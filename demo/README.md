@@ -6,7 +6,7 @@ Worked examples of the lazytui loop:
 
 Each demo is a real, working lazytui project for an open-source target.
 The human-authored part of every demo is one page; the rest was
-produced by an AI agent from that page plus `node js/tui.js --spec`.
+produced by an AI agent from that page plus `bin/lazytui --spec`.
 
 See **[../DEMO.md](../DEMO.md)** for the convention (directory shape,
 author contract, why `.agent-prompt.md` is checked in).
@@ -32,15 +32,19 @@ the specific action surface it exposes.
 
 ## What each demo proves
 
-- **postgres** — that the framework handles the canonical "one
-  container, fast cycle, classic build/test/run" case. Most visitors'
-  mental model of "a TUI for ops" maps onto this directly.
-- **cloudberrydb** — that the *same* framework, with no internal
-  changes, handles a multi-process MPP cluster with cluster-aware
-  lifecycle actions (init, gpstate, per-segment logs) and a long
-  cached build. If the postgres demo is the easy case, this is the
-  one that shows the framework still earns its keep at scale.
+- **postgres** — the **produce-from-scratch** shape (Shape A in
+  DEMO.md). Postgres has no canonical upstream docker setup; the demo
+  writes the whole stack (Dockerfile, compose, scripts, YAML). Most
+  visitors' mental model of "a TUI for ops" maps onto this directly.
+- **cloudberrydb** — the **wrap-upstream** shape (Shape B). Apache
+  Cloudberry already ships a docker sandbox under `devops/`; the demo
+  ships only the lazytui surface (no Dockerfile, no compose) and
+  delegates docker plumbing to upstream. The right pattern for any
+  target project that already has docker infrastructure.
 
 Together they exercise: every action `type` (`run`, `spawn`,
 `background`), the built-in containers and stats panels, embedded
-terminals, detail tabs, and the cmdline (`:`) verb plumbing.
+terminals, detail tabs, and the cmdline (`:`) verb plumbing. They
+also surface the two different POSTMORTEM shapes (live discovery vs
+production-review discovery) the loop discipline produces — see
+each demo's `POSTMORTEM*.md`.

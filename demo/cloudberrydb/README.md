@@ -9,7 +9,8 @@ A different demo shape than postgres: lazytui as the **YAML/CLI
 surface** on top of an existing, upstream-maintained docker setup.
 The demo itself ships no Dockerfile and no docker-compose.yml —
 upstream owns the docker plumbing. Our job is just the action surface
-(13 actions across sandbox / cluster / test groups).
+(16 actions across sandbox / cluster / test groups, plus a `help`
+action and the auto-generated docker plugin actions).
 
 This is the right pattern for any project that already has docker
 infrastructure: don't reinvent it, wrap it.
