@@ -1,0 +1,11 @@
+project_dir: .
+
+groups:
+  g:
+    label: G
+    containers: []
+    actions:
+      a:
+        cmd: echo hi
+        label: A
+        type: exec

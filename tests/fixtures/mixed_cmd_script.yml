@@ -1,0 +1,23 @@
+project_dir: .
+
+vars:
+  COMPOSE_FILE: docker-compose.yml
+
+helpers:
+  check_ready: |
+    docker compose -f $COMPOSE_FILE ps --format json
+
+groups:
+  svc:
+    label: Services
+    containers:
+      - app
+    actions:
+      up:
+        cmd: docker compose up -d
+        label: Start
+      status:
+        label: Status
+        script: |
+          @use check_ready
+          echo "Done checking."

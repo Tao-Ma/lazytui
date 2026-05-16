@@ -1,0 +1,25 @@
+project_dir: .
+
+vars:
+  KEY_FILE: client/id_ed25519
+
+helpers:
+  init_ssh: |
+    if [ -f "$KEY_FILE" ]; then
+        echo "exists"
+    else
+        ssh-keygen -t ed25519 -f "$KEY_FILE" -N ""
+    fi
+
+groups:
+  test:
+    label: Test
+    containers:
+      - dev9-env
+    actions:
+      init:
+        label: Init
+        confirm: Initialize?
+        script: |
+          @use init_ssh
+          echo "Done."

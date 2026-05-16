@@ -1,0 +1,211 @@
+# lazytui config for the cloudberrydb demo.
+#
+# Produced by the lazytui loop:
+#   demo/cloudberrydb/.agent-prompt.md + node js/tui.js --spec
+#       → this file (+ scripts/)
+#
+# Wraps upstream's docker sandbox (apache/cloudberry's devops/sandbox).
+# This demo does NOT ship its own Dockerfile or docker-compose.yml —
+# upstream owns the docker plumbing; lazytui owns the YAML/CLI verbs.
+#
+# Prerequisite: `upstream/` is a clone of github.com/apache/cloudberry
+# at the demo dir root. See README.md for the clone command.
+#
+# To change behavior, edit .agent-prompt.md and rerun the loop with a
+# fresh AI agent. Editing this file directly defeats the loop.
+
+project_dir: .
+theme: dracula
+
+groups:
+  cbdb:
+    label: cloudberry
+    containers:
+      - cbdb-cdw
+    actions:
+      help:
+        label: Help / workflow guide
+        desc: |
+          Workflow + concept guide for the cloudberrydb demo, plus a
+          probe of current state (upstream cloned? container running?).
+          Good first thing to look at if you're new to the demo.
+        type: run
+        tab: true
+        script: ./scripts/help.sh
+    children:
+      sandbox:
+        label: Sandbox
+        actions:
+          setup:
+            label: Setup (clone upstream)
+            desc: |
+              One-time clone of apache/cloudberry into ./upstream/.
+              Required before any sandbox:up* action. Idempotent — safe
+              to re-run; does nothing if upstream/ is already a git
+              repo. ~3-5 min on first run, requires network to
+              github.com.
+
+              upstream/ is gitignored, so the clone is never committed
+              to the lazytui repo.
+            type: run
+            tab: true
+            script: ./scripts/sandbox-setup.sh
+
+          up:
+            label: Up (build + run + init)
+            desc: |
+              Bring up the cloudberry sandbox via upstream's run.sh
+              against the main branch. Builds the rockylinux-9 image
+              if not cached (~30 min cold), starts the cbdb-cdw
+              container, and init_system.sh inside the container
+              initializes + starts the cluster automatically.
+
+              Port 15432 on the host is mapped to 5432 in the
+              container (postgres). Port 122 → 22 (ssh).
+
+              Prerequisite: upstream/ must be cloned. If missing, the
+              action prints a clear error pointing at the clone
+              command (no cryptic cd failure).
+            type: run
+            tab: true
+            script: ./scripts/sandbox-run.sh -c main
+
+          up-local:
+            label: Up (-c local, from upstream/)
+            desc: |
+              Same as `up` but uses local source under ./upstream/.
+              Faster when the upstream tree has been modified locally
+              and you don't want to re-fetch main.
+            type: run
+            tab: true
+            script: ./scripts/sandbox-run.sh -c local
+
+          build-only:
+            label: Build image only
+            desc: |
+              Build the cbdb image without running the container
+              (run.sh -b). Useful when you want the image cached and
+              ready, but plan to launch later.
+            type: run
+            tab: true
+            script: ./scripts/sandbox-run.sh -c main -b
+
+          down:
+            label: Down (remove container)
+            desc: |
+              Force-remove the cbdb-cdw container. Data is in container
+              filesystem only (no host volume), so this is destructive
+              for the cluster state.
+            type: run
+            confirm: Remove cbdb-cdw and its cluster state?
+            script: docker rm -f cbdb-cdw
+
+      cluster:
+        label: Cluster
+        quick: true
+        actions:
+          status:
+            label: Status (gpstate -s)
+            desc: |
+              Full cluster status. Shows coordinator + each segment's
+              role, status (up/down), and replication state.
+            type: run
+            tab: true
+            script: ./scripts/status.sh
+
+          start:
+            label: Start cluster
+            desc: gpstart -a inside cbdb-cdw. Idempotent.
+            type: run
+            script: ./scripts/start.sh
+
+          stop:
+            label: Stop cluster
+            desc: gpstop -af (fast mode). Container keeps running.
+            type: run
+            confirm: Stop the cloudberry cluster?
+            script: ./scripts/stop.sh
+
+          restart:
+            label: Restart cluster
+            desc: gpstop -afr — full cluster restart.
+            type: run
+            confirm: Restart the cloudberry cluster?
+            script: ./scripts/restart.sh
+
+          psql:
+            label: psql (coordinator)
+            desc: |
+              Interactive psql against the coordinator as gpadmin.
+              Connects via the container's internal port 5432. Ctrl+D
+              or \\q to return to the TUI.
+            type: spawn
+            script: docker exec -it -u gpadmin cbdb-cdw bash -lc 'psql -d template1'
+
+          logs-coordinator:
+            label: Coordinator log
+            desc: |
+              Tail the coordinator's most recent CSV log file
+              (snapshot, last 80 lines). Source dir:
+              /data0/database/coordinator/gpseg-1/log/
+            type: run
+            tab: true
+            script: ./scripts/logs-coordinator.sh
+
+          logs-segment-0:
+            label: Segment 0 log
+            desc: Tail segment 0's most recent CSV log (snapshot, last 80 lines).
+            type: run
+            tab: true
+            script: ./scripts/logs-segment-0.sh
+
+          logs-segment-1:
+            label: Segment 1 log
+            desc: Tail segment 1's most recent CSV log (snapshot, last 80 lines).
+            type: run
+            tab: true
+            script: ./scripts/logs-segment-1.sh
+
+      test:
+        label: Test
+        actions:
+          installcheck:
+            label: installcheck-world (full)
+            desc: |
+              Full regression run from /home/gpadmin/cloudberry inside
+              the container. On failure, regression.diffs is dumped
+              after the test output. Slow — expect 10–30 min on a warm
+              cluster.
+            type: run
+            tab: true
+            script: ./scripts/installcheck.sh
+
+          installcheck-good:
+            label: installcheck-good (fast subset)
+            desc: |
+              Core regression suite only — skips heavier contrib /
+              extension groups. ~2–5 min. Same regression.diffs hook
+              on failure.
+            type: run
+            tab: true
+            script: ./scripts/installcheck-good.sh
+
+layout:
+  left:
+    width: 32
+    panels:
+      - type: containers
+        title: Containers
+      - type: groups
+        title: Groups
+  right:
+    panels:
+      - type: actions
+        title: Actions
+      - type: stats
+        title: Stats
+        topic: docker.stats
+        select_from: containers
+      - type: detail
+        title: Detail
+        height: 60%

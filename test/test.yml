@@ -1,0 +1,281 @@
+# TUI test config. Pair with stack.yml in this directory.
+# Launch via: ./run.sh tui   (handles cwd so relative paths resolve).
+project_dir: .
+
+layout:
+  left:
+    width: 32
+    panels:
+      - type: containers
+        title: Containers
+      - type: groups
+        title: Groups
+  right:
+    panels:
+      - type: actions
+        title: Actions
+      - type: stats
+        title: Stats
+        topic: docker.stats
+        select_from: containers
+        # metrics + window default to all percent/bytes columns and 40
+      - type: detail
+        title: Detail
+
+groups:
+  # base: 4-level tree exercising recursive expand/collapse.
+  #   base (L1, branch) ─ has compose+containers, so the docker plugin
+  #     synthesizes lifecycle actions on this row.
+  #   ├── observe (L2)
+  #   │   ├── status (L3)
+  #   │   │   └── ps (L4, leaf — actions: status, tail)
+  #   │   └── logs (L3)
+  #   │       └── tail (L4, leaf — actions: tail logs)
+  #   └── run (L2)
+  #       └── shell (L3)
+  #           └── exec (L4, leaf — actions: exec)
+  base:
+    label: Base
+    compose: stack.yml
+    containers:
+      - tui-test-running
+      - tui-test-exited
+      - tui-test-healthy
+      - tui-test-unhealthy
+      - tui-test-quiet
+    children:
+      observe:
+        label: Observe
+        children:
+          status:
+            label: Status
+            children:
+              ps:
+                label: Process list
+                # Pinned to the Quick tab (deep leaf reachable in one row).
+                quick: true
+                actions:
+                  status:
+                    script: docker compose -f stack.yml ps
+                    type: run
+                    label: Status
+                    desc: Show base stack status
+                    tab: true
+                  ps-trunc:
+                    script: docker compose -f stack.yml ps --format "table {{.Name}}\t{{.Status}}"
+                    type: run
+                    label: Status (compact)
+                    desc: Truncated status table — name + status only
+                    tab: true
+          logs:
+            label: Logs
+            children:
+              tail:
+                label: Tail
+                actions:
+                  tail:
+                    # Args plumbing demo — :tail tails 20 lines (default), :tail 100
+                    # tails 100. cmdline splits the buffer at the first whitespace;
+                    # the rest is passed to sh as positional params ($1, "$@", ...).
+                    script: docker logs --tail "${1:-20}" tui-test-running 2>&1
+                    type: run
+                    label: Tail logs
+                    desc: Tail last N log lines from tui-test-running (default 20)
+                    args: "[lines]"
+                    tab: true
+      run:
+        label: Run
+        children:
+          shell:
+            label: Shell
+            children:
+              exec:
+                label: Exec command
+                actions:
+                  exec:
+                    # Mirrors dev9.yml's "Run via VPN" pattern: $# guard + exec "$@".
+                    # Use to verify what an args-required action does WITHOUT args
+                    # (Enter from actions panel today: usage error, no prompt) vs.
+                    # WITH args (`:exec date` / `:exec ls /tmp` etc).
+                    script: |
+                      [ $# -gt 0 ] || { echo "Usage: <command> [args...]"; exit 1; }
+                      exec "$@"
+                    type: run
+                    label: Exec
+                    desc: Run an arbitrary command and stream output to detail
+                    args: "command [args...]"
+
+  # detail: sandbox group for exercising the detail panel's tab UI
+  # without touching docker. Every action is `tab: true`, so running
+  # them populates persistent tabs alongside the always-present Info
+  # tab. Two YAML terminals add interactive PTY tabs to the mix —
+  # combined, you can drive the panel up to ~9 tabs and exercise
+  # tab-cycle ([ ]), mouse clicks on tab bounds, scroll (PgUp/PgDn),
+  # and stream/render paths. Pinned to Quick for one-row access.
+  detail:
+    label: Detail Demo
+    quick: true
+    containers: []
+    actions:
+      info:
+        script: |
+          echo "Single short line — checks the simplest paint path."
+          echo "Detail panel is showing this in the tab labeled 'Quick info'."
+        type: run
+        label: Quick info
+        desc: Tiny static output — a sanity tab that paints instantly
+        tab: true
+      colors:
+        script: |
+          printf '\033[31m red \033[32m green \033[33m yellow \033[34m blue \033[35m magenta \033[36m cyan \033[0m\n'
+          printf '\033[1m bold \033[0m \033[3m italic \033[0m \033[4m underline \033[0m\n'
+          printf '\033[7m reverse \033[0m  \033[2m dim \033[0m\n'
+          printf '\033[44;33m bg-blue fg-yellow \033[0m  \033[41;37m bg-red fg-white \033[0m\n'
+        type: run
+        label: ANSI palette
+        desc: Smoke-test ANSI passthrough — colors and attributes intact
+        tab: true
+      stream-fast:
+        script: |
+          i=1
+          while [ $i -le 60 ]; do
+            echo "fast $i  $(date +%T)"
+            i=$((i+1))
+          done
+        type: run
+        label: Stream (fast)
+        desc: 60 lines all at once — exercises the render queue burst path
+        tab: true
+      stream-slow:
+        script: |
+          i=1
+          while [ $i -le 8 ]; do
+            echo "tick $i/8  $(date +%T)"
+            sleep 0.5
+            i=$((i+1))
+          done
+        type: run
+        label: Stream (slow)
+        desc: 8 ticks over ~4s — watch the detail tab repaint live
+        tab: true
+      stderr-mix:
+        script: |
+          echo "stdout: alpha"
+          echo "stderr: oops" >&2
+          echo "stdout: beta"
+          echo "stderr: trouble" >&2
+          echo "stdout: gamma"
+        type: run
+        label: stdout + stderr mix
+        desc: Verify stderr lines interleave correctly with stdout
+        tab: true
+      long:
+        script: |
+          i=1
+          while [ $i -le 200 ]; do
+            printf "line %03d — lorem ipsum dolor sit amet, consectetur\n" $i
+            i=$((i+1))
+          done
+        type: run
+        label: Long output (200)
+        desc: 200 lines — exercises detail scroll (PgUp/PgDn, < / >)
+        tab: true
+    terminals:
+      sh:
+        cmd: /bin/sh
+        label: Shell
+      clock:
+        cmd: sh -c 'while true; do clear; date "+%T  %A %d %B %Y"; sleep 1; done'
+        label: Clock
+
+  # chaos stays flat (depth-0) as a regression check that single-level
+  # trees still work alongside the deep `base` branch above. Also pinned
+  # to Quick — alongside the deep `base.observe.status.ps` leaf, this
+  # exercises both depth extremes in the flat list.
+  chaos:
+    label: Chaos
+    quick: true
+    compose: stack.yml
+    containers:
+      - tui-test-crashloop
+      - tui-test-flood
+      - tui-test-slowstart
+      - tui-test-flapping
+    # Plugin-synthesized up/down don't know about profiles, so override
+    # to pass --profile chaos. Everything else (status/logs/build/restart)
+    # falls through to the docker-plugin defaults.
+    actions:
+      up:
+        script: docker compose -f stack.yml --profile chaos up -d
+        type: run
+        label: Start
+        desc: Start chaos containers
+      down:
+        script: docker compose -f stack.yml --profile chaos down
+        type: run
+        label: Stop
+        desc: Stop chaos containers
+        confirm: Stop chaos containers?
+
+  # stress: paging-test scaffolding. Two big sibling lists give the
+  # groups panel enough rows to scroll once expanded (`E` from `stress`
+  # spills 28 rows); the `actions-many` leaf has 20 actions so the
+  # actions panel scrolls too. A handful of items are pinned to Quick
+  # so the Quick tab scrolls as well — unrelated to "frequently used",
+  # purely there to verify , . < > on a long flat list.
+  stress:
+    label: Stress / Paging
+    children:
+      list-a:
+        label: List A (1-12)
+        children:
+          i01: { label: Item 01, quick: true,  actions: { run: { cmd: 'echo i01', label: Run } } }
+          i02: { label: Item 02,               actions: { run: { cmd: 'echo i02', label: Run } } }
+          i03: { label: Item 03, quick: true,  actions: { run: { cmd: 'echo i03', label: Run } } }
+          i04: { label: Item 04,               actions: { run: { cmd: 'echo i04', label: Run } } }
+          i05: { label: Item 05, quick: true,  actions: { run: { cmd: 'echo i05', label: Run } } }
+          i06: { label: Item 06,               actions: { run: { cmd: 'echo i06', label: Run } } }
+          i07: { label: Item 07, quick: true,  actions: { run: { cmd: 'echo i07', label: Run } } }
+          i08: { label: Item 08,               actions: { run: { cmd: 'echo i08', label: Run } } }
+          i09: { label: Item 09, quick: true,  actions: { run: { cmd: 'echo i09', label: Run } } }
+          i10: { label: Item 10,               actions: { run: { cmd: 'echo i10', label: Run } } }
+          i11: { label: Item 11, quick: true,  actions: { run: { cmd: 'echo i11', label: Run } } }
+          i12: { label: Item 12,               actions: { run: { cmd: 'echo i12', label: Run } } }
+      list-b:
+        label: List B (13-24)
+        children:
+          i13: { label: Item 13, quick: true,  actions: { run: { cmd: 'echo i13', label: Run } } }
+          i14: { label: Item 14,               actions: { run: { cmd: 'echo i14', label: Run } } }
+          i15: { label: Item 15, quick: true,  actions: { run: { cmd: 'echo i15', label: Run } } }
+          i16: { label: Item 16,               actions: { run: { cmd: 'echo i16', label: Run } } }
+          i17: { label: Item 17, quick: true,  actions: { run: { cmd: 'echo i17', label: Run } } }
+          i18: { label: Item 18,               actions: { run: { cmd: 'echo i18', label: Run } } }
+          i19: { label: Item 19, quick: true,  actions: { run: { cmd: 'echo i19', label: Run } } }
+          i20: { label: Item 20,               actions: { run: { cmd: 'echo i20', label: Run } } }
+          i21: { label: Item 21, quick: true,  actions: { run: { cmd: 'echo i21', label: Run } } }
+          i22: { label: Item 22,               actions: { run: { cmd: 'echo i22', label: Run } } }
+          i23: { label: Item 23, quick: true,  actions: { run: { cmd: 'echo i23', label: Run } } }
+          i24: { label: Item 24,               actions: { run: { cmd: 'echo i24', label: Run } } }
+      actions-many:
+        label: Many actions (20)
+        actions:
+          a01: { cmd: 'echo a01', label: Action 01, tab: true }
+          a02: { cmd: 'echo a02', label: Action 02 }
+          a03: { cmd: 'echo a03', label: Action 03 }
+          a04: { cmd: 'echo a04', label: Action 04 }
+          a05: { cmd: 'echo a05', label: Action 05, tab: true }
+          a06: { cmd: 'echo a06', label: Action 06 }
+          a07: { cmd: 'echo a07', label: Action 07 }
+          a08: { cmd: 'echo a08', label: Action 08 }
+          a09: { cmd: 'echo a09', label: Action 09 }
+          a10: { cmd: 'echo a10', label: Action 10, tab: true }
+          a11: { cmd: 'echo a11', label: Action 11 }
+          a12: { cmd: 'echo a12', label: Action 12 }
+          a13: { cmd: 'echo a13', label: Action 13 }
+          a14: { cmd: 'echo a14', label: Action 14 }
+          a15: { cmd: 'echo a15', label: Action 15, tab: true }
+          a16: { cmd: 'echo a16', label: Action 16 }
+          a17: { cmd: 'echo a17', label: Action 17 }
+          a18: { cmd: 'echo a18', label: Action 18 }
+          a19: { cmd: 'echo a19', label: Action 19 }
+          a20: { cmd: 'echo a20', label: Action 20, tab: true }

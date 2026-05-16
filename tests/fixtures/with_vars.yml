@@ -1,0 +1,16 @@
+project_dir: .
+
+vars:
+  KEY_FILE: client/id_ed25519
+  PORT: "2222"
+
+groups:
+  test:
+    label: Test
+    containers: []
+    actions:
+      connect:
+        label: Connect
+        type: spawn
+        script: |
+          ssh -i $KEY_FILE -p $PORT root@localhost

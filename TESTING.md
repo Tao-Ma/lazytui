@@ -1,0 +1,89 @@
+# lazytui — Testing
+
+Three test layers, each with a different purpose. Run them all from
+the repo root.
+
+| Layer | What it covers | Where | How to run |
+|---|---|---|---|
+| JS unit | TUI runtime: state, dispatch, plugins, hub, render helpers | `js/test/test-*.js` | `node js/run-tests.js -q` |
+| Parser unit | YAML loading, schema validation, migration, resolver | `tests/test_*.py` (pytest) | `python3 -m pytest tests/ -q` |
+| Integration | Live TUI against a real Docker stack + event paths | `test/` (run.sh + stack.yml + test.yml) | `test/run.sh up` then `test/run.sh tui` |
+
+The two unit layers are CI-friendly and run in seconds; integration is
+hands-on (Docker required) and is for exercising panels / terminals /
+event streaming against real containers.
+
+## JS unit tests
+
+Zero npm deps. Each test file runs in its own Node process so module
+state (hub subscribers, plugin registry, fake timers) can't leak between
+files. The harness in `js/test/test-runner.js` provides
+`describe / it / section / assert / eq / report`.
+
+```
+node js/run-tests.js               # run all
+node js/run-tests.js hub           # filter by name substring
+node js/run-tests.js -q            # quiet — only show failing files
+```
+
+Per-file isolation means imports, `require.cache` resets, and global
+mocks are local to one file. The discovery runner spawns each
+`test-*.js` as a child process; aggregation happens in `run-tests.js`.
+
+Add a new test by dropping a `test-<topic>.js` into `js/test/`. Imports
+to TUI modules use `../<module>`; the harness import is `./test-runner`
+(sibling).
+
+## Parser unit tests
+
+`pytest` with fixtures under `tests/fixtures/`. Tests cover the YAML
+schema (`test_schema.py`), parsing (`test_parser.py`), migration from
+older config layouts (`test_migration.py`), the runnable extraction
+(`test_runnable.py`), the placeholder resolver (`test_resolver.py`),
+and error paths (`test_errors.py`).
+
+```
+python3 -m pytest tests/ -q        # full run
+python3 -m pytest tests/test_schema.py -q
+python3 -m pytest tests/ -k migration
+```
+
+`pytest.ini` sets `testpaths = tests` and `pythonpath = .` so imports
+resolve against the package layout in `parser/`.
+
+## Integration / live stack
+
+`test/` ships a synthetic Docker compose stack purpose-built to exercise
+the TUI: a long-running healthy container, a flood of log output, an
+exited container ready to be re-started, and (with `--profile chaos`) a
+crashloop generator.
+
+```
+test/run.sh up               # base stack
+test/run.sh up all           # base + chaos profile
+test/run.sh ps               # check status
+test/run.sh tui              # launch TUI against test.yml
+test/run.sh tui --design     # any TUI flag forwards through
+test/run.sh down             # tear everything down
+```
+
+Run docker commands from another shell to exercise event paths:
+
+```
+docker kill   tui-test-running
+docker pause  tui-test-running && docker unpause tui-test-running
+docker stop   tui-test-flood
+docker start  tui-test-exited
+```
+
+This layer is not run in CI — it requires a Docker daemon and is for
+verifying that real PTY / event-stream / decorator behavior matches
+what the unit tests stub.
+
+## Naming
+
+- `js/run-tests.js` — discovery + sequencer (entry point you invoke).
+- `js/test/test-runner.js` — assertion harness imported by each test.
+
+The two never get confused at runtime: the runner is the orchestrator,
+the harness is the framework.

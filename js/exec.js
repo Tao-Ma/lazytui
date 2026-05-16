@@ -1,0 +1,40 @@
+/**
+ * Async exec utilities for plugin authors.
+ *
+ * Plugins should NEVER call execSync / readFileSync / etc. in refresh()
+ * or any other handler that runs in the main event loop. Sync I/O blocks
+ * the loop — keys queue up, renders freeze, terminal overlays stutter.
+ * The TUI feels "stuck" while the syscall is in flight.
+ *
+ * Use these helpers (or your own Promise-returning equivalents) instead.
+ * Zero dependencies.
+ */
+'use strict';
+
+const { spawn } = require('child_process');
+
+/**
+ * Run a shell command without blocking the event loop. Captures stdout
+ * even on non-zero exit (partial output preserved — useful for batch
+ * commands like `docker inspect a b c` where one might be missing).
+ * Never rejects — errors / timeouts resolve with whatever stdout was
+ * gathered. Pass `cwd`, `env`, `timeout` (ms; default 5000) in options.
+ *
+ * @returns {Promise<string>} stdout
+ */
+function execAsync(cmd, options = {}) {
+  const { timeout = 5000, cwd, env } = options;
+  return new Promise((resolve) => {
+    const opts = {};
+    if (cwd) opts.cwd = cwd;
+    if (env) opts.env = env;
+    const proc = spawn('sh', ['-c', cmd], opts);
+    let stdout = '';
+    const timer = setTimeout(() => { try { proc.kill(); } catch {} }, timeout);
+    proc.stdout.on('data', d => stdout += d.toString('utf8'));
+    proc.on('close', () => { clearTimeout(timer); resolve(stdout); });
+    proc.on('error', () => { clearTimeout(timer); resolve(stdout); });
+  });
+}
+
+module.exports = { execAsync };

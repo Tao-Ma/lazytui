@@ -1,0 +1,90 @@
+# Synthetic stack for live-testing the TUI. No real services — the
+# containers exist only to give the docker plugin varied state to surface
+# so the TUI's render/event/multi-select paths get exercised.
+#
+#   base profile  (default): 5 containers covering common UI states
+#   chaos profile (opt-in):  4 containers stressing events + log streaming
+#
+# Bring up via ./run.sh; never let these names collide with real workloads.
+name: tui-test
+
+services:
+  # ---- base: always-on, quiet ----------------------------------------
+
+  running:
+    image: busybox
+    container_name: tui-test-running
+    command: sh -c "while true; do echo running tick $$(date +%T); sleep 5; done"
+    restart: unless-stopped
+
+  exited:
+    image: busybox
+    container_name: tui-test-exited
+    command: sh -c "echo starting; sleep 1; echo done; exit 0"
+    restart: "no"
+
+  healthy:
+    image: busybox
+    container_name: tui-test-healthy
+    command: sleep infinity
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "true"]
+      interval: 5s
+      timeout: 2s
+      retries: 1
+
+  unhealthy:
+    image: busybox
+    container_name: tui-test-unhealthy
+    command: sleep infinity
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "false"]
+      interval: 5s
+      timeout: 2s
+      retries: 1
+
+  quiet:
+    image: busybox
+    container_name: tui-test-quiet
+    command: sleep infinity
+    restart: unless-stopped
+
+  # ---- chaos: noisy, transient, opt-in -------------------------------
+
+  # Restart-loop with 1s backoff floor — fires `start`/`die` events
+  # ~once per second. Stresses the docker events stream + scheduleRender
+  # debounce.
+  crashloop:
+    image: busybox
+    container_name: tui-test-crashloop
+    command: sh -c "echo boom; sleep 1; exit 1"
+    restart: always
+    profiles: [chaos]
+
+  # ~20 lines/sec. Stresses streamCommand + log pane render.
+  flood:
+    image: busybox
+    container_name: tui-test-flood
+    command: sh -c "i=0; while true; do echo flood line $$i $$(date +%T); i=$$((i+1)); sleep 0.05; done"
+    restart: unless-stopped
+    profiles: [chaos]
+
+  # 20s in 'created'/'starting' before settling — exercises slow state
+  # transitions in the status column.
+  slowstart:
+    image: busybox
+    container_name: tui-test-slowstart
+    command: sh -c "echo starting...; sleep 20; echo ready; sleep infinity"
+    restart: unless-stopped
+    profiles: [chaos]
+
+  # Clean exit every 5s, restart: always — different rhythm than
+  # crashloop (exit 0 vs exit 1, longer cycle).
+  flapping:
+    image: busybox
+    container_name: tui-test-flapping
+    command: sh -c "echo running; sleep 5; echo flap; exit 0"
+    restart: always
+    profiles: [chaos]

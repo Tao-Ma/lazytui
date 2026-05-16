@@ -1,0 +1,12 @@
+project_dir: .
+
+groups:
+  g:
+    label: G
+    containers: []
+    actions:
+      a:
+        label: A
+        cmd: echo hi
+        script: |
+          echo hi

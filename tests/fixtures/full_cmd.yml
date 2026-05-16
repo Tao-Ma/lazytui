@@ -1,0 +1,119 @@
+project_dir: .
+
+groups:
+  dev9-core:
+    label: Core Services
+    compose: docker-compose.yml
+    containers:
+      - dev9-env
+      - dev9-openvpn
+      - dev9-gitea
+      - dev9-cliproxyapi
+      - dev9-webdav
+      - dev9-noip
+      - dev9-status
+    actions:
+      init:
+        cmd: ./do.sh dev9-core init
+        type: run
+        label: Init
+        confirm: Initialize SSH keys + VPN server?
+      up:
+        cmd: docker compose up -d --build
+        type: run
+        label: Start
+      down:
+        cmd: docker compose down
+        type: run
+        label: Stop
+        confirm: Stop all core services?
+      status:
+        cmd: docker compose ps
+        type: run
+        label: Status
+      logs:
+        cmd: docker compose logs -f --tail=50
+        type: spawn
+        label: Logs
+      ssh:
+        cmd: ./do.sh dev9-core ssh
+        type: spawn
+        label: SSH
+      browse:
+        cmd: ./do.sh dev9-core browse
+        type: background
+        label: Browse
+
+  dev9-vpn:
+    label: Dev9 VPN
+    compose: services/vpnclient/docker-compose.yml
+    containers:
+      - dev9-vpnclient
+    actions:
+      up:
+        cmd: docker compose -f services/vpnclient/docker-compose.yml up -d --build
+        type: run
+        label: Connect
+      down:
+        cmd: docker compose -f services/vpnclient/docker-compose.yml down
+        type: run
+        label: Disconnect
+        confirm: Disconnect VPN?
+      logs:
+        cmd: docker compose -f services/vpnclient/docker-compose.yml logs -f
+        type: spawn
+        label: Logs
+      check:
+        cmd: ./do.sh dev9-vpn check
+        type: run
+        label: Check
+      ssh:
+        cmd: ./do.sh dev9-vpn ssh
+        type: spawn
+        label: SSH
+      browse:
+        cmd: ./do.sh dev9-vpn browse
+        type: background
+        label: Browse
+
+  work:
+    label: Work VPN
+    compose: services/workvpn/docker-compose.yml
+    containers:
+      - dev9-workvpn
+    actions:
+      up:
+        cmd: docker compose -f services/workvpn/docker-compose.yml up -d --build
+        type: run
+        label: Start
+      down:
+        cmd: docker compose -f services/workvpn/docker-compose.yml down
+        type: run
+        label: Stop
+        confirm: Stop work VPN?
+      logs:
+        cmd: docker compose -f services/workvpn/docker-compose.yml logs -f
+        type: spawn
+        label: Logs
+      browse:
+        cmd: ./do.sh work browse
+        type: background
+        label: Browse
+
+  config:
+    label: Config
+    containers: []
+    actions:
+      save:
+        cmd: ./do.sh config save
+        type: run
+        label: Save
+      load:
+        cmd: ./do.sh config load
+        type: run
+        label: Load
+        confirm: Restore configs from branch? Local changes may be lost.
+      check-stale:
+        cmd: ./do.sh config check-stale
+        type: run
+        label: Check Stale

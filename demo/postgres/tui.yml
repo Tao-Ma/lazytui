@@ -1,0 +1,108 @@
+# lazytui config for the postgres demo.
+#
+# Produced by the lazytui loop:
+#   demo/postgres/.agent-prompt.md + node js/tui.js --spec
+#       → this file (+ Dockerfile, docker-compose.yml, scripts/)
+#
+# To change behavior, edit .agent-prompt.md and rerun the loop with a
+# fresh AI agent. Editing this file directly defeats the loop — the
+# next regeneration will overwrite your changes.
+
+project_dir: .
+theme: dracula
+
+groups:
+  pg:
+    label: postgres 16
+    compose: docker-compose.yml
+    containers:
+      - pg
+    actions:
+      build:
+        label: Build (configure + make)
+        desc: |
+          Configure and compile postgres 16 from source inside the pg
+          container. Streams output to the detail panel. Slow on first
+          run (~5 min); subsequent rebuilds are incremental.
+
+          Output goes to /opt/pg (named volume pg-build), so the server
+          actions below find the binaries on subsequent runs.
+        type: run
+        tab: true
+        script: docker compose exec -T pg bash /scripts/build.sh
+
+      test:
+        label: Test (make check)
+        desc: |
+          Run the postgres regression suite. On failure the action
+          dumps regression.diffs after the test output so you do not
+          have to dig for it. Requires `build` to have completed.
+        type: run
+        tab: true
+        script: docker compose exec -T pg bash /scripts/test.sh
+
+      initdb:
+        label: initdb (one-time)
+        desc: |
+          Initialize the data directory at /var/lib/postgresql/data.
+          Idempotent — re-running on an initialized dir is a no-op.
+          Run this once after the first build, before pg-start.
+        type: run
+        script: docker compose exec -T pg bash /scripts/initdb.sh
+
+      pg-start:
+        label: Start postgres server
+        desc: |
+          Start the postgres server process inside the pg container
+          via pg_ctl. Server log goes to /tmp/pg.log inside the
+          container; see pg-log action.
+        type: run
+        script: docker compose exec -T pg bash /scripts/pgstart.sh
+
+      pg-stop:
+        label: Stop postgres server
+        desc: |
+          Stop the postgres server process via pg_ctl (fast mode).
+          The pg container itself keeps running so the source tree
+          and built binaries stay accessible.
+        type: run
+        confirm: Stop postgres server?
+        script: docker compose exec -T pg bash /scripts/pgstop.sh
+
+      psql:
+        label: psql (interactive)
+        desc: |
+          Open an interactive psql session against the running server.
+          Full-screen subprocess — Ctrl+D or \\q to return to the TUI.
+        type: spawn
+        script: docker compose exec -it pg /opt/pg/bin/psql -U postgres -h localhost
+
+      pg-log:
+        label: Server log (snapshot)
+        desc: |
+          Snapshot of the last 50 lines of /tmp/pg.log (postgres
+          server stderr). For live follow, use the auto-generated
+          Logs action which spawns `docker compose logs -f`.
+        type: run
+        tab: true
+        script: docker compose exec -T pg tail -n 50 /tmp/pg.log
+
+layout:
+  left:
+    width: 32
+    panels:
+      - type: containers
+        title: Containers
+      - type: groups
+        title: Groups
+  right:
+    panels:
+      - type: actions
+        title: Actions
+      - type: stats
+        title: Stats
+        topic: docker.stats
+        select_from: containers
+      - type: detail
+        title: Detail
+        height: 60%

@@ -1,0 +1,25 @@
+# Postgres 16 from source. Single service; demo actions exec into it.
+# Produced by the lazytui loop — see .agent-prompt.md.
+#
+# Named volumes:
+#   pg-build  → /opt/pg, the configure --prefix (where `make install` lands)
+#   pg-data   → /var/lib/postgresql/data, the data directory
+#
+# Persisting these across container rebuilds means subsequent `build`
+# actions are incremental and the data dir survives `down`/`up` cycles.
+
+services:
+  pg:
+    build: .
+    container_name: pg
+    user: postgres
+    working_dir: /home/postgres
+    volumes:
+      - pg-build:/opt/pg
+      - pg-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+volumes:
+  pg-build:
+  pg-data:

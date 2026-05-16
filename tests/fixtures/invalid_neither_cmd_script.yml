@@ -1,0 +1,10 @@
+project_dir: .
+
+groups:
+  g:
+    label: G
+    containers: []
+    actions:
+      a:
+        label: A
+        type: run

@@ -1,0 +1,11 @@
+# Python tooling
+.venv/
+__pycache__/
+.pytest_cache/
+*.pyc
+
+# Node modules — installed via `npm install --omit=dev` at repo root
+node_modules/
+
+# macOS
+.DS_Store

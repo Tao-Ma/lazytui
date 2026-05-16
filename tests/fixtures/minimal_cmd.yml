@@ -1,0 +1,10 @@
+project_dir: .
+
+groups:
+  mygroup:
+    label: My Group
+    containers: []
+    actions:
+      hello:
+        cmd: echo hello
+        label: Hello

@@ -1,0 +1,25 @@
+# 3-level nested group tree for parser tests.
+groups:
+  root:
+    label: Root
+    children:
+      branch:
+        label: Branch
+        children:
+          leaf:
+            label: Leaf
+            containers:
+              - cont-a
+            actions:
+              hi:
+                cmd: echo hi
+                label: Hi
+              bye:
+                cmd: echo bye
+                label: Bye
+      sibling-leaf:
+        label: Sibling
+        actions:
+          go:
+            cmd: echo go
+            label: Go
