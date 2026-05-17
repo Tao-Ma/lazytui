@@ -6,22 +6,22 @@
 `MIT License · Node.js + Python · zero npm runtime deps except node-pty + xterm-headless for embedded terminals`
 
 ```
-╭─(1)─Containers─────────╮╭─(0)─Actions────────────────────────────────╮
-│ ● pg                   ││ > Build (configure + make)            tab ▐
-╰──────────────────1 of 1─╯│   Test (make check)                   tab │
-╭─(2)─Groups──────────────╮│   initdb (one-time)                       │
-│❶ postgres 16       1 ● ││   Start postgres server                   │
-╰──────────────────1 of 1─╯│   psql (interactive)                  ⧉  │
-                          │   Server log (snapshot)               tab │
-                          ╰────────────────────────────────1 of 7─────╯
-                          ╭─(o)─Info─[Build]──────────────────────────╮
-                          │ Configure and compile postgres 16 from    ▐
-                          │ source inside the pg container. Streams   │
-                          │ output to the detail panel. Slow on first │
-                          │ run (~5 min); subsequent rebuilds are     │
-                          │ incremental.                              │
-                          ╰───────────────────────────────────────────╯
- ↑↓ select  ←→ panel  Enter run  ] tab  : cmd  ? help  q quit
+╭─(1)─Containers───────╮╭─(0)─Actions────────────────────────────────╮
+│ * pg                 ││ > Build (configure + make)             tab │
+╰────────────────1 of 1╯│   Test (make check)                    tab │
+╭─(2)─Groups───────────╮│   initdb (one-time)                        │
+│ 1 postgres 16    1 ok││   Start postgres server                    │
+╰────────────────1 of 1╯│   psql (interactive)              [spawn]  │
+                        │   Server log (snapshot)                tab │
+                        ╰──────────────────────────────────1 of 7────╯
+                        ╭─(o)─Info─[Build]───────────────────────────╮
+                        │ Configure and compile postgres 16 from     │
+                        │ source inside the pg container. Streams    │
+                        │ output to the detail panel. Slow on first  │
+                        │ run (~5 min); subsequent rebuilds are      │
+                        │ incremental.                               │
+                        ╰────────────────────────────────────────────╯
+ up/dn select  h/l panel  Enter run  ] tab  : cmd  ? help  q quit
 ```
 
 ## Quickstart
