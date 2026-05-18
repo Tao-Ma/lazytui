@@ -6,63 +6,66 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-### Added
-- **Release packaging.** `package.json` populated with publish-ready
-  metadata (repository, homepage, author, license, keywords). New
-  `.npmignore` keeps tests, demos, and `__pycache__/` out of the npm
-  tarball — package size ~170 kB / 78 files. A
-  `.github/workflows/release.yml` workflow triggers on `v*.*.*` tag
-  push: runs tests, builds `lazytui-X.Y.Z.tgz` (npm-style) +
-  `lazytui-X.Y.Z-source.tar.gz` (full git-archive), creates a GitHub
-  Release with both attached. RELEASING.md documents the maintainer
-  flow including the deferred npm-publish path (the dual-runtime
-  Node+Python install is still an open question).
-- Three worked demos under `demo/`:
-  - `postgres` — produce-from-source shape (Shape A).
-  - `cloudberrydb` — wrap-upstream shape (Shape B) against
-    apache/cloudberry's `devops/sandbox/`.
-  - `tidb` (on `dev-demo-tidb` branch, awaiting live-test merge) —
-    orchestrate pre-built `pingcap/*` images.
-- `DEMO.md` codifies the two demo shapes and the "fix the prompt,
-  not the artifact" loop discipline.
-- `bin/lazytui` portable wrapper. Auto-detects `.venv/` at the repo
-  root so demos run without manually activating the venv.
-- `--spec` flag dumps the consolidated plugin-authoring bundle
-  (SPEC + PRINCIPLES + PLUGINS + PROJECT + HUB + DECORATORS +
-  LAYOUT) for AI agents.
-- Framework + spec docs relocated under `docs/`; historical
-  snapshots under `docs/history/`. Root is README + DEMO +
-  LICENSE only.
+## [0.1.0] — 2026-05-18
 
-### Fixed
-- README ASCII TUI mockup misaligned on GitHub's web font due to
-  ambiguous-width glyphs (`●`, `❶`, `⧉`, `↑↓`, `←→`). Rebuilt with
-  single-cell-safe characters.
+First public tagged release.
 
-## [0.1.0] — 2026-05-15
-
-Initial public release. Single squashed commit on
-[github.com/Tao-Ma/lazytui](https://github.com/Tao-Ma/lazytui).
-Full pre-squash history preserved on the internal gitea mirror
-under the `backup/main-history` branch and the
-`v0.1.0-pre-squash` tag.
-
-### Included
-- Renderer (Node.js, zero npm runtime deps except node-pty and
-  @xterm/headless for embedded PTY tabs).
-- Parser (Python, validates and resolves the YAML config; 6 pytest
-  files).
-- 17 JS smoke suites covering state, dispatch, plugins, hub,
-  decorators, render helpers, terminal, history, multiselect,
-  archive, config-branch, config-status, image-backup, stats,
-  tree, prompt, confirm, cmdline-args, onkey-dispatch, bulk
-  commands.
+### Framework
+- Renderer (Node.js, zero npm runtime deps except `node-pty` and
+  `@xterm/headless` for embedded PTY tabs).
+- Parser (Python, validates and resolves the YAML config).
+- 17 JS smoke suites + 6 pytest files. Live integration harness
+  under `test/`.
 - Built-in panel types: `groups`, `actions`, `file-manager`,
   `history`, `detail`, plus `containers` and `stats` from the
   docker plugin.
 - Subsystems: hub (pub/sub), decorators (UI slot framework),
   cmdline (`:`) verbs, embedded PTY terminals, 6 themes, design
-  mode, cli mode (`--exec`, `--list`), `--spec` bundle.
+  mode, CLI mode (`--exec`, `--list`), `--spec` bundle for AI
+  agents.
+
+### Demos
+- `demo/postgres` — Shape A (build from source). Verified end-to-end
+  on Docker. Includes a `POSTMORTEM.md` documenting the DinD
+  bind-mount discovery and the "fix the prompt, not the artifact"
+  two-layer fix that resulted.
+- `demo/cloudberrydb` — Shape B (wrap upstream's `devops/sandbox/`).
+  YAML parses; live build deferred. `POSTMORTEM_v1.md` captures the
+  drop-and-rewrite decision when the first producing pass diverged
+  from upstream's actual conventions.
+- `demo/tidb` — Shape A variant (orchestrate pre-built `pingcap/*`
+  images). Lives on the `dev-demo-tidb` branch pending a live-test
+  merge.
+
+### Docs
+- `README.md` — positioning, ASCII TUI mockup, quickstart, comparison
+  table against Make / shell / Taskfile, three-demo table, "Read next"
+  with split for using vs contributing.
+- `DEMO.md` codifies the two demo shapes and the loop discipline.
+- `docs/` subtree: framework + plugin authoring (SPEC, PRINCIPLES,
+  PLUGINS, PROJECT, LAYOUT, HUB, DECORATORS, CMDMODE, TERMINAL,
+  STATS, TESTING). `docs/history/` for the dev9-era retrospective and
+  FUTURE backlog.
+- Standard OSS files: `CONTRIBUTING.md`, `CHANGELOG.md`,
+  `SECURITY.md`, `CODE_OF_CONDUCT.md`, `LICENSE` (MIT).
+
+### Release plumbing
+- `.github/workflows/test.yml` — JS + pytest CI on push / PR.
+- `.github/workflows/release.yml` — on `v*.*.*` tag push, runs
+  tests, builds `lazytui-X.Y.Z.tgz` (npm-style) +
+  `lazytui-X.Y.Z-source.tar.gz` (full git-archive), creates a
+  GitHub Release with both tarballs attached.
+- `RELEASING.md` documents the maintainer flow.
+- `package.json` ready for publish; `private: true` retained until
+  the dual-runtime npm-install question is resolved.
+
+### Pre-tag history
+The single-commit public state at `b384d19` (2026-05-15) was the
+first form of lazytui visible on GitHub. v0.1.0 is the first state
+with a semantic version, a CHANGELOG entry, and downloadable
+release tarballs. Full pre-squash development history is preserved
+on the internal gitea mirror under the `backup/main-history` branch
+and the `v0.1.0-pre-squash` tag.
 
 [Unreleased]: https://github.com/Tao-Ma/lazytui/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/Tao-Ma/lazytui/releases/tag/v0.1.0
