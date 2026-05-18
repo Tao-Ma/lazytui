@@ -45,8 +45,13 @@ function saveScript(list, out) {
     // disk. With pipefail, the subshell rc reflects docker's failure;
     // we then rm the partial file and surface a SKIP so the user
     // knows which image bailed without aborting the whole batch.
+    //
+    // Invoke bash explicitly for this subshell — actions run under
+    // `sh -c` (see exec.js) and on Debian/Ubuntu /bin/sh is dash,
+    // which lacks `set -o pipefail`. Bash is universally available
+    // on supported platforms.
     lines.push(
-      `( set -o pipefail; docker save "${img}" 2>/dev/null | gzip > "${out}/${safe}.tar.gz" ) || ` +
+      `bash -c 'set -o pipefail; docker save "$1" 2>/dev/null | gzip > "$2"' _ "${img}" "${out}/${safe}.tar.gz" || ` +
       `{ rm -f "${out}/${safe}.tar.gz"; echo "  SKIP ${img} (not found)"; }`,
     );
   }
