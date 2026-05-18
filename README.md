@@ -221,7 +221,7 @@ for "the same thing but headless."
 - **Renderer**: Node.js, zero npm runtime deps except `node-pty` + `@xterm/headless`.
 - **Parser**: Python, validates and resolves the YAML config.
 - **Tests**: 17 JS smoke suites, 6 pytest files, plus a live integration
-  harness under `test/`. See [TESTING.md](TESTING.md).
+  harness under `test/`. See [docs/TESTING.md](docs/TESTING.md).
 - **Two worked demos** at the time of initial public release; both ship
   with the human-authored intent (`.agent-prompt.md`) checked in so the
   loop is reproducible by another agent.
@@ -230,22 +230,27 @@ for "the same thing but headless."
 
 **Using lazytui:**
 
-- [SPEC.md](SPEC.md) — plugin authoring quickstart; brief any agent
-  with this.
+- [docs/SPEC.md](docs/SPEC.md) — plugin authoring quickstart; brief
+  any agent with this.
 - [DEMO.md](DEMO.md) — convention for adding your own demo, including
   the two demo shapes and the "fix the prompt, not the artifact" rule.
-- [PROJECT.md](PROJECT.md) — what a user project looks like on disk
-  and how path discovery works.
+- [docs/PROJECT.md](docs/PROJECT.md) — what a user project looks like
+  on disk and how path discovery works.
 
 **Contributing to lazytui itself:**
 
-- [PRINCIPLES.md](PRINCIPLES.md) — the invariants. "YAML defines, TUI
-  renders." Read before changing either layer.
-- [PLUGINS.md](PLUGINS.md) — full plugin contract.
-- [LAYOUT.md](LAYOUT.md), [HUB.md](HUB.md),
-  [DECORATORS.md](DECORATORS.md), [CMDMODE.md](CMDMODE.md),
-  [TERMINAL.md](TERMINAL.md), [STATS.md](STATS.md) — subsystem deep
-  dives.
+- [docs/PRINCIPLES.md](docs/PRINCIPLES.md) — the invariants.
+  "YAML defines, TUI renders." Read before changing either layer.
+- [docs/PLUGINS.md](docs/PLUGINS.md) — full plugin contract.
+- [docs/LAYOUT.md](docs/LAYOUT.md), [docs/HUB.md](docs/HUB.md),
+  [docs/DECORATORS.md](docs/DECORATORS.md),
+  [docs/CMDMODE.md](docs/CMDMODE.md),
+  [docs/TERMINAL.md](docs/TERMINAL.md),
+  [docs/STATS.md](docs/STATS.md) — subsystem deep dives.
+
+**History (archived):** [docs/history/](docs/history/) keeps the
+round-1 refactor retrospective, the dev9-era resume snapshot, and
+the feature backlog. Not load-bearing; useful for context.
 
 ## Run
 

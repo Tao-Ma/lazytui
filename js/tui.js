@@ -60,7 +60,8 @@ const SPEC_DOCS = [
 ];
 
 function printSpec() {
-  const docsDir = path.resolve(__dirname, '..');
+  // docs/ subtree under the repo root, since the 2026-05 reorg.
+  const docsDir = path.resolve(__dirname, '..', 'docs');
   for (let i = 0; i < SPEC_DOCS.length; i++) {
     const name = SPEC_DOCS[i];
     const filepath = path.join(docsDir, name);
