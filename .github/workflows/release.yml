@@ -1,0 +1,67 @@
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write  # needed to create GitHub Releases
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # full history for git archive
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Node deps
+        run: npm install --omit=dev
+
+      - name: Install Python deps
+        run: pip install -r requirements.txt
+
+      - name: Run JS tests
+        run: node js/run-tests.js
+
+      - name: Run parser tests
+        run: pytest tests/ -q
+
+      # npm pack produces lazytui-<version>.tgz from package.json metadata
+      # + the .npmignore exclusion list. Test code, demos, pycache, and
+      # the .github/ workflows are excluded; the runtime + docs ship.
+      - name: Build npm tarball
+        run: npm pack
+
+      # Source tarball — git-archive of HEAD. Includes everything that's
+      # in git (tests, demos, .github, etc), unlike the npm tarball.
+      - name: Build source tarball
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          git archive \
+              --format=tar.gz \
+              --prefix="lazytui-${VERSION}/" \
+              --output="lazytui-${VERSION}-source.tar.gz" \
+              HEAD
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            lazytui-*.tgz
+            lazytui-*-source.tar.gz
+          generate_release_notes: true
+          draft: false
+          prerelease: ${{ contains(github.ref, '-') }}  # vX.Y.Z-rc1 etc are pre-release

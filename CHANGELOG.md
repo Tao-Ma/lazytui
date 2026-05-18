@@ -7,6 +7,16 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Release packaging.** `package.json` populated with publish-ready
+  metadata (repository, homepage, author, license, keywords). New
+  `.npmignore` keeps tests, demos, and `__pycache__/` out of the npm
+  tarball — package size ~170 kB / 78 files. A
+  `.github/workflows/release.yml` workflow triggers on `v*.*.*` tag
+  push: runs tests, builds `lazytui-X.Y.Z.tgz` (npm-style) +
+  `lazytui-X.Y.Z-source.tar.gz` (full git-archive), creates a GitHub
+  Release with both attached. RELEASING.md documents the maintainer
+  flow including the deferred npm-publish path (the dual-runtime
+  Node+Python install is still an open question).
 - Three worked demos under `demo/`:
   - `postgres` — produce-from-source shape (Shape A).
   - `cloudberrydb` — wrap-upstream shape (Shape B) against

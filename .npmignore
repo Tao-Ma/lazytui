@@ -1,0 +1,27 @@
+# Test code — not part of the runtime that ships in the published package.
+js/test/
+tests/
+
+# Python bytecode created on parse runs.
+__pycache__/
+*.pyc
+*.pyo
+
+# Demos: large (hundreds of KB) and not needed at runtime. Users who
+# want demos can git-clone the repo. Keeps the npm tarball lean.
+demo/
+
+# Repo-level housekeeping the framework runtime doesn't need.
+test/
+.github/
+.git/
+
+# Dev-time artifacts.
+.venv/
+.tmp/
+dist/
+node_modules/
+
+# Editor / OS.
+.DS_Store
+*.swp
