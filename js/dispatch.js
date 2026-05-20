@@ -357,7 +357,36 @@ const modeChain = [
   { active: () => S.cmdMode,    handler: (key, seq) => { handleCmdlineKey(key, seq); showSelectedInfo(); } },
 ];
 
+// Key-filter middleware (CHANGELOG v0.3.0). Registered callbacks run
+// in order, each receiving the current {key, seq} event. A filter may
+// return a modified event, return the event unchanged (no-op), or
+// return null to suppress the key entirely.
+//
+// Use cases: keyboard remapping (translate hjkl→up/down/left/right
+// in a vim-mode plugin), pre-dispatch logging beyond the event-log
+// recording below, key throttling / debouncing, key-press analytics.
+const _keyFilters = [];
+
+function registerKeyFilter(fn) {
+  if (typeof fn !== 'function') throw new Error('key filter must be a function');
+  _keyFilters.push(fn);
+}
+
+function clearKeyFilters() {
+  _keyFilters.length = 0;
+}
+
 function handleKey(key, seq) {
+  // Filter middleware runs first — before logging, before dispatch.
+  // A filter that returns null wholly suppresses the event (no log
+  // entry, no dispatch, no render).
+  let evt = { key, seq };
+  for (const f of _keyFilters) {
+    evt = f(evt);
+    if (evt == null) return;
+  }
+  ({ key, seq } = evt);
+
   // Event log (PRINCIPLES.md §11 + CHANGELOG v0.2.0). Recorded once
   // at the dispatch boundary so both modal and normal-key paths land
   // in the log identically. Silent + idempotent when the log is
@@ -524,4 +553,8 @@ function handleAction(action, arg) {
   }
 }
 
-module.exports = { handleKey, handleAction, startDesignMode, _dispatchPluginKey: dispatchPluginKey };
+module.exports = {
+  handleKey, handleAction, startDesignMode,
+  registerKeyFilter, clearKeyFilters,
+  _dispatchPluginKey: dispatchPluginKey,
+};

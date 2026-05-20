@@ -7,6 +7,14 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added — v0.3.0 surface (terminal-citizen polish)
+- **Key-filter middleware.** `dispatch.registerKeyFilter(fn)` adds a
+  pre-dispatch hook. Each filter receives `{key, seq}` and may
+  return the (possibly modified) event, the event unchanged, or
+  null to suppress. Filters run in registration order; the dispatch
+  layer logs + dispatches whatever survives the chain. Use cases:
+  keyboard remapping (vim-mode hjkl → arrows), key throttling /
+  debouncing, pre-dispatch analytics, test instrumentation. New
+  test file `js/test/test-key-filters.js` (13 assertions).
 - **Per-plugin refresh cadence.** Plugins gain optional
   `refreshIntervalMs` (default 10000). New
   `plugins/api.startRefreshLoops(config, opts)` starts a self-scheduling
