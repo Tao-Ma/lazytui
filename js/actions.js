@@ -15,6 +15,11 @@ const { enterConfirm } = require('./confirm');
 const history = require('./history');
 
 function runAction(actionKey, action, args = []) {
+  // Event log (PRINCIPLES.md §11 + CHANGELOG v0.2.0). Record the user
+  // invocation here — at the entry point, before confirm gating —
+  // so the log captures "user pressed Enter on action X" once. The
+  // doRun() path is the response.
+  require('./event-log').record('action', { actionKey, args, type: action.type });
   // Gate on action.confirm — show modal y/N overlay; user-confirmed
   // execution re-enters this fn through doRun(). Cancel is a no-op
   // (lastRunAction stays whatever it was, no '>' marker drift).

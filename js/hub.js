@@ -87,6 +87,11 @@ function recomputeAllWindows() {
  * '_' (the spec convention) so all storage paths use one shape.
  */
 function publish(topic, rowKey, sample) {
+  // Event log (PRINCIPLES.md §11 + CHANGELOG v0.2.0). Record before
+  // the retention/dedup branches so the recording reflects every
+  // publish call as the producer saw it — even ones that the hub
+  // drops because no subscribers ask for the topic.
+  require('./event-log').record('publish', { topic, rowKey, sample });
   // Wildcard subscriptions don't pre-populate the cache for topics they'd
   // match (the topic name isn't known until first publish). Compute on
   // demand and cache so the second publish is hot.

@@ -358,6 +358,11 @@ const modeChain = [
 ];
 
 function handleKey(key, seq) {
+  // Event log (PRINCIPLES.md §11 + CHANGELOG v0.2.0). Recorded once
+  // at the dispatch boundary so both modal and normal-key paths land
+  // in the log identically. Silent + idempotent when the log is
+  // disabled.
+  require('./event-log').record('key', { key, seq });
   for (const m of modeChain) {
     if (m.active()) { m.handler(key, seq); render(); return; }
   }

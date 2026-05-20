@@ -176,6 +176,10 @@ function getItems(panelType, S) {
  * @returns {Promise<boolean>} true if any plugin reported changes
  */
 async function refreshAll(config) {
+  // Event log (PRINCIPLES.md §11 + CHANGELOG v0.2.0). One record per
+  // tick — payload empty because the tick itself is the input event;
+  // the per-plugin refresh side-effects are responses.
+  require('../event-log').record('refresh', null);
   let changed = false;
   for (const plugin of Object.values(plugins)) {
     if (plugin.refresh) {

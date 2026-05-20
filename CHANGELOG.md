@@ -7,12 +7,27 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Event log recorder (`js/event-log.js`).** In-memory ring buffer
+  capturing input events: key presses (via `dispatch.handleKey`),
+  hub publishes (via `hub.publish`), refresh ticks (via
+  `plugins/api.refreshAll`), and action invocations (via
+  `actions.runAction`). Default cap 500 events (~50 kB). Exposes
+  `record / enable / setCap / clear / snapshot / size / save`. The
+  `save(path)` helper serializes to JSON with a version header,
+  suitable for attaching to bug reports. Foundation for the planned
+  replay path; deliberately producer-only in v0.2.0 — see "Pending
+  for v0.2.x" below.
 - **Render idempotence principle (PRINCIPLES.md §11).** A panel's
   `render(panel, w, h, S)` called twice with the same inputs produces
   the same output. Articulates the actual discipline lazytui follows
   (weaker than strict purity — layout writes derived state, stats
   panel lazy-subscribes to the hub on first render — but stronger
   than "anything goes"). New checklist bullet in §12.
+- **`js/test/test-event-log.js`** — covers the ring buffer, enable
+  / disable gate, JSON save round-trip, and the wired hub +
+  refreshAll hooks (key + action hooks are exercised indirectly by
+  the existing dispatch + cli test suites). 22 new assertions; JS
+  suite now 19/19 (was 18/18).
 - **`js/test/test-render-idempotent.js`.** Exercises representative
   core plugin renders (groups, actions, detail, file-manager,
   history) twice per panel under two focus configurations. 15 new
