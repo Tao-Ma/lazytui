@@ -159,10 +159,10 @@ is no privileged path the agent cannot reach.
 
 ## Worked demos
 
-| Demo | Target | Shape | Notes |
+| Demo | Target | Shape | Status |
 |---|---|---|---|
-| **[postgres](demo/postgres/)** | PostgreSQL 16 from source | Single container, build → test → psql | Verified end-to-end on Docker. See [POSTMORTEM.md](demo/postgres/POSTMORTEM.md) for the loop discipline applied to a live discovery (DinD bind-mount). |
-| **[cloudberrydb](demo/cloudberrydb/)** | Apache Cloudberry main | Wraps upstream's `devops/sandbox/` — lazytui adds the YAML/CLI surface on top of upstream's docker | Live build deferred (~30 min cold). See [POSTMORTEM_v1.md](demo/cloudberrydb/POSTMORTEM_v1.md) for the upstream-pivot decision. |
+| **[postgres](demo/postgres/)** | PostgreSQL 16 from source | Single container, build → test → psql | **Verified end-to-end on Docker.** See [POSTMORTEM.md](demo/postgres/POSTMORTEM.md) for the loop discipline applied to a live discovery (DinD bind-mount). |
+| **[cloudberrydb](demo/cloudberrydb/)** | Apache Cloudberry main | Wraps upstream's `devops/sandbox/` — lazytui adds the YAML/CLI surface on top of upstream's docker | **YAML parses; live build not yet verified** (~30 min cold). See [POSTMORTEM_v1.md](demo/cloudberrydb/POSTMORTEM_v1.md) for the upstream-pivot decision. |
 
 The two demos prove the two **shapes** demos can take — produce a
 docker stack from scratch, or wrap an upstream project's existing

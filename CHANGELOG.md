@@ -6,6 +6,20 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Removed
+- **tidb demo (parseable-only) dropped from advertised support.** The
+  in-flight `dev-demo-tidb` branch is removed from `origin`. v0.1.0's
+  CHANGELOG entry referenced "tidb on `dev-demo-tidb` branch awaiting
+  live-test merge"; that was overpromising for a release that hadn't
+  verified the demo on Docker. Restored as a future demo once a real
+  use-case drives it (and once a live test actually runs).
+
+### Changed
+- README's demos table column renamed `Notes` → `Status`, and the
+  cloudberrydb row now reads "YAML parses; live build not yet
+  verified" instead of "live build deferred." More upfront for a
+  first-time visitor.
+
 ## [0.1.0] — 2026-05-18
 
 First public tagged release.
