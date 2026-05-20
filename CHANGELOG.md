@@ -6,6 +6,21 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- **`type: spawn` actually works outside tmux now.** Previously, the
+  no-tmux branch ran the script *detached* with `stdio: 'ignore'`, so
+  interactive subprocesses (`psql`, `less`, `$EDITOR`) got `/dev/null`
+  for stdin/stdout and silently exited — making the action feel like
+  it "had no effect". The fix mirrors the SIGTSTP dance from
+  `suspend.js`: suspend the TUI's terminal modes, hand the child our
+  TTY synchronously (`spawnSync` with `stdio: 'inherit'`), then
+  restore. Suspend/resume primitives are factored into
+  `suspend.js#suspendTerminal/resumeTerminal` so both call sites stay
+  in sync. The detail panel now also reports the child's exit status
+  (clean, non-zero, signal, or spawn-error), so a quick failure is
+  no longer indistinguishable from a no-op. Regression test in
+  `js/test/test-spawn-bare.js`.
+
 ### Considered but not shipped for v0.3.0
 - **Printf-above-program output.** Persistent messages printed above
   a TUI's main render area need altscreen — lazytui doesn't use it

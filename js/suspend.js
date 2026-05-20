@@ -34,7 +34,12 @@ const { RESET } = require('./ansi');
 let _suspendHandler;
 let _resumeHandler;
 
-function _restoreForSuspend() {
+// Save/restore the terminal modes lazytui owns (raw-mode, cursor,
+// mouse, focus, bracketed paste). Used both by SIGTSTP/SIGCONT (the
+// kernel-stop case) and by actions.js when type: spawn hands the
+// terminal to a child synchronously outside tmux. Exporting these so
+// both call sites stay in sync — adding a new mode happens once.
+function suspendTerminal() {
   disableMouse();
   disableFocusEvents();
   disableBracketedPaste();
@@ -43,7 +48,7 @@ function _restoreForSuspend() {
   try { process.stdin.setRawMode(false); } catch (e) { /* not a TTY */ }
 }
 
-function _resetForResume() {
+function resumeTerminal() {
   try { process.stdin.setRawMode(true); } catch (e) { /* not a TTY */ }
   enableMouse();
   enableFocusEvents();
@@ -58,7 +63,7 @@ function installSuspendHandlers() {
   if (process.platform === 'win32') return;
 
   _suspendHandler = () => {
-    _restoreForSuspend();
+    suspendTerminal();
     // Detach this handler so the next SIGTSTP triggers the kernel
     // default (actually stop the process). Then re-raise.
     process.removeListener('SIGTSTP', _suspendHandler);
@@ -66,7 +71,7 @@ function installSuspendHandlers() {
   };
 
   _resumeHandler = () => {
-    _resetForResume();
+    resumeTerminal();
     // Reinstall the suspend handler for the next Ctrl+Z (it was
     // detached above so the kernel could honour the previous one).
     process.on('SIGTSTP', _suspendHandler);
@@ -82,4 +87,4 @@ function installSuspendHandlers() {
   process.on('SIGCONT', _resumeHandler);
 }
 
-module.exports = { installSuspendHandlers };
+module.exports = { installSuspendHandlers, suspendTerminal, resumeTerminal };

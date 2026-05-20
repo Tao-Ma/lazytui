@@ -7,12 +7,13 @@
  */
 'use strict';
 
-const { spawn } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 const fs = require('fs');
 const { S, setDetail } = require('./state');
 const { streamCommand, killCurrentProc } = require('./stream');
 const { enterConfirm } = require('./confirm');
 const history = require('./history');
+const { suspendTerminal, resumeTerminal } = require('./suspend');
 
 function runAction(actionKey, action, args = []) {
   // Event log (PRINCIPLES.md §11 + CHANGELOG v0.2.0). Record the user
@@ -49,7 +50,6 @@ function doRun(actionKey, action, args = []) {
   const actionType = action.type || 'run';
 
   if (actionType === 'spawn') {
-    setDetail(`[dim]$ ${actionKey}[/]\n[yellow]Spawning...[/]`);
     // Wrap so the temp script removes itself before running the command —
     // works for both the tmux and bare-spawn paths, and survives crashes
     // (the rm runs even if cmd later fails). Args reach the script body
@@ -59,12 +59,50 @@ function doRun(actionKey, action, args = []) {
     const body = `#!/bin/sh\nrm -- "$0"\ncd ${S.projectDir} && ${cmd}\n`;
     fs.writeFileSync(tmp, body, { mode: 0o700 });
     if (process.env.TMUX) {
+      setDetail(`[dim]$ ${actionKey}[/]\n[yellow]Spawned in new tmux window.[/]`);
       const argStr = args.length ? ' ' + args.map(shQuote).join(' ') : '';
       spawn('tmux', ['new-window', '-n', actionKey, `${tmp}${argStr}; read`], { detached: true, stdio: 'ignore' });
+      history.start(actionKey, cmd, { detached: true });
     } else {
-      spawn('sh', [tmp, ...args], { detached: true, stdio: 'ignore' });
+      // No tmux: suspend the TUI, hand the child our terminal, wait
+      // for it to exit, then restore. Without this the bare-spawn
+      // path would run with stdio:'ignore' and any interactive
+      // command (psql, less, $EDITOR) would silently exit on EOF.
+      // Same dance as suspend.js does under SIGTSTP — that's why
+      // suspendTerminal/resumeTerminal are factored out there.
+      //
+      // spawnSync blocks Node's event loop, which means refresh
+      // timers / hub publishers pause for the duration. That's the
+      // right semantic: the user has explicitly handed the terminal
+      // to a subprocess, so lazytui shouldn't be doing background
+      // work behind the curtain.
+      suspendTerminal();
+      const result = spawnSync('sh', [tmp, ...args], {
+        cwd: S.projectDir,
+        stdio: 'inherit',
+      });
+      resumeTerminal();
+
+      let summary;
+      if (result.error) {
+        summary = `[dim]$ ${actionKey}[/]\n[red]Spawn failed: ${result.error.message}[/]`;
+      } else if (result.signal) {
+        summary = `[dim]$ ${actionKey}[/]\n[yellow]Exited on signal ${result.signal}.[/]`;
+      } else if (result.status !== 0) {
+        summary = `[dim]$ ${actionKey}[/]\n[yellow]Exited with status ${result.status}.[/]`;
+      } else {
+        summary = `[dim]$ ${actionKey}[/]\n[green]Exited cleanly.[/]`;
+      }
+      setDetail(summary);
+
+      // The child painted over our screen — invalidate the diff cache
+      // so the next frame is a full clear + redraw, then paint now.
+      const { forceFullRepaint, render } = require('./layout');
+      forceFullRepaint();
+      render();
+
+      history.start(actionKey, cmd, { detached: false });
     }
-    history.start(actionKey, cmd, { detached: true });
     return;
   }
 
