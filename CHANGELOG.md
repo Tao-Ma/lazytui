@@ -6,6 +6,21 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **Render idempotence principle (PRINCIPLES.md §11).** A panel's
+  `render(panel, w, h, S)` called twice with the same inputs produces
+  the same output. Articulates the actual discipline lazytui follows
+  (weaker than strict purity — layout writes derived state, stats
+  panel lazy-subscribes to the hub on first render — but stronger
+  than "anything goes"). New checklist bullet in §12.
+- **`js/test/test-render-idempotent.js`.** Exercises representative
+  core plugin renders (groups, actions, detail, file-manager,
+  history) twice per panel under two focus configurations. 15 new
+  assertions; total JS suite now 18/18 (was 17/17). Docker, stats,
+  config-status skipped: docker needs runtime status setup; stats +
+  config-status have known idempotent-but-impure lazy-init that is
+  covered separately by their existing tests.
+
 ### Removed
 - **tidb demo (parseable-only) dropped from advertised support.** The
   in-flight `dev-demo-tidb` branch is removed from `origin`. v0.1.0's

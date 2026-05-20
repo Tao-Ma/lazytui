@@ -242,7 +242,49 @@ content is YAML-configurable.
 See **LAYOUT.md** for the full panel-type catalog, YAML schema, and
 visual concept. See **PLUGINS.md** for how plugins contribute panel types.
 
-## 11. Checklist for new features
+## 11. Render is idempotent on equal state
+
+A plugin's `render(panel, width, height, S)` called twice with the
+same inputs produces the same output, and the second call observably
+does not change anything that would alter a third call. Same for
+`render()` at the layout level — calling it back-to-back is a no-op
+beyond writing pixels.
+
+This is **weaker than "render is pure"** (no mutation, no I/O).
+lazytui admits two intentional impurities the idempotence rule
+still permits:
+
+- **Layout calculation** writes derived state — `S.panelHeights`,
+  `S.panelBounds`, and `S.scroll` keep-in-view adjustments — into
+  `S` during `calcLayout()`. These are *outputs* of the layout pass,
+  consumed by mouse/input handlers between frames; plugin renderers
+  read them, don't write them.
+- **Lazy hub subscriptions** (stats panel,
+  `js/plugins/core/stats.js#_ensureSub`) and **lazy initial-state
+  fixup** (config-status panel) happen on first render and are
+  idempotent on subsequent calls. Pure-render would prefer these
+  in an `init` hook, but the current plugin API has none — the
+  idempotent lazy-init pattern is an accepted middle ground.
+
+**Why the rule matters:**
+
+- **Replay tests.** If render output is a function of state alone,
+  a stored state snapshot replays to a known string. The
+  TEA-inspired event log (planned for v0.2.x) needs this guarantee.
+- **Snapshot tests.** Same-state-twice can be asserted in unit
+  tests without elaborate setup. `js/test/test-render-idempotent.js`
+  is the canonical example.
+- **Diff repaint.** `layout.js#paintColumns()` writes only the rows
+  that changed since the previous frame. If render were
+  non-idempotent the diff cache would silently desync — the user
+  sees stale pixels.
+
+**Rule for new plugin renders:** read `S`, return a string. If you
+need a side effect on first render, make it idempotent and add a
+comment explaining the lazy-init pattern (see `stats.js#_ensureSub`
+for the canonical example).
+
+## 12. Checklist for new features
 
 Before implementing, verify:
 
@@ -257,3 +299,4 @@ Before implementing, verify:
 - [ ] Do selected lines use plain text in `[reverse]` with no inner markup?
 - [ ] Is the `[reverse]` left unclosed (panel renderer adds reset before border)?
 - [ ] Does the plugin reference top-level state (`source: files`, top-level vars) rather than redeclaring it inside its own config block?
+- [ ] Is each plugin's `render()` idempotent on equal state? (§11)
