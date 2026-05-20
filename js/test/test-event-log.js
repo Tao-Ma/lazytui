@@ -69,7 +69,40 @@ describe('[2] enable / disable gate', () => {
   });
 });
 
-describe('[3] save() round-trips through JSON', () => {
+describe('[3] live stream tails to file (LAZYTUI_LOG)', () => {
+  it('attachStream writes one JSON line per record', () => {
+    log.clear();
+    const fp = path.join(os.tmpdir(), `lazytui-eventlog-stream-${Date.now()}.log`);
+    log.attachStream(fp);
+    log.record('key', { key: 'down' });
+    log.record('refresh', null);
+    // Allow the stream to flush — Node createWriteStream is buffered
+    // but tiny writes flush synchronously.
+    log.detachStream();
+    const lines = fs.readFileSync(fp, 'utf8').trim().split('\n');
+    // 3 lines = 1 session-start header + 2 events
+    eq(lines.length, 3, 'header + 2 events written');
+    const hdr = JSON.parse(lines[0]);
+    eq(hdr.type, 'session-start', 'first line is session-start header');
+    eq(JSON.parse(lines[1]).type, 'key', 'second line is key event');
+    eq(JSON.parse(lines[2]).type, 'refresh', 'third line is refresh event');
+    fs.unlinkSync(fp);
+  });
+
+  it('detachStream stops further writes', () => {
+    log.clear();
+    const fp = path.join(os.tmpdir(), `lazytui-eventlog-stop-${Date.now()}.log`);
+    log.attachStream(fp);
+    log.record('key', { key: 'a' });
+    log.detachStream();
+    log.record('key', { key: 'b' });   // should not reach the file
+    const lines = fs.readFileSync(fp, 'utf8').trim().split('\n');
+    eq(lines.length, 2, 'header + first event only');
+    fs.unlinkSync(fp);
+  });
+});
+
+describe('[4] save() round-trips through JSON', () => {
   log.clear();
   log.record('key',     { key: 'down' });
   log.record('refresh', null);
@@ -88,7 +121,7 @@ describe('[3] save() round-trips through JSON', () => {
   });
 });
 
-describe('[4] hooks fire from the wired sources', () => {
+describe('[5] hooks fire from the wired sources', () => {
   // Wired sources (see commit message):
   //   - dispatch.handleKey       → 'key'
   //   - hub.publish              → 'publish'

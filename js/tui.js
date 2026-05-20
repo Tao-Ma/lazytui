@@ -142,6 +142,7 @@ function main() {
   const { registerPlugin, loadPlugins, refreshAll } = require('./plugins/api');
   const { setupKeyListener } = require('./input');
   const { destroyAll: destroyTerminals } = require('./terminal');
+  const { installSuspendHandlers } = require('./suspend');
 
   S.designEnabled = designEnabled;
 
@@ -163,6 +164,7 @@ function main() {
 
   initState();
   hideCursor();
+  installSuspendHandlers();   // Ctrl+Z: restore terminal → suspend → resume
   // Initial refresh kicks off async — first frame uses cached/empty data,
   // re-renders when plugins finish. UX: brief "no data" flash on first paint
   // is acceptable; freezing the boot wasn't.

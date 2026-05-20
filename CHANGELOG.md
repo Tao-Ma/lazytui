@@ -7,6 +7,25 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added — v0.3.0 surface (terminal-citizen polish)
+- **Suspend / resume (SIGTSTP / SIGCONT).** Ctrl+Z used to corrupt
+  the terminal (raw mode + mouse + focus reporting all stayed on
+  for the shell). New `js/suspend.js` installs the standard Unix
+  dance: on SIGTSTP, restore the terminal then re-raise the signal
+  so the kernel actually stops the process; on SIGCONT, re-enter
+  raw mode, re-enable mouse/focus/paste, hide cursor, invalidate
+  the render diff cache, repaint. Embedded PTY children get SIGCONT
+  automatically. No-op on Windows.
+- **Live debug log stream (`LAZYTUI_LOG=path`).** Event log gains
+  `attachStream(path)` / `detachStream()` and an auto-attach from
+  the `LAZYTUI_LOG` env var at module load. Every recorded event
+  also gets a JSON line appended to the file via `appendFileSync`
+  (sync writes at TUI event rates are ~3 kB/s — negligible vs
+  stream complexity). Tail with `tail -F` in another window for
+  live diagnostics.
+- `layout.js` exports `forceFullRepaint()` — resets the diff cache
+  so the next `render()` does a full clear + redraw. Used by the
+  SIGCONT handler; future use cases include returning from any
+  external subprocess that scribbled on the screen.
 - **Focus / blur events (DEC 1004).** `\e[?1004h` enabled at startup;
   `\e[I` and `\e[O` parsed in `input.js`. `S.focused` defaults to
   true (so terminals without focus reporting still refresh). The

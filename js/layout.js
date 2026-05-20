@@ -406,4 +406,19 @@ function renderFooter() {
   stdout.write(`\x1b[${ROWS};1H` + richToAnsi(footerMarkup) + RESET);
 }
 
-module.exports = { calcLayout, render, redraw, renderFooter, renderTerminalOverlay };
+/**
+ * Invalidate the per-row diff cache so the next render() does a
+ * full-screen clear + repaint. Used after the terminal has been
+ * touched by something outside our control: a suspended shell
+ * (SIGCONT path), an external subprocess, a docker compose spawn
+ * that returned.
+ */
+function forceFullRepaint() {
+  _prevRows = [];
+  _forceFullRepaint = true;
+}
+
+module.exports = {
+  calcLayout, render, redraw, renderFooter, renderTerminalOverlay,
+  forceFullRepaint,
+};

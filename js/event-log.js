@@ -40,10 +40,35 @@ let _enabled = true;
 let _cap = DEFAULT_CAP;
 let _buf = [];
 
+// Live-tail file path — set via attachStream(path) or auto-attached
+// from the LAZYTUI_LOG env var at process start. When set, every
+// record() call appendFileSync's a JSON line. Sync I/O is fine at
+// TUI event rates (~30 records/s peak, ~3 kB/s); a tail consumer
+// can `tail -F` the file in another window.
+let _streamPath = null;
+
+function _openStream(filepath) {
+  try {
+    // Verify writability up front so we fail loudly here, not on
+    // every record() call.
+    fs.appendFileSync(filepath, JSON.stringify({
+      t: Date.now(),
+      type: 'session-start',
+      payload: { lazytui: version, pid: process.pid },
+    }) + '\n');
+    _streamPath = filepath;
+  } catch (e) {
+    process.stderr.write(`event-log: cannot open ${filepath}: ${e.message}\n`);
+    _streamPath = null;
+  }
+}
+
 /**
  * Append an event to the ring buffer. Silent no-op if disabled. The
  * `payload` is shallow-cloned where reasonable to avoid downstream
- * mutations bleeding into recorded history.
+ * mutations bleeding into recorded history. If a stream is attached
+ * (via attachStream or LAZYTUI_LOG), the event is also written to
+ * the file as one JSON line.
  */
 function record(type, payload) {
   if (!_enabled) return;
@@ -54,6 +79,38 @@ function record(type, payload) {
   };
   _buf.push(entry);
   if (_buf.length > _cap) _buf.shift();
+  if (_streamPath) {
+    // Best-effort append; if the file vanished (deleted, disk full),
+    // drop silently rather than crashing the TUI.
+    try { fs.appendFileSync(_streamPath, JSON.stringify(entry) + '\n'); }
+    catch (e) { _streamPath = null; }
+  }
+}
+
+/**
+ * Attach a live log stream. Every subsequent record() also appends a
+ * JSON line to the given file. Idempotent — calling with the same
+ * path twice is a no-op; calling with a different path closes the
+ * previous stream first.
+ */
+function attachStream(filepath) {
+  if (_streamPath === filepath) return;
+  detachStream();
+  if (filepath) _openStream(filepath);
+}
+
+function detachStream() {
+  _streamPath = null;
+}
+
+function streamPath() { return _streamPath; }
+
+// LAZYTUI_LOG env var: if set, attach a stream automatically at
+// module load. Skipped under test runners that load this module
+// without intending to write logs (no env var means no behavior
+// change for existing callers).
+if (process.env.LAZYTUI_LOG) {
+  _openStream(process.env.LAZYTUI_LOG);
 }
 
 function enable(yes = true)  { _enabled = !!yes; }
@@ -89,5 +146,6 @@ function save(filepath) {
 
 module.exports = {
   record, enable, isEnabled, setCap, clear, snapshot, size, save,
+  attachStream, detachStream, streamPath,
   DEFAULT_CAP,
 };
