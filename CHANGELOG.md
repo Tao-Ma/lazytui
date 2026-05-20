@@ -6,6 +6,23 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Considered but not shipped for v0.3.0
+- **Printf-above-program output.** Persistent messages printed above
+  a TUI's main render area need altscreen — lazytui doesn't use it
+  (deliberate — leaves prior shell content visible after quit) so
+  the "above" concept doesn't translate. The detail panel +
+  `streamCommand` already cover the underlying use case (streamed
+  action output landing somewhere visible and persistent).
+- **External event injection.** Useful for IPC and test harnesses,
+  but every implementation (HTTP server, Unix socket, named pipe)
+  adds attack surface for a feature with no concrete user demand
+  yet. The key-filter middleware (above) already covers the
+  in-process injection case for tests. Defer until a real use case
+  surfaces.
+- **Embeddable widget library + declarative styling DSL.** Big
+  architectural moves from the earlier feature audit. Each is a
+  v1.0-scale undertaking; deferred deliberately.
+
 ### Added — v0.3.0 surface (terminal-citizen polish)
 - **Key-filter middleware.** `dispatch.registerKeyFilter(fn)` adds a
   pre-dispatch hook. Each filter receives `{key, seq}` and may
