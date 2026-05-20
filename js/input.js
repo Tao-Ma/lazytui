@@ -14,7 +14,7 @@
 const { S, allPanels, selectGroup, setSel, getSel, getScroll } = require('./state');
 const { render } = require('./layout');
 const { switchToTab, showSelectedInfo } = require('./detail');
-const { enableMouse } = require('./term');
+const { enableMouse, enableFocusEvents, enableBracketedPaste } = require('./term');
 const { isTerminalTab, activeTerminalId } = require('./tabs');
 const { writeToSession, isSessionDead } = require('./terminal');
 const { getPanelDef, getItems } = require('./plugins/api');
@@ -91,7 +91,9 @@ function setupKeyListener() {
   stdin.setRawMode(true);
   stdin.resume();
   stdin.setEncoding('utf8');
-  enableMouse();  // SGR-mode mouse click reporting
+  enableMouse();             // SGR-mode mouse click reporting
+  enableFocusEvents();       // \e[I on focus gain, \e[O on focus loss
+  enableBracketedPaste();    // \e[200~ ... \e[201~ wraps pasted blocks
 
   stdin.on('data', (data) => {
     // Terminal mode: forward raw bytes to PTY (Ctrl+\ exits)
@@ -110,6 +112,31 @@ function setupKeyListener() {
         return;
       }
       writeToSession(id, data);
+      return;
+    }
+
+    // Terminal focus events (DEC 1004). On blur, the periodic
+    // refresh loop in tui.js pauses; on focus return, we fire one
+    // catch-up refresh immediately so stale data doesn't show.
+    if (data === '\x1b[I') {
+      const wasUnfocused = !S.focused;
+      S.focused = true;
+      if (wasUnfocused) require('./render-queue').scheduleRender();
+      return;
+    }
+    if (data === '\x1b[O') {
+      S.focused = false;
+      return;
+    }
+
+    // Bracketed paste — collapse the bracketed block into a single
+    // 'paste' event rather than dispatching per-byte. Currently
+    // forwarded to dispatch as a 'paste' key with the inner text in
+    // `seq`; mode handlers that care (prompt, cmdline) handle the
+    // multi-line content; other modes treat it as a no-op.
+    if (data.startsWith('\x1b[200~') && data.endsWith('\x1b[201~')) {
+      const text = data.slice('\x1b[200~'.length, -'\x1b[201~'.length);
+      handleKey('paste', text);
       return;
     }
 

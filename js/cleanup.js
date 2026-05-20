@@ -9,7 +9,10 @@
 'use strict';
 
 const { RESET } = require('./ansi');
-const { showCursor, moveTo, stdout, clearScreen, disableMouse } = require('./term');
+const {
+  showCursor, moveTo, stdout, clearScreen,
+  disableMouse, disableFocusEvents, disableBracketedPaste,
+} = require('./term');
 const { destroyAll } = require('./terminal');
 const { killCurrentProc } = require('./actions');
 
@@ -17,6 +20,8 @@ function cleanup() {
   killCurrentProc();
   destroyAll();
   disableMouse();
+  disableFocusEvents();
+  disableBracketedPaste();
   showCursor();
   stdout.write(RESET);
   clearScreen();

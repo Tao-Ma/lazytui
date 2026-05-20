@@ -20,10 +20,25 @@ function showCursor() { stdout.write('\x1b[?25h'); }
 function enableMouse() { stdout.write('\x1b[?1000h\x1b[?1006h'); }
 function disableMouse() { stdout.write('\x1b[?1000l\x1b[?1006l'); }
 
+// XTerm focus-tracking (DEC 1004). Terminal emits `\e[I` on gain,
+// `\e[O` on loss. Used by the refresh loop to pause polling when
+// the user has tabbed away.
+function enableFocusEvents()  { stdout.write('\x1b[?1004h'); }
+function disableFocusEvents() { stdout.write('\x1b[?1004l'); }
+
+// Bracketed paste (DEC 2004). Multi-line pastes arrive bracketed by
+// `\e[200~` ... `\e[201~`, letting the input parser treat the whole
+// chunk as one block instead of dispatching every byte as a keystroke.
+function enableBracketedPaste()  { stdout.write('\x1b[?2004h'); }
+function disableBracketedPaste() { stdout.write('\x1b[?2004l'); }
+
 function cols() { return COLS; }
 function rows() { return ROWS; }
 
 module.exports = {
   refreshSize, moveTo, clearScreen, hideCursor, showCursor,
-  enableMouse, disableMouse, cols, rows, stdout,
+  enableMouse, disableMouse,
+  enableFocusEvents, disableFocusEvents,
+  enableBracketedPaste, disableBracketedPaste,
+  cols, rows, stdout,
 };

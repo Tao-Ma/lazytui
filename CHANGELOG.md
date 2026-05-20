@@ -6,7 +6,25 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-### Added
+### Added — v0.3.0 surface (terminal-citizen polish)
+- **Focus / blur events (DEC 1004).** `\e[?1004h` enabled at startup;
+  `\e[I` and `\e[O` parsed in `input.js`. `S.focused` defaults to
+  true (so terminals without focus reporting still refresh). The
+  `refreshLoop` in `tui.js` skips its `refreshAll()` call while
+  blurred — saves CPU + docker API calls while the user has tabbed
+  away. On focus return, `scheduleRender()` paints the cached frame
+  immediately; the next loop iteration runs the real refresh.
+- **Bracketed paste (DEC 2004).** `\e[?2004h` enabled at startup.
+  Pasted multi-line blocks arrive wrapped in `\e[200~ ... \e[201~`;
+  `input.js` collapses each into a single `paste` key event with
+  the inner text in `seq`, instead of dispatching per-byte. Mode
+  handlers that want the multi-line content (prompt, cmdline) read
+  the seq arg; other modes ignore.
+- `js/term.js` gains `enableFocusEvents` / `disableFocusEvents` and
+  `enableBracketedPaste` / `disableBracketedPaste`. Both disabled
+  in `cleanup.js` for clean terminal restore on exit.
+
+### Added — v0.2.0 surface (TEA-inspired discipline)
 - **Event log recorder (`js/event-log.js`).** In-memory ring buffer
   capturing input events: key presses (via `dispatch.handleKey`),
   hub publishes (via `hub.publish`), refresh ticks (via

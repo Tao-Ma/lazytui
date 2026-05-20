@@ -172,10 +172,19 @@ function main() {
 
   // Self-scheduling refresh loop. setTimeout-after-await prevents overlapping
   // ticks: if a refresh takes 12s, we don't queue 2 more behind it.
+  //
+  // Pauses while the terminal is blurred (S.focused === false, set by the
+  // DEC 1004 focus events parsed in input.js). The loop keeps rescheduling
+  // so it picks back up immediately on focus return without needing a
+  // separate "kick on focus" path — input.js fires a scheduleRender()
+  // when focus returns, which paints the latest cached data; this loop's
+  // next iteration then runs the real refresh.
   async function refreshLoop() {
     try {
-      const changed = await refreshAll(S.config);
-      if (changed) render();
+      if (S.focused) {
+        const changed = await refreshAll(S.config);
+        if (changed) render();
+      }
     } catch (e) {
       console.error('refresh error:', e.message);
     }

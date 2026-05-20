@@ -59,6 +59,12 @@ const S = {
   terminalMode: false,        // true when keystrokes go to PTY
   ephemeralTerminals: {},     // groupName -> { key -> { cmd, label } } (runtime-added)
   multiSel: {},               // panelType -> Set<itemId> — bulk-operation operand
+  // Terminal focus tracking (DEC 1004). Default true so a TUI launched
+  // in a non-1004 terminal (no focus reporting) still refreshes. Flips
+  // to false on \e[O (focus lost), true on \e[I (focus gained). Read
+  // by the refresh loop in tui.js to pause background polling when the
+  // user has tabbed away.
+  focused: true,
 };
 
 // --- Config loading ---
