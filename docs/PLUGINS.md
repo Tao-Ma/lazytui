@@ -253,6 +253,137 @@ useful for expensive ops like `docker inspect`). Core appends a
 trailing "Cancel" entry. 0 options → no-op; 1 option → copies
 directly; 2+ → popup with arrow nav.
 
+## Component Interface — the strict alternative
+
+Plugins (the API above) are the fast path: mutate `S` directly, react
+to keys via `onKey`. **Component** is a strict, TEA-shaped alternative
+that exists alongside Plugin — every existing plugin still works
+unchanged; new code chooses per file. The contract lives in
+[PRINCIPLES.md §12](PRINCIPLES.md#12-two-plugin-apis--plugin-simple-and-component-strict);
+this section is the practical reference for authoring one.
+
+### When to choose Component over Plugin
+
+- You want **snapshot tests** or **replay determinism** for the
+  plugin's behavior — Component's `update(msg, slice) → newSlice` is
+  pure, so a stored slice + a Msg list replays to an exact final
+  state.
+- The plugin maintains **non-trivial state** that you don't want
+  other plugins (or future you) accidentally trampling. Components
+  own a slice the framework hands them; cross-Component access goes
+  through the runtime, not through shared `S`.
+- You're comfortable writing a `switch (msg.type)` in exchange for
+  the discipline.
+
+Otherwise use Plugin. The mutate-S shape is faster to write and
+correct for the common case.
+
+### Minimum viable Component
+
+```javascript
+// components/counter.js
+module.exports = {
+  name: 'counter',
+
+  // Framework calls init() once at registration. Returns the
+  // initial slice — the plugin's private state.
+  init: () => ({
+    n: 0,
+    lastKey: null,
+  }),
+
+  // Framework calls update() once for every Msg. Pure function:
+  // returns the new slice (or `undefined` to leave it unchanged).
+  update: (msg, slice) => {
+    switch (msg.type) {
+      case 'key':
+        if (msg.key === '+') return { ...slice, n: slice.n + 1, lastKey: msg.key };
+        if (msg.key === '-') return { ...slice, n: slice.n - 1, lastKey: msg.key };
+        return { ...slice, lastKey: msg.key };
+      case 'refresh':
+        // No-op for this Component, but the Msg still arrives.
+        return slice;
+      default:
+        return slice;
+    }
+  },
+
+  // Panel types use the same shape as Plugin's, but render gets
+  // (panel, w, h, slice) — the slice, NOT the global S.
+  panelTypes: {
+    counter: {
+      render: (panel, w, h, slice) =>
+        `count: ${slice.n}\nlast key: ${slice.lastKey || '(none)'}`,
+    },
+  },
+};
+```
+
+Register with `api.registerComponent(component)` (compare:
+`api.registerPlugin(plugin)` for the Plugin shape).
+
+### Msg types a Component receives
+
+The framework fans every input event out to every registered
+Component's `update()`. Msg shape mirrors event-log entries — same
+data, different consumer.
+
+| Msg `type` | When fired | Payload fields |
+|---|---|---|
+| `'key'` | Every key event after key-filter middleware | `key` (string, e.g. `'up'`, `'q'`, `'a'`), `seq` (raw bytes for paste etc.) |
+| `'refresh'` | Every refresh tick (per-plugin cadence or `:refresh`) | (none) |
+| `'hub'` | Every `hub.publish()` call, before retention dedup | `topic`, `rowKey`, `sample` |
+| `'action'` | Every action invocation, before confirm gating | `actionKey`, `args`, `actionType` (`'run'` / `'spawn'` / `'background'`) |
+
+Future Msg types will be additive — a Component's `default:` arm
+ignoring unknown types is forward-compatible.
+
+### Discipline rules
+
+1. **Components MAY read `S`** for app-global concerns: focus,
+   currentGroup, mode flags, panel dimensions. Components MUST
+   import it explicitly — `S` is not passed as an argument.
+2. **Components MUST NOT write to `S`.** The Plugin/Component
+   boundary depends on Components staying read-only with respect to
+   shared state. v0.3.0 enforces this by documentation only — no
+   `Object.freeze` / Proxy. If you find yourself wanting to write
+   to `S`, you probably want a Plugin, not a Component.
+3. **`update()` is pure.** No I/O, no `setTimeout`, no side effects.
+   The slice is the only output. (Want async? Trigger it from a
+   Plugin's `refresh()` or `onKey()`; the result arrives back as a
+   `'hub'` Msg if you publish it.)
+4. **Returning `undefined`** from `update()` leaves the slice
+   unchanged. Explicit escape hatch for "this Msg is a no-op for me."
+5. **Throwing from `update()`** is isolated — the failing
+   Component's slice stays put; other Components keep processing
+   the same Msg. The error is logged.
+
+### What Component does NOT have
+
+- **`onKey`** — gone. Keys arrive as `'key'` Msgs through
+  `update()`. The key-filter middleware (also v0.3.0;
+  `dispatch.registerKeyFilter`) runs *before* dispatch, so a
+  Component's update sees whatever survived the filter chain.
+- **Direct hub subscription** — instead, every `hub.publish()` fans
+  out as a `'hub'` Msg. A Component interested in a topic filters by
+  `msg.topic` in its `update()`. (Plugins still use
+  `hub.subscribe()` if they need a windowed history retention.)
+
+### What Component still has
+
+Decorators, `groupActions`, `statusFor`, `copyOptions`, `keyHints`,
+`filterable`, custom `:` cmdline verbs — all of these work
+identically to the Plugin API. The Component / Plugin split is
+narrowly about *state ownership and update flow*; everything else is
+shared.
+
+### Tests
+
+`js/test/test-component.js` exercises the framework wiring: shape
+validation, init-at-register, Msg fan-out, return shapes (new slice
+/ undefined / throw), component-panel render. Use it as the
+template for your own Component tests.
+
 ## Panel Modes
 
 | Mode | Behavior | Example |
