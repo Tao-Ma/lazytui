@@ -195,6 +195,56 @@ async function refreshAll(config) {
 }
 
 /**
+ * Start per-plugin refresh loops. Each loaded plugin with a
+ * `refresh()` function gets its own self-scheduling setTimeout
+ * keyed on its declared `refreshIntervalMs` (default 10000ms).
+ *
+ * A plugin author who wants fast updates (stats panel at ~1s)
+ * declares `refreshIntervalMs: 1000`; a plugin that polls a remote
+ * API declares the slower cadence it actually needs.
+ *
+ * The runtime guarantees:
+ *   - Overlap protection: if a plugin's refresh is still running
+ *     when its next tick fires, the tick is skipped (don't queue
+ *     up backlogged runs on a slow plugin).
+ *   - Focus gating: if `isFocused()` returns false, ticks are
+ *     skipped — the runtime still reschedules, so cadence picks
+ *     back up when focus returns. (Provided by the caller so api.js
+ *     stays state.js-agnostic.)
+ *   - One-shot `refreshAll` (for :refresh cmdline + initial paint)
+ *     keeps working unchanged; it iterates plugins serially and
+ *     ignores their declared interval.
+ *
+ * @param {object} config        - parsed YAML config passed to each refresh()
+ * @param {object} opts
+ * @param {() => boolean} opts.isFocused - return true if the TUI should poll
+ * @param {() => void} opts.onChanged    - called when any plugin returned truthy
+ */
+function startRefreshLoops(config, { isFocused = () => true, onChanged } = {}) {
+  for (const plugin of Object.values(plugins)) {
+    if (!plugin.refresh) continue;
+    const interval = plugin.refreshIntervalMs || 10000;
+    let running = false;
+
+    async function tick() {
+      if (!running && isFocused()) {
+        running = true;
+        try {
+          const changed = await plugin.refresh(config);
+          if (changed && onChanged) onChanged();
+        } catch (e) {
+          console.error(`[plugin:${plugin.name}] refresh error: ${e.message}`);
+        } finally {
+          running = false;
+        }
+      }
+      setTimeout(tick, interval);
+    }
+    setTimeout(tick, interval);
+  }
+}
+
+/**
  * Check if a panel type is provided by a plugin (not core built-in).
  */
 function isPluginPanel(panelType) {
@@ -331,7 +381,7 @@ function getCommands(S) {
 module.exports = {
   // --- Plugin registry / lifecycle ---
   registerPlugin, loadPlugins, getPlugin, getPanelDef, getItems,
-  refreshAll, isPluginPanel, pluginNames, getGroupActions, statusFor,
+  refreshAll, startRefreshLoops, isPluginPanel, pluginNames, getGroupActions, statusFor,
   getCommands, idOf, selectedOrFocused,
 
   // --- Subsystems (plugins commonly publish/subscribe or decorate) ---

@@ -139,7 +139,7 @@ function main() {
   const { hideCursor } = require('./term');
   const { render, redraw, renderTerminalOverlay } = require('./layout');
   const { scheduleRender } = require('./render-queue');
-  const { registerPlugin, loadPlugins, refreshAll } = require('./plugins/api');
+  const { registerPlugin, loadPlugins, refreshAll, startRefreshLoops } = require('./plugins/api');
   const { setupKeyListener } = require('./input');
   const { destroyAll: destroyTerminals } = require('./terminal');
   const { installSuspendHandlers } = require('./suspend');
@@ -172,27 +172,17 @@ function main() {
   redraw();
   setupKeyListener();
 
-  // Self-scheduling refresh loop. setTimeout-after-await prevents overlapping
-  // ticks: if a refresh takes 12s, we don't queue 2 more behind it.
-  //
-  // Pauses while the terminal is blurred (S.focused === false, set by the
-  // DEC 1004 focus events parsed in input.js). The loop keeps rescheduling
-  // so it picks back up immediately on focus return without needing a
-  // separate "kick on focus" path — input.js fires a scheduleRender()
-  // when focus returns, which paints the latest cached data; this loop's
-  // next iteration then runs the real refresh.
-  async function refreshLoop() {
-    try {
-      if (S.focused) {
-        const changed = await refreshAll(S.config);
-        if (changed) render();
-      }
-    } catch (e) {
-      console.error('refresh error:', e.message);
-    }
-    setTimeout(refreshLoop, 10000);
-  }
-  setTimeout(refreshLoop, 10000);
+  // Per-plugin refresh loops. Each plugin self-schedules at its declared
+  // `refreshIntervalMs` (default 10000). Overlap-skip + focus-gating
+  // happen inside startRefreshLoops; the call here just wires the
+  // dependencies (config + focus state + paint callback). This replaces
+  // the previous single setTimeout loop that fanned out to every plugin
+  // on the same 10s tick — stats can now declare 1s, archive can
+  // declare 5min, docker stays at 10s.
+  startRefreshLoops(S.config, {
+    isFocused: () => S.focused,
+    onChanged: render,
+  });
 
   // Safety-net poll for terminal overlay — primary updates come from
   // xterm.write callback (event-driven). This catches edge cases where

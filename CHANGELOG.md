@@ -7,6 +7,17 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added — v0.3.0 surface (terminal-citizen polish)
+- **Per-plugin refresh cadence.** Plugins gain optional
+  `refreshIntervalMs` (default 10000). New
+  `plugins/api.startRefreshLoops(config, opts)` starts a self-scheduling
+  setTimeout *per plugin*, with overlap-skip (if a previous tick is
+  still running, skip the new one) and focus-gating (via the
+  `isFocused` callback the caller passes — keeps api.js
+  state.js-agnostic). Stats plugins that want ~1s ticks can declare
+  it; rare-poll plugins (image archives, config branch) can declare
+  5min and stop wasting CPU. Replaces the previous single 10s
+  refresh-everything loop in tui.js. `refreshAll()` is preserved for
+  one-shot use (initial paint + `:refresh` cmdline).
 - **Suspend / resume (SIGTSTP / SIGCONT).** Ctrl+Z used to corrupt
   the terminal (raw mode + mouse + focus reporting all stayed on
   for the shell). New `js/suspend.js` installs the standard Unix
