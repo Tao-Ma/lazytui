@@ -20,6 +20,9 @@ function runAction(actionKey, action, args = []) {
   // so the log captures "user pressed Enter on action X" once. The
   // doRun() path is the response.
   require('./event-log').record('action', { actionKey, args, type: action.type });
+  // Component Msg dispatch (v0.3.0). Action invocations fan out to
+  // every Component's update() as an 'action' Msg.
+  require('./plugins/api').dispatchMsg({ type: 'action', actionKey, args, actionType: action.type });
   // Gate on action.confirm — show modal y/N overlay; user-confirmed
   // execution re-enters this fn through doRun(). Cancel is a no-op
   // (lastRunAction stays whatever it was, no '>' marker drift).

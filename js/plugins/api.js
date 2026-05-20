@@ -32,6 +32,17 @@ const plugins = {};        // name -> plugin module
 const panelTypeMap = {};   // panelType -> plugin name
 const statusProviders = []; // plugin modules that expose statusFor(name)
 
+// Components — the TEA-shaped strict-discipline alternative to Plugin.
+// See docs/PRINCIPLES.md (and PLUGINS.md when written) for the design
+// rationale. A Component owns a state slice via init() and accepts
+// messages through update(msg, slice) → newSlice. Render functions
+// receive the slice (not the global S) — Components that read
+// app-global state must import it explicitly. Both APIs coexist; old
+// plugins are untouched.
+const components = {};              // name -> component spec
+const componentSlices = {};         // name -> current slice
+const componentPanelTypeMap = {};   // panelType -> component name
+
 /**
  * Register a plugin. Validates required shape (rejects malformed plugins)
  * and warns about optional-hook shape mismatches so authors notice typos
@@ -85,6 +96,87 @@ function registerPlugin(plugin, config) {
     }
   }
 }
+
+/**
+ * Register a Component — the strict TEA-shaped alternative to
+ * registerPlugin. A Component must declare:
+ *
+ *   - name: string
+ *   - init(): slice       — initial state slice for this component
+ *   - update(msg, slice)  — pure: returns the new slice
+ *   - panelTypes (opt):   — same shape as Plugin's, but render gets
+ *                           (panel, w, h, slice) instead of (..., S)
+ *
+ * The framework owns the slice. Every Msg (key / refresh / hub /
+ * action) is fanned out to every Component's update(). The dispatch
+ * stays sync: a single update() returning a new slice is the only
+ * mutation site.
+ *
+ * Components don't have `onKey` — key events arrive as messages
+ * through update(). Components can still ship decorators, commands,
+ * statusFor — those are unchanged.
+ *
+ * Coexists with registerPlugin. A plugin author chooses per-plugin.
+ */
+function registerComponent(comp) {
+  if (!comp || typeof comp !== 'object' || typeof comp.name !== 'string') {
+    console.error('[component] missing or invalid name; skipping');
+    return;
+  }
+  if (typeof comp.init !== 'function' || typeof comp.update !== 'function') {
+    console.error(`[component:${comp.name}] requires init() and update(msg, slice); skipping`);
+    return;
+  }
+  components[comp.name] = comp;
+  try { componentSlices[comp.name] = comp.init(); }
+  catch (e) {
+    console.error(`[component:${comp.name}] init error: ${e.message}`);
+    componentSlices[comp.name] = null;
+  }
+  if (comp.panelTypes) {
+    for (const [type, def] of Object.entries(comp.panelTypes)) {
+      if (!def || typeof def.render !== 'function') {
+        console.error(`[component:${comp.name}] panelType '${type}' missing render(); skipping`);
+        continue;
+      }
+      componentPanelTypeMap[type] = comp.name;
+    }
+  }
+  if (typeof comp.statusFor === 'function') statusProviders.push(comp);
+  if (comp.decorators && typeof comp.decorators === 'object') {
+    for (const [slot, fn] of Object.entries(comp.decorators)) {
+      decorators.register(slot, fn, comp.name);
+    }
+  }
+}
+
+/**
+ * Dispatch a Msg to every registered Component. Each Component's
+ * slice is replaced with the return value of its update(msg, slice).
+ *
+ * Msg shape mirrors the event-log entries:
+ *   { type: 'key', key, seq }
+ *   { type: 'refresh' }
+ *   { type: 'hub', topic, rowKey, sample }
+ *   { type: 'action', actionKey, args, type: 'run'|'spawn'|... }
+ *
+ * Failures in one Component's update don't stop dispatch to the
+ * others — error logged, that Component's slice is left as-is.
+ */
+function dispatchMsg(msg) {
+  for (const [name, comp] of Object.entries(components)) {
+    try {
+      const next = comp.update(msg, componentSlices[name]);
+      if (next !== undefined) componentSlices[name] = next;
+    } catch (e) {
+      console.error(`[component:${name}] update error: ${e.message}`);
+    }
+  }
+}
+
+function getComponent(name)              { return components[name]; }
+function getComponentSlice(name)         { return componentSlices[name]; }
+function getComponentOwningPanel(panelT) { return componentPanelTypeMap[panelT]; }
 
 /**
  * Ask all plugins that contribute item status (e.g. docker container state).
@@ -180,6 +272,9 @@ async function refreshAll(config) {
   // tick — payload empty because the tick itself is the input event;
   // the per-plugin refresh side-effects are responses.
   require('../event-log').record('refresh', null);
+  // Component Msg dispatch (v0.3.0). Refresh ticks fan out to every
+  // Component's update() as a 'refresh' Msg.
+  dispatchMsg({ type: 'refresh' });
   let changed = false;
   for (const plugin of Object.values(plugins)) {
     if (plugin.refresh) {
@@ -382,6 +477,8 @@ module.exports = {
   // --- Plugin registry / lifecycle ---
   registerPlugin, loadPlugins, getPlugin, getPanelDef, getItems,
   refreshAll, startRefreshLoops, isPluginPanel, pluginNames, getGroupActions, statusFor,
+  registerComponent, dispatchMsg,
+  getComponent, getComponentSlice, getComponentOwningPanel,
   getCommands, idOf, selectedOrFocused,
 
   // --- Subsystems (plugins commonly publish/subscribe or decorate) ---

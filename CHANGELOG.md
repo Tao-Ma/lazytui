@@ -24,6 +24,32 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   v1.0-scale undertaking; deferred deliberately.
 
 ### Added — v0.3.0 surface (terminal-citizen polish)
+- **Component API — strict TEA-shaped alternative to Plugin.** New
+  `api.registerComponent(component)` registers a plugin whose state
+  is framework-owned (slice per Component), messages flow through
+  `update(msg, slice) → newSlice`, and render functions receive the
+  slice (not the global `S`). Coexists with `registerPlugin` —
+  every existing plugin keeps working unchanged. Plugin authors
+  pick per-plugin: Plugin for the fast-path (mutate-S, simple) or
+  Component for the discipline (replay, snapshot tests, isolation).
+  See PRINCIPLES.md §12 for the contract.
+  - Framework wiring: registration validates `init` + `update`,
+    init runs at register time, panel types tracked separately
+    from Plugin panel types, decorators / statusFor reused as-is.
+  - Msg dispatch: every key (via `dispatch.handleKey`), refresh
+    tick (via `refreshAll`), hub publish (via `hub.publish`), and
+    action invocation (via `actions.runAction`) fans out to every
+    Component's `update()`. Msg shape mirrors event-log entries.
+  - Update isolation: a Component's update() throw is logged and
+    that Component's slice stays put; other Components keep
+    processing the same Msg.
+  - Render integration: `layout.rendererFor(type)` checks the
+    Component-owned panel map first; falls through to the
+    Plugin-owned path if no Component claimed the panelType.
+  - Tests: `js/test/test-component.js` (15 assertions) covers
+    registration validation, init-at-register, Msg fan-out, return
+    shapes (new slice / undefined / throw), and component-panel
+    render wiring. JS suite now 21/21 (was 20).
 - **Key-filter middleware.** `dispatch.registerKeyFilter(fn)` adds a
   pre-dispatch hook. Each filter receives `{key, seq}` and may
   return the (possibly modified) event, the event unchanged, or

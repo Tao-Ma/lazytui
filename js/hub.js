@@ -92,6 +92,9 @@ function publish(topic, rowKey, sample) {
   // publish call as the producer saw it — even ones that the hub
   // drops because no subscribers ask for the topic.
   require('./event-log').record('publish', { topic, rowKey, sample });
+  // Component Msg dispatch (v0.3.0). Hub publishes fan out to every
+  // Component's update() as a 'hub' Msg.
+  require('./plugins/api').dispatchMsg({ type: 'hub', topic, rowKey, sample });
   // Wildcard subscriptions don't pre-populate the cache for topics they'd
   // match (the topic name isn't known until first publish). Compute on
   // demand and cache so the second publish is hot.

@@ -284,7 +284,95 @@ need a side effect on first render, make it idempotent and add a
 comment explaining the lazy-init pattern (see `stats.js#_ensureSub`
 for the canonical example).
 
-## 12. Checklist for new features
+## 12. Two plugin APIs — Plugin (simple) and Component (strict)
+
+Lazytui supports two plugin shapes side-by-side. A plugin author
+picks per-plugin based on need.
+
+**`Plugin`** — the simple, mutable, fast-path API. Read and write
+`S` directly. Handle key events via `panelTypes.<X>.onKey`. Maintain
+state in module-private caches or in `S`. Every existing plugin in
+the repo uses this. Right choice for: one-off demos, AI-generated
+wrappers, anything where the cost of TEA boilerplate isn't repaid
+by the discipline it buys.
+
+```js
+module.exports = {
+  name: 'docker',
+  refresh: async (config) => { /* mutate S or module cache */ },
+  panelTypes: {
+    containers: {
+      render: (panel, w, h, S) => { /* reads S */ },
+      onKey: (key, item, S) => { /* mutates S */ },
+    },
+  },
+};
+// register with: api.registerPlugin(plugin)
+```
+
+**`Component`** — the TEA-shaped strict API. The framework owns a
+state slice per Component. Messages (key / refresh / hub / action)
+arrive through `update(msg, slice) → newSlice`; render functions
+receive the slice, not `S`. No `onKey` — key events become Msgs.
+Right choice for: plugins that want determinism (snapshot tests,
+replay), plugins that handle state complex enough that
+mutation-everywhere becomes a hazard, plugins whose authors prefer
+the functional discipline.
+
+```js
+module.exports = {
+  name: 'mycomp',
+  init: () => ({ items: [], selected: null }),
+  update: (msg, slice) => {
+    switch (msg.type) {
+      case 'key':
+        if (msg.key === 'down') return { ...slice, selected: nextItem(slice) };
+        return slice;
+      case 'refresh':       return { ...slice, items: fetchItems() };
+      case 'hub':           return { ...slice, last: msg.sample };
+      default:              return slice;
+    }
+  },
+  panelTypes: {
+    mycomp: {
+      render: (panel, w, h, slice) => { /* reads slice */ },
+    },
+  },
+};
+// register with: api.registerComponent(component)
+```
+
+### Rules
+
+- A Component **may read** the global `S` (focus, currentGroup, mode
+  flags — anything app-global). A Component **never writes** to `S`.
+- The framework dispatches every Msg to every Component's update().
+  Failures are logged and isolated; one Component's throw doesn't
+  stop the others.
+- An `update()` returning `undefined` leaves the slice unchanged
+  (escape hatch for "this msg is a no-op for me").
+- Components and Plugins coexist — both register types live in the
+  same panelType namespace; a Component-owned panel wins if there's
+  a collision (caught at registration as a warning).
+
+### Why both?
+
+The discipline of Component lands real benefits — slice replay,
+snapshot tests, no cross-plugin state corruption — but at the cost
+of more boilerplate per plugin. Plugin stays the default because
+lazytui's audience is users wrapping their projects, not authors
+hand-crafting complex stateful TUIs; the mutate-S shape is faster
+to write and good enough for the common case. Component is for
+plugin authors who *want* the discipline.
+
+The rule above ("Components may read S, never write") is the
+load-bearing one. If it's followed, Plugins and Components compose
+without state crossing; if it's violated, behavior gets surprising
+silently. v0.3.0 ships with documentation only — no Proxy / freeze
+enforcement. If a Component author wants strict enforcement, that
+can be added as an opt-in flag in a later version.
+
+## 13. Checklist for new features
 
 Before implementing, verify:
 
@@ -300,3 +388,4 @@ Before implementing, verify:
 - [ ] Is the `[reverse]` left unclosed (panel renderer adds reset before border)?
 - [ ] Does the plugin reference top-level state (`source: files`, top-level vars) rather than redeclaring it inside its own config block?
 - [ ] Is each plugin's `render()` idempotent on equal state? (§11)
+- [ ] If using the strict (Component) API: does `update()` return a new slice rather than mutate the existing one? Does it avoid writing to `S`? (§12)

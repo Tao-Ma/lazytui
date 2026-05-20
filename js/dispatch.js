@@ -392,6 +392,10 @@ function handleKey(key, seq) {
   // in the log identically. Silent + idempotent when the log is
   // disabled.
   require('./event-log').record('key', { key, seq });
+  // Component Msg dispatch (v0.3.0). Same hook point as the event log
+  // — every key event also fans out to every registered Component's
+  // update(). Plugins are unaffected.
+  require('./plugins/api').dispatchMsg({ type: 'key', key, seq });
   for (const m of modeChain) {
     if (m.active()) { m.handler(key, seq); render(); return; }
   }

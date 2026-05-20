@@ -32,6 +32,18 @@ const { currentText: filterCurrentText } = require('./filter');
  * modes that supply a different height.
  */
 function rendererFor(type) {
+  // Component-owned panels (v0.3.0) take precedence — a Component's
+  // render gets its slice, not the global S. Falls through to the
+  // plugin-owned path if no Component claimed this panelType.
+  const api = require('./plugins/api');
+  const compName = api.getComponentOwningPanel(type);
+  if (compName) {
+    const comp = api.getComponent(compName);
+    const def = comp.panelTypes && comp.panelTypes[type];
+    if (def && typeof def.render === 'function') {
+      return (panel, w, h) => def.render(panel, w, h, api.getComponentSlice(compName));
+    }
+  }
   const def = getPanelDef(type);
   if (!def || !def.render) return null;
   return (panel, w, h) => def.render(panel, w, h, S);
