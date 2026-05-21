@@ -140,16 +140,12 @@ function activateTerminal() {
 }
 
 function startDesignMode() {
-  enterDesign(S.layout, S.configPath, (result) => {
-    // S.layout already holds the new values (design mutates in place);
-    // we only need to surface save errors. result === null means cancel.
-    if (result && result.saveError) {
-      setDetail(`[red]Layout save failed:[/] ${esc(result.saveError.message)}`);
-    }
-    // The onDone callback fires outside the input pump's normal paint
-    // cadence (it's invoked from inside handleDesignKey on save/cancel),
-    // so we render here. showSelectedInfo first to refresh detail with
-    // info for the newly-active layout's focused panel.
+  // Save is decoupled — design mode just mutates S.layout. The
+  // :save-layout cmdline command writes to YAML. The onDone callback
+  // fires outside the input pump's normal paint cadence (from inside
+  // handleDesignKey on exit), so we render here. showSelectedInfo
+  // first to refresh detail with info for the newly-active panel.
+  enterDesign(S.layout, S.configPath, () => {
     showSelectedInfo();
     render();
   });

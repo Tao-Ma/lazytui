@@ -56,6 +56,12 @@ const S = {
   confirmMode: false,
   promptMode: false,
   designMode: false,
+  // True iff S.layout has been mutated since the last on-disk YAML
+  // sync. Set by design-mode mutations (and any future caller that
+  // changes S.layout at runtime); cleared by the `:save-layout`
+  // command. Surfaced in the footer as "• unsaved" so the user
+  // knows runtime state has diverged from the config file.
+  layoutDirty: false,
   terminalMode: false,        // true when keystrokes go to PTY
   ephemeralTerminals: {},     // groupName -> { key -> { cmd, label } } (runtime-added)
   multiSel: {},               // panelType -> Set<itemId> — bulk-operation operand

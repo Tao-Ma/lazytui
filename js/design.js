@@ -1,24 +1,30 @@
 /**
  * Design mode — interactive panel layout editor.
  *
- * Pure overlay + state mutation. enterDesign/handleDesignKey only
- * mutate S.layout and the local designState; rendering is owned by
- * layout.render(), which calls renderDesignOverlay() when S.designMode
- * is set. This keeps design on the same render pipeline as every other
- * mode (copy/menu/filter) — no parallel renderMain() loop, no drift
- * from the themed footer / overlay precedence.
+ * Pure overlay + runtime-state mutation. enterDesign/handleDesignKey
+ * only mutate `S.layout` and a module-private `designState`. Rendering
+ * is owned by layout.render(), which calls renderDesignOverlay() when
+ * S.designMode is set. This keeps design on the same render pipeline
+ * as every other mode (copy/menu/filter) — no parallel renderMain()
+ * loop, no drift from the themed footer / overlay precedence.
+ *
+ * **Save is decoupled.** Design mode mutates S.layout in place and
+ * sets `S.layoutDirty = true`. Persisting to YAML is a separate verb:
+ * the `:save-layout` cmdline command writes the current layout to the
+ * config file via `js/yaml-layout.js`. Exiting design mode with `q`,
+ * `Esc`, or Enter does NOT auto-write — the user runs `:save-layout`
+ * when they want their changes on disk.
  *
  * Keys:
  *   ↑/↓       Select panel
  *   J/K       Reorder panel within column (shift+j/k)
  *   ←/→       Move panel between columns
  *   +/-       Resize (left width or detail height %)
- *   Enter     Save to YAML
- *   q/Esc     Cancel
+ *   Enter     Exit design mode (does NOT save — use :save-layout)
+ *   q/Esc     Exit design mode (does NOT save — use :save-layout)
  */
 'use strict';
 
-const fs = require('fs');
 const { esc, RESET, richToAnsi } = require('./ansi');
 const { renderPanel } = require('./panel');
 const { cols, rows, stdout } = require('./term');
@@ -28,22 +34,18 @@ let designState = null; // null when not in design mode
 
 /**
  * Enter design mode. While active, S.layout IS the working draft —
- * mutations here flow directly through the normal render path so live
- * preview is automatic. Cancel restores S.layout from a snapshot taken
- * on entry. Caller is responsible for triggering the next render.
+ * mutations flow directly through the normal render path so live
+ * preview is automatic. Save is NOT auto-attached to exit; mutations
+ * persist at runtime, and the `:save-layout` cmdline command writes
+ * them to YAML. The caller is responsible for triggering the next
+ * render once `onDone` fires.
  *
- * @param {object} layout - reference to S.layout
- * @param {string} configPath - path to YAML file for saving
- * @param {function} onDone - callback(savedLayout|null) when done
+ * @param {object} layout    - reference to S.layout (kept for symmetry)
+ * @param {string} configPath - path to YAML file (kept for symmetry)
+ * @param {function} onDone   - callback() when design mode exits
  */
 function enterDesign(layout, configPath, onDone) {
   designState = {
-    original: {
-      leftWidth: layout.leftWidth,
-      leftPanels: layout.leftPanels.map(p => ({ ...p })),
-      rightPanels: layout.rightPanels.map(p => ({ ...p })),
-      detailHeightPct: layout.detailHeightPct,
-    },
     selectedIdx: 0,
     configPath,
     onDone,
@@ -167,6 +169,7 @@ function handleDesignKey(key) {
         [column[localIdx], column[localIdx - 1]] = [column[localIdx - 1], column[localIdx]];
         designState.selectedIdx--;
         reassignHotkeys();
+        S.layoutDirty = true;
       }
       break;
     case 'J':
@@ -174,6 +177,7 @@ function handleDesignKey(key) {
         [column[localIdx], column[localIdx + 1]] = [column[localIdx + 1], column[localIdx]];
         designState.selectedIdx++;
         reassignHotkeys();
+        S.layoutDirty = true;
       }
       break;
 
@@ -185,6 +189,7 @@ function handleDesignKey(key) {
           selPanel.column = 'left';
           designState.selectedIdx = S.layout.leftPanels.length - 1;
           reassignHotkeys();
+          S.layoutDirty = true;
         }
       }
       break;
@@ -198,38 +203,39 @@ function handleDesignKey(key) {
         selPanel.hotkey = '';
         designState.selectedIdx = S.layout.leftPanels.length + insertAt;
         reassignHotkeys();
+        S.layoutDirty = true;
       }
       break;
 
     case '+': case '=':
       if (selPanel.type === 'detail') {
         S.layout.detailHeightPct = Math.min(90, S.layout.detailHeightPct + 5);
+        S.layoutDirty = true;
       } else if (isLeft) {
         S.layout.leftWidth = Math.min(60, S.layout.leftWidth + 2);
+        S.layoutDirty = true;
       }
       break;
     case '-':
       if (selPanel.type === 'detail') {
         S.layout.detailHeightPct = Math.max(20, S.layout.detailHeightPct - 5);
+        S.layoutDirty = true;
       } else if (isLeft) {
         S.layout.leftWidth = Math.max(20, S.layout.leftWidth - 2);
+        S.layoutDirty = true;
       }
       break;
 
+    // Enter and q/Esc both exit design mode without writing. Use
+    // `:save-layout` to persist runtime changes. (Pre-decoupled
+    // behavior: Enter saved, q/Esc reverted to entry snapshot.
+    // Neither survives because save is now its own verb.)
     case 'return':
-      saveLayout();
-      return;
-
     case 'q': case 'escape': {
-      const orig = designState.original;
-      S.layout.leftWidth = orig.leftWidth;
-      S.layout.leftPanels = orig.leftPanels;
-      S.layout.rightPanels = orig.rightPanels;
-      S.layout.detailHeightPct = orig.detailHeightPct;
       const cb = designState.onDone;
       designState = null;
       S.designMode = false;
-      cb(null);
+      cb();
       return;
     }
   }
@@ -246,73 +252,6 @@ function reassignHotkeys() {
     else if (p.type === 'detail') p.hotkey = 'o';
     else p.hotkey = '';
   });
-}
-
-function saveLayout() {
-  const configPath = designState.configPath;
-  const ly = S.layout;
-
-  const yamlLines = ['layout:'];
-  yamlLines.push('  left:');
-  yamlLines.push(`    width: ${ly.leftWidth}`);
-  yamlLines.push('    panels:');
-  for (const p of ly.leftPanels) {
-    yamlLines.push(`      - type: ${p.type}`);
-    yamlLines.push(`        title: ${p.title}`);
-  }
-  yamlLines.push('  right:');
-  yamlLines.push('    panels:');
-  for (const p of ly.rightPanels) {
-    yamlLines.push(`      - type: ${p.type}`);
-    yamlLines.push(`        title: ${p.title}`);
-    if (p.type === 'detail') {
-      yamlLines.push(`        height: ${ly.detailHeightPct}%`);
-    }
-  }
-  const newLayoutYaml = yamlLines.join('\n');
-
-  // Surface any I/O error (H2 — used to be silently swallowed).
-  let saveError = null;
-  try {
-    let content = fs.readFileSync(configPath, 'utf8');
-    const lines = content.split('\n');
-    let layoutStart = -1;
-    let layoutEnd = -1;
-    for (let i = 0; i < lines.length; i++) {
-      if (/^layout:/.test(lines[i])) {
-        layoutStart = i;
-      } else if (layoutStart >= 0 && layoutEnd < 0 && /^\S/.test(lines[i]) && i > layoutStart) {
-        layoutEnd = i;
-      }
-    }
-    if (layoutStart >= 0) {
-      if (layoutEnd < 0) layoutEnd = lines.length;
-      while (layoutEnd > layoutStart && lines[layoutEnd - 1].trim() === '') layoutEnd--;
-      lines.splice(layoutStart, layoutEnd - layoutStart, newLayoutYaml);
-    } else {
-      const groupsIdx = lines.findIndex(l => /^groups:/.test(l));
-      if (groupsIdx >= 0) {
-        lines.splice(groupsIdx, 0, newLayoutYaml, '');
-      } else {
-        lines.push('', newLayoutYaml);
-      }
-    }
-    fs.writeFileSync(configPath, lines.join('\n'));
-  } catch (e) {
-    saveError = e;
-  }
-
-  const result = {
-    leftWidth: ly.leftWidth,
-    leftPanels: ly.leftPanels,
-    rightPanels: ly.rightPanels,
-    detailHeightPct: ly.detailHeightPct,
-    saveError,
-  };
-  const cb = designState.onDone;
-  designState = null;
-  S.designMode = false;
-  cb(result);
 }
 
 module.exports = { enterDesign, handleDesignKey, renderDesignOverlay, getDesignFooter };

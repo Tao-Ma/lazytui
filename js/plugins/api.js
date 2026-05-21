@@ -438,6 +438,21 @@ const FRAMEWORK_COMMANDS = [
     desc: 'Show key help in detail panel',
     run: () => { require('../help-text').showHelp(); },
   },
+  {
+    name: 'save-layout',
+    desc: 'Persist current panel layout to the YAML config',
+    run: (_args, S) => {
+      const { writeLayoutToFile } = require('../yaml-layout');
+      const { setDetail } = require('../state');
+      const { error } = writeLayoutToFile(S.layout, S.configPath);
+      if (error) {
+        setDetail(`[red]Layout save failed:[/] ${error.message}`);
+      } else {
+        S.layoutDirty = false;
+        setDetail(`[green]Layout saved to[/] ${S.configPath}`);
+      }
+    },
+  },
 ];
 
 /**

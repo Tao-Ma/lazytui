@@ -6,6 +6,34 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- **Design Mode v2 (Phase 1): save is decoupled from mode exit.**
+  Hitting Enter inside design mode no longer writes to YAML; neither
+  does `q`/`Esc`. Mutations apply to `S.layout` at runtime and the
+  footer shows `• unsaved (:save-layout)` while they differ from the
+  on-disk config. To persist, run the new `:save-layout` cmdline
+  command. Rationale: makes the editing surface a free-form
+  experiment-and-tweak space (live tweaker UX) without conflating
+  exit with commit. A future `:restore-layout` will revert runtime
+  state to the YAML's contents; for now, restart the TUI to re-read
+  from disk.
+  - Lossy save is fixed in passing. `:save-layout` writes through a
+    new `js/yaml-layout.js` module whose `serializeLayout()` walks
+    every key on each panel object except runtime-derived ones
+    (`hotkey`, `column`, `config`) and the detail panel's synthesized
+    `height`. Plugin panel keys (`topic`, `select_from`, `decorators`,
+    `refresh_interval_ms`, custom plugin options) survive the round
+    trip — previously they were silently dropped, breaking the stats
+    panel's hub subscription on any save.
+  - `S.layoutDirty` tracks divergence from disk; set by every
+    layout-mutating handler in `design.js`, cleared by
+    `:save-layout` on success.
+  - Phase 2 (drag-and-drop in the real layout, replacing the centered
+    modal overlay) is planned but not in this commit.
+  - Tests: `js/test/test-yaml-layout.js` covers scalar emission,
+    per-panel key preservation, full emit→write→reparse round-trip
+    through the Python parser, and the existing-block splicer.
+
 ### Fixed
 - **`type: spawn` actually works outside tmux now.** Previously, the
   no-tmux branch ran the script *detached* with `stdio: 'ignore'`, so

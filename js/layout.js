@@ -346,7 +346,10 @@ function footerKeys() {
   }
   if (S.filterMode) return ` /${esc(filterCurrentText())}│ | Esc clear | Enter ok`;
   if (S.copyMode)   return ' ↑↓ select | Esc cancel | Enter copy';
-  if (S.designMode) return ` Design Mode${getDesignFooter()}`;
+  if (S.designMode) {
+    const dirty = S.layoutDirty ? ' [yellow]• unsaved (:save-layout)[/]' : '';
+    return ` Design Mode${getDesignFooter()}${dirty}`;
+  }
   if (S.menuOpen)   return ' ↑↓ select | Esc close | Enter run';
 
   if (S.focus === 'detail') {
@@ -391,6 +394,12 @@ function renderFooter() {
     if (def && def.keyHints) keys += ` | ${esc(def.keyHints)}`;
     const msCount = multiSelCount(S.focus);
     if (msCount > 0) keys += ` | ${esc(`[${msCount} sel]`)}`;
+    // Surface layout-dirty state to non-modal users too. They might
+    // have left design mode with pending changes; the indicator
+    // reminds them `:save-layout` exists. Design-mode footer adds
+    // its own dirty marker in footerKeys() to keep modal layout
+    // self-contained.
+    if (S.layoutDirty) keys += ` | [yellow]• unsaved (:save-layout)[/]`;
   }
 
   // Plugin footer decorations — DECORATORS.md `footer:left` / `footer:right`.
