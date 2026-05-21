@@ -17,8 +17,15 @@ function moveTo(row, col) { stdout.write(`\x1b[${row};${col}H`); }
 function clearScreen() { stdout.write('\x1b[2J\x1b[H'); }
 function hideCursor() { stdout.write('\x1b[?25l'); }
 function showCursor() { stdout.write('\x1b[?25h'); }
-function enableMouse() { stdout.write('\x1b[?1000h\x1b[?1006h'); }
-function disableMouse() { stdout.write('\x1b[?1000l\x1b[?1006l'); }
+// SGR mouse reporting:
+//   1000 — button events (press/release)
+//   1002 — button events + motion while a button is held (= drag)
+//   1006 — SGR coordinate encoding (vs the legacy <0xff cap)
+// 1002 is the drag protocol Design Mode v2 uses; it only reports
+// motion while a button is held so the cost is bounded (no idle
+// motion spam). Terminals that don't support 1002 ignore it.
+function enableMouse() { stdout.write('\x1b[?1000h\x1b[?1002h\x1b[?1006h'); }
+function disableMouse() { stdout.write('\x1b[?1000l\x1b[?1002l\x1b[?1006l'); }
 
 // XTerm focus-tracking (DEC 1004). Terminal emits `\e[I` on gain,
 // `\e[O` on loss. Used by the refresh loop to pause polling when

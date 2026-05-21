@@ -7,6 +7,34 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Changed
+- **Design Mode v2 (Phase 2): drag-and-drop in the real layout.**
+  The centered modal overlay is gone. Mouse press on any panel
+  inside design mode arms a drag; ≥1 cell of motion enters dragging
+  state and paints a green/red insertion line across the target
+  column where the panel will land. Release commits the move
+  (sets `S.layoutDirty`) or snaps back (invalid target — detail or
+  actions into the left column). Keyboard bindings stay (`↑↓ J/K
+  ←→ +/-`) — mouse is additive, not replacing.
+  - SGR mouse mode 1002 is now enabled at startup (motion-while-held).
+    Cost is bounded: terminal only reports motion when a button is
+    down. Press → motion+ → release events now fan out through
+    `input.js#handleMouse`; non-design code paths still only act on
+    press (existing focus+select behavior unchanged).
+  - Drop-target math: top half of a panel = insert before, bottom half
+    = insert after, below the last panel in a column = append. Empty
+    column drops at index 0. Detail and Actions panels are blocked
+    from the left column with a footer reason; the insertion line
+    paints red instead of green over the blocked target.
+  - Design-mode footer now surfaces the affordance hints inline
+    (`drag move | J/K reorder | ←→ swap col | +/- resize |
+    :save-layout | q exit`) so the discovery path doesn't need
+    external docs.
+  - Tests: new `js/test/test-design-drag.js` (44 assertions) pins
+    state machine transitions (press → armed → dragging → release),
+    drop-position math (top/bottom half, append, empty column,
+    invalid column), and cross-column splice/insert math with
+    same-column-index adjustment.
+
 - **Design Mode v2 (Phase 1): save is decoupled from mode exit.**
   Hitting Enter inside design mode no longer writes to YAML; neither
   does `q`/`Esc`. Mutations apply to `S.layout` at runtime and the

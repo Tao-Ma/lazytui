@@ -347,8 +347,8 @@ function footerKeys() {
   if (S.filterMode) return ` /${esc(filterCurrentText())}│ | Esc clear | Enter ok`;
   if (S.copyMode)   return ' ↑↓ select | Esc cancel | Enter copy';
   if (S.designMode) {
-    const dirty = S.layoutDirty ? ' [yellow]• unsaved (:save-layout)[/]' : '';
-    return ` Design Mode${getDesignFooter()}${dirty}`;
+    const dirty = S.layoutDirty ? ' | [yellow]• unsaved (:save-layout)[/]' : '';
+    return ` Design Mode | drag move | J/K reorder | ←→ swap col | +/- resize | :save-layout | q exit${getDesignFooter()}${dirty}`;
   }
   if (S.menuOpen)   return ' ↑↓ select | Esc close | Enter run';
 

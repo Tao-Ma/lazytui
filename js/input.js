@@ -23,11 +23,24 @@ const { cleanup } = require('./cleanup');
 
 // --- Mouse handling ---
 
-function handleMouse(button, x, y) {
-  if (button !== 0) return;  // left click only
+function handleMouse(kind, x, y) {
   // x, y are 1-based from SGR; convert to 0-based
   const mx = x - 1;
   const my = y - 1;
+
+  // Design mode owns the entire mouse pipeline — drag state machine,
+  // drop validation, layout mutation. Routed through one entry point
+  // so the state machine can see press → motion+ → release in order.
+  if (S.designMode) {
+    const { onMouseEvent } = require('./design');
+    onMouseEvent(kind, mx, my);
+    render();
+    return;
+  }
+
+  // Non-design-mode: only fire on press. Motion/release are 1002-protocol
+  // chatter that the focus+select path doesn't care about.
+  if (kind !== 'press') return;
 
   let mutated = false;
 
@@ -140,14 +153,26 @@ function setupKeyListener() {
       return;
     }
 
-    // Parse SGR mouse events: \x1b[<button;x;yM (press) or m (release)
+    // SGR mouse events: \x1b[<button;x;yM (press / motion) or m (release).
+    // button encoding (SGR bits): low 2 = button index (0=left, 1=middle,
+    // 2=right), bit 5 (0x20) = motion-while-held. We track left-only and
+    // emit one of three kinds:
+    //   press   — initial button-down
+    //   motion  — cursor moved while button held (only with mode 1002)
+    //   release — button up
+    // Non-design code paths only care about 'press' (focus + select);
+    // design-mode drag uses all three.
     const mouseMatch = data.match(/\x1b\[<(\d+);(\d+);(\d+)([Mm])/);
     if (mouseMatch) {
-      const btn = parseInt(mouseMatch[1]);
-      const x = parseInt(mouseMatch[2]);
-      const y = parseInt(mouseMatch[3]);
-      const pressed = mouseMatch[4] === 'M';
-      if (pressed && (btn & 3) === 0) handleMouse(0, x, y);
+      const btn      = parseInt(mouseMatch[1]);
+      const x        = parseInt(mouseMatch[2]);
+      const y        = parseInt(mouseMatch[3]);
+      const released = mouseMatch[4] === 'm';
+      const motion   = (btn & 0x20) !== 0;
+      const button   = btn & 3;
+      if (button !== 0) return;  // left button only
+      const kind = released ? 'release' : motion ? 'motion' : 'press';
+      handleMouse(kind, x, y);
       return;
     }
     if (data === '\x1b[A') handleKey('up');
