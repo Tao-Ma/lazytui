@@ -56,6 +56,10 @@ const S = {
   confirmMode: false,
   promptMode: false,
   designMode: false,
+  // Sub-mode of designMode. When true, keystrokes drive a single-line
+  // edit of the currently-focused panel's title instead of design's
+  // navigation keys. Mode chain runs this before designMode.
+  designTitleEditMode: false,
   // True iff S.layout has been mutated since the last on-disk YAML
   // sync. Set by design-mode mutations (and any future caller that
   // changes S.layout at runtime); cleared by the `:save-layout`
@@ -98,22 +102,31 @@ function loadConfig(configPath) {
 
 // --- Layout initialization ---
 
-function initState() {
-  const config = S.config;
-  setTheme(config.theme || 'default');
-
+/**
+ * Build a fresh `{ leftWidth, detailHeightPct, leftPanels, rightPanels }`
+ * struct from a parsed config. Pure with respect to S (reads S only for
+ * the implicit groups-detection branch when no `layout:` block exists,
+ * which initState handles by passing the config explicitly).
+ *
+ * Extracted so `:restore-layout` can replay the same logic on demand
+ * without re-running `initState` (which also resets expanded-groups
+ * state, sets focus, etc. — things we don't want to clobber on a
+ * layout-only restore).
+ */
+function rebuildLayoutFromConfig(config) {
   const ly = config.layout;
+  const out = { leftWidth: 30, detailHeightPct: 60, leftPanels: [], rightPanels: [] };
 
   if (ly) {
     const leftPanelsSrc = ly.left_panels || (ly.left && ly.left.panels) || [];
     const rightPanelsSrc = ly.right_panels || (ly.right && ly.right.panels) || [];
-    S.layout.leftWidth = ly.left_width || (ly.left && ly.left.width) || 30;
-    S.layout.detailHeightPct = ly.detail_height_pct || 60;
+    out.leftWidth = ly.left_width || (ly.left && ly.left.width) || 30;
+    out.detailHeightPct = ly.detail_height_pct || 60;
     // Plugin-specific panel options (parser PanelConfig.config) ride
     // alongside type/title/hotkey/column so the panel def can read them
     // off `panel` directly. Spread first so the framework keys win on
     // any overlap.
-    S.layout.leftPanels = leftPanelsSrc.map((p, i) => ({
+    out.leftPanels = leftPanelsSrc.map((p, i) => ({
       ...(p.config || {}),
       type: p.type,
       title: p.title || p.type.replace(/_/g, ' '),
@@ -127,7 +140,7 @@ function initState() {
     const rightPool = ['7', '8', '9'];
     const rightExplicit = new Set(rightPanelsSrc.map(p => p.hotkey).filter(Boolean));
     const rightAuto = rightPool.filter(k => !rightExplicit.has(k));
-    S.layout.rightPanels = rightPanelsSrc.map(p => ({
+    out.rightPanels = rightPanelsSrc.map(p => ({
       ...(p.config || {}),
       type: p.type,
       title: p.title || p.type.replace(/_/g, ' '),
@@ -137,20 +150,27 @@ function initState() {
   } else {
     const hasContainers = Object.values(config.groups).some(g => g.containers && g.containers.length);
     const hasConfigFiles = config.files && config.files.length;
-    S.layout.leftPanels = [];
     let hk = 1;
     if (hasContainers) {
-      S.layout.leftPanels.push({ type: 'containers', title: 'Containers', hotkey: String(hk++), column: 'left' });
+      out.leftPanels.push({ type: 'containers', title: 'Containers', hotkey: String(hk++), column: 'left' });
     }
-    S.layout.leftPanels.push({ type: 'groups', title: 'Groups', hotkey: String(hk++), column: 'left' });
+    out.leftPanels.push({ type: 'groups', title: 'Groups', hotkey: String(hk++), column: 'left' });
     if (hasConfigFiles) {
-      S.layout.leftPanels.push({ type: 'file-manager', title: 'Files', hotkey: String(hk++), column: 'left' });
+      out.leftPanels.push({ type: 'file-manager', title: 'Files', hotkey: String(hk++), column: 'left' });
     }
-    S.layout.rightPanels = [
+    out.rightPanels = [
       { type: 'actions', title: 'Actions', hotkey: '7', column: 'right' },
       { type: 'detail', title: 'Detail', hotkey: '8', column: 'right' },
     ];
   }
+  return out;
+}
+
+function initState() {
+  const config = S.config;
+  setTheme(config.theme || 'default');
+
+  S.layout = rebuildLayoutFromConfig(config);
 
   // Tree state: start collapsed (only top-level nodes visible). The cursor
   // lands on the first visible row, which is the first top-level group.
@@ -369,7 +389,8 @@ function multiSelCount(panelType) {
 }
 
 module.exports = {
-  S, loadConfig, initState, allPanels, selectGroup, resetGroupContext, setDetail,
+  S, loadConfig, initState, rebuildLayoutFromConfig,
+  allPanels, selectGroup, resetGroupContext, setDetail,
   getSel, setSel, getScroll, setScroll, syncPanelScroll,
   toggleMultiSel, isMultiSel, clearMultiSel, multiSelCount,
   expandGroup, collapseGroup, recomputeGroups, switchGroupsTab,

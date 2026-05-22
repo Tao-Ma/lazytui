@@ -453,6 +453,19 @@ const FRAMEWORK_COMMANDS = [
       }
     },
   },
+  {
+    name: 'restore-layout',
+    desc: 'Discard runtime changes; reload panel layout from YAML',
+    run: (_args, S) => {
+      const { rebuildLayoutFromConfig, setDetail } = require('../state');
+      S.layout = rebuildLayoutFromConfig(S.config);
+      S.layoutDirty = false;
+      // The runtime layout the user was working with is gone; the
+      // undo/redo history pointed at it is no longer meaningful.
+      try { require('../design')._clearUndoStacks(); } catch (e) { /* design not yet loaded — fine */ }
+      setDetail(`[green]Layout restored from[/] ${S.configPath}`);
+    },
+  },
 ];
 
 /**

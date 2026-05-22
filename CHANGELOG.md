@@ -7,6 +7,45 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Changed
+- **Design Mode v2 (Phase 3): undo/redo, drag-to-resize, title edit,
+  and `:restore-layout`.** Four features stacked on top of Phase 2:
+  - **Drag-to-resize separators.** Mouse press on the column boundary
+    (`x ≈ leftWidth`, ±1 cell tolerance) drags `leftWidth` with the
+    cursor. Press on the detail-panel top border (`y === panelBounds.detail.y`)
+    drags `detailHeightPct`. Both clamp to the same ranges as the
+    keyboard `+/-` keys (20–60 for `leftWidth`, 20–90 for
+    `detailHeightPct`). Hit-test runs BEFORE the panel-drag arming
+    so the separator (which visually sits on a panel border) is
+    reachable.
+  - **Edit panel title in place.** `t` in design mode enters a
+    sub-mode that buffers keystrokes against the focused panel's
+    title; Enter commits, Esc cancels. A new `S.designTitleEditMode`
+    flag sits ABOVE `S.designMode` in the dispatch chain so design's
+    main key handler is skipped while editing.
+  - **`:restore-layout` cmdline.** Discards runtime layout changes
+    and reloads the `layout:` block from the YAML config file.
+    Clears `S.layoutDirty` and the design-mode undo history (the
+    new layout is unrelated to anything in the stacks). Companion to
+    `:save-layout`; both share the new pure-function
+    `rebuildLayoutFromConfig(config)` extracted from `state.js#initState`.
+  - **Multi-step undo / redo within a design-mode session.** Every
+    layout mutation pushes a snapshot to an in-memory stack (cap 50).
+    `u` pops to undo, `Ctrl+R` redoes. Drag gestures push exactly one
+    snapshot per gesture (on press), not per motion event. Stack is
+    session-scoped: cleared on `enterDesign` and on `:restore-layout`.
+    A new mutation after an undo invalidates the redo stack (the
+    branched-off timeline no longer applies).
+  - Footer hints expanded inline: `Design Mode | drag move/resize |
+    J/K reorder | ←→ swap col | +/- resize | t rename | u undo |
+    C-r redo | :save-layout | q exit`.
+  - Input layer: `\x12` (Ctrl+R) now translates to a named `'ctrl-r'`
+    key event in `js/input.js`, alongside the existing `\x03 → exit`
+    handling. Currently only design mode acts on it.
+  - Tests: new `js/test/test-design-phase3.js` (57 assertions across
+    6 describe blocks) covers hit-test math, drag-resize gestures,
+    undo/redo round-trip across all mutation types, title-edit buffer
+    handling, and `rebuildLayoutFromConfig` purity.
+
 - **Design Mode v2 (Phase 2): drag-and-drop in the real layout.**
   The centered modal overlay is gone. Mouse press on any panel
   inside design mode arms a drag; ≥1 cell of motion enters dragging

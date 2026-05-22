@@ -12,23 +12,41 @@
  * **Save is decoupled.** Design mode mutates S.layout in place and
  * sets `S.layoutDirty = true`. Persisting to YAML is a separate verb:
  * the `:save-layout` cmdline command writes the current layout to
- * the config file via `js/yaml-layout.js`. Exiting design mode with
- * `q`, `Esc`, or Enter does NOT auto-write — the user runs
- * `:save-layout` when they want their changes on disk.
+ * the config file via `js/yaml-layout.js`. Companion `:restore-layout`
+ * reverts the runtime layout to the YAML state and clears the dirty
+ * flag and undo history.
  *
- * **Drag-and-drop (Phase 2).** When design mode is active, mouse
- * press on a panel arms the drag. Motion ≥1 cell from the press
- * point enters dragging state and paints an insertion line at the
- * drop target. Release commits the drop (or snaps back on invalid
- * target). Mode 1002 mouse reporting (button-with-motion) carries
- * the events; press/motion/release fan out from `js/input.js`'s
- * `handleMouse` into `onMouseEvent` here.
+ * **Drag-and-drop (Phase 2).** Mouse press on a panel arms the drag.
+ * Motion ≥1 cell from the press point enters dragging state and
+ * paints an insertion line at the drop target. Release commits the
+ * drop (or snaps back on invalid target). Mode 1002 mouse reporting
+ * (button-with-motion) carries the events.
  *
- * Keys (still work; mouse is additive):
+ * **Drag-to-resize (Phase 3).** Mouse press on a separator zone
+ * arms a resize gesture. Column separator (`mx ≈ leftWidth`, ±1
+ * tolerance) → leftWidth tracks the cursor. Detail-panel top edge
+ * (`my === panelBounds.detail.y`) → detailHeightPct tracks. Hit-test
+ * is checked BEFORE panel-drag arming so the user can grab a
+ * separator even though it visually sits on a panel border.
+ *
+ * **Title edit (Phase 3).** `t` enters a sub-mode where keystrokes
+ * edit the focused panel's title. The mode flag `S.designTitleEditMode`
+ * sits ABOVE `S.designMode` in the dispatch chain so design-mode's
+ * key handler is skipped while editing. Enter commits, Esc cancels.
+ *
+ * **Undo / redo (Phase 3).** Every layout mutation pushes a snapshot
+ * to an in-memory stack (max 50). `u` pops to undo, `Ctrl+R` redoes.
+ * Stack is session-scoped: cleared on `enterDesign` and on
+ * `:restore-layout` (the new layout invalidates the prior history).
+ *
+ * Keys (mouse is additive):
  *   ↑/↓       Select panel
  *   J/K       Reorder panel within column (shift+j/k)
  *   ←/→       Move panel between columns
  *   +/-       Resize (left width or detail height %)
+ *   t         Edit focused panel's title
+ *   u         Undo last layout mutation
+ *   Ctrl+R    Redo
  *   Enter     Exit design mode (does NOT save — use :save-layout)
  *   q/Esc     Exit design mode (does NOT save — use :save-layout)
  */
@@ -39,10 +57,34 @@ const { cols, rows, stdout } = require('./term');
 const { S } = require('./state');
 
 let designState = null; // null when not in design mode
-// Drag lifecycle: null → armed(press, no motion yet) → dragging (motion seen).
-// Captured at press time; cleared on release. `target` is recomputed on every
-// motion event so renderDesignOverlay can paint the current drop indicator.
+
+// Drag lifecycle:
+//   null
+//     → armed(press, no motion yet)                  [panel drag]
+//     → dragging(motion seen, target tracked)        [panel drag]
+//     → resizing-col   (immediate, on press)         [drag-resize]
+//     → resizing-detail (immediate, on press)        [drag-resize]
+//     → null (on release)
+// `target` is recomputed on every motion event so renderDesignOverlay
+// can paint the current drop indicator. Resize kinds capture the
+// reference-frame measurements at press time so the dragged edge
+// doesn't drift the math (see press handler for detail-resize).
 let dragState = null;
+
+// Undo / redo stacks. Module-private, session-scoped — cleared on
+// enterDesign and on :restore-layout. Snapshot via JSON round-trip
+// because panel objects can carry plugin-specific keys (no functions /
+// Symbols / circular refs in any documented panel config). Cap is a
+// soft safety belt against runaway memory.
+const MAX_UNDO = 50;
+let undoStack = [];
+let redoStack = [];
+
+// Title-edit sub-mode buffer. titleEditPanel is a direct reference to
+// the panel object being edited (not a copy) so commit is a single
+// assignment. Cleared on enter/leave.
+let titleEditBuf = '';
+let titleEditPanel = null;
 
 /**
  * Enter design mode. While active, S.layout IS the working draft —
@@ -59,7 +101,67 @@ function enterDesign(layout, configPath, onDone) {
     onDone,
   };
   dragState = null;
+  // Undo history is session-scoped — clear it for the new session
+  // so the user can't undo back into a previous session's state.
+  undoStack = [];
+  redoStack = [];
   S.designMode = true;
+}
+
+// ---------------------------------------------------------------- undo / redo
+
+function snapshot() {
+  return JSON.parse(JSON.stringify(S.layout));
+}
+
+/**
+ * Push the current layout to the undo stack. Caller MUST call BEFORE
+ * mutating (the snapshot captures the pre-mutation state). Also clears
+ * the redo stack: any new mutation invalidates the redo history that
+ * was built from a different timeline.
+ */
+function pushUndo() {
+  undoStack.push(snapshot());
+  if (undoStack.length > MAX_UNDO) undoStack.shift();
+  redoStack.length = 0;
+}
+
+/**
+ * Restore the layout fields from a snapshot in-place (preserves the
+ * outer S.layout reference, which other code may hold by reference).
+ */
+function applySnapshot(snap) {
+  S.layout.leftWidth        = snap.leftWidth;
+  S.layout.detailHeightPct  = snap.detailHeightPct;
+  S.layout.leftPanels       = snap.leftPanels;
+  S.layout.rightPanels      = snap.rightPanels;
+}
+
+function undo() {
+  if (undoStack.length === 0) return false;
+  redoStack.push(snapshot());
+  applySnapshot(undoStack.pop());
+  S.layoutDirty = true;
+  return true;
+}
+
+function redo() {
+  if (redoStack.length === 0) return false;
+  undoStack.push(snapshot());
+  applySnapshot(redoStack.pop());
+  S.layoutDirty = true;
+  return true;
+}
+
+/**
+ * Exported escape hatch for `:restore-layout` to wipe the session's
+ * undo history when the user explicitly resets from disk. The new
+ * S.layout is unrelated to anything in the stacks; keeping them
+ * would leak prior runtime state back in via `u`.
+ */
+function _clearUndoStacks() {
+  undoStack = [];
+  redoStack = [];
 }
 
 function allDesignPanels() {
@@ -101,6 +203,32 @@ function onMouseEvent(kind, mx, my) {
   if (!designState) return;
 
   if (kind === 'press') {
+    // Resize hit-test runs FIRST — the separator visually sits on a
+    // panel border, so without priority the panel-drag arming would
+    // always win on borderline clicks.
+    const resize = pointToResizeTarget(mx, my);
+    if (resize) {
+      pushUndo();
+      const ds = { kind: `resizing-${resize.edge}` };
+      if (resize.edge === 'detail') {
+        // Capture right-column extents at press time so the moving
+        // edge doesn't drift the reference frame on each motion.
+        const detailB = S.panelBounds.detail;
+        // Top of the right column = top of its topmost panel.
+        let rightTop = Infinity;
+        for (const p of S.layout.rightPanels) {
+          const b = S.panelBounds[p.type];
+          if (b && b.y < rightTop) rightTop = b.y;
+        }
+        if (rightTop === Infinity) rightTop = 0;
+        ds.detailBottomY  = detailB.y + detailB.h;
+        ds.rightColTotal  = ds.detailBottomY - rightTop;
+        if (ds.rightColTotal < 1) ds.rightColTotal = 1; // guard / 0
+      }
+      dragState = ds;
+      return;
+    }
+
     const hit = panelAt(mx, my);
     if (!hit) { dragState = null; return; }
     dragState = {
@@ -122,6 +250,27 @@ function onMouseEvent(kind, mx, my) {
 
   if (kind === 'motion') {
     if (!dragState) return;
+
+    // Drag-resize: motion directly mutates the resize target. No
+    // armed→dragging promotion; the gesture is committed at press.
+    if (dragState.kind === 'resizing-col') {
+      const newW = Math.max(20, Math.min(60, mx + 1));
+      if (newW !== S.layout.leftWidth) {
+        S.layout.leftWidth = newW;
+        S.layoutDirty = true;
+      }
+      return;
+    }
+    if (dragState.kind === 'resizing-detail') {
+      const newH = dragState.detailBottomY - my;
+      const pct  = Math.max(20, Math.min(90, Math.round((newH / dragState.rightColTotal) * 100)));
+      if (pct !== S.layout.detailHeightPct) {
+        S.layout.detailHeightPct = pct;
+        S.layoutDirty = true;
+      }
+      return;
+    }
+
     dragState.curX = mx;
     dragState.curY = my;
     if (dragState.kind === 'armed') {
@@ -140,11 +289,38 @@ function onMouseEvent(kind, mx, my) {
   if (kind === 'release') {
     if (!dragState) return;
     if (dragState.kind === 'dragging' && dragState.target && dragState.target.valid) {
+      pushUndo();
       applyDrop(dragState.sourceType, dragState.target);
     }
     dragState = null;
     return;
   }
+}
+
+/**
+ * Check whether (mx, my) lands on a draggable separator. Returns
+ * `{ edge: 'col' | 'detail' }` or null. Has priority over panel
+ * hit-testing in onMouseEvent('press'). Exported for tests.
+ *
+ * Tolerance: column separator is `mx ∈ [leftWidth-1, leftWidth+1]`;
+ * detail-panel top is the exact row `my === panelBounds.detail.y`
+ * (the top border row of the detail panel). The ±1 column tolerance
+ * forgives one cell of mouse imprecision.
+ */
+function pointToResizeTarget(mx, my) {
+  const leftW = S.layout.leftWidth;
+  // Detail-top check first: a press on the detail top-border that
+  // happens to be at x=leftWidth (= the column separator) should
+  // resize the column, not the detail height. Reverse priority so
+  // detail-top only matches when mx is inside the right column proper.
+  if (Math.abs(mx - leftW) <= 1) {
+    return { edge: 'col' };
+  }
+  const detailB = S.panelBounds.detail;
+  if (detailB && my === detailB.y && mx > leftW + 1 && mx < detailB.x + detailB.w) {
+    return { edge: 'detail' };
+  }
+  return null;
 }
 
 /**
@@ -344,6 +520,7 @@ function handleDesignKey(key) {
 
     case 'K':
       if (localIdx > 0) {
+        pushUndo();
         [column[localIdx], column[localIdx - 1]] = [column[localIdx - 1], column[localIdx]];
         designState.selectedIdx--;
         reassignHotkeys();
@@ -352,6 +529,7 @@ function handleDesignKey(key) {
       break;
     case 'J':
       if (localIdx < column.length - 1) {
+        pushUndo();
         [column[localIdx], column[localIdx + 1]] = [column[localIdx + 1], column[localIdx]];
         designState.selectedIdx++;
         reassignHotkeys();
@@ -362,6 +540,7 @@ function handleDesignKey(key) {
     case 'left': case 'h':
       if (!isLeft && selPanel.type !== 'detail' && selPanel.type !== 'actions') {
         if (S.layout.leftPanels.length < 6) {
+          pushUndo();
           S.layout.rightPanels.splice(localIdx, 1);
           S.layout.leftPanels.push(selPanel);
           selPanel.column = 'left';
@@ -373,6 +552,7 @@ function handleDesignKey(key) {
       break;
     case 'right': case 'l':
       if (isLeft && S.layout.rightPanels.length < 3) {
+        pushUndo();
         S.layout.leftPanels.splice(localIdx, 1);
         const detailIdx = S.layout.rightPanels.findIndex(p => p.type === 'detail');
         const insertAt = detailIdx >= 0 ? detailIdx : S.layout.rightPanels.length;
@@ -386,22 +566,40 @@ function handleDesignKey(key) {
       break;
 
     case '+': case '=':
-      if (selPanel.type === 'detail') {
+      if (selPanel.type === 'detail' && S.layout.detailHeightPct < 90) {
+        pushUndo();
         S.layout.detailHeightPct = Math.min(90, S.layout.detailHeightPct + 5);
         S.layoutDirty = true;
-      } else if (isLeft) {
+      } else if (isLeft && S.layout.leftWidth < 60) {
+        pushUndo();
         S.layout.leftWidth = Math.min(60, S.layout.leftWidth + 2);
         S.layoutDirty = true;
       }
       break;
     case '-':
-      if (selPanel.type === 'detail') {
+      if (selPanel.type === 'detail' && S.layout.detailHeightPct > 20) {
+        pushUndo();
         S.layout.detailHeightPct = Math.max(20, S.layout.detailHeightPct - 5);
         S.layoutDirty = true;
-      } else if (isLeft) {
+      } else if (isLeft && S.layout.leftWidth > 20) {
+        pushUndo();
         S.layout.leftWidth = Math.max(20, S.layout.leftWidth - 2);
         S.layoutDirty = true;
       }
+      break;
+
+    case 't':
+      // Enter title-edit sub-mode for the currently focused panel.
+      // The sub-mode flag sits ABOVE designMode in the modeChain so
+      // this handler is skipped while editing.
+      enterDesignTitleEdit();
+      break;
+
+    case 'u':
+      undo();
+      break;
+    case 'ctrl-r':
+      redo();
       break;
 
     // Enter and q/Esc both exit design mode without writing. Use
@@ -431,12 +629,68 @@ function reassignHotkeys() {
   });
 }
 
+// ---------------------------------------------------------------- title edit
+
+function enterDesignTitleEdit() {
+  if (!designState) return;
+  const all = allDesignPanels();
+  const panel = all[designState.selectedIdx];
+  if (!panel) return;
+  titleEditPanel = panel;
+  titleEditBuf = panel.title || '';
+  S.designTitleEditMode = true;
+}
+
+/**
+ * Sub-mode key handler — installed in dispatch.js's modeChain ABOVE
+ * the designMode handler. Esc cancels (no commit), Enter commits if
+ * the buffer is non-empty, Backspace edits, printable chars append.
+ */
+function handleDesignTitleEditKey(key, seq) {
+  if (key === 'escape') {
+    S.designTitleEditMode = false;
+    titleEditPanel = null;
+    titleEditBuf = '';
+    return;
+  }
+  if (key === 'return') {
+    if (titleEditPanel && titleEditBuf.length > 0 && titleEditBuf !== titleEditPanel.title) {
+      pushUndo();
+      titleEditPanel.title = titleEditBuf;
+      S.layoutDirty = true;
+    }
+    S.designTitleEditMode = false;
+    titleEditPanel = null;
+    titleEditBuf = '';
+    return;
+  }
+  if (key === 'backspace' || seq === '\x7f' || seq === '\b') {
+    titleEditBuf = titleEditBuf.slice(0, -1);
+    return;
+  }
+  // Append a single printable character. Multi-char sequences (arrow
+  // keys, function keys, etc.) are ignored — title is a single-line
+  // text field.
+  if (seq && seq.length === 1 && seq >= ' ' && seq < '\x7f') {
+    titleEditBuf += seq;
+  }
+}
+
+function titleEditText() {
+  return titleEditBuf;
+}
+
 module.exports = {
   enterDesign, handleDesignKey, renderDesignOverlay, getDesignFooter,
   onMouseEvent,
-  // Exported for tests — pure, takes (srcType, mx, my) and reads
-  // S.panelBounds + S.layout. No side effects.
-  pointToDropTarget,
-  // Test helper: peek at the internal drag state.
-  _getDragState: () => dragState,
+  handleDesignTitleEditKey, titleEditText,
+  // Exported for tests — pure functions, no module state.
+  pointToDropTarget, pointToResizeTarget,
+  // Exported for :restore-layout to clear undo when the layout is
+  // reset from disk.
+  _clearUndoStacks,
+  // Test helpers: peek at internals.
+  _getDragState:  () => dragState,
+  _getUndoDepth:  () => undoStack.length,
+  _getRedoDepth:  () => redoStack.length,
 };

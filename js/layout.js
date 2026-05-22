@@ -346,9 +346,13 @@ function footerKeys() {
   }
   if (S.filterMode) return ` /${esc(filterCurrentText())}│ | Esc clear | Enter ok`;
   if (S.copyMode)   return ' ↑↓ select | Esc cancel | Enter copy';
+  if (S.designTitleEditMode) {
+    const { titleEditText } = require('./design');
+    return ` rename: ${esc(titleEditText())}│ | Esc cancel | Enter ok`;
+  }
   if (S.designMode) {
     const dirty = S.layoutDirty ? ' | [yellow]• unsaved (:save-layout)[/]' : '';
-    return ` Design Mode | drag move | J/K reorder | ←→ swap col | +/- resize | :save-layout | q exit${getDesignFooter()}${dirty}`;
+    return ` Design Mode | drag move/resize | J/K reorder | ←→ swap col | +/- resize | t rename | u undo | C-r redo | :save-layout | q exit${getDesignFooter()}${dirty}`;
   }
   if (S.menuOpen)   return ' ↑↓ select | Esc close | Enter run';
 
@@ -383,7 +387,7 @@ function renderFooter() {
   // overwrites it.
   if (S.cmdMode) return;
   const COLS = cols(), ROWS = rows();
-  const inModal = S.terminalMode || S.filterMode || S.copyMode || S.designMode || S.menuOpen;
+  const inModal = S.terminalMode || S.filterMode || S.copyMode || S.designMode || S.designTitleEditMode || S.menuOpen;
 
   // Left side: mode message OR (panel hints + plugin keyHints +
   // multi-select indicator + footer:left decorator). Modal footers

@@ -27,7 +27,7 @@ const { render } = require('./layout');
 const { showSelectedInfo, runTab } = require('./detail');
 const { runAction } = require('./actions');
 const { openMenu, closeMenu, navMenu, activateMenu } = require('./menu');
-const { enterDesign, handleDesignKey } = require('./design');
+const { enterDesign, handleDesignKey, handleDesignTitleEditKey } = require('./design');
 const { refreshAll, getPanelDef, getItems, idOf } = require('./plugins/api');
 const { showHelp } = require('./help-text');
 const { enterFilter, exitFilter, keystroke: filterKeystroke } = require('./filter');
@@ -342,6 +342,11 @@ const modeChain = [
   // confirm in practice (prompt fires first, runAction may then enter
   // confirm with the collected args captured in the closure).
   { active: () => S.promptMode,  handler: handlePromptKey },
+  // Title-edit sub-mode of design mode — runs BEFORE designMode in the
+  // chain so the design-mode key handler is skipped while the user is
+  // typing a new title. Esc/Enter in this handler clear the sub-mode
+  // flag and return control to designMode handling.
+  { active: () => S.designTitleEditMode, handler: handleDesignTitleEditKey },
   { active: () => S.designMode, handler: handleDesignKey },
   { active: () => S.menuOpen,   handler: handleMenuKey },
   { active: () => S.filterMode, handler: handleFilterKey },

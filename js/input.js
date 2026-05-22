@@ -184,6 +184,7 @@ function setupKeyListener() {
     else if (data === '\x1b') handleKey('escape');
     else if (data === '\r' || data === '\n') handleKey('return');
     else if (data === '\x03') { cleanup(); process.exit(0); }
+    else if (data === '\x12') handleKey('ctrl-r');  // Ctrl+R → design-mode redo
     else handleKey(data, data);
   });
 }
