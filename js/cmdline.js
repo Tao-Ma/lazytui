@@ -315,10 +315,19 @@ function renderCmdline() {
  * the entire row in [reverse] for selection highlight, and the
  * panel renderer adds a reset before the right border (PRINCIPLES.md
  * §8). renderPanel handles width-based truncation.
+ *
+ * Whitespace in display/desc is collapsed to single spaces. YAML
+ * `desc: |` block scalars produce multi-line strings; the embedded
+ * newlines bypass renderPanel's truncate (visibleLen counts \n as
+ * width 1 but the terminal honors it as a real line break, so the
+ * right border ends up on its own row).
  */
+function oneLine(s) { return s.replace(/\s+/g, ' ').trim(); }
+
 function formatMatchLine(match) {
-  if (match.desc) return `${esc(match.display)} ─ ${esc(match.desc)}`;
-  return esc(match.display);
+  const display = esc(oneLine(match.display));
+  if (match.desc) return `${display} ─ ${esc(oneLine(match.desc))}`;
+  return display;
 }
 
 module.exports = {
