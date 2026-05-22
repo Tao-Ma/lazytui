@@ -4,10 +4,6 @@
 # Resolves the framework root from this script's own location so it
 # works whether invoked directly, via a symlink in PATH, or from a
 # demo's ./run script. Forwards every argument to tui.js unchanged.
-#
-# If a `.venv` exists at the framework root, its bin/ is prepended to
-# PATH so the Python parser finds its deps (pyyaml) without the user
-# having to activate the venv first.
 
 set -e
 
@@ -20,9 +16,5 @@ while [ -L "$SOURCE" ]; do
 done
 HERE="$(cd -P "$(dirname "$SOURCE")" && pwd)"
 ROOT="$(cd -P "$HERE/.." && pwd)"
-
-if [ -d "$ROOT/.venv/bin" ]; then
-  export PATH="$ROOT/.venv/bin:$PATH"
-fi
 
 exec node "$ROOT/js/tui.js" "$@"

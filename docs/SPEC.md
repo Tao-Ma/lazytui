@@ -102,8 +102,8 @@ build on the five core docs above.
 
 The plugin/config YAML schema is described in **PLUGINS.md** (plugin
 section) and **LAYOUT.md** (layout section). When the two disagree,
-the parser under `parser/` is authoritative — covered by
-Python pytest suite.
+the parser under `js/parser/` is authoritative — covered by the
+JS test suite (`js/test/test-parser-*.js`).
 
 ## Conventions used in the spec
 

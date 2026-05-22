@@ -4,7 +4,6 @@
  */
 'use strict';
 
-const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const { setTheme } = require('./themes');
@@ -84,17 +83,13 @@ function loadConfig(configPath) {
   if (ext === '.json') {
     S.config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
   } else {
-    // Run the parser as a Python module — no temp script, no /tmp cleanup.
-    // Stderr is left unredirected so parse errors surface to the user.
-    // Mirror the `do` shim: prefer the project venv, fall back to system
-    // python3 when it's missing (system PyYAML is enough for the parser).
-    const parserDir = path.resolve(__dirname, '..');
-    const venv = path.join(parserDir, '.venv/bin/python');
-    const py = fs.existsSync(venv) ? venv : 'python3';
-    const out = execSync(`${JSON.stringify(py)} -m parser ${JSON.stringify(path.resolve(configPath))}`, {
-      encoding: 'utf8', timeout: 10000, cwd: parserDir,
-    });
-    S.config = JSON.parse(out);
+    // In-process JS parser — was an out-of-process `python -m parser`
+    // call until the parser was rewritten in JS. Errors thrown by
+    // parse() are ParseError subclasses with composed messages; let
+    // them propagate so tui.js's top-level handler prints them and
+    // exits non-zero (mirrors the old "parser: <msg>" stderr line).
+    const { parse } = require('./parser');
+    S.config = parse(path.resolve(configPath));
   }
   S.projectDir = S.config.project_dir || '.';
   S.configPath = path.resolve(configPath);

@@ -10,20 +10,13 @@ your favorite open-source target.
 git clone https://github.com/Tao-Ma/lazytui.git
 cd lazytui
 
-# Node deps (node-pty + @xterm/headless for embedded terminals).
+# Node deps (node-pty + @xterm/headless for embedded terminals,
+# js-yaml for config parsing).
 npm install --omit=dev
 
-# Python deps (pyyaml for the parser).
-python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
-
 # Run the test suite.
-node js/run-tests.js          # 17 JS smoke suites
-.venv/bin/pytest tests/ -q    # parser tests
+node js/run-tests.js
 ```
-
-`bin/lazytui` auto-detects `.venv/` at the repo root and prepends
-its `bin/` to PATH, so you can run `bin/lazytui` (or any demo's
-`./run`) without `source .venv/bin/activate`.
 
 ## Where to start
 
@@ -64,8 +57,7 @@ actions rather than introducing a new YAML top-level concept.
 1. Fork or branch off `main`.
 2. Make the change. Keep commits focused (one logical change per
    commit is ideal but not required for small PRs).
-3. Run `node js/run-tests.js` and `pytest tests/ -q` locally. CI
-   runs the same on every push.
+3. Run `node js/run-tests.js` locally. CI runs the same on every push.
 4. Open the PR with a description that answers "what changed and
    why." A test plan or repro for bug fixes is appreciated.
 
@@ -78,7 +70,7 @@ of intent and the only way the next regeneration stays coherent.
 Open an issue on GitHub:
 [github.com/Tao-Ma/lazytui/issues](https://github.com/Tao-Ma/lazytui/issues).
 
-Include the lazytui commit, your OS / Node / Python versions, and
+Include the lazytui commit, your OS / Node version, and
 a minimal repro YAML if relevant. For framework bugs, include the
 output of `bin/lazytui your-config.yml --list` so it's clear which
 actions the parser saw.

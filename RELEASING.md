@@ -41,7 +41,7 @@ publishable) while the source tarball is the developer/auditor form
    git push origin vX.Y.Z
    ```
 6. The `.github/workflows/release.yml` workflow triggers automatically:
-   - Runs the JS + Python test suites against the tagged commit.
+   - Runs the JS test suite against the tagged commit.
    - Builds the two tarballs above.
    - Creates a GitHub Release with auto-generated release notes
      (commits since the previous tag) and both tarballs attached.
@@ -85,13 +85,8 @@ refuse. When ready to ship to npm:
 4. First publish: `npm publish` from a tagged commit locally to make
    sure the package metadata is right.
 
-**The Python parser is the open question for npm install.** A
-`npm install -g lazytui` user needs Python + `pyyaml` available
-on PATH; the postinstall hook handles node-pty but not Python.
-Options when we cross that bridge:
-- Document Python as a hard prerequisite in the npm README.
-- Ship the parser as a separate `pip install lazytui-parser` package.
-- Rewrite the parser in JS (eliminates the dual-runtime concern but
-  is a real chunk of work — the parser is ~500 LOC of Python).
-
-Until that decision is made, npm publish stays disabled.
+Single-runtime now — the parser is in JS (`js/parser/`) so an
+`npm install -g lazytui` user only needs Node ≥ 18. `package.json`
+still carries `"private": true` while the publish flow stabilizes;
+flipping that to false is all that's needed to enable
+`npm publish`.

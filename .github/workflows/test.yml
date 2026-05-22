@@ -18,19 +18,8 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
       - name: Install Node deps
         run: npm install --omit=dev
 
-      - name: Install Python deps
-        run: pip install -r requirements.txt
-
       - name: Run JS test suites
         run: node js/run-tests.js
-
-      - name: Run parser tests
-        run: pytest tests/ -q

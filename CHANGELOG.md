@@ -7,6 +7,77 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Changed
+- **Parser rewritten from Python to JS — lazytui is single-runtime now.**
+  The Python parser (`parser/`, 1124 LOC) and its pytest suite (`tests/`,
+  1101 LOC) are deleted. Replaced by an in-process JS parser at
+  `js/parser/` (~700 LOC) backed by `js-yaml` for YAML loading; the
+  ported test suite lives at `js/test/test-parser-*.js` (88 cases
+  across 4 files). The runtime path swaps `python -m parser` for
+  `require('./parser').parse()` — saves an out-of-process spawn on
+  every TUI launch and removes the dual-runtime install story.
+  - **`bin/lazytui`** drops the `.venv/bin` PATH shim — no Python
+    needed at runtime.
+  - **`package.json`** adds `js-yaml ^4.1.1` as a runtime dep
+    (alongside `node-pty` and `@xterm/headless`). `private: true`
+    stays for now — flipping that to false is all that's needed to
+    enable `npm publish` when ready.
+  - **CI** drops the "Set up Python / install pyyaml / run pytest"
+    steps from both `.github/workflows/test.yml` and `release.yml`.
+    `requirements.txt` and `pytest.ini` are removed.
+  - **Output parity**: a differential harness (parse the same YAML
+    through both parsers, deep-diff JSON output) ran on every
+    fixture + both demos before deletion — 14/14 identical, including
+    error-message strings for schema and resolution failures. State.js
+    consumes the same JSON shape unchanged.
+  - **Test fixtures** moved from `tests/fixtures/` to
+    `js/test/fixtures/` so the JS suite owns them.
+  - **Docs** updated: README, DEMO, CONTRIBUTING, RELEASING,
+    docs/TESTING, docs/SPEC drop their Python-prereq references.
+    History entries in CHANGELOG.md describing the prior dual-runtime
+    state are left intact as a chronological record.
+
+- **Design Mode v2 (Phase 3 follow-up): per-panel `heightPct` +
+  corner drag + keyboard `[`/`]`.** Drag-to-resize extends from
+  two single-axis seams (column separator + detail top) to every
+  same-column horizontal boundary, plus a corner handle at the
+  col-separator × column-boundary intersections that adjusts both
+  axes in one gesture.
+  - **Per-panel `heightPct` (YAML).** New optional key on any
+    non-detail panel — fraction of the column's total height.
+    Panels that set it are anchored; panels that don't are flex
+    and share whatever's left in their column equally. Existing
+    YAMLs without `heightPct` behave exactly as before
+    (equal-share). Oversubscribed sums scale proportionally;
+    every panel still meets `minH=3`. Detail keeps its own
+    `detailHeightPct` knob (layout-level), unchanged.
+  - **Every same-column boundary is draggable.** New
+    `boundaryNear()` hit-test runs on press. Drags between two
+    non-detail panels mutate both `heightPct` values; drags
+    involving detail mutate `detailHeightPct` (clamped [20, 90])
+    and the non-detail neighbor's `heightPct`. D1 semantics:
+    `freezeColumnFlex` runs on press so siblings keep their
+    displayed height instead of redistributing mid-drag and
+    outrunning the cursor.
+  - **Corner handle.** At intersections of col-separator × any
+    column boundary (left or right), the press dispatches
+    `resizing-corner`; motion fires both `applyColResize` and
+    `applyBoundaryResize` per event. One diagonal gesture moves
+    `leftWidth` + the column boundary together.
+  - **Keyboard `]` / `[`.** Grow / shrink the focused non-detail
+    panel's `heightPct` by 5 pp, stealing from the panel below
+    (mirrors drag D1). Detail keeps `+`/`-`. No-op at the last
+    position in a column. Footer learns the binding:
+    `+/- col/detail · [/] panel h`.
+  - **docs/LAYOUT.md** grows a "Resizing panels (design mode)"
+    section with drag-target and keyboard tables; the YAML
+    example shows `heightPct`.
+  - **Tests:** new sections `[3a]`–`[3f]` in
+    `js/test/test-design-phase3.js` cover within-col boundary
+    drag, corner drag on both sides, freeze-on-press, `calcLayout`
+    distribution math (anchored / flex / oversubscribed), and the
+    `]` / `[` keys (grow, shrink, detail-skipped, last-position
+    no-op, detail-clamp). 97 assertions across 41 cases.
+
 - **Design Mode v2 (Phase 3): undo/redo, drag-to-resize, title edit,
   and `:restore-layout`.** Four features stacked on top of Phase 2:
   - **Drag-to-resize separators.** Mouse press on the column boundary
@@ -102,6 +173,57 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
     through the Python parser, and the existing-block splicer.
 
 ### Fixed
+- **Cmdline (`:`) polish from manual testing.** A cluster of
+  user-reported glitches in the cmdline dropdown and bare-Esc
+  dispatch, fixed in sequence as they surfaced:
+  - **Bordered dropdown panel + theme integration.** The match
+    list used to paint raw `\x1b[7m` / `\x1b[2m` rows directly
+    onto the cells beneath, with no border or separator — read
+    as visual bleed-through against whatever panels happened to
+    sit at the bottom of the screen. Now renders through
+    `renderPanel` (same helper menu / design overlays use):
+    bordered box, themed chrome, count badge (`<sel>/<total>`),
+    centered horizontally just above the prompt row. Selection
+    follows PRINCIPLES.md §8 — outer `[reverse]` wraps the
+    whole row, no inner style nesting.
+  - **Width scales with the terminal.** The previous 80-col cap
+    left a small box hovering in unused space on wide
+    terminals. New formula `panelW = max(40, COLS - 4)` bottoms
+    out at 40 on narrow terminals and grows with everything
+    else.
+  - **Clean shrink residue.** When the match set shrunk
+    (additional chars narrowed matches), the previous frame's
+    taller panel left ANSI residue on rows the new panel no
+    longer covered — the underlying panels' diff cache had no
+    reason to think they'd been touched. New
+    `layout.invalidateRows(startY, endY)` empties the per-row
+    diff cache for the affected range so the next render
+    repaints from the panels below; `cmdline.js` also blanks
+    those rows synchronously so the current frame stays clean.
+    `invalidateRows` is reusable by any future overlay with a
+    similar incremental-shrink pattern.
+  - **Collapse newlines in match desc.** YAML `desc: |` block
+    scalars carry literal `\n`. The dropdown formatter passed
+    them through to `renderPanel`; `truncate()` counted `\n` as
+    width 1 but the terminal honored it as a real line break,
+    so the right border dropped onto its own row. Whitespace
+    runs in both `display` and `desc` are now collapsed to
+    single spaces in `formatMatchLine` — the single-line
+    guarantee is enforced at the formatter, not relied on from
+    the data source. Full multi-line desc still renders
+    untouched in the Info panel.
+  - **Bare Esc dispatch (input layer).** Pressing Esc inside
+    cmdline sometimes didn't exit. Some terminals + Node
+    stdin buffering states deliver bare Esc as `\x1b\x1b`
+    (the legacy literal-Esc trick) or `\x1b<followup>` (Esc
+    plus a buffered keypress in one chunk); the strict
+    `data === '\x1b'` check on `input.js` only matched a clean
+    single-byte chunk. Defensive fallthrough now treats any
+    chunk that starts with `\x1b` and survived all the
+    specific-sequence checks (focus events, paste, SGR mouse,
+    arrow keys, PgUp/PgDn, Ctrl+R) as `'escape'`. Trailing
+    bytes are discarded — lazytui has no Alt/Meta bindings.
+
 - **`type: spawn` actually works outside tmux now.** Previously, the
   no-tmux branch ran the script *detached* with `stdio: 'ignore'`, so
   interactive subprocesses (`psql`, `less`, `$EDITOR`) got `/dev/null`

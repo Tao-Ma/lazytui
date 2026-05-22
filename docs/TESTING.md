@@ -1,23 +1,22 @@
 # lazytui — Testing
 
-Three test layers, each with a different purpose. Run them all from
+Two test layers, each with a different purpose. Run them all from
 the repo root.
 
 | Layer | What it covers | Where | How to run |
 |---|---|---|---|
-| JS unit | TUI runtime: state, dispatch, plugins, hub, render helpers | `js/test/test-*.js` | `node js/run-tests.js -q` |
-| Parser unit | YAML loading, schema validation, migration, resolver | `tests/test_*.py` (pytest) | `python3 -m pytest tests/ -q` |
+| Unit | TUI runtime + parser: state, dispatch, plugins, hub, render helpers, YAML schema, resolver | `js/test/test-*.js` | `node js/run-tests.js -q` |
 | Integration | Live TUI against a real Docker stack + event paths | `test/` (run.sh + stack.yml + test.yml) | `test/run.sh up` then `test/run.sh tui` |
 
-The two unit layers are CI-friendly and run in seconds; integration is
+The unit layer is CI-friendly and runs in seconds; integration is
 hands-on (Docker required) and is for exercising panels / terminals /
 event streaming against real containers.
 
-## JS unit tests
+## Unit tests
 
-Zero npm deps. Each test file runs in its own Node process so module
-state (hub subscribers, plugin registry, fake timers) can't leak between
-files. The harness in `js/test/test-runner.js` provides
+Each test file runs in its own Node process so module state (hub
+subscribers, plugin registry, fake timers) can't leak between files.
+The harness in `js/test/test-runner.js` provides
 `describe / it / section / assert / eq / report`.
 
 ```
@@ -30,26 +29,15 @@ Per-file isolation means imports, `require.cache` resets, and global
 mocks are local to one file. The discovery runner spawns each
 `test-*.js` as a child process; aggregation happens in `run-tests.js`.
 
+**Parser tests** live alongside the runtime tests as `test-parser-*.js`:
+`test-parser-errors.js` (error hierarchy), `test-parser-resolver.js`
+(variable + helper expansion), `test-parser-schema.js` (YAML schema
+validation), `test-parser-pipeline.js` (end-to-end `parse()`). YAML
+fixtures under `js/test/fixtures/` are reused across the parser suite.
+
 Add a new test by dropping a `test-<topic>.js` into `js/test/`. Imports
 to TUI modules use `../<module>`; the harness import is `./test-runner`
 (sibling).
-
-## Parser unit tests
-
-`pytest` with fixtures under `tests/fixtures/`. Tests cover the YAML
-schema (`test_schema.py`), parsing (`test_parser.py`), migration from
-older config layouts (`test_migration.py`), the runnable extraction
-(`test_runnable.py`), the placeholder resolver (`test_resolver.py`),
-and error paths (`test_errors.py`).
-
-```
-python3 -m pytest tests/ -q        # full run
-python3 -m pytest tests/test_schema.py -q
-python3 -m pytest tests/ -k migration
-```
-
-`pytest.ini` sets `testpaths = tests` and `pythonpath = .` so imports
-resolve against the package layout in `parser/`.
 
 ## Integration / live stack
 

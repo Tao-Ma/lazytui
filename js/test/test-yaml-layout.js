@@ -146,9 +146,9 @@ describe('[3] serializeLayout — full layout block', () => {
     assert(out.includes('height: 60%'), 'detail height synthesized');
   });
 
-  it('round-trips through the Python parser — every config key survives', () => {
-    // End-to-end: write what we emit to a file, run the parser,
-    // assert PanelConfig.config has every extra key back.
+  it('round-trips through the parser — every config key survives', () => {
+    // End-to-end: write what we emit to a file, run parse(), assert
+    // PanelConfig.config has every extra key back.
     const tmp = path.join(os.tmpdir(), `lazytui-yaml-rt-${process.pid}.yml`);
     const layoutYaml = serializeLayout({
       leftWidth: 28, detailHeightPct: 70,
@@ -162,35 +162,15 @@ describe('[3] serializeLayout — full layout block', () => {
     const fullYaml = `groups:\n  g1:\n    label: g1\n    actions:\n      noop:\n        label: noop\n        cmd: "true"\n\n${layoutYaml}\n`;
     fs.writeFileSync(tmp, fullYaml);
 
-    const { spawnSync } = require('child_process');
-    const pyScript = `
-import sys, json
-sys.path.insert(0, '${path.resolve(__dirname, '../../parser')}')
-from parser import parse
-cfg = parse('${tmp}')
-print(json.dumps({
-  'left_width': cfg.layout.left_width,
-  'detail_height_pct': cfg.layout.detail_height_pct,
-  'left_panels': [{'type': p.type, 'title': p.title, 'config': p.config} for p in cfg.layout.left_panels],
-  'right_panels': [{'type': p.type, 'title': p.title, 'config': p.config} for p in cfg.layout.right_panels],
-}))
-`;
-    const venvPy = path.resolve(__dirname, '../../.venv/bin/python3');
-    const py = fs.existsSync(venvPy) ? venvPy : 'python3';
-    const res = spawnSync(py, ['-c', pyScript], { encoding: 'utf8' });
-    fs.unlinkSync(tmp);
+    const { parse } = require('../parser');
+    let cfg;
+    try { cfg = parse(tmp); } finally { fs.unlinkSync(tmp); }
 
-    if (res.status !== 0) {
-      assert(false, `parser invocation failed: ${res.stderr || res.stdout}`);
-      return;
-    }
-    const parsed = JSON.parse(res.stdout.trim());
+    eq(cfg.layout.left_width, 28, 'left width round-trips');
+    eq(cfg.layout.detail_height_pct, 70, 'detail height round-trips');
+    eq(cfg.layout.left_panels[0].config.decorators.join(','), 'status', 'decorators survive YAML round-trip');
 
-    eq(parsed.left_width, 28, 'left width round-trips');
-    eq(parsed.detail_height_pct, 70, 'detail height round-trips');
-    eq(parsed.left_panels[0].config.decorators.join(','), 'status', 'decorators survive YAML round-trip');
-
-    const stats = parsed.right_panels.find(p => p.type === 'stats');
+    const stats = cfg.layout.right_panels.find(p => p.type === 'stats');
     eq(stats.config.topic, 'docker.stats', 'topic survives YAML round-trip');
     eq(stats.config.select_from, 'containers', 'select_from survives YAML round-trip');
     eq(stats.config.refresh_interval_ms, 1500, 'refresh_interval_ms survives YAML round-trip');

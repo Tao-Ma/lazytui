@@ -18,15 +18,10 @@ demo shapes" below for the picking rule.
 Once per clone of the lazytui repo:
 
 ```sh
-# Node deps (node-pty + @xterm/headless for embedded terminals)
+# Node deps (node-pty + @xterm/headless for embedded terminals,
+# js-yaml for config parsing)
 npm install --omit=dev
-
-# Python deps (pyyaml for the parser)
-python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 ```
-
-`bin/lazytui` auto-detects `.venv/` at the repo root and prepends its
-`bin/` to PATH, so demos run without needing `source .venv/bin/activate`.
 
 ## Directory shape
 

@@ -3,7 +3,7 @@
 > **everybody tui — a glue framework for the tools around your real work;
 > AI writes it, you run it as TUI or CLI.**
 
-`MIT License · Node.js + Python · zero npm runtime deps except node-pty + xterm-headless for embedded terminals`
+`MIT License · Node.js · npm runtime deps: node-pty, @xterm/headless, js-yaml`
 
 ```
 ╭─(1)─Containers───────╮╭─(0)─Actions────────────────────────────────╮
@@ -30,17 +30,14 @@
 git clone https://github.com/Tao-Ma/lazytui.git
 cd lazytui
 
-# One-time deps: node-pty + @xterm/headless, and pyyaml for the parser.
+# One-time deps: node-pty + @xterm/headless + js-yaml.
 npm install --omit=dev
-python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 
 # Try a worked demo. Requires Docker on the host.
 cd demo/postgres && ./run
 ```
 
-The `bin/lazytui` wrapper auto-detects `.venv/` at the repo root, so
-demos run without `source .venv/bin/activate`. See [DEMO.md](DEMO.md)
-to add your own demo.
+See [DEMO.md](DEMO.md) to add your own demo.
 
 ## The problem this solves
 
@@ -218,10 +215,10 @@ for "the same thing but headless."
 
 ## Status
 
-- **Renderer**: Node.js, zero npm runtime deps except `node-pty` + `@xterm/headless`.
-- **Parser**: Python, validates and resolves the YAML config.
-- **Tests**: 17 JS smoke suites, 6 pytest files, plus a live integration
-  harness under `test/`. See [docs/TESTING.md](docs/TESTING.md).
+- **Renderer + parser**: Node.js. Runtime npm deps: `node-pty` and
+  `@xterm/headless` for embedded PTY tabs, `js-yaml` for config parsing.
+- **Tests**: JS smoke suites under `js/test/` (29 files), plus a
+  live integration harness under `test/`. See [docs/TESTING.md](docs/TESTING.md).
 - **Two worked demos** at the time of initial public release; both ship
   with the human-authored intent (`.agent-prompt.md`) checked in so the
   loop is reproducible by another agent.
