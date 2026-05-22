@@ -466,6 +466,73 @@ function applyBoundaryResize(my) {
   else                       { setPct(ds.upper, upperPct); setPct(ds.lower, lowerPct); }
 }
 
+// --- Keyboard height resize (`]` / `[`) ----------------------------
+//
+// Mirrors the within-column boundary drag from the keyboard. Grows
+// or shrinks the focused panel's heightPct by Δ percentage points,
+// stealing from (or giving to) the panel immediately below in the
+// same column. Detail is skipped — its `+`/`-` binding stays put.
+// No-op at the last position (no panel below to swap with) or when
+// the move would push the neighbor below its min-height clamp.
+
+function panelHeightPct(p, availH) {
+  if (p.type === 'detail') return S.layout.detailHeightPct;
+  if (typeof p.heightPct === 'number') return p.heightPct;
+  const b = S.panelBounds[p.type];
+  return b ? Math.round(b.h / availH * 100) : 0;
+}
+
+function setPanelHeightPct(p, pct) {
+  if (p.type === 'detail') S.layout.detailHeightPct = pct;
+  else p.heightPct = pct;
+}
+
+function resizeFocusedPanelHeight(deltaPct) {
+  if (!designState) return;
+  const all = allDesignPanels();
+  const sel = all[designState.selectedIdx];
+  if (!sel || sel.type === 'detail') return;  // detail uses +/-
+
+  const isLeft = designState.selectedIdx < S.layout.leftPanels.length;
+  const column = isLeft ? S.layout.leftPanels : S.layout.rightPanels;
+  const colName = isLeft ? 'left' : 'right';
+  const idx = column.indexOf(sel);
+  if (idx < 0 || idx === column.length - 1) return;  // no neighbor below
+  const next = column[idx + 1];
+
+  const availH = columnTotalH(colName);
+  if (availH < 6) return;
+
+  // Match drag semantics: freeze any other flex panels first so the
+  // adjustment stays between sel and next, not redistributed.
+  freezeColumnFlex(colName, sel, next, availH);
+
+  const selCur  = panelHeightPct(sel,  availH);
+  const nextCur = panelHeightPct(next, availH);
+  const combined = selCur + nextCur;
+
+  // Minimum pct for each panel — detail has its own [20, 90] band;
+  // others bottom at the row-equivalent of MIN_PANEL_H.
+  const rowsToPct = (rows) => Math.max(1, Math.ceil(rows / availH * 100));
+  const minPct = (p) => p.type === 'detail' ? DETAIL_MIN_PCT : rowsToPct(MIN_PANEL_H);
+  const maxPct = (p) => p.type === 'detail' ? DETAIL_MAX_PCT : 100;
+
+  let newSel  = selCur  + deltaPct;
+  let newNext = nextCur - deltaPct;
+  // Clamp newSel, derive newNext from combined to preserve the column's
+  // total. Then clamp newNext and re-derive newSel symmetrically.
+  if (newSel < minPct(sel))  { newSel = minPct(sel);  newNext = combined - newSel; }
+  if (newSel > maxPct(sel))  { newSel = maxPct(sel);  newNext = combined - newSel; }
+  if (newNext < minPct(next)){ newNext = minPct(next); newSel = combined - newNext; }
+  if (newNext > maxPct(next)){ newNext = maxPct(next); newSel = combined - newNext; }
+
+  if (newSel === selCur && newNext === nextCur) return;
+  pushUndo();
+  setPanelHeightPct(sel, newSel);
+  setPanelHeightPct(next, newNext);
+  S.layoutDirty = true;
+}
+
 /**
  * Hit-test a point against rendered panel bounds. Returns the panel
  * type at (mx, my) or null. Uses S.panelBounds which layout.js rebuilds
@@ -729,6 +796,13 @@ function handleDesignKey(key) {
         S.layout.leftWidth = Math.max(20, S.layout.leftWidth - 2);
         S.layoutDirty = true;
       }
+      break;
+
+    case ']':
+      resizeFocusedPanelHeight(+5);
+      break;
+    case '[':
+      resizeFocusedPanelHeight(-5);
       break;
 
     case 't':

@@ -270,6 +270,47 @@ describe('[3d] press freezes flex panels in the dragged column', () => {
   });
 });
 
+describe('[3f] keyboard `]` / `[` — focused panel heightPct', () => {
+  it('] grows focused left panel, steals from neighbor below', () => {
+    setupFixture();
+    // selectedIdx=0 (containers). availH=20 (left col).
+    // containers starts flex (h=10 → 50%). groups also flex (h=10 → 50%).
+    handleDesignKey(']');
+    eq(S.layout.leftPanels[0].heightPct, 55, 'containers +5');
+    eq(S.layout.leftPanels[1].heightPct, 45, 'groups -5 (stolen from)');
+  });
+  it('[ shrinks focused panel, gives to neighbor below', () => {
+    setupFixture();
+    handleDesignKey('[');
+    eq(S.layout.leftPanels[0].heightPct, 45);
+    eq(S.layout.leftPanels[1].heightPct, 55);
+  });
+  it('detail focused → ] / [ are no-ops (use +/- instead)', () => {
+    setupFixture();
+    // Fixture has 5 panels total; idx=4 (last) is detail.
+    handleDesignKey('j'); handleDesignKey('j'); handleDesignKey('j'); handleDesignKey('j');
+    eq(S.layout.rightPanels[2].type, 'detail');
+    const prevDetail = S.layout.detailHeightPct;
+    handleDesignKey(']');
+    eq(S.layout.detailHeightPct, prevDetail, 'detail untouched by `]`');
+  });
+  it('last panel in column → ] no-op (nothing to steal from)', () => {
+    setupFixture();
+    handleDesignKey('j');  // → groups (last in left col)
+    handleDesignKey(']');
+    eq(S.layout.leftPanels[1].heightPct, undefined, 'no mutation');
+  });
+  it('] respects detail [20,90] clamp when stealing from detail', () => {
+    setupFixture();
+    // Focus stats (right col, idx=3 in all). stats is just above detail.
+    // detail starts at 60%. Repeated `]` should stop at detail hitting 20%.
+    handleDesignKey('j'); handleDesignKey('j'); handleDesignKey('j');  // → stats
+    eq(S.layout.rightPanels[1].type, 'stats');
+    for (let i = 0; i < 20; i++) handleDesignKey(']');
+    assert(S.layout.detailHeightPct >= 20, `detail clamped at min 20 (got ${S.layout.detailHeightPct})`);
+  });
+});
+
 // ===============================================================
 describe('[3e] calcLayout — heightPct distribution', () => {
   const { calcLayout } = require('../layout');

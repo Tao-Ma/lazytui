@@ -431,7 +431,7 @@ function footerKeys() {
   }
   if (S.designMode) {
     const dirty = S.layoutDirty ? ' | [yellow]• unsaved (:save-layout)[/]' : '';
-    return ` Design Mode | drag move/resize | J/K reorder | ←→ swap col | +/- resize | t rename | u undo | C-r redo | :save-layout | q exit${getDesignFooter()}${dirty}`;
+    return ` Design Mode | drag move/resize | J/K reorder | ←→ swap col | +/- col/detail · [/] panel h | t rename | u undo | C-r redo | :save-layout | q exit${getDesignFooter()}${dirty}`;
   }
   if (S.menuOpen)   return ' ↑↓ select | Esc close | Enter run';
 

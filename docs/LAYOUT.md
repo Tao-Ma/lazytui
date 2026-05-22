@@ -15,12 +15,14 @@ layout pattern is fixed; the panel content is YAML-configurable.
 ```yaml
 layout:
   left:
-    width: 30                # optional
+    width: 30                # optional, column width in chars
     panels:
       - type: containers
         title: Containers
+        heightPct: 30        # optional, panel height as % of column
       - type: groups
         title: Groups
+        heightPct: 70
       - type: file-manager
         title: Files
   right:
@@ -29,10 +31,23 @@ layout:
         title: Actions
       - type: detail
         title: Detail
-        height: 60%          # optional
+        height: 60%          # optional, layout-level detailHeightPct
 ```
 
 Default layout generated when `layout:` is omitted.
+
+**Per-panel height — `heightPct`.** Optional integer 1–100. Panels
+that set it are *anchored*; panels that don't are *flex* and share
+whatever's left in their column equally. Detail keeps its layout-
+level `height: N%` knob (becomes `detailHeightPct`). When anchored
+values + reserved (detail) leave less than 3 rows per flex panel,
+anchored values scale proportionally so every panel still meets the
+minimum.
+
+YAMLs without `heightPct` behave as before (equal-share within the
+column). The drag UX (below) materializes `heightPct` for any panel
+the user resizes — once the layout is saved via `:save-layout`, the
+new values appear in the YAML.
 
 ### Panel constraints
 - Left: 1–6 panels, hotkeys `1`–`6` auto-assigned by position
@@ -214,6 +229,43 @@ are also more likely to collide with future per-panel bindings (numeric
 adjustments, zoom-style verbs). Keeping shift-only here leaves the
 unshifted slots free. Reconsider only if a panel-level use of `=`/`-`
 forces the issue.
+
+## Resizing panels (design mode)
+
+Design mode (`--design` flag or `:design`) is where layout gets
+mutated interactively. Saves are explicit: `:save-layout` writes
+to YAML, `:restore-layout` reloads from disk.
+
+### Drag — mouse
+
+Every seam between panels is a drag target:
+
+| Press on | Gesture | Mutates |
+|---|---|---|
+| Column separator (the vertical line) | drag left/right | `leftWidth` (clamped 20–60) |
+| Boundary inside the right column | drag up/down | the two adjacent panels' `heightPct` (or `detailHeightPct` when detail is one of the pair, clamped 20–90) |
+| Boundary inside the left column | drag up/down | the two adjacent panels' `heightPct` |
+| **Corner** — col-separator × any boundary | drag diagonally | both axes in one gesture |
+
+All drag gestures use ±1 cell tolerance so you don't have to land
+the cursor exactly on the seam. D1 semantics (steal from neighbor
+only): when you drag a boundary, the column's other panels keep
+their current heights — they get frozen as `heightPct` on press if
+they were previously flex, so the seam follows the cursor instead
+of being smeared across the column.
+
+### Keyboard
+
+| Key | Mutates |
+|---|---|
+| `+` / `-` on detail panel focus | `detailHeightPct` ±5 |
+| `+` / `-` on left-column panel focus | `leftWidth` ±2 |
+| `]` / `[` on any non-detail panel | focused panel's `heightPct` ±5 (steals from the panel below; no-op at last position) |
+| `u` / `Ctrl+R` | undo / redo any layout mutation (max 50 in stack) |
+
+`+`/`-` keeps its current bindings so existing muscle memory works.
+`]`/`[` are the new ones for per-panel height — they mirror the
+within-column boundary drag from the keyboard.
 
 ## Context-sensitive detail (Info tab)
 
