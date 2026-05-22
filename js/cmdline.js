@@ -12,9 +12,10 @@
 'use strict';
 
 const { S, allPanels } = require('./state');
-const { richToAnsi, RESET, visibleLen } = require('./ansi');
+const { richToAnsi, RESET, visibleLen, esc } = require('./ansi');
 const { cols, rows, stdout } = require('./term');
 const { theme } = require('./themes');
+const { renderPanel } = require('./panel');
 const { getCommands, getItems: apiGetItems } = require('./plugins/api');
 
 const MAX_DROPDOWN = 8;
@@ -216,17 +217,43 @@ function renderCmdline() {
 
   const k = Math.min(_matches.length, MAX_DROPDOWN);
 
-  // Build one string with embedded cursor moves — dropdown rows + prompt
-  // + cursor positioning — and write once. The previous version emitted
-  // ~10 syscalls per keystroke (one per row + prompt + moveTo for cursor).
+  // Build one string with embedded cursor moves — dropdown panel + prompt
+  // + cursor positioning — and write once. Per-line stdout.write was a
+  // syscall per row; on slow TTYs that could tear under load.
   let buf = '';
 
-  // Dropdown rows: top-of-list is row N-k, bottom (best match) is row N-1.
-  for (let i = 0; i < k; i++) {
-    const matchIdx = k - 1 - i;             // top row shows worst, bottom shows best
-    const m = _matches[matchIdx];
-    const screenRow = ROWS - k + i;
-    buf += matchRowAnsi(screenRow, COLS, m, matchIdx === _sel);
+  // Match dropdown — bordered panel just above the prompt row. The
+  // panel chrome (border + title + count badge) reuses renderPanel so
+  // the cmdline visually belongs to lazytui rather than overlaying it
+  // with bare ANSI. The previous render painted raw `\x1b[2m` rows
+  // straight onto whatever panels sat underneath, which read as visual
+  // bleed-through with no separator. Centered horizontally so it
+  // doesn't dominate the screen on wide terminals; bounded to 80
+  // columns max for readability of long descs.
+  if (k > 0) {
+    const lines = [];
+    // Order in the lines array: top of panel = worst match, bottom
+    // of panel = best match (sel index 0), so the user's eye lands
+    // on the selected best-match nearest the prompt cursor.
+    for (let i = 0; i < k; i++) {
+      const matchIdx = k - 1 - i;
+      const m = _matches[matchIdx];
+      const label = formatMatchLine(m);
+      lines.push(matchIdx === _sel ? `[reverse]  ${label}` : `  ${label}`);
+    }
+    const panelW = Math.min(80, COLS - 2);
+    const panelH = k + 2;
+    const content = renderPanel({
+      width: panelW, height: panelH, lines,
+      title: 'Commands', focused: true,
+      count: [_sel + 1, _matches.length],
+    });
+    const offY = Math.max(0, ROWS - panelH - 1);  // just above prompt row
+    const offX = Math.max(0, Math.floor((COLS - panelW) / 2));
+    const panelLines = content.split('\n');
+    for (let i = 0; i < panelLines.length; i++) {
+      buf += `\x1b[${offY + i + 1};${offX + 1}H` + richToAnsi(panelLines[i]) + RESET;
+    }
   }
 
   // Prompt row (replaces footer). Rich-style markup mirrors renderFooter()
@@ -245,31 +272,15 @@ function renderCmdline() {
 }
 
 /**
- * Build the ANSI string for a single dropdown row (no syscall — caller
- * batches into one stdout.write).
+ * Format one match as a single rich-markup line for the dropdown.
+ * "  display ─ desc" without inner style nesting — the caller wraps
+ * the entire row in [reverse] for selection highlight, and the
+ * panel renderer adds a reset before the right border (PRINCIPLES.md
+ * §8). renderPanel handles width-based truncation.
  */
-function matchRowAnsi(row, width, match, selected) {
-  // Layout: "  display ─ desc"; selected row uses [reverse] to highlight.
-  const display = match.display;
-  const desc = match.desc;
-  const leftPad = '  ';
-  // Widths: display takes up to 30 cols, desc fills the rest. Truncate as needed.
-  let line;
-  if (desc) {
-    const dispPart = display.length > 30 ? display.slice(0, 29) + '…' : display;
-    const remaining = width - leftPad.length - visibleLen(dispPart) - 3 - 2; // " ─ ", trailing pad
-    const descPart = remaining > 0
-      ? (visibleLen(desc) > remaining ? desc.slice(0, Math.max(0, remaining - 1)) + '…' : desc)
-      : '';
-    line = `${leftPad}${dispPart} ─ ${descPart}`;
-  } else {
-    line = `${leftPad}${display}`;
-  }
-  const padded = line + ' '.repeat(Math.max(0, width - visibleLen(line)));
-  // Faint dim color on unselected rows reads as ancillary; the prompt row
-  // is the user's actual focus.
-  const sgr = selected ? '\x1b[7m' : '\x1b[2m';
-  return `\x1b[${row};1H${sgr}${padded}${RESET}`;
+function formatMatchLine(match) {
+  if (match.desc) return `${esc(match.display)} ─ ${esc(match.desc)}`;
+  return esc(match.display);
 }
 
 module.exports = {
