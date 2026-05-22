@@ -51,6 +51,98 @@ function rendererFor(type) {
 
 // --- Layout calculation ---
 
+/**
+ * Distribute the column's `availH` rows across `panels`, writing each
+ * panel's height to `S.panelHeights[panel.type]`. Three classes of
+ * panel share the column:
+ *
+ *   1. Detail (right column only). Reserved height = `availH *
+ *      detailHeightPct / 100`. Detail never carries a per-panel
+ *      heightPct — the layout-level knob is its sole control.
+ *   2. Anchored panels — those with an explicit `heightPct: N`.
+ *      Each gets `availH * N / 100` rows.
+ *   3. Flex panels — no heightPct. Split whatever remains, equally.
+ *
+ * If anchored + reserved would leave less than minH for each flex
+ * panel, anchored shrinks proportionally (largest first) until the
+ * flex panels can fit at their minimum. minH floor applies to every
+ * panel — a manually oversubscribed heightPct (sum > 100) gets
+ * scaled down here rather than crashing the renderer.
+ */
+function distributeColumnHeights(panels, availH, isRightCol, minH) {
+  if (panels.length === 0) return;
+
+  let reserved = 0;
+  let detailPanel = null;
+  if (isRightCol) {
+    detailPanel = panels.find(p => p.type === 'detail') || null;
+    if (detailPanel) {
+      reserved = Math.max(minH, Math.floor(availH * S.layout.detailHeightPct / 100));
+    }
+  }
+
+  const anchored = [];   // { p, h }
+  const flex = [];       // panel
+  let anchoredTotal = 0;
+  for (const p of panels) {
+    if (p === detailPanel) continue;
+    if (typeof p.heightPct === 'number' && isFinite(p.heightPct)) {
+      const h = Math.max(minH, Math.floor(availH * p.heightPct / 100));
+      anchored.push({ p, h });
+      anchoredTotal += h;
+    } else {
+      flex.push(p);
+    }
+  }
+
+  // If anchored + reserved + (flex × minH) > availH, scale anchored
+  // proportionally to the share they each claimed. Each panel still
+  // floors at minH — if every anchored is at minH and the column
+  // still overflows the terminal, the renderer truncates rather than
+  // crashes.
+  const flexMin = flex.length * minH;
+  if (reserved + anchoredTotal + flexMin > availH && anchoredTotal > 0) {
+    const target = Math.max(0, availH - reserved - flexMin);
+    const scale = target / anchoredTotal;
+    let allocated = 0;
+    for (const a of anchored) {
+      a.h = Math.max(minH, Math.floor(a.h * scale));
+      allocated += a.h;
+    }
+    // Distribute slack rows (caused by flooring) to the largest panels
+    // first so the visual ratios stay close to the requested split.
+    let leftover = target - allocated;
+    if (leftover > 0) {
+      const sorted = anchored.slice().sort((a, b) => b.h - a.h);
+      let i = 0;
+      while (leftover > 0) { sorted[i % sorted.length].h++; leftover--; i++; }
+    }
+    anchoredTotal = anchored.reduce((s, a) => s + a.h, 0);
+  }
+
+  // Flex panels share whatever's left.
+  const flexTotalH = Math.max(0, availH - reserved - anchoredTotal);
+  if (flex.length) {
+    const baseH = Math.floor(flexTotalH / flex.length);
+    flex.forEach((p, i) => {
+      const h = i === flex.length - 1 ? flexTotalH - baseH * (flex.length - 1) : baseH;
+      S.panelHeights[p.type] = Math.max(minH, h);
+    });
+  }
+  for (const { p, h } of anchored) S.panelHeights[p.type] = h;
+  if (detailPanel) S.panelHeights[detailPanel.type] = reserved;
+
+  // Park rounding-leftover rows on the column's last panel so the
+  // column exactly fills availH (matches the pre-heightPct behavior
+  // and avoids a visually empty strip at the bottom).
+  let sum = 0;
+  for (const p of panels) sum += S.panelHeights[p.type];
+  if (sum < availH) {
+    const last = panels[panels.length - 1];
+    S.panelHeights[last.type] += availH - sum;
+  }
+}
+
 function calcLayout() {
   refreshSize();
   const COLS = cols(), ROWS = rows();
@@ -68,26 +160,13 @@ function calcLayout() {
   const minH = 3;
 
   S.panelHeights = {};
-  const nLeft = S.layout.leftPanels.length;
-  if (nLeft > 0) {
-    const baseH = Math.floor(availH / nLeft);
-    S.layout.leftPanels.forEach((p, i) => {
-      const h = i === nLeft - 1 ? availH - baseH * (nLeft - 1) : baseH;
-      S.panelHeights[p.type] = Math.max(minH, h);
-    });
+  distributeColumnHeights(S.layout.leftPanels, availH, /*isRightCol*/ false, minH);
+  distributeColumnHeights(S.layout.rightPanels, availH, /*isRightCol*/ true,  minH);
+  // Half/full view modes read S.panelHeights.detail even when detail
+  // isn't currently rendered; keep the fallback so they don't crash.
+  if (!('detail' in S.panelHeights)) {
+    S.panelHeights.detail = Math.max(minH, Math.floor(availH * S.layout.detailHeightPct / 100));
   }
-
-  const detailH = Math.max(minH, Math.floor(availH * S.layout.detailHeightPct / 100));
-  const nonDetail = S.layout.rightPanels.filter(p => p.type !== 'detail');
-  if (nonDetail.length) {
-    const restH = Math.max(minH, availH - detailH);
-    const each = Math.floor(restH / nonDetail.length);
-    nonDetail.forEach((p, i) => {
-      const h = i === nonDetail.length - 1 ? restH - each * (nonDetail.length - 1) : each;
-      S.panelHeights[p.type] = Math.max(minH, h);
-    });
-  }
-  S.panelHeights.detail = detailH;
 
   // Heights settled — keep each panel's scroll offset such that the selected
   // item is in view. Done here (not inside render) so renderers stay pure

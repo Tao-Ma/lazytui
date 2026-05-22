@@ -62,13 +62,18 @@ let designState = null; // null when not in design mode
 //   null
 //     → armed(press, no motion yet)                  [panel drag]
 //     → dragging(motion seen, target tracked)        [panel drag]
-//     → resizing-col   (immediate, on press)         [drag-resize]
-//     → resizing-detail (immediate, on press)        [drag-resize]
+//     → resizing-col              (immediate, on press)  [drag-resize]
+//     → resizing-left-boundary    (immediate, on press)  [drag-resize]
+//     → resizing-right-boundary   (immediate, on press)  [drag-resize]
+//     → resizing-corner           (immediate, on press)  [drag-resize]
 //     → null (on release)
 // `target` is recomputed on every motion event so renderDesignOverlay
 // can paint the current drop indicator. Resize kinds capture the
-// reference-frame measurements at press time so the dragged edge
-// doesn't drift the math (see press handler for detail-resize).
+// reference-frame measurements at press time (upper.y, combinedH,
+// availH) so the dragged seam doesn't drift the math across motions,
+// and freeze any other flex panels in the column so D1 semantics
+// hold (steal from neighbor only — not redistributed across the
+// column).
 let dragState = null;
 
 // Undo / redo stacks. Module-private, session-scoped — cleared on
@@ -210,20 +215,29 @@ function onMouseEvent(kind, mx, my) {
     if (resize) {
       pushUndo();
       const ds = { kind: `resizing-${resize.edge}` };
-      if (resize.edge === 'detail') {
-        // Capture right-column extents at press time so the moving
-        // edge doesn't drift the reference frame on each motion.
-        const detailB = S.panelBounds.detail;
-        // Top of the right column = top of its topmost panel.
-        let rightTop = Infinity;
-        for (const p of S.layout.rightPanels) {
-          const b = S.panelBounds[p.type];
-          if (b && b.y < rightTop) rightTop = b.y;
-        }
-        if (rightTop === Infinity) rightTop = 0;
-        ds.detailBottomY  = detailB.y + detailB.h;
-        ds.rightColTotal  = ds.detailBottomY - rightTop;
-        if (ds.rightColTotal < 1) ds.rightColTotal = 1; // guard / 0
+      // Capture reference frame at press so the moving edge doesn't
+      // drift the math on each motion event. Both boundary and corner
+      // need the column extents + upper.y / combinedH; corner is just
+      // boundary + simultaneous col-resize.
+      if (resize.edge === 'left-boundary' || resize.edge === 'right-boundary' || resize.edge === 'corner') {
+        // Corner carries an explicit column (the side its boundary lives in);
+        // boundary edges encode the column in their edge name.
+        const column = resize.column || (resize.edge === 'left-boundary' ? 'left' : 'right');
+        const b = resize.boundary;
+        ds.column = column;
+        ds.upper = b.upper;
+        ds.lower = b.lower;
+        ds.upperStartY = S.panelBounds[b.upper.type].y;
+        ds.combinedH = S.panelBounds[b.upper.type].h + S.panelBounds[b.lower.type].h;
+        ds.availH = columnTotalH(column);
+        if (ds.availH < 1) ds.availH = 1;
+        ds.detailIsUpper = b.upper.type === 'detail';
+        ds.detailIsLower = b.lower.type === 'detail';
+        // Freeze the column's other flex panels at their current
+        // displayed heights — without this they'd absorb the
+        // boundary motion proportionally and the cursor would
+        // outrun the seam.
+        freezeColumnFlex(column, b.upper, b.lower, ds.availH);
       }
       dragState = ds;
       return;
@@ -254,20 +268,17 @@ function onMouseEvent(kind, mx, my) {
     // Drag-resize: motion directly mutates the resize target. No
     // armed→dragging promotion; the gesture is committed at press.
     if (dragState.kind === 'resizing-col') {
-      const newW = Math.max(20, Math.min(60, mx + 1));
-      if (newW !== S.layout.leftWidth) {
-        S.layout.leftWidth = newW;
-        S.layoutDirty = true;
-      }
+      applyColResize(mx);
       return;
     }
-    if (dragState.kind === 'resizing-detail') {
-      const newH = dragState.detailBottomY - my;
-      const pct  = Math.max(20, Math.min(90, Math.round((newH / dragState.rightColTotal) * 100)));
-      if (pct !== S.layout.detailHeightPct) {
-        S.layout.detailHeightPct = pct;
-        S.layoutDirty = true;
-      }
+    if (dragState.kind === 'resizing-left-boundary'
+        || dragState.kind === 'resizing-right-boundary') {
+      applyBoundaryResize(my);
+      return;
+    }
+    if (dragState.kind === 'resizing-corner') {
+      applyColResize(mx);
+      applyBoundaryResize(my);
       return;
     }
 
@@ -299,28 +310,160 @@ function onMouseEvent(kind, mx, my) {
 
 /**
  * Check whether (mx, my) lands on a draggable separator. Returns
- * `{ edge: 'col' | 'detail' }` or null. Has priority over panel
- * hit-testing in onMouseEvent('press'). Exported for tests.
+ * `{ edge, boundary? }` or null. Edges:
+ *   'corner'         — col-separator × any right-col boundary (both
+ *                       axes drag in one gesture).
+ *   'col'            — col-separator only.
+ *   'right-boundary' — horizontal seam between two right-col panels.
+ *                       If detail is one of the two, motion routes
+ *                       to detailHeightPct; otherwise it splits two
+ *                       adjacent heightPct values.
+ *   'left-boundary'  — horizontal seam between two left-col panels.
  *
- * Tolerance: column separator is `mx ∈ [leftWidth-1, leftWidth+1]`;
- * detail-panel top is the exact row `my === panelBounds.detail.y`
- * (the top border row of the detail panel). The ±1 column tolerance
- * forgives one cell of mouse imprecision.
+ * `boundary` carries `{ upper, lower, y }` for boundary/corner hits
+ * so the motion handler doesn't have to re-discover the pair. ±1
+ * tolerance on both axes — same forgiveness as the col separator.
+ * Exported for tests.
  */
 function pointToResizeTarget(mx, my) {
   const leftW = S.layout.leftWidth;
-  // Detail-top check first: a press on the detail top-border that
-  // happens to be at x=leftWidth (= the column separator) should
-  // resize the column, not the detail height. Reverse priority so
-  // detail-top only matches when mx is inside the right column proper.
-  if (Math.abs(mx - leftW) <= 1) {
-    return { edge: 'col' };
+  const COLS = cols();
+  const colMatch = Math.abs(mx - leftW) <= 1;
+  const rightB = boundaryNear(S.layout.rightPanels, my);
+  const leftB  = boundaryNear(S.layout.leftPanels,  my);
+
+  // Corner first — both axes match at the intersection of col-sep
+  // and a column boundary (either side). A col-sep-only press wins
+  // on the same row when no boundary is nearby, so col-resize still
+  // works on every other row of the col separator. Right-col wins
+  // ties (both columns happen to have a seam at the same y), since
+  // that was the only corner shape before this commit.
+  if (colMatch && rightB) return { edge: 'corner', boundary: rightB, column: 'right' };
+  if (colMatch && leftB)  return { edge: 'corner', boundary: leftB,  column: 'left'  };
+  if (colMatch)            return { edge: 'col' };
+  if (rightB && mx > leftW + 1 && mx < COLS) {
+    return { edge: 'right-boundary', boundary: rightB };
   }
-  const detailB = S.panelBounds.detail;
-  if (detailB && my === detailB.y && mx > leftW + 1 && mx < detailB.x + detailB.w) {
-    return { edge: 'detail' };
+  if (leftB && mx >= 0 && mx < leftW) {
+    return { edge: 'left-boundary', boundary: leftB };
   }
   return null;
+}
+
+/**
+ * Return the horizontal boundary between two adjacent panels in
+ * `panels` that's within ±1 of `my`, or null. The boundary y is
+ * `upper.y + upper.h` — the row where the next panel's top border
+ * sits.
+ */
+function boundaryNear(panels, my) {
+  for (let i = 0; i < panels.length - 1; i++) {
+    const b = S.panelBounds[panels[i].type];
+    if (!b) continue;
+    const y = b.y + b.h;
+    if (Math.abs(my - y) <= 1) {
+      return { upper: panels[i], lower: panels[i + 1], y };
+    }
+  }
+  return null;
+}
+
+/** Total height of a column, summed from its rendered bounds. */
+function columnTotalH(column) {
+  const panels = column === 'left' ? S.layout.leftPanels : S.layout.rightPanels;
+  let total = 0;
+  for (const p of panels) {
+    const b = S.panelBounds[p.type];
+    if (b) total += b.h;
+  }
+  return total;
+}
+
+/**
+ * Convert any panels in `column` that currently have no `heightPct`
+ * (and aren't the upper/lower of the active drag, and aren't detail
+ * which uses detailHeightPct) to anchored at their current rendered
+ * height. Without this, the moment motion shrinks the dragged pair,
+ * the flex panels would absorb the freed rows proportionally and
+ * the boundary visual would lag behind the cursor.
+ */
+function freezeColumnFlex(column, upper, lower, availH) {
+  const panels = column === 'left' ? S.layout.leftPanels : S.layout.rightPanels;
+  for (const p of panels) {
+    if (p === upper || p === lower) continue;
+    if (p.type === 'detail') continue;
+    if (typeof p.heightPct === 'number') continue;
+    const b = S.panelBounds[p.type];
+    if (!b) continue;
+    p.heightPct = Math.round((b.h / availH) * 100);
+  }
+}
+
+const MIN_PANEL_H = 3;
+
+/**
+ * Column-separator drag: leftWidth follows cursor, clamped to [20, 60].
+ * Pulled out so corner drag can reuse it.
+ */
+function applyColResize(mx) {
+  const newW = Math.max(20, Math.min(60, mx + 1));
+  if (newW !== S.layout.leftWidth) {
+    S.layout.leftWidth = newW;
+    S.layoutDirty = true;
+  }
+}
+
+/**
+ * Within-column boundary drag: redistributes height between the two
+ * panels adjacent to the boundary captured at press. Only those two
+ * are touched (D1 semantics — steal from neighbor only). When one
+ * side is `detail`, its share is written to `S.layout.detailHeightPct`
+ * (the layout-level knob) and clamped to [20, 90] to match the
+ * existing keyboard +/- bounds; the non-detail neighbor takes the
+ * complement. With two non-detail panels, both get `heightPct`.
+ * Reused by corner drag for the height axis.
+ */
+const DETAIL_MIN_PCT = 20;
+const DETAIL_MAX_PCT = 90;
+
+function applyBoundaryResize(my) {
+  const ds = dragState;
+  if (!ds) return;
+  let upperH = Math.max(MIN_PANEL_H, Math.min(ds.combinedH - MIN_PANEL_H, my - ds.upperStartY));
+  let lowerH = ds.combinedH - upperH;
+
+  // Detail-pct clamp [20, 90] — snap the detail side, then re-derive
+  // the neighbor's height from the snapped value so the seam visually
+  // stops at the clamp boundary instead of continuing past it.
+  if (ds.detailIsUpper) {
+    const minH = Math.max(MIN_PANEL_H, Math.floor(ds.availH * DETAIL_MIN_PCT / 100));
+    const maxH = Math.min(ds.combinedH - MIN_PANEL_H, Math.floor(ds.availH * DETAIL_MAX_PCT / 100));
+    upperH = Math.max(minH, Math.min(maxH, upperH));
+    lowerH = ds.combinedH - upperH;
+  } else if (ds.detailIsLower) {
+    const minH = Math.max(MIN_PANEL_H, Math.floor(ds.availH * DETAIL_MIN_PCT / 100));
+    const maxH = Math.min(ds.combinedH - MIN_PANEL_H, Math.floor(ds.availH * DETAIL_MAX_PCT / 100));
+    lowerH = Math.max(minH, Math.min(maxH, lowerH));
+    upperH = ds.combinedH - lowerH;
+  }
+
+  const upperPct = Math.round(upperH / ds.availH * 100);
+  const lowerPct = Math.round(lowerH / ds.availH * 100);
+  const setPct = (panel, pct) => {
+    if (panel.heightPct !== pct) {
+      panel.heightPct = pct;
+      S.layoutDirty = true;
+    }
+  };
+  const setDetailPct = (pct) => {
+    if (S.layout.detailHeightPct !== pct) {
+      S.layout.detailHeightPct = pct;
+      S.layoutDirty = true;
+    }
+  };
+  if (ds.detailIsUpper)      { setDetailPct(upperPct); setPct(ds.lower, lowerPct); }
+  else if (ds.detailIsLower) { setDetailPct(lowerPct); setPct(ds.upper, upperPct); }
+  else                       { setPct(ds.upper, upperPct); setPct(ds.lower, lowerPct); }
 }
 
 /**

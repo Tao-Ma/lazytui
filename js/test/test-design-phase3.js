@@ -60,80 +60,100 @@ function setupFixture() {
 
 // ===============================================================
 describe('[1] pointToResizeTarget — separator hit-tests', () => {
+  // y=2 is inside actions (y=0,h=5), not on any boundary (boundaries
+  // sit at y=5, y=10, y=15). Used wherever we want to isolate
+  // col-separator hit-tests from the boundary hit-tests.
   it('column separator at exactly x=leftWidth → edge=col', () => {
     setupFixture();
-    eq(pointToResizeTarget(30, 5).edge, 'col');
+    eq(pointToResizeTarget(30, 2).edge, 'col');
   });
   it('column separator at x=leftWidth-1 → edge=col (tolerance)', () => {
     setupFixture();
-    eq(pointToResizeTarget(29, 5).edge, 'col');
+    eq(pointToResizeTarget(29, 2).edge, 'col');
   });
   it('column separator at x=leftWidth+1 → edge=col (tolerance)', () => {
     setupFixture();
-    eq(pointToResizeTarget(31, 5).edge, 'col');
+    eq(pointToResizeTarget(31, 2).edge, 'col');
   });
   it('out of tolerance (x=27 or x=33) → not col', () => {
     setupFixture();
-    const t27 = pointToResizeTarget(27, 5);
+    const t27 = pointToResizeTarget(27, 2);
     eq(t27, null, 'x=27 → null');
-    const t33 = pointToResizeTarget(33, 5);
+    const t33 = pointToResizeTarget(33, 2);
     assert(t33 === null || t33.edge !== 'col', `x=33 → not col (got ${JSON.stringify(t33)})`);
   });
-  it('detail-top row inside right column → edge=detail', () => {
+  it('detail-top row inside right column → edge=right-boundary with detail as lower', () => {
     setupFixture();
-    // detail.y === 15, inside right column (mx > leftWidth+1 = 31)
-    eq(pointToResizeTarget(50, 15).edge, 'detail');
+    const t = pointToResizeTarget(50, 15);
+    eq(t.edge, 'right-boundary');
+    eq(t.boundary.lower.type, 'detail');
   });
-  it('detail-top row but at column separator → col wins (priority)', () => {
+  it('detail-top row at column separator → corner (both axes drag)', () => {
     setupFixture();
-    // mx=30 is inside col-tolerance (29..31) — should be 'col' not 'detail'
-    eq(pointToResizeTarget(30, 15).edge, 'col');
+    const t = pointToResizeTarget(30, 15);
+    eq(t.edge, 'corner');
+    eq(t.boundary.lower.type, 'detail');
   });
-  it('detail-top at non-top y → no hit', () => {
+  it('row well inside a panel (no boundary near) → no hit outside col-sep', () => {
     setupFixture();
-    eq(pointToResizeTarget(50, 16), null);
+    eq(pointToResizeTarget(50, 12), null, 'mx=50 my=12 (inside stats) → null');
+  });
+  it('within-column boundary in right col (stats/actions seam, y=5) → right-boundary', () => {
+    setupFixture();
+    const t = pointToResizeTarget(60, 5);
+    eq(t.edge, 'right-boundary');
+    eq(t.boundary.upper.type, 'actions');
+    eq(t.boundary.lower.type, 'stats');
+  });
+  it('within-column boundary in left col (containers/groups seam, y=10) → left-boundary', () => {
+    setupFixture();
+    const t = pointToResizeTarget(10, 10);
+    eq(t.edge, 'left-boundary');
+    eq(t.boundary.upper.type, 'containers');
+    eq(t.boundary.lower.type, 'groups');
   });
 });
 
 // ===============================================================
 describe('[2] drag-to-resize — column separator', () => {
+  // y=2 keeps these pure col-separator hits (no boundary nearby).
   it('press on col separator then motion shrinks leftWidth', () => {
     setupFixture();
-    onMouseEvent('press',  30, 5);
-    onMouseEvent('motion', 24, 5);
+    onMouseEvent('press',  30, 2);
+    onMouseEvent('motion', 24, 2);
     eq(S.layout.leftWidth, 25, 'leftWidth = mx + 1 = 25');
     eq(S.layoutDirty, true);
   });
   it('motion clamps at lower bound (20)', () => {
     setupFixture();
-    onMouseEvent('press',  30, 5);
-    onMouseEvent('motion',  5, 5);
+    onMouseEvent('press',  30, 2);
+    onMouseEvent('motion',  5, 2);
     eq(S.layout.leftWidth, 20);
   });
   it('motion clamps at upper bound (60)', () => {
     setupFixture();
-    onMouseEvent('press',  30, 5);
-    onMouseEvent('motion', 99, 5);
+    onMouseEvent('press',  30, 2);
+    onMouseEvent('motion', 99, 2);
     eq(S.layout.leftWidth, 60);
   });
   it('release ends resize gesture', () => {
     setupFixture();
-    onMouseEvent('press',   30, 5);
-    onMouseEvent('motion',  40, 5);
-    onMouseEvent('release', 40, 5);
+    onMouseEvent('press',   30, 2);
+    onMouseEvent('motion',  40, 2);
+    onMouseEvent('release', 40, 2);
     // Further motion should NOT change leftWidth (drag is over)
-    onMouseEvent('motion', 20, 5);
+    onMouseEvent('motion', 20, 2);
     eq(S.layout.leftWidth, 41, 'leftWidth unchanged after release');
   });
   it('single undo entry pushed for the whole drag', () => {
     setupFixture();
     const depthBefore = _getUndoDepth();
-    onMouseEvent('press',   30, 5);
+    onMouseEvent('press',   30, 2);
     // Multiple motions during the drag
-    onMouseEvent('motion',  35, 5);
-    onMouseEvent('motion',  40, 5);
-    onMouseEvent('motion',  45, 5);
-    onMouseEvent('release', 45, 5);
+    onMouseEvent('motion',  35, 2);
+    onMouseEvent('motion',  40, 2);
+    onMouseEvent('motion',  45, 2);
+    onMouseEvent('release', 45, 2);
     eq(_getUndoDepth(), depthBefore + 1, 'only one undo entry pushed for the gesture');
   });
 });
@@ -155,6 +175,142 @@ describe('[3] drag-to-resize — detail-panel top edge', () => {
     onMouseEvent('press',  50, 15);
     onMouseEvent('motion', 50, 36);  // newDetailH = 4 → 10% but clamped to 20
     eq(S.layout.detailHeightPct, 20);
+  });
+});
+
+// ===============================================================
+describe('[3a] drag-to-resize — within-column boundary (left col)', () => {
+  // Boundary between containers (y=0..9) and groups (y=10..19) at y=10.
+  // availH for left col = 20. press at (10, 10) → left-boundary drag.
+  it('press + motion redistributes containers/groups heightPct', () => {
+    setupFixture();
+    onMouseEvent('press',  10, 10);
+    onMouseEvent('motion', 10,  6);  // drag boundary up to y=6
+    // upperStartY=0, combinedH=20, availH=20.
+    // proposedUpperH = max(3, min(17, 6)) = 6. proposedLowerH = 14.
+    // containers.heightPct = round(6/20*100) = 30. groups = round(14/20*100) = 70.
+    eq(S.layout.leftPanels[0].heightPct, 30, 'containers anchored');
+    eq(S.layout.leftPanels[1].heightPct, 70, 'groups anchored');
+    eq(S.layoutDirty, true);
+  });
+  it('drag clamps so each side stays ≥ MIN_PANEL_H (3 rows)', () => {
+    setupFixture();
+    onMouseEvent('press',  10, 10);
+    onMouseEvent('motion', 10,  0);  // drag boundary to row 0 (would zero containers)
+    // proposedUpperH = max(3, min(17, 0)) = 3. proposedLowerH = 17.
+    eq(S.layout.leftPanels[0].heightPct, 15, 'containers floored at minH=3 (3/20=15)');
+    eq(S.layout.leftPanels[1].heightPct, 85);
+  });
+});
+
+describe('[3b] drag-to-resize — within-column boundary (right col, non-detail)', () => {
+  // Boundary between actions (y=0..4) and stats (y=5..14) at y=5.
+  // press at (60, 5) → right-boundary, both non-detail.
+  it('press + motion redistributes actions/stats heightPct, detail untouched', () => {
+    setupFixture();
+    const prevDetail = S.layout.detailHeightPct;
+    onMouseEvent('press',  60, 5);
+    onMouseEvent('motion', 60, 8);  // boundary moves down → actions grows
+    // upperStartY=0, combinedH=actions.h(5)+stats.h(10)=15, availH=40.
+    // proposedUpperH = max(3, min(12, 8)) = 8. proposedLowerH = 7.
+    // actions.heightPct = round(8/40*100) = 20. stats = round(7/40*100) = 18.
+    eq(S.layout.rightPanels[0].heightPct, 20, 'actions anchored');
+    eq(S.layout.rightPanels[1].heightPct, 18, 'stats anchored');
+    eq(S.layout.detailHeightPct, prevDetail, 'detailHeightPct untouched');
+  });
+});
+
+describe('[3c] drag-to-resize — corner (col-separator × right boundary)', () => {
+  // Intersection: x=leftWidth(30) AND y=detail.y(15). press at (30, 15) → corner.
+  it('single gesture adjusts both leftWidth and detailHeightPct', () => {
+    setupFixture();
+    onMouseEvent('press',  30, 15);
+    onMouseEvent('motion', 35, 12);  // diagonal NE → leftW grows, detail grows
+    // Col axis: leftW = 35+1 = 36.
+    // Height axis: upper=stats (y=5,h=10), lower=detail (y=15,h=25).
+    //   upperStartY=5, combinedH=35, availH=40, detailIsLower.
+    //   proposedUpperH = max(3, min(32, 12-5)) = 7. proposedLowerH = 28.
+    //   detailHeightPct = round(28/40*100) = 70. stats.heightPct = round(7/40*100) = 18.
+    eq(S.layout.leftWidth, 36, 'leftWidth follows mx');
+    eq(S.layout.detailHeightPct, 70, 'detailHeightPct follows my');
+    eq(S.layout.rightPanels[1].heightPct, 18, 'stats anchored from the height axis');
+  });
+});
+
+describe('[3c2] drag-to-resize — left-side corner (col-separator × left boundary)', () => {
+  // Intersection: x=leftWidth(30) AND y=10 (containers/groups seam).
+  // Regression: a previous version only checked colMatch×rightB for the
+  // corner, so col-sep × left-boundary fell through to plain 'col' and
+  // the boundary axis didn't move.
+  it('single gesture adjusts both leftWidth and left-col panel heightPcts', () => {
+    setupFixture();
+    onMouseEvent('press',  30, 10);
+    onMouseEvent('motion', 26, 14);  // diagonal SW → leftW shrinks, boundary down
+    // Col axis: leftW = 26+1 = 27.
+    // Height axis: upper=containers (y=0,h=10), lower=groups (y=10,h=10).
+    //   upperStartY=0, combinedH=20, availH=20.
+    //   proposedUpperH = max(3, min(17, 14)) = 14. proposedLowerH = 6.
+    //   containers.heightPct = round(14/20*100) = 70.
+    //   groups.heightPct = round(6/20*100) = 30.
+    eq(S.layout.leftWidth, 27, 'leftWidth follows mx');
+    eq(S.layout.leftPanels[0].heightPct, 70, 'containers anchored from height axis');
+    eq(S.layout.leftPanels[1].heightPct, 30, 'groups anchored from height axis');
+  });
+});
+
+describe('[3d] press freezes flex panels in the dragged column', () => {
+  it('pressing right-col boundary anchors actions even though only stats/detail dragged', () => {
+    setupFixture();
+    eq(S.layout.rightPanels[0].heightPct, undefined, 'actions starts flex');
+    onMouseEvent('press', 60, 15);  // press on stats/detail boundary
+    // freezeColumnFlex runs on press — actions (not in the drag pair,
+    // not detail, no existing heightPct) gets anchored to its current
+    // rendered share: round(5/40*100) = 13.
+    eq(S.layout.rightPanels[0].heightPct, 13, 'actions frozen at its rendered pct');
+  });
+});
+
+// ===============================================================
+describe('[3e] calcLayout — heightPct distribution', () => {
+  const { calcLayout } = require('../layout');
+  function freshLayout() {
+    S.layout = {
+      leftWidth: 30, detailHeightPct: 60,
+      leftPanels: [
+        { type: 'containers', title: 'C', column: 'left', hotkey: '1' },
+        { type: 'groups',     title: 'G', column: 'left', hotkey: '2' },
+      ],
+      rightPanels: [
+        { type: 'actions', title: 'A', column: 'right', hotkey: '0' },
+        { type: 'stats',   title: 'S', column: 'right', hotkey: '' },
+        { type: 'detail',  title: 'D', column: 'right', hotkey: 'o' },
+      ],
+    };
+  }
+  it('all-flex left col splits equally', () => {
+    freshLayout();
+    process.stdout.columns = 100; process.stdout.rows = 30; // availH = 29
+    calcLayout();
+    eq(S.panelHeights.containers, 14);
+    eq(S.panelHeights.groups, 15, 'last flex absorbs rounding');
+  });
+  it('anchored heightPct claims its share, flex absorbs remainder', () => {
+    freshLayout();
+    S.layout.leftPanels[0].heightPct = 70;  // containers fixed at 70%
+    process.stdout.columns = 100; process.stdout.rows = 30; // availH = 29
+    calcLayout();
+    eq(S.panelHeights.containers, 20, 'floor(29 * 0.7) = 20');
+    eq(S.panelHeights.groups, 9, 'flex remainder');
+  });
+  it('oversubscribed anchored values scale proportionally', () => {
+    freshLayout();
+    S.layout.leftPanels[0].heightPct = 90;
+    S.layout.leftPanels[1].heightPct = 90;
+    process.stdout.columns = 100; process.stdout.rows = 30; // availH = 29
+    calcLayout();
+    eq(S.panelHeights.containers + S.panelHeights.groups, 29, 'column fills availH after scaling');
+    assert(S.panelHeights.containers >= 3, 'containers ≥ minH');
+    assert(S.panelHeights.groups >= 3, 'groups ≥ minH');
   });
 });
 
