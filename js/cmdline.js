@@ -20,6 +20,15 @@ const { getCommands, getItems: apiGetItems } = require('./plugins/api');
 
 const MAX_DROPDOWN = 8;
 
+// Tracks the panel height (including borders) painted by the previous
+// renderCmdline. When the new render is shorter (e.g., the user typed
+// more chars and the match set shrank), we invalidate the diff cache
+// for the now-uncovered rows so layout.render repaints the underlying
+// panels there. Without this, the previous-render residue sticks
+// around until the user types something that grows the panel again
+// or until the overlay closes entirely.
+let _lastPanelH = 0;
+
 // Module-private mode state. S.cmdMode (the flag) stays on S so the
 // render conductor can detect overlay-active. The buffers (typed
 // text, selected match, cached match list) are transient per-session
@@ -35,6 +44,7 @@ function enterCmdline() {
   _text = '';
   _sel = 0;
   _matches = rebuildMatches('');
+  _lastPanelH = 0;
 }
 
 function exitCmdline() {
@@ -42,8 +52,11 @@ function exitCmdline() {
   _text = '';
   _sel = 0;
   _matches = [];
+  _lastPanelH = 0;
   // Cursor visibility is derived in layout.render() from S.cmdMode +
-  // S.terminalMode — no need to emit hideCursor here.
+  // S.terminalMode — no need to emit hideCursor here. Overlay-close
+  // detection in layout.render forces a full repaint, which wipes
+  // any cmdline-panel residue.
 }
 
 // --- Registry ---
@@ -227,9 +240,36 @@ function renderCmdline() {
   // the cmdline visually belongs to lazytui rather than overlaying it
   // with bare ANSI. The previous render painted raw `\x1b[2m` rows
   // straight onto whatever panels sat underneath, which read as visual
-  // bleed-through with no separator. Centered horizontally so it
-  // doesn't dominate the screen on wide terminals; bounded to 80
-  // columns max for readability of long descs.
+  // bleed-through with no separator.
+  //
+  // Width scales with the terminal: full width minus a 2-cell margin
+  // on each side, bottoming out at 40 so it stays usable on narrow
+  // terminals. Centered horizontally.
+  const panelH = k > 0 ? k + 2 : 0;
+  const panelW = Math.max(40, COLS - 4);
+
+  // Invalidate the diff cache for any rows that the previous render
+  // painted but this one won't. Without this the residue from the
+  // taller previous panel sticks around until the overlay closes.
+  // Done BEFORE we emit the new paint so the next layout.render gets
+  // dirty markers for those rows — but since renderCmdline runs at
+  // the tail of THIS render(), the invalidation actually takes effect
+  // on the NEXT render. To make THIS frame clean, also blank the
+  // affected rows directly below (the underlying panel will redraw
+  // on the next keystroke).
+  if (panelH < _lastPanelH) {
+    const oldTop = ROWS - _lastPanelH - 1;
+    const newTop = ROWS - panelH - 1;
+    require('./layout').invalidateRows(oldTop, newTop);
+    // Blank the rows now so this frame doesn't show residue. Next
+    // render repaints them from the underlying panels via the diff
+    // cache we just invalidated.
+    for (let y = oldTop; y < newTop; y++) {
+      buf += `\x1b[${y + 1};1H\x1b[K`;
+    }
+  }
+  _lastPanelH = panelH;
+
   if (k > 0) {
     const lines = [];
     // Order in the lines array: top of panel = worst match, bottom
@@ -241,8 +281,6 @@ function renderCmdline() {
       const label = formatMatchLine(m);
       lines.push(matchIdx === _sel ? `[reverse]  ${label}` : `  ${label}`);
     }
-    const panelW = Math.min(80, COLS - 2);
-    const panelH = k + 2;
     const content = renderPanel({
       width: panelW, height: panelH, lines,
       title: 'Commands', focused: true,

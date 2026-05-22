@@ -443,7 +443,22 @@ function forceFullRepaint() {
   _forceFullRepaint = true;
 }
 
+/**
+ * Invalidate the diff cache for a specific row range (0-based, half-open
+ * — [startY, endY)). Used when an overlay shrinks and the cells it
+ * previously covered need to be repainted from the underlying panels
+ * on the next render. Cheaper than a full repaint when only a few rows
+ * are affected.
+ */
+function invalidateRows(startY, endY) {
+  for (let y = startY; y < endY; y++) {
+    if (y >= 0 && _prevRows[y] !== undefined) {
+      _prevRows[y] = '';
+    }
+  }
+}
+
 module.exports = {
   calcLayout, render, redraw, renderFooter, renderTerminalOverlay,
-  forceFullRepaint,
+  forceFullRepaint, invalidateRows,
 };
