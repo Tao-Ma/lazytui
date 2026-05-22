@@ -185,6 +185,15 @@ function setupKeyListener() {
     else if (data === '\r' || data === '\n') handleKey('return');
     else if (data === '\x03') { cleanup(); process.exit(0); }
     else if (data === '\x12') handleKey('ctrl-r');  // Ctrl+R → design-mode redo
+    // Defensive Esc fallthrough: some terminals (and Node buffering
+    // states) deliver a bare Esc as `\x1b\x1b` or `\x1b<followup>` in
+    // a single chunk. The strict `data === '\x1b'` check above misses
+    // those, and the catch-all below would dispatch the raw bytes as
+    // an opaque key string that no mode handler recognizes. Treat any
+    // chunk starting with `\x1b` that survived the specific-sequence
+    // checks as Esc — mode handlers exit cleanly. Trailing bytes are
+    // discarded (lazytui doesn't bind any Alt/Meta combinations).
+    else if (data.charCodeAt(0) === 0x1b) handleKey('escape');
     else handleKey(data, data);
   });
 }
