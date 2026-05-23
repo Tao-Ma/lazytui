@@ -64,13 +64,13 @@ git push origin vX.Y.Z
 Don't reuse a tag silently after a partial release; deletion + re-tag is
 the visible record.
 
-## Publishing to npm (not yet enabled)
+## Publishing to npm
 
-`package.json` currently has `"private": true`, so `npm publish` would
-refuse. When ready to ship to npm:
+As of v0.3.0, `package.json` has `"private": false`, so `npm publish`
+is unblocked at the CLI level. The actual publish is still manual —
+no automation in `release.yml` yet. To wire it up:
 
-1. Set `"private": false` (or remove the field) in `package.json`.
-2. Add an `npm publish` step to `release.yml` after the tarball build:
+1. Add an `npm publish` step to `release.yml` after the tarball build:
    ```yaml
    - uses: actions/setup-node@v4
      with:
@@ -80,13 +80,11 @@ refuse. When ready to ship to npm:
      env:
        NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
    ```
-3. Create an `NPM_TOKEN` secret in the GitHub repo settings (npm
+2. Create an `NPM_TOKEN` secret in the GitHub repo settings (npm
    automation token from npmjs.com).
-4. First publish: `npm publish` from a tagged commit locally to make
-   sure the package metadata is right.
+3. First publish: `npm publish` from a tagged commit locally to make
+   sure the package metadata is right; subsequent releases can ride
+   the workflow.
 
-Single-runtime now — the parser is in JS (`js/parser/`) so an
-`npm install -g lazytui` user only needs Node ≥ 18. `package.json`
-still carries `"private": true` while the publish flow stabilizes;
-flipping that to false is all that's needed to enable
-`npm publish`.
+Single-runtime — the parser is in JS (`js/parser/`) so an
+`npm install -g lazytui` user only needs Node ≥ 18.

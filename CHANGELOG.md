@@ -6,6 +6,8 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-05-24
+
 ### Changed
 - **Parser rewritten from Python to JS — lazytui is single-runtime now.**
   The Python parser (`parser/`, 1124 LOC) and its pytest suite (`tests/`,
@@ -18,9 +20,11 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   - **`bin/lazytui`** drops the `.venv/bin` PATH shim — no Python
     needed at runtime.
   - **`package.json`** adds `js-yaml ^4.1.1` as a runtime dep
-    (alongside `node-pty` and `@xterm/headless`). `private: true`
-    stays for now — flipping that to false is all that's needed to
-    enable `npm publish` when ready.
+    (alongside `node-pty` and `@xterm/headless`), and flips
+    `"private": true` → `false` now that the dual-runtime install
+    story is gone. `npm publish` passes its CLI guard; the actual
+    publish to npmjs.com is still a separate manual step (no
+    `release.yml` automation yet — see RELEASING.md).
   - **CI** drops the "Set up Python / install pyyaml / run pytest"
     steps from both `.github/workflows/test.yml` and `release.yml`.
     `requirements.txt` and `pytest.ini` are removed.
@@ -442,5 +446,6 @@ release tarballs. Full pre-squash development history is preserved
 on the internal gitea mirror under the `backup/main-history` branch
 and the `v0.1.0-pre-squash` tag.
 
-[Unreleased]: https://github.com/Tao-Ma/lazytui/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/Tao-Ma/lazytui/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/Tao-Ma/lazytui/releases/tag/v0.3.0
 [0.1.0]: https://github.com/Tao-Ma/lazytui/releases/tag/v0.1.0

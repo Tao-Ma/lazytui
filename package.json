@@ -1,7 +1,7 @@
 {
   "name": "lazytui",
-  "version": "0.1.0",
-  "private": true,
+  "version": "0.3.0",
+  "private": false,
   "description": "everybody tui — a glue framework for the tools around your real work; AI writes it, you run it as TUI or CLI.",
   "keywords": [
     "tui",
