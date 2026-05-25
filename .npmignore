@@ -22,6 +22,7 @@ test/
 dist/
 node_modules/
 
-# Editor / OS.
+# Editor / OS / agent tooling.
 .DS_Store
 *.swp
+.claude/
