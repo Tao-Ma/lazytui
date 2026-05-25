@@ -33,6 +33,13 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
     `_onSessionExit(id, exitCode)` so the view-reset behavior is
     unit-testable without mocking node-pty. `tabs.handleSession
     CleanExit` is unchanged.
+  - On session exit (clean, non-zero, or signal like SIGQUIT
+    from Ctrl+\), `_onSessionExit` calls `forceFullRepaint()`
+    when the exiting session was the user-visible one. Without
+    it, the diff cache held the PTY-painted cells as "unchanged"
+    and skipped them — chrome behind the dead PTY never redrew,
+    leaving the last frame stuck on screen. Same diff-cache-
+    reclaim pattern as the SIGCONT/suspend path.
   - Tests: replaces `test-spawn-bare.js` (which pinned the old
     blocking semantics) with `test-spawn-pty-tab.js` — 21
     assertions across 5 sections covering the new path, the
