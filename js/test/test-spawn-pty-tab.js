@@ -25,7 +25,8 @@ const spawnCalls = [];
 child_process.spawn = (...args) => { spawnCalls.push(args); return { on() {}, kill() {} }; };
 
 const layout = require('../layout');
-layout.forceFullRepaint = () => {};
+let forceFullRepaintCalls = 0;
+layout.forceFullRepaint = () => { forceFullRepaintCalls++; };
 layout.render = () => {};
 
 const history = require('../history');
@@ -52,6 +53,7 @@ function resetState() {
   S.terminalMode = false;
   spawnCalls.length = 0;
   historyStarts.length = 0;
+  forceFullRepaintCalls = 0;
   delete process.env.TMUX;
 }
 
@@ -114,6 +116,9 @@ describe('[3] _onSessionExit: clean exit (0) on the active tab', () => {
     assert(S.ephemeralTerminals.g1[ephKey] != null, 'pre: tab exists');
   });
 
+  // forceFullRepaintCalls captures the spawn-time repaint above;
+  // reset so the assertion below isolates the onExit-time repaint.
+  forceFullRepaintCalls = 0;
   _onSessionExit(sessionId, 0);
 
   it('drops viewMode to "normal" (user lands in normal layout)', () => {
@@ -123,6 +128,10 @@ describe('[3] _onSessionExit: clean exit (0) on the active tab', () => {
     eq(S.ephemeralTerminals.g1, undefined,
       'tab gone (group entry also collapses when last tab removed)');
   });
+  it('calls forceFullRepaint (active session — PTY painted cells need reclaim)', () => {
+    assert(forceFullRepaintCalls >= 1,
+      'forceFullRepaint fired so chrome behind the PTY redraws');
+  });
 });
 
 describe('[4] _onSessionExit: non-zero exit on the active tab', () => {
@@ -131,6 +140,7 @@ describe('[4] _onSessionExit: non-zero exit on the active tab', () => {
   const ephKey = Object.keys(S.ephemeralTerminals.g1)[0];
   const sessionId = `g1_${ephKey}`;
 
+  forceFullRepaintCalls = 0;
   _onSessionExit(sessionId, 1);
 
   it('drops viewMode (rest of TUI reachable for navigation)', () => {
@@ -140,6 +150,10 @@ describe('[4] _onSessionExit: non-zero exit on the active tab', () => {
     assert(S.ephemeralTerminals.g1 && S.ephemeralTerminals.g1[ephKey] != null,
       'tab still present after non-zero exit');
   });
+  it('calls forceFullRepaint — fixes the Ctrl+\\ stuck-frame bug', () => {
+    assert(forceFullRepaintCalls >= 1,
+      'forceFullRepaint fired even on non-zero exit (SIGQUIT, ENOENT, etc)');
+  });
 });
 
 describe('[5] _onSessionExit: clean exit on a NON-active session', () => {
@@ -148,6 +162,7 @@ describe('[5] _onSessionExit: clean exit on a NON-active session', () => {
   const activeEphKey = Object.keys(S.ephemeralTerminals.g1)[0];
   S.ephemeralTerminals.g1.orphan = { cmd: 'true', label: 'orphan' };
 
+  forceFullRepaintCalls = 0;
   _onSessionExit('g1_orphan', 0);
 
   it('does NOT touch viewMode (orphan was not the focused tab)', () => {
@@ -160,6 +175,10 @@ describe('[5] _onSessionExit: clean exit on a NON-active session', () => {
   it('leaves the active tab intact', () => {
     assert(S.ephemeralTerminals.g1 && S.ephemeralTerminals.g1[activeEphKey] != null,
       'active tab still there');
+  });
+  it('does NOT forceFullRepaint (orphan PTY never painted to current view)', () => {
+    eq(forceFullRepaintCalls, 0,
+      'no chrome reclaim needed for a background-tab exit');
   });
 });
 

@@ -68,14 +68,29 @@ function ensureSession(id, cmd, cols, rows) {
 function _onSessionExit(id, exitCode) {
   const tabs = require('./tabs');
   let anyChange = false;
-  if (S.viewMode === 'full' && tabs.activeTerminalId() === id) {
+  const wasActive = tabs.activeTerminalId() === id;
+  if (S.viewMode === 'full' && wasActive) {
     S.viewMode = 'normal';
     anyChange = true;
   }
   if (exitCode === 0 && tabs.handleSessionCleanExit(id)) {
     anyChange = true;
   }
-  if (anyChange) scheduleRender();
+  if (anyChange) {
+    // If the exiting session was the user-visible one, the PTY
+    // had painted into cells the diff cache won't think to
+    // repaint — viewMode dropping back to 'normal' (or the tab
+    // going away on clean exit) means the underlying panel
+    // renderer needs to reclaim those cells. Without this,
+    // SIGQUIT'd children leave their last frame stuck on screen
+    // while the chrome behind doesn't redraw. Same pattern as
+    // the SIGCONT path in suspend.js.
+    if (wasActive) {
+      const { forceFullRepaint } = require('./layout');
+      forceFullRepaint();
+    }
+    scheduleRender();
+  }
 }
 
 /** Get an existing session by ID, or null. */
