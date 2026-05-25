@@ -6,6 +6,8 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-05-24
+
 ### Changed
 - **`type: spawn` no longer depends on tmux for non-blocking
   execution.** Outside tmux, spawn now opens an ephemeral PTY tab
@@ -22,7 +24,7 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   an opt-in tier — a real OS-level new window is still preferred
   for long-lived interactive sessions, and existing users who
   already run lazytui under tmux see no change.
-  - Replaces the pre-change `suspendTerminal` / `spawnSync(stdio:
+  - Replaces the prior `suspendTerminal` / `spawnSync(stdio:
     'inherit')` / `resumeTerminal` dance, which blocked Node's
     event loop for the child's entire lifetime — refresh ticks
     and hub publishers were frozen, and the user couldn't
@@ -38,9 +40,6 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
     onExit view-reset for clean / non-zero / non-active-session
     cases.
 
-## [0.3.0] — 2026-05-24
-
-### Changed
 - **Parser rewritten from Python to JS — lazytui is single-runtime now.**
   The Python parser (`parser/`, 1124 LOC) and its pytest suite (`tests/`,
   1101 LOC) are deleted. Replaced by an in-process JS parser at
