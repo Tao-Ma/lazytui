@@ -97,6 +97,50 @@ function handleMouse(kind, x, y) {
   if (mutated) render();
 }
 
+// --- Terminal-mode keystroke handling ---
+
+/**
+ * Handle a raw stdin chunk while S.terminalMode is true. Extracted
+ * from the stdin closure so tests can drive it directly.
+ *
+ * Returns true if the chunk was consumed (caller should skip the
+ * rest of the input pipeline). Never returns false today — terminal
+ * mode swallows everything until Ctrl+\ flips us out. Still returns
+ * a bool so future expansion (e.g., chord prefixes) has a contract.
+ *
+ * Side effects:
+ *  - `\x1c` (Ctrl+\) → terminalMode=false. If viewMode was 'full'
+ *    (auto-zoom from a `type: spawn`), drops it to 'normal' and
+ *    forceFullRepaints so the chrome reclaims the screen. The PTY
+ *    child keeps running; the user can navigate back via tabs.
+ *  - Session already dead (id missing or isSessionDead) → same
+ *    flip + zoom-drop, plus the keystroke is dropped on the floor.
+ *  - Live session → writeToSession forwards the bytes to the PTY.
+ */
+function _handleTerminalModeData(data) {
+  if (data === '\x1c') {
+    S.terminalMode = false;
+    if (S.viewMode === 'full') {
+      S.viewMode = 'normal';
+      forceFullRepaint();
+    }
+    render();
+    return true;
+  }
+  const id = activeTerminalId();
+  if (!id || isSessionDead(id)) {
+    S.terminalMode = false;
+    if (S.viewMode === 'full') {
+      S.viewMode = 'normal';
+      forceFullRepaint();
+    }
+    render();
+    return true;
+  }
+  writeToSession(id, data);
+  return true;
+}
+
 // --- Stdin setup ---
 
 function setupKeyListener() {
@@ -110,38 +154,7 @@ function setupKeyListener() {
 
   stdin.on('data', (data) => {
     // Terminal mode: forward raw bytes to PTY (Ctrl+\ exits)
-    if (S.terminalMode) {
-      if (data === '\x1c') {
-        // Ctrl+\ — exit terminal mode, focus stays on detail.
-        // If we were zoomed (e.g., auto-zoom from a `type: spawn`
-        // child), also drop viewMode='full' back to 'normal' —
-        // otherwise the user is stuck in a chrome-less full-screen
-        // detail panel that no longer accepts PTY input, with no
-        // obvious way out. The PTY child keeps running in the
-        // background and the user can navigate back in via tabs.
-        S.terminalMode = false;
-        if (S.viewMode === 'full') {
-          S.viewMode = 'normal';
-          forceFullRepaint();
-        }
-        render();
-        return;
-      }
-      const id = activeTerminalId();
-      if (!id || isSessionDead(id)) {
-        // Shell died — exit terminal mode, ignore keystroke.
-        // Same zoom-drop rationale as the Ctrl+\ branch.
-        S.terminalMode = false;
-        if (S.viewMode === 'full') {
-          S.viewMode = 'normal';
-          forceFullRepaint();
-        }
-        render();
-        return;
-      }
-      writeToSession(id, data);
-      return;
-    }
+    if (S.terminalMode && _handleTerminalModeData(data)) return;
 
     // Terminal focus events (DEC 1004). On blur, the periodic
     // refresh loop in tui.js pauses; on focus return, we fire one
@@ -213,4 +226,7 @@ function setupKeyListener() {
   });
 }
 
-module.exports = { setupKeyListener };
+module.exports = {
+  setupKeyListener,
+  _handleTerminalModeData,  // exported for tests
+};

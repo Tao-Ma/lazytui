@@ -42,6 +42,12 @@ function shQuote(s) {
   return `'${String(s).replace(/'/g, `'\\''`)}'`;
 }
 
+// Monotonic per-process counter for ephemeral spawn tab keys.
+// Date.now() alone collides if the user double-fires the same action
+// faster than 1ms — addEphemeralTab silently reuses the existing tab
+// (and its dead PTY session) instead of starting a fresh child.
+let _spawnSeq = 0;
+
 function doRun(actionKey, action, args = []) {
   S.lastRunAction = actionKey;
   // Parser normalizes both YAML `cmd:` and `script:` into `action.script`
@@ -78,7 +84,7 @@ function doRun(actionKey, action, args = []) {
       // long-lived interactive sessions.
       const { addEphemeralTab } = require('./tabs');
       const argStr = args.length ? ' ' + args.map(shQuote).join(' ') : '';
-      const tabKey = `spawn-${actionKey}-${Date.now()}`;
+      const tabKey = `spawn-${actionKey}-${Date.now()}-${++_spawnSeq}`;
       // addEphemeralTab side-effects: S.activeTab, S.focus='detail',
       // S.terminalMode=true, S.ephemeralTerminals[...][tabKey].
       addEphemeralTab(S.currentGroup, tabKey, `${tmp}${argStr}`, actionKey);

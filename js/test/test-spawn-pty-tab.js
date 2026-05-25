@@ -42,7 +42,21 @@ S.ephemeralTerminals = {};
 S.viewMode = 'normal';
 
 const { runAction } = require('../actions');
-const { _onSessionExit } = require('../terminal');
+
+// Mock terminal.writeToSession + isSessionDead BEFORE requiring input.js
+// — input.js destructures these at module-load time, so the override has
+// to happen before that destructure runs. terminal.js is already loaded
+// (actions.js → tabs.js → terminal.js lazy-require chain), so we mutate
+// its cached exports object.
+const terminal = require('../terminal');
+const { _onSessionExit } = terminal;
+const writeToSessionCalls = [];
+let mockSessionDead = false;
+terminal.writeToSession = (id, data) => { writeToSessionCalls.push({ id, data }); };
+terminal.isSessionDead = (_id) => mockSessionDead;
+
+const { _handleTerminalModeData } = require('../input');
+
 const { describe, it, assert, eq, report } = require('./test-runner');
 
 function resetState() {
@@ -54,6 +68,8 @@ function resetState() {
   spawnCalls.length = 0;
   historyStarts.length = 0;
   forceFullRepaintCalls = 0;
+  writeToSessionCalls.length = 0;
+  mockSessionDead = false;
   delete process.env.TMUX;
 }
 
@@ -179,6 +195,104 @@ describe('[5] _onSessionExit: clean exit on a NON-active session', () => {
   it('does NOT forceFullRepaint (orphan PTY never painted to current view)', () => {
     eq(forceFullRepaintCalls, 0,
       'no chrome reclaim needed for a background-tab exit');
+  });
+});
+
+describe('[6] tab-key uses monotonic counter — no ms-collision', () => {
+  resetState();
+  // Two spawns of the same action — without the counter, Date.now()
+  // could produce the same value on a hot path and addEphemeralTab
+  // would silently reuse the first tab.
+  runAction('a:dup', { type: 'spawn', script: 'sleep 1' }, []);
+  runAction('a:dup', { type: 'spawn', script: 'sleep 1' }, []);
+
+  it('two spawns of the same action produce two distinct tab keys', () => {
+    const keys = Object.keys(S.ephemeralTerminals.g1 || {});
+    eq(keys.length, 2,
+      `two tabs created (got ${keys.length}: ${JSON.stringify(keys)})`);
+  });
+});
+
+describe('[7] _handleTerminalModeData: Ctrl+\\ from zoom drops full+terminalMode', () => {
+  resetState();
+  // Bootstrap into the spawn-and-zoom state
+  runAction('a:vim', { type: 'spawn', script: 'vim' }, []);
+  forceFullRepaintCalls = 0;
+  S.terminalMode = true;  // simulate having focused the PTY
+
+  const handled = _handleTerminalModeData('\x1c');
+
+  it('returns true (chunk consumed)', () => assert(handled === true, 'returned true'));
+  it('flips S.terminalMode = false', () => eq(S.terminalMode, false, 'terminalMode off'));
+  it('drops S.viewMode = "normal"', () => eq(S.viewMode, 'normal', 'viewMode reset'));
+  it('calls forceFullRepaint', () => {
+    assert(forceFullRepaintCalls >= 1, 'forceFullRepaint fired so chrome reclaims');
+  });
+  it('does NOT forward Ctrl+\\ to the PTY', () => {
+    eq(writeToSessionCalls.length, 0,
+      'Ctrl+\\ is the exit key, never reaches the child');
+  });
+});
+
+describe('[8] _handleTerminalModeData: Ctrl+\\ without zoom only flips terminalMode', () => {
+  resetState();
+  S.viewMode = 'normal';
+  S.terminalMode = true;
+
+  _handleTerminalModeData('\x1c');
+
+  it('flips terminalMode = false', () => eq(S.terminalMode, false));
+  it('leaves viewMode = "normal"', () => eq(S.viewMode, 'normal',
+    'no spurious viewMode mutation when not in zoom'));
+  it('does NOT call forceFullRepaint (no chrome was hidden)', () => {
+    eq(forceFullRepaintCalls, 0, 'no need to force repaint when chrome was already visible');
+  });
+});
+
+describe('[9] _handleTerminalModeData: dead session also exits + drops zoom', () => {
+  resetState();
+  runAction('a:dead', { type: 'spawn', script: 'true' }, []);
+  forceFullRepaintCalls = 0;
+  S.terminalMode = true;
+  mockSessionDead = true;  // pretend the PTY exited under our feet
+
+  _handleTerminalModeData('x');  // any non-Ctrl+\ key
+
+  it('flips terminalMode = false (no point staying — session is gone)', () => {
+    eq(S.terminalMode, false, 'terminalMode off on dead session');
+  });
+  it('drops viewMode = "normal"', () => eq(S.viewMode, 'normal',
+    'zoom dropped so user is reachable'));
+  it('calls forceFullRepaint', () => {
+    assert(forceFullRepaintCalls >= 1, 'forceFullRepaint fired');
+  });
+  it('does NOT forward the keystroke (session is dead)', () => {
+    eq(writeToSessionCalls.length, 0,
+      'no point writing into a dead PTY');
+  });
+});
+
+describe('[10] _handleTerminalModeData: live session forwards bytes to PTY', () => {
+  resetState();
+  runAction('a:live', { type: 'spawn', script: 'cat' }, []);
+  S.terminalMode = true;
+  mockSessionDead = false;
+
+  const beforeForce = forceFullRepaintCalls;
+  _handleTerminalModeData('hello');
+
+  it('does NOT flip terminalMode (PTY is live)', () => {
+    eq(S.terminalMode, true, 'terminalMode stays on');
+  });
+  it('does NOT change viewMode', () => {
+    eq(S.viewMode, 'full', 'viewMode unchanged on data-forward path');
+  });
+  it('does NOT force a repaint (data-forward doesn\'t need it)', () => {
+    eq(forceFullRepaintCalls, beforeForce, 'no extra repaint on each keystroke');
+  });
+  it('writes the bytes to the PTY session', () => {
+    eq(writeToSessionCalls.length, 1, 'writeToSession called exactly once');
+    eq(writeToSessionCalls[0].data, 'hello', 'forwarded the exact bytes');
   });
 });
 
