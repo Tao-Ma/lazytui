@@ -7,13 +7,12 @@
  */
 'use strict';
 
-const { spawn, spawnSync } = require('child_process');
+const { spawn } = require('child_process');
 const fs = require('fs');
 const { S, setDetail } = require('./state');
 const { streamCommand, killCurrentProc } = require('./stream');
 const { enterConfirm } = require('./confirm');
 const history = require('./history');
-const { suspendTerminal, resumeTerminal } = require('./suspend');
 
 function runAction(actionKey, action, args = []) {
   // Event log (PRINCIPLES.md §11 + CHANGELOG v0.2.0). Record the user
@@ -64,43 +63,27 @@ function doRun(actionKey, action, args = []) {
       spawn('tmux', ['new-window', '-n', actionKey, `${tmp}${argStr}; read`], { detached: true, stdio: 'ignore' });
       history.start(actionKey, cmd, { detached: true });
     } else {
-      // No tmux: suspend the TUI, hand the child our terminal, wait
-      // for it to exit, then restore. Without this the bare-spawn
-      // path would run with stdio:'ignore' and any interactive
-      // command (psql, less, $EDITOR) would silently exit on EOF.
-      // Same dance as suspend.js does under SIGTSTP — that's why
-      // suspendTerminal/resumeTerminal are factored out there.
-      //
-      // spawnSync blocks Node's event loop, which means refresh
-      // timers / hub publishers pause for the duration. That's the
-      // right semantic: the user has explicitly handed the terminal
-      // to a subprocess, so lazytui shouldn't be doing background
-      // work behind the curtain.
-      suspendTerminal();
-      const result = spawnSync('sh', [tmp, ...args], {
-        cwd: S.projectDir,
-        stdio: 'inherit',
-      });
-      resumeTerminal();
-
-      let summary;
-      if (result.error) {
-        summary = `[dim]$ ${actionKey}[/]\n[red]Spawn failed: ${result.error.message}[/]`;
-      } else if (result.signal) {
-        summary = `[dim]$ ${actionKey}[/]\n[yellow]Exited on signal ${result.signal}.[/]`;
-      } else if (result.status !== 0) {
-        summary = `[dim]$ ${actionKey}[/]\n[yellow]Exited with status ${result.status}.[/]`;
-      } else {
-        summary = `[dim]$ ${actionKey}[/]\n[green]Exited cleanly.[/]`;
-      }
-      setDetail(summary);
-
-      // The child painted over our screen — invalidate the diff cache
-      // so the next frame is a full clear + redraw, then paint now.
-      const { forceFullRepaint, render } = require('./layout');
-      forceFullRepaint();
-      render();
-
+      // Outside tmux: spawn into an embedded PTY tab in the detail
+      // panel, auto-zoomed to viewMode='full' so the child gets the
+      // whole terminal. Replaces the pre-v0.3.1 suspend/spawnSync/
+      // resume dance, which blocked Node's event loop for the
+      // child's entire lifetime. The child now runs alongside the
+      // TUI: `_` steps back to half/normal layout while the child
+      // keeps running; `+` re-zooms; the tab auto-closes on clean
+      // exit (terminal.js#onExit → tabs.handleSessionCleanExit).
+      // Non-zero exit keeps the tab so the user can read the error,
+      // but drops viewMode so the rest of the TUI is reachable.
+      // The tmux branch above is still preferred when $TMUX is set —
+      // a real OS-level new window beats an in-process tab for
+      // long-lived interactive sessions.
+      const { addEphemeralTab } = require('./tabs');
+      const argStr = args.length ? ' ' + args.map(shQuote).join(' ') : '';
+      const tabKey = `spawn-${actionKey}-${Date.now()}`;
+      // addEphemeralTab side-effects: S.activeTab, S.focus='detail',
+      // S.terminalMode=true, S.ephemeralTerminals[...][tabKey].
+      addEphemeralTab(S.currentGroup, tabKey, `${tmp}${argStr}`, actionKey);
+      S.viewMode = 'full';
+      require('./layout').forceFullRepaint();
       history.start(actionKey, cmd, { detached: false });
     }
     return;

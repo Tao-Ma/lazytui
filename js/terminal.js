@@ -45,17 +45,37 @@ function ensureSession(id, cmd, cols, rows) {
   p.onExit(({ exitCode }) => {
     session.exited = true;
     session.exitCode = exitCode;
-    // Auto-remove ephemeral tabs on clean exit (`exit 0` from the
-    // shell). Non-zero stays put so the user can read the exit code;
-    // `x` closes it. Lazy-require avoids a tabs.js ↔ terminal.js
-    // cycle at module load.
-    if (exitCode === 0) {
-      const { handleSessionCleanExit } = require('./tabs');
-      if (handleSessionCleanExit(id)) scheduleRender();
-    }
+    _onSessionExit(id, exitCode);
   });
   sessions[id] = session;
   return session;
+}
+
+/**
+ * Handle a session's PTY exit. Extracted from the onExit closure
+ * so tests can drive it directly without mocking node-pty.
+ *
+ * Two side effects, both lazy-requiring `./tabs` to avoid the
+ * tabs.js ↔ terminal.js cycle at module load:
+ * - If viewMode was 'full' and this session was the active terminal
+ *   tab, drop viewMode to 'normal' — user lands somewhere reachable
+ *   instead of staring at an exited PTY (clean) or an unresponsive
+ *   error screen (non-zero). 'half' is left alone (user-chosen).
+ * - On clean exit (exitCode === 0), auto-remove the ephemeral tab
+ *   via handleSessionCleanExit. Non-zero stays put so the user
+ *   can read the exit code; `x` closes it.
+ */
+function _onSessionExit(id, exitCode) {
+  const tabs = require('./tabs');
+  let anyChange = false;
+  if (S.viewMode === 'full' && tabs.activeTerminalId() === id) {
+    S.viewMode = 'normal';
+    anyChange = true;
+  }
+  if (exitCode === 0 && tabs.handleSessionCleanExit(id)) {
+    anyChange = true;
+  }
+  if (anyChange) scheduleRender();
 }
 
 /** Get an existing session by ID, or null. */
@@ -114,4 +134,5 @@ module.exports = {
   ensureSession, getSession, writeToSession,
   resizeSession, destroySession, destroyAll,
   restartSession, isSessionDead,
+  _onSessionExit,  // exported for tests
 };

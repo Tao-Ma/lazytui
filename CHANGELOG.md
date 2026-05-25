@@ -6,6 +6,38 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- **`type: spawn` no longer depends on tmux for non-blocking
+  execution.** Outside tmux, spawn now opens an ephemeral PTY tab
+  in the detail panel (reusing the existing node-pty +
+  @xterm/headless infrastructure that already backs `terminals:`
+  blocks) and sets `S.viewMode = 'full'` so the child gets the
+  whole terminal via the already-shipping full-screen view.
+  Multiple concurrent spawns each get their own tab. The user can
+  step back to the normal layout with `_` while the child keeps
+  running; `+` re-zooms; clean exit auto-closes the tab and drops
+  back to normal layout; non-zero exit keeps the tab so the error
+  is readable but drops the zoom so the rest of the TUI is
+  reachable. The tmux branch (`process.env.TMUX` set) is kept as
+  an opt-in tier — a real OS-level new window is still preferred
+  for long-lived interactive sessions, and existing users who
+  already run lazytui under tmux see no change.
+  - Replaces the pre-change `suspendTerminal` / `spawnSync(stdio:
+    'inherit')` / `resumeTerminal` dance, which blocked Node's
+    event loop for the child's entire lifetime — refresh ticks
+    and hub publishers were frozen, and the user couldn't
+    navigate to other panels until the spawned command exited.
+  - `terminal.js#onExit` factored into a new exported
+    `_onSessionExit(id, exitCode)` so the view-reset behavior is
+    unit-testable without mocking node-pty. `tabs.handleSession
+    CleanExit` is unchanged.
+  - Tests: replaces `test-spawn-bare.js` (which pinned the old
+    blocking semantics) with `test-spawn-pty-tab.js` — 21
+    assertions across 5 sections covering the new path, the
+    tmux path still routing through `tmux new-window`, and the
+    onExit view-reset for clean / non-zero / non-active-session
+    cases.
+
 ## [0.3.0] — 2026-05-24
 
 ### Changed
