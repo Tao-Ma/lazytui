@@ -51,6 +51,23 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
     no obvious way out. The handler now also drops the zoom and
     forces a repaint. Same fix applied to the sibling "session
     already dead" branch.
+  - **Tab keys use a monotonic counter** —
+    `spawn-<actionKey>-<ts>-<seq>` — so two spawns of the same
+    action within a single millisecond produce distinct tabs.
+    Without it, `addEphemeralTab` silently reused the existing
+    tab and its dead PTY session.
+  - **Child-lifecycle note (PTY-tab path only).** Because the
+    embedded PTY session lives as a child of the lazytui Node
+    process, the spawned child dies when lazytui quits — same
+    contract as lazygit / lazydocker / k9s subprocesses. The
+    tmux branch (`$TMUX` set) keeps its old detach-survival
+    semantics: child runs in a sibling tmux window and outlives
+    lazytui. If you need detach-survival without tmux, wrap the
+    script in a session manager (`tmux new-session -d`,
+    `dtach`, `abduco`). There's no in-process node-pty trick
+    that gives both an embedded display and survive-quit —
+    the PTY master fd in our process is the child's lifeline,
+    so when it closes the slave gets SIGHUP.
   - Tests: replaces `test-spawn-bare.js` (which pinned the old
     blocking semantics) with `test-spawn-pty-tab.js` — 21
     assertions across 5 sections covering the new path, the
