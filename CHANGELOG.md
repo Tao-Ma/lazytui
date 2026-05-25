@@ -40,6 +40,17 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
     and skipped them — chrome behind the dead PTY never redrew,
     leaving the last frame stuck on screen. Same diff-cache-
     reclaim pattern as the SIGCONT/suspend path.
+  - **Ctrl+\ drops viewMode='full' along with terminal mode.**
+    In `input.js`, Ctrl+\ is intercepted before reaching the
+    PTY — it just toggles `S.terminalMode = false` so the user
+    can navigate via lazytui keys while the child stays alive.
+    Pre-v0.3.0, that was enough because PTY tabs lived in
+    `viewMode='normal'`. With auto-zoom from `type: spawn`,
+    keeping `viewMode='full'` after Ctrl+\ left the user in a
+    chrome-less full-screen detail panel with no PTY input and
+    no obvious way out. The handler now also drops the zoom and
+    forces a repaint. Same fix applied to the sibling "session
+    already dead" branch.
   - Tests: replaces `test-spawn-bare.js` (which pinned the old
     blocking semantics) with `test-spawn-pty-tab.js` — 21
     assertions across 5 sections covering the new path, the
