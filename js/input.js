@@ -12,7 +12,7 @@
 'use strict';
 
 const { S, allPanels, selectGroup, setSel, getSel, getScroll } = require('./state');
-const { render } = require('./layout');
+const { render, forceFullRepaint } = require('./layout');
 const { switchToTab, showSelectedInfo } = require('./detail');
 const { enableMouse, enableFocusEvents, enableBracketedPaste } = require('./term');
 const { isTerminalTab, activeTerminalId } = require('./tabs');
@@ -112,15 +112,30 @@ function setupKeyListener() {
     // Terminal mode: forward raw bytes to PTY (Ctrl+\ exits)
     if (S.terminalMode) {
       if (data === '\x1c') {
-        // Ctrl+\ — exit terminal mode, focus stays on detail
+        // Ctrl+\ — exit terminal mode, focus stays on detail.
+        // If we were zoomed (e.g., auto-zoom from a `type: spawn`
+        // child), also drop viewMode='full' back to 'normal' —
+        // otherwise the user is stuck in a chrome-less full-screen
+        // detail panel that no longer accepts PTY input, with no
+        // obvious way out. The PTY child keeps running in the
+        // background and the user can navigate back in via tabs.
         S.terminalMode = false;
+        if (S.viewMode === 'full') {
+          S.viewMode = 'normal';
+          forceFullRepaint();
+        }
         render();
         return;
       }
       const id = activeTerminalId();
       if (!id || isSessionDead(id)) {
-        // Shell died — exit terminal mode, ignore keystroke
+        // Shell died — exit terminal mode, ignore keystroke.
+        // Same zoom-drop rationale as the Ctrl+\ branch.
         S.terminalMode = false;
+        if (S.viewMode === 'full') {
+          S.viewMode = 'normal';
+          forceFullRepaint();
+        }
         render();
         return;
       }
