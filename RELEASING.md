@@ -66,25 +66,27 @@ the visible record.
 
 ## Publishing to npm
 
-As of v0.3.0, `package.json` has `"private": false`, so `npm publish`
-is unblocked at the CLI level. The actual publish is still manual —
-no automation in `release.yml` yet. To wire it up:
+As of v0.3.0, `package.json` has `"private": false` and
+`release.yml` includes a `Publish to npm` step that runs after the
+tarball build on every non-pre-release tag push. The step is gated
+by `if: ${{ !contains(github.ref, '-') }}` so `vX.Y.Z-rc1` tags
+still produce a GitHub Release for download without leaking
+pre-release builds to the public npm registry.
 
-1. Add an `npm publish` step to `release.yml` after the tarball build:
-   ```yaml
-   - uses: actions/setup-node@v4
-     with:
-       node-version: '22'
-       registry-url: 'https://registry.npmjs.org'
-   - run: npm publish
-     env:
-       NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-   ```
-2. Create an `NPM_TOKEN` secret in the GitHub repo settings (npm
-   automation token from npmjs.com).
-3. First publish: `npm publish` from a tagged commit locally to make
-   sure the package metadata is right; subsequent releases can ride
-   the workflow.
+**Prerequisite — one-time setup per repo:**
+- Create an npm automation token at npmjs.com (Settings → Access
+  Tokens → Generate New Token → Automation).
+- Add it to the GitHub repo as a secret named `NPM_TOKEN`
+  (Settings → Secrets and variables → Actions).
+
+Without `NPM_TOKEN`, the publish step fails the whole workflow and
+the GitHub Release isn't created — fix the secret, then delete and
+re-push the tag (see "If the release workflow fails" above).
+
+**First publish:** if you want the extra safety of a manual sanity
+check, run `npm publish` locally from the tagged commit before the
+secret is wired up — that lets you eyeball npm's response without
+the workflow racing it. Subsequent releases ride the workflow.
 
 Single-runtime — the parser is in JS (`js/parser/`) so an
 `npm install -g lazytui` user only needs Node ≥ 18.

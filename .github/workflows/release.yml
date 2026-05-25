@@ -21,6 +21,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
 
       - name: Install Node deps
         run: npm install --omit=dev
@@ -33,6 +34,16 @@ jobs:
       # .github/ workflows are excluded; the runtime + docs ship.
       - name: Build npm tarball
         run: npm pack
+
+      # Publish to npmjs.com. Requires the NPM_TOKEN repo secret (npm
+      # automation token). Skipped automatically for pre-release tags
+      # (vX.Y.Z-rc1 etc) — those still land in the GitHub Release below
+      # for download, but don't go to the public npm registry.
+      - name: Publish to npm
+        if: ${{ !contains(github.ref, '-') }}
+        run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       # Source tarball — git-archive of HEAD. Includes everything that's
       # in git (tests, demos, .github, etc), unlike the npm tarball.
