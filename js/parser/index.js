@@ -362,6 +362,15 @@ function parse(yamlPath) {
     files,
     layout,
     theme: data.theme !== undefined ? data.theme : 'monokai',
+    // Preserve the `plugins:` block so loadPlugins() can require any
+    // JS-plugin entries at boot. Without this, JS plugins (entries
+    // with `.js` paths) silently never load — their panel types are
+    // referenced in `layout:` but rendererFor() returns null, leaving
+    // panel slots empty and the column-bottom rows of the right side
+    // spill over column 0 as paintColumns concatenates short+full
+    // row counts. YAML plugins (`.yml`/`.yaml` paths) keep working
+    // either way — `mergeYamlPlugins` inlined them above.
+    plugins: data.plugins !== undefined ? data.plugins : {},
   };
 }
 

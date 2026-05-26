@@ -34,6 +34,53 @@ function expectThrow(re, fn, kind = ParseError) {
   }
 }
 
+describe('plugins block pass-through (regression: JS parser port dropped it)', () => {
+  it('plugins map appears verbatim on the parsed config', () => {
+    // The bug: parse() returned {project_dir, groups, source_file,
+    // files, layout, theme} with no `plugins` field, so loadPlugins
+    // received undefined and JS plugins (`path: ./foo.js`) silently
+    // never loaded. Demos with custom panel types (e.g. ssh-fleet's
+    // `hosts:` panel) then rendered as empty strings, the right
+    // column's rows spilled into column 0 of the bottom of the
+    // screen, and the user saw "left bottom occupied by detail".
+    const p = tmpYaml(`
+groups:
+  g:
+    label: G
+    actions:
+      a: { cmd: 'echo a', label: A }
+plugins:
+  myplugin:
+    path: ./myplugin.js
+    custom_opt: 42
+`);
+    const cfg = parse(p);
+    assert(cfg.plugins && typeof cfg.plugins === 'object',
+      'cfg.plugins is present and a mapping');
+    assert(cfg.plugins.myplugin, 'myplugin entry preserved');
+    eq(cfg.plugins.myplugin.path, './myplugin.js');
+    eq(cfg.plugins.myplugin.custom_opt, 42);
+  });
+
+  it('no plugins block → cfg.plugins is an empty object (never undefined)', () => {
+    // Callers (loadPlugins, etc.) treat undefined as "skip" and {} as
+    // "iterate zero times" — same effect, but {} is the kinder
+    // contract: lets callers Object.keys() / Object.entries() without
+    // guarding.
+    const p = tmpYaml(`
+groups:
+  g:
+    label: G
+    actions:
+      a: { cmd: 'echo a', label: A }
+`);
+    const cfg = parse(p);
+    assert(cfg.plugins !== undefined, 'plugins key is present');
+    eq(typeof cfg.plugins, 'object');
+    eq(Object.keys(cfg.plugins).length, 0, 'empty object, not undefined');
+  });
+});
+
 describe('successful parsing', () => {
   it('minimal_cmd', () => {
     const cfg = parseFixture('minimal_cmd.yml');
