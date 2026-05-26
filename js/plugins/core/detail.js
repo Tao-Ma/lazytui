@@ -78,10 +78,20 @@ function render(panel, w, h) {
   if (S.detailLines.length > innerH) {
     count = [S.detailScroll + innerH, S.detailLines.length];
   }
-  // When a selection is active in this panel, weave [reverse] into the
-  // intersected lines. decorateLines is a no-op when S.select.active is
-  // false, so steady-state renders pay no cost.
-  const lines = require('../../select').decorateLines(S.detailLines);
+  // Decorate detail content with either selection highlights or
+  // search-match highlights — whichever is active. Selection wins on
+  // overlap because both write display-column ranges and a single
+  // pass can't compose them (Rich's [/] is unstacked, so stripping
+  // one to apply the other would lose info). In practice users don't
+  // run both simultaneously; the precedence is well-defined.
+  let lines = S.detailLines;
+  const select = require('../../select');
+  const search = require('../../detail-search');
+  if (select.isActive()) {
+    lines = select.decorateLines(lines);
+  } else {
+    lines = search.decorateLines(lines);
+  }
   return renderPanel({
     width: w, height: h, lines,
     title: detailTitle(), hotkey,

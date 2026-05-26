@@ -337,6 +337,17 @@ function onDetailKey(key, seq) {
   if (!S.detailCursor) S.detailCursor = { line: 0, col: 0 };
   const active = !!(S.select && S.select.active);
 
+  // Detail-search post-commit navigation. n/N cycle through committed
+  // matches, Esc clears the search. These come before visual-mode v/V
+  // so search nav is always reachable, but a live selection (visual
+  // mode) hides search highlights anyway.
+  const search = require('./detail-search');
+  if (S.detailSearch && S.detailSearch.active) {
+    if (seq === 'n' || key === 'n') { search.next(); return true; }
+    if (seq === 'N' || key === 'N') { search.prev(); return true; }
+    if (key === 'escape' && !active) { search.clearCommitted(); return true; }
+  }
+
   // Mode toggles. Entering visual mode plants the cursor at the top
   // of the current viewport rather than at the last known position —
   // matches what mouse-drag effectively does (cursor where the click

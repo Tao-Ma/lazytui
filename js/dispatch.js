@@ -36,6 +36,7 @@ const { enterCmdline, handleCmdlineKey } = require('./cmdline');
 const { handleConfirmKey } = require('./confirm');
 const { enterPrompt, handlePromptKey } = require('./prompt');
 const registerPopup = require('./register-popup');
+const detailSearch = require('./detail-search');
 const { isTerminalTab, activeTerminalId, findEphemeralByid,
         removeEphemeralTab } = require('./tabs');
 const { isSessionDead, restartSession } = require('./terminal');
@@ -248,6 +249,17 @@ function handleCopyKey(key, seq) {
   if (key === 'down' || seq === 'j') { navCopy(1); return; }
 }
 
+function handleDetailSearchKey(key, seq) {
+  if (key === 'escape') { detailSearch.cancel(); return; }
+  if (key === 'return') { detailSearch.commit(); return; }
+  // up/down jump to prev/next match WITHIN typing phase, mirroring
+  // less's incremental search. Lets the user refine + step through
+  // without committing first.
+  if (key === 'up')   { detailSearch.prev(); return; }
+  if (key === 'down') { detailSearch.next(); return; }
+  detailSearch.keystroke(seq);
+}
+
 function handleNormalKey(key, seq) {
   // Detail-panel keyboard visual-mode (v/V/y/Esc + cursor movement).
   // Claims keys ahead of the global switch so y commits a live selection
@@ -323,7 +335,13 @@ function handleNormalKey(key, seq) {
     case '>':              handleAction('goto_bottom'); break;
     case '+':              handleAction('view_expand'); break;
     case '_':              handleAction('view_shrink'); break;
-    case '/':              enterFilter(); break;
+    case '/':
+      // Filter doesn't apply to the (non-list) detail panel — overload
+      // `/` there as vim/less-style search instead. Same key, different
+      // mode based on focus.
+      if (S.focus === 'detail') detailSearch.enter();
+      else                      enterFilter();
+      break;
     case 'y':              enterCopy(); break;
     case '"':              registerPopup.enter(); break;
     case ':':              enterCmdline(); break;
@@ -360,6 +378,7 @@ const modeChain = [
   { active: () => S.menuOpen,   handler: handleMenuKey },
   { active: () => S.filterMode, handler: handleFilterKey },
   { active: () => S.copyMode,   handler: handleCopyKey },
+  { active: () => S.detailSearchMode, handler: handleDetailSearchKey },
   { active: () => S.registerPopupMode, handler: (k, s) => registerPopup.handleKey(k, s) },
   // cmd mode runs whatever the user typed (a `:focus <panel>` mutates
   // S.focus; a plugin command might mutate detail/group/etc). Refresh

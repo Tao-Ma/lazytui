@@ -187,6 +187,12 @@ function initState() {
   S.cmdMode = false;
   S.designMode = false;
   S.registerPopupMode = false;
+  // Detail-panel search — typing phase flag + state. `term`, `matches`,
+  // and `idx` live under S.detailSearch (single object); the mode flag
+  // stays at top level so the existing modeChain / overlay-active
+  // pattern matches what other modes do.
+  S.detailSearchMode = false;
+  S.detailSearch = { active: false, term: '', matches: [], idx: 0 };
   S.terminalMode = false;
   S.ephemeralTerminals = {};
   S.multiSel = {};

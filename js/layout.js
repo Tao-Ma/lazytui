@@ -434,6 +434,13 @@ function footerKeys() {
     const label = tconf ? tconf.label : 'terminal';
     return ` \\[terminal: ${esc(label)}] | Ctrl+\\ return to TUI`;
   }
+  if (S.detailSearchMode) {
+    const ds = require('./detail-search');
+    const term = ds.typingText();
+    const n = (S.detailSearch.matches || []).length;
+    const idx = n ? S.detailSearch.idx + 1 : 0;
+    return ` /${esc(term)}│ \\[${idx}/${n}] | ↑↓ step | Esc cancel | Enter commit`;
+  }
   if (S.filterMode) return ` /${esc(filterCurrentText())}│ | Esc clear | Enter ok`;
   if (S.copyMode)   return ' ↑↓ select | Esc cancel | Enter copy';
   if (S.designTitleEditMode) {
@@ -459,6 +466,12 @@ function footerKeys() {
       segs.push(xLabel, 'q quit', dead ? 'Enter restart' : 'Enter activate');
     } else {
       segs.push('x menu', 'q quit');
+      segs.push('/ search');
+      if (S.detailSearch && S.detailSearch.active) {
+        const n = S.detailSearch.matches.length;
+        const idx = S.detailSearch.idx + 1;
+        segs.push(`n/N [${idx}/${n}]`, 'Esc clear');
+      }
     }
     return ' ' + segs.join(' | ');
   }
