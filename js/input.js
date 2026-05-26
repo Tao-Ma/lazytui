@@ -38,8 +38,31 @@ function handleMouse(kind, x, y) {
     return;
   }
 
-  // Non-design-mode: only fire on press. Motion/release are 1002-protocol
-  // chatter that the focus+select path doesn't care about.
+  // Detail-panel text selection. press → begin; motion (with button
+  // held) → extend; release → commit + push to register. Runs ahead
+  // of the focus+select loop so dragging across panels can extend a
+  // selection that started in detail rather than losing it to a focus
+  // change.
+  const sel = require('./select');
+  if (kind === 'motion' && sel.isActive()) {
+    const db = S.panelBounds.detail;
+    if (db) {
+      const visibleLine = Math.max(0, Math.min(db.h - 3, my - db.y - 1));
+      const col = Math.max(0, mx - db.x - 1);
+      sel.extendTo((S.detailScroll || 0) + visibleLine, col);
+      render();
+    }
+    return;
+  }
+  if (kind === 'release') {
+    if (sel.isActive()) {
+      sel.commit();
+      render();
+    }
+    return;
+  }
+
+  // From here on: press only.
   if (kind !== 'press') return;
 
   let mutated = false;
@@ -49,9 +72,10 @@ function handleMouse(kind, x, y) {
     if (!b) continue;
     if (mx < b.x || mx >= b.x + b.w || my < b.y || my >= b.y + b.h) continue;
 
-    // Detail panel — top border row may be a tab bar; check tab bounds.
-    // Bounds are published into S.panelBounds.detail.tabs by the detail
-    // panel's render path (plugins/core/detail.js#detailTitle).
+    // Detail panel — top border row may be a tab bar; otherwise a
+    // click inside the content area begins a text selection.
+    // Tab bounds are published into S.panelBounds.detail.tabs by the
+    // detail panel's render path (plugins/core/detail.js#detailTitle).
     if (p.type === 'detail') {
       if (my === b.y) {
         const localX = mx - b.x;
@@ -67,12 +91,26 @@ function handleMouse(kind, x, y) {
       }
       if (!mutated) {
         S.focus = 'detail';
+        // Begin a selection iff the click landed in the content rows
+        // and this tab actually has scrollable text content (skip
+        // terminal tabs — the PTY handles its own input).
+        const inContent = my > b.y && my < b.y + b.h - 1;
+        if (inContent && !isTerminalTab() && S.detailLines.length > 0) {
+          const visibleLine = my - b.y - 1;
+          const col = Math.max(0, mx - b.x - 1);
+          sel.beginAt((S.detailScroll || 0) + visibleLine, col, 'char');
+        } else {
+          sel.cancel();
+        }
         mutated = true;
       }
       break;
     }
 
-    // Other panels — focus + select clicked item.
+    // Other panels — focus + select clicked item. A press anywhere
+    // outside the detail content area cancels any pending selection
+    // (starting a new gesture here).
+    sel.cancel();
     S.focus = p.type;
     const itemRow = my - b.y - 1;  // -1 for top border
     if (itemRow >= 0) {

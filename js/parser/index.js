@@ -371,6 +371,10 @@ function parse(yamlPath) {
     // row counts. YAML plugins (`.yml`/`.yaml` paths) keep working
     // either way — `mergeYamlPlugins` inlined them above.
     plugins: data.plugins !== undefined ? data.plugins : {},
+    // Yank-register config (top-level `register: { cap: N }`). state.js
+    // forwards this to register.init() at boot. Default cap (100) is
+    // applied inside register.init() when this block is absent.
+    register: data.register !== undefined ? data.register : {},
   };
 }
 

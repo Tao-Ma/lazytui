@@ -14,6 +14,7 @@ const { ensureSession, getSession, resizeSession } = require('./terminal');
 const { getPanelDef } = require('./plugins/api');
 const { showSelectedInfo } = require('./detail');
 const { renderCopyMenu } = require('./copy');
+const { render: renderRegisterPopup } = require('./register-popup');
 const { renderMenu } = require('./menu');
 const { renderCmdline } = require('./cmdline');
 const { renderConfirmOverlay } = require('./confirm');
@@ -154,7 +155,11 @@ function calcLayout() {
     leftW = Math.max(10, COLS - minRight);
   }
   const rightW = Math.max(minRight, COLS - leftW);
-  const availH = Math.max(6, ROWS - 1);
+  // ROWS reservation: bottom row = footer; row above that = register strip.
+  // Panel grid gets `ROWS - 2`. minH (3) means we still allocate sensible
+  // panel space on very short terminals; the strip falls into the footer
+  // row when ROWS < 4, which is degenerate enough to not care about.
+  const availH = Math.max(6, ROWS - 2);
 
   // Minimum panel height: 3 rows (border + 1 content line)
   const minH = 3;
@@ -258,7 +263,7 @@ function renderHalf() {
   calcLayout();
   const COLS = cols(), ROWS = rows();
   const halfW = Math.floor(COLS / 2);
-  const availH = ROWS - 1;
+  const availH = ROWS - 2;  // -2: footer + register strip rows
   const focusedPanel = allPanels().find(p => p.type === S.focus);
   if (!focusedPanel) return renderNormal();
   const detailPanel = S.layout.rightPanels.find(p => p.type === 'detail');
@@ -275,7 +280,7 @@ function renderHalf() {
 function renderFull() {
   calcLayout();
   const COLS = cols(), ROWS = rows();
-  const availH = ROWS - 1;
+  const availH = ROWS - 2;  // -2: footer + register strip rows
   const focusedPanel = allPanels().find(p => p.type === S.focus);
   if (!focusedPanel) return renderNormal();
   S.panelBounds = {};
@@ -360,7 +365,8 @@ function render() {
   // an event-driven render fires while/just-after the overlay is open
   // (e.g. crashloop container spamming docker events with prompt up).
   const overlayActive = S.copyMode || S.menuOpen || S.designMode
-                     || S.cmdMode || S.confirmMode || S.promptMode;
+                     || S.cmdMode || S.confirmMode || S.promptMode
+                     || S.registerPopupMode;
   if (_wasOverlayActive && !overlayActive) _forceFullRepaint = true;
   _wasOverlayActive = overlayActive;
 
@@ -375,6 +381,10 @@ function render() {
   if (mainDidFull) _forceOverlayFull = true;
   renderTerminalOverlay();
   renderFooter();
+  // Register strip — one row above the footer; always on. Centered overlays
+  // (copy menu, prompt, etc.) paint after, so they can cover the strip when
+  // their geometry happens to overlap.
+  renderRegisterStrip();
   // Overlays are mutually exclusive in practice (modeChain enforces it).
   // Order matches dispatch.js's modeChain: design > menu > copy.
   if (S.copyMode)    renderCopyMenu();
@@ -383,6 +393,7 @@ function render() {
   if (S.cmdMode)     renderCmdline();
   if (S.confirmMode) renderConfirmOverlay();
   if (S.promptMode)  renderPromptOverlay();
+  if (S.registerPopupMode) renderRegisterPopup();
 
   // Cursor visibility — derived from mode state, single emission site.
   // Cursor *position* is set inline by renderTerminalOverlay (when in
@@ -458,6 +469,38 @@ function footerKeys() {
     return ' ↑↓ select | ←→ panel | / filter | +/_ view | x menu | q quit | Enter actions';
   }
   return ' ↑↓ select | ←→ panel | / filter | +/_ view | x menu | q quit';
+}
+
+/**
+ * Always-on yank-register strip — one row above the footer (row ROWS-1,
+ * 1-indexed: ROWS-1 from rows()). Renders either `reg: (empty)` or
+ * `reg: "<top>" [+N]` where N = older entries count. Multi-line tops are
+ * shown with `↵` glyphs; long tops truncate with `…`. Width-budgeted so
+ * the prefix/suffix always fit even on narrow terminals.
+ *
+ * Written outside the panel diff cache (same pattern as renderFooter)
+ * because the strip lives in the chrome row, not the panel grid.
+ */
+function renderRegisterStrip() {
+  const ROWS = rows(), COLS = cols();
+  const reg = S.register;
+  let content;
+  if (!reg || !reg.history || reg.history.length === 0) {
+    content = 'reg: (empty)';
+  } else {
+    const top = reg.history[0];
+    const olderCount = reg.history.length - 1;
+    const tail = olderCount > 0 ? ` [+${olderCount}]` : '';
+    const prefix = 'reg: "';
+    const suffix = `"${tail}`;
+    const budget = Math.max(4, COLS - visibleLen(prefix) - visibleLen(suffix));
+    let preview = String(top).replace(/\n/g, '↵').replace(/\t/g, ' ');
+    if (visibleLen(preview) > budget) preview = preview.slice(0, budget - 1) + '…';
+    content = prefix + esc(preview) + suffix;
+  }
+  const padding = ' '.repeat(Math.max(0, COLS - visibleLen(content)));
+  const markup = `[${theme().footer}]${content}${padding}[/]`;
+  stdout.write(`\x1b[${ROWS - 1};1H` + richToAnsi(markup) + RESET);
 }
 
 function renderFooter() {

@@ -186,9 +186,25 @@ function initState() {
   S.copyMode = false;
   S.cmdMode = false;
   S.designMode = false;
+  S.registerPopupMode = false;
   S.terminalMode = false;
   S.ephemeralTerminals = {};
   S.multiSel = {};
+  // Yank register — bounded history, system-clipboard mirror. Cap is
+  // configurable via top-level `register: { cap: N }` in YAML; default 100.
+  // Init is deferred to here (rather than at module-load) so cap reflects
+  // the parsed config.
+  require('./register').init(config.register || {});
+  // Selection state — set/cleared by js/select.js during drag and
+  // commit. Stored on S so the render path can see active selections
+  // in the detail panel.
+  S.select = { active: false, kind: 'char',
+               anchor: { line: 0, col: 0 },
+               cursor: { line: 0, col: 0 } };
+  // Detail cursor — used by keyboard visual-mode (v/V) to track the
+  // logical cursor in the detail panel. Mouse-drag bypasses this
+  // (anchor + cursor are set directly from screen coords).
+  S.detailCursor = { line: 0, col: 0 };
 }
 
 function allPanels() { return [...S.layout.leftPanels, ...S.layout.rightPanels]; }

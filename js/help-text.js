@@ -49,6 +49,18 @@ function helpLines() {
     );
   }
 
+  if (S.focus === 'detail') {
+    lines.push('', '[dim]Detail panel selection[/]',
+      '  v              Start char-select at cursor',
+      '  V              Start line-select at cursor',
+      '  hjkl / arrows  Move cursor (h/l only while a selection is active)',
+      '  0 / $          Line start / end',
+      '  y              Yank selection → register + clipboard',
+      '  Esc            Cancel selection',
+      '  click + drag   Mouse-drag selection (release to commit)',
+    );
+  }
+
   lines.push('', '[dim]Actions[/]',
     '  Enter          Run selected action',
     '  x              Open menu popup',
@@ -57,6 +69,7 @@ function helpLines() {
     '  _              Shrink view (full→half→normal)',
     '  /              Filter panel items',
     '  y              Copy menu (pick what to copy)',
+    '  "              Yank-register history popup',
     '  :              Command mode',
     '  Enter          Activate terminal tab',
     `  Ctrl+\\         Exit terminal mode`,

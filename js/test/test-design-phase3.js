@@ -330,26 +330,26 @@ describe('[3e] calcLayout — heightPct distribution', () => {
   }
   it('all-flex left col splits equally', () => {
     freshLayout();
-    process.stdout.columns = 100; process.stdout.rows = 30; // availH = 29
+    process.stdout.columns = 100; process.stdout.rows = 30; // availH = 28 (rows-2: footer + register strip)
     calcLayout();
     eq(S.panelHeights.containers, 14);
-    eq(S.panelHeights.groups, 15, 'last flex absorbs rounding');
+    eq(S.panelHeights.groups, 14, 'two flex panels share 28 evenly');
   });
   it('anchored heightPct claims its share, flex absorbs remainder', () => {
     freshLayout();
     S.layout.leftPanels[0].heightPct = 70;  // containers fixed at 70%
-    process.stdout.columns = 100; process.stdout.rows = 30; // availH = 29
+    process.stdout.columns = 100; process.stdout.rows = 30; // availH = 28
     calcLayout();
-    eq(S.panelHeights.containers, 20, 'floor(29 * 0.7) = 20');
+    eq(S.panelHeights.containers, 19, 'floor(28 * 0.7) = 19');
     eq(S.panelHeights.groups, 9, 'flex remainder');
   });
   it('oversubscribed anchored values scale proportionally', () => {
     freshLayout();
     S.layout.leftPanels[0].heightPct = 90;
     S.layout.leftPanels[1].heightPct = 90;
-    process.stdout.columns = 100; process.stdout.rows = 30; // availH = 29
+    process.stdout.columns = 100; process.stdout.rows = 30; // availH = 28
     calcLayout();
-    eq(S.panelHeights.containers + S.panelHeights.groups, 29, 'column fills availH after scaling');
+    eq(S.panelHeights.containers + S.panelHeights.groups, 28, 'column fills availH after scaling');
     assert(S.panelHeights.containers >= 3, 'containers ≥ minH');
     assert(S.panelHeights.groups >= 3, 'groups ≥ minH');
   });

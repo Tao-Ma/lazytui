@@ -35,6 +35,7 @@ const { enterCopy, exitCopy, navCopy } = require('./copy');
 const { enterCmdline, handleCmdlineKey } = require('./cmdline');
 const { handleConfirmKey } = require('./confirm');
 const { enterPrompt, handlePromptKey } = require('./prompt');
+const registerPopup = require('./register-popup');
 const { isTerminalTab, activeTerminalId, findEphemeralByid,
         removeEphemeralTab } = require('./tabs');
 const { isSessionDead, restartSession } = require('./terminal');
@@ -248,6 +249,13 @@ function handleCopyKey(key, seq) {
 }
 
 function handleNormalKey(key, seq) {
+  // Detail-panel keyboard visual-mode (v/V/y/Esc + cursor movement).
+  // Claims keys ahead of the global switch so y commits a live selection
+  // instead of opening the copy menu, and j/k move the detail cursor
+  // instead of falling through to moveSel (which is a no-op for the
+  // non-list detail panel anyway).
+  if (S.focus === 'detail' && require('./select').onDetailKey(key, seq)) return;
+
   // [ / ] are panel-aware tab switchers: if the focused panel owns sub-tabs
   // (today: groups → All/Quick), they cycle those. Otherwise the keys fall
   // through to the global detail-tab cycle below — preserving the prior
@@ -317,6 +325,7 @@ function handleNormalKey(key, seq) {
     case '_':              handleAction('view_shrink'); break;
     case '/':              enterFilter(); break;
     case 'y':              enterCopy(); break;
+    case '"':              registerPopup.enter(); break;
     case ':':              enterCmdline(); break;
     default:
       if (allPanels().some(p => p.hotkey === key)) {
@@ -351,6 +360,7 @@ const modeChain = [
   { active: () => S.menuOpen,   handler: handleMenuKey },
   { active: () => S.filterMode, handler: handleFilterKey },
   { active: () => S.copyMode,   handler: handleCopyKey },
+  { active: () => S.registerPopupMode, handler: (k, s) => registerPopup.handleKey(k, s) },
   // cmd mode runs whatever the user typed (a `:focus <panel>` mutates
   // S.focus; a plugin command might mutate detail/group/etc). Refresh
   // the focused panel's info into detail so the trailing paint reflects

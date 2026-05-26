@@ -10,7 +10,8 @@ const { SchemaError } = require('./errors');
 
 const VALID_ACTION_TYPES = new Set(['run', 'spawn', 'background']);
 
-const VALID_TOP_KEYS    = new Set(['project_dir', 'groups', 'vars', 'helpers', 'files', 'layout', 'theme', 'plugins']);
+const VALID_TOP_KEYS    = new Set(['project_dir', 'groups', 'vars', 'helpers', 'files', 'layout', 'theme', 'plugins', 'register']);
+const VALID_REGISTER_KEYS = new Set(['cap']);
 const VALID_FILE_KEYS   = new Set(['path', 'var', 'desc', 'exclude', 'category']);
 const VALID_GROUP_KEYS  = new Set(['label', 'compose', 'containers', 'actions', 'terminals', 'children', 'quick', 'archive', 'config_branch', 'images']);
 const VALID_ARCHIVE_KEYS = new Set(['target', 'output_dir', 'name']);
@@ -57,6 +58,7 @@ function validate(data, _sourceFile) {
   if ('vars' in data)    validateVars(data.vars);
   if ('helpers' in data) validateHelpers(data.helpers);
   if ('files' in data)   validateFiles(data.files);
+  if ('register' in data) validateRegister(data.register);
 
   for (const [gname, gdata] of Object.entries(groups)) {
     validateGroup(gname, gdata);
@@ -83,6 +85,17 @@ function validateHelpers(helpersBlock) {
     }
     if (typeof v !== 'string') {
       throw new SchemaError(`helper '${k}' value must be a string`, { context: 'helpers' });
+    }
+  }
+}
+
+function validateRegister(regBlock) {
+  if (!isMapping(regBlock)) throw new SchemaError("'register' must be a mapping");
+  checkUnknownKeys(regBlock, VALID_REGISTER_KEYS, 'register');
+  if ('cap' in regBlock) {
+    const cap = regBlock.cap;
+    if (typeof cap !== 'number' || !Number.isInteger(cap) || cap <= 0) {
+      throw new SchemaError("'register.cap' must be a positive integer");
     }
   }
 }

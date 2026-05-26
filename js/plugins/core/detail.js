@@ -78,8 +78,12 @@ function render(panel, w, h) {
   if (S.detailLines.length > innerH) {
     count = [S.detailScroll + innerH, S.detailLines.length];
   }
+  // When a selection is active in this panel, weave [reverse] into the
+  // intersected lines. decorateLines is a no-op when S.select.active is
+  // false, so steady-state renders pay no cost.
+  const lines = require('../../select').decorateLines(S.detailLines);
   return renderPanel({
-    width: w, height: h, lines: S.detailLines,
+    width: w, height: h, lines,
     title: detailTitle(), hotkey,
     panelType: 'detail',
     focused: isFocused,

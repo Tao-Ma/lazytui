@@ -154,6 +154,38 @@ describe('args / default_cmd', () => {
   });
 });
 
+describe('register block', () => {
+  function withReg(reg) {
+    return {
+      groups: { g: { label: 'G', actions: { a: { cmd: 'echo', label: 'A' } } } },
+      register: reg,
+    };
+  }
+  it('absent register is OK (default cap applied at runtime)', () => {
+    validate({ groups: { g: { label: 'G', actions: { a: { cmd: 'echo', label: 'A' } } } } }, 'test');
+    assert(true);
+  });
+  it('cap as positive integer accepted', () => {
+    validate(withReg({ cap: 50 }), 'test'); assert(true);
+    validate(withReg({ cap: 1 }), 'test');  assert(true);
+  });
+  it('cap zero/negative/non-int rejected', () => {
+    expectThrow(/positive integer/, () => validate(withReg({ cap: 0 }), 'test'));
+    expectThrow(/positive integer/, () => validate(withReg({ cap: -1 }), 'test'));
+    expectThrow(/positive integer/, () => validate(withReg({ cap: 1.5 }), 'test'));
+    expectThrow(/positive integer/, () => validate(withReg({ cap: '10' }), 'test'));
+  });
+  it('unknown key in register rejected', () => {
+    expectThrow(/unknown key.*foo/, () => validate(withReg({ cap: 10, foo: 1 }), 'test'));
+  });
+  it('register not a mapping rejected', () => {
+    expectThrow(/must be a mapping/, () => validate({
+      groups: { g: { label: 'G', actions: { a: { cmd: 'echo', label: 'A' } } } },
+      register: 'oops',
+    }, 'test'));
+  });
+});
+
 describe('files.category', () => {
   function withFiles(entries) {
     return {
