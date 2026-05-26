@@ -146,6 +146,12 @@ function hexdump(buf, baseOffset = 0) {
  *   maxBytes  text cap (default 1MB)
  *   hexAfter  hex cap (default 256KB)
  *   forceHex  bypass binary detection, always render as hex
+ *   readBytes (path, maxBytes) → Promise<{ buf, totalSize, truncated }>
+ *             pluggable byte source. Defaults to local FS via
+ *             _readCapped; the docker source passes a closure that
+ *             routes through `docker exec`. The contract is the
+ *             same for both: a bounded read returning a Buffer plus
+ *             totalSize so the truncation footer is accurate.
  *
  * Return shape:
  *   { kind: 'text'|'hex'|'error', lines, totalSize, truncated, path,
@@ -155,12 +161,13 @@ async function loadFile(path, opts = {}) {
   const maxBytes = opts.maxBytes || DEFAULT_MAX_BYTES;
   const hexAfter = opts.hexAfter || DEFAULT_HEX_AFTER;
   const forceHex = !!opts.forceHex;
+  const readBytes = opts.readBytes || _readCapped;
 
   let info;
   try {
     // Read up to the larger cap so we can detect binary first and
     // decide whether to apply the smaller hex cap on a re-slice.
-    info = await _readCapped(path, Math.max(maxBytes, hexAfter));
+    info = await readBytes(path, Math.max(maxBytes, hexAfter));
   } catch (err) {
     return {
       kind: 'error',

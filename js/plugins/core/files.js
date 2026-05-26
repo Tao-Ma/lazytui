@@ -2,7 +2,7 @@
  * Core plugin — unified `files` panel (with `file-manager` and
  * `file-browser` aliases for backward compatibility).
  *
- * One panel type, three behaviors selected by `source:` in YAML:
+ * One panel type, four behaviors selected by `source:` in YAML:
  *
  *   source: declared     reads the project's declared file registry
  *                        (S.config.files — the YAML `files:` block).
@@ -18,6 +18,12 @@
  *                        projects that want the curated list visible
  *                        while still allowing ad-hoc browsing.
  *
+ *   source: docker       container filesystem browser. Requires
+ *                        `container: <name>` on the same panel. Listings
+ *                        run `docker exec <c> ls -lA ...`; opens read
+ *                        through `docker exec <c> head -c <cap>`. Async
+ *                        — placeholder rows during the first fetch.
+ *
  * Aliases:
  *   - `type: file-manager`  hard-pins source=declared (the v0.3 panel).
  *   - `type: file-browser`  hard-pins source=filesystem (in-development
@@ -27,11 +33,15 @@
  * Items are normalized to a single shape so getInfo/copyOptions/onKey/
  * render branch on `item.kind`:
  *
- *   declared:  { kind: 'declared', name, path, var?, desc?, exclude?, category? }
+ *   declared:  { kind: 'declared', name, path, var?, desc?, exclude?, category?, container? }
  *   parent:    { kind: 'parent',   name: '..',  path }
  *   dir:       { kind: 'dir',      name, path }
  *   file:      { kind: 'file',     name, path, size, mtime }
  *   symlink:   { kind: 'symlink',  name, path, size, mtime }
+ *   loading:   { kind: 'loading',  name: 'Loading…', path: null }
+ *
+ * Declared items may carry `container:` so the registry can mix host
+ * paths with container paths in one list (`source: declared`).
  */
 'use strict';
 
@@ -47,6 +57,7 @@ const {
 
 const { addContentTab } = require('../../tabs');
 const { loadFile, DEFAULT_MAX_BYTES, DEFAULT_HEX_AFTER } = require('../../file-loader');
+const { dockerList, dockerReadBytes } = require('../../docker-fs');
 
 // --- per-panel state ---
 
@@ -69,12 +80,23 @@ function _state(panelType) {
       // _fsItems cache: keyed by cwd; invalidated on dir change. Holds
       // the last computed items array and its source mtime.
       fsCache: { cwd: null, items: null },
+      // Docker-source bookkeeping. dockerSeq is monotonic so a stale
+      // fetch (user navigated away mid-flight) drops its result on
+      // arrival instead of clobbering the current cwd's listing.
+      dockerSeq: 0,
+      dockerPending: false,
     };
   }
   return S.fileBrowsers[panelType];
 }
 
 function _resolveInitialCwd(panel) {
+  // Docker source: roots are container-side absolute POSIX paths. No
+  // host-side resolution — pass through verbatim or default to '/'.
+  if (panel && panel.source === 'docker') {
+    if (panel && typeof panel.root === 'string' && panel.root) return panel.root;
+    return '/';
+  }
   const base = S.projectDir || process.cwd();
   if (panel && typeof panel.root === 'string' && panel.root) {
     return path.isAbsolute(panel.root) ? panel.root : path.resolve(base, panel.root);
@@ -112,7 +134,59 @@ function _declaredItems() {
     desc: cf.desc || null,
     exclude: cf.exclude || [],
     category: cf.category || null,
+    container: cf.container || null,
   }));
+}
+
+/**
+ * Docker-source listing. Returns cached items synchronously; on cache
+ * miss kicks off an async docker-exec and schedules a re-render when
+ * results arrive. While fetching, a single `{ kind: 'loading' }` row
+ * is returned so the user sees motion instead of an empty panel.
+ *
+ * Stale-fetch guard: dockerSeq is captured before await and compared
+ * after — if the user navigated to a different cwd before the listing
+ * returned, the result is discarded.
+ */
+function _dockerItems(cwd, container, panelType) {
+  const state = _state(panelType);
+
+  // Serve from cache when the cached cwd matches. Docker can't tell us
+  // a cheap mtime, so we cache per-cwd indefinitely; the user busts it
+  // by navigating out and back in (cwd change clears fsCache), or via
+  // the :refresh-files cmdline command.
+  if (state.fsCache.cwd === cwd && Array.isArray(state.fsCache.items)) {
+    return state.fsCache.items;
+  }
+
+  // Placeholder rows during fetch. Parent stays navigable so the user
+  // isn't trapped if the listing hangs.
+  const placeholder = [];
+  const parent = path.posix.dirname(cwd);
+  if (parent !== cwd) placeholder.push({ kind: 'parent', name: '..', path: parent });
+  placeholder.push({ kind: 'loading', name: 'Loading…', path: null });
+
+  if (!state.dockerPending) {
+    state.dockerPending = true;
+    const mySeq = ++state.dockerSeq;
+    dockerList(container, cwd).then(({ items, error }) => {
+      // If the user navigated elsewhere mid-flight, drop this result.
+      if (mySeq !== state.dockerSeq) return;
+      state.dockerPending = false;
+      state.lastError = error || null;
+      const out = [];
+      if (parent !== cwd) out.push({ kind: 'parent', name: '..', path: parent });
+      state.fsCache = { cwd, items: out.concat(items) };
+      require('../../render-queue').scheduleRender();
+    }).catch(err => {
+      if (mySeq !== state.dockerSeq) return;
+      state.dockerPending = false;
+      state.lastError = err.message;
+      state.fsCache = { cwd, items: [] };
+      require('../../render-queue').scheduleRender();
+    });
+  }
+  return placeholder;
 }
 
 /**
@@ -189,22 +263,24 @@ function _matchesFilter(items, pattern) {
   const { safeRegex } = require('../../regex-guard');
   const rx = safeRegex(pattern, 'i');
   if (!rx) return items;
-  // Never filter out the parent shortcut; navigation must stay reachable.
-  return items.filter(it => it.kind === 'parent' || rx.test(it.name));
+  // Never filter out parent / loading rows — navigation + status must
+  // stay reachable regardless of pattern.
+  return items.filter(it => it.kind === 'parent' || it.kind === 'loading' || rx.test(it.name));
 }
 
 function _getItemsFor(panelType, hardcoded) {
   const source = _source(panelType, hardcoded);
   const state = _state(panelType);
+  const panel = _panelOf(panelType);
   let items = [];
   if (source === 'declared') {
     items = _declaredItems();
   } else if (source === 'filesystem') {
-    if (!state.cwd) state.cwd = _resolveInitialCwd(_panelOf(panelType));
+    if (!state.cwd) state.cwd = _resolveInitialCwd(panel);
     items = _fsItems(state.cwd, panelType);
     if (!state.showHidden) items = items.filter(it => it.kind === 'parent' || !it.name.startsWith('.'));
   } else if (source === 'both') {
-    if (!state.cwd) state.cwd = _resolveInitialCwd(_panelOf(panelType));
+    if (!state.cwd) state.cwd = _resolveInitialCwd(panel);
     const fsItems = _fsItems(state.cwd, panelType)
       .filter(it => state.showHidden || it.kind === 'parent' || !it.name.startsWith('.'));
     // C4: also filter declared dotfiles when showHidden is off — otherwise
@@ -213,6 +289,16 @@ function _getItemsFor(panelType, hardcoded) {
     const declared = _declaredItems()
       .filter(it => state.showHidden || !path.basename(it.path).startsWith('.'));
     items = declared.concat(fsItems);
+  } else if (source === 'docker') {
+    const container = panel && panel.container;
+    if (!container) {
+      state.lastError = 'source: docker requires `container:` on the panel';
+      items = [];
+    } else {
+      if (!state.cwd) state.cwd = _resolveInitialCwd(panel);
+      items = _dockerItems(state.cwd, container, panelType);
+      if (!state.showHidden) items = items.filter(it => it.kind === 'parent' || it.kind === 'loading' || !it.name.startsWith('.'));
+    }
   }
   return _matchesFilter(items, getFilter(panelType));
 }
@@ -231,21 +317,30 @@ function _formatSize(bytes) {
 function _getInfoFor(item, panelType, hardcoded) {
   const state = _state(panelType);
   const source = _source(panelType, hardcoded);
+  const panel = _panelOf(panelType);
   const lines = [];
   if (source !== 'declared') {
-    lines.push(`[bold]${esc(state.cwd || '?')}[/]`);
+    const cwdPrefix = source === 'docker' && panel && panel.container
+      ? `${esc(panel.container)}:`
+      : '';
+    lines.push(`[bold]${cwdPrefix}${esc(state.cwd || '?')}[/]`);
     if (state.lastError) {
       lines.push('', `[red]${esc(state.lastError)}[/]`);
     }
     lines.push('');
   }
   if (!item) return lines;
+  if (item.kind === 'loading') {
+    lines.push('[dim]Fetching directory listing…[/]');
+    return lines;
+  }
   lines.push(`[bold]${esc(item.name)}[/]`);
   lines.push(`[dim]kind:[/]  ${item.kind}`);
   if (item.kind === 'declared') {
-    if (item.var)      lines.push(`[dim]var:[/]   $${esc(item.var)}`);
-    if (item.desc)     lines.push(`[dim]desc:[/]  ${esc(item.desc)}`);
-    if (item.category) lines.push(`[dim]category:[/] ${esc(item.category)}`);
+    if (item.var)       lines.push(`[dim]var:[/]   $${esc(item.var)}`);
+    if (item.desc)      lines.push(`[dim]desc:[/]  ${esc(item.desc)}`);
+    if (item.category)  lines.push(`[dim]category:[/] ${esc(item.category)}`);
+    if (item.container) lines.push(`[dim]container:[/] ${esc(item.container)}`);
     if (item.exclude && item.exclude.length) {
       lines.push(`[dim]exclude:[/] ${esc(item.exclude.join(', '))}`);
     }
@@ -267,8 +362,8 @@ function _getInfoFor(item, panelType, hardcoded) {
   return lines;
 }
 
-function _copyOptionsFor(item) {
-  if (!item || item.kind === 'parent') return [];
+function _copyOptionsFor(item, panelType) {
+  if (!item || item.kind === 'parent' || item.kind === 'loading') return [];
   const fsp = require('fs').promises;
   const opts = [
     { label: `Name: ${item.name}`, content: item.name },
@@ -278,9 +373,19 @@ function _copyOptionsFor(item) {
     opts.push({ label: `Var: $${item.var}`, content: item.var });
   }
   if (item.kind === 'file' || item.kind === 'symlink' || item.kind === 'declared') {
+    // Match the open-as-tab adapter dispatch: docker source panels and
+    // declared rows with `container:` read through docker exec; everything
+    // else reads via local fsp.readFile.
+    const panel = _panelOf(panelType) || {};
+    const container = item.container
+      || (panel.source === 'docker' ? panel.container : null);
     opts.push({
       label: 'File contents (text, up to cap)',
-      content: () => fsp.readFile(item.path, 'utf8').catch(() => ''),
+      content: container
+        ? () => dockerReadBytes(container, item.path, DEFAULT_MAX_BYTES)
+            .then(r => r.buf.toString('utf8'))
+            .catch(() => '')
+        : () => fsp.readFile(item.path, 'utf8').catch(() => ''),
     });
   }
   return opts;
@@ -291,15 +396,29 @@ function _openFileAsTab(item, panelType) {
   const maxBytes = _parseSize(panel.max_bytes, DEFAULT_MAX_BYTES);
   const hexAfter = _parseSize(panel.hex_after, DEFAULT_HEX_AFTER);
 
+  // Container source: a docker-source panel uses panel.container for
+  // every read; a declared-source registry can mix host + container
+  // paths via per-entry `container:` on the file row.
+  const container = item.container
+    || (panel.source === 'docker' ? panel.container : null);
+
   // Resolve relative paths against S.projectDir so:
   //   1. The tab key (and dedup) is stable regardless of the process's
   //      cwd at load time.
   //   2. loadFile reads the same file the user pointed at (declared
   //      items like `README.md` resolved against project root, not
   //      whichever directory lazytui happened to be launched from).
-  const base = S.projectDir || process.cwd();
-  const absPath = path.isAbsolute(item.path) ? item.path : path.resolve(base, item.path);
-  const key = `file:${absPath}`;
+  //
+  // Container-side paths are absolute POSIX and pass through verbatim
+  // — host-side path.resolve must not rewrite them.
+  let absPath;
+  if (container) {
+    absPath = item.path;
+  } else {
+    const base = S.projectDir || process.cwd();
+    absPath = path.isAbsolute(item.path) ? item.path : path.resolve(base, item.path);
+  }
+  const key = container ? `docker:${container}:${absPath}` : `file:${absPath}`;
   const label = item.name;
 
   // Capture group at submit time. If the user switches groups while
@@ -308,14 +427,21 @@ function _openFileAsTab(item, panelType) {
   // be current when the promise resolves.
   const originGroup = S.currentGroup;
 
-  addContentTab(originGroup, key, label, [`[dim]Loading ${esc(absPath)}…[/]`]);
+  const loadingLabel = container
+    ? `[dim]Loading ${esc(container)}:${esc(absPath)}…[/]`
+    : `[dim]Loading ${esc(absPath)}…[/]`;
+  addContentTab(originGroup, key, label, [loadingLabel]);
 
   // Use updateContentTabLines on completion: refreshes the tab's
   // stored lines and re-emits setDetail iff the user is STILL parked
   // on this tab in this group. If they've navigated away, the load
   // result is silently stored for when they come back; no focus yank.
   const { updateContentTabLines } = require('../../tabs');
-  loadFile(absPath, { maxBytes, hexAfter }).then(result => {
+  const loadOpts = { maxBytes, hexAfter };
+  if (container) {
+    loadOpts.readBytes = (p, n) => dockerReadBytes(container, p, n);
+  }
+  loadFile(absPath, loadOpts).then(result => {
     updateContentTabLines(originGroup, key, result.lines);
     require('../../render-queue').scheduleRender();
   }).catch(err => {
@@ -344,11 +470,17 @@ function _parseSize(val, fallback) {
 
 function _onKeyFor(key, item, S, panelType /*, hardcoded*/) {
   if (key !== 'return' || !item) return false;
+  // Loading placeholder is a status row, not actionable.
+  if (item.kind === 'loading') return true;
   if (item.kind === 'parent' || item.kind === 'dir') {
     const state = _state(panelType);
     state.cwd = item.path;
-    // Bust the fs cache so the new dir's listing is read fresh.
+    // Bust the fs cache so the new dir's listing is read fresh. For
+    // docker we also bump dockerSeq so any in-flight fetch from the
+    // previous cwd drops its result on arrival.
     state.fsCache = { cwd: null, items: null };
+    state.dockerSeq = (state.dockerSeq || 0) + 1;
+    state.dockerPending = false;
     if (S.sel) S.sel[panelType] = 0;
     if (S.scroll) S.scroll[panelType] = 0;
     if (S.filters) delete S.filters[panelType];
@@ -372,10 +504,11 @@ function _renderFor(panel, w, h, state, panelType, hardcoded) {
     let marker;
     if (it.kind === 'parent')        marker = '↩ ';
     else if (it.kind === 'dir')      marker = '▸ ';
+    else if (it.kind === 'loading')  marker = '⋯ ';
     else if (it.kind === 'declared') marker = source === 'both' ? '★ ' : '  ';
     else                              marker = '  ';
     const sizeStr = (it.kind === 'file' || it.kind === 'symlink') ? _formatSize(it.size || 0) : '';
-    const ms = isMultiSel(panelType, it.path) ? '*' : ' ';
+    const ms = it.kind === 'loading' ? ' ' : (isMultiSel(panelType, it.path) ? '*' : ' ');
     const nameMax = Math.max(4, innerW - marker.length - sizeStr.length - 4);
     let name = it.name;
     if (name.length > nameMax) name = name.slice(0, nameMax - 1) + '…';
@@ -383,6 +516,7 @@ function _renderFor(panel, w, h, state, panelType, hardcoded) {
     const pad = Math.max(1, innerW - visibleLen(left) - sizeStr.length - 1);
     const row = `${left}${' '.repeat(pad)}${sizeStr} `;
     if (isSel) return `[${t.selected}]${row}`;
+    if (it.kind === 'loading') return `[dim]${row}[/]`;
     if (it.kind === 'dir' || it.kind === 'parent') return `[bold]${row}[/]`;
     if (it.kind === 'declared' && source === 'both') return `[dim]${row}[/]`;
     return row;
@@ -393,6 +527,10 @@ function _renderFor(panel, w, h, state, panelType, hardcoded) {
   if (filterText) title += ` /${esc(filterText)}`;
   if (source === 'both') title += ' [dim]\\[both][/]';
   else if (source === 'declared' && panelType === 'files') title += ' [dim]\\[declared][/]';
+  else if (source === 'docker') {
+    const c = panel.container || '?';
+    title += ` [dim]\\[docker:${esc(c)}][/]`;
+  }
   return renderPanel({
     width: w, height: h, lines,
     title, hotkey: panel.hotkey,
@@ -494,7 +632,7 @@ function _makeDef(panelType, hardcoded) {
     render: (panel, w, h, state) => _renderFor(panel, w, h, state, panelType, hardcoded),
     getItems: () => _getItemsFor(panelType, hardcoded),
     getInfo: (item) => _getInfoFor(item, panelType, hardcoded),
-    copyOptions: _copyOptionsFor,
+    copyOptions: (item) => _copyOptionsFor(item, panelType),
     onKey: (key, item, state) => _onKeyFor(key, item, state, panelType, hardcoded),
     filterable: true,
     customFilter: true,

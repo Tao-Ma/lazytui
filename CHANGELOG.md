@@ -42,6 +42,26 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
     max_bytes: 2MB       # text-read cap
     hex_after: 512KB     # hex-render cap
   ```
+- **`source: docker` — browse paths inside a running container.** A
+  fourth source for the `files` panel that shells out to `docker exec
+  <container> ls -lA --time-style=+%s` for listings and `head -c <cap>`
+  for binary-safe capped reads. Same navigation, content tabs, hex
+  view, and copy options as the local source; the panel just operates
+  inside the named container instead of on the host. Async with a
+  `Loading…` placeholder during the first fetch; cache busts on cwd
+  change. Use when the data you care about lives in a named volume
+  (e.g. postgres `PGDATA`) and a host-side bind mount isn't an option.
+
+  Declared registry entries also accept a `container:` field so
+  `source: declared` (and `both`) can mix host and container paths in
+  one curated list.
+
+  ```yaml
+  - type: files
+    source: docker
+    container: pg
+    root: /var/lib/postgresql/data
+  ```
 - **Content tabs** — new tab category in the detail panel for
   read-only text/hex surfaces. Sits alongside action tabs and terminal
   tabs (so `[`/`]` cycle through all of them). Created by plugins via
