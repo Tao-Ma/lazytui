@@ -167,11 +167,12 @@ describe('[10] decorateLines — multi-line render integration', () => {
     eq(out[2], 'after',  'untouched');
     assert(out[1].includes('[reverse]'), 'sel line carries [reverse]');
   });
-  it('no-op when no active selection', () => {
+  it('no-op when no active selection (reading mode = no cursor)', () => {
     setUp(['x']);
+    S.focus = 'detail';
     sel.cancel();
     const out = sel.decorateLines(S.detailLines);
-    eq(out, S.detailLines, 'returns input ref/equal');
+    eq(out, S.detailLines, 'pass-through; reading mode shows no cursor');
   });
 });
 
@@ -202,28 +203,58 @@ describe('[11] onDetailKey — keyboard visual-mode', () => {
     S.focus = 'detail';
     eq(sel.onDetailKey('v', 'v'), true, 'returns true when focus = detail');
   });
-  it('v toggles char select on/off; cursor anchors', () => {
-    withDetail(['hello']);
-    S.detailCursor = { line: 0, col: 2 };
+  it('v lands cursor at top of current viewport', () => {
+    withDetail(Array.from({ length: 10 }, (_, i) => `line${i}`));
+    S.detailScroll = 3;
     sel.onDetailKey('v', 'v');
     eq(sel.isActive(), true);
     eq(S.select.kind, 'char');
-    eq(S.select.anchor.col, 2);
-    sel.onDetailKey('v', 'v');
-    eq(sel.isActive(), false, 'second v cancels');
+    eq(S.select.anchor.line, 3, 'anchor at viewport top, not line 0');
+    eq(S.select.anchor.col, 0);
   });
-  it('V switches to line mode (even while char already active)', () => {
-    withDetail(['hello']);
-    sel.onDetailKey('v', 'v');
+  it('V starts line mode at viewport top', () => {
+    withDetail(['a', 'b', 'c']);
+    S.detailScroll = 1;
     sel.onDetailKey('V', 'V');
-    eq(S.select.kind, 'line', 'line mode now');
+    eq(S.select.kind, 'line');
+    eq(S.select.anchor.line, 1);
   });
-  it('j/k move cursor; sel extends when active', () => {
-    withDetail(['line0', 'line1', 'line2']);
+  it('reading-mode j/k scrolls the view, cursor not used', () => {
+    withDetail(Array.from({ length: 20 }, (_, i) => `line${i}`));
+    S.panelHeights.detail = 5;  // innerH = 3
+    eq(S.detailScroll, 0, 'starts at top');
+    eq(sel.isActive(), false, 'reading mode (no select)');
+    sel.onDetailKey('j', 'j');
+    eq(S.detailScroll, 1, 'scroll advanced by 1');
+    sel.onDetailKey('j', 'j');
+    sel.onDetailKey('j', 'j');
+    eq(S.detailScroll, 3, 'scrolled 3 lines');
+    sel.onDetailKey('k', 'k');
+    eq(S.detailScroll, 2, 'k scrolls back');
+  });
+  it('reading-mode j/k clamps at top and bottom', () => {
+    withDetail(Array.from({ length: 10 }, (_, i) => `line${i}`));
+    S.panelHeights.detail = 5;  // innerH = 3, maxScroll = 7
+    for (let i = 0; i < 20; i++) sel.onDetailKey('j', 'j');
+    eq(S.detailScroll, 7, 'clamped to maxScroll');
+    for (let i = 0; i < 20; i++) sel.onDetailKey('k', 'k');
+    eq(S.detailScroll, 0, 'clamped to 0');
+  });
+  it('visual-mode j/k moves cursor and extends selection', () => {
+    withDetail(['line0', 'line1', 'line2', 'line3']);
     sel.onDetailKey('v', 'v');
     sel.onDetailKey('j', 'j');
     eq(S.detailCursor.line, 1);
     eq(S.select.cursor.line, 1, 'selection extended');
+    sel.onDetailKey('j', 'j');
+    eq(S.detailCursor.line, 2);
+  });
+  it('visual-mode j scrolls when cursor leaves viewport', () => {
+    withDetail(Array.from({ length: 20 }, (_, i) => `line${i}`));
+    S.panelHeights.detail = 5;  // innerH = 3
+    sel.onDetailKey('v', 'v');
+    for (let i = 0; i < 5; i++) sel.onDetailKey('j', 'j');
+    assert(S.detailScroll > 0, `scroll auto-advanced (got ${S.detailScroll})`);
   });
   it('h/l only claimed while selection active', () => {
     withDetail(['abc']);
@@ -250,20 +281,6 @@ describe('[11] onDetailKey — keyboard visual-mode', () => {
     sel.onDetailKey('escape', '');
     eq(sel.isActive(), false);
     eq(reg.historyLen(), 0, 'nothing pushed');
-  });
-  it('cursor scroll-into-view when moving below viewport', () => {
-    withDetail(Array.from({ length: 20 }, (_, i) => `line${i}`));
-    S.panelHeights.detail = 5;  // innerH = 3
-    for (let i = 0; i < 5; i++) sel.onDetailKey('j', 'j');
-    assert(S.detailScroll > 0, `scroll advanced (got ${S.detailScroll})`);
-  });
-  it('clamping: cursor never escapes detailLines bounds', () => {
-    withDetail(['only']);
-    for (let i = 0; i < 10; i++) sel.onDetailKey('j', 'j');
-    eq(S.detailCursor.line, 0, 'still on the only line');
-    for (let i = 0; i < 10; i++) sel.onDetailKey('l', 'l');
-    // Need active sel to claim l; without it cursor.col stays put.
-    eq(S.detailCursor.col, 0);
   });
 });
 

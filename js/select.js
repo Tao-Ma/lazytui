@@ -244,34 +244,21 @@ function highlightLine(line, startCol, endCol) {
 }
 
 /**
- * Apply the active selection's highlight (or, when no selection is
- * active, the detail cursor) to a copy of `lines`. Lines outside the
- * affected range are returned as-is.
- *
- * Active selection: every intersected line gets highlightLine applied.
- * No selection, detail focused: one single-cell cursor indicator at
- * S.detailCursor.line/col. Anywhere else: pass-through.
+ * Apply the active selection's highlight to a copy of `lines`. Lines
+ * outside the selection range are returned as-is; intersected lines
+ * get highlightLine applied. Returns `lines` unchanged when there is
+ * no active selection — reading mode has no visible cursor, only
+ * visual mode does.
  */
 function decorateLines(lines) {
-  if (S.select && S.select.active) {
-    const r = selectedRange();
-    if (!r) return lines;
-    return lines.map((line, i) => {
-      if (i < r.startLine || i > r.endLine) return line;
-      const s = (i === r.startLine) ? r.startCol : 0;
-      const e = (i === r.endLine)   ? r.endCol   : Infinity;
-      return highlightLine(line, s, e);
-    });
-  }
-  // No active selection — show the cursor indicator only when detail
-  // is the focused panel (and not in terminal mode where the PTY owns
-  // its own cursor).
-  if (S.focus !== 'detail' || S.terminalMode) return lines;
-  const c = S.detailCursor;
-  if (!c) return lines;
+  if (!S.select || !S.select.active) return lines;
+  const r = selectedRange();
+  if (!r) return lines;
   return lines.map((line, i) => {
-    if (i !== c.line) return line;
-    return highlightLine(line, c.col, c.col);
+    if (i < r.startLine || i > r.endLine) return line;
+    const s = (i === r.startLine) ? r.startCol : 0;
+    const e = (i === r.endLine)   ? r.endCol   : Infinity;
+    return highlightLine(line, s, e);
   });
 }
 
@@ -281,21 +268,29 @@ function decorateLines(lines) {
 // higher-priority mode owns the key), calls onDetailKey first.
 // Returns true to claim the key — the dispatch switch is then skipped.
 //
-// Bindings (focus=detail, not terminal mode):
-//   v        toggle char-select at cursor
-//   V        toggle line-select at cursor
-//   y        commit + push to register (only when selection active)
-//   Esc      cancel selection (only when selection active)
-//   j/down   cursor down (extends selection if active)
-//   k/up     cursor up
-//   h/left   cursor left  — only claimed when selection active
-//   l/right  cursor right — only claimed when selection active
-//   0/Home   cursor to col 0
-//   $/End    cursor to end-of-line
+// Two modes:
 //
-// h/l fall through to the global focus-shift when no selection is
-// active; entering visual mode is how the user opts into per-char
-// horizontal cursor motion.
+// Reading mode (no selection active):
+//   j/down  scroll detail view +1 line
+//   k/up    scroll detail view -1 line
+//   h/l     fall through to global focus-shift (panel navigation)
+//   v       enter char-select at top of current viewport
+//   V       enter line-select at top of current viewport
+//
+// Visual mode (selection active):
+//   j/down  cursor down (extends selection + autoscrolls)
+//   k/up    cursor up
+//   h/left  cursor left
+//   l/right cursor right
+//   0/Home  cursor to col 0
+//   $/End   cursor to end-of-line
+//   y       commit + push to register
+//   v / V   exit visual mode (cancel)
+//   Esc     cancel
+//
+// Cursor is rendered as a one-cell [reverse] glyph only while a
+// selection is active — reading mode has no visible cursor, matching
+// pager/lazygit-style expectations where j/k means "move the view".
 
 function _innerHeight() {
   const h = S.panelHeights.detail || 0;
@@ -327,6 +322,13 @@ function _moveCursor(dline, dcol) {
   return true;
 }
 
+function _scrollView(delta) {
+  const innerH = _innerHeight();
+  const maxScroll = Math.max(0, S.detailLines.length - innerH);
+  const next = Math.max(0, Math.min(maxScroll, (S.detailScroll || 0) + delta));
+  S.detailScroll = next;
+}
+
 function onDetailKey(key, seq) {
   if (S.focus !== 'detail' || S.terminalMode) return false;
   // Higher-priority modes (menu/cmd/etc.) are filtered upstream in
@@ -335,25 +337,43 @@ function onDetailKey(key, seq) {
   if (!S.detailCursor) S.detailCursor = { line: 0, col: 0 };
   const active = !!(S.select && S.select.active);
 
-  // Mode toggles
+  // Mode toggles. Entering visual mode plants the cursor at the top
+  // of the current viewport rather than at the last known position —
+  // matches what mouse-drag effectively does (cursor where the click
+  // landed) and avoids "where did v take me?" surprises after the
+  // user has been scrolling around.
   if (seq === 'v' || key === 'v') {
     if (active && S.select.kind === 'char') cancel();
-    else beginAt(S.detailCursor.line, S.detailCursor.col, 'char');
+    else {
+      const start = S.detailScroll || 0;
+      S.detailCursor = { line: start, col: 0 };
+      beginAt(start, 0, 'char');
+    }
     return true;
   }
   if (seq === 'V' || key === 'V') {
     if (active && S.select.kind === 'line') cancel();
-    else beginAt(S.detailCursor.line, S.detailCursor.col, 'line');
+    else {
+      const start = S.detailScroll || 0;
+      S.detailCursor = { line: start, col: 0 };
+      beginAt(start, 0, 'line');
+    }
     return true;
   }
   if ((seq === 'y' || key === 'y') && active) { commit(); return true; }
   if (key === 'escape' && active) { cancel(); return true; }
 
-  // Vertical movement (always claimed in detail — previously j/k were
-  // no-op there since detail isn't a list panel, so this isn't taking
-  // anything away).
-  if (key === 'down' || seq === 'j' || key === 'j') { _moveCursor(+1, 0); return true; }
-  if (key === 'up'   || seq === 'k' || key === 'k') { _moveCursor(-1, 0); return true; }
+  // Vertical movement is mode-dependent:
+  //   reading mode → scroll the view ±1 line
+  //   visual mode  → move cursor + extend selection + autoscroll
+  if (key === 'down' || seq === 'j' || key === 'j') {
+    if (active) _moveCursor(+1, 0); else _scrollView(+1);
+    return true;
+  }
+  if (key === 'up' || seq === 'k' || key === 'k') {
+    if (active) _moveCursor(-1, 0); else _scrollView(-1);
+    return true;
+  }
 
   // Horizontal movement — only claim h/l while a selection is active,
   // so the panel-focus-shift behavior is preserved in the normal case.
@@ -362,18 +382,17 @@ function onDetailKey(key, seq) {
     if (key === 'right' || seq === 'l' || key === 'l') { _moveCursor(0, +1); return true; }
   }
 
-  // Line-start / line-end jumps. `0` is taken from any panel hotkey
-  // that happens to use it — but the user is in detail focus already,
-  // so shadowing the focus-shift hotkey here is intentional.
-  if (seq === '0' || key === 'home') {
+  // Line-start / line-end jumps — only meaningful with a cursor, i.e.
+  // when a selection is active. In reading mode 0/$ fall through.
+  if (active && (seq === '0' || key === 'home')) {
     S.detailCursor.col = 0;
-    if (active) extendTo(S.detailCursor.line, 0);
+    extendTo(S.detailCursor.line, 0);
     return true;
   }
-  if (seq === '$' || key === 'end') {
+  if (active && (seq === '$' || key === 'end')) {
     const w = plainLineWidth(S.detailCursor.line);
     S.detailCursor.col = Math.max(0, w - 1);
-    if (active) extendTo(S.detailCursor.line, S.detailCursor.col);
+    extendTo(S.detailCursor.line, S.detailCursor.col);
     return true;
   }
   return false;

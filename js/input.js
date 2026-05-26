@@ -23,6 +23,64 @@ const { cleanup } = require('./cleanup');
 
 // --- Mouse handling ---
 
+/**
+ * Wheel-on-panel: hit-test (mx, my) against every panel's bounds and
+ * scroll the one under the cursor. Returns true if any state mutated
+ * (so the caller knows to repaint). Focus is intentionally NOT
+ * changed — users can wheel through a side panel while keeping the
+ * keyboard focused elsewhere, which is the friendlier-than-click
+ * behavior most TUIs converge on.
+ *
+ * Per-panel behavior:
+ *   detail        adjust S.detailScroll ±1 (clamped)
+ *   list panels   moveSel-style ±1 on that panel's own selection
+ *   anything else no-op
+ *
+ * In visual-mode the detail wheel still adjusts only the view; the
+ * cursor's logical position stays where it is and may drift off
+ * screen. Wheel back to bring it back. j/k is the way to extend the
+ * selection.
+ */
+function _handleWheel(mx, my, delta) {
+  for (const p of allPanels()) {
+    const b = S.panelBounds[p.type];
+    if (!b) continue;
+    if (mx < b.x || mx >= b.x + b.w || my < b.y || my >= b.y + b.h) continue;
+
+    if (p.type === 'detail') {
+      const innerH = Math.max(1, (S.panelHeights.detail || b.h) - 2);
+      const maxScroll = Math.max(0, S.detailLines.length - innerH);
+      const next = Math.max(0, Math.min(maxScroll, (S.detailScroll || 0) + delta));
+      if (next === (S.detailScroll || 0)) return false;
+      S.detailScroll = next;
+      return true;
+    }
+
+    const def = getPanelDef(p.type);
+    if (def && typeof def.getItems === 'function') {
+      const items = getItems(p.type, S);
+      if (!items.length) return false;
+      const sel = getSel(p.type);
+      const next = Math.max(0, Math.min(items.length - 1, sel + delta));
+      if (next === sel) return false;
+      if (p.type === 'groups') {
+        // selectGroup has cascading side effects (resetGroupContext);
+        // wheel-over should behave the same as a click on row N.
+        selectGroup(next);
+      } else {
+        setSel(p.type, next);
+      }
+      // Refresh detail only when the wheel landed on the focused panel
+      // (so its info reflects the new selection); wheeling over a side
+      // panel without focus shouldn't clobber detail.
+      if (p.type === S.focus) showSelectedInfo();
+      return true;
+    }
+    return false;
+  }
+  return false;
+}
+
 function handleMouse(kind, x, y) {
   // x, y are 1-based from SGR; convert to 0-based
   const mx = x - 1;
@@ -35,6 +93,14 @@ function handleMouse(kind, x, y) {
     const { onMouseEvent } = require('./design');
     onMouseEvent(kind, mx, my);
     render();
+    return;
+  }
+
+  // Mouse wheel — scrolls the panel under the cursor without changing
+  // focus. Detail adjusts S.detailScroll; list panels move their own
+  // selection. No-op when the wheel landed outside any panel bounds.
+  if (kind === 'wheel-up' || kind === 'wheel-down') {
+    if (_handleWheel(mx, my, kind === 'wheel-down' ? +1 : -1)) render();
     return;
   }
 
@@ -221,22 +287,33 @@ function setupKeyListener() {
 
     // SGR mouse events: \x1b[<button;x;yM (press / motion) or m (release).
     // button encoding (SGR bits): low 2 = button index (0=left, 1=middle,
-    // 2=right), bit 5 (0x20) = motion-while-held. We track left-only and
-    // emit one of three kinds:
-    //   press   — initial button-down
-    //   motion  — cursor moved while button held (only with mode 1002)
-    //   release — button up
-    // Non-design code paths only care about 'press' (focus + select);
-    // design-mode drag uses all three.
+    // 2=right), bit 5 (0x20) = motion-while-held, bit 6 (0x40) = wheel.
+    // We emit one of:
+    //   press      — initial button-down
+    //   motion     — cursor moved while button held (mode 1002)
+    //   release    — button up
+    //   wheel-up   — wheel rotated away from user (btn 64)
+    //   wheel-down — wheel rotated toward user (btn 65)
+    // Non-design code paths only care about 'press' / wheel; design
+    // mode drag uses press/motion/release.
     const mouseMatch = data.match(/\x1b\[<(\d+);(\d+);(\d+)([Mm])/);
     if (mouseMatch) {
       const btn      = parseInt(mouseMatch[1]);
       const x        = parseInt(mouseMatch[2]);
       const y        = parseInt(mouseMatch[3]);
       const released = mouseMatch[4] === 'm';
-      const motion   = (btn & 0x20) !== 0;
-      const button   = btn & 3;
-      if (button !== 0) return;  // left button only
+      // Wheel events — bit 6 set. SGR mode 1006 reports both a press
+      // (M) and a release (m) for each notch in some terminals; drop
+      // the release to avoid double-firing.
+      if ((btn & 0x40) !== 0) {
+        if (released) return;
+        const kind = (btn & 1) ? 'wheel-down' : 'wheel-up';
+        handleMouse(kind, x, y);
+        return;
+      }
+      const motion = (btn & 0x20) !== 0;
+      const button = btn & 3;
+      if (button !== 0) return;  // left button only for non-wheel events
       const kind = released ? 'release' : motion ? 'motion' : 'press';
       handleMouse(kind, x, y);
       return;
@@ -267,4 +344,5 @@ function setupKeyListener() {
 module.exports = {
   setupKeyListener,
   _handleTerminalModeData,  // exported for tests
+  _handleWheel,             // exported for tests
 };

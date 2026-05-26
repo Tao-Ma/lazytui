@@ -50,10 +50,16 @@ function helpLines() {
   }
 
   if (S.focus === 'detail') {
-    lines.push('', '[dim]Detail panel selection[/]',
-      '  v              Start char-select at cursor',
-      '  V              Start line-select at cursor',
-      '  hjkl / arrows  Move cursor (h/l only while a selection is active)',
+    lines.push('', '[dim]Detail panel — reading mode[/]',
+      '  j / k / arrows Scroll view ±1 line',
+      '  , .            Half-page up / down',
+      '  < >            Top / bottom',
+      '  wheel          Scroll panel under cursor (any panel, any time)',
+      '',
+      '[dim]Detail panel — visual mode (selection)[/]',
+      '  v              Start char-select at top of viewport',
+      '  V              Start line-select at top of viewport',
+      '  j / k / h / l  Move cursor (extends selection + autoscroll)',
       '  0 / $          Line start / end',
       '  y              Yank selection → register + clipboard',
       '  Esc            Cancel selection',

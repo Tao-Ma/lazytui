@@ -541,15 +541,23 @@ function renderFooter() {
     if (footerLeftExtra) keys += ` │ ${footerLeftExtra}`;
   }
 
-  // Right tail: footer:right + view-mode tag (`[half]` / `[full]`).
+  // Right tail: footer:right + visual-select tag + view-mode tag.
+  // The visual-select tag (`[v-char]` / `[v-line]`) is a precursor to
+  // the configurable status-bar segments planned for v0.5/v0.6 — when
+  // that lands, this becomes one of several registered widgets, but
+  // for now it's hardcoded next to the existing [half]/[full] tag.
   const rightTail = footerRightExtra ? `${footerRightExtra} │ ` : '';
+  const selectTag = (S.select && S.select.active)
+    ? ` \\[${S.select.kind === 'line' ? 'v-line' : 'v-char'}]`
+    : '';
   const modeTag = S.viewMode !== 'normal' ? ` \\[${S.viewMode}]` : '';
 
-  // Pad left → right tail → mode tag, using visible width math (esc'd
+  // Pad left → right tail → tags, using visible width math (esc'd
   // [ characters and double-width chars must not throw the alignment).
-  const visLen = visibleLen(keys) + visibleLen(rightTail) + visibleLen(modeTag);
+  const visLen = visibleLen(keys) + visibleLen(rightTail)
+               + visibleLen(selectTag) + visibleLen(modeTag);
   const padding = ' '.repeat(Math.max(0, COLS - visLen));
-  const footerMarkup = `[${theme().footer}]${keys}${padding}${rightTail}${modeTag}[/]`;
+  const footerMarkup = `[${theme().footer}]${keys}${padding}${rightTail}${selectTag}${modeTag}[/]`;
   stdout.write(`\x1b[${ROWS};1H` + richToAnsi(footerMarkup) + RESET);
 }
 
