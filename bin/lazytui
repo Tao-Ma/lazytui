@@ -4,6 +4,20 @@
 # Resolves the framework root from this script's own location so it
 # works whether invoked directly, via a symlink in PATH, or from a
 # demo's ./run script. Forwards every argument to tui.js unchanged.
+#
+# Version trampoline: if $LAZYTUI_PATH is set, every consumer's
+# bin/lazytui re-exec's against the lazytui at that path instead of
+# the locally-installed one. Lets you test an in-development lazytui
+# (e.g. ~/exchange/lazytui) inside an existing consumer project
+# (~/exchange/pg-tui) without npm install/publish churn.
+#
+#   export LAZYTUI_PATH=~/exchange/lazytui
+#   ~/exchange/pg-tui/run            # uses your dev lazytui
+#   unset LAZYTUI_PATH               # back to whatever pg-tui shipped with
+#
+# The trampoline is a no-op when LAZYTUI_PATH resolves to the current
+# install (no infinite re-exec) and fails loud if it's set but points
+# nowhere valid (silent fallback would hide misconfiguration).
 
 set -e
 
@@ -16,5 +30,20 @@ while [ -L "$SOURCE" ]; do
 done
 HERE="$(cd -P "$(dirname "$SOURCE")" && pwd)"
 ROOT="$(cd -P "$HERE/.." && pwd)"
+
+if [ -n "${LAZYTUI_PATH:-}" ]; then
+  if [ ! -d "$LAZYTUI_PATH" ]; then
+    echo "lazytui: LAZYTUI_PATH set but not a directory: $LAZYTUI_PATH" >&2
+    exit 1
+  fi
+  TARGET_ROOT="$(cd -P "$LAZYTUI_PATH" && pwd)"
+  if [ "$TARGET_ROOT" != "$ROOT" ]; then
+    if [ ! -f "$TARGET_ROOT/js/tui.js" ]; then
+      echo "lazytui: LAZYTUI_PATH=$TARGET_ROOT has no js/tui.js — not a lazytui checkout" >&2
+      exit 1
+    fi
+    exec node "$TARGET_ROOT/js/tui.js" "$@"
+  fi
+fi
 
 exec node "$ROOT/js/tui.js" "$@"

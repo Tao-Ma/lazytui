@@ -18,6 +18,23 @@ npm install --omit=dev
 node js/run-tests.js
 ```
 
+### Dogfooding a dev lazytui inside another project
+
+When you're iterating on lazytui itself and want to try a change
+inside an existing consumer (say `~/exchange/pg-tui`) without
+publishing/installing, set `LAZYTUI_PATH`:
+
+```sh
+export LAZYTUI_PATH=~/exchange/lazytui
+~/exchange/pg-tui/run        # runs your dev lazytui against pg-tui's config
+unset LAZYTUI_PATH           # back to whatever pg-tui shipped with
+```
+
+Every `bin/lazytui` (including the one in the consumer's node_modules)
+re-exec's against the lazytui at `LAZYTUI_PATH`. Same-directory guard
+keeps the lazytui repo itself unaffected; an invalid path fails loud
+(no silent fallback).
+
 ## Where to start
 
 - **Found a bug or want a small fix:** open an issue, or send a PR

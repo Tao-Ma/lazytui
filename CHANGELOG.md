@@ -6,6 +6,19 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **`LAZYTUI_PATH` version trampoline.** When set in the environment,
+  every `bin/lazytui` re-exec's against the lazytui checkout at that
+  path instead of the locally-installed one. Lets a consumer project
+  (e.g. `~/exchange/pg-tui`) point at an in-development lazytui
+  (`~/exchange/lazytui`) without npm install/publish churn, then
+  `unset LAZYTUI_PATH` to fall back to whatever the consumer
+  shipped with. Same-directory guard prevents infinite re-exec when
+  the path resolves to the current install. Fails loud (exit 1, error
+  on stderr) when set to a non-directory or a directory missing
+  `js/tui.js`, so misconfiguration can't silently fall through to the
+  wrong version.
+
 ## [0.3.0] — 2026-05-24
 
 ### Changed
