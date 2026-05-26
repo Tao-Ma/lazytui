@@ -60,7 +60,7 @@ function freshState(root, panelType = 'files', extraPanelCfg = {}) {
     leftWidth: 30, detailHeightPct: 60,
   };
   S.sel = {}; S.scroll = {}; S.filters = {};
-  S.fileBrowser = null;
+  S.fileBrowsers = {};
   S.contentTabs = {};
   S.ephemeralTerminals = {};
   S.activeTab = 0;
@@ -191,14 +191,14 @@ describe('[7] :show-hidden cmdline command', () => {
 });
 
 describe('[8] onKey — Enter on dir navigates; on declared no-op-cd', () => {
-  it('navigating filesystem dirs updates S.fileBrowser.cwd', () => {
+  it('navigating filesystem dirs updates the per-type cwd', () => {
     const root = mkTree();
     try {
       freshState(root, 'file-browser');
       const items = fbDef.getItems(S);
       const sub = items.find(i => i.name === 'subdir');
       fbDef.onKey('return', sub, S);
-      eq(S.fileBrowser.cwd, path.join(root, 'subdir'));
+      eq(S.fileBrowsers['file-browser'].cwd, path.join(root, 'subdir'));
       assert(fbDef.getItems(S).some(i => i.name === 'gamma.txt'));
     } finally { rm(root); }
   });

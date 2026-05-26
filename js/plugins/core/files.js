@@ -50,10 +50,28 @@ const { loadFile, DEFAULT_MAX_BYTES, DEFAULT_HEX_AFTER } = require('../../file-l
 
 // --- per-panel state ---
 
-function _ensureState() {
-  if (!S.fileBrowser) {
-    S.fileBrowser = { cwd: null, showHidden: false, lastError: null };
+/**
+ * Per-panel-type state. Keyed by `panelType` (the registered name —
+ * `files`, `file-browser`, or any future variant) so two panels of
+ * different types have independent cwd / showHidden / lastError /
+ * fsCache slots. Two panels of the SAME type still share — same
+ * limitation as `S.sel[panelType]` and the rest of the framework.
+ *
+ * Legacy global S.fileBrowser was retired in v0.4 stabilization;
+ * callers must go through _state(panelType) now. `:show-hidden`
+ * fans out across all slots for backwards compatibility.
+ */
+function _state(panelType) {
+  if (!S.fileBrowsers) S.fileBrowsers = {};
+  if (!S.fileBrowsers[panelType]) {
+    S.fileBrowsers[panelType] = {
+      cwd: null, showHidden: false, lastError: null,
+      // _fsItems cache: keyed by cwd; invalidated on dir change. Holds
+      // the last computed items array and its source mtime.
+      fsCache: { cwd: null, items: null },
+    };
   }
+  return S.fileBrowsers[panelType];
 }
 
 function _resolveInitialCwd(panel) {
@@ -97,8 +115,31 @@ function _declaredItems() {
   }));
 }
 
-function _fsItems(cwd) {
-  _ensureState();
+/**
+ * Read directory contents into the normalized item shape, with a
+ * per-panel cache keyed on cwd + the directory's own mtime. Re-renders
+ * that don't change the cwd or the on-disk dir contents return the
+ * cached list with zero syscalls. Manual `:refresh` (`r`) busts the
+ * cache via fileBrowser.fsCache.cwd = null in the refresh hook.
+ *
+ * Without this cache, getItems re-ran readdirSync + N statSyncs every
+ * render frame — sluggish on slow filesystems (NFS, sshfs) or huge
+ * dirs (node_modules, /usr/bin).
+ */
+function _fsItems(cwd, panelType) {
+  const state = _state(panelType);
+
+  // Cache-validity: same cwd AND the cwd's own mtime hasn't advanced
+  // since we last listed. statSync on the cwd itself is one syscall;
+  // listing all entries is N+1.
+  let cwdMtime = 0;
+  try { cwdMtime = fs.statSync(cwd).mtimeMs; } catch { /* unreadable */ }
+  if (state.fsCache.cwd === cwd
+      && state.fsCache.cwdMtime === cwdMtime
+      && Array.isArray(state.fsCache.items)) {
+    return state.fsCache.items;
+  }
+
   const out = [];
   const parent = path.dirname(cwd);
   if (parent !== cwd) {
@@ -107,9 +148,10 @@ function _fsItems(cwd) {
   let entries;
   try {
     entries = fs.readdirSync(cwd, { withFileTypes: true });
-    S.fileBrowser.lastError = null;
+    state.lastError = null;
   } catch (err) {
-    S.fileBrowser.lastError = err.message;
+    state.lastError = err.message;
+    state.fsCache = { cwd, cwdMtime, items: out };
     return out;
   }
   const dirs = [];
@@ -133,7 +175,9 @@ function _fsItems(cwd) {
   }
   dirs.sort((a, b) => a.name.localeCompare(b.name));
   files.sort((a, b) => a.name.localeCompare(b.name));
-  return out.concat(dirs, files);
+  const items = out.concat(dirs, files);
+  state.fsCache = { cwd, cwdMtime, items };
+  return items;
 }
 
 function _matchesFilter(items, pattern) {
@@ -151,20 +195,24 @@ function _matchesFilter(items, pattern) {
 
 function _getItemsFor(panelType, hardcoded) {
   const source = _source(panelType, hardcoded);
+  const state = _state(panelType);
   let items = [];
   if (source === 'declared') {
     items = _declaredItems();
   } else if (source === 'filesystem') {
-    _ensureState();
-    if (!S.fileBrowser.cwd) S.fileBrowser.cwd = _resolveInitialCwd(_panelOf(panelType));
-    items = _fsItems(S.fileBrowser.cwd);
-    if (!S.fileBrowser.showHidden) items = items.filter(it => it.kind === 'parent' || !it.name.startsWith('.'));
+    if (!state.cwd) state.cwd = _resolveInitialCwd(_panelOf(panelType));
+    items = _fsItems(state.cwd, panelType);
+    if (!state.showHidden) items = items.filter(it => it.kind === 'parent' || !it.name.startsWith('.'));
   } else if (source === 'both') {
-    _ensureState();
-    if (!S.fileBrowser.cwd) S.fileBrowser.cwd = _resolveInitialCwd(_panelOf(panelType));
-    const fsItems = _fsItems(S.fileBrowser.cwd)
-      .filter(it => S.fileBrowser.showHidden || it.kind === 'parent' || !it.name.startsWith('.'));
-    items = _declaredItems().concat(fsItems);
+    if (!state.cwd) state.cwd = _resolveInitialCwd(_panelOf(panelType));
+    const fsItems = _fsItems(state.cwd, panelType)
+      .filter(it => state.showHidden || it.kind === 'parent' || !it.name.startsWith('.'));
+    // C4: also filter declared dotfiles when showHidden is off — otherwise
+    // declared entries like .env render with the ★ marker, defeating the
+    // hide-dotfiles default the user expects.
+    const declared = _declaredItems()
+      .filter(it => state.showHidden || !path.basename(it.path).startsWith('.'));
+    items = declared.concat(fsItems);
   }
   return _matchesFilter(items, getFilter(panelType));
 }
@@ -181,13 +229,13 @@ function _formatSize(bytes) {
 // --- getInfo / copyOptions / render / onKey (kind-aware) ---
 
 function _getInfoFor(item, panelType, hardcoded) {
-  _ensureState();
+  const state = _state(panelType);
   const source = _source(panelType, hardcoded);
   const lines = [];
   if (source !== 'declared') {
-    lines.push(`[bold]${esc(S.fileBrowser.cwd || '?')}[/]`);
-    if (S.fileBrowser.lastError) {
-      lines.push('', `[red]${esc(S.fileBrowser.lastError)}[/]`);
+    lines.push(`[bold]${esc(state.cwd || '?')}[/]`);
+    if (state.lastError) {
+      lines.push('', `[red]${esc(state.lastError)}[/]`);
     }
     lines.push('');
   }
@@ -297,8 +345,10 @@ function _parseSize(val, fallback) {
 function _onKeyFor(key, item, S, panelType /*, hardcoded*/) {
   if (key !== 'return' || !item) return false;
   if (item.kind === 'parent' || item.kind === 'dir') {
-    _ensureState();
-    S.fileBrowser.cwd = item.path;
+    const state = _state(panelType);
+    state.cwd = item.path;
+    // Bust the fs cache so the new dir's listing is read fresh.
+    state.fsCache = { cwd: null, items: null };
     if (S.sel) S.sel[panelType] = 0;
     if (S.scroll) S.scroll[panelType] = 0;
     if (S.filters) delete S.filters[panelType];
@@ -466,11 +516,25 @@ const commands = [
     name: 'show-hidden',
     desc: 'Toggle dotfile visibility in files panels (on/off/toggle)',
     run: (args /*, S */) => {
-      _ensureState();
       const arg = (args && args[0] || '').toLowerCase();
-      if (arg === 'on')        S.fileBrowser.showHidden = true;
-      else if (arg === 'off')  S.fileBrowser.showHidden = false;
-      else                     S.fileBrowser.showHidden = !S.fileBrowser.showHidden;
+      // Fan out across every files-style panel-type slot. Two slots
+      // would only exist if a layout uses both `type: files` (or
+      // `file-browser`) variants; either way the toggle is global
+      // from the user's perspective.
+      if (!S.fileBrowsers) S.fileBrowsers = {};
+      // Pre-seed slots for the registered files panel types so a
+      // toggle works even before the user has hit any of them.
+      for (const pt of ['files', 'file-browser']) {
+        if (!S.fileBrowsers[pt]) _state(pt);
+      }
+      for (const k of Object.keys(S.fileBrowsers)) {
+        const slot = S.fileBrowsers[k];
+        if (arg === 'on')       slot.showHidden = true;
+        else if (arg === 'off') slot.showHidden = false;
+        else                    slot.showHidden = !slot.showHidden;
+        // Bust the fs cache so the next render re-lists with the new flag.
+        slot.fsCache = { cwd: null, items: null };
+      }
     },
   },
 ];

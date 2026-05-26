@@ -61,6 +61,51 @@ function _isBinary(buf) {
 }
 
 /**
+ * Detect a leading byte-order mark (BOM) and return one of:
+ *   'utf8'     — EF BB BF (drop 3 bytes, decode as utf8)
+ *   'utf16le'  — FF FE   (drop 2 bytes, decode as utf16le)
+ *   'utf16be'  — FE FF   (route to hex; Node Buffer has no native
+ *                          utf16be decoder and a byte-swap path adds
+ *                          complexity for a rare format)
+ *   null       — no BOM detected
+ */
+function _detectBOM(buf) {
+  if (buf.length >= 3 && buf[0] === 0xEF && buf[1] === 0xBB && buf[2] === 0xBF) return 'utf8';
+  if (buf.length >= 2 && buf[0] === 0xFF && buf[1] === 0xFE) return 'utf16le';
+  if (buf.length >= 2 && buf[0] === 0xFE && buf[1] === 0xFF) return 'utf16be';
+  return null;
+}
+
+/**
+ * Trim a length to the last complete UTF-8 codepoint boundary at or
+ * before `len`. Prevents decoding garbage bytes (U+FFFD replacement
+ * chars) when the cap lands mid-multibyte-sequence.
+ *
+ * UTF-8 byte classification:
+ *   0xxxxxxx — single-byte ASCII (complete)
+ *   110xxxxx — leading byte of 2-byte sequence
+ *   1110xxxx — leading byte of 3-byte sequence
+ *   11110xxx — leading byte of 4-byte sequence
+ *   10xxxxxx — continuation byte
+ */
+function _trimToUtf8Boundary(buf, len) {
+  if (len <= 0) return 0;
+  let end = len;
+  // Walk back over continuation bytes.
+  while (end > 0 && (buf[end - 1] & 0xC0) === 0x80) end--;
+  if (end === 0) return 0;
+  const lead = buf[end - 1];
+  let needed;
+  if      ((lead & 0x80) === 0x00) needed = 1;
+  else if ((lead & 0xE0) === 0xC0) needed = 2;
+  else if ((lead & 0xF0) === 0xE0) needed = 3;
+  else if ((lead & 0xF8) === 0xF0) needed = 4;
+  else                              return end;  // malformed; nothing to align
+  const have = len - (end - 1);
+  return have >= needed ? len : end - 1;
+}
+
+/**
  * Canonical hexdump-style format:
  *
  *   00000000  4d 5a 90 00 03 00 00 00  04 00 00 00 ff ff 00 00  |MZ..............|
@@ -126,14 +171,31 @@ async function loadFile(path, opts = {}) {
   }
 
   const { buf, totalSize } = info;
-  const binary = forceHex || _isBinary(buf);
+  const bom = _detectBOM(buf);
+
+  // Treat UTF-16-LE as text — strip BOM and decode. UTF-16-BE has no
+  // native Node decoder and is rare enough to route through hex view.
+  // UTF-8 BOM (rare in modern files but harmless) gets stripped so it
+  // doesn't render as a stray U+FEFF.
+  if (bom === 'utf16le' && !forceHex) {
+    const sliceEnd = Math.min(buf.length, maxBytes);
+    // Round to even byte count (UTF-16 codepoints are 2 bytes each,
+    // surrogate pairs are 4). Truncating mid-pair would still be a
+    // minor U+FFFD risk; even-only is a cheap approximation.
+    const evenEnd = sliceEnd - ((sliceEnd - 2) % 2);
+    const text = buf.slice(2, evenEnd).toString('utf16le');
+    return _wrapTextResult(text, totalSize, evenEnd, path, 'utf16le');
+  }
+
+  const binary = forceHex || (bom === 'utf16be') || _isBinary(buf);
 
   if (binary) {
     const slice = buf.slice(0, Math.min(buf.length, hexAfter));
     const lines = hexdump(slice);
     const truncated = totalSize > slice.length;
     // Header on every hex view; truncation footer appended when capped.
-    lines.unshift(`[dim]hex view · ${totalSize} bytes[/]`, '');
+    const headerSuffix = bom === 'utf16be' ? ' · utf-16-be detected' : '';
+    lines.unshift(`[dim]hex view · ${totalSize} bytes${headerSuffix}[/]`, '');
     if (truncated) {
       lines.push('', `[dim]… truncated at ${slice.length} of ${totalSize} bytes (hex_after cap)[/]`);
     }
@@ -141,18 +203,28 @@ async function loadFile(path, opts = {}) {
   }
 
   // Text path: decode the (possibly smaller) text-capped slice.
-  const textSlice = buf.slice(0, Math.min(buf.length, maxBytes));
-  const text = textSlice.toString('utf8');
+  // _trimToUtf8Boundary prevents the cap from chopping mid-codepoint
+  // (which would otherwise render as U+FFFD replacement chars).
+  const rawEnd = Math.min(buf.length, maxBytes);
+  const skipBom = bom === 'utf8' ? 3 : 0;
+  const alignedEnd = _trimToUtf8Boundary(buf, rawEnd);
+  const text = buf.slice(skipBom, alignedEnd).toString('utf8');
+  return _wrapTextResult(text, totalSize, alignedEnd, path, 'utf8');
+}
+
+function _wrapTextResult(text, totalSize, consumed, path, encoding) {
   // esc() every line — file content is plain text data, not Rich
   // markup. Without escape, a source file containing `[bold]` or
   // `arr[0]` would be re-parsed as markup tags and corrupt styling.
   const lines = text.split('\n').map(esc);
-  // Strip a trailing empty line if the file ended in \n (common).
   if (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
-  const truncated = totalSize > textSlice.length;
+  const truncated = totalSize > consumed;
+  if (encoding && encoding !== 'utf8') {
+    lines.unshift(`[dim]text view · ${encoding} · ${totalSize} bytes[/]`, '');
+  }
   if (truncated) {
     lines.push('');
-    lines.push(`[dim]… truncated at ${textSlice.length} of ${totalSize} bytes (max_bytes cap)[/]`);
+    lines.push(`[dim]… truncated at ${consumed} of ${totalSize} bytes (max_bytes cap)[/]`);
   }
   return { kind: 'text', lines, totalSize, truncated, path };
 }
@@ -160,6 +232,6 @@ async function loadFile(path, opts = {}) {
 module.exports = {
   loadFile,
   // Exposed for tests / advanced callers
-  hexdump, _isBinary, _readCapped,
+  hexdump, _isBinary, _readCapped, _detectBOM, _trimToUtf8Boundary,
   DEFAULT_MAX_BYTES, DEFAULT_HEX_AFTER,
 };

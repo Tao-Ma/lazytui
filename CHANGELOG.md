@@ -27,10 +27,12 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   null-byte scan in the first 8KB → canonical hexdump format.
 
   Backwards-compat aliases (no YAML changes required):
-  - `type: file-manager` → `type: files, source: declared`
-  - `type: file-browser` → `type: files, source: filesystem`
-    (in-development name from this release; kept as an alias in case
-    any tree adopted it during the cycle)
+  - `type: file-manager` keeps the **verbatim v0.3 behavior** — substring
+    (not regex) filter, no Enter-opens-file, `decorate('row:left:file-manager')`
+    /`row:right:file-manager` extension hooks preserved. Users opting
+    into the new declared-list rendering migrate to `type: files,
+    source: declared`.
+  - `type: file-browser` → `type: files, source: filesystem` alias.
 
   Example:
   ```yaml
@@ -51,6 +53,48 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   file-browser to wire regex filter via the same `/` flow; available
   to any future plugin that wants fuzzy / case-sensitive / structured
   filtering.
+
+### Hardening
+- **Per-panel-type files state** (`S.fileBrowsers[panelType]`) — the
+  `files` and `file-browser` panel types now hold independent cwd /
+  showHidden / lastError slots. Earlier global singleton meant a
+  layout with both panel types collapsed to one cwd.
+- **`_fsItems` mtime cache.** Directory listings memoize on cwd +
+  cwd-mtime; unchanged dirs return cached items with zero syscalls.
+  Refresh / cd / `:show-hidden` bust the cache. Earlier code did
+  readdirSync + N statSyncs every render frame.
+- **UTF-8 codepoint alignment + BOM detection** in file-loader. The
+  text cap is rounded back to the last complete UTF-8 codepoint so
+  trailing partial bytes don't render as U+FFFD. Files with a UTF-8
+  BOM get it stripped silently; UTF-16-LE BOM routes through a
+  utf16le-decoded text path; UTF-16-BE BOM is acknowledged and
+  routed to hex view (no native Node decoder).
+- **Declared dotfiles respect `:show-hidden`** in `source: both`
+  mode. Previously the filter ran only over filesystem entries —
+  YAML-declared `.env` etc. always rendered with the ★ marker.
+- **Regex-DoS guard** (`js/regex-guard.js`). The `/`-filter (files
+  panel) and `/`-search (detail panel) compile user-typed buffers
+  into RegExps; without a guard, patterns like `(a+)+x` freeze the
+  event loop indefinitely. The shared `safeRegex(pattern, flags)`
+  caps pattern length at 200 chars and rejects the classic
+  catastrophic-backtracking shapes (`(a+)+`, `(.*)+`, etc.) before
+  ever compiling.
+- **Rich-markup escaping** in file-loader's hex ASCII column and
+  text-line output — file bytes containing `[` no longer get
+  re-parsed as markup tags and corrupt downstream styling.
+- **Async file-open race fixes** in `_openFileAsTab`:
+  - Capture `S.currentGroup` at submit time so a mid-load group
+    switch doesn't dump content into the wrong group.
+  - Resolve `item.path` against `S.projectDir` before reading so
+    declared relative paths land at the right file regardless of
+    the process's launch directory.
+  - Use new `tabs.updateContentTabLines(group, key, lines)` on
+    completion so a slow load can't yank focus back to detail
+    after the user navigated away.
+- **`removeContentTab` refreshes the detail body** after rewinding
+  `S.activeTab` — closing the active content tab now loads the
+  sibling tab's lines (or re-emits Info via `showSelectedInfo`)
+  instead of leaving the closed file's text painted on screen.
 
 - **`LAZYTUI_PATH` version trampoline.** When set in the environment,
   every `bin/lazytui` re-exec's against the lazytui checkout at that
