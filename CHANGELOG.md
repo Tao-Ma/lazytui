@@ -243,6 +243,26 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
     through the Python parser, and the existing-block splicer.
 
 ### Fixed
+- **JS-plugin loading was a silent no-op (parser-port regression).**
+  The JS parser-port from earlier in v0.3.0 dropped the `plugins:`
+  block from `parse()`'s returned config — `loadPlugins(S.config.plugins,
+  ...)` received `undefined` and iterated zero entries, so JS plugins
+  (`path: ./foo.js` style) never `require()`d and never registered
+  their panel types. Layouts that referenced a JS-plugin-provided
+  panel type rendered the slot as an empty string; in `paintColumns`
+  the short-left-output then concatenated the right column's bottom
+  rows into the empty left rows, painting the detail panel under the
+  groups panel at column 0 with right-column width. YAML plugins
+  (`.yml`/`.yaml` paths) were unaffected because `mergeYamlPlugins`
+  inlines their content into groups/vars/files before validation.
+  The differential parser test that gated the JS port passed only
+  because neither postgres nor cloudberrydb demo uses a `.js` plugin
+  path — the codepath had no fixture coverage. Fix: include
+  `data.plugins || {}` in `parse()`'s return; two regression tests
+  pin the round-trip and the no-plugins-block → `{}` contract.
+  Surfaced by the ssh-fleet demo, which is lazytui's first JS-plugin
+  user.
+
 - **Cmdline (`:`) polish from manual testing.** A cluster of
   user-reported glitches in the cmdline dropdown and bare-Esc
   dispatch, fixed in sequence as they surfaced:
