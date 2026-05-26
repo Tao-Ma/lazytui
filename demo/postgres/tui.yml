@@ -95,6 +95,16 @@ layout:
         title: Containers
       - type: groups
         title: Groups
+      # PGDATA browser. `source: docker` shells out via `docker exec pg
+      # ls -lA --time-style=+%s` for listings and `head -c <cap>` for
+      # capped reads, so the data dir is browsable even though it's a
+      # named volume (no host-side bind mount). Enter on a file opens
+      # it as a content tab in the detail panel.
+      - type: files
+        title: PGDATA
+        source: docker
+        container: pg
+        root: /var/lib/postgresql/data
   right:
     panels:
       - type: actions
