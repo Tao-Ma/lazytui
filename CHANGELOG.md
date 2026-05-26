@@ -7,6 +7,51 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Unified `files` core panel — declared registry + filesystem browser
+  in one panel type.** Replaces the v0.3 `file-manager` (declared-only)
+  with a `source:` config that picks the behavior:
+  - `source: declared`   — read `S.config.files` (the YAML `files:` block).
+                           Same content as the v0.3 file-manager panel.
+  - `source: filesystem` — real directory browser. Enter drills into
+                           dirs, files open as content tabs in detail.
+                           Hidden dotfiles excluded; `:show-hidden
+                           on|off|toggle` flips visibility at runtime.
+                           Regex filter via `/` (case-insensitive,
+                           invalid pattern shows everything).
+  - `source: both`       — declared rows first (marked ★), then the
+                           filesystem listing. For projects that want
+                           both their curated set and ad-hoc browsing.
+
+  File loads are async with configurable caps (`max_bytes`, default 1MB
+  text; `hex_after`, default 256KB hex). Binary files detected via
+  null-byte scan in the first 8KB → canonical hexdump format.
+
+  Backwards-compat aliases (no YAML changes required):
+  - `type: file-manager` → `type: files, source: declared`
+  - `type: file-browser` → `type: files, source: filesystem`
+    (in-development name from this release; kept as an alias in case
+    any tree adopted it during the cycle)
+
+  Example:
+  ```yaml
+  - type: files
+    source: both
+    root: ./src          # initial cwd for filesystem mode
+    max_bytes: 2MB       # text-read cap
+    hex_after: 512KB     # hex-render cap
+  ```
+- **Content tabs** — new tab category in the detail panel for
+  read-only text/hex surfaces. Sits alongside action tabs and terminal
+  tabs (so `[`/`]` cycle through all of them). Created by plugins via
+  `tabs.addContentTab(group, key, label, lines)`; reusing the same
+  key updates the existing tab in place rather than duplicating. `x`
+  on a focused content tab closes it.
+- **`customFilter: true` plugin opt-in.** Lets a panel def take over
+  filtering instead of the framework's substring matcher. Used by
+  file-browser to wire regex filter via the same `/` flow; available
+  to any future plugin that wants fuzzy / case-sensitive / structured
+  filtering.
+
 - **`LAZYTUI_PATH` version trampoline.** When set in the environment,
   every `bin/lazytui` re-exec's against the lazytui checkout at that
   path instead of the locally-installed one. Lets a consumer project

@@ -85,6 +85,7 @@ function helpLines() {
     '  y              Copy menu (pick what to copy)',
     '  "              Yank-register history popup',
     '  :              Command mode',
+    '  :show-hidden   Toggle dotfile visibility in file-browser panels',
     '  Enter          Activate terminal tab',
     `  Ctrl+\\         Exit terminal mode`,
     '  r              Refresh container status',

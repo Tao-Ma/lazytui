@@ -114,10 +114,12 @@ function recompute() {
  */
 function _recomputeFor(term) {
   _ensure();
-  let rx;
-  try {
-    rx = new RegExp(term, 'gi');
-  } catch {
+  // safeRegex caps pattern length and rejects nested-quantifier shapes
+  // that would otherwise freeze the event loop on .exec — same defense
+  // as files.js's filter path.
+  const { safeRegex } = require('./regex-guard');
+  const rx = safeRegex(term, 'gi');
+  if (!rx) {
     S.detailSearch.matches = [];
     S.detailSearch.idx = 0;
     return;

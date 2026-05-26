@@ -28,11 +28,11 @@ function tabSlot(label) {
 
 function detailTitle() {
   const tabBounds = [];
-  const { actionTabs, termTabs } = getTabInfo();
+  const { actionTabs, termTabs, contentTabs } = getTabInfo();
   // Always publish bounds (empty when "Detail" is the only label).
   // input.js iterates the array; an empty array is a clean no-op.
   if (S.panelBounds.detail) S.panelBounds.detail.tabs = tabBounds;
-  if (!actionTabs.length && !termTabs.length) return 'Detail';
+  if (!actionTabs.length && !termTabs.length && !contentTabs.length) return 'Detail';
   const parts = [];
   // Each tab label can be augmented by `tab:<labelSlug>` decorators
   // (e.g. `tab:logs` could append an error count). Plugin handlers
@@ -47,6 +47,8 @@ function detailTitle() {
   actionTabs.forEach(([, action], i) => pushTab(action.label, S.activeTab === i + 1, action));
   const termOffset = 1 + actionTabs.length;
   termTabs.forEach(([, term], i) => pushTab(term.label, S.activeTab === termOffset + i, term));
+  const contentOffset = 1 + actionTabs.length + termTabs.length;
+  contentTabs.forEach(([, info], i) => pushTab(info.label, S.activeTab === contentOffset + i, info));
   // Compute click bounds for each tab (panel-relative cols).
   // Title bar layout: ╭─(hotkey)─titleText───╮
   const dp = S.layout.rightPanels.find(p => p.type === 'detail');

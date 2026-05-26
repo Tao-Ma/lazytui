@@ -38,7 +38,8 @@ const { enterPrompt, handlePromptKey } = require('./prompt');
 const registerPopup = require('./register-popup');
 const detailSearch = require('./detail-search');
 const { isTerminalTab, activeTerminalId, findEphemeralByid,
-        removeEphemeralTab } = require('./tabs');
+        removeEphemeralTab, isContentTab, activeContentTab,
+        removeContentTab } = require('./tabs');
 const { isSessionDead, restartSession } = require('./terminal');
 const { cleanup } = require('./cleanup');
 const { execSync } = require('child_process');
@@ -311,6 +312,13 @@ function handleNormalKey(key, seq) {
           const eph = findEphemeralByid(id);
           if (eph) { removeEphemeralTab(eph.group, eph.key); break; }
         }
+      }
+      // Content tabs (e.g. file-browser opens) close on `x` from
+      // detail focus — no liveness concept like PTYs; users want a
+      // close gesture, and `x` mirrors the dead-terminal flow.
+      if (S.focus === 'detail' && isContentTab()) {
+        const ct = activeContentTab();
+        if (ct) { removeContentTab(S.currentGroup, ct[0]); break; }
       }
       openMenu();
       break;

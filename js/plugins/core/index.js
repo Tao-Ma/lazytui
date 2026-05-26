@@ -17,12 +17,15 @@ const { setTheme, themeNames } = require('../../themes');
 
 const groups       = require('./groups');
 const actions      = require('./actions');
-const fileManager  = require('./file-manager');
+const files        = require('./files');     // unified files panel + file-manager/file-browser aliases
 const history      = require('./history');
 const detail       = require('./detail');
 const stats        = require('./stats');
 
-const mods = [groups, actions, fileManager, history, detail, stats];
+// `files` is an array-mod (multiple panelTypes per file) so the loop
+// below has to handle both shapes. Spread up front to keep the loop
+// simple: flatten array-mods into a flat list of {panelType, def, …}.
+const mods = [groups, actions, ...files, history, detail, stats];
 
 // --- commands (`:` cmdline mode) ---
 //
@@ -61,17 +64,24 @@ function getCommands(state) {
   return out;
 }
 
-// Compose panelTypes + decorators from each per-file module.
+// Compose panelTypes + decorators + commands from each per-file module.
+// `commands` is the fixed-verb cmdline-command list — see plugins/api.js
+// getCommands(). Combined with the per-call getCommands() above (which
+// synthesizes dynamic entries like `theme <name>`), this gives core
+// plugin modules a way to register their own `:`-verbs without
+// touching this index file's logic.
 const corePlugin = {
   name: 'core',
   getCommands,
   panelTypes: {},
   decorators: {},
+  commands: [],
 };
 
 for (const m of mods) {
   corePlugin.panelTypes[m.panelType] = m.def;
   if (m.decorators) Object.assign(corePlugin.decorators, m.decorators);
+  if (Array.isArray(m.commands)) corePlugin.commands.push(...m.commands);
 }
 
 module.exports = corePlugin;

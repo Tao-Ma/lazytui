@@ -25,7 +25,8 @@ const { setTheme } = require('../themes');
 const groups = require('../plugins/core/groups');
 const actions = require('../plugins/core/actions');
 const detail = require('../plugins/core/detail');
-const fileManager = require('../plugins/core/file-manager');
+const files = require('../plugins/core/files');  // array-mod; file-manager alias is files[1]
+const fileManager = files.find(e => e.panelType === 'file-manager');
 const history = require('../plugins/core/history');
 
 // --- Minimal state setup — just enough that every render under test can

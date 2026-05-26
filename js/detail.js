@@ -6,7 +6,7 @@
 
 const { S, setDetail, getSel } = require('./state');
 const { getPanelDef, getItems } = require('./plugins/api');
-const { getTabInfo, isTerminalTab } = require('./tabs');
+const { getTabInfo, isTerminalTab, activeContentTab } = require('./tabs');
 const { killCurrentProc, streamCommand } = require('./actions');
 const { isStreaming } = require('./stream');
 
@@ -30,7 +30,7 @@ function showSelectedInfo() {
 }
 
 function switchToTab(idx) {
-  const { actionTabs, total } = getTabInfo();
+  const { actionTabs, termTabs, contentTabs, total } = getTabInfo();
   if (idx < 0 || idx >= total) return;
   // Kill any streaming run-action so its output doesn't bleed into the new tab
   killCurrentProc();
@@ -38,13 +38,24 @@ function switchToTab(idx) {
   S.terminalMode = false;
   if (idx === 0) {
     showSelectedInfo();
-  } else if (idx <= actionTabs.length) {
+    return;
+  }
+  if (idx <= actionTabs.length) {
     // Action tab — stream script output
     const [key, act] = actionTabs[idx - 1];
     streamCommand(key, act.script);
-  } else {
+    return;
+  }
+  if (idx <= actionTabs.length + termTabs.length) {
     // Terminal tab — content rendered by overlay, clear detail lines.
     setDetail('');
+    return;
+  }
+  // Content tab — load cached lines into detail.
+  const ct = activeContentTab();
+  if (ct) {
+    const [, info] = ct;
+    setDetail((info.lines || []).join('\n'));
   }
 }
 

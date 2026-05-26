@@ -195,6 +195,7 @@ function initState() {
   S.detailSearch = { active: false, term: '', matches: [], idx: 0 };
   S.terminalMode = false;
   S.ephemeralTerminals = {};
+  S.contentTabs = {};
   S.multiSel = {};
   // Yank register — bounded history, system-clipboard mirror. Cap is
   // configurable via top-level `register: { cap: N }` in YAML; default 100.

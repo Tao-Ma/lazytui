@@ -249,6 +249,11 @@ function getItems(panelType, S) {
   if (!def || typeof def.getItems !== 'function') return [];
   const raw = def.getItems(S);
   if (!def.filterable) return raw;
+  // `customFilter: true` means the plugin's getItems already honored
+  // `S.filters[panelType]` itself (regex match, fuzzy match, anything
+  // beyond substring). Skip the framework's substring filter so we
+  // don't double-filter.
+  if (def.customFilter) return raw;
   // Inlined filter match — kept here (rather than imported from ../filter)
   // so plugins/api stays free of a back-edge to filter.js, which lazy-
   // requires from this module for filterable-panel detection.
