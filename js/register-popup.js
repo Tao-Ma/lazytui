@@ -92,6 +92,13 @@ function handleKey(key, seq) {
     // _idx stays on the row that the next-older entry just slid into;
     // _clamp brings it back inside bounds if we dropped the last entry.
     _clamp();
+    // Drop can shrink the popup by 1 row (when historyLen falls below
+    // the viewport). The main-paint diff doesn't see the overlay's
+    // geometry — the now-uncovered row keeps the old popup's bottom
+    // border sitting on screen below the new one. Force a full
+    // repaint so the underlying panels reclaim that row. Required
+    // require to dodge the module cycle (layout already imports us).
+    require('./layout').forceFullRepaint();
     // If history is now empty, close — nothing to do.
     if (register.historyLen() === 0) exit();
     return;
