@@ -200,7 +200,18 @@ function validateGroup(gname, gdata, parentPath = '') {
   const ctx = `group '${full}'`;
   if (!isMapping(gdata)) throw new SchemaError('must be a mapping', { context: ctx });
 
-  checkUnknownKeys(gdata, VALID_GROUP_KEYS, ctx);
+  // Group keys are EXTENSIBLE. The framework owns a small set
+  // (label/actions/terminals/children/quick); the rest — `compose`/
+  // `containers` (docker), `archive`, `config_branch`, `images`, and any
+  // key a user plugin introduces — are plugin data. We validate the
+  // shapes of the keys the framework + bundled plugins know about
+  // (below), but do NOT reject unknown keys: they pass through to the
+  // parsed group (see parser walkGroups) for whatever plugin consumes
+  // them, mirroring how panel `extras` pass through. This is what lets a
+  // plugin add a group-level key without editing this file (PRINCIPLES
+  // §1/§5/§9). VALID_GROUP_KEYS is kept as documentation of the
+  // framework + bundled-plugin vocabulary.
+  void VALID_GROUP_KEYS;
 
   if (!('label' in gdata)) throw new SchemaError("'label' is required", { context: ctx });
   if (typeof gdata.label !== 'string') throw new SchemaError("'label' must be a string", { context: ctx });

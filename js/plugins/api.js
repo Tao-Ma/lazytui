@@ -320,13 +320,29 @@ async function refreshAll(config) {
  * @param {() => boolean} opts.isFocused - return true if the TUI should poll
  * @param {() => void} opts.onChanged    - called when any plugin returned truthy
  */
+// One in-flight timer handle per plugin (replaced each tick, so the map
+// never grows). stopRefreshLoops() clears them and sets the stopped
+// flag so an in-flight tick doesn't reschedule. Without teardown the
+// self-scheduling chains fired after quit and doubled on any re-start.
+let _refreshTimers = new Map();
+let _refreshStopped = false;
+
 function startRefreshLoops(config, { isFocused = () => true, onChanged } = {}) {
+  // Idempotent: a second call (reload) must not leave the previous
+  // chains running in parallel.
+  stopRefreshLoops();
+  _refreshStopped = false;
   for (const plugin of Object.values(plugins)) {
     if (!plugin.refresh) continue;
     const interval = plugin.refreshIntervalMs || 10000;
     let running = false;
 
+    const schedule = () => {
+      if (_refreshStopped) return;
+      _refreshTimers.set(plugin.name, setTimeout(tick, interval));
+    };
     async function tick() {
+      if (_refreshStopped) return;
       if (!running && isFocused()) {
         running = true;
         try {
@@ -338,9 +354,29 @@ function startRefreshLoops(config, { isFocused = () => true, onChanged } = {}) {
           running = false;
         }
       }
-      setTimeout(tick, interval);
+      schedule();
     }
-    setTimeout(tick, interval);
+    schedule();
+  }
+}
+
+/** Stop every plugin refresh loop (called from cleanup on quit). */
+function stopRefreshLoops() {
+  _refreshStopped = true;
+  for (const t of _refreshTimers.values()) clearTimeout(t);
+  _refreshTimers.clear();
+}
+
+/** Fire each plugin's optional cleanup() hook, isolated. Lets a plugin
+ *  that spawned a long-lived child (e.g. docker's `docker events`
+ *  stream) tear it down through the framework instead of relying solely
+ *  on its own process.on('exit') backstop. */
+function cleanupPlugins() {
+  for (const plugin of Object.values(plugins)) {
+    if (typeof plugin.cleanup === 'function') {
+      try { plugin.cleanup(); }
+      catch (e) { console.error(`[plugin:${plugin.name}] cleanup error: ${e.message}`); }
+    }
   }
 }
 
@@ -509,7 +545,7 @@ function getCommands(S) {
 module.exports = {
   // --- Plugin registry / lifecycle ---
   registerPlugin, loadPlugins, getPlugin, getPanelDef, getItems,
-  refreshAll, startRefreshLoops, isPluginPanel, pluginNames, getGroupActions, statusFor,
+  refreshAll, startRefreshLoops, stopRefreshLoops, cleanupPlugins, isPluginPanel, pluginNames, getGroupActions, statusFor,
   registerComponent, dispatchMsg,
   getComponent, getComponentSlice, getComponentOwningPanel,
   getCommands, idOf, selectedOrFocused,

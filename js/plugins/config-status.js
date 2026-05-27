@@ -256,8 +256,39 @@ function statusFor(S, p) {
   return cache.byPath[p] || STATUS_UNKNOWN;
 }
 
-function ensureCache(S) {
-  if (!S.configStatusCache) refreshStatus(S);
+/** Resolve the branch from the config-status panel's `config.branch`
+ *  (the authoritative source), independent of whether render() has run
+ *  yet — the deferred cache build can fire before the first paint. */
+function _resolveBranch(S) {
+  const panels = (S.layout && [...(S.layout.leftPanels || []), ...(S.layout.rightPanels || [])]) || [];
+  const p = panels.find(pp => pp.type === 'config-status');
+  const b = p && p.config && p.config.branch;
+  if (typeof b === 'string' && b) return b;
+  return S.configStatusBranch || DEFAULT_BRANCH;
+}
+
+/**
+ * Schedule the (blocking) git status computation OFF the render path.
+ * render()/getItems must stay side-effect-free and cheap (PRINCIPLES
+ * §11) — they used to call refreshStatus() inline, spawning a git
+ * worktree synchronously on the first paint and freezing input. Now the
+ * first render shows a "computing…" placeholder and the work runs on a
+ * deferred tick, re-painting when the cache lands. A computing-guard
+ * prevents piling up duplicate runs across the frames shown while it's
+ * in flight.
+ */
+function _kickCache(S, force) {
+  if (S._configStatusComputing) return;
+  if (S.configStatusCache && !force) return;
+  S._configStatusComputing = true;
+  setImmediate(() => {
+    try { refreshStatus(S, { branch: _resolveBranch(S) }); }
+    catch (_) { /* refreshStatus records git failures in cache.error */ }
+    finally {
+      S._configStatusComputing = false;
+      try { require('./api').scheduleRender(); } catch (_) { /* no renderer (tests) */ }
+    }
+  });
 }
 
 // --- item builders ---
@@ -341,7 +372,12 @@ function buildItems(S) {
   if (cf.length === 0) {
     return [{ kind: 'note', text: 'no files declared in YAML' }];
   }
-  ensureCache(S);
+  // No cache yet → kick the (deferred, off-render) computation and show
+  // a placeholder this frame. The deferred run scheduleRenders when done.
+  if (!S.configStatusCache) {
+    _kickCache(S);
+    return [{ kind: 'note', text: 'computing config status…' }];
+  }
   const cache = S.configStatusCache || {};
   const head = [];
   if (cache.error) head.push({ kind: 'note', text: cache.error });
@@ -503,11 +539,11 @@ function onKey(key, item, S) {
   if (key === ']') { cycleTab(S, +1); return true; }
   if (key === '[') { cycleTab(S, -1); return true; }
   if (key === 'r') {
-    // Force-refresh: clear the cache so the next getItems / render
-    // recomputes against the current branch state. Useful after a
-    // save / load / external git operation.
+    // Force-refresh: clear the cache and recompute OFF the keypress
+    // path (the git worktree spawn would otherwise block the `r` press).
+    // The deferred run scheduleRenders when the fresh cache lands.
     S.configStatusCache = null;
-    refreshStatus(S);
+    _kickCache(S, true);
     return true;
   }
   if (key === 'return' && item && item.kind === 'more') {

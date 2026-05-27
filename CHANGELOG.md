@@ -107,6 +107,29 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   filtering.
 
 ### Hardening
+- **Extensible group schema** (PRINCIPLES §1/§5/§9). Group-level YAML
+  keys are no longer rejected against a hardcoded whitelist baked into
+  framework core — the framework validates the keys it owns
+  (`label`/`actions`/`terminals`/`children`/`quick`) and the bundled
+  plugins' shapes, but unknown keys pass through to the parsed group
+  (mirroring how panel `extras` already pass through) so a plugin can
+  introduce a group-level key without editing `parser/schema.js`.
+- **config-status off the render path.** The panel used to spawn a git
+  worktree synchronously on first render (blocking the paint + input,
+  and making render impure per §11). The git computation now runs
+  deferred off the render/keypress path; the first frame shows a
+  `computing…` placeholder and repaints when the cache lands. `r`
+  likewise defers instead of blocking the keystroke.
+- **View-mode transitions force a full repaint.** `+`/`_` (normal↔
+  half↔full) now invalidate the diff cache like the terminal-unzoom
+  path already did, so shrinking no longer leaves stale wide-mode
+  pixels.
+- **Plugin / refresh-loop teardown.** Refresh loops are tracked and
+  stopped on quit (and are idempotent on restart — no doubled chains);
+  a new optional `plugin.cleanup()` hook fires from the framework's
+  cleanup path, letting the docker plugin tear down its long-lived
+  `docker events` child through the framework instead of relying solely
+  on a `process.on('exit')` backstop.
 - **Mode registry — single source of truth for modal states**
   (`js/modes.js`). The set of modes was previously duplicated across
   four hand-maintained lists (dispatch `modeChain`, layout

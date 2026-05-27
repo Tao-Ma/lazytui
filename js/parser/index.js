@@ -269,7 +269,7 @@ function walkGroups(rawGroups, varsBlock, helpersBlock, source, parent, depth, o
       ? Object.keys(gdata.children).map(c => `${groupPath}.${c}`)
       : [];
 
-    out[groupPath] = {
+    const parsedGroup = {
       name: groupPath,
       label: gdata.label,
       compose: gdata.compose !== undefined ? gdata.compose : null,
@@ -284,6 +284,16 @@ function walkGroups(rawGroups, varsBlock, helpersBlock, source, parent, depth, o
       config_branch: gdata.config_branch !== undefined ? gdata.config_branch : null,
       images:        gdata.images        !== undefined ? gdata.images        : null,
     };
+
+    // Pass through any plugin-introduced group keys the framework doesn't
+    // name above, so a plugin can read its own group-level config without
+    // the parser (a framework-core module) having to know about it. The
+    // explicitly-handled keys win; `children` is already transformed into
+    // childPaths so the raw value must not overwrite it.
+    for (const [k, v] of Object.entries(gdata)) {
+      if (!(k in parsedGroup) && k !== 'children') parsedGroup[k] = v;
+    }
+    out[groupPath] = parsedGroup;
 
     if ('children' in gdata) {
       walkGroups(gdata.children, varsBlock, helpersBlock, source, groupPath, depth + 1, out);

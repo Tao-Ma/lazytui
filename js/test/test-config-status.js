@@ -171,17 +171,17 @@ describe('[4] panel onKey — cycles tabs and refreshes', () => {
     eq(def.onKey('[', null, S), true);
     eq(cs._tabIdx(S), 0);
   });
-  it('r clears the cache and triggers refresh', () => {
+  it('r clears the cache and schedules a deferred (off-keypress) refresh', () => {
     const S = freshS();
-    // Provide an unreachable branch so refreshStatus bails fast on
-    // rev-parse — we only care that the cache is *replaced*, not
-    // dropped entirely.
+    // Unreachable branch + tmpdir so the deferred refreshStatus bails
+    // fast (and harmlessly) when its setImmediate fires after the test.
     S.configStatusBranch = 'definitely-not-a-real-branch-' + Date.now();
     S.projectDir = os.tmpdir();
-    const before = S.configStatusCache;
     eq(def.onKey('r', null, S), true);
-    assert(S.configStatusCache !== before, 'cache replaced');
-    assert(S.configStatusCache.error || true, 'fresh cache (with or without error)');
+    // The keypress no longer blocks on git: the cache is cleared and the
+    // recompute is deferred (computing flag set), not run inline.
+    eq(S.configStatusCache, null, 'cache cleared synchronously');
+    eq(S._configStatusComputing, true, 'recompute scheduled off the keypress path');
   });
   it('any other key passes through', () => {
     const S = freshS();

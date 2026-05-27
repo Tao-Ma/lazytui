@@ -492,6 +492,10 @@ module.exports = {
   name: 'docker',
   init,
   refresh,
+  // Framework teardown hook (called by cleanupPlugins on quit) — stop
+  // the long-lived `docker events` child + its reconnect timer. The
+  // process.on('exit') registration stays as a backstop for hard exits.
+  cleanup: stopEventsStream,
   // statusFor: generic plugin contract — registry asks all plugins, first
   // non-null wins. Lets core renderers show running/stopped without knowing
   // docker exists. Returns null for names this plugin doesn't track.

@@ -23,7 +23,7 @@ const { esc } = require('./ansi');
 const { S, allPanels, selectGroup, setDetail, getSel, setSel,
         toggleMultiSel, isMultiSel, clearMultiSel, multiSelCount,
         expandGroup, collapseGroup, switchGroupsTab } = require('./state');
-const { render } = require('./layout');
+const { render, forceFullRepaint } = require('./layout');
 const { showSelectedInfo, runTab } = require('./detail');
 const { runAction } = require('./actions');
 const { openMenu, closeMenu, navMenu, activateMenu } = require('./menu');
@@ -737,14 +737,24 @@ function handleAction(action, arg) {
       }
       break;
     }
-    case 'view_expand':
+    case 'view_expand': {
+      const before = S.viewMode;
       if (S.viewMode === 'normal') S.viewMode = 'half';
       else if (S.viewMode === 'half') S.viewMode = 'full';
+      // A shrink (full→half→normal) re-exposes panels the diff cache
+      // can't tell changed (same row strings at the same indices), so
+      // stale wide-mode pixels linger. Force a full repaint on any
+      // transition — mirrors the terminal-unzoom path in input.js.
+      if (S.viewMode !== before) forceFullRepaint();
       break;
-    case 'view_shrink':
+    }
+    case 'view_shrink': {
+      const before = S.viewMode;
       if (S.viewMode === 'full') S.viewMode = 'half';
       else if (S.viewMode === 'half') S.viewMode = 'normal';
+      if (S.viewMode !== before) forceFullRepaint();
       break;
+    }
     case 'filter':
       enterFilter();
       break;

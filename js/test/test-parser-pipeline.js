@@ -396,4 +396,34 @@ describe('args / default_cmd round-trip', () => {
   });
 });
 
+describe('extensible group keys pass through to the parsed group (T6)', () => {
+  it('a plugin-introduced group key lands verbatim on the parsed group', () => {
+    const p = tmpYaml(`
+groups:
+  g:
+    label: G
+    kubernetes: { namespace: prod, replicas: 3 }
+    actions:
+      a: { cmd: 'echo a', label: A }
+`);
+    const cfg = parse(p);
+    assert(cfg.groups.g.kubernetes, 'unknown group key preserved');
+    eq(cfg.groups.g.kubernetes.namespace, 'prod');
+    eq(cfg.groups.g.kubernetes.replicas, 3);
+  });
+  it('passthrough never clobbers framework-transformed keys (children → childPaths)', () => {
+    const p = tmpYaml(`
+groups:
+  parent:
+    label: P
+    children:
+      kid: { label: K, actions: { a: { cmd: 'echo', label: A } } }
+`);
+    const cfg = parse(p);
+    // children must remain the transformed childPaths array, not the raw map.
+    assert(Array.isArray(cfg.groups.parent.children), 'children stays an array of paths');
+    eq(cfg.groups.parent.children[0], 'parent.kid');
+  });
+});
+
 report();

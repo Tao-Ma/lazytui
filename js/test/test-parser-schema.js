@@ -73,6 +73,28 @@ describe('invalid structures rejected', () => {
   }, 'test')));
 });
 
+describe('group keys are extensible (T6)', () => {
+  it('an unknown group key does NOT throw (plugins may introduce keys)', () => {
+    validate({ groups: { g: {
+      label: 'G',
+      kubernetes: { namespace: 'prod' },   // not a framework/bundled key
+      actions: { a: { cmd: 'echo', label: 'A' } },
+    } } }, 'test');
+    assert(true, 'unknown group key accepted as plugin data');
+  });
+  it('unknown ACTION keys still reject (only group level is extensible)', () => {
+    expectThrow(/unknown key/, () => validate({ groups: { g: {
+      label: 'G',
+      actions: { a: { cmd: 'echo', label: 'A', bogusActionKey: 1 } },
+    } } }, 'test'));
+  });
+  it('a required framework group key is still enforced', () => {
+    expectThrow(/'label' is required/, () => validate({ groups: { g: {
+      actions: { a: { cmd: 'echo', label: 'A' } },
+    } } }, 'test'));
+  });
+});
+
 describe('actions/children invariant', () => {
   it('node with neither actions nor children rejected', () => {
     expectThrow(/must have 'actions', 'children', or both/, () =>
