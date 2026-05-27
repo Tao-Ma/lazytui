@@ -155,4 +155,50 @@ describe('[3] loadKeyBindings', () => {
   });
 });
 
+// ---- [4] command binding resolves by EXACT name only --------------
+
+const { runCommandString } = require('../cmdline');
+
+describe('[4] runCommandString exact match', () => {
+  it('runs the exact-named command with args', () => {
+    cmdRan = null;
+    const r = runCommandString('stubcmd a b', S);
+    assert(Array.isArray(cmdRan), 'exact match ran');
+    eq(cmdRan.join(','), 'a,b');
+    assert(r !== false, 'returns the command result');
+  });
+  it('does NOT prefix-match a near-miss (typo) onto another command', () => {
+    cmdRan = null;
+    // "stub" is a prefix of "stubcmd" but not an exact name → no run.
+    const r = runCommandString('stub', S);
+    eq(r, false, 'no exact match → false');
+    eq(cmdRan, null, 'the prefix-sharing command did NOT fire');
+  });
+});
+
+// ---- [5] action binding with args: routes through the prompt ------
+
+const dispatch2 = require('../dispatch');
+
+describe('[5] action binding honors args:', () => {
+  it('an action with args: opens the prompt instead of running argless', () => {
+    kb.clearBindings();
+    S.config = {
+      groups: { g: { actions: {
+        deploy: { key: 'deploy', label: 'Deploy', script: 'echo', containers: [], type: 'run', args: ['env'] },
+      } } },
+      keys: { '<leader>d': { action: 'deploy' } },
+    };
+    // Reset prompt/confirm so we can observe the prompt opening.
+    S.promptMode = false; S.confirmMode = false;
+    dispatch2.loadKeyBindings(S.config);
+    const leaf = kb.resolve(kb.rootNode(), 'd');
+    assert(leaf && typeof leaf.run === 'function', 'binding registered');
+    leaf.run();
+    assert(S.promptMode === true, 'args: action opened the prompt rather than running with empty args');
+    // Clean up prompt mode so we don't leak into other files.
+    S.promptMode = false;
+  });
+});
+
 report();

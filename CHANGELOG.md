@@ -19,10 +19,12 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
   Bind your own chords in a top-level **`keys:`** block. Each entry
   targets exactly one of `action:` (run a declared action by its
-  `actions:` key), `command:` (run a `:` cmdline command), or
+  `actions:` key — honors the action's `args:` prompt and `confirm:`),
+  `command:` (run a `:` cmdline command, resolved by exact name), or
   `builtin:` (a framework action like `refresh` / `goto_top`); an
   optional `label:` sets the popup text. Sequences nest naturally
-  (`<leader>gg`):
+  (`<leader>gg`). User bindings **override** the built-in chords, so
+  you can reclaim `g` / `r` / `?` for your own actions:
   ```yaml
   keys:
     "<leader>b":  { action: build }

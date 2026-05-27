@@ -164,8 +164,16 @@ function main() {
 
   // Register any leader-key bindings declared in the top-level `keys:`
   // block, after plugins so the binding-tree conflict check sees the
-  // full picture. Built-in chords are already registered at module load.
-  require('./dispatch').loadKeyBindings(S.config);
+  // full picture. Built-in chords are already registered at module load
+  // (and are overridable by user bindings). A genuine conflict between
+  // two user bindings throws — surface it as a clean config error and
+  // exit rather than crashing the boot with a raw stack trace.
+  try {
+    require('./dispatch').loadKeyBindings(S.config);
+  } catch (e) {
+    console.error(`keys: ${e.message}`);
+    process.exit(1);
+  }
 
   initState();
   hideCursor();

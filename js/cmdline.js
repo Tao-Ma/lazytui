@@ -344,7 +344,12 @@ function runCommandString(str, state) {
   const name = parts[0].toLowerCase();
   const args = parts.slice(1);
   const reg = buildRegistry(state);
-  const entry = reg.find(e => e.name === name) || reg.find(e => e.name.startsWith(name));
+  // Exact name match only. A declared `command:` binding names a
+  // specific command; prefix/fuzzy matching (which the interactive `:`
+  // prompt uses) would silently run a different command on a typo or
+  // when an unrelated entry happens to share the prefix — and the
+  // resolution would vary by group since the registry is state-derived.
+  const entry = reg.find(e => e.name === name);
   if (!entry) return false;
   return entry.run(args, state);
 }

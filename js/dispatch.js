@@ -309,12 +309,15 @@ function handleNormalKey(key, seq) {
       }
       break;
     case ' ':
-      // Space is the leader EXCEPT inside list-select mode, where it
-      // toggles the focused row (the v0.3 multi-select gesture). The
-      // mode chain already suppresses the leader inside detail-visual /
-      // terminal / text modes, so this is the only contextual case.
-      if (S.listSelectMode) toggleMultiSelOnFocused();
-      else                  enterPrefix();
+      // Space is the leader EXCEPT inside list-select mode on a list
+      // panel, where it toggles the focused row (the v0.3 multi-select
+      // gesture). Gating on _isListPanel keeps the leader reachable if
+      // the flag is still armed but focus has moved to a non-list panel
+      // (e.g. detail) — otherwise space would be a dead no-op there.
+      // The mode chain already suppresses the leader inside
+      // detail-visual / terminal / text modes.
+      if (S.listSelectMode && _isListPanel(S.focus)) toggleMultiSelOnFocused();
+      else                                           enterPrefix();
       break;
     case '*':
       // Select-all implies select mode so the user can then space-toggle
@@ -426,9 +429,15 @@ function handlePrefixKey(key, seq) {
   if (!next) { exitPrefix(); return; }   // no binding — silently drop
   S.prefixSeq = S.prefixSeq.concat(tok);
   if (next.children) { S.prefixNode = next; return; }  // descend, stay pending
-  // Leaf — run it, then exit.
+  // Leaf — run it, then exit. Surface both sync throws and async
+  // rejections (mirrors the `:` cmdline path) instead of swallowing
+  // them; a misconfigured chord should leave a trace, not vanish.
   exitPrefix();
-  try { next.run(); } catch { /* a bad binding shouldn't wedge dispatch */ }
+  try {
+    Promise.resolve(next.run()).catch(e => console.error('[leader]', e && e.message));
+  } catch (e) {
+    console.error('[leader]', e && e.message);
+  }
 }
 
 // Built-in starter chords. Single keys like `r` / `?` still work bare
@@ -436,20 +445,32 @@ function handlePrefixKey(key, seq) {
 // nesting demo via `g g` / `g e`). YAML `keys:` + plugin bindings
 // layer on top of the same registry (stages 3 / plugin API).
 function _registerBuiltinChords() {
-  keybindings.registerKeyBinding('?',  { label: 'help',    run: () => handleAction('show_help') });
-  keybindings.registerKeyBinding('r',  { label: 'refresh', run: () => handleAction('refresh') });
-  keybindings.registerKeyBinding('gg', { label: 'top',     run: () => handleAction('goto_top') });
-  keybindings.registerKeyBinding('ge', { label: 'bottom',  run: () => handleAction('goto_bottom') });
+  const b = { builtin: true };
+  keybindings.registerKeyBinding('?',  { label: 'help',    run: () => handleAction('show_help') },   b);
+  keybindings.registerKeyBinding('r',  { label: 'refresh', run: () => handleAction('refresh') },      b);
+  keybindings.registerKeyBinding('gg', { label: 'top',     run: () => handleAction('goto_top') },     b);
+  keybindings.registerKeyBinding('ge', { label: 'bottom',  run: () => handleAction('goto_bottom') },  b);
   keybindings.labelSubtree('g', '+goto');
 }
 _registerBuiltinChords();
 
 /** Run a declared action by its key (the YAML `actions:` map key),
- *  searching every group. First match wins. */
+ *  searching every group. First match wins. Routes through the same
+ *  args-prompt / confirm path as the actions-panel Enter flow so a
+ *  leader-bound action with `args:` still prompts instead of running
+ *  with empty params. */
 function _runActionByKey(key) {
   const groups = (S.config && S.config.groups) || {};
   for (const g of Object.values(groups)) {
-    if (g.actions && g.actions[key]) { runAction(key, g.actions[key]); return true; }
+    const act = g.actions && g.actions[key];
+    if (!act) continue;
+    if (act.args) {
+      const initial = resolvePromptDefault(act);
+      enterPrompt(`Run: ${act.label}`, act.args, (args) => runAction(key, act, args), initial);
+    } else {
+      runAction(key, act);
+    }
+    return true;
   }
   return false;
 }

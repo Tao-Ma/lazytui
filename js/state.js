@@ -377,6 +377,11 @@ function resetGroupContext() {
   delete S.multiSel.actions;
   delete S.multiSel.containers;
   S.terminalMode = false;
+  // List-select (v-mode) is armed globally but its operand (multiSel)
+  // is group-scoped and just got cleared — drop the mode too so the
+  // user doesn't land in a new group with a sticky [select] tag over
+  // an empty selection and a dead leader key.
+  S.listSelectMode = false;
 }
 
 /**

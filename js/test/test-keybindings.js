@@ -227,4 +227,96 @@ describe('[6] which-key popup', () => {
   });
 });
 
+// ---- [7] review fixes ---------------------------------------------
+
+describe('[7] prototype-safe tree (Object.create(null) children)', () => {
+  it('resolve never returns inherited Object.prototype members', () => {
+    kb.clearBindings();
+    kb.registerKeyBinding('g', { label: 'g', run() {} });
+    eq(kb.resolve(kb.rootNode(), 'constructor'), null, 'constructor → null, not Object');
+    eq(kb.resolve(kb.rootNode(), 'toString'), null, 'toString → null, not a function');
+    eq(kb.resolve(kb.rootNode(), '__proto__'), null, '__proto__ → null');
+  });
+  it('a __proto__ token registers as an ordinary own key without polluting', () => {
+    kb.clearBindings();
+    kb.registerKeyBinding(['__proto__'], { label: 'p', run() {} });
+    const n = kb.resolve(kb.rootNode(), '__proto__');
+    assert(n && typeof n.run === 'function', 'own leaf stored');
+    eq(({}).polluted, undefined, 'Object.prototype not polluted');
+  });
+});
+
+describe('[8] overridable built-ins', () => {
+  it('a user leaf overrides a built-in leaf (last-write-wins, no throw)', () => {
+    kb.clearBindings();
+    let which = '';
+    kb.registerKeyBinding('r', { label: 'builtin', run: () => { which = 'builtin'; } }, { builtin: true });
+    kb.registerKeyBinding('r', { label: 'user',    run: () => { which = 'user'; } });
+    kb.resolve(kb.rootNode(), 'r').run();
+    eq(which, 'user', 'user binding wins');
+  });
+  it('a user leaf overrides a built-in subtree (replaces it)', () => {
+    kb.clearBindings();
+    kb.registerKeyBinding('gg', { label: 'top', run() {} }, { builtin: true });   // g is a builtin subtree
+    let ran = false;
+    kb.registerKeyBinding('g', { label: 'mine', run: () => { ran = true; } });     // override whole subtree
+    const g = kb.resolve(kb.rootNode(), 'g');
+    assert(g && typeof g.run === 'function' && !g.children, 'g is now a leaf');
+    g.run(); assert(ran, 'user leaf runs');
+  });
+  it('a user leaf promotes a built-in leaf to a subtree', () => {
+    kb.clearBindings();
+    kb.registerKeyBinding('r', { label: 'refresh', run() {} }, { builtin: true });
+    kb.registerKeyBinding('rx', { label: 'mine', run() {} });   // nest under former builtin leaf
+    const r = kb.resolve(kb.rootNode(), 'r');
+    assert(r && r.children && r.children.x, 'r became a subtree with x');
+  });
+  it('two NON-builtin conflicting bindings still throw', () => {
+    kb.clearBindings();
+    kb.registerKeyBinding('a', { label: 'a', run() {} });
+    let threw = false;
+    try { kb.registerKeyBinding('ab', { label: 'ab', run() {} }); } catch { threw = true; }
+    assert(threw, 'user-vs-user conflict preserved');
+  });
+});
+
+describe('[9] space gate + group-switch reset', () => {
+  const { resetGroupContext } = require('../state');
+  it('space leads when select mode is armed but focus is a non-list panel', () => {
+    kb.clearBindings();
+    S.focus = 'detail';
+    S.listSelectMode = true;
+    S.prefixMode = false;
+    S.detailLines = []; S.detailScroll = 0;
+    S.panelHeights = { detail: 10 };
+    S.detailSearch = { active: false };
+    S.detailCursor = { line: 0, col: 0 };
+    dispatch._handleNormalKey(' ', ' ');
+    assert(S.prefixMode === true, 'space is the leader on detail even with listSelectMode armed');
+    dispatch._handlePrefixKey('escape', undefined);
+  });
+  it('resetGroupContext clears listSelectMode', () => {
+    S.listSelectMode = true;
+    S.sel = {}; S.filters = {}; S.multiSel = {};
+    resetGroupContext();
+    eq(S.listSelectMode, false, 'select mode dropped on group switch');
+  });
+});
+
+describe('[10] leader run() error is surfaced, not swallowed', () => {
+  it('a throwing binding logs instead of vanishing silently', () => {
+    kb.clearBindings();
+    kb.registerKeyBinding('z', { label: 'boom', run: () => { throw new Error('kaboom'); } });
+    const origErr = console.error;
+    let logged = '';
+    console.error = (...a) => { logged = a.join(' '); };
+    try {
+      dispatch._enterPrefix();
+      dispatch._handlePrefixKey('z', 'z');
+    } finally { console.error = origErr; }
+    assert(/leader/.test(logged) && /kaboom/.test(logged), `error surfaced: ${logged}`);
+    assert(S.prefixMode === false, 'still exits prefix mode after a throwing binding');
+  });
+});
+
 report();

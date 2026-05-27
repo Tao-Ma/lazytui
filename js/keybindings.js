@@ -25,11 +25,15 @@
  */
 'use strict';
 
-const _root = { children: {} };
+// children maps use a null prototype so token strings like `constructor`,
+// `toString`, or `__proto__` (reachable via `<…>` tokens or plugin
+// registration) can't resolve to inherited Object.prototype members or
+// pollute the prototype chain.
+const _root = { children: Object.create(null) };
 
 function rootNode() { return _root; }
 
-function clearBindings() { _root.children = {}; }
+function clearBindings() { _root.children = Object.create(null); }
 
 /**
  * Tokenize a sequence string into an array of key-name tokens.
@@ -69,30 +73,46 @@ function parseSeq(str) {
  * Insert a binding. `seq` is a sequence string or token array; `def`
  * is `{ label, run }`. Intermediate nodes are auto-created with a
  * `+<token>` placeholder label unless one is supplied later.
+ *
+ * `opts.builtin` marks every node this call creates as a default. A
+ * later non-builtin registration (user YAML, plugin) is allowed to
+ * OVERRIDE a built-in node — replace a default leaf with a subtree or
+ * vice versa — so users can rebind `g` / `r` / `?` etc. Conflicts
+ * between two NON-builtin bindings still throw, so genuine config
+ * mistakes (binding both `g` and `gg`) are still caught.
  */
-function registerKeyBinding(seq, def) {
+function registerKeyBinding(seq, def, opts = {}) {
   const steps = parseSeq(seq);
   if (!def || typeof def.run !== 'function') {
     throw new Error(`binding "${steps.join(' ')}" needs a run() function`);
   }
+  const builtin = !!opts.builtin;
   let node = _root;
   for (let i = 0; i < steps.length; i++) {
     const tok = steps[i];
     const last = i === steps.length - 1;
-    if (node.run) {
-      // The path passes through an existing leaf.
-      throw new Error(`key conflict: "${steps.slice(0, i).join(' ')}" is already a terminal binding`);
-    }
-    if (!node.children) node.children = {};
+    if (!node.children) node.children = Object.create(null);
+    const existing = node.children[tok];
     if (last) {
-      const existing = node.children[tok];
-      if (existing && existing.children) {
+      if (existing && existing.children && !existing._builtin) {
         throw new Error(`key conflict: "${steps.join(' ')}" already has sub-bindings`);
       }
+      // Absent, a leaf (overwrite), or a built-in subtree (override) →
+      // install the leaf.
       node.children[tok] = { label: def.label || steps.join(' '), run: def.run };
+      if (builtin) node.children[tok]._builtin = true;
     } else {
-      if (!node.children[tok]) {
-        node.children[tok] = { label: `+${tok}`, children: {} };
+      if (existing && existing.run) {
+        // Intermediate step lands on a leaf: only a built-in leaf may be
+        // promoted to a subtree (override); a user/plugin leaf throws.
+        if (!existing._builtin) {
+          throw new Error(`key conflict: "${steps.slice(0, i + 1).join(' ')}" is already a terminal binding`);
+        }
+        node.children[tok] = { label: `+${tok}`, children: Object.create(null) };
+        if (builtin) node.children[tok]._builtin = true;
+      } else if (!existing) {
+        node.children[tok] = { label: `+${tok}`, children: Object.create(null) };
+        if (builtin) node.children[tok]._builtin = true;
       }
       node = node.children[tok];
     }

@@ -568,9 +568,14 @@ function renderFooter() {
   // that lands, this becomes one of several registered widgets, but
   // for now it's hardcoded next to the existing [half]/[full] tag.
   const rightTail = footerRightExtra ? `${footerRightExtra} │ ` : '';
+  // List-select tag only when the armed mode actually applies — i.e.
+  // focus is on a list panel. (The flag can stay armed while focus is
+  // on a non-list panel, where space falls back to the leader.)
+  const focusDef = getPanelDef(S.focus);
+  const selectActive = S.listSelectMode && focusDef && typeof focusDef.getItems === 'function';
   const selectTag = (S.select && S.select.active)
     ? ` \\[${S.select.kind === 'line' ? 'v-line' : 'v-char'}]`
-    : (S.listSelectMode ? ' \\[select]' : '');
+    : (selectActive ? ' \\[select]' : '');
   const modeTag = S.viewMode !== 'normal' ? ` \\[${S.viewMode}]` : '';
 
   // Pad left → right tail → tags, using visible width math (esc'd
