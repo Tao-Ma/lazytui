@@ -16,6 +16,7 @@ const { showSelectedInfo } = require('./detail');
 const { renderCopyMenu } = require('./copy');
 const { render: renderRegisterPopup } = require('./register-popup');
 const { renderMenu } = require('./menu');
+const { renderWhichKey } = require('./which-key');
 const { renderCmdline } = require('./cmdline');
 const { renderConfirmOverlay } = require('./confirm');
 const { renderPromptOverlay } = require('./prompt');
@@ -366,7 +367,7 @@ function render() {
   // (e.g. crashloop container spamming docker events with prompt up).
   const overlayActive = S.copyMode || S.menuOpen || S.designMode
                      || S.cmdMode || S.confirmMode || S.promptMode
-                     || S.registerPopupMode;
+                     || S.registerPopupMode || S.prefixMode;
   if (_wasOverlayActive && !overlayActive) _forceFullRepaint = true;
   _wasOverlayActive = overlayActive;
 
@@ -394,6 +395,7 @@ function render() {
   if (S.confirmMode) renderConfirmOverlay();
   if (S.promptMode)  renderPromptOverlay();
   if (S.registerPopupMode) renderRegisterPopup();
+  if (S.prefixMode)  renderWhichKey();
 
   // Cursor visibility — derived from mode state, single emission site.
   // Cursor *position* is set inline by renderTerminalOverlay (when in

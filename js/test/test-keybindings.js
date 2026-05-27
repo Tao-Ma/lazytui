@@ -198,4 +198,33 @@ describe('[5] v-mode gates space', () => {
   });
 });
 
+// ---- [6] which-key popup lines ------------------------------------
+
+const wk = require('../which-key');
+
+describe('[6] which-key popup', () => {
+  it('lists leaves with their label and subtrees with +name …', () => {
+    kb.clearBindings();
+    kb.registerKeyBinding('r',  { label: 'refresh', run() {} });
+    kb.registerKeyBinding('gg', { label: 'top',     run() {} });
+    kb.labelSubtree('g', '+goto');
+    const lines = wk.whichKeyLines(kb.rootNode());
+    // sorted: g (subtree) before r (leaf)
+    assert(/\+goto …/.test(lines[0]), `subtree row shows group + …: ${lines[0]}`);
+    assert(/refresh/.test(lines[1]), `leaf row shows label: ${lines[1]}`);
+    // descending into g shows its children as leaves
+    const gNode = kb.resolve(kb.rootNode(), 'g');
+    const sub = wk.whichKeyLines(gNode);
+    assert(sub.some(l => /top/.test(l)), 'subtree level lists its leaves');
+  });
+  it('empty node renders a (no bindings) placeholder', () => {
+    kb.clearBindings();
+    eq(wk.whichKeyLines(kb.rootNode())[0], '[dim](no bindings)[/]');
+  });
+  it('_padKey wraps named tokens and pads to a column', () => {
+    eq(wk._padKey('g'), 'g    ');
+    eq(wk._padKey('up'), '<up> ');
+  });
+});
+
 report();
