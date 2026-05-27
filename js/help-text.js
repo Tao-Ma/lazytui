@@ -36,12 +36,20 @@ function helpLines() {
   ];
 
   if (isList) {
-    lines.push('', '[dim]Selection[/]',
-      '  Space          Toggle multi-select on focused row',
-      '  *              Select all visible',
-      '  Esc            Clear multi-select',
+    lines.push('', '[dim]Selection (v-mode)[/]',
+      '  v              Enter/exit list-select mode',
+      '  Space          Toggle row (in select mode) — else it is the leader',
+      '  *              Select all visible (enters select mode)',
+      '  Esc            Exit select mode / clear selection',
     );
   }
+
+  lines.push('', '[dim]Leader (prefix key)[/]',
+    '  Space          Open the leader namespace (outside v-mode)',
+    '  Space ?        Help    ·  Space r  Refresh',
+    '  Space g g      Top     ·  Space g e  Bottom',
+    '  Esc            Cancel a pending leader sequence',
+  );
 
   if (def && def.keyHints) {
     lines.push('', `[dim]Focused panel — ${esc(focusName)}[/]`,

@@ -429,6 +429,12 @@ require('./render-queue').setRenderers({ render, overlay: renderTerminalOverlay 
  * leading-space-prefixed concatenation ready for assembly.
  */
 function footerKeys() {
+  if (S.prefixMode) {
+    const pending = (S.prefixSeq && S.prefixSeq.length)
+      ? ' ' + S.prefixSeq.join(' ')
+      : '';
+    return ` \\[leader]${esc(pending)}… | <key> select | Esc cancel`;
+  }
   if (S.terminalMode) {
     const tconf = activeTerminalConfig();
     const label = tconf ? tconf.label : 'terminal';
@@ -522,7 +528,7 @@ function renderFooter() {
   // overwrites it.
   if (S.cmdMode) return;
   const COLS = cols(), ROWS = rows();
-  const inModal = S.terminalMode || S.filterMode || S.copyMode || S.designMode || S.designTitleEditMode || S.menuOpen;
+  const inModal = S.terminalMode || S.filterMode || S.copyMode || S.designMode || S.designTitleEditMode || S.menuOpen || S.prefixMode;
 
   // Left side: mode message OR (panel hints + plugin keyHints +
   // multi-select indicator + footer:left decorator). Modal footers
@@ -562,7 +568,7 @@ function renderFooter() {
   const rightTail = footerRightExtra ? `${footerRightExtra} │ ` : '';
   const selectTag = (S.select && S.select.active)
     ? ` \\[${S.select.kind === 'line' ? 'v-line' : 'v-char'}]`
-    : '';
+    : (S.listSelectMode ? ' \\[select]' : '');
   const modeTag = S.viewMode !== 'normal' ? ` \\[${S.viewMode}]` : '';
 
   // Pad left → right tail → tags, using visible width math (esc'd

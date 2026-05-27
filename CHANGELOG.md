@@ -7,6 +7,22 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Prefix (leader) key — a fresh `<space><key>` namespace.** (Stage 1
+  of 3: dispatch + v-mode foundation.) Pressing the leader (default
+  `<space>`) opens a binding namespace resolved as a TREE, so chords
+  nest: `<space>g g` → top, `<space>g e` → bottom, `<space>r` →
+  refresh, `<space>?` → help. Esc (or a second leader press) cancels a
+  pending sequence. Bindings live in a registry (`js/keybindings.js`)
+  that the which-key popup (stage 2) and YAML `keys:` reader (stage 3)
+  both build on.
+
+  Because `<space>` previously toggled list multi-select, selection now
+  lives behind a **v-mode** mirroring the detail panel's visual mode:
+  `v` enters list-select mode (footer shows `[select]`), `space` toggles
+  the focused row *inside* that mode, `*` selects all (and enters the
+  mode), `v`/`Esc` exit. Outside v-mode `space` is always the leader —
+  the rule is uniform because the mode chain already suppresses the
+  leader inside detail-visual / terminal / text-input modes.
 - **Unified `files` core panel — declared registry + filesystem browser
   in one panel type.** Replaces the v0.3 `file-manager` (declared-only)
   with a `source:` config that picks the behavior:

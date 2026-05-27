@@ -59,6 +59,17 @@ const S = {
   // edit of the currently-focused panel's title instead of design's
   // navigation keys. Mode chain runs this before designMode.
   designTitleEditMode: false,
+  // Prefix (leader) mode — the leader key was pressed and we're waiting
+  // for the next key in the sequence. prefixNode points at the current
+  // position in the binding tree (a subtree); resolving a leaf runs it
+  // and exits, resolving a subtree descends + stays in prefix mode.
+  prefixMode: false,
+  prefixNode: null,
+  prefixSeq: [],              // tokens consumed so far (footer / popup display)
+  // List-panel select mode (entered with `v`). While active, `space`
+  // toggles the focused row's multi-selection instead of opening the
+  // leader. Outside this mode `space` is the leader — see dispatch.
+  listSelectMode: false,
   // True iff S.layout has been mutated since the last on-disk YAML
   // sync. Set by design-mode mutations (and any future caller that
   // changes S.layout at runtime); cleared by the `:save-layout`
@@ -187,6 +198,10 @@ function initState() {
   S.cmdMode = false;
   S.designMode = false;
   S.registerPopupMode = false;
+  S.prefixMode = false;
+  S.prefixNode = null;
+  S.prefixSeq = [];
+  S.listSelectMode = false;
   // Detail-panel search — typing phase flag + state. `term`, `matches`,
   // and `idx` live under S.detailSearch (single object); the mode flag
   // stays at top level so the existing modeChain / overlay-active

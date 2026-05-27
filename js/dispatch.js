@@ -43,6 +43,7 @@ const { isTerminalTab, activeTerminalId, findEphemeralByid,
 const { isSessionDead, restartSession } = require('./terminal');
 const { cleanup } = require('./cleanup');
 const { execSync } = require('child_process');
+const keybindings = require('./keybindings');
 
 /**
  * Synchronously evaluate an action's `default_cmd` to pre-fill its
@@ -168,6 +169,17 @@ function toggleMultiSelOnFocused() {
 }
 
 /**
+ * True when the focused panel is a navigable list (containers / groups
+ * / files / actions / …) — i.e. it exposes getItems and isn't the
+ * detail panel. Used to gate `v` (enter list-select mode) and `*`.
+ */
+function _isListPanel(focus) {
+  if (focus === 'detail') return false;
+  const def = getPanelDef(focus);
+  return !!(def && typeof def.getItems === 'function');
+}
+
+/**
  * Add every visible row in the focused panel to multi-selection.
  * Idempotent — already-selected rows stay selected.
  */
@@ -281,13 +293,35 @@ function handleNormalKey(key, seq) {
   switch (key) {
     case 'q': cleanup(); process.exit(0); break;
     case 'escape':
-      // Esc clears multi-selection on the focused panel if any. (When no
-      // multi-select is active, Esc is a no-op — reserved for future
-      // "back to groups" behavior from the handoff thread.)
-      if (multiSelCount(S.focus) > 0) clearMultiSel(S.focus);
+      // Esc exits list-select mode (and clears the selection). Outside
+      // select mode it clears any lingering multi-selection. When
+      // neither applies it's a no-op.
+      if (S.listSelectMode) { S.listSelectMode = false; clearMultiSel(S.focus); }
+      else if (multiSelCount(S.focus) > 0) clearMultiSel(S.focus);
       break;
-    case ' ':              toggleMultiSelOnFocused(); break;
-    case '*':              selectAllVisible(); break;
+    case 'v':
+      // `v` enters list-select mode on a list panel (mirrors the detail
+      // panel's visual mode, which onDetailKey already claimed above
+      // when focus=detail). A second `v` exits.
+      if (_isListPanel(S.focus)) {
+        S.listSelectMode = !S.listSelectMode;
+        if (!S.listSelectMode) clearMultiSel(S.focus);
+      }
+      break;
+    case ' ':
+      // Space is the leader EXCEPT inside list-select mode, where it
+      // toggles the focused row (the v0.3 multi-select gesture). The
+      // mode chain already suppresses the leader inside detail-visual /
+      // terminal / text modes, so this is the only contextual case.
+      if (S.listSelectMode) toggleMultiSelOnFocused();
+      else                  enterPrefix();
+      break;
+    case '*':
+      // Select-all implies select mode so the user can then space-toggle
+      // individual rows off.
+      if (_isListPanel(S.focus)) S.listSelectMode = true;
+      selectAllVisible();
+      break;
     case 'up': case 'k':   handleAction('nav_up'); break;
     case 'down': case 'j': handleAction('nav_down'); break;
     case 'left': case 'h': handleAction('focus_left'); break;
@@ -362,6 +396,54 @@ function handleNormalKey(key, seq) {
   }
 }
 
+// --- prefix (leader) mode ---
+//
+// Enter from handleNormalKey when the leader (space) is pressed outside
+// any selection / text mode. Once in prefix mode, each key walks the
+// binding tree: a leaf runs + exits, a subtree descends + stays. Esc
+// (or a second leader press) cancels. The which-key popup (stage 2)
+// renders the available continuations from S.prefixNode.
+
+function enterPrefix() {
+  S.prefixMode = true;
+  S.prefixNode = keybindings.rootNode();
+  S.prefixSeq = [];
+}
+
+function exitPrefix() {
+  S.prefixMode = false;
+  S.prefixNode = null;
+  S.prefixSeq = [];
+}
+
+function handlePrefixKey(key, seq) {
+  // Esc and a second leader press both cancel. (Space isn't a control
+  // byte, so there's no literal-passthrough need here — prefix is
+  // already suppressed in terminal mode, the only place that matters.)
+  if (key === 'escape' || seq === ' ' || key === ' ') { exitPrefix(); return; }
+  const tok = keybindings.tokenForEvent(key, seq);
+  const next = keybindings.resolve(S.prefixNode, tok);
+  if (!next) { exitPrefix(); return; }   // no binding — silently drop
+  S.prefixSeq = S.prefixSeq.concat(tok);
+  if (next.children) { S.prefixNode = next; return; }  // descend, stay pending
+  // Leaf — run it, then exit.
+  exitPrefix();
+  try { next.run(); } catch { /* a bad binding shouldn't wedge dispatch */ }
+}
+
+// Built-in starter chords. Single keys like `r` / `?` still work bare
+// in normal mode; these leader variants are additive (and seed the
+// nesting demo via `g g` / `g e`). YAML `keys:` + plugin bindings
+// layer on top of the same registry (stages 3 / plugin API).
+function _registerBuiltinChords() {
+  keybindings.registerKeyBinding('?',  { label: 'help',    run: () => handleAction('show_help') });
+  keybindings.registerKeyBinding('r',  { label: 'refresh', run: () => handleAction('refresh') });
+  keybindings.registerKeyBinding('gg', { label: 'top',     run: () => handleAction('goto_top') });
+  keybindings.registerKeyBinding('ge', { label: 'bottom',  run: () => handleAction('goto_bottom') });
+  keybindings.labelSubtree('g', '+goto');
+}
+_registerBuiltinChords();
+
 // Mode → activation predicate + handler. Order is precedence: design
 // wins over menu, menu over filter, etc. Add a new mode here, not in
 // handleKey. Each handler is mutation-only — handleKey paints once
@@ -388,6 +470,9 @@ const modeChain = [
   { active: () => S.copyMode,   handler: handleCopyKey },
   { active: () => S.detailSearchMode, handler: handleDetailSearchKey },
   { active: () => S.registerPopupMode, handler: (k, s) => registerPopup.handleKey(k, s) },
+  // Prefix (leader) — pending after the leader key. Exclusive with the
+  // modes above in practice (entered only from normal-mode space).
+  { active: () => S.prefixMode, handler: handlePrefixKey },
   // cmd mode runs whatever the user typed (a `:focus <panel>` mutates
   // S.focus; a plugin command might mutate detail/group/etc). Refresh
   // the focused panel's info into detail so the trailing paint reflects
@@ -599,4 +684,9 @@ module.exports = {
   handleKey, handleAction, startDesignMode,
   registerKeyFilter, clearKeyFilters,
   _dispatchPluginKey: dispatchPluginKey,
+  // Exposed for tests
+  _enterPrefix: enterPrefix,
+  _handlePrefixKey: handlePrefixKey,
+  _handleNormalKey: handleNormalKey,
+  _isListPanel,
 };
