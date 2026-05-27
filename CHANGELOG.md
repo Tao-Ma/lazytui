@@ -7,17 +7,28 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
-- **Prefix (leader) key — a fresh `<space><key>` namespace.** (Stages
-  1–2 of 3: dispatch + v-mode foundation, which-key popup.) Pressing
+- **Prefix (leader) key — a fresh `<space><key>` namespace.** Pressing
   the leader (default
   `<space>`) opens a binding namespace resolved as a TREE, so chords
   nest: `<space>g g` → top, `<space>g e` → bottom, `<space>r` →
   refresh, `<space>?` → help. Esc (or a second leader press) cancels a
-  pending sequence. Bindings live in a registry (`js/keybindings.js`)
-  that the which-key popup and YAML `keys:` reader (stage 3) both build
-  on. After the leader (and at each nested level) a **which-key popup**
+  pending sequence. Bindings live in a registry (`js/keybindings.js`).
+  After the leader (and at each nested level) a **which-key popup**
   lists the available continuations — `key → label`, sorted, with
   `+name …` for subtrees — so chords are discoverable, not memorized.
+
+  Bind your own chords in a top-level **`keys:`** block. Each entry
+  targets exactly one of `action:` (run a declared action by its
+  `actions:` key), `command:` (run a `:` cmdline command), or
+  `builtin:` (a framework action like `refresh` / `goto_top`); an
+  optional `label:` sets the popup text. Sequences nest naturally
+  (`<leader>gg`):
+  ```yaml
+  keys:
+    "<leader>b":  { action: build }
+    "<leader>L":  { command: "logs" }
+    "<leader>gg": { builtin: goto_top, label: top }
+  ```
 
   Because `<space>` previously toggled list multi-select, selection now
   lives behind a **v-mode** mirroring the detail panel's visual mode:

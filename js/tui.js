@@ -162,6 +162,11 @@ function main() {
   const configDir = path.dirname(path.resolve(configArgs[0]));
   loadPlugins(S.config.plugins, configDir);
 
+  // Register any leader-key bindings declared in the top-level `keys:`
+  // block, after plugins so the binding-tree conflict check sees the
+  // full picture. Built-in chords are already registered at module load.
+  require('./dispatch').loadKeyBindings(S.config);
+
   initState();
   hideCursor();
   installSuspendHandlers();   // Ctrl+Z: restore terminal → suspend → resume

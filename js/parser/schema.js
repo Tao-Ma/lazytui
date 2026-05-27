@@ -10,7 +10,8 @@ const { SchemaError } = require('./errors');
 
 const VALID_ACTION_TYPES = new Set(['run', 'spawn', 'background']);
 
-const VALID_TOP_KEYS    = new Set(['project_dir', 'groups', 'vars', 'helpers', 'files', 'layout', 'theme', 'plugins', 'register']);
+const VALID_TOP_KEYS    = new Set(['project_dir', 'groups', 'vars', 'helpers', 'files', 'layout', 'theme', 'plugins', 'register', 'keys']);
+const VALID_KEY_BINDING_KEYS = new Set(['action', 'command', 'builtin', 'label', 'desc']);
 const VALID_REGISTER_KEYS = new Set(['cap']);
 const VALID_FILE_KEYS   = new Set(['path', 'var', 'desc', 'exclude', 'category']);
 const VALID_GROUP_KEYS  = new Set(['label', 'compose', 'containers', 'actions', 'terminals', 'children', 'quick', 'archive', 'config_branch', 'images']);
@@ -59,9 +60,38 @@ function validate(data, _sourceFile) {
   if ('helpers' in data) validateHelpers(data.helpers);
   if ('files' in data)   validateFiles(data.files);
   if ('register' in data) validateRegister(data.register);
+  if ('keys' in data)     validateKeys(data.keys);
 
   for (const [gname, gdata] of Object.entries(groups)) {
     validateGroup(gname, gdata);
+  }
+}
+
+function validateKeys(keysBlock) {
+  if (!isMapping(keysBlock)) throw new SchemaError("'keys' must be a mapping");
+  for (const [seq, spec] of Object.entries(keysBlock)) {
+    const ctx = `keys, '${seq}'`;
+    if (!isMapping(spec)) {
+      throw new SchemaError(`binding must be a mapping, got ${typeName(spec)}`, { context: ctx });
+    }
+    checkUnknownKeys(spec, VALID_KEY_BINDING_KEYS, ctx);
+    // Exactly one target verb.
+    const verbs = ['action', 'command', 'builtin'].filter(v => v in spec);
+    if (verbs.length === 0) {
+      throw new SchemaError("binding needs one of 'action', 'command', or 'builtin'", { context: ctx });
+    }
+    if (verbs.length > 1) {
+      throw new SchemaError(`binding has conflicting targets: ${verbs.join(', ')}`, { context: ctx });
+    }
+    const verb = verbs[0];
+    if (typeof spec[verb] !== 'string' || !spec[verb].trim()) {
+      throw new SchemaError(`'${verb}' must be a non-empty string`, { context: ctx });
+    }
+    for (const opt of ['label', 'desc']) {
+      if (opt in spec && typeof spec[opt] !== 'string') {
+        throw new SchemaError(`'${opt}' must be a string`, { context: ctx });
+      }
+    }
   }
 }
 

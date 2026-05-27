@@ -330,8 +330,28 @@ function formatMatchLine(match) {
   return display;
 }
 
+/**
+ * Run a cmdline command string programmatically (no UI): "logs",
+ * "show-hidden toggle", etc. Resolves the leading word against the
+ * same registry the `:` prompt uses (exact name, then prefix), passing
+ * the rest as args. Returns the command's result, or false if no
+ * command matched. Used by the YAML `keys:` reader to bind leader
+ * chords to commands.
+ */
+function runCommandString(str, state) {
+  const parts = String(str).trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return false;
+  const name = parts[0].toLowerCase();
+  const args = parts.slice(1);
+  const reg = buildRegistry(state);
+  const entry = reg.find(e => e.name === name) || reg.find(e => e.name.startsWith(name));
+  if (!entry) return false;
+  return entry.run(args, state);
+}
+
 module.exports = {
   enterCmdline, exitCmdline, handleCmdlineKey, renderCmdline,
+  runCommandString,
   // Test-only export — buffer parsing reused by test-cmdline-args.js.
   _splitQuery: splitQuery,
 };

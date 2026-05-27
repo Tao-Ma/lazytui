@@ -444,6 +444,44 @@ function _registerBuiltinChords() {
 }
 _registerBuiltinChords();
 
+/** Run a declared action by its key (the YAML `actions:` map key),
+ *  searching every group. First match wins. */
+function _runActionByKey(key) {
+  const groups = (S.config && S.config.groups) || {};
+  for (const g of Object.values(groups)) {
+    if (g.actions && g.actions[key]) { runAction(key, g.actions[key]); return true; }
+  }
+  return false;
+}
+
+/** Build the run() closure for a YAML `keys:` binding spec. The verb
+ *  is resolved at INVOKE time so group-relative actions / commands see
+ *  the current state, not whatever was current at registration. */
+function _bindingRunner(spec) {
+  if (spec.builtin) return () => handleAction(spec.builtin);
+  if (spec.action)  return () => _runActionByKey(spec.action);
+  if (spec.command) return () => require('./cmdline').runCommandString(spec.command, S);
+  return null;
+}
+
+/**
+ * Register every entry in the top-level `keys:` block into the leader
+ * binding tree. Called once at boot after the config is loaded (and
+ * after plugins, so a project binding can shadow nothing it shouldn't).
+ * A conflicting sequence throws from registerKeyBinding — surfaced to
+ * the user as a boot error, same as any other config mistake.
+ */
+function loadKeyBindings(config) {
+  const keys = (config && config.keys) || {};
+  for (const [seq, spec] of Object.entries(keys)) {
+    const run = _bindingRunner(spec);
+    if (!run) continue;
+    const label = spec.label || spec.desc
+      || spec.action || spec.builtin || spec.command || seq;
+    keybindings.registerKeyBinding(seq, { label, run });
+  }
+}
+
 // Mode → activation predicate + handler. Order is precedence: design
 // wins over menu, menu over filter, etc. Add a new mode here, not in
 // handleKey. Each handler is mutation-only — handleKey paints once
@@ -683,6 +721,7 @@ function handleAction(action, arg) {
 module.exports = {
   handleKey, handleAction, startDesignMode,
   registerKeyFilter, clearKeyFilters,
+  loadKeyBindings,
   _dispatchPluginKey: dispatchPluginKey,
   // Exposed for tests
   _enterPrefix: enterPrefix,

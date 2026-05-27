@@ -375,6 +375,10 @@ function parse(yamlPath) {
     // forwards this to register.init() at boot. Default cap (100) is
     // applied inside register.init() when this block is absent.
     register: data.register !== undefined ? data.register : {},
+    // Leader-key bindings (top-level `keys:`). dispatch.loadKeyBindings
+    // registers each entry into the prefix-key tree at boot. Default
+    // empty — the built-in chords are registered unconditionally.
+    keys: data.keys !== undefined ? data.keys : {},
   };
 }
 
