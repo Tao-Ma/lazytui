@@ -107,6 +107,16 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   filtering.
 
 ### Hardening
+- **Panel-type registration is validated + collision-aware.** A single
+  panel-def check at registration covers the whole contract
+  (`render` required; `getItems`/`getInfo`/`onKey`/`copyOptions`/
+  `filterText`/`idOf` must be functions; `customFilter` boolean;
+  `mode`/`keyHints` strings) so a typo'd hook surfaces at load instead
+  of as a silent no-op later. Panel-type **namespace collisions** now
+  warn instead of silently last-wins shadowing: Plugin↔Plugin (the
+  later registration shadows the earlier) and Plugin↔Component
+  (split-brain — Component owns `render`, Plugin owns the other hooks),
+  making real the collision warning PRINCIPLES §12 documented.
 - **Extensible group schema** (PRINCIPLES §1/§5/§9). Group-level YAML
   keys are no longer rejected against a hardcoded whitelist baked into
   framework core — the framework validates the keys it owns

@@ -54,6 +54,49 @@ const componentPanelTypeMap = {};   // panelType -> component name
  *
  * @param {object} plugin
  */
+// Panel-def contract check, shared by registerPlugin/registerComponent.
+// Returns false (skip this type) only when render() is missing — the
+// one hard requirement. Everything else is a non-fatal warning so a
+// typo'd hook surfaces at registration instead of as a silent no-op at
+// some scattered `typeof def.X === 'function'` call site later.
+function _validatePanelDef(label, type, def) {
+  if (!def || typeof def.render !== 'function') {
+    console.error(`[${label}] panelType '${type}' missing render(); skipping`);
+    return false;
+  }
+  for (const fn of ['getItems', 'getInfo', 'onKey', 'copyOptions', 'filterText', 'idOf']) {
+    if (def[fn] !== undefined && typeof def[fn] !== 'function') {
+      console.error(`[${label}] panelType '${type}' has '${fn}' that is not a function; ignored`);
+    }
+  }
+  if (def.customFilter !== undefined && typeof def.customFilter !== 'boolean') {
+    console.error(`[${label}] panelType '${type}' has non-boolean 'customFilter'; treated as truthy`);
+  }
+  if (def.mode !== undefined && typeof def.mode !== 'string') {
+    console.error(`[${label}] panelType '${type}' has non-string 'mode'`);
+  }
+  if (def.keyHints !== undefined && typeof def.keyHints !== 'string') {
+    console.error(`[${label}] panelType '${type}' has non-string 'keyHints'`);
+  }
+  if (def.filterable && typeof def.getItems !== 'function') {
+    console.error(`[${label}] panelType '${type}' is filterable but has no getItems(); filtering will no-op`);
+  }
+  return true;
+}
+
+// Surface panel-type namespace collisions instead of silently
+// last-wins shadowing them (the previous behavior — a user plugin
+// reusing a built-in type name killed the original with no diagnostic).
+function _warnPanelTypeCollision(pluginName, type) {
+  // Skip the no-op case of a plugin re-registering its own type.
+  if (panelTypeMap[type] && panelTypeMap[type] !== pluginName) {
+    console.error(`[plugin:${pluginName}] panelType '${type}' already registered by plugin '${panelTypeMap[type]}'; the later registration shadows it (last-wins)`);
+  }
+  if (componentPanelTypeMap[type]) {
+    console.error(`[plugin:${pluginName}] panelType '${type}' is also a Component panel ('${componentPanelTypeMap[type]}'); the Component owns render() while the Plugin owns getItems/onKey/etc. — split-brain, rename one`);
+  }
+}
+
 function registerPlugin(plugin, config) {
   if (!plugin || typeof plugin !== 'object' || !plugin.name) {
     console.error('[plugin] missing or invalid name; skipping');
@@ -69,20 +112,9 @@ function registerPlugin(plugin, config) {
   }
   plugins[plugin.name] = plugin;
   if (plugin.panelTypes) {
-    const optionalFns = ['getItems', 'getInfo', 'onKey', 'copyOptions', 'filterText'];
     for (const [type, def] of Object.entries(plugin.panelTypes)) {
-      if (!def || typeof def.render !== 'function') {
-        console.error(`[plugin:${plugin.name}] panelType '${type}' missing render(); skipping`);
-        continue;
-      }
-      for (const fn of optionalFns) {
-        if (def[fn] !== undefined && typeof def[fn] !== 'function') {
-          console.error(`[plugin:${plugin.name}] panelType '${type}' has '${fn}' that is not a function; ignored`);
-        }
-      }
-      if (def.filterable && typeof def.getItems !== 'function') {
-        console.error(`[plugin:${plugin.name}] panelType '${type}' is filterable but has no getItems(); filtering will no-op`);
-      }
+      if (!_validatePanelDef(`plugin:${plugin.name}`, type, def)) continue;
+      _warnPanelTypeCollision(plugin.name, type);
       panelTypeMap[type] = plugin.name;
     }
   }
@@ -135,9 +167,16 @@ function registerComponent(comp) {
   }
   if (comp.panelTypes) {
     for (const [type, def] of Object.entries(comp.panelTypes)) {
-      if (!def || typeof def.render !== 'function') {
-        console.error(`[component:${comp.name}] panelType '${type}' missing render(); skipping`);
-        continue;
+      if (!_validatePanelDef(`component:${comp.name}`, type, def)) continue;
+      // Make the documented collision warning real (PRINCIPLES §12): a
+      // Component panel that collides with a Plugin panel wins render()
+      // but the Plugin def still answers getItems/onKey/etc. via
+      // getPanelDef — surface that split-brain at registration.
+      if (panelTypeMap[type]) {
+        console.error(`[component:${comp.name}] panelType '${type}' collides with plugin '${panelTypeMap[type]}'; Component owns render() but the Plugin def owns other hooks — split-brain, rename one`);
+      }
+      if (componentPanelTypeMap[type] && componentPanelTypeMap[type] !== comp.name) {
+        console.error(`[component:${comp.name}] panelType '${type}' already registered by component '${componentPanelTypeMap[type]}'; last-wins`);
       }
       componentPanelTypeMap[type] = comp.name;
     }

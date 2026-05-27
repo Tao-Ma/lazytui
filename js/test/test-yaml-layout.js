@@ -175,6 +175,33 @@ describe('[3] serializeLayout — full layout block', () => {
     eq(stats.config.select_from, 'containers', 'select_from survives YAML round-trip');
     eq(stats.config.refresh_interval_ms, 1500, 'refresh_interval_ms survives YAML round-trip');
   });
+
+  it('round-trips a plugin files panel\'s string extras (source/container/root)', () => {
+    // Regression for design-mode save → reload dropping plugin panel
+    // options. The v0.4 docker files panel carries string extras; a
+    // save (serialize) followed by reload (parse) must preserve them.
+    const tmp = path.join(os.tmpdir(), `lazytui-yaml-rt2-${process.pid}.yml`);
+    const layoutYaml = serializeLayout({
+      leftWidth: 32, detailHeightPct: 60,
+      leftPanels: [
+        { type: 'groups', title: 'Groups' },
+        { type: 'files', title: 'PGDATA',
+          source: 'docker', container: 'pg', root: '/var/lib/postgresql/data' },
+      ],
+      rightPanels: [{ type: 'detail', title: 'Detail' }],
+    });
+    const fullYaml = `groups:\n  g1:\n    label: g1\n    actions:\n      noop:\n        label: noop\n        cmd: "true"\n\n${layoutYaml}\n`;
+    fs.writeFileSync(tmp, fullYaml);
+    const { parse } = require('../parser');
+    let cfg;
+    try { cfg = parse(tmp); } finally { fs.unlinkSync(tmp); }
+
+    const files = cfg.layout.left_panels.find(p => p.type === 'files');
+    assert(files, 'files panel survives round-trip');
+    eq(files.config.source, 'docker', 'source extra round-trips');
+    eq(files.config.container, 'pg', 'container extra round-trips');
+    eq(files.config.root, '/var/lib/postgresql/data', 'root extra round-trips');
+  });
 });
 
 describe('[4] writeLayoutToFile — splices the layout block into an existing config', () => {
