@@ -190,25 +190,18 @@ function initState() {
   S.detailScroll = 0;
   S.activeTab = 0;
   S.focus = 'groups';
-  // Mode flags — buffers reset inside their owning modules.
-  S.menuOpen = false;
-  S.filterMode = false;
+  // Mode flags — cleared from the single registry (js/modes.js) so this
+  // can't drift out of sync with the modeChain / overlay / modal lists.
+  // Non-flag buffers (filters, prefixNode/Seq, detailSearch object) are
+  // reset explicitly below since the registry only flips the booleans.
+  require('./modes').resetModes(S);
   S.filters = {};
-  S.copyMode = false;
-  S.cmdMode = false;
-  S.designMode = false;
-  S.registerPopupMode = false;
-  S.prefixMode = false;
   S.prefixNode = null;
   S.prefixSeq = [];
-  S.listSelectMode = false;
   // Detail-panel search — typing phase flag + state. `term`, `matches`,
   // and `idx` live under S.detailSearch (single object); the mode flag
-  // stays at top level so the existing modeChain / overlay-active
-  // pattern matches what other modes do.
-  S.detailSearchMode = false;
+  // (detailSearchMode) is cleared by resetModes above.
   S.detailSearch = { active: false, term: '', matches: [], idx: 0 };
-  S.terminalMode = false;
   S.ephemeralTerminals = {};
   S.contentTabs = {};
   S.multiSel = {};
@@ -382,6 +375,13 @@ function resetGroupContext() {
   // user doesn't land in a new group with a sticky [select] tag over
   // an empty selection and a dead leader key.
   S.listSelectMode = false;
+  // Detail-panel transient state is tied to the OUTGOING group's content
+  // (which the new group is about to replace). Drop the visual selection
+  // and cursor so a half-made selection / stale cursor doesn't carry a
+  // phantom highlight + bogus yank coordinates into the new content.
+  // (detailSearch is invalidated by setDetail when the content swaps.)
+  if (S.select) S.select.active = false;
+  if (S.detailCursor) S.detailCursor = { line: 0, col: 0 };
 }
 
 /**
@@ -398,6 +398,15 @@ function selectGroup(idx) {
 function setDetail(text) {
   S.detailLines = text ? text.split('\n') : [];
   S.detailScroll = 0;
+  // Replacing the detail content invalidates any committed search: its
+  // matches[] hold line/col offsets into the PREVIOUS content, so the
+  // highlight renderer and n/N navigation would point at the wrong
+  // lines. Drop the search rather than render stale highlights. (The
+  // typing-phase flag detailSearchMode is owned by the search module's
+  // own enter/exit; this only clears a committed search.)
+  if (S.detailSearch && S.detailSearch.active) {
+    S.detailSearch = { active: false, term: '', matches: [], idx: 0 };
+  }
 }
 
 // --- Multi-select (bulk-operation operand) ---

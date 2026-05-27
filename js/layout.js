@@ -17,6 +17,7 @@ const { renderCopyMenu } = require('./copy');
 const { render: renderRegisterPopup } = require('./register-popup');
 const { renderMenu } = require('./menu');
 const { renderWhichKey } = require('./which-key');
+const modes = require('./modes');
 const { renderCmdline } = require('./cmdline');
 const { renderConfirmOverlay } = require('./confirm');
 const { renderPromptOverlay } = require('./prompt');
@@ -365,9 +366,7 @@ function render() {
   // All overlay flags must appear here, otherwise residue lingers when
   // an event-driven render fires while/just-after the overlay is open
   // (e.g. crashloop container spamming docker events with prompt up).
-  const overlayActive = S.copyMode || S.menuOpen || S.designMode
-                     || S.cmdMode || S.confirmMode || S.promptMode
-                     || S.registerPopupMode || S.prefixMode;
+  const overlayActive = modes.isOverlayActive(S);
   if (_wasOverlayActive && !overlayActive) _forceFullRepaint = true;
   _wasOverlayActive = overlayActive;
 
@@ -530,7 +529,7 @@ function renderFooter() {
   // overwrites it.
   if (S.cmdMode) return;
   const COLS = cols(), ROWS = rows();
-  const inModal = S.terminalMode || S.filterMode || S.copyMode || S.designMode || S.designTitleEditMode || S.menuOpen || S.prefixMode;
+  const inModal = modes.isModal(S);
 
   // Left side: mode message OR (panel hints + plugin keyHints +
   // multi-select indicator + footer:left decorator). Modal footers

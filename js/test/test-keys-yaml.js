@@ -201,4 +201,32 @@ describe('[5] action binding honors args:', () => {
   });
 });
 
+// ---- [6] leader resolves PLUGIN-synthesized actions (not just YAML) ----
+
+describe('[6] action binding finds plugin-synthesized actions', () => {
+  it('resolves an action contributed by a plugin groupActions hook', () => {
+    // A plugin contributes `deploy` to group g; group g declares NO
+    // actions of its own. The old _runActionByKey searched only
+    // g.actions and would miss this; the fix merges getGroupActions.
+    api.registerPlugin({
+      name: 'kb-groupactions-test',
+      groupActions: (group, groupName) => groupName === 'g'
+        ? { deploy: { key: 'deploy', label: 'Deploy', script: 'echo', containers: [], type: 'run', args: ['env'] } }
+        : {},
+    });
+    kb.clearBindings();
+    S.config = {
+      groups: { g: { label: 'G' } },          // no `actions:` here — only the plugin's
+      keys: { '<leader>x': { action: 'deploy' } },
+    };
+    S.promptMode = false; S.confirmMode = false;
+    dispatch2.loadKeyBindings(S.config);
+    const leaf = kb.resolve(kb.rootNode(), 'x');
+    assert(leaf && typeof leaf.run === 'function', 'binding registered');
+    leaf.run();
+    assert(S.promptMode === true, 'plugin-synthesized action resolved + opened its args prompt');
+    S.promptMode = false;
+  });
+});
+
 report();

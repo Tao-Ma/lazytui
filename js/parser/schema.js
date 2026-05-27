@@ -61,9 +61,50 @@ function validate(data, _sourceFile) {
   if ('files' in data)   validateFiles(data.files);
   if ('register' in data) validateRegister(data.register);
   if ('keys' in data)     validateKeys(data.keys);
+  if ('layout' in data)   validateLayout(data.layout);
 
   for (const [gname, gdata] of Object.entries(groups)) {
     validateGroup(gname, gdata);
+  }
+}
+
+/**
+ * Enforce the PRINCIPLES.md §10 layout invariants at parse time instead
+ * of letting violations surface as render-time crashes (two `detail`
+ * panels both write S.panelBounds.detail and clobber each other; >6
+ * left panels exhaust the hotkey pool; zero detail panels leave the
+ * right column dead). Only runs when an explicit `layout:` is given —
+ * the generated default layout is always well-formed.
+ */
+function validateLayout(layout) {
+  if (!isMapping(layout)) throw new SchemaError("'layout' must be a mapping");
+  const collectPanels = (side, max) => {
+    const block = layout[side];
+    if (block === undefined) return [];
+    if (!isMapping(block)) throw new SchemaError(`'layout.${side}' must be a mapping`);
+    const panels = block.panels;
+    if (panels === undefined) return [];
+    if (!Array.isArray(panels)) throw new SchemaError(`'layout.${side}.panels' must be a list`);
+    panels.forEach((p, i) => {
+      const ctx = `layout.${side}.panels[${i}]`;
+      if (!isMapping(p)) throw new SchemaError(`panel must be a mapping, got ${typeName(p)}`, { context: ctx });
+      if (typeof p.type !== 'string' || !p.type.trim()) {
+        throw new SchemaError("panel 'type' is required and must be a non-empty string", { context: ctx });
+      }
+    });
+    if (panels.length > max) {
+      throw new SchemaError(`'layout.${side}' allows at most ${max} panels, got ${panels.length}`);
+    }
+    return panels;
+  };
+  const all = collectPanels('left', 6).concat(collectPanels('right', 3));
+  const detailCount = all.filter(p => p.type === 'detail').length;
+  if (detailCount !== 1) {
+    throw new SchemaError(`layout must have exactly one 'detail' panel, found ${detailCount}`);
+  }
+  const actionsCount = all.filter(p => p.type === 'actions').length;
+  if (actionsCount > 1) {
+    throw new SchemaError(`layout allows at most one 'actions' panel, found ${actionsCount}`);
   }
 }
 

@@ -107,6 +107,33 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   filtering.
 
 ### Hardening
+- **Mode registry — single source of truth for modal states**
+  (`js/modes.js`). The set of modes was previously duplicated across
+  four hand-maintained lists (dispatch `modeChain`, layout
+  `overlayActive`, layout `inModal`, `initState` reset) that drifted —
+  a mode added to one but not the others left stale overlay pixels on
+  close or leaked across re-init (the `initState` list was in fact
+  missing `confirmMode`/`promptMode`/`designTitleEditMode`). All four
+  now derive from one table; adding a mode is a one-line edit, and
+  dispatch throws at load if a chain mode has no handler.
+- **Mode-chain wedge guard.** A modal key handler that throws no longer
+  traps the user in an unexitable mode — the dispatcher catches, logs,
+  and force-clears the offending flag so the next key returns to normal
+  dispatch.
+- **Layout constraints enforced at parse time** (PRINCIPLES §10).
+  `validateLayout` rejects configs with ≠1 `detail` panel, >1 `actions`
+  panel, >6 left / >3 right panels, or a panel missing `type` — these
+  previously passed `parse()` and crashed or silently misbehaved at
+  render (two `detail` panels clobbered each other's bounds).
+- **Detail-transient state no longer leaks across transitions.**
+  `resetGroupContext` clears the visual selection + detail cursor on
+  group switch; `setDetail` invalidates a committed `/`-search (whose
+  match offsets pointed into the now-replaced content).
+- **Leader-bound actions resolve plugin-synthesized actions.** A `keys:`
+  `action:` binding now sees the same merged set as the actions panel
+  (plugin `groupActions` + YAML `actions:`), routed through the shared
+  args-prompt/confirm path — so binding e.g. a docker-contributed action
+  works instead of silently doing nothing.
 - **Per-panel-type files state** (`S.fileBrowsers[panelType]`) — the
   `files` and `file-browser` panel types now hold independent cwd /
   showHidden / lastError slots. Earlier global singleton meant a

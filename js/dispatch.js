@@ -28,7 +28,7 @@ const { showSelectedInfo, runTab } = require('./detail');
 const { runAction } = require('./actions');
 const { openMenu, closeMenu, navMenu, activateMenu } = require('./menu');
 const { enterDesign, handleDesignKey, handleDesignTitleEditKey } = require('./design');
-const { refreshAll, getPanelDef, getItems, idOf } = require('./plugins/api');
+const { refreshAll, getPanelDef, getItems, idOf, getGroupActions } = require('./plugins/api');
 const { showHelp } = require('./help-text');
 const { enterFilter, exitFilter, keystroke: filterKeystroke } = require('./filter');
 const { enterCopy, exitCopy, navCopy } = require('./copy');
@@ -44,6 +44,7 @@ const { isSessionDead, restartSession } = require('./terminal');
 const { cleanup } = require('./cleanup');
 const { execSync } = require('child_process');
 const keybindings = require('./keybindings');
+const modes = require('./modes');
 
 /**
  * Synchronously evaluate an action's `default_cmd` to pre-fill its
@@ -454,22 +455,30 @@ function _registerBuiltinChords() {
 }
 _registerBuiltinChords();
 
-/** Run a declared action by its key (the YAML `actions:` map key),
- *  searching every group. First match wins. Routes through the same
- *  args-prompt / confirm path as the actions-panel Enter flow so a
- *  leader-bound action with `args:` still prompts instead of running
- *  with empty params. */
+/** Run a resolved action object, routing through the same args-prompt /
+ *  confirm path the actions-panel Enter flow uses. Single definition so
+ *  the panel, the leader bindings, and any future caller can't drift on
+ *  how `args:` / `confirm:` are handled. */
+function _runResolvedAction(key, act) {
+  if (act.args) {
+    const initial = resolvePromptDefault(act);
+    enterPrompt(`Run: ${act.label}`, act.args, (args) => runAction(key, act, args), initial);
+  } else {
+    runAction(key, act);
+  }
+}
+
+/** Run a declared action by its key, searching every group. Resolves
+ *  the SAME merged set the actions panel shows — plugin-synthesized
+ *  actions (docker's `up`/`logs`/…) plus YAML `actions:` — so a leader
+ *  binding to a plugin action isn't silently dead. First match wins. */
 function _runActionByKey(key) {
   const groups = (S.config && S.config.groups) || {};
-  for (const g of Object.values(groups)) {
-    const act = g.actions && g.actions[key];
+  for (const [gname, g] of Object.entries(groups)) {
+    const merged = { ...getGroupActions(g, gname), ...(g.actions || {}) };
+    const act = merged[key];
     if (!act) continue;
-    if (act.args) {
-      const initial = resolvePromptDefault(act);
-      enterPrompt(`Run: ${act.label}`, act.args, (args) => runAction(key, act, args), initial);
-    } else {
-      runAction(key, act);
-    }
+    _runResolvedAction(key, act);
     return true;
   }
   return false;
@@ -503,41 +512,36 @@ function loadKeyBindings(config) {
   }
 }
 
-// Mode → activation predicate + handler. Order is precedence: design
-// wins over menu, menu over filter, etc. Add a new mode here, not in
-// handleKey. Each handler is mutation-only — handleKey paints once
-// after the entire dispatch chain completes.
-const modeChain = [
-  // confirm is highest precedence — y/N must resolve before anything
-  // else. Cannot coexist with other modes in practice (only entered
-  // from runAction → only fires from normal-mode Enter / cmdline run).
-  { active: () => S.confirmMode, handler: handleConfirmKey },
-  // prompt — collects positional args from the user when an action has
-  // `args:` declared and was invoked from the actions panel (not via
-  // `:` cmdline, which carries args inline). Mutually exclusive with
-  // confirm in practice (prompt fires first, runAction may then enter
-  // confirm with the collected args captured in the closure).
-  { active: () => S.promptMode,  handler: handlePromptKey },
-  // Title-edit sub-mode of design mode — runs BEFORE designMode in the
-  // chain so the design-mode key handler is skipped while the user is
-  // typing a new title. Esc/Enter in this handler clear the sub-mode
-  // flag and return control to designMode handling.
-  { active: () => S.designTitleEditMode, handler: handleDesignTitleEditKey },
-  { active: () => S.designMode, handler: handleDesignKey },
-  { active: () => S.menuOpen,   handler: handleMenuKey },
-  { active: () => S.filterMode, handler: handleFilterKey },
-  { active: () => S.copyMode,   handler: handleCopyKey },
-  { active: () => S.detailSearchMode, handler: handleDetailSearchKey },
-  { active: () => S.registerPopupMode, handler: (k, s) => registerPopup.handleKey(k, s) },
-  // Prefix (leader) — pending after the leader key. Exclusive with the
-  // modes above in practice (entered only from normal-mode space).
-  { active: () => S.prefixMode, handler: handlePrefixKey },
-  // cmd mode runs whatever the user typed (a `:focus <panel>` mutates
-  // S.focus; a plugin command might mutate detail/group/etc). Refresh
-  // the focused panel's info into detail so the trailing paint reflects
-  // any focus change.
-  { active: () => S.cmdMode,    handler: (key, seq) => { handleCmdlineKey(key, seq); showSelectedInfo(); } },
-];
+// Mode → handler map. The ORDER and the membership of the modal set
+// live in js/modes.js (the single source of truth); here we only bind
+// each chain mode to its key handler. Precedence is modes.CHAIN_MODES
+// order: confirm > prompt > designTitleEdit > design > menu > filter >
+// copy > detailSearch > registerPopup > prefix > cmd.
+//
+//   - confirm/prompt: y/N + arg collection, entered from runAction.
+//   - designTitleEdit runs before designMode so title typing isn't
+//     swallowed by design navigation.
+//   - cmd refreshes the focused panel's info so a `:focus`/command that
+//     changes focus is reflected in the trailing paint.
+const _modeHandlers = {
+  confirmMode:         handleConfirmKey,
+  promptMode:          handlePromptKey,
+  designTitleEditMode: handleDesignTitleEditKey,
+  designMode:          handleDesignKey,
+  menuOpen:            handleMenuKey,
+  filterMode:          handleFilterKey,
+  copyMode:            handleCopyKey,
+  detailSearchMode:    handleDetailSearchKey,
+  registerPopupMode:   (k, s) => registerPopup.handleKey(k, s),
+  prefixMode:          handlePrefixKey,
+  cmdMode:             (key, seq) => { handleCmdlineKey(key, seq); showSelectedInfo(); },
+};
+
+const modeChain = modes.CHAIN_MODES.map(flag => {
+  const handler = _modeHandlers[flag];
+  if (!handler) throw new Error(`mode "${flag}" is in CHAIN_MODES but has no handler in dispatch.js`);
+  return { flag, active: () => S[flag], handler };
+});
 
 // Key-filter middleware (CHANGELOG v0.3.0). Registered callbacks run
 // in order, each receiving the current {key, seq} event. A filter may
@@ -578,11 +582,35 @@ function handleKey(key, seq) {
   // — every key event also fans out to every registered Component's
   // update(). Plugins are unaffected.
   require('./plugins/api').dispatchMsg({ type: 'key', key, seq });
-  for (const m of modeChain) {
-    if (m.active()) { m.handler(key, seq); render(); return; }
-  }
+  if (_dispatchActiveMode(key, seq)) { render(); return; }
   handleNormalKey(key, seq);
   render();
+}
+
+/**
+ * Run the first active mode's handler, if any. Returns true when a mode
+ * claimed the key (caller should paint and stop), false to fall through
+ * to normal-mode dispatch.
+ *
+ * Wedge guard: a handler that throws before clearing its own flag would
+ * otherwise trap every subsequent key (Esc included) in the same
+ * throwing handler. We force-clear the flag on throw so the user returns
+ * to normal-mode dispatch instead of a frozen modal. Painting is the
+ * caller's job — this stays render-free so it's unit-testable.
+ */
+function _dispatchActiveMode(key, seq) {
+  for (const m of modeChain) {
+    if (m.active()) {
+      try {
+        m.handler(key, seq);
+      } catch (e) {
+        console.error('[mode]', m.flag, e && e.message);
+        S[m.flag] = false;
+      }
+      return true;
+    }
+  }
+  return false;
 }
 
 // --- handleAction: name → effect ---
@@ -651,13 +679,7 @@ function handleAction(action, arg) {
         const item = items[getSel('actions')];
         if (item) {
           const [key, act] = item;
-          if (act.args) {
-            const initial = resolvePromptDefault(act);
-            enterPrompt(`Run: ${act.label}`, act.args,
-                        (args) => runAction(key, act, args), initial);
-          } else {
-            runAction(key, act);
-          }
+          _runResolvedAction(key, act);
         }
       } else {
         showSelectedInfo();
@@ -748,5 +770,6 @@ module.exports = {
   _enterPrefix: enterPrefix,
   _handlePrefixKey: handlePrefixKey,
   _handleNormalKey: handleNormalKey,
+  _dispatchActiveMode,
   _isListPanel,
 };
