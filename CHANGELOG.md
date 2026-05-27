@@ -6,6 +6,8 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-05-27
+
 ### Added
 - **Prefix (leader) key — a fresh `<space><key>` namespace.** Pressing
   the leader (default
