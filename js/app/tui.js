@@ -203,13 +203,17 @@ function main() {
   // chrome reset / viewer reset) goes out as apply_msg / dispatch_msg Cmds.
   registerComponent(require('../panel/navigator/groups'));
 
-  // Phase 6 — the legacy Plugin API + YAML `plugins:` loader retired.
-  // External authors write Components and register them the same way
-  // the built-ins above do. A non-empty `plugins:` block in the config
-  // is now an unused field (the parser still accepts it; nothing reads it).
-  if (getModel().config && getModel().config.plugins
-      && Object.keys(getModel().config.plugins).length > 0) {
-    console.error('[config] `plugins:` block is no longer loaded (Plugin API retired in v0.5 Phase 6); migrate to Components.');
+  // Phase 6 — the runtime Plugin API retired. External authors write
+  // Components and register them the same way the built-ins above do.
+  // The `plugins:` block still has a parser-level role though: entries
+  // whose `path:` ends in `.yml`/`.yaml` are merged in by the parser as
+  // YAML config splits (see `mergeYamlPlugins` in parser/index.js).
+  // Warn only on entries that AREN'T splits — those are the ones that
+  // would have been runtime plugins under the retired API.
+  const { retiredPluginEntries } = require('../parser/index');
+  const retired = retiredPluginEntries(getModel().config && getModel().config.plugins);
+  if (retired.length > 0) {
+    console.error(`[config] \`plugins:\` entries ${JSON.stringify(retired)} are no longer loaded (runtime Plugin API retired in v0.5 Phase 6); migrate to Components.`);
   }
 
   // Register any leader-key bindings declared in the top-level `keys:`

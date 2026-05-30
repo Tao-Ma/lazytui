@@ -112,6 +112,19 @@ that breaks for anyone using `dispatch.applyMsg` directly.
   if usage shifts: `docs/v0.5-perf.md`; benchmark script
   `js/test/bench-hotpaths.js`.
 
+### Fixed
+- **`plugins:` warning scope.** The boot-time deprecation warning
+  fired on every non-empty `plugins:` block, including YAML config
+  splits — the parser-level merge feature that's still supported and
+  documented as unrelated to the retired runtime Plugin API. The
+  warning now fires only on non-split entries (paths that don't end
+  in `.yml`/`.yaml`, plus malformed entries that would silently
+  no-op) and names them in the message, so config-split users boot
+  quietly. Predicate exported from `js/parser/index.js` so the parser's
+  own split-detection and the boot warning share one rule; pinned by
+  `js/test/test-retired-plugin-entries.js`. PLUGINS.md updated to
+  match the corrected behavior.
+
 ## [0.4.0] — 2026-05-27
 
 ### Added

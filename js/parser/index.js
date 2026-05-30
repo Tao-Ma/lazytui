@@ -157,19 +157,35 @@ function mergePluginInto(main, plugin) {
   }
 }
 
+// A `plugins:` entry is a YAML config split (still supported in v0.5)
+// when it's a well-formed mapping whose `path:` ends in `.yml`/`.yaml`.
+// Anything else — a non-yaml path, a malformed entry, a string scalar —
+// would have been a runtime Plugin API entry under the retired API.
+function isYamlSplitEntry(conf) {
+  if (!conf || typeof conf !== 'object' || Array.isArray(conf)) return false;
+  const p = typeof conf.path === 'string' ? conf.path : '';
+  return p.endsWith('.yml') || p.endsWith('.yaml');
+}
+
+// Names of `plugins:` entries that AREN'T config splits — the warning
+// surface for tui.js boot. Pure; no side effects; tested directly.
+function retiredPluginEntries(plugins) {
+  if (!plugins || typeof plugins !== 'object' || Array.isArray(plugins)) return [];
+  return Object.keys(plugins).filter(name => !isYamlSplitEntry(plugins[name]));
+}
+
 function mergeYamlPlugins(data, baseDir) {
   // T19 note: pluginPath is resolved relative to the source YAML's
   // directory. Path traversal (`../foo.yml`) is by design — configs
   // are user-owned and a project may share helpers / vars across
   // multiple YAMLs in a parent directory. The .yml/.yaml extension
-  // guard at line 166 blocks the obvious "read /etc/passwd" misuse;
-  // beyond that, the user's filesystem boundaries are their concern.
+  // guard inside isYamlSplitEntry blocks the obvious "read /etc/passwd"
+  // misuse; beyond that, the user's filesystem boundaries are their concern.
   const plugins = data.plugins;
   if (!plugins || typeof plugins !== 'object' || Array.isArray(plugins)) return;
   for (const [name, conf] of Object.entries(plugins)) {
-    if (!conf || typeof conf !== 'object' || Array.isArray(conf)) continue;
-    const pluginPath = conf.path || '';
-    if (!pluginPath.endsWith('.yml') && !pluginPath.endsWith('.yaml')) continue;
+    if (!isYamlSplitEntry(conf)) continue;
+    const pluginPath = conf.path;
     const full = path.resolve(baseDir, pluginPath);
     let text;
     try {
@@ -403,4 +419,4 @@ function parse(yamlPath) {
   };
 }
 
-module.exports = { parse };
+module.exports = { parse, retiredPluginEntries };

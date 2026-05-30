@@ -303,9 +303,13 @@ layout:
       - type: detail        # viewer Component (the detail panel)
 ```
 
-The `plugins:` top-level block (legacy Plugin loader) is no longer
-read at runtime; tui.js surfaces a one-time warning if the block is
-non-empty. The parser still preserves it for round-trip fidelity.
+The `plugins:` top-level block no longer drives runtime plugin loading.
+Entries whose `path:` ends in `.yml`/`.yaml` are still consumed by the
+parser as YAML config splits (see "Config splits" below). tui.js
+surfaces a one-time warning naming any non-split entries — the ones
+that would have been runtime plugins under the retired API — so they
+don't silently no-op. The parser preserves the block verbatim for
+round-trip fidelity.
 
 ## Config splits — YAML "plugins"
 
