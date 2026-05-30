@@ -131,6 +131,27 @@ describe('[immutable] root reducer — prompt modal', () => {
     eq(armed.modal.prompt.text, 'ls', 'original buffer untouched');
   });
 
+  it('T26 — paste support: bracketed-paste content appends to prompt', () => {
+    const armed = { ...freshModel(),
+      modes: { ...freshModel().modes, promptMode: true },
+      modal: { ...freshModel().modal, prompt: { label: '', spec: '', text: 'ls ', ghost: '', cmd: null } },
+    };
+    const [next] = expectNoMutation(
+      'prompt_key paste leaves input frozen',
+      () => runtime.update(armed, { type: 'prompt_key', key: 'paste', seq: '/tmp/foo' }),
+      armed,
+    );
+    eq(next.modal.prompt.text, 'ls /tmp/foo', 'paste content appended');
+  });
+  it('T26 — paste collapses newlines in single-line prompt', () => {
+    const armed = { ...freshModel(),
+      modes: { ...freshModel().modes, promptMode: true },
+      modal: { ...freshModel().modal, prompt: { label: '', spec: '', text: '', ghost: '', cmd: null } },
+    };
+    const [next] = runtime.update(armed, { type: 'prompt_key', key: 'paste', seq: 'line1\nline2\r\nline3' });
+    eq(next.modal.prompt.text, 'line1 line2 line3', 'newlines collapsed to spaces');
+  });
+
   it('prompt_submit emits the Cmd with parsed args', () => {
     const armed = { ...freshModel(),
       modes: { ...freshModel().modes, promptMode: true },

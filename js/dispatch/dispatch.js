@@ -260,7 +260,9 @@ function handleFilterKey(key, seq) {
   if (key === 'return') { applyMsg({ type: 'filter_exit', keep: true  }); dispatchMsg(wrap('detail', { type: 'viewer_show_info' })); return; }
   if (key === 'up'   || seq === 'k') { handleAction('nav_up');   return; }
   if (key === 'down' || seq === 'j') { handleAction('nav_down'); return; }
-  applyMsg({ type: 'filter_key', seq });
+  // T26 — thread `key` through so the reducer can detect paste
+  // (key='paste', seq=<content>).
+  applyMsg({ type: 'filter_key', key, seq });
 }
 
 /**
@@ -320,7 +322,8 @@ function handleCmdlineKey(key, seq) {
   if (key === 'return')                      { applyMsg({ type: 'cmdline_submit' }); return; }
   if (key === 'up'   || seq === '\x1b[A')    { applyMsg({ type: 'cmdline_nav', dir: +1 }); return; }
   if (key === 'down' || seq === '\x1b[B')    { applyMsg({ type: 'cmdline_nav', dir: -1 }); return; }
-  applyMsg({ type: 'cmdline_key', seq });
+  // T26 — thread `key` so the reducer detects paste (key='paste').
+  applyMsg({ type: 'cmdline_key', key, seq });
 }
 
 function handleRegisterPopupKey(key, seq) {

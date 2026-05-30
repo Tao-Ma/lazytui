@@ -58,6 +58,28 @@ function _recordError(payload) {
   catch (_) { /* event-log unavailable — already logged to console */ }
 }
 
+// T28 — cyclic apply_msg / dispatch_msg recursion guard. Both effects
+// synchronously re-enter the dispatch pipeline; two Components that
+// emit cross-layer Msgs at each other would blow the JS stack without
+// any depth bound. No in-tree Component does this today, but the
+// contract permits it. Cap at 32 — deep enough for any legitimate
+// fan-out cascade (the deepest observed is groups → groups_selected →
+// reset_group_context → 3x set_cursor + multisel_clear + clear_filter,
+// nesting ~4 deep), shallow enough to fail loudly on a runaway loop.
+let _crossLayerDepth = 0;
+const _CROSS_LAYER_MAX = 32;
+function _enterCrossLayer(kind, eff) {
+  if (_crossLayerDepth >= _CROSS_LAYER_MAX) {
+    console.error(`[effects] ${kind} recursion depth ${_crossLayerDepth} exceeded ${_CROSS_LAYER_MAX} — dropping (cyclic dispatch_msg / apply_msg between Components?)`);
+    _recordError({ where: 'effects', kind: 'recursion_cap', effectType: kind,
+      depth: _crossLayerDepth, msgType: eff && eff.msg && eff.msg.type });
+    return false;
+  }
+  _crossLayerDepth++;
+  return true;
+}
+function _exitCrossLayer() { if (_crossLayerDepth > 0) _crossLayerDepth--; }
+
 /** Clear all handlers — test isolation only. */
 function clearEffects() { for (const k of Object.keys(_handlers)) delete _handlers[k]; }
 
@@ -96,13 +118,17 @@ function installBuiltins() {
   // re-dispatch a Msg back to the root reducer (focus_set / terminal_enter
   // / mode_set/clear) without owning that layer's writes. Phase A/B.
   registerEffect('apply_msg', (eff) => {
-    require('./dispatch').applyMsg(eff.msg);
+    if (!_enterCrossLayer('apply_msg', eff)) return;
+    try { require('./dispatch').applyMsg(eff.msg); }
+    finally { _exitCrossLayer(); }
   });
   // dispatch_msg: Component-fan-out companion (Phase C). Used by a Component
   // update when it needs to send a Msg to ANOTHER Component (e.g. groups →
   // viewer_reset_chrome → detail Component on a group cascade).
   registerEffect('dispatch_msg', (eff) => {
-    require('../panel/api').dispatchMsg(eff.msg);
+    if (!_enterCrossLayer('dispatch_msg', eff)) return;
+    try { require('../panel/api').dispatchMsg(eff.msg); }
+    finally { _exitCrossLayer(); }
   });
   // show_selected_info: Component-level access to the framework Cmd that
   // refreshes the focused panel's info into the viewer. detail.update emits

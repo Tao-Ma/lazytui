@@ -224,8 +224,14 @@ function renderCmdline() {
   // affected rows directly below (the underlying panel will redraw
   // on the next keystroke).
   if (panelH < _lastPanelH) {
-    const oldTop = ROWS - _lastPanelH - 1;
-    const newTop = ROWS - panelH - 1;
+    // T25 / R17 — clamp oldTop to >= 0. A resize that shrinks ROWS
+    // below the stashed _lastPanelH (e.g. last frame ROWS=40 with a
+    // 30-row dropdown, current frame ROWS=20) makes oldTop negative;
+    // the blanking loop then writes `\x1b[<negative>;1H` cursor
+    // moves, which terminals clamp to row 1 — cosmetic flicker but
+    // unintended.
+    const oldTop = Math.max(0, ROWS - _lastPanelH - 1);
+    const newTop = Math.max(0, ROWS - panelH - 1);
     require('../render/layout').invalidateRows(oldTop, newTop);
     // Blank the rows now so this frame doesn't show residue. Next
     // render repaints them from the underlying panels via the diff

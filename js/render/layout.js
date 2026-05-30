@@ -254,6 +254,28 @@ function paintColumns(leftOutput, rightOutput) {
   return didFull;
 }
 
+// T28 — isolate render() throws to the failing panel. Pre-fix every
+// fn(panel, w, h) call was bare; a throw bubbled up through renderNormal/
+// Half/Full and killed the entire frame, not just the one panel. Now:
+// the throw is caught, logged to console.error + event-log (T11 channel,
+// so post-mortem inspectable from a recorded session), and the panel
+// renders as a single-line error marker so the rest of the layout keeps
+// painting. Same pattern as panel/api.js's update/key catches.
+function _safeRender(fn, panel, w, h) {
+  if (!fn) return '';
+  try { return fn(panel, w, h); }
+  catch (e) {
+    console.error(`[render:${panel && panel.type}] ${e && e.message}`);
+    try {
+      require('../dispatch/event-log').record('error', {
+        where: 'component_render', component: panel && panel.type,
+        message: e && e.message, stack: e && e.stack,
+      });
+    } catch (_) {}
+    return `[red][render error: ${panel && panel.type} — ${e && e.message}][/]`;
+  }
+}
+
 // renderNormal/Half/Full populate `layoutSlice.panelBounds` directly —
 // the renderer-as-writer pattern documented in the file header (§5
 // view-derived data). Reset on every entry so stale entries from a
@@ -267,16 +289,14 @@ function renderNormal(model) {
     const h = layoutSlice.panelHeights[p.type] || 0;
     layoutSlice.panelBounds[p.type] = { x: 0, y: leftY, w: leftW, h };
     leftY += h;
-    const fn = rendererFor(p.type);
-    return fn ? fn(p, leftW, h) : '';
+    return _safeRender(rendererFor(p.type), p, leftW, h);
   });
   let rightY = 0;
   const rightOutputs = layoutSlice.arrange.rightPanels.map(p => {
     const h = layoutSlice.panelHeights[p.type] || 0;
     layoutSlice.panelBounds[p.type] = { x: leftW, y: rightY, w: rightW, h };
     rightY += h;
-    const fn = rendererFor(p.type);
-    return fn ? fn(p, rightW, h) : '';
+    return _safeRender(rendererFor(p.type), p, rightW, h);
   });
   return paintColumns(leftOutputs.join('\n'), rightOutputs.join('\n'));
 }
@@ -293,10 +313,8 @@ function renderHalf(model) {
   layoutSlice.panelBounds = {};
   layoutSlice.panelBounds[focusedPanel.type] = { x: 0, y: 0, w: halfW, h: availH };
   if (detailPanel) layoutSlice.panelBounds.detail = { x: halfW, y: 0, w: COLS - halfW, h: availH };
-  const fn = rendererFor(focusedPanel.type);
-  const leftContent = fn ? fn(focusedPanel, halfW, availH) : '';
-  const detailFn = detailPanel ? rendererFor('detail') : null;
-  const rightContent = detailFn ? detailFn(detailPanel, halfW, availH) : '';
+  const leftContent = _safeRender(rendererFor(focusedPanel.type), focusedPanel, halfW, availH);
+  const rightContent = detailPanel ? _safeRender(rendererFor('detail'), detailPanel, halfW, availH) : '';
   return paintColumns(leftContent, rightContent);
 }
 
@@ -309,8 +327,7 @@ function renderFull(model) {
   if (!focusedPanel) return renderNormal(model);
   layoutSlice.panelBounds = {};
   layoutSlice.panelBounds[focusedPanel.type] = { x: 0, y: 0, w: COLS, h: availH };
-  const fn = rendererFor(focusedPanel.type);
-  const content = fn ? fn(focusedPanel, COLS, availH) : '';
+  const content = _safeRender(rendererFor(focusedPanel.type), focusedPanel, COLS, availH);
   return paintColumns(content, '');
 }
 

@@ -361,6 +361,13 @@ function update(model, msg) {
         if (tail) text += tail;
       } else if (msg.seq === '\x7f') { text = text.slice(0, -1); }      // backspace
       else if (msg.seq === '\x15')   { text = ''; }                     // Ctrl+U
+      // T26 — paste: bracketed-paste content arrives as key='paste',
+      // seq=<full content>. Append (single-line modal: collapse line
+      // breaks to single spaces so a multi-line paste doesn't break
+      // the single-line UX).
+      else if (msg.key === 'paste' && typeof msg.seq === 'string') {
+        text += msg.seq.replace(/[\r\n]+/g, ' ');
+      }
       else if (msg.seq && msg.seq.length === 1 && msg.seq.charCodeAt(0) >= 32 && msg.seq.charCodeAt(0) < 127) {
         text += msg.seq;
       }
@@ -547,6 +554,13 @@ function update(model, msg) {
       if (msg.seq && msg.seq.length === 1 && msg.seq.charCodeAt(0) >= 32 && msg.seq.charCodeAt(0) < 127) {
         return [_withModal(model, { cmdline: { ...c, text: c.text + msg.seq, sel: 0 } }), [{ type: 'cmdline_rebuild' }]];
       }
+      // T26 — paste support: bracketed-paste content arrives as
+      // key='paste', seq=<full content>. Single-line modal — collapse
+      // line breaks to single spaces.
+      if (msg.key === 'paste' && typeof msg.seq === 'string') {
+        const pasted = msg.seq.replace(/[\r\n]+/g, ' ');
+        return [_withModal(model, { cmdline: { ...c, text: c.text + pasted, sel: 0 } }), [{ type: 'cmdline_rebuild' }]];
+      }
       return [model, []];
     }
     case 'cmdline_submit': {
@@ -664,6 +678,11 @@ function update(model, msg) {
         text = text.slice(0, -1);
       } else if (msg.seq && msg.seq.length === 1 && msg.seq.charCodeAt(0) >= 32) {
         text = text + msg.seq;
+      // T26 — paste support: bracketed-paste content arrives as
+      // key='paste', seq=<full content>. Single-line modal — collapse
+      // line breaks to single spaces.
+      } else if (msg.key === 'paste' && typeof msg.seq === 'string') {
+        text = text + msg.seq.replace(/[\r\n]+/g, ' ');
       } else {
         return [model, []];
       }

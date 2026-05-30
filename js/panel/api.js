@@ -649,19 +649,41 @@ function _frameworkDynamicCommands(m) {
  */
 function getCommands() {
   const out = [];
+  // T28 / R23 — duplicate command name detection. Two Components
+  // contributing the same command name silently both appear in the
+  // `:` cmdline; programmatic lookup picks whichever was registered
+  // first. Warn ONCE per (name, owner) pair so a maintainer notices
+  // — log goes to console + event-log via the same channel as the
+  // panel-type collision warning at registerComponent.
+  const seen = new Map();   // name → first _source we saw
+  const warned = new Set(); // dedup warning across multiple getCommands calls
+  const _addOrWarn = (cmd) => {
+    out.push(cmd);
+    const prior = seen.get(cmd.name);
+    if (prior === undefined) { seen.set(cmd.name, cmd._source); return; }
+    if (prior === cmd._source) return;  // same Component re-registering its own name
+    const key = `${cmd.name}|${prior}|${cmd._source}`;
+    if (warned.has(key)) return;
+    warned.add(key);
+    console.error(`[commands] duplicate name '${cmd.name}': '${prior}' and '${cmd._source}' both contribute (both will appear in the cmdline)`);
+    try { require('../dispatch/event-log').record('error', {
+      where: 'commands', kind: 'duplicate_name',
+      name: cmd.name, owners: [prior, cmd._source],
+    }); } catch (_) {}
+  };
   for (const c of FRAMEWORK_COMMANDS) {
-    out.push({ ...c, _source: '<framework>' });
+    _addOrWarn({ ...c, _source: '<framework>' });
   }
   const m = getModel();
   for (const c of _frameworkDynamicCommands(m)) {
-    out.push({ ...c, _source: '<framework>' });
+    _addOrWarn({ ...c, _source: '<framework>' });
   }
   for (const comp of Object.values(components)) {
     const collect = (list) => {
       if (!Array.isArray(list)) return;
       for (const c of list) {
         if (!c || typeof c.name !== 'string' || typeof c.run !== 'function') continue;
-        out.push({ ...c, _source: comp.name });
+        _addOrWarn({ ...c, _source: comp.name });
       }
     };
     collect(comp.commands);

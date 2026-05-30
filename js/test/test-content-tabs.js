@@ -173,4 +173,54 @@ describe('[4] isTerminalTab unaffected by content tabs', () => {
   });
 });
 
+// ---- T27 regression: cross-group tab mutators don't clobber current-group state ----
+//
+// Pre-T27, addContent / removeContent / removeEphemeral wrote to slice.tab,
+// slice.lines, slice.scroll unconditionally — even when groupName !==
+// model.currentGroup. The tab-index math was meaningful in `groupName`'s
+// tab ordering, so applying it to the current group jumped the user's
+// cursor to a meaningless index and replaced the body with the OTHER
+// group's content. Real trigger: handleSessionCleanExit after a group
+// switch (PTY exits in a non-current group, removeEphemeralTab fires).
+
+describe('[T27] cross-group mutators preserve current-group cursor + body', () => {
+  it('addContentTab for non-current group does not touch slice.tab / lines / scroll', () => {
+    // Set up two groups; user is parked in g1 with a content tab open.
+    getModel().config = { groups: { g1: { actions: {}, terminals: {} },
+                                    g2: { actions: {}, terminals: {} } } };
+    getModel().currentGroup = 'g1';
+    getComponentSlice('detail').ephemeralTerminals = {};
+    getComponentSlice('detail').contentTabs = {};
+    getComponentSlice('detail').lines = ['g1 content'];
+    getComponentSlice('detail').scroll = 5;
+    getComponentSlice('detail').tab = 0;
+    tabs.addContentTab('g1', 'file:a', 'a', ['g1 a-tab']);
+    const tabBefore  = getComponentSlice('detail').tab;
+    const linesBefore = getComponentSlice('detail').lines.slice();
+    // Now an async loadDir for g2 (the OTHER group) resolves. Pre-T27
+    // this clobbered the current-group cursor + body.
+    tabs.addContentTab('g2', 'file:b', 'b', ['g2 b-tab']);
+    eq(getComponentSlice('detail').tab, tabBefore, 'tab cursor unchanged');
+    eq(getComponentSlice('detail').lines.join('\n'), linesBefore.join('\n'), 'lines unchanged');
+    // But the cross-group tab IS now in the per-group map:
+    const ct = getComponentSlice('detail').contentTabs;
+    assert(ct.g2 && ct.g2['file:b'], 'g2 content tab stored in map');
+  });
+  it('removeContentTab for non-current group does not touch current cursor', () => {
+    getModel().config = { groups: { g1: { actions: {}, terminals: {} },
+                                    g2: { actions: {}, terminals: {} } } };
+    getModel().currentGroup = 'g2';
+    getComponentSlice('detail').ephemeralTerminals = {};
+    getComponentSlice('detail').contentTabs = { g1: { 'file:a': { label: 'a', lines: ['old'] } } };
+    getComponentSlice('detail').lines = ['g2 view'];
+    getComponentSlice('detail').scroll = 3;
+    getComponentSlice('detail').tab = 0;
+    tabs.removeContentTab('g1', 'file:a');  // remove from OTHER group
+    eq(getComponentSlice('detail').tab, 0, 'tab unchanged');
+    eq(getComponentSlice('detail').lines.join('\n'), 'g2 view', 'lines unchanged');
+    eq(getComponentSlice('detail').scroll, 3, 'scroll unchanged');
+    assert(!getComponentSlice('detail').contentTabs.g1, 'g1 map dropped (empty after remove)');
+  });
+});
+
 report();

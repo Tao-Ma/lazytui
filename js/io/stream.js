@@ -13,6 +13,7 @@
 'use strict';
 
 const { spawn } = require('child_process');
+const { StringDecoder } = require('string_decoder');
 const { esc } = require('./ansi');
 const { getModel } = require('../app/runtime');
 const { scheduleRender } = require('../render/render-queue');
@@ -68,8 +69,15 @@ function streamCommand(headerLabel, cmd, args = []) {
   currentRecord = rec;
 
   let buffer = '';
+  // T24 — StringDecoder buffers partial UTF-8 sequences across chunks.
+  // Pre-fix `data.toString('utf8')` decoded each chunk independently,
+  // so multi-byte codepoints split at chunk boundaries (extremely
+  // common: any docker log / shell output with non-ASCII text +
+  // chunked I/O) became U+FFFD replacement-char pairs. Verified by
+  // repro: `'café'` arriving split at byte 4 became `'caf��'`.
+  const decoder = new StringDecoder('utf8');
   const onData = (data) => {
-    buffer += data.toString('utf8');
+    buffer += decoder.write(data);
     const lines = buffer.split('\n');
     buffer = lines.pop();
     for (const line of lines) {
@@ -86,6 +94,11 @@ function streamCommand(headerLabel, cmd, args = []) {
     if (proc !== currentProc) return;  // superseded
     currentProc = null;
     currentRecord = null;
+    // Flush any dangling bytes the decoder is still holding (rare —
+    // means the stream closed mid-codepoint, which is a malformed
+    // sender; emit U+FFFD per Node's standard behavior).
+    const tail = decoder.end();
+    if (tail) buffer += tail;
     if (buffer) { appendDetailLine(esc(buffer)); rec.append(buffer); buffer = ''; }
     if (signal) { appendDetailLine(`[yellow]Killed (${signal})[/]`); rec.end(`signal:${signal}`); }
     else if (code === 0) { appendDetailLine('[green]Done.[/]'); rec.end(0); }

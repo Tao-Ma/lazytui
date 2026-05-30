@@ -107,7 +107,16 @@ function doRun(actionKey, action, args = []) {
       addEphemeralTab(getModel().currentGroup, tabKey, `${tmp}${argStr}`, actionKey);
       dispatchMsg(wrap('layout', { type: 'view_set', mode: 'full' }));
       require('../render/layout').forceFullRepaint();
-      history.start(actionKey, cmd, { detached: false });
+      // T27 / B19 — pre-fix `{ detached: false }` returned a live
+      // record whose handle the caller discarded; the embedded PTY's
+      // exit lives in terminal.js with no link back, so the entry
+      // stayed `endedAt=null, exitCode=null` forever in the history
+      // panel. Flip to detached (treat like tmux spawn): the entry
+      // closes immediately. Cost: history doesn't show the spawn's
+      // exit code. Threading the record through addEphemeralTab →
+      // terminal session would be the precise fix but invasive — and
+      // the user can scroll back through the tab itself for output.
+      history.start(actionKey, cmd, { detached: true });
     }
     return;
   }
