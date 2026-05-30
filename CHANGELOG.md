@@ -6,6 +6,102 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **Free-config mode + panel pool.** The v0.5 design mode evolves
+  into "free-config mode" — a layout editor with a configurable
+  trigger and an explicit save command. The new top-level `panels:`
+  block declares a POOL of panel definitions; the `layout:` block
+  picks a subset of those by id. Pool entries that aren't placed in
+  the grid are *hidden* — still configured, surfaced in the panel-
+  list overlay so users can summon them back. More panels available
+  under the hood than the grid shows at once.
+
+  ```yaml
+  panels:                 # the pool
+    docker: { type: docker }
+    logs:   { type: tail, file: /var/log/syslog }
+    notes:  { type: viewer, title: Notes }   # hidden by default
+    actions: { type: actions }
+    detail:  { type: detail }
+
+  layout:                 # the grid (id-refs into the pool)
+    left:  { panels: [docker, logs] }
+    right:
+      panels:
+        - actions
+        - { id: detail, height: 60% }
+  ```
+
+  Legacy configs with inline `{ type: ... }` cells continue to parse
+  and round-trip unchanged — the pool synthesizes implicitly at load
+  time, and `:save-layout` only writes the new `panels:` block when
+  the legacy inline form can't express the state (hidden entries OR
+  a user-declared pool).
+
+- **Panel-list overlay.** A modal popup inside free-config (open by
+  pressing `w`, or automatically when the pool has hidden entries on
+  mode entry). Shows every pool entry with its status — placed /
+  essential (detail) / hidden — and lets the user toggle membership
+  in the grid:
+
+  - **Keyboard**: arrow keys nav, `Enter` to context-pick (placed →
+    hide; hidden → show + place; detail no-op).
+  - **Mouse**: drag a list item onto the grid. Drop on a cell →
+    REPLACE (occupant returns to the pool). Drop in a column area
+    (between or below cells) → APPEND to that column. Drop outside
+    the layout → cancel.
+
+- **`:hide <id>` / `:show <id>` cmdline verbs.** Direct pool↔grid
+  mutation from the command line; same Msgs the overlay drives.
+  Detail refuses to hide (the layout invariant requires exactly one);
+  pool_show refuses to place a second detail / actions panel or
+  exceed column caps. Autocomplete restricts to valid ids.
+
+- **`:free-config` cmdline verb.** Opens the layout editor. `:design`
+  remains as a v0.5 alias for muscle memory. The boot-time `--design`
+  CLI flag now auto-enters free-config after the first paint instead
+  of gating cmdline visibility — the mode is always available.
+
+### Changed
+- **Mode flag renamed.** `model.modes.designMode` → `freeConfigMode`
+  throughout (26 references across 13 files). Mechanical rename;
+  behavior under the old flag preserved. External plugins reading
+  the flag name need a one-line update.
+
+- **Freeze gate during free-config mode.** While the mode is active,
+  the dispatch layer drops broadcast Msgs (refresh / hub / action)
+  and wrapped Msgs targeting non-`layout` components. Components
+  render their last snapshot until the user exits, so the canvas
+  stays stable under drag / resize / pool mutations — matches the
+  tmux prefix-mode mental model. Mode entry/exit ride the root
+  reducer, not the gated dispatch path, so the mode itself always
+  transitions cleanly.
+
+- **`:save-layout` writes the `panels:` block when needed.** Legacy
+  configs (every entry synthesized AND placed) continue to write the
+  v0.5 inline form, byte-for-byte where possible. Configs with
+  hidden entries or a user-declared pool write both blocks; layout
+  cells become id-refs. Round-trip is idempotent — parse → save →
+  parse → save produces the same bytes.
+
+### Internal
+- **`js/leaves/pool.js`** — pure derivations over `arrange.pool` /
+  `leftPanels` / `rightPanels`: `placedIds`, `hiddenIds`, `isPlaced`,
+  `isHidden`, `getPoolEntry`, `orphanPlacements`, `panelListItems`.
+  Tested directly; no model access.
+
+- **New Msgs on the layout slice:** `pool_hide`, `pool_show`,
+  `panel_list_{open, close, nav, pick}`, `pool_drag_{start, motion,
+  release}`. Single-writer-per-slice preserved; `pool_drag_release`
+  returns a `dispatch_msg` Cmd that re-emits `pool_hide` / `pool_show`
+  so the existing Phase 2 handlers do the mutation.
+
+- **Test coverage:** five new test files pinning the v0.6 surface —
+  `test-pool-schema.js`, `test-pool-derivation.js`, `test-pool-
+  cmdline.js`, `test-free-config-freeze.js`, `test-panel-list-
+  overlay.js`, `test-pool-drag.js`, `test-pool-save.js`. Suite
+  52→59 files green.
+
 ## [0.5.0] — 2026-05-30
 
 A refactor release. No new end-user features; the panel grid, key

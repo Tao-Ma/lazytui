@@ -56,7 +56,8 @@ Two consequences worth internalizing:
 The framework guarantees, regardless of project:
 
 - YAML schema validation, var/helper resolution (parser/)
-- Layout, panel rendering, navigation, themes, design mode
+- Layout, panel rendering, navigation, themes, free-config mode
+  (interactive layout + pool editing — see `docs/LAYOUT.md`)
 - Action execution by `type` (`run` / `spawn` / `background`)
 - Built-in Components: `layout`, `groups`, `actions`, `history`,
   `detail` (viewer), `docker` (containers), `files`, `config-status`,

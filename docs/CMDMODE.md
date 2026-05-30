@@ -102,7 +102,10 @@ dynamic is fine when the candidate list depends on state.
 | `restore-layout`  | Reload panel layout from YAML                |
 | `theme <name>`    | Switch theme (one entry per theme)           |
 | `focus <panel>`   | Focus a panel (one entry per layout panel)   |
-| `design`          | Open layout design mode (when `--design`)    |
+| `free-config`     | Open the layout + pool editor                |
+| `design`          | Alias for `:free-config` (v0.5 name)         |
+| `hide <id>`       | Unplace a panel (one entry per placed id)    |
+| `show <id>`       | Place a hidden panel (one entry per hidden id) |
 
 These live in `panel/api.js#FRAMEWORK_COMMANDS` + a small
 `_frameworkDynamicCommands` builder; they appear in the cmdline registry

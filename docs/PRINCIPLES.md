@@ -226,10 +226,10 @@ content is YAML-configurable.
 
 - **Fixed**: two columns, bordered panels with scrollbars, navigation
   (hotkeys, ↑↓ j/k, ←→ h/l, mouse, `x` menu, `?` help), detail panel
-  tabs (`]`/`[`), view modes (`+`/`_`), themes, design mode (`--design`),
-  action execution.
+  tabs (`]`/`[`), view modes (`+`/`_`), themes, free-config mode
+  (`:free-config` / `:design` / `--design`), action execution.
 - **Configurable**: panels, panel types, sizes, theme, layout — via the
-  YAML `layout:` section.
+  YAML `panels:` (pool, v0.6+) + `layout:` sections.
 - **Constraints**: 1–6 left panels (hotkeys `1`–`6` auto-assigned by
   position), 1–3 right panels (hotkeys `7`–`9` auto-assigned by
   position); exactly one `detail` panel; at most one `actions` panel.

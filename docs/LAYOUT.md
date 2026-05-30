@@ -11,31 +11,52 @@ layout pattern is fixed; the panel content is YAML-configurable.
 - Detail panel with tabs, scroll
 - Footer bar, `x` menu popup, `?` help
 
-### Configuration (YAML `layout:` section, optional)
+### Configuration (YAML `panels:` + `layout:` sections, both optional)
+
+Since v0.6 there are two cooperating blocks. The `panels:` block
+declares a POOL of panel definitions (panel identities); the
+`layout:` block picks a subset of the pool by id and arranges them
+in the two-column grid. Pool entries not placed in the grid are
+*hidden* — still configured, surfaced in the free-config overlay
+so you can summon them back without editing YAML.
+
 ```yaml
-layout:
+panels:                # the pool — every panel keyed by id
+  containers:
+    type: containers
+    title: Containers
+  groups:
+    type: groups
+  files:
+    type: files
+    source: declared
+  actions:
+    type: actions
+  detail:
+    type: detail
+  notes:               # in pool but not placed below → starts hidden
+    type: viewer
+    title: Notes
+
+layout:                # the grid — cells reference pool by id
   left:
-    width: 30                # optional, column width in chars
-    panels:
-      - type: containers
-        title: Containers
-        heightPct: 30        # optional, panel height as % of column
-      - type: groups
-        title: Groups
-        heightPct: 70
-      - type: files
-        source: declared
-        title: Files
+    width: 30          # optional, column width in chars
+    panels: [containers, groups, files]
   right:
     panels:
-      - type: actions
-        title: Actions
-      - type: detail
-        title: Detail
-        height: 60%          # optional, layout-level detailHeightPct
+      - actions
+      - { id: detail, height: 60% }   # mapping form when an override applies
 ```
 
-Default layout generated when `layout:` is omitted.
+**Three layout-cell forms**, mix and match:
+
+| Cell form | Meaning |
+|---|---|
+| `groups` (string) | id-ref into `panels:`. No overrides. |
+| `{ id: detail, height: 60% }` | id-ref + placement override (heightPct or, for detail, height). |
+| `{ type: tail, file: /var/log/syslog }` | **Legacy inline** — declares + places in one cell. Auto-synthesizes a pool entry with id from `type` (`tail`, `tail-2`, `tail-3` for duplicates). Configs that look exactly like v0.5 still work. |
+
+**Default layout** generated when neither block is given.
 
 **Per-panel height — `heightPct`.** Optional integer 1–100. Panels
 that set it are *anchored*; panels that don't are *flex* and share
@@ -233,13 +254,55 @@ adjustments, zoom-style verbs). Keeping shift-only here leaves the
 unshifted slots free. Reconsider only if a panel-level use of `=`/`-`
 forces the issue.
 
-## Resizing panels (design mode)
+## Free-config mode (layout + pool editor)
 
-Design mode (`--design` flag or `:design`) is where layout gets
-mutated interactively. Saves are explicit: `:save-layout` writes
-to YAML, `:restore-layout` reloads from disk.
+Free-config mode is where the layout gets mutated interactively —
+column widths, panel heights, panel arrangement, hidden/shown
+membership. Entry:
 
-### Drag — mouse
+- `:free-config` (cmdline)
+- `:design` (v0.5 alias)
+- `--design` CLI flag (auto-enters after first paint)
+- (configurable keybinding — slot one into the `keys:` block)
+
+Saves are explicit: `:save-layout` writes to YAML, `:restore-layout`
+reloads from disk and clears the session's undo history.
+
+**Freeze gate.** While the mode is active, all panel Components are
+visually frozen (last snapshot rendered, poll/stream updates queued
+or dropped behind the gate). This keeps the canvas stable under
+drag / resize / pool mutations and matches tmux prefix-mode
+semantics — the user's input is for editing, not interacting with
+the panels.
+
+### Panel-list overlay
+
+Press `w` while in free-config to open the panel-list overlay (or
+it opens automatically on entry when the pool has hidden entries).
+Each pool entry shows with a status marker:
+
+| Marker | Status | Pick action (Enter) |
+|---|---|---|
+| `[green]●[/]` | Placed in the grid | hide (returns to pool) |
+| `[dim]●[/]` | Essential (detail) | no-op (the layout invariant requires exactly one detail) |
+| `[yellow]○[/]` | Hidden — pool only | show (places at the next free slot, right column by default) |
+
+| Key | Effect |
+|---|---|
+| `↑` / `↓` (or `k` / `j`) | Navigate the list |
+| `Enter` | Context-pick (hide / show / no-op per status above) |
+| `w` or `Esc` | Close the overlay (free-config stays open) |
+| `q` | Exit free-config entirely |
+
+**Mouse drag from the overlay onto the grid:**
+
+| Drop target | Effect |
+|---|---|
+| On an existing cell | **Replace** — occupant returns to the pool, source lands in the same column. Detail refuses (essential). |
+| In a column area (between or below cells) | **Append** to that column's tail. |
+| Outside the layout | Cancel. |
+
+### Resizing — drag (mouse)
 
 Every seam between panels is a drag target:
 
@@ -257,7 +320,7 @@ their current heights — they get frozen as `heightPct` on press if
 they were previously flex, so the seam follows the cursor instead
 of being smeared across the column.
 
-### Keyboard
+### Resizing — keyboard
 
 | Key | Mutates |
 |---|---|
@@ -269,6 +332,21 @@ of being smeared across the column.
 `+`/`-` keeps its current bindings so existing muscle memory works.
 `]`/`[` are the new ones for per-panel height — they mirror the
 within-column boundary drag from the keyboard.
+
+### Hide / show — cmdline (no overlay needed)
+
+`:hide <id>` and `:show <id>` directly mutate the pool↔grid mapping
+from the command line. Same Msgs the overlay drives:
+
+| Verb | Effect |
+|---|---|
+| `:hide <id>` | Remove that panel's placement from the grid; pool entry stays. Refused on detail. |
+| `:show <id>` | Place a hidden pool entry at the right column's tail (or left when right is full). Refused on unknown / already-placed / second-detail / second-actions / column-cap-exceeded. |
+
+Autocomplete restricts the id argument to currently-valid targets
+(placed panels for hide; hidden panels for show). The dynamic
+registration in `panel/api.js#_frameworkDynamicCommands` regenerates
+the verb list every cmdline open.
 
 ## Context-sensitive detail (Info tab)
 
