@@ -52,6 +52,19 @@ function rekeyColumn(panels, pool) {
   return panels.map((p, i) => ({ ...p, hotkey: pool[i] || '' }));
 }
 
+/** Compare two pool-drag drop targets for visual equality. Used by
+ *  pool_drag_motion to decide whether the cursor moved between drop
+ *  zones (force_full_repaint needed) or just within one (no repaint).
+ *  curX/curY are not visual; ignore them. */
+function _dropTargetsEqual(a, b) {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return a.kind === b.kind
+      && a.column === b.column
+      && a.occupantId === b.occupantId
+      && a.valid === b.valid;
+}
+
 /** Build a runtime placement object from a pool entry. Mirrors the
  *  flattening that `state.rebuildLayoutFromConfig` does on initial load
  *  — plugin-specific config spread first, framework fields override. */
@@ -232,12 +245,18 @@ function update(msg, slice) {
     }
     case 'pool_drag_motion': {
       // The pool-drag overlay paints a frame/bar on the drop target each
-      // render. When the target shifts between cells, the previous
-      // frame's affordance needs to be wiped — paintColumns can't tell
-      // anything changed (the panels themselves are frozen), so emit a
-      // force_full_repaint to clear and repaint from scratch.
+      // render. When the target SHIFTS BETWEEN CELLS, the previous
+      // frame's affordance needs wiping — paintColumns can't tell
+      // anything changed (panels are frozen), so emit force_full_repaint.
+      // When the target stays put (mouse moved within the same drop
+      // zone) the affordance is painted in the same place each render,
+      // so no repaint is needed and emitting one each motion was
+      // causing visible blinking under rapid drag.
       const next = mdesign.poolDragMotion(slice, msg.mx, msg.my);
       if (next === slice) return slice;
+      const oldT = slice.design && slice.design.drag && slice.design.drag.target;
+      const newT = next.design  && next.design.drag  && next.design.drag.target;
+      if (_dropTargetsEqual(oldT, newT)) return next;
       return [next, [{ type: 'force_full_repaint' }]];
     }
     case 'pool_drag_release': return mdesign.poolDragRelease(slice);
