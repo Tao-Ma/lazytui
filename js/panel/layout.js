@@ -272,7 +272,11 @@ function update(msg, slice) {
       } else {
         return slice;  // already hidden
       }
-      return { ...slice, arrange: { ...arrange, leftPanels: nextLeft, rightPanels: nextRight }, dirty: true };
+      const next = { ...slice, arrange: { ...arrange, leftPanels: nextLeft, rightPanels: nextRight }, dirty: true };
+      // Restore the v0.6 focus+selectedIdx invariant. If the hidden
+      // panel was focused, clampSelected falls through to its
+      // selectedIdx-based pick.
+      return mdesign.clampSelected(next);
     }
     // v0.6 Phase 4 — panel-list overlay state Msgs. Open/close, cursor
     // nav, context-pick. The pick re-emits a pool_hide / pool_show Msg
@@ -334,7 +338,11 @@ function update(msg, slice) {
       const nextArrange = column === 'left'
         ? { ...arrange, leftPanels:  nextCol }
         : { ...arrange, rightPanels: nextCol };
-      return { ...slice, arrange: nextArrange, dirty: true };
+      const next = { ...slice, arrange: nextArrange, dirty: true };
+      // Move focus + selectedIdx to the newly-shown panel — matches the
+      // overlay UX where picking from the pool surfaces the new panel
+      // as the active one.
+      return mdesign.clampSelected(next, entry.type);
     }
     default:
       return slice;

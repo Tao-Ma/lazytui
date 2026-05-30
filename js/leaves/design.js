@@ -348,15 +348,31 @@ function resizeFocusedPanelHeight(slice, deltaPct) {
   return { ...result, dirty: true };
 }
 
-/** Safety clamp after any mutation that can change the panel count. */
-function clampSelected(slice) {
+/** Safety clamp after any mutation that can change the panel count.
+ *  v0.6 invariant: in free-config the active panel is one well-defined
+ *  thing — selectedIdx is the cursor truth, slice.focus follows. This
+ *  helper re-establishes the invariant after a layout-shape change
+ *  (undo/redo, applyDrop, pool_hide/show).
+ *
+ *  Resolution order for "which panel index is active now":
+ *    1. preferredType (when supplied — e.g. the panel just dropped)
+ *    2. the current selectedIdx, clamped into [0, all.length-1]
+ *  Then `slice.focus = all[idx].type` always, so focus reflects
+ *  whatever panel ended up at the chosen index. */
+function clampSelected(slice, preferredType) {
   const d = slice.design;
   const all = allDesignPanels(slice);
-  let idx = d.selectedIdx;
-  if (idx >= all.length) idx = all.length - 1;
-  if (idx < 0) idx = 0;
-  if (idx === d.selectedIdx) return slice;
-  return { ...slice, design: { ...d, selectedIdx: idx } };
+  if (all.length === 0) return slice;
+  let idx = -1;
+  if (preferredType) idx = all.findIndex(p => p.type === preferredType);
+  if (idx < 0) {
+    idx = d.selectedIdx;
+    if (idx >= all.length) idx = all.length - 1;
+    if (idx < 0) idx = 0;
+  }
+  const focus = all[idx].type;
+  if (idx === d.selectedIdx && focus === slice.focus) return slice;
+  return { ...slice, focus, design: { ...d, selectedIdx: idx } };
 }
 
 // ---------------------------------------------------------------- title edit
@@ -627,17 +643,24 @@ function mouseMotion(slice, mx, my, COLS) {
   return { ...slice, design: { ...d, drag: { ...ds, kind: nextKind, curX: mx, curY: my, target } } };
 }
 
-/** Release: commit a valid drop (push undo + applyDrop), then clear the drag. */
+/** Release: commit a valid drop (push undo + applyDrop), then clear the drag.
+ *  Drop normalizes focus + selectedIdx onto the panel that just landed
+ *  (its type stayed the same; its position is new). Without this the
+ *  green border would stay on whatever was focused before the drag. */
 function mouseRelease(slice) {
   const d = slice.design;
   const ds = d && d.drag;
   if (!ds) return slice;
   let next = slice;
+  let droppedType = null;
   if (ds.kind === 'dragging' && ds.target && ds.target.valid) {
     next = _pushUndoSlice(next);
     next = applyDrop(next, ds.sourceType, ds.target);
+    droppedType = ds.sourceType;
   }
-  return { ...next, design: { ...next.design, drag: null } };
+  next = { ...next, design: { ...next.design, drag: null } };
+  if (droppedType) next = clampSelected(next, droppedType);
+  return next;
 }
 
 // ---------------------------------------------------- v0.6 Phase 5: pool drag
