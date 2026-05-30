@@ -37,6 +37,12 @@ const { rasterize } = require('./stats-graph');
 // not), so the host's render-on-changed loop can miss new samples.
 // The hub publishes every tick regardless; the onUpdate hook makes
 // sure each one drives a repaint.
+//
+// _ensureSub is called from render(). That mixes paint with lifecycle
+// — documented as a blessed exception per v0.5-layering.md §5 since
+// no current pathway triggers a topic change post-boot (a topic switch
+// would orphan the old sub). If hot-reload / live topic editing ever
+// ships, move this into a Component update lifecycle Msg.
 const _subKeys = new Set();
 function _ensureSub(topic, window) {
   const key = `${topic}:${window}`;

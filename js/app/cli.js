@@ -33,10 +33,21 @@ const { loadConfig } = require('./state');
 const { getModel } = require('./runtime');
 
 // Built-in Components consulted for `groupActions(group, name)`
-// synthesis. Add new generic Components here as they ship — keeping
-// this list explicit (rather than auto-discovering panel/**/*.js)
-// avoids accidentally pulling render-coupled modules that don't
-// tolerate CLI-mode startup.
+// synthesis. Add new generic Components here as they ship — keep
+// the list explicit (rather than auto-discovering panel/**/*.js)
+// for predictability.
+//
+// T18 — earlier framing claimed this list "avoids pulling render-
+// coupled modules that don't tolerate CLI-mode startup." In practice
+// `require('../panel/navigator/docker')` transitively loads panel/
+// api → render/panel, render/themes, render/render-queue, render/
+// scrollbar, io/term, io/stream, overlay/filter, panel/viewer/tabs,
+// dispatch/effects. CLI mode still doesn't pollute stdout/stderr
+// today because none of those have load-time side effects (no top-
+// level setRawMode / hideCursor / setInterval). The load-bearing
+// contract is now "the transitive closure of these modules must not
+// have load-time side effects" — if a future commit adds one, CLI
+// mode breaks silently.
 const BUILT_IN_PLUGINS = [
   '../panel/navigator/docker',
   '../panel/archive',
@@ -143,7 +154,11 @@ function resolveAction(config, actionPath) {
  * the subprocess exit code; the caller is expected to call process.exit.
  */
 function runCli(configPath, actionPath, actionArgs) {
-  loadConfig(configPath);
+  // T18 — friendly one-line error matching tui.js's T12 pattern.
+  // Pre-fix loadConfig leaked a 10-line ParseError stack to stderr;
+  // programmatic callers couldn't grep for `tui --exec:` consistently.
+  try { loadConfig(configPath); }
+  catch (e) { process.stderr.write(`tui --exec: ${e.message}\n`); return Promise.resolve(1); }
   const config = getModel().config;
   applyPluginGroupActions(config);
 
@@ -178,7 +193,27 @@ function runCli(configPath, actionPath, actionArgs) {
       cwd,
       stdio: 'inherit',
     });
+
+    // T18 — forward parent's termination signals to the child. With
+    // stdio:'inherit', a Ctrl-C at the controlling TTY already
+    // reaches both parent and child via the kernel (same process
+    // group gets SIGINT). But an out-of-band `kill -INT <parent>`
+    // from a supervisor / CI runner / parent shell DOES NOT — parent
+    // exits and the child orphans with PPID=1, traps never fire.
+    // Forward each signal once; clear the forwarders after exit so
+    // we don't reinstall them on subsequent runCli calls (tests).
+    const forwarders = {};
+    const forwarded = ['SIGINT', 'SIGTERM', 'SIGHUP'];
+    for (const sig of forwarded) {
+      forwarders[sig] = () => { try { child.kill(sig); } catch {} };
+      process.on(sig, forwarders[sig]);
+    }
+    const detach = () => {
+      for (const sig of forwarded) process.off(sig, forwarders[sig]);
+    };
+
     child.on('exit', (code, signal) => {
+      detach();
       if (signal) {
         process.stderr.write(`tui --exec: action terminated by signal ${signal}\n`);
         resolve(128 + (require('os').constants.signals[signal] || 0));
@@ -187,6 +222,7 @@ function runCli(configPath, actionPath, actionArgs) {
       }
     });
     child.on('error', (err) => {
+      detach();
       process.stderr.write(`tui --exec: spawn failed: ${err.message}\n`);
       resolve(1);
     });
@@ -198,7 +234,9 @@ function runCli(configPath, actionPath, actionArgs) {
  * process.exit; symmetric with runCli().
  */
 function runList(configPath, filter) {
-  loadConfig(configPath);
+  // T18 — symmetric with runCli's loadConfig wrap.
+  try { loadConfig(configPath); }
+  catch (e) { process.stderr.write(`tui --list: ${e.message}\n`); return Promise.resolve(1); }
   applyPluginGroupActions(getModel().config);
   const out = formatActionList(getModel().config, filter);
   process.stdout.write(out + '\n');

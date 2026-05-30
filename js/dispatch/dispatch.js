@@ -72,7 +72,13 @@ function resolvePromptDefault(act) {
  * Centralized here so every call site (j/k, page nav, goto top/bottom,
  * mouse click, `state.selectGroup`) goes through the same routing.
  */
-function navSelect(model, panelType, index) {
+// T7: all of navSelect / moveSel / _pageInListPanel / _jumpInListPanel /
+// _runResolvedAction / enterFilterMode / enterCopyMode / handleAction once
+// took a leading `model` arg that they never read directly (they re-resolve
+// via getFocus() / getItems() / getModel() internally). The arg was the
+// captured-stale-ref hazard that bit us in 2be348a; dropping it removes
+// the invitation to reintroduce that bug class.
+function navSelect(panelType, index) {
   const compName = require('../panel/api').getComponentOwningPanel(panelType);
   if (!compName) return;
   dispatchMsg(wrap(compName, { type: 'set_cursor', panel: panelType, index }));
@@ -86,14 +92,14 @@ function navSelect(model, panelType, index) {
  * Generic selection move via plugin API. Resolves the clamped target
  * index (getItems is view-side derivation) then hands it to `navSelect`.
  */
-function moveSel(model, delta) {
+function moveSel(delta) {
   const def = getPanelDef(getFocus());
   if (!def || typeof def.getItems !== 'function') return;
   const items = getItems(getFocus());
   const sel = getSel(getFocus());
   const newSel = sel + delta;
   if (newSel < 0 || newSel >= items.length) return;
-  navSelect(model, getFocus(), newSel);
+  navSelect(getFocus(), newSel);
 }
 
 /**
@@ -106,7 +112,7 @@ function moveSel(model, delta) {
  * has consistent rhythm across panels (j/k for one row, ,/. for ~half a
  * panel, </> for ends).
  */
-function _pageInListPanel(model, delta) {
+function _pageInListPanel(delta) {
   const def = getPanelDef(getFocus());
   if (!def || typeof def.getItems !== 'function') return;
   const items = getItems(getFocus());
@@ -114,10 +120,10 @@ function _pageInListPanel(model, delta) {
   const sel = getSel(getFocus());
   const next = Math.max(0, Math.min(items.length - 1, sel + delta));
   if (next === sel) return;
-  navSelect(model, getFocus(), next);
+  navSelect(getFocus(), next);
 }
 
-function _jumpInListPanel(model, target) {
+function _jumpInListPanel(target) {
   const def = getPanelDef(getFocus());
   if (!def || typeof def.getItems !== 'function') return;
   const items = getItems(getFocus());
@@ -125,7 +131,7 @@ function _jumpInListPanel(model, target) {
   const next = target === 'top' ? 0 : items.length - 1;
   const sel = getSel(getFocus());
   if (next === sel) return;
-  navSelect(model, getFocus(), next);
+  navSelect(getFocus(), next);
 }
 
 function _halfPageStep(panelType) {
@@ -240,7 +246,7 @@ function handleMenuKey(key, seq) {
  * filter_enter Msg seeds the draft from the committed value. No-op (returns
  * false) when the focused panel isn't filterable.
  */
-function enterFilterMode(model) {
+function enterFilterMode() {
   const def = getPanelDef(getFocus());
   if (!def || !def.filterable) return false;
   // Phase 4c — committed filter text lives on the panel's nav slice;
@@ -252,8 +258,8 @@ function enterFilterMode(model) {
 function handleFilterKey(key, seq) {
   if (key === 'escape') { applyMsg({ type: 'filter_exit', keep: false }); dispatchMsg(wrap('detail', { type: 'viewer_show_info' })); return; }
   if (key === 'return') { applyMsg({ type: 'filter_exit', keep: true  }); dispatchMsg(wrap('detail', { type: 'viewer_show_info' })); return; }
-  if (key === 'up' || seq === 'k') { handleAction(model, 'nav_up'); return; }
-  if (key === 'down' || seq === 'j') { handleAction(model, 'nav_down'); return; }
+  if (key === 'up'   || seq === 'k') { handleAction('nav_up');   return; }
+  if (key === 'down' || seq === 'j') { handleAction('nav_down'); return; }
   applyMsg({ type: 'filter_key', seq });
 }
 
@@ -261,7 +267,7 @@ function handleFilterKey(key, seq) {
  * `y` entry: collect options (plugin facade — effectful, stays here). 0 → no-op;
  * 1 → copy directly; many → stage the copy menu through update.
  */
-function enterCopyMode(model) {
+function enterCopyMode() {
   const opts = copy.collectOptions();
   if (!opts.length) return;
   if (opts.length === 1) { copy.copyOption(opts[0]); copy.clearOptions(); return; }
@@ -342,10 +348,10 @@ function handleDetailSearchKey(key, seq) {
 }
 
 function handleNormalKey(key, seq) {
-  // Phase 4 — read getModel() at entry: dispatchKeyToFocused above may
-  // have run a Component update that emitted apply_msg Cmds, swapping
-  // the root model via setModel. A captured local would be stale.
-  const model = getModel();
+  // Phase 4 / T7 — no captured root-model local. Every read goes
+  // through getModel() AT the read site so post-dispatch reads (e.g.
+  // model.currentGroup after a removeEphemeralTab cascade) see the
+  // current snapshot. Same hazard class as 2be348a / action-runner.
   // `dispatchKeyToFocused` (the call site that invokes us) already gave
   // the focused Component first dibs and returned only if the Component
   // didn't claim the keystroke. So no per-key Component-claim check is
@@ -382,7 +388,7 @@ function handleNormalKey(key, seq) {
       // (e.g. detail) — otherwise space would be a dead no-op there.
       // The mode chain already suppresses the leader inside
       // detail-visual / terminal / text modes.
-      if (model.modes.listSelectMode && _isListPanel(getFocus())) toggleMultiSelOnFocused();
+      if (getModel().modes.listSelectMode && _isListPanel(getFocus())) toggleMultiSelOnFocused();
       else                                                         applyMsg({ type: 'enter_prefix' });
       break;
     case '*':
@@ -392,17 +398,17 @@ function handleNormalKey(key, seq) {
       if (_isListPanel(getFocus())) applyMsg({ type: 'list_select', mode: 'on' });
       selectAllVisible();
       break;
-    case 'up': case 'k':   handleAction(model, 'nav_up'); break;
-    case 'down': case 'j': handleAction(model, 'nav_down'); break;
-    case 'left': case 'h': handleAction(model, 'focus_left'); break;
-    case 'right': case 'l':handleAction(model, 'focus_right'); break;
+    case 'up': case 'k':   handleAction('nav_up'); break;
+    case 'down': case 'j': handleAction('nav_down'); break;
+    case 'left': case 'h': handleAction('focus_left'); break;
+    case 'right': case 'l':handleAction('focus_right'); break;
     case 'return':
       // Framework default — Component claims for Enter (e.g. config-status
       // expanding a "... N more" row) already returned `_claimed` from
       // their update and short-circuited dispatchKeyToFocused.
-      handleAction(model, 'run_selected');
+      handleAction('run_selected');
       break;
-    case 'r':              handleAction(model, 'refresh'); break;
+    case 'r':              handleAction('refresh'); break;
     case 'x': {
       // On a dead ephemeral terminal tab, `x` closes it instead of
       // opening the menu. Lets the user dismiss a non-zero exit
@@ -419,32 +425,32 @@ function handleNormalKey(key, seq) {
       // close gesture, and `x` mirrors the dead-terminal flow.
       if (getFocus() === 'detail' && isContentTab()) {
         const ct = activeContentTab();
-        if (ct) { removeContentTab(model.currentGroup, ct[0]); break; }
+        if (ct) { removeContentTab(getModel().currentGroup, ct[0]); break; }
       }
       applyMsg({ type: 'menu_open' });
       break;
     }
-    case '?':              handleAction(model, 'show_help'); break;
+    case '?':              handleAction('show_help'); break;
     // Tab keys: framework default cycles detail tabs. Panels that own
     // their own ]/[ behavior (config-status's tab cycle) return the
     // `_claimed` sentinel from their update and short-circuit before
     // we reach this switch.
-    case ']':              handleAction(model, 'next_tab'); break;
-    case '[':              handleAction(model, 'prev_tab'); break;
-    case 'pageup': case ',': handleAction(model, 'page_up'); break;
-    case 'pagedown': case '.': handleAction(model, 'page_down'); break;
-    case '<':              handleAction(model, 'goto_top'); break;
-    case '>':              handleAction(model, 'goto_bottom'); break;
-    case '+':              handleAction(model, 'view_expand'); break;
-    case '_':              handleAction(model, 'view_shrink'); break;
+    case ']':              handleAction('next_tab'); break;
+    case '[':              handleAction('prev_tab'); break;
+    case 'pageup': case ',': handleAction('page_up'); break;
+    case 'pagedown': case '.': handleAction('page_down'); break;
+    case '<':              handleAction('goto_top'); break;
+    case '>':              handleAction('goto_bottom'); break;
+    case '+':              handleAction('view_expand'); break;
+    case '_':              handleAction('view_shrink'); break;
     case '/':
       // Filter doesn't apply to the (non-list) detail panel — overload
       // `/` there as vim/less-style search instead. Same key, different
       // mode based on focus.
       if (getFocus() === 'detail') require('../panel/api').dispatchMsg(require('../panel/api').wrap('detail', { type: 'viewer_search_enter' }));
-      else                          enterFilterMode(model);
+      else                          enterFilterMode();
       break;
-    case 'y':              enterCopyMode(model); break;
+    case 'y':              enterCopyMode(); break;
     case '"':              applyMsg({ type: 'register_popup_enter' }); break;
     case ':':              applyMsg({ type: 'cmdline_enter' }); break;
     default:
@@ -452,7 +458,7 @@ function handleNormalKey(key, seq) {
       // is a no-op at the framework level; the focused Component
       // already saw it via the key Msg broadcast.
       if (allPanels().some(p => p.hotkey === key)) {
-        handleAction(model, 'focus_panel', key);
+        handleAction('focus_panel', key);
       }
   }
 }
@@ -481,13 +487,13 @@ function handlePrefixKey(key, seq) { applyMsg({ type: 'prefix_key', key, seq });
 // layer on top of the same registry (stages 3 / plugin API).
 function _registerBuiltinChords() {
   const b = { builtin: true };
-  // Leader chords fire outside the threaded key spine, so each closure
-  // reaches the owned model via getModel() at invoke time.
-  const m = () => runtime.getModel();
-  keybindings.registerKeyBinding('?',  { label: 'help',    run: () => handleAction(m(), 'show_help') },   b);
-  keybindings.registerKeyBinding('r',  { label: 'refresh', run: () => handleAction(m(), 'refresh') },      b);
-  keybindings.registerKeyBinding('gg', { label: 'top',     run: () => handleAction(m(), 'goto_top') },     b);
-  keybindings.registerKeyBinding('ge', { label: 'bottom',  run: () => handleAction(m(), 'goto_bottom') },  b);
+  // Leader chords fire outside the threaded key spine. handleAction now
+  // resolves state via getModel() internally (T7), so chord closures
+  // don't need to thread the model in themselves.
+  keybindings.registerKeyBinding('?',  { label: 'help',    run: () => handleAction('show_help') }, b);
+  keybindings.registerKeyBinding('r',  { label: 'refresh', run: () => handleAction('refresh') },   b);
+  keybindings.registerKeyBinding('gg', { label: 'top',     run: () => handleAction('goto_top') },  b);
+  keybindings.registerKeyBinding('ge', { label: 'bottom',  run: () => handleAction('goto_bottom') }, b);
   keybindings.labelSubtree('g', '+goto');
 }
 _registerBuiltinChords();
@@ -496,7 +502,7 @@ _registerBuiltinChords();
  *  confirm path the actions-panel Enter flow uses. Single definition so
  *  the panel, the leader bindings, and any future caller can't drift on
  *  how `args:` / `confirm:` are handled. */
-function _runResolvedAction(model, key, act) {
+function _runResolvedAction(key, act) {
   if (act.args) {
     const initial = resolvePromptDefault(act);
     // Seed the autosuggest ghost from the yank register's top (first line).
@@ -512,7 +518,7 @@ function _runResolvedAction(model, key, act) {
       cmd: { type: 'run_action', actionKey: key, action: act },
     });
   } else {
-    runAction(model, key, act);
+    runAction(key, act);
   }
 }
 
@@ -520,13 +526,13 @@ function _runResolvedAction(model, key, act) {
  *  the SAME merged set the actions panel shows — plugin-synthesized
  *  actions (docker's `up`/`logs`/…) plus YAML `actions:` — so a leader
  *  binding to a plugin action isn't silently dead. First match wins. */
-function _runActionByKey(model, key) {
-  const groups = (model.config && model.config.groups) || {};
+function _runActionByKey(key) {
+  const groups = (getModel().config && getModel().config.groups) || {};
   for (const [gname, g] of Object.entries(groups)) {
     const merged = { ...getGroupActions(g, gname), ...(g.actions || {}) };
     const act = merged[key];
     if (!act) continue;
-    _runResolvedAction(model, key, act);
+    _runResolvedAction(key, act);
     return true;
   }
   return false;
@@ -536,10 +542,33 @@ function _runActionByKey(model, key) {
  *  is resolved at INVOKE time so group-relative actions / commands see
  *  the current state, not whatever was current at registration. */
 function _bindingRunner(spec) {
-  if (spec.builtin) return () => handleAction(runtime.getModel(), spec.builtin);
-  if (spec.action)  return () => _runActionByKey(runtime.getModel(), spec.action);
+  if (spec.builtin) return () => handleAction(spec.builtin);
+  if (spec.action)  return () => _runActionByKey(spec.action);
   if (spec.command) return () => require('./cmdline').runCommandString(spec.command);
   return null;
+}
+
+// T20 — single-char keys hardcoded into handleNormalKey's switch.
+// A user `keys:` binding to any of these registers in the leader tree
+// but NEVER fires in normal mode (handleNormalKey claims the keystroke
+// first). The user sees "I bound `j` but it still does nav_down" with
+// no diagnostic. Warn at registration time.
+const _SHADOWED_NORMAL_KEYS = new Set([
+  'q', 'v', 'r', 'x', 'y', '?', '/', ':', '"',
+  'j', 'k', 'h', 'l', '*', '+', '_', '[', ']',
+  ',', '.', '<', '>',
+  // Multi-char names that also have hardcoded cases:
+  'escape', 'return', 'up', 'down', 'left', 'right',
+  'pageup', 'pagedown',
+]);
+
+function _collectActionKeys(config) {
+  // Build a set of every action's short key for R14's resolution check.
+  const out = new Set();
+  for (const g of Object.values((config && config.groups) || {})) {
+    for (const k of Object.keys((g && g.actions) || {})) out.add(k);
+  }
+  return out;
 }
 
 /**
@@ -548,12 +577,30 @@ function _bindingRunner(spec) {
  * after plugins, so a project binding can shadow nothing it shouldn't).
  * A conflicting sequence throws from registerKeyBinding — surfaced to
  * the user as a boot error, same as any other config mistake.
+ *
+ * T20 — also warns on two silent-failure classes that the agent audit
+ * flagged: single-char bindings shadowed by handleNormalKey's hardcoded
+ * switch, and `action:` bindings whose target doesn't resolve.
  */
 function loadKeyBindings(config) {
   const keys = (config && config.keys) || {};
+  const actionKeys = _collectActionKeys(config);
   for (const [seq, spec] of Object.entries(keys)) {
     const run = _bindingRunner(spec);
     if (!run) continue;
+    // T20 / B12 — shadow warning: a single-key binding here is
+    // unreachable in normal mode. The binding still registers (it'll
+    // fire after the leader chord), but the user almost certainly
+    // didn't intend that.
+    if (_SHADOWED_NORMAL_KEYS.has(seq)) {
+      console.error(`[keys] binding '${seq}' is shadowed by a built-in normal-mode handler — your binding won't fire on a bare '${seq}' press (only after the leader chord)`);
+    }
+    // T20 / R14 — `action:` resolves at invoke time via _runActionByKey,
+    // which silently returns false for unknown keys. Pre-validate now so
+    // a typo gets caught at boot instead of being a dead key forever.
+    if (spec.action && !actionKeys.has(spec.action)) {
+      console.error(`[keys] binding '${seq}' targets action '${spec.action}' but no action with that short key exists in config — binding will be a silent no-op`);
+    }
     const label = spec.label || spec.desc
       || spec.action || spec.builtin || spec.command || seq;
     keybindings.registerKeyBinding(seq, { label, run });
@@ -625,16 +672,12 @@ function clearKeyFilters() {
   _keyFilters.length = 0;
 }
 
-// `model` is the owned root model, threaded in from the input pump
-// (tui.js → setupKeyListener → here). The normal-key path carries it
-// down to update; the modal path (_dispatchActiveMode) is not yet
-// threaded and still reads the global via the shim. render() feeds
-// the view the same threaded model.
+// (key, seq) — no model param. 2be348a fixed the captured-stale-ref
+// hazard at this layer (handleKey/handleMouse used to receive a `model`
+// arg threaded down from setupKeyListener at boot; post-Phase-4 that
+// ref froze on the first dispatch). Every downstream call resolves
+// state via getModel() / getFocus() / getItems() fresh.
 function handleKey(key, seq) {
-  // Phase 4 — runtime.update returns NEW model objects; read getModel()
-  // at entry so post-Msg state is what dispatchKeyToFocused (and the
-  // handlers below) see for every event.
-  const model = getModel();
   // Filter middleware runs first — before logging, before dispatch.
   // A filter that returns null wholly suppresses the event (no log
   // entry, no dispatch, no render).
@@ -687,6 +730,16 @@ function _dispatchActiveMode(key, seq) {
         m.handler(key, seq);
       } catch (e) {
         console.error('[mode]', m.flag, e && e.message);
+        // Persist to the event log too — this is the wedge-guard that
+        // hid handleFilterKey (T6) for who-knows-how-long. console.error
+        // gets painted over by the next render; the event log file is
+        // where future occurrences can be inspected post-mortem.
+        try {
+          require('./event-log').record('error', {
+            where: 'mode_handler', flag: m.flag, key, seq,
+            message: e && e.message, stack: e && e.stack,
+          });
+        } catch (_) { /* event-log unavailable */ }
         // Route the panic-recovery flag-clear through update so single-writer
         // holds even on this exceptional path (the alternative — a direct
         // model.modes[flag]=false here — was the last outside-writer in
@@ -723,10 +776,10 @@ function applyMsg(msg) {
 // menu Enter path) owns the trailing paint. Arms resolve a Msg from the
 // model and call applyMsg(msg) — the reducer is the writer.
 
-function handleAction(model, action, arg) {
+function handleAction(action, arg) {
   switch (action) {
-    case 'nav_up':       moveSel(model, -1); break;
-    case 'nav_down':     moveSel(model, +1); break;
+    case 'nav_up':       moveSel(-1); break;
+    case 'nav_down':     moveSel(+1); break;
     case 'focus_left': {
       const order = allPanels().map(p => p.type);
       const idx = order.indexOf(getFocus());
@@ -780,7 +833,7 @@ function handleAction(model, action, arg) {
         const item = items[getSel('actions')];
         if (item) {
           const [key, act] = item;
-          _runResolvedAction(model, key, act);
+          _runResolvedAction(key, act);
         }
       } else {
         dispatchMsg(wrap('detail', { type: 'viewer_show_info' }));
@@ -805,21 +858,21 @@ function handleAction(model, action, arg) {
       // inline in the reducer). Other panel modes (e.g. stats content)
       // get no-op — they don't expose getItems().
       if (getFocus() === 'detail') require('../panel/api').dispatchMsg(require('../panel/api').wrap('detail', { type: 'viewer_scroll', delta: -_halfPageStep('detail') }));
-      else                          _pageInListPanel(model, -_halfPageStep(getFocus()));
+      else                          _pageInListPanel(-_halfPageStep(getFocus()));
       break;
     }
     case 'page_down': {
       if (getFocus() === 'detail') require('../panel/api').dispatchMsg(require('../panel/api').wrap('detail', { type: 'viewer_scroll', delta: +_halfPageStep('detail') }));
-      else                          _pageInListPanel(model, +_halfPageStep(getFocus()));
+      else                          _pageInListPanel(+_halfPageStep(getFocus()));
       break;
     }
     case 'goto_top':
       if (getFocus() === 'detail') require('../panel/api').dispatchMsg(require('../panel/api').wrap('detail', { type: 'viewer_scroll', to: 'top' }));
-      else                          _jumpInListPanel(model, 'top');
+      else                          _jumpInListPanel('top');
       break;
     case 'goto_bottom':
       if (getFocus() === 'detail') require('../panel/api').dispatchMsg(require('../panel/api').wrap('detail', { type: 'viewer_scroll', to: 'bottom' }));
-      else                          _jumpInListPanel(model, 'bottom');
+      else                          _jumpInListPanel('bottom');
       break;
     case 'view_expand':
       // Through the Component fan-out: layout's update flips viewMode and
@@ -833,7 +886,7 @@ function handleAction(model, action, arg) {
       break;
     case 'filter':
       // Reachable from the menu + `:filter`. Same filterable-gated enter.
-      enterFilterMode(model);
+      enterFilterMode();
       break;
     case 'design':
       // Reachable from menu entry and `:design` cmdline. The design-enabled

@@ -77,13 +77,17 @@ describe('[4] wedge guard (_dispatchActiveMode)', () => {
     // (registerPopup.viewportRows, to build the nav Msgs), so we can force
     // it to throw.
     const rp = require('../overlay/register-popup');
+    const eventLog = require('../dispatch/event-log');
     const orig = rp.viewportRows;
     const origErr = console.error;
     let logged = '';
     rp.viewportRows = () => { throw new Error('boom'); };
     console.error = (...a) => { logged = a.join(' '); };
+    // T11 — the wedge-guard now also persists to event-log so the bug
+    // class that hid handleFilterKey for who-knows-how-long is
+    // post-mortem inspectable. Clear the buffer before driving.
+    eventLog.clear();
     try {
-      // reset all mode flags, then arm just this one
       modes.resetModes();
       getModel().modes.registerPopupMode = true;
       const claimed = dispatch._dispatchActiveMode('x', 'x');  // must not throw
@@ -94,10 +98,49 @@ describe('[4] wedge guard (_dispatchActiveMode)', () => {
       console.error = origErr;
     }
     assert(/registerPopupMode/.test(logged) && /boom/.test(logged), `error logged: ${logged}`);
+    // T11 assertion: event-log captured the diagnostic.
+    const errs = eventLog.snapshot().filter(e => e.type === 'error');
+    assert(errs.length >= 1, 'event-log captured at least one error entry');
+    const last = errs[errs.length - 1];
+    eq(last.payload.where, 'mode_handler', 'where=mode_handler');
+    eq(last.payload.flag, 'registerPopupMode', 'flag carried through');
+    assert(/boom/.test(last.payload.message), 'error message preserved');
   });
   it('returns false (falls through) when no mode is active', () => {
     modes.resetModes();
     eq(dispatch._dispatchActiveMode('j', 'j'), false);
+  });
+});
+
+// ---- [5] T6 regression: filterMode j/k/arrows must not wedge ----
+//
+// The 2a2b96e (key, seq) handler sweep dropped the leading `model` arg
+// from handleFilterKey but left two `handleAction(model, ...)` calls
+// referencing the now-undefined identifier. Pressing j/k/up/down inside
+// filter mode threw ReferenceError, which the wedge-guard at [4]
+// silently swallowed by force-clearing filterMode — user-visible
+// symptom: filter overlay disappears when trying to navigate the
+// filtered list. Pin the post-fix behavior: handler does NOT throw,
+// filterMode stays active, no wedge-guard log.
+
+describe('[5] T6 regression: filterMode j/k navigates without wedging', () => {
+  it('j/k/arrows preserve filterMode (no ReferenceError → no force-clear)', () => {
+    const origErr = console.error;
+    let logged = '';
+    console.error = (...a) => { logged += a.join(' ') + '\n'; };
+    try {
+      for (const [key, seq] of [['', 'j'], ['', 'k'], ['up', ''], ['down', '']]) {
+        modes.resetModes();
+        getModel().modes.filterMode = true;
+        const claimed = dispatch._dispatchActiveMode(key, seq);
+        eq(claimed, true, `${key||seq} claimed by filterMode handler`);
+        eq(getModel().modes.filterMode, true, `${key||seq} preserved filterMode (no wedge)`);
+      }
+      eq(logged, '', 'no wedge-guard error logged');
+    } finally {
+      console.error = origErr;
+      modes.resetModes();
+    }
   });
 });
 

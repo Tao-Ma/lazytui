@@ -57,9 +57,19 @@ function isOverlayActive(md = _modes()) { return MODES.some(m => m.overlay && md
 /** True when any mode that owns the footer row is active. */
 function isModal(md = _modes()) { return MODES.some(m => m.modal && md[m.flag]); }
 
+/** True when ANY modeChain mode is active — i.e. the keyboard side
+ *  would route the next key through a modal handler rather than the
+ *  framework default. Used by handleMouse to mirror keyboard modal
+ *  gating: while a modal claims keys, mouse events should not
+ *  cascade into focus changes / selection / scroll that the user
+ *  can't see through the overlay. The designMode special-case in
+ *  handleMouse runs BEFORE this gate (design owns the mouse pipeline);
+ *  terminalMode is non-chain by design and not covered here. */
+function isChainActive(md = _modes()) { return CHAIN_MODES.some(f => md[f]); }
+
 /** Clear every resettable mode flag (called from initState). Non-flag
  *  buffers (prefixNode, detail-slice search state, etc.) are reset by
  *  their owners; this only flips the booleans. */
 function resetModes(md = _modes()) { for (const m of MODES) if (m.reset) md[m.flag] = false; }
 
-module.exports = { MODES, CHAIN_MODES, isOverlayActive, isModal, resetModes };
+module.exports = { MODES, CHAIN_MODES, isOverlayActive, isModal, isChainActive, resetModes };

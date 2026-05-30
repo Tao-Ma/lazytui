@@ -350,6 +350,8 @@ function dispatchKeyToFocused(key, seq) {
     }
   } catch (e) {
     console.error(`[component:${compName}] key update error: ${e.message}`);
+    _recordError({ where: 'component_key', component: compName,
+      message: e && e.message, stack: e && e.stack });
   }
   return claimed;
 }
@@ -373,7 +375,19 @@ function _runComponentUpdate(name, comp, msg) {
     }
   } catch (e) {
     console.error(`[component:${name}] update error: ${e.message}`);
+    _recordError({ where: 'component_update', component: name,
+      message: e && e.message, stack: e && e.stack });
   }
+}
+
+// Persist diagnostics from the Component fan-out paths (key + Msg) to the
+// event log. The console.error above is invisible while the TUI is
+// drawing (the next render paints over it); the event log file is the
+// only place a thrown Component update is inspectable post-mortem.
+// Lazy-require avoids a panel/api ↔ dispatch/event-log cycle.
+function _recordError(payload) {
+  try { require('../dispatch/event-log').record('error', payload); }
+  catch (_) { /* event-log unavailable — already logged to console */ }
 }
 
 function getComponent(name)              { return components[name]; }

@@ -38,10 +38,17 @@ function ensureSession(id, cmd, cols, rows) {
   // parsing PTY output, so keystroke echo appears within ~16ms instead
   // of waiting for the polling tick. The write() callback fires after
   // each parse completes.
-  p.onData(data => {
+  // T17 — node-pty's onData returns a disposable. We hold it on the
+  // session so destroySession can dispose the listener BEFORE
+  // xterm.dispose(); otherwise an in-flight data chunk could fire
+  // xterm.write on a disposed Terminal (undefined behavior in
+  // @xterm/headless — likely throws and unwinds out of node-pty's
+  // emitter).
+  const onDataSub = p.onData(data => {
+    if (session.exited) return;  // belt-and-braces: also drop if exited
     xterm.write(data, () => scheduleOverlay());
   });
-  const session = { pty: p, xterm, cmd, exited: false, exitCode: null };
+  const session = { pty: p, xterm, cmd, exited: false, exitCode: null, _onDataSub: onDataSub };
   p.onExit(({ exitCode }) => {
     session.exited = true;
     session.exitCode = exitCode;
@@ -122,6 +129,10 @@ function resizeSession(id, cols, rows) {
 function destroySession(id) {
   const s = sessions[id];
   if (!s) return;
+  // T17 — dispose the onData listener BEFORE xterm.dispose() so a
+  // chunk in flight (kernel-buffered between SIGTERM and pipe close)
+  // can't call xterm.write on a disposed Terminal.
+  if (s._onDataSub) { try { s._onDataSub.dispose(); } catch {} s._onDataSub = null; }
   if (!s.exited) try { s.pty.kill(); } catch {}
   s.xterm.dispose();
   delete sessions[id];

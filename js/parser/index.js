@@ -158,6 +158,12 @@ function mergePluginInto(main, plugin) {
 }
 
 function mergeYamlPlugins(data, baseDir) {
+  // T19 note: pluginPath is resolved relative to the source YAML's
+  // directory. Path traversal (`../foo.yml`) is by design — configs
+  // are user-owned and a project may share helpers / vars across
+  // multiple YAMLs in a parent directory. The .yml/.yaml extension
+  // guard at line 166 blocks the obvious "read /etc/passwd" misuse;
+  // beyond that, the user's filesystem boundaries are their concern.
   const plugins = data.plugins;
   if (!plugins || typeof plugins !== 'object' || Array.isArray(plugins)) return;
   for (const [name, conf] of Object.entries(plugins)) {
@@ -225,6 +231,13 @@ function generateConfigCopyTo(files) {
 function walkGroups(rawGroups, varsBlock, helpersBlock, source, parent, depth, out) {
   for (const [gname, gdata] of Object.entries(rawGroups)) {
     const groupPath = parent ? `${parent}.${gname}` : gname;
+    // T19 — flat dotted-name `"a.b":` collides with nested
+    // `a: { children: { b: ... } }` at the same dotted path. Pre-fix
+    // walkGroups silently overwrote on collision (last write wins,
+    // user's earlier-declared group vanished). Detect + throw cleanly.
+    if (groupPath in out) {
+      throw new ParseError(`duplicate group path '${groupPath}' (declared both as a flat key and a nested child)`);
+    }
     const containers = gdata.containers || [];
 
     const actions = {};
@@ -233,7 +246,7 @@ function walkGroups(rawGroups, varsBlock, helpersBlock, source, parent, depth, o
         const ctx = `group '${groupPath}', action '${aname}'`;
         let script, varsUsed, helpersUsed;
         if ('cmd' in adata) {
-          ({ script, varsUsed, helpersUsed } = passthroughCmd(adata.cmd));
+          ({ script, varsUsed, helpersUsed } = passthroughCmd(adata.cmd, ctx));
         } else {
           ({ script, varsUsed, helpersUsed } = resolveScript(adata.script, varsBlock, helpersBlock, ctx));
         }

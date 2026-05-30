@@ -29,7 +29,7 @@ const CONFIRM_ACTION = { script: 'true', type: 'background', confirm: 'sure?' };
 describe('[1] runAction with confirm: stages the overlay, defers the action', () => {
   it('confirmMode on, do_run Cmd staged as data, action not yet run', () => {
     reset();
-    runAction(getModel(), 'stop', CONFIRM_ACTION);
+    runAction('stop', CONFIRM_ACTION);
     eq(getModel().modes.confirmMode, true, 'overlay opened');
     eq(getModel().modal.confirm.cmd.type, 'do_run', 'pending do_run Cmd staged (data, not a closure)');
     eq(getModel().lastRunAction, '', 'execution deferred');
@@ -39,14 +39,14 @@ describe('[1] runAction with confirm: stages the overlay, defers the action', ()
 describe('[3] n / escape reject without running', () => {
   it('n clears mode, no run', () => {
     reset();
-    runAction(getModel(), 'stop', CONFIRM_ACTION);
+    runAction('stop', CONFIRM_ACTION);
     press('', 'n');
     eq(getModel().modes.confirmMode, false, 'mode cleared');
     eq(getModel().lastRunAction, '', 'not run');
   });
   it('escape clears mode, no run', () => {
     reset();
-    runAction(getModel(), 'stop', CONFIRM_ACTION);
+    runAction('stop', CONFIRM_ACTION);
     press('escape', '');
     eq(getModel().modes.confirmMode, false, 'mode cleared');
     eq(getModel().lastRunAction, '', 'not run');
@@ -56,7 +56,7 @@ describe('[3] n / escape reject without running', () => {
 describe('[5] stray keys swallowed', () => {
   it('non-y/n keys keep the overlay open', () => {
     reset();
-    runAction(getModel(), 'stop', CONFIRM_ACTION);
+    runAction('stop', CONFIRM_ACTION);
     press('', 'q'); press('up', ''); press('', 'a');
     eq(getModel().modes.confirmMode, true, 'still active');
     eq(getModel().lastRunAction, '', 'no run');
@@ -66,7 +66,7 @@ describe('[5] stray keys swallowed', () => {
 describe('[6] no-confirm action runs immediately (sync)', () => {
   it('runs without staging an overlay', () => {
     reset();
-    runAction(getModel(), 'noop', { script: 'true', type: 'background' });
+    runAction('noop', { script: 'true', type: 'background' });
     eq(getModel().modes.confirmMode, false, 'no overlay');
     eq(getModel().lastRunAction, 'noop', 'ran immediately');
   });
@@ -76,7 +76,7 @@ describe('[6] no-confirm action runs immediately (sync)', () => {
 
 section('[2] y commits — action runs after setImmediate');
 reset();
-runAction(getModel(), 'yes-run', CONFIRM_ACTION);
+runAction('yes-run', CONFIRM_ACTION);
 press('', 'y');
 eq(getModel().modes.confirmMode, false, 'mode cleared synchronously on y');
 eq(getModel().lastRunAction, '', 'action NOT yet run (do_run deferred to next tick)');
@@ -88,7 +88,7 @@ setImmediate(() => {
 function runStep4() {
   section('[4] Enter also accepts — also deferred');
   reset();
-  runAction(getModel(), 'ent-run', CONFIRM_ACTION);
+  runAction('ent-run', CONFIRM_ACTION);
   press('return', '');
   eq(getModel().modes.confirmMode, false, 'mode cleared on Enter');
   eq(getModel().lastRunAction, '', 'deferred');

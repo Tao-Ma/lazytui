@@ -135,6 +135,16 @@ function main() {
     return;
   }
 
+  // TUI branch — needs a TTY on stdin and stdout. Without this guard,
+  // setupKeyListener's setRawMode(true) below throws TypeError mid-boot
+  // AFTER hideCursor + chrome paint have already run, leaving the
+  // terminal with a hidden cursor + half-painted chrome and no cleanup.
+  // Fail clean with a useful message instead.
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    console.error('lazytui: needs a TTY on stdin and stdout (run interactively, not in a pipe or redirect)');
+    process.exit(1);
+  }
+
   // Lazy-load TUI runtime so CLI mode stays free of node-pty + render deps.
   const { hideCursor } = require('../io/term');
   const { render, redraw, renderTerminalOverlay } = require('../render/layout');
@@ -142,15 +152,29 @@ function main() {
   const { registerComponent, refreshAll } = require('../panel/api');
   const { setupKeyListener } = require('../dispatch/input');
   const { getModel } = require('./runtime');
-  const { destroyAll: destroyTerminals } = require('../io/terminal');
   const { installSuspendHandlers } = require('./suspend');
+  const { cleanup } = require('./cleanup');
+
+  // Register the global cleanup handler FIRST — any throw between here
+  // and the input pump starting (loadConfig, registerComponent, the
+  // initial refreshAll) would otherwise leave the terminal in raw mode /
+  // mouse on / bracketed paste on / focus events on / cursor hidden.
+  // cleanup() is idempotent (destroyAll empties the session map; disable
+  // escape codes are no-ops when already off) so the symmetric call from
+  // the `quit` effect on user-quit is safe to fire too.
+  process.on('exit', cleanup);
 
   // Install the Component effect handlers (setDetail/focus/render) before any
   // Component registers — a Component's update→effects must resolve at
   // first dispatch.
   require('../dispatch/effects').installBuiltins();
 
-  loadConfig(configArgs[0]);
+  // Friendly one-line error instead of a Node stack trace if the config
+  // is missing, empty, or malformed — every other config-shaped error
+  // in main (--exec missing, unknown flag, key-binding conflict) already
+  // matches this pattern; loadConfig was the odd one out.
+  try { loadConfig(configArgs[0]); }
+  catch (e) { console.error(`config: ${e.message}`); process.exit(1); }
 
   // Built-in Components (TEA shape). The first three OWN state in their slices
   // (genuine isolation — poll loops, browsers, git cache); the rest are
@@ -202,16 +226,10 @@ function main() {
   }
 
   initState();
-  // The program owns the root model from here on. Everything tui.js
-  // directly triggers — the input pump (keys + mouse), the initial paint,
-  // and the refresh-loop repaint — gets it threaded in (carried down
-  // handleKey/handleMouse → update, and into render()). The
-  // cycle-broken schedulers still default to getModel(): scheduleRender
-  // (resize + PTY/stream producers) and the terminal-overlay poll route
-  // through render-queue, which exists precisely so terminal.js/actions.js
-  // can ask for a paint WITHOUT importing layout — so they have no model
-  // to hand in. Threading those waits for a later phase.
-  const model = getModel();
+  // Post-T7: no captured `model` local at boot. handleKey / handleMouse
+  // / render() all default to getModel() at entry; scheduleRender goes
+  // through render-queue. Anything that needs current model state reads
+  // it AT the read site, not from a frozen-at-boot snapshot.
   hideCursor();
   installSuspendHandlers();   // Ctrl+Z: restore terminal → suspend → resume
   // Initial refresh kicks off async — first frame uses cached/empty data,
@@ -239,8 +257,11 @@ function main() {
   // event would run a full calcLayout + force-full repaint each time.
   process.stdout.on('resize', () => scheduleRender());
 
-  // Clean up terminal sessions on exit
-  process.on('exit', destroyTerminals);
+  // T12: PTY teardown rides on the global cleanup() handler registered
+  // earlier in main — cleanup invokes destroyAll itself. The previous
+  // standalone process.on('exit', destroyTerminals) was redundant with
+  // that AND covered only the PTY-cleanup slice (left mouse/cursor/etc.
+  // in their enabled state if anything mid-boot threw).
 }
 
 main();

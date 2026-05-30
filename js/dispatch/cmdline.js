@@ -112,7 +112,7 @@ function buildRegistry() {
       display: action.label,
       desc: action.desc || `Run ${key}`,
       kind: 'action',
-      run: (args) => { require('./action-runner').runAction(getModel(), key, action, args); },
+      run: (args) => { require('./action-runner').runAction(key, action, args); },
     });
   }
 

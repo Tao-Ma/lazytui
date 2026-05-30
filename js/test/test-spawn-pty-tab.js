@@ -82,7 +82,7 @@ function resetState() {
 
 describe('[1] spawn outside tmux → embedded PTY tab + viewMode=full', () => {
   resetState();
-  runAction(runtime.getModel(), 'a:psql', { type: 'spawn', script: 'psql' }, []);
+  runAction('a:psql', { type: 'spawn', script: 'psql' }, []);
 
   it('does NOT call async spawn (no tmux new-window)', () => {
     eq(spawnCalls.length, 0, 'async spawn unused outside tmux');
@@ -108,7 +108,7 @@ describe('[1] spawn outside tmux → embedded PTY tab + viewMode=full', () => {
 describe('[2] spawn inside tmux → tmux new-window path (opt-in tier)', () => {
   resetState();
   process.env.TMUX = '/tmp/mock-tmux';
-  runAction(runtime.getModel(), 'a:vim', { type: 'spawn', script: 'vim' }, []);
+  runAction('a:vim', { type: 'spawn', script: 'vim' }, []);
 
   it('calls async spawn with tmux new-window', () => {
     eq(spawnCalls.length, 1, 'spawn called once');
@@ -130,7 +130,7 @@ describe('[2] spawn inside tmux → tmux new-window path (opt-in tier)', () => {
 
 describe('[3] _onSessionExit: clean exit (0) on the active tab', () => {
   resetState();
-  runAction(runtime.getModel(), 'a:less', { type: 'spawn', script: 'less /etc/hosts' }, []);
+  runAction('a:less', { type: 'spawn', script: 'less /etc/hosts' }, []);
   const ephKey = Object.keys(getComponentSlice('detail').ephemeralTerminals.g1)[0];
   const sessionId = `g1_${ephKey}`;
 
@@ -159,7 +159,7 @@ describe('[3] _onSessionExit: clean exit (0) on the active tab', () => {
 
 describe('[4] _onSessionExit: non-zero exit on the active tab', () => {
   resetState();
-  runAction(runtime.getModel(), 'a:badcmd', { type: 'spawn', script: 'false' }, []);
+  runAction('a:badcmd', { type: 'spawn', script: 'false' }, []);
   const ephKey = Object.keys(getComponentSlice('detail').ephemeralTerminals.g1)[0];
   const sessionId = `g1_${ephKey}`;
 
@@ -181,7 +181,7 @@ describe('[4] _onSessionExit: non-zero exit on the active tab', () => {
 
 describe('[5] _onSessionExit: clean exit on a NON-active session', () => {
   resetState();
-  runAction(runtime.getModel(), 'a:vim', { type: 'spawn', script: 'vim' }, []);
+  runAction('a:vim', { type: 'spawn', script: 'vim' }, []);
   const activeEphKey = Object.keys(getComponentSlice('detail').ephemeralTerminals.g1)[0];
   getComponentSlice('detail').ephemeralTerminals.g1.orphan = { cmd: 'true', label: 'orphan' };
 
@@ -210,8 +210,8 @@ describe('[6] tab-key uses monotonic counter — no ms-collision', () => {
   // Two spawns of the same action — without the counter, Date.now()
   // could produce the same value on a hot path and addEphemeralTab
   // would silently reuse the first tab.
-  runAction(runtime.getModel(), 'a:dup', { type: 'spawn', script: 'sleep 1' }, []);
-  runAction(runtime.getModel(), 'a:dup', { type: 'spawn', script: 'sleep 1' }, []);
+  runAction('a:dup', { type: 'spawn', script: 'sleep 1' }, []);
+  runAction('a:dup', { type: 'spawn', script: 'sleep 1' }, []);
 
   it('two spawns of the same action produce two distinct tab keys', () => {
     const keys = Object.keys(getComponentSlice('detail').ephemeralTerminals.g1 || {});
@@ -223,7 +223,7 @@ describe('[6] tab-key uses monotonic counter — no ms-collision', () => {
 describe('[7] _handleTerminalModeData: Ctrl+\\ from zoom drops full+terminalMode', () => {
   resetState();
   // Bootstrap into the spawn-and-zoom state
-  runAction(runtime.getModel(), 'a:vim', { type: 'spawn', script: 'vim' }, []);
+  runAction('a:vim', { type: 'spawn', script: 'vim' }, []);
   forceFullRepaintCalls = 0;
   getModel().modes.terminalMode = true;  // simulate having focused the PTY
 
@@ -258,7 +258,7 @@ describe('[8] _handleTerminalModeData: Ctrl+\\ without zoom only flips terminalM
 
 describe('[9] _handleTerminalModeData: dead session also exits + drops zoom', () => {
   resetState();
-  runAction(runtime.getModel(), 'a:dead', { type: 'spawn', script: 'true' }, []);
+  runAction('a:dead', { type: 'spawn', script: 'true' }, []);
   forceFullRepaintCalls = 0;
   getModel().modes.terminalMode = true;
   mockSessionDead = true;  // pretend the PTY exited under our feet
@@ -281,7 +281,7 @@ describe('[9] _handleTerminalModeData: dead session also exits + drops zoom', ()
 
 describe('[10] _handleTerminalModeData: live session forwards bytes to PTY', () => {
   resetState();
-  runAction(runtime.getModel(), 'a:live', { type: 'spawn', script: 'cat' }, []);
+  runAction('a:live', { type: 'spawn', script: 'cat' }, []);
   getModel().modes.terminalMode = true;
   mockSessionDead = false;
 

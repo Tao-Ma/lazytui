@@ -12,12 +12,16 @@
  *   files           dirLoaded, showHidden
  *   config-status   cfgStatusResult, key '['/']'
  *   stats           any-Msg no-op (identity)
- *   history         return key with empty ring buffer
+ *   history         non-claim no-op + nav Msg (T9 coverage)
+ *   actions         nav Msg + non-nav identity (T9 coverage)
  *
  * Branches that read model.config / model.focused / panel layout (eg.
  * `refresh` on docker, files, config-status) are exercised by the
  * existing integration suites — pinning them here would require deep
  * fixture setup that duplicates that coverage.
+ *
+ * config-branch isn't a Component — it exports `name` + `groupActions`
+ * only (no `update`), so it has no slice-write surface to pin.
  *
  * Run: node js/test/test-immutable-components.js
  */
@@ -30,6 +34,7 @@ const files         = require('../panel/navigator/files');
 const configStatus  = require('../panel/navigator/config-status');
 const stats         = require('../panel/monitor/stats');
 const history       = require('../panel/navigator/history');
+const actions       = require('../panel/navigator/actions');
 const groups        = require('../panel/navigator/groups');
 const detail        = require('../panel/viewer/viewer');
 const runtime       = require('../app/runtime');
@@ -185,6 +190,52 @@ describe('[immutable] history', () => {
     const slice = { nav: {} };
     const out = history.update({ type: 'refresh' }, slice);
     assert(out === slice, 'no-op for non-handled Msg');
+  });
+  it('nav set_cursor flows through the shared leaf without mutating input', () => {
+    const slice = { nav: { history: { cursor: 0, scroll: 0, multiSel: new Set(), filter: '' } } };
+    const out = expectNoMutation(
+      'history nav set_cursor leaves input frozen',
+      () => history.update({ type: 'set_cursor', panel: 'history', index: 3 }, slice),
+      slice,
+    );
+    eq(out.nav.history.cursor, 3, 'cursor advanced on a new slice');
+    assert(out !== slice, 'fresh slice ref');
+  });
+});
+
+// --- actions -------------------------------------------------------------
+//
+// Stateless Navigator — the entire update is `mnav.isNavMsg(msg) ? mnav.apply
+// (slice, msg) : slice`. Pinning the freeze contract end-to-end through the
+// Component (not just the leaf, which test-immutable-leaves.js covers) means
+// a future direct mutation in the wrapper would still be caught.
+
+describe('[immutable] actions', () => {
+  it('nav set_cursor returns a new slice without mutating input', () => {
+    const slice = { nav: { actions: { cursor: 0, scroll: 0, multiSel: new Set(), filter: '' } } };
+    const out = expectNoMutation(
+      'actions nav set_cursor leaves input frozen',
+      () => actions.update({ type: 'set_cursor', panel: 'actions', index: 2 }, slice),
+      slice,
+    );
+    eq(out.nav.actions.cursor, 2, 'cursor advanced on a new slice');
+    assert(out !== slice, 'fresh slice ref');
+  });
+  it('nav multisel_toggle clones the Set copy-on-write', () => {
+    const slice = { nav: { actions: { cursor: 0, scroll: 0, multiSel: new Set(['a']), filter: '' } } };
+    const out = expectNoMutation(
+      'actions multisel_toggle leaves input frozen',
+      () => actions.update({ type: 'multisel_toggle', panel: 'actions', id: 'b' }, slice),
+      slice,
+    );
+    assert(out.nav.actions.multiSel.has('b'), 'b added to new Set');
+    assert(!slice.nav.actions.multiSel.has('b'), 'original Set untouched');
+    assert(out.nav.actions.multiSel !== slice.nav.actions.multiSel, 'Set ref distinct');
+  });
+  it('non-nav Msg is identity-preserving', () => {
+    const slice = { nav: { actions: { cursor: 0, scroll: 0, multiSel: new Set(), filter: '' } } };
+    const same = actions.update({ type: 'action', actionKey: 'foo' }, slice);
+    assert(same === slice, 'non-nav Msg returns the same slice ref');
   });
 });
 

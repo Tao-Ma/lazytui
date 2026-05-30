@@ -18,6 +18,7 @@ const { enableMouse, enableFocusEvents, enableBracketedPaste, cols } = require('
 const { isTerminalTab, activeTerminalId } = require('../panel/viewer/tabs');
 const { writeToSession, isSessionDead } = require('../io/terminal');
 const {getPanelDef, getItems, getComponentSlice, dispatchMsg, wrap, getFocus } = require('../panel/api');
+const { isChainActive } = require('./modes');
 
 function _detail() { return getComponentSlice('detail'); }
 const { handleKey, applyMsg } = require('./dispatch');
@@ -43,7 +44,7 @@ const { cleanup } = require('../app/cleanup');
  * screen. Wheel back to bring it back. j/k is the way to extend the
  * selection.
  */
-function _handleWheel(model, mx, my, delta) {
+function _handleWheel(mx, my, delta) {
   for (const p of allPanels()) {
     const b = getComponentSlice('layout').panelBounds[p.type];
     if (!b) continue;
@@ -108,11 +109,21 @@ function handleMouse(kind, x, y) {
     return;
   }
 
+  // T13 — mirror keyboard modal gating: while any chain mode claims
+  // keystrokes via the modeChain, mouse events must not cascade into
+  // focus changes / selection / scroll that the user can't see through
+  // the overlay (or that would silently mutate state behind a modal —
+  // notably the wheel-over-groups path, which fires reset_group_context
+  // and leaves modal sub-models bound to the OLD group). The design-
+  // mode special-case above runs first because design owns the mouse
+  // pipeline. terminalMode is non-chain by design.
+  if (isChainActive(model.modes)) return;
+
   // Mouse wheel — scrolls the panel under the cursor without changing
   // focus. Detail adjusts the detail scroll; list panels move their own
   // selection. No-op when the wheel landed outside any panel bounds.
   if (kind === 'wheel-up' || kind === 'wheel-down') {
-    if (_handleWheel(model, mx, my, kind === 'wheel-down' ? +1 : -1)) render();
+    if (_handleWheel(mx, my, kind === 'wheel-down' ? +1 : -1)) render();
     return;
   }
 
@@ -358,4 +369,5 @@ module.exports = {
   setupKeyListener,
   _handleTerminalModeData,  // exported for tests
   _handleWheel,             // exported for tests
+  handleMouse,              // exported for tests (T13 modal-gate regression)
 };

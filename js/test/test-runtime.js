@@ -82,12 +82,11 @@ describe('[3] update — (model, msg) → [model, cmds], pure + Cmd descriptors'
     // cascade. Drive it through the real dispatch so the wrapped Msgs
     // land in each Component's slice.
     const state = require('../app/state');
-    const m = runtime.getModel();
     state.setSel('actions', 0);
     state.setSel('groups',  0);
-    require('../dispatch/dispatch').navSelect(m, 'actions', 3);
+    require('../dispatch/dispatch').navSelect('actions', 3);
     eq(state.getSel('actions'), 3, 'actions cursor advanced');
-    require('../dispatch/dispatch').navSelect(m, 'groups', 1);
+    require('../dispatch/dispatch').navSelect('groups', 1);
     eq(state.getSel('groups'), 1, 'groups cursor advanced');
   });
   it('escape / list_select: emit wrapped multisel_clear into the focused Component', () => {

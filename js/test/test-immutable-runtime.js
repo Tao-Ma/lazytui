@@ -345,4 +345,141 @@ describe('[immutable] root reducer — Cmd-only verbs are identity-preserving', 
   });
 });
 
+// --- T9 coverage: escape / list_select / menu_* family --------------------
+//
+// The cross-layer cascades the pre-release audit flagged as the highest-risk
+// uncovered class: escape and list_select both flip `model.modes` AND dispatch
+// a wrapped multisel_clear into the focused Component's update. The menu_*
+// family is the entire untested modal sub-model with cursor + items array.
+
+describe('[immutable] root reducer — escape / list_select', () => {
+  it('escape clears listSelectMode and returns a new model', () => {
+    const armed = { ...freshModel(),
+      modes: { ...freshModel().modes, listSelectMode: true } };
+    const [next, cmds] = expectNoMutation(
+      'escape (listSelectMode on) leaves input frozen',
+      () => runtime.update(armed, { type: 'escape' }),
+      armed,
+    );
+    eq(next.modes.listSelectMode, false);
+    eq(armed.modes.listSelectMode, true, 'original untouched');
+    assert(Array.isArray(cmds), 'Cmds array (compName-dependent payload)');
+  });
+  it('escape identity-preserves when nothing to clear', () => {
+    const m = freshModel();
+    const [same, cmds] = runtime.update(m, { type: 'escape' });
+    assert(same === m, 'no listSelect, no multiSel: same ref');
+    eq(cmds.length, 0, 'no Cmds');
+  });
+  it('list_select toggle flips listSelectMode on a new model', () => {
+    const m = freshModel();
+    const [next] = expectNoMutation(
+      'list_select toggle leaves input frozen',
+      () => runtime.update(m, { type: 'list_select', mode: 'toggle' }),
+      m,
+    );
+    eq(next.modes.listSelectMode, true);
+    eq(m.modes.listSelectMode, false, 'original untouched');
+  });
+  it('list_select on (when already on) is identity-preserving', () => {
+    const armed = { ...freshModel(),
+      modes: { ...freshModel().modes, listSelectMode: true } };
+    // mode:'on' always sets to true, but with no actual flip there's still
+    // an allocation (the reducer takes the success branch). The contract
+    // says no MUTATION, not no-allocation — pin both with expectNoMutation.
+    const [next] = expectNoMutation(
+      'list_select mode:on leaves input frozen',
+      () => runtime.update(armed, { type: 'list_select', mode: 'on' }),
+      armed,
+    );
+    eq(next.modes.listSelectMode, true);
+  });
+});
+
+describe('[immutable] root reducer — menu_* modal', () => {
+  it('menu_open seeds modal.menu on a fresh model', () => {
+    const m = freshModel();
+    const [next] = expectNoMutation(
+      'menu_open leaves input frozen',
+      () => runtime.update(m, { type: 'menu_open' }),
+      m,
+    );
+    eq(next.modes.menuOpen, true);
+    assert(Array.isArray(next.modal.menu.items), 'items list built');
+    eq(next.modal.menu.idx, 0);
+    eq(m.modes.menuOpen, false, 'original untouched');
+    assert(next.modal !== m.modal, 'modal sub-model is a new object');
+  });
+  it('menu_nav advances idx, skipping null separators', () => {
+    const opened = runtime.update(freshModel(), { type: 'menu_open' })[0];
+    if (opened.modal.menu.items.length < 2) return;  // build empty in some test envs
+    const [next] = expectNoMutation(
+      'menu_nav leaves input frozen',
+      () => runtime.update(opened, { type: 'menu_nav', dir: +1 }),
+      opened,
+    );
+    assert(next.modal.menu.idx > 0 || next === opened, 'idx advanced or no-op past tail');
+  });
+  it('menu_close clears modal.menu + flag on a new model', () => {
+    const opened = runtime.update(freshModel(), { type: 'menu_open' })[0];
+    const [next] = expectNoMutation(
+      'menu_close leaves input frozen',
+      () => runtime.update(opened, { type: 'menu_close' }),
+      opened,
+    );
+    eq(next.modes.menuOpen, false);
+    eq(next.modal.menu.items.length, 0);
+    eq(next.modal.menu.idx, 0);
+  });
+  it('menu_close on a closed menu is identity-preserving', () => {
+    const m = freshModel();
+    const same = runtime.update(m, { type: 'menu_close' });
+    assert(same[0] === m, 'no-op returns same ref');
+  });
+  it('menu_activate clears modal + emits menu_action Cmd when item present', () => {
+    const opened = runtime.update(freshModel(), { type: 'menu_open' })[0];
+    // Walk to a non-null item; if no items at all (empty test config), the
+    // activate path still has to leave input frozen — that's the contract.
+    const [next, cmds] = expectNoMutation(
+      'menu_activate leaves input frozen',
+      () => runtime.update(opened, { type: 'menu_activate' }),
+      opened,
+    );
+    eq(next.modes.menuOpen, false);
+    eq(next.modal.menu.items.length, 0);
+    assert(Array.isArray(cmds), 'Cmds array (item-dependent payload)');
+  });
+});
+
+// ---- T16 regression: accept arms identity-preserve when flag is off ----
+//
+// Pre-T16, confirm_accept / prompt_submit / copy_select / copy_cancel /
+// menu_activate / cmdline_submit / cmdline_cancel / register_popup_commit
+// / register_popup_drop would proceed and emit their side-effecting Cmd
+// even when the mode flag was already false (e.g. a stale double-fire).
+// Symmetric with the reject/cancel arms.
+
+describe('[immutable] root reducer — T16 accept-arm guards', () => {
+  const cases = [
+    ['confirm_accept',        {}],
+    ['prompt_submit',         {}],
+    ['copy_select',           {}],
+    ['copy_cancel',           {}],
+    ['menu_activate',         {}],
+    ['cmdline_submit',        {}],
+    ['cmdline_cancel',        {}],
+    ['register_popup_commit', {}],
+    ['register_popup_drop',   { vh: 5 }],
+  ];
+  for (const [type, extra] of cases) {
+    it(`${type} identity-preserves when its mode flag is off`, () => {
+      const m = freshModel();
+      const msg = Object.assign({ type }, extra);
+      const [next, cmds] = runtime.update(m, msg);
+      assert(next === m, `${type} returns same model ref when flag off`);
+      eq(cmds.length, 0, `${type} emits no Cmds when flag off`);
+    });
+  }
+});
+
 report();

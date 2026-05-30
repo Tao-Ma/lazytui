@@ -18,7 +18,16 @@ const USE_RE = /^([ \t]*)@use\s+(\w+)\s*$/gm;
 // $VAR or ${VAR}. Group 1 = braced name, group 2 = bare name.
 const VAR_RE = /\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)/g;
 
-function passthroughCmd(cmd) {
+function passthroughCmd(cmd, context) {
+  // T19 — `cmd:` is the one-liner short form; `@use` directives need
+  // the multi-line `script:` resolution pass to expand. Pre-fix the
+  // string passed through verbatim and the shell got `/bin/sh -c
+  // '@use greet'` → "@use: command not found" at runtime, leaving
+  // the user thinking the helper was broken. Reject at parse time
+  // with a useful message.
+  if (typeof cmd === 'string' && /(^|\n)\s*@use\s+\w+/.test(cmd)) {
+    throw new ResolutionError(`'@use' directives require 'script:' (multi-line) not 'cmd:'`, { context });
+  }
   return { script: cmd, varsUsed: {}, helpersUsed: [] };
 }
 

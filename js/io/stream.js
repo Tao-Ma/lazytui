@@ -24,6 +24,16 @@ let currentRecord = null; // history record handle for the active stream
 /** Kill any running streamed action (e.g., on tab switch / new action). */
 function killCurrentProc() {
   if (currentProc) {
+    // T17 — detach the data listeners FIRST. SIGTERM doesn't flush
+    // kernel pipe buffers atomically; the dying child can fire one
+    // more `data` event between kill() and pipe close. Without the
+    // detach, those tail bytes call appendDetailLine — which now
+    // dispatches into the NEW stream's tab. Symptom: starting a
+    // second run-action shows the previous action's last few lines
+    // mixed into the new tab. The `close` handler is already gated
+    // by `proc !== currentProc`, but data listeners weren't.
+    try { currentProc.stdout.removeAllListeners('data'); } catch {}
+    try { currentProc.stderr.removeAllListeners('data'); } catch {}
     try { currentProc.kill('SIGTERM'); } catch {}
     currentProc = null;
   }

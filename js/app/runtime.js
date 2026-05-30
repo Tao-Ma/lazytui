@@ -320,6 +320,13 @@ function update(model, msg) {
         modal: { ...model.modal, confirm: { message: msg.message || 'Are you sure?', cmd: msg.cmd || null } },
       }, []];
     case 'confirm_accept': {
+      // T16 — mirror the confirm_reject guard. The accept arm fires
+      // the staged Cmd descriptor as a side effect; if a stale
+      // double-fire ever landed here with the mode already cleared,
+      // a leftover model.modal.confirm.cmd would re-execute against
+      // unstaged state. No current path produces such a double-fire,
+      // but symmetry with the cancel arm makes the contract robust.
+      if (!model.modes.confirmMode) return [model, []];
       const cmd = model.modal.confirm.cmd;
       const next = {
         ..._withModes(model, { confirmMode: false }),
@@ -361,6 +368,8 @@ function update(model, msg) {
       return [_withModal(model, { prompt: { ...p, text } }), []];
     }
     case 'prompt_submit': {
+      // T16 — mirror prompt_cancel guard; same shape as confirm_accept.
+      if (!model.modes.promptMode) return [model, []];
       const p = model.modal.prompt;
       const text = p.text;
       const cmd = p.cmd;
@@ -392,6 +401,9 @@ function update(model, msg) {
       return [_withModal(model, { copy: { ...c, idx } }), []];
     }
     case 'copy_select': {
+      // T16 — guard mirrors the cancel-arm pattern. Same defensive
+      // shape as confirm_accept / prompt_submit.
+      if (!model.modes.copyMode) return [model, []];
       const idx = model.modal.copy.idx;
       const next = {
         ..._withModes(model, { copyMode: false }),
@@ -400,6 +412,7 @@ function update(model, msg) {
       return [next, [{ type: 'copy_commit', idx }]];
     }
     case 'copy_cancel':
+      if (!model.modes.copyMode) return [model, []];
       return [{
         ..._withModes(model, { copyMode: false }),
         modal: { ...model.modal, copy: { options: [], idx: 0 } },
@@ -428,6 +441,10 @@ function update(model, msg) {
       return [_withModal(model, { registerPopup: clamped }), []];
     }
     case 'register_popup_drop': {
+      // T16 — gate on the mode flag too. The history-length check
+      // below is the value-no-op guard; the flag guard catches a
+      // stale double-fire after the popup already closed.
+      if (!model.modes.registerPopupMode) return [model, []];
       const rp = model.modal.registerPopup;
       if (model.register.history.length === 0) return [model, []];
       // The leaf returns `[newRegister, removed]`; clamp against the new
@@ -448,6 +465,8 @@ function update(model, msg) {
       return [next, [{ type: 'force_full_repaint' }]];
     }
     case 'register_popup_commit': {
+      // T16 — mirror cancel-arm guard.
+      if (!model.modes.registerPopupMode) return [model, []];
       const idx = model.modal.registerPopup.idx;
       const n = model.register.history.length;
       const baseNext = {
@@ -531,6 +550,9 @@ function update(model, msg) {
       return [model, []];
     }
     case 'cmdline_submit': {
+      // T16 — mirror cmdline_cancel guard; symmetric with submit/
+      // cancel arms across the other modals.
+      if (!model.modes.cmdMode) return [model, []];
       const c = model.modal.cmdline;
       const sel = c.sel;
       const { args } = _cmdlineSplit(c.text);
@@ -544,6 +566,7 @@ function update(model, msg) {
       return [next, had ? [{ type: 'cmdline_run', sel, args }, { type: 'cmdline_clear' }] : [{ type: 'cmdline_clear' }]];
     }
     case 'cmdline_cancel':
+      if (!model.modes.cmdMode) return [model, []];
       return [{
         ..._withModes(model, { cmdMode: false }),
         modal: { ...model.modal, cmdline: { text: '', sel: 0, matches: [] } },
@@ -613,6 +636,8 @@ function update(model, msg) {
       return [_withModal(model, { menu: { ...mm, idx: i } }), []];
     }
     case 'menu_activate': {
+      // T16 — mirror menu_close guard.
+      if (!model.modes.menuOpen) return [model, []];
       const mm = model.modal.menu;
       const item = mm.items[mm.idx];
       const next = {

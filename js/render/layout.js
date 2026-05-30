@@ -1,13 +1,21 @@
 /**
  * Layout calculation and view mode rendering.
  *
- * Post-Phase-1e: the geometry (panelHeights / panelBounds) lives on the
- * layout Component's slice, written during the render pass. This module
- * IS the writer — the slice owns the data; the render pass refills it
- * each frame; downstream readers (per-panel render fns, mouse hit-tests,
- * design-mode drag math) read it back via getComponentSlice('layout').
- * The render is one of the regular "Component writes its own slice"
- * paths now — no longer a blessed exception.
+ * Geometry as view-derived data (docs/v0.5-layering.md §5). The layout
+ * Component's slice holds `panelHeights` + `panelBounds`, but they are
+ * recomputed per-frame from terminal size + arrange settings — this
+ * module is the writer. Downstream readers (per-panel render fns,
+ * mouse hit-tests in input.js, design-mode drag math, terminal overlay
+ * positioning) consume them via getComponentSlice('layout').
+ *
+ * This is the one pattern that sits outside the otherwise-uniform
+ * "Component update is the single writer of its slice" rule. The
+ * justification is layering: the geometry is a pure function of view
+ * state (term size, arrange, viewMode) and would be wasteful to route
+ * through a Msg every frame. The viewer Component does the same for
+ * `panelBounds.detail.tabs` (the tab-bar hit-test cache, viewer.js
+ * §detailTitle). Pure-TEA freeze tests on the layout slice must
+ * whitelist these renderer-written fields.
  *
  * Zero npm dependencies (uses local modules).
  */
@@ -179,9 +187,13 @@ function calcLayout(model = getModel()) {
     layoutSlice.panelHeights.detail = Math.max(minH, Math.floor(availH * layoutSlice.arrange.detailHeightPct / 100));
   }
 
-  // Heights settled — keep each panel's scroll offset such that the selected
-  // item is in view. Done here (not inside render) so renderers stay pure
-  // and resize alone (without selection movement) still re-syncs scroll.
+  // Heights settled — keep each panel's scroll offset such that the
+  // selected item is in view. syncPanelScroll → setScroll → a wrapped
+  // `set_scroll` Msg to the owning navigator's update, which is the
+  // single writer for nav.scroll. The Msg-from-layout-pass pattern
+  // is the documented blessed exception per v0.5-layering.md §5; the
+  // navigator's `set_scroll` arm is pure + idempotent (returns same
+  // ref when the value is unchanged), so re-renders don't ping-pong.
   for (const p of [...layoutSlice.arrange.leftPanels, ...layoutSlice.arrange.rightPanels]) {
     if (p.type === 'detail') continue;
     syncPanelScroll(p.type, layoutSlice.panelHeights[p.type] - 2);
@@ -242,14 +254,13 @@ function paintColumns(leftOutput, rightOutput) {
   return didFull;
 }
 
-// renderNormal/Half/Full take the threaded model: they read/write the
-// derived layout chrome (panelBounds/panelHeights/layout/focus) on it.
-// allPanels()/calcLayout() stay state-helpers; rendererFor() hands each
-// panel its slice (Component) or the model (Plugin).
+// renderNormal/Half/Full populate `layoutSlice.panelBounds` directly —
+// the renderer-as-writer pattern documented in the file header (§5
+// view-derived data). Reset on every entry so stale entries from a
+// prior view-mode aren't hit-testable.
 function renderNormal(model) {
   const { leftW, rightW } = calcLayout(model);
   const layoutSlice = getComponentSlice('layout');
-  // Reset bounds — stale entries from a prior view-mode mustn't be hit-testable.
   layoutSlice.panelBounds = {};
   let leftY = 0;
   const leftOutputs = layoutSlice.arrange.leftPanels.map(p => {
@@ -352,10 +363,18 @@ function renderTerminalOverlay(model = getModel()) {
 
   // Show exit prompt if process died (overlay on bottom content row)
   if (session.exited) {
-    // Route the stale-flag cleanup through update so single-writer holds —
-    // terminal_exit also force_full_repaints when viewMode was 'full', which
-    // is the right thing on a PTY exit anyway (chrome reclaims rows).
-    if (model.modes.terminalMode) require('../dispatch/dispatch').applyMsg({ type: 'terminal_exit' });
+    // T14 — defer the stale-flag cleanup to the next tick. Dispatching
+    // applyMsg('terminal_exit') inline from a render path cascades
+    // synchronously (setModel → view_drop_full_to_normal → force_full_
+    // repaint Cmd → resets the layout-module-local _prevRows mid-paint
+    // + leaves the captured `model` arg in the caller stale). The
+    // setImmediate defer means the next render frame picks up the
+    // post-Msg state cleanly; this frame just paints the "Process
+    // exited" overlay on top of the still-terminalMode chrome — a
+    // single-frame harmless lag, not a structural mid-render mutation.
+    if (model.modes.terminalMode) {
+      setImmediate(() => require('../dispatch/dispatch').applyMsg({ type: 'terminal_exit' }));
+    }
     const msg = ` Process exited: ${session.exitCode} — Enter restart, x close `;
     const text = msg.length > innerW ? msg.slice(0, innerW) : msg;
     const padding = Math.max(0, Math.floor((innerW - text.length) / 2));

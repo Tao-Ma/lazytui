@@ -75,6 +75,7 @@ function _containers() {
 let _eventsProc = null;
 let _eventsBuf = '';
 let _eventsRefreshTimer = null;
+let _eventsReconnectTimer = null;       // T17: tracked so stopEventsStream can cancel
 let _eventsExitHandler = null;
 const EVENTS_DEBOUNCE_MS = 200;
 const EVENTS_RECONNECT_MS = 5000;
@@ -131,7 +132,19 @@ function startEventsStream(config) {
       ['events', '--filter', 'type=container', '--format', '{{json .}}'],
       { stdio: ['ignore', 'pipe', 'ignore'] });
   } catch (e) {
+    // T17 — pre-fix, a spawn failure (no `docker` on PATH) left the
+    // slice's `eventsStarted: true` latch on with no reconnect path
+    // ever firing (proc.on('exit') needs a proc). Schedule a retry
+    // through the same reconnect timer so a later `docker` install
+    // (or PATH fix) eventually picks the stream up.
     console.error(`[docker:events] spawn failed: ${e.message}`);
+    if (!_eventsReconnectTimer) {
+      _eventsReconnectTimer = setTimeout(() => {
+        _eventsReconnectTimer = null;
+        startEventsStream(config);
+      }, EVENTS_RECONNECT_MS);
+      _eventsReconnectTimer.unref();
+    }
     return;
   }
   _eventsProc = proc;
@@ -148,7 +161,18 @@ function startEventsStream(config) {
   });
   proc.on('exit', () => {
     if (_eventsProc === proc) _eventsProc = null;
-    if (!proc.killed) setTimeout(() => startEventsStream(config), EVENTS_RECONNECT_MS);
+    if (!proc.killed) {
+      // T17 — track the reconnect timer and .unref() it so we don't
+      // keep the process alive during the 5s reconnect window. Without
+      // the handle, stopEventsStream couldn't cancel it; without
+      // .unref(), Node would hang for 5s after the user's quit just
+      // to fire a reconnect that immediately gets killed.
+      _eventsReconnectTimer = setTimeout(() => {
+        _eventsReconnectTimer = null;
+        startEventsStream(config);
+      }, EVENTS_RECONNECT_MS);
+      _eventsReconnectTimer.unref();
+    }
   });
   proc.on('error', (e) => {
     console.error(`[docker:events] stream error: ${e.message}`);
@@ -161,6 +185,10 @@ function startEventsStream(config) {
 
 function stopEventsStream() {
   if (_eventsRefreshTimer) { clearTimeout(_eventsRefreshTimer); _eventsRefreshTimer = null; }
+  // T17 — cancel the pending reconnect too so cleanup() doesn't race
+  // with a fresh `docker events` spawn after the TUI quit. Symmetric
+  // with the debounce-timer cleanup above.
+  if (_eventsReconnectTimer) { clearTimeout(_eventsReconnectTimer); _eventsReconnectTimer = null; }
   if (_eventsProc) {
     try { _eventsProc.kill(); } catch { /* already dead */ }
     _eventsProc = null;

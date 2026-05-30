@@ -387,6 +387,15 @@ function validateAction(groupPath, aname, adata) {
   if (hasScript && typeof adata.script !== 'string') {
     throw new SchemaError("'script' must be a string", { context: ctx });
   }
+  // T19 — empty / whitespace-only cmd/script accepted pre-fix; runtime
+  // ran `/bin/sh -c ''` as a no-op and the user got no feedback for an
+  // action that simply did nothing. Reject at parse time.
+  if (hasCmd && !adata.cmd.trim()) {
+    throw new SchemaError("'cmd' must not be empty or whitespace-only", { context: ctx });
+  }
+  if (hasScript && !adata.script.trim()) {
+    throw new SchemaError("'script' must not be empty or whitespace-only", { context: ctx });
+  }
 
   if (!('label' in adata)) throw new SchemaError("'label' is required", { context: ctx });
   if (typeof adata.label !== 'string') throw new SchemaError("'label' must be a string", { context: ctx });

@@ -34,10 +34,28 @@ function runEffects(effects) {
   for (const eff of effects) {
     if (!eff || typeof eff.type !== 'string') continue;
     const fn = _handlers[eff.type];
-    if (!fn) { console.error(`[effects] no handler for '${eff.type}'`); continue; }
+    if (!fn) {
+      console.error(`[effects] no handler for '${eff.type}'`);
+      _recordError({ where: 'effects', kind: 'no_handler', effectType: eff.type });
+      continue;
+    }
     try { fn(eff); }
-    catch (e) { console.error(`[effects] '${eff.type}' failed: ${e && e.message}`); }
+    catch (e) {
+      console.error(`[effects] '${eff.type}' failed: ${e && e.message}`);
+      _recordError({ where: 'effects', kind: 'throw', effectType: eff.type,
+        message: e && e.message, stack: e && e.stack });
+    }
   }
+}
+
+// Persist the diagnostic to the event log too — console.error gets
+// painted over by the next render, so without this a thrown effect
+// (ReferenceError class, same as the T6 handleFilterKey bug) is
+// invisible to anyone trying to debug from a recorded session.
+// Lazy-require keeps effects.js dep-light + importable from tests.
+function _recordError(payload) {
+  try { require('./event-log').record('error', payload); }
+  catch (_) { /* event-log unavailable — already logged to console */ }
 }
 
 /** Clear all handlers — test isolation only. */
@@ -145,10 +163,10 @@ function installBuiltins() {
   // trailing render() paints the overlay-gone frame BEFORE spawn() blocks
   // (preserves the pre-TEA setImmediate-on-commit behavior).
   registerEffect('do_run', (eff) => {
-    setImmediate(() => require('./action-runner').doRun(getModel(), eff.actionKey, eff.action, eff.args));
+    setImmediate(() => require('./action-runner').doRun(eff.actionKey, eff.action, eff.args));
   });
   registerEffect('run_action', (eff) => {
-    setImmediate(() => require('./action-runner').runAction(getModel(), eff.actionKey, eff.action, eff.args));
+    setImmediate(() => require('./action-runner').runAction(eff.actionKey, eff.action, eff.args));
   });
   // kill_proc / stream_action: emitted by detail.update's tab_switch case.
   // Killing a streaming run-action stops bleed-through when the user
@@ -191,9 +209,8 @@ function installBuiltins() {
   // carries its hotkey as a suffix; everything else is a bare handleAction verb.
   registerEffect('menu_action', (eff) => {
     const dispatch = require('./dispatch');
-    const m = getModel();
-    if (eff.action.startsWith('focus_panel:')) dispatch.handleAction(m, 'focus_panel', eff.action.split(':')[1]);
-    else dispatch.handleAction(m, eff.action);
+    if (eff.action.startsWith('focus_panel:')) dispatch.handleAction('focus_panel', eff.action.split(':')[1]);
+    else dispatch.handleAction(eff.action);
   });
   // run_binding: a resolved leader leaf. Surface sync throws + async
   // rejections (mirrors the `:` cmdline path) rather than swallowing them.

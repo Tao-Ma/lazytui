@@ -299,7 +299,7 @@ function selectGroup(idx) {
   // Phase 4b — the uniform `nav_select` Msg retired; dispatch.navSelect
   // does the per-Component routing (set_cursor → owning Component +
   // show_selected_info + the groups_selected cascade).
-  require('../dispatch/dispatch').navSelect(getModel(), 'groups', idx);
+  require('../dispatch/dispatch').navSelect('groups', idx);
 }
 
 function setDetail(text) {
