@@ -155,7 +155,7 @@ function scrollToActive(slice) {
   const s = slice.search;
   const m = s.matches[s.idx];
   if (!m) return;
-  const layoutSlice = require('./plugins/api').getComponentSlice('layout');
+  const layoutSlice = require('./components/api').getComponentSlice('layout');
   const ph = layoutSlice && layoutSlice.panelHeights;
   const h = ph && ph.detail;
   const innerH = Math.max(1, (h || 6) - 2);

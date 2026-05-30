@@ -9,7 +9,6 @@ const { visibleLen, stripMarkup, charWidth, richToAnsi, RESET } = require('./ans
 const { scrollbar } = require('./scrollbar');
 const { theme } = require('./themes');
 const { cols, rows, stdout } = require('./term');
-const { decorate } = require('./decorators');
 
 const BORDER = { tl: '╭', tr: '╮', bl: '╰', br: '╯', h: '─', v: '│' };
 const THUMB = '▐';
@@ -70,14 +69,9 @@ function renderPanel({
   let titleText = '';
   if (hotkey) titleText += `(${hotkey})`;
   if (title) titleText += `─${title}`;
-  // Plugins may decorate the title bar (DECORATORS.md `title:<panelType>`).
-  // Skipped for overlays (no panelType passed). Budget: leave room for at
-  // least 4 trailing dashes so the right border separator stays visible.
-  if (panelType) {
-    const titleBudget = Math.max(0, innerW - 2 - visibleLen(titleText) - 4);
-    const titleExtra = decorate('title:' + panelType, { panelType, width: titleBudget });
-    if (titleExtra) titleText += `, ${titleExtra}`;
-  }
+  // Phase 5 — title-bar decoration framework retired; nothing in tree
+  // contributed and the extension point was unused. Components own their
+  // own title composition inline (e.g. groups' tab strip in _groupsTitle).
   // Use visibleLen for fill so escaped markup (\[ → [) doesn't
   // miscount and shift the right border. JS-length truncation is fine
   // for the upper bound since visibleLen <= length.

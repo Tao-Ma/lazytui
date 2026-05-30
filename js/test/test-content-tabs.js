@@ -9,7 +9,7 @@
 const tabs = require('../tabs');
 const { describe, it, eq, assert, report } = require('./test-runner');
 const { getModel } = require('../runtime');
-const { getComponentSlice } = require('../plugins/api');
+const { getComponentSlice } = require('../components/api');
 
 
 function freshGroup({ actions = {}, terminals = {} } = {}) {

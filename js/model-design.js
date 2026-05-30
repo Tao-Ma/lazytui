@@ -26,7 +26,7 @@ const MAX_UNDO = 50;
 // = true`. Lazy-required here so this leaf stays dependency-free at
 // load time (plugins/api requires runtime, which requires us).
 function _markDirty() {
-  const slice = require('./plugins/api').getComponentSlice('layout');
+  const slice = require('./components/api').getComponentSlice('layout');
   if (slice) slice.dirty = true;
 }
 
@@ -34,14 +34,14 @@ function _markDirty() {
 // what used to live at `model.modal.design`). Same lazy-require pattern
 // as _markDirty.
 function _designSlice() {
-  const slice = require('./plugins/api').getComponentSlice('layout');
+  const slice = require('./components/api').getComponentSlice('layout');
   return slice ? slice.design : null;
 }
 
 // Layout Component slice — for reads of panelBounds (frame geometry,
 // written by layout.js's render pass) used by the hit-test math here.
 function _layoutSlice() {
-  return require('./plugins/api').getComponentSlice('layout');
+  return require('./components/api').getComponentSlice('layout');
 }
 
 // The arrange struct (was `model.layout` pre-1g): leftPanels,

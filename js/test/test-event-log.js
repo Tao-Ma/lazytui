@@ -145,7 +145,7 @@ describe('[5] hooks fire from the wired sources', () => {
 
   it('plugins.refreshAll appends a "refresh" event', async () => {
     log.clear();
-    const { refreshAll } = require('../plugins/api');
+    const { refreshAll } = require('../components/api');
     await refreshAll({});
     const evs = log.snapshot();
     eq(evs.length, 1, 'one event recorded');

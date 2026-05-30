@@ -8,13 +8,14 @@
  */
 'use strict';
 
-const { getModel } = require('../../runtime');
+const { getModel } = require('../runtime');
+const mnav = require('../model-nav');
 const {
-  esc, visibleLen, theme, renderPanel,
-  getSel, getScroll, isMultiSel, getFilter, decorate,
+  esc, theme, renderPanel,
+  getSel, getScroll, isMultiSel, getFilter,
   getGroupActions, getItems: apiGetItems,
   getComponentSlice,
-} = require('../api');
+} = require('./api');
 
 /**
  * Raw [key, action] tuples for the current group. Filtering is applied
@@ -86,22 +87,9 @@ function actionRow([key, action], i) {
 
 function render(panel, w, h) {
   const actions = apiGetItems('actions');
-  const innerW = w - 2;
   const sel = getSel('actions');
   const isFocused = getComponentSlice("layout").focus === 'actions';
-  const lines = actions.map((item, i) => {
-    const isSel = i === sel && isFocused;
-    const ctx = { panelType: 'actions', item, selected: isSel };
-    const baseRow = actionRow(item, i);
-    const left = decorate('row:left:actions', { ...ctx, width: 4 });
-    const used = visibleLen(baseRow) + (left ? visibleLen(left) + 1 : 0);
-    const right = decorate('row:right:actions', { ...ctx, width: Math.max(0, innerW - used - 1) });
-    // actionRow already starts with the mark+space gutter; left content
-    // splices in after the gutter (preserve the existing marker pattern
-    // so the row formatter doesn't have to learn about decorators).
-    const withLeft = left ? `${baseRow.slice(0, 2)}${left} ${baseRow.slice(2)}` : baseRow;
-    return right ? `${withLeft} ${right}` : withLeft;
-  });
+  const lines = actions.map((item, i) => actionRow(item, i));
   const filterText = getFilter('actions');
   const title = filterText ? `${panel.title} /${esc(filterText)}` : panel.title;
   return renderPanel({
@@ -121,8 +109,11 @@ function render(panel, w, h) {
 // one panel shape. See docs/v0.5-layering.md.
 module.exports = {
   name: 'actions',
-  init: () => ({}),
-  update: (msg, slice) => slice,
+  // Phase 4a — nav chrome (cursor / scroll / multiSel) lives on the
+  // Component's slice now; the shared leaf in model-nav handles the
+  // five Msg shapes uniformly across every Navigator.
+  init: () => ({ nav: { actions: mnav.init() } }),
+  update: (msg, slice) => mnav.isNavMsg(msg) ? mnav.apply(slice, msg) : slice,
   panelTypes: {
     actions: {
       mode: 'list', render,

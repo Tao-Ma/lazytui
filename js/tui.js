@@ -5,7 +5,7 @@
  *
  * Usage: node tui.js [--design] <config.yml|config.json>
  *        node tui.js <config> --exec <group>:<action> [args...]
- *        node tui.js --spec   (print plugin authoring spec to stdout)
+ *        node tui.js --spec   (print Component authoring spec to stdout)
  *        node tui.js --help
  */
 'use strict';
@@ -14,9 +14,9 @@ const fs = require('fs');
 const path = require('path');
 const { loadConfig, initState } = require('./state');
 
-// Heavy modules (terminal.js → node-pty, layout/render, plugin runtime) are
-// loaded lazily inside the TUI branch in main() so CLI mode (--exec) doesn't
-// pull in the render pipeline or its native deps.
+// Heavy modules (terminal.js → node-pty, layout/render, Component runtime)
+// are loaded lazily inside the TUI branch in main() so CLI mode (--exec)
+// doesn't pull in the render pipeline or its native deps.
 
 const USAGE = `Usage: node tui.js [options] <config.yml|config.json>
 
@@ -27,7 +27,7 @@ Options:
                              Only type: run is supported in CLI mode.
   --list [filter]            Print every YAML action (path, label, desc).
                              Optional substring filters by path.
-  --spec                     Print the plugin authoring spec to stdout
+  --spec                     Print the Component authoring spec to stdout
   -h, --help                 Show this help, then exit
 
 Examples:
@@ -38,24 +38,24 @@ Examples:
   node tui.js test.yml --exec detail:info
   node tui.js test.yml --exec base.observe.status:list 50
   node tui.js --spec | less
-  node tui.js --spec > plugin-spec.md   # feed to an LLM as context
+  node tui.js --spec > component-spec.md   # feed to an LLM as context
 
-The plugin authoring spec is the concatenation of SPEC.md plus
-PRINCIPLES.md, PLUGINS.md, PROJECT.md, HUB.md, DECORATORS.md,
-LAYOUT.md from this repo. Use it to write a new plugin without
-searching the codebase. AI agents: read --spec output before writing
-plugin code.`;
+The Component authoring spec is the concatenation of SPEC.md plus
+PRINCIPLES.md, PLUGINS.md, PROJECT.md, HUB.md, LAYOUT.md from this
+repo. Use it to write a new Component without searching the codebase.
+AI agents: read --spec output before writing Component code.`;
 
 // Order matters — SPEC.md is the entry/quickstart, then invariants,
-// then plugin contract, then user-project contract (consumer-side
+// then Component contract, then user-project contract (consumer-side
 // of the same boundary), then optional layers, then layout reference.
+// (DECORATORS.md retired in v0.5 Phase 5; the file is a one-page
+// retirement note and isn't part of the authoring bundle anymore.)
 const SPEC_DOCS = [
   'SPEC.md',
   'PRINCIPLES.md',
   'PLUGINS.md',
   'PROJECT.md',
   'HUB.md',
-  'DECORATORS.md',
   'LAYOUT.md',
 ];
 
@@ -139,15 +139,15 @@ function main() {
   const { hideCursor } = require('./term');
   const { render, redraw, renderTerminalOverlay } = require('./layout');
   const { scheduleRender } = require('./render-queue');
-  const { registerComponent, loadPlugins, refreshAll, startRefreshLoops } = require('./plugins/api');
+  const { registerComponent, refreshAll } = require('./components/api');
   const { setupKeyListener } = require('./input');
   const { getModel } = require('./runtime');
   const { destroyAll: destroyTerminals } = require('./terminal');
   const { installSuspendHandlers } = require('./suspend');
 
   // Install the Component effect handlers (setDetail/focus/render) before any
-  // plugin/component registers — a migrated component's update→effects must
-  // resolve at first dispatch.
+  // Component registers — a Component's update→effects must resolve at
+  // first dispatch.
   require('./effects').installBuiltins();
 
   loadConfig(configArgs[0]);
@@ -160,37 +160,41 @@ function main() {
   // layout (chrome-only) — the frame Component (Phase 1a skeleton; subsequent
   // sub-phases migrate focus/viewMode/design/arrange into its slice). See
   // docs/v0.5-layout-component.md.
-  registerComponent(require('./plugins/core/layout'));
+  registerComponent(require('./components/layout'));
   // BLESSED outside-writer: boot-time write of the --design CLI flag into
   // the layout slice. Write-once at boot, after the layout Component is
   // registered (so the slice exists). No runtime mutation.
-  require('./plugins/api').getComponentSlice('layout').design.enabled = designEnabled;
-  registerComponent(require('./plugins/docker'));
-  registerComponent(require('./plugins/config-status'));
-  registerComponent(require('./plugins/files'));
-  registerComponent(require('./plugins/core/actions'));
-  registerComponent(require('./plugins/core/stats'));
-  registerComponent(require('./plugins/core/history'));
-  registerComponent(require('./plugins/core/file-manager'));
-  // detail (the viewer) — Phase B: owns the viewer slice + update; the
-  // last panel migrated to the Component shape. groups stays the only
-  // Plugin (currentGroup is app-wide chrome, not panel-private).
-  registerComponent(require('./plugins/core/viewer'));
-  // groups (Phase C — the last in-tree Plugin migrated). Owns the tree slice
-  // (list / expanded / tab); the cascade (currentGroup / per-group root chrome
-  // reset / viewer reset) goes out as apply_msg / dispatch_msg Cmds.
-  registerComponent(require('./plugins/core/groups'));
+  require('./components/api').getComponentSlice('layout').design.enabled = designEnabled;
+  registerComponent(require('./components/docker'));
+  registerComponent(require('./components/config-status'));
+  registerComponent(require('./components/files'));
+  registerComponent(require('./components/actions'));
+  registerComponent(require('./components/stats'));
+  registerComponent(require('./components/history'));
+  registerComponent(require('./components/file-manager'));
+  // detail (the viewer) — owns the viewer slice + update; the last panel
+  // migrated to the Component shape in v0.5 Phase B.
+  registerComponent(require('./components/viewer'));
+  // groups (last in-tree migration, v0.5 Phase C). Owns the tree slice
+  // (list / expanded / tab); the cascade (currentGroup / per-group root
+  // chrome reset / viewer reset) goes out as apply_msg / dispatch_msg Cmds.
+  registerComponent(require('./components/groups'));
 
-  // Load user plugins from YAML
-  const configDir = path.dirname(path.resolve(configArgs[0]));
-  loadPlugins(getModel().config.plugins, configDir);
+  // Phase 6 — the legacy Plugin API + YAML `plugins:` loader retired.
+  // External authors write Components and register them the same way
+  // the built-ins above do. A non-empty `plugins:` block in the config
+  // is now an unused field (the parser still accepts it; nothing reads it).
+  if (getModel().config && getModel().config.plugins
+      && Object.keys(getModel().config.plugins).length > 0) {
+    console.error('[config] `plugins:` block is no longer loaded (Plugin API retired in v0.5 Phase 6); migrate to Components.');
+  }
 
   // Register any leader-key bindings declared in the top-level `keys:`
-  // block, after plugins so the binding-tree conflict check sees the
-  // full picture. Built-in chords are already registered at module load
-  // (and are overridable by user bindings). A genuine conflict between
-  // two user bindings throws — surface it as a clean config error and
-  // exit rather than crashing the boot with a raw stack trace.
+  // block, after Component registration so the binding-tree conflict
+  // check sees the full picture. Built-in chords are already registered
+  // at module load (and are overridable by user bindings). A genuine
+  // conflict between two user bindings throws — surface it as a clean
+  // config error and exit rather than crashing the boot with a raw stack.
   try {
     require('./dispatch').loadKeyBindings(getModel().config);
   } catch (e) {
@@ -212,28 +216,22 @@ function main() {
   hideCursor();
   installSuspendHandlers();   // Ctrl+Z: restore terminal → suspend → resume
   // Initial refresh kicks off async — first frame uses cached/empty data,
-  // re-renders when plugins finish. UX: brief "no data" flash on first paint
-  // is acceptable; freezing the boot wasn't.
-  refreshAll(getModel().config).then(() => render(model));
+  // re-renders when each Component's refresh-Msg handler folds results
+  // back via dispatchMsg. UX: brief "no data" flash on first paint is
+  // acceptable; freezing the boot wasn't.
+  refreshAll().then(() => render(model));
   redraw();
   setupKeyListener(model);
 
-  // Per-plugin refresh loops. Each plugin self-schedules at its declared
-  // `refreshIntervalMs` (default 10000). Overlap-skip + focus-gating
-  // happen inside startRefreshLoops; the call here just wires the
-  // dependencies (config + focus state + paint callback). This replaces
-  // the previous single setTimeout loop that fanned out to every plugin
-  // on the same 10s tick — stats can now declare 1s, archive can
-  // declare 5min, docker stays at 10s.
-  startRefreshLoops(getModel().config, {
-    isFocused: () => model.focused,
-    onChanged: () => render(model),
-  });
+  // Phase 6 — the framework's per-Plugin refresh-loop retired. Components
+  // that need periodic polling (docker, files, config-status) self-arm
+  // from their `refresh`-Msg handler via a `tick` effect; the cadence is
+  // entirely Component-owned (the self-re-arming-tick Cmd pattern).
 
   // Safety-net poll for terminal overlay — primary updates come from
   // xterm.write callback (event-driven). This catches edge cases where
   // internal state changes without parse events. Always-on so ephemeral
-  // terminals (created at runtime via plugins) are covered too. The
+  // terminals (created at runtime by Components) are covered too. The
   // function returns immediately if no terminal tab is active.
   setInterval(() => renderTerminalOverlay(), 250);
 

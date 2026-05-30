@@ -21,14 +21,14 @@
  */
 'use strict';
 
-const { getTabInfo, isTerminalTab } = require('../../tabs');
+const { getTabInfo, isTerminalTab } = require('../tabs');
 const {
-  esc, visibleLen, renderPanel, decorate,
+  esc, visibleLen, renderPanel,
   getComponentSlice,
-} = require('../api');
-const ms = require('../../model-search');
-const mt = require('../../model-tabs');
-const { getModel } = require('../../runtime');
+} = require('./api');
+const ms = require('../model-search');
+const mt = require('../model-tabs');
+const { getModel } = require('../runtime');
 
 // --- init ---
 
@@ -127,7 +127,7 @@ function update(msg, slice) {
       const effects = [];
       // focus_set is layout-owned (Phase 1c). Phase 2a — inner msg wrapped
       // so the dispatch_msg handler routes through layout directly.
-      if (out.focusDetail)   effects.push({ type: 'dispatch_msg', msg: require('../api').wrap('layout', { type: 'focus_set', focus: 'detail' }) });
+      if (out.focusDetail)   effects.push({ type: 'dispatch_msg', msg: require('./api').wrap('layout', { type: 'focus_set', focus: 'detail' }) });
       if (out.terminalEnter) effects.push({ type: 'apply_msg', msg: { type: 'terminal_enter' } });
       return [slice, effects];
     }
@@ -142,7 +142,7 @@ function update(msg, slice) {
       const out = mt.addContent(slice, getModel(), msg);
       const effects = [];
       // focus_set is layout-owned (Phase 1c). Phase 2a — wrapped (see addEphemeral).
-      if (out.focusDetail)  effects.push({ type: 'dispatch_msg', msg: require('../api').wrap('layout', { type: 'focus_set', focus: 'detail' }) });
+      if (out.focusDetail)  effects.push({ type: 'dispatch_msg', msg: require('./api').wrap('layout', { type: 'focus_set', focus: 'detail' }) });
       if (out.terminalExit) effects.push({ type: 'apply_msg', msg: { type: 'terminal_exit' } });
       return [slice, effects];
     }
@@ -202,12 +202,7 @@ function update(msg, slice) {
 
 // --- panel renderer (reads the slice directly) ---
 
-function tabSlot(label) {
-  return 'tab:' + label.toLowerCase().replace(/\s+/g, '-');
-}
-
 function detailTitle(slice) {
-  const m = getModel();
   const tabBounds = [];
   const { actionTabs, termTabs, contentTabs } = getTabInfo();
   const layoutSlice = getComponentSlice('layout');
@@ -215,17 +210,19 @@ function detailTitle(slice) {
   if (!actionTabs.length && !termTabs.length && !contentTabs.length) return 'Detail';
   const parts = [];
   const tab = slice.tab;
-  const pushTab = (label, isActive, item) => {
-    const extra = decorate(tabSlot(label), { tabId: tabSlot(label), item, active: isActive });
-    const text = extra ? `${esc(label)} ${extra}` : esc(label);
+  // Phase 5 — per-tab decorator slot retired; the decorate framework had
+  // no in-tree contributor and gave plugins no realistic seam (tab labels
+  // are panel-managed). Tabs render plain.
+  const pushTab = (label, isActive) => {
+    const text = esc(label);
     parts.push(isActive ? `\\[${text}]` : text);
   };
-  pushTab('Info', tab === 0, null);
-  actionTabs.forEach(([, action], i) => pushTab(action.label, tab === i + 1, action));
+  pushTab('Info', tab === 0);
+  actionTabs.forEach(([, action], i) => pushTab(action.label, tab === i + 1));
   const termOffset = 1 + actionTabs.length;
-  termTabs.forEach(([, term], i) => pushTab(term.label, tab === termOffset + i, term));
+  termTabs.forEach(([, term], i) => pushTab(term.label, tab === termOffset + i));
   const contentOffset = 1 + actionTabs.length + termTabs.length;
-  contentTabs.forEach(([, info], i) => pushTab(info.label, tab === contentOffset + i, info));
+  contentTabs.forEach(([, info], i) => pushTab(info.label, tab === contentOffset + i));
   const dp = getComponentSlice('layout').arrange.rightPanels.find(p => p.type === 'detail');
   const hotkey = dp ? dp.hotkey : '';
   let xOffset = 2 + (hotkey ? 2 + hotkey.length : 0) + 1;
@@ -257,8 +254,8 @@ function render(panel, w, h, slice) {
     count = [slice.scroll + innerH, slice.lines.length];
   }
   let lines = slice.lines;
-  const select = require('../../select');
-  const search = require('../../viewer-search');
+  const select = require('../select');
+  const search = require('../viewer-search');
   if (select.isActive()) {
     lines = select.decorateLines(lines);
   } else {

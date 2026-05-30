@@ -7,16 +7,20 @@
 'use strict';
 
 const { toggleMultiSel, isMultiSel, clearMultiSel, multiSelCount,
-        resetGroupContext } = require('../state');
-const api = require('../plugins/api');
+        setSel, resetGroupContext } = require('../state');
+const api = require('../components/api');
 const { describe, it, assert, eq, report } = require('./test-runner');
 const { getModel } = require('../runtime');
-const { getComponentSlice } = require('../plugins/api');
+const { getComponentSlice } = require('../components/api');
+const mnav = require('../model-nav');
 
-
-// Reset state for a clean slate.
-getModel().ui.multiSel = {};
-getModel().ui.sel = {};
+// Phase 4a — multi-select state lives on each Navigator Component's
+// `slice.nav[panelType].multiSel`. test-runner registers layout/detail/
+// groups; register the rest the test exercises so panel-type → Component
+// lookup resolves.
+api.registerComponent(require('../components/docker'));
+api.registerComponent(require('../components/actions'));
+api.registerComponent(require('../components/file-manager'));
 
 describe('[1] empty state', () => {
   it('no panel has selection initially', () => {
@@ -38,11 +42,12 @@ describe('[2] toggle on / off', () => {
   });
 });
 
-describe('[3] empty Set is removed', () => {
-  it('no leak when set drains to zero', () => {
+describe('[3] empty Set semantics', () => {
+  it('count goes to 0 when set drains', () => {
     toggleMultiSel('containers', 'gitea');     // count → 0
     eq(multiSelCount('containers'), 0, 'count = 0');
-    assert(!('containers' in getModel().ui.multiSel), 'empty Set deleted from getModel().ui.multiSel');
+    // Phase 4a — the nav entry always exists on the Component's slice;
+    // "no selection" is `multiSel.size === 0`, not a missing key.
   });
 });
 
@@ -74,7 +79,7 @@ describe('[6] resetGroupContext drops only containers + actions', () => {
     eq(multiSelCount('actions'), 1, 'actions has selection');
     eq(multiSelCount('file-manager'), 1, 'file-manager has selection');
     getComponentSlice('groups').list = [{ name: 'dev9', containers: [] }];
-    getModel().ui.sel = { groups: 0 };
+    setSel('groups', 0);
     getModel().config = { groups: { dev9: { name: 'dev9' } } };
     resetGroupContext();
     eq(multiSelCount('containers'), 0, 'containers cleared on group switch');
@@ -94,11 +99,13 @@ describe('[7] idOf default fallback', () => {
 
 describe('[8] selectedOrFocused with multi-selection', () => {
   it('multi-select takes priority over focused row', () => {
-    getModel().ui.multiSel = {};
-    getModel().ui.sel = {};
-    // Register a fake panel via the plugin API so getItems works.
-    api.registerPlugin({
+    // Phase 4a — register as a Component (not a Plugin) so the helper-
+    // resolved per-panel nav slice exists. Shared nav leaf handles the
+    // five Msgs uniformly.
+    api.registerComponent({
       name: 'test',
+      init: () => ({ nav: { test: mnav.init() } }),
+      update: (msg, slice) => mnav.isNavMsg(msg) ? mnav.apply(slice, msg) : slice,
       panelTypes: {
         test: {
           mode: 'list',
@@ -108,7 +115,8 @@ describe('[8] selectedOrFocused with multi-selection', () => {
         },
       },
     });
-    getModel().ui.sel.test = 1;  // focused on 'b'
+    clearMultiSel('test');
+    setSel('test', 1);  // focused on 'b'
     eq(api.selectedOrFocused('test'), ['b'], 'no multi-select → focused single');
     toggleMultiSel('test', 'a');
     toggleMultiSel('test', 'c');
@@ -119,8 +127,10 @@ describe('[8] selectedOrFocused with multi-selection', () => {
 
 describe('[9] selectedOrFocused with empty getItems', () => {
   it('no items → []', () => {
-    api.registerPlugin({
+    api.registerComponent({
       name: 'empty',
+      init: () => ({ nav: { empty: mnav.init() } }),
+      update: (msg, slice) => mnav.isNavMsg(msg) ? mnav.apply(slice, msg) : slice,
       panelTypes: {
         empty: { mode: 'list', render: () => '', getItems: () => [] },
       },

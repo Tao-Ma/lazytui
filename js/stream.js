@@ -38,7 +38,7 @@ function killCurrentProc() {
 // model, so it bridges via getModel(); dispatch is lazy-required to dodge the
 // stream → dispatch → actions → stream load cycle. These Msgs emit no Cmds.
 function appendDetailLine(line) {
-  require('./plugins/api').dispatchMsg(require('./plugins/api').wrap('detail', { type: 'viewer_append', line }));
+  require('./components/api').dispatchMsg(require('./components/api').wrap('detail', { type: 'viewer_append', line }));
 }
 
 /**
@@ -48,7 +48,7 @@ function appendDetailLine(line) {
  */
 function streamCommand(headerLabel, cmd, args = []) {
   killCurrentProc();
-  require('./plugins/api').dispatchMsg(require('./plugins/api').wrap('detail', { type: 'stream_start', header: `[dim]$ ${headerLabel}[/]` }));
+  require('./components/api').dispatchMsg(require('./components/api').wrap('detail', { type: 'stream_start', header: `[dim]$ ${headerLabel}[/]` }));
   scheduleRender();
 
   // -- delimiter so $0 = "--", $1 = first arg, $@ = arg list (POSIX).

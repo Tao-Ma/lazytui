@@ -14,10 +14,18 @@
 
 const { describe, it, eq, assert, report } = require('./test-runner');
 const { getModel } = require('../runtime');
-const { getComponentSlice } = require('../plugins/api');
+const api = require('../components/api');
+const { getComponentSlice } = api;
 
+// Phase 4a — `getSel('containers')` walks panel-type → owning Component
+// (docker) → its slice.nav, so the Component must be registered (layout
+// first per Phase 3) for the helper to resolve. The Component-level [6]
+// section below re-registers; that's idempotent.
+api.registerComponent(require('../components/layout'));
+const docker = require('../components/docker');
+api.registerComponent(docker);
+const { setSel } = require('../state');
 
-const docker = require('../plugins/docker');
 const { _update } = docker;
 
 // Fresh literal slice (avoid _init() — it re-defines the hub topic each call).
@@ -28,10 +36,11 @@ function slice0() {
 function setup(containers = ['c1', 'c2'], focused = true) {
   getModel().config = { groups: { g1: { name: 'g1', containers } } };
   getModel().currentGroup = 'g1';
-  getModel().ui.sel = { containers: 0 };
-  getModel().ui.scroll = {};
   getModel().ui.filters = {};
-  getModel().ui.multiSel = {};
+  // Reset per-panel nav chrome on the docker Component's slice for a
+  // deterministic baseline (cursor → 0, multiSel empty).
+  setSel('containers', 0);
+  api.dispatchMsg(api.wrap('docker', { type: 'multisel_clear', panel: 'containers' }));
   getComponentSlice("layout").focus = 'containers';
   getModel().focused = focused;
 }
@@ -120,7 +129,7 @@ describe('[4] dockerResult folds maps + clears the guard', () => {
 describe('[5] i/t/s key Msgs emit stream/shell effects on the focused row', () => {
   it('i → inspect, t → logs, s → shell, targeting the selected container', () => {
     setup(['c1', 'c2']);
-    getModel().ui.sel.containers = 1;  // c2 focused
+    setSel('containers', 1);  // c2 focused
     const i = step({ type: 'key', key: 'i' }, slice0());
     eq(i.effects[0].type, 'dockerExec');
     eq(i.effects[0].mode, 'inspect');
@@ -141,7 +150,7 @@ describe('[5] i/t/s key Msgs emit stream/shell effects on the focused row', () =
 
 describe('[6] registered Component — slice-backed reads', () => {
   it('statusFor + getInfo reflect the folded slice', () => {
-    const api = require('../plugins/api');
+    const api = require('../components/api');
     require('../effects').installBuiltins();
     api.registerComponent(docker);
     setup(['c1']);

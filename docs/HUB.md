@@ -33,8 +33,8 @@ design and its own branch:
 | Layer | What it is | Status |
 |-------|-----------|--------|
 | **Hub** (this doc) | Pub/sub data bus. No opinion about UI. | Shipped. |
-| **Decorator framework** | Generic plugin extension for UI surfaces — footer/status line (powerline / tmux style), panel rows, panel titles. Slot-based. | Not started. Needs its own design doc + branch. Footer is the canonical first consumer. |
-| **Stats panel type** | A YAML-declarable `type: stats` (or `type: graph`) panel that takes `topic:` and renders bars / tables / sparklines from hub data. | Not started. Independent of the decorator framework. |
+| **Decorator framework** | Generic plugin extension for UI surfaces — footer/status line (powerline / tmux style), panel rows, panel titles. Slot-based. | Retired in v0.5 Phase 5. Footer contributions now live on Component `viewContributions`; row/title/tab decorations inline in each Component's `render()`. See DECORATORS.md for migration notes. |
+| **Stats panel type** | A YAML-declarable `type: stats` (or `type: graph`) panel that takes `topic:` and renders bars / tables / sparklines from hub data. | Shipped. |
 
 A specific cpu/mem sparkline rendering is a ~20-line utility, not a
 plugin and not a hook. It belongs inside whichever of the layers above
@@ -385,11 +385,11 @@ plugin, not part of the hub itself.
 ## 11. Plugin API additions
 
 ```javascript
-// plugins/api.js — new exports
+// components/api.js — new exports
 const { hub } = require('./api');
 ```
 
-The hub is a singleton accessed through `plugins/api.js` (existing
+The hub is a singleton accessed through `components/api.js` (existing
 plugin entry point). No new top-level dependency for plugin authors.
 
 Plugin authors that publish should call `hub.defineTopic()` once during

@@ -25,19 +25,20 @@
  */
 'use strict';
 
-const { getModel } = require('../../runtime');
+const { getModel } = require('../runtime');
+const mnav = require('../model-nav');
 const {
-  esc, visibleLen, theme, renderPanel,
-  getSel, getScroll, isMultiSel, decorate,
+  esc, theme, renderPanel,
+  getSel, getScroll, isMultiSel,
   statusFor,
   getComponentSlice,
-} = require('../api');
+} = require('./api');
 
 // --- pure tree transforms (slice writes + cascade descriptors) ---
 //
 // Each helper takes `(slice, model, …)`, mutates the slice in place, and
 // returns `{ newIdx, newCurrentGroup, groupChanged }` (cascade descriptor).
-// Cross-layer writes (model.ui.sel.groups, model.currentGroup, root chrome
+// Cross-layer writes (the groups cursor, model.currentGroup, root chrome
 // reset) are NOT performed here — update() emits the cross-layer Cmds based
 // on the returned descriptor. Single-writer per layer.
 
@@ -124,7 +125,7 @@ function collapse(slice, model, path, recursive = false) {
 
 /** Select the row at `idx`. Returns `{ newCurrentGroup, groupChanged }`.
  *  No slice mutation here — slice doesn't track cursor (that's framework
- *  chrome in model.ui.sel.groups). */
+ *  chrome on the groups Component's own slice.nav.groups). */
 function selectAt(slice, model, idx) {
   if (idx < 0 || idx >= slice.list.length) return { newIdx: -1, newCurrentGroup: model.currentGroup, groupChanged: false };
   const newCurrentGroup = slice.list[idx].name;
@@ -134,7 +135,13 @@ function selectAt(slice, model, idx) {
 // --- init ---
 
 function init() {
-  return { list: [], expanded: new Set(), tab: 'all' };
+  return {
+    list: [], expanded: new Set(), tab: 'all',
+    // Phase 4a — nav chrome (cursor / scroll / multiSel) lives on the
+    // Component's slice now, keyed by panel type. The groups Component
+    // owns exactly one panel type.
+    nav: { groups: mnav.init() },
+  };
 }
 
 // --- update ---
@@ -142,34 +149,45 @@ function init() {
 /** Build the cascade Cmds when a tree-shape change moved currentGroup. */
 function _cascadeCmds(res) {
   const cmds = [];
-  if (res.newIdx >= 0) cmds.push({ type: 'apply_msg', msg: { type: 'set_panel_cursor', panel: 'groups', index: res.newIdx } });
+  // Phase 4b — cursor lives on this Component's own nav slice; emit a
+  // wrapped set_cursor Msg back to ourselves rather than routing via
+  // the (retired) `set_panel_cursor` reducer name.
+  if (res.newIdx >= 0) {
+    cmds.push({ type: 'dispatch_msg', msg: require('./api').wrap('groups', { type: 'set_cursor', panel: 'groups', index: res.newIdx }) });
+  }
   if (res.groupChanged) {
     cmds.push({ type: 'apply_msg', msg: { type: 'set_current_group', name: res.newCurrentGroup } });
     cmds.push({ type: 'apply_msg', msg: { type: 'reset_group_context' } });
-    cmds.push({ type: 'dispatch_msg', msg: { type: 'viewer_reset_chrome' } });
+    cmds.push({ type: 'dispatch_msg', msg: require('./api').wrap('detail', { type: 'viewer_reset_chrome' }) });
   }
   cmds.push({ type: 'show_selected_info' });
   return cmds;
 }
 
 function update(msg, slice) {
+  // Phase 4a — nav chrome Msgs (set_cursor / set_scroll / multisel_*)
+  // are handled by the shared leaf so every Navigator's update has the
+  // same nav semantics. A nav-match returns the (mutated) slice;
+  // non-nav Msgs fall through to this Component's own switch.
+  if (mnav.isNavMsg(msg)) return mnav.apply(slice, msg);
   if (msg.type === 'groups_recompute') {
     // Boot / config reload — rebuild list from config.groups + slice state.
     recomputeList(slice, getModel());
     return slice;
   }
   if (msg.type === 'groups_selected') {
-    // nav_select for panel:'groups' wrote ui.sel.groups already; we just emit
-    // the cascade Cmds (set_current_group + reset_group_context + viewer
-    // reset) if the index actually moved the active group.
+    // nav_select for panel:'groups' wrote the cursor already (Phase 4a:
+    // via a wrapped set_cursor Msg into this Component's nav slice); we
+    // just emit the cascade Cmds (set_current_group + reset_group_context
+    // + viewer reset) if the index actually moved the active group.
     const res = selectAt(slice, getModel(), msg.index);
     if (res.newIdx < 0) return slice;
-    // ui.sel.groups already written by nav_select — don't re-emit set_panel_cursor.
+    // cursor already written by nav_select — don't re-emit set_panel_cursor.
     const cmds = [];
     if (res.groupChanged) {
       cmds.push({ type: 'apply_msg', msg: { type: 'set_current_group', name: res.newCurrentGroup } });
       cmds.push({ type: 'apply_msg', msg: { type: 'reset_group_context' } });
-      cmds.push({ type: 'dispatch_msg', msg: { type: 'viewer_reset_chrome' } });
+      cmds.push({ type: 'dispatch_msg', msg: require('./api').wrap('detail', { type: 'viewer_reset_chrome' }) });
     }
     return [slice, cmds];
   }
@@ -247,15 +265,11 @@ function _glyphFor(group, expanded) {
 }
 
 function render(panel, w, h, slice) {
-  const m = getModel();
   const sel = getSel('groups');
-  const innerW = w - 2;
   const isQuick = slice.tab === 'quick';
   const lines = slice.list.map((group, i) => {
     const t = theme();
     const isSel = i === sel && getComponentSlice("layout").focus === 'groups';
-    const ctx = { panelType: 'groups', item: group, selected: isSel };
-    const left  = decorate('row:left:groups',  { ...ctx, width: 4 });
     let treeSeg;
     let labelStr;
     if (isQuick) {
@@ -267,15 +281,13 @@ function render(panel, w, h, slice) {
       treeSeg = `${indent}${glyph} `;
       labelStr = esc(group.label);
     }
-    const labelLen = visibleLen(labelStr);
-    const used = 2 + (left ? visibleLen(left) + 1 : 0)
-                 + visibleLen(treeSeg) + labelLen;
-    const right = decorate('row:right:groups', { ...ctx, width: Math.max(0, innerW - used - 1) });
-    const lhead = left  ? `${left} `  : '';
+    // Phase 5 — running/total badge inlined (was a decorator handler).
+    // Returns '' for groups with no containers.
+    const right = _rowRightGroups(group, isSel);
     const rtail = right ? ` ${right}` : '';
     const isMs  = isMultiSel('groups', group.name);
     const mark  = isMs ? '*' : (isSel ? ' ' : (i === sel ? '>' : ' '));
-    const labelText = `${mark} ${lhead}${treeSeg}${labelStr}${rtail}`;
+    const labelText = `${mark} ${treeSeg}${labelStr}${rtail}`;
     if (isSel) return `[${t.selected}]${labelText}`;
     if (i === sel) return `[${t.bold_current}]${labelText}[/]`;
     return labelText;
@@ -301,13 +313,12 @@ function _groupsTitle(panelTitle, slice) {
   return `${panelTitle}─${allTab}─${quickTab}`;
 }
 
-function rowRightGroups(ctx) {
-  const group = ctx.item;
+function _rowRightGroups(group, selected) {
   const containers = group.containers || [];
   const total = containers.length;
   if (total === 0) return '';
   const running = containers.filter(c => statusFor(c) === 'running').length;
-  if (ctx.selected) return `${running}/${total} ●`;
+  if (selected) return `${running}/${total} ●`;
   const t = theme();
   const color = running === total ? t.running : running > 0 ? t.partial : t.stopped;
   return `${running}/${total} [${color}]●[/]`;
@@ -323,9 +334,6 @@ module.exports = {
       getItems, getInfo, copyOptions,
       idOf: (g) => g.name,
     },
-  },
-  decorators: {
-    'row:right:groups': rowRightGroups,
   },
   // Test-only exports.
   _init: init,

@@ -21,7 +21,7 @@
 const { esc, RESET, richToAnsi } = require('./ansi');
 const { cols, stdout } = require('./term');
 const { getModel } = require('./runtime');
-const { getComponentSlice } = require('./plugins/api');
+const { getComponentSlice } = require('./components/api');
 const mdesign = require('./model-design');
 
 // The layout Component's design sub-slice (Phase 1f) — what used to be

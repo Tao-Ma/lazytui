@@ -20,7 +20,7 @@ const { theme } = require('./themes');
 const { isTerminalTab, activeTerminalId, activeTerminalConfig,
         getTabInfo, findEphemeralByid } = require('./tabs');
 const { ensureSession, getSession, resizeSession } = require('./terminal');
-const { getPanelDef, getComponentSlice } = require('./plugins/api');
+const { getPanelDef, getComponentSlice } = require('./components/api');
 const { showSelectedInfo } = require('./viewer');
 const { renderCopyMenu } = require('./copy');
 const { render: renderRegisterPopup } = require('./register-popup');
@@ -32,7 +32,7 @@ const { renderCmdline } = require('./cmdline');
 const { renderConfirmOverlay } = require('./confirm');
 const { renderPromptOverlay } = require('./prompt');
 const { renderDesignOverlay, getDesignFooter } = require('./design');
-const { decorate } = require('./decorators');
+const { collectViewContributions } = require('./components/api');
 const { currentText: filterCurrentText } = require('./filter');
 
 /**
@@ -45,23 +45,15 @@ const { currentText: filterCurrentText } = require('./filter');
  * different height.
  */
 function rendererFor(type) {
-  // Component-owned panels take precedence — a Component's render gets
-  // its slice. Falls through to the Plugin-owned path if no Component
-  // claimed this panelType.
-  const api = require('./plugins/api');
+  // Phase 6 — every panel is a Component. The owning Component's
+  // render(panel, w, h, slice) is the only render path; no fallback.
+  const api = require('./components/api');
   const compName = api.getComponentOwningPanel(type);
-  if (compName) {
-    const comp = api.getComponent(compName);
-    const def = comp.panelTypes && comp.panelTypes[type];
-    if (def && typeof def.render === 'function') {
-      return (panel, w, h) => def.render(panel, w, h, api.getComponentSlice(compName));
-    }
-  }
-  const def = getPanelDef(type);
-  if (!def || !def.render) return null;
-  // Plugin (non-Component) fallback — passes the root model as the 4th
-  // arg so external Plugin authors can read app-global state.
-  return (panel, w, h) => def.render(panel, w, h, require('./runtime').getModel());
+  if (!compName) return null;
+  const comp = api.getComponent(compName);
+  const def = comp && comp.panelTypes && comp.panelTypes[type];
+  if (!def || typeof def.render !== 'function') return null;
+  return (panel, w, h) => def.render(panel, w, h, api.getComponentSlice(compName));
 }
 
 // --- Layout calculation ---
@@ -588,17 +580,18 @@ function renderFooter(model = getModel()) {
     if (layoutSlice.dirty) keys += ` | [yellow]• unsaved (:save-layout)[/]`;
   }
 
-  // Plugin footer decorations — DECORATORS.md `footer:left` / `footer:right`.
-  // Suppressed in modal footers (the message owns the row). Note the
-  // separator is the heavy pipe `│`, distinguishing decorator output
-  // from the regular `|`-separated key hints. Decorator handlers read
-  // app-global state via `getModel()` and any Component slice they own.
+  // Component footer contributions (Phase 5 — viewContributions slots
+  // `footerLeft` / `footerRight`). Suppressed in modal footers (the
+  // message owns the row). Note the separator is the heavy pipe `│`,
+  // distinguishing contributor output from the regular `|`-separated
+  // key hints. Each contributor receives its own Component slice as the
+  // first arg + this `ctx` as the second.
   let footerLeftExtra = '', footerRightExtra = '';
   if (!inModal) {
     const ctxBase = { focus: getComponentSlice("layout").focus, view: layoutSlice.viewMode };
     const halfBudget = Math.max(0, Math.floor(COLS / 2) - 4);
-    footerLeftExtra  = decorate('footer:left',  { ...ctxBase, width: halfBudget });
-    footerRightExtra = decorate('footer:right', { ...ctxBase, width: halfBudget });
+    footerLeftExtra  = collectViewContributions('footerLeft',  { ...ctxBase, width: halfBudget });
+    footerRightExtra = collectViewContributions('footerRight', { ...ctxBase, width: halfBudget });
     if (footerLeftExtra) keys += ` │ ${footerLeftExtra}`;
   }
 

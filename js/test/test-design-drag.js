@@ -21,7 +21,7 @@
 const { onMouseEvent, pointToDropTarget, _getDragState } = require('../design');
 const dispatch = require('../dispatch');
 const { getModel } = require('../runtime');
-const { getComponentSlice } = require('../plugins/api');
+const { getComponentSlice } = require('../components/api');
 const { describe, it, assert, eq, report } = require('./test-runner');
 
 // Design mode folded onto the update spine: enter via the design_enter Msg.

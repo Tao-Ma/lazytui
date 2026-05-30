@@ -8,7 +8,7 @@
 'use strict';
 
 const { describe, it, eq, assert, report } = require('./test-runner');
-const api = require('../plugins/api');
+const api = require('../components/api');
 const { getModel } = require('../runtime');
 
 // Test helper: build a small Component whose update() appends every
@@ -197,9 +197,8 @@ describe('[7] update() → [slice, effects] runs effects (the TEA Cmd half)', ()
 });
 
 describe('[8b] viewContributions — footerLeft / footerRight', () => {
-  it('Component footerLeft contribution shows up in decorate("footer:left")', () => {
-    const decorators = require('../decorators');
-    decorators._reset();   // isolate this test's slot from earlier registrations
+  it('Component footerLeft contribution composes through collectViewContributions("footerLeft")', () => {
+    api._resetViewContributions();   // isolate from earlier registrations
     api.registerComponent({
       name: 'view-contrib',
       init: () => ({ label: 'hi' }),
@@ -210,20 +209,18 @@ describe('[8b] viewContributions — footerLeft / footerRight', () => {
         footerRight: (slice)      => `[R:${slice.label}]`,
       },
     });
-    const left  = decorators.decorate('footer:left',  { width: 80 });
-    const right = decorators.decorate('footer:right', { width: 80 });
+    const left  = api.collectViewContributions('footerLeft',  { width: 80 });
+    const right = api.collectViewContributions('footerRight', { width: 80 });
     eq(left,  '[L:hi w=80]', 'footerLeft renders, slice + ctx injected');
     eq(right, '[R:hi]',      'footerRight renders, slice injected');
   });
 
-  it('slice changes are visible to the next decorate() call', () => {
-    // The previous test left 'view-contrib' registered + ran decorators._reset
-    // only at its start. Bumping its slice through dispatch should be picked
-    // up by a subsequent decorate() because the contribution closure reads
-    // componentSlices[name] live.
+  it('slice changes are visible to the next collect() call', () => {
+    // The previous test left 'view-contrib' registered. Bumping its slice
+    // through dispatch should be picked up by a subsequent collect()
+    // because the contribution closure reads the live slice each call.
     api.dispatchMsg(api.wrap('view-contrib', { type: 'bump' }));
-    const decorators = require('../decorators');
-    const left = decorators.decorate('footer:left', { width: 80 });
+    const left = api.collectViewContributions('footerLeft', { width: 80 });
     eq(left, '[L:hi! w=80]', 'contribution re-reads the live slice');
   });
 
@@ -250,7 +247,7 @@ describe('[8b] viewContributions — footerLeft / footerRight', () => {
 });
 
 describe('[8e] layout Component — viewMode (Phase 1b)', () => {
-  const layout = require('../plugins/core/layout');
+  const layout = require('../components/layout');
 
   it('reduceViewMode pure cycling (view_expand / view_shrink / view_set)', () => {
     const r = layout.reduceViewMode;
@@ -292,7 +289,7 @@ describe('[8e] layout Component — viewMode (Phase 1b)', () => {
   });
 
   it('dispatched view_expand (wrapped) reaches the layout slice', () => {
-    api.registerComponent(require('../plugins/core/layout'));
+    api.registerComponent(require('../components/layout'));
     const slice = api.getComponentSlice('layout');
     slice.viewMode = 'normal';
     api.dispatchMsg(api.wrap('layout', { type: 'view_expand' }));
@@ -303,7 +300,7 @@ describe('[8e] layout Component — viewMode (Phase 1b)', () => {
 
 describe('[8d] layout Component skeleton (Phase 1a)', () => {
   it('layout registers as a chrome-only Component with the expected slice shape', () => {
-    api.registerComponent(require('../plugins/core/layout'));
+    api.registerComponent(require('../components/layout'));
     const slice = api.getComponentSlice('layout');
     assert(slice !== undefined, 'layout slice exists');
     // Slice shape — sub-phases will populate these fields one by one.

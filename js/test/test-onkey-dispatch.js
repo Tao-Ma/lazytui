@@ -14,7 +14,7 @@
  */
 'use strict';
 
-const api = require('../plugins/api');
+const api = require('../components/api');
 const { describe, it, assert, eq, report } = require('./test-runner');
 const { getModel } = require('../runtime');
 
@@ -24,8 +24,19 @@ const { getModel } = require('../runtime');
 const { _dispatchPluginKey } = require('../dispatch');
 
 const calls = [];
-api.registerPlugin({
+// Phase 4a — register as a Component (not a Plugin) so the cursor sits
+// on the Component's `slice.nav.listy.cursor` and the helpers resolve.
+// The dispatchPluginKey path is shape-agnostic: it reads getPanelDef and
+// calls onKey, which works for both Plugins and Components.
+const mnav = require('../model-nav');
+api.registerComponent({
   name: 'onkey-test',
+  init: () => ({
+    nav: {
+      listy: mnav.init(), contenty: mnav.init(), silent: mnav.init(),
+    },
+  }),
+  update: (msg, slice) => mnav.isNavMsg(msg) ? mnav.apply(slice, msg) : slice,
   panelTypes: {
     listy: {
       mode: 'list',
@@ -46,7 +57,7 @@ api.registerPlugin({
   },
 });
 
-getModel().ui.sel = { listy: 1, contenty: 0, silent: 0 };
+require('../state').setSel('listy', 1);
 getModel().ui.filters = {};
 
 describe('[1] list-mode panel receives focused item', () => {

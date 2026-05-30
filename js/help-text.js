@@ -15,7 +15,7 @@
 const { allPanels, setDetail } = require('./state');
 const { getModel } = require('./runtime');
 const { esc } = require('./ansi');
-const { getCommands, getPanelDef, getComponentSlice } = require('./plugins/api');
+const { getCommands, getPanelDef, getComponentSlice } = require('./components/api');
 
 /**
  * Build the help-text lines (Rich markup). Pure read of state +

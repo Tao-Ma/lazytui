@@ -35,7 +35,7 @@ const mt = require('./model-tabs');
  *  Phase B). Empty fallback so callers don't have to guard before the
  *  Component is registered (e.g. mid-boot reads, tests). */
 function _detailSlice() {
-  return require('./plugins/api').getComponentSlice('detail')
+  return require('./components/api').getComponentSlice('detail')
       || { contentTabs: {}, ephemeralTerminals: {} };
 }
 
@@ -127,7 +127,7 @@ function findEphemeralByid(id) {
  *  to open interactive shells against an item (e.g. docker exec). If a tab
  *  with the same key already exists, switches to it. */
 function addEphemeralTab(groupName, key, cmd, label) {
-  const api = require('./plugins/api');
+  const api = require('./components/api');
   api.dispatchMsg(api.wrap('detail',
     { type: 'viewer_add_ephemeral_terminal', groupName, key, cmd, label }));
 }
@@ -135,7 +135,7 @@ function addEphemeralTab(groupName, key, cmd, label) {
 /** Remove an ephemeral terminal tab — drops the entry, adjusts the active tab,
  *  and emits a destroy_pty_session Cmd so the PTY child is torn down. */
 function removeEphemeralTab(groupName, key) {
-  const api = require('./plugins/api');
+  const api = require('./components/api');
   api.dispatchMsg(api.wrap('detail',
     { type: 'viewer_remove_ephemeral_terminal', groupName, key }));
 }
@@ -143,7 +143,7 @@ function removeEphemeralTab(groupName, key) {
 /** Add a content tab at runtime (e.g. file-browser opening a file). If a tab
  *  with the same key exists, refreshes its lines + switches to it. */
 function addContentTab(groupName, key, label, lines) {
-  const api = require('./plugins/api');
+  const api = require('./components/api');
   api.dispatchMsg(api.wrap('detail',
     { type: 'viewer_add_content_tab', groupName, key, label, lines }));
 }
@@ -152,7 +152,7 @@ function addContentTab(groupName, key, label, lines) {
  *  resolving). If the user is still parked on that tab, the viewer body
  *  refreshes; otherwise the update is silently stored for when they return. */
 function updateContentTabLines(groupName, key, lines) {
-  const api = require('./plugins/api');
+  const api = require('./components/api');
   api.dispatchMsg(api.wrap('detail',
     { type: 'viewer_update_content_tab_lines', groupName, key, lines }));
 }
@@ -161,7 +161,7 @@ function updateContentTabLines(groupName, key, lines) {
  *  the body from the sibling tab (or refreshes Info via show_selected_info if
  *  this was the last content tab). */
 function removeContentTab(groupName, key) {
-  const api = require('./plugins/api');
+  const api = require('./components/api');
   api.dispatchMsg(api.wrap('detail',
     { type: 'viewer_remove_content_tab', groupName, key }));
 }

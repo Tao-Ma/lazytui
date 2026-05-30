@@ -29,14 +29,15 @@ const { getModel } = require('./runtime');
 // production already registers detail + groups at boot (tui.js).
 let _detailAutoRegistered = false;
 function _detailSlice() {
-  const api = require('./plugins/api');
+  const api = require('./components/api');
   let s = api.getComponentSlice('detail');
   if (!s) {
     if (!_detailAutoRegistered) {
       try { require('./effects').installBuiltins(); } catch (_) {}
       _detailAutoRegistered = true;
     }
-    api.registerComponent(require('./plugins/core/viewer'));
+    _layoutSlice();   // Phase 3 — layout must register before detail
+    api.registerComponent(require('./components/viewer'));
     s = api.getComponentSlice('detail');
   }
   return s;
@@ -44,14 +45,15 @@ function _detailSlice() {
 
 let _groupsAutoRegistered = false;
 function _groupsSlice() {
-  const api = require('./plugins/api');
+  const api = require('./components/api');
   let s = api.getComponentSlice('groups');
   if (!s) {
     if (!_groupsAutoRegistered) {
       try { require('./effects').installBuiltins(); } catch (_) {}
       _groupsAutoRegistered = true;
     }
-    api.registerComponent(require('./plugins/core/groups'));
+    _layoutSlice();   // Phase 3 — layout must register before groups
+    api.registerComponent(require('./components/groups'));
     s = api.getComponentSlice('groups');
   }
   return s;
@@ -64,14 +66,14 @@ function _groupsSlice() {
 // viewMode tag), so the helper is called there.
 let _layoutAutoRegistered = false;
 function _layoutSlice() {
-  const api = require('./plugins/api');
+  const api = require('./components/api');
   let s = api.getComponentSlice('layout');
   if (!s) {
     if (!_layoutAutoRegistered) {
       try { require('./effects').installBuiltins(); } catch (_) {}
       _layoutAutoRegistered = true;
     }
-    api.registerComponent(require('./plugins/core/layout'));
+    api.registerComponent(require('./components/layout'));
     s = api.getComponentSlice('layout');
   }
   return s;
@@ -178,8 +180,9 @@ function initState() {
   groups.tab = 'all';
   recomputeGroups();
   m.currentGroup = groups.list.length ? groups.list[0].name : '';
-  m.ui.sel = {};
-  m.ui.scroll = {};
+  // Phase 4a — `ui.sel` / `ui.scroll` / `ui.multiSel` no longer exist;
+  // each Navigator owns its own nav slice (cursor/scroll/multiSel) and
+  // initializes it via the Component's own init().
   const detail = _detailSlice();
   detail.lines = [];
   detail.scroll = 0;
@@ -202,7 +205,6 @@ function initState() {
   detail.search = { active: false, term: '', matches: [], idx: 0 };
   detail.ephemeralTerminals = {};
   detail.contentTabs = {};
-  m.ui.multiSel = {};
   // Yank register — bounded history, system-clipboard mirror. Cap is
   // configurable via top-level `register: { cap: N }` in YAML; default 100.
   // Init is deferred to here (rather than at module-load) so cap reflects
@@ -235,31 +237,52 @@ function allPanels() {
 // Kept here as named exports so non-reducer callers (mouse, recursive `"`
 // expand, tests) have a stable surface.
 function recomputeGroups() {
-  require('./plugins/api').dispatchMsg(require('./plugins/api').wrap('groups', { type: 'groups_recompute' }));
+  require('./components/api').dispatchMsg(require('./components/api').wrap('groups', { type: 'groups_recompute' }));
 }
 function switchGroupsTab(/* tab */) {
   // toggle_groups_tab flips All↔Quick (the only transition we use today);
   // explicit-target setters belong to the Component if ever needed.
-  require('./plugins/api').dispatchMsg(require('./plugins/api').wrap('groups', { type: 'toggle_groups_tab' }));
+  require('./components/api').dispatchMsg(require('./components/api').wrap('groups', { type: 'toggle_groups_tab' }));
 }
 function expandGroup(path, recursive = false) {
-  require('./plugins/api').dispatchMsg(require('./plugins/api').wrap('groups', { type: 'toggle_group', name: path, recursive }));
+  require('./components/api').dispatchMsg(require('./components/api').wrap('groups', { type: 'toggle_group', name: path, recursive }));
 }
 function collapseGroup(path, recursive = false) {
-  require('./plugins/api').dispatchMsg(require('./plugins/api').wrap('groups', { type: 'toggle_group', name: path, recursive }));
+  require('./components/api').dispatchMsg(require('./components/api').wrap('groups', { type: 'toggle_group', name: path, recursive }));
+}
+
+// Phase 4a — nav chrome (cursor / scroll / multiSel) lives on each
+// Navigator Component's slice at `slice.nav[panelType]`. The helpers
+// walk panel-type → owning Component → that Component's slice → nav
+// entry. Reads are direct; writes go through wrapped Msgs so the
+// Component's update is the single writer for its own nav slice.
+
+function _navEntry(panelType) {
+  const api = require('./components/api');
+  const compName = api.getComponentOwningPanel(panelType);
+  if (!compName) return null;
+  const slice = api.getComponentSlice(compName);
+  return (slice && slice.nav && slice.nav[panelType]) || null;
+}
+
+function _navDispatch(panelType, msg) {
+  const api = require('./components/api');
+  const compName = api.getComponentOwningPanel(panelType);
+  if (!compName) return;
+  api.dispatchMsg(api.wrap(compName, { ...msg, panel: panelType }));
 }
 
 /** Get selection index for a panel type (default 0). */
-function getSel(panelType) { return getModel().ui.sel[panelType] || 0; }
+function getSel(panelType) { const e = _navEntry(panelType); return e ? e.cursor : 0; }
 
 /** Set selection index for a panel type. */
-function setSel(panelType, idx) { getModel().ui.sel[panelType] = idx; }
+function setSel(panelType, idx) { _navDispatch(panelType, { type: 'set_cursor', index: idx | 0 }); }
 
 /** Get scroll offset for a panel type (default 0). */
-function getScroll(panelType) { return getModel().ui.scroll[panelType] || 0; }
+function getScroll(panelType) { const e = _navEntry(panelType); return e ? e.scroll : 0; }
 
 /** Set scroll offset for a panel type. */
-function setScroll(panelType, offset) { getModel().ui.scroll[panelType] = offset; }
+function setScroll(panelType, offset) { _navDispatch(panelType, { type: 'set_scroll', offset: offset | 0 }); }
 
 /**
  * Sync scroll offset so the selected item is visible within innerH rows.
@@ -284,7 +307,7 @@ function resetGroupContext() {
   // viewer-slice half is its own Msg dispatched to the detail Component.
   const dispatch = require('./dispatch');
   dispatch.applyMsg(getModel(), { type: 'reset_group_context' });
-  require('./plugins/api').dispatchMsg(require('./plugins/api').wrap('detail', { type: 'viewer_reset_chrome' }));
+  require('./components/api').dispatchMsg(require('./components/api').wrap('detail', { type: 'viewer_reset_chrome' }));
 }
 
 /**
@@ -292,10 +315,10 @@ function resetGroupContext() {
  * out-of-range. Resets per-group transient state via resetGroupContext().
  */
 function selectGroup(idx) {
-  // Phase C: route through nav_select — the root reducer writes ui.sel.groups,
-  // then dispatch_msg → groups Component emits the cascade (set_current_group /
-  // reset_group_context / viewer_reset_chrome).
-  require('./dispatch').applyMsg(getModel(), { type: 'nav_select', panel: 'groups', index: idx });
+  // Phase 4b — the uniform `nav_select` Msg retired; dispatch.navSelect
+  // does the per-Component routing (set_cursor → owning Component +
+  // show_selected_info + the groups_selected cascade).
+  require('./dispatch').navSelect(getModel(), 'groups', idx);
 }
 
 function setDetail(text) {
@@ -303,34 +326,34 @@ function setDetail(text) {
   // routes via the Component fan-out. Single-writer for the slice through
   // detail.update; every setDetail caller (detail / tabs / actions / help-text
   // / api save-layout-message) ends up as the same reducer write.
-  require('./plugins/api').dispatchMsg(require('./plugins/api').wrap('detail', { type: 'viewer_set_content', lines: text ? text.split('\n') : [] }));
+  require('./components/api').dispatchMsg(require('./components/api').wrap('detail', { type: 'viewer_set_content', lines: text ? text.split('\n') : [] }));
 }
 
 // --- Multi-select (bulk-operation operand) ---
 //
-// `model.ui.multiSel[panelType]` is a Set of stable item IDs. Identity comes
-// from each panelType's `idOf(item)` (plugins/api.js#idOf), so selections are
-// robust to filtering and re-sorting — you select a thing, not a position.
+// Each Navigator's `slice.nav[panelType].multiSel` is a Set of stable
+// item IDs. Identity comes from each panelType's `idOf(item)`
+// (plugins/api.js#idOf), so selections are robust to filtering and
+// re-sorting — you select a thing, not a position. Writes go through
+// wrapped Msgs (multisel_toggle / multisel_select_all / multisel_clear)
+// so each Component owns its own multiSel Set.
 
 function toggleMultiSel(panelType, itemId) {
-  const ms = getModel().ui.multiSel;
-  if (!ms[panelType]) ms[panelType] = new Set();
-  const set = ms[panelType];
-  if (set.has(itemId)) set.delete(itemId);
-  else set.add(itemId);
-  if (set.size === 0) delete ms[panelType];
+  _navDispatch(panelType, { type: 'multisel_toggle', id: itemId });
 }
 
 function isMultiSel(panelType, itemId) {
-  return getModel().ui.multiSel[panelType]?.has(itemId) || false;
+  const e = _navEntry(panelType);
+  return !!(e && e.multiSel.has(itemId));
 }
 
 function clearMultiSel(panelType) {
-  delete getModel().ui.multiSel[panelType];
+  _navDispatch(panelType, { type: 'multisel_clear' });
 }
 
 function multiSelCount(panelType) {
-  return getModel().ui.multiSel[panelType]?.size || 0;
+  const e = _navEntry(panelType);
+  return e ? e.multiSel.size : 0;
 }
 
 module.exports = {

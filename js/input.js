@@ -18,7 +18,7 @@ const { switchToTab, showSelectedInfo } = require('./viewer');
 const { enableMouse, enableFocusEvents, enableBracketedPaste, cols } = require('./term');
 const { isTerminalTab, activeTerminalId } = require('./tabs');
 const { writeToSession, isSessionDead } = require('./terminal');
-const { getPanelDef, getItems, getComponentSlice, dispatchMsg, wrap } = require('./plugins/api');
+const { getPanelDef, getItems, getComponentSlice, dispatchMsg, wrap } = require('./components/api');
 
 function _detail() { return getComponentSlice('detail'); }
 const { handleKey, applyMsg } = require('./dispatch');
@@ -58,7 +58,7 @@ function _handleWheel(model, mx, my, delta) {
       const maxScroll = Math.max(0, lines.length - innerH);
       const next = Math.max(0, Math.min(maxScroll, curScroll + delta));
       if (next === curScroll) return false;
-      require('./plugins/api').dispatchMsg(require('./plugins/api').wrap('detail', { type: 'viewer_scroll', delta }));
+      require('./components/api').dispatchMsg(require('./components/api').wrap('detail', { type: 'viewer_scroll', delta }));
       return true;
     }
 
@@ -150,7 +150,7 @@ function handleMouse(model, kind, x, y) {
     // Detail panel — top border row may be a tab bar; otherwise a
     // click inside the content area begins a text selection.
     // Tab bounds are published into panelBounds.detail.tabs by the
-    // detail panel's render path (plugins/core/viewer.js#detailTitle).
+    // detail panel's render path (components/viewer.js#detailTitle).
     if (p.type === 'detail') {
       if (my === b.y) {
         const localX = mx - b.x;

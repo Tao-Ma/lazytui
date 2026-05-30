@@ -6,19 +6,20 @@
  * no onKey, decorate-based row chrome, no shared cwd state, no fs browsing.
  *
  * The unified filesystem/registry/docker browser (`type: files` and the
- * `file-browser` alias) lives in js/plugins/files.js as a Component — this
+ * `file-browser` alias) lives in js/components/files.js as a Component — this
  * file is only the back-compat alias. Users wanting the new declared-list
  * behavior should migrate to `type: files, source: declared`.
  */
 'use strict';
 
-const { getModel } = require('../../runtime');
+const { getModel } = require('../runtime');
+const mnav = require('../model-nav');
 const {
-  esc, visibleLen, theme, renderPanel,
-  getSel, getScroll, getFilter, isMultiSel, decorate,
+  esc, theme, renderPanel,
+  getSel, getScroll, getFilter, isMultiSel,
   getItems: apiGetItems,
   getComponentSlice,
-} = require('../api');
+} = require('./api');
 
 function _getItems() {
   const cfg = getModel().config;
@@ -52,7 +53,6 @@ function _copyOptions(item) {
 
 function _render(panel, w, h) {
   const cfiles = apiGetItems('file-manager');
-  const innerW = w - 2;
   const sel = getSel('file-manager');
   const isFocused = getComponentSlice("layout").focus === 'file-manager';
   const maxPathLen = w - 5;
@@ -60,17 +60,8 @@ function _render(panel, w, h) {
     let p = cf.path;
     if (p.length > maxPathLen) p = '…' + p.slice(-(maxPathLen - 1));
     const isSel = i === sel && isFocused;
-    const ctx = { panelType: 'file-manager', item: cf, selected: isSel };
-    const left  = decorate('row:left:file-manager',  { ...ctx, width: 4 });
-    const pathLen = p.length;
-    const gutterLen = 2;
-    const used = gutterLen + (left ? visibleLen(left) + 1 : 0) + pathLen;
-    const right = decorate('row:right:file-manager', { ...ctx, width: Math.max(0, innerW - used - 1) });
-    const lhead = left  ? `${left} `  : '';
-    const rtail = right ? ` ${right}` : '';
     const gutter = isMultiSel('file-manager', cf.path) ? '* ' : '  ';
-    const base = isSel ? `[${theme().selected}]${gutter}${lhead}${p}${rtail}` : `${gutter}${lhead}${p}${rtail}`;
-    return base;
+    return isSel ? `[${theme().selected}]${gutter}${p}` : `${gutter}${p}`;
   });
   const filterText = getFilter('file-manager');
   const title = filterText ? `${panel.title} /${esc(filterText)}` : panel.title;
@@ -89,8 +80,9 @@ function _render(panel, w, h) {
 // are the API-uniformity cost. See docs/v0.5-layering.md.
 module.exports = {
   name: 'file-manager',
-  init: () => ({}),
-  update: (msg, slice) => slice,
+  // Phase 4a — nav chrome on the slice; shared leaf handles the five Msgs.
+  init: () => ({ nav: { 'file-manager': mnav.init() } }),
+  update: (msg, slice) => mnav.isNavMsg(msg) ? mnav.apply(slice, msg) : slice,
   panelTypes: {
     'file-manager': {
       mode: 'list',

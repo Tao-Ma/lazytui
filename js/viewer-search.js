@@ -31,10 +31,10 @@ const ms = require('./model-search');
 // mutate the slice directly via the api facade.
 // All Msgs target detail.update (viewer_search_*). Phase 2b wraps once.
 function _dispatch(msg) {
-  const api = require('./plugins/api');
+  const api = require('./components/api');
   return api.dispatchMsg(api.wrap('detail', msg));
 }
-function _slice() { return require('./plugins/api').getComponentSlice('detail'); }
+function _slice() { return require('./components/api').getComponentSlice('detail'); }
 
 function enter()            { _dispatch({ type: 'viewer_search_enter' }); }
 function cancel()           { _dispatch({ type: 'viewer_search_cancel' }); }

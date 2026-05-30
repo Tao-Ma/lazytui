@@ -194,12 +194,13 @@ function _state() {
 // register, but explicit at the test-harness level.
 try {
   require('../effects').installBuiltins();
-  const api = require('../plugins/api');
-  if (!api.getComponentSlice('detail')) api.registerComponent(require('../plugins/core/viewer'));
-  if (!api.getComponentSlice('groups')) api.registerComponent(require('../plugins/core/groups'));
-  // layout (chrome Component) — owns viewMode/focus/design/arrange/etc.
-  // Phase 1b onward, tests that read getComponentSlice('layout') need it.
-  if (!api.getComponentSlice('layout')) api.registerComponent(require('../plugins/core/layout'));
+  const api = require('../components/api');
+  // Phase 3 — layout MUST register first so other Components nest under
+  // layout.slice.panels[name]. Production (tui.js) already orders this
+  // way; tests need the same.
+  if (!api.getComponentSlice('layout')) api.registerComponent(require('../components/layout'));
+  if (!api.getComponentSlice('detail')) api.registerComponent(require('../components/viewer'));
+  if (!api.getComponentSlice('groups')) api.registerComponent(require('../components/groups'));
 } catch (_) { /* tests that don't need Components still load */ }
 
 module.exports = { describe, section, it, assert, eq, report, _state };

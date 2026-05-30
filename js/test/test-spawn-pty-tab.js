@@ -40,7 +40,7 @@ history.start = (key, cmd, opts) => { historyStarts.push({ key, cmd, opts }); };
 require('./test-runner');
 const runtime = require('../runtime');   // viewMode migrated to the TEA root model (v0.5 spike)
 const { getModel } = runtime;
-const { getComponentSlice } = require('../plugins/api');
+const { getComponentSlice } = require('../components/api');
 getModel().projectDir = '/tmp/spawn-test-cwd';
 getModel().currentGroup = 'g1';
 getModel().config = { groups: { g1: { actions: {}, terminals: {} } } };

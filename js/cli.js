@@ -32,25 +32,26 @@ const path = require('path');
 const { loadConfig } = require('./state');
 const { getModel } = require('./runtime');
 
-// Built-in plugins consulted for `groupActions(group, name)` synthesis.
-// Add new generic plugins here as they ship — keeping this list explicit
-// (rather than auto-discovering plugins/*.js) avoids accidentally
-// pulling render-coupled modules that don't tolerate CLI-mode startup.
+// Built-in Components consulted for `groupActions(group, name)`
+// synthesis. Add new generic Components here as they ship — keeping
+// this list explicit (rather than auto-discovering components/*.js)
+// avoids accidentally pulling render-coupled modules that don't
+// tolerate CLI-mode startup.
 const BUILT_IN_PLUGINS = [
-  './plugins/docker',
-  './plugins/archive',
-  './plugins/config-branch',
-  './plugins/image-backup',
+  './components/docker',
+  './components/archive',
+  './components/config-branch',
+  './components/image-backup',
 ];
 
 /**
- * Walk every plugin in BUILT_IN_PLUGINS, call its groupActions on each
+ * Walk every entry in BUILT_IN_PLUGINS, call its groupActions on each
  * group, and merge the result into config.groups[*].actions. YAML
  * actions are NEVER overwritten (matches the parser's plugin merge
  * rule). Mutates config in place; returns nothing.
  *
- * Failures in any single plugin are swallowed — a broken plugin must
- * never wedge the CLI.
+ * Failures in any single module are swallowed — a broken contributor
+ * must never wedge the CLI.
  */
 function applyPluginGroupActions(config) {
   const groups = (config && config.groups) || {};

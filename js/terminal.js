@@ -67,7 +67,7 @@ function ensureSession(id, cmd, cols, rows) {
  */
 function _onSessionExit(id, exitCode) {
   const tabs = require('./tabs');
-  const api = require('./plugins/api');
+  const api = require('./components/api');
   let anyChange = false;
   const wasActive = tabs.activeTerminalId() === id;
   // viewMode owned by the layout Component (Phase 1b) — read the slice,

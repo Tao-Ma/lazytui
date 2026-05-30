@@ -13,9 +13,9 @@
 
 const { describe, it, assert, eq, report } = require('./test-runner');
 const { getModel } = require('../runtime');
-const { getComponentSlice } = require('../plugins/api');
+const { getComponentSlice } = require('../components/api');
 
-const { initState, getSel, selectGroup } = require('../state');
+const { initState, getSel, setSel, selectGroup } = require('../state');
 
 // --- boot a minimal-but-real app (mirrors tui.js boot, no PTY/input) ---
 const _grp = (name, label) => ({
@@ -84,10 +84,10 @@ describe('[3] chrome (sel/focus) flows through the model — live', () => {
   it('down-arrow moves the groups selection via the real key path', () => {
     capture(() => { handleKey(model, '_', '_'); handleKey(model, '_', '_'); });   // back to normal view (silenced)
     getComponentSlice("layout").focus = 'groups';
-    getModel().ui.sel.groups = 0;
+    setSel('groups', 0);
     const before = capture(() => render());
-    // handleKey(model, 'down') → nav_down → moveSel on the focused panel; the
-    // cursor index lives in model.ui.sel (via the getModel().ui.sel shim).
+    // handleKey(model, 'down') → nav_down → moveSel on the focused panel.
+    // Phase 4a — cursor lives on the groups Component's slice.nav.groups.
     const after = capture(() => handleKey(model, 'down', 'down'));
     eq(getSel('groups'), 1, 'selection advanced 0 → 1 (chrome read through the model)');
     assert(before !== after, 'the rendered frame changed when the selection moved');
@@ -95,7 +95,7 @@ describe('[3] chrome (sel/focus) flows through the model — live', () => {
   it('down-arrow cascades currentGroup inline (the selectGroup transform in the reducer)', () => {
     capture(() => { handleKey(model, '_', '_'); handleKey(model, '_', '_'); });
     getComponentSlice("layout").focus = 'groups';
-    getModel().ui.sel.groups = 0;
+    setSel('groups', 0);
     selectGroup(0);   // anchor currentGroup on the first row
     eq(getModel().currentGroup, 'g1', 'anchored on g1');
     // nav_down → nav_select(groups) → mg.selectGroup runs inline in

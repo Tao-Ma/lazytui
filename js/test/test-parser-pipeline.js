@@ -36,13 +36,12 @@ function expectThrow(re, fn, kind = ParseError) {
 
 describe('plugins block pass-through (regression: JS parser port dropped it)', () => {
   it('plugins map appears verbatim on the parsed config', () => {
-    // The bug: parse() returned {project_dir, groups, source_file,
-    // files, layout, theme} with no `plugins` field, so loadPlugins
-    // received undefined and JS plugins (`path: ./foo.js`) silently
-    // never loaded. Demos with custom panel types (e.g. ssh-fleet's
-    // `hosts:` panel) then rendered as empty strings, the right
-    // column's rows spilled into column 0 of the bottom of the
-    // screen, and the user saw "left bottom occupied by detail".
+    // Historical: the JS parser port dropped this block, so the legacy
+    // loadPlugins() silently never loaded `path: ./foo.js` plugins.
+    // Phase 6 retired the Plugin API entirely; the field is now unused
+    // at runtime, but the parser still preserves it so a config carrying
+    // a stale `plugins:` block round-trips losslessly. tui.js surfaces a
+    // one-time warning if the block is non-empty.
     const p = tmpYaml(`
 groups:
   g:
@@ -63,10 +62,9 @@ plugins:
   });
 
   it('no plugins block → cfg.plugins is an empty object (never undefined)', () => {
-    // Callers (loadPlugins, etc.) treat undefined as "skip" and {} as
-    // "iterate zero times" — same effect, but {} is the kinder
-    // contract: lets callers Object.keys() / Object.entries() without
-    // guarding.
+    // `{}` is the kinder contract: lets callers Object.keys() /
+    // Object.entries() without guarding. (Plugin loading itself retired
+    // in Phase 6; this is purely a parser shape guarantee now.)
     const p = tmpYaml(`
 groups:
   g:

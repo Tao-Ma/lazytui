@@ -72,7 +72,11 @@ function init() {
       cmdMode: false, terminalMode: false, listSelectMode: false,
     },
     currentGroup: '',
-    ui: { sel: {}, scroll: {}, filters: {}, multiSel: {} },
+    // Phase 4a — nav chrome (sel/scroll/multiSel) moved off the root
+    // model and into each Navigator Component's slice under
+    // `slice.nav[panelType] = { cursor, scroll, multiSel }`. Only the
+    // committed-per-panel filter map stays on `model.ui` for now.
+    ui: { filters: {} },
     // The viewer slice (detail Component) and groups slice live in
     // plugins/api.js's componentSlices map, accessed via getComponentSlice.
     // Transient per-mode editing buffers (the modal sub-models). The reducer
@@ -198,36 +202,24 @@ function update(model, msg) {
     // viewer_add_ephemeral_terminal / viewer_remove_ephemeral_terminal /
     // viewer_add_content_tab / viewer_update_content_tab_lines /
     // viewer_remove_content_tab — all moved to detail.update (Phase B).
-    case 'nav_select':
-      // The caller clamped `index` against the panel's item count
-      // (getItems is plugin-API/derivation logic — view-side). Storing a
-      // plain list panel's selection is a pure model write. The groups
-      // panel cascades (currentGroup + per-group context reset) — run by
-      // the groups Component as a follow-up to dispatch_msg.
-      // Either way the detail body refreshes for the new row.
-      // Uniform write across panels (Phase C): just store the index. For
-      // 'groups', additionally dispatch_msg → groups Component, which owns
-      // the cascade (currentGroup + per-group root-chrome reset + viewer
-      // reset) and emits the appropriate Cmds.
-      model.ui.sel[msg.panel] = msg.index;
-      if (msg.panel === 'groups') {
-        return [model, [
-          { type: 'show_selected_info' },
-          { type: 'dispatch_msg', msg: require('./plugins/api').wrap('groups', { type: 'groups_selected', index: msg.index }) },
-        ]];
-      }
-      return [model, [{ type: 'show_selected_info' }]];
+    // nav_select retired in Phase 4b — callers use `dispatch.navSelect`
+    // directly, which wraps a `set_cursor` Msg to the owning Component
+    // and runs the body refresh + groups cascade inline.
     case 'escape': {
       // Esc exits list-select mode (clearing the focused panel's
       // selection), else clears any lingering multi-selection; otherwise
-      // a no-op. Clearing a multi-selection is `delete model.ui.multiSel
-      // [panel]` — a pure model write, so it lives here (no Cmd).
-      const focus = require('./plugins/api').getComponentSlice('layout').focus;
+      // a no-op. Phase 4a: the multiSel clear is dispatched into the
+      // focused Navigator's update (each panel owns its own Set).
+      const api = require('./components/api');
+      const focus = api.getComponentSlice('layout').focus;
+      const compName = api.getComponentOwningPanel(focus);
+      const navEntry = compName ? (api.getComponentSlice(compName) || {}).nav : null;
+      const had = navEntry && navEntry[focus] && navEntry[focus].multiSel.size > 0;
       if (model.modes.listSelectMode) {
         model.modes.listSelectMode = false;
-        delete model.ui.multiSel[focus];
-      } else if ((model.ui.multiSel[focus] && model.ui.multiSel[focus].size) > 0) {
-        delete model.ui.multiSel[focus];
+        if (compName) return [model, [{ type: 'dispatch_msg', msg: api.wrap(compName, { type: 'multisel_clear', panel: focus }) }]];
+      } else if (had) {
+        return [model, [{ type: 'dispatch_msg', msg: api.wrap(compName, { type: 'multisel_clear', panel: focus }) }]];
       }
       return [model, []];
     }
@@ -236,12 +228,16 @@ function update(model, msg) {
       // operand selection. `mode:'on'` (*) forces it on (the caller then
       // fires selectAllVisible as an effect). The _isListPanel guard is
       // view derivation — the caller already applied it.
-      const focus = require('./plugins/api').getComponentSlice('layout').focus;
+      const api = require('./components/api');
+      const focus = api.getComponentSlice('layout').focus;
       if (msg.mode === 'on') {
         model.modes.listSelectMode = true;
-      } else {
-        model.modes.listSelectMode = !model.modes.listSelectMode;
-        if (!model.modes.listSelectMode) delete model.ui.multiSel[focus];
+        return [model, []];
+      }
+      model.modes.listSelectMode = !model.modes.listSelectMode;
+      if (!model.modes.listSelectMode) {
+        const compName = api.getComponentOwningPanel(focus);
+        if (compName) return [model, [{ type: 'dispatch_msg', msg: api.wrap(compName, { type: 'multisel_clear', panel: focus }) }]];
       }
       return [model, []];
     }
@@ -475,7 +471,7 @@ function update(model, msg) {
       // Reset the working state on entry but preserve `enabled` (the
       // boot-time --design CLI flag).
       model.modes.designMode = true;
-      const slice = require('./plugins/api').getComponentSlice('layout');
+      const slice = require('./components/api').getComponentSlice('layout');
       if (slice) {
         const enabled = slice.design && slice.design.enabled;
         slice.design = { enabled, selectedIdx: 0, drag: null, undo: [], redo: [], titleEdit: { active: false, text: '' } };
@@ -496,7 +492,7 @@ function update(model, msg) {
       model.modes.designMode = false;
       model.modes.designTitleEditMode = false;
       {
-        const slice = require('./plugins/api').getComponentSlice('layout');
+        const slice = require('./components/api').getComponentSlice('layout');
         if (slice) {
           const enabled = slice.design && slice.design.enabled;
           slice.design = { enabled, selectedIdx: 0, drag: null, undo: [], redo: [], titleEdit: { active: false, text: '' } };
@@ -508,7 +504,7 @@ function update(model, msg) {
       model.modes.designTitleEditMode = true;
       return [model, []];
     case 'design_title_key': {
-      const slice = require('./plugins/api').getComponentSlice('layout');
+      const slice = require('./components/api').getComponentSlice('layout');
       const te = slice && slice.design && slice.design.titleEdit;
       if (!te) return [model, []];
       if (msg.key === 'backspace' || msg.seq === '\x7f' || msg.seq === '\b') { te.text = te.text.slice(0, -1); return [model, []]; }
@@ -516,7 +512,7 @@ function update(model, msg) {
       return [model, []];
     }
     case 'design_title_submit': {
-      const slice = require('./plugins/api').getComponentSlice('layout');
+      const slice = require('./components/api').getComponentSlice('layout');
       const text = slice && slice.design ? slice.design.titleEdit.text : '';
       mdesign.setSelectedTitle(model, text);
       model.modes.designTitleEditMode = false;
@@ -525,7 +521,7 @@ function update(model, msg) {
     }
     case 'design_title_cancel': {
       model.modes.designTitleEditMode = false;
-      const slice = require('./plugins/api').getComponentSlice('layout');
+      const slice = require('./components/api').getComponentSlice('layout');
       if (slice && slice.design) slice.design.titleEdit = { active: false, text: '' };
       return [model, []];
     }
@@ -551,30 +547,11 @@ function update(model, msg) {
       // 'full' auto-zoom back to 'normal'. The conditional + the
       // repaint Cmd both live in layout's update.
       model.modes.terminalMode = false;
-      return [model, [{ type: 'dispatch_msg', msg: require('./plugins/api').wrap('layout', { type: 'view_drop_full_to_normal' }) }]];
+      return [model, [{ type: 'dispatch_msg', msg: require('./components/api').wrap('layout', { type: 'view_drop_full_to_normal' }) }]];
     }
-    // --- multi-selection writes (folded into update). The caller resolves the
-    // operand IDs from the plugin facade (idOf/getItems — effects) and passes
-    // them in; the reducer owns the model.ui.multiSel[panel] Set. Mirrors the
-    // state.js toggleMultiSel semantics (drop the panel key when the set empties
-    // so multiSelCount/render treat "no selection" uniformly).
-    case 'multisel_toggle': {
-      const ms = model.ui.multiSel;
-      if (!ms[msg.panel]) ms[msg.panel] = new Set();
-      const set = ms[msg.panel];
-      if (set.has(msg.id)) set.delete(msg.id);
-      else set.add(msg.id);
-      if (set.size === 0) delete ms[msg.panel];
-      return [model, []];
-    }
-    case 'multisel_select_all': {
-      const ms = model.ui.multiSel;
-      if (!ms[msg.panel]) ms[msg.panel] = new Set();
-      const set = ms[msg.panel];
-      for (const id of msg.ids) set.add(id);
-      if (set.size === 0) delete ms[msg.panel];
-      return [model, []];
-    }
+    // multisel_toggle / multisel_select_all retired in Phase 4b — call
+    // sites (dispatch.toggleMultiSelOnFocused, selectAllVisible) wrap
+    // those Msgs directly to the owning Component now.
     // --- terminal focus events (DEC 1004), folded into update. Pauses/resumes
     // the refresh loop via model.focused; the focus-regain catch-up
     // scheduleRender stays in input.js (an effect decision the caller owns).
@@ -591,7 +568,7 @@ function update(model, msg) {
       // :save-layout clears the dirty flag; :restore-layout replaces the
       // arrange struct (rebuilt from config by the caller) and clears dirty.
       // Both write into the layout Component's slice (Phase 1d/1g).
-      const layoutSlice = require('./plugins/api').getComponentSlice('layout');
+      const layoutSlice = require('./components/api').getComponentSlice('layout');
       if (layoutSlice) {
         if (msg.layout !== undefined) layoutSlice.arrange = msg.layout;
         if (msg.dirty  !== undefined) layoutSlice.dirty   = !!msg.dirty;
@@ -651,8 +628,12 @@ function update(model, msg) {
       } else {
         return [model, []];
       }
-      model.ui.sel[f.panel] = 0;  // re-home the cursor as the filter narrows
-      return [model, []];
+      // Phase 4a — re-home the cursor as the filter narrows; the panel's
+      // nav slice is the writer now.
+      const api = require('./components/api');
+      const compName = api.getComponentOwningPanel(f.panel);
+      if (!compName) return [model, []];
+      return [model, [{ type: 'dispatch_msg', msg: api.wrap(compName, { type: 'set_cursor', panel: f.panel, index: 0 }) }]];
     }
     case 'filter_exit': {
       const f = model.modal.filter;
@@ -661,22 +642,18 @@ function update(model, msg) {
       else                    delete model.ui.filters[panel];
       model.modes.filterMode = false;
       f.text = ''; f.panel = '';
-      if (panel) { model.ui.sel[panel] = 0; model.ui.scroll[panel] = 0; }
-      return [model, []];
+      if (!panel) return [model, []];
+      const api = require('./components/api');
+      const compName = api.getComponentOwningPanel(panel);
+      if (!compName) return [model, []];
+      return [model, [
+        { type: 'dispatch_msg', msg: api.wrap(compName, { type: 'set_cursor', panel, index: 0 }) },
+        { type: 'dispatch_msg', msg: api.wrap(compName, { type: 'set_scroll', panel, offset: 0 }) },
+      ]];
     }
-    case 'panel_reset': {
-      // Re-home a panel's framework chrome (cursor/scroll/filter). The files
-      // Component emits this (via the resetPanelChrome effect) on directory
-      // navigation — it owns its slice but not model.ui, so the reset routes
-      // through update to keep the reducer the single writer.
-      const p = msg.panel;
-      if (p) {
-        model.ui.sel[p] = 0;
-        model.ui.scroll[p] = 0;
-        delete model.ui.filters[p];
-      }
-      return [model, []];
-    }
+    // panel_reset retired in Phase 4b — the resetPanelChrome effect
+    // (files Component) now writes the cursor/scroll directly via
+    // wrapped Msgs and clears the root-level filter entry itself.
     case 'set_last_run_action':
       // Routes actions.js's `model.lastRunAction = actionKey` write through
       // update so the actions-panel `>`-marker has a single writer (the
@@ -706,28 +683,33 @@ function update(model, msg) {
       // every reader sees the same source of truth (Phase C).
       model.currentGroup = typeof msg.name === 'string' ? msg.name : '';
       return [model, []];
-    case 'reset_group_context':
+    case 'reset_group_context': {
       // Cross-layer Msg emitted by the groups Component on a group switch —
       // the ROOT chrome half of the old resetGroupContext (per-group sel /
       // filters / multiSel reset, mode flags off, lastRunAction clear). The
       // viewer-slice half rides on viewer_reset_chrome → detail Component
       // (Phase A/B).
-      model.ui.sel.actions = 0;
-      model.ui.sel.containers = 0;
+      // Phase 4a — actions/containers nav state lives on their own
+      // Component slices now; emit wrapped resets per panel, but only when
+      // the owning Component is registered (tests that don't register
+      // actions/docker shouldn't trigger "unknown Component" warnings).
       model.lastRunAction = '';
       delete model.ui.filters.actions;
       delete model.ui.filters.containers;
-      delete model.ui.multiSel.actions;
-      delete model.ui.multiSel.containers;
       model.modes.terminalMode = false;
       model.modes.listSelectMode = false;
-      return [model, []];
-    case 'set_panel_cursor':
-      // Plain panel-cursor write (no nav_select cascade). Used by the groups
-      // Component to adjust ui.sel.groups after a tree-shape change without
-      // re-triggering the nav_select → groups_selected cycle.
-      if (msg.panel) model.ui.sel[msg.panel] = msg.index | 0;
-      return [model, []];
+      const api = require('./components/api');
+      const cmds = [];
+      for (const panel of ['actions', 'containers']) {
+        const compName = api.getComponentOwningPanel(panel);
+        if (!compName) continue;
+        cmds.push({ type: 'dispatch_msg', msg: api.wrap(compName, { type: 'set_cursor', panel, index: 0 }) });
+        cmds.push({ type: 'dispatch_msg', msg: api.wrap(compName, { type: 'multisel_clear', panel }) });
+      }
+      return [model, cmds];
+    }
+    // set_panel_cursor retired in Phase 4b — groups Component now wraps
+    // `set_cursor` to its own slice directly (see _cascadeCmds).
     // (viewer_reset_chrome + viewer_add_ephemeral_terminal /
     //  viewer_remove_ephemeral_terminal / viewer_add_content_tab /
     //  viewer_update_content_tab_lines / viewer_remove_content_tab moved to
@@ -737,7 +719,7 @@ function update(model, msg) {
     case 'design': {
       // Gated on the --design flag; emit the Cmd only when design is
       // enabled, otherwise no effect.
-      const layoutSlice = require('./plugins/api').getComponentSlice('layout');
+      const layoutSlice = require('./components/api').getComponentSlice('layout');
       const enabled = layoutSlice && layoutSlice.design.enabled;
       return [model, enabled ? [{ type: 'start_design' }] : []];
     }

@@ -23,18 +23,26 @@ const path = require('path');
 
 const { describe, it, eq, assert, section, report } = require('./test-runner');
 const { getModel } = require('../runtime');
-const { getComponentSlice } = require('../plugins/api');
+const { getComponentSlice } = require('../components/api');
 
 
 // Register the file-manager Component so the api facade can resolve the def.
-const api = require('../plugins/api');
+// (test-runner.js already registered layout + detail + groups when required
+// above — that's the production order tui.js uses.)
+const api = require('../components/api');
 
-const fmMod = require('../plugins/core/file-manager');
+const fmMod = require('../components/file-manager');
 api.registerComponent(fmMod);
 const fmDef = fmMod.panelTypes['file-manager'];
 
-// The files Component.
-const filesComp = require('../plugins/files');
+// The files Component. Phase 4a — registering up front so panel-type →
+// Component lookup resolves for `getSel`/`setSel`/`setScroll` in sections
+// [1-8]. Section [9] re-registers explicitly while exercising the real
+// effect loop; re-register is idempotent.
+const filesComp = require('../components/files');
+api.registerComponent(filesComp);
+
+const { setSel, setScroll, getSel } = require('../state');
 
 function mkTree() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'lazytui-files-'));
@@ -67,7 +75,10 @@ function freshState(root, panelType = 'files', extraPanelCfg = {}) {
     rightPanels: [],
     leftWidth: 30, detailHeightPct: 60,
   };
-  getModel().ui.sel = {}; getModel().ui.scroll = {}; getModel().ui.filters = {};
+  // Phase 4a — only `ui.filters` survives at root; cursor/scroll/multiSel
+  // live on each Component's nav slice. Re-home the panels we touch.
+  getModel().ui.filters = {};
+  setSel(panelType, 0); setScroll(panelType, 0);
   getComponentSlice('detail').contentTabs = {};
   getComponentSlice('detail').ephemeralTerminals = {};
   getComponentSlice('detail').tab = 0;
@@ -98,7 +109,10 @@ function makeDriver() {
       }
       dispatch({ type: 'dirLoaded', panelType: eff.panelType, cwd: eff.cwd, seq: eff.seq, items, error });
     } else if (eff.type === 'resetPanelChrome') {
-      getModel().ui.sel[eff.panel] = 0; getModel().ui.scroll[eff.panel] = 0; delete getModel().ui.filters[eff.panel];
+      // Mirrors the reducer's panel_reset: cursor/scroll → 0 via wrapped
+      // Msgs into the owning Component's nav slice; filter map at root.
+      setSel(eff.panel, 0); setScroll(eff.panel, 0);
+      delete getModel().ui.filters[eff.panel];
     } else if (eff.type === 'openFile') {
       opened.push(eff);
     }
@@ -261,11 +275,11 @@ describe('[8] Enter on a dir navigates — slice cwd advances + chrome resets', 
       const items = d.items('file-browser', 'filesystem');
       const subIdx = items.findIndex(i => i.name === 'subdir');
       assert(subIdx >= 0, 'subdir present');
-      getModel().ui.sel['file-browser'] = subIdx;
+      setSel('file-browser', subIdx);
       d.dispatch({ type: 'key', key: 'return', seq: '' });
       eq(d.browser('file-browser').cwd, path.join(root, 'subdir'), 'cwd advanced');
       assert(d.items('file-browser', 'filesystem').some(i => i.name === 'gamma.txt'), 'subdir listing loaded');
-      eq(getModel().ui.sel['file-browser'], 0, 'resetPanelChrome re-homed the cursor');
+      eq(getSel('file-browser'), 0, 'resetPanelChrome re-homed the cursor');
     } finally { rm(root); }
   });
   it('Enter on a file emits an openFile effect (no cwd change)', () => {
@@ -276,7 +290,7 @@ describe('[8] Enter on a dir navigates — slice cwd advances + chrome resets', 
       d.dispatch({ type: 'refresh' });
       const items = d.items('file-browser', 'filesystem');
       const alphaIdx = items.findIndex(i => i.name === 'alpha.txt');
-      getModel().ui.sel['file-browser'] = alphaIdx;
+      setSel('file-browser', alphaIdx);
       d.dispatch({ type: 'key', key: 'return', seq: '' });
       eq(d.opened.length, 1, 'one openFile effect emitted');
       eq(d.opened[0].item.name, 'alpha.txt');
@@ -315,7 +329,7 @@ section('[9] file open → content tab (real effect loop, async loader)');
 
     const items = api.getItems('file-browser');
     const alphaIdx = items.findIndex(i => i.name === 'alpha.txt');
-    getModel().ui.sel['file-browser'] = alphaIdx;
+    setSel('file-browser', alphaIdx);
     getComponentSlice("layout").focus = 'file-browser';
     // The real key path: routes to the focused Component's update → openFile.
     api.dispatchMsg({ type: 'key', key: 'return', seq: '' });

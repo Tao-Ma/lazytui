@@ -33,9 +33,9 @@
 const { spawn } = require('child_process');
 
 const {
-  esc, visibleLen, theme, renderPanel,
+  esc, theme, renderPanel,
   getSel, getScroll, isMultiSel, getFilter,
-  execAsync, decorate,
+  execAsync,
   streamCommand, addEphemeralTab, scheduleRender,
   setActiveTab, leaveTerminalMode,
   getItems: apiGetItems, selectedOrFocused,
@@ -44,6 +44,7 @@ const {
   hub,
 } = require('./api');
 const { getModel } = require('../runtime');
+const mnav = require('../model-nav');
 
 const POLL_MS = 10000;
 
@@ -214,7 +215,11 @@ function init() {
       memLimit: { type: 'bytes',   unit: 'B', meta: true },
     },
   });
-  return { status: {}, stats: {}, inFlight: false, started: false, eventsStarted: false };
+  return {
+    status: {}, stats: {}, inFlight: false, started: false, eventsStarted: false,
+    // Phase 4a — nav chrome for the `containers` panel type lives here.
+    nav: { containers: mnav.init() },
+  };
 }
 
 /** Emit a fetch (+ start the events stream the first time) unless one is
@@ -230,6 +235,8 @@ function _maybeFetch(slice) {
 }
 
 function update(msg, slice) {
+  // Phase 4a — nav chrome Msgs handled by the shared leaf.
+  if (mnav.isNavMsg(msg)) return mnav.apply(slice, msg);
   if (msg.type === 'refresh') {
     // boot + r + :refresh. Arm the recurring tick once; poll immediately.
     let next = slice;
@@ -403,22 +410,23 @@ function render(panel, width, height) {
   const group = m.config.groups[m.currentGroup];
   if (!group) return '';
   const containers = apiGetItems('containers');
-  const innerW = width - 2;
   const sel = getSel('containers');
   const isFocused = getComponentSlice("layout").focus === 'containers';
   const t = theme();
   const lines = containers.map((name, i) => {
     const isSel = i === sel && isFocused;
-    const ctx = { panelType: 'containers', item: name, selected: isSel };
-    const left  = decorate('row:left:containers',  { ...ctx, width: 4 });
-    const nameLen = visibleLen(esc(name));
-    const used = 1 + (left ? visibleLen(left) + 1 : 0) + nameLen;
-    const right = decorate('row:right:containers', { ...ctx, width: Math.max(0, innerW - used - 1) });
-    const lhead = left  ? `${left} `  : '';
-    const rtail = right ? ` ${right}` : '';
+    // Phase 5 — status dot inlined (was a decorator handler). Plain text
+    // on selected rows; colored markup otherwise (PRINCIPLES §8 — no [/]
+    // in [reverse]).
+    const st = _status(name);
+    const dot = (st === 'running' || st === 'stopped' || st === 'exited') ? '●' : '○';
+    const color = st === 'running' ? t.running
+                : (st === 'stopped' || st === 'exited') ? t.stopped
+                : t.unknown;
+    const lhead = isSel ? `${dot} ` : `[${color}]${dot}[/] `;
     const gutter = isMultiSel('containers', name) ? '*' : ' ';
-    if (isSel) return `[${t.selected}]${gutter}${lhead}${esc(name)}${rtail}`;
-    return `${gutter}${lhead}${esc(name)}${rtail}`;
+    if (isSel) return `[${t.selected}]${gutter}${lhead}${esc(name)}`;
+    return `${gutter}${lhead}${esc(name)}`;
   });
   const filterText = getFilter('containers');
   const title = filterText ? `${panel.title} /${esc(filterText)}` : panel.title;
@@ -468,19 +476,6 @@ function copyOptions(item) {
   return opts;
 }
 
-// Container row's left-side status glyph (DECORATORS.md). Plain text on
-// selected rows; colored markup otherwise (PRINCIPLES §8 — no [/] in [reverse]).
-function rowLeftContainers(ctx) {
-  const st = _status(ctx.item);
-  const dot = st === 'running' || st === 'stopped' || st === 'exited' ? '●' : '○';
-  if (ctx.selected) return dot;
-  const t = theme();
-  const color = st === 'running' ? t.running
-              : (st === 'stopped' || st === 'exited') ? t.stopped
-              : t.unknown;
-  return `[${color}]${dot}[/]`;
-}
-
 // --- Bulk container commands (`:` cmdline mode) ---
 //
 // Each reads selectedOrFocused('containers') so the same invocation works
@@ -518,7 +513,7 @@ module.exports = {
   name: 'docker',
   init,
   update,
-  // Framework teardown (cleanupPlugins on quit) — stop the long-lived
+  // Framework teardown (cleanupComponents on quit) — stop the long-lived
   // `docker events` child + its reconnect timer. process.on('exit') backstops.
   cleanup: stopEventsStream,
   // statusFor: generic provider contract — lets the core groups renderer show
@@ -529,9 +524,6 @@ module.exports = {
   },
   groupActions,
   commands: containerCommands,
-  decorators: {
-    'row:left:containers': rowLeftContainers,
-  },
   panelTypes: {
     containers: {
       mode: 'list',

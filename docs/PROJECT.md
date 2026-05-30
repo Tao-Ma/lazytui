@@ -16,7 +16,10 @@ doesn't mention it, the framework doesn't see it.
 A directory that contains:
 
 - One YAML config file (the entry point — pass it to `tui.js`)
-- Any plugins, scripts, data, or services the YAML refers to
+- Any scripts, data, or services the YAML refers to
+- Optional config splits (additional `.yml`/`.yaml` files referenced
+  via the top-level `plugins:` block — parser-level merge, see
+  PLUGINS.md "Config splits")
 - Anything else the project needs (the framework doesn't care)
 
 The framework imposes no naming or layout beyond that — `services.yml`
@@ -31,11 +34,13 @@ from there.
 | Path declared in YAML | Resolved against |
 |---|---|
 | `project_dir:` (default `.`) | The YAML's parent directory |
-| `plugins.<name>.path:` (`.yml`/`.yaml`) | The YAML's parent directory |
-| `plugins.<name>.path:` (`.js`) | The YAML's parent directory |
-| `plugins.<name>` with no `path:` | Built-in: `js/plugins/<name>.js` in the lazytui repo |
+| `plugins.<name>.path:` (`.yml`/`.yaml`) — config split | The YAML's parent directory |
 | `files[].path:` | Used as-is — typically a project-relative string for display |
 | Action `script:` cwd | `project_dir` (resolved absolute at parse time) |
+
+The legacy `plugins.<name>.path: *.js` runtime-Plugin entries are no
+longer loaded (v0.5 Phase 6 retired the Plugin API); tui.js logs a
+one-time warning if the `plugins:` block contains non-split entries.
 
 Two consequences worth internalizing:
 
@@ -43,8 +48,8 @@ Two consequences worth internalizing:
   `tui.js` from anywhere; paths inside the YAML still resolve the
   same way.
 - **`project_dir` is for *script execution*, not for path discovery.**
-  Plugins and nested YAMLs always anchor to the entry-point YAML's
-  directory. `project_dir` only changes where action scripts run.
+  Config splits always anchor to the entry-point YAML's directory.
+  `project_dir` only changes where action scripts run.
 
 ## What the framework owns
 
@@ -53,10 +58,13 @@ The framework guarantees, regardless of project:
 - YAML schema validation, var/helper resolution (parser/)
 - Layout, panel rendering, navigation, themes, design mode
 - Action execution by `type` (`run` / `spawn` / `background`)
-- Built-in panels: `groups`, `actions`, `file-manager`, `history`, `detail`
+- Built-in Components: `layout`, `groups`, `actions`, `file-manager`,
+  `history`, `detail` (viewer), `docker` (containers), `files`,
+  `config-status`, `stats`
 - Built-in `:` commands: `:quit`, `:refresh`, `:help`
-- Plugin loading and lifecycle (`refresh`, `groupActions`, `panelTypes`)
-- Hub pub/sub, decorators, copy menu, filter, multi-select
+- Component lifecycle (`init`, `update(msg, slice)`, `cleanup`,
+  `refresh`, `groupActions`, `panelTypes`)
+- Hub pub/sub, viewContributions (footer slots), copy menu, filter, multi-select
 
 Things the framework will never know:
 
@@ -65,15 +73,16 @@ Things the framework will never know:
 - Where your data lives
 - What containers (if any) you run
 
-These come from the user project's YAML and plugins.
+These come from the user project's YAML.
 
 ## What the user project owns
 
 The project provides:
 
-- **The YAML** — source of truth; describes groups, actions, layout, plugins
-- **Domain plugins (optional)** — JS for new panel types or runtime
-  behavior; YAML for declarative config splits (see PLUGINS.md)
+- **The YAML** — source of truth; describes groups, actions, layout, splits
+- **Config splits (optional)** — YAML files referenced via top-level
+  `plugins:` to break a long config into per-group modules (see
+  PLUGINS.md "Config splits")
 - **Scripts and data** the actions invoke
 - **A way to invoke `tui.js`** — typically a thin wrapper script in the
   project root (e.g. `./do tui` or `make tui`) that calls
@@ -128,16 +137,16 @@ The framework finds `tui-plugins/extras.yml` relative to
 `my-services/` (because `project_dir: .`), and renders the `prod`
 group's `Deploy` action.
 
-That's the entire contract. Everything else — multiple groups, custom
-panel types, hub-fed status panels, confirmation prompts — is
-additive on top.
+That's the entire contract. Everything else — multiple groups,
+hub-fed status panels, confirmation prompts — is additive on top.
 
 ## Splitting a large YAML
 
 When `services.yml` outgrows one file, split groups into per-module
-YAMLs and reference them via `plugins:`. Merge rules and a worked
-example are in **PLUGINS.md** (YAML plugins section). The split is
-transparent to the framework: it sees a single merged config.
+YAMLs and reference them via the top-level `plugins:` block. Merge
+rules and a worked example are in **PLUGINS.md** ("Config splits"
+section). The split is transparent to the framework: it sees a single
+merged config.
 
 ## Adding runtime behavior
 

@@ -1,8 +1,8 @@
 # `:` Command Mode
 
 A modeline-style command bar (vim / k9s style) that resolves any panel,
-item, action, or plugin-supplied command from a single keystroke. Replaces
-multi-step navigation with one fuzzy-matched name.
+item, action, or Component-supplied command from a single keystroke.
+Replaces multi-step navigation with one fuzzy-matched name.
 
 ## UX
 
@@ -33,7 +33,7 @@ of `{ name, desc, run() }` records:
 | Layout panels               | `<panel.title>`   | Focus that panel            |
 | Items in current group's actions panel | `<action.label>` | Run the action |
 | Items in any panel's `getItems()` (filtered by panel) | `<item display>` | Focus panel + select item |
-| Plugin `commands` array     | `<cmd.name>`      | Call `cmd.run(args, state)` |
+| Component `commands` array  | `<cmd.name>`      | Call `cmd.run(args)`        |
 
 ### Disambiguation
 
@@ -49,18 +49,20 @@ Every candidate has a `desc` field (right column of the dropdown). Sources:
 - Panel: `panel.title` (no desc — the name *is* the help)
 - Action: action's `desc` field from YAML (already authored)
 - Item: `getInfo()[0]` line stripped of markup, or `String(item)` fallback
-- Plugin command: `command.desc`
+- Component command: `command.desc`
 
 No new authoring is required for anything that already exists in YAML.
 
-## Plugin extension contract
+## Component extension contract
 
-Plugins extend the registry by exporting `commands`:
+Components extend the registry by exporting `commands`:
 
 ```javascript
 // plugins/foo.js
 module.exports = {
   name: 'foo',
+  init: () => ({ ... }),
+  update: (msg, slice) => slice,
   panelTypes: { ... },
 
   // Static commands — array of { name, desc, run, args? }
@@ -68,14 +70,14 @@ module.exports = {
     {
       name: 'foo refresh',
       desc: 'Refresh foo data',
-      run: (args, S) => { /* ... */ },
+      run: (args) => { /* ... */ },
     },
   ],
 
-  // OR dynamic — function returning an array (called every cmdline open)
+  // OR dynamic — function returning an array (called every cmdline open).
   // Use this when commands depend on runtime state (e.g. a list of
   // available themes, profiles, recent items).
-  getCommands(S) {
+  getCommands(model) {
     return THEMES.map(t => ({
       name: `theme ${t}`,
       desc: `Switch to ${t} theme`,
@@ -85,23 +87,26 @@ module.exports = {
 };
 ```
 
-Both `commands` (static) and `getCommands(S)` (dynamic) are walked by
-`api.getCommands(S)` and merged. Static is fine for fixed verbs; dynamic
-is fine when the candidate list depends on state.
+Both `commands` (static) and `getCommands(model)` (dynamic) are walked
+by `api.getCommands()` and merged. Static is fine for fixed verbs;
+dynamic is fine when the candidate list depends on state.
 
-### Built-in commands (in core plugin)
+### Built-in commands (framework defaults)
 
 | Name              | Effect                                       |
 |-------------------|----------------------------------------------|
 | `quit`            | Exit the TUI                                 |
-| `reload`          | Reload YAML config                           |
-| `refresh`         | Re-run plugin `refresh()` cycle              |
+| `refresh`         | Re-fan a refresh Msg to every Component      |
 | `help`            | Show help text in detail panel               |
+| `save-layout`     | Persist current panel layout to YAML         |
+| `restore-layout`  | Reload panel layout from YAML                |
 | `theme <name>`    | Switch theme (one entry per theme)           |
 | `focus <panel>`   | Focus a panel (one entry per layout panel)   |
+| `design`          | Open layout design mode (when `--design`)    |
 
-These are core in the literal sense — they live in `plugins/core.js`'s
-`commands` so the same contract third-party plugins use is dogfooded.
+These live in `components/api.js#FRAMEWORK_COMMANDS` + a small
+`_frameworkDynamicCommands` builder; they appear in the cmdline registry
+with the source tag `<framework>`.
 
 ## YAML extension
 
@@ -113,9 +118,10 @@ becomes the dropdown help line. No new schema.
 
 The cmdline buffer splits at the first whitespace: the leading token
 fuzzy-matches a registry entry; everything past it becomes positional
-args. Both YAML actions and plugin commands receive them — actions via
-`sh -c "$script" -- arg1 arg2 ...` (so script bodies use `$1`, `$@`,
-`${1:-default}`); plugin commands via the documented `run(args, S)`.
+args. Both YAML actions and Component commands receive them — actions
+via `sh -c "$script" -- arg1 arg2 ...` (so script bodies use `$1`,
+`$@`, `${1:-default}`); Component commands via the documented
+`run(args)`.
 
 ```yaml
 tail:
@@ -142,33 +148,30 @@ with no args — the script gets called with `$#=0`, so use
 `${1:-default}` if you want a default value.
 
 Out of scope for v1 (deferred until a real use case shows up):
-- Top-level `commands:` block in the user's YAML for project-wide commands not
-  tied to a group. Could be done as a thin wrapper that adds entries to
-  the resolver via the same shape as plugin `commands`.
+- Top-level `commands:` block in the user's YAML for project-wide
+  commands not tied to a group. Could be done as a thin wrapper that
+  adds entries to the resolver via the same shape as Component
+  `commands`.
 
 ## Architecture
 
 ```
 ┌─ dispatch.js ─────────────────────────────────────────┐
-│  ':' in handleNormalKey → enterCmdline()               │
-│  modeChain: { active: () => S.cmdMode,                 │
+│  ':' in handleNormalKey → cmdline_enter Msg            │
+│  modeChain: { active: () => cmdMode flag,              │
 │               handler: handleCmdlineKey }              │
-├─ cmdline.js (NEW) ────────────────────────────────────┤
-│  enterCmdline / exitCmdline   — mode toggles           │
-│  handleCmdlineKey             — typed key → state      │
-│  buildRegistry(S)             — walk panels/actions/   │
-│                                  items/plugin commands │
-│  fuzzyMatch(text, registry)   — score + sort           │
+├─ cmdline.js ──────────────────────────────────────────┤
+│  buildRegistry()              — walk panels/actions/   │
+│                                  items/Component cmds  │
+│  rebuild(text)                — fuzzy score + sort     │
 │  renderCmdline()              — bottom-row prompt +    │
 │                                  matches dropdown      │
-│  runCommand(match, S)         — dispatch to source     │
-├─ plugins/api.js ─────────────────────────────────────┤
-│  getCommands(S) → [{name,desc,run,plugin}]             │
-│    walks static plugin.commands +                      │
-│          dynamic plugin.getCommands(S)                 │
-├─ plugins/core.js ────────────────────────────────────┤
-│  commands: [quit, reload, refresh, help, theme×N,     │
-│             focus×N]                                  │
+│  runAt(sel, args)             — dispatch to source     │
+├─ components/api.js ─────────────────────────────────────┤
+│  getCommands() → [{name,desc,run,_plugin}]             │
+│    walks FRAMEWORK_COMMANDS +                          │
+│          static component.commands +                   │
+│          dynamic component.getCommands(model)          │
 └────────────────────────────────────────────────────────┘
 ```
 

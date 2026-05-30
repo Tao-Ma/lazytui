@@ -12,7 +12,7 @@
  */
 'use strict';
 
-const docker = require('../plugins/docker');
+const docker = require('../components/docker');
 const { _handleEventLine, _isTrackedContainer, _stopEventsStream } = docker;
 const { describe, section, it, assert, eq, report } = require('./test-runner');
 

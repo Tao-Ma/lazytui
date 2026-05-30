@@ -14,7 +14,7 @@ rediscovers them.
 
 **Status:** shipped (`d4274d6` impl + `6fc9edb` live-repaint fix).
 Producer: docker plugin publishes per-tick numeric samples on
-`docker.stats`. Consumer: `plugins/core/stats.js` renders the focused
+`docker.stats`. Consumer: `components/stats.js` renders the focused
 container's CPU + MEM as multi-row block-char line graphs. Schema
 flag `meta: true` keeps scale-reference columns (memLimit) out of
 auto-graphed metrics.
@@ -110,8 +110,10 @@ the focused container has no history yet), the panel shows
 
 **Sparklines are not deferred — they're a different layer.** A future
 table-style panel could carry a stat column rendered as a sparkline,
-or the footer could carry a sparkline tracking one live signal. Both
-are decorator-slot work (DECORATORS.md), not stats-panel scope.
+or the footer could carry a sparkline tracking one live signal. The
+footer case is `viewContributions.footerLeft|Right` on whichever
+Component owns the signal (DECORATORS.md notes the retirement); the
+column case is inline in that panel's `render()`.
 
 ## 3. YAML contract
 
@@ -155,11 +157,11 @@ scaling and `unit` for value formatting:
 
 ## 4. Plugin contract
 
-Lives in `plugins/core/stats.js` (framework code, alongside
+Lives in `components/stats.js` (framework code, alongside
 `history.js` / `viewer.js` — not docker-specific).
 
 ```javascript
-// plugins/core/stats.js  (sketch)
+// components/stats.js  (sketch)
 const { S } = require('../../state');
 const { hub, esc, theme, renderPanel, getSel, getItems: apiGetItems } = require('../api');
 
@@ -297,7 +299,7 @@ For a graph rendered in `H` rows of height by `W` columns of width:
 4. For each row from top to bottom, emit ` `/`▁`-`█` per column based
    on which slot of which row the value falls into.
 
-The rasterizer is in `plugins/core/stats-graph.js` (separate file so
+The rasterizer is in `components/stats-graph.js` (separate file so
 it's testable in isolation against fixed sample arrays).
 
 **Y-axis labels NOT shipped in v1.** Originally planned (`100% ┤` /
@@ -316,8 +318,8 @@ labels worthwhile.
 
 | Piece | LOC |
 |-------|-----|
-| `plugins/core/stats.js` — panel def, render, selection | ~80 |
-| `plugins/core/stats-graph.js` — rasterizer + axis labels + overlay formatters | ~80 |
+| `components/stats.js` — panel def, render, selection | ~80 |
+| `components/stats-graph.js` — rasterizer + axis labels + overlay formatters | ~80 |
 | `docker.js` — `parseBytes` + `parsePercent` + publish + delete + defineTopic | ~30 |
 | `tests/test-stats.js` — rasterizer + selection + producer wire-up | ~120 |
 | YAML wiring in `test/test.yml` | ~5 |
@@ -380,7 +382,7 @@ Run via `node js/run-tests.js -q`.
 This branch ships:
 
 - ONE producer wiring (`docker.js` publish + delete + defineTopic).
-- ONE consumer (`plugins/core/stats.js` + rasterizer).
+- ONE consumer (`components/stats.js` + rasterizer).
 - Tests for both.
 - YAML wiring in `test/test.yml` to live-exercise it.
 

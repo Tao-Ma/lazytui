@@ -19,7 +19,7 @@ const reg = require('../register');
 const sel = require('../select');
 const { describe, it, eq, assert, report } = require('./test-runner');
 const { getModel } = require('../runtime');
-const { getComponentSlice } = require('../plugins/api');
+const { getComponentSlice } = require('../components/api');
 
 
 function setUp(lines) {

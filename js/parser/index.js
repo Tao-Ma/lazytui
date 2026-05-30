@@ -372,14 +372,12 @@ function parse(yamlPath) {
     files,
     layout,
     theme: data.theme !== undefined ? data.theme : 'monokai',
-    // Preserve the `plugins:` block so loadPlugins() can require any
-    // JS-plugin entries at boot. Without this, JS plugins (entries
-    // with `.js` paths) silently never load — their panel types are
-    // referenced in `layout:` but rendererFor() returns null, leaving
-    // panel slots empty and the column-bottom rows of the right side
-    // spill over column 0 as paintColumns concatenates short+full
-    // row counts. YAML plugins (`.yml`/`.yaml` paths) keep working
-    // either way — `mergeYamlPlugins` inlined them above.
+    // Preserve the `plugins:` block for round-trip fidelity. The Plugin
+    // API itself retired in v0.5 Phase 6; tui.js surfaces a one-time
+    // warning if the field is non-empty. (YAML plugin merging — entries
+    // with `.yml`/`.yaml` paths — still happens above via
+    // `mergeYamlPlugins`; that's a config-merge concern, not a runtime
+    // hook, and stays.)
     plugins: data.plugins !== undefined ? data.plugins : {},
     // Yank-register config (top-level `register: { cap: N }`). state.js
     // forwards this to register.init() at boot. Default cap (100) is

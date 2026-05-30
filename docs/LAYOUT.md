@@ -278,17 +278,17 @@ within-column boundary drag from the keyboard.
 
 ## Implementation
 
-Node.js TUI with zero npm dependencies. Plugin system for extensibility.
+Node.js TUI with zero npm dependencies. Component system for extensibility.
 
 ```
-config.yml → parser (Python) → JSON → tui.js (Node.js) → terminal
+config.yml → parser → in-mem config → tui.js (Node.js) → terminal
                                          ↓
-                                    plugins/<name>.js
+                                  plugins/<name>.js  ← Component modules
 ```
 
 For module-level architecture, read the source under `js/`
-(every file is small and self-describing). For plugin authoring, see
-PLUGINS.md.
+(every file is small and self-describing). For Component authoring,
+see PLUGINS.md.
 
 ### Themes
 

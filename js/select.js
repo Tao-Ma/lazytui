@@ -37,7 +37,7 @@
 // the mode flags (visual / select) live in model.modes.
 const { getModel } = require('./runtime');
 const { stripMarkup, charWidth, esc } = require('./ansi');
-const { getComponentSlice } = require('./plugins/api');
+const { getComponentSlice } = require('./components/api');
 
 // All reads target the detail Component slice (lines / select / cursor /
 // scroll / search). Helper returns undefined if detail isn't registered
@@ -53,7 +53,7 @@ function _detail() { return getComponentSlice('detail'); }
 // All Msgs from this module target detail.update (Phase 2b). The
 // helper wraps so call sites stay tight: _apply({type:'select_*'}).
 function _apply(msg) {
-  const api = require('./plugins/api');
+  const api = require('./components/api');
   api.dispatchMsg(api.wrap('detail', msg));
 }
 

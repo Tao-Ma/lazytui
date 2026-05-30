@@ -13,7 +13,7 @@
 
 const { describe, it, eq, assert, report } = require('./test-runner');
 const { getModel } = require('../runtime');
-const { getComponentSlice } = require('../plugins/api');
+const { getComponentSlice } = require('../components/api');
 
 const kb = require('../keybindings');
 
@@ -151,9 +151,16 @@ describe('[4] prefix dispatch', () => {
 
 // ---- [5] dispatch: list-select gating -----------------------------
 
-const api = require('../plugins/api');
-api.registerPlugin({
+const api = require('../components/api');
+// Phase 4a — register as a Component (not a Plugin) so the test's
+// list-select multi-toggle reads/writes the new per-Navigator nav slice
+// via the helpers. The shared model-nav leaf handles set_cursor /
+// multisel_*; init seeds the panel's nav entry.
+const mnav = require('../model-nav');
+api.registerComponent({
   name: 'kb-test',
+  init: () => ({ nav: { listy: mnav.init() } }),
+  update: (msg, slice) => mnav.isNavMsg(msg) ? mnav.apply(slice, msg) : slice,
   panelTypes: {
     listy: {
       mode: 'list',
@@ -167,8 +174,8 @@ api.registerPlugin({
 describe('[5] v-mode gates space', () => {
   it('space enters prefix in normal mode; v enters select then space toggles', () => {
     kb.clearBindings();
-    getModel().ui.multiSel = {};
-    getModel().ui.sel = { listy: 1 };
+    require('../state').setSel('listy', 1);
+    require('../state').clearMultiSel('listy');
     getModel().ui.filters = {};
     getComponentSlice("layout").focus = 'listy';
     getModel().modes.listSelectMode = false;
@@ -299,7 +306,7 @@ describe('[9] space gate + group-switch reset', () => {
   });
   it('resetGroupContext clears listSelectMode', () => {
     getModel().modes.listSelectMode = true;
-    getModel().ui.sel = {}; getModel().ui.filters = {}; getModel().ui.multiSel = {};
+    getModel().ui.filters = {};
     resetGroupContext();
     eq(getModel().modes.listSelectMode, false, 'select mode dropped on group switch');
   });

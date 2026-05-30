@@ -10,16 +10,17 @@
  */
 'use strict';
 
-const { setDetail } = require('../../state');
-const { getModel } = require('../../runtime');
-const history = require('../../history');
-const { registerEffect } = require('../../effects');
+const { setDetail } = require('../state');
+const { getModel } = require('../runtime');
+const history = require('../history');
+const mnav = require('../model-nav');
+const { registerEffect } = require('../effects');
 const {
-  esc, visibleLen, theme, renderPanel,
-  getSel, getScroll, isMultiSel, decorate,
+  esc, theme, renderPanel,
+  getSel, getScroll, isMultiSel,
   getItems: apiGetItems, setActiveTab,
   getComponentSlice,
-} = require('../api');
+} = require('./api');
 
 function getItems() { return history.all(); }
 
@@ -78,30 +79,21 @@ function copyOptions(entry) {
 }
 
 function render(panel, w, h) {
-  const m = getModel();
   const items = apiGetItems('history', null);
-  const innerW = w - 2;
   const sel = getSel('history');
   const isFocused = getComponentSlice("layout").focus === 'history';
   const lines = items.map((entry, i) => {
     const time = fmtTime(entry.startedAt);
     const dur = fmtDuration(entry).padStart(5, ' ');
     const isSel = i === sel && isFocused;
-    const ctx = { panelType: 'history', item: entry, selected: isSel };
-    const left = decorate('row:left:history', { ...ctx, width: 4 });
-    const lhead = left ? `${left} ` : '';
     const gutter = isMultiSel('history', String(entry.startedAt)) ? '*' : ' ';
-    let row;
     if (isSel) {
       // Selected row: plain text in [reverse] (no inner markup, see PRINCIPLES §8).
       const plainGlyph = entry._detached ? '—' : entry.exitCode === null ? '⟳' : entry.exitCode === 0 ? '✓' : entry.exitCode === 'killed' ? '⊗' : '✗';
-      row = `[${theme().selected}]${gutter}${lhead}${time} ${dur} ${plainGlyph} ${esc(entry.label)}`;
-    } else {
-      const glyph = statusGlyph(entry);
-      row = `${gutter}${lhead}${time} ${dur} ${glyph} ${esc(entry.label)}`;
+      return `[${theme().selected}]${gutter}${time} ${dur} ${plainGlyph} ${esc(entry.label)}`;
     }
-    const right = decorate('row:right:history', { ...ctx, width: Math.max(0, innerW - visibleLen(row) - 1) });
-    return right ? `${row} ${right}` : row;
+    const glyph = statusGlyph(entry);
+    return `${gutter}${time} ${dur} ${glyph} ${esc(entry.label)}`;
   });
   return renderPanel({
     width: w, height: h, lines,
@@ -136,6 +128,8 @@ function _replayLines(entry) {
 // Enter on a row replays the captured output into the viewer — that side
 // effect is the only thing update() needs to fire.
 function update(msg, slice) {
+  // Phase 4a — nav chrome Msgs handled by the shared leaf.
+  if (mnav.isNavMsg(msg)) return mnav.apply(slice, msg);
   if (msg.type !== 'key' || msg.key !== 'return') return slice;
   if (getComponentSlice("layout").focus !== 'history') return slice;
   const entry = history.all()[getSel('history')];
@@ -153,7 +147,7 @@ registerEffect('historyReplay', (eff) => {
 
 module.exports = {
   name: 'history',
-  init: () => ({}),
+  init: () => ({ nav: { history: mnav.init() } }),
   update,
   panelTypes: {
     history: {

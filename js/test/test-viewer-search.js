@@ -9,7 +9,7 @@
 const search = require('../viewer-search');
 const { describe, it, eq, assert, report } = require('./test-runner');
 const { getModel } = require('../runtime');
-const { getComponentSlice } = require('../plugins/api');
+const { getComponentSlice } = require('../components/api');
 
 
 function setup(lines, panelH = 10) {

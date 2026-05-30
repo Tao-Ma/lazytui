@@ -11,7 +11,7 @@ const { spawn } = require('child_process');
 const fs = require('fs');
 const { setDetail } = require('./state');
 const { streamCommand, killCurrentProc } = require('./stream');
-const { getComponentSlice, dispatchMsg, wrap } = require('./plugins/api');
+const { getComponentSlice, dispatchMsg, wrap } = require('./components/api');
 const history = require('./history');
 
 function runAction(model, actionKey, action, args = []) {
@@ -22,7 +22,7 @@ function runAction(model, actionKey, action, args = []) {
   require('./event-log').record('action', { actionKey, args, type: action.type });
   // Component Msg dispatch (v0.3.0). Action invocations fan out to
   // every Component's update() as an 'action' Msg.
-  require('./plugins/api').dispatchMsg({ type: 'action', actionKey, args, actionType: action.type });
+  require('./components/api').dispatchMsg({ type: 'action', actionKey, args, actionType: action.type });
   // Gate on action.confirm — show modal y/N overlay; user-confirmed
   // execution re-enters this fn through doRun(). Cancel is a no-op
   // (lastRunAction stays whatever it was, no '>' marker drift). The

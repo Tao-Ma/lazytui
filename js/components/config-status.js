@@ -34,6 +34,7 @@ const {
 } = require('./api');
 const { registerEffect } = require('../effects');
 const { getModel } = require('../runtime');
+const mnav = require('../model-nav');
 
 const TAB_FILE_TREE = 0;
 const TAB_TRACKED_TREE = 1;
@@ -350,10 +351,16 @@ function diffFor(item, branch, projectDir) {
 // --- update + effects (the TEA half) ---
 
 function init() {
-  return { tab: 0, cache: null, branch: null, expanded: {}, computing: false };
+  return {
+    tab: 0, cache: null, branch: null, expanded: {}, computing: false,
+    // Phase 4a — nav chrome on the slice; one entry for the panel type.
+    nav: { 'config-status': mnav.init() },
+  };
 }
 
 function update(msg, slice) {
+  // Phase 4a — nav chrome Msgs handled by the shared leaf.
+  if (mnav.isNavMsg(msg)) return mnav.apply(slice, msg);
   if (msg.type === 'refresh') {
     // Boot + explicit `r`/`:refresh` (refreshAll dispatches it; the periodic
     // loop does not). Recompute unless one is already in flight.

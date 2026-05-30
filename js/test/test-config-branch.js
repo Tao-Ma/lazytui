@@ -21,7 +21,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { spawnSync } = require('child_process');
-const cb = require('../plugins/config-branch');
+const cb = require('../components/config-branch');
 const { describe, it, eq, assert, report } = require('./test-runner');
 
 const TUI = path.resolve(__dirname, '..', 'tui.js');

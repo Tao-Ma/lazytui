@@ -10,9 +10,9 @@
 
 const { describe, it, assert, eq, report } = require('./test-runner');
 const hub = require('../hub');
-const { rasterize, BLOCKS } = require('../plugins/core/stats-graph');
-const stats = require('../plugins/core/stats');
-const docker = require('../plugins/docker');
+const { rasterize, BLOCKS } = require('../components/stats-graph');
+const stats = require('../components/stats');
+const docker = require('../components/docker');
 
 // --- rasterize: shape ---
 

@@ -21,15 +21,15 @@
 
 const { describe, it, eq, report } = require('./test-runner');
 const { getModel } = require('../runtime');
-const { getComponentSlice } = require('../plugins/api');
+const { getComponentSlice } = require('../components/api');
 
 const { recomputeGroups } = require('../state');
 const { setTheme } = require('../themes');
-const groups = require('../plugins/core/groups');
-const actions = require('../plugins/core/actions');
-const detail = require('../plugins/core/viewer');
-const fileManager = require('../plugins/core/file-manager');  // legacy v0.3 alias
-const history = require('../plugins/core/history');
+const groups = require('../components/groups');
+const actions = require('../components/actions');
+const detail = require('../components/viewer');
+const fileManager = require('../components/file-manager');  // legacy v0.3 alias
+const history = require('../components/history');
 
 // --- Minimal state setup — just enough that every render under test can
 // resolve its inputs without throwing. ---
@@ -105,7 +105,7 @@ const cases = [
 // All panels are Components now — render takes its own slice (resolved from
 // the global Component registry; auto-registers via the S shim path if needed).
 function _renderArg(name) {
-  return require('../plugins/api').getComponentSlice(name);
+  return require('../components/api').getComponentSlice(name);
 }
 
 describe('render idempotence — same state, twice', () => {

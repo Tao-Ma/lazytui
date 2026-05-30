@@ -103,13 +103,15 @@ describe('[2] parser', () => {
 // ---- [3] dispatch.loadKeyBindings ---------------------------------
 
 const kb = require('../keybindings');
-const api = require('../plugins/api');
+const api = require('../components/api');
 const dispatch = require('../dispatch');
 
-// A stub plugin command so the {command:…} path resolves without UI.
+// A stub Component command so the {command:…} path resolves without UI.
 let cmdRan = null;
-api.registerPlugin({
+api.registerComponent({
   name: 'keys-yaml-test',
+  init: () => ({}),
+  update: (msg, slice) => slice,
   commands: [{ name: 'stubcmd', desc: 'test', run: (args) => { cmdRan = args || []; } }],
 });
 
@@ -202,15 +204,17 @@ describe('[5] action binding honors args:', () => {
   });
 });
 
-// ---- [6] leader resolves PLUGIN-synthesized actions (not just YAML) ----
+// ---- [6] leader resolves COMPONENT-synthesized actions (not just YAML) ----
 
-describe('[6] action binding finds plugin-synthesized actions', () => {
-  it('resolves an action contributed by a plugin groupActions hook', () => {
-    // A plugin contributes `deploy` to group g; group g declares NO
+describe('[6] action binding finds component-synthesized actions', () => {
+  it('resolves an action contributed by a Component groupActions hook', () => {
+    // A Component contributes `deploy` to group g; group g declares NO
     // actions of its own. The old _runActionByKey searched only
     // g.actions and would miss this; the fix merges getGroupActions.
-    api.registerPlugin({
+    api.registerComponent({
       name: 'kb-groupactions-test',
+      init: () => ({}),
+      update: (msg, slice) => slice,
       groupActions: (group, groupName) => groupName === 'g'
         ? { deploy: { key: 'deploy', label: 'Deploy', script: 'echo', containers: [], type: 'run', args: ['env'] } }
         : {},
@@ -225,7 +229,7 @@ describe('[6] action binding finds plugin-synthesized actions', () => {
     const leaf = kb.resolve(kb.rootNode(), 'x');
     assert(leaf && typeof leaf.run === 'function', 'binding registered');
     leaf.run();
-    assert(getModel().modes.promptMode === true, 'plugin-synthesized action resolved + opened its args prompt');
+    assert(getModel().modes.promptMode === true, 'component-synthesized action resolved + opened its args prompt');
     getModel().modes.promptMode = false;
   });
 });

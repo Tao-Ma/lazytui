@@ -20,7 +20,7 @@ term.stdout.write = (chunk, ...rest) => {
 const { _handleWheel } = require('../input');
 const { describe, it, eq, report } = require('./test-runner');
 const { getModel } = require('../runtime');
-const { getComponentSlice } = require('../plugins/api');
+const { getComponentSlice } = require('../components/api');
 
 
 // _handleWheel now takes the owned model first (threaded from the pump).

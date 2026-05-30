@@ -159,22 +159,22 @@ if (selected) return `[reverse] ● ${esc(name)}`;
 return ` [green]●[/] ${esc(name)}`;
 ```
 
-## 9. Plugins read state, they don't hold it
+## 9. Components read state, they don't hold it
 
-A plugin's YAML config carries plugin-specific *parameters* — values that
-configure how the plugin operates (branch name, output dir, refresh
-interval, image list). It does NOT carry the user's *domain data* — the
-paths, image refs, container names, or other facts that already live in
-the project's top-level state.
+A Component's YAML config carries Component-specific *parameters* —
+values that configure how it operates (branch name, output dir,
+refresh interval, image list). It does NOT carry the user's *domain
+data* — the paths, image refs, container names, or other facts that
+already live in the project's top-level state.
 
-When a plugin needs to act on state that already exists at the top level
-(e.g., `files:`, `vars:`), the plugin should **reference** that state,
+When a Component needs to act on state that already exists at the top
+level (e.g., `files:`, `vars:`), it should **reference** that state,
 not duplicate it.
 
-**Test**: if a path, name, or other user fact appears in two places in
-the project YAML — once at the top level and once inside a plugin's
-config block — one of them is wrong. The duplicate inevitably drifts; a
-fix in one place is forgotten in the other.
+**Test**: if a path, name, or other user fact appears in two places
+in the project YAML — once at the top level and once inside a
+Component's config block — one of them is wrong. The duplicate
+inevitably drifts; a fix in one place is forgotten in the other.
 
 Bad — `config_branch:` redeclaring the path list:
 ```yaml
@@ -208,18 +208,15 @@ groups:
           categories: [secret, config]
 ```
 
-The plugin code mirrors the rule: hooks receive the full config
-(`groupActions(group, name, config)`), so a plugin can read top-level
-state without snapshotting it. The plugin is a pure function; user state
-is its input, not its possession.
+Component hooks (`groupActions(group, name, config)` etc.) receive the
+full config, so a Component can read top-level state without
+snapshotting it. The Component's reads are pure functions of input;
+user state is the input, not the Component's possession.
 
-When a plugin must accept the same data both ways (legacy explicit list
-*or* reference), expose `source:` as one alternative and validate at
-parse time that exactly one of them is set. Never silently fall back —
-explicit refusal beats a surprising default.
-
-See **PLUGINS.md** § "State references" for the worked
-`resolveFromSource` pattern used by `config-branch.js`.
+When a Component must accept the same data both ways (legacy explicit
+list *or* reference), expose `source:` as one alternative and validate
+at parse time that exactly one of them is set. Never silently fall
+back — explicit refusal beats a surprising default.
 
 ## 10. Layout framework
 
@@ -240,29 +237,28 @@ content is YAML-configurable.
   skips keys claimed explicitly.
 
 See **LAYOUT.md** for the full panel-type catalog, YAML schema, and
-visual concept. See **PLUGINS.md** for how plugins contribute panel types.
+visual concept. See **PLUGINS.md** for the Component API surface.
 
 ## 11. Render is idempotent on equal state
 
-A panel's `render(panel, width, height, state)` called twice with the
+A panel's `render(panel, width, height, slice)` called twice with the
 same inputs produces the same output, and the second call observably
-does not change anything that would alter a third call. (`state` is the
-root model for a Plugin, or the Component's slice for a Component.) Same
-for `render()` at the layout level — calling it back-to-back is a no-op
+does not change anything that would alter a third call. Same for
+`render()` at the layout level — calling it back-to-back is a no-op
 beyond writing pixels.
 
 This is **weaker than "render is pure"** (no mutation, no I/O).
 lazytui admits two intentional impurities the idempotence rule
 still permits:
 
-- **Layout calculation** writes derived state — `model.panelHeights`,
-  `model.panelBounds`, and `model.ui.scroll` keep-in-view adjustments —
-  during `calcLayout()`. These are *outputs* of the layout pass,
-  consumed by mouse/input handlers between frames; panel renderers
-  read them, don't write them. (Blessed outside-writer; see
-  `docs/v0.5-layering.md`.)
+- **Layout calculation** writes derived state — `layout.slice.panelHeights`,
+  `layout.slice.panelBounds` (Phase 1e), and per-Navigator
+  `slice.nav[panel].scroll` keep-in-view adjustments (Phase 4a) — during
+  `calcLayout()`. These are *outputs* of the layout pass, consumed by
+  mouse/input handlers between frames; panel renderers read them, don't
+  write them. (Blessed outside-writer; see `docs/v0.5-layering.md`.)
 - **Lazy hub subscriptions** (stats panel,
-  `js/plugins/core/stats.js#_ensureSub`) and **lazy initial-state
+  `js/components/stats.js#_ensureSub`) and **lazy initial-state
   fixup** (config-status panel) happen on first render and are
   idempotent on subsequent calls. Pure-render would prefer these
   in an `init` hook, but the current Plugin API has none — the
@@ -281,49 +277,26 @@ still permits:
   non-idempotent the diff cache would silently desync — the user
   sees stale pixels.
 
-**Rule for new panel renders:** read the model (Plugin) or the slice
-(Component), return a string. If you need a side effect on first
-render, make it idempotent and add a comment explaining the lazy-init
-pattern (see `stats.js#_ensureSub` for the canonical example).
+**Rule for new panel renders:** read the slice, return a string. If
+you need a side effect on first render, make it idempotent and add a
+comment explaining the lazy-init pattern (see `stats.js#_ensureSub`
+for the canonical example).
 
-## 12. Two plugin APIs — Plugin (simple) and Component (strict)
+## 12. TEA shape and the Component discipline
 
-Lazytui has two panel shapes. Both are legitimate TEA — they differ in
-*where state lives*, and the choice is a structural decision, not author
-taste. **In-tree, every built-in panel is a Component** (9/9 after v0.5
-Phase C). The **Plugin** API is preserved as the simpler shape for
-**external / user-authored** plugins where a slice + `update` is more
-ceremony than the panel needs.
-
-**`Plugin`** — the simple shape. A stateless renderer over the root
-model, plus an optional `onKey` that emits the standard verbs (or claims
-the key by returning `true`). It owns no slice; per-panel chrome
-(cursor / scroll / filter / multi-sel) lives on the root model and is
-read via `getSel` / `getScroll` / `isMultiSel`.
-
-```js
-module.exports = {
-  name: 'history',
-  panelTypes: {
-    history: {
-      render:  (panel, w, h, model) => { /* reads model + a module ring buffer */ },
-      getItems: (model) => historyEntries(),
-      onKey:   (key, item) => { /* e.g. replay into the detail panel */ },
-    },
-  },
-};
-// register with: api.registerPlugin(plugin)
-```
-
-**`Component`** — the TEA shape. The framework owns a state slice per
-Component. Messages arrive through `update(msg, slice)`, which returns
-either the next slice OR `[nextSlice, effects]`. Effects are plain data
+Every panel is a **Component**: the framework owns a state slice per
+Component, messages arrive through `update(msg, slice)` which returns
+either the next slice or `[nextSlice, effects]`. Effects are plain data
 descriptors (`{ type, … }`) the effects layer runs: async work, a
-viewer write, a repaint, a recurring `tick`, an `apply_msg` re-dispatch
-to the root reducer. An effect's async result feeds back as a Msg
-(`dispatchMsg`). Render receives the slice, not the root model. No
-`onKey` — key events arrive as `{ type:'key' }` Msgs (only to the
-focused Component, only when no modal owns input).
+viewer write, a repaint, a recurring `tick`, an `apply_msg`
+re-dispatch to the root reducer. An effect's async result feeds back
+as a Msg (`dispatchMsg`). Render receives the slice, not the root
+model. Key events arrive as `{ type:'key' }` Msgs — only to the
+focused Component, only when no modal owns input.
+
+The earlier "Plugin" shape (stateless renderer + `onKey`) and the
+slot-keyed decorator framework retired in v0.5 Phase 5/6. The single
+Component API replaces both.
 
 ```js
 module.exports = {
@@ -366,70 +339,46 @@ module.exports = {
   owns input, so the focused panel must not also see the key. A panel declares
   `claimsKeys: [...]` to suppress the framework's *default* for keys it handles
   in `update` (e.g. files claims `return`; config-status claims `] [ return`).
+- **Wrapped Msgs.** Component-specific Msgs MUST be wrapped via
+  `api.wrap('name', innerMsg)` (so the framework routes to exactly one
+  Component); only the four framework signals above fan out unwrapped.
 - **Effects stay out of `update`** — return `[slice, effects]`, never perform
   I/O inline (keeps `update` pure + replayable). The framework runs effects;
   an effect's async result re-enters as a Msg.
-- **Periodic work is self-driven.** There is no Plugin-style poll loop for
-  Components — a Component drives its own cadence by re-emitting a `tick`
-  effect from its tick-Msg handler (docker polls this way — the
-  self-re-arming-tick Cmd pattern).
+- **Periodic work is self-driven.** No framework poll loop — a
+  Component drives its own cadence by re-emitting a `tick` effect from
+  its tick-Msg handler (docker polls this way — the self-re-arming-tick
+  Cmd pattern).
 - An `update()` returning `undefined` leaves the slice unchanged (no-op
   escape hatch).
 - Components also contribute `commands` / `groupActions` / `statusFor` /
-  `decorators` / `cleanup`, collected by the framework exactly like a Plugin's.
-- Components and Plugins coexist in one panelType namespace; a Component-owned
-  panel wins on collision (caught at registration as a warning).
+  `viewContributions` / `cleanup`, collected by the framework.
 
-### Why both?
+### Two homes for state
 
-Components carry real benefits — slice isolation, no cross-panel state
-corruption, async folded through a single writer, replay — at the cost of
-boilerplate. In-tree the choice landed on Components everywhere (v0.5 Phase
-A→B→C; see `docs/v0.5-layering.md`). External plugins keep the Plugin shape
-because a small custom panel — a list backed by a YAML field, a status
-read-out — doesn't need a slice or an `update`. The single-writer rule
-per layer is preserved either way: a Plugin doesn't write the model at all
-(it's a renderer); a Component writes only its own slice and re-dispatches
-across layers via effects.
+Both *centralized* (root model) and *decentralized* (Component slice)
+are legitimate. The choice is per-piece-of-state:
 
-### Two homes for state — and the "one API" question
-
-Both shapes are legitimate TEA. They differ in *where* state lives:
-
-- **Centralized** (the pure-Elm shape) — state in the root model
-  (`model.modal.*`, `ui.sel`, `ui.scroll`, etc.), logic in the root reducer
-  (`runtime.update`); the view is a function over it. The chrome cluster —
-  per-panel cursor / scroll / filter / multi-sel — lives here.
-- **Decentralized** (nested sub-models) — state in a per-Component slice,
-  logic in the panel's own `update`. The slice is the Component's
-  encapsulation boundary; cross-layer reads go through `getModel()`,
-  cross-layer writes through effects.
-
-In-tree every panel is a Component, so the *panel* surface is uniform; the
-"two homes" still applies to **where each piece of state lives**:
+- **Centralized** — state in the root model (`model.modal.*`,
+  `model.ui.filters`, etc.), logic in the root reducer
+  (`runtime.update`). Per-panel filter text + cross-cutting modal
+  buffers stay here.
+- **Decentralized** — state in a per-Component slice, logic in the
+  Component's own `update`. The slice is the encapsulation boundary;
+  cross-layer reads go through `getModel()`, cross-layer writes
+  through effects.
 
 > **Is this state messy + self-contained enough that isolating it in a
-> Component slice (with its own effects) beats folding it into the shared
-> root model?**
+> Component slice (with its own effects) beats folding it into the
+> shared root model?**
 
-The genuine isolation wins go in slices: docker's polling loop + stats +
-events subprocess; files' per-panel directory browsers; config-status'
-git-worktree cache; the viewer's content tabs + ephemeral terminals; the
-groups tree's `expanded` Set. Everything chrome-shaped (cursors, scroll,
-filters, focus, mode flags, modal sub-models) lives in the root model where
-the reducer can write it uniformly.
-
-**Corollaries:**
-
-- For an external Plugin, don't reach for a Component "for consistency." If
-  the panel is a stateless view over data the framework already holds, a
-  Plugin is shorter to write and just as correct.
-- "Component" is not "better than" Plugin. It's a *different home* for
-  state, chosen for isolation. Picking it for a panel with no slice-shaped
-  state is pure boilerplate (the anti-pattern an early all-Components
-  attempt hit; see `docs/v0.5-tea.md`).
-- If you ever want *one* surface, that's a deliberate redesign (collapse
-  to one pole), not a cleanup — see `docs/v0.5-tea.md`.
+The genuine isolation wins live on slices: docker's polling loop +
+stats + events subprocess; files' per-panel directory browsers;
+config-status' git-worktree cache; the viewer's content tabs +
+ephemeral terminals; the groups tree's `expanded` Set; per-Navigator
+nav chrome (`slice.nav[panel].cursor/scroll/multiSel`, Phase 4a). The
+layout Component owns the frame (focus, viewMode, design, panel
+arrangement) — slice-private but loaded via cross-layer Msgs.
 
 ## 13. Checklist for new features
 

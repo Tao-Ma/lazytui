@@ -11,10 +11,11 @@
 
 const { describe, it, assert, eq, report } = require('./test-runner');
 const { getModel } = require('../runtime');
-const { getComponentSlice } = require('../plugins/api');
+const { getComponentSlice } = require('../components/api');
 
 const {
   recomputeGroups, expandGroup, collapseGroup, switchGroupsTab,
+  setSel, getSel,
 } = require('../state');
 
 // Build a 3-level synthetic tree directly into getModel().config.groups so we
@@ -50,9 +51,8 @@ function setupTree() {
   };
   getComponentSlice('groups').expanded = new Set();
   getComponentSlice('groups').tab = 'all';
-  getModel().ui.sel = {};
+  setSel('groups', 0);
   getModel().currentGroup = '';
-  getModel().ui.multiSel = {};
   getModel().ui.filters = {};
   recomputeGroups();
   getModel().currentGroup = getComponentSlice('groups').list[0].name;
@@ -115,12 +115,12 @@ describe('[6] cursor resync — points to nearest visible ancestor', () => {
     expandGroup('a', true);
     // Place cursor on a.x.deep (a leaf).
     const idx = getComponentSlice('groups').list.findIndex(g => g.name === 'a.x.deep');
-    getModel().ui.sel.groups = idx;
+    setSel('groups', idx);
     getModel().currentGroup = 'a.x.deep';
     // Collapse a — descendants disappear; cursor should land on 'a'.
     collapseGroup('a', false);
     eq(getModel().currentGroup, 'a', 'cursor walked up to nearest visible ancestor');
-    eq(getModel().ui.sel.groups, 0, 'sel index points at the new currentGroup row');
+    eq(getSel('groups'), 0, 'sel index points at the new currentGroup row');
   });
 });
 
@@ -156,11 +156,11 @@ describe('[8] Quick tab — flat list of pinned groups, any depth', () => {
     expandGroup('a', true);
     // Cursor on a.y (not pinned).
     const idx = getComponentSlice('groups').list.findIndex(g => g.name === 'a.y');
-    getModel().ui.sel.groups = idx;
+    setSel('groups', idx);
     getModel().currentGroup = 'a.y';
     switchGroupsTab('quick');
     eq(getModel().currentGroup, 'a.x.deep', 'cursor jumps to first pinned row');
-    eq(getModel().ui.sel.groups, 0, 'sel index is 0');
+    eq(getSel('groups'), 0, 'sel index is 0');
   });
 });
 

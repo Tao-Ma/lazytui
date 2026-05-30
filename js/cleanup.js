@@ -19,14 +19,11 @@ const { killCurrentProc } = require('./actions');
 function cleanup() {
   killCurrentProc();
   destroyAll();
-  // Stop plugin refresh loops + fire plugin cleanup hooks (e.g. docker's
-  // events stream) so no timer or child fires after quit. Lazy-required
-  // and guarded: CLI mode (--exec/--list) never loaded the plugin API.
-  try {
-    const api = require('./plugins/api');
-    api.stopRefreshLoops();
-    api.cleanupPlugins();
-  } catch { /* plugin API not initialized (CLI path) */ }
+  // Fire each Component's cleanup() hook (e.g. docker's `docker events`
+  // stream) so no timer or child fires after quit. Lazy-required and
+  // guarded: CLI mode (--exec/--list) never loaded the Component API.
+  try { require('./components/api').cleanupComponents(); }
+  catch { /* Component API not initialized (CLI path) */ }
   disableMouse();
   disableFocusEvents();
   disableBracketedPaste();

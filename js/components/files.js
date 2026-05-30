@@ -11,7 +11,7 @@
  *   source: docker       container filesystem browser (needs `container:`).
  *
  * The legacy `type: file-manager` panel is its own Component — see
- * js/plugins/core/file-manager.js. THIS module is the browsable
+ * js/components/file-manager.js. THIS module is the browsable
  * `files` / `file-browser` Component.
  *
  * Slice shape:
@@ -47,6 +47,7 @@ const path = require('path');
 
 const { getModel } = require('../runtime');
 const { registerEffect } = require('../effects');
+const mnav = require('../model-nav');
 const {
   esc, visibleLen, theme, renderPanel,
   getSel, getScroll, getFilter, isMultiSel,
@@ -312,7 +313,14 @@ function _renderFor(panel, w, h, slice, panelType, hardcoded) {
 // --- update + effects (the TEA half) ---
 
 function init() {
-  return { browsers: {} };
+  return {
+    browsers: {},
+    // Phase 4a — nav chrome lives on the slice now. `files` owns two
+    // panel types — `files` and `file-browser` — so the `nav` map is
+    // keyed per-panel-type. A single Component, two independent nav
+    // entries; matches the per-panel-type semantics of the helpers.
+    nav: { files: mnav.init(), 'file-browser': mnav.init() },
+  };
 }
 
 /** Each refresh / navigation produces a fresh load with a bumped seq so a
@@ -327,6 +335,8 @@ function _kickLoad(b, panel, source, panelType, container) {
 }
 
 function update(msg, slice) {
+  // Phase 4a — nav chrome Msgs handled by the shared leaf.
+  if (mnav.isNavMsg(msg)) return mnav.apply(slice, msg);
   if (msg.type === 'refresh') {
     // Boot + explicit `r`/`:refresh` (refreshAll dispatches refresh; the
     // periodic loop does not). Re-list every owned fs/docker panel present in
@@ -385,9 +395,10 @@ function update(msg, slice) {
 
 /**
  * Enter is the only key the Component owns (declared in claimsKeys); cursor
- * navigation stays framework chrome (model.ui.sel, moved by the global j/k
- * path). The key Msg carries no selected row — re-derive it from the slice +
- * the framework cursor, the same list render() uses.
+ * navigation is framework chrome — Phase 4a moved it onto this Component's
+ * own slice.nav[panelType].cursor, written by the wrapped set_cursor Msg
+ * the global j/k path emits. The key Msg carries no selected row — re-derive
+ * it from the slice + the cursor, the same list render() uses.
  */
 function _handleKey(msg, slice) {
   if (msg.key !== 'return') return slice;
@@ -473,10 +484,18 @@ registerEffect('openFile', (eff) => {
   _openFileAsTab(eff.item, eff.panelType);
 });
 
-// resetPanelChrome: the Component can't write model.ui (single-writer), so it
-// asks the reducer to re-home the panel's cursor/scroll/filter on navigation.
+// resetPanelChrome: re-home the panel's cursor/scroll/filter on navigation.
+// Phase 4b — cursor/scroll live on each Navigator's nav slice and are
+// written by that Component's update; the filter map is still root chrome
+// so a small reducer write covers it.
 registerEffect('resetPanelChrome', (eff) => {
-  require('../dispatch').applyMsg(require('../runtime').getModel(), { type: 'panel_reset', panel: eff.panel });
+  const api = require('./api');
+  const compName = api.getComponentOwningPanel(eff.panel);
+  if (compName) {
+    api.dispatchMsg(api.wrap(compName, { type: 'set_cursor', panel: eff.panel, index: 0 }));
+    api.dispatchMsg(api.wrap(compName, { type: 'set_scroll', panel: eff.panel, offset: 0 }));
+  }
+  delete require('../runtime').getModel().ui.filters[eff.panel];
 });
 
 function _openFileAsTab(item, panelType) {

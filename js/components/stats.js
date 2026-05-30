@@ -18,13 +18,13 @@
  */
 'use strict';
 
-const { getModel } = require('../../runtime');
+const { getModel } = require('../runtime');
 const {
   hub, esc, theme, renderPanel,
   getItems: apiGetItems,
   scheduleRender,
   getComponentSlice,
-} = require('../api');
+} = require('./api');
 const { rasterize } = require('./stats-graph');
 
 // Dedup hub.subscribe calls: one sub per (topic, window). Two stats
@@ -68,8 +68,9 @@ function _fmtBytes(v) {
 function _resolveSelection(panel) {
   if (!panel.select_from) return null;
   const items = apiGetItems(panel.select_from);
-  const m = getModel();
-  const sel = (m.ui.sel && m.ui.sel[panel.select_from]) || 0;
+  // Phase 4a — read the cursor via the state helper (resolves the
+  // owning Component's nav slice).
+  const sel = require('../state').getSel(panel.select_from);
   const item = items[sel];
   if (!item) return null;
   // For string-row panels (containers, etc.) the row key IS the item.

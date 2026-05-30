@@ -16,16 +16,20 @@ const stream = require('../stream');
 const calls = [];
 stream.streamCommand = (label, cmd) => { calls.push({ label, cmd }); };
 
-const { toggleMultiSel } = require('../state');
-const api = require('../plugins/api');
+const { toggleMultiSel, setSel, clearMultiSel } = require('../state');
+const api = require('../components/api');
 // docker is a Component now — its bulk `:` verbs are collected from the
 // component registry (getCommands), and getItems('containers') reads config.
-const dockerPlugin = require('../plugins/docker');
+// Phase 3 requires `layout` to register before any other Component so
+// non-layout slices nest under it; Phase 4a piggy-backs on that ordering
+// since each Navigator's nav slice lives on its own Component slice.
+api.registerComponent(require('../components/layout'));
+const dockerPlugin = require('../components/docker');
 api.registerComponent(dockerPlugin);
 
 const { describe, it, assert, eq, report } = require('./test-runner');
 const { getModel } = require('../runtime');
-const { getComponentSlice } = require('../plugins/api');
+const { getComponentSlice } = require('../components/api');
 
 
 // Set up a fake config + group so apiGetItems('containers', S) returns names.
@@ -35,8 +39,6 @@ getModel().config = {
   },
 };
 getModel().currentGroup = 'g1';
-getModel().ui.sel = {};
-getModel().ui.multiSel = {};
 getModel().ui.filters = {};
 
 const cmds = api.getCommands();
@@ -58,7 +60,7 @@ describe('[1] :stop / :start / :restart / :inspect resolve via getCommands', () 
 describe('[2] no multi-select → focused container', () => {
   it('cmd targets only the focused row', () => {
     calls.length = 0;
-    getModel().ui.sel.containers = 1;  // c2 is focused
+    setSel('containers', 1);  // c2 is focused
     stopCmd.run([]);
     eq(calls.length, 1, 'one streamCommand call');
     assert(calls[0].cmd === 'docker stop "c2"', `cmd is "docker stop \\"c2\\"" (got ${calls[0].cmd})`);
@@ -96,8 +98,8 @@ describe('[5] empty operand → no streamCommand call', () => {
   it('no-op when there is nothing to operate on', () => {
     calls.length = 0;
     getModel().config = { groups: { g1: { name: 'g1', containers: [] } } };
-    getModel().ui.multiSel = {};
-    getModel().ui.sel.containers = 0;
+    clearMultiSel('containers');
+    setSel('containers', 0);
     stopCmd.run([]);
     eq(calls.length, 0);
   });
@@ -108,8 +110,8 @@ describe('[6] command resets activeTab and terminalMode', () => {
     getModel().config = { groups: { g1: { name: 'g1', containers: ['c1'] } } };
     getComponentSlice('detail').tab = 3;
     getModel().modes.terminalMode = true;
-    getModel().ui.sel.containers = 0;
-    getModel().ui.multiSel = {};
+    setSel('containers', 0);
+    clearMultiSel('containers');
     calls.length = 0;
     stopCmd.run([]);
     eq(getComponentSlice('detail').tab, 0, 'switched to Info tab');
@@ -128,8 +130,8 @@ describe('[7] full cmdline path: type "inspect" + Enter → bulk command runs', 
     const m = getModel();
     getModel().config = { groups: { g1: { name: 'g1', containers: ['c1', 'c2'] } } };
     getModel().currentGroup = 'g1';
-    getModel().ui.sel = { containers: 0 };
-    getModel().ui.multiSel = {};
+    setSel('containers', 0);
+    clearMultiSel('containers');
     calls.length = 0;
     // cmdline folded onto the update spine: enter + each keystroke + submit
     // flow as Msgs through update (cmdline_key emits cmdline_rebuild → the

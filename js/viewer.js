@@ -7,7 +7,7 @@
 
 const { setDetail, getSel } = require('./state');
 const { getModel } = require('./runtime');
-const { getPanelDef, getItems, getComponentSlice } = require('./plugins/api');
+const { getPanelDef, getItems, getComponentSlice } = require('./components/api');
 const { getTabInfo, isTerminalTab, activeContentTab } = require('./tabs');
 const { killCurrentProc, streamCommand } = require('./actions');
 const { isStreaming } = require('./stream');
@@ -43,7 +43,7 @@ function switchToTab(model, idx) {
   // viewer_set_tab → detail Component (dispatchMsg); terminal_exit stays a
   // root-reducer Msg (applyMsg). The latter also emits force_full_repaint Cmd
   // when viewMode was 'full' so the layout reclaims rows.
-  require('./plugins/api').dispatchMsg(require('./plugins/api').wrap('detail', { type: 'viewer_set_tab', tab: idx }));
+  require('./components/api').dispatchMsg(require('./components/api').wrap('detail', { type: 'viewer_set_tab', tab: idx }));
   require('./dispatch').applyMsg(model, { type: 'terminal_exit' });
   if (idx === 0) {
     showSelectedInfo(model);

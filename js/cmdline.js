@@ -17,7 +17,7 @@ const { richToAnsi, RESET, visibleLen, esc } = require('./ansi');
 const { cols, rows, stdout } = require('./term');
 const { theme } = require('./themes');
 const { renderPanel } = require('./panel');
-const { getCommands, getItems: apiGetItems, dispatchMsg, wrap } = require('./plugins/api');
+const { getCommands, getItems: apiGetItems, dispatchMsg, wrap } = require('./components/api');
 
 const MAX_DROPDOWN = 8;
 

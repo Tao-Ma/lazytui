@@ -28,7 +28,7 @@ const {
 } = require('../design');
 const dispatch = require('../dispatch');
 const { getModel } = require('../runtime');
-const { getComponentSlice } = require('../plugins/api');
+const { getComponentSlice } = require('../components/api');
 const { describe, it, assert, eq, report } = require('./test-runner');
 
 // Design mode folded onto the update spine: entry is the design_enter Msg,

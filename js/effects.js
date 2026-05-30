@@ -56,7 +56,7 @@ function installBuiltins() {
   registerEffect('setDetail', (eff) => {
     // viewer_set_content is handled by the detail Component's update (Phase B).
     // Phase 2b — wrapped routing.
-    const api = require('./plugins/api');
+    const api = require('./components/api');
     api.dispatchMsg(api.wrap('detail', {
       type: 'viewer_set_content', lines: Array.isArray(eff.lines) ? eff.lines.slice() : [],
     }));
@@ -66,7 +66,7 @@ function installBuiltins() {
   // route directly to layout.
   registerEffect('focus', (eff) => {
     if (typeof eff.panel === 'string') {
-      const api = require('./plugins/api');
+      const api = require('./components/api');
       api.dispatchMsg(api.wrap('layout', { type: 'focus_set', focus: eff.panel }));
     }
   });
@@ -84,7 +84,7 @@ function installBuiltins() {
   // update when it needs to send a Msg to ANOTHER Component (e.g. groups →
   // viewer_reset_chrome → detail Component on a group cascade).
   registerEffect('dispatch_msg', (eff) => {
-    require('./plugins/api').dispatchMsg(eff.msg);
+    require('./components/api').dispatchMsg(eff.msg);
   });
   // show_selected_info: Component-level access to the framework Cmd that
   // refreshes the focused panel's info into the viewer. detail.update emits
@@ -108,7 +108,7 @@ function installBuiltins() {
   registerEffect('tick', (eff) => {
     if (!eff || typeof eff.ms !== 'number' || !eff.msg) return;
     const t = setTimeout(() => {
-      try { require('./plugins/api').dispatchMsg(eff.msg); } catch (_) { /* registry gone */ }
+      try { require('./components/api').dispatchMsg(eff.msg); } catch (_) { /* registry gone */ }
     }, eff.ms);
     if (t && typeof t.unref === 'function') t.unref();
   });
@@ -121,7 +121,7 @@ function installBuiltins() {
     try { require('./layout').forceFullRepaint(); } catch (_) {}
   });
   registerEffect('refresh', () => {
-    require('./plugins/api').refreshAll(getModel().config);
+    require('./components/api').refreshAll(getModel().config);
   });
   registerEffect('show_help', () => { require('./help-text').showHelp(); });
   registerEffect('run_tab', (eff) => {
