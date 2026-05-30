@@ -26,7 +26,7 @@
 'use strict';
 
 const { getModel } = require('../../app/runtime');
-const mnav = require('../../model/nav');
+const mnav = require('../../leaves/nav');
 const {
   esc, theme, renderPanel,
   getSel, getScroll, isMultiSel,

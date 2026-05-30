@@ -48,7 +48,7 @@ const path = require('path');
 
 const { getModel } = require('../../app/runtime');
 const { registerEffect } = require('../../dispatch/effects');
-const mnav = require('../../model/nav');
+const mnav = require('../../leaves/nav');
 const {
   esc, visibleLen, theme, renderPanel,
   getSel, getScroll, getFilter, isMultiSel,
@@ -128,7 +128,7 @@ function _matchesFilter(items, pattern) {
   if (!pattern) return items;
   // safeRegex rejects oversize / catastrophic-backtracking patterns; null
   // means "don't filter" (friendlier than blinking to empty mid-type).
-  const { safeRegex } = require('../../model/regex-guard');
+  const { safeRegex } = require('../../leaves/regex-guard');
   const rx = safeRegex(pattern, 'i');
   if (!rx) return items;
   // Never filter out parent / loading rows — navigation + status must stay
@@ -395,11 +395,13 @@ function update(msg, slice) {
 }
 
 /**
- * Enter is the only key the Component owns (declared in claimsKeys); cursor
- * navigation is framework chrome — Phase 4a moved it onto this Component's
- * own slice.nav[panelType].cursor, written by the wrapped set_cursor Msg
- * the global j/k path emits. The key Msg carries no selected row — re-derive
- * it from the slice + the cursor, the same list render() uses.
+ * Enter is the only key the Component owns — the handler returns the
+ * `_claimed` sentinel effect to suppress the framework's run_selected
+ * default. Cursor navigation is framework chrome (Phase 4a moved it
+ * onto this Component's slice.nav[panelType], written by the wrapped
+ * set_cursor Msg the global j/k path emits). The key Msg carries no
+ * selected row — re-derive it from the slice + cursor, the same way
+ * list render() does.
  */
 function _handleKey(msg, slice) {
   if (msg.key !== 'return') return slice;
@@ -407,7 +409,10 @@ function _handleKey(msg, slice) {
   if (!OWNED_TYPES.includes(panelType)) return slice;
   const hardcoded = _hardcodedFor(panelType);
   const item = _itemsFor(slice, panelType, hardcoded)[getSel(panelType)];
-  if (!item || item.kind === 'loading') return slice;  // claimed, no-op
+  // `return` is claimed even when the row resolves to nothing actionable
+  // (no item / loading) — the framework default would just call back
+  // into the panel with no useful result.
+  if (!item || item.kind === 'loading') return [slice, [{ type: '_claimed' }]];
   if (item.kind === 'parent' || item.kind === 'dir') {
     const source = _source(panelType, hardcoded);
     const panel = _panelOf(panelType) || {};
@@ -416,11 +421,11 @@ function _handleKey(msg, slice) {
     const { next, effect } = _kickLoad({ ...b, cwd: item.path }, panel, source, panelType, panel.container);
     return [
       { ...slice, browsers: { ...slice.browsers, [panelType]: next } },
-      [effect, { type: 'resetPanelChrome', panel: panelType }],
+      [effect, { type: 'resetPanelChrome', panel: panelType }, { type: '_claimed' }],
     ];
   }
   // declared / file / symlink → open in a content tab
-  return [slice, [{ type: 'openFile', panelType, item }]];
+  return [slice, [{ type: 'openFile', panelType, item }, { type: '_claimed' }]];
 }
 
 // --- effects (registered once at module load) ---
@@ -553,8 +558,7 @@ function _makeDef(panelType, hardcoded) {
     filterText: (it) => it.name || it.path || '',
     idOf: (it) => it.path,
     // Enter is owned in update() (navigate / open) — suppress the framework
-    // default (run_selected / showSelectedInfo) for it.
-    claimsKeys: ['return'],
+    // default (run_selected / viewer_show_info) for it.
     keyHints: hardcoded === 'declared'
       ? 'Enter open · / filter · y copy'
       : 'Enter open · / regex · y copy',

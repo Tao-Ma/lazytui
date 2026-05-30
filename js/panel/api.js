@@ -17,7 +17,8 @@
  */
 'use strict';
 
-const hub = require('../feature/hub');
+const hub = require('./hub');
+const route = require('./route');
 
 // L0/L2 helpers re-exported as the Component-facing surface. Component
 // authors should import only from `./api` so the surface is one diff
@@ -40,51 +41,12 @@ const { scheduleRender } = require('../render/render-queue');
 // Render functions receive the slice — Components that read app-global
 // state import it explicitly via getModel(). See docs/PRINCIPLES.md §12.
 const components = {};              // name -> component spec (functions, not state)
-const componentPanelTypeMap = {};   // panelType -> component name
 const statusProviders = [];         // Components that expose statusFor(name)
 
-// Phase 3 — Component slice storage is now nested:
-//   - The layout Component's slice lives at `_layoutSliceRef.current`.
-//   - Every other Component's slice lives at
-//     `_layoutSliceRef.current.panels[<name>]`.
-// The `componentSlices` accessor helpers below abstract the walk so
-// callers (registerComponent, getComponentSlice, _runComponentUpdate)
-// don't write the nesting at every site.
-const _layoutSliceRef = { current: null };
-
-// Pre-Phase-3 fallback: a flat slice bag for slices registered BEFORE
-// 'layout' exists (a misconfiguration we warn about and tolerate so
-// callers don't crash). Production registration order in tui.js +
-// test-runner ensures layout first; this fallback should never be hit.
-const _flatFallback = {};
-
-function _readSlice(name) {
-  if (name === 'layout') return _layoutSliceRef.current;
-  const layout = _layoutSliceRef.current;
-  if (layout && layout.panels && name in layout.panels) return layout.panels[name];
-  return _flatFallback[name];
-}
-
-function _writeSlice(name, slice) {
-  if (name === 'layout') {
-    _layoutSliceRef.current = slice;
-    return;
-  }
-  const layout = _layoutSliceRef.current;
-  if (layout) {
-    if (!layout.panels) layout.panels = {};
-    layout.panels[name] = slice;
-  } else {
-    _flatFallback[name] = slice;
-  }
-}
-
-function _hasSlice(name) {
-  if (name === 'layout') return _layoutSliceRef.current !== null;
-  const layout = _layoutSliceRef.current;
-  if (layout && layout.panels && name in layout.panels) return true;
-  return name in _flatFallback;
-}
+// Slice storage + panel→Component ownership map live in `./route` (a
+// zero-dep leaf) so the root reducer can read them without a require
+// cycle. The nested store (layout at root, others under
+// `layout.panels[<name>]`) is documented there; api just calls through.
 
 // Panel-def contract check. Returns false (skip this type) only when
 // render() is missing — the one hard requirement. Everything else is a
@@ -97,7 +59,7 @@ function _validatePanelDef(compName, type, def) {
     console.error(`[${label}] panelType '${type}' missing render(); skipping`);
     return false;
   }
-  for (const fn of ['getItems', 'getInfo', 'onKey', 'copyOptions', 'filterText', 'idOf']) {
+  for (const fn of ['getItems', 'getInfo', 'copyOptions', 'filterText', 'idOf']) {
     if (def[fn] !== undefined && typeof def[fn] !== 'function') {
       console.error(`[${label}] panelType '${type}' has '${fn}' that is not a function; ignored`);
     }
@@ -107,6 +69,9 @@ function _validatePanelDef(compName, type, def) {
   }
   if (def.keyHints !== undefined && typeof def.keyHints !== 'string') {
     console.error(`[${label}] panelType '${type}' has non-string 'keyHints'`);
+  }
+  if (def.claimsKeys !== undefined) {
+    console.error(`[${label}] panelType '${type}' declares 'claimsKeys' — that field is retired. Return the \`_claimed\` sentinel effect from update() for keys you own.`);
   }
   if (def.filterable && typeof def.getItems !== 'function') {
     console.error(`[${label}] panelType '${type}' is filterable but has no getItems(); filtering will no-op`);
@@ -121,8 +86,8 @@ function _validatePanelDef(compName, type, def) {
  *   - init(): slice       — initial state slice for this component
  *   - update(msg, slice)  — pure: returns the new slice (or [slice, effects])
  *   - panelTypes (opt):   — { [type]: { render, getItems?, getInfo?,
- *                           copyOptions?, filterText?, idOf?, onKey?,
- *                           claimsKeys?, keyHints?, ... } }. `render` gets
+ *                           copyOptions?, filterText?, idOf?,
+ *                           keyHints?, ... } }. `render` gets
  *                           (panel, w, h, slice). Omitted entirely for
  *                           chrome-only Components (see below).
  *   - viewContributions (opt): — `{ footerLeft?, footerRight? }` — see
@@ -139,13 +104,21 @@ function _validatePanelDef(compName, type, def) {
  * receive `key` Msgs since key arbitration routes to the focused
  * panel's owner.
  *
- * The framework owns the slice. Every Msg (key / refresh / hub /
- * action) is fanned out to every Component's update(). The dispatch
- * stays sync: a single update() returning a new slice is the only
- * mutation site.
+ * The framework owns the slice. Refresh / hub / action Msgs fan out to
+ * every Component's update(); a single update() returning a new slice
+ * is the only mutation site. Dispatch stays sync.
  *
- * Components don't have a separate `onKey` callback at the panel level —
- * key events arrive as messages through update().
+ * Key events arrive at the focused Component as `{type:'key', key, seq}`
+ * Msgs through update() via `dispatchKeyToFocused`. To suppress the
+ * framework default for a key the Component owns, return the
+ * `_claimed` sentinel effect alongside the slice:
+ *
+ *     return [slice, [{ type: '_claimed' }]];
+ *
+ * `dispatchKeyToFocused` consumes the sentinel and short-circuits the
+ * framework switch in handleNormalKey. Both the claim and the handler
+ * live in the same return statement — no separate field to keep in
+ * sync.
  */
 function registerComponent(comp) {
   if (!comp || typeof comp !== 'object' || typeof comp.name !== 'string') {
@@ -157,26 +130,27 @@ function registerComponent(comp) {
     return;
   }
   components[comp.name] = comp;
-  // Phase 3 — initial slice goes through the nested storage. The first
-  // Component registered MUST be 'layout' so non-layout slices have a
-  // place to nest under. tui.js + test-runner already enforce that
-  // order; a misordered register triggers the _flatFallback warning
-  // (kept lenient so a stray test doesn't crash).
-  if (comp.name !== 'layout' && _layoutSliceRef.current === null) {
+  // Phase 3 — initial slice goes through the nested storage in route.
+  // The first Component registered MUST be 'layout' so non-layout
+  // slices have a place to nest under. tui.js + test-runner already
+  // enforce that order; a misordered register triggers the
+  // route._flatFallback warning (kept lenient so a stray test doesn't crash).
+  if (comp.name !== 'layout' && !route.hasSlice('layout')) {
     console.error(`[component:${comp.name}] registered before 'layout' — Phase 3 requires layout to register first; slice will land in the flat fallback bag`);
   }
-  try { _writeSlice(comp.name, comp.init()); }
+  try { route.setSlice(comp.name, comp.init()); }
   catch (e) {
     console.error(`[component:${comp.name}] init error: ${e.message}`);
-    _writeSlice(comp.name, null);
+    route.setSlice(comp.name, null);
   }
   if (comp.panelTypes) {
     for (const [type, def] of Object.entries(comp.panelTypes)) {
       if (!_validatePanelDef(comp.name, type, def)) continue;
-      if (componentPanelTypeMap[type] && componentPanelTypeMap[type] !== comp.name) {
-        console.error(`[component:${comp.name}] panelType '${type}' already registered by component '${componentPanelTypeMap[type]}'; last-wins`);
+      const prev = route.componentForPanel(type);
+      if (prev && prev !== comp.name) {
+        console.error(`[component:${comp.name}] panelType '${type}' already registered by component '${prev}'; last-wins`);
       }
-      componentPanelTypeMap[type] = comp.name;
+      route.registerPanelOwner(type, comp.name);
     }
   }
   if (typeof comp.statusFor === 'function') statusProviders.push(comp);
@@ -238,7 +212,7 @@ function collectViewContributions(slot, ctx) {
   const items = [];
   for (const entry of bucket) {
     let result;
-    try { result = entry.fn(_readSlice(entry.owner), ctx); }
+    try { result = entry.fn(route.getSlice(entry.owner), ctx); }
     catch (e) {
       console.error(`[viewContributions:${entry.owner}] '${slot}' handler error: ${e.message}`);
       continue;
@@ -282,9 +256,7 @@ function _resetViewContributions() {
  * The inner msg is the Component's own Msg shape — its update() never
  * sees the wrapper.
  */
-function wrap(kind, msg) {
-  return { kind, msg };
-}
+const { wrap } = route;
 
 /**
  * Dispatch a Msg. Two shapes are accepted:
@@ -294,10 +266,11 @@ function wrap(kind, msg) {
  *    update() sees the unwrapped inner msg. Unknown `kind` is
  *    logged and dropped.
  *
- * 2. **Broadcast Msg**: one of the four framework signals —
- *    `refresh`, `hub`, `action`, `key`. Fans out to every
- *    registered Component's update(msg, slice). `key` is arbitrated
- *    — only the Component owning the focused panel receives it.
+ * 2. **Broadcast Msg**: one of the three framework signals —
+ *    `refresh`, `hub`, `action`. Fans out to every registered
+ *    Component's update(msg, slice). (Key events go through
+ *    `dispatchKeyToFocused`, not the broadcast path — they need a
+ *    return value to gate the framework default.)
  *
  * Phase 2f locked this contract: every Component-specific Msg MUST
  * be wrapped (via api.wrap). The previous "flat fan-out for any Msg
@@ -310,7 +283,7 @@ function wrap(kind, msg) {
  * Effects returned via `[slice, effects]` flow through the unified
  * effects registry regardless of shape.
  */
-const BROADCAST_TYPES = new Set(['refresh', 'hub', 'action', 'key']);
+const BROADCAST_TYPES = new Set(['refresh', 'hub', 'action']);
 
 function dispatchMsg(msg) {
   // Wrapped-Msg path. Routes to exactly one Component. Discriminator:
@@ -327,12 +300,10 @@ function dispatchMsg(msg) {
     _runComponentUpdate(name, comp, msg.msg);
     return;
   }
-  // Broadcast path. Only the 4 framework signals fan out; everything
+  // Broadcast path. Only the 3 framework signals fan out; everything
   // else must arrive wrapped.
   if (msg && BROADCAST_TYPES.has(msg.type)) {
-    const keyOwner = msg.type === 'key' ? componentPanelTypeMap[getFocus()] : undefined;
     for (const [name, comp] of Object.entries(components)) {
-      if (msg.type === 'key' && name !== keyOwner) continue;
       _runComponentUpdate(name, comp, msg);
     }
     return;
@@ -342,22 +313,63 @@ function dispatchMsg(msg) {
   console.error(`[dispatch] unwrapped Component-specific Msg ${ty}; dropped. Wrap with api.wrap('<component>', msg).`);
 }
 
+/**
+ * Dispatch a `key` Msg to the focused Component and return whether the
+ * Component claimed the keystroke (i.e. asked the framework to skip its
+ * default for this key). The claim shows up as a `_claimed` sentinel
+ * effect in the Component's `[slice, effects]` return; the framework
+ * consumes it here and runs the remaining effects normally.
+ *
+ * The key arbitration is identical to the old broadcast path — only the
+ * focused-panel Component receives the keystroke. Chrome-only
+ * Components never see it. The return-value contract is what makes the
+ * claim work without a separate `claimsKeys` declaration: the same
+ * branch that handles the key decides whether to suppress the default.
+ */
+function dispatchKeyToFocused(key, seq) {
+  const compName = route.componentForPanel(route.getFocus());
+  if (!compName) return false;
+  const comp = components[compName];
+  if (!comp) return false;
+
+  let claimed = false;
+  try {
+    const result = comp.update({ type: 'key', key, seq }, route.getSlice(compName));
+    if (result === undefined) return false;
+    if (Array.isArray(result)) {
+      const [next, effects] = result;
+      if (next !== undefined) route.setSlice(compName, next);
+      const filtered = [];
+      for (const e of (effects || [])) {
+        if (e && e.type === '_claimed') claimed = true;
+        else if (e) filtered.push(e);
+      }
+      if (filtered.length) require('../dispatch/effects').runEffects(filtered);
+    } else {
+      route.setSlice(compName, result);
+    }
+  } catch (e) {
+    console.error(`[component:${compName}] key update error: ${e.message}`);
+  }
+  return claimed;
+}
+
 // Inner helper — runs one Component's update, handles the
 // undefined / slice / [slice, effects] return contract, and isolates
 // throws. Shared by both the wrapped and broadcast dispatch paths.
-// Reads + writes route through _readSlice / _writeSlice so the
+// Reads + writes go through route.getSlice / route.setSlice so the
 // underlying nesting (layout.slice.panels[name] post-Phase-3) is
 // transparent here.
 function _runComponentUpdate(name, comp, msg) {
   try {
-    const result = comp.update(msg, _readSlice(name));
+    const result = comp.update(msg, route.getSlice(name));
     if (result === undefined) return;
     if (Array.isArray(result)) {
       const [next, effects] = result;
-      if (next !== undefined) _writeSlice(name, next);
+      if (next !== undefined) route.setSlice(name, next);
       require('../dispatch/effects').runEffects(effects);
     } else {
-      _writeSlice(name, result);
+      route.setSlice(name, result);
     }
   } catch (e) {
     console.error(`[component:${name}] update error: ${e.message}`);
@@ -365,21 +377,7 @@ function _runComponentUpdate(name, comp, msg) {
 }
 
 function getComponent(name)              { return components[name]; }
-function getComponentSlice(name)         { return _readSlice(name); }
-function getComponentOwningPanel(panelT) { return componentPanelTypeMap[panelT]; }
-
-/**
- * Read the currently focused panel type. Convenience for the common
- * `getFocus()` read — focus lives on layout's
- * slice (Phase 1c) and is read at ~50 sites across dispatch / layout /
- * Component renders. Writes still go through `dispatchMsg(wrap('layout',
- * { type: 'focus_set', focus: X }))`; there's no `setFocus()` because
- * focus is single-writer (only `layout.update` writes it).
- */
-function getFocus() {
-  const s = _readSlice('layout');
-  return s ? s.focus : null;
-}
+const { getSlice: getComponentSlice, componentForPanel: getComponentOwningPanel, getFocus } = route;
 
 /**
  * Ask all registered Components that contribute item status (e.g. docker
@@ -401,7 +399,7 @@ function statusFor(name) {
  * @returns {object|null} { mode, render, getItems, getInfo, ... }
  */
 function getPanelDef(panelType) {
-  const compName = componentPanelTypeMap[panelType];
+  const compName = route.componentForPanel(panelType);
   if (!compName) return null;
   const comp = components[compName];
   return comp && comp.panelTypes ? comp.panelTypes[panelType] : null;
@@ -424,7 +422,7 @@ function getPanelDef(panelType) {
 function getItems(panelType) {
   const def = getPanelDef(panelType);
   if (!def || typeof def.getItems !== 'function') return [];
-  const compName = componentPanelTypeMap[panelType];
+  const compName = route.componentForPanel(panelType);
   const raw = def.getItems(getComponentSlice(compName));
   if (!def.filterable) return raw;
   if (def.customFilter) return raw;
@@ -451,7 +449,7 @@ async function refreshAll() {
   // Event log (PRINCIPLES.md §11 + CHANGELOG v0.2.0). One record per
   // tick — payload empty because the tick itself is the input event;
   // each Component's refresh-Msg side-effects are responses.
-  require('../feature/event-log').record('refresh', null);
+  require('../dispatch/event-log').record('refresh', null);
   dispatchMsg({ type: 'refresh' });
 }
 
@@ -559,7 +557,7 @@ const FRAMEWORK_COMMANDS = [
       const { writeLayoutToFile } = require('../feature/yaml-layout');
       const { setDetail } = require('../app/state');
       const m = getModel();
-      const { error } = writeLayoutToFile(_readSlice('layout').arrange, m.configPath);
+      const { error } = writeLayoutToFile(route.getSlice('layout').arrange, m.configPath);
       if (error) {
         setDetail(`[red]Layout save failed:[/] ${error.message}`);
       } else {
@@ -613,7 +611,7 @@ function _frameworkDynamicCommands(m) {
       },
     });
   }
-  const layoutSlice = _readSlice('layout');
+  const layoutSlice = route.getSlice('layout');
   if (layoutSlice && layoutSlice.design.enabled) {
     out.push({
       name: 'design',
@@ -684,7 +682,7 @@ function leaveTerminalMode() {
 
 module.exports = {
   // --- Component registry / lifecycle ---
-  registerComponent, registerEffect, dispatchMsg, wrap,
+  registerComponent, registerEffect, dispatchMsg, dispatchKeyToFocused, wrap,
   getComponent, getComponentSlice, getComponentOwningPanel, getFocus,
   getPanelDef, getItems, idOf, selectedOrFocused,
   refreshAll, cleanupComponents,

@@ -17,7 +17,7 @@
 const { esc } = require('../io/ansi');
 const { renderOverlay } = require('../render/panel');
 const { getModel } = require('../app/runtime');
-const kb = require('./keybindings');
+const kb = require('../dispatch/keybindings');
 
 /** Build the popup body lines for a binding node (markup strings). */
 function whichKeyLines(node) {

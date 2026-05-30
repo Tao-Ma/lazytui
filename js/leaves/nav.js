@@ -42,7 +42,7 @@ function init() {
 /**
  * Apply a nav Msg to `slice`. Mutates the matching `slice.nav[msg.panel]`
  * in place (mirrors the in-place style of the other reducer leaves —
- * model-design / model-register / model-search / model-tabs). Returns the
+ * leaves/design / leaves/register / leaves/search / leaves/tabs). Returns the
  * passed slice on match, or `undefined` to signal "not a nav Msg" so the
  * Component's own update can take over.
  */

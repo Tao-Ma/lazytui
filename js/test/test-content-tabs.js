@@ -141,11 +141,11 @@ describe('[6] removeContentTab refreshes detail body', () => {
     tabs.removeContentTab('g1', 'file:x');
     eq(getComponentSlice('detail').tab, 0, 'back to Info');
     // detailLines should no longer hold the closed file's content
-    // (it's cleared via showSelectedInfo / setDetail in the close path).
-    // The test config has no panel def with getItems so showSelectedInfo
-    // returns early — but the assertion is that we DON'T still hold
-    // the file content unchanged. In a real app, showSelectedInfo
-    // would populate Info; here we accept that getComponentSlice('detail').lines may have
+    // (it's cleared via viewer_show_info in the close path). The test
+    // config has no panel def with getItems so viewer_show_info returns
+    // early — but the assertion is that we DON'T still hold the file
+    // content unchanged. In a real app, viewer_show_info would populate
+    // Info; here we accept that getComponentSlice('detail').lines may have
     // been left as-is OR cleared. Tighter assertion below.
   });
   it('falls back to sibling content tab and loads its lines', () => {

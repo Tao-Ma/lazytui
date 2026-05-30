@@ -14,14 +14,13 @@
 const { allPanels, selectGroup, setSel, getSel, getScroll } = require('../app/state');
 const { render } = require('../render/layout');
 const { getModel } = require('../app/runtime');
-const { switchToTab, showSelectedInfo } = require('../panel/viewer-cascade');
-const { enableMouse, enableFocusEvents, enableBracketedPaste, cols } = require('./term');
+const { enableMouse, enableFocusEvents, enableBracketedPaste, cols } = require('../io/term');
 const { isTerminalTab, activeTerminalId } = require('../panel/viewer/tabs');
-const { writeToSession, isSessionDead } = require('./terminal');
+const { writeToSession, isSessionDead } = require('../io/terminal');
 const {getPanelDef, getItems, getComponentSlice, dispatchMsg, wrap, getFocus } = require('../panel/api');
 
 function _detail() { return getComponentSlice('detail'); }
-const { handleKey, applyMsg } = require('../dispatch/dispatch');
+const { handleKey, applyMsg } = require('./dispatch');
 const { cleanup } = require('../app/cleanup');
 
 // --- Mouse handling ---
@@ -79,7 +78,7 @@ function _handleWheel(model, mx, my, delta) {
       // Refresh detail only when the wheel landed on the focused panel
       // (so its info reflects the new selection); wheeling over a side
       // panel without focus shouldn't clobber detail.
-      if (p.type === getFocus()) showSelectedInfo(model);
+      if (p.type === getFocus()) dispatchMsg(wrap('detail', { type: 'viewer_show_info' }));
       return true;
     }
     return false;
@@ -159,7 +158,7 @@ function handleMouse(model, kind, x, y) {
         for (const tab of tabs) {
           if (localX >= tab.x && localX < tab.x + tab.w) {
             dispatchMsg(wrap('layout', { type: 'focus_set', focus: 'detail' }));
-            switchToTab(model, tab.tabIdx);
+            dispatchMsg(wrap('detail', { type: 'tab_switch', idx: tab.tabIdx }));
             mutated = true;
             break;
           }
@@ -201,7 +200,7 @@ function handleMouse(model, kind, x, y) {
         }
       }
     }
-    showSelectedInfo(model);
+    dispatchMsg(wrap('detail', { type: 'viewer_show_info' }));
     mutated = true;
     break;
   }

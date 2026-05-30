@@ -4,7 +4,7 @@
  * Fully folded onto the update spine: the keyboard handler, the title-edit
  * sub-mode, undo/redo, AND the mouse drag/resize state machine now live in the
  * reducer (runtime: design_* / design_mouse_* Msgs) backed by the
- * dependency-free `model-design` leaf. design.js is now render-only — the
+ * dependency-free `leaves/design` leaf. design.js is now render-only — the
  * overlay (drag insertion line) + the footer text — reading the owned model
  * via getModel(). The drag/resize gesture state lives on model.modal.design
  * .drag; the working draft IS getModel().layout.
@@ -22,7 +22,7 @@ const { esc, RESET, richToAnsi } = require('../io/ansi');
 const { cols, stdout } = require('../io/term');
 const { getModel } = require('../app/runtime');
 const { getComponentSlice } = require('../panel/api');
-const mdesign = require('../model/design');
+const mdesign = require('../leaves/design');
 
 // The layout Component's design sub-slice (Phase 1f) — what used to be
 // at `model.modal.design`. Lazy because tests can boot without layout.

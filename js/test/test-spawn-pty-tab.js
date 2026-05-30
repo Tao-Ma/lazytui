@@ -61,7 +61,7 @@ let mockSessionDead = false;
 terminal.writeToSession = (id, data) => { writeToSessionCalls.push({ id, data }); };
 terminal.isSessionDead = (_id) => mockSessionDead;
 
-const { _handleTerminalModeData } = require('../io/input');
+const { _handleTerminalModeData } = require('../dispatch/input');
 
 const { describe, it, assert, eq, report } = require('./test-runner');
 

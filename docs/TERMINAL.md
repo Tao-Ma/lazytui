@@ -113,7 +113,7 @@ Tab 1+: action tabs     group.actions where tab: true
 Total:  1 + actionTabs.length
 ```
 
-`S.activeTab` indexes into this flat list. `runTab(direction)` cycles
+`S.activeTab` indexes into this flat list. The `tab_cycle` Msg cycles
 and executes action scripts.
 
 ### New tab model

@@ -89,9 +89,13 @@ function installBuiltins() {
   // show_selected_info: Component-level access to the framework Cmd that
   // refreshes the focused panel's info into the viewer. detail.update emits
   // this when closing the last content tab so the body falls back to Info.
+  // Routes to detail.update's viewer_show_info case — single-writer for the
+  // viewer slice through the Component fan-out.
   registerEffect('show_selected_info', () => {
-    try { require('../panel/viewer-cascade').showSelectedInfo(require('../app/runtime').getModel()); }
-    catch (_) { /* no renderer (test) */ }
+    try {
+      const api = require('../panel/api');
+      api.dispatchMsg(api.wrap('detail', { type: 'viewer_show_info' }));
+    } catch (_) { /* no renderer (test) */ }
   });
   // destroy_pty_session: PTY teardown from the viewer-tab lifecycle (closing
   // an ephemeral terminal tab — emitted by detail.update's
@@ -124,12 +128,15 @@ function installBuiltins() {
     require('../panel/api').refreshAll(getModel().config);
   });
   registerEffect('show_help', () => { require('./help-text').showHelp(); });
-  registerEffect('run_tab', (eff) => {
-    require('../panel/viewer-cascade').runTab(getModel(), eff.dir);
-  });
   registerEffect('start_design', () => {
     require('./dispatch').startDesignMode();
   });
+  // `_claimed` is the framework-internal sentinel a Component returns from
+  // its `key` update to suppress the framework default. The normal path
+  // consumes + filters it inside `dispatchKeyToFocused` before runEffects
+  // sees it; the no-op here covers tests that call `runEffects` on a raw
+  // update return without going through the dispatch entry point.
+  registerEffect('_claimed', () => {});
   registerEffect('quit', () => {
     require('../app/cleanup').cleanup();
     process.exit(0);
@@ -143,10 +150,20 @@ function installBuiltins() {
   registerEffect('run_action', (eff) => {
     setImmediate(() => require('./action-runner').runAction(getModel(), eff.actionKey, eff.action, eff.args));
   });
+  // kill_proc / stream_action: emitted by detail.update's tab_switch case.
+  // Killing a streaming run-action stops bleed-through when the user
+  // switches to a different tab; stream_action restarts the action's
+  // output flow when the user re-selects an action tab.
+  registerEffect('kill_proc', () => {
+    try { require('./action-runner').killCurrentProc(); } catch (_) {}
+  });
+  registerEffect('stream_action', (eff) => {
+    try { require('./action-runner').streamCommand(eff.actionKey, eff.script); } catch (_) {}
+  });
   // copy_commit: resolve the selected copy option's (module-held) content
   // thunk → OSC52, then drop the module options. idx<0 = cancel (just clear).
   registerEffect('copy_commit', (eff) => {
-    const copy = require('../render/copy');
+    const copy = require('../overlay/copy');
     if (eff.idx >= 0) copy.copySelect(eff.idx);
     copy.clearOptions();
   });

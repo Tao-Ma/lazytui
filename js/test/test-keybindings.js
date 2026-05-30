@@ -154,9 +154,9 @@ describe('[4] prefix dispatch', () => {
 const api = require('../panel/api');
 // Phase 4a — register as a Component (not a Plugin) so the test's
 // list-select multi-toggle reads/writes the new per-Navigator nav slice
-// via the helpers. The shared model-nav leaf handles set_cursor /
+// via the helpers. The shared leaves/nav leaf handles set_cursor /
 // multisel_*; init seeds the panel's nav entry.
-const mnav = require('../model/nav');
+const mnav = require('../leaves/nav');
 api.registerComponent({
   name: 'kb-test',
   init: () => ({ nav: { listy: mnav.init() } }),
@@ -207,7 +207,7 @@ describe('[5] v-mode gates space', () => {
 
 // ---- [6] which-key popup lines ------------------------------------
 
-const wk = require('../dispatch/which-key');
+const wk = require('../overlay/which-key');
 
 describe('[6] which-key popup', () => {
   it('lists leaves with their label and subtrees with +name …', () => {

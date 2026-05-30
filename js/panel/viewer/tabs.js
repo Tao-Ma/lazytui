@@ -18,7 +18,7 @@
  * The MUTATION surface (add/remove/update) routes through `update` via
  * viewer_* Msgs — single-writer through the reducer (see docs/v0.5-layering.md).
  * This module's mutation functions are thin facades that dispatch those Msgs;
- * the tab-arithmetic + lifecycle logic lives in the model-tabs leaf, called
+ * the tab-arithmetic + lifecycle logic lives in the leaves/tabs leaf, called
  * from the reducer.
  *
  * Lives separately from `terminal.js` so terminal.js stays focused on PTY-
@@ -27,7 +27,7 @@
 'use strict';
 
 const { getModel } = require('../../app/runtime');
-const mt = require('../../model/tabs');
+const mt = require('../../leaves/tabs');
 
 // --- Read helpers (used by the layout + render paths) ---
 

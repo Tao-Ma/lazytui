@@ -35,7 +35,7 @@
 // `getComponentSlice('layout').design` internally). Called from this
 // Component's update, so the slice writes happen within layout.update's
 // call stack (single-writer per slice preserved).
-const mdesign = require('../model/design');
+const mdesign = require('../leaves/design');
 
 function init() {
   return {

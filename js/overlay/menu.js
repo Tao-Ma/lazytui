@@ -2,7 +2,7 @@
  * Menu popup — centered overlay with keybinding list.
  *
  * Menu state + behavior now live in the reducer (runtime.update: menu_open/
- * nav/activate/close; items built by the pure model-menu leaf). This module
+ * nav/activate/close; items built by the pure leaves/menu leaf). This module
  * is the render-side only: renderMenu paints model.modal.menu.{items,idx}.
  */
 'use strict';

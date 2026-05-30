@@ -6,7 +6,7 @@
  */
 'use strict';
 
-const search = require('../render/viewer-search');
+const search = require('../overlay/viewer-search');
 const { describe, it, eq, assert, report } = require('./test-runner');
 const { getModel } = require('../app/runtime');
 const { getComponentSlice } = require('../panel/api');

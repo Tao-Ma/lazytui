@@ -19,7 +19,15 @@ const reg = require('../feature/register');
 const sel = require('../overlay/select');
 const { describe, it, eq, assert, report } = require('./test-runner');
 const { getModel } = require('../app/runtime');
-const { getComponentSlice } = require('../panel/api');
+const { getComponentSlice, dispatchKeyToFocused } = require('../panel/api');
+
+// (c)-era key-claim adapter: the keyboard visual-mode state machine
+// lives in the detail Component's update now, not in overlay/select.
+// `dispatchKeyToFocused` returns true when the focused Component
+// returned the `_claimed` sentinel — the same semantic the retired
+// `detailKey` exposed. Used by the visual-mode test section
+// below to drive the state machine through the production path.
+function detailKey(key, seq) { return dispatchKeyToFocused(key, seq); }
 
 
 function setUp(lines) {
@@ -189,7 +197,7 @@ describe('[8] cancel', () => {
   });
 });
 
-describe('[11] onDetailKey — keyboard visual-mode', () => {
+describe('[11] keyboard visual-mode — claim via detail Component update', () => {
   function withDetail(lines) {
     setUp(lines);
     getComponentSlice("layout").focus = 'detail';
@@ -201,14 +209,14 @@ describe('[11] onDetailKey — keyboard visual-mode', () => {
   it('claims keys only when focus=detail', () => {
     withDetail(['abc']);
     getComponentSlice("layout").focus = 'groups';
-    eq(sel.onDetailKey('v', 'v'), false, 'returns false when focus != detail');
+    eq(detailKey('v', 'v'), false, 'returns false when focus != detail');
     getComponentSlice("layout").focus = 'detail';
-    eq(sel.onDetailKey('v', 'v'), true, 'returns true when focus = detail');
+    eq(detailKey('v', 'v'), true, 'returns true when focus = detail');
   });
   it('v lands cursor at top of current viewport', () => {
     withDetail(Array.from({ length: 10 }, (_, i) => `line${i}`));
     getComponentSlice('detail').scroll = 3;
-    sel.onDetailKey('v', 'v');
+    detailKey('v', 'v');
     eq(sel.isActive(), true);
     eq(getComponentSlice('detail').select.kind, 'char');
     eq(getComponentSlice('detail').select.anchor.line, 3, 'anchor at viewport top, not line 0');
@@ -217,7 +225,7 @@ describe('[11] onDetailKey — keyboard visual-mode', () => {
   it('V starts line mode at viewport top', () => {
     withDetail(['a', 'b', 'c']);
     getComponentSlice('detail').scroll = 1;
-    sel.onDetailKey('V', 'V');
+    detailKey('V', 'V');
     eq(getComponentSlice('detail').select.kind, 'line');
     eq(getComponentSlice('detail').select.anchor.line, 1);
   });
@@ -226,61 +234,61 @@ describe('[11] onDetailKey — keyboard visual-mode', () => {
     getComponentSlice('layout').panelHeights.detail = 5;  // innerH = 3
     eq(getComponentSlice('detail').scroll, 0, 'starts at top');
     eq(sel.isActive(), false, 'reading mode (no select)');
-    sel.onDetailKey('j', 'j');
+    detailKey('j', 'j');
     eq(getComponentSlice('detail').scroll, 1, 'scroll advanced by 1');
-    sel.onDetailKey('j', 'j');
-    sel.onDetailKey('j', 'j');
+    detailKey('j', 'j');
+    detailKey('j', 'j');
     eq(getComponentSlice('detail').scroll, 3, 'scrolled 3 lines');
-    sel.onDetailKey('k', 'k');
+    detailKey('k', 'k');
     eq(getComponentSlice('detail').scroll, 2, 'k scrolls back');
   });
   it('reading-mode j/k clamps at top and bottom', () => {
     withDetail(Array.from({ length: 10 }, (_, i) => `line${i}`));
     getComponentSlice('layout').panelHeights.detail = 5;  // innerH = 3, maxScroll = 7
-    for (let i = 0; i < 20; i++) sel.onDetailKey('j', 'j');
+    for (let i = 0; i < 20; i++) detailKey('j', 'j');
     eq(getComponentSlice('detail').scroll, 7, 'clamped to maxScroll');
-    for (let i = 0; i < 20; i++) sel.onDetailKey('k', 'k');
+    for (let i = 0; i < 20; i++) detailKey('k', 'k');
     eq(getComponentSlice('detail').scroll, 0, 'clamped to 0');
   });
   it('visual-mode j/k moves cursor and extends selection', () => {
     withDetail(['line0', 'line1', 'line2', 'line3']);
-    sel.onDetailKey('v', 'v');
-    sel.onDetailKey('j', 'j');
+    detailKey('v', 'v');
+    detailKey('j', 'j');
     eq(getComponentSlice('detail').cursor.line, 1);
     eq(getComponentSlice('detail').select.cursor.line, 1, 'selection extended');
-    sel.onDetailKey('j', 'j');
+    detailKey('j', 'j');
     eq(getComponentSlice('detail').cursor.line, 2);
   });
   it('visual-mode j scrolls when cursor leaves viewport', () => {
     withDetail(Array.from({ length: 20 }, (_, i) => `line${i}`));
     getComponentSlice('layout').panelHeights.detail = 5;  // innerH = 3
-    sel.onDetailKey('v', 'v');
-    for (let i = 0; i < 5; i++) sel.onDetailKey('j', 'j');
+    detailKey('v', 'v');
+    for (let i = 0; i < 5; i++) detailKey('j', 'j');
     assert(getComponentSlice('detail').scroll > 0, `scroll auto-advanced (got ${getComponentSlice('detail').scroll})`);
   });
   it('h/l only claimed while selection active', () => {
     withDetail(['abc']);
-    eq(sel.onDetailKey('h', 'h'), false, 'h passes through when no sel');
-    sel.onDetailKey('v', 'v');
-    eq(sel.onDetailKey('l', 'l'), true, 'l claimed in visual mode');
+    eq(detailKey('h', 'h'), false, 'h passes through when no sel');
+    detailKey('v', 'v');
+    eq(detailKey('l', 'l'), true, 'l claimed in visual mode');
     eq(getComponentSlice('detail').cursor.col, 1, 'cursor moved right');
   });
   it('y commits + pushes; selection cleared', () => {
     withDetail(['hello']);
-    sel.onDetailKey('v', 'v');
-    sel.onDetailKey('l', 'l');
-    sel.onDetailKey('l', 'l');
-    sel.onDetailKey('l', 'l');
-    sel.onDetailKey('l', 'l');
-    sel.onDetailKey('y', 'y');
+    detailKey('v', 'v');
+    detailKey('l', 'l');
+    detailKey('l', 'l');
+    detailKey('l', 'l');
+    detailKey('l', 'l');
+    detailKey('y', 'y');
     eq(reg.top(), 'hello', 'full word yanked');
     eq(sel.isActive(), false, 'sel cleared');
   });
   it('Esc cancels without yanking', () => {
     withDetail(['abc']);
-    sel.onDetailKey('v', 'v');
-    sel.onDetailKey('l', 'l');
-    sel.onDetailKey('escape', '');
+    detailKey('v', 'v');
+    detailKey('l', 'l');
+    detailKey('escape', '');
     eq(sel.isActive(), false);
     eq(reg.historyLen(), 0, 'nothing pushed');
   });

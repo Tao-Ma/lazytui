@@ -4,7 +4,7 @@
  * Extracted as a dependency-free leaf (imports only the ansi leaf for esc)
  * so runtime.update can build the menu inline on `menu_open` without a cycle
  * — menu.js imports runtime for the shim, so the reducer can't call back into
- * it (same rationale as model-search).
+ * it (same rationale as leaves/search).
  *
  * Each item is `[label, actionString]` or `null` (a separator). The action
  * strings are handleAction verbs (`nav_up`, `focus_panel:7`, `design`, …);

@@ -11,7 +11,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { describe, it, eq, assert, report } = require('./test-runner');
-const log = require('../feature/event-log');
+const log = require('../dispatch/event-log');
 
 describe('[1] basic ring buffer', () => {
   log.clear();
@@ -130,7 +130,7 @@ describe('[5] hooks fire from the wired sources', () => {
 
   it('hub.publish appends a "publish" event', () => {
     log.clear();
-    const hub = require('../feature/hub');
+    const hub = require('../panel/hub');
     // Need a subscriber so the publish actually retains; recording
     // happens regardless but exercising the real path is cleaner.
     hub.subscribe('test.topic', { window: 5 });

@@ -22,10 +22,9 @@
 const { esc } = require('../io/ansi');
 const { allPanels, setDetail, getSel } = require('../app/state');
 const { render } = require('../render/layout');
-const { showSelectedInfo } = require('../panel/viewer-cascade');
 const { runAction } = require('./action-runner');
 const {refreshAll, getPanelDef, getItems, idOf, getGroupActions, getComponentSlice, dispatchMsg, wrap, getFocus } = require('../panel/api');
-const copy = require('../render/copy');
+const copy = require('../overlay/copy');
 const registerPopup = require('../overlay/register-popup');
 const { isTerminalTab, activeTerminalId, findEphemeralByid,
         removeEphemeralTab, isContentTab, activeContentTab,
@@ -77,7 +76,7 @@ function navSelect(model, panelType, index) {
   const compName = require('../panel/api').getComponentOwningPanel(panelType);
   if (!compName) return;
   dispatchMsg(wrap(compName, { type: 'set_cursor', panel: panelType, index }));
-  showSelectedInfo(model);
+  dispatchMsg(wrap('detail', { type: 'viewer_show_info' }));
   if (panelType === 'groups') {
     dispatchMsg(wrap('groups', { type: 'groups_selected', index }));
   }
@@ -219,32 +218,6 @@ function _groupsHasQuick() {
   return false;
 }
 
-/**
- * Forward an unhandled key to the focused panel's plugin (if any).
- * Returns true if the plugin claimed the key.
- *
- * For list-mode panels (those with getItems) the focused item is
- * resolved and passed as the second arg. Content / stream / tree /
- * terminal panels have no item under the cursor — `item` is null and
- * the plugin handles the key based on panel-level state alone.
- */
-function dispatchPluginKey(key) {
-  const def = getPanelDef(getFocus());
-  if (!def) return false;
-  // Component panels: the key was already handled in update() (routed there by
-  // dispatchMsg to the focused component). Here we only honor the panel's
-  // declared `claimsKeys` to SUPPRESS the framework default for keys the
-  // component owns (e.g. config-status claiming ]/[/Enter so they don't also
-  // trigger detail-tab-cycle / showSelectedInfo).
-  if (Array.isArray(def.claimsKeys) && def.claimsKeys.includes(key)) return true;
-  if (typeof def.onKey !== 'function') return false;
-  let item = null;
-  if (typeof def.getItems === 'function') {
-    const items = getItems(getFocus());
-    item = items[getSel(getFocus())] || null;
-  }
-  return def.onKey(key, item) === true;
-}
 
 // --- Mode handlers (one per modal state) ---
 //
@@ -277,8 +250,8 @@ function enterFilterMode(model) {
 }
 
 function handleFilterKey(model, key, seq) {
-  if (key === 'escape') { applyMsg(model, { type: 'filter_exit', keep: false }); showSelectedInfo(model); return; }
-  if (key === 'return') { applyMsg(model, { type: 'filter_exit', keep: true  }); showSelectedInfo(model); return; }
+  if (key === 'escape') { applyMsg(model, { type: 'filter_exit', keep: false }); dispatchMsg(wrap('detail', { type: 'viewer_show_info' })); return; }
+  if (key === 'return') { applyMsg(model, { type: 'filter_exit', keep: true  }); dispatchMsg(wrap('detail', { type: 'viewer_show_info' })); return; }
   if (key === 'up' || seq === 'k') { handleAction(model, 'nav_up'); return; }
   if (key === 'down' || seq === 'j') { handleAction(model, 'nav_down'); return; }
   applyMsg(model, { type: 'filter_key', seq });
@@ -305,7 +278,7 @@ function handleCopyKey(model, key, seq) {
 function handleDesignKey(model, key, seq) {
   // Post-Phase-6 single-writer cleanup: design state lives on layout's
   // slice; each key wraps a `design_*` Msg into layout. q/Esc/Enter all
-  // exit. The model-design leaf still does the pure layout transform —
+  // exit. The leaves/design leaf still does the pure layout transform —
   // layout.update calls it on each Msg arrival.
   const dispatch = (m) => dispatchMsg(wrap('layout', m));
   switch (key) {
@@ -369,12 +342,11 @@ function handleDetailSearchKey(model, key, seq) {
 }
 
 function handleNormalKey(model, key, seq) {
-  // Detail-panel keyboard visual-mode (v/V/y/Esc + cursor movement).
-  // Claims keys ahead of the global switch so y commits a live selection
-  // instead of opening the copy menu, and j/k move the detail cursor
-  // instead of falling through to moveSel (which is a no-op for the
-  // non-list detail panel anyway).
-  if (getFocus() === 'detail' && require('../overlay/select').onDetailKey(key, seq)) return;
+  // `dispatchKeyToFocused` (the call site that invokes us) already gave
+  // the focused Component first dibs and returned only if the Component
+  // didn't claim the keystroke. So no per-key Component-claim check is
+  // needed here — every claim, including the detail panel's visual-mode
+  // hijack, is folded into the owning Component's `update`.
 
   // [ / ] are panel-aware tab switchers: if the focused panel owns sub-tabs
   // (today: groups → All/Quick), they cycle those. Otherwise the keys fall
@@ -394,8 +366,8 @@ function handleNormalKey(model, key, seq) {
       break;
     case 'v':
       // `v` enters list-select mode on a list panel (mirrors the detail
-      // panel's visual mode, which onDetailKey already claimed above
-      // when focus=detail). A second `v` exits.
+      // panel's visual mode, which the detail Component claims via its
+      // own update when focus=detail). A second `v` exits.
       if (_isListPanel(getFocus())) applyMsg(model, { type: 'list_select', mode: 'toggle' });
       break;
     case ' ':
@@ -421,12 +393,9 @@ function handleNormalKey(model, key, seq) {
     case 'left': case 'h': handleAction(model, 'focus_left'); break;
     case 'right': case 'l':handleAction(model, 'focus_right'); break;
     case 'return':
-      // Plugins get first crack at Enter — config-status uses it to
-      // expand a "... N more" row, future plugins may bind it for
-      // their own per-row activation. If the plugin doesn't claim,
-      // fall through to the framework default (run the selected
-      // action / drill into the selected group).
-      if (dispatchPluginKey('return')) break;
+      // Framework default — Component claims for Enter (e.g. config-status
+      // expanding a "... N more" row) already returned `_claimed` from
+      // their update and short-circuited dispatchKeyToFocused.
       handleAction(model, 'run_selected');
       break;
     case 'r':              handleAction(model, 'refresh'); break;
@@ -452,19 +421,12 @@ function handleNormalKey(model, key, seq) {
       break;
     }
     case '?':              handleAction(model, 'show_help'); break;
-    // Tab keys are panel-aware: a focused plugin panel that wants its
-    // own ]/[ behavior (config-status's tab cycle, future tabbed
-    // plugins) gets first crack via dispatchPluginKey. If the plugin
-    // doesn't claim (returns false), fall through to the framework
-    // default — cycling detail tabs.
-    case ']':
-      if (dispatchPluginKey(']')) break;
-      handleAction(model, 'next_tab');
-      break;
-    case '[':
-      if (dispatchPluginKey('[')) break;
-      handleAction(model, 'prev_tab');
-      break;
+    // Tab keys: framework default cycles detail tabs. Panels that own
+    // their own ]/[ behavior (config-status's tab cycle) return the
+    // `_claimed` sentinel from their update and short-circuit before
+    // we reach this switch.
+    case ']':              handleAction(model, 'next_tab'); break;
+    case '[':              handleAction(model, 'prev_tab'); break;
     case 'pageup': case ',': handleAction(model, 'page_up'); break;
     case 'pagedown': case '.': handleAction(model, 'page_down'); break;
     case '<':              handleAction(model, 'goto_top'); break;
@@ -482,10 +444,11 @@ function handleNormalKey(model, key, seq) {
     case '"':              applyMsg(model, { type: 'register_popup_enter' }); break;
     case ':':              applyMsg(model, { type: 'cmdline_enter' }); break;
     default:
+      // Numeric hotkey → focus the corresponding panel. Anything else
+      // is a no-op at the framework level; the focused Component
+      // already saw it via the key Msg broadcast.
       if (allPanels().some(p => p.hotkey === key)) {
         handleAction(model, 'focus_panel', key);
-      } else {
-        dispatchPluginKey(key);
       }
   }
 }
@@ -629,7 +592,7 @@ const _modeHandlers = {
   detailSearchMode:    (model, key, seq) => handleDetailSearchKey(model, key, seq),
   registerPopupMode:   (model, key, seq) => handleRegisterPopupKey(model, key, seq),
   prefixMode:          (model, key, seq) => applyMsg(model, { type: 'prefix_key', key, seq }),
-  cmdMode:             (model, key, seq) => { handleCmdlineKey(model, key, seq); showSelectedInfo(model); },
+  cmdMode:             (model, key, seq) => { handleCmdlineKey(model, key, seq); dispatchMsg(wrap('detail', { type: 'viewer_show_info' })); },
 };
 
 const modeChain = modes.CHAIN_MODES.map(flag => {
@@ -677,7 +640,7 @@ function handleKey(model, key, seq) {
   // at the dispatch boundary so both modal and normal-key paths land
   // in the log identically. Silent + idempotent when the log is
   // disabled.
-  require('../feature/event-log').record('key', { key, seq });
+  require('./event-log').record('key', { key, seq });
   // A modal mode (filter / menu / cmdline / confirm / …) owns keyboard input
   // while active, so the focused Component must NOT also see the key — else
   // Enter-to-commit-a-/-filter would ALSO navigate a files panel, and typing
@@ -686,8 +649,12 @@ function handleKey(model, key, seq) {
   // refresh/hub/action Msgs still fan unconditionally (dispatched elsewhere);
   // this gate is for KEY routing alone — see PRINCIPLES §12.
   if (_dispatchActiveMode(model, key, seq)) { render(model); return; }
-  require('../panel/api').dispatchMsg({ type: 'key', key, seq });
-  handleNormalKey(model, key, seq);
+  // The focused Component sees the key; if its update returns the
+  // `_claimed` sentinel effect, the framework default is suppressed
+  // (panel claims the keystroke). Otherwise we fall through to the
+  // global switch.
+  const claimed = require('../panel/api').dispatchKeyToFocused(key, seq);
+  if (!claimed) handleNormalKey(model, key, seq);
   render(model);
 }
 
@@ -799,7 +766,7 @@ function handleAction(model, action, arg) {
           _runResolvedAction(model, key, act);
         }
       } else {
-        showSelectedInfo(model);
+        dispatchMsg(wrap('detail', { type: 'viewer_show_info' }));
       }
       break;
     }
@@ -867,7 +834,6 @@ module.exports = {
   handleKey, handleAction, applyMsg, navSelect, startDesignMode,
   registerKeyFilter, clearKeyFilters,
   loadKeyBindings,
-  _dispatchPluginKey: dispatchPluginKey,
   // Exposed for tests
   _enterPrefix: enterPrefix,
   _handlePrefixKey: handlePrefixKey,

@@ -17,7 +17,7 @@ term.stdout.write = (chunk, ...rest) => {
   return _origWrite(chunk, ...rest);
 };
 
-const { _handleWheel } = require('../io/input');
+const { _handleWheel } = require('../dispatch/input');
 const { describe, it, eq, report } = require('./test-runner');
 const { getModel } = require('../app/runtime');
 const {getComponentSlice, getFocus } = require('../panel/api');

@@ -302,7 +302,7 @@ section('[9] file open → content tab (real effect loop, async loader)');
     setSel('file-browser', alphaIdx);
     getComponentSlice("layout").focus = 'file-browser';
     // The real key path: routes to the focused Component's update → openFile.
-    api.dispatchMsg({ type: 'key', key: 'return', seq: '' });
+    api.dispatchKeyToFocused('return', '');
 
     const alpha = items[alphaIdx];
     const key = `file:${alpha.path}`;

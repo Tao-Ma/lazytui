@@ -59,7 +59,7 @@ describe('[2] registration stores spec + initial slice', () => {
   });
 });
 
-describe('[3] dispatchMsg fan-out — non-key fans to all; key goes to the focused panel', () => {
+describe('[3] dispatch — non-key fans to all; key goes to the focused panel via dispatchKeyToFocused', () => {
   it('refresh/hub reach every component; a key reaches only the focused owner', () => {
     // Use fresh names to avoid carry-over from earlier tests.
     api.registerComponent(makeRecorder('fanA'));
@@ -68,10 +68,11 @@ describe('[3] dispatchMsg fan-out — non-key fans to all; key goes to the focus
     // Non-key Msgs fan to every component (the §12 contract holds for these).
     api.dispatchMsg({ type: 'refresh' });
     api.dispatchMsg({ type: 'hub', topic: 'foo', rowKey: 'r', sample: 1 });
-    // A key Msg routes ONLY to the component owning the focused panel —
-    // makeRecorder('fanA') registers panelType 'fanA'.
+    // Key events have their own dispatch path — they need a return
+    // value to gate the framework default — and route only to the
+    // focused panel's Component.
     api.getComponentSlice("layout").focus = 'fanA';
-    api.dispatchMsg({ type: 'key', key: 'down' });
+    api.dispatchKeyToFocused('down', 'down');
 
     const a = api.getComponentSlice('fanA');
     const b = api.getComponentSlice('fanB');
@@ -142,7 +143,7 @@ describe('[5] component-owned panels — render() receives slice, not S', () => 
     // arbitration routes it there) updates the slice; a subsequent render
     // through rendererFor would see the new value.
     api.getComponentSlice("layout").focus = 'showcase';
-    api.dispatchMsg({ type: 'key', key: 'l' });
+    api.dispatchKeyToFocused('l', 'l');
     eq(api.getComponentSlice('showcase').label, 'updated',
        'slice mutated through the dispatch path');
   });
@@ -174,7 +175,7 @@ describe('[6] integration — dispatch.handleKey reaches Components', () => {
     // call dispatchMsg directly — the integration with handleKey
     // is verified by the key-filter test suite's "no filters"
     // case, which exercises the full path.
-    api.dispatchMsg({ type: 'key', key: 'enter' });
+    api.dispatchKeyToFocused('enter', 'enter');
     eq(api.getComponentSlice('keyrec').keys.join(','), 'enter',
        'component received the key Msg');
   });
@@ -420,7 +421,7 @@ describe('[8a] chrome-only Component (no panelTypes) is supported', () => {
     // Even when nothing else owns the focus, a chrome-only Component
     // does not act as the key target — keys arbitrate to panel owners only.
     api.getComponentSlice("layout").focus = 'some-non-existent-panel';
-    api.dispatchMsg({ type: 'key', key: 'enter' });
+    api.dispatchKeyToFocused('enter', 'enter');
     eq(api.getComponentSlice('chrome-key').keys.length, 0,
        'chrome-only Component did not receive the key');
   });
@@ -428,7 +429,7 @@ describe('[8a] chrome-only Component (no panelTypes) is supported', () => {
 
 describe('[8] getItems reads the component slice (list panel)', () => {
   it('rows come from the slice; the framework filter applies over them', () => {
-    const mnav = require('../model/nav');
+    const mnav = require('../leaves/nav');
     api.registerComponent({
       name: 'list',
       // Phase 4c — filter text lives on `slice.nav[panelType].filter`;

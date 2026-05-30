@@ -10,8 +10,8 @@
  * Contract:
  *   - Readers use `getModel()` (no global imports).
  *   - All writes to root-model fields flow through `update`. Reducer-
- *     leaves (model-design / model-register / model-menu / model-search /
- *     model-tabs) mutate the slice/model arg in place — intentional;
+ *     leaves (leaves/design / leaves/register / leaves/menu / leaves/search /
+ *     leaves/tabs) mutate the slice/model arg in place — intentional;
  *     full immutability was evaluated and skipped (see v0.5-layering.md
  *     §"Skipped").
  *   - The reducer performs no I/O; effects are Cmd DESCRIPTORS the
@@ -28,11 +28,16 @@
 // the reducer can read it to walk the prefix tree without a require cycle.
 const kb = require('../dispatch/keybindings');
 // Pure command-menu item builder (leaf), so menu_open can build inline.
-const menu = require('../model/menu');
+const menu = require('../leaves/menu');
 // Pure yank-register transforms (leaf) — push/promote/drop/clear taking
 // `model`, so the reducer owns register mutations; OSC52 is an emit_osc52 Cmd.
-const mreg = require('../model/register');
-// model-tabs + model-search are leaves of the detail Component's update.
+const mreg = require('../leaves/register');
+// Panel routing leaf — `wrap` for routed Msgs, `componentForPanel` /
+// `getFocus` for the cross-layer dispatches in `escape`, `filter_*`,
+// `reset_group_context`, etc. Direct import (zero deps) — no cycle.
+// Replaces the old lazy `require('../panel/api')` peppered through this file.
+const route = require('../panel/route');
+// leaves/tabs + leaves/search are leaves of the detail Component's update.
 // The root reducer doesn't import them directly.
 
 /**
@@ -206,16 +211,15 @@ function update(model, msg) {
       // selection), else clears any lingering multi-selection; otherwise
       // a no-op. Phase 4a: the multiSel clear is dispatched into the
       // focused Navigator's update (each panel owns its own Set).
-      const api = require('../panel/api');
-      const focus = api.getFocus();
-      const compName = api.getComponentOwningPanel(focus);
-      const navEntry = compName ? (api.getComponentSlice(compName) || {}).nav : null;
+      const focus = route.getFocus();
+      const compName = route.componentForPanel(focus);
+      const navEntry = compName ? (route.getSlice(compName) || {}).nav : null;
       const had = navEntry && navEntry[focus] && navEntry[focus].multiSel.size > 0;
       if (model.modes.listSelectMode) {
         model.modes.listSelectMode = false;
-        if (compName) return [model, [{ type: 'dispatch_msg', msg: api.wrap(compName, { type: 'multisel_clear', panel: focus }) }]];
+        if (compName) return [model, [{ type: 'dispatch_msg', msg: route.wrap(compName, { type: 'multisel_clear', panel: focus }) }]];
       } else if (had) {
-        return [model, [{ type: 'dispatch_msg', msg: api.wrap(compName, { type: 'multisel_clear', panel: focus }) }]];
+        return [model, [{ type: 'dispatch_msg', msg: route.wrap(compName, { type: 'multisel_clear', panel: focus }) }]];
       }
       return [model, []];
     }
@@ -224,16 +228,15 @@ function update(model, msg) {
       // operand selection. `mode:'on'` (*) forces it on (the caller then
       // fires selectAllVisible as an effect). The _isListPanel guard is
       // view derivation — the caller already applied it.
-      const api = require('../panel/api');
-      const focus = api.getFocus();
+      const focus = route.getFocus();
       if (msg.mode === 'on') {
         model.modes.listSelectMode = true;
         return [model, []];
       }
       model.modes.listSelectMode = !model.modes.listSelectMode;
       if (!model.modes.listSelectMode) {
-        const compName = api.getComponentOwningPanel(focus);
-        if (compName) return [model, [{ type: 'dispatch_msg', msg: api.wrap(compName, { type: 'multisel_clear', panel: focus }) }]];
+        const compName = route.componentForPanel(focus);
+        if (compName) return [model, [{ type: 'dispatch_msg', msg: route.wrap(compName, { type: 'multisel_clear', panel: focus }) }]];
       }
       return [model, []];
     }
@@ -269,8 +272,8 @@ function update(model, msg) {
     // mapping here is what lets handleAction's arms collapse into update.
     case 'refresh':     return [model, [{ type: 'refresh' }]];
     case 'show_help':   return [model, [{ type: 'show_help' }]];
-    case 'next_tab':    return [model, [{ type: 'run_tab', dir: +1 }]];
-    case 'prev_tab':    return [model, [{ type: 'run_tab', dir: -1 }]];
+    case 'next_tab':    return [model, [{ type: 'dispatch_msg', msg: route.wrap('detail', { type: 'tab_cycle', dir: +1 }) }]];
+    case 'prev_tab':    return [model, [{ type: 'dispatch_msg', msg: route.wrap('detail', { type: 'tab_cycle', dir: -1 }) }]];
     // --- confirm modal (folded into update). The caller stages a message +
     // a Cmd DESCRIPTOR (the deferred effect as data); `y` re-emits that Cmd,
     // `n`/Esc clears. No closure in the model.
@@ -349,7 +352,7 @@ function update(model, msg) {
       return [model, [{ type: 'copy_commit', idx: -1 }]];  // -1 = clear, no copy
     // --- register-history popup (`"`, folded into update). The reducer owns
     // the cursor/scroll (model.modal.registerPopup) + the mode flag AND the
-    // history mutation (via the model-register leaf); OSC52 is the only effect,
+    // history mutation (via the leaves/register leaf); OSC52 is the only effect,
     // emitted as an emit_osc52 Cmd. `vh` (viewport height) is caller-resolved
     // since it reads the terminal size.
     case 'register_popup_enter':
@@ -480,7 +483,7 @@ function update(model, msg) {
       // 'full' auto-zoom back to 'normal'. The conditional + the
       // repaint Cmd both live in layout's update.
       model.modes.terminalMode = false;
-      return [model, [{ type: 'dispatch_msg', msg: require('../panel/api').wrap('layout', { type: 'view_drop_full_to_normal' }) }]];
+      return [model, [{ type: 'dispatch_msg', msg: route.wrap('layout', { type: 'view_drop_full_to_normal' }) }]];
     }
     // multisel_toggle / multisel_select_all retired in Phase 4b — call
     // sites (dispatch.toggleMultiSelOnFocused, selectAllVisible) wrap
@@ -555,10 +558,9 @@ function update(model, msg) {
       }
       // Phase 4a — re-home the cursor as the filter narrows; the panel's
       // nav slice is the writer now.
-      const api = require('../panel/api');
-      const compName = api.getComponentOwningPanel(f.panel);
+      const compName = route.componentForPanel(f.panel);
       if (!compName) return [model, []];
-      return [model, [{ type: 'dispatch_msg', msg: api.wrap(compName, { type: 'set_cursor', panel: f.panel, index: 0 }) }]];
+      return [model, [{ type: 'dispatch_msg', msg: route.wrap(compName, { type: 'set_cursor', panel: f.panel, index: 0 }) }]];
     }
     case 'filter_exit': {
       const f = model.modal.filter;
@@ -568,8 +570,7 @@ function update(model, msg) {
       model.modes.filterMode = false;
       f.text = ''; f.panel = '';
       if (!panel) return [model, []];
-      const api = require('../panel/api');
-      const compName = api.getComponentOwningPanel(panel);
+      const compName = route.componentForPanel(panel);
       if (!compName) return [model, []];
       // Phase 4c — commit/clear the filter on the panel's nav slice; the
       // owning Component is the single writer.
@@ -577,9 +578,9 @@ function update(model, msg) {
         ? { type: 'set_filter',   panel, text }
         : { type: 'clear_filter', panel };
       return [model, [
-        { type: 'dispatch_msg', msg: api.wrap(compName, filterMsg) },
-        { type: 'dispatch_msg', msg: api.wrap(compName, { type: 'set_cursor', panel, index: 0 }) },
-        { type: 'dispatch_msg', msg: api.wrap(compName, { type: 'set_scroll', panel, offset: 0 }) },
+        { type: 'dispatch_msg', msg: route.wrap(compName, filterMsg) },
+        { type: 'dispatch_msg', msg: route.wrap(compName, { type: 'set_cursor', panel, index: 0 }) },
+        { type: 'dispatch_msg', msg: route.wrap(compName, { type: 'set_scroll', panel, offset: 0 }) },
       ]];
     }
     // panel_reset retired in Phase 4b — the resetPanelChrome effect
@@ -628,14 +629,13 @@ function update(model, msg) {
       model.lastRunAction = '';
       model.modes.terminalMode = false;
       model.modes.listSelectMode = false;
-      const api = require('../panel/api');
       const cmds = [];
       for (const panel of ['actions', 'containers']) {
-        const compName = api.getComponentOwningPanel(panel);
+        const compName = route.componentForPanel(panel);
         if (!compName) continue;
-        cmds.push({ type: 'dispatch_msg', msg: api.wrap(compName, { type: 'set_cursor', panel, index: 0 }) });
-        cmds.push({ type: 'dispatch_msg', msg: api.wrap(compName, { type: 'multisel_clear', panel }) });
-        cmds.push({ type: 'dispatch_msg', msg: api.wrap(compName, { type: 'clear_filter', panel }) });
+        cmds.push({ type: 'dispatch_msg', msg: route.wrap(compName, { type: 'set_cursor', panel, index: 0 }) });
+        cmds.push({ type: 'dispatch_msg', msg: route.wrap(compName, { type: 'multisel_clear', panel }) });
+        cmds.push({ type: 'dispatch_msg', msg: route.wrap(compName, { type: 'clear_filter', panel }) });
       }
       return [model, cmds];
     }
@@ -649,8 +649,9 @@ function update(model, msg) {
     case 'quit':        return [model, [{ type: 'quit' }]];
     case 'design': {
       // Gated on the --design flag; emit the Cmd only when design is
-      // enabled, otherwise no effect.
-      const layoutSlice = require('../panel/api').getComponentSlice('layout');
+      // enabled, otherwise no effect. Cross-layer slice read via the
+      // route leaf (the same store panel/api uses) — no lazy require.
+      const layoutSlice = route.getSlice('layout');
       const enabled = layoutSlice && layoutSlice.design.enabled;
       return [model, enabled ? [{ type: 'start_design' }] : []];
     }

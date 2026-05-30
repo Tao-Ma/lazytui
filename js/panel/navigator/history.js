@@ -13,7 +13,7 @@
 const { setDetail } = require('../../app/state');
 const { getModel } = require('../../app/runtime');
 const history = require('../../feature/history');
-const mnav = require('../../model/nav');
+const mnav = require('../../leaves/nav');
 const { registerEffect } = require('../../dispatch/effects');
 const {
   esc, theme, renderPanel,
@@ -133,8 +133,11 @@ function update(msg, slice) {
   if (msg.type !== 'key' || msg.key !== 'return') return slice;
   if (getFocus() !== 'history') return slice;
   const entry = history.all()[getSel('history')];
-  if (!entry) return slice;
-  return [slice, [{ type: 'historyReplay', entry }]];
+  // Claim `return` even with no entry — the framework's run_selected
+  // default (viewer_show_info) would just re-render the same Info pane
+  // we're already on.
+  if (!entry) return [slice, [{ type: '_claimed' }]];
+  return [slice, [{ type: 'historyReplay', entry }, { type: '_claimed' }]];
 }
 
 registerEffect('historyReplay', (eff) => {
@@ -153,9 +156,8 @@ module.exports = {
     history: {
       render,
       getItems, getInfo, copyOptions,
-      // Enter is handled in update() — suppress the framework default
-      // (run_selected → showSelectedInfo) so it doesn't fire twice.
-      claimsKeys: ['return'],
+      // Enter is handled in update() — claimed via the `_claimed`
+      // sentinel effect so run_selected → viewer_show_info doesn't ALSO fire.
       keyHints: 'Enter view',
       idOf: (entry) => String(entry.startedAt),
     },

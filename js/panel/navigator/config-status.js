@@ -17,7 +17,8 @@
  * branch OFF-tick and dispatches `cfgStatusResult` with the cache; update()
  * folds it into the slice (effects can't write the slice). Enter on a file emits
  * `cfgStatusDiff` (git show/diff → the detail panel via setDetail). `]`/`[`/Enter
- * are handled in update(); claimsKeys suppresses the framework key defaults.
+ * are handled in update(); each returns the `_claimed` sentinel effect so the
+ * framework's tab-cycle / run_selected defaults don't ALSO fire.
  * Branch comes from the panel's `config.branch` (default `config`).
  */
 'use strict';
@@ -34,7 +35,7 @@ const {
 } = require('../api');
 const { registerEffect } = require('../../dispatch/effects');
 const { getModel } = require('../../app/runtime');
-const mnav = require('../../model/nav');
+const mnav = require('../../leaves/nav');
 
 const TAB_FILE_TREE = 0;
 const TAB_TRACKED_TREE = 1;
@@ -372,20 +373,28 @@ function update(msg, slice) {
     return [{ ...slice, cache: msg.cache, computing: false }, [{ type: 'render' }]];
   }
   if (msg.type === 'key') {
-    if (msg.key === ']') return { ...slice, tab: (tabIdx(slice) + 1) % TAB_LABELS.length };
-    if (msg.key === '[') return { ...slice, tab: (tabIdx(slice) + TAB_LABELS.length - 1) % TAB_LABELS.length };
+    // The Component owns ]/[/return on this panel: each branch returns
+    // the `_claimed` sentinel effect so the framework default (tab
+    // cycle / run_selected) doesn't ALSO fire. Other keys flow through
+    // to the framework as no-claim returns.
+    if (msg.key === ']') return [{ ...slice, tab: (tabIdx(slice) + 1) % TAB_LABELS.length }, [{ type: '_claimed' }]];
+    if (msg.key === '[') return [{ ...slice, tab: (tabIdx(slice) + TAB_LABELS.length - 1) % TAB_LABELS.length }, [{ type: '_claimed' }]];
     if (msg.key === 'return') {
       // The key Msg carries no selected row — re-derive it from the slice +
       // the framework cursor (getSel), the same list render uses.
       const item = buildItems(slice, _files())[getSel('config-status')];
-      if (!item) return slice;
+      // `return` is claimed regardless of what the row resolves to —
+      // even an unclickable header row shouldn't ALSO trigger the
+      // framework's run_selected default.
+      if (!item) return [slice, [{ type: '_claimed' }]];
       if (item.kind === 'more') {
         const cur = slice.expanded[item.declaredPath] || WALK_LIMIT;
-        return { ...slice, expanded: { ...slice.expanded, [item.declaredPath]: Math.min(cur + WALK_LIMIT, item.total) } };
+        return [{ ...slice, expanded: { ...slice.expanded, [item.declaredPath]: Math.min(cur + WALK_LIMIT, item.total) } }, [{ type: '_claimed' }]];
       }
       if (item.kind === 'file') {
-        return [slice, [{ type: 'cfgStatusDiff', item, branch: slice.branch || DEFAULT_BRANCH }]];
+        return [slice, [{ type: 'cfgStatusDiff', item, branch: slice.branch || DEFAULT_BRANCH }, { type: '_claimed' }]];
       }
+      return [slice, [{ type: '_claimed' }]];
     }
     return slice;
   }
@@ -424,8 +433,6 @@ module.exports = {
         if (item.kind === 'header') return item.cat;
         return '';
       },
-      // The component handles these in update(); suppress framework defaults.
-      claimsKeys: [']', '[', 'return'],
     },
   },
   // Exposed for unit tests; not part of the public contract.

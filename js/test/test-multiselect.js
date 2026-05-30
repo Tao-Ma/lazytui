@@ -12,7 +12,7 @@ const api = require('../panel/api');
 const { describe, it, assert, eq, report } = require('./test-runner');
 const { getModel } = require('../app/runtime');
 const { getComponentSlice } = require('../panel/api');
-const mnav = require('../model/nav');
+const mnav = require('../leaves/nav');
 
 // Phase 4a — multi-select state lives on each Navigator Component's
 // `slice.nav[panelType].multiSel`. test-runner registers layout/detail/

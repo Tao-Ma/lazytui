@@ -44,7 +44,7 @@ const {
   hub,
 } = require('../api');
 const { getModel } = require('../../app/runtime');
-const mnav = require('../../model/nav');
+const mnav = require('../../leaves/nav');
 
 const POLL_MS = 10000;
 

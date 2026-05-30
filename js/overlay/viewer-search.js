@@ -11,7 +11,7 @@
  *      through them; `Esc` clears the committed search.
  *
  * The typing-phase TRANSFORMS (matcher + keystroke/nav/commit/cancel) live in
- * the pure leaf js/model/search.js, called from the detail Component's
+ * the pure leaf js/leaves/search.js, called from the detail Component's
  * update. This module is the FACADE: thin wrappers binding the leaf for
  * non-reducer callers (select.js committed-phase n/N, tests), plus the
  * render-side highlight (decorateLines) which reads the detail slice's
@@ -22,7 +22,7 @@
 'use strict';
 
 const { getModel } = require('../app/runtime');
-const ms = require('../model/search');
+const ms = require('../leaves/search');
 
 // The typing-phase state + transforms live in the detail Component's
 // slice + update. The user-facing wrappers dispatch viewer_search_* Msgs

@@ -9,7 +9,7 @@
 'use strict';
 
 const { getModel } = require('../../app/runtime');
-const mnav = require('../../model/nav');
+const mnav = require('../../leaves/nav');
 const {
   esc, theme, renderPanel,
   getSel, getScroll, isMultiSel, getFilter,
@@ -110,7 +110,7 @@ function render(panel, w, h) {
 module.exports = {
   name: 'actions',
   // Phase 4a — nav chrome (cursor / scroll / multiSel) lives on the
-  // Component's slice now; the shared leaf in model-nav handles the
+  // Component's slice now; the shared leaf in leaves/nav handles the
   // five Msg shapes uniformly across every Navigator.
   init: () => ({ nav: { actions: mnav.init() } }),
   update: (msg, slice) => mnav.isNavMsg(msg) ? mnav.apply(slice, msg) : slice,

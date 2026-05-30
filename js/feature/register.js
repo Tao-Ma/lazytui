@@ -21,7 +21,7 @@
 
 const { getModel } = require('../app/runtime');
 const { stdout } = require('../io/term');
-const mreg = require('../model/register');
+const mreg = require('../leaves/register');
 
 const DEFAULT_CAP = 100;
 
@@ -43,7 +43,7 @@ function emitOSC52(text) {
   stdout.write(`\x1b]52;c;${b64}\x07`);
 }
 
-// Writers are thin bridges over the pure model-register leaf (the same leaf
+// Writers are thin bridges over the pure leaves/register leaf (the same leaf
 // runtime.update uses), plus the OSC52 effect. Production yank/popup writes
 // flow through update (register_push / register_popup_* Msgs); these wrappers
 // remain as the direct test-facing API + for any non-threaded caller.

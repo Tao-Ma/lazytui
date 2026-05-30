@@ -138,7 +138,7 @@ Register with `api.registerComponent(component)`.
 
 ```javascript
 // components/counter.js
-const mnav = require('../model-nav');
+const mnav = require('../leaves/nav');
 module.exports = {
   name: 'counter',
   init: () => ({
@@ -182,7 +182,7 @@ data, different consumer.
 
 Plus the shared nav-chrome Msgs (`set_cursor`, `set_scroll`,
 `multisel_toggle`, `multisel_select_all`, `multisel_clear`) handled by
-`js/model/nav.js`.
+`js/leaves/nav.js`.
 
 Future Msg types will be additive — a Component's `default:` arm
 ignoring unknown types is forward-compatible.
@@ -214,7 +214,7 @@ ignoring unknown types is forward-compatible.
 
 Every Navigator panel's `slice.nav[panelType] = { cursor, scroll,
 multiSel, filter }` is the canonical per-panel chrome (Phase 4a + 4c).
-The shared `js/model/nav.js` leaf handles seven uniform Msg shapes
+The shared `js/leaves/nav.js` leaf handles seven uniform Msg shapes
 (`set_cursor` / `set_scroll` / `multisel_toggle` /
 `multisel_select_all` / `multisel_clear` / `set_filter` /
 `clear_filter`) — every Navigator's `update` should call
@@ -226,7 +226,7 @@ groups panel also fire the currentGroup-change cascade), use the
 emitting `set_cursor` by hand. It bundles:
 
 1. `dispatchMsg(wrap(<owner>, { type: 'set_cursor', panel, index }))`
-2. `showSelectedInfo(model)` — refresh the focused panel's info
+2. `dispatchMsg(wrap('detail', { type: 'viewer_show_info' }))` — refresh the focused panel's info
 3. For `panelType === 'groups'`: `dispatchMsg(wrap('groups', { type:
    'groups_selected', index }))` — the cascade that updates
    `currentGroup`, resets per-group chrome, and resets the viewer.

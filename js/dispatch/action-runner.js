@@ -19,7 +19,7 @@ function runAction(model, actionKey, action, args = []) {
   // invocation here — at the entry point, before confirm gating —
   // so the log captures "user pressed Enter on action X" once. The
   // doRun() path is the response.
-  require('../feature/event-log').record('action', { actionKey, args, type: action.type });
+  require('./event-log').record('action', { actionKey, args, type: action.type });
   // Component Msg dispatch (v0.3.0). Action invocations fan out to
   // every Component's update() as an 'action' Msg.
   require('../panel/api').dispatchMsg({ type: 'action', actionKey, args, actionType: action.type });

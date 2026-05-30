@@ -264,134 +264,21 @@ function decorateLines(lines) {
   });
 }
 
-// --- Keyboard visual-mode for the detail panel ---
+// Note: the keyboard state machine that USED to live here (onDetailKey,
+// _moveCursor, _scrollView) folded into the detail Component's `key` arm
+// (panel/viewer/viewer.js). The claim is now signaled via the `_claimed`
+// effect from update() — the framework gates on it inside
+// `dispatchKeyToFocused`, so the dispatch layer no longer needs a hijack.
 //
-// Wired from dispatch.handleNormalKey: when focus=detail (and no
-// higher-priority mode owns the key), calls onDetailKey first.
-// Returns true to claim the key — the dispatch switch is then skipped.
-//
-// Two modes:
-//
-// Reading mode (no selection active):
-//   j/down  scroll detail view +1 line
-//   k/up    scroll detail view -1 line
-//   h/l     fall through to global focus-shift (panel navigation)
-//   v       enter char-select at top of current viewport
-//   V       enter line-select at top of current viewport
-//
-// Visual mode (selection active):
-//   j/down  cursor down (extends selection + autoscrolls)
-//   k/up    cursor up
-//   h/left  cursor left
-//   l/right cursor right
-//   0/Home  cursor to col 0
-//   $/End   cursor to end-of-line
-//   y       commit + push to register
-//   v / V   exit visual mode (cancel)
-//   Esc     cancel
-//
-// Cursor is rendered as a one-cell [reverse] glyph only while a
-// selection is active — reading mode has no visible cursor, matching
-// pager/lazygit-style expectations where j/k means "move the view".
-
-function _moveCursor(dline, dcol) {
-  const d = _detail();
-  if (!d) return false;
-  const cur = d.cursor || { line: 0, col: 0 };
-  const n = d.lines.length;
-  if (n === 0) return false;
-  const newLine = Math.max(0, Math.min(n - 1, cur.line + dline));
-  let newCol = (dcol === 0) ? cur.col : Math.max(0, cur.col + dcol);
-  const w = plainLineWidth(newLine);
-  newCol = (w === 0) ? 0 : Math.min(w - 1, newCol);
-  const active = !!(d.select && d.select.active);
-  // Caller pre-clamps (width needs ansi, which the reducer can't reach); the
-  // select_set_cursor branch stores the cursor, mirrors the selection, scrolls.
-  _apply({ type: 'select_set_cursor', line: newLine, col: newCol, extend: active });
-  return true;
-}
-
-function _scrollView(delta) {
-  _apply({ type: 'select_scroll_view', delta });
-}
-
-function onDetailKey(key, seq) {
-  const m = getModel();
-  if (getFocus() !== 'detail' || m.modes.terminalMode) return false;
-  // Higher-priority modes (menu/cmd/etc.) are filtered upstream in
-  // modeChain; this guard is belt-and-suspenders for any future caller.
-  if (m.modes.menuOpen || m.modes.cmdMode || m.modes.confirmMode || m.modes.promptMode || m.modes.copyMode) return false;
-  const d = _detail();
-  const active = !!(d?.select && d.select.active);
-
-  // Detail-search post-commit navigation. n/N cycle through committed
-  // matches, Esc clears the search. These come before visual-mode v/V
-  // so search nav is always reachable, but a live selection (visual
-  // mode) hides search highlights anyway.
-  const search = require('../render/viewer-search');
-  if (d?.search && d.search.active) {
-    if (seq === 'n' || key === 'n') { search.next(); return true; }
-    if (seq === 'N' || key === 'N') { search.prev(); return true; }
-    if (key === 'escape' && !active) { search.clearCommitted(); return true; }
-  }
-
-  // Mode toggles. Entering visual mode plants the cursor at the top
-  // of the current viewport rather than at the last known position —
-  // matches what mouse-drag effectively does (cursor where the click
-  // landed) and avoids "where did v take me?" surprises after the
-  // user has been scrolling around.
-  if (seq === 'v' || key === 'v') {
-    // beginAt (select_begin) plants the visual cursor at the anchor.
-    if (active && d.select.kind === 'char') cancel();
-    else beginAt(d?.scroll || 0, 0, 'char');
-    return true;
-  }
-  if (seq === 'V' || key === 'V') {
-    if (active && d.select.kind === 'line') cancel();
-    else beginAt(d?.scroll || 0, 0, 'line');
-    return true;
-  }
-  if ((seq === 'y' || key === 'y') && active) { commit(); return true; }
-  if (key === 'escape' && active) { cancel(); return true; }
-
-  // Vertical movement is mode-dependent:
-  //   reading mode → scroll the view ±1 line
-  //   visual mode  → move cursor + extend selection + autoscroll
-  if (key === 'down' || seq === 'j' || key === 'j') {
-    if (active) _moveCursor(+1, 0); else _scrollView(+1);
-    return true;
-  }
-  if (key === 'up' || seq === 'k' || key === 'k') {
-    if (active) _moveCursor(-1, 0); else _scrollView(-1);
-    return true;
-  }
-
-  // Horizontal movement — only claim h/l while a selection is active,
-  // so the panel-focus-shift behavior is preserved in the normal case.
-  if (active) {
-    if (key === 'left'  || seq === 'h' || key === 'h') { _moveCursor(0, -1); return true; }
-    if (key === 'right' || seq === 'l' || key === 'l') { _moveCursor(0, +1); return true; }
-  }
-
-  // Line-start / line-end jumps — only meaningful with a cursor, i.e.
-  // when a selection is active. In reading mode 0/$ fall through.
-  if (active && (seq === '0' || key === 'home')) {
-    _apply({ type: 'select_set_cursor', line: d.cursor.line, col: 0, extend: true });
-    return true;
-  }
-  if (active && (seq === '$' || key === 'end')) {
-    const w = plainLineWidth(d.cursor.line);
-    _apply({ type: 'select_set_cursor', line: d.cursor.line, col: Math.max(0, w - 1), extend: true });
-    return true;
-  }
-  return false;
-}
+// The mouse path still uses this module's service API (beginAt/extendTo/
+// cancel/commit) to start/extend/finish a drag selection, and the render
+// path uses the pure reads (isActive, decorateLines, highlightLine,
+// selectedText, plainLine, plainLineWidth, _displayCol* helpers).
 
 module.exports = {
   beginAt, extendTo, cancel, commit, isActive,
   selectedRange, selectedText, plainLine, plainLineWidth,
-  highlightLine, decorateLines, onDetailKey,
+  highlightLine, decorateLines,
   // exposed for testing only
   _displayColToCharIdx, _displayColToCharIdxEnd, _codepointSlice,
-  _moveCursor,
 };

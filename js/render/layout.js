@@ -20,12 +20,11 @@ const { theme } = require('./themes');
 const { isTerminalTab, activeTerminalId, activeTerminalConfig,
         getTabInfo, findEphemeralByid } = require('../panel/viewer/tabs');
 const { ensureSession, getSession, resizeSession } = require('../io/terminal');
-const {getPanelDef, getComponentSlice, getFocus } = require('../panel/api');
-const { showSelectedInfo } = require('../panel/viewer-cascade');
-const { renderCopyMenu } = require('./copy');
+const {getPanelDef, getComponentSlice, getFocus, dispatchMsg, wrap } = require('../panel/api');
+const { renderCopyMenu } = require('../overlay/copy');
 const { render: renderRegisterPopup } = require('../overlay/register-popup');
 const { renderMenu } = require('../overlay/menu');
-const { renderWhichKey } = require('../dispatch/which-key');
+const { renderWhichKey } = require('../overlay/which-key');
 const modes = require('../dispatch/modes');
 const { getModel } = require('../app/runtime');
 const { renderCmdline } = require('../dispatch/cmdline');
@@ -435,13 +434,13 @@ function render(model = getModel()) {
 
 /**
  * Refresh the focused panel's info into detail, then render. The previous
- * pattern was render(); showSelectedInfo(); render(); — two paints with an
- * info-update sandwiched. showSelectedInfo() writes the detail slice's
- * `lines`, so the leading render painted stale info. redraw() collapses
- * to a single paint with up-to-date info.
+ * pattern was render(); refresh-info; render(); — two paints with an
+ * info-update sandwiched. The viewer_show_info Msg writes the detail
+ * slice's `lines`, so the leading render painted stale info. redraw()
+ * collapses to a single paint with up-to-date info.
  */
 function redraw() {
-  showSelectedInfo();
+  dispatchMsg(wrap('detail', { type: 'viewer_show_info' }));
   render();
 }
 
@@ -470,7 +469,7 @@ function footerKeys(model) {
     return ` \\[terminal: ${esc(label)}] | Ctrl+\\ return to TUI`;
   }
   if (md.detailSearchMode) {
-    const ds = require('./viewer-search');
+    const ds = require('../overlay/viewer-search');
     const term = ds.typingText();
     const search = getComponentSlice('detail')?.search || { matches: [], idx: 0 };
     const n = (search.matches || []).length;

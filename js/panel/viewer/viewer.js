@@ -21,14 +21,69 @@
  */
 'use strict';
 
-const { getTabInfo, isTerminalTab } = require('./tabs');
+const { getTabInfo, isTerminalTab, activeContentTab } = require('./tabs');
 const {
   esc, visibleLen, renderPanel,
-  getComponentSlice, getFocus,
+  getComponentSlice, getFocus, getPanelDef, getItems, wrap,
 } = require('../api');
-const ms = require('../../model/search');
-const mt = require('../../model/tabs');
+const ms = require('../../leaves/search');
+const mt = require('../../leaves/tabs');
 const { getModel } = require('../../app/runtime');
+const { getSel } = require('../../app/state');
+const { isStreaming } = require('../../io/stream');
+
+// --- internal slice mutators ---
+//
+// Shared by the explicit `select_*` Msg arms (mouse path dispatches them via
+// overlay/select.js) and the visual-mode keyboard handler in the `key` arm.
+// All three perform the same slice writes — clamp + mutate in place. The
+// `_moveCursor` helper resolves display width through overlay/select.js's
+// pure ANSI-aware reader.
+
+function _beginSelect(slice, line, col, kind) {
+  const n = slice.lines.length;
+  const l = n === 0 ? 0 : Math.max(0, Math.min(n - 1, line | 0));
+  const c = Math.max(0, col | 0);
+  slice.select = {
+    active: true,
+    kind: kind === 'line' ? 'line' : 'char',
+    anchor: { line: l, col: c },
+    cursor: { line: l, col: c },
+  };
+  slice.cursor = { line: l, col: c };
+}
+
+function _setCursor(slice, line, col, extend) {
+  if (!slice.cursor) slice.cursor = { line: 0, col: 0 };
+  slice.cursor.line = line | 0;
+  slice.cursor.col = col | 0;
+  if (extend && slice.select && slice.select.active) {
+    slice.select.cursor = { line: slice.cursor.line, col: slice.cursor.col };
+  }
+  const innerH = Math.max(1, (getComponentSlice('layout').panelHeights.detail || 0) - 2);
+  const top = slice.scroll || 0;
+  if (slice.cursor.line < top) slice.scroll = slice.cursor.line;
+  else if (slice.cursor.line >= top + innerH) slice.scroll = slice.cursor.line - innerH + 1;
+}
+
+function _scrollView(slice, delta) {
+  const innerH = Math.max(1, (getComponentSlice('layout').panelHeights.detail || 0) - 2);
+  const maxScroll = Math.max(0, slice.lines.length - innerH);
+  slice.scroll = Math.max(0, Math.min(maxScroll, (slice.scroll || 0) + (delta || 0)));
+}
+
+function _moveCursor(slice, dline, dcol) {
+  const cur = slice.cursor || { line: 0, col: 0 };
+  const n = slice.lines.length;
+  if (n === 0) return;
+  const newLine = Math.max(0, Math.min(n - 1, cur.line + dline));
+  let newCol = (dcol === 0) ? cur.col : Math.max(0, cur.col + dcol);
+  const select = require('../../overlay/select');
+  const w = select.plainLineWidth(newLine);
+  newCol = (w === 0) ? 0 : Math.min(w - 1, newCol);
+  const active = !!(slice.select && slice.select.active);
+  _setCursor(slice, newLine, newCol, active);
+}
 
 // --- init ---
 
@@ -54,6 +109,27 @@ function update(msg, slice) {
       slice.scroll = 0;
       if (slice.search && slice.search.active) {
         slice.search = { active: false, term: '', matches: [], idx: 0, typing: '' };
+      }
+      return slice;
+    }
+    case 'viewer_show_info': {
+      // Pull focused-Navigator info into the viewer — the Navigator→Viewer
+      // cascade rides the single-writer pathway. Skip if a non-Info tab is
+      // active or a live stream is filling the body; cmdline's mode wrapper
+      // dispatches this after every command, and we don't want to clobber
+      // stream output or content/term tabs.
+      if (slice.tab !== 0) return slice;
+      if (isStreaming()) return slice;
+      const focus = getFocus();
+      const def = getPanelDef(focus);
+      if (!def || typeof def.getItems !== 'function' || typeof def.getInfo !== 'function') return slice;
+      const items = getItems(focus);
+      const item = items[getSel(focus)];
+      if (!item) return slice;
+      const lines = def.getInfo(item);
+      if (lines && lines.length) {
+        slice.lines = lines.join('\n').split('\n');
+        slice.scroll = 0;
       }
       return slice;
     }
@@ -85,6 +161,49 @@ function update(msg, slice) {
     case 'viewer_set_tab':
       slice.tab = msg.tab | 0;
       return slice;
+    case 'tab_switch': {
+      // The full tab-switch cascade — orchestrates the cross-layer concerns
+      // (kill streaming proc, exit terminal mode, then dispatch the per-
+      // kind body update) that the bare `viewer_set_tab` primitive doesn't.
+      // Emitted from the mouse tab-click in input.js and from `tab_cycle`
+      // (next_tab/prev_tab); setActiveTab() keeps using the bare primitive
+      // when callers just want to flip the tab number without the cascade.
+      const { actionTabs, termTabs, total } = getTabInfo();
+      const idx = msg.idx | 0;
+      if (idx < 0 || idx >= total) return slice;
+      slice.tab = idx;
+      const effects = [
+        { type: 'kill_proc' },
+        { type: 'apply_msg', msg: { type: 'terminal_exit' } },
+      ];
+      if (idx === 0) {
+        effects.push({ type: 'dispatch_msg', msg: wrap('detail', { type: 'viewer_show_info' }) });
+      } else if (idx <= actionTabs.length) {
+        const [key, act] = actionTabs[idx - 1];
+        effects.push({ type: 'stream_action', actionKey: key, script: act.script });
+      } else if (idx <= actionTabs.length + termTabs.length) {
+        // Terminal tab — content rendered by overlay, clear detail body.
+        slice.lines = [];
+        slice.scroll = 0;
+      } else {
+        const ct = activeContentTab();
+        if (ct) {
+          const [, info] = ct;
+          slice.lines = (info.lines || []).slice();
+          slice.scroll = 0;
+        }
+      }
+      return [slice, effects];
+    }
+    case 'tab_cycle': {
+      // next_tab / prev_tab keyboard verbs land here — compute the wrapped
+      // index and re-emit through tab_switch so both keyboard and mouse
+      // paths share the cascade.
+      const { total } = getTabInfo();
+      if (total <= 1) return slice;
+      const next = (slice.tab + (msg.dir | 0) + total) % total;
+      return [slice, [{ type: 'dispatch_msg', msg: wrap('detail', { type: 'tab_switch', idx: next }) }]];
+    }
     case 'viewer_reset_chrome': {
       // Dispatched (via dispatch_msg Cmd) from the groups Component when a
       // tree cascade changes currentGroup. Single-writer per layer: root
@@ -97,7 +216,7 @@ function update(msg, slice) {
     }
 
     // --- viewer-search (typing phase, folded into the viewer Component).
-    // model-search writes only the slice; the detailSearchMode flag (root
+    // leaves/search writes only the slice; the detailSearchMode flag (root
     // chrome) is set/cleared via apply_msg → mode_set / mode_clear.
     case 'viewer_search_enter': {
       const r = ms.enter(slice);
@@ -120,7 +239,7 @@ function update(msg, slice) {
         : []];
     }
 
-    // --- tab lifecycle. model-tabs leaves write only the slice; the
+    // --- tab lifecycle. leaves/tabs leaves write only the slice; the
     // cross-layer modes/focus changes go out as apply_msg Cmds.
     case 'viewer_add_ephemeral_terminal': {
       const out = mt.addEphemeral(slice, getModel(), msg);
@@ -154,18 +273,14 @@ function update(msg, slice) {
       return [slice, needShowSelectedInfo ? [{ type: 'show_selected_info' }] : []];
     }
 
-    // --- visual-mode select (folded into the viewer Component). The ansi-
-    // dependent text/column math (selectedText / plainLineWidth) stays in
-    // select.js as pure reads; the WRITES are here. `line`/`col` are pre-
-    // clamped by the caller for set_cursor; begin/extend clamp the line.
-    case 'select_begin': {
-      const n = slice.lines.length;
-      const l = n === 0 ? 0 : Math.max(0, Math.min(n - 1, msg.line | 0));
-      const c = Math.max(0, msg.col | 0);
-      slice.select = { active: true, kind: msg.kind === 'line' ? 'line' : 'char', anchor: { line: l, col: c }, cursor: { line: l, col: c } };
-      slice.cursor = { line: l, col: c };
+    // --- visual-mode select. The mouse path dispatches the select_* Msgs
+    // (overlay/select.js); the keyboard path lives in `case 'key':` below.
+    // Both flow through the same slice mutators (`_beginSelect`/`_setCursor`/
+    // `_scrollView`/`_moveCursor`) defined above the reducer. The pure ANSI-
+    // aware reads (selectedText / plainLineWidth) stay in select.js.
+    case 'select_begin':
+      _beginSelect(slice, msg.line, msg.col, msg.kind);
       return slice;
-    }
     case 'select_extend': {
       if (!slice.select || !slice.select.active) return slice;
       const n = slice.lines.length;
@@ -176,23 +291,105 @@ function update(msg, slice) {
     case 'select_cancel':
       if (slice.select) slice.select.active = false;
       return slice;
-    case 'select_set_cursor': {
-      if (!slice.cursor) slice.cursor = { line: 0, col: 0 };
-      slice.cursor.line = msg.line | 0;
-      slice.cursor.col = msg.col | 0;
-      if (msg.extend && slice.select && slice.select.active) {
-        slice.select.cursor = { line: slice.cursor.line, col: slice.cursor.col };
-      }
-      const innerH = Math.max(1, (getComponentSlice('layout').panelHeights.detail || 0) - 2);
-      const top = slice.scroll || 0;
-      if (slice.cursor.line < top) slice.scroll = slice.cursor.line;
-      else if (slice.cursor.line >= top + innerH) slice.scroll = slice.cursor.line - innerH + 1;
+    case 'select_set_cursor':
+      _setCursor(slice, msg.line, msg.col, msg.extend);
       return slice;
-    }
-    case 'select_scroll_view': {
-      const innerH = Math.max(1, (getComponentSlice('layout').panelHeights.detail || 0) - 2);
-      const maxScroll = Math.max(0, slice.lines.length - innerH);
-      slice.scroll = Math.max(0, Math.min(maxScroll, (slice.scroll || 0) + (msg.delta || 0)));
+    case 'select_scroll_view':
+      _scrollView(slice, msg.delta);
+      return slice;
+
+    // --- keyboard: the detail-panel visual-mode state machine. Lives here
+    // (instead of as a dispatch.js hijack) because the claim is conditional
+    // on slice state — the `_claimed` sentinel returned with `[slice, …]`
+    // is consumed by `dispatchKeyToFocused` to gate the framework default.
+    //
+    // Two modes:
+    //   Reading mode (no selection active):
+    //     j / down  scroll +1
+    //     k / up    scroll -1
+    //     h / l     NOT claimed → framework focus-shift
+    //     v / V     enter char / line visual
+    //     n / N     search-nav (when committed search is active)
+    //   Visual mode (selection active):
+    //     j / k / h / l / arrows  cursor + extend
+    //     0 / $ / Home / End      cursor jump
+    //     y                       commit → register_push
+    //     v / V                   toggle off
+    //     escape                  cancel
+    case 'key': {
+      const m = getModel();
+      if (getFocus() !== 'detail' || m.modes.terminalMode) return slice;
+      // Higher-priority modes (menu/cmd/etc.) are filtered upstream by the
+      // modeChain in dispatch.handleKey; this guard is belt-and-suspenders.
+      if (m.modes.menuOpen || m.modes.cmdMode || m.modes.confirmMode ||
+          m.modes.promptMode || m.modes.copyMode) return slice;
+
+      const active = !!(slice.select && slice.select.active);
+      const claim = [{ type: '_claimed' }];
+
+      // Detail-search post-commit n/N nav; Esc clears.
+      if (slice.search && slice.search.active) {
+        if (msg.seq === 'n' || msg.key === 'n') { ms.next(slice); return [slice, claim]; }
+        if (msg.seq === 'N' || msg.key === 'N') { ms.prev(slice); return [slice, claim]; }
+        if (msg.key === 'escape' && !active)    { ms.clearCommitted(slice); return [slice, claim]; }
+      }
+
+      // v / V — toggle visual mode. Anchor at the top of the current viewport
+      // (matches what mouse-drag effectively does — cursor where it lands).
+      if (msg.seq === 'v' || msg.key === 'v') {
+        if (active && slice.select.kind === 'char') slice.select.active = false;
+        else _beginSelect(slice, slice.scroll || 0, 0, 'char');
+        return [slice, claim];
+      }
+      if (msg.seq === 'V' || msg.key === 'V') {
+        if (active && slice.select.kind === 'line') slice.select.active = false;
+        else _beginSelect(slice, slice.scroll || 0, 0, 'line');
+        return [slice, claim];
+      }
+
+      // y — commit + push to register. The text resolution + OSC52 ride out
+      // as apply_msg → register_push (root reducer owns the register).
+      if ((msg.seq === 'y' || msg.key === 'y') && active) {
+        const text = require('../../overlay/select').selectedText();
+        slice.select.active = false;
+        const effects = [{ type: '_claimed' }];
+        if (text) effects.push({ type: 'apply_msg', msg: { type: 'register_push', text } });
+        return [slice, effects];
+      }
+      if (msg.key === 'escape' && active) {
+        slice.select.active = false;
+        return [slice, claim];
+      }
+
+      // Vertical movement: reading → scroll view, visual → cursor + extend.
+      if (msg.key === 'down' || msg.seq === 'j' || msg.key === 'j') {
+        if (active) _moveCursor(slice, +1, 0);
+        else        _scrollView(slice, +1);
+        return [slice, claim];
+      }
+      if (msg.key === 'up' || msg.seq === 'k' || msg.key === 'k') {
+        if (active) _moveCursor(slice, -1, 0);
+        else        _scrollView(slice, -1);
+        return [slice, claim];
+      }
+
+      // Horizontal h/l — only claim in visual mode so reading-mode focus-shift
+      // still works (`l` to step out of detail into the next panel).
+      if (active) {
+        if (msg.key === 'left'  || msg.seq === 'h' || msg.key === 'h') { _moveCursor(slice, 0, -1); return [slice, claim]; }
+        if (msg.key === 'right' || msg.seq === 'l' || msg.key === 'l') { _moveCursor(slice, 0, +1); return [slice, claim]; }
+      }
+
+      // 0 / $ — line-start / line-end jumps. Only meaningful with a cursor.
+      if (active && (msg.seq === '0' || msg.key === 'home')) {
+        _setCursor(slice, slice.cursor.line, 0, true);
+        return [slice, claim];
+      }
+      if (active && (msg.seq === '$' || msg.key === 'end')) {
+        const w = require('../../overlay/select').plainLineWidth(slice.cursor.line);
+        _setCursor(slice, slice.cursor.line, Math.max(0, w - 1), true);
+        return [slice, claim];
+      }
       return slice;
     }
     default:
@@ -255,7 +452,7 @@ function render(panel, w, h, slice) {
   }
   let lines = slice.lines;
   const select = require('../../overlay/select');
-  const search = require('../../render/viewer-search');
+  const search = require('../../overlay/viewer-search');
   if (select.isActive()) {
     lines = select.decorateLines(lines);
   } else {

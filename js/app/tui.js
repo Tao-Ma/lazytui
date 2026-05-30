@@ -140,7 +140,7 @@ function main() {
   const { render, redraw, renderTerminalOverlay } = require('../render/layout');
   const { scheduleRender } = require('../render/render-queue');
   const { registerComponent, refreshAll } = require('../panel/api');
-  const { setupKeyListener } = require('../io/input');
+  const { setupKeyListener } = require('../dispatch/input');
   const { getModel } = require('./runtime');
   const { destroyAll: destroyTerminals } = require('../io/terminal');
   const { installSuspendHandlers } = require('./suspend');
