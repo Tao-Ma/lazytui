@@ -224,7 +224,12 @@ function update(msg, slice) {
     // (replace) or column gap (append). poolDragRelease returns the
     // [next, cmds] tuple directly so its dispatch_msg Cmds re-enter
     // the existing Phase 2 pool_hide / pool_show handlers.
-    case 'pool_drag_start':   return mdesign.poolDragStart(slice, msg.id, msg.mx, msg.my);
+    case 'pool_drag_start': {
+      // poolDragStart closes the overlay so the user can see the drop
+      // targets — force_full_repaint wipes the overlay's pixels.
+      const next = mdesign.poolDragStart(slice, msg.id, msg.mx, msg.my);
+      return [next, [{ type: 'force_full_repaint' }]];
+    }
     case 'pool_drag_motion':  return mdesign.poolDragMotion(slice, msg.mx, msg.my);
     case 'pool_drag_release': return mdesign.poolDragRelease(slice);
     case 'design_title_key': {

@@ -56,6 +56,24 @@ function getDesignFooter() {
     if (!t.valid) return ` | dragging ${esc(srcTitle)} → [red]✗ ${esc(t.reason || 'blocked')}[/]`;
     return ` | dragging ${esc(srcTitle)} → ${t.column} @ ${t.index}`;
   }
+  // v0.6 — pool drag from the panel-list overlay. The overlay closes
+  // at drag-start so the layout drop targets are visible; this footer
+  // is the only live indicator of what's being dragged.
+  if (drag && (drag.kind === 'pool-armed' || drag.kind === 'pool-dragging')) {
+    const slice = _slice();
+    const entry = slice && slice.arrange.pool ? slice.arrange.pool[drag.sourceId] : null;
+    const srcTitle = entry ? (entry.title || entry.id) : drag.sourceId;
+    if (drag.kind === 'pool-armed') {
+      return ` | from pool: ${esc(srcTitle)} → [dim](move to drop)[/]`;
+    }
+    const t = drag.target;
+    if (!t)             return ` | from pool: ${esc(srcTitle)} → [yellow](drop outside cancels)[/]`;
+    if (!t.valid)       return ` | from pool: ${esc(srcTitle)} → [red]✗ detail is essential[/]`;
+    if (t.kind === 'replace') {
+      return ` | from pool: ${esc(srcTitle)} → [bold yellow]replace[/] ${esc(t.occupantId)} (${t.column})`;
+    }
+    return ` | from pool: ${esc(srcTitle)} → [bold green]append[/] to ${t.column}`;
+  }
   const slice = _slice();
   const all = slice ? mdesign.allDesignPanels(slice) : [];
   const sel = all[d.selectedIdx];

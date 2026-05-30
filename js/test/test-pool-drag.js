@@ -132,35 +132,40 @@ describe('[poolDragRelease] emits Cmds + clears drag', () => {
     eq(cmds[1].msg.msg.column, 'right');
     eq(cmds[2].type, 'force_full_repaint');
   });
-  it('invalid target (detail replace) → no Cmds, drag still cleared', () => {
+  it('invalid target (detail replace) → only force_full_repaint, drag cleared, overlay resumes', () => {
     let s = mdesign.poolDragStart(buildSlice(), 'notes', 50, 5);
     s = mdesign.poolDragMotion(s, 50, 15); // on detail (invalid)
     const [next, cmds] = mdesign.poolDragRelease(s);
     eq(next.design.drag, null);
-    eq(cmds.length, 0);
+    eq(next.panelList.open, true, 'overlay reopened (was open at drag start)');
+    eq(cmds.length, 1);
+    eq(cmds[0].type, 'force_full_repaint');
   });
-  it('release without motion (no target) → no Cmds, drag cleared', () => {
+  it('release without motion (no target) → only force_full_repaint, drag cleared', () => {
     const s = mdesign.poolDragStart(buildSlice(), 'notes', 50, 5);
     const [next, cmds] = mdesign.poolDragRelease(s);
     eq(next.design.drag, null);
-    eq(cmds.length, 0);
+    eq(cmds.length, 1);
+    eq(cmds[0].type, 'force_full_repaint');
   });
 });
 
 describe('[end-to-end] layout.update threads pool_drag_* Msgs to the leaf', () => {
-  it('pool_drag_start sets the drag', () => {
-    const s = layout.update({ type: 'pool_drag_start', id: 'notes', mx: 50, my: 5 }, buildSlice());
-    eq(s.design.drag.kind, 'pool-armed');
+  it('pool_drag_start sets the drag + emits force_full_repaint, hides overlay', () => {
+    const [next, cmds] = layout.update({ type: 'pool_drag_start', id: 'notes', mx: 50, my: 5 }, buildSlice());
+    eq(next.design.drag.kind, 'pool-armed');
+    eq(next.panelList.open, false, 'overlay closed for drop-target visibility');
+    eq(cmds[0].type, 'force_full_repaint');
   });
   it('pool_drag_motion computes target', () => {
-    let s = layout.update({ type: 'pool_drag_start', id: 'notes', mx: 50, my: 5 }, buildSlice());
-    s = layout.update({ type: 'pool_drag_motion', mx: 50, my: 30 }, s);
-    eq(s.design.drag.target.kind, 'append');
+    const [armed] = layout.update({ type: 'pool_drag_start', id: 'notes', mx: 50, my: 5 }, buildSlice());
+    const moving = layout.update({ type: 'pool_drag_motion', mx: 50, my: 30 }, armed);
+    eq(moving.design.drag.target.kind, 'append');
   });
   it('pool_drag_release returns the [next, cmds] tuple', () => {
-    let s = layout.update({ type: 'pool_drag_start', id: 'notes', mx: 50, my: 5 }, buildSlice());
-    s = layout.update({ type: 'pool_drag_motion', mx: 50, my: 30 }, s);
-    const result = layout.update({ type: 'pool_drag_release' }, s);
+    const [armed] = layout.update({ type: 'pool_drag_start', id: 'notes', mx: 50, my: 5 }, buildSlice());
+    const moving = layout.update({ type: 'pool_drag_motion', mx: 50, my: 30 }, armed);
+    const result = layout.update({ type: 'pool_drag_release' }, moving);
     assert(Array.isArray(result), 'returns tuple');
     const [next, cmds] = result;
     eq(next.design.drag, null);

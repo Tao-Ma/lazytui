@@ -710,8 +710,18 @@ function pointToPoolDropTarget(slice, mx, my) {
 }
 
 function poolDragStart(slice, sourceId, mx, my) {
+  // Close the overlay while dragging so the layout drop targets are
+  // visible. The user can still see what they're dragging via the
+  // free-config footer ("dragging <title> → <target>"). If the drag
+  // is cancelled (drop outside layout), poolDragRelease reopens the
+  // overlay so they can try again without pressing `w`.
   const drag = { kind: 'pool-armed', sourceId, startX: mx, startY: my, curX: mx, curY: my, target: null };
-  return { ...slice, design: { ...slice.design, drag } };
+  const wasOpen = !!(slice.panelList && slice.panelList.open);
+  return {
+    ...slice,
+    panelList: { ...slice.panelList, open: false, _resumeOnCancel: wasOpen },
+    design: { ...slice.design, drag },
+  };
 }
 
 function poolDragMotion(slice, mx, my) {
@@ -731,27 +741,35 @@ function poolDragMotion(slice, mx, my) {
 
 /** Release: returns [next slice, cmds]. Cmds re-emit pool_hide/show Msgs
  *  back into layout.update so the existing Phase 2 handlers do the work
- *  (single source of truth for the mutation). Clears drag + closes the
- *  panel-list overlay on commit. */
+ *  (single source of truth for the mutation). On a valid drop the overlay
+ *  stays closed; on cancel (no valid target) the overlay reopens if it
+ *  was open at drag-start, so the user can try again without re-pressing
+ *  `w`. Clears the `_resumeOnCancel` bookkeeping flag in both cases. */
 function poolDragRelease(slice) {
   const d = slice.design;
   const ds = d && d.drag;
   if (!ds || (ds.kind !== 'pool-armed' && ds.kind !== 'pool-dragging')) return [slice, []];
-  const cleared = {
-    ...slice,
-    design: { ...d, drag: null },
-  };
-  if (ds.kind !== 'pool-dragging' || !ds.target || !ds.target.valid) {
-    return [cleared, []];
+  const resumeOnCancel = !!(slice.panelList && slice.panelList._resumeOnCancel);
+  const repaint = { type: 'force_full_repaint' };
+  const isValid = ds.kind === 'pool-dragging' && ds.target && ds.target.valid;
+  if (!isValid) {
+    // Cancel — reopen overlay (if it was open at drag-start) so the user
+    // can retry. The repaint covers the drag-state pixel churn.
+    const cleared = {
+      ...slice,
+      panelList: { ...slice.panelList, open: resumeOnCancel, _resumeOnCancel: false },
+      design: { ...d, drag: null },
+    };
+    return [cleared, [repaint]];
   }
   const sourceId = ds.sourceId;
   const t = ds.target;
-  const closeOverlay = { ...cleared, panelList: { ...cleared.panelList, open: false } };
+  const closeOverlay = {
+    ...slice,
+    panelList: { ...slice.panelList, open: false, _resumeOnCancel: false },
+    design: { ...d, drag: null },
+  };
   const showCmd = { kind: 'layout', msg: { type: 'pool_show', id: sourceId, column: t.column } };
-  // The overlay closes here; same reasoning as panel_list_close — pixels
-  // need wiping since `panelList.open` isn't a mode flag the render-
-  // layer fingerprint tracks.
-  const repaint = { type: 'force_full_repaint' };
   if (t.kind === 'replace') {
     const cmds = [
       { type: 'dispatch_msg', msg: { kind: 'layout', msg: { type: 'pool_hide', id: t.occupantId } } },
