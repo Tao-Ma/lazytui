@@ -38,6 +38,33 @@
 // No in-place writes, no panel/api reach-around. Called from this
 // Component's update, preserving single-writer-per-slice.
 const mdesign = require('../leaves/design');
+const mpool = require('../leaves/pool');
+
+// Hotkey pools — match parser/index.js LEFT/RIGHT_HOTKEY_POOL.
+const LEFT_HOTKEY_POOL  = ['1', '2', '3', '4', '5', '6'];
+const RIGHT_HOTKEY_POOL = ['7', '8', '9'];
+
+/** Reassign positional hotkeys for a column after a hide/show mutation.
+ *  Matches the design-mode behavior — hotkey is the panel's slot index
+ *  within its column. Explicit YAML hotkeys are NOT preserved across
+ *  runtime mutations (consistent with how design-mode reorder works). */
+function rekeyColumn(panels, pool) {
+  return panels.map((p, i) => ({ ...p, hotkey: pool[i] || '' }));
+}
+
+/** Build a runtime placement object from a pool entry. Mirrors the
+ *  flattening that `state.rebuildLayoutFromConfig` does on initial load
+ *  — plugin-specific config spread first, framework fields override. */
+function placementFromPoolEntry(entry, column) {
+  return {
+    ...(entry.config || {}),
+    id: entry.id,
+    type: entry.type,
+    title: entry.title,
+    hotkey: '',
+    column,
+  };
+}
 
 function init() {
   return {
@@ -198,6 +225,54 @@ function update(msg, slice) {
     // history pointed at it no longer makes sense.
     case 'design_clear_undo':
       return mdesign.clearUndoStacks(slice);
+    // v0.6 Phase 2 — pool hide/show. The pool entry stays in the pool;
+    // only the placement in leftPanels/rightPanels changes. Detail is
+    // unhideable (the layout invariant requires exactly one); the
+    // overlay UX in Phase 4 will surface this as "essential" rather
+    // than offering hide. pool_show refuses to create a second detail
+    // or actions panel — same invariant the parser enforces at load.
+    case 'pool_hide': {
+      const arrange = slice.arrange;
+      const id = msg.id;
+      const entry = (arrange.pool || {})[id];
+      if (!entry) return slice;
+      if (entry.type === 'detail') return slice;
+      const leftIdx  = arrange.leftPanels.findIndex(p => p.id === id);
+      const rightIdx = arrange.rightPanels.findIndex(p => p.id === id);
+      let nextLeft  = arrange.leftPanels;
+      let nextRight = arrange.rightPanels;
+      if (leftIdx >= 0) {
+        nextLeft = rekeyColumn(arrange.leftPanels.filter((_, i) => i !== leftIdx), LEFT_HOTKEY_POOL);
+      } else if (rightIdx >= 0) {
+        nextRight = rekeyColumn(arrange.rightPanels.filter((_, i) => i !== rightIdx), RIGHT_HOTKEY_POOL);
+      } else {
+        return slice;  // already hidden
+      }
+      return { ...slice, arrange: { ...arrange, leftPanels: nextLeft, rightPanels: nextRight }, dirty: true };
+    }
+    case 'pool_show': {
+      const arrange = slice.arrange;
+      const id = msg.id;
+      const entry = (arrange.pool || {})[id];
+      if (!entry) return slice;
+      if (mpool.placedIdSet(arrange).has(id)) return slice;  // already placed
+      // Invariant guard: refuse a second detail / actions.
+      const all = arrange.leftPanels.concat(arrange.rightPanels);
+      if (entry.type === 'detail'  && all.some(p => p.type === 'detail'))  return slice;
+      if (entry.type === 'actions' && all.some(p => p.type === 'actions')) return slice;
+      const column = msg.column === 'left' ? 'left' : 'right';
+      // Column cap: 6 left, 3 right (matches parser/schema constraints).
+      const cap = column === 'left' ? 6 : 3;
+      const target = column === 'left' ? arrange.leftPanels : arrange.rightPanels;
+      if (target.length >= cap) return slice;
+      const placement = placementFromPoolEntry(entry, column);
+      const nextCol = rekeyColumn(target.concat([placement]),
+                                  column === 'left' ? LEFT_HOTKEY_POOL : RIGHT_HOTKEY_POOL);
+      const nextArrange = column === 'left'
+        ? { ...arrange, leftPanels:  nextCol }
+        : { ...arrange, rightPanels: nextCol };
+      return { ...slice, arrange: nextArrange, dirty: true };
+    }
     default:
       return slice;
   }

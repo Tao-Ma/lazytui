@@ -633,6 +633,31 @@ function _frameworkDynamicCommands(m) {
       run: () => { require('../dispatch/dispatch').startDesignMode(); },
     });
   }
+  // v0.6 Phase 2 — pool hide/show. One verb per id makes autocomplete
+  // restrict to valid targets and gives `desc` somewhere to land. Same
+  // pattern as `theme <name>` / `focus <name>` above.
+  if (layoutSlice && layoutSlice.arrange && layoutSlice.arrange.pool) {
+    const mpool = require('../leaves/pool');
+    const arrange = layoutSlice.arrange;
+    for (const id of mpool.placedIds(arrange)) {
+      const entry = arrange.pool[id];
+      if (!entry || entry.type === 'detail') continue;  // detail can't be hidden
+      out.push({
+        name: `hide ${id}`,
+        desc: `Hide the ${entry.title || id} panel (stays in pool)`,
+        run: () => { dispatchMsg(wrap('layout', { type: 'pool_hide', id })); },
+      });
+    }
+    for (const id of mpool.hiddenIds(arrange)) {
+      const entry = arrange.pool[id];
+      if (!entry) continue;
+      out.push({
+        name: `show ${id}`,
+        desc: `Show the hidden ${entry.title || id} panel`,
+        run: () => { dispatchMsg(wrap('layout', { type: 'pool_show', id })); },
+      });
+    }
+  }
   return out;
 }
 
