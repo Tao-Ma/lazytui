@@ -20,6 +20,11 @@ const CODES = {
   white: '\x1b[37m',
   'bold cyan': '\x1b[1;36m',
   'bold yellow': '\x1b[1;33m',
+  'bold red': '\x1b[1;31m',
+  'bold green': '\x1b[1;32m',
+  'bold magenta': '\x1b[1;35m',
+  'bold blue': '\x1b[1;34m',
+  'bold white': '\x1b[1;37m',
   'on dark_blue': '\x1b[44m',
 };
 const RESET = '\x1b[0m';
