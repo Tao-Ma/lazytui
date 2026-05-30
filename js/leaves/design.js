@@ -589,10 +589,15 @@ function mousePress(slice, model, mx, my, COLS) {
   const all = allDesignPanels(slice);
   const idx = all.findIndex(p => p.type === hit);
   const drag = { kind: 'armed', sourceType: hit, startX: mx, startY: my, curX: mx, curY: my, target: null };
+  // Sync runtime focus alongside the design selection (same v0.6
+  // invariant navSelect maintains for keyboard nav). A click on a
+  // cell should move the green border there, even if the user
+  // doesn't go on to drag.
+  const focus = idx >= 0 ? all[idx].type : slice.focus;
   const designNext = idx >= 0
     ? { ...slice.design, drag, selectedIdx: idx }
     : { ...slice.design, drag };
-  return { ...slice, design: designNext };
+  return { ...slice, focus, design: designNext };
 }
 
 /** Motion: resize kinds redistribute heights; a panel drag promotes
