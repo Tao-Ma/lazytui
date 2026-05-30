@@ -25,6 +25,7 @@ const { RESET, richToAnsi, esc, visibleLen } = require('../io/ansi');
 const { refreshSize, cols, rows, stdout, showCursor, hideCursor } = require('../io/term');
 const { allPanels, syncPanelScroll, multiSelCount } = require('../app/state');
 const { theme } = require('./themes');
+const { truncate } = require('./panel');
 const { isTerminalTab, activeTerminalId, activeTerminalConfig,
         getTabInfo, findEphemeralByid } = require('../panel/viewer/tabs');
 const { ensureSession, getSession, resizeSession } = require('../io/terminal');
@@ -676,8 +677,16 @@ function renderFooter(model = getModel()) {
 
   // Pad left → right tail → tags, using visible width math (esc'd
   // [ characters and double-width chars must not throw the alignment).
-  const visLen = visibleLen(keys) + visibleLen(rightTail)
-               + visibleLen(selectTag) + visibleLen(modeTag);
+  // Truncate `keys` first when the combined visible length would
+  // overflow the terminal width — otherwise the footer wraps onto a
+  // new row, scrolls the screen up, and looks like the entire frame
+  // is shrinking each render. Surfaced under v0.6 free-config when
+  // the design footer + pool-drag status string grew past common
+  // terminal widths.
+  const tailLen = visibleLen(rightTail) + visibleLen(selectTag) + visibleLen(modeTag);
+  const maxKeysLen = Math.max(0, COLS - tailLen);
+  if (visibleLen(keys) > maxKeysLen) keys = truncate(keys, maxKeysLen);
+  const visLen = visibleLen(keys) + tailLen;
   const padding = ' '.repeat(Math.max(0, COLS - visLen));
   const footerMarkup = `[${theme().footer}]${keys}${padding}${rightTail}${selectTag}${modeTag}[/]`;
   stdout.write(`\x1b[${ROWS};1H` + richToAnsi(footerMarkup) + RESET);
