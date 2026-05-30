@@ -42,9 +42,11 @@ const mdesign = require('../leaves/design');
 function init() {
   return {
     // 1g: { leftPanels, rightPanels, leftWidth, detailHeightPct }.
-    // Default matches runtime.init pre-1g; state.js's initState replaces
-    // it with the parsed config (rebuildLayoutFromConfig).
-    arrange: { leftWidth: 30, leftPanels: [], rightPanels: [], detailHeightPct: 60 },
+    // v0.6 Phase 1 adds `pool` (id → entry for placed + hidden panels);
+    // pool derivations live in `js/leaves/pool`. Default matches
+    // runtime.init pre-1g; state.js's initState replaces it with the
+    // parsed config (rebuildLayoutFromConfig).
+    arrange: { leftWidth: 30, leftPanels: [], rightPanels: [], detailHeightPct: 60, pool: {} },
     // 1c: focus defaults to 'groups' (the historical initial focus set by
     // runtime.init pre-1c). state.js's initState() overrides this once the
     // panel arrangement is known.

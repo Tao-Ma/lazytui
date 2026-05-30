@@ -112,53 +112,63 @@ function loadConfig(configPath) {
  */
 function rebuildLayoutFromConfig(config) {
   const ly = config.layout;
-  const out = { leftWidth: 30, detailHeightPct: 60, leftPanels: [], rightPanels: [] };
+  const out = { leftWidth: 30, detailHeightPct: 60, leftPanels: [], rightPanels: [], pool: {} };
 
   if (ly) {
     const leftPanelsSrc = ly.left_panels || (ly.left && ly.left.panels) || [];
     const rightPanelsSrc = ly.right_panels || (ly.right && ly.right.panels) || [];
     out.leftWidth = ly.left_width || (ly.left && ly.left.width) || 30;
     out.detailHeightPct = ly.detail_height_pct || 60;
+    // v0.6 pool: every configured panel (placed + hidden) keyed by id.
+    // Parser always emits one; default to {} for legacy JSON callers.
+    out.pool = ly.pool || {};
     // Plugin-specific panel options (parser PanelConfig.config) ride
     // alongside type/title/hotkey/column so the panel def can read them
     // off `panel` directly. Spread first so the framework keys win on
-    // any overlap.
+    // any overlap. `id` plumbs the link back to the pool — Phase 1
+    // derivations (`leaves/pool`) read it to compute placed vs hidden.
     out.leftPanels = leftPanelsSrc.map((p, i) => ({
       ...(p.config || {}),
+      id: p.id,
       type: p.type,
       title: p.title || p.type.replace(/_/g, ' '),
       hotkey: p.hotkey || String(i + 1),
       column: 'left',
     }));
-    // Right-panel hotkeys come pre-assigned from the parser (positional
-    // 7/8/9, with explicit YAML overrides honored). Fall back to position
-    // here too in case the layout block came from JSON or some other
-    // source that didn't go through the parser.
-    const rightPool = ['7', '8', '9'];
+    const rightHotkeyPool = ['7', '8', '9'];
     const rightExplicit = new Set(rightPanelsSrc.map(p => p.hotkey).filter(Boolean));
-    const rightAuto = rightPool.filter(k => !rightExplicit.has(k));
+    const rightAuto = rightHotkeyPool.filter(k => !rightExplicit.has(k));
     out.rightPanels = rightPanelsSrc.map(p => ({
       ...(p.config || {}),
+      id: p.id,
       type: p.type,
       title: p.title || p.type.replace(/_/g, ' '),
       hotkey: p.hotkey || (rightAuto.shift() || ''),
       column: 'right',
     }));
   } else {
+    // No layout block — defensive fallback for JSON callers or tests
+    // that bypass the parser. Synthesize the same default the parser
+    // produces, plus a matching pool.
     const hasContainers = Object.values(config.groups).some(g => g.containers && g.containers.length);
     const hasConfigFiles = config.files && config.files.length;
     let hk = 1;
+    const push = (col, panel) => {
+      const arr = col === 'left' ? out.leftPanels : out.rightPanels;
+      arr.push(panel);
+      out.pool[panel.id] = {
+        id: panel.id, type: panel.type, title: panel.title, config: {}, _synthesized: true,
+      };
+    };
     if (hasContainers) {
-      out.leftPanels.push({ type: 'containers', title: 'Containers', hotkey: String(hk++), column: 'left' });
+      push('left', { id: 'containers', type: 'containers', title: 'Containers', hotkey: String(hk++), column: 'left' });
     }
-    out.leftPanels.push({ type: 'groups', title: 'Groups', hotkey: String(hk++), column: 'left' });
+    push('left', { id: 'groups', type: 'groups', title: 'Groups', hotkey: String(hk++), column: 'left' });
     if (hasConfigFiles) {
-      out.leftPanels.push({ type: 'files', source: 'declared', title: 'Files', hotkey: String(hk++), column: 'left' });
+      push('left', { id: 'files', type: 'files', title: 'Files', hotkey: String(hk++), column: 'left', source: 'declared' });
     }
-    out.rightPanels = [
-      { type: 'actions', title: 'Actions', hotkey: '7', column: 'right' },
-      { type: 'detail', title: 'Detail', hotkey: '8', column: 'right' },
-    ];
+    push('right', { id: 'actions', type: 'actions', title: 'Actions', hotkey: '7', column: 'right' });
+    push('right', { id: 'detail',  type: 'detail',  title: 'Detail',  hotkey: '8', column: 'right' });
   }
   return out;
 }
