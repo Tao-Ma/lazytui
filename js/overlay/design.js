@@ -81,6 +81,55 @@ function getDesignFooter() {
 }
 
 /**
+ * v0.6 free-config: a small `[X]` quick-hide button painted over the
+ * top-left corner of each placed panel that's allowed to be hidden
+ * (everything except detail). Click it to dispatch a pool_hide Msg
+ * directly — faster than `w` → arrow nav → Enter when the user already
+ * knows which panel they want gone. The button is suppressed while a
+ * drag gesture is active so it doesn't fight the drag affordances.
+ */
+function renderCloseButtons() {
+  const layoutSlice = getComponentSlice('layout');
+  if (!layoutSlice || !layoutSlice.arrange) return;
+  const drag = layoutSlice.design && layoutSlice.design.drag;
+  if (drag) return;
+  const panels = (layoutSlice.arrange.leftPanels || []).concat(layoutSlice.arrange.rightPanels || []);
+  for (const p of panels) {
+    if (p.type === 'detail') continue;  // essential — no close button
+    const b = layoutSlice.panelBounds[p.type];
+    if (!b || b.w < 6 || b.h < 1) continue;
+    // Sit at row y, columns x+1..x+3 — directly after the ╭ corner so
+    // it overlays a few horizontal-line cells of the existing top
+    // border without colliding with the (hotkey)─title text further
+    // right. 1-indexed for ANSI CUP.
+    stdout.write(`\x1b[${b.y + 1};${b.x + 2}H` + richToAnsi('[bold red]\\[x][/]') + RESET);
+  }
+}
+
+/**
+ * Hit-test the close-button glyphs painted by renderCloseButtons.
+ * Returns the panel id whose `[x]` was clicked, or null. Pure
+ * derivation over slice.arrange + slice.panelBounds (same geometry
+ * the render pass writes). Called by input.js BEFORE the overlay /
+ * design drag press handlers so a button click intercepts cleanly.
+ */
+function hitTestCloseButton(mx, my) {
+  const layoutSlice = getComponentSlice('layout');
+  if (!layoutSlice || !layoutSlice.arrange) return null;
+  const drag = layoutSlice.design && layoutSlice.design.drag;
+  if (drag) return null;
+  const panels = (layoutSlice.arrange.leftPanels || []).concat(layoutSlice.arrange.rightPanels || []);
+  for (const p of panels) {
+    if (p.type === 'detail') continue;
+    const b = layoutSlice.panelBounds[p.type];
+    if (!b || b.w < 6 || b.h < 1) continue;
+    // Glyph occupies (row=b.y, cols=b.x+1..b.x+3) in 0-indexed coords.
+    if (my === b.y && mx >= b.x + 1 && mx <= b.x + 3) return p.id;
+  }
+  return null;
+}
+
+/**
  * Pool-drag drop-target affordance: paints a colored frame on the
  * target cell (replace) or a colored bar at the column's append slot,
  * so the user can SEE where the dragged pool panel will land. Pure
@@ -220,7 +269,7 @@ function pointToResizeTarget(mx, my) { return mdesign.pointToResizeTarget(_slice
 function pointToDropTarget(srcType, mx, my) { return mdesign.pointToDropTarget(_slice(), srcType, mx, my, cols()); }
 
 module.exports = {
-  renderDesignOverlay, getDesignFooter, titleEditText,
+  renderDesignOverlay, getDesignFooter, titleEditText, renderCloseButtons, hitTestCloseButton,
   onMouseEvent,
   pointToDropTarget, pointToResizeTarget,
   _clearUndoStacks,

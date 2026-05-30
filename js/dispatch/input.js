@@ -119,6 +119,20 @@ function handleMouse(kind, x, y) {
       return;
     }
 
+    // v0.6 — close-button click: top-left [x] on each non-detail panel
+    // dispatches a pool_hide. Checked before the design / overlay
+    // press handlers so the button beats any drag gesture that would
+    // start at the same coordinate.
+    if (kind === 'press') {
+      const { hitTestCloseButton } = require('../overlay/design');
+      const hideId = hitTestCloseButton(mx, my);
+      if (hideId) {
+        dispatchMsg(wrap('layout', { type: 'pool_hide', id: hideId }));
+        render();
+        return;
+      }
+    }
+
     if (kind === 'press' && slice && slice.panelList && slice.panelList.open) {
       const { hitTest } = require('../overlay/panel-list');
       const mpool = require('../leaves/pool');
