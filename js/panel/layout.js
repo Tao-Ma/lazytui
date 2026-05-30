@@ -213,6 +213,14 @@ function update(msg, slice) {
     case 'design_mouse_press':  return mdesign.mousePress(slice, require('../app/runtime').getModel(), msg.mx, msg.my, msg.cols);
     case 'design_mouse_motion': return mdesign.mouseMotion(slice, msg.mx, msg.my, msg.cols);
     case 'design_mouse_release': return mdesign.mouseRelease(slice);
+    // v0.6 Phase 5 — pool-drag gesture from the panel-list overlay.
+    // Source is the overlay cursor's item id; drop is on a layout cell
+    // (replace) or column gap (append). poolDragRelease returns the
+    // [next, cmds] tuple directly so its dispatch_msg Cmds re-enter
+    // the existing Phase 2 pool_hide / pool_show handlers.
+    case 'pool_drag_start':   return mdesign.poolDragStart(slice, msg.id, msg.mx, msg.my);
+    case 'pool_drag_motion':  return mdesign.poolDragMotion(slice, msg.mx, msg.my);
+    case 'pool_drag_release': return mdesign.poolDragRelease(slice);
     case 'design_title_key': {
       const te = slice.design && slice.design.titleEdit;
       if (!te) return slice;

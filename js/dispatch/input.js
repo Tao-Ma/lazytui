@@ -101,7 +101,55 @@ function handleMouse(kind, x, y) {
   // (the one terminal read the layout Component can't do without
   // back-coupling) and threaded into the hit-tests. Non-press/motion/
   // release events (wheel) are swallowed in design mode, as before.
+  //
+  // v0.6 Phase 5 — pool drag from the overlay. Press inside the panel-
+  // list overlay starts a pool-drag gesture (sourceId from the clicked
+  // row, or the cursor's current item if the click hits the overlay but
+  // not a specific row). Motion/release re-route to the pool-drag Msgs
+  // while drag.kind is `pool-*`; otherwise the existing design path runs.
   if (model.modes.freeConfigMode) {
+    const slice = getComponentSlice('layout');
+    const drag = slice && slice.design && slice.design.drag;
+    const isPoolDrag = drag && (drag.kind === 'pool-armed' || drag.kind === 'pool-dragging');
+
+    if (isPoolDrag) {
+      if (kind === 'motion')       dispatchMsg(wrap('layout', { type: 'pool_drag_motion', mx, my }));
+      else if (kind === 'release') dispatchMsg(wrap('layout', { type: 'pool_drag_release' }));
+      render();
+      return;
+    }
+
+    if (kind === 'press' && slice && slice.panelList && slice.panelList.open) {
+      const { hitTest } = require('../overlay/panel-list');
+      const mpool = require('../leaves/pool');
+      const hit = hitTest(mx, my);
+      if (hit) {
+        // Click inside overlay. If a specific item row was clicked,
+        // update the cursor to that row first; then start the drag.
+        // Clicks on the header/footer (itemIdx === null) start a drag
+        // from the existing cursor position.
+        let cursor = slice.panelList.cursor;
+        if (hit.itemIdx !== null) cursor = hit.itemIdx;
+        const items = mpool.panelListItems(slice.arrange);
+        const item = items[cursor];
+        if (item && item.status !== 'essential') {
+          if (hit.itemIdx !== null && hit.itemIdx !== slice.panelList.cursor) {
+            dispatchMsg(wrap('layout', { type: 'panel_list_open', cursor }));
+          }
+          dispatchMsg(wrap('layout', { type: 'pool_drag_start', id: item.id, mx, my }));
+          render();
+          return;
+        }
+        // Header/footer click or essential row — no-op, but still
+        // swallow the click so it doesn't leak through to design drag.
+        render();
+        return;
+      }
+      // Click outside overlay: close it, then fall through to design
+      // drag so the user can interact with the layout in the same click.
+      dispatchMsg(wrap('layout', { type: 'panel_list_close' }));
+    }
+
     if (kind === 'press')        dispatchMsg(wrap('layout', { type: 'design_mouse_press',  mx, my, cols: cols() }));
     else if (kind === 'motion')  dispatchMsg(wrap('layout', { type: 'design_mouse_motion', mx, my, cols: cols() }));
     else if (kind === 'release') dispatchMsg(wrap('layout', { type: 'design_mouse_release' }));

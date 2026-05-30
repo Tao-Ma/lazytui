@@ -626,6 +626,102 @@ function mouseRelease(slice) {
   return { ...next, design: { ...next.design, drag: null } };
 }
 
+// ---------------------------------------------------- v0.6 Phase 5: pool drag
+//
+// A separate gesture from the existing panel-reorder drag. Source: an item in
+// the panel-list overlay (identified by sourceId, not sourceType, since the
+// pool can hold multiple panels of the same type). Drop:
+//
+//   - on an existing cell → REPLACE: occupant returns to pool, source lands
+//     in occupant's column at the same position
+//   - in a column area but not on any cell → APPEND to that column's tail
+//   - outside the layout → cancel
+//
+// `pool-armed` → `pool-dragging` promotion on any motion (matches the design
+// drag pattern). Release returns [next slice, cmds] — cmds are dispatch_msg
+// wrappers that re-emit pool_hide/pool_show Msgs back into layout.update so
+// the existing handlers (Phase 2) do the actual mutation.
+
+/** Compute the drop target for a pool drag at (mx, my). Returns
+ *  `{ kind, column, occupantId?, valid }` or `null` when outside the
+ *  layout area. Uses slice.panelBounds (view-derived, written by the
+ *  render pass) for cell hit-tests, mirroring the design-drag approach. */
+function pointToPoolDropTarget(slice, mx, my) {
+  const arrange = slice.arrange;
+  for (const p of arrange.leftPanels  || []) {
+    const b = slice.panelBounds[p.type];
+    if (b && mx >= b.x && mx < b.x + b.w && my >= b.y && my < b.y + b.h) {
+      // Refuse replace on detail — layout invariant. The release path
+      // converts an invalid replace into a same-column append above
+      // the cell, so the gesture isn't a dead-end.
+      const valid = p.type !== 'detail';
+      return { kind: 'replace', column: 'left', occupantId: p.id, valid };
+    }
+  }
+  for (const p of arrange.rightPanels || []) {
+    const b = slice.panelBounds[p.type];
+    if (b && mx >= b.x && mx < b.x + b.w && my >= b.y && my < b.y + b.h) {
+      const valid = p.type !== 'detail';
+      return { kind: 'replace', column: 'right', occupantId: p.id, valid };
+    }
+  }
+  // Not on any cell — pick column by x, append at tail.
+  if (mx < 0 || my < 0) return null;
+  const leftWidth = arrange.leftWidth || 30;
+  const column = mx < leftWidth ? 'left' : 'right';
+  return { kind: 'append', column, valid: true };
+}
+
+function poolDragStart(slice, sourceId, mx, my) {
+  const drag = { kind: 'pool-armed', sourceId, startX: mx, startY: my, curX: mx, curY: my, target: null };
+  return { ...slice, design: { ...slice.design, drag } };
+}
+
+function poolDragMotion(slice, mx, my) {
+  const d = slice.design;
+  const ds = d && d.drag;
+  if (!ds || (ds.kind !== 'pool-armed' && ds.kind !== 'pool-dragging')) return slice;
+  let nextKind = ds.kind;
+  if (ds.kind === 'pool-armed') {
+    if (mx === ds.startX && my === ds.startY) {
+      return { ...slice, design: { ...d, drag: { ...ds, curX: mx, curY: my } } };
+    }
+    nextKind = 'pool-dragging';
+  }
+  const target = pointToPoolDropTarget(slice, mx, my);
+  return { ...slice, design: { ...d, drag: { ...ds, kind: nextKind, curX: mx, curY: my, target } } };
+}
+
+/** Release: returns [next slice, cmds]. Cmds re-emit pool_hide/show Msgs
+ *  back into layout.update so the existing Phase 2 handlers do the work
+ *  (single source of truth for the mutation). Clears drag + closes the
+ *  panel-list overlay on commit. */
+function poolDragRelease(slice) {
+  const d = slice.design;
+  const ds = d && d.drag;
+  if (!ds || (ds.kind !== 'pool-armed' && ds.kind !== 'pool-dragging')) return [slice, []];
+  const cleared = {
+    ...slice,
+    design: { ...d, drag: null },
+  };
+  if (ds.kind !== 'pool-dragging' || !ds.target || !ds.target.valid) {
+    return [cleared, []];
+  }
+  const sourceId = ds.sourceId;
+  const t = ds.target;
+  const closeOverlay = { ...cleared, panelList: { ...cleared.panelList, open: false } };
+  const showCmd = { kind: 'layout', msg: { type: 'pool_show', id: sourceId, column: t.column } };
+  if (t.kind === 'replace') {
+    const cmds = [
+      { type: 'dispatch_msg', msg: { kind: 'layout', msg: { type: 'pool_hide', id: t.occupantId } } },
+      { type: 'dispatch_msg', msg: showCmd },
+    ];
+    return [closeOverlay, cmds];
+  }
+  // append
+  return [closeOverlay, [{ type: 'dispatch_msg', msg: showCmd }]];
+}
+
 module.exports = {
   MIN_PANEL_H, DETAIL_MIN_PCT, DETAIL_MAX_PCT,
   allDesignPanels,
@@ -635,4 +731,5 @@ module.exports = {
   clampSelected, titleEnter, setSelectedTitle,
   pointToResizeTarget, pointToDropTarget, panelAt,
   mousePress, mouseMotion, mouseRelease,
+  poolDragStart, poolDragMotion, poolDragRelease, pointToPoolDropTarget,
 };
