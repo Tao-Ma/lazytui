@@ -7,8 +7,14 @@
  */
 'use strict';
 
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const yaml = require('js-yaml');
+
 const { describe, it, assert, report } = require('./test-runner');
 const { validate } = require('../parser/schema');
+const { parse } = require('../parser');
 
 // Minimal valid base; vary `layout`.
 function withLayout(layout) {
@@ -22,6 +28,20 @@ function bad(layout) {
   let threw = false;
   try { validate(withLayout(layout), 'test'); } catch { threw = true; }
   assert(threw, 'expected a SchemaError');
+}
+
+// Cardinality checks (exactly-one-detail, at-most-one-actions) moved to
+// parseLayout post-resolution in v0.6 — string-id cells need the pool to
+// know their type. badParse() runs the full pipeline so the resolver-
+// level check fires.
+let _tmpDir = null;
+function badParse(layout) {
+  if (!_tmpDir) _tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'lazytui-layout-'));
+  const p = path.join(_tmpDir, `case-${Math.floor(Math.random() * 1e9)}.yml`);
+  fs.writeFileSync(p, yaml.dump(withLayout(layout)));
+  let threw = false;
+  try { parse(p); } catch { threw = true; }
+  assert(threw, 'expected parse to throw');
 }
 
 const goodLayout = {
@@ -38,16 +58,16 @@ describe('[1] well-formed layout passes', () => {
 
 describe('[2] detail-panel cardinality', () => {
   it('rejects zero detail panels', () => {
-    bad({ left: { panels: [{ type: 'groups' }] }, right: { panels: [{ type: 'actions' }] } });
+    badParse({ left: { panels: [{ type: 'groups' }] }, right: { panels: [{ type: 'actions' }] } });
   });
   it('rejects two detail panels', () => {
-    bad({ left: { panels: [{ type: 'detail' }] }, right: { panels: [{ type: 'detail' }] } });
+    badParse({ left: { panels: [{ type: 'detail' }] }, right: { panels: [{ type: 'detail' }] } });
   });
 });
 
 describe('[3] actions-panel cardinality', () => {
   it('rejects two actions panels', () => {
-    bad({ right: { panels: [{ type: 'actions' }, { type: 'actions' }, { type: 'detail' }] } });
+    badParse({ right: { panels: [{ type: 'actions' }, { type: 'actions' }, { type: 'detail' }] } });
   });
 });
 

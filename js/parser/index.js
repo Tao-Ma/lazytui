@@ -23,7 +23,15 @@ const RIGHT_HOTKEY_POOL = ['7', '8', '9'];
 // Reserved layout keys consumed by the framework; everything else
 // passes through as plugin-specific panel config (e.g. stats panel's
 // `topic`, `select_from`).
-const RESERVED_PANEL_KEYS = new Set(['type', 'title', 'hotkey', 'height']);
+const RESERVED_PANEL_KEYS = new Set(['type', 'title', 'hotkey', 'height', 'id']);
+
+// v0.6 pool model — a `panels:` top-level block declares panels as a
+// mapping of id → {type, title?, ...config}. Layout cells reference
+// pool entries by id (string or `{id, ...placement-overrides}`).
+// Placement-only fields aren't allowed at the pool level; they belong
+// on the cell.
+const RESERVED_POOL_KEYS = new Set(['type', 'title']);
+const PLACEMENT_ONLY_KEYS = new Set(['hotkey', 'height', 'heightPct']);
 
 function assignHotkeys(panelsYaml, pool) {
   const explicit = new Map();
@@ -45,76 +53,234 @@ function titleCase(s) {
   return s.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 }
 
-function defaultLayout(hasContainers, _hasFiles) {
+/**
+ * Build a normalized pool entry from a raw YAML mapping.
+ *
+ * Pool entries hold panel IDENTITY (type, title, plugin-specific config).
+ * Placement-only fields (hotkey, height, heightPct) raise — they belong
+ * on the layout cell, not the pool. Synthesized entries (from legacy
+ * inline `{type:}` cells) carry `_synthesized: true` so Phase 6's
+ * `:save-layout` can preserve the inline form unless the pool was
+ * explicitly mutated.
+ */
+function normalizePoolEntry(id, raw, synthesized) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new ParseError(`panels.${id}: must be a mapping`);
+  }
+  if (typeof raw.type !== 'string' || !raw.type) {
+    throw new ParseError(`panels.${id}: missing required field 'type'`);
+  }
+  const config = {};
+  for (const [k, v] of Object.entries(raw)) {
+    if (k === 'id' || RESERVED_POOL_KEYS.has(k)) continue;
+    if (PLACEMENT_ONLY_KEYS.has(k)) {
+      throw new ParseError(`panels.${id}: '${k}' is a placement field; put it on the layout cell, not the pool entry`);
+    }
+    config[k] = v;
+  }
+  const entry = {
+    id,
+    type: raw.type,
+    title: raw.title || titleCase(raw.type),
+    config,
+  };
+  if (synthesized) entry._synthesized = true;
+  return entry;
+}
+
+/**
+ * Parse the top-level `panels:` block (the v0.6 pool). Returns a Map
+ * id → entry. Empty / absent block yields an empty map; layout cells
+ * may still synthesize entries into it. Map (not plain object) so the
+ * downstream layout pass can mutate it as it walks cells.
+ */
+function parsePool(panelsData) {
+  const pool = new Map();
+  if (panelsData === undefined || panelsData === null) return pool;
+  if (typeof panelsData !== 'object' || Array.isArray(panelsData)) {
+    throw new ParseError("'panels:' must be a mapping of id → { type, ... }");
+  }
+  for (const [id, entry] of Object.entries(panelsData)) {
+    if (typeof id !== 'string' || !id) {
+      throw new ParseError("'panels:' entry id must be a non-empty string");
+    }
+    pool.set(id, normalizePoolEntry(id, entry, /*synthesized*/ false));
+  }
+  return pool;
+}
+
+/** Pick an unused id for a synthesized inline cell. `type` first, then
+ *  `type-2`, `type-3`, ... — matches what a user would naturally write
+ *  if they later promoted the inline cell to a `panels:` block entry. */
+function synthIdFor(type, pool) {
+  if (!pool.has(type)) return type;
+  let n = 2;
+  while (pool.has(`${type}-${n}`)) n++;
+  return `${type}-${n}`;
+}
+
+function pickPlacement(raw) {
+  const out = {};
+  if (raw.hotkey !== undefined)    out.hotkey    = String(raw.hotkey);
+  if (raw.heightPct !== undefined) out.heightPct = raw.heightPct;
+  if (raw.height !== undefined)    out.height    = raw.height;
+  return out;
+}
+
+/**
+ * Normalize one layout cell into `{ entry, placement }`. Mutates `pool`
+ * when the cell is an inline `{type:}` declaration (legacy form) or a
+ * `{id, type, ...}` declare-in-place. Throws on unresolvable refs and
+ * id collisions between cell-declared and pool-declared entries.
+ */
+function resolveLayoutCell(raw, pool) {
+  if (typeof raw === 'string') {
+    if (!pool.has(raw)) {
+      throw new ParseError(`layout cell references unknown panel id '${raw}'`);
+    }
+    return { entry: pool.get(raw), placement: {} };
+  }
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new ParseError(`layout cell must be a string id or a mapping, got ${Array.isArray(raw) ? 'array' : typeof raw}`);
+  }
+  const hasId = typeof raw.id === 'string' && raw.id;
+  const hasType = typeof raw.type === 'string' && raw.type;
+
+  if (hasId && !hasType) {
+    if (!pool.has(raw.id)) {
+      throw new ParseError(`layout cell references unknown panel id '${raw.id}'`);
+    }
+    return { entry: pool.get(raw.id), placement: pickPlacement(raw) };
+  }
+  if (!hasType) {
+    throw new ParseError("layout cell missing both 'id' and 'type'");
+  }
+  // Inline form. Either a fresh `{type:}` (legacy) or `{id, type, ...}`
+  // (v0.6 declare-in-place). In both cases, synthesize a pool entry.
+  if (hasId && pool.has(raw.id)) {
+    throw new ParseError(`layout cell declares panel id '${raw.id}' but a pool entry already exists with that id`);
+  }
+  const id = hasId ? raw.id : synthIdFor(raw.type, pool);
+  // Strip placement-only fields before pool normalization.
+  const poolRaw = {};
+  for (const [k, v] of Object.entries(raw)) {
+    if (k === 'id' || PLACEMENT_ONLY_KEYS.has(k)) continue;
+    poolRaw[k] = v;
+  }
+  const entry = normalizePoolEntry(id, poolRaw, /*synthesized*/ !hasId);
+  pool.set(id, entry);
+  return { entry, placement: pickPlacement(raw) };
+}
+
+/** Serialize the pool Map into a plain object for the parser output. */
+function poolToObject(pool) {
+  const out = {};
+  for (const [id, entry] of pool) out[id] = entry;
+  return out;
+}
+
+/**
+ * Build a placed-panel object from a resolved {entry, placement} pair.
+ * Output shape matches the existing v0.5 parser surface — type/title/
+ * hotkey/column/config — plus a new `id` linking back to the pool, and
+ * heightPct lifted from the placement when present. detail's `height`
+ * is layout-level (becomes detail_height_pct); the caller threads it
+ * through via `detailHeightSetter`.
+ */
+function buildPlacedPanel(resolved, hotkey, column, detailHeightSetter) {
+  const entry = resolved.entry;
+  const placement = resolved.placement;
+  if (entry.type === 'detail' && placement.height !== undefined) {
+    const h = placement.height;
+    if (typeof h === 'string' && h.endsWith('%')) {
+      detailHeightSetter(parseInt(h.slice(0, -1), 10));
+    } else if (typeof h === 'number' && Number.isInteger(h)) {
+      detailHeightSetter(h);
+    }
+  }
+  const panel = {
+    id: entry.id,
+    type: entry.type,
+    title: entry.title,
+    hotkey,
+    column,
+    config: entry.config,
+  };
+  if (placement.heightPct !== undefined) panel.heightPct = placement.heightPct;
+  return panel;
+}
+
+function defaultLayout(hasContainers, hasFiles) {
+  const pool = new Map();
   const left = [];
   let hk = 1;
+  const addDefault = (id, type, title, column, hotkey, extra) => {
+    const entry = { id, type, title, config: extra || {}, _synthesized: true };
+    pool.set(id, entry);
+    return { id, type, title, hotkey, column, config: entry.config };
+  };
   if (hasContainers) {
-    left.push({ type: 'containers', title: 'Containers', hotkey: String(hk++), column: 'left', config: {} });
+    left.push(addDefault('containers', 'containers', 'Containers', 'left', String(hk++)));
   }
-  left.push({ type: 'groups', title: 'Groups', hotkey: String(hk++), column: 'left', config: {} });
-  if (_hasFiles) {
-    left.push({ type: 'files', source: 'declared', title: 'Files', hotkey: String(hk++), column: 'left', config: {} });
+  left.push(addDefault('groups', 'groups', 'Groups', 'left', String(hk++)));
+  if (hasFiles) {
+    left.push(addDefault('files', 'files', 'Files', 'left', String(hk++), { source: 'declared' }));
   }
   const right = [
-    { type: 'actions', title: 'Actions', hotkey: '7', column: 'right', config: {} },
-    { type: 'detail',  title: 'Detail',  hotkey: '8', column: 'right', config: {} },
+    addDefault('actions', 'actions', 'Actions', 'right', '7'),
+    addDefault('detail',  'detail',  'Detail',  'right', '8'),
   ];
   return {
     left_width: 30, left_panels: left, right_panels: right,
     detail_height_pct: 60,
+    pool: poolToObject(pool),
   };
 }
 
-function parseLayout(layoutData, _hasContainers, _hasFiles) {
+function parseLayout(layoutData, _hasContainers, _hasFiles, userPool) {
   const leftBlock  = layoutData.left  || {};
   const rightBlock = layoutData.right || {};
   const leftWidth  = (leftBlock.width !== undefined && leftBlock.width !== null) ? leftBlock.width : 30;
   let detailHeightPct = 60;
+  const setDetailHeight = (n) => { detailHeightPct = n; };
 
-  const extras = (pdata) => {
-    const out = {};
-    for (const [k, v] of Object.entries(pdata)) {
-      if (!RESERVED_PANEL_KEYS.has(k)) out[k] = v;
-    }
-    return out;
-  };
+  // Pool is mutated as we resolve cells — inline `{type:}` entries
+  // synthesize new pool entries. Start from the user-declared pool.
+  const pool = userPool || new Map();
 
   const leftYaml  = leftBlock.panels  || [];
   const rightYaml = rightBlock.panels || [];
-  const leftKeys  = assignHotkeys(leftYaml,  LEFT_HOTKEY_POOL);
-  const rightKeys = assignHotkeys(rightYaml, RIGHT_HOTKEY_POOL);
+  const leftResolved  = leftYaml.map(c  => resolveLayoutCell(c, pool));
+  const rightResolved = rightYaml.map(c => resolveLayoutCell(c, pool));
 
-  const leftPanels = leftYaml.map((pdata, i) => ({
-    type: pdata.type,
-    title: pdata.title || titleCase(pdata.type),
-    hotkey: leftKeys[i],
-    column: 'left',
-    config: extras(pdata),
-  }));
+  // Hotkey assignment runs against placement-level hotkey overrides.
+  // assignHotkeys() reads `.hotkey` off the array elements — feed it
+  // the placements directly.
+  const leftKeys  = assignHotkeys(leftResolved.map(r  => r.placement), LEFT_HOTKEY_POOL);
+  const rightKeys = assignHotkeys(rightResolved.map(r => r.placement), RIGHT_HOTKEY_POOL);
 
-  const rightPanels = rightYaml.map((pdata, i) => {
-    if (pdata.type === 'detail' && 'height' in pdata) {
-      const h = pdata.height;
-      if (typeof h === 'string' && h.endsWith('%')) {
-        detailHeightPct = parseInt(h.slice(0, -1), 10);
-      } else if (typeof h === 'number' && Number.isInteger(h)) {
-        detailHeightPct = h;
-      }
-    }
-    return {
-      type: pdata.type,
-      title: pdata.title || titleCase(pdata.type),
-      hotkey: rightKeys[i],
-      column: 'right',
-      config: extras(pdata),
-    };
-  });
+  const leftPanels  = leftResolved.map((r, i)  => buildPlacedPanel(r, leftKeys[i],  'left',  setDetailHeight));
+  const rightPanels = rightResolved.map((r, i) => buildPlacedPanel(r, rightKeys[i], 'right', setDetailHeight));
+
+  // Semantic layout invariants — counted on RESOLVED types so string-id
+  // refs are followed through the pool. Moved here from schema.js (the
+  // schema layer can't see resolved types).
+  const all = leftPanels.concat(rightPanels);
+  const detailCount = all.filter(p => p.type === 'detail').length;
+  if (detailCount !== 1) {
+    throw new ParseError(`layout must have exactly one 'detail' panel, found ${detailCount}`);
+  }
+  const actionsCount = all.filter(p => p.type === 'actions').length;
+  if (actionsCount > 1) {
+    throw new ParseError(`layout allows at most one 'actions' panel, found ${actionsCount}`);
+  }
 
   return {
     left_width: leftWidth,
     left_panels: leftPanels,
     right_panels: rightPanels,
     detail_height_pct: detailHeightPct,
+    pool: poolToObject(pool),
   };
 }
 
@@ -390,8 +556,9 @@ function parse(yamlPath) {
 
   const hasContainers = Object.values(groups).some(g => g.containers && g.containers.length > 0);
   const hasFiles = files.length > 0;
+  const userPool = parsePool(data.panels);
   const layout = ('layout' in data)
-    ? parseLayout(data.layout, hasContainers, hasFiles)
+    ? parseLayout(data.layout, hasContainers, hasFiles, userPool)
     : defaultLayout(hasContainers, hasFiles);
 
   return {

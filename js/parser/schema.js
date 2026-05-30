@@ -10,7 +10,7 @@ const { SchemaError } = require('./errors');
 
 const VALID_ACTION_TYPES = new Set(['run', 'spawn', 'background']);
 
-const VALID_TOP_KEYS    = new Set(['project_dir', 'groups', 'vars', 'helpers', 'files', 'layout', 'theme', 'plugins', 'register', 'keys']);
+const VALID_TOP_KEYS    = new Set(['project_dir', 'groups', 'vars', 'helpers', 'files', 'layout', 'theme', 'plugins', 'register', 'keys', 'panels']);
 const VALID_KEY_BINDING_KEYS = new Set(['action', 'command', 'builtin', 'label', 'desc']);
 const VALID_REGISTER_KEYS = new Set(['cap']);
 const VALID_FILE_KEYS   = new Set(['path', 'var', 'desc', 'exclude', 'category']);
@@ -61,6 +61,7 @@ function validate(data, _sourceFile) {
   if ('files' in data)   validateFiles(data.files);
   if ('register' in data) validateRegister(data.register);
   if ('keys' in data)     validateKeys(data.keys);
+  if ('panels' in data)   validatePanels(data.panels);
   if ('layout' in data)   validateLayout(data.layout);
 
   for (const [gname, gdata] of Object.entries(groups)) {
@@ -69,12 +70,12 @@ function validate(data, _sourceFile) {
 }
 
 /**
- * Enforce the PRINCIPLES.md §10 layout invariants at parse time instead
- * of letting violations surface as render-time crashes (two `detail`
- * panels both write S.panelBounds.detail and clobber each other; >6
- * left panels exhaust the hotkey pool; zero detail panels leave the
- * right column dead). Only runs when an explicit `layout:` is given —
- * the generated default layout is always well-formed.
+ * Structural shape check for the `layout:` block. Cells may be a string
+ * (pool id reference, v0.6) or a mapping (legacy inline `{type:}` form
+ * OR `{id, ...overrides}`). The semantic invariants — exactly-one detail,
+ * at-most-one actions, column size caps — depend on resolved cell types
+ * (string ids resolve through the pool), so they run in `parseLayout`
+ * post-resolution, not here.
  */
 function validateLayout(layout) {
   if (!isMapping(layout)) throw new SchemaError("'layout' must be a mapping");
@@ -87,9 +88,17 @@ function validateLayout(layout) {
     if (!Array.isArray(panels)) throw new SchemaError(`'layout.${side}.panels' must be a list`);
     panels.forEach((p, i) => {
       const ctx = `layout.${side}.panels[${i}]`;
-      if (!isMapping(p)) throw new SchemaError(`panel must be a mapping, got ${typeName(p)}`, { context: ctx });
-      if (typeof p.type !== 'string' || !p.type.trim()) {
-        throw new SchemaError("panel 'type' is required and must be a non-empty string", { context: ctx });
+      if (typeof p === 'string') {
+        if (!p.trim()) throw new SchemaError("layout cell id must be non-empty", { context: ctx });
+        return;
+      }
+      if (!isMapping(p)) throw new SchemaError(`layout cell must be a string id or a mapping, got ${typeName(p)}`, { context: ctx });
+      // Mapping form: needs either `id:` or `type:`. The resolver will
+      // synthesize a pool entry when only `type:` is present.
+      const hasId = typeof p.id === 'string' && p.id.trim();
+      const hasType = typeof p.type === 'string' && p.type.trim();
+      if (!hasId && !hasType) {
+        throw new SchemaError("layout cell missing both 'id' and 'type'", { context: ctx });
       }
     });
     if (panels.length > max) {
@@ -97,14 +106,25 @@ function validateLayout(layout) {
     }
     return panels;
   };
-  const all = collectPanels('left', 6).concat(collectPanels('right', 3));
-  const detailCount = all.filter(p => p.type === 'detail').length;
-  if (detailCount !== 1) {
-    throw new SchemaError(`layout must have exactly one 'detail' panel, found ${detailCount}`);
+  collectPanels('left', 6);
+  collectPanels('right', 3);
+}
+
+/**
+ * Structural shape check for the v0.6 top-level `panels:` pool. Must be
+ * a mapping of id → mapping. Per-entry field validation (required
+ * `type`, no placement-only fields) lives in the resolver
+ * (`normalizePoolEntry` in parser/index.js).
+ */
+function validatePanels(panelsBlock) {
+  if (!isMapping(panelsBlock)) {
+    throw new SchemaError("'panels' must be a mapping of id → { type, ... }");
   }
-  const actionsCount = all.filter(p => p.type === 'actions').length;
-  if (actionsCount > 1) {
-    throw new SchemaError(`layout allows at most one 'actions' panel, found ${actionsCount}`);
+  for (const [id, entry] of Object.entries(panelsBlock)) {
+    const ctx = `panels.${id}`;
+    if (!isMapping(entry)) {
+      throw new SchemaError(`panel entry must be a mapping, got ${typeName(entry)}`, { context: ctx });
+    }
   }
 }
 
