@@ -173,10 +173,16 @@ function update(msg, slice) {
       // --design CLI flag). v0.6: auto-open the panel-list overlay when
       // the pool has hidden entries — the discoverability hint that
       // there are more panels available than currently in the grid.
+      // Also sync runtime focus to the design selection's starting
+      // panel (selectedIdx=0) so the green border + nav stay in sync
+      // from the first keypress; navSelect maintains this invariant.
       const enabled = slice.design && slice.design.enabled;
       const hasHidden = mpool.hiddenIds(slice.arrange).length > 0;
+      const all = mdesign.allDesignPanels(slice);
+      const focus = all[0] ? all[0].type : slice.focus;
       const next = {
         ...slice,
+        focus,
         design: { enabled, selectedIdx: 0, drag: null, undo: [], redo: [], titleEdit: { active: false, text: '' } },
         panelList: { open: hasHidden, cursor: 0 },
       };

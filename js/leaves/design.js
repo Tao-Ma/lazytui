@@ -176,7 +176,15 @@ function _setPanelHeightPct(slice, panelType, pct) {
 
 // ---------------------------------------------------------------- keyboard transforms
 
-/** ↑/↓ — move the selection cursor, clamped to the panel list. */
+/** ↑/↓ — move the selection cursor, clamped to the panel list.
+ *  v0.6: also syncs `slice.focus` to the newly selected panel's type
+ *  so the runtime focus border tracks the design selection. v0.5
+ *  surfaced the selection only in the footer text, leaving the green
+ *  border on whatever was focused at mode entry — confusing in
+ *  free-config where the user is actively navigating cells. The
+ *  focused-panel content stays frozen (freeze gate drops the
+ *  show_selected_info Cmd's downstream detail update); design_exit
+ *  re-emits show_selected_info to refresh detail on the way out. */
 function navSelect(slice, delta) {
   const d = slice.design;
   const all = allDesignPanels(slice);
@@ -184,7 +192,8 @@ function navSelect(slice, delta) {
   if (delta < 0) { if (idx > 0) idx--; }
   else           { if (idx < all.length - 1) idx++; }
   if (idx === d.selectedIdx) return slice;
-  return { ...slice, design: { ...d, selectedIdx: idx } };
+  const focus = all[idx] ? all[idx].type : slice.focus;
+  return { ...slice, focus, design: { ...d, selectedIdx: idx } };
 }
 
 /** J/K — reorder the focused panel within its column (delta ±1). */
