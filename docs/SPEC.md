@@ -85,14 +85,18 @@ Read the sections in this order. Each is the original `.md` file from
 2. **PLUGINS** — the Component contract. Module shape, panel types,
    Msg types, effects, discipline rules, viewContributions,
    `copyOptions`, `groupActions`, YAML config splits.
-3. **PROJECT** — user-project contract. Directory shape, discovery
+3. **DATAFLOW** — how a Msg becomes a paint. Input → dispatch routing
+   → root + Component reducers → effects → state → render. Annotated
+   ASCII diagram with source-file paths; the runtime view that
+   complements PLUGINS' Component-author view.
+4. **PROJECT** — user-project contract. Directory shape, discovery
    rules, what the framework owns vs what a user project owns. Read
    this if you are adopting the TUI in a new project, or deciding
    where to put a new file.
-4. **HUB** — pub/sub event bus for sharing data across Components.
+5. **HUB** — pub/sub event bus for sharing data across Components.
    Three data shapes (time series, snapshot, matrix), retention by
    subscriber window, wildcard subscriptions.
-5. **LAYOUT** — panel-type catalog, navigation, view modes, themes.
+6. **LAYOUT** — panel-type catalog, navigation, view modes, themes.
    What the user sees and how they drive it.
 
 (Historical: `DECORATORS.md` retired in v0.5 Phase 5; the file remains

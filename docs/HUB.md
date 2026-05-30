@@ -1,63 +1,23 @@
 # Event Hub
 
 A single in-process pub-sub data bus that decouples *who collects data*
-from *who shows it*. Plugins publish samples to named topics; panels and
-other plugins subscribe and read history. The hub doesn't know what any
+from *who shows it*. Producers publish samples to named topics;
+consumers subscribe and read history. The hub doesn't know what any
 topic *means* — it just routes.
-
-This document specifies the contract. The hub stands alone — it has no
-pre-committed consumers and no pre-planned follow-up branches.
-
-## 0. Status & retrospective
-
-**Status:** the hub is shipped (`js/panel/hub.js`, 32/32 smoke tests). The
-first production consumer is `history.js` — the action-history ring
-buffer is now backed by hub topic `actions.lifecycle` (single-stream,
-window=100). No other producers or consumers wired in yet. The
-foundation pattern stands: features plug in when they need streaming
-data, not before.
-
-**Why this section exists.** An earlier draft of this branch bundled
-three concerns into one delivery:
-
-1. The hub itself (data foundation).
-2. A `decorateRow` plugin hook (UI extension surface).
-3. A specific cpu/mem sparkline rendering for the containers panel.
-
-That bundle shipped, was reviewed, and was reverted. The bundling was
-the mistake — three different layers fused into "the sparklines branch"
-because (3) was the only motivating end-user visible feature, and (1)+(2)
-got dragged along to support it. Each of those layers deserves its own
-design and its own branch:
-
-| Layer | What it is | Status |
-|-------|-----------|--------|
-| **Hub** (this doc) | Pub/sub data bus. No opinion about UI. | Shipped. |
-| **Decorator framework** | Generic plugin extension for UI surfaces — footer/status line (powerline / tmux style), panel rows, panel titles. Slot-based. | Retired in v0.5 Phase 5. Footer contributions now live on Component `viewContributions`; row/title/tab decorations inline in each Component's `render()`. See DECORATORS.md for migration notes. |
-| **Stats panel type** | A YAML-declarable `type: stats` (or `type: graph`) panel that takes `topic:` and renders bars / tables / sparklines from hub data. | Shipped. |
-
-A specific cpu/mem sparkline rendering is a ~20-line utility, not a
-plugin and not a hook. It belongs inside whichever of the layers above
-ends up consuming it (decorator slot or stats panel) — and the decision
-is best made *with the consuming framework already in hand*, not
-guessed at in advance.
-
-**Lesson.** Foundations get *more* valuable when they're shipped naked.
-A hub with no consumers is harder to misuse than a hub shipped with one
-specific consumer's hooks pre-wired.
 
 ## 1. Why it exists
 
-Without a hub, a feature that wants another plugin's data has to either
-tightly couple to that plugin, duplicate the collection, or invent one-off
-hooks. With a hub:
-
 - Producers don't know who consumes their data.
 - Consumers don't reach into producer internals.
-- Multiple consumers share one collection cost (any number of panels and
-  decorators can read the same `docker.stats` topic).
-- If nobody listens, retention is zero — producer's `publish()` is a
-  cheap drop. **Cost scales with what's rendered, not what's possible.**
+- Multiple consumers share one collection cost (any number of panels
+  reading the same `docker.stats` topic pay once).
+- Zero subscribers → `publish()` drops cheaply. **Cost scales with
+  what's rendered, not what's possible.**
+
+> **Layer discipline.** Anything that uses the hub is a separate
+> design with its own doc + branch — don't fuse hub additions with
+> consumer features. (Earlier draft bundled hub + decorator framework
+> + a sparkline render in one branch; got reverted.)
 
 ## 2. The three data shapes
 
@@ -256,20 +216,13 @@ a single subscribe to the wildcard yields every container's history.
 
 Wildcard subscribers also get `onUpdate` for every matched topic.
 
-## 8. Schema hint — when does it pay off?
+## 8. Schema hint — when to set it
 
-Optional, never required. Worth setting when:
-
-- The topic feeds a **generic table panel** that auto-formats columns
-  (`unit: 'B'` → "245 MB"; `unit: '%'` → "12.3%"; `type: 'duration'` →
-  "1m23s"). Without the hint, the table renders raw numbers.
-- You want the topic to show up in `:hub list` with column names.
-- You want type-aware bar/graph scaling (a `percent` series scales
-  0–100; a `bytes` series auto-scales).
-
-Plugins that publish ad-hoc without a generic consumer in mind can skip
-`defineTopic()` entirely. Consumers that know their topic structure
-hardcode the field names.
+Optional. Worth setting when the topic feeds a generic consumer that
+auto-formats by column type (table panels, stats panels) — `unit: 'B'`
+→ "245 MB", `unit: '%'` → "12.3%", `percent` series scales 0–100, etc.
+Skip `defineTopic()` for ad-hoc publishes whose only consumer hardcodes
+the field names.
 
 ## 9. Concrete examples
 
@@ -441,15 +394,9 @@ fine. If someone requests gigabytes, that's a bug, not a hub problem.
   stall publish. Mitigate with the existing `async contract` rule:
   `onUpdate` does no I/O, only state mutation + scheduling.
 
-## 16. Status
+## 16. Production consumers
 
-The hub is shipped (`js/panel/hub.js`, smoke-tested). Production consumers:
-
-- `history.js` — backs the action-history ring buffer with topic
-  `actions.lifecycle` (rowKey `'_'`, window 100). See §9.
-- Stats panel (STATS.md) — consumes `docker.stats` to render time-series
-  graphs. The docker plugin publishes the producer side.
-
-**Layer rule.** Anything that uses the hub is a separate design with
-its own doc and its own branch. Don't fuse hub additions with consumer
-features in one commit — that's the bundling mistake §0 documents.
+- `history.js` — action-history ring buffer on `actions.lifecycle`
+  (rowKey `'_'`, window 100). See §9.
+- Stats panel (STATS.md) — consumes `docker.stats` for time-series
+  graphs. Docker Component is the producer.

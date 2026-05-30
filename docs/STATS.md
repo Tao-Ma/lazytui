@@ -1,52 +1,23 @@
 # Stats Panel
 
 A YAML-declarable, multi-line live-graph panel — the first non-trivial
-visual consumer of the event hub (HUB.md). Generic over the
-underlying hub topic; docker is the first producer to wire in but
-not the only conceivable one.
+visual consumer of the event hub (HUB.md). Generic over the underlying
+hub topic; docker is the first producer to wire in.
 
-This document is the design record **before the first line of code
-lands**. It captures the alternatives considered, the chosen shape,
-and the rationale, so future work inherits the trade-offs rather than
-rediscovers them.
-
-## 0. Status & framing
-
-**Status:** shipped (`d4274d6` impl + `6fc9edb` live-repaint fix).
-Producer: docker Component publishes per-tick numeric samples on
-`docker.stats`. Consumer: `panel/monitor/stats.js` renders the focused
-container's CPU + MEM as multi-row block-char line graphs. Schema
-flag `meta: true` keeps scale-reference columns (memLimit) out of
-auto-graphed metrics.
-
-This doc was written *before* the implementation landed (the goal:
-lock the shape before coding so we don't repeat HUB.md §0's mistake of
-bundling three layers because one of them was the only visible
-feature). Sections that drifted from what shipped are noted inline.
-
-**Framing question.** The hub gives us per-row time-series. What does a
-panel look like that's *worth a panel*?
-
-A sparkline glyph next to a container row is information-dense — but
-it's a one-line decoration, reachable through the existing decorator
-framework. If a stats panel renders the same shape stacked vertically
-(one sparkline-row per container), it's just decorators with more
-borders. The new panel must show something the row decorator *can't*.
-
-That framing is the core of the design. It rules out the
-all-containers-mini-graph shape early (§2 alternatives) and points at
-the deep-view shape (§2).
+**Status:** shipped. Producer: docker Component publishes per-tick
+numeric samples on `docker.stats`. Consumer: `panel/monitor/stats.js`
+renders the focused container's CPU + MEM as multi-row block-char line
+graphs. Schema flag `meta: true` keeps scale-reference columns
+(memLimit) out of auto-graphed metrics.
 
 ## 1. Why a panel earns its space
 
-A dedicated panel justifies itself when it shows information the row
-decorator can't:
+The panel shows what a one-line row decorator (sparkline) can't:
 
-- **Vertical resolution.** A multi-line line graph reads CPU%
-  movement to ~5% precision; a one-line sparkline only resolves to
-  one of 8 block heights.
-- **Two metrics in parallel.** CPU and MEM stacked vertically, each
-  with its own axis scale and units.
+- **Vertical resolution.** Multi-line line graph reads CPU% movement
+  to ~5% precision; a sparkline resolves to one of 8 block heights.
+- **Two metrics in parallel.** CPU and MEM stacked, each with its own
+  scale.
 - **Time-axis labels.** "now − 5m" / "now" labels give scale that a
   sparkline can't carry.
 - **Peak / avg annotations.** Numeric overlays alongside the graph
@@ -85,35 +56,19 @@ the focused container has no history yet), the panel shows
 
 ### Why this shape
 
-- **Justifies the panel.** Vertical resolution, axes, dual metric,
-  numeric annotation — none reachable from a row decorator.
-- **Matches the test stack story.** Chaos profile produces visible
-  spikes (flood, crashloop) — a multi-line graph reads them
-  legibly; a sparkline blurs them.
-- **Idiomatic for the framework.** Cross-panel selection-driven
-  content already powers Actions (group-driven) and Detail
-  (selection-driven). Stats follows the same pattern.
-- **Generic over topic.** Nothing in the panel logic is
-  docker-specific — any topic with `percent`/`bytes` schema columns
+- Vertical resolution, axes, dual metric, numeric annotation — none
+  reachable from a one-line row decorator.
+- Cross-panel selection-driven content matches the Detail-follows-
+  Group pattern.
+- Generic over topic: any topic with `percent`/`bytes` columns
   renders. Future producers (process top, network rates, request
   latency) drop in without panel changes.
 
-### Considered alternatives
-
-| Shape | Why rejected |
-|-------|--------------|
-| Per-container tile rows (3 lines each: header + CPU sparkline + MEM sparkline, repeated vertically) | A panel of sparklines is the **anti-pattern** — sparklines are decorator-layer widgets (one-line, slot-shaped), not panel content. Same data is reachable through a future table-column or a footer decorator slot, without the borders. |
-| All-containers grid (one row per container, sparkline only) | Same anti-pattern — sparklines belong in slots that already justify their density (column among columns, footer widget), not as a panel's primary content. See HUB.md §0 retrospective (the deferred sparkline-widget discussion). |
-| All-containers single multi-line graph (overlaid lines, one per container, color-coded) | Compelling but legibility falls apart past 4–5 lines. Defer until someone asks. |
-| Aggregate / system-pulse graph (sum across all containers) | Useful but answers "is the host busy?" not "what's misbehaving?". Defer. |
-| Heatmap (rows × time, color = CPU%) | Earns its space at >20 containers; overkill for typical small stacks (5–10). Defer. |
-
-**Sparklines are not deferred — they're a different layer.** A future
-table-style panel could carry a stat column rendered as a sparkline,
-or the footer could carry a sparkline tracking one live signal. The
-footer case is `viewContributions.footerLeft|Right` on whichever
-Component owns the signal (DECORATORS.md notes the retirement); the
-column case is inline in that panel's `render()`.
+Sparklines belong in slot-shaped surfaces (table column,
+`viewContributions.footerLeft|Right`), not as a panel's primary
+content — a panel-of-sparklines was rejected. Other shapes deferred:
+all-containers overlaid graph (legibility past ~5 lines),
+aggregate/system-pulse, heatmap (>20 containers).
 
 ## 3. YAML contract
 
@@ -357,43 +312,15 @@ behavior, `assert/eq`, exception isolation per test.
 
 Run via `node js/scripts/run-tests.js -q`.
 
-## 10. Open questions / deferred
+## 10. Deferred
 
-- **Y-axis labels.** Originally planned, dropped from v1 (see §7).
-  Revisit if a wider panel slot becomes available.
-- **Color-coded thresholds** (CPU > 80% → red). Trivial extension; defer
-  until the v1 visual feels right.
-- **Mouse interaction.** Hover for value-at-time, drag-to-zoom. Not
-  on the radar; the rasterizer doesn't track per-column source samples.
-- **Multi-line overlay.** "All containers, one line each, color-coded."
-  Reachable as a follow-up panel mode (`mode: stats-multi`?). Defer.
-- ~~**Stream-driven re-render.**~~ Shipped — `onUpdate: scheduleRender`
-  on the panel's hub subscription drives repaint per sample (see §6).
-  Caught during the live exercise; was incorrectly guessed as
-  unnecessary in the design phase.
-- **Persistence across restarts.** Hub is in-memory (HUB.md §15); the
-  stats panel inherits that limitation. Out of scope.
-- **Faster docker stats poll.** Currently 10s (docker Component default).
-  Visible motion in the graph requires either waiting through the
-  10s tick or lowering the interval globally. A stats-only fast poll
+- **Y-axis labels.** Dropped from v1 — axis labels eat too much
+  horizontal space at typical panel widths (~50 cols). Revisit on
+  wider panel slots.
+- **Color-coded thresholds** (CPU > 80% → red).
+- **Mouse interaction.** Hover-for-value, drag-to-zoom. Rasterizer
+  doesn't track per-column source samples.
+- **Multi-line overlay.** "All containers, one line each." Likely a
+  separate panel mode (`mode: stats-multi`).
+- **Faster docker stats poll.** Currently 10s. A stats-only fast poll
   is a separate concern from the panel itself.
-
-## 11. Branch hygiene (HUB.md §0 lesson applied)
-
-This branch ships:
-
-- ONE producer wiring (`docker.js` publish + delete + defineTopic).
-- ONE consumer (`panel/monitor/stats.js` + rasterizer).
-- Tests for both.
-- YAML wiring in `test/test.yml` to live-exercise it.
-
-This branch does NOT ship:
-
-- Row-decorator sparklines (would re-bundle the rejected layer).
-- A second producer (no premature generalization until a real second
-  consumer needs it).
-- Mouse / color-threshold / multi-line overlay extensions (§10).
-
-If the implementation grows tendrils into other layers, that's a
-signal to stop and split — not to keep going. The rule from HUB.md §0
-applies here: foundations get *more* valuable when shipped naked.
