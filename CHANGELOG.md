@@ -6,7 +6,7 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-## [0.5.0] — TBD
+## [0.5.0] — 2026-05-30
 
 A refactor release. No new end-user features; the panel grid, key
 bindings, and YAML config surface all look the same. What changed is
