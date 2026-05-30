@@ -81,14 +81,83 @@ function getDesignFooter() {
 }
 
 /**
- * Paint the design overlay — just the insertion line during an active drag.
+ * Pool-drag drop-target affordance: paints a colored frame on the
+ * target cell (replace) or a colored bar at the column's append slot,
+ * so the user can SEE where the dragged pool panel will land. Pure
+ * stdout writes at absolute screen positions; reads panelBounds (the
+ * frame geometry written by the render pass).
+ */
+function renderPoolDragOverlay(drag) {
+  const layoutSlice = getComponentSlice('layout');
+  if (!layoutSlice) return;
+  const t = drag.target;
+  if (!t) return;
+
+  if (t.kind === 'replace') {
+    // Outline the cell that would be replaced. Yellow on a valid
+    // replace, red on detail (invalid — see leaves/design#poolDrop).
+    const occ = (t.column === 'left' ? layoutSlice.arrange.leftPanels : layoutSlice.arrange.rightPanels)
+      .find(p => p.id === t.occupantId);
+    if (!occ) return;
+    const b = layoutSlice.panelBounds[occ.type];
+    if (!b) return;
+    const color = t.valid ? 'bold yellow' : 'bold red';
+    _drawFrame(b.x, b.y, b.w, b.h, color);
+    return;
+  }
+
+  // Append: bar at the bottom of the target column, full-width.
+  const COLS = cols();
+  const leftW = layoutSlice.arrange.leftWidth;
+  const colX = t.column === 'left' ? 0 : leftW;
+  const colW = t.column === 'left' ? leftW : COLS - leftW;
+  const panels = t.column === 'left' ? layoutSlice.arrange.leftPanels : layoutSlice.arrange.rightPanels;
+  let lineY = 0;
+  if (panels.length > 0) {
+    const last = layoutSlice.panelBounds[panels[panels.length - 1].type];
+    if (last) lineY = last.y + last.h - 1;
+  }
+  const bar = '═'.repeat(Math.max(1, colW));
+  stdout.write(`\x1b[${lineY + 1};${colX + 1}H` + richToAnsi(`[bold green]${bar}[/]`) + RESET);
+}
+
+/** Paint a single-line frame around (x, y, w, h) in the given color.
+ *  Used by the pool-drag replace affordance to highlight the cell that
+ *  would be replaced without disturbing its content (top, sides, bottom
+ *  borders only). The painted characters overwrite the cell's existing
+ *  border, so the effect is "the border just lit up in <color>". */
+function _drawFrame(x, y, w, h, color) {
+  if (w < 2 || h < 2) return;
+  const tl = '╭', tr = '╮', bl = '╰', br = '╯';
+  const top    = `[${color}]${tl}${'─'.repeat(w - 2)}${tr}[/]`;
+  const bot    = `[${color}]${bl}${'─'.repeat(w - 2)}${br}[/]`;
+  const sideC  = `[${color}]│[/]`;
+  stdout.write(`\x1b[${y + 1};${x + 1}H` + richToAnsi(top) + RESET);
+  for (let row = 1; row < h - 1; row++) {
+    stdout.write(`\x1b[${y + row + 1};${x + 1}H` + richToAnsi(sideC) + RESET);
+    stdout.write(`\x1b[${y + row + 1};${x + w}H` + richToAnsi(sideC) + RESET);
+  }
+  stdout.write(`\x1b[${y + h};${x + 1}H` + richToAnsi(bot) + RESET);
+}
+
+/**
+ * Paint the design overlay — drop-target affordance during an active drag.
+ * Two drag kinds:
+ *   - 'dragging'      : reordering an existing panel; paints an insertion
+ *                       line at the target seam (green=valid, red=invalid).
+ *   - 'pool-dragging' : new panel from the pool; paints a full-cell
+ *                       border on REPLACE targets and a colored bar at
+ *                       the bottom of the column on APPEND targets, so
+ *                       the user can see WHERE the panel will land.
  * Banner / status lives in the footer (getDesignFooter).
  */
 function renderDesignOverlay() {
   if (!getModel().modes.freeConfigMode) return;
   const d = _design();
   const drag = d && d.drag;
-  if (!drag || drag.kind !== 'dragging') return;
+  if (!drag) return;
+  if (drag.kind === 'pool-dragging') { renderPoolDragOverlay(drag); return; }
+  if (drag.kind !== 'dragging') return;
   const t = drag.target;
   if (!t) return;
 

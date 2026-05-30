@@ -157,14 +157,17 @@ describe('[end-to-end] layout.update threads pool_drag_* Msgs to the leaf', () =
     eq(next.panelList.open, false, 'overlay closed for drop-target visibility');
     eq(cmds[0].type, 'force_full_repaint');
   });
-  it('pool_drag_motion computes target', () => {
+  it('pool_drag_motion computes target + force_full_repaint Cmd', () => {
     const [armed] = layout.update({ type: 'pool_drag_start', id: 'notes', mx: 50, my: 5 }, buildSlice());
-    const moving = layout.update({ type: 'pool_drag_motion', mx: 50, my: 30 }, armed);
+    const result = layout.update({ type: 'pool_drag_motion', mx: 50, my: 30 }, armed);
+    assert(Array.isArray(result), 'motion now returns [slice, cmds] (overlay repaint)');
+    const [moving, cmds] = result;
     eq(moving.design.drag.target.kind, 'append');
+    eq(cmds[0].type, 'force_full_repaint');
   });
   it('pool_drag_release returns the [next, cmds] tuple', () => {
     const [armed] = layout.update({ type: 'pool_drag_start', id: 'notes', mx: 50, my: 5 }, buildSlice());
-    const moving = layout.update({ type: 'pool_drag_motion', mx: 50, my: 30 }, armed);
+    const [moving] = layout.update({ type: 'pool_drag_motion', mx: 50, my: 30 }, armed);
     const result = layout.update({ type: 'pool_drag_release' }, moving);
     assert(Array.isArray(result), 'returns tuple');
     const [next, cmds] = result;

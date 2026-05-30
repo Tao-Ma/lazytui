@@ -230,7 +230,16 @@ function update(msg, slice) {
       const next = mdesign.poolDragStart(slice, msg.id, msg.mx, msg.my);
       return [next, [{ type: 'force_full_repaint' }]];
     }
-    case 'pool_drag_motion':  return mdesign.poolDragMotion(slice, msg.mx, msg.my);
+    case 'pool_drag_motion': {
+      // The pool-drag overlay paints a frame/bar on the drop target each
+      // render. When the target shifts between cells, the previous
+      // frame's affordance needs to be wiped — paintColumns can't tell
+      // anything changed (the panels themselves are frozen), so emit a
+      // force_full_repaint to clear and repaint from scratch.
+      const next = mdesign.poolDragMotion(slice, msg.mx, msg.my);
+      if (next === slice) return slice;
+      return [next, [{ type: 'force_full_repaint' }]];
+    }
     case 'pool_drag_release': return mdesign.poolDragRelease(slice);
     case 'design_title_key': {
       const te = slice.design && slice.design.titleEdit;
