@@ -11,6 +11,8 @@ const os = require('os');
 const path = require('path');
 
 const { describe, it, eq, assert, report } = require('./test-runner');
+const { getModel } = require('../runtime');
+
 const { validate } = require('../parser/schema');
 const { parse } = require('../parser');
 
@@ -100,7 +102,6 @@ describe('[2] parser', () => {
 
 // ---- [3] dispatch.loadKeyBindings ---------------------------------
 
-const { S } = require('../state');
 const kb = require('../keybindings');
 const api = require('../plugins/api');
 const dispatch = require('../dispatch');
@@ -115,7 +116,7 @@ api.registerPlugin({
 describe('[3] loadKeyBindings', () => {
   it('registers builtin / action / command bindings into the tree', () => {
     kb.clearBindings();
-    S.config = {
+    getModel().config = {
       groups: { g: { actions: { build: { key: 'build', label: 'Build', script: 'true', containers: [], type: 'run' } } } },
       keys: {
         '<leader>h':  { builtin: 'show_help', label: 'help' },
@@ -123,7 +124,7 @@ describe('[3] loadKeyBindings', () => {
         '<leader>cc': { command: 'stubcmd one two', label: 'stub' },
       },
     };
-    dispatch.loadKeyBindings(S.config);
+    dispatch.loadKeyBindings(getModel().config);
 
     const h = kb.resolve(kb.rootNode(), 'h');
     eq(h && h.label, 'help', 'builtin binding registered with label');
@@ -162,7 +163,7 @@ const { runCommandString } = require('../cmdline');
 describe('[4] runCommandString exact match', () => {
   it('runs the exact-named command with args', () => {
     cmdRan = null;
-    const r = runCommandString('stubcmd a b', S);
+    const r = runCommandString('stubcmd a b');
     assert(Array.isArray(cmdRan), 'exact match ran');
     eq(cmdRan.join(','), 'a,b');
     assert(r !== false, 'returns the command result');
@@ -170,7 +171,7 @@ describe('[4] runCommandString exact match', () => {
   it('does NOT prefix-match a near-miss (typo) onto another command', () => {
     cmdRan = null;
     // "stub" is a prefix of "stubcmd" but not an exact name → no run.
-    const r = runCommandString('stub', S);
+    const r = runCommandString('stub');
     eq(r, false, 'no exact match → false');
     eq(cmdRan, null, 'the prefix-sharing command did NOT fire');
   });
@@ -183,21 +184,21 @@ const dispatch2 = require('../dispatch');
 describe('[5] action binding honors args:', () => {
   it('an action with args: opens the prompt instead of running argless', () => {
     kb.clearBindings();
-    S.config = {
+    getModel().config = {
       groups: { g: { actions: {
         deploy: { key: 'deploy', label: 'Deploy', script: 'echo', containers: [], type: 'run', args: ['env'] },
       } } },
       keys: { '<leader>d': { action: 'deploy' } },
     };
     // Reset prompt/confirm so we can observe the prompt opening.
-    S.promptMode = false; S.confirmMode = false;
-    dispatch2.loadKeyBindings(S.config);
+    getModel().modes.promptMode = false; getModel().modes.confirmMode = false;
+    dispatch2.loadKeyBindings(getModel().config);
     const leaf = kb.resolve(kb.rootNode(), 'd');
     assert(leaf && typeof leaf.run === 'function', 'binding registered');
     leaf.run();
-    assert(S.promptMode === true, 'args: action opened the prompt rather than running with empty args');
+    assert(getModel().modes.promptMode === true, 'args: action opened the prompt rather than running with empty args');
     // Clean up prompt mode so we don't leak into other files.
-    S.promptMode = false;
+    getModel().modes.promptMode = false;
   });
 });
 
@@ -215,17 +216,17 @@ describe('[6] action binding finds plugin-synthesized actions', () => {
         : {},
     });
     kb.clearBindings();
-    S.config = {
+    getModel().config = {
       groups: { g: { label: 'G' } },          // no `actions:` here — only the plugin's
       keys: { '<leader>x': { action: 'deploy' } },
     };
-    S.promptMode = false; S.confirmMode = false;
-    dispatch2.loadKeyBindings(S.config);
+    getModel().modes.promptMode = false; getModel().modes.confirmMode = false;
+    dispatch2.loadKeyBindings(getModel().config);
     const leaf = kb.resolve(kb.rootNode(), 'x');
     assert(leaf && typeof leaf.run === 'function', 'binding registered');
     leaf.run();
-    assert(S.promptMode === true, 'plugin-synthesized action resolved + opened its args prompt');
-    S.promptMode = false;
+    assert(getModel().modes.promptMode === true, 'plugin-synthesized action resolved + opened its args prompt');
+    getModel().modes.promptMode = false;
   });
 });
 

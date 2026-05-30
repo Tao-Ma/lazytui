@@ -20,13 +20,15 @@
 'use strict';
 
 const { describe, it, eq, report } = require('./test-runner');
-const { S, recomputeGroups } = require('../state');
+const { getModel } = require('../runtime');
+const { getComponentSlice } = require('../plugins/api');
+
+const { recomputeGroups } = require('../state');
 const { setTheme } = require('../themes');
 const groups = require('../plugins/core/groups');
 const actions = require('../plugins/core/actions');
 const detail = require('../plugins/core/detail');
-const files = require('../plugins/core/files');  // array-mod; file-manager alias is files[1]
-const fileManager = files.find(e => e.panelType === 'file-manager');
+const fileManager = require('../plugins/core/file-manager');  // legacy v0.3 alias
 const history = require('../plugins/core/history');
 
 // --- Minimal state setup — just enough that every render under test can
@@ -34,7 +36,7 @@ const history = require('../plugins/core/history');
 
 function setupState() {
   setTheme('monokai');
-  S.config = {
+  getModel().config = {
     project_dir: '.',
     files: [
       { path: 'a.txt', desc: 'first file', category: 'config' },
@@ -58,46 +60,61 @@ function setupState() {
       },
     },
   };
-  S.expandedGroups = new Set();
-  S.groupsTab = 'all';
-  S.sel = { groups: 0, actions: 0, 'file-manager': 0, history: 0, detail: 0 };
-  S.scroll = { groups: 0, actions: 0, 'file-manager': 0, history: 0 };
-  S.multiSel = {};
-  S.filters = {};
-  S.currentGroup = '';
+  getComponentSlice('groups').expanded = new Set();
+  getComponentSlice('groups').tab = 'all';
+  getModel().ui.sel = { groups: 0, actions: 0, 'file-manager': 0, history: 0, detail: 0 };
+  getModel().ui.scroll = { groups: 0, actions: 0, 'file-manager': 0, history: 0 };
+  getModel().ui.multiSel = {};
+  getModel().ui.filters = {};
+  getModel().currentGroup = '';
   recomputeGroups();
-  S.currentGroup = S.groups[0].name;
-  S.focus = 'groups';
-  S.lastRunAction = '';
-  S.detailLines = ['[bold]Detail title[/]', '', 'body line 1', 'body line 2'];
-  S.detailScroll = 0;
-  S.activeTab = 0;
-  S.history = [];
-  S.layout = {
+  getModel().currentGroup = getComponentSlice('groups').list[0].name;
+  getModel().focus = 'groups';
+  getModel().lastRunAction = '';
+  getComponentSlice('detail').lines = ['[bold]Detail title[/]', '', 'body line 1', 'body line 2'];
+  getComponentSlice('detail').scroll = 0;
+  getComponentSlice('detail').tab = 0;
+  // history Component holds its ring buffer in its own module (../history.js),
+  // not on a shim field; no init needed here.
+  getModel().layout = {
     leftWidth: 30,
     leftPanels: [],
     rightPanels: [],
     detailHeightPct: 60,
   };
-  S.panelHeights = {};
-  S.panelBounds = {};
+  getModel().panelHeights = {};
+  getModel().panelBounds = {};
 }
 
-// Plugins export their render via def.render (mode: 'list' / 'content' / ...).
+// Plugin panels export def via { panelType, def }; Component panels expose
+// def via panelTypes[panelType]. Resolve uniformly here so the test doesn't
+// need to track each panel's API shape.
+function _resolveDef(mod, panelType) {
+  if (mod.def) return mod.def;                                  // Plugin shape
+  if (mod.panelTypes && mod.panelTypes[panelType]) return mod.panelTypes[panelType]; // Component shape
+  throw new Error(`no def for ${panelType}`);
+}
 const cases = [
-  { name: 'groups',       fn: groups.def.render,      panel: { type: 'groups',       title: 'Groups',    hotkey: '1' } },
-  { name: 'actions',      fn: actions.def.render,     panel: { type: 'actions',      title: 'Actions',   hotkey: '7' } },
-  { name: 'detail',       fn: detail.def.render,      panel: { type: 'detail',       title: 'Detail',    hotkey: '8', tabs: [{ label: 'Info' }] } },
-  { name: 'file-manager', fn: fileManager.def.render, panel: { type: 'file-manager', title: 'Files',     hotkey: '2' } },
-  { name: 'history',      fn: history.def.render,     panel: { type: 'history',      title: 'History',   hotkey: '3' } },
+  { name: 'groups',       fn: _resolveDef(groups,      'groups').render,       panel: { type: 'groups',       title: 'Groups',    hotkey: '1' } },
+  { name: 'actions',      fn: _resolveDef(actions,     'actions').render,      panel: { type: 'actions',      title: 'Actions',   hotkey: '7' } },
+  { name: 'detail',       fn: _resolveDef(detail,      'detail').render,       panel: { type: 'detail',       title: 'Detail',    hotkey: '8', tabs: [{ label: 'Info' }] } },
+  { name: 'file-manager', fn: _resolveDef(fileManager, 'file-manager').render, panel: { type: 'file-manager', title: 'Files',     hotkey: '2' } },
+  { name: 'history',      fn: _resolveDef(history,     'history').render,      panel: { type: 'history',      title: 'History',   hotkey: '3' } },
 ];
+
+// All panels are Components now — render takes its own slice (resolved from
+// the global Component registry; auto-registers via the S shim path if needed).
+function _renderArg(name) {
+  return require('../plugins/api').getComponentSlice(name);
+}
 
 describe('render idempotence — same state, twice', () => {
   setupState();
   for (const c of cases) {
     it(`${c.name}.render twice produces identical output`, () => {
-      const r1 = c.fn(c.panel, 30, 10, S);
-      const r2 = c.fn(c.panel, 30, 10, S);
+      const arg = _renderArg(c.name);
+      const r1 = c.fn(c.panel, 30, 10, arg);
+      const r2 = c.fn(c.panel, 30, 10, arg);
       eq(r1, r2, `second ${c.name}.render output matches first`);
     });
   }
@@ -110,14 +127,15 @@ describe('render idempotence — focus toggled between calls', () => {
       // Render twice while focused, then twice while unfocused. Each pair
       // should be internally identical (focus is the input state, not a
       // side effect render writes).
-      S.focus = c.name;
-      const focusedA = c.fn(c.panel, 30, 10, S);
-      const focusedB = c.fn(c.panel, 30, 10, S);
+      const arg = _renderArg(c.name);
+      getModel().focus = c.name;
+      const focusedA = c.fn(c.panel, 30, 10, arg);
+      const focusedB = c.fn(c.panel, 30, 10, arg);
       eq(focusedA, focusedB, `focused output stable for ${c.name}`);
 
-      S.focus = 'somewhere-else';
-      const unfocusedA = c.fn(c.panel, 30, 10, S);
-      const unfocusedB = c.fn(c.panel, 30, 10, S);
+      getModel().focus = 'somewhere-else';
+      const unfocusedA = c.fn(c.panel, 30, 10, arg);
+      const unfocusedB = c.fn(c.panel, 30, 10, arg);
       eq(unfocusedA, unfocusedB, `unfocused output stable for ${c.name}`);
     });
   }

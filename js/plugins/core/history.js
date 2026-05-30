@@ -10,12 +10,14 @@
  */
 'use strict';
 
-const { S } = require('../../state');
+const { setDetail } = require('../../state');
+const { getModel } = require('../../runtime');
 const history = require('../../history');
+const { registerEffect } = require('../../effects');
 const {
   esc, visibleLen, theme, renderPanel,
   getSel, getScroll, isMultiSel, decorate,
-  getItems: apiGetItems,
+  getItems: apiGetItems, setActiveTab,
 } = require('../api');
 
 function getItems() { return history.all(); }
@@ -75,15 +77,16 @@ function copyOptions(entry) {
 }
 
 function render(panel, w, h) {
-  const items = apiGetItems('history', S);
+  const m = getModel();
+  const items = apiGetItems('history', null);
   const innerW = w - 2;
   const sel = getSel('history');
-  const isFocused = S.focus === 'history';
+  const isFocused = m.focus === 'history';
   const lines = items.map((entry, i) => {
     const time = fmtTime(entry.startedAt);
     const dur = fmtDuration(entry).padStart(5, ' ');
     const isSel = i === sel && isFocused;
-    const ctx = { panelType: 'history', item: entry, selected: isSel, S };
+    const ctx = { panelType: 'history', item: entry, selected: isSel };
     const left = decorate('row:left:history', { ...ctx, width: 4 });
     const lhead = left ? `${left} ` : '';
     const gutter = isMultiSel('history', String(entry.startedAt)) ? '*' : ' ';
@@ -110,34 +113,57 @@ function render(panel, w, h) {
 }
 
 /**
- * Enter on a history row: replay the captured output into the detail panel.
- * Prefixed with `$ <label>` like a fresh stream so it reads consistently.
+ * Build the replay-content lines for a history entry. Pure — used by the
+ * historyReplay effect on Enter.
  */
-function onKey(key, entry, S) {
-  if (!entry) return false;
-  if (key === 'return') {
-    S.detailLines = [`[dim]$ ${esc(entry.label)}[/]`];
-    for (const ol of entry.output || []) S.detailLines.push(esc(ol));
-    if (entry._detached) {
-      S.detailLines.push('[dim](detached — no captured output)[/]');
-    } else if (entry.exitCode === 0) {
-      S.detailLines.push('[green]Done.[/]');
-    } else if (entry.exitCode !== null) {
-      S.detailLines.push(`[red]Exit ${entry.exitCode}[/]`);
-    }
-    S.detailScroll = 0;
-    S.activeTab = 0;
-    return true;
+function _replayLines(entry) {
+  const lines = [`[dim]$ ${esc(entry.label)}[/]`];
+  for (const ol of entry.output || []) lines.push(esc(ol));
+  if (entry._detached) {
+    lines.push('[dim](detached — no captured output)[/]');
+  } else if (entry.exitCode === 0) {
+    lines.push('[green]Done.[/]');
+  } else if (entry.exitCode !== null) {
+    lines.push(`[red]Exit ${entry.exitCode}[/]`);
   }
-  return false;
+  return lines;
 }
 
+// Stateless Component — `history` is a render over the module-private ring
+// buffer (../../history.js). The buffer is its own decentralized state home
+// (written by stream.js when actions finish); the panel is just the reader.
+// Enter on a row replays the captured output into the viewer — that side
+// effect is the only thing update() needs to fire.
+function update(msg, slice) {
+  if (msg.type !== 'key' || msg.key !== 'return') return slice;
+  if (getModel().focus !== 'history') return slice;
+  const entry = history.all()[getSel('history')];
+  if (!entry) return slice;
+  return [slice, [{ type: 'historyReplay', entry }]];
+}
+
+registerEffect('historyReplay', (eff) => {
+  // setDetail routes the content write through update (viewer_set_content
+  // Msg); setActiveTab routes through update (viewer_set_tab Msg). The replay
+  // string is markup-ready single-line strings so join/split round-trips.
+  setDetail(_replayLines(eff.entry).join('\n'));
+  setActiveTab(0);
+});
+
 module.exports = {
-  panelType: 'history',
-  def: {
-    mode: 'list', render,
-    getItems, getInfo, copyOptions, onKey,
-    keyHints: 'Enter view',
-    idOf: (entry) => String(entry.startedAt),
+  name: 'history',
+  init: () => ({}),
+  update,
+  panelTypes: {
+    history: {
+      kind: 'navigator',
+      mode: 'list', render,
+      getItems, getInfo, copyOptions,
+      // Enter is handled in update() — suppress the framework default
+      // (run_selected → showSelectedInfo) so it doesn't fire twice.
+      claimsKeys: ['return'],
+      keyHints: 'Enter view',
+      idOf: (entry) => String(entry.startedAt),
+    },
   },
 };

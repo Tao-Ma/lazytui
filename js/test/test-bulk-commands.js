@@ -16,25 +16,30 @@ const stream = require('../stream');
 const calls = [];
 stream.streamCommand = (label, cmd) => { calls.push({ label, cmd }); };
 
-const { S, toggleMultiSel } = require('../state');
+const { toggleMultiSel } = require('../state');
 const api = require('../plugins/api');
+// docker is a Component now — its bulk `:` verbs are collected from the
+// component registry (getCommands), and getItems('containers') reads config.
 const dockerPlugin = require('../plugins/docker');
-api.registerPlugin(dockerPlugin);
+api.registerComponent(dockerPlugin);
 
 const { describe, it, assert, eq, report } = require('./test-runner');
+const { getModel } = require('../runtime');
+const { getComponentSlice } = require('../plugins/api');
+
 
 // Set up a fake config + group so apiGetItems('containers', S) returns names.
-S.config = {
+getModel().config = {
   groups: {
     g1: { name: 'g1', containers: ['c1', 'c2', 'c3'] },
   },
 };
-S.currentGroup = 'g1';
-S.sel = {};
-S.multiSel = {};
-S.filters = {};
+getModel().currentGroup = 'g1';
+getModel().ui.sel = {};
+getModel().ui.multiSel = {};
+getModel().ui.filters = {};
 
-const cmds = api.getCommands(S);
+const cmds = api.getCommands();
 const stopCmd    = cmds.find(c => c.name === 'stop');
 const startCmd   = cmds.find(c => c.name === 'start');
 const restartCmd = cmds.find(c => c.name === 'restart');
@@ -53,8 +58,8 @@ describe('[1] :stop / :start / :restart / :inspect resolve via getCommands', () 
 describe('[2] no multi-select → focused container', () => {
   it('cmd targets only the focused row', () => {
     calls.length = 0;
-    S.sel.containers = 1;  // c2 is focused
-    stopCmd.run([], S);
+    getModel().ui.sel.containers = 1;  // c2 is focused
+    stopCmd.run([]);
     eq(calls.length, 1, 'one streamCommand call');
     assert(calls[0].cmd === 'docker stop "c2"', `cmd is "docker stop \\"c2\\"" (got ${calls[0].cmd})`);
     assert(calls[0].label.includes('c2'), `label mentions c2 (got ${calls[0].label})`);
@@ -66,7 +71,7 @@ describe('[3] multi-select → all marked containers', () => {
     calls.length = 0;
     toggleMultiSel('containers', 'c1');
     toggleMultiSel('containers', 'c3');
-    stopCmd.run([], S);
+    stopCmd.run([]);
     eq(calls.length, 1, 'one streamCommand call');
     assert(calls[0].cmd === 'docker stop "c1" "c3"',
            `cmd is "docker stop \\"c1\\" \\"c3\\"" (got ${calls[0].cmd})`);
@@ -77,9 +82,9 @@ describe('[3] multi-select → all marked containers', () => {
 describe('[4] start / restart / inspect use correct verbs', () => {
   it('verbs are docker start / restart / inspect', () => {
     calls.length = 0;
-    startCmd.run([], S);
-    restartCmd.run([], S);
-    inspectCmd.run([], S);
+    startCmd.run([]);
+    restartCmd.run([]);
+    inspectCmd.run([]);
     eq(calls[0].cmd, 'docker start "c1" "c3"', 'start verb');
     eq(calls[1].cmd, 'docker restart "c1" "c3"', 'restart verb');
     assert(calls[2].cmd.startsWith('docker inspect "c1" "c3"'), `inspect verb (got ${calls[2].cmd})`);
@@ -90,25 +95,25 @@ describe('[4] start / restart / inspect use correct verbs', () => {
 describe('[5] empty operand → no streamCommand call', () => {
   it('no-op when there is nothing to operate on', () => {
     calls.length = 0;
-    S.config = { groups: { g1: { name: 'g1', containers: [] } } };
-    S.multiSel = {};
-    S.sel.containers = 0;
-    stopCmd.run([], S);
+    getModel().config = { groups: { g1: { name: 'g1', containers: [] } } };
+    getModel().ui.multiSel = {};
+    getModel().ui.sel.containers = 0;
+    stopCmd.run([]);
     eq(calls.length, 0);
   });
 });
 
 describe('[6] command resets activeTab and terminalMode', () => {
   it('switches to Info tab + leaves terminal mode', () => {
-    S.config = { groups: { g1: { name: 'g1', containers: ['c1'] } } };
-    S.activeTab = 3;
-    S.terminalMode = true;
-    S.sel.containers = 0;
-    S.multiSel = {};
+    getModel().config = { groups: { g1: { name: 'g1', containers: ['c1'] } } };
+    getComponentSlice('detail').tab = 3;
+    getModel().modes.terminalMode = true;
+    getModel().ui.sel.containers = 0;
+    getModel().ui.multiSel = {};
     calls.length = 0;
-    stopCmd.run([], S);
-    eq(S.activeTab, 0, 'switched to Info tab');
-    eq(S.terminalMode, false, 'left terminal mode');
+    stopCmd.run([]);
+    eq(getComponentSlice('detail').tab, 0, 'switched to Info tab');
+    eq(getModel().modes.terminalMode, false, 'left terminal mode');
   });
 });
 
@@ -118,15 +123,20 @@ describe('[7] full cmdline path: type "inspect" + Enter → bulk command runs', 
   // run(args, S); cmdline.js now passes both. Exercise the actual cmdline
   // dispatch end-to-end.
   it('cmdline-dispatched run reaches the docker plugin', () => {
-    const cmdline = require('../cmdline');
-    S.config = { groups: { g1: { name: 'g1', containers: ['c1', 'c2'] } } };
-    S.currentGroup = 'g1';
-    S.sel = { containers: 0 };
-    S.multiSel = {};
+    const { getModel } = require('../runtime');
+    const dispatch = require('../dispatch');
+    const m = getModel();
+    getModel().config = { groups: { g1: { name: 'g1', containers: ['c1', 'c2'] } } };
+    getModel().currentGroup = 'g1';
+    getModel().ui.sel = { containers: 0 };
+    getModel().ui.multiSel = {};
     calls.length = 0;
-    cmdline.enterCmdline();
-    for (const ch of 'inspect') cmdline.handleCmdlineKey(null, ch);
-    cmdline.handleCmdlineKey('return', null);
+    // cmdline folded onto the update spine: enter + each keystroke + submit
+    // flow as Msgs through update (cmdline_key emits cmdline_rebuild → the
+    // facade re-query → cmdline_set_matches; submit emits cmdline_run).
+    dispatch.applyMsg(m, { type: 'cmdline_enter' });
+    for (const ch of 'inspect') dispatch.applyMsg(m, { type: 'cmdline_key', seq: ch });
+    dispatch.applyMsg(m, { type: 'cmdline_submit' });
     eq(calls.length, 1, 'cmdline dispatched the run');
     assert(calls[0].cmd.startsWith('docker inspect "c1"'),
            `cmd via cmdline: docker inspect "c1" ... (got ${calls[0].cmd})`);

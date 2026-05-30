@@ -15,10 +15,11 @@
 'use strict';
 
 const api = require('../plugins/api');
-const { S } = require('../state');
 const { describe, it, assert, eq, report } = require('./test-runner');
+const { getModel } = require('../runtime');
 
-// dispatch.js is wired to S.focus. Import after S is in scope so the
+
+// dispatch.js is wired to getModel().focus. Import after S is in scope so the
 // module's getPanelDef/getItems read the same singleton.
 const { _dispatchPluginKey } = require('../dispatch');
 
@@ -45,12 +46,12 @@ api.registerPlugin({
   },
 });
 
-S.sel = { listy: 1, contenty: 0, silent: 0 };
-S.filters = {};
+getModel().ui.sel = { listy: 1, contenty: 0, silent: 0 };
+getModel().ui.filters = {};
 
 describe('[1] list-mode panel receives focused item', () => {
-  it('item is the row at S.sel[panel]', () => {
-    S.focus = 'listy';
+  it('item is the row at getModel().ui.sel[panel]', () => {
+    getModel().focus = 'listy';
     calls.length = 0;
     const claimed = _dispatchPluginKey('i');
     eq(calls.length, 1, 'onKey fired once');
@@ -62,7 +63,7 @@ describe('[1] list-mode panel receives focused item', () => {
 
 describe('[2] content-mode panel gets onKey with item=null', () => {
   it('non-list panels still get the hook (regression)', () => {
-    S.focus = 'contenty';
+    getModel().focus = 'contenty';
     calls.length = 0;
     const claimed = _dispatchPluginKey('r');
     eq(calls.length, 1, 'onKey fired once');
@@ -80,7 +81,7 @@ describe('[2] content-mode panel gets onKey with item=null', () => {
 
 describe('[3] panel without onKey is a no-op', () => {
   it('returns false without throwing', () => {
-    S.focus = 'silent';
+    getModel().focus = 'silent';
     calls.length = 0;
     const claimed = _dispatchPluginKey('z');
     eq(calls.length, 0, 'no onKey to call');

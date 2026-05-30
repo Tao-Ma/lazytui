@@ -11,7 +11,8 @@
  */
 'use strict';
 
-const { S, allPanels } = require('./state');
+const { allPanels } = require('./state');
+const { getModel } = require('./runtime');
 const { richToAnsi, RESET, visibleLen, esc } = require('./ansi');
 const { cols, rows, stdout } = require('./term');
 const { theme } = require('./themes');
@@ -29,34 +30,39 @@ const MAX_DROPDOWN = 8;
 // or until the overlay closes entirely.
 let _lastPanelH = 0;
 
-// Module-private mode state. S.cmdMode (the flag) stays on S so the
-// render conductor can detect overlay-active. The buffers (typed
-// text, selected match, cached match list) are transient per-session
-// and live here.
-let _text = '';
-let _sel = 0;
-let _matches = [];
+// The matched registry entries for the current buffer — WITH their run
+// closures. Folded onto the update spine: the text/sel/render-safe match
+// list live on model.modal.cmdline (the reducer owns them); only the run
+// closures stay module-held here (they're effectful — like copy.js's
+// content thunks — and can't enter the pure reducer). Parallel-indexed to
+// model.modal.cmdline.matches. cmdline_run invokes one by index.
+let _full = [];
 
-// --- Mode toggles ---
+// --- Rebuild / run / clear (the effect side, driven by Cmds) ---
 
-function enterCmdline() {
-  S.cmdMode = true;
-  _text = '';
-  _sel = 0;
-  _matches = rebuildMatches('');
-  _lastPanelH = 0;
+/**
+ * Rebuild the match registry from `text` (reads the plugin facade via
+ * buildRegistry(S) — an effect, so the reducer can't do it). Stashes the
+ * full entries (with run closures) module-side and returns the render-safe
+ * projection ({display, desc, kind}) for the reducer to store on the model.
+ */
+function rebuild(text) {
+  _full = rebuildMatches(text);
+  return _full.map(e => ({ display: e.display, desc: e.desc, kind: e.kind }));
 }
 
-function exitCmdline() {
-  S.cmdMode = false;
-  _text = '';
-  _sel = 0;
-  _matches = [];
+/** Run the module-held match at `sel` (the cmdline_run Cmd). Plugin commands
+ *  now read app-global state via `getModel()` — no S threading. */
+function runAt(sel, args) {
+  const match = _full[sel];
+  if (match) Promise.resolve(match.run(args)).catch(e => console.error('[cmd]', e.message));
+}
+
+/** Drop the held registry + reset the render residue tracker (cmdline_clear,
+ *  emitted on submit/cancel). */
+function clear() {
+  _full = [];
   _lastPanelH = 0;
-  // Cursor visibility is derived in layout.render() from S.cmdMode +
-  // S.terminalMode — no need to emit hideCursor here. Overlay-close
-  // detection in layout.render forces a full repaint, which wipes
-  // any cmdline-panel residue.
 }
 
 // --- Registry ---
@@ -68,7 +74,7 @@ function exitCmdline() {
 /**
  * Split the cmdline buffer at the first whitespace into the action-name
  * query (used for fuzzy matching) and the positional args (passed to the
- * matched entry's run(args, S)). Whitespace-only split — no shell-style
+ * matched entry's run(args)). Whitespace-only split — no shell-style
  * quoting in v1; users wanting "one arg with spaces" can collapse via
  * the script body or wait for a follow-up.
  */
@@ -79,38 +85,40 @@ function splitQuery(text) {
   return { query: m[1], args: rest ? rest.split(/\s+/) : [] };
 }
 
-function buildRegistry(state) {
+function buildRegistry() {
   const reg = [];
 
-  // Panels — focus the panel.
+  // Panels — focus the panel via the focus_set Msg (single-writer).
   for (const p of allPanels()) {
     reg.push({
       name: p.title.toLowerCase(),
       display: p.title,
       desc: `Focus the ${p.title} panel`,
       kind: 'panel',
-      run: () => { state.focus = p.type; },
+      run: () => {
+        require('./dispatch').applyMsg(getModel(), { type: 'focus_set', focus: p.type });
+      },
     });
   }
 
   // Current group's actions — run on Enter. Reuse api.getItems so the
   // active filter applies (so a filtered Actions panel shows fewer
   // candidates here too — consistent with what the user sees).
-  const actions = apiGetItems('actions', state);
+  const actions = apiGetItems('actions');
   for (const [key, action] of actions) {
     reg.push({
       name: action.label.toLowerCase(),
       display: action.label,
       desc: action.desc || `Run ${key}`,
       kind: 'action',
-      run: (args) => { require('./actions').runAction(key, action, args); },
+      run: (args) => { require('./actions').runAction(getModel(), key, action, args); },
     });
   }
 
   // Plugin commands (static + dynamic). Built-in `theme <name>`,
   // `focus <panel>`, `quit`, `refresh`, `help` come through here from
   // plugins/core.js.
-  for (const cmd of getCommands(state)) {
+  for (const cmd of getCommands()) {
     reg.push({
       name: cmd.name.toLowerCase(),
       display: cmd.name,
@@ -148,7 +156,7 @@ function score(query, name) {
 }
 
 function rebuildMatches(text) {
-  const reg = buildRegistry(S);
+  const reg = buildRegistry();
   // Fuzzy-match against the action-name part only — args (anything past
   // the first whitespace) are operands, not name characters.
   const { query } = splitQuery(text);
@@ -160,53 +168,6 @@ function rebuildMatches(text) {
   }
   scored.sort((a, b) => b.score - a.score);
   return scored.slice(0, MAX_DROPDOWN).map(s => s.entry);
-}
-
-// --- Key handler ---
-
-function handleCmdlineKey(key, seq) {
-  if (key === 'escape') { exitCmdline(); return; }
-  if (key === 'return') {
-    const match = _matches[_sel];
-    const { args } = splitQuery(_text);
-    exitCmdline();
-    // Honor the documented run(args, S) contract from CMDMODE.md. Existing
-    // core commands captured S from closure scope and worked despite this
-    // being missing; plugin commands like docker's :stop / :inspect read S
-    // off the parameter and crashed without it.
-    if (match) Promise.resolve(match.run(args, S)).catch(e => console.error('[cmd]', e.message));
-    return;
-  }
-  if (key === 'up' || (seq === '\x1b[A')) {
-    if (_sel < _matches.length - 1) _sel++;
-    return;
-  }
-  if (key === 'down' || (seq === '\x1b[B')) {
-    if (_sel > 0) _sel--;
-    return;
-  }
-  if (seq === '\t') { // Tab — accept top match into buffer (refine further)
-    const top = _matches[0];
-    if (top) {
-      // Keep any args the user already typed past the matched name.
-      const { args } = splitQuery(_text);
-      _text = top.display.toLowerCase() + (args.length ? ' ' + args.join(' ') : '');
-      _sel = 0;
-      _matches = rebuildMatches(_text);
-    }
-    return;
-  }
-  if (seq === '\x7f') { // Backspace
-    _text = _text.slice(0, -1);
-    _sel = 0;
-    _matches = rebuildMatches(_text);
-    return;
-  }
-  if (seq && seq.length === 1 && seq.charCodeAt(0) >= 32 && seq.charCodeAt(0) < 127) {
-    _text += seq;
-    _sel = 0;
-    _matches = rebuildMatches(_text);
-  }
 }
 
 // --- Render ---
@@ -223,7 +184,11 @@ function handleCmdlineKey(key, seq) {
 // the residue wipe when cmd mode closes.
 
 function renderCmdline() {
-  if (!S.cmdMode) return;
+  if (!getModel().modes.cmdMode) return;
+  // Buffer state now lives on the model (folded onto update); the render-safe
+  // match list (display/desc/kind) is enough to paint — the run closures it
+  // mirrors stay module-held in _full.
+  const { text: _text, sel: _sel, matches: _matches } = getModel().modal.cmdline;
   const COLS = cols();
   const ROWS = rows();
   const t = theme();
@@ -338,12 +303,12 @@ function formatMatchLine(match) {
  * command matched. Used by the YAML `keys:` reader to bind leader
  * chords to commands.
  */
-function runCommandString(str, state) {
+function runCommandString(str) {
   const parts = String(str).trim().split(/\s+/).filter(Boolean);
   if (parts.length === 0) return false;
   const name = parts[0].toLowerCase();
   const args = parts.slice(1);
-  const reg = buildRegistry(state);
+  const reg = buildRegistry();
   // Exact name match only. A declared `command:` binding names a
   // specific command; prefix/fuzzy matching (which the interactive `:`
   // prompt uses) would silently run a different command on a typo or
@@ -351,11 +316,11 @@ function runCommandString(str, state) {
   // resolution would vary by group since the registry is state-derived.
   const entry = reg.find(e => e.name === name);
   if (!entry) return false;
-  return entry.run(args, state);
+  return entry.run(args);
 }
 
 module.exports = {
-  enterCmdline, exitCmdline, handleCmdlineKey, renderCmdline,
+  rebuild, runAt, clear, renderCmdline,
   runCommandString,
   // Test-only export — buffer parsing reused by test-cmdline-args.js.
   _splitQuery: splitQuery,

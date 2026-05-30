@@ -2,21 +2,21 @@
  * Which-key popup — a centered overlay listing the available
  * continuations from the current point in the leader binding tree.
  *
- * Pure paint over S.prefixNode / S.prefixSeq (set by dispatch's prefix
+ * Pure paint over getModel().prefixNode / getModel().prefixSeq (set by dispatch's prefix
  * mode). Reused for every level: after the bare leader it shows the
  * root's children; after descending into a subtree (e.g. `g`) it shows
  * that subtree's children. Subtrees render with a `+` and a trailing
  * `…` so the user knows another keystroke follows.
  *
- * Mirrors menu.js: state lives on S (S.prefixMode), the item content is
- * derived fresh each paint from the registry, and dispatch.js owns the
- * render() call.
+ * Mirrors menu.js: the mode flag lives on model.modes.prefixMode, the
+ * item content is derived fresh each paint from the registry, and
+ * dispatch.js owns the render() call.
  */
 'use strict';
 
 const { esc } = require('./ansi');
 const { renderOverlay } = require('./panel');
-const { S } = require('./state');
+const { getModel } = require('./runtime');
 const kb = require('./keybindings');
 
 /** Build the popup body lines for a binding node (markup strings). */
@@ -35,11 +35,11 @@ function whichKeyLines(node) {
 }
 
 function renderWhichKey() {
-  const node = S.prefixNode || kb.rootNode();
+  const node = getModel().prefixNode || kb.rootNode();
   // Title shows the pending path so nested levels are legible:
   //   "leader"  →  "leader g"
-  const seq = (S.prefixSeq && S.prefixSeq.length)
-    ? 'leader ' + S.prefixSeq.join(' ')
+  const seq = (getModel().prefixSeq && getModel().prefixSeq.length)
+    ? 'leader ' + getModel().prefixSeq.join(' ')
     : 'leader';
   renderOverlay({ lines: whichKeyLines(node), title: `\\[${seq}]`, count: null });
 }

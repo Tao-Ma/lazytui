@@ -6,14 +6,17 @@
  */
 'use strict';
 
-const { S, toggleMultiSel, isMultiSel, clearMultiSel, multiSelCount,
+const { toggleMultiSel, isMultiSel, clearMultiSel, multiSelCount,
         resetGroupContext } = require('../state');
 const api = require('../plugins/api');
 const { describe, it, assert, eq, report } = require('./test-runner');
+const { getModel } = require('../runtime');
+const { getComponentSlice } = require('../plugins/api');
+
 
 // Reset state for a clean slate.
-S.multiSel = {};
-S.sel = {};
+getModel().ui.multiSel = {};
+getModel().ui.sel = {};
 
 describe('[1] empty state', () => {
   it('no panel has selection initially', () => {
@@ -39,7 +42,7 @@ describe('[3] empty Set is removed', () => {
   it('no leak when set drains to zero', () => {
     toggleMultiSel('containers', 'gitea');     // count → 0
     eq(multiSelCount('containers'), 0, 'count = 0');
-    assert(!('containers' in S.multiSel), 'empty Set deleted from S.multiSel');
+    assert(!('containers' in getModel().ui.multiSel), 'empty Set deleted from getModel().ui.multiSel');
   });
 });
 
@@ -70,9 +73,9 @@ describe('[6] resetGroupContext drops only containers + actions', () => {
     eq(multiSelCount('containers'), 1, 'containers has selection');
     eq(multiSelCount('actions'), 1, 'actions has selection');
     eq(multiSelCount('file-manager'), 1, 'file-manager has selection');
-    S.groups = [{ name: 'dev9', containers: [] }];
-    S.sel = { groups: 0 };
-    S.config = { groups: { dev9: { name: 'dev9' } } };
+    getComponentSlice('groups').list = [{ name: 'dev9', containers: [] }];
+    getModel().ui.sel = { groups: 0 };
+    getModel().config = { groups: { dev9: { name: 'dev9' } } };
     resetGroupContext();
     eq(multiSelCount('containers'), 0, 'containers cleared on group switch');
     eq(multiSelCount('actions'), 0, 'actions cleared on group switch');
@@ -91,8 +94,8 @@ describe('[7] idOf default fallback', () => {
 
 describe('[8] selectedOrFocused with multi-selection', () => {
   it('multi-select takes priority over focused row', () => {
-    S.multiSel = {};
-    S.sel = {};
+    getModel().ui.multiSel = {};
+    getModel().ui.sel = {};
     // Register a fake panel via the plugin API so getItems works.
     api.registerPlugin({
       name: 'test',
@@ -105,11 +108,11 @@ describe('[8] selectedOrFocused with multi-selection', () => {
         },
       },
     });
-    S.sel.test = 1;  // focused on 'b'
-    eq(api.selectedOrFocused('test', S), ['b'], 'no multi-select → focused single');
+    getModel().ui.sel.test = 1;  // focused on 'b'
+    eq(api.selectedOrFocused('test'), ['b'], 'no multi-select → focused single');
     toggleMultiSel('test', 'a');
     toggleMultiSel('test', 'c');
-    eq(api.selectedOrFocused('test', S), ['a', 'c'],
+    eq(api.selectedOrFocused('test'), ['a', 'c'],
        'multi-select non-empty → only multi (focused ignored)');
   });
 });
@@ -122,7 +125,7 @@ describe('[9] selectedOrFocused with empty getItems', () => {
         empty: { mode: 'list', render: () => '', getItems: () => [] },
       },
     });
-    eq(api.selectedOrFocused('empty', S), []);
+    eq(api.selectedOrFocused('empty'), []);
   });
 });
 

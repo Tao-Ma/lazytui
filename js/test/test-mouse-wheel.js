@@ -17,71 +17,76 @@ term.stdout.write = (chunk, ...rest) => {
   return _origWrite(chunk, ...rest);
 };
 
-const { S } = require('../state');
 const { _handleWheel } = require('../input');
 const { describe, it, eq, report } = require('./test-runner');
+const { getModel } = require('../runtime');
+const { getComponentSlice } = require('../plugins/api');
+
+
+// _handleWheel now takes the owned model first (threaded from the pump).
+const model = getModel();
 
 function setupTwoPanel() {
   // Pretend layout: hosts on the left (0..30, 0..20), detail on the right (30..80, 0..20)
-  S.layout = {
+  getModel().layout = {
     leftPanels: [{ type: 'hosts' }],
     rightPanels: [{ type: 'detail' }],
     leftWidth: 30, detailHeightPct: 60,
   };
-  S.panelBounds = {
+  getModel().panelBounds = {
     hosts:  { x: 0,  y: 0, w: 30, h: 20 },
     detail: { x: 30, y: 0, w: 50, h: 20 },
   };
-  S.panelHeights = { hosts: 20, detail: 20 };
-  S.focus = 'hosts';
-  S.detailLines = Array.from({ length: 100 }, (_, i) => `line-${i}`);
-  S.detailScroll = 0;
+  getModel().panelHeights = { hosts: 20, detail: 20 };
+  getModel().focus = 'hosts';
+  getComponentSlice('detail').lines = Array.from({ length: 100 }, (_, i) => `line-${i}`);
+  getComponentSlice('detail').scroll = 0;
 }
 
 describe('[1] wheel over detail scrolls view, no focus change', () => {
-  it('wheel-down increments S.detailScroll while focus stays on hosts', () => {
+  it('wheel-down increments detail.scroll while focus stays on hosts', () => {
     setupTwoPanel();
-    eq(S.focus, 'hosts', 'starts on hosts');
-    const mutated = _handleWheel(40, 5, +1);  // (mx, my) inside detail
+    eq(getModel().focus, 'hosts', 'starts on hosts');
+    const mutated = _handleWheel(model, 40, 5, +1);  // (mx, my) inside detail
     eq(mutated, true);
-    eq(S.detailScroll, 1, 'detail scrolled');
-    eq(S.focus, 'hosts', 'focus unchanged — that is the friendlier semantics');
+    eq(getComponentSlice('detail').scroll, 1, 'detail scrolled');
+    eq(getModel().focus, 'hosts', 'focus unchanged — that is the friendlier semantics');
   });
   it('wheel-up decrements', () => {
     setupTwoPanel();
-    S.detailScroll = 5;
-    _handleWheel(40, 5, -1);
-    eq(S.detailScroll, 4);
+    getComponentSlice('detail').scroll = 5;
+    _handleWheel(model, 40, 5, -1);
+    eq(getComponentSlice('detail').scroll, 4);
   });
   it('clamps at 0 and at maxScroll', () => {
     setupTwoPanel();
     // detailLines = 100, innerH = h - 2 = 18, maxScroll = 82
-    _handleWheel(40, 5, -1);
-    eq(S.detailScroll, 0, 'cannot go negative');
-    S.detailScroll = 82;
-    const mutated = _handleWheel(40, 5, +1);
+    _handleWheel(model, 40, 5, -1);
+    eq(getComponentSlice('detail').scroll, 0, 'cannot go negative');
+    getComponentSlice('detail').scroll = 82;
+    const mutated = _handleWheel(model, 40, 5, +1);
     eq(mutated, false, 'no mutation past max');
-    eq(S.detailScroll, 82);
+    eq(getComponentSlice('detail').scroll, 82);
   });
 });
 
 describe('[2] wheel outside any panel is a no-op', () => {
   it('returns false; nothing changes', () => {
     setupTwoPanel();
-    S.detailScroll = 5;
-    const mutated = _handleWheel(200, 200, +1);
+    getComponentSlice('detail').scroll = 5;
+    const mutated = _handleWheel(model, 200, 200, +1);
     eq(mutated, false);
-    eq(S.detailScroll, 5, 'untouched');
+    eq(getComponentSlice('detail').scroll, 5, 'untouched');
   });
 });
 
 describe('[3] wheel target ≠ focused panel: focus stays put', () => {
   it('hosts focused, wheel lands in detail — detail scrolls, hosts focus retained', () => {
     setupTwoPanel();
-    S.focus = 'hosts';
-    _handleWheel(40, 10, +1);
-    eq(S.focus, 'hosts');
-    eq(S.detailScroll, 1);
+    getModel().focus = 'hosts';
+    _handleWheel(model, 40, 10, +1);
+    eq(getModel().focus, 'hosts');
+    eq(getComponentSlice('detail').scroll, 1);
   });
 });
 

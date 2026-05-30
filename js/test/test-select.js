@@ -15,18 +15,20 @@ term.stdout.write = (chunk, ...rest) => {
   return _origWrite(chunk, ...rest);
 };
 
-const { S } = require('../state');
 const reg = require('../register');
 const sel = require('../select');
 const { describe, it, eq, assert, report } = require('./test-runner');
+const { getModel } = require('../runtime');
+const { getComponentSlice } = require('../plugins/api');
+
 
 function setUp(lines) {
   reg.init({ cap: 10 });
   reg.clear();
-  S.detailLines = lines.slice();
-  S.detailScroll = 0;
-  // Force re-init of S.select.
-  S.select = undefined;
+  getComponentSlice('detail').lines = lines.slice();
+  getComponentSlice('detail').scroll = 0;
+  // Force re-init of getComponentSlice('detail').select.
+  getComponentSlice('detail').select = undefined;
   sel.cancel();
 }
 
@@ -162,17 +164,17 @@ describe('[10] decorateLines — multi-line render integration', () => {
     setUp(['before', 'sel-line', 'after']);
     sel.beginAt(1, 0, 'char');
     sel.extendTo(1, 99);
-    const out = sel.decorateLines(S.detailLines);
+    const out = sel.decorateLines(getComponentSlice('detail').lines);
     eq(out[0], 'before', 'untouched');
     eq(out[2], 'after',  'untouched');
     assert(out[1].includes('[reverse]'), 'sel line carries [reverse]');
   });
   it('no-op when no active selection (reading mode = no cursor)', () => {
     setUp(['x']);
-    S.focus = 'detail';
+    getModel().focus = 'detail';
     sel.cancel();
-    const out = sel.decorateLines(S.detailLines);
-    eq(out, S.detailLines, 'pass-through; reading mode shows no cursor');
+    const out = sel.decorateLines(getComponentSlice('detail').lines);
+    eq(out, getComponentSlice('detail').lines, 'pass-through; reading mode shows no cursor');
   });
 });
 
@@ -190,78 +192,78 @@ describe('[8] cancel', () => {
 describe('[11] onDetailKey — keyboard visual-mode', () => {
   function withDetail(lines) {
     setUp(lines);
-    S.focus = 'detail';
-    S.terminalMode = false;
-    S.detailCursor = { line: 0, col: 0 };
-    S.panelHeights.detail = 10;
-    S.detailScroll = 0;
+    getModel().focus = 'detail';
+    getModel().modes.terminalMode = false;
+    getComponentSlice('detail').cursor = { line: 0, col: 0 };
+    getModel().panelHeights.detail = 10;
+    getComponentSlice('detail').scroll = 0;
   }
   it('claims keys only when focus=detail', () => {
     withDetail(['abc']);
-    S.focus = 'groups';
+    getModel().focus = 'groups';
     eq(sel.onDetailKey('v', 'v'), false, 'returns false when focus != detail');
-    S.focus = 'detail';
+    getModel().focus = 'detail';
     eq(sel.onDetailKey('v', 'v'), true, 'returns true when focus = detail');
   });
   it('v lands cursor at top of current viewport', () => {
     withDetail(Array.from({ length: 10 }, (_, i) => `line${i}`));
-    S.detailScroll = 3;
+    getComponentSlice('detail').scroll = 3;
     sel.onDetailKey('v', 'v');
     eq(sel.isActive(), true);
-    eq(S.select.kind, 'char');
-    eq(S.select.anchor.line, 3, 'anchor at viewport top, not line 0');
-    eq(S.select.anchor.col, 0);
+    eq(getComponentSlice('detail').select.kind, 'char');
+    eq(getComponentSlice('detail').select.anchor.line, 3, 'anchor at viewport top, not line 0');
+    eq(getComponentSlice('detail').select.anchor.col, 0);
   });
   it('V starts line mode at viewport top', () => {
     withDetail(['a', 'b', 'c']);
-    S.detailScroll = 1;
+    getComponentSlice('detail').scroll = 1;
     sel.onDetailKey('V', 'V');
-    eq(S.select.kind, 'line');
-    eq(S.select.anchor.line, 1);
+    eq(getComponentSlice('detail').select.kind, 'line');
+    eq(getComponentSlice('detail').select.anchor.line, 1);
   });
   it('reading-mode j/k scrolls the view, cursor not used', () => {
     withDetail(Array.from({ length: 20 }, (_, i) => `line${i}`));
-    S.panelHeights.detail = 5;  // innerH = 3
-    eq(S.detailScroll, 0, 'starts at top');
+    getModel().panelHeights.detail = 5;  // innerH = 3
+    eq(getComponentSlice('detail').scroll, 0, 'starts at top');
     eq(sel.isActive(), false, 'reading mode (no select)');
     sel.onDetailKey('j', 'j');
-    eq(S.detailScroll, 1, 'scroll advanced by 1');
+    eq(getComponentSlice('detail').scroll, 1, 'scroll advanced by 1');
     sel.onDetailKey('j', 'j');
     sel.onDetailKey('j', 'j');
-    eq(S.detailScroll, 3, 'scrolled 3 lines');
+    eq(getComponentSlice('detail').scroll, 3, 'scrolled 3 lines');
     sel.onDetailKey('k', 'k');
-    eq(S.detailScroll, 2, 'k scrolls back');
+    eq(getComponentSlice('detail').scroll, 2, 'k scrolls back');
   });
   it('reading-mode j/k clamps at top and bottom', () => {
     withDetail(Array.from({ length: 10 }, (_, i) => `line${i}`));
-    S.panelHeights.detail = 5;  // innerH = 3, maxScroll = 7
+    getModel().panelHeights.detail = 5;  // innerH = 3, maxScroll = 7
     for (let i = 0; i < 20; i++) sel.onDetailKey('j', 'j');
-    eq(S.detailScroll, 7, 'clamped to maxScroll');
+    eq(getComponentSlice('detail').scroll, 7, 'clamped to maxScroll');
     for (let i = 0; i < 20; i++) sel.onDetailKey('k', 'k');
-    eq(S.detailScroll, 0, 'clamped to 0');
+    eq(getComponentSlice('detail').scroll, 0, 'clamped to 0');
   });
   it('visual-mode j/k moves cursor and extends selection', () => {
     withDetail(['line0', 'line1', 'line2', 'line3']);
     sel.onDetailKey('v', 'v');
     sel.onDetailKey('j', 'j');
-    eq(S.detailCursor.line, 1);
-    eq(S.select.cursor.line, 1, 'selection extended');
+    eq(getComponentSlice('detail').cursor.line, 1);
+    eq(getComponentSlice('detail').select.cursor.line, 1, 'selection extended');
     sel.onDetailKey('j', 'j');
-    eq(S.detailCursor.line, 2);
+    eq(getComponentSlice('detail').cursor.line, 2);
   });
   it('visual-mode j scrolls when cursor leaves viewport', () => {
     withDetail(Array.from({ length: 20 }, (_, i) => `line${i}`));
-    S.panelHeights.detail = 5;  // innerH = 3
+    getModel().panelHeights.detail = 5;  // innerH = 3
     sel.onDetailKey('v', 'v');
     for (let i = 0; i < 5; i++) sel.onDetailKey('j', 'j');
-    assert(S.detailScroll > 0, `scroll auto-advanced (got ${S.detailScroll})`);
+    assert(getComponentSlice('detail').scroll > 0, `scroll auto-advanced (got ${getComponentSlice('detail').scroll})`);
   });
   it('h/l only claimed while selection active', () => {
     withDetail(['abc']);
     eq(sel.onDetailKey('h', 'h'), false, 'h passes through when no sel');
     sel.onDetailKey('v', 'v');
     eq(sel.onDetailKey('l', 'l'), true, 'l claimed in visual mode');
-    eq(S.detailCursor.col, 1, 'cursor moved right');
+    eq(getComponentSlice('detail').cursor.col, 1, 'cursor moved right');
   });
   it('y commits + pushes; selection cleared', () => {
     withDetail(['hello']);

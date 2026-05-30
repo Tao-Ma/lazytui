@@ -1,23 +1,42 @@
 /**
  * Layout calculation and view mode rendering.
- * Zero dependencies (uses local modules).
+ *
+ * Single-writer note (docs/v0.5-layering.md step 5).
+ * This module is the **layout engine** and writes `model.panelHeights` /
+ * `model.panelBounds` directly during the render pass — those fields are
+ * VIEW OUTPUT (derived geometry), not state owned by other modules. The
+ * pattern is: compute the geometry from the terminal size + the current
+ * layout struct + the focus, memoize it on the model so downstream readers
+ * (the per-panel render fns, mouse hit-testing, design-mode drag hit-tests
+ * in model-design.js) can resolve coordinates without recomputing.
+ *
+ * This is a deliberate BLESSED exception to "the reducer is the single
+ * writer of model state" — the layout engine owns this geometry the way a
+ * view function owns its own output; routing per-frame `panelHeights[type]
+ * = h` through a Msg would be churn for no correctness gain (no other
+ * module writes here; the geometry is recomputed from scratch each frame).
+ * model-design.js's "READ only — frame-derived, written by layout.js"
+ * comment encodes the same contract from the consumer side.
+ *
+ * Zero npm dependencies (uses local modules).
  */
 'use strict';
 
 const { RESET, richToAnsi, esc, visibleLen } = require('./ansi');
 const { refreshSize, cols, rows, stdout, showCursor, hideCursor } = require('./term');
-const { S, allPanels, syncPanelScroll, multiSelCount } = require('./state');
+const { allPanels, syncPanelScroll, multiSelCount } = require('./state');
 const { theme } = require('./themes');
 const { isTerminalTab, activeTerminalId, activeTerminalConfig,
         getTabInfo, findEphemeralByid } = require('./tabs');
 const { ensureSession, getSession, resizeSession } = require('./terminal');
-const { getPanelDef } = require('./plugins/api');
+const { getPanelDef, getComponentSlice } = require('./plugins/api');
 const { showSelectedInfo } = require('./detail');
 const { renderCopyMenu } = require('./copy');
 const { render: renderRegisterPopup } = require('./register-popup');
 const { renderMenu } = require('./menu');
 const { renderWhichKey } = require('./which-key');
 const modes = require('./modes');
+const { getModel } = require('./runtime');
 const { renderCmdline } = require('./cmdline');
 const { renderConfirmOverlay } = require('./confirm');
 const { renderPromptOverlay } = require('./prompt');
@@ -26,18 +45,18 @@ const { decorate } = require('./decorators');
 const { currentText: filterCurrentText } = require('./filter');
 
 /**
- * Look up the render function for a panel type. Plugin contract:
+ * Look up the render function for a panel type. Contract:
  *   render(panel, width, height, state) → string
- * Height is now passed explicitly by every caller (renderNormal/Half/Full)
- * — no fallback to S.panelHeights. Plugin renderers should treat the
- * height arg as authoritative; reading S.panelHeights inside a renderer
- * is implicit coupling to the layout pass and breaks half/full view
- * modes that supply a different height.
+ * Height is passed explicitly by every caller (renderNormal/Half/Full).
+ * Renderers should treat the height arg as authoritative; reading
+ * model.panelHeights inside a renderer is implicit coupling to the
+ * layout pass and breaks half/full view modes that supply a different
+ * height.
  */
 function rendererFor(type) {
-  // Component-owned panels (v0.3.0) take precedence — a Component's
-  // render gets its slice, not the global S. Falls through to the
-  // plugin-owned path if no Component claimed this panelType.
+  // Component-owned panels take precedence — a Component's render gets
+  // its slice. Falls through to the Plugin-owned path if no Component
+  // claimed this panelType.
   const api = require('./plugins/api');
   const compName = api.getComponentOwningPanel(type);
   if (compName) {
@@ -49,7 +68,9 @@ function rendererFor(type) {
   }
   const def = getPanelDef(type);
   if (!def || !def.render) return null;
-  return (panel, w, h) => def.render(panel, w, h, S);
+  // Plugin (non-Component) fallback — passes the root model as the 4th
+  // arg so external Plugin authors can read app-global state.
+  return (panel, w, h) => def.render(panel, w, h, require('./runtime').getModel());
 }
 
 // --- Layout calculation ---
@@ -72,7 +93,7 @@ function rendererFor(type) {
  * panel — a manually oversubscribed heightPct (sum > 100) gets
  * scaled down here rather than crashing the renderer.
  */
-function distributeColumnHeights(panels, availH, isRightCol, minH) {
+function distributeColumnHeights(model, panels, availH, isRightCol, minH) {
   if (panels.length === 0) return;
 
   let reserved = 0;
@@ -80,7 +101,7 @@ function distributeColumnHeights(panels, availH, isRightCol, minH) {
   if (isRightCol) {
     detailPanel = panels.find(p => p.type === 'detail') || null;
     if (detailPanel) {
-      reserved = Math.max(minH, Math.floor(availH * S.layout.detailHeightPct / 100));
+      reserved = Math.max(minH, Math.floor(availH * model.layout.detailHeightPct / 100));
     }
   }
 
@@ -129,30 +150,30 @@ function distributeColumnHeights(panels, availH, isRightCol, minH) {
     const baseH = Math.floor(flexTotalH / flex.length);
     flex.forEach((p, i) => {
       const h = i === flex.length - 1 ? flexTotalH - baseH * (flex.length - 1) : baseH;
-      S.panelHeights[p.type] = Math.max(minH, h);
+      model.panelHeights[p.type] = Math.max(minH, h);
     });
   }
-  for (const { p, h } of anchored) S.panelHeights[p.type] = h;
-  if (detailPanel) S.panelHeights[detailPanel.type] = reserved;
+  for (const { p, h } of anchored) model.panelHeights[p.type] = h;
+  if (detailPanel) model.panelHeights[detailPanel.type] = reserved;
 
   // Park rounding-leftover rows on the column's last panel so the
   // column exactly fills availH (matches the pre-heightPct behavior
   // and avoids a visually empty strip at the bottom).
   let sum = 0;
-  for (const p of panels) sum += S.panelHeights[p.type];
+  for (const p of panels) sum += model.panelHeights[p.type];
   if (sum < availH) {
     const last = panels[panels.length - 1];
-    S.panelHeights[last.type] += availH - sum;
+    model.panelHeights[last.type] += availH - sum;
   }
 }
 
-function calcLayout() {
+function calcLayout(model = getModel()) {
   refreshSize();
   const COLS = cols(), ROWS = rows();
 
   // Adaptive: shrink left column on narrow terminals
   const minRight = 20;
-  let leftW = S.layout.leftWidth;
+  let leftW = model.layout.leftWidth;
   if (COLS < leftW + minRight) {
     leftW = Math.max(10, COLS - minRight);
   }
@@ -166,21 +187,21 @@ function calcLayout() {
   // Minimum panel height: 3 rows (border + 1 content line)
   const minH = 3;
 
-  S.panelHeights = {};
-  distributeColumnHeights(S.layout.leftPanels, availH, /*isRightCol*/ false, minH);
-  distributeColumnHeights(S.layout.rightPanels, availH, /*isRightCol*/ true,  minH);
-  // Half/full view modes read S.panelHeights.detail even when detail
+  model.panelHeights = {};
+  distributeColumnHeights(model, model.layout.leftPanels, availH, /*isRightCol*/ false, minH);
+  distributeColumnHeights(model, model.layout.rightPanels, availH, /*isRightCol*/ true,  minH);
+  // Half/full view modes read panelHeights.detail even when detail
   // isn't currently rendered; keep the fallback so they don't crash.
-  if (!('detail' in S.panelHeights)) {
-    S.panelHeights.detail = Math.max(minH, Math.floor(availH * S.layout.detailHeightPct / 100));
+  if (!('detail' in model.panelHeights)) {
+    model.panelHeights.detail = Math.max(minH, Math.floor(availH * model.layout.detailHeightPct / 100));
   }
 
   // Heights settled — keep each panel's scroll offset such that the selected
   // item is in view. Done here (not inside render) so renderers stay pure
   // and resize alone (without selection movement) still re-syncs scroll.
-  for (const p of [...S.layout.leftPanels, ...S.layout.rightPanels]) {
+  for (const p of [...model.layout.leftPanels, ...model.layout.rightPanels]) {
     if (p.type === 'detail') continue;
-    syncPanelScroll(p.type, S.panelHeights[p.type] - 2);
+    syncPanelScroll(p.type, model.panelHeights[p.type] - 2);
   }
 
   return { leftW, rightW, availH };
@@ -238,22 +259,26 @@ function paintColumns(leftOutput, rightOutput) {
   return didFull;
 }
 
-function renderNormal() {
-  const { leftW, rightW } = calcLayout();
+// renderNormal/Half/Full take the threaded model: they read/write the
+// derived layout chrome (panelBounds/panelHeights/layout/focus) on it.
+// allPanels()/calcLayout() stay state-helpers; rendererFor() hands each
+// panel its slice (Component) or the model (Plugin).
+function renderNormal(model) {
+  const { leftW, rightW } = calcLayout(model);
   // Reset bounds — stale entries from a prior view-mode mustn't be hit-testable.
-  S.panelBounds = {};
+  model.panelBounds = {};
   let leftY = 0;
-  const leftOutputs = S.layout.leftPanels.map(p => {
-    const h = S.panelHeights[p.type] || 0;
-    S.panelBounds[p.type] = { x: 0, y: leftY, w: leftW, h };
+  const leftOutputs = model.layout.leftPanels.map(p => {
+    const h = model.panelHeights[p.type] || 0;
+    model.panelBounds[p.type] = { x: 0, y: leftY, w: leftW, h };
     leftY += h;
     const fn = rendererFor(p.type);
     return fn ? fn(p, leftW, h) : '';
   });
   let rightY = 0;
-  const rightOutputs = S.layout.rightPanels.map(p => {
-    const h = S.panelHeights[p.type] || 0;
-    S.panelBounds[p.type] = { x: leftW, y: rightY, w: rightW, h };
+  const rightOutputs = model.layout.rightPanels.map(p => {
+    const h = model.panelHeights[p.type] || 0;
+    model.panelBounds[p.type] = { x: leftW, y: rightY, w: rightW, h };
     rightY += h;
     const fn = rendererFor(p.type);
     return fn ? fn(p, rightW, h) : '';
@@ -261,17 +286,17 @@ function renderNormal() {
   return paintColumns(leftOutputs.join('\n'), rightOutputs.join('\n'));
 }
 
-function renderHalf() {
-  calcLayout();
+function renderHalf(model) {
+  calcLayout(model);
   const COLS = cols(), ROWS = rows();
   const halfW = Math.floor(COLS / 2);
   const availH = ROWS - 2;  // -2: footer + register strip rows
-  const focusedPanel = allPanels().find(p => p.type === S.focus);
-  if (!focusedPanel) return renderNormal();
-  const detailPanel = S.layout.rightPanels.find(p => p.type === 'detail');
-  S.panelBounds = {};
-  S.panelBounds[focusedPanel.type] = { x: 0, y: 0, w: halfW, h: availH };
-  if (detailPanel) S.panelBounds.detail = { x: halfW, y: 0, w: COLS - halfW, h: availH };
+  const focusedPanel = allPanels().find(p => p.type === model.focus);
+  if (!focusedPanel) return renderNormal(model);
+  const detailPanel = model.layout.rightPanels.find(p => p.type === 'detail');
+  model.panelBounds = {};
+  model.panelBounds[focusedPanel.type] = { x: 0, y: 0, w: halfW, h: availH };
+  if (detailPanel) model.panelBounds.detail = { x: halfW, y: 0, w: COLS - halfW, h: availH };
   const fn = rendererFor(focusedPanel.type);
   const leftContent = fn ? fn(focusedPanel, halfW, availH) : '';
   const detailFn = detailPanel ? rendererFor('detail') : null;
@@ -279,14 +304,14 @@ function renderHalf() {
   return paintColumns(leftContent, rightContent);
 }
 
-function renderFull() {
-  calcLayout();
+function renderFull(model) {
+  calcLayout(model);
   const COLS = cols(), ROWS = rows();
   const availH = ROWS - 2;  // -2: footer + register strip rows
-  const focusedPanel = allPanels().find(p => p.type === S.focus);
-  if (!focusedPanel) return renderNormal();
-  S.panelBounds = {};
-  S.panelBounds[focusedPanel.type] = { x: 0, y: 0, w: COLS, h: availH };
+  const focusedPanel = allPanels().find(p => p.type === model.focus);
+  if (!focusedPanel) return renderNormal(model);
+  model.panelBounds = {};
+  model.panelBounds[focusedPanel.type] = { x: 0, y: 0, w: COLS, h: availH };
   const fn = rendererFor(focusedPanel.type);
   const content = fn ? fn(focusedPanel, COLS, availH) : '';
   return paintColumns(content, '');
@@ -295,13 +320,13 @@ function renderFull() {
 let _forceOverlayFull = true;
 let _lastOverlayId = null;
 
-function renderTerminalOverlay() {
+function renderTerminalOverlay(model = getModel()) {
   if (!isTerminalTab()) return;
   const id = activeTerminalId();
   const termConf = activeTerminalConfig();
   if (!id || !termConf) return;
 
-  const bounds = S.panelBounds.detail;
+  const bounds = model.panelBounds.detail;
   if (!bounds) return;
   const innerW = bounds.w - 2;
   const innerH = bounds.h - 2;
@@ -340,7 +365,10 @@ function renderTerminalOverlay() {
 
   // Show exit prompt if process died (overlay on bottom content row)
   if (session.exited) {
-    if (S.terminalMode) S.terminalMode = false;
+    // Route the stale-flag cleanup through update so single-writer holds —
+    // terminal_exit also force_full_repaints when viewMode was 'full', which
+    // is the right thing on a PTY exit anyway (chrome reclaims rows).
+    if (model.modes.terminalMode) require('./dispatch').applyMsg(model, { type: 'terminal_exit' });
     const msg = ` Process exited: ${session.exitCode} — Enter restart, x close `;
     const text = msg.length > innerW ? msg.slice(0, innerW) : msg;
     const padding = Math.max(0, Math.floor((innerW - text.length) / 2));
@@ -348,9 +376,9 @@ function renderTerminalOverlay() {
   }
 
   // Position screen cursor at PTY cursor when in terminal mode.
-  // Visibility (show/hide) is no longer emitted here — it's derived
-  // once at the end of render() from S.terminalMode || S.cmdMode.
-  if (S.terminalMode && !session.exited) {
+  // Visibility (show/hide) is derived once at the end of render() from
+  // model.modes.terminalMode || model.modes.cmdMode.
+  if (model.modes.terminalMode && !session.exited) {
     const cx = bounds.x + 2 + buffer.cursorX;
     const cy = bounds.y + 2 + buffer.cursorY;
     out += `\x1b[${cy};${cx}H`;
@@ -358,7 +386,12 @@ function renderTerminalOverlay() {
   stdout.write(out);
 }
 
-function render() {
+function render(model = getModel()) {
+  // `model` is the TEA root model (js/runtime.js), threaded in by the
+  // owner (the program). The view reads migrated slices (currently
+  // `viewMode`) from this param, not a global fetch. The `= getModel()`
+  // default keeps every existing `render()` call site working during
+  // the v0.5 migration; it'll be removed once all callers thread it.
   // Only force-full-repaint on overlay CLOSE (residue wipe). While an
   // overlay is open, the main paint diff is still valid — main rows
   // haven't changed under the popup, and the overlay redraws itself
@@ -366,35 +399,39 @@ function render() {
   // All overlay flags must appear here, otherwise residue lingers when
   // an event-driven render fires while/just-after the overlay is open
   // (e.g. crashloop container spamming docker events with prompt up).
-  const overlayActive = modes.isOverlayActive(S);
+  // Mode flags live nested under `model.modes`; overlay/modal helpers default
+  // to getModel().modes but accept an explicit bag too.
+  const md = model.modes;
+  const overlayActive = modes.isOverlayActive(md);
   if (_wasOverlayActive && !overlayActive) _forceFullRepaint = true;
   _wasOverlayActive = overlayActive;
 
   let mainDidFull;
-  if (S.viewMode === 'half') mainDidFull = renderHalf();
-  else if (S.viewMode === 'full') mainDidFull = renderFull();
-  else mainDidFull = renderNormal();
+  const viewMode = model.viewMode;
+  if (viewMode === 'half') mainDidFull = renderHalf(model);
+  else if (viewMode === 'full') mainDidFull = renderFull(model);
+  else mainDidFull = renderNormal(model);
   // Only force the terminal-overlay repaint when main paint actually
   // cleared the screen (resize, overlay-close, first frame). In the
   // steady state main paint is diff-based and leaves the PTY region
   // untouched, so the overlay's own diff cache is enough.
   if (mainDidFull) _forceOverlayFull = true;
-  renderTerminalOverlay();
-  renderFooter();
+  renderTerminalOverlay(model);
+  renderFooter(model);
   // Register strip — one row above the footer; always on. Centered overlays
   // (copy menu, prompt, etc.) paint after, so they can cover the strip when
   // their geometry happens to overlap.
-  renderRegisterStrip();
+  renderRegisterStrip(model);
   // Overlays are mutually exclusive in practice (modeChain enforces it).
   // Order matches dispatch.js's modeChain: design > menu > copy.
-  if (S.copyMode)    renderCopyMenu();
-  if (S.menuOpen)    renderMenu();
-  if (S.designMode)  renderDesignOverlay();
-  if (S.cmdMode)     renderCmdline();
-  if (S.confirmMode) renderConfirmOverlay();
-  if (S.promptMode)  renderPromptOverlay();
-  if (S.registerPopupMode) renderRegisterPopup();
-  if (S.prefixMode)  renderWhichKey();
+  if (md.copyMode)    renderCopyMenu();
+  if (md.menuOpen)    renderMenu();
+  if (md.designMode)  renderDesignOverlay();
+  if (md.cmdMode)     renderCmdline();
+  if (md.confirmMode) renderConfirmOverlay();
+  if (md.promptMode)  renderPromptOverlay();
+  if (md.registerPopupMode) renderRegisterPopup();
+  if (md.prefixMode)  renderWhichKey();
 
   // Cursor visibility — derived from mode state, single emission site.
   // Cursor *position* is set inline by renderTerminalOverlay (when in
@@ -402,16 +439,16 @@ function render() {
   // renderPromptOverlay (cursor inside the prompt's input row); here
   // we only flip whether it's visible. Eliminates the bug class where
   // a mode forgets to call hideCursor() / showCursor() on exit.
-  if (S.terminalMode || S.cmdMode || S.promptMode) showCursor();
+  if (md.terminalMode || md.cmdMode || md.promptMode) showCursor();
   else hideCursor();
 }
 
 /**
  * Refresh the focused panel's info into detail, then render. The previous
  * pattern was render(); showSelectedInfo(); render(); — two paints with an
- * info-update sandwiched. showSelectedInfo() mutates S.detailLines, so the
- * leading render painted stale info. redraw() collapses to a single paint
- * with up-to-date info.
+ * info-update sandwiched. showSelectedInfo() writes the detail slice's
+ * `lines`, so the leading render painted stale info. redraw() collapses
+ * to a single paint with up-to-date info.
  */
 function redraw() {
   showSelectedInfo();
@@ -429,38 +466,40 @@ require('./render-queue').setRenderers({ render, overlay: renderTerminalOverlay 
  * standard non-modal footer is built from segments. Returns the
  * leading-space-prefixed concatenation ready for assembly.
  */
-function footerKeys() {
-  if (S.prefixMode) {
-    const pending = (S.prefixSeq && S.prefixSeq.length)
-      ? ' ' + S.prefixSeq.join(' ')
+function footerKeys(model) {
+  const md = model.modes;
+  if (md.prefixMode) {
+    const pending = (model.prefixSeq && model.prefixSeq.length)
+      ? ' ' + model.prefixSeq.join(' ')
       : '';
     return ` \\[leader]${esc(pending)}… | <key> select | Esc cancel`;
   }
-  if (S.terminalMode) {
+  if (md.terminalMode) {
     const tconf = activeTerminalConfig();
     const label = tconf ? tconf.label : 'terminal';
     return ` \\[terminal: ${esc(label)}] | Ctrl+\\ return to TUI`;
   }
-  if (S.detailSearchMode) {
+  if (md.detailSearchMode) {
     const ds = require('./detail-search');
     const term = ds.typingText();
-    const n = (S.detailSearch.matches || []).length;
-    const idx = n ? S.detailSearch.idx + 1 : 0;
+    const search = getComponentSlice('detail')?.search || { matches: [], idx: 0 };
+    const n = (search.matches || []).length;
+    const idx = n ? search.idx + 1 : 0;
     return ` /${esc(term)}│ \\[${idx}/${n}] | ↑↓ step | Esc cancel | Enter commit`;
   }
-  if (S.filterMode) return ` /${esc(filterCurrentText())}│ | Esc clear | Enter ok`;
-  if (S.copyMode)   return ' ↑↓ select | Esc cancel | Enter copy';
-  if (S.designTitleEditMode) {
+  if (md.filterMode) return ` /${esc(filterCurrentText())}│ | Esc clear | Enter ok`;
+  if (md.copyMode)   return ' ↑↓ select | Esc cancel | Enter copy';
+  if (md.designTitleEditMode) {
     const { titleEditText } = require('./design');
     return ` rename: ${esc(titleEditText())}│ | Esc cancel | Enter ok`;
   }
-  if (S.designMode) {
-    const dirty = S.layoutDirty ? ' | [yellow]• unsaved (:save-layout)[/]' : '';
+  if (md.designMode) {
+    const dirty = model.layoutDirty ? ' | [yellow]• unsaved (:save-layout)[/]' : '';
     return ` Design Mode | drag move/resize | J/K reorder | ←→ swap col | +/- col/detail · [/] panel h | t rename | u undo | C-r redo | :save-layout | q exit${getDesignFooter()}${dirty}`;
   }
-  if (S.menuOpen)   return ' ↑↓ select | Esc close | Enter run';
+  if (md.menuOpen)   return ' ↑↓ select | Esc close | Enter run';
 
-  if (S.focus === 'detail') {
+  if (model.focus === 'detail') {
     const { total } = getTabInfo();
     const segs = ['←→ panel'];
     if (total > 1) segs.push(']\\[ tabs');
@@ -474,18 +513,19 @@ function footerKeys() {
     } else {
       segs.push('x menu', 'q quit');
       segs.push('/ search');
-      if (S.detailSearch && S.detailSearch.active) {
-        const n = S.detailSearch.matches.length;
-        const idx = S.detailSearch.idx + 1;
+      const search = getComponentSlice('detail')?.search;
+      if (search && search.active) {
+        const n = search.matches.length;
+        const idx = search.idx + 1;
         segs.push(`n/N [${idx}/${n}]`, 'Esc clear');
       }
     }
     return ' ' + segs.join(' | ');
   }
-  if (S.focus === 'actions') {
+  if (model.focus === 'actions') {
     return ' ↑↓ select | ←→ panel | / filter | +/_ view | x menu | q quit | Enter run';
   }
-  if (S.focus === 'groups') {
+  if (model.focus === 'groups') {
     return ' ↑↓ select | ←→ panel | / filter | +/_ view | x menu | q quit | Enter actions';
   }
   return ' ↑↓ select | ←→ panel | / filter | +/_ view | x menu | q quit';
@@ -501,9 +541,9 @@ function footerKeys() {
  * Written outside the panel diff cache (same pattern as renderFooter)
  * because the strip lives in the chrome row, not the panel grid.
  */
-function renderRegisterStrip() {
+function renderRegisterStrip(model) {
   const ROWS = rows(), COLS = cols();
-  const reg = S.register;
+  const reg = model.register;
   let content;
   if (!reg || !reg.history || reg.history.length === 0) {
     content = 'reg: (empty)';
@@ -523,38 +563,39 @@ function renderRegisterStrip() {
   stdout.write(`\x1b[${ROWS - 1};1H` + richToAnsi(markup) + RESET);
 }
 
-function renderFooter() {
+function renderFooter(model = getModel()) {
   // cmdline mode replaces the footer with its own prompt — drawing the
   // footer first would flicker on every keystroke as renderCmdline() then
   // overwrites it.
-  if (S.cmdMode) return;
+  if (model.modes.cmdMode) return;
   const COLS = cols(), ROWS = rows();
-  const inModal = modes.isModal(S);
+  const inModal = modes.isModal();
 
   // Left side: mode message OR (panel hints + plugin keyHints +
   // multi-select indicator + footer:left decorator). Modal footers
   // own the row — no plugin contributions appended.
-  let keys = footerKeys();
+  let keys = footerKeys(model);
   if (!inModal) {
-    const def = getPanelDef(S.focus);
+    const def = getPanelDef(model.focus);
     if (def && def.keyHints) keys += ` | ${esc(def.keyHints)}`;
-    const msCount = multiSelCount(S.focus);
+    const msCount = multiSelCount(model.focus);
     if (msCount > 0) keys += ` | ${esc(`[${msCount} sel]`)}`;
     // Surface layout-dirty state to non-modal users too. They might
     // have left design mode with pending changes; the indicator
     // reminds them `:save-layout` exists. Design-mode footer adds
     // its own dirty marker in footerKeys() to keep modal layout
     // self-contained.
-    if (S.layoutDirty) keys += ` | [yellow]• unsaved (:save-layout)[/]`;
+    if (model.layoutDirty) keys += ` | [yellow]• unsaved (:save-layout)[/]`;
   }
 
   // Plugin footer decorations — DECORATORS.md `footer:left` / `footer:right`.
   // Suppressed in modal footers (the message owns the row). Note the
   // separator is the heavy pipe `│`, distinguishing decorator output
-  // from the regular `|`-separated key hints.
+  // from the regular `|`-separated key hints. Decorator handlers read
+  // app-global state via `getModel()` and any Component slice they own.
   let footerLeftExtra = '', footerRightExtra = '';
   if (!inModal) {
-    const ctxBase = { S, focus: S.focus, view: S.viewMode };
+    const ctxBase = { focus: model.focus, view: model.viewMode };
     const halfBudget = Math.max(0, Math.floor(COLS / 2) - 4);
     footerLeftExtra  = decorate('footer:left',  { ...ctxBase, width: halfBudget });
     footerRightExtra = decorate('footer:right', { ...ctxBase, width: halfBudget });
@@ -570,12 +611,14 @@ function renderFooter() {
   // List-select tag only when the armed mode actually applies — i.e.
   // focus is on a list panel. (The flag can stay armed while focus is
   // on a non-list panel, where space falls back to the leader.)
-  const focusDef = getPanelDef(S.focus);
-  const selectActive = S.listSelectMode && focusDef && typeof focusDef.getItems === 'function';
-  const selectTag = (S.select && S.select.active)
-    ? ` \\[${S.select.kind === 'line' ? 'v-line' : 'v-char'}]`
+  const focusDef = getPanelDef(model.focus);
+  const selectActive = model.modes.listSelectMode && focusDef && typeof focusDef.getItems === 'function';
+  const sel = getComponentSlice('detail')?.select;
+  const selectTag = (sel && sel.active)
+    ? ` \\[${sel.kind === 'line' ? 'v-line' : 'v-char'}]`
     : (selectActive ? ' \\[select]' : '');
-  const modeTag = S.viewMode !== 'normal' ? ` \\[${S.viewMode}]` : '';
+  const vm = model.viewMode;
+  const modeTag = vm !== 'normal' ? ` \\[${vm}]` : '';
 
   // Pad left → right tail → tags, using visible width math (esc'd
   // [ characters and double-width chars must not throw the alignment).

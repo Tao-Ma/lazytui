@@ -1,24 +1,99 @@
 /**
- * Core plugin — groups panel.
+ * Core Component — groups (Phase C).
  *
- * Reads `S.groups` (built from `S.config.groups` at boot). Each row is
- * a group object with name/label/compose/containers/actions; selection
- * here drives `S.currentGroup` via dispatch's selectGroup() helper.
+ * The last in-tree Plugin migrated to the Component API. Owns the group-tree
+ * slice (list / expanded / tab) — panel-private state. The cascade
+ * operations (cursor + currentGroup + per-group root-chrome reset + viewer
+ * reset) are CROSS-LAYER; each emits an apply_msg / dispatch_msg Cmd.
  *
- * Owns the `row:right:groups` decorator that paints the running-count
- * dot — was inline in the renderer originally; moved through the
- * decorator framework so other plugins can override / augment it.
+ * Slice shape:
+ *   { list: [], expanded: Set, tab: 'all' | 'quick' }
+ *
+ * Msgs handled here:
+ *   - groups_recompute    — re-derive slice.list from config (dispatched by
+ *                           state.initState after config loads).
+ *   - groups_selected     — `nav_select panel:'groups'` re-fires this via
+ *                           dispatch_msg; emits the cascade Cmds.
+ *   - toggle_group        — expand/collapse a node.
+ *   - toggle_groups_tab   — All ↔ Quick.
+ *
+ * Cross-layer Cmds emitted by the cascade:
+ *   - apply_msg set_panel_cursor { panel:'groups', index }   (root chrome)
+ *   - apply_msg set_current_group { name }                   (app-wide)
+ *   - apply_msg reset_group_context                          (root chrome)
+ *   - dispatch_msg viewer_reset_chrome                       (detail slice)
  */
 'use strict';
 
-const { S } = require('../../state');
+const mg = require('../../model-groups');
+const { getModel } = require('../../runtime');
 const {
   esc, visibleLen, theme, renderPanel,
   getSel, getScroll, isMultiSel, decorate,
   statusFor,
 } = require('../api');
 
-function getItems() { return S.groups; }
+// --- init ---
+
+function init() {
+  return { list: [], expanded: new Set(), tab: 'all' };
+}
+
+// --- update ---
+
+/** Build the cascade Cmds when a tree-shape change moved currentGroup. */
+function _cascadeCmds(res) {
+  const cmds = [];
+  if (res.newIdx >= 0) cmds.push({ type: 'apply_msg', msg: { type: 'set_panel_cursor', panel: 'groups', index: res.newIdx } });
+  if (res.groupChanged) {
+    cmds.push({ type: 'apply_msg', msg: { type: 'set_current_group', name: res.newCurrentGroup } });
+    cmds.push({ type: 'apply_msg', msg: { type: 'reset_group_context' } });
+    cmds.push({ type: 'dispatch_msg', msg: { type: 'viewer_reset_chrome' } });
+  }
+  cmds.push({ type: 'show_selected_info' });
+  return cmds;
+}
+
+function update(msg, slice) {
+  if (msg.type === 'groups_recompute') {
+    // Boot / config reload — rebuild list from config.groups + slice state.
+    mg.recomputeList(slice, getModel());
+    return slice;
+  }
+  if (msg.type === 'groups_selected') {
+    // nav_select for panel:'groups' wrote ui.sel.groups already; we just emit
+    // the cascade Cmds (set_current_group + reset_group_context + viewer
+    // reset) if the index actually moved the active group.
+    const res = mg.selectAt(slice, getModel(), msg.index);
+    if (res.newIdx < 0) return slice;
+    // ui.sel.groups already written by nav_select — don't re-emit set_panel_cursor.
+    const cmds = [];
+    if (res.groupChanged) {
+      cmds.push({ type: 'apply_msg', msg: { type: 'set_current_group', name: res.newCurrentGroup } });
+      cmds.push({ type: 'apply_msg', msg: { type: 'reset_group_context' } });
+      cmds.push({ type: 'dispatch_msg', msg: { type: 'viewer_reset_chrome' } });
+    }
+    return [slice, cmds];
+  }
+  if (msg.type === 'toggle_group') {
+    // `recursive` only matters for the leader-key `"` chord (expand
+    // every descendant) — interactive Enter on a row toggles one level.
+    const res = slice.expanded.has(msg.name)
+      ? mg.collapse(slice, getModel(), msg.name, !!msg.recursive)
+      : mg.expand(slice, getModel(), msg.name, !!msg.recursive);
+    return [slice, _cascadeCmds(res)];
+  }
+  if (msg.type === 'toggle_groups_tab') {
+    const next = slice.tab === 'quick' ? 'all' : 'quick';
+    const res = mg.switchTab(slice, getModel(), next);
+    return [slice, _cascadeCmds(res)];
+  }
+  return slice;
+}
+
+// --- panel def (render + accessors). ---
+
+function getItems(slice) { return slice ? slice.list : []; }
 
 function copyOptions(group) {
   if (!group) return [];
@@ -64,58 +139,43 @@ function getInfo(group) {
   return lines;
 }
 
-// Tree glyphs — all single-column (charWidth() returns 1) so visibleLen
-// stays accurate. ▸ collapsed branch, ▾ expanded branch, · leaf.
 const GLYPH_COLLAPSED = '▸';
 const GLYPH_EXPANDED  = '▾';
 const GLYPH_LEAF      = '·';
 
-function _glyphFor(group) {
+function _glyphFor(group, expanded) {
   if (!group.children || group.children.length === 0) return GLYPH_LEAF;
-  return S.expandedGroups.has(group.name) ? GLYPH_EXPANDED : GLYPH_COLLAPSED;
+  return expanded.has(group.name) ? GLYPH_EXPANDED : GLYPH_COLLAPSED;
 }
 
-function render(panel, w, h) {
+function render(panel, w, h, slice) {
+  const m = getModel();
   const sel = getSel('groups');
   const innerW = w - 2;
-  // In Quick tab, rows are a flat pinned list — no indent or glyph. The
-  // path label tells the user which deeply-nested node they're hitting,
-  // which is the whole point of pinning a leaf into Quick.
-  const isQuick = S.groupsTab === 'quick';
-  const lines = S.groups.map((group, i) => {
+  const isQuick = slice.tab === 'quick';
+  const lines = slice.list.map((group, i) => {
     const t = theme();
-    const isSel = i === sel && S.focus === 'groups';
-    const ctx = { panelType: 'groups', item: group, selected: isSel, S };
+    const isSel = i === sel && m.focus === 'groups';
+    const ctx = { panelType: 'groups', item: group, selected: isSel };
     const left  = decorate('row:left:groups',  { ...ctx, width: 4 });
     let treeSeg;
     let labelStr;
     if (isQuick) {
       treeSeg = '';
-      // Show the full dotted path so the user knows where the pinned
-      // row lives in the tree. For top-level groups (path === label
-      // case-insensitive), this is just the label.
       labelStr = esc(group.name);
     } else {
-      // Tree shape: 2 spaces per depth level + 1 glyph + 1 space. The glyph
-      // tells the user at a glance whether the row is a leaf (·), an open
-      // branch (▾), or a closed one (▸).
       const indent = '  '.repeat(group.depth || 0);
-      const glyph = _glyphFor(group);
+      const glyph = _glyphFor(group, slice.expanded);
       treeSeg = `${indent}${glyph} `;
       labelStr = esc(group.label);
     }
     const labelLen = visibleLen(labelStr);
-    // Row layout: "{mark} {left }{tree}{label} {right}". The mark column
-    // (1 char) reserves the gutter for multi-select / focused-but-blurred
-    // marker; +1 for the trailing space before content.
     const used = 2 + (left ? visibleLen(left) + 1 : 0)
                  + visibleLen(treeSeg) + labelLen;
     const right = decorate('row:right:groups', { ...ctx, width: Math.max(0, innerW - used - 1) });
     const lhead = left  ? `${left} `  : '';
     const rtail = right ? ` ${right}` : '';
     const isMs  = isMultiSel('groups', group.name);
-    // Multi-select wins the gutter glyph (most recent action signal); the
-    // existing > mark for "cursor-but-not-focused" stays as fallback.
     const mark  = isMs ? '*' : (isSel ? ' ' : (i === sel ? '>' : ' '));
     const labelText = `${mark} ${lhead}${treeSeg}${labelStr}${rtail}`;
     if (isSel) return `[${t.selected}]${labelText}`;
@@ -124,58 +184,53 @@ function render(panel, w, h) {
   });
   return renderPanel({
     width: w, height: h, lines,
-    title: _groupsTitle(panel.title), hotkey: panel.hotkey,
+    title: _groupsTitle(panel.title, slice), hotkey: panel.hotkey,
     panelType: 'groups',
-    focused: S.focus === 'groups',
-    count: [sel + 1, S.groups.length],
+    focused: m.focus === 'groups',
+    count: [sel + 1, slice.list.length],
     scrollOffset: getScroll('groups'),
   });
 }
 
-/**
- * Compose the groups panel's full title with All/Quick tabs joined by ─
- * (matching detail.js's tab style). Active tab is wrapped in escaped
- * brackets (\[ → literal `[` on screen) — PRINCIPLES §8: no [/] resets
- * inside the title or they'll tangle with the panel border highlight.
- *
- * Falls back to the bare title when no group declares `quick: true`.
- */
-function _groupsTitle(panelTitle) {
-  const all = (S.config && S.config.groups) || {};
+function _groupsTitle(panelTitle, slice) {
+  const cfg = getModel().config;
+  const all = (cfg && cfg.groups) || {};
   const hasQuick = Object.values(all).some(g => g.quick);
   if (!hasQuick) return panelTitle;
-  const active = S.groupsTab || 'all';
+  const active = (slice && slice.tab) || 'all';
   const allTab   = active === 'all'   ? '\\[All]'   : 'All';
   const quickTab = active === 'quick' ? '\\[Quick]' : 'Quick';
   return `${panelTitle}─${allTab}─${quickTab}`;
 }
 
-/**
- * Running-count + dot — `n/total ●` with color reflecting how many of
- * the group's containers are running. Used to be inline in render(),
- * moved to a `row:right:groups` decorator so a plugin can override or
- * augment with the same mechanism that exposes every other row badge.
- */
 function rowRightGroups(ctx) {
   const group = ctx.item;
   const containers = group.containers || [];
   const total = containers.length;
   if (total === 0) return '';
   const running = containers.filter(c => statusFor(c) === 'running').length;
-  if (ctx.selected) return `${running}/${total} ●`;   // plain text in [reverse]
+  if (ctx.selected) return `${running}/${total} ●`;
   const t = theme();
   const color = running === total ? t.running : running > 0 ? t.partial : t.stopped;
   return `${running}/${total} [${color}]●[/]`;
 }
 
 module.exports = {
-  panelType: 'groups',
-  def: {
-    mode: 'list', render,
-    getItems, getInfo, copyOptions,
-    idOf: (g) => g.name,
+  name: 'groups',
+  init,
+  update,
+  panelTypes: {
+    groups: {
+      kind: 'navigator',
+      mode: 'list', render,
+      getItems, getInfo, copyOptions,
+      idOf: (g) => g.name,
+    },
   },
   decorators: {
     'row:right:groups': rowRightGroups,
   },
+  // Test-only exports.
+  _init: init,
+  _update: update,
 };

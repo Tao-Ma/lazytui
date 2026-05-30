@@ -18,7 +18,7 @@
  */
 'use strict';
 
-const { S } = require('../../state');
+const { getModel } = require('../../runtime');
 const {
   hub, esc, theme, renderPanel,
   getItems: apiGetItems,
@@ -66,8 +66,9 @@ function _fmtBytes(v) {
 
 function _resolveSelection(panel) {
   if (!panel.select_from) return null;
-  const items = apiGetItems(panel.select_from, S);
-  const sel = (S.sel && S.sel[panel.select_from]) || 0;
+  const items = apiGetItems(panel.select_from);
+  const m = getModel();
+  const sel = (m.ui.sel && m.ui.sel[panel.select_from]) || 0;
   const item = items[sel];
   if (!item) return null;
   // For string-row panels (containers, etc.) the row key IS the item.
@@ -82,7 +83,7 @@ function _renderEmpty(panel, w, h, msg) {
     lines: [`[${t.dim}]${esc(msg)}[/]`],
     title: panel.title, hotkey: panel.hotkey,
     panelType: 'stats',
-    focused: S.focus === 'stats',
+    focused: getModel().focus === 'stats',
   });
 }
 
@@ -178,15 +179,24 @@ function render(panel, w, h) {
     title: `${panel.title}: ${esc(rowKey)}`,
     hotkey: panel.hotkey,
     panelType: 'stats',
-    focused: S.focus === 'stats',
+    focused: getModel().focus === 'stats',
   });
 }
 
+// Stateless Component — `stats` is a pure render over the hub bus (where
+// docker.js publishes docker.stats time series). The data lives in the hub,
+// not in a Component slice; the empty slice + no-op update are the API-
+// uniformity cost. See docs/v0.5-layering.md.
 module.exports = {
-  panelType: 'stats',
-  def: {
-    mode: 'content',
-    render,
+  name: 'stats',
+  init: () => ({}),
+  update: (msg, slice) => slice,
+  panelTypes: {
+    stats: {
+      kind: 'monitor',
+      mode: 'content',
+      render,
+    },
   },
   // Test-only internals.
   _defaultMetrics,

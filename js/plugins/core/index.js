@@ -15,17 +15,11 @@
 const { allPanels } = require('../../state');
 const { setTheme, themeNames } = require('../../themes');
 
-const groups       = require('./groups');
-const actions      = require('./actions');
-const files        = require('./files');     // unified files panel + file-manager/file-browser aliases
-const history      = require('./history');
-const detail       = require('./detail');
-const stats        = require('./stats');
-
-// `files` is an array-mod (multiple panelTypes per file) so the loop
-// below has to handle both shapes. Spread up front to keep the loop
-// simple: flatten array-mods into a flat list of {panelType, def, …}.
-const mods = [groups, actions, ...files, history, detail, stats];
+// Phase C: every built-in panel is now a Component (registered individually
+// in tui.js). corePlugin retains only framework-level concerns — the dynamic
+// `theme <name>` / `focus <panel>` / `design` cmdline verbs — which depend on
+// runtime state and have to be re-synthesized each call.
+const mods = [];
 
 // --- commands (`:` cmdline mode) ---
 //

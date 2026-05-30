@@ -12,7 +12,8 @@
  */
 'use strict';
 
-const { S, allPanels, setDetail } = require('./state');
+const { allPanels, setDetail } = require('./state');
+const { getModel } = require('./runtime');
 const { esc } = require('./ansi');
 const { getCommands, getPanelDef } = require('./plugins/api');
 
@@ -21,9 +22,9 @@ const { getCommands, getPanelDef } = require('./plugins/api');
  * plugin registry; doesn't paint.
  */
 function helpLines() {
-  const focusedPanel = allPanels().find(p => p.type === S.focus);
+  const focusedPanel = allPanels().find(p => p.type === getModel().focus);
   const focusName = focusedPanel ? focusedPanel.title : 'TUI';
-  const def = getPanelDef(S.focus);
+  const def = getPanelDef(getModel().focus);
   const isList = !!(def && typeof def.getItems === 'function');
 
   const lines = [
@@ -57,7 +58,7 @@ function helpLines() {
     );
   }
 
-  if (S.focus === 'detail') {
+  if (getModel().focus === 'detail') {
     lines.push('', '[dim]Detail panel — reading mode[/]',
       '  j / k / arrows Scroll view ±1 line',
       '  , .            Half-page up / down',
@@ -103,7 +104,7 @@ function helpLines() {
 
   // Real plugin commands (skip dynamic theme×N / focus×N — those clutter
   // the help and are easier to discover via `:` cmdline anyway).
-  const cmds = getCommands(S).filter(c =>
+  const cmds = getCommands().filter(c =>
     !c.name.startsWith('theme ') && !c.name.startsWith('focus '));
   if (cmds.length) {
     lines.push('', '[dim]Command mode (`:`)[/]');

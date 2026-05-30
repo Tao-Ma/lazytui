@@ -10,7 +10,6 @@ const { scrollbar } = require('./scrollbar');
 const { theme } = require('./themes');
 const { cols, rows, stdout } = require('./term');
 const { decorate } = require('./decorators');
-const { S } = require('./state');
 
 const BORDER = { tl: '╭', tr: '╮', bl: '╰', br: '╯', h: '─', v: '│' };
 const THUMB = '▐';
@@ -76,7 +75,7 @@ function renderPanel({
   // least 4 trailing dashes so the right border separator stays visible.
   if (panelType) {
     const titleBudget = Math.max(0, innerW - 2 - visibleLen(titleText) - 4);
-    const titleExtra = decorate('title:' + panelType, { panelType, S, width: titleBudget });
+    const titleExtra = decorate('title:' + panelType, { panelType, width: titleBudget });
     if (titleExtra) titleText += `, ${titleExtra}`;
   }
   // Use visibleLen for fill so escaped markup (\[ → [) doesn't

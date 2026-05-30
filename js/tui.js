@@ -12,7 +12,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { S, loadConfig, initState } = require('./state');
+const { loadConfig, initState } = require('./state');
 
 // Heavy modules (terminal.js → node-pty, layout/render, plugin runtime) are
 // loaded lazily inside the TUI branch in main() so CLI mode (--exec) doesn't
@@ -139,12 +139,20 @@ function main() {
   const { hideCursor } = require('./term');
   const { render, redraw, renderTerminalOverlay } = require('./layout');
   const { scheduleRender } = require('./render-queue');
-  const { registerPlugin, loadPlugins, refreshAll, startRefreshLoops } = require('./plugins/api');
+  const { registerPlugin, registerComponent, loadPlugins, refreshAll, startRefreshLoops } = require('./plugins/api');
   const { setupKeyListener } = require('./input');
+  const { getModel } = require('./runtime');
   const { destroyAll: destroyTerminals } = require('./terminal');
   const { installSuspendHandlers } = require('./suspend');
 
-  S.designEnabled = designEnabled;
+  // BLESSED outside-writer (docs/v0.5-layering.md §5): boot-time write of the
+  // --design CLI flag onto the model. Write-once at boot; no runtime mutation.
+  getModel().designEnabled = designEnabled;
+
+  // Install the Component effect handlers (setDetail/focus/render) before any
+  // plugin/component registers — a migrated component's update→effects must
+  // resolve at first dispatch.
+  require('./effects').installBuiltins();
 
   loadConfig(configArgs[0]);
 
@@ -152,15 +160,30 @@ function main() {
   // so the framework dogfoods its own plugin API.
   registerPlugin(require('./plugins/core'));
 
-  // Register built-in plugins. docker provides the containers panel +
-  // groupActions for `compose:` groups; config-status provides the
-  // panel type that renders the file registry with category-grouped tabs.
-  registerPlugin(require('./plugins/docker'));
-  registerPlugin(require('./plugins/config-status'));
+  // Built-in Components (TEA shape). The first three OWN state in their slices
+  // (genuine isolation — poll loops, browsers, git cache); the last four are
+  // stateless Components (empty slice + no-op update) — the API-uniformity tax
+  // for keeping ONE panel shape across the stateless view set. See
+  // docs/v0.5-layering.md.
+  registerComponent(require('./plugins/docker'));
+  registerComponent(require('./plugins/config-status'));
+  registerComponent(require('./plugins/files'));
+  registerComponent(require('./plugins/core/actions'));
+  registerComponent(require('./plugins/core/stats'));
+  registerComponent(require('./plugins/core/history'));
+  registerComponent(require('./plugins/core/file-manager'));
+  // detail (the viewer) — Phase B: owns the viewer slice + update; the
+  // last panel migrated to the Component shape. groups stays the only
+  // Plugin (currentGroup is app-wide chrome, not panel-private).
+  registerComponent(require('./plugins/core/detail'));
+  // groups (Phase C — the last in-tree Plugin migrated). Owns the tree slice
+  // (list / expanded / tab); the cascade (currentGroup / per-group root chrome
+  // reset / viewer reset) goes out as apply_msg / dispatch_msg Cmds.
+  registerComponent(require('./plugins/core/groups'));
 
   // Load user plugins from YAML
   const configDir = path.dirname(path.resolve(configArgs[0]));
-  loadPlugins(S.config.plugins, configDir);
+  loadPlugins(getModel().config.plugins, configDir);
 
   // Register any leader-key bindings declared in the top-level `keys:`
   // block, after plugins so the binding-tree conflict check sees the
@@ -169,21 +192,31 @@ function main() {
   // two user bindings throws — surface it as a clean config error and
   // exit rather than crashing the boot with a raw stack trace.
   try {
-    require('./dispatch').loadKeyBindings(S.config);
+    require('./dispatch').loadKeyBindings(getModel().config);
   } catch (e) {
     console.error(`keys: ${e.message}`);
     process.exit(1);
   }
 
   initState();
+  // The program owns the root model from here on. Everything tui.js
+  // directly triggers — the input pump (keys + mouse), the initial paint,
+  // and the refresh-loop repaint — gets it threaded in (carried down
+  // handleKey/handleMouse → update, and into render(model)). The
+  // cycle-broken schedulers still default to getModel(): scheduleRender
+  // (resize + PTY/stream producers) and the terminal-overlay poll route
+  // through render-queue, which exists precisely so terminal.js/actions.js
+  // can ask for a paint WITHOUT importing layout — so they have no model
+  // to hand in. Threading those waits for a later phase.
+  const model = getModel();
   hideCursor();
   installSuspendHandlers();   // Ctrl+Z: restore terminal → suspend → resume
   // Initial refresh kicks off async — first frame uses cached/empty data,
   // re-renders when plugins finish. UX: brief "no data" flash on first paint
   // is acceptable; freezing the boot wasn't.
-  refreshAll(S.config).then(() => render());
+  refreshAll(getModel().config).then(() => render(model));
   redraw();
-  setupKeyListener();
+  setupKeyListener(model);
 
   // Per-plugin refresh loops. Each plugin self-schedules at its declared
   // `refreshIntervalMs` (default 10000). Overlap-skip + focus-gating
@@ -192,9 +225,9 @@ function main() {
   // the previous single setTimeout loop that fanned out to every plugin
   // on the same 10s tick — stats can now declare 1s, archive can
   // declare 5min, docker stays at 10s.
-  startRefreshLoops(S.config, {
-    isFocused: () => S.focused,
-    onChanged: render,
+  startRefreshLoops(getModel().config, {
+    isFocused: () => model.focused,
+    onChanged: () => render(model),
   });
 
   // Safety-net poll for terminal overlay — primary updates come from

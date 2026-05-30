@@ -20,19 +20,29 @@
  */
 'use strict';
 
-const { S, rebuildLayoutFromConfig } = require('../state');
+const { rebuildLayoutFromConfig } = require('../state');
 const {
-  enterDesign, handleDesignKey, handleDesignTitleEditKey, titleEditText,
+  titleEditText,
   onMouseEvent, pointToResizeTarget,
   _clearUndoStacks, _getUndoDepth, _getRedoDepth,
 } = require('../design');
+const dispatch = require('../dispatch');
+const { getModel } = require('../runtime');
 const { describe, it, assert, eq, report } = require('./test-runner');
+
+// Design mode folded onto the update spine: entry is the design_enter Msg,
+// keys route through the modeChain handler (designMode / designTitleEditMode).
+// These shims keep the existing call sites driving the REAL path.
+function enterDesign() { dispatch.applyMsg(getModel(), { type: 'design_enter' }); }
+function press(key, seq) { dispatch._dispatchActiveMode(getModel(), key, seq); }
+function handleDesignKey(key) { press(key, key); }
+function handleDesignTitleEditKey(key, seq) { press(key, seq); }
 
 // ----- Fixture -----
 // Same shape as test-design-drag.js fixture. Reset before every it().
 
 function setupFixture() {
-  S.layout = {
+  getModel().layout = {
     leftWidth: 30, detailHeightPct: 60,
     leftPanels: [
       { type: 'containers', title: 'Containers', column: 'left',  hotkey: '1' },
@@ -44,18 +54,18 @@ function setupFixture() {
       { type: 'detail',  title: 'Detail',  column: 'right', hotkey: 'o' },
     ],
   };
-  S.panelBounds = {
+  getModel().panelBounds = {
     containers: { x:  0, y:  0, w: 30, h: 10 },
     groups:     { x:  0, y: 10, w: 30, h: 10 },
     actions:    { x: 30, y:  0, w: 90, h:  5 },
     stats:      { x: 30, y:  5, w: 90, h: 10 },
     detail:     { x: 30, y: 15, w: 90, h: 25 },
   };
-  S.designMode = false;
-  S.designTitleEditMode = false;
-  S.layoutDirty = false;
+  getModel().modes.designMode = false;
+  getModel().modes.designTitleEditMode = false;
+  getModel().layoutDirty = false;
   _clearUndoStacks();
-  enterDesign(S.layout, '/dev/null', () => {});
+  enterDesign(getModel().layout, '/dev/null', () => {});
 }
 
 // ===============================================================
@@ -121,20 +131,20 @@ describe('[2] drag-to-resize — column separator', () => {
     setupFixture();
     onMouseEvent('press',  30, 2);
     onMouseEvent('motion', 24, 2);
-    eq(S.layout.leftWidth, 25, 'leftWidth = mx + 1 = 25');
-    eq(S.layoutDirty, true);
+    eq(getModel().layout.leftWidth, 25, 'leftWidth = mx + 1 = 25');
+    eq(getModel().layoutDirty, true);
   });
   it('motion clamps at lower bound (20)', () => {
     setupFixture();
     onMouseEvent('press',  30, 2);
     onMouseEvent('motion',  5, 2);
-    eq(S.layout.leftWidth, 20);
+    eq(getModel().layout.leftWidth, 20);
   });
   it('motion clamps at upper bound (60)', () => {
     setupFixture();
     onMouseEvent('press',  30, 2);
     onMouseEvent('motion', 99, 2);
-    eq(S.layout.leftWidth, 60);
+    eq(getModel().layout.leftWidth, 60);
   });
   it('release ends resize gesture', () => {
     setupFixture();
@@ -143,7 +153,7 @@ describe('[2] drag-to-resize — column separator', () => {
     onMouseEvent('release', 40, 2);
     // Further motion should NOT change leftWidth (drag is over)
     onMouseEvent('motion', 20, 2);
-    eq(S.layout.leftWidth, 41, 'leftWidth unchanged after release');
+    eq(getModel().layout.leftWidth, 41, 'leftWidth unchanged after release');
   });
   it('single undo entry pushed for the whole drag', () => {
     setupFixture();
@@ -167,14 +177,14 @@ describe('[3] drag-to-resize — detail-panel top edge', () => {
     // pct = 30/40 * 100 = 75
     onMouseEvent('press',  50, 15);
     onMouseEvent('motion', 50, 10);
-    eq(S.layout.detailHeightPct, 75);
-    eq(S.layoutDirty, true);
+    eq(getModel().layout.detailHeightPct, 75);
+    eq(getModel().layoutDirty, true);
   });
   it('drag down shrinks detailHeightPct, clamped at 20', () => {
     setupFixture();
     onMouseEvent('press',  50, 15);
     onMouseEvent('motion', 50, 36);  // newDetailH = 4 → 10% but clamped to 20
-    eq(S.layout.detailHeightPct, 20);
+    eq(getModel().layout.detailHeightPct, 20);
   });
 });
 
@@ -189,17 +199,17 @@ describe('[3a] drag-to-resize — within-column boundary (left col)', () => {
     // upperStartY=0, combinedH=20, availH=20.
     // proposedUpperH = max(3, min(17, 6)) = 6. proposedLowerH = 14.
     // containers.heightPct = round(6/20*100) = 30. groups = round(14/20*100) = 70.
-    eq(S.layout.leftPanels[0].heightPct, 30, 'containers anchored');
-    eq(S.layout.leftPanels[1].heightPct, 70, 'groups anchored');
-    eq(S.layoutDirty, true);
+    eq(getModel().layout.leftPanels[0].heightPct, 30, 'containers anchored');
+    eq(getModel().layout.leftPanels[1].heightPct, 70, 'groups anchored');
+    eq(getModel().layoutDirty, true);
   });
   it('drag clamps so each side stays ≥ MIN_PANEL_H (3 rows)', () => {
     setupFixture();
     onMouseEvent('press',  10, 10);
     onMouseEvent('motion', 10,  0);  // drag boundary to row 0 (would zero containers)
     // proposedUpperH = max(3, min(17, 0)) = 3. proposedLowerH = 17.
-    eq(S.layout.leftPanels[0].heightPct, 15, 'containers floored at minH=3 (3/20=15)');
-    eq(S.layout.leftPanels[1].heightPct, 85);
+    eq(getModel().layout.leftPanels[0].heightPct, 15, 'containers floored at minH=3 (3/20=15)');
+    eq(getModel().layout.leftPanels[1].heightPct, 85);
   });
 });
 
@@ -208,15 +218,15 @@ describe('[3b] drag-to-resize — within-column boundary (right col, non-detail)
   // press at (60, 5) → right-boundary, both non-detail.
   it('press + motion redistributes actions/stats heightPct, detail untouched', () => {
     setupFixture();
-    const prevDetail = S.layout.detailHeightPct;
+    const prevDetail = getModel().layout.detailHeightPct;
     onMouseEvent('press',  60, 5);
     onMouseEvent('motion', 60, 8);  // boundary moves down → actions grows
     // upperStartY=0, combinedH=actions.h(5)+stats.h(10)=15, availH=40.
     // proposedUpperH = max(3, min(12, 8)) = 8. proposedLowerH = 7.
     // actions.heightPct = round(8/40*100) = 20. stats = round(7/40*100) = 18.
-    eq(S.layout.rightPanels[0].heightPct, 20, 'actions anchored');
-    eq(S.layout.rightPanels[1].heightPct, 18, 'stats anchored');
-    eq(S.layout.detailHeightPct, prevDetail, 'detailHeightPct untouched');
+    eq(getModel().layout.rightPanels[0].heightPct, 20, 'actions anchored');
+    eq(getModel().layout.rightPanels[1].heightPct, 18, 'stats anchored');
+    eq(getModel().layout.detailHeightPct, prevDetail, 'detailHeightPct untouched');
   });
 });
 
@@ -231,9 +241,9 @@ describe('[3c] drag-to-resize — corner (col-separator × right boundary)', () 
     //   upperStartY=5, combinedH=35, availH=40, detailIsLower.
     //   proposedUpperH = max(3, min(32, 12-5)) = 7. proposedLowerH = 28.
     //   detailHeightPct = round(28/40*100) = 70. stats.heightPct = round(7/40*100) = 18.
-    eq(S.layout.leftWidth, 36, 'leftWidth follows mx');
-    eq(S.layout.detailHeightPct, 70, 'detailHeightPct follows my');
-    eq(S.layout.rightPanels[1].heightPct, 18, 'stats anchored from the height axis');
+    eq(getModel().layout.leftWidth, 36, 'leftWidth follows mx');
+    eq(getModel().layout.detailHeightPct, 70, 'detailHeightPct follows my');
+    eq(getModel().layout.rightPanels[1].heightPct, 18, 'stats anchored from the height axis');
   });
 });
 
@@ -252,21 +262,21 @@ describe('[3c2] drag-to-resize — left-side corner (col-separator × left bound
     //   proposedUpperH = max(3, min(17, 14)) = 14. proposedLowerH = 6.
     //   containers.heightPct = round(14/20*100) = 70.
     //   groups.heightPct = round(6/20*100) = 30.
-    eq(S.layout.leftWidth, 27, 'leftWidth follows mx');
-    eq(S.layout.leftPanels[0].heightPct, 70, 'containers anchored from height axis');
-    eq(S.layout.leftPanels[1].heightPct, 30, 'groups anchored from height axis');
+    eq(getModel().layout.leftWidth, 27, 'leftWidth follows mx');
+    eq(getModel().layout.leftPanels[0].heightPct, 70, 'containers anchored from height axis');
+    eq(getModel().layout.leftPanels[1].heightPct, 30, 'groups anchored from height axis');
   });
 });
 
 describe('[3d] press freezes flex panels in the dragged column', () => {
   it('pressing right-col boundary anchors actions even though only stats/detail dragged', () => {
     setupFixture();
-    eq(S.layout.rightPanels[0].heightPct, undefined, 'actions starts flex');
+    eq(getModel().layout.rightPanels[0].heightPct, undefined, 'actions starts flex');
     onMouseEvent('press', 60, 15);  // press on stats/detail boundary
     // freezeColumnFlex runs on press — actions (not in the drag pair,
     // not detail, no existing heightPct) gets anchored to its current
     // rendered share: round(5/40*100) = 13.
-    eq(S.layout.rightPanels[0].heightPct, 13, 'actions frozen at its rendered pct');
+    eq(getModel().layout.rightPanels[0].heightPct, 13, 'actions frozen at its rendered pct');
   });
 });
 
@@ -276,38 +286,38 @@ describe('[3f] keyboard `]` / `[` — focused panel heightPct', () => {
     // selectedIdx=0 (containers). availH=20 (left col).
     // containers starts flex (h=10 → 50%). groups also flex (h=10 → 50%).
     handleDesignKey(']');
-    eq(S.layout.leftPanels[0].heightPct, 55, 'containers +5');
-    eq(S.layout.leftPanels[1].heightPct, 45, 'groups -5 (stolen from)');
+    eq(getModel().layout.leftPanels[0].heightPct, 55, 'containers +5');
+    eq(getModel().layout.leftPanels[1].heightPct, 45, 'groups -5 (stolen from)');
   });
   it('[ shrinks focused panel, gives to neighbor below', () => {
     setupFixture();
     handleDesignKey('[');
-    eq(S.layout.leftPanels[0].heightPct, 45);
-    eq(S.layout.leftPanels[1].heightPct, 55);
+    eq(getModel().layout.leftPanels[0].heightPct, 45);
+    eq(getModel().layout.leftPanels[1].heightPct, 55);
   });
   it('detail focused → ] / [ are no-ops (use +/- instead)', () => {
     setupFixture();
     // Fixture has 5 panels total; idx=4 (last) is detail.
     handleDesignKey('j'); handleDesignKey('j'); handleDesignKey('j'); handleDesignKey('j');
-    eq(S.layout.rightPanels[2].type, 'detail');
-    const prevDetail = S.layout.detailHeightPct;
+    eq(getModel().layout.rightPanels[2].type, 'detail');
+    const prevDetail = getModel().layout.detailHeightPct;
     handleDesignKey(']');
-    eq(S.layout.detailHeightPct, prevDetail, 'detail untouched by `]`');
+    eq(getModel().layout.detailHeightPct, prevDetail, 'detail untouched by `]`');
   });
   it('last panel in column → ] no-op (nothing to steal from)', () => {
     setupFixture();
     handleDesignKey('j');  // → groups (last in left col)
     handleDesignKey(']');
-    eq(S.layout.leftPanels[1].heightPct, undefined, 'no mutation');
+    eq(getModel().layout.leftPanels[1].heightPct, undefined, 'no mutation');
   });
   it('] respects detail [20,90] clamp when stealing from detail', () => {
     setupFixture();
     // Focus stats (right col, idx=3 in all). stats is just above detail.
     // detail starts at 60%. Repeated `]` should stop at detail hitting 20%.
     handleDesignKey('j'); handleDesignKey('j'); handleDesignKey('j');  // → stats
-    eq(S.layout.rightPanels[1].type, 'stats');
+    eq(getModel().layout.rightPanels[1].type, 'stats');
     for (let i = 0; i < 20; i++) handleDesignKey(']');
-    assert(S.layout.detailHeightPct >= 20, `detail clamped at min 20 (got ${S.layout.detailHeightPct})`);
+    assert(getModel().layout.detailHeightPct >= 20, `detail clamped at min 20 (got ${getModel().layout.detailHeightPct})`);
   });
 });
 
@@ -315,7 +325,7 @@ describe('[3f] keyboard `]` / `[` — focused panel heightPct', () => {
 describe('[3e] calcLayout — heightPct distribution', () => {
   const { calcLayout } = require('../layout');
   function freshLayout() {
-    S.layout = {
+    getModel().layout = {
       leftWidth: 30, detailHeightPct: 60,
       leftPanels: [
         { type: 'containers', title: 'C', column: 'left', hotkey: '1' },
@@ -332,26 +342,26 @@ describe('[3e] calcLayout — heightPct distribution', () => {
     freshLayout();
     process.stdout.columns = 100; process.stdout.rows = 30; // availH = 28 (rows-2: footer + register strip)
     calcLayout();
-    eq(S.panelHeights.containers, 14);
-    eq(S.panelHeights.groups, 14, 'two flex panels share 28 evenly');
+    eq(getModel().panelHeights.containers, 14);
+    eq(getModel().panelHeights.groups, 14, 'two flex panels share 28 evenly');
   });
   it('anchored heightPct claims its share, flex absorbs remainder', () => {
     freshLayout();
-    S.layout.leftPanels[0].heightPct = 70;  // containers fixed at 70%
+    getModel().layout.leftPanels[0].heightPct = 70;  // containers fixed at 70%
     process.stdout.columns = 100; process.stdout.rows = 30; // availH = 28
     calcLayout();
-    eq(S.panelHeights.containers, 19, 'floor(28 * 0.7) = 19');
-    eq(S.panelHeights.groups, 9, 'flex remainder');
+    eq(getModel().panelHeights.containers, 19, 'floor(28 * 0.7) = 19');
+    eq(getModel().panelHeights.groups, 9, 'flex remainder');
   });
   it('oversubscribed anchored values scale proportionally', () => {
     freshLayout();
-    S.layout.leftPanels[0].heightPct = 90;
-    S.layout.leftPanels[1].heightPct = 90;
+    getModel().layout.leftPanels[0].heightPct = 90;
+    getModel().layout.leftPanels[1].heightPct = 90;
     process.stdout.columns = 100; process.stdout.rows = 30; // availH = 28
     calcLayout();
-    eq(S.panelHeights.containers + S.panelHeights.groups, 28, 'column fills availH after scaling');
-    assert(S.panelHeights.containers >= 3, 'containers ≥ minH');
-    assert(S.panelHeights.groups >= 3, 'groups ≥ minH');
+    eq(getModel().panelHeights.containers + getModel().panelHeights.groups, 28, 'column fills availH after scaling');
+    assert(getModel().panelHeights.containers >= 3, 'containers ≥ minH');
+    assert(getModel().panelHeights.groups >= 3, 'groups ≥ minH');
   });
 });
 
@@ -363,16 +373,16 @@ describe('[4] undo / redo — round-trip across mutation types', () => {
     // Easier: focus groups (idx=1) then K to swap up.
     handleDesignKey('j');  // sel: containers → groups
     handleDesignKey('K');  // swap groups up
-    eq(S.layout.leftPanels[0].type, 'groups');
+    eq(getModel().layout.leftPanels[0].type, 'groups');
     eq(_getUndoDepth(), 1);
 
     handleDesignKey('u');  // undo
-    eq(S.layout.leftPanels[0].type, 'containers');
+    eq(getModel().layout.leftPanels[0].type, 'containers');
     eq(_getUndoDepth(), 0);
     eq(_getRedoDepth(), 1);
 
     handleDesignKey('ctrl-r');  // redo
-    eq(S.layout.leftPanels[0].type, 'groups');
+    eq(getModel().layout.leftPanels[0].type, 'groups');
     eq(_getUndoDepth(), 1);
     eq(_getRedoDepth(), 0);
   });
@@ -383,11 +393,11 @@ describe('[4] undo / redo — round-trip across mutation types', () => {
     onMouseEvent('press',   5, 2);
     onMouseEvent('motion',  5, 17);
     onMouseEvent('release', 5, 17);
-    eq(S.layout.leftPanels[0].type, 'groups');
+    eq(getModel().layout.leftPanels[0].type, 'groups');
     eq(_getUndoDepth(), 1);
 
     handleDesignKey('u');
-    eq(S.layout.leftPanels[0].type, 'containers');
+    eq(getModel().layout.leftPanels[0].type, 'containers');
     eq(_getRedoDepth(), 1);
   });
 
@@ -421,7 +431,7 @@ describe('[5] title-edit sub-mode', () => {
   it('typing builds the buffer, backspace edits', () => {
     setupFixture();
     handleDesignKey('t');
-    eq(S.designTitleEditMode, true);
+    eq(getModel().modes.designTitleEditMode, true);
     eq(titleEditText(), 'Containers', 'pre-filled with current title');
 
     handleDesignTitleEditKey('backspace');
@@ -441,9 +451,9 @@ describe('[5] title-edit sub-mode', () => {
     handleDesignTitleEditKey('z', 'z');
     handleDesignTitleEditKey('return');
 
-    eq(S.designTitleEditMode, false);
-    eq(S.layout.leftPanels[0].title, 'Containerz');
-    eq(S.layoutDirty, true);
+    eq(getModel().modes.designTitleEditMode, false);
+    eq(getModel().layout.leftPanels[0].title, 'Containerz');
+    eq(getModel().layoutDirty, true);
     eq(_getUndoDepth(), depthBefore + 1);
   });
 
@@ -454,8 +464,8 @@ describe('[5] title-edit sub-mode', () => {
     handleDesignTitleEditKey('q', 'q');
     handleDesignTitleEditKey('escape');
 
-    eq(S.designTitleEditMode, false);
-    eq(S.layout.leftPanels[0].title, 'Containers', 'title NOT changed');
+    eq(getModel().modes.designTitleEditMode, false);
+    eq(getModel().layout.leftPanels[0].title, 'Containers', 'title NOT changed');
     eq(_getUndoDepth(), depthBefore, 'no undo entry pushed on cancel');
   });
 

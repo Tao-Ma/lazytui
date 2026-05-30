@@ -22,6 +22,7 @@ const { esc, visibleLen, stripMarkup } = require('../ansi');
 const { theme } = require('../themes');
 const { renderPanel } = require('../panel');
 const { getSel, getScroll, isMultiSel } = require('../state');
+const { getModel } = require('../runtime');
 const { getFilter } = require('../filter');
 const { execAsync } = require('../exec');
 const { streamCommand } = require('../stream');
@@ -32,13 +33,13 @@ const plugins = {};        // name -> plugin module
 const panelTypeMap = {};   // panelType -> plugin name
 const statusProviders = []; // plugin modules that expose statusFor(name)
 
-// Components — the TEA-shaped strict-discipline alternative to Plugin.
-// See docs/PRINCIPLES.md (and PLUGINS.md when written) for the design
-// rationale. A Component owns a state slice via init() and accepts
-// messages through update(msg, slice) → newSlice. Render functions
-// receive the slice (not the global S) — Components that read
-// app-global state must import it explicitly. Both APIs coexist; old
-// plugins are untouched.
+// Components — the TEA-shaped strict-discipline shape used by every
+// in-tree panel (the Plugin API survives for external plugins). A
+// Component owns a state slice via init() and accepts messages through
+// update(msg, slice) → newSlice (or [newSlice, effects]). Render
+// functions receive the slice — Components that read app-global state
+// import it explicitly via getModel(). See docs/PRINCIPLES.md §12 +
+// docs/PLUGINS.md "Component Interface".
 const components = {};              // name -> component spec
 const componentSlices = {};         // name -> current slice
 const componentPanelTypeMap = {};   // panelType -> component name
@@ -203,10 +204,27 @@ function registerComponent(comp) {
  * others — error logged, that Component's slice is left as-is.
  */
 function dispatchMsg(msg) {
+  // Key msgs route ONLY to the component owning the focused panel — an
+  // unfocused panel must not react to keystrokes. refresh/hub/action still
+  // fan to every component (the §12 "every component sees every msg" contract
+  // held for non-key msgs).
+  const keyOwner = (msg && msg.type === 'key') ? componentPanelTypeMap[getModel().focus] : undefined;
   for (const [name, comp] of Object.entries(components)) {
+    if (msg && msg.type === 'key' && name !== keyOwner) continue;
     try {
-      const next = comp.update(msg, componentSlices[name]);
-      if (next !== undefined) componentSlices[name] = next;
+      // Return contract:
+      //   undefined            → no change (escape hatch)
+      //   newSlice (object)    → state change, no effects
+      //   [newSlice, effects]  → state change + side effects (TEA Cmd half)
+      const result = comp.update(msg, componentSlices[name]);
+      if (result === undefined) continue;
+      if (Array.isArray(result)) {
+        const [next, effects] = result;
+        if (next !== undefined) componentSlices[name] = next;
+        require('../effects').runEffects(effects);
+      } else {
+        componentSlices[name] = result;
+      }
     } catch (e) {
       console.error(`[component:${name}] update error: ${e.message}`);
     }
@@ -271,6 +289,16 @@ function getPlugin(panelType) {
  * @returns {object|null} { mode, render, getItems, getInfo, ... }
  */
 function getPanelDef(panelType) {
+  // Component-first: a Component-owned panel takes precedence (matching
+  // rendererFor in layout.js), so getItems/getInfo/copyOptions/idOf/keyHints
+  // + the onKey-absence all resolve to the Component's def — closing the
+  // split-brain where render used the Component but other hooks fell back to a
+  // colliding Plugin def.
+  const compName = componentPanelTypeMap[panelType];
+  if (compName) {
+    const comp = components[compName];
+    return comp && comp.panelTypes ? comp.panelTypes[panelType] : null;
+  }
   const plugin = getPlugin(panelType);
   return plugin && plugin.panelTypes ? plugin.panelTypes[panelType] : null;
 }
@@ -283,20 +311,25 @@ function getPanelDef(panelType) {
  * detail info, and copy options — no caller may filter independently,
  * which would desync selection index vs rendered list.
  */
-function getItems(panelType, S) {
+function getItems(panelType) {
   const def = getPanelDef(panelType);
   if (!def || typeof def.getItems !== 'function') return [];
-  const raw = def.getItems(S);
+  // A Component panel's getItems reads its own slice (the framework owns the
+  // cursor/filter chrome in the root model, but the rows come from the
+  // component's state); a Plugin panel's getItems reads the root model.
+  const compName = componentPanelTypeMap[panelType];
+  const m = getModel();
+  const raw = compName ? def.getItems(getComponentSlice(compName)) : def.getItems(m);
   if (!def.filterable) return raw;
-  // `customFilter: true` means the plugin's getItems already honored
-  // `S.filters[panelType]` itself (regex match, fuzzy match, anything
+  // `customFilter: true` means the plugin's getItems already honored the
+  // current filter text itself (regex match, fuzzy match, anything
   // beyond substring). Skip the framework's substring filter so we
   // don't double-filter.
   if (def.customFilter) return raw;
   // Inlined filter match — kept here (rather than imported from ../filter)
   // so plugins/api stays free of a back-edge to filter.js, which lazy-
   // requires from this module for filterable-panel detection.
-  const filterText = (S.filters[panelType] || '');
+  const filterText = (m.ui.filters[panelType] || '');
   if (!filterText) return raw;
   const lc = filterText.toLowerCase();
   const fieldOf = typeof def.filterText === 'function' ? def.filterText : String;
@@ -411,12 +444,15 @@ function stopRefreshLoops() {
  *  stream) tear it down through the framework instead of relying solely
  *  on its own process.on('exit') backstop. */
 function cleanupPlugins() {
-  for (const plugin of Object.values(plugins)) {
-    if (typeof plugin.cleanup === 'function') {
-      try { plugin.cleanup(); }
-      catch (e) { console.error(`[plugin:${plugin.name}] cleanup error: ${e.message}`); }
-    }
-  }
+  const fire = (owner) => {
+    if (typeof owner.cleanup !== 'function') return;
+    try { owner.cleanup(); }
+    catch (e) { console.error(`[${owner.name}] cleanup error: ${e.message}`); }
+  };
+  for (const plugin of Object.values(plugins)) fire(plugin);
+  // Components register cleanup too (e.g. docker stops its `docker events`
+  // child + reconnect timer).
+  for (const comp of Object.values(components)) fire(comp);
 }
 
 /**
@@ -441,15 +477,17 @@ function pluginNames() {
  */
 function getGroupActions(group, groupName) {
   const result = {};
-  for (const plugin of Object.values(plugins)) {
-    if (typeof plugin.groupActions === 'function') {
-      try {
-        Object.assign(result, plugin.groupActions(group, groupName) || {});
-      } catch (e) {
-        console.error(`[plugin:${plugin.name}] groupActions error: ${e.message}`);
-      }
+  const collect = (owner) => {
+    if (typeof owner.groupActions !== 'function') return;
+    try {
+      Object.assign(result, owner.groupActions(group, groupName) || {});
+    } catch (e) {
+      console.error(`[${owner.name}] groupActions error: ${e.message}`);
     }
-  }
+  };
+  for (const plugin of Object.values(plugins)) collect(plugin);
+  // Components contribute group actions too (e.g. docker's compose verbs).
+  for (const comp of Object.values(components)) collect(comp);
   return result;
 }
 
@@ -474,13 +512,14 @@ function idOf(panelType, item) {
  * Bulk-capable plugin commands call this with their panelType and act on
  * the result — same code path for one and many. See CMDMODE.md.
  */
-function selectedOrFocused(panelType, S) {
-  const items = getItems(panelType, S);
-  const ms = S.multiSel[panelType];
+function selectedOrFocused(panelType) {
+  const items = getItems(panelType);
+  const m = getModel();
+  const ms = m.ui.multiSel[panelType];
   if (ms && ms.size > 0) {
     return items.filter(item => ms.has(idOf(panelType, item)));
   }
-  const sel = (S.sel && S.sel[panelType]) || 0;
+  const sel = (m.ui.sel && m.ui.sel[panelType]) || 0;
   return items[sel] ? [items[sel]] : [];
 }
 
@@ -510,8 +549,7 @@ const FRAMEWORK_COMMANDS = [
   {
     name: 'refresh',
     desc: 'Re-run plugin refresh()',
-    // S comes from the cmdline-dispatched run(args, S) contract.
-    run: async (_args, S) => { await refreshAll(S.config); },
+    run: async () => { await refreshAll(getModel().config); },
   },
   {
     name: 'help',
@@ -521,29 +559,32 @@ const FRAMEWORK_COMMANDS = [
   {
     name: 'save-layout',
     desc: 'Persist current panel layout to the YAML config',
-    run: (_args, S) => {
+    run: () => {
       const { writeLayoutToFile } = require('../yaml-layout');
       const { setDetail } = require('../state');
-      const { error } = writeLayoutToFile(S.layout, S.configPath);
+      const m = getModel();
+      const { error } = writeLayoutToFile(m.layout, m.configPath);
       if (error) {
         setDetail(`[red]Layout save failed:[/] ${error.message}`);
       } else {
-        S.layoutDirty = false;
-        setDetail(`[green]Layout saved to[/] ${S.configPath}`);
+        require('../dispatch').applyMsg(m, { type: 'set_layout', dirty: false });
+        setDetail(`[green]Layout saved to[/] ${m.configPath}`);
       }
     },
   },
   {
     name: 'restore-layout',
     desc: 'Discard runtime changes; reload panel layout from YAML',
-    run: (_args, S) => {
+    run: () => {
       const { rebuildLayoutFromConfig, setDetail } = require('../state');
-      S.layout = rebuildLayoutFromConfig(S.config);
-      S.layoutDirty = false;
+      const m = getModel();
+      require('../dispatch').applyMsg(m, {
+        type: 'set_layout', layout: rebuildLayoutFromConfig(m.config), dirty: false,
+      });
       // The runtime layout the user was working with is gone; the
       // undo/redo history pointed at it is no longer meaningful.
       try { require('../design')._clearUndoStacks(); } catch (e) { /* design not yet loaded — fine */ }
-      setDetail(`[green]Layout restored from[/] ${S.configPath}`);
+      setDetail(`[green]Layout restored from[/] ${m.configPath}`);
     },
   },
 ];
@@ -552,40 +593,65 @@ const FRAMEWORK_COMMANDS = [
  * Collect commands for `:` cmdline mode. Three sources:
  *   1. Framework defaults (quit / refresh / help) — always available.
  *   2. Plugin `commands` arrays (fixed verbs).
- *   3. Plugin `getCommands(S)` (state-derived candidates like
+ *   3. Plugin `getCommands(model)` (state-derived candidates like
  *      `theme <name>` — one entry per available theme).
  *
- * Each command must have { name, desc, run(args, S) }. The source name
+ * Each command must have { name, desc, run(args) }. The source name
  * is stamped on `_plugin` for telemetry / disambiguation; framework
  * defaults are stamped `<framework>`.
  */
-function getCommands(S) {
+function getCommands() {
   const out = [];
   for (const c of FRAMEWORK_COMMANDS) {
     out.push({ ...c, _plugin: '<framework>' });
   }
-  for (const plugin of Object.values(plugins)) {
+  const m = getModel();
+  const collectFrom = (owner) => {
     const collect = (list) => {
       if (!Array.isArray(list)) return;
       for (const c of list) {
         if (!c || typeof c.name !== 'string' || typeof c.run !== 'function') continue;
-        out.push({ ...c, _plugin: plugin.name });
+        out.push({ ...c, _plugin: owner.name });
       }
     };
-    collect(plugin.commands);
-    if (typeof plugin.getCommands === 'function') {
-      try { collect(plugin.getCommands(S)); }
-      catch (e) { console.error(`[plugin:${plugin.name}] getCommands error: ${e.message}`); }
+    collect(owner.commands);
+    if (typeof owner.getCommands === 'function') {
+      try { collect(owner.getCommands(m)); }
+      catch (e) { console.error(`[${owner.name}] getCommands error: ${e.message}`); }
     }
-  }
+  };
+  for (const plugin of Object.values(plugins)) collectFrom(plugin);
+  // Components contribute `:` verbs too (e.g. files' show-hidden) — they live
+  // in a separate registry, so collect them the same way.
+  for (const comp of Object.values(components)) collectFrom(comp);
   return out;
+}
+
+// --- Host write capabilities for plugins (route through update) ---
+//
+// Convenience wrappers for the two writes plugins commonly need
+// (set the active viewer tab; leave terminal mode). Both go through the
+// reducer / Component fan-out — the plugin doesn't touch the model.
+// Components register their own effect descriptors via registerEffect
+// (e.g. config-status' cfgStatusCompute); proxy to the effects registry
+// so the plugin surface is the single import for component authors.
+function registerEffect(type, fn) { require('../effects').registerEffect(type, fn); }
+
+function setActiveTab(tab) {
+  // viewer_set_tab is handled by the detail Component's update — route
+  // via the Component fan-out, not the root reducer.
+  dispatchMsg({ type: 'viewer_set_tab', tab });
+}
+function leaveTerminalMode() {
+  const { getModel } = require('../runtime');
+  require('../dispatch').applyMsg(getModel(), { type: 'terminal_exit' });
 }
 
 module.exports = {
   // --- Plugin registry / lifecycle ---
   registerPlugin, loadPlugins, getPlugin, getPanelDef, getItems,
   refreshAll, startRefreshLoops, stopRefreshLoops, cleanupPlugins, isPluginPanel, pluginNames, getGroupActions, statusFor,
-  registerComponent, dispatchMsg,
+  registerComponent, registerEffect, dispatchMsg,
   getComponent, getComponentSlice, getComponentOwningPanel,
   getCommands, idOf, selectedOrFocused,
 
@@ -613,4 +679,6 @@ module.exports = {
   streamCommand,
   addEphemeralTab,
   scheduleRender,
+  setActiveTab,
+  leaveTerminalMode,
 };

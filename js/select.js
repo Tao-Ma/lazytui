@@ -7,9 +7,9 @@
  * outside the visible window doesn't lose the anchor.
  *
  * Coordinate system:
- *   - line: index into S.detailLines (markup-stripped projection used
- *           for slicing during commit; render path applies highlight on
- *           top of the markup).
+ *   - line: index into the detail slice's `lines` (markup-stripped
+ *           projection used for slicing during commit; render path
+ *           applies highlight on top of the markup).
  *   - col:  display column 0-indexed within the plain-text projection
  *           of the line. East-asian width is honored: a 2-cell CJK char
  *           occupies cols [c, c+1] and clicking on either resolves to
@@ -23,29 +23,38 @@
  * On commit, the resolved plain-text span is pushed onto the yank
  * register (which mirrors to OS clipboard via OSC52).
  *
- * Selection is transient: after commit() or cancel(), S.select.active
- * is false and the highlight disappears. The register keeps the value.
+ * Selection is transient: after commit() or cancel(), the slice's
+ * `select.active` is false and the highlight disappears. The register
+ * keeps the value.
  */
 'use strict';
 
-const { S } = require('./state');
+// Detail visual-mode/selection helper. Service module called from both
+// dispatch-side and render-side; reads the detail Component slice via
+// getComponentSlice and the model via getModel rather than threading
+// either through every call site. The detail-cluster fields all live in
+// the detail slice (`lines` / `select` / `cursor` / `scroll` / `search`);
+// the mode flags (visual / select) live in model.modes.
+const { getModel } = require('./runtime');
 const { stripMarkup, charWidth, esc } = require('./ansi');
-const register = require('./register');
+const { getComponentSlice } = require('./plugins/api');
 
-function _init() {
-  if (!S.select) {
-    S.select = {
-      active: false,
-      kind: 'char',
-      anchor: { line: 0, col: 0 },
-      cursor: { line: 0, col: 0 },
-    };
-  }
-}
+// All reads target the detail Component slice (lines / select / cursor /
+// scroll / search). Helper returns undefined if detail isn't registered
+// (callers null-guard).
+function _detail() { return getComponentSlice('detail'); }
+
+// Selection writes fold onto the update spine (select_* Msgs). select.js
+// can't be imported by the reducer (it requires runtime → cycle), so the
+// writers resolve any ansi-dependent values here (plainLineWidth clamps)
+// and dispatch via the Component fan-out (handled by detail.update). The
+// text/column READS (selectedText, decorateLines, …) stay here — reads
+// don't break single-writer.
+function _apply(msg) { require('./plugins/api').dispatchMsg(msg); }
 
 /** Plain text projection of detail line `i` (markup stripped). */
 function plainLine(i) {
-  const ln = S.detailLines[i];
+  const ln = _detail()?.lines?.[i];
   return ln == null ? '' : stripMarkup(ln);
 }
 
@@ -105,33 +114,16 @@ function _codepointSlice(s, startCp, endCp) {
   return chars.slice(startCp, endCp).join('');
 }
 
-function _clampLine(line) {
-  const n = S.detailLines.length;
-  if (n === 0) return 0;
-  return Math.max(0, Math.min(n - 1, line));
-}
-
 function beginAt(line, col, kind) {
-  _init();
-  const l = _clampLine(line);
-  const c = Math.max(0, col | 0);
-  S.select.active = true;
-  S.select.kind = (kind === 'line') ? 'line' : 'char';
-  S.select.anchor = { line: l, col: c };
-  S.select.cursor = { line: l, col: c };
+  _apply({ type: 'select_begin', line, col, kind });
 }
 
 function extendTo(line, col) {
-  _init();
-  if (!S.select.active) return;
-  const l = _clampLine(line);
-  const c = Math.max(0, col | 0);
-  S.select.cursor = { line: l, col: c };
+  _apply({ type: 'select_extend', line, col });
 }
 
 function cancel() {
-  _init();
-  S.select.active = false;
+  _apply({ type: 'select_cancel' });
 }
 
 /**
@@ -139,9 +131,9 @@ function cancel() {
  * For 'line' kind, cols are coerced to span the full line.
  */
 function selectedRange() {
-  _init();
-  if (!S.select.active) return null;
-  const { anchor, cursor, kind } = S.select;
+  const sel = _detail()?.select;
+  if (!sel || !sel.active) return null;
+  const { anchor, cursor, kind } = sel;
   let s = anchor, e = cursor;
   // Lexicographic compare on (line, col).
   if (anchor.line > cursor.line ||
@@ -198,15 +190,19 @@ function selectedText() {
  * Returns the text (or '' if there was no active selection).
  */
 function commit() {
-  if (!S.select || !S.select.active) return '';
+  const sel = _detail()?.select;
+  if (!sel || !sel.active) return '';
   const text = selectedText();
-  S.select.active = false;
-  if (text) register.push(text);
+  _apply({ type: 'select_cancel' });
+  // register_push is a ROOT-reducer Msg (model.register lives on the root
+  // model), so route via applyMsg, not the Component fan-out.
+  if (text) require('./dispatch').applyMsg(getModel(), { type: 'register_push', text });
   return text;
 }
 
 function isActive() {
-  return !!(S.select && S.select.active);
+  const sel = _detail()?.select;
+  return !!(sel && sel.active);
 }
 
 /**
@@ -251,7 +247,8 @@ function highlightLine(line, startCol, endCol) {
  * visual mode does.
  */
 function decorateLines(lines) {
-  if (!S.select || !S.select.active) return lines;
+  const sel = _detail()?.select;
+  if (!sel || !sel.active) return lines;
   const r = selectedRange();
   if (!r) return lines;
   return lines.map((line, i) => {
@@ -292,57 +289,42 @@ function decorateLines(lines) {
 // selection is active — reading mode has no visible cursor, matching
 // pager/lazygit-style expectations where j/k means "move the view".
 
-function _innerHeight() {
-  const h = S.panelHeights.detail || 0;
-  return Math.max(1, h - 2);
-}
-
-function _scrollIntoView() {
-  const c = S.detailCursor;
-  if (!c) return;
-  const innerH = _innerHeight();
-  const top = S.detailScroll || 0;
-  if (c.line < top) S.detailScroll = c.line;
-  else if (c.line >= top + innerH) S.detailScroll = c.line - innerH + 1;
-}
-
 function _moveCursor(dline, dcol) {
-  if (!S.detailCursor) S.detailCursor = { line: 0, col: 0 };
-  const c = S.detailCursor;
-  const n = S.detailLines.length;
+  const d = _detail();
+  if (!d) return false;
+  const cur = d.cursor || { line: 0, col: 0 };
+  const n = d.lines.length;
   if (n === 0) return false;
-  const newLine = Math.max(0, Math.min(n - 1, c.line + dline));
-  let newCol = (dcol === 0) ? c.col : Math.max(0, c.col + dcol);
+  const newLine = Math.max(0, Math.min(n - 1, cur.line + dline));
+  let newCol = (dcol === 0) ? cur.col : Math.max(0, cur.col + dcol);
   const w = plainLineWidth(newLine);
   newCol = (w === 0) ? 0 : Math.min(w - 1, newCol);
-  c.line = newLine;
-  c.col = newCol;
-  if (S.select && S.select.active) extendTo(newLine, newCol);
-  _scrollIntoView();
+  const active = !!(d.select && d.select.active);
+  // Caller pre-clamps (width needs ansi, which the reducer can't reach); the
+  // select_set_cursor branch stores the cursor, mirrors the selection, scrolls.
+  _apply({ type: 'select_set_cursor', line: newLine, col: newCol, extend: active });
   return true;
 }
 
 function _scrollView(delta) {
-  const innerH = _innerHeight();
-  const maxScroll = Math.max(0, S.detailLines.length - innerH);
-  const next = Math.max(0, Math.min(maxScroll, (S.detailScroll || 0) + delta));
-  S.detailScroll = next;
+  _apply({ type: 'select_scroll_view', delta });
 }
 
 function onDetailKey(key, seq) {
-  if (S.focus !== 'detail' || S.terminalMode) return false;
+  const m = getModel();
+  if (m.focus !== 'detail' || m.modes.terminalMode) return false;
   // Higher-priority modes (menu/cmd/etc.) are filtered upstream in
   // modeChain; this guard is belt-and-suspenders for any future caller.
-  if (S.menuOpen || S.cmdMode || S.confirmMode || S.promptMode || S.copyMode) return false;
-  if (!S.detailCursor) S.detailCursor = { line: 0, col: 0 };
-  const active = !!(S.select && S.select.active);
+  if (m.modes.menuOpen || m.modes.cmdMode || m.modes.confirmMode || m.modes.promptMode || m.modes.copyMode) return false;
+  const d = _detail();
+  const active = !!(d?.select && d.select.active);
 
   // Detail-search post-commit navigation. n/N cycle through committed
   // matches, Esc clears the search. These come before visual-mode v/V
   // so search nav is always reachable, but a live selection (visual
   // mode) hides search highlights anyway.
   const search = require('./detail-search');
-  if (S.detailSearch && S.detailSearch.active) {
+  if (d?.search && d.search.active) {
     if (seq === 'n' || key === 'n') { search.next(); return true; }
     if (seq === 'N' || key === 'N') { search.prev(); return true; }
     if (key === 'escape' && !active) { search.clearCommitted(); return true; }
@@ -354,21 +336,14 @@ function onDetailKey(key, seq) {
   // landed) and avoids "where did v take me?" surprises after the
   // user has been scrolling around.
   if (seq === 'v' || key === 'v') {
-    if (active && S.select.kind === 'char') cancel();
-    else {
-      const start = S.detailScroll || 0;
-      S.detailCursor = { line: start, col: 0 };
-      beginAt(start, 0, 'char');
-    }
+    // beginAt (select_begin) plants the visual cursor at the anchor.
+    if (active && d.select.kind === 'char') cancel();
+    else beginAt(d?.scroll || 0, 0, 'char');
     return true;
   }
   if (seq === 'V' || key === 'V') {
-    if (active && S.select.kind === 'line') cancel();
-    else {
-      const start = S.detailScroll || 0;
-      S.detailCursor = { line: start, col: 0 };
-      beginAt(start, 0, 'line');
-    }
+    if (active && d.select.kind === 'line') cancel();
+    else beginAt(d?.scroll || 0, 0, 'line');
     return true;
   }
   if ((seq === 'y' || key === 'y') && active) { commit(); return true; }
@@ -396,14 +371,12 @@ function onDetailKey(key, seq) {
   // Line-start / line-end jumps — only meaningful with a cursor, i.e.
   // when a selection is active. In reading mode 0/$ fall through.
   if (active && (seq === '0' || key === 'home')) {
-    S.detailCursor.col = 0;
-    extendTo(S.detailCursor.line, 0);
+    _apply({ type: 'select_set_cursor', line: d.cursor.line, col: 0, extend: true });
     return true;
   }
   if (active && (seq === '$' || key === 'end')) {
-    const w = plainLineWidth(S.detailCursor.line);
-    S.detailCursor.col = Math.max(0, w - 1);
-    extendTo(S.detailCursor.line, S.detailCursor.col);
+    const w = plainLineWidth(d.cursor.line);
+    _apply({ type: 'select_set_cursor', line: d.cursor.line, col: Math.max(0, w - 1), extend: true });
     return true;
   }
   return false;

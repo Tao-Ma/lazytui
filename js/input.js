@@ -11,14 +11,17 @@
  */
 'use strict';
 
-const { S, allPanels, selectGroup, setSel, getSel, getScroll } = require('./state');
-const { render, forceFullRepaint } = require('./layout');
+const { allPanels, selectGroup, setSel, getSel, getScroll } = require('./state');
+const { render } = require('./layout');
+const { getModel } = require('./runtime');
 const { switchToTab, showSelectedInfo } = require('./detail');
-const { enableMouse, enableFocusEvents, enableBracketedPaste } = require('./term');
+const { enableMouse, enableFocusEvents, enableBracketedPaste, cols } = require('./term');
 const { isTerminalTab, activeTerminalId } = require('./tabs');
 const { writeToSession, isSessionDead } = require('./terminal');
-const { getPanelDef, getItems } = require('./plugins/api');
-const { handleKey } = require('./dispatch');
+const { getPanelDef, getItems, getComponentSlice } = require('./plugins/api');
+
+function _detail() { return getComponentSlice('detail'); }
+const { handleKey, applyMsg } = require('./dispatch');
 const { cleanup } = require('./cleanup');
 
 // --- Mouse handling ---
@@ -32,7 +35,7 @@ const { cleanup } = require('./cleanup');
  * behavior most TUIs converge on.
  *
  * Per-panel behavior:
- *   detail        adjust S.detailScroll ±1 (clamped)
+ *   detail        viewer_scroll ±1 (clamped — detail slice's `scroll`)
  *   list panels   moveSel-style ±1 on that panel's own selection
  *   anything else no-op
  *
@@ -41,24 +44,27 @@ const { cleanup } = require('./cleanup');
  * screen. Wheel back to bring it back. j/k is the way to extend the
  * selection.
  */
-function _handleWheel(mx, my, delta) {
+function _handleWheel(model, mx, my, delta) {
   for (const p of allPanels()) {
-    const b = S.panelBounds[p.type];
+    const b = model.panelBounds[p.type];
     if (!b) continue;
     if (mx < b.x || mx >= b.x + b.w || my < b.y || my >= b.y + b.h) continue;
 
     if (p.type === 'detail') {
-      const innerH = Math.max(1, (S.panelHeights.detail || b.h) - 2);
-      const maxScroll = Math.max(0, S.detailLines.length - innerH);
-      const next = Math.max(0, Math.min(maxScroll, (S.detailScroll || 0) + delta));
-      if (next === (S.detailScroll || 0)) return false;
-      S.detailScroll = next;
+      const d = _detail();
+      const lines = d?.lines || [];
+      const curScroll = d?.scroll || 0;
+      const innerH = Math.max(1, (model.panelHeights.detail || b.h) - 2);
+      const maxScroll = Math.max(0, lines.length - innerH);
+      const next = Math.max(0, Math.min(maxScroll, curScroll + delta));
+      if (next === curScroll) return false;
+      require('./plugins/api').dispatchMsg({ type: 'viewer_scroll', delta });
       return true;
     }
 
     const def = getPanelDef(p.type);
     if (def && typeof def.getItems === 'function') {
-      const items = getItems(p.type, S);
+      const items = getItems(p.type);
       if (!items.length) return false;
       const sel = getSel(p.type);
       const next = Math.max(0, Math.min(items.length - 1, sel + delta));
@@ -73,7 +79,7 @@ function _handleWheel(mx, my, delta) {
       // Refresh detail only when the wheel landed on the focused panel
       // (so its info reflects the new selection); wheeling over a side
       // panel without focus shouldn't clobber detail.
-      if (p.type === S.focus) showSelectedInfo();
+      if (p.type === model.focus) showSelectedInfo(model);
       return true;
     }
     return false;
@@ -81,26 +87,29 @@ function _handleWheel(mx, my, delta) {
   return false;
 }
 
-function handleMouse(kind, x, y) {
+function handleMouse(model, kind, x, y) {
   // x, y are 1-based from SGR; convert to 0-based
   const mx = x - 1;
   const my = y - 1;
 
-  // Design mode owns the entire mouse pipeline — drag state machine,
-  // drop validation, layout mutation. Routed through one entry point
-  // so the state machine can see press → motion+ → release in order.
-  if (S.designMode) {
-    const { onMouseEvent } = require('./design');
-    onMouseEvent(kind, mx, my);
-    render();
+  // Design mode owns the entire mouse pipeline — the drag/resize state machine
+  // now lives in the reducer (design_mouse_* Msgs running on model.modal.design
+  // .drag). cols() is resolved here (the terminal read the reducer can't do)
+  // and threaded into the hit-tests. Non-press/motion/release events (wheel)
+  // are swallowed in design mode, as before.
+  if (model.modes.designMode) {
+    if (kind === 'press')        applyMsg(model, { type: 'design_mouse_press',  mx, my, cols: cols() });
+    else if (kind === 'motion')  applyMsg(model, { type: 'design_mouse_motion', mx, my, cols: cols() });
+    else if (kind === 'release') applyMsg(model, { type: 'design_mouse_release' });
+    render(model);
     return;
   }
 
   // Mouse wheel — scrolls the panel under the cursor without changing
-  // focus. Detail adjusts S.detailScroll; list panels move their own
+  // focus. Detail adjusts the detail scroll; list panels move their own
   // selection. No-op when the wheel landed outside any panel bounds.
   if (kind === 'wheel-up' || kind === 'wheel-down') {
-    if (_handleWheel(mx, my, kind === 'wheel-down' ? +1 : -1)) render();
+    if (_handleWheel(model, mx, my, kind === 'wheel-down' ? +1 : -1)) render(model);
     return;
   }
 
@@ -111,19 +120,19 @@ function handleMouse(kind, x, y) {
   // change.
   const sel = require('./select');
   if (kind === 'motion' && sel.isActive()) {
-    const db = S.panelBounds.detail;
+    const db = model.panelBounds.detail;
     if (db) {
       const visibleLine = Math.max(0, Math.min(db.h - 3, my - db.y - 1));
       const col = Math.max(0, mx - db.x - 1);
-      sel.extendTo((S.detailScroll || 0) + visibleLine, col);
-      render();
+      sel.extendTo((_detail()?.scroll || 0) + visibleLine, col);
+      render(model);
     }
     return;
   }
   if (kind === 'release') {
     if (sel.isActive()) {
       sel.commit();
-      render();
+      render(model);
     }
     return;
   }
@@ -134,13 +143,13 @@ function handleMouse(kind, x, y) {
   let mutated = false;
 
   for (const p of allPanels()) {
-    const b = S.panelBounds[p.type];
+    const b = model.panelBounds[p.type];
     if (!b) continue;
     if (mx < b.x || mx >= b.x + b.w || my < b.y || my >= b.y + b.h) continue;
 
     // Detail panel — top border row may be a tab bar; otherwise a
     // click inside the content area begins a text selection.
-    // Tab bounds are published into S.panelBounds.detail.tabs by the
+    // Tab bounds are published into panelBounds.detail.tabs by the
     // detail panel's render path (plugins/core/detail.js#detailTitle).
     if (p.type === 'detail') {
       if (my === b.y) {
@@ -148,23 +157,24 @@ function handleMouse(kind, x, y) {
         const tabs = b.tabs || [];
         for (const tab of tabs) {
           if (localX >= tab.x && localX < tab.x + tab.w) {
-            S.focus = 'detail';
-            switchToTab(tab.tabIdx);
+            require('./dispatch').applyMsg(model, { type: 'focus_set', focus: 'detail' });
+            switchToTab(model, tab.tabIdx);
             mutated = true;
             break;
           }
         }
       }
       if (!mutated) {
-        S.focus = 'detail';
+        require('./dispatch').applyMsg(model, { type: 'focus_set', focus: 'detail' });
         // Begin a selection iff the click landed in the content rows
         // and this tab actually has scrollable text content (skip
         // terminal tabs — the PTY handles its own input).
         const inContent = my > b.y && my < b.y + b.h - 1;
-        if (inContent && !isTerminalTab() && S.detailLines.length > 0) {
+        const d = _detail();
+        if (inContent && !isTerminalTab() && d && d.lines.length > 0) {
           const visibleLine = my - b.y - 1;
           const col = Math.max(0, mx - b.x - 1);
-          sel.beginAt((S.detailScroll || 0) + visibleLine, col, 'char');
+          sel.beginAt((d.scroll || 0) + visibleLine, col, 'char');
         } else {
           sel.cancel();
         }
@@ -177,12 +187,12 @@ function handleMouse(kind, x, y) {
     // outside the detail content area cancels any pending selection
     // (starting a new gesture here).
     sel.cancel();
-    S.focus = p.type;
+    require('./dispatch').applyMsg(model, { type: 'focus_set', focus: p.type });
     const itemRow = my - b.y - 1;  // -1 for top border
     if (itemRow >= 0) {
       const def = getPanelDef(p.type);
       if (def && typeof def.getItems === 'function') {
-        const items = getItems(p.type, S);
+        const items = getItems(p.type);
         // getScroll defaults to 0 — only file-manager actually scrolls
         const idx = itemRow + getScroll(p.type);
         if (idx < items.length) {
@@ -191,20 +201,20 @@ function handleMouse(kind, x, y) {
         }
       }
     }
-    showSelectedInfo();
+    showSelectedInfo(model);
     mutated = true;
     break;
   }
 
   // Single paint at end — same contract as dispatch.handleKey. Diff
   // render makes a no-op paint cheap when click missed every panel.
-  if (mutated) render();
+  if (mutated) render(model);
 }
 
 // --- Terminal-mode keystroke handling ---
 
 /**
- * Handle a raw stdin chunk while S.terminalMode is true. Extracted
+ * Handle a raw stdin chunk while getModel().modes.terminalMode is true. Extracted
  * from the stdin closure so tests can drive it directly.
  *
  * Returns true if the chunk was consumed (caller should skip the
@@ -222,22 +232,18 @@ function handleMouse(kind, x, y) {
  *  - Live session → writeToSession forwards the bytes to the PTY.
  */
 function _handleTerminalModeData(data) {
+  // Ctrl+\ exits terminal mode; a dead/missing session exits too (and drops
+  // the keystroke). Both flow through the terminal_exit Msg, which clears the
+  // flag, drops a 'full' auto-zoom to 'normal', and emits a force_full_repaint
+  // Cmd when it did so. render() paints the result.
   if (data === '\x1c') {
-    S.terminalMode = false;
-    if (S.viewMode === 'full') {
-      S.viewMode = 'normal';
-      forceFullRepaint();
-    }
+    applyMsg(getModel(), { type: 'terminal_exit' });
     render();
     return true;
   }
   const id = activeTerminalId();
   if (!id || isSessionDead(id)) {
-    S.terminalMode = false;
-    if (S.viewMode === 'full') {
-      S.viewMode = 'normal';
-      forceFullRepaint();
-    }
+    applyMsg(getModel(), { type: 'terminal_exit' });
     render();
     return true;
   }
@@ -247,7 +253,7 @@ function _handleTerminalModeData(data) {
 
 // --- Stdin setup ---
 
-function setupKeyListener() {
+function setupKeyListener(model) {
   const stdin = process.stdin;
   stdin.setRawMode(true);
   stdin.resume();
@@ -258,19 +264,19 @@ function setupKeyListener() {
 
   stdin.on('data', (data) => {
     // Terminal mode: forward raw bytes to PTY (Ctrl+\ exits)
-    if (S.terminalMode && _handleTerminalModeData(data)) return;
+    if (getModel().modes.terminalMode && _handleTerminalModeData(data)) return;
 
     // Terminal focus events (DEC 1004). On blur, the periodic
     // refresh loop in tui.js pauses; on focus return, we fire one
     // catch-up refresh immediately so stale data doesn't show.
     if (data === '\x1b[I') {
-      const wasUnfocused = !S.focused;
-      S.focused = true;
+      const wasUnfocused = !getModel().focused;
+      applyMsg(model, { type: 'focus_event', focused: true });
       if (wasUnfocused) require('./render-queue').scheduleRender();
       return;
     }
     if (data === '\x1b[O') {
-      S.focused = false;
+      applyMsg(model, { type: 'focus_event', focused: false });
       return;
     }
 
@@ -281,7 +287,7 @@ function setupKeyListener() {
     // multi-line content; other modes treat it as a no-op.
     if (data.startsWith('\x1b[200~') && data.endsWith('\x1b[201~')) {
       const text = data.slice('\x1b[200~'.length, -'\x1b[201~'.length);
-      handleKey('paste', text);
+      handleKey(model, 'paste', text);
       return;
     }
 
@@ -308,26 +314,26 @@ function setupKeyListener() {
       if ((btn & 0x40) !== 0) {
         if (released) return;
         const kind = (btn & 1) ? 'wheel-down' : 'wheel-up';
-        handleMouse(kind, x, y);
+        handleMouse(model, kind, x, y);
         return;
       }
       const motion = (btn & 0x20) !== 0;
       const button = btn & 3;
       if (button !== 0) return;  // left button only for non-wheel events
       const kind = released ? 'release' : motion ? 'motion' : 'press';
-      handleMouse(kind, x, y);
+      handleMouse(model, kind, x, y);
       return;
     }
-    if (data === '\x1b[A') handleKey('up');
-    else if (data === '\x1b[B') handleKey('down');
-    else if (data === '\x1b[C') handleKey('right');
-    else if (data === '\x1b[D') handleKey('left');
-    else if (data === '\x1b[5~') handleKey('pageup');
-    else if (data === '\x1b[6~') handleKey('pagedown');
-    else if (data === '\x1b') handleKey('escape');
-    else if (data === '\r' || data === '\n') handleKey('return');
+    if (data === '\x1b[A') handleKey(model, 'up');
+    else if (data === '\x1b[B') handleKey(model, 'down');
+    else if (data === '\x1b[C') handleKey(model, 'right');
+    else if (data === '\x1b[D') handleKey(model, 'left');
+    else if (data === '\x1b[5~') handleKey(model, 'pageup');
+    else if (data === '\x1b[6~') handleKey(model, 'pagedown');
+    else if (data === '\x1b') handleKey(model, 'escape');
+    else if (data === '\r' || data === '\n') handleKey(model, 'return');
     else if (data === '\x03') { cleanup(); process.exit(0); }
-    else if (data === '\x12') handleKey('ctrl-r');  // Ctrl+R → design-mode redo
+    else if (data === '\x12') handleKey(model, 'ctrl-r');  // Ctrl+R → design-mode redo
     // Defensive Esc fallthrough: some terminals (and Node buffering
     // states) deliver a bare Esc as `\x1b\x1b` or `\x1b<followup>` in
     // a single chunk. The strict `data === '\x1b'` check above misses
@@ -336,8 +342,8 @@ function setupKeyListener() {
     // chunk starting with `\x1b` that survived the specific-sequence
     // checks as Esc — mode handlers exit cleanly. Trailing bytes are
     // discarded (lazytui doesn't bind any Alt/Meta combinations).
-    else if (data.charCodeAt(0) === 0x1b) handleKey('escape');
-    else handleKey(data, data);
+    else if (data.charCodeAt(0) === 0x1b) handleKey(model, 'escape');
+    else handleKey(model, data, data);
   });
 }
 

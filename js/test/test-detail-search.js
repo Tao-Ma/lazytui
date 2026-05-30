@@ -6,17 +6,19 @@
  */
 'use strict';
 
-const { S } = require('../state');
 const search = require('../detail-search');
 const { describe, it, eq, assert, report } = require('./test-runner');
+const { getModel } = require('../runtime');
+const { getComponentSlice } = require('../plugins/api');
+
 
 function setup(lines, panelH = 10) {
-  S.detailLines = lines.slice();
-  S.detailScroll = 0;
-  S.panelHeights = S.panelHeights || {};
-  S.panelHeights.detail = panelH;
-  S.detailSearchMode = false;
-  S.detailSearch = { active: false, term: '', matches: [], idx: 0 };
+  getComponentSlice('detail').lines = lines.slice();
+  getComponentSlice('detail').scroll = 0;
+  getModel().panelHeights = getModel().panelHeights || {};
+  getModel().panelHeights.detail = panelH;
+  getModel().modes.detailSearchMode = false;
+  getComponentSlice('detail').search = { active: false, term: '', matches: [], idx: 0 };
 }
 
 describe('[1] substring match (regex literal chars)', () => {
@@ -24,10 +26,10 @@ describe('[1] substring match (regex literal chars)', () => {
     setup(['hello world', 'world peace', 'hello again']);
     search.enter();
     'hello'.split('').forEach(c => search.keystroke(c));
-    eq(S.detailSearch.matches.length, 2, 'matches on line 0 and 2');
-    eq(S.detailSearch.matches[0].line, 0);
-    eq(S.detailSearch.matches[0].col, 0);
-    eq(S.detailSearch.matches[1].line, 2);
+    eq(getComponentSlice('detail').search.matches.length, 2, 'matches on line 0 and 2');
+    eq(getComponentSlice('detail').search.matches[0].line, 0);
+    eq(getComponentSlice('detail').search.matches[0].col, 0);
+    eq(getComponentSlice('detail').search.matches[1].line, 2);
   });
 });
 
@@ -36,7 +38,7 @@ describe('[2] case-insensitive by default', () => {
     setup(['HELLO World', 'hello WORLD']);
     search.enter();
     'world'.split('').forEach(c => search.keystroke(c));
-    eq(S.detailSearch.matches.length, 2, 'both lines match');
+    eq(getComponentSlice('detail').search.matches.length, 2, 'both lines match');
   });
 });
 
@@ -45,13 +47,13 @@ describe('[3] regex meta-characters work', () => {
     setup(['error: foo', 'warn: bar', 'info: baz']);
     search.enter();
     'error|warn'.split('').forEach(c => search.keystroke(c));
-    eq(S.detailSearch.matches.length, 2, 'error + warn match');
+    eq(getComponentSlice('detail').search.matches.length, 2, 'error + warn match');
   });
   it('character class', () => {
     setup(['code 42', 'code 7', 'code XX']);
     search.enter();
     '[0-9]+'.split('').forEach(c => search.keystroke(c));
-    eq(S.detailSearch.matches.length, 2, 'two digit-runs found');
+    eq(getComponentSlice('detail').search.matches.length, 2, 'two digit-runs found');
   });
 });
 
@@ -60,11 +62,11 @@ describe('[4] invalid regex during typing is graceful', () => {
     setup(['line a', 'line b']);
     search.enter();
     search.keystroke('[');
-    eq(S.detailSearch.matches.length, 0, 'no matches on invalid pattern');
+    eq(getComponentSlice('detail').search.matches.length, 0, 'no matches on invalid pattern');
     // Continue typing to make it valid again
     search.keystroke('a');
     search.keystroke(']');
-    eq(S.detailSearch.matches.length, 1, 'recovers when pattern becomes valid');
+    eq(getComponentSlice('detail').search.matches.length, 1, 'recovers when pattern becomes valid');
   });
 });
 
@@ -74,19 +76,19 @@ describe('[5] commit + clear', () => {
     search.enter();
     'a'.split('').forEach(c => search.keystroke(c));
     search.commit();
-    eq(S.detailSearchMode, false);
-    eq(S.detailSearch.active, true);
-    assert(S.detailSearch.matches.length > 0);
+    eq(getModel().modes.detailSearchMode, false);
+    eq(getComponentSlice('detail').search.active, true);
+    assert(getComponentSlice('detail').search.matches.length > 0);
     search.clearCommitted();
-    eq(S.detailSearch.active, false);
-    eq(S.detailSearch.matches.length, 0);
-    eq(S.detailSearch.term, '');
+    eq(getComponentSlice('detail').search.active, false);
+    eq(getComponentSlice('detail').search.matches.length, 0);
+    eq(getComponentSlice('detail').search.term, '');
   });
   it('empty commit clears active', () => {
     setup(['only one']);
     search.enter();
     search.commit();
-    eq(S.detailSearch.active, false, 'empty term yields no active search');
+    eq(getComponentSlice('detail').search.active, false, 'empty term yields no active search');
   });
 });
 
@@ -96,13 +98,13 @@ describe('[6] cancel during typing restores prior committed term', () => {
     search.enter();
     'hello'.split('').forEach(c => search.keystroke(c));
     search.commit();
-    eq(S.detailSearch.term, 'hello');
-    eq(S.detailSearch.matches.length, 2);
+    eq(getComponentSlice('detail').search.term, 'hello');
+    eq(getComponentSlice('detail').search.matches.length, 2);
     search.enter();      // reopen
     search.keystroke('X');
     search.cancel();     // Esc
-    eq(S.detailSearch.term, 'hello', 'committed term restored');
-    eq(S.detailSearch.matches.length, 2);
+    eq(getComponentSlice('detail').search.term, 'hello', 'committed term restored');
+    eq(getComponentSlice('detail').search.matches.length, 2);
   });
 });
 
@@ -113,16 +115,16 @@ describe('[7] next/prev cycles + autoscroll', () => {
     search.enter();
     'row0'.split('').forEach(c => search.keystroke(c));
     search.commit();
-    eq(S.detailSearch.matches.length, 4);
-    eq(S.detailSearch.idx, 0);
+    eq(getComponentSlice('detail').search.matches.length, 4);
+    eq(getComponentSlice('detail').search.idx, 0);
     search.next();
-    eq(S.detailSearch.idx, 1);
+    eq(getComponentSlice('detail').search.idx, 1);
     search.next(); search.next();
-    eq(S.detailSearch.idx, 3);
+    eq(getComponentSlice('detail').search.idx, 3);
     search.next();
-    eq(S.detailSearch.idx, 0, 'wraps to start');
+    eq(getComponentSlice('detail').search.idx, 0, 'wraps to start');
     search.prev();
-    eq(S.detailSearch.idx, 3, 'prev from 0 wraps to last');
+    eq(getComponentSlice('detail').search.idx, 3, 'prev from 0 wraps to last');
   });
   it('autoscroll brings the match line into view', () => {
     setup(Array.from({ length: 50 }, (_, i) =>
@@ -131,9 +133,9 @@ describe('[7] next/prev cycles + autoscroll', () => {
     search.enter();
     'TARGET'.split('').forEach(c => search.keystroke(c));
     search.commit();
-    assert(S.detailScroll > 0, `scrolled to TARGET (got ${S.detailScroll})`);
+    assert(getComponentSlice('detail').scroll > 0, `scrolled to TARGET (got ${getComponentSlice('detail').scroll})`);
     const innerH = 6;
-    const top = S.detailScroll;
+    const top = getComponentSlice('detail').scroll;
     assert(30 >= top && 30 < top + innerH, 'TARGET line is now in viewport');
   });
 });
@@ -144,7 +146,7 @@ describe('[8] decorateLines render integration', () => {
     search.enter();
     'foo'.split('').forEach(c => search.keystroke(c));
     search.commit();
-    const out = search.decorateLines(S.detailLines);
+    const out = search.decorateLines(getComponentSlice('detail').lines);
     eq(out[0], 'no match here', 'untouched');
     assert(out[1].includes('[yellow]'), 'matched line carries [yellow]');
   });
@@ -153,8 +155,8 @@ describe('[8] decorateLines render integration', () => {
     search.enter();
     'foo'.split('').forEach(c => search.keystroke(c));
     search.commit();
-    S.detailSearch.idx = 0;
-    const out = search.decorateLines(S.detailLines);
+    getComponentSlice('detail').search.idx = 0;
+    const out = search.decorateLines(getComponentSlice('detail').lines);
     // First match (idx=0) → [reverse][yellow]
     assert(out[0].includes('[reverse][yellow]'), `expected active style: ${out[0]}`);
     // Second match (idx=1) → [yellow] only (no reverse)
@@ -164,8 +166,8 @@ describe('[8] decorateLines render integration', () => {
   });
   it('no matches → pass-through', () => {
     setup(['abc', 'def']);
-    const out = search.decorateLines(S.detailLines);
-    eq(out, S.detailLines);
+    const out = search.decorateLines(getComponentSlice('detail').lines);
+    eq(out, getComponentSlice('detail').lines);
   });
 });
 

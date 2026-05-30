@@ -9,12 +9,11 @@
 
 const { spawn } = require('child_process');
 const fs = require('fs');
-const { S, setDetail } = require('./state');
+const { setDetail } = require('./state');
 const { streamCommand, killCurrentProc } = require('./stream');
-const { enterConfirm } = require('./confirm');
 const history = require('./history');
 
-function runAction(actionKey, action, args = []) {
+function runAction(model, actionKey, action, args = []) {
   // Event log (PRINCIPLES.md §11 + CHANGELOG v0.2.0). Record the user
   // invocation here — at the entry point, before confirm gating —
   // so the log captures "user pressed Enter on action X" once. The
@@ -25,12 +24,20 @@ function runAction(actionKey, action, args = []) {
   require('./plugins/api').dispatchMsg({ type: 'action', actionKey, args, actionType: action.type });
   // Gate on action.confirm — show modal y/N overlay; user-confirmed
   // execution re-enters this fn through doRun(). Cancel is a no-op
-  // (lastRunAction stays whatever it was, no '>' marker drift).
-  if (action.confirm && !S.confirmMode) {
-    enterConfirm(action.confirm, () => doRun(actionKey, action, args));
+  // (lastRunAction stays whatever it was, no '>' marker drift). The
+  // confirm callback closes over the threaded model.
+  if (action.confirm && !model.modes.confirmMode) {
+    // Stage the confirm through the reducer — `y` re-emits the do_run Cmd
+    // (a DATA descriptor, not a closure). Lazy require breaks the
+    // dispatch↔actions load cycle; this is "an effect dispatches a Msg".
+    require('./dispatch').applyMsg(model, {
+      type: 'confirm_enter',
+      message: action.confirm,
+      cmd: { type: 'do_run', actionKey, action, args },
+    });
     return;
   }
-  doRun(actionKey, action, args);
+  doRun(model, actionKey, action, args);
 }
 
 /**
@@ -48,8 +55,11 @@ function shQuote(s) {
 // (and its dead PTY session) instead of starting a fresh child.
 let _spawnSeq = 0;
 
-function doRun(actionKey, action, args = []) {
-  S.lastRunAction = actionKey;
+function doRun(model, actionKey, action, args = []) {
+  // Routes through update (set_last_run_action Msg) so the reducer remains the
+  // single writer of model state — see docs/v0.5-layering.md. The marker the
+  // actions panel paints (`>` on the last-run row) reads model.lastRunAction.
+  require('./dispatch').applyMsg(model, { type: 'set_last_run_action', action: actionKey });
   // Parser normalizes both YAML `cmd:` and `script:` into `action.script`
   const cmd = action.script || '';
   const actionType = action.type || 'run';
@@ -61,7 +71,7 @@ function doRun(actionKey, action, args = []) {
     // as positional params: bare-spawn passes them via argv, tmux path
     // shell-escapes them into the new-window command string.
     const tmp = `/tmp/tui-${process.pid}-${Date.now()}.sh`;
-    const body = `#!/bin/sh\nrm -- "$0"\ncd ${S.projectDir} && ${cmd}\n`;
+    const body = `#!/bin/sh\nrm -- "$0"\ncd ${model.projectDir} && ${cmd}\n`;
     fs.writeFileSync(tmp, body, { mode: 0o700 });
     if (process.env.TMUX) {
       setDetail(`[dim]$ ${actionKey}[/]\n[yellow]Spawned in new tmux window.[/]`);
@@ -85,10 +95,10 @@ function doRun(actionKey, action, args = []) {
       const { addEphemeralTab } = require('./tabs');
       const argStr = args.length ? ' ' + args.map(shQuote).join(' ') : '';
       const tabKey = `spawn-${actionKey}-${Date.now()}-${++_spawnSeq}`;
-      // addEphemeralTab side-effects: S.activeTab, S.focus='detail',
-      // S.terminalMode=true, S.ephemeralTerminals[...][tabKey].
-      addEphemeralTab(S.currentGroup, tabKey, `${tmp}${argStr}`, actionKey);
-      S.viewMode = 'full';
+      // addEphemeralTab side-effects: detail slice's `tab` + ephemeral-
+      // Terminals[...][tabKey], model.focus='detail', model.modes.terminalMode.
+      addEphemeralTab(model.currentGroup, tabKey, `${tmp}${argStr}`, actionKey);
+      require('./runtime').dispatch({ type: 'view_set', mode: 'full' });
       require('./layout').forceFullRepaint();
       history.start(actionKey, cmd, { detached: false });
     }
@@ -98,7 +108,7 @@ function doRun(actionKey, action, args = []) {
   if (actionType === 'background') {
     setDetail(`[dim]$ ${actionKey}[/]\n[yellow]Started in background.[/]`);
     // -- delimiter so $0 = "--", $1 = first arg, $@ = arg list (POSIX).
-    spawn('sh', ['-c', cmd, '--', ...args], { cwd: S.projectDir, detached: true, stdio: 'ignore' });
+    spawn('sh', ['-c', cmd, '--', ...args], { cwd: model.projectDir, detached: true, stdio: 'ignore' });
     history.start(actionKey, cmd, { detached: true });
     return;
   }
@@ -109,4 +119,4 @@ function doRun(actionKey, action, args = []) {
 
 // Re-export streaming helpers so existing import sites
 // (dispatch.js, plugins/docker.js, cleanup.js) keep working.
-module.exports = { runAction, killCurrentProc, streamCommand };
+module.exports = { runAction, doRun, killCurrentProc, streamCommand };

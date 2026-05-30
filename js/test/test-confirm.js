@@ -1,94 +1,99 @@
 /**
- * Confirm overlay smoke test — runAction gating + key handler dispatch.
+ * Confirm overlay smoke test — runAction gating + reducer-driven accept/reject.
  *
- * The proceed callback is dispatched via setImmediate (so the input
- * pump's trailing render() paints the overlay-gone frame before the
- * action's spawn() blocks). Tests that observe callback effects therefore
- * use section() + setImmediate, mirroring test-docker-events.js's pattern.
+ * Confirm now flows through update: runAction stages a confirm_enter Msg with
+ * a do_run Cmd DESCRIPTOR (data, not a closure); the modeChain handler turns
+ * y/Enter → confirm_accept (re-emits do_run) and n/Esc → confirm_reject. The
+ * do_run Cmd is deferred via setImmediate (so the overlay-gone frame paints
+ * before spawn), so accept tests observe the effect after setImmediate.
  *
  * Run: node js/test/test-confirm.js
  */
 'use strict';
 
-const { S } = require('../state');
-const { enterConfirm, handleConfirmKey } = require('../confirm');
+const { getModel } = require('../runtime');
+const dispatch = require('../dispatch');
+const { runAction } = require('../actions');
 const { describe, it, section, eq, report } = require('./test-runner');
 
-S.confirmMode = false;
+function reset() {
+  getModel().modes.confirmMode = false;
+  getModel().lastRunAction = '';
+  getModel().modal.confirm = { message: '', cmd: null };
+}
+// Drive a key through the active mode handler (the confirm modeChain entry).
+function press(key, seq) { dispatch._dispatchActiveMode(getModel(), key, seq); }
 
-describe('[1] enter sets mode', () => {
-  it('confirmMode flips on, escape cancels without firing', () => {
-    let fired = 0;
-    enterConfirm('really?', () => { fired += 1; });
-    eq(S.confirmMode, true, 'mode active');
-    eq(fired, 0, 'callback not yet fired');
-    handleConfirmKey('escape', '');
-    eq(S.confirmMode, false, 'escape exits');
-    eq(fired, 0, 'escape does not fire callback (still 0 — setImmediate skipped on cancel)');
+const CONFIRM_ACTION = { script: 'true', type: 'background', confirm: 'sure?' };
+
+describe('[1] runAction with confirm: stages the overlay, defers the action', () => {
+  it('confirmMode on, do_run Cmd staged as data, action not yet run', () => {
+    reset();
+    runAction(getModel(), 'stop', CONFIRM_ACTION);
+    eq(getModel().modes.confirmMode, true, 'overlay opened');
+    eq(getModel().modal.confirm.cmd.type, 'do_run', 'pending do_run Cmd staged (data, not a closure)');
+    eq(getModel().lastRunAction, '', 'execution deferred');
   });
 });
 
-describe('[3] n cancels', () => {
-  it('n exits without firing callback', () => {
-    let fired = 0;
-    enterConfirm('go?', () => { fired += 1; });
-    handleConfirmKey('', 'n');
-    eq(S.confirmMode, false, 'mode cleared');
-    eq(fired, 0, 'callback not fired');
+describe('[3] n / escape reject without running', () => {
+  it('n clears mode, no run', () => {
+    reset();
+    runAction(getModel(), 'stop', CONFIRM_ACTION);
+    press('', 'n');
+    eq(getModel().modes.confirmMode, false, 'mode cleared');
+    eq(getModel().lastRunAction, '', 'not run');
+  });
+  it('escape clears mode, no run', () => {
+    reset();
+    runAction(getModel(), 'stop', CONFIRM_ACTION);
+    press('escape', '');
+    eq(getModel().modes.confirmMode, false, 'mode cleared');
+    eq(getModel().lastRunAction, '', 'not run');
   });
 });
 
 describe('[5] stray keys swallowed', () => {
   it('non-y/n keys keep the overlay open', () => {
-    let fired = 0;
-    enterConfirm('go?', () => { fired += 1; });
-    handleConfirmKey('', 'q');
-    handleConfirmKey('up', '');
-    handleConfirmKey('', 'a');
-    eq(S.confirmMode, true, 'still active');
-    eq(fired, 0, 'no callback');
-    handleConfirmKey('', 'n');  // close cleanly without firing
+    reset();
+    runAction(getModel(), 'stop', CONFIRM_ACTION);
+    press('', 'q'); press('up', ''); press('', 'a');
+    eq(getModel().modes.confirmMode, true, 'still active');
+    eq(getModel().lastRunAction, '', 'no run');
   });
 });
 
-describe('[6] runAction respects confirm', () => {
-  it('action with confirm: stages overlay, no execution; without runs immediately', () => {
-    const { runAction } = require('../actions');
-    S.lastRunAction = '';
-    runAction('stop', { script: 'true', type: 'run', confirm: 'sure?' });
-    eq(S.confirmMode, true, 'overlay opened');
-    eq(S.lastRunAction, '', 'execution deferred');
-    handleConfirmKey('escape', '');
-    eq(S.lastRunAction, '', 'escape leaves lastRunAction untouched');
-    // No-confirm path is fully sync (no setImmediate), so lastRunAction
-    // observable on the next line.
-    runAction('noop', { script: 'true', type: 'background' });
-    eq(S.lastRunAction, 'noop', 'no-confirm action ran');
+describe('[6] no-confirm action runs immediately (sync)', () => {
+  it('runs without staging an overlay', () => {
+    reset();
+    runAction(getModel(), 'noop', { script: 'true', type: 'background' });
+    eq(getModel().modes.confirmMode, false, 'no overlay');
+    eq(getModel().lastRunAction, 'noop', 'ran immediately');
   });
 });
 
-// --- Async sections — observe deferred-callback effects after setImmediate fires ---
+// --- Async: y / Enter accept → do_run Cmd deferred via setImmediate ---
 
-let _firedY = 0;
-section('[2] y commits — callback fires after setImmediate');
-enterConfirm('go?', () => { _firedY += 1; });
-handleConfirmKey('', 'y');
-eq(S.confirmMode, false, 'mode cleared synchronously on y');
-eq(_firedY, 0, 'callback NOT yet fired (still on input frame)');
+section('[2] y commits — action runs after setImmediate');
+reset();
+runAction(getModel(), 'yes-run', CONFIRM_ACTION);
+press('', 'y');
+eq(getModel().modes.confirmMode, false, 'mode cleared synchronously on y');
+eq(getModel().lastRunAction, '', 'action NOT yet run (do_run deferred to next tick)');
 setImmediate(() => {
-  eq(_firedY, 1, 'callback fired exactly once after setImmediate');
+  eq(getModel().lastRunAction, 'yes-run', 'action ran after setImmediate');
   runStep4();
 });
 
 function runStep4() {
-  let firedR = 0;
-  section('[4] return acts as confirm — also deferred');
-  enterConfirm('go?', () => { firedR += 1; });
-  handleConfirmKey('return', '');
-  eq(S.confirmMode, false, 'mode cleared on Enter');
-  eq(firedR, 0, 'callback not yet fired');
+  section('[4] Enter also accepts — also deferred');
+  reset();
+  runAction(getModel(), 'ent-run', CONFIRM_ACTION);
+  press('return', '');
+  eq(getModel().modes.confirmMode, false, 'mode cleared on Enter');
+  eq(getModel().lastRunAction, '', 'deferred');
   setImmediate(() => {
-    eq(firedR, 1, 'Enter fires callback after setImmediate');
+    eq(getModel().lastRunAction, 'ent-run', 'Enter ran the action after setImmediate');
     report();
   });
 }

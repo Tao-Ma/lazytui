@@ -1,56 +1,63 @@
 /**
  * Copy menu — lazygit-style. Press `y` to popup a menu of copy targets;
- * each plugin contributes options for its panel via `copyOptions(item, S)`.
+ * each plugin contributes options for its panel via `copyOptions(item)`.
  *
  * Contract:
- *   panelDef.copyOptions(item, S) → [ { label, content } ]
+ *   panelDef.copyOptions(item) → [ { label, content } ]
  *   `content` may be a string or a thunk `() => string` (for lazy/expensive
  *   computations like `docker inspect`).
  *
- * Zero dependencies (uses local modules).
+ * State split: nav/idx/open live in the reducer (runtime.update:
+ * copy_enter/nav/select/cancel; model.modal.copy holds the render-only
+ * {label, cancel} options + idx). The option CONTENT are plugin-provided
+ * thunks (closures) — they can't be model data, so the full options stay
+ * module-held here and a copy_commit Cmd invokes the selected one by index.
  */
 'use strict';
 
-const { S, getSel } = require('./state');
+const { getSel } = require('./state');
+const { getModel } = require('./runtime');
 const { stripMarkup, esc } = require('./ansi');
 const { stdout } = require('./term');
-const { getPanelDef, getItems } = require('./plugins/api');
+const { getPanelDef, getItems, getComponentSlice } = require('./plugins/api');
 const { renderOverlay } = require('./panel');
 
-// Module-private mode state. S.copyMode (a flag) stays on S so the
-// render conductor can detect "an overlay is active" for force-full-
-// repaint logic; the buffers (options + selected index) are transient
-// per-popup state and live here.
+// Module-held options (label + content thunk + cancel). The reducer mirrors
+// only the render-safe {label, cancel} + idx in model.modal.copy; the thunks
+// stay here and are resolved by copy_commit (the effect).
 let _options = [];
-let _idx = 0;
 
 /**
  * Collect copy options from the focused panel's plugin plus a built-in
- * "detail panel content" option when detail has content.
+ * "detail panel content" option when detail has content. Stashes them
+ * module-side and returns them (the caller decides 0/1/many).
  */
 function collectOptions() {
   const options = [];
-  const def = getPanelDef(S.focus);
+  const def = getPanelDef(getModel().focus);
   if (def && typeof def.copyOptions === 'function' && typeof def.getItems === 'function') {
-    const items = getItems(S.focus, S);
-    const item = items[getSel(S.focus)];
+    const items = getItems(getModel().focus);
+    const item = items[getSel(getModel().focus)];
     if (item) {
-      const provided = def.copyOptions(item, S) || [];
+      const provided = def.copyOptions(item) || [];
       for (const o of provided) {
         if (o && o.label && o.content !== undefined) options.push(o);
       }
     }
   }
-  if (S.detailLines.length > 0) {
+  const detailSlice = getComponentSlice('detail');
+  const detailLines = detailSlice ? detailSlice.lines : [];
+  if (detailLines.length > 0) {
     options.push({
       label: 'Detail panel (plain text)',
-      content: () => S.detailLines.map(stripMarkup).join('\n'),
+      content: () => detailLines.map(stripMarkup).join('\n'),
     });
   }
   if (options.length > 0) {
     // Trailing cancel — gives a clear "do nothing" choice in addition to Esc
     options.push({ label: '— Cancel —', cancel: true });
   }
+  _options = options;
   return options;
 }
 
@@ -63,8 +70,7 @@ function emitOSC52(text) {
 
 /**
  * Resolve an option's content and copy. content may be a string or a thunk
- * returning a string OR a Promise<string> (for slow ops like docker inspect).
- * Async thunks don't block the event loop — copy happens when ready.
+ * returning a string OR a Promise<string> (slow ops like docker inspect).
  */
 function copyOption(opt) {
   if (!opt || opt.cancel) return;
@@ -73,59 +79,39 @@ function copyOption(opt) {
     if (content) emitOSC52(content);
     return;
   }
-  // Promise.resolve handles both sync- and Promise-returning thunks
   Promise.resolve()
     .then(() => content())
     .then(text => { if (text) emitOSC52(text); })
     .catch(e => console.error('[copy] thunk error:', e && e.message));
 }
 
-/**
- * Press `y` entry point. Returns true if a popup was opened (caller
- * should render); returns false if direct-copied or no-op.
- */
-function enterCopy() {
-  const opts = collectOptions();
-  if (!opts.length) return false;
-  if (opts.length === 1) { copyOption(opts[0]); return false; }
-  S.copyMode = true;
-  _options = opts;
-  _idx = 0;
-  return true;
+/** Copy the module-held option at `idx` (the copy_commit Cmd). */
+function copySelect(idx) {
+  if (idx >= 0 && idx < _options.length) copyOption(_options[idx]);
 }
 
-function exitCopy(commit) {
-  if (commit && _options[_idx]) copyOption(_options[_idx]);
-  S.copyMode = false;
-  _options = [];
-  _idx = 0;
-}
-
-function navCopy(delta) {
-  if (!S.copyMode) return;
-  const len = _options.length;
-  if (!len) return;
-  _idx = (_idx + delta + len) % len;
-}
+/** Drop the module-held options (after commit/cancel). */
+function clearOptions() { _options = []; }
 
 /**
- * Centered popup overlay listing the copy options. Rendered after the
- * main render so it appears on top.
+ * Centered popup overlay listing the copy options — reads the render-safe
+ * options + idx the reducer mirrors into model.modal.copy.
  */
 function renderCopyMenu() {
-  if (!S.copyMode) return;
-  const lines = _options.map((o, i) => {
+  if (!getModel().modes.copyMode) return;
+  const { options, idx } = getModel().modal.copy;
+  const lines = options.map((o, i) => {
     const label = esc(o.label);
-    if (i === _idx) return `[reverse]  ${label}`;            // selected — plain text in reverse
-    if (o.cancel) return `  [dim]${label}[/]`;                // dim when unselected
+    if (i === idx) return `[reverse]  ${label}`;     // selected — reverse
+    if (o.cancel) return `  [dim]${label}[/]`;        // dim when unselected
     return `  ${label}`;
   });
   renderOverlay({
     lines, title: 'Copy', maxWidth: 62,
-    count: [_idx + 1, _options.length],
+    count: [idx + 1, options.length],
   });
 }
 
 module.exports = {
-  collectOptions, enterCopy, exitCopy, navCopy, renderCopyMenu, emitOSC52,
+  collectOptions, copyOption, copySelect, clearOptions, renderCopyMenu, emitOSC52,
 };

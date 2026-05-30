@@ -12,7 +12,7 @@
 
 const { describe, it, eq, assert, report } = require('./test-runner');
 const modes = require('../modes');
-const { S } = require('../state');
+const { getModel } = require('../runtime');
 
 // ---- [1] registry shape + derivations ----------------------------
 
@@ -74,29 +74,30 @@ const dispatch = require('../dispatch');
 describe('[4] wedge guard (_dispatchActiveMode)', () => {
   it('a throwing mode handler is caught, flag cleared, key claimed', () => {
     // The registerPopupMode handler does a live property lookup
-    // (registerPopup.handleKey), so we can force it to throw.
+    // (registerPopup.viewportRows, to build the nav Msgs), so we can force
+    // it to throw.
     const rp = require('../register-popup');
-    const orig = rp.handleKey;
+    const orig = rp.viewportRows;
     const origErr = console.error;
     let logged = '';
-    rp.handleKey = () => { throw new Error('boom'); };
+    rp.viewportRows = () => { throw new Error('boom'); };
     console.error = (...a) => { logged = a.join(' '); };
     try {
       // reset all mode flags, then arm just this one
-      modes.resetModes(S);
-      S.registerPopupMode = true;
-      const claimed = dispatch._dispatchActiveMode('x', 'x');  // must not throw
+      modes.resetModes();
+      getModel().modes.registerPopupMode = true;
+      const claimed = dispatch._dispatchActiveMode(getModel(), 'x', 'x');  // must not throw
       eq(claimed, true, 'mode claimed the key');
-      eq(S.registerPopupMode, false, 'flag force-cleared so the user is not wedged');
+      eq(getModel().modes.registerPopupMode, false, 'flag force-cleared so the user is not wedged');
     } finally {
-      rp.handleKey = orig;
+      rp.viewportRows = orig;
       console.error = origErr;
     }
     assert(/registerPopupMode/.test(logged) && /boom/.test(logged), `error logged: ${logged}`);
   });
   it('returns false (falls through) when no mode is active', () => {
-    modes.resetModes(S);
-    eq(dispatch._dispatchActiveMode('j', 'j'), false);
+    modes.resetModes();
+    eq(dispatch._dispatchActiveMode(getModel(), 'j', 'j'), false);
   });
 });
 

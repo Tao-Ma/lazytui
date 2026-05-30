@@ -16,9 +16,10 @@ term.stdout.write = (chunk, ...rest) => {
   return _origWrite(chunk, ...rest);
 };
 
-const { S } = require('../state');
 const reg = require('../register');
 const { describe, it, eq, assert, report } = require('./test-runner');
+const { getModel } = require('../runtime');
+
 
 function reset(cap) {
   reg.init({ cap });
@@ -28,18 +29,18 @@ function reset(cap) {
 describe('[1] init', () => {
   it('default cap is 100', () => {
     reg.init();
-    eq(S.register.cap, 100, 'default cap');
-    eq(S.register.history.length, 0, 'history empty');
+    eq(getModel().register.cap, 100, 'default cap');
+    eq(getModel().register.history.length, 0, 'history empty');
   });
   it('positive int cap honored; invalid falls back to default', () => {
     reg.init({ cap: 7 });
-    eq(S.register.cap, 7, 'honors 7');
+    eq(getModel().register.cap, 7, 'honors 7');
     reg.init({ cap: 0 });
-    eq(S.register.cap, 100, '0 invalid → default');
+    eq(getModel().register.cap, 100, '0 invalid → default');
     reg.init({ cap: -3 });
-    eq(S.register.cap, 100, 'negative invalid → default');
+    eq(getModel().register.cap, 100, 'negative invalid → default');
     reg.init({ cap: 1.5 });
-    eq(S.register.cap, 100, 'non-integer invalid → default');
+    eq(getModel().register.cap, 100, 'non-integer invalid → default');
   });
 });
 
@@ -97,7 +98,7 @@ describe('[4] cap eviction', () => {
     eq(reg.at(0), 'd');
     eq(reg.at(1), 'c');
     eq(reg.at(2), 'b');
-    assert(!S.register.history.includes('a'), 'a evicted');
+    assert(!getModel().register.history.includes('a'), 'a evicted');
   });
 });
 

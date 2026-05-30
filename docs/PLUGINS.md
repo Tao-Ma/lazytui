@@ -20,8 +20,13 @@
 ```
 
 Core TUI is a generic framework. Plugins provide data for panels.
-Built-in panel types (groups, actions, file-manager, history, detail)
-stay in core. Everything else comes from plugins.
+
+**In-tree, every built-in panel is a Component** (`registerComponent`) — the
+strict, TEA-shaped API documented further below and in PRINCIPLES §12. The
+**Plugin API** documented here is the shape used by **external / user-
+authored plugins**; it stays simple (no slice, no `update`, no effects) so a
+small custom panel doesn't have to learn the spine. See §"Component
+Interface" below for when to pick which.
 
 ### Plugin API surface
 
@@ -37,7 +42,7 @@ const {
   theme,
   // panel
   renderPanel,
-  // state (read helpers — plugins should not mutate S directly)
+  // state (read helpers — per-panel chrome off the root model)
   getSel, getScroll, isMultiSel,
   // filter
   getFilter,
@@ -75,34 +80,36 @@ Three commands are available without any plugin contribution:
 
 These live in `plugins/api.js#FRAMEWORK_COMMANDS` (not in any plugin)
 because they're framework actions, not panel-type behavior. They're
-collected by `getCommands(S)` alongside plugin-contributed commands;
+collected by `getCommands()` alongside plugin-contributed commands;
 the `_plugin` field is `<framework>` for these entries.
 
 ## Plugin Interface
 
 ```javascript
-// plugins/docker.js
+// plugins/myplugin.js  (a Plugin — a stateless view panel)
 module.exports = {
-  name: 'docker',
+  name: 'myplugin',
 
   // Panel types this plugin provides
   panelTypes: {
-    containers: {
+    mypanel: {
+      kind: 'navigator',                  // navigator | viewer | monitor — see v0.5-layering.md
       mode: 'list',                       // list | content | stream | tree | terminal | input
-      render(panel, width, height, state) {}, // return Rich markup string
+      render(panel, width, height, state) {}, // return Rich markup string. `state` is the
+                                          //   root model for a Plugin (or the slice for a Component)
       getItems(state) {},                 // return RAW items (don't filter — framework filters centrally)
       getInfo(item) {},                   // return Rich-markup lines for detail
-      onKey(key, item, state) {},         // optional: panel keys; `item` is
-                                          // the focused list row, or null for
-                                          // content/stream/tree/terminal panels
-      copyOptions(item, state) {},        // optional: items for `y` copy menu
-      keyHints: 'i inspect | t logs',     // optional: shown in footer
+      onKey(key, item) {},                // optional: panel keys. `item` is the focused list row,
+                                          //   or null for content/stream/tree/terminal panels.
+                                          //   Read app-global state via getModel() / getSel() / etc.
+      copyOptions(item) {},               // optional: items for `y` copy menu
+      keyHints: 'enter open | r reload',  // optional: shown in footer
       filterable: true,                   // optional: enables `/` filter
       filterText: item => item.label,     // optional: which field the `/` filter matches (default: String(item))
     },
 
     // The framework applies the active filter centrally via api.getItems.
-    // Renderers and event handlers MUST call api.getItems(panelType, S) to
+    // Renderers and event handlers MUST call api.getItems(panelType) to
     // get the canonical filtered list — never iterate panelDef.getItems
     // directly, or selection index can desync from the rendered list.
   },
@@ -134,18 +141,19 @@ freeze, terminal overlays stutter. The user perceives this as "stuck".
 
 **Hooks that MUST be async** (run on a timer or in response to fast events):
 - `refresh(config)` — runs every ~10s; should return `Promise<boolean>`
-- `getItems(S)` if it does I/O (rare — most plugins have items in memory)
+- `getItems(state)` if it does I/O (rare — most plugins have items in memory)
 - `groupActions(group, name, config)` if it does I/O
 
 **Hooks that MAY be sync** (user-initiated, brief):
-- `render(panel, w, S)` — pure rendering, no I/O
-- `onKey(key, item, S)` — user pressed a key, brief work OK; for streaming
+- `render(panel, w, h, state)` — pure rendering, no I/O. `state` is the model
+  (Plugin) or the slice (Component).
+- `onKey(key, item)` — user pressed a key, brief work OK; for streaming
   output use `streamCommand` from `actions.js` (already async). `item` is
   the focused row when the panel has `getItems`; otherwise `null`. Return
   `true` to claim the key (suppresses framework default), anything else to
   fall through.
 - `getInfo(item)` — formatting cached data
-- `copyOptions(item, S)` — return options; expensive `content` should be
+- `copyOptions(item)` — return options; expensive `content` should be
   thunks `() => string` so they only run if user picks them
 
 **Helper**: `execAsync(cmd, options)` (re-exported from `./api`)
@@ -237,7 +245,7 @@ Press `y` opens a popup of copy targets. Each plugin contributes options
 for its panel based on the focused item:
 
 ```javascript
-copyOptions(item, S) {
+copyOptions(item) {
   return [
     { label: 'Container name',  content: item },
     { label: 'Status',          content: cachedStatus(item) },
@@ -255,28 +263,30 @@ directly; 2+ → popup with arrow nav.
 
 ## Component Interface — the strict alternative
 
-Plugins (the API above) are the fast path: mutate `S` directly, react
-to keys via `onKey`. **Component** is a strict, TEA-shaped alternative
-that exists alongside Plugin — every existing plugin still works
-unchanged; new code chooses per file. The contract lives in
+Plugins (the API above) are the fast path: a stateless render over the
+shared model plus an optional `onKey`. **Component** is the strict,
+TEA-shaped alternative the in-tree built-ins all use. Both APIs coexist;
+external plugins choose per file. The contract also lives in
 [PRINCIPLES.md §12](PRINCIPLES.md#12-two-plugin-apis--plugin-simple-and-component-strict);
 this section is the practical reference for authoring one.
 
 ### When to choose Component over Plugin
 
-- You want **snapshot tests** or **replay determinism** for the
-  plugin's behavior — Component's `update(msg, slice) → newSlice` is
-  pure, so a stored slice + a Msg list replays to an exact final
-  state.
-- The plugin maintains **non-trivial state** that you don't want
-  other plugins (or future you) accidentally trampling. Components
-  own a slice the framework hands them; cross-Component access goes
-  through the runtime, not through shared `S`.
+- The panel **owns evolving state** (a cursor, a cache, a poll loop) that
+  you don't want other panels — or future you — accidentally trampling.
+  Components own a slice the framework hands them; cross-Component access
+  goes through Msgs, not through the shared model.
+- You want **snapshot tests** or **replay determinism** for the panel's
+  behavior — Component's `update(msg, slice) → [slice, effects]` is
+  pure, so a stored slice + a Msg list replays to an exact final state.
+- You need to fire **async work** as part of input handling — Components
+  emit Cmd-style effect descriptors which the framework runs; the result
+  comes back as a Msg.
 - You're comfortable writing a `switch (msg.type)` in exchange for
   the discipline.
 
-Otherwise use Plugin. The mutate-S shape is faster to write and
-correct for the common case.
+Otherwise use Plugin. The stateless-view shape is faster to write and
+correct for purely derived content.
 
 ### Minimum viable Component
 
@@ -293,12 +303,17 @@ module.exports = {
   }),
 
   // Framework calls update() once for every Msg. Pure function:
-  // returns the new slice (or `undefined` to leave it unchanged).
+  // returns the new slice (or [slice, effects] to also emit framework
+  // side-effects, or `undefined` to leave the slice unchanged).
   update: (msg, slice) => {
     switch (msg.type) {
       case 'key':
         if (msg.key === '+') return { ...slice, n: slice.n + 1, lastKey: msg.key };
         if (msg.key === '-') return { ...slice, n: slice.n - 1, lastKey: msg.key };
+        // Effect example — emit a setDetail to push text into the viewer.
+        // The framework runs the effect; if its result needs to feed back
+        // it does so via dispatchMsg from the effect handler.
+        if (msg.key === 'i') return [slice, [{ type: 'setDetail', lines: ['n = ' + slice.n] }]];
         return { ...slice, lastKey: msg.key };
       case 'refresh':
         // No-op for this Component, but the Msg still arrives.
@@ -309,7 +324,7 @@ module.exports = {
   },
 
   // Panel types use the same shape as Plugin's, but render gets
-  // (panel, w, h, slice) — the slice, NOT the global S.
+  // (panel, w, h, slice) — the Component's own slice, NOT the root model.
   panelTypes: {
     counter: {
       render: (panel, w, h, slice) =>
@@ -340,18 +355,21 @@ ignoring unknown types is forward-compatible.
 
 ### Discipline rules
 
-1. **Components MAY read `S`** for app-global concerns: focus,
-   currentGroup, mode flags, panel dimensions. Components MUST
-   import it explicitly — `S` is not passed as an argument.
-2. **Components MUST NOT write to `S`.** The Plugin/Component
-   boundary depends on Components staying read-only with respect to
-   shared state. v0.3.0 enforces this by documentation only — no
-   `Object.freeze` / Proxy. If you find yourself wanting to write
-   to `S`, you probably want a Plugin, not a Component.
+1. **Components MAY read the root model** for app-global concerns —
+   focus, currentGroup, mode flags, panel dimensions. Use
+   `require('./runtime').getModel()` (or the re-exported chrome
+   helpers `getSel` / `getScroll` / `isMultiSel`); the model is not
+   passed as an argument.
+2. **Components MUST NOT write the root model.** A Component's own
+   slice is the only thing its `update` writes directly; cross-layer
+   writes go out as effects — `apply_msg` (re-dispatch a Msg through
+   the root reducer) or `dispatch_msg` (re-dispatch to another
+   Component). The framework runs them, so the single-writer rule
+   per layer is preserved.
 3. **`update()` is pure.** No I/O, no `setTimeout`, no side effects.
-   The slice is the only output. (Want async? Trigger it from a
-   Plugin's `refresh()` or `onKey()`; the result arrives back as a
-   `'hub'` Msg if you publish it.)
+   The output is the next slice (or `[slice, effects]`). Async work
+   is an effect: return a Cmd descriptor, the framework runs it, the
+   result re-enters as a Msg.
 4. **Returning `undefined`** from `update()` leaves the slice
    unchanged. Explicit escape hatch for "this Msg is a no-op for me."
 5. **Throwing from `update()`** is isolated — the failing
@@ -360,9 +378,10 @@ ignoring unknown types is forward-compatible.
 
 ### What Component does NOT have
 
-- **`onKey`** — gone. Keys arrive as `'key'` Msgs through
-  `update()`. The key-filter middleware (also v0.3.0;
-  `dispatch.registerKeyFilter`) runs *before* dispatch, so a
+- **`onKey`** — gone. Keys arrive as `'key'` Msgs through `update()`,
+  and only for the focused Component (and only when no modal mode is
+  active — modals own input). The key-filter middleware
+  (`dispatch.registerKeyFilter`) runs *before* dispatch, so a
   Component's update sees whatever survived the filter chain.
 - **Direct hub subscription** — instead, every `hub.publish()` fans
   out as a `'hub'` Msg. A Component interested in a topic filters by
@@ -419,10 +438,14 @@ layout:
 
 ## Core vs Plugin
 
-The framework ships built-in panel types (`groups`, `actions`,
-`file-manager`, `history`, `detail`) implemented as a `core` plugin.
-Everything else — including the `containers` panel — comes from
-plugins. New panel types are added by writing a plugin.
+The framework ships built-in panel types — `groups`, `actions`,
+`file-manager`, `history`, `stats`, `detail`, plus the heavier
+`containers` (docker), `config-status`, and `files` panels — all
+implemented as **Components**, registered individually at boot
+(`tui.js`). New first-party panels follow the same shape. The
+**Plugin API** documented above is preserved as the simpler shape
+for **external / user-authored** plugins that don't need a slice or
+an `update`.
 
 For the current panel-type catalog, see **LAYOUT.md**.
 

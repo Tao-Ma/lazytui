@@ -47,15 +47,19 @@ const MODES = [
 // Ordered list of modeChain flags (precedence = array order).
 const CHAIN_MODES = MODES.filter(m => m.chain).map(m => m.flag);
 
-/** True when any mode that draws a centered overlay is active. */
-function isOverlayActive(S) { return MODES.some(m => m.overlay && S[m.flag]); }
+function _modes() { return require('./runtime').getModel().modes; }
+
+/** True when any mode that draws a centered overlay is active.
+ *  Accepts an optional explicit modes-bag for test isolation; defaults
+ *  to the live model's modes. */
+function isOverlayActive(md = _modes()) { return MODES.some(m => m.overlay && md[m.flag]); }
 
 /** True when any mode that owns the footer row is active. */
-function isModal(S) { return MODES.some(m => m.modal && S[m.flag]); }
+function isModal(md = _modes()) { return MODES.some(m => m.modal && md[m.flag]); }
 
 /** Clear every resettable mode flag (called from initState). Non-flag
- *  buffers (S.prefixNode, S.detailSearch, etc.) are reset by their
- *  owners; this only flips the booleans. */
-function resetModes(S) { for (const m of MODES) if (m.reset) S[m.flag] = false; }
+ *  buffers (prefixNode, detail-slice search state, etc.) are reset by
+ *  their owners; this only flips the booleans. */
+function resetModes(md = _modes()) { for (const m of MODES) if (m.reset) md[m.flag] = false; }
 
 module.exports = { MODES, CHAIN_MODES, isOverlayActive, isModal, resetModes };

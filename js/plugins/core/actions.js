@@ -8,7 +8,7 @@
  */
 'use strict';
 
-const { S } = require('../../state');
+const { getModel } = require('../../runtime');
 const {
   esc, visibleLen, theme, renderPanel,
   getSel, getScroll, isMultiSel, getFilter, decorate,
@@ -20,12 +20,13 @@ const {
  * centrally by api.getItems via `filterText: ([, a]) => a.label`.
  */
 function getItems() {
-  const group = S.config.groups[S.currentGroup];
+  const m = getModel();
+  const group = m.config.groups[m.currentGroup];
   if (!group) return [];
   // Merge: plugin-contributed actions first (defaults), then YAML actions.
   // YAML keys override plugin keys so users can customize / omit any.
   const merged = {
-    ...getGroupActions(group, S.currentGroup),
+    ...getGroupActions(group, m.currentGroup),
     ...(group.actions || {}),
   };
   return Object.entries(merged);
@@ -65,10 +66,11 @@ function getInfo(item) {
  * confirm/args annotations.
  */
 function actionRow([key, action], i) {
+  const m = getModel();
   const tag = { spawn: ' ⧉', background: ' ⇱' }[action.type] || '';
-  const isLast = key === S.lastRunAction;
+  const isLast = key === m.lastRunAction;
   const isSel = i === getSel('actions');
-  const isFocused = S.focus === 'actions';
+  const isFocused = m.focus === 'actions';
   const isMs = isMultiSel('actions', key);
   const mark = isMs ? '*' : ((isLast || (isSel && !isFocused)) ? '>' : ' ');
   const confirmStr = action.confirm ? ' \\[confirm]' : '';
@@ -82,13 +84,13 @@ function actionRow([key, action], i) {
 }
 
 function render(panel, w, h) {
-  const actions = apiGetItems('actions', S);
+  const actions = apiGetItems('actions');
   const innerW = w - 2;
   const sel = getSel('actions');
-  const isFocused = S.focus === 'actions';
+  const isFocused = getModel().focus === 'actions';
   const lines = actions.map((item, i) => {
     const isSel = i === sel && isFocused;
-    const ctx = { panelType: 'actions', item, selected: isSel, S };
+    const ctx = { panelType: 'actions', item, selected: isSel };
     const baseRow = actionRow(item, i);
     const left = decorate('row:left:actions', { ...ctx, width: 4 });
     const used = visibleLen(baseRow) + (left ? visibleLen(left) + 1 : 0);
@@ -111,12 +113,22 @@ function render(panel, w, h) {
   });
 }
 
+// Stateless Component — `actions` is a pure projection of
+// model.config.groups[currentGroup].actions + plugin groupActions, with no
+// panel-owned domain state. Registered as a Component (rather than a Plugin)
+// for API uniformity; the empty slice + no-op update are the cost paid for
+// one panel shape. See docs/v0.5-layering.md.
 module.exports = {
-  panelType: 'actions',
-  def: {
-    mode: 'list', render,
-    getItems, getInfo, copyOptions,
-    filterable: true, filterText: ([, a]) => a.label,
-    idOf: ([key]) => key,
+  name: 'actions',
+  init: () => ({}),
+  update: (msg, slice) => slice,
+  panelTypes: {
+    actions: {
+      kind: 'navigator',
+      mode: 'list', render,
+      getItems, getInfo, copyOptions,
+      filterable: true, filterText: ([, a]) => a.label,
+      idOf: ([key]) => key,
+    },
   },
 };

@@ -29,7 +29,8 @@
 
 const { spawn } = require('child_process');
 const path = require('path');
-const { S, loadConfig } = require('./state');
+const { loadConfig } = require('./state');
+const { getModel } = require('./runtime');
 
 // Built-in plugins consulted for `groupActions(group, name)` synthesis.
 // Add new generic plugins here as they ship — keeping this list explicit
@@ -142,7 +143,7 @@ function resolveAction(config, actionPath) {
  */
 function runCli(configPath, actionPath, actionArgs) {
   loadConfig(configPath);
-  const config = S.config;
+  const config = getModel().config;
   applyPluginGroupActions(config);
 
   const r = resolveAction(config, actionPath);
@@ -197,8 +198,8 @@ function runCli(configPath, actionPath, actionArgs) {
  */
 function runList(configPath, filter) {
   loadConfig(configPath);
-  applyPluginGroupActions(S.config);
-  const out = formatActionList(S.config, filter);
+  applyPluginGroupActions(getModel().config);
+  const out = formatActionList(getModel().config, filter);
   process.stdout.write(out + '\n');
   return Promise.resolve(0);
 }

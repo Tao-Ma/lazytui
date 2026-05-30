@@ -29,7 +29,10 @@ function withDispatchKey(key, seq, recorded) {
       recorded.push({ key: evt.key, seq: evt.seq });
       return null;  // suppress — no downstream side-effects fire
     });
-    dispatch.handleKey(key, seq);
+    // handleKey now takes the owned model first; the terminal sink filter
+    // returns null and suppresses the chain before the model is touched,
+    // so a placeholder is fine here.
+    dispatch.handleKey({}, key, seq);
   };
 }
 

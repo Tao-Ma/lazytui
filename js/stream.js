@@ -14,7 +14,7 @@
 
 const { spawn } = require('child_process');
 const { esc } = require('./ansi');
-const { S } = require('./state');
+const { getModel } = require('./runtime');
 const { scheduleRender } = require('./render-queue');
 const history = require('./history');
 
@@ -33,15 +33,12 @@ function killCurrentProc() {
   }
 }
 
-/** Append a line to detail; auto-scroll to bottom only if already at bottom. */
+// Append a line to detail through the reducer (the viewer_append Msg owns the
+// push + bottom-stick scroll). stream.js is an async producer with no threaded
+// model, so it bridges via getModel(); dispatch is lazy-required to dodge the
+// stream → dispatch → actions → stream load cycle. These Msgs emit no Cmds.
 function appendDetailLine(line) {
-  const innerH = Math.max(1, (S.panelHeights.detail || 10) - 2);
-  const maxScroll = Math.max(0, S.detailLines.length - innerH);
-  const wasAtBottom = S.detailScroll >= maxScroll;
-  S.detailLines.push(line);
-  if (wasAtBottom) {
-    S.detailScroll = Math.max(0, S.detailLines.length - innerH);
-  }
+  require('./plugins/api').dispatchMsg({ type: 'viewer_append', line });
 }
 
 /**
@@ -51,12 +48,11 @@ function appendDetailLine(line) {
  */
 function streamCommand(headerLabel, cmd, args = []) {
   killCurrentProc();
-  S.detailLines = [`[dim]$ ${headerLabel}[/]`];
-  S.detailScroll = 0;
+  require('./plugins/api').dispatchMsg({ type: 'stream_start', header: `[dim]$ ${headerLabel}[/]` });
   scheduleRender();
 
   // -- delimiter so $0 = "--", $1 = first arg, $@ = arg list (POSIX).
-  const proc = spawn('sh', ['-c', cmd, '--', ...args], { cwd: S.projectDir });
+  const proc = spawn('sh', ['-c', cmd, '--', ...args], { cwd: getModel().projectDir });
   currentProc = proc;
   const rec = history.start(headerLabel, cmd);
   currentRecord = rec;
@@ -98,7 +94,7 @@ function streamCommand(headerLabel, cmd, args = []) {
   });
 }
 
-/** True while a streamed command is producing output into S.detailLines. */
+/** True while a streamed command is producing output into getModel().viewer.lines. */
 function isStreaming() { return currentProc !== null; }
 
 module.exports = { streamCommand, killCurrentProc, isStreaming };

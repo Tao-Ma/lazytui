@@ -14,7 +14,7 @@
 
 const pty = require('node-pty');
 const { Terminal } = require('@xterm/headless');
-const { S } = require('./state');
+const { getModel } = require('./runtime');
 const { scheduleOverlay, scheduleRender } = require('./render-queue');
 
 const sessions = {};  // id -> { pty, xterm, cmd, exited, exitCode }
@@ -31,7 +31,7 @@ function ensureSession(id, cmd, cols, rows) {
     name: 'xterm-256color',
     cols,
     rows,
-    cwd: S.projectDir,
+    cwd: getModel().projectDir,
     env: process.env,
   });
   // Event-driven overlay refresh — render right after xterm finishes
@@ -69,8 +69,8 @@ function _onSessionExit(id, exitCode) {
   const tabs = require('./tabs');
   let anyChange = false;
   const wasActive = tabs.activeTerminalId() === id;
-  if (S.viewMode === 'full' && wasActive) {
-    S.viewMode = 'normal';
+  if (require('./runtime').getModel().viewMode === 'full' && wasActive) {
+    require('./runtime').dispatch({ type: 'view_set', mode: 'normal' });
     anyChange = true;
   }
   if (exitCode === 0 && tabs.handleSessionCleanExit(id)) {

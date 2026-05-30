@@ -12,6 +12,9 @@
 'use strict';
 
 const { describe, it, eq, assert, report } = require('./test-runner');
+const { getModel } = require('../runtime');
+const { getComponentSlice } = require('../plugins/api');
+
 const kb = require('../keybindings');
 
 // ---- [1] parseSeq -------------------------------------------------
@@ -109,7 +112,6 @@ describe('[3] resolve helpers', () => {
 
 // ---- [4] dispatch: prefix walk ------------------------------------
 
-const { S } = require('../state');
 const dispatch = require('../dispatch');
 
 describe('[4] prefix dispatch', () => {
@@ -118,13 +120,13 @@ describe('[4] prefix dispatch', () => {
     let ran = null;
     kb.registerKeyBinding('zz', { label: 'z-test', run: () => { ran = 'zz'; } });
     dispatch._enterPrefix();
-    assert(S.prefixMode === true, 'in prefix mode');
+    assert(getModel().modes.prefixMode === true, 'in prefix mode');
     dispatch._handlePrefixKey('z', 'z');           // descend
-    assert(S.prefixMode === true, 'still pending after subtree step');
-    eq(S.prefixSeq.join(''), 'z', 'consumed token recorded');
+    assert(getModel().modes.prefixMode === true, 'still pending after subtree step');
+    eq(getModel().prefixSeq.join(''), 'z', 'consumed token recorded');
     dispatch._handlePrefixKey('z', 'z');           // leaf → run
     eq(ran, 'zz', 'leaf ran');
-    assert(S.prefixMode === false, 'exited prefix mode');
+    assert(getModel().modes.prefixMode === false, 'exited prefix mode');
   });
   it('Esc cancels without running', () => {
     kb.clearBindings();
@@ -132,18 +134,18 @@ describe('[4] prefix dispatch', () => {
     kb.registerKeyBinding('q', { label: 'q', run: () => { ran = true; } });
     dispatch._enterPrefix();
     dispatch._handlePrefixKey('escape', undefined);
-    assert(!ran && S.prefixMode === false, 'cancelled, nothing ran');
+    assert(!ran && getModel().modes.prefixMode === false, 'cancelled, nothing ran');
   });
   it('a second leader press cancels', () => {
     dispatch._enterPrefix();
     dispatch._handlePrefixKey(' ', ' ');
-    assert(S.prefixMode === false, 'double-leader exits');
+    assert(getModel().modes.prefixMode === false, 'double-leader exits');
   });
   it('an unbound key drops out of prefix mode', () => {
     kb.clearBindings();
     dispatch._enterPrefix();
     dispatch._handlePrefixKey('x', 'x');
-    assert(S.prefixMode === false, 'unbound key exits');
+    assert(getModel().modes.prefixMode === false, 'unbound key exits');
   });
 });
 
@@ -165,30 +167,30 @@ api.registerPlugin({
 describe('[5] v-mode gates space', () => {
   it('space enters prefix in normal mode; v enters select then space toggles', () => {
     kb.clearBindings();
-    S.multiSel = {};
-    S.sel = { listy: 1 };
-    S.filters = {};
-    S.focus = 'listy';
-    S.listSelectMode = false;
-    S.prefixMode = false;
+    getModel().ui.multiSel = {};
+    getModel().ui.sel = { listy: 1 };
+    getModel().ui.filters = {};
+    getModel().focus = 'listy';
+    getModel().modes.listSelectMode = false;
+    getModel().modes.prefixMode = false;
 
     // Normal mode: space → prefix.
-    dispatch._handleNormalKey(' ', ' ');
-    assert(S.prefixMode === true, 'space is leader outside select mode');
+    dispatch._handleNormalKey(getModel(), ' ', ' ');
+    assert(getModel().modes.prefixMode === true, 'space is leader outside select mode');
     dispatch._handlePrefixKey('escape', undefined);  // clean up
 
     // v → enter select mode.
-    dispatch._handleNormalKey('v', 'v');
-    assert(S.listSelectMode === true, 'v enters list-select mode');
+    dispatch._handleNormalKey(getModel(), 'v', 'v');
+    assert(getModel().modes.listSelectMode === true, 'v enters list-select mode');
 
     // space → toggle the focused row (no prefix).
-    dispatch._handleNormalKey(' ', ' ');
-    assert(S.prefixMode === false, 'space does not lead inside select mode');
+    dispatch._handleNormalKey(getModel(), ' ', ' ');
+    assert(getModel().modes.prefixMode === false, 'space does not lead inside select mode');
     eq(require('../state').multiSelCount('listy'), 1, 'focused row toggled on');
 
     // v → exit select mode (clears selection).
-    dispatch._handleNormalKey('v', 'v');
-    assert(S.listSelectMode === false, 'second v exits select mode');
+    dispatch._handleNormalKey(getModel(), 'v', 'v');
+    assert(getModel().modes.listSelectMode === false, 'second v exits select mode');
     eq(require('../state').multiSelCount('listy'), 0, 'selection cleared on exit');
   });
 
@@ -284,22 +286,22 @@ describe('[9] space gate + group-switch reset', () => {
   const { resetGroupContext } = require('../state');
   it('space leads when select mode is armed but focus is a non-list panel', () => {
     kb.clearBindings();
-    S.focus = 'detail';
-    S.listSelectMode = true;
-    S.prefixMode = false;
-    S.detailLines = []; S.detailScroll = 0;
-    S.panelHeights = { detail: 10 };
-    S.detailSearch = { active: false };
-    S.detailCursor = { line: 0, col: 0 };
-    dispatch._handleNormalKey(' ', ' ');
-    assert(S.prefixMode === true, 'space is the leader on detail even with listSelectMode armed');
+    getModel().focus = 'detail';
+    getModel().modes.listSelectMode = true;
+    getModel().modes.prefixMode = false;
+    getComponentSlice('detail').lines = []; getComponentSlice('detail').scroll = 0;
+    getModel().panelHeights = { detail: 10 };
+    getComponentSlice('detail').search = { active: false };
+    getComponentSlice('detail').cursor = { line: 0, col: 0 };
+    dispatch._handleNormalKey(getModel(), ' ', ' ');
+    assert(getModel().modes.prefixMode === true, 'space is the leader on detail even with listSelectMode armed');
     dispatch._handlePrefixKey('escape', undefined);
   });
   it('resetGroupContext clears listSelectMode', () => {
-    S.listSelectMode = true;
-    S.sel = {}; S.filters = {}; S.multiSel = {};
+    getModel().modes.listSelectMode = true;
+    getModel().ui.sel = {}; getModel().ui.filters = {}; getModel().ui.multiSel = {};
     resetGroupContext();
-    eq(S.listSelectMode, false, 'select mode dropped on group switch');
+    eq(getModel().modes.listSelectMode, false, 'select mode dropped on group switch');
   });
 });
 
@@ -315,7 +317,7 @@ describe('[10] leader run() error is surfaced, not swallowed', () => {
       dispatch._handlePrefixKey('z', 'z');
     } finally { console.error = origErr; }
     assert(/leader/.test(logged) && /kaboom/.test(logged), `error surfaced: ${logged}`);
-    assert(S.prefixMode === false, 'still exits prefix mode after a throwing binding');
+    assert(getModel().modes.prefixMode === false, 'still exits prefix mode after a throwing binding');
   });
 });
 
