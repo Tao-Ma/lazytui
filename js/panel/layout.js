@@ -173,14 +173,6 @@ function update(msg, slice) {
       // --design CLI flag). v0.6: auto-open the panel-list overlay when
       // the pool has hidden entries — the discoverability hint that
       // there are more panels available than currently in the grid.
-      //
-      // force_full_repaint covers the overlay→overlay transition case
-      // (`:free-config` typed in cmdMode): the render layer's residue
-      // wipe only fires on overlay→NO-overlay transitions, so going
-      // straight from one overlay (cmdline) to another (free-config)
-      // would leave the cmdline popup's pixels on screen. The repaint
-      // is cheap and idempotent for the no-prior-overlay case (boot
-      // via --design, menu pick).
       const enabled = slice.design && slice.design.enabled;
       const hasHidden = mpool.hiddenIds(slice.arrange).length > 0;
       const next = {
@@ -188,10 +180,7 @@ function update(msg, slice) {
         design: { enabled, selectedIdx: 0, drag: null, undo: [], redo: [], titleEdit: { active: false, text: '' } },
         panelList: { open: hasHidden, cursor: 0 },
       };
-      return [next, [
-        { type: 'apply_msg', msg: { type: 'mode_set', flag: 'freeConfigMode' } },
-        { type: 'force_full_repaint' },
-      ]];
+      return [next, [{ type: 'apply_msg', msg: { type: 'mode_set', flag: 'freeConfigMode' } }]];
     }
     case 'design_exit': {
       const enabled = slice.design && slice.design.enabled;

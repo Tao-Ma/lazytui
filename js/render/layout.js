@@ -211,7 +211,12 @@ function calcLayout(model = getModel()) {
 let _prevRows = [];
 let _prevCols = 0;
 let _forceFullRepaint = true;
-let _wasOverlayActive = false;
+// Set of overlay-flag names that were active on the previous frame.
+// Used to detect close + transition (any flag dropping out → force a
+// full repaint to wipe the closed overlay's pixels). Pure-open
+// transitions (no overlay → some overlay) don't force a repaint —
+// the new overlay paints cleanly on top of the existing frame.
+let _prevOverlayFlags = new Set();
 
 /**
  * Paint left + right column outputs to the screen. `leftOutput` and
@@ -419,19 +424,22 @@ function render(model = getModel()) {
   // `viewMode`) from this param, not a global fetch. The `= getModel()`
   // default keeps every existing `render()` call site working during
   // the v0.5 migration; it'll be removed once all callers thread it.
-  // Only force-full-repaint on overlay CLOSE (residue wipe). While an
-  // overlay is open, the main paint diff is still valid — main rows
-  // haven't changed under the popup, and the overlay redraws itself
-  // on each keypress, so we'd just be flashing the screen for nothing.
-  // All overlay flags must appear here, otherwise residue lingers when
-  // an event-driven render fires while/just-after the overlay is open
-  // (e.g. crashloop container spamming docker events with prompt up).
-  // Mode flags live nested under `model.modes`; overlay/modal helpers default
-  // to getModel().modes but accept an explicit bag too.
+  // Force-full-repaint when any overlay drops out — close OR transition.
+  // Pure opens (no overlay → some overlay) don't trigger: the new overlay
+  // paints cleanly on top of the still-valid frame, no flash. A transition
+  // overlay-A → overlay-B drops A AND adds B in the same dispatch cycle;
+  // the old logic only caught "all overlays gone", so A's pixels lingered
+  // beneath B (visible as e.g. cmdline residue under the design footer
+  // when :free-config typed from cmdMode). Computing the active-overlay
+  // SET (not just a single bool) catches every drop including nested
+  // closes (A,B → A) and same-cycle swaps.
   const md = model.modes;
-  const overlayActive = modes.isOverlayActive(md);
-  if (_wasOverlayActive && !overlayActive) _forceFullRepaint = true;
-  _wasOverlayActive = overlayActive;
+  const curOverlayFlags = new Set();
+  for (const m of modes.MODES) if (m.overlay && md[m.flag]) curOverlayFlags.add(m.flag);
+  for (const flag of _prevOverlayFlags) {
+    if (!curOverlayFlags.has(flag)) { _forceFullRepaint = true; break; }
+  }
+  _prevOverlayFlags = curOverlayFlags;
 
   let mainDidFull;
   // viewMode lives on the layout Component slice (Phase 1b).
