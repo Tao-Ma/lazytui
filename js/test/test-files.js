@@ -26,11 +26,8 @@ const { getModel } = require('../runtime');
 const { getComponentSlice } = require('../plugins/api');
 
 
-// The legacy file-manager is now a stateless Component; register it + the
-// core Plugin (groups/detail) so the api facade can resolve the def.
-const corePlugin = require('../plugins/core');
+// Register the file-manager Component so the api facade can resolve the def.
 const api = require('../plugins/api');
-api.registerPlugin(corePlugin);
 
 const fmMod = require('../plugins/core/file-manager');
 api.registerComponent(fmMod);

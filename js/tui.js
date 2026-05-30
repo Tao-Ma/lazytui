@@ -139,7 +139,7 @@ function main() {
   const { hideCursor } = require('./term');
   const { render, redraw, renderTerminalOverlay } = require('./layout');
   const { scheduleRender } = require('./render-queue');
-  const { registerPlugin, registerComponent, loadPlugins, refreshAll, startRefreshLoops } = require('./plugins/api');
+  const { registerComponent, loadPlugins, refreshAll, startRefreshLoops } = require('./plugins/api');
   const { setupKeyListener } = require('./input');
   const { getModel } = require('./runtime');
   const { destroyAll: destroyTerminals } = require('./terminal');
@@ -156,12 +156,8 @@ function main() {
 
   loadConfig(configArgs[0]);
 
-  // Register core panels (groups, actions, file-manager, detail) as a plugin
-  // so the framework dogfoods its own plugin API.
-  registerPlugin(require('./plugins/core'));
-
   // Built-in Components (TEA shape). The first three OWN state in their slices
-  // (genuine isolation — poll loops, browsers, git cache); the last four are
+  // (genuine isolation — poll loops, browsers, git cache); the rest are
   // stateless Components (empty slice + no-op update) — the API-uniformity tax
   // for keeping ONE panel shape across the stateless view set. See
   // docs/v0.5-layering.md.
@@ -175,7 +171,7 @@ function main() {
   // detail (the viewer) — Phase B: owns the viewer slice + update; the
   // last panel migrated to the Component shape. groups stays the only
   // Plugin (currentGroup is app-wide chrome, not panel-private).
-  registerComponent(require('./plugins/core/detail'));
+  registerComponent(require('./plugins/core/viewer'));
   // groups (Phase C — the last in-tree Plugin migrated). Owns the tree slice
   // (list / expanded / tab); the cascade (currentGroup / per-group root chrome
   // reset / viewer reset) goes out as apply_msg / dispatch_msg Cmds.

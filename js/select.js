@@ -323,7 +323,7 @@ function onDetailKey(key, seq) {
   // matches, Esc clears the search. These come before visual-mode v/V
   // so search nav is always reachable, but a live selection (visual
   // mode) hides search highlights anyway.
-  const search = require('./detail-search');
+  const search = require('./viewer-search');
   if (d?.search && d.search.active) {
     if (seq === 'n' || key === 'n') { search.next(); return true; }
     if (seq === 'N' || key === 'N') { search.prev(); return true; }

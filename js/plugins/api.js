@@ -590,15 +590,53 @@ const FRAMEWORK_COMMANDS = [
 ];
 
 /**
- * Collect commands for `:` cmdline mode. Three sources:
- *   1. Framework defaults (quit / refresh / help) — always available.
- *   2. Plugin `commands` arrays (fixed verbs).
- *   3. Plugin `getCommands(model)` (state-derived candidates like
- *      `theme <name>` — one entry per available theme).
+ * Dynamic framework `:` verbs — synthesized per call because their
+ * candidates depend on current state (loaded themes, configured panels,
+ * --design flag). The static framework defaults are in FRAMEWORK_COMMANDS.
+ */
+function _frameworkDynamicCommands(m) {
+  const { setTheme, themeNames } = require('../themes');
+  const { allPanels } = require('../state');
+  const out = [];
+  for (const name of themeNames()) {
+    out.push({
+      name: `theme ${name}`,
+      desc: `Switch to ${name} theme`,
+      run: () => { setTheme(name); },
+    });
+  }
+  for (const p of allPanels()) {
+    out.push({
+      name: `focus ${p.title}`,
+      desc: `Focus the ${p.title} panel`,
+      // applyMsg via focus_set so the change emits the show_selected_info
+      // Cmd (same cascade as keyboard focus). Writing model.focus directly
+      // would skip the refresh.
+      run: () => {
+        require('../dispatch').applyMsg(getModel(), { type: 'focus_set', focus: p.type });
+      },
+    });
+  }
+  if (m.designEnabled) {
+    out.push({
+      name: 'design',
+      desc: 'Open layout design mode',
+      run: () => { require('../dispatch').startDesignMode(); },
+    });
+  }
+  return out;
+}
+
+/**
+ * Collect commands for `:` cmdline mode. Four sources:
+ *   1. FRAMEWORK_COMMANDS (quit / refresh / help / save-layout / restore-layout).
+ *   2. Dynamic framework verbs (theme <name> / focus <panel> / design).
+ *   3. Plugin / Component `commands` arrays (fixed verbs).
+ *   4. Plugin / Component `getCommands(model)` (state-derived candidates).
  *
  * Each command must have { name, desc, run(args) }. The source name
  * is stamped on `_plugin` for telemetry / disambiguation; framework
- * defaults are stamped `<framework>`.
+ * defaults + dynamic framework verbs are stamped `<framework>`.
  */
 function getCommands() {
   const out = [];
@@ -606,6 +644,9 @@ function getCommands() {
     out.push({ ...c, _plugin: '<framework>' });
   }
   const m = getModel();
+  for (const c of _frameworkDynamicCommands(m)) {
+    out.push({ ...c, _plugin: '<framework>' });
+  }
   const collectFrom = (owner) => {
     const collect = (list) => {
       if (!Array.isArray(list)) return;

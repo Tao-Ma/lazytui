@@ -124,7 +124,6 @@ module.exports = {
   update: (msg, slice) => slice,
   panelTypes: {
     actions: {
-      kind: 'navigator',
       mode: 'list', render,
       getItems, getInfo, copyOptions,
       filterable: true, filterText: ([, a]) => a.label,

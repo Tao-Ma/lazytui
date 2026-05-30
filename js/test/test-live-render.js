@@ -16,10 +16,8 @@ const { getModel } = require('../runtime');
 const { getComponentSlice } = require('../plugins/api');
 
 const { initState, getSel, selectGroup } = require('../state');
-const api = require('../plugins/api');
 
 // --- boot a minimal-but-real app (mirrors tui.js boot, no PTY/input) ---
-api.registerPlugin(require('../plugins/core'));
 const _grp = (name, label) => ({
   name, label, containers: [],
   actions: { a1: { key: 'a1', label: 'Action 1', type: 'run', script: 'echo a1', tab: false } },

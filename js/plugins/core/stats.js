@@ -193,7 +193,6 @@ module.exports = {
   update: (msg, slice) => slice,
   panelTypes: {
     stats: {
-      kind: 'monitor',
       mode: 'content',
       render,
     },

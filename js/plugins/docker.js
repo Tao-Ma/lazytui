@@ -534,7 +534,6 @@ module.exports = {
   },
   panelTypes: {
     containers: {
-      kind: 'navigator',
       mode: 'list',
       render,
       getItems: (slice) => _getItems(slice),

@@ -21,20 +21,16 @@
 
 const { esc } = require('./ansi');
 const { allPanels, setDetail, getSel } = require('./state');
-const { render, forceFullRepaint } = require('./layout');
-const { showSelectedInfo, runTab } = require('./detail');
-const { runAction, doRun } = require('./actions');
+const { render } = require('./layout');
+const { showSelectedInfo } = require('./viewer');
+const { runAction } = require('./actions');
 const { refreshAll, getPanelDef, getItems, idOf, getGroupActions } = require('./plugins/api');
-const { showHelp } = require('./help-text');
 const copy = require('./copy');
-const cmdline = require('./cmdline');
 const registerPopup = require('./register-popup');
-const register = require('./register');
 const { isTerminalTab, activeTerminalId, findEphemeralByid,
         removeEphemeralTab, isContentTab, activeContentTab,
         removeContentTab } = require('./tabs');
 const { isSessionDead, restartSession } = require('./terminal');
-const { cleanup } = require('./cleanup');
 const { execSync } = require('child_process');
 const keybindings = require('./keybindings');
 const modes = require('./modes');
@@ -306,8 +302,8 @@ function handleDesignTitleEditKey(model, key, seq) {
 function handleCmdlineKey(model, key, seq) {
   // Folded into update: each key becomes a cmdline_* Msg. Text changes emit a
   // cmdline_rebuild Cmd (the effects layer re-queries the plugin facade — see
-  // runCmd). Arrow-key raw escape sequences are kept as fallbacks for callers
-  // that don't pre-normalize them to 'up'/'down'.
+  // effects.js). Arrow-key raw escape sequences are kept as fallbacks for
+  // callers that don't pre-normalize them to 'up'/'down'.
   if (key === 'escape')                      { applyMsg(model, { type: 'cmdline_cancel' }); return; }
   if (key === 'return')                      { applyMsg(model, { type: 'cmdline_submit' }); return; }
   if (key === 'up'   || seq === '\x1b[A')    { applyMsg(model, { type: 'cmdline_nav', dir: +1 }); return; }
@@ -696,105 +692,13 @@ function _dispatchActiveMode(model, key, seq) {
 // --- update spine ---
 //
 // The reducer (runtime.update) is pure and returns Cmd DESCRIPTORS — it
-// performs no effects itself. This is the effects layer: `runCmds`
-// interprets those descriptors against the modules that actually do the
-// work. `applyMsg` is the bridge handleAction arms call to feed a Msg
-// through update + run its Cmds.
-function runCmd(model, cmd) {
-  switch (cmd.type) {
-    case 'show_selected_info': showSelectedInfo(model); break;
-    case 'force_full_repaint': forceFullRepaint(); break;
-    case 'refresh':            refreshAll(model.config); break;
-    case 'show_help':          showHelp(); break;
-    case 'run_tab':            runTab(model, cmd.dir); break;
-    case 'start_design':       startDesignMode(); break;
-    case 'quit':               cleanup(); process.exit(0); break;
-    case 'do_run':
-      // The confirmed action. Deferred to the next tick so the input pump's
-      // trailing render() paints the overlay-gone frame BEFORE doRun blocks
-      // on spawn() (preserves the pre-TEA setImmediate-on-commit behavior).
-      setImmediate(() => doRun(model, cmd.actionKey, cmd.action, cmd.args));
-      break;
-    case 'run_action':
-      // A prompt-submitted action: re-enter runAction (so an action that is
-      // ALSO confirm: still gets gated) with the parsed args. Deferred for
-      // the same paint-first reason as do_run.
-      setImmediate(() => runAction(model, cmd.actionKey, cmd.action, cmd.args));
-      break;
-    case 'copy_commit':
-      // Resolve the selected copy option's (module-held) content thunk →
-      // OSC52, then drop the module options. idx<0 = cancel (just clear).
-      if (cmd.idx >= 0) copy.copySelect(cmd.idx);
-      copy.clearOptions();
-      break;
-    case 'destroy_pty_session':
-      // PTY teardown from the viewer-tab lifecycle (closing an ephemeral
-      // terminal tab). Idempotent if the session never started.
-      require('./terminal').destroySession(cmd.id);
-      break;
-    case 'apply_msg':
-      // Cross-layer Msg dispatch to the ROOT reducer from a reducer branch.
-      // The branch couldn't write the target field directly without violating
-      // layer ownership (e.g. viewer_add_content_tab needs to write
-      // model.modes.terminalMode, which belongs to the modes layer); emitting
-      // an apply_msg Cmd defers to a second update cycle that the proper
-      // handler reduces. See docs/v0.5-layering.md Phase A.
-      applyMsg(model, cmd.msg);
-      break;
-    case 'dispatch_msg':
-      // Companion to apply_msg, but for Msgs handled by a COMPONENT's update
-      // (viewer_reset_chrome → detail Component after Phase B). Routes via the
-      // Component fan-out instead of the root reducer.
-      require('./plugins/api').dispatchMsg(cmd.msg);
-      break;
-    case 'emit_osc52':
-      // The register's only effect: mirror a value to the OS clipboard via
-      // OSC52. The history mutation already happened in the reducer (model-
-      // register leaf); this just writes the escape sequence.
-      register.emitOSC52(cmd.text);
-      break;
-    case 'cmdline_rebuild':
-      // Text changed: re-query the registry from the plugin facade (effect)
-      // and feed the render-safe projection back through update. This is the
-      // one Cmd that produces a Msg — the reducer stays the model's writer
-      // while the effect supplies the facade-derived data.
-      applyMsg(model, { type: 'cmdline_set_matches', matches: cmdline.rebuild(model.modal.cmdline.text) });
-      break;
-    case 'cmdline_run':
-      // Run the module-held match at the selected index (run(args, S) — plugin
-      // commands read the facade off the param). May change focus, hence the
-      // showSelectedInfo in the cmdMode mode handler.
-      cmdline.runAt(cmd.sel, cmd.args);
-      break;
-    case 'cmdline_clear':
-      // Drop the held registry + reset render residue (submit/cancel).
-      cmdline.clear();
-      break;
-    case 'menu_action':
-      // The verb the user picked in the command menu. focus_panel carries
-      // its hotkey as a suffix; everything else is a bare handleAction verb.
-      if (cmd.action.startsWith('focus_panel:')) handleAction(model, 'focus_panel', cmd.action.split(':')[1]);
-      else handleAction(model, cmd.action);
-      break;
-    case 'run_binding':
-      // A resolved leader leaf. Surface sync throws + async rejections
-      // (mirrors the `:` cmdline path) rather than swallowing them.
-      try {
-        Promise.resolve(cmd.run()).catch(e => console.error('[leader]', e && e.message));
-      } catch (e) {
-        console.error('[leader]', e && e.message);
-      }
-      break;
-  }
-}
-
-function runCmds(model, cmds) {
-  for (const c of cmds) runCmd(model, c);
-}
-
+// performs no effects itself. The interpreter lives in `effects.js`
+// (shared with Component `update` so both paths run through the same
+// registry); `applyMsg` is the bridge handleAction arms call to feed a
+// Msg through update + run the resulting Cmds.
 function applyMsg(model, msg) {
   const [, cmds] = runtime.update(model, msg);
-  runCmds(model, cmds);
+  require('./effects').runEffects(cmds);
 }
 
 // --- handleAction: name → effect ---

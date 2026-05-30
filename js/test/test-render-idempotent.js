@@ -27,7 +27,7 @@ const { recomputeGroups } = require('../state');
 const { setTheme } = require('../themes');
 const groups = require('../plugins/core/groups');
 const actions = require('../plugins/core/actions');
-const detail = require('../plugins/core/detail');
+const detail = require('../plugins/core/viewer');
 const fileManager = require('../plugins/core/file-manager');  // legacy v0.3 alias
 const history = require('../plugins/core/history');
 

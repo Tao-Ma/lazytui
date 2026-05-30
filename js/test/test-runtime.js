@@ -81,7 +81,7 @@ describe('[3] update — (model, msg) → [model, cmds], pure + Cmd descriptors'
   it('viewer_scroll: delta pages clamped, to:top/bottom jumps, no effects', () => {
     // Phase B: viewer_scroll moved to detail.update — test the Component
     // update directly with an isolated slice.
-    const detail = require('../plugins/core/detail');
+    const detail = require('../plugins/core/viewer');
     // detail.update reads getModel().panelHeights — write to the singleton so
     // the viewport-based clamp uses the test's value.
     runtime.getModel().panelHeights.detail = 22;  // viewport = 20 → maxScroll 80
@@ -231,7 +231,7 @@ describe('[11] terminal mode + multi-select writes (folded off the input path)',
 describe('[10] streamed output — stream_start / viewer_append (effect source)', () => {
   // Phase B: stream_start + viewer_append moved into detail.update — tested
   // here against the Component update with an isolated slice.
-  const detail = require('../plugins/core/detail');
+  const detail = require('../plugins/core/viewer');
   it('stream_start replaces detail with the header + resets scroll', () => {
     const m = runtime.init();
     const slice = detail._init();

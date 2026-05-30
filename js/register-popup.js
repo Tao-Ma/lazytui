@@ -7,11 +7,11 @@
  * promotes that entry to the top (and re-emits OSC52 so the OS
  * clipboard tracks the choice). `d` drops the highlighted entry.
  *
- * This module is now RENDER-ONLY (+ the viewport-height helper the caller
+ * This module is RENDER-ONLY (+ the viewport-height helper the caller
  * needs to build nav Msgs). The cursor/scroll buffer + the key handling
  * folded into update (runtime: register_popup_* Msgs → model.modal.
  * registerPopup); the history mutations + OSC52 stay effects driven by the
- * register_* Cmds dispatch.runCmd interprets.
+ * register_* Cmds the effects layer interprets.
  *
  * Bindings (dispatch.handleRegisterPopupKey → register_popup_* Msgs):
  *   j / down   — move selection down

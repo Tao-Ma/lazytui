@@ -195,7 +195,7 @@ function _state() {
 try {
   require('../effects').installBuiltins();
   const api = require('../plugins/api');
-  if (!api.getComponentSlice('detail')) api.registerComponent(require('../plugins/core/detail'));
+  if (!api.getComponentSlice('detail')) api.registerComponent(require('../plugins/core/viewer'));
   if (!api.getComponentSlice('groups')) api.registerComponent(require('../plugins/core/groups'));
 } catch (_) { /* tests that don't need Components still load */ }
 

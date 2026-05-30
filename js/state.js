@@ -36,7 +36,7 @@ function _detailSlice() {
       try { require('./effects').installBuiltins(); } catch (_) {}
       _detailAutoRegistered = true;
     }
-    api.registerComponent(require('./plugins/core/detail'));
+    api.registerComponent(require('./plugins/core/viewer'));
     s = api.getComponentSlice('detail');
   }
   return s;
@@ -206,8 +206,7 @@ function allPanels() {
 // update, and the cross-layer cascade Cmds (set_current_group /
 // reset_group_context / viewer_reset_chrome) fire as a consequence.
 // Kept here as named exports so non-reducer callers (mouse, recursive `"`
-// expand, tests) have a stable surface; runtime.update calls the underlying
-// reducer leaves in model-groups.js directly.
+// expand, tests) have a stable surface.
 function recomputeGroups() {
   require('./plugins/api').dispatchMsg({ type: 'groups_recompute' });
 }
@@ -250,8 +249,8 @@ function syncPanelScroll(panelType, innerH) {
  * Reset the per-group transient UI state. Called when the user navigates
  * to a different group — selections in group-scoped panels go back to
  * row 0, the detail tab returns to "Info", filters/last-action/terminal
- * mode are cleared. Pure mutation of the model; doesn't render. (Logic in
- * model-groups.js; this binds it to the owned model.)
+ * mode are cleared. Routes through reset_group_context (root reducer) +
+ * viewer_reset_chrome (detail Component).
  */
 function resetGroupContext() {
   // Phase C: the root-chrome reset moved to a Msg in runtime.update; the

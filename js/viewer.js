@@ -1,6 +1,7 @@
 /**
- * Detail panel helpers — info display, tabs, copy mode.
- * Zero dependencies (uses local modules).
+ * Viewer-layer helpers — info display, tab switching, focused-panel-into-
+ * viewer cascade. Lives outside the viewer Component because these helpers
+ * span layers (the Navigator → Viewer "set content" wiring + tab arithmetic).
  */
 'use strict';
 

@@ -115,9 +115,9 @@ function buildRegistry() {
     });
   }
 
-  // Plugin commands (static + dynamic). Built-in `theme <name>`,
-  // `focus <panel>`, `quit`, `refresh`, `help` come through here from
-  // plugins/core.js.
+  // Plugin / Component commands (static + dynamic), plus the framework
+  // defaults + dynamic verbs (`quit`, `refresh`, `help`, `theme <name>`,
+  // `focus <panel>`, `design`) — all collected by plugins/api.js#getCommands.
   for (const cmd of getCommands()) {
     reg.push({
       name: cmd.name.toLowerCase(),

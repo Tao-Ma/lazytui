@@ -14,7 +14,7 @@
 const { allPanels, selectGroup, setSel, getSel, getScroll } = require('./state');
 const { render } = require('./layout');
 const { getModel } = require('./runtime');
-const { switchToTab, showSelectedInfo } = require('./detail');
+const { switchToTab, showSelectedInfo } = require('./viewer');
 const { enableMouse, enableFocusEvents, enableBracketedPaste, cols } = require('./term');
 const { isTerminalTab, activeTerminalId } = require('./tabs');
 const { writeToSession, isSessionDead } = require('./terminal');
@@ -150,7 +150,7 @@ function handleMouse(model, kind, x, y) {
     // Detail panel — top border row may be a tab bar; otherwise a
     // click inside the content area begins a text selection.
     // Tab bounds are published into panelBounds.detail.tabs by the
-    // detail panel's render path (plugins/core/detail.js#detailTitle).
+    // detail panel's render path (plugins/core/viewer.js#detailTitle).
     if (p.type === 'detail') {
       if (my === b.y) {
         const localX = mx - b.x;

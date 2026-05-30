@@ -93,7 +93,6 @@ module.exports = {
   // Panel types this plugin provides
   panelTypes: {
     mypanel: {
-      kind: 'navigator',                  // navigator | viewer | monitor — see v0.5-layering.md
       mode: 'list',                       // list | content | stream | tree | terminal | input
       render(panel, width, height, state) {}, // return Rich markup string. `state` is the
                                           //   root model for a Plugin (or the slice for a Component)

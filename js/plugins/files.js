@@ -525,7 +525,6 @@ function _openFileAsTab(item, panelType) {
 
 function _makeDef(panelType, hardcoded) {
   return {
-    kind: 'navigator',
     mode: 'list',
     render: (panel, w, h, slice) => _renderFor(panel, w, h, slice, panelType, hardcoded),
     getItems: (slice) => _itemsFor(slice, panelType, hardcoded),

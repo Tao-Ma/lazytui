@@ -2,11 +2,11 @@
  * Detail-search smoke test — substring + regex matching, case-
  * insensitivity, invalid regex graceful, navigation, autoscroll.
  *
- * Run: node js/test/test-detail-search.js
+ * Run: node js/test/test-viewer-search.js
  */
 'use strict';
 
-const search = require('../detail-search');
+const search = require('../viewer-search');
 const { describe, it, eq, assert, report } = require('./test-runner');
 const { getModel } = require('../runtime');
 const { getComponentSlice } = require('../plugins/api');

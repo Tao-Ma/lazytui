@@ -1,23 +1,22 @@
 /**
- * Effect channel for the Component (TEA) API — the side-effect half of
- * `update(msg, slice) → [newSlice, effects]`.
+ * The unified effect/Cmd channel — the side-effect half of every
+ * `update(... , msg) → [..., cmds]` path in the system.
  *
- * A Component is a pure function of (msg, slice): it returns its next state
- * plus a list of EFFECTS describing framework actions it wants performed
- * (write the detail panel, switch focus, request a repaint, run an async
- * compute, …). It never writes the model itself. The framework executes
- * those effects here, keeping the component testable/replayable while still
- * able to drive the imperative core.
+ * One registry, two emitters:
+ *   - Root reducer (`runtime.update`) returns Cmd descriptors;
+ *     `dispatch.applyMsg` runs them via `runEffects` here.
+ *   - Component `update(msg, slice)` returns effect descriptors;
+ *     `plugins/api.dispatchMsg` runs them via `runEffects` here.
  *
- * Effects are plain descriptors: `{ type: 'setDetail', lines: [...] }`.
- * Handlers register by type; the vocabulary grows as plugins migrate and
- * need new effects (a component can registerEffect its own — e.g.
- * config-status' cfgStatusCompute). Unknown effect types are logged, not
- * thrown — a misconfigured component shouldn't wedge dispatch.
+ * Cmds and effects are the same thing — plain descriptors
+ * (`{ type: 'setDetail', lines: [...] }`). Handlers register by type;
+ * the vocabulary grows as Components register their own (e.g.
+ * config-status' cfgStatusCompute). Unknown types are logged, not
+ * thrown — a misconfigured Component shouldn't wedge dispatch.
  *
- * v0.5 note: the built-in effects route through the reducer (viewer_set_content /
- * focus_set Msgs) so even a component's framework writes flow through update
- * — the single writer. The component never touches model state directly.
+ * The handlers route framework writes back through the reducer
+ * (`viewer_set_content` / `focus_set` Msgs) so even effect-driven
+ * writes go through update — single writer per layer.
  */
 'use strict';
 
@@ -71,11 +70,9 @@ function installBuiltins() {
   registerEffect('render', () => {
     try { require('./render-queue').scheduleRender(); } catch (_) { /* no renderer */ }
   });
-  // apply_msg: cross-layer Msg dispatch from a Component's update — same
-  // semantics as the root reducer's apply_msg Cmd (dispatch.runCmd). Lets a
-  // Component (e.g. detail) re-dispatch a Msg back to the root reducer
-  // (focus_set / terminal_enter/exit / mode_set/clear) without owning that
-  // layer's writes. Phase A/B.
+  // apply_msg: cross-layer Msg dispatch — lets a Component (e.g. detail)
+  // re-dispatch a Msg back to the root reducer (focus_set / terminal_enter
+  // / mode_set/clear) without owning that layer's writes. Phase A/B.
   registerEffect('apply_msg', (eff) => {
     require('./dispatch').applyMsg(require('./runtime').getModel(), eff.msg);
   });
@@ -89,7 +86,7 @@ function installBuiltins() {
   // refreshes the focused panel's info into the viewer. detail.update emits
   // this when closing the last content tab so the body falls back to Info.
   registerEffect('show_selected_info', () => {
-    try { require('./detail').showSelectedInfo(require('./runtime').getModel()); }
+    try { require('./viewer').showSelectedInfo(require('./runtime').getModel()); }
     catch (_) { /* no renderer (test) */ }
   });
   // destroy_pty_session: PTY teardown from the viewer-tab lifecycle (closing
@@ -98,18 +95,93 @@ function installBuiltins() {
   registerEffect('destroy_pty_session', (eff) => {
     try { require('./terminal').destroySession(eff.id); } catch (_) {}
   });
-  // tick: the recurring-timer primitive — the TEA self-re-arming-tick Cmd.
+  // tick: the recurring-timer primitive — the self-re-arming-tick Cmd.
   // Waits `ms`, then re-dispatches `msg` as a Component Msg. A Component drives
-  // a periodic loop
-  // by RE-EMITTING this effect from the handler for its tick Msg (self-arming,
-  // owned by the model — not a framework poll loop). `unref` so a pending tick
-  // never keeps the process alive (clean teardown on quit + in tests).
+  // a periodic loop by RE-EMITTING this effect from the handler for its tick
+  // Msg (self-arming, owned by the model — not a framework poll loop). `unref`
+  // so a pending tick never keeps the process alive (clean teardown on quit +
+  // in tests).
   registerEffect('tick', (eff) => {
     if (!eff || typeof eff.ms !== 'number' || !eff.msg) return;
     const t = setTimeout(() => {
       try { require('./plugins/api').dispatchMsg(eff.msg); } catch (_) { /* registry gone */ }
     }, eff.ms);
     if (t && typeof t.unref === 'function') t.unref();
+  });
+
+  // --- Root-reducer Cmds ---
+  // Emitted by `runtime.update` branches; run from `dispatch.applyMsg` via
+  // the same `runEffects` interpreter as Component effects.
+
+  registerEffect('force_full_repaint', () => {
+    try { require('./layout').forceFullRepaint(); } catch (_) {}
+  });
+  registerEffect('refresh', () => {
+    require('./plugins/api').refreshAll(getModel().config);
+  });
+  registerEffect('show_help', () => { require('./help-text').showHelp(); });
+  registerEffect('run_tab', (eff) => {
+    require('./viewer').runTab(getModel(), eff.dir);
+  });
+  registerEffect('start_design', () => {
+    require('./dispatch').startDesignMode();
+  });
+  registerEffect('quit', () => {
+    require('./cleanup').cleanup();
+    process.exit(0);
+  });
+  // do_run / run_action: deferred to the next tick so the input pump's
+  // trailing render() paints the overlay-gone frame BEFORE spawn() blocks
+  // (preserves the pre-TEA setImmediate-on-commit behavior).
+  registerEffect('do_run', (eff) => {
+    setImmediate(() => require('./actions').doRun(getModel(), eff.actionKey, eff.action, eff.args));
+  });
+  registerEffect('run_action', (eff) => {
+    setImmediate(() => require('./actions').runAction(getModel(), eff.actionKey, eff.action, eff.args));
+  });
+  // copy_commit: resolve the selected copy option's (module-held) content
+  // thunk → OSC52, then drop the module options. idx<0 = cancel (just clear).
+  registerEffect('copy_commit', (eff) => {
+    const copy = require('./copy');
+    if (eff.idx >= 0) copy.copySelect(eff.idx);
+    copy.clearOptions();
+  });
+  // emit_osc52: the register's only effect — mirror a value to the OS
+  // clipboard. History mutation already happened in the reducer (model-
+  // register leaf); this just writes the escape sequence.
+  registerEffect('emit_osc52', (eff) => {
+    require('./register').emitOSC52(eff.text);
+  });
+  // cmdline_rebuild: text changed — re-query the registry from the plugin
+  // facade and feed the render-safe projection back through update. The
+  // one Cmd that produces a Msg.
+  registerEffect('cmdline_rebuild', () => {
+    const m = getModel();
+    const matches = require('./cmdline').rebuild(m.modal.cmdline.text);
+    require('./dispatch').applyMsg(m, { type: 'cmdline_set_matches', matches });
+  });
+  // cmdline_run: invoke the held match at the selected index.
+  registerEffect('cmdline_run', (eff) => {
+    require('./cmdline').runAt(eff.sel, eff.args);
+  });
+  // cmdline_clear: drop the held registry + reset render residue (submit/cancel).
+  registerEffect('cmdline_clear', () => { require('./cmdline').clear(); });
+  // menu_action: the verb the user picked in the command menu. focus_panel
+  // carries its hotkey as a suffix; everything else is a bare handleAction verb.
+  registerEffect('menu_action', (eff) => {
+    const dispatch = require('./dispatch');
+    const m = getModel();
+    if (eff.action.startsWith('focus_panel:')) dispatch.handleAction(m, 'focus_panel', eff.action.split(':')[1]);
+    else dispatch.handleAction(m, eff.action);
+  });
+  // run_binding: a resolved leader leaf. Surface sync throws + async
+  // rejections (mirrors the `:` cmdline path) rather than swallowing them.
+  registerEffect('run_binding', (eff) => {
+    try {
+      Promise.resolve(eff.run()).catch(e => console.error('[leader]', e && e.message));
+    } catch (e) {
+      console.error('[leader]', e && e.message);
+    }
   });
 }
 

@@ -156,7 +156,6 @@ module.exports = {
   update,
   panelTypes: {
     history: {
-      kind: 'navigator',
       mode: 'list', render,
       getItems, getInfo, copyOptions,
       // Enter is handled in update() — suppress the framework default

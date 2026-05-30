@@ -46,8 +46,7 @@ function emitOSC52(text) {
 // Writers are thin bridges over the pure model-register leaf (the same leaf
 // runtime.update uses), plus the OSC52 effect. Production yank/popup writes
 // flow through update (register_push / register_popup_* Msgs); these wrappers
-// remain as the direct test-facing API + for any non-threaded caller — same
-// bridge shape as state.js's group-tree wrappers over model-groups.
+// remain as the direct test-facing API + for any non-threaded caller.
 function push(text) {
   _ensure();
   const v = mreg.push(getModel(), text);

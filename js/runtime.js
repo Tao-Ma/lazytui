@@ -10,11 +10,13 @@
  * Contract:
  *   - Readers use `getModel()` (no global imports).
  *   - All writes to root-model fields flow through `update`. Reducer-
- *     leaves (model-design / model-groups / model-register / model-menu)
- *     mutate the model arg in place — intentional; full immutability was
- *     evaluated and skipped (see v0.5-layering.md §"Skipped").
+ *     leaves (model-design / model-register / model-menu / model-search /
+ *     model-tabs) mutate the slice/model arg in place — intentional;
+ *     full immutability was evaluated and skipped (see v0.5-layering.md
+ *     §"Skipped").
  *   - The reducer performs no I/O; effects are Cmd DESCRIPTORS the
- *     effects layer (dispatch.runCmd) interprets.
+ *     effects layer (effects.runEffects, called from dispatch.applyMsg)
+ *     interprets.
  */
 'use strict';
 
@@ -202,10 +204,10 @@ function reduceViewMode(viewMode, msg) {
  *   1. Root-model writes happen HERE. The reducer is the single writer
  *      for every chrome / modal / config / framework field; Component
  *      slices are written by each Component's own `update`.
- *   2. No effects. `update` stays free of effectful imports (no detail.js
+ *   2. No effects. `update` stays free of effectful imports (no viewer.js
  *      / layout.js) so it has no require cycle and is trivially unit-
  *      testable. Side effects go out as Cmd DESCRIPTORS (`{ type, ... }`)
- *      the effects layer (dispatch.runCmds) interprets.
+ *      the effects layer (effects.runEffects) interprets.
  *
  * Implementation note: there is one shared `_model`, so this mutates and
  * returns it rather than cloning. The signature is the contract callers
@@ -239,9 +241,8 @@ function update(model, msg) {
       // The caller clamped `index` against the panel's item count
       // (getItems is plugin-API/derivation logic — view-side). Storing a
       // plain list panel's selection is a pure model write. The groups
-      // panel cascades (currentGroup + per-group context reset) — now a
-      // pure transform too, run inline via model-groups (was a Cmd back
-      // when the cascade was trapped in state.js behind the require cycle).
+      // panel cascades (currentGroup + per-group context reset) — run by
+      // the groups Component as a follow-up to dispatch_msg.
       // Either way the detail body refreshes for the new row.
       // Uniform write across panels (Phase C): just store the index. For
       // 'groups', additionally dispatch_msg → groups Component, which owns
@@ -693,9 +694,8 @@ function update(model, msg) {
     case 'set_last_run_action':
       // Routes actions.js's `model.lastRunAction = actionKey` write through
       // update so the actions-panel `>`-marker has a single writer (the
-      // reducer). `''` clears (e.g. on group change — model-groups.reset-
-      // GroupContext does this inline as a reducer-leaf, which is fine;
-      // this Msg covers the outside-of-update writer).
+      // reducer). `''` clears (e.g. on group change — the cascade in the
+      // groups Component handles this via reset_group_context).
       model.lastRunAction = typeof msg.action === 'string' ? msg.action : '';
       return [model, []];
     case 'mode_clear':
@@ -708,9 +708,9 @@ function update(model, msg) {
       return [model, []];
     case 'mode_set':
       // Companion to mode_clear: set a mode flag to true via Msg. Used by the
-      // detail-search Component's enter() to flip detailSearchMode without
-      // writing across layers (the search slice is detail's; the mode flag is
-      // root chrome). Phase A pattern.
+      // viewer Component's search-enter handler to flip detailSearchMode
+      // without writing across layers (the search slice is the viewer's;
+      // the mode flag is root chrome). Phase A pattern.
       if (msg.flag && msg.flag in model.modes) model.modes[msg.flag] = true;
       return [model, []];
     case 'set_current_group':

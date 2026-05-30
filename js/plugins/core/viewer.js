@@ -85,19 +85,19 @@ function update(msg, slice) {
       slice.tab = msg.tab | 0;
       return slice;
     case 'viewer_reset_chrome': {
-      // Dispatched (via dispatch_msg Cmd) from the root reducer's nav_select /
-      // toggle_group when a group cascade changes currentGroup. Single-writer
-      // per layer: root chrome reset happens in model-groups; the viewer-slice
-      // half lives here. See Phase A.
+      // Dispatched (via dispatch_msg Cmd) from the groups Component when a
+      // tree cascade changes currentGroup. Single-writer per layer: root
+      // chrome reset goes through the reset_group_context Msg; the viewer-
+      // slice half lives here. See Phase A.
       slice.tab = 0;
       if (slice.select) slice.select.active = false;
       slice.cursor = { line: 0, col: 0 };
       return slice;
     }
 
-    // --- detail-search (typing phase, folded into the viewer Component).
-    // model-search now writes only the slice; the detailSearchMode flag
-    // (root chrome) is set/cleared via apply_msg → mode_set / mode_clear.
+    // --- viewer-search (typing phase, folded into the viewer Component).
+    // model-search writes only the slice; the detailSearchMode flag (root
+    // chrome) is set/cleared via apply_msg → mode_set / mode_clear.
     case 'viewer_search_enter': {
       const r = ms.enter(slice);
       return [slice, r.enableSearchMode
@@ -253,7 +253,7 @@ function render(panel, w, h, slice) {
   }
   let lines = slice.lines;
   const select = require('../../select');
-  const search = require('../../detail-search');
+  const search = require('../../viewer-search');
   if (select.isActive()) {
     lines = select.decorateLines(lines);
   } else {
@@ -274,7 +274,7 @@ module.exports = {
   init,
   update,
   panelTypes: {
-    detail: { kind: 'viewer', mode: 'content', render },
+    detail: { mode: 'content', render },
   },
   // Test-only exports — not part of the Component contract.
   _init: init,

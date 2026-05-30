@@ -30,7 +30,7 @@ const { isTerminalTab, activeTerminalId, activeTerminalConfig,
         getTabInfo, findEphemeralByid } = require('./tabs');
 const { ensureSession, getSession, resizeSession } = require('./terminal');
 const { getPanelDef, getComponentSlice } = require('./plugins/api');
-const { showSelectedInfo } = require('./detail');
+const { showSelectedInfo } = require('./viewer');
 const { renderCopyMenu } = require('./copy');
 const { render: renderRegisterPopup } = require('./register-popup');
 const { renderMenu } = require('./menu');
@@ -480,7 +480,7 @@ function footerKeys(model) {
     return ` \\[terminal: ${esc(label)}] | Ctrl+\\ return to TUI`;
   }
   if (md.detailSearchMode) {
-    const ds = require('./detail-search');
+    const ds = require('./viewer-search');
     const term = ds.typingText();
     const search = getComponentSlice('detail')?.search || { matches: [], idx: 0 };
     const n = (search.matches || []).length;

@@ -156,7 +156,7 @@ scaling and `unit` for value formatting:
 ## 4. Plugin contract
 
 Lives in `plugins/core/stats.js` (framework code, alongside
-`history.js` / `detail.js` — not docker-specific).
+`history.js` / `viewer.js` — not docker-specific).
 
 ```javascript
 // plugins/core/stats.js  (sketch)

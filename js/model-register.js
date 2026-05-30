@@ -1,15 +1,15 @@
 /**
  * Pure yank-register transforms — the reducer-owned half of register.js.
  *
- * Dependency-free leaf (model-groups precedent) so runtime.update can mutate
+ * Dependency-free leaf (same shape as model-search / model-menu) so runtime.update can mutate
  * the register slice without importing register.js (which requires runtime →
  * cycle). Every function takes `model` and mutates model.register.history;
  * none touch the terminal. The OSC52 emit is the only effect — these return
  * the value to emit (or null) so the caller raises an emit_osc52 Cmd.
  *
  * register.js keeps thin wrappers over these for the test-facing API + the
- * OSC52 effect (same bridge shape as state.js's group-tree wrappers over
- * model-groups).
+ * OSC52 effect (a leaf + a thin bridge module — same pattern as
+ * model-search / viewer-search.js).
  */
 'use strict';
 

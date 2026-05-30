@@ -404,7 +404,6 @@ module.exports = {
   update,
   panelTypes: {
     'config-status': {
-      kind: 'navigator',
       mode: 'list',
       render,
       getItems: (slice) => buildItems(slice, _files()),

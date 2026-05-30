@@ -406,7 +406,7 @@ describe('[8] diffFor — preview shape per status', () => {
   it('Enter on a file row runs cfgStatusDiff → populates the detail panel', () => {
     effects.installBuiltins();  // setDetail effect (cfgStatusDiff calls state.setDetail directly)
     // Phase B: setDetail routes via dispatchMsg → detail Component; register it.
-    require('../plugins/api').registerComponent(require('../plugins/core/detail'));
+    require('../plugins/api').registerComponent(require('../plugins/core/viewer'));
     baseline();
     fs.writeFileSync(path.join(TMP, 'data', 'dev9', 'bashrc'), 'export FOO=mutated\n');
     const cache = cs._computeStatus('config', E2E_FILES, TMP);

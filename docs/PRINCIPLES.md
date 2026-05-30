@@ -306,7 +306,6 @@ module.exports = {
   name: 'history',
   panelTypes: {
     history: {
-      kind: 'navigator',
       render:  (panel, w, h, model) => { /* reads model + a module ring buffer */ },
       getItems: (model) => historyEntries(),
       onKey:   (key, item) => { /* e.g. replay into the detail panel */ },

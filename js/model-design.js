@@ -1,7 +1,7 @@
 /**
  * Pure design-mode layout transforms — the reducer-owned half of design.js.
  *
- * Like model-groups / model-search / model-menu, this is a dependency-free
+ * Like model-search / model-menu / model-register, this is a dependency-free
  * leaf so runtime.update can import it without a require cycle (design.js
  * requires runtime + term + ansi, so the reducer can't call into it). Every
  * function takes `model` and mutates model.layout / model.modal.design — no

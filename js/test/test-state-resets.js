@@ -26,7 +26,7 @@ describe('[2] viewer_reset_chrome clears VIEWER-slice transient state', () => {
   it('Msg-driven so per-layer single-writer holds (Phase B)', () => {
     // Phase B: the viewer state moved into the detail Component's slice;
     // test via the Component's update directly (isolated, no global state).
-    const detail = require('../plugins/core/detail');
+    const detail = require('../plugins/core/viewer');
     const slice = detail._init();
     slice.select = { active: true, kind: 'char', anchor: { line: 2, col: 1 }, cursor: { line: 3, col: 0 } };
     slice.cursor = { line: 5, col: 2 };

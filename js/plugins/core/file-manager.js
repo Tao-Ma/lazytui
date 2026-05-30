@@ -92,7 +92,6 @@ module.exports = {
   update: (msg, slice) => slice,
   panelTypes: {
     'file-manager': {
-      kind: 'navigator',
       mode: 'list',
       render: _render,
       getItems: _getItems,
