@@ -104,7 +104,7 @@ dynamic is fine when the candidate list depends on state.
 | `focus <panel>`   | Focus a panel (one entry per layout panel)   |
 | `design`          | Open layout design mode (when `--design`)    |
 
-These live in `components/api.js#FRAMEWORK_COMMANDS` + a small
+These live in `panel/api.js#FRAMEWORK_COMMANDS` + a small
 `_frameworkDynamicCommands` builder; they appear in the cmdline registry
 with the source tag `<framework>`.
 
@@ -167,7 +167,7 @@ Out of scope for v1 (deferred until a real use case shows up):
 │  renderCmdline()              — bottom-row prompt +    │
 │                                  matches dropdown      │
 │  runAt(sel, args)             — dispatch to source     │
-├─ components/api.js ─────────────────────────────────────┤
+├─ panel/api.js ─────────────────────────────────────┤
 │  getCommands() → [{name,desc,run,_source}]             │
 │    walks FRAMEWORK_COMMANDS +                          │
 │          static component.commands +                   │

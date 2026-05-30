@@ -220,7 +220,7 @@ function main() {
   // acceptable; freezing the boot wasn't.
   refreshAll().then(() => render());
   redraw();
-  setupKeyListener(model);
+  setupKeyListener();
 
   // Phase 6 — the framework's per-Plugin refresh-loop retired. Components
   // that need periodic polling (docker, files, config-status) self-arm

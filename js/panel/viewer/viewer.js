@@ -91,6 +91,16 @@ function _moveCursor(slice, dline, dcol) {
   return _setCursor(slice, newLine, newCol, active);
 }
 
+// Resolve the detail viewport's inner height for handlers that need
+// to drive search-scroll-to-active. The one terminal-derived value
+// `leaves/search` can't read pure; threaded explicitly so the leaf
+// stays dep-free.
+function _innerH() {
+  const layoutSlice = getComponentSlice('layout');
+  const h = layoutSlice && layoutSlice.panelHeights && layoutSlice.panelHeights.detail;
+  return Math.max(1, (h || 6) - 2);
+}
+
 // --- init ---
 
 function init() {
@@ -153,8 +163,12 @@ function update(msg, slice) {
     case 'viewer_append': {
       // Hot path — streamed action output can fire 500-1000 lines/sec.
       // Per the arc rule, no in-place exception: spread lines fresh each
-      // call. If profiling later shows this dominates, mitigate via a
-      // persistent vector or coalesced/batched append Msg, NOT mutation.
+      // call. Phase 6 benchmarks (docs/v0.5-perf.md, run via
+      // `node js/test/bench-hotpaths.js`) show 21k ops/sec at 10k-line
+      // buffer and 5.7k ops/sec at 50k — comfortably above the sustained
+      // 1k/sec target. If field reports show pressure on long-running
+      // streams (100k+ lines / GC pauses), the documented mitigations
+      // are ring-buffer trim or a coalesced/batched append Msg.
       const innerH = Math.max(1, (getComponentSlice('layout').panelHeights.detail || 10) - 2);
       const maxScroll = Math.max(0, slice.lines.length - innerH);
       const wasAtBottom = slice.scroll >= maxScroll;
@@ -233,9 +247,9 @@ function update(msg, slice) {
         : []];
     }
     case 'viewer_search_key':    return ms.keystroke(slice, msg.seq);
-    case 'viewer_search_nav':    return msg.dir > 0 ? ms.next(slice) : ms.prev(slice);
+    case 'viewer_search_nav':    return msg.dir > 0 ? ms.next(slice, _innerH()) : ms.prev(slice, _innerH());
     case 'viewer_search_commit': {
-      const [next, info] = ms.commit(slice);
+      const [next, info] = ms.commit(slice, _innerH());
       return [next, info.disableSearchMode
         ? [{ type: 'apply_msg', msg: { type: 'mode_clear', flag: 'detailSearchMode' } }]
         : []];
@@ -335,8 +349,8 @@ function update(msg, slice) {
 
       // Detail-search post-commit n/N nav; Esc clears.
       if (slice.search && slice.search.active) {
-        if (msg.seq === 'n' || msg.key === 'n') return [ms.next(slice), claim];
-        if (msg.seq === 'N' || msg.key === 'N') return [ms.prev(slice), claim];
+        if (msg.seq === 'n' || msg.key === 'n') return [ms.next(slice, _innerH()), claim];
+        if (msg.seq === 'N' || msg.key === 'N') return [ms.prev(slice, _innerH()), claim];
         if (msg.key === 'escape' && !active)    return [ms.clearCommitted(slice), claim];
       }
 
@@ -406,6 +420,12 @@ function detailTitle(slice) {
   const tabBounds = [];
   const { actionTabs, termTabs, contentTabs } = getTabInfo();
   const layoutSlice = getComponentSlice('layout');
+  // Blessed exception (docs/v0.5-layering.md §5): the mouse hit-test
+  // cache for the tab bar is a view-output write — populated during
+  // the layout Component's render pass + consumed by input.js. Pure-TEA
+  // doesn't apply to render-time writes into the owning Component's
+  // own slice; the alternative would be a parallel structure
+  // round-tripping per-frame.
   if (layoutSlice && layoutSlice.panelBounds.detail) layoutSlice.panelBounds.detail.tabs = tabBounds;
   if (!actionTabs.length && !termTabs.length && !contentTabs.length) return 'Detail';
   const parts = [];

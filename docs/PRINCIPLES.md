@@ -138,7 +138,7 @@ and breaking `visibleLen()` width calculation, misaligning borders.
   `  \\[1] Containers  Status of containers in selected group`
   ```
 
-`esc()` replaces `[` → `\[`. Defined in `js/ansi.js`.
+`esc()` replaces `[` → `\[`. Defined in `js/io/ansi.js`.
 
 ## 8. Selected lines: plain text in `[reverse]`, no inner markup
 
@@ -317,7 +317,8 @@ module.exports = {
   panelTypes: {
     mycomp: {
       render: (panel, w, h, slice) => { /* reads slice */ },
-      claimsKeys: ['return'],  // suppress the framework default for keys update handles
+      // To claim a keystroke, return `{ type: '_claimed' }` as one of
+      // the effects from `update()`; the framework consumes it.
     },
   },
 };
@@ -327,7 +328,7 @@ module.exports = {
 
 ### Rules
 
-- A Component **may read** the root model via `require('./runtime').getModel()`
+- A Component **may read** the root model via `require('../app/runtime').getModel()`
   (focus, currentGroup, mode flags — anything app-global) but **never writes**
   it. The Component's own slice is the only thing its `update` writes
   directly. Cross-layer writes go out as effects — `apply_msg` re-dispatches
@@ -336,9 +337,11 @@ module.exports = {
 - **Msg routing.** `refresh` / `hub` / `action` fan to every Component's
   `update`. **Key Msgs go ONLY to the Component owning the focused panel, and
   ONLY when no modal mode is active** — a modal (filter / menu / cmdline / …)
-  owns input, so the focused panel must not also see the key. A panel declares
-  `claimsKeys: [...]` to suppress the framework's *default* for keys it handles
-  in `update` (e.g. files claims `return`; config-status claims `] [ return`).
+  owns input, so the focused panel must not also see the key. To suppress
+  the framework's default for a key the Component handles, its `update`
+  returns a `_claimed` sentinel as one of the effects (e.g. files claims
+  `return`; config-status claims `] [ return`). The framework filters
+  `_claimed` out of the effect list and skips the global default.
 - **Wrapped Msgs.** Component-specific Msgs MUST be wrapped via
   `api.wrap('name', innerMsg)` (so the framework routes to exactly one
   Component); only the four framework signals above fan out unwrapped.
@@ -360,9 +363,9 @@ Both *centralized* (root model) and *decentralized* (Component slice)
 are legitimate. The choice is per-piece-of-state:
 
 - **Centralized** — state in the root model (`model.modal.*`,
-  `model.ui.filters`, etc.), logic in the root reducer
-  (`runtime.update`). Per-panel filter text + cross-cutting modal
-  buffers stay here.
+  `model.modes.*`, the in-flight cmdline / prompt / confirm /
+  registerPopup buffers), logic in the root reducer
+  (`runtime.update`). Cross-cutting modal buffers stay here.
 - **Decentralized** — state in a per-Component slice, logic in the
   Component's own `update`. The slice is the encapsulation boundary;
   cross-layer reads go through `getModel()`, cross-layer writes
@@ -397,5 +400,5 @@ Before implementing, verify:
 - [ ] Does the Component reference top-level state (`source: files`, top-level vars) rather than redeclaring it inside its own config block?
 - [ ] Is each Component's `render()` idempotent on equal state? (§11)
 - [ ] Does each piece of state live in the right home — Component slice for slice-shaped state with async work, root model for cross-cutting chrome (modes, modal sub-models, currentGroup)? (§12)
-- [ ] Does `update()` return a new slice (or `[slice, effects]`) rather than mutate root model, keep effects/I-O out of `update`, and never write any layer it doesn't own? Does it `claimsKeys` for the keys it handles? (§12)
+- [ ] Does `update()` return a new slice (or `[slice, effects]`) rather than mutate root model, keep effects/I-O out of `update`, and never write any layer it doesn't own? Does it return a `_claimed` sentinel effect for keys it handles? (§12)
 - [ ] Are Component-specific Msgs wrapped via `api.wrap('name', msg)` at the dispatch site? (§12)

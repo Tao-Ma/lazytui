@@ -43,7 +43,7 @@ module.exports = {
 Register it at boot in `tui.js`:
 
 ```javascript
-registerComponent(require('./components/hello'));
+registerComponent(require('../panel/navigator/hello'));
 ```
 
 Reference the panel type in your YAML config:

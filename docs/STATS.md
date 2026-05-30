@@ -14,7 +14,7 @@ rediscovers them.
 
 **Status:** shipped (`d4274d6` impl + `6fc9edb` live-repaint fix).
 Producer: docker Component publishes per-tick numeric samples on
-`docker.stats`. Consumer: `components/stats.js` renders the focused
+`docker.stats`. Consumer: `panel/monitor/stats.js` renders the focused
 container's CPU + MEM as multi-row block-char line graphs. Schema
 flag `meta: true` keeps scale-reference columns (memLimit) out of
 auto-graphed metrics.
@@ -157,11 +157,11 @@ scaling and `unit` for value formatting:
 
 ## 4. Plugin contract
 
-Lives in `components/stats.js` (framework code, alongside
+Lives in `panel/monitor/stats.js` (framework code, alongside
 `history.js` / `viewer.js` — not docker-specific).
 
 ```javascript
-// components/stats.js  (sketch)
+// panel/monitor/stats.js  (sketch)
 const { S } = require('../../state');
 const { hub, esc, theme, renderPanel, getSel, getItems: apiGetItems } = require('../api');
 
@@ -250,7 +250,7 @@ The stats panel needs to know "which row are we showing?". Today's
 framework state already has the answer:
 
 ```javascript
-// In components/stats.js render()
+// In panel/monitor/stats.js render()
 const { getSel } = require('../state');
 function resolveSelection(panel) {
   const items = apiGetItems(panel.select_from);
@@ -300,7 +300,7 @@ For a graph rendered in `H` rows of height by `W` columns of width:
 4. For each row from top to bottom, emit ` `/`▁`-`█` per column based
    on which slot of which row the value falls into.
 
-The rasterizer is in `components/stats-graph.js` (separate file so
+The rasterizer is in `panel/monitor/stats-graph.js` (separate file so
 it's testable in isolation against fixed sample arrays).
 
 **Y-axis labels NOT shipped in v1.** Originally planned (`100% ┤` /
@@ -319,8 +319,8 @@ labels worthwhile.
 
 | Piece | LOC |
 |-------|-----|
-| `components/stats.js` — panel def, render, selection | ~80 |
-| `components/stats-graph.js` — rasterizer + axis labels + overlay formatters | ~80 |
+| `panel/monitor/stats.js` — panel def, render, selection | ~80 |
+| `panel/monitor/stats-graph.js` — rasterizer + axis labels + overlay formatters | ~80 |
 | `docker.js` — `parseBytes` + `parsePercent` + publish + delete + defineTopic | ~30 |
 | `tests/test-stats.js` — rasterizer + selection + producer wire-up | ~120 |
 | YAML wiring in `test/test.yml` | ~5 |
@@ -383,7 +383,7 @@ Run via `node js/scripts/run-tests.js -q`.
 This branch ships:
 
 - ONE producer wiring (`docker.js` publish + delete + defineTopic).
-- ONE consumer (`components/stats.js` + rasterizer).
+- ONE consumer (`panel/monitor/stats.js` + rasterizer).
 - Tests for both.
 - YAML wiring in `test/test.yml` to live-exercise it.
 

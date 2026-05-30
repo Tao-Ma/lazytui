@@ -168,63 +168,39 @@ function initState() {
   const config = m.config;
   setTheme(config.theme || 'default');
 
-  // Touch the layout slice early so its Component is registered before
-  // any view-mode / focus / design Msg fires (Phase 1b: viewMode lives
-  // on this slice).
-  _layoutSlice().arrange = rebuildLayoutFromConfig(config);
+  // Force-register the layout / groups / detail Components — production
+  // (tui.js) already did, but the test harness path may have skipped them.
+  // The lazy auto-register fallbacks here are belt-and-suspenders.
+  _layoutSlice();
+  _groupsSlice();
+  _detailSlice();
 
-  // Tree state: start collapsed (only top-level nodes visible). The cursor
-  // lands on the first visible row, which is the first top-level group.
-  const groups = _groupsSlice();
-  groups.expanded = new Set();
-  groups.tab = 'all';
+  // Seed the layout arrange struct from config via the layout
+  // Component's own writer (set_arrange Msg). Single-writer holds at
+  // boot too — initState doesn't poke at slice fields directly anymore.
+  // All other slice/model state initializes from runtime.init() /
+  // Component.init() defaults; only config-derived seeds (arrange,
+  // currentGroup, register cap) and the theme set need a write here.
+  const api = require('../panel/api');
+  api.dispatchMsg(api.wrap('layout', {
+    type: 'set_arrange',
+    arrange: rebuildLayoutFromConfig(config),
+    dirty: false,
+  }));
+
+  // Rebuild the visible group list from config, then seed currentGroup
+  // from the first visible row. recomputeGroups dispatches into the
+  // groups Component; set_current_group rides through the root reducer.
   recomputeGroups();
-  // Phase 3 — groups_recompute now returns a new slice via dispatch; the
-  // local `groups` ref above is stale. Re-read so the currentGroup seed
-  // sees the recomputed list.
   const groupsAfter = _groupsSlice();
-  m.currentGroup = groupsAfter.list.length ? groupsAfter.list[0].name : '';
-  // Phase 4a — `ui.sel` / `ui.scroll` / `ui.multiSel` no longer exist;
-  // each Navigator owns its own nav slice (cursor/scroll/multiSel) and
-  // initializes it via the Component's own init().
-  const detail = _detailSlice();
-  detail.lines = [];
-  detail.scroll = 0;
-  detail.tab = 0;
-  // focus lives on layout's slice (Phase 1c). The shim on m.focus still
-  // works for legacy writers, but we prefer the direct slice write here
-  // for clarity. initState is the boot writer; nothing else races it.
-  _layoutSlice().focus = 'groups';
-  // Mode flags — cleared from the single registry (js/modes.js) so this
-  // can't drift out of sync with the modeChain / overlay / modal lists.
-  // Non-flag buffers (filters, prefixNode/Seq, detailSearch object) are
-  // reset explicitly below since the registry only flips the booleans.
-  require('../dispatch/modes').resetModes();
-  // Phase 4c — committed filter text lives on each Navigator's nav slice
-  // (`slice.nav[panelType].filter`); `model.ui` retired entirely.
-  m.prefixNode = null;
-  m.prefixSeq = [];
-  // Detail-panel search — typing phase flag + state. `term`, `matches`,
-  // and `idx` live under detail slice (single object); the mode flag
-  // (detailSearchMode) is cleared by resetModes above.
-  detail.search = { active: false, term: '', matches: [], idx: 0 };
-  detail.ephemeralTerminals = {};
-  detail.contentTabs = {};
+  const firstName = groupsAfter.list.length ? groupsAfter.list[0].name : '';
+  require('../dispatch/dispatch').applyMsg({ type: 'set_current_group', name: firstName });
+
   // Yank register — bounded history, system-clipboard mirror. Cap is
-  // configurable via top-level `register: { cap: N }` in YAML; default 100.
-  // Init is deferred to here (rather than at module-load) so cap reflects
-  // the parsed config.
+  // configurable via top-level `register: { cap: N }` in YAML; default
+  // 100. Init deferred to here so cap reflects the parsed config.
+  // BLESSED outside-writer (docs/v0.5-layering.md §5).
   require('../feature/register').init(config.register || {});
-  // Selection state — set/cleared by js/select.js during drag and
-  // commit. Lives in the detail slice so the render path can see active
-  // selections in the detail panel.
-  detail.select = { active: false, kind: 'char',
-                    anchor: { line: 0, col: 0 },
-                    cursor: { line: 0, col: 0 } };
-  // Detail cursor — used by keyboard visual-mode (v/V) to track the
-  // logical cursor in the detail panel. Mouse-drag bypasses this
-  // (anchor + cursor are set directly from screen coords).
-  detail.cursor = { line: 0, col: 0 };
 }
 
 function allPanels() {

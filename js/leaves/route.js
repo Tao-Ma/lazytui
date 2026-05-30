@@ -1,5 +1,5 @@
 /**
- * Panel routing leaf — the shared registry the root reducer and
+ * Panel-routing leaf — the shared registry the root reducer and
  * `panel/api` both read from.
  *
  * Three concerns, one zero-dep module:
@@ -8,14 +8,12 @@
  *   - Component slice store (nested: layout at the root, every other
  *     Component under `layout.panels[name]`).
  *
- * Why it exists: the root reducer (`runtime.update`) needs to ROUTE Msgs
- * to Components (wrap + owner lookup) and OCCASIONALLY READ slice state
- * (focus, escape-clears-multisel). Importing `panel/api` from runtime
- * cycles (api → runtime via `getModel`), so the relevant bits move down
- * here. api itself becomes a thin caller — its public surface re-exports
- * these names for back-compat.
- *
- * No dependencies. Both api and runtime sit above this leaf.
+ * Lives under `leaves/` (not `panel/`) because it has no dependencies
+ * and is structurally a pure registry — runtime imports it directly,
+ * and panel/api re-exports its public surface for callers that want
+ * the cohesive "panel system" import path. Importing `panel/api`
+ * from runtime would cycle (api → runtime via `getModel`), so the
+ * routing bits live down here on their own.
  */
 'use strict';
 

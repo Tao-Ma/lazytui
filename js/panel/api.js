@@ -18,7 +18,7 @@
 'use strict';
 
 const hub = require('./hub');
-const route = require('./route');
+const route = require('../leaves/route');
 
 // L0/L2 helpers re-exported as the Component-facing surface. Component
 // authors should import only from `./api` so the surface is one diff

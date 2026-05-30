@@ -6,13 +6,98 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.5.0] — TBD
+
+A refactor release. No new end-user features; the panel grid, key
+bindings, and YAML config surface all look the same. What changed is
+the internal architecture — and one externally visible API surface
+that breaks for anyone using `dispatch.applyMsg` directly.
+
+### Changed
+- **Plugin API retired; Component API is the only extension shape.**
+  External authors register a Component the same way the built-ins do
+  (`require('../panel/api').registerComponent(spec)`). A Component
+  owns a slice (`init()` returns the initial slice; `update(msg, slice)`
+  is the single writer; `panelTypes` declares the render contract).
+  The legacy Plugin API + the YAML `plugins:` loader are gone; a
+  non-empty `plugins:` block in a config logs a one-line warning and
+  is otherwise ignored. The migration shape is documented in
+  `docs/v0.5-layering.md` and `docs/PLUGINS.md`.
+- **`dispatch.applyMsg` signature changed: `applyMsg(msg)`.** The
+  previous `applyMsg(model, msg)` shape carried a model argument that
+  became unsafe across cascades once the reducer turned pure (a
+  captured ref would lose intermediate writes if a Cmd re-entered the
+  dispatch graph). The function now reads `getModel()` internally;
+  callers drop the leading arg. Affects anyone using `applyMsg`
+  outside this codebase — typically only test code in plugin trees.
+- **Single-writer per slice.** Every Component is the sole writer of
+  its own slice; the root reducer (`runtime.update`) is the sole writer
+  of root-model fields. Cross-layer writes ride out as `apply_msg` /
+  `dispatch_msg` Cmds. The invariants are documented in
+  `docs/v0.5-layering.md §5`.
+- **Pure-TEA reducer + Components.** The reducer and every Component's
+  `update` now return new state objects (`{ ...slice, field: next }`)
+  rather than mutating their arg. Hot-path append (streamed action
+  output) spreads `[...lines, line]` per the no-in-place-exceptions
+  rule. Freeze-test coverage in `js/test/test-immutable-*.js`.
+- **Per-panel chrome lives on each Navigator's slice.** Cursor,
+  scroll, multi-select, and committed filter text used to live at
+  `model.ui.{sel,scroll,multiSel,filters}`. They now live on each
+  Component's `slice.nav[panelType]`. The `model.ui` field retired.
+- **Layout state lives on a layout Component slice.** The
+  arrange struct (column widths + panel order), focus, view mode,
+  panel bounds, design-mode working state, and the layout-dirty
+  flag all live on `slice.panels.layout` now, not on the root model.
+  The layout Component is registered before any other and nests
+  every other Component's slice under `layout.panels[name]`.
+- **viewer (detail) + groups are Components.** The final two
+  bespoke panels migrated to the Component API. Their reducers,
+  cascade logic (group switch → viewer reset, etc.), and slice
+  state all live in `panel/viewer/viewer.js` and
+  `panel/navigator/groups.js`.
+
 ### Removed
-- **`type: file-manager` panel — back-compat alias dropped.** The v0.3.0
-  declared-registry panel was a subset of v0.5's unified browser.
-  Migrate to `type: files, source: declared` for identical behavior.
-  The auto-generated default left panel (when a project declares a
+- **`type: file-manager` panel alias.** The v0.3.0 declared-registry
+  panel was a subset of v0.5's unified browser. Migrate to
+  `type: files, source: declared` for identical behavior. The
+  auto-generated default left panel (when a project declares a
   top-level `files:` block but no explicit layout) now uses the new
   shape automatically.
+- **Decorators framework.** The `decorate('panel:slot')` /
+  `decorate('row:left:panelType')` extension surface was retired —
+  nothing in-tree contributed, and the seam wasn't reachable from
+  the new Component-shape panels. Panels compose their own row /
+  badge logic inline now (e.g. groups' `running/total ●` badge).
+  `viewContributions` (footer / overlay strips) remains.
+- **The `S` shim.** The pre-v0.5 façade over the root model + slices
+  was removed in chunks A–E during the migration. Production reads
+  `getModel()` / `getComponentSlice()` directly.
+
+### Internal
+- **Source tree reorganized.** The flat `js/` directory split by
+  kind: `app/` (runtime, state, tui boot), `io/` (terminal, ansi,
+  streams), `render/`, `dispatch/`, `overlay/` (modal/popup
+  overlays), `panel/` with sub-trees `navigator/` (list-style
+  panels), `viewer/`, `monitor/`, plus `leaves/` (pure transforms)
+  and `feature/` (history, register).
+- **Wrapped Msg dispatch.** Component-targeted Msgs now travel as
+  `{ kind: 'componentName', msg }` wrappers via `dispatchMsg`. The
+  framework rejects flat Component-specific Msgs with an error log
+  to catch missed wrap sites.
+- **Centralized claim signaling.** Panels that claim a keystroke
+  return a `_claimed` sentinel effect from their `update`; the
+  framework consumes it in `dispatchKeyToFocused`. The previous
+  `claimsKeys:` declaration retired.
+- **Pre-release reviews.** A 4-track audit (arch / file layout /
+  code / doc parity) ran before tagging; outcomes folded into
+  this release.
+- **Hot-path perf measured.** `viewer_append` and `select_extend` —
+  the two paths flagged for measurement when the arc rule of "no
+  in-place exceptions" was adopted — measured well within budget
+  at realistic loads (21k ops/sec at 10k-line buffer; 3.2M ops/sec
+  for `select_extend`). Numbers, conditions, and mitigation options
+  if usage shifts: `docs/v0.5-perf.md`; benchmark script
+  `js/test/bench-hotpaths.js`.
 
 ## [0.4.0] — 2026-05-27
 
@@ -756,6 +841,8 @@ release tarballs. Full pre-squash development history is preserved
 on the internal gitea mirror under the `backup/main-history` branch
 and the `v0.1.0-pre-squash` tag.
 
-[Unreleased]: https://github.com/Tao-Ma/lazytui/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/Tao-Ma/lazytui/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/Tao-Ma/lazytui/compare/v0.4.0...v0.5.0
+[0.4.0]: https://github.com/Tao-Ma/lazytui/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/Tao-Ma/lazytui/releases/tag/v0.3.0
 [0.1.0]: https://github.com/Tao-Ma/lazytui/releases/tag/v0.1.0

@@ -8,7 +8,10 @@
  * wildcard). Zero subscribers → publish drops; cost scales with
  * what's rendered, not what's possible.
  *
- * Zero npm dependencies; pure JS.
+ * Lives under `panel/` (alongside api, route, layout) because it's
+ * panel-framework infrastructure: the data bus panels publish to and
+ * subscribe from. Module-private state (subscribers, ring buffers)
+ * is stateful — not a leaf. Zero npm dependencies; pure JS.
  */
 'use strict';
 

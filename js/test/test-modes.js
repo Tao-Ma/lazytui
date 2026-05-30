@@ -86,7 +86,7 @@ describe('[4] wedge guard (_dispatchActiveMode)', () => {
       // reset all mode flags, then arm just this one
       modes.resetModes();
       getModel().modes.registerPopupMode = true;
-      const claimed = dispatch._dispatchActiveMode(getModel(), 'x', 'x');  // must not throw
+      const claimed = dispatch._dispatchActiveMode('x', 'x');  // must not throw
       eq(claimed, true, 'mode claimed the key');
       eq(getModel().modes.registerPopupMode, false, 'flag force-cleared so the user is not wedged');
     } finally {
@@ -97,7 +97,7 @@ describe('[4] wedge guard (_dispatchActiveMode)', () => {
   });
   it('returns false (falls through) when no mode is active', () => {
     modes.resetModes();
-    eq(dispatch._dispatchActiveMode(getModel(), 'j', 'j'), false);
+    eq(dispatch._dispatchActiveMode('j', 'j'), false);
   });
 });
 

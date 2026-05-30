@@ -32,9 +32,11 @@
 'use strict';
 
 // Pure design-mode layout transforms — take this Component's slice and
-// return a new slice. Phase 1e of the pure-TEA arc: no in-place writes,
-// no panel/api reach-around. Called from this Component's update,
-// keeping the single-writer-per-slice invariant.
+// return a new slice (the leaf converted to return-new in the pure-TEA
+// arc on this branch; not to be confused with the layout-Component
+// arc's own "Phase 1e" which moved panelBounds/Heights into the slice).
+// No in-place writes, no panel/api reach-around. Called from this
+// Component's update, preserving single-writer-per-slice.
 const mdesign = require('../leaves/design');
 
 function init() {

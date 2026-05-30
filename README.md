@@ -150,7 +150,7 @@ Or headlessly, with the same definition, exiting with the action's rc:
 ```
 
 When the project outgrows one file, the agent splits it into YAML or
-JS plugins against [`js/plugins/api.js`](js/plugins/api.js). The
+JS plugins against [`js/panel/api.js`](js/panel/api.js). The
 framework dogfoods that same API for its own built-in panels — there
 is no privileged path the agent cannot reach.
 

@@ -225,7 +225,7 @@ function _groupsHasQuick() {
 // handleKey paints. Order in modeChain is precedence: first matching
 // mode handles the key, others don't see it.
 
-function handleMenuKey(model, key, seq) {
+function handleMenuKey(key, seq) {
   // Menu lives in the reducer now (menu_open/nav/activate/close);
   // activate emits a menu_action Cmd that routes the verb through handleAction.
   if (key === 'escape') { applyMsg({ type: 'menu_close' }); return; }
@@ -249,7 +249,7 @@ function enterFilterMode(model) {
   return true;
 }
 
-function handleFilterKey(model, key, seq) {
+function handleFilterKey(key, seq) {
   if (key === 'escape') { applyMsg({ type: 'filter_exit', keep: false }); dispatchMsg(wrap('detail', { type: 'viewer_show_info' })); return; }
   if (key === 'return') { applyMsg({ type: 'filter_exit', keep: true  }); dispatchMsg(wrap('detail', { type: 'viewer_show_info' })); return; }
   if (key === 'up' || seq === 'k') { handleAction(model, 'nav_up'); return; }
@@ -268,14 +268,14 @@ function enterCopyMode(model) {
   applyMsg({ type: 'copy_enter', options: opts.map(o => ({ label: o.label, cancel: !!o.cancel })) });
 }
 
-function handleCopyKey(model, key, seq) {
+function handleCopyKey(key, seq) {
   if (key === 'escape') { applyMsg({ type: 'copy_cancel' }); return; }
   if (key === 'return') { applyMsg({ type: 'copy_select' }); return; }
   if (key === 'up' || seq === 'k') { applyMsg({ type: 'copy_nav', dir: -1 }); return; }
   if (key === 'down' || seq === 'j') { applyMsg({ type: 'copy_nav', dir: +1 }); return; }
 }
 
-function handleDesignKey(model, key, seq) {
+function handleDesignKey(key, seq) {
   // Post-Phase-6 single-writer cleanup: design state lives on layout's
   // slice; each key wraps a `design_*` Msg into layout. q/Esc/Enter all
   // exit. The leaves/design leaf still does the pure layout transform —
@@ -299,13 +299,13 @@ function handleDesignKey(model, key, seq) {
   }
 }
 
-function handleDesignTitleEditKey(model, key, seq) {
+function handleDesignTitleEditKey(key, seq) {
   if (key === 'escape') { dispatchMsg(wrap('layout', { type: 'design_title_cancel' })); return; }
   if (key === 'return') { dispatchMsg(wrap('layout', { type: 'design_title_submit' })); return; }
   dispatchMsg(wrap('layout', { type: 'design_title_key', key, seq }));
 }
 
-function handleCmdlineKey(model, key, seq) {
+function handleCmdlineKey(key, seq) {
   // Folded into update: each key becomes a cmdline_* Msg. Text changes emit a
   // cmdline_rebuild Cmd (the effects layer re-queries the plugin facade — see
   // effects.js). Arrow-key raw escape sequences are kept as fallbacks for
@@ -317,7 +317,7 @@ function handleCmdlineKey(model, key, seq) {
   applyMsg({ type: 'cmdline_key', seq });
 }
 
-function handleRegisterPopupKey(model, key, seq) {
+function handleRegisterPopupKey(key, seq) {
   // Folded into update: each key becomes a register_popup_* Msg. `vh` (the
   // viewport height) is resolved here — it reads the terminal size, which is
   // view-derived and must not enter the reducer.
@@ -331,7 +331,7 @@ function handleRegisterPopupKey(model, key, seq) {
   if (seq === 'd')                   { applyMsg({ type: 'register_popup_drop', vh }); return; }
 }
 
-function handleDetailSearchKey(model, key, seq) {
+function handleDetailSearchKey(key, seq) {
   // viewer_search_* Msgs are handled by detail.update (Phase B) — route via
   // the Component fan-out, not the root reducer. Phase 2b will wrap these.
   if (key === 'escape') { dispatchMsg(wrap('detail', { type: 'viewer_search_cancel' })); return; }
@@ -341,7 +341,11 @@ function handleDetailSearchKey(model, key, seq) {
   dispatchMsg(wrap('detail', { type: 'viewer_search_key', seq }));
 }
 
-function handleNormalKey(model, key, seq) {
+function handleNormalKey(key, seq) {
+  // Phase 4 — read getModel() at entry: dispatchKeyToFocused above may
+  // have run a Component update that emitted apply_msg Cmds, swapping
+  // the root model via setModel. A captured local would be stale.
+  const model = getModel();
   // `dispatchKeyToFocused` (the call site that invokes us) already gave
   // the focused Component first dibs and returned only if the Component
   // didn't claim the keystroke. So no per-key Component-claim check is
@@ -567,38 +571,39 @@ function loadKeyBindings(config) {
 //     swallowed by design navigation.
 //   - cmd refreshes the focused panel's info so a `:focus`/command that
 //     changes focus is reflected in the trailing paint.
-// Every handler now takes the threaded model first. prefix is the first mode
-// folded into update — it routes the keystroke as a Msg (applyMsg) instead of
-// mutating directly. The rest still mutate inside their own modules for now
-// (they accept + ignore `model`); converting each onto update is the
-// remaining real-TEA work, mode by mode.
+// Every handler routes its keystrokes through `applyMsg` — the reducer
+// owns the slice/model writes (post-Phase-4 pure-TEA, the reducer
+// returns a new model per Msg). Handlers take `(key, seq)`; the inner
+// `handle*Key` helpers read `getModel()` directly where they need it.
+// `active` reads through `getModel()` so the chain sees post-Msg state
+// across a cascade.
 const _modeHandlers = {
-  confirmMode:         (model, key, seq) => {
+  confirmMode:         (key, seq) => {
     // y/Enter accepts (re-emits the staged Cmd), n/Esc rejects; anything
     // else is swallowed so stray keys don't leak to the panel below.
     if (key === 'escape' || seq === 'n' || seq === 'N') applyMsg({ type: 'confirm_reject' });
     else if (seq === 'y' || seq === 'Y' || key === 'return') applyMsg({ type: 'confirm_accept' });
   },
-  promptMode:          (model, key, seq) => {
+  promptMode:          (key, seq) => {
     if (key === 'escape') applyMsg({ type: 'prompt_cancel' });
     else if (key === 'return') applyMsg({ type: 'prompt_submit' });
     else applyMsg({ type: 'prompt_key', key, seq });
   },
-  designTitleEditMode: (model, key, seq) => handleDesignTitleEditKey(model, key, seq),
-  designMode:          (model, key, seq) => handleDesignKey(model, key, seq),
-  menuOpen:            (model, key, seq) => handleMenuKey(model, key, seq),
-  filterMode:          (model, key, seq) => handleFilterKey(model, key, seq),
-  copyMode:            (model, key, seq) => handleCopyKey(model, key, seq),
-  detailSearchMode:    (model, key, seq) => handleDetailSearchKey(model, key, seq),
-  registerPopupMode:   (model, key, seq) => handleRegisterPopupKey(model, key, seq),
-  prefixMode:          (model, key, seq) => applyMsg({ type: 'prefix_key', key, seq }),
-  cmdMode:             (model, key, seq) => { handleCmdlineKey(model, key, seq); dispatchMsg(wrap('detail', { type: 'viewer_show_info' })); },
+  designTitleEditMode: (key, seq) => handleDesignTitleEditKey(key, seq),
+  designMode:          (key, seq) => handleDesignKey(key, seq),
+  menuOpen:            (key, seq) => handleMenuKey(key, seq),
+  filterMode:          (key, seq) => handleFilterKey(key, seq),
+  copyMode:            (key, seq) => handleCopyKey(key, seq),
+  detailSearchMode:    (key, seq) => handleDetailSearchKey(key, seq),
+  registerPopupMode:   (key, seq) => handleRegisterPopupKey(key, seq),
+  prefixMode:          (key, seq) => applyMsg({ type: 'prefix_key', key, seq }),
+  cmdMode:             (key, seq) => { handleCmdlineKey(key, seq); dispatchMsg(wrap('detail', { type: 'viewer_show_info' })); },
 };
 
 const modeChain = modes.CHAIN_MODES.map(flag => {
   const handler = _modeHandlers[flag];
   if (!handler) throw new Error(`mode "${flag}" is in CHAIN_MODES but has no handler in dispatch.js`);
-  return { flag, active: (model) => model.modes[flag], handler };
+  return { flag, active: () => getModel().modes[flag], handler };
 });
 
 // Key-filter middleware (CHANGELOG v0.3.0). Registered callbacks run
@@ -625,10 +630,10 @@ function clearKeyFilters() {
 // down to update; the modal path (_dispatchActiveMode) is not yet
 // threaded and still reads the global via the shim. render() feeds
 // the view the same threaded model.
-function handleKey(_legacy, key, seq) {
-  // Phase 4 — runtime.update returns NEW model objects; a captured
-  // model arg goes stale on the first state-changing Msg. Always read
-  // through getModel() so the dispatch sees post-Msg state.
+function handleKey(key, seq) {
+  // Phase 4 — runtime.update returns NEW model objects; read getModel()
+  // at entry so post-Msg state is what dispatchKeyToFocused (and the
+  // handlers below) see for every event.
   const model = getModel();
   // Filter middleware runs first — before logging, before dispatch.
   // A filter that returns null wholly suppresses the event (no log
@@ -652,13 +657,15 @@ function handleKey(_legacy, key, seq) {
   // fan-out therefore happens ONLY when the modal gate declines (normal mode).
   // refresh/hub/action Msgs still fan unconditionally (dispatched elsewhere);
   // this gate is for KEY routing alone — see PRINCIPLES §12.
-  if (_dispatchActiveMode(model, key, seq)) { render(); return; }
+  if (_dispatchActiveMode(key, seq)) { render(); return; }
   // The focused Component sees the key; if its update returns the
   // `_claimed` sentinel effect, the framework default is suppressed
   // (panel claims the keystroke). Otherwise we fall through to the
-  // global switch.
+  // global switch — handleNormalKey re-reads getModel() at entry so
+  // the focused Component's apply_msg effects don't leave us with a
+  // stale ref (same hazard class as the Phase 4 fix-up at 2be348a).
   const claimed = require('../panel/api').dispatchKeyToFocused(key, seq);
-  if (!claimed) handleNormalKey(model, key, seq);
+  if (!claimed) handleNormalKey(key, seq);
   render();
 }
 
@@ -673,11 +680,11 @@ function handleKey(_legacy, key, seq) {
  * to normal-mode dispatch instead of a frozen modal. Painting is the
  * caller's job — this stays render-free so it's unit-testable.
  */
-function _dispatchActiveMode(model, key, seq) {
+function _dispatchActiveMode(key, seq) {
   for (const m of modeChain) {
-    if (m.active(model)) {
+    if (m.active()) {
       try {
-        m.handler(model, key, seq);
+        m.handler(key, seq);
       } catch (e) {
         console.error('[mode]', m.flag, e && e.message);
         // Route the panic-recovery flag-clear through update so single-writer

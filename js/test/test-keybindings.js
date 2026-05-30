@@ -180,21 +180,21 @@ describe('[5] v-mode gates space', () => {
     getModel().modes.prefixMode = false;
 
     // Normal mode: space → prefix.
-    dispatch._handleNormalKey(getModel(), ' ', ' ');
+    dispatch._handleNormalKey(' ', ' ');
     assert(getModel().modes.prefixMode === true, 'space is leader outside select mode');
     dispatch._handlePrefixKey('escape', undefined);  // clean up
 
     // v → enter select mode.
-    dispatch._handleNormalKey(getModel(), 'v', 'v');
+    dispatch._handleNormalKey('v', 'v');
     assert(getModel().modes.listSelectMode === true, 'v enters list-select mode');
 
     // space → toggle the focused row (no prefix).
-    dispatch._handleNormalKey(getModel(), ' ', ' ');
+    dispatch._handleNormalKey(' ', ' ');
     assert(getModel().modes.prefixMode === false, 'space does not lead inside select mode');
     eq(require('../app/state').multiSelCount('listy'), 1, 'focused row toggled on');
 
     // v → exit select mode (clears selection).
-    dispatch._handleNormalKey(getModel(), 'v', 'v');
+    dispatch._handleNormalKey('v', 'v');
     assert(getModel().modes.listSelectMode === false, 'second v exits select mode');
     eq(require('../app/state').multiSelCount('listy'), 0, 'selection cleared on exit');
   });
@@ -298,7 +298,7 @@ describe('[9] space gate + group-switch reset', () => {
     getComponentSlice('layout').panelHeights = { detail: 10 };
     getComponentSlice('detail').search = { active: false };
     getComponentSlice('detail').cursor = { line: 0, col: 0 };
-    dispatch._handleNormalKey(getModel(), ' ', ' ');
+    dispatch._handleNormalKey(' ', ' ');
     assert(getModel().modes.prefixMode === true, 'space is the leader on detail even with listSelectMode armed');
     dispatch._handlePrefixKey('escape', undefined);
   });

@@ -15,7 +15,7 @@
 ```
 ┌─ Core TUI ──────────────────────────────────────────┐
 │  Layout, keys, panel borders, themes                 │
-├─ Component API (require('./components/api')) ───────┤
+├─ Component API (require('./panel/api')) ────────────┤
 │  Registry:  registerComponent, getCommands,          │
 │             getItems, selectedOrFocused, idOf, ...   │
 │  Subsystems: hub                                     │
@@ -37,7 +37,7 @@ arc.
 
 ### Component API surface
 
-Component authors import everything from `./components/api`:
+Component authors import everything from `./panel/api`:
 
 ```javascript
 const {
@@ -62,11 +62,11 @@ const {
   getFilter, execAsync, streamCommand, addEphemeralTab, scheduleRender,
   // viewer tab controls
   setActiveTab, leaveTerminalMode,
-} = require('./components/api');
+} = require('./panel/api');
 ```
 
 Direct imports from `../ansi`, `../panel`, etc. still work but are not
-part of the contract — `components/api.js` is the documented surface,
+part of the contract — `panel/api.js` is the documented surface,
 and the only place an API change shows up.
 
 ### Framework default `:` commands
@@ -79,7 +79,7 @@ Three commands are available without any Component contribution:
 | `:refresh` | Re-fan a `refresh` Msg to every Component |
 | `:help` | Render per-context help into the detail panel |
 
-These live in `components/api.js#FRAMEWORK_COMMANDS`. They're collected by
+These live in `panel/api.js#FRAMEWORK_COMMANDS`. They're collected by
 `getCommands()` alongside Component-contributed commands; the `_source`
 field tags each entry's origin (a Component name, or `<framework>` for
 the built-ins).
@@ -191,7 +191,7 @@ ignoring unknown types is forward-compatible.
 
 1. **Components MAY read the root model** for app-global concerns
    (focus, currentGroup, mode flags). Use
-   `require('./runtime').getModel()`. The model is not passed as an
+   `require('../app/runtime').getModel()`. The model is not passed as an
    argument.
 2. **Components MUST NOT write the root model.** A Component's own
    slice is the only thing its `update` writes directly; cross-layer

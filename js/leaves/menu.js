@@ -1,20 +1,24 @@
 /**
  * Pure builder for the command-menu item list (the menu's sub-model).
  *
- * Extracted as a dependency-free leaf (imports only the ansi leaf for esc)
- * so runtime.update can build the menu inline on `menu_open` without a cycle
- * — menu.js imports runtime for the shim, so the reducer can't call back into
- * it (same rationale as leaves/search).
+ * Dependency-free leaf (only imports `io/ansi` for `esc`). Caller
+ * (runtime.update's menu_open branch) threads the layout slice in —
+ * the menu needs the current panel arrangement (for hotkeys) and the
+ * `design.enabled` flag, both of which live on the layout slice. No
+ * `panel/api` reach-around.
  *
- * Each item is `[label, actionString]` or `null` (a separator). The action
- * strings are handleAction verbs (`nav_up`, `focus_panel:7`, `design`, …);
- * menu_activate routes the chosen one back through dispatch as a Cmd.
+ * Each item is `[label, actionString]` or `null` (a separator). The
+ * action strings are handleAction verbs (`nav_up`, `focus_panel:7`,
+ * `design`, …); `menu_activate` routes the chosen one back through
+ * dispatch as a Cmd.
  */
 'use strict';
 
 const { esc } = require('../io/ansi');
 
-function buildItems(model) {
+function buildItems(layoutSlice) {
+  const arrange = (layoutSlice && layoutSlice.arrange) || { leftPanels: [], rightPanels: [] };
+  const designEnabled = !!(layoutSlice && layoutSlice.design && layoutSlice.design.enabled);
   const items = [
     ['↑ / k    Move up',            'nav_up'],
     ['↓ / j    Move down',          'nav_down'],
@@ -22,9 +26,6 @@ function buildItems(model) {
     ['→ / l    Panel right',        'focus_right'],
     null,
   ];
-  // allPanels() lives in state.js (a cycle from here); the panel list is
-  // just both layout columns, so read it off the layout slice's arrange.
-  const arrange = (require('../panel/api').getComponentSlice('layout') || {}).arrange || { leftPanels: [], rightPanels: [] };
   const panels = [...arrange.leftPanels, ...arrange.rightPanels];
   for (const p of panels) {
     if (p.hotkey) items.push([`[${p.hotkey}]       ${esc(p.title)}`, `focus_panel:${p.hotkey}`]);
@@ -43,8 +44,7 @@ function buildItems(model) {
     ['+        Expand view',        'view_expand'],
     ['_        Shrink view',        'view_shrink'],
     null,
-    ...((require('../panel/api').getComponentSlice('layout') || {}).design?.enabled
-        ? [[':design  Design mode', 'design']] : []),
+    ...(designEnabled ? [[':design  Design mode', 'design']] : []),
     ['r        Refresh status',     'refresh'],
     ['?        Help in detail',     'show_help'],
     ['q        Quit',               'quit'],

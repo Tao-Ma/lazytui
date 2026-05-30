@@ -10,7 +10,7 @@ pre-committed consumers and no pre-planned follow-up branches.
 
 ## 0. Status & retrospective
 
-**Status:** the hub is shipped (`js/hub.js`, 32/32 smoke tests). The
+**Status:** the hub is shipped (`js/panel/hub.js`, 32/32 smoke tests). The
 first production consumer is `history.js` — the action-history ring
 buffer is now backed by hub topic `actions.lifecycle` (single-stream,
 window=100). No other producers or consumers wired in yet. The
@@ -385,11 +385,11 @@ plugin, not part of the hub itself.
 ## 11. Component API additions
 
 ```javascript
-// components/api.js — re-exports the hub singleton
+// panel/api.js — re-exports the hub singleton
 const { hub } = require('./api');
 ```
 
-The hub is a singleton accessed through `components/api.js`. No new
+The hub is a singleton accessed through `panel/api.js`. No new
 top-level dependency for Component authors.
 
 Components that publish should call `hub.defineTopic()` once during
@@ -443,7 +443,7 @@ fine. If someone requests gigabytes, that's a bug, not a hub problem.
 
 ## 16. Status
 
-The hub is shipped (`js/hub.js`, smoke-tested). Production consumers:
+The hub is shipped (`js/panel/hub.js`, smoke-tested). Production consumers:
 
 - `history.js` — backs the action-history ring buffer with topic
   `actions.lifecycle` (rowKey `'_'`, window 100). See §9.

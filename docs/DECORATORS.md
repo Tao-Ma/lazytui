@@ -7,7 +7,7 @@ to it cross-Component; every "decoration" was a Component contributing
 to its own panel.
 
 The replacement is **`viewContributions`** — a Component-only surface
-exposed by `components/api.js`:
+exposed by `panel/api.js`:
 
 ```js
 module.exports = {
@@ -32,4 +32,4 @@ Component's `render(panel, w, h, slice)`. The Plugin-side
 register).
 
 Use this file to discover the migration; the live API doc is the
-`viewContributions` block in `components/api.js`.
+`viewContributions` block in `panel/api.js`.

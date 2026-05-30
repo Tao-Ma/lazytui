@@ -356,7 +356,7 @@ If the PTY process exits (user types `exit`, command finishes):
 ## New Module: terminal.js
 
 ```
-js/terminal.js (~80 lines)
+js/io/terminal.js (~80 lines)
   sessions = {}                            // id → { pty, xterm, cmd }
   ensureSession(id, cmd, cols, rows)       // lazy create
   destroySession(id)                       // kill one

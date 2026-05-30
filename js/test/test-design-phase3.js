@@ -39,7 +39,7 @@ function enterDesign() {
   const api = require('../panel/api');
   api.dispatchMsg(api.wrap('layout', { type: 'design_enter' }));
 }
-function press(key, seq) { dispatch._dispatchActiveMode(getModel(), key, seq); }
+function press(key, seq) { dispatch._dispatchActiveMode(key, seq); }
 function handleDesignKey(key) { press(key, key); }
 function handleDesignTitleEditKey(key, seq) { press(key, seq); }
 

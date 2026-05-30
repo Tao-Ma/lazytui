@@ -2,20 +2,22 @@
  * Pure detail-`/`-search transforms over the detail slice.
  *
  * The matcher + the typing/nav/commit/cancel operations, called from the
- * detail Component's update. Each function takes the slice and mutates
- * it in place. App-global reads (model.panelHeights.detail for
- * scroll-to-match centering) go via lazy `getModel()`.
+ * detail Component's update. Each function takes the slice and returns
+ * a NEW slice (or the same ref on no-op), matching the post-Phase-1
+ * pure-TEA shape. Some operations return `[newSlice, info]` where
+ * `info` carries cross-layer signals the caller folds into Cmds.
  *
- * Cross-layer concern: detailSearchMode is a ROOT chrome flag (modal handler
- * key — see modeChain). enter/commit/cancel don't write it directly;
- * instead they return whether the mode should turn on/off, and the
- * calling reducer branch in detail.update emits an apply_msg Cmd for
- * mode_set/mode_clear. Single-writer per layer.
+ * Cross-layer concern: detailSearchMode is a ROOT chrome flag (modal
+ * handler key — see modeChain). enter/commit/cancel don't write it
+ * directly; instead they return whether the mode should turn on/off,
+ * and the calling reducer branch in detail.update emits an apply_msg
+ * Cmd for mode_set/mode_clear. Single-writer per layer.
  *
  * State homes (under slice.search): typing (in-progress buffer, separate
  * from the committed `term`), term, matches[{line,col,len}], idx, active.
- * scrollToActive reads/writes slice.scroll + reads getModel().panelHeights.detail
- * and slice.lines.
+ * scrollToActive returns a new slice with updated `scroll` when a scroll
+ * is needed; the caller threads `innerH` (the detail viewport's inner
+ * height) since the leaf is dependency-free.
  */
 'use strict';
 
@@ -107,7 +109,7 @@ function cancel(slice) {
   return [next, { disableSearchMode: true }];
 }
 
-function commit(slice) {
+function commit(slice, innerH) {
   const term = slice.search.typing || '';
   if (!term) {
     return [_withSearch(slice, { term: '', matches: [], idx: 0, active: false }), { disableSearchMode: true }];
@@ -115,7 +117,7 @@ function commit(slice) {
   let next = recomputeFor(_withSearch(slice, { term }), term);
   const active = next.search.matches.length > 0;
   next = _withSearch(next, { active });
-  if (active) next = scrollToActive(next);
+  if (active) next = scrollToActive(next, innerH);
   return [next, { disableSearchMode: true }];
 }
 
@@ -135,35 +137,33 @@ function keystroke(slice, seq) {
   return slice;
 }
 
-function next(slice) {
+function next(slice, innerH) {
   const s = slice.search;
   if (!s.matches.length) return slice;
-  return scrollToActive(_withSearch(slice, { idx: (s.idx + 1) % s.matches.length }));
+  return scrollToActive(_withSearch(slice, { idx: (s.idx + 1) % s.matches.length }), innerH);
 }
 
-function prev(slice) {
+function prev(slice, innerH) {
   const s = slice.search;
   if (!s.matches.length) return slice;
   const n = s.matches.length;
-  return scrollToActive(_withSearch(slice, { idx: (s.idx - 1 + n) % n }));
+  return scrollToActive(_withSearch(slice, { idx: (s.idx - 1 + n) % n }), innerH);
 }
 
 /** Center the active match in the detail viewport when off-screen.
- *  Reads panelHeights from the layout Component's slice. Returns new
- *  slice (with new `scroll`) only when a scroll is needed; same ref
- *  otherwise. */
-function scrollToActive(slice) {
+ *  `innerH` is the caller-supplied viewport height (rows inside the
+ *  border) — the one terminal-derived value this leaf can't read pure.
+ *  Returns a new slice with updated `scroll` only when a scroll is
+ *  actually needed; same ref otherwise. */
+function scrollToActive(slice, innerH) {
   const s = slice.search;
   const m = s.matches[s.idx];
   if (!m) return slice;
-  const layoutSlice = require('../panel/api').getComponentSlice('layout');
-  const ph = layoutSlice && layoutSlice.panelHeights;
-  const h = ph && ph.detail;
-  const innerH = Math.max(1, (h || 6) - 2);
+  const h = Math.max(1, innerH || 4);
   const top = slice.scroll || 0;
-  if (m.line < top || m.line >= top + innerH) {
-    const maxScroll = Math.max(0, slice.lines.length - innerH);
-    const desired = Math.max(0, m.line - Math.floor(innerH / 2));
+  if (m.line < top || m.line >= top + h) {
+    const maxScroll = Math.max(0, slice.lines.length - h);
+    const desired = Math.max(0, m.line - Math.floor(h / 2));
     const scroll = Math.max(0, Math.min(maxScroll, desired));
     return { ...slice, scroll };
   }

@@ -67,60 +67,60 @@ describe('[2] viewMode flows model → view end-to-end (the v0.5 slice, live)', 
   it('pressing + (the real key path) renders the [half] footer tag', () => {
     // handleKey runs the real dispatch (case '+' → handleAction
     // view_expand → runtime model update) AND paints — capture that.
-    const frame = capture(() => handleKey(model, '+', '+'));
+    const frame = capture(() => handleKey('+', '+'));
     assert(/\[half\]/.test(frame), `[half] tag rendered after +: ${JSON.stringify(frame.slice(-80))}`);
   });
   it('pressing + again renders [full]', () => {
-    const frame = capture(() => handleKey(model, '+', '+'));
+    const frame = capture(() => handleKey('+', '+'));
     assert(/\[full\]/.test(frame), `[full] tag rendered after second +: ${JSON.stringify(frame.slice(-80))}`);
   });
   it('pressing _ shrinks back toward [half]', () => {
-    const frame = capture(() => handleKey(model, '_', '_'));
+    const frame = capture(() => handleKey('_', '_'));
     assert(/\[half\]/.test(frame), `[half] after _: ${JSON.stringify(frame.slice(-80))}`);
   });
 });
 
 describe('[3] chrome (sel/focus) flows through the model — live', () => {
   it('down-arrow moves the groups selection via the real key path', () => {
-    capture(() => { handleKey(model, '_', '_'); handleKey(model, '_', '_'); });   // back to normal view (silenced)
+    capture(() => { handleKey('_', '_'); handleKey('_', '_'); });   // back to normal view (silenced)
     getComponentSlice("layout").focus = 'groups';
     setSel('groups', 0);
     const before = capture(() => render());
-    // handleKey(model, 'down') → nav_down → moveSel on the focused panel.
+    // handleKey('down') → nav_down → moveSel on the focused panel.
     // Phase 4a — cursor lives on the groups Component's slice.nav.groups.
-    const after = capture(() => handleKey(model, 'down', 'down'));
+    const after = capture(() => handleKey('down', 'down'));
     eq(getSel('groups'), 1, 'selection advanced 0 → 1 (chrome read through the model)');
     assert(before !== after, 'the rendered frame changed when the selection moved');
   });
   it('down-arrow cascades currentGroup inline (the selectGroup transform in the reducer)', () => {
-    capture(() => { handleKey(model, '_', '_'); handleKey(model, '_', '_'); });
+    capture(() => { handleKey('_', '_'); handleKey('_', '_'); });
     getComponentSlice("layout").focus = 'groups';
     setSel('groups', 0);
     selectGroup(0);   // anchor currentGroup on the first row
     eq(getModel().currentGroup, 'g1', 'anchored on g1');
     // nav_down → nav_select(groups) → mg.selectGroup runs inline in
     // update (no Cmd): the cursor AND currentGroup advance together.
-    capture(() => handleKey(model, 'down', 'down'));
+    capture(() => handleKey('down', 'down'));
     eq(getModel().currentGroup, 'g2', 'currentGroup cascaded to row 1 via the inline reducer transform');
   });
 });
 
 describe('[3b] focus moves through the update spine — live', () => {
   it('right/left arrow re-focus via applyMsg → update(focus_set) and repaint', () => {
-    capture(() => { handleKey(model, '_', '_'); handleKey(model, '_', '_'); });   // normal view (silenced)
+    capture(() => { handleKey('_', '_'); handleKey('_', '_'); });   // normal view (silenced)
     getComponentSlice("layout").focus = 'groups';
-    const fromGroups = capture(() => handleKey(model, 'right', 'right')); // focus_right → update
+    const fromGroups = capture(() => handleKey('right', 'right')); // focus_right → update
     assert(getFocus() !== 'groups', `focus advanced off groups (now ${getFocus()})`);
     assert(fromGroups.length > 0, 'a frame painted on focus change');
     const movedTo = getFocus();
-    capture(() => handleKey(model, 'left', 'left'));                       // focus_left → back
+    capture(() => handleKey('left', 'left'));                       // focus_left → back
     assert(getFocus() === 'groups', `focus_left returned to groups from ${movedTo}`);
   });
 });
 
 describe('[4] detail content flows model → view — live', () => {
   it('detail slice lines (now model.viewer.lines) renders into the Detail panel', () => {
-    capture(() => { handleKey(model, '_', '_'); handleKey(model, '_', '_'); });  // normal view
+    capture(() => { handleKey('_', '_'); handleKey('_', '_'); });  // normal view
     getComponentSlice('detail').lines = ['ZZ-DETAIL-MARKER-ZZ'];
     getComponentSlice('detail').scroll = 0;
     const frame = capture(() => render());

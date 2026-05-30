@@ -48,26 +48,39 @@ function init() {
  */
 function _stepEntry(entry, msg) {
   switch (msg.type) {
-    case 'set_cursor':
-      return { ...entry, cursor: msg.index | 0 };
-    case 'set_scroll':
-      return { ...entry, scroll: msg.offset | 0 };
+    case 'set_cursor': {
+      const cursor = msg.index | 0;
+      return cursor === entry.cursor ? entry : { ...entry, cursor };
+    }
+    case 'set_scroll': {
+      const scroll = msg.offset | 0;
+      return scroll === entry.scroll ? entry : { ...entry, scroll };
+    }
     case 'multisel_toggle': {
       const next = new Set(entry.multiSel);
       if (next.has(msg.id)) next.delete(msg.id); else next.add(msg.id);
       return { ...entry, multiSel: next };
     }
     case 'multisel_select_all': {
+      // Skip the allocation when every id is already in the Set —
+      // filter_key dispatches this each keystroke; the typical "still
+      // selected" case shouldn't churn the slice.
+      const ids = msg.ids || [];
+      let added = false;
+      for (const id of ids) { if (!entry.multiSel.has(id)) { added = true; break; } }
+      if (!added) return entry;
       const next = new Set(entry.multiSel);
-      for (const id of (msg.ids || [])) next.add(id);
+      for (const id of ids) next.add(id);
       return { ...entry, multiSel: next };
     }
     case 'multisel_clear':
       // Skip the allocation if the Set was already empty — common path on
       // re-clears + on group changes where the panel had no selection.
       return entry.multiSel.size === 0 ? entry : { ...entry, multiSel: new Set() };
-    case 'set_filter':
-      return { ...entry, filter: typeof msg.text === 'string' ? msg.text : '' };
+    case 'set_filter': {
+      const text = typeof msg.text === 'string' ? msg.text : '';
+      return text === entry.filter ? entry : { ...entry, filter: text };
+    }
     case 'clear_filter':
       return entry.filter === '' ? entry : { ...entry, filter: '' };
     default:

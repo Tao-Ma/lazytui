@@ -22,7 +22,7 @@ function reset() {
   getModel().modal.confirm = { message: '', cmd: null };
 }
 // Drive a key through the active mode handler (the confirm modeChain entry).
-function press(key, seq) { dispatch._dispatchActiveMode(getModel(), key, seq); }
+function press(key, seq) { dispatch._dispatchActiveMode(key, seq); }
 
 const CONFIRM_ACTION = { script: 'true', type: 'background', confirm: 'sure?' };
 

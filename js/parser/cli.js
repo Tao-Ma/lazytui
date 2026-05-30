@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * CLI entry — parses a YAML config and prints resolved JSON to stdout.
- * The runtime (js/state.js) calls parse() directly; this CLI exists
+ * The runtime (js/app/state.js) calls parse() directly; this CLI exists
  * for external scripts and parity / sanity testing.
  *
  * Exit codes:

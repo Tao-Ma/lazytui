@@ -2,18 +2,19 @@
  * Root model + reducer (`update`) + Cmd descriptors.
  *
  * The root model lives here, owned by the runtime. The reducer
- * `update(model, msg) → [model, cmds]` is the single writer for the
+ * `update(model, msg) → [newModel, cmds]` is the single writer for the
  * chrome / modal / config / framework layers; Component slices are
  * written by each Component's own `update`. Cross-layer ops route
  * through `apply_msg` / `dispatch_msg` Cmds (see docs/v0.5-layering.md).
  *
  * Contract:
  *   - Readers use `getModel()` (no global imports).
- *   - All writes to root-model fields flow through `update`. Reducer-
- *     leaves (leaves/design / leaves/register / leaves/menu / leaves/search /
- *     leaves/tabs) mutate the slice/model arg in place — intentional;
- *     full immutability was evaluated and skipped (see v0.5-layering.md
- *     §"Skipped").
+ *   - All writes to root-model fields flow through `update`, which
+ *     returns a NEW model object on state change (post-Phase-4 pure-TEA
+ *     conversion). Reducer-leaves (leaves/design / leaves/register /
+ *     leaves/search / leaves/tabs / leaves/nav) are pure return-new
+ *     transforms; leaves/menu is a pure builder that returns a fresh
+ *     items list. Freeze-test coverage in `js/test/test-immutable-*.js`.
  *   - The reducer performs no I/O; effects are Cmd DESCRIPTORS the
  *     effects layer (effects.runEffects, called from dispatch.applyMsg)
  *     interprets.
@@ -36,7 +37,7 @@ const mreg = require('../leaves/register');
 // `getFocus` for the cross-layer dispatches in `escape`, `filter_*`,
 // `reset_group_context`, etc. Direct import (zero deps) — no cycle.
 // Replaces the old lazy `require('../panel/api')` peppered through this file.
-const route = require('../panel/route');
+const route = require('../leaves/route');
 // leaves/tabs + leaves/search are leaves of the detail Component's update.
 // The root reducer doesn't import them directly.
 
@@ -132,23 +133,22 @@ function init() {
   return m;
 }
 
-// Container pattern: the root model lives behind a single mutable ref so
-// the dispatcher can swap it for a new immutable snapshot post-reducer
-// (Phase 4 of the pure-TEA conversion will start emitting new models;
-// today the reducer still mutates in place and `setModel` is a no-op
-// reassignment when it sees the same ref). getModel() always returns the
-// current snapshot — callers MUST NOT cache the returned object across
-// Msg dispatches once the reducer goes immutable.
+// Container pattern: the root model lives behind a single mutable ref
+// the dispatcher swaps for a new snapshot post-reducer. The reducer
+// now returns new models on every state-changing Msg (pure-TEA);
+// no-op Msgs return the same ref so setModel can identity-check.
+// getModel() always returns the current snapshot — callers MUST NOT
+// cache the returned object across Msg dispatches (see the stale-ref
+// hazards documented in v0.5-layering.md).
 const _modelRef = { current: init() };
 
 function getModel() { return _modelRef.current; }
 
 /**
  * Replace the root model with a new snapshot. Called by the dispatch
- * boundary (`applyMsg`) after the reducer returns. During the pure-TEA
- * conversion this is a no-op when the reducer hands back the same ref
- * (in-place mutation, current behavior); once the reducer returns new
- * snapshots, the reassignment is what makes the new state visible.
+ * boundary (`applyMsg`) after the reducer returns. No-op when the
+ * reducer identity-preserves on a no-op Msg; otherwise the
+ * reassignment is what makes the new state visible to `getModel()`.
  *
  * Reentrant dispatch ordering: setModel MUST be called BEFORE
  * `runEffects` so cross-layer Cmds (`apply_msg`, `dispatch_msg`) see
@@ -328,6 +328,7 @@ function update(model, msg) {
       return [next, cmd ? [cmd] : []];
     }
     case 'confirm_reject':
+      if (!model.modes.confirmMode) return [model, []];
       return [{
         ..._withModes(model, { confirmMode: false }),
         modal: { ...model.modal, confirm: { message: '', cmd: null } },
@@ -371,6 +372,7 @@ function update(model, msg) {
       return [next, cmd ? [{ ...cmd, args }] : []];
     }
     case 'prompt_cancel':
+      if (!model.modes.promptMode) return [model, []];
       return [{
         ..._withModes(model, { promptMode: false }),
         modal: { ...model.modal, prompt: { label: '', spec: '', text: '', ghost: '', cmd: null } },
@@ -475,6 +477,7 @@ function update(model, msg) {
       return [{ ...model, register: nextReg }, v ? [{ type: 'emit_osc52', text: v }] : []];
     }
     case 'register_popup_cancel':
+      if (!model.modes.registerPopupMode) return [model, []];
       return [{
         ..._withModes(model, { registerPopupMode: false }),
         modal: { ...model.modal, registerPopup: { idx: 0, scroll: 0 } },
@@ -592,9 +595,10 @@ function update(model, msg) {
     case 'menu_open':
       return [{
         ..._withModes(model, { menuOpen: true }),
-        modal: { ...model.modal, menu: { items: menu.buildItems(model), idx: 0 } },
+        modal: { ...model.modal, menu: { items: menu.buildItems(route.getSlice('layout')), idx: 0 } },
       }, []];
     case 'menu_close':
+      if (!model.modes.menuOpen) return [model, []];
       return [{
         ..._withModes(model, { menuOpen: false }),
         modal: { ...model.modal, menu: { items: [], idx: 0 } },

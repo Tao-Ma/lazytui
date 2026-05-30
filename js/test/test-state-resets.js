@@ -15,7 +15,11 @@ const { getComponentSlice } = require('../panel/api');
 
 describe('[1] resetGroupContext drops ROOT chrome state', () => {
   it('clears list-select + per-panel filters/multi-sel (root layer)', () => {
-    getModel().modes.listSelectMode = true;
+    // Set up via the reducer rather than poking model.modes directly —
+    // tests post-Phase 4 should mirror the production write path.
+    const dispatch = require('../dispatch/dispatch');
+    dispatch.applyMsg({ type: 'list_select', mode: 'on' });
+    eq(getModel().modes.listSelectMode, true, 'precondition: mode armed');
     resetGroupContext();
     eq(getModel().modes.listSelectMode, false, 'list-select mode cleared');
   });

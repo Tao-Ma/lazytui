@@ -44,15 +44,17 @@ function emitOSC52(text) {
 }
 
 // Writers are thin bridges over the pure leaves/register leaf (the same leaf
-// runtime.update uses), plus the OSC52 effect. Production yank/popup writes
-// flow through update (register_push / register_popup_* Msgs); these wrappers
-// remain as the direct test-facing API + for any non-threaded caller.
+// runtime.update uses), plus the OSC52 effect.
 //
-// Pure-TEA conversion (Phase 1b): the leaf takes the register sub-slice
-// and returns `[newRegister, value]`. The bridges below assign the new
-// register back onto the model in place — the model itself isn't yet
-// immutable (Phase 4), but the leaf's purity is the verifiable
-// invariant that matters here.
+// Production yank/popup writes flow through `update` (register_push /
+// register_popup_* Msgs); the bridges below are the **test-facing setup
+// API** — they exist so tests can seed the register without ceremony.
+//
+// In production, the root model is immutable post-Phase-4 (pure-TEA); the
+// `m.register = next` writes here are an intentional, scoped escape hatch
+// for test setup only. No production code path calls these writers
+// directly. (`init` is the BLESSED outside-writer for the lazy boot-time
+// seed — see docs/v0.5-layering.md §5.)
 function push(text) {
   _ensure();
   const m = getModel();

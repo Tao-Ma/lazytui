@@ -86,11 +86,9 @@ function _handleWheel(model, mx, my, delta) {
   return false;
 }
 
-function handleMouse(_legacy, kind, x, y) {
-  // Phase 4 — runtime.update returns NEW model objects; a captured
-  // model param goes stale on the first state-changing Msg. The leading
-  // arg is tolerated for back-compat (callers in tests pass it) but the
-  // real source of truth is getModel().
+function handleMouse(kind, x, y) {
+  // Phase 4 — runtime.update returns NEW model objects; read getModel()
+  // at entry so post-Msg state is what subsequent reads see.
   const model = getModel();
   // x, y are 1-based from SGR; convert to 0-based
   const mx = x - 1;
@@ -257,7 +255,12 @@ function _handleTerminalModeData(data) {
 
 // --- Stdin setup ---
 
-function setupKeyListener(model) {
+function setupKeyListener() {
+  // Phase 4 — the stdin closure used to capture `model` and thread it
+  // into handleMouse / handleKey / render(model). Post-pure-TEA the
+  // captured ref would freeze at boot state; every reader now re-reads
+  // getModel() at the entry point that needs it. The function takes
+  // no model arg.
   const stdin = process.stdin;
   stdin.setRawMode(true);
   stdin.resume();
@@ -291,7 +294,7 @@ function setupKeyListener(model) {
     // multi-line content; other modes treat it as a no-op.
     if (data.startsWith('\x1b[200~') && data.endsWith('\x1b[201~')) {
       const text = data.slice('\x1b[200~'.length, -'\x1b[201~'.length);
-      handleKey(model, 'paste', text);
+      handleKey('paste', text);
       return;
     }
 
@@ -318,26 +321,26 @@ function setupKeyListener(model) {
       if ((btn & 0x40) !== 0) {
         if (released) return;
         const kind = (btn & 1) ? 'wheel-down' : 'wheel-up';
-        handleMouse(model, kind, x, y);
+        handleMouse(kind, x, y);
         return;
       }
       const motion = (btn & 0x20) !== 0;
       const button = btn & 3;
       if (button !== 0) return;  // left button only for non-wheel events
       const kind = released ? 'release' : motion ? 'motion' : 'press';
-      handleMouse(model, kind, x, y);
+      handleMouse(kind, x, y);
       return;
     }
-    if (data === '\x1b[A') handleKey(model, 'up');
-    else if (data === '\x1b[B') handleKey(model, 'down');
-    else if (data === '\x1b[C') handleKey(model, 'right');
-    else if (data === '\x1b[D') handleKey(model, 'left');
-    else if (data === '\x1b[5~') handleKey(model, 'pageup');
-    else if (data === '\x1b[6~') handleKey(model, 'pagedown');
-    else if (data === '\x1b') handleKey(model, 'escape');
-    else if (data === '\r' || data === '\n') handleKey(model, 'return');
+    if (data === '\x1b[A') handleKey('up');
+    else if (data === '\x1b[B') handleKey('down');
+    else if (data === '\x1b[C') handleKey('right');
+    else if (data === '\x1b[D') handleKey('left');
+    else if (data === '\x1b[5~') handleKey('pageup');
+    else if (data === '\x1b[6~') handleKey('pagedown');
+    else if (data === '\x1b') handleKey('escape');
+    else if (data === '\r' || data === '\n') handleKey('return');
     else if (data === '\x03') { cleanup(); process.exit(0); }
-    else if (data === '\x12') handleKey(model, 'ctrl-r');  // Ctrl+R → design-mode redo
+    else if (data === '\x12') handleKey('ctrl-r');  // Ctrl+R → design-mode redo
     // Defensive Esc fallthrough: some terminals (and Node buffering
     // states) deliver a bare Esc as `\x1b\x1b` or `\x1b<followup>` in
     // a single chunk. The strict `data === '\x1b'` check above misses
@@ -346,8 +349,8 @@ function setupKeyListener(model) {
     // chunk starting with `\x1b` that survived the specific-sequence
     // checks as Esc — mode handlers exit cleanly. Trailing bytes are
     // discarded (lazytui doesn't bind any Alt/Meta combinations).
-    else if (data.charCodeAt(0) === 0x1b) handleKey(model, 'escape');
-    else handleKey(model, data, data);
+    else if (data.charCodeAt(0) === 0x1b) handleKey('escape');
+    else handleKey(data, data);
   });
 }
 
