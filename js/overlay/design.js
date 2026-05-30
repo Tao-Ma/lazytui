@@ -68,7 +68,10 @@ function getDesignFooter() {
     }
     const t = drag.target;
     if (!t)             return ` | from pool: ${esc(srcTitle)} → [yellow](drop outside cancels)[/]`;
-    if (!t.valid)       return ` | from pool: ${esc(srcTitle)} → [red]✗ detail is essential[/]`;
+    if (!t.valid) {
+      const reason = t.kind === 'replace' ? 'detail is essential' : `${t.column} column is full`;
+      return ` | from pool: ${esc(srcTitle)} → [red]✗ ${reason}[/]`;
+    }
     if (t.kind === 'replace') {
       return ` | from pool: ${esc(srcTitle)} → [bold yellow]replace[/] ${esc(t.occupantId)} (${t.column})`;
     }
@@ -156,6 +159,10 @@ function renderPoolDragOverlay(drag) {
   }
 
   // Append: bar at the bottom of the target column, full-width.
+  // Color reflects validity — green when the drop will commit, red
+  // when it would be refused (column at cap). Without the red flag
+  // the user sees a "valid"-looking green bar, releases, and nothing
+  // happens (the cancel branch silently fires in poolDragRelease).
   const COLS = cols();
   const leftW = layoutSlice.arrange.leftWidth;
   const colX = t.column === 'left' ? 0 : leftW;
@@ -166,8 +173,9 @@ function renderPoolDragOverlay(drag) {
     const last = layoutSlice.panelBounds[panels[panels.length - 1].type];
     if (last) lineY = last.y + last.h - 1;
   }
+  const barColor = t.valid ? 'bold green' : 'bold red';
   const bar = '═'.repeat(Math.max(1, colW));
-  stdout.write(`\x1b[${lineY + 1};${colX + 1}H` + richToAnsi(`[bold green]${bar}[/]`) + RESET);
+  stdout.write(`\x1b[${lineY + 1};${colX + 1}H` + richToAnsi(`[${barColor}]${bar}[/]`) + RESET);
 }
 
 /** Paint a single-line frame around (x, y, w, h) in the given color.
