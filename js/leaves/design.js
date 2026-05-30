@@ -683,14 +683,43 @@ function mouseRelease(slice) {
  *  `{ kind, column, occupantId?, valid }` or `null` when outside the
  *  layout area. Uses slice.panelBounds (view-derived, written by the
  *  render pass) for cell hit-tests, mirroring the design-drag approach. */
+// Bottom-of-column zone reserved for "append" drops. Each column's last
+// cell is normally full-height, so without carving out a dedicated zone
+// the user can never hit the "not on any cell" branch below. The zone
+// is the bottom N rows of the last cell — wide enough to be reachable
+// with the mouse, narrow enough that "drop on this cell" (replace) is
+// still the dominant gesture on the upper portion.
+const APPEND_ZONE_ROWS = 2;
+
 function pointToPoolDropTarget(slice, mx, my) {
   const arrange = slice.arrange;
+  if (mx < 0 || my < 0) return null;
+
+  // 1. Append zone — bottom APPEND_ZONE_ROWS of each column's last
+  //    cell. Checked before replace so the user has a reachable gesture
+  //    for "add this panel at the end of the column".
+  const checkAppend = (column, panels) => {
+    if (panels.length === 0) return null;
+    const last = panels[panels.length - 1];
+    const b = slice.panelBounds[last.type];
+    if (!b) return null;
+    if (mx < b.x || mx >= b.x + b.w) return null;
+    const zoneTop = b.y + b.h - APPEND_ZONE_ROWS;
+    if (my < zoneTop || my >= b.y + b.h) return null;
+    // Refuse append into a column at its cap (matches pool_show check).
+    const cap = column === 'left' ? 6 : 3;
+    const valid = panels.length < cap;
+    return { kind: 'append', column, valid };
+  };
+  const leftAppend  = checkAppend('left',  arrange.leftPanels  || []);
+  if (leftAppend)  return leftAppend;
+  const rightAppend = checkAppend('right', arrange.rightPanels || []);
+  if (rightAppend) return rightAppend;
+
+  // 2. Replace zone — cell hit-test on whatever sits at the cursor.
   for (const p of arrange.leftPanels  || []) {
     const b = slice.panelBounds[p.type];
     if (b && mx >= b.x && mx < b.x + b.w && my >= b.y && my < b.y + b.h) {
-      // Refuse replace on detail — layout invariant. The release path
-      // converts an invalid replace into a same-column append above
-      // the cell, so the gesture isn't a dead-end.
       const valid = p.type !== 'detail';
       return { kind: 'replace', column: 'left', occupantId: p.id, valid };
     }
@@ -702,8 +731,9 @@ function pointToPoolDropTarget(slice, mx, my) {
       return { kind: 'replace', column: 'right', occupantId: p.id, valid };
     }
   }
-  // Not on any cell — pick column by x, append at tail.
-  if (mx < 0 || my < 0) return null;
+
+  // 3. Outside everything (cursor in dead zone, e.g. the footer row or
+  //    outside terminal bounds). Append to the column under the cursor.
   const leftWidth = arrange.leftWidth || 30;
   const column = mx < leftWidth ? 'left' : 'right';
   return { kind: 'append', column, valid: true };
