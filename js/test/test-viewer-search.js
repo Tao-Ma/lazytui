@@ -15,8 +15,9 @@ const { getComponentSlice } = require('../panel/api');
 function setup(lines, panelH = 10) {
   getComponentSlice('detail').lines = lines.slice();
   getComponentSlice('detail').scroll = 0;
-  getComponentSlice('layout').panelHeights = getComponentSlice('layout').panelHeights || {};
-  getComponentSlice('layout').panelHeights.detail = panelH;
+  // A1/B1 fix: viewer.update reads slice.innerH directly. Tests seed it
+  // on the detail slice (was: cross-slice into layout.panelHeights.detail).
+  getComponentSlice('detail').innerH = Math.max(1, panelH - 2);
   getModel().modes.detailSearchMode = false;
   getComponentSlice('detail').search = { active: false, term: '', matches: [], idx: 0 };
 }

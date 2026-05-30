@@ -61,7 +61,11 @@ function appendDetailLine(line) {
 function streamCommand(headerLabel, cmd, args = []) {
   killCurrentProc();
   const api = require('../panel/api');
-  api.dispatchMsg(api.wrap('detail', { type: 'stream_start', header: `[dim]$ ${headerLabel}[/]` }));
+  // T32 — esc the dynamic header. Callers pass `actionKey` (YAML key) or
+  // `verb <container>` strings; a `[` or `\t` in either would corrupt
+  // the markup parse / panel padding (same class as the postgresql.conf
+  // tab bug).
+  api.dispatchMsg(api.wrap('detail', { type: 'stream_start', header: `[dim]$ ${esc(headerLabel)}[/]` }));
   scheduleRender();
 
   // -- delimiter so $0 = "--", $1 = first arg, $@ = arg list (POSIX).

@@ -46,9 +46,9 @@ greppable.
         ▼
 ═══════════════════════════ EFFECTS ════════════════════════════════
    runEffects(effects)                 (js/dispatch/effects.js)
-     apply_msg     → applyMsg     ─┐
-     dispatch_msg  → dispatchMsg  ─┤ re-enter the spine
-     tick(ms, msg) → setTimeout   ─┘ (cycle cap @ 32 deep)
+     apply_msg     → applyMsg     ─┐ re-enter the spine
+     dispatch_msg  → dispatchMsg  ─┘ (cycle cap @ 32 deep; T28)
+     tick(ms, msg) → setTimeout      (async re-entry; not depth-counted)
      render        → scheduleRender (50ms debounce)
      setDetail / setActiveTab / focus / show_selected_info
      do_run / run_action / kill_proc / stream_action
@@ -101,14 +101,30 @@ The spine is *cyclic at the effects layer*: `apply_msg` /
 `dispatch_msg` re-enter `applyMsg` / `dispatchMsg`, so one Msg can
 ripple into a multi-step cascade (e.g. groups switch →
 reset_group_context → 3× set_cursor + multisel_clear + clear_filter
-+ viewer_reset_chrome). T28 caps depth at 32.
++ viewer_reset_chrome). T28 caps depth at 32 around those two Cmd
+handlers specifically — direct `applyMsg`/`dispatchMsg` calls from
+async producers (PTY onExit, docker events, stream onData, the `tick`
+handler, the `cmdline_rebuild` writeback) are not depth-counted; they
+re-enter through ordinary JS event-loop turns.
 
 **Single-writer per layer is structural.** Only `runtime.update`
 writes the root model; only each Component's own `update` writes its
 slice. Cross-layer writes have a Msg channel (`apply_msg` /
 `dispatch_msg`) — no path where module X writes layer Y's state
-directly except the blessed view-output exceptions during render
-(`panelBounds`, keep-in-view scroll).
+directly except the blessed render-side exceptions:
+
+  - `layout.panelHeights` / `panelBounds` written by `calcLayout` +
+    each render-mode (the view-output geometry).
+  - `panelBounds.detail.tabs` written by the viewer's `detailTitle`
+    (tab-bar hit-test cache).
+  - keep-in-view `set_scroll` Msgs from `syncPanelScroll` into each
+    Navigator's nav slice (Msgs, not direct writes).
+  - `viewer_set_viewport` Msg from `render()` into detail's `innerH`
+    (T34 — viewport cache so viewer reducers don't read layout cross-
+    slice; same Msg shape as the keep-in-view scroll above).
+  - `setImmediate(terminal_exit)` from `renderTerminalOverlay` when
+    the active PTY session has exited (T14 — deferred a tick so the
+    cleanup cascade isn't inline in the render path).
 
 **Sync vs debounced render.** The steady state is one sync `render()`
 per keystroke at the tail of `dispatch.handleKey`. The 50 ms

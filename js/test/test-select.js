@@ -203,7 +203,10 @@ describe('[11] keyboard visual-mode — claim via detail Component update', () =
     getComponentSlice("layout").focus = 'detail';
     getModel().modes.terminalMode = false;
     getComponentSlice('detail').cursor = { line: 0, col: 0 };
+    // A1/B1 fix: viewer.update reads slice.innerH directly. Seed it
+    // alongside the previous panelHeights seeding (8 = panelH 10 - 2).
     getComponentSlice('layout').panelHeights.detail = 10;
+    getComponentSlice('detail').innerH = 8;
     getComponentSlice('detail').scroll = 0;
   }
   it('claims keys only when focus=detail', () => {
@@ -231,7 +234,8 @@ describe('[11] keyboard visual-mode — claim via detail Component update', () =
   });
   it('reading-mode j/k scrolls the view, cursor not used', () => {
     withDetail(Array.from({ length: 20 }, (_, i) => `line${i}`));
-    getComponentSlice('layout').panelHeights.detail = 5;  // innerH = 3
+    getComponentSlice('layout').panelHeights.detail = 5;
+    getComponentSlice('detail').innerH = 3;
     eq(getComponentSlice('detail').scroll, 0, 'starts at top');
     eq(sel.isActive(), false, 'reading mode (no select)');
     detailKey('j', 'j');
@@ -244,7 +248,8 @@ describe('[11] keyboard visual-mode — claim via detail Component update', () =
   });
   it('reading-mode j/k clamps at top and bottom', () => {
     withDetail(Array.from({ length: 10 }, (_, i) => `line${i}`));
-    getComponentSlice('layout').panelHeights.detail = 5;  // innerH = 3, maxScroll = 7
+    getComponentSlice('layout').panelHeights.detail = 5;
+    getComponentSlice('detail').innerH = 3;  // maxScroll = 7
     for (let i = 0; i < 20; i++) detailKey('j', 'j');
     eq(getComponentSlice('detail').scroll, 7, 'clamped to maxScroll');
     for (let i = 0; i < 20; i++) detailKey('k', 'k');
@@ -261,7 +266,8 @@ describe('[11] keyboard visual-mode — claim via detail Component update', () =
   });
   it('visual-mode j scrolls when cursor leaves viewport', () => {
     withDetail(Array.from({ length: 20 }, (_, i) => `line${i}`));
-    getComponentSlice('layout').panelHeights.detail = 5;  // innerH = 3
+    getComponentSlice('layout').panelHeights.detail = 5;
+    getComponentSlice('detail').innerH = 3;
     detailKey('v', 'v');
     for (let i = 0; i < 5; i++) detailKey('j', 'j');
     assert(getComponentSlice('detail').scroll > 0, `scroll auto-advanced (got ${getComponentSlice('detail').scroll})`);

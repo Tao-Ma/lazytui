@@ -40,6 +40,9 @@ function setupTwoPanel() {
   getComponentSlice("layout").focus = 'hosts';
   getComponentSlice('detail').lines = Array.from({ length: 100 }, (_, i) => `line-${i}`);
   getComponentSlice('detail').scroll = 0;
+  // A1/B1 fix: viewer.update reads slice.innerH instead of layout's
+  // panelHeights. Seed the detail slice's own viewport (panel h - 2 chrome).
+  getComponentSlice('detail').innerH = 18;
 }
 
 describe('[1] wheel over detail scrolls view, no focus change', () => {

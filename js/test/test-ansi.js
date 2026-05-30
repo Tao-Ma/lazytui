@@ -81,4 +81,34 @@ describe('[3] T22 verified-repro pinning', () => {
   });
 });
 
+// T31 — tab expansion. visibleLen counts a tab as 1 col but the terminal
+// advances to the next 8-col tab stop. Without expansion, padding +
+// border calculations overrun the panel width and corrupt the next row
+// (postgresql.conf line `#data_directory = 'ConfigDir'\t\t# ...`).
+const { visibleLen } = require('../io/ansi');
+describe('[3] esc() — expands \\t to spaces against 8-col tab stops', () => {
+  it('two tabs after a col-29 prefix expand to 3+8 spaces', () => {
+    const line = "#data_directory = 'ConfigDir'\t\t# use data";
+    const out = esc(line);
+    assert(!out.includes('\t'), 'no raw tab survives esc()');
+    eq(out, "#data_directory = 'ConfigDir'           # use data",
+       'tabs expanded to land at col 32 then col 40');
+  });
+  it('leading tab → 8 spaces', () => {
+    eq(esc('\thello'), '        hello');
+  });
+  it('tab at col 7 → 1 space (lands at col 8)', () => {
+    eq(esc('1234567\tX'), '1234567 X');
+  });
+  it('visibleLen matches actual terminal-rendered width post-esc', () => {
+    const out = esc("abc\tdef\t1234567Z");
+    // abc(3) → col 3, tab → col 8 (+5 spaces), def(3) → col 11,
+    // tab → col 16 (+5 spaces), 1234567Z(8) → col 24
+    eq(visibleLen(out), 24);
+  });
+  it('no-tab input is unchanged (hot-path early-out)', () => {
+    eq(esc('plain ascii'), 'plain ascii');
+  });
+});
+
 report();

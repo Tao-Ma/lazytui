@@ -439,6 +439,20 @@ function render(model = getModel()) {
   if (viewMode === 'half') mainDidFull = renderHalf(model);
   else if (viewMode === 'full') mainDidFull = renderFull(model);
   else mainDidFull = renderNormal(model);
+  // Cache the detail panel's effective viewport on detail's own slice
+  // so viewer.update can clamp scroll/cursor without reading layout's
+  // render-time geometry across slices. Blessed render-side write into
+  // an owning slice (same shape as syncPanelScroll → set_scroll). Pair
+  // with viewer_set_viewport's identity-preserve guard — when nothing
+  // changed the Msg short-circuits before any allocation.
+  const detailBounds = layoutSlice.panelBounds && layoutSlice.panelBounds.detail;
+  if (detailBounds) {
+    const innerH = Math.max(0, detailBounds.h - 2);
+    const detailSlice = getComponentSlice('detail');
+    if (detailSlice && detailSlice.innerH !== innerH) {
+      dispatchMsg(wrap('detail', { type: 'viewer_set_viewport', innerH }));
+    }
+  }
   // Only force the terminal-overlay repaint when main paint actually
   // cleared the screen (resize, overlay-close, first frame). In the
   // steady state main paint is diff-based and leaves the PTY region

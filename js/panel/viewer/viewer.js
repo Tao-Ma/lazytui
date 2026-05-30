@@ -56,9 +56,20 @@ function _beginSelect(slice, line, col, kind) {
   };
 }
 
+// Effective viewport for scroll/cursor clamps. The slice's `innerH` is
+// written from render() each frame (viewer_set_viewport Msg) so the
+// reducer stays a pure function of (slice, msg) — no cross-slice read of
+// layout's render-time geometry. The pre-first-render fallback is `1`:
+// any viewer_scroll/append/cursor before paint still clamps inside
+// [0, lines.length - 1] instead of overshooting (the pre-fix bug was
+// `(0 || 0) - 2 = -2` viewport → `maxScroll = lines.length + 2`, leaving
+// the slice with scroll past the last line until the next render).
+// Tests that need a specific viewport seed `slice.innerH` directly.
+function _innerH(slice) { return slice.innerH > 0 ? slice.innerH : 1; }
+
 function _setCursor(slice, line, col, extend) {
   const cursor = { line: line | 0, col: col | 0 };
-  const innerH = Math.max(1, (getComponentSlice('layout').panelHeights.detail || 0) - 2);
+  const innerH = _innerH(slice);
   const top = slice.scroll || 0;
   let scroll = slice.scroll || 0;
   if (cursor.line < top)                       scroll = cursor.line;
@@ -71,7 +82,7 @@ function _setCursor(slice, line, col, extend) {
 }
 
 function _scrollView(slice, delta) {
-  const innerH = Math.max(1, (getComponentSlice('layout').panelHeights.detail || 0) - 2);
+  const innerH = _innerH(slice);
   const maxScroll = Math.max(0, slice.lines.length - innerH);
   const scroll = Math.max(0, Math.min(maxScroll, (slice.scroll || 0) + (delta || 0)));
   if (scroll === (slice.scroll || 0)) return slice;
@@ -91,16 +102,6 @@ function _moveCursor(slice, dline, dcol) {
   return _setCursor(slice, newLine, newCol, active);
 }
 
-// Resolve the detail viewport's inner height for handlers that need
-// to drive search-scroll-to-active. The one terminal-derived value
-// `leaves/search` can't read pure; threaded explicitly so the leaf
-// stays dep-free.
-function _innerH() {
-  const layoutSlice = getComponentSlice('layout');
-  const h = layoutSlice && layoutSlice.panelHeights && layoutSlice.panelHeights.detail;
-  return Math.max(1, (h || 6) - 2);
-}
-
 // --- init ---
 
 function init() {
@@ -108,6 +109,13 @@ function init() {
     lines: [],
     scroll: 0,
     tab: 0,
+    // Effective viewport rows (panel height minus 2-row border chrome).
+    // Written from render() via viewer_set_viewport once the layout pass
+    // settles a panelBounds.detail — owning slice, not cross-slice, so the
+    // reducer is a pure function of (slice, msg). 0 = not-yet-rendered;
+    // _innerH() falls back to lines.length in that degenerate so clamps
+    // collapse to "everything fits".
+    innerH: 0,
     search: { active: false, term: '', matches: [], idx: 0, typing: '' },
     select: { active: false, kind: 'char', anchor: { line: 0, col: 0 }, cursor: { line: 0, col: 0 } },
     cursor: { line: 0, col: 0 },
@@ -150,8 +158,8 @@ function update(msg, slice) {
       return { ...slice, lines: lines.join('\n').split('\n'), scroll: 0 };
     }
     case 'viewer_scroll': {
-      const viewport = (getComponentSlice('layout').panelHeights.detail || 0) - 2;
-      const maxScroll = Math.max(0, slice.lines.length - viewport);
+      const innerH = _innerH(slice);
+      const maxScroll = Math.max(0, slice.lines.length - innerH);
       let next;
       if (msg.to === 'top') next = 0;
       else if (msg.to === 'bottom') next = maxScroll;
@@ -159,6 +167,15 @@ function update(msg, slice) {
       const scroll = Math.max(0, Math.min(maxScroll, next));
       if (scroll === slice.scroll) return slice;
       return { ...slice, scroll };
+    }
+    case 'viewer_set_viewport': {
+      // Render-side cache update. layout.render() dispatches this after
+      // panelBounds settle so subsequent reducer-only scroll/append/cursor
+      // clamps don't have to reach into the layout slice. Identity-preserve
+      // on no-op (cheap render-tail call when nothing changed).
+      const innerH = Math.max(0, msg.innerH | 0);
+      if (innerH === slice.innerH) return slice;
+      return { ...slice, innerH };
     }
     case 'viewer_append': {
       // Hot path — streamed action output can fire 500-1000 lines/sec.
@@ -169,7 +186,7 @@ function update(msg, slice) {
       // 1k/sec target. If field reports show pressure on long-running
       // streams (100k+ lines / GC pauses), the documented mitigations
       // are ring-buffer trim or a coalesced/batched append Msg.
-      const innerH = Math.max(1, (getComponentSlice('layout').panelHeights.detail || 10) - 2);
+      const innerH = _innerH(slice);
       const maxScroll = Math.max(0, slice.lines.length - innerH);
       const wasAtBottom = slice.scroll >= maxScroll;
       const lines = [...slice.lines, msg.line];
@@ -247,9 +264,9 @@ function update(msg, slice) {
         : []];
     }
     case 'viewer_search_key':    return ms.keystroke(slice, msg.seq);
-    case 'viewer_search_nav':    return msg.dir > 0 ? ms.next(slice, _innerH()) : ms.prev(slice, _innerH());
+    case 'viewer_search_nav':    return msg.dir > 0 ? ms.next(slice, _innerH(slice)) : ms.prev(slice, _innerH(slice));
     case 'viewer_search_commit': {
-      const [next, info] = ms.commit(slice, _innerH());
+      const [next, info] = ms.commit(slice, _innerH(slice));
       return [next, info.disableSearchMode
         ? [{ type: 'apply_msg', msg: { type: 'mode_clear', flag: 'detailSearchMode' } }]
         : []];
@@ -349,8 +366,8 @@ function update(msg, slice) {
 
       // Detail-search post-commit n/N nav; Esc clears.
       if (slice.search && slice.search.active) {
-        if (msg.seq === 'n' || msg.key === 'n') return [ms.next(slice, _innerH()), claim];
-        if (msg.seq === 'N' || msg.key === 'N') return [ms.prev(slice, _innerH()), claim];
+        if (msg.seq === 'n' || msg.key === 'n') return [ms.next(slice, _innerH(slice)), claim];
+        if (msg.seq === 'N' || msg.key === 'N') return [ms.prev(slice, _innerH(slice)), claim];
         if (msg.key === 'escape' && !active)    return [ms.clearCommitted(slice), claim];
       }
 

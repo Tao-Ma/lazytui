@@ -52,16 +52,15 @@ describe('[3] update — (model, msg) → [model, cmds], pure + Cmd descriptors'
     // Phase B: viewer_scroll moved to detail.update — test the Component
     // update directly with an isolated slice.
     const detail = require('../panel/viewer/viewer');
-    // detail.update reads getModel().panelHeights — write to the singleton so
-    // the viewport-based clamp uses the test's value.
-    require('../panel/api').getComponentSlice('layout').panelHeights.detail = 22;  // viewport = 20 → maxScroll 80
+    // A1/B1 fix: viewport lives on detail's own slice (innerH), written
+    // by render() via viewer_set_viewport. Tests seed it directly.
     // Phase 3 — _update returns the new slice; step() threads it through.
     const step = (sl, msg) => {
       const out = detail._update(msg, sl);
       return Array.isArray(out) ? out[0] : out;
     };
     let slice = detail._init();
-    slice = { ...slice, lines: new Array(100).fill('x') };
+    slice = { ...slice, lines: new Array(100).fill('x'), innerH: 20 };  // maxScroll 80
     slice = step(slice, { type: 'viewer_scroll', delta: 30 });
     eq(slice.scroll, 30);
     slice = step(slice, { type: 'viewer_scroll', delta: 999 });
@@ -239,17 +238,15 @@ describe('[10] streamed output — stream_start / viewer_append (effect source)'
     assert(!Array.isArray(r), 'no effects — bare slice return');
   });
   it('viewer_append pins to bottom when already at bottom', () => {
-    require('../panel/api').getComponentSlice('layout').panelHeights.detail = 5;   // innerH = 3
     const init = detail._init();
-    const slice = { ...init, lines: ['a', 'b', 'c'], scroll: 0 };  // maxScroll = 0, at bottom
+    const slice = { ...init, lines: ['a', 'b', 'c'], scroll: 0, innerH: 3 };  // maxScroll = 0, at bottom
     const r = detail._update({ type: 'viewer_append', line: 'd' }, slice);
     eq(r.lines.length, 4);
     eq(r.scroll, 1, 'followed to the new bottom');
   });
   it('viewer_append leaves scroll alone when the user scrolled up', () => {
-    require('../panel/api').getComponentSlice('layout').panelHeights.detail = 5;   // innerH = 3
     const init = detail._init();
-    const slice = { ...init, lines: ['a', 'b', 'c', 'd', 'e'], scroll: 0 };  // maxScroll = 2, user at top
+    const slice = { ...init, lines: ['a', 'b', 'c', 'd', 'e'], scroll: 0, innerH: 3 };  // maxScroll = 2, user at top
     const r = detail._update({ type: 'viewer_append', line: 'f' }, slice);
     eq(r.lines.length, 6);
     eq(r.scroll, 0, 'not yanked down — user was reading');

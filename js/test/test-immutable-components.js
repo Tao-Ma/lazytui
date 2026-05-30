@@ -350,10 +350,9 @@ describe('[immutable] detail (viewer)', () => {
   });
 
   it('viewer_append spreads lines, follows bottom', () => {
-    // panelHeights.detail seeded by the prior viewer_append test in
-    // test-runtime.js — we set our own to make the test self-contained.
-    require('../panel/api').getComponentSlice('layout').panelHeights.detail = 5;  // innerH = 3
-    const slice = makeSlice({ lines: ['a', 'b', 'c'], scroll: 0 });
+    // A1/B1 fix: innerH lives on detail's own slice; seed it in the
+    // test slice (was: panelHeights.detail = 5 → innerH 3 cross-slice).
+    const slice = makeSlice({ lines: ['a', 'b', 'c'], scroll: 0, innerH: 3 });
     const out = expectNoMutation(
       'viewer_append leaves input frozen',
       () => detail._update({ type: 'viewer_append', line: 'd' }, slice),

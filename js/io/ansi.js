@@ -150,14 +150,46 @@ function stripControls(s) {
 }
 
 /**
+ * Expand `\t` characters to spaces against a tab-stop ruler (TAB_SIZE
+ * cols). esc() calls this after stripControls so a tab in content
+ * doesn't desync visibleLen (which counts a tab as 1) from the
+ * terminal's display width (which advances to the next tab stop) —
+ * the mismatch overruns panel padding and pushes the right border
+ * past the panel edge, corrupting the next row. Assumes the input
+ * is one line starting at column 0; that holds for the real callers
+ * (file-loader.js splits on `\n` before esc; stream.js dispatches
+ * per-line; YAML labels are single-line strings).
+ */
+const TAB_SIZE = 8;
+function _expandTabs(s) {
+  if (s.indexOf('\t') < 0) return s;
+  let out = '';
+  let col = 0;
+  for (const ch of s) {
+    if (ch === '\t') {
+      const n = TAB_SIZE - (col % TAB_SIZE);
+      out += ' '.repeat(n);
+      col += n;
+    } else {
+      out += ch;
+      col += charWidth(ch.codePointAt(0));
+    }
+  }
+  return out;
+}
+
+/**
  * Escape [ for Rich markup so literal brackets render correctly.
- * T22 — also strips dangerous terminal-control sequences. Every
- * content-trust-boundary call site (stream output, YAML label render,
- * file-loader preview) routes through esc(), so this single hook
- * closes the breakout for all of them.
+ * T22 — also strips dangerous terminal-control sequences. T31 —
+ * also expands tabs to spaces against TAB_SIZE-col stops so tab-
+ * containing content (postgresql.conf, Makefiles, etc.) doesn't
+ * misalign the panel renderer's right border. Every content-trust-
+ * boundary call site (stream output, YAML label render, file-loader
+ * preview) routes through esc(), so this single hook closes both
+ * the breakout AND the tab-width class.
  */
 function esc(text) {
-  return stripControls(text).replace(/\[/g, '\\[');
+  return _expandTabs(stripControls(text)).replace(/\[/g, '\\[');
 }
 
 module.exports = { richToAnsi, stripMarkup, visibleLen, charWidth, esc, stripControls, RESET };

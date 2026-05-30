@@ -717,7 +717,6 @@ function setActiveTab(tab) {
   dispatchMsg(wrap('detail', { type: 'viewer_set_tab', tab }));
 }
 function leaveTerminalMode() {
-  const { getModel } = require('../app/runtime');
   require('../dispatch/dispatch').applyMsg({ type: 'terminal_exit' });
 }
 

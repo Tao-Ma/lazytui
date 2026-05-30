@@ -598,11 +598,18 @@ function update(model, msg) {
     // 'normal' (pure) and asks for a full repaint so the chrome reclaims the
     // cells the PTY painted (the diff cache can't see those).
     case 'terminal_enter':
+      if (model.modes.terminalMode) return [model, []];
       return [_withModes(model, { terminalMode: true }), []];
     case 'terminal_exit':
       // viewMode is owned by the layout Component (Phase 1b) — emit a
       // cross-layer dispatch_msg so layout decides whether to drop a
-      // 'full' auto-zoom back to 'normal'.
+      // 'full' auto-zoom back to 'normal'. T34 — guard on the flag so
+      // the per-frame setImmediate from renderTerminalOverlay on a dead
+      // PTY (layout.js#renderTerminalOverlay) doesn't allocate a fresh
+      // model snapshot + re-emit view_drop_full_to_normal each frame
+      // once terminalMode is already off. Mirrors confirm_reject /
+      // prompt_cancel / cmdline_cancel — every other modal-close arm.
+      if (!model.modes.terminalMode) return [model, []];
       return [_withModes(model, { terminalMode: false }),
               [{ type: 'dispatch_msg', msg: route.wrap('layout', { type: 'view_drop_full_to_normal' }) }]];
     // multisel_toggle / multisel_select_all retired in Phase 4b — call

@@ -324,15 +324,21 @@ function diffFor(item, branch, projectDir) {
   if (item.status === STATUS_LOCAL_ONLY) {
     let body;
     try { body = fs.readFileSync(localAbs, 'utf8'); } catch (e) { body = `(error reading: ${e.message})`; }
-    const lines = body.split('\n').slice(0, 200);
+    // T32 — esc() each raw line: file content (or git output below) may
+    // contain tabs, literal `[`, or terminal-control sequences. Without
+    // esc, tabs in a Makefile / postgresql.conf / .py overrun panel
+    // padding and corrupt the right border (same class as T31). esc()
+    // also strips any dangerous control bytes that survived disk → string
+    // (T22's stripControls hook).
+    const lines = body.split('\n').slice(0, 200).map(esc);
     return [...header, `[bold]${item.status} local-only — branch has no copy[/]`, '', ...lines];
   }
   if (item.status === STATUS_BRANCH_ONLY) {
     const r = spawnSync('git', ['show', `${branch}:${item.path}`], { cwd: projectDir, encoding: 'utf8' });
     if (r.status !== 0) {
-      return [...header, `[red](git show "${branch}:${item.path}" failed)[/]`, ...(r.stderr || '').split('\n')];
+      return [...header, `[red](git show "${branch}:${item.path}" failed)[/]`, ...(r.stderr || '').split('\n').map(esc)];
     }
-    const lines = r.stdout.split('\n').slice(0, 200);
+    const lines = r.stdout.split('\n').slice(0, 200).map(esc);
     return [...header, `[bold]${item.status} branch-only — local missing[/]`, '', ...lines];
   }
   // STATUS_DIFFERS — materialize the branch version, then git diff --no-index.
@@ -340,9 +346,9 @@ function diffFor(item, branch, projectDir) {
   const branchFile = path.join(tmp, 'branch');
   try {
     const sh = spawnSync('sh', ['-c', `git show '${branch}:${item.path}' > '${branchFile}'`], { cwd: projectDir, encoding: 'utf8' });
-    if (sh.status !== 0) return [...header, `[red](git show failed)[/]`, ...(sh.stderr || '').split('\n')];
+    if (sh.status !== 0) return [...header, `[red](git show failed)[/]`, ...(sh.stderr || '').split('\n').map(esc)];
     const d = spawnSync('git', ['diff', '--no-index', '--', branchFile, localAbs], { encoding: 'utf8' });
-    const out = (d.stdout || '').split('\n');
+    const out = (d.stdout || '').split('\n').map(esc);
     return [...header, `[bold]${item.status} differs — branch vs local[/]`, '', ...out];
   } finally {
     try { fs.rmSync(tmp, { recursive: true, force: true }); } catch (_) {}

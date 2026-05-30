@@ -49,7 +49,22 @@ function getSlice(name) {
 }
 
 function setSlice(name, slice) {
-  if (name === 'layout') { _layoutRef.current = slice; return; }
+  if (name === 'layout') {
+    // Repair the panels-map invariant: every layout.update branch is
+    // *supposed* to shallow-spread `slice.panels` along with whatever
+    // field it touches, but the invariant lives in convention — a
+    // branch that ever returned a fresh `{ ... }` without spreading
+    // would silently lose every non-layout Component's slice. Splice
+    // the prior panels back on the new layout when missing. Cheap
+    // insurance; common path (panels intact) early-returns through
+    // the truthy check.
+    if (slice && !slice.panels) {
+      const prev = _layoutRef.current;
+      slice.panels = (prev && prev.panels) || {};
+    }
+    _layoutRef.current = slice;
+    return;
+  }
   const layout = _layoutRef.current;
   if (layout) {
     if (!layout.panels) layout.panels = {};

@@ -41,9 +41,10 @@ try { require('../render/render-queue').scheduleRender = () => {}; } catch (_) {
 
 const detailSlice = getComponentSlice('detail');
 detailSlice.lines = [];
-// Seed panelHeights.detail so viewer_append's bottom-stick math has a
-// realistic viewport (40 rows ≈ a normal terminal).
-getComponentSlice('layout').panelHeights.detail = 40;
+// Seed innerH so viewer_append's bottom-stick math has a realistic
+// viewport (38 = panelH 40 minus 2-row border chrome). A1/B1 fix: this
+// lives on detail's own slice now, not cross-slice in layout.
+detailSlice.innerH = 38;
 
 function bench(label, n, fn) {
   // One warmup pass so V8 has a chance to inline / optimize.
