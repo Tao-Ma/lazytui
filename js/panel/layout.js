@@ -96,6 +96,11 @@ function init() {
     // and design-mode drag math)
     panelHeights: {},
     panelBounds: {},
+    // v0.6 Phase 4 — panel-list overlay state. Nested inside free-config
+    // mode: opened by `w` (or auto-opened on free-config entry when the
+    // pool has hidden entries), arrow keys navigate, Enter context-
+    // picks (hide if placed, show if hidden, no-op on detail).
+    panelList: { open: false, cursor: 0 },
     // Phase 3 — nested panel slices land here. Empty for now.
     panels: {},
   };
@@ -165,11 +170,15 @@ function update(msg, slice) {
     // `apply_msg` Cmds the reducer applies (`mode_set` / `mode_clear`).
     case 'design_enter': {
       // Reset working state on entry; preserve `enabled` (the boot-time
-      // --design CLI flag).
+      // --design CLI flag). v0.6: auto-open the panel-list overlay when
+      // the pool has hidden entries — the discoverability hint that
+      // there are more panels available than currently in the grid.
       const enabled = slice.design && slice.design.enabled;
+      const hasHidden = mpool.hiddenIds(slice.arrange).length > 0;
       const next = {
         ...slice,
         design: { enabled, selectedIdx: 0, drag: null, undo: [], redo: [], titleEdit: { active: false, text: '' } },
+        panelList: { open: hasHidden, cursor: 0 },
       };
       return [next, [{ type: 'apply_msg', msg: { type: 'mode_set', flag: 'freeConfigMode' } }]];
     }
@@ -178,6 +187,7 @@ function update(msg, slice) {
       const next = {
         ...slice,
         design: { enabled, selectedIdx: 0, drag: null, undo: [], redo: [], titleEdit: { active: false, text: '' } },
+        panelList: { open: false, cursor: 0 },
       };
       return [next, [
         { type: 'apply_msg', msg: { type: 'mode_clear', flag: 'freeConfigMode' } },
@@ -249,6 +259,33 @@ function update(msg, slice) {
         return slice;  // already hidden
       }
       return { ...slice, arrange: { ...arrange, leftPanels: nextLeft, rightPanels: nextRight }, dirty: true };
+    }
+    // v0.6 Phase 4 — panel-list overlay state Msgs. Open/close, cursor
+    // nav, context-pick. The pick re-emits a pool_hide / pool_show Msg
+    // back into the layout component via a dispatch_msg Cmd so the
+    // existing handlers do the work (single source of truth for the
+    // pool↔grid mutation).
+    case 'panel_list_open': {
+      return { ...slice, panelList: { open: true, cursor: msg.cursor || 0 } };
+    }
+    case 'panel_list_close': {
+      return { ...slice, panelList: { ...slice.panelList, open: false } };
+    }
+    case 'panel_list_nav': {
+      const items = mpool.panelListItems(slice.arrange);
+      if (items.length === 0) return slice;
+      const cur = slice.panelList ? slice.panelList.cursor : 0;
+      const next = Math.max(0, Math.min(items.length - 1, cur + (msg.dir | 0)));
+      if (next === cur) return slice;
+      return { ...slice, panelList: { ...slice.panelList, cursor: next } };
+    }
+    case 'panel_list_pick': {
+      const items = mpool.panelListItems(slice.arrange);
+      const item = items[slice.panelList ? slice.panelList.cursor : 0];
+      if (!item || item.status === 'essential') return slice;
+      const closed = { ...slice, panelList: { ...slice.panelList, open: false } };
+      const verb = item.status === 'placed' ? 'pool_hide' : 'pool_show';
+      return [closed, [{ type: 'dispatch_msg', msg: { kind: 'layout', msg: { type: verb, id: item.id } } }]];
     }
     case 'pool_show': {
       const arrange = slice.arrange;

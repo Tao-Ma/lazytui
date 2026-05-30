@@ -64,6 +64,40 @@ function orphanPlacements(arrange) {
   return out;
 }
 
+/**
+ * Build the ordered item list for the panel-list overlay (v0.6 Phase 4).
+ * Placed entries come first (in left-then-right grid order), hidden
+ * entries after (in pool insertion order). Each item carries a status
+ * marker the overlay uses to style + decide pick semantics:
+ *
+ *   placed     — currently in the grid; pick = hide (unplaces it)
+ *   essential  — placed AND type === 'detail'; pick = no-op (the
+ *                layout invariant requires exactly one detail panel,
+ *                so the overlay surfaces it as essential rather than
+ *                offering a hide that would refuse)
+ *   hidden     — in pool but not placed; pick = show
+ */
+function panelListItems(arrange) {
+  if (!arrange || !arrange.pool) return [];
+  const items = [];
+  const seen = new Set();
+  const pushPlacement = (p) => {
+    const entry = arrange.pool[p.id];
+    if (!entry) return;
+    const status = entry.type === 'detail' ? 'essential' : 'placed';
+    items.push({ id: entry.id, type: entry.type, title: entry.title, status });
+    seen.add(entry.id);
+  };
+  for (const p of arrange.leftPanels  || []) if (p && p.id) pushPlacement(p);
+  for (const p of arrange.rightPanels || []) if (p && p.id) pushPlacement(p);
+  for (const id of Object.keys(arrange.pool)) {
+    if (seen.has(id)) continue;
+    const entry = arrange.pool[id];
+    items.push({ id: entry.id, type: entry.type, title: entry.title, status: 'hidden' });
+  }
+  return items;
+}
+
 module.exports = {
   placedIds,
   placedIdSet,
@@ -72,4 +106,5 @@ module.exports = {
   isHidden,
   getPoolEntry,
   orphanPlacements,
+  panelListItems,
 };

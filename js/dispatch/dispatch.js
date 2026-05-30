@@ -289,7 +289,23 @@ function handleDesignKey(key, seq) {
   // slice; each key wraps a `design_*` Msg into layout. q/Esc/Enter all
   // exit. The leaves/design leaf still does the pure layout transform —
   // layout.update calls it on each Msg arrival.
+  //
+  // v0.6 Phase 4 — the panel-list overlay nests inside free-config:
+  // when slice.panelList.open, keys route to the list (nav / pick /
+  // close) instead of design. Outer Esc/q still exits the whole mode.
   const dispatch = (m) => dispatchMsg(wrap('layout', m));
+  const { getComponentSlice } = require('../panel/api');
+  const layoutSlice = getComponentSlice('layout');
+  if (layoutSlice && layoutSlice.panelList && layoutSlice.panelList.open) {
+    switch (key) {
+      case 'up':    case 'k': dispatch({ type: 'panel_list_nav', dir: -1 }); return;
+      case 'down':  case 'j': dispatch({ type: 'panel_list_nav', dir: +1 }); return;
+      case 'return':          dispatch({ type: 'panel_list_pick' }); return;
+      case 'w': case 'escape': dispatch({ type: 'panel_list_close' }); return;
+      case 'q':                dispatch({ type: 'design_exit' }); return;
+    }
+    return;  // swallow other keys while the overlay is open
+  }
   switch (key) {
     case 'up':    case 'k': dispatch({ type: 'design_nav', dir: -1 }); break;
     case 'down':  case 'j': dispatch({ type: 'design_nav', dir: +1 }); break;
@@ -304,6 +320,7 @@ function handleDesignKey(key, seq) {
     case 't':               dispatch({ type: 'design_title_enter' }); break;
     case 'u':               dispatch({ type: 'design_undo' }); break;
     case 'ctrl-r':          dispatch({ type: 'design_redo' }); break;
+    case 'w':               dispatch({ type: 'panel_list_open' }); break;
     case 'return': case 'q': case 'escape': dispatch({ type: 'design_exit' }); break;
   }
 }

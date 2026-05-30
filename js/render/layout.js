@@ -39,6 +39,7 @@ const { renderCmdline } = require('../dispatch/cmdline');
 const { renderConfirmOverlay } = require('../overlay/confirm');
 const { renderPromptOverlay } = require('../overlay/prompt');
 const { renderDesignOverlay, getDesignFooter } = require('../overlay/design');
+const { renderPanelListOverlay } = require('../overlay/panel-list');
 const { collectViewContributions } = require('../panel/api');
 const { currentText: filterCurrentText } = require('../overlay/filter');
 
@@ -468,7 +469,7 @@ function render(model = getModel()) {
   // Order matches dispatch.js's modeChain: design > menu > copy.
   if (md.copyMode)    renderCopyMenu();
   if (md.menuOpen)    renderMenu();
-  if (md.freeConfigMode)  renderDesignOverlay();
+  if (md.freeConfigMode)  { renderDesignOverlay(); renderPanelListOverlay(); }
   if (md.cmdMode)     renderCmdline();
   if (md.confirmMode) renderConfirmOverlay();
   if (md.promptMode)  renderPromptOverlay();
