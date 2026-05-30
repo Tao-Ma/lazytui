@@ -7,7 +7,7 @@
  */
 'use strict';
 
-const hub = require('../hub');
+const hub = require('../feature/hub');
 const { describe, it, assert, eq, report } = require('./test-runner');
 
 // Per-suite harness: history.js subscribes to actions.lifecycle on first
@@ -16,8 +16,8 @@ const { describe, it, assert, eq, report } = require('./test-runner');
 // so the subscribe runs again against the freshly-reset hub.
 function freshHistory() {
   hub._reset();
-  delete require.cache[require.resolve('../history')];
-  return require('../history');
+  delete require.cache[require.resolve('../feature/history')];
+  return require('../feature/history');
 }
 
 const h1 = freshHistory();

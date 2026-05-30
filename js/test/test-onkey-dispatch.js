@@ -14,21 +14,21 @@
  */
 'use strict';
 
-const api = require('../components/api');
+const api = require('../panel/api');
 const { describe, it, assert, eq, report } = require('./test-runner');
-const { getModel } = require('../runtime');
+const { getModel } = require('../app/runtime');
 
 
 // dispatch.js is wired to api.getFocus(). Import after S is in scope so the
 // module's getPanelDef/getItems read the same singleton.
-const { _dispatchPluginKey } = require('../dispatch');
+const { _dispatchPluginKey } = require('../dispatch/dispatch');
 
 const calls = [];
 // Phase 4a — register as a Component (not a Plugin) so the cursor sits
 // on the Component's `slice.nav.listy.cursor` and the helpers resolve.
 // The dispatchPluginKey path is shape-agnostic: it reads getPanelDef and
 // calls onKey, which works for both Plugins and Components.
-const mnav = require('../model-nav');
+const mnav = require('../model/nav');
 api.registerComponent({
   name: 'onkey-test',
   init: () => ({
@@ -54,7 +54,7 @@ api.registerComponent({
   },
 });
 
-require('../state').setSel('listy', 1);
+require('../app/state').setSel('listy', 1);
 describe('[1] list-mode panel receives focused item', () => {
   it('item is the row at getSel(panel) on the owning slice', () => {
     api.getComponentSlice("layout").focus = 'listy';

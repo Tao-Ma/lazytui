@@ -8,8 +8,8 @@
 'use strict';
 
 const { describe, it, eq, assert, report } = require('./test-runner');
-const api = require('../components/api');
-const { getModel } = require('../runtime');
+const api = require('../panel/api');
+const { getModel } = require('../app/runtime');
 
 // Test helper: build a small Component whose update() appends every
 // Msg type to a list, so tests can assert what arrived.
@@ -161,7 +161,7 @@ describe('[6] integration — dispatch.handleKey reaches Components', () => {
       panelTypes: { keyrec: { render: () => '' } },
     });
     api.getComponentSlice("layout").focus = 'keyrec';
-    // Use require('../dispatch') indirectly via a key-filter that
+    // Use require('../dispatch/dispatch') indirectly via a key-filter that
     // suppresses — we want the dispatch fan-out, not the downstream
     // render. The key-filter terminator drops the event AFTER the
     // existing record + dispatchMsg calls fire (filter runs at the
@@ -247,7 +247,7 @@ describe('[8b] viewContributions — footerLeft / footerRight', () => {
 });
 
 describe('[8e] layout Component — viewMode (Phase 1b)', () => {
-  const layout = require('../components/layout');
+  const layout = require('../panel/layout');
 
   it('reduceViewMode pure cycling (view_expand / view_shrink / view_set)', () => {
     const r = layout.reduceViewMode;
@@ -289,7 +289,7 @@ describe('[8e] layout Component — viewMode (Phase 1b)', () => {
   });
 
   it('dispatched view_expand (wrapped) reaches the layout slice', () => {
-    api.registerComponent(require('../components/layout'));
+    api.registerComponent(require('../panel/layout'));
     const slice = api.getComponentSlice('layout');
     slice.viewMode = 'normal';
     api.dispatchMsg(api.wrap('layout', { type: 'view_expand' }));
@@ -300,7 +300,7 @@ describe('[8e] layout Component — viewMode (Phase 1b)', () => {
 
 describe('[8d] layout Component skeleton (Phase 1a)', () => {
   it('layout registers as a chrome-only Component with the expected slice shape', () => {
-    api.registerComponent(require('../components/layout'));
+    api.registerComponent(require('../panel/layout'));
     const slice = api.getComponentSlice('layout');
     assert(slice !== undefined, 'layout slice exists');
     // Slice shape — sub-phases will populate these fields one by one.
@@ -428,7 +428,7 @@ describe('[8a] chrome-only Component (no panelTypes) is supported', () => {
 
 describe('[8] getItems reads the component slice (list panel)', () => {
   it('rows come from the slice; the framework filter applies over them', () => {
-    const mnav = require('../model-nav');
+    const mnav = require('../model/nav');
     api.registerComponent({
       name: 'list',
       // Phase 4c — filter text lives on `slice.nav[panelType].filter`;

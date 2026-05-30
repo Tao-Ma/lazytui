@@ -11,7 +11,7 @@ const os = require('os');
 const path = require('path');
 
 const { describe, it, eq, assert, report } = require('./test-runner');
-const { getModel } = require('../runtime');
+const { getModel } = require('../app/runtime');
 
 const { validate } = require('../parser/schema');
 const { parse } = require('../parser');
@@ -102,9 +102,9 @@ describe('[2] parser', () => {
 
 // ---- [3] dispatch.loadKeyBindings ---------------------------------
 
-const kb = require('../keybindings');
-const api = require('../components/api');
-const dispatch = require('../dispatch');
+const kb = require('../dispatch/keybindings');
+const api = require('../panel/api');
+const dispatch = require('../dispatch/dispatch');
 
 // A stub Component command so the {command:…} path resolves without UI.
 let cmdRan = null;
@@ -160,7 +160,7 @@ describe('[3] loadKeyBindings', () => {
 
 // ---- [4] command binding resolves by EXACT name only --------------
 
-const { runCommandString } = require('../cmdline');
+const { runCommandString } = require('../dispatch/cmdline');
 
 describe('[4] runCommandString exact match', () => {
   it('runs the exact-named command with args', () => {
@@ -181,7 +181,7 @@ describe('[4] runCommandString exact match', () => {
 
 // ---- [5] action binding with args: routes through the prompt ------
 
-const dispatch2 = require('../dispatch');
+const dispatch2 = require('../dispatch/dispatch');
 
 describe('[5] action binding honors args:', () => {
   it('an action with args: opens the prompt instead of running argless', () => {

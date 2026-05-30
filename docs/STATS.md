@@ -355,7 +355,7 @@ behavior, `assert/eq`, exception isolation per test.
 9. **Window sizing.** Two stats panels on same topic, different
    windows → hub retains the max.
 
-Run via `node js/run-tests.js -q`.
+Run via `node js/scripts/run-tests.js -q`.
 
 ## 10. Open questions / deferred
 

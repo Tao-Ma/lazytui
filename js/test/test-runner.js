@@ -188,19 +188,19 @@ function _state() {
 // --- Core-Component registration (test-only auto-setup) ---
 //
 // In production tui.js registers all built-in Components at boot. Tests that
-// only require state.js / components/api.js miss that step. Side-effect-on-
+// only require state.js / panel/api.js miss that step. Side-effect-on-
 // import here gives every test a registered detail + groups slice from the
 // start — same convenience the legacy `S` shim provided via lazy auto-
 // register, but explicit at the test-harness level.
 try {
-  require('../effects').installBuiltins();
-  const api = require('../components/api');
+  require('../dispatch/effects').installBuiltins();
+  const api = require('../panel/api');
   // Phase 3 — layout MUST register first so other Components nest under
   // layout.slice.panels[name]. Production (tui.js) already orders this
   // way; tests need the same.
-  if (!api.getComponentSlice('layout')) api.registerComponent(require('../components/layout'));
-  if (!api.getComponentSlice('detail')) api.registerComponent(require('../components/viewer'));
-  if (!api.getComponentSlice('groups')) api.registerComponent(require('../components/groups'));
+  if (!api.getComponentSlice('layout')) api.registerComponent(require('../panel/layout'));
+  if (!api.getComponentSlice('detail')) api.registerComponent(require('../panel/viewer/viewer'));
+  if (!api.getComponentSlice('groups')) api.registerComponent(require('../panel/navigator/groups'));
 } catch (_) { /* tests that don't need Components still load */ }
 
 module.exports = { describe, section, it, assert, eq, report, _state };

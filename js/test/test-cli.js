@@ -16,7 +16,7 @@ const os = require('os');
 const { spawnSync } = require('child_process');
 const { describe, it, eq, assert, report } = require('./test-runner');
 
-const TUI = path.resolve(__dirname, '..', 'tui.js');
+const TUI = path.resolve(__dirname, '..', 'app', 'tui.js');
 
 // Build a tiny throwaway YAML so test cases don't depend on test/test.yml's
 // docker-fixture state. Lives in tmpdir, cleaned up at exit.

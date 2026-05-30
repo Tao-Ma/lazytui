@@ -11,7 +11,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const { loadFile, hexdump, _isBinary } = require('../file-loader');
+const { loadFile, hexdump, _isBinary } = require('../io/file-loader');
 const { describe, it, eq, assert, section, report } = require('./test-runner');
 
 function tmpFile(contents) {
@@ -111,7 +111,7 @@ section('[3] loadFile — async text + cap');
 })
 .then(() => section('[8] _trimToUtf8Boundary — multi-byte alignment'))
 .then(async () => {
-  const { _trimToUtf8Boundary } = require('../file-loader');
+  const { _trimToUtf8Boundary } = require('../io/file-loader');
   // "你好" in UTF-8 = E4 BD A0 E5 A5 BD (6 bytes for 2 codepoints).
   const cjk = Buffer.from('你好', 'utf8');
   eq(cjk.length, 6, 'sanity: utf-8 length of 你好');
@@ -126,7 +126,7 @@ section('[3] loadFile — async text + cap');
 })
 .then(() => section('[9] _detectBOM'))
 .then(async () => {
-  const { _detectBOM } = require('../file-loader');
+  const { _detectBOM } = require('../io/file-loader');
   eq(_detectBOM(Buffer.from([0xEF, 0xBB, 0xBF, 0x41])), 'utf8');
   eq(_detectBOM(Buffer.from([0xFF, 0xFE, 0x41, 0x00])), 'utf16le');
   eq(_detectBOM(Buffer.from([0xFE, 0xFF, 0x00, 0x41])), 'utf16be');

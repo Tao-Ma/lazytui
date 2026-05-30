@@ -5,7 +5,7 @@ the documents you need to write a Component without searching the
 codebase. The TUI itself can print this entire bundle to stdout:
 
 ```sh
-node js/tui.js --spec
+node js/app/tui.js --spec
 ```
 
 The output is this file plus the documents listed in **Index** below,
@@ -25,7 +25,7 @@ correctly.
 A Component is a CommonJS module. The smallest viable one:
 
 ```javascript
-// js/components/hello.js
+// js/panel/hello.js
 module.exports = {
   name: 'hello',
   init: () => ({}),
@@ -64,7 +64,7 @@ layout:
         title: Detail
 ```
 
-Run: `node js/tui.js path/to/config.yml`. The Component's `hello`
+Run: `node js/app/tui.js path/to/config.yml`. The Component's `hello`
 panel appears in the left column, populated by `getItems()`. Selecting
 an item shows `getInfo(item)` in the detail panel.
 

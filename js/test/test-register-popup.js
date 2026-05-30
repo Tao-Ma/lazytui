@@ -13,7 +13,7 @@
 'use strict';
 
 // Mute OSC52 writes — register.push/promote emit them.
-const term = require('../term');
+const term = require('../io/term');
 const _origWrite = term.stdout.write.bind(term.stdout);
 term.stdout.write = (chunk, ...rest) => {
   const s = typeof chunk === 'string' ? chunk : '';
@@ -21,9 +21,9 @@ term.stdout.write = (chunk, ...rest) => {
   return _origWrite(chunk, ...rest);
 };
 
-const { getModel } = require('../runtime');
-const dispatch = require('../dispatch');
-const reg = require('../register');
+const { getModel } = require('../app/runtime');
+const dispatch = require('../dispatch/dispatch');
+const reg = require('../feature/register');
 const { describe, it, eq, report } = require('./test-runner');
 
 function setUp(entries) {

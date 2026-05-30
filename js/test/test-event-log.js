@@ -11,7 +11,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { describe, it, eq, assert, report } = require('./test-runner');
-const log = require('../event-log');
+const log = require('../feature/event-log');
 
 describe('[1] basic ring buffer', () => {
   log.clear();
@@ -125,12 +125,12 @@ describe('[5] hooks fire from the wired sources', () => {
   // Wired sources (see commit message):
   //   - dispatch.handleKey       → 'key'
   //   - hub.publish              → 'publish'
-  //   - components/api.refreshAll   → 'refresh'
+  //   - panel/api.refreshAll   → 'refresh'
   //   - actions.runAction        → 'action'
 
   it('hub.publish appends a "publish" event', () => {
     log.clear();
-    const hub = require('../hub');
+    const hub = require('../feature/hub');
     // Need a subscriber so the publish actually retains; recording
     // happens regardless but exercising the real path is cleaner.
     hub.subscribe('test.topic', { window: 5 });
@@ -145,7 +145,7 @@ describe('[5] hooks fire from the wired sources', () => {
 
   it('plugins.refreshAll appends a "refresh" event', async () => {
     log.clear();
-    const { refreshAll } = require('../components/api');
+    const { refreshAll } = require('../panel/api');
     await refreshAll({});
     const evs = log.snapshot();
     eq(evs.length, 1, 'one event recorded');

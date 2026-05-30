@@ -6,10 +6,10 @@
  */
 'use strict';
 
-const tabs = require('../tabs');
+const tabs = require('../panel/viewer/tabs');
 const { describe, it, eq, assert, report } = require('./test-runner');
-const { getModel } = require('../runtime');
-const {getComponentSlice, getFocus } = require('../components/api');
+const { getModel } = require('../app/runtime');
+const {getComponentSlice, getFocus } = require('../panel/api');
 
 
 function freshGroup({ actions = {}, terminals = {} } = {}) {

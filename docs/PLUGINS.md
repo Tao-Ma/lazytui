@@ -4,7 +4,9 @@
 > APIs: a "Plugin" shape (stateless, callback-style) and a "Component"
 > shape (TEA, slice-owning). v0.5 Phase 6 retired the Plugin API; Phase
 > 1h renamed `js/plugins/` → `js/components/` and flattened the
-> historical `core/` subdirectory. Every in-tree panel is now a
+> historical `core/` subdirectory. The post-v0.5 source reorg further
+> moved `js/components/` → `js/panel/{,navigator,viewer,monitor}/`,
+> matching the kind taxonomy. Every in-tree panel is still a
 > Component, and external authors write Components too — same API as
 > the built-ins. The file kept its name for cross-link stability.
 
@@ -180,7 +182,7 @@ data, different consumer.
 
 Plus the shared nav-chrome Msgs (`set_cursor`, `set_scroll`,
 `multisel_toggle`, `multisel_select_all`, `multisel_clear`) handled by
-`js/model-nav.js`.
+`js/model/nav.js`.
 
 Future Msg types will be additive — a Component's `default:` arm
 ignoring unknown types is forward-compatible.
@@ -212,7 +214,7 @@ ignoring unknown types is forward-compatible.
 
 Every Navigator panel's `slice.nav[panelType] = { cursor, scroll,
 multiSel, filter }` is the canonical per-panel chrome (Phase 4a + 4c).
-The shared `js/model-nav.js` leaf handles seven uniform Msg shapes
+The shared `js/model/nav.js` leaf handles seven uniform Msg shapes
 (`set_cursor` / `set_scroll` / `multisel_toggle` /
 `multisel_select_all` / `multisel_clear` / `set_filter` /
 `clear_filter`) — every Navigator's `update` should call
@@ -264,7 +266,7 @@ docs, not a runtime-enforced enum):
   cursor / scroll / multiSel on `slice.nav[panelType]` (Phase 4a) and
   contributes `getItems` / `getInfo` / `copyOptions` / `idOf` /
   optional `onKey` / optional `claimsKeys`. Groups, actions, history,
-  containers (docker), files, file-manager, config-status.
+  containers (docker), files, config-status.
 - **Viewer** — single scrollable content surface (the detail panel).
   Owns content + scroll + tabs + search + selection on its own slice.
 - **Monitor** — pure projection (stats). No cursor; no multiSel; the
@@ -285,7 +287,8 @@ layout:
     panels:
       - type: containers    # docker Component
       - type: groups        # groups Component
-      - type: file-manager  # file-manager Component
+      - type: files         # files Component
+        source: declared    #   declared / filesystem / both / docker
   right:
     panels:
       - type: actions       # actions Component

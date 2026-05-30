@@ -8,10 +8,10 @@
 'use strict';
 
 const { describe, it, eq, report } = require('./test-runner');
-const { resetGroupContext, setDetail } = require('../state');
-const runtime = require('../runtime');
+const { resetGroupContext, setDetail } = require('../app/state');
+const runtime = require('../app/runtime');
 const { getModel } = runtime;
-const { getComponentSlice } = require('../components/api');
+const { getComponentSlice } = require('../panel/api');
 
 describe('[1] resetGroupContext drops ROOT chrome state', () => {
   it('clears list-select + per-panel filters/multi-sel (root layer)', () => {
@@ -25,7 +25,7 @@ describe('[2] viewer_reset_chrome clears VIEWER-slice transient state', () => {
   it('Msg-driven so per-layer single-writer holds (Phase B)', () => {
     // Phase B: the viewer state moved into the detail Component's slice;
     // test via the Component's update directly (isolated, no global state).
-    const detail = require('../components/viewer');
+    const detail = require('../panel/viewer/viewer');
     const slice = detail._init();
     slice.select = { active: true, kind: 'char', anchor: { line: 2, col: 1 }, cursor: { line: 3, col: 0 } };
     slice.cursor = { line: 5, col: 2 };

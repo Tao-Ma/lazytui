@@ -13,18 +13,18 @@
 'use strict';
 
 const { describe, it, eq, assert, report } = require('./test-runner');
-const { getModel } = require('../runtime');
-const api = require('../components/api');
+const { getModel } = require('../app/runtime');
+const api = require('../panel/api');
 const { getComponentSlice } = api;
 
 // Phase 4a — `getSel('containers')` walks panel-type → owning Component
 // (docker) → its slice.nav, so the Component must be registered (layout
 // first per Phase 3) for the helper to resolve. The Component-level [6]
 // section below re-registers; that's idempotent.
-api.registerComponent(require('../components/layout'));
-const docker = require('../components/docker');
+api.registerComponent(require('../panel/layout'));
+const docker = require('../panel/navigator/docker');
 api.registerComponent(docker);
-const { setSel } = require('../state');
+const { setSel } = require('../app/state');
 
 const { _update } = docker;
 
@@ -149,8 +149,8 @@ describe('[5] i/t/s key Msgs emit stream/shell effects on the focused row', () =
 
 describe('[6] registered Component — slice-backed reads', () => {
   it('statusFor + getInfo reflect the folded slice', () => {
-    const api = require('../components/api');
-    require('../effects').installBuiltins();
+    const api = require('../panel/api');
+    require('../dispatch/effects').installBuiltins();
     api.registerComponent(docker);
     setup(['c1']);
     // Fold a result into the REGISTERED slice via the real dispatch path.

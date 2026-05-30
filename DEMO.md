@@ -39,7 +39,7 @@ demo/<project>/
 
 Only the first three files are human-authored. Everything else is
 produced by an AI agent reading `.agent-prompt.md` plus the output of
-`node js/tui.js --spec`. This split is the whole point — visitors can
+`node js/app/tui.js --spec`. This split is the whole point — visitors can
 see which files carry intent (one page, human) and which files are
 machinery (everything else, agent).
 
@@ -61,7 +61,7 @@ A demo author writes exactly three files:
    demo's `tui.yml`. Three lines. See the existing demos.
 
 Everything else is produced by handing `.agent-prompt.md` and
-`node js/tui.js --spec` to an AI coding agent and reviewing the diff.
+`node js/app/tui.js --spec` to an AI coding agent and reviewing the diff.
 
 ## Why `.agent-prompt.md` is checked in
 
@@ -157,7 +157,7 @@ See `demo/cloudberrydb/POSTMORTEM_v1.md` for the worked example.
    clone command (or include a `setup` action that does it).
 5. Drop in a `run` script (copy from an existing demo, edit the
    `tui.yml` reference).
-6. Hand `.agent-prompt.md` + `node js/tui.js --spec` to an AI agent
+6. Hand `.agent-prompt.md` + `node js/app/tui.js --spec` to an AI agent
    and let it produce `tui.yml`, `scripts/`, and (Shape A only)
    `Dockerfile` + `docker-compose.yml`.
 7. Review the diff. Run `./run`. Iterate on the prompt if the agent

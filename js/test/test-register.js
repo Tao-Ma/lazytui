@@ -8,7 +8,7 @@
 // Suppress OSC52 emits during the test run — register's push/promote
 // calls term.stdout.write with a `\x1b]52;c;...\x07` payload. Wrap
 // write to filter only that sequence; ordinary test output still flows.
-const term = require('../term');
+const term = require('../io/term');
 const _origWrite = term.stdout.write.bind(term.stdout);
 term.stdout.write = (chunk, ...rest) => {
   const s = typeof chunk === 'string' ? chunk : '';
@@ -16,9 +16,9 @@ term.stdout.write = (chunk, ...rest) => {
   return _origWrite(chunk, ...rest);
 };
 
-const reg = require('../register');
+const reg = require('../feature/register');
 const { describe, it, eq, assert, report } = require('./test-runner');
-const { getModel } = require('../runtime');
+const { getModel } = require('../app/runtime');
 
 
 function reset(cap) {

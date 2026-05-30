@@ -1,7 +1,7 @@
 # lazytui config for the postgres demo.
 #
 # Produced by the lazytui loop:
-#   demo/postgres/.agent-prompt.md + node js/tui.js --spec
+#   demo/postgres/.agent-prompt.md + node js/app/tui.js --spec
 #       → this file (+ Dockerfile, docker-compose.yml, scripts/)
 #
 # To change behavior, edit .agent-prompt.md and rerun the loop with a

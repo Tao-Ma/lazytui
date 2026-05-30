@@ -258,7 +258,7 @@ still permits:
   mouse/input handlers between frames; panel renderers read them, don't
   write them. (Blessed outside-writer; see `docs/v0.5-layering.md`.)
 - **Lazy hub subscriptions** (stats panel,
-  `js/components/stats.js#_ensureSub`) and **lazy initial-state
+  `js/panel/monitor/stats.js#_ensureSub`) and **lazy initial-state
   fixup** (config-status panel) happen on first render and are
   idempotent on subsequent calls. Pure-render would prefer these
   in an init hook fired at a guaranteed point; today the

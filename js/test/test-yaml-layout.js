@@ -34,7 +34,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const { serializeLayout, serializePanelYaml, yamlValue, writeLayoutToFile } = require('../yaml-layout');
+const { serializeLayout, serializePanelYaml, yamlValue, writeLayoutToFile } = require('../feature/yaml-layout');
 const { describe, it, assert, eq, report } = require('./test-runner');
 
 describe('[1] yamlValue scalar emission', () => {

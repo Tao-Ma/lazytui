@@ -1,0 +1,65 @@
+/**
+ * Single source of truth for lazytui's modal UI states.
+ *
+ * Each mode is a boolean flag on `S`. Historically the set of modes was
+ * duplicated across four hand-maintained lists that drifted apart (a
+ * mode added to the dispatch chain but forgotten in the overlay-residue
+ * list left stale pixels on close; forgotten in the reset list leaked
+ * across re-init). This table is the one place a mode is declared; the
+ * consumers derive their lists from it:
+ *
+ *   - dispatch.js  modeChain     ← CHAIN_MODES (array order = precedence)
+ *   - layout.js    overlayActive ← isOverlayActive (centered box → must
+ *                                   force a full repaint when it closes)
+ *   - layout.js    inModal       ← isModal (footer owns the row → suppress
+ *                                   panel hints + footer decorators)
+ *   - state.js     initState     ← resetModes (cleared on (re-)init)
+ *
+ * `chain:false` modes are real modes but not key-claiming modeChain
+ * entries: terminalMode is handled before the chain (input.js routes
+ * keys to the PTY), and listSelectMode is a gate inside handleNormalKey
+ * rather than a modal that swallows keys. They still participate in the
+ * overlay / modal / reset derivations.
+ *
+ * The booleans below reproduce the pre-registry behavior exactly; the
+ * point of the table is that changing or adding a mode is now a
+ * one-line edit in one file instead of four.
+ */
+'use strict';
+
+const MODES = [
+  { flag: 'confirmMode',         chain: true,  overlay: true,  modal: false, reset: true },
+  { flag: 'promptMode',          chain: true,  overlay: true,  modal: false, reset: true },
+  { flag: 'designTitleEditMode', chain: true,  overlay: false, modal: true,  reset: true },
+  { flag: 'designMode',          chain: true,  overlay: true,  modal: true,  reset: true },
+  { flag: 'menuOpen',            chain: true,  overlay: true,  modal: true,  reset: true },
+  { flag: 'filterMode',          chain: true,  overlay: false, modal: true,  reset: true },
+  { flag: 'copyMode',            chain: true,  overlay: true,  modal: true,  reset: true },
+  { flag: 'detailSearchMode',    chain: true,  overlay: false, modal: false, reset: true },
+  { flag: 'registerPopupMode',   chain: true,  overlay: true,  modal: false, reset: true },
+  { flag: 'prefixMode',          chain: true,  overlay: true,  modal: true,  reset: true },
+  { flag: 'cmdMode',             chain: true,  overlay: true,  modal: false, reset: true },
+  // Non-chain modes (see header).
+  { flag: 'terminalMode',        chain: false, overlay: false, modal: true,  reset: true },
+  { flag: 'listSelectMode',      chain: false, overlay: false, modal: false, reset: true },
+];
+
+// Ordered list of modeChain flags (precedence = array order).
+const CHAIN_MODES = MODES.filter(m => m.chain).map(m => m.flag);
+
+function _modes() { return require('../app/runtime').getModel().modes; }
+
+/** True when any mode that draws a centered overlay is active.
+ *  Accepts an optional explicit modes-bag for test isolation; defaults
+ *  to the live model's modes. */
+function isOverlayActive(md = _modes()) { return MODES.some(m => m.overlay && md[m.flag]); }
+
+/** True when any mode that owns the footer row is active. */
+function isModal(md = _modes()) { return MODES.some(m => m.modal && md[m.flag]); }
+
+/** Clear every resettable mode flag (called from initState). Non-flag
+ *  buffers (prefixNode, detail-slice search state, etc.) are reset by
+ *  their owners; this only flips the booleans. */
+function resetModes(md = _modes()) { for (const m of MODES) if (m.reset) md[m.flag] = false; }
+
+module.exports = { MODES, CHAIN_MODES, isOverlayActive, isModal, resetModes };

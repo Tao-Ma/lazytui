@@ -7,7 +7,7 @@
 'use strict';
 
 // Filter OSC52 emits — register.push will fire one on commit().
-const term = require('../term');
+const term = require('../io/term');
 const _origWrite = term.stdout.write.bind(term.stdout);
 term.stdout.write = (chunk, ...rest) => {
   const s = typeof chunk === 'string' ? chunk : '';
@@ -15,11 +15,11 @@ term.stdout.write = (chunk, ...rest) => {
   return _origWrite(chunk, ...rest);
 };
 
-const reg = require('../register');
-const sel = require('../select');
+const reg = require('../feature/register');
+const sel = require('../overlay/select');
 const { describe, it, eq, assert, report } = require('./test-runner');
-const { getModel } = require('../runtime');
-const { getComponentSlice } = require('../components/api');
+const { getModel } = require('../app/runtime');
+const { getComponentSlice } = require('../panel/api');
 
 
 function setUp(lines) {

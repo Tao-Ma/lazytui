@@ -58,9 +58,9 @@ The framework guarantees, regardless of project:
 - YAML schema validation, var/helper resolution (parser/)
 - Layout, panel rendering, navigation, themes, design mode
 - Action execution by `type` (`run` / `spawn` / `background`)
-- Built-in Components: `layout`, `groups`, `actions`, `file-manager`,
-  `history`, `detail` (viewer), `docker` (containers), `files`,
-  `config-status`, `stats`
+- Built-in Components: `layout`, `groups`, `actions`, `history`,
+  `detail` (viewer), `docker` (containers), `files`, `config-status`,
+  `stats`
 - Built-in `:` commands: `:quit`, `:refresh`, `:help`
 - Component lifecycle (`init`, `update(msg, slice)`, `cleanup`,
   `refresh`, `groupActions`, `panelTypes`)
@@ -86,7 +86,7 @@ The project provides:
 - **Scripts and data** the actions invoke
 - **A way to invoke `tui.js`** — typically a thin wrapper script in the
   project root (e.g. `./do tui` or `make tui`) that calls
-  `node <path-to-lazytui/js/tui.js> <path-to-config.yml>`
+  `node <path-to-lazytui/js/app/tui.js> <path-to-config.yml>`
 
 A project that doesn't provide these is just an empty directory the
 framework refuses to start in. The framework is a renderer; the
@@ -129,7 +129,7 @@ plugins:
 Run it (from anywhere):
 
 ```sh
-node /path/to/lazytui/js/tui.js my-services/services.yml
+node /path/to/lazytui/js/app/tui.js my-services/services.yml
 ```
 
 The framework finds `tui-plugins/extras.yml` relative to

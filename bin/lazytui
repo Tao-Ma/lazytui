@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# lazytui — thin wrapper around js/tui.js.
+# lazytui — thin wrapper around js/app/tui.js.
 #
 # Resolves the framework root from this script's own location so it
 # works whether invoked directly, via a symlink in PATH, or from a
@@ -38,12 +38,12 @@ if [ -n "${LAZYTUI_PATH:-}" ]; then
   fi
   TARGET_ROOT="$(cd -P "$LAZYTUI_PATH" && pwd)"
   if [ "$TARGET_ROOT" != "$ROOT" ]; then
-    if [ ! -f "$TARGET_ROOT/js/tui.js" ]; then
-      echo "lazytui: LAZYTUI_PATH=$TARGET_ROOT has no js/tui.js — not a lazytui checkout" >&2
+    if [ ! -f "$TARGET_ROOT/js/app/tui.js" ]; then
+      echo "lazytui: LAZYTUI_PATH=$TARGET_ROOT has no js/app/tui.js — not a lazytui checkout" >&2
       exit 1
     fi
-    exec node "$TARGET_ROOT/js/tui.js" "$@"
+    exec node "$TARGET_ROOT/js/app/tui.js" "$@"
   fi
 fi
 
-exec node "$ROOT/js/tui.js" "$@"
+exec node "$ROOT/js/app/tui.js" "$@"

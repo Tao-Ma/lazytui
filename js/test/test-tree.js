@@ -4,19 +4,19 @@
  *
  * Run: node js/test/test-tree.js
  *
- * Avoids loading components/api.js (node-pty in cleanup→terminal); state.js
+ * Avoids loading panel/api.js (node-pty in cleanup→terminal); state.js
  * has no PTY dependency, so we drive its API directly.
  */
 'use strict';
 
 const { describe, it, assert, eq, report } = require('./test-runner');
-const { getModel } = require('../runtime');
-const { getComponentSlice } = require('../components/api');
+const { getModel } = require('../app/runtime');
+const { getComponentSlice } = require('../panel/api');
 
 const {
   recomputeGroups, expandGroup, collapseGroup, switchGroupsTab,
   setSel, getSel,
-} = require('../state');
+} = require('../app/state');
 
 // Build a 3-level synthetic tree directly into getModel().config.groups so we
 // don't rely on the parser. DFS pre-order matters — same shape the

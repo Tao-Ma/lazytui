@@ -1,0 +1,366 @@
+/**
+ * App state — config loading, layout initialization, slice-reset wrappers.
+ *
+ * No mutable state lives here. The root model lives in runtime.js
+ * (getModel()); Component slices live in panel/api.js's registry. This
+ * module is the boot/init layer (loadConfig + initState) plus the small
+ * set of read/write helpers the rest of the codebase imports from `./state`
+ * (getSel / setSel / getScroll / setScroll / toggleMultiSel / allPanels /
+ * resetGroupContext / selectGroup / setDetail / recomputeGroups / …).
+ *
+ * Historical note: state.js used to export a global `S` object that
+ * doubled as both the data home and a facade over the model + Component
+ * slices. After the v0.5 single-writer migration, `S` was deleted
+ * (chunks A–E): production code reads getModel() / getComponentSlice()
+ * directly, and tests do the same.
+ */
+'use strict';
+
+const fs = require('fs');
+const path = require('path');
+const { setTheme } = require('../render/themes');
+const { getModel } = require('./runtime');
+
+// --- Component slice resolution ---
+//
+// state.js's own init/reset code (initState) writes into Component slices
+// directly via these helpers — no longer through the `S` shim. Lazy auto-
+// register covers tests that touch state without explicit Component setup;
+// production already registers detail + groups at boot (tui.js).
+let _detailAutoRegistered = false;
+function _detailSlice() {
+  const api = require('../panel/api');
+  let s = api.getComponentSlice('detail');
+  if (!s) {
+    if (!_detailAutoRegistered) {
+      try { require('../dispatch/effects').installBuiltins(); } catch (_) {}
+      _detailAutoRegistered = true;
+    }
+    _layoutSlice();   // Phase 3 — layout must register before detail
+    api.registerComponent(require('../panel/viewer/viewer'));
+    s = api.getComponentSlice('detail');
+  }
+  return s;
+}
+
+let _groupsAutoRegistered = false;
+function _groupsSlice() {
+  const api = require('../panel/api');
+  let s = api.getComponentSlice('groups');
+  if (!s) {
+    if (!_groupsAutoRegistered) {
+      try { require('../dispatch/effects').installBuiltins(); } catch (_) {}
+      _groupsAutoRegistered = true;
+    }
+    _layoutSlice();   // Phase 3 — layout must register before groups
+    api.registerComponent(require('../panel/navigator/groups'));
+    s = api.getComponentSlice('groups');
+  }
+  return s;
+}
+
+// Same lazy-auto-register pattern for the layout (chrome) Component
+// added in Phase 1a. Production registers via tui.js boot; tests +
+// initState callers that don't go through tui get the slice via this
+// helper. The "first-touch" point is initState (sets initial focus +
+// viewMode tag), so the helper is called there.
+let _layoutAutoRegistered = false;
+function _layoutSlice() {
+  const api = require('../panel/api');
+  let s = api.getComponentSlice('layout');
+  if (!s) {
+    if (!_layoutAutoRegistered) {
+      try { require('../dispatch/effects').installBuiltins(); } catch (_) {}
+      _layoutAutoRegistered = true;
+    }
+    api.registerComponent(require('../panel/layout'));
+    s = api.getComponentSlice('layout');
+  }
+  return s;
+}
+
+// --- Config loading ---
+
+function loadConfig(configPath) {
+  const m = getModel();
+  const ext = path.extname(configPath);
+  if (ext === '.json') {
+    m.config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+  } else {
+    // In-process JS parser — was an out-of-process `python -m parser`
+    // call until the parser was rewritten in JS. Errors thrown by
+    // parse() are ParseError subclasses with composed messages; let
+    // them propagate so tui.js's top-level handler prints them and
+    // exits non-zero (mirrors the old "parser: <msg>" stderr line).
+    const { parse } = require('../parser');
+    m.config = parse(path.resolve(configPath));
+  }
+  m.projectDir = m.config.project_dir || '.';
+  m.configPath = path.resolve(configPath);
+}
+
+// --- Layout initialization ---
+
+/**
+ * Build a fresh `{ leftWidth, detailHeightPct, leftPanels, rightPanels }`
+ * struct from a parsed config. Pure — reads only the passed-in config.
+ *
+ * Extracted so `:restore-layout` can replay the same logic on demand
+ * without re-running `initState` (which also resets expanded-groups
+ * state, sets focus, etc. — things we don't want to clobber on a
+ * layout-only restore).
+ */
+function rebuildLayoutFromConfig(config) {
+  const ly = config.layout;
+  const out = { leftWidth: 30, detailHeightPct: 60, leftPanels: [], rightPanels: [] };
+
+  if (ly) {
+    const leftPanelsSrc = ly.left_panels || (ly.left && ly.left.panels) || [];
+    const rightPanelsSrc = ly.right_panels || (ly.right && ly.right.panels) || [];
+    out.leftWidth = ly.left_width || (ly.left && ly.left.width) || 30;
+    out.detailHeightPct = ly.detail_height_pct || 60;
+    // Plugin-specific panel options (parser PanelConfig.config) ride
+    // alongside type/title/hotkey/column so the panel def can read them
+    // off `panel` directly. Spread first so the framework keys win on
+    // any overlap.
+    out.leftPanels = leftPanelsSrc.map((p, i) => ({
+      ...(p.config || {}),
+      type: p.type,
+      title: p.title || p.type.replace(/_/g, ' '),
+      hotkey: p.hotkey || String(i + 1),
+      column: 'left',
+    }));
+    // Right-panel hotkeys come pre-assigned from the parser (positional
+    // 7/8/9, with explicit YAML overrides honored). Fall back to position
+    // here too in case the layout block came from JSON or some other
+    // source that didn't go through the parser.
+    const rightPool = ['7', '8', '9'];
+    const rightExplicit = new Set(rightPanelsSrc.map(p => p.hotkey).filter(Boolean));
+    const rightAuto = rightPool.filter(k => !rightExplicit.has(k));
+    out.rightPanels = rightPanelsSrc.map(p => ({
+      ...(p.config || {}),
+      type: p.type,
+      title: p.title || p.type.replace(/_/g, ' '),
+      hotkey: p.hotkey || (rightAuto.shift() || ''),
+      column: 'right',
+    }));
+  } else {
+    const hasContainers = Object.values(config.groups).some(g => g.containers && g.containers.length);
+    const hasConfigFiles = config.files && config.files.length;
+    let hk = 1;
+    if (hasContainers) {
+      out.leftPanels.push({ type: 'containers', title: 'Containers', hotkey: String(hk++), column: 'left' });
+    }
+    out.leftPanels.push({ type: 'groups', title: 'Groups', hotkey: String(hk++), column: 'left' });
+    if (hasConfigFiles) {
+      out.leftPanels.push({ type: 'files', source: 'declared', title: 'Files', hotkey: String(hk++), column: 'left' });
+    }
+    out.rightPanels = [
+      { type: 'actions', title: 'Actions', hotkey: '7', column: 'right' },
+      { type: 'detail', title: 'Detail', hotkey: '8', column: 'right' },
+    ];
+  }
+  return out;
+}
+
+function initState() {
+  const m = getModel();
+  const config = m.config;
+  setTheme(config.theme || 'default');
+
+  // Touch the layout slice early so its Component is registered before
+  // any view-mode / focus / design Msg fires (Phase 1b: viewMode lives
+  // on this slice).
+  _layoutSlice().arrange = rebuildLayoutFromConfig(config);
+
+  // Tree state: start collapsed (only top-level nodes visible). The cursor
+  // lands on the first visible row, which is the first top-level group.
+  const groups = _groupsSlice();
+  groups.expanded = new Set();
+  groups.tab = 'all';
+  recomputeGroups();
+  m.currentGroup = groups.list.length ? groups.list[0].name : '';
+  // Phase 4a — `ui.sel` / `ui.scroll` / `ui.multiSel` no longer exist;
+  // each Navigator owns its own nav slice (cursor/scroll/multiSel) and
+  // initializes it via the Component's own init().
+  const detail = _detailSlice();
+  detail.lines = [];
+  detail.scroll = 0;
+  detail.tab = 0;
+  // focus lives on layout's slice (Phase 1c). The shim on m.focus still
+  // works for legacy writers, but we prefer the direct slice write here
+  // for clarity. initState is the boot writer; nothing else races it.
+  _layoutSlice().focus = 'groups';
+  // Mode flags — cleared from the single registry (js/modes.js) so this
+  // can't drift out of sync with the modeChain / overlay / modal lists.
+  // Non-flag buffers (filters, prefixNode/Seq, detailSearch object) are
+  // reset explicitly below since the registry only flips the booleans.
+  require('../dispatch/modes').resetModes();
+  // Phase 4c — committed filter text lives on each Navigator's nav slice
+  // (`slice.nav[panelType].filter`); `model.ui` retired entirely.
+  m.prefixNode = null;
+  m.prefixSeq = [];
+  // Detail-panel search — typing phase flag + state. `term`, `matches`,
+  // and `idx` live under detail slice (single object); the mode flag
+  // (detailSearchMode) is cleared by resetModes above.
+  detail.search = { active: false, term: '', matches: [], idx: 0 };
+  detail.ephemeralTerminals = {};
+  detail.contentTabs = {};
+  // Yank register — bounded history, system-clipboard mirror. Cap is
+  // configurable via top-level `register: { cap: N }` in YAML; default 100.
+  // Init is deferred to here (rather than at module-load) so cap reflects
+  // the parsed config.
+  require('../feature/register').init(config.register || {});
+  // Selection state — set/cleared by js/select.js during drag and
+  // commit. Lives in the detail slice so the render path can see active
+  // selections in the detail panel.
+  detail.select = { active: false, kind: 'char',
+                    anchor: { line: 0, col: 0 },
+                    cursor: { line: 0, col: 0 } };
+  // Detail cursor — used by keyboard visual-mode (v/V) to track the
+  // logical cursor in the detail panel. Mouse-drag bypasses this
+  // (anchor + cursor are set directly from screen coords).
+  detail.cursor = { line: 0, col: 0 };
+}
+
+function allPanels() {
+  const slice = _layoutSlice();
+  const ly = slice ? slice.arrange : { leftPanels: [], rightPanels: [] };
+  return [...ly.leftPanels, ...ly.rightPanels];
+}
+
+// --- Group tree (flatten + expand/collapse) ---
+//
+// The groups Component owns the tree slice + cascade logic. These wrappers
+// dispatch the right Msgs — slice mutations go through the Component's
+// update, and the cross-layer cascade Cmds (set_current_group /
+// reset_group_context / viewer_reset_chrome) fire as a consequence.
+// Kept here as named exports so non-reducer callers (mouse, recursive `"`
+// expand, tests) have a stable surface.
+function recomputeGroups() {
+  require('../panel/api').dispatchMsg(require('../panel/api').wrap('groups', { type: 'groups_recompute' }));
+}
+function switchGroupsTab(/* tab */) {
+  // toggle_groups_tab flips All↔Quick (the only transition we use today);
+  // explicit-target setters belong to the Component if ever needed.
+  require('../panel/api').dispatchMsg(require('../panel/api').wrap('groups', { type: 'toggle_groups_tab' }));
+}
+function expandGroup(path, recursive = false) {
+  require('../panel/api').dispatchMsg(require('../panel/api').wrap('groups', { type: 'toggle_group', name: path, recursive }));
+}
+function collapseGroup(path, recursive = false) {
+  require('../panel/api').dispatchMsg(require('../panel/api').wrap('groups', { type: 'toggle_group', name: path, recursive }));
+}
+
+// Phase 4a — nav chrome (cursor / scroll / multiSel) lives on each
+// Navigator Component's slice at `slice.nav[panelType]`. The helpers
+// walk panel-type → owning Component → that Component's slice → nav
+// entry. Reads are direct; writes go through wrapped Msgs so the
+// Component's update is the single writer for its own nav slice.
+
+function _navEntry(panelType) {
+  const api = require('../panel/api');
+  const compName = api.getComponentOwningPanel(panelType);
+  if (!compName) return null;
+  const slice = api.getComponentSlice(compName);
+  return (slice && slice.nav && slice.nav[panelType]) || null;
+}
+
+function _navDispatch(panelType, msg) {
+  const api = require('../panel/api');
+  const compName = api.getComponentOwningPanel(panelType);
+  if (!compName) return;
+  api.dispatchMsg(api.wrap(compName, { ...msg, panel: panelType }));
+}
+
+/** Get selection index for a panel type (default 0). */
+function getSel(panelType) { const e = _navEntry(panelType); return e ? e.cursor : 0; }
+
+/** Set selection index for a panel type. */
+function setSel(panelType, idx) { _navDispatch(panelType, { type: 'set_cursor', index: idx | 0 }); }
+
+/** Get scroll offset for a panel type (default 0). */
+function getScroll(panelType) { const e = _navEntry(panelType); return e ? e.scroll : 0; }
+
+/** Set scroll offset for a panel type. */
+function setScroll(panelType, offset) { _navDispatch(panelType, { type: 'set_scroll', offset: offset | 0 }); }
+
+/**
+ * Sync scroll offset so the selected item is visible within innerH rows.
+ * Scrolls down if selection is past the viewport bottom; scrolls up if above.
+ */
+function syncPanelScroll(panelType, innerH) {
+  const sel = getSel(panelType);
+  const scroll = getScroll(panelType);
+  if (sel >= scroll + innerH) setScroll(panelType, sel - innerH + 1);
+  else if (sel < scroll) setScroll(panelType, sel);
+}
+
+/**
+ * Reset the per-group transient UI state. Called when the user navigates
+ * to a different group — selections in group-scoped panels go back to
+ * row 0, the detail tab returns to "Info", filters/last-action/terminal
+ * mode are cleared. Routes through reset_group_context (root reducer) +
+ * viewer_reset_chrome (detail Component).
+ */
+function resetGroupContext() {
+  // Phase C: the root-chrome reset moved to a Msg in runtime.update; the
+  // viewer-slice half is its own Msg dispatched to the detail Component.
+  const dispatch = require('../dispatch/dispatch');
+  dispatch.applyMsg(getModel(), { type: 'reset_group_context' });
+  require('../panel/api').dispatchMsg(require('../panel/api').wrap('detail', { type: 'viewer_reset_chrome' }));
+}
+
+/**
+ * Set the active group by its index in the visible group list. No-op on
+ * out-of-range. Resets per-group transient state via resetGroupContext().
+ */
+function selectGroup(idx) {
+  // Phase 4b — the uniform `nav_select` Msg retired; dispatch.navSelect
+  // does the per-Component routing (set_cursor → owning Component +
+  // show_selected_info + the groups_selected cascade).
+  require('../dispatch/dispatch').navSelect(getModel(), 'groups', idx);
+}
+
+function setDetail(text) {
+  // viewer_set_content is handled by the detail Component's update (Phase B);
+  // routes via the Component fan-out. Single-writer for the slice through
+  // detail.update; every setDetail caller (detail / tabs / actions / help-text
+  // / api save-layout-message) ends up as the same reducer write.
+  require('../panel/api').dispatchMsg(require('../panel/api').wrap('detail', { type: 'viewer_set_content', lines: text ? text.split('\n') : [] }));
+}
+
+// --- Multi-select (bulk-operation operand) ---
+//
+// Each Navigator's `slice.nav[panelType].multiSel` is a Set of stable
+// item IDs. Identity comes from each panelType's `idOf(item)`
+// (panel/api.js#idOf), so selections are robust to filtering and
+// re-sorting — you select a thing, not a position. Writes go through
+// wrapped Msgs (multisel_toggle / multisel_select_all / multisel_clear)
+// so each Component owns its own multiSel Set.
+
+function toggleMultiSel(panelType, itemId) {
+  _navDispatch(panelType, { type: 'multisel_toggle', id: itemId });
+}
+
+function isMultiSel(panelType, itemId) {
+  const e = _navEntry(panelType);
+  return !!(e && e.multiSel.has(itemId));
+}
+
+function clearMultiSel(panelType) {
+  _navDispatch(panelType, { type: 'multisel_clear' });
+}
+
+function multiSelCount(panelType) {
+  const e = _navEntry(panelType);
+  return e ? e.multiSel.size : 0;
+}
+
+module.exports = {
+  loadConfig, initState, rebuildLayoutFromConfig,
+  allPanels, selectGroup, resetGroupContext, setDetail,
+  getSel, setSel, getScroll, setScroll, syncPanelScroll,
+  toggleMultiSel, isMultiSel, clearMultiSel, multiSelCount,
+  expandGroup, collapseGroup, recomputeGroups, switchGroupsTab,
+};

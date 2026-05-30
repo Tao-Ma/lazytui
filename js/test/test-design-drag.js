@@ -18,16 +18,16 @@
  */
 'use strict';
 
-const { onMouseEvent, pointToDropTarget, _getDragState } = require('../design');
-const dispatch = require('../dispatch');
-const { getModel } = require('../runtime');
-const { getComponentSlice } = require('../components/api');
+const { onMouseEvent, pointToDropTarget, _getDragState } = require('../overlay/design');
+const dispatch = require('../dispatch/dispatch');
+const { getModel } = require('../app/runtime');
+const { getComponentSlice } = require('../panel/api');
 const { describe, it, assert, eq, report } = require('./test-runner');
 
 // Design mode lives on layout's slice (post-Phase-6 single-writer cleanup):
 // enter via a wrapped `design_enter` Msg into the layout Component.
 function enterDesign() {
-  const api = require('../components/api');
+  const api = require('../panel/api');
   api.dispatchMsg(api.wrap('layout', { type: 'design_enter' }));
 }
 

@@ -12,10 +12,10 @@
 'use strict';
 
 const { describe, it, assert, eq, report } = require('./test-runner');
-const { getModel } = require('../runtime');
-const {getComponentSlice, getFocus } = require('../components/api');
+const { getModel } = require('../app/runtime');
+const {getComponentSlice, getFocus } = require('../panel/api');
 
-const { initState, getSel, setSel, selectGroup } = require('../state');
+const { initState, getSel, setSel, selectGroup } = require('../app/state');
 
 // --- boot a minimal-but-real app (mirrors tui.js boot, no PTY/input) ---
 const _grp = (name, label) => ({
@@ -30,7 +30,7 @@ getModel().config = {
 initState();
 getModel().projectDir = '.';
 
-const { handleKey } = require('../dispatch');
+const { handleKey } = require('../dispatch/dispatch');
 // The program owns the model and threads it into handleKey; the harness
 // plays that owner role here.
 const model = getModel();
@@ -48,7 +48,7 @@ function capture(fn) {
   return stripAnsi(chunks.join(''));
 }
 
-const { render } = require('../layout');
+const { render } = require('../render/layout');
 
 describe('[1] live render pipeline boots + paints', () => {
   it('renders a frame without throwing, showing panel chrome', () => {

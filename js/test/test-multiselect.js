@@ -7,20 +7,20 @@
 'use strict';
 
 const { toggleMultiSel, isMultiSel, clearMultiSel, multiSelCount,
-        setSel, resetGroupContext } = require('../state');
-const api = require('../components/api');
+        setSel, resetGroupContext } = require('../app/state');
+const api = require('../panel/api');
 const { describe, it, assert, eq, report } = require('./test-runner');
-const { getModel } = require('../runtime');
-const { getComponentSlice } = require('../components/api');
-const mnav = require('../model-nav');
+const { getModel } = require('../app/runtime');
+const { getComponentSlice } = require('../panel/api');
+const mnav = require('../model/nav');
 
 // Phase 4a — multi-select state lives on each Navigator Component's
 // `slice.nav[panelType].multiSel`. test-runner registers layout/detail/
 // groups; register the rest the test exercises so panel-type → Component
 // lookup resolves.
-api.registerComponent(require('../components/docker'));
-api.registerComponent(require('../components/actions'));
-api.registerComponent(require('../components/file-manager'));
+api.registerComponent(require('../panel/navigator/docker'));
+api.registerComponent(require('../panel/navigator/actions'));
+api.registerComponent(require('../panel/navigator/files'));
 
 describe('[1] empty state', () => {
   it('no panel has selection initially', () => {
@@ -73,18 +73,18 @@ describe('[6] resetGroupContext drops only containers + actions', () => {
   it('group-scoped panels clear; non-group ones survive', () => {
     toggleMultiSel('containers', 'a');
     toggleMultiSel('actions', 'up');
-    toggleMultiSel('file-manager', '/path/to/file');
+    toggleMultiSel('files', '/path/to/file');
     // groups is left from earlier
     eq(multiSelCount('containers'), 1, 'containers has selection');
     eq(multiSelCount('actions'), 1, 'actions has selection');
-    eq(multiSelCount('file-manager'), 1, 'file-manager has selection');
+    eq(multiSelCount('files'), 1, 'files has selection');
     getComponentSlice('groups').list = [{ name: 'dev9', containers: [] }];
     setSel('groups', 0);
     getModel().config = { groups: { dev9: { name: 'dev9' } } };
     resetGroupContext();
     eq(multiSelCount('containers'), 0, 'containers cleared on group switch');
     eq(multiSelCount('actions'), 0, 'actions cleared on group switch');
-    eq(multiSelCount('file-manager'), 1, 'file-manager preserved (not group-scoped)');
+    eq(multiSelCount('files'), 1, 'files preserved (not group-scoped)');
     eq(multiSelCount('groups'), 1, 'groups preserved (not group-scoped)');
   });
 });

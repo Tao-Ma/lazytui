@@ -6,6 +6,14 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Removed
+- **`type: file-manager` panel — back-compat alias dropped.** The v0.3.0
+  declared-registry panel was a subset of v0.5's unified browser.
+  Migrate to `type: files, source: declared` for identical behavior.
+  The auto-generated default left panel (when a project declares a
+  top-level `files:` block but no explicit layout) now uses the new
+  shape automatically.
+
 ## [0.4.0] — 2026-05-27
 
 ### Added

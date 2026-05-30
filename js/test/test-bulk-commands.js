@@ -12,24 +12,24 @@
 'use strict';
 
 // Mock streamCommand BEFORE loading docker plugin.
-const stream = require('../stream');
+const stream = require('../io/stream');
 const calls = [];
 stream.streamCommand = (label, cmd) => { calls.push({ label, cmd }); };
 
-const { toggleMultiSel, setSel, clearMultiSel } = require('../state');
-const api = require('../components/api');
+const { toggleMultiSel, setSel, clearMultiSel } = require('../app/state');
+const api = require('../panel/api');
 // docker is a Component now — its bulk `:` verbs are collected from the
 // component registry (getCommands), and getItems('containers') reads config.
 // Phase 3 requires `layout` to register before any other Component so
 // non-layout slices nest under it; Phase 4a piggy-backs on that ordering
 // since each Navigator's nav slice lives on its own Component slice.
-api.registerComponent(require('../components/layout'));
-const dockerPlugin = require('../components/docker');
+api.registerComponent(require('../panel/layout'));
+const dockerPlugin = require('../panel/navigator/docker');
 api.registerComponent(dockerPlugin);
 
 const { describe, it, assert, eq, report } = require('./test-runner');
-const { getModel } = require('../runtime');
-const { getComponentSlice } = require('../components/api');
+const { getModel } = require('../app/runtime');
+const { getComponentSlice } = require('../panel/api');
 
 
 // Set up a fake config + group so apiGetItems('containers', S) returns names.
@@ -123,8 +123,8 @@ describe('[7] full cmdline path: type "inspect" + Enter → bulk command runs', 
   // run(args, S); cmdline.js now passes both. Exercise the actual cmdline
   // dispatch end-to-end.
   it('cmdline-dispatched run reaches the docker plugin', () => {
-    const { getModel } = require('../runtime');
-    const dispatch = require('../dispatch');
+    const { getModel } = require('../app/runtime');
+    const dispatch = require('../dispatch/dispatch');
     const m = getModel();
     getModel().config = { groups: { g1: { name: 'g1', containers: ['c1', 'c2'] } } };
     getModel().currentGroup = 'g1';

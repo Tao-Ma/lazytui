@@ -21,13 +21,13 @@
   "bugs": "https://github.com/Tao-Ma/lazytui/issues",
   "author": "Tao Ma",
   "license": "MIT",
-  "main": "js/tui.js",
+  "main": "js/app/tui.js",
   "bin": {
     "lazytui": "bin/lazytui"
   },
   "scripts": {
     "postinstall": "node js/scripts/fix-pty-helper.js",
-    "test": "node js/run-tests.js"
+    "test": "node js/scripts/run-tests.js"
   },
   "dependencies": {
     "@xterm/headless": "^5.5.0",

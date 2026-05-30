@@ -58,7 +58,7 @@ No new authoring is required for anything that already exists in YAML.
 Components extend the registry by exporting `commands`:
 
 ```javascript
-// js/components/foo.js
+// js/panel/foo.js
 module.exports = {
   name: 'foo',
   init: () => ({ ... }),

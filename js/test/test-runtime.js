@@ -9,14 +9,14 @@
 'use strict';
 
 const { describe, it, eq, assert, report } = require('./test-runner');
-const runtime = require('../runtime');
+const runtime = require('../app/runtime');
 // Phase 4a — nav chrome (cursor/scroll/multiSel) lives on each Navigator
 // Component's slice. The tests below dispatch through wrapped Msgs and
 // read via state helpers, so the Components must be registered first.
 // test-runner already registered layout/detail/groups.
-const _api = require('../components/api');
-_api.registerComponent(require('../components/docker'));
-_api.registerComponent(require('../components/actions'));
+const _api = require('../panel/api');
+_api.registerComponent(require('../panel/navigator/docker'));
+_api.registerComponent(require('../panel/navigator/actions'));
 
 describe('[0] init — builds the root model', () => {
   it('returns a fresh model (viewMode moved to layout Component)', () => {
@@ -31,7 +31,7 @@ describe('[3] update — (model, msg) → [model, cmds], pure + Cmd descriptors'
     const m = runtime.init();
     // Phase 1c: focus_set moved to layout.update — test the Component
     // update directly with an isolated slice.
-    const layout = require('../components/layout');
+    const layout = require('../panel/layout');
     const slice = layout.init();
     slice.focus = 'groups';
     const [s1, c1] = layout.update({ type: 'focus_set', focus: 'actions' }, slice);
@@ -51,10 +51,10 @@ describe('[3] update — (model, msg) → [model, cmds], pure + Cmd descriptors'
   it('viewer_scroll: delta pages clamped, to:top/bottom jumps, no effects', () => {
     // Phase B: viewer_scroll moved to detail.update — test the Component
     // update directly with an isolated slice.
-    const detail = require('../components/viewer');
+    const detail = require('../panel/viewer/viewer');
     // detail.update reads getModel().panelHeights — write to the singleton so
     // the viewport-based clamp uses the test's value.
-    require('../components/api').getComponentSlice('layout').panelHeights.detail = 22;  // viewport = 20 → maxScroll 80
+    require('../panel/api').getComponentSlice('layout').panelHeights.detail = 22;  // viewport = 20 → maxScroll 80
     const slice = detail._init();
     slice.lines = new Array(100).fill('x');
     detail._update({ type: 'viewer_scroll', delta: 30 }, slice);
@@ -76,44 +76,44 @@ describe('[3] update — (model, msg) → [model, cmds], pure + Cmd descriptors'
     // show_selected_info, and (for groups) emits the groups_selected
     // cascade. Drive it through the real dispatch so the wrapped Msgs
     // land in each Component's slice.
-    const state = require('../state');
+    const state = require('../app/state');
     const m = runtime.getModel();
     state.setSel('actions', 0);
     state.setSel('groups',  0);
-    require('../dispatch').navSelect(m, 'actions', 3);
+    require('../dispatch/dispatch').navSelect(m, 'actions', 3);
     eq(state.getSel('actions'), 3, 'actions cursor advanced');
-    require('../dispatch').navSelect(m, 'groups', 1);
+    require('../dispatch/dispatch').navSelect(m, 'groups', 1);
     eq(state.getSel('groups'), 1, 'groups cursor advanced');
   });
   it('escape / list_select: emit wrapped multisel_clear into the focused Component', () => {
     // Phase 4a — escape/list_select route multiSel clears through the
     // focused Navigator's update (single-writer per slice). Read via the
     // state helper to assert the post-effect outcome.
-    const api = require('../components/api');
-    const state = require('../state');
+    const api = require('../panel/api');
+    const state = require('../app/state');
     const m = runtime.getModel();
     api.getComponentSlice('layout').focus = 'containers';
     // Seed: arm select mode + put two ids in the multiSel set.
-    require('../dispatch').applyMsg(m, { type: 'list_select', mode: 'toggle' });
+    require('../dispatch/dispatch').applyMsg(m, { type: 'list_select', mode: 'toggle' });
     eq(m.modes.listSelectMode, true, 'toggle on');
     state.toggleMultiSel('containers', 'a');
     state.toggleMultiSel('containers', 'b');
     eq(state.multiSelCount('containers'), 2, 'two items selected');
-    require('../dispatch').applyMsg(m, { type: 'escape' });
+    require('../dispatch/dispatch').applyMsg(m, { type: 'escape' });
     eq(m.modes.listSelectMode, false, 'escape exits select mode');
     eq(state.multiSelCount('containers'), 0, 'escape clears the selection');
     // escape again with a lingering selection but not in select mode
     state.toggleMultiSel('containers', 'x');
-    require('../dispatch').applyMsg(m, { type: 'escape' });
+    require('../dispatch/dispatch').applyMsg(m, { type: 'escape' });
     eq(state.multiSelCount('containers'), 0, 'escape clears lingering selection');
     // list_select on (the * path) forces it true
-    require('../dispatch').applyMsg(m, { type: 'list_select', mode: 'on' });
+    require('../dispatch/dispatch').applyMsg(m, { type: 'list_select', mode: 'on' });
     eq(m.modes.listSelectMode, true, 'mode:on forces select mode');
   });
   it('toggle_groups_tab + toggle_group are handled by the groups Component (Phase C)', () => {
     // Phase C: these Msgs moved out of runtime.update into groups.update.
     // Test the Component update directly with an isolated slice.
-    const groups = require('../components/groups');
+    const groups = require('../panel/navigator/groups');
     const m = runtime.getModel();  // the leaves read getModel().config
     m.config = { groups: {
       g1: { name: 'g1', quick: true, children: ['g1.a'], parent: null },
@@ -136,7 +136,7 @@ describe('[3] update — (model, msg) → [model, cmds], pure + Cmd descriptors'
   });
   it('design: gate is pure reducer logic — Cmd only when layout slice has design.enabled', () => {
     // Phase 1f migration: designEnabled lives on layout.slice.design.enabled.
-    const api = require('../components/api');
+    const api = require('../panel/api');
     const m = runtime.init();
     const layoutSlice = api.getComponentSlice('layout');
     layoutSlice.design.enabled = false;
@@ -191,7 +191,7 @@ describe('[11] terminal mode + multi-select writes (folded off the input path)',
     // Phase 4b — call sites wrap directly to the owning Component now;
     // exercise the state helpers (which do that wrap) and read back via
     // the same helpers.
-    const state = require('../state');
+    const state = require('../app/state');
     state.clearMultiSel('containers');
     state.toggleMultiSel('containers', 'c1');
     assert(state.isMultiSel('containers', 'c1'), 'added');
@@ -199,8 +199,8 @@ describe('[11] terminal mode + multi-select writes (folded off the input path)',
     eq(state.multiSelCount('containers'), 0, 'count drops to 0 when the set empties');
   });
   it('multisel_select_all adds every id (idempotent)', () => {
-    const api = require('../components/api');
-    const state = require('../state');
+    const api = require('../panel/api');
+    const state = require('../app/state');
     state.clearMultiSel('containers');
     state.toggleMultiSel('containers', 'c1');
     api.dispatchMsg(api.wrap('docker', { type: 'multisel_select_all', panel: 'containers', ids: ['c1', 'c2', 'c3'] }));
@@ -211,7 +211,7 @@ describe('[11] terminal mode + multi-select writes (folded off the input path)',
 describe('[10] streamed output — stream_start / viewer_append (effect source)', () => {
   // Phase B: stream_start + viewer_append moved into detail.update — tested
   // here against the Component update with an isolated slice.
-  const detail = require('../components/viewer');
+  const detail = require('../panel/viewer/viewer');
   it('stream_start replaces detail with the header + resets scroll', () => {
     const m = runtime.init();
     const slice = detail._init();
@@ -224,7 +224,7 @@ describe('[10] streamed output — stream_start / viewer_append (effect source)'
     assert(!Array.isArray(r), 'no effects — bare slice return');
   });
   it('viewer_append pins to bottom when already at bottom', () => {
-    require('../components/api').getComponentSlice('layout').panelHeights.detail = 5;   // innerH = 3
+    require('../panel/api').getComponentSlice('layout').panelHeights.detail = 5;   // innerH = 3
     const slice = detail._init();
     slice.lines = ['a', 'b', 'c'];      // maxScroll = 0, scroll 0 = at bottom
     slice.scroll = 0;
@@ -233,7 +233,7 @@ describe('[10] streamed output — stream_start / viewer_append (effect source)'
     eq(slice.scroll, 1, 'followed to the new bottom');
   });
   it('viewer_append leaves scroll alone when the user scrolled up', () => {
-    require('../components/api').getComponentSlice('layout').panelHeights.detail = 5;   // innerH = 3
+    require('../panel/api').getComponentSlice('layout').panelHeights.detail = 5;   // innerH = 3
     const slice = detail._init();
     slice.lines = ['a', 'b', 'c', 'd', 'e'];  // maxScroll = 2
     slice.scroll = 0;                          // user scrolled up to the top

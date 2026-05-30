@@ -12,7 +12,7 @@ const { describe, it, eq, assert, section, report } = require('./test-runner');
 
 const {
   dockerList, dockerReadBytes, _parseLsLine,
-} = require('../docker-fs');
+} = require('../feature/docker-fs');
 
 // ---- spawn stub ---------------------------------------------------
 

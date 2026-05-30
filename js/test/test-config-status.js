@@ -15,16 +15,16 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { spawnSync } = require('child_process');
-const cs = require('../components/config-status');
-const effects = require('../effects');
-const { getModel } = require('../runtime');
-const api = require('../components/api');
+const cs = require('../panel/navigator/config-status');
+const effects = require('../dispatch/effects');
+const { getModel } = require('../app/runtime');
+const api = require('../panel/api');
 // Phase 4a — `getSel('config-status')` walks panel-type → owning
 // Component → that Component's slice.nav, so the Component must be
 // registered (layout first per Phase 3) for the helper to resolve.
-api.registerComponent(require('../components/layout'));
+api.registerComponent(require('../panel/layout'));
 api.registerComponent(cs);
-const { setSel } = require('../state');
+const { setSel } = require('../app/state');
 const { describe, it, assert, eq, report } = require('./test-runner');
 
 const STATUS = cs.STATUS;
@@ -229,7 +229,7 @@ fs.writeFileSync(path.join(TMP, 'client', 'id_ed25519'), 'PRIVATE-V1\n');
 fs.writeFileSync(path.join(TMP, 'data', 'openvpn', 'ca.crt'), 'CA-V1\n');
 fs.writeFileSync(path.join(TMP, 'data', 'dev9', 'bashrc'), 'export FOO=bar\n');
 
-const cb = require('../components/config-branch');
+const cb = require('../panel/navigator/config-branch');
 const saveScript = cb.groupActions({
   config_branch: { branch: 'config', paths: ['client', 'data/openvpn', 'data/dev9/bashrc'] },
 }).save.script;
@@ -414,7 +414,7 @@ describe('[8] diffFor — preview shape per status', () => {
   it('Enter on a file row runs cfgStatusDiff → populates the detail panel', () => {
     effects.installBuiltins();  // setDetail effect (cfgStatusDiff calls state.setDetail directly)
     // Phase B: setDetail routes via dispatchMsg → detail Component; register it.
-    require('../components/api').registerComponent(require('../components/viewer'));
+    require('../panel/api').registerComponent(require('../panel/viewer/viewer'));
     baseline();
     fs.writeFileSync(path.join(TMP, 'data', 'dev9', 'bashrc'), 'export FOO=mutated\n');
     const cache = cs._computeStatus('config', E2E_FILES, TMP);
@@ -426,7 +426,7 @@ describe('[8] diffFor — preview shape per status', () => {
     const r = cs._update({ type: 'key', key: 'return' }, slice);
     assert(Array.isArray(r) && r[1][0].type === 'cfgStatusDiff', 'Enter on a file emits cfgStatusDiff');
     effects.runEffects(r[1]);  // run the diff effect → setDetail → viewer slice
-    const md = require('../components/api').getComponentSlice('detail');
+    const md = require('../panel/api').getComponentSlice('detail');
     assert(Array.isArray(md.lines) && md.lines.length > 2, 'detail populated');
     eq(md.scroll, 0, 'scroll reset');
   });

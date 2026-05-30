@@ -9,10 +9,10 @@
 'use strict';
 
 const { describe, it, assert, eq, report } = require('./test-runner');
-const hub = require('../hub');
-const { rasterize, BLOCKS } = require('../components/stats-graph');
-const stats = require('../components/stats');
-const docker = require('../components/docker');
+const hub = require('../feature/hub');
+const { rasterize, BLOCKS } = require('../panel/monitor/stats-graph');
+const stats = require('../panel/monitor/stats');
+const docker = require('../panel/navigator/docker');
 
 // --- rasterize: shape ---
 

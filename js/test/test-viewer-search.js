@@ -6,10 +6,10 @@
  */
 'use strict';
 
-const search = require('../viewer-search');
+const search = require('../render/viewer-search');
 const { describe, it, eq, assert, report } = require('./test-runner');
-const { getModel } = require('../runtime');
-const { getComponentSlice } = require('../components/api');
+const { getModel } = require('../app/runtime');
+const { getComponentSlice } = require('../panel/api');
 
 
 function setup(lines, panelH = 10) {

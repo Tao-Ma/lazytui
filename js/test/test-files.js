@@ -1,6 +1,5 @@
 /**
- * files — directory/registry browser (Component / TEA API), plus the legacy
- * file-manager alias (still a Plugin).
+ * files — directory/registry browser (Component / TEA API).
  *
  * The Component loads listings ASYNCHRONOUSLY through the effect loop, so the
  * tests drive a small effect pump: `update(msg, slice) → [slice, effects]` is
@@ -22,27 +21,22 @@ const os = require('os');
 const path = require('path');
 
 const { describe, it, eq, assert, section, report } = require('./test-runner');
-const { getModel } = require('../runtime');
-const { getComponentSlice } = require('../components/api');
+const { getModel } = require('../app/runtime');
+const { getComponentSlice } = require('../panel/api');
 
 
-// Register the file-manager Component so the api facade can resolve the def.
 // (test-runner.js already registered layout + detail + groups when required
 // above — that's the production order tui.js uses.)
-const api = require('../components/api');
-
-const fmMod = require('../components/file-manager');
-api.registerComponent(fmMod);
-const fmDef = fmMod.panelTypes['file-manager'];
+const api = require('../panel/api');
 
 // The files Component. Phase 4a — registering up front so panel-type →
 // Component lookup resolves for `getSel`/`setSel`/`setScroll` in sections
 // [1-8]. Section [9] re-registers explicitly while exercising the real
 // effect loop; re-register is idempotent.
-const filesComp = require('../components/files');
+const filesComp = require('../panel/navigator/files');
 api.registerComponent(filesComp);
 
-const { setSel, setScroll, getSel } = require('../state');
+const { setSel, setScroll, getSel } = require('../app/state');
 
 function mkTree() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'lazytui-files-'));
@@ -134,29 +128,6 @@ function makeDriver() {
     opened,
   };
 }
-
-describe('[1] file-manager alias — VERBATIM v0.3 def (back-compat)', () => {
-  it('returns getModel().config.files items in the original shape', () => {
-    const root = mkTree();
-    try {
-      freshState(root, 'file-manager');
-      const items = fmDef.getItems();
-      const paths = items.map(i => i.path);
-      eq(items.length, 2, 'two declared entries');
-      assert(paths.includes('README.md') && paths.includes('src/main.js'));
-      assert(items.every(i => i.kind === undefined), 'legacy def: no kind field');
-      assert(items.every(i => typeof i.path === 'string'), 'items have path');
-    } finally { rm(root); }
-  });
-  it('no onKey: pressing Enter is unclaimed (v0.3 behavior)', () => {
-    eq(fmDef.onKey, undefined, 'no onKey on the legacy alias def');
-  });
-  it('no customFilter: framework substring filter still owns the / pipeline', () => {
-    eq(fmDef.customFilter, undefined);
-    eq(typeof fmDef.filterText, 'function', 'filterText still exposed for framework substring');
-    eq(fmDef.filterText({ path: 'README.md' }), 'README.md');
-  });
-});
 
 describe('[2] file-browser — filesystem source, loaded via the effect loop', () => {
   it('lists dirs first then files, dotfiles hidden', () => {
@@ -306,7 +277,7 @@ section('[9] file open → content tab (real effect loop, async loader)');
   try {
     // Install the built-in effect handlers (render) + register the Component so
     // the real loadDir/openFile effects run and dispatchMsg routes key events.
-    require('../effects').installBuiltins();
+    require('../dispatch/effects').installBuiltins();
     api.registerComponent(filesComp);
     freshState(root, 'file-browser');
 

@@ -1,7 +1,7 @@
 # lazytui config for the cloudberrydb demo.
 #
 # Produced by the lazytui loop:
-#   demo/cloudberrydb/.agent-prompt.md + node js/tui.js --spec
+#   demo/cloudberrydb/.agent-prompt.md + node js/app/tui.js --spec
 #       → this file (+ scripts/)
 #
 # Wraps upstream's docker sandbox (apache/cloudberry's devops/sandbox).

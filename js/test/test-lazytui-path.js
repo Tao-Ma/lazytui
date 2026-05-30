@@ -43,12 +43,12 @@ describe('[1] invalid LAZYTUI_PATH fails loud', () => {
     eq(r.status, 1, 'exit code');
     assert(/not a directory/.test(r.stderr), `expected "not a directory" in stderr: ${r.stderr}`);
   });
-  it('valid dir without js/tui.js → exit 1, descriptive error', () => {
+  it('valid dir without js/app/tui.js → exit 1, descriptive error', () => {
     const tmp = mkTmpdir();
     try {
       const r = run({ LAZYTUI_PATH: tmp });
       eq(r.status, 1);
-      assert(/no js\/tui\.js/.test(r.stderr), `expected "no js/tui.js" in stderr: ${r.stderr}`);
+      assert(/no js\/app\/tui\.js/.test(r.stderr), `expected "no js/app/tui.js" in stderr: ${r.stderr}`);
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
     }
@@ -59,14 +59,14 @@ describe('[2] valid LAZYTUI_PATH redirects to that lazytui', () => {
   it('stub target runs instead of the local install', () => {
     const tmp = mkTmpdir();
     try {
-      fs.mkdirSync(path.join(tmp, 'js'));
+      fs.mkdirSync(path.join(tmp, 'js', 'app'), { recursive: true });
       fs.writeFileSync(
-        path.join(tmp, 'js', 'tui.js'),
+        path.join(tmp, 'js', 'app', 'tui.js'),
         "console.log('STUB_RAN_FROM=' + __dirname); process.exit(0);\n",
       );
       const r = run({ LAZYTUI_PATH: tmp });
       eq(r.status, 0);
-      assert(r.stdout.includes(`STUB_RAN_FROM=${path.join(tmp, 'js')}`),
+      assert(r.stdout.includes(`STUB_RAN_FROM=${path.join(tmp, 'js', 'app')}`),
         `expected stub output, got: ${JSON.stringify(r.stdout)}`);
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });

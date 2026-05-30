@@ -15,7 +15,7 @@
 'use strict';
 
 // Mute OSC52 — register.push() can print clipboard escapes.
-const term = require('../term');
+const term = require('../io/term');
 const _origWrite = term.stdout.write.bind(term.stdout);
 term.stdout.write = (chunk, ...rest) => {
   const s = typeof chunk === 'string' ? chunk : '';
@@ -23,8 +23,8 @@ term.stdout.write = (chunk, ...rest) => {
   return _origWrite(chunk, ...rest);
 };
 
-const runtime = require('../runtime');
-const register = require('../register');
+const runtime = require('../app/runtime');
+const register = require('../feature/register');
 const { describe, it, eq, assert, report } = require('./test-runner');
 
 const m = runtime.getModel();

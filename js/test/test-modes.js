@@ -11,8 +11,8 @@
 'use strict';
 
 const { describe, it, eq, assert, report } = require('./test-runner');
-const modes = require('../modes');
-const { getModel } = require('../runtime');
+const modes = require('../dispatch/modes');
+const { getModel } = require('../app/runtime');
 
 // ---- [1] registry shape + derivations ----------------------------
 
@@ -62,21 +62,21 @@ describe('[3] dispatch modeChain completeness', () => {
     // dispatch.js builds modeChain at module load and throws if any
     // CHAIN_MODES flag lacks a handler — so a clean require IS the test.
     let ok = true;
-    try { require('../dispatch'); } catch { ok = false; }
+    try { require('../dispatch/dispatch'); } catch { ok = false; }
     assert(ok, 'dispatch loaded; modeChain fully wired');
   });
 });
 
 // ---- [4] T2 wedge guard -------------------------------------------
 
-const dispatch = require('../dispatch');
+const dispatch = require('../dispatch/dispatch');
 
 describe('[4] wedge guard (_dispatchActiveMode)', () => {
   it('a throwing mode handler is caught, flag cleared, key claimed', () => {
     // The registerPopupMode handler does a live property lookup
     // (registerPopup.viewportRows, to build the nav Msgs), so we can force
     // it to throw.
-    const rp = require('../register-popup');
+    const rp = require('../overlay/register-popup');
     const orig = rp.viewportRows;
     const origErr = console.error;
     let logged = '';

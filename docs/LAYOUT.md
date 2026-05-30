@@ -23,7 +23,8 @@ layout:
       - type: groups
         title: Groups
         heightPct: 70
-      - type: file-manager
+      - type: files
+        source: declared
         title: Files
   right:
     panels:
@@ -117,7 +118,9 @@ new values appear in the YAML.
 - Selecting a group updates containers and actions panels
 - Detail shows group info (compose, containers, action list)
 
-**file-manager** — File registry paths from the top-level `files:` section
+**files** — Browse declared file registry, filesystem, or a container's
+filesystem; select with `source:` (`declared` / `filesystem` / `both` /
+`docker`). `file-browser` is a hardcoded `filesystem` alias.
 - Shows path only — details shown in detail panel on browse
 - Scroll indicator when list overflows
 

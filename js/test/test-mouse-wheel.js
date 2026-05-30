@@ -9,7 +9,7 @@
 'use strict';
 
 // Mute OSC52 — register imports get pulled transitively.
-const term = require('../term');
+const term = require('../io/term');
 const _origWrite = term.stdout.write.bind(term.stdout);
 term.stdout.write = (chunk, ...rest) => {
   const s = typeof chunk === 'string' ? chunk : '';
@@ -17,10 +17,10 @@ term.stdout.write = (chunk, ...rest) => {
   return _origWrite(chunk, ...rest);
 };
 
-const { _handleWheel } = require('../input');
+const { _handleWheel } = require('../io/input');
 const { describe, it, eq, report } = require('./test-runner');
-const { getModel } = require('../runtime');
-const {getComponentSlice, getFocus } = require('../components/api');
+const { getModel } = require('../app/runtime');
+const {getComponentSlice, getFocus } = require('../panel/api');
 
 
 // _handleWheel now takes the owned model first (threaded from the pump).

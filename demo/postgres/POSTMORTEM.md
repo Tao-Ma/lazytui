@@ -7,7 +7,7 @@ problem surfaces from the live artifact, fix it in both the artifact
 ## Timeline
 
 1. Loop ran. Agent (Claude Opus 4.7) consumed `.agent-prompt.md` +
-   `node js/tui.js --spec`, produced `tui.yml`, `Dockerfile`,
+   `node js/app/tui.js --spec`, produced `tui.yml`, `Dockerfile`,
    `docker-compose.yml`, and five shell scripts under `scripts/`.
 2. `./run --list` parsed cleanly: 12 actions (7 YAML + 5 from the
    docker plugin's compose-synthesis, with `build` overridden).

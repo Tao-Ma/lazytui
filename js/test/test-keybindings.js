@@ -12,10 +12,10 @@
 'use strict';
 
 const { describe, it, eq, assert, report } = require('./test-runner');
-const { getModel } = require('../runtime');
-const { getComponentSlice } = require('../components/api');
+const { getModel } = require('../app/runtime');
+const { getComponentSlice } = require('../panel/api');
 
-const kb = require('../keybindings');
+const kb = require('../dispatch/keybindings');
 
 // ---- [1] parseSeq -------------------------------------------------
 
@@ -112,7 +112,7 @@ describe('[3] resolve helpers', () => {
 
 // ---- [4] dispatch: prefix walk ------------------------------------
 
-const dispatch = require('../dispatch');
+const dispatch = require('../dispatch/dispatch');
 
 describe('[4] prefix dispatch', () => {
   it('walk descends a subtree then runs the leaf, exiting after', () => {
@@ -151,12 +151,12 @@ describe('[4] prefix dispatch', () => {
 
 // ---- [5] dispatch: list-select gating -----------------------------
 
-const api = require('../components/api');
+const api = require('../panel/api');
 // Phase 4a — register as a Component (not a Plugin) so the test's
 // list-select multi-toggle reads/writes the new per-Navigator nav slice
 // via the helpers. The shared model-nav leaf handles set_cursor /
 // multisel_*; init seeds the panel's nav entry.
-const mnav = require('../model-nav');
+const mnav = require('../model/nav');
 api.registerComponent({
   name: 'kb-test',
   init: () => ({ nav: { listy: mnav.init() } }),
@@ -173,8 +173,8 @@ api.registerComponent({
 describe('[5] v-mode gates space', () => {
   it('space enters prefix in normal mode; v enters select then space toggles', () => {
     kb.clearBindings();
-    require('../state').setSel('listy', 1);
-    require('../state').clearMultiSel('listy');
+    require('../app/state').setSel('listy', 1);
+    require('../app/state').clearMultiSel('listy');
     getComponentSlice("layout").focus = 'listy';
     getModel().modes.listSelectMode = false;
     getModel().modes.prefixMode = false;
@@ -191,12 +191,12 @@ describe('[5] v-mode gates space', () => {
     // space → toggle the focused row (no prefix).
     dispatch._handleNormalKey(getModel(), ' ', ' ');
     assert(getModel().modes.prefixMode === false, 'space does not lead inside select mode');
-    eq(require('../state').multiSelCount('listy'), 1, 'focused row toggled on');
+    eq(require('../app/state').multiSelCount('listy'), 1, 'focused row toggled on');
 
     // v → exit select mode (clears selection).
     dispatch._handleNormalKey(getModel(), 'v', 'v');
     assert(getModel().modes.listSelectMode === false, 'second v exits select mode');
-    eq(require('../state').multiSelCount('listy'), 0, 'selection cleared on exit');
+    eq(require('../app/state').multiSelCount('listy'), 0, 'selection cleared on exit');
   });
 
   it('_isListPanel: true for list panels, false for detail', () => {
@@ -207,7 +207,7 @@ describe('[5] v-mode gates space', () => {
 
 // ---- [6] which-key popup lines ------------------------------------
 
-const wk = require('../which-key');
+const wk = require('../dispatch/which-key');
 
 describe('[6] which-key popup', () => {
   it('lists leaves with their label and subtrees with +name …', () => {
@@ -288,7 +288,7 @@ describe('[8] overridable built-ins', () => {
 });
 
 describe('[9] space gate + group-switch reset', () => {
-  const { resetGroupContext } = require('../state');
+  const { resetGroupContext } = require('../app/state');
   it('space leads when select mode is armed but focus is a non-list panel', () => {
     kb.clearBindings();
     getComponentSlice("layout").focus = 'detail';

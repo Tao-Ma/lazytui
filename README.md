@@ -205,7 +205,7 @@ for "the same thing but headless."
 |---|---|
 | Two-column layout | 1–6 left panels, 1–3 right panels, detail panel with tabs. Fixed pattern, YAML-configurable content. |
 | Action types | `run` (capture output), `spawn` (full-screen interactive), `background` (fire-and-forget). One uniform schema. |
-| Built-in panel types | `groups`, `actions`, `file-manager`, `history`, `detail`, plus docker container / stats panels. |
+| Built-in panel types | `groups`, `actions`, `files`, `history`, `detail`, plus docker container / stats panels. |
 | Embedded terminals | PTY tabs inside the detail panel. Persistent across group switches. |
 | Event hub | In-process pub/sub for plugins. Time-series, snapshot, matrix shapes. Cost scales with subscribers. |
 | Decorator slots | Plugins add glyphs to rows / titles / tabs / footer without touching the renderer. |

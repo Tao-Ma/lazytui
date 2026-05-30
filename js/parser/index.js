@@ -53,7 +53,7 @@ function defaultLayout(hasContainers, _hasFiles) {
   }
   left.push({ type: 'groups', title: 'Groups', hotkey: String(hk++), column: 'left', config: {} });
   if (_hasFiles) {
-    left.push({ type: 'file-manager', title: 'Files', hotkey: String(hk++), column: 'left', config: {} });
+    left.push({ type: 'files', source: 'declared', title: 'Files', hotkey: String(hk++), column: 'left', config: {} });
   }
   const right = [
     { type: 'actions', title: 'Actions', hotkey: '7', column: 'right', config: {} },

@@ -19,10 +19,10 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { spawnSync } = require('child_process');
-const archive = require('../components/archive');
+const archive = require('../panel/archive');
 const { describe, it, eq, assert, report } = require('./test-runner');
 
-const TUI = path.resolve(__dirname, '..', 'tui.js');
+const TUI = path.resolve(__dirname, '..', 'app', 'tui.js');
 
 // --- Pure unit tests for groupActions ---
 

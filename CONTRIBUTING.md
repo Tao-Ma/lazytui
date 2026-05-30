@@ -15,7 +15,7 @@ cd lazytui
 npm install --omit=dev
 
 # Run the test suite.
-node js/run-tests.js
+node js/scripts/run-tests.js
 ```
 
 ### Dogfooding a dev lazytui inside another project
@@ -74,7 +74,7 @@ actions rather than introducing a new YAML top-level concept.
 1. Fork or branch off `main`.
 2. Make the change. Keep commits focused (one logical change per
    commit is ideal but not required for small PRs).
-3. Run `node js/run-tests.js` locally. CI runs the same on every push.
+3. Run `node js/scripts/run-tests.js` locally. CI runs the same on every push.
 4. Open the PR with a description that answers "what changed and
    why." A test plan or repro for bug fixes is appreciated.
 

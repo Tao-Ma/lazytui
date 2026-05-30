@@ -10,7 +10,7 @@
 'use strict';
 
 const { spawn } = require('child_process');
-const { _splitQuery: splitQuery } = require('../cmdline');
+const { _splitQuery: splitQuery } = require('../dispatch/cmdline');
 const { describe, it, eq, section, report } = require('./test-runner');
 
 describe('[1] no whitespace → query only, empty args', () => {

@@ -24,12 +24,12 @@ const child_process = require('child_process');
 const spawnCalls = [];
 child_process.spawn = (...args) => { spawnCalls.push(args); return { on() {}, kill() {} }; };
 
-const layout = require('../layout');
+const layout = require('../render/layout');
 let forceFullRepaintCalls = 0;
 layout.forceFullRepaint = () => { forceFullRepaintCalls++; };
 layout.render = () => {};
 
-const history = require('../history');
+const history = require('../feature/history');
 const historyStarts = [];
 history.start = (key, cmd, opts) => { historyStarts.push({ key, cmd, opts }); };
 
@@ -38,30 +38,30 @@ history.start = (key, cmd, opts) => { historyStarts.push({ key, cmd, opts }); };
 // core Components (detail, groups). Without that, getComponentSlice('detail')
 // returns undefined and the slice writes below fail.
 require('./test-runner');
-const runtime = require('../runtime');   // viewMode migrated to the TEA root model (v0.5 spike)
+const runtime = require('../app/runtime');   // viewMode migrated to the TEA root model (v0.5 spike)
 const { getModel } = runtime;
-const {getComponentSlice, getFocus } = require('../components/api');
+const {getComponentSlice, getFocus } = require('../panel/api');
 getModel().projectDir = '/tmp/spawn-test-cwd';
 getModel().currentGroup = 'g1';
 getModel().config = { groups: { g1: { actions: {}, terminals: {} } } };
 getComponentSlice('detail').ephemeralTerminals = {};
 getComponentSlice('layout').viewMode = 'normal';
 
-const { runAction } = require('../actions');
+const { runAction } = require('../dispatch/action-runner');
 
 // Mock terminal.writeToSession + isSessionDead BEFORE requiring input.js
 // — input.js destructures these at module-load time, so the override has
 // to happen before that destructure runs. terminal.js is already loaded
 // (actions.js → tabs.js → terminal.js lazy-require chain), so we mutate
 // its cached exports object.
-const terminal = require('../terminal');
+const terminal = require('../io/terminal');
 const { _onSessionExit } = terminal;
 const writeToSessionCalls = [];
 let mockSessionDead = false;
 terminal.writeToSession = (id, data) => { writeToSessionCalls.push({ id, data }); };
 terminal.isSessionDead = (_id) => mockSessionDead;
 
-const { _handleTerminalModeData } = require('../input');
+const { _handleTerminalModeData } = require('../io/input');
 
 const { describe, it, assert, eq, report } = require('./test-runner');
 

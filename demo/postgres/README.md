@@ -36,7 +36,7 @@ items. Every other file in this directory was produced by an AI
 coding agent reading that prompt plus the output of:
 
 ```sh
-node ../../js/tui.js --spec
+node ../../js/app/tui.js --spec
 ```
 
 See **[../../DEMO.md](../../DEMO.md)** for the convention.

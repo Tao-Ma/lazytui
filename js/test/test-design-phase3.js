@@ -20,15 +20,15 @@
  */
 'use strict';
 
-const { rebuildLayoutFromConfig } = require('../state');
+const { rebuildLayoutFromConfig } = require('../app/state');
 const {
   titleEditText,
   onMouseEvent, pointToResizeTarget,
   _clearUndoStacks, _getUndoDepth, _getRedoDepth,
-} = require('../design');
-const dispatch = require('../dispatch');
-const { getModel } = require('../runtime');
-const { getComponentSlice } = require('../components/api');
+} = require('../overlay/design');
+const dispatch = require('../dispatch/dispatch');
+const { getModel } = require('../app/runtime');
+const { getComponentSlice } = require('../panel/api');
 const { describe, it, assert, eq, report } = require('./test-runner');
 
 // Design mode lives on layout's slice (post-Phase-6 single-writer cleanup):
@@ -36,7 +36,7 @@ const { describe, it, assert, eq, report } = require('./test-runner');
 // modeChain handler (designMode / designTitleEditMode). These shims keep
 // the existing call sites driving the REAL path.
 function enterDesign() {
-  const api = require('../components/api');
+  const api = require('../panel/api');
   api.dispatchMsg(api.wrap('layout', { type: 'design_enter' }));
 }
 function press(key, seq) { dispatch._dispatchActiveMode(getModel(), key, seq); }
@@ -328,7 +328,7 @@ describe('[3f] keyboard `]` / `[` — focused panel heightPct', () => {
 
 // ===============================================================
 describe('[3e] calcLayout — heightPct distribution', () => {
-  const { calcLayout } = require('../layout');
+  const { calcLayout } = require('../render/layout');
   function freshLayout() {
     getComponentSlice("layout").arrange = {
       leftWidth: 30, detailHeightPct: 60,

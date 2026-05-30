@@ -4,7 +4,7 @@
  * docs/PRINCIPLES.md §11.
  *
  * The test exercises representative core plugin renderers (groups, actions,
- * detail, file-manager, history). Docker + stats + config-status are
+ * detail, history). Docker + stats + config-status are
  * deliberately skipped here:
  *
  *   - docker.render reads a runtime status cache fed by container events;
@@ -20,16 +20,15 @@
 'use strict';
 
 const { describe, it, eq, report } = require('./test-runner');
-const { getModel } = require('../runtime');
-const { getComponentSlice } = require('../components/api');
+const { getModel } = require('../app/runtime');
+const { getComponentSlice } = require('../panel/api');
 
-const { recomputeGroups } = require('../state');
-const { setTheme } = require('../themes');
-const groups = require('../components/groups');
-const actions = require('../components/actions');
-const detail = require('../components/viewer');
-const fileManager = require('../components/file-manager');  // legacy v0.3 alias
-const history = require('../components/history');
+const { recomputeGroups } = require('../app/state');
+const { setTheme } = require('../render/themes');
+const groups = require('../panel/navigator/groups');
+const actions = require('../panel/navigator/actions');
+const detail = require('../panel/viewer/viewer');
+const history = require('../panel/navigator/history');
 
 // --- Minimal state setup — just enough that every render under test can
 // resolve its inputs without throwing. ---
@@ -96,14 +95,13 @@ const cases = [
   { name: 'groups',       fn: _resolveDef(groups,      'groups').render,       panel: { type: 'groups',       title: 'Groups',    hotkey: '1' } },
   { name: 'actions',      fn: _resolveDef(actions,     'actions').render,      panel: { type: 'actions',      title: 'Actions',   hotkey: '7' } },
   { name: 'detail',       fn: _resolveDef(detail,      'detail').render,       panel: { type: 'detail',       title: 'Detail',    hotkey: '8', tabs: [{ label: 'Info' }] } },
-  { name: 'file-manager', fn: _resolveDef(fileManager, 'file-manager').render, panel: { type: 'file-manager', title: 'Files',     hotkey: '2' } },
   { name: 'history',      fn: _resolveDef(history,     'history').render,      panel: { type: 'history',      title: 'History',   hotkey: '3' } },
 ];
 
 // All panels are Components now — render takes its own slice (resolved from
 // the global Component registry; auto-registers via the S shim path if needed).
 function _renderArg(name) {
-  return require('../components/api').getComponentSlice(name);
+  return require('../panel/api').getComponentSlice(name);
 }
 
 describe('render idempotence — same state, twice', () => {
