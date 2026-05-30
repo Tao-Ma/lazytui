@@ -217,4 +217,26 @@ describe('[9] missing --exec value', () => {
   });
 });
 
+describe('[10] --spec — Component authoring spec bundle', () => {
+  it('reads docs/ at the repo root and prints the bundle to stdout', () => {
+    // Regression: tui.js moved from `js/` to `js/app/` in the v0.5
+    // reorg but printSpec() still resolved `..` once from __dirname,
+    // landing in `js/docs/` (which doesn't exist). The fix resolves
+    // up two levels to the repo root. Guard the file-resolution path
+    // here so a future tui.js relocation can't silently break --spec.
+    const r = spawnSync(process.execPath, [TUI, '--spec'], {
+      encoding: 'utf8', timeout: 5000,
+    });
+    eq(r.status, 0, 'rc 0');
+    assert(r.stdout.length > 0, 'stdout non-empty');
+    assert(
+      r.stdout.includes('Component Authoring Spec'),
+      'starts with SPEC.md heading'
+    );
+    // Every SPEC_DOCS file should land in the bundled output. A path
+    // regression would surface here as a missing-doc stderr + rc 1.
+    assert(!r.stderr.includes('missing doc'), 'no "missing doc" stderr');
+  });
+});
+
 report();

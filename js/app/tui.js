@@ -60,8 +60,10 @@ const SPEC_DOCS = [
 ];
 
 function printSpec() {
-  // docs/ subtree under the repo root, since the 2026-05 reorg.
-  const docsDir = path.resolve(__dirname, '..', 'docs');
+  // docs/ subtree at the repo root. tui.js lives at js/app/tui.js after
+  // the v0.5 reorg, so resolve up two levels (js/app → js → repo root)
+  // before joining `docs`.
+  const docsDir = path.resolve(__dirname, '..', '..', 'docs');
   for (let i = 0; i < SPEC_DOCS.length; i++) {
     const name = SPEC_DOCS[i];
     const filepath = path.join(docsDir, name);

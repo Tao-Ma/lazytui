@@ -113,6 +113,13 @@ that breaks for anyone using `dispatch.applyMsg` directly.
   `js/test/bench-hotpaths.js`.
 
 ### Fixed
+- **`--spec` doc-bundle path.** `tui.js --spec` aborted with
+  `missing doc js/docs/SPEC.md`. The v0.5 reorg moved `tui.js` from
+  `js/` to `js/app/` but `printSpec()` still resolved `..` once from
+  `__dirname`, landing in `js/docs/` instead of `<repo>/docs/`. Now
+  walks up two levels to the repo root. Pinned by a new spawn-based
+  test block in `js/test/test-cli.js` so a future relocation can't
+  silently break the bundle again.
 - **`plugins:` warning scope.** The boot-time deprecation warning
   fired on every non-empty `plugins:` block, including YAML config
   splits — the parser-level merge feature that's still supported and
