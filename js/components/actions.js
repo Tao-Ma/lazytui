@@ -14,7 +14,7 @@ const {
   esc, theme, renderPanel,
   getSel, getScroll, isMultiSel, getFilter,
   getGroupActions, getItems: apiGetItems,
-  getComponentSlice,
+  getComponentSlice, getFocus,
 } = require('./api');
 
 /**
@@ -72,7 +72,7 @@ function actionRow([key, action], i) {
   const tag = { spawn: ' ⧉', background: ' ⇱' }[action.type] || '';
   const isLast = key === m.lastRunAction;
   const isSel = i === getSel('actions');
-  const isFocused = getComponentSlice("layout").focus === 'actions';
+  const isFocused = getFocus() === 'actions';
   const isMs = isMultiSel('actions', key);
   const mark = isMs ? '*' : ((isLast || (isSel && !isFocused)) ? '>' : ' ');
   const confirmStr = action.confirm ? ' \\[confirm]' : '';
@@ -88,7 +88,7 @@ function actionRow([key, action], i) {
 function render(panel, w, h) {
   const actions = apiGetItems('actions');
   const sel = getSel('actions');
-  const isFocused = getComponentSlice("layout").focus === 'actions';
+  const isFocused = getFocus() === 'actions';
   const lines = actions.map((item, i) => actionRow(item, i));
   const filterText = getFilter('actions');
   const title = filterText ? `${panel.title} /${esc(filterText)}` : panel.title;
@@ -116,7 +116,7 @@ module.exports = {
   update: (msg, slice) => mnav.isNavMsg(msg) ? mnav.apply(slice, msg) : slice,
   panelTypes: {
     actions: {
-      mode: 'list', render,
+      render,
       getItems, getInfo, copyOptions,
       filterable: true, filterText: ([, a]) => a.label,
       idOf: ([key]) => key,

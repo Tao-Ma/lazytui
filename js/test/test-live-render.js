@@ -13,7 +13,7 @@
 
 const { describe, it, assert, eq, report } = require('./test-runner');
 const { getModel } = require('../runtime');
-const { getComponentSlice } = require('../components/api');
+const {getComponentSlice, getFocus } = require('../components/api');
 
 const { initState, getSel, setSel, selectGroup } = require('../state');
 
@@ -110,11 +110,11 @@ describe('[3b] focus moves through the update spine — live', () => {
     capture(() => { handleKey(model, '_', '_'); handleKey(model, '_', '_'); });   // normal view (silenced)
     getComponentSlice("layout").focus = 'groups';
     const fromGroups = capture(() => handleKey(model, 'right', 'right')); // focus_right → update
-    assert(getComponentSlice("layout").focus !== 'groups', `focus advanced off groups (now ${getComponentSlice("layout").focus})`);
+    assert(getFocus() !== 'groups', `focus advanced off groups (now ${getFocus()})`);
     assert(fromGroups.length > 0, 'a frame painted on focus change');
-    const movedTo = getComponentSlice("layout").focus;
+    const movedTo = getFocus();
     capture(() => handleKey(model, 'left', 'left'));                       // focus_left → back
-    assert(getComponentSlice("layout").focus === 'groups', `focus_left returned to groups from ${movedTo}`);
+    assert(getFocus() === 'groups', `focus_left returned to groups from ${movedTo}`);
   });
 });
 

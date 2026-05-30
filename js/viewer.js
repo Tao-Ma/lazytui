@@ -7,7 +7,7 @@
 
 const { setDetail, getSel } = require('./state');
 const { getModel } = require('./runtime');
-const { getPanelDef, getItems, getComponentSlice } = require('./components/api');
+const {getPanelDef, getItems, getComponentSlice, getFocus } = require('./components/api');
 const { getTabInfo, isTerminalTab, activeContentTab } = require('./tabs');
 const { killCurrentProc, streamCommand } = require('./actions');
 const { isStreaming } = require('./stream');
@@ -26,10 +26,10 @@ function showSelectedInfo(model = getModel()) {
   if (isStreaming()) return;
   // Generic dispatch via plugin API. All panels (core + plugin) provide
   // getItems()/getInfo(); getInfo returns markup-ready Rich-formatted lines.
-  const def = getPanelDef(getComponentSlice("layout").focus);
+  const def = getPanelDef(getFocus());
   if (!def || typeof def.getItems !== 'function' || typeof def.getInfo !== 'function') return;
-  const items = getItems(getComponentSlice("layout").focus);
-  const item = items[getSel(getComponentSlice("layout").focus)];
+  const items = getItems(getFocus());
+  const item = items[getSel(getFocus())];
   if (!item) return;
   const lines = def.getInfo(item);
   if (lines && lines.length) setDetail(lines.join('\n'));

@@ -261,7 +261,7 @@ still permits:
   `js/components/stats.js#_ensureSub`) and **lazy initial-state
   fixup** (config-status panel) happen on first render and are
   idempotent on subsequent calls. Pure-render would prefer these
-  in an `init` hook, but the current Plugin API has none — the
+  in an init hook fired at a guaranteed point; today the
   idempotent lazy-init pattern is an accepted middle ground.
 
 **Why the rule matters:**
@@ -394,7 +394,8 @@ Before implementing, verify:
 - [ ] Do static strings with literal `[` use `\[`?
 - [ ] Do selected lines use plain text in `[reverse]` with no inner markup?
 - [ ] Is the `[reverse]` left unclosed (panel renderer adds reset before border)?
-- [ ] Does the plugin reference top-level state (`source: files`, top-level vars) rather than redeclaring it inside its own config block?
-- [ ] Is each plugin's `render()` idempotent on equal state? (§11)
-- [ ] Does the panel pick the right shape — Component if it owns slice-shaped state / fires async work, Plugin if it's a stateless view? (§12)
-- [ ] If a Component: does `update()` return a new slice (or `[slice, effects]`) rather than mutate, keep effects/I-O out of `update`, and never write the root model directly? Does it `claimsKeys` for the keys it handles? (§12)
+- [ ] Does the Component reference top-level state (`source: files`, top-level vars) rather than redeclaring it inside its own config block?
+- [ ] Is each Component's `render()` idempotent on equal state? (§11)
+- [ ] Does each piece of state live in the right home — Component slice for slice-shaped state with async work, root model for cross-cutting chrome (modes, modal sub-models, currentGroup)? (§12)
+- [ ] Does `update()` return a new slice (or `[slice, effects]`) rather than mutate root model, keep effects/I-O out of `update`, and never write any layer it doesn't own? Does it `claimsKeys` for the keys it handles? (§12)
+- [ ] Are Component-specific Msgs wrapped via `api.wrap('name', msg)` at the dispatch site? (§12)

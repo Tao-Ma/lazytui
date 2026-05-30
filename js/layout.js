@@ -20,7 +20,7 @@ const { theme } = require('./themes');
 const { isTerminalTab, activeTerminalId, activeTerminalConfig,
         getTabInfo, findEphemeralByid } = require('./tabs');
 const { ensureSession, getSession, resizeSession } = require('./terminal');
-const { getPanelDef, getComponentSlice } = require('./components/api');
+const {getPanelDef, getComponentSlice, getFocus } = require('./components/api');
 const { showSelectedInfo } = require('./viewer');
 const { renderCopyMenu } = require('./copy');
 const { render: renderRegisterPopup } = require('./register-popup');
@@ -490,7 +490,7 @@ function footerKeys(model) {
   }
   if (md.menuOpen)   return ' ↑↓ select | Esc close | Enter run';
 
-  if (getComponentSlice("layout").focus === 'detail') {
+  if (getFocus() === 'detail') {
     const { total } = getTabInfo();
     const segs = ['←→ panel'];
     if (total > 1) segs.push(']\\[ tabs');
@@ -513,10 +513,10 @@ function footerKeys(model) {
     }
     return ' ' + segs.join(' | ');
   }
-  if (getComponentSlice("layout").focus === 'actions') {
+  if (getFocus() === 'actions') {
     return ' ↑↓ select | ←→ panel | / filter | +/_ view | x menu | q quit | Enter run';
   }
-  if (getComponentSlice("layout").focus === 'groups') {
+  if (getFocus() === 'groups') {
     return ' ↑↓ select | ←→ panel | / filter | +/_ view | x menu | q quit | Enter actions';
   }
   return ' ↑↓ select | ←→ panel | / filter | +/_ view | x menu | q quit';
@@ -568,9 +568,9 @@ function renderFooter(model = getModel()) {
   // own the row — no plugin contributions appended.
   let keys = footerKeys(model);
   if (!inModal) {
-    const def = getPanelDef(getComponentSlice("layout").focus);
+    const def = getPanelDef(getFocus());
     if (def && def.keyHints) keys += ` | ${esc(def.keyHints)}`;
-    const msCount = multiSelCount(getComponentSlice("layout").focus);
+    const msCount = multiSelCount(getFocus());
     if (msCount > 0) keys += ` | ${esc(`[${msCount} sel]`)}`;
     // Surface layout-dirty state to non-modal users too. They might
     // have left design mode with pending changes; the indicator
@@ -588,7 +588,7 @@ function renderFooter(model = getModel()) {
   // first arg + this `ctx` as the second.
   let footerLeftExtra = '', footerRightExtra = '';
   if (!inModal) {
-    const ctxBase = { focus: getComponentSlice("layout").focus, view: layoutSlice.viewMode };
+    const ctxBase = { focus: getFocus(), view: layoutSlice.viewMode };
     const halfBudget = Math.max(0, Math.floor(COLS / 2) - 4);
     footerLeftExtra  = collectViewContributions('footerLeft',  { ...ctxBase, width: halfBudget });
     footerRightExtra = collectViewContributions('footerRight', { ...ctxBase, width: halfBudget });
@@ -604,7 +604,7 @@ function renderFooter(model = getModel()) {
   // List-select tag only when the armed mode actually applies — i.e.
   // focus is on a list panel. (The flag can stay armed while focus is
   // on a non-list panel, where space falls back to the leader.)
-  const focusDef = getPanelDef(getComponentSlice("layout").focus);
+  const focusDef = getPanelDef(getFocus());
   const selectActive = model.modes.listSelectMode && focusDef && typeof focusDef.getItems === 'function';
   const sel = getComponentSlice('detail')?.select;
   const selectTag = (sel && sel.active)

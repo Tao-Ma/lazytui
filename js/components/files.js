@@ -32,10 +32,11 @@
  *                             seq from a since-abandoned cwd is dropped).
  *   Enter-on-file           → an `openFile` effect (addContentTab + async
  *                             file-loader; same machinery as before).
- *   Enter-on-dir            → also a `resetPanelChrome` effect — the framework
- *                             owns sel/scroll/filter (in model.ui), so the
- *                             Component asks for the reset via a Msg rather
- *                             than writing model state itself.
+ *   Enter-on-dir            → also a `resetPanelChrome` effect — wipes
+ *                             cursor / scroll / filter on the panel's
+ *                             own nav slice via wrapped Msgs (each
+ *                             write originates inside the owning
+ *                             Component's update).
  *
  * Items are normalized to a single shape so getInfo/copyOptions/render branch
  * on `item.kind` (declared | parent | dir | file | symlink | loading).
@@ -51,7 +52,7 @@ const mnav = require('../model-nav');
 const {
   esc, visibleLen, theme, renderPanel,
   getSel, getScroll, getFilter, isMultiSel,
-  getComponentSlice,
+  getComponentSlice, getFocus,
 } = require('./api');
 
 const { addContentTab, updateContentTabLines } = require('../tabs');
@@ -265,7 +266,7 @@ function _renderFor(panel, w, h, slice, panelType, hardcoded) {
   const items = _itemsFor(slice, panelType, hardcoded);
   const innerW = w - 2;
   const sel = getSel(panelType);
-  const isFocused = getComponentSlice("layout").focus === panelType;
+  const isFocused = getFocus() === panelType;
   const t = theme();
   const source = _source(panelType, hardcoded);
   const lines = items.map((it, i) => {
@@ -402,7 +403,7 @@ function update(msg, slice) {
  */
 function _handleKey(msg, slice) {
   if (msg.key !== 'return') return slice;
-  const panelType = getComponentSlice("layout").focus;
+  const panelType = getFocus();
   if (!OWNED_TYPES.includes(panelType)) return slice;
   const hardcoded = _hardcodedFor(panelType);
   const item = _itemsFor(slice, panelType, hardcoded)[getSel(panelType)];
@@ -484,18 +485,17 @@ registerEffect('openFile', (eff) => {
   _openFileAsTab(eff.item, eff.panelType);
 });
 
-// resetPanelChrome: re-home the panel's cursor/scroll/filter on navigation.
-// Phase 4b — cursor/scroll live on each Navigator's nav slice and are
-// written by that Component's update; the filter map is still root chrome
-// so a small reducer write covers it.
+// resetPanelChrome: re-home the panel's cursor/scroll/filter on
+// navigation (Phase 4b cursor/scroll, Phase 4c filter — all live on
+// the owning Component's `slice.nav[panel]` and are written by its
+// own update via wrapped Msgs).
 registerEffect('resetPanelChrome', (eff) => {
   const api = require('./api');
   const compName = api.getComponentOwningPanel(eff.panel);
-  if (compName) {
-    api.dispatchMsg(api.wrap(compName, { type: 'set_cursor', panel: eff.panel, index: 0 }));
-    api.dispatchMsg(api.wrap(compName, { type: 'set_scroll', panel: eff.panel, offset: 0 }));
-  }
-  delete require('../runtime').getModel().ui.filters[eff.panel];
+  if (!compName) return;
+  api.dispatchMsg(api.wrap(compName, { type: 'set_cursor',   panel: eff.panel, index: 0 }));
+  api.dispatchMsg(api.wrap(compName, { type: 'set_scroll',   panel: eff.panel, offset: 0 }));
+  api.dispatchMsg(api.wrap(compName, { type: 'clear_filter', panel: eff.panel }));
 });
 
 function _openFileAsTab(item, panelType) {
@@ -544,9 +544,7 @@ function _openFileAsTab(item, panelType) {
 // --- per-panel-type def factory ---
 
 function _makeDef(panelType, hardcoded) {
-  return {
-    mode: 'list',
-    render: (panel, w, h, slice) => _renderFor(panel, w, h, slice, panelType, hardcoded),
+  return {    render: (panel, w, h, slice) => _renderFor(panel, w, h, slice, panelType, hardcoded),
     getItems: (slice) => _itemsFor(slice, panelType, hardcoded),
     getInfo: (item) => _getInfoFor(item, panelType, hardcoded),
     copyOptions: (item) => _copyOptionsFor(item, panelType),

@@ -20,7 +20,7 @@ term.stdout.write = (chunk, ...rest) => {
 const { _handleWheel } = require('../input');
 const { describe, it, eq, report } = require('./test-runner');
 const { getModel } = require('../runtime');
-const { getComponentSlice } = require('../components/api');
+const {getComponentSlice, getFocus } = require('../components/api');
 
 
 // _handleWheel now takes the owned model first (threaded from the pump).
@@ -46,11 +46,11 @@ function setupTwoPanel() {
 describe('[1] wheel over detail scrolls view, no focus change', () => {
   it('wheel-down increments detail.scroll while focus stays on hosts', () => {
     setupTwoPanel();
-    eq(getComponentSlice("layout").focus, 'hosts', 'starts on hosts');
+    eq(getFocus(), 'hosts', 'starts on hosts');
     const mutated = _handleWheel(model, 40, 5, +1);  // (mx, my) inside detail
     eq(mutated, true);
     eq(getComponentSlice('detail').scroll, 1, 'detail scrolled');
-    eq(getComponentSlice("layout").focus, 'hosts', 'focus unchanged — that is the friendlier semantics');
+    eq(getFocus(), 'hosts', 'focus unchanged — that is the friendlier semantics');
   });
   it('wheel-up decrements', () => {
     setupTwoPanel();
@@ -85,7 +85,7 @@ describe('[3] wheel target ≠ focused panel: focus stays put', () => {
     setupTwoPanel();
     getComponentSlice("layout").focus = 'hosts';
     _handleWheel(model, 40, 10, +1);
-    eq(getComponentSlice("layout").focus, 'hosts');
+    eq(getFocus(), 'hosts');
     eq(getComponentSlice('detail').scroll, 1);
   });
 });

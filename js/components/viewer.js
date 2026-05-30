@@ -7,7 +7,7 @@
  * root reducer doesn't touch the slice.
  *
  * Cross-layer concerns:
- *   - When a viewer write also flips model.modes / getComponentSlice("layout").focus (tab-open
+ *   - When a viewer write also flips model.modes / getFocus() (tab-open
  *     focuses 'detail' + sets/clears terminalMode; search enter/commit toggles
  *     detailSearchMode), the slice write happens inline and the cross-layer
  *     flag write is returned as an apply_msg Cmd (root reducer applies it).
@@ -24,7 +24,7 @@
 const { getTabInfo, isTerminalTab } = require('../tabs');
 const {
   esc, visibleLen, renderPanel,
-  getComponentSlice,
+  getComponentSlice, getFocus,
 } = require('./api');
 const ms = require('../model-search');
 const mt = require('../model-tabs');
@@ -240,7 +240,7 @@ function render(panel, w, h, slice) {
   const innerH = h - 2;
   const dp = getComponentSlice('layout').arrange.rightPanels.find(p => p.type === 'detail');
   const hotkey = dp ? dp.hotkey : '';
-  const isFocused = getComponentSlice("layout").focus === 'detail' || m.modes.terminalMode;
+  const isFocused = getFocus() === 'detail' || m.modes.terminalMode;
   if (isTerminalTab()) {
     return renderPanel({
       width: w, height: h, lines: [],
@@ -276,7 +276,7 @@ module.exports = {
   init,
   update,
   panelTypes: {
-    detail: { mode: 'content', render },
+    detail: { render },
   },
   // Test-only exports — not part of the Component contract.
   _init: init,

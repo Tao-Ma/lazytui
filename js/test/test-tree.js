@@ -4,7 +4,7 @@
  *
  * Run: node js/test/test-tree.js
  *
- * Avoids loading plugins/api.js (node-pty in cleanup→terminal); state.js
+ * Avoids loading components/api.js (node-pty in cleanup→terminal); state.js
  * has no PTY dependency, so we drive its API directly.
  */
 'use strict';
@@ -53,7 +53,6 @@ function setupTree() {
   getComponentSlice('groups').tab = 'all';
   setSel('groups', 0);
   getModel().currentGroup = '';
-  getModel().ui.filters = {};
   recomputeGroups();
   getModel().currentGroup = getComponentSlice('groups').list[0].name;
 }

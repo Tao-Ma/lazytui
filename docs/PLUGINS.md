@@ -78,9 +78,9 @@ Three commands are available without any Component contribution:
 | `:help` | Render per-context help into the detail panel |
 
 These live in `components/api.js#FRAMEWORK_COMMANDS`. They're collected by
-`getCommands()` alongside Component-contributed commands; the `_plugin`
-field (kept as the source-tag name for cmdline display) is
-`<framework>` for these entries.
+`getCommands()` alongside Component-contributed commands; the `_source`
+field tags each entry's origin (a Component name, or `<framework>` for
+the built-ins).
 
 ## Component Interface
 
@@ -109,7 +109,6 @@ module.exports = {
   // the Rich-markup string for the panel's grid cell.
   panelTypes: {
     mypanel: {
-      mode: 'list',           // 'list' | 'content' | 'stream' | 'tree' | 'terminal' | 'input'
       render: (panel, w, h, slice) => '...',
       getItems: (slice) => [ /* rows */ ],
       getInfo:  (item)  => [ /* detail lines */ ],
@@ -158,7 +157,6 @@ module.exports = {
   },
   panelTypes: {
     counter: {
-      mode: 'list',
       render: (panel, w, h, slice) =>
         `count: ${slice.n}\nlast key: ${slice.lastKey || '(none)'}`,
     },
@@ -210,6 +208,31 @@ ignoring unknown types is forward-compatible.
    Component's slice stays put; other Components keep processing the
    same Msg. The error is logged.
 
+### Nav chrome and the `dispatch.navSelect` helper
+
+Every Navigator panel's `slice.nav[panelType] = { cursor, scroll,
+multiSel, filter }` is the canonical per-panel chrome (Phase 4a + 4c).
+The shared `js/model-nav.js` leaf handles seven uniform Msg shapes
+(`set_cursor` / `set_scroll` / `multisel_toggle` /
+`multisel_select_all` / `multisel_clear` / `set_filter` /
+`clear_filter`) — every Navigator's `update` should call
+`mnav.apply(slice, msg)` first and fall through on miss.
+
+For cursor moves with cascade behavior (refresh detail body; on the
+groups panel also fire the currentGroup-change cascade), use the
+`dispatch.navSelect(model, panelType, index)` helper instead of
+emitting `set_cursor` by hand. It bundles:
+
+1. `dispatchMsg(wrap(<owner>, { type: 'set_cursor', panel, index }))`
+2. `showSelectedInfo(model)` — refresh the focused panel's info
+3. For `panelType === 'groups'`: `dispatchMsg(wrap('groups', { type:
+   'groups_selected', index }))` — the cascade that updates
+   `currentGroup`, resets per-group chrome, and resets the viewer.
+
+j/k, page-up/down, goto-top/bottom, mouse click on a panel row, and
+`state.selectGroup()` all route through `navSelect` so the cascade
+fires consistently.
+
 ### viewContributions — footer slot composition
 
 ```javascript
@@ -232,19 +255,24 @@ validation, init-at-register, Msg fan-out, return shapes (new slice /
 undefined / throw), Component-panel render, viewContributions. Use it
 as the template for your own Component tests.
 
-## Panel Modes
+## Panel kinds (informal)
 
-| Mode | Behavior | Example |
-|------|----------|---------|
-| `list` | Static items, ↑↓ selection, scroll | containers, files, history |
-| `content` | Readonly scrollable text | diffs, file preview, script display |
-| `stream` | Async line append, auto-scroll | `log -f`, build output |
-| `tree` | Expand/collapse nodes | groups |
-| `terminal` | PTY in panel region | embedded shell |
-| `input` | Editable text | commit message, search |
+Three kinds of panel coexist in tree (a taxonomy from the v0.5 design
+docs, not a runtime-enforced enum):
 
-Core TUI handles the rendering/interaction pattern for each mode.
-Components provide data and respond to events.
+- **Navigator** — list/tree of selectable rows. Owns a per-panel
+  cursor / scroll / multiSel on `slice.nav[panelType]` (Phase 4a) and
+  contributes `getItems` / `getInfo` / `copyOptions` / `idOf` /
+  optional `onKey` / optional `claimsKeys`. Groups, actions, history,
+  containers (docker), files, file-manager, config-status.
+- **Viewer** — single scrollable content surface (the detail panel).
+  Owns content + scroll + tabs + search + selection on its own slice.
+- **Monitor** — pure projection (stats). No cursor; no multiSel; the
+  panel reads upstream data (typically the hub) and renders.
+
+The `panelTypes[X]` def has no enum that distinguishes these — the
+shape of the def (presence of `getItems` / `idOf` / `keyHints`) tells
+the framework what behavior to apply.
 
 ## YAML Configuration
 

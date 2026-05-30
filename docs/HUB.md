@@ -382,40 +382,41 @@ generic table panel type (`type: table` in YAML, takes a `topic:` field)
 becomes feasible once the hub ships — that's a separate ~80 LOC follow-up
 plugin, not part of the hub itself.
 
-## 11. Plugin API additions
+## 11. Component API additions
 
 ```javascript
-// components/api.js — new exports
+// components/api.js — re-exports the hub singleton
 const { hub } = require('./api');
 ```
 
-The hub is a singleton accessed through `components/api.js` (existing
-plugin entry point). No new top-level dependency for plugin authors.
+The hub is a singleton accessed through `components/api.js`. No new
+top-level dependency for Component authors.
 
-Plugin authors that publish should call `hub.defineTopic()` once during
-`init(config)` so introspection (`:hub list`) shows their schema.
+Components that publish should call `hub.defineTopic()` once during
+their first refresh (or `init`) so introspection (`:hub list`) shows
+their schema.
 
 ## 12. Subscription lifecycle and panel coupling
 
 A panel-bound consumer must unsubscribe when the panel is removed from
 layout. Two strategies:
 
-- **Subscribe in `init(config)`** — for stable, plugin-lifetime
+- **Subscribe in `init()`** — for stable, Component-lifetime
   subscriptions. Most cases.
 - **Subscribe per-render** — for transient consumers. Costs a
   subscribe/unsubscribe per frame. Discouraged.
 
-If a plugin is loaded but its panels aren't in the active layout,
+If a Component is loaded but its panels aren't in the active layout,
 consumers still subscribe (cheap) but no rendering happens. The hub
-doesn't care; window stays small if the plugin is the only subscriber
-and only needs latest.
+doesn't care; window stays small if the Component is the only
+subscriber and only needs latest.
 
 ## 13. Threading / concurrency
 
 The TUI is a single Node.js event loop. No threads, no locks. Publishes
 are synchronous; `onUpdate` callbacks fire inline. Consumers must not
-block in `onUpdate` (no I/O, no `execSync`) — same rule as `getItems` et
-al. (PLUGINS.md §async contract).
+block in `onUpdate` (no I/O, no `execSync`) — same rule as `getItems`
+and other Component callbacks (see PRINCIPLES.md §12 discipline rules).
 
 ## 14. Storage primitives
 

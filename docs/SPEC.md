@@ -16,9 +16,9 @@ correctly.
 > **History.** Before v0.5 Phase 6 retired the Plugin API, lazytui
 > shipped two panel shapes — "Plugin" (simple, stateless) and
 > "Component" (TEA, slice-owning). Today every panel is a Component;
-> external authors write Components too. The `_plugin` source-tag
-> field on cmdline commands is historical (the rename to `_component`
-> wasn't worth the cmdline-display churn).
+> external authors write Components too. The cmdline registry's
+> source-tag field on each entry is `_source` (was `_plugin` before
+> v0.5; renamed for clarity).
 
 ## Quickstart — minimal Component
 
@@ -32,7 +32,6 @@ module.exports = {
   update: (msg, slice) => slice,
   panelTypes: {
     hello: {
-      mode: 'list',
       render: (panel, w, h, slice) => `(stub render of ${panel.title})`,
       getItems: (slice) => ['one', 'two', 'three'],
       getInfo: (item) => [`item: ${item}`],

@@ -118,7 +118,7 @@ function buildRegistry() {
 
   // Plugin / Component commands (static + dynamic), plus the framework
   // defaults + dynamic verbs (`quit`, `refresh`, `help`, `theme <name>`,
-  // `focus <panel>`, `design`) — all collected by plugins/api.js#getCommands.
+  // `focus <panel>`, `design`) — all collected by components/api.js#getCommands.
   for (const cmd of getCommands()) {
     reg.push({
       name: cmd.name.toLowerCase(),

@@ -163,7 +163,6 @@ api.registerComponent({
   update: (msg, slice) => mnav.isNavMsg(msg) ? mnav.apply(slice, msg) : slice,
   panelTypes: {
     listy: {
-      mode: 'list',
       render() { return ''; },
       getItems() { return ['a', 'b', 'c']; },
       idOf: (x) => x,
@@ -176,7 +175,6 @@ describe('[5] v-mode gates space', () => {
     kb.clearBindings();
     require('../state').setSel('listy', 1);
     require('../state').clearMultiSel('listy');
-    getModel().ui.filters = {};
     getComponentSlice("layout").focus = 'listy';
     getModel().modes.listSelectMode = false;
     getModel().modes.prefixMode = false;
@@ -306,7 +304,6 @@ describe('[9] space gate + group-switch reset', () => {
   });
   it('resetGroupContext clears listSelectMode', () => {
     getModel().modes.listSelectMode = true;
-    getModel().ui.filters = {};
     resetGroupContext();
     eq(getModel().modes.listSelectMode, false, 'select mode dropped on group switch');
   });

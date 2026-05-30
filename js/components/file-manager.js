@@ -18,7 +18,7 @@ const {
   esc, theme, renderPanel,
   getSel, getScroll, getFilter, isMultiSel,
   getItems: apiGetItems,
-  getComponentSlice,
+  getComponentSlice, getFocus,
 } = require('./api');
 
 function _getItems() {
@@ -54,7 +54,7 @@ function _copyOptions(item) {
 function _render(panel, w, h) {
   const cfiles = apiGetItems('file-manager');
   const sel = getSel('file-manager');
-  const isFocused = getComponentSlice("layout").focus === 'file-manager';
+  const isFocused = getFocus() === 'file-manager';
   const maxPathLen = w - 5;
   const lines = cfiles.map((cf, i) => {
     let p = cf.path;
@@ -84,9 +84,7 @@ module.exports = {
   init: () => ({ nav: { 'file-manager': mnav.init() } }),
   update: (msg, slice) => mnav.isNavMsg(msg) ? mnav.apply(slice, msg) : slice,
   panelTypes: {
-    'file-manager': {
-      mode: 'list',
-      render: _render,
+    'file-manager': {      render: _render,
       getItems: _getItems,
       getInfo: _getInfo,
       copyOptions: _copyOptions,

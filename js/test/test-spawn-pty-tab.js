@@ -40,7 +40,7 @@ history.start = (key, cmd, opts) => { historyStarts.push({ key, cmd, opts }); };
 require('./test-runner');
 const runtime = require('../runtime');   // viewMode migrated to the TEA root model (v0.5 spike)
 const { getModel } = runtime;
-const { getComponentSlice } = require('../components/api');
+const {getComponentSlice, getFocus } = require('../components/api');
 getModel().projectDir = '/tmp/spawn-test-cwd';
 getModel().currentGroup = 'g1';
 getModel().config = { groups: { g1: { actions: {}, terminals: {} } } };
@@ -97,7 +97,7 @@ describe('[1] spawn outside tmux → embedded PTY tab + viewMode=full', () => {
     eq(getComponentSlice('layout').viewMode, 'full', 'viewMode flipped to full');
   });
   it('focuses the detail panel (set by addEphemeralTab)', () => {
-    eq(getComponentSlice("layout").focus, 'detail', 'focus moved to detail');
+    eq(getFocus(), 'detail', 'focus moved to detail');
   });
   it('history records detached:false (child runs in our process)', () => {
     const last = historyStarts[historyStarts.length - 1];

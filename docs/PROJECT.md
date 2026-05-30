@@ -152,8 +152,9 @@ merged config.
 
 When the project needs panel types or behavior not covered by the
 built-ins (a custom dashboard, per-item shortcuts, group-action
-synthesis), write a JS plugin. Contract and examples are in
-**PLUGINS.md** (JS plugins section).
+synthesis), write a Component. Contract and examples are in
+**PLUGINS.md** (Component contract — same API external authors use
+that the in-tree built-ins do).
 
 ## Boundary check
 

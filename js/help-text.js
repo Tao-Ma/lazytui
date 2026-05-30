@@ -4,7 +4,7 @@
  * keyHints + collected `:` cmdline commands.
  *
  * Lives outside dispatch.js so the framework default `:help` command
- * (registered in plugins/api.js) can show help without dispatch
+ * (registered in components/api.js) can show help without dispatch
  * needing to import api back. dispatch.js's handleAction('show_help')
  * forwards to showHelp() here.
  *
@@ -15,16 +15,16 @@
 const { allPanels, setDetail } = require('./state');
 const { getModel } = require('./runtime');
 const { esc } = require('./ansi');
-const { getCommands, getPanelDef, getComponentSlice } = require('./components/api');
+const {getCommands, getPanelDef, getComponentSlice, getFocus } = require('./components/api');
 
 /**
  * Build the help-text lines (Rich markup). Pure read of state +
  * plugin registry; doesn't paint.
  */
 function helpLines() {
-  const focusedPanel = allPanels().find(p => p.type === getComponentSlice("layout").focus);
+  const focusedPanel = allPanels().find(p => p.type === getFocus());
   const focusName = focusedPanel ? focusedPanel.title : 'TUI';
-  const def = getPanelDef(getComponentSlice("layout").focus);
+  const def = getPanelDef(getFocus());
   const isList = !!(def && typeof def.getItems === 'function');
 
   const lines = [
@@ -58,7 +58,7 @@ function helpLines() {
     );
   }
 
-  if (getComponentSlice("layout").focus === 'detail') {
+  if (getFocus() === 'detail') {
     lines.push('', '[dim]Detail panel — reading mode[/]',
       '  j / k / arrows Scroll view ±1 line',
       '  , .            Half-page up / down',

@@ -428,26 +428,28 @@ describe('[8a] chrome-only Component (no panelTypes) is supported', () => {
 
 describe('[8] getItems reads the component slice (list panel)', () => {
   it('rows come from the slice; the framework filter applies over them', () => {
+    const mnav = require('../model-nav');
     api.registerComponent({
       name: 'list',
-      init: () => ({ rows: ['alpha', 'beta', 'gamma'] }),
-      update: (msg, slice) => slice,
+      // Phase 4c — filter text lives on `slice.nav[panelType].filter`;
+      // shared mnav leaf handles `set_filter` / `clear_filter` Msgs.
+      init: () => ({ rows: ['alpha', 'beta', 'gamma'], nav: { list: mnav.init() } }),
+      update: (msg, slice) => mnav.isNavMsg(msg) ? mnav.apply(slice, msg) : slice,
       panelTypes: {
         list: {
           render: () => '',
-          getItems: (slice) => slice.rows,   // reads the SLICE, not S
+          getItems: (slice) => slice.rows,   // reads the SLICE
           filterable: true,
         },
       },
     });
-    getModel().ui.filters = getModel().ui.filters || {};
-    delete getModel().ui.filters.list;
+    api.dispatchMsg(api.wrap('list', { type: 'clear_filter', panel: 'list' }));
     eq(api.getItems('list').join(','), 'alpha,beta,gamma', 'unfiltered = slice rows');
-    getModel().ui.filters.list = 'a';
+    api.dispatchMsg(api.wrap('list', { type: 'set_filter', panel: 'list', text: 'a' }));
     eq(api.getItems('list').join(','), 'alpha,beta,gamma', 'substring "a" matches all three');
-    getModel().ui.filters.list = 'bet';
+    api.dispatchMsg(api.wrap('list', { type: 'set_filter', panel: 'list', text: 'bet' }));
     eq(api.getItems('list').join(','), 'beta', 'framework filter narrows the slice rows');
-    delete getModel().ui.filters.list;
+    api.dispatchMsg(api.wrap('list', { type: 'clear_filter', panel: 'list' }));
   });
 });
 

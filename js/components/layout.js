@@ -31,6 +31,12 @@
  */
 'use strict';
 
+// Pure design-mode layout transforms — mutate `slice.design` (via
+// `getComponentSlice('layout').design` internally). Called from this
+// Component's update, so the slice writes happen within layout.update's
+// call stack (single-writer per slice preserved).
+const mdesign = require('../model-design');
+
 function init() {
   return {
     // 1g: { leftPanels, rightPanels, leftWidth, detailHeightPct }.
@@ -110,6 +116,101 @@ function update(msg, slice) {
       const next = msg.focus != null ? msg.focus : slice.focus;
       return [{ ...slice, focus: next }, [{ type: 'show_selected_info' }]];
     }
+    // arrange + dirty writes (post-Phase-6 follow-up). :save-layout sends
+    // `{ dirty: false }`; :restore-layout sends `{ arrange, dirty: false }`
+    // (the rebuilt struct from `state.rebuildLayoutFromConfig`). Both are
+    // wrapped Msgs dispatched into layout — the layout Component is the
+    // single writer of its own slice.
+    case 'set_arrange': {
+      const next = { ...slice };
+      if (msg.arrange !== undefined) next.arrange = msg.arrange;
+      if (msg.dirty   !== undefined) next.dirty   = !!msg.dirty;
+      return next;
+    }
+    // design-mode state (post-Phase-6 follow-up — single-writer cleanup).
+    // Pre-fix: `runtime.update` wrote `slice.design.*` from a dozen
+    // branches. Now layout.update owns every slice write; the root chrome
+    // mode flags (`designMode`, `designTitleEditMode`) ride on `apply_msg`
+    // Cmds the reducer applies (`mode_set` / `mode_clear`). The mdesign
+    // leaf functions still take `model` and write the slice in place via
+    // `getComponentSlice('layout').design` — same access path, but now
+    // their writes originate inside layout.update's call stack.
+    case 'design_enter': {
+      // Reset working state on entry; preserve `enabled` (the boot-time
+      // --design CLI flag).
+      const enabled = slice.design && slice.design.enabled;
+      slice.design = { enabled, selectedIdx: 0, drag: null, undo: [], redo: [], titleEdit: { active: false, text: '' } };
+      return [slice, [{ type: 'apply_msg', msg: { type: 'mode_set', flag: 'designMode' } }]];
+    }
+    case 'design_exit': {
+      const enabled = slice.design && slice.design.enabled;
+      slice.design = { enabled, selectedIdx: 0, drag: null, undo: [], redo: [], titleEdit: { active: false, text: '' } };
+      return [slice, [
+        { type: 'apply_msg', msg: { type: 'mode_clear', flag: 'designMode' } },
+        { type: 'apply_msg', msg: { type: 'mode_clear', flag: 'designTitleEditMode' } },
+        { type: 'show_selected_info' },
+      ]];
+    }
+    case 'design_nav':
+    case 'design_reorder':
+    case 'design_move_col':
+    case 'design_resize':
+    case 'design_panel_height':
+    case 'design_undo':
+    case 'design_redo':
+    case 'design_title_enter':
+    case 'design_title_submit':
+    case 'design_mouse_press':
+    case 'design_mouse_motion':
+    case 'design_mouse_release': {
+      // mdesign.* leaves read app-global state (model.config, model.modes)
+      // + mutate slice.design in place via getComponentSlice. The model is
+      // resolved inline here so callers don't have to thread it into the
+      // Msg.
+      const m = require('../runtime').getModel();
+      const cmds = [];
+      switch (msg.type) {
+        case 'design_nav':          mdesign.navSelect(m, msg.dir); break;
+        case 'design_reorder':      mdesign.reorderWithin(m, msg.dir); mdesign.clampSelected(m); break;
+        case 'design_move_col':     mdesign.moveColumn(m, msg.col);    mdesign.clampSelected(m); break;
+        case 'design_resize':       mdesign.resizeWidthOrDetail(m, msg.delta); break;
+        case 'design_panel_height': mdesign.resizeFocusedPanelHeight(m, msg.delta); break;
+        case 'design_undo':         mdesign.undo(m); mdesign.clampSelected(m); break;
+        case 'design_redo':         mdesign.redo(m); mdesign.clampSelected(m); break;
+        case 'design_title_enter':
+          mdesign.titleEnter(m);
+          cmds.push({ type: 'apply_msg', msg: { type: 'mode_set', flag: 'designTitleEditMode' } });
+          break;
+        case 'design_title_submit': {
+          const text = slice.design ? slice.design.titleEdit.text : '';
+          mdesign.setSelectedTitle(m, text);
+          if (slice.design) slice.design.titleEdit = { active: false, text: '' };
+          cmds.push({ type: 'apply_msg', msg: { type: 'mode_clear', flag: 'designTitleEditMode' } });
+          break;
+        }
+        case 'design_mouse_press':   mdesign.mousePress(m, msg.mx, msg.my, msg.cols); break;
+        case 'design_mouse_motion':  mdesign.mouseMotion(m, msg.mx, msg.my, msg.cols); break;
+        case 'design_mouse_release': mdesign.mouseRelease(m); break;
+      }
+      return cmds.length ? [slice, cmds] : slice;
+    }
+    case 'design_title_key': {
+      const te = slice.design && slice.design.titleEdit;
+      if (!te) return slice;
+      if (msg.key === 'backspace' || msg.seq === '\x7f' || msg.seq === '\b') { te.text = te.text.slice(0, -1); return slice; }
+      if (msg.seq && msg.seq.length === 1 && msg.seq >= ' ' && msg.seq < '\x7f') { te.text += msg.seq; return slice; }
+      return slice;
+    }
+    case 'design_title_cancel': {
+      if (slice.design) slice.design.titleEdit = { active: false, text: '' };
+      return [slice, [{ type: 'apply_msg', msg: { type: 'mode_clear', flag: 'designTitleEditMode' } }]];
+    }
+    // Wipe the session's undo/redo history. :restore-layout emits this
+    // because the runtime layout the user was editing is gone — the
+    // history pointed at it no longer makes sense.
+    case 'design_clear_undo':
+      mdesign.clearUndoStacks(require('../runtime').getModel());
+      return slice;
     default:
       return slice;
   }

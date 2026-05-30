@@ -15,7 +15,6 @@ const { getComponentSlice } = require('../components/api');
 
 describe('[1] resetGroupContext drops ROOT chrome state', () => {
   it('clears list-select + per-panel filters/multi-sel (root layer)', () => {
-    getModel().ui.sel = {}; getModel().ui.filters = {}; getModel().ui.multiSel = {};
     getModel().modes.listSelectMode = true;
     resetGroupContext();
     eq(getModel().modes.listSelectMode, false, 'list-select mode cleared');

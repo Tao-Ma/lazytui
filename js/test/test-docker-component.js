@@ -36,7 +36,6 @@ function slice0() {
 function setup(containers = ['c1', 'c2'], focused = true) {
   getModel().config = { groups: { g1: { name: 'g1', containers } } };
   getModel().currentGroup = 'g1';
-  getModel().ui.filters = {};
   // Reset per-panel nav chrome on the docker Component's slice for a
   // deterministic baseline (cursor → 0, multiSel empty).
   setSel('containers', 0);

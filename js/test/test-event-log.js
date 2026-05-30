@@ -125,7 +125,7 @@ describe('[5] hooks fire from the wired sources', () => {
   // Wired sources (see commit message):
   //   - dispatch.handleKey       → 'key'
   //   - hub.publish              → 'publish'
-  //   - plugins/api.refreshAll   → 'refresh'
+  //   - components/api.refreshAll   → 'refresh'
   //   - actions.runAction        → 'action'
 
   it('hub.publish appends a "publish" event', () => {

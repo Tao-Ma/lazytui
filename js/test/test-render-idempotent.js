@@ -62,10 +62,8 @@ function setupState() {
   };
   getComponentSlice('groups').expanded = new Set();
   getComponentSlice('groups').tab = 'all';
-  getModel().ui.sel = { groups: 0, actions: 0, 'file-manager': 0, history: 0, detail: 0 };
-  getModel().ui.scroll = { groups: 0, actions: 0, 'file-manager': 0, history: 0 };
-  getModel().ui.multiSel = {};
-  getModel().ui.filters = {};
+  // Phase 4a — `ui.sel` / `ui.scroll` / `ui.multiSel` retired (each Navigator
+  // owns its own `nav` slice). Only `ui.filters` survives at root.
   getModel().currentGroup = '';
   recomputeGroups();
   getModel().currentGroup = getComponentSlice('groups').list[0].name;

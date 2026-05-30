@@ -37,7 +37,7 @@
 // the mode flags (visual / select) live in model.modes.
 const { getModel } = require('./runtime');
 const { stripMarkup, charWidth, esc } = require('./ansi');
-const { getComponentSlice } = require('./components/api');
+const {getComponentSlice, getFocus } = require('./components/api');
 
 // All reads target the detail Component slice (lines / select / cursor /
 // scroll / search). Helper returns undefined if detail isn't registered
@@ -317,7 +317,7 @@ function _scrollView(delta) {
 
 function onDetailKey(key, seq) {
   const m = getModel();
-  if (getComponentSlice("layout").focus !== 'detail' || m.modes.terminalMode) return false;
+  if (getFocus() !== 'detail' || m.modes.terminalMode) return false;
   // Higher-priority modes (menu/cmd/etc.) are filtered upstream in
   // modeChain; this guard is belt-and-suspenders for any future caller.
   if (m.modes.menuOpen || m.modes.cmdMode || m.modes.confirmMode || m.modes.promptMode || m.modes.copyMode) return false;

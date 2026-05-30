@@ -19,7 +19,7 @@ const {
   esc, theme, renderPanel,
   getSel, getScroll, isMultiSel,
   getItems: apiGetItems, setActiveTab,
-  getComponentSlice,
+  getComponentSlice, getFocus,
 } = require('./api');
 
 function getItems() { return history.all(); }
@@ -81,7 +81,7 @@ function copyOptions(entry) {
 function render(panel, w, h) {
   const items = apiGetItems('history', null);
   const sel = getSel('history');
-  const isFocused = getComponentSlice("layout").focus === 'history';
+  const isFocused = getFocus() === 'history';
   const lines = items.map((entry, i) => {
     const time = fmtTime(entry.startedAt);
     const dur = fmtDuration(entry).padStart(5, ' ');
@@ -131,7 +131,7 @@ function update(msg, slice) {
   // Phase 4a — nav chrome Msgs handled by the shared leaf.
   if (mnav.isNavMsg(msg)) return mnav.apply(slice, msg);
   if (msg.type !== 'key' || msg.key !== 'return') return slice;
-  if (getComponentSlice("layout").focus !== 'history') return slice;
+  if (getFocus() !== 'history') return slice;
   const entry = history.all()[getSel('history')];
   if (!entry) return slice;
   return [slice, [{ type: 'historyReplay', entry }]];
@@ -151,7 +151,7 @@ module.exports = {
   update,
   panelTypes: {
     history: {
-      mode: 'list', render,
+      render,
       getItems, getInfo, copyOptions,
       // Enter is handled in update() — suppress the framework default
       // (run_selected → showSelectedInfo) so it doesn't fire twice.

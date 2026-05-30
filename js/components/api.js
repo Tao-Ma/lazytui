@@ -105,9 +105,6 @@ function _validatePanelDef(compName, type, def) {
   if (def.customFilter !== undefined && typeof def.customFilter !== 'boolean') {
     console.error(`[${label}] panelType '${type}' has non-boolean 'customFilter'; treated as truthy`);
   }
-  if (def.mode !== undefined && typeof def.mode !== 'string') {
-    console.error(`[${label}] panelType '${type}' has non-string 'mode'`);
-  }
   if (def.keyHints !== undefined && typeof def.keyHints !== 'string') {
     console.error(`[${label}] panelType '${type}' has non-string 'keyHints'`);
   }
@@ -123,7 +120,7 @@ function _validatePanelDef(compName, type, def) {
  *   - name: string
  *   - init(): slice       — initial state slice for this component
  *   - update(msg, slice)  — pure: returns the new slice (or [slice, effects])
- *   - panelTypes (opt):   — { [type]: { mode, render, getItems?, getInfo?,
+ *   - panelTypes (opt):   — { [type]: { render, getItems?, getInfo?,
  *                           copyOptions?, filterText?, idOf?, onKey?,
  *                           claimsKeys?, keyHints?, ... } }. `render` gets
  *                           (panel, w, h, slice). Omitted entirely for
@@ -333,7 +330,7 @@ function dispatchMsg(msg) {
   // Broadcast path. Only the 4 framework signals fan out; everything
   // else must arrive wrapped.
   if (msg && BROADCAST_TYPES.has(msg.type)) {
-    const keyOwner = msg.type === 'key' ? componentPanelTypeMap[getComponentSlice('layout').focus] : undefined;
+    const keyOwner = msg.type === 'key' ? componentPanelTypeMap[getFocus()] : undefined;
     for (const [name, comp] of Object.entries(components)) {
       if (msg.type === 'key' && name !== keyOwner) continue;
       _runComponentUpdate(name, comp, msg);
@@ -370,6 +367,19 @@ function _runComponentUpdate(name, comp, msg) {
 function getComponent(name)              { return components[name]; }
 function getComponentSlice(name)         { return _readSlice(name); }
 function getComponentOwningPanel(panelT) { return componentPanelTypeMap[panelT]; }
+
+/**
+ * Read the currently focused panel type. Convenience for the common
+ * `getFocus()` read — focus lives on layout's
+ * slice (Phase 1c) and is read at ~50 sites across dispatch / layout /
+ * Component renders. Writes still go through `dispatchMsg(wrap('layout',
+ * { type: 'focus_set', focus: X }))`; there's no `setFocus()` because
+ * focus is single-writer (only `layout.update` writes it).
+ */
+function getFocus() {
+  const s = _readSlice('layout');
+  return s ? s.focus : null;
+}
 
 /**
  * Ask all registered Components that contribute item status (e.g. docker
@@ -418,10 +428,13 @@ function getItems(panelType) {
   const raw = def.getItems(getComponentSlice(compName));
   if (!def.filterable) return raw;
   if (def.customFilter) return raw;
-  // Inlined filter match — kept here (rather than imported from ../filter)
-  // so plugins/api stays free of a back-edge to filter.js, which lazy-
-  // requires from this module for filterable-panel detection.
-  const filterText = (getModel().ui.filters[panelType] || '');
+  // Phase 4c — committed filter text lives on each Navigator's nav
+  // slice (`slice.nav[panelType].filter`). Read it off the same slice
+  // we already have; falls back to '' if no nav entry (Monitor panels,
+  // panels that haven't been touched yet).
+  const slice = getComponentSlice(compName);
+  const navEntry = slice && slice.nav && slice.nav[panelType];
+  const filterText = (navEntry && navEntry.filter) || '';
   if (!filterText) return raw;
   const lc = filterText.toLowerCase();
   const fieldOf = typeof def.filterText === 'function' ? def.filterText : String;
@@ -550,7 +563,7 @@ const FRAMEWORK_COMMANDS = [
       if (error) {
         setDetail(`[red]Layout save failed:[/] ${error.message}`);
       } else {
-        require('../dispatch').applyMsg(m, { type: 'set_layout', dirty: false });
+        dispatchMsg(wrap('layout', { type: 'set_arrange', dirty: false }));
         setDetail(`[green]Layout saved to[/] ${m.configPath}`);
       }
     },
@@ -561,12 +574,12 @@ const FRAMEWORK_COMMANDS = [
     run: () => {
       const { rebuildLayoutFromConfig, setDetail } = require('../state');
       const m = getModel();
-      require('../dispatch').applyMsg(m, {
-        type: 'set_layout', layout: rebuildLayoutFromConfig(m.config), dirty: false,
-      });
+      dispatchMsg(wrap('layout', {
+        type: 'set_arrange', arrange: rebuildLayoutFromConfig(m.config), dirty: false,
+      }));
       // The runtime layout the user was working with is gone; the
       // undo/redo history pointed at it is no longer meaningful.
-      try { require('../design')._clearUndoStacks(); } catch (e) { /* design not yet loaded — fine */ }
+      dispatchMsg(wrap('layout', { type: 'design_clear_undo' }));
       setDetail(`[green]Layout restored from[/] ${m.configPath}`);
     },
   },
@@ -594,7 +607,7 @@ function _frameworkDynamicCommands(m) {
       desc: `Focus the ${p.title} panel`,
       // focus_set is handled by layout.update (Phase 1c); route via
       // Component fan-out so the cascade (show_selected_info Cmd) runs.
-      // Writing getComponentSlice("layout").focus directly would skip the refresh.
+      // Writing getFocus() directly would skip the refresh.
       run: () => {
         dispatchMsg(wrap('layout', { type: 'focus_set', focus: p.type }));
       },
@@ -619,26 +632,24 @@ function _frameworkDynamicCommands(m) {
  *   4. Component `getCommands(model)` (state-derived candidates).
  *
  * Each command must have { name, desc, run(args) }. The source name
- * is stamped on `_plugin` (the source-tag field name, preserved from
- * the pre-Phase-6 surface for cmdline display) for telemetry /
- * disambiguation; framework defaults + dynamic framework verbs are
- * stamped `<framework>`.
+ * is stamped on `_source` for telemetry / disambiguation; framework
+ * defaults + dynamic framework verbs are stamped `<framework>`.
  */
 function getCommands() {
   const out = [];
   for (const c of FRAMEWORK_COMMANDS) {
-    out.push({ ...c, _plugin: '<framework>' });
+    out.push({ ...c, _source: '<framework>' });
   }
   const m = getModel();
   for (const c of _frameworkDynamicCommands(m)) {
-    out.push({ ...c, _plugin: '<framework>' });
+    out.push({ ...c, _source: '<framework>' });
   }
   for (const comp of Object.values(components)) {
     const collect = (list) => {
       if (!Array.isArray(list)) return;
       for (const c of list) {
         if (!c || typeof c.name !== 'string' || typeof c.run !== 'function') continue;
-        out.push({ ...c, _plugin: comp.name });
+        out.push({ ...c, _source: comp.name });
       }
     };
     collect(comp.commands);
@@ -674,7 +685,7 @@ function leaveTerminalMode() {
 module.exports = {
   // --- Component registry / lifecycle ---
   registerComponent, registerEffect, dispatchMsg, wrap,
-  getComponent, getComponentSlice, getComponentOwningPanel,
+  getComponent, getComponentSlice, getComponentOwningPanel, getFocus,
   getPanelDef, getItems, idOf, selectedOrFocused,
   refreshAll, cleanupComponents,
   getCommands, getGroupActions, statusFor,

@@ -6,7 +6,7 @@
  *   - Root reducer (`runtime.update`) returns Cmd descriptors;
  *     `dispatch.applyMsg` runs them via `runEffects` here.
  *   - Component `update(msg, slice)` returns effect descriptors;
- *     `plugins/api.dispatchMsg` runs them via `runEffects` here.
+ *     `components/api.dispatchMsg` runs them via `runEffects` here.
  *
  * Cmds and effects are the same thing — plain descriptors
  * (`{ type: 'setDetail', lines: [...] }`). Handlers register by type;

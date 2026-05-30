@@ -1,11 +1,11 @@
 /**
- * Pure leaf for per-panel nav chrome (cursor / scroll / multiSel).
+ * Pure leaf for per-panel nav chrome (cursor / scroll / multiSel / filter).
  *
- * Phase 4a moved nav chrome off the root model and into each Navigator
- * Component's slice under `slice.nav[panelType] = { cursor, scroll,
- * multiSel }`. The same five Msg shapes apply to every Navigator, so
- * the handlers live here as a shared pure transform — each Navigator's
- * update() calls `apply(slice, msg)` first and falls through on miss.
+ * Phase 4a moved cursor/scroll/multiSel onto each Navigator's slice;
+ * Phase 4c folded the committed filter text in too. All four fields live
+ * at `slice.nav[panelType] = { cursor, scroll, multiSel, filter }`. One
+ * shared transform handles every Navigator — each Component's update()
+ * calls `apply(slice, msg)` first and falls through on miss.
  *
  * Returns `slice` (passed through, with the matching nav entry mutated
  * in place) when a nav Msg matched, or `undefined` when the Msg is not
@@ -19,12 +19,15 @@
  *   { type: 'multisel_toggle',    panel, id }
  *   { type: 'multisel_select_all',panel, ids }
  *   { type: 'multisel_clear',     panel }
+ *   { type: 'set_filter',         panel, text }   // Phase 4c
+ *   { type: 'clear_filter',       panel }         // Phase 4c
  */
 'use strict';
 
 const NAV_TYPES = new Set([
   'set_cursor', 'set_scroll',
   'multisel_toggle', 'multisel_select_all', 'multisel_clear',
+  'set_filter', 'clear_filter',
 ]);
 
 function isNavMsg(msg) {
@@ -33,7 +36,7 @@ function isNavMsg(msg) {
 
 /** Init a fresh nav entry. Multi-panel Components seed one per panel type. */
 function init() {
-  return { cursor: 0, scroll: 0, multiSel: new Set() };
+  return { cursor: 0, scroll: 0, multiSel: new Set(), filter: '' };
 }
 
 /**
@@ -65,6 +68,12 @@ function apply(slice, msg) {
       return slice;
     case 'multisel_clear':
       entry.multiSel.clear();
+      return slice;
+    case 'set_filter':
+      entry.filter = typeof msg.text === 'string' ? msg.text : '';
+      return slice;
+    case 'clear_filter':
+      entry.filter = '';
       return slice;
     default:
       return slice;

@@ -58,7 +58,7 @@ No new authoring is required for anything that already exists in YAML.
 Components extend the registry by exporting `commands`:
 
 ```javascript
-// plugins/foo.js
+// js/components/foo.js
 module.exports = {
   name: 'foo',
   init: () => ({ ... }),
@@ -168,7 +168,7 @@ Out of scope for v1 (deferred until a real use case shows up):
 │                                  matches dropdown      │
 │  runAt(sel, args)             — dispatch to source     │
 ├─ components/api.js ─────────────────────────────────────┤
-│  getCommands() → [{name,desc,run,_plugin}]             │
+│  getCommands() → [{name,desc,run,_source}]             │
 │    walks FRAMEWORK_COMMANDS +                          │
 │          static component.commands +                   │
 │          dynamic component.getCommands(model)          │
@@ -179,20 +179,24 @@ Out of scope for v1 (deferred until a real use case shows up):
 
 Render path mirrors the existing menu/copy/design overlays:
 
-1. `S.cmdMode` flag flips on `:`
-2. `layout.render()` paints main columns, then footer; if `S.cmdMode`,
+1. `model.modes.cmdMode` flag flips on `:` (cmdline_enter Msg).
+2. `layout.render()` paints main columns, then footer; if cmdMode,
    `renderCmdline()` overwrites the bottom row and paints the dropdown
    directly above it.
 3. `_wasOverlayActive` already drives a force-full repaint on overlay
-   close — extend to include `cmdMode` so the dropdown wipe is clean.
+   close — cmdMode is included so the dropdown wipe is clean.
 
-### State (state.js additions)
+### State (root model)
 
 ```javascript
-S.cmdMode = false;        // true while cmdline is open
-S.cmdText = '';           // current input buffer
-S.cmdSel = 0;             // dropdown selection index
-S.cmdMatches = [];        // cached matches for current text
+model.modes.cmdMode           // true while cmdline is open
+model.modal.cmdline = {
+  text: '',                   // current input buffer
+  sel: 0,                     // dropdown selection index
+  matches: [],                // cached render-safe match projection
+                              // ({display, desc, kind} — closures stay
+                              //  module-held in cmdline.js)
+}
 ```
 
 ## Sizing — what costs what

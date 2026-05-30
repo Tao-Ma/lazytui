@@ -70,13 +70,13 @@ function renderDesignOverlay() {
   if (!t) return;
 
   const COLS = cols();
+  const layoutSlice = getComponentSlice('layout');
   const leftW = layoutSlice.arrange.leftWidth;
   const colX = t.column === 'left' ? 0 : leftW;
   const colW = t.column === 'left' ? leftW : COLS - leftW;
 
   // Resolve insertion y: t.index === 0 → top of column; else bottom edge of
   // the panel at index t.index - 1.
-  const layoutSlice = getComponentSlice('layout');
   const panels = t.column === 'left' ? layoutSlice.arrange.leftPanels : layoutSlice.arrange.rightPanels;
   let lineY;
   if (panels.length === 0) {
@@ -103,9 +103,11 @@ function titleEditText() {
 }
 
 /** `:restore-layout` escape hatch — wipe the session's undo history when the
- *  user resets the layout from disk. */
+ *  user resets the layout from disk. Production routes through the layout
+ *  Component (`design_clear_undo` Msg); this test-only shim mirrors that. */
 function _clearUndoStacks() {
-  mdesign.clearUndoStacks(getModel());
+  const api = require('./components/api');
+  api.dispatchMsg(api.wrap('layout', { type: 'design_clear_undo' }));
 }
 
 // --- test-facing shims (production drives these via input.js → applyMsg /
@@ -116,7 +118,10 @@ function onMouseEvent(kind, mx, my) {
             : kind === 'motion' ? { type: 'design_mouse_motion', mx, my, cols: cols() }
             : kind === 'release' ? { type: 'design_mouse_release' }
             : null;
-  if (msg) require('./dispatch').applyMsg(getModel(), msg);
+  if (msg) {
+    const api = require('./components/api');
+    api.dispatchMsg(api.wrap('layout', msg));
+  }
 }
 
 function pointToResizeTarget(mx, my) { return mdesign.pointToResizeTarget(getModel(), mx, my, cols()); }

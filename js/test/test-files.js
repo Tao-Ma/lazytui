@@ -75,9 +75,8 @@ function freshState(root, panelType = 'files', extraPanelCfg = {}) {
     rightPanels: [],
     leftWidth: 30, detailHeightPct: 60,
   };
-  // Phase 4a — only `ui.filters` survives at root; cursor/scroll/multiSel
-  // live on each Component's nav slice. Re-home the panels we touch.
-  getModel().ui.filters = {};
+  // Phase 4a/4c — every per-panel chrome (cursor/scroll/multiSel/filter)
+  // lives on each Component's nav slice. Re-home the panels we touch.
   setSel(panelType, 0); setScroll(panelType, 0);
   getComponentSlice('detail').contentTabs = {};
   getComponentSlice('detail').ephemeralTerminals = {};
@@ -109,10 +108,10 @@ function makeDriver() {
       }
       dispatch({ type: 'dirLoaded', panelType: eff.panelType, cwd: eff.cwd, seq: eff.seq, items, error });
     } else if (eff.type === 'resetPanelChrome') {
-      // Mirrors the reducer's panel_reset: cursor/scroll → 0 via wrapped
-      // Msgs into the owning Component's nav slice; filter map at root.
+      // Mirrors the production resetPanelChrome effect: cursor / scroll
+      // / filter → 0/'' on the owning Component's nav slice.
       setSel(eff.panel, 0); setScroll(eff.panel, 0);
-      delete getModel().ui.filters[eff.panel];
+      api.dispatchMsg(api.wrap('files', { type: 'clear_filter', panel: eff.panel }));
     } else if (eff.type === 'openFile') {
       opened.push(eff);
     }
@@ -232,12 +231,12 @@ describe('[6] regex filter — invalid pattern shows everything', () => {
       const d = makeDriver();
       d.dispatch({ type: 'refresh' });
 
-      getModel().ui.filters['file-browser'] = 'be';
+      api.dispatchMsg(api.wrap('files', { type: 'set_filter', panel: 'file-browser', text: 'be' }));
       const names1 = d.items('file-browser', 'filesystem').map(i => i.name);
       assert(names1.includes('beta.txt') && names1.includes('..'));
       assert(!names1.includes('alpha.txt'));
 
-      getModel().ui.filters['file-browser'] = '[';
+      api.dispatchMsg(api.wrap('files', { type: 'set_filter', panel: 'file-browser', text: '[' }));
       const names2 = d.items('file-browser', 'filesystem').map(i => i.name);
       assert(names2.includes('alpha.txt') && names2.includes('beta.txt'),
         'invalid regex passes everything through');

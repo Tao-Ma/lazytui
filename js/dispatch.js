@@ -24,7 +24,7 @@ const { allPanels, setDetail, getSel } = require('./state');
 const { render } = require('./layout');
 const { showSelectedInfo } = require('./viewer');
 const { runAction } = require('./actions');
-const { refreshAll, getPanelDef, getItems, idOf, getGroupActions, getComponentSlice, dispatchMsg, wrap } = require('./components/api');
+const {refreshAll, getPanelDef, getItems, idOf, getGroupActions, getComponentSlice, dispatchMsg, wrap, getFocus } = require('./components/api');
 const copy = require('./copy');
 const registerPopup = require('./register-popup');
 const { isTerminalTab, activeTerminalId, findEphemeralByid,
@@ -88,13 +88,13 @@ function navSelect(model, panelType, index) {
  * index (getItems is view-side derivation) then hands it to `navSelect`.
  */
 function moveSel(model, delta) {
-  const def = getPanelDef(getComponentSlice("layout").focus);
+  const def = getPanelDef(getFocus());
   if (!def || typeof def.getItems !== 'function') return;
-  const items = getItems(getComponentSlice("layout").focus);
-  const sel = getSel(getComponentSlice("layout").focus);
+  const items = getItems(getFocus());
+  const sel = getSel(getFocus());
   const newSel = sel + delta;
   if (newSel < 0 || newSel >= items.length) return;
-  navSelect(model, getComponentSlice("layout").focus, newSel);
+  navSelect(model, getFocus(), newSel);
 }
 
 /**
@@ -108,25 +108,25 @@ function moveSel(model, delta) {
  * panel, </> for ends).
  */
 function _pageInListPanel(model, delta) {
-  const def = getPanelDef(getComponentSlice("layout").focus);
+  const def = getPanelDef(getFocus());
   if (!def || typeof def.getItems !== 'function') return;
-  const items = getItems(getComponentSlice("layout").focus);
+  const items = getItems(getFocus());
   if (!items.length) return;
-  const sel = getSel(getComponentSlice("layout").focus);
+  const sel = getSel(getFocus());
   const next = Math.max(0, Math.min(items.length - 1, sel + delta));
   if (next === sel) return;
-  navSelect(model, getComponentSlice("layout").focus, next);
+  navSelect(model, getFocus(), next);
 }
 
 function _jumpInListPanel(model, target) {
-  const def = getPanelDef(getComponentSlice("layout").focus);
+  const def = getPanelDef(getFocus());
   if (!def || typeof def.getItems !== 'function') return;
-  const items = getItems(getComponentSlice("layout").focus);
+  const items = getItems(getFocus());
   if (!items.length) return;
   const next = target === 'top' ? 0 : items.length - 1;
-  const sel = getSel(getComponentSlice("layout").focus);
+  const sel = getSel(getFocus());
   if (next === sel) return;
-  navSelect(model, getComponentSlice("layout").focus, next);
+  navSelect(model, getFocus(), next);
 }
 
 function _halfPageStep(panelType) {
@@ -152,10 +152,12 @@ function activateTerminal() {
 }
 
 function startDesignMode() {
-  // Design mode folded onto update: entry is the design_enter Msg (resets the
-  // editor state + flips the flag). Save stays decoupled (:save-layout); exit
+  // Design mode is owned by the layout Component (post-Phase-6
+  // single-writer cleanup): entry is a wrapped `design_enter` Msg that
+  // resets the slice and emits a `mode_set` Cmd to flip
+  // `model.modes.designMode`. Save stays decoupled (:save-layout); exit
   // emits a show_selected_info Cmd in place of the old onDone callback.
-  applyMsg(getModel(), { type: 'design_enter' });
+  dispatchMsg(wrap('layout', { type: 'design_enter' }));
 }
 
 /**
@@ -163,7 +165,7 @@ function startDesignMode() {
  * No-op if the panel doesn't support `getItems` or has no items.
  */
 function toggleMultiSelOnFocused() {
-  const focus = getComponentSlice("layout").focus;
+  const focus = getFocus();
   const def = getPanelDef(focus);
   if (!def || typeof def.getItems !== 'function') return;
   const items = getItems(focus);
@@ -192,7 +194,7 @@ function _isListPanel(focus) {
  * Idempotent — already-selected rows stay selected.
  */
 function selectAllVisible() {
-  const focus = getComponentSlice("layout").focus;
+  const focus = getFocus();
   const def = getPanelDef(focus);
   if (!def || typeof def.getItems !== 'function') return;
   const items = getItems(focus);
@@ -227,7 +229,7 @@ function _groupsHasQuick() {
  * the plugin handles the key based on panel-level state alone.
  */
 function dispatchPluginKey(key) {
-  const def = getPanelDef(getComponentSlice("layout").focus);
+  const def = getPanelDef(getFocus());
   if (!def) return false;
   // Component panels: the key was already handled in update() (routed there by
   // dispatchMsg to the focused component). Here we only honor the panel's
@@ -238,8 +240,8 @@ function dispatchPluginKey(key) {
   if (typeof def.onKey !== 'function') return false;
   let item = null;
   if (typeof def.getItems === 'function') {
-    const items = getItems(getComponentSlice("layout").focus);
-    item = items[getSel(getComponentSlice("layout").focus)] || null;
+    const items = getItems(getFocus());
+    item = items[getSel(getFocus())] || null;
   }
   return def.onKey(key, item) === true;
 }
@@ -266,9 +268,11 @@ function handleMenuKey(model, key, seq) {
  * false) when the focused panel isn't filterable.
  */
 function enterFilterMode(model) {
-  const def = getPanelDef(getComponentSlice("layout").focus);
+  const def = getPanelDef(getFocus());
   if (!def || !def.filterable) return false;
-  applyMsg(model, { type: 'filter_enter', panel: getComponentSlice("layout").focus, text: model.ui.filters[getComponentSlice("layout").focus] || '' });
+  // Phase 4c — committed filter text lives on the panel's nav slice;
+  // `filter.getFilter()` resolves it via the helper.
+  applyMsg(model, { type: 'filter_enter', panel: getFocus(), text: require('./filter').getFilter(getFocus()) });
   return true;
 }
 
@@ -299,30 +303,33 @@ function handleCopyKey(model, key, seq) {
 }
 
 function handleDesignKey(model, key, seq) {
-  // Folded into update: each key maps to one design_* Msg; the model-design
-  // leaf does the pure layout transform. q/Esc/Enter all exit.
+  // Post-Phase-6 single-writer cleanup: design state lives on layout's
+  // slice; each key wraps a `design_*` Msg into layout. q/Esc/Enter all
+  // exit. The model-design leaf still does the pure layout transform —
+  // layout.update calls it on each Msg arrival.
+  const dispatch = (m) => dispatchMsg(wrap('layout', m));
   switch (key) {
-    case 'up':    case 'k': applyMsg(model, { type: 'design_nav', dir: -1 }); break;
-    case 'down':  case 'j': applyMsg(model, { type: 'design_nav', dir: +1 }); break;
-    case 'K':               applyMsg(model, { type: 'design_reorder', dir: -1 }); break;
-    case 'J':               applyMsg(model, { type: 'design_reorder', dir: +1 }); break;
-    case 'left':  case 'h': applyMsg(model, { type: 'design_move_col', col: 'left' }); break;
-    case 'right': case 'l': applyMsg(model, { type: 'design_move_col', col: 'right' }); break;
-    case '+':     case '=': applyMsg(model, { type: 'design_resize', delta: +1 }); break;
-    case '-':               applyMsg(model, { type: 'design_resize', delta: -1 }); break;
-    case ']':               applyMsg(model, { type: 'design_panel_height', delta: +5 }); break;
-    case '[':               applyMsg(model, { type: 'design_panel_height', delta: -5 }); break;
-    case 't':               applyMsg(model, { type: 'design_title_enter' }); break;
-    case 'u':               applyMsg(model, { type: 'design_undo' }); break;
-    case 'ctrl-r':          applyMsg(model, { type: 'design_redo' }); break;
-    case 'return': case 'q': case 'escape': applyMsg(model, { type: 'design_exit' }); break;
+    case 'up':    case 'k': dispatch({ type: 'design_nav', dir: -1 }); break;
+    case 'down':  case 'j': dispatch({ type: 'design_nav', dir: +1 }); break;
+    case 'K':               dispatch({ type: 'design_reorder', dir: -1 }); break;
+    case 'J':               dispatch({ type: 'design_reorder', dir: +1 }); break;
+    case 'left':  case 'h': dispatch({ type: 'design_move_col', col: 'left' }); break;
+    case 'right': case 'l': dispatch({ type: 'design_move_col', col: 'right' }); break;
+    case '+':     case '=': dispatch({ type: 'design_resize', delta: +1 }); break;
+    case '-':               dispatch({ type: 'design_resize', delta: -1 }); break;
+    case ']':               dispatch({ type: 'design_panel_height', delta: +5 }); break;
+    case '[':               dispatch({ type: 'design_panel_height', delta: -5 }); break;
+    case 't':               dispatch({ type: 'design_title_enter' }); break;
+    case 'u':               dispatch({ type: 'design_undo' }); break;
+    case 'ctrl-r':          dispatch({ type: 'design_redo' }); break;
+    case 'return': case 'q': case 'escape': dispatch({ type: 'design_exit' }); break;
   }
 }
 
 function handleDesignTitleEditKey(model, key, seq) {
-  if (key === 'escape') { applyMsg(model, { type: 'design_title_cancel' }); return; }
-  if (key === 'return') { applyMsg(model, { type: 'design_title_submit' }); return; }
-  applyMsg(model, { type: 'design_title_key', key, seq });
+  if (key === 'escape') { dispatchMsg(wrap('layout', { type: 'design_title_cancel' })); return; }
+  if (key === 'return') { dispatchMsg(wrap('layout', { type: 'design_title_submit' })); return; }
+  dispatchMsg(wrap('layout', { type: 'design_title_key', key, seq }));
 }
 
 function handleCmdlineKey(model, key, seq) {
@@ -367,13 +374,13 @@ function handleNormalKey(model, key, seq) {
   // instead of opening the copy menu, and j/k move the detail cursor
   // instead of falling through to moveSel (which is a no-op for the
   // non-list detail panel anyway).
-  if (getComponentSlice("layout").focus === 'detail' && require('./select').onDetailKey(key, seq)) return;
+  if (getFocus() === 'detail' && require('./select').onDetailKey(key, seq)) return;
 
   // [ / ] are panel-aware tab switchers: if the focused panel owns sub-tabs
   // (today: groups → All/Quick), they cycle those. Otherwise the keys fall
   // through to the global detail-tab cycle below — preserving the prior
   // behavior for users hitting [ / ] from any other panel.
-  if ((key === '[' || key === ']') && getComponentSlice("layout").focus === 'groups' && _groupsHasQuick()) {
+  if ((key === '[' || key === ']') && getFocus() === 'groups' && _groupsHasQuick()) {
     applyMsg(model, { type: 'toggle_groups_tab' });
     return;
   }
@@ -389,7 +396,7 @@ function handleNormalKey(model, key, seq) {
       // `v` enters list-select mode on a list panel (mirrors the detail
       // panel's visual mode, which onDetailKey already claimed above
       // when focus=detail). A second `v` exits.
-      if (_isListPanel(getComponentSlice("layout").focus)) applyMsg(model, { type: 'list_select', mode: 'toggle' });
+      if (_isListPanel(getFocus())) applyMsg(model, { type: 'list_select', mode: 'toggle' });
       break;
     case ' ':
       // Space is the leader EXCEPT inside list-select mode on a list
@@ -399,14 +406,14 @@ function handleNormalKey(model, key, seq) {
       // (e.g. detail) — otherwise space would be a dead no-op there.
       // The mode chain already suppresses the leader inside
       // detail-visual / terminal / text modes.
-      if (model.modes.listSelectMode && _isListPanel(getComponentSlice("layout").focus)) toggleMultiSelOnFocused();
+      if (model.modes.listSelectMode && _isListPanel(getFocus())) toggleMultiSelOnFocused();
       else                                                         applyMsg(model, { type: 'enter_prefix' });
       break;
     case '*':
       // Select-all implies select mode so the user can then space-toggle
       // individual rows off. (selectAllVisible reads items via the plugin
       // API — an effect — so it stays a direct call.)
-      if (_isListPanel(getComponentSlice("layout").focus)) applyMsg(model, { type: 'list_select', mode: 'on' });
+      if (_isListPanel(getFocus())) applyMsg(model, { type: 'list_select', mode: 'on' });
       selectAllVisible();
       break;
     case 'up': case 'k':   handleAction(model, 'nav_up'); break;
@@ -427,7 +434,7 @@ function handleNormalKey(model, key, seq) {
       // On a dead ephemeral terminal tab, `x` closes it instead of
       // opening the menu. Lets the user dismiss a non-zero exit
       // (clean exits auto-close from the PTY onExit handler).
-      if (getComponentSlice("layout").focus === 'detail' && isTerminalTab()) {
+      if (getFocus() === 'detail' && isTerminalTab()) {
         const id = activeTerminalId();
         if (id && isSessionDead(id)) {
           const eph = findEphemeralByid(id);
@@ -437,7 +444,7 @@ function handleNormalKey(model, key, seq) {
       // Content tabs (e.g. file-browser opens) close on `x` from
       // detail focus — no liveness concept like PTYs; users want a
       // close gesture, and `x` mirrors the dead-terminal flow.
-      if (getComponentSlice("layout").focus === 'detail' && isContentTab()) {
+      if (getFocus() === 'detail' && isContentTab()) {
         const ct = activeContentTab();
         if (ct) { removeContentTab(model.currentGroup, ct[0]); break; }
       }
@@ -468,7 +475,7 @@ function handleNormalKey(model, key, seq) {
       // Filter doesn't apply to the (non-list) detail panel — overload
       // `/` there as vim/less-style search instead. Same key, different
       // mode based on focus.
-      if (getComponentSlice("layout").focus === 'detail') require('./components/api').dispatchMsg(require('./components/api').wrap('detail', { type: 'viewer_search_enter' }));
+      if (getFocus() === 'detail') require('./components/api').dispatchMsg(require('./components/api').wrap('detail', { type: 'viewer_search_enter' }));
       else                          enterFilterMode(model);
       break;
     case 'y':              enterCopyMode(model); break;
@@ -738,18 +745,18 @@ function handleAction(model, action, arg) {
     case 'nav_down':     moveSel(model, +1); break;
     case 'focus_left': {
       const order = allPanels().map(p => p.type);
-      const idx = order.indexOf(getComponentSlice("layout").focus);
-      dispatchMsg(wrap('layout', { type: 'focus_set', focus: idx > 0 ? order[idx - 1] : getComponentSlice("layout").focus }));
+      const idx = order.indexOf(getFocus());
+      dispatchMsg(wrap('layout', { type: 'focus_set', focus: idx > 0 ? order[idx - 1] : getFocus() }));
       break;
     }
     case 'focus_right': {
       const order = allPanels().map(p => p.type);
-      const idx = order.indexOf(getComponentSlice("layout").focus);
-      dispatchMsg(wrap('layout', { type: 'focus_set', focus: idx < order.length - 1 ? order[idx + 1] : getComponentSlice("layout").focus }));
+      const idx = order.indexOf(getFocus());
+      dispatchMsg(wrap('layout', { type: 'focus_set', focus: idx < order.length - 1 ? order[idx + 1] : getFocus() }));
       break;
     }
     case 'focus_panel': {
-      let target = getComponentSlice("layout").focus;
+      let target = getFocus();
       for (const p of allPanels()) {
         if (p.hotkey === arg) { target = p.type; break; }
       }
@@ -758,7 +765,7 @@ function handleAction(model, action, arg) {
     }
     case 'run_selected': {
       // Enter on detail + terminal tab → activate terminal mode
-      if (getComponentSlice("layout").focus === 'detail' && isTerminalTab()) {
+      if (getFocus() === 'detail' && isTerminalTab()) {
         activateTerminal();
         break;
       }
@@ -768,7 +775,7 @@ function handleAction(model, action, arg) {
       // hammering Enter walks down levels (cursor stays put, the row
       // below opens or closes). Avoids the prior "drill to empty actions"
       // smell when a branch had no own actions.
-      if (getComponentSlice("layout").focus === 'groups') {
+      if (getFocus() === 'groups') {
         const items = getItems('groups');
         const row = items[getSel('groups')];
         if (row && row.children && row.children.length > 0) {
@@ -784,7 +791,7 @@ function handleAction(model, action, arg) {
       // params; submit then forwards them to runAction. Cmdline (`:`)
       // already carries args inline, so this only matters for the
       // actions-panel path.
-      if (getComponentSlice("layout").focus === 'actions') {
+      if (getFocus() === 'actions') {
         const items = getItems('actions');
         const item = items[getSel('actions')];
         if (item) {
@@ -813,21 +820,21 @@ function handleAction(model, action, arg) {
       // jump the cursor by half a panel (the nav_select cascade, now run
       // inline in the reducer). Other panel modes (e.g. stats content)
       // get no-op — they don't expose getItems().
-      if (getComponentSlice("layout").focus === 'detail') require('./components/api').dispatchMsg(require('./components/api').wrap('detail', { type: 'viewer_scroll', delta: -_halfPageStep('detail') }));
-      else                          _pageInListPanel(model, -_halfPageStep(getComponentSlice("layout").focus));
+      if (getFocus() === 'detail') require('./components/api').dispatchMsg(require('./components/api').wrap('detail', { type: 'viewer_scroll', delta: -_halfPageStep('detail') }));
+      else                          _pageInListPanel(model, -_halfPageStep(getFocus()));
       break;
     }
     case 'page_down': {
-      if (getComponentSlice("layout").focus === 'detail') require('./components/api').dispatchMsg(require('./components/api').wrap('detail', { type: 'viewer_scroll', delta: +_halfPageStep('detail') }));
-      else                          _pageInListPanel(model, +_halfPageStep(getComponentSlice("layout").focus));
+      if (getFocus() === 'detail') require('./components/api').dispatchMsg(require('./components/api').wrap('detail', { type: 'viewer_scroll', delta: +_halfPageStep('detail') }));
+      else                          _pageInListPanel(model, +_halfPageStep(getFocus()));
       break;
     }
     case 'goto_top':
-      if (getComponentSlice("layout").focus === 'detail') require('./components/api').dispatchMsg(require('./components/api').wrap('detail', { type: 'viewer_scroll', to: 'top' }));
+      if (getFocus() === 'detail') require('./components/api').dispatchMsg(require('./components/api').wrap('detail', { type: 'viewer_scroll', to: 'top' }));
       else                          _jumpInListPanel(model, 'top');
       break;
     case 'goto_bottom':
-      if (getComponentSlice("layout").focus === 'detail') require('./components/api').dispatchMsg(require('./components/api').wrap('detail', { type: 'viewer_scroll', to: 'bottom' }));
+      if (getFocus() === 'detail') require('./components/api').dispatchMsg(require('./components/api').wrap('detail', { type: 'viewer_scroll', to: 'bottom' }));
       else                          _jumpInListPanel(model, 'bottom');
       break;
     case 'view_expand':

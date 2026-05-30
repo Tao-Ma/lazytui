@@ -19,7 +19,7 @@ const { describe, it, assert, eq, report } = require('./test-runner');
 const { getModel } = require('../runtime');
 
 
-// dispatch.js is wired to api.getComponentSlice("layout").focus. Import after S is in scope so the
+// dispatch.js is wired to api.getFocus(). Import after S is in scope so the
 // module's getPanelDef/getItems read the same singleton.
 const { _dispatchPluginKey } = require('../dispatch');
 
@@ -39,18 +39,15 @@ api.registerComponent({
   update: (msg, slice) => mnav.isNavMsg(msg) ? mnav.apply(slice, msg) : slice,
   panelTypes: {
     listy: {
-      mode: 'list',
       render() { return ''; },
       getItems() { return ['a', 'b', 'c']; },
       onKey(key, item, state) { calls.push({ panel: 'listy', key, item }); return key === 'i'; },
     },
     contenty: {
-      mode: 'content',
       render() { return 'static content'; },
       onKey(key, item, state) { calls.push({ panel: 'contenty', key, item }); return key === 'r'; },
     },
     silent: {
-      mode: 'content',
       render() { return ''; },
       // no onKey
     },
@@ -58,10 +55,8 @@ api.registerComponent({
 });
 
 require('../state').setSel('listy', 1);
-getModel().ui.filters = {};
-
 describe('[1] list-mode panel receives focused item', () => {
-  it('item is the row at getModel().ui.sel[panel]', () => {
+  it('item is the row at getSel(panel) on the owning slice', () => {
     api.getComponentSlice("layout").focus = 'listy';
     calls.length = 0;
     const claimed = _dispatchPluginKey('i');

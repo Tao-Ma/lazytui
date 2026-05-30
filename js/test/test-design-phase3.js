@@ -31,10 +31,14 @@ const { getModel } = require('../runtime');
 const { getComponentSlice } = require('../components/api');
 const { describe, it, assert, eq, report } = require('./test-runner');
 
-// Design mode folded onto the update spine: entry is the design_enter Msg,
-// keys route through the modeChain handler (designMode / designTitleEditMode).
-// These shims keep the existing call sites driving the REAL path.
-function enterDesign() { dispatch.applyMsg(getModel(), { type: 'design_enter' }); }
+// Design mode lives on layout's slice (post-Phase-6 single-writer cleanup):
+// entry is a wrapped `design_enter` Msg into layout; keys route through the
+// modeChain handler (designMode / designTitleEditMode). These shims keep
+// the existing call sites driving the REAL path.
+function enterDesign() {
+  const api = require('../components/api');
+  api.dispatchMsg(api.wrap('layout', { type: 'design_enter' }));
+}
 function press(key, seq) { dispatch._dispatchActiveMode(getModel(), key, seq); }
 function handleDesignKey(key) { press(key, key); }
 function handleDesignTitleEditKey(key, seq) { press(key, seq); }

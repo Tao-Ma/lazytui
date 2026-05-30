@@ -188,7 +188,7 @@ function _state() {
 // --- Core-Component registration (test-only auto-setup) ---
 //
 // In production tui.js registers all built-in Components at boot. Tests that
-// only require state.js / plugins/api.js miss that step. Side-effect-on-
+// only require state.js / components/api.js miss that step. Side-effect-on-
 // import here gives every test a registered detail + groups slice from the
 // start — same convenience the legacy `S` shim provided via lazy auto-
 // register, but explicit at the test-harness level.

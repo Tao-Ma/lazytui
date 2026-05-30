@@ -19,7 +19,7 @@ const { getSel } = require('./state');
 const { getModel } = require('./runtime');
 const { stripMarkup, esc } = require('./ansi');
 const { stdout } = require('./term');
-const { getPanelDef, getItems, getComponentSlice } = require('./components/api');
+const {getPanelDef, getItems, getComponentSlice, getFocus } = require('./components/api');
 const { renderOverlay } = require('./panel');
 
 // Module-held options (label + content thunk + cancel). The reducer mirrors
@@ -34,10 +34,10 @@ let _options = [];
  */
 function collectOptions() {
   const options = [];
-  const def = getPanelDef(getComponentSlice("layout").focus);
+  const def = getPanelDef(getFocus());
   if (def && typeof def.copyOptions === 'function' && typeof def.getItems === 'function') {
-    const items = getItems(getComponentSlice("layout").focus);
-    const item = items[getSel(getComponentSlice("layout").focus)];
+    const items = getItems(getFocus());
+    const item = items[getSel(getFocus())];
     if (item) {
       const provided = def.copyOptions(item) || [];
       for (const o of provided) {

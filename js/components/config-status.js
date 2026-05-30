@@ -30,7 +30,7 @@ const { spawnSync } = require('child_process');
 const {
   esc, theme, renderPanel,
   getScroll, getSel,
-  getComponentSlice,
+  getComponentSlice, getFocus,
 } = require('./api');
 const { registerEffect } = require('../effects');
 const { getModel } = require('../runtime');
@@ -288,7 +288,7 @@ function rowText(item, isSelected) {
 function render(panel, w, h, slice) {
   const items = buildItems(slice, _files());
   const sel = getSel('config-status');
-  const focused = getComponentSlice("layout").focus === 'config-status';
+  const focused = getFocus() === 'config-status';
   const lines = items.map((item, i) => rowText(item, focused && i === sel));
   const title = `${panel.title || 'Config'} — ${TAB_LABELS[tabIdx(slice)]}`;
   return renderPanel({
@@ -413,7 +413,6 @@ module.exports = {
   update,
   panelTypes: {
     'config-status': {
-      mode: 'list',
       render,
       getItems: (slice) => buildItems(slice, _files()),
       getInfo,

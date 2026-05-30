@@ -283,7 +283,7 @@ Node.js TUI with zero npm dependencies. Component system for extensibility.
 ```
 config.yml → parser → in-mem config → tui.js (Node.js) → terminal
                                          ↓
-                                  plugins/<name>.js  ← Component modules
+                                  components/<name>.js
 ```
 
 For module-level architecture, read the source under `js/`

@@ -2,7 +2,7 @@
  * App state — config loading, layout initialization, slice-reset wrappers.
  *
  * No mutable state lives here. The root model lives in runtime.js
- * (getModel()); Component slices live in plugins/api.js's registry. This
+ * (getModel()); Component slices live in components/api.js's registry. This
  * module is the boot/init layer (loadConfig + initState) plus the small
  * set of read/write helpers the rest of the codebase imports from `./state`
  * (getSel / setSel / getScroll / setScroll / toggleMultiSel / allPanels /
@@ -196,7 +196,8 @@ function initState() {
   // Non-flag buffers (filters, prefixNode/Seq, detailSearch object) are
   // reset explicitly below since the registry only flips the booleans.
   require('./modes').resetModes();
-  m.ui.filters = {};
+  // Phase 4c — committed filter text lives on each Navigator's nav slice
+  // (`slice.nav[panelType].filter`); `model.ui` retired entirely.
   m.prefixNode = null;
   m.prefixSeq = [];
   // Detail-panel search — typing phase flag + state. `term`, `matches`,
@@ -333,7 +334,7 @@ function setDetail(text) {
 //
 // Each Navigator's `slice.nav[panelType].multiSel` is a Set of stable
 // item IDs. Identity comes from each panelType's `idOf(item)`
-// (plugins/api.js#idOf), so selections are robust to filtering and
+// (components/api.js#idOf), so selections are robust to filtering and
 // re-sorting — you select a thing, not a position. Writes go through
 // wrapped Msgs (multisel_toggle / multisel_select_all / multisel_clear)
 // so each Component owns its own multiSel Set.

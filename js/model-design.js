@@ -24,7 +24,7 @@ const MAX_UNDO = 50;
 
 // Mark the layout as dirty — equivalent to the pre-1d `model.layoutDirty
 // = true`. Lazy-required here so this leaf stays dependency-free at
-// load time (plugins/api requires runtime, which requires us).
+// load time (components/api requires runtime, which requires us).
 function _markDirty() {
   const slice = require('./components/api').getComponentSlice('layout');
   if (slice) slice.dirty = true;

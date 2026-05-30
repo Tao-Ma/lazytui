@@ -29,9 +29,6 @@
 const kb = require('./keybindings');
 // Pure command-menu item builder (leaf), so menu_open can build inline.
 const menu = require('./model-menu');
-// Pure design-mode layout transforms (leaf) — reorder/move/resize/undo, all
-// taking `model`, so the reducer owns the design state machine inline.
-const mdesign = require('./model-design');
 // Pure yank-register transforms (leaf) — push/promote/drop/clear taking
 // `model`, so the reducer owns register mutations; OSC52 is an emit_osc52 Cmd.
 const mreg = require('./model-register');
@@ -43,13 +40,12 @@ const mreg = require('./model-register');
  *
  * Single owned object; `update` is its single writer. Component slices
  * (detail / groups / docker / files / config-status) live in
- * plugins/api.js's componentSlices map — not here — and are written
+ * components/api.js's componentSlices map — not here — and are written
  * only by their own `update`.
  *
- * Field map:
+ * Field map (post-v0.5):
  *   - modes{}                        — 13 modal flags (single registry; see modes.js)
  *   - currentGroup                   — current group (chrome)
- *   - ui{ sel, scroll, filters, multiSel } — per-panel chrome (panelType→value)
  *   - modal{ filter, menu, confirm, prompt, copy, registerPopup, cmdline }
  *                                    — modal sub-model editing buffers
  *   - config / projectDir / configPath — parsed config + paths
@@ -58,8 +54,10 @@ const mreg = require('./model-register');
  *
  * Phase 1 (docs/v0.5-layout-component.md) migrated focus, viewMode,
  * design state, designEnabled, layoutDirty, model.layout (arrange),
- * and panelHeights/panelBounds into the layout Component's slice.
- * Readers use `getComponentSlice('layout').<field>`.
+ * and panelHeights/panelBounds onto the layout Component's slice.
+ * Phase 4 (a + b + c) migrated all per-panel chrome (cursor / scroll /
+ * multiSel / filter) onto each Navigator's `slice.nav[panelType]`;
+ * `model.ui` retired entirely.
  */
 function init() {
   const m = {
@@ -72,17 +70,15 @@ function init() {
       cmdMode: false, terminalMode: false, listSelectMode: false,
     },
     currentGroup: '',
-    // Phase 4a — nav chrome (sel/scroll/multiSel) moved off the root
-    // model and into each Navigator Component's slice under
-    // `slice.nav[panelType] = { cursor, scroll, multiSel }`. Only the
-    // committed-per-panel filter map stays on `model.ui` for now.
-    ui: { filters: {} },
-    // The viewer slice (detail Component) and groups slice live in
-    // plugins/api.js's componentSlices map, accessed via getComponentSlice.
-    // Transient per-mode editing buffers (the modal sub-models). The reducer
-    // owns them; each modal handler is an update branch. `filter` = the live
-    // `/`-filter draft (text + which panel is being filtered), distinct from
-    // the COMMITTED per-panel filters in ui.filters.
+    // Phase 4a moved cursor/scroll/multiSel onto each Navigator's nav
+    // slice; Phase 4c folded the committed filter text in too. The root
+    // `ui` field retired — every per-panel chrome lives on
+    // `slice.nav[panelType] = { cursor, scroll, multiSel, filter }`.
+    // Transient per-mode editing buffers (the modal sub-models). The
+    // reducer owns them; each modal handler is an update branch.
+    // `filter` = the live `/`-filter draft (text + which panel is being
+    // filtered), distinct from the COMMITTED per-panel filter text that
+    // lives on each Navigator's `slice.nav[panel].filter` (Phase 4c).
     modal: {
       filter: { text: '', panel: '' },
       menu: { items: [], idx: 0 },
@@ -195,7 +191,7 @@ function update(model, msg) {
   switch (msg.type) {
     // view_expand / view_shrink / view_set moved to layout's update (Phase 1b).
     // focus_set moved to layout's update (Phase 1c).
-    // Call sites dispatch through `plugins/api.dispatchMsg` — the layout
+    // Call sites dispatch through `components/api.dispatchMsg` — the layout
     // Component handles these via fan-out.
     // viewer_scroll / stream_start / viewer_append / viewer_set_content /
     // viewer_set_tab / viewer_reset_chrome / viewer_search_* /
@@ -211,7 +207,7 @@ function update(model, msg) {
       // a no-op. Phase 4a: the multiSel clear is dispatched into the
       // focused Navigator's update (each panel owns its own Set).
       const api = require('./components/api');
-      const focus = api.getComponentSlice('layout').focus;
+      const focus = api.getFocus();
       const compName = api.getComponentOwningPanel(focus);
       const navEntry = compName ? (api.getComponentSlice(compName) || {}).nav : null;
       const had = navEntry && navEntry[focus] && navEntry[focus].multiSel.size > 0;
@@ -229,7 +225,7 @@ function update(model, msg) {
       // fires selectAllVisible as an effect). The _isListPanel guard is
       // view derivation — the caller already applied it.
       const api = require('./components/api');
-      const focus = api.getComponentSlice('layout').focus;
+      const focus = api.getFocus();
       if (msg.mode === 'on') {
         model.modes.listSelectMode = true;
         return [model, []];
@@ -463,76 +459,13 @@ function update(model, msg) {
       model.modes.cmdMode = false;
       model.modal.cmdline = { text: '', sel: 0, matches: [] };
       return [model, [{ type: 'cmdline_clear' }]];
-    // --- design mode keyboard + title edit (folded into update). All the
-    // layout mutations are pure transforms in the model-design leaf taking
-    // `model`; the reducer just routes each key to one. The mouse drag/resize
-    // path still lives in design.js (reads the model) until a later commit.
-    case 'design_enter': {
-      // Reset the working state on entry but preserve `enabled` (the
-      // boot-time --design CLI flag).
-      model.modes.designMode = true;
-      const slice = require('./components/api').getComponentSlice('layout');
-      if (slice) {
-        const enabled = slice.design && slice.design.enabled;
-        slice.design = { enabled, selectedIdx: 0, drag: null, undo: [], redo: [], titleEdit: { active: false, text: '' } };
-      }
-      return [model, []];
-    }
-    case 'design_nav':          mdesign.navSelect(model, msg.dir);          return [model, []];
-    case 'design_reorder':      mdesign.reorderWithin(model, msg.dir);  mdesign.clampSelected(model); return [model, []];
-    case 'design_move_col':     mdesign.moveColumn(model, msg.col);     mdesign.clampSelected(model); return [model, []];
-    case 'design_resize':       mdesign.resizeWidthOrDetail(model, msg.delta); return [model, []];
-    case 'design_panel_height': mdesign.resizeFocusedPanelHeight(model, msg.delta); return [model, []];
-    case 'design_undo':         mdesign.undo(model); mdesign.clampSelected(model); return [model, []];
-    case 'design_redo':         mdesign.redo(model); mdesign.clampSelected(model); return [model, []];
-    case 'design_exit':
-      // Exit keeps the mutated layout (save is the separate :save-layout verb)
-      // and clears the editor state. show_selected_info refreshes detail for
-      // the now-active panel (the old onDone callback, now a Cmd).
-      model.modes.designMode = false;
-      model.modes.designTitleEditMode = false;
-      {
-        const slice = require('./components/api').getComponentSlice('layout');
-        if (slice) {
-          const enabled = slice.design && slice.design.enabled;
-          slice.design = { enabled, selectedIdx: 0, drag: null, undo: [], redo: [], titleEdit: { active: false, text: '' } };
-        }
-      }
-      return [model, [{ type: 'show_selected_info' }]];
-    case 'design_title_enter':
-      mdesign.titleEnter(model);
-      model.modes.designTitleEditMode = true;
-      return [model, []];
-    case 'design_title_key': {
-      const slice = require('./components/api').getComponentSlice('layout');
-      const te = slice && slice.design && slice.design.titleEdit;
-      if (!te) return [model, []];
-      if (msg.key === 'backspace' || msg.seq === '\x7f' || msg.seq === '\b') { te.text = te.text.slice(0, -1); return [model, []]; }
-      if (msg.seq && msg.seq.length === 1 && msg.seq >= ' ' && msg.seq < '\x7f') { te.text += msg.seq; return [model, []]; }
-      return [model, []];
-    }
-    case 'design_title_submit': {
-      const slice = require('./components/api').getComponentSlice('layout');
-      const text = slice && slice.design ? slice.design.titleEdit.text : '';
-      mdesign.setSelectedTitle(model, text);
-      model.modes.designTitleEditMode = false;
-      if (slice && slice.design) slice.design.titleEdit = { active: false, text: '' };
-      return [model, []];
-    }
-    case 'design_title_cancel': {
-      model.modes.designTitleEditMode = false;
-      const slice = require('./components/api').getComponentSlice('layout');
-      if (slice && slice.design) slice.design.titleEdit = { active: false, text: '' };
-      return [model, []];
-    }
-    // --- design mode mouse drag/resize (folded into update). The gesture
-    // state machine runs in the model-design leaf against model.modal.design
-    // .drag; `cols` (terminal width) is caller-resolved (input.js) since it's
-    // the one terminal read the reducer can't do. No Cmds — the input pump's
-    // trailing render paints the live drag/resize.
-    case 'design_mouse_press':   mdesign.mousePress(model, msg.mx, msg.my, msg.cols);  return [model, []];
-    case 'design_mouse_motion':  mdesign.mouseMotion(model, msg.mx, msg.my, msg.cols); return [model, []];
-    case 'design_mouse_release': mdesign.mouseRelease(model);                          return [model, []];
+    // --- design-mode Msgs (post-Phase-6 single-writer cleanup). Every
+    // design_* case retired from the reducer; layout.update owns the slice
+    // writes now (it calls mdesign.* leaves directly so the writes happen
+    // inside layout.update's call stack). Mode-flag flips (designMode /
+    // designTitleEditMode) ride back via apply_msg mode_set / mode_clear
+    // Cmds the reducer applies. Call sites in dispatch.js, input.js,
+    // design.js wrap directly: `dispatchMsg(wrap('layout', { type: 'design_*'}))`.
     // --- terminal mode enter/exit (folded into update). The PTY restart (on
     // a dead session) stays an effect in dispatch.activateTerminal; only the
     // flag write is the Msg. Exit also drops a 'full' auto-zoom back to
@@ -564,17 +497,9 @@ function update(model, msg) {
     // (viewer_set_content / viewer_set_tab moved to detail.update — Phase B.
     //  state.setDetail / api.setActiveTab still dispatch the same Msgs; they
     //  now route to detail.update via the dispatchMsg fan-out.)
-    case 'set_layout': {
-      // :save-layout clears the dirty flag; :restore-layout replaces the
-      // arrange struct (rebuilt from config by the caller) and clears dirty.
-      // Both write into the layout Component's slice (Phase 1d/1g).
-      const layoutSlice = require('./components/api').getComponentSlice('layout');
-      if (layoutSlice) {
-        if (msg.layout !== undefined) layoutSlice.arrange = msg.layout;
-        if (msg.dirty  !== undefined) layoutSlice.dirty   = !!msg.dirty;
-      }
-      return [model, []];
-    }
+    // set_layout retired (single-writer follow-up): :save-layout and
+    // :restore-layout now wrap a `set_arrange` Msg directly to layout —
+    // its own update is the single writer for `arrange` and `dirty`.
     // --- command menu (folded into update). Items (action strings, no
     // closures) are built inline from the model on open; nav skips null
     // separators; activate emits a menu_action Cmd routing the chosen verb
@@ -638,15 +563,21 @@ function update(model, msg) {
     case 'filter_exit': {
       const f = model.modal.filter;
       const panel = f.panel;
-      if (msg.keep && f.text) model.ui.filters[panel] = f.text;
-      else                    delete model.ui.filters[panel];
+      const text = f.text;
+      const keep = !!msg.keep;
       model.modes.filterMode = false;
       f.text = ''; f.panel = '';
       if (!panel) return [model, []];
       const api = require('./components/api');
       const compName = api.getComponentOwningPanel(panel);
       if (!compName) return [model, []];
+      // Phase 4c — commit/clear the filter on the panel's nav slice; the
+      // owning Component is the single writer.
+      const filterMsg = (keep && text)
+        ? { type: 'set_filter',   panel, text }
+        : { type: 'clear_filter', panel };
       return [model, [
+        { type: 'dispatch_msg', msg: api.wrap(compName, filterMsg) },
         { type: 'dispatch_msg', msg: api.wrap(compName, { type: 'set_cursor', panel, index: 0 }) },
         { type: 'dispatch_msg', msg: api.wrap(compName, { type: 'set_scroll', panel, offset: 0 }) },
       ]];
@@ -693,9 +624,8 @@ function update(model, msg) {
       // Component slices now; emit wrapped resets per panel, but only when
       // the owning Component is registered (tests that don't register
       // actions/docker shouldn't trigger "unknown Component" warnings).
+      // Phase 4c — filter text moved onto the same nav slices.
       model.lastRunAction = '';
-      delete model.ui.filters.actions;
-      delete model.ui.filters.containers;
       model.modes.terminalMode = false;
       model.modes.listSelectMode = false;
       const api = require('./components/api');
@@ -705,6 +635,7 @@ function update(model, msg) {
         if (!compName) continue;
         cmds.push({ type: 'dispatch_msg', msg: api.wrap(compName, { type: 'set_cursor', panel, index: 0 }) });
         cmds.push({ type: 'dispatch_msg', msg: api.wrap(compName, { type: 'multisel_clear', panel }) });
+        cmds.push({ type: 'dispatch_msg', msg: api.wrap(compName, { type: 'clear_filter', panel }) });
       }
       return [model, cmds];
     }

@@ -18,7 +18,7 @@ const { switchToTab, showSelectedInfo } = require('./viewer');
 const { enableMouse, enableFocusEvents, enableBracketedPaste, cols } = require('./term');
 const { isTerminalTab, activeTerminalId } = require('./tabs');
 const { writeToSession, isSessionDead } = require('./terminal');
-const { getPanelDef, getItems, getComponentSlice, dispatchMsg, wrap } = require('./components/api');
+const {getPanelDef, getItems, getComponentSlice, dispatchMsg, wrap, getFocus } = require('./components/api');
 
 function _detail() { return getComponentSlice('detail'); }
 const { handleKey, applyMsg } = require('./dispatch');
@@ -79,7 +79,7 @@ function _handleWheel(model, mx, my, delta) {
       // Refresh detail only when the wheel landed on the focused panel
       // (so its info reflects the new selection); wheeling over a side
       // panel without focus shouldn't clobber detail.
-      if (p.type === getComponentSlice("layout").focus) showSelectedInfo(model);
+      if (p.type === getFocus()) showSelectedInfo(model);
       return true;
     }
     return false;
@@ -92,15 +92,16 @@ function handleMouse(model, kind, x, y) {
   const mx = x - 1;
   const my = y - 1;
 
-  // Design mode owns the entire mouse pipeline — the drag/resize state machine
-  // now lives in the reducer (design_mouse_* Msgs running on model.modal.design
-  // .drag). cols() is resolved here (the terminal read the reducer can't do)
-  // and threaded into the hit-tests. Non-press/motion/release events (wheel)
-  // are swallowed in design mode, as before.
+  // Design mode owns the entire mouse pipeline — the drag/resize state
+  // machine lives on layout's slice (post-Phase-6 single-writer cleanup),
+  // dispatched as wrapped `design_mouse_*` Msgs. cols() is resolved here
+  // (the one terminal read the layout Component can't do without
+  // back-coupling) and threaded into the hit-tests. Non-press/motion/
+  // release events (wheel) are swallowed in design mode, as before.
   if (model.modes.designMode) {
-    if (kind === 'press')        applyMsg(model, { type: 'design_mouse_press',  mx, my, cols: cols() });
-    else if (kind === 'motion')  applyMsg(model, { type: 'design_mouse_motion', mx, my, cols: cols() });
-    else if (kind === 'release') applyMsg(model, { type: 'design_mouse_release' });
+    if (kind === 'press')        dispatchMsg(wrap('layout', { type: 'design_mouse_press',  mx, my, cols: cols() }));
+    else if (kind === 'motion')  dispatchMsg(wrap('layout', { type: 'design_mouse_motion', mx, my, cols: cols() }));
+    else if (kind === 'release') dispatchMsg(wrap('layout', { type: 'design_mouse_release' }));
     render(model);
     return;
   }

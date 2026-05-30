@@ -1,7 +1,7 @@
 # Stats Panel
 
 A YAML-declarable, multi-line live-graph panel — the first non-trivial
-visual consumer of the event hub (HUB.md §17). Generic over the
+visual consumer of the event hub (HUB.md). Generic over the
 underlying hub topic; docker is the first producer to wire in but
 not the only conceivable one.
 
@@ -13,7 +13,7 @@ rediscovers them.
 ## 0. Status & framing
 
 **Status:** shipped (`d4274d6` impl + `6fc9edb` live-repaint fix).
-Producer: docker plugin publishes per-tick numeric samples on
+Producer: docker Component publishes per-tick numeric samples on
 `docker.stats`. Consumer: `components/stats.js` renders the focused
 container's CPU + MEM as multi-row block-char line graphs. Schema
 flag `meta: true` keeps scale-reference columns (memLimit) out of
@@ -103,7 +103,7 @@ the focused container has no history yet), the panel shows
 | Shape | Why rejected |
 |-------|--------------|
 | Per-container tile rows (3 lines each: header + CPU sparkline + MEM sparkline, repeated vertically) | A panel of sparklines is the **anti-pattern** — sparklines are decorator-layer widgets (one-line, slot-shaped), not panel content. Same data is reachable through a future table-column or a footer decorator slot, without the borders. |
-| All-containers grid (one row per container, sparkline only) | Same anti-pattern — sparklines belong in slots that already justify their density (column among columns, footer widget), not as a panel's primary content. See HUB.md §17 "Sparkline widget" entry. |
+| All-containers grid (one row per container, sparkline only) | Same anti-pattern — sparklines belong in slots that already justify their density (column among columns, footer widget), not as a panel's primary content. See HUB.md §0 retrospective (the deferred sparkline-widget discussion). |
 | All-containers single multi-line graph (overlaid lines, one per container, color-coded) | Compelling but legibility falls apart past 4–5 lines. Defer until someone asks. |
 | Aggregate / system-pulse graph (sum across all containers) | Useful but answers "is the host busy?" not "what's misbehaving?". Defer. |
 | Heatmap (rows × time, color = CPU%) | Earns its space at >20 containers; overkill for typical small stacks (5–10). Defer. |
@@ -203,7 +203,7 @@ panel-collect. Filtering, sorting, idOf — none apply.
 
 ## 5. Producer wiring — docker.js
 
-The docker plugin already polls `docker stats` every 10s
+The docker Component already polls `docker stats` every 10s
 (`refresh()`#L192–217). The publish is a 5-line addition inside the
 existing parse loop, plus parsing the strings into numbers:
 
@@ -250,21 +250,22 @@ The stats panel needs to know "which row are we showing?". Today's
 framework state already has the answer:
 
 ```javascript
-// In stats.js render()
-function resolveSelection(panel, S) {
-  const items = apiGetItems(panel.select_from, S);
-  const sel = (S.sel && S.sel[panel.select_from]) || 0;
-  return items[sel] || null;
+// In components/stats.js render()
+const { getSel } = require('../state');
+function resolveSelection(panel) {
+  const items = apiGetItems(panel.select_from);
+  return items[getSel(panel.select_from)] || null;
 }
 ```
 
-For docker, `getItems('containers', S)[sel]` is the focused container
-name — which is also the hub `rowKey` the docker producer publishes
-under. **No new framework hook required**: the stats panel just reads
-existing per-panel selection state.
+For docker, `getItems('containers')[getSel('containers')]` is the
+focused container name — which is also the hub `rowKey` the docker
+Component publishes under. **No new framework hook required**: the
+stats panel just reads existing per-panel selection state via the
+Phase-4a per-Navigator nav slice.
 
 The contract: `select_from`'s panel must use the same row identity as
-`topic`'s row key. The docker plugin satisfies this by publishing
+`topic`'s row key. The docker Component satisfies this by publishing
 under container name, which `getItems('containers')` returns. Future
 producers must publish under whatever `getItems(panel)` returns for
 their `select_from` source — documented as part of the stats panel
@@ -325,7 +326,7 @@ labels worthwhile.
 | YAML wiring in `test/test.yml` | ~5 |
 | **Total** | **~315** |
 
-Higher than HUB.md §17's "~120 LOC" estimate, which assumed a
+Higher than HUB.md §0's "~120 LOC" estimate, which assumed a
 sparkline shape. The ~200 extra is the line-graph rasterizer + tests
 — the cost of earning the panel.
 
@@ -372,7 +373,7 @@ Run via `node js/run-tests.js -q`.
   unnecessary in the design phase.
 - **Persistence across restarts.** Hub is in-memory (HUB.md §15); the
   stats panel inherits that limitation. Out of scope.
-- **Faster docker stats poll.** Currently 10s (docker plugin default).
+- **Faster docker stats poll.** Currently 10s (docker Component default).
   Visible motion in the graph requires either waiting through the
   10s tick or lowering the interval globally. A stats-only fast poll
   is a separate concern from the panel itself.

@@ -39,8 +39,6 @@ getModel().config = {
   },
 };
 getModel().currentGroup = 'g1';
-getModel().ui.filters = {};
-
 const cmds = api.getCommands();
 const stopCmd    = cmds.find(c => c.name === 'stop');
 const startCmd   = cmds.find(c => c.name === 'start');
