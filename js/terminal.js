@@ -67,10 +67,14 @@ function ensureSession(id, cmd, cols, rows) {
  */
 function _onSessionExit(id, exitCode) {
   const tabs = require('./tabs');
+  const api = require('./plugins/api');
   let anyChange = false;
   const wasActive = tabs.activeTerminalId() === id;
-  if (require('./runtime').getModel().viewMode === 'full' && wasActive) {
-    require('./runtime').dispatch({ type: 'view_set', mode: 'normal' });
+  // viewMode owned by the layout Component (Phase 1b) — read the slice,
+  // dispatch a flat Msg through the Component fan-out.
+  const layoutSlice = api.getComponentSlice('layout');
+  if (layoutSlice && layoutSlice.viewMode === 'full' && wasActive) {
+    api.dispatchMsg(api.wrap('layout', { type: 'view_set', mode: 'normal' }));
     anyChange = true;
   }
   if (exitCode === 0 && tabs.handleSessionCleanExit(id)) {

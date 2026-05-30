@@ -17,6 +17,7 @@ const {
   esc, visibleLen, theme, renderPanel,
   getSel, getScroll, getFilter, isMultiSel, decorate,
   getItems: apiGetItems,
+  getComponentSlice,
 } = require('../api');
 
 function _getItems() {
@@ -53,7 +54,7 @@ function _render(panel, w, h) {
   const cfiles = apiGetItems('file-manager');
   const innerW = w - 2;
   const sel = getSel('file-manager');
-  const isFocused = getModel().focus === 'file-manager';
+  const isFocused = getComponentSlice("layout").focus === 'file-manager';
   const maxPathLen = w - 5;
   const lines = cfiles.map((cf, i) => {
     let p = cf.path;

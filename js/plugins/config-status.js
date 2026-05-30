@@ -30,6 +30,7 @@ const { spawnSync } = require('child_process');
 const {
   esc, theme, renderPanel,
   getScroll, getSel,
+  getComponentSlice,
 } = require('./api');
 const { registerEffect } = require('../effects');
 const { getModel } = require('../runtime');
@@ -56,7 +57,8 @@ function _projectDir() { return getModel().projectDir || '.'; }
 
 /** Resolve the branch from the config-status panel's `config.branch`. */
 function _resolveBranch() {
-  const ly = getModel().layout;
+  const slice = getComponentSlice('layout');
+  const ly = slice && slice.arrange;
   const panels = (ly && [...(ly.leftPanels || []), ...(ly.rightPanels || [])]) || [];
   const p = panels.find(pp => pp.type === 'config-status');
   const b = p && p.config && p.config.branch;
@@ -285,7 +287,7 @@ function rowText(item, isSelected) {
 function render(panel, w, h, slice) {
   const items = buildItems(slice, _files());
   const sel = getSel('config-status');
-  const focused = getModel().focus === 'config-status';
+  const focused = getComponentSlice("layout").focus === 'config-status';
   const lines = items.map((item, i) => rowText(item, focused && i === sel));
   const title = `${panel.title || 'Config'} — ${TAB_LABELS[tabIdx(slice)]}`;
   return renderPanel({
@@ -390,7 +392,7 @@ registerEffect('cfgStatusCompute', (eff) => {
     let cache;
     try { cache = computeStatus(eff.branch, _files(), _projectDir()); }
     catch (e) { cache = { branch: eff.branch, byPath: {}, children: {}, error: e.message, computedAt: Date.now() }; }
-    require('./api').dispatchMsg({ type: 'cfgStatusResult', cache });
+    require('./api').dispatchMsg(require('./api').wrap('config-status', { type: 'cfgStatusResult', cache }));
   });
 });
 registerEffect('cfgStatusDiff', (eff) => {

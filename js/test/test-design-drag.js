@@ -9,7 +9,7 @@
  *   2. Release with no motion → click, no mutation
  *   3. Drop position math (insert before / after / append / empty col)
  *   4. Invalid-target snap-back (detail / actions into left column)
- *   5. getModel().layoutDirty set on valid drops, NOT set on snap-back
+ *   5. getComponentSlice('layout').dirty set on valid drops, NOT set on snap-back
  *   6. Cross-column drag mutates correctly (splice from source, insert
  *      at target, with index adjustment for same-column drag where
  *      the splice shifts the target index)
@@ -21,6 +21,7 @@
 const { onMouseEvent, pointToDropTarget, _getDragState } = require('../design');
 const dispatch = require('../dispatch');
 const { getModel } = require('../runtime');
+const { getComponentSlice } = require('../plugins/api');
 const { describe, it, assert, eq, report } = require('./test-runner');
 
 // Design mode folded onto the update spine: enter via the design_enter Msg.
@@ -38,7 +39,7 @@ function enterDesign() { dispatch.applyMsg(getModel(), { type: 'design_enter' })
 //   detail     : y=15..39 (h=25)
 
 function setupFixture() {
-  getModel().layout = {
+  getComponentSlice("layout").arrange = {
     leftWidth: 30,
     detailHeightPct: 60,
     leftPanels: [
@@ -51,7 +52,7 @@ function setupFixture() {
       { type: 'detail',  title: 'Detail',  column: 'right', hotkey: 'o' },
     ],
   };
-  getModel().panelBounds = {
+  getComponentSlice('layout').panelBounds = {
     containers: { x:  0, y:  0, w: 30, h: 10 },
     groups:     { x:  0, y: 10, w: 30, h: 10 },
     actions:    { x: 30, y:  0, w: 90, h:  5 },
@@ -59,8 +60,8 @@ function setupFixture() {
     detail:     { x: 30, y: 15, w: 90, h: 25 },
   };
   getModel().modes.designMode = false;
-  getModel().layoutDirty = false;
-  enterDesign(getModel().layout, '/dev/null', () => {});
+  getComponentSlice('layout').dirty = false;
+  enterDesign(getComponentSlice("layout").arrange, '/dev/null', () => {});
 }
 
 // ===============================================================
@@ -166,10 +167,10 @@ describe('[2] onMouseEvent — state machine transitions', () => {
     onMouseEvent('release', 5, 17);
 
     eq(_getDragState(), null);
-    eq(getModel().layout.leftPanels.length, 2);
-    eq(getModel().layout.leftPanels[0].type, 'groups',     'groups now first');
-    eq(getModel().layout.leftPanels[1].type, 'containers', 'containers now last');
-    eq(getModel().layoutDirty, true);
+    eq(getComponentSlice("layout").arrange.leftPanels.length, 2);
+    eq(getComponentSlice("layout").arrange.leftPanels[0].type, 'groups',     'groups now first');
+    eq(getComponentSlice("layout").arrange.leftPanels[1].type, 'containers', 'containers now last');
+    eq(getComponentSlice('layout').dirty, true);
   });
 
   it('release with no motion → click (no mutation, no dirty)', () => {
@@ -177,8 +178,8 @@ describe('[2] onMouseEvent — state machine transitions', () => {
     onMouseEvent('press',   5, 2);
     onMouseEvent('release', 5, 2);
     eq(_getDragState(), null);
-    eq(getModel().layoutDirty, false);
-    eq(getModel().layout.leftPanels[0].type, 'containers');
+    eq(getComponentSlice('layout').dirty, false);
+    eq(getComponentSlice("layout").arrange.leftPanels[0].type, 'containers');
   });
 
   it('release on invalid target → snap back, no mutation, no dirty', () => {
@@ -188,8 +189,8 @@ describe('[2] onMouseEvent — state machine transitions', () => {
     onMouseEvent('motion',   5, 2);
     onMouseEvent('release',  5, 2);
     eq(_getDragState(), null);
-    eq(getModel().layoutDirty, false);
-    eq(getModel().layout.rightPanels[2].type, 'detail', 'detail still in right column');
+    eq(getComponentSlice('layout').dirty, false);
+    eq(getComponentSlice("layout").arrange.rightPanels[2].type, 'detail', 'detail still in right column');
   });
 
   it('release outside any column → no mutation', () => {
@@ -197,8 +198,8 @@ describe('[2] onMouseEvent — state machine transitions', () => {
     onMouseEvent('press',   5, 2);
     onMouseEvent('motion', 200, 200);  // off-screen
     onMouseEvent('release', 200, 200);
-    eq(getModel().layoutDirty, false);
-    eq(getModel().layout.leftPanels[0].type, 'containers');
+    eq(getComponentSlice('layout').dirty, false);
+    eq(getComponentSlice("layout").arrange.leftPanels[0].type, 'containers');
   });
 });
 
@@ -210,13 +211,13 @@ describe('[3] cross-column drag — splice / insert math', () => {
     onMouseEvent('motion', 50, 6);   // top half of stats
     onMouseEvent('release', 50, 6);
 
-    eq(getModel().layout.leftPanels.length, 1, 'one panel left in left col');
-    eq(getModel().layout.leftPanels[0].type, 'groups');
-    eq(getModel().layout.rightPanels[0].type, 'actions');
-    eq(getModel().layout.rightPanels[1].type, 'containers');  // inserted before stats
-    eq(getModel().layout.rightPanels[2].type, 'stats');
-    eq(getModel().layout.rightPanels[3].type, 'detail');
-    eq(getModel().layoutDirty, true);
+    eq(getComponentSlice("layout").arrange.leftPanels.length, 1, 'one panel left in left col');
+    eq(getComponentSlice("layout").arrange.leftPanels[0].type, 'groups');
+    eq(getComponentSlice("layout").arrange.rightPanels[0].type, 'actions');
+    eq(getComponentSlice("layout").arrange.rightPanels[1].type, 'containers');  // inserted before stats
+    eq(getComponentSlice("layout").arrange.rightPanels[2].type, 'stats');
+    eq(getComponentSlice("layout").arrange.rightPanels[3].type, 'detail');
+    eq(getComponentSlice('layout').dirty, true);
   });
 
   it('same-column reorder: drag groups upward past containers', () => {
@@ -226,8 +227,8 @@ describe('[3] cross-column drag — splice / insert math', () => {
     onMouseEvent('motion',  5,  2);
     onMouseEvent('release', 5,  2);
 
-    eq(getModel().layout.leftPanels[0].type, 'groups',     'groups moved to top');
-    eq(getModel().layout.leftPanels[1].type, 'containers');
+    eq(getComponentSlice("layout").arrange.leftPanels[0].type, 'groups',     'groups moved to top');
+    eq(getComponentSlice("layout").arrange.leftPanels[1].type, 'containers');
   });
 
   it('same-column drag to same position is a no-op (drag-back)', () => {
@@ -239,8 +240,8 @@ describe('[3] cross-column drag — splice / insert math', () => {
     // already is → no order change but dirty flag DOES flip (the splice
     // happens). That's acceptable — same shape applied to same shape.
     // Order assertion is what matters:
-    eq(getModel().layout.leftPanels[0].type, 'containers');
-    eq(getModel().layout.leftPanels[1].type, 'groups');
+    eq(getComponentSlice("layout").arrange.leftPanels[0].type, 'containers');
+    eq(getComponentSlice("layout").arrange.leftPanels[1].type, 'groups');
   });
 });
 

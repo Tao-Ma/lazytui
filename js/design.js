@@ -21,7 +21,15 @@
 const { esc, RESET, richToAnsi } = require('./ansi');
 const { cols, stdout } = require('./term');
 const { getModel } = require('./runtime');
+const { getComponentSlice } = require('./plugins/api');
 const mdesign = require('./model-design');
+
+// The layout Component's design sub-slice (Phase 1f) — what used to be
+// at `model.modal.design`. Lazy because tests can boot without layout.
+function _design() {
+  const slice = getComponentSlice('layout');
+  return slice ? slice.design : null;
+}
 
 function panelTitle(type) {
   const p = mdesign.allDesignPanels(getModel()).find(x => x.type === type);
@@ -34,7 +42,9 @@ function panelTitle(type) {
  */
 function getDesignFooter() {
   if (!getModel().modes.designMode) return '';
-  const drag = getModel().modal.design.drag;
+  const d = _design();
+  if (!d) return '';
+  const drag = d.drag;
   if (drag && drag.kind === 'dragging') {
     const t = drag.target;
     const srcTitle = panelTitle(drag.sourceType);
@@ -43,7 +53,7 @@ function getDesignFooter() {
     return ` | dragging ${esc(srcTitle)} → ${t.column} @ ${t.index}`;
   }
   const all = mdesign.allDesignPanels(getModel());
-  const sel = all[getModel().modal.design.selectedIdx];
+  const sel = all[d.selectedIdx];
   return sel ? ` | ${esc(sel.title)} (${sel.column})` : '';
 }
 
@@ -53,28 +63,30 @@ function getDesignFooter() {
  */
 function renderDesignOverlay() {
   if (!getModel().modes.designMode) return;
-  const drag = getModel().modal.design.drag;
+  const d = _design();
+  const drag = d && d.drag;
   if (!drag || drag.kind !== 'dragging') return;
   const t = drag.target;
   if (!t) return;
 
   const COLS = cols();
-  const leftW = getModel().layout.leftWidth;
+  const leftW = layoutSlice.arrange.leftWidth;
   const colX = t.column === 'left' ? 0 : leftW;
   const colW = t.column === 'left' ? leftW : COLS - leftW;
 
   // Resolve insertion y: t.index === 0 → top of column; else bottom edge of
   // the panel at index t.index - 1.
-  const panels = t.column === 'left' ? getModel().layout.leftPanels : getModel().layout.rightPanels;
+  const layoutSlice = getComponentSlice('layout');
+  const panels = t.column === 'left' ? layoutSlice.arrange.leftPanels : layoutSlice.arrange.rightPanels;
   let lineY;
   if (panels.length === 0) {
     lineY = 0;
   } else if (t.index <= 0) {
-    const first = getModel().panelBounds[panels[0].type];
+    const first = layoutSlice.panelBounds[panels[0].type];
     lineY = first ? first.y : 0;
   } else {
     const beforeIdx = Math.min(t.index, panels.length) - 1;
-    const before = getModel().panelBounds[panels[beforeIdx].type];
+    const before = layoutSlice.panelBounds[panels[beforeIdx].type];
     lineY = before ? before.y + before.h - 1 : 0;
   }
 
@@ -84,9 +96,10 @@ function renderDesignOverlay() {
   stdout.write(`\x1b[${lineY + 1};${colX + 1}H` + richToAnsi(markup) + RESET);
 }
 
-/** Title-edit footer text — the live buffer (reads the model). */
+/** Title-edit footer text — the live buffer (reads the layout slice). */
 function titleEditText() {
-  return getModel().modal.design.titleEdit.text;
+  const d = _design();
+  return d ? d.titleEdit.text : '';
 }
 
 /** `:restore-layout` escape hatch — wipe the session's undo history when the
@@ -114,7 +127,7 @@ module.exports = {
   onMouseEvent,
   pointToDropTarget, pointToResizeTarget,
   _clearUndoStacks,
-  _getDragState:  () => getModel().modal.design.drag,
-  _getUndoDepth:  () => getModel().modal.design.undo.length,
-  _getRedoDepth:  () => getModel().modal.design.redo.length,
+  _getDragState:  () => _design()?.drag,
+  _getUndoDepth:  () => _design()?.undo.length,
+  _getRedoDepth:  () => _design()?.redo.length,
 };

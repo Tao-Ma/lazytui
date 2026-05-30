@@ -7,7 +7,7 @@
  * root reducer doesn't touch the slice.
  *
  * Cross-layer concerns:
- *   - When a viewer write also flips model.modes / model.focus (tab-open
+ *   - When a viewer write also flips model.modes / getComponentSlice("layout").focus (tab-open
  *     focuses 'detail' + sets/clears terminalMode; search enter/commit toggles
  *     detailSearchMode), the slice write happens inline and the cross-layer
  *     flag write is returned as an apply_msg Cmd (root reducer applies it).
@@ -24,6 +24,7 @@
 const { getTabInfo, isTerminalTab } = require('../../tabs');
 const {
   esc, visibleLen, renderPanel, decorate,
+  getComponentSlice,
 } = require('../api');
 const ms = require('../../model-search');
 const mt = require('../../model-tabs');
@@ -57,7 +58,7 @@ function update(msg, slice) {
       return slice;
     }
     case 'viewer_scroll': {
-      const viewport = (getModel().panelHeights.detail || 0) - 2;
+      const viewport = (getComponentSlice('layout').panelHeights.detail || 0) - 2;
       const maxScroll = Math.max(0, slice.lines.length - viewport);
       let next;
       if (msg.to === 'top') next = 0;
@@ -67,7 +68,7 @@ function update(msg, slice) {
       return slice;
     }
     case 'viewer_append': {
-      const innerH = Math.max(1, (getModel().panelHeights.detail || 10) - 2);
+      const innerH = Math.max(1, (getComponentSlice('layout').panelHeights.detail || 10) - 2);
       const maxScroll = Math.max(0, slice.lines.length - innerH);
       const wasAtBottom = slice.scroll >= maxScroll;
       slice.lines.push(msg.line);
@@ -124,7 +125,9 @@ function update(msg, slice) {
     case 'viewer_add_ephemeral_terminal': {
       const out = mt.addEphemeral(slice, getModel(), msg);
       const effects = [];
-      if (out.focusDetail)   effects.push({ type: 'apply_msg', msg: { type: 'focus_set', focus: 'detail' } });
+      // focus_set is layout-owned (Phase 1c). Phase 2a — inner msg wrapped
+      // so the dispatch_msg handler routes through layout directly.
+      if (out.focusDetail)   effects.push({ type: 'dispatch_msg', msg: require('../api').wrap('layout', { type: 'focus_set', focus: 'detail' }) });
       if (out.terminalEnter) effects.push({ type: 'apply_msg', msg: { type: 'terminal_enter' } });
       return [slice, effects];
     }
@@ -138,7 +141,8 @@ function update(msg, slice) {
     case 'viewer_add_content_tab': {
       const out = mt.addContent(slice, getModel(), msg);
       const effects = [];
-      if (out.focusDetail)  effects.push({ type: 'apply_msg', msg: { type: 'focus_set', focus: 'detail' } });
+      // focus_set is layout-owned (Phase 1c). Phase 2a — wrapped (see addEphemeral).
+      if (out.focusDetail)  effects.push({ type: 'dispatch_msg', msg: require('../api').wrap('layout', { type: 'focus_set', focus: 'detail' }) });
       if (out.terminalExit) effects.push({ type: 'apply_msg', msg: { type: 'terminal_exit' } });
       return [slice, effects];
     }
@@ -179,14 +183,14 @@ function update(msg, slice) {
       if (msg.extend && slice.select && slice.select.active) {
         slice.select.cursor = { line: slice.cursor.line, col: slice.cursor.col };
       }
-      const innerH = Math.max(1, (getModel().panelHeights.detail || 0) - 2);
+      const innerH = Math.max(1, (getComponentSlice('layout').panelHeights.detail || 0) - 2);
       const top = slice.scroll || 0;
       if (slice.cursor.line < top) slice.scroll = slice.cursor.line;
       else if (slice.cursor.line >= top + innerH) slice.scroll = slice.cursor.line - innerH + 1;
       return slice;
     }
     case 'select_scroll_view': {
-      const innerH = Math.max(1, (getModel().panelHeights.detail || 0) - 2);
+      const innerH = Math.max(1, (getComponentSlice('layout').panelHeights.detail || 0) - 2);
       const maxScroll = Math.max(0, slice.lines.length - innerH);
       slice.scroll = Math.max(0, Math.min(maxScroll, (slice.scroll || 0) + (msg.delta || 0)));
       return slice;
@@ -206,7 +210,8 @@ function detailTitle(slice) {
   const m = getModel();
   const tabBounds = [];
   const { actionTabs, termTabs, contentTabs } = getTabInfo();
-  if (m.panelBounds.detail) m.panelBounds.detail.tabs = tabBounds;
+  const layoutSlice = getComponentSlice('layout');
+  if (layoutSlice && layoutSlice.panelBounds.detail) layoutSlice.panelBounds.detail.tabs = tabBounds;
   if (!actionTabs.length && !termTabs.length && !contentTabs.length) return 'Detail';
   const parts = [];
   const tab = slice.tab;
@@ -221,7 +226,7 @@ function detailTitle(slice) {
   termTabs.forEach(([, term], i) => pushTab(term.label, tab === termOffset + i, term));
   const contentOffset = 1 + actionTabs.length + termTabs.length;
   contentTabs.forEach(([, info], i) => pushTab(info.label, tab === contentOffset + i, info));
-  const dp = m.layout.rightPanels.find(p => p.type === 'detail');
+  const dp = getComponentSlice('layout').arrange.rightPanels.find(p => p.type === 'detail');
   const hotkey = dp ? dp.hotkey : '';
   let xOffset = 2 + (hotkey ? 2 + hotkey.length : 0) + 1;
   parts.forEach((part, i) => {
@@ -236,9 +241,9 @@ function detailTitle(slice) {
 function render(panel, w, h, slice) {
   const m = getModel();
   const innerH = h - 2;
-  const dp = m.layout.rightPanels.find(p => p.type === 'detail');
+  const dp = getComponentSlice('layout').arrange.rightPanels.find(p => p.type === 'detail');
   const hotkey = dp ? dp.hotkey : '';
-  const isFocused = m.focus === 'detail' || m.modes.terminalMode;
+  const isFocused = getComponentSlice("layout").focus === 'detail' || m.modes.terminalMode;
   if (isTerminalTab()) {
     return renderPanel({
       width: w, height: h, lines: [],

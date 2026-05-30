@@ -19,7 +19,7 @@ function freshGroup({ actions = {}, terminals = {} } = {}) {
   getComponentSlice('detail').ephemeralTerminals = {};
   getComponentSlice('detail').contentTabs = {};
   getComponentSlice('detail').tab = 0;
-  getModel().focus = 'groups';
+  getComponentSlice("layout").focus = 'groups';
   getModel().modes.terminalMode = false;
   getComponentSlice('detail').lines = [];
   getComponentSlice('detail').scroll = 0;
@@ -34,7 +34,7 @@ describe('[1] addContentTab basics', () => {
     eq(info.contentTabs.length, 1, 'one content tab');
     eq(info.total, 1 + 1 + 0 + 1, 'info + action + term + content');
     eq(getComponentSlice('detail').tab, 2, 'content tab is at index 2');
-    eq(getModel().focus, 'detail', 'focus moved to detail');
+    eq(getComponentSlice("layout").focus, 'detail', 'focus moved to detail');
     eq(getComponentSlice('detail').lines.join('\n'), 'line one\nline two', 'lines loaded into detail');
   });
   it('re-add with same key updates label/lines and re-switches', () => {
@@ -101,10 +101,10 @@ describe('[5] updateContentTabLines — no focus steal', () => {
     tabs.addContentTab('g1', 'file:x', 'x', ['v1']);
     // User navigates away
     getComponentSlice('detail').tab = 0;
-    getModel().focus = 'groups';
+    getComponentSlice("layout").focus = 'groups';
     tabs.updateContentTabLines('g1', 'file:x', ['v2', 'v3']);
     eq(getComponentSlice('detail').tab, 0, 'activeTab unchanged');
-    eq(getModel().focus, 'groups', 'focus unchanged');
+    eq(getComponentSlice("layout").focus, 'groups', 'focus unchanged');
     // Lines stored, but detail body NOT refreshed (we're not on that tab)
     eq(getComponentSlice('detail').contentTabs.g1['file:x'].lines.join('\n'), 'v2\nv3');
   });

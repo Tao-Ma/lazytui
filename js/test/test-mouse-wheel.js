@@ -28,17 +28,17 @@ const model = getModel();
 
 function setupTwoPanel() {
   // Pretend layout: hosts on the left (0..30, 0..20), detail on the right (30..80, 0..20)
-  getModel().layout = {
+  getComponentSlice("layout").arrange = {
     leftPanels: [{ type: 'hosts' }],
     rightPanels: [{ type: 'detail' }],
     leftWidth: 30, detailHeightPct: 60,
   };
-  getModel().panelBounds = {
+  getComponentSlice('layout').panelBounds = {
     hosts:  { x: 0,  y: 0, w: 30, h: 20 },
     detail: { x: 30, y: 0, w: 50, h: 20 },
   };
-  getModel().panelHeights = { hosts: 20, detail: 20 };
-  getModel().focus = 'hosts';
+  getComponentSlice('layout').panelHeights = { hosts: 20, detail: 20 };
+  getComponentSlice("layout").focus = 'hosts';
   getComponentSlice('detail').lines = Array.from({ length: 100 }, (_, i) => `line-${i}`);
   getComponentSlice('detail').scroll = 0;
 }
@@ -46,11 +46,11 @@ function setupTwoPanel() {
 describe('[1] wheel over detail scrolls view, no focus change', () => {
   it('wheel-down increments detail.scroll while focus stays on hosts', () => {
     setupTwoPanel();
-    eq(getModel().focus, 'hosts', 'starts on hosts');
+    eq(getComponentSlice("layout").focus, 'hosts', 'starts on hosts');
     const mutated = _handleWheel(model, 40, 5, +1);  // (mx, my) inside detail
     eq(mutated, true);
     eq(getComponentSlice('detail').scroll, 1, 'detail scrolled');
-    eq(getModel().focus, 'hosts', 'focus unchanged — that is the friendlier semantics');
+    eq(getComponentSlice("layout").focus, 'hosts', 'focus unchanged — that is the friendlier semantics');
   });
   it('wheel-up decrements', () => {
     setupTwoPanel();
@@ -83,9 +83,9 @@ describe('[2] wheel outside any panel is a no-op', () => {
 describe('[3] wheel target ≠ focused panel: focus stays put', () => {
   it('hosts focused, wheel lands in detail — detail scrolls, hosts focus retained', () => {
     setupTwoPanel();
-    getModel().focus = 'hosts';
+    getComponentSlice("layout").focus = 'hosts';
     _handleWheel(model, 40, 10, +1);
-    eq(getModel().focus, 'hosts');
+    eq(getComponentSlice("layout").focus, 'hosts');
     eq(getComponentSlice('detail').scroll, 1);
   });
 });

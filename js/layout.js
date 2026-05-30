@@ -1,22 +1,13 @@
 /**
  * Layout calculation and view mode rendering.
  *
- * Single-writer note (docs/v0.5-layering.md step 5).
- * This module is the **layout engine** and writes `model.panelHeights` /
- * `model.panelBounds` directly during the render pass — those fields are
- * VIEW OUTPUT (derived geometry), not state owned by other modules. The
- * pattern is: compute the geometry from the terminal size + the current
- * layout struct + the focus, memoize it on the model so downstream readers
- * (the per-panel render fns, mouse hit-testing, design-mode drag hit-tests
- * in model-design.js) can resolve coordinates without recomputing.
- *
- * This is a deliberate BLESSED exception to "the reducer is the single
- * writer of model state" — the layout engine owns this geometry the way a
- * view function owns its own output; routing per-frame `panelHeights[type]
- * = h` through a Msg would be churn for no correctness gain (no other
- * module writes here; the geometry is recomputed from scratch each frame).
- * model-design.js's "READ only — frame-derived, written by layout.js"
- * comment encodes the same contract from the consumer side.
+ * Post-Phase-1e: the geometry (panelHeights / panelBounds) lives on the
+ * layout Component's slice, written during the render pass. This module
+ * IS the writer — the slice owns the data; the render pass refills it
+ * each frame; downstream readers (per-panel render fns, mouse hit-tests,
+ * design-mode drag math) read it back via getComponentSlice('layout').
+ * The render is one of the regular "Component writes its own slice"
+ * paths now — no longer a blessed exception.
  *
  * Zero npm dependencies (uses local modules).
  */
@@ -49,9 +40,9 @@ const { currentText: filterCurrentText } = require('./filter');
  *   render(panel, width, height, state) → string
  * Height is passed explicitly by every caller (renderNormal/Half/Full).
  * Renderers should treat the height arg as authoritative; reading
- * model.panelHeights inside a renderer is implicit coupling to the
- * layout pass and breaks half/full view modes that supply a different
- * height.
+ * layoutSlice.panelHeights inside a renderer is implicit coupling to
+ * the layout pass and breaks half/full view modes that supply a
+ * different height.
  */
 function rendererFor(type) {
   // Component-owned panels take precedence — a Component's render gets
@@ -77,8 +68,8 @@ function rendererFor(type) {
 
 /**
  * Distribute the column's `availH` rows across `panels`, writing each
- * panel's height to `S.panelHeights[panel.type]`. Three classes of
- * panel share the column:
+ * panel's height to the layout slice's `panelHeights[type]`. Three
+ * classes of panel share the column:
  *
  *   1. Detail (right column only). Reserved height = `availH *
  *      detailHeightPct / 100`. Detail never carries a per-panel
@@ -93,7 +84,7 @@ function rendererFor(type) {
  * panel — a manually oversubscribed heightPct (sum > 100) gets
  * scaled down here rather than crashing the renderer.
  */
-function distributeColumnHeights(model, panels, availH, isRightCol, minH) {
+function distributeColumnHeights(layoutSlice, panels, availH, isRightCol, minH) {
   if (panels.length === 0) return;
 
   let reserved = 0;
@@ -101,7 +92,7 @@ function distributeColumnHeights(model, panels, availH, isRightCol, minH) {
   if (isRightCol) {
     detailPanel = panels.find(p => p.type === 'detail') || null;
     if (detailPanel) {
-      reserved = Math.max(minH, Math.floor(availH * model.layout.detailHeightPct / 100));
+      reserved = Math.max(minH, Math.floor(availH * layoutSlice.arrange.detailHeightPct / 100));
     }
   }
 
@@ -150,30 +141,31 @@ function distributeColumnHeights(model, panels, availH, isRightCol, minH) {
     const baseH = Math.floor(flexTotalH / flex.length);
     flex.forEach((p, i) => {
       const h = i === flex.length - 1 ? flexTotalH - baseH * (flex.length - 1) : baseH;
-      model.panelHeights[p.type] = Math.max(minH, h);
+      layoutSlice.panelHeights[p.type] = Math.max(minH, h);
     });
   }
-  for (const { p, h } of anchored) model.panelHeights[p.type] = h;
-  if (detailPanel) model.panelHeights[detailPanel.type] = reserved;
+  for (const { p, h } of anchored) layoutSlice.panelHeights[p.type] = h;
+  if (detailPanel) layoutSlice.panelHeights[detailPanel.type] = reserved;
 
   // Park rounding-leftover rows on the column's last panel so the
   // column exactly fills availH (matches the pre-heightPct behavior
   // and avoids a visually empty strip at the bottom).
   let sum = 0;
-  for (const p of panels) sum += model.panelHeights[p.type];
+  for (const p of panels) sum += layoutSlice.panelHeights[p.type];
   if (sum < availH) {
     const last = panels[panels.length - 1];
-    model.panelHeights[last.type] += availH - sum;
+    layoutSlice.panelHeights[last.type] += availH - sum;
   }
 }
 
 function calcLayout(model = getModel()) {
   refreshSize();
   const COLS = cols(), ROWS = rows();
+  const layoutSlice = getComponentSlice('layout');
 
   // Adaptive: shrink left column on narrow terminals
   const minRight = 20;
-  let leftW = model.layout.leftWidth;
+  let leftW = layoutSlice.arrange.leftWidth;
   if (COLS < leftW + minRight) {
     leftW = Math.max(10, COLS - minRight);
   }
@@ -187,21 +179,21 @@ function calcLayout(model = getModel()) {
   // Minimum panel height: 3 rows (border + 1 content line)
   const minH = 3;
 
-  model.panelHeights = {};
-  distributeColumnHeights(model, model.layout.leftPanels, availH, /*isRightCol*/ false, minH);
-  distributeColumnHeights(model, model.layout.rightPanels, availH, /*isRightCol*/ true,  minH);
+  layoutSlice.panelHeights = {};
+  distributeColumnHeights(layoutSlice, layoutSlice.arrange.leftPanels, availH, /*isRightCol*/ false, minH);
+  distributeColumnHeights(layoutSlice, layoutSlice.arrange.rightPanels, availH, /*isRightCol*/ true,  minH);
   // Half/full view modes read panelHeights.detail even when detail
   // isn't currently rendered; keep the fallback so they don't crash.
-  if (!('detail' in model.panelHeights)) {
-    model.panelHeights.detail = Math.max(minH, Math.floor(availH * model.layout.detailHeightPct / 100));
+  if (!('detail' in layoutSlice.panelHeights)) {
+    layoutSlice.panelHeights.detail = Math.max(minH, Math.floor(availH * layoutSlice.arrange.detailHeightPct / 100));
   }
 
   // Heights settled — keep each panel's scroll offset such that the selected
   // item is in view. Done here (not inside render) so renderers stay pure
   // and resize alone (without selection movement) still re-syncs scroll.
-  for (const p of [...model.layout.leftPanels, ...model.layout.rightPanels]) {
+  for (const p of [...layoutSlice.arrange.leftPanels, ...layoutSlice.arrange.rightPanels]) {
     if (p.type === 'detail') continue;
-    syncPanelScroll(p.type, model.panelHeights[p.type] - 2);
+    syncPanelScroll(p.type, layoutSlice.panelHeights[p.type] - 2);
   }
 
   return { leftW, rightW, availH };
@@ -265,20 +257,21 @@ function paintColumns(leftOutput, rightOutput) {
 // panel its slice (Component) or the model (Plugin).
 function renderNormal(model) {
   const { leftW, rightW } = calcLayout(model);
+  const layoutSlice = getComponentSlice('layout');
   // Reset bounds — stale entries from a prior view-mode mustn't be hit-testable.
-  model.panelBounds = {};
+  layoutSlice.panelBounds = {};
   let leftY = 0;
-  const leftOutputs = model.layout.leftPanels.map(p => {
-    const h = model.panelHeights[p.type] || 0;
-    model.panelBounds[p.type] = { x: 0, y: leftY, w: leftW, h };
+  const leftOutputs = layoutSlice.arrange.leftPanels.map(p => {
+    const h = layoutSlice.panelHeights[p.type] || 0;
+    layoutSlice.panelBounds[p.type] = { x: 0, y: leftY, w: leftW, h };
     leftY += h;
     const fn = rendererFor(p.type);
     return fn ? fn(p, leftW, h) : '';
   });
   let rightY = 0;
-  const rightOutputs = model.layout.rightPanels.map(p => {
-    const h = model.panelHeights[p.type] || 0;
-    model.panelBounds[p.type] = { x: leftW, y: rightY, w: rightW, h };
+  const rightOutputs = layoutSlice.arrange.rightPanels.map(p => {
+    const h = layoutSlice.panelHeights[p.type] || 0;
+    layoutSlice.panelBounds[p.type] = { x: leftW, y: rightY, w: rightW, h };
     rightY += h;
     const fn = rendererFor(p.type);
     return fn ? fn(p, rightW, h) : '';
@@ -289,14 +282,15 @@ function renderNormal(model) {
 function renderHalf(model) {
   calcLayout(model);
   const COLS = cols(), ROWS = rows();
+  const layoutSlice = getComponentSlice('layout');
   const halfW = Math.floor(COLS / 2);
   const availH = ROWS - 2;  // -2: footer + register strip rows
-  const focusedPanel = allPanels().find(p => p.type === model.focus);
+  const focusedPanel = allPanels().find(p => p.type === layoutSlice.focus);
   if (!focusedPanel) return renderNormal(model);
-  const detailPanel = model.layout.rightPanels.find(p => p.type === 'detail');
-  model.panelBounds = {};
-  model.panelBounds[focusedPanel.type] = { x: 0, y: 0, w: halfW, h: availH };
-  if (detailPanel) model.panelBounds.detail = { x: halfW, y: 0, w: COLS - halfW, h: availH };
+  const detailPanel = layoutSlice.arrange.rightPanels.find(p => p.type === 'detail');
+  layoutSlice.panelBounds = {};
+  layoutSlice.panelBounds[focusedPanel.type] = { x: 0, y: 0, w: halfW, h: availH };
+  if (detailPanel) layoutSlice.panelBounds.detail = { x: halfW, y: 0, w: COLS - halfW, h: availH };
   const fn = rendererFor(focusedPanel.type);
   const leftContent = fn ? fn(focusedPanel, halfW, availH) : '';
   const detailFn = detailPanel ? rendererFor('detail') : null;
@@ -307,11 +301,12 @@ function renderHalf(model) {
 function renderFull(model) {
   calcLayout(model);
   const COLS = cols(), ROWS = rows();
+  const layoutSlice = getComponentSlice('layout');
   const availH = ROWS - 2;  // -2: footer + register strip rows
-  const focusedPanel = allPanels().find(p => p.type === model.focus);
+  const focusedPanel = allPanels().find(p => p.type === layoutSlice.focus);
   if (!focusedPanel) return renderNormal(model);
-  model.panelBounds = {};
-  model.panelBounds[focusedPanel.type] = { x: 0, y: 0, w: COLS, h: availH };
+  layoutSlice.panelBounds = {};
+  layoutSlice.panelBounds[focusedPanel.type] = { x: 0, y: 0, w: COLS, h: availH };
   const fn = rendererFor(focusedPanel.type);
   const content = fn ? fn(focusedPanel, COLS, availH) : '';
   return paintColumns(content, '');
@@ -326,7 +321,8 @@ function renderTerminalOverlay(model = getModel()) {
   const termConf = activeTerminalConfig();
   if (!id || !termConf) return;
 
-  const bounds = model.panelBounds.detail;
+  const layoutSlice = getComponentSlice('layout');
+  const bounds = layoutSlice && layoutSlice.panelBounds.detail;
   if (!bounds) return;
   const innerW = bounds.w - 2;
   const innerH = bounds.h - 2;
@@ -407,7 +403,9 @@ function render(model = getModel()) {
   _wasOverlayActive = overlayActive;
 
   let mainDidFull;
-  const viewMode = model.viewMode;
+  // viewMode lives on the layout Component slice (Phase 1b).
+  const layoutSlice = getComponentSlice('layout') || { viewMode: 'normal' };
+  const viewMode = layoutSlice.viewMode;
   if (viewMode === 'half') mainDidFull = renderHalf(model);
   else if (viewMode === 'full') mainDidFull = renderFull(model);
   else mainDidFull = renderNormal(model);
@@ -494,12 +492,13 @@ function footerKeys(model) {
     return ` rename: ${esc(titleEditText())}│ | Esc cancel | Enter ok`;
   }
   if (md.designMode) {
-    const dirty = model.layoutDirty ? ' | [yellow]• unsaved (:save-layout)[/]' : '';
+    const layoutSlice = getComponentSlice('layout');
+    const dirty = (layoutSlice && layoutSlice.dirty) ? ' | [yellow]• unsaved (:save-layout)[/]' : '';
     return ` Design Mode | drag move/resize | J/K reorder | ←→ swap col | +/- col/detail · [/] panel h | t rename | u undo | C-r redo | :save-layout | q exit${getDesignFooter()}${dirty}`;
   }
   if (md.menuOpen)   return ' ↑↓ select | Esc close | Enter run';
 
-  if (model.focus === 'detail') {
+  if (getComponentSlice("layout").focus === 'detail') {
     const { total } = getTabInfo();
     const segs = ['←→ panel'];
     if (total > 1) segs.push(']\\[ tabs');
@@ -522,10 +521,10 @@ function footerKeys(model) {
     }
     return ' ' + segs.join(' | ');
   }
-  if (model.focus === 'actions') {
+  if (getComponentSlice("layout").focus === 'actions') {
     return ' ↑↓ select | ←→ panel | / filter | +/_ view | x menu | q quit | Enter run';
   }
-  if (model.focus === 'groups') {
+  if (getComponentSlice("layout").focus === 'groups') {
     return ' ↑↓ select | ←→ panel | / filter | +/_ view | x menu | q quit | Enter actions';
   }
   return ' ↑↓ select | ←→ panel | / filter | +/_ view | x menu | q quit';
@@ -570,22 +569,23 @@ function renderFooter(model = getModel()) {
   if (model.modes.cmdMode) return;
   const COLS = cols(), ROWS = rows();
   const inModal = modes.isModal();
+  const layoutSlice = getComponentSlice('layout') || { viewMode: 'normal', dirty: false };
 
   // Left side: mode message OR (panel hints + plugin keyHints +
   // multi-select indicator + footer:left decorator). Modal footers
   // own the row — no plugin contributions appended.
   let keys = footerKeys(model);
   if (!inModal) {
-    const def = getPanelDef(model.focus);
+    const def = getPanelDef(getComponentSlice("layout").focus);
     if (def && def.keyHints) keys += ` | ${esc(def.keyHints)}`;
-    const msCount = multiSelCount(model.focus);
+    const msCount = multiSelCount(getComponentSlice("layout").focus);
     if (msCount > 0) keys += ` | ${esc(`[${msCount} sel]`)}`;
     // Surface layout-dirty state to non-modal users too. They might
     // have left design mode with pending changes; the indicator
     // reminds them `:save-layout` exists. Design-mode footer adds
     // its own dirty marker in footerKeys() to keep modal layout
     // self-contained.
-    if (model.layoutDirty) keys += ` | [yellow]• unsaved (:save-layout)[/]`;
+    if (layoutSlice.dirty) keys += ` | [yellow]• unsaved (:save-layout)[/]`;
   }
 
   // Plugin footer decorations — DECORATORS.md `footer:left` / `footer:right`.
@@ -595,7 +595,7 @@ function renderFooter(model = getModel()) {
   // app-global state via `getModel()` and any Component slice they own.
   let footerLeftExtra = '', footerRightExtra = '';
   if (!inModal) {
-    const ctxBase = { focus: model.focus, view: model.viewMode };
+    const ctxBase = { focus: getComponentSlice("layout").focus, view: layoutSlice.viewMode };
     const halfBudget = Math.max(0, Math.floor(COLS / 2) - 4);
     footerLeftExtra  = decorate('footer:left',  { ...ctxBase, width: halfBudget });
     footerRightExtra = decorate('footer:right', { ...ctxBase, width: halfBudget });
@@ -611,13 +611,13 @@ function renderFooter(model = getModel()) {
   // List-select tag only when the armed mode actually applies — i.e.
   // focus is on a list panel. (The flag can stay armed while focus is
   // on a non-list panel, where space falls back to the leader.)
-  const focusDef = getPanelDef(model.focus);
+  const focusDef = getPanelDef(getComponentSlice("layout").focus);
   const selectActive = model.modes.listSelectMode && focusDef && typeof focusDef.getItems === 'function';
   const sel = getComponentSlice('detail')?.select;
   const selectTag = (sel && sel.active)
     ? ` \\[${sel.kind === 'line' ? 'v-line' : 'v-char'}]`
     : (selectActive ? ' \\[select]' : '');
-  const vm = model.viewMode;
+  const vm = layoutSlice.viewMode;
   const modeTag = vm !== 'normal' ? ` \\[${vm}]` : '';
 
   // Pad left → right tail → tags, using visible width math (esc'd

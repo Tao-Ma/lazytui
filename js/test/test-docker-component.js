@@ -32,7 +32,7 @@ function setup(containers = ['c1', 'c2'], focused = true) {
   getModel().ui.scroll = {};
   getModel().ui.filters = {};
   getModel().ui.multiSel = {};
-  getModel().focus = 'containers';
+  getComponentSlice("layout").focus = 'containers';
   getModel().focused = focused;
 }
 
@@ -51,7 +51,9 @@ describe('[1] refresh arms the recurring tick + an immediate fetch', () => {
     assert(types(effects).includes('dockerFetch'), 'immediate fetch');
     assert(types(effects).includes('dockerEventsStart'), 'events subscription started');
     const tick = effects.find(e => e.type === 'tick');
-    eq(tick.msg.type, 'dockerTick', 'tick re-dispatches dockerTick');
+    // Phase 2d: the tick's carried msg is wrapped to docker.
+    eq(tick.msg.kind, 'docker', 'tick wrapped to docker');
+    eq(tick.msg.msg.type, 'dockerTick', 'tick re-dispatches dockerTick');
     assert(slice.started && slice.inFlight && slice.eventsStarted, 'flags set');
   });
   it('no containers: arms the tick but emits no fetch', () => {
@@ -131,7 +133,7 @@ describe('[5] i/t/s key Msgs emit stream/shell effects on the focused row', () =
   });
   it('keys are ignored when the containers panel is not focused', () => {
     setup();
-    getModel().focus = 'groups';
+    getComponentSlice("layout").focus = 'groups';
     const { effects } = step({ type: 'key', key: 'i' }, slice0());
     eq(effects.length, 0, 'no effect when unfocused');
   });
@@ -144,7 +146,7 @@ describe('[6] registered Component — slice-backed reads', () => {
     api.registerComponent(docker);
     setup(['c1']);
     // Fold a result into the REGISTERED slice via the real dispatch path.
-    api.dispatchMsg({ type: 'dockerResult', status: { c1: 'running' }, stats: { c1: { cpu: '5%', mem: '1MB' } } });
+    api.dispatchMsg(api.wrap('docker', { type: 'dockerResult', status: { c1: 'running' }, stats: { c1: { cpu: '5%', mem: '1MB' } } }));
     eq(api.getComponentSlice('docker').status.c1, 'running', 'slice updated');
     eq(docker.statusFor('c1'), 'running', 'statusFor reads the slice');
     eq(docker.statusFor('ghost'), null, 'untracked → null');

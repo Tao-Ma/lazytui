@@ -171,7 +171,7 @@ describe('[10] decorateLines — multi-line render integration', () => {
   });
   it('no-op when no active selection (reading mode = no cursor)', () => {
     setUp(['x']);
-    getModel().focus = 'detail';
+    getComponentSlice("layout").focus = 'detail';
     sel.cancel();
     const out = sel.decorateLines(getComponentSlice('detail').lines);
     eq(out, getComponentSlice('detail').lines, 'pass-through; reading mode shows no cursor');
@@ -192,17 +192,17 @@ describe('[8] cancel', () => {
 describe('[11] onDetailKey — keyboard visual-mode', () => {
   function withDetail(lines) {
     setUp(lines);
-    getModel().focus = 'detail';
+    getComponentSlice("layout").focus = 'detail';
     getModel().modes.terminalMode = false;
     getComponentSlice('detail').cursor = { line: 0, col: 0 };
-    getModel().panelHeights.detail = 10;
+    getComponentSlice('layout').panelHeights.detail = 10;
     getComponentSlice('detail').scroll = 0;
   }
   it('claims keys only when focus=detail', () => {
     withDetail(['abc']);
-    getModel().focus = 'groups';
+    getComponentSlice("layout").focus = 'groups';
     eq(sel.onDetailKey('v', 'v'), false, 'returns false when focus != detail');
-    getModel().focus = 'detail';
+    getComponentSlice("layout").focus = 'detail';
     eq(sel.onDetailKey('v', 'v'), true, 'returns true when focus = detail');
   });
   it('v lands cursor at top of current viewport', () => {
@@ -223,7 +223,7 @@ describe('[11] onDetailKey — keyboard visual-mode', () => {
   });
   it('reading-mode j/k scrolls the view, cursor not used', () => {
     withDetail(Array.from({ length: 20 }, (_, i) => `line${i}`));
-    getModel().panelHeights.detail = 5;  // innerH = 3
+    getComponentSlice('layout').panelHeights.detail = 5;  // innerH = 3
     eq(getComponentSlice('detail').scroll, 0, 'starts at top');
     eq(sel.isActive(), false, 'reading mode (no select)');
     sel.onDetailKey('j', 'j');
@@ -236,7 +236,7 @@ describe('[11] onDetailKey — keyboard visual-mode', () => {
   });
   it('reading-mode j/k clamps at top and bottom', () => {
     withDetail(Array.from({ length: 10 }, (_, i) => `line${i}`));
-    getModel().panelHeights.detail = 5;  // innerH = 3, maxScroll = 7
+    getComponentSlice('layout').panelHeights.detail = 5;  // innerH = 3, maxScroll = 7
     for (let i = 0; i < 20; i++) sel.onDetailKey('j', 'j');
     eq(getComponentSlice('detail').scroll, 7, 'clamped to maxScroll');
     for (let i = 0; i < 20; i++) sel.onDetailKey('k', 'k');
@@ -253,7 +253,7 @@ describe('[11] onDetailKey — keyboard visual-mode', () => {
   });
   it('visual-mode j scrolls when cursor leaves viewport', () => {
     withDetail(Array.from({ length: 20 }, (_, i) => `line${i}`));
-    getModel().panelHeights.detail = 5;  // innerH = 3
+    getComponentSlice('layout').panelHeights.detail = 5;  // innerH = 3
     sel.onDetailKey('v', 'v');
     for (let i = 0; i < 5; i++) sel.onDetailKey('j', 'j');
     assert(getComponentSlice('detail').scroll > 0, `scroll auto-advanced (got ${getComponentSlice('detail').scroll})`);

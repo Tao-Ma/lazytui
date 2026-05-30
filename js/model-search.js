@@ -150,12 +150,13 @@ function prev(slice) {
 }
 
 /** Center the active match in the detail viewport when off-screen.
- *  Reads panelHeights via getModel() since that's app-global (not slice). */
+ *  Reads panelHeights from the layout Component's slice (Phase 1e). */
 function scrollToActive(slice) {
   const s = slice.search;
   const m = s.matches[s.idx];
   if (!m) return;
-  const ph = require('./runtime').getModel().panelHeights;
+  const layoutSlice = require('./plugins/api').getComponentSlice('layout');
+  const ph = layoutSlice && layoutSlice.panelHeights;
   const h = ph && ph.detail;
   const innerH = Math.max(1, (h || 6) - 2);
   const top = slice.scroll || 0;

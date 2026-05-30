@@ -29,7 +29,11 @@ const ms = require('./model-search');
 // (handled by detail.update, which emits the cross-layer mode_set /
 // mode_clear Cmds); low-level helpers (recompute, clearCommitted) still
 // mutate the slice directly via the api facade.
-function _dispatch(msg) { return require('./plugins/api').dispatchMsg(msg); }
+// All Msgs target detail.update (viewer_search_*). Phase 2b wraps once.
+function _dispatch(msg) {
+  const api = require('./plugins/api');
+  return api.dispatchMsg(api.wrap('detail', msg));
+}
 function _slice() { return require('./plugins/api').getComponentSlice('detail'); }
 
 function enter()            { _dispatch({ type: 'viewer_search_enter' }); }

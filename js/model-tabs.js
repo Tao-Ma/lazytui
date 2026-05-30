@@ -5,7 +5,7 @@
  * (groupTerminals / groupContentTabs / actionTabCount) take `model` only —
  * they read config + the slice (via the current Component slice).
  *
- * The leaves don't write `model.modes` / `model.focus` themselves (those are
+ * The leaves don't write `model.modes` / `getComponentSlice("layout").focus` themselves (those are
  * root chrome — the calling reducer branch emits apply_msg Cmds for any
  * cross-layer write). Single-writer per layer.
  */

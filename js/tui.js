@@ -145,10 +145,6 @@ function main() {
   const { destroyAll: destroyTerminals } = require('./terminal');
   const { installSuspendHandlers } = require('./suspend');
 
-  // BLESSED outside-writer (docs/v0.5-layering.md §5): boot-time write of the
-  // --design CLI flag onto the model. Write-once at boot; no runtime mutation.
-  getModel().designEnabled = designEnabled;
-
   // Install the Component effect handlers (setDetail/focus/render) before any
   // plugin/component registers — a migrated component's update→effects must
   // resolve at first dispatch.
@@ -161,6 +157,14 @@ function main() {
   // stateless Components (empty slice + no-op update) — the API-uniformity tax
   // for keeping ONE panel shape across the stateless view set. See
   // docs/v0.5-layering.md.
+  // layout (chrome-only) — the frame Component (Phase 1a skeleton; subsequent
+  // sub-phases migrate focus/viewMode/design/arrange into its slice). See
+  // docs/v0.5-layout-component.md.
+  registerComponent(require('./plugins/core/layout'));
+  // BLESSED outside-writer: boot-time write of the --design CLI flag into
+  // the layout slice. Write-once at boot, after the layout Component is
+  // registered (so the slice exists). No runtime mutation.
+  require('./plugins/api').getComponentSlice('layout').design.enabled = designEnabled;
   registerComponent(require('./plugins/docker'));
   registerComponent(require('./plugins/config-status'));
   registerComponent(require('./plugins/files'));

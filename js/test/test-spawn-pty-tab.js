@@ -4,7 +4,7 @@
  * Replaces the prior test-spawn-bare.js, which pinned the
  * suspend/spawnSync/resume bare-spawn dance — that path was deleted
  * in favor of an in-process node-pty session living in an ephemeral
- * detail-panel tab with `runtime.getModel().viewMode = 'full'` for auto-zoom.
+ * detail-panel tab with `getComponentSlice('layout').viewMode = 'full'` for auto-zoom.
  *
  * This file pins:
  *   1. Outside tmux, runAction(spawn) creates an ephemeral tab and
@@ -45,7 +45,7 @@ getModel().projectDir = '/tmp/spawn-test-cwd';
 getModel().currentGroup = 'g1';
 getModel().config = { groups: { g1: { actions: {}, terminals: {} } } };
 getComponentSlice('detail').ephemeralTerminals = {};
-runtime.getModel().viewMode = 'normal';
+getComponentSlice('layout').viewMode = 'normal';
 
 const { runAction } = require('../actions');
 
@@ -68,9 +68,9 @@ const { describe, it, assert, eq, report } = require('./test-runner');
 
 function resetState() {
   getComponentSlice('detail').ephemeralTerminals = {};
-  runtime.getModel().viewMode = 'normal';
+  getComponentSlice('layout').viewMode = 'normal';
   getComponentSlice('detail').tab = 0;
-  getModel().focus = null;
+  getComponentSlice("layout").focus = null;
   getModel().modes.terminalMode = false;
   spawnCalls.length = 0;
   historyStarts.length = 0;
@@ -93,11 +93,11 @@ describe('[1] spawn outside tmux → embedded PTY tab + viewMode=full', () => {
     assert(keys[0].startsWith('spawn-a:psql-'),
       `tab key prefixed with spawn-<actionKey>- (got ${keys[0]})`);
   });
-  it('sets runtime.getModel().viewMode = "full" for auto-zoom', () => {
-    eq(runtime.getModel().viewMode, 'full', 'viewMode flipped to full');
+  it('sets layout slice viewMode = "full" for auto-zoom', () => {
+    eq(getComponentSlice('layout').viewMode, 'full', 'viewMode flipped to full');
   });
   it('focuses the detail panel (set by addEphemeralTab)', () => {
-    eq(getModel().focus, 'detail', 'focus moved to detail');
+    eq(getComponentSlice("layout").focus, 'detail', 'focus moved to detail');
   });
   it('history records detached:false (child runs in our process)', () => {
     const last = historyStarts[historyStarts.length - 1];
@@ -120,7 +120,7 @@ describe('[2] spawn inside tmux → tmux new-window path (opt-in tier)', () => {
     eq(Object.keys(eph).length, 0, 'no ephemeral tab on tmux path');
   });
   it('does NOT flip viewMode (no auto-zoom in tmux)', () => {
-    eq(runtime.getModel().viewMode, 'normal', 'viewMode unchanged on tmux path');
+    eq(getComponentSlice('layout').viewMode, 'normal', 'viewMode unchanged on tmux path');
   });
   it('history records detached:true (sibling tmux window)', () => {
     const last = historyStarts[historyStarts.length - 1];
@@ -135,7 +135,7 @@ describe('[3] _onSessionExit: clean exit (0) on the active tab', () => {
   const sessionId = `g1_${ephKey}`;
 
   it('precondition — pre-exit: viewMode=full, tab exists', () => {
-    eq(runtime.getModel().viewMode, 'full', 'pre: viewMode=full');
+    eq(getComponentSlice('layout').viewMode, 'full', 'pre: viewMode=full');
     assert(getComponentSlice('detail').ephemeralTerminals.g1[ephKey] != null, 'pre: tab exists');
   });
 
@@ -145,7 +145,7 @@ describe('[3] _onSessionExit: clean exit (0) on the active tab', () => {
   _onSessionExit(sessionId, 0);
 
   it('drops viewMode to "normal" (user lands in normal layout)', () => {
-    eq(runtime.getModel().viewMode, 'normal', 'viewMode reset on clean exit');
+    eq(getComponentSlice('layout').viewMode, 'normal', 'viewMode reset on clean exit');
   });
   it('auto-removes the ephemeral tab (clean exit only)', () => {
     eq(getComponentSlice('detail').ephemeralTerminals.g1, undefined,
@@ -167,7 +167,7 @@ describe('[4] _onSessionExit: non-zero exit on the active tab', () => {
   _onSessionExit(sessionId, 1);
 
   it('drops viewMode (rest of TUI reachable for navigation)', () => {
-    eq(runtime.getModel().viewMode, 'normal', 'viewMode reset even on non-zero exit');
+    eq(getComponentSlice('layout').viewMode, 'normal', 'viewMode reset even on non-zero exit');
   });
   it('keeps the ephemeral tab (user can read error output)', () => {
     assert(getComponentSlice('detail').ephemeralTerminals.g1 && getComponentSlice('detail').ephemeralTerminals.g1[ephKey] != null,
@@ -189,7 +189,7 @@ describe('[5] _onSessionExit: clean exit on a NON-active session', () => {
   _onSessionExit('g1_orphan', 0);
 
   it('does NOT touch viewMode (orphan was not the focused tab)', () => {
-    eq(runtime.getModel().viewMode, 'full', 'viewMode untouched for non-active exit');
+    eq(getComponentSlice('layout').viewMode, 'full', 'viewMode untouched for non-active exit');
   });
   it('still cleans up the orphan tab (handleSessionCleanExit fires)', () => {
     assert(!getComponentSlice('detail').ephemeralTerminals.g1 || getComponentSlice('detail').ephemeralTerminals.g1.orphan === undefined,
@@ -231,7 +231,7 @@ describe('[7] _handleTerminalModeData: Ctrl+\\ from zoom drops full+terminalMode
 
   it('returns true (chunk consumed)', () => assert(handled === true, 'returned true'));
   it('flips getModel().modes.terminalMode = false', () => eq(getModel().modes.terminalMode, false, 'terminalMode off'));
-  it('drops runtime.getModel().viewMode = "normal"', () => eq(runtime.getModel().viewMode, 'normal', 'viewMode reset'));
+  it('drops layout slice viewMode = "normal"', () => eq(getComponentSlice('layout').viewMode, 'normal', 'viewMode reset'));
   it('calls forceFullRepaint', () => {
     assert(forceFullRepaintCalls >= 1, 'forceFullRepaint fired so chrome reclaims');
   });
@@ -243,13 +243,13 @@ describe('[7] _handleTerminalModeData: Ctrl+\\ from zoom drops full+terminalMode
 
 describe('[8] _handleTerminalModeData: Ctrl+\\ without zoom only flips terminalMode', () => {
   resetState();
-  runtime.getModel().viewMode = 'normal';
+  getComponentSlice('layout').viewMode = 'normal';
   getModel().modes.terminalMode = true;
 
   _handleTerminalModeData('\x1c');
 
   it('flips terminalMode = false', () => eq(getModel().modes.terminalMode, false));
-  it('leaves viewMode = "normal"', () => eq(runtime.getModel().viewMode, 'normal',
+  it('leaves viewMode = "normal"', () => eq(getComponentSlice('layout').viewMode, 'normal',
     'no spurious viewMode mutation when not in zoom'));
   it('does NOT call forceFullRepaint (no chrome was hidden)', () => {
     eq(forceFullRepaintCalls, 0, 'no need to force repaint when chrome was already visible');
@@ -268,7 +268,7 @@ describe('[9] _handleTerminalModeData: dead session also exits + drops zoom', ()
   it('flips terminalMode = false (no point staying — session is gone)', () => {
     eq(getModel().modes.terminalMode, false, 'terminalMode off on dead session');
   });
-  it('drops viewMode = "normal"', () => eq(runtime.getModel().viewMode, 'normal',
+  it('drops viewMode = "normal"', () => eq(getComponentSlice('layout').viewMode, 'normal',
     'zoom dropped so user is reachable'));
   it('calls forceFullRepaint', () => {
     assert(forceFullRepaintCalls >= 1, 'forceFullRepaint fired');
@@ -292,7 +292,7 @@ describe('[10] _handleTerminalModeData: live session forwards bytes to PTY', () 
     eq(getModel().modes.terminalMode, true, 'terminalMode stays on');
   });
   it('does NOT change viewMode', () => {
-    eq(runtime.getModel().viewMode, 'full', 'viewMode unchanged on data-forward path');
+    eq(getComponentSlice('layout').viewMode, 'full', 'viewMode unchanged on data-forward path');
   });
   it('does NOT force a repaint (data-forward doesn\'t need it)', () => {
     eq(forceFullRepaintCalls, beforeForce, 'no extra repaint on each keystroke');

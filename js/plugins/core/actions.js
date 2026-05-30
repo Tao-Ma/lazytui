@@ -13,6 +13,7 @@ const {
   esc, visibleLen, theme, renderPanel,
   getSel, getScroll, isMultiSel, getFilter, decorate,
   getGroupActions, getItems: apiGetItems,
+  getComponentSlice,
 } = require('../api');
 
 /**
@@ -70,7 +71,7 @@ function actionRow([key, action], i) {
   const tag = { spawn: ' ⧉', background: ' ⇱' }[action.type] || '';
   const isLast = key === m.lastRunAction;
   const isSel = i === getSel('actions');
-  const isFocused = m.focus === 'actions';
+  const isFocused = getComponentSlice("layout").focus === 'actions';
   const isMs = isMultiSel('actions', key);
   const mark = isMs ? '*' : ((isLast || (isSel && !isFocused)) ? '>' : ' ');
   const confirmStr = action.confirm ? ' \\[confirm]' : '';
@@ -87,7 +88,7 @@ function render(panel, w, h) {
   const actions = apiGetItems('actions');
   const innerW = w - 2;
   const sel = getSel('actions');
-  const isFocused = getModel().focus === 'actions';
+  const isFocused = getComponentSlice("layout").focus === 'actions';
   const lines = actions.map((item, i) => {
     const isSel = i === sel && isFocused;
     const ctx = { panelType: 'actions', item, selected: isSel };

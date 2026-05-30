@@ -50,7 +50,12 @@ function _detail() { return getComponentSlice('detail'); }
 // and dispatch via the Component fan-out (handled by detail.update). The
 // text/column READS (selectedText, decorateLines, …) stay here — reads
 // don't break single-writer.
-function _apply(msg) { require('./plugins/api').dispatchMsg(msg); }
+// All Msgs from this module target detail.update (Phase 2b). The
+// helper wraps so call sites stay tight: _apply({type:'select_*'}).
+function _apply(msg) {
+  const api = require('./plugins/api');
+  api.dispatchMsg(api.wrap('detail', msg));
+}
 
 /** Plain text projection of detail line `i` (markup stripped). */
 function plainLine(i) {
@@ -312,7 +317,7 @@ function _scrollView(delta) {
 
 function onDetailKey(key, seq) {
   const m = getModel();
-  if (m.focus !== 'detail' || m.modes.terminalMode) return false;
+  if (getComponentSlice("layout").focus !== 'detail' || m.modes.terminalMode) return false;
   // Higher-priority modes (menu/cmd/etc.) are filtered upstream in
   // modeChain; this guard is belt-and-suspenders for any future caller.
   if (m.modes.menuOpen || m.modes.cmdMode || m.modes.confirmMode || m.modes.promptMode || m.modes.copyMode) return false;

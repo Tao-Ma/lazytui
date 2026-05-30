@@ -39,7 +39,7 @@ const {
   streamCommand, addEphemeralTab, scheduleRender,
   setActiveTab, leaveTerminalMode,
   getItems: apiGetItems, selectedOrFocused,
-  getComponentSlice, dispatchMsg,
+  getComponentSlice, dispatchMsg, wrap,
   registerEffect,
   hub,
 } = require('./api');
@@ -116,7 +116,7 @@ function handleEventLine(line, config, refreshFn, renderFn) {
 // Production event → Msg bridge: a tracked event injects a one-shot poll Msg.
 // (Returns true so handleEventLine's renderFn fires — the real data update
 // rides back on dockerResult's render effect.)
-function _eventPoll() { dispatchMsg({ type: 'dockerPoll' }); return true; }
+function _eventPoll() { dispatchMsg(wrap('docker', { type: 'dockerPoll' })); return true; }
 
 /**
  * Idempotent: start the events stream if not already running. Auto-reconnects
@@ -236,15 +236,15 @@ function update(msg, slice) {
     const armed = [];
     if (!slice.started) {
       next = { ...next, started: true };
-      armed.push({ type: 'tick', ms: POLL_MS, msg: { type: 'dockerTick' } });
+      armed.push({ type: 'tick', ms: POLL_MS, msg: wrap('docker', { type: 'dockerTick' }) });
     }
     const [n2, fx] = _maybeFetch(next);
     return [n2, armed.concat(fx)];
   }
   if (msg.type === 'dockerTick') {
     // Re-arm regardless (so cadence resumes after a blur), then poll if able.
-    const armed = [{ type: 'tick', ms: POLL_MS, msg: { type: 'dockerTick' } }];
-    if (getModel().focused === false) return [slice, armed];
+    const armed = [{ type: 'tick', ms: POLL_MS, msg: wrap('docker', { type: 'dockerTick' }) }];
+    if (require('../runtime').getModel().focused === false) return [slice, armed];
     const [next, fx] = _maybeFetch(slice);
     return [next, armed.concat(fx)];
   }
@@ -269,7 +269,7 @@ function update(msg, slice) {
 }
 
 function _handleKey(msg, slice) {
-  if (getModel().focus !== 'containers') return slice;
+  if (getComponentSlice("layout").focus !== 'containers') return slice;
   const item = _getItems(slice)[getSel('containers')];
   if (!item) return slice;
   if (msg.key === 'i') return [slice, [{ type: 'dockerExec', mode: 'inspect', item }]];
@@ -286,7 +286,7 @@ registerEffect('dockerFetch', () => {
   setImmediate(async () => {
     try {
       const containers = _containers();
-      if (!containers.length) { dispatchMsg({ type: 'dockerResult', status: {}, stats: {} }); return; }
+      if (!containers.length) { dispatchMsg(wrap('docker', { type: 'dockerResult', status: {}, stats: {} })); return; }
 
       const status = {};
       const args = containers.map(JSON.stringify).join(' ');
@@ -328,10 +328,10 @@ registerEffect('dockerFetch', () => {
       // Drop the hub series for any tracked container that isn't running now.
       for (const name of containers) if (!stats[name]) hub.delete('docker.stats', name);
 
-      dispatchMsg({ type: 'dockerResult', status, stats });
+      dispatchMsg(wrap('docker', { type: 'dockerResult', status, stats }));
     } catch (e) {
       console.error(`[docker:fetch] ${e.message}`);
-      dispatchMsg({ type: 'dockerResult' });  // keep prior maps, clear inFlight
+      dispatchMsg(wrap('docker', { type: 'dockerResult' }));  // keep prior maps, clear inFlight
     }
   });
 });
@@ -405,7 +405,7 @@ function render(panel, width, height) {
   const containers = apiGetItems('containers');
   const innerW = width - 2;
   const sel = getSel('containers');
-  const isFocused = m.focus === 'containers';
+  const isFocused = getComponentSlice("layout").focus === 'containers';
   const t = theme();
   const lines = containers.map((name, i) => {
     const isSel = i === sel && isFocused;

@@ -197,6 +197,9 @@ try {
   const api = require('../plugins/api');
   if (!api.getComponentSlice('detail')) api.registerComponent(require('../plugins/core/viewer'));
   if (!api.getComponentSlice('groups')) api.registerComponent(require('../plugins/core/groups'));
+  // layout (chrome Component) — owns viewMode/focus/design/arrange/etc.
+  // Phase 1b onward, tests that read getComponentSlice('layout') need it.
+  if (!api.getComponentSlice('layout')) api.registerComponent(require('../plugins/core/layout'));
 } catch (_) { /* tests that don't need Components still load */ }
 
 module.exports = { describe, section, it, assert, eq, report, _state };

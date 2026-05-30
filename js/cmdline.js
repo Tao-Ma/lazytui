@@ -17,7 +17,7 @@ const { richToAnsi, RESET, visibleLen, esc } = require('./ansi');
 const { cols, rows, stdout } = require('./term');
 const { theme } = require('./themes');
 const { renderPanel } = require('./panel');
-const { getCommands, getItems: apiGetItems } = require('./plugins/api');
+const { getCommands, getItems: apiGetItems, dispatchMsg, wrap } = require('./plugins/api');
 
 const MAX_DROPDOWN = 8;
 
@@ -88,7 +88,8 @@ function splitQuery(text) {
 function buildRegistry() {
   const reg = [];
 
-  // Panels — focus the panel via the focus_set Msg (single-writer).
+  // Panels — focus the panel via the focus_set Msg (handled by layout's
+  // update; routed through dispatchMsg fan-out since Phase 1c).
   for (const p of allPanels()) {
     reg.push({
       name: p.title.toLowerCase(),
@@ -96,7 +97,7 @@ function buildRegistry() {
       desc: `Focus the ${p.title} panel`,
       kind: 'panel',
       run: () => {
-        require('./dispatch').applyMsg(getModel(), { type: 'focus_set', focus: p.type });
+        dispatchMsg(wrap('layout', { type: 'focus_set', focus: p.type }));
       },
     });
   }

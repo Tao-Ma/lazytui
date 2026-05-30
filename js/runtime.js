@@ -47,21 +47,22 @@ const mreg = require('./model-register');
  * only by their own `update`.
  *
  * Field map:
- *   - viewMode                       — 'normal' | 'half' | 'full'
  *   - modes{}                        — 13 modal flags (single registry; see modes.js)
- *   - focus / currentGroup           — chrome
+ *   - currentGroup                   — current group (chrome)
  *   - ui{ sel, scroll, filters, multiSel } — per-panel chrome (panelType→value)
- *   - modal{ filter, menu, confirm, prompt, copy, registerPopup, cmdline, design }
+ *   - modal{ filter, menu, confirm, prompt, copy, registerPopup, cmdline }
  *                                    — modal sub-model editing buffers
- *   - config / projectDir / configPath / layout — parsed config + layout struct
- *   - panelHeights / panelBounds     — layout engine's view output (blessed
- *                                      outside-writer; see v0.5-layering.md)
- *   - lastRunAction / layoutDirty / focused / prefixNode / prefixSeq — misc
- *   - register / designEnabled       — yank register / --design flag
+ *   - config / projectDir / configPath — parsed config + paths
+ *   - lastRunAction / focused / prefixNode / prefixSeq — misc
+ *   - register                       — yank register
+ *
+ * Phase 1 (docs/v0.5-layout-component.md) migrated focus, viewMode,
+ * design state, designEnabled, layoutDirty, model.layout (arrange),
+ * and panelHeights/panelBounds into the layout Component's slice.
+ * Readers use `getComponentSlice('layout').<field>`.
  */
 function init() {
-  return {
-    viewMode: 'normal',   // 'normal' | 'half' | 'full'
+  const m = {
     // The 13 modal-state flags. Maintained centrally in js/modes.js (registry +
     // resetModes()); update branches and modeChain consult that single list.
     modes: {
@@ -70,9 +71,6 @@ function init() {
       detailSearchMode: false, registerPopupMode: false, prefixMode: false,
       cmdMode: false, terminalMode: false, listSelectMode: false,
     },
-    // Panel chrome — which panel is focused, the current group, and per-panel
-    // cursor / scroll / filter / multi-select (panelType→value maps).
-    focus: 'groups',
     currentGroup: '',
     ui: { sel: {}, scroll: {}, filters: {}, multiSel: {} },
     // The viewer slice (detail Component) and groups slice live in
@@ -106,30 +104,27 @@ function init() {
       // the plugin facade each keystroke); cmdline_run invokes the selected
       // one by index. Mirrors the copy split.
       cmdline: { text: '', sel: 0, matches: [] },
-      // Design mode (the layout editor): the keyboard selection cursor, the
-      // undo/redo snapshot stacks (plain layout JSON — no closures), the
-      // title-edit sub-mode buffer, and the in-flight mouse drag/resize state
-      // machine (`drag`, populated by design.js's mouse path — folded onto
-      // update in a later commit). The working draft IS model.layout.
-      design: { selectedIdx: 0, drag: null, undo: [], redo: [], titleEdit: { active: false, text: '' } },
+      // Design-mode state lives on the layout Component's slice
+      // (Phase 1f) — `getComponentSlice('layout').design`.
     },
-    // Framework-level state: parsed config, paths, the layout struct,
-    // layout-engine outputs (panelHeights/panelBounds — blessed view-output
-    // writers; see v0.5-layering.md), leader-mode buffers, misc flags.
+    // Framework-level state: parsed config, paths, leader-mode buffers,
+    // misc flags. The layout struct + design state + viewMode + focus
+    // are on the layout Component's slice (Phase 1; see
+    // docs/v0.5-layout-component.md).
     config: null,
     projectDir: '.',
     configPath: '',
-    layout: { leftWidth: 30, leftPanels: [], rightPanels: [], detailHeightPct: 60 },
-    panelHeights: {},
-    panelBounds: {},
     lastRunAction: '',
-    layoutDirty: false,
     focused: true,
     prefixNode: null,
     prefixSeq: [],
     register: null,                  // yank register {history, cap} (register.js)
-    designEnabled: false,            // --design flag (tui.js boot-time write)
   };
+  // All Phase 1 property shims (model.focus / layoutDirty / panelHeights /
+  // panelBounds / modal.design / designEnabled / model.layout) have been
+  // swept — callers read/write the layout Component's slice directly via
+  // getComponentSlice('layout').<field>.
+  return m;
 }
 
 const _model = init();
@@ -176,28 +171,6 @@ function _clampRegisterPopup(rp, n, vh) {
 }
 
 /**
- * Pure reducer for the `viewMode` slice — returns the next value given
- * the current value + a message. No side effects.
- */
-function reduceViewMode(viewMode, msg) {
-  switch (msg.type) {
-    case 'view_expand':
-      if (viewMode === 'normal') return 'half';
-      if (viewMode === 'half')   return 'full';
-      return viewMode;
-    case 'view_shrink':
-      if (viewMode === 'full') return 'half';
-      if (viewMode === 'half') return 'normal';
-      return viewMode;
-    case 'view_set':
-      return (msg.mode === 'normal' || msg.mode === 'half' || msg.mode === 'full')
-        ? msg.mode : viewMode;
-    default:
-      return viewMode;
-  }
-}
-
-/**
  * The reducer — `(model, msg) → [nextModel, cmds]`.
  *
  * Two rules:
@@ -216,22 +189,10 @@ function reduceViewMode(viewMode, msg) {
  */
 function update(model, msg) {
   switch (msg.type) {
-    case 'view_expand':
-    case 'view_shrink':
-    case 'view_set': {
-      const next = reduceViewMode(model.viewMode, msg);
-      const changed = next !== model.viewMode;
-      model.viewMode = next;
-      // A view transition re-exposes panels the diff cache can't tell
-      // changed — ask the effects layer for a full repaint.
-      return [model, changed ? [{ type: 'force_full_repaint' }] : []];
-    }
-    case 'focus_set':
-      // The caller resolved the target panel from the model (panel order
-      // is view/derivation logic); we just store it. Refreshing the
-      // detail body for the newly-focused panel is an effect (Cmd).
-      if (msg.focus != null) model.focus = msg.focus;
-      return [model, [{ type: 'show_selected_info' }]];
+    // view_expand / view_shrink / view_set moved to layout's update (Phase 1b).
+    // focus_set moved to layout's update (Phase 1c).
+    // Call sites dispatch through `plugins/api.dispatchMsg` — the layout
+    // Component handles these via fan-out.
     // viewer_scroll / stream_start / viewer_append / viewer_set_content /
     // viewer_set_tab / viewer_reset_chrome / viewer_search_* /
     // viewer_add_ephemeral_terminal / viewer_remove_ephemeral_terminal /
@@ -252,7 +213,7 @@ function update(model, msg) {
       if (msg.panel === 'groups') {
         return [model, [
           { type: 'show_selected_info' },
-          { type: 'dispatch_msg', msg: { type: 'groups_selected', index: msg.index } },
+          { type: 'dispatch_msg', msg: require('./plugins/api').wrap('groups', { type: 'groups_selected', index: msg.index }) },
         ]];
       }
       return [model, [{ type: 'show_selected_info' }]];
@@ -261,7 +222,7 @@ function update(model, msg) {
       // selection), else clears any lingering multi-selection; otherwise
       // a no-op. Clearing a multi-selection is `delete model.ui.multiSel
       // [panel]` — a pure model write, so it lives here (no Cmd).
-      const focus = model.focus;
+      const focus = require('./plugins/api').getComponentSlice('layout').focus;
       if (model.modes.listSelectMode) {
         model.modes.listSelectMode = false;
         delete model.ui.multiSel[focus];
@@ -275,7 +236,7 @@ function update(model, msg) {
       // operand selection. `mode:'on'` (*) forces it on (the caller then
       // fires selectAllVisible as an effect). The _isListPanel guard is
       // view derivation — the caller already applied it.
-      const focus = model.focus;
+      const focus = require('./plugins/api').getComponentSlice('layout').focus;
       if (msg.mode === 'on') {
         model.modes.listSelectMode = true;
       } else {
@@ -510,10 +471,17 @@ function update(model, msg) {
     // layout mutations are pure transforms in the model-design leaf taking
     // `model`; the reducer just routes each key to one. The mouse drag/resize
     // path still lives in design.js (reads the model) until a later commit.
-    case 'design_enter':
+    case 'design_enter': {
+      // Reset the working state on entry but preserve `enabled` (the
+      // boot-time --design CLI flag).
       model.modes.designMode = true;
-      model.modal.design = { selectedIdx: 0, drag: null, undo: [], redo: [], titleEdit: { active: false, text: '' } };
+      const slice = require('./plugins/api').getComponentSlice('layout');
+      if (slice) {
+        const enabled = slice.design && slice.design.enabled;
+        slice.design = { enabled, selectedIdx: 0, drag: null, undo: [], redo: [], titleEdit: { active: false, text: '' } };
+      }
       return [model, []];
+    }
     case 'design_nav':          mdesign.navSelect(model, msg.dir);          return [model, []];
     case 'design_reorder':      mdesign.reorderWithin(model, msg.dir);  mdesign.clampSelected(model); return [model, []];
     case 'design_move_col':     mdesign.moveColumn(model, msg.col);     mdesign.clampSelected(model); return [model, []];
@@ -527,27 +495,40 @@ function update(model, msg) {
       // the now-active panel (the old onDone callback, now a Cmd).
       model.modes.designMode = false;
       model.modes.designTitleEditMode = false;
-      model.modal.design = { selectedIdx: 0, drag: null, undo: [], redo: [], titleEdit: { active: false, text: '' } };
+      {
+        const slice = require('./plugins/api').getComponentSlice('layout');
+        if (slice) {
+          const enabled = slice.design && slice.design.enabled;
+          slice.design = { enabled, selectedIdx: 0, drag: null, undo: [], redo: [], titleEdit: { active: false, text: '' } };
+        }
+      }
       return [model, [{ type: 'show_selected_info' }]];
     case 'design_title_enter':
       mdesign.titleEnter(model);
       model.modes.designTitleEditMode = true;
       return [model, []];
     case 'design_title_key': {
-      const te = model.modal.design.titleEdit;
+      const slice = require('./plugins/api').getComponentSlice('layout');
+      const te = slice && slice.design && slice.design.titleEdit;
+      if (!te) return [model, []];
       if (msg.key === 'backspace' || msg.seq === '\x7f' || msg.seq === '\b') { te.text = te.text.slice(0, -1); return [model, []]; }
       if (msg.seq && msg.seq.length === 1 && msg.seq >= ' ' && msg.seq < '\x7f') { te.text += msg.seq; return [model, []]; }
       return [model, []];
     }
-    case 'design_title_submit':
-      mdesign.setSelectedTitle(model, model.modal.design.titleEdit.text);
+    case 'design_title_submit': {
+      const slice = require('./plugins/api').getComponentSlice('layout');
+      const text = slice && slice.design ? slice.design.titleEdit.text : '';
+      mdesign.setSelectedTitle(model, text);
       model.modes.designTitleEditMode = false;
-      model.modal.design.titleEdit = { active: false, text: '' };
+      if (slice && slice.design) slice.design.titleEdit = { active: false, text: '' };
       return [model, []];
-    case 'design_title_cancel':
+    }
+    case 'design_title_cancel': {
       model.modes.designTitleEditMode = false;
-      model.modal.design.titleEdit = { active: false, text: '' };
+      const slice = require('./plugins/api').getComponentSlice('layout');
+      if (slice && slice.design) slice.design.titleEdit = { active: false, text: '' };
       return [model, []];
+    }
     // --- design mode mouse drag/resize (folded into update). The gesture
     // state machine runs in the model-design leaf against model.modal.design
     // .drag; `cols` (terminal width) is caller-resolved (input.js) since it's
@@ -565,12 +546,12 @@ function update(model, msg) {
       model.modes.terminalMode = true;
       return [model, []];
     case 'terminal_exit': {
+      // viewMode is owned by the layout Component (Phase 1b) — emit a
+      // cross-layer dispatch_msg so layout decides whether to drop a
+      // 'full' auto-zoom back to 'normal'. The conditional + the
+      // repaint Cmd both live in layout's update.
       model.modes.terminalMode = false;
-      if (model.viewMode === 'full') {
-        model.viewMode = 'normal';
-        return [model, [{ type: 'force_full_repaint' }]];
-      }
-      return [model, []];
+      return [model, [{ type: 'dispatch_msg', msg: require('./plugins/api').wrap('layout', { type: 'view_drop_full_to_normal' }) }]];
     }
     // --- multi-selection writes (folded into update). The caller resolves the
     // operand IDs from the plugin facade (idOf/getItems — effects) and passes
@@ -606,12 +587,17 @@ function update(model, msg) {
     // (viewer_set_content / viewer_set_tab moved to detail.update — Phase B.
     //  state.setDetail / api.setActiveTab still dispatch the same Msgs; they
     //  now route to detail.update via the dispatchMsg fan-out.)
-    case 'set_layout':
-      // :save-layout clears the dirty flag; :restore-layout replaces the layout
-      // (rebuilt from config by the caller) and clears dirty.
-      if (msg.layout !== undefined) model.layout = msg.layout;
-      if (msg.dirty !== undefined) model.layoutDirty = !!msg.dirty;
+    case 'set_layout': {
+      // :save-layout clears the dirty flag; :restore-layout replaces the
+      // arrange struct (rebuilt from config by the caller) and clears dirty.
+      // Both write into the layout Component's slice (Phase 1d/1g).
+      const layoutSlice = require('./plugins/api').getComponentSlice('layout');
+      if (layoutSlice) {
+        if (msg.layout !== undefined) layoutSlice.arrange = msg.layout;
+        if (msg.dirty  !== undefined) layoutSlice.dirty   = !!msg.dirty;
+      }
       return [model, []];
+    }
     // --- command menu (folded into update). Items (action strings, no
     // closures) are built inline from the model on open; nav skips null
     // separators; activate emits a menu_action Cmd routing the chosen verb
@@ -748,25 +734,16 @@ function update(model, msg) {
     //  detail.update — Phase B. The dispatchers route via dispatchMsg now;
     //  the cross-layer Msgs they emit come back via apply_msg.)
     case 'quit':        return [model, [{ type: 'quit' }]];
-    case 'design':
+    case 'design': {
       // Gated on the --design flag; emit the Cmd only when design is
       // enabled, otherwise no effect.
-      return [model, model.designEnabled ? [{ type: 'start_design' }] : []];
+      const layoutSlice = require('./plugins/api').getComponentSlice('layout');
+      const enabled = layoutSlice && layoutSlice.design.enabled;
+      return [model, enabled ? [{ type: 'start_design' }] : []];
+    }
     default:
       return [model, []];
   }
 }
 
-/**
- * Back-compat wrapper over `update` for the call sites that only nudge
- * `viewMode` (terminal zoom, input focus/blur) and own their own repaint
- * — they ignore Cmds. Returns whether `viewMode` changed, the legacy
- * signal those callers still branch on.
- */
-function dispatch(msg) {
-  const before = _model.viewMode;
-  update(_model, msg);
-  return _model.viewMode !== before;
-}
-
-module.exports = { init, getModel, update, dispatch, reduceViewMode, _ghostSuffix };
+module.exports = { init, getModel, update, _ghostSuffix };

@@ -69,21 +69,21 @@ function setupState() {
   getModel().currentGroup = '';
   recomputeGroups();
   getModel().currentGroup = getComponentSlice('groups').list[0].name;
-  getModel().focus = 'groups';
+  getComponentSlice("layout").focus = 'groups';
   getModel().lastRunAction = '';
   getComponentSlice('detail').lines = ['[bold]Detail title[/]', '', 'body line 1', 'body line 2'];
   getComponentSlice('detail').scroll = 0;
   getComponentSlice('detail').tab = 0;
   // history Component holds its ring buffer in its own module (../history.js),
   // not on a shim field; no init needed here.
-  getModel().layout = {
+  getComponentSlice("layout").arrange = {
     leftWidth: 30,
     leftPanels: [],
     rightPanels: [],
     detailHeightPct: 60,
   };
-  getModel().panelHeights = {};
-  getModel().panelBounds = {};
+  getComponentSlice('layout').panelHeights = {};
+  getComponentSlice('layout').panelBounds = {};
 }
 
 // Plugin panels export def via { panelType, def }; Component panels expose
@@ -128,12 +128,12 @@ describe('render idempotence — focus toggled between calls', () => {
       // should be internally identical (focus is the input state, not a
       // side effect render writes).
       const arg = _renderArg(c.name);
-      getModel().focus = c.name;
+      getComponentSlice("layout").focus = c.name;
       const focusedA = c.fn(c.panel, 30, 10, arg);
       const focusedB = c.fn(c.panel, 30, 10, arg);
       eq(focusedA, focusedB, `focused output stable for ${c.name}`);
 
-      getModel().focus = 'somewhere-else';
+      getComponentSlice("layout").focus = 'somewhere-else';
       const unfocusedA = c.fn(c.panel, 30, 10, arg);
       const unfocusedB = c.fn(c.panel, 30, 10, arg);
       eq(unfocusedA, unfocusedB, `unfocused output stable for ${c.name}`);

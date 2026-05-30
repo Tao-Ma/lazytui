@@ -15,16 +15,16 @@
 const { allPanels, setDetail } = require('./state');
 const { getModel } = require('./runtime');
 const { esc } = require('./ansi');
-const { getCommands, getPanelDef } = require('./plugins/api');
+const { getCommands, getPanelDef, getComponentSlice } = require('./plugins/api');
 
 /**
  * Build the help-text lines (Rich markup). Pure read of state +
  * plugin registry; doesn't paint.
  */
 function helpLines() {
-  const focusedPanel = allPanels().find(p => p.type === getModel().focus);
+  const focusedPanel = allPanels().find(p => p.type === getComponentSlice("layout").focus);
   const focusName = focusedPanel ? focusedPanel.title : 'TUI';
-  const def = getPanelDef(getModel().focus);
+  const def = getPanelDef(getComponentSlice("layout").focus);
   const isList = !!(def && typeof def.getItems === 'function');
 
   const lines = [
@@ -58,7 +58,7 @@ function helpLines() {
     );
   }
 
-  if (getModel().focus === 'detail') {
+  if (getComponentSlice("layout").focus === 'detail') {
     lines.push('', '[dim]Detail panel — reading mode[/]',
       '  j / k / arrows Scroll view ±1 line',
       '  , .            Half-page up / down',

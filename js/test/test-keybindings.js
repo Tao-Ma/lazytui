@@ -170,7 +170,7 @@ describe('[5] v-mode gates space', () => {
     getModel().ui.multiSel = {};
     getModel().ui.sel = { listy: 1 };
     getModel().ui.filters = {};
-    getModel().focus = 'listy';
+    getComponentSlice("layout").focus = 'listy';
     getModel().modes.listSelectMode = false;
     getModel().modes.prefixMode = false;
 
@@ -286,11 +286,11 @@ describe('[9] space gate + group-switch reset', () => {
   const { resetGroupContext } = require('../state');
   it('space leads when select mode is armed but focus is a non-list panel', () => {
     kb.clearBindings();
-    getModel().focus = 'detail';
+    getComponentSlice("layout").focus = 'detail';
     getModel().modes.listSelectMode = true;
     getModel().modes.prefixMode = false;
     getComponentSlice('detail').lines = []; getComponentSlice('detail').scroll = 0;
-    getModel().panelHeights = { detail: 10 };
+    getComponentSlice('layout').panelHeights = { detail: 10 };
     getComponentSlice('detail').search = { active: false };
     getComponentSlice('detail').cursor = { line: 0, col: 0 };
     dispatch._handleNormalKey(getModel(), ' ', ' ');

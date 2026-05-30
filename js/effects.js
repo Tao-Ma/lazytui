@@ -54,16 +54,20 @@ function installBuiltins() {
   // setDetail: replace the detail panel content (config-status' Enter→diff,
   // any migrated plugin's detail write). Routes through viewer_set_content (no Cmds).
   registerEffect('setDetail', (eff) => {
-    // viewer_set_content is handled by the detail Component's update (Phase B);
-    // route via the Component fan-out.
-    require('./plugins/api').dispatchMsg({
+    // viewer_set_content is handled by the detail Component's update (Phase B).
+    // Phase 2b — wrapped routing.
+    const api = require('./plugins/api');
+    api.dispatchMsg(api.wrap('detail', {
       type: 'viewer_set_content', lines: Array.isArray(eff.lines) ? eff.lines.slice() : [],
-    });
+    }));
   });
-  // focus: move panel focus (a component can't write model.focus itself).
+  // focus: move panel focus (a component can't write slice.focus itself).
+  // Phase 1c — focus_set is owned by layout.update. Phase 2a — wrapped to
+  // route directly to layout.
   registerEffect('focus', (eff) => {
     if (typeof eff.panel === 'string') {
-      require('./dispatch').applyMsg(getModel(), { type: 'focus_set', focus: eff.panel });
+      const api = require('./plugins/api');
+      api.dispatchMsg(api.wrap('layout', { type: 'focus_set', focus: eff.panel }));
     }
   });
   // render: request a repaint (async effect results landing into a slice).

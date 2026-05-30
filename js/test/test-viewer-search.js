@@ -15,8 +15,8 @@ const { getComponentSlice } = require('../plugins/api');
 function setup(lines, panelH = 10) {
   getComponentSlice('detail').lines = lines.slice();
   getComponentSlice('detail').scroll = 0;
-  getModel().panelHeights = getModel().panelHeights || {};
-  getModel().panelHeights.detail = panelH;
+  getComponentSlice('layout').panelHeights = getComponentSlice('layout').panelHeights || {};
+  getComponentSlice('layout').panelHeights.detail = panelH;
   getModel().modes.detailSearchMode = false;
   getComponentSlice('detail').search = { active: false, term: '', matches: [], idx: 0 };
 }

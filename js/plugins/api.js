@@ -138,7 +138,20 @@ function registerPlugin(plugin, config) {
  *   - init(): slice       — initial state slice for this component
  *   - update(msg, slice)  — pure: returns the new slice
  *   - panelTypes (opt):   — same shape as Plugin's, but render gets
- *                           (panel, w, h, slice) instead of (..., S)
+ *                           (panel, w, h, slice) instead of (..., S).
+ *                           Omitted entirely for chrome-only Components
+ *                           (see below).
+ *   - viewContributions (opt): — { footerLeft?, footerRight? } chrome
+ *                           contributions; see registerComponent body.
+ *
+ * **Chrome-only Components** — a Component with no `panelTypes` is
+ * valid and supported. It owns a slice + update + (optionally) view
+ * contributions, but renders no panel in the grid. Used for the
+ * eventual `layout` Component (which owns frame state — focus, view
+ * mode, design — without occupying a grid cell) and for future chrome
+ * widgets (status bar etc.). Chrome-only Components still receive
+ * fan-out Msgs (refresh / hub / action / wrapped); they do NOT receive
+ * `key` Msgs since key arbitration routes to the focused panel's owner.
  *
  * The framework owns the slice. Every Msg (key / refresh / hub /
  * action) is fanned out to every Component's update(). The dispatch
@@ -188,46 +201,125 @@ function registerComponent(comp) {
       decorators.register(slot, fn, comp.name);
     }
   }
+  // viewContributions — the Component-native chrome contribution API.
+  // Each contributor is wrapped to inject the Component's own slice as
+  // the first arg (signature: `contribute(slice, ctx) → string | {text,weight}`)
+  // and bridges into the existing decorator registry. Phase 5 will retire
+  // decorators.js entirely and host a Component-only registry; for now
+  // they share the same composition path so a Component contribution and
+  // a Plugin decorator on the same slot concatenate correctly.
+  if (comp.viewContributions && typeof comp.viewContributions === 'object') {
+    for (const [key, fn] of Object.entries(comp.viewContributions)) {
+      if (typeof fn !== 'function') {
+        console.error(`[component:${comp.name}] viewContributions.${key} is not a function; ignored`);
+        continue;
+      }
+      const slot = VIEW_CONTRIBUTION_SLOTS[key];
+      if (!slot) {
+        console.error(`[component:${comp.name}] viewContributions.${key} is not a known slot; ignored (valid: ${Object.keys(VIEW_CONTRIBUTION_SLOTS).join(', ')})`);
+        continue;
+      }
+      decorators.register(slot, (ctx) => fn(componentSlices[comp.name], ctx), comp.name);
+    }
+  }
+}
+
+// Mapping from the camelCase keys used by Components on
+// `viewContributions: { footerLeft, footerRight }` to the colon-style
+// decorator slot names. Kept small — Phase 0 only knows about footer
+// slots; future slots (status bar, title etc.) extend this map.
+const VIEW_CONTRIBUTION_SLOTS = {
+  footerLeft:  'footer:left',
+  footerRight: 'footer:right',
+};
+
+/**
+ * Wrap a child Msg with its target Component's name. Used by callers
+ * that want to route a Msg to exactly one Component instead of fan-out.
+ * Phase 0 introduces the shape behind a back-compat shim; Phase 2 (the
+ * one-way door) makes wrapped dispatch the only Component-routing path.
+ *
+ *   dispatch(wrap('groups', { type: 'toggle_group', name: 'a' }))
+ *
+ * The inner msg is the Component's own Msg shape — its update() never
+ * sees the wrapper.
+ */
+function wrap(kind, msg) {
+  return { kind, msg };
 }
 
 /**
- * Dispatch a Msg to every registered Component. Each Component's
- * slice is replaced with the return value of its update(msg, slice).
+ * Dispatch a Msg. Two shapes are accepted:
  *
- * Msg shape mirrors the event-log entries:
- *   { type: 'key', key, seq }
- *   { type: 'refresh' }
- *   { type: 'hub', topic, rowKey, sample }
- *   { type: 'action', actionKey, args, type: 'run'|'spawn'|... }
+ * 1. **Wrapped Msg**: `{ kind: <ComponentName>, msg: <inner> }` —
+ *    routes ONLY to the Component named `kind`. The Component's
+ *    update() sees the unwrapped inner msg. Unknown `kind` is
+ *    logged and dropped.
+ *
+ * 2. **Broadcast Msg**: one of the four framework signals —
+ *    `refresh`, `hub`, `action`, `key`. Fans out to every
+ *    registered Component's update(msg, slice). `key` is arbitrated
+ *    — only the Component owning the focused panel receives it.
+ *
+ * Phase 2f locked this contract: every Component-specific Msg MUST
+ * be wrapped (via api.wrap). The previous "flat fan-out for any Msg
+ * type" path is gone. An unwrapped Component-specific Msg is logged
+ * as an error and dropped — the missed wrap site needs fixing.
  *
  * Failures in one Component's update don't stop dispatch to the
  * others — error logged, that Component's slice is left as-is.
+ *
+ * Effects returned via `[slice, effects]` flow through the unified
+ * effects registry regardless of shape.
  */
+const BROADCAST_TYPES = new Set(['refresh', 'hub', 'action', 'key']);
+
 function dispatchMsg(msg) {
-  // Key msgs route ONLY to the component owning the focused panel — an
-  // unfocused panel must not react to keystrokes. refresh/hub/action still
-  // fan to every component (the §12 "every component sees every msg" contract
-  // held for non-key msgs).
-  const keyOwner = (msg && msg.type === 'key') ? componentPanelTypeMap[getModel().focus] : undefined;
-  for (const [name, comp] of Object.entries(components)) {
-    if (msg && msg.type === 'key' && name !== keyOwner) continue;
-    try {
-      // Return contract:
-      //   undefined            → no change (escape hatch)
-      //   newSlice (object)    → state change, no effects
-      //   [newSlice, effects]  → state change + side effects (TEA Cmd half)
-      const result = comp.update(msg, componentSlices[name]);
-      if (result === undefined) continue;
-      if (Array.isArray(result)) {
-        const [next, effects] = result;
-        if (next !== undefined) componentSlices[name] = next;
-        require('../effects').runEffects(effects);
-      } else {
-        componentSlices[name] = result;
-      }
-    } catch (e) {
-      console.error(`[component:${name}] update error: ${e.message}`);
+  // Wrapped-Msg path. Routes to exactly one Component. Discriminator:
+  // { kind: string, msg: any } AND no top-level `type` field — the
+  // latter rules out any pre-existing flat Msg shape that happens to
+  // also carry `kind` / `msg` properties.
+  if (msg && typeof msg.kind === 'string' && msg.msg !== undefined && msg.type === undefined) {
+    const name = msg.kind;
+    const comp = components[name];
+    if (!comp) {
+      console.error(`[dispatch] wrapped Msg targeting unknown Component '${name}'; dropped`);
+      return;
     }
+    _runComponentUpdate(name, comp, msg.msg);
+    return;
+  }
+  // Broadcast path. Only the 4 framework signals fan out; everything
+  // else must arrive wrapped.
+  if (msg && BROADCAST_TYPES.has(msg.type)) {
+    const keyOwner = msg.type === 'key' ? componentPanelTypeMap[getComponentSlice('layout').focus] : undefined;
+    for (const [name, comp] of Object.entries(components)) {
+      if (msg.type === 'key' && name !== keyOwner) continue;
+      _runComponentUpdate(name, comp, msg);
+    }
+    return;
+  }
+  // Phase 2f strictness: any other flat Msg is a missed wrap site.
+  const ty = msg && msg.type ? `'${msg.type}'` : '(no type)';
+  console.error(`[dispatch] unwrapped Component-specific Msg ${ty}; dropped. Wrap with api.wrap('<component>', msg).`);
+}
+
+// Inner helper — runs one Component's update, handles the
+// undefined / slice / [slice, effects] return contract, and isolates
+// throws. Shared by both the flat and wrapped dispatch paths.
+function _runComponentUpdate(name, comp, msg) {
+  try {
+    const result = comp.update(msg, componentSlices[name]);
+    if (result === undefined) return;
+    if (Array.isArray(result)) {
+      const [next, effects] = result;
+      if (next !== undefined) componentSlices[name] = next;
+      require('../effects').runEffects(effects);
+    } else {
+      componentSlices[name] = result;
+    }
+  } catch (e) {
+    console.error(`[component:${name}] update error: ${e.message}`);
   }
 }
 
@@ -563,7 +655,7 @@ const FRAMEWORK_COMMANDS = [
       const { writeLayoutToFile } = require('../yaml-layout');
       const { setDetail } = require('../state');
       const m = getModel();
-      const { error } = writeLayoutToFile(m.layout, m.configPath);
+      const { error } = writeLayoutToFile(componentSlices.layout.arrange, m.configPath);
       if (error) {
         setDetail(`[red]Layout save failed:[/] ${error.message}`);
       } else {
@@ -609,15 +701,16 @@ function _frameworkDynamicCommands(m) {
     out.push({
       name: `focus ${p.title}`,
       desc: `Focus the ${p.title} panel`,
-      // applyMsg via focus_set so the change emits the show_selected_info
-      // Cmd (same cascade as keyboard focus). Writing model.focus directly
-      // would skip the refresh.
+      // focus_set is handled by layout.update (Phase 1c); route via
+      // Component fan-out so the cascade (show_selected_info Cmd) runs.
+      // Writing getComponentSlice("layout").focus directly would skip the refresh.
       run: () => {
-        require('../dispatch').applyMsg(getModel(), { type: 'focus_set', focus: p.type });
+        dispatchMsg(wrap('layout', { type: 'focus_set', focus: p.type }));
       },
     });
   }
-  if (m.designEnabled) {
+  const layoutSlice = componentSlices.layout;
+  if (layoutSlice && layoutSlice.design.enabled) {
     out.push({
       name: 'design',
       desc: 'Open layout design mode',
@@ -681,7 +774,7 @@ function registerEffect(type, fn) { require('../effects').registerEffect(type, f
 function setActiveTab(tab) {
   // viewer_set_tab is handled by the detail Component's update — route
   // via the Component fan-out, not the root reducer.
-  dispatchMsg({ type: 'viewer_set_tab', tab });
+  dispatchMsg(wrap('detail', { type: 'viewer_set_tab', tab }));
 }
 function leaveTerminalMode() {
   const { getModel } = require('../runtime');
@@ -692,7 +785,7 @@ module.exports = {
   // --- Plugin registry / lifecycle ---
   registerPlugin, loadPlugins, getPlugin, getPanelDef, getItems,
   refreshAll, startRefreshLoops, stopRefreshLoops, cleanupPlugins, isPluginPanel, pluginNames, getGroupActions, statusFor,
-  registerComponent, registerEffect, dispatchMsg,
+  registerComponent, registerEffect, dispatchMsg, wrap,
   getComponent, getComponentSlice, getComponentOwningPanel,
   getCommands, idOf, selectedOrFocused,
 

@@ -57,6 +57,26 @@ function _groupsSlice() {
   return s;
 }
 
+// Same lazy-auto-register pattern for the layout (chrome) Component
+// added in Phase 1a. Production registers via tui.js boot; tests +
+// initState callers that don't go through tui get the slice via this
+// helper. The "first-touch" point is initState (sets initial focus +
+// viewMode tag), so the helper is called there.
+let _layoutAutoRegistered = false;
+function _layoutSlice() {
+  const api = require('./plugins/api');
+  let s = api.getComponentSlice('layout');
+  if (!s) {
+    if (!_layoutAutoRegistered) {
+      try { require('./effects').installBuiltins(); } catch (_) {}
+      _layoutAutoRegistered = true;
+    }
+    api.registerComponent(require('./plugins/core/layout'));
+    s = api.getComponentSlice('layout');
+  }
+  return s;
+}
+
 // --- Config loading ---
 
 function loadConfig(configPath) {
@@ -146,7 +166,10 @@ function initState() {
   const config = m.config;
   setTheme(config.theme || 'default');
 
-  m.layout = rebuildLayoutFromConfig(config);
+  // Touch the layout slice early so its Component is registered before
+  // any view-mode / focus / design Msg fires (Phase 1b: viewMode lives
+  // on this slice).
+  _layoutSlice().arrange = rebuildLayoutFromConfig(config);
 
   // Tree state: start collapsed (only top-level nodes visible). The cursor
   // lands on the first visible row, which is the first top-level group.
@@ -161,7 +184,10 @@ function initState() {
   detail.lines = [];
   detail.scroll = 0;
   detail.tab = 0;
-  m.focus = 'groups';
+  // focus lives on layout's slice (Phase 1c). The shim on m.focus still
+  // works for legacy writers, but we prefer the direct slice write here
+  // for clarity. initState is the boot writer; nothing else races it.
+  _layoutSlice().focus = 'groups';
   // Mode flags — cleared from the single registry (js/modes.js) so this
   // can't drift out of sync with the modeChain / overlay / modal lists.
   // Non-flag buffers (filters, prefixNode/Seq, detailSearch object) are
@@ -195,7 +221,8 @@ function initState() {
 }
 
 function allPanels() {
-  const ly = getModel().layout;
+  const slice = _layoutSlice();
+  const ly = slice ? slice.arrange : { leftPanels: [], rightPanels: [] };
   return [...ly.leftPanels, ...ly.rightPanels];
 }
 
@@ -208,18 +235,18 @@ function allPanels() {
 // Kept here as named exports so non-reducer callers (mouse, recursive `"`
 // expand, tests) have a stable surface.
 function recomputeGroups() {
-  require('./plugins/api').dispatchMsg({ type: 'groups_recompute' });
+  require('./plugins/api').dispatchMsg(require('./plugins/api').wrap('groups', { type: 'groups_recompute' }));
 }
 function switchGroupsTab(/* tab */) {
   // toggle_groups_tab flips All↔Quick (the only transition we use today);
   // explicit-target setters belong to the Component if ever needed.
-  require('./plugins/api').dispatchMsg({ type: 'toggle_groups_tab' });
+  require('./plugins/api').dispatchMsg(require('./plugins/api').wrap('groups', { type: 'toggle_groups_tab' }));
 }
 function expandGroup(path, recursive = false) {
-  require('./plugins/api').dispatchMsg({ type: 'toggle_group', name: path, recursive });
+  require('./plugins/api').dispatchMsg(require('./plugins/api').wrap('groups', { type: 'toggle_group', name: path, recursive }));
 }
 function collapseGroup(path, recursive = false) {
-  require('./plugins/api').dispatchMsg({ type: 'toggle_group', name: path, recursive });
+  require('./plugins/api').dispatchMsg(require('./plugins/api').wrap('groups', { type: 'toggle_group', name: path, recursive }));
 }
 
 /** Get selection index for a panel type (default 0). */
@@ -257,7 +284,7 @@ function resetGroupContext() {
   // viewer-slice half is its own Msg dispatched to the detail Component.
   const dispatch = require('./dispatch');
   dispatch.applyMsg(getModel(), { type: 'reset_group_context' });
-  require('./plugins/api').dispatchMsg({ type: 'viewer_reset_chrome' });
+  require('./plugins/api').dispatchMsg(require('./plugins/api').wrap('detail', { type: 'viewer_reset_chrome' }));
 }
 
 /**
@@ -276,7 +303,7 @@ function setDetail(text) {
   // routes via the Component fan-out. Single-writer for the slice through
   // detail.update; every setDetail caller (detail / tabs / actions / help-text
   // / api save-layout-message) ends up as the same reducer write.
-  require('./plugins/api').dispatchMsg({ type: 'viewer_set_content', lines: text ? text.split('\n') : [] });
+  require('./plugins/api').dispatchMsg(require('./plugins/api').wrap('detail', { type: 'viewer_set_content', lines: text ? text.split('\n') : [] }));
 }
 
 // --- Multi-select (bulk-operation operand) ---

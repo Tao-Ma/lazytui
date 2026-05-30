@@ -18,6 +18,7 @@ const {
   esc, visibleLen, theme, renderPanel,
   getSel, getScroll, isMultiSel, decorate,
   getItems: apiGetItems, setActiveTab,
+  getComponentSlice,
 } = require('../api');
 
 function getItems() { return history.all(); }
@@ -81,7 +82,7 @@ function render(panel, w, h) {
   const items = apiGetItems('history', null);
   const innerW = w - 2;
   const sel = getSel('history');
-  const isFocused = m.focus === 'history';
+  const isFocused = getComponentSlice("layout").focus === 'history';
   const lines = items.map((entry, i) => {
     const time = fmtTime(entry.startedAt);
     const dur = fmtDuration(entry).padStart(5, ' ');
@@ -136,7 +137,7 @@ function _replayLines(entry) {
 // effect is the only thing update() needs to fire.
 function update(msg, slice) {
   if (msg.type !== 'key' || msg.key !== 'return') return slice;
-  if (getModel().focus !== 'history') return slice;
+  if (getComponentSlice("layout").focus !== 'history') return slice;
   const entry = history.all()[getSel('history')];
   if (!entry) return slice;
   return [slice, [{ type: 'historyReplay', entry }]];

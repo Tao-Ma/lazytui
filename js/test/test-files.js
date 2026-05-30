@@ -58,7 +58,7 @@ function freshState(root, panelType = 'files', extraPanelCfg = {}) {
   };
   getModel().projectDir = root;
   getModel().currentGroup = 'g';
-  getModel().layout = {
+  getComponentSlice("layout").arrange = {
     leftPanels: [{
       type: panelType, root,
       title: panelType, hotkey: '1', column: 'left',
@@ -71,7 +71,7 @@ function freshState(root, panelType = 'files', extraPanelCfg = {}) {
   getComponentSlice('detail').contentTabs = {};
   getComponentSlice('detail').ephemeralTerminals = {};
   getComponentSlice('detail').tab = 0;
-  getModel().focus = panelType;
+  getComponentSlice("layout").focus = panelType;
   getComponentSlice('detail').lines = [];
 }
 
@@ -316,7 +316,7 @@ section('[9] file open → content tab (real effect loop, async loader)');
     const items = api.getItems('file-browser');
     const alphaIdx = items.findIndex(i => i.name === 'alpha.txt');
     getModel().ui.sel['file-browser'] = alphaIdx;
-    getModel().focus = 'file-browser';
+    getComponentSlice("layout").focus = 'file-browser';
     // The real key path: routes to the focused Component's update → openFile.
     api.dispatchMsg({ type: 'key', key: 'return', seq: '' });
 

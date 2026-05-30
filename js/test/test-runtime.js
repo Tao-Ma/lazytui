@@ -1,6 +1,8 @@
 /**
  * v0.5 TEA spike — the root-model reducer/dispatch seam (js/runtime.js).
- * So far only the `viewMode` slice has migrated off the global S.
+ * Phase 1b moved viewMode out of the root reducer into the layout
+ * Component's slice; the view_* tests below live in test-component
+ * and exercise layout.update directly.
  *
  * Run: node js/test/test-runtime.js
  */
@@ -10,68 +12,29 @@ const { describe, it, eq, assert, report } = require('./test-runner');
 const runtime = require('../runtime');
 
 describe('[0] init — builds the root model', () => {
-  it('returns a fresh model with viewMode defaulted', () => {
+  it('returns a fresh model (viewMode moved to layout Component)', () => {
     const m = runtime.init();
-    eq(m.viewMode, 'normal');
-  });
-});
-
-describe('[1] reduceViewMode — pure cycling', () => {
-  const r = runtime.reduceViewMode;
-  it('view_expand: normal → half → full → full', () => {
-    eq(r('normal', { type: 'view_expand' }), 'half');
-    eq(r('half',   { type: 'view_expand' }), 'full');
-    eq(r('full',   { type: 'view_expand' }), 'full');
-  });
-  it('view_shrink: full → half → normal → normal', () => {
-    eq(r('full',   { type: 'view_shrink' }), 'half');
-    eq(r('half',   { type: 'view_shrink' }), 'normal');
-    eq(r('normal', { type: 'view_shrink' }), 'normal');
-  });
-  it('view_set sets a valid mode; ignores junk', () => {
-    eq(r('normal', { type: 'view_set', mode: 'full' }), 'full');
-    eq(r('full',   { type: 'view_set', mode: 'bogus' }), 'full');
-  });
-  it('unknown msg is a no-op', () => {
-    eq(r('half', { type: 'whatever' }), 'half');
-  });
-});
-
-describe('[2] dispatch — applies the reducer, reports change', () => {
-  it('mutates the model and returns whether it changed', () => {
-    // reset to a known state
-    runtime.getModel().viewMode = 'normal';
-    eq(runtime.dispatch({ type: 'view_expand' }), true);
-    eq(runtime.getModel().viewMode, 'half');
-    eq(runtime.dispatch({ type: 'view_shrink' }), true);
-    eq(runtime.getModel().viewMode, 'normal');
-    eq(runtime.dispatch({ type: 'view_shrink' }), false, 'no change at normal → false');
-    eq(runtime.getModel().viewMode, 'normal');
+    assert(!('viewMode' in m),
+       'viewMode no longer on the root model (lives on layout slice)');
   });
 });
 
 describe('[3] update — (model, msg) → [model, cmds], pure + Cmd descriptors', () => {
-  it('view transition returns a force_full_repaint Cmd; no-op returns none', () => {
-    const m = runtime.init();                       // isolated model, not the singleton
-    const [m1, c1] = runtime.update(m, { type: 'view_expand' });
-    eq(m1.viewMode, 'half');
-    eq(c1.length, 1);
-    eq(c1[0].type, 'force_full_repaint');
-    const [, c2] = runtime.update(m1, { type: 'view_shrink' }); // half → normal: changed
-    eq(c2.length, 1);
-    const [, c3] = runtime.update(m1, { type: 'view_shrink' }); // normal → normal: no change
-    eq(c3.length, 0, 'no Cmd when viewMode did not change');
-  });
   it('focus_set stores focus and always emits show_selected_info', () => {
     const m = runtime.init();
-    const [m1, cmds] = runtime.update(m, { type: 'focus_set', focus: 'actions' });
-    eq(m1.focus, 'actions');
-    eq(cmds.length, 1);
-    eq(cmds[0].type, 'show_selected_info');
+    // Phase 1c: focus_set moved to layout.update — test the Component
+    // update directly with an isolated slice.
+    const layout = require('../plugins/core/layout');
+    const slice = layout.init();
+    slice.focus = 'groups';
+    const [s1, c1] = layout.update({ type: 'focus_set', focus: 'actions' }, slice);
+    eq(s1.focus, 'actions');
+    eq(c1.length, 1);
+    eq(c1[0].type, 'show_selected_info');
     // null focus leaves it put but still refreshes the body
-    const [m2, cmds2] = runtime.update(m1, { type: 'focus_set', focus: null });
-    eq(m2.focus, 'actions', 'null focus is a no-op on the value');
-    eq(cmds2[0].type, 'show_selected_info');
+    const [s2, c2] = layout.update({ type: 'focus_set', focus: null }, s1);
+    eq(s2.focus, 'actions', 'null focus is a no-op on the value');
+    eq(c2[0].type, 'show_selected_info');
   });
   it('returns the SAME model object (hybrid: mutate-and-return)', () => {
     const m = runtime.init();
@@ -84,7 +47,7 @@ describe('[3] update — (model, msg) → [model, cmds], pure + Cmd descriptors'
     const detail = require('../plugins/core/viewer');
     // detail.update reads getModel().panelHeights — write to the singleton so
     // the viewport-based clamp uses the test's value.
-    runtime.getModel().panelHeights.detail = 22;  // viewport = 20 → maxScroll 80
+    require('../plugins/api').getComponentSlice('layout').panelHeights.detail = 22;  // viewport = 20 → maxScroll 80
     const slice = detail._init();
     slice.lines = new Array(100).fill('x');
     detail._update({ type: 'viewer_scroll', delta: 30 }, slice);
@@ -114,12 +77,14 @@ describe('[3] update — (model, msg) → [model, cmds], pure + Cmd descriptors'
     eq(c2.length, 2);
     eq(c2[0].type, 'show_selected_info');
     eq(c2[1].type, 'dispatch_msg');
-    eq(c2[1].msg.type, 'groups_selected');
-    eq(c2[1].msg.index, 1);
+    // Phase 2c: the inner Msg is wrapped { kind: 'groups', msg: {...} }.
+    eq(c2[1].msg.kind, 'groups');
+    eq(c2[1].msg.msg.type, 'groups_selected');
+    eq(c2[1].msg.msg.index, 1);
   });
   it('escape / list_select: pure model.modes + model.ui.multiSel writes', () => {
     const m = runtime.init();
-    m.focus = 'containers';
+    require('../plugins/api').getComponentSlice('layout').focus = 'containers';
     // list_select toggle on, then escape exits + clears the selection
     runtime.update(m, { type: 'list_select', mode: 'toggle' });
     eq(m.modes.listSelectMode, true, 'toggle on');
@@ -160,25 +125,28 @@ describe('[3] update — (model, msg) → [model, cmds], pure + Cmd descriptors'
     groups._update({ type: 'toggle_group', name: 'g1' }, slice);
     eq(slice.expanded.has('g1'), false, 'collapsed after second toggle');
   });
-  it('design: gate is pure reducer logic — Cmd only when model.designEnabled', () => {
+  it('design: gate is pure reducer logic — Cmd only when layout slice has design.enabled', () => {
+    // Phase 1f migration: designEnabled lives on layout.slice.design.enabled.
+    const api = require('../plugins/api');
     const m = runtime.init();
-    eq(m.designEnabled, false);
+    const layoutSlice = api.getComponentSlice('layout');
+    layoutSlice.design.enabled = false;
     const [, off] = runtime.update(m, { type: 'design' });
     eq(off.length, 0, 'no start_design Cmd when disabled');
-    m.designEnabled = true;
+    layoutSlice.design.enabled = true;
     const [, on] = runtime.update(m, { type: 'design' });
     eq(on.length, 1);
     eq(on[0].type, 'start_design');
   });
   it('Cmd-only verbs route Msg → Cmd without touching the model', () => {
     const m = runtime.init();
-    const snap = JSON.stringify(m.focus) + m.viewMode;
+    const snap = JSON.stringify(m.focus);
     eq(runtime.update(m, { type: 'refresh' })[1][0].type, 'refresh');
     eq(runtime.update(m, { type: 'show_help' })[1][0].type, 'show_help');
     eq(runtime.update(m, { type: 'next_tab' })[1][0].dir, +1);
     eq(runtime.update(m, { type: 'prev_tab' })[1][0].dir, -1);
     eq(runtime.update(m, { type: 'quit' })[1][0].type, 'quit');
-    eq(JSON.stringify(m.focus) + m.viewMode, snap, 'model unchanged by Cmd-only verbs');
+    eq(JSON.stringify(m.focus), snap, 'model unchanged by Cmd-only verbs');
   });
   it('unknown msg: model untouched, no cmds', () => {
     const m = runtime.init();
@@ -196,22 +164,19 @@ describe('[11] terminal mode + multi-select writes (folded off the input path)',
     eq(m.modes.terminalMode, true);
     eq(cmds.length, 0);
   });
-  it('terminal_exit clears the flag; drops full→normal + repaint Cmd', () => {
+  it('terminal_exit clears the flag and emits cross-layer dispatch_msg wrapped to layout', () => {
+    // Phase 1b: viewMode lives on layout's slice; terminal_exit emits a
+    // dispatch_msg → view_drop_full_to_normal. Phase 2a — the inner Msg is
+    // wrapped { kind: 'layout', msg: {...} } so the handler routes
+    // straight to layout's update.
     const m = runtime.init();
     m.modes.terminalMode = true;
-    m.viewMode = 'full';
     const [, cmds] = runtime.update(m, { type: 'terminal_exit' });
     eq(m.modes.terminalMode, false);
-    eq(m.viewMode, 'normal');
-    eq(cmds[0].type, 'force_full_repaint');
-  });
-  it('terminal_exit from non-full leaves viewMode + emits no Cmd', () => {
-    const m = runtime.init();
-    m.modes.terminalMode = true;
-    m.viewMode = 'half';
-    const [, cmds] = runtime.update(m, { type: 'terminal_exit' });
-    eq(m.viewMode, 'half');
-    eq(cmds.length, 0);
+    eq(cmds.length, 1);
+    eq(cmds[0].type, 'dispatch_msg');
+    eq(cmds[0].msg.kind, 'layout');
+    eq(cmds[0].msg.msg.type, 'view_drop_full_to_normal');
   });
   it('multisel_toggle adds then removes; drops the panel key when empty', () => {
     const m = runtime.init();
@@ -244,7 +209,7 @@ describe('[10] streamed output — stream_start / viewer_append (effect source)'
     assert(!Array.isArray(r), 'no effects — bare slice return');
   });
   it('viewer_append pins to bottom when already at bottom', () => {
-    runtime.getModel().panelHeights.detail = 5;   // innerH = 3
+    require('../plugins/api').getComponentSlice('layout').panelHeights.detail = 5;   // innerH = 3
     const slice = detail._init();
     slice.lines = ['a', 'b', 'c'];      // maxScroll = 0, scroll 0 = at bottom
     slice.scroll = 0;
@@ -253,7 +218,7 @@ describe('[10] streamed output — stream_start / viewer_append (effect source)'
     eq(slice.scroll, 1, 'followed to the new bottom');
   });
   it('viewer_append leaves scroll alone when the user scrolled up', () => {
-    runtime.getModel().panelHeights.detail = 5;   // innerH = 3
+    require('../plugins/api').getComponentSlice('layout').panelHeights.detail = 5;   // innerH = 3
     const slice = detail._init();
     slice.lines = ['a', 'b', 'c', 'd', 'e'];  // maxScroll = 2
     slice.scroll = 0;                          // user scrolled up to the top

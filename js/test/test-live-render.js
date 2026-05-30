@@ -83,7 +83,7 @@ describe('[2] viewMode flows model → view end-to-end (the v0.5 slice, live)', 
 describe('[3] chrome (sel/focus) flows through the model — live', () => {
   it('down-arrow moves the groups selection via the real key path', () => {
     capture(() => { handleKey(model, '_', '_'); handleKey(model, '_', '_'); });   // back to normal view (silenced)
-    getModel().focus = 'groups';
+    getComponentSlice("layout").focus = 'groups';
     getModel().ui.sel.groups = 0;
     const before = capture(() => render());
     // handleKey(model, 'down') → nav_down → moveSel on the focused panel; the
@@ -94,7 +94,7 @@ describe('[3] chrome (sel/focus) flows through the model — live', () => {
   });
   it('down-arrow cascades currentGroup inline (the selectGroup transform in the reducer)', () => {
     capture(() => { handleKey(model, '_', '_'); handleKey(model, '_', '_'); });
-    getModel().focus = 'groups';
+    getComponentSlice("layout").focus = 'groups';
     getModel().ui.sel.groups = 0;
     selectGroup(0);   // anchor currentGroup on the first row
     eq(getModel().currentGroup, 'g1', 'anchored on g1');
@@ -108,13 +108,13 @@ describe('[3] chrome (sel/focus) flows through the model — live', () => {
 describe('[3b] focus moves through the update spine — live', () => {
   it('right/left arrow re-focus via applyMsg → update(focus_set) and repaint', () => {
     capture(() => { handleKey(model, '_', '_'); handleKey(model, '_', '_'); });   // normal view (silenced)
-    getModel().focus = 'groups';
+    getComponentSlice("layout").focus = 'groups';
     const fromGroups = capture(() => handleKey(model, 'right', 'right')); // focus_right → update
-    assert(getModel().focus !== 'groups', `focus advanced off groups (now ${getModel().focus})`);
+    assert(getComponentSlice("layout").focus !== 'groups', `focus advanced off groups (now ${getComponentSlice("layout").focus})`);
     assert(fromGroups.length > 0, 'a frame painted on focus change');
-    const movedTo = getModel().focus;
+    const movedTo = getComponentSlice("layout").focus;
     capture(() => handleKey(model, 'left', 'left'));                       // focus_left → back
-    assert(getModel().focus === 'groups', `focus_left returned to groups from ${movedTo}`);
+    assert(getComponentSlice("layout").focus === 'groups', `focus_left returned to groups from ${movedTo}`);
   });
 });
 

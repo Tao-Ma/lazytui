@@ -26,10 +26,10 @@ function showSelectedInfo(model = getModel()) {
   if (isStreaming()) return;
   // Generic dispatch via plugin API. All panels (core + plugin) provide
   // getItems()/getInfo(); getInfo returns markup-ready Rich-formatted lines.
-  const def = getPanelDef(model.focus);
+  const def = getPanelDef(getComponentSlice("layout").focus);
   if (!def || typeof def.getItems !== 'function' || typeof def.getInfo !== 'function') return;
-  const items = getItems(model.focus);
-  const item = items[getSel(model.focus)];
+  const items = getItems(getComponentSlice("layout").focus);
+  const item = items[getSel(getComponentSlice("layout").focus)];
   if (!item) return;
   const lines = def.getInfo(item);
   if (lines && lines.length) setDetail(lines.join('\n'));
@@ -43,7 +43,7 @@ function switchToTab(model, idx) {
   // viewer_set_tab → detail Component (dispatchMsg); terminal_exit stays a
   // root-reducer Msg (applyMsg). The latter also emits force_full_repaint Cmd
   // when viewMode was 'full' so the layout reclaims rows.
-  require('./plugins/api').dispatchMsg({ type: 'viewer_set_tab', tab: idx });
+  require('./plugins/api').dispatchMsg(require('./plugins/api').wrap('detail', { type: 'viewer_set_tab', tab: idx }));
   require('./dispatch').applyMsg(model, { type: 'terminal_exit' });
   if (idx === 0) {
     showSelectedInfo(model);

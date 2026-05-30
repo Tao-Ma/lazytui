@@ -22,9 +22,10 @@ function buildItems(model) {
     ['→ / l    Panel right',        'focus_right'],
     null,
   ];
-  // allPanels() lives in state.js (a cycle from here); the panel list is just
-  // both layout columns, so read it off the model directly.
-  const panels = [...model.layout.leftPanels, ...model.layout.rightPanels];
+  // allPanels() lives in state.js (a cycle from here); the panel list is
+  // just both layout columns, so read it off the layout slice's arrange.
+  const arrange = (require('./plugins/api').getComponentSlice('layout') || {}).arrange || { leftPanels: [], rightPanels: [] };
+  const panels = [...arrange.leftPanels, ...arrange.rightPanels];
   for (const p of panels) {
     if (p.hotkey) items.push([`[${p.hotkey}]       ${esc(p.title)}`, `focus_panel:${p.hotkey}`]);
   }
@@ -42,7 +43,8 @@ function buildItems(model) {
     ['+        Expand view',        'view_expand'],
     ['_        Shrink view',        'view_shrink'],
     null,
-    ...(model.designEnabled ? [[':design  Design mode', 'design']] : []),
+    ...((require('./plugins/api').getComponentSlice('layout') || {}).design?.enabled
+        ? [[':design  Design mode', 'design']] : []),
     ['r        Refresh status',     'refresh'],
     ['?        Help in detail',     'show_help'],
     ['q        Quit',               'quit'],

@@ -23,6 +23,7 @@ const {
   hub, esc, theme, renderPanel,
   getItems: apiGetItems,
   scheduleRender,
+  getComponentSlice,
 } = require('../api');
 const { rasterize } = require('./stats-graph');
 
@@ -83,7 +84,7 @@ function _renderEmpty(panel, w, h, msg) {
     lines: [`[${t.dim}]${esc(msg)}[/]`],
     title: panel.title, hotkey: panel.hotkey,
     panelType: 'stats',
-    focused: getModel().focus === 'stats',
+    focused: getComponentSlice("layout").focus === 'stats',
   });
 }
 
@@ -179,7 +180,7 @@ function render(panel, w, h) {
     title: `${panel.title}: ${esc(rowKey)}`,
     hotkey: panel.hotkey,
     panelType: 'stats',
-    focused: getModel().focus === 'stats',
+    focused: getComponentSlice("layout").focus === 'stats',
   });
 }
 

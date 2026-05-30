@@ -18,7 +18,7 @@ const { switchToTab, showSelectedInfo } = require('./viewer');
 const { enableMouse, enableFocusEvents, enableBracketedPaste, cols } = require('./term');
 const { isTerminalTab, activeTerminalId } = require('./tabs');
 const { writeToSession, isSessionDead } = require('./terminal');
-const { getPanelDef, getItems, getComponentSlice } = require('./plugins/api');
+const { getPanelDef, getItems, getComponentSlice, dispatchMsg, wrap } = require('./plugins/api');
 
 function _detail() { return getComponentSlice('detail'); }
 const { handleKey, applyMsg } = require('./dispatch');
@@ -46,7 +46,7 @@ const { cleanup } = require('./cleanup');
  */
 function _handleWheel(model, mx, my, delta) {
   for (const p of allPanels()) {
-    const b = model.panelBounds[p.type];
+    const b = getComponentSlice('layout').panelBounds[p.type];
     if (!b) continue;
     if (mx < b.x || mx >= b.x + b.w || my < b.y || my >= b.y + b.h) continue;
 
@@ -54,11 +54,11 @@ function _handleWheel(model, mx, my, delta) {
       const d = _detail();
       const lines = d?.lines || [];
       const curScroll = d?.scroll || 0;
-      const innerH = Math.max(1, (model.panelHeights.detail || b.h) - 2);
+      const innerH = Math.max(1, (getComponentSlice('layout').panelHeights.detail || b.h) - 2);
       const maxScroll = Math.max(0, lines.length - innerH);
       const next = Math.max(0, Math.min(maxScroll, curScroll + delta));
       if (next === curScroll) return false;
-      require('./plugins/api').dispatchMsg({ type: 'viewer_scroll', delta });
+      require('./plugins/api').dispatchMsg(require('./plugins/api').wrap('detail', { type: 'viewer_scroll', delta }));
       return true;
     }
 
@@ -79,7 +79,7 @@ function _handleWheel(model, mx, my, delta) {
       // Refresh detail only when the wheel landed on the focused panel
       // (so its info reflects the new selection); wheeling over a side
       // panel without focus shouldn't clobber detail.
-      if (p.type === model.focus) showSelectedInfo(model);
+      if (p.type === getComponentSlice("layout").focus) showSelectedInfo(model);
       return true;
     }
     return false;
@@ -120,7 +120,7 @@ function handleMouse(model, kind, x, y) {
   // change.
   const sel = require('./select');
   if (kind === 'motion' && sel.isActive()) {
-    const db = model.panelBounds.detail;
+    const db = getComponentSlice('layout').panelBounds.detail;
     if (db) {
       const visibleLine = Math.max(0, Math.min(db.h - 3, my - db.y - 1));
       const col = Math.max(0, mx - db.x - 1);
@@ -143,7 +143,7 @@ function handleMouse(model, kind, x, y) {
   let mutated = false;
 
   for (const p of allPanels()) {
-    const b = model.panelBounds[p.type];
+    const b = getComponentSlice('layout').panelBounds[p.type];
     if (!b) continue;
     if (mx < b.x || mx >= b.x + b.w || my < b.y || my >= b.y + b.h) continue;
 
@@ -157,7 +157,7 @@ function handleMouse(model, kind, x, y) {
         const tabs = b.tabs || [];
         for (const tab of tabs) {
           if (localX >= tab.x && localX < tab.x + tab.w) {
-            require('./dispatch').applyMsg(model, { type: 'focus_set', focus: 'detail' });
+            dispatchMsg(wrap('layout', { type: 'focus_set', focus: 'detail' }));
             switchToTab(model, tab.tabIdx);
             mutated = true;
             break;
@@ -165,7 +165,7 @@ function handleMouse(model, kind, x, y) {
         }
       }
       if (!mutated) {
-        require('./dispatch').applyMsg(model, { type: 'focus_set', focus: 'detail' });
+        dispatchMsg(wrap('layout', { type: 'focus_set', focus: 'detail' }));
         // Begin a selection iff the click landed in the content rows
         // and this tab actually has scrollable text content (skip
         // terminal tabs — the PTY handles its own input).
@@ -187,7 +187,7 @@ function handleMouse(model, kind, x, y) {
     // outside the detail content area cancels any pending selection
     // (starting a new gesture here).
     sel.cancel();
-    require('./dispatch').applyMsg(model, { type: 'focus_set', focus: p.type });
+    dispatchMsg(wrap('layout', { type: 'focus_set', focus: p.type }));
     const itemRow = my - b.y - 1;  // -1 for top border
     if (itemRow >= 0) {
       const def = getPanelDef(p.type);

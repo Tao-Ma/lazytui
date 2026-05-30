@@ -11,6 +11,7 @@ const { spawn } = require('child_process');
 const fs = require('fs');
 const { setDetail } = require('./state');
 const { streamCommand, killCurrentProc } = require('./stream');
+const { getComponentSlice, dispatchMsg, wrap } = require('./plugins/api');
 const history = require('./history');
 
 function runAction(model, actionKey, action, args = []) {
@@ -96,9 +97,9 @@ function doRun(model, actionKey, action, args = []) {
       const argStr = args.length ? ' ' + args.map(shQuote).join(' ') : '';
       const tabKey = `spawn-${actionKey}-${Date.now()}-${++_spawnSeq}`;
       // addEphemeralTab side-effects: detail slice's `tab` + ephemeral-
-      // Terminals[...][tabKey], model.focus='detail', model.modes.terminalMode.
+      // Terminals[...][tabKey], getComponentSlice("layout").focus='detail', model.modes.terminalMode.
       addEphemeralTab(model.currentGroup, tabKey, `${tmp}${argStr}`, actionKey);
-      require('./runtime').dispatch({ type: 'view_set', mode: 'full' });
+      dispatchMsg(wrap('layout', { type: 'view_set', mode: 'full' }));
       require('./layout').forceFullRepaint();
       history.start(actionKey, cmd, { detached: false });
     }

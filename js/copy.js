@@ -34,10 +34,10 @@ let _options = [];
  */
 function collectOptions() {
   const options = [];
-  const def = getPanelDef(getModel().focus);
+  const def = getPanelDef(getComponentSlice("layout").focus);
   if (def && typeof def.copyOptions === 'function' && typeof def.getItems === 'function') {
-    const items = getItems(getModel().focus);
-    const item = items[getSel(getModel().focus)];
+    const items = getItems(getComponentSlice("layout").focus);
+    const item = items[getSel(getComponentSlice("layout").focus)];
     if (item) {
       const provided = def.copyOptions(item) || [];
       for (const o of provided) {

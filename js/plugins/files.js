@@ -74,7 +74,8 @@ function _hardcodedFor(panelType) {
 // --- framework reads (app-global, read explicitly per the Component contract) ---
 
 function _allPanels() {
-  const ly = getModel().layout;
+  const slice = getComponentSlice('layout');
+  const ly = slice && slice.arrange;
   return ly ? [...(ly.leftPanels || []), ...(ly.rightPanels || [])] : [];
 }
 
@@ -263,7 +264,7 @@ function _renderFor(panel, w, h, slice, panelType, hardcoded) {
   const items = _itemsFor(slice, panelType, hardcoded);
   const innerW = w - 2;
   const sel = getSel(panelType);
-  const isFocused = getModel().focus === panelType;
+  const isFocused = getComponentSlice("layout").focus === panelType;
   const t = theme();
   const source = _source(panelType, hardcoded);
   const lines = items.map((it, i) => {
@@ -390,7 +391,7 @@ function update(msg, slice) {
  */
 function _handleKey(msg, slice) {
   if (msg.key !== 'return') return slice;
-  const panelType = getModel().focus;
+  const panelType = getComponentSlice("layout").focus;
   if (!OWNED_TYPES.includes(panelType)) return slice;
   const hardcoded = _hardcodedFor(panelType);
   const item = _itemsFor(slice, panelType, hardcoded)[getSel(panelType)];
@@ -464,7 +465,7 @@ registerEffect('loadDir', (eff) => {
       const dn = source === 'docker' ? path.posix.dirname(cwd) : path.dirname(cwd);
       items = dn !== cwd ? [{ kind: 'parent', name: '..', path: dn }] : [];
     }
-    require('./api').dispatchMsg({ type: 'dirLoaded', panelType, cwd, seq, items, error });
+    require('./api').dispatchMsg(require('./api').wrap('files', { type: 'dirLoaded', panelType, cwd, seq, items, error }));
   });
 });
 
@@ -552,7 +553,7 @@ const commands = [
     run: (args) => {
       const arg = ((args && args[0]) || '').toLowerCase();
       const mode = arg === 'on' ? 'on' : arg === 'off' ? 'off' : 'toggle';
-      require('./api').dispatchMsg({ type: 'showHidden', mode });
+      require('./api').dispatchMsg(require('./api').wrap('files', { type: 'showHidden', mode }));
     },
   },
 ];
