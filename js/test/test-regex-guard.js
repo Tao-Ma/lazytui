@@ -38,6 +38,16 @@ describe('[3] rejects classic catastrophic-backtracking shapes', () => {
   it('(\\d+)+', () => { eq(safeRegex('(\\d+)+', 'i'), null); });
 });
 
+describe('[3b] T21 — with-intermediate-parens catastrophic shapes', () => {
+  // Round-5 audit confirmed `((a+))+$` slipped through the pre-T21
+  // guard and froze Node for 83.5s matching against 31 `a` chars.
+  // Reachable: any user pasting it into the `/`-filter on a populated
+  // list freezes the input thread for over a minute.
+  it('((a+))+$', () => { eq(safeRegex('((a+))+$', 'i'), null); });
+  it('((.*))+x', () => { eq(safeRegex('((.*))+x', 'i'), null); });
+  it('((\\d+))*end', () => { eq(safeRegex('((\\d+))*end', 'i'), null); });
+});
+
 describe('[4] length cap', () => {
   it('rejects over MAX_PATTERN_LEN', () => {
     const big = 'a'.repeat(MAX_PATTERN_LEN + 1);

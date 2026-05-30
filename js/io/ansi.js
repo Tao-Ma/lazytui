@@ -29,23 +29,33 @@ const RESET = '\x1b[0m';
  * [bold]text[/] → \x1b[1mtext\x1b[0m
  * \[literal] → [literal]
  */
+// T23 — escaped-bracket sentinel. Pre-fix used NUL (\x00), which
+// collided with literal NULs in binary content: `richToAnsi(esc('a\x00b'))`
+// returned `'a[b'` because the NUL was treated as an escaped-bracket
+// marker. Switched to a BMP private-use codepoint (U+E002) — outside
+// any byte range that appears in normal text or in T22's SGR
+// placeholder pair (U+E000/U+E001).
+const _BRACKET_SENTINEL = '';
+
 function richToAnsi(text) {
   // Protect escaped brackets
-  let result = text.replace(/\\\[/g, '\x00');
+  let result = text.replace(/\\\[/g, _BRACKET_SENTINEL);
   // Replace tags
   result = result.replace(/\[([^\]]*)\]/g, (_, tag) => {
     if (tag === '/' || tag === '/bold' || tag === '/dim') return RESET;
     return CODES[tag] || RESET;
   });
   // Restore escaped brackets
-  return result.replace(/\x00/g, '[');
+  return result.replace(new RegExp(_BRACKET_SENTINEL, 'g'), '[');
 }
 
 /**
  * Strip Rich markup and escaped brackets, return plain text.
  */
 function stripMarkup(text) {
-  return text.replace(/\\\[/g, '\x00').replace(/\[[^\]]*\]/g, '').replace(/\x00/g, '[');
+  return text.replace(/\\\[/g, _BRACKET_SENTINEL)
+    .replace(/\[[^\]]*\]/g, '')
+    .replace(new RegExp(_BRACKET_SENTINEL, 'g'), '[');
 }
 
 /**
@@ -77,10 +87,77 @@ function visibleLen(text) {
 }
 
 /**
- * Escape [ for Rich markup so literal brackets render correctly.
+ * Strip dangerous terminal-control sequences that would let untrusted
+ * content (streamed command output, YAML labels, file-loader previews)
+ * escape the panel viewport and hijack the host terminal. Preserves
+ * SGR sequences (\x1b[…m) — the only ANSI codes legitimate action
+ * output emits into the viewer for color/style — and strips every
+ * other CSI / OSC / SS3 / single-byte escape, plus C0 controls except
+ * \t (tab) and \n (newline).
+ *
+ * T22 SEVERE — pre-fix esc() only escaped `[`, leaving raw \x1b, \r,
+ * \b, \x07 to pass through. A streamed command emitting \x1b[2J\x1b[H
+ * cleared the host's screen; \x1b[?1049h flipped to the alt buffer;
+ * \x1b]52;c;<base64>\x07 wrote OSC52 to the user's clipboard;
+ * \x1b[?25l hid the host cursor permanently. Verified via repro on
+ * the round-5 audit.
+ *
+ * Trade-off: stripping non-SGR CSI means actions can no longer emit
+ * cursor-move / screen-clear ANSI into the viewer (those would be
+ * meaningless inside a panel anyway — the viewer owns its own
+ * scrolling). SGR colors + styles work as before. The viewer's
+ * embedded PTY terminal (tabs) DOES interpret the full ANSI repertoire
+ * via @xterm/headless and isn't affected by this strip.
  */
-function esc(text) {
-  return text.replace(/\[/g, '\\[');
+function stripControls(s) {
+  if (typeof s !== 'string') return s;
+  // Protect SGR (\x1b[…m) by parking each match under private-use
+  // codepoints (U+E000/U+E001) so the C0 + orphan-ESC strips below
+  // don't eat the SGR's own `\x1b`. Restored at the end.
+  const sgrs = [];
+  s = s.replace(/\x1b\[[0-9;]*m/g, (m) => {
+    const i = sgrs.length;
+    sgrs.push(m);
+    return `${i};`;
+  });
+  s = s
+    // CSI (non-SGR — SGR already parked above): cursor moves, screen
+    // clears, alt-buffer flips, mode toggles. Now safe to strip any
+    // CSI without preserving anything.
+    .replace(/\x1b\[[0-9;?<>=!]*[@-~]/g, '')
+    // OSC: \x1b]…ST (BEL 0x07 or ESC-backslash). Catches OSC52
+    // clipboard writes, OSC8 hyperlinks, title sets, etc.
+    .replace(/\x1b\][\s\S]*?(?:\x07|\x1b\\)/g, '')
+    // DCS / SOS / PM / APC: \x1bP|\x1bX|\x1b^|\x1b_ … ST
+    .replace(/\x1b[PX^_][\s\S]*?\x1b\\/g, '')
+    // 2-byte escapes: \x1b followed by a char in 0x40-0x5f EXCLUDING
+    // those consumed above ([ for CSI, ] for OSC, P/X/^/_ for
+    // DCS/SOS/PM/APC). Allowed finals: @, A-O, Q-W, Y-Z, backslash.
+    .replace(/\x1b[@A-OQ-WYZ\\]/g, '')
+    // Orphan ESC: any \x1b left over (chunk-split sequence, malformed
+    // input). Strip — a lone ESC byte makes the terminal swallow the
+    // next character as part of an escape, which is the same hijack
+    // class we're defending against.
+    .replace(/\x1b/g, '')
+    // C0 controls (0x00-0x1f) except \t (0x09), \n (0x0a), and ESC
+    // (already swept above); DEL (0x7f). This sweeps \r (would reset
+    // cursor to col 0, wiping panel borders), \b (corrupts preceding
+    // cell), \x07 (BEL — beeps the host), stray NULs, etc.
+    .replace(/[\x00-\x08\x0b-\x1a\x1c-\x1f\x7f]/g, '');
+  // Restore parked SGR.
+  s = s.replace(/(\d+);/g, (_, i) => sgrs[+i]);
+  return s;
 }
 
-module.exports = { richToAnsi, stripMarkup, visibleLen, charWidth, esc, RESET };
+/**
+ * Escape [ for Rich markup so literal brackets render correctly.
+ * T22 — also strips dangerous terminal-control sequences. Every
+ * content-trust-boundary call site (stream output, YAML label render,
+ * file-loader preview) routes through esc(), so this single hook
+ * closes the breakout for all of them.
+ */
+function esc(text) {
+  return stripControls(text).replace(/\[/g, '\\[');
+}
+
+module.exports = { richToAnsi, stripMarkup, visibleLen, charWidth, esc, stripControls, RESET };

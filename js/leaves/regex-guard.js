@@ -28,16 +28,31 @@
 
 const MAX_PATTERN_LEN = 200;
 
-// `[^()]*` deliberately excludes parens so we only match the
-// no-intermediate-parens shape. Inner unbounded quantifier (`*`/`+`)
-// followed by closing `)` and an outer quantifier (`*`/`+`/`?`).
+// Two complementary heuristics for catastrophic-backtrack patterns.
+//
+// NESTED_QUANT (pre-T21) catches the no-intermediate-parens shape:
+//   (a+)+   (.*)+   (.+)*   (\d+)+
+// Inner unbounded quantifier (`*`/`+`) followed by closing `)` and an
+// outer quantifier (`*`/`+`/`?`).
+//
+// NESTED_QUANT_OUTER (T21) catches the WITH-intermediate-parens shape
+// that the round-5 audit bypassed:
+//   ((a+))+   ((.*))+$
+// Any pattern where a quantifier-followed-by-close-paren sits BEFORE
+// an outer close-paren that's followed by a quantifier. Verified: pre-
+// T21 the pattern `((a+))+$` passed the guard and froze Node for 83.5
+// seconds matching against 31 `a` characters + a non-matching tail.
+// This is a user-triggerable DoS: paste into the `/`-filter on a
+// populated list, the input thread freezes for a minute+.
 const NESTED_QUANT = /\([^()]*[*+][^()]*\)[*+?]/;
+const NESTED_QUANT_OUTER = /[*+]\)[^)]*\)[*+?]/;
 
 function safeRegex(pattern, flags) {
   if (typeof pattern !== 'string') return null;
   if (pattern.length === 0) return null;
   if (pattern.length > MAX_PATTERN_LEN) return null;
   if (NESTED_QUANT.test(pattern)) return null;
+  if (NESTED_QUANT_OUTER.test(pattern)) return null;
   try {
     return new RegExp(pattern, flags);
   } catch {
@@ -45,4 +60,5 @@ function safeRegex(pattern, flags) {
   }
 }
 
-module.exports = { safeRegex, MAX_PATTERN_LEN, _NESTED_QUANT: NESTED_QUANT };
+module.exports = { safeRegex, MAX_PATTERN_LEN,
+  _NESTED_QUANT: NESTED_QUANT, _NESTED_QUANT_OUTER: NESTED_QUANT_OUTER };
