@@ -58,19 +58,22 @@ describe('[panel_list_open / close] simple toggles', () => {
       right:  [['actions', 'actions'], ['detail', 'detail']],
       hidden: [['notes', 'viewer']],
     });
-    const next = layout.update({ type: 'panel_list_open' }, s);
+    const [next, cmds] = layout.update({ type: 'panel_list_open' }, s);
     eq(next.panelList.open, true);
     eq(next.panelList.cursor, 0);
+    eq(cmds.length, 1);
+    eq(cmds[0].type, 'force_full_repaint');
   });
-  it('close sets open=false (cursor preserved)', () => {
+  it('close sets open=false (cursor preserved) + force repaint', () => {
     const s = buildSlice({
       left:  [['groups', 'groups']],
       right: [['actions', 'actions'], ['detail', 'detail']],
     });
-    const opened = layout.update({ type: 'panel_list_open', cursor: 2 }, s);
-    const closed = layout.update({ type: 'panel_list_close' }, opened);
+    const [opened] = layout.update({ type: 'panel_list_open', cursor: 2 }, s);
+    const [closed, cmds] = layout.update({ type: 'panel_list_close' }, opened);
     eq(closed.panelList.open, false);
     eq(closed.panelList.cursor, 2);
+    eq(cmds[0].type, 'force_full_repaint');
   });
 });
 
@@ -81,7 +84,8 @@ describe('[panel_list_nav] cursor moves, clamped to item range', () => {
       right:  [['actions', 'actions'], ['detail', 'detail']],
       hidden: [['notes', 'viewer']],
     });
-    return layout.update({ type: 'panel_list_open' }, s);
+    const [next] = layout.update({ type: 'panel_list_open' }, s);
+    return next;
   }
   it('+1 advances cursor', () => {
     const next = layout.update({ type: 'panel_list_nav', dir: +1 }, shape());
@@ -102,11 +106,11 @@ describe('[panel_list_nav] cursor moves, clamped to item range', () => {
 describe('[panel_list_pick] context-dependent: hide / show / no-op', () => {
   function setupCursor(spec, cursorIdx) {
     const s = buildSlice(spec);
-    let opened = layout.update({ type: 'panel_list_open' }, s);
+    let [opened] = layout.update({ type: 'panel_list_open' }, s);
     for (let i = 0; i < cursorIdx; i++) opened = layout.update({ type: 'panel_list_nav', dir: +1 }, opened);
     return opened;
   }
-  it('pick on a placed item returns a pool_hide dispatch_msg Cmd and closes', () => {
+  it('pick on a placed item returns a pool_hide dispatch_msg + force_full_repaint, closes', () => {
     // groups @ cursor 0
     const s = setupCursor({
       left:   [['groups', 'groups']],
@@ -117,11 +121,12 @@ describe('[panel_list_pick] context-dependent: hide / show / no-op', () => {
     assert(Array.isArray(result), 'returns [slice, cmds] tuple');
     const [next, cmds] = result;
     eq(next.panelList.open, false, 'overlay closes on pick');
-    eq(cmds.length, 1);
+    eq(cmds.length, 2, 'dispatch_msg + force_full_repaint');
     eq(cmds[0].type, 'dispatch_msg');
     eq(cmds[0].msg.kind, 'layout');
     eq(cmds[0].msg.msg.type, 'pool_hide');
     eq(cmds[0].msg.msg.id, 'groups');
+    eq(cmds[1].type, 'force_full_repaint');
   });
   it('pick on a hidden item returns a pool_show dispatch_msg Cmd', () => {
     // After 3 nav steps: cursor on 'notes' (groups,actions,detail,notes)
@@ -134,6 +139,7 @@ describe('[panel_list_pick] context-dependent: hide / show / no-op', () => {
     eq(next.panelList.open, false);
     eq(cmds[0].msg.msg.type, 'pool_show');
     eq(cmds[0].msg.msg.id, 'notes');
+    eq(cmds[1].type, 'force_full_repaint');
   });
   it('pick on detail (essential) is a no-op — slice unchanged, overlay stays open', () => {
     // detail @ cursor 2: groups, actions, detail

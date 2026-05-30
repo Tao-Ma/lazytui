@@ -273,11 +273,20 @@ function update(msg, slice) {
     // back into the layout component via a dispatch_msg Cmd so the
     // existing handlers do the work (single source of truth for the
     // pool↔grid mutation).
+    //
+    // Toggle paths emit `force_full_repaint` — the panel-list overlay
+    // is a sub-state of the layout slice (not its own mode flag), so
+    // the render layer's overlay-set fingerprint doesn't change on
+    // toggle. Without the repaint, closing leaves the modal's pixels
+    // on screen (residue) and opening can race with the diff-painter
+    // skipping rows it thinks are unchanged.
     case 'panel_list_open': {
-      return { ...slice, panelList: { open: true, cursor: msg.cursor || 0 } };
+      const next = { ...slice, panelList: { open: true, cursor: msg.cursor || 0 } };
+      return [next, [{ type: 'force_full_repaint' }]];
     }
     case 'panel_list_close': {
-      return { ...slice, panelList: { ...slice.panelList, open: false } };
+      const next = { ...slice, panelList: { ...slice.panelList, open: false } };
+      return [next, [{ type: 'force_full_repaint' }]];
     }
     case 'panel_list_nav': {
       const items = mpool.panelListItems(slice.arrange);
@@ -293,7 +302,10 @@ function update(msg, slice) {
       if (!item || item.status === 'essential') return slice;
       const closed = { ...slice, panelList: { ...slice.panelList, open: false } };
       const verb = item.status === 'placed' ? 'pool_hide' : 'pool_show';
-      return [closed, [{ type: 'dispatch_msg', msg: { kind: 'layout', msg: { type: verb, id: item.id } } }]];
+      return [closed, [
+        { type: 'dispatch_msg', msg: { kind: 'layout', msg: { type: verb, id: item.id } } },
+        { type: 'force_full_repaint' },
+      ]];
     }
     case 'pool_show': {
       const arrange = slice.arrange;

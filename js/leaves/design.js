@@ -711,15 +711,20 @@ function poolDragRelease(slice) {
   const t = ds.target;
   const closeOverlay = { ...cleared, panelList: { ...cleared.panelList, open: false } };
   const showCmd = { kind: 'layout', msg: { type: 'pool_show', id: sourceId, column: t.column } };
+  // The overlay closes here; same reasoning as panel_list_close — pixels
+  // need wiping since `panelList.open` isn't a mode flag the render-
+  // layer fingerprint tracks.
+  const repaint = { type: 'force_full_repaint' };
   if (t.kind === 'replace') {
     const cmds = [
       { type: 'dispatch_msg', msg: { kind: 'layout', msg: { type: 'pool_hide', id: t.occupantId } } },
       { type: 'dispatch_msg', msg: showCmd },
+      repaint,
     ];
     return [closeOverlay, cmds];
   }
   // append
-  return [closeOverlay, [{ type: 'dispatch_msg', msg: showCmd }]];
+  return [closeOverlay, [{ type: 'dispatch_msg', msg: showCmd }, repaint]];
 }
 
 module.exports = {

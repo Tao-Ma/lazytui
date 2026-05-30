@@ -106,29 +106,31 @@ describe('[poolDragMotion] promotes armed→dragging and computes drop target', 
 });
 
 describe('[poolDragRelease] emits Cmds + clears drag', () => {
-  it('valid append drop → single pool_show dispatch_msg, drag cleared, overlay closes', () => {
+  it('valid append drop → pool_show dispatch_msg + force_full_repaint; drag cleared, overlay closes', () => {
     let s = mdesign.poolDragStart(buildSlice(), 'notes', 50, 5);
     s = mdesign.poolDragMotion(s, 50, 30);
     const [next, cmds] = mdesign.poolDragRelease(s);
     eq(next.design.drag, null, 'drag cleared');
     eq(next.panelList.open, false, 'overlay closed on successful drop');
-    eq(cmds.length, 1);
+    eq(cmds.length, 2);
     eq(cmds[0].type, 'dispatch_msg');
     eq(cmds[0].msg.kind, 'layout');
     eq(cmds[0].msg.msg.type, 'pool_show');
     eq(cmds[0].msg.msg.id, 'notes');
     eq(cmds[0].msg.msg.column, 'right');
+    eq(cmds[1].type, 'force_full_repaint');
   });
-  it('valid replace drop → pool_hide(occupant) + pool_show(source)', () => {
+  it('valid replace drop → pool_hide(occupant) + pool_show(source) + force_full_repaint', () => {
     let s = mdesign.poolDragStart(buildSlice(), 'notes', 50, 5);
     s = mdesign.poolDragMotion(s, 50, 4); // on actions
     const [next, cmds] = mdesign.poolDragRelease(s);
-    eq(cmds.length, 2);
+    eq(cmds.length, 3);
     eq(cmds[0].msg.msg.type, 'pool_hide');
     eq(cmds[0].msg.msg.id, 'actions');
     eq(cmds[1].msg.msg.type, 'pool_show');
     eq(cmds[1].msg.msg.id, 'notes');
     eq(cmds[1].msg.msg.column, 'right');
+    eq(cmds[2].type, 'force_full_repaint');
   });
   it('invalid target (detail replace) → no Cmds, drag still cleared', () => {
     let s = mdesign.poolDragStart(buildSlice(), 'notes', 50, 5);
