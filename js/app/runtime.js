@@ -71,7 +71,7 @@ function init() {
     // resetModes()); update branches and modeChain consult that single list.
     modes: {
       confirmMode: false, promptMode: false, designTitleEditMode: false,
-      designMode: false, menuOpen: false, filterMode: false, copyMode: false,
+      freeConfigMode: false, menuOpen: false, filterMode: false, copyMode: false,
       detailSearchMode: false, registerPopupMode: false, prefixMode: false,
       cmdMode: false, terminalMode: false, listSelectMode: false,
     },
@@ -588,7 +588,7 @@ function update(model, msg) {
     // --- design-mode Msgs (post-Phase-6 single-writer cleanup). Every
     // design_* case retired from the reducer; layout.update owns the slice
     // writes now (it calls mdesign.* leaves directly so the writes happen
-    // inside layout.update's call stack). Mode-flag flips (designMode /
+    // inside layout.update's call stack). Mode-flag flips (freeConfigMode /
     // designTitleEditMode) ride back via apply_msg mode_set / mode_clear
     // Cmds the reducer applies. Call sites in dispatch.js, input.js,
     // design.js wrap directly: `dispatchMsg(wrap('layout', { type: 'design_*'}))`.
@@ -793,12 +793,10 @@ function update(model, msg) {
     //  the cross-layer Msgs they emit come back via apply_msg.)
     case 'quit':        return [model, [{ type: 'quit' }]];
     case 'design': {
-      // Gated on the --design flag; emit the Cmd only when design is
-      // enabled, otherwise no effect. Cross-layer slice read via the
-      // route leaf (the same store panel/api uses) — no lazy require.
-      const layoutSlice = route.getSlice('layout');
-      const enabled = layoutSlice && layoutSlice.design.enabled;
-      return [model, enabled ? [{ type: 'start_design' }] : []];
+      // v0.6: free-config (formerly "design mode") is always available.
+      // The --design CLI flag (slice.design.enabled) used to gate this
+      // verb; now it just auto-enters at boot — see tui.js.
+      return [model, [{ type: 'start_design' }]];
     }
     default:
       return [model, []];

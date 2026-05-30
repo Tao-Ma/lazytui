@@ -31,7 +31,7 @@ const MODES = [
   { flag: 'confirmMode',         chain: true,  overlay: true,  modal: false, reset: true },
   { flag: 'promptMode',          chain: true,  overlay: true,  modal: false, reset: true },
   { flag: 'designTitleEditMode', chain: true,  overlay: false, modal: true,  reset: true },
-  { flag: 'designMode',          chain: true,  overlay: true,  modal: true,  reset: true },
+  { flag: 'freeConfigMode',          chain: true,  overlay: true,  modal: true,  reset: true },
   { flag: 'menuOpen',            chain: true,  overlay: true,  modal: true,  reset: true },
   { flag: 'filterMode',          chain: true,  overlay: false, modal: true,  reset: true },
   { flag: 'copyMode',            chain: true,  overlay: true,  modal: true,  reset: true },
@@ -62,7 +62,7 @@ function isModal(md = _modes()) { return MODES.some(m => m.modal && md[m.flag]);
  *  framework default. Used by handleMouse to mirror keyboard modal
  *  gating: while a modal claims keys, mouse events should not
  *  cascade into focus changes / selection / scroll that the user
- *  can't see through the overlay. The designMode special-case in
+ *  can't see through the overlay. The freeConfigMode special-case in
  *  handleMouse runs BEFORE this gate (design owns the mouse pipeline);
  *  terminalMode is non-chain by design and not covered here. */
 function isChainActive(md = _modes()) { return CHAIN_MODES.some(f => md[f]); }

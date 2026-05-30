@@ -8,7 +8,7 @@
  * same ref when the operation is a no-op). No I/O, no globals, no terminal
  * reads. The one bit of terminal state the reducer can't synthesize — the
  * current terminal width — is threaded in as `COLS` by the caller for the
- * hit-tests; `model.modes.designMode` is the one read of the chrome flag,
+ * hit-tests; `model.modes.freeConfigMode` is the one read of the chrome flag,
  * threaded in as `model` for mousePress's defensive guard.
  *
  * Slice shape touched:
@@ -554,7 +554,7 @@ function applyDrop(slice, srcType, target) {
 /** Press: resize hit-test FIRST (a seam sits on a panel border), else arm a
  *  panel drag + move the keyboard selection to the clicked panel. */
 function mousePress(slice, model, mx, my, COLS) {
-  if (!model.modes.designMode) return slice;
+  if (!model.modes.freeConfigMode) return slice;
   const resize = pointToResizeTarget(slice, mx, my, COLS);
   if (resize) {
     let next = _pushUndoSlice(slice);

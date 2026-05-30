@@ -468,7 +468,7 @@ function render(model = getModel()) {
   // Order matches dispatch.js's modeChain: design > menu > copy.
   if (md.copyMode)    renderCopyMenu();
   if (md.menuOpen)    renderMenu();
-  if (md.designMode)  renderDesignOverlay();
+  if (md.freeConfigMode)  renderDesignOverlay();
   if (md.cmdMode)     renderCmdline();
   if (md.confirmMode) renderConfirmOverlay();
   if (md.promptMode)  renderPromptOverlay();
@@ -535,7 +535,7 @@ function footerKeys(model) {
     const { titleEditText } = require('../overlay/design');
     return ` rename: ${esc(titleEditText())}│ | Esc cancel | Enter ok`;
   }
-  if (md.designMode) {
+  if (md.freeConfigMode) {
     const layoutSlice = getComponentSlice('layout');
     const dirty = (layoutSlice && layoutSlice.dirty) ? ' | [yellow]• unsaved (:save-layout)[/]' : '';
     return ` Design Mode | drag move/resize | J/K reorder | ←→ swap col | +/- col/detail · [/] panel h | t rename | u undo | C-r redo | :save-layout | q exit${getDesignFooter()}${dirty}`;

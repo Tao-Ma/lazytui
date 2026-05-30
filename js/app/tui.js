@@ -246,6 +246,14 @@ function main() {
   redraw();
   setupKeyListener();
 
+  // v0.6: --design auto-enters free-config mode after the first paint.
+  // The flag no longer gates the feature (the cmdline / menu / keybind
+  // are always available); it's just a "boot directly into edit mode"
+  // shortcut for muscle memory.
+  if (designEnabled) {
+    require('../dispatch/dispatch').startDesignMode();
+  }
+
   // Phase 6 — the framework's per-Plugin refresh-loop retired. Components
   // that need periodic polling (docker, files, config-status) self-arm
   // from their `refresh`-Msg handler via a `tick` effect; the cadence is

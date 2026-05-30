@@ -3,8 +3,7 @@
  *
  * Dependency-free leaf (only imports `io/ansi` for `esc`). Caller
  * (runtime.update's menu_open branch) threads the layout slice in —
- * the menu needs the current panel arrangement (for hotkeys) and the
- * `design.enabled` flag, both of which live on the layout slice. No
+ * the menu needs the current panel arrangement (for hotkeys). No
  * `panel/api` reach-around.
  *
  * Each item is `[label, actionString]` or `null` (a separator). The
@@ -18,7 +17,6 @@ const { esc } = require('../io/ansi');
 
 function buildItems(layoutSlice) {
   const arrange = (layoutSlice && layoutSlice.arrange) || { leftPanels: [], rightPanels: [] };
-  const designEnabled = !!(layoutSlice && layoutSlice.design && layoutSlice.design.enabled);
   const items = [
     ['↑ / k    Move up',            'nav_up'],
     ['↓ / j    Move down',          'nav_down'],
@@ -44,7 +42,7 @@ function buildItems(layoutSlice) {
     ['+        Expand view',        'view_expand'],
     ['_        Shrink view',        'view_shrink'],
     null,
-    ...(designEnabled ? [[':design  Design mode', 'design']] : []),
+    [':free-config  Edit layout + pool', 'design'],
     ['r        Refresh status',     'refresh'],
     ['?        Help in detail',     'show_help'],
     ['q        Quit',               'quit'],

@@ -235,7 +235,7 @@ describe('[immutable] leaves/design.js', () => {
     panelHeights: {},
   });
 
-  const makeModel = () => ({ modes: { designMode: true } });
+  const makeModel = () => ({ modes: { freeConfigMode: true } });
 
   it('navSelect advances selectedIdx without mutating input', () => {
     const slice = makeSlice();

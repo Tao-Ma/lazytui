@@ -41,11 +41,11 @@ function panelTitle(type) {
 }
 
 /**
- * Footer text contribution for renderFooter (read when designMode is set).
+ * Footer text contribution for renderFooter (read when freeConfigMode is set).
  * Idle: ` | <title> (<column>)`. Dragging: includes the live drop target.
  */
 function getDesignFooter() {
-  if (!getModel().modes.designMode) return '';
+  if (!getModel().modes.freeConfigMode) return '';
   const d = _design();
   if (!d) return '';
   const drag = d.drag;
@@ -67,7 +67,7 @@ function getDesignFooter() {
  * Banner / status lives in the footer (getDesignFooter).
  */
 function renderDesignOverlay() {
-  if (!getModel().modes.designMode) return;
+  if (!getModel().modes.freeConfigMode) return;
   const d = _design();
   const drag = d && d.drag;
   if (!drag || drag.kind !== 'dragging') return;

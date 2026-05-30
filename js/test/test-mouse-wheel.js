@@ -97,7 +97,7 @@ describe('[3] wheel target ≠ focused panel: focus stays put', () => {
 // The keyboard modeChain claims keystrokes while any chain mode (filter
 // / menu / prefix / cmdline / confirm / prompt / copy / register-popup
 // / detail-search / design-title-edit) is active. handleMouse used to
-// only special-case designMode, letting every other modal cascade into
+// only special-case freeConfigMode, letting every other modal cascade into
 // focus changes + selection + reset_group_context — the wheel-over-
 // groups path during filter mode was the smoking gun (modal sub-model
 // stayed bound to the OLD current-group). Pin the post-fix behavior.

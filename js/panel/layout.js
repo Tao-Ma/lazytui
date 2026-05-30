@@ -161,7 +161,7 @@ function update(msg, slice) {
     // design-mode state (Phase 1e — pure return-new). The mdesign leaf
     // takes this Component's slice and returns a new slice; layout.update
     // threads it through, preserving single-writer-per-slice. The root
-    // chrome mode flags (`designMode`, `designTitleEditMode`) ride on
+    // chrome mode flags (`freeConfigMode`, `designTitleEditMode`) ride on
     // `apply_msg` Cmds the reducer applies (`mode_set` / `mode_clear`).
     case 'design_enter': {
       // Reset working state on entry; preserve `enabled` (the boot-time
@@ -171,7 +171,7 @@ function update(msg, slice) {
         ...slice,
         design: { enabled, selectedIdx: 0, drag: null, undo: [], redo: [], titleEdit: { active: false, text: '' } },
       };
-      return [next, [{ type: 'apply_msg', msg: { type: 'mode_set', flag: 'designMode' } }]];
+      return [next, [{ type: 'apply_msg', msg: { type: 'mode_set', flag: 'freeConfigMode' } }]];
     }
     case 'design_exit': {
       const enabled = slice.design && slice.design.enabled;
@@ -180,7 +180,7 @@ function update(msg, slice) {
         design: { enabled, selectedIdx: 0, drag: null, undo: [], redo: [], titleEdit: { active: false, text: '' } },
       };
       return [next, [
-        { type: 'apply_msg', msg: { type: 'mode_clear', flag: 'designMode' } },
+        { type: 'apply_msg', msg: { type: 'mode_clear', flag: 'freeConfigMode' } },
         { type: 'apply_msg', msg: { type: 'mode_clear', flag: 'designTitleEditMode' } },
         { type: 'show_selected_info' },
       ]];

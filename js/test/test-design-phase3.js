@@ -33,7 +33,7 @@ const { describe, it, assert, eq, report } = require('./test-runner');
 
 // Design mode lives on layout's slice (post-Phase-6 single-writer cleanup):
 // entry is a wrapped `design_enter` Msg into layout; keys route through the
-// modeChain handler (designMode / designTitleEditMode). These shims keep
+// modeChain handler (freeConfigMode / designTitleEditMode). These shims keep
 // the existing call sites driving the REAL path.
 function enterDesign() {
   const api = require('../panel/api');
@@ -66,7 +66,7 @@ function setupFixture() {
     stats:      { x: 30, y:  5, w: 90, h: 10 },
     detail:     { x: 30, y: 15, w: 90, h: 25 },
   };
-  getModel().modes.designMode = false;
+  getModel().modes.freeConfigMode = false;
   getModel().modes.designTitleEditMode = false;
   getComponentSlice('layout').dirty = false;
   _clearUndoStacks();

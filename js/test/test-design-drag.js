@@ -63,7 +63,7 @@ function setupFixture() {
     stats:      { x: 30, y:  5, w: 90, h: 10 },
     detail:     { x: 30, y: 15, w: 90, h: 25 },
   };
-  getModel().modes.designMode = false;
+  getModel().modes.freeConfigMode = false;
   getComponentSlice('layout').dirty = false;
   enterDesign(getComponentSlice("layout").arrange, '/dev/null', () => {});
 }

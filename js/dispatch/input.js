@@ -101,7 +101,7 @@ function handleMouse(kind, x, y) {
   // (the one terminal read the layout Component can't do without
   // back-coupling) and threaded into the hit-tests. Non-press/motion/
   // release events (wheel) are swallowed in design mode, as before.
-  if (model.modes.designMode) {
+  if (model.modes.freeConfigMode) {
     if (kind === 'press')        dispatchMsg(wrap('layout', { type: 'design_mouse_press',  mx, my, cols: cols() }));
     else if (kind === 'motion')  dispatchMsg(wrap('layout', { type: 'design_mouse_motion', mx, my, cols: cols() }));
     else if (kind === 'release') dispatchMsg(wrap('layout', { type: 'design_mouse_release' }));

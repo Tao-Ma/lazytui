@@ -146,18 +146,15 @@ describe('[3] update — (model, msg) → [model, cmds], pure + Cmd descriptors'
     slice = step(slice, { type: 'toggle_group', name: 'g1' });
     eq(slice.expanded.has('g1'), false, 'collapsed after second toggle');
   });
-  it('design: gate is pure reducer logic — Cmd only when layout slice has design.enabled', () => {
-    // Phase 1f migration: designEnabled lives on layout.slice.design.enabled.
-    const api = require('../panel/api');
+  it('design: always emits start_design Cmd (v0.6 — free-config is always available)', () => {
+    // v0.5 gated this on layout.slice.design.enabled (the --design CLI
+    // flag); v0.6 removed the gate — free-config mode is reachable from
+    // the cmdline / menu / keybinding regardless of how the TUI was
+    // booted. --design now just auto-enters at startup.
     const m = runtime.init();
-    const layoutSlice = api.getComponentSlice('layout');
-    layoutSlice.design.enabled = false;
-    const [, off] = runtime.update(m, { type: 'design' });
-    eq(off.length, 0, 'no start_design Cmd when disabled');
-    layoutSlice.design.enabled = true;
-    const [, on] = runtime.update(m, { type: 'design' });
-    eq(on.length, 1);
-    eq(on[0].type, 'start_design');
+    const [, cmds] = runtime.update(m, { type: 'design' });
+    eq(cmds.length, 1);
+    eq(cmds[0].type, 'start_design');
   });
   it('Cmd-only verbs route Msg → Cmd without touching the model', () => {
     const m = runtime.init();

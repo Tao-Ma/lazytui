@@ -286,6 +286,19 @@ const { wrap } = route;
 const BROADCAST_TYPES = new Set(['refresh', 'hub', 'action']);
 
 function dispatchMsg(msg) {
+  // v0.6 Phase 3 — freeze gate. While free-config mode is active, only
+  // layout-wrapped Msgs flow (they drive the mode itself: design_*,
+  // pool_*, focus_set, view_*, set_arrange). Broadcasts (refresh / hub
+  // / action) and wrapped Msgs to non-layout components are dropped —
+  // each Component renders its last snapshot until the mode exits, so
+  // the canvas stays stable under drag / resize / pool mutations. Mode
+  // entry/exit themselves ride apply_msg Cmds through the root reducer,
+  // not through here, so they always reach the modes table.
+  const m = require('../app/runtime').getModel();
+  if (m && m.modes && m.modes.freeConfigMode) {
+    const isLayoutWrap = msg && msg.kind === 'layout' && msg.type === undefined;
+    if (!isLayoutWrap) return;
+  }
   // Wrapped-Msg path. Routes to exactly one Component. Discriminator:
   // { kind: string, msg: any } AND no top-level `type` field — the
   // latter rules out any pre-existing flat Msg shape that happens to
@@ -626,10 +639,19 @@ function _frameworkDynamicCommands(m) {
     });
   }
   const layoutSlice = route.getSlice('layout');
-  if (layoutSlice && layoutSlice.design.enabled) {
+  // v0.6: free-config mode is always available; `:design` is the v0.5
+  // alias kept for muscle memory. The boot-time `--design` CLI flag
+  // (slice.design.enabled) now just auto-enters at startup; it no
+  // longer gates the cmdline verb.
+  if (layoutSlice) {
+    out.push({
+      name: 'free-config',
+      desc: 'Open free-config mode (layout edit + pool overlay)',
+      run: () => { require('../dispatch/dispatch').startDesignMode(); },
+    });
     out.push({
       name: 'design',
-      desc: 'Open layout design mode',
+      desc: 'Alias for :free-config (v0.5 name)',
       run: () => { require('../dispatch/dispatch').startDesignMode(); },
     });
   }

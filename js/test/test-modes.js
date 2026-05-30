@@ -19,17 +19,17 @@ const { getModel } = require('../app/runtime');
 describe('[1] registry derivations', () => {
   it('CHAIN_MODES is the modeChain precedence order', () => {
     eq(modes.CHAIN_MODES.join(','),
-       'confirmMode,promptMode,designTitleEditMode,designMode,menuOpen,filterMode,copyMode,detailSearchMode,registerPopupMode,prefixMode,cmdMode');
+       'confirmMode,promptMode,designTitleEditMode,freeConfigMode,menuOpen,filterMode,copyMode,detailSearchMode,registerPopupMode,prefixMode,cmdMode');
   });
   it('isOverlayActive matches the pre-registry hardcoded list', () => {
-    const overlay = ['copyMode','menuOpen','designMode','cmdMode','confirmMode','promptMode','registerPopupMode','prefixMode'];
+    const overlay = ['copyMode','menuOpen','freeConfigMode','cmdMode','confirmMode','promptMode','registerPopupMode','prefixMode'];
     for (const f of modes.MODES.map(m => m.flag)) {
       const s = {}; s[f] = true;
       eq(modes.isOverlayActive(s), overlay.includes(f), `${f} overlay`);
     }
   });
   it('isModal matches the pre-registry hardcoded list', () => {
-    const modal = ['terminalMode','filterMode','copyMode','designMode','designTitleEditMode','menuOpen','prefixMode'];
+    const modal = ['terminalMode','filterMode','copyMode','freeConfigMode','designTitleEditMode','menuOpen','prefixMode'];
     for (const f of modes.MODES.map(m => m.flag)) {
       const s = {}; s[f] = true;
       eq(modes.isModal(s), modal.includes(f), `${f} modal`);
