@@ -1,5 +1,23 @@
 # Terminal Tabs Design
 
+> **Note.** This doc is the original design rationale, written before
+> the v0.5 architectural arc. Code snippets reference the retired `S`
+> shim — substitute as you read:
+>
+> - `S.config.*`, `S.currentGroup`, `S.terminalMode`, `S.activeTab` →
+>   `getModel().config.*` / `.currentGroup` / `.modes.terminalMode` /
+>   `getComponentSlice('detail').tab` respectively (every read goes
+>   through `getModel()` / `getComponentSlice(<comp>)` now).
+> - `S.detailLines` → `getComponentSlice('detail').lines`.
+> - `S.panelBounds` → `getComponentSlice('layout').panelBounds`.
+> - Direct assignment like `S.terminalMode = true` → dispatch the
+>   appropriate Msg (`terminal_enter` / `terminal_exit` for the flag,
+>   wrapped Msgs into the owning Component for slice writes).
+>
+> The live source is the authoritative reference:
+> `js/panel/viewer/tabs.js`, `js/panel/viewer/viewer.js`,
+> `js/io/terminal.js`, `js/render/layout.js#renderTerminalOverlay`.
+
 Embed interactive terminal sessions (SSH, SQL editor, REPL) as tabs
 in the detail panel. Users configure `terminals:` per group in YAML.
 The framework manages PTY sessions transparently — no tmux knowledge

@@ -218,18 +218,22 @@ function allPanels() {
 // Kept here as named exports so non-reducer callers (mouse, recursive `"`
 // expand, tests) have a stable surface.
 function recomputeGroups() {
-  require('../panel/api').dispatchMsg(require('../panel/api').wrap('groups', { type: 'groups_recompute' }));
+  const api = require('../panel/api');
+  api.dispatchMsg(api.wrap('groups', { type: 'groups_recompute' }));
 }
 function switchGroupsTab(/* tab */) {
   // toggle_groups_tab flips All↔Quick (the only transition we use today);
   // explicit-target setters belong to the Component if ever needed.
-  require('../panel/api').dispatchMsg(require('../panel/api').wrap('groups', { type: 'toggle_groups_tab' }));
+  const api = require('../panel/api');
+  api.dispatchMsg(api.wrap('groups', { type: 'toggle_groups_tab' }));
 }
 function expandGroup(path, recursive = false) {
-  require('../panel/api').dispatchMsg(require('../panel/api').wrap('groups', { type: 'toggle_group', name: path, recursive }));
+  const api = require('../panel/api');
+  api.dispatchMsg(api.wrap('groups', { type: 'toggle_group', name: path, recursive }));
 }
 function collapseGroup(path, recursive = false) {
-  require('../panel/api').dispatchMsg(require('../panel/api').wrap('groups', { type: 'toggle_group', name: path, recursive }));
+  const api = require('../panel/api');
+  api.dispatchMsg(api.wrap('groups', { type: 'toggle_group', name: path, recursive }));
 }
 
 // Phase 4a — nav chrome (cursor / scroll / multiSel) lives on each
@@ -287,8 +291,9 @@ function resetGroupContext() {
   // Phase C: the root-chrome reset moved to a Msg in runtime.update; the
   // viewer-slice half is its own Msg dispatched to the detail Component.
   const dispatch = require('../dispatch/dispatch');
+  const api = require('../panel/api');
   dispatch.applyMsg({ type: 'reset_group_context' });
-  require('../panel/api').dispatchMsg(require('../panel/api').wrap('detail', { type: 'viewer_reset_chrome' }));
+  api.dispatchMsg(api.wrap('detail', { type: 'viewer_reset_chrome' }));
 }
 
 /**
@@ -307,7 +312,8 @@ function setDetail(text) {
   // routes via the Component fan-out. Single-writer for the slice through
   // detail.update; every setDetail caller (detail / tabs / actions / help-text
   // / api save-layout-message) ends up as the same reducer write.
-  require('../panel/api').dispatchMsg(require('../panel/api').wrap('detail', { type: 'viewer_set_content', lines: text ? text.split('\n') : [] }));
+  const api = require('../panel/api');
+  api.dispatchMsg(api.wrap('detail', { type: 'viewer_set_content', lines: text ? text.split('\n') : [] }));
 }
 
 // --- Multi-select (bulk-operation operand) ---

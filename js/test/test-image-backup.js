@@ -15,7 +15,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { spawnSync } = require('child_process');
-const ib = require('../panel/image-backup');
+const ib = require('../feature/image-backup');
 const { describe, it, eq, assert, report } = require('./test-runner');
 
 const TUI = path.resolve(__dirname, '..', 'app', 'tui.js');

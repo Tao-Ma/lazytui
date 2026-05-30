@@ -50,9 +50,9 @@ const { getModel } = require('./runtime');
 // mode breaks silently.
 const BUILT_IN_PLUGINS = [
   '../panel/navigator/docker',
-  '../panel/archive',
+  '../feature/archive',
   '../panel/navigator/config-branch',
-  '../panel/image-backup',
+  '../feature/image-backup',
 ];
 
 /**

@@ -99,9 +99,13 @@ describe('[1] spawn outside tmux → embedded PTY tab + viewMode=full', () => {
   it('focuses the detail panel (set by addEphemeralTab)', () => {
     eq(getFocus(), 'detail', 'focus moved to detail');
   });
-  it('history records detached:false (child runs in our process)', () => {
+  it('history records detached:true (PTY exit lives in terminal.js with no link back)', () => {
+    // T27 / B19 — pre-fix used `detached: false` but the embedded PTY's
+    // exit had no path back to the history entry, leaving it
+    // `endedAt=null, exitCode=null` forever. Flipped to detached so the
+    // entry closes immediately; same shape as the tmux path below.
     const last = historyStarts[historyStarts.length - 1];
-    eq(last.opts.detached, false, 'history.start { detached: false }');
+    eq(last.opts.detached, true, 'history.start { detached: true }');
   });
 });
 

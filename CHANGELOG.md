@@ -89,8 +89,21 @@ that breaks for anyone using `dispatch.applyMsg` directly.
   framework consumes it in `dispatchKeyToFocused`. The previous
   `claimsKeys:` declaration retired.
 - **Pre-release reviews.** A 4-track audit (arch / file layout /
-  code / doc parity) ran before tagging; outcomes folded into
-  this release.
+  code / doc parity) ran before tagging. Code track: five rounds
+  surfaced ~30 BUGs + 26 RISKs (3 verified by repro:
+  regex DoS, ANSI breakout in panel titles, UTF-8 chunk-boundary
+  corruption in streamed output). Arch track caught two dead Msg
+  routes (`toggle_group` on Enter-on-branch, `toggle_groups_tab` on
+  `[`/`]`) — Msgs that moved to a Component but kept being routed
+  through the root reducer's no-op default; added
+  `js/test/test-msg-routing.js` as a static check that every
+  `applyMsg` literal in the dispatch spine has a matching reducer
+  case. File-layout track moved two CLI-mode groupAction
+  contributors (`archive`, `image-backup`) out of `panel/` into
+  `feature/` — they were never Components, never registered.
+  Doc-parity track refreshed PLUGINS.md's stale `claimsKeys`
+  guidance to the post-Phase-6 `_claimed` sentinel and added a
+  retired-`S`-shim substitution table to TERMINAL.md.
 - **Hot-path perf measured.** `viewer_append` and `select_extend` —
   the two paths flagged for measurement when the arc rule of "no
   in-place exceptions" was adopted — measured well within budget

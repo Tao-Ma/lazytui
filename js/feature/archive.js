@@ -1,5 +1,5 @@
 /**
- * archive plugin — generic tar+xz+sha256 backup pattern.
+ * archive — generic tar+xz+sha256 backup pattern. groupAction contributor.
  *
  * A group declares:
  *
@@ -8,7 +8,7 @@
  *     name:   <archive-base-filename>          # required
  *     output_dir: <where-to-write>             # optional, default: "."
  *
- * The plugin's `groupActions` synthesizes two actions on that group:
+ * `groupActions(group, name)` synthesizes two actions on that group:
  *
  *   archive  → writes <output_dir>/<name>-YYYYMMDD.tar.xz plus a
  *              <archive>.sha256 sidecar in the same dir, then echoes
@@ -22,10 +22,13 @@
  * action runs on dev9-env's macOS host and inside Linux containers
  * without a config switch.
  *
- * Plugin contract: this module exports only `name` and `groupActions`.
- * It deliberately has no other lifecycle hooks — keeps it loadable
- * from cli.js without booting any TUI runtime, mirroring the pattern
- * used by docker.js's groupActions for CLI parity (Phase A v2).
+ * Shape: this module exports only `name` and `groupActions` — no
+ * `init` / `update` / `panelTypes`, so it's NOT a Component and isn't
+ * registered with the Component framework. cli.js loads it directly
+ * via the BUILT_IN_PLUGINS list to merge groupActions for CLI-mode
+ * action resolution. Living in `feature/` (alongside register /
+ * history / yaml-layout) signals "utility module, not a panel" —
+ * the post-v0.5-Phase-6 spot for chrome-less groupAction contributors.
  *
  * If extending to multi-path archives — DO NOT introduce a bare
  * `paths: [...]` field. That recreates the two-registry duplication

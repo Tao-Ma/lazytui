@@ -118,7 +118,14 @@ module.exports = {
       filterText:  (item) => 'searchable',
       idOf:        (item) => 'stable-id',
       keyHints:    'i inspect | t logs',
-      claimsKeys:  ['return'],    // suppress framework default for these
+      // To suppress the framework default for a key the Component owns,
+      // return the `_claimed` sentinel as one of the effects from update():
+      //   return [slice, [{ type: '_claimed' }]];
+      // The framework consumes the sentinel in dispatchKeyToFocused and
+      // skips the global default. Same return statement handles the key
+      // AND the claim — no separate `claimsKeys` field. (The legacy
+      // `claimsKeys:` declaration retired in v0.5 Phase 6; declaring it
+      // now logs a registration warning.)
     },
   },
 
@@ -264,9 +271,10 @@ docs, not a runtime-enforced enum):
 
 - **Navigator** — list/tree of selectable rows. Owns a per-panel
   cursor / scroll / multiSel on `slice.nav[panelType]` (Phase 4a) and
-  contributes `getItems` / `getInfo` / `copyOptions` / `idOf` /
-  optional `onKey` / optional `claimsKeys`. Groups, actions, history,
-  containers (docker), files, config-status.
+  contributes `getItems` / `getInfo` / `copyOptions` / `idOf`. To claim
+  a keystroke (suppress the framework default), return a `_claimed`
+  sentinel effect from the Component's `update`. Groups, actions,
+  history, containers (docker), files, config-status.
 - **Viewer** — single scrollable content surface (the detail panel).
   Owns content + scroll + tabs + search + selection on its own slice.
 - **Monitor** — pure projection (stats). No cursor; no multiSel; the

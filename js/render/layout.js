@@ -272,7 +272,10 @@ function _safeRender(fn, panel, w, h) {
         message: e && e.message, stack: e && e.stack,
       });
     } catch (_) {}
-    return `[red][render error: ${panel && panel.type} — ${e && e.message}][/]`;
+    // esc() the interpolated values — a thrown error whose message
+    // contained a literal `[` would otherwise become embedded markup
+    // and confuse the panel renderer's parser.
+    return `[red][render error: ${esc(String(panel && panel.type))} — ${esc(String(e && e.message))}][/]`;
   }
 }
 

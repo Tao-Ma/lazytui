@@ -23,7 +23,8 @@ const { esc } = require('../io/ansi');
 const { allPanels, setDetail, getSel } = require('../app/state');
 const { render } = require('../render/layout');
 const { runAction } = require('./action-runner');
-const {refreshAll, getPanelDef, getItems, idOf, getGroupActions, getComponentSlice, dispatchMsg, wrap, getFocus } = require('../panel/api');
+const {refreshAll, getPanelDef, getItems, idOf, getGroupActions, getComponentSlice,
+       getComponentOwningPanel, dispatchMsg, dispatchKeyToFocused, wrap, getFocus } = require('../panel/api');
 const copy = require('../overlay/copy');
 const registerPopup = require('../overlay/register-popup');
 const { isTerminalTab, activeTerminalId, findEphemeralByid,
@@ -79,7 +80,7 @@ function resolvePromptDefault(act) {
 // captured-stale-ref hazard that bit us in 2be348a; dropping it removes
 // the invitation to reintroduce that bug class.
 function navSelect(panelType, index) {
-  const compName = require('../panel/api').getComponentOwningPanel(panelType);
+  const compName = getComponentOwningPanel(panelType);
   if (!compName) return;
   dispatchMsg(wrap(compName, { type: 'set_cursor', panel: panelType, index }));
   dispatchMsg(wrap('detail', { type: 'viewer_show_info' }));
@@ -135,7 +136,7 @@ function _jumpInListPanel(target) {
 }
 
 function _halfPageStep(panelType) {
-  const slice = require('../panel/api').getComponentSlice('layout');
+  const slice = getComponentSlice('layout');
   const h = (slice && slice.panelHeights[panelType]) || 4;
   return Math.max(1, Math.floor((h - 2) / 2));
 }
@@ -149,7 +150,7 @@ function activateTerminal() {
   const id = activeTerminalId();
   if (!id) return;
   if (isSessionDead(id)) {
-    const slice = require('../panel/api').getComponentSlice('layout');
+    const slice = getComponentSlice('layout');
     const bounds = slice && slice.panelBounds.detail;
     if (bounds) restartSession(id, bounds.w - 2, bounds.h - 2);
   }
@@ -178,7 +179,7 @@ function toggleMultiSelOnFocused() {
   if (item == null) return;
   // Phase 4b — write through the owning Component's nav slice; each
   // Component is the single writer for its own multiSel Set.
-  const compName = require('../panel/api').getComponentOwningPanel(focus);
+  const compName = getComponentOwningPanel(focus);
   if (!compName) return;
   dispatchMsg(wrap(compName, { type: 'multisel_toggle', panel: focus, id: idOf(focus, item) }));
 }
@@ -206,7 +207,7 @@ function selectAllVisible() {
   // Phase 4b — write through the owning Component's nav slice
   // (idempotent on already-selected ids).
   const ids = items.map(item => idOf(focus, item));
-  const compName = require('../panel/api').getComponentOwningPanel(focus);
+  const compName = getComponentOwningPanel(focus);
   if (!compName) return;
   dispatchMsg(wrap(compName, { type: 'multisel_select_all', panel: focus, ids }));
 }
@@ -366,7 +367,9 @@ function handleNormalKey(key, seq) {
   // through to the global detail-tab cycle below — preserving the prior
   // behavior for users hitting [ / ] from any other panel.
   if ((key === '[' || key === ']') && getFocus() === 'groups' && _groupsHasQuick()) {
-    applyMsg({ type: 'toggle_groups_tab' });
+    // toggle_groups_tab moved to groups.update in Phase C — route via
+    // the Component fan-out, not the root reducer.
+    dispatchMsg(wrap('groups', { type: 'toggle_groups_tab' }));
     return;
   }
   switch (key) {
@@ -450,7 +453,7 @@ function handleNormalKey(key, seq) {
       // Filter doesn't apply to the (non-list) detail panel — overload
       // `/` there as vim/less-style search instead. Same key, different
       // mode based on focus.
-      if (getFocus() === 'detail') require('../panel/api').dispatchMsg(require('../panel/api').wrap('detail', { type: 'viewer_search_enter' }));
+      if (getFocus() === 'detail') dispatchMsg(wrap('detail', { type: 'viewer_search_enter' }));
       else                          enterFilterMode();
       break;
     case 'y':              enterCopyMode(); break;
@@ -710,7 +713,7 @@ function handleKey(key, seq) {
   // global switch — handleNormalKey re-reads getModel() at entry so
   // the focused Component's apply_msg effects don't leave us with a
   // stale ref (same hazard class as the Phase 4 fix-up at 2be348a).
-  const claimed = require('../panel/api').dispatchKeyToFocused(key, seq);
+  const claimed = dispatchKeyToFocused(key, seq);
   if (!claimed) handleNormalKey(key, seq);
   render();
 }
@@ -819,7 +822,9 @@ function handleAction(action, arg) {
         const items = getItems('groups');
         const row = items[getSel('groups')];
         if (row && row.children && row.children.length > 0) {
-          applyMsg({ type: 'toggle_group', name: row.name });
+          // toggle_group moved to groups.update in Phase C — route via
+          // the Component fan-out, not the root reducer.
+          dispatchMsg(wrap('groups', { type: 'toggle_group', name: row.name }));
           break;
         }
         // Leaf: drill into the actions panel (a plain focus change).
@@ -860,21 +865,21 @@ function handleAction(action, arg) {
       // jump the cursor by half a panel (the nav_select cascade, now run
       // inline in the reducer). Other panel modes (e.g. stats content)
       // get no-op — they don't expose getItems().
-      if (getFocus() === 'detail') require('../panel/api').dispatchMsg(require('../panel/api').wrap('detail', { type: 'viewer_scroll', delta: -_halfPageStep('detail') }));
+      if (getFocus() === 'detail') dispatchMsg(wrap('detail', { type: 'viewer_scroll', delta: -_halfPageStep('detail') }));
       else                          _pageInListPanel(-_halfPageStep(getFocus()));
       break;
     }
     case 'page_down': {
-      if (getFocus() === 'detail') require('../panel/api').dispatchMsg(require('../panel/api').wrap('detail', { type: 'viewer_scroll', delta: +_halfPageStep('detail') }));
+      if (getFocus() === 'detail') dispatchMsg(wrap('detail', { type: 'viewer_scroll', delta: +_halfPageStep('detail') }));
       else                          _pageInListPanel(+_halfPageStep(getFocus()));
       break;
     }
     case 'goto_top':
-      if (getFocus() === 'detail') require('../panel/api').dispatchMsg(require('../panel/api').wrap('detail', { type: 'viewer_scroll', to: 'top' }));
+      if (getFocus() === 'detail') dispatchMsg(wrap('detail', { type: 'viewer_scroll', to: 'top' }));
       else                          _jumpInListPanel('top');
       break;
     case 'goto_bottom':
-      if (getFocus() === 'detail') require('../panel/api').dispatchMsg(require('../panel/api').wrap('detail', { type: 'viewer_scroll', to: 'bottom' }));
+      if (getFocus() === 'detail') dispatchMsg(wrap('detail', { type: 'viewer_scroll', to: 'bottom' }));
       else                          _jumpInListPanel('bottom');
       break;
     case 'view_expand':

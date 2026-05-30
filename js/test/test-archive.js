@@ -19,7 +19,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { spawnSync } = require('child_process');
-const archive = require('../panel/archive');
+const archive = require('../feature/archive');
 const { describe, it, eq, assert, report } = require('./test-runner');
 
 const TUI = path.resolve(__dirname, '..', 'app', 'tui.js');

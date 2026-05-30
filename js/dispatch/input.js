@@ -58,7 +58,7 @@ function _handleWheel(mx, my, delta) {
       const maxScroll = Math.max(0, lines.length - innerH);
       const next = Math.max(0, Math.min(maxScroll, curScroll + delta));
       if (next === curScroll) return false;
-      require('../panel/api').dispatchMsg(require('../panel/api').wrap('detail', { type: 'viewer_scroll', delta }));
+      dispatchMsg(wrap('detail', { type: 'viewer_scroll', delta }));
       return true;
     }
 
@@ -272,6 +272,18 @@ function _handleTerminalModeData(data) {
 // multi-chunk pastes, falling through to the \x1b defensive fallback
 // which fired Esc (closing any open modal); subsequent chunks
 // silently dropped.
+//
+// Residual gap (not fixed): if the 6-byte OPEN marker itself splits
+// across chunks (e.g. chunk-1 ends with `\x1b[20`, chunk-2 starts
+// with `0~content...`), the first chunk doesn't satisfy
+// `startsWith(_PASTE_OPEN)` and falls through to the unknown-escape
+// drop path. The paste content gets fed back through `stdin.emit`
+// retry but without the open-marker context, so it dispatches as
+// individual chars. Practically rare — TTY pastes typically arrive
+// with the open marker intact in the first chunk (markers are 6
+// bytes, the splits are large-content-driven) — but the gap exists.
+// A more robust accumulator would also detect prefixes-of-OPEN at
+// chunk boundaries, which adds latency to every \x1b-prefixed key.
 let _pasteBuffer = '';
 const _PASTE_MAX = 256 * 1024;   // 256 KB cap (R16)
 const _PASTE_OPEN = '\x1b[200~';

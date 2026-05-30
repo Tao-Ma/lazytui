@@ -1,8 +1,8 @@
 /**
- * image-backup plugin — `docker save | gzip` for a list of images
- * (and `gunzip | docker load` to restore). Mirrors do.sh's old
- * `maintenance image-save` / `image-load` but driven by YAML so any
- * dev project can wire its own list.
+ * image-backup — `docker save | gzip` for a list of images (and
+ * `gunzip | docker load` to restore). groupAction contributor.
+ * Mirrors do.sh's old `maintenance image-save` / `image-load` but
+ * driven by YAML so any dev project can wire its own list.
  *
  * A group declares:
  *
@@ -13,7 +13,7 @@
  *       - aanousakis/no-ip
  *     output_dir: image_backup       # optional, default "."
  *
- * Plugin synthesizes two actions:
+ * `groupActions(group, name)` synthesizes two actions:
  *
  *   save  → for each image, `docker save <img> | gzip > <dir>/<safe>.tar.gz`
  *           (`/` and `:` in image refs are replaced with `_` for the
@@ -22,9 +22,10 @@
  *   load  → `gunzip -c <dir>/*.tar.gz | docker load` for every file in
  *           the output dir. Refuses if the dir is missing.
  *
- * Plugin contract: only `name` + `groupActions`. No init, no other
- * lifecycle hooks — loadable from cli.js without booting the TUI
- * runtime, mirroring archive.js / config-branch.js.
+ * Shape: exports only `name` + `groupActions` — not a Component, not
+ * registered with the framework. cli.js loads it directly via
+ * BUILT_IN_PLUGINS for CLI-mode action resolution. Same shape +
+ * intent as feature/archive.js.
  */
 'use strict';
 

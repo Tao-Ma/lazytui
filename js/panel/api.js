@@ -652,11 +652,16 @@ function getCommands() {
   // T28 / R23 — duplicate command name detection. Two Components
   // contributing the same command name silently both appear in the
   // `:` cmdline; programmatic lookup picks whichever was registered
-  // first. Warn ONCE per (name, owner) pair so a maintainer notices
-  // — log goes to console + event-log via the same channel as the
+  // first. Warn on each collision so a maintainer notices —
+  // log goes to console + event-log via the same channel as the
   // panel-type collision warning at registerComponent.
-  const seen = new Map();   // name → first _source we saw
-  const warned = new Set(); // dedup warning across multiple getCommands calls
+  //
+  // Dedup scope: per getCommands() call. `seen` and `warned` reset on
+  // every call, so a duplicate collision re-warns on each cmdline
+  // rebuild (i.e. each keystroke in `:` mode). That's noisy if a real
+  // dup exists, but the common path (no dups) never logs.
+  const seen = new Map();   // name → first _source we saw THIS call
+  const warned = new Set(); // dedup (name, prior, new) within THIS call
   const _addOrWarn = (cmd) => {
     out.push(cmd);
     const prior = seen.get(cmd.name);
