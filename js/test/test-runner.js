@@ -173,6 +173,68 @@ function report() {
   process.exit(1);
 }
 
+// --- Immutability helpers (pure-TEA conversion) ---
+//
+// Pre-Phase-1: most reducers mutate their slice/model arg in place. Phase
+// 1 converts the leaves to return-new; Phases 2-4 do the same for
+// Components and the root reducer. These helpers let a test assert that
+// a function did NOT mutate its input — deep-freezes the input, calls
+// the function, catches the TypeError that throws on any attempted
+// write through a frozen path.
+
+/**
+ * Deep-freeze a plain-object / array tree. Walks own enumerable props;
+ * skips Map/Set/Date/etc (the structured-clone-able tree we actually
+ * use in slices is plain objects + arrays + the occasional Set, and
+ * Sets/Maps don't honor freeze for their own writes — we work around
+ * by treating them as opaque leaf cells via `_freezeLeafAware`).
+ */
+function deepFreeze(o) {
+  if (!o || typeof o !== 'object') return o;
+  if (Object.isFrozen(o)) return o;
+  if (o instanceof Set || o instanceof Map) {
+    // Sets/Maps don't honor Object.freeze for .add/.set/.delete — wrap
+    // the mutating methods to throw instead so a mutation is observable.
+    if (o instanceof Set) {
+      o.add = () => { throw new TypeError('frozen Set: add'); };
+      o.delete = () => { throw new TypeError('frozen Set: delete'); };
+      o.clear = () => { throw new TypeError('frozen Set: clear'); };
+    } else {
+      o.set = () => { throw new TypeError('frozen Map: set'); };
+      o.delete = () => { throw new TypeError('frozen Map: delete'); };
+      o.clear = () => { throw new TypeError('frozen Map: clear'); };
+    }
+    return Object.freeze(o);
+  }
+  for (const k of Object.keys(o)) deepFreeze(o[k]);
+  return Object.freeze(o);
+}
+
+/**
+ * Assert that `fn` returns a value that is NOT the same reference as
+ * `input` AND did not mutate `input`. Use to verify pure-reducer
+ * behavior:
+ *
+ *     expectNoMutation('nav.apply set_cursor', () => {
+ *       return nav.apply(slice, { type: 'set_cursor', panel: 'p', index: 3 });
+ *     }, slice);
+ *
+ * Strict mode is required for the assignment-to-frozen-prop to throw
+ * (it would silently no-op in sloppy mode). Test files run with
+ * 'use strict' at the top.
+ */
+function expectNoMutation(label, fn, input) {
+  deepFreeze(input);
+  try {
+    const out = fn();
+    if (out === input) recordFail(`${label}: returned same ref (no clone)`);
+    else _passCount++, console.log(`  ✓ ${label}`);
+    return out;
+  } catch (e) {
+    recordFail(`${label}: threw on frozen input — likely in-place mutation (${e.message})`);
+  }
+}
+
 // --- Test-only state introspection (used by run-tests.js to detect
 // whether a file forgot to call report()) ---
 
@@ -203,4 +265,5 @@ try {
   if (!api.getComponentSlice('groups')) api.registerComponent(require('../panel/navigator/groups'));
 } catch (_) { /* tests that don't need Components still load */ }
 
-module.exports = { describe, section, it, assert, eq, report, _state };
+module.exports = { describe, section, it, assert, eq, report, _state,
+                   deepFreeze, expectNoMutation };

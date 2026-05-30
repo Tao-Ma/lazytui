@@ -34,13 +34,13 @@ const {
   getComponentSlice, getFocus,
 } = require('../api');
 
-// --- pure tree transforms (slice writes + cascade descriptors) ---
+// --- pure tree transforms (return-new slice + cascade descriptor) ---
 //
-// Each helper takes `(slice, model, …)`, mutates the slice in place, and
-// returns `{ newIdx, newCurrentGroup, groupChanged }` (cascade descriptor).
-// Cross-layer writes (the groups cursor, model.currentGroup, root chrome
-// reset) are NOT performed here — update() emits the cross-layer Cmds based
-// on the returned descriptor. Single-writer per layer.
+// Each tree-shape helper takes `(slice, model, …)` and returns
+// `[newSlice, descriptor]` where descriptor =
+// `{ newIdx, newCurrentGroup, groupChanged }`. Cross-layer writes (cursor,
+// model.currentGroup, root chrome reset) are emitted by update() based on
+// the descriptor — single-writer per layer.
 
 /** Visible iff every ancestor is expanded. */
 function isVisible(slice, model, path) {
@@ -53,7 +53,7 @@ function isVisible(slice, model, path) {
 }
 
 /** Rebuild slice.list (the visible flattened tree) from config.groups + the
- *  expanded set, or the flat pinned list in 'quick'. Pure slice write. */
+ *  expanded set, or the flat pinned list in 'quick'. Returns the new slice. */
 function recomputeList(slice, model) {
   const all = (model.config && model.config.groups) || {};
   const out = [];
@@ -66,13 +66,12 @@ function recomputeList(slice, model) {
       if (isVisible(slice, model, path)) out.push(all[path]);
     }
   }
-  slice.list = out;
+  return { ...slice, list: out };
 }
 
 /** Compute the cursor + currentGroup that should follow a tree-shape change.
  *  Read-only over `slice` + `model` — returns `{ newIdx, newCurrentGroup,
- *  groupChanged }`. update() emits set_panel_cursor / set_current_group /
- *  reset_group_context Cmds as appropriate. */
+ *  groupChanged }`. update() emits the cascade Cmds. */
 function resolveCursor(slice, model) {
   const all = (model.config && model.config.groups) || {};
   let target = model.currentGroup;
@@ -87,45 +86,65 @@ function resolveCursor(slice, model) {
   return { newIdx: idx, newCurrentGroup, groupChanged: newCurrentGroup !== model.currentGroup };
 }
 
+const _noopDescriptor = (model) =>
+  ({ newIdx: 0, newCurrentGroup: model.currentGroup, groupChanged: false });
+
 /** Switch the groups panel between 'all' (tree) and 'quick' (flat pinned). */
 function switchTab(slice, model, tab) {
-  if (tab !== 'all' && tab !== 'quick') return { newIdx: 0, newCurrentGroup: model.currentGroup, groupChanged: false };
-  if (slice.tab === tab) return { newIdx: 0, newCurrentGroup: model.currentGroup, groupChanged: false };
-  slice.tab = tab;
-  recomputeList(slice, model);
-  return resolveCursor(slice, model);
+  if (tab !== 'all' && tab !== 'quick') return [slice, _noopDescriptor(model)];
+  if (slice.tab === tab) return [slice, _noopDescriptor(model)];
+  const next = recomputeList({ ...slice, tab }, model);
+  return [next, resolveCursor(next, model)];
 }
 
 /** Expand `path`. When `recursive`, also expand every descendant. No-op for
- *  leaves (empty children). */
+ *  leaves (empty children). The `expanded` Set is copied on write. */
 function expand(slice, model, path, recursive = false) {
   const all = (model.config && model.config.groups) || {};
   const g = all[path];
-  if (!g || !g.children || g.children.length === 0) return { newIdx: 0, newCurrentGroup: model.currentGroup, groupChanged: false };
-  slice.expanded.add(path);
-  if (recursive) {
-    for (const childPath of g.children) expand(slice, model, childPath, true);
+  if (!g || !g.children || g.children.length === 0) return [slice, _noopDescriptor(model)];
+  const expanded = new Set(slice.expanded);
+  expanded.add(path);
+  if (recursive) _expandRecursive(expanded, all, g);
+  const withSet = { ...slice, expanded };
+  const next = recomputeList(withSet, model);
+  return [next, resolveCursor(next, model)];
+}
+
+function _expandRecursive(expanded, all, g) {
+  for (const childPath of (g.children || [])) {
+    const child = all[childPath];
+    if (!child || !child.children || child.children.length === 0) continue;
+    expanded.add(childPath);
+    _expandRecursive(expanded, all, child);
   }
-  recomputeList(slice, model);
-  return resolveCursor(slice, model);
 }
 
 /** Collapse `path` and (if recursive) every descendant. */
 function collapse(slice, model, path, recursive = false) {
   const all = (model.config && model.config.groups) || {};
   const g = all[path];
-  if (!g) return { newIdx: 0, newCurrentGroup: model.currentGroup, groupChanged: false };
-  if (recursive && g.children) {
-    for (const childPath of g.children) collapse(slice, model, childPath, true);
-  }
-  slice.expanded.delete(path);
-  recomputeList(slice, model);
-  return resolveCursor(slice, model);
+  if (!g) return [slice, _noopDescriptor(model)];
+  const expanded = new Set(slice.expanded);
+  if (recursive) _collapseRecursive(expanded, all, g);
+  expanded.delete(path);
+  const withSet = { ...slice, expanded };
+  const next = recomputeList(withSet, model);
+  return [next, resolveCursor(next, model)];
 }
 
-/** Select the row at `idx`. Returns `{ newCurrentGroup, groupChanged }`.
- *  No slice mutation here — slice doesn't track cursor (that's framework
- *  chrome on the groups Component's own slice.nav.groups). */
+function _collapseRecursive(expanded, all, g) {
+  for (const childPath of (g.children || [])) {
+    const child = all[childPath];
+    if (!child) continue;
+    _collapseRecursive(expanded, all, child);
+    expanded.delete(childPath);
+  }
+}
+
+/** Select the row at `idx`. Returns `{ newIdx, newCurrentGroup,
+ *  groupChanged }`. Read-only — slice has no cursor field (that lives on
+ *  slice.nav.groups, written by the nav leaf). */
 function selectAt(slice, model, idx) {
   if (idx < 0 || idx >= slice.list.length) return { newIdx: -1, newCurrentGroup: model.currentGroup, groupChanged: false };
   const newCurrentGroup = slice.list[idx].name;
@@ -167,13 +186,12 @@ function _cascadeCmds(res) {
 function update(msg, slice) {
   // Phase 4a — nav chrome Msgs (set_cursor / set_scroll / multisel_*)
   // are handled by the shared leaf so every Navigator's update has the
-  // same nav semantics. A nav-match returns the (mutated) slice;
-  // non-nav Msgs fall through to this Component's own switch.
+  // same nav semantics. Non-nav Msgs fall through to this Component's
+  // own switch.
   if (mnav.isNavMsg(msg)) return mnav.apply(slice, msg);
   if (msg.type === 'groups_recompute') {
     // Boot / config reload — rebuild list from config.groups + slice state.
-    recomputeList(slice, getModel());
-    return slice;
+    return recomputeList(slice, getModel());
   }
   if (msg.type === 'groups_selected') {
     // nav_select for panel:'groups' wrote the cursor already (Phase 4a:
@@ -194,15 +212,15 @@ function update(msg, slice) {
   if (msg.type === 'toggle_group') {
     // `recursive` only matters for the leader-key `"` chord (expand
     // every descendant) — interactive Enter on a row toggles one level.
-    const res = slice.expanded.has(msg.name)
+    const [next, res] = slice.expanded.has(msg.name)
       ? collapse(slice, getModel(), msg.name, !!msg.recursive)
       : expand(slice, getModel(), msg.name, !!msg.recursive);
-    return [slice, _cascadeCmds(res)];
+    return [next, _cascadeCmds(res)];
   }
   if (msg.type === 'toggle_groups_tab') {
-    const next = slice.tab === 'quick' ? 'all' : 'quick';
-    const res = switchTab(slice, getModel(), next);
-    return [slice, _cascadeCmds(res)];
+    const target = slice.tab === 'quick' ? 'all' : 'quick';
+    const [next, res] = switchTab(slice, getModel(), target);
+    return [next, _cascadeCmds(res)];
   }
   return slice;
 }

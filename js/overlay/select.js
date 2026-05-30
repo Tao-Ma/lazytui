@@ -201,7 +201,7 @@ function commit() {
   _apply({ type: 'select_cancel' });
   // register_push is a ROOT-reducer Msg (model.register lives on the root
   // model), so route via applyMsg, not the Component fan-out.
-  if (text) require('../dispatch/dispatch').applyMsg(getModel(), { type: 'register_push', text });
+  if (text) require('../dispatch/dispatch').applyMsg({ type: 'register_push', text });
   return text;
 }
 

@@ -27,7 +27,9 @@ const runtime = require('../app/runtime');
 const register = require('../feature/register');
 const { describe, it, eq, assert, report } = require('./test-runner');
 
-const m = runtime.getModel();
+// Phase 4 — runtime.update is pure (returns a new model); thread the model
+// through a mutable handle so each step sees the previous step's writes.
+let m = runtime.getModel();
 
 function emptyReg() { register.init({ cap: 10 }); register.clear(); }
 // Replicate dispatch's ghost seeding: first line of the register top,
@@ -36,19 +38,21 @@ function ghostFor(initial) {
   const g = String(register.top() || '').split('\n')[0];
   return (g && g !== initial) ? g : '';
 }
+function apply(msg) { const [next] = runtime.update(m, msg); m = next; runtime.setModel(next); }
+function applyCmds(msg) { const [next, cmds] = runtime.update(m, msg); m = next; runtime.setModel(next); return cmds; }
 function stage(initial) {
-  runtime.update(m, {
+  apply({
     type: 'prompt_enter', label: 'X', spec: '',
     text: initial || '', ghost: ghostFor(initial || ''),
     cmd: { type: 'run_action', actionKey: 'a', action: {} },
   });
 }
-const seq  = (s) => runtime.update(m, { type: 'prompt_key', seq: s });
-const keyk = (k) => runtime.update(m, { type: 'prompt_key', key: k });
+const seq  = (s) => apply({ type: 'prompt_key', seq: s });
+const keyk = (k) => apply({ type: 'prompt_key', key: k });
 function type(str) { for (const ch of str) seq(ch); }
 // Submit → the run_action Cmd carries the parsed args (or null if no Cmd).
 function submitArgs() {
-  const [, cmds] = runtime.update(m, { type: 'prompt_submit' });
+  const cmds = applyCmds({ type: 'prompt_submit' });
   return cmds.length ? cmds[0].args : null;
 }
 
@@ -60,7 +64,7 @@ describe('[1] enter sets mode; typing + backspace; Esc cancels', () => {
     type('ls /tmp');
     seq('\x7f');  // backspace
     eq(m.modal.prompt.text, 'ls /tm', 'typing + backspace');
-    const [, cmds] = runtime.update(m, { type: 'prompt_cancel' });
+    const cmds = applyCmds({ type: 'prompt_cancel' });
     eq(m.modes.promptMode, false, 'mode cleared on cancel');
     eq(cmds.length, 0, 'cancel emits no Cmd');
   });

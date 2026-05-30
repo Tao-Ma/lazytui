@@ -147,7 +147,7 @@ function activateTerminal() {
     const bounds = slice && slice.panelBounds.detail;
     if (bounds) restartSession(id, bounds.w - 2, bounds.h - 2);
   }
-  applyMsg(getModel(), { type: 'terminal_enter' });
+  applyMsg({ type: 'terminal_enter' });
 }
 
 function startDesignMode() {
@@ -228,10 +228,10 @@ function _groupsHasQuick() {
 function handleMenuKey(model, key, seq) {
   // Menu lives in the reducer now (menu_open/nav/activate/close);
   // activate emits a menu_action Cmd that routes the verb through handleAction.
-  if (key === 'escape') { applyMsg(model, { type: 'menu_close' }); return; }
-  if (key === 'up' || seq === 'k') { applyMsg(model, { type: 'menu_nav', dir: -1 }); return; }
-  if (key === 'down' || seq === 'j') { applyMsg(model, { type: 'menu_nav', dir: +1 }); return; }
-  if (key === 'return') { applyMsg(model, { type: 'menu_activate' }); }
+  if (key === 'escape') { applyMsg({ type: 'menu_close' }); return; }
+  if (key === 'up' || seq === 'k') { applyMsg({ type: 'menu_nav', dir: -1 }); return; }
+  if (key === 'down' || seq === 'j') { applyMsg({ type: 'menu_nav', dir: +1 }); return; }
+  if (key === 'return') { applyMsg({ type: 'menu_activate' }); }
 }
 
 /**
@@ -245,16 +245,16 @@ function enterFilterMode(model) {
   if (!def || !def.filterable) return false;
   // Phase 4c — committed filter text lives on the panel's nav slice;
   // `filter.getFilter()` resolves it via the helper.
-  applyMsg(model, { type: 'filter_enter', panel: getFocus(), text: require('../overlay/filter').getFilter(getFocus()) });
+  applyMsg({ type: 'filter_enter', panel: getFocus(), text: require('../overlay/filter').getFilter(getFocus()) });
   return true;
 }
 
 function handleFilterKey(model, key, seq) {
-  if (key === 'escape') { applyMsg(model, { type: 'filter_exit', keep: false }); dispatchMsg(wrap('detail', { type: 'viewer_show_info' })); return; }
-  if (key === 'return') { applyMsg(model, { type: 'filter_exit', keep: true  }); dispatchMsg(wrap('detail', { type: 'viewer_show_info' })); return; }
+  if (key === 'escape') { applyMsg({ type: 'filter_exit', keep: false }); dispatchMsg(wrap('detail', { type: 'viewer_show_info' })); return; }
+  if (key === 'return') { applyMsg({ type: 'filter_exit', keep: true  }); dispatchMsg(wrap('detail', { type: 'viewer_show_info' })); return; }
   if (key === 'up' || seq === 'k') { handleAction(model, 'nav_up'); return; }
   if (key === 'down' || seq === 'j') { handleAction(model, 'nav_down'); return; }
-  applyMsg(model, { type: 'filter_key', seq });
+  applyMsg({ type: 'filter_key', seq });
 }
 
 /**
@@ -265,14 +265,14 @@ function enterCopyMode(model) {
   const opts = copy.collectOptions();
   if (!opts.length) return;
   if (opts.length === 1) { copy.copyOption(opts[0]); copy.clearOptions(); return; }
-  applyMsg(model, { type: 'copy_enter', options: opts.map(o => ({ label: o.label, cancel: !!o.cancel })) });
+  applyMsg({ type: 'copy_enter', options: opts.map(o => ({ label: o.label, cancel: !!o.cancel })) });
 }
 
 function handleCopyKey(model, key, seq) {
-  if (key === 'escape') { applyMsg(model, { type: 'copy_cancel' }); return; }
-  if (key === 'return') { applyMsg(model, { type: 'copy_select' }); return; }
-  if (key === 'up' || seq === 'k') { applyMsg(model, { type: 'copy_nav', dir: -1 }); return; }
-  if (key === 'down' || seq === 'j') { applyMsg(model, { type: 'copy_nav', dir: +1 }); return; }
+  if (key === 'escape') { applyMsg({ type: 'copy_cancel' }); return; }
+  if (key === 'return') { applyMsg({ type: 'copy_select' }); return; }
+  if (key === 'up' || seq === 'k') { applyMsg({ type: 'copy_nav', dir: -1 }); return; }
+  if (key === 'down' || seq === 'j') { applyMsg({ type: 'copy_nav', dir: +1 }); return; }
 }
 
 function handleDesignKey(model, key, seq) {
@@ -310,11 +310,11 @@ function handleCmdlineKey(model, key, seq) {
   // cmdline_rebuild Cmd (the effects layer re-queries the plugin facade — see
   // effects.js). Arrow-key raw escape sequences are kept as fallbacks for
   // callers that don't pre-normalize them to 'up'/'down'.
-  if (key === 'escape')                      { applyMsg(model, { type: 'cmdline_cancel' }); return; }
-  if (key === 'return')                      { applyMsg(model, { type: 'cmdline_submit' }); return; }
-  if (key === 'up'   || seq === '\x1b[A')    { applyMsg(model, { type: 'cmdline_nav', dir: +1 }); return; }
-  if (key === 'down' || seq === '\x1b[B')    { applyMsg(model, { type: 'cmdline_nav', dir: -1 }); return; }
-  applyMsg(model, { type: 'cmdline_key', seq });
+  if (key === 'escape')                      { applyMsg({ type: 'cmdline_cancel' }); return; }
+  if (key === 'return')                      { applyMsg({ type: 'cmdline_submit' }); return; }
+  if (key === 'up'   || seq === '\x1b[A')    { applyMsg({ type: 'cmdline_nav', dir: +1 }); return; }
+  if (key === 'down' || seq === '\x1b[B')    { applyMsg({ type: 'cmdline_nav', dir: -1 }); return; }
+  applyMsg({ type: 'cmdline_key', seq });
 }
 
 function handleRegisterPopupKey(model, key, seq) {
@@ -322,13 +322,13 @@ function handleRegisterPopupKey(model, key, seq) {
   // viewport height) is resolved here — it reads the terminal size, which is
   // view-derived and must not enter the reducer.
   const vh = registerPopup.viewportRows();
-  if (key === 'escape')              { applyMsg(model, { type: 'register_popup_cancel' }); return; }
-  if (key === 'return')              { applyMsg(model, { type: 'register_popup_commit' }); return; }
-  if (key === 'down' || seq === 'j') { applyMsg(model, { type: 'register_popup_nav', dir: +1, vh }); return; }
-  if (key === 'up'   || seq === 'k') { applyMsg(model, { type: 'register_popup_nav', dir: -1, vh }); return; }
-  if (seq === 'g')                   { applyMsg(model, { type: 'register_popup_nav', to: 'top', vh }); return; }
-  if (seq === 'G')                   { applyMsg(model, { type: 'register_popup_nav', to: 'bottom', vh }); return; }
-  if (seq === 'd')                   { applyMsg(model, { type: 'register_popup_drop', vh }); return; }
+  if (key === 'escape')              { applyMsg({ type: 'register_popup_cancel' }); return; }
+  if (key === 'return')              { applyMsg({ type: 'register_popup_commit' }); return; }
+  if (key === 'down' || seq === 'j') { applyMsg({ type: 'register_popup_nav', dir: +1, vh }); return; }
+  if (key === 'up'   || seq === 'k') { applyMsg({ type: 'register_popup_nav', dir: -1, vh }); return; }
+  if (seq === 'g')                   { applyMsg({ type: 'register_popup_nav', to: 'top', vh }); return; }
+  if (seq === 'G')                   { applyMsg({ type: 'register_popup_nav', to: 'bottom', vh }); return; }
+  if (seq === 'd')                   { applyMsg({ type: 'register_popup_drop', vh }); return; }
 }
 
 function handleDetailSearchKey(model, key, seq) {
@@ -353,22 +353,22 @@ function handleNormalKey(model, key, seq) {
   // through to the global detail-tab cycle below — preserving the prior
   // behavior for users hitting [ / ] from any other panel.
   if ((key === '[' || key === ']') && getFocus() === 'groups' && _groupsHasQuick()) {
-    applyMsg(model, { type: 'toggle_groups_tab' });
+    applyMsg({ type: 'toggle_groups_tab' });
     return;
   }
   switch (key) {
-    case 'q': applyMsg(model, { type: 'quit' }); break;
+    case 'q': applyMsg({ type: 'quit' }); break;
     case 'escape':
       // Esc exits list-select mode (and clears the selection). Outside
       // select mode it clears any lingering multi-selection. When
       // neither applies it's a no-op. (All pure model writes — reducer.)
-      applyMsg(model, { type: 'escape' });
+      applyMsg({ type: 'escape' });
       break;
     case 'v':
       // `v` enters list-select mode on a list panel (mirrors the detail
       // panel's visual mode, which the detail Component claims via its
       // own update when focus=detail). A second `v` exits.
-      if (_isListPanel(getFocus())) applyMsg(model, { type: 'list_select', mode: 'toggle' });
+      if (_isListPanel(getFocus())) applyMsg({ type: 'list_select', mode: 'toggle' });
       break;
     case ' ':
       // Space is the leader EXCEPT inside list-select mode on a list
@@ -379,13 +379,13 @@ function handleNormalKey(model, key, seq) {
       // The mode chain already suppresses the leader inside
       // detail-visual / terminal / text modes.
       if (model.modes.listSelectMode && _isListPanel(getFocus())) toggleMultiSelOnFocused();
-      else                                                         applyMsg(model, { type: 'enter_prefix' });
+      else                                                         applyMsg({ type: 'enter_prefix' });
       break;
     case '*':
       // Select-all implies select mode so the user can then space-toggle
       // individual rows off. (selectAllVisible reads items via the plugin
       // API — an effect — so it stays a direct call.)
-      if (_isListPanel(getFocus())) applyMsg(model, { type: 'list_select', mode: 'on' });
+      if (_isListPanel(getFocus())) applyMsg({ type: 'list_select', mode: 'on' });
       selectAllVisible();
       break;
     case 'up': case 'k':   handleAction(model, 'nav_up'); break;
@@ -417,7 +417,7 @@ function handleNormalKey(model, key, seq) {
         const ct = activeContentTab();
         if (ct) { removeContentTab(model.currentGroup, ct[0]); break; }
       }
-      applyMsg(model, { type: 'menu_open' });
+      applyMsg({ type: 'menu_open' });
       break;
     }
     case '?':              handleAction(model, 'show_help'); break;
@@ -441,8 +441,8 @@ function handleNormalKey(model, key, seq) {
       else                          enterFilterMode(model);
       break;
     case 'y':              enterCopyMode(model); break;
-    case '"':              applyMsg(model, { type: 'register_popup_enter' }); break;
-    case ':':              applyMsg(model, { type: 'cmdline_enter' }); break;
+    case '"':              applyMsg({ type: 'register_popup_enter' }); break;
+    case ':':              applyMsg({ type: 'cmdline_enter' }); break;
     default:
       // Numeric hotkey → focus the corresponding panel. Anything else
       // is a no-op at the framework level; the focused Component
@@ -467,9 +467,9 @@ function handleNormalKey(model, key, seq) {
 // so they exercise the real update path. Production drives prefix via
 // handleNormalKey's leader case + the modeChain prefix handler, both of
 // which already applyMsg the owned model.
-function enterPrefix() { applyMsg(getModel(), { type: 'enter_prefix' }); }
+function enterPrefix() { applyMsg({ type: 'enter_prefix' }); }
 
-function handlePrefixKey(key, seq) { applyMsg(getModel(), { type: 'prefix_key', key, seq }); }
+function handlePrefixKey(key, seq) { applyMsg({ type: 'prefix_key', key, seq }); }
 
 // Built-in starter chords. Single keys like `r` / `?` still work bare
 // in normal mode; these leader variants are additive (and seed the
@@ -501,7 +501,7 @@ function _runResolvedAction(model, key, act) {
     // Stage the prompt through update with a base run_action Cmd — submit
     // parses args + re-enters runAction (so an action that's ALSO confirm:
     // still confirms after the prompt). The Cmd carries data, not a closure.
-    applyMsg(model, {
+    applyMsg({
       type: 'prompt_enter',
       label: `Run: ${act.label}`, spec: act.args, text: initial,
       ghost: ghost && ghost !== initial ? ghost : '',
@@ -576,13 +576,13 @@ const _modeHandlers = {
   confirmMode:         (model, key, seq) => {
     // y/Enter accepts (re-emits the staged Cmd), n/Esc rejects; anything
     // else is swallowed so stray keys don't leak to the panel below.
-    if (key === 'escape' || seq === 'n' || seq === 'N') applyMsg(model, { type: 'confirm_reject' });
-    else if (seq === 'y' || seq === 'Y' || key === 'return') applyMsg(model, { type: 'confirm_accept' });
+    if (key === 'escape' || seq === 'n' || seq === 'N') applyMsg({ type: 'confirm_reject' });
+    else if (seq === 'y' || seq === 'Y' || key === 'return') applyMsg({ type: 'confirm_accept' });
   },
   promptMode:          (model, key, seq) => {
-    if (key === 'escape') applyMsg(model, { type: 'prompt_cancel' });
-    else if (key === 'return') applyMsg(model, { type: 'prompt_submit' });
-    else applyMsg(model, { type: 'prompt_key', key, seq });
+    if (key === 'escape') applyMsg({ type: 'prompt_cancel' });
+    else if (key === 'return') applyMsg({ type: 'prompt_submit' });
+    else applyMsg({ type: 'prompt_key', key, seq });
   },
   designTitleEditMode: (model, key, seq) => handleDesignTitleEditKey(model, key, seq),
   designMode:          (model, key, seq) => handleDesignKey(model, key, seq),
@@ -591,7 +591,7 @@ const _modeHandlers = {
   copyMode:            (model, key, seq) => handleCopyKey(model, key, seq),
   detailSearchMode:    (model, key, seq) => handleDetailSearchKey(model, key, seq),
   registerPopupMode:   (model, key, seq) => handleRegisterPopupKey(model, key, seq),
-  prefixMode:          (model, key, seq) => applyMsg(model, { type: 'prefix_key', key, seq }),
+  prefixMode:          (model, key, seq) => applyMsg({ type: 'prefix_key', key, seq }),
   cmdMode:             (model, key, seq) => { handleCmdlineKey(model, key, seq); dispatchMsg(wrap('detail', { type: 'viewer_show_info' })); },
 };
 
@@ -623,9 +623,13 @@ function clearKeyFilters() {
 // `model` is the owned root model, threaded in from the input pump
 // (tui.js → setupKeyListener → here). The normal-key path carries it
 // down to update; the modal path (_dispatchActiveMode) is not yet
-// threaded and still reads the global via the shim. render(model) feeds
+// threaded and still reads the global via the shim. render() feeds
 // the view the same threaded model.
-function handleKey(model, key, seq) {
+function handleKey(_legacy, key, seq) {
+  // Phase 4 — runtime.update returns NEW model objects; a captured
+  // model arg goes stale on the first state-changing Msg. Always read
+  // through getModel() so the dispatch sees post-Msg state.
+  const model = getModel();
   // Filter middleware runs first — before logging, before dispatch.
   // A filter that returns null wholly suppresses the event (no log
   // entry, no dispatch, no render).
@@ -648,14 +652,14 @@ function handleKey(model, key, seq) {
   // fan-out therefore happens ONLY when the modal gate declines (normal mode).
   // refresh/hub/action Msgs still fan unconditionally (dispatched elsewhere);
   // this gate is for KEY routing alone — see PRINCIPLES §12.
-  if (_dispatchActiveMode(model, key, seq)) { render(model); return; }
+  if (_dispatchActiveMode(model, key, seq)) { render(); return; }
   // The focused Component sees the key; if its update returns the
   // `_claimed` sentinel effect, the framework default is suppressed
   // (panel claims the keystroke). Otherwise we fall through to the
   // global switch.
   const claimed = require('../panel/api').dispatchKeyToFocused(key, seq);
   if (!claimed) handleNormalKey(model, key, seq);
-  render(model);
+  render();
 }
 
 /**
@@ -680,7 +684,7 @@ function _dispatchActiveMode(model, key, seq) {
         // holds even on this exceptional path (the alternative — a direct
         // model.modes[flag]=false here — was the last outside-writer in
         // dispatch.js per docs/v0.5-layering.md step 5).
-        applyMsg(model, { type: 'mode_clear', flag: m.flag });
+        applyMsg({ type: 'mode_clear', flag: m.flag });
       }
       return true;
     }
@@ -695,8 +699,14 @@ function _dispatchActiveMode(model, key, seq) {
 // (shared with Component `update` so both paths run through the same
 // registry); `applyMsg` is the bridge handleAction arms call to feed a
 // Msg through update + run the resulting Cmds.
-function applyMsg(model, msg) {
-  const [, cmds] = runtime.update(model, msg);
+function applyMsg(msg) {
+  // Phase 4 — the reducer is pure; the natural source of truth is
+  // `getModel()` (a stale captured ref would lose intermediate writes
+  // across cascades), so callers pass only `msg`. setModel commits the
+  // snapshot BEFORE runEffects so cross-layer Cmds (`apply_msg`,
+  // `dispatch_msg`) re-entering the dispatch graph see post-Msg state.
+  const [next, cmds] = runtime.update(getModel(), msg);
+  runtime.setModel(next);
   require('./effects').runEffects(cmds);
 }
 
@@ -704,7 +714,7 @@ function applyMsg(model, msg) {
 //
 // Effect arms are mutation-only. Caller (handleKey, handleMouse, the
 // menu Enter path) owns the trailing paint. Arms resolve a Msg from the
-// model and call applyMsg(model, msg) — the reducer is the writer.
+// model and call applyMsg(msg) — the reducer is the writer.
 
 function handleAction(model, action, arg) {
   switch (action) {
@@ -746,7 +756,7 @@ function handleAction(model, action, arg) {
         const items = getItems('groups');
         const row = items[getSel('groups')];
         if (row && row.children && row.children.length > 0) {
-          applyMsg(model, { type: 'toggle_group', name: row.name });
+          applyMsg({ type: 'toggle_group', name: row.name });
           break;
         }
         // Leaf: drill into the actions panel (a plain focus change).
@@ -775,13 +785,13 @@ function handleAction(model, action, arg) {
       // changed-flag bookkeeping in the refresh loop. The trailing
       // sync paint here gives immediate feedback that "something
       // happened" even before refresh completes.
-      applyMsg(model, { type: 'refresh' });
+      applyMsg({ type: 'refresh' });
       break;
     case 'show_help':
-      applyMsg(model, { type: 'show_help' });
+      applyMsg({ type: 'show_help' });
       break;
-    case 'next_tab': applyMsg(model, { type: 'next_tab' }); break;
-    case 'prev_tab': applyMsg(model, { type: 'prev_tab' }); break;
+    case 'next_tab': applyMsg({ type: 'next_tab' }); break;
+    case 'prev_tab': applyMsg({ type: 'prev_tab' }); break;
     case 'page_up': {
       // Paging is focus-aware: detail scrolls its content; list panels
       // jump the cursor by half a panel (the nav_select cascade, now run
@@ -822,10 +832,10 @@ function handleAction(model, action, arg) {
       // Reachable from menu entry and `:design` cmdline. The design-enabled
       // gate lives in the reducer (update emits the start_design Cmd only
       // when enabled) — same gate the cmdline command uses for visibility.
-      applyMsg(model, { type: 'design' });
+      applyMsg({ type: 'design' });
       break;
     case 'quit':
-      applyMsg(model, { type: 'quit' });
+      applyMsg({ type: 'quit' });
       break;
   }
 }

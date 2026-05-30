@@ -31,7 +31,7 @@ function runAction(model, actionKey, action, args = []) {
     // Stage the confirm through the reducer — `y` re-emits the do_run Cmd
     // (a DATA descriptor, not a closure). Lazy require breaks the
     // dispatch↔actions load cycle; this is "an effect dispatches a Msg".
-    require('./dispatch').applyMsg(model, {
+    require('./dispatch').applyMsg({
       type: 'confirm_enter',
       message: action.confirm,
       cmd: { type: 'do_run', actionKey, action, args },
@@ -60,7 +60,7 @@ function doRun(model, actionKey, action, args = []) {
   // Routes through update (set_last_run_action Msg) so the reducer remains the
   // single writer of model state — see docs/v0.5-layering.md. The marker the
   // actions panel paints (`>` on the last-run row) reads model.lastRunAction.
-  require('./dispatch').applyMsg(model, { type: 'set_last_run_action', action: actionKey });
+  require('./dispatch').applyMsg({ type: 'set_last_run_action', action: actionKey });
   // Parser normalizes both YAML `cmd:` and `script:` into `action.script`
   const cmd = action.script || '';
   const actionType = action.type || 'run';

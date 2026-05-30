@@ -24,15 +24,19 @@ const { getModel } = require('../app/runtime');
 const { getComponentSlice } = require('../panel/api');
 const mdesign = require('../leaves/design');
 
-// The layout Component's design sub-slice (Phase 1f) — what used to be
-// at `model.modal.design`. Lazy because tests can boot without layout.
+// The layout Component's slice + its design sub-slice (Phase 1f). Lazy
+// because tests can boot without layout. Post-1e the read helpers take the
+// slice directly — model isn't threaded into mdesign anymore.
+function _slice() { return getComponentSlice('layout'); }
 function _design() {
-  const slice = getComponentSlice('layout');
+  const slice = _slice();
   return slice ? slice.design : null;
 }
 
 function panelTitle(type) {
-  const p = mdesign.allDesignPanels(getModel()).find(x => x.type === type);
+  const slice = _slice();
+  if (!slice) return type;
+  const p = mdesign.allDesignPanels(slice).find(x => x.type === type);
   return p ? p.title : type;
 }
 
@@ -52,7 +56,8 @@ function getDesignFooter() {
     if (!t.valid) return ` | dragging ${esc(srcTitle)} → [red]✗ ${esc(t.reason || 'blocked')}[/]`;
     return ` | dragging ${esc(srcTitle)} → ${t.column} @ ${t.index}`;
   }
-  const all = mdesign.allDesignPanels(getModel());
+  const slice = _slice();
+  const all = slice ? mdesign.allDesignPanels(slice) : [];
   const sel = all[d.selectedIdx];
   return sel ? ` | ${esc(sel.title)} (${sel.column})` : '';
 }
@@ -124,8 +129,8 @@ function onMouseEvent(kind, mx, my) {
   }
 }
 
-function pointToResizeTarget(mx, my) { return mdesign.pointToResizeTarget(getModel(), mx, my, cols()); }
-function pointToDropTarget(srcType, mx, my) { return mdesign.pointToDropTarget(getModel(), srcType, mx, my, cols()); }
+function pointToResizeTarget(mx, my) { return mdesign.pointToResizeTarget(_slice(), mx, my, cols()); }
+function pointToDropTarget(srcType, mx, my) { return mdesign.pointToDropTarget(_slice(), srcType, mx, my, cols()); }
 
 module.exports = {
   renderDesignOverlay, getDesignFooter, titleEditText,

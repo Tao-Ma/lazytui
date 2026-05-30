@@ -205,7 +205,7 @@ function main() {
   // The program owns the root model from here on. Everything tui.js
   // directly triggers — the input pump (keys + mouse), the initial paint,
   // and the refresh-loop repaint — gets it threaded in (carried down
-  // handleKey/handleMouse → update, and into render(model)). The
+  // handleKey/handleMouse → update, and into render()). The
   // cycle-broken schedulers still default to getModel(): scheduleRender
   // (resize + PTY/stream producers) and the terminal-overlay poll route
   // through render-queue, which exists precisely so terminal.js/actions.js
@@ -218,7 +218,7 @@ function main() {
   // re-renders when each Component's refresh-Msg handler folds results
   // back via dispatchMsg. UX: brief "no data" flash on first paint is
   // acceptable; freezing the boot wasn't.
-  refreshAll().then(() => render(model));
+  refreshAll().then(() => render());
   redraw();
   setupKeyListener(model);
 

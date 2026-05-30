@@ -47,9 +47,17 @@ function emitOSC52(text) {
 // runtime.update uses), plus the OSC52 effect. Production yank/popup writes
 // flow through update (register_push / register_popup_* Msgs); these wrappers
 // remain as the direct test-facing API + for any non-threaded caller.
+//
+// Pure-TEA conversion (Phase 1b): the leaf takes the register sub-slice
+// and returns `[newRegister, value]`. The bridges below assign the new
+// register back onto the model in place — the model itself isn't yet
+// immutable (Phase 4), but the leaf's purity is the verifiable
+// invariant that matters here.
 function push(text) {
   _ensure();
-  const v = mreg.push(getModel(), text);
+  const m = getModel();
+  const [next, v] = mreg.push(m.register, text);
+  m.register = next;
   if (v) emitOSC52(v);
 }
 
@@ -70,19 +78,25 @@ function historyLen() {
 
 function drop(i) {
   _ensure();
-  return mreg.drop(getModel(), i);
+  const m = getModel();
+  const [next, removed] = mreg.drop(m.register, i);
+  m.register = next;
+  return removed;
 }
 
 function promote(i) {
   _ensure();
-  const v = mreg.promote(getModel(), i);
+  const m = getModel();
+  const [next, v] = mreg.promote(m.register, i);
+  m.register = next;
   if (v != null) { emitOSC52(v); return true; }
   return false;
 }
 
 function clear() {
   _ensure();
-  mreg.clear(getModel());
+  const m = getModel();
+  m.register = mreg.clear(m.register);
 }
 
 module.exports = {

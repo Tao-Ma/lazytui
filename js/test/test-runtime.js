@@ -55,20 +55,25 @@ describe('[3] update — (model, msg) → [model, cmds], pure + Cmd descriptors'
     // detail.update reads getModel().panelHeights — write to the singleton so
     // the viewport-based clamp uses the test's value.
     require('../panel/api').getComponentSlice('layout').panelHeights.detail = 22;  // viewport = 20 → maxScroll 80
-    const slice = detail._init();
-    slice.lines = new Array(100).fill('x');
-    detail._update({ type: 'viewer_scroll', delta: 30 }, slice);
+    // Phase 3 — _update returns the new slice; step() threads it through.
+    const step = (sl, msg) => {
+      const out = detail._update(msg, sl);
+      return Array.isArray(out) ? out[0] : out;
+    };
+    let slice = detail._init();
+    slice = { ...slice, lines: new Array(100).fill('x') };
+    slice = step(slice, { type: 'viewer_scroll', delta: 30 });
     eq(slice.scroll, 30);
-    detail._update({ type: 'viewer_scroll', delta: 999 }, slice);
+    slice = step(slice, { type: 'viewer_scroll', delta: 999 });
     eq(slice.scroll, 80, 'clamped to maxScroll');
-    detail._update({ type: 'viewer_scroll', delta: -999 }, slice);
+    slice = step(slice, { type: 'viewer_scroll', delta: -999 });
     eq(slice.scroll, 0, 'clamped to 0');
-    detail._update({ type: 'viewer_scroll', to: 'bottom' }, slice);
+    slice = step(slice, { type: 'viewer_scroll', to: 'bottom' });
     eq(slice.scroll, 80);
     const r = detail._update({ type: 'viewer_scroll', to: 'top' }, slice);
-    eq(slice.scroll, 0);
     // Bare slice return = no effects array.
     assert(!Array.isArray(r), 'scroll returns bare slice (no effects)');
+    eq(r.scroll, 0);
   });
   it('navSelect: writes the cursor via the owning Component + show_selected_info; groups also cascades', () => {
     // Phase 4b — the uniform `nav_select` Msg retired; `dispatch.navSelect`
@@ -94,21 +99,24 @@ describe('[3] update — (model, msg) → [model, cmds], pure + Cmd descriptors'
     const m = runtime.getModel();
     api.getComponentSlice('layout').focus = 'containers';
     // Seed: arm select mode + put two ids in the multiSel set.
-    require('../dispatch/dispatch').applyMsg(m, { type: 'list_select', mode: 'toggle' });
-    eq(m.modes.listSelectMode, true, 'toggle on');
+    // Phase 4 — runtime.update is pure; applyMsg threads the new model
+    // through setModel(), so subsequent reads must go through getModel().
+    const dispatch = require('../dispatch/dispatch');
+    dispatch.applyMsg({ type: 'list_select', mode: 'toggle' });
+    eq(runtime.getModel().modes.listSelectMode, true, 'toggle on');
     state.toggleMultiSel('containers', 'a');
     state.toggleMultiSel('containers', 'b');
     eq(state.multiSelCount('containers'), 2, 'two items selected');
-    require('../dispatch/dispatch').applyMsg(m, { type: 'escape' });
-    eq(m.modes.listSelectMode, false, 'escape exits select mode');
+    dispatch.applyMsg({ type: 'escape' });
+    eq(runtime.getModel().modes.listSelectMode, false, 'escape exits select mode');
     eq(state.multiSelCount('containers'), 0, 'escape clears the selection');
     // escape again with a lingering selection but not in select mode
     state.toggleMultiSel('containers', 'x');
-    require('../dispatch/dispatch').applyMsg(m, { type: 'escape' });
+    dispatch.applyMsg({ type: 'escape' });
     eq(state.multiSelCount('containers'), 0, 'escape clears lingering selection');
     // list_select on (the * path) forces it true
-    require('../dispatch/dispatch').applyMsg(m, { type: 'list_select', mode: 'on' });
-    eq(m.modes.listSelectMode, true, 'mode:on forces select mode');
+    dispatch.applyMsg({ type: 'list_select', mode: 'on' });
+    eq(runtime.getModel().modes.listSelectMode, true, 'mode:on forces select mode');
   });
   it('toggle_groups_tab + toggle_group are handled by the groups Component (Phase C)', () => {
     // Phase C: these Msgs moved out of runtime.update into groups.update.
@@ -121,17 +129,23 @@ describe('[3] update — (model, msg) → [model, cmds], pure + Cmd descriptors'
     } };
     m.currentGroup = '';
 
-    const slice = groups._init();
+    // Phase 3 — update() returns either a new slice or [newSlice, Cmds];
+    // unwrap both shapes and thread through.
+    const step = (sl, msg) => {
+      const out = groups._update(msg, sl);
+      return Array.isArray(out) ? out[0] : out;
+    };
+    let slice = groups._init();
     eq(slice.tab, 'all');
     // toggle_groups_tab
-    groups._update({ type: 'toggle_groups_tab' }, slice);
+    slice = step(slice, { type: 'toggle_groups_tab' });
     eq(slice.tab, 'quick', 'all → quick');
-    groups._update({ type: 'toggle_groups_tab' }, slice);
+    slice = step(slice, { type: 'toggle_groups_tab' });
     eq(slice.tab, 'all', 'quick → all');
     // toggle_group
-    groups._update({ type: 'toggle_group', name: 'g1' }, slice);
+    slice = step(slice, { type: 'toggle_group', name: 'g1' });
     eq(slice.expanded.has('g1'), true, 'expanded after first toggle');
-    groups._update({ type: 'toggle_group', name: 'g1' }, slice);
+    slice = step(slice, { type: 'toggle_group', name: 'g1' });
     eq(slice.expanded.has('g1'), false, 'collapsed after second toggle');
   });
   it('design: gate is pure reducer logic — Cmd only when layout slice has design.enabled', () => {
@@ -168,9 +182,10 @@ describe('[3] update — (model, msg) → [model, cmds], pure + Cmd descriptors'
 
 describe('[11] terminal mode + multi-select writes (folded off the input path)', () => {
   it('terminal_enter sets the flag; no Cmds', () => {
+    // Phase 4 — capture the new model from the return tuple.
     const m = runtime.init();
-    const [, cmds] = runtime.update(m, { type: 'terminal_enter' });
-    eq(m.modes.terminalMode, true);
+    const [m2, cmds] = runtime.update(m, { type: 'terminal_enter' });
+    eq(m2.modes.terminalMode, true);
     eq(cmds.length, 0);
   });
   it('terminal_exit clears the flag and emits cross-layer dispatch_msg wrapped to layout', () => {
@@ -179,9 +194,9 @@ describe('[11] terminal mode + multi-select writes (folded off the input path)',
     // wrapped { kind: 'layout', msg: {...} } so the handler routes
     // straight to layout's update.
     const m = runtime.init();
-    m.modes.terminalMode = true;
-    const [, cmds] = runtime.update(m, { type: 'terminal_exit' });
-    eq(m.modes.terminalMode, false);
+    const armed = { ...m, modes: { ...m.modes, terminalMode: true } };
+    const [m2, cmds] = runtime.update(armed, { type: 'terminal_exit' });
+    eq(m2.modes.terminalMode, false);
     eq(cmds.length, 1);
     eq(cmds[0].type, 'dispatch_msg');
     eq(cmds[0].msg.kind, 'layout');
@@ -212,34 +227,33 @@ describe('[10] streamed output — stream_start / viewer_append (effect source)'
   // Phase B: stream_start + viewer_append moved into detail.update — tested
   // here against the Component update with an isolated slice.
   const detail = require('../panel/viewer/viewer');
+  // Phase 3 — _update returns the new slice; capture it instead of reading
+  // the input after the call.
   it('stream_start replaces detail with the header + resets scroll', () => {
     const m = runtime.init();
-    const slice = detail._init();
-    slice.lines = ['old', 'stuff'];
-    slice.scroll = 5;
+    const init = detail._init();
+    const slice = { ...init, lines: ['old', 'stuff'], scroll: 5 };
     const r = detail._update({ type: 'stream_start', header: '$ run' }, slice);
-    eq(slice.lines.length, 1);
-    eq(slice.lines[0], '$ run');
-    eq(slice.scroll, 0);
+    eq(r.lines.length, 1);
+    eq(r.lines[0], '$ run');
+    eq(r.scroll, 0);
     assert(!Array.isArray(r), 'no effects — bare slice return');
   });
   it('viewer_append pins to bottom when already at bottom', () => {
     require('../panel/api').getComponentSlice('layout').panelHeights.detail = 5;   // innerH = 3
-    const slice = detail._init();
-    slice.lines = ['a', 'b', 'c'];      // maxScroll = 0, scroll 0 = at bottom
-    slice.scroll = 0;
-    detail._update({ type: 'viewer_append', line: 'd' }, slice);
-    eq(slice.lines.length, 4);
-    eq(slice.scroll, 1, 'followed to the new bottom');
+    const init = detail._init();
+    const slice = { ...init, lines: ['a', 'b', 'c'], scroll: 0 };  // maxScroll = 0, at bottom
+    const r = detail._update({ type: 'viewer_append', line: 'd' }, slice);
+    eq(r.lines.length, 4);
+    eq(r.scroll, 1, 'followed to the new bottom');
   });
   it('viewer_append leaves scroll alone when the user scrolled up', () => {
     require('../panel/api').getComponentSlice('layout').panelHeights.detail = 5;   // innerH = 3
-    const slice = detail._init();
-    slice.lines = ['a', 'b', 'c', 'd', 'e'];  // maxScroll = 2
-    slice.scroll = 0;                          // user scrolled up to the top
-    detail._update({ type: 'viewer_append', line: 'f' }, slice);
-    eq(slice.lines.length, 6);
-    eq(slice.scroll, 0, 'not yanked down — user was reading');
+    const init = detail._init();
+    const slice = { ...init, lines: ['a', 'b', 'c', 'd', 'e'], scroll: 0 };  // maxScroll = 2, user at top
+    const r = detail._update({ type: 'viewer_append', line: 'f' }, slice);
+    eq(r.lines.length, 6);
+    eq(r.scroll, 0, 'not yanked down — user was reading');
   });
 });
 

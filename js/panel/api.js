@@ -677,7 +677,7 @@ function setActiveTab(tab) {
 }
 function leaveTerminalMode() {
   const { getModel } = require('../app/runtime');
-  require('../dispatch/dispatch').applyMsg(getModel(), { type: 'terminal_exit' });
+  require('../dispatch/dispatch').applyMsg({ type: 'terminal_exit' });
 }
 
 module.exports = {

@@ -78,7 +78,7 @@ function installBuiltins() {
   // re-dispatch a Msg back to the root reducer (focus_set / terminal_enter
   // / mode_set/clear) without owning that layer's writes. Phase A/B.
   registerEffect('apply_msg', (eff) => {
-    require('./dispatch').applyMsg(require('../app/runtime').getModel(), eff.msg);
+    require('./dispatch').applyMsg(eff.msg);
   });
   // dispatch_msg: Component-fan-out companion (Phase C). Used by a Component
   // update when it needs to send a Msg to ANOTHER Component (e.g. groups →
@@ -179,7 +179,7 @@ function installBuiltins() {
   registerEffect('cmdline_rebuild', () => {
     const m = getModel();
     const matches = require('./cmdline').rebuild(m.modal.cmdline.text);
-    require('./dispatch').applyMsg(m, { type: 'cmdline_set_matches', matches });
+    require('./dispatch').applyMsg({ type: 'cmdline_set_matches', matches });
   });
   // cmdline_run: invoke the held match at the selected index.
   registerEffect('cmdline_run', (eff) => {

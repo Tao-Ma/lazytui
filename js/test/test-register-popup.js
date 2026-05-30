@@ -34,7 +34,7 @@ function setUp(entries) {
 }
 
 // Open the popup the way `"` does (the enter Msg through the real spine).
-function enter() { dispatch.applyMsg(getModel(), { type: 'register_popup_enter' }); }
+function enter() { dispatch.applyMsg({ type: 'register_popup_enter' }); }
 // Drive a key through the active mode handler (the registerPopup modeChain entry).
 function press(key, seq) { dispatch._dispatchActiveMode(getModel(), key, seq); }
 

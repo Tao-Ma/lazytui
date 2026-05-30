@@ -86,7 +86,12 @@ function _handleWheel(model, mx, my, delta) {
   return false;
 }
 
-function handleMouse(model, kind, x, y) {
+function handleMouse(_legacy, kind, x, y) {
+  // Phase 4 — runtime.update returns NEW model objects; a captured
+  // model param goes stale on the first state-changing Msg. The leading
+  // arg is tolerated for back-compat (callers in tests pass it) but the
+  // real source of truth is getModel().
+  const model = getModel();
   // x, y are 1-based from SGR; convert to 0-based
   const mx = x - 1;
   const my = y - 1;
@@ -101,7 +106,7 @@ function handleMouse(model, kind, x, y) {
     if (kind === 'press')        dispatchMsg(wrap('layout', { type: 'design_mouse_press',  mx, my, cols: cols() }));
     else if (kind === 'motion')  dispatchMsg(wrap('layout', { type: 'design_mouse_motion', mx, my, cols: cols() }));
     else if (kind === 'release') dispatchMsg(wrap('layout', { type: 'design_mouse_release' }));
-    render(model);
+    render();
     return;
   }
 
@@ -109,7 +114,7 @@ function handleMouse(model, kind, x, y) {
   // focus. Detail adjusts the detail scroll; list panels move their own
   // selection. No-op when the wheel landed outside any panel bounds.
   if (kind === 'wheel-up' || kind === 'wheel-down') {
-    if (_handleWheel(model, mx, my, kind === 'wheel-down' ? +1 : -1)) render(model);
+    if (_handleWheel(model, mx, my, kind === 'wheel-down' ? +1 : -1)) render();
     return;
   }
 
@@ -125,14 +130,14 @@ function handleMouse(model, kind, x, y) {
       const visibleLine = Math.max(0, Math.min(db.h - 3, my - db.y - 1));
       const col = Math.max(0, mx - db.x - 1);
       sel.extendTo((_detail()?.scroll || 0) + visibleLine, col);
-      render(model);
+      render();
     }
     return;
   }
   if (kind === 'release') {
     if (sel.isActive()) {
       sel.commit();
-      render(model);
+      render();
     }
     return;
   }
@@ -207,7 +212,7 @@ function handleMouse(model, kind, x, y) {
 
   // Single paint at end — same contract as dispatch.handleKey. Diff
   // render makes a no-op paint cheap when click missed every panel.
-  if (mutated) render(model);
+  if (mutated) render();
 }
 
 // --- Terminal-mode keystroke handling ---
@@ -236,13 +241,13 @@ function _handleTerminalModeData(data) {
   // flag, drops a 'full' auto-zoom to 'normal', and emits a force_full_repaint
   // Cmd when it did so. render() paints the result.
   if (data === '\x1c') {
-    applyMsg(getModel(), { type: 'terminal_exit' });
+    applyMsg({ type: 'terminal_exit' });
     render();
     return true;
   }
   const id = activeTerminalId();
   if (!id || isSessionDead(id)) {
-    applyMsg(getModel(), { type: 'terminal_exit' });
+    applyMsg({ type: 'terminal_exit' });
     render();
     return true;
   }
@@ -270,12 +275,12 @@ function setupKeyListener(model) {
     // catch-up refresh immediately so stale data doesn't show.
     if (data === '\x1b[I') {
       const wasUnfocused = !getModel().focused;
-      applyMsg(model, { type: 'focus_event', focused: true });
+      applyMsg({ type: 'focus_event', focused: true });
       if (wasUnfocused) require('../render/render-queue').scheduleRender();
       return;
     }
     if (data === '\x1b[O') {
-      applyMsg(model, { type: 'focus_event', focused: false });
+      applyMsg({ type: 'focus_event', focused: false });
       return;
     }
 

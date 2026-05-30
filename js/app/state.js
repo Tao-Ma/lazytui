@@ -179,7 +179,11 @@ function initState() {
   groups.expanded = new Set();
   groups.tab = 'all';
   recomputeGroups();
-  m.currentGroup = groups.list.length ? groups.list[0].name : '';
+  // Phase 3 — groups_recompute now returns a new slice via dispatch; the
+  // local `groups` ref above is stale. Re-read so the currentGroup seed
+  // sees the recomputed list.
+  const groupsAfter = _groupsSlice();
+  m.currentGroup = groupsAfter.list.length ? groupsAfter.list[0].name : '';
   // Phase 4a — `ui.sel` / `ui.scroll` / `ui.multiSel` no longer exist;
   // each Navigator owns its own nav slice (cursor/scroll/multiSel) and
   // initializes it via the Component's own init().
@@ -307,7 +311,7 @@ function resetGroupContext() {
   // Phase C: the root-chrome reset moved to a Msg in runtime.update; the
   // viewer-slice half is its own Msg dispatched to the detail Component.
   const dispatch = require('../dispatch/dispatch');
-  dispatch.applyMsg(getModel(), { type: 'reset_group_context' });
+  dispatch.applyMsg({ type: 'reset_group_context' });
   require('../panel/api').dispatchMsg(require('../panel/api').wrap('detail', { type: 'viewer_reset_chrome' }));
 }
 

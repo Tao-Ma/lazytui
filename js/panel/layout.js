@@ -31,10 +31,10 @@
  */
 'use strict';
 
-// Pure design-mode layout transforms — mutate `slice.design` (via
-// `getComponentSlice('layout').design` internally). Called from this
-// Component's update, so the slice writes happen within layout.update's
-// call stack (single-writer per slice preserved).
+// Pure design-mode layout transforms — take this Component's slice and
+// return a new slice. Phase 1e of the pure-TEA arc: no in-place writes,
+// no panel/api reach-around. Called from this Component's update,
+// keeping the single-writer-per-slice invariant.
 const mdesign = require('../leaves/design');
 
 function init() {
@@ -127,90 +127,73 @@ function update(msg, slice) {
       if (msg.dirty   !== undefined) next.dirty   = !!msg.dirty;
       return next;
     }
-    // design-mode state (post-Phase-6 follow-up — single-writer cleanup).
-    // Pre-fix: `runtime.update` wrote `slice.design.*` from a dozen
-    // branches. Now layout.update owns every slice write; the root chrome
-    // mode flags (`designMode`, `designTitleEditMode`) ride on `apply_msg`
-    // Cmds the reducer applies (`mode_set` / `mode_clear`). The mdesign
-    // leaf functions still take `model` and write the slice in place via
-    // `getComponentSlice('layout').design` — same access path, but now
-    // their writes originate inside layout.update's call stack.
+    // design-mode state (Phase 1e — pure return-new). The mdesign leaf
+    // takes this Component's slice and returns a new slice; layout.update
+    // threads it through, preserving single-writer-per-slice. The root
+    // chrome mode flags (`designMode`, `designTitleEditMode`) ride on
+    // `apply_msg` Cmds the reducer applies (`mode_set` / `mode_clear`).
     case 'design_enter': {
       // Reset working state on entry; preserve `enabled` (the boot-time
       // --design CLI flag).
       const enabled = slice.design && slice.design.enabled;
-      slice.design = { enabled, selectedIdx: 0, drag: null, undo: [], redo: [], titleEdit: { active: false, text: '' } };
-      return [slice, [{ type: 'apply_msg', msg: { type: 'mode_set', flag: 'designMode' } }]];
+      const next = {
+        ...slice,
+        design: { enabled, selectedIdx: 0, drag: null, undo: [], redo: [], titleEdit: { active: false, text: '' } },
+      };
+      return [next, [{ type: 'apply_msg', msg: { type: 'mode_set', flag: 'designMode' } }]];
     }
     case 'design_exit': {
       const enabled = slice.design && slice.design.enabled;
-      slice.design = { enabled, selectedIdx: 0, drag: null, undo: [], redo: [], titleEdit: { active: false, text: '' } };
-      return [slice, [
+      const next = {
+        ...slice,
+        design: { enabled, selectedIdx: 0, drag: null, undo: [], redo: [], titleEdit: { active: false, text: '' } },
+      };
+      return [next, [
         { type: 'apply_msg', msg: { type: 'mode_clear', flag: 'designMode' } },
         { type: 'apply_msg', msg: { type: 'mode_clear', flag: 'designTitleEditMode' } },
         { type: 'show_selected_info' },
       ]];
     }
-    case 'design_nav':
-    case 'design_reorder':
-    case 'design_move_col':
-    case 'design_resize':
-    case 'design_panel_height':
-    case 'design_undo':
-    case 'design_redo':
+    case 'design_nav':          return mdesign.navSelect(slice, msg.dir);
+    case 'design_reorder':      return mdesign.clampSelected(mdesign.reorderWithin(slice, msg.dir));
+    case 'design_move_col':     return mdesign.clampSelected(mdesign.moveColumn(slice, msg.col));
+    case 'design_resize':       return mdesign.resizeWidthOrDetail(slice, msg.delta);
+    case 'design_panel_height': return mdesign.resizeFocusedPanelHeight(slice, msg.delta);
+    case 'design_undo':         return mdesign.clampSelected(mdesign.undo(slice));
+    case 'design_redo':         return mdesign.clampSelected(mdesign.redo(slice));
     case 'design_title_enter':
-    case 'design_title_submit':
-    case 'design_mouse_press':
-    case 'design_mouse_motion':
-    case 'design_mouse_release': {
-      // mdesign.* leaves read app-global state (model.config, model.modes)
-      // + mutate slice.design in place via getComponentSlice. The model is
-      // resolved inline here so callers don't have to thread it into the
-      // Msg.
-      const m = require('../app/runtime').getModel();
-      const cmds = [];
-      switch (msg.type) {
-        case 'design_nav':          mdesign.navSelect(m, msg.dir); break;
-        case 'design_reorder':      mdesign.reorderWithin(m, msg.dir); mdesign.clampSelected(m); break;
-        case 'design_move_col':     mdesign.moveColumn(m, msg.col);    mdesign.clampSelected(m); break;
-        case 'design_resize':       mdesign.resizeWidthOrDetail(m, msg.delta); break;
-        case 'design_panel_height': mdesign.resizeFocusedPanelHeight(m, msg.delta); break;
-        case 'design_undo':         mdesign.undo(m); mdesign.clampSelected(m); break;
-        case 'design_redo':         mdesign.redo(m); mdesign.clampSelected(m); break;
-        case 'design_title_enter':
-          mdesign.titleEnter(m);
-          cmds.push({ type: 'apply_msg', msg: { type: 'mode_set', flag: 'designTitleEditMode' } });
-          break;
-        case 'design_title_submit': {
-          const text = slice.design ? slice.design.titleEdit.text : '';
-          mdesign.setSelectedTitle(m, text);
-          if (slice.design) slice.design.titleEdit = { active: false, text: '' };
-          cmds.push({ type: 'apply_msg', msg: { type: 'mode_clear', flag: 'designTitleEditMode' } });
-          break;
-        }
-        case 'design_mouse_press':   mdesign.mousePress(m, msg.mx, msg.my, msg.cols); break;
-        case 'design_mouse_motion':  mdesign.mouseMotion(m, msg.mx, msg.my, msg.cols); break;
-        case 'design_mouse_release': mdesign.mouseRelease(m); break;
-      }
-      return cmds.length ? [slice, cmds] : slice;
+      return [mdesign.titleEnter(slice), [{ type: 'apply_msg', msg: { type: 'mode_set', flag: 'designTitleEditMode' } }]];
+    case 'design_title_submit': {
+      const text = slice.design ? slice.design.titleEdit.text : '';
+      let next = mdesign.setSelectedTitle(slice, text);
+      if (next.design) next = { ...next, design: { ...next.design, titleEdit: { active: false, text: '' } } };
+      return [next, [{ type: 'apply_msg', msg: { type: 'mode_clear', flag: 'designTitleEditMode' } }]];
     }
+    case 'design_mouse_press':  return mdesign.mousePress(slice, require('../app/runtime').getModel(), msg.mx, msg.my, msg.cols);
+    case 'design_mouse_motion': return mdesign.mouseMotion(slice, msg.mx, msg.my, msg.cols);
+    case 'design_mouse_release': return mdesign.mouseRelease(slice);
     case 'design_title_key': {
       const te = slice.design && slice.design.titleEdit;
       if (!te) return slice;
-      if (msg.key === 'backspace' || msg.seq === '\x7f' || msg.seq === '\b') { te.text = te.text.slice(0, -1); return slice; }
-      if (msg.seq && msg.seq.length === 1 && msg.seq >= ' ' && msg.seq < '\x7f') { te.text += msg.seq; return slice; }
+      if (msg.key === 'backspace' || msg.seq === '\x7f' || msg.seq === '\b') {
+        return { ...slice, design: { ...slice.design, titleEdit: { ...te, text: te.text.slice(0, -1) } } };
+      }
+      if (msg.seq && msg.seq.length === 1 && msg.seq >= ' ' && msg.seq < '\x7f') {
+        return { ...slice, design: { ...slice.design, titleEdit: { ...te, text: te.text + msg.seq } } };
+      }
       return slice;
     }
     case 'design_title_cancel': {
-      if (slice.design) slice.design.titleEdit = { active: false, text: '' };
-      return [slice, [{ type: 'apply_msg', msg: { type: 'mode_clear', flag: 'designTitleEditMode' } }]];
+      const next = slice.design
+        ? { ...slice, design: { ...slice.design, titleEdit: { active: false, text: '' } } }
+        : slice;
+      return [next, [{ type: 'apply_msg', msg: { type: 'mode_clear', flag: 'designTitleEditMode' } }]];
     }
     // Wipe the session's undo/redo history. :restore-layout emits this
     // because the runtime layout the user was editing is gone — the
     // history pointed at it no longer makes sense.
     case 'design_clear_undo':
-      mdesign.clearUndoStacks(require('../app/runtime').getModel());
-      return slice;
+      return mdesign.clearUndoStacks(slice);
     default:
       return slice;
   }

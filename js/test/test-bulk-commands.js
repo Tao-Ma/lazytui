@@ -134,9 +134,9 @@ describe('[7] full cmdline path: type "inspect" + Enter → bulk command runs', 
     // cmdline folded onto the update spine: enter + each keystroke + submit
     // flow as Msgs through update (cmdline_key emits cmdline_rebuild → the
     // facade re-query → cmdline_set_matches; submit emits cmdline_run).
-    dispatch.applyMsg(m, { type: 'cmdline_enter' });
-    for (const ch of 'inspect') dispatch.applyMsg(m, { type: 'cmdline_key', seq: ch });
-    dispatch.applyMsg(m, { type: 'cmdline_submit' });
+    dispatch.applyMsg({ type: 'cmdline_enter' });
+    for (const ch of 'inspect') dispatch.applyMsg({ type: 'cmdline_key', seq: ch });
+    dispatch.applyMsg({ type: 'cmdline_submit' });
     eq(calls.length, 1, 'cmdline dispatched the run');
     assert(calls[0].cmd.startsWith('docker inspect "c1"'),
            `cmd via cmdline: docker inspect "c1" ... (got ${calls[0].cmd})`);

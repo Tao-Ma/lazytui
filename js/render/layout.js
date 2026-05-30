@@ -355,7 +355,7 @@ function renderTerminalOverlay(model = getModel()) {
     // Route the stale-flag cleanup through update so single-writer holds —
     // terminal_exit also force_full_repaints when viewMode was 'full', which
     // is the right thing on a PTY exit anyway (chrome reclaims rows).
-    if (model.modes.terminalMode) require('../dispatch/dispatch').applyMsg(model, { type: 'terminal_exit' });
+    if (model.modes.terminalMode) require('../dispatch/dispatch').applyMsg({ type: 'terminal_exit' });
     const msg = ` Process exited: ${session.exitCode} — Enter restart, x close `;
     const text = msg.length > innerW ? msg.slice(0, innerW) : msg;
     const padding = Math.max(0, Math.floor((innerW - text.length) / 2));

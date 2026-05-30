@@ -42,9 +42,14 @@ function commit()           { _dispatch({ type: 'viewer_search_commit' }); }
 function keystroke(seq)     { _dispatch({ type: 'viewer_search_key', seq }); }
 function next()             { _dispatch({ type: 'viewer_search_nav', dir: +1 }); }
 function prev()             { _dispatch({ type: 'viewer_search_nav', dir: -1 }); }
-function clearCommitted()   { const s = _slice(); if (s) ms.clearCommitted(s); }
-function recompute()        { const s = _slice(); if (s) ms.recompute(s); }
-function _recomputeFor(term){ const s = _slice(); if (s) ms.recomputeFor(s, term); }
+// Pure-TEA conversion (Phase 1d): the leaf returns a new slice — these
+// facades write the result back to the slice store. Used by tests + the
+// committed-search `n`/`N`/Esc adapter; production search-mode is
+// already routed through viewer.update's Msg arms.
+function _writeBack(next) { require('../panel/route').setSlice('detail', next); }
+function clearCommitted()    { const s = _slice(); if (s) _writeBack(ms.clearCommitted(s)); }
+function recompute()         { const s = _slice(); if (s) _writeBack(ms.recompute(s)); }
+function _recomputeFor(term) { const s = _slice(); if (s) _writeBack(ms.recomputeFor(s, term)); }
 
 function isActive() {
   const search = _slice()?.search;

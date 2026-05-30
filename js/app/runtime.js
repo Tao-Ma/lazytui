@@ -132,9 +132,31 @@ function init() {
   return m;
 }
 
-const _model = init();
+// Container pattern: the root model lives behind a single mutable ref so
+// the dispatcher can swap it for a new immutable snapshot post-reducer
+// (Phase 4 of the pure-TEA conversion will start emitting new models;
+// today the reducer still mutates in place and `setModel` is a no-op
+// reassignment when it sees the same ref). getModel() always returns the
+// current snapshot — callers MUST NOT cache the returned object across
+// Msg dispatches once the reducer goes immutable.
+const _modelRef = { current: init() };
 
-function getModel() { return _model; }
+function getModel() { return _modelRef.current; }
+
+/**
+ * Replace the root model with a new snapshot. Called by the dispatch
+ * boundary (`applyMsg`) after the reducer returns. During the pure-TEA
+ * conversion this is a no-op when the reducer hands back the same ref
+ * (in-place mutation, current behavior); once the reducer returns new
+ * snapshots, the reassignment is what makes the new state visible.
+ *
+ * Reentrant dispatch ordering: setModel MUST be called BEFORE
+ * `runEffects` so cross-layer Cmds (`apply_msg`, `dispatch_msg`) see
+ * the post-Msg state when they re-enter the dispatch graph.
+ */
+function setModel(next) {
+  if (next && next !== _modelRef.current) _modelRef.current = next;
+}
 
 /**
  * Pending suffix of the autosuggest ghost — empty unless `text` is a strict
@@ -163,16 +185,35 @@ function _cmdlineSplit(text) {
 /**
  * Clamp the register-popup cursor + scroll into bounds against the history
  * length `n` and the viewport height `vh` (resolved by the caller, since it
- * reads the terminal size — view-derived, not reducer state). Pure mutation
- * of the {idx, scroll} buffer; mirrors register-popup.js's old _clamp().
+ * reads the terminal size — view-derived, not reducer state). Returns a new
+ * `{idx, scroll}` value; mirrors register-popup.js's old _clamp().
  */
 function _clampRegisterPopup(rp, n, vh) {
-  if (n === 0) { rp.idx = 0; rp.scroll = 0; return; }
-  if (rp.idx < 0) rp.idx = 0;
-  if (rp.idx >= n) rp.idx = n - 1;
-  if (rp.idx < rp.scroll) rp.scroll = rp.idx;
-  if (rp.idx >= rp.scroll + vh) rp.scroll = rp.idx - vh + 1;
-  if (rp.scroll < 0) rp.scroll = 0;
+  if (n === 0) {
+    if (rp.idx === 0 && rp.scroll === 0) return rp;
+    return { idx: 0, scroll: 0 };
+  }
+  let idx = rp.idx;
+  let scroll = rp.scroll;
+  if (idx < 0) idx = 0;
+  if (idx >= n) idx = n - 1;
+  if (idx < scroll) scroll = idx;
+  if (idx >= scroll + vh) scroll = idx - vh + 1;
+  if (scroll < 0) scroll = 0;
+  if (idx === rp.idx && scroll === rp.scroll) return rp;
+  return { idx, scroll };
+}
+
+// Shallow update helpers. Spread chains for nested model writes are
+// readable but verbose; these collapse the common cases. `_withModes`
+// flips one or more mode flags; `_withModal` patches one or more modal
+// sub-models. Both preserve object identity when no field actually
+// changes (cheap skip — callers don't need to guard).
+function _withModes(model, patch) {
+  return { ...model, modes: { ...model.modes, ...patch } };
+}
+function _withModal(model, patch) {
+  return { ...model, modal: { ...model.modal, ...patch } };
 }
 
 /**
@@ -187,10 +228,9 @@ function _clampRegisterPopup(rp, n, vh) {
  *      testable. Side effects go out as Cmd DESCRIPTORS (`{ type, ... }`)
  *      the effects layer (effects.runEffects) interprets.
  *
- * Implementation note: there is one shared `_model`, so this mutates and
- * returns it rather than cloning. The signature is the contract callers
- * code against; switching to an immutable copy later wouldn't touch them
- * (skipped by design — see v0.5-layering.md §"Skipped").
+ * Phase 4 (pure-TEA): every branch returns a NEW model object; no
+ * in-place writes. The `_withModes` / `_withModal` helpers above keep
+ * the spread chains readable. Identity-preserve on no-ops (skip alloc).
  */
 function update(model, msg) {
   switch (msg.type) {
@@ -216,8 +256,9 @@ function update(model, msg) {
       const navEntry = compName ? (route.getSlice(compName) || {}).nav : null;
       const had = navEntry && navEntry[focus] && navEntry[focus].multiSel.size > 0;
       if (model.modes.listSelectMode) {
-        model.modes.listSelectMode = false;
-        if (compName) return [model, [{ type: 'dispatch_msg', msg: route.wrap(compName, { type: 'multisel_clear', panel: focus }) }]];
+        const next = _withModes(model, { listSelectMode: false });
+        if (compName) return [next, [{ type: 'dispatch_msg', msg: route.wrap(compName, { type: 'multisel_clear', panel: focus }) }]];
+        return [next, []];
       } else if (had) {
         return [model, [{ type: 'dispatch_msg', msg: route.wrap(compName, { type: 'multisel_clear', panel: focus }) }]];
       }
@@ -229,42 +270,38 @@ function update(model, msg) {
       // fires selectAllVisible as an effect). The _isListPanel guard is
       // view derivation — the caller already applied it.
       const focus = route.getFocus();
-      if (msg.mode === 'on') {
-        model.modes.listSelectMode = true;
-        return [model, []];
-      }
-      model.modes.listSelectMode = !model.modes.listSelectMode;
-      if (!model.modes.listSelectMode) {
+      if (msg.mode === 'on') return [_withModes(model, { listSelectMode: true }), []];
+      const nextOn = !model.modes.listSelectMode;
+      const next = _withModes(model, { listSelectMode: nextOn });
+      if (!nextOn) {
         const compName = route.componentForPanel(focus);
-        if (compName) return [model, [{ type: 'dispatch_msg', msg: route.wrap(compName, { type: 'multisel_clear', panel: focus }) }]];
+        if (compName) return [next, [{ type: 'dispatch_msg', msg: route.wrap(compName, { type: 'multisel_clear', panel: focus }) }]];
       }
-      return [model, []];
+      return [next, []];
     }
     // (toggle_groups_tab moved to groups.update — Phase C.)
     // (detail-`/`-search Msgs moved to detail.update — Phase B.)
     case 'enter_prefix':
       // Leader pressed — arm prefix mode at the binding-tree root. All of
-      // prefixMode/prefixNode/prefixSeq are model-resident, so this is a
-      // pure model write (the first modal mode folded into update).
-      model.modes.prefixMode = true;
-      model.prefixNode = kb.rootNode();
-      model.prefixSeq = [];
-      return [model, []];
+      // prefixMode/prefixNode/prefixSeq are model-resident.
+      return [{ ..._withModes(model, { prefixMode: true }), prefixNode: kb.rootNode(), prefixSeq: [] }, []];
     case 'prefix_key': {
       // Walk the leader tree. Esc / a second leader press cancels. An
       // unbound token silently drops out. A subtree descends (stay armed);
       // a leaf exits + emits a run_binding Cmd carrying the thunk (a Cmd is
       // a thunk the effects layer runs — TEA-shaped). kb.resolve is a pure
-      // read of the leaf registry, so the whole branch stays a model write.
-      const cancel = () => { model.modes.prefixMode = false; model.prefixNode = null; model.prefixSeq = []; };
-      if (msg.key === 'escape' || msg.seq === ' ' || msg.key === ' ') { cancel(); return [model, []]; }
+      // read of the leaf registry.
+      const cancelled = () =>
+        ({ ..._withModes(model, { prefixMode: false }), prefixNode: null, prefixSeq: [] });
+      if (msg.key === 'escape' || msg.seq === ' ' || msg.key === ' ') return [cancelled(), []];
       const tok = kb.tokenForEvent(msg.key, msg.seq);
-      const next = kb.resolve(model.prefixNode, tok);
-      if (!next) { cancel(); return [model, []]; }
-      model.prefixSeq = model.prefixSeq.concat(tok);
-      if (next.children) { model.prefixNode = next; return [model, []]; }  // descend
-      cancel();
-      return [model, [{ type: 'run_binding', run: next.run }]];
+      const nextNode = kb.resolve(model.prefixNode, tok);
+      if (!nextNode) return [cancelled(), []];
+      const seq = model.prefixSeq.concat(tok);
+      if (nextNode.children) return [{ ...model, prefixNode: nextNode, prefixSeq: seq }, []];  // descend
+      // leaf — exit prefix mode and emit the binding
+      return [{ ..._withModes(model, { prefixMode: false }), prefixNode: null, prefixSeq: [] },
+              [{ type: 'run_binding', run: nextNode.run }]];
     }
     // (toggle_group moved to groups.update — Phase C.)
     // --- Cmd-only verbs: no model change, the reducer just routes the
@@ -278,130 +315,170 @@ function update(model, msg) {
     // a Cmd DESCRIPTOR (the deferred effect as data); `y` re-emits that Cmd,
     // `n`/Esc clears. No closure in the model.
     case 'confirm_enter':
-      model.modes.confirmMode = true;
-      model.modal.confirm = { message: msg.message || 'Are you sure?', cmd: msg.cmd || null };
-      return [model, []];
+      return [{
+        ..._withModes(model, { confirmMode: true }),
+        modal: { ...model.modal, confirm: { message: msg.message || 'Are you sure?', cmd: msg.cmd || null } },
+      }, []];
     case 'confirm_accept': {
       const cmd = model.modal.confirm.cmd;
-      model.modes.confirmMode = false;
-      model.modal.confirm = { message: '', cmd: null };
-      return [model, cmd ? [cmd] : []];
+      const next = {
+        ..._withModes(model, { confirmMode: false }),
+        modal: { ...model.modal, confirm: { message: '', cmd: null } },
+      };
+      return [next, cmd ? [cmd] : []];
     }
     case 'confirm_reject':
-      model.modes.confirmMode = false;
-      model.modal.confirm = { message: '', cmd: null };
-      return [model, []];
+      return [{
+        ..._withModes(model, { confirmMode: false }),
+        modal: { ...model.modal, confirm: { message: '', cmd: null } },
+      }, []];
     // --- args prompt (folded into update). Same Cmd-descriptor pattern as
     // confirm: the caller stages a base do_run Cmd; submit parses args from
     // the typed text and merges them in before emitting. The ghost is seeded
     // by the caller (reading the yank register, which the reducer can't).
     case 'prompt_enter':
-      model.modes.promptMode = true;
-      model.modal.prompt = {
-        label: msg.label || 'Input', spec: msg.spec || '',
-        text: typeof msg.text === 'string' ? msg.text : '',
-        ghost: msg.ghost || '', cmd: msg.cmd || null,
-      };
-      return [model, []];
+      return [{
+        ..._withModes(model, { promptMode: true }),
+        modal: { ...model.modal, prompt: {
+          label: msg.label || 'Input', spec: msg.spec || '',
+          text: typeof msg.text === 'string' ? msg.text : '',
+          ghost: msg.ghost || '', cmd: msg.cmd || null,
+        } },
+      }, []];
     case 'prompt_key': {
       const p = model.modal.prompt;
+      let text = p.text;
       if (msg.seq === '\x09' || msg.key === 'right') {       // accept ghost suffix
-        const tail = _ghostSuffix(p.text, p.ghost);
-        if (tail) p.text += tail;
-      } else if (msg.seq === '\x7f') { p.text = p.text.slice(0, -1); }  // backspace
-      else if (msg.seq === '\x15') { p.text = ''; }                     // Ctrl+U
+        const tail = _ghostSuffix(text, p.ghost);
+        if (tail) text += tail;
+      } else if (msg.seq === '\x7f') { text = text.slice(0, -1); }      // backspace
+      else if (msg.seq === '\x15')   { text = ''; }                     // Ctrl+U
       else if (msg.seq && msg.seq.length === 1 && msg.seq.charCodeAt(0) >= 32 && msg.seq.charCodeAt(0) < 127) {
-        p.text += msg.seq;
+        text += msg.seq;
       }
-      return [model, []];
+      if (text === p.text) return [model, []];
+      return [_withModal(model, { prompt: { ...p, text } }), []];
     }
     case 'prompt_submit': {
       const p = model.modal.prompt;
       const text = p.text;
       const cmd = p.cmd;
-      model.modes.promptMode = false;
-      model.modal.prompt = { label: '', spec: '', text: '', ghost: '', cmd: null };
+      const next = {
+        ..._withModes(model, { promptMode: false }),
+        modal: { ...model.modal, prompt: { label: '', spec: '', text: '', ghost: '', cmd: null } },
+      };
       const args = text.trim() ? text.trim().split(/\s+/) : [];
-      return [model, cmd ? [{ ...cmd, args }] : []];
+      return [next, cmd ? [{ ...cmd, args }] : []];
     }
     case 'prompt_cancel':
-      model.modes.promptMode = false;
-      model.modal.prompt = { label: '', spec: '', text: '', ghost: '', cmd: null };
-      return [model, []];
+      return [{
+        ..._withModes(model, { promptMode: false }),
+        modal: { ...model.modal, prompt: { label: '', spec: '', text: '', ghost: '', cmd: null } },
+      }, []];
     // --- copy menu (folded into update; the content thunks stay module-held,
     // resolved by the copy_commit Cmd — decision-A copy-split).
     case 'copy_enter':
-      model.modes.copyMode = true;
-      model.modal.copy = { options: msg.options || [], idx: 0 };
-      return [model, []];
+      return [{
+        ..._withModes(model, { copyMode: true }),
+        modal: { ...model.modal, copy: { options: msg.options || [], idx: 0 } },
+      }, []];
     case 'copy_nav': {
       const c = model.modal.copy;
       if (!c.options.length) return [model, []];
-      c.idx = (c.idx + msg.dir + c.options.length) % c.options.length;
-      return [model, []];
+      const idx = (c.idx + msg.dir + c.options.length) % c.options.length;
+      if (idx === c.idx) return [model, []];
+      return [_withModal(model, { copy: { ...c, idx } }), []];
     }
     case 'copy_select': {
       const idx = model.modal.copy.idx;
-      model.modes.copyMode = false;
-      model.modal.copy = { options: [], idx: 0 };
-      return [model, [{ type: 'copy_commit', idx }]];
+      const next = {
+        ..._withModes(model, { copyMode: false }),
+        modal: { ...model.modal, copy: { options: [], idx: 0 } },
+      };
+      return [next, [{ type: 'copy_commit', idx }]];
     }
     case 'copy_cancel':
-      model.modes.copyMode = false;
-      model.modal.copy = { options: [], idx: 0 };
-      return [model, [{ type: 'copy_commit', idx: -1 }]];  // -1 = clear, no copy
+      return [{
+        ..._withModes(model, { copyMode: false }),
+        modal: { ...model.modal, copy: { options: [], idx: 0 } },
+      }, [{ type: 'copy_commit', idx: -1 }]];  // -1 = clear, no copy
     // --- register-history popup (`"`, folded into update). The reducer owns
     // the cursor/scroll (model.modal.registerPopup) + the mode flag AND the
     // history mutation (via the leaves/register leaf); OSC52 is the only effect,
     // emitted as an emit_osc52 Cmd. `vh` (viewport height) is caller-resolved
     // since it reads the terminal size.
     case 'register_popup_enter':
-      model.modes.registerPopupMode = true;
-      model.modal.registerPopup = { idx: 0, scroll: 0 };
-      return [model, []];
+      return [{
+        ..._withModes(model, { registerPopupMode: true }),
+        modal: { ...model.modal, registerPopup: { idx: 0, scroll: 0 } },
+      }, []];
     case 'register_popup_nav': {
       const rp = model.modal.registerPopup;
       const n = model.register.history.length;
-      if (msg.to === 'top') rp.idx = 0;
-      else if (msg.to === 'bottom') rp.idx = n - 1;
-      else rp.idx += (msg.dir || 0);
-      _clampRegisterPopup(rp, n, msg.vh);
-      return [model, []];
+      let idx = rp.idx;
+      if (msg.to === 'top')         idx = 0;
+      else if (msg.to === 'bottom') idx = n - 1;
+      else                          idx = rp.idx + (msg.dir || 0);
+      const clamped = _clampRegisterPopup({ idx, scroll: rp.scroll }, n, msg.vh);
+      // Value-equal clamps preserve the original ref (callers can still
+      // distinguish "nothing changed" from "no-op").
+      if (clamped.idx === rp.idx && clamped.scroll === rp.scroll) return [model, []];
+      return [_withModal(model, { registerPopup: clamped }), []];
     }
     case 'register_popup_drop': {
       const rp = model.modal.registerPopup;
       if (model.register.history.length === 0) return [model, []];
-      // Drop in-place via the leaf, then clamp the cursor against the ACTUAL
-      // new length (idx stays on the row the next-older entry slides into).
-      mreg.drop(model, rp.idx);
-      _clampRegisterPopup(rp, model.register.history.length, msg.vh);
-      if (model.register.history.length === 0) model.modes.registerPopupMode = false;
-      // force_full_repaint reclaims the row the shrunk overlay no longer covers
-      // (the main diff can't see the overlay geometry).
-      return [model, [{ type: 'force_full_repaint' }]];
+      // The leaf returns `[newRegister, removed]`; clamp against the new
+      // length (idx stays on the row the next-older entry slides into).
+      const [nextReg] = mreg.drop(model.register, rp.idx);
+      const nextRp = _clampRegisterPopup(rp, nextReg.history.length, msg.vh);
+      const modes = nextReg.history.length === 0
+        ? { ...model.modes, registerPopupMode: false }
+        : model.modes;
+      const next = {
+        ...model,
+        modes,
+        register: nextReg,
+        modal: { ...model.modal, registerPopup: nextRp },
+      };
+      // force_full_repaint reclaims the row the shrunk overlay no longer
+      // covers (the main diff can't see the overlay geometry).
+      return [next, [{ type: 'force_full_repaint' }]];
     }
     case 'register_popup_commit': {
       const idx = model.modal.registerPopup.idx;
       const n = model.register.history.length;
-      model.modes.registerPopupMode = false;
-      model.modal.registerPopup = { idx: 0, scroll: 0 };
-      if (n === 0) return [model, []];
+      const baseNext = {
+        ..._withModes(model, { registerPopupMode: false }),
+        modal: { ...model.modal, registerPopup: { idx: 0, scroll: 0 } },
+      };
+      if (n === 0) return [baseNext, []];
       // idx>0 promotes the entry to top; idx===0 re-emits the current top so
       // opening the popup just to copy it still refreshes the OS clipboard.
-      const v = idx > 0 ? mreg.promote(model, idx) : (model.register.history[0] || '');
-      return [model, v ? [{ type: 'emit_osc52', text: v }] : []];
+      let nextReg = model.register;
+      let v;
+      if (idx > 0) {
+        const [r, val] = mreg.promote(model.register, idx);
+        nextReg = r;
+        v = val;
+      } else {
+        v = model.register.history[0] || '';
+      }
+      return [{ ...baseNext, register: nextReg }, v ? [{ type: 'emit_osc52', text: v }] : []];
     }
     // --- yank-register push (folded into update). select.commit + any other
     // app yank emits this; the leaf does the dedup/cap, OSC52 rides out as a
     // Cmd. register.js keeps direct wrappers over the leaf for the test API.
     case 'register_push': {
-      const v = mreg.push(model, msg.text);
-      return [model, v ? [{ type: 'emit_osc52', text: v }] : []];
+      const [nextReg, v] = mreg.push(model.register, msg.text);
+      if (nextReg === model.register && !v) return [model, []];
+      return [{ ...model, register: nextReg }, v ? [{ type: 'emit_osc52', text: v }] : []];
     }
     case 'register_popup_cancel':
-      model.modes.registerPopupMode = false;
-      model.modal.registerPopup = { idx: 0, scroll: 0 };
-      return [model, []];
+      return [{
+        ..._withModes(model, { registerPopupMode: false }),
+        modal: { ...model.modal, registerPopup: { idx: 0, scroll: 0 } },
+      }, []];
     // --- `:` cmdline (folded into update). The reducer owns text + sel + the
     // render-safe match list (model.modal.cmdline); the run closures stay
     // module-held in cmdline.js. Any text change emits a cmdline_rebuild Cmd
@@ -410,23 +487,26 @@ function update(model, msg) {
     // the render-safe projection. That Cmd→Msg writeback keeps the reducer
     // the single writer of model state while the effect supplies the data.
     case 'cmdline_enter':
-      model.modes.cmdMode = true;
-      model.modal.cmdline = { text: '', sel: 0, matches: [] };
-      return [model, [{ type: 'cmdline_rebuild' }]];
+      return [{
+        ..._withModes(model, { cmdMode: true }),
+        modal: { ...model.modal, cmdline: { text: '', sel: 0, matches: [] } },
+      }, [{ type: 'cmdline_rebuild' }]];
     case 'cmdline_set_matches': {
       const c = model.modal.cmdline;
-      c.matches = msg.matches || [];
-      if (c.sel > c.matches.length - 1) c.sel = Math.max(0, c.matches.length - 1);
-      return [model, []];
+      const matches = msg.matches || [];
+      const sel = c.sel > matches.length - 1 ? Math.max(0, matches.length - 1) : c.sel;
+      return [_withModal(model, { cmdline: { ...c, matches, sel } }), []];
     }
     case 'cmdline_nav': {
       const c = model.modal.cmdline;
       // up (dir>0) walks toward worse matches (higher idx); down (dir<0) walks
       // back toward the best match at idx 0 — the dropdown paints best-nearest-
       // the-prompt, so the visual "up" is a higher index.
-      if (msg.dir > 0) c.sel = Math.min(c.sel + 1, c.matches.length - 1);
-      else             c.sel = Math.max(0, c.sel - 1);
-      return [model, []];
+      const sel = msg.dir > 0
+        ? Math.min(c.sel + 1, c.matches.length - 1)
+        : Math.max(0, c.sel - 1);
+      if (sel === c.sel) return [model, []];
+      return [_withModal(model, { cmdline: { ...c, sel } }), []];
     }
     case 'cmdline_key': {
       const c = model.modal.cmdline;
@@ -436,14 +516,14 @@ function update(model, msg) {
         const top = c.matches[0];
         if (!top) return [model, []];
         const { args } = _cmdlineSplit(c.text);
-        c.text = top.display.toLowerCase() + (args.length ? ' ' + args.join(' ') : '');
-        c.sel = 0;
-        return [model, [{ type: 'cmdline_rebuild' }]];
+        const text = top.display.toLowerCase() + (args.length ? ' ' + args.join(' ') : '');
+        return [_withModal(model, { cmdline: { ...c, text, sel: 0 } }), [{ type: 'cmdline_rebuild' }]];
       }
-      if (msg.seq === '\x7f') { c.text = c.text.slice(0, -1); c.sel = 0; return [model, [{ type: 'cmdline_rebuild' }]]; }
+      if (msg.seq === '\x7f') {
+        return [_withModal(model, { cmdline: { ...c, text: c.text.slice(0, -1), sel: 0 } }), [{ type: 'cmdline_rebuild' }]];
+      }
       if (msg.seq && msg.seq.length === 1 && msg.seq.charCodeAt(0) >= 32 && msg.seq.charCodeAt(0) < 127) {
-        c.text += msg.seq; c.sel = 0;
-        return [model, [{ type: 'cmdline_rebuild' }]];
+        return [_withModal(model, { cmdline: { ...c, text: c.text + msg.seq, sel: 0 } }), [{ type: 'cmdline_rebuild' }]];
       }
       return [model, []];
     }
@@ -452,16 +532,19 @@ function update(model, msg) {
       const sel = c.sel;
       const { args } = _cmdlineSplit(c.text);
       const had = c.matches.length > 0;
-      model.modes.cmdMode = false;
-      model.modal.cmdline = { text: '', sel: 0, matches: [] };
+      const next = {
+        ..._withModes(model, { cmdMode: false }),
+        modal: { ...model.modal, cmdline: { text: '', sel: 0, matches: [] } },
+      };
       // cmdline_run resolves the module-held closure at `sel` + runs it with
       // the parsed args; cmdline_clear drops the held registry afterward.
-      return [model, had ? [{ type: 'cmdline_run', sel, args }, { type: 'cmdline_clear' }] : [{ type: 'cmdline_clear' }]];
+      return [next, had ? [{ type: 'cmdline_run', sel, args }, { type: 'cmdline_clear' }] : [{ type: 'cmdline_clear' }]];
     }
     case 'cmdline_cancel':
-      model.modes.cmdMode = false;
-      model.modal.cmdline = { text: '', sel: 0, matches: [] };
-      return [model, [{ type: 'cmdline_clear' }]];
+      return [{
+        ..._withModes(model, { cmdMode: false }),
+        modal: { ...model.modal, cmdline: { text: '', sel: 0, matches: [] } },
+      }, [{ type: 'cmdline_clear' }]];
     // --- design-mode Msgs (post-Phase-6 single-writer cleanup). Every
     // design_* case retired from the reducer; layout.update owns the slice
     // writes now (it calls mdesign.* leaves directly so the writes happen
@@ -475,25 +558,24 @@ function update(model, msg) {
     // 'normal' (pure) and asks for a full repaint so the chrome reclaims the
     // cells the PTY painted (the diff cache can't see those).
     case 'terminal_enter':
-      model.modes.terminalMode = true;
-      return [model, []];
-    case 'terminal_exit': {
+      return [_withModes(model, { terminalMode: true }), []];
+    case 'terminal_exit':
       // viewMode is owned by the layout Component (Phase 1b) — emit a
       // cross-layer dispatch_msg so layout decides whether to drop a
-      // 'full' auto-zoom back to 'normal'. The conditional + the
-      // repaint Cmd both live in layout's update.
-      model.modes.terminalMode = false;
-      return [model, [{ type: 'dispatch_msg', msg: route.wrap('layout', { type: 'view_drop_full_to_normal' }) }]];
-    }
+      // 'full' auto-zoom back to 'normal'.
+      return [_withModes(model, { terminalMode: false }),
+              [{ type: 'dispatch_msg', msg: route.wrap('layout', { type: 'view_drop_full_to_normal' }) }]];
     // multisel_toggle / multisel_select_all retired in Phase 4b — call
     // sites (dispatch.toggleMultiSelOnFocused, selectAllVisible) wrap
     // those Msgs directly to the owning Component now.
     // --- terminal focus events (DEC 1004), folded into update. Pauses/resumes
     // the refresh loop via model.focused; the focus-regain catch-up
     // scheduleRender stays in input.js (an effect decision the caller owns).
-    case 'focus_event':
-      model.focused = !!msg.focused;
-      return [model, []];
+    case 'focus_event': {
+      const focused = !!msg.focused;
+      if (focused === model.focused) return [model, []];
+      return [{ ...model, focused }, []];
+    }
     // (select_* visual-mode Msgs moved to detail.update — Phase B; the
     //  WRITE side lives with the slice, while select.js's ansi/column reads
     //  stay there as pure helpers.)
@@ -507,77 +589,80 @@ function update(model, msg) {
     // closures) are built inline from the model on open; nav skips null
     // separators; activate emits a menu_action Cmd routing the chosen verb
     // back through dispatch.handleAction.
-    case 'menu_open': {
-      const mm = model.modal.menu;
-      mm.items = menu.buildItems(model);
-      mm.idx = 0;
-      model.modes.menuOpen = true;
-      return [model, []];
-    }
-    case 'menu_close': {
-      const mm = model.modal.menu;
-      model.modes.menuOpen = false;
-      mm.items = []; mm.idx = 0;
-      return [model, []];
-    }
+    case 'menu_open':
+      return [{
+        ..._withModes(model, { menuOpen: true }),
+        modal: { ...model.modal, menu: { items: menu.buildItems(model), idx: 0 } },
+      }, []];
+    case 'menu_close':
+      return [{
+        ..._withModes(model, { menuOpen: false }),
+        modal: { ...model.modal, menu: { items: [], idx: 0 } },
+      }, []];
     case 'menu_nav': {
       const mm = model.modal.menu;
       const items = mm.items;
       let i = mm.idx + (msg.dir < 0 ? -1 : 1);
       if (msg.dir < 0) { while (i >= 0 && items[i] === null) i--; if (i < 0) return [model, []]; }
       else { while (i < items.length && items[i] === null) i++; if (i >= items.length) return [model, []]; }
-      mm.idx = i;
-      return [model, []];
+      if (i === mm.idx) return [model, []];
+      return [_withModal(model, { menu: { ...mm, idx: i } }), []];
     }
     case 'menu_activate': {
       const mm = model.modal.menu;
       const item = mm.items[mm.idx];
-      model.modes.menuOpen = false;
-      mm.items = []; mm.idx = 0;
-      if (!item) return [model, []];
-      return [model, [{ type: 'menu_action', action: item[1] }]];
+      const next = {
+        ..._withModes(model, { menuOpen: false }),
+        modal: { ...model.modal, menu: { items: [], idx: 0 } },
+      };
+      if (!item) return [next, []];
+      return [next, [{ type: 'menu_action', action: item[1] }]];
     }
     // --- `/`-filter mode (folded into update). The caller (dispatch)
     // resolves the panel + filterable gate + committed seed text, since the
     // filterable check is plugin-API (can't live in the reducer). The
     // transforms are pure model writes (no plugin API, no Cmd).
     case 'filter_enter':
-      model.modes.filterMode = true;
-      model.modal.filter.text = msg.text || '';
-      model.modal.filter.panel = msg.panel;
-      return [model, []];
+      return [{
+        ..._withModes(model, { filterMode: true }),
+        modal: { ...model.modal, filter: { text: msg.text || '', panel: msg.panel } },
+      }, []];
     case 'filter_key': {
       const f = model.modal.filter;
+      let text = f.text;
       if (msg.seq === '\x7f') {
-        if (!f.text) return [model, []];
-        f.text = f.text.slice(0, -1);
+        if (!text) return [model, []];
+        text = text.slice(0, -1);
       } else if (msg.seq && msg.seq.length === 1 && msg.seq.charCodeAt(0) >= 32) {
-        f.text += msg.seq;
+        text = text + msg.seq;
       } else {
         return [model, []];
       }
+      const next = _withModal(model, { filter: { ...f, text } });
       // Phase 4a — re-home the cursor as the filter narrows; the panel's
       // nav slice is the writer now.
       const compName = route.componentForPanel(f.panel);
-      if (!compName) return [model, []];
-      return [model, [{ type: 'dispatch_msg', msg: route.wrap(compName, { type: 'set_cursor', panel: f.panel, index: 0 }) }]];
+      if (!compName) return [next, []];
+      return [next, [{ type: 'dispatch_msg', msg: route.wrap(compName, { type: 'set_cursor', panel: f.panel, index: 0 }) }]];
     }
     case 'filter_exit': {
       const f = model.modal.filter;
       const panel = f.panel;
       const text = f.text;
       const keep = !!msg.keep;
-      model.modes.filterMode = false;
-      f.text = ''; f.panel = '';
-      if (!panel) return [model, []];
+      const next = {
+        ..._withModes(model, { filterMode: false }),
+        modal: { ...model.modal, filter: { text: '', panel: '' } },
+      };
+      if (!panel) return [next, []];
       const compName = route.componentForPanel(panel);
-      if (!compName) return [model, []];
+      if (!compName) return [next, []];
       // Phase 4c — commit/clear the filter on the panel's nav slice; the
       // owning Component is the single writer.
       const filterMsg = (keep && text)
         ? { type: 'set_filter',   panel, text }
         : { type: 'clear_filter', panel };
-      return [model, [
+      return [next, [
         { type: 'dispatch_msg', msg: route.wrap(compName, filterMsg) },
         { type: 'dispatch_msg', msg: route.wrap(compName, { type: 'set_cursor', panel, index: 0 }) },
         { type: 'dispatch_msg', msg: route.wrap(compName, { type: 'set_scroll', panel, offset: 0 }) },
@@ -586,49 +671,54 @@ function update(model, msg) {
     // panel_reset retired in Phase 4b — the resetPanelChrome effect
     // (files Component) now writes the cursor/scroll directly via
     // wrapped Msgs and clears the root-level filter entry itself.
-    case 'set_last_run_action':
+    case 'set_last_run_action': {
       // Routes actions.js's `model.lastRunAction = actionKey` write through
       // update so the actions-panel `>`-marker has a single writer (the
       // reducer). `''` clears (e.g. on group change — the cascade in the
       // groups Component handles this via reset_group_context).
-      model.lastRunAction = typeof msg.action === 'string' ? msg.action : '';
-      return [model, []];
+      const lastRunAction = typeof msg.action === 'string' ? msg.action : '';
+      if (lastRunAction === model.lastRunAction) return [model, []];
+      return [{ ...model, lastRunAction }, []];
+    }
     case 'mode_clear':
       // Defensive: clear a single mode flag. Used by dispatch's wedge-guard
       // when a mode handler throws — without this, the failing modal traps
       // every subsequent key (Esc included) in the same throwing handler.
       // Routed through update so even the panic-recovery path stays single-
       // writer; falls back to no-op if the flag isn't a registered mode.
-      if (msg.flag && msg.flag in model.modes) model.modes[msg.flag] = false;
-      return [model, []];
+      if (!msg.flag || !(msg.flag in model.modes) || model.modes[msg.flag] === false) return [model, []];
+      return [_withModes(model, { [msg.flag]: false }), []];
     case 'mode_set':
       // Companion to mode_clear: set a mode flag to true via Msg. Used by the
       // viewer Component's search-enter handler to flip detailSearchMode
       // without writing across layers (the search slice is the viewer's;
       // the mode flag is root chrome). Phase A pattern.
-      if (msg.flag && msg.flag in model.modes) model.modes[msg.flag] = true;
-      return [model, []];
-    case 'set_current_group':
+      if (!msg.flag || !(msg.flag in model.modes) || model.modes[msg.flag] === true) return [model, []];
+      return [_withModes(model, { [msg.flag]: true }), []];
+    case 'set_current_group': {
       // Cross-layer Msg emitted by the groups Component when its tree cascade
       // changes the active group. currentGroup is APP-WIDE chrome (read by
       // actions / docker / files / tabs / etc.) — written through update so
       // every reader sees the same source of truth (Phase C).
-      model.currentGroup = typeof msg.name === 'string' ? msg.name : '';
-      return [model, []];
+      const name = typeof msg.name === 'string' ? msg.name : '';
+      if (name === model.currentGroup) return [model, []];
+      return [{ ...model, currentGroup: name }, []];
+    }
     case 'reset_group_context': {
       // Cross-layer Msg emitted by the groups Component on a group switch —
       // the ROOT chrome half of the old resetGroupContext (per-group sel /
       // filters / multiSel reset, mode flags off, lastRunAction clear). The
       // viewer-slice half rides on viewer_reset_chrome → detail Component
       // (Phase A/B).
+      const next = {
+        ..._withModes(model, { terminalMode: false, listSelectMode: false }),
+        lastRunAction: '',
+      };
       // Phase 4a — actions/containers nav state lives on their own
-      // Component slices now; emit wrapped resets per panel, but only when
-      // the owning Component is registered (tests that don't register
+      // Component slices; emit wrapped resets per panel only when the
+      // owning Component is registered (tests that don't register
       // actions/docker shouldn't trigger "unknown Component" warnings).
       // Phase 4c — filter text moved onto the same nav slices.
-      model.lastRunAction = '';
-      model.modes.terminalMode = false;
-      model.modes.listSelectMode = false;
       const cmds = [];
       for (const panel of ['actions', 'containers']) {
         const compName = route.componentForPanel(panel);
@@ -637,7 +727,7 @@ function update(model, msg) {
         cmds.push({ type: 'dispatch_msg', msg: route.wrap(compName, { type: 'multisel_clear', panel }) });
         cmds.push({ type: 'dispatch_msg', msg: route.wrap(compName, { type: 'clear_filter', panel }) });
       }
-      return [model, cmds];
+      return [next, cmds];
     }
     // set_panel_cursor retired in Phase 4b — groups Component now wraps
     // `set_cursor` to its own slice directly (see _cascadeCmds).
@@ -660,4 +750,4 @@ function update(model, msg) {
   }
 }
 
-module.exports = { init, getModel, update, _ghostSuffix };
+module.exports = { init, getModel, setModel, update, _ghostSuffix };

@@ -26,15 +26,19 @@ describe('[2] viewer_reset_chrome clears VIEWER-slice transient state', () => {
     // Phase B: the viewer state moved into the detail Component's slice;
     // test via the Component's update directly (isolated, no global state).
     const detail = require('../panel/viewer/viewer');
-    const slice = detail._init();
-    slice.select = { active: true, kind: 'char', anchor: { line: 2, col: 1 }, cursor: { line: 3, col: 0 } };
-    slice.cursor = { line: 5, col: 2 };
-    slice.tab = 3;
-    detail._update({ type: 'viewer_reset_chrome' }, slice);
-    eq(slice.select.active, false, 'visual selection cleared');
-    eq(slice.cursor.line, 0, 'cursor line reset');
-    eq(slice.cursor.col, 0, 'cursor col reset');
-    eq(slice.tab, 0, 'tab reset');
+    const init = detail._init();
+    // Phase 3 — _update returns the new slice; assert on the return value.
+    const slice = {
+      ...init,
+      select: { active: true, kind: 'char', anchor: { line: 2, col: 1 }, cursor: { line: 3, col: 0 } },
+      cursor: { line: 5, col: 2 },
+      tab: 3,
+    };
+    const r = detail._update({ type: 'viewer_reset_chrome' }, slice);
+    eq(r.select.active, false, 'visual selection cleared');
+    eq(r.cursor.line, 0, 'cursor line reset');
+    eq(r.cursor.col, 0, 'cursor col reset');
+    eq(r.tab, 0, 'tab reset');
   });
 });
 

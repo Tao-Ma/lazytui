@@ -1,19 +1,26 @@
 /**
  * Pure design-mode layout transforms — the reducer-owned half of design.js.
  *
- * Like leaves/search / leaves/menu / leaves/register, this is a dependency-free
- * leaf so runtime.update can import it without a require cycle (design.js
+ * Like leaves/search / leaves/tabs / leaves/register, this is a dependency-free
+ * leaf the layout Component imports without a require cycle (design.js
  * requires runtime + term + ansi, so the reducer can't call into it). Every
- * function takes `model` and mutates model.layout / layout slice — no
- * I/O, no global, no terminal reads. The terminal-dependent geometry
- * (hit-tests reading cols(), the drag state machine) stays in design.js and
- * folds onto update in a later commit.
+ * function takes the layout Component slice, returns a new slice (or the
+ * same ref when the operation is a no-op). No I/O, no globals, no terminal
+ * reads. The one bit of terminal state the reducer can't synthesize — the
+ * current terminal width — is threaded in as `COLS` by the caller for the
+ * hit-tests; `model.modes.designMode` is the one read of the chrome flag,
+ * threaded in as `model` for mousePress's defensive guard.
  *
- * State touched:
- *   - _arrange().{leftWidth, detailHeightPct, leftPanels, rightPanels}
- *   - layout slice .dirty (set via _markDirty() — see helper below)
- *   - layout slice .design.{selectedIdx, undo, redo, titleEdit} (via _designSlice)
- *   - _layoutSlice().panelBounds (READ only — frame-derived, written by layout.js)
+ * Slice shape touched:
+ *   - slice.arrange.{leftWidth, detailHeightPct, leftPanels, rightPanels}
+ *   - slice.dirty (set true on any change that should round-trip to YAML)
+ *   - slice.design.{selectedIdx, undo, redo, titleEdit, drag}
+ *   - slice.panelBounds (READ only — frame-derived, written by layout.js)
+ *
+ * Drag state machine note: `drag` captures the gesture's anchor panels by
+ * **type string**, not by panel ref, because the panel objects themselves
+ * are reallocated as the slice updates and any captured refs would go stale
+ * across motion events.
  */
 'use strict';
 
@@ -22,269 +29,295 @@ const DETAIL_MIN_PCT = 20;
 const DETAIL_MAX_PCT = 90;
 const MAX_UNDO = 50;
 
-// Mark the layout as dirty — equivalent to the pre-1d `model.layoutDirty
-// = true`. Lazy-required here so this leaf stays dependency-free at
-// load time (panel/api requires runtime, which requires us).
-function _markDirty() {
-  const slice = require('../panel/api').getComponentSlice('layout');
-  if (slice) slice.dirty = true;
+// ---------------------------------------------------------------- pure reads
+
+function allDesignPanels(slice) {
+  return [...slice.arrange.leftPanels, ...slice.arrange.rightPanels];
 }
 
-// Return the layout Component's design slice (the post-Phase-1f home for
-// what used to live at `model.modal.design`). Same lazy-require pattern
-// as _markDirty.
-function _designSlice() {
-  const slice = require('../panel/api').getComponentSlice('layout');
-  return slice ? slice.design : null;
+// Snapshots are JSON round-trips of the arrange struct — plain data
+// (documented: no functions / Symbols / circular refs in panel config), so
+// the stacks live happily on the slice. Session-scoped: cleared on
+// design_enter.
+function snapshot(arrange) {
+  return JSON.parse(JSON.stringify(arrange));
 }
 
-// Layout Component slice — for reads of panelBounds (frame geometry,
-// written by layout.js's render pass) used by the hit-test math here.
-function _layoutSlice() {
-  return require('../panel/api').getComponentSlice('layout');
+function _applySnapshot(arrange, snap) {
+  return {
+    ...arrange,
+    leftWidth: snap.leftWidth,
+    detailHeightPct: snap.detailHeightPct,
+    leftPanels: snap.leftPanels,
+    rightPanels: snap.rightPanels,
+  };
 }
 
-// The arrange struct (was `model.layout` pre-1g): leftPanels,
-// rightPanels, leftWidth, detailHeightPct.
-function _arrange() {
-  const slice = _layoutSlice();
-  return slice ? slice.arrange : null;
-}
-
-function allDesignPanels(model) {
-  return [..._arrange().leftPanels, ..._arrange().rightPanels];
-}
-
-// ---------------------------------------------------------------- undo / redo
-//
-// Snapshots are JSON round-trips of the layout — plain data (documented: no
-// functions / Symbols / circular refs in panel config), so the stacks live
-// happily on the model. Session-scoped: cleared on design_enter.
-
-function snapshot(model) {
-  return JSON.parse(JSON.stringify(_arrange()));
-}
-
-/** Push the current layout to the undo stack (call BEFORE mutating) and clear
- *  the redo stack — any new mutation invalidates the redo timeline. */
-function pushUndo(model) {
-  const d = _designSlice();
-  d.undo.push(snapshot(model));
-  if (d.undo.length > MAX_UNDO) d.undo.shift();
-  d.redo.length = 0;
-}
-
-/** Restore layout fields from a snapshot in-place (preserves the outer
- *  slice.arrange reference other code holds). */
-function applySnapshot(model, snap) {
-  _arrange().leftWidth       = snap.leftWidth;
-  _arrange().detailHeightPct = snap.detailHeightPct;
-  _arrange().leftPanels      = snap.leftPanels;
-  _arrange().rightPanels     = snap.rightPanels;
-}
-
-function undo(model) {
-  const d = _designSlice();
-  if (d.undo.length === 0) return false;
-  d.redo.push(snapshot(model));
-  applySnapshot(model, d.undo.pop());
-  _markDirty();
-  return true;
-}
-
-function redo(model) {
-  const d = _designSlice();
-  if (d.redo.length === 0) return false;
-  d.undo.push(snapshot(model));
-  applySnapshot(model, d.redo.pop());
-  _markDirty();
-  return true;
-}
-
-/** Wipe undo/redo (design_enter, and :restore-layout via the design.js shim).
- *  Tolerates the layout slice not existing yet. */
-function clearUndoStacks(model) {
-  const d = _designSlice();
-  if (!d) return;
-  d.undo = [];
-  d.redo = [];
-}
-
-// ---------------------------------------------------------------- geometry helpers
-
-/** Total height of a column, summed from rendered bounds. */
-function columnTotalH(model, column) {
-  const panels = column === 'left' ? _arrange().leftPanels : _arrange().rightPanels;
+function columnTotalH(slice, column) {
+  const panels = column === 'left' ? slice.arrange.leftPanels : slice.arrange.rightPanels;
   let total = 0;
   for (const p of panels) {
-    const b = _layoutSlice().panelBounds[p.type];
+    const b = slice.panelBounds[p.type];
     if (b) total += b.h;
   }
   return total;
 }
 
-/** Anchor any flex panels in `column` (no heightPct, not the active pair, not
- *  detail) at their current rendered height, so a boundary drag steals only
- *  from the neighbor instead of being absorbed proportionally. */
-function freezeColumnFlex(model, column, upper, lower, availH) {
-  const panels = column === 'left' ? _arrange().leftPanels : _arrange().rightPanels;
-  for (const p of panels) {
-    if (p === upper || p === lower) continue;
-    if (p.type === 'detail') continue;
-    if (typeof p.heightPct === 'number') continue;
-    const b = _layoutSlice().panelBounds[p.type];
-    if (!b) continue;
-    p.heightPct = Math.round((b.h / availH) * 100);
-  }
-}
-
-function panelHeightPct(model, p, availH) {
-  if (p.type === 'detail') return _arrange().detailHeightPct;
+function panelHeightPct(slice, p, availH) {
+  if (p.type === 'detail') return slice.arrange.detailHeightPct;
   if (typeof p.heightPct === 'number') return p.heightPct;
-  const b = _layoutSlice().panelBounds[p.type];
+  const b = slice.panelBounds[p.type];
   return b ? Math.round(b.h / availH * 100) : 0;
 }
 
-function setPanelHeightPct(model, p, pct) {
-  if (p.type === 'detail') _arrange().detailHeightPct = pct;
-  else p.heightPct = pct;
+function _reassignHotkeys(arrange) {
+  return {
+    ...arrange,
+    leftPanels: arrange.leftPanels.map((p, i) => ({ ...p, hotkey: String(i + 1) })),
+    rightPanels: arrange.rightPanels.map(p =>
+      p.type === 'actions' ? { ...p, hotkey: '0' }
+      : p.type === 'detail' ? { ...p, hotkey: 'o' }
+      : { ...p, hotkey: '' }
+    ),
+  };
 }
 
-function reassignHotkeys(model) {
-  _arrange().leftPanels.forEach((p, i) => { p.hotkey = String(i + 1); });
-  _arrange().rightPanels.forEach(p => {
-    if (p.type === 'actions') p.hotkey = '0';
-    else if (p.type === 'detail') p.hotkey = 'o';
-    else p.hotkey = '';
+// ---------------------------------------------------------------- undo / redo
+
+function _pushUndoSlice(slice) {
+  const d = slice.design;
+  let undo = [...d.undo, snapshot(slice.arrange)];
+  if (undo.length > MAX_UNDO) undo = undo.slice(undo.length - MAX_UNDO);
+  return { ...slice, design: { ...d, undo, redo: [] } };
+}
+
+function undo(slice) {
+  const d = slice.design;
+  if (d.undo.length === 0) return slice;
+  const snap = d.undo[d.undo.length - 1];
+  return {
+    ...slice,
+    arrange: _applySnapshot(slice.arrange, snap),
+    design: {
+      ...d,
+      undo: d.undo.slice(0, -1),
+      redo: [...d.redo, snapshot(slice.arrange)],
+    },
+    dirty: true,
+  };
+}
+
+function redo(slice) {
+  const d = slice.design;
+  if (d.redo.length === 0) return slice;
+  const snap = d.redo[d.redo.length - 1];
+  return {
+    ...slice,
+    arrange: _applySnapshot(slice.arrange, snap),
+    design: {
+      ...d,
+      redo: d.redo.slice(0, -1),
+      undo: [...d.undo, snapshot(slice.arrange)],
+    },
+    dirty: true,
+  };
+}
+
+/** Wipe undo/redo (design_enter, and :restore-layout via the design.js shim).
+ *  Tolerates the layout slice not existing yet. */
+function clearUndoStacks(slice) {
+  if (!slice || !slice.design) return slice;
+  if (slice.design.undo.length === 0 && slice.design.redo.length === 0) return slice;
+  return { ...slice, design: { ...slice.design, undo: [], redo: [] } };
+}
+
+// ---------------------------------------------------------------- geometry helpers
+
+/** Anchor any flex panels in `column` (no heightPct, not the active pair, not
+ *  detail) at their current rendered height, so a boundary drag steals only
+ *  from the neighbor instead of being absorbed proportionally. Returns the
+ *  same slice ref when nothing actually freezes. */
+function freezeColumnFlex(slice, column, upperType, lowerType, availH) {
+  const colKey = column === 'left' ? 'leftPanels' : 'rightPanels';
+  let changed = false;
+  const newCol = slice.arrange[colKey].map(p => {
+    if (p.type === upperType || p.type === lowerType) return p;
+    if (p.type === 'detail') return p;
+    if (typeof p.heightPct === 'number') return p;
+    const b = slice.panelBounds[p.type];
+    if (!b) return p;
+    changed = true;
+    return { ...p, heightPct: Math.round((b.h / availH) * 100) };
   });
+  if (!changed) return slice;
+  return { ...slice, arrange: { ...slice.arrange, [colKey]: newCol } };
+}
+
+/** Set a panel's heightPct by type. detail → arrange.detailHeightPct; other
+ *  panels → the matching panel's heightPct in whichever column owns it.
+ *  Identity-preserve when already at `pct`. */
+function _setPanelHeightPct(slice, panelType, pct) {
+  if (panelType === 'detail') {
+    if (slice.arrange.detailHeightPct === pct) return slice;
+    return { ...slice, arrange: { ...slice.arrange, detailHeightPct: pct } };
+  }
+  let changed = false;
+  const patch = (col) => col.map(p => {
+    if (p.type !== panelType) return p;
+    if (p.heightPct === pct) return p;
+    changed = true;
+    return { ...p, heightPct: pct };
+  });
+  const leftPanels  = patch(slice.arrange.leftPanels);
+  const rightPanels = patch(slice.arrange.rightPanels);
+  if (!changed) return slice;
+  return { ...slice, arrange: { ...slice.arrange, leftPanels, rightPanels } };
 }
 
 // ---------------------------------------------------------------- keyboard transforms
 
 /** ↑/↓ — move the selection cursor, clamped to the panel list. */
-function navSelect(model, delta) {
-  const d = _designSlice();
-  const all = allDesignPanels(model);
-  if (delta < 0) { if (d.selectedIdx > 0) d.selectedIdx--; }
-  else           { if (d.selectedIdx < all.length - 1) d.selectedIdx++; }
+function navSelect(slice, delta) {
+  const d = slice.design;
+  const all = allDesignPanels(slice);
+  let idx = d.selectedIdx;
+  if (delta < 0) { if (idx > 0) idx--; }
+  else           { if (idx < all.length - 1) idx++; }
+  if (idx === d.selectedIdx) return slice;
+  return { ...slice, design: { ...d, selectedIdx: idx } };
 }
 
 /** J/K — reorder the focused panel within its column (delta ±1). */
-function reorderWithin(model, delta) {
-  const d = _designSlice();
+function reorderWithin(slice, delta) {
+  const d = slice.design;
   const sel = d.selectedIdx;
-  const isLeft = sel < _arrange().leftPanels.length;
-  const localIdx = isLeft ? sel : sel - _arrange().leftPanels.length;
-  const column = isLeft ? _arrange().leftPanels : _arrange().rightPanels;
-  if (delta < 0) {
-    if (localIdx > 0) {
-      pushUndo(model);
-      [column[localIdx], column[localIdx - 1]] = [column[localIdx - 1], column[localIdx]];
-      d.selectedIdx--;
-      reassignHotkeys(model);
-      _markDirty();
-    }
-  } else {
-    if (localIdx < column.length - 1) {
-      pushUndo(model);
-      [column[localIdx], column[localIdx + 1]] = [column[localIdx + 1], column[localIdx]];
-      d.selectedIdx++;
-      reassignHotkeys(model);
-      _markDirty();
-    }
-  }
+  const isLeft = sel < slice.arrange.leftPanels.length;
+  const localIdx = isLeft ? sel : sel - slice.arrange.leftPanels.length;
+  const colKey = isLeft ? 'leftPanels' : 'rightPanels';
+  const column = slice.arrange[colKey];
+  const targetIdx = localIdx + delta;
+  if (targetIdx < 0 || targetIdx >= column.length) return slice;
+
+  const newCol = column.slice();
+  [newCol[localIdx], newCol[targetIdx]] = [newCol[targetIdx], newCol[localIdx]];
+
+  let next = _pushUndoSlice(slice);
+  next = {
+    ...next,
+    arrange: _reassignHotkeys({ ...slice.arrange, [colKey]: newCol }),
+    design: { ...next.design, selectedIdx: sel + delta },
+    dirty: true,
+  };
+  return next;
 }
 
 /** ←/→ — move the focused panel between columns. */
-function moveColumn(model, col) {
-  const d = _designSlice();
+function moveColumn(slice, col) {
+  const d = slice.design;
   const sel = d.selectedIdx;
-  const all = allDesignPanels(model);
+  const all = allDesignPanels(slice);
   const selPanel = all[sel];
-  if (!selPanel) return;
-  const isLeft = sel < _arrange().leftPanels.length;
-  const localIdx = isLeft ? sel : sel - _arrange().leftPanels.length;
+  if (!selPanel) return slice;
+  const isLeft = sel < slice.arrange.leftPanels.length;
+  const localIdx = isLeft ? sel : sel - slice.arrange.leftPanels.length;
 
   if (col === 'left') {
-    if (!isLeft && selPanel.type !== 'detail' && selPanel.type !== 'actions'
-        && _arrange().leftPanels.length < 6) {
-      pushUndo(model);
-      _arrange().rightPanels.splice(localIdx, 1);
-      _arrange().leftPanels.push(selPanel);
-      selPanel.column = 'left';
-      d.selectedIdx = _arrange().leftPanels.length - 1;
-      reassignHotkeys(model);
-      _markDirty();
-    }
-  } else {
-    if (isLeft && _arrange().rightPanels.length < 3) {
-      pushUndo(model);
-      _arrange().leftPanels.splice(localIdx, 1);
-      const detailIdx = _arrange().rightPanels.findIndex(p => p.type === 'detail');
-      const insertAt = detailIdx >= 0 ? detailIdx : _arrange().rightPanels.length;
-      _arrange().rightPanels.splice(insertAt, 0, selPanel);
-      selPanel.column = 'right';
-      selPanel.hotkey = '';
-      d.selectedIdx = _arrange().leftPanels.length + insertAt;
-      reassignHotkeys(model);
-      _markDirty();
-    }
+    if (isLeft) return slice;
+    if (selPanel.type === 'detail' || selPanel.type === 'actions') return slice;
+    if (slice.arrange.leftPanels.length >= 6) return slice;
+
+    const newRight = slice.arrange.rightPanels.slice();
+    newRight.splice(localIdx, 1);
+    const newLeft = [...slice.arrange.leftPanels, { ...selPanel, column: 'left' }];
+
+    let next = _pushUndoSlice(slice);
+    next = {
+      ...next,
+      arrange: _reassignHotkeys({ ...slice.arrange, leftPanels: newLeft, rightPanels: newRight }),
+      design: { ...next.design, selectedIdx: newLeft.length - 1 },
+      dirty: true,
+    };
+    return next;
   }
+
+  // col === 'right'
+  if (!isLeft) return slice;
+  if (slice.arrange.rightPanels.length >= 3) return slice;
+
+  const newLeft = slice.arrange.leftPanels.slice();
+  newLeft.splice(localIdx, 1);
+  const detailIdx = slice.arrange.rightPanels.findIndex(p => p.type === 'detail');
+  const insertAt = detailIdx >= 0 ? detailIdx : slice.arrange.rightPanels.length;
+  const newRight = slice.arrange.rightPanels.slice();
+  newRight.splice(insertAt, 0, { ...selPanel, column: 'right', hotkey: '' });
+
+  let next = _pushUndoSlice(slice);
+  next = {
+    ...next,
+    arrange: _reassignHotkeys({ ...slice.arrange, leftPanels: newLeft, rightPanels: newRight }),
+    design: { ...next.design, selectedIdx: newLeft.length + insertAt },
+    dirty: true,
+  };
+  return next;
 }
 
 /** +/- — detail selected: grow/shrink detailHeightPct by 5 (clamped [20,90]);
  *  else a left panel selected: grow/shrink leftWidth by 2 (clamped [20,60]). */
-function resizeWidthOrDetail(model, sign) {
-  const d = _designSlice();
-  const all = allDesignPanels(model);
+function resizeWidthOrDetail(slice, sign) {
+  const d = slice.design;
+  const all = allDesignPanels(slice);
   const selPanel = all[d.selectedIdx];
-  if (!selPanel) return;
-  const isLeft = d.selectedIdx < _arrange().leftPanels.length;
+  if (!selPanel) return slice;
+  const isLeft = d.selectedIdx < slice.arrange.leftPanels.length;
+
+  let newDetail = slice.arrange.detailHeightPct;
+  let newLeftW  = slice.arrange.leftWidth;
+
   if (sign > 0) {
-    if (selPanel.type === 'detail' && _arrange().detailHeightPct < 90) {
-      pushUndo(model);
-      _arrange().detailHeightPct = Math.min(90, _arrange().detailHeightPct + 5);
-      _markDirty();
-    } else if (isLeft && _arrange().leftWidth < 60) {
-      pushUndo(model);
-      _arrange().leftWidth = Math.min(60, _arrange().leftWidth + 2);
-      _markDirty();
-    }
+    if (selPanel.type === 'detail' && slice.arrange.detailHeightPct < 90) {
+      newDetail = Math.min(90, slice.arrange.detailHeightPct + 5);
+    } else if (isLeft && slice.arrange.leftWidth < 60) {
+      newLeftW = Math.min(60, slice.arrange.leftWidth + 2);
+    } else return slice;
   } else {
-    if (selPanel.type === 'detail' && _arrange().detailHeightPct > 20) {
-      pushUndo(model);
-      _arrange().detailHeightPct = Math.max(20, _arrange().detailHeightPct - 5);
-      _markDirty();
-    } else if (isLeft && _arrange().leftWidth > 20) {
-      pushUndo(model);
-      _arrange().leftWidth = Math.max(20, _arrange().leftWidth - 2);
-      _markDirty();
-    }
+    if (selPanel.type === 'detail' && slice.arrange.detailHeightPct > 20) {
+      newDetail = Math.max(20, slice.arrange.detailHeightPct - 5);
+    } else if (isLeft && slice.arrange.leftWidth > 20) {
+      newLeftW = Math.max(20, slice.arrange.leftWidth - 2);
+    } else return slice;
   }
+
+  let next = _pushUndoSlice(slice);
+  next = {
+    ...next,
+    arrange: { ...slice.arrange, detailHeightPct: newDetail, leftWidth: newLeftW },
+    dirty: true,
+  };
+  return next;
 }
 
 /** ] / [ — grow/shrink the focused panel's heightPct by Δ, stealing from the
  *  panel below in the same column (D1 semantics). No-op on detail / last row. */
-function resizeFocusedPanelHeight(model, deltaPct) {
-  const d = _designSlice();
-  const all = allDesignPanels(model);
+function resizeFocusedPanelHeight(slice, deltaPct) {
+  const d = slice.design;
+  const all = allDesignPanels(slice);
   const sel = all[d.selectedIdx];
-  if (!sel || sel.type === 'detail') return;  // detail uses +/-
+  if (!sel || sel.type === 'detail') return slice;  // detail uses +/-
 
-  const isLeft = d.selectedIdx < _arrange().leftPanels.length;
-  const column = isLeft ? _arrange().leftPanels : _arrange().rightPanels;
+  const isLeft = d.selectedIdx < slice.arrange.leftPanels.length;
+  const column = isLeft ? slice.arrange.leftPanels : slice.arrange.rightPanels;
   const colName = isLeft ? 'left' : 'right';
   const idx = column.indexOf(sel);
-  if (idx < 0 || idx === column.length - 1) return;  // no neighbor below
-  const next = column[idx + 1];
+  if (idx < 0 || idx === column.length - 1) return slice;  // no neighbor below
+  const nextPanel = column[idx + 1];
 
-  const availH = columnTotalH(model, colName);
-  if (availH < 6) return;
+  const availH = columnTotalH(slice, colName);
+  if (availH < 6) return slice;
 
-  freezeColumnFlex(model, colName, sel, next, availH);
+  const frozen = freezeColumnFlex(slice, colName, sel.type, nextPanel.type, availH);
 
-  const selCur  = panelHeightPct(model, sel,  availH);
-  const nextCur = panelHeightPct(model, next, availH);
+  const selCur  = panelHeightPct(frozen, sel, availH);
+  const nextCur = panelHeightPct(frozen, nextPanel, availH);
   const combined = selCur + nextCur;
 
   const rowsToPct = (rows) => Math.max(1, Math.ceil(rows / availH * 100));
@@ -293,56 +326,65 @@ function resizeFocusedPanelHeight(model, deltaPct) {
 
   let newSel  = selCur  + deltaPct;
   let newNext = nextCur - deltaPct;
-  if (newSel < minPct(sel))   { newSel = minPct(sel);   newNext = combined - newSel; }
-  if (newSel > maxPct(sel))   { newSel = maxPct(sel);   newNext = combined - newSel; }
-  if (newNext < minPct(next)) { newNext = minPct(next); newSel = combined - newNext; }
-  if (newNext > maxPct(next)) { newNext = maxPct(next); newSel = combined - newNext; }
+  if (newSel < minPct(sel))         { newSel = minPct(sel);         newNext = combined - newSel; }
+  if (newSel > maxPct(sel))         { newSel = maxPct(sel);         newNext = combined - newSel; }
+  if (newNext < minPct(nextPanel))  { newNext = minPct(nextPanel);  newSel  = combined - newNext; }
+  if (newNext > maxPct(nextPanel))  { newNext = maxPct(nextPanel);  newSel  = combined - newNext; }
 
-  if (newSel === selCur && newNext === nextCur) return;
-  pushUndo(model);
-  setPanelHeightPct(model, sel, newSel);
-  setPanelHeightPct(model, next, newNext);
-  _markDirty();
+  if (newSel === selCur && newNext === nextCur) return slice;
+
+  let result = _pushUndoSlice(frozen);
+  result = _setPanelHeightPct(result, sel.type, newSel);
+  result = _setPanelHeightPct(result, nextPanel.type, newNext);
+  return { ...result, dirty: true };
 }
 
 /** Safety clamp after any mutation that can change the panel count. */
-function clampSelected(model) {
-  const d = _designSlice();
-  const all = allDesignPanels(model);
-  if (d.selectedIdx >= all.length) d.selectedIdx = all.length - 1;
-  if (d.selectedIdx < 0) d.selectedIdx = 0;
+function clampSelected(slice) {
+  const d = slice.design;
+  const all = allDesignPanels(slice);
+  let idx = d.selectedIdx;
+  if (idx >= all.length) idx = all.length - 1;
+  if (idx < 0) idx = 0;
+  if (idx === d.selectedIdx) return slice;
+  return { ...slice, design: { ...d, selectedIdx: idx } };
 }
 
 // ---------------------------------------------------------------- title edit
 
 /** Seed the title-edit buffer from the focused panel's current title. */
-function titleEnter(model) {
-  const all = allDesignPanels(model);
-  const d = _designSlice();
-  const p = d ? all[d.selectedIdx] : null;
-  if (!p) return;
-  d.titleEdit = { active: true, text: p.title || '' };
+function titleEnter(slice) {
+  const d = slice.design;
+  if (!d) return slice;
+  const all = allDesignPanels(slice);
+  const p = all[d.selectedIdx];
+  if (!p) return slice;
+  return { ...slice, design: { ...d, titleEdit: { active: true, text: p.title || '' } } };
 }
 
 /** Commit a non-empty, changed title to the focused panel (pushes one undo). */
-function setSelectedTitle(model, text) {
-  const all = allDesignPanels(model);
-  const d = _designSlice();
-  const p = d ? all[d.selectedIdx] : null;
-  if (p && text.length > 0 && text !== p.title) {
-    pushUndo(model);
-    p.title = text;
-    _markDirty();
-  }
+function setSelectedTitle(slice, text) {
+  const d = slice.design;
+  if (!d) return slice;
+  const all = allDesignPanels(slice);
+  const p = all[d.selectedIdx];
+  if (!p || text.length === 0 || text === p.title) return slice;
+
+  let next = _pushUndoSlice(slice);
+  const patch = (col) => col.map(x => x.type === p.type ? { ...x, title: text } : x);
+  next = {
+    ...next,
+    arrange: {
+      ...next.arrange,
+      leftPanels:  patch(next.arrange.leftPanels),
+      rightPanels: patch(next.arrange.rightPanels),
+    },
+    dirty: true,
+  };
+  return next;
 }
 
-// ---------------------------------------------------------------- mouse
-//
-// The drag/resize state machine. `model.modal.design.drag` holds the in-flight
-// gesture across press→motion→release (it can't be a single Msg). `COLS` (the
-// terminal width) is caller-resolved — the one terminal read the reducer can't
-// do — and threaded into the hit-tests. panelBounds is read off the model
-// (frame-derived, written by layout.js).
+// ---------------------------------------------------------------- mouse hit-tests
 
 /**
  * Hit-test a point against draggable separators. Returns `{ edge, boundary?,
@@ -350,11 +392,11 @@ function setSelectedTitle(model, text) {
  * 'col' (col-sep only), 'right-boundary' / 'left-boundary' (a horizontal seam
  * between two stacked panels). ±1 tolerance on both axes; right-col wins ties.
  */
-function pointToResizeTarget(model, mx, my, COLS) {
-  const leftW = _arrange().leftWidth;
+function pointToResizeTarget(slice, mx, my, COLS) {
+  const leftW = slice.arrange.leftWidth;
   const colMatch = Math.abs(mx - leftW) <= 1;
-  const rightB = boundaryNear(model, _arrange().rightPanels, my);
-  const leftB  = boundaryNear(model, _arrange().leftPanels,  my);
+  const rightB = boundaryNear(slice, slice.arrange.rightPanels, my);
+  const leftB  = boundaryNear(slice, slice.arrange.leftPanels,  my);
   if (colMatch && rightB) return { edge: 'corner', boundary: rightB, column: 'right' };
   if (colMatch && leftB)  return { edge: 'corner', boundary: leftB,  column: 'left'  };
   if (colMatch)            return { edge: 'col' };
@@ -365,9 +407,9 @@ function pointToResizeTarget(model, mx, my, COLS) {
 
 /** Horizontal boundary between two adjacent panels within ±1 of `my`, or null.
  *  Boundary y = `upper.y + upper.h` (where the next panel's top border sits). */
-function boundaryNear(model, panels, my) {
+function boundaryNear(slice, panels, my) {
   for (let i = 0; i < panels.length - 1; i++) {
-    const b = _layoutSlice().panelBounds[panels[i].type];
+    const b = slice.panelBounds[panels[i].type];
     if (!b) continue;
     const y = b.y + b.h;
     if (Math.abs(my - y) <= 1) return { upper: panels[i], lower: panels[i + 1], y };
@@ -375,54 +417,10 @@ function boundaryNear(model, panels, my) {
   return null;
 }
 
-/** Column-separator drag: leftWidth follows cursor, clamped [20, 60]. */
-function applyColResize(model, mx) {
-  const newW = Math.max(20, Math.min(60, mx + 1));
-  if (newW !== _arrange().leftWidth) {
-    _arrange().leftWidth = newW;
-    _markDirty();
-  }
-}
-
-/** Within-column boundary drag: redistributes height between the two panels
- *  captured at press (D1 — steal from neighbor only). A detail side writes
- *  detailHeightPct clamped [20, 90]; the neighbor takes the complement. */
-function applyBoundaryResize(model, my) {
-  const d = _designSlice();
-  const ds = d && d.drag;
-  if (!ds) return;
-  let upperH = Math.max(MIN_PANEL_H, Math.min(ds.combinedH - MIN_PANEL_H, my - ds.upperStartY));
-  let lowerH = ds.combinedH - upperH;
-
-  if (ds.detailIsUpper) {
-    const minH = Math.max(MIN_PANEL_H, Math.floor(ds.availH * DETAIL_MIN_PCT / 100));
-    const maxH = Math.min(ds.combinedH - MIN_PANEL_H, Math.floor(ds.availH * DETAIL_MAX_PCT / 100));
-    upperH = Math.max(minH, Math.min(maxH, upperH));
-    lowerH = ds.combinedH - upperH;
-  } else if (ds.detailIsLower) {
-    const minH = Math.max(MIN_PANEL_H, Math.floor(ds.availH * DETAIL_MIN_PCT / 100));
-    const maxH = Math.min(ds.combinedH - MIN_PANEL_H, Math.floor(ds.availH * DETAIL_MAX_PCT / 100));
-    lowerH = Math.max(minH, Math.min(maxH, lowerH));
-    upperH = ds.combinedH - lowerH;
-  }
-
-  const upperPct = Math.round(upperH / ds.availH * 100);
-  const lowerPct = Math.round(lowerH / ds.availH * 100);
-  const setPct = (panel, pct) => {
-    if (panel.heightPct !== pct) { panel.heightPct = pct; _markDirty(); }
-  };
-  const setDetailPct = (pct) => {
-    if (_arrange().detailHeightPct !== pct) { _arrange().detailHeightPct = pct; _markDirty(); }
-  };
-  if (ds.detailIsUpper)      { setDetailPct(upperPct); setPct(ds.lower, lowerPct); }
-  else if (ds.detailIsLower) { setDetailPct(lowerPct); setPct(ds.upper, upperPct); }
-  else                       { setPct(ds.upper, upperPct); setPct(ds.lower, lowerPct); }
-}
-
 /** Panel type at (mx, my) per rendered bounds, or null (frame-synchronous). */
-function panelAt(model, mx, my) {
-  for (const p of allDesignPanels(model)) {
-    const b = _layoutSlice().panelBounds[p.type];
+function panelAt(slice, mx, my) {
+  for (const p of allDesignPanels(slice)) {
+    const b = slice.panelBounds[p.type];
     if (!b) continue;
     if (mx >= b.x && mx < b.x + b.w && my >= b.y && my < b.y + b.h) return p.type;
   }
@@ -434,23 +432,23 @@ function panelAt(model, mx, my) {
  * or null. Top half → before, bottom half → after, below last → append, empty
  * column → index 0, detail/actions in left column → invalid.
  */
-function pointToDropTarget(model, srcType, mx, my, COLS) {
-  const leftPanels = _arrange().leftPanels;
-  const rightPanels = _arrange().rightPanels;
-  const leftW = _arrange().leftWidth;
-  const inLeft = matchColumn(model, leftPanels, mx, my);
+function pointToDropTarget(slice, srcType, mx, my, COLS) {
+  const leftPanels = slice.arrange.leftPanels;
+  const rightPanels = slice.arrange.rightPanels;
+  const leftW = slice.arrange.leftWidth;
+  const inLeft = matchColumn(slice, leftPanels, mx, my);
   if (inLeft !== null) return validateTarget(srcType, 'left', inLeft);
-  const inRight = matchColumn(model, rightPanels, mx, my);
+  const inRight = matchColumn(slice, rightPanels, mx, my);
   if (inRight !== null) return validateTarget(srcType, 'right', inRight);
   if (mx >= 0 && mx < leftW && leftPanels.length === 0) return validateTarget(srcType, 'left', 0);
   if (mx >= leftW && mx < COLS && rightPanels.length === 0) return validateTarget(srcType, 'right', 0);
   return null;
 }
 
-function matchColumn(model, panels, mx, my) {
+function matchColumn(slice, panels, mx, my) {
   let anyXMatch = false;
   for (let i = 0; i < panels.length; i++) {
-    const b = _layoutSlice().panelBounds[panels[i].type];
+    const b = slice.panelBounds[panels[i].type];
     if (!b) continue;
     if (mx < b.x || mx >= b.x + b.w) continue;
     anyXMatch = true;
@@ -468,11 +466,60 @@ function validateTarget(srcType, column, index) {
   return { column, index, valid: true };
 }
 
+// ---------------------------------------------------------------- mouse state machine
+
+/** Column-separator drag: leftWidth follows cursor, clamped [20, 60]. */
+function applyColResize(slice, mx) {
+  const newW = Math.max(20, Math.min(60, mx + 1));
+  if (newW === slice.arrange.leftWidth) return slice;
+  return { ...slice, arrange: { ...slice.arrange, leftWidth: newW }, dirty: true };
+}
+
+/** Within-column boundary drag: redistributes height between the two panels
+ *  captured at press (D1 — steal from neighbor only). A detail side writes
+ *  detailHeightPct clamped [20, 90]; the neighbor takes the complement. */
+function applyBoundaryResize(slice, my) {
+  const d = slice.design;
+  const ds = d && d.drag;
+  if (!ds) return slice;
+  let upperH = Math.max(MIN_PANEL_H, Math.min(ds.combinedH - MIN_PANEL_H, my - ds.upperStartY));
+  let lowerH = ds.combinedH - upperH;
+
+  if (ds.detailIsUpper) {
+    const minH = Math.max(MIN_PANEL_H, Math.floor(ds.availH * DETAIL_MIN_PCT / 100));
+    const maxH = Math.min(ds.combinedH - MIN_PANEL_H, Math.floor(ds.availH * DETAIL_MAX_PCT / 100));
+    upperH = Math.max(minH, Math.min(maxH, upperH));
+    lowerH = ds.combinedH - upperH;
+  } else if (ds.detailIsLower) {
+    const minH = Math.max(MIN_PANEL_H, Math.floor(ds.availH * DETAIL_MIN_PCT / 100));
+    const maxH = Math.min(ds.combinedH - MIN_PANEL_H, Math.floor(ds.availH * DETAIL_MAX_PCT / 100));
+    lowerH = Math.max(minH, Math.min(maxH, lowerH));
+    upperH = ds.combinedH - lowerH;
+  }
+
+  const upperPct = Math.round(upperH / ds.availH * 100);
+  const lowerPct = Math.round(lowerH / ds.availH * 100);
+
+  let next = slice;
+  if (ds.detailIsUpper) {
+    next = _setPanelHeightPct(next, 'detail', upperPct);
+    next = _setPanelHeightPct(next, ds.lowerType, lowerPct);
+  } else if (ds.detailIsLower) {
+    next = _setPanelHeightPct(next, 'detail', lowerPct);
+    next = _setPanelHeightPct(next, ds.upperType, upperPct);
+  } else {
+    next = _setPanelHeightPct(next, ds.upperType, upperPct);
+    next = _setPanelHeightPct(next, ds.lowerType, lowerPct);
+  }
+  if (next === slice) return slice;
+  return { ...next, dirty: true };
+}
+
 /** Splice the source panel out of its column and insert at the target slot;
- *  re-derive hotkeys positionally; set layoutDirty. */
-function applyDrop(model, srcType, target) {
-  const leftPanels = _arrange().leftPanels;
-  const rightPanels = _arrange().rightPanels;
+ *  re-derive hotkeys positionally; mark dirty. */
+function applyDrop(slice, srcType, target) {
+  const leftPanels = slice.arrange.leftPanels;
+  const rightPanels = slice.arrange.rightPanels;
 
   let src = null, fromCol = null, fromIdx = -1;
   for (let i = 0; i < leftPanels.length; i++) {
@@ -483,91 +530,107 @@ function applyDrop(model, srcType, target) {
       if (rightPanels[i].type === srcType) { src = rightPanels[i]; fromCol = 'right'; fromIdx = i; break; }
     }
   }
-  if (!src) return;
+  if (!src) return slice;
 
-  if (fromCol === 'left') leftPanels.splice(fromIdx, 1);
-  else rightPanels.splice(fromIdx, 1);
+  const newLeft = leftPanels.slice();
+  const newRight = rightPanels.slice();
+  if (fromCol === 'left') newLeft.splice(fromIdx, 1);
+  else newRight.splice(fromIdx, 1);
 
   let insertAt = target.index;
   if (fromCol === target.column && fromIdx < insertAt) insertAt--;
 
-  const dest = target.column === 'left' ? leftPanels : rightPanels;
-  dest.splice(insertAt, 0, src);
-  src.column = target.column;
+  const newSrc = { ...src, column: target.column };
+  if (target.column === 'left') newLeft.splice(insertAt, 0, newSrc);
+  else newRight.splice(insertAt, 0, newSrc);
 
-  reassignHotkeys(model);
-  _markDirty();
+  return {
+    ...slice,
+    arrange: _reassignHotkeys({ ...slice.arrange, leftPanels: newLeft, rightPanels: newRight }),
+    dirty: true,
+  };
 }
 
 /** Press: resize hit-test FIRST (a seam sits on a panel border), else arm a
  *  panel drag + move the keyboard selection to the clicked panel. */
-function mousePress(model, mx, my, COLS) {
-  if (!model.modes.designMode) return;
-  const d = _designSlice();
-  const resize = pointToResizeTarget(model, mx, my, COLS);
+function mousePress(slice, model, mx, my, COLS) {
+  if (!model.modes.designMode) return slice;
+  const resize = pointToResizeTarget(slice, mx, my, COLS);
   if (resize) {
-    pushUndo(model);
+    let next = _pushUndoSlice(slice);
     const ds = { kind: `resizing-${resize.edge}` };
     if (resize.edge === 'left-boundary' || resize.edge === 'right-boundary' || resize.edge === 'corner') {
       const column = resize.column || (resize.edge === 'left-boundary' ? 'left' : 'right');
       const b = resize.boundary;
       ds.column = column;
-      ds.upper = b.upper;
-      ds.lower = b.lower;
-      ds.upperStartY = _layoutSlice().panelBounds[b.upper.type].y;
-      ds.combinedH = _layoutSlice().panelBounds[b.upper.type].h + _layoutSlice().panelBounds[b.lower.type].h;
-      ds.availH = columnTotalH(model, column);
+      ds.upperType = b.upper.type;
+      ds.lowerType = b.lower.type;
+      ds.upperStartY = slice.panelBounds[b.upper.type].y;
+      ds.combinedH = slice.panelBounds[b.upper.type].h + slice.panelBounds[b.lower.type].h;
+      ds.availH = columnTotalH(slice, column);
       if (ds.availH < 1) ds.availH = 1;
       ds.detailIsUpper = b.upper.type === 'detail';
       ds.detailIsLower = b.lower.type === 'detail';
-      freezeColumnFlex(model, column, b.upper, b.lower, ds.availH);
+      next = freezeColumnFlex(next, column, b.upper.type, b.lower.type, ds.availH);
     }
-    d.drag = ds;
-    return;
+    return { ...next, design: { ...next.design, drag: ds } };
   }
-  const hit = panelAt(model, mx, my);
-  if (!hit) { d.drag = null; return; }
-  d.drag = { kind: 'armed', sourceType: hit, startX: mx, startY: my, curX: mx, curY: my, target: null };
-  const all = allDesignPanels(model);
+  const hit = panelAt(slice, mx, my);
+  if (!hit) return { ...slice, design: { ...slice.design, drag: null } };
+  const all = allDesignPanels(slice);
   const idx = all.findIndex(p => p.type === hit);
-  if (idx >= 0) d.selectedIdx = idx;
+  const drag = { kind: 'armed', sourceType: hit, startX: mx, startY: my, curX: mx, curY: my, target: null };
+  const designNext = idx >= 0
+    ? { ...slice.design, drag, selectedIdx: idx }
+    : { ...slice.design, drag };
+  return { ...slice, design: designNext };
 }
 
-/** Motion: resize kinds mutate directly; a panel drag promotes armed→dragging
- *  after ≥1 cell and recomputes the drop target. */
-function mouseMotion(model, mx, my, COLS) {
-  const d = _designSlice();
+/** Motion: resize kinds redistribute heights; a panel drag promotes
+ *  armed→dragging after ≥1 cell and recomputes the drop target. */
+function mouseMotion(slice, mx, my, COLS) {
+  const d = slice.design;
   const ds = d && d.drag;
-  if (!ds) return;
-  if (ds.kind === 'resizing-col') { applyColResize(model, mx); return; }
-  if (ds.kind === 'resizing-left-boundary' || ds.kind === 'resizing-right-boundary') { applyBoundaryResize(model, my); return; }
-  if (ds.kind === 'resizing-corner') { applyColResize(model, mx); applyBoundaryResize(model, my); return; }
-  ds.curX = mx;
-  ds.curY = my;
-  if (ds.kind === 'armed') {
-    if (mx !== ds.startX || my !== ds.startY) ds.kind = 'dragging';
-    else return;
+  if (!ds) return slice;
+  if (ds.kind === 'resizing-col')        return applyColResize(slice, mx);
+  if (ds.kind === 'resizing-left-boundary' || ds.kind === 'resizing-right-boundary') {
+    return applyBoundaryResize(slice, my);
   }
-  ds.target = pointToDropTarget(model, ds.sourceType, mx, my, COLS);
+  if (ds.kind === 'resizing-corner') {
+    return applyBoundaryResize(applyColResize(slice, mx), my);
+  }
+  // panel drag (armed → dragging)
+  let nextKind = ds.kind;
+  if (ds.kind === 'armed') {
+    if (mx === ds.startX && my === ds.startY) {
+      // movement-free motion still updates the cursor record so a later release
+      // can read it; old code mutated curX/curY before the early return.
+      return { ...slice, design: { ...d, drag: { ...ds, curX: mx, curY: my } } };
+    }
+    nextKind = 'dragging';
+  }
+  const target = pointToDropTarget(slice, ds.sourceType, mx, my, COLS);
+  return { ...slice, design: { ...d, drag: { ...ds, kind: nextKind, curX: mx, curY: my, target } } };
 }
 
-/** Release: commit a valid drop (pushUndo + applyDrop), then clear the drag. */
-function mouseRelease(model) {
-  const d = _designSlice();
-  const ds = d.drag;
-  if (!ds) return;
+/** Release: commit a valid drop (push undo + applyDrop), then clear the drag. */
+function mouseRelease(slice) {
+  const d = slice.design;
+  const ds = d && d.drag;
+  if (!ds) return slice;
+  let next = slice;
   if (ds.kind === 'dragging' && ds.target && ds.target.valid) {
-    pushUndo(model);
-    applyDrop(model, ds.sourceType, ds.target);
+    next = _pushUndoSlice(next);
+    next = applyDrop(next, ds.sourceType, ds.target);
   }
-  d.drag = null;
+  return { ...next, design: { ...next.design, drag: null } };
 }
 
 module.exports = {
   MIN_PANEL_H, DETAIL_MIN_PCT, DETAIL_MAX_PCT,
   allDesignPanels,
-  snapshot, pushUndo, applySnapshot, undo, redo, clearUndoStacks,
-  columnTotalH, freezeColumnFlex, panelHeightPct, setPanelHeightPct, reassignHotkeys,
+  snapshot, undo, redo, clearUndoStacks,
+  columnTotalH, freezeColumnFlex, panelHeightPct,
   navSelect, reorderWithin, moveColumn, resizeWidthOrDetail, resizeFocusedPanelHeight,
   clampSelected, titleEnter, setSelectedTitle,
   pointToResizeTarget, pointToDropTarget, panelAt,
