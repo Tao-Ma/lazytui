@@ -91,6 +91,19 @@ function getDesignFooter() {
  * knows which panel they want gone. The button is suppressed while a
  * drag gesture is active so it doesn't fight the drag affordances.
  */
+// Close-button glyph layout. Placed at the TOP-RIGHT of the panel
+// (matches the common close-button convention) so it overlays the
+// inert tail of `─`'s in the top border without colliding with the
+// (hotkey)─title text on the left side. Glyph is 3 cells wide:
+//   col b.x + b.w - 4 : '['
+//   col b.x + b.w - 3 : 'X'
+//   col b.x + b.w - 2 : ']'
+//   col b.x + b.w - 1 : '╮'  (untouched)
+const CLOSE_GLYPH_W = 3;
+const CLOSE_GLYPH = '\\[X]';
+
+function _closeGlyphX0(b) { return b.x + b.w - 1 - CLOSE_GLYPH_W; }
+
 function renderCloseButtons() {
   const layoutSlice = getComponentSlice('layout');
   if (!layoutSlice || !layoutSlice.arrange) return;
@@ -100,18 +113,16 @@ function renderCloseButtons() {
   for (const p of panels) {
     if (p.type === 'detail') continue;  // essential — no close button
     const b = layoutSlice.panelBounds[p.type];
-    if (!b || b.w < 6 || b.h < 1) continue;
-    // Sit at row y, columns x+1..x+3 — directly after the ╭ corner so
-    // it overlays a few horizontal-line cells of the existing top
-    // border without colliding with the (hotkey)─title text further
-    // right. 1-indexed for ANSI CUP.
-    stdout.write(`\x1b[${b.y + 1};${b.x + 2}H` + richToAnsi('[bold red]\\[x][/]') + RESET);
+    // Need enough room for ╭(hotkey)─[X]╮: 1 + 3 + 1 + 3 + 1 = 9 cols.
+    if (!b || b.w < 9 || b.h < 1) continue;
+    const x0 = _closeGlyphX0(b);
+    stdout.write(`\x1b[${b.y + 1};${x0 + 1}H` + richToAnsi(`[bold red]${CLOSE_GLYPH}[/]`) + RESET);
   }
 }
 
 /**
  * Hit-test the close-button glyphs painted by renderCloseButtons.
- * Returns the panel id whose `[x]` was clicked, or null. Pure
+ * Returns the panel id whose `[X]` was clicked, or null. Pure
  * derivation over slice.arrange + slice.panelBounds (same geometry
  * the render pass writes). Called by input.js BEFORE the overlay /
  * design drag press handlers so a button click intercepts cleanly.
@@ -125,9 +136,9 @@ function hitTestCloseButton(mx, my) {
   for (const p of panels) {
     if (p.type === 'detail') continue;
     const b = layoutSlice.panelBounds[p.type];
-    if (!b || b.w < 6 || b.h < 1) continue;
-    // Glyph occupies (row=b.y, cols=b.x+1..b.x+3) in 0-indexed coords.
-    if (my === b.y && mx >= b.x + 1 && mx <= b.x + 3) return p.id;
+    if (!b || b.w < 9 || b.h < 1) continue;
+    const x0 = _closeGlyphX0(b);
+    if (my === b.y && mx >= x0 && mx < x0 + CLOSE_GLYPH_W) return p.id;
   }
   return null;
 }
