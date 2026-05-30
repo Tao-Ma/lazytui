@@ -547,7 +547,7 @@ function footerKeys(model) {
   if (md.freeConfigMode) {
     const layoutSlice = getComponentSlice('layout');
     const dirty = (layoutSlice && layoutSlice.dirty) ? ' | [yellow]• unsaved (:save-layout)[/]' : '';
-    return ` Design Mode | drag move/resize | J/K reorder | ←→ swap col | +/- col/detail · [/] panel h | t rename | u undo | C-r redo | :save-layout | q exit${getDesignFooter()}${dirty}`;
+    return ` Free Config | drag/resize | J/K reorder | ←→ swap col | +/- col/detail · [/] panel h | t rename | w panel list | u undo | C-r redo | :save-layout | q exit${getDesignFooter()}${dirty}`;
   }
   if (md.menuOpen)   return ' ↑↓ select | Esc close | Enter run';
 
