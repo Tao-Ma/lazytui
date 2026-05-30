@@ -99,18 +99,20 @@ describe('[pool_hide] removes placement, pool entry stays', () => {
 });
 
 describe('[pool_show] inserts placement from pool entry', () => {
-  it('shows a hidden pool entry on the right column by default', () => {
+  it('shows a hidden pool entry on the right column INSERTED BEFORE detail', () => {
+    // Right column convention: detail stays at the end. pool_show
+    // inserts before detail (matches moveColumn behavior).
     const slice = buildSlice({
       left:   [['groups', 'groups']],
       right:  [['actions', 'actions'], ['detail', 'detail']],
       hidden: [['notes', 'viewer']],
     });
     const next = layout.update({ type: 'pool_show', id: 'notes' }, slice);
-    eq(mpool.placedIds(next.arrange), ['groups', 'actions', 'detail', 'notes']);
+    eq(mpool.placedIds(next.arrange), ['groups', 'actions', 'notes', 'detail']);
     eq(mpool.hiddenIds(next.arrange), []);
     assert(next.dirty);
   });
-  it("column: 'left' places into the left column", () => {
+  it("column: 'left' places into the left column (append at tail)", () => {
     const slice = buildSlice({
       left:   [['groups', 'groups']],
       right:  [['actions', 'actions'], ['detail', 'detail']],
@@ -120,15 +122,15 @@ describe('[pool_show] inserts placement from pool entry', () => {
     eq(next.arrange.leftPanels.map(p => p.id), ['groups', 'logs']);
     eq(next.arrange.rightPanels.map(p => p.id), ['actions', 'detail']);
   });
-  it('assigns the next positional hotkey for the column', () => {
+  it('right column: hotkeys reassign positionally — new panel takes the slot before detail', () => {
     const slice = buildSlice({
       left:   [['groups', 'groups']],
       right:  [['actions', 'actions'], ['detail', 'detail']],
       hidden: [['notes', 'viewer']],
     });
     const next = layout.update({ type: 'pool_show', id: 'notes' }, slice);
-    const notes = next.arrange.rightPanels.find(p => p.id === 'notes');
-    eq(notes.hotkey, '9');
+    eq(next.arrange.rightPanels.map(p => [p.id, p.hotkey]),
+       [['actions', '7'], ['notes', '8'], ['detail', '9']]);
   });
   it('no-op when already placed', () => {
     const slice = buildSlice({

@@ -695,20 +695,44 @@ function pointToPoolDropTarget(slice, mx, my) {
   const arrange = slice.arrange;
   if (mx < 0 || my < 0) return null;
 
-  // 1. Append zone — bottom APPEND_ZONE_ROWS of each column's last
-  //    cell. Checked before replace so the user has a reachable gesture
-  //    for "add this panel at the end of the column".
+  // 1. Append zone. Position differs by column because right column
+  //    keeps detail at the end (pool_show inserts before detail), so
+  //    the affordance for "add to right column" sits at the TOP of
+  //    detail — the seam where the new panel will actually land.
+  //
+  //    Left column: bottom APPEND_ZONE_ROWS of the last cell.
+  //    Right column: top APPEND_ZONE_ROWS of detail (visually = the
+  //                   seam above detail; semantically = the slot
+  //                   pool_show will insert into).
   const checkAppend = (column, panels) => {
     if (panels.length === 0) return null;
-    const last = panels[panels.length - 1];
-    const b = slice.panelBounds[last.type];
-    if (!b) return null;
-    if (mx < b.x || mx >= b.x + b.w) return null;
-    const zoneTop = b.y + b.h - APPEND_ZONE_ROWS;
-    if (my < zoneTop || my >= b.y + b.h) return null;
-    // Refuse append into a column at its cap (matches pool_show check).
     const cap = column === 'left' ? 6 : 3;
     const valid = panels.length < cap;
+    if (column === 'left') {
+      const last = panels[panels.length - 1];
+      const b = slice.panelBounds[last.type];
+      if (!b) return null;
+      if (mx < b.x || mx >= b.x + b.w) return null;
+      const zoneTop = b.y + b.h - APPEND_ZONE_ROWS;
+      if (my < zoneTop || my >= b.y + b.h) return null;
+      return { kind: 'append', column, valid };
+    }
+    // right column
+    const detail = panels.find(p => p.type === 'detail');
+    const b = detail ? slice.panelBounds[detail.type] : null;
+    if (!b) {
+      // No detail (shouldn't happen — layout invariant) — fall back to
+      // the v0.5-style bottom-of-last zone.
+      const last = panels[panels.length - 1];
+      const lb = slice.panelBounds[last.type];
+      if (!lb) return null;
+      if (mx < lb.x || mx >= lb.x + lb.w) return null;
+      const zt = lb.y + lb.h - APPEND_ZONE_ROWS;
+      if (my < zt || my >= lb.y + lb.h) return null;
+      return { kind: 'append', column, valid };
+    }
+    if (mx < b.x || mx >= b.x + b.w) return null;
+    if (my < b.y || my >= b.y + APPEND_ZONE_ROWS) return null;
     return { kind: 'append', column, valid };
   };
   const leftAppend  = checkAppend('left',  arrange.leftPanels  || []);

@@ -366,8 +366,18 @@ function update(msg, slice) {
       const target = column === 'left' ? arrange.leftPanels : arrange.rightPanels;
       if (target.length >= cap) return slice;
       const placement = placementFromPoolEntry(entry, column);
-      const nextCol = rekeyColumn(target.concat([placement]),
-                                  column === 'left' ? LEFT_HOTKEY_POOL : RIGHT_HOTKEY_POOL);
+      // Right column keeps `detail` as the last cell (convention shared
+      // with moveColumn). Insert BEFORE detail when present; otherwise
+      // (left column or right with no detail yet) append at the tail.
+      let inserted;
+      if (column === 'right') {
+        const detailIdx = target.findIndex(p => p.type === 'detail');
+        if (detailIdx >= 0) inserted = target.slice(0, detailIdx).concat([placement], target.slice(detailIdx));
+        else                inserted = target.concat([placement]);
+      } else {
+        inserted = target.concat([placement]);
+      }
+      const nextCol = rekeyColumn(inserted, column === 'left' ? LEFT_HOTKEY_POOL : RIGHT_HOTKEY_POOL);
       const nextArrange = column === 'left'
         ? { ...arrange, leftPanels:  nextCol }
         : { ...arrange, rightPanels: nextCol };

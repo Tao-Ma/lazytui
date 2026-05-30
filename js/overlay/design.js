@@ -169,18 +169,25 @@ function renderPoolDragOverlay(drag) {
     return;
   }
 
-  // Append: bar at the bottom of the target column, full-width.
+  // Append: bar painted at the SEAM where the new panel will land.
+  //   Left column   → bottom of last cell (panel appends at tail).
+  //   Right column  → top of detail (panel inserts before detail,
+  //                    keeping detail-at-end convention).
   // Color reflects validity — green when the drop will commit, red
   // when it would be refused (column at cap). Without the red flag
-  // the user sees a "valid"-looking green bar, releases, and nothing
-  // happens (the cancel branch silently fires in poolDragRelease).
+  // the user saw a "valid"-looking green bar, released, and nothing
+  // happened (the cancel branch silently fired in poolDragRelease).
   const COLS = cols();
   const leftW = layoutSlice.arrange.leftWidth;
   const colX = t.column === 'left' ? 0 : leftW;
   const colW = t.column === 'left' ? leftW : COLS - leftW;
   const panels = t.column === 'left' ? layoutSlice.arrange.leftPanels : layoutSlice.arrange.rightPanels;
   let lineY = 0;
-  if (panels.length > 0) {
+  if (t.column === 'right') {
+    const detail = panels.find(p => p.type === 'detail');
+    const b = detail ? layoutSlice.panelBounds[detail.type] : null;
+    lineY = b ? b.y : 0;
+  } else if (panels.length > 0) {
     const last = layoutSlice.panelBounds[panels[panels.length - 1].type];
     if (last) lineY = last.y + last.h - 1;
   }
