@@ -525,7 +525,18 @@ function update(model, msg) {
     case 'cmdline_set_matches': {
       const c = model.modal.cmdline;
       const matches = msg.matches || [];
-      const sel = c.sel > matches.length - 1 ? Math.max(0, matches.length - 1) : c.sel;
+      let sel = c.sel > matches.length - 1 ? Math.max(0, matches.length - 1) : c.sel;
+      // Skip past hint entries when defaulting — they're discoverability
+      // markers (e.g. `docker://`) with no meaningful run action, so
+      // Enter shouldn't land on one by default. Once the user arrows TO
+      // a hint deliberately, c.sel is preserved across rebuilds; this
+      // fixup only fires when sel WOULD point to a hint as a side-effect
+      // of the new match set.
+      if (matches[sel] && matches[sel].kind === 'hint') {
+        let i = sel;
+        while (i < matches.length && matches[i].kind === 'hint') i++;
+        if (i < matches.length) sel = i;
+      }
       return [_withModal(model, { cmdline: { ...c, matches, sel } }), []];
     }
     case 'cmdline_nav': {

@@ -44,10 +44,30 @@ const REFRESH_INTERVAL_MS = 5000;
 
 const _containerCache = { names: [], lastRefresh: 0, inflight: false };
 
+/** Sync probe — used on FIRST completion call so the user doesn't hit
+ *  an empty cache while the async probe is still in flight. Blocks for
+ *  up to ~1.5s if the daemon is slow; subsequent calls use async refresh. */
+function _syncProbe() {
+  try {
+    const { execSync } = require('child_process');
+    const out = execSync('docker ps --format "{{.Names}}"', {
+      timeout: 1500,
+      stdio: ['ignore', 'pipe', 'ignore'],
+      encoding: 'utf8',
+    });
+    _containerCache.names = out.split('\n').map(s => s.trim()).filter(Boolean);
+    _containerCache.lastRefresh = Date.now();
+  } catch { /* daemon down / docker missing — leave cache empty */ }
+}
+
 function _maybeRefreshContainers() {
+  // First call after boot — sync to guarantee the cache is populated
+  // before this rebuildMatches returns. Eliminates the async-race the
+  // initial async probe had on a cold daemon.
+  if (_containerCache.lastRefresh === 0) { _syncProbe(); return; }
   if (_containerCache.inflight) return;
   const since = Date.now() - _containerCache.lastRefresh;
-  if (_containerCache.lastRefresh > 0 && since < REFRESH_INTERVAL_MS) return;
+  if (since < REFRESH_INTERVAL_MS) return;
   _containerCache.inflight = true;
   listRunningContainers().then(names => {
     _containerCache.names = names;
@@ -144,15 +164,23 @@ function dockerOpenFileAsTab(container, absPath, opts = {}) {
 openTarget.registerOpenScheme('docker', {
   match: input => _parseDockerUri(input),
   complete: dockerComplete,
+  // Discoverability — shown in `:open <Tab>` (empty input) alongside
+  // host paths so the user learns the docker:// scheme exists.
+  hintEntry: () => ({
+    display: 'open docker://',
+    desc: '[docker container — Tab to list]',
+    kind: 'hint',
+    argComplete: true,
+    run: () => { /* not runnable bare; user Tabs / types more */ },
+  }),
   open: (target, opts) => {
     if (!target || !target.container || target.path === null) return;
     dockerOpenFileAsTab(target.container, target.path, opts);
   },
 });
 
-// Kick off the initial container probe so the first `:open docker://`
-// has names available without waiting.
-_maybeRefreshContainers();
+// Probe is now lazy (on first dockerComplete call) so we don't pay
+// the docker-ps cost at boot for users who never `:open docker://`.
 
 module.exports = {
   dockerOpenFileAsTab, dockerComplete,

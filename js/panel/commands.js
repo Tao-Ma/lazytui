@@ -74,7 +74,7 @@ const FRAMEWORK_COMMANDS = [
   },
   {
     name: 'open',
-    desc: 'Open a file as a content tab — :open <path>',
+    desc: 'Open a file as a content tab — :open <path>  (or docker://container/path)',
     // Per-argument completion. Routes through the open-target scheme
     // registry so host paths, docker URIs (`docker://container/path`,
     // Phase B), and future schemes share the same TAB-completion machinery.

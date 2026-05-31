@@ -47,11 +47,35 @@ function parseTarget(input) {
 
 /** Completion candidates for `input`, routed to the claiming scheme.
  *  Returns [] when no scheme claims or the claiming scheme has no
- *  complete() hook. Caller (cmdline) merges with its other matches. */
+ *  complete() hook.
+ *
+ *  Discoverability: when `input` is empty (no scheme prefix typed yet),
+ *  also inject `hintEntry()` from EVERY OTHER scheme so the user sees
+ *  `docker://` (etc.) as an option alongside host paths. Once the user
+ *  has typed something, hints are dropped — they're committed to a
+ *  scheme. */
 function complete(input) {
   const m = _findScheme(input);
   if (!m || typeof m.scheme.complete !== 'function') return [];
-  return m.scheme.complete(input) || [];
+  const main = m.scheme.complete(input) || [];
+  if (!input || !input.trim()) {
+    // Prepend hints so they're visible in the dropdown's first
+    // MAX_DROPDOWN slots. Default selection skips hints (runtime.js
+    // cmdline_set_matches) so Enter still lands on the first real
+    // completion. Placing hints at the FRONT (rendered bottom-of-
+    // dropdown by overlay/cmdline.js's reverse-iterate) puts them
+    // closest to the user's eye + the prompt.
+    const hints = [];
+    for (const s of _schemes) {
+      if (s === m.scheme) continue;
+      if (typeof s.hintEntry === 'function') {
+        const h = s.hintEntry();
+        if (h) hints.push(h);
+      }
+    }
+    return hints.concat(main);
+  }
+  return main;
 }
 
 /** Open `input` via the claiming scheme. Silently no-ops if nothing
