@@ -76,7 +76,29 @@ new values appear in the YAML.
 - Right: 1–3 panels, hotkeys `7`–`9` auto-assigned by position
 - Per-panel override via YAML `hotkey: <char>`; auto-assignment skips
   keys already claimed explicitly
-- Detail panel required in right column
+- Detail panel required in right column, and must be the LAST cell
+
+### `panel.type` vs `panel.id` — two roles, one panel object
+Each placed panel carries two identifiers that look similar but
+answer different questions; they're easy to confuse when reading
+the codebase.
+
+- **`panel.type`** — the renderer/component kind. Maps to the
+  Component that owns the panel via `registerComponent({ panelTypes: { <type>: … } })`.
+  Used by: the render layer (which renderer to call), the focus
+  / dispatch layer (what `slice.focus` points at), `panelHeights[type]`,
+  `panelBounds[type]`. Same value for every instance of the same
+  panel kind.
+- **`panel.id`** — the pool-entry identity (v0.6+). Unique per
+  placement. Used by: the `panels:` pool map, `arrange.pool[id]`,
+  `pool_hide` / `pool_show` / `panel_collapse_toggle` Msgs,
+  `:save-layout` round-trip. Two panels with the same `type` (e.g.
+  two file-browsers) get distinct `id`s.
+
+Rule of thumb: read or set `type` when you mean "what KIND of
+panel"; read or set `id` when you mean "which SPECIFIC panel
+instance". The mapping is built at parser-time in
+`state.rebuildLayoutFromConfig` and lives on each placement object.
 
 ## Visual patterns
 

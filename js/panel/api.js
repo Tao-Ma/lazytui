@@ -138,11 +138,16 @@ function registerComponent(comp) {
   if (comp.name !== 'layout' && !route.hasSlice('layout')) {
     console.error(`[component:${comp.name}] registered before 'layout' — Phase 3 requires layout to register first; slice will land in the flat fallback bag`);
   }
-  try { route.setSlice(comp.name, comp.init()); }
-  catch (e) {
-    console.error(`[component:${comp.name}] init error: ${e.message}`);
-    route.setSlice(comp.name, null);
-  }
+  // init() failure used to swallow the error + set slice = null,
+  // which left downstream code reading a null slice and producing
+  // confusing secondary failures far from the root cause. Now the
+  // error propagates so the boot fails fast at the actual source.
+  // The component MUST already be registered in `components` before
+  // we throw — otherwise a later registration whose init also fails
+  // would see this component as un-registered + the cascade gets
+  // worse. (`components` was set above; route.setSlice is the only
+  // step we skip on throw.)
+  route.setSlice(comp.name, comp.init());
   // Per-Component effects (loadDir, openFile, historyReplay, …) — used
   // to be registered at module-top-level via top-level
   // `registerEffect(...)` calls in each file, which meant a test that
@@ -159,8 +164,17 @@ function registerComponent(comp) {
     for (const [type, def] of Object.entries(comp.panelTypes)) {
       if (!_validatePanelDef(comp.name, type, def)) continue;
       const prev = route.componentForPanel(type);
-      if (prev && prev !== comp.name) {
-        console.error(`[component:${comp.name}] panelType '${type}' already registered by component '${prev}'; last-wins`);
+      // Duplicate registration used to log + last-wins, which silently
+      // routed a panel to a different Component than the YAML expected.
+      // Throw unless the second Component opts in with `override: true`
+      // on the panelType def. No in-tree caller uses override today;
+      // the opt-in is there for future plugins that genuinely replace
+      // a built-in (e.g. a third-party docker variant).
+      if (prev && prev !== comp.name && !def.override) {
+        throw new Error(
+          `[component:${comp.name}] panelType '${type}' already registered by component '${prev}'. ` +
+          `Set \`override: true\` on the panelType def to replace it.`,
+        );
       }
       route.registerPanelOwner(type, comp.name);
     }
