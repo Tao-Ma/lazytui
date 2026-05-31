@@ -242,6 +242,35 @@ groups:
     } finally { fs.unlinkSync(p); }
   });
 
+  it('parser rejects collapsed: true on detail placement', () => {
+    const p = writeTmp(`
+panels:
+  files:
+    type: files
+layout:
+  left:
+    width: 30
+    panels:
+      - id: files
+  right:
+    panels:
+      - type: detail
+        collapsed: true
+groups:
+  g1:
+    label: G1
+    actions:
+      a:
+        label: A
+        script: 'echo a'
+`.trim());
+    let threw = null;
+    try { parser.parse(p); } catch (e) { threw = e; }
+    fs.unlinkSync(p);
+    assert(threw, 'should reject collapsed on detail');
+    assert(/detail.*collapsed|collapsed.*detail/i.test(threw.message), `got: ${threw && threw.message}`);
+  });
+
   it('parser rejects collapsed in a pool entry (placement-only)', () => {
     const p = writeTmp(`
 panels:

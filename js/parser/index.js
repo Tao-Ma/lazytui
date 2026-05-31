@@ -191,6 +191,13 @@ function poolToObject(pool) {
 function buildPlacedPanel(resolved, hotkey, column, detailHeightSetter) {
   const entry = resolved.entry;
   const placement = resolved.placement;
+  // detail is essential (the layout invariant requires exactly one) and
+  // can't be collapsed — the runtime reducer refuses; reject at parse
+  // time so a hand-edited YAML doesn't silently land in an inconsistent
+  // visual state (1-row title bar above the full detail reservation).
+  if (entry.type === 'detail' && placement.collapsed === true) {
+    throw new ParseError(`layout cell '${entry.id}': detail panel can't be collapsed`);
+  }
   if (entry.type === 'detail' && placement.height !== undefined) {
     const h = placement.height;
     if (typeof h === 'string' && h.endsWith('%')) {

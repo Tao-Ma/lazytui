@@ -140,13 +140,22 @@ function handleMouse(kind, x, y) {
     // v0.6 — close-button click: top-right [X] on each non-detail panel
     // dispatches a pool_hide. Checked before the design / overlay
     // press handlers so the button beats any drag gesture that would
-    // start at the same coordinate. Collapse button (parallel widget,
-    // visible in all modes) is hit-tested OUTSIDE this block.
+    // start at the same coordinate. Collapse button [_]/[+] has the
+    // PARALLEL hit-test here too — the early non-free-config hit-test
+    // at the top of handleMouse is gated on !isChainActive, and
+    // freeConfigMode IS chain-active, so it would skip in free-config
+    // without this second site. Same pattern as the close button.
     if (kind === 'press') {
-      const { hitTestCloseButton } = require('../overlay/design');
+      const { hitTestCloseButton, hitTestCollapseButton } = require('../overlay/design');
       const hideId = hitTestCloseButton(mx, my);
       if (hideId) {
         dispatchMsg(wrap('layout', { type: 'pool_hide', id: hideId }));
+        render();
+        return;
+      }
+      const collapseId = hitTestCollapseButton(mx, my);
+      if (collapseId) {
+        dispatchMsg(wrap('layout', { type: 'panel_collapse_toggle', id: collapseId }));
         render();
         return;
       }
