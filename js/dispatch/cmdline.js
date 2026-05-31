@@ -12,23 +12,12 @@
 'use strict';
 
 const { allPanels } = require('../app/state');
-const { getModel } = require('../app/runtime');
-const { richToAnsi, RESET, visibleLen, esc } = require('../io/ansi');
-const { cols, rows, stdout } = require('../io/term');
-const { theme } = require('../render/themes');
-const { renderPanel } = require('../render/panel');
+const { esc } = require('../io/ansi');
 const { getCommands, getItems: apiGetItems, dispatchMsg, wrap } = require('../panel/api');
 
-const MAX_DROPDOWN = 8;
-
-// Tracks the panel height (including borders) painted by the previous
-// renderCmdline. When the new render is shorter (e.g., the user typed
-// more chars and the match set shrank), we invalidate the diff cache
-// for the now-uncovered rows so layout.render repaints the underlying
-// panels there. Without this, the previous-render residue sticks
-// around until the user types something that grows the panel again
-// or until the overlay closes entirely.
-let _lastPanelH = 0;
+// Render moved to overlay/cmdline.js (v0.6 layering cleanup — dispatch
+// modules don't paint). This file owns: registry build, fuzzy scoring,
+// run-closure stash, programmatic runCommandString.
 
 // The matched registry entries for the current buffer — WITH their run
 // closures. Folded onto the update spine: the text/sel/render-safe match
@@ -59,10 +48,11 @@ function runAt(sel, args) {
 }
 
 /** Drop the held registry + reset the render residue tracker (cmdline_clear,
- *  emitted on submit/cancel). */
+ *  emitted on submit/cancel). Render residue lives in the overlay module
+ *  post-v0.6 split; ask it to reset alongside the dispatch-side state. */
 function clear() {
   _full = [];
-  _lastPanelH = 0;
+  require('../overlay/cmdline')._resetRenderState();
 }
 
 // --- Registry ---
@@ -176,139 +166,15 @@ function rebuildMatches(text) {
     if (s > 0) scored.push({ entry, score: s });
   }
   scored.sort((a, b) => b.score - a.score);
-  return scored.slice(0, MAX_DROPDOWN).map(s => s.entry);
+  // No cap here — the render side (overlay/cmdline) truncates to its
+  // visible window. Returning the full ranked list keeps the run-
+  // closure `_full` indexed parallel to model.modal.cmdline.matches
+  // without an out-of-band index translation.
+  return scored.map(s => s.entry);
 }
 
-// --- Render ---
-//
-// Layout:
-//   row N-K   match[K-1]                  (worst match shown)
-//   ...
-//   row N-1   match[0]  ← selected (best match, closest to cursor)
-//   row N     :typed_text_                ← prompt (replaces footer)
-//
-// Selected row uses [reverse] (no inner markup — see PRINCIPLES §8).
-// Each row is padded to full screen width so we don't have to wipe
-// background separately. _wasOverlayActive in layout.render() handles
-// the residue wipe when cmd mode closes.
-
-function renderCmdline() {
-  if (!getModel().modes.cmdMode) return;
-  // Buffer state now lives on the model (folded onto update); the render-safe
-  // match list (display/desc/kind) is enough to paint — the run closures it
-  // mirrors stay module-held in _full.
-  const { text: _text, sel: _sel, matches: _matches } = getModel().modal.cmdline;
-  const COLS = cols();
-  const ROWS = rows();
-  const t = theme();
-
-  const k = Math.min(_matches.length, MAX_DROPDOWN);
-
-  // Build one string with embedded cursor moves — dropdown panel + prompt
-  // + cursor positioning — and write once. Per-line stdout.write was a
-  // syscall per row; on slow TTYs that could tear under load.
-  let buf = '';
-
-  // Match dropdown — bordered panel just above the prompt row. The
-  // panel chrome (border + title + count badge) reuses renderPanel so
-  // the cmdline visually belongs to lazytui rather than overlaying it
-  // with bare ANSI. The previous render painted raw `\x1b[2m` rows
-  // straight onto whatever panels sat underneath, which read as visual
-  // bleed-through with no separator.
-  //
-  // Width scales with the terminal: full width minus a 2-cell margin
-  // on each side, bottoming out at 40 so it stays usable on narrow
-  // terminals. Centered horizontally.
-  const panelH = k > 0 ? k + 2 : 0;
-  const panelW = Math.max(40, COLS - 4);
-
-  // Invalidate the diff cache for any rows that the previous render
-  // painted but this one won't. Without this the residue from the
-  // taller previous panel sticks around until the overlay closes.
-  // Done BEFORE we emit the new paint so the next layout.render gets
-  // dirty markers for those rows — but since renderCmdline runs at
-  // the tail of THIS render(), the invalidation actually takes effect
-  // on the NEXT render. To make THIS frame clean, also blank the
-  // affected rows directly below (the underlying panel will redraw
-  // on the next keystroke).
-  if (panelH < _lastPanelH) {
-    // T25 / R17 — clamp oldTop to >= 0. A resize that shrinks ROWS
-    // below the stashed _lastPanelH (e.g. last frame ROWS=40 with a
-    // 30-row dropdown, current frame ROWS=20) makes oldTop negative;
-    // the blanking loop then writes `\x1b[<negative>;1H` cursor
-    // moves, which terminals clamp to row 1 — cosmetic flicker but
-    // unintended.
-    const oldTop = Math.max(0, ROWS - _lastPanelH - 1);
-    const newTop = Math.max(0, ROWS - panelH - 1);
-    require('../render/layout').invalidateRows(oldTop, newTop);
-    // Blank the rows now so this frame doesn't show residue. Next
-    // render repaints them from the underlying panels via the diff
-    // cache we just invalidated.
-    for (let y = oldTop; y < newTop; y++) {
-      buf += `\x1b[${y + 1};1H\x1b[K`;
-    }
-  }
-  _lastPanelH = panelH;
-
-  if (k > 0) {
-    const lines = [];
-    // Order in the lines array: top of panel = worst match, bottom
-    // of panel = best match (sel index 0), so the user's eye lands
-    // on the selected best-match nearest the prompt cursor.
-    for (let i = 0; i < k; i++) {
-      const matchIdx = k - 1 - i;
-      const m = _matches[matchIdx];
-      const label = formatMatchLine(m);
-      lines.push(matchIdx === _sel ? `[reverse]  ${label}` : `  ${label}`);
-    }
-    const content = renderPanel({
-      width: panelW, height: panelH, lines,
-      title: 'Commands', focused: true,
-      count: [_sel + 1, _matches.length],
-    });
-    const offY = Math.max(0, ROWS - panelH - 1);  // just above prompt row
-    const offX = Math.max(0, Math.floor((COLS - panelW) / 2));
-    const panelLines = content.split('\n');
-    for (let i = 0; i < panelLines.length; i++) {
-      buf += `\x1b[${offY + i + 1};${offX + 1}H` + richToAnsi(panelLines[i]) + RESET;
-    }
-  }
-
-  // Prompt row (replaces footer). Rich-style markup mirrors renderFooter()
-  // so the cmdline blends with the chrome it's temporarily covering.
-  const prompt = ` :${_text}`;
-  const padded = prompt + ' '.repeat(Math.max(0, COLS - visibleLen(prompt)));
-  buf += `\x1b[${ROWS};1H` + richToAnsi(`[${t.footer}]${padded}[/]`) + RESET;
-
-  // Cursor at end of typed text. column = 1 (leading space) + ':' + _text.
-  // Visibility is derived in layout.render() — only the *position* is
-  // set here (and only while cmd mode is active).
-  const cursorCol = 2 + 1 + _text.length;
-  buf += `\x1b[${ROWS};${cursorCol}H`;
-
-  stdout.write(buf);
-}
-
-/**
- * Format one match as a single rich-markup line for the dropdown.
- * "  display ─ desc" without inner style nesting — the caller wraps
- * the entire row in [reverse] for selection highlight, and the
- * panel renderer adds a reset before the right border (PRINCIPLES.md
- * §8). renderPanel handles width-based truncation.
- *
- * Whitespace in display/desc is collapsed to single spaces. YAML
- * `desc: |` block scalars produce multi-line strings; the embedded
- * newlines bypass renderPanel's truncate (visibleLen counts \n as
- * width 1 but the terminal honors it as a real line break, so the
- * right border ends up on its own row).
- */
-function oneLine(s) { return s.replace(/\s+/g, ' ').trim(); }
-
-function formatMatchLine(match) {
-  const display = esc(oneLine(match.display));
-  if (match.desc) return `${display} ─ ${esc(oneLine(match.desc))}`;
-  return display;
-}
+// Render (renderCmdline + dropdown formatting + _lastPanelH state) moved
+// to overlay/cmdline.js — see header comment.
 
 /**
  * Run a cmdline command string programmatically (no UI): "logs",
@@ -335,7 +201,7 @@ function runCommandString(str) {
 }
 
 module.exports = {
-  rebuild, runAt, clear, renderCmdline,
+  rebuild, runAt, clear,
   runCommandString,
   // Test-only export — buffer parsing reused by test-cmdline-args.js.
   _splitQuery: splitQuery,
