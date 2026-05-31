@@ -35,7 +35,12 @@ const { getModel } = require('../app/runtime');
 const { getTabInfo, getGroupContentTabs } = require('../panel/viewer/tabs');
 
 const MAX_W = 50;
-const TRIGGER_GLYPH = '[≡]';
+// `\[` is the markup-escape for a literal `[` (otherwise richToAnsi
+// treats `[≡]` as an unknown tag and EATS the inner glyph — the bug
+// the first cut shipped with). The close `]` doesn't need escaping
+// since it's only a markup terminator when paired with an unescaped
+// opening bracket.
+const TRIGGER_GLYPH = '\\[≡]';
 const TRIGGER_X_OFFSET = 2;  // after detail's `╭─`
 const TRIGGER_VIS_W = 3;     // [, ≡, ]
 
