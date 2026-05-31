@@ -32,7 +32,7 @@
 'use strict';
 
 const path = require('path');
-const { dockerReadBytes, listRunningContainers } = require('./docker-fs');
+const { dockerList, dockerReadBytes, listRunningContainers } = require('./docker-fs');
 const { addContentTab, updateContentTabLines } = require('../panel/viewer/tabs');
 const { loadFile, DEFAULT_MAX_BYTES, DEFAULT_HEX_AFTER } = require('../io/file-loader');
 const { esc } = require('../io/ansi');
@@ -116,18 +116,110 @@ function dockerComplete(input) {
   const parsed = _parseDockerUri(input);
   if (!parsed) return [];
   if (parsed.path === null) return _completeContainers(parsed.container);
-  // Path-in-container — deferred. Echo a single hint entry so the user
-  // sees the URI is being claimed by the docker scheme and that Enter
-  // will open the typed path.
-  const absPath = parsed.path;
-  const target = `docker://${parsed.container}${absPath}`;
-  return [{
-    display: `open ${target}`,
-    desc: `[docker:${parsed.container}] press Enter to open`,
-    kind: 'path',
-    argComplete: true,
-    run: () => { openTarget.openInput(target); },
-  }];
+  return _completePath(parsed.container, parsed.path);
+}
+
+// Path-in-container completion. Cache is module-local:
+//   _dirCache[`${container}:${dir}`]  = items[]   (success)
+//                                     = null      (fetch failed)
+//                                     = undefined (not yet fetched)
+// Fetches are async (docker exec ls). First request shows a `[loading…]`
+// hint entry; when the fetch resolves we re-fire cmdline_rebuild so the
+// dropdown picks up the cached entries. Cache has no TTL — restart
+// lazytui to refresh stale listings (acceptable for v1).
+const _dirCache = Object.create(null);
+const _inflightFetches = new Set();
+
+function _splitDirPrefix(fullPath) {
+  if (fullPath.endsWith('/')) {
+    return { dir: fullPath.slice(0, -1) || '/', prefix: '' };
+  }
+  const slash = fullPath.lastIndexOf('/');
+  return {
+    dir: slash <= 0 ? '/' : fullPath.slice(0, slash),
+    prefix: fullPath.slice(slash + 1),
+  };
+}
+
+function _kickFetch(container, dir) {
+  const key = `${container}:${dir}`;
+  if (_inflightFetches.has(key)) return;
+  _inflightFetches.add(key);
+  dockerList(container, dir).then(res => {
+    _inflightFetches.delete(key);
+    _dirCache[key] = (res && res.error) ? null : (res.items || []);
+    _refireCmdlineRebuild();
+  }).catch(() => {
+    _inflightFetches.delete(key);
+    _dirCache[key] = null;
+    _refireCmdlineRebuild();
+  });
+}
+
+/** Re-fire the cmdline_rebuild effect's logic so the dropdown picks
+ *  up newly-cached completions. No-op when cmdline isn't open. Mirrors
+ *  the registerEffect('cmdline_rebuild', …) handler in dispatch/effects.js. */
+function _refireCmdlineRebuild() {
+  const runtime = require('../app/runtime');
+  if (!runtime.getModel().modes.cmdMode) return;
+  const matches = require('../dispatch/cmdline').rebuild(runtime.getModel().modal.cmdline.text);
+  require('../dispatch/dispatch').applyMsg({ type: 'cmdline_set_matches', matches });
+  require('../render/render-queue').scheduleRender();
+}
+
+function _completePath(container, fullPath) {
+  const { dir, prefix } = _splitDirPrefix(fullPath);
+  const key = `${container}:${dir}`;
+  const cached = _dirCache[key];
+
+  // Not fetched yet — kick + show loading hint
+  if (cached === undefined) {
+    _kickFetch(container, dir);
+    return [{
+      display: `open docker://${container}${fullPath}`,
+      desc: `[loading ${dir}…]`,
+      kind: 'hint',
+      argComplete: true,
+      run: () => {},
+    }];
+  }
+  // Fetch failed (container down, permission denied, exotic FS) — fall
+  // back to a single "Enter to open the typed path anyway" entry.
+  if (cached === null) {
+    const target = `docker://${container}${fullPath}`;
+    return [{
+      display: `open ${target}`,
+      desc: `[failed to list ${dir}] press Enter to open this path anyway`,
+      kind: 'hint',
+      argComplete: true,
+      run: () => { openTarget.openInput(target); },
+    }];
+  }
+
+  // Cache hit — produce a completion per matching dir/file entry.
+  const lcPrefix = prefix.toLowerCase();
+  const sep = dir === '/' ? '' : dir;
+  return cached
+    .filter(e => e.name.toLowerCase().startsWith(lcPrefix))
+    .sort((a, b) => {
+      if (a.kind !== b.kind) return a.kind === 'dir' ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    })
+    .map(e => {
+      const isDir = e.kind === 'dir';
+      const newPath = `${sep}/${e.name}${isDir ? '/' : ''}`;
+      const target = `docker://${container}${newPath}`;
+      return {
+        display: `open ${target}`,
+        desc: isDir ? '[dir]' : '[file]',
+        kind: 'path',
+        argComplete: true,
+        run: () => {
+          if (!isDir) openTarget.openInput(target);
+          // Directories: Enter is no-op — user should Tab to descend.
+        },
+      };
+    });
 }
 
 /** Open `<absPath>` inside `<container>` as a content tab. Mirrors
