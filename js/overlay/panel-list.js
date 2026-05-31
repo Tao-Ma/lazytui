@@ -60,23 +60,27 @@ function _buildListLines(items, cursor, w) {
       lines.push('[dim] ── hidden ─────────[/]');
     }
     const it = items[i];
-    const marker = it.status === 'essential'
+    const idCol    = esc(it.id).padEnd(9);
+    const typeCol  = esc(it.type).padEnd(8);
+    const titleCol = esc(it.title);
+    // The marker's COLOR comes from a `[/]` that — for the cursor row
+    // — would also close the outer `[reverse]` early (richToAnsi's
+    // `[/]` is a single hard reset, not stack-aware). Non-cursor rows
+    // still get the colored marker; cursor row drops the color and
+    // uses the bare glyph so the whole label highlights uniformly.
+    // Status is also surfaced in the footer hint (pick/hide/show/no-op).
+    const markerChar = it.status === 'hidden' ? '○' : '●';
+    const coloredMarker = it.status === 'essential'
       ? '[dim]●[/]'
       : it.status === 'placed'
         ? '[green]●[/]'
         : '[yellow]○[/]';
-    const idCol    = esc(it.id).padEnd(9);
-    const typeCol  = esc(it.type).padEnd(8);
-    const titleCol = esc(it.title);
-    const label = `${marker}  ${idCol} ${typeCol} ${titleCol}`;
-    // Close [reverse] explicitly — without `[/]`, the styling carries
-    // through the SEP and the entire preview row, painting the right
-    // half of the overlay in reverse video on the cursor row only.
-    // (v0.6 preview-pane regression: in the v0.5 list-only layout
-    // renderPanel's trailing `[/]` reset always landed before the
-    // right border, masking the missing close.)
-    if (i === cursor) lines.push(`[reverse]> ${label}[/]`);
-    else              lines.push(`  ${label}`);
+    if (i === cursor) {
+      // Single [reverse]…[/] wrapping the whole label — no inner [/].
+      lines.push(`[reverse]> ${markerChar}  ${idCol} ${typeCol} ${titleCol}[/]`);
+    } else {
+      lines.push(`  ${coloredMarker}  ${idCol} ${typeCol} ${titleCol}`);
+    }
   }
 
   if (items.length === 0) {
@@ -185,9 +189,18 @@ function _buildPreviewLines(entry, w, h, arrange) {
  *  header was already wider than the list pane in 75-col terminals. */
 function _padRight(row, w) {
   const vl = visibleLen(row);
-  if (vl === w) return row;
-  if (vl > w)  return truncate(row, w);
-  return row + ' '.repeat(w - vl);
+  // Always close any open style after the row. truncate() preserves
+  // the row's leading style prefix (e.g. `[reverse]`) but DROPS the
+  // trailing `[/]` — v0.5's convention was "renderPanel adds the
+  // closing `[/]` before the right border". That convention falls
+  // apart in the side-by-side composition: SEP + preview now sit
+  // between the row's content and renderPanel's border, so an open
+  // [reverse] from a truncated cursor row paints the entire preview
+  // half in reverse video. Append `[/]` after both the truncate and
+  // the pad branches — richToAnsi handles a redundant reset cheaply.
+  if (vl === w) return row + '[/]';
+  if (vl > w)   return truncate(row, w) + '[/]';
+  return row + ' '.repeat(w - vl) + '[/]';
 }
 
 function renderPanelListOverlay() {
