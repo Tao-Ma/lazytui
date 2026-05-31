@@ -68,6 +68,22 @@ const FRAMEWORK_COMMANDS = [
     },
   },
   {
+    name: 'open',
+    desc: 'Open a host filesystem path as a content tab',
+    run: (args) => {
+      const fp = args && args[0];
+      if (!fp) {
+        const { setDetail } = require('../app/state');
+        setDetail('[red]:open requires a path[/] — usage: :open <path>');
+        return;
+      }
+      // Quoted paths preserve spaces (cmdline splits on whitespace);
+      // strip the wrapping quotes so the load actually finds the file.
+      const filepath = fp.replace(/^['"]|['"]$/g, '');
+      require('../feature/open-file').openHostFileAsTab(filepath);
+    },
+  },
+  {
     name: 'restore-layout',
     desc: 'Discard runtime changes; reload panel layout from YAML',
     run: () => {
