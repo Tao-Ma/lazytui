@@ -256,8 +256,10 @@ function dockerOpenFileAsTab(container, absPath, opts = {}) {
 openTarget.registerOpenScheme('docker', {
   match: input => _parseDockerUri(input),
   complete: dockerComplete,
-  // Discoverability — shown in `:open <Tab>` (empty input) alongside
-  // host paths so the user learns the docker:// scheme exists.
+  // urlPrefix lets open-target's hint-injection logic surface this
+  // scheme whenever the user types a prefix of `docker://`
+  // (e.g. `d`, `dock`, `docker:`) — not just empty input.
+  urlPrefix: 'docker://',
   hintEntry: () => ({
     display: 'open docker://',
     desc: '[docker container — Tab to list]',

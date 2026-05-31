@@ -58,24 +58,30 @@ function complete(input) {
   const m = _findScheme(input);
   if (!m || typeof m.scheme.complete !== 'function') return [];
   const main = m.scheme.complete(input) || [];
-  if (!input || !input.trim()) {
-    // Prepend hints so they're visible in the dropdown's first
-    // MAX_DROPDOWN slots. Default selection skips hints (runtime.js
-    // cmdline_set_matches) so Enter still lands on the first real
-    // completion. Placing hints at the FRONT (rendered bottom-of-
-    // dropdown by overlay/cmdline.js's reverse-iterate) puts them
-    // closest to the user's eye + the prompt.
-    const hints = [];
-    for (const s of _schemes) {
-      if (s === m.scheme) continue;
-      if (typeof s.hintEntry === 'function') {
-        const h = s.hintEntry();
-        if (h) hints.push(h);
-      }
-    }
-    return hints.concat(main);
+
+  // Inject scheme hints. A scheme's hint shows when the user's input
+  // is a (case-insensitive) prefix of that scheme's `urlPrefix` — so:
+  //   ''      → all hints (empty input matches every prefix)
+  //   'd' / 'dock' / 'docker://' → docker hint shows
+  //   '/etc' / 'foo.txt' → no hints (host paths don't prefix-match
+  //                       any scheme's urlPrefix)
+  // The currently-matched scheme is excluded — it's already serving
+  // completions and doesn't need to hint itself.
+  //
+  // Hints prepended (matches[0..N]) so they sit at the BOTTOM of the
+  // dropdown (overlay reverse-iterates) and are visible in the first
+  // MAX_DROPDOWN slots. Default selection skips hints (runtime.js
+  // cmdline_set_matches) so Enter still lands on the first real entry.
+  const lc = (input || '').toLowerCase();
+  const hints = [];
+  for (const s of _schemes) {
+    if (s === m.scheme) continue;
+    if (typeof s.hintEntry !== 'function') continue;
+    if (s.urlPrefix && !s.urlPrefix.toLowerCase().startsWith(lc)) continue;
+    const h = s.hintEntry();
+    if (h) hints.push(h);
   }
-  return main;
+  return hints.concat(main);
 }
 
 /** Open `input` via the claiming scheme. Silently no-ops if nothing
