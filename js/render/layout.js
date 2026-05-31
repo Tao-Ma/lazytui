@@ -211,13 +211,10 @@ function calcLayout(model = getModel()) {
     leftW = Math.max(10, COLS - minRight);
   }
   const rightW = Math.max(minRight, COLS - leftW);
-  // ROWS reservation: bottom row = footer ALWAYS; register strip ONLY
-  // when the register is populated. Empty-register: panels grow into
-  // that row (ROWS-1 available). Populated: strip reclaims it. The
-  // transition (empty↔populated) changes maxRows in paintColumns →
-  // auto-forced full repaint, so no explicit Cmd needed.
-  const stripRows = _registerStripActive(model) ? 1 : 0;
-  const availH = Math.max(6, ROWS - 1 - stripRows);
+  // Only the footer is reserved at the bottom; panels fill everything
+  // else. The yank register surfaces via the `"` popup, not an
+  // always-on chrome strip (retired v0.6).
+  const availH = Math.max(6, ROWS - 1);
 
   // Minimum panel height: 3 rows (border + 1 content line)
   const minH = 3;
@@ -364,8 +361,7 @@ function renderHalf(model) {
   const COLS = cols(), ROWS = rows();
   const layoutSlice = getComponentSlice('layout');
   const halfW = Math.floor(COLS / 2);
-  // Footer always reserved; register strip only when populated.
-  const availH = ROWS - 1 - (_registerStripActive(model) ? 1 : 0);
+  const availH = ROWS - 1;  // only the footer is reserved
   const focusedPanel = allPanels().find(p => p.type === layoutSlice.focus);
   if (!focusedPanel) return renderNormal(model);
   const detailPanel = layoutSlice.arrange.rightPanels.find(p => p.type === 'detail');
@@ -381,7 +377,7 @@ function renderFull(model) {
   calcLayout(model);
   const COLS = cols(), ROWS = rows();
   const layoutSlice = getComponentSlice('layout');
-  const availH = ROWS - 1 - (_registerStripActive(model) ? 1 : 0);
+  const availH = ROWS - 1;  // only the footer is reserved
   const focusedPanel = allPanels().find(p => p.type === layoutSlice.focus);
   if (!focusedPanel) return renderNormal(model);
   layoutSlice.panelBounds = {};
@@ -519,10 +515,6 @@ function render(model = getModel()) {
   if (mainDidFull) _forceOverlayFull = true;
   renderTerminalOverlay(model);
   renderFooter(model);
-  // Register strip — one row above the footer; always on. Centered overlays
-  // (copy menu, prompt, etc.) paint after, so they can cover the strip when
-  // their geometry happens to overlap.
-  renderRegisterStrip(model);
   // Collapse-toggle widgets — painted on every non-detail placed panel
   // in BOTH free-config and normal mode (unlike close-buttons which are
   // free-config-only). Only meaningful in `normal` view mode (half/full
@@ -637,53 +629,6 @@ function footerKeys(model) {
     return ' ↑↓ select | ←→ panel | / filter | +/_ view | x menu | q quit | Enter actions';
   }
   return ' ↑↓ select | ←→ panel | / filter | +/_ view | x menu | q quit';
-}
-
-/**
- * Yank-register strip is "active" iff the register holds at least one
- * entry. When inactive the strip row is recovered by the panel grid
- * (calcLayout's `stripRows` math); when active it sits one row above
- * the footer and shows the top entry plus an older-count badge.
- */
-function _registerStripActive(model) {
-  const reg = model.register;
-  return !!(reg && reg.history && reg.history.length > 0);
-}
-
-/**
- * Yank-register strip — only rendered when the register is populated
- * (see `_registerStripActive`). Format: `[dim]"<top>" [+N][/]` where
- * N = older entries count. Multi-line tops show `↵` glyphs; long tops
- * truncate with `…`. Width-budgeted so the prefix/suffix always fit
- * on narrow terminals.
- *
- * Style choice: dim text on default bg + `\x1b[K` to clear EOL (no
- * full-width painted bar). The v0.5 form used the footer theme across
- * the whole row, which read as a second footer; the new form looks
- * like an unobtrusive status hint.
- *
- * Written outside the panel diff cache (same pattern as renderFooter)
- * because the strip lives in the chrome row, not the panel grid.
- */
-function renderRegisterStrip(model) {
-  if (!_registerStripActive(model)) return;
-  const ROWS = rows(), COLS = cols();
-  const reg = model.register;
-  const top = reg.history[0];
-  const olderCount = reg.history.length - 1;
-  // Escape the OPEN bracket only — richToAnsi otherwise treats `[+N]`
-  // as an unknown tag and emits RESET in its place (visually drops
-  // the count badge). richToAnsi has no `\]` handler (a bare `]`
-  // doesn't trigger tag matching), so leave the close bracket plain.
-  const tail = olderCount > 0 ? ` \\[+${olderCount}]` : '';
-  const prefix = '"';
-  const suffix = `"${tail}`;
-  const budget = Math.max(4, COLS - visibleLen(prefix) - visibleLen(suffix));
-  let preview = String(top).replace(/\n/g, '↵').replace(/\t/g, ' ');
-  if (visibleLen(preview) > budget) preview = preview.slice(0, budget - 1) + '…';
-  const content = prefix + esc(preview) + suffix;
-  const markup = `[dim]${content}[/]`;
-  stdout.write(`\x1b[${ROWS - 1};1H` + richToAnsi(markup) + RESET + '\x1b[K');
 }
 
 function renderFooter(model = getModel()) {
