@@ -170,9 +170,50 @@ async function dockerReadBytes(container, absPath, maxBytes, opts = {}) {
   return { buf, totalSize, truncated: totalSize > buf.length };
 }
 
+/**
+ * List names of currently running docker containers via `docker ps`.
+ * Returns Promise<string[]> — empty array on error (daemon down, docker
+ * not installed). Never rejects.
+ *
+ * Used by the docker open-target scheme (feature/open-docker.js) to
+ * power `:open docker://<TAB>` container-name completion. Throttled
+ * caching lives in the consumer; this is a bare-metal probe.
+ */
+function listRunningContainers(opts = {}) {
+  const { spawn } = require('child_process');
+  const sp = opts.spawnImpl || spawn;
+  return new Promise((resolve) => {
+    let proc;
+    try {
+      proc = sp('docker', ['ps', '--format', '{{.Names}}'], {
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+    } catch {
+      return resolve([]);
+    }
+    const chunks = [];
+    let killed = false;
+    const to = setTimeout(() => {
+      killed = true;
+      try { proc.kill('SIGKILL'); } catch { /* already dead */ }
+    }, opts.timeout || DEFAULT_LIST_TIMEOUT_MS);
+    proc.stdout.on('data', c => chunks.push(c));
+    proc.stderr.on('data', () => { /* suppressed — silent on failure */ });
+    proc.on('error', () => { clearTimeout(to); resolve([]); });
+    proc.on('close', (code) => {
+      clearTimeout(to);
+      if (killed || code !== 0) return resolve([]);
+      const names = Buffer.concat(chunks).toString('utf8').split('\n')
+        .map(s => s.trim()).filter(Boolean);
+      resolve(names);
+    });
+  });
+}
+
 module.exports = {
   dockerList,
   dockerReadBytes,
+  listRunningContainers,
   // Exposed for tests
   _parseLsLine, _dockerExec,
   DEFAULT_LIST_TIMEOUT_MS, DEFAULT_READ_TIMEOUT_MS,

@@ -30,10 +30,11 @@
 
 const route = require('../leaves/route');
 const { wrap } = route;
-// Eager-require feature/open-file so its host scheme registers on the
-// open-target registry before the first `:open` invocation (or first
-// cmdline rebuild that consults argComplete).
-require('../feature/open-file');
+// Eager-require open-target scheme modules so their schemes register on
+// the registry before the first `:open` invocation (or first cmdline
+// rebuild that consults argComplete).
+require('../feature/open-file');     // host scheme (catch-all)
+require('../feature/open-docker');   // docker scheme (docker://<container>/<path>)
 
 const FRAMEWORK_COMMANDS = [
   {
