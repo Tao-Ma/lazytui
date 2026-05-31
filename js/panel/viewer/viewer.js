@@ -219,6 +219,12 @@ function update(msg, slice) {
         { type: 'apply_msg', msg: { type: 'terminal_exit' } },
       ];
       if (idx === 0) {
+        // Wipe lines+scroll BEFORE show_selected_info fires. The Cmd
+        // repopulates iff focus is on a navigator; when focus is detail
+        // (the common case after clicking the Info tab in the detail tab
+        // bar), viewer_show_info bails and stale lines from the previous
+        // tab would otherwise paint under the Info label.
+        next = { ...next, lines: [], scroll: 0 };
         effects.push({ type: 'dispatch_msg', msg: wrap('detail', { type: 'viewer_show_info' }) });
       } else if (idx <= actionTabs.length) {
         const [key, act] = actionTabs[idx - 1];

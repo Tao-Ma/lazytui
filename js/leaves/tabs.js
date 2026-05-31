@@ -100,16 +100,28 @@ function removeEphemeral(slice, model, { groupName, key }) {
   const newCount = Object.keys({ ...yaml, ...ephGroupRest }).length;
 
   let tab = slice.tab;
+  let lines = slice.lines;
+  let scroll = slice.scroll;
   let terminalExit = false;
   if (slice.tab === removedTabIdx) {
-    if (newCount > 0) tab = 1 + aCount + Math.min(removedTermIdx, newCount - 1);
-    else              tab = 0;
+    if (newCount > 0) {
+      tab = 1 + aCount + Math.min(removedTermIdx, newCount - 1);
+      // Switching to a sibling terminal — PTY overlay will cover, lines
+      // stay as-is (irrelevant under the overlay).
+    } else {
+      // Falling back to Info — wipe any stale lines so the body doesn't
+      // paint pre-terminal content under the Info label. Same pattern as
+      // the removeContent fall-back-to-Info branch above.
+      tab = 0;
+      lines = [];
+      scroll = 0;
+    }
     terminalExit = true;
   } else if (slice.tab > removedTabIdx) {
     tab = slice.tab - 1;
   }
 
-  return [{ ...slice, ephemeralTerminals: ephAllNext, tab }, { sessionId: id, terminalExit }];
+  return [{ ...slice, ephemeralTerminals: ephAllNext, tab, lines, scroll }, { sessionId: id, terminalExit }];
 }
 
 function addContent(slice, model, { groupName, key, label, lines }) {
