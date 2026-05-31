@@ -20,7 +20,9 @@
 // Component's update, preserving single-writer-per-slice.
 const mdesign = require('../leaves/design');
 const mpoolDrag = require('../leaves/design-pool-drag');
+const mtabDrag = require('../leaves/tab-drag');
 const mpool = require('../leaves/pool');
+const { getModel } = require('../app/runtime');
 
 const { LEFT_HOTKEY_POOL, RIGHT_HOTKEY_POOL } = require('../leaves/hotkeys');
 
@@ -269,6 +271,18 @@ function update(msg, slice) {
       return [next, [{ type: 'force_full_repaint' }]];
     }
     case 'pool_drag_release': return mpoolDrag.poolDragRelease(slice);
+    // Tab-reorder drag — free-config mouse drag on a detail-panel content
+    // tab. Live reorder: tabDragMotion emits viewer_reorder_content_tab
+    // Cmds each time the cursor crosses into a new content-tab slot;
+    // viewer.update permutes contentTabs[group] via the reorderContent
+    // leaf. The drag itself only touches layout's slice (design.drag).
+    case 'tab_drag_start': {
+      const next = mtabDrag.tabDragStart(slice, msg.sourceKey, msg.fromIdx, msg.mx, msg.my);
+      return [next, [{ type: 'force_full_repaint' }]];
+    }
+    case 'tab_drag_motion':
+      return mtabDrag.tabDragMotion(slice, msg.mx, msg.my, slice.panelBounds && slice.panelBounds.detail, getModel().currentGroup);
+    case 'tab_drag_release':  return mtabDrag.tabDragRelease(slice);
     case 'design_title_key': {
       const te = slice.design && slice.design.titleEdit;
       if (!te) return slice;

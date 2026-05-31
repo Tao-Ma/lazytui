@@ -147,12 +147,47 @@ function handleMouse(kind, x, y) {
     const slice = getComponentSlice('layout');
     const drag = slice && slice.design && slice.design.drag;
     const isPoolDrag = drag && (drag.kind === 'pool-armed' || drag.kind === 'pool-dragging');
+    const isTabDrag = drag && (drag.kind === 'tab-armed' || drag.kind === 'tab-dragging');
 
     if (isPoolDrag) {
       if (kind === 'motion')       dispatchMsg(wrap('layout', { type: 'pool_drag_motion', mx, my }));
       else if (kind === 'release') dispatchMsg(wrap('layout', { type: 'pool_drag_release' }));
       render();
       return;
+    }
+
+    if (isTabDrag) {
+      if (kind === 'motion')       dispatchMsg(wrap('layout', { type: 'tab_drag_motion', mx, my }));
+      else if (kind === 'release') dispatchMsg(wrap('layout', { type: 'tab_drag_release' }));
+      render();
+      return;
+    }
+
+    // Tab-reorder press detection. A click on a content tab in the detail
+    // panel's tab bar arms a tab drag instead of the usual design drag.
+    // closeKey is stamped only on content tabs (viewer.js#detailTitle);
+    // action / yaml-terminal / info tabs fall through to design drag, so
+    // the existing panel-move gesture still works when the user clicks
+    // those parts of the tab bar.
+    if (kind === 'press' && slice && slice.panelBounds && slice.panelBounds.detail) {
+      const db = slice.panelBounds.detail;
+      if (my === db.y && Array.isArray(db.tabs)) {
+        const localX = mx - db.x;
+        let contentIdx = 0;
+        for (const t of db.tabs) {
+          if (t.closeKey == null) continue;
+          if (localX >= t.x && localX < t.x + t.w) {
+            dispatchMsg(wrap('layout', {
+              type: 'tab_drag_start',
+              sourceKey: t.closeKey, fromIdx: contentIdx,
+              mx, my,
+            }));
+            render();
+            return;
+          }
+          contentIdx++;
+        }
+      }
     }
 
     if (kind === 'press' && slice && slice.panelList && slice.panelList.open) {
