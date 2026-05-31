@@ -16,6 +16,31 @@ const { allPanels, setDetail } = require('../app/state');
 const { getModel } = require('../app/runtime');
 const { esc } = require('../io/ansi');
 const {getCommands, getPanelDef, getComponentSlice, getFocus } = require('../panel/api');
+const kb = require('./keybindings');
+
+/** Walk the leader-tree depth-first, emitting `{seq, label}` for every
+ *  LEAF (the actual bindings). Subtrees recurse; their internal labels
+ *  are display-only (the popup uses them) — leaves carry the run target.
+ *  Replaces the hand-rolled "Space ? / Space r / Space g g / …" stanza
+ *  in helpLines() so a new chord registered via `keys:` YAML or by a
+ *  Component shows up in help without a parallel edit. */
+function _walkLeader(node, prefix, out) {
+  for (const [tok, child] of kb.continuations(node)) {
+    const seq = prefix.concat(tok);
+    if (child.children) _walkLeader(child, seq, out);
+    else out.push({ seq, label: child.label || `(${seq.join(' ')})` });
+  }
+}
+function _leaderChordLines() {
+  const items = [];
+  _walkLeader(kb.rootNode(), [], items);
+  if (items.length === 0) return [];
+  return items.map(({ seq, label }) => {
+    const left = `Space ${seq.join(' ')}`;
+    const padded = left.length >= 15 ? left : left + ' '.repeat(15 - left.length);
+    return `  ${padded} ${esc(label)}`;
+  });
+}
 
 /**
  * Build the help-text lines (Rich markup). Pure read of state +
@@ -47,10 +72,12 @@ function helpLines() {
 
   lines.push('', '[dim]Leader (prefix key)[/]',
     '  Space          Open the leader namespace (outside v-mode)',
-    '  Space ?        Help    ·  Space r  Refresh',
-    '  Space g g      Top     ·  Space g e  Bottom',
     '  Esc            Cancel a pending leader sequence',
   );
+  // Dynamic chord list — derived from the live keybinding registry so
+  // user-declared `keys:` bindings AND chords from Components show up
+  // here without a parallel edit to this file.
+  lines.push(..._leaderChordLines());
 
   if (def && def.keyHints) {
     lines.push('', `[dim]Focused panel — ${esc(focusName)}[/]`,
