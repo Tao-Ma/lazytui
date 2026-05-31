@@ -255,8 +255,20 @@ function handleMouse(kind, x, y) {
         const tabs = b.tabs || [];
         for (const tab of tabs) {
           if (localX >= tab.x && localX < tab.x + tab.w) {
-            dispatchMsg(wrap('layout', { type: 'focus_set', focus: 'detail' }));
-            dispatchMsg(wrap('detail', { type: 'tab_switch', idx: tab.tabIdx }));
+            // Close-zone hit (content tabs only — viewer.js#detailTitle
+            // stamps `closeKey` on those tabBounds entries). Wins over
+            // a tab-switch click since the close glyph sits inside the
+            // tab's outer rect.
+            if (tab.closeKey != null && localX >= tab.closeX && localX < tab.closeX + tab.closeW) {
+              dispatchMsg(wrap('detail', {
+                type: 'viewer_remove_content_tab',
+                groupName: getModel().currentGroup,
+                key: tab.closeKey,
+              }));
+            } else {
+              dispatchMsg(wrap('layout', { type: 'focus_set', focus: 'detail' }));
+              dispatchMsg(wrap('detail', { type: 'tab_switch', idx: tab.tabIdx }));
+            }
             mutated = true;
             break;
           }

@@ -446,27 +446,43 @@ function detailTitle(slice) {
   if (layoutSlice && layoutSlice.panelBounds.detail) layoutSlice.panelBounds.detail.tabs = tabBounds;
   if (!actionTabs.length && !termTabs.length && !contentTabs.length) return 'Detail';
   const parts = [];
+  // Per-tab metadata so the bounds loop below can place the close-zone hit
+  // rect on closeable tabs (content tabs only at this point — ephemeral
+  // terminals still close via `x` since that flow respects PTY liveness).
+  const partMeta = [];
   const tab = slice.tab;
   // Phase 5 — per-tab decorator slot retired; the decorate framework had
   // no in-tree contributor and gave plugins no realistic seam (tab labels
   // are panel-managed). Tabs render plain.
-  const pushTab = (label, isActive) => {
+  const pushTab = (label, isActive, closeKey) => {
     const text = esc(label);
-    parts.push(isActive ? `\\[${text}]` : text);
+    const close = closeKey ? ' \\[x]' : '';
+    parts.push(isActive ? `\\[${text}${close}]` : `${text}${close}`);
+    partMeta.push({ closeKey, activeWrap: isActive ? 1 : 0 });
   };
-  pushTab('Info', tab === 0);
-  actionTabs.forEach(([, action], i) => pushTab(action.label, tab === i + 1));
+  pushTab('Info', tab === 0, null);
+  actionTabs.forEach(([, action], i) => pushTab(action.label, tab === i + 1, null));
   const termOffset = 1 + actionTabs.length;
-  termTabs.forEach(([, term], i) => pushTab(term.label, tab === termOffset + i));
+  termTabs.forEach(([, term], i) => pushTab(term.label, tab === termOffset + i, null));
   const contentOffset = 1 + actionTabs.length + termTabs.length;
-  contentTabs.forEach(([, info], i) => pushTab(info.label, tab === contentOffset + i));
+  contentTabs.forEach(([key, info], i) => pushTab(info.label, tab === contentOffset + i, key));
   const dp = getComponentSlice('layout').arrange.rightPanels.find(p => p.type === 'detail');
   const hotkey = dp ? dp.hotkey : '';
   let xOffset = 2 + (hotkey ? 2 + hotkey.length : 0) + 1;
   parts.forEach((part, i) => {
     if (i > 0) xOffset += 1;
     const visLen = visibleLen(part);
-    tabBounds.push({ tabIdx: i, x: xOffset, w: visLen });
+    const meta = partMeta[i];
+    const bound = { tabIdx: i, x: xOffset, w: visLen };
+    if (meta.closeKey) {
+      // Close glyph "[x]" sits at the end of the tab's visible text. For
+      // an active tab the trailing `]` of the wrapper sits one cell after
+      // the glyph (activeWrap=1), so the close zone is offset accordingly.
+      bound.closeKey = meta.closeKey;
+      bound.closeX = xOffset + visLen - meta.activeWrap - 3;
+      bound.closeW = 3;
+    }
+    tabBounds.push(bound);
     xOffset += visLen;
   });
   return parts.join('─');
