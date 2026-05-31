@@ -1,16 +1,18 @@
 /**
- * Key/action dispatch — modal key handlers + handleAction switch.
+ * Key/action dispatch — input pump + modal key handlers + leader-chord
+ * registry + the applyMsg reducer bridge. The handleAction switch and
+ * its action-runner helpers live in ./actions (carved out 2026-05-31);
+ * this module re-exports `handleAction` for back-compat.
  *
  * Mode handlers (one per modal state) are selected via modeChain; the
  * first mode whose `active()` predicate returns true claims the key.
  * Add a new mode by appending an entry — never edit handleKey directly.
  *
- * Render contract: handleKey() / handleMouse() (the input pump) own
- * the trailing paint. Effect handlers (handleAction arms, mode key
- * handlers, helper fns like moveSel / startDesignMode / activateTerminal)
- * just mutate state; the diff-render layer below makes a per-key paint
- * cheap, and a single emission point eliminates the "forgot to render"
- * bug class.
+ * Render contract: handleKey() (the input pump) owns the trailing paint.
+ * Effect handlers (handleAction arms in ./actions, mode key handlers,
+ * helper fns like startDesignMode) just mutate state; the diff-render
+ * layer below makes a per-key paint cheap, and a single emission point
+ * eliminates the "forgot to render" bug class.
  *
  * Sync paint at end of dispatch is the right cadence for the steady
  * state — keystroke echo wants ~16ms, not 50ms. Async producers
@@ -22,46 +24,23 @@
 const { esc } = require('../io/ansi');
 const { allPanels, setDetail, getSel } = require('../app/state');
 const { render } = require('../render/layout');
-const { runAction } = require('./action-runner');
-const {refreshAll, getPanelDef, getItems, idOf, getGroupActions, getComponentSlice,
+const {refreshAll, getPanelDef, getItems, idOf, getComponentSlice,
        getComponentOwningPanel, dispatchMsg, dispatchKeyToFocused, wrap, getFocus } = require('../panel/api');
 const copy = require('../overlay/copy');
 const registerPopup = require('../overlay/register-popup');
 const { isTerminalTab, activeTerminalId, findEphemeralByid,
         removeEphemeralTab, isContentTab, activeContentTab,
         removeContentTab } = require('../panel/viewer/tabs');
-const { isSessionDead, restartSession } = require('../io/terminal');
-const { execSync } = require('child_process');
+const { isSessionDead } = require('../io/terminal');
 const keybindings = require('./keybindings');
 const modes = require('./modes');
 const runtime = require('../app/runtime');
 const { getModel } = runtime;
-
-/**
- * Synchronously evaluate an action's `default_cmd` to pre-fill its
- * prompt input. Bounded by a short timeout so a misbehaving snippet
- * can't freeze the UI; a failure (non-zero rc, timeout, missing file)
- * silently falls back to empty — the prompt opens as it would have
- * without `default_cmd:`. Stderr is dropped; we don't want grep noise
- * spilling onto the screen between frames.
- */
-function resolvePromptDefault(act) {
-  if (!act || !act.default_cmd) return '';
-  try {
-    const out = execSync(act.default_cmd, {
-      shell: '/bin/sh',
-      cwd: getModel().projectDir,
-      timeout: 1000,
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-    });
-    return (out || '').trim();
-  } catch {
-    return '';
-  }
-}
-
-// --- Selection / focus helpers ---
+// handleAction + _runActionByKey live in ./actions (carved out 2026-05-31).
+// Cycle-safe: actions.js lazy-requires this module's applyMsg/navSelect
+// inline at call sites, so by the time it reads them this module's exports
+// are complete.
+const { handleAction, _runActionByKey } = require('./actions');
 
 /**
  * Move the focused Navigator's cursor to `index`. Phase 4b — the uniform
@@ -72,13 +51,10 @@ function resolvePromptDefault(act) {
  *
  * Centralized here so every call site (j/k, page nav, goto top/bottom,
  * mouse click, `state.selectGroup`) goes through the same routing.
+ * Exported so actions.js's moveSel / _pageInListPanel / _jumpInListPanel
+ * (in the carved-out handleAction module) can reach it without a
+ * destructure-at-load-time hazard.
  */
-// T7: all of navSelect / moveSel / _pageInListPanel / _jumpInListPanel /
-// _runResolvedAction / enterFilterMode / enterCopyMode / handleAction once
-// took a leading `model` arg that they never read directly (they re-resolve
-// via getFocus() / getItems() / getModel() internally). The arg was the
-// captured-stale-ref hazard that bit us in 2be348a; dropping it removes
-// the invitation to reintroduce that bug class.
 function navSelect(panelType, index) {
   const compName = getComponentOwningPanel(panelType);
   if (!compName) return;
@@ -87,74 +63,6 @@ function navSelect(panelType, index) {
   if (panelType === 'groups') {
     dispatchMsg(wrap('groups', { type: 'groups_selected', index }));
   }
-}
-
-/**
- * Generic selection move via plugin API. Resolves the clamped target
- * index (getItems is view-side derivation) then hands it to `navSelect`.
- */
-function moveSel(delta) {
-  const def = getPanelDef(getFocus());
-  if (!def || typeof def.getItems !== 'function') return;
-  const items = getItems(getFocus());
-  const sel = getSel(getFocus());
-  const newSel = sel + delta;
-  if (newSel < 0 || newSel >= items.length) return;
-  navSelect(getFocus(), newSel);
-}
-
-/**
- * Jump-set the focused list panel's selection to `next` (clamped to
- * [0, len-1]). Used by page_up / page_down / goto_top / goto_bottom on
- * any list-mode panel. No-op for content panels (they don't expose
- * getItems) — the caller branches separately for detail's scroll path.
- *
- * Half-page step matches the detail panel's scroll precedent so paging
- * has consistent rhythm across panels (j/k for one row, ,/. for ~half a
- * panel, </> for ends).
- */
-function _pageInListPanel(delta) {
-  const def = getPanelDef(getFocus());
-  if (!def || typeof def.getItems !== 'function') return;
-  const items = getItems(getFocus());
-  if (!items.length) return;
-  const sel = getSel(getFocus());
-  const next = Math.max(0, Math.min(items.length - 1, sel + delta));
-  if (next === sel) return;
-  navSelect(getFocus(), next);
-}
-
-function _jumpInListPanel(target) {
-  const def = getPanelDef(getFocus());
-  if (!def || typeof def.getItems !== 'function') return;
-  const items = getItems(getFocus());
-  if (!items.length) return;
-  const next = target === 'top' ? 0 : items.length - 1;
-  const sel = getSel(getFocus());
-  if (next === sel) return;
-  navSelect(getFocus(), next);
-}
-
-function _halfPageStep(panelType) {
-  const slice = getComponentSlice('layout');
-  const h = (slice && slice.panelHeights[panelType]) || 4;
-  return Math.max(1, Math.floor((h - 2) / 2));
-}
-
-/**
- * Activate the terminal in the active tab: restart if dead, then enter
- * terminal input mode. Caller should ensure focus is on detail and active
- * tab is a terminal tab.
- */
-function activateTerminal() {
-  const id = activeTerminalId();
-  if (!id) return;
-  if (isSessionDead(id)) {
-    const slice = getComponentSlice('layout');
-    const bounds = slice && slice.panelBounds.detail;
-    if (bounds) restartSession(id, bounds.w - 2, bounds.h - 2);
-  }
-  applyMsg({ type: 'terminal_enter' });
 }
 
 function startDesignMode() {
@@ -532,46 +440,6 @@ function _registerBuiltinChords() {
 }
 _registerBuiltinChords();
 
-/** Run a resolved action object, routing through the same args-prompt /
- *  confirm path the actions-panel Enter flow uses. Single definition so
- *  the panel, the leader bindings, and any future caller can't drift on
- *  how `args:` / `confirm:` are handled. */
-function _runResolvedAction(key, act) {
-  if (act.args) {
-    const initial = resolvePromptDefault(act);
-    // Seed the autosuggest ghost from the yank register's top (first line).
-    const top = require('../feature/register').top();
-    const ghost = String(top || '').split('\n')[0];
-    // Stage the prompt through update with a base run_action Cmd — submit
-    // parses args + re-enters runAction (so an action that's ALSO confirm:
-    // still confirms after the prompt). The Cmd carries data, not a closure.
-    applyMsg({
-      type: 'prompt_enter',
-      label: `Run: ${act.label}`, spec: act.args, text: initial,
-      ghost: ghost && ghost !== initial ? ghost : '',
-      cmd: { type: 'run_action', actionKey: key, action: act },
-    });
-  } else {
-    runAction(key, act);
-  }
-}
-
-/** Run a declared action by its key, searching every group. Resolves
- *  the SAME merged set the actions panel shows — plugin-synthesized
- *  actions (docker's `up`/`logs`/…) plus YAML `actions:` — so a leader
- *  binding to a plugin action isn't silently dead. First match wins. */
-function _runActionByKey(key) {
-  const groups = (getModel().config && getModel().config.groups) || {};
-  for (const [gname, g] of Object.entries(groups)) {
-    const merged = { ...getGroupActions(g, gname), ...(g.actions || {}) };
-    const act = merged[key];
-    if (!act) continue;
-    _runResolvedAction(key, act);
-    return true;
-  }
-  return false;
-}
-
 /** Build the run() closure for a YAML `keys:` binding spec. The verb
  *  is resolved at INVOKE time so group-relative actions / commands see
  *  the current state, not whatever was current at registration. */
@@ -804,154 +672,14 @@ function applyMsg(msg) {
   require('./effects').runEffects(cmds);
 }
 
-// --- handleAction: name → effect ---
-//
-// Effect arms are mutation-only. Caller (handleKey, handleMouse, the
-// menu Enter path) owns the trailing paint. Arms resolve a Msg from the
-// model and call applyMsg(msg) — the reducer is the writer.
-
-function handleAction(action, arg) {
-  switch (action) {
-    case 'nav_up':       moveSel(-1); break;
-    case 'nav_down':     moveSel(+1); break;
-    case 'focus_left': {
-      const order = allPanels().map(p => p.type);
-      const idx = order.indexOf(getFocus());
-      dispatchMsg(wrap('layout', { type: 'focus_set', focus: idx > 0 ? order[idx - 1] : getFocus() }));
-      break;
-    }
-    case 'focus_right': {
-      const order = allPanels().map(p => p.type);
-      const idx = order.indexOf(getFocus());
-      dispatchMsg(wrap('layout', { type: 'focus_set', focus: idx < order.length - 1 ? order[idx + 1] : getFocus() }));
-      break;
-    }
-    case 'focus_panel': {
-      let target = getFocus();
-      for (const p of allPanels()) {
-        if (p.hotkey === arg) { target = p.type; break; }
-      }
-      dispatchMsg(wrap('layout', { type: 'focus_set', focus: target }));
-      break;
-    }
-    case 'run_selected': {
-      // Enter on detail + terminal tab → activate terminal mode
-      if (getFocus() === 'detail' && isTerminalTab()) {
-        activateTerminal();
-        break;
-      }
-      // Enter on groups: branches toggle expand/collapse one level;
-      // leaves drill into the actions panel. This is the only tree-shape
-      // keybinding — recursive expand/collapse have no dedicated key,
-      // hammering Enter walks down levels (cursor stays put, the row
-      // below opens or closes). Avoids the prior "drill to empty actions"
-      // smell when a branch had no own actions.
-      if (getFocus() === 'groups') {
-        const items = getItems('groups');
-        const row = items[getSel('groups')];
-        if (row && row.children && row.children.length > 0) {
-          // toggle_group moved to groups.update in Phase C — route via
-          // the Component fan-out, not the root reducer.
-          dispatchMsg(wrap('groups', { type: 'toggle_group', name: row.name }));
-          break;
-        }
-        // Leaf: drill into the actions panel (a plain focus change).
-        dispatchMsg(wrap('layout', { type: 'focus_set', focus: 'actions' }));
-        break;
-      }
-      // Enter on actions → run selected action. If the action declares
-      // `args:`, open the prompt overlay first to collect positional
-      // params; submit then forwards them to runAction. Cmdline (`:`)
-      // already carries args inline, so this only matters for the
-      // actions-panel path.
-      if (getFocus() === 'actions') {
-        const items = getItems('actions');
-        const item = items[getSel('actions')];
-        if (item) {
-          const [key, act] = item;
-          _runResolvedAction(key, act);
-        }
-      } else {
-        dispatchMsg(wrap('detail', { type: 'viewer_show_info' }));
-      }
-      break;
-    }
-    case 'refresh':
-      // Async — refreshAll's resolve drives a scheduleRender via
-      // changed-flag bookkeeping in the refresh loop. The trailing
-      // sync paint here gives immediate feedback that "something
-      // happened" even before refresh completes.
-      applyMsg({ type: 'refresh' });
-      break;
-    case 'toggle_collapse_focused': {
-      // v0.6 — `<leader> c` chord in normal mode. Toggles the focused
-      // panel's collapsed state. detail / unrecognized focus = no-op
-      // (reducer is the gatekeeper, but resolving the id early lets
-      // the no-op skip the wrapped Msg entirely).
-      const focus = getFocus();
-      if (!focus || focus === 'detail') break;
-      const p = allPanels().find(x => x.type === focus);
-      if (!p) break;
-      dispatchMsg(wrap('layout', { type: 'panel_collapse_toggle', id: p.id }));
-      break;
-    }
-    case 'show_help':
-      applyMsg({ type: 'show_help' });
-      break;
-    case 'next_tab': applyMsg({ type: 'next_tab' }); break;
-    case 'prev_tab': applyMsg({ type: 'prev_tab' }); break;
-    case 'page_up': {
-      // Paging is focus-aware: detail scrolls its content; list panels
-      // jump the cursor by half a panel (the nav_select cascade, now run
-      // inline in the reducer). Other panel modes (e.g. stats content)
-      // get no-op — they don't expose getItems().
-      if (getFocus() === 'detail') dispatchMsg(wrap('detail', { type: 'viewer_scroll', delta: -_halfPageStep('detail') }));
-      else                          _pageInListPanel(-_halfPageStep(getFocus()));
-      break;
-    }
-    case 'page_down': {
-      if (getFocus() === 'detail') dispatchMsg(wrap('detail', { type: 'viewer_scroll', delta: +_halfPageStep('detail') }));
-      else                          _pageInListPanel(+_halfPageStep(getFocus()));
-      break;
-    }
-    case 'goto_top':
-      if (getFocus() === 'detail') dispatchMsg(wrap('detail', { type: 'viewer_scroll', to: 'top' }));
-      else                          _jumpInListPanel('top');
-      break;
-    case 'goto_bottom':
-      if (getFocus() === 'detail') dispatchMsg(wrap('detail', { type: 'viewer_scroll', to: 'bottom' }));
-      else                          _jumpInListPanel('bottom');
-      break;
-    case 'view_expand':
-      // Through the Component fan-out: layout's update flips viewMode and
-      // returns a force_full_repaint effect on a real transition (a view
-      // change re-exposes panels the diff cache can't tell changed). Phase
-      // 1b moved viewMode out of the root reducer into layout's slice.
-      dispatchMsg(wrap('layout', { type: 'view_expand' }));
-      break;
-    case 'view_shrink':
-      dispatchMsg(wrap('layout', { type: 'view_shrink' }));
-      break;
-    case 'filter':
-      // Reachable from the menu + `:filter`. Same filterable-gated enter.
-      enterFilterMode();
-      break;
-    case 'design':
-      // Reachable from menu entry and `:design` cmdline. The design-enabled
-      // gate lives in the reducer (update emits the start_design Cmd only
-      // when enabled) — same gate the cmdline command uses for visibility.
-      applyMsg({ type: 'design' });
-      break;
-    case 'quit':
-      applyMsg({ type: 'quit' });
-      break;
-  }
-}
-
 module.exports = {
   handleKey, handleAction, applyMsg, navSelect, startDesignMode,
   registerKeyFilter, clearKeyFilters,
   loadKeyBindings,
+  // Exposed so actions.js (the carved-out handleAction switch) can lazy-
+  // require enterFilterMode for its `:filter` arm — keeps the filterable
+  // gate single-sourced.
+  enterFilterMode,
   // Exposed for tests
   _enterPrefix: enterPrefix,
   _handlePrefixKey: handlePrefixKey,
