@@ -275,6 +275,33 @@ function handleRegisterPopupKey(key, seq) {
   if (seq === 'd')                   { applyMsg({ type: 'register_popup_drop', vh }); return; }
 }
 
+function handleTabListKey(key, seq) {
+  // Routes overlay keys into the tabList reducer on the detail slice.
+  // `vh` (viewport rows of the overlay) and `tabCount` are view-derived
+  // — resolved here off the overlay module so the reducer can stay pure.
+  const overlay = require('../overlay/tab-list');
+  const flat = overlay._flatTabs();
+  const vh = overlay.viewportRows();
+  const tabCount = flat.length;
+  const send = (m) => dispatchMsg(wrap('detail', m));
+  if (key === 'escape' || seq === 'T' || key === 'T') { send({ type: 'tab_list_close' }); return; }
+  if (key === 'return')              { send({ type: 'tab_list_pick' }); return; }
+  if (key === 'up' || seq === 'k')   { send({ type: 'tab_list_nav', dir: -1, vh, tabCount }); return; }
+  if (key === 'down' || seq === 'j') { send({ type: 'tab_list_nav', dir: +1, vh, tabCount }); return; }
+  if (seq === 'g')                   { send({ type: 'tab_list_nav', to: 'top',      vh, tabCount }); return; }
+  if (seq === 'G')                   { send({ type: 'tab_list_nav', to: 'bottom',   vh, tabCount }); return; }
+  if (seq === ',' || key === 'pageup')   { send({ type: 'tab_list_nav', to: 'pageup',   vh, tabCount }); return; }
+  if (seq === '.' || key === 'pagedown') { send({ type: 'tab_list_nav', to: 'pagedown', vh, tabCount }); return; }
+  if (seq === 'x') {
+    const slice = getComponentSlice('detail');
+    const tl = slice && slice.tabList;
+    if (!tl || !tl.open) return;
+    const row = flat[tl.cursor];
+    if (!row || !row.closeable) return;  // Info / action / yaml-term: silent no-op
+    send({ type: 'tab_list_close_selected', closeKind: row.closeKind, closeKey: row.closeKey });
+  }
+}
+
 function handleDetailSearchKey(key, seq) {
   // viewer_search_* Msgs are handled by detail.update (Phase B) — route via
   // the Component fan-out, not the root reducer. Phase 2b will wrap these.
@@ -349,6 +376,19 @@ function handleNormalKey(key, seq) {
       handleAction('run_selected');
       break;
     case 'r':              handleAction('refresh'); break;
+    case 'T': {
+      // Open the tab-list overlay anchored to detail's top-left `[≡]`
+      // trigger. vh + tabCount are view-derived (read off overlay/
+      // tab-list); the reducer (viewer.update#tab_list_open) clamps
+      // cursor at the active tab + computes initial scroll.
+      const overlay = require('../overlay/tab-list');
+      dispatchMsg(wrap('detail', {
+        type: 'tab_list_open',
+        vh: overlay.viewportRows(),
+        tabCount: overlay._flatTabs().length,
+      }));
+      break;
+    }
     case 'x': {
       // On a dead ephemeral terminal tab, `x` closes it instead of
       // opening the menu. Lets the user dismiss a non-zero exit
@@ -546,6 +586,7 @@ const _modeHandlers = {
   registerPopupMode:   (key, seq) => handleRegisterPopupKey(key, seq),
   prefixMode:          (key, seq) => applyMsg({ type: 'prefix_key', key, seq }),
   cmdMode:             (key, seq) => { handleCmdlineKey(key, seq); dispatchMsg(wrap('detail', { type: 'viewer_show_info' })); },
+  tabListMode:         (key, seq) => handleTabListKey(key, seq),
 };
 
 const modeChain = modes.CHAIN_MODES.map(flag => {

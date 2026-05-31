@@ -73,7 +73,7 @@ function init() {
       confirmMode: false, promptMode: false, designTitleEditMode: false,
       freeConfigMode: false, menuOpen: false, filterMode: false, copyMode: false,
       detailSearchMode: false, registerPopupMode: false, prefixMode: false,
-      cmdMode: false, terminalMode: false, listSelectMode: false,
+      cmdMode: false, tabListMode: false, terminalMode: false, listSelectMode: false,
     },
     currentGroup: '',
     // Phase 4a moved cursor/scroll/multiSel onto each Navigator's nav

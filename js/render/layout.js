@@ -42,6 +42,7 @@ const { renderPromptOverlay } = require('../overlay/prompt');
 const { renderDesignOverlay, getDesignFooter } = require('../overlay/design');
 const { renderCloseButtons, renderCollapseButtons } = require('./panel-widgets');
 const { renderPanelListOverlay } = require('../overlay/panel-list');
+const { renderTabList, renderTabTrigger } = require('../overlay/tab-list');
 const { collectViewContributions } = require('../panel/api');
 const { currentText: filterCurrentText } = require('../overlay/filter');
 
@@ -532,6 +533,14 @@ function render(model = getModel()) {
   if (md.promptMode)  renderPromptOverlay();
   if (md.registerPopupMode) renderRegisterPopup();
   if (md.prefixMode)  renderWhichKey();
+  // Tab list overlay (only when active) — paint the popup BEFORE the
+  // always-on trigger glyph below so the trigger sits on top of any
+  // pixel the overlay's border would otherwise occlude.
+  if (md.tabListMode) renderTabList();
+  // The `[≡]` trigger is always-on chrome (like the [_] collapse
+  // button) — paints AFTER everything else so it overlays the detail
+  // panel's `(o)` hotkey display at cols detail.x+2..detail.x+4.
+  renderTabTrigger();
 
   // Cursor visibility — derived from mode state, single emission site.
   // Cursor *position* is set inline by renderTerminalOverlay (when in

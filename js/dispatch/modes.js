@@ -39,6 +39,7 @@ const MODES = [
   { flag: 'registerPopupMode',   chain: true,  overlay: true,  modal: false, reset: true },
   { flag: 'prefixMode',          chain: true,  overlay: true,  modal: true,  reset: true },
   { flag: 'cmdMode',             chain: true,  overlay: true,  modal: false, reset: true },
+  { flag: 'tabListMode',         chain: true,  overlay: true,  modal: false, reset: true },
   // Non-chain modes (see header).
   { flag: 'terminalMode',        chain: false, overlay: false, modal: true,  reset: true },
   { flag: 'listSelectMode',      chain: false, overlay: false, modal: false, reset: true },

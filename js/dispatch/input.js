@@ -129,6 +129,57 @@ function handleMouse(kind, x, y) {
         return;
       }
     }
+    // Tab-list `[≡]` trigger at detail's top-left. Toggles the overlay.
+    // Trigger's own suppression (free-config + modals) lives inside
+    // `isTriggerHit` so the click silently misses there.
+    const tabOverlay = require('../overlay/tab-list');
+    if (tabOverlay.isTriggerHit(mx, my)) {
+      if (model.modes.tabListMode) {
+        dispatchMsg(wrap('detail', { type: 'tab_list_close' }));
+      } else {
+        dispatchMsg(wrap('detail', {
+          type: 'tab_list_open',
+          vh: tabOverlay.viewportRows(),
+          tabCount: tabOverlay._flatTabs().length,
+        }));
+      }
+      render();
+      return;
+    }
+  }
+
+  // Tab-list overlay click + wheel — when the overlay is open, mouse
+  // events route to it (row click switches + closes; wheel scrolls the
+  // cursor; click outside closes). Mirrors the panel-list overlay's
+  // mouse routing.
+  if (model.modes.tabListMode) {
+    const tabOverlay = require('../overlay/tab-list');
+    if (kind === 'wheel-up' || kind === 'wheel-down') {
+      dispatchMsg(wrap('detail', {
+        type: 'tab_list_nav',
+        dir: kind === 'wheel-up' ? -1 : +1,
+        vh: tabOverlay.viewportRows(),
+        tabCount: tabOverlay._flatTabs().length,
+      }));
+      render();
+      return;
+    }
+    if (kind === 'press') {
+      const hit = tabOverlay.hitTest(mx, my);
+      if (hit) {
+        // Click on a row → switch + close. Bypasses cursor and the
+        // tab_list_pick Msg (which reads cursor off the slice); the
+        // click already names the target tab directly.
+        dispatchMsg(wrap('layout', { type: 'focus_set', focus: 'detail' }));
+        dispatchMsg(wrap('detail', { type: 'tab_switch', idx: hit.tabIdx }));
+        dispatchMsg(wrap('detail', { type: 'tab_list_close' }));
+      } else {
+        // Click outside overlay (and not on the trigger) → close.
+        dispatchMsg(wrap('detail', { type: 'tab_list_close' }));
+      }
+      render();
+      return;
+    }
   }
 
   // Design mode owns the entire mouse pipeline — the drag/resize state

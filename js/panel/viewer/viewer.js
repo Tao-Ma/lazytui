@@ -121,6 +121,11 @@ function init() {
     cursor: { line: 0, col: 0 },
     contentTabs: {},          // [groupName]: { [key]: { label, lines } }
     ephemeralTerminals: {},   // [groupName]: { [key]: { cmd, label } }
+    // Tab-list overlay (the `[≡]` switcher anchored to detail's top-left).
+    // `cursor` is the row index in the flat tab list (Info..actions..
+    // terminals..content); `scroll` is the first visible row when the
+    // overlay's body is smaller than the tab count.
+    tabList: { open: false, cursor: 0, scroll: 0 },
   };
 }
 
@@ -257,6 +262,13 @@ function update(msg, slice) {
       // slice half lives here. See Phase A.
       const next = { ...slice, tab: 0, cursor: { line: 0, col: 0 } };
       if (slice.select) next.select = { ...slice.select, active: false };
+      // Group switch closes the tab-list overlay too — the per-group tab
+      // set is fundamentally different across groups, so lingering would
+      // be confusing.
+      if (slice.tabList && slice.tabList.open) {
+        next.tabList = { ...slice.tabList, open: false };
+        return [next, [{ type: 'apply_msg', msg: { type: 'mode_clear', flag: 'tabListMode' } }]];
+      }
       return next;
     }
 
@@ -320,6 +332,80 @@ function update(msg, slice) {
     }
     case 'viewer_reorder_content_tab':
       return mt.reorderContent(slice, getModel(), msg);
+
+    // --- tab-list overlay (the `[≡]` switcher anchored to detail's
+    // top-left). Cursor starts at the active tab; scroll keeps the
+    // cursor in view as it walks the list. Both fields live on
+    // slice.tabList; the overlay reads them and the trigger glyph
+    // queries `model.modes.tabListMode` for its open/closed indicator.
+    case 'tab_list_open': {
+      // cursor = current active tab. scroll computed so cursor lands
+      // in the visible window. vh threaded from the keyhandler since
+      // it's view-derived (reads detail.h via overlay/tab-list).
+      const vh = Math.max(1, msg.vh | 0);
+      const tabCount = msg.tabCount | 0 || 1;
+      const cursor = Math.max(0, Math.min(slice.tab | 0, tabCount - 1));
+      let scroll = 0;
+      if (cursor >= vh) scroll = Math.min(cursor - vh + 1, Math.max(0, tabCount - vh));
+      return [
+        { ...slice, tabList: { open: true, cursor, scroll } },
+        [{ type: 'apply_msg', msg: { type: 'mode_set', flag: 'tabListMode' } }],
+      ];
+    }
+    case 'tab_list_close':
+      if (!slice.tabList || !slice.tabList.open) return slice;
+      return [
+        { ...slice, tabList: { ...slice.tabList, open: false } },
+        [{ type: 'apply_msg', msg: { type: 'mode_clear', flag: 'tabListMode' } },
+         { type: 'force_full_repaint' }],
+      ];
+    case 'tab_list_nav': {
+      const tl = slice.tabList || { open: false, cursor: 0, scroll: 0 };
+      if (!tl.open) return slice;
+      const tabCount = msg.tabCount | 0 || 1;
+      const vh = Math.max(1, msg.vh | 0);
+      let cursor = tl.cursor;
+      if (msg.to === 'top')           cursor = 0;
+      else if (msg.to === 'bottom')   cursor = tabCount - 1;
+      else if (msg.to === 'pageup')   cursor = Math.max(0, tl.cursor - vh);
+      else if (msg.to === 'pagedown') cursor = Math.min(tabCount - 1, tl.cursor + vh);
+      else                            cursor = tl.cursor + (msg.dir | 0);
+      cursor = Math.max(0, Math.min(tabCount - 1, cursor));
+      let scroll = tl.scroll | 0;
+      const maxScroll = Math.max(0, tabCount - vh);
+      if (cursor < scroll)              scroll = cursor;
+      else if (cursor >= scroll + vh)   scroll = cursor - vh + 1;
+      scroll = Math.max(0, Math.min(scroll, maxScroll));
+      if (cursor === tl.cursor && scroll === tl.scroll) return slice;
+      return { ...slice, tabList: { ...tl, cursor, scroll } };
+    }
+    case 'tab_list_pick': {
+      const tl = slice.tabList || { open: false, cursor: 0 };
+      if (!tl.open) return slice;
+      const idx = tl.cursor | 0;
+      return [
+        { ...slice, tabList: { ...tl, open: false } },
+        [
+          { type: 'apply_msg', msg: { type: 'mode_clear', flag: 'tabListMode' } },
+          { type: 'dispatch_msg', msg: wrap('layout', { type: 'focus_set', focus: 'detail' }) },
+          { type: 'dispatch_msg', msg: wrap('detail', { type: 'tab_switch', idx }) },
+          { type: 'force_full_repaint' },
+        ],
+      ];
+    }
+    case 'tab_list_close_selected': {
+      // The caller (overlay key handler) resolves the row's
+      // closeable + closeKind + closeKey from the flat tab list and
+      // threads them in. Non-closeable rows: silent no-op (msg.kind
+      // is null). Cursor clamps to the new tab count on the next
+      // open — clamping here would race with the async tab-removal
+      // Msg the handler also emits.
+      if (!msg.closeKind || !msg.closeKey) return slice;
+      const removeMsg = msg.closeKind === 'content'
+        ? { type: 'viewer_remove_content_tab', groupName: getModel().currentGroup, key: msg.closeKey }
+        : { type: 'viewer_remove_ephemeral_terminal', groupName: getModel().currentGroup, key: msg.closeKey };
+      return [slice, [{ type: 'dispatch_msg', msg: wrap('detail', removeMsg) }]];
+    }
 
     // --- visual-mode select. The mouse path dispatches the select_* Msgs
     // (overlay/select.js); the keyboard path lives in `case 'key':` below.
