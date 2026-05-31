@@ -111,11 +111,11 @@ function hostComplete(input) {
         desc: e.isDirectory() ? '[dir]' : '[file]',
         kind: 'path',
         argComplete: true,
+        // Directories are refine-only: Enter behaves like Tab (descend).
+        // Files have a meaningful Enter (open the file).
+        refine: e.isDirectory(),
         run: () => {
           if (!e.isDirectory()) openHostFileAsTab(shown);
-          // Directory: silent no-op on Enter (the user should Tab to
-          // continue refining). Closing the cmdline + doing nothing
-          // matches the openInput pattern for unmatched input.
         },
       };
     });

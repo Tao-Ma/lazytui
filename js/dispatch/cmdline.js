@@ -37,10 +37,17 @@ let _full = [];
  */
 function rebuild(text) {
   _full = rebuildMatches(text);
-  // Pass `argComplete` through so the Tab handler in runtime.update knows
-  // to replace the whole buffer (path completion shape) rather than
-  // splicing the command name (default command-match shape).
-  return _full.map(e => ({ display: e.display, desc: e.desc, kind: e.kind, argComplete: !!e.argComplete }));
+  // Pass `argComplete` + `refine` through. argComplete (Tab handler):
+  // entry's display IS the full cmdline replacement. refine
+  // (cmdline_submit handler): Enter on this entry behaves like Tab —
+  // the entry isn't terminally actionable (dirs to descend, containers
+  // to refine, hints to surface). Without refine, Enter would fire a
+  // no-op run() and silently close the cmdline.
+  return _full.map(e => ({
+    display: e.display, desc: e.desc, kind: e.kind,
+    argComplete: !!e.argComplete,
+    refine: !!e.refine,
+  }));
 }
 
 /** Run the module-held match at `sel` (the cmdline_run Cmd). Plugin commands

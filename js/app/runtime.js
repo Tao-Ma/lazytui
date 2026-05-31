@@ -611,6 +611,16 @@ function update(model, msg) {
       // cancel arms across the other modals.
       if (!model.modes.cmdMode) return [model, []];
       const c = model.modal.cmdline;
+      const chosen = c.matches[c.sel];
+      // Enter on a "refinable" entry (hint / dir / docker container —
+      // no terminal action) acts like Tab: rewrite the buffer with the
+      // entry's display and stay in cmdline mode so the user can keep
+      // refining. Without this, Enter would fire the entry's no-op
+      // run() and silently close the cmdline — looks like a dead key.
+      if (chosen && chosen.refine) {
+        return [_withModal(model, { cmdline: { ...c, text: chosen.display, sel: 0, scroll: 0 } }),
+                [{ type: 'cmdline_rebuild' }]];
+      }
       const sel = c.sel;
       const { args } = _cmdlineSplit(c.text);
       const had = c.matches.length > 0;

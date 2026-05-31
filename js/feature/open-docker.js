@@ -102,9 +102,11 @@ function _completeContainers(prefix) {
       desc: '[container]',
       kind: 'path',
       argComplete: true,
-      // Enter on a bare container name doesn't open anything — user
-      // needs to type the in-container path. The directory case in
-      // hostComplete bails the same way.
+      // Container slots are refine-only — Enter behaves like Tab
+      // (descend into the container's filesystem). The cmdline_submit
+      // handler in runtime.js checks `refine` and rewrites the buffer
+      // instead of firing run().
+      refine: true,
       run: () => { /* refine further */ },
     }));
 }
@@ -180,6 +182,7 @@ function _completePath(container, fullPath) {
       desc: `[loading ${dir}…]`,
       kind: 'hint',
       argComplete: true,
+      refine: true,  // Enter while loading → no-op + retry-on-rebuild
       run: () => {},
     }];
   }
@@ -214,9 +217,9 @@ function _completePath(container, fullPath) {
         desc: isDir ? '[dir]' : '[file]',
         kind: 'path',
         argComplete: true,
+        refine: isDir,  // Dirs descend on Enter (like Tab); files open.
         run: () => {
           if (!isDir) openTarget.openInput(target);
-          // Directories: Enter is no-op — user should Tab to descend.
         },
       };
     });
@@ -265,6 +268,8 @@ openTarget.registerOpenScheme('docker', {
     desc: '[docker container — Tab to list]',
     kind: 'hint',
     argComplete: true,
+    refine: true,  // Enter rewrites buffer to "open docker://" — keeps
+                   // the user in cmdline so they can pick a container.
     run: () => { /* not runnable bare; user Tabs / types more */ },
   }),
   open: (target, opts) => {
