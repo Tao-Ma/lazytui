@@ -70,7 +70,10 @@ function _renderCollapsed(p, w) {
   let titleText = '';
   if (p.hotkey) titleText += `(${p.hotkey})`;
   if (p.title)  titleText += `─${p.title}`;
-  if (titleText.length > innerW - 2) titleText = titleText.slice(0, innerW - 2);
+  // Markup-aware truncation — same trap as renderPanel: a length-based
+  // slice can cut mid-tag and let the next `[…]` match swallow the fill
+  // and right corner. truncate() is a no-op when visibleLen fits.
+  titleText = truncate(titleText, innerW - 2);
   const fill = innerW - visibleLen(titleText);
   if (fill >= 2)      return `[${fc}]╭─${titleText}${'─'.repeat(fill - 1)}╮[/]`;
   else if (fill === 1) return `[${fc}]╭${titleText}─╮[/]`;

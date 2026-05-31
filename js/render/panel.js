@@ -86,10 +86,13 @@ function renderPanel({
   // Phase 5 — title-bar decoration framework retired; nothing in tree
   // contributed and the extension point was unused. Components own their
   // own title composition inline (e.g. groups' tab strip in _groupsTitle).
-  // Use visibleLen for fill so escaped markup (\[ → [) doesn't
-  // miscount and shift the right border. JS-length truncation is fine
-  // for the upper bound since visibleLen <= length.
-  if (titleText.length > innerW - 2) titleText = titleText.slice(0, innerW - 2);
+  // Markup-aware truncation: titles can carry markup (`[dim]`, `\[…\]`,
+  // `[/]`) whose JS .length over-counts the visible width. A length-
+  // based slice would over-trigger AND could cut mid-tag, leaving an
+  // unclosed `[/` that the next `[…]` match greedily swallows along
+  // with the fill chars and `╮` corner. truncate() short-circuits when
+  // visibleLen ≤ maxWidth, so the common (fits) case is a no-op.
+  titleText = truncate(titleText, innerW - 2);
   const fill = innerW - visibleLen(titleText);
   let top;
   if (fill >= 2) {
