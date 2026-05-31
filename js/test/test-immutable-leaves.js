@@ -367,7 +367,7 @@ describe('[immutable] leaves/design.js', () => {
     const model = makeModel();
     const out = expectNoMutation(
       'mousePress leaves input frozen',
-      () => mdesign.mousePress(slice, model, 5, 5, 80),  // inside panel 'a'
+      () => mdesign.mousePress(slice, 5, 5, 80),  // inside panel 'a'
       slice,
     );
     eq(out.design.drag.kind, 'armed');
@@ -378,7 +378,7 @@ describe('[immutable] leaves/design.js', () => {
   it('mouseMotion promotes armed → dragging on movement', () => {
     const slice = makeSlice();
     const model = makeModel();
-    const pressed = mdesign.mousePress(slice, model, 5, 5, 80);
+    const pressed = mdesign.mousePress(slice, 5, 5, 80);
     const moved = expectNoMutation(
       'mouseMotion leaves input frozen',
       () => mdesign.mouseMotion(pressed, 5, 12, 80),  // drag down into 'b'
@@ -391,7 +391,7 @@ describe('[immutable] leaves/design.js', () => {
   it('mouseRelease commits a valid drop + clears drag', () => {
     const slice = makeSlice();
     const model = makeModel();
-    let s = mdesign.mousePress(slice, model, 5, 5, 80);   // press 'a'
+    let s = mdesign.mousePress(slice, 5, 5, 80);   // press 'a'
     s = mdesign.mouseMotion(s, 5, 16, 80);                // drag below 'b'
     const out = expectNoMutation(
       'mouseRelease leaves input frozen',

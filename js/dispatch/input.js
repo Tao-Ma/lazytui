@@ -87,6 +87,17 @@ function _handleWheel(mx, my, delta) {
   return false;
 }
 
+/** Suppress chrome-glyph clicks when a mode owns the user's input or
+ *  paints a centered popup over the chrome. Free-config is explicitly
+ *  let through — the [_] widget is supposed to work there. Same for
+ *  filter/detailSearch/prefix/listSelect (no centered overlay covering
+ *  chrome). */
+function _suppressesChromeClicks(md) {
+  return md.cmdMode || md.menuOpen || md.copyMode
+      || md.confirmMode || md.promptMode || md.registerPopupMode
+      || md.designTitleEditMode || md.terminalMode;
+}
+
 function handleMouse(kind, x, y) {
   // Phase 4 — runtime.update returns NEW model objects; read getModel()
   // at entry so post-Msg state is what subsequent reads see.
@@ -95,21 +106,28 @@ function handleMouse(kind, x, y) {
   const mx = x - 1;
   const my = y - 1;
 
-  // v0.6 — collapse-button click: top-right [_]/[+] on every non-detail
-  // panel toggles placement.collapsed. Works in BOTH free-config and
-  // normal mode (the widget paints in both). Checked AHEAD of any
-  // mode-specific handling so the click is always intercepted by the
-  // chrome before falling through to focus / drag / detail selection.
-  // Modal overlays still suppress mouse via isChainActive() below, so
-  // a press inside a menu doesn't accidentally collapse a panel
-  // underneath. cmdMode/promptMode are chain-active.
-  if (kind === 'press' && !isChainActive(model.modes)) {
-    const { hitTestCollapseButton } = require('../overlay/design');
+  // Panel-chrome glyph clicks — single early hit-test site for both
+  // [_]/[+] (collapse, always-on) and [X] (close, free-config-only).
+  // The close-button paint is itself gated on free-config in render(),
+  // so its hit-test no-ops in normal mode (no glyph there to click).
+  // Suppression predicate is narrower than isChainActive: free-config
+  // and the in-grid modes (filter/search/prefix/listSelect) still let
+  // chrome clicks through; only input-owning modes block them.
+  if (kind === 'press' && !_suppressesChromeClicks(model.modes)) {
+    const { hitTestCollapseButton, hitTestCloseButton } = require('../render/panel-widgets');
     const collapseId = hitTestCollapseButton(mx, my);
     if (collapseId) {
       dispatchMsg(wrap('layout', { type: 'panel_collapse_toggle', id: collapseId }));
       render();
       return;
+    }
+    if (model.modes.freeConfigMode) {
+      const hideId = hitTestCloseButton(mx, my);
+      if (hideId) {
+        dispatchMsg(wrap('layout', { type: 'pool_hide', id: hideId }));
+        render();
+        return;
+      }
     }
   }
 
@@ -135,30 +153,6 @@ function handleMouse(kind, x, y) {
       else if (kind === 'release') dispatchMsg(wrap('layout', { type: 'pool_drag_release' }));
       render();
       return;
-    }
-
-    // v0.6 — close-button click: top-right [X] on each non-detail panel
-    // dispatches a pool_hide. Checked before the design / overlay
-    // press handlers so the button beats any drag gesture that would
-    // start at the same coordinate. Collapse button [_]/[+] has the
-    // PARALLEL hit-test here too — the early non-free-config hit-test
-    // at the top of handleMouse is gated on !isChainActive, and
-    // freeConfigMode IS chain-active, so it would skip in free-config
-    // without this second site. Same pattern as the close button.
-    if (kind === 'press') {
-      const { hitTestCloseButton, hitTestCollapseButton } = require('../overlay/design');
-      const hideId = hitTestCloseButton(mx, my);
-      if (hideId) {
-        dispatchMsg(wrap('layout', { type: 'pool_hide', id: hideId }));
-        render();
-        return;
-      }
-      const collapseId = hitTestCollapseButton(mx, my);
-      if (collapseId) {
-        dispatchMsg(wrap('layout', { type: 'panel_collapse_toggle', id: collapseId }));
-        render();
-        return;
-      }
     }
 
     if (kind === 'press' && slice && slice.panelList && slice.panelList.open) {

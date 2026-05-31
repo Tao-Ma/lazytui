@@ -242,7 +242,7 @@ function update(msg, slice) {
       if (next.design) next = { ...next, design: { ...next.design, titleEdit: { active: false, text: '' } } };
       return [next, [{ type: 'apply_msg', msg: { type: 'mode_clear', flag: 'designTitleEditMode' } }]];
     }
-    case 'design_mouse_press':  return mdesign.mousePress(slice, require('../app/runtime').getModel(), msg.mx, msg.my, msg.cols);
+    case 'design_mouse_press':  return mdesign.mousePress(slice, msg.mx, msg.my, msg.cols);
     case 'design_mouse_motion': {
       // Same diff-painter trap as pool_drag_motion: the insertion bar
       // is painted at the target seam each render, but panel content

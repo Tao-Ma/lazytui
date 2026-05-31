@@ -604,9 +604,11 @@ function applyDrop(slice, srcType, target) {
 }
 
 /** Press: resize hit-test FIRST (a seam sits on a panel border), else arm a
- *  panel drag + move the keyboard selection to the clicked panel. */
-function mousePress(slice, model, mx, my, COLS) {
-  if (!model.modes.freeConfigMode) return slice;
+ *  panel drag + move the keyboard selection to the clicked panel. Callers
+ *  already gate on `freeConfigMode` (input.js handleMouse only dispatches
+ *  `design_mouse_press` when the mode is active), so the leaf no longer
+ *  needs the model to re-check — drops the `model` arg. */
+function mousePress(slice, mx, my, COLS) {
   const resize = pointToResizeTarget(slice, mx, my, COLS);
   if (resize) {
     let next = _pushUndoSlice(slice);
@@ -795,12 +797,15 @@ function poolDragStart(slice, sourceId, mx, my) {
   // visible. The user can still see what they're dragging via the
   // free-config footer ("dragging <title> → <target>"). If the drag
   // is cancelled (drop outside layout), poolDragRelease reopens the
-  // overlay so they can try again without pressing `w`.
-  const drag = { kind: 'pool-armed', sourceId, startX: mx, startY: my, curX: mx, curY: my, target: null };
+  // overlay so they can try again without pressing `w`. The
+  // resume-on-cancel flag rides on the drag object (its natural
+  // lifecycle) rather than being stuffed into panelList, which the
+  // rest of the code treats as a clean `{open, cursor}` shape.
   const wasOpen = !!(slice.panelList && slice.panelList.open);
+  const drag = { kind: 'pool-armed', sourceId, startX: mx, startY: my, curX: mx, curY: my, target: null, resumeOnCancel: wasOpen };
   return {
     ...slice,
-    panelList: { ...slice.panelList, open: false, _resumeOnCancel: wasOpen },
+    panelList: { ...slice.panelList, open: false },
     design: { ...slice.design, drag },
   };
 }
@@ -824,13 +829,14 @@ function poolDragMotion(slice, mx, my) {
  *  back into layout.update so the existing Phase 2 handlers do the work
  *  (single source of truth for the mutation). On a valid drop the overlay
  *  stays closed; on cancel (no valid target) the overlay reopens if it
- *  was open at drag-start, so the user can try again without re-pressing
- *  `w`. Clears the `_resumeOnCancel` bookkeeping flag in both cases. */
+ *  was open at drag-start (drag.resumeOnCancel), so the user can try
+ *  again without re-pressing `w`. The drag is cleared in both cases —
+ *  the resumeOnCancel flag dies with it. */
 function poolDragRelease(slice) {
   const d = slice.design;
   const ds = d && d.drag;
   if (!ds || (ds.kind !== 'pool-armed' && ds.kind !== 'pool-dragging')) return [slice, []];
-  const resumeOnCancel = !!(slice.panelList && slice.panelList._resumeOnCancel);
+  const resumeOnCancel = !!ds.resumeOnCancel;
   const repaint = { type: 'force_full_repaint' };
   const isValid = ds.kind === 'pool-dragging' && ds.target && ds.target.valid;
   if (!isValid) {
@@ -838,7 +844,7 @@ function poolDragRelease(slice) {
     // can retry. The repaint covers the drag-state pixel churn.
     const cleared = {
       ...slice,
-      panelList: { ...slice.panelList, open: resumeOnCancel, _resumeOnCancel: false },
+      panelList: { ...slice.panelList, open: resumeOnCancel },
       design: { ...d, drag: null },
     };
     return [cleared, [repaint]];
@@ -847,7 +853,7 @@ function poolDragRelease(slice) {
   const t = ds.target;
   const closeOverlay = {
     ...slice,
-    panelList: { ...slice.panelList, open: false, _resumeOnCancel: false },
+    panelList: { ...slice.panelList, open: false },
     design: { ...d, drag: null },
   };
   const showCmd = { kind: 'layout', msg: { type: 'pool_show', id: sourceId, column: t.column } };

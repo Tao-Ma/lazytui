@@ -84,120 +84,6 @@ function getDesignFooter() {
 }
 
 /**
- * v0.6 free-config: a small `[X]` quick-hide button painted over the
- * top-left corner of each placed panel that's allowed to be hidden
- * (everything except detail). Click it to dispatch a pool_hide Msg
- * directly — faster than `w` → arrow nav → Enter when the user already
- * knows which panel they want gone. The button is suppressed while a
- * drag gesture is active so it doesn't fight the drag affordances.
- */
-// Top-right widget glyph layout — each 3 cells wide, painted on the
-// panel's top border row. Two widgets:
-//
-//   [_]/[+]  ALWAYS visible (normal mode + free-config). Toggles
-//            placement.collapsed. Sits at [w-4, w-3, w-2].
-//   [X]      Free-config ONLY. Quick-hide (pool_hide). Sits at
-//            [w-8, w-7, w-6] — one column gap left of [_].
-//
-// Min top-border width to host both glyphs in free-config:
-//   ╭(hk)─[X] [_]╮ → 1 + 3 + 1 + 3 + 1 + 3 + 1 = 13 cols.
-// Normal mode hosts only [_] → min 9 cols (same as the v0.6 [X]-only).
-const GLYPH_W = 3;
-const CLOSE_GLYPH = '\\[X]';
-
-function _collapseGlyphX0(b) { return b.x + b.w - 1 - GLYPH_W; }
-function _closeGlyphX0(b)    { return b.x + b.w - 1 - GLYPH_W - 1 - GLYPH_W; }
-
-function renderCloseButtons() {
-  const layoutSlice = getComponentSlice('layout');
-  if (!layoutSlice || !layoutSlice.arrange) return;
-  const drag = layoutSlice.design && layoutSlice.design.drag;
-  if (drag) return;
-  const panels = (layoutSlice.arrange.leftPanels || []).concat(layoutSlice.arrange.rightPanels || []);
-  for (const p of panels) {
-    if (p.type === 'detail') continue;  // essential — no close button
-    const b = layoutSlice.panelBounds[p.type];
-    // Need room for ╭(hk)─[X] [_]╮ = 13 cols.
-    if (!b || b.w < 13 || b.h < 1) continue;
-    const x0 = _closeGlyphX0(b);
-    stdout.write(`\x1b[${b.y + 1};${x0 + 1}H` + richToAnsi(`[bold red]${CLOSE_GLYPH}[/]`) + RESET);
-  }
-}
-
-/**
- * Hit-test the close-button glyphs painted by renderCloseButtons.
- * Returns the panel id whose `[X]` was clicked, or null. Pure
- * derivation over slice.arrange + slice.panelBounds (same geometry
- * the render pass writes). Called by input.js BEFORE the overlay /
- * design drag press handlers so a button click intercepts cleanly.
- */
-function hitTestCloseButton(mx, my) {
-  const layoutSlice = getComponentSlice('layout');
-  if (!layoutSlice || !layoutSlice.arrange) return null;
-  const drag = layoutSlice.design && layoutSlice.design.drag;
-  if (drag) return null;
-  const panels = (layoutSlice.arrange.leftPanels || []).concat(layoutSlice.arrange.rightPanels || []);
-  for (const p of panels) {
-    if (p.type === 'detail') continue;
-    const b = layoutSlice.panelBounds[p.type];
-    if (!b || b.w < 13 || b.h < 1) continue;
-    const x0 = _closeGlyphX0(b);
-    if (my === b.y && mx >= x0 && mx < x0 + GLYPH_W) return p.id;
-  }
-  return null;
-}
-
-/**
- * v0.6 — `[_]`/`[+]` collapse-toggle button on every non-detail
- * placed panel. Visible in BOTH free-config and normal mode (unlike
- * the close button, which is free-config-only). Clicking toggles
- * placement.collapsed via panel_collapse_toggle.
- *
- * Painted at the rightmost slot inside the top border (where [X]
- * used to sit before v0.6.5); [X] now slides one slot left in
- * free-config. Suppressed while any drag gesture is in flight so
- * it doesn't fight drag affordances.
- */
-function renderCollapseButtons() {
-  const layoutSlice = getComponentSlice('layout');
-  if (!layoutSlice || !layoutSlice.arrange) return;
-  const drag = layoutSlice.design && layoutSlice.design.drag;
-  if (drag) return;
-  const panels = (layoutSlice.arrange.leftPanels || []).concat(layoutSlice.arrange.rightPanels || []);
-  for (const p of panels) {
-    if (p.type === 'detail') continue;  // essential — no collapse
-    const b = layoutSlice.panelBounds[p.type];
-    // Need room for ╭(hk)─[_]╮ = 9 cols.
-    if (!b || b.w < 9 || b.h < 1) continue;
-    const x0 = _collapseGlyphX0(b);
-    const glyph = p.collapsed ? '\\[+]' : '\\[_]';
-    stdout.write(`\x1b[${b.y + 1};${x0 + 1}H` + richToAnsi(`[bold cyan]${glyph}[/]`) + RESET);
-  }
-}
-
-/**
- * Hit-test the collapse-toggle glyphs. Returns the panel id whose
- * `[_]`/`[+]` was clicked, or null. Called from input.js before the
- * design / close-button hit-tests in free-config, and before the
- * normal-mode focus/select loop in non-free-config.
- */
-function hitTestCollapseButton(mx, my) {
-  const layoutSlice = getComponentSlice('layout');
-  if (!layoutSlice || !layoutSlice.arrange) return null;
-  const drag = layoutSlice.design && layoutSlice.design.drag;
-  if (drag) return null;
-  const panels = (layoutSlice.arrange.leftPanels || []).concat(layoutSlice.arrange.rightPanels || []);
-  for (const p of panels) {
-    if (p.type === 'detail') continue;
-    const b = layoutSlice.panelBounds[p.type];
-    if (!b || b.w < 9 || b.h < 1) continue;
-    const x0 = _collapseGlyphX0(b);
-    if (my === b.y && mx >= x0 && mx < x0 + GLYPH_W) return p.id;
-  }
-  return null;
-}
-
-/**
  * Pool-drag drop-target affordance: paints a colored frame on the
  * target cell (replace) or a colored bar at the column's append slot,
  * so the user can SEE where the dragged pool panel will land. Pure
@@ -350,8 +236,6 @@ function pointToDropTarget(srcType, mx, my) { return mdesign.pointToDropTarget(_
 
 module.exports = {
   renderDesignOverlay, getDesignFooter, titleEditText,
-  renderCloseButtons, hitTestCloseButton,
-  renderCollapseButtons, hitTestCollapseButton,
   onMouseEvent,
   pointToDropTarget, pointToResizeTarget,
   _clearUndoStacks,
