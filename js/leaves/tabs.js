@@ -218,8 +218,64 @@ function removeContent(slice, model, { groupName, key }) {
   return [{ ...slice, contentTabs: ctAllNext, tab, lines, scroll }, { needShowSelectedInfo }];
 }
 
+/**
+ * Reorder content tabs within a group: move the tab at `fromIdx` to `toIdx`.
+ *
+ * Implementation note: JS preserves insertion order for string keys, so we
+ * just rebuild `contentTabs[group]` with the permuted key sequence. No
+ * parallel ordering array, no accessor changes — every reader (getTabInfo /
+ * detailTitle / addContent's `Object.keys(...).indexOf(key)`) follows the
+ * new order for free.
+ *
+ * `slice.tab` follows the moved tab when the active tab IS the one moving;
+ * otherwise it adjusts to keep pointing at the same content (a forward
+ * move shifts active LEFT for tabs in (from, to]; a backward move shifts
+ * active RIGHT for tabs in [to, from)).
+ *
+ * Cross-group is supported: when groupName !== currentGroup we permute the
+ * map only and leave slice.tab / slice.lines / slice.scroll alone (T27
+ * pattern).
+ */
+function reorderContent(slice, model, { groupName, fromIdx, toIdx }) {
+  const ctAll = slice.contentTabs || {};
+  const ct = ctAll[groupName];
+  if (!ct) return slice;
+  const keys = Object.keys(ct);
+  const n = keys.length;
+  if (fromIdx < 0 || fromIdx >= n) return slice;
+  const clampedTo = Math.max(0, Math.min(n - 1, toIdx));
+  if (fromIdx === clampedTo) return slice;
+
+  const reordered = keys.slice();
+  const [moved] = reordered.splice(fromIdx, 1);
+  reordered.splice(clampedTo, 0, moved);
+  const ctGroupNext = {};
+  for (const k of reordered) ctGroupNext[k] = ct[k];
+  const ctAllNext = { ...ctAll, [groupName]: ctGroupNext };
+  let next = { ...slice, contentTabs: ctAllNext };
+
+  if (groupName !== model.currentGroup) return next;
+
+  const aCount = actionTabCount(model, groupName);
+  const tCount = Object.keys(groupTerminals(model, next, groupName)).length;
+  const contentBase = 1 + aCount + tCount;
+  const oldContentTab = slice.tab - contentBase;
+  if (oldContentTab < 0 || oldContentTab >= n) return next;
+
+  let newTab = slice.tab;
+  if (oldContentTab === fromIdx) {
+    newTab = contentBase + clampedTo;
+  } else if (fromIdx < clampedTo) {
+    if (oldContentTab > fromIdx && oldContentTab <= clampedTo) newTab--;
+  } else {
+    if (oldContentTab >= clampedTo && oldContentTab < fromIdx) newTab++;
+  }
+  if (newTab === slice.tab) return next;
+  return { ...next, tab: newTab };
+}
+
 module.exports = {
   actionTabCount, groupTerminals, groupContentTabs,
   addEphemeral, removeEphemeral,
-  addContent, updateContentLines, removeContent,
+  addContent, updateContentLines, removeContent, reorderContent,
 };

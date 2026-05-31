@@ -312,6 +312,8 @@ function update(msg, slice) {
       const [next, { needShowSelectedInfo }] = mt.removeContent(slice, getModel(), msg);
       return [next, needShowSelectedInfo ? [{ type: 'show_selected_info' }] : []];
     }
+    case 'viewer_reorder_content_tab':
+      return mt.reorderContent(slice, getModel(), msg);
 
     // --- visual-mode select. The mouse path dispatches the select_* Msgs
     // (overlay/select.js); the keyboard path lives in `case 'key':` below.
