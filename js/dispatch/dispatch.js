@@ -321,6 +321,17 @@ function handleDesignKey(key, seq) {
     case 'u':               dispatch({ type: 'design_undo' }); break;
     case 'ctrl-r':          dispatch({ type: 'design_redo' }); break;
     case 'w':               dispatch({ type: 'panel_list_open' }); break;
+    case ' ': {
+      // v0.6 — collapse-toggle on the SELECTED placement (the panel
+      // under the green focus border). detail is rejected by the
+      // reducer; other invariants (drag in flight) are out of band
+      // here since handleDesignKey only runs on idle key input.
+      const mdesign = require('../leaves/design');
+      const all = layoutSlice ? mdesign.allDesignPanels(layoutSlice) : [];
+      const sel = all[layoutSlice && layoutSlice.design ? layoutSlice.design.selectedIdx : 0];
+      if (sel) dispatch({ type: 'panel_collapse_toggle', id: sel.id });
+      break;
+    }
     case 'return': case 'q': case 'escape': dispatch({ type: 'design_exit' }); break;
   }
 }
@@ -517,6 +528,7 @@ function _registerBuiltinChords() {
   keybindings.registerKeyBinding('r',  { label: 'refresh', run: () => handleAction('refresh') },   b);
   keybindings.registerKeyBinding('gg', { label: 'top',     run: () => handleAction('goto_top') },  b);
   keybindings.registerKeyBinding('ge', { label: 'bottom',  run: () => handleAction('goto_bottom') }, b);
+  keybindings.registerKeyBinding('c',  { label: 'collapse', run: () => handleAction('toggle_collapse_focused') }, b);
   keybindings.labelSubtree('g', '+goto');
 }
 _registerBuiltinChords();
@@ -872,6 +884,18 @@ function handleAction(action, arg) {
       // happened" even before refresh completes.
       applyMsg({ type: 'refresh' });
       break;
+    case 'toggle_collapse_focused': {
+      // v0.6 — `<leader> c` chord in normal mode. Toggles the focused
+      // panel's collapsed state. detail / unrecognized focus = no-op
+      // (reducer is the gatekeeper, but resolving the id early lets
+      // the no-op skip the wrapped Msg entirely).
+      const focus = getFocus();
+      if (!focus || focus === 'detail') break;
+      const p = allPanels().find(x => x.type === focus);
+      if (!p) break;
+      dispatchMsg(wrap('layout', { type: 'panel_collapse_toggle', id: p.id }));
+      break;
+    }
     case 'show_help':
       applyMsg({ type: 'show_help' });
       break;

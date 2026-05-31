@@ -39,7 +39,7 @@ const { getModel } = require('../app/runtime');
 const { renderCmdline } = require('../dispatch/cmdline');
 const { renderConfirmOverlay } = require('../overlay/confirm');
 const { renderPromptOverlay } = require('../overlay/prompt');
-const { renderDesignOverlay, getDesignFooter, renderCloseButtons } = require('../overlay/design');
+const { renderDesignOverlay, getDesignFooter, renderCloseButtons, renderCollapseButtons } = require('../overlay/design');
 const { renderPanelListOverlay } = require('../overlay/panel-list');
 const { collectViewContributions } = require('../panel/api');
 const { currentText: filterCurrentText } = require('../overlay/filter');
@@ -53,6 +53,28 @@ const { currentText: filterCurrentText } = require('../overlay/filter');
  * the layout pass and breaks half/full view modes that supply a
  * different height.
  */
+/**
+ * Render a collapsed placement as a 1-row title bar. The panel's own
+ * renderer is bypassed (it'd need to special-case h=1 everywhere);
+ * layout owns this for-uniformity rendering of the minimized chrome.
+ * Focus-aware color (matches renderPanel's top border).
+ */
+function _renderCollapsed(p, w) {
+  const t = theme();
+  const layoutSlice = getComponentSlice('layout');
+  const focused = layoutSlice && layoutSlice.focus === p.type;
+  const fc = focused ? t.focus : t.dim;
+  const innerW = Math.max(0, w - 2);
+  let titleText = '';
+  if (p.hotkey) titleText += `(${p.hotkey})`;
+  if (p.title)  titleText += `─${p.title}`;
+  if (titleText.length > innerW - 2) titleText = titleText.slice(0, innerW - 2);
+  const fill = innerW - visibleLen(titleText);
+  if (fill >= 2)      return `[${fc}]╭─${titleText}${'─'.repeat(fill - 1)}╮[/]`;
+  else if (fill === 1) return `[${fc}]╭${titleText}─╮[/]`;
+  else                 return `[${fc}]╭${titleText}╮[/]`;
+}
+
 function rendererFor(type) {
   // Phase 6 — every panel is a Component. The owning Component's
   // render(panel, w, h, slice) is the only render path; no fallback.
@@ -88,12 +110,25 @@ function rendererFor(type) {
 function distributeColumnHeights(layoutSlice, panels, availH, isRightCol, minH) {
   if (panels.length === 0) return;
 
+  // Collapsed placements get a hard 1-row reservation each. Their share
+  // is subtracted from availH BEFORE detail/anchored/flex math so the
+  // remaining height splits across the visible panels. detail can't be
+  // collapsed (reducer guard), so this never overlaps the detail branch.
+  let collapsedTotal = 0;
+  for (const p of panels) {
+    if (p.collapsed && p.type !== 'detail') {
+      layoutSlice.panelHeights[p.type] = 1;
+      collapsedTotal += 1;
+    }
+  }
+  const innerAvail = Math.max(minH, availH - collapsedTotal);
+
   let reserved = 0;
   let detailPanel = null;
   if (isRightCol) {
     detailPanel = panels.find(p => p.type === 'detail') || null;
     if (detailPanel) {
-      reserved = Math.max(minH, Math.floor(availH * layoutSlice.arrange.detailHeightPct / 100));
+      reserved = Math.max(minH, Math.floor(innerAvail * layoutSlice.arrange.detailHeightPct / 100));
     }
   }
 
@@ -102,8 +137,9 @@ function distributeColumnHeights(layoutSlice, panels, availH, isRightCol, minH) 
   let anchoredTotal = 0;
   for (const p of panels) {
     if (p === detailPanel) continue;
+    if (p.collapsed) continue;  // already 1-row-reserved above
     if (typeof p.heightPct === 'number' && isFinite(p.heightPct)) {
-      const h = Math.max(minH, Math.floor(availH * p.heightPct / 100));
+      const h = Math.max(minH, Math.floor(innerAvail * p.heightPct / 100));
       anchored.push({ p, h });
       anchoredTotal += h;
     } else {
@@ -111,14 +147,14 @@ function distributeColumnHeights(layoutSlice, panels, availH, isRightCol, minH) 
     }
   }
 
-  // If anchored + reserved + (flex × minH) > availH, scale anchored
+  // If anchored + reserved + (flex × minH) > innerAvail, scale anchored
   // proportionally to the share they each claimed. Each panel still
   // floors at minH — if every anchored is at minH and the column
   // still overflows the terminal, the renderer truncates rather than
   // crashes.
   const flexMin = flex.length * minH;
-  if (reserved + anchoredTotal + flexMin > availH && anchoredTotal > 0) {
-    const target = Math.max(0, availH - reserved - flexMin);
+  if (reserved + anchoredTotal + flexMin > innerAvail && anchoredTotal > 0) {
+    const target = Math.max(0, innerAvail - reserved - flexMin);
     const scale = target / anchoredTotal;
     let allocated = 0;
     for (const a of anchored) {
@@ -137,7 +173,7 @@ function distributeColumnHeights(layoutSlice, panels, availH, isRightCol, minH) 
   }
 
   // Flex panels share whatever's left.
-  const flexTotalH = Math.max(0, availH - reserved - anchoredTotal);
+  const flexTotalH = Math.max(0, innerAvail - reserved - anchoredTotal);
   if (flex.length) {
     const baseH = Math.floor(flexTotalH / flex.length);
     flex.forEach((p, i) => {
@@ -148,14 +184,18 @@ function distributeColumnHeights(layoutSlice, panels, availH, isRightCol, minH) 
   for (const { p, h } of anchored) layoutSlice.panelHeights[p.type] = h;
   if (detailPanel) layoutSlice.panelHeights[detailPanel.type] = reserved;
 
-  // Park rounding-leftover rows on the column's last panel so the
-  // column exactly fills availH (matches the pre-heightPct behavior
-  // and avoids a visually empty strip at the bottom).
+  // Park rounding-leftover rows on the column's last non-collapsed
+  // panel so the column exactly fills availH (matches the pre-heightPct
+  // behavior and avoids a visually empty strip at the bottom). Collapsed
+  // panels are locked at 1 row — never grow them with slack.
   let sum = 0;
   for (const p of panels) sum += layoutSlice.panelHeights[p.type];
   if (sum < availH) {
-    const last = panels[panels.length - 1];
-    layoutSlice.panelHeights[last.type] += availH - sum;
+    let lastVisible = null;
+    for (let i = panels.length - 1; i >= 0; i--) {
+      if (!panels[i].collapsed) { lastVisible = panels[i]; break; }
+    }
+    if (lastVisible) layoutSlice.panelHeights[lastVisible.type] += availH - sum;
   }
 }
 
@@ -198,6 +238,7 @@ function calcLayout(model = getModel()) {
   // ref when the value is unchanged), so re-renders don't ping-pong.
   for (const p of [...layoutSlice.arrange.leftPanels, ...layoutSlice.arrange.rightPanels]) {
     if (p.type === 'detail') continue;
+    if (p.collapsed) continue;  // no content rows to scroll-clamp against
     syncPanelScroll(p.type, layoutSlice.panelHeights[p.type] - 2);
   }
 
@@ -302,6 +343,7 @@ function renderNormal(model) {
     const h = layoutSlice.panelHeights[p.type] || 0;
     layoutSlice.panelBounds[p.type] = { x: 0, y: leftY, w: leftW, h };
     leftY += h;
+    if (p.collapsed) return _renderCollapsed(p, leftW);
     return _safeRender(rendererFor(p.type), p, leftW, h);
   });
   let rightY = 0;
@@ -309,6 +351,7 @@ function renderNormal(model) {
     const h = layoutSlice.panelHeights[p.type] || 0;
     layoutSlice.panelBounds[p.type] = { x: leftW, y: rightY, w: rightW, h };
     rightY += h;
+    if (p.collapsed) return _renderCollapsed(p, rightW);
     return _safeRender(rendererFor(p.type), p, rightW, h);
   });
   return paintColumns(leftOutputs.join('\n'), rightOutputs.join('\n'));
@@ -477,6 +520,12 @@ function render(model = getModel()) {
   // (copy menu, prompt, etc.) paint after, so they can cover the strip when
   // their geometry happens to overlap.
   renderRegisterStrip(model);
+  // Collapse-toggle widgets — painted on every non-detail placed panel
+  // in BOTH free-config and normal mode (unlike close-buttons which are
+  // free-config-only). Only meaningful in `normal` view mode (half/full
+  // hide the column structure). After the main paint so the glyph
+  // overwrites the panel's top border.
+  if (viewMode === 'normal') renderCollapseButtons();
   // Overlays are mutually exclusive in practice (modeChain enforces it).
   // Order matches dispatch.js's modeChain: design > menu > copy.
   if (md.copyMode)    renderCopyMenu();
@@ -725,4 +774,9 @@ function invalidateRows(startY, endY) {
 module.exports = {
   calcLayout, render, redraw, renderFooter, renderTerminalOverlay,
   forceFullRepaint, invalidateRows,
+  // Test seam: distributeColumnHeights is a pure function that writes
+  // into the slice passed via `layoutSlice.panelHeights`. Exposed so
+  // collapsed-honor + heightPct math can be unit-tested without
+  // bringing up the whole runtime.
+  _distributeColumnHeights: distributeColumnHeights,
 };

@@ -31,7 +31,7 @@ const RESERVED_PANEL_KEYS = new Set(['type', 'title', 'hotkey', 'height', 'id'])
 // Placement-only fields aren't allowed at the pool level; they belong
 // on the cell.
 const RESERVED_POOL_KEYS = new Set(['type', 'title']);
-const PLACEMENT_ONLY_KEYS = new Set(['hotkey', 'height', 'heightPct']);
+const PLACEMENT_ONLY_KEYS = new Set(['hotkey', 'height', 'heightPct', 'collapsed']);
 
 function assignHotkeys(panelsYaml, pool) {
   const explicit = new Map();
@@ -124,6 +124,7 @@ function pickPlacement(raw) {
   if (raw.hotkey !== undefined)    out.hotkey    = String(raw.hotkey);
   if (raw.heightPct !== undefined) out.heightPct = raw.heightPct;
   if (raw.height !== undefined)    out.height    = raw.height;
+  if (raw.collapsed !== undefined) out.collapsed = !!raw.collapsed;
   return out;
 }
 
@@ -207,6 +208,7 @@ function buildPlacedPanel(resolved, hotkey, column, detailHeightSetter) {
     config: entry.config,
   };
   if (placement.heightPct !== undefined) panel.heightPct = placement.heightPct;
+  if (placement.collapsed === true)      panel.collapsed = true;
   return panel;
 }
 

@@ -179,6 +179,7 @@ function serializeLayoutCellPoolForm(panel, indent, opts = {}) {
   const firstPad = pad.slice(0, -2) + '- ';
   const placement = {};
   if (panel.heightPct !== undefined) placement.heightPct = panel.heightPct;
+  if (panel.collapsed === true)      placement.collapsed = true;
   if (panel.type === 'detail' && opts.detailHeightPct !== undefined) {
     placement.height = `${opts.detailHeightPct}%`;
   }

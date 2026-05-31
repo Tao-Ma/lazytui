@@ -95,6 +95,24 @@ function handleMouse(kind, x, y) {
   const mx = x - 1;
   const my = y - 1;
 
+  // v0.6 — collapse-button click: top-right [_]/[+] on every non-detail
+  // panel toggles placement.collapsed. Works in BOTH free-config and
+  // normal mode (the widget paints in both). Checked AHEAD of any
+  // mode-specific handling so the click is always intercepted by the
+  // chrome before falling through to focus / drag / detail selection.
+  // Modal overlays still suppress mouse via isChainActive() below, so
+  // a press inside a menu doesn't accidentally collapse a panel
+  // underneath. cmdMode/promptMode are chain-active.
+  if (kind === 'press' && !isChainActive(model.modes)) {
+    const { hitTestCollapseButton } = require('../overlay/design');
+    const collapseId = hitTestCollapseButton(mx, my);
+    if (collapseId) {
+      dispatchMsg(wrap('layout', { type: 'panel_collapse_toggle', id: collapseId }));
+      render();
+      return;
+    }
+  }
+
   // Design mode owns the entire mouse pipeline — the drag/resize state
   // machine lives on layout's slice (post-Phase-6 single-writer cleanup),
   // dispatched as wrapped `design_mouse_*` Msgs. cols() is resolved here
@@ -119,10 +137,11 @@ function handleMouse(kind, x, y) {
       return;
     }
 
-    // v0.6 — close-button click: top-left [x] on each non-detail panel
+    // v0.6 — close-button click: top-right [X] on each non-detail panel
     // dispatches a pool_hide. Checked before the design / overlay
     // press handlers so the button beats any drag gesture that would
-    // start at the same coordinate.
+    // start at the same coordinate. Collapse button (parallel widget,
+    // visible in all modes) is hit-tested OUTSIDE this block.
     if (kind === 'press') {
       const { hitTestCloseButton } = require('../overlay/design');
       const hideId = hitTestCloseButton(mx, my);

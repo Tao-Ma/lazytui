@@ -91,18 +91,22 @@ function getDesignFooter() {
  * knows which panel they want gone. The button is suppressed while a
  * drag gesture is active so it doesn't fight the drag affordances.
  */
-// Close-button glyph layout. Placed at the TOP-RIGHT of the panel
-// (matches the common close-button convention) so it overlays the
-// inert tail of `─`'s in the top border without colliding with the
-// (hotkey)─title text on the left side. Glyph is 3 cells wide:
-//   col b.x + b.w - 4 : '['
-//   col b.x + b.w - 3 : 'X'
-//   col b.x + b.w - 2 : ']'
-//   col b.x + b.w - 1 : '╮'  (untouched)
-const CLOSE_GLYPH_W = 3;
+// Top-right widget glyph layout — each 3 cells wide, painted on the
+// panel's top border row. Two widgets:
+//
+//   [_]/[+]  ALWAYS visible (normal mode + free-config). Toggles
+//            placement.collapsed. Sits at [w-4, w-3, w-2].
+//   [X]      Free-config ONLY. Quick-hide (pool_hide). Sits at
+//            [w-8, w-7, w-6] — one column gap left of [_].
+//
+// Min top-border width to host both glyphs in free-config:
+//   ╭(hk)─[X] [_]╮ → 1 + 3 + 1 + 3 + 1 + 3 + 1 = 13 cols.
+// Normal mode hosts only [_] → min 9 cols (same as the v0.6 [X]-only).
+const GLYPH_W = 3;
 const CLOSE_GLYPH = '\\[X]';
 
-function _closeGlyphX0(b) { return b.x + b.w - 1 - CLOSE_GLYPH_W; }
+function _collapseGlyphX0(b) { return b.x + b.w - 1 - GLYPH_W; }
+function _closeGlyphX0(b)    { return b.x + b.w - 1 - GLYPH_W - 1 - GLYPH_W; }
 
 function renderCloseButtons() {
   const layoutSlice = getComponentSlice('layout');
@@ -113,8 +117,8 @@ function renderCloseButtons() {
   for (const p of panels) {
     if (p.type === 'detail') continue;  // essential — no close button
     const b = layoutSlice.panelBounds[p.type];
-    // Need enough room for ╭(hotkey)─[X]╮: 1 + 3 + 1 + 3 + 1 = 9 cols.
-    if (!b || b.w < 9 || b.h < 1) continue;
+    // Need room for ╭(hk)─[X] [_]╮ = 13 cols.
+    if (!b || b.w < 13 || b.h < 1) continue;
     const x0 = _closeGlyphX0(b);
     stdout.write(`\x1b[${b.y + 1};${x0 + 1}H` + richToAnsi(`[bold red]${CLOSE_GLYPH}[/]`) + RESET);
   }
@@ -136,9 +140,59 @@ function hitTestCloseButton(mx, my) {
   for (const p of panels) {
     if (p.type === 'detail') continue;
     const b = layoutSlice.panelBounds[p.type];
-    if (!b || b.w < 9 || b.h < 1) continue;
+    if (!b || b.w < 13 || b.h < 1) continue;
     const x0 = _closeGlyphX0(b);
-    if (my === b.y && mx >= x0 && mx < x0 + CLOSE_GLYPH_W) return p.id;
+    if (my === b.y && mx >= x0 && mx < x0 + GLYPH_W) return p.id;
+  }
+  return null;
+}
+
+/**
+ * v0.6 — `[_]`/`[+]` collapse-toggle button on every non-detail
+ * placed panel. Visible in BOTH free-config and normal mode (unlike
+ * the close button, which is free-config-only). Clicking toggles
+ * placement.collapsed via panel_collapse_toggle.
+ *
+ * Painted at the rightmost slot inside the top border (where [X]
+ * used to sit before v0.6.5); [X] now slides one slot left in
+ * free-config. Suppressed while any drag gesture is in flight so
+ * it doesn't fight drag affordances.
+ */
+function renderCollapseButtons() {
+  const layoutSlice = getComponentSlice('layout');
+  if (!layoutSlice || !layoutSlice.arrange) return;
+  const drag = layoutSlice.design && layoutSlice.design.drag;
+  if (drag) return;
+  const panels = (layoutSlice.arrange.leftPanels || []).concat(layoutSlice.arrange.rightPanels || []);
+  for (const p of panels) {
+    if (p.type === 'detail') continue;  // essential — no collapse
+    const b = layoutSlice.panelBounds[p.type];
+    // Need room for ╭(hk)─[_]╮ = 9 cols.
+    if (!b || b.w < 9 || b.h < 1) continue;
+    const x0 = _collapseGlyphX0(b);
+    const glyph = p.collapsed ? '\\[+]' : '\\[_]';
+    stdout.write(`\x1b[${b.y + 1};${x0 + 1}H` + richToAnsi(`[bold cyan]${glyph}[/]`) + RESET);
+  }
+}
+
+/**
+ * Hit-test the collapse-toggle glyphs. Returns the panel id whose
+ * `[_]`/`[+]` was clicked, or null. Called from input.js before the
+ * design / close-button hit-tests in free-config, and before the
+ * normal-mode focus/select loop in non-free-config.
+ */
+function hitTestCollapseButton(mx, my) {
+  const layoutSlice = getComponentSlice('layout');
+  if (!layoutSlice || !layoutSlice.arrange) return null;
+  const drag = layoutSlice.design && layoutSlice.design.drag;
+  if (drag) return null;
+  const panels = (layoutSlice.arrange.leftPanels || []).concat(layoutSlice.arrange.rightPanels || []);
+  for (const p of panels) {
+    if (p.type === 'detail') continue;
+    const b = layoutSlice.panelBounds[p.type];
+    if (!b || b.w < 9 || b.h < 1) continue;
+    const x0 = _collapseGlyphX0(b);
+    if (my === b.y && mx >= x0 && mx < x0 + GLYPH_W) return p.id;
   }
   return null;
 }
@@ -295,7 +349,9 @@ function pointToResizeTarget(mx, my) { return mdesign.pointToResizeTarget(_slice
 function pointToDropTarget(srcType, mx, my) { return mdesign.pointToDropTarget(_slice(), srcType, mx, my, cols()); }
 
 module.exports = {
-  renderDesignOverlay, getDesignFooter, titleEditText, renderCloseButtons, hitTestCloseButton,
+  renderDesignOverlay, getDesignFooter, titleEditText,
+  renderCloseButtons, hitTestCloseButton,
+  renderCollapseButtons, hitTestCollapseButton,
   onMouseEvent,
   pointToDropTarget, pointToResizeTarget,
   _clearUndoStacks,

@@ -350,6 +350,33 @@ function update(msg, slice) {
         { type: 'force_full_repaint' },
       ]];
     }
+    // v0.6 — collapse toggle. Flips placement.collapsed for the given
+    // panel id. Works in BOTH free-config and normal mode (the widget /
+    // keybinding are wired in both); detail is essential and refuses.
+    case 'panel_collapse_toggle': {
+      const arrange = slice.arrange;
+      const id = msg.id;
+      const leftIdx  = arrange.leftPanels.findIndex(p => p.id === id);
+      const rightIdx = arrange.rightPanels.findIndex(p => p.id === id);
+      let col = null, idx = -1;
+      if (leftIdx >= 0)       { col = 'left';  idx = leftIdx;  }
+      else if (rightIdx >= 0) { col = 'right'; idx = rightIdx; }
+      else return slice;
+      const arr = col === 'left' ? arrange.leftPanels : arrange.rightPanels;
+      const p = arr[idx];
+      if (p.type === 'detail') return slice;  // essential
+      const next = { ...p, collapsed: !p.collapsed };
+      const nextArr = arr.slice(); nextArr[idx] = next;
+      const nextArrange = col === 'left'
+        ? { ...arrange, leftPanels:  nextArr }
+        : { ...arrange, rightPanels: nextArr };
+      // Mark dirty: collapsed is a real layout field that round-trips
+      // through :save-layout. The free-config unsaved-banner only
+      // surfaces in that mode (footerKeys check), so normal-mode
+      // toggles silently arm the dirty flag — :save-layout (a cmdline
+      // command available everywhere) commits it.
+      return { ...slice, arrange: nextArrange, dirty: true };
+    }
     case 'pool_show': {
       const arrange = slice.arrange;
       const id = msg.id;
