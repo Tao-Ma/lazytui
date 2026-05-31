@@ -168,19 +168,10 @@ function _ghostSuffix(text, ghost) {
   return ghost.slice(text.length);
 }
 
-/**
- * Split the cmdline buffer at the first whitespace into the fuzzy-match
- * query and the positional args. Mirrors cmdline.splitQuery (kept there as
- * the canonical, plugin-facing copy + reused by runCommandString/tests);
- * duplicated here because cmdline.js requires runtime (importing it back
- * would cycle) and the parse is a trivial, stable regex.
- */
-function _cmdlineSplit(text) {
-  const m = text.match(/^(\S*)\s+(.*)$/);
-  if (!m) return { query: text, args: [] };
-  const rest = m[2].trim();
-  return { query: m[1], args: rest ? rest.split(/\s+/) : [] };
-}
+// cmdline split lives in a zero-dep leaf so both this file and
+// dispatch/cmdline.js can import the same impl (pre-v0.6.x the regex
+// was duplicated in both sites).
+const { splitQuery: _cmdlineSplit } = require('../leaves/cmdline-split');
 
 /**
  * Clamp the register-popup cursor + scroll into bounds against the history
@@ -447,7 +438,11 @@ function update(model, msg) {
       let idx = rp.idx;
       if (msg.to === 'top')         idx = 0;
       else if (msg.to === 'bottom') idx = n - 1;
-      else                          idx = rp.idx + (msg.dir || 0);
+      // Number.isInteger guard instead of `msg.dir || 0` — same arithmetic
+      // result today (no caller passes 0), but the integer-typed contract
+      // is explicit and a malformed call with `dir: 'up'` falls through
+      // to 0 (a no-op) rather than producing NaN.
+      else                          idx = rp.idx + (Number.isInteger(msg.dir) ? msg.dir : 0);
       const clamped = _clampRegisterPopup({ idx, scroll: rp.scroll }, n, msg.vh);
       // Value-equal clamps preserve the original ref (callers can still
       // distinguish "nothing changed" from "no-op").

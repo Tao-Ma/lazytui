@@ -85,34 +85,32 @@ function clearEffects() { for (const k of Object.keys(_handlers)) delete _handle
 
 /**
  * Register the framework's built-in effect handlers. Called once at boot
- * (tui.js). Lazy-requires the core modules so this file stays dependency-
- * light + importable from tests. The writes go through the reducer so update
- * stays the single writer.
+ * (tui.js). Module references are cached once here so the hot-path
+ * handlers (`render` fires per streamed line via viewer_append; `refresh`
+ * per refresh tick) don't re-traverse the require cache on each call.
+ * Writes go through the reducer so update stays the single writer.
  */
 function installBuiltins() {
   const { getModel } = require('../app/runtime');
+  const api = require('../panel/api');
+  const renderQueue = require('../render/render-queue');
   // setDetail: replace the detail panel content (config-status' Enter→diff,
   // any migrated plugin's detail write). Routes through viewer_set_content (no Cmds).
   registerEffect('setDetail', (eff) => {
-    // viewer_set_content is handled by the detail Component's update (Phase B).
-    // Phase 2b — wrapped routing.
-    const api = require('../panel/api');
     api.dispatchMsg(api.wrap('detail', {
       type: 'viewer_set_content', lines: Array.isArray(eff.lines) ? eff.lines.slice() : [],
     }));
   });
   // focus: move panel focus (a component can't write slice.focus itself).
-  // Phase 1c — focus_set is owned by layout.update. Phase 2a — wrapped to
-  // route directly to layout.
+  // focus_set is owned by layout.update.
   registerEffect('focus', (eff) => {
     if (typeof eff.panel === 'string') {
-      const api = require('../panel/api');
       api.dispatchMsg(api.wrap('layout', { type: 'focus_set', focus: eff.panel }));
     }
   });
   // render: request a repaint (async effect results landing into a slice).
   registerEffect('render', () => {
-    try { require('../render/render-queue').scheduleRender(); } catch (_) { /* no renderer */ }
+    try { renderQueue.scheduleRender(); } catch (_) { /* no renderer */ }
   });
   // apply_msg: cross-layer Msg dispatch — lets a Component (e.g. detail)
   // re-dispatch a Msg back to the root reducer (focus_set / terminal_enter
@@ -127,7 +125,7 @@ function installBuiltins() {
   // viewer_reset_chrome → detail Component on a group cascade).
   registerEffect('dispatch_msg', (eff) => {
     if (!_enterCrossLayer('dispatch_msg', eff)) return;
-    try { require('../panel/api').dispatchMsg(eff.msg); }
+    try { api.dispatchMsg(eff.msg); }
     finally { _exitCrossLayer(); }
   });
   // show_selected_info: Component-level access to the framework Cmd that
@@ -137,7 +135,6 @@ function installBuiltins() {
   // viewer slice through the Component fan-out.
   registerEffect('show_selected_info', () => {
     try {
-      const api = require('../panel/api');
       api.dispatchMsg(api.wrap('detail', { type: 'viewer_show_info' }));
     } catch (_) { /* no renderer (test) */ }
   });
@@ -156,7 +153,7 @@ function installBuiltins() {
   registerEffect('tick', (eff) => {
     if (!eff || typeof eff.ms !== 'number' || !eff.msg) return;
     const t = setTimeout(() => {
-      try { require('../panel/api').dispatchMsg(eff.msg); } catch (_) { /* registry gone */ }
+      try { api.dispatchMsg(eff.msg); } catch (_) { /* registry gone */ }
     }, eff.ms);
     if (t && typeof t.unref === 'function') t.unref();
   });
@@ -169,7 +166,7 @@ function installBuiltins() {
     try { require('../render/layout').forceFullRepaint(); } catch (_) {}
   });
   registerEffect('refresh', () => {
-    require('../panel/api').refreshAll(getModel().config);
+    api.refreshAll(getModel().config);
   });
   registerEffect('show_help', () => { require('./help-text').showHelp(); });
   registerEffect('start_design', () => {

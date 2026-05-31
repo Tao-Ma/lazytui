@@ -78,12 +78,10 @@ function clear() {
  * quoting in v1; users wanting "one arg with spaces" can collapse via
  * the script body or wait for a follow-up.
  */
-function splitQuery(text) {
-  const m = text.match(/^(\S*)\s+(.*)$/);
-  if (!m) return { query: text, args: [] };
-  const rest = m[2].trim();
-  return { query: m[1], args: rest ? rest.split(/\s+/) : [] };
-}
+// splitQuery moved to the zero-dep leaves/cmdline-split leaf so
+// runtime.js can import the same impl without the back-cycle that
+// kept the duplicate around pre-v0.6.x.
+const { splitQuery } = require('../leaves/cmdline-split');
 
 function buildRegistry() {
   const reg = [];
