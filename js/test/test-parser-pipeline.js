@@ -316,6 +316,54 @@ layout:
   });
 });
 
+describe('layout invariants — detail / actions placement', () => {
+  it('detail in left column is rejected', () => {
+    const p = tmpYaml(
+      `groups:
+  g: { label: G, actions: { a: { cmd: 'echo', label: A } } }
+layout:
+  left:
+    panels:
+      - { type: detail, title: D }
+      - { type: groups, title: G }
+  right:
+    panels:
+      - { type: actions, title: A }
+`);
+    expectThrow(/'detail' panel must be in the right column/, () => parse(p));
+  });
+  it('detail not as the last cell in the right column is rejected', () => {
+    const p = tmpYaml(
+      `groups:
+  g: { label: G, actions: { a: { cmd: 'echo', label: A } } }
+layout:
+  left:
+    panels:
+      - { type: groups, title: G }
+  right:
+    panels:
+      - { type: detail, title: D }
+      - { type: actions, title: A }
+`);
+    expectThrow(/'detail' panel must be the last cell/, () => parse(p));
+  });
+  it('actions in left column is rejected', () => {
+    const p = tmpYaml(
+      `groups:
+  g: { label: G, actions: { a: { cmd: 'echo', label: A } } }
+layout:
+  left:
+    panels:
+      - { type: actions, title: A }
+      - { type: groups, title: G }
+  right:
+    panels:
+      - { type: detail, title: D }
+`);
+    expectThrow(/'actions' panel must be in the right column/, () => parse(p));
+  });
+});
+
 describe('user pool merges into the default layout when `layout:` block is absent', () => {
   // Regression: a top-level `panels:` block without a `layout:` block
   // used to silently drop every user-declared entry — defaultLayout()

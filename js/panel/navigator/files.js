@@ -47,7 +47,6 @@ const fs   = require('fs');
 const path = require('path');
 
 const { getModel } = require('../../app/runtime');
-const { registerEffect } = require('../../dispatch/effects');
 const mnav = require('../../leaves/nav');
 const {
   esc, visibleLen, theme, renderPanel,
@@ -460,48 +459,53 @@ function _readDirRows(cwd) {
   return out.concat(dirs, files);
 }
 
-registerEffect('loadDir', (eff) => {
-  const { panelType, source, cwd, container, seq } = eff;
-  // Off-tick so a slow filesystem (NFS, sshfs) or a docker exec never blocks
-  // the render/keypress tick; the result folds back via the dirLoaded Msg.
-  setImmediate(async () => {
-    let items = [];
-    let error = null;
-    try {
-      if (source === 'docker') {
-        const res = await dockerList(container, cwd);
-        error = res.error || null;
-        const parent = path.posix.dirname(cwd);
-        const head = parent !== cwd ? [{ kind: 'parent', name: '..', path: parent }] : [];
-        items = head.concat(res.items || []);
-      } else {
-        items = _readDirRows(cwd);
+/** Called from registerComponent after init() — replaces the
+ *  pre-cleanup module-top-level registrations so test lifecycles
+ *  that clear+reinstall effects can drive registration through the
+ *  same path. */
+function installEffects(registerEffect) {
+  registerEffect('loadDir', (eff) => {
+    const { panelType, source, cwd, container, seq } = eff;
+    // Off-tick so a slow filesystem (NFS, sshfs) or a docker exec never blocks
+    // the render/keypress tick; the result folds back via the dirLoaded Msg.
+    setImmediate(async () => {
+      let items = [];
+      let error = null;
+      try {
+        if (source === 'docker') {
+          const res = await dockerList(container, cwd);
+          error = res.error || null;
+          const parent = path.posix.dirname(cwd);
+          const head = parent !== cwd ? [{ kind: 'parent', name: '..', path: parent }] : [];
+          items = head.concat(res.items || []);
+        } else {
+          items = _readDirRows(cwd);
+        }
+      } catch (e) {
+        error = e.message;
+        const dn = source === 'docker' ? path.posix.dirname(cwd) : path.dirname(cwd);
+        items = dn !== cwd ? [{ kind: 'parent', name: '..', path: dn }] : [];
       }
-    } catch (e) {
-      error = e.message;
-      const dn = source === 'docker' ? path.posix.dirname(cwd) : path.dirname(cwd);
-      items = dn !== cwd ? [{ kind: 'parent', name: '..', path: dn }] : [];
-    }
-    require('../api').dispatchMsg(require('../api').wrap('files', { type: 'dirLoaded', panelType, cwd, seq, items, error }));
+      require('../api').dispatchMsg(require('../api').wrap('files', { type: 'dirLoaded', panelType, cwd, seq, items, error }));
+    });
   });
-});
 
-registerEffect('openFile', (eff) => {
-  _openFileAsTab(eff.item, eff.panelType);
-});
+  registerEffect('openFile', (eff) => {
+    _openFileAsTab(eff.item, eff.panelType);
+  });
 
-// resetPanelChrome: re-home the panel's cursor/scroll/filter on
-// navigation (Phase 4b cursor/scroll, Phase 4c filter — all live on
-// the owning Component's `slice.nav[panel]` and are written by its
-// own update via wrapped Msgs).
-registerEffect('resetPanelChrome', (eff) => {
-  const api = require('../api');
-  const compName = api.getComponentOwningPanel(eff.panel);
-  if (!compName) return;
-  api.dispatchMsg(api.wrap(compName, { type: 'set_cursor',   panel: eff.panel, index: 0 }));
-  api.dispatchMsg(api.wrap(compName, { type: 'set_scroll',   panel: eff.panel, offset: 0 }));
-  api.dispatchMsg(api.wrap(compName, { type: 'clear_filter', panel: eff.panel }));
-});
+  // resetPanelChrome: re-home the panel's cursor/scroll/filter on
+  // navigation — all live on the owning Component's `slice.nav[panel]`
+  // and are written by its own update via wrapped Msgs.
+  registerEffect('resetPanelChrome', (eff) => {
+    const api = require('../api');
+    const compName = api.getComponentOwningPanel(eff.panel);
+    if (!compName) return;
+    api.dispatchMsg(api.wrap(compName, { type: 'set_cursor',   panel: eff.panel, index: 0 }));
+    api.dispatchMsg(api.wrap(compName, { type: 'set_scroll',   panel: eff.panel, offset: 0 }));
+    api.dispatchMsg(api.wrap(compName, { type: 'clear_filter', panel: eff.panel }));
+  });
+}
 
 function _openFileAsTab(item, panelType) {
   const panel = _panelOf(panelType) || {};
@@ -583,6 +587,7 @@ module.exports = {
   name: 'files',
   init,
   update,
+  installEffects,
   panelTypes: {
     files:          _makeDef('files', null),
     'file-browser': _makeDef('file-browser', 'filesystem'),

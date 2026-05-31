@@ -14,7 +14,6 @@ const { setDetail } = require('../../app/state');
 const { getModel } = require('../../app/runtime');
 const history = require('../../feature/history');
 const mnav = require('../../leaves/nav');
-const { registerEffect } = require('../../dispatch/effects');
 const {
   esc, theme, renderPanel,
   getSel, getScroll, isMultiSel,
@@ -140,18 +139,25 @@ function update(msg, slice) {
   return [slice, [{ type: 'historyReplay', entry }, { type: '_claimed' }]];
 }
 
-registerEffect('historyReplay', (eff) => {
-  // setDetail routes the content write through update (viewer_set_content
-  // Msg); setActiveTab routes through update (viewer_set_tab Msg). The replay
-  // string is markup-ready single-line strings so join/split round-trips.
-  setDetail(_replayLines(eff.entry).join('\n'));
-  setActiveTab(0);
-});
+/** Called from registerComponent after init(). Moving these out of
+ *  module-top-level means test lifecycles that clear+reinstall effects
+ *  can re-register the per-Component handlers without re-requiring the
+ *  file (which would no-op due to module caching). */
+function installEffects(registerEffect) {
+  registerEffect('historyReplay', (eff) => {
+    // setDetail routes the content write through update (viewer_set_content
+    // Msg); setActiveTab routes through update (viewer_set_tab Msg). The replay
+    // string is markup-ready single-line strings so join/split round-trips.
+    setDetail(_replayLines(eff.entry).join('\n'));
+    setActiveTab(0);
+  });
+}
 
 module.exports = {
   name: 'history',
   init: () => ({ nav: { history: mnav.init() } }),
   update,
+  installEffects,
   panelTypes: {
     history: {
       render,

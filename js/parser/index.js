@@ -307,15 +307,35 @@ function parseLayout(layoutData, _hasContainers, _hasFiles, userPool) {
 
   // Semantic layout invariants — counted on RESOLVED types so string-id
   // refs are followed through the pool. Moved here from schema.js (the
-  // schema layer can't see resolved types).
+  // schema layer can't see resolved types). Each invariant is enforced
+  // here ONCE so per-Component code (viewer, layout, design) doesn't
+  // have to rediscover them via scattered guards.
   const all = leftPanels.concat(rightPanels);
   const detailCount = all.filter(p => p.type === 'detail').length;
   if (detailCount !== 1) {
     throw new ParseError(`layout must have exactly one 'detail' panel, found ${detailCount}`);
   }
+  // detail must live in the right column (the viewer Component looks
+  // for it there; the renderer's half/full view modes assume it). A
+  // left-column detail would render but hotkey lookup / activeTab
+  // resolution silently miss it.
+  if (leftPanels.some(p => p.type === 'detail')) {
+    throw new ParseError(`'detail' panel must be in the right column, not the left`);
+  }
+  // detail must be the LAST cell in the right column. design-mode
+  // reorder, pool_show, and pool_drag all preserve this convention;
+  // letting a config opt out would surface as drag/drop affordances
+  // that "snap" to a position the user didn't ask for.
+  const detailIdx = rightPanels.findIndex(p => p.type === 'detail');
+  if (detailIdx !== rightPanels.length - 1) {
+    throw new ParseError(`'detail' panel must be the last cell in the right column (found at index ${detailIdx} of ${rightPanels.length})`);
+  }
   const actionsCount = all.filter(p => p.type === 'actions').length;
   if (actionsCount > 1) {
     throw new ParseError(`layout allows at most one 'actions' panel, found ${actionsCount}`);
+  }
+  if (leftPanels.some(p => p.type === 'actions')) {
+    throw new ParseError(`'actions' panel must be in the right column, not the left`);
   }
 
   return {

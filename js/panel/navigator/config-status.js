@@ -33,7 +33,6 @@ const {
   getScroll, getSel,
   getComponentSlice, getFocus,
 } = require('../api');
-const { registerEffect } = require('../../dispatch/effects');
 const { getModel } = require('../../app/runtime');
 const mnav = require('../../leaves/nav');
 
@@ -407,25 +406,29 @@ function update(msg, slice) {
   return slice;
 }
 
-// Effects (registered once at module load). They run the blocking git work
-// off-tick / fold results back via Msgs — never writing the slice directly.
-registerEffect('cfgStatusCompute', (eff) => {
-  setImmediate(() => {
-    let cache;
-    try { cache = computeStatus(eff.branch, _files(), _projectDir()); }
-    catch (e) { cache = { branch: eff.branch, byPath: {}, children: {}, error: e.message, computedAt: Date.now() }; }
-    require('../api').dispatchMsg(require('../api').wrap('config-status', { type: 'cfgStatusResult', cache }));
+/** Called from registerComponent after init(). Runs the blocking git
+ *  work off-tick / folds results back via Msgs — never writing the
+ *  slice directly. */
+function installEffects(registerEffect) {
+  registerEffect('cfgStatusCompute', (eff) => {
+    setImmediate(() => {
+      let cache;
+      try { cache = computeStatus(eff.branch, _files(), _projectDir()); }
+      catch (e) { cache = { branch: eff.branch, byPath: {}, children: {}, error: e.message, computedAt: Date.now() }; }
+      require('../api').dispatchMsg(require('../api').wrap('config-status', { type: 'cfgStatusResult', cache }));
+    });
   });
-});
-registerEffect('cfgStatusDiff', (eff) => {
-  const { setDetail } = require('../../app/state');
-  setDetail(diffFor(eff.item, eff.branch, _projectDir()).join('\n'));
-});
+  registerEffect('cfgStatusDiff', (eff) => {
+    const { setDetail } = require('../../app/state');
+    setDetail(diffFor(eff.item, eff.branch, _projectDir()).join('\n'));
+  });
+}
 
 module.exports = {
   name: 'config-status',
   init,
   update,
+  installEffects,
   panelTypes: {
     'config-status': {
       render,

@@ -143,6 +143,18 @@ function registerComponent(comp) {
     console.error(`[component:${comp.name}] init error: ${e.message}`);
     route.setSlice(comp.name, null);
   }
+  // Per-Component effects (loadDir, openFile, historyReplay, …) — used
+  // to be registered at module-top-level via top-level
+  // `registerEffect(...)` calls in each file, which meant a test that
+  // did `clearEffects()` + `installBuiltins()` would silently lose the
+  // per-Component handlers (the file-cached side effect didn't re-run).
+  // Routing through the Component lifecycle keeps registration symmetric
+  // with the test reset path — `clearEffects()` followed by re-running
+  // `registerComponent` brings every effect back.
+  if (typeof comp.installEffects === 'function') {
+    try { comp.installEffects(registerEffect); }
+    catch (e) { console.error(`[component:${comp.name}] installEffects error: ${e.message}`); }
+  }
   if (comp.panelTypes) {
     for (const [type, def] of Object.entries(comp.panelTypes)) {
       if (!_validatePanelDef(comp.name, type, def)) continue;

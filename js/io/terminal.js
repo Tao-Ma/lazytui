@@ -1,23 +1,35 @@
 /**
  * Terminal session management — PTY + xterm-headless per session.
  * Owns lifecycle (spawn / resize / kill / restart), input routing,
- * and screen buffer reads. No tab-arithmetic knowledge — that lives
- * in `./tabs`.
+ * and screen buffer reads. No tab-arithmetic, no panel/api or
+ * render/layout knowledge — those live in higher layers and reach
+ * THIS module, never the reverse.
  *
- * Lazy-requires `./tabs` inside the PTY onExit handler so an
- * ephemeral tab can be cleaned up on its shell's clean exit (`exit 0`)
- * without forming a top-level cycle: tabs.js requires terminal.js for
- * destroySession, and terminal.js → tabs.js only fires when a real
- * PTY exit happens (after both modules are fully loaded).
+ * The PTY-exit fan-out (active-tab check, viewMode 'full' drop,
+ * ephemeral-tab cleanup, force-full-repaint) used to be inlined here
+ * via lazy-requires up to panel/viewer/tabs, panel/api, render/layout
+ * — a documented layering inversion. v0.6 routes those side effects
+ * through a registered handler (`setExitHandler`) wired at boot from
+ * panel/viewer/pty-lifecycle.js. io/terminal.js stays a true leaf;
+ * if no handler is registered (tests / scripts that don't bring up
+ * the full panel layer), PTY exits silently update session state.
  */
 'use strict';
 
 const pty = require('node-pty');
 const { Terminal } = require('@xterm/headless');
 const { getModel } = require('../app/runtime');
-const { scheduleOverlay, scheduleRender } = require('../render/render-queue');
+const { scheduleOverlay } = require('../render/render-queue');
 
 const sessions = {};  // id -> { pty, xterm, cmd, exited, exitCode }
+
+let _exitHandler = null;
+
+/** Wire a fan-out handler invoked after each PTY session exit. Receives
+ *  `(id, exitCode)`. Called once at boot from a higher layer; the io
+ *  module itself stays a leaf. Idempotent on re-registration so test
+ *  setup can swap handlers between runs. */
+function setExitHandler(fn) { _exitHandler = (typeof fn === 'function') ? fn : null; }
 
 /**
  * Create or return existing session. Lazy — created on first access
@@ -58,49 +70,12 @@ function ensureSession(id, cmd, cols, rows) {
   return session;
 }
 
-/**
- * Handle a session's PTY exit. Extracted from the onExit closure
- * so tests can drive it directly without mocking node-pty.
- *
- * Two side effects, both lazy-requiring `./tabs` to avoid the
- * tabs.js ↔ terminal.js cycle at module load:
- * - If viewMode was 'full' and this session was the active terminal
- *   tab, drop viewMode to 'normal' — user lands somewhere reachable
- *   instead of staring at an exited PTY (clean) or an unresponsive
- *   error screen (non-zero). 'half' is left alone (user-chosen).
- * - On clean exit (exitCode === 0), auto-remove the ephemeral tab
- *   via handleSessionCleanExit. Non-zero stays put so the user
- *   can read the exit code; `x` closes it.
- */
+/** Invoke the registered exit handler (if any). Lifted out of the
+ *  onExit closure so tests can drive it without spinning a real PTY. */
 function _onSessionExit(id, exitCode) {
-  const tabs = require('../panel/viewer/tabs');
-  const api = require('../panel/api');
-  let anyChange = false;
-  const wasActive = tabs.activeTerminalId() === id;
-  // viewMode owned by the layout Component (Phase 1b) — read the slice,
-  // dispatch a flat Msg through the Component fan-out.
-  const layoutSlice = api.getComponentSlice('layout');
-  if (layoutSlice && layoutSlice.viewMode === 'full' && wasActive) {
-    api.dispatchMsg(api.wrap('layout', { type: 'view_set', mode: 'normal' }));
-    anyChange = true;
-  }
-  if (exitCode === 0 && tabs.handleSessionCleanExit(id)) {
-    anyChange = true;
-  }
-  if (anyChange) {
-    // If the exiting session was the user-visible one, the PTY
-    // had painted into cells the diff cache won't think to
-    // repaint — viewMode dropping back to 'normal' (or the tab
-    // going away on clean exit) means the underlying panel
-    // renderer needs to reclaim those cells. Without this,
-    // SIGQUIT'd children leave their last frame stuck on screen
-    // while the chrome behind doesn't redraw. Same pattern as
-    // the SIGCONT path in suspend.js.
-    if (wasActive) {
-      const { forceFullRepaint } = require('../render/layout');
-      forceFullRepaint();
-    }
-    scheduleRender();
+  if (_exitHandler) {
+    try { _exitHandler(id, exitCode); }
+    catch (e) { console.error(`[terminal] exit handler threw: ${e.message}`); }
   }
 }
 
@@ -164,5 +139,6 @@ module.exports = {
   ensureSession, getSession, writeToSession,
   resizeSession, destroySession, destroyAll,
   restartSession, isSessionDead,
-  _onSessionExit,  // exported for tests
+  setExitHandler,
+  _onSessionExit,  // exported for tests (invokes the registered handler)
 };

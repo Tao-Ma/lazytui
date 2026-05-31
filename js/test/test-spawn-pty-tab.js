@@ -60,6 +60,10 @@ const writeToSessionCalls = [];
 let mockSessionDead = false;
 terminal.writeToSession = (id, data) => { writeToSessionCalls.push({ id, data }); };
 terminal.isSessionDead = (_id) => mockSessionDead;
+// v0.6 — io/terminal.js is now a leaf; the upstream fan-out (viewMode
+// drop, ephemeral cleanup, forceFullRepaint) lives in pty-lifecycle.
+// tui.js wires this at boot in production; the test wires it directly.
+require('../panel/viewer/pty-lifecycle').install();
 
 const { _handleTerminalModeData } = require('../dispatch/input');
 

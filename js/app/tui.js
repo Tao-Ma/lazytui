@@ -205,6 +205,13 @@ function main() {
   // chrome reset / viewer reset) goes out as apply_msg / dispatch_msg Cmds.
   registerComponent(require('../panel/navigator/groups'));
 
+  // PTY exit fan-out — wires `panel/viewer/pty-lifecycle` into
+  // `io/terminal.js` so the io layer stays a leaf (it used to lazy-
+  // require panel/viewer/tabs + panel/api + render/layout on every
+  // session exit — a documented inversion). Must run AFTER the viewer
+  // Component is registered so the handler's slice reads land.
+  require('../panel/viewer/pty-lifecycle').install();
+
   // Phase 6 — the runtime Plugin API retired. External authors write
   // Components and register them the same way the built-ins above do.
   // The `plugins:` block still has a parser-level role though: entries
