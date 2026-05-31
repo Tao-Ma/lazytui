@@ -88,7 +88,7 @@ function helpLines() {
   if (getFocus() === 'detail') {
     lines.push('', '[dim]Detail panel — reading mode[/]',
       '  j / k / arrows Scroll view ±1 line',
-      '  , .            Half-page up / down',
+      '  , .            Page up / down',
       '  < >            Top / bottom',
       '  wheel          Scroll panel under cursor (any panel, any time)',
       '',

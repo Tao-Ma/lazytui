@@ -103,10 +103,10 @@ function _jumpInListPanel(target) {
   require('./dispatch').navSelect(getFocus(), next);
 }
 
-function _halfPageStep(panelType) {
+function _pageStep(panelType) {
   const slice = getComponentSlice('layout');
   const h = (slice && slice.panelHeights[panelType]) || 4;
-  return Math.max(1, Math.floor((h - 2) / 2));
+  return Math.max(1, h - 2);
 }
 
 /**
@@ -271,17 +271,17 @@ function handleAction(action, arg) {
     case 'prev_tab': applyMsg({ type: 'prev_tab' }); break;
     case 'page_up': {
       // Paging is focus-aware: detail scrolls its content; list panels
-      // jump the cursor by half a panel (the nav_select cascade, now
-      // run inline in the reducer). Other panel modes (e.g. stats
+      // jump the cursor by a full inner page (the nav_select cascade,
+      // now run inline in the reducer). Other panel modes (e.g. stats
       // content) get no-op — they don't expose getItems(), so the
       // guard at the top of _pageInListPanel intentionally bails.
-      if (getFocus() === 'detail') dispatchMsg(wrap('detail', { type: 'viewer_scroll', delta: -_halfPageStep('detail') }));
-      else                          _pageInListPanel(-_halfPageStep(getFocus()));
+      if (getFocus() === 'detail') dispatchMsg(wrap('detail', { type: 'viewer_scroll', delta: -_pageStep('detail') }));
+      else                          _pageInListPanel(-_pageStep(getFocus()));
       break;
     }
     case 'page_down': {
-      if (getFocus() === 'detail') dispatchMsg(wrap('detail', { type: 'viewer_scroll', delta: +_halfPageStep('detail') }));
-      else                          _pageInListPanel(+_halfPageStep(getFocus()));
+      if (getFocus() === 'detail') dispatchMsg(wrap('detail', { type: 'viewer_scroll', delta: +_pageStep('detail') }));
+      else                          _pageInListPanel(+_pageStep(getFocus()));
       break;
     }
     case 'goto_top':
