@@ -343,28 +343,30 @@ describe('[3e] calcLayout — heightPct distribution', () => {
       ],
     };
   }
+  // ROWS=30 with empty register → strip suppressed → availH = ROWS - 1 = 29.
+  // (v0.6 switched the strip from always-reserved to active-only.)
   it('all-flex left col splits equally', () => {
     freshLayout();
-    process.stdout.columns = 100; process.stdout.rows = 30; // availH = 28 (rows-2: footer + register strip)
+    process.stdout.columns = 100; process.stdout.rows = 30; // availH = 29
     calcLayout();
     eq(getComponentSlice('layout').panelHeights.containers, 14);
-    eq(getComponentSlice('layout').panelHeights.groups, 14, 'two flex panels share 28 evenly');
+    eq(getComponentSlice('layout').panelHeights.groups, 15, 'two flex split 29: 14 + 15 (last gets leftover)');
   });
   it('anchored heightPct claims its share, flex absorbs remainder', () => {
     freshLayout();
     getComponentSlice("layout").arrange.leftPanels[0].heightPct = 70;  // containers fixed at 70%
-    process.stdout.columns = 100; process.stdout.rows = 30; // availH = 28
+    process.stdout.columns = 100; process.stdout.rows = 30; // availH = 29
     calcLayout();
-    eq(getComponentSlice('layout').panelHeights.containers, 19, 'floor(28 * 0.7) = 19');
+    eq(getComponentSlice('layout').panelHeights.containers, 20, 'floor(29 * 0.7) = 20');
     eq(getComponentSlice('layout').panelHeights.groups, 9, 'flex remainder');
   });
   it('oversubscribed anchored values scale proportionally', () => {
     freshLayout();
     getComponentSlice("layout").arrange.leftPanels[0].heightPct = 90;
     getComponentSlice("layout").arrange.leftPanels[1].heightPct = 90;
-    process.stdout.columns = 100; process.stdout.rows = 30; // availH = 28
+    process.stdout.columns = 100; process.stdout.rows = 30; // availH = 29
     calcLayout();
-    eq(getComponentSlice('layout').panelHeights.containers + getComponentSlice('layout').panelHeights.groups, 28, 'column fills availH after scaling');
+    eq(getComponentSlice('layout').panelHeights.containers + getComponentSlice('layout').panelHeights.groups, 29, 'column fills availH after scaling');
     assert(getComponentSlice('layout').panelHeights.containers >= 3, 'containers ≥ minH');
     assert(getComponentSlice('layout').panelHeights.groups >= 3, 'groups ≥ minH');
   });
