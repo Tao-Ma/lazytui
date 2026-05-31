@@ -32,6 +32,11 @@ function execAsync(cmd, options = {}) {
     let stdout = '';
     const timer = setTimeout(() => { try { proc.kill(); } catch {} }, timeout);
     proc.stdout.on('data', d => stdout += d.toString('utf8'));
+    // Drain stderr — without a consumer the pipe buffer fills (typically
+    // 64KB) and the child blocks on its next stderr write, holding the
+    // function until `timeout` kicks in. Silent discard matches what the
+    // function already does on non-zero exit (caller only sees stdout).
+    proc.stderr.on('data', () => {});
     proc.on('close', () => { clearTimeout(timer); resolve(stdout); });
     proc.on('error', () => { clearTimeout(timer); resolve(stdout); });
   });

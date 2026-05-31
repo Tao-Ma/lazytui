@@ -265,6 +265,37 @@ layout:
     eq(cfg.layout.left_panels.map(pp => [pp.hotkey, pp.type]),  [['1','containers'], ['2','groups']]);
     eq(cfg.layout.right_panels.map(pp => [pp.hotkey, pp.type]), [['7','actions'], ['8','stats'], ['9','detail']]);
   });
+  it('duplicate explicit hotkey WITHIN a side throws', () => {
+    const p = tmpYaml(
+      `groups:
+  g: { label: G, actions: { a: { cmd: 'echo', label: A } } }
+layout:
+  left:
+    panels:
+      - { type: groups, title: G, hotkey: '1' }
+      - { type: containers, title: C, hotkey: '1' }
+  right:
+    panels:
+      - { type: actions, title: A }
+      - { type: detail, title: D }
+`);
+    expectThrow(/left column declares hotkey '1' twice/, () => parse(p));
+  });
+  it('explicit hotkey collision ACROSS sides throws', () => {
+    const p = tmpYaml(
+      `groups:
+  g: { label: G, actions: { a: { cmd: 'echo', label: A } } }
+layout:
+  left:
+    panels:
+      - { type: groups, title: G, hotkey: '7' }
+  right:
+    panels:
+      - { type: actions, title: A, hotkey: '7' }
+      - { type: detail, title: D }
+`);
+    expectThrow(/hotkey '7' claimed by both/, () => parse(p));
+  });
   it('explicit override wins, others skip claimed keys', () => {
     const p = tmpYaml(
       `groups:
@@ -282,6 +313,44 @@ layout:
     eq(cfg.layout.left_panels[0].hotkey, 'g');
     eq(cfg.layout.right_panels.map(pp => [pp.hotkey, pp.type]),
        [['7','actions'], ['o','detail']]);
+  });
+});
+
+describe('user pool merges into the default layout when `layout:` block is absent', () => {
+  // Regression: a top-level `panels:` block without a `layout:` block
+  // used to silently drop every user-declared entry — defaultLayout()
+  // was called without userPool. Now the user entries land in the
+  // pool as hidden (available via the `w` overlay).
+  it('user pool entries survive as hidden pool entries', () => {
+    const p = tmpYaml(
+      `panels:
+  notes:
+    type: history
+    title: Notes
+groups:
+  g: { label: G, actions: { a: { cmd: 'echo', label: A } } }
+`);
+    const cfg = parse(p);
+    assert(cfg.layout.pool.notes, 'user pool entry survived');
+    eq(cfg.layout.pool.notes.type, 'history');
+    eq(cfg.layout.pool.notes.title, 'Notes');
+    // Not placed in either column — it's hidden.
+    const placed = cfg.layout.left_panels.concat(cfg.layout.right_panels);
+    assert(!placed.some(pp => pp.id === 'notes'), 'not placed in any column');
+  });
+  it('default entries still populate the pool', () => {
+    const p = tmpYaml(
+      `panels:
+  notes:
+    type: history
+groups:
+  g: { label: G, actions: { a: { cmd: 'echo', label: A } } }
+`);
+    const cfg = parse(p);
+    assert(cfg.layout.pool.groups,  'default groups entry present');
+    assert(cfg.layout.pool.actions, 'default actions entry present');
+    assert(cfg.layout.pool.detail,  'default detail entry present');
+    assert(cfg.layout.pool.notes,   'user notes entry present');
   });
 });
 

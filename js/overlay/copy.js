@@ -18,7 +18,6 @@
 const { getSel } = require('../app/state');
 const { getModel } = require('../app/runtime');
 const { stripMarkup, esc } = require('../io/ansi');
-const { stdout } = require('../io/term');
 const {getPanelDef, getItems, getComponentSlice, getFocus } = require('../panel/api');
 const { renderOverlay } = require('../render/panel');
 
@@ -61,12 +60,9 @@ function collectOptions() {
   return options;
 }
 
-/** Emit OSC52 clipboard escape sequence. */
-function emitOSC52(text) {
-  if (typeof text !== 'string' || !text) return;
-  const b64 = Buffer.from(text, 'utf8').toString('base64');
-  stdout.write(`\x1b]52;c;${b64}\x07`);
-}
+// emitOSC52 moved to io/term.js as the single home for terminal
+// escape sequences.
+const { emitOSC52 } = require('../io/term');
 
 /**
  * Resolve an option's content and copy. content may be a string or a thunk

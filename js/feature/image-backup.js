@@ -29,8 +29,18 @@
  */
 'use strict';
 
+const crypto = require('crypto');
+
+/** Filename-safe key for a docker image ref. Replaces `/` and `:` with
+ *  `_` AND appends an 8-char hash of the ORIGINAL ref so collisions
+ *  between distinct refs that flatten to the same string (e.g.
+ *  `a/b:latest` vs `a:b:latest`) can't silently clobber each other in
+ *  the backup directory. Load still globs `*.tar.gz`, so the longer
+ *  filename is transparent to the load path. */
 function safeName(img) {
-  return img.replace(/[\/:]/g, '_');
+  const flat = img.replace(/[\/:]/g, '_');
+  const hash = crypto.createHash('sha256').update(img).digest('hex').slice(0, 8);
+  return `${flat}-${hash}`;
 }
 
 function saveScript(list, out) {

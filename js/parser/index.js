@@ -33,10 +33,17 @@ const RESERVED_PANEL_KEYS = new Set(['type', 'title', 'hotkey', 'height', 'id'])
 const RESERVED_POOL_KEYS = new Set(['type', 'title']);
 const PLACEMENT_ONLY_KEYS = new Set(['hotkey', 'height', 'heightPct', 'collapsed']);
 
-function assignHotkeys(panelsYaml, pool) {
+function assignHotkeys(panelsYaml, pool, sideLabel) {
   const explicit = new Map();
+  const seen = new Map();   // key → first index that claimed it
   for (let i = 0; i < panelsYaml.length; i++) {
-    if (panelsYaml[i].hotkey) explicit.set(i, String(panelsYaml[i].hotkey));
+    if (!panelsYaml[i].hotkey) continue;
+    const key = String(panelsYaml[i].hotkey);
+    if (seen.has(key)) {
+      throw new ParseError(`${sideLabel} column declares hotkey '${key}' twice (cells ${seen.get(key)} and ${i})`);
+    }
+    seen.set(key, i);
+    explicit.set(i, key);
   }
   const used = new Set(explicit.values());
   const available = pool.filter(k => !used.has(k));
@@ -219,7 +226,7 @@ function buildPlacedPanel(resolved, hotkey, column, detailHeightSetter) {
   return panel;
 }
 
-function defaultLayout(hasContainers, hasFiles) {
+function defaultLayout(hasContainers, hasFiles, userPool) {
   const pool = new Map();
   const left = [];
   let hk = 1;
@@ -239,6 +246,18 @@ function defaultLayout(hasContainers, hasFiles) {
     addDefault('actions', 'actions', 'Actions', 'right', '7'),
     addDefault('detail',  'detail',  'Detail',  'right', '8'),
   ];
+  // Merge user-declared pool entries (from a top-level `panels:` block
+  // that the YAML had without a matching `layout:`). Without this, the
+  // user's entries would be silently dropped — surface them as HIDDEN
+  // pool entries (available via the `w` overlay), since the default
+  // layout doesn't know where to place them. Default entries win on
+  // id collision; the user entry would have been visible through the
+  // pool anyway if they'd written a layout block.
+  if (userPool) {
+    for (const [id, entry] of userPool) {
+      if (!pool.has(id)) pool.set(id, entry);
+    }
+  }
   return {
     left_width: 30, left_panels: left, right_panels: right,
     detail_height_pct: 60,
@@ -265,8 +284,23 @@ function parseLayout(layoutData, _hasContainers, _hasFiles, userPool) {
   // Hotkey assignment runs against placement-level hotkey overrides.
   // assignHotkeys() reads `.hotkey` off the array elements — feed it
   // the placements directly.
-  const leftKeys  = assignHotkeys(leftResolved.map(r  => r.placement), LEFT_HOTKEY_POOL);
-  const rightKeys = assignHotkeys(rightResolved.map(r => r.placement), RIGHT_HOTKEY_POOL);
+  const leftKeys  = assignHotkeys(leftResolved.map(r  => r.placement), LEFT_HOTKEY_POOL,  'left');
+  const rightKeys = assignHotkeys(rightResolved.map(r => r.placement), RIGHT_HOTKEY_POOL, 'right');
+
+  // Cross-side collision check — only one panel can answer to a given
+  // hotkey in normal-mode dispatch. Explicit hotkeys can claim ANY key
+  // (not just the per-side pool), so a left cell with `hotkey: '7'` and
+  // a right cell that auto-picks '7' would collide silently. Surface it.
+  const seenKey = new Map();
+  const allKeys = leftKeys.map(k => ({ k, side: 'left' }))
+    .concat(rightKeys.map(k => ({ k, side: 'right' })));
+  for (const { k, side } of allKeys) {
+    if (!k) continue;  // unassigned slot
+    if (seenKey.has(k)) {
+      throw new ParseError(`hotkey '${k}' claimed by both ${seenKey.get(k)} and ${side} columns`);
+    }
+    seenKey.set(k, side);
+  }
 
   const leftPanels  = leftResolved.map((r, i)  => buildPlacedPanel(r, leftKeys[i],  'left',  setDetailHeight));
   const rightPanels = rightResolved.map((r, i) => buildPlacedPanel(r, rightKeys[i], 'right', setDetailHeight));
@@ -568,7 +602,7 @@ function parse(yamlPath) {
   const userPool = parsePool(data.panels);
   const layout = ('layout' in data)
     ? parseLayout(data.layout, hasContainers, hasFiles, userPool)
-    : defaultLayout(hasContainers, hasFiles);
+    : defaultLayout(hasContainers, hasFiles, userPool);
 
   return {
     project_dir: projectDir,

@@ -39,13 +39,26 @@ describe('[2] groupActions synthesizes save + load', () => {
     const a = ib.groupActions({ images: { list: ['a', 'b'] } });
     eq(Object.keys(a).sort().join(','), 'load,save');
   });
-  it('safeName strips / and :', () => {
-    eq(ib._safeName('gitea/gitea:latest'), 'gitea_gitea_latest');
-    eq(ib._safeName('plain'), 'plain');
+  it('safeName flattens / and : then appends a hash', () => {
+    // Flat prefix preserved for readability + a hash suffix to keep
+    // collision-prone refs distinct on disk.
+    const a = ib._safeName('gitea/gitea:latest');
+    assert(a.startsWith('gitea_gitea_latest-'), `got: ${a}`);
+    eq(a.length, 'gitea_gitea_latest-'.length + 8, '8-char hash');
+    const b = ib._safeName('plain');
+    assert(b.startsWith('plain-'), `got: ${b}`);
+  });
+  it('safeName distinguishes refs that would otherwise flatten the same', () => {
+    // Three distinct refs, all flatten to `a_b_latest` pre-v0.6 →
+    // silent clobber on save. Hash suffix keeps them apart.
+    const refs = ['a/b:latest', 'a:b:latest', 'a/b/latest'];
+    const names = refs.map(ib._safeName);
+    eq(new Set(names).size, 3, 'all three names distinct');
   });
   it('save script uses safe filenames', () => {
     const a = ib.groupActions({ images: { list: ['gitea/gitea:latest'], output_dir: 'out' } });
-    assert(a.save.script.includes('out/gitea_gitea_latest.tar.gz'), 'safe filename in save');
+    const expected = `out/${ib._safeName('gitea/gitea:latest')}.tar.gz`;
+    assert(a.save.script.includes(expected), `safe filename in save (looking for ${expected})`);
     assert(a.save.script.includes('mkdir -p "out"'), 'mkdir uses configured dir');
   });
   it('load script refuses if dir missing', () => {
@@ -144,9 +157,12 @@ describe('[4] save: writes gzipped tarballs, skips missing images, lists output'
     eq(r.status, 0, `rc 0 (stderr: ${r.stderr})`);
     const dir = path.join(TMP, 'image_backup');
     const files = fs.readdirSync(dir).sort();
-    assert(files.includes('dev9-env.tar.gz'), 'dev9-env saved');
-    assert(files.includes('gitea_gitea_latest.tar.gz'), 'safe-named gitea saved');
-    assert(!files.includes('missing_image.tar.gz'), 'missing image not written');
+    const devFile  = `${ib._safeName('dev9-env')}.tar.gz`;
+    const gitFile  = `${ib._safeName('gitea/gitea:latest')}.tar.gz`;
+    const missFile = `${ib._safeName('missing/image')}.tar.gz`;
+    assert(files.includes(devFile), `dev9-env saved (${devFile})`);
+    assert(files.includes(gitFile), `safe-named gitea saved (${gitFile})`);
+    assert(!files.includes(missFile), 'missing image not written');
   });
   it('save reports SKIP for the missing image', () => {
     // Re-run on the existing dir; this time we just want stdout.
@@ -155,7 +171,7 @@ describe('[4] save: writes gzipped tarballs, skips missing images, lists output'
     assert(r.stdout.includes('SKIP missing/image'), 'reports skip');
   });
   it('saved tar.gz contents are recoverable through gzip', () => {
-    const file = path.join(TMP, 'image_backup', 'dev9-env.tar.gz');
+    const file = path.join(TMP, 'image_backup', `${ib._safeName('dev9-env')}.tar.gz`);
     const r = spawnSync('gunzip', ['-c', file], { encoding: 'utf8' });
     eq(r.status, 0, 'gunzip succeeded');
     eq(r.stdout, 'FAKE-IMAGE:dev9-env', 'fake payload round-tripped');

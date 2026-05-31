@@ -42,10 +42,23 @@ function disableBracketedPaste() { stdout.write('\x1b[?2004l'); }
 function cols() { return COLS; }
 function rows() { return ROWS; }
 
+/** OSC52 clipboard escape — `ESC]52;c;<base64>BEL`. Tells terminals
+ *  that support OSC52 (kitty, iTerm2, WezTerm, modern xterm, tmux/screen
+ *  with pass-through configured) to put `text` on the system clipboard.
+ *  Silent no-op on non-strings / empty input. Single home for the
+ *  sequence; both the yank-register and the copy-menu commit path
+ *  import from here. */
+function emitOSC52(text) {
+  if (typeof text !== 'string' || !text) return;
+  const b64 = Buffer.from(text, 'utf8').toString('base64');
+  stdout.write(`\x1b]52;c;${b64}\x07`);
+}
+
 module.exports = {
   refreshSize, moveTo, clearScreen, hideCursor, showCursor,
   enableMouse, disableMouse,
   enableFocusEvents, disableFocusEvents,
   enableBracketedPaste, disableBracketedPaste,
+  emitOSC52,
   cols, rows, stdout,
 };

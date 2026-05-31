@@ -20,7 +20,6 @@
 'use strict';
 
 const { getModel } = require('../app/runtime');
-const { stdout } = require('../io/term');
 const mreg = require('../leaves/register');
 
 const DEFAULT_CAP = 100;
@@ -37,11 +36,9 @@ function _ensure() {
   if (!getModel().register) init();
 }
 
-function emitOSC52(text) {
-  if (typeof text !== 'string' || !text) return;
-  const b64 = Buffer.from(text, 'utf8').toString('base64');
-  stdout.write(`\x1b]52;c;${b64}\x07`);
-}
+// emitOSC52 moved to io/term.js as the single home for terminal
+// escape sequences. Re-export here for the module's existing surface.
+const { emitOSC52 } = require('../io/term');
 
 // Writers are thin bridges over the pure leaves/register leaf (the same leaf
 // runtime.update uses), plus the OSC52 effect.
