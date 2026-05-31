@@ -208,7 +208,15 @@ function removeContent(slice, model, { groupName, key }) {
         scroll = 0;
       }
     } else {
+      // Falling back to Info — wipe the closed tab's lines so the body
+      // doesn't keep painting the closed content. The downstream
+      // show_selected_info Cmd repopulates IF focus is on a navigator;
+      // when focus is detail (the common case after click-to-close on a
+      // tab), viewer_show_info bails and an empty body is the right
+      // result until the user moves focus back to a list panel.
       tab = 0;
+      lines = [];
+      scroll = 0;
       needShowSelectedInfo = true;
     }
   } else if (slice.tab > removedTabIdx) {
