@@ -47,12 +47,17 @@ function renderCmdline() {
   // Buffer state lives on the model (folded onto update); the render-safe
   // match list (display/desc/kind) is enough to paint — run closures
   // stay module-held in dispatch/cmdline.js#_full.
-  const { text: _text, sel: _sel, matches: _matches } = getModel().modal.cmdline;
+  const { text: _text, sel: _sel, matches: _matches, scroll: _scroll = 0 } = getModel().modal.cmdline;
   const COLS = cols();
   const ROWS = rows();
   const t = theme();
 
-  const k = Math.min(_matches.length, MAX_DROPDOWN);
+  // Visible window into the (possibly larger) match list. `_scroll` is
+  // the lowest match-index visible at the BOTTOM of the dropdown; the
+  // reducer (runtime.update#cmdline_nav) advances it as sel walks past
+  // the viewport's upper bound. MAX_DROPDOWN here must stay in sync
+  // with CMDLINE_VW in app/runtime.js.
+  const k = Math.min(_matches.length - _scroll, MAX_DROPDOWN);
 
   // Build one string with embedded cursor moves — dropdown panel +
   // prompt + cursor positioning — and write once. Per-line stdout.write
@@ -92,7 +97,7 @@ function renderCmdline() {
     // (sel index 0), so the user's eye lands on the selected best-
     // match nearest the prompt cursor.
     for (let i = 0; i < k; i++) {
-      const matchIdx = k - 1 - i;
+      const matchIdx = _scroll + k - 1 - i;
       const m = _matches[matchIdx];
       const label = _formatMatchLine(m);
       lines.push(matchIdx === _sel ? `[reverse]  ${label}` : `  ${label}`);

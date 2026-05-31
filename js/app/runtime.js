@@ -109,7 +109,7 @@ function init() {
       // closures). The closures stay module-held in cmdline.js (rebuilt from
       // the plugin facade each keystroke); cmdline_run invokes the selected
       // one by index. Mirrors the copy split.
-      cmdline: { text: '', sel: 0, matches: [] },
+      cmdline: { text: '', sel: 0, scroll: 0, matches: [] },
       // Design-mode state lives on the layout Component's slice
       // (Phase 1f) — `getComponentSlice('layout').design`.
     },
@@ -172,6 +172,13 @@ function _ghostSuffix(text, ghost) {
 // dispatch/cmdline.js can import the same impl (pre-v0.6.x the regex
 // was duplicated in both sites).
 const { splitQuery: _cmdlineSplit } = require('../leaves/cmdline-split');
+
+// Visible window size of the `:` cmdline match dropdown. The reducer
+// scrolls a viewport so sel stays in view (cmdline_set_matches /
+// cmdline_nav update scroll). MUST stay in sync with `MAX_DROPDOWN` in
+// `overlay/cmdline.js` — that file reads model.modal.cmdline.scroll
+// off this slice and paints the corresponding window.
+const CMDLINE_VW = 8;
 
 /**
  * Clamp the register-popup cursor + scroll into bounds against the history
@@ -520,7 +527,7 @@ function update(model, msg) {
     case 'cmdline_enter':
       return [{
         ..._withModes(model, { cmdMode: true }),
-        modal: { ...model.modal, cmdline: { text: '', sel: 0, matches: [] } },
+        modal: { ...model.modal, cmdline: { text: '', sel: 0, scroll: 0, matches: [] } },
       }, [{ type: 'cmdline_rebuild' }]];
     case 'cmdline_set_matches': {
       const c = model.modal.cmdline;
@@ -537,7 +544,14 @@ function update(model, msg) {
         while (i < matches.length && matches[i].kind === 'hint') i++;
         if (i < matches.length) sel = i;
       }
-      return [_withModal(model, { cmdline: { ...c, matches, sel } }), []];
+      // Scroll viewport — match-set size changed, ensure sel is in view
+      // and scroll is within bounds. CMDLINE_VW must match the constant
+      // MAX_DROPDOWN in overlay/cmdline.js (paint reads scroll from here).
+      const maxScroll = Math.max(0, matches.length - CMDLINE_VW);
+      let scroll = Math.min(Math.max(0, c.scroll || 0), maxScroll);
+      if (sel < scroll) scroll = sel;
+      else if (sel >= scroll + CMDLINE_VW) scroll = sel - CMDLINE_VW + 1;
+      return [_withModal(model, { cmdline: { ...c, matches, sel, scroll } }), []];
     }
     case 'cmdline_nav': {
       const c = model.modal.cmdline;
@@ -548,7 +562,14 @@ function update(model, msg) {
         ? Math.min(c.sel + 1, c.matches.length - 1)
         : Math.max(0, c.sel - 1);
       if (sel === c.sel) return [model, []];
-      return [_withModal(model, { cmdline: { ...c, sel } }), []];
+      // Scroll the visible window so sel stays in view. When sel walks
+      // OFF the top (sel exceeds the window's upper bound) advance scroll
+      // so sel ends up at the top of the new window. Symmetrical the
+      // other direction.
+      let scroll = c.scroll || 0;
+      if (sel < scroll) scroll = sel;
+      else if (sel >= scroll + CMDLINE_VW) scroll = sel - CMDLINE_VW + 1;
+      return [_withModal(model, { cmdline: { ...c, sel, scroll } }), []];
     }
     case 'cmdline_key': {
       const c = model.modal.cmdline;
@@ -595,7 +616,7 @@ function update(model, msg) {
       const had = c.matches.length > 0;
       const next = {
         ..._withModes(model, { cmdMode: false }),
-        modal: { ...model.modal, cmdline: { text: '', sel: 0, matches: [] } },
+        modal: { ...model.modal, cmdline: { text: '', sel: 0, scroll: 0, matches: [] } },
       };
       // cmdline_run resolves the module-held closure at `sel` + runs it with
       // the parsed args; cmdline_clear drops the held registry afterward.
@@ -605,7 +626,7 @@ function update(model, msg) {
       if (!model.modes.cmdMode) return [model, []];
       return [{
         ..._withModes(model, { cmdMode: false }),
-        modal: { ...model.modal, cmdline: { text: '', sel: 0, matches: [] } },
+        modal: { ...model.modal, cmdline: { text: '', sel: 0, scroll: 0, matches: [] } },
       }, [{ type: 'cmdline_clear' }]];
     // --- design-mode Msgs (post-Phase-6 single-writer cleanup). Every
     // design_* case retired from the reducer; layout.update owns the slice
