@@ -35,12 +35,12 @@ const { getModel } = require('../app/runtime');
 const { getTabInfo, getGroupContentTabs } = require('../panel/viewer/tabs');
 
 const MAX_W = 50;
-// `\[` is the markup-escape for a literal `[` (otherwise richToAnsi
-// treats `[≡]` as an unknown tag and EATS the inner glyph — the bug
-// the first cut shipped with). The close `]` doesn't need escaping
-// since it's only a markup terminator when paired with an unescaped
-// opening bracket.
-const TRIGGER_GLYPH = '\\[≡]';
+// esc() escapes the literal `[` so richToAnsi doesn't treat `[≡]`
+// as an unknown markup tag and EAT the inner glyph (the bug the
+// first cut shipped with). Using esc() rather than hardcoding `\[≡]`
+// is the convention for ANY literal bracket entering richToAnsi —
+// same pattern as overlay/cmdline's _formatMatchLine.
+const TRIGGER_GLYPH = esc('[≡]');
 const TRIGGER_X_OFFSET = 2;  // after detail's `╭─`
 const TRIGGER_VIS_W = 3;     // [, ≡, ]
 
@@ -139,7 +139,12 @@ function hitTest(mx, my) {
  *  whole row so border + padding pick up the highlight cleanly). */
 function _formatRow(tab, isActive, width) {
   const marker = isActive ? '*' : ' ';
-  const idx = `[${tab.tabIdx}]`;
+  // esc() escapes the `[` so richToAnsi renders `[N]` literally
+  // instead of treating it as an unknown markup tag and EATING the
+  // inner digits. Same gotcha as the trigger glyph above; cmdline's
+  // _formatMatchLine handles its own display/desc fields the same
+  // way.
+  const idx = esc(`[${tab.tabIdx}]`);
   const label = esc(tab.label);
   const kind = tab.kind ? `(${tab.kind})` : '';
   // marker(1) + ' '(1) + idx(<= 4) + '  '(2) + label + spaces + kind
