@@ -298,7 +298,14 @@ function update(model, msg) {
       const nextNode = kb.resolve(model.prefixNode, tok);
       if (!nextNode) return [cancelled(), []];
       const seq = model.prefixSeq.concat(tok);
-      if (nextNode.children) return [{ ...model, prefixNode: nextNode, prefixSeq: seq }, []];  // descend
+      // Descend: which-key popup re-renders with the subtree's
+      // continuations. If the subtree has fewer entries than the
+      // current level, the centered overlay shrinks — its prior top/
+      // bottom border rows are now exposed under-content the diff
+      // cache treats as unchanged (panels are frozen during prefix
+      // mode), so prior pixels stick. Same trap as pool_drag_motion +
+      // design_mouse_motion. Force a full repaint on every descend.
+      if (nextNode.children) return [{ ...model, prefixNode: nextNode, prefixSeq: seq }, [{ type: 'force_full_repaint' }]];
       // leaf — exit prefix mode and emit the binding
       return [{ ..._withModes(model, { prefixMode: false }), prefixNode: null, prefixSeq: [] },
               [{ type: 'run_binding', run: nextNode.run }]];

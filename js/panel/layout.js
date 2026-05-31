@@ -65,6 +65,19 @@ function _dropTargetsEqual(a, b) {
       && a.valid === b.valid;
 }
 
+/** Compare two in-grid drag drop targets for visual equality. Same
+ *  pattern as `_dropTargetsEqual` but for the {column, index, valid}
+ *  shape returned by `pointToDropTarget`. The insertion-line overlay's
+ *  visible position is a pure function of (column, index, valid); a
+ *  curX/curY change inside the same seam zone is invisible. */
+function _insertionTargetsEqual(a, b) {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return a.column === b.column
+      && a.index === b.index
+      && a.valid === b.valid;
+}
+
 /** Build a runtime placement object from a pool entry. Mirrors the
  *  flattening that `state.rebuildLayoutFromConfig` does on initial load
  *  — plugin-specific config spread first, framework fields override. */
@@ -230,7 +243,26 @@ function update(msg, slice) {
       return [next, [{ type: 'apply_msg', msg: { type: 'mode_clear', flag: 'designTitleEditMode' } }]];
     }
     case 'design_mouse_press':  return mdesign.mousePress(slice, require('../app/runtime').getModel(), msg.mx, msg.my, msg.cols);
-    case 'design_mouse_motion': return mdesign.mouseMotion(slice, msg.mx, msg.my, msg.cols);
+    case 'design_mouse_motion': {
+      // Same diff-painter trap as pool_drag_motion: the insertion bar
+      // is painted at the target seam each render, but panel content
+      // is frozen during the drag, so the row that hosted the PREVIOUS
+      // bar looks unchanged to paintColumns and never gets rewritten.
+      // Force a full repaint whenever the visible target shifts (column
+      // or index or validity); same-seam motion still no-ops.
+      const next = mdesign.mouseMotion(slice, msg.mx, msg.my, msg.cols);
+      if (next === slice) return slice;
+      const ds = slice.design && slice.design.drag;
+      const ns = next.design  && next.design.drag;
+      // Only the in-grid 'dragging' kind paints an insertion bar; for
+      // resize / armed phases there's nothing to wipe.
+      const isInsertionDrag = ns && (ns.kind === 'dragging' || ns.kind === 'armed');
+      if (!isInsertionDrag) return next;
+      const oldT = ds && ds.target;
+      const newT = ns && ns.target;
+      if (_insertionTargetsEqual(oldT, newT)) return next;
+      return [next, [{ type: 'force_full_repaint' }]];
+    }
     case 'design_mouse_release': return mdesign.mouseRelease(slice);
     // v0.6 Phase 5 — pool-drag gesture from the panel-list overlay.
     // Source is the overlay cursor's item id; drop is on a layout cell
