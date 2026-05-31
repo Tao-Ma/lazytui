@@ -207,6 +207,17 @@ function reorderWithin(slice, delta) {
   const targetIdx = localIdx + delta;
   if (targetIdx < 0 || targetIdx >= column.length) return slice;
 
+  // Right column: detail stays at the end. Refuse any swap that
+  // either moves detail off its slot OR moves a non-detail panel
+  // past it. Mirrors the validateTarget guard in applyDrop and the
+  // insert-before-detail logic in pool_show — same invariant, three
+  // entry points, one rule.
+  if (!isLeft) {
+    if (column[localIdx].type === 'detail' || column[targetIdx].type === 'detail') {
+      return slice;
+    }
+  }
+
   const newCol = column.slice();
   [newCol[localIdx], newCol[targetIdx]] = [newCol[targetIdx], newCol[localIdx]];
 
@@ -462,11 +473,11 @@ function pointToDropTarget(slice, srcType, mx, my, COLS) {
   const rightPanels = slice.arrange.rightPanels;
   const leftW = slice.arrange.leftWidth;
   const inLeft = matchColumn(slice, leftPanels, mx, my);
-  if (inLeft !== null) return validateTarget(srcType, 'left', inLeft);
+  if (inLeft !== null) return validateTarget(slice, srcType, 'left', inLeft);
   const inRight = matchColumn(slice, rightPanels, mx, my);
-  if (inRight !== null) return validateTarget(srcType, 'right', inRight);
-  if (mx >= 0 && mx < leftW && leftPanels.length === 0) return validateTarget(srcType, 'left', 0);
-  if (mx >= leftW && mx < COLS && rightPanels.length === 0) return validateTarget(srcType, 'right', 0);
+  if (inRight !== null) return validateTarget(slice, srcType, 'right', inRight);
+  if (mx >= 0 && mx < leftW && leftPanels.length === 0) return validateTarget(slice, srcType, 'left', 0);
+  if (mx >= leftW && mx < COLS && rightPanels.length === 0) return validateTarget(slice, srcType, 'right', 0);
   return null;
 }
 
@@ -484,9 +495,25 @@ function matchColumn(slice, panels, mx, my) {
   return null;
 }
 
-function validateTarget(srcType, column, index) {
+function validateTarget(slice, srcType, column, index) {
   if (column === 'left' && (srcType === 'detail' || srcType === 'actions')) {
     return { column, index, valid: false, reason: `${srcType} can't live in left column` };
+  }
+  // Right column: detail stays at the end (same convention pool_show
+  // follows). Clamp any drop AFTER detail to land BEFORE it instead.
+  // Source being detail itself is allowed to stay in place; the drop
+  // logic in applyDrop is a no-op for same-slot drops.
+  if (column === 'right' && srcType !== 'detail') {
+    const rightPanels = slice.arrange.rightPanels;
+    const detailIdx = rightPanels.findIndex(p => p.type === 'detail');
+    if (detailIdx >= 0) {
+      // applyDrop removes the source before inserting, so the
+      // effective detailIdx shifts down by 1 if the source sat
+      // before detail in the same column.
+      const srcIdxInRight = rightPanels.findIndex(p => p.type === srcType);
+      const effDetail = (srcIdxInRight >= 0 && srcIdxInRight < detailIdx) ? detailIdx - 1 : detailIdx;
+      if (index > effDetail) return { column, index: effDetail, valid: true };
+    }
   }
   return { column, index, valid: true };
 }

@@ -94,9 +94,12 @@ describe('[1] pointToDropTarget — drop position math', () => {
        JSON.stringify({ column: 'right', index: 0, valid: true }));
   });
 
-  it('bottom half of detail → append at right:3', () => {
+  it('bottom half of detail → CLAMPED to right:2 (detail stays at end)', () => {
+    // v0.6: detail-at-end convention. Drops after detail clamp to
+    // detail's position so the panel lands BEFORE detail. Same rule
+    // pool_show and reorderWithin follow.
     eq(JSON.stringify(pointToDropTarget('containers', 50, 35)),
-       JSON.stringify({ column: 'right', index: 3, valid: true }));
+       JSON.stringify({ column: 'right', index: 2, valid: true }));
   });
 
   it('between stats and detail (top half of detail) → right:2', () => {
