@@ -323,7 +323,14 @@ function dispatchMsg(msg) {
   const m = require('../app/runtime').getModel();
   if (m && m.modes && m.modes.freeConfigMode) {
     const isLayoutWrap = msg && msg.kind === 'layout' && msg.type === undefined;
-    if (!isLayoutWrap) return;
+    // Narrow exception: the free-config tab-reorder gesture lives on
+    // layout's slice but emits a viewer_reorder_content_tab dispatch_msg
+    // back through this gate to permute detail's contentTabs. It's a
+    // free-config-shape change (visible tab order), just within a panel
+    // rather than across panels — same justification as pool_hide/show.
+    const isTabReorder = msg && msg.kind === 'detail'
+      && msg.msg && msg.msg.type === 'viewer_reorder_content_tab';
+    if (!isLayoutWrap && !isTabReorder) return;
   }
   // Wrapped-Msg path. Routes to exactly one Component. Discriminator:
   // { kind: string, msg: any } AND no top-level `type` field — the
