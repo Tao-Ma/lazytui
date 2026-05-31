@@ -165,6 +165,19 @@ function main() {
   // escape codes are no-ops when already off) so the symmetric call from
   // the `quit` effect on user-quit is safe to fire too.
   process.on('exit', cleanup);
+  // Backstop: process.on('exit') runs only when Node exits NORMALLY.
+  // An uncaught throw (async PTY handler after dispose, a hub publish
+  // inside an effect that rethrows, etc.) would bypass it — terminal
+  // left in raw + mouse mode + bracketed paste on, PTY children
+  // orphaned. Run cleanup then re-throw to keep the stack trace.
+  const _onFatal = (kind) => (err) => {
+    try { cleanup(); } finally {
+      process.stderr.write(`\n[lazytui] ${kind}: ${err && err.stack || err}\n`);
+      process.exit(1);
+    }
+  };
+  process.on('uncaughtException',  _onFatal('uncaughtException'));
+  process.on('unhandledRejection', _onFatal('unhandledRejection'));
 
   // Install the Component effect handlers (setDetail/focus/render) before any
   // Component registers — a Component's update→effects must resolve at

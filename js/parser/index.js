@@ -17,8 +17,7 @@ const { ParseError } = require('./errors');
 const { validate } = require('./schema');
 const { passthroughCmd, resolveScript } = require('./resolver');
 
-const LEFT_HOTKEY_POOL  = ['1', '2', '3', '4', '5', '6'];
-const RIGHT_HOTKEY_POOL = ['7', '8', '9'];
+const { LEFT_HOTKEY_POOL, RIGHT_HOTKEY_POOL } = require('../leaves/hotkeys');
 
 // Reserved layout keys consumed by the framework; everything else
 // passes through as plugin-specific panel config (e.g. stats panel's

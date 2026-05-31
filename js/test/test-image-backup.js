@@ -57,9 +57,10 @@ describe('[2] groupActions synthesizes save + load', () => {
   });
   it('save script uses safe filenames', () => {
     const a = ib.groupActions({ images: { list: ['gitea/gitea:latest'], output_dir: 'out' } });
-    const expected = `out/${ib._safeName('gitea/gitea:latest')}.tar.gz`;
+    // Post-v0.6 shell-injection guard: filename is single-quote escaped.
+    const expected = `'out/${ib._safeName('gitea/gitea:latest')}.tar.gz'`;
     assert(a.save.script.includes(expected), `safe filename in save (looking for ${expected})`);
-    assert(a.save.script.includes('mkdir -p "out"'), 'mkdir uses configured dir');
+    assert(a.save.script.includes("mkdir -p 'out'"), 'mkdir uses configured dir');
   });
   it('load script refuses if dir missing', () => {
     const a = ib.groupActions({ images: { list: ['x'], output_dir: 'archives' } });

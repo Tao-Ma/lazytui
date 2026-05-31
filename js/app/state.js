@@ -135,9 +135,9 @@ function rebuildLayoutFromConfig(config) {
       hotkey: p.hotkey || String(i + 1),
       column: 'left',
     }));
-    const rightHotkeyPool = ['7', '8', '9'];
+    const { RIGHT_HOTKEY_POOL } = require('../leaves/hotkeys');
     const rightExplicit = new Set(rightPanelsSrc.map(p => p.hotkey).filter(Boolean));
-    const rightAuto = rightHotkeyPool.filter(k => !rightExplicit.has(k));
+    const rightAuto = RIGHT_HOTKEY_POOL.filter(k => !rightExplicit.has(k));
     out.rightPanels = rightPanelsSrc.map(p => ({
       ...(p.config || {}),
       id: p.id,

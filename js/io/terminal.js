@@ -46,6 +46,12 @@ function ensureSession(id, cmd, cols, rows) {
     cwd: getModel().projectDir,
     env: process.env,
   });
+  // Declare `session` BEFORE registering `p.onData` so the closure's
+  // `session.exited` read can't TDZ-throw if node-pty ever emits a
+  // synchronous data chunk during spawn (today it doesn't, but a
+  // future change would surface the latent hazard). Sub field gets
+  // filled in immediately after subscription.
+  const session = { pty: p, xterm, cmd, exited: false, exitCode: null, _onDataSub: null };
   // Event-driven overlay refresh — render right after xterm finishes
   // parsing PTY output, so keystroke echo appears within ~16ms instead
   // of waiting for the polling tick. The write() callback fires after
@@ -56,11 +62,10 @@ function ensureSession(id, cmd, cols, rows) {
   // xterm.write on a disposed Terminal (undefined behavior in
   // @xterm/headless — likely throws and unwinds out of node-pty's
   // emitter).
-  const onDataSub = p.onData(data => {
+  session._onDataSub = p.onData(data => {
     if (session.exited) return;  // belt-and-braces: also drop if exited
     xterm.write(data, () => scheduleOverlay());
   });
-  const session = { pty: p, xterm, cmd, exited: false, exitCode: null, _onDataSub: onDataSub };
   p.onExit(({ exitCode }) => {
     session.exited = true;
     session.exitCode = exitCode;

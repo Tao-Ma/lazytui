@@ -1,5 +1,5 @@
 /**
- * Panel-list overlay (v0.6 Phase 4 + preview-pane polish) — modal popup
+ * Panel-list overlay — modal popup
  * showing every panel in the pool: placed panels (in grid order, greyed
  * since picking them means hide), the essential `detail` panel (no-op
  * pick), and hidden panels (highlighted; pick = show + place in grid).

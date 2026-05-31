@@ -30,6 +30,7 @@
 'use strict';
 
 const crypto = require('crypto');
+const { shEscape } = require('../leaves/sh-escape');
 
 /** Filename-safe key for a docker image ref. Replaces `/` and `:` with
  *  `_` AND appends an 8-char hash of the ORIGINAL ref so collisions
@@ -44,12 +45,19 @@ function safeName(img) {
 }
 
 function saveScript(list, out) {
+  // shEscape every config-supplied value before embedding — schema only
+  // checks that strings ARE strings; a `output_dir: /tmp"; rm -rf /; "`
+  // would otherwise execute under raw `"${out}"` interpolation. Image
+  // refs come from the user-provided `list` and need the same treatment.
+  const dir = shEscape(out);
   const lines = [
     'set -u',
-    `mkdir -p "${out}"`,
+    `mkdir -p ${dir}`,
   ];
   for (const img of list) {
     const safe = safeName(img);
+    const imgQ = shEscape(img);
+    const outFile = shEscape(`${out}/${safe}.tar.gz`);
     lines.push(`echo "  ${img}..."`);
     // pipefail in a subshell — without it, gzip succeeds on empty
     // input even when docker save fails, leaving a junk .tar.gz on
@@ -62,21 +70,22 @@ function saveScript(list, out) {
     // which lacks `set -o pipefail`. Bash is universally available
     // on supported platforms.
     lines.push(
-      `bash -c 'set -o pipefail; docker save "$1" 2>/dev/null | gzip > "$2"' _ "${img}" "${out}/${safe}.tar.gz" || ` +
-      `{ rm -f "${out}/${safe}.tar.gz"; echo "  SKIP ${img} (not found)"; }`,
+      `bash -c 'set -o pipefail; docker save "$1" 2>/dev/null | gzip > "$2"' _ ${imgQ} ${outFile} || ` +
+      `{ rm -f ${outFile}; echo "  SKIP ${img} (not found)"; }`,
     );
   }
   lines.push(`echo "saved to ${out}/"`);
-  lines.push(`ls -lh "${out}/"`);
+  lines.push(`ls -lh ${dir}/`);
   return lines.join('\n');
 }
 
 function loadScript(out) {
+  const dir = shEscape(out);
   return [
     'set -u',
-    `[ -d "${out}" ] || { echo "no backup dir at ${out}" >&2; exit 1; }`,
+    `[ -d ${dir} ] || { echo "no backup dir at ${out}" >&2; exit 1; }`,
     'found=0',
-    `for f in "${out}"/*.tar.gz; do`,
+    `for f in ${dir}/*.tar.gz; do`,
     '    [ -f "$f" ] || continue',
     '    found=$((found + 1))',
     '    echo "  $(basename "$f")..."',

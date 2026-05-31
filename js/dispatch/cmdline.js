@@ -89,11 +89,21 @@ function buildRegistry() {
   const reg = [];
 
   // Panels — focus the panel via the focus_set Msg (handled by layout's
-  // update; routed through dispatchMsg fan-out since Phase 1c).
-  for (const p of allPanels()) {
+  // update). When two panels share a title (e.g. two file-browsers
+  // named "Files"), bare title scoring is identical and the user can't
+  // disambiguate. Detect title duplicates up-front; for dupes, include
+  // the id in both the match name and the display.
+  const panels = allPanels();
+  const titleCounts = new Map();
+  for (const p of panels) {
+    titleCounts.set(p.title, (titleCounts.get(p.title) || 0) + 1);
+  }
+  for (const p of panels) {
+    const dup = titleCounts.get(p.title) > 1;
+    const display = dup ? `${p.title} (${p.id})` : p.title;
     reg.push({
-      name: p.title.toLowerCase(),
-      display: p.title,
+      name: display.toLowerCase(),
+      display,
       desc: `Focus the ${p.title} panel`,
       kind: 'panel',
       run: () => {

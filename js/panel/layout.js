@@ -1,48 +1,27 @@
 /**
  * Core Component — layout (chrome-only, no panelTypes).
  *
- * The frame surrounding the panel grid. Owns arrangement, focus, view
- * mode, design state, and view-pass geometry — concerns that today live
- * scattered across root-model fields and a few render-only modules.
- * Spec: docs/v0.5-layout-component.md.
+ * The frame surrounding the panel grid. Owns:
+ *   - arrange        — { leftWidth, leftPanels, rightPanels, detailHeightPct, pool }
+ *   - focus          — currently focused panel type
+ *   - viewMode       — normal / half / full
+ *   - dirty          — layout has unsaved changes (drives `:save-layout` hint)
+ *   - design         — free-config working state (selectedIdx, drag, undo/redo, titleEdit)
+ *   - panelHeights / panelBounds — view-output, written by the render pass
+ *   - panelList      — `w` overlay state (open, cursor)
  *
- * **Phase 1a (this commit): inert skeleton.** The Component is
- * registered with an initial slice shape, but every concern is still
- * authored at the root model. Subsequent sub-phases migrate concerns
- * one-by-one into this slice, retiring the root-model fields as they
- * move:
- *
- *   - 1b → viewMode
- *   - 1c → focus
- *   - 1d → layoutDirty       → slice.dirty
- *   - 1e → panelHeights / panelBounds (view-output, written during render)
- *   - 1f → modal.design + designEnabled → slice.design{ ..., enabled }
- *   - 1g → model.layout (arrange struct) → slice.arrange
- *
- * **Until Phase 3, `getModel().layout` is the legacy arrange struct, and
- * the layout Component's slice lives at `getComponentSlice('layout')`.**
- * The names overlap but the access paths are distinct. Phase 3 nests panel
- * slices under `slice.panels`; the final `getModel().layout` shape (root-
- * exposed slice) lands at that point.
- *
- * Chrome-only Component: no `panelTypes`, no panel rendered in the grid.
- * Updates that would mutate frame state arrive as wrapped Msgs (Phase 2
- * onward) or as flat Msgs during the back-compat window.
+ * No `panelTypes` — this Component renders chrome, not panel content. Spec:
+ * docs/v0.5-layout-component.md.
  */
 'use strict';
 
-// Pure design-mode layout transforms — take this Component's slice and
-// return a new slice (the leaf converted to return-new in the pure-TEA
-// arc on this branch; not to be confused with the layout-Component
-// arc's own "Phase 1e" which moved panelBounds/Heights into the slice).
+// Pure leaves — take this Component's slice and return a new one.
 // No in-place writes, no panel/api reach-around. Called from this
 // Component's update, preserving single-writer-per-slice.
 const mdesign = require('../leaves/design');
 const mpool = require('../leaves/pool');
 
-// Hotkey pools — match parser/index.js LEFT/RIGHT_HOTKEY_POOL.
-const LEFT_HOTKEY_POOL  = ['1', '2', '3', '4', '5', '6'];
-const RIGHT_HOTKEY_POOL = ['7', '8', '9'];
+const { LEFT_HOTKEY_POOL, RIGHT_HOTKEY_POOL } = require('../leaves/hotkeys');
 
 /** Reassign positional hotkeys for a column after a hide/show mutation.
  *  Matches the design-mode behavior — hotkey is the panel's slot index
@@ -94,22 +73,18 @@ function placementFromPoolEntry(entry, column) {
 
 function init() {
   return {
-    // 1g: { leftPanels, rightPanels, leftWidth, detailHeightPct }.
-    // v0.6 Phase 1 adds `pool` (id → entry for placed + hidden panels);
-    // pool derivations live in `js/leaves/pool`. Default matches
-    // runtime.init pre-1g; state.js's initState replaces it with the
-    // parsed config (rebuildLayoutFromConfig).
+    // { leftPanels, rightPanels, leftWidth, detailHeightPct, pool }.
+    // `pool` is the v0.6 id → entry map for placed + hidden panels;
+    // pool derivations live in `js/leaves/pool`. state.js's initState
+    // replaces this default with the parsed config (rebuildLayoutFromConfig).
     arrange: { leftWidth: 30, leftPanels: [], rightPanels: [], detailHeightPct: 60, pool: {} },
-    // 1c: focus defaults to 'groups' (the historical initial focus set by
-    // runtime.init pre-1c). state.js's initState() overrides this once the
-    // panel arrangement is known.
+    // Default focus = first declared panel. state.js's initState() overrides
+    // this once the parsed layout is in.
     focus: 'groups',
-    // 1b
     viewMode: 'normal',
-    // 1d
     dirty: false,
-    // 1f: design-mode state. `enabled` is the boot-time --design flag;
-    // the rest is the design-mode reducer's working state.
+    // Free-config working state. `enabled` is the boot-time --design CLI
+    // flag; the rest is the design-mode reducer's drag/undo/title-edit state.
     design: {
       enabled: false,
       selectedIdx: 0,
@@ -118,17 +93,16 @@ function init() {
       redo: [],
       titleEdit: { active: false, text: '' },
     },
-    // 1e (view-output; written by the render pass, read by mouse hit-tests
-    // and design-mode drag math)
+    // View-output (written by the render pass, read by mouse hit-tests
+    // and design-mode drag math). The renderer-as-writer pattern is the
+    // documented exception to single-writer — see render/layout.js header.
     panelHeights: {},
     panelBounds: {},
-    // v0.6 Phase 4 — panel-list overlay state. Nested inside free-config
-    // mode: opened by `w` (or auto-opened on free-config entry when the
-    // pool has hidden entries), arrow keys navigate, Enter context-
-    // picks (hide if placed, show if hidden, no-op on detail).
+    // Panel-list overlay state. Opened by `w` (or auto-opened on
+    // free-config entry when the pool has hidden entries). Arrow keys
+    // navigate, Enter context-picks (hide if placed, show if hidden,
+    // no-op on detail).
     panelList: { open: false, cursor: 0 },
-    // Phase 3 — nested panel slices land here. Empty for now.
-    panels: {},
   };
 }
 
@@ -160,9 +134,9 @@ function reduceViewMode(viewMode, msg) {
 
 function update(msg, slice) {
   switch (msg.type) {
-    // viewMode (Phase 1b). Each transition that actually changes the
-    // value asks the effects layer for a full repaint — a view change
-    // re-exposes panels the diff cache can't tell changed.
+    // viewMode. Each transition that actually changes the value asks
+    // the effects layer for a full repaint — a view change re-exposes
+    // panels the diff cache can't tell changed.
     case 'view_expand':
     case 'view_shrink':
     case 'view_set':
@@ -171,28 +145,27 @@ function update(msg, slice) {
       if (next === slice.viewMode) return slice;
       return [{ ...slice, viewMode: next }, [{ type: 'force_full_repaint' }]];
     }
-    // focus (Phase 1c). Stores the focused panel; refresh of the detail
-    // body for the newly-focused panel is an effect (Cmd). msg.focus ==
-    // null leaves the value put (matches the pre-migration semantics).
+    // focus. Stores the focused panel; refresh of the detail body for
+    // the newly-focused panel is an effect (Cmd). msg.focus == null
+    // leaves the value put.
     case 'focus_set': {
       const next = msg.focus != null ? msg.focus : slice.focus;
       return [{ ...slice, focus: next }, [{ type: 'show_selected_info' }]];
     }
-    // arrange + dirty writes (post-Phase-6 follow-up). :save-layout sends
-    // `{ dirty: false }`; :restore-layout sends `{ arrange, dirty: false }`
-    // (the rebuilt struct from `state.rebuildLayoutFromConfig`). Both are
-    // wrapped Msgs dispatched into layout — the layout Component is the
-    // single writer of its own slice.
+    // arrange + dirty writes. :save-layout sends `{ dirty: false }`;
+    // :restore-layout sends `{ arrange, dirty: false }` (the rebuilt
+    // struct from `state.rebuildLayoutFromConfig`). Both are wrapped
+    // Msgs dispatched into layout — single-writer.
     case 'set_arrange': {
       const next = { ...slice };
       if (msg.arrange !== undefined) next.arrange = msg.arrange;
       if (msg.dirty   !== undefined) next.dirty   = !!msg.dirty;
       return next;
     }
-    // design-mode state (Phase 1e — pure return-new). The mdesign leaf
-    // takes this Component's slice and returns a new slice; layout.update
-    // threads it through, preserving single-writer-per-slice. The root
-    // chrome mode flags (`freeConfigMode`, `designTitleEditMode`) ride on
+    // Design-mode state — pure return-new. The mdesign leaf takes this
+    // Component's slice and returns a new slice; layout.update threads
+    // it through, preserving single-writer-per-slice. The root chrome
+    // mode flags (`freeConfigMode`, `designTitleEditMode`) ride on
     // `apply_msg` Cmds the reducer applies (`mode_set` / `mode_clear`).
     case 'design_enter': {
       // Reset working state on entry; preserve `enabled` (the boot-time
@@ -264,11 +237,11 @@ function update(msg, slice) {
       return [next, [{ type: 'force_full_repaint' }]];
     }
     case 'design_mouse_release': return mdesign.mouseRelease(slice);
-    // v0.6 Phase 5 — pool-drag gesture from the panel-list overlay.
-    // Source is the overlay cursor's item id; drop is on a layout cell
-    // (replace) or column gap (append). poolDragRelease returns the
-    // [next, cmds] tuple directly so its dispatch_msg Cmds re-enter
-    // the existing Phase 2 pool_hide / pool_show handlers.
+    // Pool-drag gesture from the panel-list overlay. Source is the
+    // overlay cursor's item id; drop is on a layout cell (replace) or
+    // column gap (append). poolDragRelease returns the [next, cmds]
+    // tuple directly so its dispatch_msg Cmds re-enter the pool_hide
+    // / pool_show handlers.
     case 'pool_drag_start': {
       // poolDragStart closes the overlay so the user can see the drop
       // targets — force_full_repaint wipes the overlay's pixels.
@@ -314,12 +287,12 @@ function update(msg, slice) {
     // history pointed at it no longer makes sense.
     case 'design_clear_undo':
       return mdesign.clearUndoStacks(slice);
-    // v0.6 Phase 2 — pool hide/show. The pool entry stays in the pool;
-    // only the placement in leftPanels/rightPanels changes. Detail is
-    // unhideable (the layout invariant requires exactly one); the
-    // overlay UX in Phase 4 will surface this as "essential" rather
-    // than offering hide. pool_show refuses to create a second detail
-    // or actions panel — same invariant the parser enforces at load.
+    // Pool hide/show. The pool entry stays in the pool; only the
+    // placement in leftPanels/rightPanels changes. Detail is essential
+    // (the layout invariant requires exactly one) — the overlay UX
+    // surfaces this as "essential" rather than offering hide.
+    // pool_show refuses to create a second detail or actions panel —
+    // same invariant the parser enforces at load.
     case 'pool_hide': {
       const arrange = slice.arrange;
       const id = msg.id;
@@ -343,11 +316,10 @@ function update(msg, slice) {
       // selectedIdx-based pick.
       return mdesign.clampSelected(next);
     }
-    // v0.6 Phase 4 — panel-list overlay state Msgs. Open/close, cursor
-    // nav, context-pick. The pick re-emits a pool_hide / pool_show Msg
-    // back into the layout component via a dispatch_msg Cmd so the
-    // existing handlers do the work (single source of truth for the
-    // pool↔grid mutation).
+    // Panel-list overlay state Msgs. Open/close, cursor nav, context-
+    // pick. The pick re-emits a pool_hide / pool_show Msg back into
+    // the layout Component via a dispatch_msg Cmd so the existing
+    // handlers do the work (single source of truth).
     //
     // Toggle paths emit `force_full_repaint` — the panel-list overlay
     // is a sub-state of the layout slice (not its own mode flag), so
@@ -455,6 +427,6 @@ module.exports = {
   name: 'layout',
   init,
   update,
-  // Exposed for tests + Phase 1b transition; the runtime branch is gone.
+  // Exposed for tests.
   reduceViewMode,
 };

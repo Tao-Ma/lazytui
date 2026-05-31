@@ -47,14 +47,24 @@ describe('[2] groupActions synthesizes archive + verify', () => {
     eq(a.verify.type, 'run', 'verify type');
     eq(a.verify.args, '<archive-file>', 'verify documents its arg');
   });
+  // Post-v0.6 shell-injection guard: config values are single-quote
+  // escaped via shEscape before embedding. `archives` → `'archives'`
+  // in the emitted script — POSIX-literal, no shell metas can break out.
   it('output_dir defaults to "." when omitted', () => {
     const a = archive.groupActions({ archive: { target: 'data', name: 'foo' } });
-    assert(a.archive.script.includes('mkdir -p "."'), 'mkdir -p defaults to .');
+    assert(a.archive.script.includes("mkdir -p '.'"), 'mkdir -p defaults to .');
   });
   it('output_dir custom value lands in script', () => {
     const a = archive.groupActions({ archive: { target: 'data', output_dir: 'archives', name: 'foo' } });
-    assert(a.archive.script.includes('mkdir -p "archives"'), 'mkdir -p uses configured dir');
-    assert(a.archive.script.includes('archives/foo-'), 'archive path includes output_dir/name');
+    assert(a.archive.script.includes("mkdir -p 'archives'"), 'mkdir -p uses configured dir');
+    assert(a.archive.script.includes("'archives'/'foo'-"), 'archive path includes output_dir/name');
+  });
+  it('shell-meta in target is neutralised', () => {
+    // The single-quote wrap stops the metas from leaving the literal.
+    const a = archive.groupActions({ archive: { target: 'foo"; rm -rf /; "', name: 'x' } });
+    assert(a.archive.script.includes(`-C 'foo"; rm -rf /; "'`),
+      `expected POSIX-literal interpolation, got:\n${a.archive.script}`);
+    assert(!/-C foo"; rm -rf/.test(a.archive.script), 'no unquoted metacharacters');
   });
 });
 
