@@ -79,7 +79,7 @@ function getDesignFooter() {
   }
   const slice = _slice();
   const all = slice ? mdesign.allDesignPanels(slice) : [];
-  const sel = all[d.selectedIdx];
+  const sel = slice ? all[mdesign.selectedIdx(slice)] : null;
   return sel ? ` | ${esc(sel.title)} (${sel.column})` : '';
 }
 

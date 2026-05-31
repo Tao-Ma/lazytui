@@ -217,7 +217,6 @@ describe('[immutable] leaves/design.js', () => {
     dirty: false,
     design: {
       enabled: true,
-      selectedIdx: 0,
       drag: null,
       undo: [],
       redo: [],
@@ -229,23 +228,25 @@ describe('[immutable] leaves/design.js', () => {
       detail:  { x: 30, y: 0,  w: 50, h: 15 },
       actions: { x: 30, y: 15, w: 50, h: 5  },
     },
-    panels: {},
-    focus: 'groups',
+    // focus is the single source of truth for the active panel in
+    // free-config (post-v0.6.x); the design.selectedIdx field is gone,
+    // mdesign.selectedIdx(slice) derives the index from focus.
+    focus: 'a',
     viewMode: 'normal',
     panelHeights: {},
   });
 
   const makeModel = () => ({ modes: { freeConfigMode: true } });
 
-  it('navSelect advances selectedIdx without mutating input', () => {
+  it('navSelect advances focus to the next panel', () => {
     const slice = makeSlice();
     const out = expectNoMutation(
       'navSelect(+1) leaves input frozen',
       () => mdesign.navSelect(slice, 1),
       slice,
     );
-    eq(out.design.selectedIdx, 1, 'selectedIdx advanced');
-    eq(slice.design.selectedIdx, 0, 'original untouched');
+    eq(out.focus, 'b', 'focus advanced to next panel');
+    eq(slice.focus, 'a', 'original untouched');
   });
 
   it('navSelect at boundary returns same ref (identity-preserve)', () => {
@@ -267,7 +268,10 @@ describe('[immutable] leaves/design.js', () => {
     eq(out.arrange.leftPanels[1].hotkey, '2');
     assert(out.dirty === true, 'dirty flag set');
     eq(out.design.undo.length, 1, 'undo stack pushed');
-    eq(out.design.selectedIdx, 1, 'selection follows the panel');
+    // focus stays at 'a' (same type, new position); derived selectedIdx
+    // is now 1 because 'a' moved to slot 1 of the left column.
+    eq(out.focus, 'a', 'focus follows the panel by TYPE');
+    eq(mdesign.selectedIdx(out), 1, 'derived index reflects the new position');
   });
 
   it('moveColumn left→right splices across columns', () => {
@@ -351,20 +355,22 @@ describe('[immutable] leaves/design.js', () => {
     assert(out.dirty === true);
   });
 
-  it('clampSelected pulls out-of-range idx back in', () => {
+  it('clampSelected snaps focus back when focus names a hidden panel', () => {
+    // post-v0.6.x: clampSelected restores the invariant by snapping
+    // focus to a valid placed-panel type, not by clamping an integer.
     const slice = makeSlice();
-    const high = { ...slice, design: { ...slice.design, selectedIdx: 99 } };
+    const stale = { ...slice, focus: 'ghost' };
     const out = expectNoMutation(
       'clampSelected leaves input frozen',
-      () => mdesign.clampSelected(high),
-      high,
+      () => mdesign.clampSelected(stale),
+      stale,
     );
-    eq(out.design.selectedIdx, 3, 'clamped to last panel (4 total - 1)');
+    // First placed panel becomes the snap target.
+    eq(out.focus, 'a', 'focus snapped to first placed panel');
   });
 
-  it('mousePress on a panel arms the drag + selects', () => {
+  it('mousePress on a panel arms the drag + sets focus to the clicked type', () => {
     const slice = makeSlice();
-    const model = makeModel();
     const out = expectNoMutation(
       'mousePress leaves input frozen',
       () => mdesign.mousePress(slice, 5, 5, 80),  // inside panel 'a'
@@ -372,7 +378,7 @@ describe('[immutable] leaves/design.js', () => {
     );
     eq(out.design.drag.kind, 'armed');
     eq(out.design.drag.sourceType, 'a');
-    eq(out.design.selectedIdx, 0);
+    eq(out.focus, 'a', 'focus tracks the clicked panel');
   });
 
   it('mouseMotion promotes armed → dragging on movement', () => {

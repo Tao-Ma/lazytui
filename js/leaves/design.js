@@ -14,7 +14,9 @@
  * Slice shape touched:
  *   - slice.arrange.{leftWidth, detailHeightPct, leftPanels, rightPanels}
  *   - slice.dirty (set true on any change that should round-trip to YAML)
- *   - slice.design.{selectedIdx, undo, redo, titleEdit, drag}
+ *   - slice.design.{undo, redo, titleEdit, drag}
+ *   - slice.focus is the cursor truth in free-config; the active-panel
+ *     INDEX is derived via `selectedIdx(slice)` rather than stored.
  *   - slice.panelBounds (READ only — frame-derived, written by layout.js)
  *
  * Drag state machine note: `drag` captures the gesture's anchor panels by
@@ -186,20 +188,20 @@ function _setPanelHeightPct(slice, panelType, pct) {
  *  show_selected_info Cmd's downstream detail update); design_exit
  *  re-emits show_selected_info to refresh detail on the way out. */
 function navSelect(slice, delta) {
-  const d = slice.design;
   const all = allDesignPanels(slice);
-  let idx = d.selectedIdx;
+  const curIdx = selectedIdx(slice);
+  let idx = curIdx;
   if (delta < 0) { if (idx > 0) idx--; }
   else           { if (idx < all.length - 1) idx++; }
-  if (idx === d.selectedIdx) return slice;
-  const focus = all[idx] ? all[idx].type : slice.focus;
-  return { ...slice, focus, design: { ...d, selectedIdx: idx } };
+  if (idx === curIdx) return slice;
+  const nextFocus = all[idx] ? all[idx].type : slice.focus;
+  return { ...slice, focus: nextFocus };
 }
 
 /** J/K — reorder the focused panel within its column (delta ±1). */
 function reorderWithin(slice, delta) {
-  const d = slice.design;
-  const sel = d.selectedIdx;
+  const sel = selectedIdx(slice);
+  if (sel < 0) return slice;
   const isLeft = sel < slice.arrange.leftPanels.length;
   const localIdx = isLeft ? sel : sel - slice.arrange.leftPanels.length;
   const colKey = isLeft ? 'leftPanels' : 'rightPanels';
@@ -222,10 +224,11 @@ function reorderWithin(slice, delta) {
   [newCol[localIdx], newCol[targetIdx]] = [newCol[targetIdx], newCol[localIdx]];
 
   let next = _pushUndoSlice(slice);
+  // focus stays — same TYPE, new position. selectedIdx() will derive
+  // the new index from focus + the new arrangement on next read.
   next = {
     ...next,
     arrange: _reassignHotkeys({ ...slice.arrange, [colKey]: newCol }),
-    design: { ...next.design, selectedIdx: sel + delta },
     dirty: true,
   };
   return next;
@@ -233,14 +236,15 @@ function reorderWithin(slice, delta) {
 
 /** ←/→ — move the focused panel between columns. */
 function moveColumn(slice, col) {
-  const d = slice.design;
-  const sel = d.selectedIdx;
+  const sel = selectedIdx(slice);
   const all = allDesignPanels(slice);
   const selPanel = all[sel];
   if (!selPanel) return slice;
   const isLeft = sel < slice.arrange.leftPanels.length;
   const localIdx = isLeft ? sel : sel - slice.arrange.leftPanels.length;
 
+  // focus stays at the same type across the move — selectedIdx()
+  // derives the new index from the rearranged columns automatically.
   if (col === 'left') {
     if (isLeft) return slice;
     if (selPanel.type === 'detail' || selPanel.type === 'actions') return slice;
@@ -254,7 +258,6 @@ function moveColumn(slice, col) {
     next = {
       ...next,
       arrange: _reassignHotkeys({ ...slice.arrange, leftPanels: newLeft, rightPanels: newRight }),
-      design: { ...next.design, selectedIdx: newLeft.length - 1 },
       dirty: true,
     };
     return next;
@@ -275,7 +278,6 @@ function moveColumn(slice, col) {
   next = {
     ...next,
     arrange: _reassignHotkeys({ ...slice.arrange, leftPanels: newLeft, rightPanels: newRight }),
-    design: { ...next.design, selectedIdx: newLeft.length + insertAt },
     dirty: true,
   };
   return next;
@@ -284,11 +286,11 @@ function moveColumn(slice, col) {
 /** +/- — detail selected: grow/shrink detailHeightPct by 5 (clamped [20,90]);
  *  else a left panel selected: grow/shrink leftWidth by 2 (clamped [20,60]). */
 function resizeWidthOrDetail(slice, sign) {
-  const d = slice.design;
+  const sel = selectedIdx(slice);
   const all = allDesignPanels(slice);
-  const selPanel = all[d.selectedIdx];
+  const selPanel = all[sel];
   if (!selPanel) return slice;
-  const isLeft = d.selectedIdx < slice.arrange.leftPanels.length;
+  const isLeft = sel < slice.arrange.leftPanels.length;
 
   let newDetail = slice.arrange.detailHeightPct;
   let newLeftW  = slice.arrange.leftWidth;
@@ -319,17 +321,17 @@ function resizeWidthOrDetail(slice, sign) {
 /** ] / [ — grow/shrink the focused panel's heightPct by Δ, stealing from the
  *  panel below in the same column (D1 semantics). No-op on detail / last row. */
 function resizeFocusedPanelHeight(slice, deltaPct) {
-  const d = slice.design;
+  const selIdx = selectedIdx(slice);
   const all = allDesignPanels(slice);
-  const sel = all[d.selectedIdx];
+  const sel = all[selIdx];
   if (!sel || sel.type === 'detail') return slice;  // detail uses +/-
 
-  const isLeft = d.selectedIdx < slice.arrange.leftPanels.length;
+  const isLeft = selIdx < slice.arrange.leftPanels.length;
   const column = isLeft ? slice.arrange.leftPanels : slice.arrange.rightPanels;
   const colName = isLeft ? 'left' : 'right';
-  const idx = column.indexOf(sel);
-  if (idx < 0 || idx === column.length - 1) return slice;  // no neighbor below
-  const nextPanel = column[idx + 1];
+  const idxInCol = column.indexOf(sel);
+  if (idxInCol < 0 || idxInCol === column.length - 1) return slice;  // no neighbor below
+  const nextPanel = column[idxInCol + 1];
 
   const availH = columnTotalH(slice, colName);
   if (availH < 6) return slice;
@@ -359,31 +361,35 @@ function resizeFocusedPanelHeight(slice, deltaPct) {
   return { ...result, dirty: true };
 }
 
+/** Derive the design-mode cursor index from `slice.focus`. Returns
+ *  -1 if the focused type isn't in the placed set (caller should
+ *  clampSelected to recover). Replaces the pre-v0.6.x `selectedIdx`
+ *  slice field — focus is the single source of truth for the active
+ *  panel in free-config; the index is just an arithmetic convenience. */
+function selectedIdx(slice) {
+  return allDesignPanels(slice).findIndex(p => p.type === slice.focus);
+}
+
 /** Safety clamp after any mutation that can change the panel count.
- *  v0.6 invariant: in free-config the active panel is one well-defined
- *  thing — selectedIdx is the cursor truth, slice.focus follows. This
- *  helper re-establishes the invariant after a layout-shape change
- *  (undo/redo, applyDrop, pool_hide/show).
- *
- *  Resolution order for "which panel index is active now":
- *    1. preferredType (when supplied — e.g. the panel just dropped)
- *    2. the current selectedIdx, clamped into [0, all.length-1]
- *  Then `slice.focus = all[idx].type` always, so focus reflects
- *  whatever panel ended up at the chosen index. */
+ *  v0.6 invariant: `slice.focus` is the cursor truth — when a layout-
+ *  shape change (undo/redo, applyDrop, pool_hide/show) leaves focus
+ *  pointing at a panel that's no longer placed, snap it to whatever
+ *  ends up at the same index, or to preferredType if supplied. */
 function clampSelected(slice, preferredType) {
-  const d = slice.design;
   const all = allDesignPanels(slice);
   if (all.length === 0) return slice;
-  let idx = -1;
-  if (preferredType) idx = all.findIndex(p => p.type === preferredType);
-  if (idx < 0) {
-    idx = d.selectedIdx;
-    if (idx >= all.length) idx = all.length - 1;
-    if (idx < 0) idx = 0;
+  if (preferredType) {
+    const pIdx = all.findIndex(p => p.type === preferredType);
+    if (pIdx >= 0) {
+      const nextFocus = all[pIdx].type;
+      if (nextFocus === slice.focus) return slice;
+      return { ...slice, focus: nextFocus };
+    }
   }
-  const focus = all[idx].type;
-  if (idx === d.selectedIdx && focus === slice.focus) return slice;
-  return { ...slice, focus, design: { ...d, selectedIdx: idx } };
+  // focus already names a placed panel → no clamp needed
+  if (all.some(p => p.type === slice.focus)) return slice;
+  // focus is stale — snap to the first placed panel
+  return { ...slice, focus: all[0].type };
 }
 
 // ---------------------------------------------------------------- title edit
@@ -393,7 +399,7 @@ function titleEnter(slice) {
   const d = slice.design;
   if (!d) return slice;
   const all = allDesignPanels(slice);
-  const p = all[d.selectedIdx];
+  const p = all[selectedIdx(slice)];
   if (!p) return slice;
   return { ...slice, design: { ...d, titleEdit: { active: true, text: p.title || '' } } };
 }
@@ -403,7 +409,7 @@ function setSelectedTitle(slice, text) {
   const d = slice.design;
   if (!d) return slice;
   const all = allDesignPanels(slice);
-  const p = all[d.selectedIdx];
+  const p = all[selectedIdx(slice)];
   if (!p || text.length === 0 || text === p.title) return slice;
 
   let next = _pushUndoSlice(slice);
@@ -631,18 +637,11 @@ function mousePress(slice, mx, my, COLS) {
   }
   const hit = panelAt(slice, mx, my);
   if (!hit) return { ...slice, design: { ...slice.design, drag: null } };
-  const all = allDesignPanels(slice);
-  const idx = all.findIndex(p => p.type === hit);
+  // Click sets focus to the panel under the cursor — green border
+  // tracks the click even if the user doesn't go on to drag.
+  // selectedIdx() derives from focus.
   const drag = { kind: 'armed', sourceType: hit, startX: mx, startY: my, curX: mx, curY: my, target: null };
-  // Sync runtime focus alongside the design selection (same v0.6
-  // invariant navSelect maintains for keyboard nav). A click on a
-  // cell should move the green border there, even if the user
-  // doesn't go on to drag.
-  const focus = idx >= 0 ? all[idx].type : slice.focus;
-  const designNext = idx >= 0
-    ? { ...slice.design, drag, selectedIdx: idx }
-    : { ...slice.design, drag };
-  return { ...slice, focus, design: designNext };
+  return { ...slice, focus: hit, design: { ...slice.design, drag } };
 }
 
 /** Motion: resize kinds redistribute heights; a panel drag promotes
@@ -673,9 +672,9 @@ function mouseMotion(slice, mx, my, COLS) {
 }
 
 /** Release: commit a valid drop (push undo + applyDrop), then clear the drag.
- *  Drop normalizes focus + selectedIdx onto the panel that just landed
- *  (its type stayed the same; its position is new). Without this the
- *  green border would stay on whatever was focused before the drag. */
+ *  Drop calls clampSelected with the dropped panel's type so focus
+ *  lands there — its type stayed the same; its position is new, and
+ *  selectedIdx() derives the new index from the rearranged columns. */
 function mouseRelease(slice) {
   const d = slice.design;
   const ds = d && d.drag;
@@ -871,7 +870,7 @@ function poolDragRelease(slice) {
 
 module.exports = {
   MIN_PANEL_H, DETAIL_MIN_PCT, DETAIL_MAX_PCT,
-  allDesignPanels,
+  allDesignPanels, selectedIdx,
   snapshot, undo, redo, clearUndoStacks,
   columnTotalH, freezeColumnFlex, panelHeightPct,
   navSelect, reorderWithin, moveColumn, resizeWidthOrDetail, resizeFocusedPanelHeight,

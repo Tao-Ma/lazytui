@@ -322,13 +322,12 @@ function handleDesignKey(key, seq) {
     case 'ctrl-r':          dispatch({ type: 'design_redo' }); break;
     case 'w':               dispatch({ type: 'panel_list_open' }); break;
     case ' ': {
-      // v0.6 — collapse-toggle on the SELECTED placement (the panel
+      // v0.6 — collapse-toggle on the FOCUSED placement (the panel
       // under the green focus border). detail is rejected by the
       // reducer; other invariants (drag in flight) are out of band
       // here since handleDesignKey only runs on idle key input.
-      const mdesign = require('../leaves/design');
-      const all = layoutSlice ? mdesign.allDesignPanels(layoutSlice) : [];
-      const sel = all[layoutSlice && layoutSlice.design ? layoutSlice.design.selectedIdx : 0];
+      const all = layoutSlice ? require('../leaves/design').allDesignPanels(layoutSlice) : [];
+      const sel = all.find(p => p.type === (layoutSlice && layoutSlice.focus));
       if (sel) dispatch({ type: 'panel_collapse_toggle', id: sel.id });
       break;
     }

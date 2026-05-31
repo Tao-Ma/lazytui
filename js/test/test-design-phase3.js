@@ -414,7 +414,9 @@ describe('[4] undo / redo — round-trip across mutation types', () => {
     handleDesignKey('K');                    // mutation 1 (undoDepth=1)
     handleDesignKey('u');                    // undo (redoDepth=1)
     eq(_getRedoDepth(), 1);
-    handleDesignKey('j');
+    // Post-v0.6.x: focus follows the PANEL (not the slot), so after
+    // `K u` focus is still on 'groups'. Reorder it again to make a
+    // new mutation that should invalidate redo.
     handleDesignKey('K');                    // mutation 2 (a different timeline)
     eq(_getRedoDepth(), 0, 'redo cleared by new mutation');
   });

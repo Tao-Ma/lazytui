@@ -6,7 +6,7 @@
  *   - focus          — currently focused panel type
  *   - viewMode       — normal / half / full
  *   - dirty          — layout has unsaved changes (drives `:save-layout` hint)
- *   - design         — free-config working state (selectedIdx, drag, undo/redo, titleEdit)
+ *   - design         — free-config working state (drag, undo/redo, titleEdit)
  *   - panelHeights / panelBounds — view-output, written by the render pass
  *   - panelList      — `w` overlay state (open, cursor)
  *
@@ -84,10 +84,12 @@ function init() {
     viewMode: 'normal',
     dirty: false,
     // Free-config working state. `enabled` is the boot-time --design CLI
-    // flag; the rest is the design-mode reducer's drag/undo/title-edit state.
+    // flag; the rest is the design-mode reducer's drag/undo/title-edit
+    // state. The active panel (formerly `selectedIdx` here) is derived
+    // from `slice.focus` via `mdesign.selectedIdx(slice)` — single
+    // source of truth.
     design: {
       enabled: false,
-      selectedIdx: 0,
       drag: null,
       undo: [],
       redo: [],
@@ -172,9 +174,10 @@ function update(msg, slice) {
       // --design CLI flag). v0.6: auto-open the panel-list overlay when
       // the pool has hidden entries — the discoverability hint that
       // there are more panels available than currently in the grid.
-      // Also sync runtime focus to the design selection's starting
-      // panel (selectedIdx=0) so the green border + nav stay in sync
-      // from the first keypress; navSelect maintains this invariant.
+      // Sync runtime focus to the first placed panel on entry. focus
+      // is the single source of truth for the active panel in free-
+      // config (mdesign.selectedIdx derives the index); navSelect
+      // moves focus, and the green border tracks it.
       const enabled = slice.design && slice.design.enabled;
       const hasHidden = mpool.hiddenIds(slice.arrange).length > 0;
       const all = mdesign.allDesignPanels(slice);
@@ -182,7 +185,7 @@ function update(msg, slice) {
       const next = {
         ...slice,
         focus,
-        design: { enabled, selectedIdx: 0, drag: null, undo: [], redo: [], titleEdit: { active: false, text: '' } },
+        design: { enabled, drag: null, undo: [], redo: [], titleEdit: { active: false, text: '' } },
         panelList: { open: hasHidden, cursor: 0 },
       };
       return [next, [{ type: 'apply_msg', msg: { type: 'mode_set', flag: 'freeConfigMode' } }]];
@@ -191,7 +194,7 @@ function update(msg, slice) {
       const enabled = slice.design && slice.design.enabled;
       const next = {
         ...slice,
-        design: { enabled, selectedIdx: 0, drag: null, undo: [], redo: [], titleEdit: { active: false, text: '' } },
+        design: { enabled, drag: null, undo: [], redo: [], titleEdit: { active: false, text: '' } },
         panelList: { open: false, cursor: 0 },
       };
       return [next, [
@@ -311,9 +314,9 @@ function update(msg, slice) {
         return slice;  // already hidden
       }
       const next = { ...slice, arrange: { ...arrange, leftPanels: nextLeft, rightPanels: nextRight }, dirty: true };
-      // Restore the v0.6 focus+selectedIdx invariant. If the hidden
-      // panel was focused, clampSelected falls through to its
-      // selectedIdx-based pick.
+      // If the hidden panel was focused, focus is now stale (points at
+      // a no-longer-placed type). clampSelected snaps it back to a
+      // valid panel.
       return mdesign.clampSelected(next);
     }
     // Panel-list overlay state Msgs. Open/close, cursor nav, context-
@@ -413,9 +416,8 @@ function update(msg, slice) {
         ? { ...arrange, leftPanels:  nextCol }
         : { ...arrange, rightPanels: nextCol };
       const next = { ...slice, arrange: nextArrange, dirty: true };
-      // Move focus + selectedIdx to the newly-shown panel — matches the
-      // overlay UX where picking from the pool surfaces the new panel
-      // as the active one.
+      // Move focus to the newly-shown panel — matches the overlay UX
+      // where picking from the pool surfaces it as the active one.
       return mdesign.clampSelected(next, entry.type);
     }
     default:
