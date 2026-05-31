@@ -21,10 +21,9 @@
  */
 'use strict';
 
-const { esc } = require('../io/ansi');
-const { allPanels, setDetail, getSel } = require('../app/state');
+const { allPanels, getSel } = require('../app/state');
 const { render } = require('../render/layout');
-const {refreshAll, getPanelDef, getItems, idOf, getComponentSlice,
+const { getPanelDef, getItems, idOf, getComponentSlice,
        getComponentOwningPanel, dispatchMsg, dispatchKeyToFocused, wrap, getFocus } = require('../panel/api');
 const copy = require('../overlay/copy');
 const registerPopup = require('../overlay/register-popup');
