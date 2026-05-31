@@ -172,6 +172,12 @@ function _runActionByKey(key) {
 // Effect arms are mutation-only. Caller (handleKey, handleMouse, the
 // menu Enter path) owns the trailing paint. Arms resolve a Msg from the
 // model and call applyMsg(msg) — the reducer is the writer.
+//
+// T7: arms here once took a leading `model` arg that they never read
+// directly (they re-resolve via getFocus() / getItems() / getModel()
+// internally). That arg was the captured-stale-ref hazard that bit
+// us in 2be348a; dropping it removes the invitation to reintroduce
+// that bug class.
 
 function handleAction(action, arg) {
   switch (action) {
@@ -204,20 +210,29 @@ function handleAction(action, arg) {
         break;
       }
       // Enter on groups: branches toggle expand/collapse one level;
-      // leaves drill into the actions panel.
+      // leaves drill into the actions panel. This is the only tree-shape
+      // keybinding — recursive expand/collapse have no dedicated key,
+      // hammering Enter walks down levels (cursor stays put, the row
+      // below opens or closes). Avoids the prior "drill to empty actions"
+      // smell when a branch had no own actions.
       if (getFocus() === 'groups') {
         const items = getItems('groups');
         const row = items[getSel('groups')];
         if (row && row.children && row.children.length > 0) {
+          // toggle_group moved to groups.update in Phase C — route via
+          // the Component fan-out, not the root reducer.
           dispatchMsg(wrap('groups', { type: 'toggle_group', name: row.name }));
           break;
         }
+        // Leaf: drill into the actions panel (a plain focus change).
         dispatchMsg(wrap('layout', { type: 'focus_set', focus: 'actions' }));
         break;
       }
       // Enter on actions → run selected action. If the action declares
       // `args:`, open the prompt overlay first to collect positional
-      // params; submit then forwards them to runAction.
+      // params; submit then forwards them to runAction. Cmdline (`:`)
+      // already carries args inline, so this only matters for the
+      // actions-panel path.
       if (getFocus() === 'actions') {
         const items = getItems('actions');
         const item = items[getSel('actions')];
@@ -231,6 +246,10 @@ function handleAction(action, arg) {
       break;
     }
     case 'refresh':
+      // Async — refreshAll's resolve drives a scheduleRender via
+      // changed-flag bookkeeping in the refresh loop. The trailing
+      // sync paint in handleKey gives immediate feedback that
+      // "something happened" even before refresh completes.
       applyMsg({ type: 'refresh' });
       break;
     case 'toggle_collapse_focused': {
@@ -252,7 +271,10 @@ function handleAction(action, arg) {
     case 'prev_tab': applyMsg({ type: 'prev_tab' }); break;
     case 'page_up': {
       // Paging is focus-aware: detail scrolls its content; list panels
-      // jump the cursor by half a panel.
+      // jump the cursor by half a panel (the nav_select cascade, now
+      // run inline in the reducer). Other panel modes (e.g. stats
+      // content) get no-op — they don't expose getItems(), so the
+      // guard at the top of _pageInListPanel intentionally bails.
       if (getFocus() === 'detail') dispatchMsg(wrap('detail', { type: 'viewer_scroll', delta: -_halfPageStep('detail') }));
       else                          _pageInListPanel(-_halfPageStep(getFocus()));
       break;
@@ -271,6 +293,11 @@ function handleAction(action, arg) {
       else                          _jumpInListPanel('bottom');
       break;
     case 'view_expand':
+      // Through the Component fan-out: layout's update flips viewMode and
+      // returns a force_full_repaint effect on a real transition (a view
+      // change re-exposes panels the diff cache can't tell changed). Phase
+      // 1b moved viewMode out of the root reducer into layout's slice —
+      // hence wrap('layout', …) instead of the usual applyMsg here.
       dispatchMsg(wrap('layout', { type: 'view_expand' }));
       break;
     case 'view_shrink':
@@ -283,8 +310,9 @@ function handleAction(action, arg) {
       require('./dispatch').enterFilterMode();
       break;
     case 'design':
-      // The design-enabled gate lives in the reducer (update emits the
-      // start_design Cmd only when enabled).
+      // Reachable from menu entry and `:design` cmdline. The design-enabled
+      // gate lives in the reducer (update emits the start_design Cmd only
+      // when enabled) — same gate the cmdline command uses for visibility.
       applyMsg({ type: 'design' });
       break;
     case 'quit':

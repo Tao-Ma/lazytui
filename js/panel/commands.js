@@ -3,7 +3,8 @@
  *
  * Four sources collected into one list per call:
  *   1. FRAMEWORK_COMMANDS — static framework verbs (quit / refresh / help /
- *      save-layout / restore-layout).
+ *      save-layout / restore-layout). They live here because they're
+ *      framework actions, not Component behavior.
  *   2. _frameworkDynamicCommands — state-derived framework verbs
  *      (theme <name> / focus <panel> / free-config / design / hide / show).
  *   3. Each Component's static `commands` array.
@@ -18,6 +19,12 @@
  * Dispatch primitives (dispatchMsg, refreshAll) live in api.js; the run
  * closures here lazy-require them to break the cycle. `wrap` comes from the
  * zero-dep route leaf directly (api.js itself is just a re-exporter).
+ *
+ * Run closures are lazy on their imports too: `help` lazy-requires help-text
+ * to avoid an api → help-text → api cycle at module-load time. `cleanup`
+ * lazy-requires `app/cleanup` because that file pulls `terminal` → `node-pty`,
+ * which CLI mode (cli.js) needs to avoid — cli.js may require panel/api to
+ * discover Component `groupActions` without booting the TUI runtime.
  */
 'use strict';
 
@@ -101,6 +108,7 @@ function _frameworkDynamicCommands(m) {
       desc: `Focus the ${p.title} panel`,
       // focus_set is handled by layout.update (Phase 1c); route via
       // Component fan-out so the cascade (show_selected_info Cmd) runs.
+      // Writing getFocus() directly would skip the refresh.
       run: () => {
         api.dispatchMsg(wrap('layout', { type: 'focus_set', focus: p.type }));
       },
@@ -159,7 +167,8 @@ function _frameworkDynamicCommands(m) {
  * T28 / R23 — duplicate command name detection. Two Components contributing
  * the same command name silently both appear in the `:` cmdline; programmatic
  * lookup picks whichever was registered first. Warn on each collision so a
- * maintainer notices.
+ * maintainer notices — log goes to console + event-log via the same channel
+ * as the panel-type collision warning at registerComponent.
  *
  * Dedup scope: per call. `seen` and `warned` reset on every call, so a
  * duplicate collision re-warns on each cmdline rebuild (i.e. each keystroke
