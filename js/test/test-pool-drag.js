@@ -2,7 +2,7 @@
  * Phase 5 — pool drag from the panel-list overlay onto the layout grid.
  *
  * Pins the `poolDragStart` → `poolDragMotion` → `poolDragRelease` state
- * machine on `leaves/design`. Release returns [next, cmds]; the cmds
+ * machine on `leaves/design-pool-drag`. Release returns [next, cmds]; the cmds
  * are dispatch_msg Cmds that re-emit pool_hide / pool_show Msgs back
  * into layout.update — Phase 2's handlers do the actual mutation.
  *
@@ -11,7 +11,7 @@
 'use strict';
 
 const { describe, it, eq, assert, report } = require('./test-runner');
-const mdesign = require('../leaves/design');
+const mpoolDrag = require('../leaves/design-pool-drag');
 const layout = require('../panel/layout');
 
 // Build a slice with panelBounds populated so pool-drop hit-tests have
@@ -51,7 +51,7 @@ function buildSlice() {
 
 describe('[poolDragStart] sets drag.kind = pool-armed with sourceId', () => {
   it('captures source id + anchor coordinates', () => {
-    const s = mdesign.poolDragStart(buildSlice(), 'notes', 50, 5);
+    const s = mpoolDrag.poolDragStart(buildSlice(), 'notes', 50, 5);
     const d = s.design.drag;
     eq(d.kind, 'pool-armed');
     eq(d.sourceId, 'notes');
@@ -63,18 +63,18 @@ describe('[poolDragStart] sets drag.kind = pool-armed with sourceId', () => {
 
 describe('[poolDragMotion] promotes armed→dragging and computes drop target', () => {
   it('no movement leaves kind=pool-armed but updates curX/Y', () => {
-    let s = mdesign.poolDragStart(buildSlice(), 'notes', 50, 5);
-    s = mdesign.poolDragMotion(s, 50, 5);
+    let s = mpoolDrag.poolDragStart(buildSlice(), 'notes', 50, 5);
+    s = mpoolDrag.poolDragMotion(s, 50, 5);
     eq(s.design.drag.kind, 'pool-armed', 'still armed without motion');
   });
   it('motion promotes to pool-dragging', () => {
-    let s = mdesign.poolDragStart(buildSlice(), 'notes', 50, 5);
-    s = mdesign.poolDragMotion(s, 52, 6);
+    let s = mpoolDrag.poolDragStart(buildSlice(), 'notes', 50, 5);
+    s = mpoolDrag.poolDragMotion(s, 52, 6);
     eq(s.design.drag.kind, 'pool-dragging');
   });
   it('drop on an actions cell → replace target', () => {
-    let s = mdesign.poolDragStart(buildSlice(), 'notes', 50, 5);
-    s = mdesign.poolDragMotion(s, 50, 4); // inside actions (x:30-79, y:0-7)
+    let s = mpoolDrag.poolDragStart(buildSlice(), 'notes', 50, 5);
+    s = mpoolDrag.poolDragMotion(s, 50, 4); // inside actions (x:30-79, y:0-7)
     const t = s.design.drag.target;
     eq(t.kind, 'replace');
     eq(t.column, 'right');
@@ -82,24 +82,24 @@ describe('[poolDragMotion] promotes armed→dragging and computes drop target', 
     assert(t.valid, 'replace on actions is valid');
   });
   it('drop on detail → replace target marked invalid (detail is essential)', () => {
-    let s = mdesign.poolDragStart(buildSlice(), 'notes', 50, 5);
-    s = mdesign.poolDragMotion(s, 50, 15); // inside detail (x:30-79, y:8-19)
+    let s = mpoolDrag.poolDragStart(buildSlice(), 'notes', 50, 5);
+    s = mpoolDrag.poolDragMotion(s, 50, 15); // inside detail (x:30-79, y:8-19)
     const t = s.design.drag.target;
     eq(t.kind, 'replace');
     eq(t.occupantId, 'detail');
     eq(t.valid, false, 'detail replace refused');
   });
   it('drop in a column gap → append target', () => {
-    let s = mdesign.poolDragStart(buildSlice(), 'notes', 50, 5);
-    s = mdesign.poolDragMotion(s, 50, 30); // below all right-column cells
+    let s = mpoolDrag.poolDragStart(buildSlice(), 'notes', 50, 5);
+    s = mpoolDrag.poolDragMotion(s, 50, 30); // below all right-column cells
     const t = s.design.drag.target;
     eq(t.kind, 'append');
     eq(t.column, 'right');
     assert(t.valid);
   });
   it('drop on left column gap → append left', () => {
-    let s = mdesign.poolDragStart(buildSlice(), 'notes', 5, 5);
-    s = mdesign.poolDragMotion(s, 5, 25); // below groups + files
+    let s = mpoolDrag.poolDragStart(buildSlice(), 'notes', 5, 5);
+    s = mpoolDrag.poolDragMotion(s, 5, 25); // below groups + files
     eq(s.design.drag.target.kind, 'append');
     eq(s.design.drag.target.column, 'left');
   });
@@ -107,9 +107,9 @@ describe('[poolDragMotion] promotes armed→dragging and computes drop target', 
 
 describe('[poolDragRelease] emits Cmds + clears drag', () => {
   it('valid append drop → pool_show dispatch_msg + force_full_repaint; drag cleared, overlay closes', () => {
-    let s = mdesign.poolDragStart(buildSlice(), 'notes', 50, 5);
-    s = mdesign.poolDragMotion(s, 50, 30);
-    const [next, cmds] = mdesign.poolDragRelease(s);
+    let s = mpoolDrag.poolDragStart(buildSlice(), 'notes', 50, 5);
+    s = mpoolDrag.poolDragMotion(s, 50, 30);
+    const [next, cmds] = mpoolDrag.poolDragRelease(s);
     eq(next.design.drag, null, 'drag cleared');
     eq(next.panelList.open, false, 'overlay closed on successful drop');
     eq(cmds.length, 2);
@@ -121,9 +121,9 @@ describe('[poolDragRelease] emits Cmds + clears drag', () => {
     eq(cmds[1].type, 'force_full_repaint');
   });
   it('valid replace drop → pool_hide(occupant) + pool_show(source) + force_full_repaint', () => {
-    let s = mdesign.poolDragStart(buildSlice(), 'notes', 50, 5);
-    s = mdesign.poolDragMotion(s, 50, 4); // on actions
-    const [next, cmds] = mdesign.poolDragRelease(s);
+    let s = mpoolDrag.poolDragStart(buildSlice(), 'notes', 50, 5);
+    s = mpoolDrag.poolDragMotion(s, 50, 4); // on actions
+    const [next, cmds] = mpoolDrag.poolDragRelease(s);
     eq(cmds.length, 3);
     eq(cmds[0].msg.msg.type, 'pool_hide');
     eq(cmds[0].msg.msg.id, 'actions');
@@ -133,17 +133,17 @@ describe('[poolDragRelease] emits Cmds + clears drag', () => {
     eq(cmds[2].type, 'force_full_repaint');
   });
   it('invalid target (detail replace) → only force_full_repaint, drag cleared, overlay resumes', () => {
-    let s = mdesign.poolDragStart(buildSlice(), 'notes', 50, 5);
-    s = mdesign.poolDragMotion(s, 50, 15); // on detail (invalid)
-    const [next, cmds] = mdesign.poolDragRelease(s);
+    let s = mpoolDrag.poolDragStart(buildSlice(), 'notes', 50, 5);
+    s = mpoolDrag.poolDragMotion(s, 50, 15); // on detail (invalid)
+    const [next, cmds] = mpoolDrag.poolDragRelease(s);
     eq(next.design.drag, null);
     eq(next.panelList.open, true, 'overlay reopened (was open at drag start)');
     eq(cmds.length, 1);
     eq(cmds[0].type, 'force_full_repaint');
   });
   it('release without motion (no target) → only force_full_repaint, drag cleared', () => {
-    const s = mdesign.poolDragStart(buildSlice(), 'notes', 50, 5);
-    const [next, cmds] = mdesign.poolDragRelease(s);
+    const s = mpoolDrag.poolDragStart(buildSlice(), 'notes', 50, 5);
+    const [next, cmds] = mpoolDrag.poolDragRelease(s);
     eq(next.design.drag, null);
     eq(cmds.length, 1);
     eq(cmds[0].type, 'force_full_repaint');

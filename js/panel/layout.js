@@ -19,6 +19,7 @@
 // No in-place writes, no panel/api reach-around. Called from this
 // Component's update, preserving single-writer-per-slice.
 const mdesign = require('../leaves/design');
+const mpoolDrag = require('../leaves/design-pool-drag');
 const mpool = require('../leaves/pool');
 
 const { LEFT_HOTKEY_POOL, RIGHT_HOTKEY_POOL } = require('../leaves/hotkeys');
@@ -248,7 +249,7 @@ function update(msg, slice) {
     case 'pool_drag_start': {
       // poolDragStart closes the overlay so the user can see the drop
       // targets — force_full_repaint wipes the overlay's pixels.
-      const next = mdesign.poolDragStart(slice, msg.id, msg.mx, msg.my);
+      const next = mpoolDrag.poolDragStart(slice, msg.id, msg.mx, msg.my);
       return [next, [{ type: 'force_full_repaint' }]];
     }
     case 'pool_drag_motion': {
@@ -260,14 +261,14 @@ function update(msg, slice) {
       // zone) the affordance is painted in the same place each render,
       // so no repaint is needed and emitting one each motion was
       // causing visible blinking under rapid drag.
-      const next = mdesign.poolDragMotion(slice, msg.mx, msg.my);
+      const next = mpoolDrag.poolDragMotion(slice, msg.mx, msg.my);
       if (next === slice) return slice;
       const oldT = slice.design && slice.design.drag && slice.design.drag.target;
       const newT = next.design  && next.design.drag  && next.design.drag.target;
       if (_dropTargetsEqual(oldT, newT)) return next;
       return [next, [{ type: 'force_full_repaint' }]];
     }
-    case 'pool_drag_release': return mdesign.poolDragRelease(slice);
+    case 'pool_drag_release': return mpoolDrag.poolDragRelease(slice);
     case 'design_title_key': {
       const te = slice.design && slice.design.titleEdit;
       if (!te) return slice;
