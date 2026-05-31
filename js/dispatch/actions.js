@@ -14,7 +14,7 @@
  * 'bar' } }` bindings + future callers).
  *
  * Carved out of dispatch.js (which still owns applyMsg + navSelect +
- * enterFilterMode + the mode-key handlers). Cycle break: this module
+ * _enterFilterMode + the mode-key handlers). Cycle break: this module
  * lazy-requires dispatch.js inline at call sites — never destructure
  * `applyMsg` / `navSelect` at module-load time, since dispatch.js is mid-
  * load when we run. Matches the existing dispatch↔effects / dispatch↔state
@@ -305,9 +305,9 @@ function handleAction(action, arg) {
       break;
     case 'filter':
       // Reachable from the menu + `:filter`. The filterable gate lives in
-      // dispatch.enterFilterMode (plugin-API check); lazy-require to cross
+      // dispatch._enterFilterMode (plugin-API check); lazy-require to cross
       // the dispatch↔actions cycle.
-      require('./dispatch').enterFilterMode();
+      require('./dispatch')._enterFilterMode();
       break;
     case 'design':
       // Reachable from menu entry and `:design` cmdline. The design-enabled

@@ -154,7 +154,7 @@ function handleMenuKey(key, seq) {
  * filter_enter Msg seeds the draft from the committed value. No-op (returns
  * false) when the focused panel isn't filterable.
  */
-function enterFilterMode() {
+function _enterFilterMode() {
   const def = getPanelDef(getFocus());
   if (!def || !def.filterable) return false;
   // Phase 4c — committed filter text lives on the panel's nav slice;
@@ -388,7 +388,7 @@ function handleNormalKey(key, seq) {
       // `/` there as vim/less-style search instead. Same key, different
       // mode based on focus.
       if (getFocus() === 'detail') dispatchMsg(wrap('detail', { type: 'viewer_search_enter' }));
-      else                          enterFilterMode();
+      else                          _enterFilterMode();
       break;
     case 'y':              enterCopyMode(); break;
     case '"':              applyMsg({ type: 'register_popup_enter' }); break;
@@ -676,9 +676,9 @@ module.exports = {
   registerKeyFilter, clearKeyFilters,
   loadKeyBindings,
   // Exposed so actions.js (the carved-out handleAction switch) can lazy-
-  // require enterFilterMode for its `:filter` arm — keeps the filterable
+  // require _enterFilterMode for its `:filter` arm — keeps the filterable
   // gate single-sourced.
-  enterFilterMode,
+  _enterFilterMode,
   // Exposed for tests
   _enterPrefix: enterPrefix,
   _handlePrefixKey: handlePrefixKey,
