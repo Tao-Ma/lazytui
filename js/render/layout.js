@@ -281,8 +281,11 @@ function _safeRender(fn, panel, w, h) {
     } catch (_) {}
     // esc() the interpolated values — a thrown error whose message
     // contained a literal `[` would otherwise become embedded markup
-    // and confuse the panel renderer's parser.
-    return `[red][render error: ${esc(String(panel && panel.type))} — ${esc(String(e && e.message))}][/]`;
+    // and confuse the panel renderer's parser. The OUTER brackets
+    // around "render error: …" must also be escaped — without `\[`
+    // and `\]`, richToAnsi treats the whole thing as a tag, looks it
+    // up in CODES (miss), and emits RESET, swallowing the message.
+    return `[red]\\[render error: ${esc(String(panel && panel.type))} — ${esc(String(e && e.message))}\\][/]`;
   }
 }
 

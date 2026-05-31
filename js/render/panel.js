@@ -36,7 +36,21 @@ function truncate(text, maxWidth) {
     result.push(ch);
     w += cw;
   }
-  return prefix + result.join('') + '…';
+  // Re-escape literal `[` in the truncated plain text — stripMarkup
+  // converted any original `\[` escape into a literal `[`, and emitting
+  // that un-escaped would let richToAnsi re-parse it as the START of
+  // a markup tag (e.g. `\[Enter]` in a hint string → `[Enter]` after
+  // stripMarkup → matched as `[Enter]` tag, looked up in CODES, missed,
+  // emits RESET — the bracketed text silently disappears). v0.5 hadn't
+  // hit this because no in-tree caller mixed `\[` escapes with content
+  // long enough to truncate; the v0.6 panel-list overlay's hint row does.
+  //
+  // Only `[` needs escaping. richToAnsi doesn't have a `\]` handler —
+  // a bare `]` doesn't trigger tag matching (the regex requires `[xxx]`)
+  // and writing `\]` would emit the LITERAL TWO CHARS `\` + `]` in the
+  // terminal, miscounting visible width.
+  const safe = result.join('').replace(/\[/g, '\\[');
+  return prefix + safe + '…';
 }
 
 /**
