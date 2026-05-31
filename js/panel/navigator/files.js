@@ -54,9 +54,11 @@ const {
   getComponentSlice, getFocus,
 } = require('../api');
 
-const { addContentTab, updateContentTabLines } = require('../viewer/tabs');
-const { loadFile, DEFAULT_MAX_BYTES, DEFAULT_HEX_AFTER } = require('../../io/file-loader');
+const { DEFAULT_MAX_BYTES, DEFAULT_HEX_AFTER } = require('../../io/file-loader');
 const { dockerList, dockerReadBytes } = require('../../feature/docker-fs');
+// _openFileAsTab delegates to the open-target scheme registry (Phase C);
+// addContentTab / updateContentTabLines / loadFile are owned by the
+// scheme implementations (feature/open-file.js, feature/open-docker.js).
 
 const OWNED_TYPES = ['files', 'file-browser'];
 
@@ -507,47 +509,31 @@ function installEffects(registerEffect) {
   });
 }
 
+/**
+ * Phase C: delegate to the open-target scheme registry. The two schemes
+ * (feature/open-file.js for host, feature/open-docker.js for docker)
+ * own the load+tab+error machinery; this Component just picks which
+ * scheme based on item.container / panel.source and threads per-panel
+ * config (max_bytes / hex_after / label) through as opts.
+ *
+ * Future schemes (ssh, s3, …) automatically work for the files panel
+ * once registered — no change needed here.
+ */
 function _openFileAsTab(item, panelType) {
   const panel = _panelOf(panelType) || {};
-  const maxBytes = _parseSize(panel.max_bytes, DEFAULT_MAX_BYTES);
-  const hexAfter = _parseSize(panel.hex_after, DEFAULT_HEX_AFTER);
-
+  const opts = {
+    maxBytes: _parseSize(panel.max_bytes, DEFAULT_MAX_BYTES),
+    hexAfter: _parseSize(panel.hex_after, DEFAULT_HEX_AFTER),
+    label: item.name,
+  };
   // A docker-source panel reads every file through panel.container; a declared
   // registry can mix host + container paths via per-entry `container:`.
   const container = item.container || (panel.source === 'docker' ? panel.container : null);
-
-  // Resolve relative paths against model.projectDir so the tab key is
-  // stable and loadFile reads the file the user pointed at. Container-
-  // side paths are absolute POSIX and pass through verbatim.
-  let absPath;
   if (container) {
-    absPath = item.path;
+    require('../../feature/open-docker').dockerOpenFileAsTab(container, item.path, opts);
   } else {
-    const base = getModel().projectDir || process.cwd();
-    absPath = path.isAbsolute(item.path) ? item.path : path.resolve(base, item.path);
+    require('../../feature/open-file').openHostFileAsTab(item.path, opts);
   }
-  const key = container ? `docker:${container}:${absPath}` : `file:${absPath}`;
-  const label = item.name;
-
-  // Capture the group at submit time so a mid-flight group switch doesn't
-  // misfile the resolved content tab.
-  const originGroup = getModel().currentGroup;
-  const loadingLabel = container
-    ? `[dim]Loading ${esc(container)}:${esc(absPath)}…[/]`
-    : `[dim]Loading ${esc(absPath)}…[/]`;
-  addContentTab(originGroup, key, label, [loadingLabel]);
-
-  const loadOpts = { maxBytes, hexAfter };
-  if (container) loadOpts.readBytes = (p, n) => dockerReadBytes(container, p, n);
-  loadFile(absPath, loadOpts).then(result => {
-    updateContentTabLines(originGroup, key, result.lines);
-    require('../../render/render-queue').scheduleRender();
-  }).catch(err => {
-    updateContentTabLines(originGroup, key, [
-      '[red]Failed to load:[/]', '', `[dim]${esc(err.message)}[/]`,
-    ]);
-    require('../../render/render-queue').scheduleRender();
-  });
 }
 
 // --- per-panel-type def factory ---
