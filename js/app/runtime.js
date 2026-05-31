@@ -543,11 +543,20 @@ function update(model, msg) {
       const c = model.modal.cmdline;
       if (msg.seq === '\t') {
         // Tab accepts the top match into the buffer (refine further), keeping
-        // any args already typed past the matched name.
+        // any args already typed past the matched name. argComplete entries
+        // already pack the full cmdline replacement into `display` (e.g.
+        // "open /etc/hosts/"), so we swap the buffer wholesale — the
+        // command-name splice formula doesn't apply when display IS the
+        // entire command line.
         const top = c.matches[0];
         if (!top) return [model, []];
-        const { args } = _cmdlineSplit(c.text);
-        const text = top.display.toLowerCase() + (args.length ? ' ' + args.join(' ') : '');
+        let text;
+        if (top.argComplete) {
+          text = top.display;
+        } else {
+          const { args } = _cmdlineSplit(c.text);
+          text = top.display.toLowerCase() + (args.length ? ' ' + args.join(' ') : '');
+        }
         return [_withModal(model, { cmdline: { ...c, text, sel: 0 } }), [{ type: 'cmdline_rebuild' }]];
       }
       if (msg.seq === '\x7f') {

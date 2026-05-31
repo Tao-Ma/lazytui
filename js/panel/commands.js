@@ -30,6 +30,10 @@
 
 const route = require('../leaves/route');
 const { wrap } = route;
+// Eager-require feature/open-file so its host scheme registers on the
+// open-target registry before the first `:open` invocation (or first
+// cmdline rebuild that consults argComplete).
+require('../feature/open-file');
 
 const FRAMEWORK_COMMANDS = [
   {
@@ -69,18 +73,22 @@ const FRAMEWORK_COMMANDS = [
   },
   {
     name: 'open',
-    desc: 'Open a host filesystem path as a content tab',
+    desc: 'Open a file as a content tab — :open <path>',
+    // Per-argument completion. Routes through the open-target scheme
+    // registry so host paths, docker URIs (`docker://container/path`,
+    // Phase B), and future schemes share the same TAB-completion machinery.
+    argComplete: (text) => require('../feature/open-target').complete(text),
     run: (args) => {
-      const fp = args && args[0];
-      if (!fp) {
+      const input = (args && args.join(' ')) || '';
+      if (!input) {
         const { setDetail } = require('../app/state');
         setDetail('[red]:open requires a path[/] — usage: :open <path>');
         return;
       }
-      // Quoted paths preserve spaces (cmdline splits on whitespace);
-      // strip the wrapping quotes so the load actually finds the file.
-      const filepath = fp.replace(/^['"]|['"]$/g, '');
-      require('../feature/open-file').openHostFileAsTab(filepath);
+      // Strip wrapping quotes (the cmdline splits on whitespace; quoting
+      // is the user's way of preserving a path with spaces).
+      const cleaned = input.replace(/^['"]|['"]$/g, '');
+      require('../feature/open-target').openInput(cleaned);
     },
   },
   {

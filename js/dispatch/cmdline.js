@@ -37,7 +37,10 @@ let _full = [];
  */
 function rebuild(text) {
   _full = rebuildMatches(text);
-  return _full.map(e => ({ display: e.display, desc: e.desc, kind: e.kind }));
+  // Pass `argComplete` through so the Tab handler in runtime.update knows
+  // to replace the whole buffer (path completion shape) rather than
+  // splicing the command name (default command-match shape).
+  return _full.map(e => ({ display: e.display, desc: e.desc, kind: e.kind, argComplete: !!e.argComplete }));
 }
 
 /** Run the module-held match at `sel` (the cmdline_run Cmd). Plugin commands
@@ -124,6 +127,11 @@ function buildRegistry() {
       desc: cmd.desc || '',
       kind: 'command',
       run: cmd.run,
+      // argComplete is the per-command path/value completer (see
+      // panel/commands.js#open). Carried through buildRegistry so
+      // rebuildMatches can dispatch to it when the user types past the
+      // command name.
+      argComplete: typeof cmd.argComplete === 'function' ? cmd.argComplete : null,
     });
   }
 
@@ -156,9 +164,29 @@ function score(query, name) {
 
 function rebuildMatches(text) {
   const reg = buildRegistry();
-  // Fuzzy-match against the action-name part only — args (anything past
-  // the first whitespace) are operands, not name characters.
-  const { query } = splitQuery(text);
+  const { query, args } = splitQuery(text);
+
+  // Argument-completion path — when the user is past the command name AND
+  // the matched command declares argComplete(), swap the dropdown to its
+  // completion list. Triggers when there's any arg text OR the buffer
+  // ends with a space (so the empty-arg case lists "all entries in dir").
+  const hasArgsCtx = args.length > 0 || /\s$/.test(text);
+  if (hasArgsCtx) {
+    const qLower = query.toLowerCase();
+    const matchedCmd = reg.find(e => e.name === qLower);
+    if (matchedCmd && typeof matchedCmd.argComplete === 'function') {
+      try {
+        const completions = matchedCmd.argComplete(args.join(' ')) || [];
+        return completions.map(c => ({ ...c, argComplete: true }));
+      } catch (e) {
+        console.error('[cmdline] argComplete error:', e.message);
+        return [];
+      }
+    }
+  }
+
+  // Default path — fuzzy-match the command name. Args are operands, not
+  // name characters.
   const q = query.toLowerCase().trim();
   const scored = [];
   for (const entry of reg) {

@@ -4,7 +4,11 @@
  * Shared between the files Component's Enter-on-file flow and the `:open`
  * cmdline verb. Handles the HOST-path case only — files.js still owns the
  * docker-container / declared-registry variants of _openFileAsTab because
- * those need panel-config context (panel.container, panel.source).
+ * those need panel-config context (panel.container, panel.source). Phase C
+ * of the open-target arc will fold those back through the scheme registry.
+ *
+ * Also registers the HOST scheme on the open-target registry (the catch-all
+ * fallback): anything without a `<word>://` prefix is routed here.
  *
  * Async file load: an immediate `[dim]Loading…[/]` content tab is added so
  * the user gets feedback under their cursor; the resolved lines slot in via
@@ -16,10 +20,14 @@
 'use strict';
 
 const path = require('path');
+const fs = require('fs');
 const { addContentTab, updateContentTabLines } = require('../panel/viewer/tabs');
 const { loadFile, DEFAULT_MAX_BYTES, DEFAULT_HEX_AFTER } = require('../io/file-loader');
 const { esc } = require('../io/ansi');
 const { getModel } = require('../app/runtime');
+const openTarget = require('./open-target');
+
+const SCHEME_PREFIX = /^[a-z][a-z0-9+.-]*:\/\//;
 
 /**
  * Open `filepath` as a content tab in the current group.
@@ -51,4 +59,75 @@ function openHostFileAsTab(filepath, opts = {}) {
   });
 }
 
-module.exports = { openHostFileAsTab };
+/**
+ * Path completion for the host filesystem. Returns render-safe match
+ * entries the cmdline drops into its dropdown.
+ *
+ *   - Empty input or trailing `/` → list everything in that dir
+ *   - Otherwise → list entries in dirname(input) whose name starts with
+ *     basename(input) (case-insensitive)
+ *
+ * Display string is the full command line replacement (`open <path>`) so
+ * the Tab handler can swap it into the buffer wholesale; the entries
+ * carry `argComplete: true` so the cmdline knows to use replace-buffer
+ * semantics rather than the default command-name rewrite.
+ */
+function hostComplete(input) {
+  const base = getModel().projectDir || process.cwd();
+  let dir, prefix;
+  if (!input || input.endsWith('/')) {
+    const absInput = !input ? base : (path.isAbsolute(input) ? input : path.resolve(base, input));
+    dir = absInput;
+    prefix = '';
+  } else {
+    const absInput = path.isAbsolute(input) ? input : path.resolve(base, input);
+    dir = path.dirname(absInput);
+    prefix = path.basename(absInput);
+  }
+
+  let entries;
+  try { entries = fs.readdirSync(dir, { withFileTypes: true }); }
+  catch { return []; }
+
+  const lcPrefix = prefix.toLowerCase();
+  return entries
+    .filter(e => e.name.toLowerCase().startsWith(lcPrefix))
+    .sort((a, b) => {
+      if (a.isDirectory() !== b.isDirectory()) return a.isDirectory() ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    })
+    .map(e => {
+      const fullPath = path.join(dir, e.name);
+      // Render the path the same way the user typed (relative if input was
+      // relative, absolute if they typed absolute). Cleaner UX than
+      // forcing all completions to be absolute.
+      const displayPath = path.isAbsolute(input) || (input && input.startsWith('/'))
+        ? fullPath
+        : path.relative(base, fullPath) || e.name;
+      const suffix = e.isDirectory() ? '/' : '';
+      const shown = displayPath + suffix;
+      return {
+        display: `open ${shown}`,
+        desc: e.isDirectory() ? '[dir]' : '[file]',
+        kind: 'path',
+        argComplete: true,
+        run: () => {
+          if (!e.isDirectory()) openHostFileAsTab(shown);
+          // Directory: silent no-op on Enter (the user should Tab to
+          // continue refining). Closing the cmdline + doing nothing
+          // matches the openInput pattern for unmatched input.
+        },
+      };
+    });
+}
+
+// Host scheme — the catch-all. Registered LAST so specific schemes (docker,
+// ssh, …) register first and claim their prefixes before host's match()
+// sees the input. Specific schemes register at their own module load.
+openTarget.registerOpenScheme('host', {
+  match: input => SCHEME_PREFIX.test(input) ? null : (input || ''),
+  complete: hostComplete,
+  open: (target, opts) => openHostFileAsTab(target, opts),
+});
+
+module.exports = { openHostFileAsTab, hostComplete };
