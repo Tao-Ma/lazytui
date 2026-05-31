@@ -177,14 +177,15 @@ function update(msg, slice) {
       // --design CLI flag). v0.6: auto-open the panel-list overlay when
       // the pool has hidden entries — the discoverability hint that
       // there are more panels available than currently in the grid.
-      // Sync runtime focus to the first placed panel on entry. focus
-      // is the single source of truth for the active panel in free-
-      // config (mdesign.selectedIdx derives the index); navSelect
-      // moves focus, and the green border tracks it.
+      // Preserve the current focus when it points at a placed panel
+      // (mdesign.selectedIdx derives the index); fall back to the
+      // first placed panel when current focus isn't in the layout
+      // (hidden in the pool, or never set).
       const enabled = slice.design && slice.design.enabled;
       const hasHidden = mpool.hiddenIds(slice.arrange).length > 0;
       const all = mdesign.allDesignPanels(slice);
-      const focus = all[0] ? all[0].type : slice.focus;
+      const focusedIsPlaced = all.some(p => p.type === slice.focus);
+      const focus = focusedIsPlaced ? slice.focus : (all[0] ? all[0].type : slice.focus);
       const next = {
         ...slice,
         focus,

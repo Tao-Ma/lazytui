@@ -69,6 +69,12 @@ function setupFixture() {
   getModel().modes.freeConfigMode = false;
   getModel().modes.designTitleEditMode = false;
   getComponentSlice('layout').dirty = false;
+  // Pin focus to the first placed panel before entering design — every
+  // it() in this file is written from the assumption that selectedIdx=0
+  // = containers on entry, and `design_enter` now preserves focus when
+  // it points at a placed panel (no longer resets to all[0]), so a
+  // leftover focus from a prior test would otherwise leak in.
+  getComponentSlice('layout').focus = 'containers';
   _clearUndoStacks();
   enterDesign(getComponentSlice("layout").arrange, '/dev/null', () => {});
 }
