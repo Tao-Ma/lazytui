@@ -816,6 +816,20 @@ function computeDragPreviewArrange(slice) {
   if (!drag.target || !drag.target.valid) return null;
   const t = drag.target;
   if (t.kind === 'swap' && t.occupantType === drag.sourceType) return null;
+  // Same-position insert short-circuit: drop on top-third (target.index ==
+  // fromIdx) or bottom-third (target.index == fromIdx + 1) of source's own
+  // cell, same column. applyInsert's splice math produces an arrange that
+  // matches the original layout, but with a fresh object identity and
+  // dirty:true. Render would swap+paint identical pixels — wasted work.
+  // (Cross-column drops always move; only same-column self-targets short-
+  // circuit. validateTarget's detail clamp may rewrite target.index into
+  // this band, which is the correct outcome: clamp-past-detail back to
+  // own slot IS a no-op release.)
+  if (t.kind === 'insert') {
+    const panels = t.column === 'left' ? slice.arrange.leftPanels : slice.arrange.rightPanels;
+    const fromIdx = panels.findIndex(p => p.type === drag.sourceType);
+    if (fromIdx >= 0 && (t.index === fromIdx || t.index === fromIdx + 1)) return null;
+  }
   const next = applyDrop(slice, drag.sourceType, t);
   return next === slice ? null : next.arrange;
 }

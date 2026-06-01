@@ -469,6 +469,46 @@ describe('[5] computeDragPreviewArrange — what-if snapshot', () => {
     const preview = mdesign.computeDragPreviewArrange(slice);
     eq(preview, null);
   });
+
+  it('same-column insert at own slot (top-third of self) → preview is null', () => {
+    // Regression for C10: drop X at insert@fromIdx in own column is a no-op
+    // splice (remove X, re-insert at same slot). applyDrop returns a fresh
+    // slice with identical arrange + dirty:true; computing/swapping/painting
+    // it is wasted work. Short-circuit returns null so render skips the swap.
+    setupFixture();
+    onMouseEvent('press',  5, 2);  // press containers (left:0)
+    onMouseEvent('motion', 5, 1);  // containers top zone → insert@left:0
+    const slice = getComponentSlice('layout');
+    eq(slice.design.drag.target.kind, 'insert');
+    eq(slice.design.drag.target.index, 0);
+    const preview = mdesign.computeDragPreviewArrange(slice);
+    eq(preview, null, 'self-targeted insert produces no preview');
+  });
+
+  it('same-column insert at own slot+1 (bottom-third of self) → preview is null', () => {
+    setupFixture();
+    onMouseEvent('press',  5, 2);  // press containers
+    onMouseEvent('motion', 5, 8);  // containers bot zone → insert@left:1
+    const slice = getComponentSlice('layout');
+    eq(slice.design.drag.target.kind, 'insert');
+    eq(slice.design.drag.target.index, 1);
+    const preview = mdesign.computeDragPreviewArrange(slice);
+    eq(preview, null, 'bottom-third of own cell is still a self-target');
+  });
+
+  it('cross-column insert at the same numeric index is NOT a self-target', () => {
+    // Don't accidentally short-circuit a real cross-column move when its
+    // numeric index happens to match the source's idx in its own column.
+    setupFixture();
+    onMouseEvent('press',   5, 2);  // press containers (left:0)
+    onMouseEvent('motion', 50, 0);  // actions top zone → insert@right:0
+    const slice = getComponentSlice('layout');
+    eq(slice.design.drag.target.column, 'right');
+    eq(slice.design.drag.target.index, 0);
+    const preview = mdesign.computeDragPreviewArrange(slice);
+    assert(preview !== null, 'cross-column move produces a real preview');
+    eq(preview.rightPanels[0].type, 'containers');
+  });
 });
 
 // ===============================================================
