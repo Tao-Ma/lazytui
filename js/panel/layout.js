@@ -93,6 +93,13 @@ function init() {
     // navigate, Enter context-picks (hide if placed, show if hidden,
     // no-op on detail).
     panelList: { open: false, cursor: 0 },
+    // Half-view's left-side panel — tracks the most recently focused
+    // non-detail panel. When `focus === 'detail'` in half view, the
+    // renderer reads this to decide what to paint on the left instead
+    // of duplicating detail on both sides. Updated in `focus_set` only
+    // when the new focus is non-detail; stays sticky while focus sits
+    // on detail. Falls back to first non-detail panel if unset/stale.
+    halfLeftPanel: null,
   };
 }
 
@@ -191,7 +198,11 @@ function update(msg, slice) {
     // leaves the value put.
     case 'focus_set': {
       const next = msg.focus != null ? msg.focus : slice.focus;
-      return [{ ...slice, focus: next }, [{ type: 'show_selected_info' }]];
+      // Track non-detail focus for half view — the left-side panel
+      // sticks at the last non-detail focus so moving focus to detail
+      // doesn't make the other half vanish behind a duplicate detail.
+      const halfLeftPanel = next !== 'detail' ? next : slice.halfLeftPanel;
+      return [{ ...slice, focus: next, halfLeftPanel }, [{ type: 'show_selected_info' }]];
     }
     // arrange + dirty writes. :save-layout sends `{ dirty: false }`;
     // :restore-layout sends `{ arrange, dirty: false }` (the rebuilt
@@ -240,10 +251,17 @@ function update(msg, slice) {
     }
     case 'design_exit': {
       const enabled = slice.design && slice.design.enabled;
+      // Free-config nav (design_nav / design_reorder / design_move /
+      // mousePress) writes `focus` directly via the mdesign leaf, NOT
+      // through `focus_set`, so halfLeftPanel didn't track in-mode
+      // movement. Commit the current focus on exit so half-view's
+      // left-panel fallback reflects where the user landed.
+      const halfLeftPanel = slice.focus !== 'detail' ? slice.focus : slice.halfLeftPanel;
       const next = {
         ...slice,
         design: { enabled, drag: null, undo: [], redo: [], titleEdit: { active: false, text: '' }, notice: null },
         panelList: { open: false, cursor: 0 },
+        halfLeftPanel,
       };
       return [next, [
         { type: 'apply_msg', msg: { type: 'mode_clear', flag: 'freeConfigMode' } },

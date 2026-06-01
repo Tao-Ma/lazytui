@@ -393,20 +393,30 @@ function renderHalf(model) {
   const focusedPanel = allPanels().find(p => p.type === layoutSlice.focus);
   if (!focusedPanel) return renderNormal(model);
   const detailPanel = layoutSlice.arrange.rightPanels.find(p => p.type === 'detail');
+  // Half view is "non-detail panel + detail" side-by-side. When focus is
+  // ON detail (e.g., after a tab-bar click or content-area click moves
+  // focus there), the left side falls back to slice.halfLeftPanel — the
+  // most recently focused non-detail panel. Without this fallback the
+  // left would render detail again, duplicating it on both halves.
+  // Stale-handle fallback: if halfLeftPanel was removed from the layout,
+  // pick the first non-detail panel available; if none, just render
+  // detail on the left as a last resort (matches old behavior).
+  let leftPanel = focusedPanel;
+  if (focusedPanel.type === 'detail') {
+    const all = allPanels();
+    leftPanel = all.find(p => p.type === layoutSlice.halfLeftPanel)
+             || all.find(p => p.type !== 'detail')
+             || focusedPanel;
+  }
   layoutSlice.panelBounds = {};
-  layoutSlice.panelBounds[focusedPanel.type] = { x: 0, y: 0, w: halfW, h: availH };
+  layoutSlice.panelBounds[leftPanel.type] = { x: 0, y: 0, w: halfW, h: availH };
   if (detailPanel) layoutSlice.panelBounds.detail = { x: halfW, y: 0, w: COLS - halfW, h: availH };
-  let leftContent = _safeRender(rendererFor(focusedPanel.type), focusedPanel, halfW, availH);
+  let leftContent = _safeRender(rendererFor(leftPanel.type), leftPanel, halfW, availH);
   let rightContent = detailPanel ? _safeRender(rendererFor('detail'), detailPanel, halfW, availH) : '';
   // Bake the [≡] trigger into the detail render — same chrome as normal
-  // view so the user can open the tab list with the mouse in half view
-  // too. Hit-test math reads `panelBounds.detail` (right side), so when
-  // focused IS detail the left-side render also picks up the trigger
-  // visually but only the right-side click registers. Inject only on
-  // the right side to avoid that confusing dead glyph.
-  if (focusedPanel.type !== 'detail') {
-    leftContent = injectTabTrigger(leftContent, focusedPanel);  // no-op (non-detail)
-  }
+  // view so the user can open the tab list with the mouse in half view.
+  // Hit-test math reads `panelBounds.detail` (right side), so inject
+  // only on the right.
   if (rightContent) rightContent = injectTabTrigger(rightContent, detailPanel);
   return paintColumns(leftContent, rightContent);
 }
