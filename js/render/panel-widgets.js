@@ -106,9 +106,15 @@ function injectTopRowChrome(panelOutput, p, b, freeConfigMode, fc, focused) {
   // because richToAnsi looks each tag up in CODES separately — there's
   // no `[dim green]` entry. The terminal applies SGR sequentially, so
   // the result is `\x1b[2m\x1b[32m` = dim + green = darker green.
+  // Two slots so the [_] (collapsible) and [+] (collapsed) glyphs can
+  // have different colors — Mac convention: yellow minimize, green
+  // zoom. The collapsed state's [+] uses chrome_expand; the not-yet-
+  // collapsed [_] uses chrome_collapse.
   const t = theme();
   const closeBase    = t.chrome_close    || 'red';
-  const collapseBase = t.chrome_collapse || 'yellow';
+  const collapseBase = p.collapsed
+    ? (t.chrome_expand   || 'green')
+    : (t.chrome_collapse || 'yellow');
   const closeOpen    = focused ? `[${closeBase}]`    : `[dim][${closeBase}]`;
   const collapseOpen = focused ? `[${collapseBase}]` : `[dim][${collapseBase}]`;
   const fcRestore     = fc ? `[${fc}]` : '';
