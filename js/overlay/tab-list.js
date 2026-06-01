@@ -249,10 +249,18 @@ function injectTabTrigger(panelOutput, p) {
   const focused = require('../panel/api').getFocus() === 'detail' || getModel().modes.terminalMode;
   const fc = focused ? t.focus : t.dim;
   const isOpen = !!getModel().modes.tabListMode;
-  // `reverse` keeps the open-state indication (inverted block) — overrides
-  // the theme color so the user can see at a glance that the popup is open.
-  const style = isOpen ? 'reverse' : (t.chrome_trigger || 'bold cyan');
-  const triggerMarkup = `[${style}]${TRIGGER_GLYPH}[/][${fc}]`;
+  // `reverse` keeps the open-state indication (inverted block) regardless
+  // of focus. Otherwise: bright accent when detail is focused, `dim` +
+  // color when not — strip the `bold ` prefix from chrome_trigger so the
+  // dim attribute composes with the remaining color (bold + dim conflict
+  // on most terminals; bold tends to win, defeating the dim).
+  const triggerBase = t.chrome_trigger || 'bold cyan';
+  const triggerColor = triggerBase.replace(/^bold\s+/, '');
+  let triggerOpen;
+  if (isOpen)       triggerOpen = '[reverse]';
+  else if (focused) triggerOpen = `[${triggerBase}]`;
+  else              triggerOpen = `[dim][${triggerColor}]`;
+  const triggerMarkup = `${triggerOpen}${TRIGGER_GLYPH}[/][${fc}]`;
 
   const nlIdx = panelOutput.indexOf('\n');
   const topRow  = nlIdx >= 0 ? panelOutput.slice(0, nlIdx) : panelOutput;

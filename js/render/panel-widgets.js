@@ -82,7 +82,7 @@ function _placedWidgetTargets() {
  *  chrome markup, then the corner + close tag. The lazy-match anchored
  *  to end-of-line locks onto the final `─*` run, not any `─` chars inside
  *  the title text. */
-function injectTopRowChrome(panelOutput, p, b, freeConfigMode, fc) {
+function injectTopRowChrome(panelOutput, p, b, freeConfigMode, fc, focused) {
   if (!panelOutput || p.type === 'detail') return panelOutput;
   const slice = getComponentSlice('layout');
   if (slice && slice.design && slice.design.drag) return panelOutput;
@@ -98,9 +98,19 @@ function injectTopRowChrome(panelOutput, p, b, freeConfigMode, fc) {
   // Styles come from the theme — see themes.js#chrome_collapse / chrome_close.
   // Fallbacks match the previous hardcoded defaults so a custom theme
   // missing a slot still renders something sensible.
+  //
+  // When unfocused, prepend `[dim]` and KEEP the theme color, so the
+  // glyph reads as a darker shade of green/red rather than reverting
+  // to terminal-default-fg-dimmed (visually gray, no color identity).
+  // The composite is emitted as two adjacent markup tags `[dim][color]`
+  // because richToAnsi looks each tag up in CODES separately — there's
+  // no `[dim green]` entry. The terminal applies SGR sequentially, so
+  // the result is `\x1b[2m\x1b[32m` = dim + green = darker green.
   const t = theme();
-  const closeStyle    = t.chrome_close    || 'red';
-  const collapseStyle = t.chrome_collapse || 'green';
+  const closeBase    = t.chrome_close    || 'red';
+  const collapseBase = t.chrome_collapse || 'green';
+  const closeOpen    = focused ? `[${closeBase}]`    : `[dim][${closeBase}]`;
+  const collapseOpen = focused ? `[${collapseBase}]` : `[dim][${collapseBase}]`;
   const fcRestore     = fc ? `[${fc}]` : '';
   const collapseGlyph = p.collapsed ? '\\[+]' : '\\[_]';
 
@@ -119,14 +129,14 @@ function injectTopRowChrome(panelOutput, p, b, freeConfigMode, fc) {
   if (!m) return panelOutput;
   if (m[2].length < chromeW) return panelOutput;
 
-  const colMarkup = `[${collapseStyle}]${collapseGlyph}[/]${fcRestore}`;
+  const colMarkup = `${collapseOpen}${collapseGlyph}[/]${fcRestore}`;
   let injected;
   const kept = m[2].length - chromeW;
   if (wantClose) {
     // …─[X]─[_]╮ — keep one fill cell BETWEEN [X] and [_]. fcRestore
     // after [X][/] keeps that gap `─` in fc color; fcRestore after
     // [_][/] keeps the `╮` in fc.
-    const closeMarkup = `[${closeStyle}]${CLOSE_GLYPH}[/]${fcRestore}`;
+    const closeMarkup = `${closeOpen}${CLOSE_GLYPH}[/]${fcRestore}`;
     injected = '─'.repeat(kept) + closeMarkup + '─' + colMarkup;
   } else {
     injected = '─'.repeat(kept) + colMarkup;

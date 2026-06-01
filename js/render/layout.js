@@ -361,8 +361,9 @@ function renderNormal(model) {
     let out = p.collapsed
       ? _renderCollapsed(p, w)
       : _safeRender(rendererFor(p.type), p, w, h);
-    const fc = layoutSlice.focus === p.type ? t.focus : t.dim;
-    out = injectTopRowChrome(out, p, b, freeConfigMode, fc);
+    const focused = layoutSlice.focus === p.type;
+    const fc = focused ? t.focus : t.dim;
+    out = injectTopRowChrome(out, p, b, freeConfigMode, fc, focused);
     out = injectTabTrigger(out, p);
     return out;
   };
