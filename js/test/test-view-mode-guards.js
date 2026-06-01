@@ -155,4 +155,81 @@ describe('[3] design_exit clears notice', () => {
   });
 });
 
+// ===============================================================
+// Notice lifecycle (v0.6 polish):
+//   - any non-motion Msg that wouldn't re-assert the same notice clears
+//     it (so notice doesn't read stale across unrelated user intents).
+//   - a Msg that WOULD re-assert the same notice preserves slice ref
+//     (no identity churn on repeated identical blocked attempts).
+//   - drag-motion Msgs preserve notice (single intent in flight).
+describe('[4] notice auto-clears on unrelated user intent', () => {
+  it('focus_set with stale notice → notice cleared', () => {
+    setFreeConfig(false);
+    const s = freshLayoutSlice('normal');
+    s.design = { ...s.design, notice: 'stale from earlier block' };
+    s.arrange = { ...s.arrange, leftPanels: [{ id: 'a', type: 'a', column: 'left', hotkey: '1' }] };
+    const result = layout.update({ type: 'focus_set', focus: 'a' }, s);
+    assert(Array.isArray(result), 'focus_set returns [slice, cmds]');
+    const [next] = result;
+    eq(next.design.notice, null, 'unrelated Msg cleared stale notice');
+  });
+
+  it('pool_show with stale notice → notice cleared', () => {
+    setFreeConfig(false);
+    const s = freshLayoutSlice('normal');
+    s.design = { ...s.design, notice: 'stale' };
+    s.arrange = {
+      ...s.arrange,
+      pool: { x: { id: 'x', type: 'viewer', title: 'X', config: {} } },
+    };
+    const next = layout.update({ type: 'pool_show', id: 'x', column: 'left' }, s);
+    eq(next.design.notice, null, 'pool_show cleared stale notice');
+  });
+
+  it('design_mouse_motion preserves notice (drag in flight)', () => {
+    // Motion Msgs are continuous events within a single drag intent — they
+    // shouldn't disturb the unrelated hint from an earlier refused action.
+    setFreeConfig(true);
+    const s = freshLayoutSlice('normal');
+    // Seed a notice and a drag in progress so mouseMotion has something to read.
+    s.design = {
+      ...s.design,
+      notice: 'persistent through motion',
+      drag: { kind: 'armed', sourceType: 'a', startX: 5, startY: 5, curX: 5, curY: 5, target: null },
+    };
+    s.arrange = { ...s.arrange, leftPanels: [{ id: 'a', type: 'a', column: 'left', hotkey: '1' }] };
+    s.focus = 'a';
+    s.panelBounds = { a: { x: 0, y: 0, w: 30, h: 10 } };
+    const result = layout.update({ type: 'design_mouse_motion', mx: 5, my: 6, cols: 120 }, s);
+    const next = Array.isArray(result) ? result[0] : result;
+    eq(next.design.notice, 'persistent through motion', 'motion preserves notice');
+    setFreeConfig(false);
+  });
+});
+
+describe('[5] repeated identical blocked attempts preserve slice ref', () => {
+  it('view_expand × 2 in free-config returns identical slice ref on the 2nd attempt', () => {
+    setFreeConfig(true);
+    const s = freshLayoutSlice('normal');
+    const r1 = layout.update({ type: 'view_expand' }, s);
+    assert(!Array.isArray(r1));
+    assert(r1 !== s, 'first attempt creates a new slice (set notice)');
+    assert(r1.design.notice, 'first attempt sets notice');
+    const r2 = layout.update({ type: 'view_expand' }, r1);
+    assert(r2 === r1, 'second identical blocked attempt returns same slice ref (no churn)');
+    setFreeConfig(false);
+  });
+
+  it('design_enter × 2 from half view returns identical slice ref on the 2nd attempt', () => {
+    setFreeConfig(false);
+    const s = freshLayoutSlice('half');
+    const r1 = layout.update({ type: 'design_enter' }, s);
+    assert(!Array.isArray(r1));
+    assert(r1 !== s, 'first attempt creates a new slice');
+    assert(r1.design.notice, 'first attempt sets notice');
+    const r2 = layout.update({ type: 'design_enter' }, r1);
+    assert(r2 === r1, 'second identical blocked attempt preserves slice ref');
+  });
+});
+
 report();

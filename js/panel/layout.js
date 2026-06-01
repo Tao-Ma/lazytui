@@ -122,7 +122,44 @@ function reduceViewMode(viewMode, msg) {
   }
 }
 
+/** What notice (if any) would this Msg's blocked-action arm set?
+ *  Used for the notice auto-clear short-circuit: a Msg that would
+ *  RE-ASSERT the current notice preserves slice identity (no churn on
+ *  repeated identical blocked attempts); a Msg that wouldn't reassert
+ *  triggers the auto-clear so notice doesn't persist across unrelated
+ *  user intents. */
+function _potentialBlockedNotice(slice, msg) {
+  if (msg.type === 'view_expand' || msg.type === 'view_shrink') {
+    const md = getModel().modes;
+    if (md && md.freeConfigMode) return 'exit free-config (q) to change view mode';
+  }
+  if (msg.type === 'design_enter' && slice.viewMode !== 'normal') {
+    return 'free-config requires normal view ([ to return)';
+  }
+  return null;
+}
+
 function update(msg, slice) {
+  // Notice lifecycle (v0.6 view-guard polish):
+  //   - Continuous-motion Msgs (drag-in-flight) preserve the notice — one
+  //     intent in flight; cursor drift through zones shouldn't disturb an
+  //     unrelated hint from an earlier refused action.
+  //   - A Msg that would re-assert the same notice preserves it (no
+  //     identity churn on repeated identical blocked attempts).
+  //   - Everything else implicitly clears notice: any layout-touching
+  //     user intent that isn't re-asserting the block is treated as the
+  //     user having moved on.
+  const continuousMotion = msg.type === 'design_mouse_motion' ||
+                           msg.type === 'pool_drag_motion' ||
+                           msg.type === 'tab_drag_motion';
+  const oldNotice = slice.design && slice.design.notice;
+  if (oldNotice && !continuousMotion) {
+    const wouldReassert = _potentialBlockedNotice(slice, msg);
+    if (wouldReassert !== oldNotice) {
+      slice = { ...slice, design: { ...slice.design, notice: null } };
+    }
+  }
+
   switch (msg.type) {
     // viewMode. Each transition that actually changes the value asks
     // the effects layer for a full repaint — a view change re-exposes
@@ -139,15 +176,15 @@ function update(msg, slice) {
       const md = getModel().modes;
       const isUserInput = msg.type === 'view_expand' || msg.type === 'view_shrink';
       if (md && md.freeConfigMode && isUserInput) {
-        if (slice.design && slice.design.notice === 'exit free-config (q) to change view mode') return slice;
-        return { ...slice, design: { ...slice.design, notice: 'exit free-config (q) to change view mode' } };
+        const target = 'exit free-config (q) to change view mode';
+        // Short-circuit: if notice already matches, slice ref is preserved
+        // (the auto-clear above also preserved it via wouldReassert).
+        if (slice.design && slice.design.notice === target) return slice;
+        return { ...slice, design: { ...slice.design, notice: target } };
       }
       const next = reduceViewMode(slice.viewMode, msg);
       if (next === slice.viewMode) return slice;
-      // Successful view change clears any stale notice (the user reached
-      // a state where the block no longer applies).
-      const nextSlice = { ...slice, viewMode: next, design: { ...slice.design, notice: null } };
-      return [nextSlice, [{ type: 'force_full_repaint' }]];
+      return [{ ...slice, viewMode: next }, [{ type: 'force_full_repaint' }]];
     }
     // focus. Stores the focused panel; refresh of the detail body for
     // the newly-focused panel is an effect (Cmd). msg.focus == null
@@ -176,7 +213,9 @@ function update(msg, slice) {
       // operate on the full grid and need every cell visible. Surface a
       // notice so the user knows why `q` / `:free-config` didn't fire.
       if (slice.viewMode !== 'normal') {
-        return { ...slice, design: { ...slice.design, notice: 'free-config requires normal view ([ to return)' } };
+        const target = 'free-config requires normal view ([ to return)';
+        if (slice.design && slice.design.notice === target) return slice;
+        return { ...slice, design: { ...slice.design, notice: target } };
       }
       // Reset working state on entry; preserve `enabled` (the boot-time
       // --design CLI flag). v0.6: auto-open the panel-list overlay when
