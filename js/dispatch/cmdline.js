@@ -252,11 +252,21 @@ function rebuildMatches(text) {
     }
   }
 
-  // Default path — fuzzy-match the command name. Args are operands, not
-  // name characters.
-  const q = query.toLowerCase().trim();
+  // Default path — fuzzy-match the command name. For SINGLE-WORD entries
+  // (`logs`, `quit`, `help`, panel titles…) match against the leading
+  // word `query` so trailing args (typed as operands, not name chars)
+  // don't break the score. For MULTI-WORD entries (`theme dracula`,
+  // `focus FilePanel`) match against the FULL text so typing
+  // `:theme drac` narrows to `theme dracula` instead of landing on
+  // shortest-name tiebreak (`theme nord`). Pre-fix the full text was
+  // discarded in this branch — only the query word was matched, so
+  // multi-word commands all tied on `startsWith(query)` and the user
+  // had to arrow-nav to refine.
+  const qQuery = query.toLowerCase().trim();
+  const qFull = text.toLowerCase().trim().replace(/\s+/g, ' ');
   const scored = [];
   for (const entry of reg) {
+    const q = entry.name.includes(' ') ? qFull : qQuery;
     const s = score(q, entry.name);
     if (s > 0) scored.push({ entry, score: s });
   }
