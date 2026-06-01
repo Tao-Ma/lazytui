@@ -219,28 +219,50 @@ function _maybeBlank() {
   _lastPanelH = 0;
 }
 
-/** Always-on `[≡]` trigger glyph at the top-left of the detail panel.
- *  Paints AFTER everything else so it overlays the panel chrome at
- *  cols `detail.x+2..detail.x+4` (replacing the `(o)` hotkey display).
+/** Bake the `[≡]` trigger into the detail panel's top-border markup so
+ *  it rides into paintColumns' single write — eliminates the flicker
+ *  class the old paint-on-top suffered (the `[_]` fix's sibling).
+ *  Returns the modified panelOutput.
  *
- *  Suppressed in free-config mode (`tab_drag_start` press would race
- *  with the trigger hit-test in input.js) and any other chain mode
- *  that owns the cursor (cmdMode, prompt, confirm, …) — the trigger
- *  is interactive chrome and shouldn't be clickable while a modal
- *  owns input. */
-function renderTabTrigger() {
+ *  The trigger replaces the `(o)` hotkey display at cols
+ *  `detail.x+2..detail.x+4` — both are 3 cells, so the width is
+ *  preserved and the right border stays put. We re-emit `[fc]` after
+ *  the trigger's `[/]` so the rest of the top row keeps its border
+ *  color (the pre-fix paint-on-top didn't touch cells past the glyph,
+ *  so they kept fc; a naked `[/]` here would reset them to default).
+ *
+ *  No-op when:
+ *    - panel isn't detail
+ *    - detail bounds aren't set or too narrow
+ *    - trigger is suppressed (see `_triggerSuppressed`)
+ *    - the top row's hotkey display isn't single-char (multi-char
+ *      hotkeys would shift the width and aren't worth the complexity
+ *      for what is, by convention, always single-char in this codebase)
+ */
+function injectTabTrigger(panelOutput, p) {
+  if (!panelOutput || p.type !== 'detail') return panelOutput;
   const detailB = _detailBounds();
-  if (!detailB || detailB.w < TRIGGER_X_OFFSET + TRIGGER_VIS_W + 2) return;
-  if (_triggerSuppressed()) return;
-  const x0 = detailB.x + TRIGGER_X_OFFSET;
-  const y0 = detailB.y;
+  if (!detailB || detailB.w < TRIGGER_X_OFFSET + TRIGGER_VIS_W + 2) return panelOutput;
+  if (_triggerSuppressed()) return panelOutput;
+
+  const t = theme();
+  const focused = require('../panel/api').getFocus() === 'detail' || getModel().modes.terminalMode;
+  const fc = focused ? t.focus : t.dim;
   const isOpen = !!getModel().modes.tabListMode;
-  const style = isOpen ? 'reverse' : `bold ${theme().focusBorder || 'cyan'}`;
-  stdout.write(
-    `\x1b[${y0 + 1};${x0 + 1}H` +
-    richToAnsi(`[${style}]${TRIGGER_GLYPH}[/]`) +
-    RESET
-  );
+  const style = isOpen ? 'reverse' : `bold ${t.focusBorder || 'cyan'}`;
+  const triggerMarkup = `[${style}]${TRIGGER_GLYPH}[/][${fc}]`;
+
+  const nlIdx = panelOutput.indexOf('\n');
+  const topRow  = nlIdx >= 0 ? panelOutput.slice(0, nlIdx) : panelOutput;
+  const restRows = nlIdx >= 0 ? panelOutput.slice(nlIdx) : '';
+
+  // Match `╭─(X)` right after the opening color tag — `X` is a single
+  // hotkey char (the convention; renderPanel writes `(${hotkey})` from
+  // a positionally-assigned single-letter key). Lazy `.*?` lets m[1]
+  // grow until the first `╭─\(.\)` matches.
+  const m = topRow.match(/^(.*?╭─)\([^)]\)(.*)$/);
+  if (!m) return panelOutput;
+  return m[1] + triggerMarkup + m[2] + restRows;
 }
 
 function _triggerSuppressed() {
@@ -269,7 +291,7 @@ function isTriggerHit(mx, my) {
 function _resetRenderState() { _lastPanelH = 0; _lastTop = 0; }
 
 module.exports = {
-  renderTabList, renderTabTrigger, hitTest, isTriggerHit,
+  renderTabList, injectTabTrigger, hitTest, isTriggerHit,
   viewportRows, _resetRenderState,
   // Exposed for tests
   _flatTabs, _geom,

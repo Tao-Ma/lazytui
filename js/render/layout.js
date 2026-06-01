@@ -42,7 +42,7 @@ const { renderPromptOverlay } = require('../overlay/prompt');
 const { renderDesignOverlay, getDesignFooter } = require('../overlay/design');
 const { injectTopRowChrome } = require('./panel-widgets');
 const { renderPanelListOverlay } = require('../overlay/panel-list');
-const { renderTabList, renderTabTrigger } = require('../overlay/tab-list');
+const { renderTabList, injectTabTrigger } = require('../overlay/tab-list');
 const { collectViewContributions } = require('../panel/api');
 const { currentText: filterCurrentText } = require('../overlay/filter');
 
@@ -343,16 +343,21 @@ function renderNormal(model) {
   const layoutSlice = getComponentSlice('layout');
   layoutSlice.panelBounds = {};
   const freeConfigMode = !!(model.modes && model.modes.freeConfigMode);
-  // Helper to render one panel + bake the `[_]` / `[X]` chrome into its
-  // top border row. Baking (vs cursor-move overpaint) keeps paintColumns'
-  // write atomic — no flicker on lower-left panels when detail scrolls.
+  // Helper to render one panel + bake the chrome glyphs into its top
+  // border row. Baking (vs cursor-move overpaint) keeps paintColumns'
+  // write atomic — no flicker on rows that get repainted while a glyph
+  // sits over them. Two glyph classes:
+  //   `[_]` / `[X]` collapse + close on non-detail panels (injectTopRowChrome)
+  //   `[≡]` tab trigger on detail (injectTabTrigger)
   const renderOne = (p, w, h, x, y) => {
     const b = { x, y, w, h };
     layoutSlice.panelBounds[p.type] = b;
-    const out = p.collapsed
+    let out = p.collapsed
       ? _renderCollapsed(p, w)
       : _safeRender(rendererFor(p.type), p, w, h);
-    return injectTopRowChrome(out, p, b, freeConfigMode);
+    out = injectTopRowChrome(out, p, b, freeConfigMode);
+    out = injectTabTrigger(out, p);
+    return out;
   };
   let leftY = 0;
   const leftOutputs = layoutSlice.arrange.leftPanels.map(p => {
@@ -547,14 +552,11 @@ function render(model = getModel()) {
   if (md.promptMode)  renderPromptOverlay();
   if (md.registerPopupMode) renderRegisterPopup();
   if (md.prefixMode)  renderWhichKey();
-  // Tab list overlay (only when active) — paint the popup BEFORE the
-  // always-on trigger glyph below so the trigger sits on top of any
-  // pixel the overlay's border would otherwise occlude.
+  // Tab list overlay (only when active). The `[≡]` trigger glyph used
+  // to paint here too — it's now baked into detail's top-row markup by
+  // injectTabTrigger inside renderNormal (sibling of injectTopRowChrome
+  // for [_]/[X]), so paintColumns writes the glyph atomically.
   if (md.tabListMode) renderTabList();
-  // The `[≡]` trigger is always-on chrome (like the [_] collapse
-  // button) — paints AFTER everything else so it overlays the detail
-  // panel's `(o)` hotkey display at cols detail.x+2..detail.x+4.
-  renderTabTrigger();
 
   // Cursor visibility — derived from mode state, single emission site.
   // Cursor *position* is set inline by renderTerminalOverlay (when in
