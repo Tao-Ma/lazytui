@@ -98,6 +98,24 @@ function panelListItems(arrange) {
   return items;
 }
 
+/** Build a runtime placement object from a pool entry. Mirrors the
+ *  flattening that `state.rebuildLayoutFromConfig` does on initial load —
+ *  plugin-specific config spread first, framework fields override.
+ *  Shared between `panel/layout.js#pool_show` (the actual commit on
+ *  release / cmdline `:show`) and the drag-preview path in
+ *  `leaves/design-pool-drag.js#computePoolDragPreviewArrange` so both
+ *  produce identical placements. */
+function placementFromPoolEntry(entry, column) {
+  return {
+    ...(entry.config || {}),
+    id: entry.id,
+    type: entry.type,
+    title: entry.title,
+    hotkey: '',
+    column,
+  };
+}
+
 module.exports = {
   placedIds,
   placedIdSet,
@@ -107,4 +125,5 @@ module.exports = {
   getPoolEntry,
   orphanPlacements,
   panelListItems,
+  placementFromPoolEntry,
 };

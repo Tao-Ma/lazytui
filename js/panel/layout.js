@@ -55,20 +55,6 @@ function _dragTargetsEqual(a, b) {
       && a.valid === b.valid;
 }
 
-/** Build a runtime placement object from a pool entry. Mirrors the
- *  flattening that `state.rebuildLayoutFromConfig` does on initial load
- *  — plugin-specific config spread first, framework fields override. */
-function placementFromPoolEntry(entry, column) {
-  return {
-    ...(entry.config || {}),
-    id: entry.id,
-    type: entry.type,
-    title: entry.title,
-    hotkey: '',
-    column,
-  };
-}
-
 function init() {
   return {
     // { leftPanels, rightPanels, leftWidth, detailHeightPct, pool }.
@@ -413,7 +399,7 @@ function update(msg, slice) {
       const cap = column === 'left' ? 6 : 3;
       const target = column === 'left' ? arrange.leftPanels : arrange.rightPanels;
       if (target.length >= cap) return slice;
-      const placement = placementFromPoolEntry(entry, column);
+      const placement = mpool.placementFromPoolEntry(entry, column);
       // Right column keeps `detail` as the last cell (convention shared
       // with moveColumn). When `msg.index` is supplied (pool-drag drops),
       // splice at that position — clamped to detail's slot in right column.

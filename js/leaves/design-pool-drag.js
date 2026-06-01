@@ -17,15 +17,18 @@
  * wrappers that re-emit pool_hide/pool_show Msgs back into layout.update so
  * the existing handlers do the actual mutation.
  *
- * Imports the cell-zone helper from leaves/design — the only cross-leaf dep
- * here, kept narrow so the two drags share one notion of "where the cursor
- * is in this cell." Reads slice.panelBounds, slice.arrange, slice.panelList;
- * writes slice.panelList, slice.design.drag (the same field design's mouse
- * drag uses; tagged union by `kind`).
+ * Imports the cell-zone helper from leaves/design (the 3-zone rule the two
+ * drags share) and placementFromPoolEntry from leaves/pool (so the preview
+ * builds the same placement object panel/layout.js's pool_show reducer
+ * commits on release). Both are pure leaves with no back-edges, so no
+ * cycle. Reads slice.panelBounds, slice.arrange, slice.panelList; writes
+ * slice.panelList, slice.design.drag (the same field design's mouse drag
+ * uses; tagged union by `kind`).
  */
 'use strict';
 
 const { pointToCellZone } = require('./design');
+const { placementFromPoolEntry } = require('./pool');
 
 /** Compute the drop target for a pool drag at (mx, my). Returns
  *  `{ kind:'insert', column, index, valid }` or
@@ -173,18 +176,6 @@ function poolDragRelease(slice) {
   return [closeOverlay, [showCmd, repaint]];
 }
 
-/** Build a runtime placement object from a pool entry — the same shape
- *  panel/layout.js#placementFromPoolEntry produces, inlined here to keep
- *  the leaf dependency-light (avoids a cycle through panel/layout which
- *  imports this file). */
-function _placement(entry, column) {
-  return {
-    ...(entry.config || {}),
-    id: entry.id, type: entry.type, title: entry.title,
-    hotkey: '', column,
-  };
-}
-
 /** Compute the preview arrange for a pool drag at the current target — what
  *  the layout would look like on release. Mirrors what pool_show / pool_hide
  *  in panel/layout.js will do, but as a pure transform on arrange (no Cmd
@@ -199,7 +190,7 @@ function computePoolDragPreviewArrange(slice) {
   const entry = (slice.arrange.pool || {})[drag.sourceId];
   if (!entry) return null;
   const arrange = slice.arrange;
-  const placement = _placement(entry, t.column);
+  const placement = placementFromPoolEntry(entry, t.column);
   if (t.kind === 'replace') {
     const apply = (panels) => panels.map(p => p.id === t.occupantId ? placement : p);
     return t.column === 'left'
