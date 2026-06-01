@@ -354,4 +354,70 @@ describe('[4] swap — middle-zone drag', () => {
   });
 });
 
+// ===============================================================
+// Preview-arrange snapshots: drag.previewArrange is what render swaps
+// slice.arrange for during the drag-render pass. It must equal the result
+// applyDrop would produce on release — that's the user-facing promise of
+// "what I see is what I get."
+describe('[5] computeDragPreviewArrange — what-if snapshot', () => {
+  const mdesign = require('../leaves/design');
+
+  it('insert preview matches a containers→left:2 release', () => {
+    setupFixture();
+    onMouseEvent('press',  5, 2);
+    onMouseEvent('motion', 5, 18);  // groups bot zone — insert at left:2
+    const slice = getComponentSlice('layout');
+    const preview = mdesign.computeDragPreviewArrange(slice);
+    eq(preview.leftPanels[0].type, 'groups');
+    eq(preview.leftPanels[1].type, 'containers');
+  });
+
+  it('swap preview shows panels traded in place', () => {
+    setupFixture();
+    onMouseEvent('press',  5, 2);
+    onMouseEvent('motion', 5, 14);  // groups mid zone — swap
+    const slice = getComponentSlice('layout');
+    const preview = mdesign.computeDragPreviewArrange(slice);
+    eq(preview.leftPanels[0].type, 'groups',     'groups at slot 0');
+    eq(preview.leftPanels[1].type, 'containers', 'containers at slot 1');
+  });
+
+  it('cross-column swap preview moves panels between columns', () => {
+    setupFixture();
+    onMouseEvent('press',   5, 2);
+    onMouseEvent('motion', 50, 10);  // stats mid zone — cross-col swap
+    const slice = getComponentSlice('layout');
+    const preview = mdesign.computeDragPreviewArrange(slice);
+    eq(preview.leftPanels[0].type, 'stats',     'stats to left:0');
+    eq(preview.rightPanels[1].type, 'containers', 'containers to right:1');
+    eq(preview.rightPanels[2].type, 'detail',    'detail still at end');
+  });
+
+  it('self-swap → preview is null (no visual change on release)', () => {
+    setupFixture();
+    onMouseEvent('press',  5, 2);
+    onMouseEvent('motion', 5, 5);  // containers mid zone — self-swap
+    const slice = getComponentSlice('layout');
+    const preview = mdesign.computeDragPreviewArrange(slice);
+    eq(preview, null);
+  });
+
+  it('invalid target → preview is null', () => {
+    setupFixture();
+    // Press detail, drag to left column → blocked.
+    onMouseEvent('press',  50, 20);
+    onMouseEvent('motion',  5,  2);
+    const slice = getComponentSlice('layout');
+    const preview = mdesign.computeDragPreviewArrange(slice);
+    eq(preview, null);
+  });
+
+  it('no drag → preview is null', () => {
+    setupFixture();
+    const slice = getComponentSlice('layout');
+    const preview = mdesign.computeDragPreviewArrange(slice);
+    eq(preview, null);
+  });
+});
+
 report();

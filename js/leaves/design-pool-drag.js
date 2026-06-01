@@ -173,7 +173,50 @@ function poolDragRelease(slice) {
   return [closeOverlay, [showCmd, repaint]];
 }
 
+/** Build a runtime placement object from a pool entry — the same shape
+ *  panel/layout.js#placementFromPoolEntry produces, inlined here to keep
+ *  the leaf dependency-light (avoids a cycle through panel/layout which
+ *  imports this file). */
+function _placement(entry, column) {
+  return {
+    ...(entry.config || {}),
+    id: entry.id, type: entry.type, title: entry.title,
+    hotkey: '', column,
+  };
+}
+
+/** Compute the preview arrange for a pool drag at the current target — what
+ *  the layout would look like on release. Mirrors what pool_show / pool_hide
+ *  in panel/layout.js will do, but as a pure transform on arrange (no Cmd
+ *  dispatch). Returns null when no preview should be painted. Like the
+ *  in-grid variant, the render path swaps + restores panelBounds so the
+ *  hit-test reference frame stays the original layout. */
+function computePoolDragPreviewArrange(slice) {
+  const drag = slice.design && slice.design.drag;
+  if (!drag || drag.kind !== 'pool-dragging') return null;
+  const t = drag.target;
+  if (!t || !t.valid) return null;
+  const entry = (slice.arrange.pool || {})[drag.sourceId];
+  if (!entry) return null;
+  const arrange = slice.arrange;
+  const placement = _placement(entry, t.column);
+  if (t.kind === 'replace') {
+    const apply = (panels) => panels.map(p => p.id === t.occupantId ? placement : p);
+    return t.column === 'left'
+      ? { ...arrange, leftPanels: apply(arrange.leftPanels) }
+      : { ...arrange, rightPanels: apply(arrange.rightPanels) };
+  }
+  // insert
+  const target = t.column === 'left' ? arrange.leftPanels : arrange.rightPanels;
+  const idx = Math.max(0, Math.min(t.index, target.length));
+  const inserted = target.slice(0, idx).concat([placement], target.slice(idx));
+  return t.column === 'left'
+    ? { ...arrange, leftPanels: inserted }
+    : { ...arrange, rightPanels: inserted };
+}
+
 module.exports = {
   pointToPoolDropTarget,
   poolDragStart, poolDragMotion, poolDragRelease,
+  computePoolDragPreviewArrange,
 };

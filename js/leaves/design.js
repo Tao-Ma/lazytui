@@ -798,8 +798,25 @@ function mouseRelease(slice) {
 
 // v0.6 Phase 5 pool drag (poolDragStart / poolDragMotion / poolDragRelease /
 // pointToPoolDropTarget) lives in leaves/design-pool-drag — separate gesture
-// with its own state-machine kind (pool-armed/pool-dragging), no shared
-// helpers with the rest of this leaf.
+// with its own state-machine kind (pool-armed/pool-dragging). Shares
+// pointToCellZone with this leaf for the 3-zone hit-test rule.
+
+/** Compute the preview arrange for an in-grid drag at the current target —
+ *  what the layout would look like on release. Returns null when there's no
+ *  preview to paint (no drag, no target, invalid target, or self-swap). The
+ *  render path swaps slice.arrange for this value during the drag-render
+ *  pass, restoring after so subsequent hit-tests use the stable original
+ *  layout (prevents the recursive flicker where painting the preview would
+ *  change which cell the cursor "is in" on the next motion event). */
+function computeDragPreviewArrange(slice) {
+  const drag = slice.design && slice.design.drag;
+  if (!drag || drag.kind !== 'dragging') return null;
+  if (!drag.target || !drag.target.valid) return null;
+  const t = drag.target;
+  if (t.kind === 'swap' && t.occupantType === drag.sourceType) return null;
+  const next = applyDrop(slice, drag.sourceType, t);
+  return next === slice ? null : next.arrange;
+}
 
 module.exports = {
   MIN_PANEL_H, DETAIL_MIN_PCT, DETAIL_MAX_PCT,
@@ -810,4 +827,5 @@ module.exports = {
   clampSelected, titleEnter, setSelectedTitle,
   pointToResizeTarget, pointToDropTarget, pointToCellZone, panelAt,
   mousePress, mouseMotion, mouseRelease,
+  computeDragPreviewArrange,
 };

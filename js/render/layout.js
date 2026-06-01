@@ -518,10 +518,30 @@ function render(model = getModel()) {
   let mainDidFull;
   // viewMode lives on the layout Component slice (Phase 1b).
   const layoutSlice = getComponentSlice('layout') || { viewMode: 'normal' };
+  // Drag preview: during an active drag with a valid target, swap
+  // slice.arrange for the would-be-after-release arrange so the user
+  // sees the actual outcome rather than an insertion-bar hint. Both
+  // arrange AND panelBounds are restored after paint — the next mouse
+  // hit-test reads original-layout bounds, which keeps drop-target
+  // detection stable when the cursor sits near a zone boundary (a
+  // preview-derived panelBounds would feed back into the next hit-test
+  // and ping-pong the layout under tiny cursor wobbles).
+  const drag = layoutSlice.design && layoutSlice.design.drag;
+  const previewArrange = drag && drag.previewArrange;
+  let savedArrange = null, savedBounds = null;
+  if (previewArrange) {
+    savedArrange = layoutSlice.arrange;
+    savedBounds = layoutSlice.panelBounds;
+    layoutSlice.arrange = previewArrange;
+  }
   const viewMode = layoutSlice.viewMode;
   if (viewMode === 'half') mainDidFull = renderHalf(model);
   else if (viewMode === 'full') mainDidFull = renderFull(model);
   else mainDidFull = renderNormal(model);
+  if (previewArrange) {
+    layoutSlice.arrange = savedArrange;
+    layoutSlice.panelBounds = savedBounds;
+  }
   // Cache the detail panel's effective viewport on detail's own slice
   // so viewer.update can clamp scroll/cursor without reading layout's
   // render-time geometry across slices. Blessed render-side write into

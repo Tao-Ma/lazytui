@@ -18,8 +18,8 @@
  */
 'use strict';
 
-const { esc, RESET, richToAnsi } = require('../io/ansi');
-const { cols, stdout } = require('../io/term');
+const { esc } = require('../io/ansi');
+const { cols } = require('../io/term');
 const { getModel } = require('../app/runtime');
 const { getComponentSlice } = require('../panel/api');
 const mdesign = require('../leaves/design');
@@ -87,129 +87,17 @@ function getDesignFooter() {
 }
 
 /**
- * Pool-drag drop-target affordance: paints a colored frame on the
- * target cell (replace) or a colored bar at the column's append slot,
- * so the user can SEE where the dragged pool panel will land. Pure
- * stdout writes at absolute screen positions; reads panelBounds (the
- * frame geometry written by the render pass).
- */
-function renderPoolDragOverlay(drag) {
-  const layoutSlice = getComponentSlice('layout');
-  if (!layoutSlice) return;
-  const t = drag.target;
-  if (!t) return;
-
-  if (t.kind === 'replace') {
-    // Outline the cell that would be replaced. Yellow on a valid
-    // replace, red on detail (invalid — see leaves/design#poolDrop).
-    const occ = (t.column === 'left' ? layoutSlice.arrange.leftPanels : layoutSlice.arrange.rightPanels)
-      .find(p => p.id === t.occupantId);
-    if (!occ) return;
-    const b = layoutSlice.panelBounds[occ.type];
-    if (!b) return;
-    const color = t.valid ? 'bold yellow' : 'bold red';
-    _drawFrame(b.x, b.y, b.w, b.h, color);
-    return;
-  }
-
-  // Append: bar painted at the SEAM where the new panel will land.
-  //   Left column   → bottom of last cell (panel appends at tail).
-  //   Right column  → top of detail (panel inserts before detail,
-  //                    keeping detail-at-end convention).
-  // Color reflects validity — green when the drop will commit, red
-  // when it would be refused (column at cap). Without the red flag
-  // the user saw a "valid"-looking green bar, released, and nothing
-  // happened (the cancel branch silently fired in poolDragRelease).
-  const COLS = cols();
-  const leftW = layoutSlice.arrange.leftWidth;
-  const colX = t.column === 'left' ? 0 : leftW;
-  const colW = t.column === 'left' ? leftW : COLS - leftW;
-  const panels = t.column === 'left' ? layoutSlice.arrange.leftPanels : layoutSlice.arrange.rightPanels;
-  let lineY = 0;
-  if (t.column === 'right') {
-    const detail = panels.find(p => p.type === 'detail');
-    const b = detail ? layoutSlice.panelBounds[detail.type] : null;
-    lineY = b ? b.y : 0;
-  } else if (panels.length > 0) {
-    const last = layoutSlice.panelBounds[panels[panels.length - 1].type];
-    if (last) lineY = last.y + last.h - 1;
-  }
-  const barColor = t.valid ? 'bold green' : 'bold red';
-  const bar = '═'.repeat(Math.max(1, colW));
-  stdout.write(`\x1b[${lineY + 1};${colX + 1}H` + richToAnsi(`[${barColor}]${bar}[/]`) + RESET);
-}
-
-/** Paint a single-line frame around (x, y, w, h) in the given color.
- *  Used by the pool-drag replace affordance to highlight the cell that
- *  would be replaced without disturbing its content (top, sides, bottom
- *  borders only). The painted characters overwrite the cell's existing
- *  border, so the effect is "the border just lit up in <color>".
- *
- *  All cursor-move + glyph sequences are accumulated into one buffer
- *  and emitted via a single stdout.write — pre-fix this issued 2 + 2*(h-2)
- *  separate writes (one per cell), so a 20-row panel meant 38 syscalls
- *  per drag-motion frame and the frame edges could tear under load. */
-function _drawFrame(x, y, w, h, color) {
-  if (w < 2 || h < 2) return;
-  const tl = '╭', tr = '╮', bl = '╰', br = '╯';
-  const top    = `[${color}]${tl}${'─'.repeat(w - 2)}${tr}[/]`;
-  const bot    = `[${color}]${bl}${'─'.repeat(w - 2)}${br}[/]`;
-  const sideC  = `[${color}]│[/]`;
-  let buf = `\x1b[${y + 1};${x + 1}H` + richToAnsi(top) + RESET;
-  for (let row = 1; row < h - 1; row++) {
-    buf += `\x1b[${y + row + 1};${x + 1}H` + richToAnsi(sideC) + RESET;
-    buf += `\x1b[${y + row + 1};${x + w}H` + richToAnsi(sideC) + RESET;
-  }
-  buf += `\x1b[${y + h};${x + 1}H` + richToAnsi(bot) + RESET;
-  stdout.write(buf);
-}
-
-/**
- * Paint the design overlay — drop-target affordance during an active drag.
- * Two drag kinds:
- *   - 'dragging'      : reordering an existing panel; paints an insertion
- *                       line at the target seam (green=valid, red=invalid).
- *   - 'pool-dragging' : new panel from the pool; paints a full-cell
- *                       border on REPLACE targets and a colored bar at
- *                       the bottom of the column on APPEND targets, so
- *                       the user can see WHERE the panel will land.
- * Banner / status lives in the footer (getDesignFooter).
+ * v0.6 — drop-target affordance is now the live preview itself. The render
+ * pass swaps slice.arrange for drag.previewArrange when a drag has a valid
+ * target, so the user SEES the would-be-after-release layout directly. No
+ * insertion bar / replace frame to paint here; the footer text
+ * (getDesignFooter) is the secondary indicator for invalid targets where
+ * no preview is shown.
  */
 function renderDesignOverlay() {
-  if (!getModel().modes.freeConfigMode) return;
-  const d = _design();
-  const drag = d && d.drag;
-  if (!drag) return;
-  if (drag.kind === 'pool-dragging') { renderPoolDragOverlay(drag); return; }
-  if (drag.kind !== 'dragging') return;
-  const t = drag.target;
-  if (!t) return;
-
-  const COLS = cols();
-  const layoutSlice = getComponentSlice('layout');
-  const leftW = layoutSlice.arrange.leftWidth;
-  const colX = t.column === 'left' ? 0 : leftW;
-  const colW = t.column === 'left' ? leftW : COLS - leftW;
-
-  // Resolve insertion y: t.index === 0 → top of column; else bottom edge of
-  // the panel at index t.index - 1.
-  const panels = t.column === 'left' ? layoutSlice.arrange.leftPanels : layoutSlice.arrange.rightPanels;
-  let lineY;
-  if (panels.length === 0) {
-    lineY = 0;
-  } else if (t.index <= 0) {
-    const first = layoutSlice.panelBounds[panels[0].type];
-    lineY = first ? first.y : 0;
-  } else {
-    const beforeIdx = Math.min(t.index, panels.length) - 1;
-    const before = layoutSlice.panelBounds[panels[beforeIdx].type];
-    lineY = before ? before.y + before.h - 1 : 0;
-  }
-
-  const color = t.valid ? 'green' : 'red';
-  const bar = '═'.repeat(Math.max(1, colW));
-  const markup = `[bold ${color}]${bar}[/]`;
-  stdout.write(`\x1b[${lineY + 1};${colX + 1}H` + richToAnsi(markup) + RESET);
+  // Kept as a no-op stub: render() in render/layout.js still calls this
+  // in the design-mode overlay slot, and tests / future overlay needs may
+  // hang things off it.
 }
 
 /** Title-edit footer text — the live buffer (reads the layout slice). */

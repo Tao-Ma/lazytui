@@ -268,4 +268,45 @@ describe('[pool_show with index] reducer splices at position', () => {
   });
 });
 
+// Pool-drag preview-arrange snapshots: drag.previewArrange is what render
+// swaps slice.arrange for during the drag-render pass. Must match what
+// pool_show / pool_hide would do on release.
+describe('[computePoolDragPreviewArrange] what-if snapshot', () => {
+  it('insert preview adds the source panel at the target index', () => {
+    let s = mpoolDrag.poolDragStart(buildSlice(), 'notes', 50, 5);
+    s = mpoolDrag.poolDragMotion(s, 50, 6);  // actions bot → insert at right:1
+    const preview = mpoolDrag.computePoolDragPreviewArrange(s);
+    eq(preview.rightPanels[0].type, 'actions');
+    eq(preview.rightPanels[1].type, 'viewer',  'notes (viewer-type) inserted');
+    eq(preview.rightPanels[2].type, 'detail',  'detail still at end');
+  });
+  it('replace preview swaps the source for the occupant', () => {
+    let s = mpoolDrag.poolDragStart(buildSlice(), 'notes', 50, 5);
+    s = mpoolDrag.poolDragMotion(s, 50, 4);  // actions mid → replace
+    const preview = mpoolDrag.computePoolDragPreviewArrange(s);
+    eq(preview.rightPanels.length, 2, 'occupant out, source in — same length');
+    eq(preview.rightPanels[0].type, 'viewer', 'notes replaces actions');
+    eq(preview.rightPanels[1].type, 'detail');
+  });
+  it('insert into left column splices at the target index', () => {
+    let s = mpoolDrag.poolDragStart(buildSlice(), 'notes', 5, 5);
+    s = mpoolDrag.poolDragMotion(s, 5, 1);  // groups top → insert at left:0
+    const preview = mpoolDrag.computePoolDragPreviewArrange(s);
+    eq(preview.leftPanels[0].type, 'viewer');
+    eq(preview.leftPanels[1].type, 'groups');
+    eq(preview.leftPanels[2].type, 'files');
+  });
+  it('invalid target → preview is null', () => {
+    let s = mpoolDrag.poolDragStart(buildSlice(), 'notes', 50, 5);
+    s = mpoolDrag.poolDragMotion(s, 50, 14);  // detail mid → invalid replace
+    const preview = mpoolDrag.computePoolDragPreviewArrange(s);
+    eq(preview, null);
+  });
+  it('no drag → preview is null', () => {
+    const s = buildSlice();
+    const preview = mpoolDrag.computePoolDragPreviewArrange(s);
+    eq(preview, null);
+  });
+});
+
 report();

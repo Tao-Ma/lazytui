@@ -224,24 +224,26 @@ function update(msg, slice) {
     }
     case 'design_mouse_press':  return mdesign.mousePress(slice, msg.mx, msg.my, msg.cols);
     case 'design_mouse_motion': {
-      // Same diff-painter trap as pool_drag_motion: the insertion bar
-      // is painted at the target seam each render, but panel content
-      // is frozen during the drag, so the row that hosted the PREVIOUS
-      // bar looks unchanged to paintColumns and never gets rewritten.
-      // Force a full repaint whenever the visible target shifts (column
-      // or index or validity); same-seam motion still no-ops.
+      // Diff-painter trap: between targets, panel content is frozen but
+      // the layout reshuffles in the preview render — paintColumns can't
+      // tell anything changed, so force a full repaint when the target
+      // shifts. Same-zone motion no-ops.
       const next = mdesign.mouseMotion(slice, msg.mx, msg.my, msg.cols);
       if (next === slice) return slice;
       const ds = slice.design && slice.design.drag;
       const ns = next.design  && next.design.drag;
-      // Only the in-grid 'dragging' kind paints an insertion bar; for
-      // resize / armed phases there's nothing to wipe.
       const isInsertionDrag = ns && (ns.kind === 'dragging' || ns.kind === 'armed');
       if (!isInsertionDrag) return next;
       const oldT = ds && ds.target;
       const newT = ns && ns.target;
       if (_insertionTargetsEqual(oldT, newT)) return next;
-      return [next, [{ type: 'force_full_repaint' }]];
+      // Target changed — recompute the preview arrange (what the layout
+      // looks like on release). Stored on drag.previewArrange; the render
+      // path swaps slice.arrange for it during paint, restoring after so
+      // hit-tests stay anchored to the original layout.
+      const previewArrange = mdesign.computeDragPreviewArrange(next);
+      const withPreview = { ...next, design: { ...next.design, drag: { ...ns, previewArrange } } };
+      return [withPreview, [{ type: 'force_full_repaint' }]];
     }
     case 'design_mouse_release': return mdesign.mouseRelease(slice);
     // Pool-drag gesture from the panel-list overlay. Source is the
@@ -256,20 +258,21 @@ function update(msg, slice) {
       return [next, [{ type: 'force_full_repaint' }]];
     }
     case 'pool_drag_motion': {
-      // The pool-drag overlay paints a frame/bar on the drop target each
-      // render. When the target SHIFTS BETWEEN CELLS, the previous
-      // frame's affordance needs wiping — paintColumns can't tell
-      // anything changed (panels are frozen), so emit force_full_repaint.
-      // When the target stays put (mouse moved within the same drop
-      // zone) the affordance is painted in the same place each render,
-      // so no repaint is needed and emitting one each motion was
+      // Target shifts between zones → preview repaints (panels relocate);
+      // motion within one zone is a no-op. Same diff-painter rule as the
+      // in-grid drag — emitting force_full_repaint every motion was
       // causing visible blinking under rapid drag.
       const next = mpoolDrag.poolDragMotion(slice, msg.mx, msg.my);
       if (next === slice) return slice;
       const oldT = slice.design && slice.design.drag && slice.design.drag.target;
       const newT = next.design  && next.design.drag  && next.design.drag.target;
       if (_dropTargetsEqual(oldT, newT)) return next;
-      return [next, [{ type: 'force_full_repaint' }]];
+      // Target changed — recompute preview arrange (same pattern as
+      // design_mouse_motion). Stored on drag.previewArrange.
+      const ns = next.design && next.design.drag;
+      const previewArrange = mpoolDrag.computePoolDragPreviewArrange(next);
+      const withPreview = { ...next, design: { ...next.design, drag: { ...ns, previewArrange } } };
+      return [withPreview, [{ type: 'force_full_repaint' }]];
     }
     case 'pool_drag_release': return mpoolDrag.poolDragRelease(slice);
     // Tab-reorder drag — free-config mouse drag on a detail-panel content
