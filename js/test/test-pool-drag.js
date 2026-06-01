@@ -180,6 +180,41 @@ describe('[poolDragMotion] promotes armed→dragging and computes drop target', 
     eq(t.index, 0);
     eq(t.valid, true);
   });
+  it('actions → left column: insert is INVALID (same rule as in-grid drag)', () => {
+    // Regression for Code-1 finding: pool-drag let the user land the
+    // actions panel in the left column, while in-grid drag blocked the
+    // same move. Now both block, with the same reason text.
+    const base = buildSlice();
+    const next = layout.update({ type: 'pool_hide', id: 'actions' }, base);
+    let s = mpoolDrag.poolDragStart(next, 'actions', 50, 5);
+    s = mpoolDrag.poolDragMotion(s, 5, 5);  // groups mid-third (left column)
+    const t = s.design.drag.target;
+    eq(t.valid, false);
+    assert(t.reason && t.reason.includes('actions'),
+      `reason mentions actions (got "${t.reason}")`);
+  });
+  it('actions → left column on a top-third (insert) zone: also INVALID', () => {
+    const base = buildSlice();
+    const next = layout.update({ type: 'pool_hide', id: 'actions' }, base);
+    let s = mpoolDrag.poolDragStart(next, 'actions', 50, 5);
+    s = mpoolDrag.poolDragMotion(s, 5, 1);  // groups top-third → would insert@0
+    const t = s.design.drag.target;
+    eq(t.kind, 'insert');
+    eq(t.column, 'left');
+    eq(t.valid, false);
+  });
+  it('pool_show with column:left + actions is refused by reducer too', () => {
+    // Defense-in-depth: even if a caller bypasses the validator and
+    // dispatches pool_show with column='left' for actions directly,
+    // the reducer must refuse.
+    const base = buildSlice();
+    const hidden = layout.update({ type: 'pool_hide', id: 'actions' }, base);
+    eq(hidden.arrange.rightPanels.some(p => p.type === 'actions'), false);
+    const tried = layout.update({ type: 'pool_show', id: 'actions', column: 'left' }, hidden);
+    eq(tried.arrange.leftPanels.some(p => p.type === 'actions'), false,
+      'actions did NOT land in left column');
+    eq(tried, hidden, 'reducer returns the slice unchanged');
+  });
 });
 
 describe('[poolDragRelease] emits Cmds + clears drag', () => {

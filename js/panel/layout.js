@@ -476,6 +476,11 @@ function update(msg, slice) {
       if (entry.type === 'detail'  && all.some(p => p.type === 'detail'))  return slice;
       if (entry.type === 'actions' && all.some(p => p.type === 'actions')) return slice;
       const column = msg.column === 'left' ? 'left' : 'right';
+      // detail / actions are right-column-only. Pool-drag's validateInsert
+      // already refuses to even propose column='left' for them; this is
+      // the defense-in-depth guard for any future caller that emits
+      // pool_show with column='left' directly.
+      if (column === 'left' && (entry.type === 'detail' || entry.type === 'actions')) return slice;
       // Column cap: 6 left, 3 right (matches parser/schema constraints).
       const cap = column === 'left' ? 6 : 3;
       const target = column === 'left' ? arrange.leftPanels : arrange.rightPanels;

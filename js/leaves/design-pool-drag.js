@@ -34,10 +34,15 @@ const { placementFromPoolEntry } = require('./pool');
  *  `{ kind:'insert', column, index, valid }` or
  *  `{ kind:'replace', column, occupantId, valid }`, or null when outside the
  *  layout. Uses slice.panelBounds (view-derived, written by the render pass)
- *  for cell hit-tests, mirroring the in-grid drag's approach. */
+ *  for cell hit-tests, mirroring the in-grid drag's approach. The dragged
+ *  pool entry's type (looked up via slice.design.drag.sourceId) is threaded
+ *  into the validators so they can refuse detail/actions in the left
+ *  column — same invariant the in-grid drag's validateTarget enforces. */
 function pointToPoolDropTarget(slice, mx, my) {
   const arrange = slice.arrange;
   if (mx < 0 || my < 0) return null;
+  const drag = slice.design && slice.design.drag;
+  const sourceEntry = drag && drag.sourceId ? (arrange.pool || {})[drag.sourceId] : null;
 
   // Per-column scan: find a cell whose x-range contains mx, classify zone.
   const scan = (column, panels) => {
@@ -49,18 +54,18 @@ function pointToPoolDropTarget(slice, mx, my) {
       const zone = pointToCellZone(b, my);
       if (!zone) {
         // Above the cell (only possible at the top of the column) → insert at 0.
-        if (my < b.y) return validateInsert(arrange, column, 0);
+        if (my < b.y) return validateInsert(arrange, column, 0, sourceEntry);
         continue;
       }
-      if (zone === 'top')    return validateInsert(arrange, column, i);
-      if (zone === 'middle') return validateReplace(panels[i], column);
-      return validateInsert(arrange, column, i + 1);  // bottom
+      if (zone === 'top')    return validateInsert(arrange, column, i, sourceEntry);
+      if (zone === 'middle') return validateReplace(panels[i], column, sourceEntry);
+      return validateInsert(arrange, column, i + 1, sourceEntry);  // bottom
     }
     // Inside the column's x-range but below the last cell → append.
     const last = panels[panels.length - 1];
     const lb = slice.panelBounds[last.type];
     if (lb && mx >= lb.x && mx < lb.x + lb.w && my >= lb.y + lb.h) {
-      return validateInsert(arrange, column, panels.length);
+      return validateInsert(arrange, column, panels.length, sourceEntry);
     }
     return null;
   };
@@ -74,17 +79,26 @@ function pointToPoolDropTarget(slice, mx, my) {
   const leftWidth = arrange.leftWidth || 30;
   const column = mx < leftWidth ? 'left' : 'right';
   const panels = column === 'left' ? (arrange.leftPanels || []) : (arrange.rightPanels || []);
-  return validateInsert(arrange, column, panels.length);
+  return validateInsert(arrange, column, panels.length, sourceEntry);
 }
 
-/** Insert validity: column-cap + detail-at-end clamp for right column.
- *  When the clamp fires, the returned target carries a `clamp` reason so
- *  the footer can show "(clamped — <reason>)"; without it the bot-third
- *  of detail looked like a normal insert that just happened to paint
- *  above detail in the preview, with no signal of WHY. */
-function validateInsert(arrange, column, index) {
+/** Insert validity: column-cap + detail-at-end clamp for right column
+ *  + detail/actions can't live in left column (same rule the in-grid
+ *  drag's validateTarget enforces). When the detail-at-end clamp fires,
+ *  the returned target carries a `clamp` reason so the footer can show
+ *  "(clamped — <reason>)"; without it the bot-third of detail looked
+ *  like a normal insert that just happened to paint above detail in the
+ *  preview, with no signal of WHY. */
+function validateInsert(arrange, column, index, sourceEntry) {
   const panels = column === 'left' ? (arrange.leftPanels || []) : (arrange.rightPanels || []);
   const cap = column === 'left' ? 6 : 3;
+  // detail/actions are right-column-only by convention. The in-grid drag's
+  // validateTarget blocks moving them into left; pool-drag must too or the
+  // user can land a hidden actions panel in the left column via the
+  // panel-list overlay.
+  if (sourceEntry && column === 'left' && (sourceEntry.type === 'detail' || sourceEntry.type === 'actions')) {
+    return { kind: 'insert', column, index, valid: false, reason: `${sourceEntry.type} can't live in left column` };
+  }
   const valid = panels.length < cap;
   let idx = index;
   let clamp = null;
@@ -100,10 +114,18 @@ function validateInsert(arrange, column, index) {
   return t;
 }
 
-/** Replace validity: detail can't be replaced (essential to the layout). */
-function validateReplace(occupant, column) {
-  const valid = occupant.type !== 'detail';
-  return { kind: 'replace', column, occupantId: occupant.id, valid };
+/** Replace validity: detail can't be replaced (essential to the layout);
+ *  detail/actions can't be the replacement panel in left column (they'd
+ *  land there as the new occupant — same invariant validateInsert
+ *  enforces). */
+function validateReplace(occupant, column, sourceEntry) {
+  if (occupant.type === 'detail') {
+    return { kind: 'replace', column, occupantId: occupant.id, valid: false };
+  }
+  if (sourceEntry && column === 'left' && (sourceEntry.type === 'detail' || sourceEntry.type === 'actions')) {
+    return { kind: 'replace', column, occupantId: occupant.id, valid: false, reason: `${sourceEntry.type} can't live in left column` };
+  }
+  return { kind: 'replace', column, occupantId: occupant.id, valid: true };
 }
 
 function poolDragStart(slice, sourceId, mx, my) {
