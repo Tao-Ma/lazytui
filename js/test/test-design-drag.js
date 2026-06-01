@@ -69,66 +69,117 @@ function setupFixture() {
 }
 
 // ===============================================================
-describe('[1] pointToDropTarget — drop position math', () => {
+// v0.6 — 3-zone hit-test per cell:
+//   top third    → insert before this cell
+//   middle third → swap with this cell's occupant
+//   bottom third → insert after this cell
+// Cells with h<3 collapse to insert-only top/bottom halves.
+//
+// containers/groups (h=10) → thirds = 3 rows; top=[y,y+3), mid=[y+3,y+7), bot=[y+7,y+10)
+// actions   (h=5)          → third = 1 row;  top=[0,1), mid=[1,4), bot=[4,5)
+// stats     (h=10)         → top=[5,8), mid=[8,12), bot=[12,15)
+// detail    (h=25)         → third = 8 rows; top=[15,23), mid=[23,32), bot=[32,40)
+describe('[1] pointToDropTarget — 3-zone hit-test', () => {
   setupFixture();
 
-  it('top half of containers → insert at left:0', () => {
-    // (5, 2) — well inside containers, top half
-    eq(JSON.stringify(pointToDropTarget('stats', 5, 2)),
-       JSON.stringify({ column: 'left', index: 0, valid: true }));
+  it('top third of containers → insert at left:0', () => {
+    // y=1 inside top zone [0,3)
+    eq(JSON.stringify(pointToDropTarget('stats', 5, 1)),
+       JSON.stringify({ kind: 'insert', column: 'left', index: 0, valid: true }));
   });
 
-  it('bottom half of containers → insert at left:1 (between containers and groups)', () => {
-    // (5, 7) — bottom half of containers
-    eq(JSON.stringify(pointToDropTarget('stats', 5, 7)),
-       JSON.stringify({ column: 'left', index: 1, valid: true }));
+  it('middle third of containers → swap with containers', () => {
+    // y=5 inside mid zone [3,7)
+    eq(JSON.stringify(pointToDropTarget('stats', 5, 5)),
+       JSON.stringify({ kind: 'swap', column: 'left', index: 0, occupantType: 'containers', valid: true }));
   });
 
-  it('bottom half of last left panel (groups) → append at left:2', () => {
-    eq(JSON.stringify(pointToDropTarget('stats', 5, 17)),
-       JSON.stringify({ column: 'left', index: 2, valid: true }));
+  it('bottom third of containers → insert at left:1 (between containers and groups)', () => {
+    // y=8 inside bot zone [7,10)
+    eq(JSON.stringify(pointToDropTarget('stats', 5, 8)),
+       JSON.stringify({ kind: 'insert', column: 'left', index: 1, valid: true }));
   });
 
-  it('top half of actions → insert at right:0', () => {
-    eq(JSON.stringify(pointToDropTarget('containers', 50, 1)),
-       JSON.stringify({ column: 'right', index: 0, valid: true }));
+  it('bottom third of last left panel (groups) → append at left:2', () => {
+    // y=18 inside groups bot zone [17,20)
+    eq(JSON.stringify(pointToDropTarget('stats', 5, 18)),
+       JSON.stringify({ kind: 'insert', column: 'left', index: 2, valid: true }));
   });
 
-  it('bottom half of detail → CLAMPED to right:2 (detail stays at end)', () => {
-    // v0.6: detail-at-end convention. Drops after detail clamp to
-    // detail's position so the panel lands BEFORE detail. Same rule
-    // pool_show and reorderWithin follow.
+  it('middle third of groups → swap with groups', () => {
+    // y=14 inside groups mid zone [13,17)
+    eq(JSON.stringify(pointToDropTarget('stats', 5, 14)),
+       JSON.stringify({ kind: 'swap', column: 'left', index: 1, occupantType: 'groups', valid: true }));
+  });
+
+  it('top third of actions → insert at right:0', () => {
+    // actions y=0..4, top=[0,1) — y=0 is the only top-zone row
+    eq(JSON.stringify(pointToDropTarget('containers', 50, 0)),
+       JSON.stringify({ kind: 'insert', column: 'right', index: 0, valid: true }));
+  });
+
+  it('bottom third of detail → CLAMPED to insert at right:2 (detail stays at end)', () => {
+    // y=35 inside detail bot zone [32,40); insert-after-detail (idx 3) clamped to 2.
     eq(JSON.stringify(pointToDropTarget('containers', 50, 35)),
-       JSON.stringify({ column: 'right', index: 2, valid: true }));
+       JSON.stringify({ kind: 'insert', column: 'right', index: 2, valid: true }));
   });
 
-  it('between stats and detail (top half of detail) → right:2', () => {
-    // detail.y=15, h=25 → top half is y in [15, 27.5)
-    eq(JSON.stringify(pointToDropTarget('containers', 50, 16)),
-       JSON.stringify({ column: 'right', index: 2, valid: true }));
+  it('top third of detail → insert at right:2 (before detail)', () => {
+    // y=20 inside detail top zone [15,23)
+    eq(JSON.stringify(pointToDropTarget('containers', 50, 20)),
+       JSON.stringify({ kind: 'insert', column: 'right', index: 2, valid: true }));
   });
 
-  it('detail panel into left column → blocked (invalid)', () => {
-    const t = pointToDropTarget('detail', 5, 2);
+  it('middle third of detail → swap with detail BLOCKED (detail must stay at end)', () => {
+    // y=27 inside detail mid zone [23,32)
+    const t = pointToDropTarget('containers', 50, 27);
+    eq(t.kind, 'swap');
+    eq(t.occupantType, 'detail');
+    eq(t.valid, false);
+    assert(t.reason.includes('detail'), `reason mentions detail (got "${t.reason}")`);
+  });
+
+  it('middle third of stats → swap with stats (containers ↔ stats cross-column)', () => {
+    // y=10 inside stats mid zone [8,12)
+    eq(JSON.stringify(pointToDropTarget('containers', 50, 10)),
+       JSON.stringify({ kind: 'swap', column: 'right', index: 1, occupantType: 'stats', valid: true }));
+  });
+
+  it('detail panel into left column → blocked (invalid insert)', () => {
+    const t = pointToDropTarget('detail', 5, 1);
+    eq(t.kind, 'insert');
     eq(t.column, 'left');
     eq(t.valid, false);
     assert(t.reason.includes('detail'), `reason mentions detail (got "${t.reason}")`);
   });
 
-  it('actions panel into left column → blocked (invalid)', () => {
-    const t = pointToDropTarget('actions', 5, 2);
+  it('actions panel into left column → blocked (invalid insert)', () => {
+    const t = pointToDropTarget('actions', 5, 1);
     eq(t.valid, false);
   });
 
-  it('containers into right column is fine (valid)', () => {
-    eq(pointToDropTarget('containers', 50, 2).valid, true);
+  it('swap that would move actions to left column → blocked', () => {
+    // Drag containers (left) onto middle of actions (right) → actions would
+    // end up at left:0 — blocked.
+    const t = pointToDropTarget('containers', 50, 2);  // actions mid zone [1,4)
+    eq(t.kind, 'swap');
+    eq(t.occupantType, 'actions');
+    eq(t.valid, false);
+    assert(t.reason.includes('actions'), `reason mentions actions (got "${t.reason}")`);
+  });
+
+  it('containers into right column is fine (valid insert)', () => {
+    eq(pointToDropTarget('containers', 50, 0).valid, true);
   });
 
   it('point above all panels but inside left x-range → insert at left:0', () => {
-    // Position outside left x is null; inside x but above first panel
-    // is handled by "my < b.y" branch.
+    // y < first.y is handled by the early-return branch in matchColumn.
+    // Fixture's first left panel is at y=0, so use mx in column but my
+    // somewhere outside any cell's y range — actually all cells fill
+    // y=0..19 in left, so this fallback path is exercised by the empty-
+    // column branch below.
     eq(JSON.stringify(pointToDropTarget('stats', 5, 0)),
-       JSON.stringify({ column: 'left', index: 0, valid: true }));
+       JSON.stringify({ kind: 'insert', column: 'left', index: 0, valid: true }));
   });
 });
 
@@ -241,14 +292,65 @@ describe('[3] cross-column drag — splice / insert math', () => {
   it('same-column drag to same position is a no-op (drag-back)', () => {
     setupFixture();
     onMouseEvent('press',   5, 2);    // press containers
-    onMouseEvent('motion',  5, 4);    // motion within containers
-    onMouseEvent('release', 5, 4);    // release still in containers
-    // Top half of containers = drop before containers = inserts where it
-    // already is → no order change but dirty flag DOES flip (the splice
-    // happens). That's acceptable — same shape applied to same shape.
-    // Order assertion is what matters:
+    onMouseEvent('motion',  5, 5);    // motion to containers mid-zone
+    onMouseEvent('release', 5, 5);    // release still in containers
+    // Middle-zone drop on own cell = self-swap, no-op. dirty stays false.
     eq(getComponentSlice("layout").arrange.leftPanels[0].type, 'containers');
     eq(getComponentSlice("layout").arrange.leftPanels[1].type, 'groups');
+    eq(getComponentSlice('layout').dirty, false);
+  });
+});
+
+// ===============================================================
+describe('[4] swap — middle-zone drag', () => {
+  it('same-column swap: drag containers → middle of groups', () => {
+    setupFixture();
+    onMouseEvent('press',   5, 2);   // press containers (top of containers)
+    onMouseEvent('motion',  5, 14);  // groups mid zone [13,17)
+    onMouseEvent('release', 5, 14);
+
+    eq(getComponentSlice("layout").arrange.leftPanels[0].type, 'groups',     'groups in slot 0');
+    eq(getComponentSlice("layout").arrange.leftPanels[1].type, 'containers', 'containers in slot 1');
+    eq(getComponentSlice('layout').dirty, true);
+  });
+
+  it('cross-column swap: drag containers (left) ↔ stats (right)', () => {
+    setupFixture();
+    onMouseEvent('press',   5, 2);    // press containers
+    onMouseEvent('motion', 50, 10);   // stats mid zone [8,12)
+    onMouseEvent('release', 50, 10);
+
+    eq(getComponentSlice("layout").arrange.leftPanels.length, 2);
+    eq(getComponentSlice("layout").arrange.leftPanels[0].type, 'stats',     'stats moved to left slot 0');
+    eq(getComponentSlice("layout").arrange.leftPanels[1].type, 'groups');
+    eq(getComponentSlice("layout").arrange.rightPanels[0].type, 'actions');
+    eq(getComponentSlice("layout").arrange.rightPanels[1].type, 'containers', 'containers moved to right slot 1');
+    eq(getComponentSlice("layout").arrange.rightPanels[2].type, 'detail',     'detail still at end');
+    eq(getComponentSlice('layout').dirty, true);
+  });
+
+  it('swap with detail is blocked → no mutation', () => {
+    setupFixture();
+    // y=10 inside stats body (y=5..14); avoids the y=5 actions/stats
+    // boundary which would otherwise hit-test as a resize-seam press.
+    onMouseEvent('press',   50, 10);
+    onMouseEvent('motion',  50, 27);  // detail mid zone [23,32) — swap blocked
+    onMouseEvent('release', 50, 27);
+
+    eq(getComponentSlice("layout").arrange.rightPanels[1].type, 'stats',  'stats unchanged');
+    eq(getComponentSlice("layout").arrange.rightPanels[2].type, 'detail', 'detail unchanged');
+    eq(getComponentSlice('layout').dirty, false);
+  });
+
+  it('swap that would put actions in left column is blocked', () => {
+    setupFixture();
+    onMouseEvent('press',    5, 2);   // press containers
+    onMouseEvent('motion',  50, 2);   // actions mid zone [1,4)
+    onMouseEvent('release', 50, 2);
+
+    eq(getComponentSlice("layout").arrange.leftPanels[0].type,  'containers', 'containers unchanged');
+    eq(getComponentSlice("layout").arrange.rightPanels[0].type, 'actions',    'actions unchanged');
+    eq(getComponentSlice('layout').dirty, false);
   });
 });
 

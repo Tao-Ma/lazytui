@@ -470,9 +470,28 @@ function panelAt(slice, mx, my) {
 }
 
 /**
- * Resolve a screen point to a drop target — `{ column, index, valid, reason? }`
- * or null. Top half → before, bottom half → after, below last → append, empty
- * column → index 0, detail/actions in left column → invalid.
+ * Cell vertical-third the point falls in, or null when outside the cell's
+ * y-range. h<3 collapses the middle (insert-only top/bottom halves) so very
+ * short cells don't sprout a 1-row-tall swap zone that's impossible to land in.
+ */
+function pointToCellZone(b, my) {
+  if (my < b.y || my >= b.y + b.h) return null;
+  if (b.h < 3) return (my < b.y + b.h / 2) ? 'top' : 'bottom';
+  const third = Math.floor(b.h / 3);
+  if (my < b.y + third)        return 'top';
+  if (my < b.y + b.h - third)  return 'middle';
+  return 'bottom';
+}
+
+/**
+ * Resolve a screen point to a drop target. Three zones per cell:
+ *   top third    → insert before this cell
+ *   middle third → swap with this cell's occupant
+ *   bottom third → insert after this cell
+ *
+ * Returns a tagged target — `{ kind:'insert', column, index, valid, reason? }`
+ * or `{ kind:'swap', column, index, occupantType, valid, reason? }` — or null
+ * when the point isn't in any column.
  */
 function pointToDropTarget(slice, srcType, mx, my, COLS) {
   const leftPanels = slice.arrange.leftPanels;
@@ -482,8 +501,12 @@ function pointToDropTarget(slice, srcType, mx, my, COLS) {
   if (inLeft !== null) return validateTarget(slice, srcType, 'left', inLeft);
   const inRight = matchColumn(slice, rightPanels, mx, my);
   if (inRight !== null) return validateTarget(slice, srcType, 'right', inRight);
-  if (mx >= 0 && mx < leftW && leftPanels.length === 0) return validateTarget(slice, srcType, 'left', 0);
-  if (mx >= leftW && mx < COLS && rightPanels.length === 0) return validateTarget(slice, srcType, 'right', 0);
+  if (mx >= 0 && mx < leftW && leftPanels.length === 0) {
+    return validateTarget(slice, srcType, 'left', { kind: 'insert', index: 0 });
+  }
+  if (mx >= leftW && mx < COLS && rightPanels.length === 0) {
+    return validateTarget(slice, srcType, 'right', { kind: 'insert', index: 0 });
+  }
   return null;
 }
 
@@ -494,16 +517,45 @@ function matchColumn(slice, panels, mx, my) {
     if (!b) continue;
     if (mx < b.x || mx >= b.x + b.w) continue;
     anyXMatch = true;
-    if (my < b.y) return i;
-    if (my < b.y + b.h) return (my < b.y + b.h / 2) ? i : i + 1;
+    if (my < b.y) return { kind: 'insert', index: i };
+    if (my < b.y + b.h) {
+      const zone = pointToCellZone(b, my);
+      if (zone === 'top')    return { kind: 'insert', index: i };
+      if (zone === 'middle') return { kind: 'swap',   index: i, occupantType: panels[i].type };
+      return { kind: 'insert', index: i + 1 };
+    }
   }
-  if (anyXMatch) return panels.length;
+  if (anyXMatch) return { kind: 'insert', index: panels.length };
   return null;
 }
 
-function validateTarget(slice, srcType, column, index) {
+function validateTarget(slice, srcType, column, target) {
+  if (target.kind === 'swap') {
+    const occType = target.occupantType;
+    const fromCol = slice.arrange.leftPanels.some(p => p.type === srcType) ? 'left' : 'right';
+    const base = { kind: 'swap', column, index: target.index, occupantType: occType };
+    // Dragged panel ends up in `column` — detail/actions can't live in left.
+    if (column === 'left' && (srcType === 'detail' || srcType === 'actions')) {
+      return { ...base, valid: false, reason: `${srcType} can't live in left column` };
+    }
+    // Occupant ends up in source's column — same rule going the other way.
+    if (fromCol === 'left' && (occType === 'detail' || occType === 'actions')) {
+      return { ...base, valid: false, reason: `${occType} can't live in left column` };
+    }
+    // Right column keeps detail at the end. Any swap involving detail in the
+    // right column would move it off the tail.
+    if (column === 'right' && occType === 'detail') {
+      return { ...base, valid: false, reason: `detail must stay at end` };
+    }
+    if (fromCol === 'right' && srcType === 'detail') {
+      return { ...base, valid: false, reason: `detail must stay at end` };
+    }
+    return { ...base, valid: true };
+  }
+  // insert
+  const index = target.index;
   if (column === 'left' && (srcType === 'detail' || srcType === 'actions')) {
-    return { column, index, valid: false, reason: `${srcType} can't live in left column` };
+    return { kind: 'insert', column, index, valid: false, reason: `${srcType} can't live in left column` };
   }
   // Right column: detail stays at the end (same convention pool_show
   // follows). Clamp any drop AFTER detail to land BEFORE it instead.
@@ -518,10 +570,10 @@ function validateTarget(slice, srcType, column, index) {
       // before detail in the same column.
       const srcIdxInRight = rightPanels.findIndex(p => p.type === srcType);
       const effDetail = (srcIdxInRight >= 0 && srcIdxInRight < detailIdx) ? detailIdx - 1 : detailIdx;
-      if (index > effDetail) return { column, index: effDetail, valid: true };
+      if (index > effDetail) return { kind: 'insert', column, index: effDetail, valid: true };
     }
   }
-  return { column, index, valid: true };
+  return { kind: 'insert', column, index, valid: true };
 }
 
 // ---------------------------------------------------------------- mouse state machine
@@ -573,9 +625,14 @@ function applyBoundaryResize(slice, my) {
   return { ...next, dirty: true };
 }
 
-/** Splice the source panel out of its column and insert at the target slot;
- *  re-derive hotkeys positionally; mark dirty. */
+/** Apply a drop target — insert (splice + insert at slot) or swap (trade
+ *  slots with occupant). Re-derives hotkeys positionally; marks dirty. */
 function applyDrop(slice, srcType, target) {
+  if (target.kind === 'swap') return applySwap(slice, srcType, target);
+  return applyInsert(slice, srcType, target);
+}
+
+function applyInsert(slice, srcType, target) {
   const leftPanels = slice.arrange.leftPanels;
   const rightPanels = slice.arrange.rightPanels;
 
@@ -601,6 +658,48 @@ function applyDrop(slice, srcType, target) {
   const newSrc = { ...src, column: target.column };
   if (target.column === 'left') newLeft.splice(insertAt, 0, newSrc);
   else newRight.splice(insertAt, 0, newSrc);
+
+  return {
+    ...slice,
+    arrange: _reassignHotkeys({ ...slice.arrange, leftPanels: newLeft, rightPanels: newRight }),
+    dirty: true,
+  };
+}
+
+/** Swap source ↔ occupant by slot. Same-column = two writes to the same
+ *  array; cross-column = one write to each. Self-swap (source = occupant)
+ *  is a no-op (returns slice unchanged). Hotkeys re-derive positionally,
+ *  so a panel's letter follows its slot, not its identity — same convention
+ *  as applyInsert. */
+function applySwap(slice, srcType, target) {
+  const leftPanels = slice.arrange.leftPanels;
+  const rightPanels = slice.arrange.rightPanels;
+
+  let src = null, fromCol = null, fromIdx = -1;
+  for (let i = 0; i < leftPanels.length; i++) {
+    if (leftPanels[i].type === srcType) { src = leftPanels[i]; fromCol = 'left'; fromIdx = i; break; }
+  }
+  if (!src) {
+    for (let i = 0; i < rightPanels.length; i++) {
+      if (rightPanels[i].type === srcType) { src = rightPanels[i]; fromCol = 'right'; fromIdx = i; break; }
+    }
+  }
+  if (!src) return slice;
+
+  const toCol = target.column;
+  const toIdx = target.index;
+  const toPanels = toCol === 'left' ? leftPanels : rightPanels;
+  const occ = toPanels[toIdx];
+  if (!occ) return slice;
+  if (fromCol === toCol && fromIdx === toIdx) return slice;
+
+  const newLeft = leftPanels.slice();
+  const newRight = rightPanels.slice();
+  const newSrc = { ...src, column: toCol };
+  const newOcc = { ...occ, column: fromCol };
+
+  if (toCol   === 'left') newLeft[toIdx]   = newSrc; else newRight[toIdx]   = newSrc;
+  if (fromCol === 'left') newLeft[fromIdx] = newOcc; else newRight[fromIdx] = newOcc;
 
   return {
     ...slice,
@@ -682,9 +781,15 @@ function mouseRelease(slice) {
   let next = slice;
   let droppedType = null;
   if (ds.kind === 'dragging' && ds.target && ds.target.valid) {
-    next = _pushUndoSlice(next);
-    next = applyDrop(next, ds.sourceType, ds.target);
-    droppedType = ds.sourceType;
+    // Self-swap (middle-zone drop on own cell) is a no-op — skip undo
+    // push so it doesn't bloat the stack with empty entries.
+    const t = ds.target;
+    const isSelfSwap = t.kind === 'swap' && t.occupantType === ds.sourceType;
+    if (!isSelfSwap) {
+      next = _pushUndoSlice(next);
+      next = applyDrop(next, ds.sourceType, ds.target);
+      droppedType = ds.sourceType;
+    }
   }
   next = { ...next, design: { ...next.design, drag: null } };
   if (droppedType) next = clampSelected(next, droppedType);

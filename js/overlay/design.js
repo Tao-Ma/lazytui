@@ -54,6 +54,9 @@ function getDesignFooter() {
     const srcTitle = panelTitle(drag.sourceType);
     if (!t) return ` | dragging ${esc(srcTitle)} → [yellow](drop outside)[/]`;
     if (!t.valid) return ` | dragging ${esc(srcTitle)} → [red]✗ ${esc(t.reason || 'blocked')}[/]`;
+    if (t.kind === 'swap') {
+      return ` | dragging ${esc(srcTitle)} → [bold yellow]swap[/] ${esc(panelTitle(t.occupantType))} (${t.column})`;
+    }
     return ` | dragging ${esc(srcTitle)} → ${t.column} @ ${t.index}`;
   }
   // v0.6 — pool drag from the panel-list overlay. The overlay closes
