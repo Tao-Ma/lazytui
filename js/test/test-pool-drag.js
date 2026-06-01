@@ -61,6 +61,14 @@ describe('[poolDragStart] sets drag.kind = pool-armed with sourceId', () => {
   });
 });
 
+// 3-zone pool-drag hit-test (v0.6) — top third inserts before the cell,
+// middle third replaces the occupant, bottom third inserts after.
+//
+// Fixture cells (heights → thirds):
+//   groups   y=0..9   (h=10) → top=[0,3),  mid=[3,7),   bot=[7,10)
+//   files    y=10..19 (h=10) → top=[10,13), mid=[13,17), bot=[17,20)
+//   actions  y=0..7   (h=8)  → top=[0,2),  mid=[2,6),   bot=[6,8)
+//   detail   y=8..19  (h=12) → top=[8,12), mid=[12,16), bot=[16,20)
 describe('[poolDragMotion] promotes armed→dragging and computes drop target', () => {
   it('no movement leaves kind=pool-armed but updates curX/Y', () => {
     let s = mpoolDrag.poolDragStart(buildSlice(), 'notes', 50, 5);
@@ -72,43 +80,89 @@ describe('[poolDragMotion] promotes armed→dragging and computes drop target', 
     s = mpoolDrag.poolDragMotion(s, 52, 6);
     eq(s.design.drag.kind, 'pool-dragging');
   });
-  it('drop on an actions cell → replace target', () => {
+  it('top third of actions → insert at right:0 (before actions)', () => {
     let s = mpoolDrag.poolDragStart(buildSlice(), 'notes', 50, 5);
-    s = mpoolDrag.poolDragMotion(s, 50, 4); // inside actions (x:30-79, y:0-7)
+    s = mpoolDrag.poolDragMotion(s, 50, 1);  // actions top zone [0,2)
+    const t = s.design.drag.target;
+    eq(t.kind, 'insert');
+    eq(t.column, 'right');
+    eq(t.index, 0);
+    eq(t.valid, true);
+  });
+  it('middle third of actions → replace actions', () => {
+    let s = mpoolDrag.poolDragStart(buildSlice(), 'notes', 50, 5);
+    s = mpoolDrag.poolDragMotion(s, 50, 4);  // actions mid zone [2,6)
     const t = s.design.drag.target;
     eq(t.kind, 'replace');
     eq(t.column, 'right');
     eq(t.occupantId, 'actions');
     assert(t.valid, 'replace on actions is valid');
   });
-  it('drop on detail → replace target marked invalid (detail is essential)', () => {
+  it('bottom third of actions → insert at right:1 (between actions and detail)', () => {
     let s = mpoolDrag.poolDragStart(buildSlice(), 'notes', 50, 5);
-    s = mpoolDrag.poolDragMotion(s, 50, 15); // inside detail (x:30-79, y:8-19)
+    s = mpoolDrag.poolDragMotion(s, 50, 6);  // actions bot zone [6,8)
+    const t = s.design.drag.target;
+    eq(t.kind, 'insert');
+    eq(t.column, 'right');
+    eq(t.index, 1);
+    eq(t.valid, true);
+  });
+  it('middle third of detail → replace target marked invalid (detail is essential)', () => {
+    let s = mpoolDrag.poolDragStart(buildSlice(), 'notes', 50, 5);
+    s = mpoolDrag.poolDragMotion(s, 50, 14);  // detail mid zone [12,16)
     const t = s.design.drag.target;
     eq(t.kind, 'replace');
     eq(t.occupantId, 'detail');
     eq(t.valid, false, 'detail replace refused');
   });
-  it('drop in a column gap → append target', () => {
+  it('top third of detail → insert clamped to right:1 (before detail)', () => {
     let s = mpoolDrag.poolDragStart(buildSlice(), 'notes', 50, 5);
-    s = mpoolDrag.poolDragMotion(s, 50, 30); // below all right-column cells
+    s = mpoolDrag.poolDragMotion(s, 50, 9);  // detail top zone [8,12)
     const t = s.design.drag.target;
-    eq(t.kind, 'append');
-    eq(t.column, 'right');
-    assert(t.valid);
+    eq(t.kind, 'insert');
+    eq(t.index, 1);  // detail is at idx 1
+    eq(t.valid, true);
   });
-  it('drop on left column gap → append left', () => {
+  it('bottom third of detail → insert CLAMPED to detail position (detail-at-end)', () => {
+    let s = mpoolDrag.poolDragStart(buildSlice(), 'notes', 50, 5);
+    s = mpoolDrag.poolDragMotion(s, 50, 18);  // detail bot zone [16,20)
+    const t = s.design.drag.target;
+    eq(t.kind, 'insert');
+    eq(t.index, 1);  // would be 2, clamped to detail's idx (1)
+    eq(t.valid, true);
+  });
+  it('drop in dead zone below all right cells → append at right tail (clamped)', () => {
+    let s = mpoolDrag.poolDragStart(buildSlice(), 'notes', 50, 5);
+    s = mpoolDrag.poolDragMotion(s, 50, 30);  // below detail
+    const t = s.design.drag.target;
+    eq(t.kind, 'insert');
+    eq(t.column, 'right');
+    // detail is at idx 1, append (idx 2) clamps to 1.
+    eq(t.index, 1);
+    eq(t.valid, true);
+  });
+  it('top third of groups (left) → insert at left:0', () => {
     let s = mpoolDrag.poolDragStart(buildSlice(), 'notes', 5, 5);
-    s = mpoolDrag.poolDragMotion(s, 5, 25); // below groups + files
-    eq(s.design.drag.target.kind, 'append');
-    eq(s.design.drag.target.column, 'left');
+    s = mpoolDrag.poolDragMotion(s, 5, 1);   // groups top zone [0,3)
+    const t = s.design.drag.target;
+    eq(t.kind, 'insert');
+    eq(t.column, 'left');
+    eq(t.index, 0);
+  });
+  it('drop below all left cells → append at left tail (idx 2)', () => {
+    let s = mpoolDrag.poolDragStart(buildSlice(), 'notes', 5, 5);
+    s = mpoolDrag.poolDragMotion(s, 5, 25);  // below files
+    const t = s.design.drag.target;
+    eq(t.kind, 'insert');
+    eq(t.column, 'left');
+    eq(t.index, 2);
   });
 });
 
 describe('[poolDragRelease] emits Cmds + clears drag', () => {
-  it('valid append drop → pool_show dispatch_msg + force_full_repaint; drag cleared, overlay closes', () => {
+  it('valid insert drop → pool_show with index + force_full_repaint', () => {
     let s = mpoolDrag.poolDragStart(buildSlice(), 'notes', 50, 5);
-    s = mpoolDrag.poolDragMotion(s, 50, 30);
+    s = mpoolDrag.poolDragMotion(s, 50, 1);  // actions top → insert at right:0
     const [next, cmds] = mpoolDrag.poolDragRelease(s);
     eq(next.design.drag, null, 'drag cleared');
     eq(next.panelList.open, false, 'overlay closed on successful drop');
@@ -118,11 +172,12 @@ describe('[poolDragRelease] emits Cmds + clears drag', () => {
     eq(cmds[0].msg.msg.type, 'pool_show');
     eq(cmds[0].msg.msg.id, 'notes');
     eq(cmds[0].msg.msg.column, 'right');
+    eq(cmds[0].msg.msg.index, 0);
     eq(cmds[1].type, 'force_full_repaint');
   });
   it('valid replace drop → pool_hide(occupant) + pool_show(source) + force_full_repaint', () => {
     let s = mpoolDrag.poolDragStart(buildSlice(), 'notes', 50, 5);
-    s = mpoolDrag.poolDragMotion(s, 50, 4); // on actions
+    s = mpoolDrag.poolDragMotion(s, 50, 4);  // actions mid → replace
     const [next, cmds] = mpoolDrag.poolDragRelease(s);
     eq(cmds.length, 3);
     eq(cmds[0].msg.msg.type, 'pool_hide');
@@ -134,7 +189,7 @@ describe('[poolDragRelease] emits Cmds + clears drag', () => {
   });
   it('invalid target (detail replace) → only force_full_repaint, drag cleared, overlay resumes', () => {
     let s = mpoolDrag.poolDragStart(buildSlice(), 'notes', 50, 5);
-    s = mpoolDrag.poolDragMotion(s, 50, 15); // on detail (invalid)
+    s = mpoolDrag.poolDragMotion(s, 50, 14);  // detail mid → replace (invalid)
     const [next, cmds] = mpoolDrag.poolDragRelease(s);
     eq(next.design.drag, null);
     eq(next.panelList.open, true, 'overlay reopened (was open at drag start)');
@@ -162,7 +217,7 @@ describe('[end-to-end] layout.update threads pool_drag_* Msgs to the leaf', () =
     const result = layout.update({ type: 'pool_drag_motion', mx: 50, my: 30 }, armed);
     assert(Array.isArray(result), 'motion now returns [slice, cmds] (overlay repaint)');
     const [moving, cmds] = result;
-    eq(moving.design.drag.target.kind, 'append');
+    eq(moving.design.drag.target.kind, 'insert');
     eq(cmds[0].type, 'force_full_repaint');
   });
   it('pool_drag_release returns the [next, cmds] tuple', () => {
@@ -173,6 +228,43 @@ describe('[end-to-end] layout.update threads pool_drag_* Msgs to the leaf', () =
     const [next, cmds] = result;
     eq(next.design.drag, null);
     eq(cmds[0].msg.msg.type, 'pool_show');
+  });
+});
+
+describe('[pool_show with index] reducer splices at position', () => {
+  it('pool_show with index=0 prepends to right column (before actions), clamped before detail', () => {
+    const s = buildSlice();
+    const next = layout.update({ type: 'pool_show', id: 'notes', column: 'right', index: 0 }, s);
+    eq(next.arrange.rightPanels.length, 3);
+    eq(next.arrange.rightPanels[0].type, 'viewer', 'notes (viewer-type) prepended');
+    eq(next.arrange.rightPanels[1].type, 'actions');
+    eq(next.arrange.rightPanels[2].type, 'detail', 'detail still at end');
+  });
+  it('pool_show with index=1 inserts between actions and detail (allowed)', () => {
+    const s = buildSlice();
+    const next = layout.update({ type: 'pool_show', id: 'notes', column: 'right', index: 1 }, s);
+    eq(next.arrange.rightPanels[0].type, 'actions');
+    eq(next.arrange.rightPanels[1].type, 'viewer');
+    eq(next.arrange.rightPanels[2].type, 'detail', 'detail still at end');
+  });
+  it('pool_show with index=99 (past detail) clamps to detail position', () => {
+    const s = buildSlice();
+    const next = layout.update({ type: 'pool_show', id: 'notes', column: 'right', index: 99 }, s);
+    // index clamped to length=2, then clamped to detailIdx=1 → notes lands before detail
+    eq(next.arrange.rightPanels[1].type, 'viewer');
+    eq(next.arrange.rightPanels[2].type, 'detail');
+  });
+  it('pool_show without index appends (existing behavior preserved)', () => {
+    const s = buildSlice();
+    const next = layout.update({ type: 'pool_show', id: 'notes', column: 'left' }, s);
+    eq(next.arrange.leftPanels[next.arrange.leftPanels.length - 1].type, 'viewer');
+  });
+  it('pool_show with index for left column splices at position', () => {
+    const s = buildSlice();
+    const next = layout.update({ type: 'pool_show', id: 'notes', column: 'left', index: 1 }, s);
+    eq(next.arrange.leftPanels[0].type, 'groups');
+    eq(next.arrange.leftPanels[1].type, 'viewer');
+    eq(next.arrange.leftPanels[2].type, 'files');
   });
 });
 

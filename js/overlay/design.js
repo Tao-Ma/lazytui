@@ -78,7 +78,7 @@ function getDesignFooter() {
     if (t.kind === 'replace') {
       return ` | from pool: ${esc(srcTitle)} → [bold yellow]replace[/] ${esc(t.occupantId)} (${t.column})`;
     }
-    return ` | from pool: ${esc(srcTitle)} → [bold green]append[/] to ${t.column}`;
+    return ` | from pool: ${esc(srcTitle)} → [bold green]insert[/] at ${t.column}:${t.index}`;
   }
   const slice = _slice();
   const all = slice ? mdesign.allDesignPanels(slice) : [];

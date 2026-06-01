@@ -808,6 +808,6 @@ module.exports = {
   columnTotalH, freezeColumnFlex, panelHeightPct,
   navSelect, reorderWithin, moveColumn, resizeWidthOrDetail, resizeFocusedPanelHeight,
   clampSelected, titleEnter, setSelectedTitle,
-  pointToResizeTarget, pointToDropTarget, panelAt,
+  pointToResizeTarget, pointToDropTarget, pointToCellZone, panelAt,
   mousePress, mouseMotion, mouseRelease,
 };

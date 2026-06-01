@@ -1,109 +1,98 @@
 /**
  * Pool drag — gesture from the panel-list overlay onto the layout grid.
  *
- * A separate gesture from the existing panel-reorder drag in leaves/design.
- * Source: an item in the panel-list overlay (identified by sourceId, not
- * sourceType, since the pool can hold multiple panels of the same type).
- * Drop:
+ * A separate gesture from the existing panel-reorder drag in leaves/design,
+ * but with the SAME 3-zone-per-cell hit-test (top/mid/bottom thirds), so the
+ * user learns one rule for both:
  *
- *   - on an existing cell → REPLACE: occupant returns to pool, source lands
- *     in occupant's column at the same position
- *   - in a column area but not on any cell → APPEND to that column's tail
- *   - outside the layout → cancel
+ *   top third    → insert before this cell
+ *   middle third → REPLACE occupant (occupant returns to pool, source lands
+ *                   in occupant's slot)
+ *   bottom third → insert after this cell  (bottom-of-last-cell = append)
+ *
+ * Outside any cell but inside a column → append at the column's tail.
  *
  * `pool-armed` → `pool-dragging` promotion on any motion (matches the design
  * drag pattern). Release returns [next slice, cmds] — cmds are dispatch_msg
  * wrappers that re-emit pool_hide/pool_show Msgs back into layout.update so
- * the existing handlers (Phase 2) do the actual mutation.
+ * the existing handlers do the actual mutation.
  *
- * Pure leaf — no imports. Reads slice.panelBounds, slice.arrange,
- * slice.panelList; writes slice.panelList, slice.design.drag (the same
- * field design's mouse drag uses; tagged union by `kind`).
+ * Imports the cell-zone helper from leaves/design — the only cross-leaf dep
+ * here, kept narrow so the two drags share one notion of "where the cursor
+ * is in this cell." Reads slice.panelBounds, slice.arrange, slice.panelList;
+ * writes slice.panelList, slice.design.drag (the same field design's mouse
+ * drag uses; tagged union by `kind`).
  */
 'use strict';
 
-// Bottom-of-column zone reserved for "append" drops. Each column's last
-// cell is normally full-height, so without carving out a dedicated zone
-// the user can never hit the "not on any cell" branch below. The zone
-// is the bottom N rows of the last cell — wide enough to be reachable
-// with the mouse, narrow enough that "drop on this cell" (replace) is
-// still the dominant gesture on the upper portion.
-const APPEND_ZONE_ROWS = 2;
+const { pointToCellZone } = require('./design');
 
 /** Compute the drop target for a pool drag at (mx, my). Returns
- *  `{ kind, column, occupantId?, valid }` or `null` when outside the
- *  layout area. Uses slice.panelBounds (view-derived, written by the
- *  render pass) for cell hit-tests, mirroring the design-drag approach. */
+ *  `{ kind:'insert', column, index, valid }` or
+ *  `{ kind:'replace', column, occupantId, valid }`, or null when outside the
+ *  layout. Uses slice.panelBounds (view-derived, written by the render pass)
+ *  for cell hit-tests, mirroring the in-grid drag's approach. */
 function pointToPoolDropTarget(slice, mx, my) {
   const arrange = slice.arrange;
   if (mx < 0 || my < 0) return null;
 
-  // 1. Append zone. Position differs by column because right column
-  //    keeps detail at the end (pool_show inserts before detail), so
-  //    the affordance for "add to right column" sits at the TOP of
-  //    detail — the seam where the new panel will actually land.
-  //
-  //    Left column: bottom APPEND_ZONE_ROWS of the last cell.
-  //    Right column: top APPEND_ZONE_ROWS of detail (visually = the
-  //                   seam above detail; semantically = the slot
-  //                   pool_show will insert into).
-  const checkAppend = (column, panels) => {
+  // Per-column scan: find a cell whose x-range contains mx, classify zone.
+  const scan = (column, panels) => {
     if (panels.length === 0) return null;
-    const cap = column === 'left' ? 6 : 3;
-    const valid = panels.length < cap;
-    if (column === 'left') {
-      const last = panels[panels.length - 1];
-      const b = slice.panelBounds[last.type];
-      if (!b) return null;
-      if (mx < b.x || mx >= b.x + b.w) return null;
-      const zoneTop = b.y + b.h - APPEND_ZONE_ROWS;
-      if (my < zoneTop || my >= b.y + b.h) return null;
-      return { kind: 'append', column, valid };
+    for (let i = 0; i < panels.length; i++) {
+      const b = slice.panelBounds[panels[i].type];
+      if (!b) continue;
+      if (mx < b.x || mx >= b.x + b.w) continue;
+      const zone = pointToCellZone(b, my);
+      if (!zone) {
+        // Above the cell (only possible at the top of the column) → insert at 0.
+        if (my < b.y) return validateInsert(arrange, column, 0);
+        continue;
+      }
+      if (zone === 'top')    return validateInsert(arrange, column, i);
+      if (zone === 'middle') return validateReplace(panels[i], column);
+      return validateInsert(arrange, column, i + 1);  // bottom
     }
-    // right column
-    const detail = panels.find(p => p.type === 'detail');
-    const b = detail ? slice.panelBounds[detail.type] : null;
-    if (!b) {
-      // No detail (shouldn't happen — layout invariant) — fall back to
-      // the v0.5-style bottom-of-last zone.
-      const last = panels[panels.length - 1];
-      const lb = slice.panelBounds[last.type];
-      if (!lb) return null;
-      if (mx < lb.x || mx >= lb.x + lb.w) return null;
-      const zt = lb.y + lb.h - APPEND_ZONE_ROWS;
-      if (my < zt || my >= lb.y + lb.h) return null;
-      return { kind: 'append', column, valid };
+    // Inside the column's x-range but below the last cell → append.
+    const last = panels[panels.length - 1];
+    const lb = slice.panelBounds[last.type];
+    if (lb && mx >= lb.x && mx < lb.x + lb.w && my >= lb.y + lb.h) {
+      return validateInsert(arrange, column, panels.length);
     }
-    if (mx < b.x || mx >= b.x + b.w) return null;
-    if (my < b.y || my >= b.y + APPEND_ZONE_ROWS) return null;
-    return { kind: 'append', column, valid };
+    return null;
   };
-  const leftAppend  = checkAppend('left',  arrange.leftPanels  || []);
-  if (leftAppend)  return leftAppend;
-  const rightAppend = checkAppend('right', arrange.rightPanels || []);
-  if (rightAppend) return rightAppend;
+  const leftHit  = scan('left',  arrange.leftPanels  || []);
+  if (leftHit)  return leftHit;
+  const rightHit = scan('right', arrange.rightPanels || []);
+  if (rightHit) return rightHit;
 
-  // 2. Replace zone — cell hit-test on whatever sits at the cursor.
-  for (const p of arrange.leftPanels  || []) {
-    const b = slice.panelBounds[p.type];
-    if (b && mx >= b.x && mx < b.x + b.w && my >= b.y && my < b.y + b.h) {
-      const valid = p.type !== 'detail';
-      return { kind: 'replace', column: 'left', occupantId: p.id, valid };
-    }
-  }
-  for (const p of arrange.rightPanels || []) {
-    const b = slice.panelBounds[p.type];
-    if (b && mx >= b.x && mx < b.x + b.w && my >= b.y && my < b.y + b.h) {
-      const valid = p.type !== 'detail';
-      return { kind: 'replace', column: 'right', occupantId: p.id, valid };
-    }
-  }
-
-  // 3. Outside everything (cursor in dead zone, e.g. the footer row or
-  //    outside terminal bounds). Append to the column under the cursor.
+  // Cursor in the column's x-range but no cells matched (empty column or
+  // dead-zone outside any cell). Fall back to append at column tail.
   const leftWidth = arrange.leftWidth || 30;
   const column = mx < leftWidth ? 'left' : 'right';
-  return { kind: 'append', column, valid: true };
+  const panels = column === 'left' ? (arrange.leftPanels || []) : (arrange.rightPanels || []);
+  return validateInsert(arrange, column, panels.length);
+}
+
+/** Insert validity: column-cap + detail-at-end clamp for right column. */
+function validateInsert(arrange, column, index) {
+  const panels = column === 'left' ? (arrange.leftPanels || []) : (arrange.rightPanels || []);
+  const cap = column === 'left' ? 6 : 3;
+  const valid = panels.length < cap;
+  // Right column: detail stays at the end. Clamp any insert past detail's
+  // position so the preview matches what pool_show will actually do.
+  let idx = index;
+  if (column === 'right') {
+    const detailIdx = panels.findIndex(p => p.type === 'detail');
+    if (detailIdx >= 0 && idx > detailIdx) idx = detailIdx;
+  }
+  return { kind: 'insert', column, index: idx, valid };
+}
+
+/** Replace validity: detail can't be replaced (essential to the layout). */
+function validateReplace(occupant, column) {
+  const valid = occupant.type !== 'detail';
+  return { kind: 'replace', column, occupantId: occupant.id, valid };
 }
 
 function poolDragStart(slice, sourceId, mx, my) {
@@ -140,12 +129,12 @@ function poolDragMotion(slice, mx, my) {
 }
 
 /** Release: returns [next slice, cmds]. Cmds re-emit pool_hide/show Msgs
- *  back into layout.update so the existing Phase 2 handlers do the work
- *  (single source of truth for the mutation). On a valid drop the overlay
- *  stays closed; on cancel (no valid target) the overlay reopens if it
- *  was open at drag-start (drag.resumeOnCancel), so the user can try
- *  again without re-pressing `w`. The drag is cleared in both cases —
- *  the resumeOnCancel flag dies with it. */
+ *  back into layout.update so the existing handlers do the work (single
+ *  source of truth for the mutation). On a valid drop the overlay stays
+ *  closed; on cancel (no valid target) the overlay reopens if it was open
+ *  at drag-start (drag.resumeOnCancel), so the user can try again without
+ *  re-pressing `w`. The drag is cleared in both cases — the resumeOnCancel
+ *  flag dies with it. */
 function poolDragRelease(slice) {
   const d = slice.design;
   const ds = d && d.drag;
@@ -154,8 +143,6 @@ function poolDragRelease(slice) {
   const repaint = { type: 'force_full_repaint' };
   const isValid = ds.kind === 'pool-dragging' && ds.target && ds.target.valid;
   if (!isValid) {
-    // Cancel — reopen overlay (if it was open at drag-start) so the user
-    // can retry. The repaint covers the drag-state pixel churn.
     const cleared = {
       ...slice,
       panelList: { ...slice.panelList, open: resumeOnCancel },
@@ -170,17 +157,20 @@ function poolDragRelease(slice) {
     panelList: { ...slice.panelList, open: false },
     design: { ...d, drag: null },
   };
-  const showCmd = { kind: 'layout', msg: { type: 'pool_show', id: sourceId, column: t.column } };
   if (t.kind === 'replace') {
     const cmds = [
       { type: 'dispatch_msg', msg: { kind: 'layout', msg: { type: 'pool_hide', id: t.occupantId } } },
-      { type: 'dispatch_msg', msg: showCmd },
+      { type: 'dispatch_msg', msg: { kind: 'layout', msg: { type: 'pool_show', id: sourceId, column: t.column } } },
       repaint,
     ];
     return [closeOverlay, cmds];
   }
-  // append
-  return [closeOverlay, [{ type: 'dispatch_msg', msg: showCmd }, repaint]];
+  // insert
+  const showCmd = {
+    type: 'dispatch_msg',
+    msg: { kind: 'layout', msg: { type: 'pool_show', id: sourceId, column: t.column, index: t.index } },
+  };
+  return [closeOverlay, [showCmd, repaint]];
 }
 
 module.exports = {

@@ -417,16 +417,19 @@ function update(msg, slice) {
       if (target.length >= cap) return slice;
       const placement = placementFromPoolEntry(entry, column);
       // Right column keeps `detail` as the last cell (convention shared
-      // with moveColumn). Insert BEFORE detail when present; otherwise
-      // (left column or right with no detail yet) append at the tail.
+      // with moveColumn). When `msg.index` is supplied (pool-drag drops),
+      // splice at that position — clamped to detail's slot in right column.
+      // Without `index`, append at the tail (with the same detail clamp).
       let inserted;
-      if (column === 'right') {
-        const detailIdx = target.findIndex(p => p.type === 'detail');
-        if (detailIdx >= 0) inserted = target.slice(0, detailIdx).concat([placement], target.slice(detailIdx));
-        else                inserted = target.concat([placement]);
+      const detailIdx = column === 'right' ? target.findIndex(p => p.type === 'detail') : -1;
+      let idx;
+      if (typeof msg.index === 'number') {
+        idx = Math.max(0, Math.min(msg.index, target.length));
       } else {
-        inserted = target.concat([placement]);
+        idx = target.length;
       }
+      if (column === 'right' && detailIdx >= 0 && idx > detailIdx) idx = detailIdx;
+      inserted = target.slice(0, idx).concat([placement], target.slice(idx));
       const nextCol = rekeyColumn(inserted, column === 'left' ? LEFT_HOTKEY_POOL : RIGHT_HOTKEY_POOL);
       const nextArrange = column === 'left'
         ? { ...arrange, leftPanels:  nextCol }
