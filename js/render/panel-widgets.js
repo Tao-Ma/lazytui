@@ -40,6 +40,7 @@
 'use strict';
 
 const { getComponentSlice } = require('../panel/api');
+const { theme } = require('./themes');
 
 const GLYPH_W = 3;
 const COLLAPSE_MIN_W = 9;
@@ -94,8 +95,12 @@ function injectTopRowChrome(panelOutput, p, b, freeConfigMode, fc) {
   // panel's border color — without this, richToAnsi's full-reset on
   // `[/]` would leave the gap `─` and the `╮` corner in the terminal's
   // default color (visibly black/uncolored on most terminals).
-  const closeStyle    = 'bold red';
-  const collapseStyle = 'bold cyan';
+  // Styles come from the theme — see themes.js#chrome_collapse / chrome_close.
+  // Fallbacks match the previous hardcoded defaults so a custom theme
+  // missing a slot still renders something sensible.
+  const t = theme();
+  const closeStyle    = t.chrome_close    || 'red';
+  const collapseStyle = t.chrome_collapse || 'green';
   const fcRestore     = fc ? `[${fc}]` : '';
   const collapseGlyph = p.collapsed ? '\\[+]' : '\\[_]';
 

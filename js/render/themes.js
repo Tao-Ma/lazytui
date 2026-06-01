@@ -21,6 +21,9 @@ const THEMES = {
     unknown: 'dim',
     footer: 'dim reverse',
     bold_current: 'bold yellow',
+    chrome_collapse: 'green',
+    chrome_close:    'red',
+    chrome_trigger:  'bold yellow',
   },
 
   // Dracula — purple/cyan accents
@@ -35,6 +38,9 @@ const THEMES = {
     unknown: 'dim',
     footer: 'dim reverse',
     bold_current: 'bold cyan',
+    chrome_collapse: 'green',
+    chrome_close:    'red',
+    chrome_trigger:  'bold magenta',
   },
 
   // Solarized — blue/cyan, muted
@@ -49,6 +55,9 @@ const THEMES = {
     unknown: 'dim',
     footer: 'dim reverse',
     bold_current: 'bold cyan',
+    chrome_collapse: 'green',
+    chrome_close:    'red',
+    chrome_trigger:  'bold cyan',
   },
 
   // Gruvbox — warm orange/yellow
@@ -63,6 +72,9 @@ const THEMES = {
     unknown: 'dim',
     footer: 'dim reverse',
     bold_current: 'bold',
+    chrome_collapse: 'green',
+    chrome_close:    'red',
+    chrome_trigger:  'bold yellow',
   },
 
   // Nord — cool blue
@@ -77,6 +89,9 @@ const THEMES = {
     unknown: 'dim',
     footer: 'dim reverse',
     bold_current: 'bold cyan',
+    chrome_collapse: 'green',
+    chrome_close:    'red',
+    chrome_trigger:  'bold blue',
   },
 
   // Minimal — white borders, no color
@@ -91,6 +106,9 @@ const THEMES = {
     unknown: 'dim',
     footer: 'dim reverse',
     bold_current: 'bold',
+    chrome_collapse: 'green',
+    chrome_close:    'red',
+    chrome_trigger:  'bold white',
   },
 };
 
