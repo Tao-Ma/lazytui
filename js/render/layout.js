@@ -349,13 +349,20 @@ function renderNormal(model) {
   // sits over them. Two glyph classes:
   //   `[_]` / `[X]` collapse + close on non-detail panels (injectTopRowChrome)
   //   `[≡]` tab trigger on detail (injectTabTrigger)
+  //
+  // `fc` mirrors renderPanel's border-color rule — focused panel uses
+  // theme.focus, unfocused uses theme.dim. injectTopRowChrome re-emits
+  // it after each chrome `[/]` so the trailing `╮` stays in the panel's
+  // border color instead of falling back to the terminal default.
+  const t = theme();
   const renderOne = (p, w, h, x, y) => {
     const b = { x, y, w, h };
     layoutSlice.panelBounds[p.type] = b;
     let out = p.collapsed
       ? _renderCollapsed(p, w)
       : _safeRender(rendererFor(p.type), p, w, h);
-    out = injectTopRowChrome(out, p, b, freeConfigMode);
+    const fc = layoutSlice.focus === p.type ? t.focus : t.dim;
+    out = injectTopRowChrome(out, p, b, freeConfigMode, fc);
     out = injectTabTrigger(out, p);
     return out;
   };

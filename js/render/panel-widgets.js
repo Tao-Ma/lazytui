@@ -81,7 +81,7 @@ function _placedWidgetTargets() {
  *  chrome markup, then the corner + close tag. The lazy-match anchored
  *  to end-of-line locks onto the final `─*` run, not any `─` chars inside
  *  the title text. */
-function injectTopRowChrome(panelOutput, p, b, freeConfigMode) {
+function injectTopRowChrome(panelOutput, p, b, freeConfigMode, fc) {
   if (!panelOutput || p.type === 'detail') return panelOutput;
   const slice = getComponentSlice('layout');
   if (slice && slice.design && slice.design.drag) return panelOutput;
@@ -89,27 +89,19 @@ function injectTopRowChrome(panelOutput, p, b, freeConfigMode) {
 
   // Build chrome markup + measure visible width. [X] sits 1 col left of
   // [_] (4-cell gap including the literal `─` left untouched between
-  // them), matching the geometry the hit-tests assume.
+  // them), matching the geometry the hit-tests assume. After each chrome
+  // glyph's `[/]` we re-emit `[fc]` so the cells AFTER it stay in the
+  // panel's border color — without this, richToAnsi's full-reset on
+  // `[/]` would leave the gap `─` and the `╮` corner in the terminal's
+  // default color (visibly black/uncolored on most terminals).
   const closeStyle    = 'bold red';
   const collapseStyle = 'bold cyan';
-  let chromeMarkup = '';
-  let chromeW = 0;
-  const wantClose = freeConfigMode && b.w >= CLOSE_PLUS_COLLAPSE_MIN_W;
-  if (wantClose) {
-    chromeMarkup += `[${closeStyle}]${CLOSE_GLYPH}[/]`;
-    // The gap cell stays as a `─` from the existing fill (kept in the
-    // trimmed run below) — visually `…─[X]─[_]╮`. Reserve only the 3
-    // cells [X] occupies.
-    chromeW += GLYPH_W;
-  }
+  const fcRestore     = fc ? `[${fc}]` : '';
   const collapseGlyph = p.collapsed ? '\\[+]' : '\\[_]';
-  // Always-on in normal view (renderNormal is only called when viewMode==='normal').
-  chromeMarkup += `[${collapseStyle}]${collapseGlyph}[/]`;
-  chromeW += GLYPH_W;
-  // When both are painted we need an additional gap cell between [X] and
-  // [_] — that cell stays as a `─` from the kept fill, but we have to
-  // consume one more fill cell on injection so total width balances.
-  if (wantClose) chromeW += 1;
+
+  let chromeW = GLYPH_W;
+  const wantClose = freeConfigMode && b.w >= CLOSE_PLUS_COLLAPSE_MIN_W;
+  if (wantClose) chromeW += GLYPH_W + 1;  // [X] + gap cell
 
   const nlIdx = panelOutput.indexOf('\n');
   const topRow  = nlIdx >= 0 ? panelOutput.slice(0, nlIdx) : panelOutput;
@@ -122,19 +114,17 @@ function injectTopRowChrome(panelOutput, p, b, freeConfigMode) {
   if (!m) return panelOutput;
   if (m[2].length < chromeW) return panelOutput;
 
-  const kept = m[2].length - chromeW;
+  const colMarkup = `[${collapseStyle}]${collapseGlyph}[/]${fcRestore}`;
   let injected;
+  const kept = m[2].length - chromeW;
   if (wantClose) {
-    // …─[X]─[_]╮ — keep one fill cell BETWEEN [X] and [_].
-    // chromeW above already reserved (3 + 1 + 3) = 7 cells, but our
-    // chromeMarkup is `[X][_]` glued together. Split it: emit [X], one
-    // `─`, then [_].
-    const closeMarkup = `[${closeStyle}]${CLOSE_GLYPH}[/]`;
-    const cgly = p.collapsed ? '\\[+]' : '\\[_]';
-    const colMarkup = `[${collapseStyle}]${cgly}[/]`;
+    // …─[X]─[_]╮ — keep one fill cell BETWEEN [X] and [_]. fcRestore
+    // after [X][/] keeps that gap `─` in fc color; fcRestore after
+    // [_][/] keeps the `╮` in fc.
+    const closeMarkup = `[${closeStyle}]${CLOSE_GLYPH}[/]${fcRestore}`;
     injected = '─'.repeat(kept) + closeMarkup + '─' + colMarkup;
   } else {
-    injected = '─'.repeat(kept) + chromeMarkup;
+    injected = '─'.repeat(kept) + colMarkup;
   }
   return m[1] + injected + '╮[/]' + restRows;
 }
