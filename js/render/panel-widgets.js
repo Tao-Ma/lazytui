@@ -108,7 +108,7 @@ function injectTopRowChrome(panelOutput, p, b, freeConfigMode, fc, focused) {
   // the result is `\x1b[2m\x1b[32m` = dim + green = darker green.
   const t = theme();
   const closeBase    = t.chrome_close    || 'red';
-  const collapseBase = t.chrome_collapse || 'green';
+  const collapseBase = t.chrome_collapse || 'yellow';
   const closeOpen    = focused ? `[${closeBase}]`    : `[dim][${closeBase}]`;
   const collapseOpen = focused ? `[${collapseBase}]` : `[dim][${collapseBase}]`;
   const fcRestore     = fc ? `[${fc}]` : '';
