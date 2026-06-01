@@ -352,6 +352,57 @@ describe('[4] swap — middle-zone drag', () => {
     eq(getComponentSlice("layout").arrange.rightPanels[0].type, 'actions',    'actions unchanged');
     eq(getComponentSlice('layout').dirty, false);
   });
+
+  it('self-swap with detail is VALID (no-op release, no error footer)', () => {
+    // Regression for C2: validateTarget used to block detail-onto-detail
+    // swap unconditionally via "detail must stay at end", but self-swap
+    // is harmless — mouseRelease detects it and skips applyDrop.
+    setupFixture();
+    // detail y=15..39, h=25, third=8, mid=[23,32). y=27 is mid of detail.
+    const t = pointToDropTarget('detail', 50, 27);
+    eq(t.kind, 'swap');
+    eq(t.occupantType, 'detail');
+    eq(t.valid, true);
+  });
+
+  it('drag right-column source past detail moves it BEFORE detail', () => {
+    // Regression for C1: validateTarget double-decremented when source
+    // was in the same column before detail — splice-shift was applied
+    // twice (once in effDetail's pre-shift, once in applyInsert), leaving
+    // the source pinned at its own slot. Expected: actions moves to just
+    // before detail; result before fix was [actions, stats, detail].
+    setupFixture();
+    // press actions (y=2, in actions y=0..4)
+    onMouseEvent('press',   50, 2);
+    onMouseEvent('motion',  50, 35);  // detail bot zone [32,40)
+    onMouseEvent('release', 50, 35);
+    eq(getComponentSlice("layout").arrange.rightPanels[0].type, 'stats',   'stats moved up');
+    eq(getComponentSlice("layout").arrange.rightPanels[1].type, 'actions', 'actions moved to just before detail');
+    eq(getComponentSlice("layout").arrange.rightPanels[2].type, 'detail',  'detail still at end');
+  });
+});
+
+// ===============================================================
+// pointToCellZone short-cell collapse: h<3 collapses the middle so very
+// short cells offer insert-only top/bottom (no impossible 0-row swap zone).
+describe('[5b] pointToCellZone — h<3 collapse', () => {
+  const mdesign = require('../leaves/design');
+  it('h=1: only row is "top" (insert before)', () => {
+    eq(mdesign.pointToCellZone({ y: 0, h: 1 }, 0), 'top');
+  });
+  it('h=2: top half=top, bottom half=bottom (no middle)', () => {
+    eq(mdesign.pointToCellZone({ y: 0, h: 2 }, 0), 'top');
+    eq(mdesign.pointToCellZone({ y: 0, h: 2 }, 1), 'bottom');
+  });
+  it('h=3: each zone exactly one row', () => {
+    eq(mdesign.pointToCellZone({ y: 0, h: 3 }, 0), 'top');
+    eq(mdesign.pointToCellZone({ y: 0, h: 3 }, 1), 'middle');
+    eq(mdesign.pointToCellZone({ y: 0, h: 3 }, 2), 'bottom');
+  });
+  it('outside the cell y-range returns null', () => {
+    eq(mdesign.pointToCellZone({ y: 5, h: 10 }, 4), null);
+    eq(mdesign.pointToCellZone({ y: 5, h: 10 }, 15), null);
+  });
 });
 
 // ===============================================================
@@ -476,6 +527,20 @@ describe('[6] design_mouse_motion — repaint emission across zone changes', () 
     eq(cmds[0] && cmds[0].type, 'force_full_repaint', 'first crossing into a target emits repaint');
     [slice, cmds] = motion(slice, 5, 2);  // still containers top → same target
     eq(cmds.length, 0, 'same-zone motion suppresses repaint');
+  });
+
+  it('column change (left → right) emits force_full_repaint', () => {
+    // Same kind/index/valid possible across columns; equality must
+    // distinguish them or zone crossings between columns would skip the
+    // repaint and leave the preview painted on the wrong column.
+    setupFixture();
+    let slice = pressAt(50, 8);     // press stats — source = stats
+    let cmds;
+    [slice, cmds] = motion(slice, 5, 1);   // left containers top → insert@left:0
+    eq(slice.design.drag.target.column, 'left');
+    [slice, cmds] = motion(slice, 50, 0);  // right actions top → insert@right:0
+    eq(slice.design.drag.target.column, 'right');
+    eq(cmds[0] && cmds[0].type, 'force_full_repaint');
   });
 });
 

@@ -432,8 +432,20 @@ function renderTerminalOverlay(model = getModel()) {
   // Lazy-create session on first render
   const session = ensureSession(id, termConf.cmd, innerW, innerH);
 
-  // Resize if dimensions changed (also invalidates diff cache)
-  if (session.xterm.cols !== innerW || session.xterm.rows !== innerH) {
+  // Resize if dimensions changed (also invalidates diff cache). Skipped
+  // during a drag preview: the bounds here are preview-shifted (detail's
+  // y/h follow the would-be-after-release arrangement), but the user
+  // hasn't committed the layout change yet. Resizing the PTY child on
+  // every zone crossing would fire SIGWINCH repeatedly and churn the
+  // child's rendering. Pixels still paint at preview coords (the screen
+  // matches), but the session keeps its committed dimensions until
+  // release. Bottom rows of a taller-preview detail show as blank;
+  // a shorter-preview detail clips the bottom of the xterm buffer
+  // visually but the layout's borders cover the overflow. After
+  // release/cancel the next render fires a single resize to the real
+  // (committed) detail size.
+  const isDragPreview = !!(layoutSlice && layoutSlice.design && layoutSlice.design.drag && layoutSlice.design.drag.previewArrange);
+  if (!isDragPreview && (session.xterm.cols !== innerW || session.xterm.rows !== innerH)) {
     resizeSession(id, innerW, innerH);
     _forceOverlayFull = true;
   }

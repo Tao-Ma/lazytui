@@ -157,6 +157,21 @@ describe('[poolDragMotion] promotes armed→dragging and computes drop target', 
     eq(t.column, 'left');
     eq(t.index, 2);
   });
+  it('empty left column → insert at left:0 (fallback for "no cells matched")', () => {
+    const base = buildSlice();
+    // Clear leftPanels — pool-drag should still allow inserting at idx 0
+    // anywhere in the left column area via the scan fallback.
+    base.arrange.leftPanels = [];
+    base.panelBounds.groups = undefined;
+    base.panelBounds.files  = undefined;
+    let s = mpoolDrag.poolDragStart(base, 'notes', 5, 5);
+    s = mpoolDrag.poolDragMotion(s, 5, 12);
+    const t = s.design.drag.target;
+    eq(t.kind, 'insert');
+    eq(t.column, 'left');
+    eq(t.index, 0);
+    eq(t.valid, true);
+  });
 });
 
 describe('[poolDragRelease] emits Cmds + clears drag', () => {

@@ -532,8 +532,13 @@ function matchColumn(slice, panels, mx, my) {
 function validateTarget(slice, srcType, column, target) {
   if (target.kind === 'swap') {
     const occType = target.occupantType;
-    const fromCol = slice.arrange.leftPanels.some(p => p.type === srcType) ? 'left' : 'right';
     const base = { kind: 'swap', column, index: target.index, occupantType: occType };
+    // Self-swap (source == occupant) is always a valid no-op — mouseRelease
+    // detects it and skips applyDrop, so nothing moves. Marking it invalid
+    // would show a misleading "✗ blocked" footer when the user releases a
+    // drag onto its own middle third (release does nothing in either case).
+    if (occType === srcType) return { ...base, valid: true };
+    const fromCol = slice.arrange.leftPanels.some(p => p.type === srcType) ? 'left' : 'right';
     // Dragged panel ends up in `column` — detail/actions can't live in left.
     if (column === 'left' && (srcType === 'detail' || srcType === 'actions')) {
       return { ...base, valid: false, reason: `${srcType} can't live in left column` };
@@ -558,19 +563,16 @@ function validateTarget(slice, srcType, column, target) {
     return { kind: 'insert', column, index, valid: false, reason: `${srcType} can't live in left column` };
   }
   // Right column: detail stays at the end (same convention pool_show
-  // follows). Clamp any drop AFTER detail to land BEFORE it instead.
-  // Source being detail itself is allowed to stay in place; the drop
-  // logic in applyDrop is a no-op for same-slot drops.
+  // follows). Clamp any drop AFTER detail to detail's slot — applyInsert
+  // handles the splice-shift for same-column moves, so the clamp uses
+  // the pre-removal detailIdx; an earlier version pre-decremented for
+  // same-column source and applyInsert decremented again, leaving
+  // same-column right-to-past-detail drags as silent no-ops.
   if (column === 'right' && srcType !== 'detail') {
     const rightPanels = slice.arrange.rightPanels;
     const detailIdx = rightPanels.findIndex(p => p.type === 'detail');
-    if (detailIdx >= 0) {
-      // applyDrop removes the source before inserting, so the
-      // effective detailIdx shifts down by 1 if the source sat
-      // before detail in the same column.
-      const srcIdxInRight = rightPanels.findIndex(p => p.type === srcType);
-      const effDetail = (srcIdxInRight >= 0 && srcIdxInRight < detailIdx) ? detailIdx - 1 : detailIdx;
-      if (index > effDetail) return { kind: 'insert', column, index: effDetail, valid: true };
+    if (detailIdx >= 0 && index > detailIdx) {
+      return { kind: 'insert', column, index: detailIdx, valid: true };
     }
   }
   return { kind: 'insert', column, index, valid: true };
