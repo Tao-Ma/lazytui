@@ -316,13 +316,29 @@ Each pool entry shows with a status marker:
 | `w` or `Esc` | Close the overlay (free-config stays open) |
 | `q` | Exit free-config entirely |
 
-**Mouse drag from the overlay onto the grid:**
+**Mouse drag from the overlay onto the grid** (3-zone per cell, same
+rule as in-grid reorder):
 
-| Drop target | Effect |
+| Drop zone (within a cell) | Effect |
 |---|---|
-| On an existing cell | **Replace** — occupant returns to the pool, source lands in the same column. Detail refuses (essential). |
-| In a column area (between or below cells) | **Append** to that column's tail. |
-| Outside the layout | Cancel. |
+| Top third | **Insert before** this cell. |
+| Middle third | **Replace** — occupant returns to the pool; source lands in the occupant's slot. Detail refuses (essential); `detail` / `actions` refuse if the slot is in the left column (right-column-only). |
+| Bottom third | **Insert after** this cell. Bottom-of-last-cell = append at tail. |
+| Right column past detail | **Clamped** to `insert before detail` — detail must stay at the column's end. The footer surfaces `(clamped — detail stays at end)` so the rewrite isn't silent. |
+| Outside the layout | Cancel; the overlay reopens if it was open at drag-start. |
+
+While a drag has a valid target, the layout reshuffles in real time —
+**live preview**. The render pass swaps `slice.arrange` for the
+would-be-after-release arrangement, so insert opens a gap, replace
+swaps the pool entry into the cell, and the existing layout shifts
+to make room. Release commits the preview; cancel reverts to the
+pre-drag layout. Self-swap (source's own cell, middle third) is a
+valid no-op surfaced in the footer as `(no-op — release to cancel)`.
+
+The same 3-zone scheme applies to in-grid reorder (drag an already-
+placed panel), with the middle third meaning **swap** instead of
+replace — the dragged panel and the occupant trade slots
+(cross-column supported, detail-at-end invariant preserved).
 
 ### Resizing — drag (mouse)
 

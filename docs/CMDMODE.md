@@ -106,10 +106,26 @@ dynamic is fine when the candidate list depends on state.
 | `design`          | Alias for `:free-config` (v0.5 name)         |
 | `hide <id>`       | Unplace a panel (one entry per placed id)    |
 | `show <id>`       | Place a hidden panel (one entry per hidden id) |
+| `open <path>`     | Open a file as a content tab in detail. TAB completes via the open-target scheme registry. |
 
 These live in `panel/api.js#FRAMEWORK_COMMANDS` + a small
 `_frameworkDynamicCommands` builder; they appear in the cmdline registry
 with the source tag `<framework>`.
+
+### `:open` schemes
+
+`:open <input>` routes through a pluggable scheme registry
+(`feature/open-target.js`). Each scheme declares `match` / `complete`
+/ `open` hooks; first match wins. Two schemes ship today:
+
+| Scheme | URI shape | Completion |
+|---|---|---|
+| **host** (catch-all) | `/abs/path`, `relative/path`, `~/home/path` | Directory listing at the typed prefix. Files open as content tabs; directories descend (Enter and Tab both refine). |
+| **docker** | `docker://<container>/<path>` | Container names (sync probe on first use, throttled async refresh) then path-in-container (cached per directory, async `docker exec ls`). Files open via `docker exec cat`. |
+
+Hint entries surface alongside completions when the buffer prefixes a
+scheme's `urlPrefix` (so typing `dock` surfaces the `docker://` hint).
+Future schemes (ssh, s3) plug into the same registry.
 
 ## YAML extension
 

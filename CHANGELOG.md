@@ -84,23 +84,373 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   cells become id-refs. Round-trip is idempotent — parse → save →
   parse → save produces the same bytes.
 
+- **Chrome glyphs on every panel.** Top-border row now hosts up to four
+  small interactive icons, theme-coloured (Mac traffic-light convention):
+
+  - `[X]` red — quick-hide. Free-config only. Click → `pool_hide` for
+    that panel (occupant goes to the pool; layout stays open).
+  - `[_]` yellow — collapse. Always visible. Click → `panel_collapse_toggle`.
+  - `[+]` green — expand a collapsed panel back to full height. Same
+    click semantics as `[_]`, just the glyph differs by state.
+  - `[≡]` theme accent — tab-list trigger, painted at detail's top-left
+    only. Click → opens the centered tab switcher (see below).
+
+  Glyphs are baked into the panel's top-border markup so they ride into
+  the same `paintColumns` write as the row's content — no second
+  cursor-move-and-overpaint pass. Pre-fix the glyphs visibly flickered
+  as `─` on every detail-scroll frame (paint-on-top happened after
+  paintColumns wrote the row). Glyphs are suppressed during any drag
+  (the drag affordance owns the screen) and during overlay-owning
+  modes (cmdline, menu, confirm, prompt, register popup, etc.).
+
+- **Tab-list overlay.** The `[≡]` glyph at detail's top-left opens a
+  centered popup listing every tab in the detail panel — Info,
+  action tabs, terminal tabs, content tabs. Cursor navigates,
+  `Enter` switches to the selected tab, `Esc` / click-outside / re-click
+  the trigger close. Working state lives on `slice.tabList`
+  (`{open, cursor, scroll}`); the trigger renders open-state via
+  `[reverse]` when `tabListMode` is on. Available in every view
+  mode (normal, half, full).
+
+- **`(o)[≡]` layout on detail.** The trigger glyph sits adjacent to the
+  hotkey — `╭─(o)[≡]─Detail─…─╮` — preserving both the keyboard
+  reference and the mouse affordance. Earlier in v0.6 the trigger
+  replaced `(o)`; now both are visible side-by-side. The trigger paints
+  in normal, half, and full view (was normal-only).
+
+- **Tab reorder via mouse drag.** Inside free-config, drag a content
+  tab in detail's tab bar to a new slot. Live reorder — the tab bar
+  re-renders in the new order as the cursor crosses each slot
+  boundary, no commit-on-release single jump. Pure leaf at
+  `leaves/tab-drag.js`; the Msg `viewer_reorder_content_tab` is the
+  one allowed non-`layout`-wrapped dispatch through the free-config
+  freeze gate.
+
+- **Click-to-close `[x]` on content tabs.** Each content tab in detail's
+  tab bar carries a tiny `[x]` close hint. Click it to drop the tab
+  (independent of free-config). Tab-bar hit-test machinery lives on
+  `panelBounds.detail.tabs` (view-output cache).
+
+- **`:open <path>` cmdline verb.** Open any file as a content tab in
+  detail. TAB-completion via a pluggable scheme registry
+  (`feature/open-target.js`):
+
+  - **Host paths** — relative or absolute. Catch-all scheme; matches
+    anything without a `<word>://` prefix.
+  - **`docker://<container>/<path>`** — read a file out of a running
+    container via `docker exec`. Container-name completion (sync
+    probe on first use, throttled async refresh after) plus
+    path-in-container completion (cached per directory).
+
+  Future schemes (ssh, s3) plug in via the same `match` / `complete` /
+  `open` contract.
+
+- **Cmdline live preview.** Cmdline entries can opt into a live preview
+  via `preview: () => teardownFn`. The framework calls `preview()` on
+  every selection change (typing-narrowed matches or arrow-nav),
+  stashes the teardown, and runs it on the next selection change OR on
+  cancel. `:theme <name>` uses this — themes switch as the user
+  navigates matches; Esc reverts; Enter commits.
+
+- **Collapse-toggle widget on every non-detail panel.** Click `[_]` /
+  `[+]` to collapse / expand any non-detail panel, available in both
+  normal and free-config modes. The `collapsed` flag round-trips
+  through `:save-layout` (real layout state, not session-only).
+
+- **Live drag preview.** During pool drag or in-grid drag with a
+  valid target, `slice.arrange` is swapped to the would-be-after-
+  release arrangement for the duration of the paint pass and
+  restored before the next mouse event. The user SEES the post-
+  release layout while dragging — replaces the old seam-bar / cell-
+  frame hints, which were one-line indicators of "where the panel
+  would land." Restore window also includes
+  `renderTerminalOverlay` so the xterm session in detail paints at
+  preview-shifted coordinates while a free-config drag is in flight.
+
+- **3-zone hit-test per cell.** Both pool drag and in-grid drag use a
+  unified cell layout:
+
+  - **Top third** → insert before this cell.
+  - **Middle third** → for pool drag: REPLACE the occupant (occupant
+    returns to pool). For in-grid drag: SWAP the dragged panel with
+    the occupant (cross-column swap supported; same-column swap
+    preserved). Self-swap (source == occupant) is a valid no-op
+    surfaced in the footer as `(no-op — release to cancel)`.
+  - **Bottom third** → insert after this cell.
+
+  Replaces the v0.5 / early-v0.6 pool-drag scheme (`replace on cell
+  hit + APPEND in a 2-row strip at column tail`), which left no way
+  to insert between cells. Detail-at-end clamp annotated in the
+  footer (`→ insert at right:N (clamped — detail stays at end)`)
+  when the user drops in a position that would land past detail in
+  the right column. Detail and `actions` can't live in the left
+  column from either gesture (was an asymmetry: in-grid drag
+  blocked it, pool drag let it through).
+
+- **View-mode × free-config guards.** Free-config can only be entered
+  from normal view; the view-mode keys (`[`, `]`) and any cmdline
+  verb that would change view-mode are blocked while free-config is
+  active. Refusals surface a footer notice (`free-config requires
+  normal view ([ to return)` / `exit free-config (q) to change view
+  mode`) that auto-clears on the next unrelated user intent. Drag
+  motion Msgs preserve the notice (single drag intent in flight).
+
+- **Half-view non-detail focus tracking.** In half view, when focus
+  moves to detail (e.g., clicking a tab in detail's bar), the LEFT
+  side now keeps showing the most recently focused non-detail panel
+  instead of duplicating detail. Tracked in `slice.halfLeftPanel`,
+  updated in `focus_set` (non-detail target) and committed on
+  `design_exit` (catches free-config nav, which bypasses
+  `focus_set`).
+
+- **Theme-driven chrome palette.** New theme slots: `chrome_close`,
+  `chrome_collapse`, `chrome_expand`, `chrome_trigger`. Default
+  mappings follow the Mac traffic-light convention; themes can
+  override per slot. Glyphs dim with the panel when the panel isn't
+  focused (composes `[dim]` with the color, not the terminal default
+  fg).
+
+### Changed
+- **Mode flag renamed.** `model.modes.designMode` → `freeConfigMode`
+  throughout (26 references across 13 files). Mechanical rename;
+  behavior under the old flag preserved. External plugins reading
+  the flag name need a one-line update.
+
+- **Freeze gate during free-config mode.** While the mode is active,
+  the dispatch layer drops broadcast Msgs (refresh / hub / action)
+  and wrapped Msgs targeting non-`layout` components. Components
+  render their last snapshot until the user exits, so the canvas
+  stays stable under drag / resize / pool mutations — matches the
+  tmux prefix-mode mental model. Mode entry/exit ride the root
+  reducer, not the gated dispatch path, so the mode itself always
+  transitions cleanly. Narrow exception: the tab-reorder gesture's
+  `viewer_reorder_content_tab` Msg passes through (live reorder
+  within detail's tab bar, same justification as `pool_hide`/`show`).
+
+- **`:save-layout` writes the `panels:` block when needed.** Legacy
+  configs (every entry synthesized AND placed) continue to write the
+  v0.5 inline form, byte-for-byte where possible. Configs with
+  hidden entries or a user-declared pool write both blocks; layout
+  cells become id-refs. Round-trip is idempotent — parse → save →
+  parse → save produces the same bytes.
+
+- **Pool drag UX.** Replaces the v0.6 Phase 5 scheme (replace on cell
+  + append in a 2-row strip at column tail) with the unified 3-zone
+  per-cell hit-test described above. Every visible cell now offers
+  insert / replace / insert at thirds; the user can drop between any
+  pair of adjacent panels without hunting for a tiny append strip.
+  Same UX works in normal, half, and full views.
+
+- **Cmdline matcher uses full buffer text.** Multi-word entry names
+  (`theme dracula`, `focus FilePanel`) score against the entire
+  buffer rather than just the first whitespace-delimited token, so
+  the user can refine through the registered display string. Single-
+  word entries still match `query`-only, so trailing positional args
+  don't disturb their fuzzy scores.
+
+- **Page-up / page-down** (`,` / `.`) move a full page. Earlier moved
+  half a page.
+
+- **Chrome paint method.** `[_]`/`[X]`/`[≡]` glyphs are baked into the
+  panel's top-border row markup, written atomically by `paintColumns`.
+  Pre-fix the glyphs were painted in a separate cursor-move pass after
+  paintColumns, which let the row's `─` fill briefly show through on
+  every detail-scroll frame — visible as flickering glyphs in the
+  lower-left panels.
+
+- **`free-config` footer label.** Reads "Free Config" (was "Design
+  Mode" through the rename).
+
+### Fixed
+- **Pool drag/show refuses `detail` / `actions` into the left column.**
+  In-grid drag already blocked this gesture; pool drag and the
+  `pool_show` reducer didn't, letting users land an `actions` panel in
+  the left column with a positional hotkey instead of the conventional
+  `0`. Now both gestures refuse with the same reason text the in-grid
+  drag uses.
+
+- **Half-view dup-detail bug.** Clicking a tab in detail's tab bar or
+  clicking detail's content area dispatched `focus_set` to detail;
+  `renderHalf` paints `focusedPanel` on the left + `detail` on the
+  right, so detail showed up on BOTH sides. Now the left side falls
+  back to the most recently focused non-detail panel
+  (`slice.halfLeftPanel`).
+
+- **Same-column right-column drag past detail.** The detail-at-end
+  clamp in `validateTarget` pre-decremented for same-column source
+  AND `applyInsert` re-decremented for the splice-shift — net
+  double-counting left the source pinned at its own slot for any
+  drag past detail. Now uses pre-removal `detailIdx` only; the
+  insert's existing decrement handles the shift correctly.
+
+- **Self-swap with detail flagged as invalid.** The "detail must stay
+  at end" rule applied unconditionally to swap targets involving
+  detail; releasing a drag onto detail's own middle-third showed a
+  red ✗ in the footer for what's semantically a no-op. Now self-swap
+  (source == occupant) is always `valid:true`; the subsequent
+  detail-at-end rule only applies to cross-panel swaps.
+
+- **Terminal overlay during drag.** `renderTerminalOverlay` reads
+  `panelBounds.detail` to position the xterm session. The drag-
+  preview swap-window used to end before the terminal overlay's
+  paint, so the overlay drew at original (pre-shuffle) coordinates
+  while the surrounding layout showed preview-shifted detail. Now
+  the swap covers the terminal overlay too; restore happens before
+  the viewport-cache dispatch.
+
+- **Detail-at-end clamp visible in the footer.** Dropping in the
+  bottom third of detail clamps the insert index back to detail's
+  slot (panel ends up just before detail). Pre-fix this happened
+  silently — the user saw their preview paint above detail with no
+  signal that the target was rewritten. Now the footer reads
+  `→ insert at right:N (clamped — detail stays at end)`.
+
+- **Self-swap reads as `(no-op)` in the footer.** After the self-swap
+  validity fix, the footer would have shown `dragging X → swap X
+  (col)` in bold yellow — looks like a real action. Now reads
+  `(no-op — release to cancel)` in dim.
+
+- **Footer truncation under overflow.** Pre-fix a long footer wrapped
+  to a second row, scrolling the screen up and looking like the
+  frame was shrinking each render. Now markup-aware-truncated to
+  fit the terminal width.
+
+- **`bold red` / `bold green` / other bold-color combos** map through
+  richToAnsi correctly. Pre-fix only the bold was emitted, dropping
+  the color half.
+
+- **Cmdline dropdown scroll** advances with the selection so the
+  highlighted entry stays in view even when the match set is larger
+  than the dropdown viewport.
+
+- **Cmdline Tab accepts the SELECTED match,** not always
+  `matches[0]`. Pre-fix arrow-down then Tab completed the first
+  match rather than the highlighted one.
+
+- **Cmdline Enter on a refinable entry behaves like Tab** —
+  directories and container names rewrite the buffer instead of
+  firing `run()`, keeping the user in cmdline so they can continue
+  refining.
+
+- **Cmdline hint shows on partial prefix** (`:open dock` now shows
+  the `docker://` hint). Pre-fix the hint only showed on empty
+  input.
+
+- **Cmdline residue persists when `:free-config` triggers from cmdline
+  mode.** Modal transitions A→B drop A's pixels before B paints; the
+  force-full-repaint fingerprint computes over the active overlay
+  SET, not a single bool, catching every overlay drop.
+
+- **Pool-drag motion only repaints on TARGET change,** not every
+  pixel. Rapid drag no longer makes the affordance blink.
+
+- **Free-config focus preserves on entry.** Entering free-config used
+  to reset focus to the first placed panel; now keeps the user's
+  current focus when it points at a placed panel.
+
+- **Panel title markup-aware truncation.** Titles carrying markup
+  (`[docker:pg]`, `[dim]`, `\[…\]`) used to be length-sliced
+  ignoring visible-width math, sometimes cutting mid-tag and
+  swallowing the right border `╮`. Now truncate() is markup-aware
+  and short-circuits when the title already fits.
+
+- **Pool-drag invalid-append surfaces a reason.** Trying to drop into
+  a column at cap now paints the bar in red AND surfaces the reason
+  in the footer; pre-fix the bar still painted green and release
+  silently cancelled.
+
+- **Force-repaint on overlay drop AND transition,** not just
+  overlay-close. Pre-fix a same-cycle A→B overlay swap left A's
+  pixels under B.
+
+- **Pool_show right-column inserts BEFORE detail,** not at the very
+  end. Detail-at-end invariant enforced consistently across all
+  panel-arrangement gestures (in-grid reorder, pool show via
+  cmdline, pool drag, drop-on-empty-column).
+
+- **Drag motion equality** compares every preview-affecting field
+  (kind, column, index, occupantId, occupantType, valid). Pre-fix
+  the helpers only checked a subset, so insert@0 → insert@1 (same
+  column, both undefined occupantId) reported "equal" and skipped
+  the repaint, leaving a stale preview at the old index.
+
 ### Internal
 - **`js/leaves/pool.js`** — pure derivations over `arrange.pool` /
   `leftPanels` / `rightPanels`: `placedIds`, `hiddenIds`, `isPlaced`,
-  `isHidden`, `getPoolEntry`, `orphanPlacements`, `panelListItems`.
-  Tested directly; no model access.
+  `isHidden`, `getPoolEntry`, `orphanPlacements`, `panelListItems`,
+  `placementFromPoolEntry`. Tested directly; no model access.
 
-- **New Msgs on the layout slice:** `pool_hide`, `pool_show`,
-  `panel_list_{open, close, nav, pick}`, `pool_drag_{start, motion,
-  release}`. Single-writer-per-slice preserved; `pool_drag_release`
-  returns a `dispatch_msg` Cmd that re-emits `pool_hide` / `pool_show`
-  so the existing Phase 2 handlers do the mutation.
+- **New leaves**:
+  - `js/leaves/design-pool-drag.js` — pool-drag gesture state machine
+    (`poolDragStart`/`Motion`/`Release`, `pointToPoolDropTarget`,
+    `computePoolDragPreviewArrange`). Depends on `leaves/design` for
+    the shared 3-zone hit-test and `leaves/pool` for
+    `placementFromPoolEntry`. Pure transform.
+  - `js/leaves/tab-drag.js` — content-tab reorder gesture for the
+    detail tab bar.
+  - `js/leaves/cmdline-split.js`, `js/leaves/sh-escape.js`,
+    `js/leaves/hotkeys.js` — small shared helpers.
 
-- **Test coverage:** five new test files pinning the v0.6 surface —
-  `test-pool-schema.js`, `test-pool-derivation.js`, `test-pool-
-  cmdline.js`, `test-free-config-freeze.js`, `test-panel-list-
-  overlay.js`, `test-pool-drag.js`, `test-pool-save.js`. Suite
-  52→59 files green.
+- **New overlays**:
+  - `js/overlay/tab-list.js` — tab-list overlay + the `injectTabTrigger`
+    helper that bakes `[≡]` into detail's top-row markup.
+  - `js/overlay/panel-list.js` — modal panel-list inside free-config,
+    with optional side-by-side preview pane (terminals ≥ 75 cols).
+  - `js/overlay/cmdline.js` — cmdline render carve-out from
+    `dispatch/cmdline.js`. Resolves a layering inversion where
+    `render/layout.js` required `dispatch/`.
+
+- **New features**:
+  - `js/feature/open-target.js` — pluggable scheme registry for
+    `:open` (`match` / `complete` / `open` hooks).
+  - `js/feature/open-docker.js`, `js/feature/open-file.js` — docker
+    and host schemes plugging into the registry.
+  - `js/render/panel-widgets.js` — `injectTopRowChrome` for
+    `[X]`/`[_]`/`[+]` and the hit-tests that read `panelBounds`.
+
+- **Carve-outs reducing the largest files**:
+  - `js/panel/commands.js` — `:` cmdline command registry, peeled
+    out of `panel/api.js`.
+  - `js/dispatch/actions.js` — `handleAction` switch, peeled out of
+    `dispatch/dispatch.js`.
+
+- **New Msgs on the layout slice:** `pool_hide`, `pool_show` (with
+  optional `index` field for drag drops), `panel_list_{open, close,
+  nav, pick}`, `pool_drag_{start, motion, release}`,
+  `tab_drag_{start, motion, release}`, `panel_collapse_toggle`,
+  `set_arrange`. Plus the existing `design_*` family. Single-writer-
+  per-slice preserved; release Msgs return `dispatch_msg` Cmds that
+  re-emit `pool_hide` / `pool_show` so the Phase 2 handlers do the
+  mutation. **Target shape**: pool-drag targets are tagged
+  `{kind:'insert'|'replace', column, index|occupantId, valid,
+  reason?, clamp?}`; in-grid drag targets are `{kind:'insert'|'swap',
+  column, index, occupantType?, valid, reason?, clamp?}`.
+
+- **New Msgs on detail (viewer):** `tab_list_{open, close, nav, page,
+  pick}`, `tab_list_close_selected`, `viewer_reorder_content_tab`,
+  `viewer_remove_content_tab`, `viewer_set_viewport`.
+
+- **New cmdline-buffer arms in the root reducer:** `cmdline_set_text`,
+  `cmdline_set_matches`, `cmdline_nav`, `cmdline_submit`,
+  `cmdline_cancel`, `cmdline_revert_preview`. The live-preview teardown
+  ride a `cmdline_preview` Cmd through `dispatch/effects.js`.
+
+- **New slice fields** on the layout slice: `arrange.pool` (id → entry),
+  `design.drag.previewArrange` (computed on target change), `design.notice`
+  (transient hint surfaced in the footer), `halfLeftPanel` (last
+  non-detail focus, half-view's left-side panel),
+  `panelList.{open, cursor}`, `tabList.{open, cursor, scroll}` (on
+  detail's slice).
+
+- **Test coverage**: twelve new test files pinning the v0.6 surface —
+  `test-pool-schema.js`, `test-pool-derivation.js`,
+  `test-pool-cmdline.js`, `test-free-config-freeze.js`,
+  `test-panel-list-overlay.js`, `test-pool-drag.js`,
+  `test-pool-save.js`, `test-collapse.js`, `test-tab-list.js`,
+  `test-view-mode-guards.js`, `test-half-view-focus.js`. Plus
+  expanded coverage in `test-design-drag.js` (3-zone hit-test, swap,
+  preview snapshots, repaint emission across zone changes). Suite
+  green across 60+ files.
 
 ## [0.5.0] — 2026-05-30
 
