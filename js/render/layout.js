@@ -39,7 +39,7 @@ const { getModel } = require('../app/runtime');
 const { renderCmdline } = require('../overlay/cmdline');
 const { renderConfirmOverlay } = require('../overlay/confirm');
 const { renderPromptOverlay } = require('../overlay/prompt');
-const { renderDesignOverlay, getDesignFooter } = require('../overlay/design');
+const { getDesignFooter } = require('../overlay/design');
 const { injectTopRowChrome } = require('./panel-widgets');
 const { renderPanelListOverlay } = require('../overlay/panel-list');
 const { renderTabList, injectTabTrigger } = require('../overlay/tab-list');
@@ -520,12 +520,16 @@ function render(model = getModel()) {
   const layoutSlice = getComponentSlice('layout') || { viewMode: 'normal' };
   // Drag preview: during an active drag with a valid target, swap
   // slice.arrange for the would-be-after-release arrange so the user
-  // sees the actual outcome rather than an insertion-bar hint. Both
-  // arrange AND panelBounds are restored after paint — the next mouse
-  // hit-test reads original-layout bounds, which keeps drop-target
-  // detection stable when the cursor sits near a zone boundary (a
-  // preview-derived panelBounds would feed back into the next hit-test
-  // and ping-pong the layout under tiny cursor wobbles).
+  // sees the actual outcome rather than an insertion-bar hint. The swap
+  // stays in place through renderTerminalOverlay too — that overlay
+  // reads panelBounds.detail to position the xterm session, and the
+  // screen shows detail at preview coords, so the terminal must paint
+  // at preview coords to match. After that we restore both arrange AND
+  // panelBounds: the viewport dispatch + the next mouse hit-test read
+  // original-layout bounds, which keeps drop-target detection stable
+  // when the cursor sits near a zone boundary (preview-derived bounds
+  // would feed back into the next hit-test and ping-pong the layout
+  // under tiny cursor wobbles).
   const drag = layoutSlice.design && layoutSlice.design.drag;
   const previewArrange = drag && drag.previewArrange;
   let savedArrange = null, savedBounds = null;
@@ -538,6 +542,12 @@ function render(model = getModel()) {
   if (viewMode === 'half') mainDidFull = renderHalf(model);
   else if (viewMode === 'full') mainDidFull = renderFull(model);
   else mainDidFull = renderNormal(model);
+  // Only force the terminal-overlay repaint when main paint actually
+  // cleared the screen (resize, overlay-close, first frame). In the
+  // steady state main paint is diff-based and leaves the PTY region
+  // untouched, so the overlay's own diff cache is enough.
+  if (mainDidFull) _forceOverlayFull = true;
+  renderTerminalOverlay(model);
   if (previewArrange) {
     layoutSlice.arrange = savedArrange;
     layoutSlice.panelBounds = savedBounds;
@@ -547,7 +557,9 @@ function render(model = getModel()) {
   // render-time geometry across slices. Blessed render-side write into
   // an owning slice (same shape as syncPanelScroll → set_scroll). Pair
   // with viewer_set_viewport's identity-preserve guard — when nothing
-  // changed the Msg short-circuits before any allocation.
+  // changed the Msg short-circuits before any allocation. Uses the
+  // original (non-preview) bounds — the viewer's actual state hasn't
+  // committed to the drag yet, so its viewport tracks the real layout.
   const detailBounds = layoutSlice.panelBounds && layoutSlice.panelBounds.detail;
   if (detailBounds) {
     const innerH = Math.max(0, detailBounds.h - 2);
@@ -556,12 +568,6 @@ function render(model = getModel()) {
       dispatchMsg(wrap('detail', { type: 'viewer_set_viewport', innerH }));
     }
   }
-  // Only force the terminal-overlay repaint when main paint actually
-  // cleared the screen (resize, overlay-close, first frame). In the
-  // steady state main paint is diff-based and leaves the PTY region
-  // untouched, so the overlay's own diff cache is enough.
-  if (mainDidFull) _forceOverlayFull = true;
-  renderTerminalOverlay(model);
   renderFooter(model);
   // Panel-chrome glyphs (`[_]`/`[+]` collapse, `[X]` close in free-config)
   // are baked into each panel's top-border row by renderNormal — see
@@ -574,7 +580,7 @@ function render(model = getModel()) {
   // Order matches dispatch.js's modeChain: design > menu > copy.
   if (md.copyMode)    renderCopyMenu();
   if (md.menuOpen)    renderMenu();
-  if (md.freeConfigMode)  { renderDesignOverlay(); renderPanelListOverlay(); }
+  if (md.freeConfigMode)  { renderPanelListOverlay(); }
   if (md.cmdMode)     renderCmdline();
   if (md.confirmMode) renderConfirmOverlay();
   if (md.promptMode)  renderPromptOverlay();

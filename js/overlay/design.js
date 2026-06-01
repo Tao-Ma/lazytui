@@ -1,20 +1,17 @@
 /**
- * Design mode — interactive panel layout editor (render half).
+ * Design mode — read-side helpers for free-config.
  *
- * Fully folded onto the update spine: the keyboard handler, the title-edit
- * sub-mode, undo/redo, AND the mouse drag/resize state machine now live in the
- * reducer (runtime: design_* / design_mouse_* Msgs) backed by the
- * dependency-free `leaves/design` leaf. design.js is now render-only — the
- * overlay (drag insertion line) + the footer text — reading the owned model
- * via getModel(). The drag/resize gesture state lives on model.modal.design
- * .drag; the working draft IS getModel().layout.
+ * The keyboard handler, title-edit sub-mode, undo/redo, and mouse drag/resize
+ * state machine all live in the reducer (runtime: design_* / design_mouse_*
+ * Msgs) backed by the dependency-free `leaves/design` leaf. The drag-target
+ * affordance is now the live layout preview painted by render/layout.js
+ * (swaps slice.arrange for drag.previewArrange during the paint pass), so
+ * this file holds no overlay paint of its own — just the free-config footer
+ * text (getDesignFooter), the title-edit buffer accessor, and a small set
+ * of test-facing shims that drive the real reducer path.
  *
  * Save is decoupled: `:save-layout` writes the runtime layout to YAML,
  * `:restore-layout` reverts it and clears undo history.
- *
- * The remaining non-render exports (onMouseEvent + the pointTo* hit-tests) are
- * thin TEST-FACING shims that drive the real reducer path (applyMsg) / inject
- * the owned model + terminal width into the leaf hit-tests.
  */
 'use strict';
 
@@ -86,20 +83,6 @@ function getDesignFooter() {
   return sel ? ` | ${esc(sel.title)} (${sel.column})` : '';
 }
 
-/**
- * v0.6 — drop-target affordance is now the live preview itself. The render
- * pass swaps slice.arrange for drag.previewArrange when a drag has a valid
- * target, so the user SEES the would-be-after-release layout directly. No
- * insertion bar / replace frame to paint here; the footer text
- * (getDesignFooter) is the secondary indicator for invalid targets where
- * no preview is shown.
- */
-function renderDesignOverlay() {
-  // Kept as a no-op stub: render() in render/layout.js still calls this
-  // in the design-mode overlay slot, and tests / future overlay needs may
-  // hang things off it.
-}
-
 /** Title-edit footer text — the live buffer (reads the layout slice). */
 function titleEditText() {
   const d = _design();
@@ -132,7 +115,7 @@ function pointToResizeTarget(mx, my) { return mdesign.pointToResizeTarget(_slice
 function pointToDropTarget(srcType, mx, my) { return mdesign.pointToDropTarget(_slice(), srcType, mx, my, cols()); }
 
 module.exports = {
-  renderDesignOverlay, getDesignFooter, titleEditText,
+  getDesignFooter, titleEditText,
   onMouseEvent,
   pointToDropTarget, pointToResizeTarget,
   _clearUndoStacks,

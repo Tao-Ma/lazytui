@@ -229,6 +229,20 @@ describe('[end-to-end] layout.update threads pool_drag_* Msgs to the leaf', () =
     eq(next.design.drag, null);
     eq(cmds[0].msg.msg.type, 'pool_show');
   });
+  it('motion between two distinct insert indices emits force_full_repaint', () => {
+    // Regression: a prior _dropTargetsEqual missed `index`, so moving from
+    // insert@0 to insert@1 (same column, same kind, both undefined occupant)
+    // returned "equal" → no repaint, stale preview.
+    const [armed] = layout.update({ type: 'pool_drag_start', id: 'notes', mx: 50, my: 5 }, buildSlice());
+    const [atTop] = layout.update({ type: 'pool_drag_motion', mx: 50, my: 1 }, armed);     // actions top → insert@0
+    eq(atTop.design.drag.target.kind, 'insert');
+    eq(atTop.design.drag.target.index, 0);
+    const result = layout.update({ type: 'pool_drag_motion', mx: 50, my: 6 }, atTop);      // actions bot → insert@1
+    assert(Array.isArray(result), 'index change → tuple with repaint cmd');
+    const [moved, cmds] = result;
+    eq(moved.design.drag.target.index, 1);
+    eq(cmds[0].type, 'force_full_repaint');
+  });
 });
 
 describe('[pool_show with index] reducer splices at position', () => {

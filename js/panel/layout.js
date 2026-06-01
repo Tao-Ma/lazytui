@@ -34,29 +34,24 @@ function rekeyColumn(panels, pool) {
   return panels.map((p, i) => ({ ...p, hotkey: pool[i] || '' }));
 }
 
-/** Compare two pool-drag drop targets for visual equality. Used by
- *  pool_drag_motion to decide whether the cursor moved between drop
- *  zones (force_full_repaint needed) or just within one (no repaint).
- *  curX/curY are not visual; ignore them. */
-function _dropTargetsEqual(a, b) {
+/** Compare two drag drop targets for visual equality. Used by both
+ *  design_mouse_motion and pool_drag_motion to decide whether the cursor
+ *  moved between drop zones (force_full_repaint + preview recompute
+ *  needed) or just within one (no repaint).
+ *
+ *  Compares every field that affects the preview render — without `kind`
+ *  an insert@N and a swap@N at the same column compare equal; without
+ *  `index` two distinct inserts compare equal; without `occupantType`
+ *  /`occupantId` distinct swap/replace targets compare equal. curX/curY
+ *  are not visual; ignore them. */
+function _dragTargetsEqual(a, b) {
   if (a === b) return true;
   if (!a || !b) return false;
   return a.kind === b.kind
       && a.column === b.column
-      && a.occupantId === b.occupantId
-      && a.valid === b.valid;
-}
-
-/** Compare two in-grid drag drop targets for visual equality. Same
- *  pattern as `_dropTargetsEqual` but for the {column, index, valid}
- *  shape returned by `pointToDropTarget`. The insertion-line overlay's
- *  visible position is a pure function of (column, index, valid); a
- *  curX/curY change inside the same seam zone is invisible. */
-function _insertionTargetsEqual(a, b) {
-  if (a === b) return true;
-  if (!a || !b) return false;
-  return a.column === b.column
       && a.index === b.index
+      && a.occupantId === b.occupantId
+      && a.occupantType === b.occupantType
       && a.valid === b.valid;
 }
 
@@ -236,7 +231,7 @@ function update(msg, slice) {
       if (!isInsertionDrag) return next;
       const oldT = ds && ds.target;
       const newT = ns && ns.target;
-      if (_insertionTargetsEqual(oldT, newT)) return next;
+      if (_dragTargetsEqual(oldT, newT)) return next;
       // Target changed — recompute the preview arrange (what the layout
       // looks like on release). Stored on drag.previewArrange; the render
       // path swaps slice.arrange for it during paint, restoring after so
@@ -266,7 +261,7 @@ function update(msg, slice) {
       if (next === slice) return slice;
       const oldT = slice.design && slice.design.drag && slice.design.drag.target;
       const newT = next.design  && next.design.drag  && next.design.drag.target;
-      if (_dropTargetsEqual(oldT, newT)) return next;
+      if (_dragTargetsEqual(oldT, newT)) return next;
       // Target changed — recompute preview arrange (same pattern as
       // design_mouse_motion). Stored on drag.previewArrange.
       const ns = next.design && next.design.drag;

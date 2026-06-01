@@ -420,4 +420,63 @@ describe('[5] computeDragPreviewArrange — what-if snapshot', () => {
   });
 });
 
+// ===============================================================
+// design_mouse_motion's diff check must compare every preview-affecting
+// field. Regression for two bugs in the original equality helpers:
+//   - missing `kind`  → insert@N vs swap@N at the same column compared equal
+//   - missing `index` → insert@0 vs insert@1 compared equal
+describe('[6] design_mouse_motion — repaint emission across zone changes', () => {
+  const layout = require('../panel/layout');
+  const { getComponentSlice } = require('../panel/api');
+
+  // layout.update returns either `nextSlice` or `[nextSlice, cmds]`; the
+  // dispatcher unwraps tuples in production. Tests need both halves, so
+  // unpack here and feed only the slice back into the next call.
+  function unpack(r) {
+    return Array.isArray(r) ? r : [r, []];
+  }
+  function pressAt(mx, my) {
+    return layout.update({ type: 'design_mouse_press', mx, my, cols: 120 }, getComponentSlice('layout'));
+  }
+  function motion(slice, mx, my) {
+    return unpack(layout.update({ type: 'design_mouse_motion', mx, my, cols: 120 }, slice));
+  }
+
+  it('insert@N → swap@N (kind change at same index) emits force_full_repaint', () => {
+    setupFixture();
+    // press stats — source = stats. Move to containers' top third (insert@0),
+    // then containers' mid third (swap@0 with containers).
+    let slice = pressAt(50, 8);  // press stats body (avoid y=5 boundary)
+    let cmds;
+    [slice, cmds] = motion(slice, 5, 1);  // containers top zone → insert at 0
+    eq(slice.design.drag.target.kind, 'insert');
+    eq(slice.design.drag.target.index, 0);
+    [slice, cmds] = motion(slice, 5, 5);  // containers mid zone → swap at 0
+    eq(slice.design.drag.target.kind, 'swap');
+    eq(slice.design.drag.target.index, 0);
+    eq(cmds[0] && cmds[0].type, 'force_full_repaint');
+  });
+
+  it('insert@N → insert@N+1 (index change at same kind) emits force_full_repaint', () => {
+    setupFixture();
+    let slice = pressAt(50, 8);
+    let cmds;
+    [slice, cmds] = motion(slice, 5, 1);  // containers top → insert@0
+    [slice, cmds] = motion(slice, 5, 8);  // containers bot → insert@1
+    eq(slice.design.drag.target.kind, 'insert');
+    eq(slice.design.drag.target.index, 1);
+    eq(cmds[0] && cmds[0].type, 'force_full_repaint');
+  });
+
+  it('motion within the same zone emits no repaint cmd', () => {
+    setupFixture();
+    let slice = pressAt(50, 8);
+    let cmds;
+    [slice, cmds] = motion(slice, 5, 1);  // containers top → insert@0 (target change)
+    eq(cmds[0] && cmds[0].type, 'force_full_repaint', 'first crossing into a target emits repaint');
+    [slice, cmds] = motion(slice, 5, 2);  // still containers top → same target
+    eq(cmds.length, 0, 'same-zone motion suppresses repaint');
+  });
+});
+
 report();
