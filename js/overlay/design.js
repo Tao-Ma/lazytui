@@ -60,7 +60,8 @@ function getDesignFooter() {
       }
       return ` | dragging ${esc(srcTitle)} → [bold yellow]swap[/] ${esc(panelTitle(t.occupantType))} (${t.column})`;
     }
-    return ` | dragging ${esc(srcTitle)} → ${t.column} @ ${t.index}`;
+    const clampSuffix = t.clamp ? ` [dim](clamped — ${esc(t.clamp)})[/]` : '';
+    return ` | dragging ${esc(srcTitle)} → ${t.column} @ ${t.index}${clampSuffix}`;
   }
   // v0.6 — pool drag from the panel-list overlay. The overlay closes
   // at drag-start so the layout drop targets are visible; this footer
@@ -81,7 +82,8 @@ function getDesignFooter() {
     if (t.kind === 'replace') {
       return ` | from pool: ${esc(srcTitle)} → [bold yellow]replace[/] ${esc(t.occupantId)} (${t.column})`;
     }
-    return ` | from pool: ${esc(srcTitle)} → [bold green]insert[/] at ${t.column}:${t.index}`;
+    const clampSuffix = t.clamp ? ` [dim](clamped — ${esc(t.clamp)})[/]` : '';
+    return ` | from pool: ${esc(srcTitle)} → [bold green]insert[/] at ${t.column}:${t.index}${clampSuffix}`;
   }
   const slice = _slice();
   const all = slice ? mdesign.allDesignPanels(slice) : [];

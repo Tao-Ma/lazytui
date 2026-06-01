@@ -130,6 +130,14 @@ describe('[poolDragMotion] promotes armed→dragging and computes drop target', 
     eq(t.kind, 'insert');
     eq(t.index, 1);  // would be 2, clamped to detail's idx (1)
     eq(t.valid, true);
+    eq(t.clamp, 'detail stays at end', 'clamp reason surfaces to footer');
+  });
+  it('top third of detail → no clamp marker (target lands where cursor says)', () => {
+    let s = mpoolDrag.poolDragStart(buildSlice(), 'notes', 50, 5);
+    s = mpoolDrag.poolDragMotion(s, 50, 9);  // detail top zone [8,12) → insert@1
+    const t = s.design.drag.target;
+    eq(t.index, 1);
+    eq(t.clamp, undefined, 'no rewrite happened, no clamp marker');
   });
   it('drop in dead zone below all right cells → append at right tail (clamped)', () => {
     let s = mpoolDrag.poolDragStart(buildSlice(), 'notes', 50, 5);

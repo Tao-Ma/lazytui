@@ -77,19 +77,27 @@ function pointToPoolDropTarget(slice, mx, my) {
   return validateInsert(arrange, column, panels.length);
 }
 
-/** Insert validity: column-cap + detail-at-end clamp for right column. */
+/** Insert validity: column-cap + detail-at-end clamp for right column.
+ *  When the clamp fires, the returned target carries a `clamp` reason so
+ *  the footer can show "(clamped — <reason>)"; without it the bot-third
+ *  of detail looked like a normal insert that just happened to paint
+ *  above detail in the preview, with no signal of WHY. */
 function validateInsert(arrange, column, index) {
   const panels = column === 'left' ? (arrange.leftPanels || []) : (arrange.rightPanels || []);
   const cap = column === 'left' ? 6 : 3;
   const valid = panels.length < cap;
-  // Right column: detail stays at the end. Clamp any insert past detail's
-  // position so the preview matches what pool_show will actually do.
   let idx = index;
+  let clamp = null;
   if (column === 'right') {
     const detailIdx = panels.findIndex(p => p.type === 'detail');
-    if (detailIdx >= 0 && idx > detailIdx) idx = detailIdx;
+    if (detailIdx >= 0 && idx > detailIdx) {
+      idx = detailIdx;
+      clamp = 'detail stays at end';
+    }
   }
-  return { kind: 'insert', column, index: idx, valid };
+  const t = { kind: 'insert', column, index: idx, valid };
+  if (clamp) t.clamp = clamp;
+  return t;
 }
 
 /** Replace validity: detail can't be replaced (essential to the layout). */

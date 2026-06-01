@@ -120,8 +120,9 @@ describe('[1] pointToDropTarget — 3-zone hit-test', () => {
 
   it('bottom third of detail → CLAMPED to insert at right:2 (detail stays at end)', () => {
     // y=35 inside detail bot zone [32,40); insert-after-detail (idx 3) clamped to 2.
+    // Clamp also carries a reason — the footer surfaces it to the user.
     eq(JSON.stringify(pointToDropTarget('containers', 50, 35)),
-       JSON.stringify({ kind: 'insert', column: 'right', index: 2, valid: true }));
+       JSON.stringify({ kind: 'insert', column: 'right', index: 2, valid: true, clamp: 'detail stays at end' }));
   });
 
   it('top third of detail → insert at right:2 (before detail)', () => {

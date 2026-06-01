@@ -567,12 +567,16 @@ function validateTarget(slice, srcType, column, target) {
   // handles the splice-shift for same-column moves, so the clamp uses
   // the pre-removal detailIdx; an earlier version pre-decremented for
   // same-column source and applyInsert decremented again, leaving
-  // same-column right-to-past-detail drags as silent no-ops.
+  // same-column right-to-past-detail drags as silent no-ops. The
+  // `clamp` field marks that the target index was rewritten so the
+  // footer can surface "(clamped — <reason>)" — earlier versions did
+  // this rewrite silently and the user couldn't tell why their drop
+  // landed above detail instead of below.
   if (column === 'right' && srcType !== 'detail') {
     const rightPanels = slice.arrange.rightPanels;
     const detailIdx = rightPanels.findIndex(p => p.type === 'detail');
     if (detailIdx >= 0 && index > detailIdx) {
-      return { kind: 'insert', column, index: detailIdx, valid: true };
+      return { kind: 'insert', column, index: detailIdx, valid: true, clamp: 'detail stays at end' };
     }
   }
   return { kind: 'insert', column, index, valid: true };
