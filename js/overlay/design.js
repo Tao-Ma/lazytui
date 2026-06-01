@@ -52,6 +52,12 @@ function getDesignFooter() {
     if (!t) return ` | dragging ${esc(srcTitle)} → [yellow](drop outside)[/]`;
     if (!t.valid) return ` | dragging ${esc(srcTitle)} → [red]✗ ${esc(t.reason || 'blocked')}[/]`;
     if (t.kind === 'swap') {
+      // Self-swap (source == occupant) is valid but a no-op on release;
+      // rendering it as "swap X" in bold yellow looks like a real action
+      // and primed the user to expect a move that doesn't come.
+      if (t.occupantType === drag.sourceType) {
+        return ` | dragging ${esc(srcTitle)} → [dim](no-op — release to cancel)[/]`;
+      }
       return ` | dragging ${esc(srcTitle)} → [bold yellow]swap[/] ${esc(panelTitle(t.occupantType))} (${t.column})`;
     }
     return ` | dragging ${esc(srcTitle)} → ${t.column} @ ${t.index}`;
