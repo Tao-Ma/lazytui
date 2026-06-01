@@ -78,6 +78,10 @@ function init() {
       undo: [],
       redo: [],
       titleEdit: { active: false, text: '' },
+      // Transient hint surfaced in the footer when a free-config / view-mode
+      // transition is blocked. Cleared when the user reaches a state where
+      // the block no longer applies (design_exit, successful view change).
+      notice: null,
     },
     // View-output (written by the render pass, read by mouse hit-tests
     // and design-mode drag math). The renderer-as-writer pattern is the
@@ -127,9 +131,23 @@ function update(msg, slice) {
     case 'view_shrink':
     case 'view_set':
     case 'view_drop_full_to_normal': {
+      // Block user-input view changes (`[` / `]`) while in free-config —
+      // the drag/resize gestures need a fully-visible grid, which half/
+      // full don't show. Programmatic Msgs (`view_set` from cmdline /
+      // pty-lifecycle, `view_drop_full_to_normal` from terminal exit)
+      // are system-driven and stay unguarded.
+      const md = getModel().modes;
+      const isUserInput = msg.type === 'view_expand' || msg.type === 'view_shrink';
+      if (md && md.freeConfigMode && isUserInput) {
+        if (slice.design && slice.design.notice === 'exit free-config (q) to change view mode') return slice;
+        return { ...slice, design: { ...slice.design, notice: 'exit free-config (q) to change view mode' } };
+      }
       const next = reduceViewMode(slice.viewMode, msg);
       if (next === slice.viewMode) return slice;
-      return [{ ...slice, viewMode: next }, [{ type: 'force_full_repaint' }]];
+      // Successful view change clears any stale notice (the user reached
+      // a state where the block no longer applies).
+      const nextSlice = { ...slice, viewMode: next, design: { ...slice.design, notice: null } };
+      return [nextSlice, [{ type: 'force_full_repaint' }]];
     }
     // focus. Stores the focused panel; refresh of the detail body for
     // the newly-focused panel is an effect (Cmd). msg.focus == null
@@ -154,6 +172,12 @@ function update(msg, slice) {
     // mode flags (`freeConfigMode`, `designTitleEditMode`) ride on
     // `apply_msg` Cmds the reducer applies (`mode_set` / `mode_clear`).
     case 'design_enter': {
+      // Refuse entry from half/full view — the drag/resize gestures
+      // operate on the full grid and need every cell visible. Surface a
+      // notice so the user knows why `q` / `:free-config` didn't fire.
+      if (slice.viewMode !== 'normal') {
+        return { ...slice, design: { ...slice.design, notice: 'free-config requires normal view ([ to return)' } };
+      }
       // Reset working state on entry; preserve `enabled` (the boot-time
       // --design CLI flag). v0.6: auto-open the panel-list overlay when
       // the pool has hidden entries — the discoverability hint that
@@ -170,7 +194,7 @@ function update(msg, slice) {
       const next = {
         ...slice,
         focus,
-        design: { enabled, drag: null, undo: [], redo: [], titleEdit: { active: false, text: '' } },
+        design: { enabled, drag: null, undo: [], redo: [], titleEdit: { active: false, text: '' }, notice: null },
         panelList: { open: hasHidden, cursor: 0 },
       };
       return [next, [{ type: 'apply_msg', msg: { type: 'mode_set', flag: 'freeConfigMode' } }]];
@@ -179,7 +203,7 @@ function update(msg, slice) {
       const enabled = slice.design && slice.design.enabled;
       const next = {
         ...slice,
-        design: { enabled, drag: null, undo: [], redo: [], titleEdit: { active: false, text: '' } },
+        design: { enabled, drag: null, undo: [], redo: [], titleEdit: { active: false, text: '' }, notice: null },
         panelList: { open: false, cursor: 0 },
       };
       return [next, [

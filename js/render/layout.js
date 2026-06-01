@@ -744,6 +744,14 @@ function renderFooter(model = getModel()) {
     if (footerLeftExtra) keys += ` │ ${footerLeftExtra}`;
   }
 
+  // Layout notice — a transient hint set by layout.update when a free-
+  // config / view-mode transition is refused. Shown in red so it reads
+  // as a refusal explanation, not normal status. Cleared by layout.update
+  // on the next state change that resolves the block (design_exit /
+  // successful view change).
+  const layoutNotice = layoutSlice.design && layoutSlice.design.notice;
+  if (layoutNotice) keys += ` | [bold red]${esc(layoutNotice)}[/]`;
+
   // Right tail: footer:right + visual-select tag + view-mode tag.
   // The visual-select tag (`[v-char]` / `[v-line]`) is a precursor to
   // the configurable status-bar segments planned for v0.5/v0.6 — when
