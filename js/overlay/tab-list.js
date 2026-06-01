@@ -41,7 +41,16 @@ const MAX_W = 50;
 // is the convention for ANY literal bracket entering richToAnsi —
 // same pattern as overlay/cmdline's _formatMatchLine.
 const TRIGGER_GLYPH = esc('[≡]');
-const TRIGGER_X_OFFSET = 2;  // after detail's `╭─`
+// Detail's top row is `╭─(o)[≡]─Title─…─╮`. Hotkey stays in the
+// conventional first position; the trigger sits immediately after.
+//   `╭`           col 0
+//   `─`           col 1
+//   `(o)`         cols 2..4   (hotkey display, 3 cells)
+//   `[≡]`         cols 5..7   (trigger glyph, 3 cells)
+//   `─Title…─╮`   col 8…
+// The 3-cell trigger displaces 3 trailing fill dashes before `╮` so
+// the panel border stays the same width as without the trigger.
+const TRIGGER_X_OFFSET = 5;  // after detail's `╭─(o)`
 const TRIGGER_VIS_W = 3;     // [, ≡, ]
 
 // Stash so the next render can blank the cells the previous overlay
@@ -224,12 +233,12 @@ function _maybeBlank() {
  *  class the old paint-on-top suffered (the `[_]` fix's sibling).
  *  Returns the modified panelOutput.
  *
- *  The trigger replaces the `(o)` hotkey display at cols
- *  `detail.x+2..detail.x+4` — both are 3 cells, so the width is
- *  preserved and the right border stays put. We re-emit `[fc]` after
- *  the trigger's `[/]` so the rest of the top row keeps its border
- *  color (the pre-fix paint-on-top didn't touch cells past the glyph,
- *  so they kept fc; a naked `[/]` here would reset them to default).
+ *  The trigger is inserted immediately after `(o)` (the hotkey display),
+ *  so the row reads `╭─(o)[≡]─Title─…─╮`. To absorb the trigger's 3
+ *  visible cells without widening the panel, 3 trailing fill dashes
+ *  are eaten from before the right corner. We re-emit `[fc]` after the
+ *  trigger's `[/]` so the rest of the top row keeps its border color
+ *  (a naked `[/]` would reset to terminal default).
  *
  *  No-op when:
  *    - panel isn't detail
@@ -238,6 +247,9 @@ function _maybeBlank() {
  *    - the top row's hotkey display isn't single-char (multi-char
  *      hotkeys would shift the width and aren't worth the complexity
  *      for what is, by convention, always single-char in this codebase)
+ *    - the top row has fewer than 3 trailing fill dashes (very narrow
+ *      panel or very long title — the trigger has nowhere to go without
+ *      overflowing the right border, so we bail)
  */
 function injectTabTrigger(panelOutput, p) {
   if (!panelOutput || p.type !== 'detail') return panelOutput;
@@ -269,10 +281,27 @@ function injectTabTrigger(panelOutput, p) {
   // Match `╭─(X)` right after the opening color tag — `X` is a single
   // hotkey char (the convention; renderPanel writes `(${hotkey})` from
   // a positionally-assigned single-letter key). Lazy `.*?` lets m[1]
-  // grow until the first `╭─\(.\)` matches.
-  const m = topRow.match(/^(.*?╭─)\([^)]\)(.*)$/);
+  // grow until the first `╭─\(.\)` matches. m[2] is the `(X)` capture
+  // we want to keep visible; m[3] is the rest of the row.
+  const m = topRow.match(/^(.*?╭─)(\([^)]\))(.*)$/);
   if (!m) return panelOutput;
-  return m[1] + triggerMarkup + m[2] + restRows;
+  // Eat 3 trailing fill dashes from before `╮` to absorb the trigger's
+  // 3 visible cells. If there aren't 3 spare dashes, fall back to the
+  // old "replace (o) with [≡]" behavior — the hotkey display is the
+  // less essential of the two when there's no room for both.
+  const after = m[3];
+  const cornerIdx = after.indexOf('╮');
+  if (cornerIdx >= 3
+      && after[cornerIdx - 1] === '─'
+      && after[cornerIdx - 2] === '─'
+      && after[cornerIdx - 3] === '─') {
+    const trimmed = after.slice(0, cornerIdx - 3) + after.slice(cornerIdx);
+    return m[1] + m[2] + triggerMarkup + trimmed + restRows;
+  }
+  // Fallback: too narrow / title too long — replace (o) with [≡] like
+  // the pre-v0.6 behavior so we still get the trigger, at the cost of
+  // hiding the hotkey label.
+  return m[1] + triggerMarkup + after + restRows;
 }
 
 function _triggerSuppressed() {

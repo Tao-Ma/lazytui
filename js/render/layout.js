@@ -396,8 +396,18 @@ function renderHalf(model) {
   layoutSlice.panelBounds = {};
   layoutSlice.panelBounds[focusedPanel.type] = { x: 0, y: 0, w: halfW, h: availH };
   if (detailPanel) layoutSlice.panelBounds.detail = { x: halfW, y: 0, w: COLS - halfW, h: availH };
-  const leftContent = _safeRender(rendererFor(focusedPanel.type), focusedPanel, halfW, availH);
-  const rightContent = detailPanel ? _safeRender(rendererFor('detail'), detailPanel, halfW, availH) : '';
+  let leftContent = _safeRender(rendererFor(focusedPanel.type), focusedPanel, halfW, availH);
+  let rightContent = detailPanel ? _safeRender(rendererFor('detail'), detailPanel, halfW, availH) : '';
+  // Bake the [≡] trigger into the detail render — same chrome as normal
+  // view so the user can open the tab list with the mouse in half view
+  // too. Hit-test math reads `panelBounds.detail` (right side), so when
+  // focused IS detail the left-side render also picks up the trigger
+  // visually but only the right-side click registers. Inject only on
+  // the right side to avoid that confusing dead glyph.
+  if (focusedPanel.type !== 'detail') {
+    leftContent = injectTabTrigger(leftContent, focusedPanel);  // no-op (non-detail)
+  }
+  if (rightContent) rightContent = injectTabTrigger(rightContent, detailPanel);
   return paintColumns(leftContent, rightContent);
 }
 
@@ -410,7 +420,10 @@ function renderFull(model) {
   if (!focusedPanel) return renderNormal(model);
   layoutSlice.panelBounds = {};
   layoutSlice.panelBounds[focusedPanel.type] = { x: 0, y: 0, w: COLS, h: availH };
-  const content = _safeRender(rendererFor(focusedPanel.type), focusedPanel, COLS, availH);
+  let content = _safeRender(rendererFor(focusedPanel.type), focusedPanel, COLS, availH);
+  // Bake the [≡] trigger when the full-view focused panel is detail —
+  // same parity with normal view.
+  content = injectTabTrigger(content, focusedPanel);  // no-op if non-detail
   return paintColumns(content, '');
 }
 

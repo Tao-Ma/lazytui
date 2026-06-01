@@ -181,4 +181,62 @@ describe('[viewer_reset_chrome] auto-closes the overlay on group switch', () => 
   });
 });
 
+// ===============================================================
+// Render-side regression: the [≡] trigger glyph is inserted AFTER (o),
+// not in place of it, so the user sees both the hotkey and the trigger.
+// Total visible width is preserved by eating 3 trailing fill dashes
+// from before the right corner.
+describe('[injectTabTrigger] (o)[≡] layout preserves panel width', () => {
+  const { renderPanel } = require('../render/panel');
+  const { injectTabTrigger } = require('../overlay/tab-list');
+  const { richToAnsi, visibleLen } = require('../io/ansi');
+  const api = require('../panel/api');
+  const { getModel } = require('../app/runtime');
+  const layout = require('../panel/layout');
+
+  function strip(s) { return s.replace(/\x1b\[[0-9;]*m/g, ''); }
+
+  // Register layout so its slice exists, then seed detail's panelBounds.
+  // Registry is idempotent on repeated calls within a test process.
+  try { api.registerComponent(layout); } catch (e) { /* already registered */ }
+  const layoutSlice = api.getComponentSlice('layout');
+  layoutSlice.panelBounds = { detail: { x: 0, y: 0, w: 40, h: 10 } };
+  layoutSlice.focus = 'detail';
+  getModel().modes = getModel().modes || {};
+  getModel().modes.tabListMode = false;
+  getModel().modes.freeConfigMode = false;
+
+  it('top row contains both (o) and [≡] with width preserved', () => {
+    const out = renderPanel({
+      width: 40, height: 10, lines: [], title: 'Detail', hotkey: 'o', focused: true,
+    });
+    const withTrigger = injectTabTrigger(out, { type: 'detail' });
+    const topBefore = out.split('\n')[0];
+    const topAfter = withTrigger.split('\n')[0];
+    const visBefore = strip(richToAnsi(topBefore));
+    const visAfter  = strip(richToAnsi(topAfter));
+    eq(visibleLen(topBefore), 40, 'pre-inject width = 40');
+    eq(visibleLen(topAfter),  40, 'post-inject width still = 40 (3 dashes eaten)');
+    assert(visAfter.includes('(o)'),  `(o) preserved: ${visAfter}`);
+    assert(visAfter.includes('[≡]'), `[≡] inserted: ${visAfter}`);
+    // [≡] sits right after (o) — both adjacent in the visible row.
+    assert(visAfter.indexOf('(o)[≡]') >= 0, `(o)[≡] adjacent: ${visAfter}`);
+  });
+
+  it('narrow detail (no room for both) falls back to (o)-replaced-by-[≡]', () => {
+    // Width 10: `╭─(o)─T───╮` — only 2 trailing dashes before ╮.
+    layoutSlice.panelBounds = { detail: { x: 0, y: 0, w: 10, h: 10 } };
+    const out = renderPanel({
+      width: 10, height: 10, lines: [], title: 'T', hotkey: 'o', focused: true,
+    });
+    const withTrigger = injectTabTrigger(out, { type: 'detail' });
+    const visAfter = strip(richToAnsi(withTrigger.split('\n')[0]));
+    eq(visibleLen(withTrigger.split('\n')[0]), 10, 'width preserved in fallback');
+    assert(visAfter.includes('[≡]'), 'trigger still shows');
+    assert(!visAfter.includes('(o)'), 'hotkey hidden in narrow fallback');
+    // Restore for any later tests in the file.
+    layoutSlice.panelBounds = { detail: { x: 0, y: 0, w: 40, h: 10 } };
+  });
+});
+
 report();
