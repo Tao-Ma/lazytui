@@ -6,6 +6,8 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-06-01
+
 ### Added
 - **Free-config mode + panel pool.** The v0.5 design mode evolves
   into "free-config mode" — a layout editor with a configurable
