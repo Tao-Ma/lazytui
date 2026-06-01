@@ -210,7 +210,7 @@ for "the same thing but headless."
 | Event hub | In-process pub/sub for plugins. Time-series, snapshot, matrix shapes. Cost scales with subscribers. |
 | Decorator slots | Plugins add glyphs to rows / titles / tabs / footer without touching the renderer. |
 | Cmdline (`:`) | `:quit`, `:refresh`, `:help`, plus plugin-registered verbs, with positional-arg plumbing. |
-| 6 themes + design mode | `--design` flag opens an interactive layout editor. |
+| 6 themes + free-config mode | `:free-config` (or the legacy `--design` flag) opens an interactive layout editor — drag/swap/resize panels, hide/show from a pool of declared panel definitions, save back to YAML. |
 | `--spec` flag | Prints the plugin-authoring bundle for AI agents (every rule in one file). |
 
 ## Status

@@ -115,6 +115,35 @@ instance". The mapping is built at parser-time in
 - `>` marks last-run action in actions panel
 - Lines wider than panel are truncated with `…`
 
+### Panel chrome glyphs
+
+Each placed panel's top-border row hosts up to four small interactive
+icons, theme-coloured per the Mac traffic-light convention. They're
+baked into the row's markup (not painted on top after-the-fact) so they
+ride atomically into `paintColumns`' single write — eliminates flicker
+on rows that get repainted while a glyph sits over them.
+
+| Glyph | Color | Where | When | Click |
+|---|---|---|---|---|
+| `[X]` | red | top-right of non-detail panels | free-config mode only | `pool_hide` — unplaces the panel; the entry stays in the pool (reachable via `:show <id>` or the `w` panel-list overlay) |
+| `[_]` | yellow | top-right of non-detail panels (4-cell gap left of `[X]` when both visible) | always (normal + free-config) | `panel_collapse_toggle` — collapses the panel to a single header row |
+| `[+]` | green | replaces `[_]` when the panel is already collapsed | always | toggle back to expanded |
+| `[≡]` | theme accent | top-left of detail (immediately after `(o)`) | always; suppressed inside cmdline / menu / confirm / prompt / register-popup / filter / copy / detail-search / prefix / title-edit modes | opens the centered **tab-list overlay** for switching among detail's tabs (Info, action tabs, terminal tabs, content tabs) |
+
+Detail's top row reads `╭─(o)[≡]─Detail─…─╮` — both the hotkey label
+and the tab-list trigger are visible, the trigger's 3-cell width
+absorbed by eating 3 trailing fill dashes before the right corner.
+When that absorption can't fit (very narrow detail or very long
+title), the trigger replaces `(o)` instead so the affordance still
+shows.
+
+All glyphs suppress during a drag in flight (the drag affordance owns
+the screen — drop targets, live preview, footer). Theme slots
+`chrome_close`, `chrome_collapse`, `chrome_expand`, `chrome_trigger`
+let palettes override the defaults. Glyphs dim with the panel when
+the panel isn't focused (composes `[dim]` with the color rather than
+defaulting to the terminal's plain `[dim]` foreground).
+
 ## Concept
 
 **Groups panel focused, Status tab active:**
