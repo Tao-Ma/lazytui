@@ -140,19 +140,25 @@ function renderPoolDragOverlay(drag) {
  *  Used by the pool-drag replace affordance to highlight the cell that
  *  would be replaced without disturbing its content (top, sides, bottom
  *  borders only). The painted characters overwrite the cell's existing
- *  border, so the effect is "the border just lit up in <color>". */
+ *  border, so the effect is "the border just lit up in <color>".
+ *
+ *  All cursor-move + glyph sequences are accumulated into one buffer
+ *  and emitted via a single stdout.write — pre-fix this issued 2 + 2*(h-2)
+ *  separate writes (one per cell), so a 20-row panel meant 38 syscalls
+ *  per drag-motion frame and the frame edges could tear under load. */
 function _drawFrame(x, y, w, h, color) {
   if (w < 2 || h < 2) return;
   const tl = '╭', tr = '╮', bl = '╰', br = '╯';
   const top    = `[${color}]${tl}${'─'.repeat(w - 2)}${tr}[/]`;
   const bot    = `[${color}]${bl}${'─'.repeat(w - 2)}${br}[/]`;
   const sideC  = `[${color}]│[/]`;
-  stdout.write(`\x1b[${y + 1};${x + 1}H` + richToAnsi(top) + RESET);
+  let buf = `\x1b[${y + 1};${x + 1}H` + richToAnsi(top) + RESET;
   for (let row = 1; row < h - 1; row++) {
-    stdout.write(`\x1b[${y + row + 1};${x + 1}H` + richToAnsi(sideC) + RESET);
-    stdout.write(`\x1b[${y + row + 1};${x + w}H` + richToAnsi(sideC) + RESET);
+    buf += `\x1b[${y + row + 1};${x + 1}H` + richToAnsi(sideC) + RESET;
+    buf += `\x1b[${y + row + 1};${x + w}H` + richToAnsi(sideC) + RESET;
   }
-  stdout.write(`\x1b[${y + h};${x + 1}H` + richToAnsi(bot) + RESET);
+  buf += `\x1b[${y + h};${x + 1}H` + richToAnsi(bot) + RESET;
+  stdout.write(buf);
 }
 
 /**
