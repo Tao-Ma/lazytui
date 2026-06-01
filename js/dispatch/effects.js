@@ -228,6 +228,18 @@ function installBuiltins() {
   });
   // cmdline_clear: drop the held registry + reset render residue (submit/cancel).
   registerEffect('cmdline_clear', () => { require('./cmdline').clear(); });
+  // cmdline_preview: drive the live-preview teardown/apply for the selected
+  // match. Emitted from cmdline_set_matches + cmdline_nav (any sel change).
+  // Generic — the framework knows nothing about themes; entries opt in by
+  // exporting `preview: () => () => void` (effect + teardown closure).
+  registerEffect('cmdline_preview', (eff) => {
+    require('./cmdline').previewAtSel(eff.sel);
+  });
+  // cmdline_revert_preview: call any active teardown without dropping the
+  // registry — emitted from cmdline_cancel so Esc restores previewed state.
+  registerEffect('cmdline_revert_preview', () => {
+    require('./cmdline').revertPreview();
+  });
   // menu_action: the verb the user picked in the command menu. focus_panel
   // carries its hotkey as a suffix; everything else is a bare handleAction verb.
   registerEffect('menu_action', (eff) => {

@@ -27,6 +27,14 @@ const { getCommands, getItems: apiGetItems, dispatchMsg, wrap } = require('../pa
 // model.modal.cmdline.matches. cmdline_run invokes one by index.
 let _full = [];
 
+// Active preview teardown — set by previewAtSel when an entry's preview()
+// returns a closure, called when the selection moves OFF that entry (or
+// the user cancels). Submit drops it WITHOUT calling — the entry's run()
+// will produce the committed state. Generalized: any cmdline entry can
+// opt into live preview by defining `preview: () => teardownFn`; the
+// framework doesn't know what the preview affects (theme, focus, view).
+let _activeTeardown = null;
+
 // --- Rebuild / run / clear (the effect side, driven by Cmds) ---
 
 /**
@@ -59,10 +67,58 @@ function runAt(sel, args) {
 
 /** Drop the held registry + reset the render residue tracker (cmdline_clear,
  *  emitted on submit/cancel). Render residue lives in the overlay module
- *  post-v0.6 split; ask it to reset alongside the dispatch-side state. */
+ *  post-v0.6 split; ask it to reset alongside the dispatch-side state.
+ *
+ *  Also drops any active preview teardown WITHOUT calling it. On submit
+ *  the chosen entry's run() produces the final state, so we don't want
+ *  to undo the preview; on cancel, the reducer emits
+ *  `cmdline_revert_preview` BEFORE this clear, so the teardown has
+ *  already fired. */
 function clear() {
   _full = [];
+  _activeTeardown = null;
   require('../overlay/cmdline')._resetRenderState();
+}
+
+/** Drive the live preview for the selected match. Called from the
+ *  `cmdline_preview` Cmd handler on every sel change (typing-narrowed
+ *  matches via cmdline_set_matches, or arrow-nav via cmdline_nav).
+ *
+ *  Generic protocol: an entry opts in by defining `preview: () => () => void`
+ *  — preview() runs the effect, returns a teardown closure. The framework:
+ *    1. Calls any active teardown (selection moving OFF the previously
+ *       previewed entry, or text just cleared).
+ *    2. If cmdline text is non-empty AND the new match has a `preview`,
+ *       invokes it and stashes the returned teardown.
+ *
+ *  The text-non-empty gate prevents previewing on cmdline open — `:`
+ *  opens with text='' and matches=ALL entries; sel=0 might happen to be
+ *  a previewable entry, and we don't want the screen flashing without
+ *  user intent. Once the user types anything, previewing kicks in. */
+function previewAtSel(sel) {
+  if (_activeTeardown) {
+    try { _activeTeardown(); }
+    catch (e) { console.error('[cmdline preview teardown]', e && e.message); }
+    _activeTeardown = null;
+  }
+  const text = require('../app/runtime').getModel().modal.cmdline.text;
+  if (!text) return;
+  const match = _full[sel];
+  if (!match || typeof match.preview !== 'function') return;
+  try {
+    const teardown = match.preview();
+    if (typeof teardown === 'function') _activeTeardown = teardown;
+  } catch (e) { console.error('[cmdline preview]', e && e.message); }
+}
+
+/** Call any active preview's teardown. Emitted from `cmdline_cancel`
+ *  before `cmdline_clear` so Esc restores whatever was previewed. */
+function revertPreview() {
+  if (_activeTeardown) {
+    try { _activeTeardown(); }
+    catch (e) { console.error('[cmdline preview teardown]', e && e.message); }
+    _activeTeardown = null;
+  }
 }
 
 // --- Registry ---
@@ -139,6 +195,10 @@ function buildRegistry() {
       // rebuildMatches can dispatch to it when the user types past the
       // command name.
       argComplete: typeof cmd.argComplete === 'function' ? cmd.argComplete : null,
+      // preview is the optional live-preview hook (see previewAtSel) —
+      // entries opt into the cursor-driven preview by exporting
+      // `preview: () => () => void` (effect + teardown closure).
+      preview: typeof cmd.preview === 'function' ? cmd.preview : null,
     });
   }
 
@@ -237,6 +297,7 @@ function runCommandString(str) {
 
 module.exports = {
   rebuild, runAt, clear,
+  previewAtSel, revertPreview,
   runCommandString,
   // Test-only export — buffer parsing reused by test-cmdline-args.js.
   _splitQuery: splitQuery,

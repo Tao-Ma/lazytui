@@ -551,7 +551,11 @@ function update(model, msg) {
       let scroll = Math.min(Math.max(0, c.scroll || 0), maxScroll);
       if (sel < scroll) scroll = sel;
       else if (sel >= scroll + CMDLINE_VW) scroll = sel - CMDLINE_VW + 1;
-      return [_withModal(model, { cmdline: { ...c, matches, sel, scroll } }), []];
+      // cmdline_preview drives the live-preview teardown/apply on the new
+      // sel (typing-narrowed match set). Entries opt in via preview(); the
+      // framework calls teardown when sel moves off.
+      return [_withModal(model, { cmdline: { ...c, matches, sel, scroll } }),
+              [{ type: 'cmdline_preview', sel }]];
     }
     case 'cmdline_nav': {
       const c = model.modal.cmdline;
@@ -569,7 +573,8 @@ function update(model, msg) {
       let scroll = c.scroll || 0;
       if (sel < scroll) scroll = sel;
       else if (sel >= scroll + CMDLINE_VW) scroll = sel - CMDLINE_VW + 1;
-      return [_withModal(model, { cmdline: { ...c, sel, scroll } }), []];
+      return [_withModal(model, { cmdline: { ...c, sel, scroll } }),
+              [{ type: 'cmdline_preview', sel }]];
     }
     case 'cmdline_key': {
       const c = model.modal.cmdline;
@@ -634,10 +639,13 @@ function update(model, msg) {
     }
     case 'cmdline_cancel':
       if (!model.modes.cmdMode) return [model, []];
+      // cmdline_revert_preview restores whatever the active preview's
+      // teardown points at (theme on revert, etc.) BEFORE clear drops
+      // the registry — Esc must restore, not commit.
       return [{
         ..._withModes(model, { cmdMode: false }),
         modal: { ...model.modal, cmdline: { text: '', sel: 0, scroll: 0, matches: [] } },
-      }, [{ type: 'cmdline_clear' }]];
+      }, [{ type: 'cmdline_revert_preview' }, { type: 'cmdline_clear' }]];
     // --- design-mode Msgs (post-Phase-6 single-writer cleanup). Every
     // design_* case retired from the reducer; layout.update owns the slice
     // writes now (it calls mdesign.* leaves directly so the writes happen

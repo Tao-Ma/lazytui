@@ -95,12 +95,15 @@ const THEMES = {
 };
 
 let active = THEMES[DEFAULT_THEME];
+let activeName = DEFAULT_THEME;
 
 function setTheme(name) {
-  active = THEMES[name] || THEMES[DEFAULT_THEME];
+  if (THEMES[name]) { active = THEMES[name]; activeName = name; }
+  else              { active = THEMES[DEFAULT_THEME]; activeName = DEFAULT_THEME; }
 }
 
 function theme() { return active; }
+function activeThemeName() { return activeName; }
 function themeNames() { return Object.keys(THEMES); }
 
-module.exports = { setTheme, theme, themeNames, THEMES, DEFAULT_THEME };
+module.exports = { setTheme, theme, activeThemeName, themeNames, THEMES, DEFAULT_THEME };

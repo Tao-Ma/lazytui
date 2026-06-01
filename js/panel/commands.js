@@ -116,7 +116,7 @@ const FRAMEWORK_COMMANDS = [
  * --design flag).
  */
 function _frameworkDynamicCommands(m) {
-  const { setTheme, themeNames } = require('../render/themes');
+  const { setTheme, themeNames, activeThemeName } = require('../render/themes');
   const { allPanels } = require('../app/state');
   const api = require('./api');
   const out = [];
@@ -124,6 +124,16 @@ function _frameworkDynamicCommands(m) {
     out.push({
       name: `theme ${name}`,
       desc: `Switch to ${name} theme`,
+      // Live preview while the user navigates cmdline matches — captures
+      // the active theme at preview-time and returns the closure that
+      // restores it (the cmdline framework calls it when sel moves off
+      // or the user cancels). On submit, run() does the same setTheme
+      // so the preview is the committed state.
+      preview: () => {
+        const orig = activeThemeName();
+        setTheme(name);
+        return () => setTheme(orig);
+      },
       run: () => { setTheme(name); },
     });
   }
