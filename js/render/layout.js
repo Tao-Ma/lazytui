@@ -40,7 +40,7 @@ const { renderCmdline } = require('../overlay/cmdline');
 const { renderConfirmOverlay } = require('../overlay/confirm');
 const { renderPromptOverlay } = require('../overlay/prompt');
 const { renderDesignOverlay, getDesignFooter } = require('../overlay/design');
-const { renderCloseButtons, renderCollapseButtons } = require('./panel-widgets');
+const { injectTopRowChrome } = require('./panel-widgets');
 const { renderPanelListOverlay } = require('../overlay/panel-list');
 const { renderTabList, renderTabTrigger } = require('../overlay/tab-list');
 const { collectViewContributions } = require('../panel/api');
@@ -342,21 +342,31 @@ function renderNormal(model) {
   const { leftW, rightW } = calcLayout(model);
   const layoutSlice = getComponentSlice('layout');
   layoutSlice.panelBounds = {};
+  const freeConfigMode = !!(model.modes && model.modes.freeConfigMode);
+  // Helper to render one panel + bake the `[_]` / `[X]` chrome into its
+  // top border row. Baking (vs cursor-move overpaint) keeps paintColumns'
+  // write atomic — no flicker on lower-left panels when detail scrolls.
+  const renderOne = (p, w, h, x, y) => {
+    const b = { x, y, w, h };
+    layoutSlice.panelBounds[p.type] = b;
+    const out = p.collapsed
+      ? _renderCollapsed(p, w)
+      : _safeRender(rendererFor(p.type), p, w, h);
+    return injectTopRowChrome(out, p, b, freeConfigMode);
+  };
   let leftY = 0;
   const leftOutputs = layoutSlice.arrange.leftPanels.map(p => {
     const h = layoutSlice.panelHeights[p.type] || 0;
-    layoutSlice.panelBounds[p.type] = { x: 0, y: leftY, w: leftW, h };
+    const out = renderOne(p, leftW, h, 0, leftY);
     leftY += h;
-    if (p.collapsed) return _renderCollapsed(p, leftW);
-    return _safeRender(rendererFor(p.type), p, leftW, h);
+    return out;
   });
   let rightY = 0;
   const rightOutputs = layoutSlice.arrange.rightPanels.map(p => {
     const h = layoutSlice.panelHeights[p.type] || 0;
-    layoutSlice.panelBounds[p.type] = { x: leftW, y: rightY, w: rightW, h };
+    const out = renderOne(p, rightW, h, leftW, rightY);
     rightY += h;
-    if (p.collapsed) return _renderCollapsed(p, rightW);
-    return _safeRender(rendererFor(p.type), p, rightW, h);
+    return out;
   });
   return paintColumns(leftOutputs.join('\n'), rightOutputs.join('\n'));
 }
@@ -520,17 +530,18 @@ function render(model = getModel()) {
   if (mainDidFull) _forceOverlayFull = true;
   renderTerminalOverlay(model);
   renderFooter(model);
-  // Collapse-toggle widgets — painted on every non-detail placed panel
-  // in BOTH free-config and normal mode (unlike close-buttons which are
-  // free-config-only). Only meaningful in `normal` view mode (half/full
-  // hide the column structure). After the main paint so the glyph
-  // overwrites the panel's top border.
-  if (viewMode === 'normal') renderCollapseButtons();
+  // Panel-chrome glyphs (`[_]`/`[+]` collapse, `[X]` close in free-config)
+  // are baked into each panel's top-border row by renderNormal — see
+  // panel-widgets.js#injectTopRowChrome. paintColumns then writes the
+  // row WITH the glyph in place, so there's no cursor-move-back-and-
+  // overpaint. Earlier "paint-on-top" approaches flickered on every
+  // detail-scroll frame because the row-paint momentarily restored `─`
+  // at the glyph cells.
   // Overlays are mutually exclusive in practice (modeChain enforces it).
   // Order matches dispatch.js's modeChain: design > menu > copy.
   if (md.copyMode)    renderCopyMenu();
   if (md.menuOpen)    renderMenu();
-  if (md.freeConfigMode)  { renderCloseButtons(); renderDesignOverlay(); renderPanelListOverlay(); }
+  if (md.freeConfigMode)  { renderDesignOverlay(); renderPanelListOverlay(); }
   if (md.cmdMode)     renderCmdline();
   if (md.confirmMode) renderConfirmOverlay();
   if (md.promptMode)  renderPromptOverlay();

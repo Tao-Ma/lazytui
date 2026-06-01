@@ -26,14 +26,19 @@
  *   - panels too narrow for the glyph
  *   - any panel while a drag is in flight (the drag overlays take over)
  *
- * Pure paint-on-top after the main `paintColumns` pass. The hit-tests
- * are pure derivations over `slice.arrange` + `slice.panelBounds`
- * (same geometry the render pass wrote).
+ * Baked into the panel's own top-border row markup (renderNormal calls
+ * `injectTopRowChrome` before joining outputs). paintColumns then writes
+ * the row WITH the glyph already in place — no second write, no cursor-
+ * move back to overpaint. Pre-fix this module wrote each glyph in its
+ * own stdout.write after paintColumns; even with both in one syscall the
+ * terminal still saw "write `─` then write `[_]`" sequentially, so the
+ * `[_]` cells visibly flickered as `─` whenever the row got repainted
+ * (e.g. on every detail-scroll frame for lower-left panels). Hit-tests
+ * are pure derivations over `slice.arrange` + `slice.panelBounds` (same
+ * geometry the render pass wrote).
  */
 'use strict';
 
-const { RESET, richToAnsi } = require('../io/ansi');
-const { stdout } = require('../io/term');
 const { getComponentSlice } = require('../panel/api');
 
 const GLYPH_W = 3;
@@ -61,17 +66,77 @@ function _placedWidgetTargets() {
     .filter(({ b }) => b && b.h >= 1);
 }
 
-/** Paint `[_]`/`[+]` on every eligible panel. Always-on in normal view
- *  (the render() caller gates on viewMode). */
-function renderCollapseButtons() {
-  const targets = _placedWidgetTargets();
-  if (!targets) return;
-  for (const { p, b } of targets) {
-    if (b.w < COLLAPSE_MIN_W) continue;
-    const x0 = _collapseGlyphX0(b);
-    const glyph = p.collapsed ? '\\[+]' : '\\[_]';
-    stdout.write(`\x1b[${b.y + 1};${x0 + 1}H` + richToAnsi(`[bold cyan]${glyph}[/]`) + RESET);
+/** Inject the panel-chrome glyphs into the top border row of `panelOutput`
+ *  (the markup string produced by renderPanel / _renderCollapsed) so the
+ *  glyph rides atomically in paintColumns' write. Returns the modified
+ *  output. No-op when:
+ *    - the panel is detail (excluded — `[_]` and `[X]` not allowed there)
+ *    - a drag is in flight (drag affordance owns the screen)
+ *    - the top row is too narrow to host the glyph(s)
+ *    - the trailing fill (`─`-run before `╮[/]`) is shorter than the
+ *      chrome width
+ *
+ *  The injection rewrites the very end of the first line — `─{N}╮[/]` —
+ *  by replacing `N` trailing fills with `(N - chromeW)` fills plus the
+ *  chrome markup, then the corner + close tag. The lazy-match anchored
+ *  to end-of-line locks onto the final `─*` run, not any `─` chars inside
+ *  the title text. */
+function injectTopRowChrome(panelOutput, p, b, freeConfigMode) {
+  if (!panelOutput || p.type === 'detail') return panelOutput;
+  const slice = getComponentSlice('layout');
+  if (slice && slice.design && slice.design.drag) return panelOutput;
+  if (!b || b.h < 1 || b.w < COLLAPSE_MIN_W) return panelOutput;
+
+  // Build chrome markup + measure visible width. [X] sits 1 col left of
+  // [_] (4-cell gap including the literal `─` left untouched between
+  // them), matching the geometry the hit-tests assume.
+  const closeStyle    = 'bold red';
+  const collapseStyle = 'bold cyan';
+  let chromeMarkup = '';
+  let chromeW = 0;
+  const wantClose = freeConfigMode && b.w >= CLOSE_PLUS_COLLAPSE_MIN_W;
+  if (wantClose) {
+    chromeMarkup += `[${closeStyle}]${CLOSE_GLYPH}[/]`;
+    // The gap cell stays as a `─` from the existing fill (kept in the
+    // trimmed run below) — visually `…─[X]─[_]╮`. Reserve only the 3
+    // cells [X] occupies.
+    chromeW += GLYPH_W;
   }
+  const collapseGlyph = p.collapsed ? '\\[+]' : '\\[_]';
+  // Always-on in normal view (renderNormal is only called when viewMode==='normal').
+  chromeMarkup += `[${collapseStyle}]${collapseGlyph}[/]`;
+  chromeW += GLYPH_W;
+  // When both are painted we need an additional gap cell between [X] and
+  // [_] — that cell stays as a `─` from the kept fill, but we have to
+  // consume one more fill cell on injection so total width balances.
+  if (wantClose) chromeW += 1;
+
+  const nlIdx = panelOutput.indexOf('\n');
+  const topRow  = nlIdx >= 0 ? panelOutput.slice(0, nlIdx) : panelOutput;
+  const restRows = nlIdx >= 0 ? panelOutput.slice(nlIdx) : '';
+
+  // Anchor to end-of-line so the captured `─*` is the FINAL fill run
+  // (not a `─` inside the title). The lazy `.*?` lets m[1] grow until
+  // the suffix matches; ─* is greedy so it grabs the whole final run.
+  const m = topRow.match(/^(.*?)(─*)╮\[\/\]$/);
+  if (!m) return panelOutput;
+  if (m[2].length < chromeW) return panelOutput;
+
+  const kept = m[2].length - chromeW;
+  let injected;
+  if (wantClose) {
+    // …─[X]─[_]╮ — keep one fill cell BETWEEN [X] and [_].
+    // chromeW above already reserved (3 + 1 + 3) = 7 cells, but our
+    // chromeMarkup is `[X][_]` glued together. Split it: emit [X], one
+    // `─`, then [_].
+    const closeMarkup = `[${closeStyle}]${CLOSE_GLYPH}[/]`;
+    const cgly = p.collapsed ? '\\[+]' : '\\[_]';
+    const colMarkup = `[${collapseStyle}]${cgly}[/]`;
+    injected = '─'.repeat(kept) + closeMarkup + '─' + colMarkup;
+  } else {
+    injected = '─'.repeat(kept) + chromeMarkup;
+  }
+  return m[1] + injected + '╮[/]' + restRows;
 }
 
 /** Hit-test the `[_]`/`[+]` glyphs. Returns the panel id under (mx, my)
@@ -85,18 +150,6 @@ function hitTestCollapseButton(mx, my) {
     if (my === b.y && mx >= x0 && mx < x0 + GLYPH_W) return p.id;
   }
   return null;
-}
-
-/** Paint `[X]` quick-hide on every eligible panel. Free-config only
- *  (the render() caller gates on `md.freeConfigMode`). */
-function renderCloseButtons() {
-  const targets = _placedWidgetTargets();
-  if (!targets) return;
-  for (const { p, b } of targets) {
-    if (b.w < CLOSE_PLUS_COLLAPSE_MIN_W) continue;
-    const x0 = _closeGlyphX0(b);
-    stdout.write(`\x1b[${b.y + 1};${x0 + 1}H` + richToAnsi(`[bold red]${CLOSE_GLYPH}[/]`) + RESET);
-  }
 }
 
 /** Hit-test the `[X]` glyphs. Returns the panel id under (mx, my)
@@ -113,6 +166,7 @@ function hitTestCloseButton(mx, my) {
 }
 
 module.exports = {
-  renderCollapseButtons, hitTestCollapseButton,
-  renderCloseButtons,    hitTestCloseButton,
+  injectTopRowChrome,
+  hitTestCollapseButton,
+  hitTestCloseButton,
 };
