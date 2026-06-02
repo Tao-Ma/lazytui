@@ -29,7 +29,7 @@ const { truncate } = require('./panel');
 const { isTerminalTab, activeTerminalId, activeTerminalConfig,
         getTabInfo, findEphemeralByid } = require('../panel/viewer/tabs');
 const { ensureSession, getSession, resizeSession } = require('../io/terminal');
-const {getPanelDef, getComponentSlice, getFocus, dispatchMsg, wrap } = require('../panel/api');
+const {getPanelDef, getComponentSlice, getFocus, dispatchMsg, wrap, instanceKind } = require('../panel/api');
 const { renderCopyMenu } = require('../overlay/copy');
 const { render: renderRegisterPopup } = require('../overlay/register-popup');
 const { renderMenu } = require('../overlay/menu');
@@ -710,7 +710,7 @@ function footerKeys(model) {
   }
   if (md.menuOpen)   return ' ↑↓ select | Esc close | Enter run';
 
-  if (getFocus() === 'detail') {
+  if (instanceKind(getFocus()) === 'detail') {
     const { total } = getTabInfo();
     const segs = ['←→ panel'];
     if (total > 1) segs.push(']\\[ tabs');
@@ -733,10 +733,10 @@ function footerKeys(model) {
     }
     return ' ' + segs.join(' | ');
   }
-  if (getFocus() === 'actions') {
+  if (instanceKind(getFocus()) === 'actions') {
     return ' ↑↓ select | ←→ panel | / filter | +/_ view | x menu | q quit | Enter run';
   }
-  if (getFocus() === 'groups') {
+  if (instanceKind(getFocus()) === 'groups') {
     return ' ↑↓ select | ←→ panel | / filter | +/_ view | x menu | q quit | Enter actions';
   }
   return ' ↑↓ select | ←→ panel | / filter | +/_ view | x menu | q quit';

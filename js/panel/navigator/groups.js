@@ -31,7 +31,7 @@ const {
   esc, theme, renderPanel,
   getSel, getScroll, isMultiSel,
   statusFor,
-  getComponentSlice, getFocus,
+  getComponentSlice, getFocus, instanceKind,
 } = require('../api');
 
 // --- pure tree transforms (return-new slice + cascade descriptor) ---
@@ -299,7 +299,7 @@ function render(panel, w, h, slice) {
   const isQuick = slice.tab === 'quick';
   const lines = slice.list.map((group, i) => {
     const t = theme();
-    const isSel = i === sel && getFocus() === 'groups';
+    const isSel = i === sel && instanceKind(getFocus()) === 'groups';
     let treeSeg;
     let labelStr;
     if (isQuick) {
@@ -326,7 +326,7 @@ function render(panel, w, h, slice) {
     width: w, height: h, lines,
     title: _groupsTitle(panel.title, slice), hotkey: panel.hotkey,
     panelType: 'groups',
-    focused: getFocus() === 'groups',
+    focused: instanceKind(getFocus()) === 'groups',
     count: [sel + 1, slice.list.length],
     scrollOffset: getScroll('groups'),
   });

@@ -24,7 +24,7 @@
 const { getTabInfo, isTerminalTab, activeContentTab } = require('./tabs');
 const {
   renderPanel,
-  getComponentSlice, getFocus, getPanelDef, getItems, wrap,
+  getComponentSlice, getFocus, getPanelDef, getItems, wrap, instanceKind,
 } = require('../api');
 const ms = require('../../leaves/search');
 const pt = require('../../leaves/pane-tabs');
@@ -310,7 +310,7 @@ function update(msg, slice) {
     //     escape                  cancel
     case 'key': {
       const m = getModel();
-      if (getFocus() !== 'detail' || m.modes.terminalMode) return slice;
+      if (instanceKind(getFocus()) !== 'detail' || m.modes.terminalMode) return slice;
       // Higher-priority modes (menu/cmd/etc.) are filtered upstream by the
       // modeChain in dispatch.handleKey; this guard is belt-and-suspenders.
       if (m.modes.menuOpen || m.modes.cmdMode || m.modes.confirmMode ||
@@ -413,7 +413,7 @@ function render(panel, w, h, slice) {
   const innerH = h - 2;
   const dp = getComponentSlice('layout').arrange.rightPanels.find(p => p.type === 'detail');
   const hotkey = dp ? dp.hotkey : '';
-  const isFocused = getFocus() === 'detail' || m.modes.terminalMode;
+  const isFocused = instanceKind(getFocus()) === 'detail' || m.modes.terminalMode;
   if (isTerminalTab()) {
     return renderPanel({
       width: w, height: h, lines: [],

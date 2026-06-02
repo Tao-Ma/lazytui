@@ -18,7 +18,7 @@ const {
   esc, theme, renderPanel,
   getSel, getScroll, isMultiSel,
   getItems: apiGetItems, setActiveTab,
-  getComponentSlice, getFocus,
+  getComponentSlice, getFocus, instanceKind,
 } = require('../api');
 
 function getItems() { return history.all(); }
@@ -80,7 +80,7 @@ function copyOptions(entry) {
 function render(panel, w, h) {
   const items = apiGetItems('history', null);
   const sel = getSel('history');
-  const isFocused = getFocus() === 'history';
+  const isFocused = instanceKind(getFocus()) === 'history';
   const lines = items.map((entry, i) => {
     const time = fmtTime(entry.startedAt);
     const dur = fmtDuration(entry).padStart(5, ' ');
@@ -130,7 +130,7 @@ function update(msg, slice) {
   // Phase 4a — nav chrome Msgs handled by the shared leaf.
   if (mnav.isNavMsg(msg)) return mnav.apply(slice, msg);
   if (msg.type !== 'key' || msg.key !== 'return') return slice;
-  if (getFocus() !== 'history') return slice;
+  if (instanceKind(getFocus()) !== 'history') return slice;
   const entry = history.all()[getSel('history')];
   // Claim `return` even with no entry — the framework's run_selected
   // default (viewer_show_info) would just re-render the same Info pane

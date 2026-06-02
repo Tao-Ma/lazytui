@@ -24,7 +24,8 @@
 const { allPanels, getSel } = require('../app/state');
 const { render } = require('../render/layout');
 const { getPanelDef, getItems, idOf, getComponentSlice,
-       getComponentOwningPanel, dispatchMsg, dispatchKeyToFocused, wrap, getFocus } = require('../panel/api');
+       getComponentOwningPanel, dispatchMsg, dispatchKeyToFocused, wrap, getFocus,
+       instanceKind } = require('../panel/api');
 const copy = require('../overlay/copy');
 const registerPopup = require('../overlay/register-popup');
 const { isTerminalTab, activeTerminalId, findEphemeralByid,
@@ -106,7 +107,7 @@ function toggleMultiSelOnFocused() {
  * detail panel. Used to gate `v` (enter list-select mode) and `*`.
  */
 function _isListPanel(focus) {
-  if (focus === 'detail') return false;
+  if (instanceKind(focus) === 'detail') return false;
   const def = getPanelDef(focus);
   return !!(def && typeof def.getItems === 'function');
 }
@@ -336,7 +337,7 @@ function handleNormalKey(key, seq) {
   // (today: groups → All/Quick), they cycle those. Otherwise the keys fall
   // through to the global detail-tab cycle below — preserving the prior
   // behavior for users hitting [ / ] from any other panel.
-  if ((key === '[' || key === ']') && getFocus() === 'groups' && _groupsHasQuick()) {
+  if ((key === '[' || key === ']') && instanceKind(getFocus()) === 'groups' && _groupsHasQuick()) {
     // toggle_groups_tab moved to groups.update in Phase C — route via
     // the Component fan-out, not the root reducer.
     dispatchMsg(wrap('groups', { type: 'toggle_groups_tab' }));
@@ -402,7 +403,7 @@ function handleNormalKey(key, seq) {
       // On a dead ephemeral terminal tab, `x` closes it instead of
       // opening the menu. Lets the user dismiss a non-zero exit
       // (clean exits auto-close from the PTY onExit handler).
-      if (getFocus() === 'detail' && isTerminalTab()) {
+      if (instanceKind(getFocus()) === 'detail' && isTerminalTab()) {
         const id = activeTerminalId();
         if (id && isSessionDead(id)) {
           const eph = findEphemeralByid(id);
@@ -412,7 +413,7 @@ function handleNormalKey(key, seq) {
       // Content tabs (e.g. file-browser opens) close on `x` from
       // detail focus — no liveness concept like PTYs; users want a
       // close gesture, and `x` mirrors the dead-terminal flow.
-      if (getFocus() === 'detail' && isContentTab()) {
+      if (instanceKind(getFocus()) === 'detail' && isContentTab()) {
         const ct = activeContentTab();
         if (ct) { removeContentTab(getModel().currentGroup, ct[0]); break; }
       }
@@ -436,8 +437,8 @@ function handleNormalKey(key, seq) {
       // Filter doesn't apply to the (non-list) detail panel — overload
       // `/` there as vim/less-style search instead. Same key, different
       // mode based on focus.
-      if (getFocus() === 'detail') dispatchMsg(wrap('detail', { type: 'viewer_search_enter' }));
-      else                          _enterFilterMode();
+      if (instanceKind(getFocus()) === 'detail') dispatchMsg(wrap(getFocus(), { type: 'viewer_search_enter' }));
+      else                                        _enterFilterMode();
       break;
     case 'y':              enterCopyMode(); break;
     case '"':              applyMsg({ type: 'register_popup_enter' }); break;

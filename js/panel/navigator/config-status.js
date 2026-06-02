@@ -31,7 +31,7 @@ const { spawnSync } = require('child_process');
 const {
   esc, theme, renderPanel,
   getScroll, getSel,
-  getComponentSlice, getFocus,
+  getComponentSlice, getFocus, instanceKind,
 } = require('../api');
 const { getModel } = require('../../app/runtime');
 const mnav = require('../../leaves/nav');
@@ -288,7 +288,7 @@ function rowText(item, isSelected) {
 function render(panel, w, h, slice) {
   const items = buildItems(slice, _files());
   const sel = getSel('config-status');
-  const focused = getFocus() === 'config-status';
+  const focused = instanceKind(getFocus()) === 'config-status';
   const lines = items.map((item, i) => rowText(item, focused && i === sel));
   const title = `${panel.title || 'Config'} — ${TAB_LABELS[tabIdx(slice)]}`;
   return renderPanel({

@@ -215,7 +215,7 @@ function update(msg, slice) {
       // Track non-detail focus for half view — the left-side panel
       // sticks at the last non-detail focus so moving focus to detail
       // doesn't make the other half vanish behind a duplicate detail.
-      const halfLeftPanel = next !== 'detail' ? next : slice.halfLeftPanel;
+      const halfLeftPanel = route.instanceKind(next) !== 'detail' ? next : slice.halfLeftPanel;
       // v0.6.1 Phase 5 — sticky pointer to the most recent viewer-
       // kind tab. resolveTarget('viewer') reads this when no viewer
       // is currently focused. instanceKind() == VIEWER_KIND filters
@@ -285,7 +285,7 @@ function update(msg, slice) {
       // through `focus_set`, so halfLeftPanel didn't track in-mode
       // movement. Commit the current focus on exit so half-view's
       // left-panel fallback reflects where the user landed.
-      const halfLeftPanel = slice.focus !== 'detail' ? slice.focus : slice.halfLeftPanel;
+      const halfLeftPanel = route.instanceKind(slice.focus) !== 'detail' ? slice.focus : slice.halfLeftPanel;
       const next = {
         ...slice,
         design: { enabled, drag: null, undo: [], redo: [], titleEdit: { active: false, text: '' }, notice: null },

@@ -25,7 +25,7 @@
 const { allPanels, getSel } = require('../app/state');
 const { runAction } = require('./action-runner');
 const { getPanelDef, getItems, getGroupActions, getComponentSlice,
-        dispatchMsg, wrap, getFocus } = require('../panel/api');
+        dispatchMsg, wrap, getFocus, instanceKind } = require('../panel/api');
 const { isTerminalTab, activeTerminalId } = require('../panel/viewer/tabs');
 const { isSessionDead, restartSession } = require('../io/terminal');
 const { execSync } = require('child_process');
@@ -206,7 +206,7 @@ function handleAction(action, arg) {
     }
     case 'run_selected': {
       // Enter on detail + terminal tab → activate terminal mode
-      if (getFocus() === 'detail' && isTerminalTab()) {
+      if (instanceKind(getFocus()) === 'detail' && isTerminalTab()) {
         activateTerminal();
         break;
       }
@@ -216,7 +216,7 @@ function handleAction(action, arg) {
       // hammering Enter walks down levels (cursor stays put, the row
       // below opens or closes). Avoids the prior "drill to empty actions"
       // smell when a branch had no own actions.
-      if (getFocus() === 'groups') {
+      if (instanceKind(getFocus()) === 'groups') {
         const items = getItems('groups');
         const row = items[getSel('groups')];
         if (row && row.children && row.children.length > 0) {
@@ -234,7 +234,7 @@ function handleAction(action, arg) {
       // params; submit then forwards them to runAction. Cmdline (`:`)
       // already carries args inline, so this only matters for the
       // actions-panel path.
-      if (getFocus() === 'actions') {
+      if (instanceKind(getFocus()) === 'actions') {
         const items = getItems('actions');
         const item = items[getSel('actions')];
         if (item) {
@@ -263,7 +263,7 @@ function handleAction(action, arg) {
       // (reducer is the gatekeeper, but resolving the id early lets
       // the no-op skip the wrapped Msg entirely).
       const focus = getFocus();
-      if (!focus || focus === 'detail') break;
+      if (!focus || instanceKind(focus) === 'detail') break;
       const p = allPanels().find(x => x.type === focus);
       if (!p) break;
       dispatchMsg(wrap('layout', { type: 'panel_collapse_toggle', id: p.id }));
@@ -280,23 +280,29 @@ function handleAction(action, arg) {
       // now run inline in the reducer). Other panel modes (e.g. stats
       // content) get no-op — they don't expose getItems(), so the
       // guard at the top of _pageInListPanel intentionally bails.
-      if (getFocus() === 'detail') dispatchMsg(wrap('detail', { type: 'viewer_scroll', delta: -_pageStep('detail') }));
-      else                          _pageInListPanel(-_pageStep(getFocus()));
+      const focus = getFocus();
+      if (instanceKind(focus) === 'detail') dispatchMsg(wrap(focus, { type: 'viewer_scroll', delta: -_pageStep('detail') }));
+      else                                  _pageInListPanel(-_pageStep(focus));
       break;
     }
     case 'page_down': {
-      if (getFocus() === 'detail') dispatchMsg(wrap('detail', { type: 'viewer_scroll', delta: +_pageStep('detail') }));
-      else                          _pageInListPanel(+_pageStep(getFocus()));
+      const focus = getFocus();
+      if (instanceKind(focus) === 'detail') dispatchMsg(wrap(focus, { type: 'viewer_scroll', delta: +_pageStep('detail') }));
+      else                                  _pageInListPanel(+_pageStep(focus));
       break;
     }
-    case 'goto_top':
-      if (getFocus() === 'detail') dispatchMsg(wrap('detail', { type: 'viewer_scroll', to: 'top' }));
-      else                          _jumpInListPanel('top');
+    case 'goto_top': {
+      const focus = getFocus();
+      if (instanceKind(focus) === 'detail') dispatchMsg(wrap(focus, { type: 'viewer_scroll', to: 'top' }));
+      else                                  _jumpInListPanel('top');
       break;
-    case 'goto_bottom':
-      if (getFocus() === 'detail') dispatchMsg(wrap('detail', { type: 'viewer_scroll', to: 'bottom' }));
-      else                          _jumpInListPanel('bottom');
+    }
+    case 'goto_bottom': {
+      const focus = getFocus();
+      if (instanceKind(focus) === 'detail') dispatchMsg(wrap(focus, { type: 'viewer_scroll', to: 'bottom' }));
+      else                                  _jumpInListPanel('bottom');
       break;
+    }
     case 'view_expand':
       // Through the Component fan-out: layout's update flips viewMode and
       // returns a force_full_repaint effect on a real transition (a view

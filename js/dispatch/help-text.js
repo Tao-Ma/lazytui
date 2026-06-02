@@ -15,7 +15,7 @@
 const { allPanels, setDetail } = require('../app/state');
 const { getModel } = require('../app/runtime');
 const { esc } = require('../io/ansi');
-const {getCommands, getPanelDef, getComponentSlice, getFocus } = require('../panel/api');
+const {getCommands, getPanelDef, getComponentSlice, getFocus, instanceKind } = require('../panel/api');
 const kb = require('./keybindings');
 
 /** Walk the leader-tree depth-first, emitting `{seq, label}` for every
@@ -85,7 +85,7 @@ function helpLines() {
     );
   }
 
-  if (getFocus() === 'detail') {
+  if (instanceKind(getFocus()) === 'detail') {
     lines.push('', '[dim]Detail panel — reading mode[/]',
       '  j / k / arrows Scroll view ±1 line',
       '  , .            Page up / down',

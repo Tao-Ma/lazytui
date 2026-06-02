@@ -39,7 +39,7 @@ const {
   streamCommand, addEphemeralTab, scheduleRender,
   setActiveTab, leaveTerminalMode,
   getItems: apiGetItems, selectedOrFocused,
-  getComponentSlice, getFocus, dispatchMsg, wrap,
+  getComponentSlice, getFocus, dispatchMsg, wrap, instanceKind,
   registerEffect,
   hub,
 } = require('../api');
@@ -304,7 +304,7 @@ function update(msg, slice) {
 }
 
 function _handleKey(msg, slice) {
-  if (getFocus() !== 'containers') return slice;
+  if (instanceKind(getFocus()) !== 'docker') return slice;
   const item = _getItems(slice)[getSel('containers')];
   if (!item) return slice;
   if (msg.key === 'i') return [slice, [{ type: 'dockerExec', mode: 'inspect', item }]];
@@ -439,7 +439,7 @@ function render(panel, width, height) {
   if (!group) return '';
   const containers = apiGetItems('containers');
   const sel = getSel('containers');
-  const isFocused = getFocus() === 'containers';
+  const isFocused = instanceKind(getFocus()) === 'docker';
   const t = theme();
   const lines = containers.map((name, i) => {
     const isSel = i === sel && isFocused;
