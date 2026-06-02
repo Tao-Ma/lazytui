@@ -13,6 +13,8 @@
  */
 'use strict';
 
+const mpane = require('./pane');
+
 function placedIds(arrange) {
   if (!arrange) return [];
   const left  = arrange.leftPanels  || [];
@@ -106,14 +108,14 @@ function panelListItems(arrange) {
  *  `leaves/design-pool-drag.js#computePoolDragPreviewArrange` so both
  *  produce identical placements. */
 function placementFromPoolEntry(entry, column) {
-  return {
+  return mpane.wrapAsPane({
     ...(entry.config || {}),
     id: entry.id,
     type: entry.type,
     title: entry.title,
     hotkey: '',
     column,
-  };
+  }, mpane.newPaneId(entry.id));
 }
 
 module.exports = {

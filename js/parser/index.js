@@ -18,6 +18,7 @@ const { validate } = require('./schema');
 const { passthroughCmd, resolveScript } = require('./resolver');
 
 const { LEFT_HOTKEY_POOL, RIGHT_HOTKEY_POOL } = require('../leaves/hotkeys');
+const mpane = require('../leaves/pane');
 
 // Reserved layout keys consumed by the framework; everything else
 // passes through as plugin-specific panel config (e.g. stats panel's
@@ -222,7 +223,7 @@ function buildPlacedPanel(resolved, hotkey, column, detailHeightSetter) {
   };
   if (placement.heightPct !== undefined) panel.heightPct = placement.heightPct;
   if (placement.collapsed === true)      panel.collapsed = true;
-  return panel;
+  return mpane.wrapAsPane(panel, mpane.newPaneId(entry.id));
 }
 
 function defaultLayout(hasContainers, hasFiles, userPool) {
@@ -232,7 +233,10 @@ function defaultLayout(hasContainers, hasFiles, userPool) {
   const addDefault = (id, type, title, column, hotkey, extra) => {
     const entry = { id, type, title, config: extra || {}, _synthesized: true };
     pool.set(id, entry);
-    return { id, type, title, hotkey, column, config: entry.config };
+    return mpane.wrapAsPane(
+      { id, type, title, hotkey, column, config: entry.config },
+      mpane.newPaneId(id),
+    );
   };
   if (hasContainers) {
     left.push(addDefault('containers', 'containers', 'Containers', 'left', String(hk++)));

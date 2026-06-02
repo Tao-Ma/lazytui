@@ -20,6 +20,7 @@ const fs = require('fs');
 const path = require('path');
 const { setTheme } = require('../render/themes');
 const { getModel } = require('./runtime');
+const mpane = require('../leaves/pane');
 
 // --- Component slice resolution ---
 //
@@ -127,25 +128,25 @@ function rebuildLayoutFromConfig(config) {
     // off `panel` directly. Spread first so the framework keys win on
     // any overlap. `id` plumbs the link back to the pool — Phase 1
     // derivations (`leaves/pool`) read it to compute placed vs hidden.
-    out.leftPanels = leftPanelsSrc.map((p, i) => ({
+    out.leftPanels = leftPanelsSrc.map((p, i) => mpane.wrapAsPane({
       ...(p.config || {}),
       id: p.id,
       type: p.type,
       title: p.title || p.type.replace(/_/g, ' '),
       hotkey: p.hotkey || String(i + 1),
       column: 'left',
-    }));
+    }, mpane.newPaneId(p.id)));
     const { RIGHT_HOTKEY_POOL } = require('../leaves/hotkeys');
     const rightExplicit = new Set(rightPanelsSrc.map(p => p.hotkey).filter(Boolean));
     const rightAuto = RIGHT_HOTKEY_POOL.filter(k => !rightExplicit.has(k));
-    out.rightPanels = rightPanelsSrc.map(p => ({
+    out.rightPanels = rightPanelsSrc.map(p => mpane.wrapAsPane({
       ...(p.config || {}),
       id: p.id,
       type: p.type,
       title: p.title || p.type.replace(/_/g, ' '),
       hotkey: p.hotkey || (rightAuto.shift() || ''),
       column: 'right',
-    }));
+    }, mpane.newPaneId(p.id)));
   } else {
     // No layout block — defensive fallback for JSON callers or tests
     // that bypass the parser. Synthesize the same default the parser
@@ -155,7 +156,7 @@ function rebuildLayoutFromConfig(config) {
     let hk = 1;
     const push = (col, panel) => {
       const arr = col === 'left' ? out.leftPanels : out.rightPanels;
-      arr.push(panel);
+      arr.push(mpane.wrapAsPane(panel, mpane.newPaneId(panel.id)));
       out.pool[panel.id] = {
         id: panel.id, type: panel.type, title: panel.title, config: {}, _synthesized: true,
       };
