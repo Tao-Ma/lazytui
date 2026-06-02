@@ -19,7 +19,7 @@ const { getModel } = require('../app/runtime');
 describe('[1] registry derivations', () => {
   it('CHAIN_MODES is the modeChain precedence order', () => {
     eq(modes.CHAIN_MODES.join(','),
-       'confirmMode,promptMode,designTitleEditMode,freeConfigMode,menuOpen,filterMode,copyMode,detailSearchMode,registerPopupMode,prefixMode,cmdMode,tabListMode');
+       'confirmMode,promptMode,freeConfigTitleEditMode,freeConfigMode,menuOpen,filterMode,copyMode,detailSearchMode,registerPopupMode,prefixMode,cmdMode,tabListMode');
   });
   it('isOverlayActive matches the pre-registry hardcoded list', () => {
     const overlay = ['copyMode','menuOpen','freeConfigMode','cmdMode','confirmMode','promptMode','registerPopupMode','prefixMode','tabListMode'];
@@ -29,7 +29,7 @@ describe('[1] registry derivations', () => {
     }
   });
   it('isModal matches the pre-registry hardcoded list', () => {
-    const modal = ['terminalMode','filterMode','copyMode','freeConfigMode','designTitleEditMode','menuOpen','prefixMode'];
+    const modal = ['terminalMode','filterMode','copyMode','freeConfigMode','freeConfigTitleEditMode','menuOpen','prefixMode'];
     for (const f of modes.MODES.map(m => m.flag)) {
       const s = {}; s[f] = true;
       eq(modes.isModal(s), modal.includes(f), `${f} modal`);
@@ -51,7 +51,7 @@ describe('[2] resetModes', () => {
     modes.resetModes(s);
     for (const m of modes.MODES) eq(s[m.flag], false, `${m.flag} reset`);
     // Specifically the three that initState used to miss:
-    assert(s.confirmMode === false && s.promptMode === false && s.designTitleEditMode === false);
+    assert(s.confirmMode === false && s.promptMode === false && s.freeConfigTitleEditMode === false);
   });
 });
 

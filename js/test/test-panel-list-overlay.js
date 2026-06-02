@@ -153,14 +153,14 @@ describe('[panel_list_pick] context-dependent: hide / show / no-op', () => {
   });
 });
 
-describe('[design_enter] auto-opens overlay when hidden entries exist', () => {
+describe('[free_config_enter] auto-opens overlay when hidden entries exist', () => {
   it('opens when pool has hidden entries', () => {
     const s = buildSlice({
       left:   [['groups', 'groups']],
       right:  [['actions', 'actions'], ['detail', 'detail']],
       hidden: [['notes', 'viewer']],
     });
-    const [next] = layout.update({ type: 'design_enter' }, s);
+    const [next] = layout.update({ type: 'free_config_enter' }, s);
     eq(next.panelList.open, true);
   });
   it('stays closed when every pool entry is placed', () => {
@@ -168,21 +168,21 @@ describe('[design_enter] auto-opens overlay when hidden entries exist', () => {
       left:  [['groups', 'groups']],
       right: [['actions', 'actions'], ['detail', 'detail']],
     });
-    const [next] = layout.update({ type: 'design_enter' }, s);
+    const [next] = layout.update({ type: 'free_config_enter' }, s);
     eq(next.panelList.open, false);
   });
 });
 
-describe('[design_exit] closes overlay', () => {
+describe('[free_config_exit] closes overlay', () => {
   it('overlay closes on exit', () => {
     const s = buildSlice({
       left:   [['groups', 'groups']],
       right:  [['actions', 'actions'], ['detail', 'detail']],
       hidden: [['notes', 'viewer']],
     });
-    const [opened] = layout.update({ type: 'design_enter' }, s);
+    const [opened] = layout.update({ type: 'free_config_enter' }, s);
     eq(opened.panelList.open, true);
-    const [exited] = layout.update({ type: 'design_exit' }, opened);
+    const [exited] = layout.update({ type: 'free_config_exit' }, opened);
     eq(exited.panelList.open, false);
   });
 });

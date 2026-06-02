@@ -1,7 +1,7 @@
 /**
  * Pool drag — gesture from the panel-list overlay onto the layout grid.
  *
- * A separate gesture from the existing panel-reorder drag in leaves/design,
+ * A separate gesture from the existing panel-reorder drag in leaves/free-config,
  * but with the SAME 3-zone-per-cell hit-test (top/mid/bottom thirds), so the
  * user learns one rule for both:
  *
@@ -17,17 +17,17 @@
  * wrappers that re-emit pool_hide/pool_show Msgs back into layout.update so
  * the existing handlers do the actual mutation.
  *
- * Imports the cell-zone helper from leaves/design (the 3-zone rule the two
+ * Imports the cell-zone helper from leaves/free-config (the 3-zone rule the two
  * drags share) and placementFromPoolEntry from leaves/pool (so the preview
  * builds the same placement object panel/layout.js's pool_show reducer
  * commits on release). Both are pure leaves with no back-edges, so no
  * cycle. Reads slice.panelBounds, slice.arrange, slice.panelList; writes
- * slice.panelList, slice.design.drag (the same field design's mouse drag
+ * slice.panelList, slice.freeConfig.drag (the same field design's mouse drag
  * uses; tagged union by `kind`).
  */
 'use strict';
 
-const { pointToCellZone } = require('./design');
+const { pointToCellZone } = require('./free-config');
 const mpool = require('./pool');
 const { placementFromPoolEntry } = mpool;
 
@@ -36,13 +36,13 @@ const { placementFromPoolEntry } = mpool;
  *  `{ kind:'replace', column, occupantId, valid }`, or null when outside the
  *  layout. Uses slice.panelBounds (view-derived, written by the render pass)
  *  for cell hit-tests, mirroring the in-grid drag's approach. The dragged
- *  pool entry's type (looked up via slice.design.drag.sourceId) is threaded
+ *  pool entry's type (looked up via slice.freeConfig.drag.sourceId) is threaded
  *  into the validators so they can refuse detail/actions in the left
  *  column — same invariant the in-grid drag's validateTarget enforces. */
 function pointToPoolDropTarget(slice, mx, my) {
   const arrange = slice.arrange;
   if (mx < 0 || my < 0) return null;
-  const drag = slice.design && slice.design.drag;
+  const drag = slice.freeConfig && slice.freeConfig.drag;
   const sourceEntry = drag && drag.sourceId ? (arrange.pool || {})[drag.sourceId] : null;
 
   // Per-column scan: find a cell whose x-range contains mx, classify zone.
@@ -144,23 +144,23 @@ function poolDragStart(slice, sourceId, mx, my) {
   return {
     ...slice,
     panelList: { ...slice.panelList, open: false },
-    design: { ...slice.design, drag },
+    freeConfig: { ...slice.freeConfig, drag },
   };
 }
 
 function poolDragMotion(slice, mx, my) {
-  const d = slice.design;
+  const d = slice.freeConfig;
   const ds = d && d.drag;
   if (!ds || (ds.kind !== 'pool-armed' && ds.kind !== 'pool-dragging')) return slice;
   let nextKind = ds.kind;
   if (ds.kind === 'pool-armed') {
     if (mx === ds.startX && my === ds.startY) {
-      return { ...slice, design: { ...d, drag: { ...ds, curX: mx, curY: my } } };
+      return { ...slice, freeConfig: { ...d, drag: { ...ds, curX: mx, curY: my } } };
     }
     nextKind = 'pool-dragging';
   }
   const target = pointToPoolDropTarget(slice, mx, my);
-  return { ...slice, design: { ...d, drag: { ...ds, kind: nextKind, curX: mx, curY: my, target } } };
+  return { ...slice, freeConfig: { ...d, drag: { ...ds, kind: nextKind, curX: mx, curY: my, target } } };
 }
 
 /** Release: returns [next slice, cmds]. Cmds re-emit pool_hide/show Msgs
@@ -171,7 +171,7 @@ function poolDragMotion(slice, mx, my) {
  *  re-pressing `w`. The drag is cleared in both cases — the resumeOnCancel
  *  flag dies with it. */
 function poolDragRelease(slice) {
-  const d = slice.design;
+  const d = slice.freeConfig;
   const ds = d && d.drag;
   if (!ds || (ds.kind !== 'pool-armed' && ds.kind !== 'pool-dragging')) return [slice, []];
   const resumeOnCancel = !!ds.resumeOnCancel;
@@ -181,7 +181,7 @@ function poolDragRelease(slice) {
     const cleared = {
       ...slice,
       panelList: { ...slice.panelList, open: resumeOnCancel },
-      design: { ...d, drag: null },
+      freeConfig: { ...d, drag: null },
     };
     return [cleared, [repaint]];
   }
@@ -190,7 +190,7 @@ function poolDragRelease(slice) {
   const closeOverlay = {
     ...slice,
     panelList: { ...slice.panelList, open: false },
-    design: { ...d, drag: null },
+    freeConfig: { ...d, drag: null },
   };
   if (t.kind === 'replace') {
     const cmds = [
@@ -215,7 +215,7 @@ function poolDragRelease(slice) {
  *  in-grid variant, the render path swaps + restores panelBounds so the
  *  hit-test reference frame stays the original layout. */
 function computePoolDragPreviewArrange(slice) {
-  const drag = slice.design && slice.design.drag;
+  const drag = slice.freeConfig && slice.freeConfig.drag;
   if (!drag || drag.kind !== 'pool-dragging') return null;
   const t = drag.target;
   if (!t || !t.valid) return null;

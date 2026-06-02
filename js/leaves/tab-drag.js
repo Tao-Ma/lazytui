@@ -17,14 +17,14 @@
  *
  * Pure leaf — no imports. Reads `slice.panelBounds.detail.tabs` (the
  * view-output hit-test cache populated by viewer.js#detailTitle), writes
- * the drag state on `slice.design.drag` (tagged union by `kind`, shares
+ * the drag state on `slice.freeConfig.drag` (tagged union by `kind`, shares
  * the field with pool / panel / resize drags).
  */
 'use strict';
 
 function tabDragStart(slice, sourceKey, fromIdx, mx, my) {
   const drag = { kind: 'tab-armed', sourceKey, fromIdx, startX: mx, startY: my, curX: mx, curY: my };
-  return { ...slice, design: { ...slice.design, drag } };
+  return { ...slice, freeConfig: { ...slice.freeConfig, drag } };
 }
 
 function _findContentIdxAt(panelBoundsDetail, mx, my) {
@@ -41,13 +41,13 @@ function _findContentIdxAt(panelBoundsDetail, mx, my) {
 }
 
 function tabDragMotion(slice, mx, my, panelBoundsDetail, currentGroup) {
-  const drag = slice.design && slice.design.drag;
+  const drag = slice.freeConfig && slice.freeConfig.drag;
   if (!drag || (drag.kind !== 'tab-armed' && drag.kind !== 'tab-dragging')) return [slice, []];
 
   let nextKind = drag.kind;
   if (drag.kind === 'tab-armed') {
     if (mx === drag.startX && my === drag.startY) {
-      return [{ ...slice, design: { ...slice.design, drag: { ...drag, curX: mx, curY: my } } }, []];
+      return [{ ...slice, freeConfig: { ...slice.freeConfig, drag: { ...drag, curX: mx, curY: my } } }, []];
     }
     nextKind = 'tab-dragging';
   }
@@ -55,7 +55,7 @@ function tabDragMotion(slice, mx, my, panelBoundsDetail, currentGroup) {
   const toIdx = _findContentIdxAt(panelBoundsDetail, mx, my);
   const cursorOnly = {
     ...slice,
-    design: { ...slice.design, drag: { ...drag, kind: nextKind, curX: mx, curY: my } },
+    freeConfig: { ...slice.freeConfig, drag: { ...drag, kind: nextKind, curX: mx, curY: my } },
   };
   if (toIdx < 0 || toIdx === drag.fromIdx) return [cursorOnly, []];
 
@@ -64,7 +64,7 @@ function tabDragMotion(slice, mx, my, panelBoundsDetail, currentGroup) {
   // newly-moved position.
   const advanced = {
     ...cursorOnly,
-    design: { ...cursorOnly.design, drag: { ...cursorOnly.design.drag, fromIdx: toIdx } },
+    freeConfig: { ...cursorOnly.freeConfig, drag: { ...cursorOnly.freeConfig.drag, fromIdx: toIdx } },
   };
   const cmd = {
     type: 'dispatch_msg',
@@ -74,10 +74,10 @@ function tabDragMotion(slice, mx, my, panelBoundsDetail, currentGroup) {
 }
 
 function tabDragRelease(slice) {
-  const drag = slice.design && slice.design.drag;
+  const drag = slice.freeConfig && slice.freeConfig.drag;
   if (!drag || (drag.kind !== 'tab-armed' && drag.kind !== 'tab-dragging')) return [slice, []];
   return [
-    { ...slice, design: { ...slice.design, drag: null } },
+    { ...slice, freeConfig: { ...slice.freeConfig, drag: null } },
     [{ type: 'force_full_repaint' }],
   ];
 }

@@ -1,6 +1,6 @@
 /**
  * Panel-chrome widget glyphs — small interactive icons painted on each
- * placed panel's top border row. Split out of `overlay/design.js`
+ * placed panel's top border row. Split out of `overlay/free-config.js`
  * because they're not all design-specific:
  *
  *   [_]/[+]  collapse-toggle — ALWAYS visible in normal view mode
@@ -60,7 +60,7 @@ function _closeGlyphX0(b)    { return b.x + b.w - 1 - GLYPH_W - 1 - GLYPH_W; }
 function _placedWidgetTargets() {
   const slice = getInstanceSlice('layout');
   if (!slice || !slice.arrange) return null;
-  const drag = slice.design && slice.design.drag;
+  const drag = slice.freeConfig && slice.freeConfig.drag;
   if (drag) return null;  // drag affordance owns the screen; suppress widgets
   const panels = (slice.arrange.leftPanels || []).concat(slice.arrange.rightPanels || []);
   return panels
@@ -87,7 +87,7 @@ function _placedWidgetTargets() {
 function injectTopRowChrome(panelOutput, p, b, freeConfigMode, fc, focused) {
   if (!panelOutput || mpool.isDetailPane(p)) return panelOutput;
   const slice = getInstanceSlice('layout');
-  if (slice && slice.design && slice.design.drag) return panelOutput;
+  if (slice && slice.freeConfig && slice.freeConfig.drag) return panelOutput;
   if (!b || b.h < 1 || b.w < COLLAPSE_MIN_W) return panelOutput;
 
   // Build chrome markup + measure visible width. [X] sits 1 col left of

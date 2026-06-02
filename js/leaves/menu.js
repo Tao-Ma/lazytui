@@ -42,7 +42,7 @@ function buildItems(layoutSlice) {
     ['+        Expand view',        'view_expand'],
     ['_        Shrink view',        'view_shrink'],
     null,
-    [':free-config  Edit layout + pool', 'design'],
+    [':free-config  Edit layout + pool', 'free_config'],
     ['r        Refresh status',     'refresh'],
     ['?        Help in detail',     'show_help'],
     ['q        Quit',               'quit'],

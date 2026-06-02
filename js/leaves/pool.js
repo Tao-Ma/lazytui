@@ -9,7 +9,7 @@
  *
  * Everything here takes a layout `arrange` struct as input and returns
  * fresh values. No model access, no side effects — same shape as the
- * `leaves/design` leaf next door. Tests drive these directly.
+ * `leaves/free-config` leaf next door. Tests drive these directly.
  */
 'use strict';
 
@@ -132,7 +132,7 @@ function panelListItems(arrange) {
  *  plugin-specific config spread first, framework fields override.
  *  Shared between `panel/layout.js#pool_show` (the actual commit on
  *  release / cmdline `:show`) and the drag-preview path in
- *  `leaves/design-pool-drag.js#computePoolDragPreviewArrange` so both
+ *  `leaves/free-config-pool-drag.js#computePoolDragPreviewArrange` so both
  *  produce identical placements. */
 function placementFromPoolEntry(entry, column) {
   return mpane.wrapAsPane({

@@ -2,12 +2,12 @@
  * Design mode — read-side helpers for free-config.
  *
  * The keyboard handler, title-edit sub-mode, undo/redo, and mouse drag/resize
- * state machine all live in the reducer (runtime: design_* / design_mouse_*
- * Msgs) backed by the dependency-free `leaves/design` leaf. The drag-target
+ * state machine all live in the reducer (runtime: free_config_* / free_config_mouse_*
+ * Msgs) backed by the dependency-free `leaves/free-config` leaf. The drag-target
  * affordance is now the live layout preview painted by render/layout.js
  * (swaps slice.arrange for drag.previewArrange during the paint pass), so
  * this file holds no overlay paint of its own — just the free-config footer
- * text (getDesignFooter), the title-edit buffer accessor, and a small set
+ * text (getFreeConfigFooter), the title-edit buffer accessor, and a small set
  * of test-facing shims that drive the real reducer path.
  *
  * Save is decoupled: `:save-layout` writes the runtime layout to YAML,
@@ -19,21 +19,21 @@ const { esc } = require('../io/ansi');
 const { cols } = require('../io/term');
 const { getModel } = require('../app/runtime');
 const { getInstanceSlice } = require('../panel/api');
-const mdesign = require('../leaves/design');
+const mfc = require('../leaves/free-config');
 
 // The layout Component's slice + its design sub-slice (Phase 1f). Lazy
 // because tests can boot without layout. Post-1e the read helpers take the
-// slice directly — model isn't threaded into mdesign anymore.
+// slice directly — model isn't threaded into mfc anymore.
 function _slice() { return getInstanceSlice('layout'); }
 function _design() {
   const slice = _slice();
-  return slice ? slice.design : null;
+  return slice ? slice.freeConfig : null;
 }
 
 function panelTitle(type) {
   const slice = _slice();
   if (!slice) return type;
-  const p = mdesign.allDesignPanels(slice).find(x => x.type === type);
+  const p = mfc.allFreeConfigPanels(slice).find(x => x.type === type);
   return p ? p.title : type;
 }
 
@@ -41,7 +41,7 @@ function panelTitle(type) {
  * Footer text contribution for renderFooter (read when freeConfigMode is set).
  * Idle: ` | <title> (<column>)`. Dragging: includes the live drop target.
  */
-function getDesignFooter() {
+function getFreeConfigFooter() {
   if (!getModel().modes.freeConfigMode) return '';
   const d = _design();
   if (!d) return '';
@@ -86,8 +86,8 @@ function getDesignFooter() {
     return ` | from pool: ${esc(srcTitle)} → [bold green]insert[/] at ${t.column}:${t.index}${clampSuffix}`;
   }
   const slice = _slice();
-  const all = slice ? mdesign.allDesignPanels(slice) : [];
-  const sel = slice ? all[mdesign.selectedIdx(slice)] : null;
+  const all = slice ? mfc.allFreeConfigPanels(slice) : [];
+  const sel = slice ? all[mfc.selectedIdx(slice)] : null;
   return sel ? ` | ${esc(sel.title)} (${sel.column})` : '';
 }
 
@@ -99,19 +99,19 @@ function titleEditText() {
 
 /** `:restore-layout` escape hatch — wipe the session's undo history when the
  *  user resets the layout from disk. Production routes through the layout
- *  Component (`design_clear_undo` Msg); this test-only shim mirrors that. */
+ *  Component (`free_config_clear_undo` Msg); this test-only shim mirrors that. */
 function _clearUndoStacks() {
   const api = require('../panel/api');
-  api.dispatchMsg(api.wrap('layout', { type: 'design_clear_undo' }));
+  api.dispatchMsg(api.wrap('layout', { type: 'free_config_clear_undo' }));
 }
 
 // --- test-facing shims (production drives these via input.js → applyMsg /
-//     the reducer's design_mouse_* branches; tests keep the old call shape) ---
+//     the reducer's free_config_mouse_* branches; tests keep the old call shape) ---
 
 function onMouseEvent(kind, mx, my) {
-  const msg = kind === 'press'  ? { type: 'design_mouse_press',  mx, my, cols: cols() }
-            : kind === 'motion' ? { type: 'design_mouse_motion', mx, my, cols: cols() }
-            : kind === 'release' ? { type: 'design_mouse_release' }
+  const msg = kind === 'press'  ? { type: 'free_config_mouse_press',  mx, my, cols: cols() }
+            : kind === 'motion' ? { type: 'free_config_mouse_motion', mx, my, cols: cols() }
+            : kind === 'release' ? { type: 'free_config_mouse_release' }
             : null;
   if (msg) {
     const api = require('../panel/api');
@@ -119,11 +119,11 @@ function onMouseEvent(kind, mx, my) {
   }
 }
 
-function pointToResizeTarget(mx, my) { return mdesign.pointToResizeTarget(_slice(), mx, my, cols()); }
-function pointToDropTarget(srcType, mx, my) { return mdesign.pointToDropTarget(_slice(), srcType, mx, my, cols()); }
+function pointToResizeTarget(mx, my) { return mfc.pointToResizeTarget(_slice(), mx, my, cols()); }
+function pointToDropTarget(srcType, mx, my) { return mfc.pointToDropTarget(_slice(), srcType, mx, my, cols()); }
 
 module.exports = {
-  getDesignFooter, titleEditText,
+  getFreeConfigFooter, titleEditText,
   onMouseEvent,
   pointToDropTarget, pointToResizeTarget,
   _clearUndoStacks,

@@ -105,7 +105,7 @@ function _handleWheel(mx, my, delta) {
 function _suppressesChromeClicks(md) {
   return md.cmdMode || md.menuOpen || md.copyMode
       || md.confirmMode || md.promptMode || md.registerPopupMode
-      || md.designTitleEditMode || md.terminalMode;
+      || md.freeConfigTitleEditMode || md.terminalMode;
 }
 
 function handleMouse(kind, x, y) {
@@ -201,7 +201,7 @@ function handleMouse(kind, x, y) {
 
   // Design mode owns the entire mouse pipeline — the drag/resize state
   // machine lives on layout's slice (post-Phase-6 single-writer cleanup),
-  // dispatched as wrapped `design_mouse_*` Msgs. cols() is resolved here
+  // dispatched as wrapped `free_config_mouse_*` Msgs. cols() is resolved here
   // (the one terminal read the layout Component can't do without
   // back-coupling) and threaded into the hit-tests. Non-press/motion/
   // release events (wheel) are swallowed in design mode, as before.
@@ -213,7 +213,7 @@ function handleMouse(kind, x, y) {
   // while drag.kind is `pool-*`; otherwise the existing design path runs.
   if (model.modes.freeConfigMode) {
     const slice = getInstanceSlice('layout');
-    const drag = slice && slice.design && slice.design.drag;
+    const drag = slice && slice.freeConfig && slice.freeConfig.drag;
     const isPoolDrag = drag && (drag.kind === 'pool-armed' || drag.kind === 'pool-dragging');
     const isTabDrag = drag && (drag.kind === 'tab-armed' || drag.kind === 'tab-dragging');
 
@@ -289,9 +289,9 @@ function handleMouse(kind, x, y) {
       dispatchMsg(wrap('layout', { type: 'panel_list_close' }));
     }
 
-    if (kind === 'press')        dispatchMsg(wrap('layout', { type: 'design_mouse_press',  mx, my, cols: cols() }));
-    else if (kind === 'motion')  dispatchMsg(wrap('layout', { type: 'design_mouse_motion', mx, my, cols: cols() }));
-    else if (kind === 'release') dispatchMsg(wrap('layout', { type: 'design_mouse_release' }));
+    if (kind === 'press')        dispatchMsg(wrap('layout', { type: 'free_config_mouse_press',  mx, my, cols: cols() }));
+    else if (kind === 'motion')  dispatchMsg(wrap('layout', { type: 'free_config_mouse_motion', mx, my, cols: cols() }));
+    else if (kind === 'release') dispatchMsg(wrap('layout', { type: 'free_config_mouse_release' }));
     render();
     return;
   }

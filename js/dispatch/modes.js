@@ -30,7 +30,7 @@
 const MODES = [
   { flag: 'confirmMode',         chain: true,  overlay: true,  modal: false, reset: true },
   { flag: 'promptMode',          chain: true,  overlay: true,  modal: false, reset: true },
-  { flag: 'designTitleEditMode', chain: true,  overlay: false, modal: true,  reset: true },
+  { flag: 'freeConfigTitleEditMode', chain: true,  overlay: false, modal: true,  reset: true },
   { flag: 'freeConfigMode',          chain: true,  overlay: true,  modal: true,  reset: true },
   { flag: 'menuOpen',            chain: true,  overlay: true,  modal: true,  reset: true },
   { flag: 'filterMode',          chain: true,  overlay: false, modal: true,  reset: true },

@@ -25,23 +25,23 @@ const {
   titleEditText,
   onMouseEvent, pointToResizeTarget,
   _clearUndoStacks, _getUndoDepth, _getRedoDepth,
-} = require('../overlay/design');
+} = require('../overlay/free-config');
 const dispatch = require('../dispatch/dispatch');
 const { getModel } = require('../app/runtime');
 const { getInstanceSlice } = require('../panel/api');
 const { describe, it, assert, eq, report } = require('./test-runner');
 
 // Design mode lives on layout's slice (post-Phase-6 single-writer cleanup):
-// entry is a wrapped `design_enter` Msg into layout; keys route through the
-// modeChain handler (freeConfigMode / designTitleEditMode). These shims keep
+// entry is a wrapped `free_config_enter` Msg into layout; keys route through the
+// modeChain handler (freeConfigMode / freeConfigTitleEditMode). These shims keep
 // the existing call sites driving the REAL path.
-function enterDesign() {
+function enterFreeConfig() {
   const api = require('../panel/api');
-  api.dispatchMsg(api.wrap('layout', { type: 'design_enter' }));
+  api.dispatchMsg(api.wrap('layout', { type: 'free_config_enter' }));
 }
 function press(key, seq) { dispatch._dispatchActiveMode(key, seq); }
-function handleDesignKey(key) { press(key, key); }
-function handleDesignTitleEditKey(key, seq) { press(key, seq); }
+function handleFreeConfigKey(key) { press(key, key); }
+function handleFreeConfigTitleEditKey(key, seq) { press(key, seq); }
 
 // ----- Fixture -----
 // Same shape as test-design-drag.js fixture. Reset before every it().
@@ -67,16 +67,16 @@ function setupFixture() {
     detail:     { x: 30, y: 15, w: 90, h: 25 },
   };
   getModel().modes.freeConfigMode = false;
-  getModel().modes.designTitleEditMode = false;
+  getModel().modes.freeConfigTitleEditMode = false;
   getInstanceSlice('layout').dirty = false;
   // Pin focus to the first placed panel before entering design — every
   // it() in this file is written from the assumption that selectedIdx=0
-  // = containers on entry, and `design_enter` now preserves focus when
+  // = containers on entry, and `free_config_enter` now preserves focus when
   // it points at a placed panel (no longer resets to all[0]), so a
   // leftover focus from a prior test would otherwise leak in.
   getInstanceSlice('layout').focus = 'containers';
   _clearUndoStacks();
-  enterDesign(getInstanceSlice("layout").arrange, '/dev/null', () => {});
+  enterFreeConfig(getInstanceSlice("layout").arrange, '/dev/null', () => {});
 }
 
 // ===============================================================
@@ -193,7 +193,7 @@ describe('[3] drag-to-resize — detail-panel top edge', () => {
   });
   it('drag down shrinks detailHeightPct, clamped at dynamic min (13% on availH=40)', () => {
     setupFixture();
-    const { detailMinPct } = require('../leaves/design');
+    const { detailMinPct } = require('../leaves/free-config');
     onMouseEvent('press',  50, 15);
     onMouseEvent('motion', 50, 36);  // newDetailH = 4 rows; clamps to DETAIL_MIN_ROWS=5
     // detailMinPct(40) = max(5, ceil(5/40*100)) = 13 — five rows is the
@@ -299,29 +299,29 @@ describe('[3f] keyboard `]` / `[` — focused panel heightPct', () => {
     setupFixture();
     // selectedIdx=0 (containers). availH=20 (left col).
     // containers starts flex (h=10 → 50%). groups also flex (h=10 → 50%).
-    handleDesignKey(']');
+    handleFreeConfigKey(']');
     eq(getInstanceSlice("layout").arrange.leftPanels[0].heightPct, 55, 'containers +5');
     eq(getInstanceSlice("layout").arrange.leftPanels[1].heightPct, 45, 'groups -5 (stolen from)');
   });
   it('[ shrinks focused panel, gives to neighbor below', () => {
     setupFixture();
-    handleDesignKey('[');
+    handleFreeConfigKey('[');
     eq(getInstanceSlice("layout").arrange.leftPanels[0].heightPct, 45);
     eq(getInstanceSlice("layout").arrange.leftPanels[1].heightPct, 55);
   });
   it('detail focused → ] / [ are no-ops (use +/- instead)', () => {
     setupFixture();
     // Fixture has 5 panels total; idx=4 (last) is detail.
-    handleDesignKey('j'); handleDesignKey('j'); handleDesignKey('j'); handleDesignKey('j');
+    handleFreeConfigKey('j'); handleFreeConfigKey('j'); handleFreeConfigKey('j'); handleFreeConfigKey('j');
     eq(getInstanceSlice("layout").arrange.rightPanels[2].type, 'detail');
     const prevDetail = getInstanceSlice("layout").arrange.detailHeightPct;
-    handleDesignKey(']');
+    handleFreeConfigKey(']');
     eq(getInstanceSlice("layout").arrange.detailHeightPct, prevDetail, 'detail untouched by `]`');
   });
   it('last panel in column → ] no-op (nothing to steal from)', () => {
     setupFixture();
-    handleDesignKey('j');  // → groups (last in left col)
-    handleDesignKey(']');
+    handleFreeConfigKey('j');  // → groups (last in left col)
+    handleFreeConfigKey(']');
     eq(getInstanceSlice("layout").arrange.leftPanels[1].heightPct, undefined, 'no mutation');
   });
   it('] respects detail dynamic-min clamp when stealing from detail', () => {
@@ -329,10 +329,10 @@ describe('[3f] keyboard `]` / `[` — focused panel heightPct', () => {
     // Focus stats (right col, idx=3 in all). stats is just above detail.
     // detail starts at 60%. Repeated `]` should stop at detail hitting
     // the dynamic min (detailMinPct(availH) = 13% on availH=40).
-    const { detailMinPct } = require('../leaves/design');
-    handleDesignKey('j'); handleDesignKey('j'); handleDesignKey('j');  // → stats
+    const { detailMinPct } = require('../leaves/free-config');
+    handleFreeConfigKey('j'); handleFreeConfigKey('j'); handleFreeConfigKey('j');  // → stats
     eq(getInstanceSlice("layout").arrange.rightPanels[1].type, 'stats');
-    for (let i = 0; i < 20; i++) handleDesignKey(']');
+    for (let i = 0; i < 20; i++) handleFreeConfigKey(']');
     const got = getInstanceSlice("layout").arrange.detailHeightPct;
     assert(got >= detailMinPct(40), `detail clamped at dynamic min ${detailMinPct(40)} (got ${got})`);
   });
@@ -390,17 +390,17 @@ describe('[4] undo / redo — round-trip across mutation types', () => {
     setupFixture();
     // Move groups to top via 'K' on the focused panel (selectedIdx=0 = containers).
     // Easier: focus groups (idx=1) then K to swap up.
-    handleDesignKey('j');  // sel: containers → groups
-    handleDesignKey('K');  // swap groups up
+    handleFreeConfigKey('j');  // sel: containers → groups
+    handleFreeConfigKey('K');  // swap groups up
     eq(getInstanceSlice("layout").arrange.leftPanels[0].type, 'groups');
     eq(_getUndoDepth(), 1);
 
-    handleDesignKey('u');  // undo
+    handleFreeConfigKey('u');  // undo
     eq(getInstanceSlice("layout").arrange.leftPanels[0].type, 'containers');
     eq(_getUndoDepth(), 0);
     eq(_getRedoDepth(), 1);
 
-    handleDesignKey('ctrl-r');  // redo
+    handleFreeConfigKey('ctrl-r');  // redo
     eq(getInstanceSlice("layout").arrange.leftPanels[0].type, 'groups');
     eq(_getUndoDepth(), 1);
     eq(_getRedoDepth(), 0);
@@ -415,34 +415,34 @@ describe('[4] undo / redo — round-trip across mutation types', () => {
     eq(getInstanceSlice("layout").arrange.leftPanels[0].type, 'groups');
     eq(_getUndoDepth(), 1);
 
-    handleDesignKey('u');
+    handleFreeConfigKey('u');
     eq(getInstanceSlice("layout").arrange.leftPanels[0].type, 'containers');
     eq(_getRedoDepth(), 1);
   });
 
   it('new mutation after undo invalidates redo history', () => {
     setupFixture();
-    handleDesignKey('j');
-    handleDesignKey('K');                    // mutation 1 (undoDepth=1)
-    handleDesignKey('u');                    // undo (redoDepth=1)
+    handleFreeConfigKey('j');
+    handleFreeConfigKey('K');                    // mutation 1 (undoDepth=1)
+    handleFreeConfigKey('u');                    // undo (redoDepth=1)
     eq(_getRedoDepth(), 1);
     // Post-v0.6.x: focus follows the PANEL (not the slot), so after
     // `K u` focus is still on 'groups'. Reorder it again to make a
     // new mutation that should invalidate redo.
-    handleDesignKey('K');                    // mutation 2 (a different timeline)
+    handleFreeConfigKey('K');                    // mutation 2 (a different timeline)
     eq(_getRedoDepth(), 0, 'redo cleared by new mutation');
   });
 
   it('undo on empty stack is a no-op', () => {
     setupFixture();
-    handleDesignKey('u');
+    handleFreeConfigKey('u');
     eq(_getUndoDepth(), 0);
     eq(_getRedoDepth(), 0);
   });
 
   it('redo on empty stack is a no-op', () => {
     setupFixture();
-    handleDesignKey('ctrl-r');
+    handleFreeConfigKey('ctrl-r');
     eq(_getRedoDepth(), 0);
   });
 });
@@ -451,28 +451,28 @@ describe('[4] undo / redo — round-trip across mutation types', () => {
 describe('[5] title-edit sub-mode', () => {
   it('typing builds the buffer, backspace edits', () => {
     setupFixture();
-    handleDesignKey('t');
-    eq(getModel().modes.designTitleEditMode, true);
+    handleFreeConfigKey('t');
+    eq(getModel().modes.freeConfigTitleEditMode, true);
     eq(titleEditText(), 'Containers', 'pre-filled with current title');
 
-    handleDesignTitleEditKey('backspace');
-    handleDesignTitleEditKey('backspace');
+    handleFreeConfigTitleEditKey('backspace');
+    handleFreeConfigTitleEditKey('backspace');
     eq(titleEditText(), 'Containe');
 
-    handleDesignTitleEditKey('x', 'x');
-    handleDesignTitleEditKey('y', 'y');
+    handleFreeConfigTitleEditKey('x', 'x');
+    handleFreeConfigTitleEditKey('y', 'y');
     eq(titleEditText(), 'Containexy');
   });
 
   it('Enter commits + clears sub-mode + pushes undo', () => {
     setupFixture();
     const depthBefore = _getUndoDepth();
-    handleDesignKey('t');
-    handleDesignTitleEditKey('backspace');
-    handleDesignTitleEditKey('z', 'z');
-    handleDesignTitleEditKey('return');
+    handleFreeConfigKey('t');
+    handleFreeConfigTitleEditKey('backspace');
+    handleFreeConfigTitleEditKey('z', 'z');
+    handleFreeConfigTitleEditKey('return');
 
-    eq(getModel().modes.designTitleEditMode, false);
+    eq(getModel().modes.freeConfigTitleEditMode, false);
     eq(getInstanceSlice("layout").arrange.leftPanels[0].title, 'Containerz');
     eq(getInstanceSlice('layout').dirty, true);
     eq(_getUndoDepth(), depthBefore + 1);
@@ -481,11 +481,11 @@ describe('[5] title-edit sub-mode', () => {
   it('Esc cancels — no commit, no undo entry, sub-mode cleared', () => {
     setupFixture();
     const depthBefore = _getUndoDepth();
-    handleDesignKey('t');
-    handleDesignTitleEditKey('q', 'q');
-    handleDesignTitleEditKey('escape');
+    handleFreeConfigKey('t');
+    handleFreeConfigTitleEditKey('q', 'q');
+    handleFreeConfigTitleEditKey('escape');
 
-    eq(getModel().modes.designTitleEditMode, false);
+    eq(getModel().modes.freeConfigTitleEditMode, false);
     eq(getInstanceSlice("layout").arrange.leftPanels[0].title, 'Containers', 'title NOT changed');
     eq(_getUndoDepth(), depthBefore, 'no undo entry pushed on cancel');
   });
@@ -493,9 +493,9 @@ describe('[5] title-edit sub-mode', () => {
   it('Enter with unchanged title is a no-op (no undo entry)', () => {
     setupFixture();
     const depthBefore = _getUndoDepth();
-    handleDesignKey('t');
+    handleFreeConfigKey('t');
     // No editing — Enter with title === panel.title
-    handleDesignTitleEditKey('return');
+    handleFreeConfigTitleEditKey('return');
 
     eq(_getUndoDepth(), depthBefore, 'no undo entry for no-op commit');
   });

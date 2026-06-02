@@ -11,7 +11,7 @@
  *   - Readers use `getModel()` (no global imports).
  *   - All writes to root-model fields flow through `update`, which
  *     returns a NEW model object on state change. Reducer-leaves
- *     (leaves/design / leaves/register / leaves/search / leaves/pane-tabs
+ *     (leaves/free-config / leaves/register / leaves/search / leaves/pane-tabs
  *     / leaves/nav) are pure return-new transforms; leaves/menu is a
  *     pure builder. Freeze-test coverage in `js/test/test-immutable-*.js`.
  *   - The reducer performs no I/O; effects are Cmd DESCRIPTORS the
@@ -55,7 +55,7 @@ const mnav = require('../leaves/nav');
  * (detail / groups / docker / files / config-status / layout) live in
  * the instance store (leaves/route.js) and are written only by their
  * own `update`. The layout slice owns the grid (arrange, focus,
- * viewMode, design); per-panel chrome (cursor/scroll/multiSel/filter)
+ * viewMode, freeConfig); per-panel chrome (cursor/scroll/multiSel/filter)
  * lives on each Navigator's `slice.nav`.
  *
  * Field map:
@@ -72,7 +72,7 @@ function init() {
     // The 14 modal-state flags. Maintained centrally in js/modes.js (registry +
     // resetModes()); update branches and modeChain consult that single list.
     modes: {
-      confirmMode: false, promptMode: false, designTitleEditMode: false,
+      confirmMode: false, promptMode: false, freeConfigTitleEditMode: false,
       freeConfigMode: false, menuOpen: false, filterMode: false, copyMode: false,
       detailSearchMode: false, registerPopupMode: false, prefixMode: false,
       cmdMode: false, tabListMode: false, terminalMode: false, listSelectMode: false,
@@ -109,10 +109,10 @@ function init() {
       // one by index. Mirrors the copy split.
       cmdline: { text: '', sel: 0, scroll: 0, matches: [] },
       // Design-mode state lives on the layout Component's slice —
-      // `getInstanceSlice('layout').design`.
+      // `getInstanceSlice('layout').freeConfig`.
     },
     // Framework-level state: parsed config, paths, leader-mode buffers,
-    // misc flags. The layout struct + design state + viewMode + focus
+    // misc flags. The layout struct + freeConfig state + viewMode + focus
     // are on the layout Component's slice (see
     // docs/v0.5-layout-component.md).
     config: null,
@@ -283,7 +283,7 @@ function update(model, msg) {
       // bottom border rows are now exposed under-content the diff
       // cache treats as unchanged (panels are frozen during prefix
       // mode), so prior pixels stick. Same trap as pool_drag_motion +
-      // design_mouse_motion. Force a full repaint on every descend.
+      // free_config_mouse_motion. Force a full repaint on every descend.
       if (nextNode.children) return [{ ...model, prefixNode: nextNode, prefixSeq: seq }, [{ type: 'force_full_repaint' }]];
       // leaf — exit prefix mode and emit the binding
       return [{ ..._withModes(model, { prefixMode: false }), prefixNode: null, prefixSeq: [] },
@@ -787,11 +787,10 @@ function update(model, msg) {
       return [next, cmds];
     }
     case 'quit':        return [model, [{ type: 'quit' }]];
-    case 'design': {
+    case 'free_config': {
       // Free-config is always available; the verb just emits the
-      // start_design Cmd. (Pre-v0.6 it was gated by the --design CLI
-      // flag — tui.js now auto-enters at boot.)
-      return [model, [{ type: 'start_design' }]];
+      // start_free_config Cmd.
+      return [model, [{ type: 'start_free_config' }]];
     }
     default:
       return [model, []];

@@ -10,7 +10,7 @@
  *
  * Render contract: handleKey() (the input pump) owns the trailing paint.
  * Effect handlers (handleAction arms in ./actions, mode key handlers,
- * helper fns like startDesignMode) just mutate state; the diff-render
+ * helper fns like startFreeConfig) just mutate state; the diff-render
  * layer below makes a per-key paint cheap, and a single emission point
  * eliminates the "forgot to render" bug class.
  *
@@ -74,13 +74,13 @@ function navSelect(panelType, index) {
   }
 }
 
-function startDesignMode() {
+function startFreeConfig() {
   // Design mode is owned by the layout Component (post-Phase-6
-  // single-writer cleanup): entry is a wrapped `design_enter` Msg that
+  // single-writer cleanup): entry is a wrapped `free_config_enter` Msg that
   // resets the slice and emits a `mode_set` Cmd to flip
   // `model.modes.freeConfigMode`. Save stays decoupled (:save-layout); exit
   // emits a show_selected_info Cmd in place of the old onDone callback.
-  dispatchMsg(wrap('layout', { type: 'design_enter' }));
+  dispatchMsg(wrap('layout', { type: 'free_config_enter' }));
 }
 
 /**
@@ -201,10 +201,10 @@ function handleCopyKey(key, seq) {
   if (key === 'down' || seq === 'j') { applyMsg({ type: 'copy_nav', dir: +1 }); return; }
 }
 
-function handleDesignKey(key, seq) {
+function handleFreeConfigKey(key, seq) {
   // Post-Phase-6 single-writer cleanup: design state lives on layout's
-  // slice; each key wraps a `design_*` Msg into layout. q/Esc/Enter all
-  // exit. The leaves/design leaf still does the pure layout transform —
+  // slice; each key wraps a `free_config_*` Msg into layout. q/Esc/Enter all
+  // exit. The leaves/free-config leaf still does the pure layout transform —
   // layout.update calls it on each Msg arrival.
   //
   // v0.6 Phase 4 — the panel-list overlay nests inside free-config:
@@ -219,43 +219,43 @@ function handleDesignKey(key, seq) {
       case 'down':  case 'j': dispatch({ type: 'panel_list_nav', dir: +1 }); return;
       case 'return':          dispatch({ type: 'panel_list_pick' }); return;
       case 'w': case 'escape': dispatch({ type: 'panel_list_close' }); return;
-      case 'q':                dispatch({ type: 'design_exit' }); return;
+      case 'q':                dispatch({ type: 'free_config_exit' }); return;
     }
     return;  // swallow other keys while the overlay is open
   }
   switch (key) {
-    case 'up':    case 'k': dispatch({ type: 'design_nav', dir: -1 }); break;
-    case 'down':  case 'j': dispatch({ type: 'design_nav', dir: +1 }); break;
-    case 'K':               dispatch({ type: 'design_reorder', dir: -1 }); break;
-    case 'J':               dispatch({ type: 'design_reorder', dir: +1 }); break;
-    case 'left':  case 'h': dispatch({ type: 'design_move_col', col: 'left' }); break;
-    case 'right': case 'l': dispatch({ type: 'design_move_col', col: 'right' }); break;
-    case '+':     case '=': dispatch({ type: 'design_resize', delta: +1 }); break;
-    case '-':               dispatch({ type: 'design_resize', delta: -1 }); break;
-    case ']':               dispatch({ type: 'design_panel_height', delta: +5 }); break;
-    case '[':               dispatch({ type: 'design_panel_height', delta: -5 }); break;
-    case 't':               dispatch({ type: 'design_title_enter' }); break;
-    case 'u':               dispatch({ type: 'design_undo' }); break;
-    case 'ctrl-r':          dispatch({ type: 'design_redo' }); break;
+    case 'up':    case 'k': dispatch({ type: 'free_config_nav', dir: -1 }); break;
+    case 'down':  case 'j': dispatch({ type: 'free_config_nav', dir: +1 }); break;
+    case 'K':               dispatch({ type: 'free_config_reorder', dir: -1 }); break;
+    case 'J':               dispatch({ type: 'free_config_reorder', dir: +1 }); break;
+    case 'left':  case 'h': dispatch({ type: 'free_config_move_col', col: 'left' }); break;
+    case 'right': case 'l': dispatch({ type: 'free_config_move_col', col: 'right' }); break;
+    case '+':     case '=': dispatch({ type: 'free_config_resize', delta: +1 }); break;
+    case '-':               dispatch({ type: 'free_config_resize', delta: -1 }); break;
+    case ']':               dispatch({ type: 'free_config_panel_height', delta: +5 }); break;
+    case '[':               dispatch({ type: 'free_config_panel_height', delta: -5 }); break;
+    case 't':               dispatch({ type: 'free_config_title_enter' }); break;
+    case 'u':               dispatch({ type: 'free_config_undo' }); break;
+    case 'ctrl-r':          dispatch({ type: 'free_config_redo' }); break;
     case 'w':               dispatch({ type: 'panel_list_open' }); break;
     case ' ': {
       // v0.6 — collapse-toggle on the FOCUSED placement (the panel
       // under the green focus border). detail is rejected by the
       // reducer; other invariants (drag in flight) are out of band
-      // here since handleDesignKey only runs on idle key input.
-      const all = layoutSlice ? require('../leaves/design').allDesignPanels(layoutSlice) : [];
+      // here since handleFreeConfigKey only runs on idle key input.
+      const all = layoutSlice ? require('../leaves/free-config').allFreeConfigPanels(layoutSlice) : [];
       const sel = all.find(p => p.type === (layoutSlice && layoutSlice.focus));
       if (sel) dispatch({ type: 'panel_collapse_toggle', id: sel.id });
       break;
     }
-    case 'return': case 'q': case 'escape': dispatch({ type: 'design_exit' }); break;
+    case 'return': case 'q': case 'escape': dispatch({ type: 'free_config_exit' }); break;
   }
 }
 
-function handleDesignTitleEditKey(key, seq) {
-  if (key === 'escape') { dispatchMsg(wrap('layout', { type: 'design_title_cancel' })); return; }
-  if (key === 'return') { dispatchMsg(wrap('layout', { type: 'design_title_submit' })); return; }
-  dispatchMsg(wrap('layout', { type: 'design_title_key', key, seq }));
+function handleFreeConfigTitleEditKey(key, seq) {
+  if (key === 'escape') { dispatchMsg(wrap('layout', { type: 'free_config_title_cancel' })); return; }
+  if (key === 'return') { dispatchMsg(wrap('layout', { type: 'free_config_title_submit' })); return; }
+  dispatchMsg(wrap('layout', { type: 'free_config_title_key', key, seq }));
 }
 
 function handleCmdlineKey(key, seq) {
@@ -598,8 +598,8 @@ const _modeHandlers = {
     else if (key === 'return') applyMsg({ type: 'prompt_submit' });
     else applyMsg({ type: 'prompt_key', key, seq });
   },
-  designTitleEditMode: (key, seq) => handleDesignTitleEditKey(key, seq),
-  freeConfigMode:          (key, seq) => handleDesignKey(key, seq),
+  freeConfigTitleEditMode: (key, seq) => handleFreeConfigTitleEditKey(key, seq),
+  freeConfigMode:          (key, seq) => handleFreeConfigKey(key, seq),
   menuOpen:            (key, seq) => handleMenuKey(key, seq),
   filterMode:          (key, seq) => handleFilterKey(key, seq),
   copyMode:            (key, seq) => handleCopyKey(key, seq),
@@ -734,7 +734,7 @@ function applyMsg(msg) {
 }
 
 module.exports = {
-  handleKey, handleAction, applyMsg, navSelect, startDesignMode,
+  handleKey, handleAction, applyMsg, navSelect, startFreeConfig,
   registerKeyFilter, clearKeyFilters,
   loadKeyBindings,
   // Exposed so actions.js (the carved-out handleAction switch) can lazy-

@@ -303,7 +303,7 @@ const BROADCAST_TYPES = new Set(['refresh', 'hub', 'action']);
 
 function dispatchMsg(msg) {
   // Free-config freeze gate. While free-config mode is active, only
-  // layout-wrapped Msgs flow (they drive the mode itself: design_*,
+  // layout-wrapped Msgs flow (they drive the mode itself: free_config_*,
   // pool_*, focus_set, view_*, set_arrange). Broadcasts (refresh / hub
   // / action) and wrapped Msgs to non-layout components are dropped —
   // each Component renders its last snapshot until the mode exits, so

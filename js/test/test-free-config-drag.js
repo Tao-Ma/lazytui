@@ -18,17 +18,17 @@
  */
 'use strict';
 
-const { onMouseEvent, pointToDropTarget, _getDragState } = require('../overlay/design');
+const { onMouseEvent, pointToDropTarget, _getDragState } = require('../overlay/free-config');
 const dispatch = require('../dispatch/dispatch');
 const { getModel } = require('../app/runtime');
 const { getInstanceSlice } = require('../panel/api');
 const { describe, it, assert, eq, report } = require('./test-runner');
 
 // Design mode lives on layout's slice (post-Phase-6 single-writer cleanup):
-// enter via a wrapped `design_enter` Msg into the layout Component.
-function enterDesign() {
+// enter via a wrapped `free_config_enter` Msg into the layout Component.
+function enterFreeConfig() {
   const api = require('../panel/api');
-  api.dispatchMsg(api.wrap('layout', { type: 'design_enter' }));
+  api.dispatchMsg(api.wrap('layout', { type: 'free_config_enter' }));
 }
 
 // ----- Fixture -----
@@ -65,7 +65,7 @@ function setupFixture() {
   };
   getModel().modes.freeConfigMode = false;
   getInstanceSlice('layout').dirty = false;
-  enterDesign(getInstanceSlice("layout").arrange, '/dev/null', () => {});
+  enterFreeConfig(getInstanceSlice("layout").arrange, '/dev/null', () => {});
 }
 
 // ===============================================================
@@ -387,22 +387,22 @@ describe('[4] swap — middle-zone drag', () => {
 // pointToCellZone short-cell collapse: h<3 collapses the middle so very
 // short cells offer insert-only top/bottom (no impossible 0-row swap zone).
 describe('[5b] pointToCellZone — h<3 collapse', () => {
-  const mdesign = require('../leaves/design');
+  const mfc = require('../leaves/free-config');
   it('h=1: only row is "top" (insert before)', () => {
-    eq(mdesign.pointToCellZone({ y: 0, h: 1 }, 0), 'top');
+    eq(mfc.pointToCellZone({ y: 0, h: 1 }, 0), 'top');
   });
   it('h=2: top half=top, bottom half=bottom (no middle)', () => {
-    eq(mdesign.pointToCellZone({ y: 0, h: 2 }, 0), 'top');
-    eq(mdesign.pointToCellZone({ y: 0, h: 2 }, 1), 'bottom');
+    eq(mfc.pointToCellZone({ y: 0, h: 2 }, 0), 'top');
+    eq(mfc.pointToCellZone({ y: 0, h: 2 }, 1), 'bottom');
   });
   it('h=3: each zone exactly one row', () => {
-    eq(mdesign.pointToCellZone({ y: 0, h: 3 }, 0), 'top');
-    eq(mdesign.pointToCellZone({ y: 0, h: 3 }, 1), 'middle');
-    eq(mdesign.pointToCellZone({ y: 0, h: 3 }, 2), 'bottom');
+    eq(mfc.pointToCellZone({ y: 0, h: 3 }, 0), 'top');
+    eq(mfc.pointToCellZone({ y: 0, h: 3 }, 1), 'middle');
+    eq(mfc.pointToCellZone({ y: 0, h: 3 }, 2), 'bottom');
   });
   it('outside the cell y-range returns null', () => {
-    eq(mdesign.pointToCellZone({ y: 5, h: 10 }, 4), null);
-    eq(mdesign.pointToCellZone({ y: 5, h: 10 }, 15), null);
+    eq(mfc.pointToCellZone({ y: 5, h: 10 }, 4), null);
+    eq(mfc.pointToCellZone({ y: 5, h: 10 }, 15), null);
   });
 });
 
@@ -412,14 +412,14 @@ describe('[5b] pointToCellZone — h<3 collapse', () => {
 // applyDrop would produce on release — that's the user-facing promise of
 // "what I see is what I get."
 describe('[5] computeDragPreviewArrange — what-if snapshot', () => {
-  const mdesign = require('../leaves/design');
+  const mfc = require('../leaves/free-config');
 
   it('insert preview matches a containers→left:2 release', () => {
     setupFixture();
     onMouseEvent('press',  5, 2);
     onMouseEvent('motion', 5, 18);  // groups bot zone — insert at left:2
     const slice = getInstanceSlice('layout');
-    const preview = mdesign.computeDragPreviewArrange(slice);
+    const preview = mfc.computeDragPreviewArrange(slice);
     eq(preview.leftPanels[0].type, 'groups');
     eq(preview.leftPanels[1].type, 'containers');
   });
@@ -429,7 +429,7 @@ describe('[5] computeDragPreviewArrange — what-if snapshot', () => {
     onMouseEvent('press',  5, 2);
     onMouseEvent('motion', 5, 14);  // groups mid zone — swap
     const slice = getInstanceSlice('layout');
-    const preview = mdesign.computeDragPreviewArrange(slice);
+    const preview = mfc.computeDragPreviewArrange(slice);
     eq(preview.leftPanels[0].type, 'groups',     'groups at slot 0');
     eq(preview.leftPanels[1].type, 'containers', 'containers at slot 1');
   });
@@ -439,7 +439,7 @@ describe('[5] computeDragPreviewArrange — what-if snapshot', () => {
     onMouseEvent('press',   5, 2);
     onMouseEvent('motion', 50, 10);  // stats mid zone — cross-col swap
     const slice = getInstanceSlice('layout');
-    const preview = mdesign.computeDragPreviewArrange(slice);
+    const preview = mfc.computeDragPreviewArrange(slice);
     eq(preview.leftPanels[0].type, 'stats',     'stats to left:0');
     eq(preview.rightPanels[1].type, 'containers', 'containers to right:1');
     eq(preview.rightPanels[2].type, 'detail',    'detail still at end');
@@ -450,7 +450,7 @@ describe('[5] computeDragPreviewArrange — what-if snapshot', () => {
     onMouseEvent('press',  5, 2);
     onMouseEvent('motion', 5, 5);  // containers mid zone — self-swap
     const slice = getInstanceSlice('layout');
-    const preview = mdesign.computeDragPreviewArrange(slice);
+    const preview = mfc.computeDragPreviewArrange(slice);
     eq(preview, null);
   });
 
@@ -460,14 +460,14 @@ describe('[5] computeDragPreviewArrange — what-if snapshot', () => {
     onMouseEvent('press',  50, 20);
     onMouseEvent('motion',  5,  2);
     const slice = getInstanceSlice('layout');
-    const preview = mdesign.computeDragPreviewArrange(slice);
+    const preview = mfc.computeDragPreviewArrange(slice);
     eq(preview, null);
   });
 
   it('no drag → preview is null', () => {
     setupFixture();
     const slice = getInstanceSlice('layout');
-    const preview = mdesign.computeDragPreviewArrange(slice);
+    const preview = mfc.computeDragPreviewArrange(slice);
     eq(preview, null);
   });
 
@@ -480,9 +480,9 @@ describe('[5] computeDragPreviewArrange — what-if snapshot', () => {
     onMouseEvent('press',  5, 2);  // press containers (left:0)
     onMouseEvent('motion', 5, 1);  // containers top zone → insert@left:0
     const slice = getInstanceSlice('layout');
-    eq(slice.design.drag.target.kind, 'insert');
-    eq(slice.design.drag.target.index, 0);
-    const preview = mdesign.computeDragPreviewArrange(slice);
+    eq(slice.freeConfig.drag.target.kind, 'insert');
+    eq(slice.freeConfig.drag.target.index, 0);
+    const preview = mfc.computeDragPreviewArrange(slice);
     eq(preview, null, 'self-targeted insert produces no preview');
   });
 
@@ -491,9 +491,9 @@ describe('[5] computeDragPreviewArrange — what-if snapshot', () => {
     onMouseEvent('press',  5, 2);  // press containers
     onMouseEvent('motion', 5, 8);  // containers bot zone → insert@left:1
     const slice = getInstanceSlice('layout');
-    eq(slice.design.drag.target.kind, 'insert');
-    eq(slice.design.drag.target.index, 1);
-    const preview = mdesign.computeDragPreviewArrange(slice);
+    eq(slice.freeConfig.drag.target.kind, 'insert');
+    eq(slice.freeConfig.drag.target.index, 1);
+    const preview = mfc.computeDragPreviewArrange(slice);
     eq(preview, null, 'bottom-third of own cell is still a self-target');
   });
 
@@ -504,20 +504,20 @@ describe('[5] computeDragPreviewArrange — what-if snapshot', () => {
     onMouseEvent('press',   5, 2);  // press containers (left:0)
     onMouseEvent('motion', 50, 0);  // actions top zone → insert@right:0
     const slice = getInstanceSlice('layout');
-    eq(slice.design.drag.target.column, 'right');
-    eq(slice.design.drag.target.index, 0);
-    const preview = mdesign.computeDragPreviewArrange(slice);
+    eq(slice.freeConfig.drag.target.column, 'right');
+    eq(slice.freeConfig.drag.target.index, 0);
+    const preview = mfc.computeDragPreviewArrange(slice);
     assert(preview !== null, 'cross-column move produces a real preview');
     eq(preview.rightPanels[0].type, 'containers');
   });
 });
 
 // ===============================================================
-// design_mouse_motion's diff check must compare every preview-affecting
+// free_config_mouse_motion's diff check must compare every preview-affecting
 // field. Regression for two bugs in the original equality helpers:
 //   - missing `kind`  → insert@N vs swap@N at the same column compared equal
 //   - missing `index` → insert@0 vs insert@1 compared equal
-describe('[6] design_mouse_motion — repaint emission across zone changes', () => {
+describe('[6] free_config_mouse_motion — repaint emission across zone changes', () => {
   const layout = require('../panel/layout');
   const { getInstanceSlice } = require('../panel/api');
 
@@ -528,10 +528,10 @@ describe('[6] design_mouse_motion — repaint emission across zone changes', () 
     return Array.isArray(r) ? r : [r, []];
   }
   function pressAt(mx, my) {
-    return layout.update({ type: 'design_mouse_press', mx, my, cols: 120 }, getInstanceSlice('layout'));
+    return layout.update({ type: 'free_config_mouse_press', mx, my, cols: 120 }, getInstanceSlice('layout'));
   }
   function motion(slice, mx, my) {
-    return unpack(layout.update({ type: 'design_mouse_motion', mx, my, cols: 120 }, slice));
+    return unpack(layout.update({ type: 'free_config_mouse_motion', mx, my, cols: 120 }, slice));
   }
 
   it('insert@N → swap@N (kind change at same index) emits force_full_repaint', () => {
@@ -541,11 +541,11 @@ describe('[6] design_mouse_motion — repaint emission across zone changes', () 
     let slice = pressAt(50, 8);  // press stats body (avoid y=5 boundary)
     let cmds;
     [slice, cmds] = motion(slice, 5, 1);  // containers top zone → insert at 0
-    eq(slice.design.drag.target.kind, 'insert');
-    eq(slice.design.drag.target.index, 0);
+    eq(slice.freeConfig.drag.target.kind, 'insert');
+    eq(slice.freeConfig.drag.target.index, 0);
     [slice, cmds] = motion(slice, 5, 5);  // containers mid zone → swap at 0
-    eq(slice.design.drag.target.kind, 'swap');
-    eq(slice.design.drag.target.index, 0);
+    eq(slice.freeConfig.drag.target.kind, 'swap');
+    eq(slice.freeConfig.drag.target.index, 0);
     eq(cmds[0] && cmds[0].type, 'force_full_repaint');
   });
 
@@ -555,8 +555,8 @@ describe('[6] design_mouse_motion — repaint emission across zone changes', () 
     let cmds;
     [slice, cmds] = motion(slice, 5, 1);  // containers top → insert@0
     [slice, cmds] = motion(slice, 5, 8);  // containers bot → insert@1
-    eq(slice.design.drag.target.kind, 'insert');
-    eq(slice.design.drag.target.index, 1);
+    eq(slice.freeConfig.drag.target.kind, 'insert');
+    eq(slice.freeConfig.drag.target.index, 1);
     eq(cmds[0] && cmds[0].type, 'force_full_repaint');
   });
 
@@ -578,9 +578,9 @@ describe('[6] design_mouse_motion — repaint emission across zone changes', () 
     let slice = pressAt(50, 8);     // press stats — source = stats
     let cmds;
     [slice, cmds] = motion(slice, 5, 1);   // left containers top → insert@left:0
-    eq(slice.design.drag.target.column, 'left');
+    eq(slice.freeConfig.drag.target.column, 'left');
     [slice, cmds] = motion(slice, 50, 0);  // right actions top → insert@right:0
-    eq(slice.design.drag.target.column, 'right');
+    eq(slice.freeConfig.drag.target.column, 'right');
     eq(cmds[0] && cmds[0].type, 'force_full_repaint');
   });
 });

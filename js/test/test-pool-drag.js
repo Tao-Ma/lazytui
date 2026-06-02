@@ -2,7 +2,7 @@
  * Phase 5 — pool drag from the panel-list overlay onto the layout grid.
  *
  * Pins the `poolDragStart` → `poolDragMotion` → `poolDragRelease` state
- * machine on `leaves/design-pool-drag`. Release returns [next, cmds]; the cmds
+ * machine on `leaves/free-config-pool-drag`. Release returns [next, cmds]; the cmds
  * are dispatch_msg Cmds that re-emit pool_hide / pool_show Msgs back
  * into layout.update — Phase 2's handlers do the actual mutation.
  *
@@ -11,7 +11,7 @@
 'use strict';
 
 const { describe, it, eq, assert, report } = require('./test-runner');
-const mpoolDrag = require('../leaves/design-pool-drag');
+const mpoolDrag = require('../leaves/free-config-pool-drag');
 const layout = require('../panel/layout');
 
 // Build a slice with panelBounds populated so pool-drop hit-tests have
@@ -52,7 +52,7 @@ function buildSlice() {
 describe('[poolDragStart] sets drag.kind = pool-armed with sourceId', () => {
   it('captures source id + anchor coordinates', () => {
     const s = mpoolDrag.poolDragStart(buildSlice(), 'notes', 50, 5);
-    const d = s.design.drag;
+    const d = s.freeConfig.drag;
     eq(d.kind, 'pool-armed');
     eq(d.sourceId, 'notes');
     eq(d.startX, 50);
@@ -73,17 +73,17 @@ describe('[poolDragMotion] promotes armed→dragging and computes drop target', 
   it('no movement leaves kind=pool-armed but updates curX/Y', () => {
     let s = mpoolDrag.poolDragStart(buildSlice(), 'notes', 50, 5);
     s = mpoolDrag.poolDragMotion(s, 50, 5);
-    eq(s.design.drag.kind, 'pool-armed', 'still armed without motion');
+    eq(s.freeConfig.drag.kind, 'pool-armed', 'still armed without motion');
   });
   it('motion promotes to pool-dragging', () => {
     let s = mpoolDrag.poolDragStart(buildSlice(), 'notes', 50, 5);
     s = mpoolDrag.poolDragMotion(s, 52, 6);
-    eq(s.design.drag.kind, 'pool-dragging');
+    eq(s.freeConfig.drag.kind, 'pool-dragging');
   });
   it('top third of actions → insert at right:0 (before actions)', () => {
     let s = mpoolDrag.poolDragStart(buildSlice(), 'notes', 50, 5);
     s = mpoolDrag.poolDragMotion(s, 50, 1);  // actions top zone [0,2)
-    const t = s.design.drag.target;
+    const t = s.freeConfig.drag.target;
     eq(t.kind, 'insert');
     eq(t.column, 'right');
     eq(t.index, 0);
@@ -92,7 +92,7 @@ describe('[poolDragMotion] promotes armed→dragging and computes drop target', 
   it('middle third of actions → replace actions', () => {
     let s = mpoolDrag.poolDragStart(buildSlice(), 'notes', 50, 5);
     s = mpoolDrag.poolDragMotion(s, 50, 4);  // actions mid zone [2,6)
-    const t = s.design.drag.target;
+    const t = s.freeConfig.drag.target;
     eq(t.kind, 'replace');
     eq(t.column, 'right');
     eq(t.occupantId, 'actions');
@@ -101,7 +101,7 @@ describe('[poolDragMotion] promotes armed→dragging and computes drop target', 
   it('bottom third of actions → insert at right:1 (between actions and detail)', () => {
     let s = mpoolDrag.poolDragStart(buildSlice(), 'notes', 50, 5);
     s = mpoolDrag.poolDragMotion(s, 50, 6);  // actions bot zone [6,8)
-    const t = s.design.drag.target;
+    const t = s.freeConfig.drag.target;
     eq(t.kind, 'insert');
     eq(t.column, 'right');
     eq(t.index, 1);
@@ -110,7 +110,7 @@ describe('[poolDragMotion] promotes armed→dragging and computes drop target', 
   it('middle third of detail → replace target marked invalid (detail is essential)', () => {
     let s = mpoolDrag.poolDragStart(buildSlice(), 'notes', 50, 5);
     s = mpoolDrag.poolDragMotion(s, 50, 14);  // detail mid zone [12,16)
-    const t = s.design.drag.target;
+    const t = s.freeConfig.drag.target;
     eq(t.kind, 'replace');
     eq(t.occupantId, 'detail');
     eq(t.valid, false, 'detail replace refused');
@@ -118,7 +118,7 @@ describe('[poolDragMotion] promotes armed→dragging and computes drop target', 
   it('top third of detail → insert clamped to right:1 (before detail)', () => {
     let s = mpoolDrag.poolDragStart(buildSlice(), 'notes', 50, 5);
     s = mpoolDrag.poolDragMotion(s, 50, 9);  // detail top zone [8,12)
-    const t = s.design.drag.target;
+    const t = s.freeConfig.drag.target;
     eq(t.kind, 'insert');
     eq(t.index, 1);  // detail is at idx 1
     eq(t.valid, true);
@@ -126,7 +126,7 @@ describe('[poolDragMotion] promotes armed→dragging and computes drop target', 
   it('bottom third of detail → insert CLAMPED to detail position (detail-at-end)', () => {
     let s = mpoolDrag.poolDragStart(buildSlice(), 'notes', 50, 5);
     s = mpoolDrag.poolDragMotion(s, 50, 18);  // detail bot zone [16,20)
-    const t = s.design.drag.target;
+    const t = s.freeConfig.drag.target;
     eq(t.kind, 'insert');
     eq(t.index, 1);  // would be 2, clamped to detail's idx (1)
     eq(t.valid, true);
@@ -135,14 +135,14 @@ describe('[poolDragMotion] promotes armed→dragging and computes drop target', 
   it('top third of detail → no clamp marker (target lands where cursor says)', () => {
     let s = mpoolDrag.poolDragStart(buildSlice(), 'notes', 50, 5);
     s = mpoolDrag.poolDragMotion(s, 50, 9);  // detail top zone [8,12) → insert@1
-    const t = s.design.drag.target;
+    const t = s.freeConfig.drag.target;
     eq(t.index, 1);
     eq(t.clamp, undefined, 'no rewrite happened, no clamp marker');
   });
   it('drop in dead zone below all right cells → append at right tail (clamped)', () => {
     let s = mpoolDrag.poolDragStart(buildSlice(), 'notes', 50, 5);
     s = mpoolDrag.poolDragMotion(s, 50, 30);  // below detail
-    const t = s.design.drag.target;
+    const t = s.freeConfig.drag.target;
     eq(t.kind, 'insert');
     eq(t.column, 'right');
     // detail is at idx 1, append (idx 2) clamps to 1.
@@ -152,7 +152,7 @@ describe('[poolDragMotion] promotes armed→dragging and computes drop target', 
   it('top third of groups (left) → insert at left:0', () => {
     let s = mpoolDrag.poolDragStart(buildSlice(), 'notes', 5, 5);
     s = mpoolDrag.poolDragMotion(s, 5, 1);   // groups top zone [0,3)
-    const t = s.design.drag.target;
+    const t = s.freeConfig.drag.target;
     eq(t.kind, 'insert');
     eq(t.column, 'left');
     eq(t.index, 0);
@@ -160,7 +160,7 @@ describe('[poolDragMotion] promotes armed→dragging and computes drop target', 
   it('drop below all left cells → append at left tail (idx 2)', () => {
     let s = mpoolDrag.poolDragStart(buildSlice(), 'notes', 5, 5);
     s = mpoolDrag.poolDragMotion(s, 5, 25);  // below files
-    const t = s.design.drag.target;
+    const t = s.freeConfig.drag.target;
     eq(t.kind, 'insert');
     eq(t.column, 'left');
     eq(t.index, 2);
@@ -174,7 +174,7 @@ describe('[poolDragMotion] promotes armed→dragging and computes drop target', 
     base.panelBounds.files  = undefined;
     let s = mpoolDrag.poolDragStart(base, 'notes', 5, 5);
     s = mpoolDrag.poolDragMotion(s, 5, 12);
-    const t = s.design.drag.target;
+    const t = s.freeConfig.drag.target;
     eq(t.kind, 'insert');
     eq(t.column, 'left');
     eq(t.index, 0);
@@ -188,7 +188,7 @@ describe('[poolDragMotion] promotes armed→dragging and computes drop target', 
     const next = layout.update({ type: 'pool_hide', id: 'actions' }, base);
     let s = mpoolDrag.poolDragStart(next, 'actions', 50, 5);
     s = mpoolDrag.poolDragMotion(s, 5, 5);  // groups mid-third (left column)
-    const t = s.design.drag.target;
+    const t = s.freeConfig.drag.target;
     eq(t.valid, false);
     assert(t.reason && t.reason.includes('actions'),
       `reason mentions actions (got "${t.reason}")`);
@@ -198,7 +198,7 @@ describe('[poolDragMotion] promotes armed→dragging and computes drop target', 
     const next = layout.update({ type: 'pool_hide', id: 'actions' }, base);
     let s = mpoolDrag.poolDragStart(next, 'actions', 50, 5);
     s = mpoolDrag.poolDragMotion(s, 5, 1);  // groups top-third → would insert@0
-    const t = s.design.drag.target;
+    const t = s.freeConfig.drag.target;
     eq(t.kind, 'insert');
     eq(t.column, 'left');
     eq(t.valid, false);
@@ -222,7 +222,7 @@ describe('[poolDragRelease] emits Cmds + clears drag', () => {
     let s = mpoolDrag.poolDragStart(buildSlice(), 'notes', 50, 5);
     s = mpoolDrag.poolDragMotion(s, 50, 1);  // actions top → insert at right:0
     const [next, cmds] = mpoolDrag.poolDragRelease(s);
-    eq(next.design.drag, null, 'drag cleared');
+    eq(next.freeConfig.drag, null, 'drag cleared');
     eq(next.panelList.open, false, 'overlay closed on successful drop');
     eq(cmds.length, 2);
     eq(cmds[0].type, 'dispatch_msg');
@@ -249,7 +249,7 @@ describe('[poolDragRelease] emits Cmds + clears drag', () => {
     let s = mpoolDrag.poolDragStart(buildSlice(), 'notes', 50, 5);
     s = mpoolDrag.poolDragMotion(s, 50, 14);  // detail mid → replace (invalid)
     const [next, cmds] = mpoolDrag.poolDragRelease(s);
-    eq(next.design.drag, null);
+    eq(next.freeConfig.drag, null);
     eq(next.panelList.open, true, 'overlay reopened (was open at drag start)');
     eq(cmds.length, 1);
     eq(cmds[0].type, 'force_full_repaint');
@@ -257,7 +257,7 @@ describe('[poolDragRelease] emits Cmds + clears drag', () => {
   it('release without motion (no target) → only force_full_repaint, drag cleared', () => {
     const s = mpoolDrag.poolDragStart(buildSlice(), 'notes', 50, 5);
     const [next, cmds] = mpoolDrag.poolDragRelease(s);
-    eq(next.design.drag, null);
+    eq(next.freeConfig.drag, null);
     eq(cmds.length, 1);
     eq(cmds[0].type, 'force_full_repaint');
   });
@@ -266,7 +266,7 @@ describe('[poolDragRelease] emits Cmds + clears drag', () => {
 describe('[end-to-end] layout.update threads pool_drag_* Msgs to the leaf', () => {
   it('pool_drag_start sets the drag + emits force_full_repaint, hides overlay', () => {
     const [next, cmds] = layout.update({ type: 'pool_drag_start', id: 'notes', mx: 50, my: 5 }, buildSlice());
-    eq(next.design.drag.kind, 'pool-armed');
+    eq(next.freeConfig.drag.kind, 'pool-armed');
     eq(next.panelList.open, false, 'overlay closed for drop-target visibility');
     eq(cmds[0].type, 'force_full_repaint');
   });
@@ -275,7 +275,7 @@ describe('[end-to-end] layout.update threads pool_drag_* Msgs to the leaf', () =
     const result = layout.update({ type: 'pool_drag_motion', mx: 50, my: 30 }, armed);
     assert(Array.isArray(result), 'motion now returns [slice, cmds] (overlay repaint)');
     const [moving, cmds] = result;
-    eq(moving.design.drag.target.kind, 'insert');
+    eq(moving.freeConfig.drag.target.kind, 'insert');
     eq(cmds[0].type, 'force_full_repaint');
   });
   it('pool_drag_release returns the [next, cmds] tuple', () => {
@@ -284,7 +284,7 @@ describe('[end-to-end] layout.update threads pool_drag_* Msgs to the leaf', () =
     const result = layout.update({ type: 'pool_drag_release' }, moving);
     assert(Array.isArray(result), 'returns tuple');
     const [next, cmds] = result;
-    eq(next.design.drag, null);
+    eq(next.freeConfig.drag, null);
     eq(cmds[0].msg.msg.type, 'pool_show');
   });
   it('motion between two distinct insert indices emits force_full_repaint', () => {
@@ -293,12 +293,12 @@ describe('[end-to-end] layout.update threads pool_drag_* Msgs to the leaf', () =
     // returned "equal" → no repaint, stale preview.
     const [armed] = layout.update({ type: 'pool_drag_start', id: 'notes', mx: 50, my: 5 }, buildSlice());
     const [atTop] = layout.update({ type: 'pool_drag_motion', mx: 50, my: 1 }, armed);     // actions top → insert@0
-    eq(atTop.design.drag.target.kind, 'insert');
-    eq(atTop.design.drag.target.index, 0);
+    eq(atTop.freeConfig.drag.target.kind, 'insert');
+    eq(atTop.freeConfig.drag.target.index, 0);
     const result = layout.update({ type: 'pool_drag_motion', mx: 50, my: 6 }, atTop);      // actions bot → insert@1
     assert(Array.isArray(result), 'index change → tuple with repaint cmd');
     const [moved, cmds] = result;
-    eq(moved.design.drag.target.index, 1);
+    eq(moved.freeConfig.drag.target.index, 1);
     eq(cmds[0].type, 'force_full_repaint');
   });
 });

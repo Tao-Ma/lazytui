@@ -320,11 +320,11 @@ function handleAction(action, arg) {
       // the dispatch↔actions cycle.
       require('./dispatch')._enterFilterMode();
       break;
-    case 'design':
+    case 'free_config':
       // Reachable from menu entry and `:design` cmdline. The design-enabled
-      // gate lives in the reducer (update emits the start_design Cmd only
+      // gate lives in the reducer (update emits the start_free_config Cmd only
       // when enabled) — same gate the cmdline command uses for visibility.
-      applyMsg({ type: 'design' });
+      applyMsg({ type: 'free_config' });
       break;
     case 'quit':
       applyMsg({ type: 'quit' });

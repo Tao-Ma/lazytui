@@ -6,7 +6,7 @@
  * "free-config + non-normal view" is structurally broken. Two guards
  * enforce the separation:
  *
- *   - design_enter from half/full view is refused; `slice.design.notice`
+ *   - free_config_enter from half/full view is refused; `slice.freeConfig.notice`
  *     carries the reason for the footer.
  *   - view_expand / view_shrink (user-input `[` / `]`) while
  *     freeConfigMode is on is refused; same notice mechanism.
@@ -35,41 +35,41 @@ function freshLayoutSlice(viewMode) {
   return s;
 }
 
-describe('[1] design_enter from half/full → refused with notice', () => {
+describe('[1] free_config_enter from half/full → refused with notice', () => {
   it('half view refuses entry; viewMode unchanged; notice set', () => {
     setFreeConfig(false);
     const s = freshLayoutSlice('half');
-    const result = layout.update({ type: 'design_enter' }, s);
+    const result = layout.update({ type: 'free_config_enter' }, s);
     // Refused path returns the slice alone (no Cmd) so freeConfigMode
     // stays off — no mode_set effect emitted.
     assert(!Array.isArray(result), 'refused entry returns plain slice (no Cmds)');
     eq(result.viewMode, 'half', 'view unchanged');
-    assert(result.design.notice && /normal view/.test(result.design.notice),
-      `notice mentions normal view (got "${result.design.notice}")`);
+    assert(result.freeConfig.notice && /normal view/.test(result.freeConfig.notice),
+      `notice mentions normal view (got "${result.freeConfig.notice}")`);
   });
 
   it('full view refuses entry', () => {
     setFreeConfig(false);
     const s = freshLayoutSlice('full');
-    const result = layout.update({ type: 'design_enter' }, s);
+    const result = layout.update({ type: 'free_config_enter' }, s);
     assert(!Array.isArray(result), 'refused entry returns plain slice');
     eq(result.viewMode, 'full');
-    assert(result.design.notice, 'notice is set');
+    assert(result.freeConfig.notice, 'notice is set');
   });
 
   it('normal view allows entry; emits mode_set; notice cleared', () => {
     setFreeConfig(false);
     const s = freshLayoutSlice('normal');
     // Seed a stale notice that should clear on successful entry.
-    s.design = { ...s.design, notice: 'stale' };
+    s.freeConfig = { ...s.freeConfig, notice: 'stale' };
     // Need at least one placed panel for clampSelected; init left/right
-    // panels are empty — push a fake one so allDesignPanels is non-empty.
+    // panels are empty — push a fake one so allFreeConfigPanels is non-empty.
     s.arrange = { ...s.arrange, leftPanels: [{ id: 'a', type: 'a', column: 'left', hotkey: '1' }] };
     s.focus = 'a';
-    const result = layout.update({ type: 'design_enter' }, s);
+    const result = layout.update({ type: 'free_config_enter' }, s);
     assert(Array.isArray(result), 'allowed entry returns [slice, cmds]');
     const [next, cmds] = result;
-    eq(next.design.notice, null, 'stale notice cleared on entry');
+    eq(next.freeConfig.notice, null, 'stale notice cleared on entry');
     assert(cmds.some(c => c.type === 'apply_msg' && c.msg.flag === 'freeConfigMode'),
       'mode_set Cmd emitted');
   });
@@ -82,8 +82,8 @@ describe('[2] view_expand / view_shrink in free-config → refused with notice',
     const result = layout.update({ type: 'view_expand' }, s);
     assert(!Array.isArray(result), 'refused returns plain slice (no repaint cmd)');
     eq(result.viewMode, 'normal', 'view unchanged');
-    assert(result.design.notice && /free-config/.test(result.design.notice),
-      `notice mentions free-config (got "${result.design.notice}")`);
+    assert(result.freeConfig.notice && /free-config/.test(result.freeConfig.notice),
+      `notice mentions free-config (got "${result.freeConfig.notice}")`);
     setFreeConfig(false);
   });
 
@@ -93,7 +93,7 @@ describe('[2] view_expand / view_shrink in free-config → refused with notice',
     const result = layout.update({ type: 'view_shrink' }, s);
     assert(!Array.isArray(result));
     eq(result.viewMode, 'half', 'view unchanged');
-    assert(result.design.notice, 'notice set');
+    assert(result.freeConfig.notice, 'notice set');
     setFreeConfig(false);
   });
 
@@ -104,19 +104,19 @@ describe('[2] view_expand / view_shrink in free-config → refused with notice',
     assert(Array.isArray(result), 'allowed returns [slice, cmds]');
     const [next, cmds] = result;
     eq(next.viewMode, 'half', 'view expanded');
-    eq(next.design.notice, null, 'no notice');
+    eq(next.freeConfig.notice, null, 'no notice');
     assert(cmds.some(c => c.type === 'force_full_repaint'), 'repaint cmd emitted');
   });
 
   it('view_shrink success clears stale notice', () => {
     setFreeConfig(false);
     const s = freshLayoutSlice('half');
-    s.design = { ...s.design, notice: 'stale' };
+    s.freeConfig = { ...s.freeConfig, notice: 'stale' };
     const result = layout.update({ type: 'view_shrink' }, s);
     assert(Array.isArray(result));
     const [next] = result;
     eq(next.viewMode, 'normal');
-    eq(next.design.notice, null, 'notice cleared by successful view change');
+    eq(next.freeConfig.notice, null, 'notice cleared by successful view change');
   });
 
   it('programmatic view_set is NOT blocked even in free-config', () => {
@@ -142,15 +142,15 @@ describe('[2] view_expand / view_shrink in free-config → refused with notice',
   });
 });
 
-describe('[3] design_exit clears notice', () => {
-  it('design_exit wipes a stale notice along with drag/title/undo state', () => {
+describe('[3] free_config_exit clears notice', () => {
+  it('free_config_exit wipes a stale notice along with drag/title/undo state', () => {
     setFreeConfig(true);
     const s = freshLayoutSlice('normal');
-    s.design = { ...s.design, notice: 'stale notice' };
-    const result = layout.update({ type: 'design_exit' }, s);
+    s.freeConfig = { ...s.freeConfig, notice: 'stale notice' };
+    const result = layout.update({ type: 'free_config_exit' }, s);
     assert(Array.isArray(result));
     const [next] = result;
-    eq(next.design.notice, null);
+    eq(next.freeConfig.notice, null);
     setFreeConfig(false);
   });
 });
@@ -166,43 +166,43 @@ describe('[4] notice auto-clears on unrelated user intent', () => {
   it('focus_set with stale notice → notice cleared', () => {
     setFreeConfig(false);
     const s = freshLayoutSlice('normal');
-    s.design = { ...s.design, notice: 'stale from earlier block' };
+    s.freeConfig = { ...s.freeConfig, notice: 'stale from earlier block' };
     s.arrange = { ...s.arrange, leftPanels: [{ id: 'a', type: 'a', column: 'left', hotkey: '1' }] };
     const result = layout.update({ type: 'focus_set', focus: 'a' }, s);
     assert(Array.isArray(result), 'focus_set returns [slice, cmds]');
     const [next] = result;
-    eq(next.design.notice, null, 'unrelated Msg cleared stale notice');
+    eq(next.freeConfig.notice, null, 'unrelated Msg cleared stale notice');
   });
 
   it('pool_show with stale notice → notice cleared', () => {
     setFreeConfig(false);
     const s = freshLayoutSlice('normal');
-    s.design = { ...s.design, notice: 'stale' };
+    s.freeConfig = { ...s.freeConfig, notice: 'stale' };
     s.arrange = {
       ...s.arrange,
       pool: { x: { id: 'x', type: 'viewer', title: 'X', config: {} } },
     };
     const next = layout.update({ type: 'pool_show', id: 'x', column: 'left' }, s);
-    eq(next.design.notice, null, 'pool_show cleared stale notice');
+    eq(next.freeConfig.notice, null, 'pool_show cleared stale notice');
   });
 
-  it('design_mouse_motion preserves notice (drag in flight)', () => {
+  it('free_config_mouse_motion preserves notice (drag in flight)', () => {
     // Motion Msgs are continuous events within a single drag intent — they
     // shouldn't disturb the unrelated hint from an earlier refused action.
     setFreeConfig(true);
     const s = freshLayoutSlice('normal');
     // Seed a notice and a drag in progress so mouseMotion has something to read.
-    s.design = {
-      ...s.design,
+    s.freeConfig = {
+      ...s.freeConfig,
       notice: 'persistent through motion',
       drag: { kind: 'armed', sourceType: 'a', startX: 5, startY: 5, curX: 5, curY: 5, target: null },
     };
     s.arrange = { ...s.arrange, leftPanels: [{ id: 'a', type: 'a', column: 'left', hotkey: '1' }] };
     s.focus = 'a';
     s.panelBounds = { a: { x: 0, y: 0, w: 30, h: 10 } };
-    const result = layout.update({ type: 'design_mouse_motion', mx: 5, my: 6, cols: 120 }, s);
+    const result = layout.update({ type: 'free_config_mouse_motion', mx: 5, my: 6, cols: 120 }, s);
     const next = Array.isArray(result) ? result[0] : result;
-    eq(next.design.notice, 'persistent through motion', 'motion preserves notice');
+    eq(next.freeConfig.notice, 'persistent through motion', 'motion preserves notice');
     setFreeConfig(false);
   });
 });
@@ -214,20 +214,20 @@ describe('[5] repeated identical blocked attempts preserve slice ref', () => {
     const r1 = layout.update({ type: 'view_expand' }, s);
     assert(!Array.isArray(r1));
     assert(r1 !== s, 'first attempt creates a new slice (set notice)');
-    assert(r1.design.notice, 'first attempt sets notice');
+    assert(r1.freeConfig.notice, 'first attempt sets notice');
     const r2 = layout.update({ type: 'view_expand' }, r1);
     assert(r2 === r1, 'second identical blocked attempt returns same slice ref (no churn)');
     setFreeConfig(false);
   });
 
-  it('design_enter × 2 from half view returns identical slice ref on the 2nd attempt', () => {
+  it('free_config_enter × 2 from half view returns identical slice ref on the 2nd attempt', () => {
     setFreeConfig(false);
     const s = freshLayoutSlice('half');
-    const r1 = layout.update({ type: 'design_enter' }, s);
+    const r1 = layout.update({ type: 'free_config_enter' }, s);
     assert(!Array.isArray(r1));
     assert(r1 !== s, 'first attempt creates a new slice');
-    assert(r1.design.notice, 'first attempt sets notice');
-    const r2 = layout.update({ type: 'design_enter' }, r1);
+    assert(r1.freeConfig.notice, 'first attempt sets notice');
+    const r2 = layout.update({ type: 'free_config_enter' }, r1);
     assert(r2 === r1, 'second identical blocked attempt preserves slice ref');
   });
 });

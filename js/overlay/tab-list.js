@@ -323,7 +323,7 @@ function _triggerSuppressed() {
   if (md.freeConfigMode) return true;
   if (md.cmdMode || md.confirmMode || md.promptMode || md.menuOpen) return true;
   if (md.filterMode || md.copyMode || md.registerPopupMode || md.detailSearchMode) return true;
-  if (md.prefixMode || md.designTitleEditMode) return true;
+  if (md.prefixMode || md.freeConfigTitleEditMode) return true;
   return false;
 }
 

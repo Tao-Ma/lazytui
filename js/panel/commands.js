@@ -105,7 +105,7 @@ const FRAMEWORK_COMMANDS = [
       }));
       // The runtime layout the user was working with is gone; the
       // undo/redo history pointed at it is no longer meaningful.
-      api.dispatchMsg(wrap('layout', { type: 'design_clear_undo' }));
+      api.dispatchMsg(wrap('layout', { type: 'free_config_clear_undo' }));
       setViewerContent(null, `[green]Layout restored from[/] ${m.configPath}`);
     },
   },
@@ -120,8 +120,7 @@ const FRAMEWORK_COMMANDS = [
 
 /**
  * Dynamic framework `:` verbs — synthesized per call because their
- * candidates depend on current state (loaded themes, configured panels,
- * --design flag).
+ * candidates depend on current state (loaded themes, configured panels).
  */
 function _frameworkDynamicCommands(m) {
   const { setTheme, themeNames, activeThemeName } = require('../render/themes');
@@ -158,20 +157,11 @@ function _frameworkDynamicCommands(m) {
     });
   }
   const layoutSlice = route.getInstanceSlice('layout');
-  // v0.6: free-config mode is always available; `:design` is the v0.5
-  // alias kept for muscle memory. The boot-time `--design` CLI flag
-  // (slice.design.enabled) now just auto-enters at startup; it no
-  // longer gates the cmdline verb.
   if (layoutSlice) {
     out.push({
       name: 'free-config',
       desc: 'Open free-config mode (layout edit + pool overlay)',
-      run: () => { require('../dispatch/dispatch').startDesignMode(); },
-    });
-    out.push({
-      name: 'design',
-      desc: 'Alias for :free-config (v0.5 name)',
-      run: () => { require('../dispatch/dispatch').startDesignMode(); },
+      run: () => { require('../dispatch/dispatch').startFreeConfig(); },
     });
   }
   // v0.6 Phase 2 — pool hide/show. One verb per id makes autocomplete

@@ -18,8 +18,8 @@
 // Pure leaves — take this Component's slice and return a new one.
 // No in-place writes, no panel/api reach-around. Called from this
 // Component's update, preserving single-writer-per-slice.
-const mdesign = require('../leaves/design');
-const mpoolDrag = require('../leaves/design-pool-drag');
+const mfc = require('../leaves/free-config');
+const mpoolDrag = require('../leaves/free-config-pool-drag');
 const mtabDrag = require('../leaves/tab-drag');
 const mpool = require('../leaves/pool');
 const route = require('../leaves/route');
@@ -28,15 +28,15 @@ const { getModel } = require('../app/runtime');
 const { LEFT_HOTKEY_POOL, RIGHT_HOTKEY_POOL } = require('../leaves/hotkeys');
 
 /** Reassign positional hotkeys for a column after a hide/show mutation.
- *  Matches the design-mode behavior — hotkey is the panel's slot index
+ *  Matches the free-config behavior — hotkey is the panel's slot index
  *  within its column. Explicit YAML hotkeys are NOT preserved across
- *  runtime mutations (consistent with how design-mode reorder works). */
+ *  runtime mutations (consistent with how free-config reorder works). */
 function rekeyColumn(panels, pool) {
   return panels.map((p, i) => ({ ...p, hotkey: pool[i] || '' }));
 }
 
 /** Compare two drag drop targets for visual equality. Used by both
- *  design_mouse_motion and pool_drag_motion to decide whether the cursor
+ *  free_config_mouse_motion and pool_drag_motion to decide whether the cursor
  *  moved between drop zones (force_full_repaint + preview recompute
  *  needed) or just within one (no repaint).
  *
@@ -69,24 +69,23 @@ function init() {
     focus: 'groups',
     viewMode: 'normal',
     dirty: false,
-    // Free-config working state. `enabled` is the boot-time --design CLI
-    // flag; the rest is the design-mode reducer's drag/undo/title-edit
-    // state. The active panel (formerly `selectedIdx` here) is derived
-    // from `slice.focus` via `mdesign.selectedIdx(slice)` — single
+    // Free-config working state — the reducer's drag/undo/title-edit
+    // sub-state. The active panel (formerly `selectedIdx` here) is
+    // derived from `slice.focus` via `mfc.selectedIdx(slice)` — single
     // source of truth.
-    design: {
-      enabled: false,
+    freeConfig: {
       drag: null,
       undo: [],
       redo: [],
       titleEdit: { active: false, text: '' },
-      // Transient hint surfaced in the footer when a free-config / view-mode
-      // transition is blocked. Cleared when the user reaches a state where
-      // the block no longer applies (design_exit, successful view change).
+      // Transient hint surfaced in the footer when a free-config /
+      // view-mode transition is blocked. Cleared when the user reaches
+      // a state where the block no longer applies (free_config_exit,
+      // successful view change).
       notice: null,
     },
     // View-output (written by the render pass, read by mouse hit-tests
-    // and design-mode drag math). The renderer-as-writer pattern is the
+    // and free-config drag math). The renderer-as-writer pattern is the
     // documented exception to single-writer — see render/layout.js header.
     panelHeights: {},
     panelBounds: {},
@@ -162,7 +161,7 @@ function _potentialBlockedNotice(slice, msg) {
     const md = getModel().modes;
     if (md && md.freeConfigMode) return 'exit free-config (q) to change view mode';
   }
-  if (msg.type === 'design_enter' && slice.viewMode !== 'normal') {
+  if (msg.type === 'free_config_enter' && slice.viewMode !== 'normal') {
     return 'free-config requires normal view ([ to return)';
   }
   return null;
@@ -178,14 +177,14 @@ function update(msg, slice) {
   //   - Everything else implicitly clears notice: any layout-touching
   //     user intent that isn't re-asserting the block is treated as the
   //     user having moved on.
-  const continuousMotion = msg.type === 'design_mouse_motion' ||
+  const continuousMotion = msg.type === 'free_config_mouse_motion' ||
                            msg.type === 'pool_drag_motion' ||
                            msg.type === 'tab_drag_motion';
-  const oldNotice = slice.design && slice.design.notice;
+  const oldNotice = slice.freeConfig && slice.freeConfig.notice;
   if (oldNotice && !continuousMotion) {
     const wouldReassert = _potentialBlockedNotice(slice, msg);
     if (wouldReassert !== oldNotice) {
-      slice = { ...slice, design: { ...slice.design, notice: null } };
+      slice = { ...slice, freeConfig: { ...slice.freeConfig, notice: null } };
     }
   }
 
@@ -208,8 +207,8 @@ function update(msg, slice) {
         const target = 'exit free-config (q) to change view mode';
         // Short-circuit: if notice already matches, slice ref is preserved
         // (the auto-clear above also preserved it via wouldReassert).
-        if (slice.design && slice.design.notice === target) return slice;
-        return { ...slice, design: { ...slice.design, notice: target } };
+        if (slice.freeConfig && slice.freeConfig.notice === target) return slice;
+        return { ...slice, freeConfig: { ...slice.freeConfig, notice: target } };
       }
       const next = reduceViewMode(slice.viewMode, msg);
       if (next === slice.viewMode) return slice;
@@ -263,86 +262,83 @@ function update(msg, slice) {
       if (msg.dirty   !== undefined) next.dirty   = !!msg.dirty;
       return next;
     }
-    // Design-mode state — pure return-new. The mdesign leaf takes this
+    // Design-mode state — pure return-new. The mfc leaf takes this
     // Component's slice and returns a new slice; layout.update threads
     // it through, preserving single-writer-per-slice. The root chrome
-    // mode flags (`freeConfigMode`, `designTitleEditMode`) ride on
+    // mode flags (`freeConfigMode`, `freeConfigTitleEditMode`) ride on
     // `apply_msg` Cmds the reducer applies (`mode_set` / `mode_clear`).
-    case 'design_enter': {
+    case 'free_config_enter': {
       // Refuse entry from half/full view — the drag/resize gestures
       // operate on the full grid and need every cell visible. Surface a
       // notice so the user knows why `q` / `:free-config` didn't fire.
       if (slice.viewMode !== 'normal') {
         const target = 'free-config requires normal view ([ to return)';
-        if (slice.design && slice.design.notice === target) return slice;
-        return { ...slice, design: { ...slice.design, notice: target } };
+        if (slice.freeConfig && slice.freeConfig.notice === target) return slice;
+        return { ...slice, freeConfig: { ...slice.freeConfig, notice: target } };
       }
-      // Reset working state on entry; preserve `enabled` (the boot-time
-      // --design CLI flag). v0.6: auto-open the panel-list overlay when
-      // the pool has hidden entries — the discoverability hint that
-      // there are more panels available than currently in the grid.
+      // Reset working state on entry. Auto-open the panel-list overlay
+      // when the pool has hidden entries — the discoverability hint
+      // that there are more panels available than currently in the grid.
       // Preserve the current focus when it points at a placed panel
-      // (mdesign.selectedIdx derives the index); fall back to the
-      // first placed panel when current focus isn't in the layout
-      // (hidden in the pool, or never set).
-      const enabled = slice.design && slice.design.enabled;
+      // (mfc.selectedIdx derives the index); fall back to the first
+      // placed panel when current focus isn't in the layout (hidden in
+      // the pool, or never set).
       const hasHidden = mpool.hiddenIds(slice.arrange).length > 0;
-      const all = mdesign.allDesignPanels(slice);
+      const all = mfc.allFreeConfigPanels(slice);
       const focusedIsPlaced = all.some(p => p.type === slice.focus);
       const focus = focusedIsPlaced ? slice.focus : (all[0] ? all[0].type : slice.focus);
       const next = {
         ...slice,
         focus,
-        design: { enabled, drag: null, undo: [], redo: [], titleEdit: { active: false, text: '' }, notice: null },
+        freeConfig: { drag: null, undo: [], redo: [], titleEdit: { active: false, text: '' }, notice: null },
         panelList: { open: hasHidden, cursor: 0 },
       };
       return [next, [{ type: 'apply_msg', msg: { type: 'mode_set', flag: 'freeConfigMode' } }]];
     }
-    case 'design_exit': {
-      const enabled = slice.design && slice.design.enabled;
-      // Free-config nav (design_nav / design_reorder / design_move /
-      // mousePress) writes `focus` directly via the mdesign leaf, NOT
-      // through `focus_set`, so halfLeftPanel didn't track in-mode
-      // movement. Commit the current focus on exit so half-view's
-      // left-panel fallback reflects where the user landed.
+    case 'free_config_exit': {
+      // Free-config nav (free_config_nav / free_config_reorder /
+      // free_config_move / mousePress) writes `focus` directly via the
+      // mfc leaf, NOT through `focus_set`, so halfLeftPanel didn't
+      // track in-mode movement. Commit the current focus on exit so
+      // half-view's left-panel fallback reflects where the user landed.
       const halfLeftPanel = route.instanceKind(slice.focus) !== 'detail' ? slice.focus : slice.halfLeftPanel;
       const next = {
         ...slice,
-        design: { enabled, drag: null, undo: [], redo: [], titleEdit: { active: false, text: '' }, notice: null },
+        freeConfig: { drag: null, undo: [], redo: [], titleEdit: { active: false, text: '' }, notice: null },
         panelList: { open: false, cursor: 0 },
         halfLeftPanel,
       };
       return [next, [
         { type: 'apply_msg', msg: { type: 'mode_clear', flag: 'freeConfigMode' } },
-        { type: 'apply_msg', msg: { type: 'mode_clear', flag: 'designTitleEditMode' } },
+        { type: 'apply_msg', msg: { type: 'mode_clear', flag: 'freeConfigTitleEditMode' } },
         { type: 'show_selected_info' },
       ]];
     }
-    case 'design_nav':          return mdesign.navSelect(slice, msg.dir);
-    case 'design_reorder':      return mdesign.clampSelected(mdesign.reorderWithin(slice, msg.dir));
-    case 'design_move_col':     return mdesign.clampSelected(mdesign.moveColumn(slice, msg.col));
-    case 'design_resize':       return mdesign.resizeWidthOrDetail(slice, msg.delta);
-    case 'design_panel_height': return mdesign.resizeFocusedPanelHeight(slice, msg.delta);
-    case 'design_undo':         return mdesign.clampSelected(mdesign.undo(slice));
-    case 'design_redo':         return mdesign.clampSelected(mdesign.redo(slice));
-    case 'design_title_enter':
-      return [mdesign.titleEnter(slice), [{ type: 'apply_msg', msg: { type: 'mode_set', flag: 'designTitleEditMode' } }]];
-    case 'design_title_submit': {
-      const text = slice.design ? slice.design.titleEdit.text : '';
-      let next = mdesign.setSelectedTitle(slice, text);
-      if (next.design) next = { ...next, design: { ...next.design, titleEdit: { active: false, text: '' } } };
-      return [next, [{ type: 'apply_msg', msg: { type: 'mode_clear', flag: 'designTitleEditMode' } }]];
+    case 'free_config_nav':          return mfc.navSelect(slice, msg.dir);
+    case 'free_config_reorder':      return mfc.clampSelected(mfc.reorderWithin(slice, msg.dir));
+    case 'free_config_move_col':     return mfc.clampSelected(mfc.moveColumn(slice, msg.col));
+    case 'free_config_resize':       return mfc.resizeWidthOrDetail(slice, msg.delta);
+    case 'free_config_panel_height': return mfc.resizeFocusedPanelHeight(slice, msg.delta);
+    case 'free_config_undo':         return mfc.clampSelected(mfc.undo(slice));
+    case 'free_config_redo':         return mfc.clampSelected(mfc.redo(slice));
+    case 'free_config_title_enter':
+      return [mfc.titleEnter(slice), [{ type: 'apply_msg', msg: { type: 'mode_set', flag: 'freeConfigTitleEditMode' } }]];
+    case 'free_config_title_submit': {
+      const text = slice.freeConfig ? slice.freeConfig.titleEdit.text : '';
+      let next = mfc.setSelectedTitle(slice, text);
+      if (next.freeConfig) next = { ...next, freeConfig: { ...next.freeConfig, titleEdit: { active: false, text: '' } } };
+      return [next, [{ type: 'apply_msg', msg: { type: 'mode_clear', flag: 'freeConfigTitleEditMode' } }]];
     }
-    case 'design_mouse_press':  return mdesign.mousePress(slice, msg.mx, msg.my, msg.cols);
-    case 'design_mouse_motion': {
+    case 'free_config_mouse_press':  return mfc.mousePress(slice, msg.mx, msg.my, msg.cols);
+    case 'free_config_mouse_motion': {
       // Diff-painter trap: between targets, panel content is frozen but
       // the layout reshuffles in the preview render — paintColumns can't
       // tell anything changed, so force a full repaint when the target
       // shifts. Same-zone motion no-ops.
-      const next = mdesign.mouseMotion(slice, msg.mx, msg.my, msg.cols);
+      const next = mfc.mouseMotion(slice, msg.mx, msg.my, msg.cols);
       if (next === slice) return slice;
-      const ds = slice.design && slice.design.drag;
-      const ns = next.design  && next.design.drag;
+      const ds = slice.freeConfig && slice.freeConfig.drag;
+      const ns = next.freeConfig  && next.freeConfig.drag;
       const isInsertionDrag = ns && (ns.kind === 'dragging' || ns.kind === 'armed');
       if (!isInsertionDrag) return next;
       const oldT = ds && ds.target;
@@ -352,11 +348,11 @@ function update(msg, slice) {
       // looks like on release). Stored on drag.previewArrange; the render
       // path swaps slice.arrange for it during paint, restoring after so
       // hit-tests stay anchored to the original layout.
-      const previewArrange = mdesign.computeDragPreviewArrange(next);
-      const withPreview = { ...next, design: { ...next.design, drag: { ...ns, previewArrange } } };
+      const previewArrange = mfc.computeDragPreviewArrange(next);
+      const withPreview = { ...next, freeConfig: { ...next.freeConfig, drag: { ...ns, previewArrange } } };
       return [withPreview, [{ type: 'force_full_repaint' }]];
     }
-    case 'design_mouse_release': return mdesign.mouseRelease(slice);
+    case 'free_config_mouse_release': return mfc.mouseRelease(slice);
     // Pool-drag gesture from the panel-list overlay. Source is the
     // overlay cursor's item id; drop is on a layout cell (replace) or
     // column gap (append). poolDragRelease returns the [next, cmds]
@@ -375,14 +371,14 @@ function update(msg, slice) {
       // causing visible blinking under rapid drag.
       const next = mpoolDrag.poolDragMotion(slice, msg.mx, msg.my);
       if (next === slice) return slice;
-      const oldT = slice.design && slice.design.drag && slice.design.drag.target;
-      const newT = next.design  && next.design.drag  && next.design.drag.target;
+      const oldT = slice.freeConfig && slice.freeConfig.drag && slice.freeConfig.drag.target;
+      const newT = next.freeConfig  && next.freeConfig.drag  && next.freeConfig.drag.target;
       if (_dragTargetsEqual(oldT, newT)) return next;
       // Target changed — recompute preview arrange (same pattern as
-      // design_mouse_motion). Stored on drag.previewArrange.
-      const ns = next.design && next.design.drag;
+      // free_config_mouse_motion). Stored on drag.previewArrange.
+      const ns = next.freeConfig && next.freeConfig.drag;
       const previewArrange = mpoolDrag.computePoolDragPreviewArrange(next);
-      const withPreview = { ...next, design: { ...next.design, drag: { ...ns, previewArrange } } };
+      const withPreview = { ...next, freeConfig: { ...next.freeConfig, drag: { ...ns, previewArrange } } };
       return [withPreview, [{ type: 'force_full_repaint' }]];
     }
     case 'pool_drag_release': return mpoolDrag.poolDragRelease(slice);
@@ -390,7 +386,7 @@ function update(msg, slice) {
     // tab. Live reorder: tabDragMotion emits viewer_reorder_content_tab
     // Cmds each time the cursor crosses into a new content-tab slot;
     // viewer.update permutes contentTabs[group] via the reorderContent
-    // leaf. The drag itself only touches layout's slice (design.drag).
+    // leaf. The drag itself only touches layout's slice (freeConfig.drag).
     case 'tab_drag_start': {
       const next = mtabDrag.tabDragStart(slice, msg.sourceKey, msg.fromIdx, msg.mx, msg.my);
       return [next, [{ type: 'force_full_repaint' }]];
@@ -398,28 +394,28 @@ function update(msg, slice) {
     case 'tab_drag_motion':
       return mtabDrag.tabDragMotion(slice, msg.mx, msg.my, slice.panelBounds && slice.panelBounds.detail, getModel().currentGroup);
     case 'tab_drag_release':  return mtabDrag.tabDragRelease(slice);
-    case 'design_title_key': {
-      const te = slice.design && slice.design.titleEdit;
+    case 'free_config_title_key': {
+      const te = slice.freeConfig && slice.freeConfig.titleEdit;
       if (!te) return slice;
       if (msg.key === 'backspace' || msg.seq === '\x7f' || msg.seq === '\b') {
-        return { ...slice, design: { ...slice.design, titleEdit: { ...te, text: te.text.slice(0, -1) } } };
+        return { ...slice, freeConfig: { ...slice.freeConfig, titleEdit: { ...te, text: te.text.slice(0, -1) } } };
       }
       if (msg.seq && msg.seq.length === 1 && msg.seq >= ' ' && msg.seq < '\x7f') {
-        return { ...slice, design: { ...slice.design, titleEdit: { ...te, text: te.text + msg.seq } } };
+        return { ...slice, freeConfig: { ...slice.freeConfig, titleEdit: { ...te, text: te.text + msg.seq } } };
       }
       return slice;
     }
-    case 'design_title_cancel': {
-      const next = slice.design
-        ? { ...slice, design: { ...slice.design, titleEdit: { active: false, text: '' } } }
+    case 'free_config_title_cancel': {
+      const next = slice.freeConfig
+        ? { ...slice, freeConfig: { ...slice.freeConfig, titleEdit: { active: false, text: '' } } }
         : slice;
-      return [next, [{ type: 'apply_msg', msg: { type: 'mode_clear', flag: 'designTitleEditMode' } }]];
+      return [next, [{ type: 'apply_msg', msg: { type: 'mode_clear', flag: 'freeConfigTitleEditMode' } }]];
     }
     // Wipe the session's undo/redo history. :restore-layout emits this
     // because the runtime layout the user was editing is gone — the
     // history pointed at it no longer makes sense.
-    case 'design_clear_undo':
-      return mdesign.clearUndoStacks(slice);
+    case 'free_config_clear_undo':
+      return mfc.clearUndoStacks(slice);
     // Pool hide/show. The pool entry stays in the pool; only the
     // placement in leftPanels/rightPanels changes. Detail is essential
     // (the layout invariant requires exactly one) — the overlay UX
@@ -511,7 +507,7 @@ function update(msg, slice) {
       // If the hidden panel was focused, focus is now stale (points at
       // a no-longer-placed type). clampSelected snaps it back to a
       // valid panel.
-      return mdesign.clampSelected(next);
+      return mfc.clampSelected(next);
     }
     // Panel-list overlay state Msgs. Open/close, cursor nav, context-
     // pick. The pick re-emits a pool_hide / pool_show Msg back into
@@ -619,7 +615,7 @@ function update(msg, slice) {
       const next = { ...slice, arrange: nextArrange, dirty: true };
       // Move focus to the newly-shown panel — matches the overlay UX
       // where picking from the pool surfaces it as the active one.
-      return mdesign.clampSelected(next, entry.type);
+      return mfc.clampSelected(next, entry.type);
     }
     default:
       return slice;

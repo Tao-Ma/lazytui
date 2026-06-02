@@ -14,7 +14,7 @@
  * Slice shape touched:
  *   - slice.arrange.{leftWidth, detailHeightPct, leftPanels, rightPanels}
  *   - slice.dirty (set true on any change that should round-trip to YAML)
- *   - slice.design.{undo, redo, titleEdit, drag}
+ *   - slice.freeConfig.{undo, redo, titleEdit, drag}
  *   - slice.focus is the cursor truth in free-config; the active-panel
  *     INDEX is derived via `selectedIdx(slice)` rather than stored.
  *   - slice.panelBounds (READ only — frame-derived, written by layout.js)
@@ -48,14 +48,14 @@ const MAX_UNDO = 50;
 
 // ---------------------------------------------------------------- pure reads
 
-function allDesignPanels(slice) {
+function allFreeConfigPanels(slice) {
   return [...slice.arrange.leftPanels, ...slice.arrange.rightPanels];
 }
 
 // Snapshots are JSON round-trips of the arrange struct — plain data
 // (documented: no functions / Symbols / circular refs in panel config), so
 // the stacks live happily on the slice. Session-scoped: cleared on
-// design_enter.
+// free_config_enter.
 function snapshot(arrange) {
   return JSON.parse(JSON.stringify(arrange));
 }
@@ -102,20 +102,20 @@ function _reassignHotkeys(arrange) {
 // ---------------------------------------------------------------- undo / redo
 
 function _pushUndoSlice(slice) {
-  const d = slice.design;
+  const d = slice.freeConfig;
   let undo = [...d.undo, snapshot(slice.arrange)];
   if (undo.length > MAX_UNDO) undo = undo.slice(undo.length - MAX_UNDO);
-  return { ...slice, design: { ...d, undo, redo: [] } };
+  return { ...slice, freeConfig: { ...d, undo, redo: [] } };
 }
 
 function undo(slice) {
-  const d = slice.design;
+  const d = slice.freeConfig;
   if (d.undo.length === 0) return slice;
   const snap = d.undo[d.undo.length - 1];
   return {
     ...slice,
     arrange: _applySnapshot(slice.arrange, snap),
-    design: {
+    freeConfig: {
       ...d,
       undo: d.undo.slice(0, -1),
       redo: [...d.redo, snapshot(slice.arrange)],
@@ -125,13 +125,13 @@ function undo(slice) {
 }
 
 function redo(slice) {
-  const d = slice.design;
+  const d = slice.freeConfig;
   if (d.redo.length === 0) return slice;
   const snap = d.redo[d.redo.length - 1];
   return {
     ...slice,
     arrange: _applySnapshot(slice.arrange, snap),
-    design: {
+    freeConfig: {
       ...d,
       redo: d.redo.slice(0, -1),
       undo: [...d.undo, snapshot(slice.arrange)],
@@ -140,12 +140,12 @@ function redo(slice) {
   };
 }
 
-/** Wipe undo/redo (design_enter, and :restore-layout via the design.js shim).
+/** Wipe undo/redo (free_config_enter, and :restore-layout via the design.js shim).
  *  Tolerates the layout slice not existing yet. */
 function clearUndoStacks(slice) {
-  if (!slice || !slice.design) return slice;
-  if (slice.design.undo.length === 0 && slice.design.redo.length === 0) return slice;
-  return { ...slice, design: { ...slice.design, undo: [], redo: [] } };
+  if (!slice || !slice.freeConfig) return slice;
+  if (slice.freeConfig.undo.length === 0 && slice.freeConfig.redo.length === 0) return slice;
+  return { ...slice, freeConfig: { ...slice.freeConfig, undo: [], redo: [] } };
 }
 
 // ---------------------------------------------------------------- geometry helpers
@@ -200,10 +200,10 @@ function _setPanelHeightPct(slice, panelType, pct) {
  *  border on whatever was focused at mode entry — confusing in
  *  free-config where the user is actively navigating cells. The
  *  focused-panel content stays frozen (freeze gate drops the
- *  show_selected_info Cmd's downstream detail update); design_exit
+ *  show_selected_info Cmd's downstream detail update); free_config_exit
  *  re-emits show_selected_info to refresh detail on the way out. */
 function navSelect(slice, delta) {
-  const all = allDesignPanels(slice);
+  const all = allFreeConfigPanels(slice);
   const curIdx = selectedIdx(slice);
   let idx = curIdx;
   if (delta < 0) { if (idx > 0) idx--; }
@@ -252,7 +252,7 @@ function reorderWithin(slice, delta) {
 /** ←/→ — move the focused panel between columns. */
 function moveColumn(slice, col) {
   const sel = selectedIdx(slice);
-  const all = allDesignPanels(slice);
+  const all = allFreeConfigPanels(slice);
   const selPanel = all[sel];
   if (!selPanel) return slice;
   const isLeft = sel < slice.arrange.leftPanels.length;
@@ -302,7 +302,7 @@ function moveColumn(slice, col) {
  *  else a left panel selected: grow/shrink leftWidth by 2 (clamped [20,60]). */
 function resizeWidthOrDetail(slice, sign) {
   const sel = selectedIdx(slice);
-  const all = allDesignPanels(slice);
+  const all = allFreeConfigPanels(slice);
   const selPanel = all[sel];
   if (!selPanel) return slice;
   const isLeft = sel < slice.arrange.leftPanels.length;
@@ -337,7 +337,7 @@ function resizeWidthOrDetail(slice, sign) {
  *  panel below in the same column (D1 semantics). No-op on detail / last row. */
 function resizeFocusedPanelHeight(slice, deltaPct) {
   const selIdx = selectedIdx(slice);
-  const all = allDesignPanels(slice);
+  const all = allFreeConfigPanels(slice);
   const sel = all[selIdx];
   if (!sel || mpool.isDetailPane(sel)) return slice;  // detail uses +/-
 
@@ -382,7 +382,7 @@ function resizeFocusedPanelHeight(slice, deltaPct) {
  *  slice field — focus is the single source of truth for the active
  *  panel in free-config; the index is just an arithmetic convenience. */
 function selectedIdx(slice) {
-  return allDesignPanels(slice).findIndex(p => p.type === slice.focus);
+  return allFreeConfigPanels(slice).findIndex(p => p.type === slice.focus);
 }
 
 /** Safety clamp after any mutation that can change the panel count.
@@ -391,7 +391,7 @@ function selectedIdx(slice) {
  *  pointing at a panel that's no longer placed, snap it to whatever
  *  ends up at the same index, or to preferredType if supplied. */
 function clampSelected(slice, preferredType) {
-  const all = allDesignPanels(slice);
+  const all = allFreeConfigPanels(slice);
   if (all.length === 0) return slice;
   if (preferredType) {
     const pIdx = all.findIndex(p => p.type === preferredType);
@@ -411,19 +411,19 @@ function clampSelected(slice, preferredType) {
 
 /** Seed the title-edit buffer from the focused panel's current title. */
 function titleEnter(slice) {
-  const d = slice.design;
+  const d = slice.freeConfig;
   if (!d) return slice;
-  const all = allDesignPanels(slice);
+  const all = allFreeConfigPanels(slice);
   const p = all[selectedIdx(slice)];
   if (!p) return slice;
-  return { ...slice, design: { ...d, titleEdit: { active: true, text: p.title || '' } } };
+  return { ...slice, freeConfig: { ...d, titleEdit: { active: true, text: p.title || '' } } };
 }
 
 /** Commit a non-empty, changed title to the focused panel (pushes one undo). */
 function setSelectedTitle(slice, text) {
-  const d = slice.design;
+  const d = slice.freeConfig;
   if (!d) return slice;
-  const all = allDesignPanels(slice);
+  const all = allFreeConfigPanels(slice);
   const p = all[selectedIdx(slice)];
   if (!p || text.length === 0 || text === p.title) return slice;
 
@@ -476,7 +476,7 @@ function boundaryNear(slice, panels, my) {
 
 /** Panel type at (mx, my) per rendered bounds, or null (frame-synchronous). */
 function panelAt(slice, mx, my) {
-  for (const p of allDesignPanels(slice)) {
+  for (const p of allFreeConfigPanels(slice)) {
     const b = slice.panelBounds[p.type];
     if (!b) continue;
     if (mx >= b.x && mx < b.x + b.w && my >= b.y && my < b.y + b.h) return p.type;
@@ -609,7 +609,7 @@ function applyColResize(slice, mx) {
  *  captured at press (D1 — steal from neighbor only). A detail side writes
  *  detailHeightPct clamped [20, 90]; the neighbor takes the complement. */
 function applyBoundaryResize(slice, my) {
-  const d = slice.design;
+  const d = slice.freeConfig;
   const ds = d && d.drag;
   if (!ds) return slice;
   let upperH = Math.max(MIN_PANEL_H, Math.min(ds.combinedH - MIN_PANEL_H, my - ds.upperStartY));
@@ -731,7 +731,7 @@ function applySwap(slice, srcType, target) {
 /** Press: resize hit-test FIRST (a seam sits on a panel border), else arm a
  *  panel drag + move the keyboard selection to the clicked panel. Callers
  *  already gate on `freeConfigMode` (input.js handleMouse only dispatches
- *  `design_mouse_press` when the mode is active), so the leaf no longer
+ *  `free_config_mouse_press` when the mode is active), so the leaf no longer
  *  needs the model to re-check — drops the `model` arg. */
 function mousePress(slice, mx, my, COLS) {
   const resize = pointToResizeTarget(slice, mx, my, COLS);
@@ -752,21 +752,21 @@ function mousePress(slice, mx, my, COLS) {
       ds.detailIsLower = mpool.isDetailPane(b.lower);
       next = freezeColumnFlex(next, column, b.upper.type, b.lower.type, ds.availH);
     }
-    return { ...next, design: { ...next.design, drag: ds } };
+    return { ...next, freeConfig: { ...next.freeConfig, drag: ds } };
   }
   const hit = panelAt(slice, mx, my);
-  if (!hit) return { ...slice, design: { ...slice.design, drag: null } };
+  if (!hit) return { ...slice, freeConfig: { ...slice.freeConfig, drag: null } };
   // Click sets focus to the panel under the cursor — green border
   // tracks the click even if the user doesn't go on to drag.
   // selectedIdx() derives from focus.
   const drag = { kind: 'armed', sourceType: hit, startX: mx, startY: my, curX: mx, curY: my, target: null };
-  return { ...slice, focus: hit, design: { ...slice.design, drag } };
+  return { ...slice, focus: hit, freeConfig: { ...slice.freeConfig, drag } };
 }
 
 /** Motion: resize kinds redistribute heights; a panel drag promotes
  *  armed→dragging after ≥1 cell and recomputes the drop target. */
 function mouseMotion(slice, mx, my, COLS) {
-  const d = slice.design;
+  const d = slice.freeConfig;
   const ds = d && d.drag;
   if (!ds) return slice;
   if (ds.kind === 'resizing-col')        return applyColResize(slice, mx);
@@ -782,12 +782,12 @@ function mouseMotion(slice, mx, my, COLS) {
     if (mx === ds.startX && my === ds.startY) {
       // movement-free motion still updates the cursor record so a later release
       // can read it; old code mutated curX/curY before the early return.
-      return { ...slice, design: { ...d, drag: { ...ds, curX: mx, curY: my } } };
+      return { ...slice, freeConfig: { ...d, drag: { ...ds, curX: mx, curY: my } } };
     }
     nextKind = 'dragging';
   }
   const target = pointToDropTarget(slice, ds.sourceType, mx, my, COLS);
-  return { ...slice, design: { ...d, drag: { ...ds, kind: nextKind, curX: mx, curY: my, target } } };
+  return { ...slice, freeConfig: { ...d, drag: { ...ds, kind: nextKind, curX: mx, curY: my, target } } };
 }
 
 /** Release: commit a valid drop (push undo + applyDrop), then clear the drag.
@@ -795,7 +795,7 @@ function mouseMotion(slice, mx, my, COLS) {
  *  lands there — its type stayed the same; its position is new, and
  *  selectedIdx() derives the new index from the rearranged columns. */
 function mouseRelease(slice) {
-  const d = slice.design;
+  const d = slice.freeConfig;
   const ds = d && d.drag;
   if (!ds) return slice;
   let next = slice;
@@ -811,13 +811,13 @@ function mouseRelease(slice) {
       droppedType = ds.sourceType;
     }
   }
-  next = { ...next, design: { ...next.design, drag: null } };
+  next = { ...next, freeConfig: { ...next.freeConfig, drag: null } };
   if (droppedType) next = clampSelected(next, droppedType);
   return next;
 }
 
 // v0.6 Phase 5 pool drag (poolDragStart / poolDragMotion / poolDragRelease /
-// pointToPoolDropTarget) lives in leaves/design-pool-drag — separate gesture
+// pointToPoolDropTarget) lives in leaves/free-config-pool-drag — separate gesture
 // with its own state-machine kind (pool-armed/pool-dragging). Shares
 // pointToCellZone with this leaf for the 3-zone hit-test rule.
 
@@ -829,7 +829,7 @@ function mouseRelease(slice) {
  *  layout (prevents the recursive flicker where painting the preview would
  *  change which cell the cursor "is in" on the next motion event). */
 function computeDragPreviewArrange(slice) {
-  const drag = slice.design && slice.design.drag;
+  const drag = slice.freeConfig && slice.freeConfig.drag;
   if (!drag || drag.kind !== 'dragging') return null;
   if (!drag.target || !drag.target.valid) return null;
   const t = drag.target;
@@ -854,7 +854,7 @@ function computeDragPreviewArrange(slice) {
 
 module.exports = {
   MIN_PANEL_H, DETAIL_MIN_ROWS, detailMinPct, detailMaxPct,
-  allDesignPanels, selectedIdx,
+  allFreeConfigPanels, selectedIdx,
   snapshot, undo, redo, clearUndoStacks,
   columnTotalH, freezeColumnFlex, panelHeightPct,
   navSelect, reorderWithin, moveColumn, resizeWidthOrDetail, resizeFocusedPanelHeight,

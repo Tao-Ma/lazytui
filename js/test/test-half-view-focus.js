@@ -67,26 +67,26 @@ describe('[focus_set] tracks halfLeftPanel for half-view rendering', () => {
   });
 });
 
-describe('[design_exit] commits current focus to halfLeftPanel', () => {
+describe('[free_config_exit] commits current focus to halfLeftPanel', () => {
   it('non-detail focus on exit → halfLeftPanel updated', () => {
-    // Free-config nav (design_nav etc.) writes focus directly without
+    // Free-config nav (free_config_nav etc.) writes focus directly without
     // routing through focus_set, so halfLeftPanel may not have tracked
-    // in-mode movement. design_exit catches it up.
+    // in-mode movement. free_config_exit catches it up.
     let s = layout.init();
     s = applyUpdate(s, { type: 'focus_set', focus: 'groups' }).next;
     eq(s.halfLeftPanel, 'groups');
     // Simulate free-config in-mode focus drift (direct write, not focus_set).
     s = { ...s, focus: 'containers' };
     eq(s.halfLeftPanel, 'groups', 'direct focus write didn’t update halfLeftPanel');
-    s = applyUpdate(s, { type: 'design_exit' }).next;
-    eq(s.halfLeftPanel, 'containers', 'design_exit committed the in-mode focus');
+    s = applyUpdate(s, { type: 'free_config_exit' }).next;
+    eq(s.halfLeftPanel, 'containers', 'free_config_exit committed the in-mode focus');
   });
 
   it('detail focus on exit → halfLeftPanel unchanged (no detail in left)', () => {
     let s = layout.init();
     s = applyUpdate(s, { type: 'focus_set', focus: 'groups' }).next;
     s = { ...s, focus: 'detail' };
-    s = applyUpdate(s, { type: 'design_exit' }).next;
+    s = applyUpdate(s, { type: 'free_config_exit' }).next;
     eq(s.halfLeftPanel, 'groups', 'detail focus doesn’t overwrite halfLeftPanel');
   });
 });

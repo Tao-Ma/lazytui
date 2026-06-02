@@ -5,7 +5,7 @@
  *   - broadcasts (refresh / hub / action) — components stop polling
  *   - wrapped Msgs to non-`layout` components
  *
- * The layout-wrap path stays open (it owns the mode itself: design_*,
+ * The layout-wrap path stays open (it owns the mode itself: free_config_*,
  * pool_*, focus_set, view_*, set_arrange all flow). Mode-clear rides
  * an apply_msg Cmd through the root reducer, not dispatchMsg, so it
  * always reaches the modes table regardless of the gate.

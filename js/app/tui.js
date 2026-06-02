@@ -3,7 +3,7 @@
  * TUI — YAML-driven service manager.
  * Keyboard-first, lazygit-style layout. Zero npm dependencies.
  *
- * Usage: node tui.js [--design] <config.yml|config.json>
+ * Usage: node tui.js [options] <config.yml|config.json>
  *        node tui.js <config> --exec <group>:<action> [args...]
  *        node tui.js --spec   (print Component authoring spec to stdout)
  *        node tui.js --help
@@ -21,7 +21,6 @@ const { loadConfig, initState } = require('./state');
 const USAGE = `Usage: node tui.js [options] <config.yml|config.json>
 
 Options:
-  --design                   Interactive layout editor mode
   --exec <group>:<action>    Run a YAML action non-interactively and exit
                              with its rc. Args after the path become "$@".
                              Only type: run is supported in CLI mode.
@@ -32,13 +31,15 @@ Options:
 
 Examples:
   node tui.js services.yml
-  node tui.js --design services.yml
   node tui.js test.yml --list
   node tui.js test.yml --list detail
   node tui.js test.yml --exec detail:info
   node tui.js test.yml --exec base.observe.status:list 50
   node tui.js --spec | less
   node tui.js --spec > component-spec.md   # feed to an LLM as context
+
+Free-config (interactive layout editor) is reachable at runtime via
+the \`:free-config\` cmdline verb.
 
 The Component authoring spec is the concatenation of SPEC.md plus
 PRINCIPLES.md, PLUGINS.md, PROJECT.md, HUB.md, LAYOUT.md from this
@@ -82,7 +83,6 @@ function printSpec() {
 
 function main() {
   const args = process.argv.slice(2);
-  let designEnabled = false;
   let execPath = null;
   let execArgs = [];
   let listMode = false;
@@ -96,8 +96,6 @@ function main() {
     } else if (a === '--spec') {
       printSpec();
       process.exit(0);
-    } else if (a === '--design') {
-      designEnabled = true;
     } else if (a === '--exec') {
       if (i + 1 >= args.length) {
         console.error('--exec requires <group>:<action>');
@@ -200,10 +198,6 @@ function main() {
   // sub-phases migrate focus/viewMode/design/arrange into its slice). See
   // docs/v0.5-layout-component.md.
   registerComponent(require('../panel/layout'));
-  // BLESSED outside-writer: boot-time write of the --design CLI flag into
-  // the layout slice. Write-once at boot, after the layout Component is
-  // registered (so the slice exists). No runtime mutation.
-  require('../panel/api').getInstanceSlice('layout').design.enabled = designEnabled;
   registerComponent(require('../panel/navigator/docker'));
   registerComponent(require('../panel/navigator/config-status'));
   registerComponent(require('../panel/navigator/files'));
@@ -265,14 +259,6 @@ function main() {
   refreshAll().then(() => render());
   redraw();
   setupKeyListener();
-
-  // v0.6: --design auto-enters free-config mode after the first paint.
-  // The flag no longer gates the feature (the cmdline / menu / keybind
-  // are always available); it's just a "boot directly into edit mode"
-  // shortcut for muscle memory.
-  if (designEnabled) {
-    require('../dispatch/dispatch').startDesignMode();
-  }
 
   // Phase 6 — the framework's per-Plugin refresh-loop retired. Components
   // that need periodic polling (docker, files, config-status) self-arm

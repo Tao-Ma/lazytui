@@ -40,7 +40,7 @@ const { getModel } = require('../app/runtime');
 const { renderCmdline } = require('../overlay/cmdline');
 const { renderConfirmOverlay } = require('../overlay/confirm');
 const { renderPromptOverlay } = require('../overlay/prompt');
-const { getDesignFooter } = require('../overlay/design');
+const { getFreeConfigFooter } = require('../overlay/free-config');
 const { injectTopRowChrome } = require('./panel-widgets');
 const { renderPanelListOverlay } = require('../overlay/panel-list');
 const { renderTabList, injectTabTrigger } = require('../overlay/tab-list');
@@ -481,7 +481,7 @@ function renderTerminalOverlay(model = getModel()) {
   // visually but the layout's borders cover the overflow. After
   // release/cancel the next render fires a single resize to the real
   // (committed) detail size.
-  const isDragPreview = !!(layoutSlice && layoutSlice.design && layoutSlice.design.drag && layoutSlice.design.drag.previewArrange);
+  const isDragPreview = !!(layoutSlice && layoutSlice.freeConfig && layoutSlice.freeConfig.drag && layoutSlice.freeConfig.drag.previewArrange);
   if (!isDragPreview && (session.xterm.cols !== innerW || session.xterm.rows !== innerH)) {
     resizeSession(id, innerW, innerH);
     _forceOverlayFull = true;
@@ -579,7 +579,7 @@ function render(model = getModel()) {
   // when the cursor sits near a zone boundary (preview-derived bounds
   // would feed back into the next hit-test and ping-pong the layout
   // under tiny cursor wobbles).
-  const drag = layoutSlice.design && layoutSlice.design.drag;
+  const drag = layoutSlice.freeConfig && layoutSlice.freeConfig.drag;
   const previewArrange = drag && drag.previewArrange;
   let savedArrange = null, savedBounds = null;
   if (previewArrange) {
@@ -705,14 +705,14 @@ function footerKeys(model) {
   }
   if (md.filterMode) return ` /${esc(filterCurrentText())}│ | Esc clear | Enter ok`;
   if (md.copyMode)   return ' ↑↓ select | Esc cancel | Enter copy';
-  if (md.designTitleEditMode) {
-    const { titleEditText } = require('../overlay/design');
+  if (md.freeConfigTitleEditMode) {
+    const { titleEditText } = require('../overlay/free-config');
     return ` rename: ${esc(titleEditText())}│ | Esc cancel | Enter ok`;
   }
   if (md.freeConfigMode) {
     const layoutSlice = getInstanceSlice('layout');
     const dirty = (layoutSlice && layoutSlice.dirty) ? ' | [yellow]• unsaved (:save-layout)[/]' : '';
-    return ` Free Config | drag/resize | J/K reorder | ←→ swap col | +/- col/detail · [/] panel h | space collapse | t rename | w panel list | u undo | C-r redo | :save-layout | q exit${getDesignFooter()}${dirty}`;
+    return ` Free Config | drag/resize | J/K reorder | ←→ swap col | +/- col/detail · [/] panel h | space collapse | t rename | w panel list | u undo | C-r redo | :save-layout | q exit${getFreeConfigFooter()}${dirty}`;
   }
   if (md.menuOpen)   return ' ↑↓ select | Esc close | Enter run';
 
@@ -792,9 +792,9 @@ function renderFooter(model = getModel()) {
   // Layout notice — a transient hint set by layout.update when a free-
   // config / view-mode transition is refused. Shown in red so it reads
   // as a refusal explanation, not normal status. Cleared by layout.update
-  // on the next state change that resolves the block (design_exit /
+  // on the next state change that resolves the block (free_config_exit /
   // successful view change).
-  const layoutNotice = layoutSlice.design && layoutSlice.design.notice;
+  const layoutNotice = layoutSlice.freeConfig && layoutSlice.freeConfig.notice;
   if (layoutNotice) keys += ` | [bold red]${esc(layoutNotice)}[/]`;
 
   // Boot warnings — soft diagnostics surfaced by parse (today: column
