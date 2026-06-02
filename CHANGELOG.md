@@ -6,6 +6,83 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed (BREAKING)
+- **YAML layout cell schema.** Layout cells are now bare pool-id
+  strings (single-tab pane shorthand) or `{tabs: [pool-id, ...]}`
+  mappings; the v0.6.0 inline `{type: ...}` form is rejected at parse
+  time. Every pool entry must be declared under the top-level
+  `panels:` block before a `layout:` cell can reference it. Hand-
+  migrate per [`docs/v0.6.1-migrate.md`](docs/v0.6.1-migrate.md) — the
+  parser's SchemaError points at the same file. No silent rewrite.
+
+  ```yaml
+  # v0.6.0 — no longer parses
+  layout:
+    right:
+      panels:
+        - type: detail
+          title: Detail
+          height: 60%
+
+  # v0.6.1
+  panels:
+    detail: { type: detail, title: Detail }
+  layout:
+    right:
+      panels:
+        - { tabs: [detail], height: 60% }
+  ```
+
+### Added
+- **Panes as containers, tabs as content.** Every cell in the grid is
+  a **pane** (placement slot) holding 1+ **tabs** (panel-kind
+  instances). The singleton-detail assumption that threaded through
+  v0.5/v0.6 retires: every pane can host any tab kind, the slice
+  store keys by tab id (instance) instead of by Component name, and
+  `getFocus()` returns a tab id rather than a panel-type string.
+  Detail is just another tab kind — same pool/cell mechanics, same
+  drag/hide/show verbs.
+
+  Configs that look exactly like v0.6.0 (one tab per pane, detail in
+  the right column's last pane) migrate to v0.6.1 in two mechanical
+  steps: split each inline cell into a pool entry + a bare-string
+  cell reference; lift `height: N%` onto the cell as
+  `{ tabs: [detail], height: N% }`. See the migration guide.
+
+- **Instance-keyed slice registry.** A new `route._instances` map
+  keys panel state by tab id (`getInstanceSlice(tabId)`); the prior
+  Component-name-keyed shim retired in Phase 8. Producer-side viewer
+  writes route through a single `resolveTarget('viewer')` chokepoint
+  (`leaves/route.js`) — focused viewer-kind → `lastViewerTab` →
+  first viewer-kind in `rightPanels` → any viewer-kind → null. v0.7
+  workflow features extend this seam; no role / channel metadata
+  shipped in v0.6.1.
+
+- **Multi-tab panes via YAML.** A `{tabs: [docker, logs]}` cell mounts
+  two tabs in one pane; `]`/`[` cycles between them inside the focused
+  pane. `activeTab` picks the boot-active tab (defaults to `tabs[0]`).
+  Layout cells reject duplicate kinds inside a pane.
+
+### Changed
+- **Serializer always writes both blocks.** `:save-layout` always
+  emits the `panels:` pool block and the `layout:` block in v0.6.1
+  shape — the v0.6.0 "keep the legacy inline form when nothing
+  requires the pool block" gate is gone. Idempotent: parse → save →
+  parse → save produces identical bytes.
+
+- **`setDetail` retires in favor of `setViewerContent(tabId, text)`.**
+  Producer-side writers (action runner, commands, history, config-
+  status, help-text, file-loader) call `state.setViewerContent(null, text)`
+  to write to whatever viewer `resolveTarget` selects. The dead
+  `'setDetail'` effect handler in `dispatch/effects.js` retires.
+
+### Migrated
+- **Live demos and test fixtures.** `test/test.yml`,
+  `demo/postgres/tui.yml`, and `demo/cloudberrydb/tui.yml` ship in
+  v0.6.1 form. The PGDATA `files` panel in postgres keeps id `files`
+  with title `PGDATA` — id is the round-trip key, title is the UI
+  label.
+
 ## [0.6.0] — 2026-06-01
 
 ### Added
