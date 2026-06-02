@@ -257,9 +257,9 @@ function _state() {
 try {
   require('../dispatch/effects').installBuiltins();
   const api = require('../panel/api');
-  // Phase 3 — layout MUST register first so other Components nest under
-  // layout.slice.panels[name]. Production (tui.js) already orders this
-  // way; tests need the same.
+  // layout MUST register first — chrome owner + focus reader's primary
+  // instance. Production (tui.js) already orders this way; tests need
+  // the same.
   if (!api.getComponentSlice('layout')) api.registerComponent(require('../panel/layout'));
   if (!api.getComponentSlice('detail')) api.registerComponent(require('../panel/viewer/viewer'));
   if (!api.getComponentSlice('groups')) api.registerComponent(require('../panel/navigator/groups'));

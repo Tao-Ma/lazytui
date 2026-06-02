@@ -312,7 +312,9 @@ describe('[8d] layout Component skeleton (Phase 1a)', () => {
     assert('design' in slice,       'slice has design (1f target)');
     assert('panelHeights' in slice, 'slice has panelHeights (1e target)');
     assert('panelBounds' in slice,  'slice has panelBounds (1e target)');
-    assert('panels' in slice,       'slice has panels (Phase 3 target)');
+    // v0.6.1 Phase 3 — slice.panels retired. Component slices live in
+    // route._instances keyed by tab id; the layout slice no longer
+    // carries a sibling map.
     // Chrome-only — no panelTypes registered.
     eq(api.getComponentOwningPanel('layout'), undefined,
        'layout owns no panel (chrome-only)');

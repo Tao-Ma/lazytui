@@ -45,8 +45,9 @@ const statusProviders = [];         // Components that expose statusFor(name)
 
 // Slice storage + panel→Component ownership map live in `./route` (a
 // zero-dep leaf) so the root reducer can read them without a require
-// cycle. The nested store (layout at root, others under
-// `layout.panels[<name>]`) is documented there; api just calls through.
+// cycle. Phase 3 instance-keyed store: every slice lives in
+// `_instances` keyed by tab id (one per kind in Phase 3); the legacy
+// by-name surface is a shim over a per-kind primary lookup.
 
 // Panel-def contract check. Returns false (skip this type) only when
 // render() is missing — the one hard requirement. Everything else is a
@@ -130,13 +131,12 @@ function registerComponent(comp) {
     return;
   }
   components[comp.name] = comp;
-  // Phase 3 — initial slice goes through the nested storage in route.
-  // The first Component registered MUST be 'layout' so non-layout
-  // slices have a place to nest under. tui.js + test-runner already
-  // enforce that order; a misordered register triggers the
-  // route._flatFallback warning (kept lenient so a stray test doesn't crash).
+  // v0.6.1 Phase 3 — initial slice goes through the instance store as a
+  // singleton (id === kind === comp.name). The first Component
+  // registered MUST be 'layout' (chrome) so the focus reader has a
+  // slice to read; tui.js + test-runner enforce that order.
   if (comp.name !== 'layout' && !route.hasSlice('layout')) {
-    console.error(`[component:${comp.name}] registered before 'layout' — Phase 3 requires layout to register first; slice will land in the flat fallback bag`);
+    console.error(`[component:${comp.name}] registered before 'layout' — layout must register first`);
   }
   // init() failure used to swallow the error + set slice = null,
   // which left downstream code reading a null slice and producing
@@ -406,8 +406,7 @@ function dispatchKeyToFocused(key, seq) {
 // undefined / slice / [slice, effects] return contract, and isolates
 // throws. Shared by both the wrapped and broadcast dispatch paths.
 // Reads + writes go through route.getSlice / route.setSlice so the
-// underlying nesting (layout.slice.panels[name] post-Phase-3) is
-// transparent here.
+// underlying instance store (v0.6.1 Phase 3) is transparent here.
 function _runComponentUpdate(name, comp, msg) {
   try {
     const result = comp.update(msg, route.getSlice(name));
