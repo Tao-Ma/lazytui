@@ -190,22 +190,33 @@ groups:
             tab: true
             script: ./scripts/installcheck-good.sh
 
+panels:
+  containers:
+    type: containers
+    title: Containers
+  groups:
+    type: groups
+    title: Groups
+  actions:
+    type: actions
+    title: Actions
+  stats:
+    type: stats
+    title: Stats
+    topic: docker.stats
+    select_from: containers
+  detail:
+    type: detail
+    title: Detail
+
 layout:
   left:
     width: 32
     panels:
-      - type: containers
-        title: Containers
-      - type: groups
-        title: Groups
+      - containers
+      - groups
   right:
     panels:
-      - type: actions
-        title: Actions
-      - type: stats
-        title: Stats
-        topic: docker.stats
-        select_from: containers
-      - type: detail
-        title: Detail
-        height: 60%
+      - actions
+      - stats
+      - { tabs: [detail], height: 60% }

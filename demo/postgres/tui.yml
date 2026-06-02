@@ -87,32 +87,45 @@ groups:
         tab: true
         script: docker compose exec -T pg tail -n 50 /tmp/pg.log
 
+panels:
+  containers:
+    type: containers
+    title: Containers
+  groups:
+    type: groups
+    title: Groups
+  # PGDATA browser. `source: docker` shells out via `docker exec pg
+  # ls -lA --time-style=+%s` for listings and `head -c <cap>` for
+  # capped reads, so the data dir is browsable even though it's a
+  # named volume (no host-side bind mount). Enter on a file opens
+  # it as a content tab in the detail panel.
+  files:
+    type: files
+    title: PGDATA
+    source: docker
+    container: pg
+    root: /var/lib/postgresql/data
+  actions:
+    type: actions
+    title: Actions
+  stats:
+    type: stats
+    title: Stats
+    topic: docker.stats
+    select_from: containers
+  detail:
+    type: detail
+    title: Detail
+
 layout:
   left:
     width: 32
     panels:
-      - type: containers
-        title: Containers
-      - type: groups
-        title: Groups
-      # PGDATA browser. `source: docker` shells out via `docker exec pg
-      # ls -lA --time-style=+%s` for listings and `head -c <cap>` for
-      # capped reads, so the data dir is browsable even though it's a
-      # named volume (no host-side bind mount). Enter on a file opens
-      # it as a content tab in the detail panel.
-      - type: files
-        title: PGDATA
-        source: docker
-        container: pg
-        root: /var/lib/postgresql/data
+      - containers
+      - groups
+      - files
   right:
     panels:
-      - type: actions
-        title: Actions
-      - type: stats
-        title: Stats
-        topic: docker.stats
-        select_from: containers
-      - type: detail
-        title: Detail
-        height: 60%
+      - actions
+      - stats
+      - { tabs: [detail], height: 60% }
