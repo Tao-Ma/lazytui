@@ -19,8 +19,7 @@ const { richToAnsi, RESET, visibleLen, esc } = require('../io/ansi');
 const { cols, rows, stdout } = require('../io/term');
 const { theme } = require('../render/themes');
 const { renderPanel } = require('../render/panel');
-
-const MAX_DROPDOWN = 8;
+const { DROPDOWN_VIEWPORT: MAX_DROPDOWN } = require('../leaves/cmdline-split');
 
 // Panel height (including borders) painted by the previous render.
 // When the new render is shorter (user typed more chars, match set
@@ -55,8 +54,8 @@ function renderCmdline() {
   // Visible window into the (possibly larger) match list. `_scroll` is
   // the lowest match-index visible at the BOTTOM of the dropdown; the
   // reducer (runtime.update#cmdline_nav) advances it as sel walks past
-  // the viewport's upper bound. MAX_DROPDOWN here must stay in sync
-  // with CMDLINE_VW in app/runtime.js.
+  // the viewport's upper bound. MAX_DROPDOWN is shared with the reducer
+  // (leaves/cmdline-split.DROPDOWN_VIEWPORT) so they can't drift apart.
   const k = Math.min(_matches.length - _scroll, MAX_DROPDOWN);
 
   // Build one string with embedded cursor moves — dropdown panel +

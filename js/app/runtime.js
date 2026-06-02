@@ -168,17 +168,9 @@ function _ghostSuffix(text, ghost) {
   return ghost.slice(text.length);
 }
 
-// cmdline split lives in a zero-dep leaf so both this file and
-// dispatch/cmdline.js can import the same impl (pre-v0.6.x the regex
-// was duplicated in both sites).
-const { splitQuery: _cmdlineSplit } = require('../leaves/cmdline-split');
-
-// Visible window size of the `:` cmdline match dropdown. The reducer
-// scrolls a viewport so sel stays in view (cmdline_set_matches /
-// cmdline_nav update scroll). MUST stay in sync with `MAX_DROPDOWN` in
-// `overlay/cmdline.js` — that file reads model.modal.cmdline.scroll
-// off this slice and paints the corresponding window.
-const CMDLINE_VW = 8;
+// cmdline split + viewport size live in a zero-dep leaf so this file,
+// dispatch/cmdline.js, and overlay/cmdline.js all read the same values.
+const { splitQuery: _cmdlineSplit, DROPDOWN_VIEWPORT: CMDLINE_VW } = require('../leaves/cmdline-split');
 
 /**
  * Clamp the register-popup cursor + scroll into bounds against the history
@@ -557,8 +549,7 @@ function update(model, msg) {
         if (i < matches.length) sel = i;
       }
       // Scroll viewport — match-set size changed, ensure sel is in view
-      // and scroll is within bounds. CMDLINE_VW must match the constant
-      // MAX_DROPDOWN in overlay/cmdline.js (paint reads scroll from here).
+      // and scroll is within bounds.
       const maxScroll = Math.max(0, matches.length - CMDLINE_VW);
       let scroll = Math.min(Math.max(0, c.scroll || 0), maxScroll);
       if (sel < scroll) scroll = sel;

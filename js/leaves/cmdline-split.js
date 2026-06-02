@@ -22,4 +22,11 @@ function splitQuery(text) {
   return { query: m[1], args: rest ? rest.split(/\s+/) : [] };
 }
 
-module.exports = { splitQuery };
+// Visible row count of the `:` cmdline match dropdown. The reducer
+// scrolls the viewport so the selected match stays in view; the
+// renderer paints the same window. Shared from this leaf so the
+// reducer (app/runtime) and the overlay paint (overlay/cmdline) can
+// never drift out of sync.
+const DROPDOWN_VIEWPORT = 8;
+
+module.exports = { splitQuery, DROPDOWN_VIEWPORT };
