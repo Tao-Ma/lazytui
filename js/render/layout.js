@@ -796,6 +796,14 @@ function renderFooter(model = getModel()) {
   const layoutNotice = layoutSlice.design && layoutSlice.design.notice;
   if (layoutNotice) keys += ` | [bold red]${esc(layoutNotice)}[/]`;
 
+  // Boot warnings — soft diagnostics surfaced by parse (today: column
+  // over soft cap). Yellow so it reads as advisory, not an error.
+  // Cleared by `:dismiss-warnings` or next config reload.
+  const bw = layoutSlice.bootWarnings;
+  if (bw && bw.length > 0) {
+    keys += ` | [yellow]⚠ ${bw.length} config warning(s) (:dismiss-warnings)[/]`;
+  }
+
   // Right tail: footer:right + visual-select tag + view-mode tag.
   // The visual-select tag (`[v-char]` / `[v-line]`) is a precursor to
   // the configurable status-bar segments planned for v0.5/v0.6 — when

@@ -136,6 +136,19 @@ function initState() {
   // 100. Init deferred to here so cap reflects the parsed config.
   // BLESSED outside-writer (docs/v0.5-layering.md §5).
   require('../feature/register').init(config.register || {});
+
+  // Soft-fail diagnostics from parse (today: column over soft cap).
+  // Records one event-log entry per warning + seeds layout's bootWarnings
+  // so the footer paints "⚠ N config warning(s)" until dismissed.
+  const warnings = Array.isArray(config.warnings) ? config.warnings : [];
+  if (warnings.length > 0) {
+    const log = require('../dispatch/event-log');
+    for (const w of warnings) log.record('warning', { code: w.code, message: w.message });
+    api.dispatchMsg(api.wrap('layout', {
+      type: 'set_boot_warnings',
+      warnings: warnings.map(w => w.message),
+    }));
+  }
 }
 
 function allPanels() {

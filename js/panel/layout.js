@@ -116,6 +116,12 @@ function init() {
     // is on a Navigator). Written in focus_set when the new focus
     // resolves to a viewer-kind instance.
     lastViewerTab: null,
+    // Soft-fail diagnostics surfaced by parser/validate (today: column
+    // over soft cap). Seeded at boot by state.initState via
+    // `set_boot_warnings`. Painted in the footer until dismissed
+    // (`:dismiss-warnings`) or the next config reload. Each entry is
+    // a plain string (the user-facing message).
+    bootWarnings: [],
   };
 }
 
@@ -235,6 +241,18 @@ function update(msg, slice) {
       if (slice.tabListOwnerPaneId === paneId) return slice;
       return { ...slice, tabListOwnerPaneId: paneId };
     }
+    // Boot warnings — whole-array replace (state.initState dispatches
+    // this once after parse). dismiss_warnings clears them. The footer
+    // renderer paints `⚠ N config warning(s)` when length > 0.
+    case 'set_boot_warnings': {
+      const next = Array.isArray(msg.warnings) ? msg.warnings.slice() : [];
+      if (next.length === slice.bootWarnings.length &&
+          next.every((w, i) => w === slice.bootWarnings[i])) return slice;
+      return { ...slice, bootWarnings: next };
+    }
+    case 'dismiss_warnings':
+      if (slice.bootWarnings.length === 0) return slice;
+      return { ...slice, bootWarnings: [] };
     // arrange + dirty writes. :save-layout sends `{ dirty: false }`;
     // :restore-layout sends `{ arrange, dirty: false }` (the rebuilt
     // struct from `leaves/arrange.rebuildLayoutFromConfig`). Both are

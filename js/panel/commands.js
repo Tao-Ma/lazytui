@@ -109,6 +109,13 @@ const FRAMEWORK_COMMANDS = [
       setViewerContent(null, `[green]Layout restored from[/] ${m.configPath}`);
     },
   },
+  {
+    name: 'dismiss-warnings',
+    desc: 'Clear the config-warning chrome notice',
+    run: () => {
+      require('./api').dispatchMsg(wrap('layout', { type: 'dismiss_warnings' }));
+    },
+  },
 ];
 
 /**
