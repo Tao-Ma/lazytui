@@ -608,12 +608,17 @@ function render(model = getModel()) {
   // changed the Msg short-circuits before any allocation. Uses the
   // original (non-preview) bounds — the viewer's actual state hasn't
   // committed to the drag yet, so its viewport tracks the real layout.
-  const detailBounds = layoutSlice.panelBounds && layoutSlice.panelBounds.detail;
-  if (detailBounds) {
-    const innerH = Math.max(0, detailBounds.h - 2);
-    const detailSlice = getComponentSlice('detail');
-    if (detailSlice && detailSlice.innerH !== innerH) {
-      dispatchMsg(wrap('detail', { type: 'viewer_set_viewport', innerH }));
+  // v0.6.1 Phase 8 — viewer_set_viewport targets the viewer pane's
+  // own tab id. For Phase 8 singleton this is 'detail' (same string
+  // as today); multi-viewer rendering will iterate per-pane.
+  const route = require('../leaves/route');
+  const viewerTab = route.resolveTarget('viewer');
+  const viewerBounds = viewerTab && layoutSlice.panelBounds && layoutSlice.panelBounds[viewerTab];
+  if (viewerBounds) {
+    const innerH = Math.max(0, viewerBounds.h - 2);
+    const viewerSlice = getComponentSlice(viewerTab);
+    if (viewerSlice && viewerSlice.innerH !== innerH) {
+      dispatchMsg(wrap(viewerTab, { type: 'viewer_set_viewport', innerH }));
     }
   }
   renderFooter(model);

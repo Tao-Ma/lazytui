@@ -293,7 +293,12 @@ function handleTabListKey(key, seq) {
   const flat = overlay._flatTabs();
   const vh = overlay.viewportRows();
   const tabCount = flat.length;
-  const send = (m) => dispatchMsg(wrap('detail', m));
+  // v0.6.1 Phase 8 — tab-list overlay key handler targets the pane that
+  // owns the open overlay (layout.tabListOwnerPaneId), not the singleton
+  // 'detail' kind. Fallback 'detail' covers the pre-init boot edge.
+  const layoutSlice = getComponentSlice('layout');
+  const ownerPaneId = (layoutSlice && layoutSlice.tabListOwnerPaneId) || 'detail';
+  const send = (m) => dispatchMsg(wrap(ownerPaneId, m));
   if (key === 'escape' || seq === 'T' || key === 'T') { send({ type: 'tab_list_close' }); return; }
   if (key === 'return')              { send({ type: 'tab_list_pick' }); return; }
   if (key === 'up' || seq === 'k')   { send({ type: 'tab_list_nav', dir: -1, vh, tabCount }); return; }
@@ -303,7 +308,7 @@ function handleTabListKey(key, seq) {
   if (seq === ',' || key === 'pageup')   { send({ type: 'tab_list_nav', to: 'pageup',   vh, tabCount }); return; }
   if (seq === '.' || key === 'pagedown') { send({ type: 'tab_list_nav', to: 'pagedown', vh, tabCount }); return; }
   if (seq === 'x') {
-    const slice = getComponentSlice('detail');
+    const slice = getComponentSlice(ownerPaneId);
     const tl = slice && slice.tabList;
     if (!tl || !tl.open) return;
     const row = flat[tl.cursor];
@@ -313,13 +318,16 @@ function handleTabListKey(key, seq) {
 }
 
 function handleDetailSearchKey(key, seq) {
-  // viewer_search_* Msgs are handled by detail.update (Phase B) — route via
-  // the Component fan-out, not the root reducer. Phase 2b will wrap these.
-  if (key === 'escape') { dispatchMsg(wrap('detail', { type: 'viewer_search_cancel' })); return; }
-  if (key === 'return') { dispatchMsg(wrap('detail', { type: 'viewer_search_commit' })); return; }
-  if (key === 'up')   { dispatchMsg(wrap('detail', { type: 'viewer_search_nav', dir: -1 })); return; }
-  if (key === 'down') { dispatchMsg(wrap('detail', { type: 'viewer_search_nav', dir: +1 })); return; }
-  dispatchMsg(wrap('detail', { type: 'viewer_search_key', seq }));
+  // viewer_search_* Msgs are handled by the viewer Component's update —
+  // route via the Component fan-out, not the root reducer. v0.6.1 Phase
+  // 8 — search mode lives on the focused viewer; target by tab id so
+  // multi-viewer is correct (each viewer can have its own search).
+  const focus = getFocus();
+  if (key === 'escape') { dispatchMsg(wrap(focus, { type: 'viewer_search_cancel' })); return; }
+  if (key === 'return') { dispatchMsg(wrap(focus, { type: 'viewer_search_commit' })); return; }
+  if (key === 'up')   { dispatchMsg(wrap(focus, { type: 'viewer_search_nav', dir: -1 })); return; }
+  if (key === 'down') { dispatchMsg(wrap(focus, { type: 'viewer_search_nav', dir: +1 })); return; }
+  dispatchMsg(wrap(focus, { type: 'viewer_search_key', seq }));
 }
 
 function handleNormalKey(key, seq) {
@@ -387,12 +395,15 @@ function handleNormalKey(key, seq) {
       break;
     case 'r':              handleAction('refresh'); break;
     case 'T': {
-      // Open the tab-list overlay anchored to detail's top-left `[≡]`
-      // trigger. vh + tabCount are view-derived (read off overlay/
-      // tab-list); the reducer (viewer.update#tab_list_open) clamps
-      // cursor at the active tab + computes initial scroll.
+      // Open the tab-list overlay anchored to the focused-or-sticky
+      // viewer's `[≡]` trigger. vh + tabCount are view-derived (read
+      // off overlay/tab-list); the reducer clamps cursor at the active
+      // tab + computes initial scroll. v0.6.1 Phase 8 — resolveTarget
+      // picks the destination pane; null = no viewer, drop.
+      const target = route.resolveTarget('viewer');
+      if (!target) break;
       const overlay = require('../overlay/tab-list');
-      dispatchMsg(wrap('detail', {
+      dispatchMsg(wrap(target, {
         type: 'tab_list_open',
         vh: overlay.viewportRows(),
         tabCount: overlay._flatTabs().length,

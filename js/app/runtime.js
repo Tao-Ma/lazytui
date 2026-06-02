@@ -214,6 +214,15 @@ function _withModal(model, patch) {
   return { ...model, modal: { ...model.modal, ...patch } };
 }
 
+// v0.6.1 Phase 8 — `]`/`[` cycle the focused-or-sticky viewer's tab list.
+// Resolve via resolveTarget so the right viewer pane reacts under
+// multi-viewer; null result drops the Cmd.
+function _cycleViewerTab(model, dir) {
+  const target = route.resolveTarget('viewer');
+  if (!target) return [model, []];
+  return [model, [{ type: 'dispatch_msg', msg: route.wrap(target, { type: 'tab_cycle', dir }) }]];
+}
+
 /**
  * The reducer — `(model, msg) → [nextModel, cmds]`.
  *
@@ -317,8 +326,8 @@ function update(model, msg) {
     // mapping here is what lets handleAction's arms collapse into update.
     case 'refresh':     return [model, [{ type: 'refresh' }]];
     case 'show_help':   return [model, [{ type: 'show_help' }]];
-    case 'next_tab':    return [model, [{ type: 'dispatch_msg', msg: route.wrap('detail', { type: 'tab_cycle', dir: +1 }) }]];
-    case 'prev_tab':    return [model, [{ type: 'dispatch_msg', msg: route.wrap('detail', { type: 'tab_cycle', dir: -1 }) }]];
+    case 'next_tab':    return _cycleViewerTab(model, +1);
+    case 'prev_tab':    return _cycleViewerTab(model, -1);
     // --- confirm modal (folded into update). The caller stages a message +
     // a Cmd DESCRIPTOR (the deferred effect as data); `y` re-emits that Cmd,
     // `n`/Esc clears. No closure in the model.

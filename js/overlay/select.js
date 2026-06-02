@@ -50,11 +50,15 @@ function _detail() { return getComponentSlice('detail'); }
 // and dispatch via the Component fan-out (handled by detail.update). The
 // text/column READS (selectedText, decorateLines, …) stay here — reads
 // don't break single-writer.
-// All Msgs from this module target detail.update (Phase 2b). The
-// helper wraps so call sites stay tight: _apply({type:'select_*'}).
+// All Msgs from this module target the focused-or-sticky viewer
+// (select_* mode lives on whichever viewer the user has). v0.6.1
+// Phase 8 — resolveTarget so multi-viewer wires up correctly; null
+// = no viewer, drop.
 function _apply(msg) {
+  const target = require('../leaves/route').resolveTarget('viewer');
+  if (!target) return;
   const api = require('../panel/api');
-  api.dispatchMsg(api.wrap('detail', msg));
+  api.dispatchMsg(api.wrap(target, msg));
 }
 
 /** Plain text projection of detail line `i` (markup stripped). */

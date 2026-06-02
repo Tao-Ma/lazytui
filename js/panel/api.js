@@ -621,9 +621,13 @@ function getCommands() {
 function registerEffect(type, fn) { require('../dispatch/effects').registerEffect(type, fn); }
 
 function setActiveTab(tab) {
-  // viewer_set_tab is handled by the detail Component's update — route
-  // via the Component fan-out, not the root reducer.
-  dispatchMsg(wrap('detail', { type: 'viewer_set_tab', tab }));
+  // viewer_set_tab is handled by the viewer Component's update — route
+  // via the Component fan-out, not the root reducer. v0.6.1 Phase 8 —
+  // viewer target resolved at dispatch time so producers (history's
+  // historyReplay, etc.) hit the focused/sticky viewer rather than
+  // a hardcoded 'detail' singleton.
+  const target = route.resolveTarget('viewer');
+  if (target) dispatchMsg(wrap(target, { type: 'viewer_set_tab', tab }));
 }
 function leaveTerminalMode() {
   require('../dispatch/dispatch').applyMsg({ type: 'terminal_exit' });

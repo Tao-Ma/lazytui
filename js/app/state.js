@@ -303,11 +303,15 @@ function syncPanelScroll(panelType, innerH) {
  */
 function resetGroupContext() {
   // Phase C: the root-chrome reset moved to a Msg in runtime.update; the
-  // viewer-slice half is its own Msg dispatched to the detail Component.
+  // viewer-slice half is its own Msg dispatched to the viewer Component.
+  // v0.6.1 Phase 8 — viewer target resolved at dispatch time so multi-
+  // viewer (future) wires up correctly; null result drops the reset Cmd.
   const dispatch = require('../dispatch/dispatch');
   const api = require('../panel/api');
+  const route = require('../leaves/route');
   dispatch.applyMsg({ type: 'reset_group_context' });
-  api.dispatchMsg(api.wrap('detail', { type: 'viewer_reset_chrome' }));
+  const target = route.resolveTarget('viewer');
+  if (target) api.dispatchMsg(api.wrap(target, { type: 'viewer_reset_chrome' }));
 }
 
 /**

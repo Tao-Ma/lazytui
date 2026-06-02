@@ -29,12 +29,21 @@ const ms = require('../leaves/search');
 // (handled by detail.update, which emits the cross-layer mode_set /
 // mode_clear Cmds); low-level helpers (recompute, clearCommitted) still
 // mutate the slice directly via the api facade.
-// All Msgs target detail.update (viewer_search_*). Phase 2b wraps once.
+// All Msgs target the focused-or-sticky viewer (viewer_search_*).
+// v0.6.1 Phase 8 — resolveTarget so multi-viewer routes searches into
+// the right pane; null = no viewer registered, drop. _slice reads the
+// same resolved target.
+function _viewerTarget() { return require('../leaves/route').resolveTarget('viewer'); }
 function _dispatch(msg) {
+  const target = _viewerTarget();
+  if (!target) return;
   const api = require('../panel/api');
-  return api.dispatchMsg(api.wrap('detail', msg));
+  return api.dispatchMsg(api.wrap(target, msg));
 }
-function _slice() { return require('../panel/api').getComponentSlice('detail'); }
+function _slice() {
+  const target = _viewerTarget();
+  return target ? require('../panel/api').getComponentSlice(target) : null;
+}
 
 function enter()            { _dispatch({ type: 'viewer_search_enter' }); }
 function cancel()           { _dispatch({ type: 'viewer_search_cancel' }); }
@@ -46,7 +55,10 @@ function prev()             { _dispatch({ type: 'viewer_search_nav', dir: -1 });
 // facades write the result back to the slice store. Used by tests + the
 // committed-search `n`/`N`/Esc adapter; production search-mode is
 // already routed through viewer.update's Msg arms.
-function _writeBack(next) { require('../leaves/route').setSlice('detail', next); }
+function _writeBack(next) {
+  const target = _viewerTarget();
+  if (target) require('../leaves/route').setSlice(target, next);
+}
 function clearCommitted()    { const s = _slice(); if (s) _writeBack(ms.clearCommitted(s)); }
 function recompute()         { const s = _slice(); if (s) _writeBack(ms.recompute(s)); }
 function _recomputeFor(term) { const s = _slice(); if (s) _writeBack(ms.recomputeFor(s, term)); }

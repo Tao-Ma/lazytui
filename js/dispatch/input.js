@@ -17,7 +17,7 @@ const { getModel } = require('../app/runtime');
 const { enableMouse, enableFocusEvents, enableBracketedPaste, cols } = require('../io/term');
 const { isTerminalTab, activeTerminalId } = require('../panel/viewer/tabs');
 const { writeToSession, isSessionDead } = require('../io/terminal');
-const {getPanelDef, getItems, getComponentSlice, dispatchMsg, wrap, getFocus } = require('../panel/api');
+const {getPanelDef, getItems, getComponentSlice, dispatchMsg, wrap, getFocus, instanceKind } = require('../panel/api');
 const route = require('../leaves/route');
 const { isChainActive } = require('./modes');
 
@@ -58,7 +58,7 @@ function _handleWheel(mx, my, delta) {
     if (!b) continue;
     if (mx < b.x || mx >= b.x + b.w || my < b.y || my >= b.y + b.h) continue;
 
-    if (p.type === 'detail') {
+    if (instanceKind(p.type) === 'detail') {
       const d = _detail();
       const lines = d?.lines || [];
       const curScroll = d?.scroll || 0;
@@ -66,7 +66,9 @@ function _handleWheel(mx, my, delta) {
       const maxScroll = Math.max(0, lines.length - innerH);
       const next = Math.max(0, Math.min(maxScroll, curScroll + delta));
       if (next === curScroll) return false;
-      dispatchMsg(wrap('detail', { type: 'viewer_scroll', delta }));
+      // v0.6.1 Phase 8 — scroll the specific viewer tab that the wheel
+      // landed on (p.type is the panel/tab id for singleton placements).
+      dispatchMsg(wrap(p.type, { type: 'viewer_scroll', delta }));
       return true;
     }
 
@@ -137,15 +139,19 @@ function handleMouse(kind, x, y) {
         return;
       }
     }
-    // Tab-list `[≡]` trigger at detail's top-left. Toggles the overlay.
-    // Trigger's own suppression (free-config + modals) lives inside
-    // `isTriggerHit` so the click silently misses there.
+    // Tab-list `[≡]` trigger at the viewer pane's top-left. Toggles
+    // the overlay. Trigger's own suppression (free-config + modals)
+    // lives inside `isTriggerHit` so the click silently misses there.
+    // v0.6.1 Phase 8 — target the focused-or-sticky viewer (the pane
+    // whose trigger glyph the user can see); null = no viewer, drop.
     const tabOverlay = require('../overlay/tab-list');
     if (tabOverlay.isTriggerHit(mx, my)) {
+      const target = route.resolveTarget('viewer');
+      if (!target) { render(); return; }
       if (model.modes.tabListMode) {
-        dispatchMsg(wrap('detail', { type: 'tab_list_close' }));
+        dispatchMsg(wrap(target, { type: 'tab_list_close' }));
       } else {
-        dispatchMsg(wrap('detail', {
+        dispatchMsg(wrap(target, {
           type: 'tab_list_open',
           vh: tabOverlay.viewportRows(),
           tabCount: tabOverlay._flatTabs().length,
@@ -159,11 +165,14 @@ function handleMouse(kind, x, y) {
   // Tab-list overlay click + wheel — when the overlay is open, mouse
   // events route to it (row click switches + closes; wheel scrolls the
   // cursor; click outside closes). Mirrors the panel-list overlay's
-  // mouse routing.
+  // mouse routing. v0.6.1 Phase 8 — target the pane that owns the
+  // open overlay (layout.tabListOwnerPaneId), not a hardcoded 'detail'.
   if (model.modes.tabListMode) {
     const tabOverlay = require('../overlay/tab-list');
+    const layoutSlice = getComponentSlice('layout');
+    const ownerPaneId = (layoutSlice && layoutSlice.tabListOwnerPaneId) || 'detail';
     if (kind === 'wheel-up' || kind === 'wheel-down') {
-      dispatchMsg(wrap('detail', {
+      dispatchMsg(wrap(ownerPaneId, {
         type: 'tab_list_nav',
         dir: kind === 'wheel-up' ? -1 : +1,
         vh: tabOverlay.viewportRows(),
@@ -178,12 +187,12 @@ function handleMouse(kind, x, y) {
         // Click on a row → switch + close. Bypasses cursor and the
         // tab_list_pick Msg (which reads cursor off the slice); the
         // click already names the target tab directly.
-        dispatchMsg(wrap('layout', { type: 'focus_set', focus: 'detail' }));
-        dispatchMsg(wrap('detail', { type: 'tab_switch', idx: hit.tabIdx }));
-        dispatchMsg(wrap('detail', { type: 'tab_list_close' }));
+        dispatchMsg(wrap('layout', { type: 'focus_set', focus: ownerPaneId }));
+        dispatchMsg(wrap(ownerPaneId, { type: 'tab_switch', idx: hit.tabIdx }));
+        dispatchMsg(wrap(ownerPaneId, { type: 'tab_list_close' }));
       } else {
         // Click outside overlay (and not on the trigger) → close.
-        dispatchMsg(wrap('detail', { type: 'tab_list_close' }));
+        dispatchMsg(wrap(ownerPaneId, { type: 'tab_list_close' }));
       }
       render();
       return;
