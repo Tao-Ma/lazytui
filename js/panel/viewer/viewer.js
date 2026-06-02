@@ -27,7 +27,7 @@ const {
   getComponentSlice, getFocus, getPanelDef, getItems, wrap,
 } = require('../api');
 const ms = require('../../leaves/search');
-const mt = require('../../leaves/tabs');
+const pt = require('../../leaves/pane-tabs');
 const { getModel } = require('../../app/runtime');
 const { getSel } = require('../../app/state');
 const { isStreaming } = require('../../io/stream');
@@ -132,6 +132,20 @@ function init() {
 // --- update (the viewer_* reducer; absorbed from runtime.update Phase B) ---
 
 function update(msg, slice) {
+  // Generic tab Msgs (tab_switch / tab_cycle / tab_list_* / viewer_add_* /
+  // viewer_remove_* / viewer_update_content_tab_lines /
+  // viewer_reorder_content_tab) lift through the pane-tabs leaf,
+  // parameterised by this pane's id. Returns null when msg isn't a tab
+  // Msg, in which case the switch below handles it.
+  const tabResult = pt.reduceTabMsg(msg, slice, {
+    paneId: 'detail',
+    wrap,
+    getModel,
+    getTabInfo,
+    activeContentTab,
+  });
+  if (tabResult !== null) return tabResult;
+
   switch (msg.type) {
     case 'viewer_set_content': {
       const next = {
@@ -208,53 +222,6 @@ function update(msg, slice) {
       if (tab === slice.tab) return slice;
       return { ...slice, tab };
     }
-    case 'tab_switch': {
-      // The full tab-switch cascade — orchestrates the cross-layer concerns
-      // (kill streaming proc, exit terminal mode, then dispatch the per-
-      // kind body update) that the bare `viewer_set_tab` primitive doesn't.
-      // Emitted from the mouse tab-click in input.js and from `tab_cycle`
-      // (next_tab/prev_tab); setActiveTab() keeps using the bare primitive
-      // when callers just want to flip the tab number without the cascade.
-      const { actionTabs, termTabs, total } = getTabInfo();
-      const idx = msg.idx | 0;
-      if (idx < 0 || idx >= total) return slice;
-      let next = { ...slice, tab: idx };
-      const effects = [
-        { type: 'kill_proc' },
-        { type: 'apply_msg', msg: { type: 'terminal_exit' } },
-      ];
-      if (idx === 0) {
-        // Wipe lines+scroll BEFORE show_selected_info fires. The Cmd
-        // repopulates iff focus is on a navigator; when focus is detail
-        // (the common case after clicking the Info tab in the detail tab
-        // bar), viewer_show_info bails and stale lines from the previous
-        // tab would otherwise paint under the Info label.
-        next = { ...next, lines: [], scroll: 0 };
-        effects.push({ type: 'dispatch_msg', msg: wrap('detail', { type: 'viewer_show_info' }) });
-      } else if (idx <= actionTabs.length) {
-        const [key, act] = actionTabs[idx - 1];
-        effects.push({ type: 'stream_action', actionKey: key, script: act.script });
-      } else if (idx <= actionTabs.length + termTabs.length) {
-        // Terminal tab — content rendered by overlay, clear detail body.
-        next = { ...next, lines: [], scroll: 0 };
-      } else {
-        const ct = activeContentTab();
-        if (ct) {
-          const [, info] = ct;
-          next = { ...next, lines: (info.lines || []).slice(), scroll: 0 };
-        }
-      }
-      return [next, effects];
-    }
-    case 'tab_cycle': {
-      // next_tab / prev_tab keyboard verbs land here — compute the wrapped
-      // index and re-emit through tab_switch so both keyboard and mouse
-      // paths share the cascade.
-      const { total } = getTabInfo();
-      if (total <= 1) return slice;
-      const next = (slice.tab + (msg.dir | 0) + total) % total;
-      return [slice, [{ type: 'dispatch_msg', msg: wrap('detail', { type: 'tab_switch', idx: next }) }]];
-    }
     case 'viewer_reset_chrome': {
       // Dispatched (via dispatch_msg Cmd) from the groups Component when a
       // tree cascade changes currentGroup. Single-writer per layer: root
@@ -294,117 +261,6 @@ function update(msg, slice) {
       return [next, info.disableSearchMode
         ? [{ type: 'apply_msg', msg: { type: 'mode_clear', flag: 'detailSearchMode' } }]
         : []];
-    }
-
-    // --- tab lifecycle. leaves/tabs returns [newSlice, info]; cross-layer
-    // modes/focus changes go out as apply_msg / dispatch_msg Cmds.
-    case 'viewer_add_ephemeral_terminal': {
-      const [next, info] = mt.addEphemeral(slice, getModel(), msg);
-      const effects = [];
-      // focus_set is layout-owned (Phase 1c). Phase 2a — inner msg wrapped
-      // so the dispatch_msg handler routes through layout directly.
-      if (info.focusDetail)   effects.push({ type: 'dispatch_msg', msg: require('../api').wrap('layout', { type: 'focus_set', focus: 'detail' }) });
-      if (info.terminalEnter) effects.push({ type: 'apply_msg', msg: { type: 'terminal_enter' } });
-      return [next, effects];
-    }
-    case 'viewer_remove_ephemeral_terminal': {
-      const [next, { sessionId, terminalExit }] = mt.removeEphemeral(slice, getModel(), msg);
-      const effects = [];
-      if (sessionId)    effects.push({ type: 'destroy_pty_session', id: sessionId });
-      if (terminalExit) effects.push({ type: 'apply_msg', msg: { type: 'terminal_exit' } });
-      return [next, effects];
-    }
-    case 'viewer_add_content_tab': {
-      const [next, info] = mt.addContent(slice, getModel(), msg);
-      const effects = [];
-      // focus_set is layout-owned (Phase 1c). Phase 2a — wrapped (see addEphemeral).
-      if (info.focusDetail)  effects.push({ type: 'dispatch_msg', msg: require('../api').wrap('layout', { type: 'focus_set', focus: 'detail' }) });
-      if (info.terminalExit) effects.push({ type: 'apply_msg', msg: { type: 'terminal_exit' } });
-      return [next, effects];
-    }
-    case 'viewer_update_content_tab_lines': {
-      const [next] = mt.updateContentLines(slice, getModel(), msg);
-      return next;
-    }
-    case 'viewer_remove_content_tab': {
-      const [next, { needShowSelectedInfo }] = mt.removeContent(slice, getModel(), msg);
-      return [next, needShowSelectedInfo ? [{ type: 'show_selected_info' }] : []];
-    }
-    case 'viewer_reorder_content_tab':
-      return mt.reorderContent(slice, getModel(), msg);
-
-    // --- tab-list overlay (the `[≡]` switcher anchored to detail's
-    // top-left). Cursor starts at the active tab; scroll keeps the
-    // cursor in view as it walks the list. Both fields live on
-    // slice.tabList; the overlay reads them and the trigger glyph
-    // queries `model.modes.tabListMode` for its open/closed indicator.
-    case 'tab_list_open': {
-      // cursor = current active tab. scroll computed so cursor lands
-      // in the visible window. vh threaded from the keyhandler since
-      // it's view-derived (reads detail.h via overlay/tab-list).
-      const vh = Math.max(1, msg.vh | 0);
-      const tabCount = msg.tabCount | 0 || 1;
-      const cursor = Math.max(0, Math.min(slice.tab | 0, tabCount - 1));
-      let scroll = 0;
-      if (cursor >= vh) scroll = Math.min(cursor - vh + 1, Math.max(0, tabCount - vh));
-      return [
-        { ...slice, tabList: { open: true, cursor, scroll } },
-        [{ type: 'apply_msg', msg: { type: 'mode_set', flag: 'tabListMode' } }],
-      ];
-    }
-    case 'tab_list_close':
-      if (!slice.tabList || !slice.tabList.open) return slice;
-      return [
-        { ...slice, tabList: { ...slice.tabList, open: false } },
-        [{ type: 'apply_msg', msg: { type: 'mode_clear', flag: 'tabListMode' } },
-         { type: 'force_full_repaint' }],
-      ];
-    case 'tab_list_nav': {
-      const tl = slice.tabList || { open: false, cursor: 0, scroll: 0 };
-      if (!tl.open) return slice;
-      const tabCount = msg.tabCount | 0 || 1;
-      const vh = Math.max(1, msg.vh | 0);
-      let cursor = tl.cursor;
-      if (msg.to === 'top')           cursor = 0;
-      else if (msg.to === 'bottom')   cursor = tabCount - 1;
-      else if (msg.to === 'pageup')   cursor = Math.max(0, tl.cursor - vh);
-      else if (msg.to === 'pagedown') cursor = Math.min(tabCount - 1, tl.cursor + vh);
-      else                            cursor = tl.cursor + (msg.dir | 0);
-      cursor = Math.max(0, Math.min(tabCount - 1, cursor));
-      let scroll = tl.scroll | 0;
-      const maxScroll = Math.max(0, tabCount - vh);
-      if (cursor < scroll)              scroll = cursor;
-      else if (cursor >= scroll + vh)   scroll = cursor - vh + 1;
-      scroll = Math.max(0, Math.min(scroll, maxScroll));
-      if (cursor === tl.cursor && scroll === tl.scroll) return slice;
-      return { ...slice, tabList: { ...tl, cursor, scroll } };
-    }
-    case 'tab_list_pick': {
-      const tl = slice.tabList || { open: false, cursor: 0 };
-      if (!tl.open) return slice;
-      const idx = tl.cursor | 0;
-      return [
-        { ...slice, tabList: { ...tl, open: false } },
-        [
-          { type: 'apply_msg', msg: { type: 'mode_clear', flag: 'tabListMode' } },
-          { type: 'dispatch_msg', msg: wrap('layout', { type: 'focus_set', focus: 'detail' }) },
-          { type: 'dispatch_msg', msg: wrap('detail', { type: 'tab_switch', idx }) },
-          { type: 'force_full_repaint' },
-        ],
-      ];
-    }
-    case 'tab_list_close_selected': {
-      // The caller (overlay key handler) resolves the row's
-      // closeable + closeKind + closeKey from the flat tab list and
-      // threads them in. Non-closeable rows: silent no-op (msg.kind
-      // is null). Cursor clamps to the new tab count on the next
-      // open — clamping here would race with the async tab-removal
-      // Msg the handler also emits.
-      if (!msg.closeKind || !msg.closeKey) return slice;
-      const removeMsg = msg.closeKind === 'content'
-        ? { type: 'viewer_remove_content_tab', groupName: getModel().currentGroup, key: msg.closeKey }
-        : { type: 'viewer_remove_ephemeral_terminal', groupName: getModel().currentGroup, key: msg.closeKey };
-      return [slice, [{ type: 'dispatch_msg', msg: wrap('detail', removeMsg) }]];
     }
 
     // --- visual-mode select. The mouse path dispatches the select_* Msgs

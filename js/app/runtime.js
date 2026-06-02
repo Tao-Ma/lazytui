@@ -12,7 +12,7 @@
  *   - All writes to root-model fields flow through `update`, which
  *     returns a NEW model object on state change (post-Phase-4 pure-TEA
  *     conversion). Reducer-leaves (leaves/design / leaves/register /
- *     leaves/search / leaves/tabs / leaves/nav) are pure return-new
+ *     leaves/search / leaves/pane-tabs / leaves/nav) are pure return-new
  *     transforms; leaves/menu is a pure builder that returns a fresh
  *     items list. Freeze-test coverage in `js/test/test-immutable-*.js`.
  *   - The reducer performs no I/O; effects are Cmd DESCRIPTORS the
@@ -38,8 +38,8 @@ const mreg = require('../leaves/register');
 // `reset_group_context`, etc. Direct import (zero deps) — no cycle.
 // Replaces the old lazy `require('../panel/api')` peppered through this file.
 const route = require('../leaves/route');
-// leaves/tabs + leaves/search are leaves of the detail Component's update.
-// The root reducer doesn't import them directly.
+// leaves/pane-tabs + leaves/search are leaves of the detail Component's
+// update. The root reducer doesn't import them directly.
 
 /**
  * The root model.

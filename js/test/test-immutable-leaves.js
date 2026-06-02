@@ -16,7 +16,7 @@ const { describe, it, eq, assert, expectNoMutation, report } = require('./test-r
 
 const mnav = require('../leaves/nav');
 const mreg = require('../leaves/register');
-const mtabs = require('../leaves/tabs');
+const mtabs = require('../leaves/pane-tabs');
 const ms = require('../leaves/search');
 const mdesign = require('../leaves/design');
 
@@ -97,9 +97,9 @@ describe('[immutable] leaves/register.js', () => {
   });
 });
 
-// --- leaves/tabs ---------------------------------------------------------
+// --- leaves/pane-tabs ----------------------------------------------------
 
-describe('[immutable] leaves/tabs.js', () => {
+describe('[immutable] leaves/pane-tabs.js', () => {
   const makeModel = () => ({
     currentGroup: 'g',
     config: { groups: { g: { actions: {}, terminals: {} } } },

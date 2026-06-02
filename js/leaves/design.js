@@ -1,7 +1,7 @@
 /**
  * Pure design-mode layout transforms — the reducer-owned half of design.js.
  *
- * Like leaves/search / leaves/tabs / leaves/register, this is a dependency-free
+ * Like leaves/search / leaves/pane-tabs / leaves/register, this is a dependency-free
  * leaf the layout Component imports without a require cycle (design.js
  * requires runtime + term + ansi, so the reducer can't call into it). Every
  * function takes the layout Component slice, returns a new slice (or the
