@@ -48,9 +48,16 @@ function killCurrentProc() {
 // push + bottom-stick scroll). stream.js is an async producer with no threaded
 // model, so it bridges via getModel(); dispatch is lazy-required to dodge the
 // stream → dispatch → actions → stream load cycle. These Msgs emit no Cmds.
+//
+// v0.6.1 Phase 6 — destination resolves via route.resolveTarget('viewer'); a
+// null result (no viewer registered) drops the line silently. Producer-side
+// write: stream output flows toward "the viewer," not a specific pane.
 function appendDetailLine(line) {
+  const route = require('../leaves/route');
+  const target = route.resolveTarget('viewer');
+  if (target == null) return;
   const api = require('../panel/api');
-  api.dispatchMsg(api.wrap('detail', { type: 'viewer_append', line }));
+  api.dispatchMsg(api.wrap(target, { type: 'viewer_append', line }));
 }
 
 /**
@@ -60,12 +67,17 @@ function appendDetailLine(line) {
  */
 function streamCommand(headerLabel, cmd, args = []) {
   killCurrentProc();
+  const route = require('../leaves/route');
+  const target = route.resolveTarget('viewer');
+  if (target == null) return;     // no viewer registered — nothing to stream into
   const api = require('../panel/api');
   // T32 — esc the dynamic header. Callers pass `actionKey` (YAML key) or
   // `verb <container>` strings; a `[` or `\t` in either would corrupt
   // the markup parse / panel padding (same class as the postgresql.conf
   // tab bug).
-  api.dispatchMsg(api.wrap('detail', { type: 'stream_start', header: `[dim]$ ${esc(headerLabel)}[/]` }));
+  // v0.6.1 Phase 6 — stream_start (and every appendDetailLine below)
+  // flows to resolveTarget's destination, not the singleton 'detail'.
+  api.dispatchMsg(api.wrap(target, { type: 'stream_start', header: `[dim]$ ${esc(headerLabel)}[/]` }));
   scheduleRender();
 
   // -- delimiter so $0 = "--", $1 = first arg, $@ = arg list (POSIX).
