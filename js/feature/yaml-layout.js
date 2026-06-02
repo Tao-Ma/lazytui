@@ -30,6 +30,7 @@
 'use strict';
 
 const fs = require('fs');
+const mpool = require('../leaves/pool');
 
 // Bookkeeping fields on pool entries that never round-trip.
 const POOL_RUNTIME_KEYS = new Set(['id', '_synthesized']);
@@ -131,7 +132,7 @@ function serializeLayoutCell(pane, indent, opts = {}) {
   // Detail height: source from arrange.detailHeightPct, attach to the
   // pane whose active tab kind is detail. Mirrors the parser, which
   // only honors `height:` when the active tab is detail.
-  if (pane.type === 'detail' && opts.detailHeightPct !== undefined) {
+  if (mpool.isDetailPane(pane) && opts.detailHeightPct !== undefined) {
     overrides.height = `${opts.detailHeightPct}%`;
   }
 

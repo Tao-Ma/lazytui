@@ -26,6 +26,8 @@
  */
 'use strict';
 
+const mpool = require('./pool');
+
 const MIN_PANEL_H = 3;
 // Detail height %, computed against available column rows. Big
 // terminals (with enough rows) get more range — a 100-row column can
@@ -79,7 +81,7 @@ function columnTotalH(slice, column) {
 }
 
 function panelHeightPct(slice, p, availH) {
-  if (p.type === 'detail') return slice.arrange.detailHeightPct;
+  if (mpool.isDetailPane(p)) return slice.arrange.detailHeightPct;
   if (typeof p.heightPct === 'number') return p.heightPct;
   const b = slice.panelBounds[p.type];
   return b ? Math.round(b.h / availH * 100) : 0;
@@ -90,8 +92,8 @@ function _reassignHotkeys(arrange) {
     ...arrange,
     leftPanels: arrange.leftPanels.map((p, i) => ({ ...p, hotkey: String(i + 1) })),
     rightPanels: arrange.rightPanels.map(p =>
-      p.type === 'actions' ? { ...p, hotkey: '0' }
-      : p.type === 'detail' ? { ...p, hotkey: 'o' }
+      mpool.isActionsPane(p) ? { ...p, hotkey: '0' }
+      : mpool.isDetailPane(p) ? { ...p, hotkey: 'o' }
       : { ...p, hotkey: '' }
     ),
   };
@@ -157,7 +159,7 @@ function freezeColumnFlex(slice, column, upperType, lowerType, availH) {
   let changed = false;
   const newCol = slice.arrange[colKey].map(p => {
     if (p.type === upperType || p.type === lowerType) return p;
-    if (p.type === 'detail') return p;
+    if (mpool.isDetailPane(p)) return p;
     if (typeof p.heightPct === 'number') return p;
     const b = slice.panelBounds[p.type];
     if (!b) return p;
@@ -228,7 +230,7 @@ function reorderWithin(slice, delta) {
   // insert-before-detail logic in pool_show — same invariant, three
   // entry points, one rule.
   if (!isLeft) {
-    if (column[localIdx].type === 'detail' || column[targetIdx].type === 'detail') {
+    if (mpool.isDetailPane(column[localIdx]) || mpool.isDetailPane(column[targetIdx])) {
       return slice;
     }
   }
@@ -260,7 +262,7 @@ function moveColumn(slice, col) {
   // derives the new index from the rearranged columns automatically.
   if (col === 'left') {
     if (isLeft) return slice;
-    if (selPanel.type === 'detail' || selPanel.type === 'actions') return slice;
+    if (mpool.isReservedPane(selPanel)) return slice;
     if (slice.arrange.leftPanels.length >= 6) return slice;
 
     const newRight = slice.arrange.rightPanels.slice();
@@ -282,7 +284,7 @@ function moveColumn(slice, col) {
 
   const newLeft = slice.arrange.leftPanels.slice();
   newLeft.splice(localIdx, 1);
-  const detailIdx = slice.arrange.rightPanels.findIndex(p => p.type === 'detail');
+  const detailIdx = mpool.detailPaneIndex(slice.arrange);
   const insertAt = detailIdx >= 0 ? detailIdx : slice.arrange.rightPanels.length;
   const newRight = slice.arrange.rightPanels.slice();
   newRight.splice(insertAt, 0, { ...selPanel, column: 'right', hotkey: '' });
@@ -309,13 +311,13 @@ function resizeWidthOrDetail(slice, sign) {
   let newLeftW  = slice.arrange.leftWidth;
 
   if (sign > 0) {
-    if (selPanel.type === 'detail' && slice.arrange.detailHeightPct < 90) {
+    if (mpool.isDetailPane(selPanel) && slice.arrange.detailHeightPct < 90) {
       newDetail = Math.min(90, slice.arrange.detailHeightPct + 5);
     } else if (isLeft && slice.arrange.leftWidth < 60) {
       newLeftW = Math.min(60, slice.arrange.leftWidth + 2);
     } else return slice;
   } else {
-    if (selPanel.type === 'detail' && slice.arrange.detailHeightPct > 20) {
+    if (mpool.isDetailPane(selPanel) && slice.arrange.detailHeightPct > 20) {
       newDetail = Math.max(20, slice.arrange.detailHeightPct - 5);
     } else if (isLeft && slice.arrange.leftWidth > 20) {
       newLeftW = Math.max(20, slice.arrange.leftWidth - 2);
@@ -337,7 +339,7 @@ function resizeFocusedPanelHeight(slice, deltaPct) {
   const selIdx = selectedIdx(slice);
   const all = allDesignPanels(slice);
   const sel = all[selIdx];
-  if (!sel || sel.type === 'detail') return slice;  // detail uses +/-
+  if (!sel || mpool.isDetailPane(sel)) return slice;  // detail uses +/-
 
   const isLeft = selIdx < slice.arrange.leftPanels.length;
   const column = isLeft ? slice.arrange.leftPanels : slice.arrange.rightPanels;
@@ -356,8 +358,8 @@ function resizeFocusedPanelHeight(slice, deltaPct) {
   const combined = selCur + nextCur;
 
   const rowsToPct = (rows) => Math.max(1, Math.ceil(rows / availH * 100));
-  const minPct = (p) => p.type === 'detail' ? detailMinPct(availH) : rowsToPct(MIN_PANEL_H);
-  const maxPct = (p) => p.type === 'detail' ? detailMaxPct(availH) : 100;
+  const minPct = (p) => mpool.isDetailPane(p) ? detailMinPct(availH) : rowsToPct(MIN_PANEL_H);
+  const maxPct = (p) => mpool.isDetailPane(p) ? detailMaxPct(availH) : 100;
 
   let newSel  = selCur  + deltaPct;
   let newNext = nextCur - deltaPct;
@@ -586,8 +588,7 @@ function validateTarget(slice, srcType, column, target) {
   // this rewrite silently and the user couldn't tell why their drop
   // landed above detail instead of below.
   if (column === 'right' && srcType !== 'detail') {
-    const rightPanels = slice.arrange.rightPanels;
-    const detailIdx = rightPanels.findIndex(p => p.type === 'detail');
+    const detailIdx = mpool.detailPaneIndex(slice.arrange);
     if (detailIdx >= 0 && index > detailIdx) {
       return { kind: 'insert', column, index: detailIdx, valid: true, clamp: 'detail stays at end' };
     }
@@ -747,8 +748,8 @@ function mousePress(slice, mx, my, COLS) {
       ds.combinedH = slice.panelBounds[b.upper.type].h + slice.panelBounds[b.lower.type].h;
       ds.availH = columnTotalH(slice, column);
       if (ds.availH < 1) ds.availH = 1;
-      ds.detailIsUpper = b.upper.type === 'detail';
-      ds.detailIsLower = b.lower.type === 'detail';
+      ds.detailIsUpper = mpool.isDetailPane(b.upper);
+      ds.detailIsLower = mpool.isDetailPane(b.lower);
       next = freezeColumnFlex(next, column, b.upper.type, b.lower.type, ds.availH);
     }
     return { ...next, design: { ...next.design, drag: ds } };

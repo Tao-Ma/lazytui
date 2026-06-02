@@ -381,7 +381,7 @@ function handleMouse(kind, x, y) {
     // Detail panel content area — text selection on a click inside the
     // body. Stays detail-specific until Phase 4 lifts the selection
     // machinery onto a per-pane basis.
-    if (p.type === 'detail') {
+    if (require('../leaves/pool').isDetailPane(p)) {
       dispatchMsg(wrap('layout', { type: 'focus_set', focus: 'detail' }));
       // Begin a selection iff the click landed in the content rows
       // and this tab actually has scrollable text content (skip

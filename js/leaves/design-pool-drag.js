@@ -28,7 +28,8 @@
 'use strict';
 
 const { pointToCellZone } = require('./design');
-const { placementFromPoolEntry } = require('./pool');
+const mpool = require('./pool');
+const { placementFromPoolEntry } = mpool;
 
 /** Compute the drop target for a pool drag at (mx, my). Returns
  *  `{ kind:'insert', column, index, valid }` or
@@ -97,14 +98,14 @@ function validateInsert(arrange, column, index, sourceEntry) {
   // validateTarget blocks moving them into left; pool-drag must too or the
   // user can land a hidden actions panel in the left column via the
   // panel-list overlay.
-  if (sourceEntry && column === 'left' && (sourceEntry.type === 'detail' || sourceEntry.type === 'actions')) {
+  if (sourceEntry && column === 'left' && mpool.isReservedPane(sourceEntry)) {
     return { kind: 'insert', column, index, valid: false, reason: `${sourceEntry.type} can't live in left column` };
   }
   const valid = true;
   let idx = index;
   let clamp = null;
   if (column === 'right') {
-    const detailIdx = panels.findIndex(p => p.type === 'detail');
+    const detailIdx = panels.findIndex(mpool.isDetailPane);
     if (detailIdx >= 0 && idx > detailIdx) {
       idx = detailIdx;
       clamp = 'detail stays at end';
@@ -120,10 +121,10 @@ function validateInsert(arrange, column, index, sourceEntry) {
  *  land there as the new occupant — same invariant validateInsert
  *  enforces). */
 function validateReplace(occupant, column, sourceEntry) {
-  if (occupant.type === 'detail') {
+  if (mpool.isDetailPane(occupant)) {
     return { kind: 'replace', column, occupantId: occupant.id, valid: false };
   }
-  if (sourceEntry && column === 'left' && (sourceEntry.type === 'detail' || sourceEntry.type === 'actions')) {
+  if (sourceEntry && column === 'left' && mpool.isReservedPane(sourceEntry)) {
     return { kind: 'replace', column, occupantId: occupant.id, valid: false, reason: `${sourceEntry.type} can't live in left column` };
   }
   return { kind: 'replace', column, occupantId: occupant.id, valid: true };

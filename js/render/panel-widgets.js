@@ -42,6 +42,7 @@
 const { getInstanceSlice } = require('../panel/api');
 const { theme } = require('./themes');
 const { esc, visibleLen } = require('../io/ansi');
+const mpool = require('../leaves/pool');
 
 const GLYPH_W = 3;
 const COLLAPSE_MIN_W = 9;
@@ -84,7 +85,7 @@ function _placedWidgetTargets() {
  *  to end-of-line locks onto the final `─*` run, not any `─` chars inside
  *  the title text. */
 function injectTopRowChrome(panelOutput, p, b, freeConfigMode, fc, focused) {
-  if (!panelOutput || p.type === 'detail') return panelOutput;
+  if (!panelOutput || mpool.isDetailPane(p)) return panelOutput;
   const slice = getInstanceSlice('layout');
   if (slice && slice.design && slice.design.drag) return panelOutput;
   if (!b || b.h < 1 || b.w < COLLAPSE_MIN_W) return panelOutput;

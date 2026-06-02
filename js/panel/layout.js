@@ -495,7 +495,7 @@ function update(msg, slice) {
       const id = msg.id;
       const entry = (arrange.pool || {})[id];
       if (!entry) return slice;
-      if (entry.type === 'detail') return slice;
+      if (mpool.isDetailPane(entry)) return slice;
       const leftIdx  = arrange.leftPanels.findIndex(p => p.id === id);
       const rightIdx = arrange.rightPanels.findIndex(p => p.id === id);
       let nextLeft  = arrange.leftPanels;
@@ -565,7 +565,7 @@ function update(msg, slice) {
       else return slice;
       const arr = col === 'left' ? arrange.leftPanels : arrange.rightPanels;
       const p = arr[idx];
-      if (p.type === 'detail') return slice;  // essential
+      if (mpool.isDetailPane(p)) return slice;  // essential
       const next = { ...p, collapsed: !p.collapsed };
       const nextArr = arr.slice(); nextArr[idx] = next;
       const nextArrange = col === 'left'
@@ -585,15 +585,14 @@ function update(msg, slice) {
       if (!entry) return slice;
       if (mpool.placedIdSet(arrange).has(id)) return slice;  // already placed
       // Invariant guard: refuse a second detail / actions.
-      const all = arrange.leftPanels.concat(arrange.rightPanels);
-      if (entry.type === 'detail'  && all.some(p => p.type === 'detail'))  return slice;
-      if (entry.type === 'actions' && all.some(p => p.type === 'actions')) return slice;
+      if (mpool.isDetailPane(entry)  && mpool.hasDetailPane(arrange))  return slice;
+      if (mpool.isActionsPane(entry) && mpool.hasActionsPane(arrange)) return slice;
       const column = msg.column === 'left' ? 'left' : 'right';
       // detail / actions are right-column-only. Pool-drag's validateInsert
       // already refuses to even propose column='left' for them; this is
       // the defense-in-depth guard for any future caller that emits
       // pool_show with column='left' directly.
-      if (column === 'left' && (entry.type === 'detail' || entry.type === 'actions')) return slice;
+      if (column === 'left' && mpool.isReservedPane(entry)) return slice;
       // Column caps (6 left / 3 right) are SOFT — exceeded at parse time
       // emits a warning; runtime placement just allows. The renderer's
       // MIN_PANEL_H + terminal-row floor is the only physical limit.
@@ -604,7 +603,7 @@ function update(msg, slice) {
       // splice at that position — clamped to detail's slot in right column.
       // Without `index`, append at the tail (with the same detail clamp).
       let inserted;
-      const detailIdx = column === 'right' ? target.findIndex(p => p.type === 'detail') : -1;
+      const detailIdx = column === 'right' ? target.findIndex(mpool.isDetailPane) : -1;
       let idx;
       if (typeof msg.index === 'number') {
         idx = Math.max(0, Math.min(msg.index, target.length));

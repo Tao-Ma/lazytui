@@ -188,7 +188,7 @@ function _frameworkDynamicCommands(m) {
     // keep hiddenIds honest.
     for (const id of mpool.activePaneIds(arrange)) {
       const entry = arrange.pool[id];
-      if (!entry || entry.type === 'detail') continue;  // detail can't be hidden
+      if (!entry || mpool.isDetailPane(entry)) continue;  // detail can't be hidden
       out.push({
         name: `hide ${id}`,
         desc: `Hide the ${entry.title || id} panel (stays in pool)`,

@@ -24,6 +24,7 @@
 const { RESET, richToAnsi, esc, visibleLen } = require('../io/ansi');
 const { refreshSize, cols, rows, stdout, showCursor, hideCursor } = require('../io/term');
 const { allPanels, syncPanelScroll, multiSelCount } = require('../app/state');
+const mpool = require('../leaves/pool');
 const { theme } = require('./themes');
 const { truncate } = require('./panel');
 const { isTerminalTab, activeTerminalId, activeTerminalConfig,
@@ -131,7 +132,7 @@ function distributeColumnHeights(layoutSlice, panels, availH, isRightCol, minH) 
   let reserved = 0;
   let detailPanel = null;
   if (isRightCol) {
-    detailPanel = panels.find(p => p.type === 'detail') || null;
+    detailPanel = panels.find(mpool.isDetailPane) || null;
     if (detailPanel) {
       reserved = Math.max(minH, Math.floor(innerAvail * layoutSlice.arrange.detailHeightPct / 100));
     }
@@ -241,7 +242,7 @@ function calcLayout(model = getModel()) {
   // navigator's `set_scroll` arm is pure + idempotent (returns same
   // ref when the value is unchanged), so re-renders don't ping-pong.
   for (const p of [...layoutSlice.arrange.leftPanels, ...layoutSlice.arrange.rightPanels]) {
-    if (p.type === 'detail') continue;
+    if (mpool.isDetailPane(p)) continue;
     if (p.collapsed) continue;  // no content rows to scroll-clamp against
     syncPanelScroll(p.type, layoutSlice.panelHeights[p.type] - 2);
   }
@@ -397,7 +398,7 @@ function renderHalf(model) {
   const availH = ROWS - 1;  // only the footer is reserved
   const focusedPanel = allPanels().find(p => p.type === layoutSlice.focus);
   if (!focusedPanel) return renderNormal(model);
-  const detailPanel = layoutSlice.arrange.rightPanels.find(p => p.type === 'detail');
+  const detailPanel = mpool.findDetailPane(layoutSlice.arrange);
   // Half view is "non-detail panel + detail" side-by-side. When focus is
   // ON detail (e.g., after a tab-bar click or content-area click moves
   // focus there), the left side falls back to slice.halfLeftPanel — the
@@ -407,10 +408,10 @@ function renderHalf(model) {
   // pick the first non-detail panel available; if none, just render
   // detail on the left as a last resort (matches old behavior).
   let leftPanel = focusedPanel;
-  if (focusedPanel.type === 'detail') {
+  if (mpool.isDetailPane(focusedPanel)) {
     const all = allPanels();
     leftPanel = all.find(p => p.type === layoutSlice.halfLeftPanel)
-             || all.find(p => p.type !== 'detail')
+             || all.find(p => !mpool.isDetailPane(p))
              || focusedPanel;
   }
   layoutSlice.panelBounds = {};

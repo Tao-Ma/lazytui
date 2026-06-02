@@ -28,6 +28,7 @@ const {
 } = require('../api');
 const ms = require('../../leaves/search');
 const pt = require('../../leaves/pane-tabs');
+const mpool = require('../../leaves/pool');
 const { buildTabStrip } = require('../../render/panel-widgets');
 const { getModel } = require('../../app/runtime');
 const { getSel } = require('../../app/state');
@@ -398,9 +399,7 @@ function update(msg, slice) {
 function detailTitle(slice) {
   const tabInfo = getTabInfo();
   const layoutSlice = getInstanceSlice('layout');
-  const dp = layoutSlice && layoutSlice.arrange
-    ? layoutSlice.arrange.rightPanels.find(p => p.type === 'detail')
-    : null;
+  const dp = layoutSlice ? mpool.findDetailPane(layoutSlice.arrange) : null;
   const hotkey = dp ? dp.hotkey : '';
   const built = buildTabStrip(tabInfo, slice.tab, hotkey);
   // Blessed exception (docs/v0.5-layering.md §5): the mouse hit-test
@@ -418,7 +417,7 @@ function detailTitle(slice) {
 function render(panel, w, h, slice) {
   const m = getModel();
   const innerH = h - 2;
-  const dp = getInstanceSlice('layout').arrange.rightPanels.find(p => p.type === 'detail');
+  const dp = mpool.findDetailPane(getInstanceSlice('layout').arrange);
   const hotkey = dp ? dp.hotkey : '';
   const isFocused = instanceKind(getFocus()) === 'detail' || m.modes.terminalMode;
   if (isTerminalTab()) {

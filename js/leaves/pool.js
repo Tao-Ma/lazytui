@@ -113,7 +113,7 @@ function panelListItems(arrange) {
   const pushPlacement = (p) => {
     const entry = arrange.pool[p.id];
     if (!entry) return;
-    const status = entry.type === 'detail' ? 'essential' : 'placed';
+    const status = isDetailPane(entry) ? 'essential' : 'placed';
     items.push({ id: entry.id, type: entry.type, title: entry.title, status });
     seen.add(entry.id);
   };
@@ -145,6 +145,67 @@ function placementFromPoolEntry(entry, column) {
   }, mpane.newPaneId(entry.id));
 }
 
+// --- Detail / actions accessors ------------------------------------------
+//
+// The "is this THE detail pane?" question is asked in ~30 sites scattered
+// across the renderer, design rules, layout reducer, serializer, parser,
+// and viewer Component. Today the answer is `pane.type === 'detail'` —
+// the legacy Panel field that mirrors the active tab's kind. Routing
+// every reader through these helpers lets the multi-instance / per-tab
+// kind lookup (v0.7) change the implementation here without touching
+// consumers. Same for actions (the second reserved-kind invariant).
+//
+// `isReservedPane` is the combined "detail OR actions" check that
+// appears in column-placement and design-rule guards.
+
+function isDetailPane(pane) {
+  return !!(pane && pane.type === 'detail');
+}
+
+function isActionsPane(pane) {
+  return !!(pane && pane.type === 'actions');
+}
+
+function isReservedPane(pane) {
+  return isDetailPane(pane) || isActionsPane(pane);
+}
+
+/** Find the detail pane in an arrange struct. Defensively scans both
+ *  columns even though the layout invariant places it in the right
+ *  column's last cell — keeps consumers honest under in-flight migrations
+ *  (drag, swap) where transient state can violate the invariant. Returns
+ *  the pane object or null. */
+function findDetailPane(arrange) {
+  if (!arrange) return null;
+  const right = arrange.rightPanels || [];
+  for (const p of right) if (isDetailPane(p)) return p;
+  const left = arrange.leftPanels || [];
+  for (const p of left) if (isDetailPane(p)) return p;
+  return null;
+}
+
+/** Index of the detail pane in `arrange.rightPanels`, or -1. The right
+ *  column is the canonical home; callers wanting "detail anywhere" use
+ *  `findDetailPane`. */
+function detailPaneIndex(arrange) {
+  if (!arrange) return -1;
+  const right = arrange.rightPanels || [];
+  return right.findIndex(isDetailPane);
+}
+
+/** True if `arrange` (or its placed panes) already hosts a detail pane.
+ *  Used by pool_show / drag-insert to refuse adding a second. */
+function hasDetailPane(arrange) {
+  return findDetailPane(arrange) !== null;
+}
+
+/** True if `arrange` already hosts an actions pane. */
+function hasActionsPane(arrange) {
+  if (!arrange) return false;
+  const all = (arrange.leftPanels || []).concat(arrange.rightPanels || []);
+  return all.some(isActionsPane);
+}
+
 module.exports = {
   placedIds,
   placedIdSet,
@@ -156,4 +217,7 @@ module.exports = {
   orphanPlacements,
   panelListItems,
   placementFromPoolEntry,
+  isDetailPane, isActionsPane, isReservedPane,
+  findDetailPane, detailPaneIndex,
+  hasDetailPane, hasActionsPane,
 };

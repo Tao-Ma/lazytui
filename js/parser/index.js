@@ -19,6 +19,7 @@ const { passthroughCmd, resolveScript } = require('./resolver');
 
 const { LEFT_HOTKEY_POOL, RIGHT_HOTKEY_POOL } = require('../leaves/hotkeys');
 const mpane = require('../leaves/pane');
+const mpool = require('../leaves/pool');
 
 // Reserved layout keys consumed by the framework; everything else
 // passes through as plugin-specific panel config (e.g. stats panel's
@@ -191,10 +192,10 @@ function buildPlacedPane(resolved, hotkey, column, detailHeightSetter, pool) {
   // detail can't be collapsed — the runtime reducer refuses. Reject at
   // parse time so a hand-edited YAML doesn't land in an inconsistent
   // visual state.
-  if (active.type === 'detail' && placement.collapsed === true) {
+  if (mpool.isDetailPane(active) && placement.collapsed === true) {
     throw new ParseError(`layout cell '${activeTabPoolId}': detail panel can't be collapsed`);
   }
-  if (active.type === 'detail' && placement.height !== undefined) {
+  if (mpool.isDetailPane(active) && placement.height !== undefined) {
     const h = placement.height;
     if (typeof h === 'string' && h.endsWith('%')) {
       detailHeightSetter(parseInt(h.slice(0, -1), 10));
