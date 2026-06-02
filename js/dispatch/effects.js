@@ -9,7 +9,7 @@
  *     `panel/api.dispatchMsg` runs them via `runEffects` here.
  *
  * Cmds and effects are the same thing — plain descriptors
- * (`{ type: 'setDetail', lines: [...] }`). Handlers register by type;
+ * (`{ type: 'focus', panel: 'detail' }`). Handlers register by type;
  * the vocabulary grows as Components register their own (e.g.
  * config-status' cfgStatusCompute). Unknown types are logged, not
  * thrown — a misconfigured Component shouldn't wedge dispatch.
@@ -94,21 +94,6 @@ function installBuiltins() {
   const { getModel } = require('../app/runtime');
   const api = require('../panel/api');
   const renderQueue = require('../render/render-queue');
-  // v0.6.1 Phase 6 — every producer-side write to "the viewer" resolves
-  // its destination via resolveTarget. Cached once per installBuiltins.
-  const route = require('../leaves/route');
-  // setDetail: replace the detail panel content (config-status' Enter→diff,
-  // any migrated plugin's detail write). Routes through viewer_set_content (no
-  // Cmds). v0.6.1 Phase 6 — destination resolves via resolveTarget so
-  // multi-viewer hits the focused/sticky one. null → no viewer registered,
-  // drop silently.
-  registerEffect('setDetail', (eff) => {
-    const target = route.resolveTarget('viewer');
-    if (target == null) return;
-    api.dispatchMsg(api.wrap(target, {
-      type: 'viewer_set_content', lines: Array.isArray(eff.lines) ? eff.lines.slice() : [],
-    }));
-  });
   // focus: move panel focus (a component can't write slice.focus itself).
   // focus_set is owned by layout.update.
   registerEffect('focus', (eff) => {

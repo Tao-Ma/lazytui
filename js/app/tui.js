@@ -179,8 +179,8 @@ function main() {
   process.on('uncaughtException',  _onFatal('uncaughtException'));
   process.on('unhandledRejection', _onFatal('unhandledRejection'));
 
-  // Install the Component effect handlers (setDetail/focus/render) before any
-  // Component registers — a Component's update→effects must resolve at
+  // Install the Component effect handlers (focus/render/apply_msg/...) before
+  // any Component registers — a Component's update→effects must resolve at
   // first dispatch.
   require('../dispatch/effects').installBuiltins();
 

@@ -16,7 +16,8 @@
  * useful.
  *
  * The output `{ kind, lines, ... }` is what addContentTab consumes:
- * `lines` is array<string> ready to setDetail.join('\n') against.
+ * `lines` is array<string> ready to viewer_set_content / join('\n')
+ * against.
  */
 'use strict';
 

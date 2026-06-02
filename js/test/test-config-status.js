@@ -412,7 +412,7 @@ describe('[8] diffFor — preview shape per status', () => {
   });
 
   it('Enter on a file row runs cfgStatusDiff → populates the detail panel', () => {
-    effects.installBuiltins();  // setDetail effect (cfgStatusDiff calls state.setViewerContent directly)
+    effects.installBuiltins();  // focus/render/apply_msg/...; cfgStatusDiff calls state.setViewerContent directly
     // Phase B: setViewerContent routes via dispatchMsg → detail Component; register it.
     require('../panel/api').registerComponent(require('../panel/viewer/viewer'));
     baseline();
