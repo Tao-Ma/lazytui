@@ -357,7 +357,12 @@ function renderNormal(model) {
   const t = theme();
   const renderOne = (p, w, h, x, y) => {
     const b = { x, y, w, h };
+    // Dual-key write (v0.6.1 Phase 1). Type-keyed access stays the
+    // canonical read path; paneId-keyed write is forward-compat
+    // scaffolding consumed by Phase 7's mass flip from type-keyed to
+    // pane-keyed reads.
     layoutSlice.panelBounds[p.type] = b;
+    if (p.paneId) layoutSlice.panelBounds[p.paneId] = b;
     let out = p.collapsed
       ? _renderCollapsed(p, w)
       : _safeRender(rendererFor(p.type), p, w, h);
@@ -409,8 +414,14 @@ function renderHalf(model) {
              || focusedPanel;
   }
   layoutSlice.panelBounds = {};
-  layoutSlice.panelBounds[leftPanel.type] = { x: 0, y: 0, w: halfW, h: availH };
-  if (detailPanel) layoutSlice.panelBounds.detail = { x: halfW, y: 0, w: COLS - halfW, h: availH };
+  const leftBounds = { x: 0, y: 0, w: halfW, h: availH };
+  layoutSlice.panelBounds[leftPanel.type] = leftBounds;
+  if (leftPanel.paneId) layoutSlice.panelBounds[leftPanel.paneId] = leftBounds;
+  if (detailPanel) {
+    const detailBounds = { x: halfW, y: 0, w: COLS - halfW, h: availH };
+    layoutSlice.panelBounds.detail = detailBounds;
+    if (detailPanel.paneId) layoutSlice.panelBounds[detailPanel.paneId] = detailBounds;
+  }
   let leftContent = _safeRender(rendererFor(leftPanel.type), leftPanel, halfW, availH);
   let rightContent = detailPanel ? _safeRender(rendererFor('detail'), detailPanel, halfW, availH) : '';
   // Bake the [≡] trigger into the detail render — same chrome as normal
@@ -429,7 +440,9 @@ function renderFull(model) {
   const focusedPanel = allPanels().find(p => p.type === layoutSlice.focus);
   if (!focusedPanel) return renderNormal(model);
   layoutSlice.panelBounds = {};
-  layoutSlice.panelBounds[focusedPanel.type] = { x: 0, y: 0, w: COLS, h: availH };
+  const fullBounds = { x: 0, y: 0, w: COLS, h: availH };
+  layoutSlice.panelBounds[focusedPanel.type] = fullBounds;
+  if (focusedPanel.paneId) layoutSlice.panelBounds[focusedPanel.paneId] = fullBounds;
   let content = _safeRender(rendererFor(focusedPanel.type), focusedPanel, COLS, availH);
   // Bake the [≡] trigger when the full-view focused panel is detail —
   // same parity with normal view.
