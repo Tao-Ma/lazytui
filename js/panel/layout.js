@@ -95,11 +95,12 @@ function init() {
     // no-op on detail).
     panelList: { open: false, cursor: 0 },
     // Half-view's left-side panel — tracks the most recently focused
-    // non-detail panel. When `focus === 'detail'` in half view, the
-    // renderer reads this to decide what to paint on the left instead
-    // of duplicating detail on both sides. Updated in `focus_set` only
-    // when the new focus is non-detail; stays sticky while focus sits
-    // on detail. Falls back to first non-detail panel if unset/stale.
+    // non-viewer-kind tab. When focus sits on a viewer-kind tab in
+    // half view, the renderer reads this to decide what to paint on
+    // the left instead of duplicating the viewer on both sides.
+    // Updated in `focus_set` only when the new focus is non-viewer-
+    // kind; stays sticky while focus sits on a viewer. Falls back to
+    // first non-viewer panel if unset/stale.
     halfLeftPanel: null,
     // v0.6.1 Phase 4 — pane id that owns the open tab-list overlay.
     // Companion to model.modes.tabListMode: the mode flag says "an

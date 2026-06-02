@@ -152,7 +152,14 @@ function setSlice(name, slice) {
 function hasSlice(name) { return _primaryByKind[name] !== undefined; }
 
 /** Focus read — the layout instance's slice owns `focus` (Phase 1c).
- *  Pre-init returns null. */
+ *  Pre-init returns null.
+ *
+ *  v0.6.1 Phase 7 — `focus` is a tab id (the placement identity, e.g.
+ *  'detail', 'groups', 'containers'). For Phase 7 singleton placements
+ *  the tab id coincides with the panel type, so today's comparison
+ *  sites that say `getFocus() === 'detail'` still work; kind-intent
+ *  comparisons should go through `instanceKind(getFocus()) === '<kind>'`
+ *  instead (resilient to multi-instance, where tab id ≠ kind). */
 function getFocus() {
   const id = _primaryByKind['layout'];
   if (id === undefined) return null;
