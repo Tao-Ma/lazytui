@@ -249,10 +249,13 @@ function update(model, msg) {
       // selection), else clears any lingering multi-selection; otherwise
       // a no-op. Phase 4a: the multiSel clear is dispatched into the
       // focused Navigator's update (each panel owns its own Set).
+      // v0.6.1 Phase 3 — single-panel navigators store the entry directly
+      // at slice.nav; multi-panel keep slice.nav[panelType].
       const focus = route.getFocus();
       const compName = route.componentForPanel(focus);
-      const navEntry = compName ? (route.getSlice(compName) || {}).nav : null;
-      const had = navEntry && navEntry[focus] && navEntry[focus].multiSel.size > 0;
+      const nav = compName ? (route.getSlice(compName) || {}).nav : null;
+      const entry = nav && ('cursor' in nav ? nav : nav[focus]);
+      const had = !!(entry && entry.multiSel && entry.multiSel.size > 0);
       if (model.modes.listSelectMode) {
         const next = _withModes(model, { listSelectMode: false });
         if (compName) return [next, [{ type: 'dispatch_msg', msg: route.wrap(compName, { type: 'multisel_clear', panel: focus }) }]];

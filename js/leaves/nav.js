@@ -2,26 +2,32 @@
  * Pure leaf for per-panel nav chrome (cursor / scroll / multiSel / filter).
  *
  * Phase 4a moved cursor/scroll/multiSel onto each Navigator's slice;
- * Phase 4c folded the committed filter text in too. All four fields live
- * at `slice.nav[panelType] = { cursor, scroll, multiSel, filter }`. One
- * shared transform handles every Navigator — each Component's update()
- * calls `apply(slice, msg)` first and falls through on miss.
+ * Phase 4c folded the committed filter text in. v0.6.1 Phase 3 collapses
+ * single-panel Components' nav from `slice.nav[panelType]` to a direct
+ * entry at `slice.nav` — one entry per instance. Multi-panel Components
+ * (today: `files` owning `files` + `file-browser`) keep the panelType-
+ * keyed shape until Phase 4 mints separate instances per panelType.
+ *
+ * **Slice shape** (detected by presence of `cursor` on slice.nav):
+ *   - single-panel Component: `slice.nav = { cursor, scroll, multiSel,
+ *                                            filter }`
+ *   - multi-panel Component:  `slice.nav[panelType] = { cursor, scroll,
+ *                                                       multiSel, filter }`
  *
  * **Pure-TEA shape:** returns a NEW slice with the matching nav entry
- * replaced (other entries pass through by reference; the rest of the
- * slice is shallow-spread). Returns `undefined` when the Msg is not a
- * nav Msg — the caller's signal to keep handling.
+ * replaced. Returns `undefined` when the Msg is not a nav Msg — the
+ * caller's signal to keep handling.
  *
- * Msg shapes (all carry `panel:` so multi-panel-type Components — `files`
- * owns `files` + `file-browser` — disambiguate which nav entry to write):
+ * Msg shapes (`panel:` field carried on every Msg; ignored when the
+ * slice is single-shape):
  *
- *   { type: 'set_cursor',         panel, index }
- *   { type: 'set_scroll',         panel, offset }
- *   { type: 'multisel_toggle',    panel, id }
- *   { type: 'multisel_select_all',panel, ids }
- *   { type: 'multisel_clear',     panel }
- *   { type: 'set_filter',         panel, text }   // Phase 4c
- *   { type: 'clear_filter',       panel }         // Phase 4c
+ *   { type: 'set_cursor',         panel?, index }
+ *   { type: 'set_scroll',         panel?, offset }
+ *   { type: 'multisel_toggle',    panel?, id }
+ *   { type: 'multisel_select_all',panel?, ids }
+ *   { type: 'multisel_clear',     panel? }
+ *   { type: 'set_filter',         panel?, text }
+ *   { type: 'clear_filter',       panel? }
  */
 'use strict';
 
@@ -90,13 +96,23 @@ function _stepEntry(entry, msg) {
 
 /**
  * Apply a nav Msg to `slice`. Returns a NEW slice (with the matching
- * nav entry replaced) on match, the same slice if `nav` or `nav[panel]`
- * is missing (quietly drop — not this Component's panel), or `undefined`
- * to signal "not a nav Msg" so the Component's own update can take over.
+ * nav entry replaced) on match, the same slice if no matching entry
+ * (quietly drop — not this Component's panel), or `undefined` to
+ * signal "not a nav Msg" so the Component's own update can take over.
+ *
+ * Detects shape by presence of `cursor` on slice.nav: direct entry
+ * (single-panel Component) vs panel-keyed map (multi-panel Component).
  */
 function apply(slice, msg) {
   if (!isNavMsg(msg)) return undefined;
   if (!slice || !slice.nav) return slice;
+  // Single-panel: slice.nav IS the entry.
+  if ('cursor' in slice.nav) {
+    const nextEntry = _stepEntry(slice.nav, msg);
+    if (nextEntry === slice.nav) return slice;
+    return { ...slice, nav: nextEntry };
+  }
+  // Multi-panel: slice.nav[msg.panel] is the entry.
   const entry = slice.nav[msg.panel];
   if (!entry) return slice;        // not this Component's panel; quietly drop
   const nextEntry = _stepEntry(entry, msg);

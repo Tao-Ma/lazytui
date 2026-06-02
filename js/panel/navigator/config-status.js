@@ -359,8 +359,8 @@ function diffFor(item, branch, projectDir) {
 function init() {
   return {
     tab: 0, cache: null, branch: null, expanded: {}, computing: false,
-    // Phase 4a — nav chrome on the slice; one entry for the panel type.
-    nav: { 'config-status': mnav.init() },
+    // v0.6.1 Phase 3 — single-panel Component, nav stores the entry directly.
+    nav: mnav.init(),
   };
 }
 

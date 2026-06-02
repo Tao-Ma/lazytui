@@ -26,7 +26,10 @@ function getFilter(panelType) {
   const compName = api.getComponentOwningPanel(panelType);
   if (!compName) return '';
   const slice = api.getComponentSlice(compName);
-  const entry = slice && slice.nav && slice.nav[panelType];
+  if (!slice || !slice.nav) return '';
+  // v0.6.1 Phase 3 — single-panel Component stores the entry directly;
+  // multi-panel keeps slice.nav[panelType].
+  const entry = 'cursor' in slice.nav ? slice.nav : slice.nav[panelType];
   return (entry && entry.filter) || '';
 }
 

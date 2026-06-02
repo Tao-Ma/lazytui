@@ -505,11 +505,13 @@ function getItems(panelType) {
   if (!def.filterable) return raw;
   if (def.customFilter) return raw;
   // Phase 4c — committed filter text lives on each Navigator's nav
-  // slice (`slice.nav[panelType].filter`). Read it off the same slice
-  // we already have; falls back to '' if no nav entry (Monitor panels,
-  // panels that haven't been touched yet).
+  // slice. v0.6.1 Phase 3 — single-panel Components store the entry
+  // directly at slice.nav; multi-panel Components key by panelType.
   const slice = getComponentSlice(compName);
-  const navEntry = slice && slice.nav && slice.nav[panelType];
+  let navEntry = null;
+  if (slice && slice.nav) {
+    navEntry = 'cursor' in slice.nav ? slice.nav : slice.nav[panelType];
+  }
   const filterText = (navEntry && navEntry.filter) || '';
   if (!filterText) return raw;
   const lc = filterText.toLowerCase();

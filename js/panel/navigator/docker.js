@@ -245,8 +245,8 @@ function init() {
   });
   return {
     status: {}, stats: {}, inFlight: false, started: false, eventsStarted: false,
-    // Phase 4a — nav chrome for the `containers` panel type lives here.
-    nav: { containers: mnav.init() },
+    // v0.6.1 Phase 3 — single-panel Component, nav stores the entry directly.
+    nav: mnav.init(),
   };
 }
 

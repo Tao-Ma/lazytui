@@ -109,10 +109,9 @@ function render(panel, w, h) {
 // one panel shape. See docs/v0.5-layering.md.
 module.exports = {
   name: 'actions',
-  // Phase 4a — nav chrome (cursor / scroll / multiSel) lives on the
-  // Component's slice now; the shared leaf in leaves/nav handles the
-  // five Msg shapes uniformly across every Navigator.
-  init: () => ({ nav: { actions: mnav.init() } }),
+  // v0.6.1 Phase 3 — single-panel Component, nav stores the entry
+  // directly. The shared leaf in leaves/nav.js handles the Msg shapes.
+  init: () => ({ nav: mnav.init() }),
   update: (msg, slice) => mnav.isNavMsg(msg) ? mnav.apply(slice, msg) : slice,
   panelTypes: {
     actions: {

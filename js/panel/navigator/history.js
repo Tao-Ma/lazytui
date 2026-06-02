@@ -155,7 +155,8 @@ function installEffects(registerEffect) {
 
 module.exports = {
   name: 'history',
-  init: () => ({ nav: { history: mnav.init() } }),
+  // v0.6.1 Phase 3 — single-panel Component, nav stores the entry directly.
+  init: () => ({ nav: mnav.init() }),
   update,
   installEffects,
   panelTypes: {

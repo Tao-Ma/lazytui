@@ -156,10 +156,9 @@ function selectAt(slice, model, idx) {
 function init() {
   return {
     list: [], expanded: new Set(), tab: 'all',
-    // Phase 4a — nav chrome (cursor / scroll / multiSel) lives on the
-    // Component's slice now, keyed by panel type. The groups Component
-    // owns exactly one panel type.
-    nav: { groups: mnav.init() },
+    // v0.6.1 Phase 3 — single-panel Component, nav stores the entry
+    // directly. mnav.apply detects shape and routes accordingly.
+    nav: mnav.init(),
   };
 }
 
