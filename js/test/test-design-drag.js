@@ -9,7 +9,7 @@
  *   2. Release with no motion → click, no mutation
  *   3. Drop position math (insert before / after / append / empty col)
  *   4. Invalid-target snap-back (detail / actions into left column)
- *   5. getComponentSlice('layout').dirty set on valid drops, NOT set on snap-back
+ *   5. getInstanceSlice('layout').dirty set on valid drops, NOT set on snap-back
  *   6. Cross-column drag mutates correctly (splice from source, insert
  *      at target, with index adjustment for same-column drag where
  *      the splice shifts the target index)
@@ -21,7 +21,7 @@
 const { onMouseEvent, pointToDropTarget, _getDragState } = require('../overlay/design');
 const dispatch = require('../dispatch/dispatch');
 const { getModel } = require('../app/runtime');
-const { getComponentSlice } = require('../panel/api');
+const { getInstanceSlice } = require('../panel/api');
 const { describe, it, assert, eq, report } = require('./test-runner');
 
 // Design mode lives on layout's slice (post-Phase-6 single-writer cleanup):
@@ -43,7 +43,7 @@ function enterDesign() {
 //   detail     : y=15..39 (h=25)
 
 function setupFixture() {
-  getComponentSlice("layout").arrange = {
+  getInstanceSlice("layout").arrange = {
     leftWidth: 30,
     detailHeightPct: 60,
     leftPanels: [
@@ -56,7 +56,7 @@ function setupFixture() {
       { type: 'detail',  title: 'Detail',  column: 'right', hotkey: 'o' },
     ],
   };
-  getComponentSlice('layout').panelBounds = {
+  getInstanceSlice('layout').panelBounds = {
     containers: { x:  0, y:  0, w: 30, h: 10 },
     groups:     { x:  0, y: 10, w: 30, h: 10 },
     actions:    { x: 30, y:  0, w: 90, h:  5 },
@@ -64,8 +64,8 @@ function setupFixture() {
     detail:     { x: 30, y: 15, w: 90, h: 25 },
   };
   getModel().modes.freeConfigMode = false;
-  getComponentSlice('layout').dirty = false;
-  enterDesign(getComponentSlice("layout").arrange, '/dev/null', () => {});
+  getInstanceSlice('layout').dirty = false;
+  enterDesign(getInstanceSlice("layout").arrange, '/dev/null', () => {});
 }
 
 // ===============================================================
@@ -226,10 +226,10 @@ describe('[2] onMouseEvent — state machine transitions', () => {
     onMouseEvent('release', 5, 17);
 
     eq(_getDragState(), null);
-    eq(getComponentSlice("layout").arrange.leftPanels.length, 2);
-    eq(getComponentSlice("layout").arrange.leftPanels[0].type, 'groups',     'groups now first');
-    eq(getComponentSlice("layout").arrange.leftPanels[1].type, 'containers', 'containers now last');
-    eq(getComponentSlice('layout').dirty, true);
+    eq(getInstanceSlice("layout").arrange.leftPanels.length, 2);
+    eq(getInstanceSlice("layout").arrange.leftPanels[0].type, 'groups',     'groups now first');
+    eq(getInstanceSlice("layout").arrange.leftPanels[1].type, 'containers', 'containers now last');
+    eq(getInstanceSlice('layout').dirty, true);
   });
 
   it('release with no motion → click (no mutation, no dirty)', () => {
@@ -237,8 +237,8 @@ describe('[2] onMouseEvent — state machine transitions', () => {
     onMouseEvent('press',   5, 2);
     onMouseEvent('release', 5, 2);
     eq(_getDragState(), null);
-    eq(getComponentSlice('layout').dirty, false);
-    eq(getComponentSlice("layout").arrange.leftPanels[0].type, 'containers');
+    eq(getInstanceSlice('layout').dirty, false);
+    eq(getInstanceSlice("layout").arrange.leftPanels[0].type, 'containers');
   });
 
   it('release on invalid target → snap back, no mutation, no dirty', () => {
@@ -248,8 +248,8 @@ describe('[2] onMouseEvent — state machine transitions', () => {
     onMouseEvent('motion',   5, 2);
     onMouseEvent('release',  5, 2);
     eq(_getDragState(), null);
-    eq(getComponentSlice('layout').dirty, false);
-    eq(getComponentSlice("layout").arrange.rightPanels[2].type, 'detail', 'detail still in right column');
+    eq(getInstanceSlice('layout').dirty, false);
+    eq(getInstanceSlice("layout").arrange.rightPanels[2].type, 'detail', 'detail still in right column');
   });
 
   it('release outside any column → no mutation', () => {
@@ -257,8 +257,8 @@ describe('[2] onMouseEvent — state machine transitions', () => {
     onMouseEvent('press',   5, 2);
     onMouseEvent('motion', 200, 200);  // off-screen
     onMouseEvent('release', 200, 200);
-    eq(getComponentSlice('layout').dirty, false);
-    eq(getComponentSlice("layout").arrange.leftPanels[0].type, 'containers');
+    eq(getInstanceSlice('layout').dirty, false);
+    eq(getInstanceSlice("layout").arrange.leftPanels[0].type, 'containers');
   });
 });
 
@@ -270,13 +270,13 @@ describe('[3] cross-column drag — splice / insert math', () => {
     onMouseEvent('motion', 50, 6);   // top half of stats
     onMouseEvent('release', 50, 6);
 
-    eq(getComponentSlice("layout").arrange.leftPanels.length, 1, 'one panel left in left col');
-    eq(getComponentSlice("layout").arrange.leftPanels[0].type, 'groups');
-    eq(getComponentSlice("layout").arrange.rightPanels[0].type, 'actions');
-    eq(getComponentSlice("layout").arrange.rightPanels[1].type, 'containers');  // inserted before stats
-    eq(getComponentSlice("layout").arrange.rightPanels[2].type, 'stats');
-    eq(getComponentSlice("layout").arrange.rightPanels[3].type, 'detail');
-    eq(getComponentSlice('layout').dirty, true);
+    eq(getInstanceSlice("layout").arrange.leftPanels.length, 1, 'one panel left in left col');
+    eq(getInstanceSlice("layout").arrange.leftPanels[0].type, 'groups');
+    eq(getInstanceSlice("layout").arrange.rightPanels[0].type, 'actions');
+    eq(getInstanceSlice("layout").arrange.rightPanels[1].type, 'containers');  // inserted before stats
+    eq(getInstanceSlice("layout").arrange.rightPanels[2].type, 'stats');
+    eq(getInstanceSlice("layout").arrange.rightPanels[3].type, 'detail');
+    eq(getInstanceSlice('layout').dirty, true);
   });
 
   it('same-column reorder: drag groups upward past containers', () => {
@@ -286,8 +286,8 @@ describe('[3] cross-column drag — splice / insert math', () => {
     onMouseEvent('motion',  5,  2);
     onMouseEvent('release', 5,  2);
 
-    eq(getComponentSlice("layout").arrange.leftPanels[0].type, 'groups',     'groups moved to top');
-    eq(getComponentSlice("layout").arrange.leftPanels[1].type, 'containers');
+    eq(getInstanceSlice("layout").arrange.leftPanels[0].type, 'groups',     'groups moved to top');
+    eq(getInstanceSlice("layout").arrange.leftPanels[1].type, 'containers');
   });
 
   it('same-column drag to same position is a no-op (drag-back)', () => {
@@ -296,9 +296,9 @@ describe('[3] cross-column drag — splice / insert math', () => {
     onMouseEvent('motion',  5, 5);    // motion to containers mid-zone
     onMouseEvent('release', 5, 5);    // release still in containers
     // Middle-zone drop on own cell = self-swap, no-op. dirty stays false.
-    eq(getComponentSlice("layout").arrange.leftPanels[0].type, 'containers');
-    eq(getComponentSlice("layout").arrange.leftPanels[1].type, 'groups');
-    eq(getComponentSlice('layout').dirty, false);
+    eq(getInstanceSlice("layout").arrange.leftPanels[0].type, 'containers');
+    eq(getInstanceSlice("layout").arrange.leftPanels[1].type, 'groups');
+    eq(getInstanceSlice('layout').dirty, false);
   });
 });
 
@@ -310,9 +310,9 @@ describe('[4] swap — middle-zone drag', () => {
     onMouseEvent('motion',  5, 14);  // groups mid zone [13,17)
     onMouseEvent('release', 5, 14);
 
-    eq(getComponentSlice("layout").arrange.leftPanels[0].type, 'groups',     'groups in slot 0');
-    eq(getComponentSlice("layout").arrange.leftPanels[1].type, 'containers', 'containers in slot 1');
-    eq(getComponentSlice('layout').dirty, true);
+    eq(getInstanceSlice("layout").arrange.leftPanels[0].type, 'groups',     'groups in slot 0');
+    eq(getInstanceSlice("layout").arrange.leftPanels[1].type, 'containers', 'containers in slot 1');
+    eq(getInstanceSlice('layout').dirty, true);
   });
 
   it('cross-column swap: drag containers (left) ↔ stats (right)', () => {
@@ -321,13 +321,13 @@ describe('[4] swap — middle-zone drag', () => {
     onMouseEvent('motion', 50, 10);   // stats mid zone [8,12)
     onMouseEvent('release', 50, 10);
 
-    eq(getComponentSlice("layout").arrange.leftPanels.length, 2);
-    eq(getComponentSlice("layout").arrange.leftPanels[0].type, 'stats',     'stats moved to left slot 0');
-    eq(getComponentSlice("layout").arrange.leftPanels[1].type, 'groups');
-    eq(getComponentSlice("layout").arrange.rightPanels[0].type, 'actions');
-    eq(getComponentSlice("layout").arrange.rightPanels[1].type, 'containers', 'containers moved to right slot 1');
-    eq(getComponentSlice("layout").arrange.rightPanels[2].type, 'detail',     'detail still at end');
-    eq(getComponentSlice('layout').dirty, true);
+    eq(getInstanceSlice("layout").arrange.leftPanels.length, 2);
+    eq(getInstanceSlice("layout").arrange.leftPanels[0].type, 'stats',     'stats moved to left slot 0');
+    eq(getInstanceSlice("layout").arrange.leftPanels[1].type, 'groups');
+    eq(getInstanceSlice("layout").arrange.rightPanels[0].type, 'actions');
+    eq(getInstanceSlice("layout").arrange.rightPanels[1].type, 'containers', 'containers moved to right slot 1');
+    eq(getInstanceSlice("layout").arrange.rightPanels[2].type, 'detail',     'detail still at end');
+    eq(getInstanceSlice('layout').dirty, true);
   });
 
   it('swap with detail is blocked → no mutation', () => {
@@ -338,9 +338,9 @@ describe('[4] swap — middle-zone drag', () => {
     onMouseEvent('motion',  50, 27);  // detail mid zone [23,32) — swap blocked
     onMouseEvent('release', 50, 27);
 
-    eq(getComponentSlice("layout").arrange.rightPanels[1].type, 'stats',  'stats unchanged');
-    eq(getComponentSlice("layout").arrange.rightPanels[2].type, 'detail', 'detail unchanged');
-    eq(getComponentSlice('layout').dirty, false);
+    eq(getInstanceSlice("layout").arrange.rightPanels[1].type, 'stats',  'stats unchanged');
+    eq(getInstanceSlice("layout").arrange.rightPanels[2].type, 'detail', 'detail unchanged');
+    eq(getInstanceSlice('layout').dirty, false);
   });
 
   it('swap that would put actions in left column is blocked', () => {
@@ -349,9 +349,9 @@ describe('[4] swap — middle-zone drag', () => {
     onMouseEvent('motion',  50, 2);   // actions mid zone [1,4)
     onMouseEvent('release', 50, 2);
 
-    eq(getComponentSlice("layout").arrange.leftPanels[0].type,  'containers', 'containers unchanged');
-    eq(getComponentSlice("layout").arrange.rightPanels[0].type, 'actions',    'actions unchanged');
-    eq(getComponentSlice('layout').dirty, false);
+    eq(getInstanceSlice("layout").arrange.leftPanels[0].type,  'containers', 'containers unchanged');
+    eq(getInstanceSlice("layout").arrange.rightPanels[0].type, 'actions',    'actions unchanged');
+    eq(getInstanceSlice('layout').dirty, false);
   });
 
   it('self-swap with detail is VALID (no-op release, no error footer)', () => {
@@ -377,9 +377,9 @@ describe('[4] swap — middle-zone drag', () => {
     onMouseEvent('press',   50, 2);
     onMouseEvent('motion',  50, 35);  // detail bot zone [32,40)
     onMouseEvent('release', 50, 35);
-    eq(getComponentSlice("layout").arrange.rightPanels[0].type, 'stats',   'stats moved up');
-    eq(getComponentSlice("layout").arrange.rightPanels[1].type, 'actions', 'actions moved to just before detail');
-    eq(getComponentSlice("layout").arrange.rightPanels[2].type, 'detail',  'detail still at end');
+    eq(getInstanceSlice("layout").arrange.rightPanels[0].type, 'stats',   'stats moved up');
+    eq(getInstanceSlice("layout").arrange.rightPanels[1].type, 'actions', 'actions moved to just before detail');
+    eq(getInstanceSlice("layout").arrange.rightPanels[2].type, 'detail',  'detail still at end');
   });
 });
 
@@ -418,7 +418,7 @@ describe('[5] computeDragPreviewArrange — what-if snapshot', () => {
     setupFixture();
     onMouseEvent('press',  5, 2);
     onMouseEvent('motion', 5, 18);  // groups bot zone — insert at left:2
-    const slice = getComponentSlice('layout');
+    const slice = getInstanceSlice('layout');
     const preview = mdesign.computeDragPreviewArrange(slice);
     eq(preview.leftPanels[0].type, 'groups');
     eq(preview.leftPanels[1].type, 'containers');
@@ -428,7 +428,7 @@ describe('[5] computeDragPreviewArrange — what-if snapshot', () => {
     setupFixture();
     onMouseEvent('press',  5, 2);
     onMouseEvent('motion', 5, 14);  // groups mid zone — swap
-    const slice = getComponentSlice('layout');
+    const slice = getInstanceSlice('layout');
     const preview = mdesign.computeDragPreviewArrange(slice);
     eq(preview.leftPanels[0].type, 'groups',     'groups at slot 0');
     eq(preview.leftPanels[1].type, 'containers', 'containers at slot 1');
@@ -438,7 +438,7 @@ describe('[5] computeDragPreviewArrange — what-if snapshot', () => {
     setupFixture();
     onMouseEvent('press',   5, 2);
     onMouseEvent('motion', 50, 10);  // stats mid zone — cross-col swap
-    const slice = getComponentSlice('layout');
+    const slice = getInstanceSlice('layout');
     const preview = mdesign.computeDragPreviewArrange(slice);
     eq(preview.leftPanels[0].type, 'stats',     'stats to left:0');
     eq(preview.rightPanels[1].type, 'containers', 'containers to right:1');
@@ -449,7 +449,7 @@ describe('[5] computeDragPreviewArrange — what-if snapshot', () => {
     setupFixture();
     onMouseEvent('press',  5, 2);
     onMouseEvent('motion', 5, 5);  // containers mid zone — self-swap
-    const slice = getComponentSlice('layout');
+    const slice = getInstanceSlice('layout');
     const preview = mdesign.computeDragPreviewArrange(slice);
     eq(preview, null);
   });
@@ -459,14 +459,14 @@ describe('[5] computeDragPreviewArrange — what-if snapshot', () => {
     // Press detail, drag to left column → blocked.
     onMouseEvent('press',  50, 20);
     onMouseEvent('motion',  5,  2);
-    const slice = getComponentSlice('layout');
+    const slice = getInstanceSlice('layout');
     const preview = mdesign.computeDragPreviewArrange(slice);
     eq(preview, null);
   });
 
   it('no drag → preview is null', () => {
     setupFixture();
-    const slice = getComponentSlice('layout');
+    const slice = getInstanceSlice('layout');
     const preview = mdesign.computeDragPreviewArrange(slice);
     eq(preview, null);
   });
@@ -479,7 +479,7 @@ describe('[5] computeDragPreviewArrange — what-if snapshot', () => {
     setupFixture();
     onMouseEvent('press',  5, 2);  // press containers (left:0)
     onMouseEvent('motion', 5, 1);  // containers top zone → insert@left:0
-    const slice = getComponentSlice('layout');
+    const slice = getInstanceSlice('layout');
     eq(slice.design.drag.target.kind, 'insert');
     eq(slice.design.drag.target.index, 0);
     const preview = mdesign.computeDragPreviewArrange(slice);
@@ -490,7 +490,7 @@ describe('[5] computeDragPreviewArrange — what-if snapshot', () => {
     setupFixture();
     onMouseEvent('press',  5, 2);  // press containers
     onMouseEvent('motion', 5, 8);  // containers bot zone → insert@left:1
-    const slice = getComponentSlice('layout');
+    const slice = getInstanceSlice('layout');
     eq(slice.design.drag.target.kind, 'insert');
     eq(slice.design.drag.target.index, 1);
     const preview = mdesign.computeDragPreviewArrange(slice);
@@ -503,7 +503,7 @@ describe('[5] computeDragPreviewArrange — what-if snapshot', () => {
     setupFixture();
     onMouseEvent('press',   5, 2);  // press containers (left:0)
     onMouseEvent('motion', 50, 0);  // actions top zone → insert@right:0
-    const slice = getComponentSlice('layout');
+    const slice = getInstanceSlice('layout');
     eq(slice.design.drag.target.column, 'right');
     eq(slice.design.drag.target.index, 0);
     const preview = mdesign.computeDragPreviewArrange(slice);
@@ -519,7 +519,7 @@ describe('[5] computeDragPreviewArrange — what-if snapshot', () => {
 //   - missing `index` → insert@0 vs insert@1 compared equal
 describe('[6] design_mouse_motion — repaint emission across zone changes', () => {
   const layout = require('../panel/layout');
-  const { getComponentSlice } = require('../panel/api');
+  const { getInstanceSlice } = require('../panel/api');
 
   // layout.update returns either `nextSlice` or `[nextSlice, cmds]`; the
   // dispatcher unwraps tuples in production. Tests need both halves, so
@@ -528,7 +528,7 @@ describe('[6] design_mouse_motion — repaint emission across zone changes', () 
     return Array.isArray(r) ? r : [r, []];
   }
   function pressAt(mx, my) {
-    return layout.update({ type: 'design_mouse_press', mx, my, cols: 120 }, getComponentSlice('layout'));
+    return layout.update({ type: 'design_mouse_press', mx, my, cols: 120 }, getInstanceSlice('layout'));
   }
   function motion(slice, mx, my) {
     return unpack(layout.update({ type: 'design_mouse_motion', mx, my, cols: 120 }, slice));

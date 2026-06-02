@@ -11,7 +11,7 @@ const { spawn } = require('child_process');
 const fs = require('fs');
 const { setViewerContent } = require('../app/state');
 const { streamCommand, killCurrentProc } = require('../io/stream');
-const { getComponentSlice, dispatchMsg, wrap } = require('../panel/api');
+const { getInstanceSlice, dispatchMsg, wrap } = require('../panel/api');
 const { getModel } = require('../app/runtime');
 const { esc } = require('../io/ansi');
 const history = require('../feature/history');
@@ -104,7 +104,7 @@ function doRun(actionKey, action, args = []) {
       const argStr = args.length ? ' ' + args.map(shQuote).join(' ') : '';
       const tabKey = `spawn-${actionKey}-${Date.now()}-${++_spawnSeq}`;
       // addEphemeralTab side-effects: detail slice's `tab` + ephemeral-
-      // Terminals[...][tabKey], getComponentSlice("layout").focus='detail', model.modes.terminalMode.
+      // Terminals[...][tabKey], getInstanceSlice("layout").focus='detail', model.modes.terminalMode.
       addEphemeralTab(getModel().currentGroup, tabKey, `${tmp}${argStr}`, actionKey);
       dispatchMsg(wrap('layout', { type: 'view_set', mode: 'full' }));
       require('../render/layout').forceFullRepaint();

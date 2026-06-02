@@ -18,7 +18,7 @@ const {
   esc, theme, renderPanel,
   getSel, getScroll, isMultiSel,
   getItems: apiGetItems, setActiveTab,
-  getComponentSlice, getFocus, instanceKind,
+  getInstanceSlice, getFocus, instanceKind,
 } = require('../api');
 
 function getItems() { return history.all(); }

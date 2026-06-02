@@ -18,13 +18,13 @@
 const { esc } = require('../io/ansi');
 const { cols } = require('../io/term');
 const { getModel } = require('../app/runtime');
-const { getComponentSlice } = require('../panel/api');
+const { getInstanceSlice } = require('../panel/api');
 const mdesign = require('../leaves/design');
 
 // The layout Component's slice + its design sub-slice (Phase 1f). Lazy
 // because tests can boot without layout. Post-1e the read helpers take the
 // slice directly — model isn't threaded into mdesign anymore.
-function _slice() { return getComponentSlice('layout'); }
+function _slice() { return getInstanceSlice('layout'); }
 function _design() {
   const slice = _slice();
   return slice ? slice.design : null;

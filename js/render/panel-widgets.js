@@ -39,7 +39,7 @@
  */
 'use strict';
 
-const { getComponentSlice } = require('../panel/api');
+const { getInstanceSlice } = require('../panel/api');
 const { theme } = require('./themes');
 const { esc, visibleLen } = require('../io/ansi');
 
@@ -57,7 +57,7 @@ function _closeGlyphX0(b)    { return b.x + b.w - 1 - GLYPH_W - 1 - GLYPH_W; }
  *  in v0.6 pre-cleanup. Returns [] when there's no layout slice yet
  *  (test/boot edge cases). */
 function _placedWidgetTargets() {
-  const slice = getComponentSlice('layout');
+  const slice = getInstanceSlice('layout');
   if (!slice || !slice.arrange) return null;
   const drag = slice.design && slice.design.drag;
   if (drag) return null;  // drag affordance owns the screen; suppress widgets
@@ -85,7 +85,7 @@ function _placedWidgetTargets() {
  *  the title text. */
 function injectTopRowChrome(panelOutput, p, b, freeConfigMode, fc, focused) {
   if (!panelOutput || p.type === 'detail') return panelOutput;
-  const slice = getComponentSlice('layout');
+  const slice = getInstanceSlice('layout');
   if (slice && slice.design && slice.design.drag) return panelOutput;
   if (!b || b.h < 1 || b.w < COLLAPSE_MIN_W) return panelOutput;
 

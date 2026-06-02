@@ -426,7 +426,7 @@ describe('[8] diffFor — preview shape per status', () => {
     const r = cs._update({ type: 'key', key: 'return' }, slice);
     assert(Array.isArray(r) && r[1][0].type === 'cfgStatusDiff', 'Enter on a file emits cfgStatusDiff');
     effects.runEffects(r[1]);  // run the diff effect → setViewerContent → viewer slice
-    const md = require('../panel/api').getComponentSlice('detail');
+    const md = require('../panel/api').getInstanceSlice('detail');
     assert(Array.isArray(md.lines) && md.lines.length > 2, 'detail populated');
     eq(md.scroll, 0, 'scroll reset');
   });

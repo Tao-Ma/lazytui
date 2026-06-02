@@ -15,7 +15,7 @@
 const { describe, it, eq, assert, report } = require('./test-runner');
 const { getModel } = require('../app/runtime');
 const api = require('../panel/api');
-const { getComponentSlice } = api;
+const { getInstanceSlice } = api;
 
 // Phase 4a — `getSel('containers')` walks panel-type → owning Component
 // (docker) → its slice.nav, so the Component must be registered (layout
@@ -40,7 +40,7 @@ function setup(containers = ['c1', 'c2'], focused = true) {
   // deterministic baseline (cursor → 0, multiSel empty).
   setSel('containers', 0);
   api.dispatchMsg(api.wrap('docker', { type: 'multisel_clear', panel: 'containers' }));
-  getComponentSlice("layout").focus = 'containers';
+  getInstanceSlice("layout").focus = 'containers';
   getModel().focused = focused;
 }
 
@@ -141,7 +141,7 @@ describe('[5] i/t/s key Msgs emit stream/shell effects on the focused row', () =
   });
   it('keys are ignored when the containers panel is not focused', () => {
     setup();
-    getComponentSlice("layout").focus = 'groups';
+    getInstanceSlice("layout").focus = 'groups';
     const { effects } = step({ type: 'key', key: 'i' }, slice0());
     eq(effects.length, 0, 'no effect when unfocused');
   });
@@ -155,7 +155,7 @@ describe('[6] registered Component — slice-backed reads', () => {
     setup(['c1']);
     // Fold a result into the REGISTERED slice via the real dispatch path.
     api.dispatchMsg(api.wrap('docker', { type: 'dockerResult', status: { c1: 'running' }, stats: { c1: { cpu: '5%', mem: '1MB' } } }));
-    eq(api.getComponentSlice('docker').status.c1, 'running', 'slice updated');
+    eq(api.getInstanceSlice('docker').status.c1, 'running', 'slice updated');
     eq(docker.statusFor('c1'), 'running', 'statusFor reads the slice');
     eq(docker.statusFor('ghost'), null, 'untracked → null');
     const def = api.getPanelDef('containers');
@@ -163,7 +163,7 @@ describe('[6] registered Component — slice-backed reads', () => {
     assert(info.some(l => l.includes('running')), 'getInfo shows status');
     assert(info.some(l => l.includes('5%')), 'getInfo shows cpu');
     // getItems is config-derived (slice unused for the row list).
-    eq(def.getItems(api.getComponentSlice('docker')).join(','), 'c1');
+    eq(def.getItems(api.getInstanceSlice('docker')).join(','), 'c1');
   });
 });
 

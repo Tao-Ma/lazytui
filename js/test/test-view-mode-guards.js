@@ -22,7 +22,7 @@
 const { describe, it, eq, assert, report } = require('./test-runner');
 const layout = require('../panel/layout');
 const { getModel } = require('../app/runtime');
-const { getComponentSlice } = require('../panel/api');
+const { getInstanceSlice } = require('../panel/api');
 
 function setFreeConfig(on) {
   getModel().modes.freeConfigMode = !!on;

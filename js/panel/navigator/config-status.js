@@ -31,7 +31,7 @@ const { spawnSync } = require('child_process');
 const {
   esc, theme, renderPanel,
   getScroll, getSel,
-  getComponentSlice, getFocus, instanceKind,
+  getInstanceSlice, getFocus, instanceKind,
 } = require('../api');
 const { getModel } = require('../../app/runtime');
 const mnav = require('../../leaves/nav');
@@ -58,7 +58,7 @@ function _projectDir() { return getModel().projectDir || '.'; }
 
 /** Resolve the branch from the config-status panel's `config.branch`. */
 function _resolveBranch() {
-  const slice = getComponentSlice('layout');
+  const slice = getInstanceSlice('layout');
   const ly = slice && slice.arrange;
   const panels = (ly && [...(ly.leftPanels || []), ...(ly.rightPanels || [])]) || [];
   const p = panels.find(pp => pp.type === 'config-status');

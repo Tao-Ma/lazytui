@@ -18,7 +18,7 @@
 const { getSel } = require('../app/state');
 const { getModel } = require('../app/runtime');
 const { stripMarkup, esc } = require('../io/ansi');
-const {getPanelDef, getItems, getComponentSlice, getFocus } = require('../panel/api');
+const {getPanelDef, getItems, getInstanceSlice, getFocus } = require('../panel/api');
 const { renderOverlay } = require('../render/panel');
 
 // Module-held options (label + content thunk + cancel). The reducer mirrors
@@ -44,7 +44,7 @@ function collectOptions() {
       }
     }
   }
-  const detailSlice = getComponentSlice('detail');
+  const detailSlice = getInstanceSlice('detail');
   const detailLines = detailSlice ? detailSlice.lines : [];
   if (detailLines.length > 0) {
     options.push({

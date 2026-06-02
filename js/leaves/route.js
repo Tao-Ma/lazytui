@@ -35,18 +35,19 @@ function registerPanelOwner(panelType, componentName) {
 
 function componentForPanel(panelType) { return _panelOwner[panelType]; }
 
-// --- Instance-keyed slice store (v0.6.1 Phase 3) --------------------------
+// --- Instance-keyed slice store (v0.6.1 Phase 3, canonical after Phase 8) -
 //
 // Canonical storage is `_instances[id] = { id, kind, slice }`. `id` is the
-// tab identity (in Phase 3 always `kind` since one instance per kind; Phase
-// 4 onward synthesizes per-tab ids). `kind` is the Component name. `slice`
-// is the per-instance state minted via `spec.init()` and updated by the
+// tab identity (Phase 3 singletons use `id === kind`; Phase 4 onward
+// synthesizes per-tab ids). `kind` is the Component name. `slice` is the
+// per-instance state minted via `spec.init()` and updated by the
 // Component's `update`.
 //
-// `_primaryByKind[kind]` maps a kind to the id of its primary instance. The
-// legacy `getSlice(name)` / `setSlice(name, slice)` surface routes through
-// this map so existing callers (tests, the rest of the runtime) keep
-// working unchanged while the store flips underneath.
+// `_primaryByKind[kind]` maps a kind to the id of its primary instance —
+// the lookup `resolveTarget` and other consumers use to pick "the
+// canonical instance of a kind." Phase 8 dropped the legacy `getSlice(name)`
+// / `setSlice(name, slice)` shim; every reader uses `getInstanceSlice(id)`
+// + `setInstanceSlice(id, slice)` directly.
 
 const _instances = Object.create(null);
 const _primaryByKind = Object.create(null);
@@ -126,30 +127,6 @@ function eachInstance(fn) {
 
 /** Primary instance id for a kind, or undefined if none registered. */
 function getPrimaryByKind(kind) { return _primaryByKind[kind]; }
-
-// --- Legacy by-name shim (over the instance store) ------------------------
-
-/** Slice for the primary instance of `name` (the Component's kind). With
- *  single instances per kind (Phase 3), this is the one and only. */
-function getSlice(name) {
-  const id = _primaryByKind[name];
-  if (id === undefined) return undefined;
-  return _instances[id].slice;
-}
-
-/** Update the primary instance's slice for `name`, or mint a new
- *  singleton instance with id === kind === name if none exists yet
- *  (registerComponent's first-write seeding). */
-function setSlice(name, slice) {
-  const id = _primaryByKind[name];
-  if (id !== undefined) {
-    _instances[id].slice = slice;
-    return;
-  }
-  setInstance(name, name, slice);
-}
-
-function hasSlice(name) { return _primaryByKind[name] !== undefined; }
 
 /** Focus read — the layout instance's slice owns `focus` (Phase 1c).
  *  Pre-init returns null.
@@ -239,7 +216,6 @@ function resolveTarget(intent, ctx) {
 module.exports = {
   wrap,
   registerPanelOwner, componentForPanel,
-  getSlice, setSlice, hasSlice,
   getFocus,
   setInstance, getInstance, getInstanceSlice, setInstanceSlice,
   hasInstance, disposeInstance, instanceKind, eachInstance,

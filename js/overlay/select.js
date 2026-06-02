@@ -31,18 +31,18 @@
 
 // Detail visual-mode/selection helper. Service module called from both
 // dispatch-side and render-side; reads the detail Component slice via
-// getComponentSlice and the model via getModel rather than threading
+// getInstanceSlice and the model via getModel rather than threading
 // either through every call site. The detail-cluster fields all live in
 // the detail slice (`lines` / `select` / `cursor` / `scroll` / `search`);
 // the mode flags (visual / select) live in model.modes.
 const { getModel } = require('../app/runtime');
 const { stripMarkup, charWidth, esc } = require('../io/ansi');
-const {getComponentSlice, getFocus } = require('../panel/api');
+const {getInstanceSlice, getFocus } = require('../panel/api');
 
 // All reads target the detail Component slice (lines / select / cursor /
 // scroll / search). Helper returns undefined if detail isn't registered
 // (callers null-guard).
-function _detail() { return getComponentSlice('detail'); }
+function _detail() { return getInstanceSlice('detail'); }
 
 // Selection writes fold onto the update spine (select_* Msgs). select.js
 // can't be imported by the reducer (it requires runtime → cycle), so the

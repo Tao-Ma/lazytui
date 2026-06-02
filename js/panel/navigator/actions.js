@@ -14,7 +14,7 @@ const {
   esc, theme, renderPanel,
   getSel, getScroll, isMultiSel, getFilter,
   getGroupActions, getItems: apiGetItems,
-  getComponentSlice, getFocus, instanceKind,
+  getInstanceSlice, getFocus, instanceKind,
 } = require('../api');
 
 /**

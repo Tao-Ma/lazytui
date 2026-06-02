@@ -95,7 +95,7 @@ describe('[3] update — (model, msg) → [model, cmds], pure + Cmd descriptors'
     const api = require('../panel/api');
     const state = require('../app/state');
     const m = runtime.getModel();
-    api.getComponentSlice('layout').focus = 'containers';
+    api.getInstanceSlice('layout').focus = 'containers';
     // Seed: arm select mode + put two ids in the multiSel set.
     // Phase 4 — runtime.update is pure; applyMsg threads the new model
     // through setModel(), so subsequent reads must go through getModel().

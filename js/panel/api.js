@@ -135,7 +135,7 @@ function registerComponent(comp) {
   // singleton (id === kind === comp.name). The first Component
   // registered MUST be 'layout' (chrome) so the focus reader has a
   // slice to read; tui.js + test-runner enforce that order.
-  if (comp.name !== 'layout' && !route.hasSlice('layout')) {
+  if (comp.name !== 'layout' && !route.hasInstance('layout')) {
     console.error(`[component:${comp.name}] registered before 'layout' — layout must register first`);
   }
   // init() failure used to swallow the error + set slice = null,
@@ -145,9 +145,12 @@ function registerComponent(comp) {
   // The component MUST already be registered in `components` before
   // we throw — otherwise a later registration whose init also fails
   // would see this component as un-registered + the cascade gets
-  // worse. (`components` was set above; route.setSlice is the only
+  // worse. (`components` was set above; setInstance is the only
   // step we skip on throw.)
-  route.setSlice(comp.name, comp.init());
+  // v0.6.1 Phase 8 — singleton instance is keyed by Component name
+  // (id === kind === name). Phase 4-6 multi-instance mints will be
+  // additive on top of this seed.
+  route.setInstance(comp.name, comp.name, comp.init());
   // Per-Component effects (loadDir, openFile, historyReplay, …) — used
   // to be registered at module-top-level via top-level
   // `registerEffect(...)` calls in each file, which meant a test that
@@ -238,7 +241,7 @@ function collectViewContributions(slot, ctx) {
   const items = [];
   for (const entry of bucket) {
     let result;
-    try { result = entry.fn(route.getSlice(entry.owner), ctx); }
+    try { result = entry.fn(route.getInstanceSlice(entry.owner), ctx); }
     catch (e) {
       console.error(`[viewContributions:${entry.owner}] '${slot}' handler error: ${e.message}`);
       continue;
@@ -447,11 +450,11 @@ function _recordError(payload) {
 }
 
 function getComponent(name)              { return components[name]; }
-const { getSlice: getComponentSlice, componentForPanel: getComponentOwningPanel, getFocus } = route;
+const { componentForPanel: getComponentOwningPanel, getFocus } = route;
 
-// Tab-instance registry surface (v0.6.1, Phase 0). Empty until Phase 4
-// onward populates it; re-exported here so Component-facing imports stay
-// on `panel/api`. See `leaves/route.js` for the data model.
+// Tab-instance registry surface (v0.6.1 Phase 0; canonical store after
+// Phase 8). `getInstanceSlice(tabId)` is the slice-read primitive every
+// reader uses. See `leaves/route.js` for the data model.
 const {
   setInstance, getInstance, getInstanceSlice, setInstanceSlice,
   hasInstance, disposeInstance, instanceKind, eachInstance,
@@ -501,13 +504,13 @@ function getItems(panelType) {
   const def = getPanelDef(panelType);
   if (!def || typeof def.getItems !== 'function') return [];
   const compName = route.componentForPanel(panelType);
-  const raw = def.getItems(getComponentSlice(compName));
+  const raw = def.getItems(getInstanceSlice(compName));
   if (!def.filterable) return raw;
   if (def.customFilter) return raw;
   // Phase 4c — committed filter text lives on each Navigator's nav
   // slice. v0.6.1 Phase 3 — single-panel Components store the entry
   // directly at slice.nav; multi-panel Components key by panelType.
-  const slice = getComponentSlice(compName);
+  const slice = getInstanceSlice(compName);
   let navEntry = null;
   if (slice && slice.nav) {
     navEntry = 'cursor' in slice.nav ? slice.nav : slice.nav[panelType];
@@ -636,10 +639,8 @@ function leaveTerminalMode() {
 module.exports = {
   // --- Component registry / lifecycle ---
   registerComponent, registerEffect, dispatchMsg, dispatchKeyToFocused, wrap,
-  getComponent, getComponentSlice, getComponentOwningPanel, getFocus,
-  // v0.6.1 Phase 0 — tab-instance registry. Empty until Phase 4 starts
-  // populating; surface lives here from Phase 0 so downstream phases
-  // can import against a stable shape.
+  getComponent, getComponentOwningPanel, getFocus,
+  // v0.6.1 — tab-instance registry surface (canonical after Phase 8).
   setInstance, getInstance, getInstanceSlice, setInstanceSlice,
   hasInstance, disposeInstance, instanceKind, eachInstance,
   getPanelDef, getItems, idOf, selectedOrFocused,

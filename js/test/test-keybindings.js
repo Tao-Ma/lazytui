@@ -13,7 +13,7 @@
 
 const { describe, it, eq, assert, report } = require('./test-runner');
 const { getModel } = require('../app/runtime');
-const { getComponentSlice } = require('../panel/api');
+const { getInstanceSlice } = require('../panel/api');
 
 const kb = require('../dispatch/keybindings');
 
@@ -175,7 +175,7 @@ describe('[5] v-mode gates space', () => {
     kb.clearBindings();
     require('../app/state').setSel('listy', 1);
     require('../app/state').clearMultiSel('listy');
-    getComponentSlice("layout").focus = 'listy';
+    getInstanceSlice("layout").focus = 'listy';
     getModel().modes.listSelectMode = false;
     getModel().modes.prefixMode = false;
 
@@ -291,13 +291,13 @@ describe('[9] space gate + group-switch reset', () => {
   const { resetGroupContext } = require('../app/state');
   it('space leads when select mode is armed but focus is a non-list panel', () => {
     kb.clearBindings();
-    getComponentSlice("layout").focus = 'detail';
+    getInstanceSlice("layout").focus = 'detail';
     getModel().modes.listSelectMode = true;
     getModel().modes.prefixMode = false;
-    getComponentSlice('detail').lines = []; getComponentSlice('detail').scroll = 0;
-    getComponentSlice('layout').panelHeights = { detail: 10 };
-    getComponentSlice('detail').search = { active: false };
-    getComponentSlice('detail').cursor = { line: 0, col: 0 };
+    getInstanceSlice('detail').lines = []; getInstanceSlice('detail').scroll = 0;
+    getInstanceSlice('layout').panelHeights = { detail: 10 };
+    getInstanceSlice('detail').search = { active: false };
+    getInstanceSlice('detail').cursor = { line: 0, col: 0 };
     dispatch._handleNormalKey(' ', ' ');
     assert(getModel().modes.prefixMode === true, 'space is the leader on detail even with listSelectMode armed');
     dispatch._handlePrefixKey('escape', undefined);

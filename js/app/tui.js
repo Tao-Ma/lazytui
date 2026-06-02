@@ -203,7 +203,7 @@ function main() {
   // BLESSED outside-writer: boot-time write of the --design CLI flag into
   // the layout slice. Write-once at boot, after the layout Component is
   // registered (so the slice exists). No runtime mutation.
-  require('../panel/api').getComponentSlice('layout').design.enabled = designEnabled;
+  require('../panel/api').getInstanceSlice('layout').design.enabled = designEnabled;
   registerComponent(require('../panel/navigator/docker'));
   registerComponent(require('../panel/navigator/config-status'));
   registerComponent(require('../panel/navigator/files'));

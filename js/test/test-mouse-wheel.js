@@ -19,30 +19,30 @@ term.stdout.write = (chunk, ...rest) => {
 
 const { _handleWheel } = require('../dispatch/input');
 const { describe, it, eq, report } = require('./test-runner');
-const {getComponentSlice, getFocus } = require('../panel/api');
+const {getInstanceSlice, getFocus } = require('../panel/api');
 
 // T10: _handleWheel no longer takes a `model` arg — the body uses
-// getComponentSlice/_detail/getSel/getFocus directly. Mirrors the T7
+// getInstanceSlice/_detail/getSel/getFocus directly. Mirrors the T7
 // arity sweep across the rest of the dispatch helpers.
 
 function setupTwoPanel() {
   // Pretend layout: hosts on the left (0..30, 0..20), detail on the right (30..80, 0..20)
-  getComponentSlice("layout").arrange = {
+  getInstanceSlice("layout").arrange = {
     leftPanels: [{ type: 'hosts' }],
     rightPanels: [{ type: 'detail' }],
     leftWidth: 30, detailHeightPct: 60,
   };
-  getComponentSlice('layout').panelBounds = {
+  getInstanceSlice('layout').panelBounds = {
     hosts:  { x: 0,  y: 0, w: 30, h: 20 },
     detail: { x: 30, y: 0, w: 50, h: 20 },
   };
-  getComponentSlice('layout').panelHeights = { hosts: 20, detail: 20 };
-  getComponentSlice("layout").focus = 'hosts';
-  getComponentSlice('detail').lines = Array.from({ length: 100 }, (_, i) => `line-${i}`);
-  getComponentSlice('detail').scroll = 0;
+  getInstanceSlice('layout').panelHeights = { hosts: 20, detail: 20 };
+  getInstanceSlice("layout").focus = 'hosts';
+  getInstanceSlice('detail').lines = Array.from({ length: 100 }, (_, i) => `line-${i}`);
+  getInstanceSlice('detail').scroll = 0;
   // A1/B1 fix: viewer.update reads slice.innerH instead of layout's
   // panelHeights. Seed the detail slice's own viewport (panel h - 2 chrome).
-  getComponentSlice('detail').innerH = 18;
+  getInstanceSlice('detail').innerH = 18;
 }
 
 describe('[1] wheel over detail scrolls view, no focus change', () => {
@@ -51,44 +51,44 @@ describe('[1] wheel over detail scrolls view, no focus change', () => {
     eq(getFocus(), 'hosts', 'starts on hosts');
     const mutated = _handleWheel(40, 5, +1);  // (mx, my) inside detail
     eq(mutated, true);
-    eq(getComponentSlice('detail').scroll, 1, 'detail scrolled');
+    eq(getInstanceSlice('detail').scroll, 1, 'detail scrolled');
     eq(getFocus(), 'hosts', 'focus unchanged — that is the friendlier semantics');
   });
   it('wheel-up decrements', () => {
     setupTwoPanel();
-    getComponentSlice('detail').scroll = 5;
+    getInstanceSlice('detail').scroll = 5;
     _handleWheel(40, 5, -1);
-    eq(getComponentSlice('detail').scroll, 4);
+    eq(getInstanceSlice('detail').scroll, 4);
   });
   it('clamps at 0 and at maxScroll', () => {
     setupTwoPanel();
     // detailLines = 100, innerH = h - 2 = 18, maxScroll = 82
     _handleWheel(40, 5, -1);
-    eq(getComponentSlice('detail').scroll, 0, 'cannot go negative');
-    getComponentSlice('detail').scroll = 82;
+    eq(getInstanceSlice('detail').scroll, 0, 'cannot go negative');
+    getInstanceSlice('detail').scroll = 82;
     const mutated = _handleWheel(40, 5, +1);
     eq(mutated, false, 'no mutation past max');
-    eq(getComponentSlice('detail').scroll, 82);
+    eq(getInstanceSlice('detail').scroll, 82);
   });
 });
 
 describe('[2] wheel outside any panel is a no-op', () => {
   it('returns false; nothing changes', () => {
     setupTwoPanel();
-    getComponentSlice('detail').scroll = 5;
+    getInstanceSlice('detail').scroll = 5;
     const mutated = _handleWheel(200, 200, +1);
     eq(mutated, false);
-    eq(getComponentSlice('detail').scroll, 5, 'untouched');
+    eq(getInstanceSlice('detail').scroll, 5, 'untouched');
   });
 });
 
 describe('[3] wheel target ≠ focused panel: focus stays put', () => {
   it('hosts focused, wheel lands in detail — detail scrolls, hosts focus retained', () => {
     setupTwoPanel();
-    getComponentSlice("layout").focus = 'hosts';
+    getInstanceSlice("layout").focus = 'hosts';
     _handleWheel(40, 10, +1);
     eq(getFocus(), 'hosts');
-    eq(getComponentSlice('detail').scroll, 1);
+    eq(getInstanceSlice('detail').scroll, 1);
   });
 });
 
@@ -109,20 +109,20 @@ const modes = require('../dispatch/modes');
 describe('[4] T13 regression: handleMouse modal gating', () => {
   it('wheel over a panel during filterMode does NOT change focus or scroll', () => {
     setupTwoPanel();
-    getComponentSlice('detail').scroll = 0;
-    getComponentSlice('layout').focus = 'hosts';
+    getInstanceSlice('detail').scroll = 0;
+    getInstanceSlice('layout').focus = 'hosts';
     modes.resetModes();
     getModel().modes.filterMode = true;
     // Wheel inside detail bounds — pre-T13 this would scroll detail.
     handleMouse('wheel-down', 40, 5);
-    eq(getComponentSlice('detail').scroll, 0, 'detail did not scroll under filter modal');
+    eq(getInstanceSlice('detail').scroll, 0, 'detail did not scroll under filter modal');
     eq(getFocus(), 'hosts', 'focus unchanged');
     eq(getModel().modes.filterMode, true, 'filterMode preserved');
     modes.resetModes();
   });
   it('press over a panel during menuOpen does NOT change focus', () => {
     setupTwoPanel();
-    getComponentSlice('layout').focus = 'hosts';
+    getInstanceSlice('layout').focus = 'hosts';
     modes.resetModes();
     getModel().modes.menuOpen = true;
     // A click on detail would normally focus + begin selection.

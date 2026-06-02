@@ -9,17 +9,17 @@
 const search = require('../overlay/viewer-search');
 const { describe, it, eq, assert, report } = require('./test-runner');
 const { getModel } = require('../app/runtime');
-const { getComponentSlice } = require('../panel/api');
+const { getInstanceSlice } = require('../panel/api');
 
 
 function setup(lines, panelH = 10) {
-  getComponentSlice('detail').lines = lines.slice();
-  getComponentSlice('detail').scroll = 0;
+  getInstanceSlice('detail').lines = lines.slice();
+  getInstanceSlice('detail').scroll = 0;
   // A1/B1 fix: viewer.update reads slice.innerH directly. Tests seed it
   // on the detail slice (was: cross-slice into layout.panelHeights.detail).
-  getComponentSlice('detail').innerH = Math.max(1, panelH - 2);
+  getInstanceSlice('detail').innerH = Math.max(1, panelH - 2);
   getModel().modes.detailSearchMode = false;
-  getComponentSlice('detail').search = { active: false, term: '', matches: [], idx: 0 };
+  getInstanceSlice('detail').search = { active: false, term: '', matches: [], idx: 0 };
 }
 
 describe('[1] substring match (regex literal chars)', () => {
@@ -27,10 +27,10 @@ describe('[1] substring match (regex literal chars)', () => {
     setup(['hello world', 'world peace', 'hello again']);
     search.enter();
     'hello'.split('').forEach(c => search.keystroke(c));
-    eq(getComponentSlice('detail').search.matches.length, 2, 'matches on line 0 and 2');
-    eq(getComponentSlice('detail').search.matches[0].line, 0);
-    eq(getComponentSlice('detail').search.matches[0].col, 0);
-    eq(getComponentSlice('detail').search.matches[1].line, 2);
+    eq(getInstanceSlice('detail').search.matches.length, 2, 'matches on line 0 and 2');
+    eq(getInstanceSlice('detail').search.matches[0].line, 0);
+    eq(getInstanceSlice('detail').search.matches[0].col, 0);
+    eq(getInstanceSlice('detail').search.matches[1].line, 2);
   });
 });
 
@@ -39,7 +39,7 @@ describe('[2] case-insensitive by default', () => {
     setup(['HELLO World', 'hello WORLD']);
     search.enter();
     'world'.split('').forEach(c => search.keystroke(c));
-    eq(getComponentSlice('detail').search.matches.length, 2, 'both lines match');
+    eq(getInstanceSlice('detail').search.matches.length, 2, 'both lines match');
   });
 });
 
@@ -48,13 +48,13 @@ describe('[3] regex meta-characters work', () => {
     setup(['error: foo', 'warn: bar', 'info: baz']);
     search.enter();
     'error|warn'.split('').forEach(c => search.keystroke(c));
-    eq(getComponentSlice('detail').search.matches.length, 2, 'error + warn match');
+    eq(getInstanceSlice('detail').search.matches.length, 2, 'error + warn match');
   });
   it('character class', () => {
     setup(['code 42', 'code 7', 'code XX']);
     search.enter();
     '[0-9]+'.split('').forEach(c => search.keystroke(c));
-    eq(getComponentSlice('detail').search.matches.length, 2, 'two digit-runs found');
+    eq(getInstanceSlice('detail').search.matches.length, 2, 'two digit-runs found');
   });
 });
 
@@ -63,11 +63,11 @@ describe('[4] invalid regex during typing is graceful', () => {
     setup(['line a', 'line b']);
     search.enter();
     search.keystroke('[');
-    eq(getComponentSlice('detail').search.matches.length, 0, 'no matches on invalid pattern');
+    eq(getInstanceSlice('detail').search.matches.length, 0, 'no matches on invalid pattern');
     // Continue typing to make it valid again
     search.keystroke('a');
     search.keystroke(']');
-    eq(getComponentSlice('detail').search.matches.length, 1, 'recovers when pattern becomes valid');
+    eq(getInstanceSlice('detail').search.matches.length, 1, 'recovers when pattern becomes valid');
   });
 });
 
@@ -78,18 +78,18 @@ describe('[5] commit + clear', () => {
     'a'.split('').forEach(c => search.keystroke(c));
     search.commit();
     eq(getModel().modes.detailSearchMode, false);
-    eq(getComponentSlice('detail').search.active, true);
-    assert(getComponentSlice('detail').search.matches.length > 0);
+    eq(getInstanceSlice('detail').search.active, true);
+    assert(getInstanceSlice('detail').search.matches.length > 0);
     search.clearCommitted();
-    eq(getComponentSlice('detail').search.active, false);
-    eq(getComponentSlice('detail').search.matches.length, 0);
-    eq(getComponentSlice('detail').search.term, '');
+    eq(getInstanceSlice('detail').search.active, false);
+    eq(getInstanceSlice('detail').search.matches.length, 0);
+    eq(getInstanceSlice('detail').search.term, '');
   });
   it('empty commit clears active', () => {
     setup(['only one']);
     search.enter();
     search.commit();
-    eq(getComponentSlice('detail').search.active, false, 'empty term yields no active search');
+    eq(getInstanceSlice('detail').search.active, false, 'empty term yields no active search');
   });
 });
 
@@ -99,13 +99,13 @@ describe('[6] cancel during typing restores prior committed term', () => {
     search.enter();
     'hello'.split('').forEach(c => search.keystroke(c));
     search.commit();
-    eq(getComponentSlice('detail').search.term, 'hello');
-    eq(getComponentSlice('detail').search.matches.length, 2);
+    eq(getInstanceSlice('detail').search.term, 'hello');
+    eq(getInstanceSlice('detail').search.matches.length, 2);
     search.enter();      // reopen
     search.keystroke('X');
     search.cancel();     // Esc
-    eq(getComponentSlice('detail').search.term, 'hello', 'committed term restored');
-    eq(getComponentSlice('detail').search.matches.length, 2);
+    eq(getInstanceSlice('detail').search.term, 'hello', 'committed term restored');
+    eq(getInstanceSlice('detail').search.matches.length, 2);
   });
 });
 
@@ -116,16 +116,16 @@ describe('[7] next/prev cycles + autoscroll', () => {
     search.enter();
     'row0'.split('').forEach(c => search.keystroke(c));
     search.commit();
-    eq(getComponentSlice('detail').search.matches.length, 4);
-    eq(getComponentSlice('detail').search.idx, 0);
+    eq(getInstanceSlice('detail').search.matches.length, 4);
+    eq(getInstanceSlice('detail').search.idx, 0);
     search.next();
-    eq(getComponentSlice('detail').search.idx, 1);
+    eq(getInstanceSlice('detail').search.idx, 1);
     search.next(); search.next();
-    eq(getComponentSlice('detail').search.idx, 3);
+    eq(getInstanceSlice('detail').search.idx, 3);
     search.next();
-    eq(getComponentSlice('detail').search.idx, 0, 'wraps to start');
+    eq(getInstanceSlice('detail').search.idx, 0, 'wraps to start');
     search.prev();
-    eq(getComponentSlice('detail').search.idx, 3, 'prev from 0 wraps to last');
+    eq(getInstanceSlice('detail').search.idx, 3, 'prev from 0 wraps to last');
   });
   it('autoscroll brings the match line into view', () => {
     setup(Array.from({ length: 50 }, (_, i) =>
@@ -134,9 +134,9 @@ describe('[7] next/prev cycles + autoscroll', () => {
     search.enter();
     'TARGET'.split('').forEach(c => search.keystroke(c));
     search.commit();
-    assert(getComponentSlice('detail').scroll > 0, `scrolled to TARGET (got ${getComponentSlice('detail').scroll})`);
+    assert(getInstanceSlice('detail').scroll > 0, `scrolled to TARGET (got ${getInstanceSlice('detail').scroll})`);
     const innerH = 6;
-    const top = getComponentSlice('detail').scroll;
+    const top = getInstanceSlice('detail').scroll;
     assert(30 >= top && 30 < top + innerH, 'TARGET line is now in viewport');
   });
 });
@@ -147,7 +147,7 @@ describe('[8] decorateLines render integration', () => {
     search.enter();
     'foo'.split('').forEach(c => search.keystroke(c));
     search.commit();
-    const out = search.decorateLines(getComponentSlice('detail').lines);
+    const out = search.decorateLines(getInstanceSlice('detail').lines);
     eq(out[0], 'no match here', 'untouched');
     assert(out[1].includes('[yellow]'), 'matched line carries [yellow]');
   });
@@ -156,8 +156,8 @@ describe('[8] decorateLines render integration', () => {
     search.enter();
     'foo'.split('').forEach(c => search.keystroke(c));
     search.commit();
-    getComponentSlice('detail').search.idx = 0;
-    const out = search.decorateLines(getComponentSlice('detail').lines);
+    getInstanceSlice('detail').search.idx = 0;
+    const out = search.decorateLines(getInstanceSlice('detail').lines);
     // First match (idx=0) → [reverse][yellow]
     assert(out[0].includes('[reverse][yellow]'), `expected active style: ${out[0]}`);
     // Second match (idx=1) → [yellow] only (no reverse)
@@ -167,8 +167,8 @@ describe('[8] decorateLines render integration', () => {
   });
   it('no matches → pass-through', () => {
     setup(['abc', 'def']);
-    const out = search.decorateLines(getComponentSlice('detail').lines);
-    eq(out, getComponentSlice('detail').lines);
+    const out = search.decorateLines(getInstanceSlice('detail').lines);
+    eq(out, getInstanceSlice('detail').lines);
   });
 });
 

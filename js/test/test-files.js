@@ -22,7 +22,7 @@ const path = require('path');
 
 const { describe, it, eq, assert, section, report } = require('./test-runner');
 const { getModel } = require('../app/runtime');
-const { getComponentSlice } = require('../panel/api');
+const { getInstanceSlice } = require('../panel/api');
 
 
 // (test-runner.js already registered layout + detail + groups when required
@@ -60,7 +60,7 @@ function freshState(root, panelType = 'files', extraPanelCfg = {}) {
   };
   getModel().projectDir = root;
   getModel().currentGroup = 'g';
-  getComponentSlice("layout").arrange = {
+  getInstanceSlice("layout").arrange = {
     leftPanels: [{
       type: panelType, root,
       title: panelType, hotkey: '1', column: 'left',
@@ -72,11 +72,11 @@ function freshState(root, panelType = 'files', extraPanelCfg = {}) {
   // Phase 4a/4c — every per-panel chrome (cursor/scroll/multiSel/filter)
   // lives on each Component's nav slice. Re-home the panels we touch.
   setSel(panelType, 0); setScroll(panelType, 0);
-  getComponentSlice('detail').contentTabs = {};
-  getComponentSlice('detail').ephemeralTerminals = {};
-  getComponentSlice('detail').tab = 0;
-  getComponentSlice("layout").focus = panelType;
-  getComponentSlice('detail').lines = [];
+  getInstanceSlice('detail').contentTabs = {};
+  getInstanceSlice('detail').ephemeralTerminals = {};
+  getInstanceSlice('detail').tab = 0;
+  getInstanceSlice("layout").focus = panelType;
+  getInstanceSlice('detail').lines = [];
 }
 
 /**
@@ -292,7 +292,7 @@ section('[9] file open → content tab (real effect loop, async loader)');
       return false;
     };
     const loaded = await poll(() => {
-      const b = api.getComponentSlice('files').browsers['file-browser'];
+      const b = api.getInstanceSlice('files').browsers['file-browser'];
       return b && Array.isArray(b.items) && b.items.length > 1;
     });
     assert(loaded, 'real loadDir populated the slice');
@@ -300,15 +300,15 @@ section('[9] file open → content tab (real effect loop, async loader)');
     const items = api.getItems('file-browser');
     const alphaIdx = items.findIndex(i => i.name === 'alpha.txt');
     setSel('file-browser', alphaIdx);
-    getComponentSlice("layout").focus = 'file-browser';
+    getInstanceSlice("layout").focus = 'file-browser';
     // The real key path: routes to the focused Component's update → openFile.
     api.dispatchKeyToFocused('return', '');
 
     const alpha = items[alphaIdx];
     const key = `file:${alpha.path}`;
-    assert(getComponentSlice('detail').contentTabs['g'] && getComponentSlice('detail').contentTabs['g'][key], 'tab created');
+    assert(getInstanceSlice('detail').contentTabs['g'] && getInstanceSlice('detail').contentTabs['g'][key], 'tab created');
     const ready = await poll(() => {
-      const lines = getComponentSlice('detail').contentTabs['g'][key].lines;
+      const lines = getInstanceSlice('detail').contentTabs['g'][key].lines;
       return lines && lines[0] === 'aaa';
     });
     assert(ready, 'file contents loaded into the content tab');

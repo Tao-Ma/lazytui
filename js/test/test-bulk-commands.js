@@ -29,7 +29,7 @@ api.registerComponent(dockerPlugin);
 
 const { describe, it, assert, eq, report } = require('./test-runner');
 const { getModel } = require('../app/runtime');
-const { getComponentSlice } = require('../panel/api');
+const { getInstanceSlice } = require('../panel/api');
 
 
 // Set up a fake config + group so apiGetItems('containers', S) returns names.
@@ -106,13 +106,13 @@ describe('[5] empty operand → no streamCommand call', () => {
 describe('[6] command resets activeTab and terminalMode', () => {
   it('switches to Info tab + leaves terminal mode', () => {
     getModel().config = { groups: { g1: { name: 'g1', containers: ['c1'] } } };
-    getComponentSlice('detail').tab = 3;
+    getInstanceSlice('detail').tab = 3;
     getModel().modes.terminalMode = true;
     setSel('containers', 0);
     clearMultiSel('containers');
     calls.length = 0;
     stopCmd.run([]);
-    eq(getComponentSlice('detail').tab, 0, 'switched to Info tab');
+    eq(getInstanceSlice('detail').tab, 0, 'switched to Info tab');
     eq(getModel().modes.terminalMode, false, 'left terminal mode');
   });
 });

@@ -17,7 +17,7 @@ const { getModel } = require('../app/runtime');
 const { enableMouse, enableFocusEvents, enableBracketedPaste, cols } = require('../io/term');
 const { isTerminalTab, activeTerminalId } = require('../panel/viewer/tabs');
 const { writeToSession, isSessionDead } = require('../io/terminal');
-const {getPanelDef, getItems, getComponentSlice, dispatchMsg, wrap, getFocus, instanceKind } = require('../panel/api');
+const {getPanelDef, getItems, getInstanceSlice, dispatchMsg, wrap, getFocus, instanceKind } = require('../panel/api');
 const route = require('../leaves/route');
 const { isChainActive } = require('./modes');
 
@@ -28,7 +28,7 @@ function _showSelectedInfo() {
   if (target) dispatchMsg(wrap(target, { type: 'viewer_show_info' }));
 }
 
-function _detail() { return getComponentSlice('detail'); }
+function _detail() { return getInstanceSlice('detail'); }
 const { handleKey, applyMsg } = require('./dispatch');
 const { cleanup } = require('../app/cleanup');
 
@@ -54,7 +54,7 @@ const { cleanup } = require('../app/cleanup');
  */
 function _handleWheel(mx, my, delta) {
   for (const p of allPanels()) {
-    const b = getComponentSlice('layout').panelBounds[p.type];
+    const b = getInstanceSlice('layout').panelBounds[p.type];
     if (!b) continue;
     if (mx < b.x || mx >= b.x + b.w || my < b.y || my >= b.y + b.h) continue;
 
@@ -62,7 +62,7 @@ function _handleWheel(mx, my, delta) {
       const d = _detail();
       const lines = d?.lines || [];
       const curScroll = d?.scroll || 0;
-      const innerH = Math.max(1, (getComponentSlice('layout').panelHeights.detail || b.h) - 2);
+      const innerH = Math.max(1, (getInstanceSlice('layout').panelHeights.detail || b.h) - 2);
       const maxScroll = Math.max(0, lines.length - innerH);
       const next = Math.max(0, Math.min(maxScroll, curScroll + delta));
       if (next === curScroll) return false;
@@ -169,7 +169,7 @@ function handleMouse(kind, x, y) {
   // open overlay (layout.tabListOwnerPaneId), not a hardcoded 'detail'.
   if (model.modes.tabListMode) {
     const tabOverlay = require('../overlay/tab-list');
-    const layoutSlice = getComponentSlice('layout');
+    const layoutSlice = getInstanceSlice('layout');
     const ownerPaneId = (layoutSlice && layoutSlice.tabListOwnerPaneId) || 'detail';
     if (kind === 'wheel-up' || kind === 'wheel-down') {
       dispatchMsg(wrap(ownerPaneId, {
@@ -212,7 +212,7 @@ function handleMouse(kind, x, y) {
   // not a specific row). Motion/release re-route to the pool-drag Msgs
   // while drag.kind is `pool-*`; otherwise the existing design path runs.
   if (model.modes.freeConfigMode) {
-    const slice = getComponentSlice('layout');
+    const slice = getInstanceSlice('layout');
     const drag = slice && slice.design && slice.design.drag;
     const isPoolDrag = drag && (drag.kind === 'pool-armed' || drag.kind === 'pool-dragging');
     const isTabDrag = drag && (drag.kind === 'tab-armed' || drag.kind === 'tab-dragging');
@@ -321,7 +321,7 @@ function handleMouse(kind, x, y) {
   // change.
   const sel = require('../overlay/select');
   if (kind === 'motion' && sel.isActive()) {
-    const db = getComponentSlice('layout').panelBounds.detail;
+    const db = getInstanceSlice('layout').panelBounds.detail;
     if (db) {
       const visibleLine = Math.max(0, Math.min(db.h - 3, my - db.y - 1));
       const col = Math.max(0, mx - db.x - 1);
@@ -344,7 +344,7 @@ function handleMouse(kind, x, y) {
   let mutated = false;
 
   for (const p of allPanels()) {
-    const b = getComponentSlice('layout').panelBounds[p.type];
+    const b = getInstanceSlice('layout').panelBounds[p.type];
     if (!b) continue;
     if (mx < b.x || mx >= b.x + b.w || my < b.y || my >= b.y + b.h) continue;
 

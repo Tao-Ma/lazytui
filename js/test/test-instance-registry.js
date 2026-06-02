@@ -84,11 +84,11 @@ describe('[v0.6.1 Phase 0] tab-instance registry', () => {
 
   it('registry is independent of the legacy name-keyed slice store', () => {
     // Phase 0 invariant: instance registry must not interfere with the
-    // existing getComponentSlice('name') path. Setting an instance with
+    // existing getInstanceSlice('name') path. Setting an instance with
     // id === some-component-name does NOT collide with the slice store.
     resetRegistry();
     route.setInstance('detail', 'detail', { fromInstance: true });
-    // No expectation about getComponentSlice('detail') here — it lives
+    // No expectation about getInstanceSlice('detail') here — it lives
     // in a separate map. Just confirm the two are not aliased.
     const inst = route.getInstanceSlice('detail');
     eq(inst.fromInstance, true, 'instance slice intact');

@@ -24,7 +24,7 @@
 const { getTabInfo, isTerminalTab, activeContentTab } = require('./tabs');
 const {
   renderPanel,
-  getComponentSlice, getFocus, getPanelDef, getItems, wrap, instanceKind,
+  getInstanceSlice, getFocus, getPanelDef, getItems, wrap, instanceKind,
 } = require('../api');
 const ms = require('../../leaves/search');
 const pt = require('../../leaves/pane-tabs');
@@ -390,7 +390,7 @@ function update(msg, slice) {
 
 function detailTitle(slice) {
   const tabInfo = getTabInfo();
-  const layoutSlice = getComponentSlice('layout');
+  const layoutSlice = getInstanceSlice('layout');
   const dp = layoutSlice && layoutSlice.arrange
     ? layoutSlice.arrange.rightPanels.find(p => p.type === 'detail')
     : null;
@@ -411,7 +411,7 @@ function detailTitle(slice) {
 function render(panel, w, h, slice) {
   const m = getModel();
   const innerH = h - 2;
-  const dp = getComponentSlice('layout').arrange.rightPanels.find(p => p.type === 'detail');
+  const dp = getInstanceSlice('layout').arrange.rightPanels.find(p => p.type === 'detail');
   const hotkey = dp ? dp.hotkey : '';
   const isFocused = instanceKind(getFocus()) === 'detail' || m.modes.terminalMode;
   if (isTerminalTab()) {

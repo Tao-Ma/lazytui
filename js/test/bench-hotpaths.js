@@ -21,7 +21,7 @@
 
 const api = require('../panel/api');
 const runtime = require('../app/runtime');
-const { getComponentSlice } = api;
+const { getInstanceSlice } = api;
 
 require('../dispatch/effects').installBuiltins();
 api.registerComponent(require('../panel/layout'));
@@ -39,7 +39,7 @@ term.stdout.write = (chunk, ...rest) => {
 };
 try { require('../render/render-queue').scheduleRender = () => {}; } catch (_) {}
 
-const detailSlice = getComponentSlice('detail');
+const detailSlice = getInstanceSlice('detail');
 detailSlice.lines = [];
 // Seed innerH so viewer_append's bottom-stick math has a realistic
 // viewport (38 = panelH 40 minus 2-row border chrome). A1/B1 fix: this
@@ -68,7 +68,7 @@ bench('append from empty', 10_000, (n) => {
     api.dispatchMsg(api.wrap('detail', { type: 'viewer_append', line: `line ${i}` }));
   }
 });
-console.log(`  final lines.length: ${getComponentSlice('detail').lines.length}`);
+console.log(`  final lines.length: ${getInstanceSlice('detail').lines.length}`);
 
 // Reset and benchmark the steady-state (large pre-existing buffer).
 console.log('\n[2] viewer_append (buffer already 10k lines — spread cost scales with length)');
@@ -77,11 +77,11 @@ bench('append to 10k buffer', 10_000, (n) => {
     api.dispatchMsg(api.wrap('detail', { type: 'viewer_append', line: `line ${i}` }));
   }
 });
-console.log(`  final lines.length: ${getComponentSlice('detail').lines.length}`);
+console.log(`  final lines.length: ${getInstanceSlice('detail').lines.length}`);
 
 console.log('\n[2b] viewer_append (buffer 50k lines — long-running stream)');
 // Build up to 50k without timing the warmup.
-while (getComponentSlice('detail').lines.length < 50_000) {
+while (getInstanceSlice('detail').lines.length < 50_000) {
   api.dispatchMsg(api.wrap('detail', { type: 'viewer_append', line: 'x' }));
 }
 bench('append to 50k buffer', 5_000, (n) => {
@@ -89,7 +89,7 @@ bench('append to 50k buffer', 5_000, (n) => {
     api.dispatchMsg(api.wrap('detail', { type: 'viewer_append', line: `line ${i}` }));
   }
 });
-console.log(`  final lines.length: ${getComponentSlice('detail').lines.length}`);
+console.log(`  final lines.length: ${getInstanceSlice('detail').lines.length}`);
 
 // --- select_extend ---
 console.log('\n[3] select_extend (mouse drag, ~60Hz target = 60 ops/sec minimum)');

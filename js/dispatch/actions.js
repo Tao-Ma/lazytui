@@ -24,7 +24,7 @@
 
 const { allPanels, getSel } = require('../app/state');
 const { runAction } = require('./action-runner');
-const { getPanelDef, getItems, getGroupActions, getComponentSlice,
+const { getPanelDef, getItems, getGroupActions, getInstanceSlice,
         dispatchMsg, wrap, getFocus, instanceKind } = require('../panel/api');
 const { isTerminalTab, activeTerminalId } = require('../panel/viewer/tabs');
 const { isSessionDead, restartSession } = require('../io/terminal');
@@ -105,7 +105,7 @@ function _jumpInListPanel(target) {
 }
 
 function _pageStep(panelType) {
-  const slice = getComponentSlice('layout');
+  const slice = getInstanceSlice('layout');
   const h = (slice && slice.panelHeights[panelType]) || 4;
   return Math.max(1, h - 2);
 }
@@ -119,7 +119,7 @@ function activateTerminal() {
   const id = activeTerminalId();
   if (!id) return;
   if (isSessionDead(id)) {
-    const slice = getComponentSlice('layout');
+    const slice = getInstanceSlice('layout');
     const bounds = slice && slice.panelBounds.detail;
     if (bounds) restartSession(id, bounds.w - 2, bounds.h - 2);
   }

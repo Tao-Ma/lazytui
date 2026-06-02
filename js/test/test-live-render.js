@@ -13,7 +13,7 @@
 
 const { describe, it, assert, eq, report } = require('./test-runner');
 const { getModel } = require('../app/runtime');
-const {getComponentSlice, getFocus } = require('../panel/api');
+const {getInstanceSlice, getFocus } = require('../panel/api');
 
 const { initState, getSel, setSel, selectGroup } = require('../app/state');
 
@@ -83,7 +83,7 @@ describe('[2] viewMode flows model → view end-to-end (the v0.5 slice, live)', 
 describe('[3] chrome (sel/focus) flows through the model — live', () => {
   it('down-arrow moves the groups selection via the real key path', () => {
     capture(() => { handleKey('_', '_'); handleKey('_', '_'); });   // back to normal view (silenced)
-    getComponentSlice("layout").focus = 'groups';
+    getInstanceSlice("layout").focus = 'groups';
     setSel('groups', 0);
     const before = capture(() => render());
     // handleKey('down') → nav_down → moveSel on the focused panel.
@@ -94,7 +94,7 @@ describe('[3] chrome (sel/focus) flows through the model — live', () => {
   });
   it('down-arrow cascades currentGroup inline (the selectGroup transform in the reducer)', () => {
     capture(() => { handleKey('_', '_'); handleKey('_', '_'); });
-    getComponentSlice("layout").focus = 'groups';
+    getInstanceSlice("layout").focus = 'groups';
     setSel('groups', 0);
     selectGroup(0);   // anchor currentGroup on the first row
     eq(getModel().currentGroup, 'g1', 'anchored on g1');
@@ -108,7 +108,7 @@ describe('[3] chrome (sel/focus) flows through the model — live', () => {
 describe('[3b] focus moves through the update spine — live', () => {
   it('right/left arrow re-focus via applyMsg → update(focus_set) and repaint', () => {
     capture(() => { handleKey('_', '_'); handleKey('_', '_'); });   // normal view (silenced)
-    getComponentSlice("layout").focus = 'groups';
+    getInstanceSlice("layout").focus = 'groups';
     const fromGroups = capture(() => handleKey('right', 'right')); // focus_right → update
     assert(getFocus() !== 'groups', `focus advanced off groups (now ${getFocus()})`);
     assert(fromGroups.length > 0, 'a frame painted on focus change');
@@ -121,8 +121,8 @@ describe('[3b] focus moves through the update spine — live', () => {
 describe('[4] detail content flows model → view — live', () => {
   it('detail slice lines (now model.viewer.lines) renders into the Detail panel', () => {
     capture(() => { handleKey('_', '_'); handleKey('_', '_'); });  // normal view
-    getComponentSlice('detail').lines = ['ZZ-DETAIL-MARKER-ZZ'];
-    getComponentSlice('detail').scroll = 0;
+    getInstanceSlice('detail').lines = ['ZZ-DETAIL-MARKER-ZZ'];
+    getInstanceSlice('detail').scroll = 0;
     const frame = capture(() => render());
     assert(/ZZ-DETAIL-MARKER-ZZ/.test(frame), 'detail content (via the model) reached the rendered frame');
   });

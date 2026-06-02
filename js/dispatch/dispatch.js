@@ -23,7 +23,7 @@
 
 const { allPanels, getSel } = require('../app/state');
 const { render } = require('../render/layout');
-const { getPanelDef, getItems, idOf, getComponentSlice,
+const { getPanelDef, getItems, idOf, getInstanceSlice,
        getComponentOwningPanel, dispatchMsg, dispatchKeyToFocused, wrap, getFocus,
        instanceKind } = require('../panel/api');
 const copy = require('../overlay/copy');
@@ -211,8 +211,8 @@ function handleDesignKey(key, seq) {
   // when slice.panelList.open, keys route to the list (nav / pick /
   // close) instead of design. Outer Esc/q still exits the whole mode.
   const dispatch = (m) => dispatchMsg(wrap('layout', m));
-  const { getComponentSlice } = require('../panel/api');
-  const layoutSlice = getComponentSlice('layout');
+  const { getInstanceSlice } = require('../panel/api');
+  const layoutSlice = getInstanceSlice('layout');
   if (layoutSlice && layoutSlice.panelList && layoutSlice.panelList.open) {
     switch (key) {
       case 'up':    case 'k': dispatch({ type: 'panel_list_nav', dir: -1 }); return;
@@ -296,7 +296,7 @@ function handleTabListKey(key, seq) {
   // v0.6.1 Phase 8 — tab-list overlay key handler targets the pane that
   // owns the open overlay (layout.tabListOwnerPaneId), not the singleton
   // 'detail' kind. Fallback 'detail' covers the pre-init boot edge.
-  const layoutSlice = getComponentSlice('layout');
+  const layoutSlice = getInstanceSlice('layout');
   const ownerPaneId = (layoutSlice && layoutSlice.tabListOwnerPaneId) || 'detail';
   const send = (m) => dispatchMsg(wrap(ownerPaneId, m));
   if (key === 'escape' || seq === 'T' || key === 'T') { send({ type: 'tab_list_close' }); return; }
@@ -308,7 +308,7 @@ function handleTabListKey(key, seq) {
   if (seq === ',' || key === 'pageup')   { send({ type: 'tab_list_nav', to: 'pageup',   vh, tabCount }); return; }
   if (seq === '.' || key === 'pagedown') { send({ type: 'tab_list_nav', to: 'pagedown', vh, tabCount }); return; }
   if (seq === 'x') {
-    const slice = getComponentSlice(ownerPaneId);
+    const slice = getInstanceSlice(ownerPaneId);
     const tl = slice && slice.tabList;
     if (!tl || !tl.open) return;
     const row = flat[tl.cursor];

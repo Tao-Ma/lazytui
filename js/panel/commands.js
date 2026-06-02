@@ -63,7 +63,7 @@ const FRAMEWORK_COMMANDS = [
       const { writeLayoutToFile } = require('../feature/yaml-layout');
       const { setViewerContent } = require('../app/state');
       const m = require('../app/runtime').getModel();
-      const { error } = writeLayoutToFile(route.getSlice('layout').arrange, m.configPath);
+      const { error } = writeLayoutToFile(route.getInstanceSlice('layout').arrange, m.configPath);
       if (error) {
         setViewerContent(null, `[red]Layout save failed:[/] ${error.message}`);
       } else {
@@ -149,7 +149,7 @@ function _frameworkDynamicCommands(m) {
       },
     });
   }
-  const layoutSlice = route.getSlice('layout');
+  const layoutSlice = route.getInstanceSlice('layout');
   // v0.6: free-config mode is always available; `:design` is the v0.5
   // alias kept for muscle memory. The boot-time `--design` CLI flag
   // (slice.design.enabled) now just auto-enters at startup; it no

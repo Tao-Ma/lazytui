@@ -20,7 +20,7 @@
 const { esc, visibleLen, stripMarkup } = require('../io/ansi');
 const { cols, rows } = require('../io/term');
 const { renderOverlay, truncate } = require('../render/panel');
-const { getComponentSlice } = require('../panel/api');
+const { getInstanceSlice } = require('../panel/api');
 const mpool = require('../leaves/pool');
 
 // Side-by-side overlay sizing — middle ground between the v0.6 Phase 4
@@ -38,7 +38,7 @@ const LIST_W = 36;                // left-pane content width when side-by-side
 const SEP = ' │ ';
 const HEADER_ROWS_TOP = 1;
 
-function _slice() { return getComponentSlice('layout'); }
+function _slice() { return getInstanceSlice('layout'); }
 
 // ----------------------- list pane ----------------------------
 
@@ -114,7 +114,7 @@ function _rendererFor(type) {
   const comp = api.getComponent(compName);
   const def = comp && comp.panelTypes && comp.panelTypes[type];
   if (!def || typeof def.render !== 'function') return null;
-  return (panel, w, h) => def.render(panel, w, h, api.getComponentSlice(compName));
+  return (panel, w, h) => def.render(panel, w, h, api.getInstanceSlice(compName));
 }
 
 /** Build the preview-pane rows for the highlighted entry. Returns an

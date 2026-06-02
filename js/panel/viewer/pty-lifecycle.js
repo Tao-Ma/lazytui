@@ -36,7 +36,7 @@ function handleExit(id, exitCode) {
   const paneId = tabs.paneForSessionId(id) || 'detail';
   let anyChange = false;
   const wasActive = tabs.activeTerminalId(paneId) === id;
-  const layoutSlice = api.getComponentSlice('layout');
+  const layoutSlice = api.getInstanceSlice('layout');
   if (layoutSlice && layoutSlice.viewMode === 'full' && wasActive) {
     api.dispatchMsg(api.wrap('layout', { type: 'view_set', mode: 'normal' }));
     anyChange = true;

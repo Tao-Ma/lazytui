@@ -215,7 +215,7 @@ describe('[injectTabTrigger] (o)[≡] layout preserves panel width', () => {
   // Register layout so its slice exists, then seed detail's panelBounds.
   // Registry is idempotent on repeated calls within a test process.
   try { api.registerComponent(layout); } catch (e) { /* already registered */ }
-  const layoutSlice = api.getComponentSlice('layout');
+  const layoutSlice = api.getInstanceSlice('layout');
   layoutSlice.panelBounds = { detail: { x: 0, y: 0, w: 40, h: 10 } };
   layoutSlice.focus = 'detail';
   getModel().modes = getModel().modes || {};

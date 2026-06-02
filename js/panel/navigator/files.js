@@ -55,7 +55,7 @@ const mnav = require('../../leaves/nav');
 const {
   esc, visibleLen, theme, renderPanel,
   getSel, getScroll, getFilter, isMultiSel,
-  getComponentSlice, getFocus,
+  getInstanceSlice, getFocus,
 } = require('../api');
 
 const { DEFAULT_MAX_BYTES, DEFAULT_HEX_AFTER } = require('../../io/file-loader');
@@ -81,7 +81,7 @@ function _hardcodedFor(panelType) {
 // --- framework reads (app-global, read explicitly per the Component contract) ---
 
 function _allPanels() {
-  const slice = getComponentSlice('layout');
+  const slice = getInstanceSlice('layout');
   const ly = slice && slice.arrange;
   return ly ? [...(ly.leftPanels || []), ...(ly.rightPanels || [])] : [];
 }
@@ -200,7 +200,7 @@ function _parseSize(val, fallback) {
 // --- getInfo / copyOptions / render (kind-aware) ---
 
 function _getInfoFor(item, panelType, hardcoded) {
-  const slice = getComponentSlice('files') || { browsers: {} };
+  const slice = getInstanceSlice('files') || { browsers: {} };
   const b = (slice.browsers && slice.browsers[panelType]) || {};
   const source = _source(panelType, hardcoded);
   const panel = _panelOf(panelType);

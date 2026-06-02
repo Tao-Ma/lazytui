@@ -15,7 +15,7 @@
 const { allPanels, setViewerContent } = require('../app/state');
 const { getModel } = require('../app/runtime');
 const { esc } = require('../io/ansi');
-const {getCommands, getPanelDef, getComponentSlice, getFocus, instanceKind } = require('../panel/api');
+const {getCommands, getPanelDef, getInstanceSlice, getFocus, instanceKind } = require('../panel/api');
 const kb = require('./keybindings');
 
 /** Walk the leader-tree depth-first, emitting `{seq, label}` for every

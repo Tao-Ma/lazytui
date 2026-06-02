@@ -31,7 +31,7 @@ const {
   esc, theme, renderPanel,
   getSel, getScroll, isMultiSel,
   statusFor,
-  getComponentSlice, getFocus, instanceKind,
+  getInstanceSlice, getFocus, instanceKind,
 } = require('../api');
 
 // --- pure tree transforms (return-new slice + cascade descriptor) ---

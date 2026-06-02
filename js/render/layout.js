@@ -6,7 +6,7 @@
  * recomputed per-frame from terminal size + arrange settings — this
  * module is the writer. Downstream readers (per-panel render fns,
  * mouse hit-tests in input.js, design-mode drag math, terminal overlay
- * positioning) consume them via getComponentSlice('layout').
+ * positioning) consume them via getInstanceSlice('layout').
  *
  * This is the one pattern that sits outside the otherwise-uniform
  * "Component update is the single writer of its slice" rule. The
@@ -29,7 +29,7 @@ const { truncate } = require('./panel');
 const { isTerminalTab, activeTerminalId, activeTerminalConfig,
         getTabInfo, findEphemeralByid } = require('../panel/viewer/tabs');
 const { ensureSession, getSession, resizeSession } = require('../io/terminal');
-const {getPanelDef, getComponentSlice, getFocus, dispatchMsg, wrap, instanceKind } = require('../panel/api');
+const {getPanelDef, getInstanceSlice, getFocus, dispatchMsg, wrap, instanceKind } = require('../panel/api');
 const { renderCopyMenu } = require('../overlay/copy');
 const { render: renderRegisterPopup } = require('../overlay/register-popup');
 const { renderMenu } = require('../overlay/menu');
@@ -63,7 +63,7 @@ const { currentText: filterCurrentText } = require('../overlay/filter');
  */
 function _renderCollapsed(p, w) {
   const t = theme();
-  const layoutSlice = getComponentSlice('layout');
+  const layoutSlice = getInstanceSlice('layout');
   const focused = layoutSlice && layoutSlice.focus === p.type;
   const fc = focused ? t.focus : t.dim;
   const innerW = Math.max(0, w - 2);
@@ -89,7 +89,7 @@ function rendererFor(type) {
   const comp = api.getComponent(compName);
   const def = comp && comp.panelTypes && comp.panelTypes[type];
   if (!def || typeof def.render !== 'function') return null;
-  return (panel, w, h) => def.render(panel, w, h, api.getComponentSlice(compName));
+  return (panel, w, h) => def.render(panel, w, h, api.getInstanceSlice(compName));
 }
 
 // --- Layout calculation ---
@@ -207,7 +207,7 @@ function distributeColumnHeights(layoutSlice, panels, availH, isRightCol, minH) 
 function calcLayout(model = getModel()) {
   refreshSize();
   const COLS = cols(), ROWS = rows();
-  const layoutSlice = getComponentSlice('layout');
+  const layoutSlice = getInstanceSlice('layout');
 
   // Adaptive: shrink left column on narrow terminals
   const minRight = 20;
@@ -340,7 +340,7 @@ function _safeRender(fn, panel, w, h) {
 // prior view-mode aren't hit-testable.
 function renderNormal(model) {
   const { leftW, rightW } = calcLayout(model);
-  const layoutSlice = getComponentSlice('layout');
+  const layoutSlice = getInstanceSlice('layout');
   layoutSlice.panelBounds = {};
   const freeConfigMode = !!(model.modes && model.modes.freeConfigMode);
   // Helper to render one panel + bake the chrome glyphs into its top
@@ -392,7 +392,7 @@ function renderNormal(model) {
 function renderHalf(model) {
   calcLayout(model);
   const COLS = cols(), ROWS = rows();
-  const layoutSlice = getComponentSlice('layout');
+  const layoutSlice = getInstanceSlice('layout');
   const halfW = Math.floor(COLS / 2);
   const availH = ROWS - 1;  // only the footer is reserved
   const focusedPanel = allPanels().find(p => p.type === layoutSlice.focus);
@@ -435,7 +435,7 @@ function renderHalf(model) {
 function renderFull(model) {
   calcLayout(model);
   const COLS = cols(), ROWS = rows();
-  const layoutSlice = getComponentSlice('layout');
+  const layoutSlice = getInstanceSlice('layout');
   const availH = ROWS - 1;  // only the footer is reserved
   const focusedPanel = allPanels().find(p => p.type === layoutSlice.focus);
   if (!focusedPanel) return renderNormal(model);
@@ -459,7 +459,7 @@ function renderTerminalOverlay(model = getModel()) {
   const termConf = activeTerminalConfig();
   if (!id || !termConf) return;
 
-  const layoutSlice = getComponentSlice('layout');
+  const layoutSlice = getInstanceSlice('layout');
   const bounds = layoutSlice && layoutSlice.panelBounds.detail;
   if (!bounds) return;
   const innerW = bounds.w - 2;
@@ -565,7 +565,7 @@ function render(model = getModel()) {
 
   let mainDidFull;
   // viewMode lives on the layout Component slice (Phase 1b).
-  const layoutSlice = getComponentSlice('layout') || { viewMode: 'normal' };
+  const layoutSlice = getInstanceSlice('layout') || { viewMode: 'normal' };
   // Drag preview: during an active drag with a valid target, swap
   // slice.arrange for the would-be-after-release arrange so the user
   // sees the actual outcome rather than an insertion-bar hint. The swap
@@ -616,7 +616,7 @@ function render(model = getModel()) {
   const viewerBounds = viewerTab && layoutSlice.panelBounds && layoutSlice.panelBounds[viewerTab];
   if (viewerBounds) {
     const innerH = Math.max(0, viewerBounds.h - 2);
-    const viewerSlice = getComponentSlice(viewerTab);
+    const viewerSlice = getInstanceSlice(viewerTab);
     if (viewerSlice && viewerSlice.innerH !== innerH) {
       dispatchMsg(wrap(viewerTab, { type: 'viewer_set_viewport', innerH }));
     }
@@ -697,7 +697,7 @@ function footerKeys(model) {
   if (md.detailSearchMode) {
     const ds = require('../overlay/viewer-search');
     const term = ds.typingText();
-    const search = getComponentSlice('detail')?.search || { matches: [], idx: 0 };
+    const search = getInstanceSlice('detail')?.search || { matches: [], idx: 0 };
     const n = (search.matches || []).length;
     const idx = n ? search.idx + 1 : 0;
     return ` /${esc(term)}│ \\[${idx}/${n}] | ↑↓ step | Esc cancel | Enter commit`;
@@ -709,7 +709,7 @@ function footerKeys(model) {
     return ` rename: ${esc(titleEditText())}│ | Esc cancel | Enter ok`;
   }
   if (md.freeConfigMode) {
-    const layoutSlice = getComponentSlice('layout');
+    const layoutSlice = getInstanceSlice('layout');
     const dirty = (layoutSlice && layoutSlice.dirty) ? ' | [yellow]• unsaved (:save-layout)[/]' : '';
     return ` Free Config | drag/resize | J/K reorder | ←→ swap col | +/- col/detail · [/] panel h | space collapse | t rename | w panel list | u undo | C-r redo | :save-layout | q exit${getDesignFooter()}${dirty}`;
   }
@@ -729,7 +729,7 @@ function footerKeys(model) {
     } else {
       segs.push('x menu', 'q quit');
       segs.push('/ search');
-      const search = getComponentSlice('detail')?.search;
+      const search = getInstanceSlice('detail')?.search;
       if (search && search.active) {
         const n = search.matches.length;
         const idx = search.idx + 1;
@@ -754,7 +754,7 @@ function renderFooter(model = getModel()) {
   if (model.modes.cmdMode) return;
   const COLS = cols(), ROWS = rows();
   const inModal = modes.isModal();
-  const layoutSlice = getComponentSlice('layout') || { viewMode: 'normal', dirty: false };
+  const layoutSlice = getInstanceSlice('layout') || { viewMode: 'normal', dirty: false };
 
   // Left side: mode message OR (panel hints + plugin keyHints +
   // multi-select indicator + footer:left decorator). Modal footers
@@ -807,7 +807,7 @@ function renderFooter(model = getModel()) {
   // on a non-list panel, where space falls back to the leader.)
   const focusDef = getPanelDef(getFocus());
   const selectActive = model.modes.listSelectMode && focusDef && typeof focusDef.getItems === 'function';
-  const sel = getComponentSlice('detail')?.select;
+  const sel = getInstanceSlice('detail')?.select;
   const selectTag = (sel && sel.active)
     ? ` \\[${sel.kind === 'line' ? 'v-line' : 'v-char'}]`
     : (selectActive ? ' \\[select]' : '');

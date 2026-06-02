@@ -11,7 +11,7 @@
  * Historical note: state.js used to export a global `S` object that
  * doubled as both the data home and a facade over the model + Component
  * slices. After the v0.5 single-writer migration, `S` was deleted
- * (chunks A–E): production code reads getModel() / getComponentSlice()
+ * (chunks A–E): production code reads getModel() / getInstanceSlice()
  * directly, and tests do the same.
  */
 'use strict';
@@ -31,7 +31,7 @@ const mpane = require('../leaves/pane');
 let _detailAutoRegistered = false;
 function _detailSlice() {
   const api = require('../panel/api');
-  let s = api.getComponentSlice('detail');
+  let s = api.getInstanceSlice('detail');
   if (!s) {
     if (!_detailAutoRegistered) {
       try { require('../dispatch/effects').installBuiltins(); } catch (_) {}
@@ -39,7 +39,7 @@ function _detailSlice() {
     }
     _layoutSlice();   // layout must register first — focus reader's primary instance
     api.registerComponent(require('../panel/viewer/viewer'));
-    s = api.getComponentSlice('detail');
+    s = api.getInstanceSlice('detail');
   }
   return s;
 }
@@ -47,7 +47,7 @@ function _detailSlice() {
 let _groupsAutoRegistered = false;
 function _groupsSlice() {
   const api = require('../panel/api');
-  let s = api.getComponentSlice('groups');
+  let s = api.getInstanceSlice('groups');
   if (!s) {
     if (!_groupsAutoRegistered) {
       try { require('../dispatch/effects').installBuiltins(); } catch (_) {}
@@ -55,7 +55,7 @@ function _groupsSlice() {
     }
     _layoutSlice();   // layout must register first — focus reader's primary instance
     api.registerComponent(require('../panel/navigator/groups'));
-    s = api.getComponentSlice('groups');
+    s = api.getInstanceSlice('groups');
   }
   return s;
 }
@@ -68,14 +68,14 @@ function _groupsSlice() {
 let _layoutAutoRegistered = false;
 function _layoutSlice() {
   const api = require('../panel/api');
-  let s = api.getComponentSlice('layout');
+  let s = api.getInstanceSlice('layout');
   if (!s) {
     if (!_layoutAutoRegistered) {
       try { require('../dispatch/effects').installBuiltins(); } catch (_) {}
       _layoutAutoRegistered = true;
     }
     api.registerComponent(require('../panel/layout'));
-    s = api.getComponentSlice('layout');
+    s = api.getInstanceSlice('layout');
   }
   return s;
 }
@@ -258,7 +258,7 @@ function _navEntry(panelType) {
   const api = require('../panel/api');
   const compName = api.getComponentOwningPanel(panelType);
   if (!compName) return null;
-  const slice = api.getComponentSlice(compName);
+  const slice = api.getInstanceSlice(compName);
   if (!slice || !slice.nav) return null;
   if ('cursor' in slice.nav) return slice.nav;        // single-panel
   return slice.nav[panelType] || null;                // multi-panel

@@ -3,7 +3,7 @@
  *
  * Every read helper (getTabInfo / isTerminalTab / activeContentTab /
  * activeTerminalId / etc.) is a one-line call into leaves/pane-tabs,
- * pinning the slice = `getComponentSlice('detail')` and the group =
+ * pinning the slice = `getInstanceSlice('detail')` and the group =
  * `getModel().currentGroup`. Phase 4 will retarget these singleton
  * pins to real pane ids; the leaf's *In(slice, model, groupName)
  * variants are already paneId-agnostic.
@@ -34,7 +34,7 @@ const pt = require('../../leaves/pane-tabs');
 /** Resolve the detail Component's slice. Empty fallback so callers don't
  *  have to guard before the Component is registered (mid-boot, tests). */
 function _detailSlice() {
-  return require('../api').getComponentSlice('detail')
+  return require('../api').getInstanceSlice('detail')
       || { contentTabs: {}, ephemeralTerminals: {}, tab: 0 };
 }
 
@@ -67,7 +67,7 @@ function activeContentTab() {
 }
 
 function activeTerminalId(paneId = 'detail') {
-  const slice = require('../api').getComponentSlice(paneId)
+  const slice = require('../api').getInstanceSlice(paneId)
               || { contentTabs: {}, ephemeralTerminals: {}, tab: 0 };
   return pt.activeTerminalIdIn(slice, getModel(), getModel().currentGroup);
 }
@@ -77,7 +77,7 @@ function activeTerminalConfig() {
 }
 
 function findEphemeralByid(id, paneId = 'detail') {
-  const slice = require('../api').getComponentSlice(paneId)
+  const slice = require('../api').getInstanceSlice(paneId)
               || { ephemeralTerminals: {} };
   return pt.findEphemeralByIdIn(slice, id);
 }

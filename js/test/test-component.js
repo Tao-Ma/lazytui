@@ -53,7 +53,7 @@ describe('[2] registration stores spec + initial slice', () => {
   it('init() runs at registration time', () => {
     const c = makeRecorder('rec1');
     api.registerComponent(c);
-    const slice = api.getComponentSlice('rec1');
+    const slice = api.getInstanceSlice('rec1');
     eq(slice.count, 0, 'initial count');
     eq(slice.msgs.length, 0, 'initial msgs empty');
   });
@@ -71,11 +71,11 @@ describe('[3] dispatch — non-key fans to all; key goes to the focused panel vi
     // Key events have their own dispatch path — they need a return
     // value to gate the framework default — and route only to the
     // focused panel's Component.
-    api.getComponentSlice("layout").focus = 'fanA';
+    api.getInstanceSlice("layout").focus = 'fanA';
     api.dispatchKeyToFocused('down', 'down');
 
-    const a = api.getComponentSlice('fanA');
-    const b = api.getComponentSlice('fanB');
+    const a = api.getInstanceSlice('fanA');
+    const b = api.getInstanceSlice('fanB');
     eq(a.msgs.join(','), 'refresh,hub,key', 'fanA: non-key Msgs + the focused key');
     eq(b.msgs.join(','), 'refresh,hub', 'fanB: non-key only — not the key (unfocused)');
   });
@@ -92,7 +92,7 @@ describe('[4] update() return shapes', () => {
     });
     api.dispatchMsg({ type: 'refresh' });
     api.dispatchMsg({ type: 'refresh' });
-    eq(api.getComponentSlice('replace').n, 2, 'slice replaced twice');
+    eq(api.getInstanceSlice('replace').n, 2, 'slice replaced twice');
   });
 
   it('update() returning undefined leaves the slice unchanged', () => {
@@ -102,7 +102,7 @@ describe('[4] update() return shapes', () => {
       update: (msg, slice) => { /* return undefined */ },
     });
     api.dispatchMsg({ type: 'refresh' });
-    eq(api.getComponentSlice('no-change').touched, false, 'untouched');
+    eq(api.getInstanceSlice('no-change').touched, false, 'untouched');
   });
 
   it('update() throw is isolated — other Components keep working', () => {
@@ -117,7 +117,7 @@ describe('[4] update() return shapes', () => {
       update: (msg, slice) => ({ count: slice.count + 1 }),
     });
     api.dispatchMsg({ type: 'refresh' });
-    eq(api.getComponentSlice('survivor').count, 1,
+    eq(api.getInstanceSlice('survivor').count, 1,
        'survivor processed despite thrower failing');
   });
 });
@@ -142,9 +142,9 @@ describe('[5] component-owned panels — render() receives slice, not S', () => 
     // Verify a dispatched key (with the showcase panel focused, so key
     // arbitration routes it there) updates the slice; a subsequent render
     // through rendererFor would see the new value.
-    api.getComponentSlice("layout").focus = 'showcase';
+    api.getInstanceSlice("layout").focus = 'showcase';
     api.dispatchKeyToFocused('l', 'l');
-    eq(api.getComponentSlice('showcase').label, 'updated',
+    eq(api.getInstanceSlice('showcase').label, 'updated',
        'slice mutated through the dispatch path');
   });
 });
@@ -161,7 +161,7 @@ describe('[6] integration — dispatch.handleKey reaches Components', () => {
       // Owns a focused panel so key arbitration routes the key here.
       panelTypes: { keyrec: { render: () => '' } },
     });
-    api.getComponentSlice("layout").focus = 'keyrec';
+    api.getInstanceSlice("layout").focus = 'keyrec';
     // Use require('../dispatch/dispatch') indirectly via a key-filter that
     // suppresses — we want the dispatch fan-out, not the downstream
     // render. The key-filter terminator drops the event AFTER the
@@ -176,7 +176,7 @@ describe('[6] integration — dispatch.handleKey reaches Components', () => {
     // is verified by the key-filter test suite's "no filters"
     // case, which exercises the full path.
     api.dispatchKeyToFocused('enter', 'enter');
-    eq(api.getComponentSlice('keyrec').keys.join(','), 'enter',
+    eq(api.getInstanceSlice('keyrec').keys.join(','), 'enter',
        'component received the key Msg');
   });
 });
@@ -192,7 +192,7 @@ describe('[7] update() → [slice, effects] runs effects (the TEA Cmd half)', ()
     });
     // no throw despite the unknown effect
     api.dispatchMsg({ type: 'refresh' });
-    eq(api.getComponentSlice('fx').n, 1, 'slice from the tuple applied');
+    eq(api.getInstanceSlice('fx').n, 1, 'slice from the tuple applied');
     eq(ran.join(','), 'hit', 'known effect ran; unknown one skipped without throwing');
   });
 });
@@ -291,10 +291,10 @@ describe('[8e] layout Component — viewMode (Phase 1b)', () => {
 
   it('dispatched view_expand (wrapped) reaches the layout slice', () => {
     api.registerComponent(require('../panel/layout'));
-    const slice = api.getComponentSlice('layout');
+    const slice = api.getInstanceSlice('layout');
     slice.viewMode = 'normal';
     api.dispatchMsg(api.wrap('layout', { type: 'view_expand' }));
-    eq(api.getComponentSlice('layout').viewMode, 'half',
+    eq(api.getInstanceSlice('layout').viewMode, 'half',
        'wrapped Msg routed view_expand into layout.update');
   });
 });
@@ -302,7 +302,7 @@ describe('[8e] layout Component — viewMode (Phase 1b)', () => {
 describe('[8d] layout Component skeleton (Phase 1a)', () => {
   it('layout registers as a chrome-only Component with the expected slice shape', () => {
     api.registerComponent(require('../panel/layout'));
-    const slice = api.getComponentSlice('layout');
+    const slice = api.getInstanceSlice('layout');
     assert(slice !== undefined, 'layout slice exists');
     // Slice shape — sub-phases will populate these fields one by one.
     assert('arrange' in slice,      'slice has arrange (1g target)');
@@ -321,12 +321,12 @@ describe('[8d] layout Component skeleton (Phase 1a)', () => {
   });
 
   it('layout update is inert during Phase 1a — flat Msgs touch nothing', () => {
-    const before = api.getComponentSlice('layout');
+    const before = api.getInstanceSlice('layout');
     api.dispatchMsg({ type: 'refresh' });
     api.dispatchMsg({ type: 'hub', topic: 't', rowKey: 'r', sample: 1 });
     // update returns the same slice; the registry stores whatever update returns.
     // Phase 1a's update returns slice unchanged, so the slice identity is preserved.
-    eq(api.getComponentSlice('layout'), before,
+    eq(api.getInstanceSlice('layout'), before,
        'slice identity unchanged through fan-out');
   });
 });
@@ -343,21 +343,21 @@ describe('[8c] wrapped-Msg dispatch — { kind, msg } routes to exactly one Comp
       init: () => ({ hits: 0 }),
       update: (msg, slice) => ({ hits: slice.hits + 1 }),
     });
-    const a0 = api.getComponentSlice('targetA').hits;
-    const b0 = api.getComponentSlice('targetB').hits;
+    const a0 = api.getInstanceSlice('targetA').hits;
+    const b0 = api.getInstanceSlice('targetB').hits;
     api.dispatchMsg(api.wrap('targetA', { type: 'private_a_msg' }));
-    eq(api.getComponentSlice('targetA').hits, a0 + 1, 'targetA received exactly one Msg');
-    eq(api.getComponentSlice('targetA').lastType, 'private_a_msg',
+    eq(api.getInstanceSlice('targetA').hits, a0 + 1, 'targetA received exactly one Msg');
+    eq(api.getInstanceSlice('targetA').lastType, 'private_a_msg',
        'targetA saw the unwrapped inner msg, not the wrapper');
-    eq(api.getComponentSlice('targetB').hits, b0,
+    eq(api.getInstanceSlice('targetB').hits, b0,
        'targetB did NOT receive the wrapped Msg');
   });
 
   it('a wrapped Msg with unknown kind is logged and dropped', () => {
     // Snapshot one existing slice; a no-op wrapped dispatch must not touch it.
-    const before = api.getComponentSlice('targetA').hits;
+    const before = api.getInstanceSlice('targetA').hits;
     api.dispatchMsg(api.wrap('does-not-exist', { type: 'ignored' }));
-    eq(api.getComponentSlice('targetA').hits, before,
+    eq(api.getInstanceSlice('targetA').hits, before,
        'no Component received the wrapped Msg with unknown kind');
   });
 
@@ -373,7 +373,7 @@ describe('[8c] wrapped-Msg dispatch — { kind, msg } routes to exactly one Comp
       ],
     });
     api.dispatchMsg(api.wrap('wrapped-fx', { type: 'go', tag: 'fired' }));
-    eq(api.getComponentSlice('wrapped-fx').n, 1, 'slice updated');
+    eq(api.getInstanceSlice('wrapped-fx').n, 1, 'slice updated');
     eq(ran.join(','), 'fired', 'effect from wrapped-Msg update ran');
   });
 
@@ -387,9 +387,9 @@ describe('[8c] wrapped-Msg dispatch — { kind, msg } routes to exactly one Comp
       update: (msg, slice) =>
         msg.type === 'refresh' ? { ticks: slice.ticks + 1 } : slice,
     });
-    const before = api.getComponentSlice('backcompat-fan').ticks;
+    const before = api.getInstanceSlice('backcompat-fan').ticks;
     api.dispatchMsg({ type: 'refresh' });
-    eq(api.getComponentSlice('backcompat-fan').ticks, before + 1,
+    eq(api.getInstanceSlice('backcompat-fan').ticks, before + 1,
        'flat refresh still reaches Components via fan-out');
   });
 });
@@ -409,7 +409,7 @@ describe('[8a] chrome-only Component (no panelTypes) is supported', () => {
     // Fan-out Msgs reach it (non-key)
     api.dispatchMsg({ type: 'refresh' });
     api.dispatchMsg({ type: 'hub', topic: 't', rowKey: 'r', sample: 1 });
-    eq(api.getComponentSlice('chrome-rec').msgs.join(','), 'refresh,hub',
+    eq(api.getInstanceSlice('chrome-rec').msgs.join(','), 'refresh,hub',
        'fan-out Msgs delivered to chrome-only Component');
   });
 
@@ -422,9 +422,9 @@ describe('[8a] chrome-only Component (no panelTypes) is supported', () => {
     });
     // Even when nothing else owns the focus, a chrome-only Component
     // does not act as the key target — keys arbitrate to panel owners only.
-    api.getComponentSlice("layout").focus = 'some-non-existent-panel';
+    api.getInstanceSlice("layout").focus = 'some-non-existent-panel';
     api.dispatchKeyToFocused('enter', 'enter');
-    eq(api.getComponentSlice('chrome-key').keys.length, 0,
+    eq(api.getInstanceSlice('chrome-key').keys.length, 0,
        'chrome-only Component did not receive the key');
   });
 });

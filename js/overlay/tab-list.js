@@ -22,7 +22,7 @@
  *   cursor row wears `[reverse]` styling around the whole row text;
  *   when cursor lands on active, both indicators compose.
  *
- * Slice: `getComponentSlice(paneId).tabList = { open, cursor, scroll }`.
+ * Slice: `getInstanceSlice(paneId).tabList = { open, cursor, scroll }`.
  *
  * Lives parallel to overlay/panel-list / overlay/cmdline (dispatch
  * modules don't paint; overlays do).
@@ -33,7 +33,7 @@ const { richToAnsi, RESET, esc, visibleLen } = require('../io/ansi');
 const { stdout, rows } = require('../io/term');
 const { theme } = require('../render/themes');
 const { renderPanel } = require('../render/panel');
-const { getComponentSlice } = require('../panel/api');
+const { getInstanceSlice } = require('../panel/api');
 const { getModel } = require('../app/runtime');
 const pt = require('../leaves/pane-tabs');
 
@@ -69,7 +69,7 @@ let _lastTop = 0;
  *  content tabs) — the same number `tab_switch` consumes. */
 function _flatTabs(paneId = 'detail') {
   const m = getModel();
-  const slice = getComponentSlice(paneId) || { ephemeralTerminals: {}, contentTabs: {}, tab: 0 };
+  const slice = getInstanceSlice(paneId) || { ephemeralTerminals: {}, contentTabs: {}, tab: 0 };
   const info = pt.flatTabInfo(slice, m, m.currentGroup);
   const out = [{ tabIdx: 0, label: 'Info', kind: '' }];
   info.actionTabs.forEach(([, a], i) => out.push({
@@ -100,7 +100,7 @@ function _flatTabs(paneId = 'detail') {
 
 /** Pane bounds — null when layout hasn't rendered yet (boot edge). */
 function _paneBounds(paneId = 'detail') {
-  const l = getComponentSlice('layout');
+  const l = getInstanceSlice('layout');
   return l && l.panelBounds && l.panelBounds[paneId];
 }
 
@@ -109,7 +109,7 @@ function _paneBounds(paneId = 'detail') {
  *  during the boot edge before layout's first paint (the singleton
  *  default; harmless for Phase 4). */
 function _ownerPaneId() {
-  const l = getComponentSlice('layout');
+  const l = getInstanceSlice('layout');
   return (l && l.tabListOwnerPaneId) || 'detail';
 }
 
@@ -142,7 +142,7 @@ function viewportRows(paneId = 'detail') {
  *  { tabIdx, zone: 'label' } if the click lands on a row; null
  *  for clicks on borders / outside the overlay. */
 function hitTest(mx, my, paneId = 'detail') {
-  const slice = getComponentSlice(paneId);
+  const slice = getInstanceSlice(paneId);
   if (!slice || !slice.tabList || !slice.tabList.open) return null;
   const tabs = _flatTabs(paneId);
   const g = _geom(tabs, paneId);
@@ -194,7 +194,7 @@ function renderTabList(paneId) {
     return;
   }
   if (paneId == null) paneId = _ownerPaneId();
-  const slice = getComponentSlice(paneId) || {};
+  const slice = getInstanceSlice(paneId) || {};
   const tabList = slice.tabList || { open: false, cursor: 0, scroll: 0 };
   if (!tabList.open) { _maybeBlank(); return; }
   const tabs = _flatTabs(paneId);

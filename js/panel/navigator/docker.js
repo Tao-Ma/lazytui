@@ -39,7 +39,7 @@ const {
   streamCommand, addEphemeralTab, scheduleRender,
   setActiveTab, leaveTerminalMode,
   getItems: apiGetItems, selectedOrFocused,
-  getComponentSlice, getFocus, dispatchMsg, wrap, instanceKind,
+  getInstanceSlice, getFocus, dispatchMsg, wrap, instanceKind,
   registerEffect,
   hub,
 } = require('../api');
@@ -50,7 +50,7 @@ const POLL_MS = 10000;
 
 // --- slice access (the polled state lives in the Component slice) ---
 
-function _slice()        { return getComponentSlice('docker') || { status: {}, stats: {} }; }
+function _slice()        { return getInstanceSlice('docker') || { status: {}, stats: {} }; }
 function _status(name)   { return _slice().status[name] || '?'; }
 function _stats(name)    { return _slice().stats[name] || null; }
 

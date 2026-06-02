@@ -42,7 +42,7 @@ function _dispatch(msg) {
 }
 function _slice() {
   const target = _viewerTarget();
-  return target ? require('../panel/api').getComponentSlice(target) : null;
+  return target ? require('../panel/api').getInstanceSlice(target) : null;
 }
 
 function enter()            { _dispatch({ type: 'viewer_search_enter' }); }
@@ -57,7 +57,7 @@ function prev()             { _dispatch({ type: 'viewer_search_nav', dir: -1 });
 // already routed through viewer.update's Msg arms.
 function _writeBack(next) {
   const target = _viewerTarget();
-  if (target) require('../leaves/route').setSlice(target, next);
+  if (target) require('../leaves/route').setInstanceSlice(target, next);
 }
 function clearCommitted()    { const s = _slice(); if (s) _writeBack(ms.clearCommitted(s)); }
 function recompute()         { const s = _slice(); if (s) _writeBack(ms.recompute(s)); }

@@ -111,7 +111,7 @@ function init() {
       // one by index. Mirrors the copy split.
       cmdline: { text: '', sel: 0, scroll: 0, matches: [] },
       // Design-mode state lives on the layout Component's slice
-      // (Phase 1f) — `getComponentSlice('layout').design`.
+      // (Phase 1f) — `getInstanceSlice('layout').design`.
     },
     // Framework-level state: parsed config, paths, leader-mode buffers,
     // misc flags. The layout struct + design state + viewMode + focus
@@ -129,7 +129,7 @@ function init() {
   // All Phase 1 property shims (model.focus / layoutDirty / panelHeights /
   // panelBounds / modal.design / designEnabled / model.layout) have been
   // swept — callers read/write the layout Component's slice directly via
-  // getComponentSlice('layout').<field>.
+  // getInstanceSlice('layout').<field>.
   return m;
 }
 
@@ -262,7 +262,7 @@ function update(model, msg) {
       // at slice.nav; multi-panel keep slice.nav[panelType].
       const focus = route.getFocus();
       const compName = route.componentForPanel(focus);
-      const nav = compName ? (route.getSlice(compName) || {}).nav : null;
+      const nav = compName ? (route.getInstanceSlice(compName) || {}).nav : null;
       const entry = nav && ('cursor' in nav ? nav : nav[focus]);
       const had = !!(entry && entry.multiSel && entry.multiSel.size > 0);
       if (model.modes.listSelectMode) {
@@ -712,7 +712,7 @@ function update(model, msg) {
     case 'menu_open':
       return [{
         ..._withModes(model, { menuOpen: true }),
-        modal: { ...model.modal, menu: { items: menu.buildItems(route.getSlice('layout')), idx: 0 } },
+        modal: { ...model.modal, menu: { items: menu.buildItems(route.getInstanceSlice('layout')), idx: 0 } },
       }, []];
     case 'menu_close':
       if (!model.modes.menuOpen) return [model, []];

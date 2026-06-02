@@ -23,7 +23,7 @@ const {
   hub, esc, theme, renderPanel,
   getItems: apiGetItems,
   scheduleRender,
-  getComponentSlice, getFocus, instanceKind,
+  getInstanceSlice, getFocus, instanceKind,
 } = require('../api');
 const { rasterize } = require('./stats-graph');
 

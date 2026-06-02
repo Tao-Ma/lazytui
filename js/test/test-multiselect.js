@@ -11,7 +11,7 @@ const { toggleMultiSel, isMultiSel, clearMultiSel, multiSelCount,
 const api = require('../panel/api');
 const { describe, it, assert, eq, report } = require('./test-runner');
 const { getModel } = require('../app/runtime');
-const { getComponentSlice } = require('../panel/api');
+const { getInstanceSlice } = require('../panel/api');
 const mnav = require('../leaves/nav');
 
 // Phase 4a — multi-select state lives on each Navigator Component's
@@ -78,7 +78,7 @@ describe('[6] resetGroupContext drops only containers + actions', () => {
     eq(multiSelCount('containers'), 1, 'containers has selection');
     eq(multiSelCount('actions'), 1, 'actions has selection');
     eq(multiSelCount('files'), 1, 'files has selection');
-    getComponentSlice('groups').list = [{ name: 'dev9', containers: [] }];
+    getInstanceSlice('groups').list = [{ name: 'dev9', containers: [] }];
     setSel('groups', 0);
     getModel().config = { groups: { dev9: { name: 'dev9' } } };
     resetGroupContext();

@@ -4,7 +4,7 @@
  * Replaces the prior test-spawn-bare.js, which pinned the
  * suspend/spawnSync/resume bare-spawn dance — that path was deleted
  * in favor of an in-process node-pty session living in an ephemeral
- * detail-panel tab with `getComponentSlice('layout').viewMode = 'full'` for auto-zoom.
+ * detail-panel tab with `getInstanceSlice('layout').viewMode = 'full'` for auto-zoom.
  *
  * This file pins:
  *   1. Outside tmux, runAction(spawn) creates an ephemeral tab and
@@ -35,17 +35,17 @@ history.start = (key, cmd, opts) => { historyStarts.push({ key, cmd, opts }); };
 
 // --- Minimal state for addEphemeralTab + activeTerminalId ---
 // Require test-runner first so its module-load side effects register the
-// core Components (detail, groups). Without that, getComponentSlice('detail')
+// core Components (detail, groups). Without that, getInstanceSlice('detail')
 // returns undefined and the slice writes below fail.
 require('./test-runner');
 const runtime = require('../app/runtime');   // viewMode migrated to the TEA root model (v0.5 spike)
 const { getModel } = runtime;
-const {getComponentSlice, getFocus } = require('../panel/api');
+const {getInstanceSlice, getFocus } = require('../panel/api');
 getModel().projectDir = '/tmp/spawn-test-cwd';
 getModel().currentGroup = 'g1';
 getModel().config = { groups: { g1: { actions: {}, terminals: {} } } };
-getComponentSlice('detail').ephemeralTerminals = {};
-getComponentSlice('layout').viewMode = 'normal';
+getInstanceSlice('detail').ephemeralTerminals = {};
+getInstanceSlice('layout').viewMode = 'normal';
 
 const { runAction } = require('../dispatch/action-runner');
 
@@ -71,10 +71,10 @@ const { describe, it, assert, eq, report } = require('./test-runner');
 
 
 function resetState() {
-  getComponentSlice('detail').ephemeralTerminals = {};
-  getComponentSlice('layout').viewMode = 'normal';
-  getComponentSlice('detail').tab = 0;
-  getComponentSlice("layout").focus = null;
+  getInstanceSlice('detail').ephemeralTerminals = {};
+  getInstanceSlice('layout').viewMode = 'normal';
+  getInstanceSlice('detail').tab = 0;
+  getInstanceSlice("layout").focus = null;
   getModel().modes.terminalMode = false;
   spawnCalls.length = 0;
   historyStarts.length = 0;
@@ -92,13 +92,13 @@ describe('[1] spawn outside tmux → embedded PTY tab + viewMode=full', () => {
     eq(spawnCalls.length, 0, 'async spawn unused outside tmux');
   });
   it('creates exactly one ephemeral terminal tab', () => {
-    const keys = Object.keys(getComponentSlice('detail').ephemeralTerminals.g1 || {});
+    const keys = Object.keys(getInstanceSlice('detail').ephemeralTerminals.g1 || {});
     eq(keys.length, 1, `one new ephemeral tab (got ${JSON.stringify(keys)})`);
     assert(keys[0].startsWith('spawn-a:psql-'),
       `tab key prefixed with spawn-<actionKey>- (got ${keys[0]})`);
   });
   it('sets layout slice viewMode = "full" for auto-zoom', () => {
-    eq(getComponentSlice('layout').viewMode, 'full', 'viewMode flipped to full');
+    eq(getInstanceSlice('layout').viewMode, 'full', 'viewMode flipped to full');
   });
   it('focuses the detail panel (set by addEphemeralTab)', () => {
     eq(getFocus(), 'detail', 'focus moved to detail');
@@ -124,11 +124,11 @@ describe('[2] spawn inside tmux → tmux new-window path (opt-in tier)', () => {
     eq(spawnCalls[0][1][0], 'new-window', 'subcommand is new-window');
   });
   it('does NOT create an ephemeral tab (tmux owns the window)', () => {
-    const eph = getComponentSlice('detail').ephemeralTerminals.g1 || {};
+    const eph = getInstanceSlice('detail').ephemeralTerminals.g1 || {};
     eq(Object.keys(eph).length, 0, 'no ephemeral tab on tmux path');
   });
   it('does NOT flip viewMode (no auto-zoom in tmux)', () => {
-    eq(getComponentSlice('layout').viewMode, 'normal', 'viewMode unchanged on tmux path');
+    eq(getInstanceSlice('layout').viewMode, 'normal', 'viewMode unchanged on tmux path');
   });
   it('history records detached:true (sibling tmux window)', () => {
     const last = historyStarts[historyStarts.length - 1];
@@ -139,12 +139,12 @@ describe('[2] spawn inside tmux → tmux new-window path (opt-in tier)', () => {
 describe('[3] _onSessionExit: clean exit (0) on the active tab', () => {
   resetState();
   runAction('a:less', { type: 'spawn', script: 'less /etc/hosts' }, []);
-  const ephKey = Object.keys(getComponentSlice('detail').ephemeralTerminals.g1)[0];
+  const ephKey = Object.keys(getInstanceSlice('detail').ephemeralTerminals.g1)[0];
   const sessionId = `g1_${ephKey}`;
 
   it('precondition — pre-exit: viewMode=full, tab exists', () => {
-    eq(getComponentSlice('layout').viewMode, 'full', 'pre: viewMode=full');
-    assert(getComponentSlice('detail').ephemeralTerminals.g1[ephKey] != null, 'pre: tab exists');
+    eq(getInstanceSlice('layout').viewMode, 'full', 'pre: viewMode=full');
+    assert(getInstanceSlice('detail').ephemeralTerminals.g1[ephKey] != null, 'pre: tab exists');
   });
 
   // forceFullRepaintCalls captures the spawn-time repaint above;
@@ -153,10 +153,10 @@ describe('[3] _onSessionExit: clean exit (0) on the active tab', () => {
   _onSessionExit(sessionId, 0);
 
   it('drops viewMode to "normal" (user lands in normal layout)', () => {
-    eq(getComponentSlice('layout').viewMode, 'normal', 'viewMode reset on clean exit');
+    eq(getInstanceSlice('layout').viewMode, 'normal', 'viewMode reset on clean exit');
   });
   it('auto-removes the ephemeral tab (clean exit only)', () => {
-    eq(getComponentSlice('detail').ephemeralTerminals.g1, undefined,
+    eq(getInstanceSlice('detail').ephemeralTerminals.g1, undefined,
       'tab gone (group entry also collapses when last tab removed)');
   });
   it('calls forceFullRepaint (active session — PTY painted cells need reclaim)', () => {
@@ -168,17 +168,17 @@ describe('[3] _onSessionExit: clean exit (0) on the active tab', () => {
 describe('[4] _onSessionExit: non-zero exit on the active tab', () => {
   resetState();
   runAction('a:badcmd', { type: 'spawn', script: 'false' }, []);
-  const ephKey = Object.keys(getComponentSlice('detail').ephemeralTerminals.g1)[0];
+  const ephKey = Object.keys(getInstanceSlice('detail').ephemeralTerminals.g1)[0];
   const sessionId = `g1_${ephKey}`;
 
   forceFullRepaintCalls = 0;
   _onSessionExit(sessionId, 1);
 
   it('drops viewMode (rest of TUI reachable for navigation)', () => {
-    eq(getComponentSlice('layout').viewMode, 'normal', 'viewMode reset even on non-zero exit');
+    eq(getInstanceSlice('layout').viewMode, 'normal', 'viewMode reset even on non-zero exit');
   });
   it('keeps the ephemeral tab (user can read error output)', () => {
-    assert(getComponentSlice('detail').ephemeralTerminals.g1 && getComponentSlice('detail').ephemeralTerminals.g1[ephKey] != null,
+    assert(getInstanceSlice('detail').ephemeralTerminals.g1 && getInstanceSlice('detail').ephemeralTerminals.g1[ephKey] != null,
       'tab still present after non-zero exit');
   });
   it('calls forceFullRepaint — fixes the Ctrl+\\ stuck-frame bug', () => {
@@ -190,21 +190,21 @@ describe('[4] _onSessionExit: non-zero exit on the active tab', () => {
 describe('[5] _onSessionExit: clean exit on a NON-active session', () => {
   resetState();
   runAction('a:vim', { type: 'spawn', script: 'vim' }, []);
-  const activeEphKey = Object.keys(getComponentSlice('detail').ephemeralTerminals.g1)[0];
-  getComponentSlice('detail').ephemeralTerminals.g1.orphan = { cmd: 'true', label: 'orphan' };
+  const activeEphKey = Object.keys(getInstanceSlice('detail').ephemeralTerminals.g1)[0];
+  getInstanceSlice('detail').ephemeralTerminals.g1.orphan = { cmd: 'true', label: 'orphan' };
 
   forceFullRepaintCalls = 0;
   _onSessionExit('g1_orphan', 0);
 
   it('does NOT touch viewMode (orphan was not the focused tab)', () => {
-    eq(getComponentSlice('layout').viewMode, 'full', 'viewMode untouched for non-active exit');
+    eq(getInstanceSlice('layout').viewMode, 'full', 'viewMode untouched for non-active exit');
   });
   it('still cleans up the orphan tab (handleSessionCleanExit fires)', () => {
-    assert(!getComponentSlice('detail').ephemeralTerminals.g1 || getComponentSlice('detail').ephemeralTerminals.g1.orphan === undefined,
+    assert(!getInstanceSlice('detail').ephemeralTerminals.g1 || getInstanceSlice('detail').ephemeralTerminals.g1.orphan === undefined,
       'orphan removed');
   });
   it('leaves the active tab intact', () => {
-    assert(getComponentSlice('detail').ephemeralTerminals.g1 && getComponentSlice('detail').ephemeralTerminals.g1[activeEphKey] != null,
+    assert(getInstanceSlice('detail').ephemeralTerminals.g1 && getInstanceSlice('detail').ephemeralTerminals.g1[activeEphKey] != null,
       'active tab still there');
   });
   it('does NOT forceFullRepaint (orphan PTY never painted to current view)', () => {
@@ -222,7 +222,7 @@ describe('[6] tab-key uses monotonic counter — no ms-collision', () => {
   runAction('a:dup', { type: 'spawn', script: 'sleep 1' }, []);
 
   it('two spawns of the same action produce two distinct tab keys', () => {
-    const keys = Object.keys(getComponentSlice('detail').ephemeralTerminals.g1 || {});
+    const keys = Object.keys(getInstanceSlice('detail').ephemeralTerminals.g1 || {});
     eq(keys.length, 2,
       `two tabs created (got ${keys.length}: ${JSON.stringify(keys)})`);
   });
@@ -239,7 +239,7 @@ describe('[7] _handleTerminalModeData: Ctrl+\\ from zoom drops full+terminalMode
 
   it('returns true (chunk consumed)', () => assert(handled === true, 'returned true'));
   it('flips getModel().modes.terminalMode = false', () => eq(getModel().modes.terminalMode, false, 'terminalMode off'));
-  it('drops layout slice viewMode = "normal"', () => eq(getComponentSlice('layout').viewMode, 'normal', 'viewMode reset'));
+  it('drops layout slice viewMode = "normal"', () => eq(getInstanceSlice('layout').viewMode, 'normal', 'viewMode reset'));
   it('calls forceFullRepaint', () => {
     assert(forceFullRepaintCalls >= 1, 'forceFullRepaint fired so chrome reclaims');
   });
@@ -251,13 +251,13 @@ describe('[7] _handleTerminalModeData: Ctrl+\\ from zoom drops full+terminalMode
 
 describe('[8] _handleTerminalModeData: Ctrl+\\ without zoom only flips terminalMode', () => {
   resetState();
-  getComponentSlice('layout').viewMode = 'normal';
+  getInstanceSlice('layout').viewMode = 'normal';
   getModel().modes.terminalMode = true;
 
   _handleTerminalModeData('\x1c');
 
   it('flips terminalMode = false', () => eq(getModel().modes.terminalMode, false));
-  it('leaves viewMode = "normal"', () => eq(getComponentSlice('layout').viewMode, 'normal',
+  it('leaves viewMode = "normal"', () => eq(getInstanceSlice('layout').viewMode, 'normal',
     'no spurious viewMode mutation when not in zoom'));
   it('does NOT call forceFullRepaint (no chrome was hidden)', () => {
     eq(forceFullRepaintCalls, 0, 'no need to force repaint when chrome was already visible');
@@ -276,7 +276,7 @@ describe('[9] _handleTerminalModeData: dead session also exits + drops zoom', ()
   it('flips terminalMode = false (no point staying — session is gone)', () => {
     eq(getModel().modes.terminalMode, false, 'terminalMode off on dead session');
   });
-  it('drops viewMode = "normal"', () => eq(getComponentSlice('layout').viewMode, 'normal',
+  it('drops viewMode = "normal"', () => eq(getInstanceSlice('layout').viewMode, 'normal',
     'zoom dropped so user is reachable'));
   it('calls forceFullRepaint', () => {
     assert(forceFullRepaintCalls >= 1, 'forceFullRepaint fired');
@@ -300,7 +300,7 @@ describe('[10] _handleTerminalModeData: live session forwards bytes to PTY', () 
     eq(getModel().modes.terminalMode, true, 'terminalMode stays on');
   });
   it('does NOT change viewMode', () => {
-    eq(getComponentSlice('layout').viewMode, 'full', 'viewMode unchanged on data-forward path');
+    eq(getInstanceSlice('layout').viewMode, 'full', 'viewMode unchanged on data-forward path');
   });
   it('does NOT force a repaint (data-forward doesn\'t need it)', () => {
     eq(forceFullRepaintCalls, beforeForce, 'no extra repaint on each keystroke');
