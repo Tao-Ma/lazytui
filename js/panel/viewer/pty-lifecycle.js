@@ -29,14 +29,19 @@ const api = require('../api');
 const { scheduleRender } = require('../../render/render-queue');
 
 function handleExit(id, exitCode) {
+  // v0.6.1 Phase 4 — resolve which viewer-kind instance hosts this
+  // PTY session before reading per-pane state. For Phase 4 singleton
+  // the answer is always 'detail'; Phase 5+ may have multiple viewer
+  // panes each with their own ephemerals.
+  const paneId = tabs.paneForSessionId(id) || 'detail';
   let anyChange = false;
-  const wasActive = tabs.activeTerminalId() === id;
+  const wasActive = tabs.activeTerminalId(paneId) === id;
   const layoutSlice = api.getComponentSlice('layout');
   if (layoutSlice && layoutSlice.viewMode === 'full' && wasActive) {
     api.dispatchMsg(api.wrap('layout', { type: 'view_set', mode: 'normal' }));
     anyChange = true;
   }
-  if (exitCode === 0 && tabs.handleSessionCleanExit(id)) {
+  if (exitCode === 0 && tabs.handleSessionCleanExit(id, paneId)) {
     anyChange = true;
   }
   if (anyChange) {

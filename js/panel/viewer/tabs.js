@@ -66,16 +66,36 @@ function activeContentTab() {
   return pt.activeContentTabIn(_detailSlice(), getModel(), getModel().currentGroup);
 }
 
-function activeTerminalId() {
-  return pt.activeTerminalIdIn(_detailSlice(), getModel(), getModel().currentGroup);
+function activeTerminalId(paneId = 'detail') {
+  const slice = require('../api').getComponentSlice(paneId)
+              || { contentTabs: {}, ephemeralTerminals: {}, tab: 0 };
+  return pt.activeTerminalIdIn(slice, getModel(), getModel().currentGroup);
 }
 
 function activeTerminalConfig() {
   return pt.activeTerminalConfigIn(_detailSlice(), getModel(), getModel().currentGroup);
 }
 
-function findEphemeralByid(id) {
-  return pt.findEphemeralByIdIn(_detailSlice(), id);
+function findEphemeralByid(id, paneId = 'detail') {
+  const slice = require('../api').getComponentSlice(paneId)
+              || { ephemeralTerminals: {} };
+  return pt.findEphemeralByIdIn(slice, id);
+}
+
+/** v0.6.1 Phase 4 — locate the viewer-kind instance whose ephemeral
+ *  terminal set owns session id `${group}_${key}`. Returns the
+ *  instance id (== paneId for singleton-detail) or null when no
+ *  owner. Scans every viewer-kind instance via the route registry —
+ *  works for Phase 4 singletons and Phase 5+ multi-instance alike. */
+function paneForSessionId(id) {
+  const route = require('../../leaves/route');
+  let found = null;
+  route.eachInstance(inst => {
+    if (found) return;
+    if (inst.kind !== 'detail') return;          // only viewers host PTY tabs
+    if (pt.findEphemeralByIdIn(inst.slice, id)) found = inst.id;
+  });
+  return found;
 }
 
 // --- Mutation surface (all routed through update — single-writer) ---------
@@ -116,9 +136,13 @@ function removeContentTab(groupName, key) {
 /** Hook called by terminal.ensureSession's `onExit` when a PTY
  *  terminates with exit code 0. Cleans up the matching ephemeral tab
  *  if any (YAML terminals stay put — only runtime tabs auto-disappear).
- *  Returns true if a cleanup happened (caller can scheduleRender). */
-function handleSessionCleanExit(id) {
-  const found = findEphemeralByid(id);
+ *  Returns true if a cleanup happened (caller can scheduleRender).
+ *
+ *  v0.6.1 Phase 4 — `paneId` threads the owning instance so multi-
+ *  detail (future) routes the remove Msg to the right slice. For
+ *  Phase 4 singleton defaults to 'detail'. */
+function handleSessionCleanExit(id, paneId = 'detail') {
+  const found = findEphemeralByid(id, paneId);
   if (!found) return false;
   removeEphemeralTab(found.group, found.key);
   return true;
@@ -128,7 +152,7 @@ module.exports = {
   getGroupTerminals, getGroupContentTabs, getTabInfo,
   isTerminalTab, activeTerminalId, activeTerminalConfig,
   isContentTab, activeContentTab,
-  findEphemeralByid,
+  findEphemeralByid, paneForSessionId,
   addEphemeralTab, removeEphemeralTab,
   addContentTab, removeContentTab, updateContentTabLines,
   handleSessionCleanExit,
