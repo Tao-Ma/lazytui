@@ -454,7 +454,22 @@ function update(msg, slice) {
       const nextArrange = col === 'left'
         ? { ...arrange, leftPanels: nextPanes }
         : { ...arrange, rightPanels: nextPanes };
-      return { ...slice, arrange: nextArrange, dirty: true };
+      const next = { ...slice, arrange: nextArrange, dirty: true };
+      // Focus follow — when the switched pane was focused, retarget
+      // focus to the new active tab id. Otherwise render's
+      // `focus === p.type` highlight (`render/layout.js:369`) misses
+      // the new type and the user's freshly-switched pane drops its
+      // focus highlight. The old pane.id (= pane.activeTabId before
+      // switch) is the canonical focus value most producers write;
+      // pane.paneId is the alternative (pane-tabs.js producers).
+      // Bouncing through focus_set keeps halfLeftPanel + lastViewerTab
+      // + show_selected_info in sync (single source for focus logic).
+      const wasFocused = slice.focus === pane.id || slice.focus === pane.paneId;
+      if (wasFocused) {
+        return [next, [{ type: 'dispatch_msg',
+          msg: route.wrap('layout', { type: 'focus_set', focus: tabPoolId }) }]];
+      }
+      return next;
     }
     case 'pool_hide': {
       const arrange = slice.arrange;

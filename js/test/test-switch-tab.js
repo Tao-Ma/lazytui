@@ -109,6 +109,48 @@ describe('[set_active_tab] flips active tab + rewrites legacy fields', () => {
   });
 });
 
+describe('[set_active_tab] focus follow', () => {
+  it('emits focus_set when the switched pane is focused (by pane.id)', () => {
+    const slice = { ...buildMultiTabSlice(), focus: 'docker' };  // focus on pane's active tab
+    const result = layout.update({
+      type: 'set_active_tab', paneId: 'pane-docker', tabPoolId: 'logs',
+    }, slice);
+    assert(Array.isArray(result), 'returns [slice, cmds] (cmds present)');
+    const [next, cmds] = result;
+    eq(next.arrange.leftPanels[0].activeTabId, 'logs', 'pane switched');
+    assert(cmds.length >= 1, 'at least one cmd emitted');
+    const focusCmd = cmds.find(c =>
+      c.type === 'dispatch_msg' && c.msg && c.msg.kind === 'layout' &&
+      c.msg.msg && c.msg.msg.type === 'focus_set'
+    );
+    assert(focusCmd, 'focus_set cmd emitted');
+    eq(focusCmd.msg.msg.focus, 'logs', 'focus retargeted to new active tab id');
+  });
+  it('emits focus_set when focused by paneId (pane-tabs producer path)', () => {
+    const slice = { ...buildMultiTabSlice(), focus: 'pane-docker' };
+    const result = layout.update({
+      type: 'set_active_tab', paneId: 'pane-docker', tabPoolId: 'logs',
+    }, slice);
+    assert(Array.isArray(result), 'cmds present');
+    const cmds = result[1];
+    const focusCmd = cmds.find(c =>
+      c.type === 'dispatch_msg' && c.msg && c.msg.msg && c.msg.msg.type === 'focus_set'
+    );
+    assert(focusCmd, 'focus_set cmd emitted for paneId focus');
+    eq(focusCmd.msg.msg.focus, 'logs', 'focus retargeted to new active tab id');
+  });
+  it('does NOT emit focus_set when another pane is focused', () => {
+    const slice = { ...buildMultiTabSlice(), focus: 'groups' };
+    const result = layout.update({
+      type: 'set_active_tab', paneId: 'pane-docker', tabPoolId: 'logs',
+    }, slice);
+    // Returned as bare slice (no cmds) — switching a non-focused pane
+    // doesn't disturb the user's current focus.
+    assert(!Array.isArray(result), 'returns bare slice (no focus follow needed)');
+    eq(result.arrange.leftPanels[0].activeTabId, 'logs', 'switch still applied');
+  });
+});
+
 describe('[set_active_tab] refusal paths', () => {
   it('unknown pane → no-op', () => {
     const slice = buildMultiTabSlice();
