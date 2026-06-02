@@ -1,5 +1,5 @@
 /**
- * Layout YAML serializer + write-back.
+ * Layout YAML serializer + write-back (v0.6.1 shape).
  *
  * Pure-function module — no module state, no side effects from
  * `serializeLayout`. `writeLayoutToFile` is the only thing that
@@ -8,67 +8,34 @@
  * dragging design-mode state along.
  *
  * The hand-rolled YAML emitter (no third-party lib) is deliberate.
- * The output goes back through the Python parser at load time; the
+ * The output goes back through the YAML parser at load time; the
  * serializer just needs to produce valid YAML 1.2 that round-trips
  * losslessly for the keys we care about. JSON is a valid YAML 1.2
  * flow-style subset, so anything we can't trivially emit as block
  * style is dumped as JSON and the parser accepts it unchanged.
  *
- * Design Mode used to drop every panel key except `type`, `title`,
- * and (for the detail panel) `height` — a silent data-loss footgun
- * on any config with plugin panel options (`topic`, `select_from`,
- * `decorators`, `refresh_interval_ms`, etc.). This serializer
- * preserves every key on the runtime panel object except:
- *   - hotkey   — derived per-load by state.js from position
- *   - column   — derived per-load from which array the panel is in
- *   - config   — already spread onto the panel object at parse time
- *                (state.js: `...(p.config || {})`), so re-emitting
- *                would double-nest
+ * v0.6.1 layout file shape: the top-level `panels:` block is the pool
+ * (id → {type, title, ...config}); each layout cell is either
+ *   - a bare pool-id string (single-tab pane shorthand), or
+ *   - a `{ tabs: [pool-id, ...], activeTab?, height?, heightPct?,
+ *     collapsed? }` mapping (multi-tab pane or placement overrides).
+ * The serializer always writes the pool block — the v0.6 legacy inline
+ * form is retired (parser rejects it; CHANGELOG calls it out).
  *
- * For the detail panel, `height` is synthesized from the layout-level
- * `detailHeightPct` rather than the panel object (which doesn't carry
- * it).
+ * Hotkeys are derived per-load by `parser/index.js#assignHotkeys` from
+ * cell position + per-side hotkey pools, so they're never emitted on
+ * cells (matches the v0.6 contract — round-trip is by position, not by
+ * explicit key).
  */
 'use strict';
 
 const fs = require('fs');
-const mpool = require('../leaves/pool');
 
-// Runtime-only keys derived from layout position / plugin spread;
-// never written back to YAML. `id` is here so legacy inline cells
-// don't leak it — in inline form the parser auto-derives id from
-// type at load, so emitting it would (a) re-parse as a non-synth
-// pool entry, breaking idempotency, and (b) is redundant noise.
-// Explicit ids belong in the v0.6 `panels:` block, not on cells.
-const RUNTIME_KEYS = new Set(['hotkey', 'column', 'config', 'id']);
-
-// Keys that get emitted on their own line at the top of each panel
-// block for diff-stable readability.
-const PRIORITY_KEYS = ['type', 'title'];
-
-// v0.6 pool entry keys. The pool serializer treats `type` + `title` as
-// priority; `id` is the mapping key (not a body key); `_synthesized`
-// is parser bookkeeping; placement-only keys never appear here.
+// Bookkeeping fields on pool entries that never round-trip.
 const POOL_RUNTIME_KEYS = new Set(['id', '_synthesized']);
 
-/**
- * Decide whether the v0.6 `panels:` block needs to be written. True iff
- * the pool has at least one entry the legacy inline form can't express:
- *   - a user-declared (non-synthesized) entry → must preserve
- *   - a hidden entry (in pool but not placed) → must write to survive reload
- * Otherwise (every entry is synthesized AND placed) the legacy form is
- * sufficient and we keep the file looking like v0.5.
- */
-function shouldWritePool(arrange) {
-  if (!arrange || !arrange.pool) return false;
-  const placed = new Set(mpool.placedIds(arrange));
-  for (const [id, entry] of Object.entries(arrange.pool)) {
-    if (entry && entry._synthesized === false) return true;
-    if (entry && !('_synthesized' in entry))   return true;   // defensive
-    if (!placed.has(id)) return true;
-  }
-  return false;
-}
+// Keys that lead each pool-entry block for diff-stable readability.
+const PRIORITY_KEYS = ['type', 'title'];
 
 /**
  * Emit a single YAML scalar/list value. Bare-identifier strings stay
@@ -83,7 +50,7 @@ function yamlValue(v) {
   if (typeof v === 'string') {
     // Identifier-shaped OR percentage scalar (`60%`, `7%`) — both YAML-
     // safe as plain scalars. The percent case keeps `height: 60%` from
-    // gaining noisy quotes (v0.5 emitted `height` raw; preserve that).
+    // gaining noisy quotes.
     const bareSafe = /^[A-Za-z_][\w./-]*$/.test(v) || /^\d+%$/.test(v);
     const reserved = /^(true|false|null|yes|no|on|off)$/i.test(v);
     if (bareSafe && !reserved) return v;
@@ -96,47 +63,10 @@ function yamlValue(v) {
 }
 
 /**
- * Serialize one panel to YAML lines. Caller controls indentation
- * (passes `indent` = column where the keys live; the leading `-`
- * sits at `indent - 2`). Returns an array of lines.
- *
- * `opts.detailHeightPct` is required when emitting a detail panel —
- * it synthesizes `height: N%` since the panel object doesn't carry
- * height directly.
- */
-function serializePanelYaml(panel, indent, opts = {}) {
-  const lines = [];
-  const pad = ' '.repeat(indent);
-  const firstPad = pad.slice(0, -2) + '- ';
-  const written = new Set(RUNTIME_KEYS);
-
-  let first = true;
-  const emit = (k, v) => {
-    lines.push(`${first ? firstPad : pad}${k}: ${v}`);
-    first = false;
-    written.add(k);
-  };
-
-  for (const k of PRIORITY_KEYS) {
-    if (panel[k] !== undefined) emit(k, yamlValue(panel[k]));
-  }
-  // Detail panel: synthesize height from layout-level detailHeightPct.
-  if (panel.type === 'detail' && opts.detailHeightPct !== undefined) {
-    emit('height', `${opts.detailHeightPct}%`);
-    written.add('height');
-  }
-  // Every other key on the panel, in insertion order.
-  for (const k of Object.keys(panel)) {
-    if (written.has(k)) continue;
-    emit(k, yamlValue(panel[k]));
-  }
-  return lines;
-}
-
-/**
  * Serialize one v0.6 pool entry as a YAML mapping under the top-level
  * `panels:` block. Returns an array of lines. Skips bookkeeping keys
- * (`id`, `_synthesized`) and placement-only fields.
+ * (`id`, `_synthesized`); placement-only fields don't live here so
+ * there's nothing to filter for them at the pool layer.
  */
 function serializePoolEntryYaml(entry, indent) {
   const lines = [];
@@ -154,14 +84,15 @@ function serializePoolEntryYaml(entry, indent) {
 }
 
 /**
- * Serialize the top-level `panels:` block. Returns the string OR null
- * when the pool block isn't needed (legacy inline form covers everything).
- * Entries emitted in pool insertion order so the file diff stays stable.
+ * Serialize the top-level `panels:` block. v0.6.1 always emits this
+ * block — there's no legacy inline-form fallback to skip to. Entries
+ * emit in pool insertion order so the file diff stays stable across
+ * parse → serialize round-trips.
  */
 function serializePanelsBlock(arrange) {
-  if (!shouldWritePool(arrange)) return null;
   const out = ['panels:'];
-  for (const [id, entry] of Object.entries(arrange.pool)) {
+  const pool = (arrange && arrange.pool) || {};
+  for (const [id, entry] of Object.entries(pool)) {
     out.push(`  ${id}:`);
     out.push(...serializePoolEntryYaml(entry, 4));
   }
@@ -169,73 +100,95 @@ function serializePanelsBlock(arrange) {
 }
 
 /**
- * Serialize a layout CELL when the pool is being written separately.
- * Cells become string id-refs (no overrides) OR a mapping when
- * placement-level keys exist (heightPct for any panel; height for
- * detail). Caller picks `indent` for the bullet column.
+ * Serialize one layout CELL — pane shape, pool-ref form.
+ *
+ * Bare-string single-tab shorthand when the pane has exactly one tab
+ * and no placement overrides; mapping form otherwise. `activeTab` is
+ * omitted when it equals `tabs[0]` (the parser's default). Detail
+ * height piggybacks on the cell whose active tab kind is `detail` —
+ * `arrange.detailHeightPct` is the source of truth.
+ *
+ * Hotkey is intentionally not emitted — the parser re-derives it from
+ * cell position + per-side pool at load time.
+ *
+ * Caller picks `indent` for the bullet column.
  */
-function serializeLayoutCellPoolForm(panel, indent, opts = {}) {
+function serializeLayoutCell(pane, indent, opts = {}) {
   const pad = ' '.repeat(indent);
   const firstPad = pad.slice(0, -2) + '- ';
-  const placement = {};
-  if (panel.heightPct !== undefined) placement.heightPct = panel.heightPct;
-  if (panel.collapsed === true)      placement.collapsed = true;
-  if (panel.type === 'detail' && opts.detailHeightPct !== undefined) {
-    placement.height = `${opts.detailHeightPct}%`;
+
+  // Tab pool-ids. Wide-intermediate-form panes carry `tabs: [{id, poolId}]`;
+  // fall back to the legacy single-tab pane id for fixtures that bypass
+  // wrapAsPane.
+  let tabIds = (pane.tabs || []).map(t => t.poolId);
+  if (tabIds.length === 0 && pane.id) tabIds = [pane.id];
+  const activeTabId = pane.activeTabId || tabIds[0];
+
+  // Placement overrides — pane-level fields lifted onto the cell.
+  const overrides = {};
+  if (pane.heightPct !== undefined) overrides.heightPct = pane.heightPct;
+  if (pane.collapsed === true)      overrides.collapsed = true;
+  // Detail height: source from arrange.detailHeightPct, attach to the
+  // pane whose active tab kind is detail. Mirrors the parser, which
+  // only honors `height:` when the active tab is detail.
+  if (pane.type === 'detail' && opts.detailHeightPct !== undefined) {
+    overrides.height = `${opts.detailHeightPct}%`;
   }
-  const placementKeys = Object.keys(placement);
-  if (placementKeys.length === 0) {
-    return [`${firstPad}${panel.id}`];
+
+  const isMulti = tabIds.length > 1;
+  const emitActive = isMulti && activeTabId !== tabIds[0];
+  const overrideKeys = Object.keys(overrides);
+  const hasOverrides = overrideKeys.length > 0;
+
+  // Bare-string shorthand: single-tab pane, no overrides.
+  if (!isMulti && !hasOverrides) {
+    return [`${firstPad}${tabIds[0]}`];
   }
-  // Mapping form: { id: foo, ...overrides }
-  const lines = [`${firstPad}id: ${yamlValue(panel.id)}`];
-  for (const k of placementKeys) lines.push(`${pad}${k}: ${yamlValue(placement[k])}`);
+
+  // Mapping form. `tabs:` always present — it's the disambiguator from
+  // the bare-string shorthand.
+  const tabsList = '[' + tabIds.map(yamlValue).join(', ') + ']';
+  const lines = [`${firstPad}tabs: ${tabsList}`];
+  if (emitActive) lines.push(`${pad}activeTab: ${yamlValue(activeTabId)}`);
+  for (const k of overrideKeys) {
+    lines.push(`${pad}${k}: ${yamlValue(overrides[k])}`);
+  }
   return lines;
 }
 
 /**
- * Serialize the full `layout:` block — legacy inline form (every cell
- * is `{ type, title, ...config }`) when the pool isn't being written,
- * v0.6 id-ref form (string id or `{id, ...placement}`) when it is.
- * Pure function — takes a layout struct, returns a string.
+ * Serialize the full `layout:` block — pool-ref cells throughout
+ * (string id or `{ tabs: [...], ...overrides }`). Pure function —
+ * takes a layout struct, returns a string.
  */
 function serializeLayout(layout) {
-  const usePool = shouldWritePool(layout);
   const out = ['layout:'];
   out.push('  left:');
   out.push(`    width: ${layout.leftWidth}`);
   out.push('    panels:');
   for (const p of layout.leftPanels) {
-    out.push(...(usePool
-      ? serializeLayoutCellPoolForm(p, 8, { detailHeightPct: layout.detailHeightPct })
-      : serializePanelYaml(p, 8, { detailHeightPct: layout.detailHeightPct })));
+    out.push(...serializeLayoutCell(p, 8, { detailHeightPct: layout.detailHeightPct }));
   }
   out.push('  right:');
   out.push('    panels:');
   for (const p of layout.rightPanels) {
-    out.push(...(usePool
-      ? serializeLayoutCellPoolForm(p, 8, { detailHeightPct: layout.detailHeightPct })
-      : serializePanelYaml(p, 8, { detailHeightPct: layout.detailHeightPct })));
+    out.push(...serializeLayoutCell(p, 8, { detailHeightPct: layout.detailHeightPct }));
   }
   return out.join('\n');
 }
 
 /**
  * Write the current layout back to the YAML config file, replacing
- * just the `layout:` block (preserves comments and other top-level
- * blocks). Returns `{ error }` — error is null on success, an Error
- * on read/write failure. Caller decides what to do with errors
- * (typically: surface in the detail panel, leave dirty flag set).
+ * just the `panels:` and `layout:` blocks (preserves comments and
+ * other top-level blocks). Returns `{ error }` — error is null on
+ * success, an Error on read/write failure. Caller decides what to do
+ * with errors (typically: surface in the detail panel, leave dirty
+ * flag set).
  *
- * Detection of the existing `layout:` block uses the same line-based
- * approach as the prior design.js implementation: find `^layout:`,
- * find the next top-level key, splice. Works on flat YAML; doesn't
- * try to be a structural editor.
+ * Detection of the existing blocks uses a line-based approach: find
+ * `^panels:` / `^layout:`, find the next top-level key, splice. Works
+ * on flat YAML; doesn't try to be a structural editor.
  */
-/** Find the [start, end) line range for a top-level YAML block whose
- *  header line matches `^<name>:` (e.g. "layout:", "panels:"). End is
- *  the line of the next top-level key, with trailing blank lines
- *  trimmed off the range. Returns null when the block isn't found. */
 function _findBlockRange(lines, name) {
   const headerRe = new RegExp(`^${name}:`);
   let start = -1;
@@ -252,33 +205,25 @@ function _findBlockRange(lines, name) {
 
 function writeLayoutToFile(arrange, configPath) {
   const newLayoutYaml = serializeLayout(arrange);
-  const newPoolYaml = serializePanelsBlock(arrange);  // null when not needed
+  const newPoolYaml = serializePanelsBlock(arrange);
   try {
     const content = fs.readFileSync(configPath, 'utf8');
     let lines = content.split('\n');
 
-    // 1) Splice/remove the `panels:` block (the v0.6 pool).
+    // 1) Splice/insert the `panels:` block (the v0.6.1 pool).
     const poolRange = _findBlockRange(lines, 'panels');
-    if (newPoolYaml !== null) {
-      if (poolRange) {
-        lines.splice(poolRange[0], poolRange[1] - poolRange[0], newPoolYaml);
-      } else {
-        // Insert before `layout:` if present, else before `groups:`,
-        // else append. Keeps file order: panels → layout → groups.
-        const layoutIdx = lines.findIndex(l => /^layout:/.test(l));
-        const groupsIdx = lines.findIndex(l => /^groups:/.test(l));
-        const insertAt = layoutIdx >= 0 ? layoutIdx
-                        : groupsIdx >= 0 ? groupsIdx
-                        : lines.length;
-        if (insertAt < lines.length) lines.splice(insertAt, 0, newPoolYaml, '');
-        else                          lines.push('', newPoolYaml);
-      }
-    } else if (poolRange) {
-      // Pool no longer needed (all entries placed + synthesized) — drop
-      // the block plus one trailing blank if it leaves one behind.
-      let [s, e] = poolRange;
-      if (e < lines.length && lines[e].trim() === '') e++;
-      lines.splice(s, e - s);
+    if (poolRange) {
+      lines.splice(poolRange[0], poolRange[1] - poolRange[0], newPoolYaml);
+    } else {
+      // Insert before `layout:` if present, else before `groups:`,
+      // else append. Keeps file order: panels → layout → groups.
+      const layoutIdx = lines.findIndex(l => /^layout:/.test(l));
+      const groupsIdx = lines.findIndex(l => /^groups:/.test(l));
+      const insertAt = layoutIdx >= 0 ? layoutIdx
+                      : groupsIdx >= 0 ? groupsIdx
+                      : lines.length;
+      if (insertAt < lines.length) lines.splice(insertAt, 0, newPoolYaml, '');
+      else                          lines.push('', newPoolYaml);
     }
 
     // 2) Splice/insert the `layout:` block. Re-find since line indices
@@ -304,11 +249,9 @@ function writeLayoutToFile(arrange, configPath) {
 
 module.exports = {
   serializeLayout,
-  serializePanelYaml,
+  serializeLayoutCell,
   serializePanelsBlock,
   serializePoolEntryYaml,
-  serializeLayoutCellPoolForm,
-  shouldWritePool,
   yamlValue,
   writeLayoutToFile,
 };
