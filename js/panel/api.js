@@ -439,6 +439,14 @@ function _recordError(payload) {
 function getComponent(name)              { return components[name]; }
 const { getSlice: getComponentSlice, componentForPanel: getComponentOwningPanel, getFocus } = route;
 
+// Tab-instance registry surface (v0.6.1, Phase 0). Empty until Phase 4
+// onward populates it; re-exported here so Component-facing imports stay
+// on `panel/api`. See `leaves/route.js` for the data model.
+const {
+  setInstance, getInstance, getInstanceSlice, setInstanceSlice,
+  hasInstance, disposeInstance, instanceKind, eachInstance,
+} = route;
+
 /**
  * Ask all registered Components that contribute item status (e.g. docker
  * container state). First non-null answer wins. Returns null if no
@@ -613,6 +621,11 @@ module.exports = {
   // --- Component registry / lifecycle ---
   registerComponent, registerEffect, dispatchMsg, dispatchKeyToFocused, wrap,
   getComponent, getComponentSlice, getComponentOwningPanel, getFocus,
+  // v0.6.1 Phase 0 — tab-instance registry. Empty until Phase 4 starts
+  // populating; surface lives here from Phase 0 so downstream phases
+  // can import against a stable shape.
+  setInstance, getInstance, getInstanceSlice, setInstanceSlice,
+  hasInstance, disposeInstance, instanceKind, eachInstance,
   getPanelDef, getItems, idOf, selectedOrFocused,
   refreshAll, cleanupComponents,
   getCommands, getGroupActions, statusFor,
