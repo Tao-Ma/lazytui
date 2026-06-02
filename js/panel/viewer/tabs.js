@@ -99,37 +99,60 @@ function paneForSessionId(id) {
 }
 
 // --- Mutation surface (all routed through update — single-writer) ---------
+//
+// v0.6.1 Phase 6 — each entry point resolves its destination via
+// route.resolveTarget(intent). The five mutators split across two
+// intents: ephemeral terminal mutations are 'terminal'; content-tab
+// mutations are 'viewer_tab_add' (one intent for the cohesive add /
+// update / remove triple, since they all key into the same per-pane
+// content-tab map). Phase 5 resolveTarget collapses all intents to
+// the same body — the distinction is reserved for v0.7. null target
+// (no viewer registered) drops the dispatch silently.
+
+function _viewerTarget(intent) {
+  return require('../../leaves/route').resolveTarget(intent);
+}
 
 /** Add an ephemeral terminal tab at runtime. Used by plugins to open
  *  interactive shells against an item (e.g. docker exec). If a tab
  *  with the same key exists, switches to it. */
 function addEphemeralTab(groupName, key, cmd, label) {
+  const target = _viewerTarget('terminal');
+  if (target == null) return;
   const api = require('../api');
-  api.dispatchMsg(api.wrap('detail',
+  api.dispatchMsg(api.wrap(target,
     { type: 'viewer_add_ephemeral_terminal', groupName, key, cmd, label }));
 }
 
 function removeEphemeralTab(groupName, key) {
+  const target = _viewerTarget('terminal');
+  if (target == null) return;
   const api = require('../api');
-  api.dispatchMsg(api.wrap('detail',
+  api.dispatchMsg(api.wrap(target,
     { type: 'viewer_remove_ephemeral_terminal', groupName, key }));
 }
 
 function addContentTab(groupName, key, label, lines) {
+  const target = _viewerTarget('viewer_tab_add');
+  if (target == null) return;
   const api = require('../api');
-  api.dispatchMsg(api.wrap('detail',
+  api.dispatchMsg(api.wrap(target,
     { type: 'viewer_add_content_tab', groupName, key, label, lines }));
 }
 
 function updateContentTabLines(groupName, key, lines) {
+  const target = _viewerTarget('viewer_tab_add');
+  if (target == null) return;
   const api = require('../api');
-  api.dispatchMsg(api.wrap('detail',
+  api.dispatchMsg(api.wrap(target,
     { type: 'viewer_update_content_tab_lines', groupName, key, lines }));
 }
 
 function removeContentTab(groupName, key) {
+  const target = _viewerTarget('viewer_tab_add');
+  if (target == null) return;
   const api = require('../api');
-  api.dispatchMsg(api.wrap('detail',
+  api.dispatchMsg(api.wrap(target,
     { type: 'viewer_remove_content_tab', groupName, key }));
 }
 
