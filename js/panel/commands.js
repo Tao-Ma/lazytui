@@ -96,7 +96,8 @@ const FRAMEWORK_COMMANDS = [
     name: 'restore-layout',
     desc: 'Discard runtime changes; reload panel layout from YAML',
     run: () => {
-      const { rebuildLayoutFromConfig, setViewerContent } = require('../app/state');
+      const { setViewerContent } = require('../app/state');
+      const { rebuildLayoutFromConfig } = require('../leaves/arrange');
       const m = require('../app/runtime').getModel();
       const api = require('./api');
       api.dispatchMsg(wrap('layout', {

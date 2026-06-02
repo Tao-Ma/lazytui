@@ -61,7 +61,8 @@ function init() {
     // { leftPanels, rightPanels, leftWidth, detailHeightPct, pool }.
     // `pool` is the v0.6 id → entry map for placed + hidden panels;
     // pool derivations live in `js/leaves/pool`. state.js's initState
-    // replaces this default with the parsed config (rebuildLayoutFromConfig).
+    // replaces this default with the parsed config
+    // (leaves/arrange.rebuildLayoutFromConfig).
     arrange: { leftWidth: 30, leftPanels: [], rightPanels: [], detailHeightPct: 60, pool: {} },
     // Default focus = first declared panel. state.js's initState() overrides
     // this once the parsed layout is in.
@@ -236,8 +237,8 @@ function update(msg, slice) {
     }
     // arrange + dirty writes. :save-layout sends `{ dirty: false }`;
     // :restore-layout sends `{ arrange, dirty: false }` (the rebuilt
-    // struct from `state.rebuildLayoutFromConfig`). Both are wrapped
-    // Msgs dispatched into layout — single-writer.
+    // struct from `leaves/arrange.rebuildLayoutFromConfig`). Both are
+    // wrapped Msgs dispatched into layout — single-writer.
     case 'set_arrange': {
       const next = { ...slice };
       if (msg.arrange !== undefined) next.arrange = msg.arrange;

@@ -17,7 +17,7 @@ const path = require('path');
 
 const { describe, it, eq, assert, report } = require('./test-runner');
 const { parse } = require('../parser');
-const { rebuildLayoutFromConfig } = require('../app/state');
+const { rebuildLayoutFromConfig } = require('../leaves/arrange');
 const mpool = require('../leaves/pool');
 const mpane = require('../leaves/pane');
 const layout = require('../panel/layout');

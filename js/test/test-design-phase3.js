@@ -20,7 +20,7 @@
  */
 'use strict';
 
-const { rebuildLayoutFromConfig } = require('../app/state');
+const { rebuildLayoutFromConfig } = require('../leaves/arrange');
 const {
   titleEditText,
   onMouseEvent, pointToResizeTarget,
