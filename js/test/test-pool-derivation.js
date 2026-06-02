@@ -172,4 +172,60 @@ layout:
   });
 });
 
+describe('[multi-tab panes] every tab counts as placed; activePaneIds tracks active only', () => {
+  it('placedIds enumerates all pool ids across tabs in multi-tab panes', () => {
+    const cfg = parse(tmpYaml(GROUPS + `
+panels:
+  docker: { type: docker, title: Docker }
+  logs:   { type: viewer, title: Logs }
+  groups: { type: groups, title: Groups }
+  actions: { type: actions, title: Actions }
+  detail:  { type: detail,  title: Detail }
+layout:
+  left:
+    panels:
+      - { tabs: [docker, logs] }
+      - groups
+  right:
+    panels:
+      - actions
+      - detail
+`));
+    const arrange = rebuildLayoutFromConfig(cfg);
+    eq(pool.placedIds(arrange).sort(), ['actions', 'detail', 'docker', 'groups', 'logs'],
+       'every tab id appears in placedIds, including non-active logs');
+    eq(pool.activePaneIds(arrange), ['docker', 'groups', 'actions', 'detail'],
+       'activePaneIds returns one id per pane (the active tab)');
+    eq(pool.hiddenIds(arrange), [],
+       'no pool entries are hidden — every tab is mounted');
+    assert(pool.isPlaced(arrange, 'logs'), 'non-active tab counts as placed');
+    assert(!pool.isHidden(arrange, 'logs'), 'non-active tab is NOT hidden');
+  });
+
+  it('hidden entry stays hidden when not in any pane.tabs', () => {
+    const cfg = parse(tmpYaml(GROUPS + `
+panels:
+  docker: { type: docker }
+  logs:   { type: viewer, title: Logs }
+  notes:  { type: viewer, title: Notes }
+  groups: { type: groups }
+  actions: { type: actions }
+  detail:  { type: detail }
+layout:
+  left:
+    panels:
+      - { tabs: [docker, logs] }
+      - groups
+  right:
+    panels:
+      - actions
+      - detail
+`));
+    const arrange = rebuildLayoutFromConfig(cfg);
+    eq(pool.hiddenIds(arrange), ['notes'], 'notes is truly hidden');
+    assert(pool.isPlaced(arrange, 'logs'),  'logs (a tab) is placed');
+    assert(pool.isHidden(arrange, 'notes'), 'notes (not in any tab) is hidden');
+  });
+});
+
 report();

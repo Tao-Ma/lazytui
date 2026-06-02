@@ -172,7 +172,13 @@ function _frameworkDynamicCommands(m) {
   if (layoutSlice && layoutSlice.arrange && layoutSlice.arrange.pool) {
     const mpool = require('../leaves/pool');
     const arrange = layoutSlice.arrange;
-    for (const id of mpool.placedIds(arrange)) {
+    // :hide accepts the ACTIVE tab id of a placed pane (pool_hide
+    // looks up by `p.id` which mirrors the active tab in v0.6.1). For
+    // multi-tab panes, non-active tabs aren't directly hide-able —
+    // managing them is :switch-tab + :hide. `activePaneIds` returns
+    // the active ids only; `placedIds` now enumerates every tab to
+    // keep hiddenIds honest.
+    for (const id of mpool.activePaneIds(arrange)) {
       const entry = arrange.pool[id];
       if (!entry || entry.type === 'detail') continue;  // detail can't be hidden
       out.push({

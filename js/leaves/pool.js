@@ -15,7 +15,34 @@
 
 const mpane = require('./pane');
 
+// "Placed" = mounted as a tab in some pane. For multi-tab panes
+// (v0.6.1) every tab's pool id counts, not just the active one — so
+// non-active tabs don't drift into `hiddenIds` (which would let
+// `:show` mount the same pool entry as a duplicate pane). Defensive
+// fallback to `p.id` for fixtures that bypass wrapAsPane and ship no
+// `tabs[]` array.
 function placedIds(arrange) {
+  if (!arrange) return [];
+  const left  = arrange.leftPanels  || [];
+  const right = arrange.rightPanels || [];
+  const out = [];
+  const collect = (p) => {
+    if (!p) return;
+    if (Array.isArray(p.tabs) && p.tabs.length > 0) {
+      for (const t of p.tabs) if (t && t.poolId) out.push(t.poolId);
+    } else if (p.id) {
+      out.push(p.id);
+    }
+  };
+  for (const p of left)  collect(p);
+  for (const p of right) collect(p);
+  return out;
+}
+
+// Pool ids of active tabs only — the "pane identity" ids. Drives
+// :hide cmdline completion ("which pane to remove") since the
+// pool_hide handler still locates panes by their active tab's id.
+function activePaneIds(arrange) {
   if (!arrange) return [];
   const left  = arrange.leftPanels  || [];
   const right = arrange.rightPanels || [];
@@ -121,6 +148,7 @@ function placementFromPoolEntry(entry, column) {
 module.exports = {
   placedIds,
   placedIdSet,
+  activePaneIds,
   hiddenIds,
   isPlaced,
   isHidden,
