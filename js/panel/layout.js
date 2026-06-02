@@ -22,6 +22,7 @@ const mdesign = require('../leaves/design');
 const mpoolDrag = require('../leaves/design-pool-drag');
 const mtabDrag = require('../leaves/tab-drag');
 const mpool = require('../leaves/pool');
+const route = require('../leaves/route');
 const { getModel } = require('../app/runtime');
 
 const { LEFT_HOTKEY_POOL, RIGHT_HOTKEY_POOL } = require('../leaves/hotkeys');
@@ -107,6 +108,12 @@ function init() {
     // anchoring). null when no overlay open. Written by pane-tabs
     // reducer's tab_list_open/tab_list_close via wrapped layout Msgs.
     tabListOwnerPaneId: null,
+    // v0.6.1 Phase 5 — sticky pointer to the most recent viewer-kind
+    // tab the user focused. resolveTarget('viewer') falls back to
+    // this when no viewer-kind tab is currently focused (e.g. user
+    // is on a Navigator). Written in focus_set when the new focus
+    // resolves to a viewer-kind instance.
+    lastViewerTab: null,
   };
 }
 
@@ -209,7 +216,13 @@ function update(msg, slice) {
       // sticks at the last non-detail focus so moving focus to detail
       // doesn't make the other half vanish behind a duplicate detail.
       const halfLeftPanel = next !== 'detail' ? next : slice.halfLeftPanel;
-      return [{ ...slice, focus: next, halfLeftPanel }, [{ type: 'show_selected_info' }]];
+      // v0.6.1 Phase 5 — sticky pointer to the most recent viewer-
+      // kind tab. resolveTarget('viewer') reads this when no viewer
+      // is currently focused. instanceKind() == VIEWER_KIND filters
+      // out Navigators / Monitors that should NOT advance the
+      // pointer.
+      const lastViewerTab = route.isViewerKind(next) ? next : slice.lastViewerTab;
+      return [{ ...slice, focus: next, halfLeftPanel, lastViewerTab }, [{ type: 'show_selected_info' }]];
     }
     // v0.6.1 Phase 4 — pane id that owns the open tab-list overlay.
     // Dispatched from the pane-tabs leaf reducer's tab_list_open

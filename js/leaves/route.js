@@ -143,6 +143,76 @@ function getFocus() {
   return s ? s.focus : null;
 }
 
+// --- resolveTarget chokepoint (v0.6.1 Phase 5) ----------------------------
+//
+// The single helper that turns a navigator-side "write the viewer" call
+// into a concrete instance id. Every site that today wraps `'detail'`
+// hardcoded routes through here so multi-viewer (Phase 6+) and the
+// future v0.7 workflow producer API can swap the resolution without
+// touching call sites.
+//
+//   resolveTarget(intent, ctx = {}) → tabId | null
+//
+// `intent` is a closed enum:
+//   'viewer'         — replace body / show info
+//   'viewer_tab_add' — add a content tab (file open, etc.)
+//   'terminal'       — spawn ephemeral terminal tab
+//
+// All three target viewer-kind tabs (today: kind === 'detail'). The
+// distinction is reserved for v0.7 when intents may diverge in their
+// resolution (e.g. terminal could prefer panes that already host a
+// terminal session). For Phase 5 they share one body.
+//
+// `ctx.focusedTabId` is an optional override for the focus read — the
+// thread-the-id seam v0.7 will use. Default reads getFocus().
+//
+// Resolution order (kind-based; no role flag):
+//   1. focused viewer-kind tab
+//   2. layout.slice.lastViewerTab (sticky)
+//   3. first viewer-kind tab in right-column arrange order
+//   4. any viewer-kind instance (insertion order)
+//   5. null — caller becomes a no-op
+
+const VIEWER_KIND = 'detail';
+
+function isViewerKind(id) {
+  const inst = _instances[id];
+  return !!(inst && inst.kind === VIEWER_KIND);
+}
+
+function resolveTarget(intent, ctx) {
+  ctx = ctx || {};
+  // (1) focused viewer-kind
+  const focused = ctx.focusedTabId != null ? ctx.focusedTabId : getFocus();
+  if (focused && isViewerKind(focused)) return focused;
+
+  // (2) sticky lastViewerTab
+  const layoutId = _primaryByKind['layout'];
+  const layout = layoutId !== undefined ? _instances[layoutId].slice : null;
+  if (layout && layout.lastViewerTab && isViewerKind(layout.lastViewerTab)) {
+    return layout.lastViewerTab;
+  }
+
+  // (3) first viewer-kind in right-column arrange order. Pane entries
+  //     carry `paneId` + `type`; instance id == type for the Phase 5
+  //     singleton (Phase 6+ panes may differ).
+  if (layout && layout.arrange && Array.isArray(layout.arrange.rightPanels)) {
+    for (const p of layout.arrange.rightPanels) {
+      if (p && p.type === VIEWER_KIND && _instances[VIEWER_KIND]) {
+        return VIEWER_KIND;
+      }
+    }
+  }
+
+  // (4) any viewer-kind instance
+  for (const id in _instances) {
+    if (_instances[id].kind === VIEWER_KIND) return id;
+  }
+
+  // (5) no viewer registered — caller no-ops
+  return null;
+}
+
 module.exports = {
   wrap,
   registerPanelOwner, componentForPanel,
@@ -151,4 +221,6 @@ module.exports = {
   setInstance, getInstance, getInstanceSlice, setInstanceSlice,
   hasInstance, disposeInstance, instanceKind, eachInstance,
   getPrimaryByKind,
+  // v0.6.1 Phase 5 — navigator → focused-viewer routing chokepoint.
+  resolveTarget, isViewerKind, VIEWER_KIND,
 };
