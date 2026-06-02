@@ -62,9 +62,9 @@ describe('[1] free_config_enter from half/full → refused with notice', () => {
     const s = freshLayoutSlice('normal');
     // Seed a stale notice that should clear on successful entry.
     s.freeConfig = { ...s.freeConfig, notice: 'stale' };
-    // Need at least one placed panel for clampSelected; init left/right
-    // panels are empty — push a fake one so allFreeConfigPanels is non-empty.
-    s.arrange = { ...s.arrange, leftPanels: [{ id: 'a', type: 'a', column: 'left', hotkey: '1' }] };
+    // Need at least one placed panel for clampSelected; init columns are
+    // empty — push a fake one so allFreeConfigPanels is non-empty.
+    s.arrange = { ...s.arrange, columns: [{ panels: [{ id: 'a', type: 'a', columnIndex: 0, hotkey: '1' }] }] };
     s.focus = 'a';
     const result = layout.update({ type: 'free_config_enter' }, s);
     assert(Array.isArray(result), 'allowed entry returns [slice, cmds]');
@@ -167,7 +167,7 @@ describe('[4] notice auto-clears on unrelated user intent', () => {
     setFreeConfig(false);
     const s = freshLayoutSlice('normal');
     s.freeConfig = { ...s.freeConfig, notice: 'stale from earlier block' };
-    s.arrange = { ...s.arrange, leftPanels: [{ id: 'a', type: 'a', column: 'left', hotkey: '1' }] };
+    s.arrange = { ...s.arrange, columns: [{ panels: [{ id: 'a', type: 'a', columnIndex: 0, hotkey: '1' }] }] };
     const result = layout.update({ type: 'focus_set', focus: 'a' }, s);
     assert(Array.isArray(result), 'focus_set returns [slice, cmds]');
     const [next] = result;
@@ -180,9 +180,13 @@ describe('[4] notice auto-clears on unrelated user intent', () => {
     s.freeConfig = { ...s.freeConfig, notice: 'stale' };
     s.arrange = {
       ...s.arrange,
+      columns: [
+        { width: 30, panels: [] },
+        { panels: [] },
+      ],
       pool: { x: { id: 'x', type: 'viewer', title: 'X', config: {} } },
     };
-    const next = layout.update({ type: 'pool_show', id: 'x', column: 'left' }, s);
+    const next = layout.update({ type: 'pool_show', id: 'x', columnIndex: 0 }, s);
     eq(next.freeConfig.notice, null, 'pool_show cleared stale notice');
   });
 
@@ -197,7 +201,7 @@ describe('[4] notice auto-clears on unrelated user intent', () => {
       notice: 'persistent through motion',
       drag: { kind: 'armed', sourceType: 'a', startX: 5, startY: 5, curX: 5, curY: 5, target: null },
     };
-    s.arrange = { ...s.arrange, leftPanels: [{ id: 'a', type: 'a', column: 'left', hotkey: '1' }] };
+    s.arrange = { ...s.arrange, columns: [{ panels: [{ id: 'a', type: 'a', columnIndex: 0, hotkey: '1' }] }] };
     s.focus = 'a';
     s.panelBounds = { a: { x: 0, y: 0, w: 30, h: 10 } };
     const result = layout.update({ type: 'free_config_mouse_motion', mx: 5, my: 6, cols: 120 }, s);

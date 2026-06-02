@@ -46,7 +46,7 @@ function assertPaneShape(p, where) {
   // Legacy Panel fields preserved
   assert(typeof p.id === 'string', `${where}: legacy id present`);
   assert(typeof p.type === 'string', `${where}: legacy type present`);
-  assert(typeof p.column === 'string', `${where}: column present`);
+  assert(typeof p.columnIndex === 'number', `${where}: columnIndex present`);
 }
 
 describe('[parser] buildPlacedPanel + defaultLayout addDefault produce panes', () => {
@@ -57,28 +57,27 @@ panels:
   actions: { type: actions }
   detail:  { type: detail }
 layout:
-  left:
-    panels:
-      - groups
-  right:
-    panels:
-      - actions
-      - detail
+  columns:
+    - panels:
+        - groups
+    - panels:
+        - actions
+        - detail
 `);
     const cfg = parse(p);
     const arrange = rebuildLayoutFromConfig(cfg);
-    for (const pane of arrange.leftPanels)  assertPaneShape(pane, `left/${pane.type}`);
-    for (const pane of arrange.rightPanels) assertPaneShape(pane, `right/${pane.type}`);
+    for (const pane of arrange.columns[0].panels)  assertPaneShape(pane, `col0/${pane.type}`);
+    for (const pane of arrange.columns[1].panels)  assertPaneShape(pane, `col1/${pane.type}`);
   });
 
   it('default layout (no layout: block) produces panes', () => {
     const p = tmpYaml(TRIVIAL);
     const cfg = parse(p);
     const arrange = rebuildLayoutFromConfig(cfg);
-    assert(arrange.leftPanels.length >= 1, 'has at least one left pane');
-    assert(arrange.rightPanels.length >= 2, 'has at least two right panes');
-    for (const pane of arrange.leftPanels)  assertPaneShape(pane, `default/left/${pane.type}`);
-    for (const pane of arrange.rightPanels) assertPaneShape(pane, `default/right/${pane.type}`);
+    assert(arrange.columns[0].panels.length >= 1, 'has at least one pane in first column');
+    assert(arrange.columns[1].panels.length >= 2, 'has at least two panes in last column');
+    for (const pane of arrange.columns[0].panels)  assertPaneShape(pane, `default/col0/${pane.type}`);
+    for (const pane of arrange.columns[1].panels)  assertPaneShape(pane, `default/col1/${pane.type}`);
   });
 });
 
@@ -91,31 +90,32 @@ describe('[leaves/arrange] rebuildLayoutFromConfig no-layout JSON fallback produ
       // no .layout — exercises the inner-else branch with the `push` helper
     };
     const arrange = rebuildLayoutFromConfig(cfg);
-    for (const pane of arrange.leftPanels)  assertPaneShape(pane, `fallback/left/${pane.type}`);
-    for (const pane of arrange.rightPanels) assertPaneShape(pane, `fallback/right/${pane.type}`);
+    for (const pane of arrange.columns[0].panels)  assertPaneShape(pane, `fallback/col0/${pane.type}`);
+    for (const pane of arrange.columns[1].panels)  assertPaneShape(pane, `fallback/col1/${pane.type}`);
   });
 });
 
 describe('[leaves/pool] placementFromPoolEntry produces a pane', () => {
   it('placement carries paneId / tabs / activeTabId', () => {
     const entry = { id: 'notes', type: 'notes', title: 'Notes', config: { source: 'inline' } };
-    const placement = mpool.placementFromPoolEntry(entry, 'left');
+    const placement = mpool.placementFromPoolEntry(entry, 0);
     assertPaneShape(placement, 'placementFromPoolEntry');
-    eq(placement.column, 'left', 'column threaded');
+    eq(placement.columnIndex, 0, 'columnIndex threaded');
     eq(placement.source, 'inline', 'config spread preserved');
   });
 });
 
 describe('[panel/layout] pool_show inserts a pane', () => {
-  it('inserts a pane shape into leftPanels', () => {
+  it('inserts a pane shape into the first column', () => {
     // Hand-build a layout slice with a hidden pool entry.
     const arrange = {
-      leftWidth: 30,
       detailHeightPct: 60,
-      leftPanels: [],
-      rightPanels: [
-        mpane.wrapAsPane({ id: 'detail', type: 'detail', title: 'Detail', hotkey: '8', column: 'right' },
-          mpane.newPaneId('detail')),
+      columns: [
+        { width: 30, panels: [] },
+        { panels: [
+          mpane.wrapAsPane({ id: 'detail', type: 'detail', title: 'Detail', hotkey: '8', columnIndex: 1 },
+            mpane.newPaneId('detail')),
+        ] },
       ],
       pool: {
         notes: { id: 'notes', type: 'notes', title: 'Notes', config: {} },
@@ -123,9 +123,9 @@ describe('[panel/layout] pool_show inserts a pane', () => {
       },
     };
     const slice = { ...layout.init(), arrange };
-    const result = layout.update({ type: 'pool_show', id: 'notes', column: 'left', index: 0 }, slice);
+    const result = layout.update({ type: 'pool_show', id: 'notes', columnIndex: 0, index: 0 }, slice);
     const next = Array.isArray(result) ? result[0] : result;
-    const inserted = next.arrange.leftPanels[0];
+    const inserted = next.arrange.columns[0].panels[0];
     assertPaneShape(inserted, 'pool_show');
     eq(inserted.id, 'notes', 'inserted pool id');
     eq(inserted.type, 'notes', 'inserted type');

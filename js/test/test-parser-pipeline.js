@@ -256,53 +256,50 @@ describe('panel hotkeys', () => {
   stats:      { type: stats,      title: S }
   detail:     { type: detail,     title: D }
 `;
-  it('positional defaults (left 1-6, right 7-9)', () => {
+  it('positional defaults (first col 1-6, last col 7-9)', () => {
     const p = tmpYaml(
       `groups:
   g: { label: G, actions: { a: { cmd: 'echo', label: A } } }
 ${POOL_BLOCK}layout:
-  left:
-    panels:
-      - containers
-      - groups
-  right:
-    panels:
-      - actions
-      - stats
-      - detail
+  columns:
+    - panels:
+        - containers
+        - groups
+    - panels:
+        - actions
+        - stats
+        - detail
 `);
     const cfg = parse(p);
-    eq(cfg.layout.left_panels.map(pp => [pp.hotkey, pp.type]),  [['1','containers'], ['2','groups']]);
-    eq(cfg.layout.right_panels.map(pp => [pp.hotkey, pp.type]), [['7','actions'], ['8','stats'], ['9','detail']]);
+    eq(cfg.layout.columns[0].panels.map(pp => [pp.hotkey, pp.type]),  [['1','containers'], ['2','groups']]);
+    eq(cfg.layout.columns[1].panels.map(pp => [pp.hotkey, pp.type]), [['7','actions'], ['8','stats'], ['9','detail']]);
   });
-  it('duplicate explicit hotkey WITHIN a side throws', () => {
+  it('duplicate explicit hotkey WITHIN a column throws', () => {
     const p = tmpYaml(
       `groups:
   g: { label: G, actions: { a: { cmd: 'echo', label: A } } }
 ${POOL_BLOCK}layout:
-  left:
-    panels:
-      - { tabs: [groups],     hotkey: '1' }
-      - { tabs: [containers], hotkey: '1' }
-  right:
-    panels:
-      - actions
-      - detail
+  columns:
+    - panels:
+        - { tabs: [groups],     hotkey: '1' }
+        - { tabs: [containers], hotkey: '1' }
+    - panels:
+        - actions
+        - detail
 `);
-    expectThrow(/left column declares hotkey '1' twice/, () => parse(p));
+    expectThrow(/declares hotkey '1' twice/, () => parse(p));
   });
-  it('explicit hotkey collision ACROSS sides throws', () => {
+  it('explicit hotkey collision ACROSS columns throws', () => {
     const p = tmpYaml(
       `groups:
   g: { label: G, actions: { a: { cmd: 'echo', label: A } } }
 ${POOL_BLOCK}layout:
-  left:
-    panels:
-      - { tabs: [groups], hotkey: '7' }
-  right:
-    panels:
-      - { tabs: [actions], hotkey: '7' }
-      - detail
+  columns:
+    - panels:
+        - { tabs: [groups], hotkey: '7' }
+    - panels:
+        - { tabs: [actions], hotkey: '7' }
+        - detail
 `);
     expectThrow(/hotkey '7' claimed by both/, () => parse(p));
   });
@@ -311,17 +308,16 @@ ${POOL_BLOCK}layout:
       `groups:
   g: { label: G, actions: { a: { cmd: 'echo', label: A } } }
 ${POOL_BLOCK}layout:
-  left:
-    panels:
-      - { tabs: [groups], hotkey: g }
-  right:
-    panels:
-      - actions
-      - { tabs: [detail], hotkey: o }
+  columns:
+    - panels:
+        - { tabs: [groups], hotkey: g }
+    - panels:
+        - actions
+        - { tabs: [detail], hotkey: o }
 `);
     const cfg = parse(p);
-    eq(cfg.layout.left_panels[0].hotkey, 'g');
-    eq(cfg.layout.right_panels.map(pp => [pp.hotkey, pp.type]),
+    eq(cfg.layout.columns[0].panels[0].hotkey, 'g');
+    eq(cfg.layout.columns[1].panels.map(pp => [pp.hotkey, pp.type]),
        [['7','actions'], ['o','detail']]);
   });
 });
@@ -336,50 +332,47 @@ describe('layout invariants — detail / actions placement', () => {
   actions:    { type: actions,    title: A }
   detail:     { type: detail,     title: D }
 `;
-  it('detail in left column is rejected', () => {
+  it('detail outside the last column is rejected', () => {
     const p = tmpYaml(
       `groups:
   g: { label: G, actions: { a: { cmd: 'echo', label: A } } }
 ${POOL_BLOCK}layout:
-  left:
-    panels:
-      - detail
-      - groups
-  right:
-    panels:
-      - actions
+  columns:
+    - panels:
+        - detail
+        - groups
+    - panels:
+        - actions
 `);
-    expectThrow(/'detail' must be in the right column/, () => parse(p));
+    expectThrow(/'detail' must be in the last column/, () => parse(p));
   });
-  it('detail not as the last cell in the right column is rejected', () => {
+  it('detail not as the last cell in the last column is rejected', () => {
     const p = tmpYaml(
       `groups:
   g: { label: G, actions: { a: { cmd: 'echo', label: A } } }
 ${POOL_BLOCK}layout:
-  left:
-    panels:
-      - groups
-  right:
-    panels:
-      - detail
-      - actions
+  columns:
+    - panels:
+        - groups
+    - panels:
+        - detail
+        - actions
 `);
-    expectThrow(/'detail' must be in the last pane of the right column/, () => parse(p));
+    expectThrow(/'detail' must be in the last pane of the last column/, () => parse(p));
   });
-  it('actions in left column is rejected', () => {
+  it('actions outside the last column is rejected', () => {
     const p = tmpYaml(
       `groups:
   g: { label: G, actions: { a: { cmd: 'echo', label: A } } }
 ${POOL_BLOCK}layout:
-  left:
-    panels:
-      - actions
-      - groups
-  right:
-    panels:
-      - detail
+  columns:
+    - panels:
+        - actions
+        - groups
+    - panels:
+        - detail
 `);
-    expectThrow(/'actions' must be in the right column/, () => parse(p));
+    expectThrow(/'actions' must be in the last column/, () => parse(p));
   });
 });
 
@@ -401,8 +394,8 @@ groups:
     assert(cfg.layout.pool.notes, 'user pool entry survived');
     eq(cfg.layout.pool.notes.type, 'history');
     eq(cfg.layout.pool.notes.title, 'Notes');
-    // Not placed in either column — it's hidden.
-    const placed = cfg.layout.left_panels.concat(cfg.layout.right_panels);
+    // Not placed in any column — it's hidden.
+    const placed = (cfg.layout.columns || []).flatMap(c => c.panels || []);
     assert(!placed.some(pp => pp.id === 'notes'), 'not placed in any column');
   });
   it('default entries still populate the pool', () => {

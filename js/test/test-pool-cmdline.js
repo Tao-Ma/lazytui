@@ -18,26 +18,33 @@ const mpool = require('../leaves/pool');
 function buildSlice({ left = [], right = [], hidden = [], leftWidth = 30, detailHeightPct = 60 } = {}) {
   const pool = {};
   const mkEntry = (id, type, title) => ({ id, type, title: title || id, config: {} });
-  const mkPlacement = (id, type, hotkey, column) => ({
-    id, type, title: id, hotkey, column,
+  const mkPlacement = (id, type, hotkey, columnIndex) => ({
+    id, type, title: id, hotkey, columnIndex,
   });
   const leftPanels = [];
   const rightPanels = [];
   for (let i = 0; i < left.length; i++) {
     const [id, type] = left[i];
     pool[id] = mkEntry(id, type);
-    leftPanels.push(mkPlacement(id, type, String(i + 1), 'left'));
+    leftPanels.push(mkPlacement(id, type, String(i + 1), 0));
   }
   const RIGHT_KEYS = ['7', '8', '9'];
   for (let i = 0; i < right.length; i++) {
     const [id, type] = right[i];
     pool[id] = mkEntry(id, type);
-    rightPanels.push(mkPlacement(id, type, RIGHT_KEYS[i], 'right'));
+    rightPanels.push(mkPlacement(id, type, RIGHT_KEYS[i], 1));
   }
   for (const [id, type] of hidden) pool[id] = mkEntry(id, type);
   return {
     ...layout.init(),
-    arrange: { leftWidth, detailHeightPct, leftPanels, rightPanels, pool },
+    arrange: {
+      detailHeightPct,
+      pool,
+      columns: [
+        { width: leftWidth, panels: leftPanels },
+        { panels: rightPanels },
+      ],
+    },
   };
 }
 
@@ -59,7 +66,7 @@ describe('[pool_hide] removes placement, pool entry stays', () => {
       right: [['actions', 'actions'], ['stats', 'stats'], ['detail', 'detail']],
     });
     const next = layout.update({ type: 'pool_hide', id: 'stats' }, slice);
-    eq(next.arrange.rightPanels.map(p => p.id), ['actions', 'detail']);
+    eq(next.arrange.columns[1].panels.map(p => p.id), ['actions', 'detail']);
     assert(next.dirty);
   });
   it('refuses to hide detail (layout invariant)', () => {
@@ -93,8 +100,8 @@ describe('[pool_hide] removes placement, pool entry stays', () => {
       right: [['actions', 'actions'], ['detail', 'detail']],
     });
     const next = layout.update({ type: 'pool_hide', id: 'groups' }, slice);
-    eq(next.arrange.leftPanels.map(p => p.hotkey), ['1', '2']);
-    eq(next.arrange.leftPanels.map(p => p.id), ['containers', 'files']);
+    eq(next.arrange.columns[0].panels.map(p => p.hotkey), ['1', '2']);
+    eq(next.arrange.columns[0].panels.map(p => p.id), ['containers', 'files']);
   });
 });
 
@@ -112,15 +119,15 @@ describe('[pool_show] inserts placement from pool entry', () => {
     eq(mpool.hiddenIds(next.arrange), []);
     assert(next.dirty);
   });
-  it("column: 'left' places into the left column (append at tail)", () => {
+  it("columnIndex: 0 places into the first column (append at tail)", () => {
     const slice = buildSlice({
       left:   [['groups', 'groups']],
       right:  [['actions', 'actions'], ['detail', 'detail']],
       hidden: [['logs', 'tail']],
     });
-    const next = layout.update({ type: 'pool_show', id: 'logs', column: 'left' }, slice);
-    eq(next.arrange.leftPanels.map(p => p.id), ['groups', 'logs']);
-    eq(next.arrange.rightPanels.map(p => p.id), ['actions', 'detail']);
+    const next = layout.update({ type: 'pool_show', id: 'logs', columnIndex: 0 }, slice);
+    eq(next.arrange.columns[0].panels.map(p => p.id), ['groups', 'logs']);
+    eq(next.arrange.columns[1].panels.map(p => p.id), ['actions', 'detail']);
   });
   it('right column: hotkeys reassign positionally — new panel takes the slot before detail', () => {
     const slice = buildSlice({
@@ -129,7 +136,7 @@ describe('[pool_show] inserts placement from pool entry', () => {
       hidden: [['notes', 'viewer']],
     });
     const next = layout.update({ type: 'pool_show', id: 'notes' }, slice);
-    eq(next.arrange.rightPanels.map(p => [p.id, p.hotkey]),
+    eq(next.arrange.columns[1].panels.map(p => [p.id, p.hotkey]),
        [['actions', '7'], ['notes', '8'], ['detail', '9']]);
   });
   it('no-op when already placed', () => {
@@ -178,9 +185,9 @@ describe('[pool_show] inserts placement from pool entry', () => {
       right:  [['actions', 'actions'], ['detail', 'detail']],
       hidden: [['g', 'g']],
     });
-    const next = layout.update({ type: 'pool_show', id: 'g', column: 'left' }, slice);
-    eq(next.arrange.leftPanels.length, 7, 'soft cap exceeded: 7th panel placed');
-    eq(next.arrange.leftPanels[6].id, 'g', 'g appended');
+    const next = layout.update({ type: 'pool_show', id: 'g', columnIndex: 0 }, slice);
+    eq(next.arrange.columns[0].panels.length, 7, 'soft cap exceeded: 7th panel placed');
+    eq(next.arrange.columns[0].panels[6].id, 'g', 'g appended');
   });
 });
 
@@ -193,7 +200,7 @@ describe('[hide + show round-trip]', () => {
     const hidden = layout.update({ type: 'pool_hide', id: 'groups' }, slice);
     eq(mpool.placedIds(hidden.arrange), ['containers', 'actions', 'detail']);
     eq(mpool.hiddenIds(hidden.arrange), ['groups']);
-    const shown = layout.update({ type: 'pool_show', id: 'groups', column: 'left' }, hidden);
+    const shown = layout.update({ type: 'pool_show', id: 'groups', columnIndex: 0 }, hidden);
     eq(mpool.placedIds(shown.arrange).sort(), ['actions', 'containers', 'detail', 'groups']);
     eq(mpool.hiddenIds(shown.arrange), []);
   });

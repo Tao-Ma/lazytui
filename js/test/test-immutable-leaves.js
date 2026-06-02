@@ -196,22 +196,25 @@ describe('[immutable] leaves/search.js', () => {
 // hit-test math has values to read.
 
 describe('[immutable] leaves/free-config.js', () => {
-  const makePanel = (type, title, hotkey, extra = {}) =>
-    ({ type, title, hotkey, column: extra.column || 'left', ...extra });
+  const makePanel = (type, title, hotkey, extra = {}) => {
+    const ci = extra.columnIndex != null ? extra.columnIndex : 0;
+    return { type, title, hotkey, columnIndex: ci, ...extra, id: type };
+  };
 
-  // 30-col left, 2 panels left ('a' at y=0..10, 'b' at y=10..20),
-  // 2 panels right (detail at y=0..15, actions at y=15..20).
+  // First column (width 30, 2 panels at y=0..10, y=10..20).
+  // Last column (2 panels: detail y=0..15, actions y=15..20).
   const makeSlice = () => ({
     arrange: {
-      leftWidth: 30,
       detailHeightPct: 60,
-      leftPanels: [
-        makePanel('a', 'A', '1', { column: 'left' }),
-        makePanel('b', 'B', '2', { column: 'left' }),
-      ],
-      rightPanels: [
-        makePanel('detail', 'Detail', 'o', { column: 'right' }),
-        makePanel('actions', 'Actions', '0', { column: 'right' }),
+      columns: [
+        { width: 30, panels: [
+          makePanel('a', 'A', '1', { columnIndex: 0 }),
+          makePanel('b', 'B', '2', { columnIndex: 0 }),
+        ] },
+        { panels: [
+          makePanel('detail',  'Detail',  'o', { columnIndex: 1 }),
+          makePanel('actions', 'Actions', '0', { columnIndex: 1 }),
+        ] },
       ],
     },
     dirty: false,
@@ -262,10 +265,10 @@ describe('[immutable] leaves/free-config.js', () => {
       () => mfc.reorderWithin(slice, 1),
       slice,
     );
-    eq(out.arrange.leftPanels[0].type, 'b', 'b swapped to slot 0');
-    eq(out.arrange.leftPanels[1].type, 'a', 'a swapped to slot 1');
-    eq(out.arrange.leftPanels[0].hotkey, '1', 'hotkey reassigned positionally');
-    eq(out.arrange.leftPanels[1].hotkey, '2');
+    eq(out.arrange.columns[0].panels[0].type, 'b', 'b swapped to slot 0');
+    eq(out.arrange.columns[0].panels[1].type, 'a', 'a swapped to slot 1');
+    eq(out.arrange.columns[0].panels[0].hotkey, '1', 'hotkey reassigned positionally');
+    eq(out.arrange.columns[0].panels[1].hotkey, '2');
     assert(out.dirty === true, 'dirty flag set');
     eq(out.freeConfig.undo.length, 1, 'undo stack pushed');
     // focus stays at 'a' (same type, new position); derived selectedIdx
@@ -277,27 +280,27 @@ describe('[immutable] leaves/free-config.js', () => {
   it('moveColumn left→right splices across columns', () => {
     const slice = makeSlice();
     const out = expectNoMutation(
-      'moveColumn(right) leaves input frozen',
-      () => mfc.moveColumn(slice, 'right'),
+      'moveColumn(+1) leaves input frozen',
+      () => mfc.moveColumn(slice, +1),
       slice,
     );
-    eq(out.arrange.leftPanels.length, 1, 'left lost a panel');
-    eq(out.arrange.rightPanels.length, 3, 'right gained a panel');
-    // 'a' inserts before detail; new right order: a, detail, actions
-    eq(out.arrange.rightPanels[0].type, 'a');
-    eq(out.arrange.rightPanels[0].column, 'right');
+    eq(out.arrange.columns[0].panels.length, 1, 'first column lost a panel');
+    eq(out.arrange.columns[1].panels.length, 3, 'last column gained a panel');
+    // 'a' inserts before detail; new last order: a, detail, actions
+    eq(out.arrange.columns[1].panels[0].type, 'a');
+    eq(out.arrange.columns[1].panels[0].columnIndex, 1);
     assert(out.dirty === true);
   });
 
   it('resizeWidthOrDetail clamps + pushes undo', () => {
     const slice = makeSlice();
-    // 'a' is selected (idx 0), isLeft = true, so +/- adjusts leftWidth by 2.
+    // 'a' is selected (idx 0), in first column → +/- adjusts column 0's width by 2.
     const out = expectNoMutation(
       'resizeWidthOrDetail(+1) leaves input frozen',
       () => mfc.resizeWidthOrDetail(slice, 1),
       slice,
     );
-    eq(out.arrange.leftWidth, 32, 'leftWidth +2');
+    eq(out.arrange.columns[0].width, 32, 'column 0 width +2');
     eq(out.freeConfig.undo.length, 1);
     assert(out.dirty === true);
   });
@@ -311,11 +314,11 @@ describe('[immutable] leaves/free-config.js', () => {
       () => mfc.undo(reordered),
       reordered,
     );
-    eq(undone.arrange.leftPanels[0].type, 'a', 'a restored to slot 0');
+    eq(undone.arrange.columns[0].panels[0].type, 'a', 'a restored to slot 0');
     eq(undone.freeConfig.undo.length, 0, 'undo stack emptied');
     eq(undone.freeConfig.redo.length, 1, 'redo stack got the snapshot');
     const redone = mfc.redo(undone);
-    eq(redone.arrange.leftPanels[0].type, 'b', 'redo replays the swap');
+    eq(redone.arrange.columns[0].panels[0].type, 'b', 'redo replays the swap');
   });
 
   it('clearUndoStacks wipes both stacks; identity-preserve when empty', () => {
@@ -350,7 +353,7 @@ describe('[immutable] leaves/free-config.js', () => {
       () => mfc.setSelectedTitle(slice, 'Aleph'),
       slice,
     );
-    eq(out.arrange.leftPanels[0].title, 'Aleph');
+    eq(out.arrange.columns[0].panels[0].title, 'Aleph');
     eq(out.freeConfig.undo.length, 1);
     assert(out.dirty === true);
   });
@@ -405,8 +408,8 @@ describe('[immutable] leaves/free-config.js', () => {
       s,
     );
     eq(out.freeConfig.drag, null, 'drag cleared');
-    eq(out.arrange.leftPanels[0].type, 'b', 'a moved past b');
-    eq(out.arrange.leftPanels[1].type, 'a');
+    eq(out.arrange.columns[0].panels[0].type, 'b', 'a moved past b');
+    eq(out.arrange.columns[0].panels[1].type, 'a');
     assert(out.dirty === true);
   });
 });

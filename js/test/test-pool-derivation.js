@@ -2,7 +2,7 @@
  * Phase 1 — pure derivations over the panel pool.
  *
  * `leaves/pool.js` derives placed vs hidden from an `arrange` struct
- * (`{ leftPanels, rightPanels, pool, ... }`). These are the building
+ * (`{ columns: [{panels:[...]}], pool, ... }`). These are the building
  * blocks for Phase 2's `:hide` / `:show` Msgs and Phase 4's panel-list
  * overlay. Pure functions; no model, no side effects.
  *
@@ -31,24 +31,28 @@ const GROUPS = `groups:
   g: { label: G, actions: { a: { cmd: 'echo', label: A } } }
 `;
 
-describe('[placedIds] reads left then right, in cell order', () => {
+describe('[placedIds] reads columns in order', () => {
   it('returns [] for empty / missing input', () => {
     eq(pool.placedIds(null), []);
     eq(pool.placedIds(undefined), []);
     eq(pool.placedIds({}), []);
-    eq(pool.placedIds({ leftPanels: [], rightPanels: [] }), []);
+    eq(pool.placedIds({ columns: [{ panels: [] }, { panels: [] }] }), []);
   });
-  it('reads left then right, in cell order', () => {
+  it('reads columns in order, cell-major', () => {
     const arrange = {
-      leftPanels: [{ id: 'a' }, { id: 'b' }],
-      rightPanels: [{ id: 'c' }, { id: 'd' }],
+      columns: [
+        { panels: [{ id: 'a' }, { id: 'b' }] },
+        { panels: [{ id: 'c' }, { id: 'd' }] },
+      ],
     };
     eq(pool.placedIds(arrange), ['a', 'b', 'c', 'd']);
   });
   it('skips panels with no id (defensive)', () => {
     const arrange = {
-      leftPanels: [{ id: 'a' }, { type: 'noid' }, { id: 'c' }],
-      rightPanels: [],
+      columns: [
+        { panels: [{ id: 'a' }, { type: 'noid' }, { id: 'c' }] },
+        { panels: [] },
+      ],
     };
     eq(pool.placedIds(arrange), ['a', 'c']);
   });
@@ -57,29 +61,35 @@ describe('[placedIds] reads left then right, in cell order', () => {
 describe('[hiddenIds] pool entries not in placed cells', () => {
   it('empty when every pool entry is placed', () => {
     const arrange = {
-      leftPanels: [{ id: 'a' }],
-      rightPanels: [{ id: 'b' }],
+      columns: [
+        { panels: [{ id: 'a' }] },
+        { panels: [{ id: 'b' }] },
+      ],
       pool: { a: {}, b: {} },
     };
     eq(pool.hiddenIds(arrange), []);
   });
   it('returns pool ids not in any cell', () => {
     const arrange = {
-      leftPanels: [{ id: 'a' }],
-      rightPanels: [{ id: 'b' }],
+      columns: [
+        { panels: [{ id: 'a' }] },
+        { panels: [{ id: 'b' }] },
+      ],
       pool: { a: {}, b: {}, hidden1: {}, hidden2: {} },
     };
     eq(pool.hiddenIds(arrange).sort(), ['hidden1', 'hidden2']);
   });
   it('no pool → no hidden ids', () => {
-    eq(pool.hiddenIds({ leftPanels: [{ id: 'a' }], rightPanels: [] }), []);
+    eq(pool.hiddenIds({ columns: [{ panels: [{ id: 'a' }] }, { panels: [] }] }), []);
   });
 });
 
 describe('[isPlaced / isHidden] mutually exclusive across pool', () => {
   const arrange = {
-    leftPanels: [{ id: 'shown' }],
-    rightPanels: [{ id: 'detail' }],
+    columns: [
+      { panels: [{ id: 'shown' }] },
+      { panels: [{ id: 'detail' }] },
+    ],
     pool: { shown: {}, detail: {}, lurker: {} },
   };
   it('placed entries are placed, not hidden', () => {
@@ -110,22 +120,26 @@ describe('[getPoolEntry] lookup', () => {
 describe('[orphanPlacements] invariant guard', () => {
   it('empty when every placement has a pool entry', () => {
     const arrange = {
-      leftPanels: [{ id: 'a' }],
-      rightPanels: [{ id: 'b' }],
+      columns: [
+        { panels: [{ id: 'a' }] },
+        { panels: [{ id: 'b' }] },
+      ],
       pool: { a: {}, b: {} },
     };
     eq(pool.orphanPlacements(arrange), []);
   });
   it('reports placed ids missing from the pool', () => {
     const arrange = {
-      leftPanels: [{ id: 'a' }, { id: 'orphan' }],
-      rightPanels: [{ id: 'b' }],
+      columns: [
+        { panels: [{ id: 'a' }, { id: 'orphan' }] },
+        { panels: [{ id: 'b' }] },
+      ],
       pool: { a: {}, b: {} },
     };
     eq(pool.orphanPlacements(arrange), ['orphan']);
   });
   it('all placements orphan when pool is missing', () => {
-    eq(pool.orphanPlacements({ leftPanels: [{ id: 'a' }], rightPanels: [{ id: 'b' }] }),
+    eq(pool.orphanPlacements({ columns: [{ panels: [{ id: 'a' }] }, { panels: [{ id: 'b' }] }] }),
        ['a', 'b']);
   });
 });
@@ -138,8 +152,9 @@ panels:
   actions: { type: actions, title: A }
   detail:  { type: detail,  title: D }
 layout:
-  left:  { panels: [groups] }
-  right: { panels: [actions, detail] }
+  columns:
+    - { panels: [groups] }
+    - { panels: [actions, detail] }
 `));
     const arrange = rebuildLayoutFromConfig(cfg);
     eq(pool.placedIds(arrange).sort(), ['actions', 'detail', 'groups']);
@@ -155,8 +170,9 @@ panels:
   a:     { type: actions, title: A }
   d:     { type: detail, title: D }
 layout:
-  left:  { panels: [g] }
-  right: { panels: [a, d] }
+  columns:
+    - { panels: [g] }
+    - { panels: [a, d] }
 `));
     const arrange = rebuildLayoutFromConfig(cfg);
     eq(pool.placedIds(arrange), ['g', 'a', 'd']);
@@ -182,14 +198,13 @@ panels:
   actions: { type: actions, title: Actions }
   detail:  { type: detail,  title: Detail }
 layout:
-  left:
-    panels:
-      - { tabs: [docker, logs] }
-      - groups
-  right:
-    panels:
-      - actions
-      - detail
+  columns:
+    - panels:
+        - { tabs: [docker, logs] }
+        - groups
+    - panels:
+        - actions
+        - detail
 `));
     const arrange = rebuildLayoutFromConfig(cfg);
     eq(pool.placedIds(arrange).sort(), ['actions', 'detail', 'docker', 'groups', 'logs'],
@@ -212,14 +227,13 @@ panels:
   actions: { type: actions }
   detail:  { type: detail }
 layout:
-  left:
-    panels:
-      - { tabs: [docker, logs] }
-      - groups
-  right:
-    panels:
-      - actions
-      - detail
+  columns:
+    - panels:
+        - { tabs: [docker, logs] }
+        - groups
+    - panels:
+        - actions
+        - detail
 `));
     const arrange = rebuildLayoutFromConfig(cfg);
     eq(pool.hiddenIds(arrange), ['notes'], 'notes is truly hidden');

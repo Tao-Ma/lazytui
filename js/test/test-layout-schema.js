@@ -64,60 +64,62 @@ function badParse(layout) {
 }
 
 const goodLayout = {
-  left:  { panels: ['groups'] },
-  right: { panels: ['actions', 'detail'] },
+  columns: [
+    { panels: ['groups'] },
+    { panels: ['actions', 'detail'] },
+  ],
 };
 
 describe('[1] well-formed layout passes', () => {
   it('accepts one detail, one actions, counts in range', () => ok(goodLayout));
-  it('accepts a layout with no left block (right-only detail)', () => {
-    ok({ right: { panels: ['detail'] } });
+  it('accepts a single-column layout (last-column-only detail)', () => {
+    ok({ columns: [{ panels: ['detail'] }] });
   });
 });
 
 describe('[2] detail-panel cardinality', () => {
   it('rejects zero detail panels', () => {
-    badParse({ left: { panels: ['groups'] }, right: { panels: ['actions'] } });
+    badParse({ columns: [{ panels: ['groups'] }, { panels: ['actions'] }] });
   });
   it('rejects two detail panels', () => {
-    badParse({ left: { panels: ['detail'] }, right: { panels: ['detail'] } });
+    badParse({ columns: [{ panels: ['detail'] }, { panels: ['detail'] }] });
   });
 });
 
 describe('[3] actions-panel cardinality', () => {
   it('rejects two actions panels', () => {
-    badParse({ right: { panels: ['actions', 'actions', 'detail'] } });
+    badParse({ columns: [{ panels: ['actions', 'actions', 'detail'] }] });
   });
 });
 
 describe('[4] panel-count soft caps', () => {
-  it('warns on 7 left panels (soft cap 6) but accepts', () => {
+  it('warns on 7 first-column panels (soft cap 6) but accepts', () => {
     const panels = Array.from({ length: 7 }, () => 'groups');
-    warns({ left: { panels }, right: { panels: ['detail'] } }, 'layout.column_over_soft_cap');
+    warns({ columns: [{ panels }, { panels: ['detail'] }] }, 'layout.column_over_soft_cap');
   });
-  it('warns on 4 right panels (soft cap 3) but accepts', () => {
-    warns({ right: { panels: ['detail', 'a', 'b', 'c'] } }, 'layout.column_over_soft_cap');
+  it('warns on 4 last-column panels (soft cap 3) but accepts', () => {
+    warns({ columns: [{ panels: ['groups'] }, { panels: ['detail', 'a', 'b', 'c'] }] }, 'layout.column_over_soft_cap');
   });
-  it('accepts exactly 6 left + 3 right with no warning', () => {
+  it('accepts exactly 6 first + 3 last with no warning', () => {
     const left = Array.from({ length: 6 }, () => 'groups');
     const warnings = [];
-    validate(withLayout({ left: { panels: left }, right: { panels: ['detail', 'a', 'b'] } }), 'test', warnings);
+    validate(withLayout({ columns: [{ panels: left }, { panels: ['detail', 'a', 'b'] }] }), 'test', warnings);
     assert(warnings.length === 0, `expected no warnings, got ${JSON.stringify(warnings)}`);
   });
 });
 
 describe('[5] cell shape', () => {
   it('rejects a v0.6 inline cell (type at cell level)', () => {
-    bad({ right: { panels: [{ type: 'detail' }] } });
+    bad({ columns: [{ panels: [{ type: 'detail' }] }] });
   });
   it("rejects a `tabs:` cell that's not a list", () => {
-    bad({ right: { panels: [{ tabs: 'detail' }] } });
+    bad({ columns: [{ panels: [{ tabs: 'detail' }] }] });
   });
   it("rejects a `tabs:` cell with empty list", () => {
-    bad({ right: { panels: [{ tabs: [] }, 'detail'] } });
+    bad({ columns: [{ panels: [{ tabs: [] }, 'detail'] }] });
   });
   it('rejects a non-list panels block', () => {
-    bad({ right: { panels: 'nope' } });
+    bad({ columns: [{ panels: 'nope' }] });
   });
   it('rejects a non-mapping layout', () => {
     bad(['nope']);

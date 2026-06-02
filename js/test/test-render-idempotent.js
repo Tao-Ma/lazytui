@@ -74,9 +74,10 @@ function setupState() {
   // history Component holds its ring buffer in its own module (../history.js),
   // not on a shim field; no init needed here.
   getInstanceSlice("layout").arrange = {
-    leftWidth: 30,
-    leftPanels: [],
-    rightPanels: [],
+    columns: [
+      { width: 30, panels: [] },
+      { panels: [] },
+    ],
     detailHeightPct: 60,
   };
   getInstanceSlice('layout').panelHeights = {};

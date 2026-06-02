@@ -46,8 +46,9 @@ panels:
   a:     { type: actions, title: Actions }
   d:     { type: detail,  title: Detail }
 layout:
-  left:  { panels: [g] }
-  right: { panels: [a, d] }
+  columns:
+    - { panels: [g] }
+    - { panels: [a, d] }
 `;
 
 const HIDDEN_CONFIG = GROUPS + `
@@ -57,8 +58,9 @@ panels:
   a:     { type: actions, title: Actions }
   d:     { type: detail,  title: Detail }
 layout:
-  left:  { panels: [g] }
-  right: { panels: [a, d] }
+  columns:
+    - { panels: [g] }
+    - { panels: [a, d] }
 `;
 
 describe('[serialize] always emits both panels: and layout: blocks', () => {
@@ -93,11 +95,11 @@ panels:
   d: { type: detail, title: Detail }
   x: { type: viewer, title: X }
 layout:
-  left:  { panels: [g] }
-  right:
-    panels:
-      - a
-      - { tabs: [d], height: 70% }
+  columns:
+    - { panels: [g] }
+    - panels:
+        - a
+        - { tabs: [d], height: 70% }
 `, 'detail-height.yml'));
     const arrange = rebuildLayoutFromConfig(cfg);
     eq(arrange.detailHeightPct, 70, 'parser captured height as detailHeightPct');
@@ -135,11 +137,11 @@ panels:
   a: { type: actions, title: Actions }
   d: { type: detail, title: Detail }
 layout:
-  left:  { panels: [g] }
-  right:
-    panels:
-      - a
-      - { tabs: [d], height: 65% }
+  columns:
+    - { panels: [g] }
+    - panels:
+        - a
+        - { tabs: [d], height: 65% }
 `, 'height-rt.yml');
   });
 });
@@ -153,13 +155,17 @@ panels:
   a:     { type: actions, title: Actions }
   d:     { type: detail,  title: Detail }
 layout:
-  left:  { panels: [g, files] }
-  right: { panels: [a, d] }
+  columns:
+    - { panels: [g, files] }
+    - { panels: [a, d] }
 `, 'hide.yml');
     const cfg = parse(p);
     const arrange = rebuildLayoutFromConfig(cfg);
     // Simulate :hide files — remove placement, keep pool entry.
-    arrange.leftPanels = arrange.leftPanels.filter(x => x.id !== 'files');
+    arrange.columns[0] = {
+      ...arrange.columns[0],
+      panels: arrange.columns[0].panels.filter(x => x.id !== 'files'),
+    };
     const r = writeLayoutToFile(arrange, p);
     eq(r.error, null);
     const after = fs.readFileSync(p, 'utf8');
@@ -170,7 +176,7 @@ layout:
     const cfg2 = parse(p);
     const arrange2 = rebuildLayoutFromConfig(cfg2);
     assert('files' in arrange2.pool,             'files survives reload via pool');
-    eq(arrange2.leftPanels.find(x => x.id === 'files'), undefined,
+    eq(arrange2.columns[0].panels.find(x => x.id === 'files'), undefined,
        'files stays hidden after reload');
   });
 });
@@ -180,22 +186,22 @@ describe('[show] re-placing a hidden entry uses pool-ref cell on save', () => {
     const p = tmpYaml(HIDDEN_CONFIG, 'show.yml');
     const cfg = parse(p);
     const arrange = rebuildLayoutFromConfig(cfg);
-    eq(arrange.leftPanels.find(x => x.id === 'notes'), undefined,
+    eq(arrange.columns[0].panels.find(x => x.id === 'notes'), undefined,
        'notes starts hidden');
     // Place notes — synthesize a pane from the pool entry.
     const mpane = require('../leaves/pane');
     const entry = arrange.pool.notes;
-    arrange.leftPanels.push(mpane.wrapAsPane({
+    arrange.columns[0].panels.push(mpane.wrapAsPane({
       id: entry.id, type: entry.type, title: entry.title,
-      hotkey: '', column: 'left', config: entry.config,
+      hotkey: '', columnIndex: 0, config: entry.config,
     }, mpane.newPaneId(entry.id)));
     const r = writeLayoutToFile(arrange, p);
     eq(r.error, null);
     const after = fs.readFileSync(p, 'utf8');
     assert(/-\s+notes\s*$/m.test(after),         'notes placed as bare pool-ref cell');
-    // Reload: notes is now in left_panels, still in pool.
+    // Reload: notes is now in first column, still in pool.
     const cfg2 = parse(p);
-    assert(cfg2.layout.left_panels.some(x => x.id === 'notes'),
+    assert(cfg2.layout.columns[0].panels.some(x => x.id === 'notes'),
        'notes placed after reload');
     assert('notes' in cfg2.layout.pool,           'notes still in pool');
   });

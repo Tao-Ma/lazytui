@@ -16,25 +16,32 @@ const mpool = require('../leaves/pool');
 function buildSlice({ left = [], right = [], hidden = [] } = {}) {
   const pool = {};
   const mkEntry = (id, type) => ({ id, type, title: id, config: {} });
-  const mkPlacement = (id, type, hotkey, column) => ({
-    id, type, title: id, hotkey, column,
+  const mkPlacement = (id, type, hotkey, columnIndex) => ({
+    id, type, title: id, hotkey, columnIndex,
   });
   const leftPanels  = [];
   const rightPanels = [];
   for (let i = 0; i < left.length; i++) {
     const [id, type] = left[i];
     pool[id] = mkEntry(id, type);
-    leftPanels.push(mkPlacement(id, type, String(i + 1), 'left'));
+    leftPanels.push(mkPlacement(id, type, String(i + 1), 0));
   }
   for (let i = 0; i < right.length; i++) {
     const [id, type] = right[i];
     pool[id] = mkEntry(id, type);
-    rightPanels.push(mkPlacement(id, type, ['7','8','9'][i], 'right'));
+    rightPanels.push(mkPlacement(id, type, ['7','8','9'][i], 1));
   }
   for (const [id, type] of hidden) pool[id] = mkEntry(id, type);
   return {
     ...layout.init(),
-    arrange: { leftWidth: 30, detailHeightPct: 60, leftPanels, rightPanels, pool },
+    arrange: {
+      detailHeightPct: 60,
+      pool,
+      columns: [
+        { width: 30, panels: leftPanels },
+        { panels: rightPanels },
+      ],
+    },
   };
 }
 

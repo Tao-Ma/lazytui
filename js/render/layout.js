@@ -113,7 +113,7 @@ function rendererFor(type) {
  * panel — a manually oversubscribed heightPct (sum > 100) gets
  * scaled down here rather than crashing the renderer.
  */
-function distributeColumnHeights(layoutSlice, panels, availH, isRightCol, minH) {
+function distributeColumnHeights(layoutSlice, panels, availH, isLastCol, minH) {
   if (panels.length === 0) return;
 
   // Collapsed placements get a hard 1-row reservation each. Their share
@@ -131,7 +131,7 @@ function distributeColumnHeights(layoutSlice, panels, availH, isRightCol, minH) 
 
   let reserved = 0;
   let detailPanel = null;
-  if (isRightCol) {
+  if (isLastCol) {
     detailPanel = panels.find(mpool.isDetailPane) || null;
     if (detailPanel) {
       reserved = Math.max(minH, Math.floor(innerAvail * layoutSlice.arrange.detailHeightPct / 100));
@@ -205,29 +205,62 @@ function distributeColumnHeights(layoutSlice, panels, availH, isRightCol, minH) 
   }
 }
 
+/** Distribute the terminal's COLS across columns. Explicit widths for
+ *  columns 0..N-2; last column gets the remainder. Narrow-terminal
+ *  adaptive: if explicit widths leave < MIN_LAST for the last column,
+ *  shrink earlier columns proportionally so the last column gets
+ *  MIN_LAST. Returns an array of `{ columnIndex, x, w }`. */
+const MIN_LAST_COL_W = 20;
+function _distributeColumnWidths(columns, COLS) {
+  const N = columns.length;
+  if (N === 0) return [];
+  const explicit = [];
+  for (let i = 0; i < N - 1; i++) {
+    const w = columns[i].width != null ? columns[i].width : 30;
+    explicit.push(w);
+  }
+  const sumExplicit = explicit.reduce((s, w) => s + w, 0);
+  let lastW = COLS - sumExplicit;
+  if (lastW < MIN_LAST_COL_W) {
+    // Squeeze explicit widths proportionally so last column gets at
+    // least MIN_LAST_COL_W. Each shrinks but never below 10.
+    const target = Math.max(0, COLS - MIN_LAST_COL_W);
+    const scale = sumExplicit > 0 ? target / sumExplicit : 0;
+    for (let i = 0; i < explicit.length; i++) {
+      explicit[i] = Math.max(10, Math.floor(explicit[i] * scale));
+    }
+    lastW = Math.max(MIN_LAST_COL_W, COLS - explicit.reduce((s, w) => s + w, 0));
+  }
+  const out = [];
+  let x = 0;
+  for (let i = 0; i < N; i++) {
+    const w = (i === N - 1) ? Math.max(1, lastW) : explicit[i];
+    out.push({ columnIndex: i, x, w });
+    x += w;
+  }
+  return out;
+}
+
 function calcLayout(model = getModel()) {
   refreshSize();
   const COLS = cols(), ROWS = rows();
   const layoutSlice = getInstanceSlice('layout');
 
-  // Adaptive: shrink left column on narrow terminals
-  const minRight = 20;
-  let leftW = layoutSlice.arrange.leftWidth;
-  if (COLS < leftW + minRight) {
-    leftW = Math.max(10, COLS - minRight);
-  }
-  const rightW = Math.max(minRight, COLS - leftW);
+  const columns = layoutSlice.arrange.columns || [];
+  const ranges = _distributeColumnWidths(columns, COLS);
+  const lastIdx = columns.length - 1;
   // Only the footer is reserved at the bottom; panels fill everything
   // else. The yank register surfaces via the `"` popup, not an
   // always-on chrome strip (retired v0.6).
   const availH = Math.max(6, ROWS - 1);
-
   // Minimum panel height: 3 rows (border + 1 content line)
   const minH = 3;
 
   layoutSlice.panelHeights = {};
-  distributeColumnHeights(layoutSlice, layoutSlice.arrange.leftPanels, availH, /*isRightCol*/ false, minH);
-  distributeColumnHeights(layoutSlice, layoutSlice.arrange.rightPanels, availH, /*isRightCol*/ true,  minH);
+  for (let ci = 0; ci < columns.length; ci++) {
+    const isLast = ci === lastIdx;
+    distributeColumnHeights(layoutSlice, columns[ci].panels || [], availH, isLast, minH);
+  }
   // Half/full view modes read panelHeights.detail even when detail
   // isn't currently rendered; keep the fallback so they don't crash.
   if (!('detail' in layoutSlice.panelHeights)) {
@@ -241,13 +274,13 @@ function calcLayout(model = getModel()) {
   // is the documented blessed exception per v0.5-layering.md §5; the
   // navigator's `set_scroll` arm is pure + idempotent (returns same
   // ref when the value is unchanged), so re-renders don't ping-pong.
-  for (const p of [...layoutSlice.arrange.leftPanels, ...layoutSlice.arrange.rightPanels]) {
+  for (const p of mpool.allPanesInColumns(layoutSlice.arrange)) {
     if (mpool.isDetailPane(p)) continue;
     if (p.collapsed) continue;  // no content rows to scroll-clamp against
     syncPanelScroll(p.type, layoutSlice.panelHeights[p.type] - 2);
   }
 
-  return { leftW, rightW, availH };
+  return { ranges, availH };
 }
 
 // --- Render modes ---
@@ -266,20 +299,25 @@ let _forceFullRepaint = true;
 let _prevOverlayFlags = new Set();
 
 /**
- * Paint left + right column outputs to the screen. `leftOutput` and
- * `rightOutput` are markup strings already rendered by the panel renderers;
- * they may each span multiple panels (multi-line). Pass empty string for
- * the right side in single-column modes (full).
+ * Paint column outputs to the screen. `columnOutputs` is an array of
+ * markup strings (one per column), each already rendered by the panel
+ * renderers and possibly multi-line. Rows are concatenated left-to-right.
+ * Single-column modes (half/full) pass a single-element array.
  */
-function paintColumns(leftOutput, rightOutput) {
+function paintColumns(columnOutputs) {
   const COLS = cols();
-  const leftRows = leftOutput ? leftOutput.split('\n') : [];
-  const rightRows = rightOutput ? rightOutput.split('\n') : [];
-  const maxRows = Math.max(leftRows.length, rightRows.length);
+  // Back-compat: accept the old two-argument shape transparently.
+  let cols2;
+  if (Array.isArray(columnOutputs)) cols2 = columnOutputs;
+  else cols2 = [columnOutputs, arguments[1] || ''];
 
+  const splits = cols2.map(s => s ? s.split('\n') : []);
+  const maxRows = splits.reduce((m, s) => Math.max(m, s.length), 0);
   const newRows = new Array(maxRows);
   for (let i = 0; i < maxRows; i++) {
-    newRows[i] = (leftRows[i] || '') + (rightRows[i] || '');
+    let row = '';
+    for (const s of splits) row += (s[i] || '');
+    newRows[i] = row;
   }
 
   // Width or row-count change → layout reshapes, can't trust per-row diff.
@@ -340,7 +378,7 @@ function _safeRender(fn, panel, w, h) {
 // view-derived data). Reset on every entry so stale entries from a
 // prior view-mode aren't hit-testable.
 function renderNormal(model) {
-  const { leftW, rightW } = calcLayout(model);
+  const { ranges } = calcLayout(model);
   const layoutSlice = getInstanceSlice('layout');
   layoutSlice.panelBounds = {};
   const freeConfigMode = !!(model.modes && model.modes.freeConfigMode);
@@ -373,21 +411,17 @@ function renderNormal(model) {
     out = injectTabTrigger(out, p);
     return out;
   };
-  let leftY = 0;
-  const leftOutputs = layoutSlice.arrange.leftPanels.map(p => {
-    const h = layoutSlice.panelHeights[p.type] || 0;
-    const out = renderOne(p, leftW, h, 0, leftY);
-    leftY += h;
-    return out;
+  const columnsOut = ranges.map(r => {
+    const panels = mpool.columnPanels(layoutSlice.arrange, r.columnIndex);
+    let y = 0;
+    return panels.map(p => {
+      const h = layoutSlice.panelHeights[p.type] || 0;
+      const out = renderOne(p, r.w, h, r.x, y);
+      y += h;
+      return out;
+    }).join('\n');
   });
-  let rightY = 0;
-  const rightOutputs = layoutSlice.arrange.rightPanels.map(p => {
-    const h = layoutSlice.panelHeights[p.type] || 0;
-    const out = renderOne(p, rightW, h, leftW, rightY);
-    rightY += h;
-    return out;
-  });
-  return paintColumns(leftOutputs.join('\n'), rightOutputs.join('\n'));
+  return paintColumns(columnsOut);
 }
 
 function renderHalf(model) {
@@ -430,7 +464,7 @@ function renderHalf(model) {
   // Hit-test math reads `panelBounds.detail` (right side), so inject
   // only on the right.
   if (rightContent) rightContent = injectTabTrigger(rightContent, detailPanel);
-  return paintColumns(leftContent, rightContent);
+  return paintColumns([leftContent, rightContent]);
 }
 
 function renderFull(model) {
@@ -448,7 +482,7 @@ function renderFull(model) {
   // Bake the [≡] trigger when the full-view focused panel is detail —
   // same parity with normal view.
   content = injectTabTrigger(content, focusedPanel);  // no-op if non-detail
-  return paintColumns(content, '');
+  return paintColumns([content]);
 }
 
 let _forceOverlayFull = true;

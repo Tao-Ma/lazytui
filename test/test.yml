@@ -23,16 +23,15 @@ panels:
     title: Detail
 
 layout:
-  left:
-    width: 32
-    panels:
-      - containers
-      - groups
-  right:
-    panels:
-      - actions
-      - stats
-      - detail
+  columns:
+    - width: 32
+      panels:
+        - containers
+        - groups
+    - panels:
+        - actions
+        - stats
+        - detail
 
 groups:
   # base: 4-level tree exercising recursive expand/collapse.

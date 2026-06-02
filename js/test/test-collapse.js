@@ -22,20 +22,27 @@ const layout = require('../panel/layout');
 // --- Tiny slice builder (mirrors test-pool-cmdline.js's helper) ---
 function buildSlice({ left = [], right = [], detailHeightPct = 60 } = {}) {
   const pool = {};
-  const mkPlacement = (id, type, hotkey, column, extra) =>
-    Object.assign({ id, type, title: id, hotkey, column }, extra || {});
+  const mkPlacement = (id, type, hotkey, columnIndex, extra) =>
+    Object.assign({ id, type, title: id, hotkey, columnIndex }, extra || {});
   const leftPanels = left.map(([id, type, extra], i) => {
     pool[id] = { id, type, title: id, config: {} };
-    return mkPlacement(id, type, String(i + 1), 'left', extra);
+    return mkPlacement(id, type, String(i + 1), 0, extra);
   });
   const RIGHT_KEYS = ['7', '8', '9'];
   const rightPanels = right.map(([id, type, extra], i) => {
     pool[id] = { id, type, title: id, config: {} };
-    return mkPlacement(id, type, RIGHT_KEYS[i], 'right', extra);
+    return mkPlacement(id, type, RIGHT_KEYS[i], 1, extra);
   });
   return {
     ...layout.init(),
-    arrange: { leftWidth: 30, detailHeightPct, leftPanels, rightPanels, pool },
+    arrange: {
+      detailHeightPct,
+      pool,
+      columns: [
+        { width: 30, panels: leftPanels },
+        { panels: rightPanels },
+      ],
+    },
   };
 }
 
@@ -48,8 +55,8 @@ describe('[panel_collapse_toggle] reducer', () => {
     });
     const next = layout.update({ type: 'panel_collapse_toggle', id: 'files' }, slice);
     assert(next !== slice, 'returns new slice');
-    eq(next.arrange.leftPanels[0].collapsed, undefined, 'untouched panel untouched');
-    eq(next.arrange.leftPanels[1].collapsed, true, 'targeted panel flipped');
+    eq(next.arrange.columns[0].panels[0].collapsed, undefined, 'untouched panel untouched');
+    eq(next.arrange.columns[0].panels[1].collapsed, true, 'targeted panel flipped');
     assert(next.dirty, 'marked dirty for :save-layout');
   });
   it('un-collapses on second toggle', () => {
@@ -58,7 +65,7 @@ describe('[panel_collapse_toggle] reducer', () => {
       right: [['detail', 'detail']],
     });
     const next = layout.update({ type: 'panel_collapse_toggle', id: 'groups' }, slice);
-    eq(next.arrange.leftPanels[0].collapsed, false);
+    eq(next.arrange.columns[0].panels[0].collapsed, false);
   });
   it('refuses to collapse detail', () => {
     const slice = buildSlice({
@@ -82,8 +89,8 @@ describe('[panel_collapse_toggle] reducer', () => {
       right: [['actions', 'actions'], ['detail', 'detail']],
     });
     const next = layout.update({ type: 'panel_collapse_toggle', id: 'actions' }, slice);
-    eq(next.arrange.rightPanels[0].collapsed, true);
-    eq(next.arrange.rightPanels[1].collapsed, undefined, 'detail untouched');
+    eq(next.arrange.columns[1].panels[0].collapsed, true);
+    eq(next.arrange.columns[1].panels[1].collapsed, undefined, 'detail untouched');
   });
 });
 
@@ -91,16 +98,16 @@ describe('[panel_collapse_toggle] reducer', () => {
 describe('[distributeColumnHeights] honors collapsed = 1 row', () => {
   const { _distributeColumnHeights } = require('../render/layout');
 
-  function run(panels, availH, isRight = false) {
+  function run(panels, availH, isLastCol = false) {
     const slice = { arrange: { detailHeightPct: 60 }, panelHeights: {} };
-    _distributeColumnHeights(slice, panels, availH, isRight, /*minH*/ 3);
+    _distributeColumnHeights(slice, panels, availH, isLastCol, /*minH*/ 3);
     return slice.panelHeights;
   }
 
   it('collapsed panel gets h=1; sibling absorbs the rest', () => {
     const panels = [
-      { type: 'groups', id: 'groups', column: 'left' },
-      { type: 'files',  id: 'files',  column: 'left', collapsed: true },
+      { type: 'groups', id: 'groups', columnIndex: 0 },
+      { type: 'files',  id: 'files',  columnIndex: 0, collapsed: true },
     ];
     const h = run(panels, 22, false);
     eq(h.files, 1, 'collapsed = 1 row');
@@ -109,9 +116,9 @@ describe('[distributeColumnHeights] honors collapsed = 1 row', () => {
 
   it('two collapsed siblings, one flex', () => {
     const panels = [
-      { type: 'a', id: 'a', column: 'left', collapsed: true },
-      { type: 'b', id: 'b', column: 'left' },
-      { type: 'c', id: 'c', column: 'left', collapsed: true },
+      { type: 'a', id: 'a', columnIndex: 0, collapsed: true },
+      { type: 'b', id: 'b', columnIndex: 0 },
+      { type: 'c', id: 'c', columnIndex: 0, collapsed: true },
     ];
     const h = run(panels, 22, false);
     eq(h.a, 1);
@@ -123,9 +130,9 @@ describe('[distributeColumnHeights] honors collapsed = 1 row', () => {
     // Two flex panels, one collapsed-LAST. Slack must NOT grow the
     // collapsed one (it's locked at h=1).
     const panels = [
-      { type: 'a', id: 'a', column: 'left' },
-      { type: 'b', id: 'b', column: 'left' },
-      { type: 'c', id: 'c', column: 'left', collapsed: true },
+      { type: 'a', id: 'a', columnIndex: 0 },
+      { type: 'b', id: 'b', columnIndex: 0 },
+      { type: 'c', id: 'c', columnIndex: 0, collapsed: true },
     ];
     // availH = 21 → innerAvail = 20 → flex 20/2 = 10 each. Sum a+b+c =
     // 10 + 10 + 1 = 21. No slack here — pick a non-divisible H instead.
@@ -139,8 +146,8 @@ describe('[distributeColumnHeights] honors collapsed = 1 row', () => {
   it('collapsed panel WITH detail in right column', () => {
     // Right column with detail (60% reserve) and one collapsed sibling.
     const panels = [
-      { type: 'actions', id: 'actions', column: 'right', collapsed: true },
-      { type: 'detail',  id: 'detail',  column: 'right' },
+      { type: 'actions', id: 'actions', columnIndex: 1, collapsed: true },
+      { type: 'detail',  id: 'detail',  columnIndex: 1 },
     ];
     const h = run(panels, 22, /*isRight*/ true);
     eq(h.actions, 1, 'collapsed at 1');
@@ -156,7 +163,7 @@ describe('[distributeColumnHeights] honors collapsed = 1 row', () => {
     // the renderer-side behavior (detail wins detail-reserve), since the
     // reducer-level no-op covers the actual user path.
     const panels = [
-      { type: 'detail', id: 'detail', column: 'right', collapsed: true },
+      { type: 'detail', id: 'detail', columnIndex: 1, collapsed: true },
     ];
     const h = run(panels, 22, true);
     // The current behavior: collapsed branch fires first (h=1), then
@@ -175,7 +182,7 @@ describe('[yaml-layout] collapsed serialization', () => {
 
   it('serializeLayoutCell emits collapsed: true (mapping form)', () => {
     const lines = yaml.serializeLayoutCell(
-      { id: 'files', type: 'files', column: 'left', collapsed: true },
+      { id: 'files', type: 'files', columnIndex: 0, collapsed: true },
       8, {});
     const joined = lines.join('\n');
     assert(joined.includes('collapsed: true'), `got: ${joined}`);
@@ -184,7 +191,7 @@ describe('[yaml-layout] collapsed serialization', () => {
 
   it('does NOT emit collapsed when absent (bare-string cell)', () => {
     const lines = yaml.serializeLayoutCell(
-      { id: 'files', type: 'files', column: 'left' },
+      { id: 'files', type: 'files', columnIndex: 0 },
       8, {});
     const joined = lines.join('\n');
     assert(!joined.includes('collapsed'), `got: ${joined}`);
@@ -193,7 +200,7 @@ describe('[yaml-layout] collapsed serialization', () => {
 
   it('does NOT emit collapsed: false (bare-string cell)', () => {
     const lines = yaml.serializeLayoutCell(
-      { id: 'files', type: 'files', column: 'left', collapsed: false },
+      { id: 'files', type: 'files', columnIndex: 0, collapsed: false },
       8, {});
     const joined = lines.join('\n');
     assert(!joined.includes('collapsed'), `got: ${joined}`);
@@ -219,13 +226,12 @@ panels:
   detail:
     type: detail
 layout:
-  left:
-    width: 30
-    panels:
-      - { tabs: [files], collapsed: true }
-  right:
-    panels:
-      - detail
+  columns:
+    - width: 30
+      panels:
+        - { tabs: [files], collapsed: true }
+    - panels:
+        - detail
 groups:
   g1:
     label: G1
@@ -236,7 +242,7 @@ groups:
 `.trim());
     try {
       const cfg = parser.parse(p);
-      const files = cfg.layout.left_panels.find(x => x.id === 'files');
+      const files = cfg.layout.columns[0].panels.find(x => x.id === 'files');
       assert(files, 'files placed');
       eq(files.collapsed, true, 'collapsed lifted onto placement');
     } finally { fs.unlinkSync(p); }
@@ -250,13 +256,12 @@ panels:
   detail:
     type: detail
 layout:
-  left:
-    width: 30
-    panels:
-      - files
-  right:
-    panels:
-      - { tabs: [detail], collapsed: true }
+  columns:
+    - width: 30
+      panels:
+        - files
+    - panels:
+        - { tabs: [detail], collapsed: true }
 groups:
   g1:
     label: G1
@@ -281,13 +286,12 @@ panels:
   detail:
     type: detail
 layout:
-  left:
-    width: 30
-    panels:
-      - files
-  right:
-    panels:
-      - detail
+  columns:
+    - width: 30
+      panels:
+        - files
+    - panels:
+        - detail
 groups:
   g1:
     label: G1

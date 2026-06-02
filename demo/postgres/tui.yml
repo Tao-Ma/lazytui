@@ -118,14 +118,13 @@ panels:
     title: Detail
 
 layout:
-  left:
-    width: 32
-    panels:
-      - containers
-      - groups
-      - files
-  right:
-    panels:
-      - actions
-      - stats
-      - { tabs: [detail], height: 60% }
+  columns:
+    - width: 32
+      panels:
+        - containers
+        - groups
+        - files
+    - panels:
+        - actions
+        - stats
+        - { tabs: [detail], height: 60% }

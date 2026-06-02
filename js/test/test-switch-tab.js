@@ -31,7 +31,7 @@ function buildMultiTabSlice() {
   const multiTabPane = {
     // legacy fields mirror the active tab (docker)
     id: 'docker', type: 'docker', title: 'Docker',
-    hotkey: '1', column: 'left',
+    hotkey: '1', columnIndex: 0,
     config: pool.docker.config,
     decorators: ['status'],   // spread from docker.config
     // pane fields
@@ -41,29 +41,31 @@ function buildMultiTabSlice() {
   };
   const groupsPane = {
     id: 'groups', type: 'groups', title: 'Groups',
-    hotkey: '2', column: 'left',
+    hotkey: '2', columnIndex: 0,
     config: pool.groups.config,
     paneId: 'pane-groups', tabs: [{ id: 'groups', poolId: 'groups' }], activeTabId: 'groups',
   };
   const actionsPane = {
     id: 'actions', type: 'actions', title: 'Actions',
-    hotkey: '7', column: 'right',
+    hotkey: '7', columnIndex: 1,
     config: pool.actions.config,
     paneId: 'pane-actions', tabs: [{ id: 'actions', poolId: 'actions' }], activeTabId: 'actions',
   };
   const detailPane = {
     id: 'detail', type: 'detail', title: 'Detail',
-    hotkey: '8', column: 'right',
+    hotkey: '8', columnIndex: 1,
     config: pool.detail.config,
     paneId: 'pane-detail', tabs: [{ id: 'detail', poolId: 'detail' }], activeTabId: 'detail',
   };
   return {
     ...layout.init(),
     arrange: {
-      leftWidth: 30, detailHeightPct: 60,
-      leftPanels: [multiTabPane, groupsPane],
-      rightPanels: [actionsPane, detailPane],
+      detailHeightPct: 60,
       pool,
+      columns: [
+        { width: 30, panels: [multiTabPane, groupsPane] },
+        { panels: [actionsPane, detailPane] },
+      ],
     },
   };
 }
@@ -74,7 +76,7 @@ describe('[set_active_tab] flips active tab + rewrites legacy fields', () => {
     const next = layout.update({
       type: 'set_active_tab', paneId: 'pane-docker', tabPoolId: 'logs',
     }, slice);
-    const pane = next.arrange.leftPanels[0];
+    const pane = next.arrange.columns[0].panels[0];
     eq(pane.activeTabId, 'logs',         'activeTabId points at logs');
     eq(pane.id,          'logs',          'legacy id mirrors new active');
     eq(pane.type,        'viewer',        'legacy type mirrors new active kind');
@@ -84,7 +86,7 @@ describe('[set_active_tab] flips active tab + rewrites legacy fields', () => {
     assert(!('decorators' in pane),       'old active config keys cleared on rewrite');
     eq(pane.paneId,    'pane-docker',     'paneId preserved (placement identity)');
     eq(pane.hotkey,    '1',                'hotkey preserved');
-    eq(pane.column,    'left',             'column preserved');
+    eq(pane.columnIndex, 0,                 'columnIndex preserved');
     eq(pane.heightPct, 50,                 'heightPct preserved');
     eq(pane.tabs.length, 2,                'tabs list preserved');
     assert(next.dirty,                     'arrange marked dirty');
@@ -103,9 +105,9 @@ describe('[set_active_tab] flips active tab + rewrites legacy fields', () => {
     const next = layout.update({
       type: 'set_active_tab', paneId: 'pane-docker', tabPoolId: 'logs',
     }, slice);
-    eq(next.arrange.leftPanels[1], slice.arrange.leftPanels[1],  'groups pane unchanged');
-    eq(next.arrange.rightPanels[0], slice.arrange.rightPanels[0], 'actions pane unchanged');
-    eq(next.arrange.rightPanels[1], slice.arrange.rightPanels[1], 'detail pane unchanged');
+    eq(next.arrange.columns[0].panels[1], slice.arrange.columns[0].panels[1],  'groups pane unchanged');
+    eq(next.arrange.columns[1].panels[0], slice.arrange.columns[1].panels[0], 'actions pane unchanged');
+    eq(next.arrange.columns[1].panels[1], slice.arrange.columns[1].panels[1], 'detail pane unchanged');
   });
 });
 
@@ -117,7 +119,7 @@ describe('[set_active_tab] focus follow', () => {
     }, slice);
     assert(Array.isArray(result), 'returns [slice, cmds] (cmds present)');
     const [next, cmds] = result;
-    eq(next.arrange.leftPanels[0].activeTabId, 'logs', 'pane switched');
+    eq(next.arrange.columns[0].panels[0].activeTabId, 'logs', 'pane switched');
     assert(cmds.length >= 1, 'at least one cmd emitted');
     const focusCmd = cmds.find(c =>
       c.type === 'dispatch_msg' && c.msg && c.msg.kind === 'layout' &&
@@ -147,7 +149,7 @@ describe('[set_active_tab] focus follow', () => {
     // Returned as bare slice (no cmds) — switching a non-focused pane
     // doesn't disturb the user's current focus.
     assert(!Array.isArray(result), 'returns bare slice (no focus follow needed)');
-    eq(result.arrange.leftPanels[0].activeTabId, 'logs', 'switch still applied');
+    eq(result.arrange.columns[0].panels[0].activeTabId, 'logs', 'switch still applied');
   });
 });
 
@@ -169,7 +171,7 @@ describe('[set_active_tab] refusal paths', () => {
   it('unknown pool id → no-op', () => {
     const slice = buildMultiTabSlice();
     // forge a tab list entry that the pool doesn't define
-    slice.arrange.leftPanels[0].tabs.push({ id: 'phantom', poolId: 'phantom' });
+    slice.arrange.columns[0].panels[0].tabs.push({ id: 'phantom', poolId: 'phantom' });
     const next = layout.update({
       type: 'set_active_tab', paneId: 'pane-docker', tabPoolId: 'phantom',
     }, slice);
@@ -199,21 +201,20 @@ panels:
   actions: { type: actions, title: Actions }
   detail:  { type: detail,  title: Detail }
 layout:
-  left:
-    panels:
-      - { tabs: [docker, logs] }
-      - groups
-  right:
-    panels:
-      - actions
-      - detail
+  columns:
+    - panels:
+        - { tabs: [docker, logs] }
+        - groups
+    - panels:
+        - actions
+        - detail
 `;
     const tmp = path.join(os.tmpdir(), `lazytui-switch-tab-${process.pid}.yml`);
     fs.writeFileSync(tmp, yaml);
     let cfg;
     try { cfg = parse(tmp); } finally { fs.unlinkSync(tmp); }
     const arrange = rebuildLayoutFromConfig(cfg);
-    const initialPane = arrange.leftPanels[0];
+    const initialPane = arrange.columns[0].panels[0];
     eq(initialPane.activeTabId, 'docker',  'starts on tabs[0] (no activeTab override)');
     eq(initialPane.type,        'docker',  'legacy type mirrors docker');
 
@@ -221,7 +222,7 @@ layout:
     const next = layout.update({
       type: 'set_active_tab', paneId: initialPane.paneId, tabPoolId: 'logs',
     }, slice);
-    const swappedPane = next.arrange.leftPanels[0];
+    const swappedPane = next.arrange.columns[0].panels[0];
     eq(swappedPane.activeTabId, 'logs',    'flipped to logs');
     eq(swappedPane.type,        'viewer',  'legacy type follows the kind switch');
     eq(swappedPane.title,       'Logs',     'title follows the switch');
@@ -242,13 +243,12 @@ panels:
   actions: { type: actions, title: Actions }
   detail:  { type: detail,  title: Detail }
 layout:
-  left:
-    panels:
-      - { tabs: [docker, logs] }
-  right:
-    panels:
-      - actions
-      - detail
+  columns:
+    - panels:
+        - { tabs: [docker, logs] }
+    - panels:
+        - actions
+        - detail
 `;
     const tmp = path.join(os.tmpdir(), `lazytui-switch-rt-${process.pid}.yml`);
     fs.writeFileSync(tmp, yaml);
@@ -256,7 +256,7 @@ layout:
     const arrange = rebuildLayoutFromConfig(cfg);
     const slice = { ...layout.init(), arrange };
     const next = layout.update({
-      type: 'set_active_tab', paneId: arrange.leftPanels[0].paneId, tabPoolId: 'logs',
+      type: 'set_active_tab', paneId: arrange.columns[0].panels[0].paneId, tabPoolId: 'logs',
     }, slice);
     const out = serializeLayout(next.arrange);
     assert(out.includes('tabs: [docker, logs]'),     'tab order preserved');
@@ -266,7 +266,7 @@ layout:
     const cfg2 = parse(tmp);
     fs.unlinkSync(tmp);
     const arrange2 = rebuildLayoutFromConfig(cfg2);
-    eq(arrange2.leftPanels[0].activeTabId, 'logs',    'activeTab round-trips');
+    eq(arrange2.columns[0].panels[0].activeTabId, 'logs',    'activeTab round-trips');
   });
 });
 

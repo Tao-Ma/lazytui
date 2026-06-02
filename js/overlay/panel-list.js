@@ -131,16 +131,18 @@ function _buildPreviewLines(entry, w, h, arrange) {
   if (entry.status !== 'hidden') {
     const lines = [`[dim]── ${esc(entry.title || entry.id)} ──[/]`, ''];
     // Find where it sits in the grid.
-    const cols2 = ['left', 'right'];
-    for (const c of cols2) {
-      const arr = c === 'left' ? arrange.leftPanels : arrange.rightPanels;
-      const idx = arr.findIndex(p => p.id === entry.id);
-      if (idx >= 0) {
-        lines.push(`  column: [bold]${c}[/]`);
-        lines.push(`  slot:   ${idx + 1} of ${arr.length}`);
-        lines.push(`  hotkey: ${arr[idx].hotkey || '(none)'}`);
-        break;
-      }
+    const loc = mpool.findPaneLocation(arrange, p => p.id === entry.id);
+    if (loc) {
+      const colPanels = mpool.columnPanels(arrange, loc.columnIndex);
+      const N = mpool.columnCount(arrange);
+      const colLabel = loc.columnIndex === 0
+        ? `1 (first)`
+        : loc.columnIndex === N - 1
+          ? `${loc.columnIndex + 1} (last)`
+          : `${loc.columnIndex + 1}`;
+      lines.push(`  column: [bold]${colLabel}[/]`);
+      lines.push(`  slot:   ${loc.paneIndex + 1} of ${colPanels.length}`);
+      lines.push(`  hotkey: ${loc.pane.hotkey || '(none)'}`);
     }
     if (entry.status === 'essential') {
       lines.push('');
@@ -160,7 +162,7 @@ function _buildPreviewLines(entry, w, h, arrange) {
     type: entry.type,
     title: entry.title,
     hotkey: '',
-    column: 'right',
+    columnIndex: mpool.lastColumnIndex(arrange),
   };
   // Reserve 1 trailing column so the rendered panel's right border
   // doesn't kiss the overlay's right border (which produced a visual

@@ -44,7 +44,7 @@ function pane({ id, type, title, tabs, activeTabId, heightPct, collapsed }) {
   const tabList = tabs || [{ id, poolId: id }];
   return {
     id, type, title: title || (type && type[0].toUpperCase() + type.slice(1)),
-    hotkey: '', column: 'left',
+    hotkey: '', columnIndex: 0,
     paneId: `pane-${id}`,
     tabs: tabList,
     activeTabId: activeTabId || (tabList[0] && tabList[0].poolId),
@@ -191,15 +191,17 @@ describe('[3] serializeLayoutCell — bare-string vs mapping', () => {
 describe('[4] serializeLayout — full layout block', () => {
   it('emits a well-formed layout: block with pool-ref cells', () => {
     const out = serializeLayout({
-      leftWidth: 32, detailHeightPct: 60,
-      leftPanels: [
-        pane({ id: 'containers', type: 'containers' }),
-        pane({ id: 'groups',     type: 'groups' }),
-      ],
-      rightPanels: [
-        pane({ id: 'actions', type: 'actions' }),
-        pane({ id: 'stats',   type: 'stats' }),
-        pane({ id: 'detail',  type: 'detail' }),
+      detailHeightPct: 60,
+      columns: [
+        { width: 32, panels: [
+          pane({ id: 'containers', type: 'containers' }),
+          pane({ id: 'groups',     type: 'groups' }),
+        ] },
+        { panels: [
+          pane({ id: 'actions', type: 'actions' }),
+          pane({ id: 'stats',   type: 'stats' }),
+          pane({ id: 'detail',  type: 'detail' }),
+        ] },
       ],
       pool: {
         containers: { id: 'containers', type: 'containers', title: 'Containers', config: {} },
@@ -209,12 +211,13 @@ describe('[4] serializeLayout — full layout block', () => {
         detail:     { id: 'detail',     type: 'detail',     title: 'Detail',     config: {} },
       },
     });
-    assert(out.startsWith('layout:\n  left:\n    width: 32\n'),
-      `starts with layout/left/width (got start: ${JSON.stringify(out.slice(0, 60))})`);
-    assert(out.includes('- containers'),     'left pool-ref cell for containers');
-    assert(out.includes('- groups'),         'left pool-ref cell for groups');
-    assert(out.includes('- actions'),        'right pool-ref cell for actions');
-    assert(out.includes('- stats'),          'right pool-ref cell for stats');
+    assert(out.startsWith('layout:\n  columns:\n'),
+      `starts with layout/columns (got start: ${JSON.stringify(out.slice(0, 60))})`);
+    assert(out.includes('width: 32'),        'first column width emitted');
+    assert(out.includes('- containers'),     'first col pool-ref cell for containers');
+    assert(out.includes('- groups'),         'first col pool-ref cell for groups');
+    assert(out.includes('- actions'),        'last col pool-ref cell for actions');
+    assert(out.includes('- stats'),          'last col pool-ref cell for stats');
     assert(out.includes('tabs: [detail]'),   'detail lifts to mapping form for height');
     assert(out.includes('height: 60%'),      'detail height synthesized');
   });
@@ -224,11 +227,13 @@ describe('[4] serializeLayout — full layout block', () => {
     // pool entries carry every extra key back.
     const tmp = path.join(os.tmpdir(), `lazytui-yaml-rt-${process.pid}.yml`);
     const layoutYaml = serializeLayout({
-      leftWidth: 28, detailHeightPct: 70,
-      leftPanels: [pane({ id: 'containers', type: 'containers' })],
-      rightPanels: [
-        pane({ id: 'stats',  type: 'stats' }),
-        pane({ id: 'detail', type: 'detail' }),
+      detailHeightPct: 70,
+      columns: [
+        { width: 28, panels: [pane({ id: 'containers', type: 'containers' })] },
+        { panels: [
+          pane({ id: 'stats',  type: 'stats' }),
+          pane({ id: 'detail', type: 'detail' }),
+        ] },
       ],
       pool: {
         containers: { id: 'containers', type: 'containers', title: 'Containers',
@@ -254,7 +259,7 @@ describe('[4] serializeLayout — full layout block', () => {
     let cfg;
     try { cfg = parse(tmp); } finally { fs.unlinkSync(tmp); }
 
-    eq(cfg.layout.left_width, 28, 'left width round-trips');
+    eq(cfg.layout.columns[0].width, 28, 'first column width round-trips');
     eq(cfg.layout.detail_height_pct, 70, 'detail height round-trips');
     eq(cfg.layout.pool.containers.config.decorators.join(','), 'status',
        'decorators survive YAML round-trip');
@@ -272,12 +277,14 @@ describe('[4] serializeLayout — full layout block', () => {
     // (serialize) followed by reload (parse) must preserve them.
     const tmp = path.join(os.tmpdir(), `lazytui-yaml-rt2-${process.pid}.yml`);
     const arrange = {
-      leftWidth: 32, detailHeightPct: 60,
-      leftPanels: [
-        pane({ id: 'groups', type: 'groups' }),
-        pane({ id: 'files',  type: 'files' }),
+      detailHeightPct: 60,
+      columns: [
+        { width: 32, panels: [
+          pane({ id: 'groups', type: 'groups' }),
+          pane({ id: 'files',  type: 'files' }),
+        ] },
+        { panels: [pane({ id: 'detail', type: 'detail' })] },
       ],
-      rightPanels: [pane({ id: 'detail', type: 'detail' })],
       pool: {
         groups: { id: 'groups', type: 'groups', title: 'Groups', config: {} },
         files: { id: 'files', type: 'files', title: 'PGDATA',
@@ -322,22 +329,25 @@ describe('[5] writeLayoutToFile — splices both panels: and layout: blocks', ()
       '    title: Detail',
       '',
       'layout:',
-      '  left:',
-      '    width: 20',
-      '    panels:',
-      '      - containers',
-      '  right:',
-      '    panels:',
-      '      - tabs: [detail]',
-      '        height: 50%',
+      '  columns:',
+      '    -',
+      '      width: 20',
+      '      panels:',
+      '        - containers',
+      '    -',
+      '      panels:',
+      '        - tabs: [detail]',
+      '          height: 50%',
       '',
       '# trailing comment',
     ].join('\n'));
 
     const arrange = {
-      leftWidth: 35, detailHeightPct: 65,
-      leftPanels: [pane({ id: 'containers', type: 'containers' })],
-      rightPanels: [pane({ id: 'detail', type: 'detail' })],
+      detailHeightPct: 65,
+      columns: [
+        { width: 35, panels: [pane({ id: 'containers', type: 'containers' })] },
+        { panels: [pane({ id: 'detail', type: 'detail' })] },
+      ],
       pool: {
         containers: { id: 'containers', type: 'containers', title: 'New Title',
                       config: { decorators: ['status'] } },
@@ -376,9 +386,11 @@ describe('[5] writeLayoutToFile — splices both panels: and layout: blocks', ()
       '',
     ].join('\n'));
     const arrange = {
-      leftWidth: 30, detailHeightPct: 60,
-      leftPanels: [pane({ id: 'groups', type: 'groups' })],
-      rightPanels: [pane({ id: 'detail', type: 'detail' })],
+      detailHeightPct: 60,
+      columns: [
+        { width: 30, panels: [pane({ id: 'groups', type: 'groups' })] },
+        { panels: [pane({ id: 'detail', type: 'detail' })] },
+      ],
       pool: {
         groups: { id: 'groups', type: 'groups', title: 'Groups', config: {} },
         detail: { id: 'detail', type: 'detail', title: 'Detail', config: {} },
@@ -396,7 +408,7 @@ describe('[5] writeLayoutToFile — splices both panels: and layout: blocks', ()
 
   it('returns error for unwritable path', () => {
     const result = writeLayoutToFile(
-      { leftWidth: 30, detailHeightPct: 60, leftPanels: [], rightPanels: [], pool: {} },
+      { detailHeightPct: 60, columns: [{ panels: [] }], pool: {} },
       '/nonexistent-dir/cannot-write.yml'
     );
     assert(result.error !== null, 'error surfaced');

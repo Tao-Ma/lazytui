@@ -218,7 +218,7 @@ function handleMouse(kind, x, y) {
     const isTabDrag = drag && (drag.kind === 'tab-armed' || drag.kind === 'tab-dragging');
 
     if (isPoolDrag) {
-      if (kind === 'motion')       dispatchMsg(wrap('layout', { type: 'pool_drag_motion', mx, my }));
+      if (kind === 'motion')       dispatchMsg(wrap('layout', { type: 'pool_drag_motion', mx, my, cols: cols() }));
       else if (kind === 'release') dispatchMsg(wrap('layout', { type: 'pool_drag_release' }));
       render();
       return;

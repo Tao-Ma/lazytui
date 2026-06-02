@@ -202,7 +202,7 @@ function _frameworkDynamicCommands(m) {
     // singleton-instance fallback).
     const focus = layoutSlice.focus;
     if (focus) {
-      const all = arrange.leftPanels.concat(arrange.rightPanels);
+      const all = mpool.allPanesInColumns(arrange);
       const focusedPane = all.find(p =>
         (p.tabs && p.tabs.some(t => t.id === focus)) || p.id === focus
       );

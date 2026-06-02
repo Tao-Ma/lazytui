@@ -14,9 +14,10 @@
 'use strict';
 
 const { esc } = require('../io/ansi');
+const mpool = require('./pool');
 
 function buildItems(layoutSlice) {
-  const arrange = (layoutSlice && layoutSlice.arrange) || { leftPanels: [], rightPanels: [] };
+  const arrange = (layoutSlice && layoutSlice.arrange) || { columns: [] };
   const items = [
     ['↑ / k    Move up',            'nav_up'],
     ['↓ / j    Move down',          'nav_down'],
@@ -24,7 +25,7 @@ function buildItems(layoutSlice) {
     ['→ / l    Panel right',        'focus_right'],
     null,
   ];
-  const panels = [...arrange.leftPanels, ...arrange.rightPanels];
+  const panels = mpool.allPanesInColumns(arrange);
   for (const p of panels) {
     if (p.hotkey) items.push([`[${p.hotkey}]       ${esc(p.title)}`, `focus_panel:${p.hotkey}`]);
   }

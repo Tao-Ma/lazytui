@@ -186,14 +186,15 @@ function resolveTarget(intent, ctx) {
     return layout.lastViewerTab;
   }
 
-  // (3) first viewer-kind in right-column arrange order. Walk each
+  // (3) first viewer-kind in last-column arrange order. Walk each
   //     pane's tabs and return the first viewer-kind tab id; this is
   //     the actually-mounted slice identity (instance keyed by id),
   //     not the kind literal. For singleton placements the answer
   //     happens to equal VIEWER_KIND, but multi-instance panes mint
   //     distinct ids and the literal would be wrong.
-  if (layout && layout.arrange && Array.isArray(layout.arrange.rightPanels)) {
-    for (const p of layout.arrange.rightPanels) {
+  if (layout && layout.arrange && Array.isArray(layout.arrange.columns)) {
+    const mpool = require('./pool');
+    for (const p of mpool.lastColumnPanels(layout.arrange)) {
       if (!p) continue;
       const tabs = Array.isArray(p.tabs) ? p.tabs : null;
       if (tabs) {
@@ -201,7 +202,6 @@ function resolveTarget(intent, ctx) {
           if (t && isViewerKind(t.id)) return t.id;
         }
       } else if (isViewerKind(p.id)) {
-        // Defensive: pre-pane fixture without `tabs[]`.
         return p.id;
       }
     }

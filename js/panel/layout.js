@@ -2,7 +2,7 @@
  * Core Component — layout (chrome-only, no panelTypes).
  *
  * The frame surrounding the panel grid. Owns:
- *   - arrange        — { leftWidth, leftPanels, rightPanels, detailHeightPct, pool }
+ *   - arrange        — { columns: [{width?, panels}], detailHeightPct, pool }
  *   - focus          — currently focused panel type
  *   - viewMode       — normal / half / full
  *   - dirty          — layout has unsaved changes (drives `:save-layout` hint)
@@ -27,6 +27,16 @@ const { getModel } = require('../app/runtime');
 
 const { LEFT_HOTKEY_POOL, RIGHT_HOTKEY_POOL } = require('../leaves/hotkeys');
 
+/** Hotkey pool for the column at `columnIndex` in an `N`-column layout.
+ *  First column → LEFT_HOTKEY_POOL, last → RIGHT_HOTKEY_POOL, middle
+ *  columns get empty (no auto-assigned hotkeys). Mirrors
+ *  parser/index.js#hotkeyPoolForColumn. */
+function hotkeyPoolForColumn(columnIndex, N) {
+  if (columnIndex === 0) return LEFT_HOTKEY_POOL;
+  if (columnIndex === N - 1) return RIGHT_HOTKEY_POOL;
+  return [];
+}
+
 /** Reassign positional hotkeys for a column after a hide/show mutation.
  *  Matches the free-config behavior — hotkey is the panel's slot index
  *  within its column. Explicit YAML hotkeys are NOT preserved across
@@ -41,7 +51,7 @@ function rekeyColumn(panels, pool) {
  *  needed) or just within one (no repaint).
  *
  *  Compares every field that affects the preview render — without `kind`
- *  an insert@N and a swap@N at the same column compare equal; without
+ *  an insert@N and a swap@N at the same columnIndex compare equal; without
  *  `index` two distinct inserts compare equal; without `occupantType`
  *  /`occupantId` distinct swap/replace targets compare equal. curX/curY
  *  are not visual; ignore them. */
@@ -49,7 +59,7 @@ function _dragTargetsEqual(a, b) {
   if (a === b) return true;
   if (!a || !b) return false;
   return a.kind === b.kind
-      && a.column === b.column
+      && a.columnIndex === b.columnIndex
       && a.index === b.index
       && a.occupantId === b.occupantId
       && a.occupantType === b.occupantType
@@ -58,12 +68,12 @@ function _dragTargetsEqual(a, b) {
 
 function init() {
   return {
-    // { leftPanels, rightPanels, leftWidth, detailHeightPct, pool }.
+    // { columns: [{width?, panels}], detailHeightPct, pool }.
     // `pool` is the v0.6 id → entry map for placed + hidden panels;
     // pool derivations live in `js/leaves/pool`. state.js's initState
     // replaces this default with the parsed config
     // (leaves/arrange.rebuildLayoutFromConfig).
-    arrange: { leftWidth: 30, leftPanels: [], rightPanels: [], detailHeightPct: 60, pool: {} },
+    arrange: { columns: [{ width: 30, panels: [] }, { panels: [] }], detailHeightPct: 60, pool: {} },
     // Default focus = first declared panel. state.js's initState() overrides
     // this once the parsed layout is in.
     focus: 'groups',
@@ -316,7 +326,7 @@ function update(msg, slice) {
     }
     case 'free_config_nav':          return mfc.navSelect(slice, msg.dir);
     case 'free_config_reorder':      return mfc.clampSelected(mfc.reorderWithin(slice, msg.dir));
-    case 'free_config_move_col':     return mfc.clampSelected(mfc.moveColumn(slice, msg.col));
+    case 'free_config_move_col':     return mfc.clampSelected(mfc.moveColumn(slice, msg.dir));
     case 'free_config_resize':       return mfc.resizeWidthOrDetail(slice, msg.delta);
     case 'free_config_panel_height': return mfc.resizeFocusedPanelHeight(slice, msg.delta);
     case 'free_config_undo':         return mfc.clampSelected(mfc.undo(slice));
@@ -369,7 +379,7 @@ function update(msg, slice) {
       // motion within one zone is a no-op. Same diff-painter rule as the
       // in-grid drag — emitting force_full_repaint every motion was
       // causing visible blinking under rapid drag.
-      const next = mpoolDrag.poolDragMotion(slice, msg.mx, msg.my);
+      const next = mpoolDrag.poolDragMotion(slice, msg.mx, msg.my, msg.cols);
       if (next === slice) return slice;
       const oldT = slice.freeConfig && slice.freeConfig.drag && slice.freeConfig.drag.target;
       const newT = next.freeConfig  && next.freeConfig.drag  && next.freeConfig.drag.target;
@@ -434,18 +444,9 @@ function update(msg, slice) {
       const paneId = msg.paneId;
       const tabPoolId = msg.tabPoolId;
       if (!paneId || !tabPoolId) return slice;
-      let col = null, idx = -1;
-      for (let i = 0; i < arrange.leftPanels.length; i++) {
-        if (arrange.leftPanels[i].paneId === paneId) { col = 'left'; idx = i; break; }
-      }
-      if (idx < 0) {
-        for (let i = 0; i < arrange.rightPanels.length; i++) {
-          if (arrange.rightPanels[i].paneId === paneId) { col = 'right'; idx = i; break; }
-        }
-      }
-      if (idx < 0) return slice;
-      const panes = col === 'left' ? arrange.leftPanels : arrange.rightPanels;
-      const pane = panes[idx];
+      const loc = mpool.findPaneLocation(arrange, p => p.paneId === paneId);
+      if (!loc) return slice;
+      const pane = loc.pane;
       if (!pane.tabs || !pane.tabs.some(t => t.id === tabPoolId)) return slice;
       if (pane.activeTabId === tabPoolId) return slice;
       const entry = (arrange.pool || {})[tabPoolId];
@@ -456,7 +457,7 @@ function update(msg, slice) {
         type: entry.type,
         title: entry.title,
         hotkey: pane.hotkey,
-        column: pane.column,
+        columnIndex: pane.columnIndex,
         config: entry.config,
         paneId: pane.paneId,
         tabs: pane.tabs,
@@ -464,11 +465,11 @@ function update(msg, slice) {
       };
       if (pane.heightPct !== undefined) nextPane.heightPct = pane.heightPct;
       if (pane.collapsed === true)      nextPane.collapsed = true;
-      const nextPanes = panes.slice();
-      nextPanes[idx] = nextPane;
-      const nextArrange = col === 'left'
-        ? { ...arrange, leftPanels: nextPanes }
-        : { ...arrange, rightPanels: nextPanes };
+      const nextArrange = mpool.updateColumn(arrange, loc.columnIndex, panels => {
+        const out = panels.slice();
+        out[loc.paneIndex] = nextPane;
+        return out;
+      });
       const next = { ...slice, arrange: nextArrange, dirty: true };
       // Focus follow — when the switched pane was focused, retarget
       // focus to the new active tab id. Otherwise render's
@@ -492,18 +493,13 @@ function update(msg, slice) {
       const entry = (arrange.pool || {})[id];
       if (!entry) return slice;
       if (mpool.isDetailPane(entry)) return slice;
-      const leftIdx  = arrange.leftPanels.findIndex(p => p.id === id);
-      const rightIdx = arrange.rightPanels.findIndex(p => p.id === id);
-      let nextLeft  = arrange.leftPanels;
-      let nextRight = arrange.rightPanels;
-      if (leftIdx >= 0) {
-        nextLeft = rekeyColumn(arrange.leftPanels.filter((_, i) => i !== leftIdx), LEFT_HOTKEY_POOL);
-      } else if (rightIdx >= 0) {
-        nextRight = rekeyColumn(arrange.rightPanels.filter((_, i) => i !== rightIdx), RIGHT_HOTKEY_POOL);
-      } else {
-        return slice;  // already hidden
-      }
-      const next = { ...slice, arrange: { ...arrange, leftPanels: nextLeft, rightPanels: nextRight }, dirty: true };
+      const loc = mpool.findPaneLocation(arrange, p => p.id === id);
+      if (!loc) return slice;  // already hidden
+      const N = mpool.columnCount(arrange);
+      const pool = hotkeyPoolForColumn(loc.columnIndex, N);
+      const nextArrange = mpool.updateColumn(arrange, loc.columnIndex, panels =>
+        rekeyColumn(panels.filter((_, i) => i !== loc.paneIndex), pool));
+      const next = { ...slice, arrange: nextArrange, dirty: true };
       // If the hidden panel was focused, focus is now stale (points at
       // a no-longer-placed type). clampSelected snaps it back to a
       // valid panel.
@@ -553,20 +549,15 @@ function update(msg, slice) {
     case 'panel_collapse_toggle': {
       const arrange = slice.arrange;
       const id = msg.id;
-      const leftIdx  = arrange.leftPanels.findIndex(p => p.id === id);
-      const rightIdx = arrange.rightPanels.findIndex(p => p.id === id);
-      let col = null, idx = -1;
-      if (leftIdx >= 0)       { col = 'left';  idx = leftIdx;  }
-      else if (rightIdx >= 0) { col = 'right'; idx = rightIdx; }
-      else return slice;
-      const arr = col === 'left' ? arrange.leftPanels : arrange.rightPanels;
-      const p = arr[idx];
+      const loc = mpool.findPaneLocation(arrange, p => p.id === id);
+      if (!loc) return slice;
+      const p = loc.pane;
       if (mpool.isDetailPane(p)) return slice;  // essential
-      const next = { ...p, collapsed: !p.collapsed };
-      const nextArr = arr.slice(); nextArr[idx] = next;
-      const nextArrange = col === 'left'
-        ? { ...arrange, leftPanels:  nextArr }
-        : { ...arrange, rightPanels: nextArr };
+      const nextArrange = mpool.updateColumn(arrange, loc.columnIndex, panels => {
+        const out = panels.slice();
+        out[loc.paneIndex] = { ...p, collapsed: !p.collapsed };
+        return out;
+      });
       // Mark dirty: collapsed is a real layout field that round-trips
       // through :save-layout. The free-config unsaved-banner only
       // surfaces in that mode (footerKeys check), so normal-mode
@@ -583,35 +574,38 @@ function update(msg, slice) {
       // Invariant guard: refuse a second detail / actions.
       if (mpool.isDetailPane(entry)  && mpool.hasDetailPane(arrange))  return slice;
       if (mpool.isActionsPane(entry) && mpool.hasActionsPane(arrange)) return slice;
-      const column = msg.column === 'left' ? 'left' : 'right';
-      // detail / actions are right-column-only. Pool-drag's validateInsert
-      // already refuses to even propose column='left' for them; this is
-      // the defense-in-depth guard for any future caller that emits
-      // pool_show with column='left' directly.
-      if (column === 'left' && mpool.isReservedPane(entry)) return slice;
-      // Column caps (6 left / 3 right) are SOFT — exceeded at parse time
-      // emits a warning; runtime placement just allows. The renderer's
-      // MIN_PANEL_H + terminal-row floor is the only physical limit.
-      const target = column === 'left' ? arrange.leftPanels : arrange.rightPanels;
-      const placement = mpool.placementFromPoolEntry(entry, column);
-      // Right column keeps `detail` as the last cell (convention shared
+      const N = mpool.columnCount(arrange);
+      const lastIdx = N - 1;
+      let columnIndex = (typeof msg.columnIndex === 'number')
+        ? msg.columnIndex
+        : lastIdx;  // default to last column (legacy 'right')
+      if (columnIndex < 0 || columnIndex >= N) return slice;
+      // detail / actions live in the last column only. Pool-drag's
+      // validateInsert already refuses to even propose other columns
+      // for them; this is the defense-in-depth guard for any future
+      // caller that emits pool_show with a non-last columnIndex directly.
+      if (columnIndex !== lastIdx && mpool.isReservedPane(entry)) return slice;
+      // Column caps are SOFT — exceeded at parse time emits a warning;
+      // runtime placement just allows. The renderer's MIN_PANEL_H +
+      // terminal-row floor is the only physical limit.
+      const target = mpool.columnPanels(arrange, columnIndex);
+      const placement = mpool.placementFromPoolEntry(entry, columnIndex);
+      // Last column keeps `detail` as the last cell (convention shared
       // with moveColumn). When `msg.index` is supplied (pool-drag drops),
-      // splice at that position — clamped to detail's slot in right column.
+      // splice at that position — clamped to detail's slot in last column.
       // Without `index`, append at the tail (with the same detail clamp).
-      let inserted;
-      const detailIdx = column === 'right' ? target.findIndex(mpool.isDetailPane) : -1;
+      const isLast = columnIndex === lastIdx;
+      const detailIdx = isLast ? target.findIndex(mpool.isDetailPane) : -1;
       let idx;
       if (typeof msg.index === 'number') {
         idx = Math.max(0, Math.min(msg.index, target.length));
       } else {
         idx = target.length;
       }
-      if (column === 'right' && detailIdx >= 0 && idx > detailIdx) idx = detailIdx;
-      inserted = target.slice(0, idx).concat([placement], target.slice(idx));
-      const nextCol = rekeyColumn(inserted, column === 'left' ? LEFT_HOTKEY_POOL : RIGHT_HOTKEY_POOL);
-      const nextArrange = column === 'left'
-        ? { ...arrange, leftPanels:  nextCol }
-        : { ...arrange, rightPanels: nextCol };
+      if (isLast && detailIdx >= 0 && idx > detailIdx) idx = detailIdx;
+      const inserted = target.slice(0, idx).concat([placement], target.slice(idx));
+      const nextArrange = mpool.updateColumn(arrange, columnIndex, () =>
+        rekeyColumn(inserted, hotkeyPoolForColumn(columnIndex, N)));
       const next = { ...slice, arrange: nextArrange, dirty: true };
       // Move focus to the newly-shown panel — matches the overlay UX
       // where picking from the pool surfaces it as the active one.

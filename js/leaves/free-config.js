@@ -12,7 +12,9 @@
  * threaded in as `model` for mousePress's defensive guard.
  *
  * Slice shape touched:
- *   - slice.arrange.{leftWidth, detailHeightPct, leftPanels, rightPanels}
+ *   - slice.arrange.{columns[], detailHeightPct}
+ *     where columns[i] = { width?, panels: [...] }; last column's width
+ *     is implicit (takes the remainder).
  *   - slice.dirty (set true on any change that should round-trip to YAML)
  *   - slice.freeConfig.{undo, redo, titleEdit, drag}
  *   - slice.focus is the cursor truth in free-config; the active-panel
@@ -27,6 +29,7 @@
 'use strict';
 
 const mpool = require('./pool');
+const { LEFT_HOTKEY_POOL, RIGHT_HOTKEY_POOL } = require('./hotkeys');
 
 const MIN_PANEL_H = 3;
 // Detail height %, computed against available column rows. Big
@@ -49,7 +52,7 @@ const MAX_UNDO = 50;
 // ---------------------------------------------------------------- pure reads
 
 function allFreeConfigPanels(slice) {
-  return [...slice.arrange.leftPanels, ...slice.arrange.rightPanels];
+  return mpool.allPanesInColumns(slice.arrange);
 }
 
 // Snapshots are JSON round-trips of the arrange struct — plain data
@@ -63,15 +66,13 @@ function snapshot(arrange) {
 function _applySnapshot(arrange, snap) {
   return {
     ...arrange,
-    leftWidth: snap.leftWidth,
+    columns: snap.columns,
     detailHeightPct: snap.detailHeightPct,
-    leftPanels: snap.leftPanels,
-    rightPanels: snap.rightPanels,
   };
 }
 
-function columnTotalH(slice, column) {
-  const panels = column === 'left' ? slice.arrange.leftPanels : slice.arrange.rightPanels;
+function columnTotalH(slice, columnIndex) {
+  const panels = mpool.columnPanels(slice.arrange, columnIndex);
   let total = 0;
   for (const p of panels) {
     const b = slice.panelBounds[p.type];
@@ -87,15 +88,34 @@ function panelHeightPct(slice, p, availH) {
   return b ? Math.round(b.h / availH * 100) : 0;
 }
 
+/** Hotkey pool for the column at `columnIndex` in an `N`-column layout.
+ *  Mirrors parser/index.js + panel/layout.js — first column gets
+ *  LEFT_HOTKEY_POOL, last gets RIGHT_HOTKEY_POOL, middle gets empty. */
+function _hotkeyPoolForColumn(columnIndex, N) {
+  if (columnIndex === 0) return LEFT_HOTKEY_POOL;
+  if (columnIndex === N - 1) return RIGHT_HOTKEY_POOL;
+  return [];
+}
+
+/** Recompute positional hotkeys for every column. detail keeps 'o', actions
+ *  keeps '0' as semantic anchors (last-column convention); everything else
+ *  gets its column's pool key by slot position. */
 function _reassignHotkeys(arrange) {
+  const N = mpool.columnCount(arrange);
+  const lastIdx = N - 1;
   return {
     ...arrange,
-    leftPanels: arrange.leftPanels.map((p, i) => ({ ...p, hotkey: String(i + 1) })),
-    rightPanels: arrange.rightPanels.map(p =>
-      mpool.isActionsPane(p) ? { ...p, hotkey: '0' }
-      : mpool.isDetailPane(p) ? { ...p, hotkey: 'o' }
-      : { ...p, hotkey: '' }
-    ),
+    columns: arrange.columns.map((col, ci) => {
+      const pool = _hotkeyPoolForColumn(ci, N);
+      const isLast = ci === lastIdx;
+      const panels = (col.panels || []).map((p, i) => {
+        if (isLast && mpool.isActionsPane(p)) return { ...p, hotkey: '0', columnIndex: ci };
+        if (isLast && mpool.isDetailPane(p))  return { ...p, hotkey: 'o', columnIndex: ci };
+        if (ci === 0) return { ...p, hotkey: String(i + 1), columnIndex: ci };
+        return { ...p, hotkey: pool[i] || '', columnIndex: ci };
+      });
+      return { ...col, panels };
+    }),
   };
 }
 
@@ -150,14 +170,14 @@ function clearUndoStacks(slice) {
 
 // ---------------------------------------------------------------- geometry helpers
 
-/** Anchor any flex panels in `column` (no heightPct, not the active pair, not
- *  detail) at their current rendered height, so a boundary drag steals only
- *  from the neighbor instead of being absorbed proportionally. Returns the
- *  same slice ref when nothing actually freezes. */
-function freezeColumnFlex(slice, column, upperType, lowerType, availH) {
-  const colKey = column === 'left' ? 'leftPanels' : 'rightPanels';
+/** Anchor any flex panels in `columnIndex` (no heightPct, not the active
+ *  pair, not detail) at their current rendered height, so a boundary drag
+ *  steals only from the neighbor instead of being absorbed proportionally.
+ *  Returns the same slice ref when nothing actually freezes. */
+function freezeColumnFlex(slice, columnIndex, upperType, lowerType, availH) {
+  const panels = mpool.columnPanels(slice.arrange, columnIndex);
   let changed = false;
-  const newCol = slice.arrange[colKey].map(p => {
+  const newCol = panels.map(p => {
     if (p.type === upperType || p.type === lowerType) return p;
     if (mpool.isDetailPane(p)) return p;
     if (typeof p.heightPct === 'number') return p;
@@ -167,7 +187,7 @@ function freezeColumnFlex(slice, column, upperType, lowerType, availH) {
     return { ...p, heightPct: Math.round((b.h / availH) * 100) };
   });
   if (!changed) return slice;
-  return { ...slice, arrange: { ...slice.arrange, [colKey]: newCol } };
+  return { ...slice, arrange: mpool.updateColumn(slice.arrange, columnIndex, () => newCol) };
 }
 
 /** Set a panel's heightPct by type. detail → arrange.detailHeightPct; other
@@ -179,16 +199,20 @@ function _setPanelHeightPct(slice, panelType, pct) {
     return { ...slice, arrange: { ...slice.arrange, detailHeightPct: pct } };
   }
   let changed = false;
-  const patch = (col) => col.map(p => {
-    if (p.type !== panelType) return p;
-    if (p.heightPct === pct) return p;
+  const nextColumns = slice.arrange.columns.map(col => {
+    let colChanged = false;
+    const panels = (col.panels || []).map(p => {
+      if (p.type !== panelType) return p;
+      if (p.heightPct === pct) return p;
+      colChanged = true;
+      return { ...p, heightPct: pct };
+    });
+    if (!colChanged) return col;
     changed = true;
-    return { ...p, heightPct: pct };
+    return { ...col, panels };
   });
-  const leftPanels  = patch(slice.arrange.leftPanels);
-  const rightPanels = patch(slice.arrange.rightPanels);
   if (!changed) return slice;
-  return { ...slice, arrange: { ...slice.arrange, leftPanels, rightPanels } };
+  return { ...slice, arrange: { ...slice.arrange, columns: nextColumns } };
 }
 
 // ---------------------------------------------------------------- keyboard transforms
@@ -215,119 +239,121 @@ function navSelect(slice, delta) {
 
 /** J/K — reorder the focused panel within its column (delta ±1). */
 function reorderWithin(slice, delta) {
-  const sel = selectedIdx(slice);
-  if (sel < 0) return slice;
-  const isLeft = sel < slice.arrange.leftPanels.length;
-  const localIdx = isLeft ? sel : sel - slice.arrange.leftPanels.length;
-  const colKey = isLeft ? 'leftPanels' : 'rightPanels';
-  const column = slice.arrange[colKey];
-  const targetIdx = localIdx + delta;
-  if (targetIdx < 0 || targetIdx >= column.length) return slice;
+  const loc = mpool.findPaneLocation(slice.arrange, p => p.type === slice.focus);
+  if (!loc) return slice;
+  const panels = mpool.columnPanels(slice.arrange, loc.columnIndex);
+  const targetIdx = loc.paneIndex + delta;
+  if (targetIdx < 0 || targetIdx >= panels.length) return slice;
 
-  // Right column: detail stays at the end. Refuse any swap that
-  // either moves detail off its slot OR moves a non-detail panel
-  // past it. Mirrors the validateTarget guard in applyDrop and the
+  // Last column keeps detail at the end. Refuse any swap that either
+  // moves detail off its slot OR moves a non-detail panel past it.
+  // Mirrors the validateTarget guard in applyDrop and the
   // insert-before-detail logic in pool_show — same invariant, three
   // entry points, one rule.
-  if (!isLeft) {
-    if (mpool.isDetailPane(column[localIdx]) || mpool.isDetailPane(column[targetIdx])) {
+  const lastIdx = mpool.lastColumnIndex(slice.arrange);
+  if (loc.columnIndex === lastIdx) {
+    if (mpool.isDetailPane(panels[loc.paneIndex]) || mpool.isDetailPane(panels[targetIdx])) {
       return slice;
     }
   }
 
-  const newCol = column.slice();
-  [newCol[localIdx], newCol[targetIdx]] = [newCol[targetIdx], newCol[localIdx]];
+  const newCol = panels.slice();
+  [newCol[loc.paneIndex], newCol[targetIdx]] = [newCol[targetIdx], newCol[loc.paneIndex]];
 
   let next = _pushUndoSlice(slice);
-  // focus stays — same TYPE, new position. selectedIdx() will derive
-  // the new index from focus + the new arrangement on next read.
   next = {
     ...next,
-    arrange: _reassignHotkeys({ ...slice.arrange, [colKey]: newCol }),
+    arrange: _reassignHotkeys(mpool.updateColumn(slice.arrange, loc.columnIndex, () => newCol)),
     dirty: true,
   };
   return next;
 }
 
-/** ←/→ — move the focused panel between columns. */
-function moveColumn(slice, col) {
-  const sel = selectedIdx(slice);
-  const all = allFreeConfigPanels(slice);
-  const selPanel = all[sel];
-  if (!selPanel) return slice;
-  const isLeft = sel < slice.arrange.leftPanels.length;
-  const localIdx = isLeft ? sel : sel - slice.arrange.leftPanels.length;
+/** ←/→ — move the focused panel between columns (dir = -1 or +1).
+ *  Phase 1: refuses moves into/out of last column for reserved panes;
+ *  clamps at the layout edges. Detail/actions stay in the last column. */
+function moveColumn(slice, dir) {
+  const loc = mpool.findPaneLocation(slice.arrange, p => p.type === slice.focus);
+  if (!loc) return slice;
+  const selPanel = loc.pane;
+  const N = mpool.columnCount(slice.arrange);
+  const lastIdx = N - 1;
+  const fromIdx = loc.columnIndex;
+  const toIdx = fromIdx + (dir < 0 ? -1 : +1);
+  if (toIdx < 0 || toIdx >= N) return slice;
+  if (mpool.isReservedPane(selPanel) && toIdx !== lastIdx) return slice;
 
-  // focus stays at the same type across the move — selectedIdx()
-  // derives the new index from the rearranged columns automatically.
-  if (col === 'left') {
-    if (isLeft) return slice;
-    if (mpool.isReservedPane(selPanel)) return slice;
-    if (slice.arrange.leftPanels.length >= 6) return slice;
+  // Source column with the pane removed.
+  const fromPanels = mpool.columnPanels(slice.arrange, fromIdx).slice();
+  fromPanels.splice(loc.paneIndex, 1);
 
-    const newRight = slice.arrange.rightPanels.slice();
-    newRight.splice(localIdx, 1);
-    const newLeft = [...slice.arrange.leftPanels, { ...selPanel, column: 'left' }];
-
-    let next = _pushUndoSlice(slice);
-    next = {
-      ...next,
-      arrange: _reassignHotkeys({ ...slice.arrange, leftPanels: newLeft, rightPanels: newRight }),
-      dirty: true,
-    };
-    return next;
+  // Destination column: append; if moving into last column with detail,
+  // insert before detail so detail stays last.
+  const toPanels = mpool.columnPanels(slice.arrange, toIdx).slice();
+  let insertAt = toPanels.length;
+  if (toIdx === lastIdx) {
+    const detailIdx = toPanels.findIndex(mpool.isDetailPane);
+    if (detailIdx >= 0) insertAt = detailIdx;
   }
+  toPanels.splice(insertAt, 0, { ...selPanel, columnIndex: toIdx, hotkey: '' });
 
-  // col === 'right'
-  if (!isLeft) return slice;
-  if (slice.arrange.rightPanels.length >= 3) return slice;
-
-  const newLeft = slice.arrange.leftPanels.slice();
-  newLeft.splice(localIdx, 1);
-  const detailIdx = mpool.detailPaneIndex(slice.arrange);
-  const insertAt = detailIdx >= 0 ? detailIdx : slice.arrange.rightPanels.length;
-  const newRight = slice.arrange.rightPanels.slice();
-  newRight.splice(insertAt, 0, { ...selPanel, column: 'right', hotkey: '' });
+  let nextArrange = mpool.updateColumn(slice.arrange, fromIdx, () => fromPanels);
+  nextArrange = mpool.updateColumn(nextArrange, toIdx, () => toPanels);
 
   let next = _pushUndoSlice(slice);
-  next = {
-    ...next,
-    arrange: _reassignHotkeys({ ...slice.arrange, leftPanels: newLeft, rightPanels: newRight }),
-    dirty: true,
-  };
+  next = { ...next, arrange: _reassignHotkeys(nextArrange), dirty: true };
   return next;
 }
 
 /** +/- — detail selected: grow/shrink detailHeightPct by 5 (clamped [20,90]);
- *  else a left panel selected: grow/shrink leftWidth by 2 (clamped [20,60]). */
+ *  else a non-last-column panel selected: grow/shrink its column's width by
+ *  2 (clamped [20,60]). Last-column non-detail panels: no-op (the last
+ *  column's width is implicit; can't grow without shrinking a neighbor). */
 function resizeWidthOrDetail(slice, sign) {
-  const sel = selectedIdx(slice);
-  const all = allFreeConfigPanels(slice);
-  const selPanel = all[sel];
-  if (!selPanel) return slice;
-  const isLeft = sel < slice.arrange.leftPanels.length;
+  const loc = mpool.findPaneLocation(slice.arrange, p => p.type === slice.focus);
+  if (!loc) return slice;
+  const selPanel = loc.pane;
+  const lastIdx = mpool.lastColumnIndex(slice.arrange);
 
   let newDetail = slice.arrange.detailHeightPct;
-  let newLeftW  = slice.arrange.leftWidth;
+  let newColumns = slice.arrange.columns;
+  let changed = false;
 
   if (sign > 0) {
     if (mpool.isDetailPane(selPanel) && slice.arrange.detailHeightPct < 90) {
       newDetail = Math.min(90, slice.arrange.detailHeightPct + 5);
-    } else if (isLeft && slice.arrange.leftWidth < 60) {
-      newLeftW = Math.min(60, slice.arrange.leftWidth + 2);
+      changed = true;
+    } else if (loc.columnIndex < lastIdx) {
+      const col = slice.arrange.columns[loc.columnIndex];
+      const curW = col.width != null ? col.width : 30;
+      if (curW < 60) {
+        const w = Math.min(60, curW + 2);
+        newColumns = slice.arrange.columns.slice();
+        newColumns[loc.columnIndex] = { ...col, width: w };
+        changed = true;
+      } else return slice;
     } else return slice;
   } else {
     if (mpool.isDetailPane(selPanel) && slice.arrange.detailHeightPct > 20) {
       newDetail = Math.max(20, slice.arrange.detailHeightPct - 5);
-    } else if (isLeft && slice.arrange.leftWidth > 20) {
-      newLeftW = Math.max(20, slice.arrange.leftWidth - 2);
+      changed = true;
+    } else if (loc.columnIndex < lastIdx) {
+      const col = slice.arrange.columns[loc.columnIndex];
+      const curW = col.width != null ? col.width : 30;
+      if (curW > 20) {
+        const w = Math.max(20, curW - 2);
+        newColumns = slice.arrange.columns.slice();
+        newColumns[loc.columnIndex] = { ...col, width: w };
+        changed = true;
+      } else return slice;
     } else return slice;
   }
+  if (!changed) return slice;
 
   let next = _pushUndoSlice(slice);
   next = {
     ...next,
-    arrange: { ...slice.arrange, detailHeightPct: newDetail, leftWidth: newLeftW },
+    arrange: { ...slice.arrange, columns: newColumns, detailHeightPct: newDetail },
     dirty: true,
   };
   return next;
@@ -336,22 +362,19 @@ function resizeWidthOrDetail(slice, sign) {
 /** ] / [ — grow/shrink the focused panel's heightPct by Δ, stealing from the
  *  panel below in the same column (D1 semantics). No-op on detail / last row. */
 function resizeFocusedPanelHeight(slice, deltaPct) {
-  const selIdx = selectedIdx(slice);
-  const all = allFreeConfigPanels(slice);
-  const sel = all[selIdx];
-  if (!sel || mpool.isDetailPane(sel)) return slice;  // detail uses +/-
+  const loc = mpool.findPaneLocation(slice.arrange, p => p.type === slice.focus);
+  if (!loc) return slice;
+  const sel = loc.pane;
+  if (mpool.isDetailPane(sel)) return slice;  // detail uses +/-
 
-  const isLeft = selIdx < slice.arrange.leftPanels.length;
-  const column = isLeft ? slice.arrange.leftPanels : slice.arrange.rightPanels;
-  const colName = isLeft ? 'left' : 'right';
-  const idxInCol = column.indexOf(sel);
-  if (idxInCol < 0 || idxInCol === column.length - 1) return slice;  // no neighbor below
-  const nextPanel = column[idxInCol + 1];
+  const panels = mpool.columnPanels(slice.arrange, loc.columnIndex);
+  if (loc.paneIndex === panels.length - 1) return slice;  // no neighbor below
+  const nextPanel = panels[loc.paneIndex + 1];
 
-  const availH = columnTotalH(slice, colName);
+  const availH = columnTotalH(slice, loc.columnIndex);
   if (availH < 6) return slice;
 
-  const frozen = freezeColumnFlex(slice, colName, sel.type, nextPanel.type, availH);
+  const frozen = freezeColumnFlex(slice, loc.columnIndex, sel.type, nextPanel.type, availH);
 
   const selCur  = panelHeightPct(frozen, sel, availH);
   const nextCur = panelHeightPct(frozen, nextPanel, availH);
@@ -413,8 +436,7 @@ function clampSelected(slice, preferredType) {
 function titleEnter(slice) {
   const d = slice.freeConfig;
   if (!d) return slice;
-  const all = allFreeConfigPanels(slice);
-  const p = all[selectedIdx(slice)];
+  const p = allFreeConfigPanels(slice)[selectedIdx(slice)];
   if (!p) return slice;
   return { ...slice, freeConfig: { ...d, titleEdit: { active: true, text: p.title || '' } } };
 }
@@ -423,42 +445,101 @@ function titleEnter(slice) {
 function setSelectedTitle(slice, text) {
   const d = slice.freeConfig;
   if (!d) return slice;
-  const all = allFreeConfigPanels(slice);
-  const p = all[selectedIdx(slice)];
+  const p = allFreeConfigPanels(slice)[selectedIdx(slice)];
   if (!p || text.length === 0 || text === p.title) return slice;
 
   let next = _pushUndoSlice(slice);
-  const patch = (col) => col.map(x => x.type === p.type ? { ...x, title: text } : x);
-  next = {
-    ...next,
-    arrange: {
-      ...next.arrange,
-      leftPanels:  patch(next.arrange.leftPanels),
-      rightPanels: patch(next.arrange.rightPanels),
-    },
-    dirty: true,
-  };
+  const nextColumns = next.arrange.columns.map(col => ({
+    ...col,
+    panels: (col.panels || []).map(x => x.type === p.type ? { ...x, title: text } : x),
+  }));
+  next = { ...next, arrange: { ...next.arrange, columns: nextColumns }, dirty: true };
   return next;
+}
+
+// ---------------------------------------------------------------- column geometry
+
+/** Compute the x-range (start, end) of each column given the layout's
+ *  explicit widths + the terminal width. The last column's width is
+ *  implicit = COLS - sum(prior widths). Returns an array of
+ *  { columnIndex, x, w } in order. */
+function _columnRanges(arrange, COLS) {
+  const cols = arrange.columns || [];
+  const out = [];
+  let x = 0;
+  for (let i = 0; i < cols.length; i++) {
+    const isLast = i === cols.length - 1;
+    const w = isLast ? Math.max(1, COLS - x) : (cols[i].width != null ? cols[i].width : 30);
+    out.push({ columnIndex: i, x, w });
+    x += w;
+  }
+  return out;
+}
+
+/** Find the column whose x-range contains `mx`, or null. */
+function _columnAtX(arrange, mx, COLS) {
+  for (const r of _columnRanges(arrange, COLS)) {
+    if (mx >= r.x && mx < r.x + r.w) return r;
+  }
+  return null;
+}
+
+/** Find the column-boundary that `mx` sits on (±1), or null. Boundary i
+ *  sits between columns i and i+1 (i.e. at x = sum(0..i).width). Only
+ *  N-1 boundaries exist (the last column's right edge IS the terminal
+ *  edge, not a draggable boundary). Returns
+ *  { boundaryIndex, x, leftColumn, rightColumn } when a hit. */
+function _boundaryAtX(arrange, mx, COLS) {
+  const ranges = _columnRanges(arrange, COLS);
+  for (let i = 0; i < ranges.length - 1; i++) {
+    const bx = ranges[i].x + ranges[i].w;
+    if (Math.abs(mx - bx) <= 1) {
+      return { boundaryIndex: i, x: bx, leftColumn: i, rightColumn: i + 1 };
+    }
+  }
+  return null;
 }
 
 // ---------------------------------------------------------------- mouse hit-tests
 
 /**
  * Hit-test a point against draggable separators. Returns `{ edge, boundary?,
- * column? }` or null. Edges: 'corner' (col-sep × a column boundary, both axes),
- * 'col' (col-sep only), 'right-boundary' / 'left-boundary' (a horizontal seam
- * between two stacked panels). ±1 tolerance on both axes; right-col wins ties.
+ * columnIndex?, boundaryIndex? }` or null. Edges: 'corner' (col-sep × a
+ * panel boundary, both axes), 'col' (col-sep only), 'panel-boundary' (a
+ * horizontal seam between two stacked panels within a column). ±1
+ * tolerance on both axes; the column the cursor sits IN wins ties on
+ * the corner. The legacy 'left-boundary'/'right-boundary' edge names
+ * are folded into 'panel-boundary' with an explicit `columnIndex`.
  */
 function pointToResizeTarget(slice, mx, my, COLS) {
-  const leftW = slice.arrange.leftWidth;
-  const colMatch = Math.abs(mx - leftW) <= 1;
-  const rightB = boundaryNear(slice, slice.arrange.rightPanels, my);
-  const leftB  = boundaryNear(slice, slice.arrange.leftPanels,  my);
-  if (colMatch && rightB) return { edge: 'corner', boundary: rightB, column: 'right' };
-  if (colMatch && leftB)  return { edge: 'corner', boundary: leftB,  column: 'left'  };
-  if (colMatch)            return { edge: 'col' };
-  if (rightB && mx > leftW + 1 && mx < COLS) return { edge: 'right-boundary', boundary: rightB };
-  if (leftB && mx >= 0 && mx < leftW)        return { edge: 'left-boundary', boundary: leftB };
+  const boundaryHit = _boundaryAtX(slice.arrange, mx, COLS);
+  const colHit = _columnAtX(slice.arrange, mx, COLS);
+
+  // Corner detection: when the cursor sits on a column boundary, look
+  // for a panel boundary at `my` in BOTH flanking columns. Prefer the
+  // cursor's column (left or right of the boundary by floor-half-cell);
+  // fall back to the other column so a 1-cell-wide column-boundary
+  // misalignment still surfaces the corner gesture.
+  if (boundaryHit) {
+    const cursorCol = colHit ? colHit.columnIndex : boundaryHit.rightColumn;
+    const otherCol = (cursorCol === boundaryHit.leftColumn)
+      ? boundaryHit.rightColumn
+      : boundaryHit.leftColumn;
+    const inCursor = boundaryNear(slice, mpool.columnPanels(slice.arrange, cursorCol), my);
+    if (inCursor) {
+      return { edge: 'corner', boundary: inCursor, columnIndex: cursorCol, boundaryIndex: boundaryHit.boundaryIndex };
+    }
+    const inOther = boundaryNear(slice, mpool.columnPanels(slice.arrange, otherCol), my);
+    if (inOther) {
+      return { edge: 'corner', boundary: inOther, columnIndex: otherCol, boundaryIndex: boundaryHit.boundaryIndex };
+    }
+    return { edge: 'col', boundaryIndex: boundaryHit.boundaryIndex };
+  }
+  // Panel boundary not on a column boundary.
+  if (colHit) {
+    const panelB = boundaryNear(slice, mpool.columnPanels(slice.arrange, colHit.columnIndex), my);
+    if (panelB) return { edge: 'panel-boundary', boundary: panelB, columnIndex: colHit.columnIndex };
+  }
   return null;
 }
 
@@ -504,23 +585,20 @@ function pointToCellZone(b, my) {
  *   middle third → swap with this cell's occupant
  *   bottom third → insert after this cell
  *
- * Returns a tagged target — `{ kind:'insert', column, index, valid, reason? }`
- * or `{ kind:'swap', column, index, occupantType, valid, reason? }` — or null
- * when the point isn't in any column.
+ * Returns a tagged target — `{ kind:'insert', columnIndex, index, valid, reason? }`
+ * or `{ kind:'swap', columnIndex, index, occupantType, valid, reason? }` —
+ * or null when the point isn't in any column.
  */
 function pointToDropTarget(slice, srcType, mx, my, COLS) {
-  const leftPanels = slice.arrange.leftPanels;
-  const rightPanels = slice.arrange.rightPanels;
-  const leftW = slice.arrange.leftWidth;
-  const inLeft = matchColumn(slice, leftPanels, mx, my);
-  if (inLeft !== null) return validateTarget(slice, srcType, 'left', inLeft);
-  const inRight = matchColumn(slice, rightPanels, mx, my);
-  if (inRight !== null) return validateTarget(slice, srcType, 'right', inRight);
-  if (mx >= 0 && mx < leftW && leftPanels.length === 0) {
-    return validateTarget(slice, srcType, 'left', { kind: 'insert', index: 0 });
-  }
-  if (mx >= leftW && mx < COLS && rightPanels.length === 0) {
-    return validateTarget(slice, srcType, 'right', { kind: 'insert', index: 0 });
+  const ranges = _columnRanges(slice.arrange, COLS);
+  for (const r of ranges) {
+    const panels = mpool.columnPanels(slice.arrange, r.columnIndex);
+    const hit = matchColumn(slice, panels, mx, my);
+    if (hit !== null) return validateTarget(slice, srcType, r.columnIndex, hit);
+    // Empty column: cursor in its x-range with no panes → insert@0.
+    if (mx >= r.x && mx < r.x + r.w && panels.length === 0) {
+      return validateTarget(slice, srcType, r.columnIndex, { kind: 'insert', index: 0 });
+    }
   }
   return null;
 }
@@ -544,65 +622,77 @@ function matchColumn(slice, panels, mx, my) {
   return null;
 }
 
-function validateTarget(slice, srcType, column, target) {
+function validateTarget(slice, srcType, columnIndex, target) {
+  const lastIdx = mpool.lastColumnIndex(slice.arrange);
   if (target.kind === 'swap') {
     const occType = target.occupantType;
-    const base = { kind: 'swap', column, index: target.index, occupantType: occType };
+    const base = { kind: 'swap', columnIndex, index: target.index, occupantType: occType };
     // Self-swap (source == occupant) is always a valid no-op — mouseRelease
     // detects it and skips applyDrop, so nothing moves. Marking it invalid
     // would show a misleading "✗ blocked" footer when the user releases a
     // drag onto its own middle third (release does nothing in either case).
     if (occType === srcType) return { ...base, valid: true };
-    const fromCol = slice.arrange.leftPanels.some(p => p.type === srcType) ? 'left' : 'right';
-    // Dragged panel ends up in `column` — detail/actions can't live in left.
-    if (column === 'left' && (srcType === 'detail' || srcType === 'actions')) {
-      return { ...base, valid: false, reason: `${srcType} can't live in left column` };
+    const fromLoc = mpool.findPaneLocation(slice.arrange, p => p.type === srcType);
+    const fromCol = fromLoc ? fromLoc.columnIndex : -1;
+    // Dragged panel ends up in `columnIndex` — detail/actions can't live
+    // outside the last column.
+    if (columnIndex !== lastIdx && (srcType === 'detail' || srcType === 'actions')) {
+      return { ...base, valid: false, reason: `${srcType} must stay in the last column` };
     }
     // Occupant ends up in source's column — same rule going the other way.
-    if (fromCol === 'left' && (occType === 'detail' || occType === 'actions')) {
-      return { ...base, valid: false, reason: `${occType} can't live in left column` };
+    if (fromCol !== lastIdx && (occType === 'detail' || occType === 'actions')) {
+      return { ...base, valid: false, reason: `${occType} must stay in the last column` };
     }
-    // Right column keeps detail at the end. Any swap involving detail in the
-    // right column would move it off the tail.
-    if (column === 'right' && occType === 'detail') {
+    // Last column keeps detail at the end. Any swap involving detail in
+    // the last column would move it off the tail.
+    if (columnIndex === lastIdx && occType === 'detail') {
       return { ...base, valid: false, reason: `detail must stay at end` };
     }
-    if (fromCol === 'right' && srcType === 'detail') {
+    if (fromCol === lastIdx && srcType === 'detail') {
       return { ...base, valid: false, reason: `detail must stay at end` };
     }
     return { ...base, valid: true };
   }
   // insert
   const index = target.index;
-  if (column === 'left' && (srcType === 'detail' || srcType === 'actions')) {
-    return { kind: 'insert', column, index, valid: false, reason: `${srcType} can't live in left column` };
+  if (columnIndex !== lastIdx && (srcType === 'detail' || srcType === 'actions')) {
+    return { kind: 'insert', columnIndex, index, valid: false, reason: `${srcType} must stay in the last column` };
   }
-  // Right column: detail stays at the end (same convention pool_show
+  // Last column: detail stays at the end (same convention pool_show
   // follows). Clamp any drop AFTER detail to detail's slot — applyInsert
   // handles the splice-shift for same-column moves, so the clamp uses
-  // the pre-removal detailIdx; an earlier version pre-decremented for
-  // same-column source and applyInsert decremented again, leaving
-  // same-column right-to-past-detail drags as silent no-ops. The
-  // `clamp` field marks that the target index was rewritten so the
-  // footer can surface "(clamped — <reason>)" — earlier versions did
-  // this rewrite silently and the user couldn't tell why their drop
-  // landed above detail instead of below.
-  if (column === 'right' && srcType !== 'detail') {
+  // the pre-removal detailIdx. The `clamp` field marks that the target
+  // index was rewritten so the footer can surface "(clamped — <reason>)".
+  if (columnIndex === lastIdx && srcType !== 'detail') {
     const detailIdx = mpool.detailPaneIndex(slice.arrange);
     if (detailIdx >= 0 && index > detailIdx) {
-      return { kind: 'insert', column, index: detailIdx, valid: true, clamp: 'detail stays at end' };
+      return { kind: 'insert', columnIndex, index: detailIdx, valid: true, clamp: 'detail stays at end' };
     }
   }
-  return { kind: 'insert', column, index, valid: true };
+  return { kind: 'insert', columnIndex, index, valid: true };
 }
 
 // ---------------------------------------------------------------- mouse state machine
 
-/** Column-separator drag: leftWidth follows cursor, clamped [20, 60]. */
+/** Column-separator drag: set the dragged boundary's left column to the
+ *  cursor's x (relative to the column's left edge). Clamped [20, 60]. */
 function applyColResize(slice, mx) {
-  const newW = Math.max(20, Math.min(60, mx + 1));
-  if (newW === slice.arrange.leftWidth) return slice;
-  return { ...slice, arrange: { ...slice.arrange, leftWidth: newW }, dirty: true };
+  const ds = slice.freeConfig && slice.freeConfig.drag;
+  if (!ds || ds.boundaryIndex == null) return slice;
+  const bi = ds.boundaryIndex;
+  // The boundary's left column is columns[bi]; that column's width is
+  // (mx - leftEdge). Compute leftEdge from preceding columns' widths.
+  let leftEdge = 0;
+  for (let i = 0; i < bi; i++) {
+    const w = slice.arrange.columns[i].width != null ? slice.arrange.columns[i].width : 30;
+    leftEdge += w;
+  }
+  const newW = Math.max(20, Math.min(60, mx - leftEdge + 1));
+  const col = slice.arrange.columns[bi];
+  if (col.width === newW) return slice;
+  const nextColumns = slice.arrange.columns.slice();
+  nextColumns[bi] = { ...col, width: newW };
+  return { ...slice, arrange: { ...slice.arrange, columns: nextColumns }, dirty: true };
 }
 
 /** Within-column boundary drag: redistributes height between the two panels
@@ -653,35 +743,35 @@ function applyDrop(slice, srcType, target) {
 }
 
 function applyInsert(slice, srcType, target) {
-  const leftPanels = slice.arrange.leftPanels;
-  const rightPanels = slice.arrange.rightPanels;
-
-  let src = null, fromCol = null, fromIdx = -1;
-  for (let i = 0; i < leftPanels.length; i++) {
-    if (leftPanels[i].type === srcType) { src = leftPanels[i]; fromCol = 'left'; fromIdx = i; break; }
-  }
-  if (!src) {
-    for (let i = 0; i < rightPanels.length; i++) {
-      if (rightPanels[i].type === srcType) { src = rightPanels[i]; fromCol = 'right'; fromIdx = i; break; }
-    }
-  }
-  if (!src) return slice;
-
-  const newLeft = leftPanels.slice();
-  const newRight = rightPanels.slice();
-  if (fromCol === 'left') newLeft.splice(fromIdx, 1);
-  else newRight.splice(fromIdx, 1);
-
+  const fromLoc = mpool.findPaneLocation(slice.arrange, p => p.type === srcType);
+  if (!fromLoc) return slice;
+  const src = fromLoc.pane;
+  const fromCol = fromLoc.columnIndex;
+  const fromIdx = fromLoc.paneIndex;
+  const toCol = target.columnIndex;
   let insertAt = target.index;
-  if (fromCol === target.column && fromIdx < insertAt) insertAt--;
+  if (fromCol === toCol && fromIdx < insertAt) insertAt--;
 
-  const newSrc = { ...src, column: target.column };
-  if (target.column === 'left') newLeft.splice(insertAt, 0, newSrc);
-  else newRight.splice(insertAt, 0, newSrc);
+  // Build the target column's new panels array. If the source is moving
+  // within the same column, mutate one column; otherwise mutate two.
+  let nextArrange;
+  if (fromCol === toCol) {
+    const panels = mpool.columnPanels(slice.arrange, fromCol).slice();
+    panels.splice(fromIdx, 1);
+    panels.splice(insertAt, 0, { ...src, columnIndex: toCol });
+    nextArrange = mpool.updateColumn(slice.arrange, fromCol, () => panels);
+  } else {
+    const fromPanels = mpool.columnPanels(slice.arrange, fromCol).slice();
+    fromPanels.splice(fromIdx, 1);
+    const toPanels = mpool.columnPanels(slice.arrange, toCol).slice();
+    toPanels.splice(insertAt, 0, { ...src, columnIndex: toCol });
+    nextArrange = mpool.updateColumn(slice.arrange, fromCol, () => fromPanels);
+    nextArrange = mpool.updateColumn(nextArrange, toCol, () => toPanels);
+  }
 
   return {
     ...slice,
-    arrange: _reassignHotkeys({ ...slice.arrange, leftPanels: newLeft, rightPanels: newRight }),
+    arrange: _reassignHotkeys(nextArrange),
     dirty: true,
   };
 }
@@ -692,38 +782,40 @@ function applyInsert(slice, srcType, target) {
  *  so a panel's letter follows its slot, not its identity — same convention
  *  as applyInsert. */
 function applySwap(slice, srcType, target) {
-  const leftPanels = slice.arrange.leftPanels;
-  const rightPanels = slice.arrange.rightPanels;
+  const fromLoc = mpool.findPaneLocation(slice.arrange, p => p.type === srcType);
+  if (!fromLoc) return slice;
+  const src = fromLoc.pane;
+  const fromCol = fromLoc.columnIndex;
+  const fromIdx = fromLoc.paneIndex;
 
-  let src = null, fromCol = null, fromIdx = -1;
-  for (let i = 0; i < leftPanels.length; i++) {
-    if (leftPanels[i].type === srcType) { src = leftPanels[i]; fromCol = 'left'; fromIdx = i; break; }
-  }
-  if (!src) {
-    for (let i = 0; i < rightPanels.length; i++) {
-      if (rightPanels[i].type === srcType) { src = rightPanels[i]; fromCol = 'right'; fromIdx = i; break; }
-    }
-  }
-  if (!src) return slice;
-
-  const toCol = target.column;
+  const toCol = target.columnIndex;
   const toIdx = target.index;
-  const toPanels = toCol === 'left' ? leftPanels : rightPanels;
+  const toPanels = mpool.columnPanels(slice.arrange, toCol);
   const occ = toPanels[toIdx];
   if (!occ) return slice;
   if (fromCol === toCol && fromIdx === toIdx) return slice;
 
-  const newLeft = leftPanels.slice();
-  const newRight = rightPanels.slice();
-  const newSrc = { ...src, column: toCol };
-  const newOcc = { ...occ, column: fromCol };
+  const newSrc = { ...src, columnIndex: toCol };
+  const newOcc = { ...occ, columnIndex: fromCol };
 
-  if (toCol   === 'left') newLeft[toIdx]   = newSrc; else newRight[toIdx]   = newSrc;
-  if (fromCol === 'left') newLeft[fromIdx] = newOcc; else newRight[fromIdx] = newOcc;
+  let nextArrange;
+  if (fromCol === toCol) {
+    const panels = mpool.columnPanels(slice.arrange, fromCol).slice();
+    panels[fromIdx] = newOcc;
+    panels[toIdx] = newSrc;
+    nextArrange = mpool.updateColumn(slice.arrange, fromCol, () => panels);
+  } else {
+    const fromPanels = mpool.columnPanels(slice.arrange, fromCol).slice();
+    fromPanels[fromIdx] = newOcc;
+    const toPanelsNew = toPanels.slice();
+    toPanelsNew[toIdx] = newSrc;
+    nextArrange = mpool.updateColumn(slice.arrange, fromCol, () => fromPanels);
+    nextArrange = mpool.updateColumn(nextArrange, toCol, () => toPanelsNew);
+  }
 
   return {
     ...slice,
-    arrange: _reassignHotkeys({ ...slice.arrange, leftPanels: newLeft, rightPanels: newRight }),
+    arrange: _reassignHotkeys(nextArrange),
     dirty: true,
   };
 }
@@ -738,19 +830,20 @@ function mousePress(slice, mx, my, COLS) {
   if (resize) {
     let next = _pushUndoSlice(slice);
     const ds = { kind: `resizing-${resize.edge}` };
-    if (resize.edge === 'left-boundary' || resize.edge === 'right-boundary' || resize.edge === 'corner') {
-      const column = resize.column || (resize.edge === 'left-boundary' ? 'left' : 'right');
+    if (resize.boundaryIndex != null) ds.boundaryIndex = resize.boundaryIndex;
+    if (resize.edge === 'panel-boundary' || resize.edge === 'corner') {
+      const columnIndex = resize.columnIndex;
       const b = resize.boundary;
-      ds.column = column;
+      ds.columnIndex = columnIndex;
       ds.upperType = b.upper.type;
       ds.lowerType = b.lower.type;
       ds.upperStartY = slice.panelBounds[b.upper.type].y;
       ds.combinedH = slice.panelBounds[b.upper.type].h + slice.panelBounds[b.lower.type].h;
-      ds.availH = columnTotalH(slice, column);
+      ds.availH = columnTotalH(slice, columnIndex);
       if (ds.availH < 1) ds.availH = 1;
       ds.detailIsUpper = mpool.isDetailPane(b.upper);
       ds.detailIsLower = mpool.isDetailPane(b.lower);
-      next = freezeColumnFlex(next, column, b.upper.type, b.lower.type, ds.availH);
+      next = freezeColumnFlex(next, columnIndex, b.upper.type, b.lower.type, ds.availH);
     }
     return { ...next, freeConfig: { ...next.freeConfig, drag: ds } };
   }
@@ -769,13 +862,9 @@ function mouseMotion(slice, mx, my, COLS) {
   const d = slice.freeConfig;
   const ds = d && d.drag;
   if (!ds) return slice;
-  if (ds.kind === 'resizing-col')        return applyColResize(slice, mx);
-  if (ds.kind === 'resizing-left-boundary' || ds.kind === 'resizing-right-boundary') {
-    return applyBoundaryResize(slice, my);
-  }
-  if (ds.kind === 'resizing-corner') {
-    return applyBoundaryResize(applyColResize(slice, mx), my);
-  }
+  if (ds.kind === 'resizing-col')           return applyColResize(slice, mx);
+  if (ds.kind === 'resizing-panel-boundary') return applyBoundaryResize(slice, my);
+  if (ds.kind === 'resizing-corner')        return applyBoundaryResize(applyColResize(slice, mx), my);
   // panel drag (armed → dragging)
   let nextKind = ds.kind;
   if (ds.kind === 'armed') {
@@ -839,12 +928,8 @@ function computeDragPreviewArrange(slice) {
   // cell, same column. applyInsert's splice math produces an arrange that
   // matches the original layout, but with a fresh object identity and
   // dirty:true. Render would swap+paint identical pixels — wasted work.
-  // (Cross-column drops always move; only same-column self-targets short-
-  // circuit. validateTarget's detail clamp may rewrite target.index into
-  // this band, which is the correct outcome: clamp-past-detail back to
-  // own slot IS a no-op release.)
   if (t.kind === 'insert') {
-    const panels = t.column === 'left' ? slice.arrange.leftPanels : slice.arrange.rightPanels;
+    const panels = mpool.columnPanels(slice.arrange, t.columnIndex);
     const fromIdx = panels.findIndex(p => p.type === drag.sourceType);
     if (fromIdx >= 0 && (t.index === fromIdx || t.index === fromIdx + 1)) return null;
   }
@@ -862,4 +947,5 @@ module.exports = {
   pointToResizeTarget, pointToDropTarget, pointToCellZone, panelAt,
   mousePress, mouseMotion, mouseRelease,
   computeDragPreviewArrange,
+  _columnRanges,
 };

@@ -61,13 +61,15 @@ function freshState(root, panelType = 'files', extraPanelCfg = {}) {
   getModel().projectDir = root;
   getModel().currentGroup = 'g';
   getInstanceSlice("layout").arrange = {
-    leftPanels: [{
-      type: panelType, root,
-      title: panelType, hotkey: '1', column: 'left',
-      ...extraPanelCfg,
-    }],
-    rightPanels: [],
-    leftWidth: 30, detailHeightPct: 60,
+    columns: [
+      { width: 30, panels: [{
+        type: panelType, root,
+        title: panelType, hotkey: '1', columnIndex: 0,
+        ...extraPanelCfg,
+      }] },
+      { panels: [] },
+    ],
+    detailHeightPct: 60,
   };
   // Phase 4a/4c — every per-panel chrome (cursor/scroll/multiSel/filter)
   // lives on each Component's nav slice. Re-home the panels we touch.

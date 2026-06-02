@@ -1,5 +1,5 @@
 /**
- * Layout YAML serializer + write-back (v0.6.1 shape).
+ * Layout YAML serializer + write-back (v0.6.2 shape).
  *
  * Pure-function module — no module state, no side effects from
  * `serializeLayout`. `writeLayoutToFile` is the only thing that
@@ -14,8 +14,11 @@
  * flow-style subset, so anything we can't trivially emit as block
  * style is dumped as JSON and the parser accepts it unchanged.
  *
- * v0.6.1 layout file shape: the top-level `panels:` block is the pool
- * (id → {type, title, ...config}); each layout cell is either
+ * v0.6.2 layout file shape: the top-level `panels:` block is the pool
+ * (id → {type, title, ...config}); the `layout:` block has an ordered
+ * `columns:` list. Each column is `{ width?: int, panels: [...] }`;
+ * the last column's `width:` is implicit (it takes the remainder), so
+ * the serializer omits it. Each layout cell is either:
  *   - a bare pool-id string (single-tab pane shorthand), or
  *   - a `{ tabs: [pool-id, ...], activeTab?, height?, heightPct?,
  *     collapsed? }` mapping (multi-tab pane or placement overrides).
@@ -23,7 +26,7 @@
  * form is retired (parser rejects it; CHANGELOG calls it out).
  *
  * Hotkeys are derived per-load by `parser/index.js#assignHotkeys` from
- * cell position + per-side hotkey pools, so they're never emitted on
+ * cell position + per-column hotkey pools, so they're never emitted on
  * cells (matches the v0.6 contract — round-trip is by position, not by
  * explicit key).
  */
@@ -158,22 +161,28 @@ function serializeLayoutCell(pane, indent, opts = {}) {
 }
 
 /**
- * Serialize the full `layout:` block — pool-ref cells throughout
- * (string id or `{ tabs: [...], ...overrides }`). Pure function —
- * takes a layout struct, returns a string.
+ * Serialize the full `layout:` block — ordered `columns:` list of
+ * `{width?, panels: [...]}` entries. The last column's `width:` is
+ * omitted (it takes the remainder). Pool-ref cells throughout (string
+ * id or `{ tabs: [...], ...overrides }`). Pure function — takes a
+ * layout struct, returns a string.
  */
 function serializeLayout(layout) {
   const out = ['layout:'];
-  out.push('  left:');
-  out.push(`    width: ${layout.leftWidth}`);
-  out.push('    panels:');
-  for (const p of layout.leftPanels) {
-    out.push(...serializeLayoutCell(p, 8, { detailHeightPct: layout.detailHeightPct }));
-  }
-  out.push('  right:');
-  out.push('    panels:');
-  for (const p of layout.rightPanels) {
-    out.push(...serializeLayoutCell(p, 8, { detailHeightPct: layout.detailHeightPct }));
+  out.push('  columns:');
+  const columns = layout.columns || [];
+  const lastIdx = columns.length - 1;
+  for (let ci = 0; ci < columns.length; ci++) {
+    const col = columns[ci];
+    const isLast = ci === lastIdx;
+    out.push('    -');
+    if (!isLast && col.width != null) {
+      out.push(`      width: ${col.width}`);
+    }
+    out.push('      panels:');
+    for (const p of (col.panels || [])) {
+      out.push(...serializeLayoutCell(p, 10, { detailHeightPct: layout.detailHeightPct }));
+    }
   }
   return out.join('\n');
 }

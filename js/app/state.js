@@ -153,8 +153,8 @@ function initState() {
 
 function allPanels() {
   const slice = _layoutSlice();
-  const ly = slice ? slice.arrange : { leftPanels: [], rightPanels: [] };
-  return [...ly.leftPanels, ...ly.rightPanels];
+  if (!slice) return [];
+  return require('../leaves/pool').allPanesInColumns(slice.arrange);
 }
 
 // --- Group tree (flatten + expand/collapse) ---

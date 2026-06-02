@@ -8,11 +8,11 @@
  * the tab-list machinery into a real container; Phase 9 retires the
  * legacy Panel fields entirely.
  *
- * Wide intermediate form. During Phases 1-8 an `arrange.leftPanels[i]`
- * (and rightPanels[i]) entry carries BOTH shapes simultaneously:
+ * Wide intermediate form. During Phases 1-8 an `arrange.columns[ci].panels[i]`
+ * entry carries BOTH shapes simultaneously:
  *
  *   - Pane fields  (new): paneId, tabs[], activeTabId
- *   - Panel fields (kept for compat): id, type, title, hotkey, column,
+ *   - Panel fields (kept for compat): id, type, title, hotkey, columnIndex,
  *     config, heightPct?, collapsed?, and any pool-config spread
  *
  * Legacy consumers reading `p.type` / `p.id` keep working; new

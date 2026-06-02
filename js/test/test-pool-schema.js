@@ -62,7 +62,8 @@ describe('[default layout] synthesizes a pool from built-in panels when no layou
   it('every placed panel carries its pool id', () => {
     const p = tmpYaml(TRIVIAL_GROUPS);
     const cfg = parse(p);
-    for (const panel of cfg.layout.left_panels.concat(cfg.layout.right_panels)) {
+    const allPanels = cfg.layout.columns.flatMap(c => c.panels);
+    for (const panel of allPanels) {
       assert(typeof panel.id === 'string' && panel.id, `panel ${panel.type} has id`);
       assert(panel.id in cfg.layout.pool, `panel id ${panel.id} resolves in pool`);
     }
@@ -70,7 +71,8 @@ describe('[default layout] synthesizes a pool from built-in panels when no layou
   it('placed panes carry tabs[] + activeTabId', () => {
     const p = tmpYaml(TRIVIAL_GROUPS);
     const cfg = parse(p);
-    for (const panel of cfg.layout.left_panels.concat(cfg.layout.right_panels)) {
+    const allPanels = cfg.layout.columns.flatMap(c => c.panels);
+    for (const panel of allPanels) {
       assert(Array.isArray(panel.tabs) && panel.tabs.length >= 1, `tabs[] non-empty for ${panel.id}`);
       eq(panel.activeTabId, panel.tabs[0].id, `activeTabId points at first tab for ${panel.id}`);
     }
@@ -91,14 +93,13 @@ panels:
     type: detail
     title: Detail
 layout:
-  left:
-    panels: [g]
-  right:
-    panels: [a, d]
+  columns:
+    - panels: [g]
+    - panels: [a, d]
 `);
     const cfg = parse(p);
-    eq(cfg.layout.left_panels.map(p => p.id), ['g']);
-    eq(cfg.layout.right_panels.map(p => p.id), ['a', 'd']);
+    eq(cfg.layout.columns[0].panels.map(p => p.id), ['g']);
+    eq(cfg.layout.columns[1].panels.map(p => p.id), ['a', 'd']);
     assert(!cfg.layout.pool.g._synthesized, 'user-declared entry is not synthesized');
     assert(!cfg.layout.pool.a._synthesized, 'user-declared entry is not synthesized');
   });
@@ -110,11 +111,12 @@ panels:
   a: { type: actions }
   d: { type: detail }
 layout:
-  left:  { panels: [g] }
-  right: { panels: [a, d] }
+  columns:
+    - { panels: [g] }
+    - { panels: [a, d] }
 `);
     const cfg = parse(p);
-    const g = cfg.layout.left_panels[0];
+    const g = cfg.layout.columns[0].panels[0];
     eq(g.tabs.length, 1, 'single-tab pane');
     eq(g.tabs[0].poolId, 'g', 'tab references pool entry');
     eq(g.activeTabId, 'g', 'active tab is the sole tab');
@@ -130,14 +132,13 @@ panels:
   a:      { type: actions, title: Actions }
   d:      { type: detail, title: Detail }
 layout:
-  left:
-    panels:
-      - { tabs: [docker, logs] }
-  right:
-    panels: [a, d]
+  columns:
+    - panels:
+        - { tabs: [docker, logs] }
+    - panels: [a, d]
 `);
     const cfg = parse(p);
-    const pane = cfg.layout.left_panels[0];
+    const pane = cfg.layout.columns[0].panels[0];
     eq(pane.tabs.map(t => t.poolId), ['docker', 'logs'], 'tabs ordered as declared');
     eq(pane.activeTabId, 'docker', 'activeTab defaults to tabs[0]');
   });
@@ -150,14 +151,13 @@ panels:
   a:      { type: actions, title: Actions }
   d:      { type: detail, title: Detail }
 layout:
-  left:
-    panels:
-      - { tabs: [docker, logs], activeTab: logs }
-  right:
-    panels: [a, d]
+  columns:
+    - panels:
+        - { tabs: [docker, logs], activeTab: logs }
+    - panels: [a, d]
 `);
     const cfg = parse(p);
-    eq(cfg.layout.left_panels[0].activeTabId, 'logs', 'activeTab honoured');
+    eq(cfg.layout.columns[0].panels[0].activeTabId, 'logs', 'activeTab honoured');
   });
 
   it('placement overrides (heightPct, collapsed, height) live on the cell', () => {
@@ -167,16 +167,15 @@ panels:
   a: { type: actions, title: Actions }
   d: { type: detail, title: Detail }
 layout:
-  left:
-    panels:
-      - { tabs: [g], heightPct: 40 }
-  right:
-    panels:
-      - a
-      - { tabs: [d], height: 70% }
+  columns:
+    - panels:
+        - { tabs: [g], heightPct: 40 }
+    - panels:
+        - a
+        - { tabs: [d], height: 70% }
 `);
     const cfg = parse(p);
-    eq(cfg.layout.left_panels[0].heightPct, 40, 'heightPct lifted onto the pane');
+    eq(cfg.layout.columns[0].panels[0].heightPct, 40, 'heightPct lifted onto the pane');
     eq(cfg.layout.detail_height_pct, 70, 'detail height lifted onto layout-level field');
   });
 });
@@ -190,11 +189,12 @@ panels:
   a:     { type: actions }
   d:     { type: detail }
 layout:
-  left:  { panels: [g] }
-  right: { panels: [a, d] }
+  columns:
+    - { panels: [g] }
+    - { panels: [a, d] }
 `);
     const cfg = parse(p);
-    const placedIds = cfg.layout.left_panels.concat(cfg.layout.right_panels).map(p => p.id);
+    const placedIds = cfg.layout.columns.flatMap(c => c.panels).map(p => p.id);
     assert(!placedIds.includes('notes'), 'notes is not placed');
     assert('notes' in cfg.layout.pool,    'notes is still in the pool — that is what makes it hideable');
   });
@@ -202,17 +202,16 @@ layout:
 
 describe('[errors] schema-level rejection of legacy + malformed cells', () => {
   it("v0.6 inline {type:} cell rejects with a migration pointer", () => {
-    expectThrow(/v0.6 inline cell shape.*not supported in v0\.6\.1/, () => parse(tmpYaml(TRIVIAL_GROUPS + `
+    expectThrow(/v0.6 inline cell shape/, () => parse(tmpYaml(TRIVIAL_GROUPS + `
 panels:
   g: { type: groups }
   a: { type: actions }
   d: { type: detail }
 layout:
-  left:
-    panels:
-      - { type: viewer, title: Inline }
-  right:
-    panels: [a, d]
+  columns:
+    - panels:
+        - { type: viewer, title: Inline }
+    - panels: [a, d]
 `)), SchemaError);
   });
 
@@ -223,10 +222,9 @@ panels:
   a: { type: actions }
   d: { type: detail }
 layout:
-  left:
-    panels: [{ id: g }]
-  right:
-    panels: [a, d]
+  columns:
+    - panels: [{ id: g }]
+    - panels: [a, d]
 `)), SchemaError);
   });
 
@@ -237,10 +235,9 @@ panels:
   a: { type: actions }
   d: { type: detail }
 layout:
-  left:
-    panels: [{ heightPct: 40 }]
-  right:
-    panels: [a, d]
+  columns:
+    - panels: [{ heightPct: 40 }]
+    - panels: [a, d]
 `)), SchemaError);
   });
 
@@ -251,10 +248,9 @@ panels:
   a: { type: actions }
   d: { type: detail }
 layout:
-  left:
-    panels: [{ tabs: [] }]
-  right:
-    panels: [a, d]
+  columns:
+    - panels: [{ tabs: [] }]
+    - panels: [a, d]
 `)), SchemaError);
   });
 
@@ -265,10 +261,9 @@ panels:
   a: { type: actions }
   d: { type: detail }
 layout:
-  left:
-    panels: [{ tabs: [g], activeTab: a }]
-  right:
-    panels: [a, d]
+  columns:
+    - panels: [{ tabs: [g], activeTab: a }]
+    - panels: [a, d]
 `)), SchemaError);
   });
 });
@@ -280,8 +275,8 @@ panels:
   a: { type: actions }
   d: { type: detail }
 layout:
-  right:
-    panels: [a, ghost, d]
+  columns:
+    - panels: [a, ghost, d]
 `)));
   });
 
@@ -314,8 +309,9 @@ panels:
   g: { type: groups }
   a: { type: actions }
 layout:
-  left:  { panels: [g] }
-  right: { panels: [a] }
+  columns:
+    - { panels: [g] }
+    - { panels: [a] }
 `)));
   });
 
@@ -327,32 +323,35 @@ panels:
   d1: { type: detail, title: D1 }
   d2: { type: detail, title: D2 }
 layout:
-  left:  { panels: [g] }
-  right: { panels: [a, d1, d2] }
+  columns:
+    - { panels: [g] }
+    - { panels: [a, d1, d2] }
 `)));
   });
 
-  it('detail tab in left column → ParseError', () => {
-    expectThrow(/'detail' must be in the right column/, () => parse(tmpYaml(TRIVIAL_GROUPS + `
+  it('detail tab in non-last column → ParseError', () => {
+    expectThrow(/'detail' must be in the last column/, () => parse(tmpYaml(TRIVIAL_GROUPS + `
 panels:
   g: { type: groups }
   a: { type: actions }
   d: { type: detail }
 layout:
-  left:  { panels: [g, d] }
-  right: { panels: [a] }
+  columns:
+    - { panels: [g, d] }
+    - { panels: [a] }
 `)));
   });
 
-  it("detail tab not in last pane of right column → ParseError", () => {
-    expectThrow(/last pane of the right column/, () => parse(tmpYaml(TRIVIAL_GROUPS + `
+  it("detail tab not in last pane of last column → ParseError", () => {
+    expectThrow(/last pane of the last column/, () => parse(tmpYaml(TRIVIAL_GROUPS + `
 panels:
   g: { type: groups }
   a: { type: actions }
   d: { type: detail }
 layout:
-  left:  { panels: [g] }
-  right: { panels: [d, a] }
+  columns:
+    - { panels: [g] }
+    - { panels: [d, a] }
 `)));
   });
 
@@ -364,11 +363,11 @@ panels:
   d:  { type: detail }
   h:  { type: history, title: History }
 layout:
-  left:  { panels: [g] }
-  right:
-    panels:
-      - a
-      - { tabs: [d, h] }
+  columns:
+    - { panels: [g] }
+    - panels:
+        - a
+        - { tabs: [d, h] }
 `)));
   });
 });

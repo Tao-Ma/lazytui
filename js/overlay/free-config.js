@@ -58,10 +58,10 @@ function getFreeConfigFooter() {
       if (t.occupantType === drag.sourceType) {
         return ` | dragging ${esc(srcTitle)} → [dim](no-op — release to cancel)[/]`;
       }
-      return ` | dragging ${esc(srcTitle)} → [bold yellow]swap[/] ${esc(panelTitle(t.occupantType))} (${t.column})`;
+      return ` | dragging ${esc(srcTitle)} → [bold yellow]swap[/] ${esc(panelTitle(t.occupantType))} (col ${t.columnIndex + 1})`;
     }
     const clampSuffix = t.clamp ? ` [dim](clamped — ${esc(t.clamp)})[/]` : '';
-    return ` | dragging ${esc(srcTitle)} → ${t.column} @ ${t.index}${clampSuffix}`;
+    return ` | dragging ${esc(srcTitle)} → col ${t.columnIndex + 1} @ ${t.index}${clampSuffix}`;
   }
   // v0.6 — pool drag from the panel-list overlay. The overlay closes
   // at drag-start so the layout drop targets are visible; this footer
@@ -76,19 +76,19 @@ function getFreeConfigFooter() {
     const t = drag.target;
     if (!t)             return ` | from pool: ${esc(srcTitle)} → [yellow](drop outside cancels)[/]`;
     if (!t.valid) {
-      const reason = t.kind === 'replace' ? 'detail is essential' : `${t.column} column is full`;
+      const reason = t.kind === 'replace' ? (t.reason || 'detail is essential') : (t.reason || `col ${t.columnIndex + 1} blocked`);
       return ` | from pool: ${esc(srcTitle)} → [red]✗ ${reason}[/]`;
     }
     if (t.kind === 'replace') {
-      return ` | from pool: ${esc(srcTitle)} → [bold yellow]replace[/] ${esc(t.occupantId)} (${t.column})`;
+      return ` | from pool: ${esc(srcTitle)} → [bold yellow]replace[/] ${esc(t.occupantId)} (col ${t.columnIndex + 1})`;
     }
     const clampSuffix = t.clamp ? ` [dim](clamped — ${esc(t.clamp)})[/]` : '';
-    return ` | from pool: ${esc(srcTitle)} → [bold green]insert[/] at ${t.column}:${t.index}${clampSuffix}`;
+    return ` | from pool: ${esc(srcTitle)} → [bold green]insert[/] at col ${t.columnIndex + 1}:${t.index}${clampSuffix}`;
   }
   const slice = _slice();
   const all = slice ? mfc.allFreeConfigPanels(slice) : [];
   const sel = slice ? all[mfc.selectedIdx(slice)] : null;
-  return sel ? ` | ${esc(sel.title)} (${sel.column})` : '';
+  return sel ? ` | ${esc(sel.title)} (col ${(sel.columnIndex != null ? sel.columnIndex + 1 : '?')})` : '';
 }
 
 /** Title-edit footer text — the live buffer (reads the layout slice). */

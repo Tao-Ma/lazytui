@@ -41,7 +41,7 @@ function assignHotkeys(panelsYaml, pool, sideLabel) {
     if (!panelsYaml[i].hotkey) continue;
     const key = String(panelsYaml[i].hotkey);
     if (seen.has(key)) {
-      throw new ParseError(`${sideLabel} column declares hotkey '${key}' twice (cells ${seen.get(key)} and ${i})`);
+      throw new ParseError(`${sideLabel} declares hotkey '${key}' twice (cells ${seen.get(key)} and ${i})`);
     }
     seen.set(key, i);
     explicit.set(i, key);
@@ -55,6 +55,16 @@ function assignHotkeys(panelsYaml, pool, sideLabel) {
     else                    out.push('');
   }
   return out;
+}
+
+/** Hotkey pool for a column at index `ci` in an `N`-column layout.
+ *  First column → LEFT_HOTKEY_POOL (1-6), last column → RIGHT_HOTKEY_POOL
+ *  (7-9). Middle columns get an empty pool — auto-assignment yields '';
+ *  the user must specify hotkeys explicitly for middle-column panes. */
+function hotkeyPoolForColumn(ci, N) {
+  if (ci === 0) return LEFT_HOTKEY_POOL;
+  if (ci === N - 1) return RIGHT_HOTKEY_POOL;
+  return [];
 }
 
 function titleCase(s) {
@@ -178,7 +188,7 @@ function poolToObject(pool) {
  * The `height` placement-only field is detail-pane-only — becomes
  * detail_height_pct via the caller's setter.
  */
-function buildPlacedPane(resolved, hotkey, column, detailHeightSetter, pool) {
+function buildPlacedPane(resolved, hotkey, columnIndex, detailHeightSetter, pool) {
   const tabIds = resolved.tabPoolIds;
   const placement = resolved.placement;
   const activeTabPoolId = resolved.activeTab;
@@ -212,7 +222,7 @@ function buildPlacedPane(resolved, hotkey, column, detailHeightSetter, pool) {
     type: active.type,
     title: active.title,
     hotkey,
-    column,
+    columnIndex,
     config: active.config,
     // Pane fields (v0.6.1 canonical).
     paneId: mpane.newPaneId(activeTabPoolId),
@@ -226,26 +236,26 @@ function buildPlacedPane(resolved, hotkey, column, detailHeightSetter, pool) {
 
 function defaultLayout(hasContainers, hasFiles, userPool) {
   const pool = new Map();
-  const left = [];
+  const firstColPanels = [];
   let hk = 1;
-  const addDefault = (id, type, title, column, hotkey, extra) => {
+  const addDefault = (id, type, title, columnIndex, hotkey, extra) => {
     const entry = { id, type, title, config: extra || {}, _synthesized: true };
     pool.set(id, entry);
     return mpane.wrapAsPane(
-      { id, type, title, hotkey, column, config: entry.config },
+      { id, type, title, hotkey, columnIndex, config: entry.config },
       mpane.newPaneId(id),
     );
   };
   if (hasContainers) {
-    left.push(addDefault('containers', 'containers', 'Containers', 'left', String(hk++)));
+    firstColPanels.push(addDefault('containers', 'containers', 'Containers', 0, String(hk++)));
   }
-  left.push(addDefault('groups', 'groups', 'Groups', 'left', String(hk++)));
+  firstColPanels.push(addDefault('groups', 'groups', 'Groups', 0, String(hk++)));
   if (hasFiles) {
-    left.push(addDefault('files', 'files', 'Files', 'left', String(hk++), { source: 'declared' }));
+    firstColPanels.push(addDefault('files', 'files', 'Files', 0, String(hk++), { source: 'declared' }));
   }
-  const right = [
-    addDefault('actions', 'actions', 'Actions', 'right', '7'),
-    addDefault('detail',  'detail',  'Detail',  'right', '8'),
+  const lastColPanels = [
+    addDefault('actions', 'actions', 'Actions', 1, '7'),
+    addDefault('detail',  'detail',  'Detail',  1, '8'),
   ];
   // Merge user-declared pool entries (from a top-level `panels:` block
   // that the YAML had without a matching `layout:`). Without this, the
@@ -260,16 +270,17 @@ function defaultLayout(hasContainers, hasFiles, userPool) {
     }
   }
   return {
-    left_width: 30, left_panels: left, right_panels: right,
+    columns: [
+      { width: 30, panels: firstColPanels },
+      { panels: lastColPanels },
+    ],
     detail_height_pct: 60,
     pool: poolToObject(pool),
   };
 }
 
 function parseLayout(layoutData, _hasContainers, _hasFiles, userPool) {
-  const leftBlock  = layoutData.left  || {};
-  const rightBlock = layoutData.right || {};
-  const leftWidth  = (leftBlock.width !== undefined && leftBlock.width !== null) ? leftBlock.width : 30;
+  const columnsYaml = layoutData.columns;
   let detailHeightPct = 60;
   const setDetailHeight = (n) => { detailHeightPct = n; };
 
@@ -278,83 +289,90 @@ function parseLayout(layoutData, _hasContainers, _hasFiles, userPool) {
   // is no longer mutated by resolveLayoutCell.
   const pool = userPool || new Map();
 
-  const leftYaml  = leftBlock.panels  || [];
-  const rightYaml = rightBlock.panels || [];
-  const leftResolved  = leftYaml.map(c  => resolveLayoutCell(c, pool));
-  const rightResolved = rightYaml.map(c => resolveLayoutCell(c, pool));
+  const N = columnsYaml.length;
+  // Resolve each column's cells through the pool. Width threads through
+  // as-is; the last column's width is ignored at paint time (it takes
+  // the remainder).
+  const resolvedColumns = columnsYaml.map(col => ({
+    width: col.width !== undefined ? col.width : null,
+    resolved: (col.panels || []).map(c => resolveLayoutCell(c, pool)),
+  }));
 
-  // Hotkey assignment runs against placement-level hotkey overrides.
-  // assignHotkeys() reads `.hotkey` off the array elements — feed it
-  // the placements directly.
-  const leftKeys  = assignHotkeys(leftResolved.map(r  => r.placement), LEFT_HOTKEY_POOL,  'left');
-  const rightKeys = assignHotkeys(rightResolved.map(r => r.placement), RIGHT_HOTKEY_POOL, 'right');
+  // Hotkey assignment runs against placement-level hotkey overrides per
+  // column. First column gets LEFT_HOTKEY_POOL, last gets RIGHT — middle
+  // columns get no auto-pool (user must specify explicit hotkeys).
+  const columnsKeys = resolvedColumns.map((c, ci) =>
+    assignHotkeys(
+      c.resolved.map(r => r.placement),
+      hotkeyPoolForColumn(ci, N),
+      `column ${ci}`,
+    ),
+  );
 
-  // Cross-side collision check — only one panel can answer to a given
+  // Cross-column collision check — only one panel can answer to a given
   // hotkey in normal-mode dispatch. Explicit hotkeys can claim ANY key
-  // (not just the per-side pool), so a left cell with `hotkey: '7'` and
-  // a right cell that auto-picks '7' would collide silently. Surface it.
+  // (not just the per-column pool), so a column-0 cell with `hotkey: '7'`
+  // and a last-column cell that auto-picks '7' would collide silently.
   const seenKey = new Map();
-  const allKeys = leftKeys.map(k => ({ k, side: 'left' }))
-    .concat(rightKeys.map(k => ({ k, side: 'right' })));
-  for (const { k, side } of allKeys) {
-    if (!k) continue;  // unassigned slot
-    if (seenKey.has(k)) {
-      throw new ParseError(`hotkey '${k}' claimed by both ${seenKey.get(k)} and ${side} columns`);
+  for (let ci = 0; ci < N; ci++) {
+    for (const k of columnsKeys[ci]) {
+      if (!k) continue;
+      if (seenKey.has(k)) {
+        throw new ParseError(`hotkey '${k}' claimed by both column ${seenKey.get(k)} and column ${ci}`);
+      }
+      seenKey.set(k, ci);
     }
-    seenKey.set(k, side);
   }
 
-  const leftPanels  = leftResolved.map((r, i)  => buildPlacedPane(r, leftKeys[i],  'left',  setDetailHeight, pool));
-  const rightPanels = rightResolved.map((r, i) => buildPlacedPane(r, rightKeys[i], 'right', setDetailHeight, pool));
+  const columns = resolvedColumns.map((c, ci) => ({
+    width: c.width,
+    panels: c.resolved.map((r, i) =>
+      buildPlacedPane(r, columnsKeys[ci][i], ci, setDetailHeight, pool)),
+  }));
 
-  // Semantic layout invariants — v0.6.1 restates them at the TAB level
-  // (every tab in every pane), not the pane level: "exactly one tab
-  // anywhere has kind detail," "at most one tab anywhere has kind
-  // actions," "no detail / actions tab in the left column." With one
-  // tab per pane (today's common shape) these collapse to the prior
-  // panel-level checks; with multi-tab cells the invariant scales.
-  const all = leftPanels.concat(rightPanels);
+  // Semantic layout invariants — restated at the TAB level (every tab
+  // in every pane). With one tab per pane (today's common shape) these
+  // collapse to the prior panel-level checks; with multi-tab cells the
+  // invariant scales.
   const tabKinds = (pane) => pane.tabs.map(t => pool.get(t.poolId).type);
-  const flatLeftTabKinds  = leftPanels.flatMap(tabKinds);
-  const flatRightTabKinds = rightPanels.flatMap(tabKinds);
-  const allTabKinds = flatLeftTabKinds.concat(flatRightTabKinds);
+  const allTabKindsByCol = columns.map(c => c.panels.flatMap(tabKinds));
+  const allTabKinds = allTabKindsByCol.flat();
+  const lastCol = columns[N - 1];
+  const lastColTabKinds = allTabKindsByCol[N - 1];
 
   const detailCount = allTabKinds.filter(t => t === 'detail').length;
   if (detailCount !== 1) {
     throw new ParseError(`layout must have exactly one tab of kind 'detail', found ${detailCount}`);
   }
-  if (flatLeftTabKinds.includes('detail')) {
-    throw new ParseError(`tab of kind 'detail' must be in the right column, not the left`);
+  // detail must live in the last column.
+  for (let ci = 0; ci < N - 1; ci++) {
+    if (allTabKindsByCol[ci].includes('detail')) {
+      throw new ParseError(`tab of kind 'detail' must be in the last column, not column ${ci}`);
+    }
   }
-  // detail tab must live in the LAST pane in the right column (design-
-  // mode reorder, pool_show, and pool_drag preserve this convention).
-  const lastRight = rightPanels[rightPanels.length - 1];
-  if (!lastRight || !tabKinds(lastRight).includes('detail')) {
-    throw new ParseError(`tab of kind 'detail' must be in the last pane of the right column`);
+  // detail must live in the LAST pane of the last column.
+  const lastPane = lastCol.panels[lastCol.panels.length - 1];
+  if (!lastPane || !tabKinds(lastPane).includes('detail')) {
+    throw new ParseError(`tab of kind 'detail' must be in the last pane of the last column`);
   }
-  // v0.6.1 — detail tab must be the ONLY tab in its pane. Several
-  // render-layer + viewer Component readers locate the detail pane by
-  // `p.type === 'detail'` (the legacy Panel field that mirrors the
-  // active tab's type). Putting detail in a multi-tab pane means a
-  // :switch-tab away from detail would flip pane.type and those
-  // readers would silently miss the detail pane. Multi-instance
-  // viewer support arrives in v0.7; until then keep the structural
-  // safety net here so the runtime contract stays honest.
-  if (lastRight.tabs.length > 1) {
+  // detail must be the ONLY tab in its pane (multi-tab + detail deferred
+  // to v0.7).
+  if (lastPane.tabs.length > 1) {
     throw new ParseError(`tab of kind 'detail' must be the only tab in its pane (multi-tab panes hosting detail are deferred to v0.7)`);
   }
   const actionsCount = allTabKinds.filter(t => t === 'actions').length;
   if (actionsCount > 1) {
     throw new ParseError(`layout allows at most one tab of kind 'actions', found ${actionsCount}`);
   }
-  if (flatLeftTabKinds.includes('actions')) {
-    throw new ParseError(`tab of kind 'actions' must be in the right column, not the left`);
+  // actions must live in the last column.
+  for (let ci = 0; ci < N - 1; ci++) {
+    if (allTabKindsByCol[ci].includes('actions')) {
+      throw new ParseError(`tab of kind 'actions' must be in the last column, not column ${ci}`);
+    }
   }
 
   return {
-    left_width: leftWidth,
-    left_panels: leftPanels,
-    right_panels: rightPanels,
+    columns,
     detail_height_pct: detailHeightPct,
     pool: poolToObject(pool),
   };

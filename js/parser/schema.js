@@ -70,9 +70,13 @@ function validate(data, _sourceFile, warnings) {
 }
 
 /**
- * Structural shape check for the `layout:` block (v0.6.1 form).
+ * Structural shape check for the `layout:` block (v0.6.2 form).
  *
- * Each cell is either:
+ * The layout has an ordered `columns:` list. Each column is a mapping
+ * with required `panels:` plus an optional `width:` (last column's width
+ * is implicit — it takes whatever's left).
+ *
+ * Each cell within `panels:` is either:
  *   - a bare string (pool-id reference; single-tab pane shorthand), or
  *   - a mapping with required `tabs: [poolId, ...]` plus optional
  *     `activeTab`, `hotkey`, `height`, `heightPct`, `collapsed`.
@@ -81,80 +85,120 @@ function validate(data, _sourceFile, warnings) {
  * level) is rejected with a migration pointer. Pool entries declare at
  * the top-level `panels:` block; layout cells only reference them.
  *
+ * The v0.6.1 two-column `left:`/`right:` form is rejected with a
+ * migration pointer to docs/v0.6.2-columns.md.
+ *
  * The semantic invariants — exactly-one detail, at-most-one actions —
  * depend on resolved tab kinds (string ids resolve through the pool),
  * so they run in `parseLayout` post-resolution.
  *
- * Column size caps (`SOFT_COL_CAP_LEFT` / `SOFT_COL_CAP_RIGHT`) are
- * SOFT: exceeding them appends a warning to the caller-supplied
- * `warnings` array but doesn't throw. The renderer's MIN_PANEL_H +
- * terminal-row floor is the physical limit; above the soft cap users
- * just get a more compressed display.
+ * Column size cap (`SOFT_COL_CAP_FIRST` / `SOFT_COL_CAP_LAST`) is SOFT:
+ * exceeding it appends a warning to the caller-supplied `warnings` array
+ * but doesn't throw. The renderer's MIN_PANEL_H + terminal-row floor is
+ * the physical limit; above the soft cap users just get a more
+ * compressed display.
  */
 const VALID_LAYOUT_CELL_KEYS = new Set([
   'tabs', 'activeTab', 'hotkey', 'height', 'heightPct', 'collapsed',
 ]);
 
-const SOFT_COL_CAP_LEFT  = 6;
-const SOFT_COL_CAP_RIGHT = 3;
+const VALID_COLUMN_KEYS = new Set(['width', 'panels']);
+
+const SOFT_COL_CAP_FIRST = 6;
+const SOFT_COL_CAP_LAST  = 3;
 
 function validateLayout(layout, warnings) {
   if (!isMapping(layout)) throw new SchemaError("'layout' must be a mapping");
-  const collectPanels = (side, softCap) => {
-    const block = layout[side];
-    if (block === undefined) return [];
-    if (!isMapping(block)) throw new SchemaError(`'layout.${side}' must be a mapping`);
-    const panels = block.panels;
-    if (panels === undefined) return [];
-    if (!Array.isArray(panels)) throw new SchemaError(`'layout.${side}.panels' must be a list`);
+  // v0.6.1 form rejection — `left:`/`right:` blocks are no longer the
+  // way; the layout is an ordered `columns:` list.
+  if ('left' in layout || 'right' in layout) {
+    throw new SchemaError(
+      "v0.6.1 layout shape (`left:` / `right:` blocks) is not supported in v0.6.2. " +
+      "Use `columns: [{width?, panels: [...]}, ...]` (last column's width is implicit). " +
+      "See docs/v0.6.2-columns.md.",
+      { context: 'layout' },
+    );
+  }
+  if (!('columns' in layout)) {
+    throw new SchemaError("'layout' must declare a `columns:` list", { context: 'layout' });
+  }
+  const columns = layout.columns;
+  if (!Array.isArray(columns) || columns.length === 0) {
+    throw new SchemaError("'layout.columns' must be a non-empty list", { context: 'layout' });
+  }
+  const lastIdx = columns.length - 1;
+  columns.forEach((col, ci) => {
+    const ctx = `layout.columns[${ci}]`;
+    if (!isMapping(col)) {
+      throw new SchemaError(`column must be a mapping, got ${typeName(col)}`, { context: ctx });
+    }
+    checkUnknownKeys(col, VALID_COLUMN_KEYS, ctx);
+    if ('width' in col) {
+      const w = col.width;
+      if (w !== null && (typeof w !== 'number' || !Number.isInteger(w) || w <= 0)) {
+        throw new SchemaError("'width' must be a positive integer", { context: ctx });
+      }
+      if (ci === lastIdx && warnings) {
+        warnings.push({
+          code: 'layout.last_column_width_ignored',
+          message: `layout.columns[${ci}]: 'width' on the last column is ignored — it takes the remainder`,
+        });
+      }
+    }
+    if (!('panels' in col)) {
+      throw new SchemaError("column requires a 'panels:' list", { context: ctx });
+    }
+    const panels = col.panels;
+    if (!Array.isArray(panels)) {
+      throw new SchemaError("'panels' must be a list", { context: ctx });
+    }
     panels.forEach((p, i) => {
-      const ctx = `layout.${side}.panels[${i}]`;
+      const cellCtx = `${ctx}.panels[${i}]`;
       if (typeof p === 'string') {
-        if (!p.trim()) throw new SchemaError("layout cell id must be non-empty", { context: ctx });
+        if (!p.trim()) throw new SchemaError("layout cell id must be non-empty", { context: cellCtx });
         return;
       }
       if (!isMapping(p)) {
-        throw new SchemaError(`layout cell must be a string id or a {tabs: [...]} mapping, got ${typeName(p)}`, { context: ctx });
+        throw new SchemaError(`layout cell must be a string id or a {tabs: [...]} mapping, got ${typeName(p)}`, { context: cellCtx });
       }
-      // v0.6 form rejection — `type:` or `id:` at cell level is no
-      // longer the way; pool entries declare in top-level `panels:`,
-      // cells reference them via `tabs: [poolId]` (or the bare-string
-      // shorthand).
       if ('type' in p || 'id' in p) {
         throw new SchemaError(
-          "v0.6 inline cell shape ({type: ...} / {id: ...}) is not supported in v0.6.1. " +
+          "v0.6 inline cell shape ({type: ...} / {id: ...}) is not supported. " +
           "Declare the panel in a top-level `panels:` block and reference it via " +
           "`{tabs: [pool-id]}` or the bare-string shorthand. " +
           "See docs/v0.6.1-migrate.md.",
-          { context: ctx },
+          { context: cellCtx },
         );
       }
-      checkUnknownKeys(p, VALID_LAYOUT_CELL_KEYS, ctx);
+      checkUnknownKeys(p, VALID_LAYOUT_CELL_KEYS, cellCtx);
       if (!('tabs' in p)) {
-        throw new SchemaError("layout cell mapping requires 'tabs: [pool-id, ...]'", { context: ctx });
+        throw new SchemaError("layout cell mapping requires 'tabs: [pool-id, ...]'", { context: cellCtx });
       }
       if (!Array.isArray(p.tabs) || p.tabs.length === 0) {
-        throw new SchemaError("'tabs' must be a non-empty list of pool ids", { context: ctx });
+        throw new SchemaError("'tabs' must be a non-empty list of pool ids", { context: cellCtx });
       }
       p.tabs.forEach((tid, j) => {
         if (typeof tid !== 'string' || !tid.trim()) {
-          throw new SchemaError(`tabs[${j}]: pool id must be a non-empty string`, { context: ctx });
+          throw new SchemaError(`tabs[${j}]: pool id must be a non-empty string`, { context: cellCtx });
         }
       });
       if ('activeTab' in p && (typeof p.activeTab !== 'string' || !p.tabs.includes(p.activeTab))) {
-        throw new SchemaError("'activeTab' must be one of the entries in `tabs`", { context: ctx });
+        throw new SchemaError("'activeTab' must be one of the entries in `tabs`", { context: cellCtx });
       }
     });
+    // Soft cap: first column (Navigators) tolerates more panels than
+    // the last column (Viewer-side, where detail + actions sit). Mirrors
+    // the two-column v0.6.1 caps (6 / 3) for the typical 2-column layout.
+    const softCap = ci === 0 ? SOFT_COL_CAP_FIRST
+                  : ci === lastIdx ? SOFT_COL_CAP_LAST
+                  : SOFT_COL_CAP_FIRST;
     if (panels.length > softCap && warnings) {
       warnings.push({
         code: 'layout.column_over_soft_cap',
-        message: `layout.${side}: ${panels.length} panes exceeds soft cap of ${softCap} — panels may be cramped on small terminals`,
+        message: `layout.columns[${ci}]: ${panels.length} panes exceeds soft cap of ${softCap} — panels may be cramped on small terminals`,
       });
     }
-    return panels;
-  };
-  collectPanels('left',  SOFT_COL_CAP_LEFT);
-  collectPanels('right', SOFT_COL_CAP_RIGHT);
+  });
 }
 
 /**

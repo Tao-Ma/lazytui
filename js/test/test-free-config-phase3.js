@@ -48,15 +48,17 @@ function handleFreeConfigTitleEditKey(key, seq) { press(key, seq); }
 
 function setupFixture() {
   getInstanceSlice("layout").arrange = {
-    leftWidth: 30, detailHeightPct: 60,
-    leftPanels: [
-      { type: 'containers', title: 'Containers', column: 'left',  hotkey: '1' },
-      { type: 'groups',     title: 'Groups',     column: 'left',  hotkey: '2' },
-    ],
-    rightPanels: [
-      { type: 'actions', title: 'Actions', column: 'right', hotkey: '0' },
-      { type: 'stats',   title: 'Stats',   column: 'right', hotkey: '' },
-      { type: 'detail',  title: 'Detail',  column: 'right', hotkey: 'o' },
+    detailHeightPct: 60,
+    columns: [
+      { width: 30, panels: [
+        { type: 'containers', id: 'containers', title: 'Containers', columnIndex: 0,  hotkey: '1' },
+        { type: 'groups',     id: 'groups',     title: 'Groups',     columnIndex: 0,  hotkey: '2' },
+      ] },
+      { panels: [
+        { type: 'actions', id: 'actions', title: 'Actions', columnIndex: 1, hotkey: '0' },
+        { type: 'stats',   id: 'stats',   title: 'Stats',   columnIndex: 1, hotkey: '' },
+        { type: 'detail',  id: 'detail',  title: 'Detail',  columnIndex: 1, hotkey: 'o' },
+      ] },
     ],
   };
   getInstanceSlice('layout').panelBounds = {
@@ -103,10 +105,11 @@ describe('[1] pointToResizeTarget — separator hit-tests', () => {
     const t33 = pointToResizeTarget(33, 2);
     assert(t33 === null || t33.edge !== 'col', `x=33 → not col (got ${JSON.stringify(t33)})`);
   });
-  it('detail-top row inside right column → edge=right-boundary with detail as lower', () => {
+  it('detail-top row inside last column → edge=panel-boundary with detail as lower', () => {
     setupFixture();
     const t = pointToResizeTarget(50, 15);
-    eq(t.edge, 'right-boundary');
+    eq(t.edge, 'panel-boundary');
+    eq(t.columnIndex, 1);
     eq(t.boundary.lower.type, 'detail');
   });
   it('detail-top row at column separator → corner (both axes drag)', () => {
@@ -119,17 +122,19 @@ describe('[1] pointToResizeTarget — separator hit-tests', () => {
     setupFixture();
     eq(pointToResizeTarget(50, 12), null, 'mx=50 my=12 (inside stats) → null');
   });
-  it('within-column boundary in right col (stats/actions seam, y=5) → right-boundary', () => {
+  it('within-column boundary in last col (stats/actions seam, y=5) → panel-boundary', () => {
     setupFixture();
     const t = pointToResizeTarget(60, 5);
-    eq(t.edge, 'right-boundary');
+    eq(t.edge, 'panel-boundary');
+    eq(t.columnIndex, 1);
     eq(t.boundary.upper.type, 'actions');
     eq(t.boundary.lower.type, 'stats');
   });
-  it('within-column boundary in left col (containers/groups seam, y=10) → left-boundary', () => {
+  it('within-column boundary in first col (containers/groups seam, y=10) → panel-boundary', () => {
     setupFixture();
     const t = pointToResizeTarget(10, 10);
-    eq(t.edge, 'left-boundary');
+    eq(t.edge, 'panel-boundary');
+    eq(t.columnIndex, 0);
     eq(t.boundary.upper.type, 'containers');
     eq(t.boundary.lower.type, 'groups');
   });
@@ -138,33 +143,33 @@ describe('[1] pointToResizeTarget — separator hit-tests', () => {
 // ===============================================================
 describe('[2] drag-to-resize — column separator', () => {
   // y=2 keeps these pure col-separator hits (no boundary nearby).
-  it('press on col separator then motion shrinks leftWidth', () => {
+  it('press on col separator then motion shrinks first column width', () => {
     setupFixture();
     onMouseEvent('press',  30, 2);
     onMouseEvent('motion', 24, 2);
-    eq(getInstanceSlice("layout").arrange.leftWidth, 25, 'leftWidth = mx + 1 = 25');
+    eq(getInstanceSlice("layout").arrange.columns[0].width, 25, 'col0.width = mx + 1 = 25');
     eq(getInstanceSlice('layout').dirty, true);
   });
   it('motion clamps at lower bound (20)', () => {
     setupFixture();
     onMouseEvent('press',  30, 2);
     onMouseEvent('motion',  5, 2);
-    eq(getInstanceSlice("layout").arrange.leftWidth, 20);
+    eq(getInstanceSlice("layout").arrange.columns[0].width, 20);
   });
   it('motion clamps at upper bound (60)', () => {
     setupFixture();
     onMouseEvent('press',  30, 2);
     onMouseEvent('motion', 99, 2);
-    eq(getInstanceSlice("layout").arrange.leftWidth, 60);
+    eq(getInstanceSlice("layout").arrange.columns[0].width, 60);
   });
   it('release ends resize gesture', () => {
     setupFixture();
     onMouseEvent('press',   30, 2);
     onMouseEvent('motion',  40, 2);
     onMouseEvent('release', 40, 2);
-    // Further motion should NOT change leftWidth (drag is over)
+    // Further motion should NOT change column width (drag is over)
     onMouseEvent('motion', 20, 2);
-    eq(getInstanceSlice("layout").arrange.leftWidth, 41, 'leftWidth unchanged after release');
+    eq(getInstanceSlice("layout").arrange.columns[0].width, 41, 'col0.width unchanged after release');
   });
   it('single undo entry pushed for the whole drag', () => {
     setupFixture();
@@ -213,8 +218,8 @@ describe('[3a] drag-to-resize — within-column boundary (left col)', () => {
     // upperStartY=0, combinedH=20, availH=20.
     // proposedUpperH = max(3, min(17, 6)) = 6. proposedLowerH = 14.
     // containers.heightPct = round(6/20*100) = 30. groups = round(14/20*100) = 70.
-    eq(getInstanceSlice("layout").arrange.leftPanels[0].heightPct, 30, 'containers anchored');
-    eq(getInstanceSlice("layout").arrange.leftPanels[1].heightPct, 70, 'groups anchored');
+    eq(getInstanceSlice("layout").arrange.columns[0].panels[0].heightPct, 30, 'containers anchored');
+    eq(getInstanceSlice("layout").arrange.columns[0].panels[1].heightPct, 70, 'groups anchored');
     eq(getInstanceSlice('layout').dirty, true);
   });
   it('drag clamps so each side stays ≥ MIN_PANEL_H (3 rows)', () => {
@@ -222,8 +227,8 @@ describe('[3a] drag-to-resize — within-column boundary (left col)', () => {
     onMouseEvent('press',  10, 10);
     onMouseEvent('motion', 10,  0);  // drag boundary to row 0 (would zero containers)
     // proposedUpperH = max(3, min(17, 0)) = 3. proposedLowerH = 17.
-    eq(getInstanceSlice("layout").arrange.leftPanels[0].heightPct, 15, 'containers floored at minH=3 (3/20=15)');
-    eq(getInstanceSlice("layout").arrange.leftPanels[1].heightPct, 85);
+    eq(getInstanceSlice("layout").arrange.columns[0].panels[0].heightPct, 15, 'containers floored at minH=3 (3/20=15)');
+    eq(getInstanceSlice("layout").arrange.columns[0].panels[1].heightPct, 85);
   });
 });
 
@@ -238,8 +243,8 @@ describe('[3b] drag-to-resize — within-column boundary (right col, non-detail)
     // upperStartY=0, combinedH=actions.h(5)+stats.h(10)=15, availH=40.
     // proposedUpperH = max(3, min(12, 8)) = 8. proposedLowerH = 7.
     // actions.heightPct = round(8/40*100) = 20. stats = round(7/40*100) = 18.
-    eq(getInstanceSlice("layout").arrange.rightPanels[0].heightPct, 20, 'actions anchored');
-    eq(getInstanceSlice("layout").arrange.rightPanels[1].heightPct, 18, 'stats anchored');
+    eq(getInstanceSlice("layout").arrange.columns[1].panels[0].heightPct, 20, 'actions anchored');
+    eq(getInstanceSlice("layout").arrange.columns[1].panels[1].heightPct, 18, 'stats anchored');
     eq(getInstanceSlice("layout").arrange.detailHeightPct, prevDetail, 'detailHeightPct untouched');
   });
 });
@@ -255,42 +260,41 @@ describe('[3c] drag-to-resize — corner (col-separator × right boundary)', () 
     //   upperStartY=5, combinedH=35, availH=40, detailIsLower.
     //   proposedUpperH = max(3, min(32, 12-5)) = 7. proposedLowerH = 28.
     //   detailHeightPct = round(28/40*100) = 70. stats.heightPct = round(7/40*100) = 18.
-    eq(getInstanceSlice("layout").arrange.leftWidth, 36, 'leftWidth follows mx');
+    eq(getInstanceSlice("layout").arrange.columns[0].width, 36, 'col0.width follows mx');
     eq(getInstanceSlice("layout").arrange.detailHeightPct, 70, 'detailHeightPct follows my');
-    eq(getInstanceSlice("layout").arrange.rightPanels[1].heightPct, 18, 'stats anchored from the height axis');
+    eq(getInstanceSlice("layout").arrange.columns[1].panels[1].heightPct, 18, 'stats anchored from the height axis');
   });
 });
 
-describe('[3c2] drag-to-resize — left-side corner (col-separator × left boundary)', () => {
-  // Intersection: x=leftWidth(30) AND y=10 (containers/groups seam).
-  // Regression: a previous version only checked colMatch×rightB for the
-  // corner, so col-sep × left-boundary fell through to plain 'col' and
-  // the boundary axis didn't move.
-  it('single gesture adjusts both leftWidth and left-col panel heightPcts', () => {
+describe('[3c2] drag-to-resize — corner (col-separator × first-col boundary)', () => {
+  // Intersection: x=col0.width(30) AND y=containers/groups boundary(10) →
+  // corner. The boundary at x=30 falls equidistant between col0 and col1;
+  // with col1 having no panel boundary at y=10, the hit-test falls back
+  // to col0's containers/groups seam so a corner-resize at the LEFT col's
+  // boundary stays reachable from the column separator.
+  it('press at col0 boundary y engages corner-resize for col0', () => {
     setupFixture();
     onMouseEvent('press',  30, 10);
-    onMouseEvent('motion', 26, 14);  // diagonal SW → leftW shrinks, boundary down
-    // Col axis: leftW = 26+1 = 27.
-    // Height axis: upper=containers (y=0,h=10), lower=groups (y=10,h=10).
-    //   upperStartY=0, combinedH=20, availH=20.
-    //   proposedUpperH = max(3, min(17, 14)) = 14. proposedLowerH = 6.
-    //   containers.heightPct = round(14/20*100) = 70.
-    //   groups.heightPct = round(6/20*100) = 30.
-    eq(getInstanceSlice("layout").arrange.leftWidth, 27, 'leftWidth follows mx');
-    eq(getInstanceSlice("layout").arrange.leftPanels[0].heightPct, 70, 'containers anchored from height axis');
-    eq(getInstanceSlice("layout").arrange.leftPanels[1].heightPct, 30, 'groups anchored from height axis');
+    onMouseEvent('motion', 26, 14);  // diagonal SW → col0 width shrinks, containers heightPct grows
+    eq(getInstanceSlice("layout").arrange.columns[0].width, 27, 'col0.width follows mx');
+    // boundary axis: upper=containers, lower=groups, combinedH=20.
+    // proposedUpperH = max(3, min(17, 14-0)) = 14. proposedLowerH = 6.
+    // containers heightPct = round(14/20*100) = 70.
+    // groups heightPct = round(6/20*100) = 30.
+    eq(getInstanceSlice("layout").arrange.columns[0].panels[0].heightPct, 70, 'containers heightPct grew');
+    eq(getInstanceSlice("layout").arrange.columns[0].panels[1].heightPct, 30, 'groups heightPct shrank');
   });
 });
 
 describe('[3d] press freezes flex panels in the dragged column', () => {
   it('pressing right-col boundary anchors actions even though only stats/detail dragged', () => {
     setupFixture();
-    eq(getInstanceSlice("layout").arrange.rightPanels[0].heightPct, undefined, 'actions starts flex');
+    eq(getInstanceSlice("layout").arrange.columns[1].panels[0].heightPct, undefined, 'actions starts flex');
     onMouseEvent('press', 60, 15);  // press on stats/detail boundary
     // freezeColumnFlex runs on press — actions (not in the drag pair,
     // not detail, no existing heightPct) gets anchored to its current
     // rendered share: round(5/40*100) = 13.
-    eq(getInstanceSlice("layout").arrange.rightPanels[0].heightPct, 13, 'actions frozen at its rendered pct');
+    eq(getInstanceSlice("layout").arrange.columns[1].panels[0].heightPct, 13, 'actions frozen at its rendered pct');
   });
 });
 
@@ -300,20 +304,20 @@ describe('[3f] keyboard `]` / `[` — focused panel heightPct', () => {
     // selectedIdx=0 (containers). availH=20 (left col).
     // containers starts flex (h=10 → 50%). groups also flex (h=10 → 50%).
     handleFreeConfigKey(']');
-    eq(getInstanceSlice("layout").arrange.leftPanels[0].heightPct, 55, 'containers +5');
-    eq(getInstanceSlice("layout").arrange.leftPanels[1].heightPct, 45, 'groups -5 (stolen from)');
+    eq(getInstanceSlice("layout").arrange.columns[0].panels[0].heightPct, 55, 'containers +5');
+    eq(getInstanceSlice("layout").arrange.columns[0].panels[1].heightPct, 45, 'groups -5 (stolen from)');
   });
   it('[ shrinks focused panel, gives to neighbor below', () => {
     setupFixture();
     handleFreeConfigKey('[');
-    eq(getInstanceSlice("layout").arrange.leftPanels[0].heightPct, 45);
-    eq(getInstanceSlice("layout").arrange.leftPanels[1].heightPct, 55);
+    eq(getInstanceSlice("layout").arrange.columns[0].panels[0].heightPct, 45);
+    eq(getInstanceSlice("layout").arrange.columns[0].panels[1].heightPct, 55);
   });
   it('detail focused → ] / [ are no-ops (use +/- instead)', () => {
     setupFixture();
     // Fixture has 5 panels total; idx=4 (last) is detail.
     handleFreeConfigKey('j'); handleFreeConfigKey('j'); handleFreeConfigKey('j'); handleFreeConfigKey('j');
-    eq(getInstanceSlice("layout").arrange.rightPanels[2].type, 'detail');
+    eq(getInstanceSlice("layout").arrange.columns[1].panels[2].type, 'detail');
     const prevDetail = getInstanceSlice("layout").arrange.detailHeightPct;
     handleFreeConfigKey(']');
     eq(getInstanceSlice("layout").arrange.detailHeightPct, prevDetail, 'detail untouched by `]`');
@@ -322,7 +326,7 @@ describe('[3f] keyboard `]` / `[` — focused panel heightPct', () => {
     setupFixture();
     handleFreeConfigKey('j');  // → groups (last in left col)
     handleFreeConfigKey(']');
-    eq(getInstanceSlice("layout").arrange.leftPanels[1].heightPct, undefined, 'no mutation');
+    eq(getInstanceSlice("layout").arrange.columns[0].panels[1].heightPct, undefined, 'no mutation');
   });
   it('] respects detail dynamic-min clamp when stealing from detail', () => {
     setupFixture();
@@ -331,7 +335,7 @@ describe('[3f] keyboard `]` / `[` — focused panel heightPct', () => {
     // the dynamic min (detailMinPct(availH) = 13% on availH=40).
     const { detailMinPct } = require('../leaves/free-config');
     handleFreeConfigKey('j'); handleFreeConfigKey('j'); handleFreeConfigKey('j');  // → stats
-    eq(getInstanceSlice("layout").arrange.rightPanels[1].type, 'stats');
+    eq(getInstanceSlice("layout").arrange.columns[1].panels[1].type, 'stats');
     for (let i = 0; i < 20; i++) handleFreeConfigKey(']');
     const got = getInstanceSlice("layout").arrange.detailHeightPct;
     assert(got >= detailMinPct(40), `detail clamped at dynamic min ${detailMinPct(40)} (got ${got})`);
@@ -343,15 +347,17 @@ describe('[3e] calcLayout — heightPct distribution', () => {
   const { calcLayout } = require('../render/layout');
   function freshLayout() {
     getInstanceSlice("layout").arrange = {
-      leftWidth: 30, detailHeightPct: 60,
-      leftPanels: [
-        { type: 'containers', title: 'C', column: 'left', hotkey: '1' },
-        { type: 'groups',     title: 'G', column: 'left', hotkey: '2' },
-      ],
-      rightPanels: [
-        { type: 'actions', title: 'A', column: 'right', hotkey: '0' },
-        { type: 'stats',   title: 'S', column: 'right', hotkey: '' },
-        { type: 'detail',  title: 'D', column: 'right', hotkey: 'o' },
+      detailHeightPct: 60,
+      columns: [
+        { width: 30, panels: [
+          { type: 'containers', id: 'containers', title: 'C', columnIndex: 0, hotkey: '1' },
+          { type: 'groups',     id: 'groups',     title: 'G', columnIndex: 0, hotkey: '2' },
+        ] },
+        { panels: [
+          { type: 'actions', id: 'actions', title: 'A', columnIndex: 1, hotkey: '0' },
+          { type: 'stats',   id: 'stats',   title: 'S', columnIndex: 1, hotkey: '' },
+          { type: 'detail',  id: 'detail',  title: 'D', columnIndex: 1, hotkey: 'o' },
+        ] },
       ],
     };
   }
@@ -366,7 +372,7 @@ describe('[3e] calcLayout — heightPct distribution', () => {
   });
   it('anchored heightPct claims its share, flex absorbs remainder', () => {
     freshLayout();
-    getInstanceSlice("layout").arrange.leftPanels[0].heightPct = 70;  // containers fixed at 70%
+    getInstanceSlice("layout").arrange.columns[0].panels[0].heightPct = 70;  // containers fixed at 70%
     process.stdout.columns = 100; process.stdout.rows = 30; // availH = 29
     calcLayout();
     eq(getInstanceSlice('layout').panelHeights.containers, 20, 'floor(29 * 0.7) = 20');
@@ -374,8 +380,8 @@ describe('[3e] calcLayout — heightPct distribution', () => {
   });
   it('oversubscribed anchored values scale proportionally', () => {
     freshLayout();
-    getInstanceSlice("layout").arrange.leftPanels[0].heightPct = 90;
-    getInstanceSlice("layout").arrange.leftPanels[1].heightPct = 90;
+    getInstanceSlice("layout").arrange.columns[0].panels[0].heightPct = 90;
+    getInstanceSlice("layout").arrange.columns[0].panels[1].heightPct = 90;
     process.stdout.columns = 100; process.stdout.rows = 30; // availH = 29
     calcLayout();
     eq(getInstanceSlice('layout').panelHeights.containers + getInstanceSlice('layout').panelHeights.groups, 29, 'column fills availH after scaling');
@@ -392,16 +398,16 @@ describe('[4] undo / redo — round-trip across mutation types', () => {
     // Easier: focus groups (idx=1) then K to swap up.
     handleFreeConfigKey('j');  // sel: containers → groups
     handleFreeConfigKey('K');  // swap groups up
-    eq(getInstanceSlice("layout").arrange.leftPanels[0].type, 'groups');
+    eq(getInstanceSlice("layout").arrange.columns[0].panels[0].type, 'groups');
     eq(_getUndoDepth(), 1);
 
     handleFreeConfigKey('u');  // undo
-    eq(getInstanceSlice("layout").arrange.leftPanels[0].type, 'containers');
+    eq(getInstanceSlice("layout").arrange.columns[0].panels[0].type, 'containers');
     eq(_getUndoDepth(), 0);
     eq(_getRedoDepth(), 1);
 
     handleFreeConfigKey('ctrl-r');  // redo
-    eq(getInstanceSlice("layout").arrange.leftPanels[0].type, 'groups');
+    eq(getInstanceSlice("layout").arrange.columns[0].panels[0].type, 'groups');
     eq(_getUndoDepth(), 1);
     eq(_getRedoDepth(), 0);
   });
@@ -412,11 +418,11 @@ describe('[4] undo / redo — round-trip across mutation types', () => {
     onMouseEvent('press',   5, 2);
     onMouseEvent('motion',  5, 17);
     onMouseEvent('release', 5, 17);
-    eq(getInstanceSlice("layout").arrange.leftPanels[0].type, 'groups');
+    eq(getInstanceSlice("layout").arrange.columns[0].panels[0].type, 'groups');
     eq(_getUndoDepth(), 1);
 
     handleFreeConfigKey('u');
-    eq(getInstanceSlice("layout").arrange.leftPanels[0].type, 'containers');
+    eq(getInstanceSlice("layout").arrange.columns[0].panels[0].type, 'containers');
     eq(_getRedoDepth(), 1);
   });
 
@@ -473,7 +479,7 @@ describe('[5] title-edit sub-mode', () => {
     handleFreeConfigTitleEditKey('return');
 
     eq(getModel().modes.freeConfigTitleEditMode, false);
-    eq(getInstanceSlice("layout").arrange.leftPanels[0].title, 'Containerz');
+    eq(getInstanceSlice("layout").arrange.columns[0].panels[0].title, 'Containerz');
     eq(getInstanceSlice('layout').dirty, true);
     eq(_getUndoDepth(), depthBefore + 1);
   });
@@ -486,7 +492,7 @@ describe('[5] title-edit sub-mode', () => {
     handleFreeConfigTitleEditKey('escape');
 
     eq(getModel().modes.freeConfigTitleEditMode, false);
-    eq(getInstanceSlice("layout").arrange.leftPanels[0].title, 'Containers', 'title NOT changed');
+    eq(getInstanceSlice("layout").arrange.columns[0].panels[0].title, 'Containers', 'title NOT changed');
     eq(_getUndoDepth(), depthBefore, 'no undo entry pushed on cancel');
   });
 
@@ -507,39 +513,42 @@ describe('[6] rebuildLayoutFromConfig — pure fn for :restore-layout', () => {
     const cfg = {
       groups: { g1: { containers: ['c1'] } },
       layout: {
-        left_panels: [{ type: 'containers', title: 'Containers' }],
-        right_panels: [
-          { type: 'stats', title: 'Stats', config: { topic: 'docker.stats' } },
-          { type: 'detail', title: 'Detail' },
+        columns: [
+          { width: 35, panels: [{ id: 'containers', type: 'containers', title: 'Containers' }] },
+          { panels: [
+            { id: 'stats', type: 'stats', title: 'Stats', config: { topic: 'docker.stats' } },
+            { id: 'detail', type: 'detail', title: 'Detail' },
+          ] },
         ],
-        left_width: 35,
         detail_height_pct: 70,
       },
     };
     const ly = rebuildLayoutFromConfig(cfg);
-    eq(ly.leftWidth, 35);
+    eq(ly.columns[0].width, 35);
     eq(ly.detailHeightPct, 70);
-    eq(ly.leftPanels.length, 1);
-    eq(ly.leftPanels[0].type, 'containers');
-    eq(ly.leftPanels[0].column, 'left');
-    eq(ly.leftPanels[0].hotkey, '1');
-    eq(ly.rightPanels.length, 2);
-    eq(ly.rightPanels[0].topic, 'docker.stats', 'plugin config keys spread onto panel');
+    eq(ly.columns[0].panels.length, 1);
+    eq(ly.columns[0].panels[0].type, 'containers');
+    eq(ly.columns[0].panels[0].columnIndex, 0);
+    eq(ly.columns[0].panels[0].hotkey, '1');
+    eq(ly.columns[1].panels.length, 2);
+    eq(ly.columns[1].panels[0].topic, 'docker.stats', 'plugin config keys spread onto panel');
   });
 
   it('returns a fresh object on each call (no mutation across calls)', () => {
     const cfg = {
       groups: { g1: { containers: ['c1'] } },
       layout: {
-        left_panels: [{ type: 'containers', title: 'Containers' }],
-        right_panels: [{ type: 'detail', title: 'Detail' }],
+        columns: [
+          { panels: [{ id: 'containers', type: 'containers', title: 'Containers' }] },
+          { panels: [{ id: 'detail', type: 'detail', title: 'Detail' }] },
+        ],
       },
     };
     const a = rebuildLayoutFromConfig(cfg);
     const b = rebuildLayoutFromConfig(cfg);
     assert(a !== b, 'distinct outer object');
-    assert(a.leftPanels !== b.leftPanels, 'distinct leftPanels array');
-    assert(a.leftPanels[0] !== b.leftPanels[0], 'distinct panel objects');
+    assert(a.columns !== b.columns, 'distinct columns array');
+    assert(a.columns[0].panels[0] !== b.columns[0].panels[0], 'distinct panel objects');
   });
 });
 

@@ -83,7 +83,8 @@ function _hardcodedFor(panelType) {
 function _allPanels() {
   const slice = getInstanceSlice('layout');
   const ly = slice && slice.arrange;
-  return ly ? [...(ly.leftPanels || []), ...(ly.rightPanels || [])] : [];
+  if (!ly) return [];
+  return require('../../leaves/pool').allPanesInColumns(ly);
 }
 
 function _panelOf(panelType) {

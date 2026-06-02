@@ -60,7 +60,7 @@ function _projectDir() { return getModel().projectDir || '.'; }
 function _resolveBranch() {
   const slice = getInstanceSlice('layout');
   const ly = slice && slice.arrange;
-  const panels = (ly && [...(ly.leftPanels || []), ...(ly.rightPanels || [])]) || [];
+  const panels = ly ? require('../../leaves/pool').allPanesInColumns(ly) : [];
   const p = panels.find(pp => pp.type === 'config-status');
   const b = p && p.config && p.config.branch;
   return (typeof b === 'string' && b) ? b : DEFAULT_BRANCH;

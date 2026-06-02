@@ -2,10 +2,11 @@
  * Pure derivations over the panel pool.
  *
  * `arrange.pool` is the v0.6 pool of configured panels (id → entry).
- * `arrange.leftPanels` / `arrange.rightPanels` are the placed cells —
- * the grid the user actually sees. Pool entries with no corresponding
- * placement are *hidden* (still configured, not currently in the grid;
- * the free-config overlay shows them so users can summon them back).
+ * `arrange.columns[i].panels` are the placed cells — the grid the user
+ * actually sees, ordered left-to-right by column index. Pool entries
+ * with no corresponding placement are *hidden* (still configured, not
+ * currently in the grid; the free-config overlay shows them so users
+ * can summon them back).
  *
  * Everything here takes a layout `arrange` struct as input and returns
  * fresh values. No model access, no side effects — same shape as the
@@ -15,6 +16,67 @@
 
 const mpane = require('./pane');
 
+// --- columns[] structural helpers -------------------------------------
+
+function columnCount(arrange) {
+  return (arrange && arrange.columns && arrange.columns.length) || 0;
+}
+
+function lastColumnIndex(arrange) {
+  return columnCount(arrange) - 1;
+}
+
+function getColumn(arrange, columnIndex) {
+  if (!arrange || !arrange.columns) return null;
+  return arrange.columns[columnIndex] || null;
+}
+
+function columnPanels(arrange, columnIndex) {
+  const c = getColumn(arrange, columnIndex);
+  return c ? (c.panels || []) : [];
+}
+
+function lastColumnPanels(arrange) {
+  return columnPanels(arrange, lastColumnIndex(arrange));
+}
+
+function allPanesInColumns(arrange) {
+  if (!arrange || !arrange.columns) return [];
+  const out = [];
+  for (const c of arrange.columns) {
+    if (c && Array.isArray(c.panels)) {
+      for (const p of c.panels) out.push(p);
+    }
+  }
+  return out;
+}
+
+/** Find the location of a pane matching `predicate(pane, columnIndex,
+ *  paneIndex)`. Returns `{ columnIndex, paneIndex, pane }` or null. */
+function findPaneLocation(arrange, predicate) {
+  if (!arrange || !arrange.columns) return null;
+  for (let ci = 0; ci < arrange.columns.length; ci++) {
+    const panels = (arrange.columns[ci] && arrange.columns[ci].panels) || [];
+    for (let pi = 0; pi < panels.length; pi++) {
+      if (predicate(panels[pi], ci, pi)) {
+        return { columnIndex: ci, paneIndex: pi, pane: panels[pi] };
+      }
+    }
+  }
+  return null;
+}
+
+/** Return a new arrange with column `columnIndex`'s panels replaced by
+ *  `panelsFn(oldPanels)`. The column's other fields (width) survive. */
+function updateColumn(arrange, columnIndex, panelsFn) {
+  const cs = arrange.columns;
+  const next = cs.slice();
+  next[columnIndex] = { ...cs[columnIndex], panels: panelsFn(cs[columnIndex].panels || []) };
+  return { ...arrange, columns: next };
+}
+
+// --- placement / hidden state ----------------------------------------
+
 // "Placed" = mounted as a tab in some pane. For multi-tab panes
 // (v0.6.1) every tab's pool id counts, not just the active one — so
 // non-active tabs don't drift into `hiddenIds` (which would let
@@ -23,19 +85,15 @@ const mpane = require('./pane');
 // `tabs[]` array.
 function placedIds(arrange) {
   if (!arrange) return [];
-  const left  = arrange.leftPanels  || [];
-  const right = arrange.rightPanels || [];
   const out = [];
-  const collect = (p) => {
-    if (!p) return;
+  for (const p of allPanesInColumns(arrange)) {
+    if (!p) continue;
     if (Array.isArray(p.tabs) && p.tabs.length > 0) {
       for (const t of p.tabs) if (t && t.poolId) out.push(t.poolId);
     } else if (p.id) {
       out.push(p.id);
     }
-  };
-  for (const p of left)  collect(p);
-  for (const p of right) collect(p);
+  }
   return out;
 }
 
@@ -44,11 +102,8 @@ function placedIds(arrange) {
 // pool_hide handler still locates panes by their active tab's id.
 function activePaneIds(arrange) {
   if (!arrange) return [];
-  const left  = arrange.leftPanels  || [];
-  const right = arrange.rightPanels || [];
   const out = [];
-  for (const p of left)  if (p && p.id) out.push(p.id);
-  for (const p of right) if (p && p.id) out.push(p.id);
+  for (const p of allPanesInColumns(arrange)) if (p && p.id) out.push(p.id);
   return out;
 }
 
@@ -95,7 +150,7 @@ function orphanPlacements(arrange) {
 
 /**
  * Build the ordered item list for the panel-list overlay (v0.6 Phase 4).
- * Placed entries come first (in left-then-right grid order), hidden
+ * Placed entries come first (in column-major grid order), hidden
  * entries after (in pool insertion order). Each item carries a status
  * marker the overlay uses to style + decide pick semantics:
  *
@@ -110,15 +165,14 @@ function panelListItems(arrange) {
   if (!arrange || !arrange.pool) return [];
   const items = [];
   const seen = new Set();
-  const pushPlacement = (p) => {
+  for (const p of allPanesInColumns(arrange)) {
+    if (!p || !p.id) continue;
     const entry = arrange.pool[p.id];
-    if (!entry) return;
+    if (!entry) continue;
     const status = isDetailPane(entry) ? 'essential' : 'placed';
     items.push({ id: entry.id, type: entry.type, title: entry.title, status });
     seen.add(entry.id);
-  };
-  for (const p of arrange.leftPanels  || []) if (p && p.id) pushPlacement(p);
-  for (const p of arrange.rightPanels || []) if (p && p.id) pushPlacement(p);
+  }
   for (const id of Object.keys(arrange.pool)) {
     if (seen.has(id)) continue;
     const entry = arrange.pool[id];
@@ -134,14 +188,14 @@ function panelListItems(arrange) {
  *  release / cmdline `:show`) and the drag-preview path in
  *  `leaves/free-config-pool-drag.js#computePoolDragPreviewArrange` so both
  *  produce identical placements. */
-function placementFromPoolEntry(entry, column) {
+function placementFromPoolEntry(entry, columnIndex) {
   return mpane.wrapAsPane({
     ...(entry.config || {}),
     id: entry.id,
     type: entry.type,
     title: entry.title,
     hotkey: '',
-    column,
+    columnIndex,
   }, mpane.newPaneId(entry.id));
 }
 
@@ -170,27 +224,31 @@ function isReservedPane(pane) {
   return isDetailPane(pane) || isActionsPane(pane);
 }
 
-/** Find the detail pane in an arrange struct. Defensively scans both
- *  columns even though the layout invariant places it in the right
- *  column's last cell — keeps consumers honest under in-flight migrations
- *  (drag, swap) where transient state can violate the invariant. Returns
- *  the pane object or null. */
+/** Find the detail pane in an arrange struct. Defensively scans every
+ *  column even though the layout invariant places it in the last
+ *  column's last cell — keeps consumers honest under in-flight
+ *  migrations (drag, swap) where transient state can violate the
+ *  invariant. Returns the pane object or null. */
 function findDetailPane(arrange) {
   if (!arrange) return null;
-  const right = arrange.rightPanels || [];
-  for (const p of right) if (isDetailPane(p)) return p;
-  const left = arrange.leftPanels || [];
-  for (const p of left) if (isDetailPane(p)) return p;
+  // Last column first — the canonical home.
+  const last = lastColumnPanels(arrange);
+  for (const p of last) if (isDetailPane(p)) return p;
+  // Then scan earlier columns (transient-state defense).
+  if (!arrange.columns) return null;
+  for (let ci = 0; ci < arrange.columns.length - 1; ci++) {
+    const panels = (arrange.columns[ci] && arrange.columns[ci].panels) || [];
+    for (const p of panels) if (isDetailPane(p)) return p;
+  }
   return null;
 }
 
-/** Index of the detail pane in `arrange.rightPanels`, or -1. The right
+/** Index of the detail pane within the LAST column, or -1. The last
  *  column is the canonical home; callers wanting "detail anywhere" use
  *  `findDetailPane`. */
 function detailPaneIndex(arrange) {
   if (!arrange) return -1;
-  const right = arrange.rightPanels || [];
-  return right.findIndex(isDetailPane);
+  return lastColumnPanels(arrange).findIndex(isDetailPane);
 }
 
 /** True if `arrange` (or its placed panes) already hosts a detail pane.
@@ -202,11 +260,13 @@ function hasDetailPane(arrange) {
 /** True if `arrange` already hosts an actions pane. */
 function hasActionsPane(arrange) {
   if (!arrange) return false;
-  const all = (arrange.leftPanels || []).concat(arrange.rightPanels || []);
-  return all.some(isActionsPane);
+  return allPanesInColumns(arrange).some(isActionsPane);
 }
 
 module.exports = {
+  columnCount, lastColumnIndex, getColumn,
+  columnPanels, lastColumnPanels,
+  allPanesInColumns, findPaneLocation, updateColumn,
   placedIds,
   placedIdSet,
   activePaneIds,

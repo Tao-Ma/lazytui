@@ -28,9 +28,11 @@ const {getInstanceSlice, getFocus } = require('../panel/api');
 function setupTwoPanel() {
   // Pretend layout: hosts on the left (0..30, 0..20), detail on the right (30..80, 0..20)
   getInstanceSlice("layout").arrange = {
-    leftPanels: [{ type: 'hosts' }],
-    rightPanels: [{ type: 'detail' }],
-    leftWidth: 30, detailHeightPct: 60,
+    columns: [
+      { width: 30, panels: [{ type: 'hosts' }] },
+      { panels: [{ type: 'detail' }] },
+    ],
+    detailHeightPct: 60,
   };
   getInstanceSlice('layout').panelBounds = {
     hosts:  { x: 0,  y: 0, w: 30, h: 20 },

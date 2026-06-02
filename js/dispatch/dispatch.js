@@ -228,8 +228,8 @@ function handleFreeConfigKey(key, seq) {
     case 'down':  case 'j': dispatch({ type: 'free_config_nav', dir: +1 }); break;
     case 'K':               dispatch({ type: 'free_config_reorder', dir: -1 }); break;
     case 'J':               dispatch({ type: 'free_config_reorder', dir: +1 }); break;
-    case 'left':  case 'h': dispatch({ type: 'free_config_move_col', col: 'left' }); break;
-    case 'right': case 'l': dispatch({ type: 'free_config_move_col', col: 'right' }); break;
+    case 'left':  case 'h': dispatch({ type: 'free_config_move_col', dir: -1 }); break;
+    case 'right': case 'l': dispatch({ type: 'free_config_move_col', dir: +1 }); break;
     case '+':     case '=': dispatch({ type: 'free_config_resize', delta: +1 }); break;
     case '-':               dispatch({ type: 'free_config_resize', delta: -1 }); break;
     case ']':               dispatch({ type: 'free_config_panel_height', delta: +5 }); break;

@@ -62,7 +62,7 @@ function _placedWidgetTargets() {
   if (!slice || !slice.arrange) return null;
   const drag = slice.freeConfig && slice.freeConfig.drag;
   if (drag) return null;  // drag affordance owns the screen; suppress widgets
-  const panels = (slice.arrange.leftPanels || []).concat(slice.arrange.rightPanels || []);
+  const panels = mpool.allPanesInColumns(slice.arrange);
   return panels
     .filter(p => p.type !== 'detail')
     .map(p => ({ p, b: slice.panelBounds[p.type] }))
