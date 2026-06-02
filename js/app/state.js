@@ -260,21 +260,19 @@ function collapseGroup(path, recursive = false) {
   api.dispatchMsg(api.wrap('groups', { type: 'toggle_group', name: path, recursive }));
 }
 
-// Phase 4a — nav chrome (cursor / scroll / multiSel) lives on each
-// Navigator Component's slice. v0.6.1 Phase 3 collapses single-panel
-// Components to `slice.nav = entry`; multi-panel Components (today:
-// files) keep `slice.nav[panelType] = entry`. The helpers walk
-// panel-type → owning Component → that Component's slice → nav entry,
-// detecting shape by presence of `cursor` on slice.nav.
+// Nav chrome (cursor / scroll / multiSel / filter) lives on each
+// Navigator Component's slice — single-panel Components store the
+// entry directly at `slice.nav`, multi-panel keep `slice.nav[panel]`.
+// The helpers walk panel-type → owning Component → entry; shape
+// detection is the `leaves/nav` reader.
+
+const mnav = require('../leaves/nav');
 
 function _navEntry(panelType) {
   const api = require('../panel/api');
   const compName = api.getComponentOwningPanel(panelType);
   if (!compName) return null;
-  const slice = api.getInstanceSlice(compName);
-  if (!slice || !slice.nav) return null;
-  if ('cursor' in slice.nav) return slice.nav;        // single-panel
-  return slice.nav[panelType] || null;                // multi-panel
+  return mnav.entryOf(api.getInstanceSlice(compName), panelType);
 }
 
 function _navDispatch(panelType, msg) {

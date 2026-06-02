@@ -507,14 +507,9 @@ function getItems(panelType) {
   const raw = def.getItems(getInstanceSlice(compName));
   if (!def.filterable) return raw;
   if (def.customFilter) return raw;
-  // Phase 4c — committed filter text lives on each Navigator's nav
-  // slice. v0.6.1 Phase 3 — single-panel Components store the entry
-  // directly at slice.nav; multi-panel Components key by panelType.
-  const slice = getInstanceSlice(compName);
-  let navEntry = null;
-  if (slice && slice.nav) {
-    navEntry = 'cursor' in slice.nav ? slice.nav : slice.nav[panelType];
-  }
+  // Committed filter text lives on each Navigator's nav entry.
+  const mnav = require('../leaves/nav');
+  const navEntry = mnav.entryOf(getInstanceSlice(compName), panelType);
   const filterText = (navEntry && navEntry.filter) || '';
   if (!filterText) return raw;
   const lc = filterText.toLowerCase();

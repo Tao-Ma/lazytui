@@ -47,6 +47,18 @@ function init() {
 }
 
 /**
+ * Read the nav entry for `panelType` off `slice`. Returns `null` when
+ * the slice has no nav (chrome-only Components) or no entry for that
+ * panel (multi-panel Component, unknown panel). Detects shape the same
+ * way `apply()` does — presence of `cursor` on `slice.nav`.
+ */
+function entryOf(slice, panelType) {
+  if (!slice || !slice.nav) return null;
+  if ('cursor' in slice.nav) return slice.nav;
+  return slice.nav[panelType] || null;
+}
+
+/**
  * Compute the next nav entry for `msg`. Pure: doesn't mutate `entry`.
  * Returns either the same entry (no-op for unknown msg.type — already
  * filtered by isNavMsg, but a defensive fall-through stays) or a new
@@ -120,4 +132,4 @@ function apply(slice, msg) {
   return { ...slice, nav: { ...slice.nav, [msg.panel]: nextEntry } };
 }
 
-module.exports = { init, apply, isNavMsg, NAV_TYPES };
+module.exports = { init, apply, entryOf, isNavMsg, NAV_TYPES };
