@@ -42,6 +42,9 @@ const mreg = require('../leaves/register');
 // `reset_group_context`, etc. Direct import (zero deps) — no cycle.
 // Replaces the old lazy `require('../panel/api')` peppered through this file.
 const route = require('../leaves/route');
+// Nav-entry shape reader — zero-dep leaf; the only consumer here is the
+// `escape` arm's multiSel probe.
+const mnav = require('../leaves/nav');
 // leaves/pane-tabs + leaves/search are leaves of the detail Component's
 // update. The root reducer doesn't import them directly.
 
@@ -231,8 +234,7 @@ function update(model, msg) {
       // Navigator's update (each panel owns its own Set).
       const focus = route.getFocus();
       const compName = route.componentForPanel(focus);
-      const nav = compName ? (route.getInstanceSlice(compName) || {}).nav : null;
-      const entry = nav && ('cursor' in nav ? nav : nav[focus]);
+      const entry = compName ? mnav.entryOf(route.getInstanceSlice(compName), focus) : null;
       const had = !!(entry && entry.multiSel && entry.multiSel.size > 0);
       if (model.modes.listSelectMode) {
         const next = _withModes(model, { listSelectMode: false });

@@ -25,11 +25,8 @@ function getFilter(panelType) {
   const api = require('../panel/api');
   const compName = api.getComponentOwningPanel(panelType);
   if (!compName) return '';
-  const slice = api.getInstanceSlice(compName);
-  if (!slice || !slice.nav) return '';
-  // v0.6.1 Phase 3 — single-panel Component stores the entry directly;
-  // multi-panel keeps slice.nav[panelType].
-  const entry = 'cursor' in slice.nav ? slice.nav : slice.nav[panelType];
+  const mnav = require('../leaves/nav');
+  const entry = mnav.entryOf(api.getInstanceSlice(compName), panelType);
   return (entry && entry.filter) || '';
 }
 
