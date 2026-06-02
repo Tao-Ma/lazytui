@@ -1,25 +1,28 @@
 /**
  * Tab list overlay + always-on `[≡]` trigger glyph at the top-left of
- * the detail panel.
+ * the pane that hosts a tab strip.
  *
- * Anchors to the detail panel's bounds dynamically — works in normal /
- * half / full view because both the trigger and the overlay follow
- * `slice.panelBounds.detail`. The trigger replaces detail's `(o)`
- * hotkey display (cols `detail.x+2..detail.x+4`); the panel's `╭─`
- * corner and `─` separator are preserved.
+ * Parameterised by `paneId` (default 'detail' for the singleton Phase 2
+ * caller). Every read — slice, panel bounds, flat tab list — keys on
+ * paneId. Phase 4 retargets the call sites to feed real pane ids;
+ * the overlay itself stops caring about which pane it's drawing for.
+ *
+ * Anchors dynamically — works in normal / half / full view because both
+ * the trigger and the overlay follow `panelBounds[paneId]`. The trigger
+ * replaces the pane's `(o)` hotkey display (cols x+2..x+4); the panel's
+ * `╭─` corner and `─` separator are preserved.
  *
  * Overlay surface:
  *   - drops down from the trigger row
- *   - width  = min(50, detail.w)
- *   - height = min(tabs.length + 2, rows - detail.y - 3)
+ *   - width  = min(50, pane.w)
+ *   - height = min(tabs.length + 2, rows - pane.y - 3)
  *
  * Row layout (Option C — hybrid):
  *   `* [N]  Label  (kind)`   ← `*` prefix on the ACTIVE tab (slice.tab)
  *   cursor row wears `[reverse]` styling around the whole row text;
- *   when cursor lands on active, both indicators compose (reversed
- *   row still shows the `*`).
+ *   when cursor lands on active, both indicators compose.
  *
- * Slice: `getComponentSlice('detail').tabList = { open, cursor, scroll }`.
+ * Slice: `getComponentSlice(paneId).tabList = { open, cursor, scroll }`.
  *
  * Lives parallel to overlay/panel-list / overlay/cmdline (dispatch
  * modules don't paint; overlays do).
@@ -32,7 +35,7 @@ const { theme } = require('../render/themes');
 const { renderPanel } = require('../render/panel');
 const { getComponentSlice } = require('../panel/api');
 const { getModel } = require('../app/runtime');
-const { getTabInfo, getGroupContentTabs } = require('../panel/viewer/tabs');
+const pt = require('../leaves/pane-tabs');
 
 const MAX_W = 50;
 // esc() escapes the literal `[` so richToAnsi doesn't treat `[≡]`
@@ -41,7 +44,7 @@ const MAX_W = 50;
 // is the convention for ANY literal bracket entering richToAnsi —
 // same pattern as overlay/cmdline's _formatMatchLine.
 const TRIGGER_GLYPH = esc('[≡]');
-// Detail's top row is `╭─(o)[≡]─Title─…─╮`. Hotkey stays in the
+// Pane's top row is `╭─(o)[≡]─Title─…─╮`. Hotkey stays in the
 // conventional first position; the trigger sits immediately after.
 //   `╭`           col 0
 //   `─`           col 1
@@ -50,11 +53,13 @@ const TRIGGER_GLYPH = esc('[≡]');
 //   `─Title…─╮`   col 8…
 // The 3-cell trigger displaces 3 trailing fill dashes before `╮` so
 // the panel border stays the same width as without the trigger.
-const TRIGGER_X_OFFSET = 5;  // after detail's `╭─(o)`
+const TRIGGER_X_OFFSET = 5;  // after the pane's `╭─(o)`
 const TRIGGER_VIS_W = 3;     // [, ≡, ]
 
 // Stash so the next render can blank the cells the previous overlay
-// occupied (same pattern as overlay/cmdline.js#_lastPanelH).
+// occupied (same pattern as overlay/cmdline.js#_lastPanelH). Single
+// stash — Phase 2 only ever renders one tab-list at a time. If Phase
+// 4+ allows multiple open overlays, this grows to a per-paneId map.
 let _lastPanelH = 0;
 let _lastTop = 0;
 
@@ -62,14 +67,15 @@ let _lastTop = 0;
  *    { tabIdx, label, kind, closeable, closeKind?, closeKey? }
  *  tabIdx is the absolute index (0=Info, then actions, terminals,
  *  content tabs) — the same number `tab_switch` consumes. */
-function _flatTabs() {
+function _flatTabs(paneId = 'detail') {
   const m = getModel();
-  const info = getTabInfo();
+  const slice = getComponentSlice(paneId) || { ephemeralTerminals: {}, contentTabs: {}, tab: 0 };
+  const info = pt.flatTabInfo(slice, m, m.currentGroup);
   const out = [{ tabIdx: 0, label: 'Info', kind: '' }];
   info.actionTabs.forEach(([, a], i) => out.push({
     tabIdx: 1 + i, label: a.label, kind: 'action',
   }));
-  const eph = ((getComponentSlice('detail') || {}).ephemeralTerminals || {})[m.currentGroup] || {};
+  const eph = (slice.ephemeralTerminals || {})[m.currentGroup] || {};
   info.termTabs.forEach(([key, t], i) => out.push({
     tabIdx: 1 + info.actionTabs.length + i,
     label: t.label || key,
@@ -92,23 +98,23 @@ function _flatTabs() {
   return out;
 }
 
-/** Detail bounds — null when layout hasn't rendered yet (boot edge). */
-function _detailBounds() {
+/** Pane bounds — null when layout hasn't rendered yet (boot edge). */
+function _paneBounds(paneId = 'detail') {
   const l = getComponentSlice('layout');
-  return l && l.panelBounds && l.panelBounds.detail;
+  return l && l.panelBounds && l.panelBounds[paneId];
 }
 
-/** Compute overlay geometry from detail bounds + tab count. */
-function _geom(tabs) {
-  const detailB = _detailBounds();
-  if (!detailB) return null;
-  const w = Math.min(MAX_W, Math.max(20, detailB.w));
+/** Compute overlay geometry from pane bounds + tab count. */
+function _geom(tabs, paneId = 'detail') {
+  const paneB = _paneBounds(paneId);
+  if (!paneB) return null;
+  const w = Math.min(MAX_W, Math.max(20, paneB.w));
   const ROWS = rows();
-  const innerCap = Math.max(1, ROWS - detailB.y - 3);
+  const innerCap = Math.max(1, ROWS - paneB.y - 3);
   const innerH = Math.min(tabs.length, innerCap);
   return {
-    x: detailB.x,
-    y: detailB.y + 1,
+    x: paneB.x,
+    y: paneB.y + 1,
     w,
     innerH,                     // visible rows of the list itself
     h: innerH + 2,              // + top/bottom border
@@ -117,20 +123,20 @@ function _geom(tabs) {
 
 /** Rows visible at the top of the overlay's body. Reducer uses this
  *  to keep cursor in [scroll, scroll+vh). */
-function viewportRows() {
-  const tabs = _flatTabs();
-  const g = _geom(tabs);
+function viewportRows(paneId = 'detail') {
+  const tabs = _flatTabs(paneId);
+  const g = _geom(tabs, paneId);
   return g ? g.innerH : 1;
 }
 
 /** Mouse hit-test for the overlay area when open. Returns
  *  { tabIdx, zone: 'label' } if the click lands on a row; null
  *  for clicks on borders / outside the overlay. */
-function hitTest(mx, my) {
-  const slice = getComponentSlice('detail');
+function hitTest(mx, my, paneId = 'detail') {
+  const slice = getComponentSlice(paneId);
   if (!slice || !slice.tabList || !slice.tabList.open) return null;
-  const tabs = _flatTabs();
-  const g = _geom(tabs);
+  const tabs = _flatTabs(paneId);
+  const g = _geom(tabs, paneId);
   if (!g) return null;
   if (mx < g.x || mx >= g.x + g.w) return null;
   if (my < g.y || my >= g.y + g.h) return null;
@@ -150,14 +156,10 @@ function _formatRow(tab, isActive, width) {
   const marker = isActive ? '*' : ' ';
   // esc() escapes the `[` so richToAnsi renders `[N]` literally
   // instead of treating it as an unknown markup tag and EATING the
-  // inner digits. Same gotcha as the trigger glyph above; cmdline's
-  // _formatMatchLine handles its own display/desc fields the same
-  // way.
+  // inner digits. Same gotcha as the trigger glyph above.
   const idx = esc(`[${tab.tabIdx}]`);
   const label = esc(tab.label);
   const kind = tab.kind ? `(${tab.kind})` : '';
-  // marker(1) + ' '(1) + idx(<= 4) + '  '(2) + label + spaces + kind
-  // visibleLen-aware to leave room for kind on the right.
   const left = `${marker} ${idx}  ${label}`;
   const leftVis = visibleLen(left);
   const kindVis = visibleLen(kind);
@@ -172,16 +174,16 @@ function _formatRow(tab, isActive, width) {
 /** Paint the overlay if `tabListMode` is active. Drops residue
  *  invalidation for the previous frame so panels behind the overlay
  *  repaint cleanly when the overlay shrinks/closes. */
-function renderTabList() {
+function renderTabList(paneId = 'detail') {
   if (!getModel().modes.tabListMode) {
     _maybeBlank();
     return;
   }
-  const slice = getComponentSlice('detail') || {};
+  const slice = getComponentSlice(paneId) || {};
   const tabList = slice.tabList || { open: false, cursor: 0, scroll: 0 };
   if (!tabList.open) { _maybeBlank(); return; }
-  const tabs = _flatTabs();
-  const g = _geom(tabs);
+  const tabs = _flatTabs(paneId);
+  const g = _geom(tabs, paneId);
   if (!g) { _maybeBlank(); return; }
   const scroll = Math.max(0, Math.min(tabList.scroll || 0, Math.max(0, tabs.length - g.innerH)));
   const cursor = Math.max(0, Math.min(tabList.cursor || 0, tabs.length - 1));
@@ -228,43 +230,39 @@ function _maybeBlank() {
   _lastPanelH = 0;
 }
 
-/** Bake the `[≡]` trigger into the detail panel's top-border markup so
- *  it rides into paintColumns' single write — eliminates the flicker
- *  class the old paint-on-top suffered (the `[_]` fix's sibling).
- *  Returns the modified panelOutput.
+/** Bake the `[≡]` trigger into a pane's top-border markup so it rides
+ *  into paintColumns' single write — eliminates the flicker class the
+ *  old paint-on-top suffered. Returns the modified panelOutput.
  *
  *  The trigger is inserted immediately after `(o)` (the hotkey display),
  *  so the row reads `╭─(o)[≡]─Title─…─╮`. To absorb the trigger's 3
  *  visible cells without widening the panel, 3 trailing fill dashes
- *  are eaten from before the right corner. We re-emit `[fc]` after the
- *  trigger's `[/]` so the rest of the top row keeps its border color
- *  (a naked `[/]` would reset to terminal default).
+ *  are eaten from before the right corner. `[fc]` is re-emitted after
+ *  the trigger's `[/]` so the rest of the top row keeps its border
+ *  color.
  *
  *  No-op when:
- *    - panel isn't detail
- *    - detail bounds aren't set or too narrow
- *    - trigger is suppressed (see `_triggerSuppressed`)
- *    - the top row's hotkey display isn't single-char (multi-char
- *      hotkeys would shift the width and aren't worth the complexity
- *      for what is, by convention, always single-char in this codebase)
- *    - the top row has fewer than 3 trailing fill dashes (very narrow
- *      panel or very long title — the trigger has nowhere to go without
- *      overflowing the right border, so we bail)
+ *    - panelOutput is empty
+ *    - the panel entry isn't the target pane (p.type !== paneId)
+ *    - pane bounds aren't set or are too narrow
+ *    - trigger is suppressed (free-config / chain modals)
+ *    - the top row's hotkey display isn't single-char
+ *    - the top row has fewer than 3 trailing fill dashes
  */
-function injectTabTrigger(panelOutput, p) {
-  if (!panelOutput || p.type !== 'detail') return panelOutput;
-  const detailB = _detailBounds();
-  if (!detailB || detailB.w < TRIGGER_X_OFFSET + TRIGGER_VIS_W + 2) return panelOutput;
+function injectTabTrigger(panelOutput, p, paneId = 'detail') {
+  if (!panelOutput || p.type !== paneId) return panelOutput;
+  const paneB = _paneBounds(paneId);
+  if (!paneB || paneB.w < TRIGGER_X_OFFSET + TRIGGER_VIS_W + 2) return panelOutput;
   if (_triggerSuppressed()) return panelOutput;
 
   const t = theme();
-  const focused = require('../panel/api').getFocus() === 'detail' || getModel().modes.terminalMode;
+  const focused = require('../panel/api').getFocus() === paneId || getModel().modes.terminalMode;
   const fc = focused ? t.focus : t.dim;
   const isOpen = !!getModel().modes.tabListMode;
   // `reverse` keeps the open-state indication (inverted block) regardless
-  // of focus. Otherwise: bright accent when detail is focused, `dim` +
-  // color when not — strip the `bold ` prefix from chrome_trigger so the
-  // dim attribute composes with the remaining color (bold + dim conflict
+  // of focus. Otherwise: bright accent when focused, `dim` + color when
+  // not — strip the `bold ` prefix from chrome_trigger so the dim
+  // attribute composes with the remaining color (bold + dim conflict
   // on most terminals; bold tends to win, defeating the dim).
   const triggerBase = t.chrome_trigger || 'bold cyan';
   const triggerColor = triggerBase.replace(/^bold\s+/, '');
@@ -281,8 +279,7 @@ function injectTabTrigger(panelOutput, p) {
   // Match `╭─(X)` right after the opening color tag — `X` is a single
   // hotkey char (the convention; renderPanel writes `(${hotkey})` from
   // a positionally-assigned single-letter key). Lazy `.*?` lets m[1]
-  // grow until the first `╭─\(.\)` matches. m[2] is the `(X)` capture
-  // we want to keep visible; m[3] is the rest of the row.
+  // grow until the first `╭─\(.\)` matches.
   const m = topRow.match(/^(.*?╭─)(\([^)]\))(.*)$/);
   if (!m) return panelOutput;
   // Eat 3 trailing fill dashes from before `╮` to absorb the trigger's
@@ -298,17 +295,16 @@ function injectTabTrigger(panelOutput, p) {
     const trimmed = after.slice(0, cornerIdx - 3) + after.slice(cornerIdx);
     return m[1] + m[2] + triggerMarkup + trimmed + restRows;
   }
-  // Fallback: too narrow / title too long — replace (o) with [≡] like
-  // the pre-v0.6 behavior so we still get the trigger, at the cost of
-  // hiding the hotkey label.
+  // Fallback: too narrow / title too long — replace (o) with [≡] so we
+  // still get the trigger at the cost of hiding the hotkey label.
   return m[1] + triggerMarkup + after + restRows;
 }
 
 function _triggerSuppressed() {
   const md = getModel().modes;
   // Suppress in free-config (its own panel-drag gesture lives on this
-  // row) and any chain modal that owns the cursor — overlay's own
-  // mode is excluded so the trigger keeps its toggle indicator.
+  // row) and any chain modal that owns the cursor — overlay's own mode
+  // is excluded so the trigger keeps its toggle indicator.
   if (md.freeConfigMode) return true;
   if (md.cmdMode || md.confirmMode || md.promptMode || md.menuOpen) return true;
   if (md.filterMode || md.copyMode || md.registerPopupMode || md.detailSearchMode) return true;
@@ -317,14 +313,14 @@ function _triggerSuppressed() {
 }
 
 /** Hit-test for the trigger click. True if (mx, my) lands on `[≡]`. */
-function isTriggerHit(mx, my) {
+function isTriggerHit(mx, my, paneId = 'detail') {
   if (_triggerSuppressed()) return false;
-  const detailB = _detailBounds();
-  if (!detailB) return false;
-  if (detailB.w < TRIGGER_X_OFFSET + TRIGGER_VIS_W + 2) return false;
-  return my === detailB.y
-      && mx >= detailB.x + TRIGGER_X_OFFSET
-      && mx < detailB.x + TRIGGER_X_OFFSET + TRIGGER_VIS_W;
+  const paneB = _paneBounds(paneId);
+  if (!paneB) return false;
+  if (paneB.w < TRIGGER_X_OFFSET + TRIGGER_VIS_W + 2) return false;
+  return my === paneB.y
+      && mx >= paneB.x + TRIGGER_X_OFFSET
+      && mx < paneB.x + TRIGGER_X_OFFSET + TRIGGER_VIS_W;
 }
 
 function _resetRenderState() { _lastPanelH = 0; _lastTop = 0; }
