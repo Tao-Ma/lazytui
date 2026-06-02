@@ -321,17 +321,24 @@ function selectGroup(idx) {
   require('../dispatch/dispatch').navSelect('groups', idx);
 }
 
-function setDetail(text, target = 'detail') {
+function setDetail(text, target) {
   // viewer_set_content is handled by the detail Component's update (Phase B);
   // routes via the Component fan-out. Single-writer for the slice through
-  // detail.update; every setDetail caller (detail / tabs / actions / help-text
-  // / api save-layout-message) ends up as the same reducer write.
+  // detail.update; every setDetail caller (history / config-status / help-
+  // text / commands / api save-layout-message) ends up as the same reducer
+  // write.
   //
-  // v0.6.1 Phase 4 — `target` is the wrap key for the destination viewer
-  // (Phase 4 singleton: 'detail'). Phase 5's resolveTarget chokepoint
-  // replaces this default with a focused-viewer lookup so producers can
-  // target whichever viewer-kind pane is currently the focus winner.
+  // v0.6.1 Phase 6 — when `target` is omitted the destination resolves via
+  // route.resolveTarget('viewer'): focused viewer-kind tab / lastViewerTab
+  // / first viewer in rightPanels / any viewer / null. With one viewer
+  // (today) this is always 'detail'. Explicit `target` overrides — used
+  // by v0.7 producers that thread a known tab id.
   const api = require('../panel/api');
+  if (target == null) {
+    const route = require('../leaves/route');
+    target = route.resolveTarget('viewer');
+    if (target == null) return;   // no viewer registered — drop the write
+  }
   api.dispatchMsg(api.wrap(target, { type: 'viewer_set_content', lines: text ? text.split('\n') : [] }));
 }
 

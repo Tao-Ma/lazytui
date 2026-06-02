@@ -94,10 +94,18 @@ function installBuiltins() {
   const { getModel } = require('../app/runtime');
   const api = require('../panel/api');
   const renderQueue = require('../render/render-queue');
+  // v0.6.1 Phase 6 — every producer-side write to "the viewer" resolves
+  // its destination via resolveTarget. Cached once per installBuiltins.
+  const route = require('../leaves/route');
   // setDetail: replace the detail panel content (config-status' Enter→diff,
-  // any migrated plugin's detail write). Routes through viewer_set_content (no Cmds).
+  // any migrated plugin's detail write). Routes through viewer_set_content (no
+  // Cmds). v0.6.1 Phase 6 — destination resolves via resolveTarget so
+  // multi-viewer hits the focused/sticky one. null → no viewer registered,
+  // drop silently.
   registerEffect('setDetail', (eff) => {
-    api.dispatchMsg(api.wrap('detail', {
+    const target = route.resolveTarget('viewer');
+    if (target == null) return;
+    api.dispatchMsg(api.wrap(target, {
       type: 'viewer_set_content', lines: Array.isArray(eff.lines) ? eff.lines.slice() : [],
     }));
   });
@@ -137,7 +145,6 @@ function installBuiltins() {
   // v0.6.1 Phase 5 — resolveTarget picks the destination viewer (today:
   // 'detail' singleton; multi-viewer in Phase 6+). null → no viewer
   // registered, drop the Cmd silently.
-  const route = require('../leaves/route');
   registerEffect('show_selected_info', () => {
     try {
       const target = route.resolveTarget('viewer');
