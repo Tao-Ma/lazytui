@@ -45,7 +45,7 @@ const {
   registerComponent,
   registerEffect,        // register a Cmd handler the framework can run
   dispatchMsg, wrap,     // dispatch a wrapped Msg to one Component
-  getComponent, getComponentSlice, getComponentOwningPanel,
+  getComponent, getInstanceSlice, getComponentOwningPanel,
   getPanelDef, getItems, idOf, selectedOrFocused,
   // lifecycle
   refreshAll, cleanupComponents,
@@ -158,8 +158,14 @@ module.exports = {
       case 'key':
         if (msg.key === '+') return { ...slice, n: slice.n + 1, lastKey: msg.key };
         if (msg.key === '-') return { ...slice, n: slice.n - 1, lastKey: msg.key };
-        // Effect example — emit a setDetail to push text into the viewer.
-        if (msg.key === 'i') return [slice, [{ type: 'setDetail', lines: ['n = ' + slice.n] }]];
+        // Producer-side viewer write — state.setViewerContent(null, text)
+        // resolves to whatever viewer-kind tab is focused (or the sticky
+        // pointer / first-in-arrange fallbacks). Pass `null` to let
+        // resolveTarget pick; pass a specific tab id to address one.
+        if (msg.key === 'i') {
+          require('../app/state').setViewerContent(null, 'n = ' + slice.n);
+          return { ...slice, lastKey: msg.key };
+        }
         return { ...slice, lastKey: msg.key };
       default: return slice;
     }

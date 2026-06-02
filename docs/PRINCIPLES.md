@@ -131,7 +131,7 @@ and breaking `visibleLen()` width calculation, misaligning borders.
 
 - **Dynamic text** (user data, command output, YAML values): use `esc()`
   ```javascript
-  setDetail(`[bold]${esc(action.label)}[/]\n${esc(text)}`);
+  setViewerContent(null, `[bold]${esc(action.label)}[/]\n${esc(text)}`);
   ```
 - **Static strings** with intentional markup: write `\[`
   ```javascript

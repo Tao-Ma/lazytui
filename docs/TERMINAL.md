@@ -6,10 +6,12 @@
 >
 > - `S.config.*`, `S.currentGroup`, `S.terminalMode`, `S.activeTab` →
 >   `getModel().config.*` / `.currentGroup` / `.modes.terminalMode` /
->   `getComponentSlice('detail').tab` respectively (every read goes
->   through `getModel()` / `getComponentSlice(<comp>)` now).
-> - `S.detailLines` → `getComponentSlice('detail').lines`.
-> - `S.panelBounds` → `getComponentSlice('layout').panelBounds`.
+>   `getInstanceSlice('detail').tab` respectively (every read goes
+>   through `getModel()` / `getInstanceSlice(<tabId>)` now; v0.6.1
+>   Phase 8 retired the `getComponentSlice` shim — for singleton
+>   instances the tab id equals the Component name).
+> - `S.detailLines` → `getInstanceSlice('detail').lines`.
+> - `S.panelBounds` → `getInstanceSlice('layout').panelBounds`.
 > - Direct assignment like `S.terminalMode = true` → dispatch the
 >   appropriate Msg (`terminal_enter` / `terminal_exit` for the flag,
 >   wrapped Msgs into the owning Component for slice writes).

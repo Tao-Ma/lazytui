@@ -50,7 +50,7 @@ greppable.
      dispatch_msg  → dispatchMsg  ─┘ (cycle cap @ 32 deep; T28)
      tick(ms, msg) → setTimeout      (async re-entry; not depth-counted)
      render        → scheduleRender (50ms debounce)
-     setDetail / setActiveTab / focus / show_selected_info
+     focus / show_selected_info / setActiveTab
      do_run / run_action / kill_proc / stream_action
      dockerFetch / dockerEventsStart / dockerExec / dockerShell
      loadDir / openFile
