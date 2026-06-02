@@ -321,13 +321,18 @@ function selectGroup(idx) {
   require('../dispatch/dispatch').navSelect('groups', idx);
 }
 
-function setDetail(text) {
+function setDetail(text, target = 'detail') {
   // viewer_set_content is handled by the detail Component's update (Phase B);
   // routes via the Component fan-out. Single-writer for the slice through
   // detail.update; every setDetail caller (detail / tabs / actions / help-text
   // / api save-layout-message) ends up as the same reducer write.
+  //
+  // v0.6.1 Phase 4 — `target` is the wrap key for the destination viewer
+  // (Phase 4 singleton: 'detail'). Phase 5's resolveTarget chokepoint
+  // replaces this default with a focused-viewer lookup so producers can
+  // target whichever viewer-kind pane is currently the focus winner.
   const api = require('../panel/api');
-  api.dispatchMsg(api.wrap('detail', { type: 'viewer_set_content', lines: text ? text.split('\n') : [] }));
+  api.dispatchMsg(api.wrap(target, { type: 'viewer_set_content', lines: text ? text.split('\n') : [] }));
 }
 
 // --- Multi-select (bulk-operation operand) ---
