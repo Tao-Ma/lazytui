@@ -2,15 +2,13 @@
  * Panel-routing leaf — the shared registry the root reducer and
  * `panel/api` both read from.
  *
- * Four concerns, one zero-dep module:
+ * Five concerns, one zero-dep module:
  *   - `wrap(kind, msg)` — the wrapped-Msg data constructor.
  *   - panel→Component ownership map (writer + reader).
- *   - Instance-keyed slice store (v0.6.1 Phase 3) — every Component
- *     slice lives in `_instances` keyed by tab id; the legacy by-name
- *     `getSlice` / `setSlice` surface is a shim over a per-kind primary
- *     lookup. With single instances per kind (Phase 3) the shim is
- *     1:1; Phase 4 onward populates multiple instances per kind.
+ *   - Instance-keyed slice store — every Component slice lives in
+ *     `_instances` keyed by tab id (singletons today use `id === kind`).
  *   - Focus reader (`getFocus`) — pulls from the layout instance.
+ *   - `resolveTarget(intent)` — the navigator → viewer routing chokepoint.
  *
  * Lives under `leaves/` (not `panel/`) because it has no dependencies
  * and is structurally a pure registry — runtime imports it directly,

@@ -50,7 +50,7 @@ const route = require('../leaves/route');
  * only by their own `update`.
  *
  * Field map (post-v0.5):
- *   - modes{}                        — 13 modal flags (single registry; see modes.js)
+ *   - modes{}                        — 14 modal flags (single registry; see modes.js)
  *   - currentGroup                   — current group (chrome)
  *   - modal{ filter, menu, confirm, prompt, copy, registerPopup, cmdline }
  *                                    — modal sub-model editing buffers
@@ -67,7 +67,7 @@ const route = require('../leaves/route');
  */
 function init() {
   const m = {
-    // The 13 modal-state flags. Maintained centrally in js/modes.js (registry +
+    // The 14 modal-state flags. Maintained centrally in js/modes.js (registry +
     // resetModes()); update branches and modeChain consult that single list.
     modes: {
       confirmMode: false, promptMode: false, designTitleEditMode: false,
