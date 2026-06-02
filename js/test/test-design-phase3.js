@@ -191,11 +191,14 @@ describe('[3] drag-to-resize — detail-panel top edge', () => {
     eq(getInstanceSlice("layout").arrange.detailHeightPct, 75);
     eq(getInstanceSlice('layout').dirty, true);
   });
-  it('drag down shrinks detailHeightPct, clamped at 20', () => {
+  it('drag down shrinks detailHeightPct, clamped at dynamic min (13% on availH=40)', () => {
     setupFixture();
+    const { detailMinPct } = require('../leaves/design');
     onMouseEvent('press',  50, 15);
-    onMouseEvent('motion', 50, 36);  // newDetailH = 4 → 10% but clamped to 20
-    eq(getInstanceSlice("layout").arrange.detailHeightPct, 20);
+    onMouseEvent('motion', 50, 36);  // newDetailH = 4 rows; clamps to DETAIL_MIN_ROWS=5
+    // detailMinPct(40) = max(5, ceil(5/40*100)) = 13 — five rows is the
+    // physical floor (legible viewer slice); the dynamic % follows.
+    eq(getInstanceSlice("layout").arrange.detailHeightPct, detailMinPct(40));
   });
 });
 
@@ -321,14 +324,17 @@ describe('[3f] keyboard `]` / `[` — focused panel heightPct', () => {
     handleDesignKey(']');
     eq(getInstanceSlice("layout").arrange.leftPanels[1].heightPct, undefined, 'no mutation');
   });
-  it('] respects detail [20,90] clamp when stealing from detail', () => {
+  it('] respects detail dynamic-min clamp when stealing from detail', () => {
     setupFixture();
     // Focus stats (right col, idx=3 in all). stats is just above detail.
-    // detail starts at 60%. Repeated `]` should stop at detail hitting 20%.
+    // detail starts at 60%. Repeated `]` should stop at detail hitting
+    // the dynamic min (detailMinPct(availH) = 13% on availH=40).
+    const { detailMinPct } = require('../leaves/design');
     handleDesignKey('j'); handleDesignKey('j'); handleDesignKey('j');  // → stats
     eq(getInstanceSlice("layout").arrange.rightPanels[1].type, 'stats');
     for (let i = 0; i < 20; i++) handleDesignKey(']');
-    assert(getInstanceSlice("layout").arrange.detailHeightPct >= 20, `detail clamped at min 20 (got ${getInstanceSlice("layout").arrange.detailHeightPct})`);
+    const got = getInstanceSlice("layout").arrange.detailHeightPct;
+    assert(got >= detailMinPct(40), `detail clamped at dynamic min ${detailMinPct(40)} (got ${got})`);
   });
 });
 

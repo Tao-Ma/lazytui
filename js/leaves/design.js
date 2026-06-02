@@ -27,8 +27,21 @@
 'use strict';
 
 const MIN_PANEL_H = 3;
-const DETAIL_MIN_PCT = 20;
-const DETAIL_MAX_PCT = 90;
+// Detail height %, computed against available column rows. Big
+// terminals (with enough rows) get more range — a 100-row column can
+// shrink detail to 5% (5 rows still legible) and grow it to 97%
+// (leaving MIN_PANEL_H rows for the upper panels). Small terminals
+// clamp tighter — at 20 rows the min jumps to 25% (5 rows physical
+// floor / 20 rows column), the max stays at ~85%.
+const DETAIL_MIN_ROWS = 5;       // legible viewer: top border + ~3 content + bottom border
+function detailMinPct(availH) {
+  if (!Number.isFinite(availH) || availH <= 0) return 20;   // pre-layout fallback
+  return Math.max(5, Math.ceil(DETAIL_MIN_ROWS / availH * 100));
+}
+function detailMaxPct(availH) {
+  if (!Number.isFinite(availH) || availH <= 0) return 90;   // pre-layout fallback
+  return Math.min(95, Math.floor((availH - MIN_PANEL_H) / availH * 100));
+}
 const MAX_UNDO = 50;
 
 // ---------------------------------------------------------------- pure reads
@@ -343,8 +356,8 @@ function resizeFocusedPanelHeight(slice, deltaPct) {
   const combined = selCur + nextCur;
 
   const rowsToPct = (rows) => Math.max(1, Math.ceil(rows / availH * 100));
-  const minPct = (p) => p.type === 'detail' ? DETAIL_MIN_PCT : rowsToPct(MIN_PANEL_H);
-  const maxPct = (p) => p.type === 'detail' ? DETAIL_MAX_PCT : 100;
+  const minPct = (p) => p.type === 'detail' ? detailMinPct(availH) : rowsToPct(MIN_PANEL_H);
+  const maxPct = (p) => p.type === 'detail' ? detailMaxPct(availH) : 100;
 
   let newSel  = selCur  + deltaPct;
   let newNext = nextCur - deltaPct;
@@ -602,13 +615,13 @@ function applyBoundaryResize(slice, my) {
   let lowerH = ds.combinedH - upperH;
 
   if (ds.detailIsUpper) {
-    const minH = Math.max(MIN_PANEL_H, Math.floor(ds.availH * DETAIL_MIN_PCT / 100));
-    const maxH = Math.min(ds.combinedH - MIN_PANEL_H, Math.floor(ds.availH * DETAIL_MAX_PCT / 100));
+    const minH = Math.max(MIN_PANEL_H, Math.floor(ds.availH * detailMinPct(ds.availH) / 100));
+    const maxH = Math.min(ds.combinedH - MIN_PANEL_H, Math.floor(ds.availH * detailMaxPct(ds.availH) / 100));
     upperH = Math.max(minH, Math.min(maxH, upperH));
     lowerH = ds.combinedH - upperH;
   } else if (ds.detailIsLower) {
-    const minH = Math.max(MIN_PANEL_H, Math.floor(ds.availH * DETAIL_MIN_PCT / 100));
-    const maxH = Math.min(ds.combinedH - MIN_PANEL_H, Math.floor(ds.availH * DETAIL_MAX_PCT / 100));
+    const minH = Math.max(MIN_PANEL_H, Math.floor(ds.availH * detailMinPct(ds.availH) / 100));
+    const maxH = Math.min(ds.combinedH - MIN_PANEL_H, Math.floor(ds.availH * detailMaxPct(ds.availH) / 100));
     lowerH = Math.max(minH, Math.min(maxH, lowerH));
     upperH = ds.combinedH - lowerH;
   }
@@ -839,7 +852,7 @@ function computeDragPreviewArrange(slice) {
 }
 
 module.exports = {
-  MIN_PANEL_H, DETAIL_MIN_PCT, DETAIL_MAX_PCT,
+  MIN_PANEL_H, DETAIL_MIN_ROWS, detailMinPct, detailMaxPct,
   allDesignPanels, selectedIdx,
   snapshot, undo, redo, clearUndoStacks,
   columnTotalH, freezeColumnFlex, panelHeightPct,
