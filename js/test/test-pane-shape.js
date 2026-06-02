@@ -2,7 +2,7 @@
  * v0.6.1 Phase 1 — arrange entries are panes wrapping one tab.
  *
  * Pins the construction-site invariant: every panel produced by the
- * parser, by state.rebuildLayoutFromConfig (both branches), by
+ * parser, by leaves/arrange.rebuildLayoutFromConfig (both branches), by
  * leaves/pool.placementFromPoolEntry, and by panel/layout's pool_show
  * Msg carries the Pane fields (paneId, tabs, activeTabId) alongside
  * the legacy Panel fields (id, type, hotkey, column, ...).
@@ -82,7 +82,7 @@ layout:
   });
 });
 
-describe('[state] rebuildLayoutFromConfig no-layout JSON fallback produces panes', () => {
+describe('[leaves/arrange] rebuildLayoutFromConfig no-layout JSON fallback produces panes', () => {
   it('JSON-style config with no layout: block', () => {
     // The fallback path expects config.groups and optionally config.files.
     // Bypass parser by passing a minimal hand-built config.

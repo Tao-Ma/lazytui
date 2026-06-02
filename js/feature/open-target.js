@@ -70,8 +70,9 @@ function complete(input) {
   //
   // Hints prepended (matches[0..N]) so they sit at the BOTTOM of the
   // dropdown (overlay reverse-iterates) and are visible in the first
-  // MAX_DROPDOWN slots. Default selection skips hints (runtime.js
-  // cmdline_set_matches) so Enter still lands on the first real entry.
+  // DROPDOWN_VIEWPORT slots (leaves/cmdline-split). Default selection
+  // skips hints (runtime.js cmdline_set_matches) so Enter still lands
+  // on the first real entry.
   const lc = (input || '').toLowerCase();
   const hints = [];
   for (const s of _schemes) {

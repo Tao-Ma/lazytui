@@ -128,7 +128,7 @@ function panelListItems(arrange) {
 }
 
 /** Build a runtime placement object from a pool entry. Mirrors the
- *  flattening that `state.rebuildLayoutFromConfig` does on initial load —
+ *  flattening that `leaves/arrange.rebuildLayoutFromConfig` does on initial load —
  *  plugin-specific config spread first, framework fields override.
  *  Shared between `panel/layout.js#pool_show` (the actual commit on
  *  release / cmdline `:show`) and the drag-preview path in
