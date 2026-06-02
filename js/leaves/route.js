@@ -193,13 +193,23 @@ function resolveTarget(intent, ctx) {
     return layout.lastViewerTab;
   }
 
-  // (3) first viewer-kind in right-column arrange order. Pane entries
-  //     carry `paneId` + `type`; instance id == type for the Phase 5
-  //     singleton (Phase 6+ panes may differ).
+  // (3) first viewer-kind in right-column arrange order. Walk each
+  //     pane's tabs and return the first viewer-kind tab id; this is
+  //     the actually-mounted slice identity (instance keyed by id),
+  //     not the kind literal. For the Phase 5 singleton the answer
+  //     happens to equal VIEWER_KIND, but Phase 4+ multi-instance
+  //     panes mint distinct ids and the literal would be wrong.
   if (layout && layout.arrange && Array.isArray(layout.arrange.rightPanels)) {
     for (const p of layout.arrange.rightPanels) {
-      if (p && p.type === VIEWER_KIND && _instances[VIEWER_KIND]) {
-        return VIEWER_KIND;
+      if (!p) continue;
+      const tabs = Array.isArray(p.tabs) ? p.tabs : null;
+      if (tabs) {
+        for (const t of tabs) {
+          if (t && isViewerKind(t.id)) return t.id;
+        }
+      } else if (isViewerKind(p.id)) {
+        // Defensive: pre-pane fixture without `tabs[]`.
+        return p.id;
       }
     }
   }
