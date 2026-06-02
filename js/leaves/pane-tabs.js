@@ -50,6 +50,80 @@ function groupContentTabs(slice, groupName) {
   return (slice.contentTabs && slice.contentTabs[groupName]) || {};
 }
 
+// --- Pure read derivatives (slice-only, no globals) -----------------------
+
+/** Flat tab info for a pane's slice + a group:
+ *    { actionTabs, termTabs, contentTabs, total }
+ *  actionTabs comes from group.actions[*].tab (YAML); termTabs merges
+ *  group.terminals (YAML) + slice.ephemeralTerminals[groupName] (runtime);
+ *  contentTabs comes from slice.contentTabs[groupName]. `total` includes
+ *  the implicit Info tab at index 0. */
+function flatTabInfo(slice, model, groupName) {
+  const group = model.config.groups[groupName];
+  if (!group) return { actionTabs: [], termTabs: [], contentTabs: [], total: 1 };
+  const actionTabs = Object.entries(group.actions || {}).filter(([, a]) => a.tab);
+  const termTabs = Object.entries(groupTerminals(model, slice, groupName));
+  const contentTabs = Object.entries(groupContentTabs(slice, groupName));
+  return {
+    actionTabs, termTabs, contentTabs,
+    total: 1 + actionTabs.length + termTabs.length + contentTabs.length,
+  };
+}
+
+/** True when the slice's active tab is a terminal tab in `groupName`. */
+function isTerminalTabIn(slice, model, groupName) {
+  const info = flatTabInfo(slice, model, groupName);
+  if (info.termTabs.length === 0) return false;
+  const start = 1 + info.actionTabs.length;
+  const t = slice.tab | 0;
+  return t >= start && t < start + info.termTabs.length;
+}
+
+/** True when the slice's active tab is a content tab in `groupName`. */
+function isContentTabIn(slice, model, groupName) {
+  const info = flatTabInfo(slice, model, groupName);
+  if (info.contentTabs.length === 0) return false;
+  const start = 1 + info.actionTabs.length + info.termTabs.length;
+  const t = slice.tab | 0;
+  return t >= start && t < start + info.contentTabs.length;
+}
+
+/** [key, { label, lines }] for the active content tab, or null. */
+function activeContentTabIn(slice, model, groupName) {
+  const info = flatTabInfo(slice, model, groupName);
+  const idx = (slice.tab | 0) - 1 - info.actionTabs.length - info.termTabs.length;
+  if (idx < 0 || idx >= info.contentTabs.length) return null;
+  return info.contentTabs[idx];
+}
+
+/** Session id (`${group}_${key}`) for the active terminal tab, or null. */
+function activeTerminalIdIn(slice, model, groupName) {
+  const info = flatTabInfo(slice, model, groupName);
+  const idx = (slice.tab | 0) - 1 - info.actionTabs.length;
+  if (idx < 0 || idx >= info.termTabs.length) return null;
+  return `${groupName}_${info.termTabs[idx][0]}`;
+}
+
+/** { cmd, label } for the active terminal tab, or null. */
+function activeTerminalConfigIn(slice, model, groupName) {
+  const info = flatTabInfo(slice, model, groupName);
+  const idx = (slice.tab | 0) - 1 - info.actionTabs.length;
+  if (idx < 0 || idx >= info.termTabs.length) return null;
+  return info.termTabs[idx][1];
+}
+
+/** Reverse-lookup an ephemeral entry from a session id. Groups can
+ *  contain underscores, so we scan rather than split. */
+function findEphemeralByIdIn(slice, id) {
+  const eph = (slice && slice.ephemeralTerminals) || {};
+  for (const group of Object.keys(eph)) {
+    for (const key of Object.keys(eph[group])) {
+      if (`${group}_${key}` === id) return { group, key };
+    }
+  }
+  return null;
+}
+
 // --- Pure slice mutators (return [newSlice, info]) ------------------------
 
 function addEphemeral(slice, model, { groupName, key, cmd, label }) {
@@ -433,6 +507,10 @@ function reduceTabMsg(msg, slice, ctx) {
 
 module.exports = {
   actionTabCount, groupTerminals, groupContentTabs,
+  flatTabInfo,
+  isTerminalTabIn, isContentTabIn,
+  activeContentTabIn, activeTerminalIdIn, activeTerminalConfigIn,
+  findEphemeralByIdIn,
   addEphemeral, removeEphemeral,
   addContent, updateContentLines, removeContent, reorderContent,
   reduceTabMsg,
