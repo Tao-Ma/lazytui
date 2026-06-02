@@ -290,17 +290,24 @@ Panel selection happens in the `layout:` block; each panel type names
 the Component that owns it.
 
 ```yaml
+panels:
+  containers: { type: containers }                    # docker Component
+  groups:     { type: groups }                        # groups Component
+  files:      { type: files, source: declared }       # files Component
+  #                                                     declared / filesystem / both / docker
+  actions:    { type: actions }                       # actions Component
+  detail:     { type: detail }                        # viewer Component (the detail panel)
+
 layout:
   left:
     panels:
-      - type: containers    # docker Component
-      - type: groups        # groups Component
-      - type: files         # files Component
-        source: declared    #   declared / filesystem / both / docker
+      - containers
+      - groups
+      - files
   right:
     panels:
-      - type: actions       # actions Component
-      - type: detail        # viewer Component (the detail panel)
+      - actions
+      - detail
 ```
 
 The `plugins:` top-level block no longer drives runtime plugin loading.

@@ -72,16 +72,19 @@ aggregate/system-pulse, heatmap (>20 containers).
 
 ## 3. YAML contract
 
+Declare the stats panel in the pool, then place it in the layout via
+a pool-id cell. Pool fields shown here; placement uses the standard
+v0.6.1 cell shapes (see [LAYOUT.md](LAYOUT.md)).
+
 ```yaml
-layout:
-  right:
-    panels:
-      - type: stats
-        title: Stats
-        topic: docker.stats     # which hub topic to read
-        select_from: containers # which panel's focused row drives content
-        metrics: [cpu, mem]     # which schema columns to graph, top-to-bottom
-        window: 40              # samples retained per row (panel-driven sub)
+panels:
+  stats:
+    type: stats
+    title: Stats
+    topic: docker.stats     # which hub topic to read
+    select_from: containers # which panel's focused row drives content
+    metrics: [cpu, mem]     # which schema columns to graph, top-to-bottom
+    window: 40              # samples retained per row (panel-driven sub)
 ```
 
 | Field         | Required | Default                                | Notes |

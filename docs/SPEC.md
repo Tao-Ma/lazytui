@@ -49,19 +49,21 @@ registerComponent(require('../panel/navigator/hello'));
 Reference the panel type in your YAML config:
 
 ```yaml
+panels:
+  hello:   { type: hello,   title: Hello }
+  groups:  { type: groups,  title: Groups }
+  actions: { type: actions, title: Actions }
+  detail:  { type: detail,  title: Detail }
+
 layout:
   left:
     panels:
-      - type: hello
-        title: Hello
-      - type: groups
-        title: Groups
+      - hello
+      - groups
   right:
     panels:
-      - type: actions
-        title: Actions
-      - type: detail
-        title: Detail
+      - actions
+      - detail
 ```
 
 Run: `node js/app/tui.js path/to/config.yml`. The Component's `hello`
