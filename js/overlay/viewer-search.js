@@ -25,14 +25,12 @@ const { getModel } = require('../app/runtime');
 const ms = require('../leaves/search');
 
 // The typing-phase state + transforms live in the detail Component's
-// slice + update. The user-facing wrappers dispatch viewer_search_* Msgs
-// (handled by detail.update, which emits the cross-layer mode_set /
-// mode_clear Cmds); low-level helpers (recompute, clearCommitted) still
-// mutate the slice directly via the api facade.
-// All Msgs target the focused-or-sticky viewer (viewer_search_*).
-// v0.6.1 Phase 8 — resolveTarget so multi-viewer routes searches into
-// the right pane; null = no viewer registered, drop. _slice reads the
-// same resolved target.
+// slice + update. Every wrapper here dispatches a viewer_search_* Msg
+// through the api facade so writes flow through viewer.update — the
+// single writer for the viewer slice (docs/PRINCIPLES.md §12).
+// All Msgs target the focused-or-sticky viewer; v0.6.1 Phase 8 —
+// resolveTarget so multi-viewer routes searches into the right pane;
+// null = no viewer registered, drop.
 function _viewerTarget() { return require('../leaves/route').resolveTarget('viewer'); }
 function _dispatch(msg) {
   const target = _viewerTarget();
@@ -51,17 +49,13 @@ function commit()           { _dispatch({ type: 'viewer_search_commit' }); }
 function keystroke(seq)     { _dispatch({ type: 'viewer_search_key', seq }); }
 function next()             { _dispatch({ type: 'viewer_search_nav', dir: +1 }); }
 function prev()             { _dispatch({ type: 'viewer_search_nav', dir: -1 }); }
-// Pure-TEA conversion (Phase 1d): the leaf returns a new slice — these
-// facades write the result back to the slice store. Used by tests + the
-// committed-search `n`/`N`/Esc adapter; production search-mode is
-// already routed through viewer.update's Msg arms.
-function _writeBack(next) {
-  const target = _viewerTarget();
-  if (target) require('../leaves/route').setInstanceSlice(target, next);
-}
-function clearCommitted()    { const s = _slice(); if (s) _writeBack(ms.clearCommitted(s)); }
-function recompute()         { const s = _slice(); if (s) _writeBack(ms.recompute(s)); }
-function _recomputeFor(term) { const s = _slice(); if (s) _writeBack(ms.recomputeFor(s, term)); }
+// Committed-search adapter (`n`/`N`/Esc after search committed) +
+// tests. Dispatches into viewer.update; single-writer-per-slice
+// holds. Pre-v0.6.1 these wrote route.setInstanceSlice directly —
+// a TEA back-channel the audit caught.
+function clearCommitted()    { _dispatch({ type: 'viewer_search_clear_committed' }); }
+function recompute()         { _dispatch({ type: 'viewer_search_recompute' }); }
+function _recomputeFor(term) { _dispatch({ type: 'viewer_search_recompute_for', term }); }
 
 function isActive() {
   const search = _slice()?.search;

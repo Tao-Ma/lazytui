@@ -267,6 +267,13 @@ function update(msg, slice) {
         ? [{ type: 'apply_msg', msg: { type: 'mode_clear', flag: 'detailSearchMode' } }]
         : []];
     }
+    // Committed-search adapter Msgs — exposed for the non-reducer
+    // facade (overlay/viewer-search.js) so its callers route through
+    // viewer.update rather than writing the slice directly (single-
+    // writer-per-slice per docs/PRINCIPLES.md §12).
+    case 'viewer_search_clear_committed': return ms.clearCommitted(slice);
+    case 'viewer_search_recompute':       return ms.recompute(slice);
+    case 'viewer_search_recompute_for':   return ms.recomputeFor(slice, msg.term);
 
     // --- visual-mode select. The mouse path dispatches the select_* Msgs
     // (overlay/select.js); the keyboard path lives in `case 'key':` below.
