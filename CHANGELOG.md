@@ -59,9 +59,15 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   shipped in v0.6.1.
 
 - **Multi-tab panes via YAML.** A `{tabs: [docker, logs]}` cell mounts
-  two tabs in one pane; `]`/`[` cycles between them inside the focused
-  pane. `activeTab` picks the boot-active tab (defaults to `tabs[0]`).
-  Layout cells reject duplicate kinds inside a pane.
+  two tabs in one pane; `activeTab` picks the boot-active tab (defaults
+  to `tabs[0]`). Switch the active tab at runtime via the new
+  `:switch-tab <pool-id>` cmdline verb (autocomplete restricts to the
+  focused pane's other tabs). Keyboard / mouse UX deferred to v0.7 (see
+  `docs/v0.6.1-panes-tabs.md` §Decisions #4). Layout cells reject
+  duplicate kinds inside a pane.
+
+- **`:switch-tab <pool-id>` cmdline verb.** Direct active-tab flip for
+  the focused pane. No-op on single-tab panes.
 
 ### Changed
 - **Serializer always writes both blocks.** `:save-layout` always
@@ -75,6 +81,31 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   status, help-text, file-loader) call `state.setViewerContent(null, text)`
   to write to whatever viewer `resolveTarget` selects. The dead
   `'setDetail'` effect handler in `dispatch/effects.js` retires.
+
+- **`getFocus()` returns a tab id, not a panel-type string.** For
+  singleton-instance kinds (today's default configs) the tab id
+  coincides with the Component name, so existing comparison sites
+  like `getFocus() === 'detail'` keep working byte-for-byte. Kind-
+  intent comparisons should go through `instanceKind(getFocus()) ===
+  '<kind>'` (resilient to multi-instance, where tab id ≠ kind).
+  External Components reading `slice.focus` directly should audit.
+
+- **Navigator slice shape — `slice.nav` collapses to a single entry
+  for single-panel navigators.** v0.6 had `slice.nav[panelType] =
+  entry`; v0.6.1 single-panel Components (groups, docker, actions,
+  config-status, history) store the entry directly at `slice.nav`.
+  The files Component, which owns multiple panel types, keeps the
+  `slice.nav[panelType]` shape. Shape is detected by `'cursor' in
+  slice.nav`. External plugins reading nav state need a one-line
+  branch.
+
+- **Pane shape on arrange entries.** `arrange.leftPanels[i]` and
+  `arrange.rightPanels[i]` now carry `paneId` (slot identity),
+  `tabs: [{id, poolId}]`, and `activeTabId` alongside the legacy
+  `id/type/title/config` fields. Anyone scripting against
+  `:save-layout` output sees these additional keys. Legacy fields
+  mirror the active tab's pool entry and stay populated through
+  v0.6.1 for compat; Phase 10+ retire them.
 
 ### Migrated
 - **Live demos and test fixtures.** `test/test.yml`,
