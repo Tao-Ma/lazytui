@@ -20,6 +20,11 @@ in the two-column grid. Pool entries not placed in the grid are
 *hidden* — still configured, surfaced in the free-config overlay
 so you can summon them back without editing YAML.
 
+v0.6.1 generalizes the model: every cell is a **pane** (a placement
+slot), and every pane holds 1+ **tabs** (each tab is a panel kind
+instance). Singleton detail retires — `detail` is just another tab
+kind, subject to the same pool/cell mechanics.
+
 ```yaml
 panels:                # the pool — every panel keyed by id
   containers:
@@ -41,20 +46,34 @@ panels:                # the pool — every panel keyed by id
 layout:                # the grid — cells reference pool by id
   left:
     width: 30          # optional, column width in chars
-    panels: [containers, groups, files]
+    panels:
+      - containers
+      - groups
+      - files
   right:
     panels:
       - actions
-      - { id: detail, height: 60% }   # mapping form when an override applies
+      - { tabs: [detail], height: 60% }   # mapping form when an override applies
 ```
 
-**Three layout-cell forms**, mix and match:
+**Two layout-cell forms** — bare-string for the common case, mapping
+when you need more:
 
 | Cell form | Meaning |
 |---|---|
-| `groups` (string) | id-ref into `panels:`. No overrides. |
-| `{ id: detail, height: 60% }` | id-ref + placement override (heightPct or, for detail, height). |
-| `{ type: tail, file: /var/log/syslog }` | **Legacy inline** — declares + places in one cell. Auto-synthesizes a pool entry with id from `type` (`tail`, `tail-2`, `tail-3` for duplicates). Configs that look exactly like v0.5 still work. |
+| `groups` (bare string) | Pool-id reference. Single-tab pane, no overrides. |
+| `{ tabs: [detail], height: 60% }` | Pool-id list (one or more) plus optional `activeTab`, `heightPct`, `collapsed`, and `height` (detail-only). |
+
+Multi-tab panes use the mapping form too:
+
+```yaml
+- { tabs: [docker, logs], activeTab: docker }
+```
+
+`activeTab` is optional — defaults to `tabs[0]`. `]` and `[` cycle
+between tabs inside the focused pane. See
+[`v0.6.1-migrate.md`](v0.6.1-migrate.md) for the conversion guide
+from v0.6.0 inline cells.
 
 **Default layout** generated when neither block is given.
 
@@ -71,34 +90,41 @@ column). The drag UX (below) materializes `heightPct` for any panel
 the user resizes — once the layout is saved via `:save-layout`, the
 new values appear in the YAML.
 
-### Panel constraints
-- Left: 1–6 panels, hotkeys `1`–`6` auto-assigned by position
-- Right: 1–3 panels, hotkeys `7`–`9` auto-assigned by position
-- Per-panel override via YAML `hotkey: <char>`; auto-assignment skips
-  keys already claimed explicitly
-- Detail panel required in right column, and must be the LAST cell
+### Pane and tab constraints
+- Left: 1–6 panes, hotkeys `1`–`6` auto-assigned by position
+- Right: 1–3 panes, hotkeys `7`–`9` auto-assigned by position
+- Per-pane override via YAML `hotkey: <char>` (on the cell);
+  auto-assignment skips keys already claimed explicitly
+- Exactly one tab of kind `detail` anywhere — in the right column, in
+  the LAST pane of that column
+- At most one tab of kind `actions` anywhere — in the right column
+- No `detail` / `actions` tab in the left column
+- No two tabs of the same kind inside one pane
 
-### `panel.type` vs `panel.id` — two roles, one panel object
-Each placed panel carries two identifiers that look similar but
-answer different questions; they're easy to confuse when reading
-the codebase.
+### `pool.type` (kind) vs pool / tab `id` — two roles
+Pool entries carry two identifiers that look similar but answer
+different questions; they're easy to confuse when reading the
+codebase.
 
-- **`panel.type`** — the renderer/component kind. Maps to the
-  Component that owns the panel via `registerComponent({ panelTypes: { <type>: … } })`.
-  Used by: the render layer (which renderer to call), the focus
-  / dispatch layer (what `slice.focus` points at), `panelHeights[type]`,
-  `panelBounds[type]`. Same value for every instance of the same
-  panel kind.
-- **`panel.id`** — the pool-entry identity (v0.6+). Unique per
-  placement. Used by: the `panels:` pool map, `arrange.pool[id]`,
-  `pool_hide` / `pool_show` / `panel_collapse_toggle` Msgs,
-  `:save-layout` round-trip. Two panels with the same `type` (e.g.
-  two file-browsers) get distinct `id`s.
+- **`pool[id].type`** — the renderer/component kind. Maps to the
+  Component that owns the panel via
+  `registerComponent({ panelTypes: { <type>: … } })`. Used by the
+  render layer (which renderer to call), the dispatch layer (kind
+  comparisons via `instanceKind(...)`), and per-kind bookkeeping.
+  Same value for every instance of the same kind.
+- **`id` (tab id == pool-entry id)** — instance identity. Unique per
+  pool entry; reused as the tab id when a layout cell places the
+  entry. Used by: the `panels:` pool map (`arrange.pool[id]`), the
+  instance-slice registry (`getInstanceSlice(id)`), `pool_hide` /
+  `pool_show` / `panel_collapse_toggle` Msgs, and `:save-layout`
+  round-trip. Two pool entries with the same `type` (e.g. two
+  file-browsers) get distinct ids.
 
 Rule of thumb: read or set `type` when you mean "what KIND of
-panel"; read or set `id` when you mean "which SPECIFIC panel
-instance". The mapping is built at parser-time in
-`state.rebuildLayoutFromConfig` and lives on each placement object.
+content"; read or set `id` when you mean "which SPECIFIC instance".
+A pane's `tabs[]` array carries `id` references that resolve through
+the pool to a `type`. The mapping is built at parser-time in
+`state.rebuildLayoutFromConfig`.
 
 ## Visual patterns
 
@@ -206,9 +232,16 @@ filesystem; select with `source:` (`declared` / `filesystem` / `both` /
 - Detail shows desc + script preview on browse
 
 **detail** (positional hotkey) — Tabbed info/output display
+- In v0.6.1 the `detail` kind is one of many possible tab kinds in a
+  pane — the singleton-detail assumption retired, even though the
+  default layout still places exactly one detail tab. The pool/tab
+  mechanics let you co-locate other viewer-kind tabs in the same
+  pane via `{tabs: [detail, history]}` mappings (see
+  [`v0.6.1-migrate.md`](v0.6.1-migrate.md)).
 - **Tab 0 (Info)**: always present — shows `info()` for selected item
-- **Tab 1+**: actions with `tab: true` — runs action, shows result
-- `]`/`[` cycles between tabs
+- **Tab 1+**: actions with `tab: true`, terminal sessions, and
+  content tabs opened via `:open` or file-browser Enter
+- `]`/`[` cycles the tabs visible in detail's tab strip
 - `PgUp`/`PgDn` scrolls content
 - Bottom border shows scroll position when content overflows
 
