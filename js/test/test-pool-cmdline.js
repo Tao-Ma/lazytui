@@ -166,7 +166,11 @@ describe('[pool_show] inserts placement from pool entry', () => {
     const next = layout.update({ type: 'pool_show', id: 'extraActions' }, slice);
     eq(next, slice);
   });
-  it('refuses to exceed column cap (6 left)', () => {
+  it('allows exceeding column soft cap (6 left)', () => {
+    // Column caps (6 left / 3 right) are SOFT — the parser warns at
+    // load time when a config exceeds them, but runtime placement
+    // (pool_show / drag-insert) doesn't refuse. The renderer's
+    // MIN_PANEL_H clamp is the only physical bound.
     const slice = buildSlice({
       left: [
         ['a', 'a'], ['b', 'b'], ['c', 'c'], ['d', 'd'], ['e', 'e'], ['f', 'f'],
@@ -175,7 +179,8 @@ describe('[pool_show] inserts placement from pool entry', () => {
       hidden: [['g', 'g']],
     });
     const next = layout.update({ type: 'pool_show', id: 'g', column: 'left' }, slice);
-    eq(next, slice, 'left column at cap, refuses');
+    eq(next.arrange.leftPanels.length, 7, 'soft cap exceeded: 7th panel placed');
+    eq(next.arrange.leftPanels[6].id, 'g', 'g appended');
   });
 });
 

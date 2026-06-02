@@ -43,7 +43,7 @@ function checkUnknownKeys(data, valid, context) {
   }
 }
 
-function validate(data, _sourceFile) {
+function validate(data, _sourceFile, warnings) {
   if (!isMapping(data)) throw new SchemaError('config must be a YAML mapping');
   checkUnknownKeys(data, VALID_TOP_KEYS, 'top level');
 
@@ -62,7 +62,7 @@ function validate(data, _sourceFile) {
   if ('register' in data) validateRegister(data.register);
   if ('keys' in data)     validateKeys(data.keys);
   if ('panels' in data)   validatePanels(data.panels);
-  if ('layout' in data)   validateLayout(data.layout);
+  if ('layout' in data)   validateLayout(data.layout, warnings);
 
   for (const [gname, gdata] of Object.entries(groups)) {
     validateGroup(gname, gdata);
@@ -81,17 +81,26 @@ function validate(data, _sourceFile) {
  * level) is rejected with a migration pointer. Pool entries declare at
  * the top-level `panels:` block; layout cells only reference them.
  *
- * The semantic invariants — exactly-one detail, at-most-one actions,
- * column size caps — depend on resolved tab kinds (string ids resolve
- * through the pool), so they run in `parseLayout` post-resolution.
+ * The semantic invariants — exactly-one detail, at-most-one actions —
+ * depend on resolved tab kinds (string ids resolve through the pool),
+ * so they run in `parseLayout` post-resolution.
+ *
+ * Column size caps (`SOFT_COL_CAP_LEFT` / `SOFT_COL_CAP_RIGHT`) are
+ * SOFT: exceeding them appends a warning to the caller-supplied
+ * `warnings` array but doesn't throw. The renderer's MIN_PANEL_H +
+ * terminal-row floor is the physical limit; above the soft cap users
+ * just get a more compressed display.
  */
 const VALID_LAYOUT_CELL_KEYS = new Set([
   'tabs', 'activeTab', 'hotkey', 'height', 'heightPct', 'collapsed',
 ]);
 
-function validateLayout(layout) {
+const SOFT_COL_CAP_LEFT  = 6;
+const SOFT_COL_CAP_RIGHT = 3;
+
+function validateLayout(layout, warnings) {
   if (!isMapping(layout)) throw new SchemaError("'layout' must be a mapping");
-  const collectPanels = (side, max) => {
+  const collectPanels = (side, softCap) => {
     const block = layout[side];
     if (block === undefined) return [];
     if (!isMapping(block)) throw new SchemaError(`'layout.${side}' must be a mapping`);
@@ -136,13 +145,16 @@ function validateLayout(layout) {
         throw new SchemaError("'activeTab' must be one of the entries in `tabs`", { context: ctx });
       }
     });
-    if (panels.length > max) {
-      throw new SchemaError(`'layout.${side}' allows at most ${max} panes, got ${panels.length}`);
+    if (panels.length > softCap && warnings) {
+      warnings.push({
+        code: 'layout.column_over_soft_cap',
+        message: `layout.${side}: ${panels.length} panes exceeds soft cap of ${softCap} — panels may be cramped on small terminals`,
+      });
     }
     return panels;
   };
-  collectPanels('left', 6);
-  collectPanels('right', 3);
+  collectPanels('left',  SOFT_COL_CAP_LEFT);
+  collectPanels('right', SOFT_COL_CAP_RIGHT);
 }
 
 /**

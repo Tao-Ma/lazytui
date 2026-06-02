@@ -597,7 +597,10 @@ function parse(yamlPath) {
   // directory containing the source YAML.
   mergeYamlPlugins(data, path.dirname(absPath));
 
-  validate(data, source);
+  // Soft-cap warnings (column over default cap, etc.) accumulate here
+  // and ride out on the returned config. tui.js boot reads them.
+  const warnings = [];
+  validate(data, source, warnings);
 
   // Build files list (before groups — auto-helper needs it).
   const files = [];
@@ -658,6 +661,10 @@ function parse(yamlPath) {
     // registers each entry into the prefix-key tree at boot. Default
     // empty — the built-in chords are registered unconditionally.
     keys: data.keys !== undefined ? data.keys : {},
+    // Soft-fail diagnostics from validation (today: column over soft
+    // cap). tui.js boot drains these into the event log + a brief
+    // chrome notice; nothing else reads them.
+    warnings,
   };
 }
 

@@ -576,10 +576,10 @@ function update(msg, slice) {
       // the defense-in-depth guard for any future caller that emits
       // pool_show with column='left' directly.
       if (column === 'left' && (entry.type === 'detail' || entry.type === 'actions')) return slice;
-      // Column cap: 6 left, 3 right (matches parser/schema constraints).
-      const cap = column === 'left' ? 6 : 3;
+      // Column caps (6 left / 3 right) are SOFT — exceeded at parse time
+      // emits a warning; runtime placement just allows. The renderer's
+      // MIN_PANEL_H + terminal-row floor is the only physical limit.
       const target = column === 'left' ? arrange.leftPanels : arrange.rightPanels;
-      if (target.length >= cap) return slice;
       const placement = mpool.placementFromPoolEntry(entry, column);
       // Right column keeps `detail` as the last cell (convention shared
       // with moveColumn). When `msg.index` is supplied (pool-drag drops),

@@ -82,16 +82,17 @@ function pointToPoolDropTarget(slice, mx, my) {
   return validateInsert(arrange, column, panels.length, sourceEntry);
 }
 
-/** Insert validity: column-cap + detail-at-end clamp for right column
- *  + detail/actions can't live in left column (same rule the in-grid
- *  drag's validateTarget enforces). When the detail-at-end clamp fires,
- *  the returned target carries a `clamp` reason so the footer can show
- *  "(clamped — <reason>)"; without it the bot-third of detail looked
- *  like a normal insert that just happened to paint above detail in the
- *  preview, with no signal of WHY. */
+/** Insert validity: detail-at-end clamp for right column + detail/
+ *  actions can't live in left column (same rule the in-grid drag's
+ *  validateTarget enforces). Column-cap caps (6 left / 3 right) are
+ *  SOFT — drag-insert allows exceeding them; only the parser warns at
+ *  load time. When the detail-at-end clamp fires the returned target
+ *  carries a `clamp` reason so the footer can show "(clamped — …)";
+ *  without it the bot-third of detail looked like a normal insert that
+ *  just happened to paint above detail in the preview, with no signal
+ *  of WHY. */
 function validateInsert(arrange, column, index, sourceEntry) {
   const panels = column === 'left' ? (arrange.leftPanels || []) : (arrange.rightPanels || []);
-  const cap = column === 'left' ? 6 : 3;
   // detail/actions are right-column-only by convention. The in-grid drag's
   // validateTarget blocks moving them into left; pool-drag must too or the
   // user can land a hidden actions panel in the left column via the
@@ -99,7 +100,7 @@ function validateInsert(arrange, column, index, sourceEntry) {
   if (sourceEntry && column === 'left' && (sourceEntry.type === 'detail' || sourceEntry.type === 'actions')) {
     return { kind: 'insert', column, index, valid: false, reason: `${sourceEntry.type} can't live in left column` };
   }
-  const valid = panels.length < cap;
+  const valid = true;
   let idx = index;
   let clamp = null;
   if (column === 'right') {

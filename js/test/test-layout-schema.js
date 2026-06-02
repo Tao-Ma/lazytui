@@ -40,6 +40,14 @@ function bad(layout) {
   try { validate(withLayout(layout), 'test'); } catch { threw = true; }
   assert(threw, 'expected a SchemaError');
 }
+// Soft warning collected, no throw. Returns the warnings array.
+function warns(layout, codeMatch) {
+  const warnings = [];
+  validate(withLayout(layout), 'test', warnings);
+  const hit = warnings.find(w => w.code === codeMatch);
+  assert(hit, `expected a warning with code '${codeMatch}', got ${JSON.stringify(warnings)}`);
+  return warnings;
+}
 
 // Cardinality checks (exactly-one-detail, at-most-one-actions) live in
 // parseLayout post-resolution — string-id cells need the pool to know
@@ -82,17 +90,19 @@ describe('[3] actions-panel cardinality', () => {
   });
 });
 
-describe('[4] panel-count maxima', () => {
-  it('rejects 7 left panels', () => {
+describe('[4] panel-count soft caps', () => {
+  it('warns on 7 left panels (soft cap 6) but accepts', () => {
     const panels = Array.from({ length: 7 }, () => 'groups');
-    bad({ left: { panels }, right: { panels: ['detail'] } });
+    warns({ left: { panels }, right: { panels: ['detail'] } }, 'layout.column_over_soft_cap');
   });
-  it('rejects 4 right panels', () => {
-    bad({ right: { panels: ['detail', 'a', 'b', 'c'] } });
+  it('warns on 4 right panels (soft cap 3) but accepts', () => {
+    warns({ right: { panels: ['detail', 'a', 'b', 'c'] } }, 'layout.column_over_soft_cap');
   });
-  it('accepts exactly 6 left + 3 right', () => {
+  it('accepts exactly 6 left + 3 right with no warning', () => {
     const left = Array.from({ length: 6 }, () => 'groups');
-    ok({ left: { panels: left }, right: { panels: ['detail', 'a', 'b'] } });
+    const warnings = [];
+    validate(withLayout({ left: { panels: left }, right: { panels: ['detail', 'a', 'b'] } }), 'test', warnings);
+    assert(warnings.length === 0, `expected no warnings, got ${JSON.stringify(warnings)}`);
   });
 });
 
