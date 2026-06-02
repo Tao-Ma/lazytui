@@ -37,7 +37,7 @@ function _detailSlice() {
       try { require('../dispatch/effects').installBuiltins(); } catch (_) {}
       _detailAutoRegistered = true;
     }
-    _layoutSlice();   // Phase 3 — layout must register before detail
+    _layoutSlice();   // layout must register first — focus reader's primary instance
     api.registerComponent(require('../panel/viewer/viewer'));
     s = api.getComponentSlice('detail');
   }
@@ -53,7 +53,7 @@ function _groupsSlice() {
       try { require('../dispatch/effects').installBuiltins(); } catch (_) {}
       _groupsAutoRegistered = true;
     }
-    _layoutSlice();   // Phase 3 — layout must register before groups
+    _layoutSlice();   // layout must register first — focus reader's primary instance
     api.registerComponent(require('../panel/navigator/groups'));
     s = api.getComponentSlice('groups');
   }

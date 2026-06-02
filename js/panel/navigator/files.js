@@ -16,10 +16,14 @@
  *
  * Slice shape:
  *
- *   { browsers: { [panelType]: { cwd, showHidden, lastError, items, loading, seq } } }
+ *   { browsers: { [tabId]: { cwd, showHidden, lastError, items, loading, seq } } }
  *
- * Keyed by `panelType` so `files` and `file-browser` have independent
- * cwd / showHidden / listing slots (two panels of the SAME type still share).
+ * Keyed by tab id so distinct panels get independent cwd / showHidden /
+ * listing slots. In v0.6.1 Phase 3 the files Component owns a single
+ * instance whose two panelTypes (`files` + `file-browser`) double as
+ * tab ids — `browsers['files']` / `browsers['file-browser']`. Phase 4
+ * mints separate instances per panelType, at which point each instance
+ * carries one browser (no map needed) and the keys collapse out.
  *
  * Directory listings are loaded ASYNCHRONOUSLY through the effect loop, never
  * synchronously in getItems (which stays a pure projection of the slice):
