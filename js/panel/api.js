@@ -332,26 +332,34 @@ function dispatchMsg(msg) {
       && msg.msg && msg.msg.type === 'viewer_reorder_content_tab';
     if (!isLayoutWrap && !isTabReorder) return;
   }
-  // Wrapped-Msg path. Routes to exactly one Component. Discriminator:
-  // { kind: string, msg: any } AND no top-level `type` field — the
-  // latter rules out any pre-existing flat Msg shape that happens to
-  // also carry `kind` / `msg` properties.
+  // Wrapped-Msg path. Routes to exactly one Component instance (the
+  // primary instance for that kind in Phase 3 — one per kind).
+  // Discriminator: `{ kind: string, msg: any }` AND no top-level
+  // `type` field — the latter rules out any pre-existing flat Msg
+  // shape that happens to also carry `kind` / `msg` properties.
   if (msg && typeof msg.kind === 'string' && msg.msg !== undefined && msg.type === undefined) {
-    const name = msg.kind;
-    const comp = components[name];
+    const kind = msg.kind;
+    const comp = components[kind];
     if (!comp) {
-      console.error(`[dispatch] wrapped Msg targeting unknown Component '${name}'; dropped`);
+      console.error(`[dispatch] wrapped Msg targeting unknown Component '${kind}'; dropped`);
       return;
     }
-    _runComponentUpdate(name, comp, msg.msg);
+    const id = route.getPrimaryByKind(kind);
+    if (id === undefined) return;  // registered but no instance — unreachable in Phase 3
+    _runInstance(route.getInstance(id), comp, msg.msg);
     return;
   }
   // Broadcast path. Only the 3 framework signals fan out; everything
-  // else must arrive wrapped.
+  // else must arrive wrapped. Iterates instances (not specs) so a
+  // Component with multiple instances has each one's update called
+  // independently — Phase 4 onward. Single instances per kind in
+  // Phase 3 → semantically equivalent to the old per-spec loop.
   if (msg && BROADCAST_TYPES.has(msg.type)) {
-    for (const [name, comp] of Object.entries(components)) {
-      _runComponentUpdate(name, comp, msg);
-    }
+    route.eachInstance(inst => {
+      const comp = components[inst.kind];
+      if (!comp) return;  // defensive: orphan instance (Component unregistered)
+      _runInstance(inst, comp, msg);
+    });
     return;
   }
   // Phase 2f strictness: any other flat Msg is a missed wrap site.
@@ -377,14 +385,17 @@ function dispatchKeyToFocused(key, seq) {
   if (!compName) return false;
   const comp = components[compName];
   if (!comp) return false;
+  const id = route.getPrimaryByKind(compName);
+  if (id === undefined) return false;
+  const inst = route.getInstance(id);
 
   let claimed = false;
   try {
-    const result = comp.update({ type: 'key', key, seq }, route.getSlice(compName));
+    const result = comp.update({ type: 'key', key, seq }, inst.slice);
     if (result === undefined) return false;
     if (Array.isArray(result)) {
       const [next, effects] = result;
-      if (next !== undefined) route.setSlice(compName, next);
+      if (next !== undefined) route.setInstanceSlice(inst.id, next);
       const filtered = [];
       for (const e of (effects || [])) {
         if (e && e.type === '_claimed') claimed = true;
@@ -392,35 +403,35 @@ function dispatchKeyToFocused(key, seq) {
       }
       if (filtered.length) require('../dispatch/effects').runEffects(filtered);
     } else {
-      route.setSlice(compName, result);
+      route.setInstanceSlice(inst.id, result);
     }
   } catch (e) {
     console.error(`[component:${compName}] key update error: ${e.message}`);
-    _recordError({ where: 'component_key', component: compName,
+    _recordError({ where: 'component_key', component: compName, instance: inst.id,
       message: e && e.message, stack: e && e.stack });
   }
   return claimed;
 }
 
-// Inner helper — runs one Component's update, handles the
+// Inner helper — runs ONE instance's update, handles the
 // undefined / slice / [slice, effects] return contract, and isolates
-// throws. Shared by both the wrapped and broadcast dispatch paths.
-// Reads + writes go through route.getSlice / route.setSlice so the
-// underlying instance store (v0.6.1 Phase 3) is transparent here.
-function _runComponentUpdate(name, comp, msg) {
+// throws. Shared by the wrapped and broadcast dispatch paths. Reads
+// inst.slice and writes back via route.setInstanceSlice(inst.id, …)
+// so multi-instance kinds (Phase 4+) update only their own slice.
+function _runInstance(inst, comp, msg) {
   try {
-    const result = comp.update(msg, route.getSlice(name));
+    const result = comp.update(msg, inst.slice);
     if (result === undefined) return;
     if (Array.isArray(result)) {
       const [next, effects] = result;
-      if (next !== undefined) route.setSlice(name, next);
+      if (next !== undefined) route.setInstanceSlice(inst.id, next);
       require('../dispatch/effects').runEffects(effects);
     } else {
-      route.setSlice(name, result);
+      route.setInstanceSlice(inst.id, result);
     }
   } catch (e) {
-    console.error(`[component:${name}] update error: ${e.message}`);
-    _recordError({ where: 'component_update', component: name,
+    console.error(`[component:${inst.kind}] update error: ${e.message}`);
+    _recordError({ where: 'component_update', component: inst.kind, instance: inst.id,
       message: e && e.message, stack: e && e.stack });
   }
 }
