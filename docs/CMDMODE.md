@@ -106,6 +106,7 @@ dynamic is fine when the candidate list depends on state.
 | `design`          | Alias for `:free-config` (v0.5 name)         |
 | `hide <id>`       | Unplace a panel (one entry per placed id)    |
 | `show <id>`       | Place a hidden panel (one entry per hidden id) |
+| `switch-tab <pool-id>` | Flip the focused multi-tab pane's active tab (one entry per non-active tab in the focused pane; absent on single-tab panes) |
 | `open <path>`     | Open a file as a content tab in detail. TAB completes via the open-target scheme registry. |
 
 These live in `panel/api.js#FRAMEWORK_COMMANDS` + a small

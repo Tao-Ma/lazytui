@@ -128,25 +128,38 @@ function rebuildLayoutFromConfig(config) {
     // off `panel` directly. Spread first so the framework keys win on
     // any overlap. `id` plumbs the link back to the pool — Phase 1
     // derivations (`leaves/pool`) read it to compute placed vs hidden.
-    out.leftPanels = leftPanelsSrc.map((p, i) => mpane.wrapAsPane({
-      ...(p.config || {}),
-      id: p.id,
-      type: p.type,
-      title: p.title || p.type.replace(/_/g, ' '),
-      hotkey: p.hotkey || String(i + 1),
-      column: 'left',
-    }, mpane.newPaneId(p.id)));
+    //
+    // v0.6.1 — preserve parser-emitted pane fields (paneId, tabs[],
+    // activeTabId) when present so multi-tab cells (`{tabs: [a, b]}`)
+    // survive the rebuild. Falls back to mpane.wrapAsPane (single-tab
+    // synthesis) for JSON callers / pre-pane fixtures that ship only
+    // legacy fields.
+    const widenPane = (p, hotkey, column) => {
+      const wide = {
+        ...(p.config || {}),
+        id: p.id,
+        type: p.type,
+        title: p.title || p.type.replace(/_/g, ' '),
+        hotkey,
+        column,
+      };
+      if (p.heightPct !== undefined) wide.heightPct = p.heightPct;
+      if (p.collapsed === true)      wide.collapsed = true;
+      if (p.paneId && Array.isArray(p.tabs) && p.tabs.length > 0) {
+        wide.paneId = p.paneId;
+        wide.tabs = p.tabs;
+        wide.activeTabId = p.activeTabId || p.tabs[0].id;
+        return wide;
+      }
+      return mpane.wrapAsPane(wide, mpane.newPaneId(p.id));
+    };
+    out.leftPanels = leftPanelsSrc.map((p, i) =>
+      widenPane(p, p.hotkey || String(i + 1), 'left'));
     const { RIGHT_HOTKEY_POOL } = require('../leaves/hotkeys');
     const rightExplicit = new Set(rightPanelsSrc.map(p => p.hotkey).filter(Boolean));
     const rightAuto = RIGHT_HOTKEY_POOL.filter(k => !rightExplicit.has(k));
-    out.rightPanels = rightPanelsSrc.map(p => mpane.wrapAsPane({
-      ...(p.config || {}),
-      id: p.id,
-      type: p.type,
-      title: p.title || p.type.replace(/_/g, ' '),
-      hotkey: p.hotkey || (rightAuto.shift() || ''),
-      column: 'right',
-    }, mpane.newPaneId(p.id)));
+    out.rightPanels = rightPanelsSrc.map(p =>
+      widenPane(p, p.hotkey || (rightAuto.shift() || ''), 'right'));
   } else {
     // No layout block — defensive fallback for JSON callers or tests
     // that bypass the parser. Synthesize the same default the parser

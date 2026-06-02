@@ -190,6 +190,33 @@ function _frameworkDynamicCommands(m) {
         run: () => { api.dispatchMsg(wrap('layout', { type: 'pool_show', id })); },
       });
     }
+    // v0.6.1 — :switch-tab <pool-id> flips the active tab in the
+    // focused multi-tab pane. One entry per non-active tab so
+    // autocomplete restricts to valid targets; absent on single-tab
+    // panes. Resolves the focused pane by finding which pane's tabs
+    // include the focused tab id (or whose pane.id matches focus —
+    // singleton-instance fallback).
+    const focus = layoutSlice.focus;
+    if (focus) {
+      const all = arrange.leftPanels.concat(arrange.rightPanels);
+      const focusedPane = all.find(p =>
+        (p.tabs && p.tabs.some(t => t.id === focus)) || p.id === focus
+      );
+      if (focusedPane && focusedPane.tabs && focusedPane.tabs.length > 1) {
+        for (const t of focusedPane.tabs) {
+          if (t.id === focusedPane.activeTabId) continue;
+          const entry = arrange.pool[t.id];
+          const title = (entry && entry.title) || t.id;
+          out.push({
+            name: `switch-tab ${t.id}`,
+            desc: `Switch to '${title}' tab in this pane`,
+            run: () => { api.dispatchMsg(wrap('layout', {
+              type: 'set_active_tab', paneId: focusedPane.paneId, tabPoolId: t.id,
+            })); },
+          });
+        }
+      }
+    }
   }
   return out;
 }

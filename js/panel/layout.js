@@ -407,6 +407,55 @@ function update(msg, slice) {
     // surfaces this as "essential" rather than offering hide.
     // pool_show refuses to create a second detail or actions panel —
     // same invariant the parser enforces at load.
+    // v0.6.1 — flip a multi-tab pane's active tab. The wide intermediate
+    // form means legacy Panel fields (id/type/title/config + spread
+    // config keys) mirror the active tab's pool entry; switching active
+    // rebuilds those from the new active's pool entry while preserving
+    // placement-only fields (paneId, tabs, hotkey, column, heightPct,
+    // collapsed). Idempotent no-op when the target is already active.
+    // Refuses missing pane / tab not in pane.tabs / unknown pool id.
+    case 'set_active_tab': {
+      const arrange = slice.arrange;
+      const paneId = msg.paneId;
+      const tabPoolId = msg.tabPoolId;
+      if (!paneId || !tabPoolId) return slice;
+      let col = null, idx = -1;
+      for (let i = 0; i < arrange.leftPanels.length; i++) {
+        if (arrange.leftPanels[i].paneId === paneId) { col = 'left'; idx = i; break; }
+      }
+      if (idx < 0) {
+        for (let i = 0; i < arrange.rightPanels.length; i++) {
+          if (arrange.rightPanels[i].paneId === paneId) { col = 'right'; idx = i; break; }
+        }
+      }
+      if (idx < 0) return slice;
+      const panes = col === 'left' ? arrange.leftPanels : arrange.rightPanels;
+      const pane = panes[idx];
+      if (!pane.tabs || !pane.tabs.some(t => t.id === tabPoolId)) return slice;
+      if (pane.activeTabId === tabPoolId) return slice;
+      const entry = (arrange.pool || {})[tabPoolId];
+      if (!entry) return slice;
+      const nextPane = {
+        ...(entry.config || {}),
+        id: entry.id,
+        type: entry.type,
+        title: entry.title,
+        hotkey: pane.hotkey,
+        column: pane.column,
+        config: entry.config,
+        paneId: pane.paneId,
+        tabs: pane.tabs,
+        activeTabId: tabPoolId,
+      };
+      if (pane.heightPct !== undefined) nextPane.heightPct = pane.heightPct;
+      if (pane.collapsed === true)      nextPane.collapsed = true;
+      const nextPanes = panes.slice();
+      nextPanes[idx] = nextPane;
+      const nextArrange = col === 'left'
+        ? { ...arrange, leftPanels: nextPanes }
+        : { ...arrange, rightPanels: nextPanes };
+      return { ...slice, arrange: nextArrange, dirty: true };
+    }
     case 'pool_hide': {
       const arrange = slice.arrange;
       const id = msg.id;

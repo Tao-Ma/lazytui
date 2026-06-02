@@ -70,8 +70,12 @@ Multi-tab panes use the mapping form too:
 - { tabs: [docker, logs], activeTab: docker }
 ```
 
-`activeTab` is optional — defaults to `tabs[0]`. `]` and `[` cycle
-between tabs inside the focused pane. See
+`activeTab` is optional — defaults to `tabs[0]`. Switch active tab
+at runtime via `:switch-tab <pool-id>` (cmdline; autocomplete restricts
+to the focused pane's other tabs). Keyboard / mouse UX for tab
+cycling is deferred to v0.7; today `]`/`[` cycles the active viewer
+tab's inner strip (Info / action tabs / terminal tabs / content
+tabs), not pane-level tabs. See
 [`v0.6.1-migrate.md`](v0.6.1-migrate.md) for the conversion guide
 from v0.6.0 inline cells.
 
