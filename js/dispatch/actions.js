@@ -30,6 +30,7 @@ const { isTerminalTab, activeTerminalId } = require('../panel/viewer/tabs');
 const { isSessionDead, restartSession } = require('../io/terminal');
 const { execSync } = require('child_process');
 const { getModel } = require('../app/runtime');
+const route = require('../leaves/route');
 
 // Lazy stub for the dispatch back-edge. Each invocation looks up the
 // cached module — Node caches require, so this is essentially free.
@@ -241,7 +242,11 @@ function handleAction(action, arg) {
           _runResolvedAction(key, act);
         }
       } else {
-        dispatchMsg(wrap('detail', { type: 'viewer_show_info' }));
+        // v0.6.1 Phase 5 — viewer body refresh routes through
+        // resolveTarget so the right viewer pane wins under
+        // multi-viewer. null when no viewer is registered (no-op).
+        const target = route.resolveTarget('viewer');
+        if (target) dispatchMsg(wrap(target, { type: 'viewer_show_info' }));
       }
       break;
     }

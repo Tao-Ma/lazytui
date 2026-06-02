@@ -133,9 +133,15 @@ function installBuiltins() {
   // this when closing the last content tab so the body falls back to Info.
   // Routes to detail.update's viewer_show_info case — single-writer for the
   // viewer slice through the Component fan-out.
+  //
+  // v0.6.1 Phase 5 — resolveTarget picks the destination viewer (today:
+  // 'detail' singleton; multi-viewer in Phase 6+). null → no viewer
+  // registered, drop the Cmd silently.
+  const route = require('../leaves/route');
   registerEffect('show_selected_info', () => {
     try {
-      api.dispatchMsg(api.wrap('detail', { type: 'viewer_show_info' }));
+      const target = route.resolveTarget('viewer');
+      if (target) api.dispatchMsg(api.wrap(target, { type: 'viewer_show_info' }));
     } catch (_) { /* no renderer (test) */ }
   });
   // destroy_pty_session: PTY teardown from the viewer-tab lifecycle (closing
