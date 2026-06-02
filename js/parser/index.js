@@ -116,16 +116,6 @@ function parsePool(panelsData) {
   return pool;
 }
 
-/** Pick an unused id for a synthesized inline cell. `type` first, then
- *  `type-2`, `type-3`, ... — matches what a user would naturally write
- *  if they later promoted the inline cell to a `panels:` block entry. */
-function synthIdFor(type, pool) {
-  if (!pool.has(type)) return type;
-  let n = 2;
-  while (pool.has(`${type}-${n}`)) n++;
-  return `${type}-${n}`;
-}
-
 function pickPlacement(raw) {
   const out = {};
   if (raw.hotkey !== undefined)    out.hotkey    = String(raw.hotkey);
