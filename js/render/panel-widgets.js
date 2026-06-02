@@ -41,6 +41,7 @@
 
 const { getComponentSlice } = require('../panel/api');
 const { theme } = require('./themes');
+const { esc, visibleLen } = require('../io/ansi');
 
 const GLYPH_W = 3;
 const COLLAPSE_MIN_W = 9;
@@ -176,8 +177,76 @@ function hitTestCloseButton(mx, my) {
   return null;
 }
 
+// --- Tab-strip helper ------------------------------------------------------
+
+/**
+ * Build the panel title string + tab-bounds array for a pane that hosts
+ * a flat tab strip (Info | actions | terminals | content).
+ *
+ * Inputs:
+ *   tabInfo  — { actionTabs, termTabs, contentTabs } (from
+ *              pt.flatTabInfo or panel/viewer/tabs.getTabInfo())
+ *   activeTab — slice.tab (flat integer index)
+ *   hotkey   — single-letter pane hotkey for x-offset math (the title
+ *              starts after `╭─(hotkey)─`)
+ *
+ * Returns { title, tabBounds }:
+ *   title     — rich-markup string ready for renderPanel(title=…). The
+ *               active tab is wrapped in `\[label]`; content tabs grow
+ *               a trailing ` \[x]` close glyph; tabs join with `─`.
+ *               When the pane has zero tabs, returns null — caller
+ *               falls back to a plain title.
+ *   tabBounds — Array<{ tabIdx, x, w, closeKey?, closeX?, closeW? }>
+ *               for the mouse hit-test cache (input.js consumes
+ *               `b.tabs`). x is the column offset relative to the
+ *               pane's left edge.
+ */
+function buildTabStrip(tabInfo, activeTab, hotkey) {
+  const { actionTabs, termTabs, contentTabs } = tabInfo;
+  if (!actionTabs.length && !termTabs.length && !contentTabs.length) return null;
+
+  const parts = [];
+  const partMeta = [];
+  const pushTab = (label, isActive, closeKey) => {
+    const text = esc(label);
+    const close = closeKey ? ' \\[x]' : '';
+    parts.push(isActive ? `\\[${text}${close}]` : `${text}${close}`);
+    partMeta.push({ closeKey, activeWrap: isActive ? 1 : 0 });
+  };
+  pushTab('Info', activeTab === 0, null);
+  actionTabs.forEach(([, action], i) => pushTab(action.label, activeTab === i + 1, null));
+  const termOffset = 1 + actionTabs.length;
+  termTabs.forEach(([, term], i) => pushTab(term.label, activeTab === termOffset + i, null));
+  const contentOffset = 1 + actionTabs.length + termTabs.length;
+  contentTabs.forEach(([key, info], i) => pushTab(info.label, activeTab === contentOffset + i, key));
+
+  const tabBounds = [];
+  // Title starts at col 2 (after `╭─`); hotkey display occupies
+  // `(h)` (3 cells) plus a `─` separator when present.
+  let xOffset = 2 + (hotkey ? 2 + hotkey.length : 0) + 1;
+  parts.forEach((part, i) => {
+    if (i > 0) xOffset += 1;  // `─` separator between tabs
+    const visLen = visibleLen(part);
+    const meta = partMeta[i];
+    const bound = { tabIdx: i, x: xOffset, w: visLen };
+    if (meta.closeKey) {
+      // Close glyph "[x]" sits at the end of the tab's visible text.
+      // For an active tab the trailing `]` of the `\[…]` wrapper sits
+      // one cell after the glyph (activeWrap=1), so the close zone
+      // shifts accordingly.
+      bound.closeKey = meta.closeKey;
+      bound.closeX = xOffset + visLen - meta.activeWrap - 3;
+      bound.closeW = 3;
+    }
+    tabBounds.push(bound);
+    xOffset += visLen;
+  });
+  return { title: parts.join('─'), tabBounds };
+}
+
 module.exports = {
   injectTopRowChrome,
   hitTestCollapseButton,
   hitTestCloseButton,
+  buildTabStrip,
 };

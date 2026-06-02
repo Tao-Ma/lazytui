@@ -331,51 +331,54 @@ function handleMouse(kind, x, y) {
     if (!b) continue;
     if (mx < b.x || mx >= b.x + b.w || my < b.y || my >= b.y + b.h) continue;
 
-    // Detail panel — top border row may be a tab bar; otherwise a
-    // click inside the content area begins a text selection.
-    // Tab bounds are published into panelBounds.detail.tabs by the
-    // detail panel's render path (components/viewer.js#detailTitle).
-    if (p.type === 'detail') {
-      if (my === b.y) {
-        const localX = mx - b.x;
-        const tabs = b.tabs || [];
-        for (const tab of tabs) {
-          if (localX >= tab.x && localX < tab.x + tab.w) {
-            // Close-zone hit (content tabs only — viewer.js#detailTitle
-            // stamps `closeKey` on those tabBounds entries). Wins over
-            // a tab-switch click since the close glyph sits inside the
-            // tab's outer rect.
-            if (tab.closeKey != null && localX >= tab.closeX && localX < tab.closeX + tab.closeW) {
-              dispatchMsg(wrap('detail', {
-                type: 'viewer_remove_content_tab',
-                groupName: getModel().currentGroup,
-                key: tab.closeKey,
-              }));
-            } else {
-              dispatchMsg(wrap('layout', { type: 'focus_set', focus: 'detail' }));
-              dispatchMsg(wrap('detail', { type: 'tab_switch', idx: tab.tabIdx }));
-            }
-            mutated = true;
-            break;
+    // Top-border tab-strip — gated on `b.tabs` presence so ANY pane
+    // that publishes tab geometry (currently only detail; Phase 4
+    // expands) gets click routing. The wrap target uses p.type — for
+    // the singleton-detail Phase 2 caller that resolves to 'detail';
+    // Phase 4 retargets when Components are instance-keyed.
+    if (my === b.y && Array.isArray(b.tabs) && b.tabs.length > 0) {
+      const localX = mx - b.x;
+      for (const tab of b.tabs) {
+        if (localX >= tab.x && localX < tab.x + tab.w) {
+          // Close-zone hit (content tabs only — the tab-strip builder
+          // stamps `closeKey` on those entries). Wins over a tab-
+          // switch click since the close glyph sits inside the tab's
+          // outer rect.
+          if (tab.closeKey != null && localX >= tab.closeX && localX < tab.closeX + tab.closeW) {
+            dispatchMsg(wrap(p.type, {
+              type: 'viewer_remove_content_tab',
+              groupName: getModel().currentGroup,
+              key: tab.closeKey,
+            }));
+          } else {
+            dispatchMsg(wrap('layout', { type: 'focus_set', focus: p.type }));
+            dispatchMsg(wrap(p.type, { type: 'tab_switch', idx: tab.tabIdx }));
           }
+          mutated = true;
+          break;
         }
       }
-      if (!mutated) {
-        dispatchMsg(wrap('layout', { type: 'focus_set', focus: 'detail' }));
-        // Begin a selection iff the click landed in the content rows
-        // and this tab actually has scrollable text content (skip
-        // terminal tabs — the PTY handles its own input).
-        const inContent = my > b.y && my < b.y + b.h - 1;
-        const d = _detail();
-        if (inContent && !isTerminalTab() && d && d.lines.length > 0) {
-          const visibleLine = my - b.y - 1;
-          const col = Math.max(0, mx - b.x - 1);
-          sel.beginAt((d.scroll || 0) + visibleLine, col, 'char');
-        } else {
-          sel.cancel();
-        }
-        mutated = true;
+      if (mutated) break;
+    }
+
+    // Detail panel content area — text selection on a click inside the
+    // body. Stays detail-specific until Phase 4 lifts the selection
+    // machinery onto a per-pane basis.
+    if (p.type === 'detail') {
+      dispatchMsg(wrap('layout', { type: 'focus_set', focus: 'detail' }));
+      // Begin a selection iff the click landed in the content rows
+      // and this tab actually has scrollable text content (skip
+      // terminal tabs — the PTY handles its own input).
+      const inContent = my > b.y && my < b.y + b.h - 1;
+      const d = _detail();
+      if (inContent && !isTerminalTab() && d && d.lines.length > 0) {
+        const visibleLine = my - b.y - 1;
+        const col = Math.max(0, mx - b.x - 1);
+        sel.beginAt((d.scroll || 0) + visibleLine, col, 'char');
+      } else {
+        sel.cancel();
       }
+      mutated = true;
       break;
     }
 
