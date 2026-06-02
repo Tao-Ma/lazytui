@@ -5,13 +5,9 @@
  * `update(msg, slice)` / `panelTypes[type].render(panel, w, h, slice)`,
  * with optional cross-cutting contributions (`commands`, `groupActions`,
  * `statusFor`, `viewContributions`, `cleanup`). The framework owns slice
- * storage; each Component's `update` is the single writer for its own
- * slice. See `docs/PRINCIPLES.md` §12 + the spec at
- * `docs/v0.5-layout-component.md`.
- *
- * Phase 6 retired the legacy Plugin API surface (`registerPlugin`,
- * `loadPlugins`, per-Plugin refresh loops, the YAML `plugins:` loader).
- * External authors write Components — same API as built-ins.
+ * storage (leaves/route.js's instance store); each Component's `update`
+ * is the single writer for its own slice. See `docs/PRINCIPLES.md` §12
+ * + the spec at `docs/v0.5-layout-component.md`.
  *
  * Zero dependencies (uses local modules).
  */
@@ -45,9 +41,8 @@ const statusProviders = [];         // Components that expose statusFor(name)
 
 // Slice storage + panel→Component ownership map live in `./route` (a
 // zero-dep leaf) so the root reducer can read them without a require
-// cycle. Phase 3 instance-keyed store: every slice lives in
-// `_instances` keyed by tab id (one per kind in Phase 3); the legacy
-// by-name surface is a shim over a per-kind primary lookup.
+// cycle. Instance-keyed store: every slice lives in `_instances` keyed
+// by tab id (id === kind for today's singletons).
 
 // Panel-def contract check. Returns false (skip this type) only when
 // render() is missing — the one hard requirement. Everything else is a
@@ -131,25 +126,17 @@ function registerComponent(comp) {
     return;
   }
   components[comp.name] = comp;
-  // v0.6.1 Phase 3 — initial slice goes through the instance store as a
-  // singleton (id === kind === comp.name). The first Component
-  // registered MUST be 'layout' (chrome) so the focus reader has a
-  // slice to read; tui.js + test-runner enforce that order.
+  // Initial slice goes through the instance store as a singleton
+  // (id === kind === comp.name). The first Component registered MUST
+  // be 'layout' (chrome) so the focus reader has a slice to read;
+  // tui.js + test-runner enforce that order.
   if (comp.name !== 'layout' && !route.hasInstance('layout')) {
     console.error(`[component:${comp.name}] registered before 'layout' — layout must register first`);
   }
-  // init() failure used to swallow the error + set slice = null,
-  // which left downstream code reading a null slice and producing
-  // confusing secondary failures far from the root cause. Now the
-  // error propagates so the boot fails fast at the actual source.
-  // The component MUST already be registered in `components` before
-  // we throw — otherwise a later registration whose init also fails
-  // would see this component as un-registered + the cascade gets
-  // worse. (`components` was set above; setInstance is the only
-  // step we skip on throw.)
-  // v0.6.1 Phase 8 — singleton instance is keyed by Component name
-  // (id === kind === name). Phase 4-6 multi-instance mints will be
-  // additive on top of this seed.
+  // An init() throw propagates — boot fails fast at the actual
+  // source. The component is already in `components` (set above) so
+  // a later registration sees this one as registered; only setInstance
+  // is skipped on throw.
   route.setInstance(comp.name, comp.name, comp.init());
   // Per-Component effects (loadDir, openFile, historyReplay, …) — used
   // to be registered at module-top-level via top-level
@@ -189,7 +176,8 @@ function registerComponent(comp) {
   // viewContributions — the Component-native chrome contribution API.
   // Each entry is a function `(slice, ctx) → string | { text, weight }`
   // stored per-slot in registration order. The layout renderer iterates
-  // `viewContributionsBySlot[slot]` and composes (`collectViewContributions`).
+  // `viewContributionsBySlot[slot]` and composes via
+  // `collectViewContributions`.
   if (comp.viewContributions && typeof comp.viewContributions === 'object') {
     for (const [key, fn] of Object.entries(comp.viewContributions)) {
       if (typeof fn !== 'function') {
@@ -207,8 +195,8 @@ function registerComponent(comp) {
   }
 }
 
-// Phase 5 final shape: the only viewContribution slots are the footer
-// halves. New slots (status bar, title etc.) extend this set.
+// Today's viewContribution slots are the footer halves. New slots
+// (status bar, title etc.) extend this set.
 const VIEW_CONTRIBUTION_SLOTS = new Set(['footerLeft', 'footerRight']);
 
 // slot → [{ owner, fn }] in registration order. Empty by default; layout's
@@ -277,13 +265,13 @@ function _resetViewContributions() {
 /**
  * Wrap a child Msg with its target Component's name. Used by callers
  * that want to route a Msg to exactly one Component instead of fan-out.
- * Phase 0 introduces the shape behind a back-compat shim; Phase 2 (the
- * one-way door) makes wrapped dispatch the only Component-routing path.
  *
  *   dispatch(wrap('groups', { type: 'toggle_group', name: 'a' }))
  *
  * The inner msg is the Component's own Msg shape — its update() never
- * sees the wrapper.
+ * sees the wrapper. Wrapped dispatch is the only Component-routing path
+ * for Component-specific Msgs; the broadcast lane is reserved for the
+ * three framework signals (refresh / hub / action).
  */
 const { wrap } = route;
 
@@ -301,10 +289,9 @@ const { wrap } = route;
  *    `dispatchKeyToFocused`, not the broadcast path — they need a
  *    return value to gate the framework default.)
  *
- * Phase 2f locked this contract: every Component-specific Msg MUST
- * be wrapped (via api.wrap). The previous "flat fan-out for any Msg
- * type" path is gone. An unwrapped Component-specific Msg is logged
- * as an error and dropped — the missed wrap site needs fixing.
+ * Every Component-specific Msg MUST be wrapped (via api.wrap). An
+ * unwrapped Component-specific Msg is logged as an error and dropped —
+ * the missed wrap site needs fixing.
  *
  * Failures in one Component's update don't stop dispatch to the
  * others — error logged, that Component's slice is left as-is.
@@ -315,7 +302,7 @@ const { wrap } = route;
 const BROADCAST_TYPES = new Set(['refresh', 'hub', 'action']);
 
 function dispatchMsg(msg) {
-  // v0.6 Phase 3 — freeze gate. While free-config mode is active, only
+  // Free-config freeze gate. While free-config mode is active, only
   // layout-wrapped Msgs flow (they drive the mode itself: design_*,
   // pool_*, focus_set, view_*, set_arrange). Broadcasts (refresh / hub
   // / action) and wrapped Msgs to non-layout components are dropped —
@@ -336,10 +323,10 @@ function dispatchMsg(msg) {
     if (!isLayoutWrap && !isTabReorder) return;
   }
   // Wrapped-Msg path. Routes to exactly one Component instance (the
-  // primary instance for that kind in Phase 3 — one per kind).
-  // Discriminator: `{ kind: string, msg: any }` AND no top-level
-  // `type` field — the latter rules out any pre-existing flat Msg
-  // shape that happens to also carry `kind` / `msg` properties.
+  // primary instance for that kind today; multi-instance can pick a
+  // specific id). Discriminator: `{ kind: string, msg: any }` AND no
+  // top-level `type` field — rules out any flat Msg shape that happens
+  // to also carry `kind` / `msg` properties.
   if (msg && typeof msg.kind === 'string' && msg.msg !== undefined && msg.type === undefined) {
     const kind = msg.kind;
     const comp = components[kind];
@@ -348,15 +335,14 @@ function dispatchMsg(msg) {
       return;
     }
     const id = route.getPrimaryByKind(kind);
-    if (id === undefined) return;  // registered but no instance — unreachable in Phase 3
+    if (id === undefined) return;  // registered but no instance — defensive
     _runInstance(route.getInstance(id), comp, msg.msg);
     return;
   }
   // Broadcast path. Only the 3 framework signals fan out; everything
   // else must arrive wrapped. Iterates instances (not specs) so a
   // Component with multiple instances has each one's update called
-  // independently — Phase 4 onward. Single instances per kind in
-  // Phase 3 → semantically equivalent to the old per-spec loop.
+  // independently.
   if (msg && BROADCAST_TYPES.has(msg.type)) {
     route.eachInstance(inst => {
       const comp = components[inst.kind];
@@ -365,7 +351,7 @@ function dispatchMsg(msg) {
     });
     return;
   }
-  // Phase 2f strictness: any other flat Msg is a missed wrap site.
+  // Any other flat Msg is a missed wrap site.
   const ty = msg && msg.type ? `'${msg.type}'` : '(no type)';
   console.error(`[dispatch] unwrapped Component-specific Msg ${ty}; dropped. Wrap with api.wrap('<component>', msg).`);
 }
@@ -420,7 +406,7 @@ function dispatchKeyToFocused(key, seq) {
 // undefined / slice / [slice, effects] return contract, and isolates
 // throws. Shared by the wrapped and broadcast dispatch paths. Reads
 // inst.slice and writes back via route.setInstanceSlice(inst.id, …)
-// so multi-instance kinds (Phase 4+) update only their own slice.
+// so multi-instance kinds update only their own slice.
 function _runInstance(inst, comp, msg) {
   try {
     const result = comp.update(msg, inst.slice);
@@ -452,9 +438,9 @@ function _recordError(payload) {
 function getComponent(name)              { return components[name]; }
 const { componentForPanel: getComponentOwningPanel, getFocus } = route;
 
-// Tab-instance registry surface (v0.6.1 Phase 0; canonical store after
-// Phase 8). `getInstanceSlice(tabId)` is the slice-read primitive every
-// reader uses. See `leaves/route.js` for the data model.
+// Tab-instance registry surface. `getInstanceSlice(tabId)` is the
+// slice-read primitive every reader uses. See `leaves/route.js` for
+// the data model.
 const {
   setInstance, getInstance, getInstanceSlice, setInstanceSlice,
   hasInstance, disposeInstance, instanceKind, eachInstance,
@@ -507,7 +493,6 @@ function getItems(panelType) {
   const raw = def.getItems(getInstanceSlice(compName));
   if (!def.filterable) return raw;
   if (def.customFilter) return raw;
-  // Committed filter text lives on each Navigator's nav entry.
   const mnav = require('../leaves/nav');
   const navEntry = mnav.entryOf(getInstanceSlice(compName), panelType);
   const filterText = (navEntry && navEntry.filter) || '';
@@ -524,9 +509,9 @@ function getItems(panelType) {
  * loop. Used at boot, on `r`, and on `:refresh`.
  */
 async function refreshAll() {
-  // Event log (PRINCIPLES.md §11 + CHANGELOG v0.2.0). One record per
-  // tick — payload empty because the tick itself is the input event;
-  // each Component's refresh-Msg side-effects are responses.
+  // Event log (PRINCIPLES.md §11). One record per tick — payload
+  // empty because the tick itself is the input event; each
+  // Component's refresh-Msg side-effects are responses.
   require('../dispatch/event-log').record('refresh', null);
   dispatchMsg({ type: 'refresh' });
 }
@@ -585,10 +570,9 @@ function idOf(panelType, item) {
  */
 function selectedOrFocused(panelType) {
   const items = getItems(panelType);
-  // Phase 4a — nav chrome lives on the owning Component's slice
-  // (`slice.nav[panelType] = { cursor, scroll, multiSel }`). Use the
-  // state.js helpers so this stays in lockstep with how renderers and
-  // navigation read the same values.
+  // nav chrome lives on the owning Component's slice — use the state.js
+  // helpers so this stays in lockstep with how renderers and navigation
+  // read the same values.
   const state = require('../app/state');
   const sel = state.getSel(panelType);
   if (state.multiSelCount(panelType) > 0) {
@@ -619,11 +603,10 @@ function getCommands() {
 function registerEffect(type, fn) { require('../dispatch/effects').registerEffect(type, fn); }
 
 function setActiveTab(tab) {
-  // viewer_set_tab is handled by the viewer Component's update — route
-  // via the Component fan-out, not the root reducer. v0.6.1 Phase 8 —
-  // viewer target resolved at dispatch time so producers (history's
-  // historyReplay, etc.) hit the focused/sticky viewer rather than
-  // a hardcoded 'detail' singleton.
+  // viewer_set_tab is handled by the viewer Component's update —
+  // routed via the Component fan-out. resolveTarget picks the focused/
+  // sticky viewer so producers (historyReplay, etc.) hit the right
+  // viewer rather than a hardcoded 'detail' singleton.
   const target = route.resolveTarget('viewer');
   if (target) dispatchMsg(wrap(target, { type: 'viewer_set_tab', tab }));
 }
@@ -635,14 +618,14 @@ module.exports = {
   // --- Component registry / lifecycle ---
   registerComponent, registerEffect, dispatchMsg, dispatchKeyToFocused, wrap,
   getComponent, getComponentOwningPanel, getFocus,
-  // v0.6.1 — tab-instance registry surface (canonical after Phase 8).
+  // Tab-instance registry surface.
   setInstance, getInstance, getInstanceSlice, setInstanceSlice,
   hasInstance, disposeInstance, instanceKind, eachInstance,
   getPanelDef, getItems, idOf, selectedOrFocused,
   refreshAll, cleanupComponents,
   getCommands, getGroupActions, statusFor,
-  // Phase 5 — viewContributions registry. footerLeft / footerRight
-  // contributors compose through `collectViewContributions`.
+  // viewContributions registry — footerLeft / footerRight contributors
+  // compose through `collectViewContributions`.
   collectViewContributions, _resetViewContributions,
 
   // --- Subsystems ---

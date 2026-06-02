@@ -33,19 +33,17 @@ function registerPanelOwner(panelType, componentName) {
 
 function componentForPanel(panelType) { return _panelOwner[panelType]; }
 
-// --- Instance-keyed slice store (v0.6.1 Phase 3, canonical after Phase 8) -
+// --- Instance-keyed slice store ----------------------------------------
 //
-// Canonical storage is `_instances[id] = { id, kind, slice }`. `id` is the
-// tab identity (Phase 3 singletons use `id === kind`; Phase 4 onward
-// synthesizes per-tab ids). `kind` is the Component name. `slice` is the
-// per-instance state minted via `spec.init()` and updated by the
-// Component's `update`.
+// Canonical storage is `_instances[id] = { id, kind, slice }`. `id` is
+// the tab identity (singleton instances today use `id === kind`;
+// multi-instance mints per-tab ids on top of this seed). `kind` is the
+// Component name. `slice` is the per-instance state minted via
+// `spec.init()` and updated by the Component's `update`.
 //
-// `_primaryByKind[kind]` maps a kind to the id of its primary instance —
-// the lookup `resolveTarget` and other consumers use to pick "the
-// canonical instance of a kind." Phase 8 dropped the legacy `getSlice(name)`
-// / `setSlice(name, slice)` shim; every reader uses `getInstanceSlice(id)`
-// + `setInstanceSlice(id, slice)` directly.
+// `_primaryByKind[kind]` maps a kind to the id of its primary
+// instance — the lookup `resolveTarget` and other consumers use to
+// pick "the canonical instance of a kind."
 
 const _instances = Object.create(null);
 const _primaryByKind = Object.create(null);
@@ -54,8 +52,7 @@ function setInstance(id, kind, slice) {
   const existing = _instances[id];
   if (existing) {
     // Update in place — preserves the wrapper object identity. kind is
-    // immutable per id (an instance can't change kind); a mismatched
-    // kind on re-write is a caller bug.
+    // immutable per id; a mismatched kind on re-write is a caller bug.
     existing.slice = slice;
     return;
   }
@@ -83,7 +80,7 @@ function disposeInstance(id) {
   if (!inst) return;
   delete _instances[id];
   // If this was the primary for its kind, demote and pick a successor
-  // (insertion order). Phase 3 with single instances never trips this.
+  // (insertion order). Singleton kinds never trip this.
   if (_primaryByKind[inst.kind] === id) {
     delete _primaryByKind[inst.kind];
     for (const otherId in _instances) {
@@ -95,20 +92,18 @@ function disposeInstance(id) {
   }
 }
 
-/** Kind of the tab at `id`. Accepts two shapes (v0.6.1 Phase 7 shim):
+/** Kind of the tab at `id`. Accepts two shapes:
  *
- *   - instance id  — direct `_instances[id].kind` read (Phase 3 store).
+ *   - instance id  — direct `_instances[id].kind` read.
  *   - panel-type   — fallback via `componentForPanel(id)` returning the
  *                    Component name (the kind for singleton instances).
  *
- *  This dual-acceptance lets `getFocus()` flip from a panel-type
- *  string (today) to a tab id (Phase 7+) without breaking the
- *  comparison sites that ask "what kind is the focused tab?". For
- *  the docker Component (name='docker', panelType='containers') the
- *  fallback resolves 'containers' to 'docker' so kind comparisons
- *  see the Component identity consistently.
- *
- *  Returns null when neither lookup succeeds. */
+ *  Dual-acceptance lets `getFocus()` return either a panel-type string
+ *  or a tab id without breaking the comparison sites that ask "what
+ *  kind is the focused tab?". For docker (name='docker',
+ *  panelType='containers') the fallback resolves 'containers' to
+ *  'docker' so kind comparisons see the Component identity
+ *  consistently. Returns null when neither lookup succeeds. */
 function instanceKind(id) {
   const inst = _instances[id];
   if (inst) return inst.kind;
@@ -126,15 +121,15 @@ function eachInstance(fn) {
 /** Primary instance id for a kind, or undefined if none registered. */
 function getPrimaryByKind(kind) { return _primaryByKind[kind]; }
 
-/** Focus read — the layout instance's slice owns `focus` (Phase 1c).
- *  Pre-init returns null.
+/** Focus read — the layout instance's slice owns `focus`. Pre-init
+ *  returns null.
  *
- *  v0.6.1 Phase 7 — `focus` is a tab id (the placement identity, e.g.
- *  'detail', 'groups', 'containers'). For Phase 7 singleton placements
- *  the tab id coincides with the panel type, so today's comparison
- *  sites that say `getFocus() === 'detail'` still work; kind-intent
- *  comparisons should go through `instanceKind(getFocus()) === '<kind>'`
- *  instead (resilient to multi-instance, where tab id ≠ kind). */
+ *  `focus` is a tab id (the placement identity, e.g. 'detail',
+ *  'groups', 'containers'). For singleton placements the tab id
+ *  coincides with the panel type, so `getFocus() === 'detail'`
+ *  comparisons work today; kind-intent comparisons should go through
+ *  `instanceKind(getFocus()) === '<kind>'` (resilient to multi-instance,
+ *  where tab id ≠ kind). */
 function getFocus() {
   const id = _primaryByKind['layout'];
   if (id === undefined) return null;
@@ -142,13 +137,13 @@ function getFocus() {
   return s ? s.focus : null;
 }
 
-// --- resolveTarget chokepoint (v0.6.1 Phase 5) ----------------------------
+// --- resolveTarget chokepoint -------------------------------------------
 //
 // The single helper that turns a navigator-side "write the viewer" call
-// into a concrete instance id. Every site that today wraps `'detail'`
-// hardcoded routes through here so multi-viewer (Phase 6+) and the
-// future v0.7 workflow producer API can swap the resolution without
-// touching call sites.
+// into a concrete instance id. Every site that today would have wrapped
+// 'detail' hardcoded routes through here so multi-viewer / future
+// workflow producer APIs can swap the resolution without touching call
+// sites.
 //
 //   resolveTarget(intent, ctx = {}) → tabId | null
 //
@@ -158,12 +153,12 @@ function getFocus() {
 //   'terminal'       — spawn ephemeral terminal tab
 //
 // All three target viewer-kind tabs (today: kind === 'detail'). The
-// distinction is reserved for v0.7 when intents may diverge in their
-// resolution (e.g. terminal could prefer panes that already host a
-// terminal session). For Phase 5 they share one body.
+// distinction is reserved for when intents diverge (e.g. terminal
+// could prefer panes that already host a terminal session); today
+// they share one body.
 //
-// `ctx.focusedTabId` is an optional override for the focus read — the
-// thread-the-id seam v0.7 will use. Default reads getFocus().
+// `ctx.focusedTabId` is an optional override for the focus read.
+// Default reads getFocus().
 //
 // Resolution order (kind-based; no role flag):
 //   1. focused viewer-kind tab
@@ -194,9 +189,9 @@ function resolveTarget(intent, ctx) {
   // (3) first viewer-kind in right-column arrange order. Walk each
   //     pane's tabs and return the first viewer-kind tab id; this is
   //     the actually-mounted slice identity (instance keyed by id),
-  //     not the kind literal. For the Phase 5 singleton the answer
-  //     happens to equal VIEWER_KIND, but Phase 4+ multi-instance
-  //     panes mint distinct ids and the literal would be wrong.
+  //     not the kind literal. For singleton placements the answer
+  //     happens to equal VIEWER_KIND, but multi-instance panes mint
+  //     distinct ids and the literal would be wrong.
   if (layout && layout.arrange && Array.isArray(layout.arrange.rightPanels)) {
     for (const p of layout.arrange.rightPanels) {
       if (!p) continue;
@@ -228,6 +223,6 @@ module.exports = {
   setInstance, getInstance, getInstanceSlice, setInstanceSlice,
   hasInstance, disposeInstance, instanceKind, eachInstance,
   getPrimaryByKind,
-  // v0.6.1 Phase 5 — navigator → focused-viewer routing chokepoint.
+  // Navigator → focused-viewer routing chokepoint.
   resolveTarget, isViewerKind, VIEWER_KIND,
 };

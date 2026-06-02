@@ -2,17 +2,17 @@
  * App state — config loading, layout initialization, slice-reset wrappers.
  *
  * No mutable state lives here. The root model lives in runtime.js
- * (getModel()); Component slices live in panel/api.js's registry. This
- * module is the boot/init layer (loadConfig + initState) plus the small
- * set of read/write helpers the rest of the codebase imports from `./state`
- * (getSel / setSel / getScroll / setScroll / toggleMultiSel / allPanels /
- * resetGroupContext / selectGroup / setViewerContent / recomputeGroups / …).
+ * (getModel()); Component slices live in the instance store
+ * (leaves/route.js). This module is the boot/init layer
+ * (loadConfig + initState) plus the small set of read/write helpers the
+ * rest of the codebase imports from `./state`: getSel / setSel /
+ * getScroll / setScroll / toggleMultiSel / allPanels /
+ * resetGroupContext / selectGroup / setViewerContent / recomputeGroups
+ * (and friends).
  *
- * Historical note: state.js used to export a global `S` object that
- * doubled as both the data home and a facade over the model + Component
- * slices. After the v0.5 single-writer migration, `S` was deleted
- * (chunks A–E): production code reads getModel() / getInstanceSlice()
- * directly, and tests do the same.
+ * Helpers are thin routers: they resolve a panel type to its owning
+ * Component, then dispatch a wrapped Msg into that Component's update.
+ * The Component is the single writer for its slice.
  */
 'use strict';
 
@@ -24,10 +24,9 @@ const { rebuildLayoutFromConfig } = require('../leaves/arrange');
 
 // --- Component slice resolution ---
 //
-// state.js's own init/reset code (initState) writes into Component slices
-// directly via these helpers — no longer through the `S` shim. Lazy auto-
-// register covers tests that touch state without explicit Component setup;
-// production already registers detail + groups at boot (tui.js).
+// Lazy auto-register covers tests that touch state without explicit
+// Component setup; production registers detail + groups + layout at
+// boot via tui.js, so these only trip in the test harness.
 let _detailAutoRegistered = false;
 function _detailSlice() {
   const api = require('../panel/api');
@@ -60,11 +59,9 @@ function _groupsSlice() {
   return s;
 }
 
-// Same lazy-auto-register pattern for the layout (chrome) Component
-// added in Phase 1a. Production registers via tui.js boot; tests +
-// initState callers that don't go through tui get the slice via this
-// helper. The "first-touch" point is initState (sets initial focus +
-// viewMode tag), so the helper is called there.
+// Same lazy-auto-register pattern for the layout (chrome) Component.
+// The "first-touch" point is initState (sets initial focus + viewMode
+// tag), so the helper is called there.
 let _layoutAutoRegistered = false;
 function _layoutSlice() {
   const api = require('../panel/api');
@@ -109,15 +106,14 @@ function initState() {
 
   // Force-register the layout / groups / detail Components — production
   // (tui.js) already did, but the test harness path may have skipped them.
-  // The lazy auto-register fallbacks here are belt-and-suspenders.
   _layoutSlice();
   _groupsSlice();
   _detailSlice();
 
   // Seed the layout arrange struct from config via the layout
   // Component's own writer (set_arrange Msg). Single-writer holds at
-  // boot too — initState doesn't poke at slice fields directly anymore.
-  // All other slice/model state initializes from runtime.init() /
+  // boot too — initState doesn't poke at slice fields directly. All
+  // other slice/model state initializes from runtime.init() /
   // Component.init() defaults; only config-derived seeds (arrange,
   // currentGroup, register cap) and the theme set need a write here.
   const api = require('../panel/api');
@@ -228,10 +224,10 @@ function syncPanelScroll(panelType, innerH) {
  * viewer_reset_chrome (detail Component).
  */
 function resetGroupContext() {
-  // Phase C: the root-chrome reset moved to a Msg in runtime.update; the
-  // viewer-slice half is its own Msg dispatched to the viewer Component.
-  // v0.6.1 Phase 8 — viewer target resolved at dispatch time so multi-
-  // viewer (future) wires up correctly; null result drops the reset Cmd.
+  // Two writes: the root-chrome reset is a Msg into runtime.update; the
+  // viewer-slice half is its own Msg dispatched to the resolved viewer
+  // target. resolveTarget returns null when no viewer is registered —
+  // the viewer-half Cmd drops in that case.
   const dispatch = require('../dispatch/dispatch');
   const api = require('../panel/api');
   const route = require('../leaves/route');
@@ -245,23 +241,20 @@ function resetGroupContext() {
  * out-of-range. Resets per-group transient state via resetGroupContext().
  */
 function selectGroup(idx) {
-  // Phase 4b — the uniform `nav_select` Msg retired; dispatch.navSelect
-  // does the per-Component routing (set_cursor → owning Component +
-  // show_selected_info + the groups_selected cascade).
+  // dispatch.navSelect does the per-Component routing (set_cursor →
+  // owning Component + show_selected_info + the groups_selected
+  // cascade).
   require('../dispatch/dispatch').navSelect('groups', idx);
 }
 
 function setViewerContent(tabId, text) {
-  // viewer_set_content is handled by the detail Component's update (Phase B);
-  // routes via the Component fan-out. Single-writer for the slice through
-  // detail.update; every viewer-content writer (history / config-status /
-  // help-text / commands / api save-layout-message) ends up as the same
-  // reducer write.
+  // viewer_set_content is the single writer of the detail slice's
+  // body; every producer (history, config-status, help-text,
+  // commands, save-layout-message) ends up at this same Msg.
   //
-  // v0.6.1 Phase 8 — explicit tabId is the producer-side address. When
-  // tabId is null the destination resolves via route.resolveTarget('viewer'):
-  // focused viewer-kind tab / lastViewerTab / first viewer in rightPanels /
-  // any viewer / null. With one viewer (today) this is always 'detail'.
+  // `tabId` is the producer-side address. When null, the destination
+  // resolves via route.resolveTarget('viewer') (focused viewer-kind
+  // tab / sticky lastViewerTab / first in arrange / any / null).
   if (tabId == null) {
     const route = require('../leaves/route');
     tabId = route.resolveTarget('viewer');

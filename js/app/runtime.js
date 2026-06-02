@@ -10,14 +10,18 @@
  * Contract:
  *   - Readers use `getModel()` (no global imports).
  *   - All writes to root-model fields flow through `update`, which
- *     returns a NEW model object on state change (post-Phase-4 pure-TEA
- *     conversion). Reducer-leaves (leaves/design / leaves/register /
- *     leaves/search / leaves/pane-tabs / leaves/nav) are pure return-new
- *     transforms; leaves/menu is a pure builder that returns a fresh
- *     items list. Freeze-test coverage in `js/test/test-immutable-*.js`.
+ *     returns a NEW model object on state change. Reducer-leaves
+ *     (leaves/design / leaves/register / leaves/search / leaves/pane-tabs
+ *     / leaves/nav) are pure return-new transforms; leaves/menu is a
+ *     pure builder. Freeze-test coverage in `js/test/test-immutable-*.js`.
  *   - The reducer performs no I/O; effects are Cmd DESCRIPTORS the
  *     effects layer (effects.runEffects, called from dispatch.applyMsg)
  *     interprets.
+ *   - Modal-close arms (confirm_reject / prompt_cancel / cmdline_cancel
+ *     / register_popup_cancel / menu_close / copy_cancel / *_drop /
+ *     *_accept / *_submit) guard on their mode flag — a stale double-
+ *     fire after the modal closed is a no-op, not a re-execution of the
+ *     staged Cmd.
  */
 'use strict';
 
@@ -45,11 +49,13 @@ const route = require('../leaves/route');
  * The root model.
  *
  * Single owned object; `update` is its single writer. Component slices
- * (detail / groups / docker / files / config-status) live in
- * panel/api.js's componentSlices map — not here — and are written
- * only by their own `update`.
+ * (detail / groups / docker / files / config-status / layout) live in
+ * the instance store (leaves/route.js) and are written only by their
+ * own `update`. The layout slice owns the grid (arrange, focus,
+ * viewMode, design); per-panel chrome (cursor/scroll/multiSel/filter)
+ * lives on each Navigator's `slice.nav`.
  *
- * Field map (post-v0.5):
+ * Field map:
  *   - modes{}                        — 14 modal flags (single registry; see modes.js)
  *   - currentGroup                   — current group (chrome)
  *   - modal{ filter, menu, confirm, prompt, copy, registerPopup, cmdline }
@@ -57,13 +63,6 @@ const route = require('../leaves/route');
  *   - config / projectDir / configPath — parsed config + paths
  *   - lastRunAction / focused / prefixNode / prefixSeq — misc
  *   - register                       — yank register
- *
- * Phase 1 (docs/v0.5-layout-component.md) migrated focus, viewMode,
- * design state, designEnabled, layoutDirty, model.layout (arrange),
- * and panelHeights/panelBounds onto the layout Component's slice.
- * Phase 4 (a + b + c) migrated all per-panel chrome (cursor / scroll /
- * multiSel / filter) onto each Navigator's `slice.nav[panelType]`;
- * `model.ui` retired entirely.
  */
 function init() {
   const m = {
@@ -76,15 +75,11 @@ function init() {
       cmdMode: false, tabListMode: false, terminalMode: false, listSelectMode: false,
     },
     currentGroup: '',
-    // Phase 4a moved cursor/scroll/multiSel onto each Navigator's nav
-    // slice; Phase 4c folded the committed filter text in too. The root
-    // `ui` field retired — every per-panel chrome lives on
-    // `slice.nav[panelType] = { cursor, scroll, multiSel, filter }`.
     // Transient per-mode editing buffers (the modal sub-models). The
     // reducer owns them; each modal handler is an update branch.
-    // `filter` = the live `/`-filter draft (text + which panel is being
-    // filtered), distinct from the COMMITTED per-panel filter text that
-    // lives on each Navigator's `slice.nav[panel].filter` (Phase 4c).
+    // `filter` here is the live `/`-filter draft (text + which panel
+    // is being filtered); the COMMITTED filter text lives on each
+    // Navigator's `slice.nav[panel].filter`.
     modal: {
       filter: { text: '', panel: '' },
       menu: { items: [], idx: 0 },
@@ -110,12 +105,12 @@ function init() {
       // the plugin facade each keystroke); cmdline_run invokes the selected
       // one by index. Mirrors the copy split.
       cmdline: { text: '', sel: 0, scroll: 0, matches: [] },
-      // Design-mode state lives on the layout Component's slice
-      // (Phase 1f) — `getInstanceSlice('layout').design`.
+      // Design-mode state lives on the layout Component's slice —
+      // `getInstanceSlice('layout').design`.
     },
     // Framework-level state: parsed config, paths, leader-mode buffers,
     // misc flags. The layout struct + design state + viewMode + focus
-    // are on the layout Component's slice (Phase 1; see
+    // are on the layout Component's slice (see
     // docs/v0.5-layout-component.md).
     config: null,
     projectDir: '.',
@@ -126,10 +121,6 @@ function init() {
     prefixSeq: [],
     register: null,                  // yank register {history, cap} (register.js)
   };
-  // All Phase 1 property shims (model.focus / layoutDirty / panelHeights /
-  // panelBounds / modal.design / designEnabled / model.layout) have been
-  // swept — callers read/write the layout Component's slice directly via
-  // getInstanceSlice('layout').<field>.
   return m;
 }
 
@@ -206,9 +197,9 @@ function _withModal(model, patch) {
   return { ...model, modal: { ...model.modal, ...patch } };
 }
 
-// v0.6.1 Phase 8 — `]`/`[` cycle the focused-or-sticky viewer's tab list.
-// Resolve via resolveTarget so the right viewer pane reacts under
-// multi-viewer; null result drops the Cmd.
+// `]`/`[` cycle the focused-or-sticky viewer's tab list. resolveTarget
+// picks the right viewer pane (focus / sticky / first-in-arrange); null
+// result (no viewer registered) drops the Cmd.
 function _cycleViewerTab(model, dir) {
   const target = route.resolveTarget('viewer');
   if (!target) return [model, []];
@@ -227,31 +218,17 @@ function _cycleViewerTab(model, dir) {
  *      testable. Side effects go out as Cmd DESCRIPTORS (`{ type, ... }`)
  *      the effects layer (effects.runEffects) interprets.
  *
- * Phase 4 (pure-TEA): every branch returns a NEW model object; no
- * in-place writes. The `_withModes` / `_withModal` helpers above keep
- * the spread chains readable. Identity-preserve on no-ops (skip alloc).
+ * Every branch returns a NEW model object; no in-place writes. The
+ * `_withModes` / `_withModal` helpers above keep the spread chains
+ * readable. Identity-preserve on no-ops (skip alloc).
  */
 function update(model, msg) {
   switch (msg.type) {
-    // view_expand / view_shrink / view_set moved to layout's update (Phase 1b).
-    // focus_set moved to layout's update (Phase 1c).
-    // Call sites dispatch through `panel/api.dispatchMsg` — the layout
-    // Component handles these via fan-out.
-    // viewer_scroll / stream_start / viewer_append / viewer_set_content /
-    // viewer_set_tab / viewer_reset_chrome / viewer_search_* /
-    // viewer_add_ephemeral_terminal / viewer_remove_ephemeral_terminal /
-    // viewer_add_content_tab / viewer_update_content_tab_lines /
-    // viewer_remove_content_tab — all moved to detail.update (Phase B).
-    // nav_select retired in Phase 4b — callers use `dispatch.navSelect`
-    // directly, which wraps a `set_cursor` Msg to the owning Component
-    // and runs the body refresh + groups cascade inline.
     case 'escape': {
       // Esc exits list-select mode (clearing the focused panel's
       // selection), else clears any lingering multi-selection; otherwise
-      // a no-op. Phase 4a: the multiSel clear is dispatched into the
-      // focused Navigator's update (each panel owns its own Set).
-      // v0.6.1 Phase 3 — single-panel navigators store the entry directly
-      // at slice.nav; multi-panel keep slice.nav[panelType].
+      // a no-op. The multiSel clear dispatches into the focused
+      // Navigator's update (each panel owns its own Set).
       const focus = route.getFocus();
       const compName = route.componentForPanel(focus);
       const nav = compName ? (route.getInstanceSlice(compName) || {}).nav : null;
@@ -281,8 +258,6 @@ function update(model, msg) {
       }
       return [next, []];
     }
-    // (toggle_groups_tab moved to groups.update — Phase C.)
-    // (detail-`/`-search Msgs moved to detail.update — Phase B.)
     case 'enter_prefix':
       // Leader pressed — arm prefix mode at the binding-tree root. All of
       // prefixMode/prefixNode/prefixSeq are model-resident.
@@ -312,7 +287,6 @@ function update(model, msg) {
       return [{ ..._withModes(model, { prefixMode: false }), prefixNode: null, prefixSeq: [] },
               [{ type: 'run_binding', run: nextNode.run }]];
     }
-    // (toggle_group moved to groups.update — Phase C.)
     // --- Cmd-only verbs: no model change, the reducer just routes the
     // Msg to a Cmd the effects layer runs. Centralizing the Msg→Cmd
     // mapping here is what lets handleAction's arms collapse into update.
@@ -329,12 +303,9 @@ function update(model, msg) {
         modal: { ...model.modal, confirm: { message: msg.message || 'Are you sure?', cmd: msg.cmd || null } },
       }, []];
     case 'confirm_accept': {
-      // T16 — mirror the confirm_reject guard. The accept arm fires
-      // the staged Cmd descriptor as a side effect; if a stale
-      // double-fire ever landed here with the mode already cleared,
-      // a leftover model.modal.confirm.cmd would re-execute against
-      // unstaged state. No current path produces such a double-fire,
-      // but symmetry with the cancel arm makes the contract robust.
+      // Guard on the flag — a stale double-fire after the modal closed
+      // would re-execute the staged Cmd against unstaged state. See
+      // the modal-close contract in the file header.
       if (!model.modes.confirmMode) return [model, []];
       const cmd = model.modal.confirm.cmd;
       const next = {
@@ -384,7 +355,6 @@ function update(model, msg) {
       return [_withModal(model, { prompt: { ...p, text } }), []];
     }
     case 'prompt_submit': {
-      // T16 — mirror prompt_cancel guard; same shape as confirm_accept.
       if (!model.modes.promptMode) return [model, []];
       const p = model.modal.prompt;
       const text = p.text;
@@ -417,8 +387,6 @@ function update(model, msg) {
       return [_withModal(model, { copy: { ...c, idx } }), []];
     }
     case 'copy_select': {
-      // T16 — guard mirrors the cancel-arm pattern. Same defensive
-      // shape as confirm_accept / prompt_submit.
       if (!model.modes.copyMode) return [model, []];
       const idx = model.modal.copy.idx;
       const next = {
@@ -461,9 +429,6 @@ function update(model, msg) {
       return [_withModal(model, { registerPopup: clamped }), []];
     }
     case 'register_popup_drop': {
-      // T16 — gate on the mode flag too. The history-length check
-      // below is the value-no-op guard; the flag guard catches a
-      // stale double-fire after the popup already closed.
       if (!model.modes.registerPopupMode) return [model, []];
       const rp = model.modal.registerPopup;
       if (model.register.history.length === 0) return [model, []];
@@ -485,7 +450,6 @@ function update(model, msg) {
       return [next, [{ type: 'force_full_repaint' }]];
     }
     case 'register_popup_commit': {
-      // T16 — mirror cancel-arm guard.
       if (!model.modes.registerPopupMode) return [model, []];
       const idx = model.modal.registerPopup.idx;
       const n = model.register.history.length;
@@ -615,8 +579,6 @@ function update(model, msg) {
       return [model, []];
     }
     case 'cmdline_submit': {
-      // T16 — mirror cmdline_cancel guard; symmetric with submit/
-      // cancel arms across the other modals.
       if (!model.modes.cmdMode) return [model, []];
       const c = model.modal.cmdline;
       const chosen = c.matches[c.sel];
@@ -649,57 +611,37 @@ function update(model, msg) {
         ..._withModes(model, { cmdMode: false }),
         modal: { ...model.modal, cmdline: { text: '', sel: 0, scroll: 0, matches: [] } },
       }, [{ type: 'cmdline_revert_preview' }, { type: 'cmdline_clear' }]];
-    // --- design-mode Msgs (post-Phase-6 single-writer cleanup). Every
-    // design_* case retired from the reducer; layout.update owns the slice
-    // writes now (it calls mdesign.* leaves directly so the writes happen
-    // inside layout.update's call stack). Mode-flag flips (freeConfigMode /
-    // designTitleEditMode) ride back via apply_msg mode_set / mode_clear
-    // Cmds the reducer applies. Call sites in dispatch.js, input.js,
-    // design.js wrap directly: `dispatchMsg(wrap('layout', { type: 'design_*'}))`.
-    // --- terminal mode enter/exit (folded into update). The PTY restart (on
-    // a dead session) stays an effect in dispatch.activateTerminal; only the
-    // flag write is the Msg. Exit also drops a 'full' auto-zoom back to
-    // 'normal' (pure) and asks for a full repaint so the chrome reclaims the
-    // cells the PTY painted (the diff cache can't see those).
+    // --- terminal mode enter/exit. The PTY restart (on a dead session)
+    // stays an effect in dispatch.activateTerminal; only the flag write
+    // is the Msg here. Exit also drops a 'full' auto-zoom back to
+    // 'normal' (pure) and asks for a full repaint so the chrome
+    // reclaims the cells the PTY painted (the diff cache can't see those).
     case 'terminal_enter':
       if (model.modes.terminalMode) return [model, []];
       return [_withModes(model, { terminalMode: true }), []];
     case 'terminal_exit':
-      // viewMode is owned by the layout Component (Phase 1b) — emit a
-      // cross-layer dispatch_msg so layout decides whether to drop a
-      // 'full' auto-zoom back to 'normal'. T34 — guard on the flag so
-      // the per-frame setImmediate from renderTerminalOverlay on a dead
-      // PTY (layout.js#renderTerminalOverlay) doesn't allocate a fresh
-      // model snapshot + re-emit view_drop_full_to_normal each frame
-      // once terminalMode is already off. Mirrors confirm_reject /
-      // prompt_cancel / cmdline_cancel — every other modal-close arm.
+      // viewMode is owned by the layout Component — emit a cross-layer
+      // dispatch_msg so layout decides whether to drop a 'full' auto-
+      // zoom back to 'normal'. Guard on the flag so the per-frame
+      // setImmediate from renderTerminalOverlay on a dead PTY
+      // (layout.js#renderTerminalOverlay) doesn't allocate a fresh model
+      // snapshot + re-emit view_drop_full_to_normal each frame once
+      // terminalMode is already off.
       if (!model.modes.terminalMode) return [model, []];
       return [_withModes(model, { terminalMode: false }),
               [{ type: 'dispatch_msg', msg: route.wrap('layout', { type: 'view_drop_full_to_normal' }) }]];
-    // multisel_toggle / multisel_select_all retired in Phase 4b — call
-    // sites (dispatch.toggleMultiSelOnFocused, selectAllVisible) wrap
-    // those Msgs directly to the owning Component now.
-    // --- terminal focus events (DEC 1004), folded into update. Pauses/resumes
-    // the refresh loop via model.focused; the focus-regain catch-up
-    // scheduleRender stays in input.js (an effect decision the caller owns).
+    // --- terminal focus events (DEC 1004). Pauses/resumes the refresh
+    // loop via model.focused; the focus-regain catch-up scheduleRender
+    // stays in input.js (an effect decision the caller owns).
     case 'focus_event': {
       const focused = !!msg.focused;
       if (focused === model.focused) return [model, []];
       return [{ ...model, focused }, []];
     }
-    // (select_* visual-mode Msgs moved to detail.update — Phase B; the
-    //  WRITE side lives with the slice, while select.js's ansi/column reads
-    //  stay there as pure helpers.)
-    // (viewer_set_content / viewer_set_tab moved to detail.update — Phase B.
-    //  state.setViewerContent / api.setActiveTab still dispatch the same
-    //  Msgs; they now route to detail.update via the dispatchMsg fan-out.)
-    // set_layout retired (single-writer follow-up): :save-layout and
-    // :restore-layout now wrap a `set_arrange` Msg directly to layout —
-    // its own update is the single writer for `arrange` and `dirty`.
-    // --- command menu (folded into update). Items (action strings, no
-    // closures) are built inline from the model on open; nav skips null
-    // separators; activate emits a menu_action Cmd routing the chosen verb
-    // back through dispatch.handleAction.
+    // --- command menu. Items (action strings, no closures) are built
+    // inline from the model on open; nav skips null separators;
+    // activate emits a menu_action Cmd routing the chosen verb back
+    // through dispatch.handleAction.
     case 'menu_open':
       return [{
         ..._withModes(model, { menuOpen: true }),
@@ -721,7 +663,6 @@ function update(model, msg) {
       return [_withModal(model, { menu: { ...mm, idx: i } }), []];
     }
     case 'menu_activate': {
-      // T16 — mirror menu_close guard.
       if (!model.modes.menuOpen) return [model, []];
       const mm = model.modal.menu;
       const item = mm.items[mm.idx];
@@ -732,10 +673,10 @@ function update(model, msg) {
       if (!item) return [next, []];
       return [next, [{ type: 'menu_action', action: item[1] }]];
     }
-    // --- `/`-filter mode (folded into update). The caller (dispatch)
-    // resolves the panel + filterable gate + committed seed text, since the
-    // filterable check is plugin-API (can't live in the reducer). The
-    // transforms are pure model writes (no plugin API, no Cmd).
+    // --- `/`-filter mode. The caller (dispatch) resolves the panel +
+    // filterable gate + committed seed text, since the filterable check
+    // is plugin-API (can't live in the reducer). The transforms are
+    // pure model writes (no plugin API, no Cmd).
     case 'filter_enter':
       return [{
         ..._withModes(model, { filterMode: true }),
@@ -758,8 +699,8 @@ function update(model, msg) {
         return [model, []];
       }
       const next = _withModal(model, { filter: { ...f, text } });
-      // Phase 4a — re-home the cursor as the filter narrows; the panel's
-      // nav slice is the writer now.
+      // Re-home the cursor as the filter narrows; the panel's nav slice
+      // is the writer.
       const compName = route.componentForPanel(f.panel);
       if (!compName) return [next, []];
       return [next, [{ type: 'dispatch_msg', msg: route.wrap(compName, { type: 'set_cursor', panel: f.panel, index: 0 }) }]];
@@ -776,8 +717,8 @@ function update(model, msg) {
       if (!panel) return [next, []];
       const compName = route.componentForPanel(panel);
       if (!compName) return [next, []];
-      // Phase 4c — commit/clear the filter on the panel's nav slice; the
-      // owning Component is the single writer.
+      // Commit/clear the filter on the panel's nav slice; the owning
+      // Component is the single writer.
       const filterMsg = (keep && text)
         ? { type: 'set_filter',   panel, text }
         : { type: 'clear_filter', panel };
@@ -787,14 +728,10 @@ function update(model, msg) {
         { type: 'dispatch_msg', msg: route.wrap(compName, { type: 'set_scroll', panel, offset: 0 }) },
       ]];
     }
-    // panel_reset retired in Phase 4b — the resetPanelChrome effect
-    // (files Component) now writes the cursor/scroll directly via
-    // wrapped Msgs and clears the root-level filter entry itself.
     case 'set_last_run_action': {
-      // Routes actions.js's `model.lastRunAction = actionKey` write through
-      // update so the actions-panel `>`-marker has a single writer (the
-      // reducer). `''` clears (e.g. on group change — the cascade in the
-      // groups Component handles this via reset_group_context).
+      // The actions-panel `>`-marker reads model.lastRunAction; this is
+      // its single writer. `''` clears (e.g. on group change — the
+      // cascade in the groups Component sends reset_group_context).
       const lastRunAction = typeof msg.action === 'string' ? msg.action : '';
       if (lastRunAction === model.lastRunAction) return [model, []];
       return [{ ...model, lastRunAction }, []];
@@ -808,36 +745,35 @@ function update(model, msg) {
       if (!msg.flag || !(msg.flag in model.modes) || model.modes[msg.flag] === false) return [model, []];
       return [_withModes(model, { [msg.flag]: false }), []];
     case 'mode_set':
-      // Companion to mode_clear: set a mode flag to true via Msg. Used by the
-      // viewer Component's search-enter handler to flip detailSearchMode
-      // without writing across layers (the search slice is the viewer's;
-      // the mode flag is root chrome). Phase A pattern.
+      // Companion to mode_clear: set a mode flag to true via Msg. Used by
+      // the viewer Component's search-enter handler to flip
+      // detailSearchMode without writing across layers (the search slice
+      // is the viewer's; the mode flag is root chrome).
       if (!msg.flag || !(msg.flag in model.modes) || model.modes[msg.flag] === true) return [model, []];
       return [_withModes(model, { [msg.flag]: true }), []];
     case 'set_current_group': {
-      // Cross-layer Msg emitted by the groups Component when its tree cascade
-      // changes the active group. currentGroup is APP-WIDE chrome (read by
-      // actions / docker / files / tabs / etc.) — written through update so
-      // every reader sees the same source of truth (Phase C).
+      // Cross-layer Msg emitted by the groups Component when its tree
+      // cascade changes the active group. currentGroup is APP-WIDE
+      // chrome (read by actions / docker / files / tabs / etc.) —
+      // written through update so every reader sees the same source.
       const name = typeof msg.name === 'string' ? msg.name : '';
       if (name === model.currentGroup) return [model, []];
       return [{ ...model, currentGroup: name }, []];
     }
     case 'reset_group_context': {
-      // Cross-layer Msg emitted by the groups Component on a group switch —
-      // the ROOT chrome half of the old resetGroupContext (per-group sel /
-      // filters / multiSel reset, mode flags off, lastRunAction clear). The
-      // viewer-slice half rides on viewer_reset_chrome → detail Component
-      // (Phase A/B).
+      // Cross-layer Msg emitted by the groups Component on a group
+      // switch — the ROOT chrome half of resetGroupContext (per-group
+      // sel / filters / multiSel reset, mode flags off, lastRunAction
+      // clear). The viewer-slice half rides on viewer_reset_chrome →
+      // detail Component.
       const next = {
         ..._withModes(model, { terminalMode: false, listSelectMode: false }),
         lastRunAction: '',
       };
-      // Phase 4a — actions/containers nav state lives on their own
-      // Component slices; emit wrapped resets per panel only when the
-      // owning Component is registered (tests that don't register
+      // actions/containers nav state lives on their own Component
+      // slices; emit wrapped resets per panel only when the owning
+      // Component is registered (tests that don't register
       // actions/docker shouldn't trigger "unknown Component" warnings).
-      // Phase 4c — filter text moved onto the same nav slices.
       const cmds = [];
       for (const panel of ['actions', 'containers']) {
         const compName = route.componentForPanel(panel);
@@ -848,18 +784,11 @@ function update(model, msg) {
       }
       return [next, cmds];
     }
-    // set_panel_cursor retired in Phase 4b — groups Component now wraps
-    // `set_cursor` to its own slice directly (see _cascadeCmds).
-    // (viewer_reset_chrome + viewer_add_ephemeral_terminal /
-    //  viewer_remove_ephemeral_terminal / viewer_add_content_tab /
-    //  viewer_update_content_tab_lines / viewer_remove_content_tab moved to
-    //  detail.update — Phase B. The dispatchers route via dispatchMsg now;
-    //  the cross-layer Msgs they emit come back via apply_msg.)
     case 'quit':        return [model, [{ type: 'quit' }]];
     case 'design': {
-      // v0.6: free-config (formerly "design mode") is always available.
-      // The --design CLI flag (slice.design.enabled) used to gate this
-      // verb; now it just auto-enters at boot — see tui.js.
+      // Free-config is always available; the verb just emits the
+      // start_design Cmd. (Pre-v0.6 it was gated by the --design CLI
+      // flag — tui.js now auto-enters at boot.)
       return [model, [{ type: 'start_design' }]];
     }
     default:
