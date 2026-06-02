@@ -658,7 +658,10 @@ function render(model = getModel()) {
  * collapses to a single paint with up-to-date info.
  */
 function redraw() {
-  dispatchMsg(wrap('detail', { type: 'viewer_show_info' }));
+  // v0.6.1 Phase 6 — resolveTarget picks the destination viewer; null
+  // result (no viewer registered) just skips the info refresh and paints.
+  const target = require('../leaves/route').resolveTarget('viewer');
+  if (target) dispatchMsg(wrap(target, { type: 'viewer_show_info' }));
   render();
 }
 

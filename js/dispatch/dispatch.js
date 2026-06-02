@@ -34,6 +34,7 @@ const { isSessionDead } = require('../io/terminal');
 const keybindings = require('./keybindings');
 const modes = require('./modes');
 const runtime = require('../app/runtime');
+const route = require('../leaves/route');
 const { getModel } = runtime;
 // handleAction + _runActionByKey live in ./actions (carved out 2026-05-31).
 // Cycle-safe: actions.js lazy-requires this module's applyMsg/navSelect
@@ -54,11 +55,19 @@ const { handleAction, _runActionByKey } = require('./actions');
  * (in the carved-out handleAction module) can reach it without a
  * destructure-at-load-time hazard.
  */
+// v0.6.1 Phase 6 — producer-side viewer body refresh resolves through
+// resolveTarget so multi-viewer (Phase 6+) hits the focused/sticky one.
+// null result drops the Cmd silently.
+function _showSelectedInfo() {
+  const target = route.resolveTarget('viewer');
+  if (target) dispatchMsg(wrap(target, { type: 'viewer_show_info' }));
+}
+
 function navSelect(panelType, index) {
   const compName = getComponentOwningPanel(panelType);
   if (!compName) return;
   dispatchMsg(wrap(compName, { type: 'set_cursor', panel: panelType, index }));
-  dispatchMsg(wrap('detail', { type: 'viewer_show_info' }));
+  _showSelectedInfo();
   if (panelType === 'groups') {
     dispatchMsg(wrap('groups', { type: 'groups_selected', index }));
   }
@@ -164,8 +173,8 @@ function _enterFilterMode() {
 }
 
 function handleFilterKey(key, seq) {
-  if (key === 'escape') { applyMsg({ type: 'filter_exit', keep: false }); dispatchMsg(wrap('detail', { type: 'viewer_show_info' })); return; }
-  if (key === 'return') { applyMsg({ type: 'filter_exit', keep: true  }); dispatchMsg(wrap('detail', { type: 'viewer_show_info' })); return; }
+  if (key === 'escape') { applyMsg({ type: 'filter_exit', keep: false }); _showSelectedInfo(); return; }
+  if (key === 'return') { applyMsg({ type: 'filter_exit', keep: true  }); _showSelectedInfo(); return; }
   if (key === 'up'   || seq === 'k') { handleAction('nav_up');   return; }
   if (key === 'down' || seq === 'j') { handleAction('nav_down'); return; }
   // T26 — thread `key` through so the reducer can detect paste
@@ -585,7 +594,7 @@ const _modeHandlers = {
   detailSearchMode:    (key, seq) => handleDetailSearchKey(key, seq),
   registerPopupMode:   (key, seq) => handleRegisterPopupKey(key, seq),
   prefixMode:          (key, seq) => applyMsg({ type: 'prefix_key', key, seq }),
-  cmdMode:             (key, seq) => { handleCmdlineKey(key, seq); dispatchMsg(wrap('detail', { type: 'viewer_show_info' })); },
+  cmdMode:             (key, seq) => { handleCmdlineKey(key, seq); _showSelectedInfo(); },
   tabListMode:         (key, seq) => handleTabListKey(key, seq),
 };
 

@@ -18,7 +18,15 @@ const { enableMouse, enableFocusEvents, enableBracketedPaste, cols } = require('
 const { isTerminalTab, activeTerminalId } = require('../panel/viewer/tabs');
 const { writeToSession, isSessionDead } = require('../io/terminal');
 const {getPanelDef, getItems, getComponentSlice, dispatchMsg, wrap, getFocus } = require('../panel/api');
+const route = require('../leaves/route');
 const { isChainActive } = require('./modes');
+
+// v0.6.1 Phase 6 — producer-side viewer body refresh resolves through
+// resolveTarget so multi-viewer (Phase 6+) hits the focused/sticky one.
+function _showSelectedInfo() {
+  const target = route.resolveTarget('viewer');
+  if (target) dispatchMsg(wrap(target, { type: 'viewer_show_info' }));
+}
 
 function _detail() { return getComponentSlice('detail'); }
 const { handleKey, applyMsg } = require('./dispatch');
@@ -79,7 +87,7 @@ function _handleWheel(mx, my, delta) {
       // Refresh detail only when the wheel landed on the focused panel
       // (so its info reflects the new selection); wheeling over a side
       // panel without focus shouldn't clobber detail.
-      if (p.type === getFocus()) dispatchMsg(wrap('detail', { type: 'viewer_show_info' }));
+      if (p.type === getFocus()) _showSelectedInfo();
       return true;
     }
     return false;
@@ -399,7 +407,7 @@ function handleMouse(kind, x, y) {
         }
       }
     }
-    dispatchMsg(wrap('detail', { type: 'viewer_show_info' }));
+    _showSelectedInfo();
     mutated = true;
     break;
   }
