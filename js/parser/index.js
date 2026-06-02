@@ -331,6 +331,17 @@ function parseLayout(layoutData, _hasContainers, _hasFiles, userPool) {
   if (!lastRight || !tabKinds(lastRight).includes('detail')) {
     throw new ParseError(`tab of kind 'detail' must be in the last pane of the right column`);
   }
+  // v0.6.1 — detail tab must be the ONLY tab in its pane. Several
+  // render-layer + viewer Component readers locate the detail pane by
+  // `p.type === 'detail'` (the legacy Panel field that mirrors the
+  // active tab's type). Putting detail in a multi-tab pane means a
+  // :switch-tab away from detail would flip pane.type and those
+  // readers would silently miss the detail pane. Multi-instance
+  // viewer support arrives in v0.7; until then keep the structural
+  // safety net here so the runtime contract stays honest.
+  if (lastRight.tabs.length > 1) {
+    throw new ParseError(`tab of kind 'detail' must be the only tab in its pane (multi-tab panes hosting detail are deferred to v0.7)`);
+  }
   const actionsCount = allTabKinds.filter(t => t === 'actions').length;
   if (actionsCount > 1) {
     throw new ParseError(`layout allows at most one tab of kind 'actions', found ${actionsCount}`);

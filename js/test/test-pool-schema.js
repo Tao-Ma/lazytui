@@ -355,6 +355,22 @@ layout:
   right: { panels: [d, a] }
 `)));
   });
+
+  it("detail tab sharing a pane with another tab → ParseError", () => {
+    expectThrow(/must be the only tab in its pane/, () => parse(tmpYaml(TRIVIAL_GROUPS + `
+panels:
+  g:  { type: groups }
+  a:  { type: actions }
+  d:  { type: detail }
+  h:  { type: history, title: History }
+layout:
+  left:  { panels: [g] }
+  right:
+    panels:
+      - a
+      - { tabs: [d, h] }
+`)));
+  });
 });
 
 report();
