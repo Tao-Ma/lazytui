@@ -37,12 +37,16 @@ describe('[tab_list_open] cursor lands on the active tab', () => {
     eq(next.tabList.cursor, 7);
     eq(next.tabList.scroll, 3, 'cursor=7, vh=5 → scroll=3 (7-5+1)');
   });
-  it('open emits mode_set Cmd', () => {
+  it('open emits mode_set Cmd + tab_list_set_owner', () => {
     const slice = { ...viewer.init(), tab: 0 };
     const { cmds } = applyUpdate(slice, { type: 'tab_list_open', vh: 5, tabCount: 3 });
-    eq(cmds.length, 1);
+    // v0.6.1 Phase 4 — open also dispatches tab_list_set_owner to layout.
+    eq(cmds.length, 2);
     eq(cmds[0].type, 'apply_msg');
     eq(cmds[0].msg.flag, 'tabListMode');
+    eq(cmds[1].type, 'dispatch_msg');
+    eq(cmds[1].msg.kind, 'layout');
+    eq(cmds[1].msg.msg.type, 'tab_list_set_owner');
   });
 });
 
@@ -92,7 +96,7 @@ describe('[tab_list_nav] cursor + auto-scroll', () => {
 });
 
 describe('[tab_list_pick] switches + closes', () => {
-  it('emits tab_switch + focus_set + mode_clear + repaint', () => {
+  it('emits tab_switch + focus_set + mode_clear + repaint + owner clear', () => {
     let s = { ...viewer.init(), tab: 0 };
     s = applyUpdate(s, { type: 'tab_list_open', vh: 5, tabCount: 10 }).next;
     s = applyUpdate(s, { type: 'tab_list_nav', dir: 1, vh: 5, tabCount: 10 }).next;
@@ -100,7 +104,8 @@ describe('[tab_list_pick] switches + closes', () => {
     eq(s.tabList.cursor, 2);
     const { next, cmds } = applyUpdate(s, { type: 'tab_list_pick' });
     eq(next.tabList.open, false);
-    eq(cmds.length, 4);
+    // v0.6.1 Phase 4 — pick also clears tab_list_set_owner on layout.
+    eq(cmds.length, 5);
     const types = cmds.map(c => c.type);
     assert(types.includes('apply_msg'));
     assert(types.includes('dispatch_msg'));
@@ -109,19 +114,27 @@ describe('[tab_list_pick] switches + closes', () => {
     const switchCmd = cmds.find(c => c.type === 'dispatch_msg' && c.msg.msg && c.msg.msg.type === 'tab_switch');
     assert(switchCmd, 'tab_switch Msg present');
     eq(switchCmd.msg.msg.idx, 2);
+    const ownerCmd = cmds.find(c => c.type === 'dispatch_msg'
+      && c.msg.msg && c.msg.msg.type === 'tab_list_set_owner');
+    assert(ownerCmd, 'tab_list_set_owner clear present');
+    eq(ownerCmd.msg.msg.paneId, null);
   });
 });
 
 describe('[tab_list_close] cleans up', () => {
-  it('open=false + mode_clear + repaint', () => {
+  it('open=false + mode_clear + owner clear + repaint', () => {
     let s = { ...viewer.init(), tab: 0 };
     s = applyUpdate(s, { type: 'tab_list_open', vh: 5, tabCount: 3 }).next;
     const { next, cmds } = applyUpdate(s, { type: 'tab_list_close' });
     eq(next.tabList.open, false);
-    eq(cmds.length, 2);
+    // v0.6.1 Phase 4 — close also dispatches tab_list_set_owner (null) to layout.
+    eq(cmds.length, 3);
     eq(cmds[0].type, 'apply_msg');
     eq(cmds[0].msg.flag, 'tabListMode');
-    eq(cmds[1].type, 'force_full_repaint');
+    eq(cmds[1].type, 'dispatch_msg');
+    eq(cmds[1].msg.msg.type, 'tab_list_set_owner');
+    eq(cmds[1].msg.msg.paneId, null);
+    eq(cmds[2].type, 'force_full_repaint');
   });
   it('close on already-closed is a no-op (identity-preserving)', () => {
     const s = viewer.init();
@@ -164,14 +177,17 @@ describe('[tab_list_close_selected] emits a remove Msg for the row', () => {
 });
 
 describe('[viewer_reset_chrome] auto-closes the overlay on group switch', () => {
-  it('open overlay → reset_chrome closes + emits mode_clear', () => {
+  it('open overlay → reset_chrome closes + emits mode_clear + owner clear', () => {
     let s = { ...viewer.init(), tab: 0 };
     s = applyUpdate(s, { type: 'tab_list_open', vh: 5, tabCount: 3 }).next;
     eq(s.tabList.open, true);
     const { next, cmds } = applyUpdate(s, { type: 'viewer_reset_chrome' });
     eq(next.tabList.open, false);
-    eq(cmds.length, 1);
+    // v0.6.1 Phase 4 — reset_chrome's close path also clears owner.
+    eq(cmds.length, 2);
     eq(cmds[0].msg.flag, 'tabListMode');
+    eq(cmds[1].type, 'dispatch_msg');
+    eq(cmds[1].msg.msg.type, 'tab_list_set_owner');
   });
   it('closed overlay → reset_chrome returns plain slice', () => {
     const s = viewer.init();

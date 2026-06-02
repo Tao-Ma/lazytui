@@ -100,6 +100,13 @@ function init() {
     // when the new focus is non-detail; stays sticky while focus sits
     // on detail. Falls back to first non-detail panel if unset/stale.
     halfLeftPanel: null,
+    // v0.6.1 Phase 4 — pane id that owns the open tab-list overlay.
+    // Companion to model.modes.tabListMode: the mode flag says "an
+    // overlay is open" (chain-mode keyboard routing); this field says
+    // "this specific pane's overlay is open" (geometry + slice
+    // anchoring). null when no overlay open. Written by pane-tabs
+    // reducer's tab_list_open/tab_list_close via wrapped layout Msgs.
+    tabListOwnerPaneId: null,
   };
 }
 
@@ -203,6 +210,15 @@ function update(msg, slice) {
       // doesn't make the other half vanish behind a duplicate detail.
       const halfLeftPanel = next !== 'detail' ? next : slice.halfLeftPanel;
       return [{ ...slice, focus: next, halfLeftPanel }, [{ type: 'show_selected_info' }]];
+    }
+    // v0.6.1 Phase 4 — pane id that owns the open tab-list overlay.
+    // Dispatched from the pane-tabs leaf reducer's tab_list_open
+    // (paneId set) / tab_list_close (paneId null). Identity-preserved
+    // on no-op so a redundant close doesn't churn the slice.
+    case 'tab_list_set_owner': {
+      const paneId = msg.paneId != null ? msg.paneId : null;
+      if (slice.tabListOwnerPaneId === paneId) return slice;
+      return { ...slice, tabListOwnerPaneId: paneId };
     }
     // arrange + dirty writes. :save-layout sends `{ dirty: false }`;
     // :restore-layout sends `{ arrange, dirty: false }` (the rebuilt

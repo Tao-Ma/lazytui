@@ -445,15 +445,24 @@ function reduceTabMsg(msg, slice, ctx) {
       if (cursor >= vh) scroll = Math.min(cursor - vh + 1, Math.max(0, tabCount - vh));
       return [
         { ...slice, tabList: { open: true, cursor, scroll } },
-        [{ type: 'apply_msg', msg: { type: 'mode_set', flag: 'tabListMode' } }],
+        [
+          // Mode flag drives keyboard routing (chain mode).
+          { type: 'apply_msg', msg: { type: 'mode_set', flag: 'tabListMode' } },
+          // v0.6.1 Phase 4 — record which pane the overlay anchors to,
+          // so the renderer + hit-test can stop assuming singleton-detail.
+          { type: 'dispatch_msg', msg: wrap('layout', { type: 'tab_list_set_owner', paneId }) },
+        ],
       ];
     }
     case 'tab_list_close':
       if (!slice.tabList || !slice.tabList.open) return slice;
       return [
         { ...slice, tabList: { ...slice.tabList, open: false } },
-        [{ type: 'apply_msg', msg: { type: 'mode_clear', flag: 'tabListMode' } },
-         { type: 'force_full_repaint' }],
+        [
+          { type: 'apply_msg', msg: { type: 'mode_clear', flag: 'tabListMode' } },
+          { type: 'dispatch_msg', msg: wrap('layout', { type: 'tab_list_set_owner', paneId: null }) },
+          { type: 'force_full_repaint' },
+        ],
       ];
     case 'tab_list_nav': {
       const tl = slice.tabList || { open: false, cursor: 0, scroll: 0 };
@@ -483,6 +492,7 @@ function reduceTabMsg(msg, slice, ctx) {
         { ...slice, tabList: { ...tl, open: false } },
         [
           { type: 'apply_msg', msg: { type: 'mode_clear', flag: 'tabListMode' } },
+          { type: 'dispatch_msg', msg: wrap('layout', { type: 'tab_list_set_owner', paneId: null }) },
           { type: 'dispatch_msg', msg: wrap('layout', { type: 'focus_set', focus: paneId }) },
           { type: 'dispatch_msg', msg: wrap(paneId, { type: 'tab_switch', idx }) },
           { type: 'force_full_repaint' },

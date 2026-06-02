@@ -104,6 +104,15 @@ function _paneBounds(paneId = 'detail') {
   return l && l.panelBounds && l.panelBounds[paneId];
 }
 
+/** Owner pane id companion to model.modes.tabListMode. The pane-tabs
+ *  reducer writes it on tab_list_open/close. Falls back to 'detail'
+ *  during the boot edge before layout's first paint (the singleton
+ *  default; harmless for Phase 4). */
+function _ownerPaneId() {
+  const l = getComponentSlice('layout');
+  return (l && l.tabListOwnerPaneId) || 'detail';
+}
+
 /** Compute overlay geometry from pane bounds + tab count. */
 function _geom(tabs, paneId = 'detail') {
   const paneB = _paneBounds(paneId);
@@ -173,12 +182,18 @@ function _formatRow(tab, isActive, width) {
 
 /** Paint the overlay if `tabListMode` is active. Drops residue
  *  invalidation for the previous frame so panels behind the overlay
- *  repaint cleanly when the overlay shrinks/closes. */
-function renderTabList(paneId = 'detail') {
+ *  repaint cleanly when the overlay shrinks/closes.
+ *
+ *  v0.6.1 Phase 4 — owner pane id is read from
+ *  `layout.tabListOwnerPaneId` (written in lockstep with tabListMode).
+ *  The optional `paneId` arg overrides for tests / future explicit
+ *  callers; default falls through to the layout-slice companion. */
+function renderTabList(paneId) {
   if (!getModel().modes.tabListMode) {
     _maybeBlank();
     return;
   }
+  if (paneId == null) paneId = _ownerPaneId();
   const slice = getComponentSlice(paneId) || {};
   const tabList = slice.tabList || { open: false, cursor: 0, scroll: 0 };
   if (!tabList.open) { _maybeBlank(); return; }

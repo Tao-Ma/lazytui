@@ -232,10 +232,14 @@ function update(msg, slice) {
       if (slice.select) next.select = { ...slice.select, active: false };
       // Group switch closes the tab-list overlay too — the per-group tab
       // set is fundamentally different across groups, so lingering would
-      // be confusing.
+      // be confusing. v0.6.1 Phase 4 — clear the owner pane id companion
+      // alongside the mode flag.
       if (slice.tabList && slice.tabList.open) {
         next.tabList = { ...slice.tabList, open: false };
-        return [next, [{ type: 'apply_msg', msg: { type: 'mode_clear', flag: 'tabListMode' } }]];
+        return [next, [
+          { type: 'apply_msg', msg: { type: 'mode_clear', flag: 'tabListMode' } },
+          { type: 'dispatch_msg', msg: wrap('layout', { type: 'tab_list_set_owner', paneId: null }) },
+        ]];
       }
       return next;
     }
