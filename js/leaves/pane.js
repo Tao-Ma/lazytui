@@ -34,22 +34,23 @@ function newPaneId(poolId) {
 }
 
 /**
- * Mint Pane fields on `entry` in-place and return it.
+ * Return a new pane object with Pane fields minted onto `entry`.
  *
  * Adds:
  *   - paneId       — slot identity (stable across moves / collapse)
- *   - tabs         — array of { id, poolId }; Phase 1 always length 1
- *   - activeTabId  — tabs[0].id in Phase 1
+ *   - tabs         — array of { id, poolId }; single-tab in Phase 1
+ *   - activeTabId  — tabs[0].id
  *
- * Existing Panel fields (id, type, hotkey, ...) are untouched. Idempotent:
- * calling twice with the same paneId is a no-op aside from rebuilding the
- * (frozen-by-convention) tabs array.
+ * Pure: returns a fresh object; the input is not mutated. Aligns with
+ * the rest of the leaf pattern (return-new transforms).
  */
 function wrapAsPane(entry, paneId) {
-  entry.paneId = paneId;
-  entry.tabs = [{ id: entry.id, poolId: entry.id }];
-  entry.activeTabId = entry.id;
-  return entry;
+  return {
+    ...entry,
+    paneId,
+    tabs: [{ id: entry.id, poolId: entry.id }],
+    activeTabId: entry.id,
+  };
 }
 
 /** The single tab in a Phase-1 pane. Phase 2+ pane may have many. */
