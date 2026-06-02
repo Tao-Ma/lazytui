@@ -131,22 +131,21 @@ describe('[orphanPlacements] invariant guard', () => {
 });
 
 describe('[integration] rebuildLayoutFromConfig plumbs pool + id', () => {
-  it('legacy inline config: pool synthesized, every cell carries id', () => {
+  it('explicit pool form: every cell references a pool id', () => {
     const cfg = parse(tmpYaml(GROUPS + `
+panels:
+  groups:  { type: groups,  title: G }
+  actions: { type: actions, title: A }
+  detail:  { type: detail,  title: D }
 layout:
-  left:
-    panels:
-      - { type: groups, title: G }
-  right:
-    panels:
-      - { type: actions, title: A }
-      - { type: detail,  title: D }
+  left:  { panels: [groups] }
+  right: { panels: [actions, detail] }
 `));
     const arrange = rebuildLayoutFromConfig(cfg);
     eq(pool.placedIds(arrange).sort(), ['actions', 'detail', 'groups']);
     eq(pool.hiddenIds(arrange), []);
     assert(arrange.pool.groups, 'pool has groups entry');
-    assert(arrange.pool.groups._synthesized, 'inline form synthesizes pool entries');
+    assert(!arrange.pool.groups._synthesized, 'pool entries are explicit, not synthesized');
   });
   it('explicit pool with hidden entry: derivation finds the hidden id', () => {
     const cfg = parse(tmpYaml(GROUPS + `

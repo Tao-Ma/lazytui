@@ -246,20 +246,30 @@ describe('nested groups (tree)', () => {
 });
 
 describe('panel hotkeys', () => {
+  // v0.6.1 — pool entries declared once at the top in `panels:`;
+  // layout cells reference them via bare-string shorthand (single-tab
+  // pane) or `{tabs: [pool-id, ...], hotkey?}` mapping.
+  const POOL_BLOCK = `panels:
+  containers: { type: containers, title: C }
+  groups:     { type: groups,     title: G }
+  actions:    { type: actions,    title: A }
+  stats:      { type: stats,      title: S }
+  detail:     { type: detail,     title: D }
+`;
   it('positional defaults (left 1-6, right 7-9)', () => {
     const p = tmpYaml(
       `groups:
   g: { label: G, actions: { a: { cmd: 'echo', label: A } } }
-layout:
+${POOL_BLOCK}layout:
   left:
     panels:
-      - { type: containers, title: C }
-      - { type: groups, title: G }
+      - containers
+      - groups
   right:
     panels:
-      - { type: actions, title: A }
-      - { type: stats, title: S }
-      - { type: detail, title: D }
+      - actions
+      - stats
+      - detail
 `);
     const cfg = parse(p);
     eq(cfg.layout.left_panels.map(pp => [pp.hotkey, pp.type]),  [['1','containers'], ['2','groups']]);
@@ -269,15 +279,15 @@ layout:
     const p = tmpYaml(
       `groups:
   g: { label: G, actions: { a: { cmd: 'echo', label: A } } }
-layout:
+${POOL_BLOCK}layout:
   left:
     panels:
-      - { type: groups, title: G, hotkey: '1' }
-      - { type: containers, title: C, hotkey: '1' }
+      - { tabs: [groups],     hotkey: '1' }
+      - { tabs: [containers], hotkey: '1' }
   right:
     panels:
-      - { type: actions, title: A }
-      - { type: detail, title: D }
+      - actions
+      - detail
 `);
     expectThrow(/left column declares hotkey '1' twice/, () => parse(p));
   });
@@ -285,14 +295,14 @@ layout:
     const p = tmpYaml(
       `groups:
   g: { label: G, actions: { a: { cmd: 'echo', label: A } } }
-layout:
+${POOL_BLOCK}layout:
   left:
     panels:
-      - { type: groups, title: G, hotkey: '7' }
+      - { tabs: [groups], hotkey: '7' }
   right:
     panels:
-      - { type: actions, title: A, hotkey: '7' }
-      - { type: detail, title: D }
+      - { tabs: [actions], hotkey: '7' }
+      - detail
 `);
     expectThrow(/hotkey '7' claimed by both/, () => parse(p));
   });
@@ -300,14 +310,14 @@ layout:
     const p = tmpYaml(
       `groups:
   g: { label: G, actions: { a: { cmd: 'echo', label: A } } }
-layout:
+${POOL_BLOCK}layout:
   left:
     panels:
-      - { type: groups, title: G, hotkey: g }
+      - { tabs: [groups], hotkey: g }
   right:
     panels:
-      - { type: actions, title: A }
-      - { type: detail, title: D, hotkey: o }
+      - actions
+      - { tabs: [detail], hotkey: o }
 `);
     const cfg = parse(p);
     eq(cfg.layout.left_panels[0].hotkey, 'g');
@@ -317,50 +327,59 @@ layout:
 });
 
 describe('layout invariants — detail / actions placement', () => {
+  // v0.6.1 — invariants restated at the tab level. With one tab per
+  // pane (these tests) the assertion strings shift slightly: "tab of
+  // kind 'detail'" replaces "'detail' panel".
+  const POOL_BLOCK = `panels:
+  containers: { type: containers, title: C }
+  groups:     { type: groups,     title: G }
+  actions:    { type: actions,    title: A }
+  detail:     { type: detail,     title: D }
+`;
   it('detail in left column is rejected', () => {
     const p = tmpYaml(
       `groups:
   g: { label: G, actions: { a: { cmd: 'echo', label: A } } }
-layout:
+${POOL_BLOCK}layout:
   left:
     panels:
-      - { type: detail, title: D }
-      - { type: groups, title: G }
+      - detail
+      - groups
   right:
     panels:
-      - { type: actions, title: A }
+      - actions
 `);
-    expectThrow(/'detail' panel must be in the right column/, () => parse(p));
+    expectThrow(/'detail' must be in the right column/, () => parse(p));
   });
   it('detail not as the last cell in the right column is rejected', () => {
     const p = tmpYaml(
       `groups:
   g: { label: G, actions: { a: { cmd: 'echo', label: A } } }
-layout:
+${POOL_BLOCK}layout:
   left:
     panels:
-      - { type: groups, title: G }
+      - groups
   right:
     panels:
-      - { type: detail, title: D }
-      - { type: actions, title: A }
+      - detail
+      - actions
 `);
-    expectThrow(/'detail' panel must be the last cell/, () => parse(p));
+    expectThrow(/'detail' must be in the last pane of the right column/, () => parse(p));
   });
   it('actions in left column is rejected', () => {
     const p = tmpYaml(
       `groups:
   g: { label: G, actions: { a: { cmd: 'echo', label: A } } }
-layout:
+${POOL_BLOCK}layout:
   left:
     panels:
-      - { type: actions, title: A }
-      - { type: groups, title: G }
+      - actions
+      - groups
   right:
     panels:
-      - { type: detail, title: D }
+      - detail
 `);
-    expectThrow(/'actions' panel must be in the right column/, () => parse(p));
+    expectThrow(/'actions' must be in the right column/, () => parse(p));
   });
 });
 

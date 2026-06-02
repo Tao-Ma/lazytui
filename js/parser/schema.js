@@ -70,13 +70,25 @@ function validate(data, _sourceFile) {
 }
 
 /**
- * Structural shape check for the `layout:` block. Cells may be a string
- * (pool id reference, v0.6) or a mapping (legacy inline `{type:}` form
- * OR `{id, ...overrides}`). The semantic invariants — exactly-one detail,
- * at-most-one actions, column size caps — depend on resolved cell types
- * (string ids resolve through the pool), so they run in `parseLayout`
- * post-resolution, not here.
+ * Structural shape check for the `layout:` block (v0.6.1 form).
+ *
+ * Each cell is either:
+ *   - a bare string (pool-id reference; single-tab pane shorthand), or
+ *   - a mapping with required `tabs: [poolId, ...]` plus optional
+ *     `activeTab`, `hotkey`, `height`, `heightPct`, `collapsed`.
+ *
+ * The v0.6 inline-declare form (`{type: ..., title: ...}` at the cell
+ * level) is rejected with a migration pointer. Pool entries declare at
+ * the top-level `panels:` block; layout cells only reference them.
+ *
+ * The semantic invariants — exactly-one detail, at-most-one actions,
+ * column size caps — depend on resolved tab kinds (string ids resolve
+ * through the pool), so they run in `parseLayout` post-resolution.
  */
+const VALID_LAYOUT_CELL_KEYS = new Set([
+  'tabs', 'activeTab', 'hotkey', 'height', 'heightPct', 'collapsed',
+]);
+
 function validateLayout(layout) {
   if (!isMapping(layout)) throw new SchemaError("'layout' must be a mapping");
   const collectPanels = (side, max) => {
@@ -92,17 +104,40 @@ function validateLayout(layout) {
         if (!p.trim()) throw new SchemaError("layout cell id must be non-empty", { context: ctx });
         return;
       }
-      if (!isMapping(p)) throw new SchemaError(`layout cell must be a string id or a mapping, got ${typeName(p)}`, { context: ctx });
-      // Mapping form: needs either `id:` or `type:`. The resolver will
-      // synthesize a pool entry when only `type:` is present.
-      const hasId = typeof p.id === 'string' && p.id.trim();
-      const hasType = typeof p.type === 'string' && p.type.trim();
-      if (!hasId && !hasType) {
-        throw new SchemaError("layout cell missing both 'id' and 'type'", { context: ctx });
+      if (!isMapping(p)) {
+        throw new SchemaError(`layout cell must be a string id or a {tabs: [...]} mapping, got ${typeName(p)}`, { context: ctx });
+      }
+      // v0.6 form rejection — `type:` or `id:` at cell level is no
+      // longer the way; pool entries declare in top-level `panels:`,
+      // cells reference them via `tabs: [poolId]` (or the bare-string
+      // shorthand).
+      if ('type' in p || 'id' in p) {
+        throw new SchemaError(
+          "v0.6 inline cell shape ({type: ...} / {id: ...}) is not supported in v0.6.1. " +
+          "Declare the panel in a top-level `panels:` block and reference it via " +
+          "`{tabs: [pool-id]}` or the bare-string shorthand. " +
+          "See docs/v0.6.1-migrate.md.",
+          { context: ctx },
+        );
+      }
+      checkUnknownKeys(p, VALID_LAYOUT_CELL_KEYS, ctx);
+      if (!('tabs' in p)) {
+        throw new SchemaError("layout cell mapping requires 'tabs: [pool-id, ...]'", { context: ctx });
+      }
+      if (!Array.isArray(p.tabs) || p.tabs.length === 0) {
+        throw new SchemaError("'tabs' must be a non-empty list of pool ids", { context: ctx });
+      }
+      p.tabs.forEach((tid, j) => {
+        if (typeof tid !== 'string' || !tid.trim()) {
+          throw new SchemaError(`tabs[${j}]: pool id must be a non-empty string`, { context: ctx });
+        }
+      });
+      if ('activeTab' in p && (typeof p.activeTab !== 'string' || !p.tabs.includes(p.activeTab))) {
+        throw new SchemaError("'activeTab' must be one of the entries in `tabs`", { context: ctx });
       }
     });
     if (panels.length > max) {
-      throw new SchemaError(`'layout.${side}' allows at most ${max} panels, got ${panels.length}`);
+      throw new SchemaError(`'layout.${side}' allows at most ${max} panes, got ${panels.length}`);
     }
     return panels;
   };

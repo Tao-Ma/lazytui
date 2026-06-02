@@ -217,15 +217,16 @@ describe('[parser] PLACEMENT_ONLY_KEYS accepts collapsed', () => {
 panels:
   files:
     type: files
+  detail:
+    type: detail
 layout:
   left:
     width: 30
     panels:
-      - id: files
-        collapsed: true
+      - { tabs: [files], collapsed: true }
   right:
     panels:
-      - type: detail
+      - detail
 groups:
   g1:
     label: G1
@@ -247,15 +248,16 @@ groups:
 panels:
   files:
     type: files
+  detail:
+    type: detail
 layout:
   left:
     width: 30
     panels:
-      - id: files
+      - files
   right:
     panels:
-      - type: detail
-        collapsed: true
+      - { tabs: [detail], collapsed: true }
 groups:
   g1:
     label: G1
@@ -277,14 +279,16 @@ panels:
   files:
     type: files
     collapsed: true
+  detail:
+    type: detail
 layout:
   left:
     width: 30
     panels:
-      - id: files
+      - files
   right:
     panels:
-      - type: detail
+      - detail
 groups:
   g1:
     label: G1

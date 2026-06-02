@@ -16,10 +16,21 @@ const { describe, it, assert, report } = require('./test-runner');
 const { validate } = require('../parser/schema');
 const { parse } = require('../parser');
 
-// Minimal valid base; vary `layout`.
-function withLayout(layout) {
+// Minimal valid base; vary `layout`. v0.6.1 — cells reference pool ids
+// declared in the top-level `panels:` block; the helpers below seed a
+// pool that covers every id any case might reference.
+function withLayout(layout, extraPool = {}) {
   return {
     groups: { g: { label: 'G', actions: { x: { cmd: 'true', label: 'X' } } } },
+    panels: {
+      groups:  { type: 'groups' },
+      actions: { type: 'actions' },
+      detail:  { type: 'detail' },
+      a:       { type: 'a' },
+      b:       { type: 'b' },
+      c:       { type: 'c' },
+      ...extraPool,
+    },
     layout,
   };
 }
@@ -30,10 +41,10 @@ function bad(layout) {
   assert(threw, 'expected a SchemaError');
 }
 
-// Cardinality checks (exactly-one-detail, at-most-one-actions) moved to
-// parseLayout post-resolution in v0.6 — string-id cells need the pool to
-// know their type. badParse() runs the full pipeline so the resolver-
-// level check fires.
+// Cardinality checks (exactly-one-detail, at-most-one-actions) live in
+// parseLayout post-resolution — string-id cells need the pool to know
+// their type. badParse() runs the full pipeline so the resolver-level
+// check fires.
 let _tmpDir = null;
 function badParse(layout) {
   if (!_tmpDir) _tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'lazytui-layout-'));
@@ -45,54 +56,55 @@ function badParse(layout) {
 }
 
 const goodLayout = {
-  left:  { panels: [{ type: 'groups' }] },
-  right: { panels: [{ type: 'actions' }, { type: 'detail' }] },
+  left:  { panels: ['groups'] },
+  right: { panels: ['actions', 'detail'] },
 };
 
 describe('[1] well-formed layout passes', () => {
   it('accepts one detail, one actions, counts in range', () => ok(goodLayout));
   it('accepts a layout with no left block (right-only detail)', () => {
-    ok({ right: { panels: [{ type: 'detail' }] } });
+    ok({ right: { panels: ['detail'] } });
   });
 });
 
 describe('[2] detail-panel cardinality', () => {
   it('rejects zero detail panels', () => {
-    badParse({ left: { panels: [{ type: 'groups' }] }, right: { panels: [{ type: 'actions' }] } });
+    badParse({ left: { panels: ['groups'] }, right: { panels: ['actions'] } });
   });
   it('rejects two detail panels', () => {
-    badParse({ left: { panels: [{ type: 'detail' }] }, right: { panels: [{ type: 'detail' }] } });
+    badParse({ left: { panels: ['detail'] }, right: { panels: ['detail'] } });
   });
 });
 
 describe('[3] actions-panel cardinality', () => {
   it('rejects two actions panels', () => {
-    badParse({ right: { panels: [{ type: 'actions' }, { type: 'actions' }, { type: 'detail' }] } });
+    badParse({ right: { panels: ['actions', 'actions', 'detail'] } });
   });
 });
 
 describe('[4] panel-count maxima', () => {
   it('rejects 7 left panels', () => {
-    const panels = Array.from({ length: 7 }, () => ({ type: 'groups' }));
-    bad({ left: { panels }, right: { panels: [{ type: 'detail' }] } });
+    const panels = Array.from({ length: 7 }, () => 'groups');
+    bad({ left: { panels }, right: { panels: ['detail'] } });
   });
   it('rejects 4 right panels', () => {
-    const panels = [{ type: 'detail' }, { type: 'a' }, { type: 'b' }, { type: 'c' }];
-    bad({ right: { panels } });
+    bad({ right: { panels: ['detail', 'a', 'b', 'c'] } });
   });
   it('accepts exactly 6 left + 3 right', () => {
-    const left = Array.from({ length: 6 }, () => ({ type: 'groups' }));
-    const right = [{ type: 'detail' }, { type: 'a' }, { type: 'b' }];
-    ok({ left: { panels: left }, right: { panels: right } });
+    const left = Array.from({ length: 6 }, () => 'groups');
+    ok({ left: { panels: left }, right: { panels: ['detail', 'a', 'b'] } });
   });
 });
 
-describe('[5] panel shape', () => {
-  it('rejects a panel missing type', () => {
-    bad({ right: { panels: [{ title: 'no type' }, { type: 'detail' }] } });
+describe('[5] cell shape', () => {
+  it('rejects a v0.6 inline cell (type at cell level)', () => {
+    bad({ right: { panels: [{ type: 'detail' }] } });
   });
-  it('rejects a non-string type', () => {
-    bad({ right: { panels: [{ type: 5 }, { type: 'detail' }] } });
+  it("rejects a `tabs:` cell that's not a list", () => {
+    bad({ right: { panels: [{ tabs: 'detail' }] } });
+  });
+  it("rejects a `tabs:` cell with empty list", () => {
+    bad({ right: { panels: [{ tabs: [] }, 'detail'] } });
   });
   it('rejects a non-list panels block', () => {
     bad({ right: { panels: 'nope' } });

@@ -136,48 +136,36 @@ function pickPlacement(raw) {
 }
 
 /**
- * Normalize one layout cell into `{ entry, placement }`. Mutates `pool`
- * when the cell is an inline `{type:}` declaration (legacy form) or a
- * `{id, type, ...}` declare-in-place. Throws on unresolvable refs and
- * id collisions between cell-declared and pool-declared entries.
+ * Normalize one layout cell into `{ tabPoolIds, placement, activeTab? }`.
+ *
+ * v0.6.1 form:
+ *   - bare string         → single-tab pane shorthand (single pool-id ref)
+ *   - { tabs: [id, ...] } → multi-tab pane, optional activeTab, plus
+ *                           placement-only fields (hotkey/height/etc.)
+ *
+ * Pool entries must already exist (declared in top-level `panels:`).
+ * Throws on unresolvable refs.
  */
 function resolveLayoutCell(raw, pool) {
   if (typeof raw === 'string') {
     if (!pool.has(raw)) {
       throw new ParseError(`layout cell references unknown panel id '${raw}'`);
     }
-    return { entry: pool.get(raw), placement: {} };
+    return { tabPoolIds: [raw], placement: {}, activeTab: raw };
   }
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
-    throw new ParseError(`layout cell must be a string id or a mapping, got ${Array.isArray(raw) ? 'array' : typeof raw}`);
-  }
-  const hasId = typeof raw.id === 'string' && raw.id;
-  const hasType = typeof raw.type === 'string' && raw.type;
-
-  if (hasId && !hasType) {
-    if (!pool.has(raw.id)) {
-      throw new ParseError(`layout cell references unknown panel id '${raw.id}'`);
+  // Schema layer already rejected v0.6 cell shapes; this is the
+  // happy-path mapping form.
+  const tabs = raw.tabs.slice();
+  for (const tid of tabs) {
+    if (!pool.has(tid)) {
+      throw new ParseError(`layout cell references unknown pool id '${tid}'`);
     }
-    return { entry: pool.get(raw.id), placement: pickPlacement(raw) };
   }
-  if (!hasType) {
-    throw new ParseError("layout cell missing both 'id' and 'type'");
-  }
-  // Inline form. Either a fresh `{type:}` (legacy) or `{id, type, ...}`
-  // (v0.6 declare-in-place). In both cases, synthesize a pool entry.
-  if (hasId && pool.has(raw.id)) {
-    throw new ParseError(`layout cell declares panel id '${raw.id}' but a pool entry already exists with that id`);
-  }
-  const id = hasId ? raw.id : synthIdFor(raw.type, pool);
-  // Strip placement-only fields before pool normalization.
-  const poolRaw = {};
-  for (const [k, v] of Object.entries(raw)) {
-    if (k === 'id' || PLACEMENT_ONLY_KEYS.has(k)) continue;
-    poolRaw[k] = v;
-  }
-  const entry = normalizePoolEntry(id, poolRaw, /*synthesized*/ !hasId);
-  pool.set(id, entry);
-  return { entry, placement: pickPlacement(raw) };
+  return {
+    tabPoolIds: tabs,
+    placement: pickPlacement(raw),
+    activeTab: raw.activeTab || tabs[0],
+  };
 }
 
 /** Serialize the pool Map into a plain object for the parser output. */
@@ -188,24 +176,35 @@ function poolToObject(pool) {
 }
 
 /**
- * Build a placed-panel object from a resolved {entry, placement} pair.
- * Output shape matches the existing v0.5 parser surface — type/title/
- * hotkey/column/config — plus a new `id` linking back to the pool, and
- * heightPct lifted from the placement when present. detail's `height`
- * is layout-level (becomes detail_height_pct); the caller threads it
- * through via `detailHeightSetter`.
+ * Build a placed pane object from a resolved cell + pool.
+ *
+ * The pane carries `tabs` (array of {id, poolId} for every tab in the
+ * cell) + `activeTabId` (currently focused tab) + `paneId` (slot
+ * identity). For multi-tab panes the active tab's pool entry populates
+ * the legacy top-level Panel fields (`id, type, title, config`) so
+ * Phase 1-8 readers that pull `p.type` keep working until Phase 10.
+ *
+ * The `height` placement-only field is detail-pane-only — becomes
+ * detail_height_pct via the caller's setter.
  */
-function buildPlacedPanel(resolved, hotkey, column, detailHeightSetter) {
-  const entry = resolved.entry;
+function buildPlacedPane(resolved, hotkey, column, detailHeightSetter, pool) {
+  const tabIds = resolved.tabPoolIds;
   const placement = resolved.placement;
-  // detail is essential (the layout invariant requires exactly one) and
-  // can't be collapsed — the runtime reducer refuses; reject at parse
-  // time so a hand-edited YAML doesn't silently land in an inconsistent
-  // visual state (1-row title bar above the full detail reservation).
-  if (entry.type === 'detail' && placement.collapsed === true) {
-    throw new ParseError(`layout cell '${entry.id}': detail panel can't be collapsed`);
+  const activeTabPoolId = resolved.activeTab;
+
+  // Tab entries — one per pool id in the cell. The schema validator
+  // already checked that all tab pool ids exist + activeTab is one of
+  // them, so we trust the input here.
+  const tabs = tabIds.map(pid => ({ id: pid, poolId: pid }));
+  const active = pool.get(activeTabPoolId);
+
+  // detail can't be collapsed — the runtime reducer refuses. Reject at
+  // parse time so a hand-edited YAML doesn't land in an inconsistent
+  // visual state.
+  if (active.type === 'detail' && placement.collapsed === true) {
+    throw new ParseError(`layout cell '${activeTabPoolId}': detail panel can't be collapsed`);
   }
-  if (entry.type === 'detail' && placement.height !== undefined) {
+  if (active.type === 'detail' && placement.height !== undefined) {
     const h = placement.height;
     if (typeof h === 'string' && h.endsWith('%')) {
       detailHeightSetter(parseInt(h.slice(0, -1), 10));
@@ -213,17 +212,25 @@ function buildPlacedPanel(resolved, hotkey, column, detailHeightSetter) {
       detailHeightSetter(h);
     }
   }
-  const panel = {
-    id: entry.id,
-    type: entry.type,
-    title: entry.title,
+  const pane = {
+    // Legacy Panel fields populated from the active tab's pool entry.
+    // Phase 10 may retire these in favor of always going through
+    // firstTab(pane) / activePoolId(pane); Phase 9 keeps them so the
+    // wide intermediate form remains valid.
+    id: active.id,
+    type: active.type,
+    title: active.title,
     hotkey,
     column,
-    config: entry.config,
+    config: active.config,
+    // Pane fields (v0.6.1 canonical).
+    paneId: mpane.newPaneId(activeTabPoolId),
+    tabs,
+    activeTabId: activeTabPoolId,
   };
-  if (placement.heightPct !== undefined) panel.heightPct = placement.heightPct;
-  if (placement.collapsed === true)      panel.collapsed = true;
-  return mpane.wrapAsPane(panel, mpane.newPaneId(entry.id));
+  if (placement.heightPct !== undefined) pane.heightPct = placement.heightPct;
+  if (placement.collapsed === true)      pane.collapsed = true;
+  return pane;
 }
 
 function defaultLayout(hasContainers, hasFiles, userPool) {
@@ -275,8 +282,9 @@ function parseLayout(layoutData, _hasContainers, _hasFiles, userPool) {
   let detailHeightPct = 60;
   const setDetailHeight = (n) => { detailHeightPct = n; };
 
-  // Pool is mutated as we resolve cells — inline `{type:}` entries
-  // synthesize new pool entries. Start from the user-declared pool.
+  // v0.6.1: every pool entry is declared in the top-level `panels:`
+  // block before parseLayout runs. Cells only reference them; the pool
+  // is no longer mutated by resolveLayoutCell.
   const pool = userPool || new Map();
 
   const leftYaml  = leftBlock.panels  || [];
@@ -305,40 +313,40 @@ function parseLayout(layoutData, _hasContainers, _hasFiles, userPool) {
     seenKey.set(k, side);
   }
 
-  const leftPanels  = leftResolved.map((r, i)  => buildPlacedPanel(r, leftKeys[i],  'left',  setDetailHeight));
-  const rightPanels = rightResolved.map((r, i) => buildPlacedPanel(r, rightKeys[i], 'right', setDetailHeight));
+  const leftPanels  = leftResolved.map((r, i)  => buildPlacedPane(r, leftKeys[i],  'left',  setDetailHeight, pool));
+  const rightPanels = rightResolved.map((r, i) => buildPlacedPane(r, rightKeys[i], 'right', setDetailHeight, pool));
 
-  // Semantic layout invariants — counted on RESOLVED types so string-id
-  // refs are followed through the pool. Moved here from schema.js (the
-  // schema layer can't see resolved types). Each invariant is enforced
-  // here ONCE so per-Component code (viewer, layout, design) doesn't
-  // have to rediscover them via scattered guards.
+  // Semantic layout invariants — v0.6.1 restates them at the TAB level
+  // (every tab in every pane), not the pane level: "exactly one tab
+  // anywhere has kind detail," "at most one tab anywhere has kind
+  // actions," "no detail / actions tab in the left column." With one
+  // tab per pane (today's common shape) these collapse to the prior
+  // panel-level checks; with multi-tab cells the invariant scales.
   const all = leftPanels.concat(rightPanels);
-  const detailCount = all.filter(p => p.type === 'detail').length;
+  const tabKinds = (pane) => pane.tabs.map(t => pool.get(t.poolId).type);
+  const flatLeftTabKinds  = leftPanels.flatMap(tabKinds);
+  const flatRightTabKinds = rightPanels.flatMap(tabKinds);
+  const allTabKinds = flatLeftTabKinds.concat(flatRightTabKinds);
+
+  const detailCount = allTabKinds.filter(t => t === 'detail').length;
   if (detailCount !== 1) {
-    throw new ParseError(`layout must have exactly one 'detail' panel, found ${detailCount}`);
+    throw new ParseError(`layout must have exactly one tab of kind 'detail', found ${detailCount}`);
   }
-  // detail must live in the right column (the viewer Component looks
-  // for it there; the renderer's half/full view modes assume it). A
-  // left-column detail would render but hotkey lookup / activeTab
-  // resolution silently miss it.
-  if (leftPanels.some(p => p.type === 'detail')) {
-    throw new ParseError(`'detail' panel must be in the right column, not the left`);
+  if (flatLeftTabKinds.includes('detail')) {
+    throw new ParseError(`tab of kind 'detail' must be in the right column, not the left`);
   }
-  // detail must be the LAST cell in the right column. design-mode
-  // reorder, pool_show, and pool_drag all preserve this convention;
-  // letting a config opt out would surface as drag/drop affordances
-  // that "snap" to a position the user didn't ask for.
-  const detailIdx = rightPanels.findIndex(p => p.type === 'detail');
-  if (detailIdx !== rightPanels.length - 1) {
-    throw new ParseError(`'detail' panel must be the last cell in the right column (found at index ${detailIdx} of ${rightPanels.length})`);
+  // detail tab must live in the LAST pane in the right column (design-
+  // mode reorder, pool_show, and pool_drag preserve this convention).
+  const lastRight = rightPanels[rightPanels.length - 1];
+  if (!lastRight || !tabKinds(lastRight).includes('detail')) {
+    throw new ParseError(`tab of kind 'detail' must be in the last pane of the right column`);
   }
-  const actionsCount = all.filter(p => p.type === 'actions').length;
+  const actionsCount = allTabKinds.filter(t => t === 'actions').length;
   if (actionsCount > 1) {
-    throw new ParseError(`layout allows at most one 'actions' panel, found ${actionsCount}`);
+    throw new ParseError(`layout allows at most one tab of kind 'actions', found ${actionsCount}`);
   }
-  if (leftPanels.some(p => p.type === 'actions')) {
-    throw new ParseError(`'actions' panel must be in the right column, not the left`);
+  if (flatLeftTabKinds.includes('actions')) {
+    throw new ParseError(`tab of kind 'actions' must be in the right column, not the left`);
   }
 
   return {
