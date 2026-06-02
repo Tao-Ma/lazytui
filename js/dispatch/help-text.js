@@ -12,7 +12,7 @@
  */
 'use strict';
 
-const { allPanels, setDetail } = require('../app/state');
+const { allPanels, setViewerContent } = require('../app/state');
 const { getModel } = require('../app/runtime');
 const { esc } = require('../io/ansi');
 const {getCommands, getPanelDef, getComponentSlice, getFocus, instanceKind } = require('../panel/api');
@@ -148,9 +148,9 @@ function helpLines() {
   return lines;
 }
 
-/** Build help lines and dump them into the detail panel. */
+/** Build help lines and dump them into the focused viewer. */
 function showHelp() {
-  setDetail(helpLines().join('\n'));
+  setViewerContent(null, helpLines().join('\n'));
 }
 
 module.exports = { helpLines, showHelp };

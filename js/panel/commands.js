@@ -61,14 +61,14 @@ const FRAMEWORK_COMMANDS = [
     desc: 'Persist current panel layout to the YAML config',
     run: () => {
       const { writeLayoutToFile } = require('../feature/yaml-layout');
-      const { setDetail } = require('../app/state');
+      const { setViewerContent } = require('../app/state');
       const m = require('../app/runtime').getModel();
       const { error } = writeLayoutToFile(route.getSlice('layout').arrange, m.configPath);
       if (error) {
-        setDetail(`[red]Layout save failed:[/] ${error.message}`);
+        setViewerContent(null, `[red]Layout save failed:[/] ${error.message}`);
       } else {
         require('./api').dispatchMsg(wrap('layout', { type: 'set_arrange', dirty: false }));
-        setDetail(`[green]Layout saved to[/] ${m.configPath}`);
+        setViewerContent(null, `[green]Layout saved to[/] ${m.configPath}`);
       }
     },
   },
@@ -82,8 +82,8 @@ const FRAMEWORK_COMMANDS = [
     run: (args) => {
       const input = (args && args.join(' ')) || '';
       if (!input) {
-        const { setDetail } = require('../app/state');
-        setDetail('[red]:open requires a path[/] — usage: :open <path>');
+        const { setViewerContent } = require('../app/state');
+        setViewerContent(null, '[red]:open requires a path[/] — usage: :open <path>');
         return;
       }
       // Strip wrapping quotes (the cmdline splits on whitespace; quoting
@@ -96,7 +96,7 @@ const FRAMEWORK_COMMANDS = [
     name: 'restore-layout',
     desc: 'Discard runtime changes; reload panel layout from YAML',
     run: () => {
-      const { rebuildLayoutFromConfig, setDetail } = require('../app/state');
+      const { rebuildLayoutFromConfig, setViewerContent } = require('../app/state');
       const m = require('../app/runtime').getModel();
       const api = require('./api');
       api.dispatchMsg(wrap('layout', {
@@ -105,7 +105,7 @@ const FRAMEWORK_COMMANDS = [
       // The runtime layout the user was working with is gone; the
       // undo/redo history pointed at it is no longer meaningful.
       api.dispatchMsg(wrap('layout', { type: 'design_clear_undo' }));
-      setDetail(`[green]Layout restored from[/] ${m.configPath}`);
+      setViewerContent(null, `[green]Layout restored from[/] ${m.configPath}`);
     },
   },
 ];

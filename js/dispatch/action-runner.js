@@ -9,7 +9,7 @@
 
 const { spawn } = require('child_process');
 const fs = require('fs');
-const { setDetail } = require('../app/state');
+const { setViewerContent } = require('../app/state');
 const { streamCommand, killCurrentProc } = require('../io/stream');
 const { getComponentSlice, dispatchMsg, wrap } = require('../panel/api');
 const { getModel } = require('../app/runtime');
@@ -82,7 +82,7 @@ function doRun(actionKey, action, args = []) {
     const body = `#!/bin/sh\nrm -- "$0"\ncd ${getModel().projectDir} && ${cmd}\n`;
     fs.writeFileSync(tmp, body, { mode: 0o700 });
     if (process.env.TMUX) {
-      setDetail(`[dim]$ ${esc(actionKey)}[/]\n[yellow]Spawned in new tmux window.[/]`);
+      setViewerContent(null, `[dim]$ ${esc(actionKey)}[/]\n[yellow]Spawned in new tmux window.[/]`);
       const argStr = args.length ? ' ' + args.map(shQuote).join(' ') : '';
       spawn('tmux', ['new-window', '-n', actionKey, `${tmp}${argStr}; read`], { detached: true, stdio: 'ignore' });
       history.start(actionKey, cmd, { detached: true });
@@ -123,7 +123,7 @@ function doRun(actionKey, action, args = []) {
   }
 
   if (actionType === 'background') {
-    setDetail(`[dim]$ ${esc(actionKey)}[/]\n[yellow]Started in background.[/]`);
+    setViewerContent(null, `[dim]$ ${esc(actionKey)}[/]\n[yellow]Started in background.[/]`);
     // -- delimiter so $0 = "--", $1 = first arg, $@ = arg list (POSIX).
     spawn('sh', ['-c', cmd, '--', ...args], { cwd: getModel().projectDir, detached: true, stdio: 'ignore' });
     history.start(actionKey, cmd, { detached: true });

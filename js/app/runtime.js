@@ -691,8 +691,8 @@ function update(model, msg) {
     //  WRITE side lives with the slice, while select.js's ansi/column reads
     //  stay there as pure helpers.)
     // (viewer_set_content / viewer_set_tab moved to detail.update — Phase B.
-    //  state.setDetail / api.setActiveTab still dispatch the same Msgs; they
-    //  now route to detail.update via the dispatchMsg fan-out.)
+    //  state.setViewerContent / api.setActiveTab still dispatch the same
+    //  Msgs; they now route to detail.update via the dispatchMsg fan-out.)
     // set_layout retired (single-writer follow-up): :save-layout and
     // :restore-layout now wrap a `set_arrange` Msg directly to layout —
     // its own update is the single writer for `arrange` and `dirty`.

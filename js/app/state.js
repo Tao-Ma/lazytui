@@ -6,7 +6,7 @@
  * module is the boot/init layer (loadConfig + initState) plus the small
  * set of read/write helpers the rest of the codebase imports from `./state`
  * (getSel / setSel / getScroll / setScroll / toggleMultiSel / allPanels /
- * resetGroupContext / selectGroup / setDetail / recomputeGroups / …).
+ * resetGroupContext / selectGroup / setViewerContent / recomputeGroups / …).
  *
  * Historical note: state.js used to export a global `S` object that
  * doubled as both the data home and a facade over the model + Component
@@ -321,25 +321,24 @@ function selectGroup(idx) {
   require('../dispatch/dispatch').navSelect('groups', idx);
 }
 
-function setDetail(text, target) {
+function setViewerContent(tabId, text) {
   // viewer_set_content is handled by the detail Component's update (Phase B);
   // routes via the Component fan-out. Single-writer for the slice through
-  // detail.update; every setDetail caller (history / config-status / help-
-  // text / commands / api save-layout-message) ends up as the same reducer
-  // write.
+  // detail.update; every viewer-content writer (history / config-status /
+  // help-text / commands / api save-layout-message) ends up as the same
+  // reducer write.
   //
-  // v0.6.1 Phase 6 — when `target` is omitted the destination resolves via
-  // route.resolveTarget('viewer'): focused viewer-kind tab / lastViewerTab
-  // / first viewer in rightPanels / any viewer / null. With one viewer
-  // (today) this is always 'detail'. Explicit `target` overrides — used
-  // by v0.7 producers that thread a known tab id.
-  const api = require('../panel/api');
-  if (target == null) {
+  // v0.6.1 Phase 8 — explicit tabId is the producer-side address. When
+  // tabId is null the destination resolves via route.resolveTarget('viewer'):
+  // focused viewer-kind tab / lastViewerTab / first viewer in rightPanels /
+  // any viewer / null. With one viewer (today) this is always 'detail'.
+  if (tabId == null) {
     const route = require('../leaves/route');
-    target = route.resolveTarget('viewer');
-    if (target == null) return;   // no viewer registered — drop the write
+    tabId = route.resolveTarget('viewer');
+    if (tabId == null) return;   // no viewer registered — drop the write
   }
-  api.dispatchMsg(api.wrap(target, { type: 'viewer_set_content', lines: text ? text.split('\n') : [] }));
+  const api = require('../panel/api');
+  api.dispatchMsg(api.wrap(tabId, { type: 'viewer_set_content', lines: text ? text.split('\n') : [] }));
 }
 
 // --- Multi-select (bulk-operation operand) ---
@@ -371,7 +370,7 @@ function multiSelCount(panelType) {
 
 module.exports = {
   loadConfig, initState, rebuildLayoutFromConfig,
-  allPanels, selectGroup, resetGroupContext, setDetail,
+  allPanels, selectGroup, resetGroupContext, setViewerContent,
   getSel, setSel, getScroll, setScroll, syncPanelScroll,
   toggleMultiSel, isMultiSel, clearMultiSel, multiSelCount,
   expandGroup, collapseGroup, recomputeGroups, switchGroupsTab,

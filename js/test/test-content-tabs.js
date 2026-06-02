@@ -113,7 +113,7 @@ describe('[5] updateContentTabLines — no focus steal', () => {
     tabs.addContentTab('g1', 'file:x', 'x', ['placeholder']);
     // Still on the content tab
     tabs.updateContentTabLines('g1', 'file:x', ['real', 'content']);
-    eq(getComponentSlice('detail').lines.join('\n'), 'real\ncontent', 'setDetail re-fired');
+    eq(getComponentSlice('detail').lines.join('\n'), 'real\ncontent', 'setViewerContent re-fired');
   });
   it('no-op for non-existent tab (after user closed it)', () => {
     freshGroup();
@@ -128,7 +128,7 @@ describe('[5] updateContentTabLines — no focus steal', () => {
     // Lines stored
     eq(getComponentSlice('detail').contentTabs.g1['file:x'].lines.join('\n'), 'v2');
     // But detail body NOT touched (user is on a different group)
-    // Note: setDetail is what would write to getComponentSlice('detail').lines; nothing
+    // Note: setViewerContent is what would write to getComponentSlice('detail').lines; nothing
     // forces it from this code path.
   });
 });

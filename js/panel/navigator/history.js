@@ -10,7 +10,7 @@
  */
 'use strict';
 
-const { setDetail } = require('../../app/state');
+const { setViewerContent } = require('../../app/state');
 const { getModel } = require('../../app/runtime');
 const history = require('../../feature/history');
 const mnav = require('../../leaves/nav');
@@ -145,10 +145,11 @@ function update(msg, slice) {
  *  file (which would no-op due to module caching). */
 function installEffects(registerEffect) {
   registerEffect('historyReplay', (eff) => {
-    // setDetail routes the content write through update (viewer_set_content
-    // Msg); setActiveTab routes through update (viewer_set_tab Msg). The replay
-    // string is markup-ready single-line strings so join/split round-trips.
-    setDetail(_replayLines(eff.entry).join('\n'));
+    // setViewerContent routes the content write through update
+    // (viewer_set_content Msg); setActiveTab routes through update
+    // (viewer_set_tab Msg). The replay string is markup-ready single-
+    // line strings so join/split round-trips.
+    setViewerContent(null, _replayLines(eff.entry).join('\n'));
     setActiveTab(0);
   });
 }

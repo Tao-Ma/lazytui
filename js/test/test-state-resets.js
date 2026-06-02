@@ -8,7 +8,7 @@
 'use strict';
 
 const { describe, it, eq, report } = require('./test-runner');
-const { resetGroupContext, setDetail } = require('../app/state');
+const { resetGroupContext, setViewerContent } = require('../app/state');
 const runtime = require('../app/runtime');
 const { getModel } = runtime;
 const { getComponentSlice } = require('../panel/api');
@@ -46,10 +46,10 @@ describe('[2] viewer_reset_chrome clears VIEWER-slice transient state', () => {
   });
 });
 
-describe('[3] setDetail invalidates a committed search', () => {
+describe('[3] setViewerContent invalidates a committed search', () => {
   it('drops stale matches when content is replaced', () => {
     getComponentSlice('detail').search = { active: true, term: 'err', matches: [{ line: 0, col: 0 }, { line: 2, col: 3 }], idx: 1 };
-    setDetail('brand new\ncontent here');
+    setViewerContent(null, 'brand new\ncontent here');
     eq(getComponentSlice('detail').search.active, false, 'search deactivated');
     eq(getComponentSlice('detail').search.matches.length, 0, 'stale matches dropped');
     eq(getComponentSlice('detail').search.term, '', 'term cleared');
@@ -57,7 +57,7 @@ describe('[3] setDetail invalidates a committed search', () => {
   it('leaves an inactive search untouched (no needless churn)', () => {
     getComponentSlice('detail').search = { active: false, term: '', matches: [], idx: 0 };
     const ref = getComponentSlice('detail').search;
-    setDetail('more content');
+    setViewerContent(null, 'more content');
     eq(getComponentSlice('detail').search, ref, 'same object — not reallocated when already inactive');
   });
 });

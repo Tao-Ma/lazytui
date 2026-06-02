@@ -16,7 +16,7 @@
  * `cfgStatusCompute` effect, which mounts a temp worktree on the configured
  * branch OFF-tick and dispatches `cfgStatusResult` with the cache; update()
  * folds it into the slice (effects can't write the slice). Enter on a file emits
- * `cfgStatusDiff` (git show/diff → the detail panel via setDetail). `]`/`[`/Enter
+ * `cfgStatusDiff` (git show/diff → the viewer via setViewerContent). `]`/`[`/Enter
  * are handled in update(); each returns the `_claimed` sentinel effect so the
  * framework's tab-cycle / run_selected defaults don't ALSO fire.
  * Branch comes from the panel's `config.branch` (default `config`).
@@ -419,8 +419,8 @@ function installEffects(registerEffect) {
     });
   });
   registerEffect('cfgStatusDiff', (eff) => {
-    const { setDetail } = require('../../app/state');
-    setDetail(diffFor(eff.item, eff.branch, _projectDir()).join('\n'));
+    const { setViewerContent } = require('../../app/state');
+    setViewerContent(null, diffFor(eff.item, eff.branch, _projectDir()).join('\n'));
   });
 }
 
