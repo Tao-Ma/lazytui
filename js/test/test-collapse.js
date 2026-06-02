@@ -173,32 +173,31 @@ describe('[distributeColumnHeights] honors collapsed = 1 row', () => {
 describe('[yaml-layout] collapsed serialization', () => {
   const yaml = require('../feature/yaml-layout');
 
-  it('serializeLayoutCellPoolForm emits collapsed: true', () => {
-    const lines = yaml.serializeLayoutCellPoolForm(
+  it('serializeLayoutCell emits collapsed: true (mapping form)', () => {
+    const lines = yaml.serializeLayoutCell(
       { id: 'files', type: 'files', column: 'left', collapsed: true },
       8, {});
     const joined = lines.join('\n');
     assert(joined.includes('collapsed: true'), `got: ${joined}`);
-    assert(joined.includes('id: files'), `got: ${joined}`);
+    assert(joined.includes('tabs: [files]'),   `got: ${joined}`);
   });
 
-  it('does NOT emit collapsed when absent', () => {
-    const lines = yaml.serializeLayoutCellPoolForm(
+  it('does NOT emit collapsed when absent (bare-string cell)', () => {
+    const lines = yaml.serializeLayoutCell(
       { id: 'files', type: 'files', column: 'left' },
       8, {});
     const joined = lines.join('\n');
     assert(!joined.includes('collapsed'), `got: ${joined}`);
-    // And the short id-ref form is used (no mapping needed).
-    eq(lines.length, 1, 'short id-ref form');
+    eq(lines.length, 1, 'bare pool-ref form');
   });
 
-  it('does NOT emit collapsed: false', () => {
-    const lines = yaml.serializeLayoutCellPoolForm(
+  it('does NOT emit collapsed: false (bare-string cell)', () => {
+    const lines = yaml.serializeLayoutCell(
       { id: 'files', type: 'files', column: 'left', collapsed: false },
       8, {});
     const joined = lines.join('\n');
     assert(!joined.includes('collapsed'), `got: ${joined}`);
-    eq(lines.length, 1, 'collapsed:false suppressed; short form used');
+    eq(lines.length, 1, 'collapsed:false suppressed; bare form used');
   });
 });
 

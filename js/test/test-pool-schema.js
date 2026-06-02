@@ -1,11 +1,15 @@
 /**
- * Phase 0 — `panels:` pool + layout cell resolution.
+ * v0.6.1 — `panels:` pool + pool-ref layout cells.
  *
- * Pins the v0.6 schema: pool entries are first-class panel identities;
- * layout cells reference them by id (string or `{id, ...overrides}`);
- * legacy inline `{type:}` cells synthesize implicit pool entries with
- * `_synthesized: true` so Phase 6 round-trip can preserve them in
- * their original inline form.
+ * Pins the v0.6.1 schema:
+ *   - Pool entries are first-class panel identities declared under a
+ *     top-level `panels:` block (or synthesized by the default layout
+ *     when no `layout:` block is present).
+ *   - Layout cells reference pool entries by id, either as a bare
+ *     string (single-tab pane shorthand) or as a `{tabs: [pool-id,
+ *     ...]}` mapping (multi-tab pane or placement overrides).
+ *   - v0.6's legacy inline `{type: ...}` cells reject loudly with a
+ *     migration pointer.
  *
  *   node js/test/test-pool-schema.js
  */
@@ -31,8 +35,8 @@ const TRIVIAL_GROUPS = `groups:
   g: { label: G, actions: { a: { cmd: 'echo', label: A } } }
 `;
 
-// Schema-layer errors (structural shape) fire before the resolver runs;
-// resolver-layer errors (semantic, pool-aware) fire during parseLayout.
+// Schema-layer errors fire on structural shape (during validate()).
+// Resolver-layer errors fire during parseLayout (semantic, pool-aware).
 function expectThrow(re, fn, kind = ParseError) {
   let threw = null;
   try { fn(); } catch (e) { threw = e; }
@@ -43,7 +47,7 @@ function expectThrow(re, fn, kind = ParseError) {
   }
 }
 
-describe('[default layout] synthesizes a pool from built-in panels', () => {
+describe('[default layout] synthesizes a pool from built-in panels when no layout: block', () => {
   it('default layout always produces a pool', () => {
     const p = tmpYaml(TRIVIAL_GROUPS);
     const cfg = parse(p);
@@ -63,48 +67,17 @@ describe('[default layout] synthesizes a pool from built-in panels', () => {
       assert(panel.id in cfg.layout.pool, `panel id ${panel.id} resolves in pool`);
     }
   });
-});
-
-describe('[legacy inline form] synthesizes pool from inline {type:} cells', () => {
-  it('each unique type → pool entry keyed by type', () => {
-    const p = tmpYaml(TRIVIAL_GROUPS + `
-layout:
-  left:
-    panels:
-      - { type: groups, title: G }
-  right:
-    panels:
-      - { type: actions, title: A }
-      - { type: stats,  title: S, topic: foo }
-      - { type: detail, title: D }
-`);
+  it('placed panes carry tabs[] + activeTabId', () => {
+    const p = tmpYaml(TRIVIAL_GROUPS);
     const cfg = parse(p);
-    eq(Object.keys(cfg.layout.pool).sort(), ['actions', 'detail', 'groups', 'stats']);
-    eq(cfg.layout.pool.stats.config.topic, 'foo', 'plugin-specific config carried into pool');
-    eq(cfg.layout.pool.stats._synthesized, true, 'synthesized flag set on inline-derived entries');
-  });
-  it('duplicate inline types autonumber: type, type-2, type-3', () => {
-    const p = tmpYaml(TRIVIAL_GROUPS + `
-layout:
-  left:
-    panels:
-      - { type: viewer, title: V1 }
-      - { type: viewer, title: V2 }
-      - { type: viewer, title: V3 }
-  right:
-    panels:
-      - { type: actions, title: A }
-      - { type: detail,  title: D }
-`);
-    const cfg = parse(p);
-    eq(cfg.layout.left_panels.map(p => p.id), ['viewer', 'viewer-2', 'viewer-3']);
-    eq(cfg.layout.pool['viewer'].title,   'V1');
-    eq(cfg.layout.pool['viewer-2'].title, 'V2');
-    eq(cfg.layout.pool['viewer-3'].title, 'V3');
+    for (const panel of cfg.layout.left_panels.concat(cfg.layout.right_panels)) {
+      assert(Array.isArray(panel.tabs) && panel.tabs.length >= 1, `tabs[] non-empty for ${panel.id}`);
+      eq(panel.activeTabId, panel.tabs[0].id, `activeTabId points at first tab for ${panel.id}`);
+    }
   });
 });
 
-describe('[explicit pool] top-level panels: block — declared entries are not synthesized', () => {
+describe('[bare-string cells] single-tab pane shorthand', () => {
   it('layout cell as string id references the pool', () => {
     const p = tmpYaml(TRIVIAL_GROUPS + `
 panels:
@@ -129,22 +102,87 @@ layout:
     assert(!cfg.layout.pool.g._synthesized, 'user-declared entry is not synthesized');
     assert(!cfg.layout.pool.a._synthesized, 'user-declared entry is not synthesized');
   });
-  it('layout cell as { id, ...overrides } applies placement-level overrides', () => {
+
+  it('bare-string cell mints a single-tab pane', () => {
+    const p = tmpYaml(TRIVIAL_GROUPS + `
+panels:
+  g: { type: groups }
+  a: { type: actions }
+  d: { type: detail }
+layout:
+  left:  { panels: [g] }
+  right: { panels: [a, d] }
+`);
+    const cfg = parse(p);
+    const g = cfg.layout.left_panels[0];
+    eq(g.tabs.length, 1, 'single-tab pane');
+    eq(g.tabs[0].poolId, 'g', 'tab references pool entry');
+    eq(g.activeTabId, 'g', 'active tab is the sole tab');
+  });
+});
+
+describe('[mapping cells] {tabs: [...]} multi-tab pane + placement overrides', () => {
+  it('multi-tab cell mints a pane with multiple tabs; activeTab defaults to tabs[0]', () => {
+    const p = tmpYaml(TRIVIAL_GROUPS + `
+panels:
+  docker: { type: docker, title: Docker }
+  logs:   { type: viewer, title: Logs }
+  a:      { type: actions, title: Actions }
+  d:      { type: detail, title: Detail }
+layout:
+  left:
+    panels:
+      - { tabs: [docker, logs] }
+  right:
+    panels: [a, d]
+`);
+    const cfg = parse(p);
+    const pane = cfg.layout.left_panels[0];
+    eq(pane.tabs.map(t => t.poolId), ['docker', 'logs'], 'tabs ordered as declared');
+    eq(pane.activeTabId, 'docker', 'activeTab defaults to tabs[0]');
+  });
+
+  it('explicit activeTab picks a non-first tab', () => {
+    const p = tmpYaml(TRIVIAL_GROUPS + `
+panels:
+  docker: { type: docker, title: Docker }
+  logs:   { type: viewer, title: Logs }
+  a:      { type: actions, title: Actions }
+  d:      { type: detail, title: Detail }
+layout:
+  left:
+    panels:
+      - { tabs: [docker, logs], activeTab: logs }
+  right:
+    panels: [a, d]
+`);
+    const cfg = parse(p);
+    eq(cfg.layout.left_panels[0].activeTabId, 'logs', 'activeTab honoured');
+  });
+
+  it('placement overrides (heightPct, collapsed, height) live on the cell', () => {
     const p = tmpYaml(TRIVIAL_GROUPS + `
 panels:
   g: { type: groups, title: Groups }
   a: { type: actions, title: Actions }
   d: { type: detail, title: Detail }
 layout:
+  left:
+    panels:
+      - { tabs: [g], heightPct: 40 }
   right:
     panels:
       - a
-      - { id: d, height: 70% }
+      - { tabs: [d], height: 70% }
 `);
     const cfg = parse(p);
-    eq(cfg.layout.detail_height_pct, 70, 'height override on placement lifted into detail_height_pct');
+    eq(cfg.layout.left_panels[0].heightPct, 40, 'heightPct lifted onto the pane');
+    eq(cfg.layout.detail_height_pct, 70, 'detail height lifted onto layout-level field');
   });
-  it('declared pool entries with no placement remain in pool (hidden)', () => {
+});
+
+describe('[hidden entries] declared pool entries with no placement remain in the pool', () => {
+  it('declared but unplaced entries survive into cfg.layout.pool', () => {
     const p = tmpYaml(TRIVIAL_GROUPS + `
 panels:
   g:     { type: groups }
@@ -158,36 +196,86 @@ layout:
     const cfg = parse(p);
     const placedIds = cfg.layout.left_panels.concat(cfg.layout.right_panels).map(p => p.id);
     assert(!placedIds.includes('notes'), 'notes is not placed');
-    assert('notes' in cfg.layout.pool, 'notes is still in the pool — that is what makes it hideable');
+    assert('notes' in cfg.layout.pool,    'notes is still in the pool — that is what makes it hideable');
   });
 });
 
-describe('[mixed] explicit pool + inline cells coexist; inline ids autonumber around the pool', () => {
-  it('inline {type:viewer} uses viewer-2 when viewer is in pool', () => {
-    const p = tmpYaml(TRIVIAL_GROUPS + `
+describe('[errors] schema-level rejection of legacy + malformed cells', () => {
+  it("v0.6 inline {type:} cell rejects with a migration pointer", () => {
+    expectThrow(/v0.6 inline cell shape.*not supported in v0\.6\.1/, () => parse(tmpYaml(TRIVIAL_GROUPS + `
 panels:
-  viewer: { type: viewer, title: PoolViewer }
-  a:      { type: actions }
-  d:      { type: detail }
+  g: { type: groups }
+  a: { type: actions }
+  d: { type: detail }
 layout:
   left:
     panels:
-      - viewer
-      - { type: viewer, title: InlineViewer }
+      - { type: viewer, title: Inline }
   right:
     panels: [a, d]
-`);
-    const cfg = parse(p);
-    eq(cfg.layout.left_panels.map(p => p.id), ['viewer', 'viewer-2']);
-    eq(cfg.layout.pool.viewer.title,   'PoolViewer',   'pool entry preserved');
-    eq(cfg.layout.pool['viewer-2'].title, 'InlineViewer', 'inline cell synthesized as viewer-2');
-    eq(cfg.layout.pool['viewer-2']._synthesized, true);
+`)), SchemaError);
+  });
+
+  it("v0.6 inline {id:} cell rejects too", () => {
+    expectThrow(/v0.6 inline cell shape/, () => parse(tmpYaml(TRIVIAL_GROUPS + `
+panels:
+  g: { type: groups }
+  a: { type: actions }
+  d: { type: detail }
+layout:
+  left:
+    panels: [{ id: g }]
+  right:
+    panels: [a, d]
+`)), SchemaError);
+  });
+
+  it("mapping cell missing tabs: → SchemaError", () => {
+    expectThrow(/requires 'tabs:/, () => parse(tmpYaml(TRIVIAL_GROUPS + `
+panels:
+  g: { type: groups }
+  a: { type: actions }
+  d: { type: detail }
+layout:
+  left:
+    panels: [{ heightPct: 40 }]
+  right:
+    panels: [a, d]
+`)), SchemaError);
+  });
+
+  it("empty tabs: list → SchemaError", () => {
+    expectThrow(/'tabs' must be a non-empty list/, () => parse(tmpYaml(TRIVIAL_GROUPS + `
+panels:
+  g: { type: groups }
+  a: { type: actions }
+  d: { type: detail }
+layout:
+  left:
+    panels: [{ tabs: [] }]
+  right:
+    panels: [a, d]
+`)), SchemaError);
+  });
+
+  it("activeTab not in tabs list → SchemaError", () => {
+    expectThrow(/'activeTab' must be one of/, () => parse(tmpYaml(TRIVIAL_GROUPS + `
+panels:
+  g: { type: groups }
+  a: { type: actions }
+  d: { type: detail }
+layout:
+  left:
+    panels: [{ tabs: [g], activeTab: a }]
+  right:
+    panels: [a, d]
+`)), SchemaError);
   });
 });
 
-describe('[errors]', () => {
+describe('[errors] resolver-level pool-aware rejection', () => {
   it('layout cell references unknown id → ParseError', () => {
-    expectThrow(/unknown panel id 'ghost'/, () => parse(tmpYaml(TRIVIAL_GROUPS + `
+    expectThrow(/unknown panel id 'ghost'|unknown pool id 'ghost'/, () => parse(tmpYaml(TRIVIAL_GROUPS + `
 panels:
   a: { type: actions }
   d: { type: detail }
@@ -196,65 +284,76 @@ layout:
     panels: [a, ghost, d]
 `)));
   });
+
   it("'panels:' must be a mapping", () => {
     expectThrow(/must be a mapping/, () => parse(tmpYaml(TRIVIAL_GROUPS + `
 panels:
   - { id: foo, type: bar }
 `)), SchemaError);
   });
+
   it('pool entry missing type → ParseError', () => {
     expectThrow(/missing required field 'type'/, () => parse(tmpYaml(TRIVIAL_GROUPS + `
 panels:
   ghost: { title: Ghost }
 `)));
   });
+
   it('placement-only field at pool level → ParseError', () => {
     expectThrow(/'hotkey' is a placement field/, () => parse(tmpYaml(TRIVIAL_GROUPS + `
 panels:
   a: { type: actions, hotkey: 7 }
 `)));
   });
-  it('declare-in-place collision with declared pool id → ParseError', () => {
-    expectThrow(/pool entry already exists with that id/, () => parse(tmpYaml(TRIVIAL_GROUPS + `
-panels:
-  viewer: { type: viewer }
-  a:      { type: actions }
-  d:      { type: detail }
-layout:
-  left:
-    panels: [{ id: viewer, type: viewer, title: Dup }]
-  right:
-    panels: [a, d]
-`)));
-  });
-  it('layout cell missing both id and type → SchemaError', () => {
-    expectThrow(/missing both 'id' and 'type'/, () => parse(tmpYaml(TRIVIAL_GROUPS + `
-layout:
-  right:
-    panels: [{ title: Headless }]
-`)), SchemaError);
-  });
 });
 
-describe('[regression] existing inline-form layouts still produce v0.5 shape', () => {
-  it('left_panels / right_panels arrays carry type/title/hotkey/column/config', () => {
-    const p = tmpYaml(TRIVIAL_GROUPS + `
+describe('[detail invariant] exactly one detail tab anywhere; last pane of right column', () => {
+  it('zero detail tabs → ParseError', () => {
+    expectThrow(/exactly one tab of kind 'detail'/, () => parse(tmpYaml(TRIVIAL_GROUPS + `
+panels:
+  g: { type: groups }
+  a: { type: actions }
 layout:
-  left:
-    panels:
-      - { type: groups, title: G }
-  right:
-    panels:
-      - { type: actions, title: A }
-      - { type: detail,  title: D, height: 60% }
-`);
-    const cfg = parse(p);
-    eq(cfg.layout.left_panels.length, 1);
-    eq(cfg.layout.left_panels[0].type, 'groups');
-    eq(cfg.layout.left_panels[0].hotkey, '1');
-    eq(cfg.layout.left_panels[0].column, 'left');
-    eq(cfg.layout.right_panels[1].type, 'detail');
-    eq(cfg.layout.detail_height_pct, 60);
+  left:  { panels: [g] }
+  right: { panels: [a] }
+`)));
+  });
+
+  it('two detail tabs (split across panes) → ParseError', () => {
+    expectThrow(/exactly one tab of kind 'detail'/, () => parse(tmpYaml(TRIVIAL_GROUPS + `
+panels:
+  g:  { type: groups }
+  a:  { type: actions }
+  d1: { type: detail, title: D1 }
+  d2: { type: detail, title: D2 }
+layout:
+  left:  { panels: [g] }
+  right: { panels: [a, d1, d2] }
+`)));
+  });
+
+  it('detail tab in left column → ParseError', () => {
+    expectThrow(/'detail' must be in the right column/, () => parse(tmpYaml(TRIVIAL_GROUPS + `
+panels:
+  g: { type: groups }
+  a: { type: actions }
+  d: { type: detail }
+layout:
+  left:  { panels: [g, d] }
+  right: { panels: [a] }
+`)));
+  });
+
+  it("detail tab not in last pane of right column → ParseError", () => {
+    expectThrow(/last pane of the right column/, () => parse(tmpYaml(TRIVIAL_GROUPS + `
+panels:
+  g: { type: groups }
+  a: { type: actions }
+  d: { type: detail }
+layout:
+  left:  { panels: [g] }
+  right: { panels: [d, a] }
+`)));
   });
 });
 
