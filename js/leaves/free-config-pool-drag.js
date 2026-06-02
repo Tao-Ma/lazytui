@@ -27,7 +27,8 @@
  */
 'use strict';
 
-const { pointToCellZone, _columnRanges } = require('./free-config');
+const mfc = require('./free-config');
+const { pointToCellZone, _columnRanges, _newColumnZoneAt, EDGE_W } = mfc;
 const mpool = require('./pool');
 const { placementFromPoolEntry } = mpool;
 
@@ -45,6 +46,12 @@ function pointToPoolDropTarget(slice, mx, my, COLS) {
   if (mx < 0 || my < 0) return null;
   const drag = slice.freeConfig && slice.freeConfig.drag;
   const sourceEntry = drag && drag.sourceId ? (arrange.pool || {})[drag.sourceId] : null;
+
+  // Edge/gap zones first — same precedence as the in-grid drag. A pool
+  // entry dropped at the screen edge or in a column gap spawns a new
+  // column instead of going into an existing one.
+  const ncz = _newColumnZoneAt(arrange, mx, COLS);
+  if (ncz) return validatePoolNewColumn(arrange, ncz.position, sourceEntry);
 
   // Per-column scan: find a cell whose x-range contains mx, classify zone.
   const scan = (columnIndex, panels) => {
@@ -116,6 +123,21 @@ function validateInsert(arrange, columnIndex, index, sourceEntry) {
   const t = { kind: 'insert', columnIndex, index: idx, valid };
   if (clamp) t.clamp = clamp;
   return t;
+}
+
+/** Validity for a new-column drop from the pool. Phase 2 rules mirror
+ *  the in-grid drag: detail/actions sources refuse, AND spawning at
+ *  position == N (right edge) refuses (it would push the current last
+ *  column off "last" and break detail's invariant). */
+function validatePoolNewColumn(arrange, position, sourceEntry) {
+  if (sourceEntry && mpool.isReservedPane(sourceEntry)) {
+    return { kind: 'new_column', position, valid: false, reason: `${sourceEntry.type} must stay in the last column` };
+  }
+  const N = mpool.columnCount(arrange);
+  if (position === N) {
+    return { kind: 'new_column', position, valid: false, reason: `can't push detail off the last column` };
+  }
+  return { kind: 'new_column', position, valid: true };
 }
 
 /** Replace validity: detail can't be replaced (essential to the layout);
@@ -202,6 +224,13 @@ function poolDragRelease(slice) {
     ];
     return [closeOverlay, cmds];
   }
+  if (t.kind === 'new_column') {
+    const cmds = [
+      { type: 'dispatch_msg', msg: { kind: 'layout', msg: { type: 'pool_show_new_column', id: sourceId, position: t.position } } },
+      repaint,
+    ];
+    return [closeOverlay, cmds];
+  }
   // insert
   const showCmd = {
     type: 'dispatch_msg',
@@ -224,6 +253,10 @@ function computePoolDragPreviewArrange(slice) {
   const entry = (slice.arrange.pool || {})[drag.sourceId];
   if (!entry) return null;
   const arrange = slice.arrange;
+  if (t.kind === 'new_column') {
+    const spawned = spawnNewColumnArrange(arrange, t.position, placementFromPoolEntry(entry, -1));
+    return mfc.reassignHotkeys(spawned);
+  }
   const placement = placementFromPoolEntry(entry, t.columnIndex);
   if (t.kind === 'replace') {
     return mpool.updateColumn(arrange, t.columnIndex, panels =>
@@ -236,8 +269,55 @@ function computePoolDragPreviewArrange(slice) {
   });
 }
 
+/** Build a new arrange with a freshly-spawned column at `position`
+ *  containing the single `placement` pane. Pure transform — used by
+ *  the live preview AND the reducer's pool_show_new_column arm. Width
+ *  allocation: edge spawns at the END produce an implicit-width new
+ *  last column (old last gets promoted to explicit); everything else
+ *  gets an explicit width stolen from adjacent columns. Width math
+ *  mirrors leaves/free-config.js#applyNewColumn so the preview
+ *  matches what release will commit. */
+function spawnNewColumnArrange(arrange, position, placement) {
+  const NEW_COL_DEFAULT_W = 24;
+  const columns = (arrange.columns || []).slice();
+  const willBeNewLast = position === columns.length;
+  const newCol = { panels: [placement] };
+  if (!willBeNewLast) {
+    let donated = 0;
+    if (position > 0) {
+      const left = columns[position - 1];
+      if (left.width != null) {
+        const take = Math.max(8, Math.floor(left.width / 3));
+        const newW = Math.max(10, left.width - take);
+        columns[position - 1] = { ...left, width: newW };
+        donated += (left.width - newW);
+      }
+    }
+    if (position < columns.length) {
+      const right = columns[position];
+      if (right.width != null) {
+        const take = Math.max(8, Math.floor(right.width / 3));
+        const newW = Math.max(10, right.width - take);
+        columns[position] = { ...right, width: newW };
+        donated += (right.width - newW);
+      }
+    }
+    newCol.width = donated > 0 ? donated : NEW_COL_DEFAULT_W;
+  } else {
+    const oldLastIdx = columns.length - 1;
+    const oldLast = columns[oldLastIdx];
+    if (oldLast && oldLast.width == null) {
+      columns[oldLastIdx] = { ...oldLast, width: NEW_COL_DEFAULT_W * 2 };
+    }
+  }
+  columns.splice(position, 0, newCol);
+  return { ...arrange, columns };
+}
+
 module.exports = {
   pointToPoolDropTarget,
   poolDragStart, poolDragMotion, poolDragRelease,
   computePoolDragPreviewArrange,
+  spawnNewColumnArrange,
+  validatePoolNewColumn,
 };

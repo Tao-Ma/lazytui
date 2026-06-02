@@ -32,6 +32,19 @@ const mpool = require('./pool');
 const { LEFT_HOTKEY_POOL, RIGHT_HOTKEY_POOL } = require('./hotkeys');
 
 const MIN_PANEL_H = 3;
+// Width allocation cells reserved for the edge/gap drop zones that
+// spawn a new column. Cursor within EDGE_W of the terminal's left
+// edge, the right edge, or any internal column boundary maps to
+// `{kind: 'new_column', position}`. The existing 3-zone-per-cell hit
+// runs only when none of these match — so the user can still drop
+// inside the first cell of column 0 by aiming at its top/middle/bot
+// strictly INSIDE the column (mx >= EDGE_W).
+const EDGE_W = 2;
+// Default width for a newly-spawned column. The renderer's
+// _distributeColumnWidths squeezes everything to fit the terminal, so
+// a too-large default just shrinks the other columns. 24 leaves a
+// usable column on most terminals.
+const NEW_COL_DEFAULT_W = 24;
 // Detail height %, computed against available column rows. Big
 // terminals (with enough rows) get more range — a 100-row column can
 // shrink detail to 5% (5 rows still legible) and grow it to 97%
@@ -500,6 +513,29 @@ function _boundaryAtX(arrange, mx, COLS) {
   return null;
 }
 
+/** Detect the new-column drop zone the cursor falls in, or null. Three
+ *  classes:
+ *    - left edge: `mx < EDGE_W` → position 0
+ *    - right edge: `mx >= COLS - EDGE_W` → position N
+ *    - column gap: `|mx - boundary| < EDGE_W` → position i+1 (between
+ *      columns i and i+1)
+ *  Edge-of-terminal classes take precedence over gap (they catch the
+ *  cursor sitting at x=0 / x=COLS-1 even when col0.width or the last
+ *  column's width is < EDGE_W). */
+function _newColumnZoneAt(arrange, mx, COLS) {
+  const N = (arrange.columns || []).length;
+  if (mx < EDGE_W) return { position: 0 };
+  if (mx >= COLS - EDGE_W) return { position: N };
+  const ranges = _columnRanges(arrange, COLS);
+  for (let i = 0; i < ranges.length - 1; i++) {
+    const bx = ranges[i].x + ranges[i].w;
+    if (Math.abs(mx - bx) < EDGE_W) {
+      return { position: i + 1 };
+    }
+  }
+  return null;
+}
+
 // ---------------------------------------------------------------- mouse hit-tests
 
 /**
@@ -590,6 +626,12 @@ function pointToCellZone(b, my) {
  * or null when the point isn't in any column.
  */
 function pointToDropTarget(slice, srcType, mx, my, COLS) {
+  // Edge/gap zones first — spawn-new-column takes precedence over the
+  // in-column 3-zone hit. Users still reach in-column inserts at the
+  // top/middle/bot of any pane that lives strictly INSIDE the column
+  // (i.e., mx >= EDGE_W and away from internal boundaries).
+  const ncz = _newColumnZoneAt(slice.arrange, mx, COLS);
+  if (ncz) return validateNewColumn(slice, srcType, ncz.position);
   const ranges = _columnRanges(slice.arrange, COLS);
   for (const r of ranges) {
     const panels = mpool.columnPanels(slice.arrange, r.columnIndex);
@@ -601,6 +643,26 @@ function pointToDropTarget(slice, srcType, mx, my, COLS) {
     }
   }
   return null;
+}
+
+/** Validate a new_column drop. Phase 2 rules:
+ *    - Detail and actions sources refuse (they live in the last column
+ *      by invariant; moving them to a fresh column would split the
+ *      reserved-pane group).
+ *    - Spawning at position == N (right edge) refuses: would promote
+ *      a non-reserved pane to the new last column, demoting the old
+ *      last (where detail lives) off "last" and breaking the invariant.
+ *      Phase 3's `:add-column` verb may relax this with explicit UX.
+ *  Future arc can relax both. */
+function validateNewColumn(slice, srcType, position) {
+  if (srcType === 'detail' || srcType === 'actions') {
+    return { kind: 'new_column', position, valid: false, reason: `${srcType} must stay in the last column` };
+  }
+  const N = mpool.columnCount(slice.arrange);
+  if (position === N) {
+    return { kind: 'new_column', position, valid: false, reason: `can't push detail off the last column` };
+  }
+  return { kind: 'new_column', position, valid: true };
 }
 
 function matchColumn(slice, panels, mx, my) {
@@ -735,11 +797,102 @@ function applyBoundaryResize(slice, my) {
   return { ...next, dirty: true };
 }
 
-/** Apply a drop target — insert (splice + insert at slot) or swap (trade
- *  slots with occupant). Re-derives hotkeys positionally; marks dirty. */
+/** Apply a drop target — insert (splice + insert at slot), swap (trade
+ *  slots with occupant), or new_column (splice a fresh column in at
+ *  `position` containing the dragged pane). Re-derives hotkeys
+ *  positionally; marks dirty. */
 function applyDrop(slice, srcType, target) {
   if (target.kind === 'swap') return applySwap(slice, srcType, target);
+  if (target.kind === 'new_column') return applyNewColumn(slice, srcType, target);
   return applyInsert(slice, srcType, target);
+}
+
+/** Spawn a new column at `target.position` containing the dragged
+ *  pane (moved from its source column). Width allocation:
+ *    - position 0 (left edge): steal floor(col0.w / 2) from old col 0
+ *    - position N (right edge, becomes new last): old last column was
+ *      implicit-width; we promote it to explicit so the new last takes
+ *      its old rendered width minus a default share, leaving the new
+ *      column implicit
+ *    - position in middle: new column gets a default width (or
+ *      floor(min(neighbor.w) / 2) when neighbors are explicit)
+ *  Source column that ends up empty (the dragged pane was its only
+ *  occupant) gets removed — keeps the UX clean. */
+function applyNewColumn(slice, srcType, target) {
+  const arrange = slice.arrange;
+  const fromLoc = mpool.findPaneLocation(arrange, p => p.type === srcType);
+  if (!fromLoc) return slice;
+  const src = fromLoc.pane;
+  const position = target.position;
+  const N = mpool.columnCount(arrange);
+  const lastIdx = N - 1;
+
+  // Build the source column minus the dragged pane.
+  const fromCol = arrange.columns[fromLoc.columnIndex];
+  const fromPanels = (fromCol.panels || []).filter((_, i) => i !== fromLoc.paneIndex);
+  const sourceWillBeEmpty = fromPanels.length === 0;
+  // Can't remove the last column (detail invariant).
+  const removeSource = sourceWillBeEmpty && fromLoc.columnIndex !== lastIdx;
+
+  // Compute the new column's width + adjust neighbors.
+  // We work against a TRANSIENT copy of arrange that has the source
+  // column either updated (with the dragged pane removed) or removed
+  // entirely. Then splice in the new column at `position`. Indexes
+  // shift if removeSource fires before `position`; track that.
+  let workingColumns = arrange.columns.slice();
+  workingColumns[fromLoc.columnIndex] = { ...fromCol, panels: fromPanels };
+  let effectivePosition = position;
+  if (removeSource) {
+    workingColumns.splice(fromLoc.columnIndex, 1);
+    if (fromLoc.columnIndex < position) effectivePosition = position - 1;
+  }
+
+  const willBeNewLast = effectivePosition === workingColumns.length;
+  const newPane = { ...src, columnIndex: -1 /* fixed below by _reassignHotkeys */ };
+  const newCol = { panels: [newPane] };
+
+  if (!willBeNewLast) {
+    // New column has explicit width. Steal from adjacent columns.
+    let donated = 0;
+    if (effectivePosition > 0) {
+      const left = workingColumns[effectivePosition - 1];
+      if (left.width != null) {
+        const take = Math.max(8, Math.floor(left.width / 3));
+        const newW = Math.max(10, left.width - take);
+        workingColumns[effectivePosition - 1] = { ...left, width: newW };
+        donated += (left.width - newW);
+      }
+    }
+    if (effectivePosition < workingColumns.length) {
+      const right = workingColumns[effectivePosition];
+      if (right.width != null) {
+        const take = Math.max(8, Math.floor(right.width / 3));
+        const newW = Math.max(10, right.width - take);
+        workingColumns[effectivePosition] = { ...right, width: newW };
+        donated += (right.width - newW);
+      }
+    }
+    newCol.width = donated > 0 ? donated : NEW_COL_DEFAULT_W;
+  } else {
+    // New column becomes the new last → implicit width. The PREVIOUS
+    // last column (workingColumns[end-1]) was implicit; promote it to
+    // explicit at its current default width (NEW_COL_DEFAULT_W * 2 is
+    // a rough heuristic; the renderer's _distributeColumnWidths
+    // squeezes anything that overflows).
+    const oldLastIdx = workingColumns.length - 1;
+    const oldLast = workingColumns[oldLastIdx];
+    if (oldLast && oldLast.width == null) {
+      workingColumns[oldLastIdx] = { ...oldLast, width: NEW_COL_DEFAULT_W * 2 };
+    }
+  }
+
+  workingColumns.splice(effectivePosition, 0, newCol);
+  const nextArrange = { ...arrange, columns: workingColumns };
+  return {
+    ...slice,
+    arrange: _reassignHotkeys(nextArrange),
+    dirty: true,
+  };
 }
 
 function applyInsert(slice, srcType, target) {
@@ -938,7 +1091,7 @@ function computeDragPreviewArrange(slice) {
 }
 
 module.exports = {
-  MIN_PANEL_H, DETAIL_MIN_ROWS, detailMinPct, detailMaxPct,
+  MIN_PANEL_H, EDGE_W, DETAIL_MIN_ROWS, detailMinPct, detailMaxPct,
   allFreeConfigPanels, selectedIdx,
   snapshot, undo, redo, clearUndoStacks,
   columnTotalH, freezeColumnFlex, panelHeightPct,
@@ -947,5 +1100,7 @@ module.exports = {
   pointToResizeTarget, pointToDropTarget, pointToCellZone, panelAt,
   mousePress, mouseMotion, mouseRelease,
   computeDragPreviewArrange,
-  _columnRanges,
+  validateNewColumn, applyNewColumn,
+  reassignHotkeys: _reassignHotkeys,
+  _columnRanges, _newColumnZoneAt,
 };

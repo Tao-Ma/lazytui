@@ -253,13 +253,15 @@ describe('[2] onMouseEvent — state machine transitions', () => {
     eq(getInstanceSlice("layout").arrange.columns[1].panels[2].type, 'detail', 'detail still in right column');
   });
 
-  it('release outside any column → no mutation', () => {
+  it('release at the right-edge zone is refused (would push detail off last)', () => {
     setupFixture();
     onMouseEvent('press',   5, 2);
-    onMouseEvent('motion', 200, 200);  // off-screen
+    onMouseEvent('motion', 200, 200);  // mx past COLS - EDGE_W → right-edge zone, refused
     onMouseEvent('release', 200, 200);
-    eq(getInstanceSlice('layout').dirty, false);
+    // Invalid drop → mouseRelease skips applyDrop; layout unchanged.
+    eq(getInstanceSlice('layout').dirty, false, 'invalid drop → no mutation');
     eq(getInstanceSlice("layout").arrange.columns[0].panels[0].type, 'containers');
+    eq(getInstanceSlice("layout").arrange.columns.length, 2, 'still 2 columns');
   });
 });
 

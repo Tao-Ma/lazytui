@@ -61,6 +61,7 @@ function _dragTargetsEqual(a, b) {
   return a.kind === b.kind
       && a.columnIndex === b.columnIndex
       && a.index === b.index
+      && a.position === b.position
       && a.occupantId === b.occupantId
       && a.occupantType === b.occupantType
       && a.valid === b.valid;
@@ -610,6 +611,37 @@ function update(msg, slice) {
       // Move focus to the newly-shown panel — matches the overlay UX
       // where picking from the pool surfaces it as the active one.
       return mfc.clampSelected(next, entry.type);
+    }
+    // v0.6.2 Phase 2 — pool drag dropping at a screen edge / column
+    // gap spawns a NEW column at `position`. The pool entry becomes
+    // the new column's only pane. Detail/actions sources are refused
+    // by the validator (defense-in-depth: they're rejected again
+    // here).
+    case 'pool_show_new_column': {
+      const arrange = slice.arrange;
+      const id = msg.id;
+      const entry = (arrange.pool || {})[id];
+      if (!entry) return slice;
+      if (mpool.placedIdSet(arrange).has(id)) return slice;  // already placed
+      if (mpool.isReservedPane(entry)) return slice;
+      const N = mpool.columnCount(arrange);
+      const position = msg.position;
+      if (typeof position !== 'number' || position < 0 || position > N) return slice;
+      // Right-edge spawn (position == N) is refused — it'd push the
+      // detail-bearing last column off "last". Same rule the validator
+      // enforces at hit-test time; defense-in-depth here.
+      if (position === N) return slice;
+      const placement = mpool.placementFromPoolEntry(entry, position);
+      // Reuse the leaf's pure transform so live preview + commit match.
+      const spawned = mpoolDrag.spawnNewColumnArrange(arrange, position, placement);
+      // Reassign hotkeys + stamp columnIndex across all columns —
+      // splicing in shifts columns at index >= position by +1, so
+      // every pane's columnIndex needs to be re-stamped.
+      const nextArrange = mfc.reassignHotkeys(spawned);
+      return mfc.clampSelected(
+        { ...slice, arrange: nextArrange, dirty: true },
+        entry.type,
+      );
     }
     default:
       return slice;

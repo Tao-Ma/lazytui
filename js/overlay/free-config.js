@@ -60,6 +60,9 @@ function getFreeConfigFooter() {
       }
       return ` | dragging ${esc(srcTitle)} → [bold yellow]swap[/] ${esc(panelTitle(t.occupantType))} (col ${t.columnIndex + 1})`;
     }
+    if (t.kind === 'new_column') {
+      return ` | dragging ${esc(srcTitle)} → [bold green]new column[/] at position ${t.position + 1}`;
+    }
     const clampSuffix = t.clamp ? ` [dim](clamped — ${esc(t.clamp)})[/]` : '';
     return ` | dragging ${esc(srcTitle)} → col ${t.columnIndex + 1} @ ${t.index}${clampSuffix}`;
   }
@@ -81,6 +84,9 @@ function getFreeConfigFooter() {
     }
     if (t.kind === 'replace') {
       return ` | from pool: ${esc(srcTitle)} → [bold yellow]replace[/] ${esc(t.occupantId)} (col ${t.columnIndex + 1})`;
+    }
+    if (t.kind === 'new_column') {
+      return ` | from pool: ${esc(srcTitle)} → [bold green]new column[/] at position ${t.position + 1}`;
     }
     const clampSuffix = t.clamp ? ` [dim](clamped — ${esc(t.clamp)})[/]` : '';
     return ` | from pool: ${esc(srcTitle)} → [bold green]insert[/] at col ${t.columnIndex + 1}:${t.index}${clampSuffix}`;
