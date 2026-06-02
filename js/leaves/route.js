@@ -96,9 +96,26 @@ function disposeInstance(id) {
   }
 }
 
+/** Kind of the tab at `id`. Accepts two shapes (v0.6.1 Phase 7 shim):
+ *
+ *   - instance id  — direct `_instances[id].kind` read (Phase 3 store).
+ *   - panel-type   — fallback via `componentForPanel(id)` returning the
+ *                    Component name (the kind for singleton instances).
+ *
+ *  This dual-acceptance lets `getFocus()` flip from a panel-type
+ *  string (today) to a tab id (Phase 7+) without breaking the
+ *  comparison sites that ask "what kind is the focused tab?". For
+ *  the docker Component (name='docker', panelType='containers') the
+ *  fallback resolves 'containers' to 'docker' so kind comparisons
+ *  see the Component identity consistently.
+ *
+ *  Returns null when neither lookup succeeds. */
 function instanceKind(id) {
   const inst = _instances[id];
-  return inst ? inst.kind : null;
+  if (inst) return inst.kind;
+  const compName = _panelOwner[id];
+  if (compName) return compName;
+  return null;
 }
 
 /** Iterate all instances. Order is insertion order. Used by the broadcast
@@ -176,8 +193,7 @@ function getFocus() {
 const VIEWER_KIND = 'detail';
 
 function isViewerKind(id) {
-  const inst = _instances[id];
-  return !!(inst && inst.kind === VIEWER_KIND);
+  return instanceKind(id) === VIEWER_KIND;
 }
 
 function resolveTarget(intent, ctx) {
