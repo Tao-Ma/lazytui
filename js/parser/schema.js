@@ -115,7 +115,7 @@ function validateLayout(layout, warnings) {
     throw new SchemaError(
       "v0.6.1 layout shape (`left:` / `right:` blocks) is not supported in v0.6.2. " +
       "Use `columns: [{width?, panels: [...]}, ...]` (last column's width is implicit). " +
-      "See docs/v0.6.2-columns.md.",
+      "See docs/v0.6.2-migrate.md.",
       { context: 'layout' },
     );
   }

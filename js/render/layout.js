@@ -824,12 +824,17 @@ function renderFooter(model = getModel()) {
   }
 
   // Layout notice — a transient hint set by layout.update when a free-
-  // config / view-mode transition is refused. Shown in red so it reads
-  // as a refusal explanation, not normal status. Cleared by layout.update
-  // on the next state change that resolves the block (free_config_exit /
-  // successful view change).
+  // config / view-mode transition is refused (kind: 'error', red) OR a
+  // successful column-edit action (kind: 'info', green). noticeKind
+  // defaults to 'error' when omitted so legacy refusal sites keep their
+  // red color without explicit annotation. Cleared by layout.update on
+  // the next state change that resolves the block.
   const layoutNotice = layoutSlice.freeConfig && layoutSlice.freeConfig.notice;
-  if (layoutNotice) keys += ` | [bold red]${esc(layoutNotice)}[/]`;
+  if (layoutNotice) {
+    const kind = (layoutSlice.freeConfig && layoutSlice.freeConfig.noticeKind) || 'error';
+    const color = kind === 'info' ? 'bold green' : 'bold red';
+    keys += ` | [${color}]${esc(layoutNotice)}[/]`;
+  }
 
   // Boot warnings — soft diagnostics surfaced by parse (today: column
   // over soft cap). Yellow so it reads as advisory, not an error.

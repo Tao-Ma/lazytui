@@ -116,6 +116,46 @@ const FRAMEWORK_COMMANDS = [
       require('./api').dispatchMsg(wrap('layout', { type: 'dismiss_warnings' }));
     },
   },
+  {
+    name: 'add-column',
+    desc: 'Insert an empty column — :add-column [position]  (default: just before the last column)',
+    run: (args) => {
+      const api = require('./api');
+      const layoutSlice = route.getInstanceSlice('layout');
+      const mpool = require('../leaves/pool');
+      const N = mpool.columnCount(layoutSlice && layoutSlice.arrange);
+      // Default: insert just before the last column (so it sits between
+      // the navigators and the viewer-side last column). 1-based for
+      // the cmdline UX (user sees columns numbered 1..N+1); internal
+      // position is 0-based.
+      let position1 = (args && args.length > 0) ? parseInt(args[0], 10) : N;
+      if (!Number.isInteger(position1)) {
+        const { setViewerContent } = require('../app/state');
+        setViewerContent(null, `[red]:add-column requires a 1-based integer position[/]`);
+        return;
+      }
+      api.dispatchMsg(wrap('layout', { type: 'add_column', position: position1 - 1 }));
+    },
+  },
+  {
+    name: 'remove-column',
+    desc: 'Remove an empty column — :remove-column <n>  (1-based; refused on last column or non-empty)',
+    run: (args) => {
+      const api = require('./api');
+      if (!args || args.length === 0) {
+        const { setViewerContent } = require('../app/state');
+        setViewerContent(null, `[red]:remove-column requires a column number[/]`);
+        return;
+      }
+      const n1 = parseInt(args[0], 10);
+      if (!Number.isInteger(n1)) {
+        const { setViewerContent } = require('../app/state');
+        setViewerContent(null, `[red]:remove-column requires a 1-based integer column number[/]`);
+        return;
+      }
+      api.dispatchMsg(wrap('layout', { type: 'remove_column', n: n1 - 1 }));
+    },
+  },
 ];
 
 /**

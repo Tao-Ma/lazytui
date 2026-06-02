@@ -55,6 +55,22 @@ function rekeyColumn(panels, pool) {
  *  `index` two distinct inserts compare equal; without `occupantType`
  *  /`occupantId` distinct swap/replace targets compare equal. curX/curY
  *  are not visual; ignore them. */
+/** Set a green status notice on slice (success messages — column added,
+ *  column removed, etc.). Mirrors the red `_withNotice('error')` flow but
+ *  flags `noticeKind: 'info'` so the footer paints it green. */
+function _withStatus(slice, text) {
+  if (!slice.freeConfig) return slice;
+  return { ...slice, freeConfig: { ...slice.freeConfig, notice: text, noticeKind: 'info' } };
+}
+
+/** Set a notice on slice with explicit kind. Used by the column-edit
+ *  arms for refusal messages (Phase 3) — existing refusal sites
+ *  (view-mode guards) keep the implicit 'error' default. */
+function _withNotice(slice, text, kind) {
+  if (!slice.freeConfig) return slice;
+  return { ...slice, freeConfig: { ...slice.freeConfig, notice: text, noticeKind: kind || 'error' } };
+}
+
 function _dragTargetsEqual(a, b) {
   if (a === b) return true;
   if (!a || !b) return false;
@@ -363,7 +379,17 @@ function update(msg, slice) {
       const withPreview = { ...next, freeConfig: { ...next.freeConfig, drag: { ...ns, previewArrange } } };
       return [withPreview, [{ type: 'force_full_repaint' }]];
     }
-    case 'free_config_mouse_release': return mfc.mouseRelease(slice);
+    case 'free_config_mouse_release': {
+      // Capture the would-be commit BEFORE mouseRelease clears the drag
+      // state so the post-release status notice can name the position.
+      const ds = slice.freeConfig && slice.freeConfig.drag;
+      const wasNewColumnDrop = ds && ds.kind === 'dragging' && ds.target
+                            && ds.target.kind === 'new_column' && ds.target.valid;
+      const pos = wasNewColumnDrop ? ds.target.position : null;
+      const next = mfc.mouseRelease(slice);
+      if (pos !== null) return _withStatus(next, `added new column at position ${pos + 1}`);
+      return next;
+    }
     // Pool-drag gesture from the panel-list overlay. Source is the
     // overlay cursor's item id; drop is on a layout cell (replace) or
     // column gap (append). poolDragRelease returns the [next, cmds]
@@ -638,10 +664,30 @@ function update(msg, slice) {
       // splicing in shifts columns at index >= position by +1, so
       // every pane's columnIndex needs to be re-stamped.
       const nextArrange = mfc.reassignHotkeys(spawned);
-      return mfc.clampSelected(
+      const spawnedSlice = mfc.clampSelected(
         { ...slice, arrange: nextArrange, dirty: true },
         entry.type,
       );
+      // Phase 3 status message — surface the spawn so the user knows
+      // the drop worked even when the new column is off-screen edge.
+      return _withStatus(spawnedSlice, `added new column at position ${position + 1}`);
+    }
+    // v0.6.2 Phase 3 — cmdline + programmatic column management.
+    // add_column inserts an empty column at `position` (0..N-1);
+    // remove_column deletes the empty column at index `n`. Both route
+    // through pure leaf helpers (mfc.addColumn / mfc.removeColumn)
+    // that return `{ slice, error }`; the reducer threads the error
+    // into freeConfig.notice (red) on refusal or a green status notice
+    // on success.
+    case 'add_column': {
+      const { slice: next, error } = mfc.addColumn(slice, msg.position);
+      if (error) return _withNotice(slice, error, 'error');
+      return _withStatus(next, `added empty column at position ${msg.position + 1}`);
+    }
+    case 'remove_column': {
+      const { slice: next, error } = mfc.removeColumn(slice, msg.n);
+      if (error) return _withNotice(slice, error, 'error');
+      return _withStatus(mfc.clampSelected(next), `removed column ${msg.n + 1}`);
     }
     default:
       return slice;

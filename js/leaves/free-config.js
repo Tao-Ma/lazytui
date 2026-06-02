@@ -1070,6 +1070,96 @@ function mouseRelease(slice) {
  *  pass, restoring after so subsequent hit-tests use the stable original
  *  layout (prevents the recursive flicker where painting the preview would
  *  change which cell the cursor "is in" on the next motion event). */
+// ---------------------------------------------------------------- column add/remove (Phase 3)
+
+/**
+ * Pure transform: insert an empty column at `position` (0..N-1) and
+ * return a new slice. Phase 3 rules mirror the drag-edge spawn:
+ *   - position must be 0 <= P <= N-1 (P === N is refused — would
+ *     demote the detail-bearing last column off "last")
+ *   - new column has explicit width (stolen from neighbors) so it
+ *     doesn't collide with the last column's implicit width
+ *   - hotkeys re-stamped via _reassignHotkeys after the splice
+ *
+ * Returns `{ slice, error }` where `error` is null on success or a
+ * user-facing message string on refusal. Pure: no side effects.
+ */
+function addColumn(slice, position) {
+  const arrange = slice.arrange;
+  const N = mpool.columnCount(arrange);
+  if (typeof position !== 'number' || !Number.isInteger(position)) {
+    return { slice, error: 'position must be an integer' };
+  }
+  if (position < 0 || position > N) {
+    return { slice, error: `position out of range (0..${N - 1})` };
+  }
+  if (position === N) {
+    return { slice, error: `can't add a column at position ${N} — would push detail off the last column` };
+  }
+  // Steal width from neighbors. position > 0 → take from left; the
+  // right neighbor is always defined here (position <= N-1).
+  const columns = arrange.columns.slice();
+  let donated = 0;
+  if (position > 0) {
+    const left = columns[position - 1];
+    if (left.width != null) {
+      const take = Math.max(8, Math.floor(left.width / 3));
+      const newW = Math.max(10, left.width - take);
+      columns[position - 1] = { ...left, width: newW };
+      donated += (left.width - newW);
+    }
+  }
+  // Right neighbor is at index `position` (before splice). If it's
+  // the last column its width is implicit — nothing to steal there
+  // (the renderer's _distributeColumnWidths will shrink it via its
+  // own remainder math when the explicit-sum grows).
+  const right = columns[position];
+  if (right && right.width != null) {
+    const take = Math.max(8, Math.floor(right.width / 3));
+    const newW = Math.max(10, right.width - take);
+    columns[position] = { ...right, width: newW };
+    donated += (right.width - newW);
+  }
+  const newCol = { width: donated > 0 ? donated : 24, panels: [] };
+  columns.splice(position, 0, newCol);
+  const nextArrange = _reassignHotkeys({ ...arrange, columns });
+  return { slice: { ...slice, arrange: nextArrange, dirty: true }, error: null };
+}
+
+/**
+ * Pure transform: remove the column at index `n` and return a new
+ * slice. Phase 3 rules:
+ *   - n must be 0 <= n < N
+ *   - n must NOT be the last column (it holds detail by invariant)
+ *   - column must be empty (caller must `:hide` or drag panes out first)
+ *
+ * Returns `{ slice, error }`. Removing the column splices out the
+ * array slot AND re-stamps columnIndex on every pane in shifted
+ * columns via _reassignHotkeys. The terminal-side width redistributes
+ * automatically since the last column's implicit width grows.
+ */
+function removeColumn(slice, n) {
+  const arrange = slice.arrange;
+  const N = mpool.columnCount(arrange);
+  if (typeof n !== 'number' || !Number.isInteger(n)) {
+    return { slice, error: 'column index must be an integer' };
+  }
+  if (n < 0 || n >= N) {
+    return { slice, error: `column index out of range (0..${N - 1})` };
+  }
+  if (n === N - 1) {
+    return { slice, error: `can't remove the last column — it holds detail` };
+  }
+  const col = arrange.columns[n];
+  if ((col.panels || []).length > 0) {
+    return { slice, error: `column ${n + 1} is not empty — hide its panes first` };
+  }
+  const columns = arrange.columns.slice();
+  columns.splice(n, 1);
+  const nextArrange = _reassignHotkeys({ ...arrange, columns });
+  return { slice: { ...slice, arrange: nextArrange, dirty: true }, error: null };
+}
+
 function computeDragPreviewArrange(slice) {
   const drag = slice.freeConfig && slice.freeConfig.drag;
   if (!drag || drag.kind !== 'dragging') return null;
@@ -1101,6 +1191,7 @@ module.exports = {
   mousePress, mouseMotion, mouseRelease,
   computeDragPreviewArrange,
   validateNewColumn, applyNewColumn,
+  addColumn, removeColumn,
   reassignHotkeys: _reassignHotkeys,
   _columnRanges, _newColumnZoneAt,
 };

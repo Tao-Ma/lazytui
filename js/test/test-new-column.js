@@ -327,7 +327,136 @@ describe('[8] pool_show_new_column — layout reducer', () => {
 
 // ----- _dragTargetsEqual handles position field -----
 
-describe('[9] _dragTargetsEqual — new_column targets compare on `position`', () => {
+// ----- Phase 3: addColumn / removeColumn leaf helpers + Msg arms -----
+
+describe('[10] addColumn — Phase 3 leaf helper', () => {
+  it('inserts an empty column at position; column has explicit width', () => {
+    const s = makeSlice();
+    const { slice: out, error } = mfc.addColumn(s, 1);
+    eq(error, null);
+    eq(out.arrange.columns.length, 3);
+    eq(out.arrange.columns[1].panels.length, 0, 'inserted column is empty');
+    assert(out.arrange.columns[1].width != null, 'inserted column has explicit width');
+    eq(out.dirty, true);
+  });
+
+  it('position 0 (front) inserts before the first column', () => {
+    const s = makeSlice();
+    const { slice: out, error } = mfc.addColumn(s, 0);
+    eq(error, null);
+    eq(out.arrange.columns.length, 3);
+    eq(out.arrange.columns[0].panels.length, 0);
+    eq(out.arrange.columns[1].panels[0].type, 'containers', 'old col 0 shifted to index 1');
+    eq(out.arrange.columns[1].panels[0].columnIndex, 1, 'columnIndex re-stamped');
+  });
+
+  it('position N (right edge) refused', () => {
+    const s = makeSlice();
+    const { slice: out, error } = mfc.addColumn(s, 2);  // N=2
+    assert(error !== null);
+    assert(/last column/.test(error), `error mentions last column: ${error}`);
+    eq(out, s, 'slice unchanged');
+  });
+
+  it('out-of-range position refused', () => {
+    const s = makeSlice();
+    const a = mfc.addColumn(s, -1);
+    const b = mfc.addColumn(s, 5);
+    assert(a.error !== null);
+    assert(b.error !== null);
+  });
+
+  it('non-integer position refused', () => {
+    const s = makeSlice();
+    const { error } = mfc.addColumn(s, '0');
+    assert(error !== null);
+  });
+});
+
+describe('[11] removeColumn — Phase 3 leaf helper', () => {
+  it('removes an empty non-last column', () => {
+    // First add an empty column at position 1, then remove it.
+    let s = makeSlice();
+    s = mfc.addColumn(s, 1).slice;
+    eq(s.arrange.columns.length, 3);
+    const { slice: out, error } = mfc.removeColumn(s, 1);
+    eq(error, null);
+    eq(out.arrange.columns.length, 2, 'back to 2 columns');
+    eq(out.arrange.columns[0].panels[0].type, 'containers');
+    eq(out.arrange.columns[1].panels[0].type, 'actions');
+  });
+
+  it('refuses removing a non-empty column', () => {
+    const s = makeSlice();
+    const { slice: out, error } = mfc.removeColumn(s, 0);  // col 0 has panes
+    assert(error !== null);
+    assert(/not empty/.test(error), `error mentions emptiness: ${error}`);
+    eq(out, s);
+  });
+
+  it('refuses removing the last column', () => {
+    let s = makeSlice();
+    // Drain the last column wouldn't work (detail can't be hidden), so
+    // just test the guard directly — try to remove index N-1 = 1.
+    const { slice: out, error } = mfc.removeColumn(s, 1);
+    assert(error !== null);
+    assert(/last column/.test(error), `error mentions last column: ${error}`);
+    eq(out, s);
+  });
+
+  it('out-of-range index refused', () => {
+    const s = makeSlice();
+    const a = mfc.removeColumn(s, -1);
+    const b = mfc.removeColumn(s, 99);
+    assert(a.error !== null);
+    assert(b.error !== null);
+  });
+});
+
+describe('[12] add_column / remove_column Msg arms', () => {
+  it('add_column emits an info notice on success', () => {
+    const slice = makeSlice();
+    const out = layout.update({ type: 'add_column', position: 1 }, slice);
+    eq(out.arrange.columns.length, 3);
+    eq(out.freeConfig.notice, 'added empty column at position 2');
+    eq(out.freeConfig.noticeKind, 'info');
+  });
+
+  it('add_column emits an error notice on refusal (position N)', () => {
+    const slice = makeSlice();
+    const out = layout.update({ type: 'add_column', position: 2 }, slice);
+    eq(out.arrange.columns.length, 2, 'unchanged');
+    assert(out.freeConfig.notice !== null);
+    eq(out.freeConfig.noticeKind, 'error');
+  });
+
+  it('remove_column emits an info notice on success', () => {
+    let slice = makeSlice();
+    slice = layout.update({ type: 'add_column', position: 1 }, slice);  // add then remove
+    const out = layout.update({ type: 'remove_column', n: 1 }, slice);
+    eq(out.arrange.columns.length, 2);
+    eq(out.freeConfig.noticeKind, 'info');
+  });
+
+  it('remove_column emits an error notice on refusal (non-empty)', () => {
+    const slice = makeSlice();
+    const out = layout.update({ type: 'remove_column', n: 0 }, slice);
+    eq(out.arrange.columns.length, 2, 'unchanged');
+    eq(out.freeConfig.noticeKind, 'error');
+  });
+});
+
+describe('[13] pool_show_new_column success notice', () => {
+  it('successful spawn emits an info notice', () => {
+    const slice = makeSlice();
+    const out = layout.update({ type: 'pool_show_new_column', id: 'notes', position: 0 }, slice);
+    eq(out.arrange.columns.length, 3);
+    eq(out.freeConfig.noticeKind, 'info');
+    assert(/position 1/.test(out.freeConfig.notice), `notice names position 1: ${out.freeConfig.notice}`);
+  });
+});
+
+describe('[14] _dragTargetsEqual — new_column targets compare on `position`', () => {
   // Re-derive via layout.update's pool_drag_motion behavior. Easier:
   // construct two new_column targets and verify the layout reducer
   // would emit force_full_repaint when they differ. Direct via
