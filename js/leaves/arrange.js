@@ -40,7 +40,14 @@ function rebuildLayoutFromConfig(config) {
     out.detailHeightPct = ly.detail_height_pct || 60;
     // Every configured panel (placed + hidden) keyed by id. Parser
     // always emits one; default to {} for legacy JSON callers.
-    out.pool = ly.pool || {};
+    // Fresh-spread the map so the runtime slice doesn't share a ref
+    // with `config.layout.pool` — a future `pool_rename` or per-entry
+    // title mutation would otherwise mutate the parser's output and
+    // corrupt the source-of-truth config (undo snapshot is a JSON
+    // deep-copy, so a ref-corruption pre-snapshot would persist past
+    // `u`). Entries themselves are still shared by id; deep-spread
+    // them only when an entry-level mutator lands.
+    out.pool = { ...(ly.pool || {}) };
     const N = (ly.columns || []).length;
     // Plugin-specific panel options ride alongside type/title/hotkey/
     // columnIndex so the panel def can read them off `panel` directly.
@@ -64,7 +71,12 @@ function rebuildLayoutFromConfig(config) {
       if (p.collapsed === true)      wide.collapsed = true;
       if (p.paneId && Array.isArray(p.tabs) && p.tabs.length > 0) {
         wide.paneId = p.paneId;
-        wide.tabs = p.tabs;
+        // Slice() the tabs array so the runtime slice doesn't share
+        // a ref with the parser's output — a future `tab_add` /
+        // `tab_reorder` reducer mutating in place would otherwise
+        // corrupt config.layout.pool's pane entries. Tab objects
+        // themselves are still shared (no mutator hits them today).
+        wide.tabs = p.tabs.slice();
         wide.activeTabId = p.activeTabId || p.tabs[0].id;
         return wide;
       }
