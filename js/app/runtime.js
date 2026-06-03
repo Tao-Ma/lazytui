@@ -292,7 +292,6 @@ function update(model, msg) {
     // --- Cmd-only verbs: no model change, the reducer just routes the
     // Msg to a Cmd the effects layer runs. Centralizing the Msg→Cmd
     // mapping here is what lets handleAction's arms collapse into update.
-    case 'show_help':   return [model, [{ type: 'show_help' }]];
     case 'next_tab':    return _cycleViewerTab(model, +1);
     case 'prev_tab':    return _cycleViewerTab(model, -1);
     // --- confirm modal (folded into update). The caller stages a message +
@@ -785,7 +784,6 @@ function update(model, msg) {
       }
       return [next, cmds];
     }
-    case 'quit':        return [model, [{ type: 'quit' }]];
     case 'free_config': {
       // Free-config is always available; the verb forwards a wrapped
       // free_config_enter Msg into the layout Component.

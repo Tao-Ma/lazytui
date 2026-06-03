@@ -154,17 +154,12 @@ function installBuiltins() {
   registerEffect('force_full_repaint', () => {
     try { require('../render/layout').forceFullRepaint(); } catch (_) {}
   });
-  registerEffect('show_help', () => { require('./help-text').showHelp(); });
   // `_claimed` is the framework-internal sentinel a Component returns from
   // its `key` update to suppress the framework default. The normal path
   // consumes + filters it inside `dispatchKeyToFocused` before runEffects
   // sees it; the no-op here covers tests that call `runEffects` on a raw
   // update return without going through the dispatch entry point.
   registerEffect('_claimed', () => {});
-  registerEffect('quit', () => {
-    require('../app/cleanup').cleanup();
-    process.exit(0);
-  });
   // do_run / run_action: deferred to the next tick so the input pump's
   // trailing render() paints the overlay-gone frame BEFORE spawn() blocks
   // (preserves the pre-TEA setImmediate-on-commit behavior).

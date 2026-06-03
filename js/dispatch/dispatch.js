@@ -345,7 +345,7 @@ function handleNormalKey(key, seq) {
     return;
   }
   switch (key) {
-    case 'q': applyMsg({ type: 'quit' }); break;
+    case 'q': { require('../app/cleanup').cleanup(); process.exit(0); break; }
     case 'escape':
       // Esc exits list-select mode (and clears the selection). Outside
       // select mode it clears any lingering multi-selection. When

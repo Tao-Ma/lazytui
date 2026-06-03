@@ -272,7 +272,7 @@ function handleAction(action, arg) {
       break;
     }
     case 'show_help':
-      applyMsg({ type: 'show_help' });
+      require('./help-text').showHelp();
       break;
     case 'next_tab': applyMsg({ type: 'next_tab' }); break;
     case 'prev_tab': applyMsg({ type: 'prev_tab' }); break;
@@ -329,7 +329,8 @@ function handleAction(action, arg) {
       applyMsg({ type: 'free_config' });
       break;
     case 'quit':
-      applyMsg({ type: 'quit' });
+      require('../app/cleanup').cleanup();
+      process.exit(0);
       break;
   }
 }
