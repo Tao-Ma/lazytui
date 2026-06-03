@@ -599,7 +599,11 @@ const _modeHandlers = {
   detailSearchMode:    (key, seq) => handleDetailSearchKey(key, seq),
   registerPopupMode:   (key, seq) => handleRegisterPopupKey(key, seq),
   prefixMode:          (key, seq) => applyMsg({ type: 'prefix_key', key, seq }),
-  cmdMode:             (key, seq) => { handleCmdlineKey(key, seq); showSelectedInfo(); },
+  // Viewer body can't change mid-cmdline-edit; only `cmdline_submit` can
+  // change focus, and the verbs that do (`:focus`, `:open`, …) already
+  // route through `focus_set` → `show_selected_info`. No per-keystroke
+  // refresh needed.
+  cmdMode:             (key, seq) => handleCmdlineKey(key, seq),
   tabListMode:         (key, seq) => handleTabListKey(key, seq),
 };
 
