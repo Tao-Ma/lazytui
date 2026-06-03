@@ -51,7 +51,7 @@ test/run.sh up               # base stack
 test/run.sh up all           # base + chaos profile
 test/run.sh ps               # check status
 test/run.sh tui              # launch TUI against test.yml
-test/run.sh tui --design     # any TUI flag forwards through
+test/run.sh tui --list       # any TUI flag forwards through
 test/run.sh down             # tear everything down
 ```
 
