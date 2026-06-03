@@ -333,7 +333,14 @@ function update(msg, slice) {
         freeConfig: { drag: null, undo: [], redo: [], titleEdit: { active: false, text: '' }, notice: null },
         panelList: { open: hasHidden, cursor: 0 },
       };
-      return [next, [{ type: 'apply_msg', msg: { type: 'mode_set', flag: 'freeConfigMode' } }]];
+      // Auto-opening the panel-list overlay needs force_full_repaint
+      // for the same reason `panel_list_open` does — the overlay set
+      // fingerprint doesn't change (it's a slice sub-state, not a
+      // mode flag), so the diff painter can skip rows the overlay now
+      // covers, leaving partial-paint residue on the first frame.
+      const cmds = [{ type: 'apply_msg', msg: { type: 'mode_set', flag: 'freeConfigMode' } }];
+      if (hasHidden) cmds.push({ type: 'force_full_repaint' });
+      return [next, cmds];
     }
     case 'free_config_exit': {
       // Free-config nav (free_config_nav / free_config_reorder /
