@@ -128,10 +128,10 @@ function init() {
     // Populated by stream_start / viewer_append when the Msg carries
     // {tabKey, groupName}; tab_switch's action arm restores slice.lines
     // from here (or paints the "[press Enter to run]" placeholder if
-    // no buffer yet). The buffer survives tab switches — switching
-    // away and back shows whatever was captured before kill_proc
-    // froze the stream. Phase 3 will drop kill_proc on tab leave so
-    // the proc keeps streaming into the buffer in the background.
+    // no buffer yet). Phase 3 — the producer no longer dies on tab
+    // leave: switching away keeps the stream writing into the buffer
+    // in the background; switching back restores slice.lines from the
+    // live buffer mid-stream.
     actionTabBuffers: {},
     // Tab-list overlay (the `[≡]` switcher anchored to detail's top-left).
     // `cursor` is the row index in the flat tab list (Info..actions..

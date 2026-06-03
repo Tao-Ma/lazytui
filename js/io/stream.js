@@ -21,8 +21,16 @@ const history = require('../feature/history');
 
 let currentProc = null;  // streaming child process, if any
 let currentRecord = null; // history record handle for the active stream
+// v0.6.2 Phase 3 — remember the tabKey/groupName the active stream is
+// writing into, so the close-by-preempt path can stamp the re-run
+// footer into the preempted buffer. The natural close handler reads
+// its own closure (tabKey, groupName locals at streamCommand entry)
+// and gates on proc===currentProc — so this target only feeds the
+// preempt path (a new streamCommand → killCurrentProc → next).
+let currentStreamTarget = null;
 
-/** Kill any running streamed action (e.g., on tab switch / new action). */
+/** Kill any running streamed action (e.g., a new run preempting, or
+ *  the TUI shutting down). */
 function killCurrentProc() {
   if (currentProc) {
     // T17 — detach the data listeners FIRST. SIGTERM doesn't flush
@@ -36,8 +44,14 @@ function killCurrentProc() {
     try { currentProc.stdout.removeAllListeners('data'); } catch {}
     try { currentProc.stderr.removeAllListeners('data'); } catch {}
     try { currentProc.kill('SIGTERM'); } catch {}
+    if (currentStreamTarget) {
+      const { tabKey, groupName } = currentStreamTarget;
+      appendDetailLine('[yellow]Killed by next run.[/]', tabKey, groupName);
+      appendDetailLine('[dim]Press Enter to run again.[/]', tabKey, groupName);
+    }
     currentProc = null;
   }
+  currentStreamTarget = null;
   if (currentRecord) {
     currentRecord.kill();
     currentRecord = null;
@@ -100,6 +114,7 @@ function streamCommand(headerLabel, cmd, args = [], opts = {}) {
   // -- delimiter so $0 = "--", $1 = first arg, $@ = arg list (POSIX).
   const proc = spawn('sh', ['-c', cmd, '--', ...args], { cwd: getModel().projectDir });
   currentProc = proc;
+  currentStreamTarget = (tabKey && groupName) ? { tabKey, groupName } : null;
   const rec = history.start(headerLabel, cmd);
   currentRecord = rec;
 
@@ -128,6 +143,7 @@ function streamCommand(headerLabel, cmd, args = [], opts = {}) {
   proc.on('close', (code, signal) => {
     if (proc !== currentProc) return;  // superseded
     currentProc = null;
+    currentStreamTarget = null;
     currentRecord = null;
     // Flush any dangling bytes the decoder is still holding (rare —
     // means the stream closed mid-codepoint, which is a malformed
@@ -149,6 +165,7 @@ function streamCommand(headerLabel, cmd, args = [], opts = {}) {
   proc.on('error', (err) => {
     if (proc !== currentProc) return;
     currentProc = null;
+    currentStreamTarget = null;
     currentRecord = null;
     appendDetailLine(`[red]Error: ${esc(err.message)}[/]`, tabKey, groupName);
     rec.append(`Error: ${err.message}`);

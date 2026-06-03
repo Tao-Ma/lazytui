@@ -381,8 +381,13 @@ function reduceTabMsg(msg, slice, ctx) {
       const idx = msg.idx | 0;
       if (idx < 0 || idx >= total) return slice;
       let next = { ...slice, tab: idx };
+      // v0.6.2 Phase 3 — kill_proc no longer fires on tab leave. The
+      // active stream keeps writing into actionTabBuffers[group][tabKey]
+      // via the routed viewer_append path; switching back restores
+      // slice.lines from the live (or frozen) buffer. The singleton
+      // currentProc invariant is preserved by streamCommand itself —
+      // a new run still preempts the previous one.
       const effects = [
-        { type: 'kill_proc' },
         { type: 'msg', msg: { type: 'terminal_exit' } },
       ];
       if (idx === 0) {
