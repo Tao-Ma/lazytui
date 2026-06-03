@@ -273,12 +273,7 @@ let _prevOverlayFlags = new Set();
  */
 function paintColumns(columnOutputs) {
   const COLS = cols();
-  // Back-compat: accept the old two-argument shape transparently.
-  let cols2;
-  if (Array.isArray(columnOutputs)) cols2 = columnOutputs;
-  else cols2 = [columnOutputs, arguments[1] || ''];
-
-  const splits = cols2.map(s => s ? s.split('\n') : []);
+  const splits = columnOutputs.map(s => s ? s.split('\n') : []);
   const maxRows = splits.reduce((m, s) => Math.max(m, s.length), 0);
   const newRows = new Array(maxRows);
   for (let i = 0; i < maxRows; i++) {
