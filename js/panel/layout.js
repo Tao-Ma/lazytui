@@ -374,15 +374,15 @@ function update(msg, slice) {
     case 'free_config_exit': {
       // Free-config nav (free_config_nav / free_config_reorder /
       // free_config_move / mousePress) writes `focus` directly via the
-      // mfc leaf, NOT through `focus_set`, so halfLeftPanel didn't
-      // track in-mode movement. Commit the current focus on exit so
-      // half-view's left-panel fallback reflects where the user landed.
-      const halfLeftPanel = route.instanceKind(slice.focus) !== 'detail' ? slice.focus : slice.halfLeftPanel;
+      // mfc leaf, NOT through `focus_set`, so halfLeftPanel and
+      // lastViewerTab didn't track in-mode movement. Commit both on
+      // exit so the focus_set-sticky fields reflect where the user
+      // landed — same triple-update _withFocus does for any other
+      // focus change.
       const next = {
-        ...slice,
+        ..._withFocus(slice, slice.focus),
         freeConfig: { drag: null, undo: [], redo: [], titleEdit: { active: false, text: '' }, notice: null },
         panelList: { open: false, cursor: 0 },
-        halfLeftPanel,
       };
       return [next, [
         { type: 'apply_msg', msg: { type: 'mode_clear', flag: 'freeConfigMode' } },
