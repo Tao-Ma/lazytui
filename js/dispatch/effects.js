@@ -9,7 +9,8 @@
  *     `panel/api.dispatchMsg` runs them via `runEffects` here.
  *
  * Cmds and effects are the same thing — plain descriptors
- * (`{ type: 'focus', panel: 'detail' }`). Handlers register by type;
+ * (`{ type: 'show_selected_info' }`, `{ type: 'apply_msg', msg }`).
+ * Handlers register by type;
  * the vocabulary grows as Components register their own (e.g.
  * config-status' cfgStatusCompute). Unknown types are logged, not
  * thrown — a misconfigured Component shouldn't wedge dispatch.
@@ -94,13 +95,6 @@ function installBuiltins() {
   const { getModel } = require('../app/runtime');
   const api = require('../panel/api');
   const renderQueue = require('../render/render-queue');
-  // focus: move panel focus (a component can't write slice.focus itself).
-  // focus_set is owned by layout.update.
-  registerEffect('focus', (eff) => {
-    if (typeof eff.panel === 'string') {
-      api.dispatchMsg(api.wrap('layout', { type: 'focus_set', focus: eff.panel }));
-    }
-  });
   // render: request a repaint (async effect results landing into a slice).
   registerEffect('render', () => {
     try { renderQueue.scheduleRender(); } catch (_) { /* no renderer */ }
