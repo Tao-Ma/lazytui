@@ -982,31 +982,30 @@ function mousePress(slice, mx, my, COLS) {
   // Click sets focus to the panel under the cursor — green border
   // tracks the click even if the user doesn't go on to drag.
   // selectedIdx() derives from focus.
-  const drag = { kind: 'armed', sourceType: hit, startX: mx, startY: my, curX: mx, curY: my, target: null };
+  const drag = { kind: 'dragging', sourceType: hit, startX: mx, startY: my, curX: mx, curY: my, target: null };
   return { ...slice, focus: hit, freeConfig: { ...slice.freeConfig, drag } };
 }
 
-/** Motion: resize kinds redistribute heights; a panel drag promotes
- *  armed→dragging after ≥1 cell and recomputes the drop target. */
+/** Motion: resize kinds redistribute heights; a panel drag recomputes
+ *  the drop target. The 'armed' kind was retired (AR4): mousePress now
+ *  sets `kind: 'dragging'` directly with target=null, and a movement-
+ *  free motion is detected by the (mx, my) === (startX, startY) check
+ *  rather than a separate state. Release/preview already short-circuit
+ *  on `!target.valid`. */
 function mouseMotion(slice, mx, my, COLS) {
   const d = slice.freeConfig;
   const ds = d && d.drag;
   if (!ds) return slice;
-  if (ds.kind === 'resizing-col')           return applyColResize(slice, mx);
+  if (ds.kind === 'resizing-col')            return applyColResize(slice, mx);
   if (ds.kind === 'resizing-panel-boundary') return applyBoundaryResize(slice, my);
-  if (ds.kind === 'resizing-corner')        return applyBoundaryResize(applyColResize(slice, mx), my);
-  // panel drag (armed → dragging)
-  let nextKind = ds.kind;
-  if (ds.kind === 'armed') {
-    if (mx === ds.startX && my === ds.startY) {
-      // movement-free motion still updates the cursor record so a later release
-      // can read it; old code mutated curX/curY before the early return.
-      return { ...slice, freeConfig: { ...d, drag: { ...ds, curX: mx, curY: my } } };
-    }
-    nextKind = 'dragging';
+  if (ds.kind === 'resizing-corner')         return applyBoundaryResize(applyColResize(slice, mx), my);
+  if (ds.kind !== 'dragging') return slice;
+  if (mx === ds.startX && my === ds.startY) {
+    // No movement — keep the cursor record without recomputing target.
+    return { ...slice, freeConfig: { ...d, drag: { ...ds, curX: mx, curY: my } } };
   }
   const target = pointToDropTarget(slice, ds.sourceType, mx, my, COLS);
-  return { ...slice, freeConfig: { ...d, drag: { ...ds, kind: nextKind, curX: mx, curY: my, target } } };
+  return { ...slice, freeConfig: { ...d, drag: { ...ds, curX: mx, curY: my, target } } };
 }
 
 /** Release: commit a valid drop (push undo + applyDrop), then clear the drag.

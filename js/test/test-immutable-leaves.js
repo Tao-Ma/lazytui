@@ -377,12 +377,13 @@ describe('[immutable] leaves/free-config.js', () => {
       () => mfc.mousePress(slice, 5, 5, 80),  // inside panel 'a'
       slice,
     );
-    eq(out.freeConfig.drag.kind, 'armed');
+    eq(out.freeConfig.drag.kind, 'dragging');
+    eq(out.freeConfig.drag.target, null, 'AR4 — target=null until motion');
     eq(out.freeConfig.drag.sourceType, 'a');
     eq(out.focus, 'a', 'focus tracks the clicked panel');
   });
 
-  it('mouseMotion promotes armed → dragging on movement', () => {
+  it('mouseMotion computes drop target on movement', () => {
     const slice = makeSlice();
     const model = makeModel();
     const pressed = mfc.mousePress(slice, 5, 5, 80);

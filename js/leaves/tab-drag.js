@@ -23,7 +23,11 @@
 'use strict';
 
 function tabDragStart(slice, sourceKey, fromIdx, mx, my) {
-  const drag = { kind: 'tab-armed', sourceKey, fromIdx, startX: mx, startY: my, curX: mx, curY: my };
+  // AR4 — single 'tab-dragging' kind; the prior 'tab-armed' variant
+  // was indistinguishable from 'tab-dragging' to render + release
+  // (no user-visible state, no different output). Movement-free
+  // motion is detected by (mx, my) === (startX, startY).
+  const drag = { kind: 'tab-dragging', sourceKey, fromIdx, startX: mx, startY: my, curX: mx, curY: my };
   return { ...slice, freeConfig: { ...slice.freeConfig, drag } };
 }
 
@@ -42,20 +46,15 @@ function _findContentIdxAt(panelBoundsDetail, mx, my) {
 
 function tabDragMotion(slice, mx, my, panelBoundsDetail, currentGroup, targetKind) {
   const drag = slice.freeConfig && slice.freeConfig.drag;
-  if (!drag || (drag.kind !== 'tab-armed' && drag.kind !== 'tab-dragging')) return [slice, []];
-
-  let nextKind = drag.kind;
-  if (drag.kind === 'tab-armed') {
-    if (mx === drag.startX && my === drag.startY) {
-      return [{ ...slice, freeConfig: { ...slice.freeConfig, drag: { ...drag, curX: mx, curY: my } } }, []];
-    }
-    nextKind = 'tab-dragging';
+  if (!drag || drag.kind !== 'tab-dragging') return [slice, []];
+  if (mx === drag.startX && my === drag.startY) {
+    // No movement — keep the cursor record without recomputing target.
+    return [{ ...slice, freeConfig: { ...slice.freeConfig, drag: { ...drag, curX: mx, curY: my } } }, []];
   }
-
   const toIdx = _findContentIdxAt(panelBoundsDetail, mx, my);
   const cursorOnly = {
     ...slice,
-    freeConfig: { ...slice.freeConfig, drag: { ...drag, kind: nextKind, curX: mx, curY: my } },
+    freeConfig: { ...slice.freeConfig, drag: { ...drag, curX: mx, curY: my } },
   };
   if (toIdx < 0 || toIdx === drag.fromIdx) return [cursorOnly, []];
 
@@ -79,7 +78,7 @@ function tabDragMotion(slice, mx, my, panelBoundsDetail, currentGroup, targetKin
 
 function tabDragRelease(slice) {
   const drag = slice.freeConfig && slice.freeConfig.drag;
-  if (!drag || (drag.kind !== 'tab-armed' && drag.kind !== 'tab-dragging')) return [slice, []];
+  if (!drag || drag.kind !== 'tab-dragging') return [slice, []];
   return [
     { ...slice, freeConfig: { ...slice.freeConfig, drag: null } },
     [{ type: 'force_full_repaint' }],

@@ -5,7 +5,7 @@
  *   /root/.claude/plans/staged-tinkering-crayon.md
  *
  * What's covered:
- *   1. Press → 'armed' (no motion yet) → 'dragging' on ≥1 cell motion
+ *   1. Press → 'dragging' (target=null until ≥1 cell motion)
  *   2. Release with no motion → click, no mutation
  *   3. Drop position math (insert before / after / append / empty col)
  *   4. Invalid-target snap-back (detail / actions into left column)
@@ -191,7 +191,11 @@ describe('[2] onMouseEvent — state machine transitions', () => {
     setupFixture();
     onMouseEvent('press', 5, 2);
     const ds = _getDragState();
-    eq(ds.kind, 'armed');
+    // AR4: 'armed' was retired — single 'dragging' kind with
+    // target=null until first motion. Movement-free motion is
+    // detected by (mx,my) === (startX,startY).
+    eq(ds.kind, 'dragging');
+    eq(ds.target, null, 'no target until motion');
     eq(ds.sourceType, 'containers');
   });
 
@@ -201,11 +205,13 @@ describe('[2] onMouseEvent — state machine transitions', () => {
     eq(_getDragState(), null);
   });
 
-  it('motion within 0 cells stays armed (not dragging)', () => {
+  it('motion within 0 cells keeps target=null (no movement)', () => {
     setupFixture();
     onMouseEvent('press',  5, 2);
     onMouseEvent('motion', 5, 2);  // same cell — no movement
-    eq(_getDragState().kind, 'armed');
+    const ds = _getDragState();
+    eq(ds.kind, 'dragging');
+    eq(ds.target, null);
   });
 
   it('motion ≥1 cell promotes to dragging + recomputes target', () => {

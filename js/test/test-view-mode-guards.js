@@ -200,7 +200,7 @@ describe('[4] notice auto-clears on unrelated user intent', () => {
     s.freeConfig = {
       ...s.freeConfig,
       notice: 'persistent through motion',
-      drag: { kind: 'armed', sourceType: 'a', startX: 5, startY: 5, curX: 5, curY: 5, target: null },
+      drag: { kind: 'dragging', sourceType: 'a', startX: 5, startY: 5, curX: 5, curY: 5, target: null },
     };
     s.arrange = { ...s.arrange, columns: [{ panels: [{ id: 'a', type: 'a', columnIndex: 0, hotkey: '1' }] }] };
     s.focus = 'a';
