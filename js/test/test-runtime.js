@@ -146,15 +146,19 @@ describe('[3] update — (model, msg) → [model, cmds], pure + Cmd descriptors'
     slice = step(slice, { type: 'toggle_group', name: 'g1' });
     eq(slice.expanded.has('g1'), false, 'collapsed after second toggle');
   });
-  it('freeConfig: always emits start_free_config Cmd (v0.6 — free-config is always available)', () => {
+  it('freeConfig: forwards a wrapped free_config_enter Msg (v0.6 — free-config is always available)', () => {
     // v0.5 gated this on layout.slice.freeConfig.enabled (the --design CLI
     // flag); v0.6 removed the gate — free-config mode is reachable from
     // the cmdline / menu / keybinding regardless of how the TUI was
-    // booted. --design now just auto-enters at startup.
+    // booted. R4.2 collapsed the start_free_config Cmd into a direct
+    // dispatch_msg wrap (was: runtime → Cmd → effects → dispatch.helper
+    // → dispatchMsg; now: runtime → Cmd → dispatchMsg).
     const m = runtime.init();
     const [, cmds] = runtime.update(m, { type: 'free_config' });
     eq(cmds.length, 1);
-    eq(cmds[0].type, 'start_free_config');
+    eq(cmds[0].type, 'dispatch_msg');
+    eq(cmds[0].msg.kind, 'layout');
+    eq(cmds[0].msg.msg.type, 'free_config_enter');
   });
   it('Cmd-only verbs route Msg → Cmd without touching the model', () => {
     const m = runtime.init();

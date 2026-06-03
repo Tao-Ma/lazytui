@@ -204,7 +204,7 @@ function _frameworkDynamicCommands(m) {
     out.push({
       name: 'free-config',
       desc: 'Open free-config mode (layout edit + pool overlay)',
-      run: () => { require('../dispatch/dispatch').startFreeConfig(); },
+      run: () => { require('./api').dispatchMsg(wrap('layout', { type: 'free_config_enter' })); },
     });
   }
   // v0.6 Phase 2 — pool hide/show. One verb per id makes autocomplete

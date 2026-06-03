@@ -76,15 +76,6 @@ function navSelect(panelType, index) {
   }
 }
 
-function startFreeConfig() {
-  // Design mode is owned by the layout Component (post-Phase-6
-  // single-writer cleanup): entry is a wrapped `free_config_enter` Msg that
-  // resets the slice and emits a `mode_set` Cmd to flip
-  // `model.modes.freeConfigMode`. Save stays decoupled (:save-layout); exit
-  // emits a show_selected_info Cmd in place of the old onDone callback.
-  dispatchMsg(wrap('layout', { type: 'free_config_enter' }));
-}
-
 /**
  * Toggle multi-select on the focused panel's currently focused row.
  * No-op if the panel doesn't support `getItems` or has no items.
@@ -736,7 +727,7 @@ function applyMsg(msg) {
 }
 
 module.exports = {
-  handleKey, handleAction, applyMsg, navSelect, startFreeConfig,
+  handleKey, handleAction, applyMsg, navSelect,
   showSelectedInfo,
   registerKeyFilter, clearKeyFilters,
   loadKeyBindings,

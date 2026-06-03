@@ -164,9 +164,6 @@ function installBuiltins() {
     api.refreshAll(getModel().config);
   });
   registerEffect('show_help', () => { require('./help-text').showHelp(); });
-  registerEffect('start_free_config', () => {
-    require('./dispatch').startFreeConfig();
-  });
   // `_claimed` is the framework-internal sentinel a Component returns from
   // its `key` update to suppress the framework default. The normal path
   // consumes + filters it inside `dispatchKeyToFocused` before runEffects

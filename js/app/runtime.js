@@ -788,9 +788,9 @@ function update(model, msg) {
     }
     case 'quit':        return [model, [{ type: 'quit' }]];
     case 'free_config': {
-      // Free-config is always available; the verb just emits the
-      // start_free_config Cmd.
-      return [model, [{ type: 'start_free_config' }]];
+      // Free-config is always available; the verb forwards a wrapped
+      // free_config_enter Msg into the layout Component.
+      return [model, [{ type: 'dispatch_msg', msg: route.wrap('layout', { type: 'free_config_enter' }) }]];
     }
     default:
       return [model, []];
