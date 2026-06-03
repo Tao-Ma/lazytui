@@ -192,58 +192,23 @@ function reduceViewMode(viewMode, msg) {
   }
 }
 
-// Refusal notice text shared between the view-mode-guard arm and the
-// `_potentialBlockedNotice` reassert detector. The auto-clear preface
-// does string-equality on the slice's current notice vs. the
-// reasserted-notice; a typo in either copy would silently break the
-// short-circuit (slice churn on every repeated blocked attempt).
-const NOTICE_VIEW_BLOCKED_IN_FREE_CONFIG = 'exit free-config (q) to change view mode';
-const NOTICE_FREE_CONFIG_REQUIRES_NORMAL = 'free-config requires normal view ([ to return)';
-
-/** What notice (if any) would this Msg's blocked-action arm set?
- *  Used for the notice auto-clear short-circuit: a Msg that would
- *  RE-ASSERT the current notice preserves slice identity (no churn on
- *  repeated identical blocked attempts); a Msg that wouldn't reassert
- *  triggers the auto-clear so notice doesn't persist across unrelated
- *  user intents.
- *
- *  TODO: `getModel().modes.freeConfigMode` is the only reducer read of
- *  external runtime state. The flag mirrors slice state by construction
- *  (mode_set on free_config_enter, mode_clear on free_config_exit), but
- *  there's no single slice field that captures "we're in free-config
- *  mode". A future refactor could either (a) add `slice.freeConfig.entered:
- *  bool` so this becomes a slice-local read, or (b) thread `model.modes`
- *  in as an arg the way mousePress does. Either retires the cross-read. */
-function _potentialBlockedNotice(slice, msg) {
-  if (msg.type === 'view_expand' || msg.type === 'view_shrink') {
-    const md = getModel().modes;
-    if (md && md.freeConfigMode) return NOTICE_VIEW_BLOCKED_IN_FREE_CONFIG;
-  }
-  if (msg.type === 'free_config_enter' && slice.viewMode !== 'normal') {
-    return NOTICE_FREE_CONFIG_REQUIRES_NORMAL;
-  }
-  return null;
-}
-
 function update(msg, slice) {
-  // Notice lifecycle (v0.6 view-guard polish):
-  //   - Continuous-motion Msgs (drag-in-flight) preserve the notice — one
-  //     intent in flight; cursor drift through zones shouldn't disturb an
-  //     unrelated hint from an earlier refused action.
-  //   - A Msg that would re-assert the same notice preserves it (no
-  //     identity churn on repeated identical blocked attempts).
-  //   - Everything else implicitly clears notice: any layout-touching
-  //     user intent that isn't re-asserting the block is treated as the
-  //     user having moved on.
-  const continuousMotion = msg.type === 'free_config_mouse_motion' ||
-                           msg.type === 'pool_drag_motion' ||
-                           msg.type === 'tab_drag_motion';
-  const oldNotice = slice.freeConfig && slice.freeConfig.notice;
-  if (oldNotice && !continuousMotion) {
-    const wouldReassert = _potentialBlockedNotice(slice, msg);
-    if (wouldReassert !== oldNotice) {
-      slice = { ...slice, freeConfig: { ...slice.freeConfig, notice: null } };
-    }
+  // Notice auto-clear. Refusal arms (view_expand/shrink in free-config,
+  // free_config_enter from a non-normal view) own their notice text +
+  // identity short-circuit; for that short-circuit to keep working on
+  // repeated refusals, the preface must NOT clear notice on a Msg the
+  // refusal arm will re-assert. Continuous-motion Msgs preserve so
+  // mid-drag cursor drift doesn't disturb the hint. Everything else
+  // clears — user has moved on. The `freeConfigMode` cross-read tells
+  // us whether view_expand/shrink will refuse this time (otherwise
+  // it'd fall through and the stale notice would linger).
+  const t = msg.type;
+  const willReassert =
+    ((t === 'view_expand' || t === 'view_shrink') && getModel().modes.freeConfigMode) ||
+    (t === 'free_config_enter' && slice.viewMode !== 'normal');
+  const motion = t === 'free_config_mouse_motion' || t === 'pool_drag_motion' || t === 'tab_drag_motion';
+  if (slice.freeConfig && slice.freeConfig.notice && !motion && !willReassert) {
+    slice = { ...slice, freeConfig: { ...slice.freeConfig, notice: null } };
   }
 
   switch (msg.type) {
@@ -262,7 +227,7 @@ function update(msg, slice) {
       const md = getModel().modes;
       const isUserInput = msg.type === 'view_expand' || msg.type === 'view_shrink';
       if (md && md.freeConfigMode && isUserInput) {
-        const target = NOTICE_VIEW_BLOCKED_IN_FREE_CONFIG;
+        const target = 'exit free-config (q) to change view mode';
         // Short-circuit: if notice already matches, slice ref is preserved
         // (the auto-clear above also preserved it via wouldReassert).
         if (slice.freeConfig && slice.freeConfig.notice === target) return slice;
@@ -355,7 +320,7 @@ function update(msg, slice) {
       // operate on the full grid and need every cell visible. Surface a
       // notice so the user knows why `q` / `:free-config` didn't fire.
       if (slice.viewMode !== 'normal') {
-        const target = NOTICE_FREE_CONFIG_REQUIRES_NORMAL;
+        const target = 'free-config requires normal view ([ to return)';
         if (slice.freeConfig && slice.freeConfig.notice === target) return slice;
         return _withNotice(slice, target, 'error');
       }
