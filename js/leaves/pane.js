@@ -15,17 +15,18 @@
  *   - Panel fields (kept for compat): id, type, title, hotkey, columnIndex,
  *     config, heightPct?, collapsed?, and any pool-config spread
  *
- * Legacy consumers reading `p.type` / `p.id` keep working; new
- * consumers read through `firstTab(p)` / `paneKind(p)` so the eventual
- * removal of Panel fields lands without rewriting render & dispatch
- * call sites a second time.
- *
  * Pane-id format: `pane-<poolId>` in Phase 1. Stable (1:1 with the
  * placed pool entry) and debugger-friendly. When multi-mount lands in
  * Phase 4+, synth ids `pane-<poolId>#n` extend the same scheme.
  *
  * Zero deps. Used by parser + state.js + leaves/pool + renderer +
- * design.js — everything that constructs or reads pane shape.
+ * leaves/free-config — everything that constructs or reads pane shape.
+ *
+ * Earlier versions also exported `firstTab` / `paneKind` /
+ * `activePoolId` as a migration shim toward Phase 9's Panel-field
+ * removal. No consumer migrated, so they were dead scaffolding kept
+ * alive only by tests. Retired here; the v0.7 multi-instance arc
+ * will pick up the migration with the right tab-resolution semantics.
  */
 'use strict';
 
@@ -53,31 +54,7 @@ function wrapAsPane(entry, paneId) {
   };
 }
 
-/** The single tab in a Phase-1 pane. Phase 2+ pane may have many. */
-function firstTab(pane) {
-  return pane && pane.tabs && pane.tabs[0];
-}
-
-/**
- * Panel-type kind of the pane's currently-active tab. Phase 1 reads
- * the legacy `pane.type` field directly; Phase 2+ will resolve through
- * the pool entry referenced by `firstTab(pane).poolId`. Centralised
- * here so the eventual switch lands in one spot.
- */
-function paneKind(pane) {
-  return pane && pane.type;
-}
-
-/** Pool id of the active tab. Phase 1 == pane.id (single-tab pane). */
-function activePoolId(pane) {
-  const t = firstTab(pane);
-  return t ? t.poolId : null;
-}
-
 module.exports = {
   newPaneId,
   wrapAsPane,
-  firstTab,
-  paneKind,
-  activePoolId,
 };

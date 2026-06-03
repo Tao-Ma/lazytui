@@ -137,31 +137,6 @@ describe('[leaves/pane] helpers', () => {
     eq(mpane.newPaneId('groups'), 'pane-groups', 'simple');
     eq(mpane.newPaneId('my-custom'), 'pane-my-custom', 'with dashes');
   });
-
-  it('firstTab returns the singleton tab', () => {
-    const p = mpane.wrapAsPane({ id: 'g', type: 'groups' }, 'pane-g');
-    const t = mpane.firstTab(p);
-    eq(t.id, 'g', 'tab id');
-    eq(t.poolId, 'g', 'pool id');
-  });
-
-  it('paneKind returns the pane type (Phase 1: reads .type directly)', () => {
-    const p = mpane.wrapAsPane({ id: 'h', type: 'history' }, 'pane-h');
-    eq(mpane.paneKind(p), 'history');
-  });
-
-  it('activePoolId returns the active tab pool id', () => {
-    const p = mpane.wrapAsPane({ id: 'f', type: 'files' }, 'pane-f');
-    eq(mpane.activePoolId(p), 'f');
-  });
-
-  it('firstTab / paneKind tolerate missing input (no throw, falsy return)', () => {
-    assert(!mpane.firstTab(null), 'firstTab(null) is falsy');
-    assert(!mpane.firstTab({}),   'firstTab({}) is falsy (no tabs field)');
-    assert(!mpane.paneKind(null), 'paneKind(null) is falsy');
-    assert(!mpane.activePoolId(null), 'activePoolId(null) is falsy');
-    assert(!mpane.activePoolId({}),   'activePoolId({}) is falsy');
-  });
 });
 
 report();
