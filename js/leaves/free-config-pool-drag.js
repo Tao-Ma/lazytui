@@ -28,7 +28,7 @@
 'use strict';
 
 const mfc = require('./free-config');
-const { pointToCellZone, _columnRanges, _newColumnZoneAt } = mfc;
+const { pointToCellZone, _newColumnZoneAt } = mfc;
 const mpool = require('./pool');
 const { placementFromPoolEntry } = mpool;
 
@@ -78,14 +78,14 @@ function pointToPoolDropTarget(slice, mx, my, COLS) {
     }
     return null;
   };
-  for (const r of _columnRanges(arrange, COLS)) {
+  for (const r of mpool.distributeColumnWidths(arrange, COLS)) {
     const panels = mpool.columnPanels(arrange, r.columnIndex);
     const hit = scan(r.columnIndex, panels);
     if (hit) return hit;
   }
   // Cursor in a column's x-range but no cells matched (empty column or
   // dead-zone outside any cell). Fall back to append at column tail.
-  for (const r of _columnRanges(arrange, COLS)) {
+  for (const r of mpool.distributeColumnWidths(arrange, COLS)) {
     if (mx >= r.x && mx < r.x + r.w) {
       const panels = mpool.columnPanels(arrange, r.columnIndex);
       return validateInsert(arrange, r.columnIndex, panels.length, sourceEntry);

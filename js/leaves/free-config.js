@@ -476,18 +476,9 @@ function setSelectedTitle(slice, text) {
 
 // ---------------------------------------------------------------- column geometry
 
-/** Compute the x-range of each column. Thin re-export of the shared
- *  distributor in `leaves/pool` so the mouse hit-tester and the
- *  renderer (which also calls `mpool.distributeColumnWidths`) never
- *  disagree — on narrow terminals where the squeeze kicks in, the
- *  renderer's painted column boundary IS where clicks land. */
-function _columnRanges(arrange, COLS) {
-  return mpool.distributeColumnWidths(arrange, COLS);
-}
-
 /** Find the column whose x-range contains `mx`, or null. */
 function _columnAtX(arrange, mx, COLS) {
-  for (const r of _columnRanges(arrange, COLS)) {
+  for (const r of mpool.distributeColumnWidths(arrange, COLS)) {
     if (mx >= r.x && mx < r.x + r.w) return r;
   }
   return null;
@@ -499,7 +490,7 @@ function _columnAtX(arrange, mx, COLS) {
  *  edge, not a draggable boundary). Returns
  *  { boundaryIndex, x, leftColumn, rightColumn } when a hit. */
 function _boundaryAtX(arrange, mx, COLS) {
-  const ranges = _columnRanges(arrange, COLS);
+  const ranges = mpool.distributeColumnWidths(arrange, COLS);
   for (let i = 0; i < ranges.length - 1; i++) {
     const bx = ranges[i].x + ranges[i].w;
     if (Math.abs(mx - bx) <= 1) {
@@ -527,7 +518,7 @@ function _newColumnZoneAt(arrange, mx, COLS) {
   // `if (mx < 0 || my < 0) return null;` at pointToPoolDropTarget.
   if (mx < 0) return null;
   if (mx < EDGE_W) return { position: 0 };
-  const ranges = _columnRanges(arrange, COLS);
+  const ranges = mpool.distributeColumnWidths(arrange, COLS);
   for (let i = 0; i < ranges.length - 1; i++) {
     const bx = ranges[i].x + ranges[i].w;
     if (Math.abs(mx - bx) < EDGE_W) {
@@ -633,7 +624,7 @@ function pointToDropTarget(slice, srcType, mx, my, COLS) {
   // (i.e., mx >= EDGE_W and away from internal boundaries).
   const ncz = _newColumnZoneAt(slice.arrange, mx, COLS);
   if (ncz) return validateNewColumn(slice, srcType, ncz.position);
-  const ranges = _columnRanges(slice.arrange, COLS);
+  const ranges = mpool.distributeColumnWidths(slice.arrange, COLS);
   for (const r of ranges) {
     const panels = mpool.columnPanels(slice.arrange, r.columnIndex);
     const hit = matchColumn(slice, panels, mx, my);
@@ -1226,5 +1217,5 @@ module.exports = {
   addColumn, removeColumn,
   allocateNewColumnWidth: _allocateNewColumnWidth,
   reassignHotkeys: _reassignHotkeys,
-  _columnRanges, _newColumnZoneAt,
+  _newColumnZoneAt,
 };
