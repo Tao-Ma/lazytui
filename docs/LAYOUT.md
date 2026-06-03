@@ -408,7 +408,7 @@ rule as in-grid reorder):
 | Middle third | **Replace** — occupant returns to the pool; source lands in the occupant's slot. Detail refuses (essential); `detail` / `actions` refuse if the slot is outside the last column. |
 | Bottom third | **Insert after** this cell. Bottom-of-last-cell = append at tail. |
 | Last column past detail | **Clamped** to `insert before detail` — detail must stay at the column's end. The footer surfaces `(clamped — detail stays at end)` so the rewrite isn't silent. |
-| Screen edge / column gap (v0.6.2) | **Spawn a new column** at that position (left edge → position 0; column gap → between the two adjacent columns). Right edge is hit-tested but refused — would push detail off the last column. Detail / actions sources refuse all new-column spawns. |
+| Screen edge / column gap (v0.6.2) | **Spawn a new column** at that position (left edge → position 0; column gap → between the two adjacent columns). The right edge is NOT a spawn zone — the rightmost cells fall through to the last column's in-column 3-zone hit (`:add-column N_cols+1` refuses at the cmdline: would push detail off the last column). Detail / actions sources refuse all new-column spawns. |
 | Outside the layout | Cancel; the overlay reopens if it was open at drag-start. |
 
 While a drag has a valid target, the layout reshuffles in real time —
