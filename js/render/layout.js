@@ -49,7 +49,7 @@ const { injectTopRowChrome } = require('./panel-widgets');
 const { renderPanelListOverlay } = require('../overlay/panel-list');
 const { renderTabList, injectTabTrigger } = require('../overlay/tab-list');
 const { collectViewContributions } = require('../panel/api');
-const { currentText: filterCurrentText } = require('../overlay/filter');
+const { filterCurrentText } = require('../panel/api');
 
 /**
  * Look up the render function for a panel type. Contract:

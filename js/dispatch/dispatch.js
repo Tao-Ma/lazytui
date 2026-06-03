@@ -162,7 +162,7 @@ function _enterFilterMode() {
   if (!def || !def.filterable) return false;
   // Phase 4c — committed filter text lives on the panel's nav slice;
   // `filter.getFilter()` resolves it via the helper.
-  applyMsg({ type: 'filter_enter', panel: getFocus(), text: require('../overlay/filter').getFilter(getFocus()) });
+  applyMsg({ type: 'filter_enter', panel: getFocus(), text: require('../panel/api').getFilter(getFocus()) });
   return true;
 }
 

@@ -25,8 +25,30 @@ const { theme } = require('../render/themes');
 const { renderPanel } = require('../render/panel');
 const { getSel, getScroll, isMultiSel } = require('../app/state');
 const { getModel } = require('../app/runtime');
-const { getFilter } = require('../overlay/filter');
+const mnav = require('../leaves/nav');
 const { execAsync } = require('../app/exec');
+
+/**
+ * Active filter text for a panel. While in filter mode, the live
+ * (uncommitted) draft is returned for the panel being edited; other
+ * panels see their committed value from `slice.nav[panel].filter`.
+ * Used by Navigator getItems implementations to filter rows.
+ * (AR3 — was overlay/filter.js, retired: that module didn't paint,
+ * just facaded these two reads.)
+ */
+function getFilter(panelType) {
+  const m = getModel();
+  if (m.modes.filterMode && m.modal.filter.panel === panelType) return m.modal.filter.text;
+  const compName = route.componentForPanel(panelType);
+  if (!compName) return '';
+  const entry = mnav.entryOf(route.getInstanceSlice(compName), panelType);
+  return (entry && entry.filter) || '';
+}
+
+/** Live filter text for the currently-active filter session — used
+ *  by renderFooter to paint the `/text │` prompt. */
+function filterCurrentText() { return getModel().modal.filter.text; }
+
 const { streamCommand } = require('../io/stream');
 const { addEphemeralTab } = require('./viewer/tabs');
 const { scheduleRender } = require('../render/render-queue');
@@ -641,7 +663,7 @@ module.exports = {
   // state (read helpers — Components write via wrapped Msgs into their own slice)
   getSel, getScroll, isMultiSel,
   // filter
-  getFilter,
+  getFilter, filterCurrentText,
   // exec
   execAsync,
   // stream / tabs / render scheduling — host capabilities a Component
