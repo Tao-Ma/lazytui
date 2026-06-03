@@ -362,7 +362,13 @@ function renderNormal(model) {
   // border color instead of falling back to the terminal default.
   const t = theme();
   const renderOne = (p, w, h, x, y) => {
-    const b = { x, y, w, h };
+    // Bounds shape: { x, y, w, h, tabs? }. `tabs` is a hit-test cache
+    // (one entry per tab in the tab strip) populated later by the
+    // viewer Component's detailTitle pass — declared empty here so
+    // the shape is uniform and viewer.js mutates an existing key
+    // rather than adding one (cohesion: makes the renderer-written
+    // surface explicit, not an implicit extension).
+    const b = { x, y, w, h, tabs: [] };
     // Dual-key write (v0.6.1 Phase 1). Type-keyed access stays the
     // canonical read path; paneId-keyed write is forward-compat
     // scaffolding consumed by Phase 7's mass flip from type-keyed to
@@ -420,7 +426,7 @@ function renderHalf(model) {
   layoutSlice.panelBounds[leftPanel.type] = leftBounds;
   if (leftPanel.paneId) layoutSlice.panelBounds[leftPanel.paneId] = leftBounds;
   if (detailPanel) {
-    const detailBounds = { x: halfW, y: 0, w: COLS - halfW, h: availH };
+    const detailBounds = { x: halfW, y: 0, w: COLS - halfW, h: availH, tabs: [] };
     layoutSlice.panelBounds.detail = detailBounds;
     if (detailPanel.paneId) layoutSlice.panelBounds[detailPanel.paneId] = detailBounds;
   }
@@ -442,7 +448,7 @@ function renderFull(model) {
   const focusedPanel = allPanels().find(p => p.type === layoutSlice.focus);
   if (!focusedPanel) return renderNormal(model);
   layoutSlice.panelBounds = {};
-  const fullBounds = { x: 0, y: 0, w: COLS, h: availH };
+  const fullBounds = { x: 0, y: 0, w: COLS, h: availH, tabs: [] };
   layoutSlice.panelBounds[focusedPanel.type] = fullBounds;
   if (focusedPanel.paneId) layoutSlice.panelBounds[focusedPanel.paneId] = fullBounds;
   let content = _safeRender(rendererFor(focusedPanel.type), focusedPanel, COLS, availH);
