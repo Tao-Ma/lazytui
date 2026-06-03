@@ -37,22 +37,6 @@ const { getModel } = require('../app/runtime');
  *  `index` two distinct inserts compare equal; without `occupantType`
  *  /`occupantId` distinct swap/replace targets compare equal. curX/curY
  *  are not visual; ignore them. */
-/** Set a green status notice on slice (success messages — column added,
- *  column removed, etc.). Mirrors the red `_withNotice('error')` flow but
- *  flags `noticeKind: 'info'` so the footer paints it green. */
-function _withStatus(slice, text) {
-  if (!slice.freeConfig) return slice;
-  return { ...slice, freeConfig: { ...slice.freeConfig, notice: text, noticeKind: 'info' } };
-}
-
-/** Set a notice on slice with explicit kind. Used by the column-edit
- *  arms for refusal messages (Phase 3) — existing refusal sites
- *  (view-mode guards) keep the implicit 'error' default. */
-function _withNotice(slice, text, kind) {
-  if (!slice.freeConfig) return slice;
-  return { ...slice, freeConfig: { ...slice.freeConfig, notice: text, noticeKind: kind || 'error' } };
-}
-
 /** Push the current arrange onto the undo stack (unless the Msg is a
  *  no-undo follow-up like the second hop of a pool-drag replace) and
  *  swap in the new arrange with dirty:true. Single helper for the
@@ -231,7 +215,7 @@ function update(msg, slice) {
         // Short-circuit: if notice already matches, slice ref is preserved
         // (the auto-clear above also preserved it via wouldReassert).
         if (slice.freeConfig && slice.freeConfig.notice === target) return slice;
-        return _withNotice(slice, target, 'error');
+        return { ...slice, freeConfig: { ...slice.freeConfig, notice: target, noticeKind: 'error' } };
       }
       const next = reduceViewMode(slice.viewMode, msg);
       if (next === slice.viewMode) return slice;
@@ -322,7 +306,7 @@ function update(msg, slice) {
       if (slice.viewMode !== 'normal') {
         const target = 'free-config requires normal view ([ to return)';
         if (slice.freeConfig && slice.freeConfig.notice === target) return slice;
-        return _withNotice(slice, target, 'error');
+        return { ...slice, freeConfig: { ...slice.freeConfig, notice: target, noticeKind: 'error' } };
       }
       // Reset working state on entry. Auto-open the panel-list overlay
       // when the pool has hidden entries — the discoverability hint
@@ -432,7 +416,7 @@ function update(msg, slice) {
                             && ds.target.kind === 'new_column' && ds.target.valid;
       const pos = wasNewColumnDrop ? ds.target.position : null;
       const next = mfc.mouseRelease(slice);
-      if (pos !== null) return _withStatus(next, `added new column at position ${pos + 1}`);
+      if (pos !== null) return { ...next, freeConfig: { ...next.freeConfig, notice: `added new column at position ${pos + 1}`, noticeKind: 'info' } };
       return next;
     }
     // Pool-drag gesture from the panel-list overlay. Source is the
@@ -757,7 +741,7 @@ function update(msg, slice) {
       // notice-auto-clear preface at the top of update() and wipe
       // the status notice before the user saw it.
       const focused = _withFocus(_commitArrange(slice, nextArrange), entry.type);
-      const spawnedSlice = _withStatus(focused, `added new column at position ${position + 1}`);
+      const spawnedSlice = { ...focused, freeConfig: { ...focused.freeConfig, notice: `added new column at position ${position + 1}`, noticeKind: 'info' } };
       return [spawnedSlice, [{ type: 'show_selected_info' }]];
     }
     // v0.6.2 Phase 3 — cmdline + programmatic column management.
@@ -777,21 +761,21 @@ function update(msg, slice) {
     //                    by `pool_show`, drag insert targets.
     case 'add_column': {
       const { slice: mutated, error } = mfc.addColumn(slice, msg.position);
-      if (error) return _withNotice(slice, error, 'error');
+      if (error) return { ...slice, freeConfig: { ...slice.freeConfig, notice: error, noticeKind: 'error' } };
       // Push undo on success so `u` can revert a cmdline-driven column
       // add (drag-driven changes already push via mouseRelease).
       const next = _commitArrange(slice, mutated.arrange);
-      return _withStatus(next, `added empty column at position ${msg.position + 1}`);
+      return { ...next, freeConfig: { ...next.freeConfig, notice: `added empty column at position ${msg.position + 1}`, noticeKind: 'info' } };
     }
     case 'remove_column': {
       const { slice: mutated, error } = mfc.removeColumn(slice, msg.columnIndex);
-      if (error) return _withNotice(slice, error, 'error');
+      if (error) return { ...slice, freeConfig: { ...slice.freeConfig, notice: error, noticeKind: 'error' } };
       const next = _commitArrange(slice, mutated.arrange);
       // Clamp focus to a still-placed panel; if focus moved, route the
       // change through _withFocus + show_selected_info (same lockstep
       // contract as pool_hide / pool_show / focus_set).
       const clamped = mfc.clampSelected(next);
-      const status = _withStatus(clamped, `removed column ${msg.columnIndex + 1}`);
+      const status = { ...clamped, freeConfig: { ...clamped.freeConfig, notice: `removed column ${msg.columnIndex + 1}`, noticeKind: 'info' } };
       if (clamped.focus !== slice.focus) {
         return [_withFocus(status, clamped.focus), [{ type: 'show_selected_info' }]];
       }
