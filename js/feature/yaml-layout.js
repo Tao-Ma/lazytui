@@ -3,9 +3,9 @@
  *
  * Pure-function module — no module state, no side effects from
  * `serializeLayout`. `writeLayoutToFile` is the only thing that
- * touches disk. Split out of `design.js` so it can be called from
- * the `:save-layout` cmdline command (and any future caller) without
- * dragging design-mode state along.
+ * touches disk. Split out of the free-config flow so it can be called
+ * from the `:save-layout` cmdline command (and any future caller)
+ * without dragging free-config working state along.
  *
  * The hand-rolled YAML emitter (no third-party lib) is deliberate.
  * The output goes back through the YAML parser at load time; the

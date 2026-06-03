@@ -64,7 +64,7 @@ Two things changed at roughly the same time:
    `deploy.sh` with a year of accumulated flag sediment can now be a
    short YAML declaration plus agent-authored script bodies covered by
    tests the agent also wrote.
-2. **lazygit / lazydocker / k9s proved the TUI shape.** A two-column,
+2. **lazygit / lazydocker / k9s proved the TUI shape.** A column-major,
    keyboard-first, panel-based dashboard is the right interface for
    "operate on a fleet of named things with a fixed set of verbs."
 
@@ -203,14 +203,14 @@ for "the same thing but headless."
 
 | Surface | What it does |
 |---|---|
-| Two-column layout | 1–6 left panels, 1–3 right panels, detail panel with tabs. Fixed pattern, YAML-configurable content. |
+| N-column layout (v0.6.2+) | Ordered columns list, default 2 columns. Soft caps: 6 panes in the first, 3 in the last. Detail panel anchored to the last pane of the last column. YAML-configurable content + column count. Grow / shrink at runtime via drag-edge spawn or `:add-column` / `:remove-column`. |
 | Action types | `run` (capture output), `spawn` (full-screen interactive), `background` (fire-and-forget). One uniform schema. |
 | Built-in panel types | `groups`, `actions`, `files`, `history`, `detail`, plus docker container / stats panels. |
 | Embedded terminals | PTY tabs inside the detail panel. Persistent across group switches. |
 | Event hub | In-process pub/sub for plugins. Time-series, snapshot, matrix shapes. Cost scales with subscribers. |
 | Decorator slots | Plugins add glyphs to rows / titles / tabs / footer without touching the renderer. |
 | Cmdline (`:`) | `:quit`, `:refresh`, `:help`, plus plugin-registered verbs, with positional-arg plumbing. |
-| 6 themes + free-config mode | `:free-config` (or the legacy `--design` flag) opens an interactive layout editor — drag/swap/resize panels, hide/show from a pool of declared panel definitions, save back to YAML. |
+| 6 themes + free-config mode | `:free-config` opens an interactive layout editor — drag/swap/resize/spawn columns and panels, hide/show from a pool of declared panel definitions, save back to YAML. |
 | `--spec` flag | Prints the plugin-authoring bundle for AI agents (every rule in one file). |
 
 ## Status

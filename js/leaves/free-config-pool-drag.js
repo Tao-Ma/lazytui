@@ -12,8 +12,8 @@
  *
  * Outside any cell but inside a column → append at the column's tail.
  *
- * `pool-armed` → `pool-dragging` promotion on any motion (matches the design
- * drag pattern). Release returns [next slice, cmds] — cmds are dispatch_msg
+ * `pool-armed` → `pool-dragging` promotion on any motion (matches the
+ * in-grid drag pattern). Release returns [next slice, cmds] — cmds are dispatch_msg
  * wrappers that re-emit pool_hide/pool_show Msgs back into layout.update so
  * the existing handlers do the actual mutation.
  *
@@ -22,7 +22,7 @@
  * builds the same placement object panel/layout.js's pool_show reducer
  * commits on release). Both are pure leaves with no back-edges, so no
  * cycle. Reads slice.panelBounds, slice.arrange, slice.panelList; writes
- * slice.panelList, slice.freeConfig.drag (the same field design's mouse drag
+ * slice.panelList, slice.freeConfig.drag (the same field the in-grid mouse drag
  * uses; tagged union by `kind`).
  */
 'use strict';

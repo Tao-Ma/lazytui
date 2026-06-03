@@ -1,9 +1,11 @@
 /**
- * Pure design-mode layout transforms — the reducer-owned half of design.js.
+ * Pure free-config layout transforms — the reducer-owned half of the
+ * free-config flow (the read-side overlay lives in `overlay/free-config.js`).
  *
- * Like leaves/search / leaves/pane-tabs / leaves/register, this is a dependency-free
- * leaf the layout Component imports without a require cycle (design.js
- * requires runtime + term + ansi, so the reducer can't call into it). Every
+ * Like leaves/search / leaves/pane-tabs / leaves/register, this is a
+ * dependency-free leaf the layout Component imports without a require
+ * cycle (overlay/free-config requires runtime + term + ansi, so the
+ * reducer can't call into it). Every
  * function takes the layout Component slice, returns a new slice (or the
  * same ref when the operation is a no-op). No I/O, no globals, no terminal
  * reads. The one bit of terminal state the reducer can't synthesize — the
@@ -176,8 +178,8 @@ function redo(slice) {
   };
 }
 
-/** Wipe undo/redo (free_config_enter, and :restore-layout via the design.js shim).
- *  Tolerates the layout slice not existing yet. */
+/** Wipe undo/redo (free_config_enter, and :restore-layout via the
+ *  overlay/free-config shim). Tolerates the layout slice not existing yet. */
 function clearUndoStacks(slice) {
   if (!slice || !slice.freeConfig) return slice;
   if (slice.freeConfig.undo.length === 0 && slice.freeConfig.redo.length === 0) return slice;
@@ -235,7 +237,7 @@ function _setPanelHeightPct(slice, panelType, pct) {
 
 /** ↑/↓ — move the selection cursor, clamped to the panel list.
  *  v0.6: also syncs `slice.focus` to the newly selected panel's type
- *  so the runtime focus border tracks the design selection. v0.5
+ *  so the runtime focus border tracks the free-config selection. v0.5
  *  surfaced the selection only in the footer text, leaving the green
  *  border on whatever was focused at mode entry — confusing in
  *  free-config where the user is actively navigating cells. The
@@ -415,7 +417,7 @@ function resizeFocusedPanelHeight(slice, deltaPct) {
   return { ...result, dirty: true };
 }
 
-/** Derive the design-mode cursor index from `slice.focus`. Returns
+/** Derive the free-config cursor index from `slice.focus`. Returns
  *  -1 if the focused type isn't in the placed set (caller should
  *  clampSelected to recover). Replaces the pre-v0.6.x `selectedIdx`
  *  slice field — focus is the single source of truth for the active

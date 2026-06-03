@@ -220,21 +220,27 @@ back — explicit refusal beats a surprising default.
 
 ## 10. Layout framework
 
-The TUI is a **lazytui** framework — a reusable two-column layout for
-lazygit/lazydocker-style projects. The layout pattern is fixed; the
-content is YAML-configurable.
+The TUI is a **lazytui** framework — a reusable N-column layout for
+lazygit/lazydocker-style projects. The layout pattern is fixed at the
+structural level (column-major grid, detail/actions anchored to the
+last column); the content + column count are YAML-configurable.
 
-- **Fixed**: two columns, bordered panels with scrollbars, navigation
-  (hotkeys, ↑↓ j/k, ←→ h/l, mouse, `x` menu, `?` help), detail panel
-  tabs (`]`/`[`), view modes (`+`/`_`), themes, free-config mode
-  (`:free-config` / `:design` / `--design`), action execution.
-- **Configurable**: panels, panel types, sizes, theme, layout — via the
-  YAML `panels:` (pool, v0.6+) + `layout:` sections.
-- **Constraints**: 1–6 left panels (hotkeys `1`–`6` auto-assigned by
-  position), 1–3 right panels (hotkeys `7`–`9` auto-assigned by
-  position); exactly one `detail` panel; at most one `actions` panel.
-  YAML can override per-panel via `hotkey: <char>` — auto-assignment
-  skips keys claimed explicitly.
+- **Fixed**: column-major grid, bordered panels with scrollbars,
+  navigation (hotkeys, ↑↓ j/k, ←→ h/l, mouse, `x` menu, `?` help),
+  detail panel tabs (`]`/`[`), view modes (`+`/`_`), themes,
+  free-config mode (`:free-config`), action execution.
+- **Configurable**: panels, panel types, sizes, theme, layout
+  (column count + per-column widths + per-pane heights) — via the
+  YAML `panels:` (pool, v0.6+) + `layout:` (columns list, v0.6.2+)
+  sections.
+- **Constraints**: first column soft-cap of 6 panes (hotkeys `1`–`6`
+  auto-assigned by position), last column soft-cap of 3 panes
+  (hotkeys `7`–`9` auto-assigned). Middle columns (only when N ≥ 3)
+  have no auto-hotkey pool — explicit `hotkey: <char>` required.
+  Exactly one `detail` tab in the last pane of the last column; at
+  most one `actions` tab in the last column. YAML can override per-
+  pane via `hotkey: <char>` — auto-assignment skips keys claimed
+  explicitly. Soft caps warn at parse but don't refuse.
 
 See **LAYOUT.md** for the full panel-type catalog, YAML schema, and
 visual concept. See **PLUGINS.md** for the Component API surface.

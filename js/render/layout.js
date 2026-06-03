@@ -5,7 +5,7 @@
  * Component's slice holds `panelHeights` + `panelBounds`, but they are
  * recomputed per-frame from terminal size + arrange settings — this
  * module is the writer. Downstream readers (per-panel render fns,
- * mouse hit-tests in input.js, design-mode drag math, terminal overlay
+ * mouse hit-tests in input.js, free-config drag math, terminal overlay
  * positioning) consume them via getInstanceSlice('layout').
  *
  * This is the one pattern that sits outside the otherwise-uniform
@@ -586,7 +586,7 @@ function render(model = getModel()) {
   // paints cleanly on top of the still-valid frame, no flash. A transition
   // overlay-A → overlay-B drops A AND adds B in the same dispatch cycle;
   // the old logic only caught "all overlays gone", so A's pixels lingered
-  // beneath B (visible as e.g. cmdline residue under the design footer
+  // beneath B (visible as e.g. cmdline residue under the free-config footer
   // when :free-config typed from cmdMode). Computing the active-overlay
   // SET (not just a single bool) catches every drop including nested
   // closes (A,B → A) and same-cycle swaps.
@@ -665,7 +665,7 @@ function render(model = getModel()) {
   // detail-scroll frame because the row-paint momentarily restored `─`
   // at the glyph cells.
   // Overlays are mutually exclusive in practice (modeChain enforces it).
-  // Order matches dispatch.js's modeChain: design > menu > copy.
+  // Order matches dispatch.js's modeChain: free-config > menu > copy.
   if (md.copyMode)    renderCopyMenu();
   if (md.menuOpen)    renderMenu();
   if (md.freeConfigMode)  { renderPanelListOverlay(); }
@@ -712,7 +712,7 @@ require('./render-queue').setRenderers({ render, overlay: renderTerminalOverlay 
 
 /**
  * Build the keys-string for the footer's left half. Modal footers
- * (terminal / filter / copy / design / menu) own the message; the
+ * (terminal / filter / copy / free-config / menu) own the message; the
  * standard non-modal footer is built from segments. Returns the
  * leading-space-prefixed concatenation ready for assembly.
  */
@@ -801,8 +801,8 @@ function renderFooter(model = getModel()) {
     const msCount = multiSelCount(getFocus());
     if (msCount > 0) keys += ` | ${esc(`[${msCount} sel]`)}`;
     // Surface layout-dirty state to non-modal users too. They might
-    // have left design mode with pending changes; the indicator
-    // reminds them `:save-layout` exists. Design-mode footer adds
+    // have left free-config mode with pending changes; the indicator
+    // reminds them `:save-layout` exists. Free-config footer adds
     // its own dirty marker in footerKeys() to keep modal layout
     // self-contained.
     if (layoutSlice.dirty) keys += ` | [yellow]• unsaved (:save-layout)[/]`;
@@ -868,7 +868,7 @@ function renderFooter(model = getModel()) {
   // overflow the terminal width — otherwise the footer wraps onto a
   // new row, scrolls the screen up, and looks like the entire frame
   // is shrinking each render. Surfaced under v0.6 free-config when
-  // the design footer + pool-drag status string grew past common
+  // the free-config footer + pool-drag status string grew past common
   // terminal widths.
   const tailLen = visibleLen(rightTail) + visibleLen(selectTag) + visibleLen(modeTag);
   const maxKeysLen = Math.max(0, COLS - tailLen);

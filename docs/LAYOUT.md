@@ -2,13 +2,19 @@
 
 ## Layout framework
 
-The TUI is a **lazytui** framework — a reusable two-column layout. The
-layout pattern is fixed; the panel content is YAML-configurable.
+The TUI is a **lazytui** framework — a reusable N-column layout. The
+pattern is fixed at the structural level (column-major grid, bordered
+panes, detail/actions anchored to the last column); the panel content
+and column count are YAML-configurable.
 
 ### Pattern (fixed)
-- Two columns: left (narrow, default 30 chars), right (wide, rest)
+- Ordered list of columns, left-to-right. Each column carries an
+  explicit `width:` in cells except the last, which takes the
+  remainder of the terminal. Two columns is the default shape; three
+  or more is supported (run-time via drag-edge spawn / `:add-column`).
 - Bordered panels with scrollbar, focus color, position counter
-- Detail panel with tabs, scroll
+- Detail panel with tabs, scroll, anchored to the LAST column's last
+  pane (layout invariant)
 - Footer bar, `x` menu popup, `?` help
 
 ### Configuration (YAML `panels:` + `layout:` sections, both optional)
@@ -16,14 +22,19 @@ layout pattern is fixed; the panel content is YAML-configurable.
 Since v0.6 there are two cooperating blocks. The `panels:` block
 declares a POOL of panel definitions (panel identities); the
 `layout:` block picks a subset of the pool by id and arranges them
-in the two-column grid. Pool entries not placed in the grid are
+in the column grid. Pool entries not placed in the grid are
 *hidden* — still configured, surfaced in the free-config overlay
 so you can summon them back without editing YAML.
 
-v0.6.1 generalizes the model: every cell is a **pane** (a placement
-slot), and every pane holds 1+ **tabs** (each tab is a panel kind
-instance). Singleton detail retires — `detail` is just another tab
-kind, subject to the same pool/cell mechanics.
+v0.6.1 generalized the cell model: every cell is a **pane** (a
+placement slot), and every pane holds 1+ **tabs** (each tab is a
+panel kind instance). Singleton detail retired — `detail` is just
+another tab kind, subject to the same pool/cell mechanics.
+
+v0.6.2 generalized the column model: `layout.left:` / `layout.right:`
+retire in favor of an ordered `layout.columns:` list (see
+[`v0.6.2-migrate.md`](v0.6.2-migrate.md) for the mechanical
+hand-conversion).
 
 ```yaml
 panels:                # the pool — every panel keyed by id
@@ -43,17 +54,16 @@ panels:                # the pool — every panel keyed by id
     type: viewer
     title: Notes
 
-layout:                # the grid — cells reference pool by id
-  left:
-    width: 30          # optional, column width in chars
-    panels:
-      - containers
-      - groups
-      - files
-  right:
-    panels:
-      - actions
-      - { tabs: [detail], height: 60% }   # mapping form when an override applies
+layout:                # the grid — ordered columns, cells reference pool by id
+  columns:
+    - width: 30        # explicit width in cells
+      panels:
+        - containers
+        - groups
+        - files
+    - panels:          # last column — width implicit (takes remainder)
+        - actions
+        - { tabs: [detail], height: 60% }   # mapping form when an override applies
 ```
 
 **Two layout-cell forms** — bare-string for the common case, mapping
@@ -95,14 +105,20 @@ the user resizes — once the layout is saved via `:save-layout`, the
 new values appear in the YAML.
 
 ### Pane and tab constraints
-- Left: 1–6 panes, hotkeys `1`–`6` auto-assigned by position
-- Right: 1–3 panes, hotkeys `7`–`9` auto-assigned by position
+- First column: soft cap of 6 panes, hotkeys `1`–`6` auto-assigned
+  by position
+- Last column: soft cap of 3 panes, hotkeys `7`–`9` auto-assigned
+- Middle columns (only when N ≥ 3): no auto-hotkey pool — panes must
+  specify `hotkey:` explicitly or accept an empty hotkey (still
+  reachable via mouse / `:focus <title>`)
 - Per-pane override via YAML `hotkey: <char>` (on the cell);
   auto-assignment skips keys already claimed explicitly
-- Exactly one tab of kind `detail` anywhere — in the right column, in
+- Soft caps warn at parse but don't refuse — the renderer's
+  MIN_PANEL_H + terminal-row floor is the only hard limit
+- Exactly one tab of kind `detail` anywhere — in the LAST column, in
   the LAST pane of that column
-- At most one tab of kind `actions` anywhere — in the right column
-- No `detail` / `actions` tab in the left column
+- At most one tab of kind `actions` anywhere — in the last column
+- No `detail` / `actions` tab outside the last column
 - No two tabs of the same kind inside one pane
 
 ### `pool.type` (kind) vs pool / tab `id` — two roles
@@ -236,12 +252,15 @@ filesystem; select with `source:` (`declared` / `filesystem` / `both` /
 - Detail shows desc + script preview on browse
 
 **detail** (positional hotkey) — Tabbed info/output display
-- In v0.6.1 the `detail` kind is one of many possible tab kinds in a
-  pane — the singleton-detail assumption retired, even though the
+- In v0.6.1+ the `detail` kind is one of many possible tab kinds in
+  a pane — the singleton-detail assumption retired, even though the
   default layout still places exactly one detail tab. The pool/tab
   mechanics let you co-locate other viewer-kind tabs in the same
   pane via `{tabs: [detail, history]}` mappings (see
   [`v0.6.1-migrate.md`](v0.6.1-migrate.md)).
+- Anchored to the **LAST column's LAST pane** by layout invariant
+  (was "right column's last pane" pre-v0.6.2; the rule scales to
+  N-column layouts).
 - **Tab 0 (Info)**: always present — shows `info()` for selected item
 - **Tab 1+**: actions with `tab: true`, terminal sessions, and
   content tabs opened via `:open` or file-browser Enter
@@ -322,7 +341,7 @@ Sessions persist across group switches. See TERMINAL.md for details.
 
 Three view modes, cycled with `+` (expand) and `_` (shrink):
 
-**Normal** (default) — standard two-column layout with all panels visible.
+**Normal** (default) — standard N-column layout with all panels visible.
 
 **Half** — focused panel and detail panel split the full screen width,
 each taking half. Other panels are hidden. Useful for browsing long
@@ -349,8 +368,6 @@ column widths, panel heights, panel arrangement, hidden/shown
 membership. Entry:
 
 - `:free-config` (cmdline)
-- `:design` (v0.5 alias)
-- `--design` CLI flag (auto-enters after first paint)
 - (configurable keybinding — slot one into the `keys:` block)
 
 Saves are explicit: `:save-layout` writes to YAML, `:restore-layout`
@@ -373,7 +390,7 @@ Each pool entry shows with a status marker:
 |---|---|---|
 | `[green]●[/]` | Placed in the grid | hide (returns to pool) |
 | `[dim]●[/]` | Essential (detail) | no-op (the layout invariant requires exactly one detail) |
-| `[yellow]○[/]` | Hidden — pool only | show (places at the next free slot, right column by default) |
+| `[yellow]○[/]` | Hidden — pool only | show (places at the last column's tail, before detail when present) |
 
 | Key | Effect |
 |---|---|
@@ -388,9 +405,10 @@ rule as in-grid reorder):
 | Drop zone (within a cell) | Effect |
 |---|---|
 | Top third | **Insert before** this cell. |
-| Middle third | **Replace** — occupant returns to the pool; source lands in the occupant's slot. Detail refuses (essential); `detail` / `actions` refuse if the slot is in the left column (right-column-only). |
+| Middle third | **Replace** — occupant returns to the pool; source lands in the occupant's slot. Detail refuses (essential); `detail` / `actions` refuse if the slot is outside the last column. |
 | Bottom third | **Insert after** this cell. Bottom-of-last-cell = append at tail. |
-| Right column past detail | **Clamped** to `insert before detail` — detail must stay at the column's end. The footer surfaces `(clamped — detail stays at end)` so the rewrite isn't silent. |
+| Last column past detail | **Clamped** to `insert before detail` — detail must stay at the column's end. The footer surfaces `(clamped — detail stays at end)` so the rewrite isn't silent. |
+| Screen edge / column gap (v0.6.2) | **Spawn a new column** at that position (left edge → position 0; column gap → between the two adjacent columns). Right edge is hit-tested but refused — would push detail off the last column. Detail / actions sources refuse all new-column spawns. |
 | Outside the layout | Cancel; the overlay reopens if it was open at drag-start. |
 
 While a drag has a valid target, the layout reshuffles in real time —
@@ -412,10 +430,9 @@ Every seam between panels is a drag target:
 
 | Press on | Gesture | Mutates |
 |---|---|---|
-| Column separator (the vertical line) | drag left/right | `leftWidth` (clamped 20–60) |
-| Boundary inside the right column | drag up/down | the two adjacent panels' `heightPct` (or `detailHeightPct` when detail is one of the pair, clamped 20–90) |
-| Boundary inside the left column | drag up/down | the two adjacent panels' `heightPct` |
-| **Corner** — col-separator × any boundary | drag diagonally | both axes in one gesture |
+| Column separator (vertical line between two columns) | drag left/right | the left-side column's `width` (clamped 20–60) |
+| Boundary inside any column | drag up/down | the two adjacent panels' `heightPct` (or `detailHeightPct` when detail is one of the pair, clamped 20–90) |
+| **Corner** — col-separator × any panel boundary | drag diagonally | both axes in one gesture (the corner falls back to the OTHER flanking column's panel boundary when the cursor's column has none at that y) |
 
 All drag gestures use ±1 cell tolerance so you don't have to land
 the cursor exactly on the seam. D1 semantics (steal from neighbor
@@ -429,7 +446,7 @@ of being smeared across the column.
 | Key | Mutates |
 |---|---|
 | `+` / `-` on detail panel focus | `detailHeightPct` ±5 |
-| `+` / `-` on left-column panel focus | `leftWidth` ±2 |
+| `+` / `-` on a non-last-column panel focus | that panel's column's `width` ±2 |
 | `]` / `[` on any non-detail panel | focused panel's `heightPct` ±5 (steals from the panel below; no-op at last position) |
 | `u` / `Ctrl+R` | undo / redo any layout mutation (max 50 in stack) |
 
@@ -445,7 +462,9 @@ from the command line. Same Msgs the overlay drives:
 | Verb | Effect |
 |---|---|
 | `:hide <id>` | Remove that panel's placement from the grid; pool entry stays. Refused on detail. |
-| `:show <id>` | Place a hidden pool entry at the right column's tail (or left when right is full). Refused on unknown / already-placed / second-detail / second-actions / column-cap-exceeded. |
+| `:show <id>` | Place a hidden pool entry at the last column's tail (before detail when present). Refused on unknown / already-placed / second-detail / second-actions. Column caps are SOFT — placement is allowed past them. |
+| `:add-column [N]` (v0.6.2) | Insert an empty column at 1-based position `N` (default: just before the last column). Refused at the right-edge slot and out-of-range. |
+| `:remove-column <N>` (v0.6.2) | Remove the empty column at 1-based index `N`. Refused for the last column, non-empty columns, and out-of-range. |
 
 Autocomplete restricts the id argument to currently-valid targets
 (placed panels for hide; hidden panels for show). The dynamic

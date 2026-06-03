@@ -6,7 +6,7 @@
  *   - focus          — currently focused panel type
  *   - viewMode       — normal / half / full
  *   - dirty          — layout has unsaved changes (drives `:save-layout` hint)
- *   - design         — free-config working state (drag, undo/redo, titleEdit)
+ *   - freeConfig     — free-config working state (drag, undo/redo, titleEdit)
  *   - panelHeights / panelBounds — view-output, written by the render pass
  *   - panelList      — `w` overlay state (open, cursor)
  *
@@ -454,7 +454,7 @@ function update(msg, slice) {
     case 'free_config_clear_undo':
       return mfc.clearUndoStacks(slice);
     // Pool hide/show. The pool entry stays in the pool; only the
-    // placement in leftPanels/rightPanels changes. Detail is essential
+    // placement in arrange.columns[].panels changes. Detail is essential
     // (the layout invariant requires exactly one) — the overlay UX
     // surfaces this as "essential" rather than offering hide.
     // pool_show refuses to create a second detail or actions panel —

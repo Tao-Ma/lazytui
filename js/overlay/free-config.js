@@ -21,11 +21,11 @@ const { getModel } = require('../app/runtime');
 const { getInstanceSlice } = require('../panel/api');
 const mfc = require('../leaves/free-config');
 
-// The layout Component's slice + its design sub-slice (Phase 1f). Lazy
-// because tests can boot without layout. Post-1e the read helpers take the
-// slice directly — model isn't threaded into mfc anymore.
+// The layout Component's slice + its freeConfig sub-slice. Lazy because
+// tests can boot without layout. Read helpers take the slice directly —
+// model isn't threaded into mfc anymore.
 function _slice() { return getInstanceSlice('layout'); }
-function _design() {
+function _freeConfig() {
   const slice = _slice();
   return slice ? slice.freeConfig : null;
 }
@@ -43,7 +43,7 @@ function panelTitle(type) {
  */
 function getFreeConfigFooter() {
   if (!getModel().modes.freeConfigMode) return '';
-  const d = _design();
+  const d = _freeConfig();
   if (!d) return '';
   const drag = d.drag;
   if (drag && drag.kind === 'dragging') {
@@ -99,7 +99,7 @@ function getFreeConfigFooter() {
 
 /** Title-edit footer text — the live buffer (reads the layout slice). */
 function titleEditText() {
-  const d = _design();
+  const d = _freeConfig();
   return d ? d.titleEdit.text : '';
 }
 
@@ -133,7 +133,7 @@ module.exports = {
   onMouseEvent,
   pointToDropTarget, pointToResizeTarget,
   _clearUndoStacks,
-  _getDragState:  () => _design()?.drag,
-  _getUndoDepth:  () => _design()?.undo.length,
-  _getRedoDepth:  () => _design()?.redo.length,
+  _getDragState:  () => _freeConfig()?.drag,
+  _getUndoDepth:  () => _freeConfig()?.undo.length,
+  _getRedoDepth:  () => _freeConfig()?.redo.length,
 };

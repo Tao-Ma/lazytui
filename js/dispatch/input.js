@@ -204,13 +204,13 @@ function handleMouse(kind, x, y) {
   // dispatched as wrapped `free_config_mouse_*` Msgs. cols() is resolved here
   // (the one terminal read the layout Component can't do without
   // back-coupling) and threaded into the hit-tests. Non-press/motion/
-  // release events (wheel) are swallowed in design mode, as before.
+  // release events (wheel) are swallowed in free-config mode, as before.
   //
   // v0.6 Phase 5 — pool drag from the overlay. Press inside the panel-
   // list overlay starts a pool-drag gesture (sourceId from the clicked
   // row, or the cursor's current item if the click hits the overlay but
   // not a specific row). Motion/release re-route to the pool-drag Msgs
-  // while drag.kind is `pool-*`; otherwise the existing design path runs.
+  // while drag.kind is `pool-*`; otherwise the existing free-config path runs.
   if (model.modes.freeConfigMode) {
     const slice = getInstanceSlice('layout');
     const drag = slice && slice.freeConfig && slice.freeConfig.drag;
@@ -232,9 +232,9 @@ function handleMouse(kind, x, y) {
     }
 
     // Tab-reorder press detection. A click on a content tab in the detail
-    // panel's tab bar arms a tab drag instead of the usual design drag.
+    // panel's tab bar arms a tab drag instead of the usual free-config drag.
     // closeKey is stamped only on content tabs (viewer.js#detailTitle);
-    // action / yaml-terminal / info tabs fall through to design drag, so
+    // action / yaml-terminal / info tabs fall through to free-config drag, so
     // the existing panel-move gesture still works when the user clicks
     // those parts of the tab bar.
     if (kind === 'press' && slice && slice.panelBounds && slice.panelBounds.detail) {
@@ -280,11 +280,11 @@ function handleMouse(kind, x, y) {
           return;
         }
         // Header/footer click or essential row — no-op, but still
-        // swallow the click so it doesn't leak through to design drag.
+        // swallow the click so it doesn't leak through to free-config drag.
         render();
         return;
       }
-      // Click outside overlay: close it, then fall through to design
+      // Click outside overlay: close it, then fall through to free-config
       // drag so the user can interact with the layout in the same click.
       dispatchMsg(wrap('layout', { type: 'panel_list_close' }));
     }
@@ -301,9 +301,9 @@ function handleMouse(kind, x, y) {
   // focus changes / selection / scroll that the user can't see through
   // the overlay (or that would silently mutate state behind a modal —
   // notably the wheel-over-groups path, which fires reset_group_context
-  // and leaves modal sub-models bound to the OLD group). The design-
-  // mode special-case above runs first because design owns the mouse
-  // pipeline. terminalMode is non-chain by design.
+  // and leaves modal sub-models bound to the OLD group). The free-
+  // config mode special-case above runs first because free-config owns
+  // the mouse pipeline. terminalMode is non-chain by design.
   if (isChainActive(model.modes)) return;
 
   // Mouse wheel — scrolls the panel under the cursor without changing
@@ -589,7 +589,7 @@ function setupKeyListener() {
     if (data === '\x1b' || data === '\x1b\x1b') return handleKey('escape');
     if (data === '\r' || data === '\n') return handleKey('return');
     if (data === '\x03') { cleanup(); process.exit(0); }
-    if (data === '\x12') return handleKey('ctrl-r');  // Ctrl+R → design-mode redo
+    if (data === '\x12') return handleKey('ctrl-r');  // Ctrl+R → free-config redo
 
     // T25 / B14 — was: ANY chunk starting with \x1b fired handleKey
     // ('escape'). That treated F-keys (\x1bOP), Alt-modified keys

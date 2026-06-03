@@ -56,18 +56,17 @@ panels:
   detail:  { type: detail,  title: Detail }
 
 layout:
-  left:
-    panels:
-      - hello
-      - groups
-  right:
-    panels:
-      - actions
-      - detail
+  columns:
+    - panels:
+        - hello
+        - groups
+    - panels:
+        - actions
+        - detail
 ```
 
 Run: `node js/app/tui.js path/to/config.yml`. The Component's `hello`
-panel appears in the left column, populated by `getItems()`. Selecting
+panel appears in the first column, populated by `getItems()`. Selecting
 an item shows `getInfo(item)` in the detail panel.
 
 That's the floor. Everything from here is on top of that contract:
