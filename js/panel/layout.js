@@ -800,6 +800,14 @@ function update(msg, slice) {
     // that return `{ slice, error }`; the reducer threads the error
     // into freeConfig.notice (red) on refusal or a green status notice
     // on success.
+    //
+    // Msg-field naming convention across the column / pane Msgs:
+    //   `position`     — slot BETWEEN columns to insert at (0..N). Used by
+    //                    `add_column`, `pool_show_new_column`.
+    //   `columnIndex`  — which existing column (0..N-1). Used by
+    //                    `remove_column`, `pool_show`, drag targets.
+    //   `index`        — slot WITHIN a column's panels array (0..len). Used
+    //                    by `pool_show`, drag insert targets.
     case 'add_column': {
       const { slice: mutated, error } = mfc.addColumn(slice, msg.position);
       if (error) return _withNotice(slice, error, 'error');
