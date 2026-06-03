@@ -388,7 +388,7 @@ stats + events subprocess; files' per-panel directory browsers;
 config-status' git-worktree cache; the viewer's content tabs +
 ephemeral terminals; the groups tree's `expanded` Set; per-Navigator
 nav chrome (`slice.nav[panel].cursor/scroll/multiSel`, Phase 4a). The
-layout Component owns the frame (focus, viewMode, design, panel
+layout Component owns the frame (focus, viewMode, freeConfig, panel
 arrangement) — slice-private but loaded via cross-layer Msgs.
 
 ## 13. Checklist for new features
