@@ -81,7 +81,8 @@ greppable.
      1. calcLayout → panelHeights, panelBounds
         (fires keep-in-view set_scroll Msgs as a side output)
      2. for each panel in arrange:
-          _safeRender( comp.render(panel, w, h, slice) )
+          _safeRender(panel, w, h)
+            (resolves comp + slice internally; P5.7)
      3. renderTerminalOverlay     (PTY buffer per-row diff)
      4. renderFooter, renderRegisterStrip
      5. modal overlays (cmdline, menu, confirm, prompt, ...)
