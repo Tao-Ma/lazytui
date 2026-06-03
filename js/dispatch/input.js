@@ -140,7 +140,8 @@ function handleMouse(kind, x, y) {
     const tabOverlay = require('../overlay/tab-list');
     if (tabOverlay.isTriggerHit(mx, my)) {
       const target = route.resolveTarget('viewer');
-      if (!target) { render(); return; }
+      // No viewer → click is a no-op; nothing changed, skip the render.
+      if (!target) return;
       if (model.modes.tabListMode) {
         dispatchMsg(wrap(target, { type: 'tab_list_close' }));
       } else {
@@ -272,9 +273,9 @@ function handleMouse(kind, x, y) {
           render();
           return;
         }
-        // Header/footer click or essential row — no-op, but still
-        // swallow the click so it doesn't leak through to free-config drag.
-        render();
+        // Header/footer click or essential row — no-op (nothing
+        // dispatched, no state change). Just swallow so it doesn't
+        // leak through to free-config drag; no render needed.
         return;
       }
       // Click outside overlay: close it, then fall through to free-config
