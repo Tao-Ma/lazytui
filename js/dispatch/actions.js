@@ -254,8 +254,10 @@ function handleAction(action, arg) {
       // Async — refreshAll's resolve drives a scheduleRender via
       // changed-flag bookkeeping in the refresh loop. The trailing
       // sync paint in handleKey gives immediate feedback that
-      // "something happened" even before refresh completes.
-      applyMsg({ type: 'refresh' });
+      // "something happened" even before refresh completes. Direct
+      // call (R4.5) — the older `applyMsg → Cmd → effects → refreshAll`
+      // chain had no model side at the runtime arm (no-op + Cmd).
+      require('../panel/api').refreshAll();
       break;
     case 'toggle_collapse_focused': {
       // v0.6 — `<leader> c` chord in normal mode. Toggles the focused

@@ -292,7 +292,6 @@ function update(model, msg) {
     // --- Cmd-only verbs: no model change, the reducer just routes the
     // Msg to a Cmd the effects layer runs. Centralizing the Msg→Cmd
     // mapping here is what lets handleAction's arms collapse into update.
-    case 'refresh':     return [model, [{ type: 'refresh' }]];
     case 'show_help':   return [model, [{ type: 'show_help' }]];
     case 'next_tab':    return _cycleViewerTab(model, +1);
     case 'prev_tab':    return _cycleViewerTab(model, -1);

@@ -163,7 +163,6 @@ describe('[3] update — (model, msg) → [model, cmds], pure + Cmd descriptors'
   it('Cmd-only verbs route Msg → Cmd without touching the model', () => {
     const m = runtime.init();
     const snap = JSON.stringify(m.focus);
-    eq(runtime.update(m, { type: 'refresh' })[1][0].type, 'refresh');
     eq(runtime.update(m, { type: 'show_help' })[1][0].type, 'show_help');
     eq(runtime.update(m, { type: 'next_tab' })[1][0].msg.msg.dir, +1);
     eq(runtime.update(m, { type: 'prev_tab' })[1][0].msg.msg.dir, -1);

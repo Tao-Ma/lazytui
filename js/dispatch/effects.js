@@ -154,9 +154,6 @@ function installBuiltins() {
   registerEffect('force_full_repaint', () => {
     try { require('../render/layout').forceFullRepaint(); } catch (_) {}
   });
-  registerEffect('refresh', () => {
-    api.refreshAll(getModel().config);
-  });
   registerEffect('show_help', () => { require('./help-text').showHelp(); });
   // `_claimed` is the framework-internal sentinel a Component returns from
   // its `key` update to suppress the framework default. The normal path
