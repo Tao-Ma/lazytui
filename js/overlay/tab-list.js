@@ -35,6 +35,7 @@ const { theme } = require('../render/themes');
 const { renderPanel } = require('../render/panel');
 const { getInstanceSlice } = require('../panel/api');
 const { getModel } = require('../app/runtime');
+const { isChainActive } = require('../dispatch/modes');
 const pt = require('../leaves/pane-tabs');
 
 const MAX_W = 50;
@@ -268,29 +269,22 @@ function injectTabTrigger(panelOutput, p, paneId = 'detail') {
   if (!panelOutput || p.type !== paneId) return panelOutput;
   const paneB = _paneBounds(paneId);
   if (!paneB || paneB.w < TRIGGER_X_OFFSET + TRIGGER_VIS_W + 2) return panelOutput;
-  if (_triggerSuppressed()) return panelOutput;
+  const state = _triggerState();
+  if (state === 'hidden') return panelOutput;
 
   const t = theme();
   const focused = require('../panel/api').getFocus() === paneId || getModel().modes.terminalMode;
   const fc = focused ? t.focus : t.dim;
-  const isOpen = !!getModel().modes.tabListMode;
-  // `reverse` keeps the open-state indication (inverted block) regardless
-  // of focus. Otherwise: bright accent when focused, `dim` + color when
-  // not — strip the `bold ` prefix from chrome_trigger so the dim
-  // attribute composes with the remaining color (bold + dim conflict
-  // on most terminals; bold tends to win, defeating the dim).
-  // free-config mode renders the trigger DISABLED (greyed) — the
-  // affordance stays visible so the user knows the tab-list exists,
-  // but click on the glyph falls through to the panel-drag gesture
-  // that owns the top-border row (see isTriggerHit).
+  // Strip the `bold ` prefix from chrome_trigger so the dim attribute
+  // composes with the remaining color (bold + dim conflict on most
+  // terminals; bold tends to win, defeating the dim).
   const triggerBase = t.chrome_trigger || 'bold cyan';
   const triggerColor = triggerBase.replace(/^bold\s+/, '');
-  const disabled = _triggerDisabled();
   let triggerOpen;
-  if (disabled)     triggerOpen = '[dim]';
-  else if (isOpen)  triggerOpen = '[reverse]';
-  else if (focused) triggerOpen = `[${triggerBase}]`;
-  else              triggerOpen = `[dim][${triggerColor}]`;
+  if      (state === 'disabled') triggerOpen = '[dim]';
+  else if (state === 'open')     triggerOpen = '[reverse]';
+  else if (focused)              triggerOpen = `[${triggerBase}]`;
+  else                           triggerOpen = `[dim][${triggerColor}]`;
   const triggerMarkup = `${triggerOpen}${TRIGGER_GLYPH}[/][${fc}]`;
 
   const nlIdx = panelOutput.indexOf('\n');
@@ -321,41 +315,54 @@ function injectTabTrigger(panelOutput, p, paneId = 'detail') {
   return m[1] + triggerMarkup + after + restRows;
 }
 
-function _triggerSuppressed() {
-  // Reserved for genuine "the glyph would be physically obscured by
-  // another paint" cases. Today nothing qualifies — none of the
-  // overlay modes paint over detail's top border (cmdline / filter
-  // / detail-search live in the footer row; menu / confirm /
-  // prompt / copy / register-popup / which-key are centered popups
-  // that don't reach the top border). Kept as a hook so a future
-  // overlay that DOES cover the top row can flip it true.
-  return false;
-}
+// --- Trigger state machine ---------------------------------------------
+//
+// One tagged state drives both the render (injectTabTrigger) and the
+// click (isTriggerHit), so the two never drift. Four states:
+//
+//   'open'     tabListMode is on → render [reverse] (inverted block).
+//              Clickable: click toggles the list closed.
+//   'normal'   no modal mode active → render in chrome_trigger color
+//              (dimmed when the pane isn't focused). Clickable: opens
+//              the list.
+//   'disabled' some other modeChain mode owns user input — free-config
+//              (its drag gesture lives on the top-border row), cmdline
+//              / filter / detail-search (typing into a prompt), centered
+//              popups (menu / confirm / prompt / copy / register),
+//              prefix chain, free-config title-edit. Render greyed
+//              ([dim]) so the affordance stays visible; NOT clickable
+//              (click falls through to whatever else owns the row, or
+//              is a no-op). dispatch/modes.js#isChainActive enumerates
+//              the modes; we exclude tabListMode (that's the 'open'
+//              state).
+//   'hidden'   render-suppressed entirely. Reserved for a future
+//              overlay that paints over the top border; today nothing
+//              qualifies (cmdline / filter / detail-search live in the
+//              footer; centered popups don't reach the top).
+//
+// Clickable derivation: state === 'open' || state === 'normal'.
 
-/** True when the trigger is rendered but disabled (greyed, no
- *  click). Any modal mode that owns user input — free-config (its
- *  own panel-drag gesture lives on this row), cmdline / filter /
- *  detail-search (typing into a prompt), centered popups (menu /
- *  confirm / prompt / copy / register), prefix chain, free-config
- *  title-edit — disables the click while leaving the glyph visible
- *  so the user keeps the affordance hint. Click falls through to
- *  whatever else owns the row (or is a no-op). */
-function _triggerDisabled() {
+function _triggerState() {
   const md = getModel().modes;
-  if (md.freeConfigMode || md.freeConfigTitleEditMode) return true;
-  if (md.cmdMode || md.filterMode || md.detailSearchMode) return true;
-  if (md.confirmMode || md.promptMode || md.menuOpen) return true;
-  if (md.copyMode || md.registerPopupMode) return true;
-  if (md.prefixMode) return true;
-  return false;
+  if (md.tabListMode) return 'open';
+  // Any chain mode other than tabListMode → disabled. Routing through
+  // dispatch/modes.js#isChainActive keeps this list in lockstep with
+  // the central registry (adding a new chain mode automatically lands
+  // in the disabled set, no extra edit here).
+  if (isChainActive(md)) return 'disabled';
+  return 'normal';
 }
 
-/** Hit-test for the trigger click. True if (mx, my) lands on `[≡]`.
- *  Disabled (free-config) and suppressed (modal overlays) both
- *  return false so the click falls through to whatever else owns
- *  that row. */
+function _triggerClickable() {
+  const state = _triggerState();
+  return state === 'open' || state === 'normal';
+}
+
+/** Hit-test for the trigger click. True if (mx, my) lands on `[≡]` AND
+ *  the trigger is in a clickable state — disabled / hidden states both
+ *  return false so the click falls through. */
 function isTriggerHit(mx, my, paneId = 'detail') {
-  if (_triggerSuppressed() || _triggerDisabled()) return false;
+  if (!_triggerClickable()) return false;
   const paneB = _paneBounds(paneId);
   if (!paneB) return false;
   if (paneB.w < TRIGGER_X_OFFSET + TRIGGER_VIS_W + 2) return false;
