@@ -294,8 +294,9 @@ Every panel is a **Component**: the framework owns a state slice per
 Component, messages arrive through `update(msg, slice)` which returns
 either the next slice or `[nextSlice, effects]`. Effects are plain data
 descriptors (`{ type, … }`) the effects layer runs: async work, a
-viewer write, a repaint, a recurring `tick`, an `apply_msg`
-re-dispatch to the root reducer. An effect's async result feeds back
+viewer write, a repaint, a recurring `tick`, a `msg` re-dispatch
+(routed by `msg.kind` — wrapped → Component fan-out, flat → root
+reducer). An effect's async result feeds back
 as a Msg (`dispatchMsg`). Render receives the slice, not the root
 model. Key events arrive as `{ type:'key' }` Msgs — only to the
 focused Component, only when no modal owns input.
@@ -337,9 +338,10 @@ module.exports = {
 - A Component **may read** the root model via `require('../app/runtime').getModel()`
   (focus, currentGroup, mode flags — anything app-global) but **never writes**
   it. The Component's own slice is the only thing its `update` writes
-  directly. Cross-layer writes go out as effects — `apply_msg` re-dispatches
-  through the root reducer, `dispatch_msg` re-dispatches to another
-  Component. The framework runs them, so single-writer per layer holds.
+  directly. Cross-layer writes go out as a `{type:'msg', msg}` effect —
+  a wrapped Msg (`{kind, msg}`) fans out to the named Component, a flat
+  Msg re-dispatches through the root reducer. The framework runs them,
+  so single-writer per layer holds.
 - **Msg routing.** `refresh` / `hub` / `action` fan to every Component's
   `update`. **Key Msgs go ONLY to the Component owning the focused panel, and
   ONLY when no modal mode is active** — a modal (filter / menu / cmdline / …)
