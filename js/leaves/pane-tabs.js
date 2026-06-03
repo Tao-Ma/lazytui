@@ -399,12 +399,15 @@ function reduceTabMsg(msg, slice, ctx) {
         next = { ...next, lines: [], scroll: 0 };
         effects.push({ type: 'msg', msg: wrap(paneId, { type: 'viewer_show_info' }) });
       } else if (idx <= actionTabs.length) {
-        // v0.6.2 — action tabs are view-only on switch. Phase 2:
-        // restore slice.lines from actionTabBuffers[group][actionKey]
-        // if the action has been run before; otherwise paint the
-        // "[press Enter to run]" placeholder. The buffer survives
-        // tab switches — switching away and back shows whatever was
-        // captured before kill_proc froze the producer.
+        // v0.6.2 — action tabs are view-only on switch. Restore
+        // slice.lines from actionTabBuffers[group][actionKey] if the
+        // action has been run before; otherwise paint the "[press
+        // Enter to run]" placeholder. Phase 3 — the producer keeps
+        // streaming into the buffer while the user is off-tab; this
+        // arm pins scroll to the bottom so the live tail is visible
+        // on return and so subsequent viewer_append's bottom-stick
+        // math keeps tracking new lines (the at-bottom check reads
+        // slice.scroll vs maxScroll).
         const [actionKey] = actionTabs[idx - 1];
         const groupName = getModel().currentGroup;
         const buf = slice.actionTabBuffers
@@ -413,7 +416,9 @@ function reduceTabMsg(msg, slice, ctx) {
         const lines = buf && Array.isArray(buf.lines) && buf.lines.length > 0
           ? buf.lines.slice()
           : ['[dim]Press Enter to run.[/]'];
-        next = { ...next, lines, scroll: 0 };
+        const innerH = slice.innerH > 0 ? slice.innerH : 1;
+        const scroll = Math.max(0, lines.length - innerH);
+        next = { ...next, lines, scroll };
       } else if (idx <= actionTabs.length + termTabs.length) {
         next = { ...next, lines: [], scroll: 0 };
       } else {
