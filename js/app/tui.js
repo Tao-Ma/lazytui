@@ -252,11 +252,16 @@ function main() {
   // it AT the read site, not from a frozen-at-boot snapshot.
   hideCursor();
   installSuspendHandlers();   // Ctrl+Z: restore terminal → suspend → resume
-  // Initial refresh kicks off async — first frame uses cached/empty data,
-  // re-renders when each Component's refresh-Msg handler folds results
-  // back via dispatchMsg. UX: brief "no data" flash on first paint is
-  // acceptable; freezing the boot wasn't.
-  refreshAll().then(() => render());
+  // Initial refresh broadcasts a `{type:'refresh'}` Msg to every
+  // Component synchronously (refreshAll's `async` wrapper doesn't
+  // await anything internally). Each Component's update folds results
+  // into its slice + may emit a tick/render Cmd for later polling.
+  // The first redraw() below paints what's settled by then;
+  // Components that drive async work (docker, files) will trigger
+  // their own scheduleRender as their callbacks land. The historical
+  // `refreshAll().then(() => render())` then a separate `redraw()`
+  // double-painted the same state (P5.6).
+  refreshAll();
   redraw();
   setupKeyListener();
 
