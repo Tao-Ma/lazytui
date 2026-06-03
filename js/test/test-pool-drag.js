@@ -14,6 +14,15 @@ const { describe, it, eq, assert, report } = require('./test-runner');
 const mpoolDrag = require('../leaves/free-config-pool-drag');
 const layout = require('../panel/layout');
 
+// Unwrap Component.update's optional [slice, cmds] tuple — R1.3 made
+// pool_hide/show/remove_column emit Cmds when focus changes; tests
+// that only assert on slice fields use this helper. Existing tests
+// that DO want cmds keep the raw destructure (`const [next, cmds] = ...`).
+const applyUpdate = (msg, slice) => {
+  const r = layout.update(msg, slice);
+  return Array.isArray(r) ? r[0] : r;
+};
+
 // Build a slice with panelBounds populated so pool-drop hit-tests have
 // something to read. Bounds mirror what render/layout writes at paint.
 function buildSlice() {
@@ -211,7 +220,7 @@ describe('[poolDragMotion] promotes armed→dragging and computes drop target', 
     const base = buildSlice();
     const hidden = layout.update({ type: 'pool_hide', id: 'actions' }, base);
     eq(hidden.arrange.columns[1].panels.some(p => p.type === 'actions'), false);
-    const tried = layout.update({ type: 'pool_show', id: 'actions', columnIndex: 0 }, hidden);
+    const tried = applyUpdate({ type: 'pool_show', id: 'actions', columnIndex: 0 }, hidden);
     eq(tried.arrange.columns[0].panels.some(p => p.type === 'actions'), false,
       'actions did NOT land in first column');
     eq(tried, hidden, 'reducer returns the slice unchanged');
@@ -307,7 +316,7 @@ describe('[end-to-end] layout.update threads pool_drag_* Msgs to the leaf', () =
 describe('[pool_show with index] reducer splices at position', () => {
   it('pool_show with index=0 prepends to right column (before actions), clamped before detail', () => {
     const s = buildSlice();
-    const next = layout.update({ type: 'pool_show', id: 'notes', columnIndex: 1, index: 0 }, s);
+    const next = applyUpdate({ type: 'pool_show', id: 'notes', columnIndex: 1, index: 0 }, s);
     eq(next.arrange.columns[1].panels.length, 3);
     eq(next.arrange.columns[1].panels[0].type, 'viewer', 'notes (viewer-type) prepended');
     eq(next.arrange.columns[1].panels[1].type, 'actions');
@@ -315,26 +324,26 @@ describe('[pool_show with index] reducer splices at position', () => {
   });
   it('pool_show with index=1 inserts between actions and detail (allowed)', () => {
     const s = buildSlice();
-    const next = layout.update({ type: 'pool_show', id: 'notes', columnIndex: 1, index: 1 }, s);
+    const next = applyUpdate({ type: 'pool_show', id: 'notes', columnIndex: 1, index: 1 }, s);
     eq(next.arrange.columns[1].panels[0].type, 'actions');
     eq(next.arrange.columns[1].panels[1].type, 'viewer');
     eq(next.arrange.columns[1].panels[2].type, 'detail', 'detail still at end');
   });
   it('pool_show with index=99 (past detail) clamps to detail position', () => {
     const s = buildSlice();
-    const next = layout.update({ type: 'pool_show', id: 'notes', columnIndex: 1, index: 99 }, s);
+    const next = applyUpdate({ type: 'pool_show', id: 'notes', columnIndex: 1, index: 99 }, s);
     // index clamped to length=2, then clamped to detailIdx=1 → notes lands before detail
     eq(next.arrange.columns[1].panels[1].type, 'viewer');
     eq(next.arrange.columns[1].panels[2].type, 'detail');
   });
   it('pool_show without index appends (existing behavior preserved)', () => {
     const s = buildSlice();
-    const next = layout.update({ type: 'pool_show', id: 'notes', columnIndex: 0 }, s);
+    const next = applyUpdate({ type: 'pool_show', id: 'notes', columnIndex: 0 }, s);
     eq(next.arrange.columns[0].panels[next.arrange.columns[0].panels.length - 1].type, 'viewer');
   });
   it('pool_show with index for left column splices at position', () => {
     const s = buildSlice();
-    const next = layout.update({ type: 'pool_show', id: 'notes', columnIndex: 0, index: 1 }, s);
+    const next = applyUpdate({ type: 'pool_show', id: 'notes', columnIndex: 0, index: 1 }, s);
     eq(next.arrange.columns[0].panels[0].type, 'groups');
     eq(next.arrange.columns[0].panels[1].type, 'viewer');
     eq(next.arrange.columns[0].panels[2].type, 'files');

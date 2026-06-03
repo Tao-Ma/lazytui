@@ -543,8 +543,14 @@ function update(msg, slice) {
       const next = { ...withUndo, arrange: nextArrange, dirty: true };
       // If the hidden panel was focused, focus is now stale (points at
       // a no-longer-placed type). clampSelected snaps it back to a
-      // valid panel.
-      return mfc.clampSelected(next);
+      // valid panel. When the snap actually moves focus, route through
+      // _withFocus so halfLeftPanel + lastViewerTab + show_selected_info
+      // stay in lockstep with the focus_set semantics.
+      const clamped = mfc.clampSelected(next);
+      if (clamped.focus !== slice.focus) {
+        return [_withFocus(clamped, clamped.focus), [{ type: 'show_selected_info' }]];
+      }
+      return clamped;
     }
     // Panel-list overlay state Msgs. Open/close, cursor nav, context-
     // pick. The pick re-emits a pool_hide / pool_show Msg back into
@@ -660,7 +666,13 @@ function update(msg, slice) {
       const next = { ...withUndo, arrange: nextArrange, dirty: true };
       // Move focus to the newly-shown panel — matches the overlay UX
       // where picking from the pool surfaces it as the active one.
-      return mfc.clampSelected(next, entry.type);
+      // _withFocus stamps focus + halfLeftPanel + lastViewerTab; the
+      // emitted show_selected_info Cmd refreshes the detail body.
+      const focused = _withFocus(next, entry.type);
+      if (focused.focus !== slice.focus) {
+        return [focused, [{ type: 'show_selected_info' }]];
+      }
+      return focused;
     }
     // v0.6.2 Phase 2 — pool drag dropping at a screen edge / column
     // gap spawns a NEW column at `position`. The pool entry becomes
@@ -722,7 +734,15 @@ function update(msg, slice) {
       if (error) return _withNotice(slice, error, 'error');
       const withUndo = mfc.pushUndo(slice);
       const next = { ...withUndo, arrange: mutated.arrange, dirty: true };
-      return _withStatus(mfc.clampSelected(next), `removed column ${msg.columnIndex + 1}`);
+      // Clamp focus to a still-placed panel; if focus moved, route the
+      // change through _withFocus + show_selected_info (same lockstep
+      // contract as pool_hide / pool_show / focus_set).
+      const clamped = mfc.clampSelected(next);
+      const status = _withStatus(clamped, `removed column ${msg.columnIndex + 1}`);
+      if (clamped.focus !== slice.focus) {
+        return [_withFocus(status, clamped.focus), [{ type: 'show_selected_info' }]];
+      }
+      return status;
     }
     default:
       return slice;

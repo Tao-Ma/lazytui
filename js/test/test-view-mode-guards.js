@@ -186,7 +186,8 @@ describe('[4] notice auto-clears on unrelated user intent', () => {
       ],
       pool: { x: { id: 'x', type: 'viewer', title: 'X', config: {} } },
     };
-    const next = layout.update({ type: 'pool_show', id: 'x', columnIndex: 0 }, s);
+    const r = layout.update({ type: 'pool_show', id: 'x', columnIndex: 0 }, s);
+    const next = Array.isArray(r) ? r[0] : r;
     eq(next.freeConfig.notice, null, 'pool_show cleared stale notice');
   });
 

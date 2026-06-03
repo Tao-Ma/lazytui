@@ -13,6 +13,15 @@ const { describe, it, eq, assert, report } = require('./test-runner');
 const layout = require('../panel/layout');
 const mpool = require('../leaves/pool');
 
+// Component.update returns either `slice` or `[slice, cmds]` — the
+// runtime's `_runInstance` handles both forms. Tests only assert on
+// slice fields, so unwrap the tuple. R1.3 made pool_hide/pool_show/
+// remove_column emit a Cmd tuple when focus changes.
+const update = (msg, slice) => {
+  const r = layout.update(msg, slice);
+  return Array.isArray(r) ? r[0] : r;
+};
+
 // Build a layout slice with a known pool + placement set. Helper makes
 // tests cheap to write without bringing up the whole runtime.
 function buildSlice({ left = [], right = [], hidden = [], leftWidth = 30, detailHeightPct = 60 } = {}) {
@@ -54,7 +63,7 @@ describe('[pool_hide] removes placement, pool entry stays', () => {
       left:  [['groups', 'groups'], ['files', 'files']],
       right: [['actions', 'actions'], ['detail', 'detail']],
     });
-    const next = layout.update({ type: 'pool_hide', id: 'files' }, slice);
+    const next = update({ type: 'pool_hide', id: 'files' }, slice);
     eq(mpool.placedIds(next.arrange), ['groups', 'actions', 'detail']);
     eq(mpool.hiddenIds(next.arrange), ['files']);
     assert(next.dirty, 'slice marked dirty');
@@ -65,7 +74,7 @@ describe('[pool_hide] removes placement, pool entry stays', () => {
       left:  [['groups', 'groups']],
       right: [['actions', 'actions'], ['stats', 'stats'], ['detail', 'detail']],
     });
-    const next = layout.update({ type: 'pool_hide', id: 'stats' }, slice);
+    const next = update({ type: 'pool_hide', id: 'stats' }, slice);
     eq(next.arrange.columns[1].panels.map(p => p.id), ['actions', 'detail']);
     assert(next.dirty);
   });
@@ -74,7 +83,7 @@ describe('[pool_hide] removes placement, pool entry stays', () => {
       left:  [['groups', 'groups']],
       right: [['actions', 'actions'], ['detail', 'detail']],
     });
-    const next = layout.update({ type: 'pool_hide', id: 'detail' }, slice);
+    const next = update({ type: 'pool_hide', id: 'detail' }, slice);
     eq(next, slice, 'no-op: same slice reference returned');
   });
   it('no-op on unknown id', () => {
@@ -82,7 +91,7 @@ describe('[pool_hide] removes placement, pool entry stays', () => {
       left:  [['groups', 'groups']],
       right: [['actions', 'actions'], ['detail', 'detail']],
     });
-    const next = layout.update({ type: 'pool_hide', id: 'ghost' }, slice);
+    const next = update({ type: 'pool_hide', id: 'ghost' }, slice);
     eq(next, slice);
   });
   it('no-op on already-hidden id', () => {
@@ -91,7 +100,7 @@ describe('[pool_hide] removes placement, pool entry stays', () => {
       right:  [['actions', 'actions'], ['detail', 'detail']],
       hidden: [['notes', 'viewer']],
     });
-    const next = layout.update({ type: 'pool_hide', id: 'notes' }, slice);
+    const next = update({ type: 'pool_hide', id: 'notes' }, slice);
     eq(next, slice);
   });
   it('reassigns positional hotkeys after a hide', () => {
@@ -99,7 +108,7 @@ describe('[pool_hide] removes placement, pool entry stays', () => {
       left:  [['containers', 'containers'], ['groups', 'groups'], ['files', 'files']],
       right: [['actions', 'actions'], ['detail', 'detail']],
     });
-    const next = layout.update({ type: 'pool_hide', id: 'groups' }, slice);
+    const next = update({ type: 'pool_hide', id: 'groups' }, slice);
     eq(next.arrange.columns[0].panels.map(p => p.hotkey), ['1', '2']);
     eq(next.arrange.columns[0].panels.map(p => p.id), ['containers', 'files']);
   });
@@ -114,7 +123,7 @@ describe('[pool_show] inserts placement from pool entry', () => {
       right:  [['actions', 'actions'], ['detail', 'detail']],
       hidden: [['notes', 'viewer']],
     });
-    const next = layout.update({ type: 'pool_show', id: 'notes' }, slice);
+    const next = update({ type: 'pool_show', id: 'notes' }, slice);
     eq(mpool.placedIds(next.arrange), ['groups', 'actions', 'notes', 'detail']);
     eq(mpool.hiddenIds(next.arrange), []);
     assert(next.dirty);
@@ -125,7 +134,7 @@ describe('[pool_show] inserts placement from pool entry', () => {
       right:  [['actions', 'actions'], ['detail', 'detail']],
       hidden: [['logs', 'tail']],
     });
-    const next = layout.update({ type: 'pool_show', id: 'logs', columnIndex: 0 }, slice);
+    const next = update({ type: 'pool_show', id: 'logs', columnIndex: 0 }, slice);
     eq(next.arrange.columns[0].panels.map(p => p.id), ['groups', 'logs']);
     eq(next.arrange.columns[1].panels.map(p => p.id), ['actions', 'detail']);
   });
@@ -135,7 +144,7 @@ describe('[pool_show] inserts placement from pool entry', () => {
       right:  [['actions', 'actions'], ['detail', 'detail']],
       hidden: [['notes', 'viewer']],
     });
-    const next = layout.update({ type: 'pool_show', id: 'notes' }, slice);
+    const next = update({ type: 'pool_show', id: 'notes' }, slice);
     eq(next.arrange.columns[1].panels.map(p => [p.id, p.hotkey]),
        [['actions', '7'], ['notes', '8'], ['detail', '9']]);
   });
@@ -144,7 +153,7 @@ describe('[pool_show] inserts placement from pool entry', () => {
       left:  [['groups', 'groups']],
       right: [['actions', 'actions'], ['detail', 'detail']],
     });
-    const next = layout.update({ type: 'pool_show', id: 'groups' }, slice);
+    const next = update({ type: 'pool_show', id: 'groups' }, slice);
     eq(next, slice);
   });
   it('no-op on unknown id', () => {
@@ -152,7 +161,7 @@ describe('[pool_show] inserts placement from pool entry', () => {
       left:  [['groups', 'groups']],
       right: [['actions', 'actions'], ['detail', 'detail']],
     });
-    const next = layout.update({ type: 'pool_show', id: 'ghost' }, slice);
+    const next = update({ type: 'pool_show', id: 'ghost' }, slice);
     eq(next, slice);
   });
   it('refuses to place a second detail panel', () => {
@@ -161,7 +170,7 @@ describe('[pool_show] inserts placement from pool entry', () => {
       right:  [['actions', 'actions'], ['detail', 'detail']],
       hidden: [['detail2', 'detail']],
     });
-    const next = layout.update({ type: 'pool_show', id: 'detail2' }, slice);
+    const next = update({ type: 'pool_show', id: 'detail2' }, slice);
     eq(next, slice);
   });
   it('refuses to place a second actions panel', () => {
@@ -170,7 +179,7 @@ describe('[pool_show] inserts placement from pool entry', () => {
       right:  [['actions', 'actions'], ['detail', 'detail']],
       hidden: [['extraActions', 'actions']],
     });
-    const next = layout.update({ type: 'pool_show', id: 'extraActions' }, slice);
+    const next = update({ type: 'pool_show', id: 'extraActions' }, slice);
     eq(next, slice);
   });
   it('allows exceeding column soft cap (6 left)', () => {
@@ -185,7 +194,7 @@ describe('[pool_show] inserts placement from pool entry', () => {
       right:  [['actions', 'actions'], ['detail', 'detail']],
       hidden: [['g', 'g']],
     });
-    const next = layout.update({ type: 'pool_show', id: 'g', columnIndex: 0 }, slice);
+    const next = update({ type: 'pool_show', id: 'g', columnIndex: 0 }, slice);
     eq(next.arrange.columns[0].panels.length, 7, 'soft cap exceeded: 7th panel placed');
     eq(next.arrange.columns[0].panels[6].id, 'g', 'g appended');
   });
@@ -197,10 +206,10 @@ describe('[hide + show round-trip]', () => {
       left:  [['containers', 'containers'], ['groups', 'groups']],
       right: [['actions', 'actions'], ['detail', 'detail']],
     });
-    const hidden = layout.update({ type: 'pool_hide', id: 'groups' }, slice);
+    const hidden = update({ type: 'pool_hide', id: 'groups' }, slice);
     eq(mpool.placedIds(hidden.arrange), ['containers', 'actions', 'detail']);
     eq(mpool.hiddenIds(hidden.arrange), ['groups']);
-    const shown = layout.update({ type: 'pool_show', id: 'groups', columnIndex: 0 }, hidden);
+    const shown = update({ type: 'pool_show', id: 'groups', columnIndex: 0 }, hidden);
     eq(mpool.placedIds(shown.arrange).sort(), ['actions', 'containers', 'detail', 'groups']);
     eq(mpool.hiddenIds(shown.arrange), []);
   });
