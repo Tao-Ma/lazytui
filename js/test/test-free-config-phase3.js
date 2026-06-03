@@ -25,7 +25,7 @@ const {
   titleEditText,
   onMouseEvent, pointToResizeTarget,
   _clearUndoStacks, _getUndoDepth, _getRedoDepth,
-} = require('../overlay/free-config');
+} = require('../panel/free-config-view');
 const dispatch = require('../dispatch/dispatch');
 const { getModel } = require('../app/runtime');
 const { getInstanceSlice } = require('../panel/api');

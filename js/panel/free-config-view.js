@@ -1,17 +1,24 @@
 /**
- * Free-config mode — read-side helpers.
- *
- * The keyboard handler, title-edit sub-mode, undo/redo, and mouse drag/resize
- * state machine all live in the reducer (runtime: free_config_* / free_config_mouse_*
- * Msgs) backed by the dependency-free `leaves/free-config` leaf. The drag-target
- * affordance is now the live layout preview painted by render/layout.js
- * (swaps slice.arrange for drag.previewArrange during the paint pass), so
- * this file holds no overlay paint of its own — just the free-config footer
- * text (getFreeConfigFooter), the title-edit buffer accessor, and a small set
+ * Free-config mode — read-side helpers (view-layer companion to
+ * `leaves/free-config`). Two render-time accessors and a small set
  * of test-facing shims that drive the real reducer path.
  *
- * Save is decoupled: `:save-layout` writes the runtime layout to YAML,
- * `:restore-layout` reverts it and clears undo history.
+ * `getFreeConfigFooter` — footer text contribution for renderFooter
+ *   (drag target, status hints).
+ * `titleEditText` — the live title-edit buffer text for the overlay
+ *   prompt.
+ *
+ * The keyboard handler, title-edit sub-mode, undo/redo, and mouse
+ * drag/resize state machine all live in the reducer (runtime:
+ * free_config_* / free_config_mouse_* Msgs) backed by the
+ * dependency-free `leaves/free-config` leaf. The drag-target
+ * affordance is the live layout preview painted by render/layout.js
+ * (swaps slice.arrange for drag.previewArrange during the paint
+ * pass). Save is decoupled: `:save-layout` writes the runtime layout
+ * to YAML, `:restore-layout` reverts it and clears undo history.
+ *
+ * (Was `overlay/free-config.js` — moved to `panel/` since this file
+ * does no overlay paint of its own; it serves the Component view.)
  */
 'use strict';
 

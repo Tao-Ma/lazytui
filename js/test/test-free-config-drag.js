@@ -18,7 +18,7 @@
  */
 'use strict';
 
-const { onMouseEvent, pointToDropTarget, _getDragState } = require('../overlay/free-config');
+const { onMouseEvent, pointToDropTarget, _getDragState } = require('../panel/free-config-view');
 const dispatch = require('../dispatch/dispatch');
 const { getModel } = require('../app/runtime');
 const { getInstanceSlice } = require('../panel/api');
