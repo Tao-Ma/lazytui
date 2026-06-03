@@ -139,7 +139,7 @@ function renderPanel({
       vl = visibleLen(line);
     }
     const pad = Math.max(0, innerW - vl);
-    const rightChar = sb[i] ? THUMB : b.v;
+    const rightChar = (sb && i >= sb.pos && i < sb.pos + sb.size) ? THUMB : b.v;
     rows.push(`[${fc}]${b.v}[/]${line}${' '.repeat(pad)}[/][${fc}]${rightChar}[/]`);
   }
 
