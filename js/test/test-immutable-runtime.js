@@ -349,9 +349,11 @@ describe('[immutable] root reducer — cross-layer cascades', () => {
 });
 
 describe('[immutable] root reducer — Cmd-only verbs are identity-preserving', () => {
-  it('refresh / show_help / quit do not change the model', () => {
+  it('show_help / quit / next_tab / prev_tab do not change the model', () => {
     const m = freshModel();
-    for (const t of ['refresh', 'show_help', 'quit', 'next_tab', 'prev_tab']) {
+    // `refresh` no longer goes through the reducer (R4.5) — actions.js
+    // calls api.refreshAll() directly.
+    for (const t of ['show_help', 'quit', 'next_tab', 'prev_tab']) {
       const [next, cmds] = runtime.update(m, { type: t });
       assert(next === m, `${t} returns same ref`);
       assert(cmds.length >= 1, `${t} emits at least one Cmd`);
