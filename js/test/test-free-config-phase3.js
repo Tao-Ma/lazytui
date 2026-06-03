@@ -367,16 +367,16 @@ describe('[3e] calcLayout — heightPct distribution', () => {
     freshLayout();
     process.stdout.columns = 100; process.stdout.rows = 30; // availH = 29
     calcLayout();
-    eq(getInstanceSlice('layout').panelHeights.containers, 14);
-    eq(getInstanceSlice('layout').panelHeights.groups, 15, 'two flex split 29: 14 + 15 (last gets leftover)');
+    eq(require('../render/layout')._getPanelHeights().containers, 14);
+    eq(require('../render/layout')._getPanelHeights().groups, 15, 'two flex split 29: 14 + 15 (last gets leftover)');
   });
   it('anchored heightPct claims its share, flex absorbs remainder', () => {
     freshLayout();
     getInstanceSlice("layout").arrange.columns[0].panels[0].heightPct = 70;  // containers fixed at 70%
     process.stdout.columns = 100; process.stdout.rows = 30; // availH = 29
     calcLayout();
-    eq(getInstanceSlice('layout').panelHeights.containers, 20, 'floor(29 * 0.7) = 20');
-    eq(getInstanceSlice('layout').panelHeights.groups, 9, 'flex remainder');
+    eq(require('../render/layout')._getPanelHeights().containers, 20, 'floor(29 * 0.7) = 20');
+    eq(require('../render/layout')._getPanelHeights().groups, 9, 'flex remainder');
   });
   it('oversubscribed anchored values scale proportionally', () => {
     freshLayout();
@@ -384,9 +384,9 @@ describe('[3e] calcLayout — heightPct distribution', () => {
     getInstanceSlice("layout").arrange.columns[0].panels[1].heightPct = 90;
     process.stdout.columns = 100; process.stdout.rows = 30; // availH = 29
     calcLayout();
-    eq(getInstanceSlice('layout').panelHeights.containers + getInstanceSlice('layout').panelHeights.groups, 29, 'column fills availH after scaling');
-    assert(getInstanceSlice('layout').panelHeights.containers >= 3, 'containers ≥ minH');
-    assert(getInstanceSlice('layout').panelHeights.groups >= 3, 'groups ≥ minH');
+    eq(require('../render/layout')._getPanelHeights().containers + require('../render/layout')._getPanelHeights().groups, 29, 'column fills availH after scaling');
+    assert(require('../render/layout')._getPanelHeights().containers >= 3, 'containers ≥ minH');
+    assert(require('../render/layout')._getPanelHeights().groups >= 3, 'groups ≥ minH');
   });
 });
 

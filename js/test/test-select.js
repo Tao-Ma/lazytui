@@ -203,9 +203,10 @@ describe('[11] keyboard visual-mode — claim via detail Component update', () =
     getInstanceSlice("layout").focus = 'detail';
     getModel().modes.terminalMode = false;
     getInstanceSlice('detail').cursor = { line: 0, col: 0 };
-    // A1/B1 fix: viewer.update reads slice.innerH directly. Seed it
-    // alongside the previous panelHeights seeding (8 = panelH 10 - 2).
-    getInstanceSlice('layout').panelHeights.detail = 10;
+    // viewer.update reads slice.innerH directly (set by render's R4.9
+    // direct write; tests seed it to drive selection geometry without
+    // rendering). panelHeights left the slice in the API-abstraction
+    // arc — was a legacy co-seed here, dropped.
     getInstanceSlice('detail').innerH = 8;
     getInstanceSlice('detail').scroll = 0;
   }
@@ -234,7 +235,6 @@ describe('[11] keyboard visual-mode — claim via detail Component update', () =
   });
   it('reading-mode j/k scrolls the view, cursor not used', () => {
     withDetail(Array.from({ length: 20 }, (_, i) => `line${i}`));
-    getInstanceSlice('layout').panelHeights.detail = 5;
     getInstanceSlice('detail').innerH = 3;
     eq(getInstanceSlice('detail').scroll, 0, 'starts at top');
     eq(sel.isActive(), false, 'reading mode (no select)');
@@ -248,7 +248,6 @@ describe('[11] keyboard visual-mode — claim via detail Component update', () =
   });
   it('reading-mode j/k clamps at top and bottom', () => {
     withDetail(Array.from({ length: 10 }, (_, i) => `line${i}`));
-    getInstanceSlice('layout').panelHeights.detail = 5;
     getInstanceSlice('detail').innerH = 3;  // maxScroll = 7
     for (let i = 0; i < 20; i++) detailKey('j', 'j');
     eq(getInstanceSlice('detail').scroll, 7, 'clamped to maxScroll');
@@ -266,7 +265,6 @@ describe('[11] keyboard visual-mode — claim via detail Component update', () =
   });
   it('visual-mode j scrolls when cursor leaves viewport', () => {
     withDetail(Array.from({ length: 20 }, (_, i) => `line${i}`));
-    getInstanceSlice('layout').panelHeights.detail = 5;
     getInstanceSlice('detail').innerH = 3;
     detailKey('v', 'v');
     for (let i = 0; i < 5; i++) detailKey('j', 'j');

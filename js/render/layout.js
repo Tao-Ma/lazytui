@@ -2,11 +2,14 @@
  * Layout calculation and view mode rendering.
  *
  * Geometry as view-derived data (docs/v0.5-layering.md §5). The layout
- * Component's slice holds `panelHeights` + `panelBounds`, but they are
- * recomputed per-frame from terminal size + arrange settings — this
- * module is the writer. Downstream readers (per-panel render fns,
- * mouse hit-tests in input.js, free-config drag math, terminal overlay
- * positioning) consume them via getInstanceSlice('layout').
+ * Component's slice holds `panelBounds` (spatial truth for mouse hit-
+ * tests + drag math). Per-panel heights live in a MODULE-LOCAL map
+ * `_panelHeights` here — recomputed per-frame from terminal size +
+ * arrange settings — exposed ONLY through `getPanelViewportH(type)`
+ * (view-mode-aware: half/full view's on-screen panel gets full availH,
+ * not its normal-view column-share). Direct reads of the column-share
+ * height would silently under-report in half/full view; the API hides
+ * that footgun (fix arc 2026-06-03).
  *
  * This is the one pattern that sits outside the otherwise-uniform
  * "Component update is the single writer of its slice" rule. The
@@ -52,10 +55,10 @@ const { currentText: filterCurrentText } = require('../overlay/filter');
  * Look up the render function for a panel type. Contract:
  *   render(panel, width, height, state) → string
  * Height is passed explicitly by every caller (renderNormal/Half/Full).
- * Renderers should treat the height arg as authoritative; reading
- * layoutSlice.panelHeights inside a renderer is implicit coupling to
- * the layout pass and breaks half/full view modes that supply a
- * different height.
+ * Renderers should treat the height arg as authoritative; reaching
+ * around for the column-share via the renderer's internal map would
+ * be implicit coupling to the layout pass and breaks half/full view
+ * modes that supply a different height.
  */
 /**
  * Render a collapsed placement as a 1-row title bar. The panel's own
@@ -89,9 +92,8 @@ function _renderCollapsed(p, w) {
 // --- Layout calculation ---
 
 /**
- * Distribute the column's `availH` rows across `panels`, writing each
- * panel's height to the layout slice's `panelHeights[type]`. Three
- * classes of panel share the column:
+ * Distribute the column's `availH` rows across `panels`, returning a
+ * `{ [type]: rows }` map. Three classes of panel share the column:
  *
  *   1. Detail (right column only). Reserved height = `availH *
  *      detailHeightPct / 100`. Detail never carries a per-panel
@@ -106,8 +108,9 @@ function _renderCollapsed(p, w) {
  * panel — a manually oversubscribed heightPct (sum > 100) gets
  * scaled down here rather than crashing the renderer.
  */
-function distributeColumnHeights(layoutSlice, panels, availH, isLastCol, minH) {
-  if (panels.length === 0) return;
+function distributeColumnHeights(panels, availH, isLastCol, minH, detailHeightPct) {
+  const out = {};
+  if (panels.length === 0) return out;
 
   // Collapsed placements get a hard 1-row reservation each. Their share
   // is subtracted from availH BEFORE detail/anchored/flex math so the
@@ -116,7 +119,7 @@ function distributeColumnHeights(layoutSlice, panels, availH, isLastCol, minH) {
   let collapsedTotal = 0;
   for (const p of panels) {
     if (p.collapsed && p.type !== 'detail') {
-      layoutSlice.panelHeights[p.type] = 1;
+      out[p.type] = 1;
       collapsedTotal += 1;
     }
   }
@@ -127,7 +130,7 @@ function distributeColumnHeights(layoutSlice, panels, availH, isLastCol, minH) {
   if (isLastCol) {
     detailPanel = panels.find(mpool.isDetailPane) || null;
     if (detailPanel) {
-      reserved = Math.max(minH, Math.floor(innerAvail * layoutSlice.arrange.detailHeightPct / 100));
+      reserved = Math.max(minH, Math.floor(innerAvail * detailHeightPct / 100));
     }
   }
 
@@ -177,26 +180,33 @@ function distributeColumnHeights(layoutSlice, panels, availH, isLastCol, minH) {
     const baseH = Math.floor(flexTotalH / flex.length);
     flex.forEach((p, i) => {
       const h = i === flex.length - 1 ? flexTotalH - baseH * (flex.length - 1) : baseH;
-      layoutSlice.panelHeights[p.type] = Math.max(minH, h);
+      out[p.type] = Math.max(minH, h);
     });
   }
-  for (const { p, h } of anchored) layoutSlice.panelHeights[p.type] = h;
-  if (detailPanel) layoutSlice.panelHeights[detailPanel.type] = reserved;
+  for (const { p, h } of anchored) out[p.type] = h;
+  if (detailPanel) out[detailPanel.type] = reserved;
 
   // Park rounding-leftover rows on the column's last non-collapsed
   // panel so the column exactly fills availH (matches the pre-heightPct
   // behavior and avoids a visually empty strip at the bottom). Collapsed
   // panels are locked at 1 row — never grow them with slack.
   let sum = 0;
-  for (const p of panels) sum += layoutSlice.panelHeights[p.type];
+  for (const p of panels) sum += out[p.type];
   if (sum < availH) {
     let lastVisible = null;
     for (let i = panels.length - 1; i >= 0; i--) {
       if (!panels[i].collapsed) { lastVisible = panels[i]; break; }
     }
-    if (lastVisible) layoutSlice.panelHeights[lastVisible.type] += availH - sum;
+    if (lastVisible) out[lastVisible.type] += availH - sum;
   }
+  return out;
 }
+
+// Module-local height map — written by calcLayout, read by renderNormal
+// and getPanelViewportH. Lives outside the slice so external readers
+// can't read the wrong-for-half/full-view value directly. Reset on
+// every calcLayout call (per-frame).
+let _panelHeights = {};
 
 /**
  * Inner viewport rows for a panel's CURRENTLY-RENDERED height, view-
@@ -216,11 +226,13 @@ function distributeColumnHeights(layoutSlice, panels, availH, isLastCol, minH) {
  * callers don't divide-by-zero.
  */
 function getPanelViewportH(panelType) {
-  refreshSize();
   const layoutSlice = getInstanceSlice('layout');
   if (!layoutSlice) return 1;
-  const ROWS = rows();
-  const availH = Math.max(6, ROWS - 1);
+  refreshSize();
+  const availH = Math.max(6, rows() - 1);
+  // Half/full view: the on-screen panel takes the full availH — beats
+  // any stored height (panelBounds may carry a previous frame's bounds
+  // across the viewMode-transition tick).
   const { viewMode, focus, halfLeftPanel } = layoutSlice;
   let visiblePanel = null;
   if (viewMode === 'half') {
@@ -228,9 +240,14 @@ function getPanelViewportH(panelType) {
   } else if (viewMode === 'full') {
     visiblePanel = focus;
   }
-  const h = panelType === visiblePanel
-    ? availH
-    : ((layoutSlice.panelHeights || {})[panelType] || 4);
+  if (panelType === visiblePanel) return Math.max(1, availH - 2);
+  // Off-screen / normal-view: prefer _panelHeights (calcLayout-fresh).
+  // Fall back to panelBounds.h (post-render canonical) when no
+  // calcLayout pass has populated _panelHeights yet — covers tests
+  // that seed bounds directly.
+  const h = _panelHeights[panelType]
+         || (layoutSlice.panelBounds && layoutSlice.panelBounds[panelType] && layoutSlice.panelBounds[panelType].h)
+         || 4;
   return Math.max(1, h - 2);
 }
 
@@ -249,15 +266,17 @@ function calcLayout(model = getModel()) {
   // Minimum panel height: 3 rows (border + 1 content line)
   const minH = 3;
 
-  layoutSlice.panelHeights = {};
+  _panelHeights = {};
+  const detailHeightPct = layoutSlice.arrange.detailHeightPct;
   for (let ci = 0; ci < columns.length; ci++) {
-    const isLast = ci === lastIdx;
-    distributeColumnHeights(layoutSlice, columns[ci].panels || [], availH, isLast, minH);
+    const colHeights = distributeColumnHeights(
+      columns[ci].panels || [], availH, ci === lastIdx, minH, detailHeightPct);
+    Object.assign(_panelHeights, colHeights);
   }
-  // Half/full view modes read panelHeights.detail even when detail
-  // isn't currently rendered; keep the fallback so they don't crash.
-  if (!('detail' in layoutSlice.panelHeights)) {
-    layoutSlice.panelHeights.detail = Math.max(minH, Math.floor(availH * layoutSlice.arrange.detailHeightPct / 100));
+  // Ensure detail has a height even when the column traversal didn't
+  // populate one (test fixtures without a placed detail panel).
+  if (!('detail' in _panelHeights)) {
+    _panelHeights.detail = Math.max(minH, Math.floor(availH * detailHeightPct / 100));
   }
 
   // Keep each panel's scroll offset such that the selected item is in
@@ -422,7 +441,7 @@ function renderNormal(model) {
     const panels = mpool.columnPanels(layoutSlice.arrange, r.columnIndex);
     let y = 0;
     return panels.map(p => {
-      const h = layoutSlice.panelHeights[p.type] || 0;
+      const h = _panelHeights[p.type] || 0;
       const out = renderOne(p, r.w, h, r.x, y);
       y += h;
       return out;
@@ -929,9 +948,14 @@ module.exports = {
   calcLayout, render, redraw, renderFooter, renderTerminalOverlay,
   forceFullRepaint, invalidateRows,
   getPanelViewportH,
-  // Test seam: distributeColumnHeights is a pure function that writes
-  // into the slice passed via `layoutSlice.panelHeights`. Exposed so
-  // collapsed-honor + heightPct math can be unit-tested without
-  // bringing up the whole runtime.
+  // Test seam: distributeColumnHeights is a pure function that returns
+  // a { [type]: rows } map. Exposed so collapsed-honor + heightPct
+  // math can be unit-tested without bringing up the whole runtime.
   _distributeColumnHeights: distributeColumnHeights,
+  // Test seam: read the raw module-local _panelHeights map (the column-
+  // share heights calcLayout last produced). NOT for production use —
+  // production callers go through `getPanelViewportH(type)` which is
+  // view-mode-aware. Exists so tests can assert calcLayout's column
+  // distribution math directly.
+  _getPanelHeights: () => ({ ..._panelHeights }),
 };

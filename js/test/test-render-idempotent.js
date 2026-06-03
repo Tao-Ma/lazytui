@@ -80,7 +80,6 @@ function setupState() {
     ],
     detailHeightPct: 60,
   };
-  getInstanceSlice('layout').panelHeights = {};
   getInstanceSlice('layout').panelBounds = {};
 }
 

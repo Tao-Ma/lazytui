@@ -236,7 +236,6 @@ describe('[immutable] leaves/free-config.js', () => {
     // mfc.selectedIdx(slice) derives the index from focus.
     focus: 'a',
     viewMode: 'normal',
-    panelHeights: {},
   });
 
   const makeModel = () => ({ modes: { freeConfigMode: true } });

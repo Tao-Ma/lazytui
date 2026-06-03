@@ -295,7 +295,8 @@ describe('[9] space gate + group-switch reset', () => {
     getModel().modes.listSelectMode = true;
     getModel().modes.prefixMode = false;
     getInstanceSlice('detail').lines = []; getInstanceSlice('detail').scroll = 0;
-    getInstanceSlice('layout').panelHeights = { detail: 10 };
+    // (panelHeights left the slice; viewer reads slice.innerH instead.)
+    getInstanceSlice('detail').innerH = 8;
     getInstanceSlice('detail').search = { active: false };
     getInstanceSlice('detail').cursor = { line: 0, col: 0 };
     dispatch._handleNormalKey(' ', ' ');

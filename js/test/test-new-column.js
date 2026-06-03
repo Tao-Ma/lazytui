@@ -72,7 +72,6 @@ function makeSlice() {
       stats:      { x: 30, y: 5, w: 90, h: 10 },
       detail:     { x: 30, y: 15, w: 90, h: 25 },
     },
-    panelHeights: {},
     panelList: { open: false, cursor: 0 },
     bootWarnings: [],
   };

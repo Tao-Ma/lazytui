@@ -99,9 +99,10 @@ describe('[distributeColumnHeights] honors collapsed = 1 row', () => {
   const { _distributeColumnHeights } = require('../render/layout');
 
   function run(panels, availH, isLastCol = false) {
-    const slice = { arrange: { detailHeightPct: 60 }, panelHeights: {} };
-    _distributeColumnHeights(slice, panels, availH, isLastCol, /*minH*/ 3);
-    return slice.panelHeights;
+    // _distributeColumnHeights is now a pure function: takes panels +
+    // settings, returns a `{ [type]: rows }` map. (Was: wrote into a
+    // slice's panelHeights field.)
+    return _distributeColumnHeights(panels, availH, isLastCol, /*minH*/ 3, /*detailHeightPct*/ 60);
   }
 
   it('collapsed panel gets h=1; sibling absorbs the rest', () => {
