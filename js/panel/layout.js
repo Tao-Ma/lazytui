@@ -205,7 +205,15 @@ const NOTICE_FREE_CONFIG_REQUIRES_NORMAL = 'free-config requires normal view ([ 
  *  RE-ASSERT the current notice preserves slice identity (no churn on
  *  repeated identical blocked attempts); a Msg that wouldn't reassert
  *  triggers the auto-clear so notice doesn't persist across unrelated
- *  user intents. */
+ *  user intents.
+ *
+ *  TODO: `getModel().modes.freeConfigMode` is the only reducer read of
+ *  external runtime state. The flag mirrors slice state by construction
+ *  (mode_set on free_config_enter, mode_clear on free_config_exit), but
+ *  there's no single slice field that captures "we're in free-config
+ *  mode". A future refactor could either (a) add `slice.freeConfig.entered:
+ *  bool` so this becomes a slice-local read, or (b) thread `model.modes`
+ *  in as an arg the way mousePress does. Either retires the cross-read. */
 function _potentialBlockedNotice(slice, msg) {
   if (msg.type === 'view_expand' || msg.type === 'view_shrink') {
     const md = getModel().modes;
