@@ -28,7 +28,7 @@
 const { getModel } = require('../../app/runtime');
 const mnav = require('../../leaves/nav');
 const {
-  esc, theme, renderPanel,
+  esc, wrapColor, theme, renderPanel,
   getSel, getScroll, isMultiSel,
   statusFor,
   getInstanceSlice, getFocus, instanceKind,
@@ -319,7 +319,13 @@ function render(panel, w, h, slice) {
     const mark  = isMs ? '*' : (isSel ? ' ' : (i === sel ? '>' : ' '));
     const labelText = `${mark} ${treeSeg}${labelStr}${rtail}`;
     if (isSel) return `[${t.selected}]${labelText}`;
-    if (i === sel) return `[${t.bold_current}]${labelText}[/]`;
+    // wrapColor reopens bold_current after any nested `[/]` in
+    // labelText (the running/total badge `[color]●[/]` from
+    // _rowRightGroups currently sits at the tail, so the inner reset
+    // is a no-op today — but moving rtail or appending content after
+    // it would silently drop bold_current. wrapColor keeps the
+    // invariant.)
+    if (i === sel) return wrapColor(t.bold_current, labelText);
     return labelText;
   });
   return renderPanel({

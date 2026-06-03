@@ -20,7 +20,7 @@ const route = require('../leaves/route');
 // authors should import only from `./api` so the surface is one diff
 // away from any future API change. Direct imports from `../ansi` etc.
 // still work but are not part of the contract.
-const { esc, visibleLen, stripMarkup } = require('../io/ansi');
+const { esc, visibleLen, stripMarkup, wrapColor } = require('../io/ansi');
 const { theme } = require('../render/themes');
 const { renderPanel } = require('../render/panel');
 const { getSel, getScroll, isMultiSel } = require('../app/state');
@@ -633,7 +633,7 @@ module.exports = {
 
   // --- L0/L2 helpers re-exported as the Component-facing surface ---
   // ansi
-  esc, visibleLen, stripMarkup,
+  esc, visibleLen, stripMarkup, wrapColor,
   // themes
   theme,
   // panel
