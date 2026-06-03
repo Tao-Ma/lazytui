@@ -614,6 +614,11 @@ function update(msg, slice) {
       if (!loc) return slice;
       const p = loc.pane;
       if (mpool.isDetailPane(p)) return slice;  // essential
+      // Push undo before mutating — `c` / `[_]` / `[+]` collapse toggles
+      // are real layout changes and should be revertable via `u` in
+      // free-config, consistent with pool_hide / pool_show / add_column
+      // / remove_column / pool_show_new_column (all of which push undo).
+      const withUndo = mfc.pushUndo(slice);
       const nextArrange = mpool.updateColumn(arrange, loc.columnIndex, panels => {
         const out = panels.slice();
         out[loc.paneIndex] = { ...p, collapsed: !p.collapsed };
@@ -624,7 +629,7 @@ function update(msg, slice) {
       // surfaces in that mode (footerKeys check), so normal-mode
       // toggles silently arm the dirty flag — :save-layout (a cmdline
       // command available everywhere) commits it.
-      return { ...slice, arrange: nextArrange, dirty: true };
+      return { ...withUndo, arrange: nextArrange, dirty: true };
     }
     case 'pool_show': {
       const arrange = slice.arrange;
