@@ -46,8 +46,8 @@ greppable.
         ▼
 ═══════════════════════════ EFFECTS ════════════════════════════════
    runEffects(effects)                 (js/dispatch/effects.js)
-     apply_msg     → applyMsg     ─┐ re-enter the spine
-     dispatch_msg  → dispatchMsg  ─┘ (cycle cap @ 32 deep; T28)
+     msg           → applyMsg / dispatchMsg routed by msg.kind
+                                       (cycle cap @ 32 deep; T28)
      tick(ms, msg) → setTimeout      (async re-entry; not depth-counted)
      render        → scheduleRender (50ms debounce)
      focus / show_selected_info / setActiveTab
@@ -97,21 +97,23 @@ greppable.
 ## Notes
 
 **Loop shape.** Input → reducer → effects → state → render → terminal.
-The spine is *cyclic at the effects layer*: `apply_msg` /
-`dispatch_msg` re-enter `applyMsg` / `dispatchMsg`, so one Msg can
-ripple into a multi-step cascade (e.g. groups switch →
-reset_group_context → 3× set_cursor + multisel_clear + clear_filter
-+ viewer_reset_chrome). T28 caps depth at 32 around those two Cmd
-handlers specifically — direct `applyMsg`/`dispatchMsg` calls from
-async producers (PTY onExit, docker events, stream onData, the `tick`
-handler, the `cmdline_rebuild` writeback) are not depth-counted; they
-re-enter through ordinary JS event-loop turns.
+The spine is *cyclic at the effects layer*: the `msg` Cmd re-enters
+`applyMsg` / `dispatchMsg` (routed by payload — wrapped Msg →
+Component fan-out, flat → root reducer), so one Msg can ripple into
+a multi-step cascade (e.g. groups switch → reset_group_context →
+3× set_cursor + multisel_clear + clear_filter + viewer_reset_chrome).
+T28 caps depth at 32 around the `msg` Cmd handler specifically —
+direct `applyMsg`/`dispatchMsg` calls from async producers (PTY
+onExit, docker events, stream onData, the `tick` handler, the
+`cmdline_rebuild` writeback) are not depth-counted; they re-enter
+through ordinary JS event-loop turns.
 
 **Single-writer per layer is structural.** Only `runtime.update`
 writes the root model; only each Component's own `update` writes its
-slice. Cross-layer writes have a Msg channel (`apply_msg` /
-`dispatch_msg`) — no path where module X writes layer Y's state
-directly except the blessed render-side exceptions:
+slice. Cross-layer writes have a Msg channel (the `msg` Cmd — wrapped
+payload fans out to a Component, flat payload re-enters the root
+reducer) — no path where module X writes layer Y's state directly
+except the blessed render-side exceptions:
 
   - `layout.panelHeights` / `panelBounds` written by `calcLayout` +
     each render-mode (the view-output geometry).
