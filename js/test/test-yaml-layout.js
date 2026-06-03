@@ -455,4 +455,88 @@ describe('[5] writeLayoutToFile — splices both panels: and layout: blocks', ()
   });
 });
 
+// T3.8 — pin the multi-column (N≥4) parse→serialize→parse round-trip.
+// All prior round-trip tests use 2 cols, so middle-column handling
+// (hotkey pool empty, no width-default, panes survive intact) was
+// unpinned.
+describe('[6] multi-column (N=4) parse → serialize → re-parse round-trip', () => {
+  const { parse } = require('../parser');
+  it('4-column layout round-trips structurally identical', () => {
+    const tmp = path.join(os.tmpdir(), `lazytui-yaml-4col-${process.pid}-1.yml`);
+    const yaml = `groups:
+  g1:
+    label: g1
+    actions:
+      noop: { label: noop, cmd: "true" }
+
+panels:
+  containers: { type: containers, title: Containers }
+  groups:     { type: groups,     title: Groups }
+  files:      { type: files,      title: Files }
+  stats:      { type: stats,      title: Stats }
+  actions:    { type: actions,    title: Actions }
+  detail:     { type: detail,     title: Detail }
+
+layout:
+  columns:
+    - width: 20
+      panels:
+        - containers
+        - groups
+    - width: 24
+      panels:
+        - files
+    - width: 28
+      panels:
+        - stats
+    - panels:
+        - actions
+        - detail
+`;
+    fs.writeFileSync(tmp, yaml);
+    const cfg1 = parse(tmp);
+    fs.unlinkSync(tmp);
+
+    eq(cfg1.layout.columns.length, 4, 'N=4 cols');
+    eq(cfg1.layout.columns[0].panels.length, 2);
+    eq(cfg1.layout.columns[1].panels.length, 1);
+    eq(cfg1.layout.columns[2].panels.length, 1);
+    eq(cfg1.layout.columns[3].panels.length, 2);
+
+    // Serialize the parsed layout back to YAML and write a fresh file.
+    const arrange = {
+      detailHeightPct: cfg1.layout.detail_height_pct,
+      columns: cfg1.layout.columns,
+      pool: cfg1.layout.pool,
+    };
+    const layoutYaml = serializeLayout(arrange);
+    const poolYaml = serializePanelsBlock(arrange);
+    const fullYaml = `groups:\n  g1:\n    label: g1\n    actions:\n      noop: { label: noop, cmd: "true" }\n\n${poolYaml}\n\n${layoutYaml}\n`;
+
+    const tmp2 = path.join(os.tmpdir(), `lazytui-yaml-4col-${process.pid}-2.yml`);
+    fs.writeFileSync(tmp2, fullYaml);
+    const cfg2 = parse(tmp2);
+    fs.unlinkSync(tmp2);
+
+    eq(cfg2.layout.columns.length, 4, 're-parse keeps N=4');
+    eq(cfg2.layout.columns[0].width, cfg1.layout.columns[0].width, 'col 0 width');
+    eq(cfg2.layout.columns[1].width, cfg1.layout.columns[1].width, 'col 1 width (middle)');
+    eq(cfg2.layout.columns[2].width, cfg1.layout.columns[2].width, 'col 2 width (middle)');
+    // Pane membership per column survives.
+    for (let ci = 0; ci < 4; ci++) {
+      const before = cfg1.layout.columns[ci].panels.map(p => p.id).join(',');
+      const after  = cfg2.layout.columns[ci].panels.map(p => p.id).join(',');
+      eq(after, before, `col ${ci} pane ids preserved`);
+    }
+    // Middle columns get an EMPTY hotkey pool (only first/last cols
+    // get auto-pools). Panes there should have empty hotkeys.
+    for (const p of cfg2.layout.columns[1].panels) {
+      eq(p.hotkey, '', 'col 1 (middle) pane hotkey is empty');
+    }
+    for (const p of cfg2.layout.columns[2].panels) {
+      eq(p.hotkey, '', 'col 2 (middle) pane hotkey is empty');
+    }
+  });
+});
+
 report();

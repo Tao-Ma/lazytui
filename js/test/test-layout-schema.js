@@ -126,4 +126,44 @@ describe('[5] cell shape', () => {
   });
 });
 
+describe('[6] width — positive integer or omitted (T3.6)', () => {
+  it('rejects width: null (use omission for implicit instead)', () => {
+    let err = null;
+    try { validate(withLayout({ columns: [{ width: null, panels: ['groups'] }, { panels: ['detail'] }] }), 'test'); }
+    catch (e) { err = e; }
+    assert(err !== null, 'expected SchemaError');
+    assert(/'width' must be a positive integer/.test(err.message),
+      `error says width must be positive integer: ${err.message}`);
+  });
+  it('rejects width: 0', () => {
+    bad({ columns: [{ width: 0, panels: ['groups'] }, { panels: ['detail'] }] });
+  });
+  it('rejects width: -5', () => {
+    bad({ columns: [{ width: -5, panels: ['groups'] }, { panels: ['detail'] }] });
+  });
+  it('rejects width: 3.5', () => {
+    bad({ columns: [{ width: 3.5, panels: ['groups'] }, { panels: ['detail'] }] });
+  });
+  it('accepts width omitted (implicit)', () => {
+    ok({ columns: [{ panels: ['groups'] }, { panels: ['detail'] }] });
+  });
+});
+
+describe('[7] empty-layout error message (T3.7)', () => {
+  it('clear error when every column has no panes', () => {
+    let err = null;
+    try { validate(withLayout({ columns: [{ panels: [] }] }), 'test'); }
+    catch (e) { err = e; }
+    assert(err !== null, 'expected SchemaError');
+    assert(/has no panes/.test(err.message),
+      `error names the structural problem: ${err.message}`);
+  });
+  it('also fires for multiple empty columns', () => {
+    let err = null;
+    try { validate(withLayout({ columns: [{ panels: [] }, { panels: [] }, { panels: [] }] }), 'test'); }
+    catch (e) { err = e; }
+    assert(err !== null && /has no panes/.test(err.message));
+  });
+});
+
 report();

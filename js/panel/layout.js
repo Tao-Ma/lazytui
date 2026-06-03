@@ -275,7 +275,23 @@ function update(msg, slice) {
     // wrapped Msgs dispatched into layout — single-writer.
     case 'set_arrange': {
       const next = { ...slice };
-      if (msg.arrange !== undefined) next.arrange = msg.arrange;
+      if (msg.arrange !== undefined) {
+        // Reject malformed arrange (missing `columns` array) — accepting
+        // it would replace a valid layout with a corrupt one and crash
+        // the next render. `:restore-layout` always passes a rebuilt
+        // valid arrange; direct programmatic dispatches that don't are
+        // a bug and should no-op rather than break the live layout.
+        if (!msg.arrange || !Array.isArray(msg.arrange.columns)) return slice;
+        next.arrange = msg.arrange;
+        // An arrange swap orphans any in-flight drag: drag.sourceType /
+        // sourceId may point at a pane that no longer exists, and the
+        // drag's target.columnIndex / index may be out of range. Clear
+        // it and close the panel-list overlay defensively — :restore-
+        // layout mid-drag is the canonical trigger.
+        if (next.freeConfig && next.freeConfig.drag) {
+          next.freeConfig = { ...next.freeConfig, drag: null };
+        }
+      }
       if (msg.dirty   !== undefined) next.dirty   = !!msg.dirty;
       return next;
     }
@@ -602,6 +618,10 @@ function update(msg, slice) {
       let columnIndex = (typeof msg.columnIndex === 'number')
         ? msg.columnIndex
         : lastIdx;  // default to last column (legacy 'right')
+      // Reject non-integer columnIndex — `arrange.columns[1.5]` returns
+      // undefined and crashes downstream. Same hardening as the cmdline
+      // `:add-column` Number.isInteger check.
+      if (!Number.isInteger(columnIndex)) return slice;
       if (columnIndex < 0 || columnIndex >= N) return slice;
       // detail / actions live in the last column only. Pool-drag's
       // validateInsert already refuses to even propose other columns

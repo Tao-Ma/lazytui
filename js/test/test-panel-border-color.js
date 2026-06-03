@@ -96,6 +96,14 @@ describe('wrapColor — markup wrapper that survives nested [/]', () => {
        'redundant [red] re-opens are harmless markup that richToAnsi compiles to repeat SGRs');
   });
 
+  it('falsy color returns content unmodified — no literal [undefined] leak (T3.2)', () => {
+    eq(wrapColor(undefined, 'plain'), 'plain', 'undefined color → content as-is');
+    eq(wrapColor(null,      'plain'), 'plain', 'null color → content as-is');
+    eq(wrapColor('',        'plain'), 'plain', 'empty-string color → content as-is');
+    eq(wrapColor(undefined, '[dim]a[/] b'), '[dim]a[/] b',
+       'undefined color preserves nested markup verbatim');
+  });
+
   // T2.5 footer end-to-end — pin the exact shape renderFooter writes
   // (commit 273fa69). The footer is `wrapColor(theme.footer, keys + padding + tags)`
   // where `keys` may embed colored notices that close with `[/]`. The

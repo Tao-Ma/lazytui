@@ -521,6 +521,11 @@ function _boundaryAtX(arrange, mx, COLS) {
  *  Cursor near the right edge falls through to the in-column 3-zone
  *  hit on the last column's cells instead. */
 function _newColumnZoneAt(arrange, mx, COLS) {
+  // Out-of-bounds left (negative mx from terminal events that fired
+  // after a resize / past the edge): the cursor is OFF the layout, not
+  // in a left-edge spawn zone. Same symmetric defense as pool drag's
+  // `if (mx < 0 || my < 0) return null;` at pointToPoolDropTarget.
+  if (mx < 0) return null;
   if (mx < EDGE_W) return { position: 0 };
   const ranges = _columnRanges(arrange, COLS);
   for (let i = 0; i < ranges.length - 1; i++) {

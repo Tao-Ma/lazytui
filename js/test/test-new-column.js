@@ -468,6 +468,45 @@ describe('[13] pool_show_new_column success notice', () => {
   });
 });
 
+describe('[T3-defenses] T3.1/T3.3/T3.4/T3.5 hardening', () => {
+  it('T3.1 — pointToDropTarget bails on negative mx (symmetric with pool-drag defense)', () => {
+    const s = makeSlice();
+    eq(mfc.pointToDropTarget(s, 'containers', -1, 5, COLS), null, 'mx=-1 → null');
+    eq(mfc.pointToDropTarget(s, 'containers', -100, 5, COLS), null, 'mx=-100 → null');
+  });
+
+  it('T3.3 — pool_show with non-integer columnIndex is refused (no crash)', () => {
+    const slice = makeSlice();
+    // Hide a panel first so pool_show has something to show.
+    const r1 = layout.update({ type: 'pool_hide', id: 'stats' }, slice);
+    const hidden = Array.isArray(r1) ? r1[0] : r1;
+    const out = applyUpdate({ type: 'pool_show', id: 'stats', columnIndex: 1.5 }, hidden);
+    eq(out.arrange.columns[1].panels.findIndex(p => p.type === 'stats'), -1,
+      'stats stays hidden — 1.5 is not an integer columnIndex');
+  });
+
+  it('T3.4 — set_arrange clears in-flight drag (no orphan drag state)', () => {
+    const slice = makeSlice();
+    const withDrag = { ...slice, freeConfig: { ...slice.freeConfig, drag: {
+      kind: 'dragging', sourceType: 'containers', curX: 5, curY: 5,
+      target: { kind: 'insert', columnIndex: 1, index: 0, valid: true },
+    } } };
+    const newArrange = { ...slice.arrange, columns: slice.arrange.columns.slice() };
+    const out = applyUpdate({ type: 'set_arrange', arrange: newArrange, dirty: false }, withDrag);
+    eq(out.freeConfig.drag, null, 'drag wiped on arrange replace');
+  });
+
+  it('T3.5 — set_arrange with malformed arrange (missing columns) is a no-op', () => {
+    const slice = makeSlice();
+    const out1 = applyUpdate({ type: 'set_arrange', arrange: {} }, slice);
+    eq(out1, slice, 'empty arrange object — slice unchanged (no crash)');
+    const out2 = applyUpdate({ type: 'set_arrange', arrange: { columns: 'not an array' } }, slice);
+    eq(out2, slice, 'non-array columns — slice unchanged');
+    const out3 = applyUpdate({ type: 'set_arrange', arrange: null }, slice);
+    eq(out3, slice, 'null arrange — slice unchanged');
+  });
+});
+
 describe('[18] pool_show_new_column routes focus through focus_set (T2.4)', () => {
   it('emits a dispatch_msg(focus_set) Cmd so halfLeftPanel + show_selected_info stay in sync', () => {
     const slice = makeSlice();

@@ -126,6 +126,20 @@ function validateLayout(layout, warnings) {
   if (!Array.isArray(columns) || columns.length === 0) {
     throw new SchemaError("'layout.columns' must be a non-empty list", { context: 'layout' });
   }
+  // Empty-layout guard: at least one column must hold panes. Without
+  // this the user gets the downstream "must have exactly one tab of
+  // kind 'detail', found 0" — accurate but cryptic given the actual
+  // structural problem is "no panes declared in any column".
+  const totalCells = columns.reduce(
+    (s, c) => s + (Array.isArray(c && c.panels) ? c.panels.length : 0),
+    0,
+  );
+  if (totalCells === 0) {
+    throw new SchemaError(
+      "'layout.columns' has no panes — at least one column must declare a `panels:` entry referencing a pool id",
+      { context: 'layout' },
+    );
+  }
   const lastIdx = columns.length - 1;
   columns.forEach((col, ci) => {
     const ctx = `layout.columns[${ci}]`;
@@ -135,8 +149,13 @@ function validateLayout(layout, warnings) {
     checkUnknownKeys(col, VALID_COLUMN_KEYS, ctx);
     if ('width' in col) {
       const w = col.width;
-      if (w !== null && (typeof w !== 'number' || !Number.isInteger(w) || w <= 0)) {
-        throw new SchemaError("'width' must be a positive integer", { context: ctx });
+      // Width must be a positive integer when present. `width: null` /
+      // any non-integer value is rejected — users wanting an implicit
+      // column should OMIT the key entirely, not write `width: null`
+      // (that form was accepted silently and behaved identically, which
+      // made the schema feel ambiguous).
+      if (typeof w !== 'number' || !Number.isInteger(w) || w <= 0) {
+        throw new SchemaError("'width' must be a positive integer (omit the key for an implicit-width column)", { context: ctx });
       }
       if (ci === lastIdx && warnings) {
         warnings.push({

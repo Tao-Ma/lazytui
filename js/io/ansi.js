@@ -224,6 +224,12 @@ function esc(text) {
  *   wrapColor('green', '[bold]X[/]Y')   → '[green][bold]X[/][green]Y[/]'
  */
 function wrapColor(color, content) {
+  // Falsy color (undefined / null / empty) means "no outer wrap" — pass
+  // content through unmodified. A theme missing the requested entry
+  // should still render the content correctly, not surface a literal
+  // `[undefined]` markup tag that would never compile to ANSI and would
+  // leak into the visible output.
+  if (!color) return String(content);
   const rewritten = String(content).split('[/]').join(`[/][${color}]`);
   return `[${color}]${rewritten}[/]`;
 }
