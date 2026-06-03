@@ -28,7 +28,7 @@
 'use strict';
 
 const mfc = require('./free-config');
-const { pointToCellZone, _newColumnZoneAt } = mfc;
+const { pointToCellZone, newColumnZoneAt } = mfc;
 const mpool = require('./pool');
 const { placementFromPoolEntry } = mpool;
 
@@ -50,7 +50,7 @@ function pointToPoolDropTarget(slice, mx, my, COLS) {
   // Edge/gap zones first — same precedence as the in-grid drag. A pool
   // entry dropped at the screen edge or in a column gap spawns a new
   // column instead of going into an existing one.
-  const ncz = _newColumnZoneAt(arrange, mx, COLS);
+  const ncz = newColumnZoneAt(arrange, mx, COLS);
   if (ncz) return validatePoolNewColumn(arrange, ncz.position, sourceEntry);
 
   // Per-column scan: find a cell whose x-range contains mx, classify zone.

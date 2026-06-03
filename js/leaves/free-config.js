@@ -511,7 +511,7 @@ function _boundaryAtX(arrange, mx, COLS) {
  *  cells of the last column without giving the user a usable target.
  *  Cursor near the right edge falls through to the in-column 3-zone
  *  hit on the last column's cells instead. */
-function _newColumnZoneAt(arrange, mx, COLS) {
+function newColumnZoneAt(arrange, mx, COLS) {
   // Out-of-bounds left (negative mx from terminal events that fired
   // after a resize / past the edge): the cursor is OFF the layout, not
   // in a left-edge spawn zone. Same symmetric defense as pool drag's
@@ -622,7 +622,7 @@ function pointToDropTarget(slice, srcType, mx, my, COLS) {
   // in-column 3-zone hit. Users still reach in-column inserts at the
   // top/middle/bot of any pane that lives strictly INSIDE the column
   // (i.e., mx >= EDGE_W and away from internal boundaries).
-  const ncz = _newColumnZoneAt(slice.arrange, mx, COLS);
+  const ncz = newColumnZoneAt(slice.arrange, mx, COLS);
   if (ncz) return validateNewColumn(slice, srcType, ncz.position);
   const ranges = mpool.distributeColumnWidths(slice.arrange, COLS);
   for (const r of ranges) {
@@ -1217,5 +1217,5 @@ module.exports = {
   addColumn, removeColumn,
   allocateNewColumnWidth: _allocateNewColumnWidth,
   reassignHotkeys: _reassignHotkeys,
-  _newColumnZoneAt,
+  newColumnZoneAt,
 };

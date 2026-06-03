@@ -2,7 +2,7 @@
  * v0.6.2 Phase 2 — drag-edge spawn (new_column).
  *
  * Covers:
- *   1. _newColumnZoneAt — left edge / right edge / column gap hit-tests
+ *   1. newColumnZoneAt — left edge / right edge / column gap hit-tests
  *   2. validateNewColumn — Phase 2 refusal rules (detail/actions source,
  *      position == N right edge)
  *   3. applyNewColumn — in-grid drag spawn + width allocation + source-
@@ -78,18 +78,18 @@ function makeSlice() {
   };
 }
 
-// ----- _newColumnZoneAt -----
+// ----- newColumnZoneAt -----
 
-describe('[1] _newColumnZoneAt — edge + gap hit-tests', () => {
+describe('[1] newColumnZoneAt — edge + gap hit-tests', () => {
   const s = makeSlice();
 
   it('left edge: mx < EDGE_W → position 0', () => {
-    eq(mfc._newColumnZoneAt(s.arrange, 0, COLS), { position: 0 });
-    eq(mfc._newColumnZoneAt(s.arrange, 1, COLS), { position: 0 });
+    eq(mfc.newColumnZoneAt(s.arrange, 0, COLS), { position: 0 });
+    eq(mfc.newColumnZoneAt(s.arrange, 1, COLS), { position: 0 });
   });
 
   it('left edge boundary (mx === EDGE_W) NOT a new-col zone', () => {
-    eq(mfc._newColumnZoneAt(s.arrange, mfc.EDGE_W, COLS), null);
+    eq(mfc.newColumnZoneAt(s.arrange, mfc.EDGE_W, COLS), null);
   });
 
   it('right edge: returns null (T2.1 — dead zone removed)', () => {
@@ -98,20 +98,20 @@ describe('[1] _newColumnZoneAt — edge + gap hit-tests', () => {
     // falls through to the in-column 3-zone hit on the last column's
     // cells, giving the user usable drop targets in the rightmost
     // ~2 cells of the last column.
-    eq(mfc._newColumnZoneAt(s.arrange, COLS - 1, COLS), null);
-    eq(mfc._newColumnZoneAt(s.arrange, COLS - mfc.EDGE_W, COLS), null);
+    eq(mfc.newColumnZoneAt(s.arrange, COLS - 1, COLS), null);
+    eq(mfc.newColumnZoneAt(s.arrange, COLS - mfc.EDGE_W, COLS), null);
   });
 
   it('column gap: cursor near internal boundary → position i+1', () => {
     // col0.width=30 → boundary at x=30. Window: [29, 31].
-    eq(mfc._newColumnZoneAt(s.arrange, 29, COLS), { position: 1 });
-    eq(mfc._newColumnZoneAt(s.arrange, 30, COLS), { position: 1 });
-    eq(mfc._newColumnZoneAt(s.arrange, 31, COLS), { position: 1 });
+    eq(mfc.newColumnZoneAt(s.arrange, 29, COLS), { position: 1 });
+    eq(mfc.newColumnZoneAt(s.arrange, 30, COLS), { position: 1 });
+    eq(mfc.newColumnZoneAt(s.arrange, 31, COLS), { position: 1 });
   });
 
   it('inside a column body (not near a boundary) → null', () => {
-    eq(mfc._newColumnZoneAt(s.arrange, 10, COLS), null);
-    eq(mfc._newColumnZoneAt(s.arrange, 60, COLS), null);
+    eq(mfc.newColumnZoneAt(s.arrange, 10, COLS), null);
+    eq(mfc.newColumnZoneAt(s.arrange, 60, COLS), null);
   });
 });
 
