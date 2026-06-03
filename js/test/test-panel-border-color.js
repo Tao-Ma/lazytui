@@ -67,4 +67,21 @@ describe('renderPanel — title with embedded [/] preserves border color', () =>
   });
 });
 
+describe('richToAnsi — confirm `[/]` is a hard reset (the underlying invariant)', () => {
+  it('[outer][inner]…[/][/] resets to default after the first [/]', () => {
+    const { richToAnsi } = require('../io/ansi');
+    const ansi = richToAnsi('[blue]A[bold red]B[/]C[/]');
+    // After the first `[/]`, color resets to terminal default. The `C`
+    // emits without any SGR open. This is the load-bearing assumption
+    // behind the title / footer re-emit fixes — if richToAnsi were
+    // stack-aware, those fixes would be unnecessary.
+    assert(ansi.includes('[0m'), 'first [/] emits reset');
+    // The blue (\x1b[34m) is NOT re-emitted before C.
+    const firstReset = ansi.indexOf('[0m');
+    const tail = ansi.slice(firstReset);
+    assert(!tail.startsWith('[0m[34m'),
+      'no automatic blue re-open after [/] — confirms hard-reset semantics');
+  });
+});
+
 report();

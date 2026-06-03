@@ -880,7 +880,14 @@ function renderFooter(model = getModel()) {
   if (visibleLen(keys) > maxKeysLen) keys = truncate(keys, maxKeysLen);
   const visLen = visibleLen(keys) + tailLen;
   const padding = ' '.repeat(Math.max(0, COLS - visLen));
-  const footerMarkup = `[${theme().footer}]${keys}${padding}${rightTail}${selectTag}${modeTag}[/]`;
+  // Re-emit `[footer]` after `${keys}` so a `[/]` inside any nested
+  // colored notice (`[bold red]…[/]`, `[bold green]…[/]`, `[yellow]…[/]`,
+  // dirty markers, boot-warning chip) doesn't drop the outer footer
+  // color for the trailing padding + tags. Same class of bug as
+  // renderPanel's title-with-nested-[/] fix — richToAnsi treats `[/]`
+  // as a hard reset, not a stack pop.
+  const fc = theme().footer;
+  const footerMarkup = `[${fc}]${keys}[${fc}]${padding}${rightTail}${selectTag}${modeTag}[/]`;
   stdout.write(`\x1b[${ROWS};1H` + richToAnsi(footerMarkup) + RESET);
 }
 
