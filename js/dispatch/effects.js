@@ -168,15 +168,13 @@ function installBuiltins() {
   registerEffect('run_action', (eff) => {
     setImmediate(() => require('./action-runner').runAction(eff.actionKey, eff.action, eff.args));
   });
-  // kill_proc / stream_action: emitted by detail.update's tab_switch case.
-  // Killing a streaming run-action stops bleed-through when the user
-  // switches to a different tab; stream_action restarts the action's
-  // output flow when the user re-selects an action tab.
+  // kill_proc: emitted by detail.update's tab_switch case. Killing a
+  // streaming run-action stops bleed-through when the user switches to
+  // a different tab — slice.lines is the only buffer in Phase 1, and
+  // an in-flight stream writing into the new tab's content would
+  // corrupt it.
   registerEffect('kill_proc', () => {
     try { require('./action-runner').killCurrentProc(); } catch (_) {}
-  });
-  registerEffect('stream_action', (eff) => {
-    try { require('./action-runner').streamCommand(eff.actionKey, eff.script); } catch (_) {}
   });
   // copy_commit: resolve the selected copy option's (module-held) content
   // thunk → OSC52, then drop the module options. idx<0 = cancel (just clear).

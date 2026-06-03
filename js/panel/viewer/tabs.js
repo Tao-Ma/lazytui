@@ -62,8 +62,16 @@ function isContentTab() {
   return pt.isContentTabIn(_detailSlice(), getModel(), getModel().currentGroup);
 }
 
+function isActionTab() {
+  return pt.isActionTabIn(_detailSlice(), getModel(), getModel().currentGroup);
+}
+
 function activeContentTab() {
   return pt.activeContentTabIn(_detailSlice(), getModel(), getModel().currentGroup);
+}
+
+function activeActionTab() {
+  return pt.activeActionTabIn(_detailSlice(), getModel(), getModel().currentGroup);
 }
 
 function activeTerminalId(paneId = 'detail') {
@@ -175,6 +183,7 @@ module.exports = {
   getGroupTerminals, getGroupContentTabs, getTabInfo,
   isTerminalTab, activeTerminalId, activeTerminalConfig,
   isContentTab, activeContentTab,
+  isActionTab, activeActionTab,
   findEphemeralByid, paneForSessionId,
   addEphemeralTab, removeEphemeralTab,
   addContentTab, removeContentTab, updateContentTabLines,

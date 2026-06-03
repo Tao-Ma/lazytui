@@ -79,6 +79,22 @@ function isTerminalTabIn(slice, model, groupName) {
   return t >= start && t < start + info.termTabs.length;
 }
 
+/** True when the slice's active tab is an action tab in `groupName`. */
+function isActionTabIn(slice, model, groupName) {
+  const info = flatTabInfo(slice, model, groupName);
+  if (info.actionTabs.length === 0) return false;
+  const t = slice.tab | 0;
+  return t >= 1 && t <= info.actionTabs.length;
+}
+
+/** [key, action] for the active action tab, or null. */
+function activeActionTabIn(slice, model, groupName) {
+  const info = flatTabInfo(slice, model, groupName);
+  const idx = (slice.tab | 0) - 1;
+  if (idx < 0 || idx >= info.actionTabs.length) return null;
+  return info.actionTabs[idx];
+}
+
 /** True when the slice's active tab is a content tab in `groupName`. */
 function isContentTabIn(slice, model, groupName) {
   const info = flatTabInfo(slice, model, groupName);
@@ -378,8 +394,15 @@ function reduceTabMsg(msg, slice, ctx) {
         next = { ...next, lines: [], scroll: 0 };
         effects.push({ type: 'msg', msg: wrap(paneId, { type: 'viewer_show_info' }) });
       } else if (idx <= actionTabs.length) {
-        const [key, act] = actionTabs[idx - 1];
-        effects.push({ type: 'stream_action', actionKey: key, script: act.script });
+        // v0.6.2 — action tabs are view-only on switch. Phase 1: show
+        // a "press Enter to run" placeholder; the run gesture lives in
+        // dispatch/actions.js's run_selected arm (Enter on a focused
+        // detail when the active tab is an action tab). Pre-Phase-1
+        // tab_switch auto-ran the action via a stream_action Cmd —
+        // which made a stray mouse click execute commands and which
+        // killed any in-progress run when the user toggled away and
+        // back. Drop both side effects.
+        next = { ...next, lines: ['[dim]Press Enter to run.[/]'], scroll: 0 };
       } else if (idx <= actionTabs.length + termTabs.length) {
         next = { ...next, lines: [], scroll: 0 };
       } else {
@@ -520,8 +543,8 @@ function reduceTabMsg(msg, slice, ctx) {
 module.exports = {
   actionTabCount, groupTerminals, groupContentTabs,
   flatTabInfo,
-  isTerminalTabIn, isContentTabIn,
-  activeContentTabIn, activeTerminalIdIn, activeTerminalConfigIn,
+  isTerminalTabIn, isContentTabIn, isActionTabIn,
+  activeContentTabIn, activeActionTabIn, activeTerminalIdIn, activeTerminalConfigIn,
   findEphemeralByIdIn,
   addEphemeral, removeEphemeral,
   addContent, updateContentLines, removeContent, reorderContent,

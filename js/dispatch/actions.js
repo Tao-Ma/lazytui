@@ -26,7 +26,7 @@ const { allPanels, getSel } = require('../app/state');
 const { runAction } = require('./action-runner');
 const { getPanelDef, getItems, getGroupActions, getInstanceSlice,
         dispatchMsg, wrap, getFocus, instanceKind } = require('../panel/api');
-const { isTerminalTab, activeTerminalId } = require('../panel/viewer/tabs');
+const { isTerminalTab, activeTerminalId, isActionTab, activeActionTab } = require('../panel/viewer/tabs');
 const { isSessionDead, restartSession } = require('../io/terminal');
 const { execSync } = require('child_process');
 const { getModel } = require('../app/runtime');
@@ -209,6 +209,18 @@ function handleAction(action, arg) {
       // Enter on detail + terminal tab → activate terminal mode
       if (instanceKind(getFocus()) === 'detail' && isTerminalTab()) {
         activateTerminal();
+        break;
+      }
+      // Enter on detail + action tab → run the action backing that tab.
+      // v0.6.2 Phase 1 — paired with the view-only tab_switch arm in
+      // leaves/pane-tabs.js: tab activation no longer auto-runs, the
+      // Enter gesture from a focused detail is the explicit re-run.
+      if (instanceKind(getFocus()) === 'detail' && isActionTab()) {
+        const item = activeActionTab();
+        if (item) {
+          const [key, act] = item;
+          _runResolvedAction(key, act);
+        }
         break;
       }
       // Enter on groups: branches toggle expand/collapse one level;
