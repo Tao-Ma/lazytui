@@ -640,8 +640,15 @@ function update(msg, slice) {
       // user with a stuck drag they can't see. The user releases the
       // mouse first, THEN opens `w`.
       if (slice.freeConfig && slice.freeConfig.drag) return slice;
+      const wasOpen = slice.panelList && slice.panelList.open;
       const next = { ...slice, panelList: { open: true, cursor: msg.cursor || 0 } };
-      return [next, [{ type: 'force_full_repaint' }]];
+      // Only force_full_repaint on actual open transition. A cursor-only
+      // update (overlay already open) doesn't need the repaint — the
+      // overlay's own diff cache handles cursor moves. Saves one of
+      // the two repaints on the input.js overlay-row click path that
+      // dispatches panel_list_open(new cursor) → pool_drag_start.
+      const cmds = wasOpen ? [] : [{ type: 'force_full_repaint' }];
+      return [next, cmds];
     }
     case 'panel_list_close': {
       const next = { ...slice, panelList: { ...slice.panelList, open: false } };
