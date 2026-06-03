@@ -279,10 +279,16 @@ function injectTabTrigger(panelOutput, p, paneId = 'detail') {
   // not — strip the `bold ` prefix from chrome_trigger so the dim
   // attribute composes with the remaining color (bold + dim conflict
   // on most terminals; bold tends to win, defeating the dim).
+  // free-config mode renders the trigger DISABLED (greyed) — the
+  // affordance stays visible so the user knows the tab-list exists,
+  // but click on the glyph falls through to the panel-drag gesture
+  // that owns the top-border row (see isTriggerHit).
   const triggerBase = t.chrome_trigger || 'bold cyan';
   const triggerColor = triggerBase.replace(/^bold\s+/, '');
+  const disabled = _triggerDisabled();
   let triggerOpen;
-  if (isOpen)       triggerOpen = '[reverse]';
+  if (disabled)     triggerOpen = '[dim]';
+  else if (isOpen)  triggerOpen = '[reverse]';
   else if (focused) triggerOpen = `[${triggerBase}]`;
   else              triggerOpen = `[dim][${triggerColor}]`;
   const triggerMarkup = `${triggerOpen}${TRIGGER_GLYPH}[/][${fc}]`;
@@ -317,19 +323,33 @@ function injectTabTrigger(panelOutput, p, paneId = 'detail') {
 
 function _triggerSuppressed() {
   const md = getModel().modes;
-  // Suppress in free-config (its own panel-drag gesture lives on this
-  // row) and any chain modal that owns the cursor — overlay's own mode
-  // is excluded so the trigger keeps its toggle indicator.
-  if (md.freeConfigMode) return true;
+  // Suppress (hide entirely) in chain modals that own the cursor —
+  // overlay's own tabListMode is excluded so the trigger keeps its
+  // toggle indicator. free-config is NOT in this list — it gets
+  // rendered greyed-but-visible via _triggerDisabled() so the user
+  // can see the affordance even though clicking it does nothing
+  // (the click falls through to the panel-drag gesture that owns
+  // the top-border row in free-config).
   if (md.cmdMode || md.confirmMode || md.promptMode || md.menuOpen) return true;
   if (md.filterMode || md.copyMode || md.registerPopupMode || md.detailSearchMode) return true;
   if (md.prefixMode || md.freeConfigTitleEditMode) return true;
   return false;
 }
 
-/** Hit-test for the trigger click. True if (mx, my) lands on `[≡]`. */
+/** True when the trigger is rendered but disabled (greyed, no
+ *  click). Today: free-config mode only. The panel-drag gesture
+ *  owns the top-border row; the trigger's visibility is purely an
+ *  affordance hint for the user. */
+function _triggerDisabled() {
+  return !!getModel().modes.freeConfigMode;
+}
+
+/** Hit-test for the trigger click. True if (mx, my) lands on `[≡]`.
+ *  Disabled (free-config) and suppressed (modal overlays) both
+ *  return false so the click falls through to whatever else owns
+ *  that row. */
 function isTriggerHit(mx, my, paneId = 'detail') {
-  if (_triggerSuppressed()) return false;
+  if (_triggerSuppressed() || _triggerDisabled()) return false;
   const paneB = _paneBounds(paneId);
   if (!paneB) return false;
   if (paneB.w < TRIGGER_X_OFFSET + TRIGGER_VIS_W + 2) return false;
