@@ -119,6 +119,11 @@ function init() {
       // a state where the block no longer applies (free_config_exit,
       // successful view change).
       notice: null,
+      // Paired with `notice`: 'error' (red, refusal) or 'info' (green,
+      // success status). Seeded null alongside notice so the slice
+      // shape is explicit at boot — the renderer fell back to 'error'
+      // when the field was missing, masking the gap.
+      noticeKind: null,
     },
     // View-output (written by the render pass, read by mouse hit-tests
     // and free-config drag math). The renderer-as-writer pattern is the
@@ -359,7 +364,7 @@ function update(msg, slice) {
       const next = {
         ...slice,
         focus,
-        freeConfig: { drag: null, undo: [], redo: [], titleEdit: { active: false, text: '' }, notice: null },
+        freeConfig: { drag: null, undo: [], redo: [], titleEdit: { active: false, text: '' }, notice: null, noticeKind: null },
         panelList: { open: hasHidden, cursor: 0 },
       };
       // Auto-opening the panel-list overlay needs force_full_repaint
@@ -381,7 +386,7 @@ function update(msg, slice) {
       // focus change.
       const next = {
         ..._withFocus(slice, slice.focus),
-        freeConfig: { drag: null, undo: [], redo: [], titleEdit: { active: false, text: '' }, notice: null },
+        freeConfig: { drag: null, undo: [], redo: [], titleEdit: { active: false, text: '' }, notice: null, noticeKind: null },
         panelList: { open: false, cursor: 0 },
       };
       return [next, [
