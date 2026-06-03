@@ -253,6 +253,11 @@ describe('[poolDragRelease] emits Cmds + clears drag', () => {
     eq(cmds[1].msg.msg.type, 'pool_show');
     eq(cmds[1].msg.msg.id, 'notes');
     eq(cmds[1].msg.msg.columnIndex, 1);
+    // R2.1 — second hop carries _skipUndo so the compound op produces
+    // a single undo entry (the pool_hide's snapshot). Without this,
+    // `u` after a replace-drag would land on the half-state (occupant
+    // hidden, source not yet placed) instead of pre-drag.
+    eq(cmds[1].msg.msg._skipUndo, true, 'pool_show in replace skips its own undo push');
     eq(cmds[2].type, 'force_full_repaint');
   });
   it('invalid target (detail replace) → only force_full_repaint, drag cleared, overlay resumes', () => {

@@ -679,7 +679,11 @@ function update(msg, slice) {
       }
       if (isLast && detailIdx >= 0 && idx > detailIdx) idx = detailIdx;
       const inserted = target.slice(0, idx).concat([placement], target.slice(idx));
-      const withUndo = mfc.pushUndo(slice);
+      // Compound ops (e.g., pool_drag replace = pool_hide + pool_show)
+      // set `_skipUndo: true` on the second hop so only the first
+      // pushes — otherwise one user gesture bloats the undo stack by 2
+      // and `u` lands on a half-state.
+      const withUndo = msg._skipUndo ? slice : mfc.pushUndo(slice);
       const nextArrange = mpool.updateColumn(withUndo.arrange, columnIndex, () =>
         rekeyColumn(inserted, hotkeyPoolForColumn(columnIndex, N)));
       const next = { ...withUndo, arrange: nextArrange, dirty: true };

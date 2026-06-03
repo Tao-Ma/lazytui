@@ -217,9 +217,14 @@ function poolDragRelease(slice) {
     freeConfig: { ...d, drag: null },
   };
   if (t.kind === 'replace') {
+    // Replace = compound (pool_hide occupant, then pool_show source).
+    // Both arms now push undo independently; without _skipUndo on the
+    // second hop, one drag gesture bloats the stack by 2 and the user
+    // would need to press `u u` to revert. The first hop's snapshot is
+    // the pre-drag arrange (what the user wants `u` to restore to).
     const cmds = [
       { type: 'dispatch_msg', msg: { kind: 'layout', msg: { type: 'pool_hide', id: t.occupantId } } },
-      { type: 'dispatch_msg', msg: { kind: 'layout', msg: { type: 'pool_show', id: sourceId, columnIndex: t.columnIndex } } },
+      { type: 'dispatch_msg', msg: { kind: 'layout', msg: { type: 'pool_show', id: sourceId, columnIndex: t.columnIndex, _skipUndo: true } } },
       repaint,
     ];
     return [closeOverlay, cmds];
