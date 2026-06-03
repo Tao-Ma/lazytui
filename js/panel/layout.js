@@ -411,7 +411,15 @@ function update(msg, slice) {
     case 'free_config_title_submit': {
       const text = slice.freeConfig ? slice.freeConfig.titleEdit.text : '';
       let next = mfc.setSelectedTitle(slice, text);
-      if (next.freeConfig) next = { ...next, freeConfig: { ...next.freeConfig, titleEdit: { active: false, text: '' } } };
+      // Close the title-edit sub-state only when it was actually open
+      // — submitting from an inactive title edit (no panel was
+      // selected at title_enter; the R1.4 short-circuit prevented the
+      // mode flag from flipping but the buffer reset can still race
+      // here) should preserve slice identity. setSelectedTitle already
+      // identity-preserves on no-op text.
+      if (next.freeConfig && next.freeConfig.titleEdit && next.freeConfig.titleEdit.active) {
+        next = { ...next, freeConfig: { ...next.freeConfig, titleEdit: { active: false, text: '' } } };
+      }
       return [next, [{ type: 'apply_msg', msg: { type: 'mode_clear', flag: 'freeConfigTitleEditMode' } }]];
     }
     case 'free_config_mouse_press':  return mfc.mousePress(slice, msg.mx, msg.my, msg.cols);
