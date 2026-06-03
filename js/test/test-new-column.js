@@ -505,6 +505,43 @@ describe('[T3-defenses] T3.1/T3.3/T3.4/T3.5 hardening', () => {
     const out3 = applyUpdate({ type: 'set_arrange', arrange: null }, slice);
     eq(out3, slice, 'null arrange — slice unchanged');
   });
+
+  it('R2.3 — set_arrange closes panelList overlay + clears tabListOwnerPaneId', () => {
+    const slice = makeSlice();
+    const dirty = { ...slice,
+      panelList: { open: true, cursor: 3 },
+      tabListOwnerPaneId: 'pane-detail',
+    };
+    const newArrange = { ...slice.arrange, columns: slice.arrange.columns.slice() };
+    const out = applyUpdate({ type: 'set_arrange', arrange: newArrange }, dirty);
+    eq(out.panelList.open, false, 'panel-list overlay closed (geometry stale)');
+    eq(out.panelList.cursor, 0, 'cursor reset');
+    eq(out.tabListOwnerPaneId, null, 'tab-list owner cleared');
+  });
+
+  it('R2.3 — set_arrange clamps focus when focus type no longer placed', () => {
+    const slice = makeSlice();
+    // Build a fresh arrange that DOESN'T contain `containers` (current focus).
+    const slimArrange = {
+      ...slice.arrange,
+      columns: [
+        { width: 30, panels: slice.arrange.columns[0].panels.filter(p => p.type !== 'containers') },
+        slice.arrange.columns[1],
+      ],
+    };
+    const out = applyUpdate({ type: 'set_arrange', arrange: slimArrange }, { ...slice, focus: 'containers' });
+    assert(out.focus !== 'containers', `focus moved off the dropped type (was 'containers', now '${out.focus}')`);
+    const allPanes = require('../leaves/pool').allPanesInColumns(out.arrange);
+    assert(allPanes.some(p => p.type === out.focus),
+      `new focus type '${out.focus}' is a placed pane`);
+  });
+
+  it('R2.3 — set_arrange preserves focus when focus type is still placed', () => {
+    const slice = makeSlice();
+    const newArrange = { ...slice.arrange, columns: slice.arrange.columns.slice() };
+    const out = applyUpdate({ type: 'set_arrange', arrange: newArrange }, { ...slice, focus: 'groups' });
+    eq(out.focus, 'groups', 'focus survives when its type is still in the new arrange');
+  });
 });
 
 describe('[18] pool_show_new_column applies focus inline (T2.4 + R1.2)', () => {

@@ -290,13 +290,30 @@ function update(msg, slice) {
         // a bug and should no-op rather than break the live layout.
         if (!msg.arrange || !Array.isArray(msg.arrange.columns)) return slice;
         next.arrange = msg.arrange;
-        // An arrange swap orphans any in-flight drag: drag.sourceType /
-        // sourceId may point at a pane that no longer exists, and the
-        // drag's target.columnIndex / index may be out of range. Clear
-        // it and close the panel-list overlay defensively — :restore-
-        // layout mid-drag is the canonical trigger.
+        // An arrange swap orphans every cross-arrange pointer on the
+        // slice. Clear them so :restore-layout / set_arrange leaves a
+        // self-consistent slice:
+        //   - drag: sourceType / target.columnIndex may name panes
+        //     and columns that no longer exist.
+        //   - panelList.open + cursor: overlay geometry (computed
+        //     from arrange) is stale; close defensively.
+        //   - tabListOwnerPaneId: paneId may no longer be placed.
+        //   - focus: may name a type that's no longer placed; clamp
+        //     to the first placed pane in the new arrange.
+        //   - halfLeftPanel / lastViewerTab: same staleness as focus;
+        //     re-derive lazily on the next focus_set rather than
+        //     trying to clamp here.
         if (next.freeConfig && next.freeConfig.drag) {
           next.freeConfig = { ...next.freeConfig, drag: null };
+        }
+        if (next.panelList && next.panelList.open) {
+          next.panelList = { open: false, cursor: 0 };
+        }
+        if (next.tabListOwnerPaneId) next.tabListOwnerPaneId = null;
+        const allPanes = mpool.allPanesInColumns(next.arrange);
+        const focusStillPlaced = allPanes.some(p => p.type === next.focus);
+        if (!focusStillPlaced && allPanes.length > 0) {
+          next.focus = allPanes[0].type;
         }
       }
       if (msg.dirty   !== undefined) next.dirty   = !!msg.dirty;
