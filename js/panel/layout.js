@@ -323,6 +323,7 @@ function update(msg, slice) {
       const all = mpool.allPanesInColumns(slice.arrange);
       const focusedIsPlaced = all.some(p => p.type === slice.focus);
       const focus = focusedIsPlaced ? slice.focus : (all[0] ? all[0].type : slice.focus);
+      const wasOpen = slice.panelList && slice.panelList.open;
       const next = {
         ...slice,
         focus,
@@ -330,12 +331,14 @@ function update(msg, slice) {
         panelList: { open: hasHidden, cursor: 0 },
       };
       // Auto-opening the panel-list overlay needs force_full_repaint
-      // for the same reason `panel_list_open` does — the overlay set
-      // fingerprint doesn't change (it's a slice sub-state, not a
-      // mode flag), so the diff painter can skip rows the overlay now
-      // covers, leaving partial-paint residue on the first frame.
+      // — the overlay's slice-subfield fingerprint doesn't change in a
+      // way the diff painter sees, same reasoning as `panel_list_open`.
+      // Only emit on the actual false→true transition (R4.14 — matches
+      // panel_list_open's `wasOpen` check; was conditioned on hasHidden
+      // alone before, which over-emitted on re-entries that didn't
+      // change overlay state).
       const cmds = [{ type: 'msg', msg: { type: 'mode_set', flag: 'freeConfigMode' } }];
-      if (hasHidden) cmds.push({ type: 'force_full_repaint' });
+      if (hasHidden && !wasOpen) cmds.push({ type: 'force_full_repaint' });
       return [next, cmds];
     }
     case 'free_config_exit': {
