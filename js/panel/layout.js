@@ -353,7 +353,7 @@ function update(msg, slice) {
       // placed panel when current focus isn't in the layout (hidden in
       // the pool, or never set).
       const hasHidden = mpool.hiddenIds(slice.arrange).length > 0;
-      const all = mfc.allFreeConfigPanels(slice);
+      const all = mpool.allPanesInColumns(slice.arrange);
       const focusedIsPlaced = all.some(p => p.type === slice.focus);
       const focus = focusedIsPlaced ? slice.focus : (all[0] ? all[0].type : slice.focus);
       const next = {

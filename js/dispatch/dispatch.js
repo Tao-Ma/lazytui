@@ -243,7 +243,7 @@ function handleFreeConfigKey(key, seq) {
       // under the green focus border). detail is rejected by the
       // reducer; other invariants (drag in flight) are out of band
       // here since handleFreeConfigKey only runs on idle key input.
-      const all = layoutSlice ? require('../leaves/free-config').allFreeConfigPanels(layoutSlice) : [];
+      const all = layoutSlice ? require('../leaves/pool').allPanesInColumns(layoutSlice.arrange) : [];
       const sel = all.find(p => p.type === (layoutSlice && layoutSlice.focus));
       if (sel) dispatch({ type: 'panel_collapse_toggle', id: sel.id });
       break;

@@ -72,12 +72,6 @@ function detailMaxPct(availH) {
 }
 const MAX_UNDO = 50;
 
-// ---------------------------------------------------------------- pure reads
-
-function allFreeConfigPanels(slice) {
-  return mpool.allPanesInColumns(slice.arrange);
-}
-
 // Snapshots are JSON round-trips of the arrange struct — plain data
 // (documented: no functions / Symbols / circular refs in panel config), so
 // the stacks live happily on the slice. Session-scoped: cleared on
@@ -244,7 +238,7 @@ function _setPanelHeightPct(slice, panelType, pct) {
  *  show_selected_info Cmd's downstream detail update); free_config_exit
  *  re-emits show_selected_info to refresh detail on the way out. */
 function navSelect(slice, delta) {
-  const all = allFreeConfigPanels(slice);
+  const all = mpool.allPanesInColumns(slice.arrange);
   const curIdx = selectedIdx(slice);
   let idx = curIdx;
   if (delta < 0) { if (idx > 0) idx--; }
@@ -422,7 +416,7 @@ function resizeFocusedPanelHeight(slice, deltaPct) {
  *  slice field — focus is the single source of truth for the active
  *  panel in free-config; the index is just an arithmetic convenience. */
 function selectedIdx(slice) {
-  return allFreeConfigPanels(slice).findIndex(p => p.type === slice.focus);
+  return mpool.allPanesInColumns(slice.arrange).findIndex(p => p.type === slice.focus);
 }
 
 /** Safety clamp after any mutation that can change the panel count.
@@ -431,7 +425,7 @@ function selectedIdx(slice) {
  *  pointing at a panel that's no longer placed, snap it to whatever
  *  ends up at the same index, or to preferredType if supplied. */
 function clampSelected(slice, preferredType) {
-  const all = allFreeConfigPanels(slice);
+  const all = mpool.allPanesInColumns(slice.arrange);
   if (all.length === 0) return slice;
   if (preferredType) {
     const pIdx = all.findIndex(p => p.type === preferredType);
@@ -453,7 +447,7 @@ function clampSelected(slice, preferredType) {
 function titleEnter(slice) {
   const d = slice.freeConfig;
   if (!d) return slice;
-  const p = allFreeConfigPanels(slice)[selectedIdx(slice)];
+  const p = mpool.allPanesInColumns(slice.arrange)[selectedIdx(slice)];
   if (!p) return slice;
   return { ...slice, freeConfig: { ...d, titleEdit: { active: true, text: p.title || '' } } };
 }
@@ -462,7 +456,7 @@ function titleEnter(slice) {
 function setSelectedTitle(slice, text) {
   const d = slice.freeConfig;
   if (!d) return slice;
-  const p = allFreeConfigPanels(slice)[selectedIdx(slice)];
+  const p = mpool.allPanesInColumns(slice.arrange)[selectedIdx(slice)];
   if (!p || text.length === 0 || text === p.title) return slice;
 
   let next = _pushUndoSlice(slice);
@@ -585,7 +579,7 @@ function boundaryNear(slice, panels, my) {
 
 /** Panel type at (mx, my) per rendered bounds, or null (frame-synchronous). */
 function panelAt(slice, mx, my) {
-  for (const p of allFreeConfigPanels(slice)) {
+  for (const p of mpool.allPanesInColumns(slice.arrange)) {
     const b = slice.panelBounds[p.type];
     if (!b) continue;
     if (mx >= b.x && mx < b.x + b.w && my >= b.y && my < b.y + b.h) return p.type;
@@ -1206,7 +1200,7 @@ function computeDragPreviewArrange(slice) {
 
 module.exports = {
   EDGE_W, detailMinPct,
-  allFreeConfigPanels, selectedIdx,
+  selectedIdx,
   undo, redo, clearUndoStacks, pushUndo: _pushUndoSlice,
   navSelect, reorderWithin, moveColumn, resizeWidthOrDetail, resizeFocusedPanelHeight,
   clampSelected, titleEnter, setSelectedTitle,

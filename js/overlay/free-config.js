@@ -20,6 +20,7 @@ const { cols } = require('../io/term');
 const { getModel } = require('../app/runtime');
 const { getInstanceSlice } = require('../panel/api');
 const mfc = require('../leaves/free-config');
+const mpool = require('../leaves/pool');
 
 // The layout Component's slice + its freeConfig sub-slice. Lazy because
 // tests can boot without layout. Read helpers take the slice directly —
@@ -33,7 +34,7 @@ function _freeConfig() {
 function panelTitle(type) {
   const slice = _slice();
   if (!slice) return type;
-  const p = mfc.allFreeConfigPanels(slice).find(x => x.type === type);
+  const p = mpool.allPanesInColumns(slice.arrange).find(x => x.type === type);
   return p ? p.title : type;
 }
 
@@ -92,7 +93,7 @@ function getFreeConfigFooter() {
     return ` | from pool: ${esc(srcTitle)} → [bold green]insert[/] at col ${t.columnIndex + 1}:${t.index}${clampSuffix}`;
   }
   const slice = _slice();
-  const all = slice ? mfc.allFreeConfigPanels(slice) : [];
+  const all = slice ? mpool.allPanesInColumns(slice.arrange) : [];
   const sel = slice ? all[mfc.selectedIdx(slice)] : null;
   return sel ? ` | ${esc(sel.title)} (col ${(sel.columnIndex != null ? sel.columnIndex + 1 : '?')})` : '';
 }
