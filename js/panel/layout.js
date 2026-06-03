@@ -52,12 +52,16 @@ function _commitArrange(slice, nextArrange, opts) {
 
 /** Apply the focus-side fields of the `focus_set` Msg inline — focus,
  *  halfLeftPanel (sticky non-detail), lastViewerTab (sticky viewer-kind).
- *  Callers that ALSO want the standard `show_selected_info` Cmd should
- *  emit it themselves alongside the resulting slice. This exists so
- *  reducer arms that already produce a layout-mutating slice + a status
- *  notice can fold focus into the same return value, rather than emit a
- *  `dispatch_msg(focus_set)` Cmd whose re-entry would trip the
- *  notice-auto-clear preface and wipe the status before the user sees it. */
+ *  Callers that ALSO want the standard `show_selected_info` Cmd emit it
+ *  alongside. Exists so reducer arms that already produce a layout-
+ *  mutating slice + a status notice can fold focus into the same return
+ *  value, rather than emit `dispatch_msg(focus_set)` whose re-entry
+ *  would trip the notice-auto-clear preface and wipe the status.
+ *
+ *  Considered inlining (R4 review's R4.11) — rejected: 7 callers all
+ *  in this file would each grow to 3 lines of identical sticky-pointer
+ *  logic, net +17 lines vs the 5-line helper. The helper carries real
+ *  derivation (not just a spread); it stays. */
 function _withFocus(slice, focus) {
   if (focus == null) return slice;
   const halfLeftPanel = route.instanceKind(focus) !== 'detail' ? focus : slice.halfLeftPanel;
