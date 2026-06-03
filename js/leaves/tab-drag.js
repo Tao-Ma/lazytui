@@ -40,7 +40,7 @@ function _findContentIdxAt(panelBoundsDetail, mx, my) {
   return -1;
 }
 
-function tabDragMotion(slice, mx, my, panelBoundsDetail, currentGroup) {
+function tabDragMotion(slice, mx, my, panelBoundsDetail, currentGroup, targetKind) {
   const drag = slice.freeConfig && slice.freeConfig.drag;
   if (!drag || (drag.kind !== 'tab-armed' && drag.kind !== 'tab-dragging')) return [slice, []];
 
@@ -61,14 +61,18 @@ function tabDragMotion(slice, mx, my, panelBoundsDetail, currentGroup) {
 
   // Crossed into a new content-tab slot — emit a single-step reorder Cmd
   // and advance drag.fromIdx so the next crossing reorders from the
-  // newly-moved position.
+  // newly-moved position. `targetKind` identifies the viewer instance
+  // that owns these tabs; today it's the singleton 'detail' but v0.7
+  // multi-viewer will pass a per-pane id resolved by the caller via
+  // `route.resolveTarget('viewer')`. The leaf takes it as an arg so it
+  // stays pure (no `route` import).
   const advanced = {
     ...cursorOnly,
     freeConfig: { ...cursorOnly.freeConfig, drag: { ...cursorOnly.freeConfig.drag, fromIdx: toIdx } },
   };
   const cmd = {
     type: 'dispatch_msg',
-    msg: { kind: 'detail', msg: { type: 'viewer_reorder_content_tab', groupName: currentGroup, fromIdx: drag.fromIdx, toIdx } },
+    msg: { kind: targetKind, msg: { type: 'viewer_reorder_content_tab', groupName: currentGroup, fromIdx: drag.fromIdx, toIdx } },
   };
   return [advanced, [cmd]];
 }

@@ -494,8 +494,19 @@ function update(msg, slice) {
       const next = mtabDrag.tabDragStart(slice, msg.sourceKey, msg.fromIdx, msg.mx, msg.my);
       return [next, [{ type: 'force_full_repaint' }]];
     }
-    case 'tab_drag_motion':
-      return mtabDrag.tabDragMotion(slice, msg.mx, msg.my, slice.panelBounds && slice.panelBounds.detail, getModel().currentGroup);
+    case 'tab_drag_motion': {
+      // Resolve the viewer instance id for the reorder dispatch. Today
+      // viewer is singleton (`route.resolveTarget('viewer')` returns
+      // 'detail'); v0.7 multi-viewer flips this to a per-pane id
+      // without the leaf needing a route import.
+      const targetKind = route.resolveTarget('viewer') || route.VIEWER_KIND;
+      return mtabDrag.tabDragMotion(
+        slice, msg.mx, msg.my,
+        slice.panelBounds && slice.panelBounds.detail,
+        getModel().currentGroup,
+        targetKind,
+      );
+    }
     case 'tab_drag_release':  return mtabDrag.tabDragRelease(slice);
     case 'free_config_title_key': {
       const te = slice.freeConfig && slice.freeConfig.titleEdit;
