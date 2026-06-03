@@ -30,7 +30,8 @@ const { truncate } = require('./panel');
 const { isTerminalTab, activeTerminalId, activeTerminalConfig,
         getTabInfo, findEphemeralByid } = require('../panel/viewer/tabs');
 const { ensureSession, getSession, resizeSession } = require('../io/terminal');
-const {getPanelDef, getInstanceSlice, getFocus, dispatchMsg, wrap, instanceKind } = require('../panel/api');
+const {getPanelDef, getInstanceSlice, getFocus, getComponent, getComponentOwningPanel,
+       dispatchMsg, wrap, instanceKind } = require('../panel/api');
 const { renderCopyMenu } = require('../overlay/copy');
 const { render: renderRegisterPopup } = require('../overlay/register-popup');
 const { renderMenu } = require('../overlay/menu');
@@ -84,17 +85,6 @@ function _renderCollapsed(p, w) {
   else                 return wrapColor(fc, `╭${titleText}╮`);
 }
 
-function rendererFor(type) {
-  // Phase 6 — every panel is a Component. The owning Component's
-  // render(panel, w, h, slice) is the only render path; no fallback.
-  const api = require('../panel/api');
-  const compName = api.getComponentOwningPanel(type);
-  if (!compName) return null;
-  const comp = api.getComponent(compName);
-  const def = comp && comp.panelTypes && comp.panelTypes[type];
-  if (!def || typeof def.render !== 'function') return null;
-  return (panel, w, h) => def.render(panel, w, h, api.getInstanceSlice(compName));
-}
 
 // --- Layout calculation ---
 
@@ -314,9 +304,19 @@ function paintColumns(columnOutputs) {
 // so post-mortem inspectable from a recorded session), and the panel
 // renders as a single-line error marker so the rest of the layout keeps
 // painting. Same pattern as panel/api.js's update/key catches.
-function _safeRender(fn, panel, w, h) {
-  if (!fn) return '';
-  try { return fn(panel, w, h); }
+// Resolve panel.type → its Component's render fn + slice, then call.
+// Inlines what was rendererFor() (a per-frame closure-allocating
+// helper) — P5.7. Returns '' for unregistered types / missing
+// render(); on throw, renders an error marker so the rest of the
+// layout keeps painting (same pattern as panel/api.js update catches).
+function _safeRender(panel, w, h) {
+  if (!panel) return '';
+  const compName = getComponentOwningPanel(panel.type);
+  if (!compName) return '';
+  const comp = getComponent(compName);
+  const def = comp && comp.panelTypes && comp.panelTypes[panel.type];
+  if (!def || typeof def.render !== 'function') return '';
+  try { return def.render(panel, w, h, getInstanceSlice(compName)); }
   catch (e) {
     console.error(`[render:${panel && panel.type}] ${e && e.message}`);
     try {
@@ -372,7 +372,7 @@ function renderNormal(model) {
     if (p.paneId) layoutSlice.panelBounds[p.paneId] = b;
     let out = p.collapsed
       ? _renderCollapsed(p, w)
-      : _safeRender(rendererFor(p.type), p, w, h);
+      : _safeRender(p, w, h);
     const focused = layoutSlice.focus === p.type;
     const fc = focused ? t.focus : t.dim;
     out = injectTopRowChrome(out, p, b, freeConfigMode, fc, focused);
@@ -425,8 +425,8 @@ function renderHalf(model) {
     layoutSlice.panelBounds.detail = detailBounds;
     if (detailPanel.paneId) layoutSlice.panelBounds[detailPanel.paneId] = detailBounds;
   }
-  let leftContent = _safeRender(rendererFor(leftPanel.type), leftPanel, halfW, availH);
-  let rightContent = detailPanel ? _safeRender(rendererFor('detail'), detailPanel, halfW, availH) : '';
+  let leftContent = _safeRender(leftPanel, halfW, availH);
+  let rightContent = detailPanel ? _safeRender(detailPanel, halfW, availH) : '';
   // Bake the [≡] trigger into the detail render — same chrome as normal
   // view so the user can open the tab list with the mouse in half view.
   // Hit-test math reads `panelBounds.detail` (right side), so inject
@@ -446,7 +446,7 @@ function renderFull(model) {
   const fullBounds = { x: 0, y: 0, w: COLS, h: availH };
   layoutSlice.panelBounds[focusedPanel.type] = fullBounds;
   if (focusedPanel.paneId) layoutSlice.panelBounds[focusedPanel.paneId] = fullBounds;
-  let content = _safeRender(rendererFor(focusedPanel.type), focusedPanel, COLS, availH);
+  let content = _safeRender(focusedPanel, COLS, availH);
   // Bake the [≡] trigger when the full-view focused panel is detail —
   // same parity with normal view.
   content = injectTabTrigger(content, focusedPanel);  // no-op if non-detail
