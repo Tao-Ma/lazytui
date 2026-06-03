@@ -8,7 +8,7 @@
  *
  * Each item is `[label, actionString]` or `null` (a separator). The
  * action strings are handleAction verbs (`nav_up`, `focus_panel:7`,
- * `design`, …); `menu_activate` routes the chosen one back through
+ * `free_config`, …); `menu_activate` routes the chosen one back through
  * dispatch as a Cmd.
  */
 'use strict';

@@ -250,7 +250,7 @@ function placementFromPoolEntry(entry, columnIndex) {
 // --- Detail / actions accessors ------------------------------------------
 //
 // The "is this THE detail pane?" question is asked in ~30 sites scattered
-// across the renderer, design rules, layout reducer, serializer, parser,
+// across the renderer, free-config rules, layout reducer, serializer, parser,
 // and viewer Component. Today the answer is `pane.type === 'detail'` —
 // the legacy Panel field that mirrors the active tab's kind. Routing
 // every reader through these helpers lets the multi-instance / per-tab
@@ -258,7 +258,7 @@ function placementFromPoolEntry(entry, columnIndex) {
 // consumers. Same for actions (the second reserved-kind invariant).
 //
 // `isReservedPane` is the combined "detail OR actions" check that
-// appears in column-placement and design-rule guards.
+// appears in column-placement and free-config rule guards.
 
 function isDetailPane(pane) {
   return !!(pane && pane.type === 'detail');

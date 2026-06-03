@@ -195,7 +195,7 @@ function main() {
   // for keeping ONE panel shape across the stateless view set. See
   // docs/v0.5-layering.md.
   // layout (chrome-only) — the frame Component (Phase 1a skeleton; subsequent
-  // sub-phases migrate focus/viewMode/design/arrange into its slice). See
+  // sub-phases migrate focus/viewMode/freeConfig/arrange into its slice). See
   // docs/v0.5-layout-component.md.
   registerComponent(require('../panel/layout'));
   registerComponent(require('../panel/navigator/docker'));

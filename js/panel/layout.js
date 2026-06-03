@@ -331,7 +331,7 @@ function update(msg, slice) {
       if (msg.dirty   !== undefined) next.dirty   = !!msg.dirty;
       return next;
     }
-    // Design-mode state — pure return-new. The mfc leaf takes this
+    // Free-config state — pure return-new. The mfc leaf takes this
     // Component's slice and returns a new slice; layout.update threads
     // it through, preserving single-writer-per-slice. The root chrome
     // mode flags (`freeConfigMode`, `freeConfigTitleEditMode`) ride on

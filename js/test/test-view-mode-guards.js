@@ -31,7 +31,7 @@ function setFreeConfig(on) {
 function freshLayoutSlice(viewMode) {
   const s = layout.init();
   s.viewMode = viewMode;
-  // Ensure design.notice slot exists (matches init); tests may inspect it.
+  // Ensure freeConfig.notice slot exists (matches init); tests may inspect it.
   return s;
 }
 

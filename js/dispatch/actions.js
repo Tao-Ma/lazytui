@@ -4,7 +4,7 @@
  * `handleAction(verb, arg)` is the central name→effect switch for verbs
  * that fire from multiple input sources — bare-key normal mode (j/k/r/?),
  * leader chords (`g g` → goto_top, `c` → toggle_collapse), `:` cmdline
- * (`:refresh`, `:design`), and the menu (Enter → menu_action effect →
+ * (`:refresh`, `:free-config`), and the menu (Enter → menu_action effect →
  * `dispatch.handleAction`). Each arm mutates state via applyMsg /
  * dispatchMsg / wrap; the caller owns the trailing paint.
  *

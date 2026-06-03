@@ -202,14 +202,14 @@ function handleCopyKey(key, seq) {
 }
 
 function handleFreeConfigKey(key, seq) {
-  // Post-Phase-6 single-writer cleanup: design state lives on layout's
-  // slice; each key wraps a `free_config_*` Msg into layout. q/Esc/Enter all
-  // exit. The leaves/free-config leaf still does the pure layout transform —
-  // layout.update calls it on each Msg arrival.
+  // Post-Phase-6 single-writer cleanup: free-config state lives on
+  // layout's slice; each key wraps a `free_config_*` Msg into layout.
+  // q/Esc/Enter all exit. The leaves/free-config leaf still does the
+  // pure layout transform — layout.update calls it on each Msg arrival.
   //
   // v0.6 Phase 4 — the panel-list overlay nests inside free-config:
   // when slice.panelList.open, keys route to the list (nav / pick /
-  // close) instead of design. Outer Esc/q still exits the whole mode.
+  // close) instead of free-config. Outer Esc/q still exits the whole mode.
   const dispatch = (m) => dispatchMsg(wrap('layout', m));
   const { getInstanceSlice } = require('../panel/api');
   const layoutSlice = getInstanceSlice('layout');
@@ -572,12 +572,12 @@ function loadKeyBindings(config) {
 // Mode → handler map. The ORDER and the membership of the modal set
 // live in js/modes.js (the single source of truth); here we only bind
 // each chain mode to its key handler. Precedence is modes.CHAIN_MODES
-// order: confirm > prompt > designTitleEdit > design > menu > filter >
+// order: confirm > prompt > freeConfigTitleEdit > freeConfig > menu > filter >
 // copy > detailSearch > registerPopup > prefix > cmd.
 //
 //   - confirm/prompt: y/N + arg collection, entered from runAction.
-//   - designTitleEdit runs before freeConfigMode so title typing isn't
-//     swallowed by design navigation.
+//   - freeConfigTitleEdit runs before freeConfigMode so title typing isn't
+//     swallowed by free-config navigation.
 //   - cmd refreshes the focused panel's info so a `:focus`/command that
 //     changes focus is reflected in the trailing paint.
 // Every handler routes its keystrokes through `applyMsg` — the reducer

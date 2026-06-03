@@ -1,5 +1,5 @@
 /**
- * Design mode — read-side helpers for free-config.
+ * Free-config mode — read-side helpers.
  *
  * The keyboard handler, title-edit sub-mode, undo/redo, and mouse drag/resize
  * state machine all live in the reducer (runtime: free_config_* / free_config_mouse_*

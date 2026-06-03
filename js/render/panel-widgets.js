@@ -1,7 +1,7 @@
 /**
  * Panel-chrome widget glyphs — small interactive icons painted on each
  * placed panel's top border row. Split out of `overlay/free-config.js`
- * because they're not all design-specific:
+ * because they're not all free-config-specific:
  *
  *   [_]/[+]  collapse-toggle — ALWAYS visible in normal view mode
  *            (free-config + non-free-config). Click → panel_collapse_toggle.

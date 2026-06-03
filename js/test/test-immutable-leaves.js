@@ -188,7 +188,7 @@ describe('[immutable] leaves/search.js', () => {
 
 // --- leaves/free-config -------------------------------------------------------
 //
-// The design leaf has 14 public mutators + the drag state machine.
+// The free-config leaf has 14 public mutators + the drag state machine.
 // Representative coverage: nav (no-op + advance), reorder (column swap +
 // undo push), moveColumn (cross-column splice), resize (clamps),
 // undo/redo (snapshot round-trip), title edit, mouse press/motion/release.
