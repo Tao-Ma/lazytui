@@ -138,6 +138,11 @@ function streamCommand(headerLabel, cmd, args = [], opts = {}) {
     if (signal) { appendDetailLine(`[yellow]Killed (${signal})[/]`, tabKey, groupName); rec.end(`signal:${signal}`); }
     else if (code === 0) { appendDetailLine('[green]Done.[/]', tabKey, groupName); rec.end(0); }
     else { appendDetailLine(`[red]Exit ${code}[/]`, tabKey, groupName); rec.end(code); }
+    // v0.6.2 Phase 2 — surface the re-run affordance for action-tab
+    // streams. Without this, a finished tab looks like a frozen log and
+    // the user has no hint that Enter restarts it. Tabless streams keep
+    // their bare "Done." / "Exit N" footer.
+    if (tabKey && groupName) appendDetailLine('[dim]Press Enter to run again.[/]', tabKey, groupName);
     scheduleRender();
   });
 
@@ -147,6 +152,7 @@ function streamCommand(headerLabel, cmd, args = [], opts = {}) {
     currentRecord = null;
     appendDetailLine(`[red]Error: ${esc(err.message)}[/]`, tabKey, groupName);
     rec.append(`Error: ${err.message}`);
+    if (tabKey && groupName) appendDetailLine('[dim]Press Enter to run again.[/]', tabKey, groupName);
     rec.end('error');
     scheduleRender();
   });
