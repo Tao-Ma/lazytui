@@ -282,6 +282,12 @@ function handleMouse(kind, x, y) {
       dispatchMsg(wrap('layout', { type: 'panel_list_close' }));
     }
 
+    // Motion without an in-flight drag is a no-op in the leaf
+    // (mouseMotion returns same slice ref when !drag) — skip the
+    // dispatch + render entirely (P5.10). Press / release always
+    // fire: press may start a drag, release defensively clears any
+    // leftover drag state.
+    if (kind === 'motion' && !drag) return;
     if (kind === 'press')        dispatchMsg(wrap('layout', { type: 'free_config_mouse_press',  mx, my, cols: cols() }));
     else if (kind === 'motion')  dispatchMsg(wrap('layout', { type: 'free_config_mouse_motion', mx, my, cols: cols() }));
     else if (kind === 'release') dispatchMsg(wrap('layout', { type: 'free_config_mouse_release' }));
