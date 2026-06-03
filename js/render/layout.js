@@ -589,18 +589,26 @@ function render(model = getModel()) {
     layoutSlice.arrange = previewArrange;
   }
   const viewMode = layoutSlice.viewMode;
-  if (viewMode === 'half') mainDidFull = renderHalf(model);
-  else if (viewMode === 'full') mainDidFull = renderFull(model);
-  else mainDidFull = renderNormal(model);
-  // Only force the terminal-overlay repaint when main paint actually
-  // cleared the screen (resize, overlay-close, first frame). In the
-  // steady state main paint is diff-based and leaves the PTY region
-  // untouched, so the overlay's own diff cache is enough.
-  if (mainDidFull) _forceOverlayFull = true;
-  renderTerminalOverlay(model);
-  if (previewArrange) {
-    layoutSlice.arrange = savedArrange;
-    layoutSlice.panelBounds = savedBounds;
+  try {
+    if (viewMode === 'half') mainDidFull = renderHalf(model);
+    else if (viewMode === 'full') mainDidFull = renderFull(model);
+    else mainDidFull = renderNormal(model);
+    // Only force the terminal-overlay repaint when main paint actually
+    // cleared the screen (resize, overlay-close, first frame). In the
+    // steady state main paint is diff-based and leaves the PTY region
+    // untouched, so the overlay's own diff cache is enough.
+    if (mainDidFull) _forceOverlayFull = true;
+    renderTerminalOverlay(model);
+  } finally {
+    // Restore the canonical slice unconditionally — _safeRender wraps
+    // per-panel throws but renderTerminalOverlay + the inner dispatches
+    // (syncPanelScroll → set_scroll) can throw past it. Without
+    // try/finally the preview arrange would persist in the live slice
+    // and every subsequent reducer write would build on top of it.
+    if (previewArrange) {
+      layoutSlice.arrange = savedArrange;
+      layoutSlice.panelBounds = savedBounds;
+    }
   }
   // Cache the detail panel's effective viewport on detail's own slice
   // so viewer.update can clamp scroll/cursor without reading layout's
