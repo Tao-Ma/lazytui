@@ -112,34 +112,28 @@ describe('[set_active_tab] flips active tab + rewrites legacy fields', () => {
 });
 
 describe('[set_active_tab] focus follow', () => {
-  it('emits focus_set when the switched pane is focused (by pane.id)', () => {
+  it('retargets focus + emits show_selected_info when switched pane is focused (by pane.id)', () => {
     const slice = { ...buildMultiTabSlice(), focus: 'docker' };  // focus on pane's active tab
     const result = layout.update({
       type: 'set_active_tab', paneId: 'pane-docker', tabPoolId: 'logs',
     }, slice);
-    assert(Array.isArray(result), 'returns [slice, cmds] (cmds present)');
+    assert(Array.isArray(result), 'returns [slice, cmds]');
     const [next, cmds] = result;
     eq(next.arrange.columns[0].panels[0].activeTabId, 'logs', 'pane switched');
-    assert(cmds.length >= 1, 'at least one cmd emitted');
-    const focusCmd = cmds.find(c =>
-      c.type === 'dispatch_msg' && c.msg && c.msg.kind === 'layout' &&
-      c.msg.msg && c.msg.msg.type === 'focus_set'
-    );
-    assert(focusCmd, 'focus_set cmd emitted');
-    eq(focusCmd.msg.msg.focus, 'logs', 'focus retargeted to new active tab id');
+    eq(next.focus, 'logs', 'focus retargeted inline to new active tab id (R4.7)');
+    assert(cmds.some(c => c.type === 'show_selected_info'),
+      'show_selected_info Cmd emitted');
   });
-  it('emits focus_set when focused by paneId (pane-tabs producer path)', () => {
+  it('retargets focus when focused by paneId (pane-tabs producer path)', () => {
     const slice = { ...buildMultiTabSlice(), focus: 'pane-docker' };
     const result = layout.update({
       type: 'set_active_tab', paneId: 'pane-docker', tabPoolId: 'logs',
     }, slice);
     assert(Array.isArray(result), 'cmds present');
-    const cmds = result[1];
-    const focusCmd = cmds.find(c =>
-      c.type === 'dispatch_msg' && c.msg && c.msg.msg && c.msg.msg.type === 'focus_set'
-    );
-    assert(focusCmd, 'focus_set cmd emitted for paneId focus');
-    eq(focusCmd.msg.msg.focus, 'logs', 'focus retargeted to new active tab id');
+    const [next, cmds] = result;
+    eq(next.focus, 'logs', 'focus retargeted via paneId path');
+    assert(cmds.some(c => c.type === 'show_selected_info'),
+      'show_selected_info Cmd emitted');
   });
   it('does NOT emit focus_set when another pane is focused', () => {
     const slice = { ...buildMultiTabSlice(), focus: 'groups' };
