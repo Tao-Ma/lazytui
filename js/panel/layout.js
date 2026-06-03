@@ -514,12 +514,17 @@ function update(msg, slice) {
       };
       if (pane.heightPct !== undefined) nextPane.heightPct = pane.heightPct;
       if (pane.collapsed === true)      nextPane.collapsed = true;
+      // Push undo before mutating — tab switches change `activeTabId`
+      // which round-trips through :save-layout, so `:switch-tab` from
+      // the cmdline should be revertable via `u` in free-config.
+      // Consistent with every other arrange-mutating arm.
+      const withUndo = mfc.pushUndo(slice);
       const nextArrange = mpool.updateColumn(arrange, loc.columnIndex, panels => {
         const out = panels.slice();
         out[loc.paneIndex] = nextPane;
         return out;
       });
-      const next = { ...slice, arrange: nextArrange, dirty: true };
+      const next = { ...withUndo, arrange: nextArrange, dirty: true };
       // Focus follow — when the switched pane was focused, retarget
       // focus to the new active tab id. Otherwise render's
       // `focus === p.type` highlight (`render/layout.js:369`) misses
