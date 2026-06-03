@@ -297,8 +297,8 @@ function _glyphFor(group, expanded) {
 function render(panel, w, h, slice) {
   const sel = getSel('groups');
   const isQuick = slice.tab === 'quick';
+  const t = theme();
   const lines = slice.list.map((group, i) => {
-    const t = theme();
     const isSel = i === sel && instanceKind(getFocus()) === 'groups';
     let treeSeg;
     let labelStr;
