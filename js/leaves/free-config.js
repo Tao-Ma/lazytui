@@ -27,6 +27,23 @@
  * **type string**, not by panel ref, because the panel objects themselves
  * are reallocated as the slice updates and any captured refs would go stale
  * across motion events.
+ *
+ * File-size note (record for the v0.7 cleanup pass): this file is ~1200
+ * lines split by section comments into three loosely-coupled blocks:
+ *
+ *   (a) undo/redo + geometry helpers + keyboard transforms + title edit
+ *       (lines ~75-470) — slice-shape and free-config-state aware.
+ *   (b) mouse hit-tests + drag state machine (lines ~470-1030) — the
+ *       largest block, sibling in shape to free-config-pool-drag.js.
+ *   (c) new-column width allocation + column add/remove (lines ~1030-1200)
+ *       — pure-arrange transforms with no slice/drag dependency.
+ *
+ * Group (c) takes only `arrange` (or `columns[]`) and could relocate to
+ * `leaves/pool.js` (where `distributeColumnWidths` already lives) or its
+ * own `leaves/free-config-column.js`. Group (b) is the natural sibling
+ * of `leaves/free-config-pool-drag.js`. The seams are clean enough that
+ * a future split wouldn't touch group (a). Deferred — not load-bearing
+ * for v0.6.2.
  */
 'use strict';
 
