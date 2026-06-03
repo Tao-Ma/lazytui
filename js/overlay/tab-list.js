@@ -322,26 +322,32 @@ function injectTabTrigger(panelOutput, p, paneId = 'detail') {
 }
 
 function _triggerSuppressed() {
-  const md = getModel().modes;
-  // Suppress (hide entirely) in chain modals that own the cursor —
-  // overlay's own tabListMode is excluded so the trigger keeps its
-  // toggle indicator. free-config is NOT in this list — it gets
-  // rendered greyed-but-visible via _triggerDisabled() so the user
-  // can see the affordance even though clicking it does nothing
-  // (the click falls through to the panel-drag gesture that owns
-  // the top-border row in free-config).
-  if (md.cmdMode || md.confirmMode || md.promptMode || md.menuOpen) return true;
-  if (md.filterMode || md.copyMode || md.registerPopupMode || md.detailSearchMode) return true;
-  if (md.prefixMode || md.freeConfigTitleEditMode) return true;
+  // Reserved for genuine "the glyph would be physically obscured by
+  // another paint" cases. Today nothing qualifies — none of the
+  // overlay modes paint over detail's top border (cmdline / filter
+  // / detail-search live in the footer row; menu / confirm /
+  // prompt / copy / register-popup / which-key are centered popups
+  // that don't reach the top border). Kept as a hook so a future
+  // overlay that DOES cover the top row can flip it true.
   return false;
 }
 
 /** True when the trigger is rendered but disabled (greyed, no
- *  click). Today: free-config mode only. The panel-drag gesture
- *  owns the top-border row; the trigger's visibility is purely an
- *  affordance hint for the user. */
+ *  click). Any modal mode that owns user input — free-config (its
+ *  own panel-drag gesture lives on this row), cmdline / filter /
+ *  detail-search (typing into a prompt), centered popups (menu /
+ *  confirm / prompt / copy / register), prefix chain, free-config
+ *  title-edit — disables the click while leaving the glyph visible
+ *  so the user keeps the affordance hint. Click falls through to
+ *  whatever else owns the row (or is a no-op). */
 function _triggerDisabled() {
-  return !!getModel().modes.freeConfigMode;
+  const md = getModel().modes;
+  if (md.freeConfigMode || md.freeConfigTitleEditMode) return true;
+  if (md.cmdMode || md.filterMode || md.detailSearchMode) return true;
+  if (md.confirmMode || md.promptMode || md.menuOpen) return true;
+  if (md.copyMode || md.registerPopupMode) return true;
+  if (md.prefixMode) return true;
+  return false;
 }
 
 /** Hit-test for the trigger click. True if (mx, my) lands on `[≡]`.
