@@ -19,15 +19,24 @@ const viewer = require('../panel/viewer/viewer');
 
 function applyUpdate(slice, msg) {
   const r = viewer.update(msg, slice);
-  if (Array.isArray(r)) return { next: r[0], cmds: r[1] };
-  return { next: r, cmds: [] };
+  const result = Array.isArray(r) ? { next: r[0], cmds: r[1] } : { next: r, cmds: [] };
+  // AR2: tab-list open-state lives on model.modes.tabListMode, not the
+  // viewer slice. Mirror mode_set/mode_clear Cmds onto the model so
+  // subsequent tab_list_* Msgs in the same test see the right flag.
+  for (const c of result.cmds) {
+    if (c && c.type === 'msg' && c.msg && typeof c.msg.flag === 'string') {
+      const { getModel } = require('../app/runtime');
+      if (c.msg.type === 'mode_set')   getModel().modes[c.msg.flag] = true;
+      if (c.msg.type === 'mode_clear') getModel().modes[c.msg.flag] = false;
+    }
+  }
+  return result;
 }
 
 describe('[tab_list_open] cursor lands on the active tab', () => {
   it('active in first viewport — scroll = 0', () => {
     const slice = { ...viewer.init(), tab: 2 };
     const { next } = applyUpdate(slice, { type: 'tab_list_open', vh: 5, tabCount: 10 });
-    eq(next.tabList.open, true);
     eq(next.tabList.cursor, 2);
     eq(next.tabList.scroll, 0);
   });
@@ -102,8 +111,7 @@ describe('[tab_list_pick] switches + closes', () => {
     s = applyUpdate(s, { type: 'tab_list_nav', dir: 1, vh: 5, tabCount: 10 }).next;
     s = applyUpdate(s, { type: 'tab_list_nav', dir: 1, vh: 5, tabCount: 10 }).next;
     eq(s.tabList.cursor, 2);
-    const { next, cmds } = applyUpdate(s, { type: 'tab_list_pick' });
-    eq(next.tabList.open, false);
+    const { cmds } = applyUpdate(s, { type: 'tab_list_pick' });
     // v0.6.1 Phase 4 — pick also clears tab_list_set_owner on layout.
     eq(cmds.length, 5);
     const types = cmds.map(c => c.type);
@@ -125,8 +133,7 @@ describe('[tab_list_close] cleans up', () => {
   it('open=false + mode_clear + owner clear + repaint', () => {
     let s = { ...viewer.init(), tab: 0 };
     s = applyUpdate(s, { type: 'tab_list_open', vh: 5, tabCount: 3 }).next;
-    const { next, cmds } = applyUpdate(s, { type: 'tab_list_close' });
-    eq(next.tabList.open, false);
+    const { cmds } = applyUpdate(s, { type: 'tab_list_close' });
     // v0.6.1 Phase 4 — close also dispatches tab_list_set_owner (null) to layout.
     eq(cmds.length, 3);
     eq(cmds[0].type, 'msg');
@@ -180,9 +187,7 @@ describe('[viewer_reset_chrome] auto-closes the overlay on group switch', () => 
   it('open overlay → reset_chrome closes + emits mode_clear + owner clear', () => {
     let s = { ...viewer.init(), tab: 0 };
     s = applyUpdate(s, { type: 'tab_list_open', vh: 5, tabCount: 3 }).next;
-    eq(s.tabList.open, true);
-    const { next, cmds } = applyUpdate(s, { type: 'viewer_reset_chrome' });
-    eq(next.tabList.open, false);
+    const { cmds } = applyUpdate(s, { type: 'viewer_reset_chrome' });
     // v0.6.1 Phase 4 — reset_chrome's close path also clears owner.
     eq(cmds.length, 2);
     eq(cmds[0].msg.flag, 'tabListMode');

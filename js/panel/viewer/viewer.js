@@ -127,7 +127,10 @@ function init() {
     // `cursor` is the row index in the flat tab list (Info..actions..
     // terminals..content); `scroll` is the first visible row when the
     // overlay's body is smaller than the tab count.
-    tabList: { open: false, cursor: 0, scroll: 0 },
+    // Open/closed is tracked by model.modes.tabListMode + layout's
+    // tabListOwnerPaneId. The per-pane slice holds the cursor/scroll
+    // bookkeeping only (AR2 — was a third co-replica of open-state).
+    tabList: { cursor: 0, scroll: 0 },
   };
 }
 
@@ -226,8 +229,7 @@ function update(msg, slice) {
       // set is fundamentally different across groups, so lingering would
       // be confusing. v0.6.1 Phase 4 — clear the owner pane id companion
       // alongside the mode flag.
-      if (slice.tabList && slice.tabList.open) {
-        next.tabList = { ...slice.tabList, open: false };
+      if (getModel().modes.tabListMode) {
         return [next, [
           { type: 'msg', msg: { type: 'mode_clear', flag: 'tabListMode' } },
           { type: 'msg', msg: wrap('layout', { type: 'tab_list_set_owner', paneId: null }) },

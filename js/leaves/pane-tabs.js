@@ -444,9 +444,11 @@ function reduceTabMsg(msg, slice, ctx) {
       let scroll = 0;
       if (cursor >= vh) scroll = Math.min(cursor - vh + 1, Math.max(0, tabCount - vh));
       return [
-        { ...slice, tabList: { open: true, cursor, scroll } },
+        { ...slice, tabList: { cursor, scroll } },
         [
-          // Mode flag drives keyboard routing (chain mode).
+          // Mode flag drives keyboard routing (chain mode) AND is the
+          // canonical "tab list is open" bit (AR2 — was duplicated on
+          // the per-pane slice as `tabList.open`).
           { type: 'msg', msg: { type: 'mode_set', flag: 'tabListMode' } },
           // v0.6.1 Phase 4 — record which pane the overlay anchors to,
           // so the renderer + hit-test can stop assuming singleton-detail.
@@ -455,9 +457,9 @@ function reduceTabMsg(msg, slice, ctx) {
       ];
     }
     case 'tab_list_close':
-      if (!slice.tabList || !slice.tabList.open) return slice;
+      if (!getModel().modes.tabListMode) return slice;
       return [
-        { ...slice, tabList: { ...slice.tabList, open: false } },
+        slice,
         [
           { type: 'msg', msg: { type: 'mode_clear', flag: 'tabListMode' } },
           { type: 'msg', msg: wrap('layout', { type: 'tab_list_set_owner', paneId: null }) },
@@ -465,8 +467,8 @@ function reduceTabMsg(msg, slice, ctx) {
         ],
       ];
     case 'tab_list_nav': {
-      const tl = slice.tabList || { open: false, cursor: 0, scroll: 0 };
-      if (!tl.open) return slice;
+      if (!getModel().modes.tabListMode) return slice;
+      const tl = slice.tabList || { cursor: 0, scroll: 0 };
       const tabCount = msg.tabCount | 0 || 1;
       const vh = Math.max(1, msg.vh | 0);
       let cursor = tl.cursor;
@@ -485,11 +487,11 @@ function reduceTabMsg(msg, slice, ctx) {
       return { ...slice, tabList: { ...tl, cursor, scroll } };
     }
     case 'tab_list_pick': {
-      const tl = slice.tabList || { open: false, cursor: 0 };
-      if (!tl.open) return slice;
+      if (!getModel().modes.tabListMode) return slice;
+      const tl = slice.tabList || { cursor: 0 };
       const idx = tl.cursor | 0;
       return [
-        { ...slice, tabList: { ...tl, open: false } },
+        slice,
         [
           { type: 'msg', msg: { type: 'mode_clear', flag: 'tabListMode' } },
           { type: 'msg', msg: wrap('layout', { type: 'tab_list_set_owner', paneId: null }) },

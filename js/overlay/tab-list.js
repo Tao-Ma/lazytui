@@ -144,7 +144,8 @@ function viewportRows(paneId = 'detail') {
  *  for clicks on borders / outside the overlay. */
 function hitTest(mx, my, paneId = 'detail') {
   const slice = getInstanceSlice(paneId);
-  if (!slice || !slice.tabList || !slice.tabList.open) return null;
+  // Open-state is the mode flag + the owner-pane match (AR2).
+  if (!slice || !getModel().modes.tabListMode || paneId !== _ownerPaneId()) return null;
   const tabs = _flatTabs(paneId);
   const g = _geom(tabs, paneId);
   if (!g) return null;
@@ -196,8 +197,10 @@ function renderTabList(paneId) {
   }
   if (paneId == null) paneId = _ownerPaneId();
   const slice = getInstanceSlice(paneId) || {};
-  const tabList = slice.tabList || { open: false, cursor: 0, scroll: 0 };
-  if (!tabList.open) { _maybeBlank(); return; }
+  // Open-state lives on the mode flag (AR2); the per-pane slice
+  // carries only cursor/scroll bookkeeping.
+  if (!getModel().modes.tabListMode) { _maybeBlank(); return; }
+  const tabList = slice.tabList || { cursor: 0, scroll: 0 };
   const tabs = _flatTabs(paneId);
   const g = _geom(tabs, paneId);
   if (!g) { _maybeBlank(); return; }
