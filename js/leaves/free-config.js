@@ -112,7 +112,11 @@ function _hotkeyPoolForColumn(columnIndex, N) {
 
 /** Recompute positional hotkeys for every column. detail keeps 'o', actions
  *  keeps '0' as semantic anchors (last-column convention); everything else
- *  gets its column's pool key by slot position. */
+ *  gets its column's pool key by slot position. When a column has more
+ *  panes than its pool has slots (above the soft cap), the overflow slots
+ *  get '' — matches panel/layout.js#rekeyColumn so the two rekey paths
+ *  agree on the same answer, regardless of which one fired last (drag-
+ *  reorder vs pool_hide / pool_show). */
 function _reassignHotkeys(arrange) {
   const N = mpool.columnCount(arrange);
   const lastIdx = N - 1;
@@ -124,7 +128,6 @@ function _reassignHotkeys(arrange) {
       const panels = (col.panels || []).map((p, i) => {
         if (isLast && mpool.isActionsPane(p)) return { ...p, hotkey: '0', columnIndex: ci };
         if (isLast && mpool.isDetailPane(p))  return { ...p, hotkey: 'o', columnIndex: ci };
-        if (ci === 0) return { ...p, hotkey: String(i + 1), columnIndex: ci };
         return { ...p, hotkey: pool[i] || '', columnIndex: ci };
       });
       return { ...col, panels };

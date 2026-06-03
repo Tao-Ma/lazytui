@@ -4,6 +4,89 @@ All notable changes to lazytui are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning
 follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.2] — 2026-06-03
+
+### Changed (BREAKING)
+- **YAML layout shape.** `layout.left:` / `layout.right:` blocks are
+  replaced by an ordered `layout.columns:` list. v0.6.1 configs do
+  not parse — the SchemaError points at
+  [`docs/v0.6.2-migrate.md`](docs/v0.6.2-migrate.md). One mechanical
+  edit per config: wrap the two existing blocks in a `columns:` list
+  and drop the `left:`/`right:` keys. Per-cell shape (bare pool-id,
+  `tabs: [...]`, `height: 60%`, `heightPct`, `collapsed`, explicit
+  `hotkey:`) is unchanged. Last column's `width:` is ignored (warns
+  at parse — last column takes the remainder).
+
+  ```yaml
+  # v0.6.1 — no longer parses
+  layout:
+    left:  { width: 30, panels: [groups] }
+    right: { panels: [detail] }
+
+  # v0.6.2
+  layout:
+    columns:
+      - { width: 30, panels: [groups] }
+      - { panels: [detail] }
+  ```
+
+### Added
+- **N-column layouts.** The hardcoded two-column shape retires.
+  `arrange = { columns: [{width?, panels: [...]}], detailHeightPct,
+  pool }` ordered left-to-right. The last column's width is implicit
+  (takes the remainder); every other column carries an explicit
+  `width:` in cells. Hotkey pool per column: first column gets
+  `1`-`6`, last gets `7`-`9`, middle columns get no auto-pool (panes
+  must specify hotkeys explicitly). Detail + actions panes still
+  anchor to the LAST column by invariant; "must be in the right
+  column" error strings now say "must be in the last column."
+
+- **Drag-edge spawn.** In free-config mode, dragging a pane (or a
+  pool entry from the `w` overlay) within 2 cells of the terminal's
+  left edge or an internal column boundary spawns a fresh column at
+  that position. Right-edge spawn is hit-tested but refused — would
+  push detail off the last column. Detail / actions sources are
+  refused for all new-column drops (they're reserved to the last
+  column). New column's width is stolen from the adjacent column(s);
+  source columns that go empty are auto-removed.
+
+- **`:add-column [N]` / `:remove-column <N>` cmdline verbs.** Insert
+  an empty column at 1-based position `N` (default: just before the
+  last column — internal position N-1); remove the column at 1-based
+  index `N` (refused for the last column, for non-empty columns, and
+  for out-of-range indices). Drag panes in afterwards.
+
+- **Status notices.** `slice.freeConfig.notice` gains a sibling
+  `noticeKind` field (`'info'` | `'error'`, defaults to `'error'`).
+  The footer paints info notices green and error notices red. New
+  column actions emit info notices on success; column-edit refusals
+  emit error notices.
+
+### Changed
+- **Msg signatures.** `pool_show({column: 'left'|'right'})` →
+  `pool_show({columnIndex: int})`. Drag target shape `{kind, column,
+  index, …}` → `{kind, columnIndex, index, …}`.
+  `free_config_move_col({col: 'left'|'right'})` →
+  `free_config_move_col({dir: -1|+1})`. New Msgs:
+  `pool_show_new_column({id, position})`,
+  `add_column({position})`, `remove_column({columnIndex})`.
+
+- **`pane.column: 'left'|'right'` → `pane.columnIndex: int`.** Every
+  pane carries its column index as an integer. The legacy string
+  form is gone.
+
+- **Hit-test edge naming.** `'resizing-left-boundary'` and
+  `'resizing-right-boundary'` fold into `'resizing-panel-boundary'`
+  carrying `columnIndex` and (when on a column boundary)
+  `boundaryIndex`. Corner-resize at the column separator now checks
+  both flanking columns for a panel boundary at `my` instead of just
+  the cursor's column.
+
+### Migration
+
+Hand-conversion per [`docs/v0.6.2-migrate.md`](docs/v0.6.2-migrate.md);
+the parser's SchemaError points at the same file.
+
 ## [0.6.1] — 2026-06-02
 
 ### Changed (BREAKING)
