@@ -52,6 +52,19 @@ function _withNotice(slice, text, kind) {
   return { ...slice, freeConfig: { ...slice.freeConfig, notice: text, noticeKind: kind || 'error' } };
 }
 
+/** Push the current arrange onto the undo stack (unless the Msg is a
+ *  no-undo follow-up like the second hop of a pool-drag replace) and
+ *  swap in the new arrange with dirty:true. Single helper for the
+ *  pattern repeated across every arrange-mutating arm (pool_hide,
+ *  pool_show, pool_show_new_column, add_column, remove_column,
+ *  panel_collapse_toggle, set_active_tab) — keeps the snapshot timing
+ *  and the dirty-flag write in lockstep. */
+function _commitArrange(slice, nextArrange, opts) {
+  const skipUndo = opts && opts.skipUndo;
+  const withUndo = skipUndo ? slice : mfc.pushUndo(slice);
+  return { ...withUndo, arrange: nextArrange, dirty: true };
+}
+
 /** Apply the focus-side fields of the `focus_set` Msg inline — focus,
  *  halfLeftPanel (sticky non-detail), lastViewerTab (sticky viewer-kind).
  *  Callers that ALSO want the standard `show_selected_info` Cmd should
@@ -541,13 +554,12 @@ function update(msg, slice) {
       // which round-trips through :save-layout, so `:switch-tab` from
       // the cmdline should be revertable via `u` in free-config.
       // Consistent with every other arrange-mutating arm.
-      const withUndo = mfc.pushUndo(slice);
       const nextArrange = mpool.updateColumn(arrange, loc.columnIndex, panels => {
         const out = panels.slice();
         out[loc.paneIndex] = nextPane;
         return out;
       });
-      const next = { ...withUndo, arrange: nextArrange, dirty: true };
+      const next = _commitArrange(slice, nextArrange);
       // Focus follow — when the switched pane was focused, retarget
       // focus to the new active tab id. Otherwise render's
       // `focus === p.type` highlight (`render/layout.js:369`) misses
@@ -572,7 +584,6 @@ function update(msg, slice) {
       if (mpool.isDetailPane(entry)) return slice;
       const loc = mpool.findPaneLocation(arrange, p => p.id === id);
       if (!loc) return slice;  // already hidden
-      const withUndo = mfc.pushUndo(slice);
       // Strip the pane, then reassign hotkeys across all columns via
       // the leaf's `_reassignHotkeys` — same path used by drag/reorder
       // / new-column-spawn / addColumn / removeColumn. Inline rekey
@@ -581,7 +592,7 @@ function update(msg, slice) {
       const stripped = mpool.updateColumn(arrange, loc.columnIndex, panels =>
         panels.filter((_, i) => i !== loc.paneIndex));
       const nextArrange = mfc.reassignHotkeys(stripped);
-      const next = { ...withUndo, arrange: nextArrange, dirty: true };
+      const next = _commitArrange(slice, nextArrange);
       // If the hidden panel was focused, focus is now stale (points at
       // a no-longer-placed type). clampSelected snaps it back to a
       // valid panel. When the snap actually moves focus, route through
@@ -650,18 +661,14 @@ function update(msg, slice) {
       // are real layout changes and should be revertable via `u` in
       // free-config, consistent with pool_hide / pool_show / add_column
       // / remove_column / pool_show_new_column (all of which push undo).
-      const withUndo = mfc.pushUndo(slice);
+      // dirty marks the change for the cmdline-driven :save-layout
+      // (free-config's unsaved-banner mirrors `slice.dirty`).
       const nextArrange = mpool.updateColumn(arrange, loc.columnIndex, panels => {
         const out = panels.slice();
         out[loc.paneIndex] = { ...p, collapsed: !p.collapsed };
         return out;
       });
-      // Mark dirty: collapsed is a real layout field that round-trips
-      // through :save-layout. The free-config unsaved-banner only
-      // surfaces in that mode (footerKeys check), so normal-mode
-      // toggles silently arm the dirty flag — :save-layout (a cmdline
-      // command available everywhere) commits it.
-      return { ...withUndo, arrange: nextArrange, dirty: true };
+      return _commitArrange(slice, nextArrange);
     }
     case 'pool_show': {
       const arrange = slice.arrange;
@@ -710,10 +717,11 @@ function update(msg, slice) {
       // set `_skipUndo: true` on the second hop so only the first
       // pushes — otherwise one user gesture bloats the undo stack by 2
       // and `u` lands on a half-state.
-      const withUndo = msg._skipUndo ? slice : mfc.pushUndo(slice);
-      const spliced = mpool.updateColumn(withUndo.arrange, columnIndex, () => inserted);
+      // _skipUndo carried by compound ops (pool_drag replace) so only
+      // the first hop pushes — see R2.1.
+      const spliced = mpool.updateColumn(slice.arrange, columnIndex, () => inserted);
       const nextArrange = mfc.reassignHotkeys(spliced);
-      const next = { ...withUndo, arrange: nextArrange, dirty: true };
+      const next = _commitArrange(slice, nextArrange, { skipUndo: msg._skipUndo });
       // Move focus to the newly-shown panel — matches the overlay UX
       // where picking from the pool surfaces it as the active one.
       // _withFocus stamps focus + halfLeftPanel + lastViewerTab; the
@@ -750,16 +758,12 @@ function update(msg, slice) {
       // splicing in shifts columns at index >= position by +1, so
       // every pane's columnIndex needs to be re-stamped.
       const nextArrange = mfc.reassignHotkeys(spawned);
-      const withUndo = mfc.pushUndo(slice);
       // Apply focus inline (halfLeftPanel + lastViewerTab + focus
       // stamped together via _withFocus) instead of re-dispatching
       // focus_set as a follow-up Cmd. The re-entry would trip the
       // notice-auto-clear preface at the top of update() and wipe
       // the status notice before the user saw it.
-      const focused = _withFocus(
-        { ...withUndo, arrange: nextArrange, dirty: true },
-        entry.type,
-      );
+      const focused = _withFocus(_commitArrange(slice, nextArrange), entry.type);
       const spawnedSlice = _withStatus(focused, `added new column at position ${position + 1}`);
       return [spawnedSlice, [{ type: 'show_selected_info' }]];
     }
@@ -775,15 +779,13 @@ function update(msg, slice) {
       if (error) return _withNotice(slice, error, 'error');
       // Push undo on success so `u` can revert a cmdline-driven column
       // add (drag-driven changes already push via mouseRelease).
-      const withUndo = mfc.pushUndo(slice);
-      const next = { ...withUndo, arrange: mutated.arrange, dirty: true };
+      const next = _commitArrange(slice, mutated.arrange);
       return _withStatus(next, `added empty column at position ${msg.position + 1}`);
     }
     case 'remove_column': {
       const { slice: mutated, error } = mfc.removeColumn(slice, msg.columnIndex);
       if (error) return _withNotice(slice, error, 'error');
-      const withUndo = mfc.pushUndo(slice);
-      const next = { ...withUndo, arrange: mutated.arrange, dirty: true };
+      const next = _commitArrange(slice, mutated.arrange);
       // Clamp focus to a still-placed panel; if focus moved, route the
       // change through _withFocus + show_selected_info (same lockstep
       // contract as pool_hide / pool_show / focus_set).
