@@ -106,8 +106,12 @@ function doRun(actionKey, action, args = []) {
       // addEphemeralTab side-effects: detail slice's `tab` + ephemeral-
       // Terminals[...][tabKey], getInstanceSlice("layout").focus='detail', model.modes.terminalMode.
       addEphemeralTab(getModel().currentGroup, tabKey, `${tmp}${argStr}`, actionKey);
+      // view_set's reducer arm emits force_full_repaint on viewMode
+      // transitions (normal/half → full). When already in full, the
+      // arm short-circuits to no-op; the new ephemeral tab's chrome
+      // shows up as different row text, which the diff cache catches
+      // naturally — no extra invalidate needed (P5.4).
       dispatchMsg(wrap('layout', { type: 'view_set', mode: 'full' }));
-      require('../render/layout').forceFullRepaint();
       // T27 / B19 — pre-fix `{ detached: false }` returned a live
       // record whose handle the caller discarded; the embedded PTY's
       // exit lives in terminal.js with no link back, so the entry
