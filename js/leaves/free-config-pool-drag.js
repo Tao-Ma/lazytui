@@ -28,7 +28,7 @@
 'use strict';
 
 const mfc = require('./free-config');
-const { pointToCellZone, _columnRanges, _newColumnZoneAt, EDGE_W } = mfc;
+const { pointToCellZone, _columnRanges, _newColumnZoneAt } = mfc;
 const mpool = require('./pool');
 const { placementFromPoolEntry } = mpool;
 

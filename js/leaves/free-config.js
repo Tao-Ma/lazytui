@@ -1214,13 +1214,12 @@ function computeDragPreviewArrange(slice) {
 }
 
 module.exports = {
-  MIN_PANEL_H, EDGE_W, DETAIL_MIN_ROWS, detailMinPct, detailMaxPct,
+  EDGE_W, detailMinPct,
   allFreeConfigPanels, selectedIdx,
-  snapshot, undo, redo, clearUndoStacks, pushUndo: _pushUndoSlice,
-  columnTotalH, freezeColumnFlex, panelHeightPct,
+  undo, redo, clearUndoStacks, pushUndo: _pushUndoSlice,
   navSelect, reorderWithin, moveColumn, resizeWidthOrDetail, resizeFocusedPanelHeight,
   clampSelected, titleEnter, setSelectedTitle,
-  pointToResizeTarget, pointToDropTarget, pointToCellZone, panelAt,
+  pointToResizeTarget, pointToDropTarget, pointToCellZone,
   mousePress, mouseMotion, mouseRelease,
   computeDragPreviewArrange,
   validateNewColumn, applyNewColumn,
