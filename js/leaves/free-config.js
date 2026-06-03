@@ -509,19 +509,19 @@ function _boundaryAtX(arrange, mx, COLS) {
   return null;
 }
 
-/** Detect the new-column drop zone the cursor falls in, or null. Three
+/** Detect the new-column drop zone the cursor falls in, or null. Two
  *  classes:
  *    - left edge: `mx < EDGE_W` → position 0
- *    - right edge: `mx >= COLS - EDGE_W` → position N
  *    - column gap: `|mx - boundary| < EDGE_W` → position i+1 (between
  *      columns i and i+1)
- *  Edge-of-terminal classes take precedence over gap (they catch the
- *  cursor sitting at x=0 / x=COLS-1 even when col0.width or the last
- *  column's width is < EDGE_W). */
+ *  No right-edge zone: position == N is always refused (would push
+ *  detail off the last column), so capturing the last 2 cells of the
+ *  terminal as a "spawn here" zone just dead-shadows the rightmost
+ *  cells of the last column without giving the user a usable target.
+ *  Cursor near the right edge falls through to the in-column 3-zone
+ *  hit on the last column's cells instead. */
 function _newColumnZoneAt(arrange, mx, COLS) {
-  const N = (arrange.columns || []).length;
   if (mx < EDGE_W) return { position: 0 };
-  if (mx >= COLS - EDGE_W) return { position: N };
   const ranges = _columnRanges(arrange, COLS);
   for (let i = 0; i < ranges.length - 1; i++) {
     const bx = ranges[i].x + ranges[i].w;
@@ -1211,7 +1211,7 @@ function computeDragPreviewArrange(slice) {
 module.exports = {
   MIN_PANEL_H, EDGE_W, DETAIL_MIN_ROWS, detailMinPct, detailMaxPct,
   allFreeConfigPanels, selectedIdx,
-  snapshot, undo, redo, clearUndoStacks,
+  snapshot, undo, redo, clearUndoStacks, pushUndo: _pushUndoSlice,
   columnTotalH, freezeColumnFlex, panelHeightPct,
   navSelect, reorderWithin, moveColumn, resizeWidthOrDetail, resizeFocusedPanelHeight,
   clampSelected, titleEnter, setSelectedTitle,

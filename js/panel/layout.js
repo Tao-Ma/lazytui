@@ -514,9 +514,10 @@ function update(msg, slice) {
       if (!loc) return slice;  // already hidden
       const N = mpool.columnCount(arrange);
       const pool = hotkeyPoolForColumn(loc.columnIndex, N);
+      const withUndo = mfc.pushUndo(slice);
       const nextArrange = mpool.updateColumn(arrange, loc.columnIndex, panels =>
         rekeyColumn(panels.filter((_, i) => i !== loc.paneIndex), pool));
-      const next = { ...slice, arrange: nextArrange, dirty: true };
+      const next = { ...withUndo, arrange: nextArrange, dirty: true };
       // If the hidden panel was focused, focus is now stale (points at
       // a no-longer-placed type). clampSelected snaps it back to a
       // valid panel.
@@ -534,6 +535,11 @@ function update(msg, slice) {
     // on screen (residue) and opening can race with the diff-painter
     // skipping rows it thinks are unchanged.
     case 'panel_list_open': {
+      // Refuse mid-drag: opening the overlay over an in-flight drag
+      // hides the preview and the drag-source feedback, leaving the
+      // user with a stuck drag they can't see. The user releases the
+      // mouse first, THEN opens `w`.
+      if (slice.freeConfig && slice.freeConfig.drag) return slice;
       const next = { ...slice, panelList: { open: true, cursor: msg.cursor || 0 } };
       return [next, [{ type: 'force_full_repaint' }]];
     }
@@ -621,9 +627,10 @@ function update(msg, slice) {
       }
       if (isLast && detailIdx >= 0 && idx > detailIdx) idx = detailIdx;
       const inserted = target.slice(0, idx).concat([placement], target.slice(idx));
-      const nextArrange = mpool.updateColumn(arrange, columnIndex, () =>
+      const withUndo = mfc.pushUndo(slice);
+      const nextArrange = mpool.updateColumn(withUndo.arrange, columnIndex, () =>
         rekeyColumn(inserted, hotkeyPoolForColumn(columnIndex, N)));
-      const next = { ...slice, arrange: nextArrange, dirty: true };
+      const next = { ...withUndo, arrange: nextArrange, dirty: true };
       // Move focus to the newly-shown panel — matches the overlay UX
       // where picking from the pool surfaces it as the active one.
       return mfc.clampSelected(next, entry.type);
@@ -654,13 +661,18 @@ function update(msg, slice) {
       // splicing in shifts columns at index >= position by +1, so
       // every pane's columnIndex needs to be re-stamped.
       const nextArrange = mfc.reassignHotkeys(spawned);
-      const spawnedSlice = mfc.clampSelected(
-        { ...slice, arrange: nextArrange, dirty: true },
-        entry.type,
+      const withUndo = mfc.pushUndo(slice);
+      const spawnedSlice = _withStatus(
+        { ...withUndo, arrange: nextArrange, dirty: true },
+        `added new column at position ${position + 1}`,
       );
-      // Phase 3 status message — surface the spawn so the user knows
-      // the drop worked even when the new column is off-screen edge.
-      return _withStatus(spawnedSlice, `added new column at position ${position + 1}`);
+      // Route focus through `focus_set` so halfLeftPanel + lastViewerTab
+      // get updated and `show_selected_info` fires — same semantics as
+      // any other focus change. clampSelected alone only writes
+      // `slice.focus` and would leave the half-view state stale.
+      return [spawnedSlice, [
+        { type: 'dispatch_msg', msg: route.wrap('layout', { type: 'focus_set', focus: entry.type }) },
+      ]];
     }
     // v0.6.2 Phase 3 — cmdline + programmatic column management.
     // add_column inserts an empty column at `position` (0..N-1);
@@ -670,13 +682,19 @@ function update(msg, slice) {
     // into freeConfig.notice (red) on refusal or a green status notice
     // on success.
     case 'add_column': {
-      const { slice: next, error } = mfc.addColumn(slice, msg.position);
+      const { slice: mutated, error } = mfc.addColumn(slice, msg.position);
       if (error) return _withNotice(slice, error, 'error');
+      // Push undo on success so `u` can revert a cmdline-driven column
+      // add (drag-driven changes already push via mouseRelease).
+      const withUndo = mfc.pushUndo(slice);
+      const next = { ...withUndo, arrange: mutated.arrange, dirty: true };
       return _withStatus(next, `added empty column at position ${msg.position + 1}`);
     }
     case 'remove_column': {
-      const { slice: next, error } = mfc.removeColumn(slice, msg.columnIndex);
+      const { slice: mutated, error } = mfc.removeColumn(slice, msg.columnIndex);
       if (error) return _withNotice(slice, error, 'error');
+      const withUndo = mfc.pushUndo(slice);
+      const next = { ...withUndo, arrange: mutated.arrange, dirty: true };
       return _withStatus(mfc.clampSelected(next), `removed column ${msg.columnIndex + 1}`);
     }
     default:

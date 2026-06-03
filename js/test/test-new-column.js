@@ -28,6 +28,13 @@ const { describe, it, assert, eq, report } = require('./test-runner');
 
 const COLS = 120;
 
+// Component.update returns either `slice` or `[slice, cmds]`. Tests
+// only assert on slice fields, so unwrap the tuple form.
+function applyUpdate(msg, slice) {
+  const r = layout.update(msg, slice);
+  return Array.isArray(r) ? r[0] : r;
+}
+
 // ----- Fixtures -----
 
 function makeSlice() {
@@ -85,9 +92,14 @@ describe('[1] _newColumnZoneAt — edge + gap hit-tests', () => {
     eq(mfc._newColumnZoneAt(s.arrange, mfc.EDGE_W, COLS), null);
   });
 
-  it('right edge: mx >= COLS - EDGE_W → position N', () => {
-    eq(mfc._newColumnZoneAt(s.arrange, COLS - 1, COLS), { position: 2 });
-    eq(mfc._newColumnZoneAt(s.arrange, COLS - mfc.EDGE_W, COLS), { position: 2 });
+  it('right edge: returns null (T2.1 — dead zone removed)', () => {
+    // The right-edge zone always refused (position N would push detail
+    // off "last"). With it gone, cursor at the terminal's right edge
+    // falls through to the in-column 3-zone hit on the last column's
+    // cells, giving the user usable drop targets in the rightmost
+    // ~2 cells of the last column.
+    eq(mfc._newColumnZoneAt(s.arrange, COLS - 1, COLS), null);
+    eq(mfc._newColumnZoneAt(s.arrange, COLS - mfc.EDGE_W, COLS), null);
   });
 
   it('column gap: cursor near internal boundary → position i+1', () => {
@@ -290,7 +302,7 @@ describe('[7] spawnNewColumnArrange — pure transform shared by preview + commi
 describe('[8] pool_show_new_column — layout reducer', () => {
   it('valid drop adds a new column with the pool entry', () => {
     const slice = makeSlice();
-    const out = layout.update({ type: 'pool_show_new_column', id: 'notes', position: 0 }, slice);
+    const out = applyUpdate({ type: 'pool_show_new_column', id: 'notes', position: 0 }, slice);
     eq(out.dirty, true);
     eq(out.arrange.columns.length, 3);
     eq(out.arrange.columns[0].panels[0].type, 'history');
@@ -449,10 +461,23 @@ describe('[12] add_column / remove_column Msg arms', () => {
 describe('[13] pool_show_new_column success notice', () => {
   it('successful spawn emits an info notice', () => {
     const slice = makeSlice();
-    const out = layout.update({ type: 'pool_show_new_column', id: 'notes', position: 0 }, slice);
+    const out = applyUpdate({ type: 'pool_show_new_column', id: 'notes', position: 0 }, slice);
     eq(out.arrange.columns.length, 3);
     eq(out.freeConfig.noticeKind, 'info');
     assert(/position 1/.test(out.freeConfig.notice), `notice names position 1: ${out.freeConfig.notice}`);
+  });
+});
+
+describe('[18] pool_show_new_column routes focus through focus_set (T2.4)', () => {
+  it('emits a dispatch_msg(focus_set) Cmd so halfLeftPanel + show_selected_info stay in sync', () => {
+    const slice = makeSlice();
+    const r = layout.update({ type: 'pool_show_new_column', id: 'notes', position: 0 }, slice);
+    assert(Array.isArray(r), 'returns [slice, cmds] tuple');
+    const [, cmds] = r;
+    const dispatchFocus = cmds.find(c => c && c.type === 'dispatch_msg'
+      && c.msg && c.msg.msg && c.msg.msg.type === 'focus_set');
+    assert(dispatchFocus, 'emits a dispatch_msg wrapping focus_set');
+    eq(dispatchFocus.msg.msg.focus, 'history', 'focus targets the just-placed pool entry type');
   });
 });
 
@@ -565,6 +590,56 @@ describe('[16] spawn → drag-back round-trip reclaims donor width', () => {
     const { slice: out } = mfc.removeColumn(s, 1);
     eq(out.arrange.columns.length, 2);
     eq(out.arrange.columns[0].width, originalWidth, 'col 0 width restored');
+  });
+
+  // T2.5 — three width-reclaim subcases the round-1 pair (above) didn't pin.
+  it('drag pane out of a multi-pane source col keeps the source col alive (no auto-cleanup)', () => {
+    // Source col has 2 panes (containers + groups). Dragging containers
+    // out leaves groups behind — the source col stays put.
+    let s = makeSlice();
+    const originalWidth = s.arrange.columns[0].width;
+    const dragging = { ...s, freeConfig: { ...s.freeConfig, drag: {
+      kind: 'dragging', sourceType: 'containers',
+      target: { kind: 'insert', columnIndex: 1, index: 0, valid: true },
+    } } };
+    const out = mfc.mouseRelease(dragging);
+    eq(out.arrange.columns.length, 2, 'still 2 cols (source col survives with groups)');
+    eq(out.arrange.columns[0].width, originalWidth, 'source col width unchanged');
+    eq(out.arrange.columns[0].panels.length, 1, 'one pane left in source col');
+    eq(out.arrange.columns[0].panels[0].type, 'groups', 'groups stayed');
+  });
+
+  it('removeColumn at index 0 with no left neighbor — splice succeeds, no width transfer', () => {
+    // Build a 3-col arrange with col 0 explicit-width but empty. Removing
+    // col 0 has no left neighbor; the released cells absorb into the
+    // implicit last column via the renderer's remainder math.
+    const s = makeSlice();
+    const fixture = { ...s, arrange: { ...s.arrange, columns: [
+      { width: 20, panels: [] },                        // empty col to remove
+      { width: 30, panels: s.arrange.columns[0].panels }, // shifted
+      { panels: s.arrange.columns[1].panels },          // last (implicit)
+    ] } };
+    const { slice: out, error } = mfc.removeColumn(fixture, 0);
+    eq(error, null);
+    eq(out.arrange.columns.length, 2, 'down to 2 cols');
+    eq(out.arrange.columns[0].width, 30, 'new col 0 keeps its explicit width');
+    eq(out.arrange.columns[1].width, undefined, 'last column still implicit');
+  });
+
+  it('within-column drag does NOT trigger auto-cleanup of the source col', () => {
+    // fromCol === toCol path in applyInsert. Even if the move would
+    // leave fromPanels.length === 0 transiently, the path short-circuits
+    // before the cleanup branch — there's nothing to clean up.
+    let s = makeSlice();
+    // Reorder containers within col 0 (move from index 0 to after groups).
+    const dragging = { ...s, freeConfig: { ...s.freeConfig, drag: {
+      kind: 'dragging', sourceType: 'containers',
+      target: { kind: 'insert', columnIndex: 0, index: 2, valid: true },
+    } } };
+    const out = mfc.mouseRelease(dragging);
+    eq(out.arrange.columns.length, 2, 'still 2 cols');
+    eq(out.arrange.columns[0].panels.length, 2, 'col 0 still has both panes');
+    eq(out.arrange.columns[0].panels[1].type, 'containers', 'containers moved to end');
   });
 });
 

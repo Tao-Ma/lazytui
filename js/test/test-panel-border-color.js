@@ -95,6 +95,40 @@ describe('wrapColor — markup wrapper that survives nested [/]', () => {
        '[red][red]nested[/][red][/]',
        'redundant [red] re-opens are harmless markup that richToAnsi compiles to repeat SGRs');
   });
+
+  // T2.5 footer end-to-end — pin the exact shape renderFooter writes
+  // (commit 273fa69). The footer is `wrapColor(theme.footer, keys + padding + tags)`
+  // where `keys` may embed colored notices that close with `[/]`. The
+  // bug was: nested `[/]` in `keys` reset to terminal default, and the
+  // trailing padding/tags rendered uncolored. wrapColor re-opens the
+  // outer footer color after each inner reset.
+  it('footer-shaped composition keeps trailing tags in footer color across nested [/]', () => {
+    // Mirrors what renderFooter builds: a chip-ish `keys` containing a
+    // green status notice (closes with [/]), then padding, then a tag.
+    const keys = '? help · [green]added new column at position 2[/] ·';
+    const padding = ' '.repeat(6);
+    const rightTail = '[yellow](dirty)[/]';
+    const tag = ' \\[half]';
+    const wrapped = wrapColor('cyan', `${keys}${padding}${rightTail}${tag}`);
+    const ansi = richToAnsi(wrapped);
+    // The LAST visible chars in the footer are the tag's `]`. The byte
+    // just preceding the final `\x1b[0m` should be inside a footer-color
+    // run, not the terminal default. Easiest check: there must be MORE
+    // than one cyan SGR open in the ANSI — at least one initial open,
+    // then a re-open after each inner [/] in keys + rightTail.
+    const cyanOpens = (ansi.match(/\x1b\[36m/g) || []).length;
+    assert(cyanOpens >= 3, `cyan re-opened ≥3 times (initial + after green[/] + after yellow[/]); got ${cyanOpens}\nansi=${JSON.stringify(ansi)}`);
+    // And: every `\x1b[0m` reset is followed by either another SGR (re-open)
+    // or end-of-string — no plain tail content drifts past a reset.
+    const resets = [...ansi.matchAll(/\x1b\[0m/g)];
+    for (const r of resets) {
+      const idx = r.index + r[0].length;
+      if (idx >= ansi.length) continue;          // trailing reset at EOF is fine
+      const next = ansi.slice(idx, idx + 1);
+      assert(next === '\x1b',
+        `every inner reset must be immediately followed by another SGR; got ${JSON.stringify(ansi.slice(idx, idx + 8))} at pos ${idx}`);
+    }
+  });
 });
 
 describe('richToAnsi — confirm `[/]` is a hard reset (the underlying invariant)', () => {

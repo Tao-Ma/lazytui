@@ -255,4 +255,94 @@ describe('[injectTabTrigger] (o)[≡] layout preserves panel width', () => {
   });
 });
 
+// T2.5 — exhaustive coverage of the four trigger states. Round-1 only
+// pinned the 'normal' state; the open/disabled/hidden branches were
+// drift-prone (4th state added without teaching isTriggerHit twice).
+describe('[trigger state machine] all four states render + click as documented', () => {
+  const { injectTabTrigger, isTriggerHit } = require('../overlay/tab-list');
+  const { renderPanel } = require('../render/panel');
+  const { richToAnsi } = require('../io/ansi');
+  const api = require('../panel/api');
+  const layout = require('../panel/layout');
+  const { getModel } = require('../app/runtime');
+
+  function strip(s) { return s.replace(/\x1b\[[0-9;]*m/g, ''); }
+
+  try { api.registerComponent(layout); } catch (e) { /* already registered */ }
+  const layoutSlice = api.getInstanceSlice('layout');
+  layoutSlice.panelBounds = { detail: { x: 0, y: 0, w: 40, h: 10 } };
+  layoutSlice.focus = 'detail';
+  const md = getModel().modes;
+
+  function withModes(setFlags, fn) {
+    const saved = {};
+    for (const k of Object.keys(setFlags)) { saved[k] = md[k]; md[k] = setFlags[k]; }
+    try { return fn(); } finally { for (const k of Object.keys(saved)) md[k] = saved[k]; }
+  }
+
+  function renderAt() {
+    const out = renderPanel({
+      width: 40, height: 10, lines: [], title: 'Detail', hotkey: 'o', focused: true,
+    });
+    const withTrigger = injectTabTrigger(out, { type: 'detail' });
+    const top = withTrigger.split('\n')[0];
+    return strip(richToAnsi(top));
+  }
+
+  function ansiAt() {
+    const out = renderPanel({
+      width: 40, height: 10, lines: [], title: 'Detail', hotkey: 'o', focused: true,
+    });
+    return richToAnsi(injectTabTrigger(out, { type: 'detail' }));
+  }
+
+  // Hit-test against `(o)`'s `[≡]` glyph: it lands a few cells past the
+  // left border (`╭─(o)`) so `mx ≈ TRIGGER_X_OFFSET` is the [≡] cell.
+  const TRIGGER_HIT_MX = 6;  // safely inside [≡]'s 3-cell band given TRIGGER_X_OFFSET=5
+
+  it('state=normal — colored glyph, clickable', () => {
+    withModes({ tabListMode: false, freeConfigMode: false, cmdMode: false }, () => {
+      const vis = renderAt();
+      assert(vis.includes('[≡]'), `vis row should carry [≡]: ${vis}`);
+      assert(isTriggerHit(TRIGGER_HIT_MX, 0, 'detail'), 'clickable in normal state');
+    });
+  });
+
+  it('state=open (tabListMode on) — reverse video, still clickable (toggles closed)', () => {
+    withModes({ tabListMode: true, freeConfigMode: false, cmdMode: false }, () => {
+      const ansi = ansiAt();
+      // [reverse] markup maps to ANSI 7 (\x1b[7m); strip-style check.
+      assert(/\x1b\[(?:[\d;]*;)?7(?:;|m)/.test(ansi),
+        `open state must include reverse-video escape: ${JSON.stringify(ansi.slice(0, 80))}`);
+      assert(isTriggerHit(TRIGGER_HIT_MX, 0, 'detail'), 'clickable in open state (click closes)');
+    });
+  });
+
+  it('state=disabled (some other chain mode active) — dim, NOT clickable', () => {
+    withModes({ tabListMode: false, freeConfigMode: true, cmdMode: false }, () => {
+      const ansi = ansiAt();
+      // [dim] maps to SGR 2.
+      assert(/\x1b\[(?:[\d;]*;)?2(?:;|m)/.test(ansi),
+        `disabled state must include dim escape: ${JSON.stringify(ansi.slice(0, 80))}`);
+      assert(!isTriggerHit(TRIGGER_HIT_MX, 0, 'detail'),
+        'NOT clickable when another chain mode owns input');
+    });
+    withModes({ tabListMode: false, freeConfigMode: false, cmdMode: true }, () => {
+      assert(!isTriggerHit(TRIGGER_HIT_MX, 0, 'detail'),
+        'NOT clickable while cmdline owns input');
+    });
+  });
+
+  it('isTriggerHit gates on clickability + bounds', () => {
+    withModes({ tabListMode: false, freeConfigMode: false, cmdMode: false }, () => {
+      // y outside top row → miss.
+      assert(!isTriggerHit(TRIGGER_HIT_MX, 1, 'detail'), 'wrong row misses');
+      // mx left of trigger → miss.
+      assert(!isTriggerHit(1, 0, 'detail'), 'mx left of trigger misses');
+      // mx far right → miss.
+      assert(!isTriggerHit(35, 0, 'detail'), 'mx right of trigger misses');
+    });
+  });
+});
+
 report();
