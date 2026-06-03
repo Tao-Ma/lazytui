@@ -54,7 +54,37 @@ function wrapAsPane(entry, paneId) {
   };
 }
 
+/**
+ * Flip a multi-tab pane's active tab. The wide intermediate form means
+ * legacy Panel fields (id/type/title/config + spread config keys) mirror
+ * the active tab's pool entry; switching active rebuilds those from the
+ * new active's pool entry while preserving placement-only fields
+ * (paneId, tabs, hotkey, columnIndex, heightPct, collapsed).
+ *
+ * Pure: returns a fresh pane object. Callers handle the `arrange`-level
+ * splice + undo push + focus follow. Pre-validation (target tab exists,
+ * not already active, pool entry exists) is the caller's responsibility.
+ */
+function setActiveTab(pane, tabPoolId, entry) {
+  const nextPane = {
+    ...(entry.config || {}),
+    id: entry.id,
+    type: entry.type,
+    title: entry.title,
+    hotkey: pane.hotkey,
+    columnIndex: pane.columnIndex,
+    config: entry.config,
+    paneId: pane.paneId,
+    tabs: pane.tabs,
+    activeTabId: tabPoolId,
+  };
+  if (pane.heightPct !== undefined) nextPane.heightPct = pane.heightPct;
+  if (pane.collapsed === true)      nextPane.collapsed = true;
+  return nextPane;
+}
+
 module.exports = {
   newPaneId,
   wrapAsPane,
+  setActiveTab,
 };

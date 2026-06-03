@@ -22,6 +22,7 @@ const mfc = require('../leaves/free-config');
 const mpoolDrag = require('../leaves/free-config-pool-drag');
 const mtabDrag = require('../leaves/tab-drag');
 const mpool = require('../leaves/pool');
+const mpane = require('../leaves/pane');
 const route = require('../leaves/route');
 const { getModel } = require('../app/runtime');
 
@@ -560,24 +561,13 @@ function update(msg, slice) {
       if (pane.activeTabId === tabPoolId) return slice;
       const entry = (arrange.pool || {})[tabPoolId];
       if (!entry) return slice;
-      const nextPane = {
-        ...(entry.config || {}),
-        id: entry.id,
-        type: entry.type,
-        title: entry.title,
-        hotkey: pane.hotkey,
-        columnIndex: pane.columnIndex,
-        config: entry.config,
-        paneId: pane.paneId,
-        tabs: pane.tabs,
-        activeTabId: tabPoolId,
-      };
-      if (pane.heightPct !== undefined) nextPane.heightPct = pane.heightPct;
-      if (pane.collapsed === true)      nextPane.collapsed = true;
+      // mpane.setActiveTab knows the wide-pane shape (legacy Panel
+      // fields + Pane fields + placement-only fields); the Component
+      // arm just splices the rebuilt pane back into the column.
       // Push undo before mutating — tab switches change `activeTabId`
       // which round-trips through :save-layout, so `:switch-tab` from
       // the cmdline should be revertable via `u` in free-config.
-      // Consistent with every other arrange-mutating arm.
+      const nextPane = mpane.setActiveTab(pane, tabPoolId, entry);
       const nextArrange = mpool.updateColumn(arrange, loc.columnIndex, panels => {
         const out = panels.slice();
         out[loc.paneIndex] = nextPane;
