@@ -549,17 +549,16 @@ function update(msg, slice) {
       const next = _commitArrange(slice, nextArrange);
       // Focus follow — when the switched pane was focused, retarget
       // focus to the new active tab id. Otherwise render's
-      // `focus === p.type` highlight (`render/layout.js:369`) misses
-      // the new type and the user's freshly-switched pane drops its
-      // focus highlight. The old pane.id (= pane.activeTabId before
-      // switch) is the canonical focus value most producers write;
-      // pane.paneId is the alternative (pane-tabs.js producers).
-      // Bouncing through focus_set keeps halfLeftPanel + lastViewerTab
-      // + show_selected_info in sync (single source for focus logic).
+      // `focus === p.type` highlight misses the new type and the
+      // user's freshly-switched pane drops its focus highlight.
+      // The old pane.id (= pane.activeTabId before switch) is the
+      // canonical focus value most producers write; pane.paneId is
+      // the alternative (pane-tabs.js producers). _withFocus stamps
+      // focus + halfLeftPanel + lastViewerTab; emit show_selected_info
+      // directly — sibling arms (pool_show, remove_column) do the same.
       const wasFocused = slice.focus === pane.id || slice.focus === pane.paneId;
       if (wasFocused) {
-        return [next, [{ type: 'dispatch_msg',
-          msg: route.wrap('layout', { type: 'focus_set', focus: tabPoolId }) }]];
+        return [_withFocus(next, tabPoolId), [{ type: 'show_selected_info' }]];
       }
       return next;
     }
