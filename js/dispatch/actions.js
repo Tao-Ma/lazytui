@@ -105,16 +105,10 @@ function _jumpInListPanel(target) {
 }
 
 function _pageStep(panelType) {
-  // Read panelBounds[type].h, not panelHeights[type] — the bounds object
-  // is the view-mode-aware height (full availH in half / full view; the
-  // column-share in normal view), while panelHeights is always the
-  // normal-view column-share regardless of viewMode. Reading panelHeights
-  // capped page_up / page_down to the small column-share even when the
-  // pane occupied the entire screen.
-  const slice = getInstanceSlice('layout');
-  const bounds = slice && slice.panelBounds && slice.panelBounds[panelType];
-  const h = (bounds && bounds.h) || 4;
-  return Math.max(1, h - 2);
+  // Single source of truth for view-mode-aware viewport rows.
+  // panelHeights[type] is the normal-view column-share regardless of
+  // viewMode; the API guards against reading it directly here.
+  return require('../render/layout').getPanelViewportH(panelType);
 }
 
 /**

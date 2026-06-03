@@ -198,6 +198,42 @@ function distributeColumnHeights(layoutSlice, panels, availH, isLastCol, minH) {
   }
 }
 
+/**
+ * Inner viewport rows for a panel's CURRENTLY-RENDERED height, view-
+ * mode aware. The on-screen panel in half/full view occupies the full
+ * `availH = max(6, rows - 1)` rows; otherwise the panel uses its
+ * column-share (`panelHeights[type]`). Border + bottom border = 2
+ * rows are subtracted, so the return is the content-row count.
+ *
+ * Single source of truth for any scroll / page / wheel math that
+ * needs "how many rows of content fit in this panel right now". The
+ * `slice.panelHeights[type]` map is INTERNAL to the renderer's
+ * normal-view column distribution — reading it directly from scroll
+ * code is a bug class because it under-reports in half/full view
+ * (see fix arc 2026-06-03 around the GPDATA scroll report).
+ *
+ * Pre-first-render (panelHeights empty), returns a 1-row fallback so
+ * callers don't divide-by-zero.
+ */
+function getPanelViewportH(panelType) {
+  refreshSize();
+  const layoutSlice = getInstanceSlice('layout');
+  if (!layoutSlice) return 1;
+  const ROWS = rows();
+  const availH = Math.max(6, ROWS - 1);
+  const { viewMode, focus, halfLeftPanel } = layoutSlice;
+  let visiblePanel = null;
+  if (viewMode === 'half') {
+    visiblePanel = instanceKind(focus) === 'detail' ? halfLeftPanel : focus;
+  } else if (viewMode === 'full') {
+    visiblePanel = focus;
+  }
+  const h = panelType === visiblePanel
+    ? availH
+    : ((layoutSlice.panelHeights || {})[panelType] || 4);
+  return Math.max(1, h - 2);
+}
+
 function calcLayout(model = getModel()) {
   refreshSize();
   const COLS = cols(), ROWS = rows();
@@ -224,36 +260,17 @@ function calcLayout(model = getModel()) {
     layoutSlice.panelHeights.detail = Math.max(minH, Math.floor(availH * layoutSlice.arrange.detailHeightPct / 100));
   }
 
-  // Heights settled — keep each panel's scroll offset such that the
-  // selected item is in view. syncPanelScroll → setScroll → a wrapped
-  // `set_scroll` Msg to the owning navigator's update, which is the
-  // single writer for nav.scroll. The Msg-from-layout-pass pattern
-  // is the documented blessed exception per v0.5-layering.md §5; the
-  // navigator's `set_scroll` arm is pure + idempotent (returns same
-  // ref when the value is unchanged), so re-renders don't ping-pong.
-  //
-  // Half/full view: the on-screen panel renders at `availH` rows, not
-  // its column-share `panelHeights[type]`. Clamping scroll against the
-  // smaller normal-view height left the bottom of the half-view pane
-  // unused (cursor advance scrolled rows out the top before reaching
-  // the actual viewport bottom). Use availH for whichever panel is
-  // visible in non-normal view.
-  const viewMode = layoutSlice.viewMode;
-  let halfFullVisiblePanel = null;
-  if (viewMode === 'half') {
-    halfFullVisiblePanel = instanceKind(layoutSlice.focus) === 'detail'
-      ? layoutSlice.halfLeftPanel
-      : layoutSlice.focus;
-  } else if (viewMode === 'full') {
-    halfFullVisiblePanel = layoutSlice.focus;
-  }
+  // Keep each panel's scroll offset such that the selected item is in
+  // view. syncPanelScroll → setScroll → a wrapped `set_scroll` Msg
+  // to the owning navigator's update (single writer for nav.scroll).
+  // The Msg-from-layout-pass pattern is documented per v0.5-layering.md
+  // §5; the `set_scroll` arm is pure + identity-preserving so re-
+  // renders don't ping-pong. Heights flow through getPanelViewportH —
+  // the view-mode-aware single source of truth.
   for (const p of mpool.allPanesInColumns(layoutSlice.arrange)) {
     if (mpool.isDetailPane(p)) continue;
     if (p.collapsed) continue;  // no content rows to scroll-clamp against
-    const effectiveH = p.type === halfFullVisiblePanel
-      ? availH
-      : layoutSlice.panelHeights[p.type];
-    syncPanelScroll(p.type, effectiveH - 2);
+    syncPanelScroll(p.type, getPanelViewportH(p.type));
   }
 
   return { ranges, availH };
@@ -911,6 +928,7 @@ function invalidateRows(startY, endY) {
 module.exports = {
   calcLayout, render, redraw, renderFooter, renderTerminalOverlay,
   forceFullRepaint, invalidateRows,
+  getPanelViewportH,
   // Test seam: distributeColumnHeights is a pure function that writes
   // into the slice passed via `layoutSlice.panelHeights`. Exposed so
   // collapsed-honor + heightPct math can be unit-tested without

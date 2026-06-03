@@ -117,6 +117,15 @@ function init() {
     // View-output (written by the render pass, read by mouse hit-tests
     // and free-config drag math). The renderer-as-writer pattern is the
     // documented exception to single-writer — see render/layout.js header.
+    //
+    // CAUTION: `panelHeights[type]` is the NORMAL-view column-share —
+    // not the actual on-screen height. In half/full view the visible
+    // panel renders at `availH`, much larger than its column-share.
+    // For any scroll / page / wheel math that needs "how many content
+    // rows fit in this panel right now", use
+    // `render/layout.js#getPanelViewportH(type)`. Reading panelHeights
+    // directly under-reports in half/full view and silently breaks the
+    // bottom of the viewport (see fix arc 2026-06-03).
     panelHeights: {},
     panelBounds: {},
     // Panel-list overlay state. Opened by `w` (or auto-opened on

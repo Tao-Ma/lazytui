@@ -55,11 +55,10 @@ function _handleWheel(mx, my, delta) {
       const d = _detail();
       const lines = d?.lines || [];
       const curScroll = d?.scroll || 0;
-      // b.h is the view-mode-aware bounds (full availH in half / full
-      // view; column-share in normal). panelHeights.detail was always
-      // the normal-view share even when the viewer occupied the whole
-      // screen — gave the wrong maxScroll in half/full view.
-      const innerH = Math.max(1, b.h - 2);
+      // Single source of truth for the view-mode-aware viewport (P5
+      // arc fix follow-up — panelHeights[type] would have given the
+      // small normal-view share even in half/full view).
+      const innerH = require('../render/layout').getPanelViewportH(p.type);
       const maxScroll = Math.max(0, lines.length - innerH);
       const next = Math.max(0, Math.min(maxScroll, curScroll + delta));
       if (next === curScroll) return false;
