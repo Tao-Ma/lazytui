@@ -507,16 +507,21 @@ describe('[T3-defenses] T3.1/T3.3/T3.4/T3.5 hardening', () => {
   });
 });
 
-describe('[18] pool_show_new_column routes focus through focus_set (T2.4)', () => {
-  it('emits a dispatch_msg(focus_set) Cmd so halfLeftPanel + show_selected_info stay in sync', () => {
+describe('[18] pool_show_new_column applies focus inline (T2.4 + R1.2)', () => {
+  it('writes focus + halfLeftPanel + emits show_selected_info — without dispatch_msg re-entry (R1.2 regression)', () => {
     const slice = makeSlice();
     const r = layout.update({ type: 'pool_show_new_column', id: 'notes', position: 0 }, slice);
     assert(Array.isArray(r), 'returns [slice, cmds] tuple');
-    const [, cmds] = r;
-    const dispatchFocus = cmds.find(c => c && c.type === 'dispatch_msg'
+    const [next, cmds] = r;
+    eq(next.focus, 'history', 'focus stamped to just-placed pool entry type');
+    eq(next.halfLeftPanel, 'history', 'halfLeftPanel sticky updated (history is non-detail)');
+    const showInfo = cmds.find(c => c && c.type === 'show_selected_info');
+    assert(showInfo, 'emits show_selected_info Cmd');
+    const reEntry = cmds.find(c => c && c.type === 'dispatch_msg'
       && c.msg && c.msg.msg && c.msg.msg.type === 'focus_set');
-    assert(dispatchFocus, 'emits a dispatch_msg wrapping focus_set');
-    eq(dispatchFocus.msg.msg.focus, 'history', 'focus targets the just-placed pool entry type');
+    assert(!reEntry, 'no dispatch_msg(focus_set) re-entry — would auto-clear the status notice');
+    eq(next.freeConfig.noticeKind, 'info', 'green status notice survives');
+    assert(/position 1/.test(next.freeConfig.notice), `status notice intact: ${next.freeConfig.notice}`);
   });
 });
 

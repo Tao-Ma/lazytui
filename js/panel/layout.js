@@ -61,6 +61,21 @@ function _withNotice(slice, text, kind) {
   return { ...slice, freeConfig: { ...slice.freeConfig, notice: text, noticeKind: kind || 'error' } };
 }
 
+/** Apply the focus-side fields of the `focus_set` Msg inline — focus,
+ *  halfLeftPanel (sticky non-detail), lastViewerTab (sticky viewer-kind).
+ *  Callers that ALSO want the standard `show_selected_info` Cmd should
+ *  emit it themselves alongside the resulting slice. This exists so
+ *  reducer arms that already produce a layout-mutating slice + a status
+ *  notice can fold focus into the same return value, rather than emit a
+ *  `dispatch_msg(focus_set)` Cmd whose re-entry would trip the
+ *  notice-auto-clear preface and wipe the status before the user sees it. */
+function _withFocus(slice, focus) {
+  if (focus == null) return slice;
+  const halfLeftPanel = route.instanceKind(focus) !== 'detail' ? focus : slice.halfLeftPanel;
+  const lastViewerTab = route.isViewerKind(focus) ? focus : slice.lastViewerTab;
+  return { ...slice, focus, halfLeftPanel, lastViewerTab };
+}
+
 function _dragTargetsEqual(a, b) {
   if (a === b) return true;
   if (!a || !b) return false;
@@ -235,18 +250,10 @@ function update(msg, slice) {
     // the newly-focused panel is an effect (Cmd). msg.focus == null
     // leaves the value put.
     case 'focus_set': {
+      // _withFocus stamps focus + sticky halfLeftPanel + sticky
+      // lastViewerTab. show_selected_info follows the focus change.
       const next = msg.focus != null ? msg.focus : slice.focus;
-      // Track non-detail focus for half view — the left-side panel
-      // sticks at the last non-detail focus so moving focus to detail
-      // doesn't make the other half vanish behind a duplicate detail.
-      const halfLeftPanel = route.instanceKind(next) !== 'detail' ? next : slice.halfLeftPanel;
-      // v0.6.1 Phase 5 — sticky pointer to the most recent viewer-
-      // kind tab. resolveTarget('viewer') reads this when no viewer
-      // is currently focused. instanceKind() == VIEWER_KIND filters
-      // out Navigators / Monitors that should NOT advance the
-      // pointer.
-      const lastViewerTab = route.isViewerKind(next) ? next : slice.lastViewerTab;
-      return [{ ...slice, focus: next, halfLeftPanel, lastViewerTab }, [{ type: 'show_selected_info' }]];
+      return [_withFocus(slice, next), [{ type: 'show_selected_info' }]];
     }
     // v0.6.1 Phase 4 — pane id that owns the open tab-list overlay.
     // Dispatched from the pane-tabs leaf reducer's tab_list_open
@@ -682,17 +689,17 @@ function update(msg, slice) {
       // every pane's columnIndex needs to be re-stamped.
       const nextArrange = mfc.reassignHotkeys(spawned);
       const withUndo = mfc.pushUndo(slice);
-      const spawnedSlice = _withStatus(
+      // Apply focus inline (halfLeftPanel + lastViewerTab + focus
+      // stamped together via _withFocus) instead of re-dispatching
+      // focus_set as a follow-up Cmd. The re-entry would trip the
+      // notice-auto-clear preface at the top of update() and wipe
+      // the status notice before the user saw it.
+      const focused = _withFocus(
         { ...withUndo, arrange: nextArrange, dirty: true },
-        `added new column at position ${position + 1}`,
+        entry.type,
       );
-      // Route focus through `focus_set` so halfLeftPanel + lastViewerTab
-      // get updated and `show_selected_info` fires — same semantics as
-      // any other focus change. clampSelected alone only writes
-      // `slice.focus` and would leave the half-view state stale.
-      return [spawnedSlice, [
-        { type: 'dispatch_msg', msg: route.wrap('layout', { type: 'focus_set', focus: entry.type }) },
-      ]];
+      const spawnedSlice = _withStatus(focused, `added new column at position ${position + 1}`);
+      return [spawnedSlice, [{ type: 'show_selected_info' }]];
     }
     // v0.6.2 Phase 3 — cmdline + programmatic column management.
     // add_column inserts an empty column at `position` (0..N-1);
