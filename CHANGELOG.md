@@ -44,11 +44,13 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 - **Drag-edge spawn.** In free-config mode, dragging a pane (or a
   pool entry from the `w` overlay) within 2 cells of the terminal's
   left edge or an internal column boundary spawns a fresh column at
-  that position. Right-edge spawn is hit-tested but refused — would
-  push detail off the last column. Detail / actions sources are
-  refused for all new-column drops (they're reserved to the last
-  column). New column's width is stolen from the adjacent column(s);
-  source columns that go empty are auto-removed.
+  that position. The right edge is NOT hit-tested as a spawn zone —
+  the rightmost cells fall through to the last column's in-column
+  3-zone hit; `:add-column N_cols+1` mirrors the refusal at the
+  cmdline (would push detail off the last column). Detail / actions
+  sources are refused for all new-column drops (they're reserved to
+  the last column). New column's width is stolen from the adjacent
+  column(s); source columns that go empty are auto-removed.
 
 - **`:add-column [N]` / `:remove-column <N>` cmdline verbs.** Insert
   an empty column at 1-based position `N` (default: just before the
