@@ -131,10 +131,7 @@ function installBuiltins() {
   // 'detail' singleton; multi-viewer in Phase 6+). null → no viewer
   // registered, drop the Cmd silently.
   registerEffect('show_selected_info', () => {
-    try {
-      const target = route.resolveTarget('viewer');
-      if (target) api.dispatchMsg(api.wrap(target, { type: 'viewer_show_info' }));
-    } catch (_) { /* no renderer (test) */ }
+    try { require('./dispatch').showSelectedInfo(); } catch (_) { /* no renderer (test) */ }
   });
   // destroy_pty_session: PTY teardown from the viewer-tab lifecycle (closing
   // an ephemeral terminal tab — emitted by detail.update's

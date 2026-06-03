@@ -21,15 +21,8 @@ const {getPanelDef, getItems, getInstanceSlice, dispatchMsg, wrap, getFocus, ins
 const route = require('../leaves/route');
 const { isChainActive } = require('./modes');
 
-// v0.6.1 Phase 6 — producer-side viewer body refresh resolves through
-// resolveTarget so multi-viewer (Phase 6+) hits the focused/sticky one.
-function _showSelectedInfo() {
-  const target = route.resolveTarget('viewer');
-  if (target) dispatchMsg(wrap(target, { type: 'viewer_show_info' }));
-}
-
 function _detail() { return getInstanceSlice('detail'); }
-const { handleKey, applyMsg } = require('./dispatch');
+const { handleKey, applyMsg, showSelectedInfo } = require('./dispatch');
 const { cleanup } = require('../app/cleanup');
 
 // --- Mouse handling ---
@@ -89,7 +82,7 @@ function _handleWheel(mx, my, delta) {
       // Refresh detail only when the wheel landed on the focused panel
       // (so its info reflects the new selection); wheeling over a side
       // panel without focus shouldn't clobber detail.
-      if (p.type === getFocus()) _showSelectedInfo();
+      if (p.type === getFocus()) showSelectedInfo();
       return true;
     }
     return false;
@@ -416,7 +409,7 @@ function handleMouse(kind, x, y) {
         }
       }
     }
-    _showSelectedInfo();
+    showSelectedInfo();
     mutated = true;
     break;
   }

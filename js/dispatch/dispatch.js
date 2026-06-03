@@ -58,8 +58,10 @@ const { handleAction, _runActionByKey } = require('./actions');
  */
 // v0.6.1 Phase 6 — producer-side viewer body refresh resolves through
 // resolveTarget so multi-viewer (Phase 6+) hits the focused/sticky one.
-// null result drops the Cmd silently.
-function _showSelectedInfo() {
+// null result drops the dispatch silently. Single source of truth:
+// the `show_selected_info` Cmd handler in effects.js delegates here,
+// and input.js imports this via the dispatch.js exports below.
+function showSelectedInfo() {
   const target = route.resolveTarget('viewer');
   if (target) dispatchMsg(wrap(target, { type: 'viewer_show_info' }));
 }
@@ -68,7 +70,7 @@ function navSelect(panelType, index) {
   const compName = getComponentOwningPanel(panelType);
   if (!compName) return;
   dispatchMsg(wrap(compName, { type: 'set_cursor', panel: panelType, index }));
-  _showSelectedInfo();
+  showSelectedInfo();
   if (panelType === 'groups') {
     dispatchMsg(wrap('groups', { type: 'groups_selected', index }));
   }
@@ -174,8 +176,8 @@ function _enterFilterMode() {
 }
 
 function handleFilterKey(key, seq) {
-  if (key === 'escape') { applyMsg({ type: 'filter_exit', keep: false }); _showSelectedInfo(); return; }
-  if (key === 'return') { applyMsg({ type: 'filter_exit', keep: true  }); _showSelectedInfo(); return; }
+  if (key === 'escape') { applyMsg({ type: 'filter_exit', keep: false }); showSelectedInfo(); return; }
+  if (key === 'return') { applyMsg({ type: 'filter_exit', keep: true  }); showSelectedInfo(); return; }
   if (key === 'up'   || seq === 'k') { handleAction('nav_up');   return; }
   if (key === 'down' || seq === 'j') { handleAction('nav_down'); return; }
   // T26 — thread `key` through so the reducer can detect paste
@@ -606,7 +608,7 @@ const _modeHandlers = {
   detailSearchMode:    (key, seq) => handleDetailSearchKey(key, seq),
   registerPopupMode:   (key, seq) => handleRegisterPopupKey(key, seq),
   prefixMode:          (key, seq) => applyMsg({ type: 'prefix_key', key, seq }),
-  cmdMode:             (key, seq) => { handleCmdlineKey(key, seq); _showSelectedInfo(); },
+  cmdMode:             (key, seq) => { handleCmdlineKey(key, seq); showSelectedInfo(); },
   tabListMode:         (key, seq) => handleTabListKey(key, seq),
 };
 
@@ -735,6 +737,7 @@ function applyMsg(msg) {
 
 module.exports = {
   handleKey, handleAction, applyMsg, navSelect, startFreeConfig,
+  showSelectedInfo,
   registerKeyFilter, clearKeyFilters,
   loadKeyBindings,
   // Exposed so actions.js (the carved-out handleAction switch) can lazy-
