@@ -76,9 +76,14 @@ function _renderCollapsed(p, w) {
   // and right corner. truncate() is a no-op when visibleLen fits.
   titleText = truncate(titleText, innerW - 2);
   const fill = innerW - visibleLen(titleText);
-  if (fill >= 2)      return `[${fc}]╭─${titleText}${'─'.repeat(fill - 1)}╮[/]`;
-  else if (fill === 1) return `[${fc}]╭${titleText}─╮[/]`;
-  else                 return `[${fc}]╭${titleText}╮[/]`;
+  // Re-emit `[${fc}]` after the title so a `[/]` inside the title's
+  // markup (e.g. `[dim]…[/]` suffix) doesn't drop the outer border
+  // color for the trailing fill chars. See renderPanel's top-border
+  // comment for the full story.
+  const fcReopen = `[${fc}]`;
+  if (fill >= 2)      return `[${fc}]╭─${titleText}${fcReopen}${'─'.repeat(fill - 1)}╮[/]`;
+  else if (fill === 1) return `[${fc}]╭${titleText}${fcReopen}─╮[/]`;
+  else                 return `[${fc}]╭${titleText}${fcReopen}╮[/]`;
 }
 
 function rendererFor(type) {

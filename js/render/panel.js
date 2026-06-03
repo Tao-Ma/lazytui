@@ -94,13 +94,23 @@ function renderPanel({
   // visibleLen ≤ maxWidth, so the common (fits) case is a no-op.
   titleText = truncate(titleText, innerW - 2);
   const fill = innerW - visibleLen(titleText);
+  // Titles can carry markup with embedded `[/]` (e.g. files panel's
+  // `[dim]\[docker:pg][/]` suffix). richToAnsi treats `[/]` as a hard
+  // reset (\x1b[0m), so the outer `[${fc}]` border color drops after
+  // any inner `[/]` and the trailing fill chars render in terminal
+  // default — visible as black on light terminals. Re-emit `[${fc}]`
+  // after the title so the fill picks the border color back up. In
+  // normal view this was masked by injectTopRowChrome (which writes
+  // its own `[${fc}]` after each chrome glyph); half/full view skip
+  // that injection and the bug was naked.
+  const fcReopen = `[${fc}]`;
   let top;
   if (fill >= 2) {
-    top = `[${fc}]${b.tl}${b.h}${titleText}${b.h.repeat(fill - 1)}${b.tr}[/]`;
+    top = `[${fc}]${b.tl}${b.h}${titleText}${fcReopen}${b.h.repeat(fill - 1)}${b.tr}[/]`;
   } else if (fill === 1) {
-    top = `[${fc}]${b.tl}${titleText}${b.h}${b.tr}[/]`;
+    top = `[${fc}]${b.tl}${titleText}${fcReopen}${b.h}${b.tr}[/]`;
   } else {
-    top = `[${fc}]${b.tl}${titleText}${b.tr}[/]`;
+    top = `[${fc}]${b.tl}${titleText}${fcReopen}${b.tr}[/]`;
   }
 
   // --- Bottom border ---
