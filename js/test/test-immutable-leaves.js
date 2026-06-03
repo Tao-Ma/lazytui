@@ -341,7 +341,6 @@ describe('[immutable] leaves/free-config.js', () => {
       () => mfc.titleEnter(slice),
       slice,
     );
-    eq(out.freeConfig.titleEdit.active, true);
     eq(out.freeConfig.titleEdit.text, 'A', 'seeded from selected panel title');
   });
 

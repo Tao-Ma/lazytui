@@ -102,7 +102,7 @@ function init() {
       drag: null,
       undo: [],
       redo: [],
-      titleEdit: { active: false, text: '' },
+      titleEdit: { text: '' },
       // Transient hint surfaced in the footer when a free-config /
       // view-mode transition is blocked. Cleared when the user reaches
       // a state where the block no longer applies (free_config_exit,
@@ -329,7 +329,7 @@ function update(msg, slice) {
       const next = {
         ...slice,
         focus,
-        freeConfig: { drag: null, undo: [], redo: [], titleEdit: { active: false, text: '' }, notice: null, noticeKind: null },
+        freeConfig: { drag: null, undo: [], redo: [], titleEdit: { text: '' }, notice: null, noticeKind: null },
         panelList: { open: hasHidden, cursor: 0 },
       };
       // Auto-opening the panel-list overlay needs force_full_repaint
@@ -353,7 +353,7 @@ function update(msg, slice) {
       // focus change.
       const next = {
         ..._withFocus(slice, slice.focus),
-        freeConfig: { drag: null, undo: [], redo: [], titleEdit: { active: false, text: '' }, notice: null, noticeKind: null },
+        freeConfig: { drag: null, undo: [], redo: [], titleEdit: { text: '' }, notice: null, noticeKind: null },
         panelList: { open: false, cursor: 0 },
       };
       return [next, [
@@ -389,8 +389,13 @@ function update(msg, slice) {
       // mode flag from flipping but the buffer reset can still race
       // here) should preserve slice identity. setSelectedTitle already
       // identity-preserves on no-op text.
-      if (next.freeConfig && next.freeConfig.titleEdit && next.freeConfig.titleEdit.active) {
-        next = { ...next, freeConfig: { ...next.freeConfig, titleEdit: { active: false, text: '' } } };
+      // Title-edit "is currently open" is tracked by the root mode flag
+      // (`modes.freeConfigTitleEditMode`) — not duplicated on the slice
+      // (AR1). When R1.4's title_enter no-op left the flag clear (no
+      // panel selected), skip the buffer reset so slice identity is
+      // preserved.
+      if (getModel().modes.freeConfigTitleEditMode) {
+        next = { ...next, freeConfig: { ...next.freeConfig, titleEdit: { text: '' } } };
       }
       return [next, [{ type: 'msg', msg: { type: 'mode_clear', flag: 'freeConfigTitleEditMode' } }]];
     }
@@ -493,7 +498,7 @@ function update(msg, slice) {
     }
     case 'free_config_title_cancel': {
       const next = slice.freeConfig
-        ? { ...slice, freeConfig: { ...slice.freeConfig, titleEdit: { active: false, text: '' } } }
+        ? { ...slice, freeConfig: { ...slice.freeConfig, titleEdit: { text: '' } } }
         : slice;
       return [next, [{ type: 'msg', msg: { type: 'mode_clear', flag: 'freeConfigTitleEditMode' } }]];
     }

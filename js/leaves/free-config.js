@@ -466,7 +466,7 @@ function titleEnter(slice) {
   if (!d) return slice;
   const p = mpool.allPanesInColumns(slice.arrange)[selectedIdx(slice)];
   if (!p) return slice;
-  return { ...slice, freeConfig: { ...d, titleEdit: { active: true, text: p.title || '' } } };
+  return { ...slice, freeConfig: { ...d, titleEdit: { text: p.title || '' } } };
 }
 
 /** Commit a non-empty, changed title to the focused panel (pushes one undo). */
