@@ -616,17 +616,15 @@ function render(model = getModel()) {
       layoutSlice.panelBounds = savedBounds;
     }
   }
-  // Cache the detail panel's effective viewport on detail's own slice
-  // so viewer.update can clamp scroll/cursor without reading layout's
-  // render-time geometry across slices. Blessed render-side write into
-  // an owning slice (same shape as syncPanelScroll → set_scroll). Pair
-  // with viewer_set_viewport's identity-preserve guard — when nothing
-  // changed the Msg short-circuits before any allocation. Uses the
-  // original (non-preview) bounds — the viewer's actual state hasn't
-  // committed to the drag yet, so its viewport tracks the real layout.
-  // v0.6.1 Phase 8 — viewer_set_viewport targets the viewer pane's
-  // own tab id. For Phase 8 singleton this is 'detail' (same string
-  // as today); multi-viewer rendering will iterate per-pane.
+  // Cache the detail panel's effective viewport on the viewer's own
+  // slice so viewer.update can clamp scroll/cursor without reading
+  // layout's render-time geometry across slices. Blessed render-side
+  // write — same documented exception as panelBounds (frame-derived,
+  // pure function of layout). Uses the original (non-preview) bounds:
+  // the viewer's actual state hasn't committed to the drag yet, so its
+  // viewport tracks the real layout. R4.9: direct setInstanceSlice
+  // instead of a wrapped viewer_set_viewport Msg + 5-line reducer arm
+  // — the Msg's only effect was this single-field write.
   const route = require('../leaves/route');
   const viewerTab = route.resolveTarget('viewer');
   const viewerBounds = viewerTab && layoutSlice.panelBounds && layoutSlice.panelBounds[viewerTab];
@@ -634,7 +632,7 @@ function render(model = getModel()) {
     const innerH = Math.max(0, viewerBounds.h - 2);
     const viewerSlice = getInstanceSlice(viewerTab);
     if (viewerSlice && viewerSlice.innerH !== innerH) {
-      dispatchMsg(wrap(viewerTab, { type: 'viewer_set_viewport', innerH }));
+      route.setInstanceSlice(viewerTab, { ...viewerSlice, innerH });
     }
   }
   renderFooter(model);

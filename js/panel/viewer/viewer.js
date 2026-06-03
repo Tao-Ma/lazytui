@@ -189,15 +189,6 @@ function update(msg, slice) {
       if (scroll === slice.scroll) return slice;
       return { ...slice, scroll };
     }
-    case 'viewer_set_viewport': {
-      // Render-side cache update. layout.render() dispatches this after
-      // panelBounds settle so subsequent reducer-only scroll/append/cursor
-      // clamps don't have to reach into the layout slice. Identity-preserve
-      // on no-op (cheap render-tail call when nothing changed).
-      const innerH = Math.max(0, msg.innerH | 0);
-      if (innerH === slice.innerH) return slice;
-      return { ...slice, innerH };
-    }
     case 'viewer_append': {
       // Hot path — streamed action output can fire 500-1000 lines/sec.
       // Per the arc rule, no in-place exception: spread lines fresh each
