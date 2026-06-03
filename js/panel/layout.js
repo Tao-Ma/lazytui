@@ -618,6 +618,12 @@ function update(msg, slice) {
       return { ...slice, panelList: { ...slice.panelList, cursor: next } };
     }
     case 'panel_list_pick': {
+      // Close the overlay and re-dispatch the canonical pool_hide /
+      // pool_show Msg — those arms handle undo push, hotkey rekey,
+      // focus clamp, and show_selected_info on focus moves.
+      // Considered inlining (R4 review's R4.13) — rejected: would
+      // duplicate ~30 lines of pool_hide/pool_show body for one extra
+      // Cmd hop saved. Re-dispatch wins.
       const items = mpool.panelListItems(slice.arrange);
       const item = items[slice.panelList ? slice.panelList.cursor : 0];
       if (!item || item.status === 'essential') return slice;
