@@ -182,6 +182,14 @@ function reduceViewMode(viewMode, msg) {
   }
 }
 
+// Refusal notice text shared between the view-mode-guard arm and the
+// `_potentialBlockedNotice` reassert detector. The auto-clear preface
+// does string-equality on the slice's current notice vs. the
+// reasserted-notice; a typo in either copy would silently break the
+// short-circuit (slice churn on every repeated blocked attempt).
+const NOTICE_VIEW_BLOCKED_IN_FREE_CONFIG = 'exit free-config (q) to change view mode';
+const NOTICE_FREE_CONFIG_REQUIRES_NORMAL = 'free-config requires normal view ([ to return)';
+
 /** What notice (if any) would this Msg's blocked-action arm set?
  *  Used for the notice auto-clear short-circuit: a Msg that would
  *  RE-ASSERT the current notice preserves slice identity (no churn on
@@ -191,10 +199,10 @@ function reduceViewMode(viewMode, msg) {
 function _potentialBlockedNotice(slice, msg) {
   if (msg.type === 'view_expand' || msg.type === 'view_shrink') {
     const md = getModel().modes;
-    if (md && md.freeConfigMode) return 'exit free-config (q) to change view mode';
+    if (md && md.freeConfigMode) return NOTICE_VIEW_BLOCKED_IN_FREE_CONFIG;
   }
   if (msg.type === 'free_config_enter' && slice.viewMode !== 'normal') {
-    return 'free-config requires normal view ([ to return)';
+    return NOTICE_FREE_CONFIG_REQUIRES_NORMAL;
   }
   return null;
 }
@@ -236,7 +244,7 @@ function update(msg, slice) {
       const md = getModel().modes;
       const isUserInput = msg.type === 'view_expand' || msg.type === 'view_shrink';
       if (md && md.freeConfigMode && isUserInput) {
-        const target = 'exit free-config (q) to change view mode';
+        const target = NOTICE_VIEW_BLOCKED_IN_FREE_CONFIG;
         // Short-circuit: if notice already matches, slice ref is preserved
         // (the auto-clear above also preserved it via wouldReassert).
         if (slice.freeConfig && slice.freeConfig.notice === target) return slice;
@@ -329,7 +337,7 @@ function update(msg, slice) {
       // operate on the full grid and need every cell visible. Surface a
       // notice so the user knows why `q` / `:free-config` didn't fire.
       if (slice.viewMode !== 'normal') {
-        const target = 'free-config requires normal view ([ to return)';
+        const target = NOTICE_FREE_CONFIG_REQUIRES_NORMAL;
         if (slice.freeConfig && slice.freeConfig.notice === target) return slice;
         return _withNotice(slice, target, 'error');
       }
