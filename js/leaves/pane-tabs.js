@@ -394,15 +394,21 @@ function reduceTabMsg(msg, slice, ctx) {
         next = { ...next, lines: [], scroll: 0 };
         effects.push({ type: 'msg', msg: wrap(paneId, { type: 'viewer_show_info' }) });
       } else if (idx <= actionTabs.length) {
-        // v0.6.2 — action tabs are view-only on switch. Phase 1: show
-        // a "press Enter to run" placeholder; the run gesture lives in
-        // dispatch/actions.js's run_selected arm (Enter on a focused
-        // detail when the active tab is an action tab). Pre-Phase-1
-        // tab_switch auto-ran the action via a stream_action Cmd —
-        // which made a stray mouse click execute commands and which
-        // killed any in-progress run when the user toggled away and
-        // back. Drop both side effects.
-        next = { ...next, lines: ['[dim]Press Enter to run.[/]'], scroll: 0 };
+        // v0.6.2 — action tabs are view-only on switch. Phase 2:
+        // restore slice.lines from actionTabBuffers[group][actionKey]
+        // if the action has been run before; otherwise paint the
+        // "[press Enter to run]" placeholder. The buffer survives
+        // tab switches — switching away and back shows whatever was
+        // captured before kill_proc froze the producer.
+        const [actionKey] = actionTabs[idx - 1];
+        const groupName = getModel().currentGroup;
+        const buf = slice.actionTabBuffers
+          && slice.actionTabBuffers[groupName]
+          && slice.actionTabBuffers[groupName][actionKey];
+        const lines = buf && Array.isArray(buf.lines) && buf.lines.length > 0
+          ? buf.lines.slice()
+          : ['[dim]Press Enter to run.[/]'];
+        next = { ...next, lines, scroll: 0 };
       } else if (idx <= actionTabs.length + termTabs.length) {
         next = { ...next, lines: [], scroll: 0 };
       } else {

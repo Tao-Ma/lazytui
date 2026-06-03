@@ -123,6 +123,16 @@ function init() {
     cursor: { line: 0, col: 0 },
     contentTabs: {},          // [groupName]: { [key]: { label, lines } }
     ephemeralTerminals: {},   // [groupName]: { [key]: { cmd, label } }
+    // Per-action-tab streamed-output buffer.
+    //   [groupName]: { [actionKey]: { lines } }
+    // Populated by stream_start / viewer_append when the Msg carries
+    // {tabKey, groupName}; tab_switch's action arm restores slice.lines
+    // from here (or paints the "[press Enter to run]" placeholder if
+    // no buffer yet). The buffer survives tab switches — switching
+    // away and back shows whatever was captured before kill_proc
+    // froze the stream. Phase 3 will drop kill_proc on tab leave so
+    // the proc keeps streaming into the buffer in the background.
+    actionTabBuffers: {},
     // Tab-list overlay (the `[≡]` switcher anchored to detail's top-left).
     // `cursor` is the row index in the flat tab list (Info..actions..
     // terminals..content); `scroll` is the first visible row when the
@@ -201,6 +211,35 @@ function update(msg, slice) {
       // 1k/sec target. If field reports show pressure on long-running
       // streams (100k+ lines / GC pauses), the documented mitigations
       // are ring-buffer trim or a coalesced/batched append Msg.
+      //
+      // v0.6.2 Phase 2 — when msg.tabKey + msg.groupName are set, the
+      // append is "routed": writes to actionTabBuffers[group][tabKey]
+      // unconditionally, mirrors to slice.lines only when the active
+      // tab in the current group is that action's tab. Unrouted
+      // appends fall through to the legacy slice.lines write.
+      if (msg.tabKey && msg.groupName) {
+        const all = slice.actionTabBuffers || {};
+        const group = all[msg.groupName] || {};
+        const buf = group[msg.tabKey] || { lines: [] };
+        const bufLines = [...buf.lines, msg.line];
+        const nextAll = {
+          ...all,
+          [msg.groupName]: { ...group, [msg.tabKey]: { lines: bufLines } },
+        };
+        const m = getModel();
+        if (msg.groupName === m.currentGroup) {
+          const active = pt.activeActionTabIn(slice, m, m.currentGroup);
+          if (active && active[0] === msg.tabKey) {
+            const innerH = _innerH(slice);
+            const maxScroll = Math.max(0, slice.lines.length - innerH);
+            const wasAtBottom = slice.scroll >= maxScroll;
+            const lines = [...slice.lines, msg.line];
+            const scroll = wasAtBottom ? Math.max(0, lines.length - innerH) : slice.scroll;
+            return { ...slice, actionTabBuffers: nextAll, lines, scroll };
+          }
+        }
+        return { ...slice, actionTabBuffers: nextAll };
+      }
       const innerH = _innerH(slice);
       const maxScroll = Math.max(0, slice.lines.length - innerH);
       const wasAtBottom = slice.scroll >= maxScroll;
@@ -208,11 +247,37 @@ function update(msg, slice) {
       const scroll = wasAtBottom ? Math.max(0, lines.length - innerH) : slice.scroll;
       return { ...slice, lines, scroll };
     }
-    case 'stream_start':
+    case 'stream_start': {
       // Streamed command output: header replaces body, scroll reset. Lives
       // here (not in viewer_set_content) because callers conceptualize it as
       // "start a streaming session" — the lines write is the side effect.
+      //
+      // v0.6.2 Phase 2 — when msg.tabKey + msg.groupName are set, the
+      // header also seeds actionTabBuffers[group][tabKey] AND auto-jumps
+      // slice.tab to that action's index (so the user sees the new
+      // stream even if they were on a different tab when they pressed
+      // Enter). When groupName !== currentGroup the auto-jump skips —
+      // the buffer write still happens so a future group switch shows
+      // the captured run.
+      if (msg.tabKey && msg.groupName) {
+        const all = slice.actionTabBuffers || {};
+        const group = all[msg.groupName] || {};
+        const nextAll = {
+          ...all,
+          [msg.groupName]: { ...group, [msg.tabKey]: { lines: [msg.header] } },
+        };
+        const m = getModel();
+        if (msg.groupName === m.currentGroup) {
+          const info = pt.flatTabInfo(slice, m, m.currentGroup);
+          const idx = info.actionTabs.findIndex(([k]) => k === msg.tabKey);
+          if (idx >= 0) {
+            return { ...slice, actionTabBuffers: nextAll, lines: [msg.header], scroll: 0, tab: 1 + idx };
+          }
+        }
+        return { ...slice, actionTabBuffers: nextAll };
+      }
       return { ...slice, lines: [msg.header], scroll: 0 };
+    }
     case 'viewer_set_tab': {
       const tab = msg.tab | 0;
       if (tab === slice.tab) return slice;

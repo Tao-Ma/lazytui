@@ -52,32 +52,49 @@ function killCurrentProc() {
 // v0.6.1 Phase 6 — destination resolves via route.resolveTarget('viewer'); a
 // null result (no viewer registered) drops the line silently. Producer-side
 // write: stream output flows toward "the viewer," not a specific pane.
-function appendDetailLine(line) {
+//
+// v0.6.2 Phase 2 — when tabKey + groupName are set, the append is routed
+// into actionTabBuffers[group][tabKey] in the viewer reducer (and mirrored
+// to slice.lines iff that action's tab is the active one). Unrouted appends
+// land on slice.lines directly (no buffer; legacy path).
+function appendDetailLine(line, tabKey, groupName) {
   const route = require('../leaves/route');
   const target = route.resolveTarget('viewer');
   if (target == null) return;
   const api = require('../panel/api');
-  api.dispatchMsg(api.wrap(target, { type: 'viewer_append', line }));
+  const msg = tabKey && groupName
+    ? { type: 'viewer_append', line, tabKey, groupName }
+    : { type: 'viewer_append', line };
+  api.dispatchMsg(api.wrap(target, msg));
 }
 
 /**
  * Stream a shell command's stdout/stderr to the detail panel.
  * Replaces detail content with `$ headerLabel` and appends lines as they
  * arrive. Used by runAction (type:run) and action-tab activation.
+ *
+ * opts.tabKey + opts.groupName route the stream into a per-action-tab
+ * buffer (Phase 2). When unset, output flows directly into slice.lines
+ * (legacy / no-tab actions).
  */
-function streamCommand(headerLabel, cmd, args = []) {
+function streamCommand(headerLabel, cmd, args = [], opts = {}) {
   killCurrentProc();
   const route = require('../leaves/route');
   const target = route.resolveTarget('viewer');
   if (target == null) return;     // no viewer registered — nothing to stream into
   const api = require('../panel/api');
+  const tabKey = opts.tabKey || null;
+  const groupName = opts.groupName || null;
   // T32 — esc the dynamic header. Callers pass `actionKey` (YAML key) or
   // `verb <container>` strings; a `[` or `\t` in either would corrupt
   // the markup parse / panel padding (same class as the postgresql.conf
   // tab bug).
   // v0.6.1 Phase 6 — stream_start (and every appendDetailLine below)
   // flows to resolveTarget's destination, not the singleton 'detail'.
-  api.dispatchMsg(api.wrap(target, { type: 'stream_start', header: `[dim]$ ${esc(headerLabel)}[/]` }));
+  const startMsg = tabKey && groupName
+    ? { type: 'stream_start', header: `[dim]$ ${esc(headerLabel)}[/]`, tabKey, groupName }
+    : { type: 'stream_start', header: `[dim]$ ${esc(headerLabel)}[/]` };
+  api.dispatchMsg(api.wrap(target, startMsg));
   scheduleRender();
 
   // -- delimiter so $0 = "--", $1 = first arg, $@ = arg list (POSIX).
@@ -99,7 +116,7 @@ function streamCommand(headerLabel, cmd, args = []) {
     const lines = buffer.split('\n');
     buffer = lines.pop();
     for (const line of lines) {
-      appendDetailLine(esc(line));
+      appendDetailLine(esc(line), tabKey, groupName);
       rec.append(line);
     }
     scheduleRender();
@@ -117,10 +134,10 @@ function streamCommand(headerLabel, cmd, args = []) {
     // sender; emit U+FFFD per Node's standard behavior).
     const tail = decoder.end();
     if (tail) buffer += tail;
-    if (buffer) { appendDetailLine(esc(buffer)); rec.append(buffer); buffer = ''; }
-    if (signal) { appendDetailLine(`[yellow]Killed (${signal})[/]`); rec.end(`signal:${signal}`); }
-    else if (code === 0) { appendDetailLine('[green]Done.[/]'); rec.end(0); }
-    else { appendDetailLine(`[red]Exit ${code}[/]`); rec.end(code); }
+    if (buffer) { appendDetailLine(esc(buffer), tabKey, groupName); rec.append(buffer); buffer = ''; }
+    if (signal) { appendDetailLine(`[yellow]Killed (${signal})[/]`, tabKey, groupName); rec.end(`signal:${signal}`); }
+    else if (code === 0) { appendDetailLine('[green]Done.[/]', tabKey, groupName); rec.end(0); }
+    else { appendDetailLine(`[red]Exit ${code}[/]`, tabKey, groupName); rec.end(code); }
     scheduleRender();
   });
 
@@ -128,7 +145,7 @@ function streamCommand(headerLabel, cmd, args = []) {
     if (proc !== currentProc) return;
     currentProc = null;
     currentRecord = null;
-    appendDetailLine(`[red]Error: ${esc(err.message)}[/]`);
+    appendDetailLine(`[red]Error: ${esc(err.message)}[/]`, tabKey, groupName);
     rec.append(`Error: ${err.message}`);
     rec.end('error');
     scheduleRender();
