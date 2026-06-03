@@ -361,8 +361,17 @@ function update(msg, slice) {
     case 'free_config_panel_height': return mfc.resizeFocusedPanelHeight(slice, msg.delta);
     case 'free_config_undo':         return mfc.clampSelected(mfc.undo(slice));
     case 'free_config_redo':         return mfc.clampSelected(mfc.redo(slice));
-    case 'free_config_title_enter':
-      return [mfc.titleEnter(slice), [{ type: 'apply_msg', msg: { type: 'mode_set', flag: 'freeConfigTitleEditMode' } }]];
+    case 'free_config_title_enter': {
+      // titleEnter no-ops (returns the same slice ref) when no panel
+      // is selected (`selectedIdx === -1`, e.g. focus is stale or the
+      // grid is empty). Don't flip the chain-mode flag in that case —
+      // it would route subsequent keystrokes into the title-edit
+      // handler while the overlay paints nothing, leaving the user
+      // stuck with no visible UI until they hit Esc.
+      const next = mfc.titleEnter(slice);
+      if (next === slice) return slice;
+      return [next, [{ type: 'apply_msg', msg: { type: 'mode_set', flag: 'freeConfigTitleEditMode' } }]];
+    }
     case 'free_config_title_submit': {
       const text = slice.freeConfig ? slice.freeConfig.titleEdit.text : '';
       let next = mfc.setSelectedTitle(slice, text);
