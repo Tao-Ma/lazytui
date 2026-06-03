@@ -208,9 +208,9 @@ ignoring unknown types is forward-compatible.
    argument.
 2. **Components MUST NOT write the root model.** A Component's own
    slice is the only thing its `update` writes directly; cross-layer
-   writes go out as effects — `apply_msg` (re-dispatch a Msg through
-   the root reducer) or `dispatch_msg` (re-dispatch to another
-   Component, with `api.wrap('target', innerMsg)`). The framework
+   writes go out as a `{type:'msg', msg}` effect — a wrapped Msg
+   (`api.wrap('target', innerMsg)`) fans out to the named Component;
+   a flat Msg re-dispatches through the root reducer. The framework
    runs them, so the single-writer rule per layer is preserved.
 3. **`update()` is pure.** No I/O, no `setTimeout`, no side effects.
    The output is the next slice (or `[slice, effects]`). Async work
