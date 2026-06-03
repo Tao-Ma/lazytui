@@ -231,10 +231,29 @@ function calcLayout(model = getModel()) {
   // is the documented blessed exception per v0.5-layering.md §5; the
   // navigator's `set_scroll` arm is pure + idempotent (returns same
   // ref when the value is unchanged), so re-renders don't ping-pong.
+  //
+  // Half/full view: the on-screen panel renders at `availH` rows, not
+  // its column-share `panelHeights[type]`. Clamping scroll against the
+  // smaller normal-view height left the bottom of the half-view pane
+  // unused (cursor advance scrolled rows out the top before reaching
+  // the actual viewport bottom). Use availH for whichever panel is
+  // visible in non-normal view.
+  const viewMode = layoutSlice.viewMode;
+  let halfFullVisiblePanel = null;
+  if (viewMode === 'half') {
+    halfFullVisiblePanel = instanceKind(layoutSlice.focus) === 'detail'
+      ? layoutSlice.halfLeftPanel
+      : layoutSlice.focus;
+  } else if (viewMode === 'full') {
+    halfFullVisiblePanel = layoutSlice.focus;
+  }
   for (const p of mpool.allPanesInColumns(layoutSlice.arrange)) {
     if (mpool.isDetailPane(p)) continue;
     if (p.collapsed) continue;  // no content rows to scroll-clamp against
-    syncPanelScroll(p.type, layoutSlice.panelHeights[p.type] - 2);
+    const effectiveH = p.type === halfFullVisiblePanel
+      ? availH
+      : layoutSlice.panelHeights[p.type];
+    syncPanelScroll(p.type, effectiveH - 2);
   }
 
   return { ranges, availH };
