@@ -272,46 +272,17 @@ function computePoolDragPreviewArrange(slice) {
 /** Build a new arrange with a freshly-spawned column at `position`
  *  containing the single `placement` pane. Pure transform — used by
  *  the live preview AND the reducer's pool_show_new_column arm. Width
- *  allocation: edge spawns at the END produce an implicit-width new
- *  last column (old last gets promoted to explicit); everything else
- *  gets an explicit width stolen from adjacent columns. Width math
- *  mirrors leaves/free-config.js#applyNewColumn so the preview
- *  matches what release will commit. */
+ *  allocation routes through `mfc.allocateNewColumnWidth` so the math
+ *  agrees with applyNewColumn (in-grid drag) and addColumn (cmdline).
+ *  Position is guaranteed inside [0, columns.length - 1] by both
+ *  callers — the position == N case was the "becomes new last" path
+ *  which all validators refuse (would demote the detail-bearing
+ *  previous last off "last"). */
 function spawnNewColumnArrange(arrange, position, placement) {
-  const NEW_COL_DEFAULT_W = 24;
-  const columns = (arrange.columns || []).slice();
-  const willBeNewLast = position === columns.length;
-  const newCol = { panels: [placement] };
-  if (!willBeNewLast) {
-    let donated = 0;
-    if (position > 0) {
-      const left = columns[position - 1];
-      if (left.width != null) {
-        const take = Math.max(8, Math.floor(left.width / 3));
-        const newW = Math.max(10, left.width - take);
-        columns[position - 1] = { ...left, width: newW };
-        donated += (left.width - newW);
-      }
-    }
-    if (position < columns.length) {
-      const right = columns[position];
-      if (right.width != null) {
-        const take = Math.max(8, Math.floor(right.width / 3));
-        const newW = Math.max(10, right.width - take);
-        columns[position] = { ...right, width: newW };
-        donated += (right.width - newW);
-      }
-    }
-    newCol.width = donated > 0 ? donated : NEW_COL_DEFAULT_W;
-  } else {
-    const oldLastIdx = columns.length - 1;
-    const oldLast = columns[oldLastIdx];
-    if (oldLast && oldLast.width == null) {
-      columns[oldLastIdx] = { ...oldLast, width: NEW_COL_DEFAULT_W * 2 };
-    }
-  }
-  columns.splice(position, 0, newCol);
-  return { ...arrange, columns };
+  const { columns: shrunk, newColWidth } =
+    mfc.allocateNewColumnWidth(arrange.columns || [], position);
+  shrunk.splice(position, 0, { width: newColWidth, panels: [placement] });
+  return { ...arrange, columns: shrunk };
 }
 
 module.exports = {

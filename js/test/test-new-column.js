@@ -433,14 +433,14 @@ describe('[12] add_column / remove_column Msg arms', () => {
   it('remove_column emits an info notice on success', () => {
     let slice = makeSlice();
     slice = layout.update({ type: 'add_column', position: 1 }, slice);  // add then remove
-    const out = layout.update({ type: 'remove_column', n: 1 }, slice);
+    const out = layout.update({ type: 'remove_column', columnIndex: 1 }, slice);
     eq(out.arrange.columns.length, 2);
     eq(out.freeConfig.noticeKind, 'info');
   });
 
   it('remove_column emits an error notice on refusal (non-empty)', () => {
     const slice = makeSlice();
-    const out = layout.update({ type: 'remove_column', n: 0 }, slice);
+    const out = layout.update({ type: 'remove_column', columnIndex: 0 }, slice);
     eq(out.arrange.columns.length, 2, 'unchanged');
     eq(out.freeConfig.noticeKind, 'error');
   });
@@ -456,7 +456,53 @@ describe('[13] pool_show_new_column success notice', () => {
   });
 });
 
-describe('[14] _dragTargetsEqual — new_column targets compare on `position`', () => {
+// ----- Phase 3 polish: shifted columnIndex after removeColumn, multi-donor spawn -----
+
+describe('[14] removeColumn re-stamps columnIndex on shifted columns', () => {
+  it('removing column 1 of a 3-col layout shifts col 2 down → columnIndex=1', () => {
+    // Build a 3-col layout: spawn an empty middle column, then remove
+    // it. Panes in the (previously-last) column should re-stamp to
+    // columnIndex 1, not stay at 2.
+    let s = makeSlice();
+    s = mfc.addColumn(s, 1).slice;  // 3 cols: [containers,groups] [empty] [actions,stats,detail]
+    eq(s.arrange.columns.length, 3);
+    eq(s.arrange.columns[2].panels[0].columnIndex, 2, 'precondition: detail-side at idx 2');
+    const { slice: out, error } = mfc.removeColumn(s, 1);
+    eq(error, null);
+    eq(out.arrange.columns.length, 2);
+    eq(out.arrange.columns[1].panels[0].columnIndex, 1, 'columnIndex re-stamped after shift');
+    eq(out.arrange.columns[1].panels[2].columnIndex, 1, 'detail also re-stamped');
+  });
+});
+
+describe('[15] addColumn donates from BOTH neighbors when both are explicit-width', () => {
+  it('3-col layout, addColumn between two explicit-width cols → both shrink', () => {
+    // Build a 3-col fixture by hand so both flanking columns have
+    // explicit widths comfortably above the donor floor (10 cells).
+    // Last column is implicit.
+    const s = makeSlice();
+    s.arrange = {
+      ...s.arrange,
+      columns: [
+        { width: 30, panels: s.arrange.columns[0].panels },
+        { width: 24, panels: [] },     // middle, empty
+        { panels: s.arrange.columns[1].panels },  // last, implicit
+      ],
+    };
+    const w0 = s.arrange.columns[0].width;
+    const w1 = s.arrange.columns[1].width;
+    // Insert between cols 0 and 1 (position 1).
+    const out = mfc.addColumn(s, 1).slice;
+    eq(out.arrange.columns.length, 4);
+    eq(out.arrange.columns[0].width < w0, true, 'col 0 shrank (left donor)');
+    eq(out.arrange.columns[2].width < w1, true, 'previously-col-1 (now col 2) shrank (right donor)');
+    assert(out.arrange.columns[1].width != null, 'new column has explicit width');
+    assert(out.arrange.columns[1].width >= 8, 'new col floored at NEW_COL_DONOR_TAKE_MIN');
+    eq(out.arrange.columns[3].width, undefined, 'last column stays implicit');
+  });
+});
+
+describe('[16] _dragTargetsEqual — new_column targets compare on `position`', () => {
   // Re-derive via layout.update's pool_drag_motion behavior. Easier:
   // construct two new_column targets and verify the layout reducer
   // would emit force_full_repaint when they differ. Direct via

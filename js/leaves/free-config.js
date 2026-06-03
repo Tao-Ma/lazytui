@@ -31,7 +31,7 @@
 'use strict';
 
 const mpool = require('./pool');
-const { LEFT_HOTKEY_POOL, RIGHT_HOTKEY_POOL } = require('./hotkeys');
+const { hotkeyPoolForColumn } = require('./hotkeys');
 
 const MIN_PANEL_H = 3;
 // Width allocation cells reserved for the edge/gap drop zones that
@@ -47,6 +47,14 @@ const EDGE_W = 2;
 // a too-large default just shrinks the other columns. 24 leaves a
 // usable column on most terminals.
 const NEW_COL_DEFAULT_W = 24;
+// Minimum width a donor neighbor retains after a new-column spawn
+// steals from it. Prevents the donor from being pared down to invisible.
+const NEW_COL_DONOR_FLOOR = 10;
+// Minimum cells we yank from a donor neighbor when its width allows
+// (don't bother with a 1-cell donation). max(NEW_COL_DONOR_TAKE_MIN,
+// floor(donor.width / 3)) — the `/3` heuristic leaves the donor at
+// two-thirds; the floor keeps tiny donors honest.
+const NEW_COL_DONOR_TAKE_MIN = 8;
 // Detail height %, computed against available column rows. Big
 // terminals (with enough rows) get more range — a 100-row column can
 // shrink detail to 5% (5 rows still legible) and grow it to 97%
@@ -103,15 +111,6 @@ function panelHeightPct(slice, p, availH) {
   return b ? Math.round(b.h / availH * 100) : 0;
 }
 
-/** Hotkey pool for the column at `columnIndex` in an `N`-column layout.
- *  Mirrors parser/index.js + panel/layout.js — first column gets
- *  LEFT_HOTKEY_POOL, last gets RIGHT_HOTKEY_POOL, middle gets empty. */
-function _hotkeyPoolForColumn(columnIndex, N) {
-  if (columnIndex === 0) return LEFT_HOTKEY_POOL;
-  if (columnIndex === N - 1) return RIGHT_HOTKEY_POOL;
-  return [];
-}
-
 /** Recompute positional hotkeys for every column. detail keeps 'o', actions
  *  keeps '0' as semantic anchors (last-column convention); everything else
  *  gets its column's pool key by slot position. When a column has more
@@ -125,7 +124,7 @@ function _reassignHotkeys(arrange) {
   return {
     ...arrange,
     columns: arrange.columns.map((col, ci) => {
-      const pool = _hotkeyPoolForColumn(ci, N);
+      const pool = hotkeyPoolForColumn(ci, N);
       const isLast = ci === lastIdx;
       const panels = (col.panels || []).map((p, i) => {
         if (isLast && mpool.isActionsPane(p)) return { ...p, hotkey: '0', columnIndex: ci };
@@ -813,16 +812,12 @@ function applyDrop(slice, srcType, target) {
 }
 
 /** Spawn a new column at `target.position` containing the dragged
- *  pane (moved from its source column). Width allocation:
- *    - position 0 (left edge): steal floor(col0.w / 2) from old col 0
- *    - position N (right edge, becomes new last): old last column was
- *      implicit-width; we promote it to explicit so the new last takes
- *      its old rendered width minus a default share, leaving the new
- *      column implicit
- *    - position in middle: new column gets a default width (or
- *      floor(min(neighbor.w) / 2) when neighbors are explicit)
- *  Source column that ends up empty (the dragged pane was its only
- *  occupant) gets removed — keeps the UX clean. */
+ *  pane (moved from its source column). Width allocation routes
+ *  through `_allocateNewColumnWidth`; both target.position and the
+ *  shifted effective position remain strictly inside [0, len-1] (the
+ *  validators refuse position == N so a "becomes the new last" outcome
+ *  is unreachable here). Source column that ends up empty (the dragged
+ *  pane was its only occupant) gets removed — keeps the UX clean. */
 function applyNewColumn(slice, srcType, target) {
   const arrange = slice.arrange;
   const fromLoc = mpool.findPaneLocation(arrange, p => p.type === srcType);
@@ -839,11 +834,9 @@ function applyNewColumn(slice, srcType, target) {
   // Can't remove the last column (detail invariant).
   const removeSource = sourceWillBeEmpty && fromLoc.columnIndex !== lastIdx;
 
-  // Compute the new column's width + adjust neighbors.
-  // We work against a TRANSIENT copy of arrange that has the source
+  // Work against a transient copy of arrange.columns with the source
   // column either updated (with the dragged pane removed) or removed
-  // entirely. Then splice in the new column at `position`. Indexes
-  // shift if removeSource fires before `position`; track that.
+  // entirely. Indexes shift if removeSource fires before `position`.
   let workingColumns = arrange.columns.slice();
   workingColumns[fromLoc.columnIndex] = { ...fromCol, panels: fromPanels };
   let effectivePosition = position;
@@ -852,50 +845,15 @@ function applyNewColumn(slice, srcType, target) {
     if (fromLoc.columnIndex < position) effectivePosition = position - 1;
   }
 
-  const willBeNewLast = effectivePosition === workingColumns.length;
-  const newPane = { ...src, columnIndex: -1 /* fixed below by _reassignHotkeys */ };
-  const newCol = { panels: [newPane] };
+  const { columns: shrunk, newColWidth } =
+    _allocateNewColumnWidth(workingColumns, effectivePosition);
+  // columnIndex re-stamped by _reassignHotkeys after the splice.
+  const newCol = { width: newColWidth, panels: [{ ...src, columnIndex: -1 }] };
+  shrunk.splice(effectivePosition, 0, newCol);
 
-  if (!willBeNewLast) {
-    // New column has explicit width. Steal from adjacent columns.
-    let donated = 0;
-    if (effectivePosition > 0) {
-      const left = workingColumns[effectivePosition - 1];
-      if (left.width != null) {
-        const take = Math.max(8, Math.floor(left.width / 3));
-        const newW = Math.max(10, left.width - take);
-        workingColumns[effectivePosition - 1] = { ...left, width: newW };
-        donated += (left.width - newW);
-      }
-    }
-    if (effectivePosition < workingColumns.length) {
-      const right = workingColumns[effectivePosition];
-      if (right.width != null) {
-        const take = Math.max(8, Math.floor(right.width / 3));
-        const newW = Math.max(10, right.width - take);
-        workingColumns[effectivePosition] = { ...right, width: newW };
-        donated += (right.width - newW);
-      }
-    }
-    newCol.width = donated > 0 ? donated : NEW_COL_DEFAULT_W;
-  } else {
-    // New column becomes the new last → implicit width. The PREVIOUS
-    // last column (workingColumns[end-1]) was implicit; promote it to
-    // explicit at its current default width (NEW_COL_DEFAULT_W * 2 is
-    // a rough heuristic; the renderer's _distributeColumnWidths
-    // squeezes anything that overflows).
-    const oldLastIdx = workingColumns.length - 1;
-    const oldLast = workingColumns[oldLastIdx];
-    if (oldLast && oldLast.width == null) {
-      workingColumns[oldLastIdx] = { ...oldLast, width: NEW_COL_DEFAULT_W * 2 };
-    }
-  }
-
-  workingColumns.splice(effectivePosition, 0, newCol);
-  const nextArrange = { ...arrange, columns: workingColumns };
   return {
     ...slice,
-    arrange: _reassignHotkeys(nextArrange),
+    arrange: _reassignHotkeys({ ...arrange, columns: shrunk }),
     dirty: true,
   };
 }
@@ -1075,6 +1033,61 @@ function mouseRelease(slice) {
  *  pass, restoring after so subsequent hit-tests use the stable original
  *  layout (prevents the recursive flicker where painting the preview would
  *  change which cell the cursor "is in" on the next motion event). */
+// ---------------------------------------------------------------- new-column width allocation
+
+/** Steal width from the columns adjacent to `position` and return
+ *  `{ columns: <new array with neighbors shrunk>, newColWidth: int }`.
+ *  Position must satisfy `0 <= position <= columns.length - 1` — the
+ *  validators (validateNewColumn, validatePoolNewColumn, addColumn)
+ *  refuse `position === columns.length` because spawning a new-last-
+ *  column would push the detail-bearing previous-last off "last."
+ *
+ *  Each explicit-width neighbor donates
+ *  `max(NEW_COL_DONOR_TAKE_MIN, floor(w / 3))`, shrinking to
+ *  `max(NEW_COL_DONOR_FLOOR, w - take)`. The new column's width =
+ *  sum of donations (or NEW_COL_DEFAULT_W if no explicit-width
+ *  neighbor donates — e.g. spawning to the LEFT of an implicit-width
+ *  last column in a 1-column layout, which is a corner case the
+ *  validators don't yet refuse).
+ *
+ *  Shared by `addColumn` (empty new column), `applyNewColumn`
+ *  (in-grid drag spawn), and `spawnNewColumnArrange` (pool drag
+ *  spawn) — every spawn site routes through this one helper so the
+ *  width math agrees across paths. */
+function _allocateNewColumnWidth(columns, position) {
+  const out = columns.slice();
+  let donated = 0;
+  if (position > 0) {
+    const left = out[position - 1];
+    if (left.width != null) {
+      const take = Math.max(NEW_COL_DONOR_TAKE_MIN, Math.floor(left.width / 3));
+      const newW = Math.max(NEW_COL_DONOR_FLOOR, left.width - take);
+      out[position - 1] = { ...left, width: newW };
+      donated += (left.width - newW);
+    }
+  }
+  if (position < out.length) {
+    const right = out[position];
+    if (right.width != null) {
+      const take = Math.max(NEW_COL_DONOR_TAKE_MIN, Math.floor(right.width / 3));
+      const newW = Math.max(NEW_COL_DONOR_FLOOR, right.width - take);
+      out[position] = { ...right, width: newW };
+      donated += (right.width - newW);
+    }
+  }
+  // When donations land tiny (e.g. a 11-cell donor floors at 10, donates
+  // 1), the new column would be 1 cell wide. The new column compensates
+  // by stealing from the implicit-width last column at render time
+  // (_distributeColumnWidths absorbs the difference) — at the cost of
+  // shrinking detail's home. NEW_COL_DONOR_TAKE_MIN as a floor on the
+  // new column's width keeps it usable; the last column gives up the
+  // shortfall.
+  const newColWidth = donated > 0
+    ? Math.max(NEW_COL_DONOR_TAKE_MIN, donated)
+    : NEW_COL_DEFAULT_W;
+  return { columns: out, newColWidth };
+}
+
 // ---------------------------------------------------------------- column add/remove (Phase 3)
 
 /**
@@ -1101,33 +1114,10 @@ function addColumn(slice, position) {
   if (position === N) {
     return { slice, error: `can't add a column at position ${N} — would push detail off the last column` };
   }
-  // Steal width from neighbors. position > 0 → take from left; the
-  // right neighbor is always defined here (position <= N-1).
-  const columns = arrange.columns.slice();
-  let donated = 0;
-  if (position > 0) {
-    const left = columns[position - 1];
-    if (left.width != null) {
-      const take = Math.max(8, Math.floor(left.width / 3));
-      const newW = Math.max(10, left.width - take);
-      columns[position - 1] = { ...left, width: newW };
-      donated += (left.width - newW);
-    }
-  }
-  // Right neighbor is at index `position` (before splice). If it's
-  // the last column its width is implicit — nothing to steal there
-  // (the renderer's _distributeColumnWidths will shrink it via its
-  // own remainder math when the explicit-sum grows).
-  const right = columns[position];
-  if (right && right.width != null) {
-    const take = Math.max(8, Math.floor(right.width / 3));
-    const newW = Math.max(10, right.width - take);
-    columns[position] = { ...right, width: newW };
-    donated += (right.width - newW);
-  }
-  const newCol = { width: donated > 0 ? donated : 24, panels: [] };
-  columns.splice(position, 0, newCol);
-  const nextArrange = _reassignHotkeys({ ...arrange, columns });
+  const { columns: shrunk, newColWidth } =
+    _allocateNewColumnWidth(arrange.columns, position);
+  shrunk.splice(position, 0, { width: newColWidth, panels: [] });
+  const nextArrange = _reassignHotkeys({ ...arrange, columns: shrunk });
   return { slice: { ...slice, arrange: nextArrange, dirty: true }, error: null };
 }
 
@@ -1197,6 +1187,7 @@ module.exports = {
   computeDragPreviewArrange,
   validateNewColumn, applyNewColumn,
   addColumn, removeColumn,
+  allocateNewColumnWidth: _allocateNewColumnWidth,
   reassignHotkeys: _reassignHotkeys,
   _columnRanges, _newColumnZoneAt,
 };

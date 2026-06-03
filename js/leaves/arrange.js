@@ -17,7 +17,7 @@
 'use strict';
 
 const mpane = require('./pane');
-const { LEFT_HOTKEY_POOL, RIGHT_HOTKEY_POOL } = require('./hotkeys');
+const { hotkeyPoolForColumn } = require('./hotkeys');
 
 /**
  * Build a fresh arrange struct from a parsed config. Pure — reads only
@@ -72,11 +72,11 @@ function rebuildLayoutFromConfig(config) {
     };
     out.columns = (ly.columns || []).map((col, ci) => {
       const isLast = ci === N - 1;
-      const pool = isLast ? RIGHT_HOTKEY_POOL : (ci === 0 ? LEFT_HOTKEY_POOL : []);
+      const pool = hotkeyPoolForColumn(ci, N);
       const explicit = new Set((col.panels || []).map(p => p.hotkey).filter(Boolean));
       const auto = pool.filter(k => !explicit.has(k));
       const panels = (col.panels || []).map((p, i) =>
-        widenPane(p, p.hotkey || (auto.shift() || (ci === 0 ? String(i + 1) : '')), ci));
+        widenPane(p, p.hotkey || (auto.shift() || ''), ci));
       const out = { panels };
       // Last column's width is implicit; everyone else carries it.
       if (!isLast && col.width != null) out.width = col.width;

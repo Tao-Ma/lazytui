@@ -17,7 +17,7 @@ const { ParseError } = require('./errors');
 const { validate } = require('./schema');
 const { passthroughCmd, resolveScript } = require('./resolver');
 
-const { LEFT_HOTKEY_POOL, RIGHT_HOTKEY_POOL } = require('../leaves/hotkeys');
+const { LEFT_HOTKEY_POOL, RIGHT_HOTKEY_POOL, hotkeyPoolForColumn } = require('../leaves/hotkeys');
 const mpane = require('../leaves/pane');
 const mpool = require('../leaves/pool');
 
@@ -57,15 +57,6 @@ function assignHotkeys(panelsYaml, pool, sideLabel) {
   return out;
 }
 
-/** Hotkey pool for a column at index `ci` in an `N`-column layout.
- *  First column → LEFT_HOTKEY_POOL (1-6), last column → RIGHT_HOTKEY_POOL
- *  (7-9). Middle columns get an empty pool — auto-assignment yields '';
- *  the user must specify hotkeys explicitly for middle-column panes. */
-function hotkeyPoolForColumn(ci, N) {
-  if (ci === 0) return LEFT_HOTKEY_POOL;
-  if (ci === N - 1) return RIGHT_HOTKEY_POOL;
-  return [];
-}
 
 function titleCase(s) {
   return s.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());

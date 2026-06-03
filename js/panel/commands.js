@@ -153,7 +153,7 @@ const FRAMEWORK_COMMANDS = [
         setViewerContent(null, `[red]:remove-column requires a 1-based integer column number[/]`);
         return;
       }
-      api.dispatchMsg(wrap('layout', { type: 'remove_column', n: n1 - 1 }));
+      api.dispatchMsg(wrap('layout', { type: 'remove_column', columnIndex: n1 - 1 }));
     },
   },
 ];

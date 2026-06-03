@@ -25,17 +25,7 @@ const mpool = require('../leaves/pool');
 const route = require('../leaves/route');
 const { getModel } = require('../app/runtime');
 
-const { LEFT_HOTKEY_POOL, RIGHT_HOTKEY_POOL } = require('../leaves/hotkeys');
-
-/** Hotkey pool for the column at `columnIndex` in an `N`-column layout.
- *  First column → LEFT_HOTKEY_POOL, last → RIGHT_HOTKEY_POOL, middle
- *  columns get empty (no auto-assigned hotkeys). Mirrors
- *  parser/index.js#hotkeyPoolForColumn. */
-function hotkeyPoolForColumn(columnIndex, N) {
-  if (columnIndex === 0) return LEFT_HOTKEY_POOL;
-  if (columnIndex === N - 1) return RIGHT_HOTKEY_POOL;
-  return [];
-}
+const { hotkeyPoolForColumn } = require('../leaves/hotkeys');
 
 /** Reassign positional hotkeys for a column after a hide/show mutation.
  *  Matches the free-config behavior — hotkey is the panel's slot index
@@ -674,8 +664,8 @@ function update(msg, slice) {
     }
     // v0.6.2 Phase 3 — cmdline + programmatic column management.
     // add_column inserts an empty column at `position` (0..N-1);
-    // remove_column deletes the empty column at index `n`. Both route
-    // through pure leaf helpers (mfc.addColumn / mfc.removeColumn)
+    // remove_column deletes the empty column at `columnIndex`. Both
+    // route through pure leaf helpers (mfc.addColumn / mfc.removeColumn)
     // that return `{ slice, error }`; the reducer threads the error
     // into freeConfig.notice (red) on refusal or a green status notice
     // on success.
@@ -685,9 +675,9 @@ function update(msg, slice) {
       return _withStatus(next, `added empty column at position ${msg.position + 1}`);
     }
     case 'remove_column': {
-      const { slice: next, error } = mfc.removeColumn(slice, msg.n);
+      const { slice: next, error } = mfc.removeColumn(slice, msg.columnIndex);
       if (error) return _withNotice(slice, error, 'error');
-      return _withStatus(mfc.clampSelected(next), `removed column ${msg.n + 1}`);
+      return _withStatus(mfc.clampSelected(next), `removed column ${msg.columnIndex + 1}`);
     }
     default:
       return slice;
