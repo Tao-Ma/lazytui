@@ -66,7 +66,7 @@ greppable.
      currentGroup, config, register, prefixSeq, focused, ...
 
    Component slices (js/leaves/route.js, nested store)
-     layout         focus, viewMode, arrange, panelBounds, design
+     layout         focus, viewMode, arrange, panelBounds, freeConfig
      detail         lines, scroll, tab, search, select,
                     contentTabs, ephemeralTerminals
      groups         list, expanded:Set, tab
