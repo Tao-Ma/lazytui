@@ -41,6 +41,10 @@ const RESET = '\x1b[0m';
 // any byte range that appears in normal text or in T22's SGR
 // placeholder pair (U+E000/U+E001).
 const _BRACKET_SENTINEL = '';
+// Hot-path regex hoisted to module scope (P5.8). `richToAnsi` and
+// `stripMarkup` run per visible row per panel per frame; rebuilding
+// the sentinel-restore regex on every call was real allocation churn.
+const _SENTINEL_RE = new RegExp(_BRACKET_SENTINEL, 'g');
 
 function richToAnsi(text) {
   // Protect escaped brackets
@@ -51,7 +55,7 @@ function richToAnsi(text) {
     return CODES[tag] || RESET;
   });
   // Restore escaped brackets
-  return result.replace(new RegExp(_BRACKET_SENTINEL, 'g'), '[');
+  return result.replace(_SENTINEL_RE, '[');
 }
 
 /**
@@ -60,7 +64,7 @@ function richToAnsi(text) {
 function stripMarkup(text) {
   return text.replace(/\\\[/g, _BRACKET_SENTINEL)
     .replace(/\[[^\]]*\]/g, '')
-    .replace(new RegExp(_BRACKET_SENTINEL, 'g'), '[');
+    .replace(_SENTINEL_RE, '[');
 }
 
 /**
