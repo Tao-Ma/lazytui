@@ -344,6 +344,9 @@ function renderNormal(model) {
   const layoutSlice = getInstanceSlice('layout');
   layoutSlice.panelBounds = {};
   const freeConfigMode = !!(model.modes && model.modes.freeConfigMode);
+  // Hoist the drag check out of the per-panel injectTopRowChrome call
+  // (P5.9) — one slice read here instead of N reads per frame.
+  const dragging = !!(layoutSlice.freeConfig && layoutSlice.freeConfig.drag);
   // Helper to render one panel + bake the chrome glyphs into its top
   // border row. Baking (vs cursor-move overpaint) keeps paintColumns'
   // write atomic — no flicker on rows that get repainted while a glyph
@@ -375,7 +378,7 @@ function renderNormal(model) {
       : _safeRender(p, w, h);
     const focused = layoutSlice.focus === p.type;
     const fc = focused ? t.focus : t.dim;
-    out = injectTopRowChrome(out, p, b, freeConfigMode, fc, focused);
+    out = injectTopRowChrome(out, p, b, freeConfigMode, fc, focused, dragging);
     out = injectTabTrigger(out, p);
     return out;
   };

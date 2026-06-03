@@ -84,10 +84,12 @@ function _placedWidgetTargets() {
  *  chrome markup, then the corner + close tag. The lazy-match anchored
  *  to end-of-line locks onto the final `─*` run, not any `─` chars inside
  *  the title text. */
-function injectTopRowChrome(panelOutput, p, b, freeConfigMode, fc, focused) {
+function injectTopRowChrome(panelOutput, p, b, freeConfigMode, fc, focused, dragging) {
   if (!panelOutput || mpool.isDetailPane(p)) return panelOutput;
-  const slice = getInstanceSlice('layout');
-  if (slice && slice.freeConfig && slice.freeConfig.drag) return panelOutput;
+  // Drag-in-flight suppresses chrome — caller hoists the freeConfig.drag
+  // read out of the per-panel loop and passes the boolean in (P5.9 —
+  // saves one slice lookup per panel per frame).
+  if (dragging) return panelOutput;
   if (!b || b.h < 1 || b.w < COLLAPSE_MIN_W) return panelOutput;
 
   // Build chrome markup + measure visible width. [X] sits 1 col left of
