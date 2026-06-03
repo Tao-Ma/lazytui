@@ -476,21 +476,13 @@ function setSelectedTitle(slice, text) {
 
 // ---------------------------------------------------------------- column geometry
 
-/** Compute the x-range (start, end) of each column given the layout's
- *  explicit widths + the terminal width. The last column's width is
- *  implicit = COLS - sum(prior widths). Returns an array of
- *  { columnIndex, x, w } in order. */
+/** Compute the x-range of each column. Thin re-export of the shared
+ *  distributor in `leaves/pool` so the mouse hit-tester and the
+ *  renderer (which also calls `mpool.distributeColumnWidths`) never
+ *  disagree — on narrow terminals where the squeeze kicks in, the
+ *  renderer's painted column boundary IS where clicks land. */
 function _columnRanges(arrange, COLS) {
-  const cols = arrange.columns || [];
-  const out = [];
-  let x = 0;
-  for (let i = 0; i < cols.length; i++) {
-    const isLast = i === cols.length - 1;
-    const w = isLast ? Math.max(1, COLS - x) : (cols[i].width != null ? cols[i].width : 30);
-    out.push({ columnIndex: i, x, w });
-    x += w;
-  }
-  return out;
+  return mpool.distributeColumnWidths(arrange, COLS);
 }
 
 /** Find the column whose x-range contains `mx`, or null. */

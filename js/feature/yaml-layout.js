@@ -202,13 +202,26 @@ function serializeLayout(layout) {
 function _findBlockRange(lines, name) {
   const headerRe = new RegExp(`^${name}:`);
   let start = -1;
-  let end = -1;
   for (let i = 0; i < lines.length; i++) {
-    if (headerRe.test(lines[i])) { start = i; }
-    else if (start >= 0 && end < 0 && /^\S/.test(lines[i]) && i > start) { end = i; }
+    if (headerRe.test(lines[i])) {
+      if (start >= 0) {
+        // Duplicate top-level header — file is malformed. Refuse rather
+        // than guess which block to overwrite; picking the LAST match
+        // (and inheriting `end` from the first range scan) corrupted
+        // the file by splicing a new block before the trailing duplicate
+        // without removing it.
+        const err = new Error(`duplicate \`${name}:\` block at lines ${start + 1} and ${i + 1}; refusing to overwrite (fix the file by hand)`);
+        err.code = 'DUPLICATE_BLOCK';
+        throw err;
+      }
+      start = i;
+    }
   }
   if (start < 0) return null;
-  if (end < 0) end = lines.length;
+  let end = lines.length;
+  for (let i = start + 1; i < lines.length; i++) {
+    if (/^\S/.test(lines[i])) { end = i; break; }
+  }
   while (end > start && lines[end - 1].trim() === '') end--;
   return [start, end];
 }

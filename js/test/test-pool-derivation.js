@@ -242,4 +242,61 @@ layout:
   });
 });
 
+describe('[distributeColumnWidths] renderer + hit-test single source of truth', () => {
+  it('wide terminal: explicit widths, last column takes remainder', () => {
+    const arrange = { columns: [{ width: 30 }, { width: 30 }, {}] };
+    const r = pool.distributeColumnWidths(arrange, 120);
+    eq(r.map(c => c.x), [0, 30, 60], 'x positions');
+    eq(r.map(c => c.w), [30, 30, 60], 'widths (last = COLS-sumExplicit)');
+  });
+
+  it('narrow terminal triggers squeeze: last column gets MIN_LAST_COL_W', () => {
+    // COLS=60, explicit=[30,30] → naive lastW = 0, < MIN_LAST (20). Squeeze
+    // shrinks both donors to 20 each so last gets 20.
+    const arrange = { columns: [{ width: 30 }, { width: 30 }, {}] };
+    const r = pool.distributeColumnWidths(arrange, 60);
+    eq(r[0].w, 20, 'donor 0 shrunk');
+    eq(r[1].w, 20, 'donor 1 shrunk');
+    eq(r[2].w, 20, 'last column gets MIN_LAST_COL_W');
+    eq(r[0].w + r[1].w + r[2].w, 60, 'widths sum to COLS');
+    eq(r[1].x, 20, 'col 1 starts after col 0');
+    eq(r[2].x, 40, 'col 2 starts after col 1');
+  });
+
+  it('donor floor: explicit columns never shrink below MIN_COL_W (10)', () => {
+    // COLS=30 with 3 cols of explicit-30 → severe squeeze; donors floor at 10
+    // each, last column absorbs the rest.
+    const arrange = { columns: [{ width: 30 }, { width: 30 }, {}] };
+    const r = pool.distributeColumnWidths(arrange, 30);
+    assert(r[0].w >= 10, 'donor 0 >= MIN_COL_W');
+    assert(r[1].w >= 10, 'donor 1 >= MIN_COL_W');
+    assert(r[2].w >= 1,  'last column always >= 1');
+  });
+
+  it('hit-test and renderer agree on the same point under squeeze', () => {
+    // The renderer paints col 1 at x=20..39 under squeeze. A click at x=25
+    // must map to col 1 in the hit-tester too — that's exactly the bug
+    // T1.1 fixed (was mapping to col 0 because the hit-tester used raw
+    // explicit widths).
+    const arrange = { columns: [{ width: 30 }, { width: 30 }, {}] };
+    const r = pool.distributeColumnWidths(arrange, 60);
+    const click = 25;
+    const col = r.find(c => click >= c.x && click < c.x + c.w);
+    eq(col.columnIndex, 1, 'click at x=25 lands in col 1 (renderer-painted range 20..39)');
+  });
+
+  it('default column width is 30 when width is null/undefined', () => {
+    const arrange = { columns: [{}, {}, {}] };
+    const r = pool.distributeColumnWidths(arrange, 120);
+    eq(r[0].w, 30, 'col 0 default');
+    eq(r[1].w, 30, 'col 1 default');
+    eq(r[2].w, 60, 'last column takes remainder');
+  });
+
+  it('empty columns array returns empty', () => {
+    eq(pool.distributeColumnWidths({ columns: [] }, 80), []);
+    eq(pool.distributeColumnWidths({}, 80), []);
+  });
+});
+
 report();

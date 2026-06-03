@@ -289,6 +289,28 @@ function parseLayout(layoutData, _hasContainers, _hasFiles, userPool) {
     resolved: (col.panels || []).map(c => resolveLayoutCell(c, pool)),
   }));
 
+  // Cross-cell pool-id uniqueness — every pool entry has exactly one
+  // home in the placed grid. Two cells referencing the same id would
+  // produce two distinct panes wrapping the same pool entry, with all
+  // the surprises that come from one pool entry having two identities
+  // (`:hide` ambiguity, double-mount of stateful viewers, etc.).
+  // Multi-tab cells reference multiple ids — the check walks every
+  // tab pool id across every cell.
+  const seenPoolId = new Map();  // poolId → "column N pane M"
+  for (let ci = 0; ci < N; ci++) {
+    const cells = resolvedColumns[ci].resolved;
+    for (let pi = 0; pi < cells.length; pi++) {
+      for (const tid of cells[pi].tabPoolIds) {
+        if (seenPoolId.has(tid)) {
+          throw new ParseError(
+            `panel id '${tid}' placed in two cells: ${seenPoolId.get(tid)} and column ${ci} pane ${pi}`,
+          );
+        }
+        seenPoolId.set(tid, `column ${ci} pane ${pi}`);
+      }
+    }
+  }
+
   // Hotkey assignment runs against placement-level hotkey overrides per
   // column. First column gets LEFT_HOTKEY_POOL, last gets RIGHT — middle
   // columns get no auto-pool (user must specify explicit hotkeys).

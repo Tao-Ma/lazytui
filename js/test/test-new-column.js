@@ -456,6 +456,20 @@ describe('[13] pool_show_new_column success notice', () => {
   });
 });
 
+describe('[14] T1.2 — inline refusal overrides stale info noticeKind', () => {
+  it('free_config_enter refusal in half-view sets noticeKind=error even if prior was info', () => {
+    let slice = makeSlice();
+    // Seed an info notice (success path) then walk slice into half-view —
+    // the free_config_enter refusal path must stomp noticeKind back to 'error'.
+    slice = layout.update({ type: 'add_column', position: 1 }, slice);
+    eq(slice.freeConfig.noticeKind, 'info', 'precondition: info notice from add_column');
+    slice = { ...slice, viewMode: 'half' };
+    const out = layout.update({ type: 'free_config_enter' }, slice);
+    eq(out.freeConfig.noticeKind, 'error', 'refusal must paint red, not inherit green');
+    assert(/normal view/.test(out.freeConfig.notice), `refusal message set: ${out.freeConfig.notice}`);
+  });
+});
+
 // ----- Phase 3 polish: shifted columnIndex after removeColumn, multi-donor spawn -----
 
 describe('[14] removeColumn re-stamps columnIndex on shifted columns', () => {

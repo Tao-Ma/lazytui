@@ -225,7 +225,7 @@ function update(msg, slice) {
         // Short-circuit: if notice already matches, slice ref is preserved
         // (the auto-clear above also preserved it via wouldReassert).
         if (slice.freeConfig && slice.freeConfig.notice === target) return slice;
-        return { ...slice, freeConfig: { ...slice.freeConfig, notice: target } };
+        return _withNotice(slice, target, 'error');
       }
       const next = reduceViewMode(slice.viewMode, msg);
       if (next === slice.viewMode) return slice;
@@ -291,7 +291,7 @@ function update(msg, slice) {
       if (slice.viewMode !== 'normal') {
         const target = 'free-config requires normal view ([ to return)';
         if (slice.freeConfig && slice.freeConfig.notice === target) return slice;
-        return { ...slice, freeConfig: { ...slice.freeConfig, notice: target } };
+        return _withNotice(slice, target, 'error');
       }
       // Reset working state on entry. Auto-open the panel-list overlay
       // when the pool has hidden entries — the discoverability hint

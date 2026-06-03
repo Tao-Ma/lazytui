@@ -208,49 +208,13 @@ function distributeColumnHeights(layoutSlice, panels, availH, isLastCol, minH) {
   }
 }
 
-/** Distribute the terminal's COLS across columns. Explicit widths for
- *  columns 0..N-2; last column gets the remainder. Narrow-terminal
- *  adaptive: if explicit widths leave < MIN_LAST for the last column,
- *  shrink earlier columns proportionally so the last column gets
- *  MIN_LAST. Returns an array of `{ columnIndex, x, w }`. */
-const MIN_LAST_COL_W = 20;
-function _distributeColumnWidths(columns, COLS) {
-  const N = columns.length;
-  if (N === 0) return [];
-  const explicit = [];
-  for (let i = 0; i < N - 1; i++) {
-    const w = columns[i].width != null ? columns[i].width : 30;
-    explicit.push(w);
-  }
-  const sumExplicit = explicit.reduce((s, w) => s + w, 0);
-  let lastW = COLS - sumExplicit;
-  if (lastW < MIN_LAST_COL_W) {
-    // Squeeze explicit widths proportionally so last column gets at
-    // least MIN_LAST_COL_W. Each shrinks but never below 10.
-    const target = Math.max(0, COLS - MIN_LAST_COL_W);
-    const scale = sumExplicit > 0 ? target / sumExplicit : 0;
-    for (let i = 0; i < explicit.length; i++) {
-      explicit[i] = Math.max(10, Math.floor(explicit[i] * scale));
-    }
-    lastW = Math.max(MIN_LAST_COL_W, COLS - explicit.reduce((s, w) => s + w, 0));
-  }
-  const out = [];
-  let x = 0;
-  for (let i = 0; i < N; i++) {
-    const w = (i === N - 1) ? Math.max(1, lastW) : explicit[i];
-    out.push({ columnIndex: i, x, w });
-    x += w;
-  }
-  return out;
-}
-
 function calcLayout(model = getModel()) {
   refreshSize();
   const COLS = cols(), ROWS = rows();
   const layoutSlice = getInstanceSlice('layout');
 
   const columns = layoutSlice.arrange.columns || [];
-  const ranges = _distributeColumnWidths(columns, COLS);
+  const ranges = mpool.distributeColumnWidths(layoutSlice.arrange, COLS);
   const lastIdx = columns.length - 1;
   // Only the footer is reserved at the bottom; panels fill everything
   // else. The yank register surfaces via the `"` popup, not an

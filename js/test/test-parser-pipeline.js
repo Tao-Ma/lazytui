@@ -374,6 +374,41 @@ ${POOL_BLOCK}layout:
 `);
     expectThrow(/'actions' must be in the last column/, () => parse(p));
   });
+
+  it('duplicate pool-id refs across cells are rejected (T1.4)', () => {
+    // Two cells reference `groups` — one in col 0, one again in col 0.
+    // Old parser accepted this and produced two distinct panes wrapping
+    // the same pool entry; new parser refuses.
+    const p = tmpYaml(
+      `groups:
+  g: { label: G, actions: { a: { cmd: 'echo', label: A } } }
+${POOL_BLOCK}layout:
+  columns:
+    - panels:
+        - groups
+        - groups
+        - actions
+    - panels:
+        - detail
+`);
+    expectThrow(/panel id 'groups' placed in two cells/, () => parse(p));
+  });
+
+  it('duplicate pool-id across columns is rejected (T1.4)', () => {
+    const p = tmpYaml(
+      `groups:
+  g: { label: G, actions: { a: { cmd: 'echo', label: A } } }
+${POOL_BLOCK}layout:
+  columns:
+    - panels:
+        - groups
+    - panels:
+        - groups
+        - actions
+        - detail
+`);
+    expectThrow(/panel id 'groups' placed in two cells/, () => parse(p));
+  });
 });
 
 describe('user pool merges into the default layout when `layout:` block is absent', () => {

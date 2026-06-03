@@ -414,6 +414,45 @@ describe('[5] writeLayoutToFile — splices both panels: and layout: blocks', ()
     assert(result.error !== null, 'error surfaced');
     assert(result.error.code === 'ENOENT', `ENOENT error (got ${result.error.code})`);
   });
+
+  it('refuses to overwrite when file has duplicate top-level header (T1.3)', () => {
+    const tmp = path.join(os.tmpdir(), `lazytui-yaml-dup-${Date.now()}.yml`);
+    // Two `layout:` blocks in the same file (malformed). The old impl
+    // picked the LAST `start` but kept `end` from the first range,
+    // splicing a new block before the trailing duplicate without
+    // removing it — file corruption. New impl refuses with a clear error.
+    fs.writeFileSync(tmp, [
+      'panels:',
+      '  groups: { type: groups }',
+      '  detail: { type: detail }',
+      'layout:',
+      '  columns:',
+      '    - panels: [groups]',
+      '    - panels: [detail]',
+      'groups: {}',
+      'layout:',
+      '  columns:',
+      '    - panels: [detail]',
+      '',
+    ].join('\n'));
+    const arrange = {
+      detailHeightPct: 60,
+      columns: [
+        { width: 30, panels: [pane({ id: 'groups', type: 'groups' })] },
+        { panels: [pane({ id: 'detail', type: 'detail' })] },
+      ],
+      pool: {
+        groups: { id: 'groups', type: 'groups', title: 'Groups', config: {} },
+        detail: { id: 'detail', type: 'detail', title: 'Detail', config: {} },
+      },
+    };
+    const result = writeLayoutToFile(arrange, tmp);
+    fs.unlinkSync(tmp);
+    assert(result.error !== null, 'error surfaced on duplicate header');
+    eq(result.error.code, 'DUPLICATE_BLOCK', 'DUPLICATE_BLOCK code');
+    assert(/duplicate `layout:`/.test(result.error.message),
+      `error names the duplicated block: ${result.error.message}`);
+  });
 });
 
 report();

@@ -128,7 +128,10 @@ const FRAMEWORK_COMMANDS = [
       // the navigators and the viewer-side last column). 1-based for
       // the cmdline UX (user sees columns numbered 1..N+1); internal
       // position is 0-based.
-      let position1 = (args && args.length > 0) ? parseInt(args[0], 10) : N;
+      // Use `Number` (not `parseInt`) so '5.5' fails the integer check
+      // — parseInt would silently floor to 5 and dispatch a bogus
+      // success.
+      let position1 = (args && args.length > 0) ? Number(args[0]) : N;
       if (!Number.isInteger(position1)) {
         const { setViewerContent } = require('../app/state');
         setViewerContent(null, `[red]:add-column requires a 1-based integer position[/]`);
@@ -147,7 +150,7 @@ const FRAMEWORK_COMMANDS = [
         setViewerContent(null, `[red]:remove-column requires a column number[/]`);
         return;
       }
-      const n1 = parseInt(args[0], 10);
+      const n1 = Number(args[0]);
       if (!Number.isInteger(n1)) {
         const { setViewerContent } = require('../app/state');
         setViewerContent(null, `[red]:remove-column requires a 1-based integer column number[/]`);

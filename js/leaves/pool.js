@@ -75,6 +75,54 @@ function updateColumn(arrange, columnIndex, panelsFn) {
   return { ...arrange, columns: next };
 }
 
+// --- column width distribution ---------------------------------------
+//
+// Single source of truth for "what's each column's x-range given the
+// terminal width". Both the renderer (paints columns) and the mouse
+// hit-tester (routes clicks/drags to a column) call this — they MUST
+// agree, otherwise a click lands in the wrong column on narrow
+// terminals where the squeeze kicks in. Returns
+// `[{columnIndex, x, w}, ...]` in order.
+//
+// Explicit widths come from `columns[i].width` (default 30) for cols
+// 0..N-2. The last column is implicit — takes the remainder.
+// Narrow-terminal adaptive: if the remainder would be < MIN_LAST_COL_W,
+// the explicit columns are squeezed proportionally so the last column
+// still gets MIN_LAST_COL_W; each donor stays >= MIN_COL_W.
+
+const MIN_LAST_COL_W = 20;
+const MIN_COL_W = 10;
+const DEFAULT_COL_W = 30;
+
+function distributeColumnWidths(arrange, COLS) {
+  const columns = (arrange && arrange.columns) || [];
+  const N = columns.length;
+  if (N === 0) return [];
+  const explicit = [];
+  for (let i = 0; i < N - 1; i++) {
+    const w = columns[i].width != null ? columns[i].width : DEFAULT_COL_W;
+    explicit.push(w);
+  }
+  const sumExplicit = explicit.reduce((s, w) => s + w, 0);
+  let lastW = COLS - sumExplicit;
+  if (lastW < MIN_LAST_COL_W) {
+    const target = Math.max(0, COLS - MIN_LAST_COL_W);
+    const scale = sumExplicit > 0 ? target / sumExplicit : 0;
+    for (let i = 0; i < explicit.length; i++) {
+      explicit[i] = Math.max(MIN_COL_W, Math.floor(explicit[i] * scale));
+    }
+    lastW = Math.max(MIN_LAST_COL_W, COLS - explicit.reduce((s, w) => s + w, 0));
+  }
+  const out = [];
+  let x = 0;
+  for (let i = 0; i < N; i++) {
+    const w = (i === N - 1) ? Math.max(1, lastW) : explicit[i];
+    out.push({ columnIndex: i, x, w });
+    x += w;
+  }
+  return out;
+}
+
 // --- placement / hidden state ----------------------------------------
 
 // "Placed" = mounted as a tab in some pane. For multi-tab panes
@@ -267,6 +315,7 @@ module.exports = {
   columnCount, lastColumnIndex, getColumn,
   columnPanels, lastColumnPanels,
   allPanesInColumns, findPaneLocation, updateColumn,
+  distributeColumnWidths,
   placedIds,
   placedIdSet,
   activePaneIds,
