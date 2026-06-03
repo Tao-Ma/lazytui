@@ -38,19 +38,18 @@ function handleExit(id, exitCode) {
   const wasActive = tabs.activeTerminalId(paneId) === id;
   const layoutSlice = api.getInstanceSlice('layout');
   if (layoutSlice && layoutSlice.viewMode === 'full' && wasActive) {
+    // view_set's reducer arm emits force_full_repaint on the full →
+    // normal transition; the bare forceFullRepaint() that used to
+    // follow here was a redundant double-invalidate (P5.5). For the
+    // not-full case, the tab strip / viewer body changes show up as
+    // different row text and the diff cache catches them naturally.
     api.dispatchMsg(api.wrap('layout', { type: 'view_set', mode: 'normal' }));
     anyChange = true;
   }
   if (exitCode === 0 && tabs.handleSessionCleanExit(id, paneId)) {
     anyChange = true;
   }
-  if (anyChange) {
-    if (wasActive) {
-      const { forceFullRepaint } = require('../../render/layout');
-      forceFullRepaint();
-    }
-    scheduleRender();
-  }
+  if (anyChange) scheduleRender();
 }
 
 /** Boot wiring — called from tui.js after the panel layer is
