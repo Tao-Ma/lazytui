@@ -206,7 +206,7 @@ function _withModal(model, patch) {
 function _cycleViewerTab(model, dir) {
   const target = route.resolveTarget('viewer');
   if (!target) return [model, []];
-  return [model, [{ type: 'dispatch_msg', msg: route.wrap(target, { type: 'tab_cycle', dir }) }]];
+  return [model, [{ type: 'msg', msg: route.wrap(target, { type: 'tab_cycle', dir }) }]];
 }
 
 /**
@@ -238,10 +238,10 @@ function update(model, msg) {
       const had = !!(entry && entry.multiSel && entry.multiSel.size > 0);
       if (model.modes.listSelectMode) {
         const next = _withModes(model, { listSelectMode: false });
-        if (compName) return [next, [{ type: 'dispatch_msg', msg: route.wrap(compName, { type: 'multisel_clear', panel: focus }) }]];
+        if (compName) return [next, [{ type: 'msg', msg: route.wrap(compName, { type: 'multisel_clear', panel: focus }) }]];
         return [next, []];
       } else if (had) {
-        return [model, [{ type: 'dispatch_msg', msg: route.wrap(compName, { type: 'multisel_clear', panel: focus }) }]];
+        return [model, [{ type: 'msg', msg: route.wrap(compName, { type: 'multisel_clear', panel: focus }) }]];
       }
       return [model, []];
     }
@@ -256,7 +256,7 @@ function update(model, msg) {
       const next = _withModes(model, { listSelectMode: nextOn });
       if (!nextOn) {
         const compName = route.componentForPanel(focus);
-        if (compName) return [next, [{ type: 'dispatch_msg', msg: route.wrap(compName, { type: 'multisel_clear', panel: focus }) }]];
+        if (compName) return [next, [{ type: 'msg', msg: route.wrap(compName, { type: 'multisel_clear', panel: focus }) }]];
       }
       return [next, []];
     }
@@ -629,7 +629,7 @@ function update(model, msg) {
       // terminalMode is already off.
       if (!model.modes.terminalMode) return [model, []];
       return [_withModes(model, { terminalMode: false }),
-              [{ type: 'dispatch_msg', msg: route.wrap('layout', { type: 'view_drop_full_to_normal' }) }]];
+              [{ type: 'msg', msg: route.wrap('layout', { type: 'view_drop_full_to_normal' }) }]];
     // --- terminal focus events (DEC 1004). Pauses/resumes the refresh
     // loop via model.focused; the focus-regain catch-up scheduleRender
     // stays in input.js (an effect decision the caller owns).
@@ -703,7 +703,7 @@ function update(model, msg) {
       // is the writer.
       const compName = route.componentForPanel(f.panel);
       if (!compName) return [next, []];
-      return [next, [{ type: 'dispatch_msg', msg: route.wrap(compName, { type: 'set_cursor', panel: f.panel, index: 0 }) }]];
+      return [next, [{ type: 'msg', msg: route.wrap(compName, { type: 'set_cursor', panel: f.panel, index: 0 }) }]];
     }
     case 'filter_exit': {
       const f = model.modal.filter;
@@ -723,9 +723,9 @@ function update(model, msg) {
         ? { type: 'set_filter',   panel, text }
         : { type: 'clear_filter', panel };
       return [next, [
-        { type: 'dispatch_msg', msg: route.wrap(compName, filterMsg) },
-        { type: 'dispatch_msg', msg: route.wrap(compName, { type: 'set_cursor', panel, index: 0 }) },
-        { type: 'dispatch_msg', msg: route.wrap(compName, { type: 'set_scroll', panel, offset: 0 }) },
+        { type: 'msg', msg: route.wrap(compName, filterMsg) },
+        { type: 'msg', msg: route.wrap(compName, { type: 'set_cursor', panel, index: 0 }) },
+        { type: 'msg', msg: route.wrap(compName, { type: 'set_scroll', panel, offset: 0 }) },
       ]];
     }
     case 'set_last_run_action': {
@@ -778,16 +778,16 @@ function update(model, msg) {
       for (const panel of ['actions', 'containers']) {
         const compName = route.componentForPanel(panel);
         if (!compName) continue;
-        cmds.push({ type: 'dispatch_msg', msg: route.wrap(compName, { type: 'set_cursor', panel, index: 0 }) });
-        cmds.push({ type: 'dispatch_msg', msg: route.wrap(compName, { type: 'multisel_clear', panel }) });
-        cmds.push({ type: 'dispatch_msg', msg: route.wrap(compName, { type: 'clear_filter', panel }) });
+        cmds.push({ type: 'msg', msg: route.wrap(compName, { type: 'set_cursor', panel, index: 0 }) });
+        cmds.push({ type: 'msg', msg: route.wrap(compName, { type: 'multisel_clear', panel }) });
+        cmds.push({ type: 'msg', msg: route.wrap(compName, { type: 'clear_filter', panel }) });
       }
       return [next, cmds];
     }
     case 'free_config': {
       // Free-config is always available; the verb forwards a wrapped
       // free_config_enter Msg into the layout Component.
-      return [model, [{ type: 'dispatch_msg', msg: route.wrap('layout', { type: 'free_config_enter' }) }]];
+      return [model, [{ type: 'msg', msg: route.wrap('layout', { type: 'free_config_enter' }) }]];
     }
     default:
       return [model, []];

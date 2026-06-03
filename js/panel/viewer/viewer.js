@@ -229,8 +229,8 @@ function update(msg, slice) {
       if (slice.tabList && slice.tabList.open) {
         next.tabList = { ...slice.tabList, open: false };
         return [next, [
-          { type: 'apply_msg', msg: { type: 'mode_clear', flag: 'tabListMode' } },
-          { type: 'dispatch_msg', msg: wrap('layout', { type: 'tab_list_set_owner', paneId: null }) },
+          { type: 'msg', msg: { type: 'mode_clear', flag: 'tabListMode' } },
+          { type: 'msg', msg: wrap('layout', { type: 'tab_list_set_owner', paneId: null }) },
         ]];
       }
       return next;
@@ -242,7 +242,7 @@ function update(msg, slice) {
     case 'viewer_search_enter': {
       const [next, info] = ms.enter(slice);
       return [next, info.enableSearchMode
-        ? [{ type: 'apply_msg', msg: { type: 'mode_set', flag: 'detailSearchMode' } }]
+        ? [{ type: 'msg', msg: { type: 'mode_set', flag: 'detailSearchMode' } }]
         : []];
     }
     case 'viewer_search_key':    return ms.keystroke(slice, msg.seq);
@@ -250,13 +250,13 @@ function update(msg, slice) {
     case 'viewer_search_commit': {
       const [next, info] = ms.commit(slice, _innerH(slice));
       return [next, info.disableSearchMode
-        ? [{ type: 'apply_msg', msg: { type: 'mode_clear', flag: 'detailSearchMode' } }]
+        ? [{ type: 'msg', msg: { type: 'mode_clear', flag: 'detailSearchMode' } }]
         : []];
     }
     case 'viewer_search_cancel': {
       const [next, info] = ms.cancel(slice);
       return [next, info.disableSearchMode
-        ? [{ type: 'apply_msg', msg: { type: 'mode_clear', flag: 'detailSearchMode' } }]
+        ? [{ type: 'msg', msg: { type: 'mode_clear', flag: 'detailSearchMode' } }]
         : []];
     }
     // Committed-search adapter Msgs — exposed for the non-reducer
@@ -346,7 +346,7 @@ function update(msg, slice) {
         const text = require('../../overlay/select').selectedText();
         const next = { ...slice, select: { ...slice.select, active: false } };
         const effects = [{ type: '_claimed' }];
-        if (text) effects.push({ type: 'apply_msg', msg: { type: 'register_push', text } });
+        if (text) effects.push({ type: 'msg', msg: { type: 'register_push', text } });
         return [next, effects];
       }
       if (msg.key === 'escape' && active) {

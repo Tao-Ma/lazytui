@@ -235,7 +235,7 @@ describe('[poolDragRelease] emits Cmds + clears drag', () => {
     eq(next.freeConfig.drag, null, 'drag cleared');
     eq(next.panelList.open, false, 'overlay closed on successful drop');
     eq(cmds.length, 2);
-    eq(cmds[0].type, 'dispatch_msg');
+    eq(cmds[0].type, 'msg');
     eq(cmds[0].msg.kind, 'layout');
     eq(cmds[0].msg.msg.type, 'pool_show');
     eq(cmds[0].msg.msg.id, 'notes');

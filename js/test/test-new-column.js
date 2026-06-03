@@ -554,7 +554,7 @@ describe('[18] pool_show_new_column applies focus inline (T2.4 + R1.2)', () => {
     eq(next.halfLeftPanel, 'history', 'halfLeftPanel sticky updated (history is non-detail)');
     const showInfo = cmds.find(c => c && c.type === 'show_selected_info');
     assert(showInfo, 'emits show_selected_info Cmd');
-    const reEntry = cmds.find(c => c && c.type === 'dispatch_msg'
+    const reEntry = cmds.find(c => c && c.type === 'msg'
       && c.msg && c.msg.msg && c.msg.msg.type === 'focus_set');
     assert(!reEntry, 'no dispatch_msg(focus_set) re-entry — would auto-clear the status notice');
     eq(next.freeConfig.noticeKind, 'info', 'green status notice survives');

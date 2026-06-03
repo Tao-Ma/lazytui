@@ -70,7 +70,7 @@ describe('[1] free_config_enter from half/full → refused with notice', () => {
     assert(Array.isArray(result), 'allowed entry returns [slice, cmds]');
     const [next, cmds] = result;
     eq(next.freeConfig.notice, null, 'stale notice cleared on entry');
-    assert(cmds.some(c => c.type === 'apply_msg' && c.msg.flag === 'freeConfigMode'),
+    assert(cmds.some(c => c.type === 'msg' && c.msg.flag === 'freeConfigMode'),
       'mode_set Cmd emitted');
   });
 });

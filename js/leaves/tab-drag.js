@@ -71,7 +71,7 @@ function tabDragMotion(slice, mx, my, panelBoundsDetail, currentGroup, targetKin
     freeConfig: { ...cursorOnly.freeConfig, drag: { ...cursorOnly.freeConfig.drag, fromIdx: toIdx } },
   };
   const cmd = {
-    type: 'dispatch_msg',
+    type: 'msg',
     msg: { kind: targetKind, msg: { type: 'viewer_reorder_content_tab', groupName: currentGroup, fromIdx: drag.fromIdx, toIdx } },
   };
   return [advanced, [cmd]];

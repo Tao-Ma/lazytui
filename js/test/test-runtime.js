@@ -156,7 +156,7 @@ describe('[3] update — (model, msg) → [model, cmds], pure + Cmd descriptors'
     const m = runtime.init();
     const [, cmds] = runtime.update(m, { type: 'free_config' });
     eq(cmds.length, 1);
-    eq(cmds[0].type, 'dispatch_msg');
+    eq(cmds[0].type, 'msg');
     eq(cmds[0].msg.kind, 'layout');
     eq(cmds[0].msg.msg.type, 'free_config_enter');
   });
@@ -197,7 +197,7 @@ describe('[11] terminal mode + multi-select writes (folded off the input path)',
     const [m2, cmds] = runtime.update(armed, { type: 'terminal_exit' });
     eq(m2.modes.terminalMode, false);
     eq(cmds.length, 1);
-    eq(cmds[0].type, 'dispatch_msg');
+    eq(cmds[0].type, 'msg');
     eq(cmds[0].msg.kind, 'layout');
     eq(cmds[0].msg.msg.type, 'view_drop_full_to_normal');
   });

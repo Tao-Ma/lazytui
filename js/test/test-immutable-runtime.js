@@ -49,7 +49,7 @@ describe('[immutable] root reducer — mode flips', () => {
       armed,
     );
     eq(next.modes.terminalMode, false);
-    eq(cmds[0].type, 'dispatch_msg');
+    eq(cmds[0].type, 'msg');
     eq(cmds[0].msg.kind, 'layout');
   });
 

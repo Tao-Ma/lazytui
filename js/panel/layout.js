@@ -334,7 +334,7 @@ function update(msg, slice) {
       // fingerprint doesn't change (it's a slice sub-state, not a
       // mode flag), so the diff painter can skip rows the overlay now
       // covers, leaving partial-paint residue on the first frame.
-      const cmds = [{ type: 'apply_msg', msg: { type: 'mode_set', flag: 'freeConfigMode' } }];
+      const cmds = [{ type: 'msg', msg: { type: 'mode_set', flag: 'freeConfigMode' } }];
       if (hasHidden) cmds.push({ type: 'force_full_repaint' });
       return [next, cmds];
     }
@@ -352,8 +352,8 @@ function update(msg, slice) {
         panelList: { open: false, cursor: 0 },
       };
       return [next, [
-        { type: 'apply_msg', msg: { type: 'mode_clear', flag: 'freeConfigMode' } },
-        { type: 'apply_msg', msg: { type: 'mode_clear', flag: 'freeConfigTitleEditMode' } },
+        { type: 'msg', msg: { type: 'mode_clear', flag: 'freeConfigMode' } },
+        { type: 'msg', msg: { type: 'mode_clear', flag: 'freeConfigTitleEditMode' } },
         { type: 'show_selected_info' },
       ]];
     }
@@ -373,7 +373,7 @@ function update(msg, slice) {
       // stuck with no visible UI until they hit Esc.
       const next = mfc.titleEnter(slice);
       if (next === slice) return slice;
-      return [next, [{ type: 'apply_msg', msg: { type: 'mode_set', flag: 'freeConfigTitleEditMode' } }]];
+      return [next, [{ type: 'msg', msg: { type: 'mode_set', flag: 'freeConfigTitleEditMode' } }]];
     }
     case 'free_config_title_submit': {
       const text = slice.freeConfig ? slice.freeConfig.titleEdit.text : '';
@@ -387,7 +387,7 @@ function update(msg, slice) {
       if (next.freeConfig && next.freeConfig.titleEdit && next.freeConfig.titleEdit.active) {
         next = { ...next, freeConfig: { ...next.freeConfig, titleEdit: { active: false, text: '' } } };
       }
-      return [next, [{ type: 'apply_msg', msg: { type: 'mode_clear', flag: 'freeConfigTitleEditMode' } }]];
+      return [next, [{ type: 'msg', msg: { type: 'mode_clear', flag: 'freeConfigTitleEditMode' } }]];
     }
     case 'free_config_mouse_press':  return mfc.mousePress(slice, msg.mx, msg.my, msg.cols);
     case 'free_config_mouse_motion': {
@@ -490,7 +490,7 @@ function update(msg, slice) {
       const next = slice.freeConfig
         ? { ...slice, freeConfig: { ...slice.freeConfig, titleEdit: { active: false, text: '' } } }
         : slice;
-      return [next, [{ type: 'apply_msg', msg: { type: 'mode_clear', flag: 'freeConfigTitleEditMode' } }]];
+      return [next, [{ type: 'msg', msg: { type: 'mode_clear', flag: 'freeConfigTitleEditMode' } }]];
     }
     // Wipe the session's undo/redo history. :restore-layout emits this
     // because the runtime layout the user was editing is gone — the
@@ -624,7 +624,7 @@ function update(msg, slice) {
       const closed = { ...slice, panelList: { ...slice.panelList, open: false } };
       const verb = item.status === 'placed' ? 'pool_hide' : 'pool_show';
       return [closed, [
-        { type: 'dispatch_msg', msg: { kind: 'layout', msg: { type: verb, id: item.id } } },
+        { type: 'msg', msg: { kind: 'layout', msg: { type: verb, id: item.id } } },
         { type: 'force_full_repaint' },
       ]];
     }

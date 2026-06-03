@@ -9,7 +9,7 @@
  *     `panel/api.dispatchMsg` runs them via `runEffects` here.
  *
  * Cmds and effects are the same thing — plain descriptors
- * (`{ type: 'show_selected_info' }`, `{ type: 'apply_msg', msg }`).
+ * (`{ type: 'show_selected_info' }`, `{ type: 'msg', msg }`).
  * Handlers register by type;
  * the vocabulary grows as Components register their own (e.g.
  * config-status' cfgStatusCompute). Unknown types are logged, not
@@ -99,21 +99,20 @@ function installBuiltins() {
   registerEffect('render', () => {
     try { renderQueue.scheduleRender(); } catch (_) { /* no renderer */ }
   });
-  // apply_msg: cross-layer Msg dispatch — lets a Component (e.g. detail)
-  // re-dispatch a Msg back to the root reducer (focus_set / terminal_enter
-  // / mode_set/clear) without owning that layer's writes. Phase A/B.
-  registerEffect('apply_msg', (eff) => {
-    if (!_enterCrossLayer('apply_msg', eff)) return;
-    try { require('./dispatch').applyMsg(eff.msg); }
-    finally { _exitCrossLayer(); }
-  });
-  // dispatch_msg: Component-fan-out companion (Phase C). Used by a Component
-  // update when it needs to send a Msg to ANOTHER Component (e.g. groups →
-  // viewer_reset_chrome → detail Component on a group cascade).
-  registerEffect('dispatch_msg', (eff) => {
-    if (!_enterCrossLayer('dispatch_msg', eff)) return;
-    try { api.dispatchMsg(eff.msg); }
-    finally { _exitCrossLayer(); }
+  // msg: cross-layer Msg dispatch. The payload shape picks the routing:
+  // a WRAPPED Msg `{kind, msg}` goes through api.dispatchMsg (Component
+  // fan-out — e.g. groups → viewer_reset_chrome → detail); a FLAT Msg
+  // goes through dispatch.applyMsg (root reducer — e.g. focus_set /
+  // mode_set / terminal_enter). The pre-R4.12 vocabulary had two
+  // separate Cmd types (`apply_msg`, `dispatch_msg`) where the type
+  // name acted as a routing hint — but the actual routing already
+  // looked at `msg.kind`, so the discriminator was duplicated.
+  registerEffect('msg', (eff) => {
+    if (!_enterCrossLayer('msg', eff)) return;
+    try {
+      if (eff.msg && eff.msg.kind) api.dispatchMsg(eff.msg);
+      else require('./dispatch').applyMsg(eff.msg);
+    } finally { _exitCrossLayer(); }
   });
   // show_selected_info: Component-level access to the framework Cmd that
   // refreshes the focused panel's info into the viewer. detail.update emits

@@ -367,7 +367,7 @@ function reduceTabMsg(msg, slice, ctx) {
       let next = { ...slice, tab: idx };
       const effects = [
         { type: 'kill_proc' },
-        { type: 'apply_msg', msg: { type: 'terminal_exit' } },
+        { type: 'msg', msg: { type: 'terminal_exit' } },
       ];
       if (idx === 0) {
         // Wipe lines+scroll BEFORE show_selected_info fires. The Cmd
@@ -376,7 +376,7 @@ function reduceTabMsg(msg, slice, ctx) {
         // tab), the show-info path bails and stale lines from the
         // previous tab would otherwise paint under the Info label.
         next = { ...next, lines: [], scroll: 0 };
-        effects.push({ type: 'dispatch_msg', msg: wrap(paneId, { type: 'viewer_show_info' }) });
+        effects.push({ type: 'msg', msg: wrap(paneId, { type: 'viewer_show_info' }) });
       } else if (idx <= actionTabs.length) {
         const [key, act] = actionTabs[idx - 1];
         effects.push({ type: 'stream_action', actionKey: key, script: act.script });
@@ -398,29 +398,29 @@ function reduceTabMsg(msg, slice, ctx) {
       const { total } = getTabInfo();
       if (total <= 1) return slice;
       const next = (slice.tab + (msg.dir | 0) + total) % total;
-      return [slice, [{ type: 'dispatch_msg', msg: wrap(paneId, { type: 'tab_switch', idx: next }) }]];
+      return [slice, [{ type: 'msg', msg: wrap(paneId, { type: 'tab_switch', idx: next }) }]];
     }
 
     // --- tab lifecycle ---
     case 'viewer_add_ephemeral_terminal': {
       const [next, info] = addEphemeral(slice, getModel(), msg);
       const effects = [];
-      if (info.focusDetail)   effects.push({ type: 'dispatch_msg', msg: wrap('layout', { type: 'focus_set', focus: paneId }) });
-      if (info.terminalEnter) effects.push({ type: 'apply_msg', msg: { type: 'terminal_enter' } });
+      if (info.focusDetail)   effects.push({ type: 'msg', msg: wrap('layout', { type: 'focus_set', focus: paneId }) });
+      if (info.terminalEnter) effects.push({ type: 'msg', msg: { type: 'terminal_enter' } });
       return [next, effects];
     }
     case 'viewer_remove_ephemeral_terminal': {
       const [next, { sessionId, terminalExit }] = removeEphemeral(slice, getModel(), msg);
       const effects = [];
       if (sessionId)    effects.push({ type: 'destroy_pty_session', id: sessionId });
-      if (terminalExit) effects.push({ type: 'apply_msg', msg: { type: 'terminal_exit' } });
+      if (terminalExit) effects.push({ type: 'msg', msg: { type: 'terminal_exit' } });
       return [next, effects];
     }
     case 'viewer_add_content_tab': {
       const [next, info] = addContent(slice, getModel(), msg);
       const effects = [];
-      if (info.focusDetail)  effects.push({ type: 'dispatch_msg', msg: wrap('layout', { type: 'focus_set', focus: paneId }) });
-      if (info.terminalExit) effects.push({ type: 'apply_msg', msg: { type: 'terminal_exit' } });
+      if (info.focusDetail)  effects.push({ type: 'msg', msg: wrap('layout', { type: 'focus_set', focus: paneId }) });
+      if (info.terminalExit) effects.push({ type: 'msg', msg: { type: 'terminal_exit' } });
       return [next, effects];
     }
     case 'viewer_update_content_tab_lines': {
@@ -447,10 +447,10 @@ function reduceTabMsg(msg, slice, ctx) {
         { ...slice, tabList: { open: true, cursor, scroll } },
         [
           // Mode flag drives keyboard routing (chain mode).
-          { type: 'apply_msg', msg: { type: 'mode_set', flag: 'tabListMode' } },
+          { type: 'msg', msg: { type: 'mode_set', flag: 'tabListMode' } },
           // v0.6.1 Phase 4 — record which pane the overlay anchors to,
           // so the renderer + hit-test can stop assuming singleton-detail.
-          { type: 'dispatch_msg', msg: wrap('layout', { type: 'tab_list_set_owner', paneId }) },
+          { type: 'msg', msg: wrap('layout', { type: 'tab_list_set_owner', paneId }) },
         ],
       ];
     }
@@ -459,8 +459,8 @@ function reduceTabMsg(msg, slice, ctx) {
       return [
         { ...slice, tabList: { ...slice.tabList, open: false } },
         [
-          { type: 'apply_msg', msg: { type: 'mode_clear', flag: 'tabListMode' } },
-          { type: 'dispatch_msg', msg: wrap('layout', { type: 'tab_list_set_owner', paneId: null }) },
+          { type: 'msg', msg: { type: 'mode_clear', flag: 'tabListMode' } },
+          { type: 'msg', msg: wrap('layout', { type: 'tab_list_set_owner', paneId: null }) },
           { type: 'force_full_repaint' },
         ],
       ];
@@ -491,10 +491,10 @@ function reduceTabMsg(msg, slice, ctx) {
       return [
         { ...slice, tabList: { ...tl, open: false } },
         [
-          { type: 'apply_msg', msg: { type: 'mode_clear', flag: 'tabListMode' } },
-          { type: 'dispatch_msg', msg: wrap('layout', { type: 'tab_list_set_owner', paneId: null }) },
-          { type: 'dispatch_msg', msg: wrap('layout', { type: 'focus_set', focus: paneId }) },
-          { type: 'dispatch_msg', msg: wrap(paneId, { type: 'tab_switch', idx }) },
+          { type: 'msg', msg: { type: 'mode_clear', flag: 'tabListMode' } },
+          { type: 'msg', msg: wrap('layout', { type: 'tab_list_set_owner', paneId: null }) },
+          { type: 'msg', msg: wrap('layout', { type: 'focus_set', focus: paneId }) },
+          { type: 'msg', msg: wrap(paneId, { type: 'tab_switch', idx }) },
           { type: 'force_full_repaint' },
         ],
       ];
@@ -507,7 +507,7 @@ function reduceTabMsg(msg, slice, ctx) {
       const removeMsg = msg.closeKind === 'content'
         ? { type: 'viewer_remove_content_tab', groupName: getModel().currentGroup, key: msg.closeKey }
         : { type: 'viewer_remove_ephemeral_terminal', groupName: getModel().currentGroup, key: msg.closeKey };
-      return [slice, [{ type: 'dispatch_msg', msg: wrap(paneId, removeMsg) }]];
+      return [slice, [{ type: 'msg', msg: wrap(paneId, removeMsg) }]];
     }
 
     default:

@@ -42,9 +42,9 @@ describe('[tab_list_open] cursor lands on the active tab', () => {
     const { cmds } = applyUpdate(slice, { type: 'tab_list_open', vh: 5, tabCount: 3 });
     // v0.6.1 Phase 4 — open also dispatches tab_list_set_owner to layout.
     eq(cmds.length, 2);
-    eq(cmds[0].type, 'apply_msg');
+    eq(cmds[0].type, 'msg');
     eq(cmds[0].msg.flag, 'tabListMode');
-    eq(cmds[1].type, 'dispatch_msg');
+    eq(cmds[1].type, 'msg');
     eq(cmds[1].msg.kind, 'layout');
     eq(cmds[1].msg.msg.type, 'tab_list_set_owner');
   });
@@ -107,14 +107,14 @@ describe('[tab_list_pick] switches + closes', () => {
     // v0.6.1 Phase 4 — pick also clears tab_list_set_owner on layout.
     eq(cmds.length, 5);
     const types = cmds.map(c => c.type);
-    assert(types.includes('apply_msg'));
-    assert(types.includes('dispatch_msg'));
+    assert(types.includes('msg'));
+    assert(types.includes('msg'));
     assert(types.includes('force_full_repaint'));
     // Verify the tab_switch carries the cursor idx
-    const switchCmd = cmds.find(c => c.type === 'dispatch_msg' && c.msg.msg && c.msg.msg.type === 'tab_switch');
+    const switchCmd = cmds.find(c => c.type === 'msg' && c.msg.msg && c.msg.msg.type === 'tab_switch');
     assert(switchCmd, 'tab_switch Msg present');
     eq(switchCmd.msg.msg.idx, 2);
-    const ownerCmd = cmds.find(c => c.type === 'dispatch_msg'
+    const ownerCmd = cmds.find(c => c.type === 'msg'
       && c.msg.msg && c.msg.msg.type === 'tab_list_set_owner');
     assert(ownerCmd, 'tab_list_set_owner clear present');
     eq(ownerCmd.msg.msg.paneId, null);
@@ -129,9 +129,9 @@ describe('[tab_list_close] cleans up', () => {
     eq(next.tabList.open, false);
     // v0.6.1 Phase 4 — close also dispatches tab_list_set_owner (null) to layout.
     eq(cmds.length, 3);
-    eq(cmds[0].type, 'apply_msg');
+    eq(cmds[0].type, 'msg');
     eq(cmds[0].msg.flag, 'tabListMode');
-    eq(cmds[1].type, 'dispatch_msg');
+    eq(cmds[1].type, 'msg');
     eq(cmds[1].msg.msg.type, 'tab_list_set_owner');
     eq(cmds[1].msg.msg.paneId, null);
     eq(cmds[2].type, 'force_full_repaint');
@@ -153,7 +153,7 @@ describe('[tab_list_close_selected] emits a remove Msg for the row', () => {
       closeKind: 'content', closeKey: 'file:/tmp/foo.txt',
     });
     eq(cmds.length, 1);
-    eq(cmds[0].type, 'dispatch_msg');
+    eq(cmds[0].type, 'msg');
     eq(cmds[0].msg.msg.type, 'viewer_remove_content_tab');
     eq(cmds[0].msg.msg.key, 'file:/tmp/foo.txt');
   });
@@ -186,7 +186,7 @@ describe('[viewer_reset_chrome] auto-closes the overlay on group switch', () => 
     // v0.6.1 Phase 4 — reset_chrome's close path also clears owner.
     eq(cmds.length, 2);
     eq(cmds[0].msg.flag, 'tabListMode');
-    eq(cmds[1].type, 'dispatch_msg');
+    eq(cmds[1].type, 'msg');
     eq(cmds[1].msg.msg.type, 'tab_list_set_owner');
   });
   it('closed overlay → reset_chrome returns plain slice', () => {

@@ -171,11 +171,11 @@ function _cascadeCmds(res) {
   // wrapped set_cursor Msg back to ourselves rather than routing via
   // the (retired) `set_panel_cursor` reducer name.
   if (res.newIdx >= 0) {
-    cmds.push({ type: 'dispatch_msg', msg: require('../api').wrap('groups', { type: 'set_cursor', panel: 'groups', index: res.newIdx }) });
+    cmds.push({ type: 'msg', msg: require('../api').wrap('groups', { type: 'set_cursor', panel: 'groups', index: res.newIdx }) });
   }
   if (res.groupChanged) {
-    cmds.push({ type: 'apply_msg', msg: { type: 'set_current_group', name: res.newCurrentGroup } });
-    cmds.push({ type: 'apply_msg', msg: { type: 'reset_group_context' } });
+    cmds.push({ type: 'msg', msg: { type: 'set_current_group', name: res.newCurrentGroup } });
+    cmds.push({ type: 'msg', msg: { type: 'reset_group_context' } });
     // v0.6.1 Phase 5 — viewer reset routes through resolveTarget so
     // multi-viewer (Phase 6+) hits the right pane. With one viewer
     // (today) this resolves to 'detail' every time. null → no viewer
@@ -183,7 +183,7 @@ function _cascadeCmds(res) {
     const route = require('../../leaves/route');
     const target = route.resolveTarget('viewer');
     if (target) {
-      cmds.push({ type: 'dispatch_msg', msg: require('../api').wrap(target, { type: 'viewer_reset_chrome' }) });
+      cmds.push({ type: 'msg', msg: require('../api').wrap(target, { type: 'viewer_reset_chrome' }) });
     }
   }
   cmds.push({ type: 'show_selected_info' });
@@ -210,13 +210,13 @@ function update(msg, slice) {
     // cursor already written by nav_select — don't re-emit set_panel_cursor.
     const cmds = [];
     if (res.groupChanged) {
-      cmds.push({ type: 'apply_msg', msg: { type: 'set_current_group', name: res.newCurrentGroup } });
-      cmds.push({ type: 'apply_msg', msg: { type: 'reset_group_context' } });
+      cmds.push({ type: 'msg', msg: { type: 'set_current_group', name: res.newCurrentGroup } });
+      cmds.push({ type: 'msg', msg: { type: 'reset_group_context' } });
       // v0.6.1 Phase 5 — viewer reset routes through resolveTarget.
       const route = require('../../leaves/route');
       const target = route.resolveTarget('viewer');
       if (target) {
-        cmds.push({ type: 'dispatch_msg', msg: require('../api').wrap(target, { type: 'viewer_reset_chrome' }) });
+        cmds.push({ type: 'msg', msg: require('../api').wrap(target, { type: 'viewer_reset_chrome' }) });
       }
     }
     return [slice, cmds];

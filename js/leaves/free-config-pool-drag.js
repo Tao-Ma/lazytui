@@ -223,22 +223,22 @@ function poolDragRelease(slice) {
     // would need to press `u u` to revert. The first hop's snapshot is
     // the pre-drag arrange (what the user wants `u` to restore to).
     const cmds = [
-      { type: 'dispatch_msg', msg: { kind: 'layout', msg: { type: 'pool_hide', id: t.occupantId } } },
-      { type: 'dispatch_msg', msg: { kind: 'layout', msg: { type: 'pool_show', id: sourceId, columnIndex: t.columnIndex, _skipUndo: true } } },
+      { type: 'msg', msg: { kind: 'layout', msg: { type: 'pool_hide', id: t.occupantId } } },
+      { type: 'msg', msg: { kind: 'layout', msg: { type: 'pool_show', id: sourceId, columnIndex: t.columnIndex, _skipUndo: true } } },
       repaint,
     ];
     return [closeOverlay, cmds];
   }
   if (t.kind === 'new_column') {
     const cmds = [
-      { type: 'dispatch_msg', msg: { kind: 'layout', msg: { type: 'pool_show_new_column', id: sourceId, position: t.position } } },
+      { type: 'msg', msg: { kind: 'layout', msg: { type: 'pool_show_new_column', id: sourceId, position: t.position } } },
       repaint,
     ];
     return [closeOverlay, cmds];
   }
   // insert
   const showCmd = {
-    type: 'dispatch_msg',
+    type: 'msg',
     msg: { kind: 'layout', msg: { type: 'pool_show', id: sourceId, columnIndex: t.columnIndex, index: t.index } },
   };
   return [closeOverlay, [showCmd, repaint]];

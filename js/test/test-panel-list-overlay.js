@@ -129,7 +129,7 @@ describe('[panel_list_pick] context-dependent: hide / show / no-op', () => {
     const [next, cmds] = result;
     eq(next.panelList.open, false, 'overlay closes on pick');
     eq(cmds.length, 2, 'dispatch_msg + force_full_repaint');
-    eq(cmds[0].type, 'dispatch_msg');
+    eq(cmds[0].type, 'msg');
     eq(cmds[0].msg.kind, 'layout');
     eq(cmds[0].msg.msg.type, 'pool_hide');
     eq(cmds[0].msg.msg.id, 'groups');
