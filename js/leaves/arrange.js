@@ -15,9 +15,8 @@
  * Zero deps beyond other leaves (pane, hotkeys).
  */
 'use strict';
-
-const mpane = require('./pane');
 const { hotkeyPoolForColumn } = require('./hotkeys');
+const mpane = require('./pane');
 
 /**
  * Build a fresh arrange struct from a parsed config. Pure — reads only
@@ -82,12 +81,18 @@ function rebuildLayoutFromConfig(config) {
       }
       return mpane.wrapAsPane(wide, mpane.newPaneId(p.id));
     };
+    // Hotkey auto-fill is a fixture / programmatic-JSON fallback.
+    // Parser callers always pre-stamp `p.hotkey` (via assignHotkeys +
+    // buildPlacedPane), so the `p.hotkey ||` short-circuits every
+    // iteration and the auto pool isn't consumed. Tests that hand-build
+    // a layout config (no parser run) DO rely on this fallback to
+    // assign positional keys '1'..'6' / '7'..'9', so don't drop it.
     out.columns = (ly.columns || []).map((col, ci) => {
       const isLast = ci === N - 1;
       const pool = hotkeyPoolForColumn(ci, N);
       const explicit = new Set((col.panels || []).map(p => p.hotkey).filter(Boolean));
       const auto = pool.filter(k => !explicit.has(k));
-      const panels = (col.panels || []).map((p, i) =>
+      const panels = (col.panels || []).map(p =>
         widenPane(p, p.hotkey || (auto.shift() || ''), ci));
       const out = { panels };
       // Last column's width is implicit; everyone else carries it.
