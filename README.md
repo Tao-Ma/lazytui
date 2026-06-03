@@ -261,9 +261,6 @@ bin/lazytui path/to/config.yml --exec group:action [args...]
 # Enumerate every action
 bin/lazytui path/to/config.yml --list [filter]
 
-# Layout editor
-bin/lazytui --design path/to/config.yml
-
 # Print the plugin-authoring bundle (feed to an AI agent)
 bin/lazytui --spec > spec.md
 ```
