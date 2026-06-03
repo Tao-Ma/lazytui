@@ -138,15 +138,19 @@ describe('[pool_show] inserts placement from pool entry', () => {
     eq(next.arrange.columns[0].panels.map(p => p.id), ['groups', 'logs']);
     eq(next.arrange.columns[1].panels.map(p => p.id), ['actions', 'detail']);
   });
-  it('right column: hotkeys reassign positionally — new panel takes the slot before detail', () => {
+  it('right column: hotkey rekey preserves actions=0 / detail=o anchors (R2.5)', () => {
     const slice = buildSlice({
       left:   [['groups', 'groups']],
       right:  [['actions', 'actions'], ['detail', 'detail']],
       hidden: [['notes', 'viewer']],
     });
     const next = update({ type: 'pool_show', id: 'notes' }, slice);
+    // Last column rekey runs through mfc.reassignHotkeys so actions
+    // keeps its '0' anchor and detail keeps its 'o' anchor. Notes
+    // (the new pane) takes whichever positional slot the leaf assigns
+    // — here position 1 in the last column → pool slot '8'.
     eq(next.arrange.columns[1].panels.map(p => [p.id, p.hotkey]),
-       [['actions', '7'], ['notes', '8'], ['detail', '9']]);
+       [['actions', '0'], ['notes', '8'], ['detail', 'o']]);
   });
   it('no-op when already placed', () => {
     const slice = buildSlice({

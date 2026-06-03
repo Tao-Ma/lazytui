@@ -25,15 +25,6 @@ const mpool = require('../leaves/pool');
 const route = require('../leaves/route');
 const { getModel } = require('../app/runtime');
 
-const { hotkeyPoolForColumn } = require('../leaves/hotkeys');
-
-/** Reassign positional hotkeys for a column after a hide/show mutation.
- *  Matches the free-config behavior — hotkey is the panel's slot index
- *  within its column. Explicit YAML hotkeys are NOT preserved across
- *  runtime mutations (consistent with how free-config reorder works). */
-function rekeyColumn(panels, pool) {
-  return panels.map((p, i) => ({ ...p, hotkey: pool[i] || '' }));
-}
 
 /** Compare two drag drop targets for visual equality. Used by both
  *  free_config_mouse_motion and pool_drag_motion to decide whether the cursor
@@ -581,11 +572,15 @@ function update(msg, slice) {
       if (mpool.isDetailPane(entry)) return slice;
       const loc = mpool.findPaneLocation(arrange, p => p.id === id);
       if (!loc) return slice;  // already hidden
-      const N = mpool.columnCount(arrange);
-      const pool = hotkeyPoolForColumn(loc.columnIndex, N);
       const withUndo = mfc.pushUndo(slice);
-      const nextArrange = mpool.updateColumn(arrange, loc.columnIndex, panels =>
-        rekeyColumn(panels.filter((_, i) => i !== loc.paneIndex), pool));
+      // Strip the pane, then reassign hotkeys across all columns via
+      // the leaf's `_reassignHotkeys` — same path used by drag/reorder
+      // / new-column-spawn / addColumn / removeColumn. Inline rekey
+      // here used to lose actions's '0' / detail's 'o' anchors when
+      // the hidden pane shared a column with them.
+      const stripped = mpool.updateColumn(arrange, loc.columnIndex, panels =>
+        panels.filter((_, i) => i !== loc.paneIndex));
+      const nextArrange = mfc.reassignHotkeys(stripped);
       const next = { ...withUndo, arrange: nextArrange, dirty: true };
       // If the hidden panel was focused, focus is now stale (points at
       // a no-longer-placed type). clampSelected snaps it back to a
@@ -716,8 +711,8 @@ function update(msg, slice) {
       // pushes — otherwise one user gesture bloats the undo stack by 2
       // and `u` lands on a half-state.
       const withUndo = msg._skipUndo ? slice : mfc.pushUndo(slice);
-      const nextArrange = mpool.updateColumn(withUndo.arrange, columnIndex, () =>
-        rekeyColumn(inserted, hotkeyPoolForColumn(columnIndex, N)));
+      const spliced = mpool.updateColumn(withUndo.arrange, columnIndex, () => inserted);
+      const nextArrange = mfc.reassignHotkeys(spliced);
       const next = { ...withUndo, arrange: nextArrange, dirty: true };
       // Move focus to the newly-shown panel — matches the overlay UX
       // where picking from the pool surfaces it as the active one.
