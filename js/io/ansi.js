@@ -197,4 +197,35 @@ function esc(text) {
   return _expandTabs(stripControls(text)).replace(/\[/g, '\\[');
 }
 
-module.exports = { richToAnsi, stripMarkup, visibleLen, charWidth, esc, stripControls, RESET };
+/**
+ * Wrap `content` in a markup color tag that survives nested `[/]`
+ * resets inside the content.
+ *
+ * Why this exists: richToAnsi treats `[/]` as a hard ANSI reset
+ * (`\x1b[0m`), not a stack pop. A naïve `[red]${content}[/]` wrapper
+ * drops to terminal default partway through whenever `content`
+ * contains a nested `[/]` — e.g., a panel title with a `[dim]…[/]`
+ * chip suffix, or a footer string with a `[bold red]…[/]` notice
+ * embedded. Every char after that inner `[/]` until the next
+ * color tag then renders in the terminal's default color (visible
+ * as black on light terminals, white on dark — never the intended
+ * border / footer color).
+ *
+ * `wrapColor` rewrites every inner `[/]` to `[/][color]`, so the
+ * outer color resumes immediately after each reset. The outer
+ * `[color]…[/]` framing is unchanged. Pairs with `esc()`: use
+ * `esc()` to neutralize untrusted markup chars; use `wrapColor()`
+ * when content INTENTIONALLY carries inner color tags but should
+ * compose under an outer color.
+ *
+ * Examples:
+ *   wrapColor('red', 'plain')           → '[red]plain[/]'
+ *   wrapColor('red', '[dim]a[/] b')     → '[red][dim]a[/][red] b[/]'
+ *   wrapColor('green', '[bold]X[/]Y')   → '[green][bold]X[/][green]Y[/]'
+ */
+function wrapColor(color, content) {
+  const rewritten = String(content).split('[/]').join(`[/][${color}]`);
+  return `[${color}]${rewritten}[/]`;
+}
+
+module.exports = { richToAnsi, stripMarkup, visibleLen, charWidth, esc, wrapColor, stripControls, RESET };

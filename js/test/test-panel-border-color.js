@@ -67,6 +67,36 @@ describe('renderPanel — title with embedded [/] preserves border color', () =>
   });
 });
 
+describe('wrapColor — markup wrapper that survives nested [/]', () => {
+  const { wrapColor, richToAnsi } = require('../io/ansi');
+
+  it('plain content wraps to [color]content[/]', () => {
+    eq(wrapColor('red', 'plain'), '[red]plain[/]');
+  });
+
+  it('rewrites every inner [/] to [/][color] so outer color resumes', () => {
+    eq(wrapColor('red', '[dim]a[/] b'), '[red][dim]a[/][red] b[/]');
+    eq(wrapColor('green', '[bold]X[/]Y[/]Z'),
+       '[green][bold]X[/][green]Y[/][green]Z[/]');
+  });
+
+  it('rendered ANSI re-opens the outer color after each reset', () => {
+    const ansi = richToAnsi(wrapColor('blue', '[bold red]X[/] tail'));
+    // Sequence: blue, bold-red, X, reset, blue (reopened), " tail", reset.
+    const resetIdx = ansi.indexOf('\x1b[0m');
+    const afterReset = ansi.slice(resetIdx + 4);  // "\x1b[0m" is 4 chars
+    assert(afterReset.startsWith('\x1b[34m'),
+      `outer blue (\\x1b[34m) re-opens after the inner reset (got: ${JSON.stringify(afterReset.slice(0, 10))})`);
+  });
+
+  it('idempotent on empty / no-nested-resets content', () => {
+    eq(wrapColor('red', ''), '[red][/]');
+    eq(wrapColor('red', '[red]nested[/]'),
+       '[red][red]nested[/][red][/]',
+       'redundant [red] re-opens are harmless markup that richToAnsi compiles to repeat SGRs');
+  });
+});
+
 describe('richToAnsi — confirm `[/]` is a hard reset (the underlying invariant)', () => {
   it('[outer][inner]…[/][/] resets to default after the first [/]', () => {
     const { richToAnsi } = require('../io/ansi');

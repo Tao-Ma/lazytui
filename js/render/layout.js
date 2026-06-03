@@ -21,7 +21,7 @@
  */
 'use strict';
 
-const { RESET, richToAnsi, esc, visibleLen } = require('../io/ansi');
+const { RESET, richToAnsi, esc, visibleLen, wrapColor } = require('../io/ansi');
 const { refreshSize, cols, rows, stdout, showCursor, hideCursor } = require('../io/term');
 const { allPanels, syncPanelScroll, multiSelCount } = require('../app/state');
 const mpool = require('../leaves/pool');
@@ -76,14 +76,12 @@ function _renderCollapsed(p, w) {
   // and right corner. truncate() is a no-op when visibleLen fits.
   titleText = truncate(titleText, innerW - 2);
   const fill = innerW - visibleLen(titleText);
-  // Re-emit `[${fc}]` after the title so a `[/]` inside the title's
-  // markup (e.g. `[dim]…[/]` suffix) doesn't drop the outer border
-  // color for the trailing fill chars. See renderPanel's top-border
-  // comment for the full story.
-  const fcReopen = `[${fc}]`;
-  if (fill >= 2)      return `[${fc}]╭─${titleText}${fcReopen}${'─'.repeat(fill - 1)}╮[/]`;
-  else if (fill === 1) return `[${fc}]╭${titleText}${fcReopen}─╮[/]`;
-  else                 return `[${fc}]╭${titleText}${fcReopen}╮[/]`;
+  // wrapColor() reopens fc after any nested `[/]` in titleText so
+  // the trailing fill + corner stay in border color — same fix as
+  // renderPanel's top border for the collapsed 1-row chrome bar.
+  if (fill >= 2)      return wrapColor(fc, `╭─${titleText}${'─'.repeat(fill - 1)}╮`);
+  else if (fill === 1) return wrapColor(fc, `╭${titleText}─╮`);
+  else                 return wrapColor(fc, `╭${titleText}╮`);
 }
 
 function rendererFor(type) {
@@ -880,14 +878,13 @@ function renderFooter(model = getModel()) {
   if (visibleLen(keys) > maxKeysLen) keys = truncate(keys, maxKeysLen);
   const visLen = visibleLen(keys) + tailLen;
   const padding = ' '.repeat(Math.max(0, COLS - visLen));
-  // Re-emit `[footer]` after `${keys}` so a `[/]` inside any nested
-  // colored notice (`[bold red]…[/]`, `[bold green]…[/]`, `[yellow]…[/]`,
-  // dirty markers, boot-warning chip) doesn't drop the outer footer
-  // color for the trailing padding + tags. Same class of bug as
-  // renderPanel's title-with-nested-[/] fix — richToAnsi treats `[/]`
-  // as a hard reset, not a stack pop.
-  const fc = theme().footer;
-  const footerMarkup = `[${fc}]${keys}[${fc}]${padding}${rightTail}${selectTag}${modeTag}[/]`;
+  // wrapColor() reopens the footer color after any nested `[/]` in
+  // `keys` (layout notice, dirty marker, boot-warning chip), so the
+  // trailing padding + tags stay in footer color instead of dropping
+  // to terminal default. Same `[/]`-is-hard-reset class of bug as
+  // renderPanel's title fix.
+  const footerMarkup = wrapColor(theme().footer,
+    `${keys}${padding}${rightTail}${selectTag}${modeTag}`);
   stdout.write(`\x1b[${ROWS};1H` + richToAnsi(footerMarkup) + RESET);
 }
 
