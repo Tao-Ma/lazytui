@@ -502,7 +502,59 @@ describe('[15] addColumn donates from BOTH neighbors when both are explicit-widt
   });
 });
 
-describe('[16] _dragTargetsEqual — new_column targets compare on `position`', () => {
+describe('[16] spawn → drag-back round-trip reclaims donor width', () => {
+  it('drag pane out to new col, then back to original col → donor width restored', () => {
+    // postgres-shaped fixture: col 0 width=32 with three panes, col 1
+    // implicit with three panes (actions, stats, detail).
+    let s = makeSlice();
+    s.arrange = {
+      ...s.arrange,
+      columns: [
+        { width: 32, panels: [
+          { type: 'containers', id: 'containers', columnIndex: 0, hotkey: '1', paneId: 'p-c', tabs: [{id:'containers',poolId:'containers'}], activeTabId: 'containers' },
+          { type: 'groups',     id: 'groups',     columnIndex: 0, hotkey: '2', paneId: 'p-g', tabs: [{id:'groups',poolId:'groups'}], activeTabId: 'groups' },
+        ] },
+        { panels: [
+          { type: 'actions', id: 'actions', columnIndex: 1, hotkey: '0', paneId: 'p-a', tabs: [{id:'actions',poolId:'actions'}], activeTabId: 'actions' },
+          { type: 'stats',   id: 'stats',   columnIndex: 1, hotkey: '',  paneId: 'p-s', tabs: [{id:'stats',poolId:'stats'}], activeTabId: 'stats' },
+          { type: 'detail',  id: 'detail',  columnIndex: 1, hotkey: 'o', paneId: 'p-d', tabs: [{id:'detail',poolId:'detail'}], activeTabId: 'detail' },
+        ] },
+      ],
+    };
+    const originalWidth = s.arrange.columns[0].width;
+
+    // Step 1: spawn stats to a new column at position 1.
+    const s1 = mfc.applyNewColumn(s, 'stats', { kind: 'new_column', position: 1, valid: true });
+    eq(s1.arrange.columns.length, 3, 'now 3 cols');
+    assert(s1.arrange.columns[0].width < originalWidth, 'col 0 shrank to donate');
+
+    // Step 2: drag stats from the new col back to col 2 via mouseRelease,
+    // which dispatches applyDrop → applyInsert (applyInsert is internal).
+    const dragging = { ...s1, freeConfig: { ...s1.freeConfig, drag: {
+      kind: 'dragging', sourceType: 'stats',
+      target: { kind: 'insert', columnIndex: 2, index: 0, valid: true },
+    } } };
+    const result = mfc.mouseRelease(dragging);
+    eq(result.arrange.columns.length, 2, 'auto-removed empty source col → back to 2 cols');
+    eq(result.arrange.columns[0].width, originalWidth, 'col 0 width reclaimed');
+    eq(result.arrange.columns[0].panels[0].type, 'containers', 'col 0 panes intact');
+    eq(result.arrange.columns[1].panels[0].type, 'stats', 'stats lands at idx 0 of col 1');
+  });
+
+  it(':remove-column also releases width back to the left neighbor', () => {
+    // Add an empty col between cols 0 and 1, then remove it.
+    let s = makeSlice();
+    const originalWidth = s.arrange.columns[0].width;
+    s = mfc.addColumn(s, 1).slice;
+    eq(s.arrange.columns.length, 3);
+    assert(s.arrange.columns[0].width < originalWidth, 'col 0 donated width');
+    const { slice: out } = mfc.removeColumn(s, 1);
+    eq(out.arrange.columns.length, 2);
+    eq(out.arrange.columns[0].width, originalWidth, 'col 0 width restored');
+  });
+});
+
+describe('[17] _dragTargetsEqual — new_column targets compare on `position`', () => {
   // Re-derive via layout.update's pool_drag_motion behavior. Easier:
   // construct two new_column targets and verify the layout reducer
   // would emit force_full_repaint when they differ. Direct via

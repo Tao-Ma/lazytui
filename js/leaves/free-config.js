@@ -841,7 +841,10 @@ function applyNewColumn(slice, srcType, target) {
   workingColumns[fromLoc.columnIndex] = { ...fromCol, panels: fromPanels };
   let effectivePosition = position;
   if (removeSource) {
-    workingColumns.splice(fromLoc.columnIndex, 1);
+    // _spliceAndReleaseWidth releases the source's width back to its
+    // left neighbor so the spawn → drag-back round-trip restores the
+    // donor's original width.
+    workingColumns = _spliceAndReleaseWidth(workingColumns, fromLoc.columnIndex);
     if (fromLoc.columnIndex < position) effectivePosition = position - 1;
   }
 
@@ -864,9 +867,10 @@ function applyInsert(slice, srcType, target) {
   const src = fromLoc.pane;
   const fromCol = fromLoc.columnIndex;
   const fromIdx = fromLoc.paneIndex;
-  const toCol = target.columnIndex;
+  let toCol = target.columnIndex;
   let insertAt = target.index;
   if (fromCol === toCol && fromIdx < insertAt) insertAt--;
+  const lastIdx = mpool.lastColumnIndex(slice.arrange);
 
   // Build the target column's new panels array. If the source is moving
   // within the same column, mutate one column; otherwise mutate two.
@@ -883,6 +887,17 @@ function applyInsert(slice, srcType, target) {
     toPanels.splice(insertAt, 0, { ...src, columnIndex: toCol });
     nextArrange = mpool.updateColumn(slice.arrange, fromCol, () => fromPanels);
     nextArrange = mpool.updateColumn(nextArrange, toCol, () => toPanels);
+    // Source column became empty and isn't the last column → auto-
+    // remove it and release its width back to the left neighbor.
+    // Mirrors applyNewColumn's removeSource branch: an emptied source
+    // column would otherwise render as a blank gap (still occupying
+    // its `width` cells) instead of yielding the cells back to the
+    // donor neighbor. The drag-out + drag-back round-trip now
+    // restores the original layout.
+    if (fromPanels.length === 0 && fromCol !== lastIdx) {
+      const releasedColumns = _spliceAndReleaseWidth(nextArrange.columns, fromCol);
+      nextArrange = { ...nextArrange, columns: releasedColumns };
+    }
   }
 
   return {
@@ -1088,6 +1103,33 @@ function _allocateNewColumnWidth(columns, position) {
   return { columns: out, newColWidth };
 }
 
+/** Splice the column at `removedIndex` out of `columns` AND release
+ *  its explicit width back to the left neighbor (the most likely
+ *  donor when the column was originally spawned). Pairs with
+ *  `_allocateNewColumnWidth` so a spawn/remove round-trip restores
+ *  the donor's width — without this, dragging a pane out to a new
+ *  column then back leaves the donor permanently narrower.
+ *
+ *  Caller must ensure the column is genuinely removable (not last,
+ *  and either empty after a drag move or explicitly :remove-column'd
+ *  empty). When the left neighbor has implicit width or doesn't
+ *  exist (removedIndex === 0), no transfer — the implicit last
+ *  column absorbs the released cells naturally via the renderer's
+ *  remainder math. */
+function _spliceAndReleaseWidth(columns, removedIndex) {
+  const removed = columns[removedIndex];
+  const out = columns.slice();
+  out.splice(removedIndex, 1);
+  if (removed && removed.width != null && removedIndex > 0) {
+    const leftIdx = removedIndex - 1;
+    const left = out[leftIdx];
+    if (left && left.width != null) {
+      out[leftIdx] = { ...left, width: left.width + removed.width };
+    }
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------- column add/remove (Phase 3)
 
 /**
@@ -1149,8 +1191,7 @@ function removeColumn(slice, n) {
   if ((col.panels || []).length > 0) {
     return { slice, error: `column ${n + 1} is not empty — hide its panes first` };
   }
-  const columns = arrange.columns.slice();
-  columns.splice(n, 1);
+  const columns = _spliceAndReleaseWidth(arrange.columns, n);
   const nextArrange = _reassignHotkeys({ ...arrange, columns });
   return { slice: { ...slice, arrange: nextArrange, dirty: true }, error: null };
 }
