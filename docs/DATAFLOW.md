@@ -121,9 +121,11 @@ except the blessed render-side exceptions:
     (tab-bar hit-test cache).
   - keep-in-view `set_scroll` Msgs from `syncPanelScroll` into each
     Navigator's nav slice (Msgs, not direct writes).
-  - `viewer_set_viewport` Msg from `render()` into detail's `innerH`
-    (T34 — viewport cache so viewer reducers don't read layout cross-
-    slice; same Msg shape as the keep-in-view scroll above).
+  - direct `route.setInstanceSlice` from `render()` into the viewer's
+    `innerH` (viewport cache so viewer reducers don't read layout
+    cross-slice; R4.9 retired the prior `viewer_set_viewport` Msg —
+    the Msg's only effect was this single-field write, now done inline
+    alongside the panelBounds writes).
   - `setImmediate(terminal_exit)` from `renderTerminalOverlay` when
     the active PTY session has exited (T14 — deferred a tick so the
     cleanup cascade isn't inline in the render path).
