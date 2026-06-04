@@ -77,8 +77,8 @@ describe('[multi-job] same-slot re-run preempts', () => {
   });
 });
 
-describe('[multi-job] unrouted preempt stages confirm; default keeps existing alive', () => {
-  it('a second unrouted run does NOT silently replace the first', () => {
+describe('[multi-job] unrouted preempt — different label stages confirm', () => {
+  it('different label → confirm overlay; existing stays alive', () => {
     seedModel();
     jobs._reset();
     runtime.setModel({ ...runtime.getModel(), modes: { ...runtime.getModel().modes, confirmMode: false } });
@@ -97,6 +97,29 @@ describe('[multi-job] unrouted preempt stages confirm; default keeps existing al
       modes: { ...runtime.getModel().modes, confirmMode: false },
       modal: { ...runtime.getModel().modal, confirm: { message: '', cmd: null } },
     });
+  });
+});
+
+describe('[multi-job] unrouted preempt — same label silent restart', () => {
+  it('same headerLabel re-run silently preempts (no confirm)', () => {
+    seedModel();
+    jobs._reset();
+    runtime.setModel({ ...runtime.getModel(),
+      modes: { ...runtime.getModel().modes, confirmMode: false },
+      modal: { ...runtime.getModel().modal, confirm: { message: '', cmd: null } },
+    });
+    stream.streamCommand('docker logs nginx', 'sleep 5', []);
+    const firstId = running()[0].id;
+    stream.streamCommand('docker logs nginx', 'sleep 5', []);
+    // Same label → no confirm; previous killed, new one alive.
+    eq(runtime.getModel().modes.confirmMode, false, 'no confirm overlay for same-label rerun');
+    const r = running();
+    eq(r.length, 1, 'exactly one alive');
+    assert(r[0].id !== firstId, 'new job replaced the old one');
+    const all = jobs.list();
+    const prior = all.find(j => j.id === firstId);
+    eq(prior.status, 'killed', 'prior marked killed');
+    stream.killAll({ silent: true });
   });
 });
 

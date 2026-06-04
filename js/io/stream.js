@@ -156,22 +156,25 @@ function streamCommand(headerLabel, cmd, args = [], opts = {}) {
   const slotKey = _slotKey(tabKey, groupName);
 
   // Confirm-before-preempt for the unrouted slot — protects the live
-  // viewer transcript from being wiped by an accidental command. Auto-
-  // jump to Info first so the user sees what's running, then stage a
-  // confirm overlay (default N → abandon the new cmd). Y → fire the
-  // `unrouted_preempt_and_run` Cmd which calls killJob + streamCommand.
-  // Routed slots preempt silently (same-slot re-runs are intentional).
+  // viewer transcript from being wiped by an *unrelated* command. Same
+  // label = silent restart (matches the routed same-slot behavior; the
+  // user's gesture is "re-run this thing," not "kill something
+  // different"). Different label = confirm overlay; default reject so
+  // a stray cmd doesn't clobber a live transcript.
   if (slotKey === 'unrouted' && slotIndex.has('unrouted')) {
     const existingId = slotIndex.get('unrouted');
     const existing = procs.get(existingId);
     const existingLabel = (existing && existing.headerLabel) || '<previous>';
-    api.dispatchMsg(api.wrap(target, { type: 'tab_switch', idx: 0 }));
-    require('../dispatch/dispatch').applyMsg({
-      type: 'confirm_enter',
-      message: `Kill running '${existingLabel}'?`,
-      cmd: { type: 'unrouted_preempt_and_run', existingId, headerLabel, cmd, args, opts },
-    });
-    return;
+    if (existingLabel !== headerLabel) {
+      api.dispatchMsg(api.wrap(target, { type: 'tab_switch', idx: 0 }));
+      require('../dispatch/dispatch').applyMsg({
+        type: 'confirm_enter',
+        message: `Kill running '${existingLabel}'?`,
+        cmd: { type: 'unrouted_preempt_and_run', existingId, headerLabel, cmd, args, opts },
+      });
+      return;
+    }
+    // Same-label rerun → fall through to silent preempt below.
   }
 
   // Same-slot routed preempt — silent (same-slot re-runs are
