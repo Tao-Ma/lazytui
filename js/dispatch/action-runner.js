@@ -134,11 +134,8 @@ function doRun(actionKey, action, args = []) {
     return;
   }
 
-  // type: run — stream stdout/stderr to detail panel (history recorded inside).
-  // v0.6.2 Phase 2 — when the action has a `tab:`, thread the action key
-  // + currentGroup so the stream lands in actionTabBuffers[group][key].
-  // tab_switch back to that tab restores the captured output instead of
-  // re-running. Tabless actions still write straight into slice.lines.
+  // type: run — stream stdout/stderr to detail panel. action.tab routes
+  // into per-action buffer (viewer.js); tabless actions hit slice.lines.
   const opts = action.tab ? { tabKey: actionKey, groupName: getModel().currentGroup } : {};
   streamCommand(actionKey, cmd, args, opts);
 }

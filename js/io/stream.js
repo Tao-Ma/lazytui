@@ -19,19 +19,20 @@ const { getModel } = require('../app/runtime');
 const { scheduleRender } = require('../render/render-queue');
 const history = require('../feature/history');
 
-let currentProc = null;  // streaming child process, if any
-let currentRecord = null; // history record handle for the active stream
-// v0.6.2 Phase 3 — remember the tabKey/groupName the active stream is
-// writing into, so the close-by-preempt path can stamp the re-run
-// footer into the preempted buffer. The natural close handler reads
-// its own closure (tabKey, groupName locals at streamCommand entry)
-// and gates on proc===currentProc — so this target only feeds the
-// preempt path (a new streamCommand → killCurrentProc → next).
-let currentStreamTarget = null;
+let currentProc = null;     // streaming child process, if any
+let currentRecord = null;    // history record handle for the active stream
+let currentStreamTarget = null;  // {tabKey, groupName} of the routed buffer, if any
+// F5 — closure that flushes the StringDecoder + the pending-line buffer
+// at kill time. The close handler bails on SIGTERM'd procs, so without
+// this any partial multi-byte tail (or unterminated last line) is
+// dropped on preempt.
+let currentFlushTail = null;
 
-/** Kill any running streamed action (e.g., a new run preempting, or
- *  the TUI shutting down). */
-function killCurrentProc() {
+/** Kill any running streamed action.
+ *  opts.silent = true suppresses the "Killed by next run." + re-run
+ *  footer (TUI shutdown — slice is being torn down anyway, and the
+ *  label would be wrong). Default emits both. */
+function killCurrentProc(opts = {}) {
   if (currentProc) {
     // T17 — detach the data listeners FIRST. SIGTERM doesn't flush
     // kernel pipe buffers atomically; the dying child can fire one
@@ -44,33 +45,29 @@ function killCurrentProc() {
     try { currentProc.stdout.removeAllListeners('data'); } catch {}
     try { currentProc.stderr.removeAllListeners('data'); } catch {}
     try { currentProc.kill('SIGTERM'); } catch {}
-    if (currentStreamTarget) {
+    if (currentStreamTarget && !opts.silent) {
       const { tabKey, groupName } = currentStreamTarget;
+      if (currentFlushTail) {
+        const tail = currentFlushTail();
+        if (tail) appendDetailLine(esc(tail), tabKey, groupName);
+      }
       appendDetailLine('[yellow]Killed by next run.[/]', tabKey, groupName);
       appendDetailLine('[dim]Press Enter to run again.[/]', tabKey, groupName);
     }
     currentProc = null;
   }
   currentStreamTarget = null;
+  currentFlushTail = null;
   if (currentRecord) {
     currentRecord.kill();
     currentRecord = null;
   }
 }
 
-// Append a line to detail through the reducer (the viewer_append Msg owns the
-// push + bottom-stick scroll). stream.js is an async producer with no threaded
-// model, so it bridges via getModel(); dispatch is lazy-required to dodge the
-// stream → dispatch → actions → stream load cycle. These Msgs emit no Cmds.
-//
-// v0.6.1 Phase 6 — destination resolves via route.resolveTarget('viewer'); a
-// null result (no viewer registered) drops the line silently. Producer-side
-// write: stream output flows toward "the viewer," not a specific pane.
-//
-// v0.6.2 Phase 2 — when tabKey + groupName are set, the append is routed
-// into actionTabBuffers[group][tabKey] in the viewer reducer (and mirrored
-// to slice.lines iff that action's tab is the active one). Unrouted appends
-// land on slice.lines directly (no buffer; legacy path).
+// Async producer-side write. Destination resolves via route.resolveTarget;
+// dispatch is lazy-required to dodge the stream→dispatch→actions cycle.
+// tabKey+groupName route into actionTabBuffers (see viewer.js#viewer_append);
+// unset → legacy slice.lines write.
 function appendDetailLine(line, tabKey, groupName) {
   const route = require('../leaves/route');
   const target = route.resolveTarget('viewer');
@@ -84,12 +81,9 @@ function appendDetailLine(line, tabKey, groupName) {
 
 /**
  * Stream a shell command's stdout/stderr to the detail panel.
- * Replaces detail content with `$ headerLabel` and appends lines as they
- * arrive. Used by runAction (type:run) and action-tab activation.
  *
- * opts.tabKey + opts.groupName route the stream into a per-action-tab
- * buffer (Phase 2). When unset, output flows directly into slice.lines
- * (legacy / no-tab actions).
+ * opts.tabKey + opts.groupName route into actionTabBuffers (buffer per
+ * tabbed action, see viewer.js); unset → legacy slice.lines write.
  */
 function streamCommand(headerLabel, cmd, args = [], opts = {}) {
   killCurrentProc();
@@ -99,12 +93,8 @@ function streamCommand(headerLabel, cmd, args = [], opts = {}) {
   const api = require('../panel/api');
   const tabKey = opts.tabKey || null;
   const groupName = opts.groupName || null;
-  // T32 — esc the dynamic header. Callers pass `actionKey` (YAML key) or
-  // `verb <container>` strings; a `[` or `\t` in either would corrupt
-  // the markup parse / panel padding (same class as the postgresql.conf
-  // tab bug).
-  // v0.6.1 Phase 6 — stream_start (and every appendDetailLine below)
-  // flows to resolveTarget's destination, not the singleton 'detail'.
+  // T32 — esc the dynamic header to prevent markup corruption from
+  // user-supplied actionKey / verb strings.
   const startMsg = tabKey && groupName
     ? { type: 'stream_start', header: `[dim]$ ${esc(headerLabel)}[/]`, tabKey, groupName }
     : { type: 'stream_start', header: `[dim]$ ${esc(headerLabel)}[/]` };
@@ -126,6 +116,14 @@ function streamCommand(headerLabel, cmd, args = [], opts = {}) {
   // chunked I/O) became U+FFFD replacement-char pairs. Verified by
   // repro: `'café'` arriving split at byte 4 became `'caf��'`.
   const decoder = new StringDecoder('utf8');
+  // F5 — close handler bails for SIGTERM'd procs; this is the only
+  // place that drains the decoder + partial-line buffer on preempt.
+  currentFlushTail = () => {
+    const tail = decoder.end() || '';
+    const combined = buffer + tail;
+    buffer = '';
+    return combined;
+  };
   const onData = (data) => {
     buffer += decoder.write(data);
     const lines = buffer.split('\n');
@@ -144,6 +142,7 @@ function streamCommand(headerLabel, cmd, args = [], opts = {}) {
     if (proc !== currentProc) return;  // superseded
     currentProc = null;
     currentStreamTarget = null;
+    currentFlushTail = null;
     currentRecord = null;
     // Flush any dangling bytes the decoder is still holding (rare —
     // means the stream closed mid-codepoint, which is a malformed
@@ -154,10 +153,6 @@ function streamCommand(headerLabel, cmd, args = [], opts = {}) {
     if (signal) { appendDetailLine(`[yellow]Killed (${signal})[/]`, tabKey, groupName); rec.end(`signal:${signal}`); }
     else if (code === 0) { appendDetailLine('[green]Done.[/]', tabKey, groupName); rec.end(0); }
     else { appendDetailLine(`[red]Exit ${code}[/]`, tabKey, groupName); rec.end(code); }
-    // v0.6.2 Phase 2 — surface the re-run affordance for action-tab
-    // streams. Without this, a finished tab looks like a frozen log and
-    // the user has no hint that Enter restarts it. Tabless streams keep
-    // their bare "Done." / "Exit N" footer.
     if (tabKey && groupName) appendDetailLine('[dim]Press Enter to run again.[/]', tabKey, groupName);
     scheduleRender();
   });
@@ -166,6 +161,7 @@ function streamCommand(headerLabel, cmd, args = [], opts = {}) {
     if (proc !== currentProc) return;
     currentProc = null;
     currentStreamTarget = null;
+    currentFlushTail = null;
     currentRecord = null;
     appendDetailLine(`[red]Error: ${esc(err.message)}[/]`, tabKey, groupName);
     rec.append(`Error: ${err.message}`);
@@ -175,7 +171,11 @@ function streamCommand(headerLabel, cmd, args = [], opts = {}) {
   });
 }
 
-/** True while a streamed command is producing output into getModel().viewer.lines. */
-function isStreaming() { return currentProc !== null; }
+/** True while an UNROUTED stream is producing output into slice.lines.
+ *  Routed (tabbed) streams write to actionTabBuffers and DON'T clobber
+ *  slice.lines for off-tab callers — info refresh on the Info tab is
+ *  safe under a routed stream. The viewer's `viewer_show_info` gate
+ *  uses this to avoid the over-broad pre-Phase-2 behavior. */
+function isUnroutedStreaming() { return currentProc !== null && currentStreamTarget === null; }
 
-module.exports = { streamCommand, killCurrentProc, isStreaming };
+module.exports = { streamCommand, killCurrentProc, isUnroutedStreaming };

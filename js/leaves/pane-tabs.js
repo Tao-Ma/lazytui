@@ -381,12 +381,9 @@ function reduceTabMsg(msg, slice, ctx) {
       const idx = msg.idx | 0;
       if (idx < 0 || idx >= total) return slice;
       let next = { ...slice, tab: idx };
-      // v0.6.2 Phase 3 — kill_proc no longer fires on tab leave. The
-      // active stream keeps writing into actionTabBuffers[group][tabKey]
-      // via the routed viewer_append path; switching back restores
-      // slice.lines from the live (or frozen) buffer. The singleton
-      // currentProc invariant is preserved by streamCommand itself —
-      // a new run still preempts the previous one.
+      // No kill_proc — the producer keeps writing into its buffer
+      // while the user is off-tab. Singleton preempt happens inside
+      // streamCommand when a new run starts.
       const effects = [
         { type: 'msg', msg: { type: 'terminal_exit' } },
       ];
@@ -399,15 +396,10 @@ function reduceTabMsg(msg, slice, ctx) {
         next = { ...next, lines: [], scroll: 0 };
         effects.push({ type: 'msg', msg: wrap(paneId, { type: 'viewer_show_info' }) });
       } else if (idx <= actionTabs.length) {
-        // v0.6.2 — action tabs are view-only on switch. Restore
-        // slice.lines from actionTabBuffers[group][actionKey] if the
-        // action has been run before; otherwise paint the "[press
-        // Enter to run]" placeholder. Phase 3 — the producer keeps
-        // streaming into the buffer while the user is off-tab; this
-        // arm pins scroll to the bottom so the live tail is visible
-        // on return and so subsequent viewer_append's bottom-stick
-        // math keeps tracking new lines (the at-bottom check reads
-        // slice.scroll vs maxScroll).
+        // View-only restore from actionTabBuffers, else placeholder.
+        // Scroll pinned to bottom so the live tail is visible and the
+        // viewer_append bottom-stick check (scroll>=maxScroll) keeps
+        // tracking new appends after restore.
         const [actionKey] = actionTabs[idx - 1];
         const groupName = getModel().currentGroup;
         const buf = slice.actionTabBuffers
@@ -417,8 +409,7 @@ function reduceTabMsg(msg, slice, ctx) {
           ? buf.lines.slice()
           : ['[dim]Press Enter to run.[/]'];
         const innerH = slice.innerH > 0 ? slice.innerH : 1;
-        const scroll = Math.max(0, lines.length - innerH);
-        next = { ...next, lines, scroll };
+        next = { ...next, lines, scroll: Math.max(0, lines.length - innerH) };
       } else if (idx <= actionTabs.length + termTabs.length) {
         next = { ...next, lines: [], scroll: 0 };
       } else {

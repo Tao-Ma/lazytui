@@ -17,7 +17,7 @@ const { destroyAll } = require('../io/terminal');
 const { killCurrentProc } = require('../dispatch/action-runner');
 
 function cleanup() {
-  killCurrentProc();
+  killCurrentProc({ silent: true });
   destroyAll();
   // Fire each Component's cleanup() hook (e.g. docker's `docker events`
   // stream) so no timer or child fires after quit. Lazy-required and

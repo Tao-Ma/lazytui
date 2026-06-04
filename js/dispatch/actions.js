@@ -212,9 +212,7 @@ function handleAction(action, arg) {
         break;
       }
       // Enter on detail + action tab → run the action backing that tab.
-      // v0.6.2 Phase 1 — paired with the view-only tab_switch arm in
-      // leaves/pane-tabs.js: tab activation no longer auto-runs, the
-      // Enter gesture from a focused detail is the explicit re-run.
+      // tab_switch is view-only; this is the explicit run gesture.
       if (instanceKind(getFocus()) === 'detail' && isActionTab()) {
         const item = activeActionTab();
         if (item) {

@@ -32,7 +32,7 @@ const mpool = require('../../leaves/pool');
 const { buildTabStrip } = require('../../render/panel-widgets');
 const { getModel } = require('../../app/runtime');
 const { getSel } = require('../../app/state');
-const { isStreaming } = require('../../io/stream');
+const { isUnroutedStreaming } = require('../../io/stream');
 
 // --- internal slice transforms (pure return-new) ---
 //
@@ -123,15 +123,8 @@ function init() {
     cursor: { line: 0, col: 0 },
     contentTabs: {},          // [groupName]: { [key]: { label, lines } }
     ephemeralTerminals: {},   // [groupName]: { [key]: { cmd, label } }
-    // Per-action-tab streamed-output buffer.
-    //   [groupName]: { [actionKey]: { lines } }
-    // Populated by stream_start / viewer_append when the Msg carries
-    // {tabKey, groupName}; tab_switch's action arm restores slice.lines
-    // from here (or paints the "[press Enter to run]" placeholder if
-    // no buffer yet). Phase 3 — the producer no longer dies on tab
-    // leave: switching away keeps the stream writing into the buffer
-    // in the background; switching back restores slice.lines from the
-    // live buffer mid-stream.
+    // [groupName]: { [actionKey]: { lines } } — survives tab switches
+    // so a tabbed action's output isn't lost when the user navigates away.
     actionTabBuffers: {},
     // Tab-list overlay (the `[≡]` switcher anchored to detail's top-left).
     // `cursor` is the row index in the flat tab list (Info..actions..
@@ -180,7 +173,7 @@ function update(msg, slice) {
       // dispatches this after every command, and we don't want to clobber
       // stream output or content/term tabs.
       if (slice.tab !== 0) return slice;
-      if (isStreaming()) return slice;
+      if (isUnroutedStreaming()) return slice;
       const focus = getFocus();
       const def = getPanelDef(focus);
       if (!def || typeof def.getItems !== 'function' || typeof def.getInfo !== 'function') return slice;
@@ -205,18 +198,11 @@ function update(msg, slice) {
     case 'viewer_append': {
       // Hot path — streamed action output can fire 500-1000 lines/sec.
       // Per the arc rule, no in-place exception: spread lines fresh each
-      // call. Phase 6 benchmarks (docs/v0.5-perf.md, run via
-      // `node js/test/bench-hotpaths.js`) show 21k ops/sec at 10k-line
-      // buffer and 5.7k ops/sec at 50k — comfortably above the sustained
-      // 1k/sec target. If field reports show pressure on long-running
-      // streams (100k+ lines / GC pauses), the documented mitigations
-      // are ring-buffer trim or a coalesced/batched append Msg.
+      // call. Bench (js/test/bench-hotpaths.js) clears the 1k/sec target.
       //
-      // v0.6.2 Phase 2 — when msg.tabKey + msg.groupName are set, the
-      // append is "routed": writes to actionTabBuffers[group][tabKey]
-      // unconditionally, mirrors to slice.lines only when the active
-      // tab in the current group is that action's tab. Unrouted
-      // appends fall through to the legacy slice.lines write.
+      // Routed (msg.tabKey set) → write to actionTabBuffers[group][tabKey];
+      // mirror to slice.lines only when the active tab in current group
+      // is that action's. Unrouted → legacy slice.lines write.
       if (msg.tabKey && msg.groupName) {
         const all = slice.actionTabBuffers || {};
         const group = all[msg.groupName] || {};
@@ -248,17 +234,10 @@ function update(msg, slice) {
       return { ...slice, lines, scroll };
     }
     case 'stream_start': {
-      // Streamed command output: header replaces body, scroll reset. Lives
-      // here (not in viewer_set_content) because callers conceptualize it as
-      // "start a streaming session" — the lines write is the side effect.
-      //
-      // v0.6.2 Phase 2 — when msg.tabKey + msg.groupName are set, the
-      // header also seeds actionTabBuffers[group][tabKey] AND auto-jumps
-      // slice.tab to that action's index (so the user sees the new
-      // stream even if they were on a different tab when they pressed
-      // Enter). When groupName !== currentGroup the auto-jump skips —
-      // the buffer write still happens so a future group switch shows
-      // the captured run.
+      // Routed (msg.tabKey set) → seed actionTabBuffers + auto-jump to
+      // the action's tab so the user sees the new run regardless of
+      // where focus was when they pressed Enter. Cross-group runs skip
+      // the jump (buffer still seeded; visible on next group switch).
       if (msg.tabKey && msg.groupName) {
         const all = slice.actionTabBuffers || {};
         const group = all[msg.groupName] || {};
@@ -271,7 +250,12 @@ function update(msg, slice) {
           const info = pt.flatTabInfo(slice, m, m.currentGroup);
           const idx = info.actionTabs.findIndex(([k]) => k === msg.tabKey);
           if (idx >= 0) {
-            return { ...slice, actionTabBuffers: nextAll, lines: [msg.header], scroll: 0, tab: 1 + idx };
+            // Auto-jump skips tab_switch — emit terminal_exit so
+            // terminalMode doesn't survive the jump.
+            return [
+              { ...slice, actionTabBuffers: nextAll, lines: [msg.header], scroll: 0, tab: 1 + idx },
+              [{ type: 'msg', msg: { type: 'terminal_exit' } }],
+            ];
           }
         }
         return { ...slice, actionTabBuffers: nextAll };
