@@ -2,7 +2,8 @@
  * v0.6.2 Phase 4.3 — Enter on a Running-overlay row jumps to the
  * job's tab/pane and closes the overlay.
  *
- * Walks each kind:
+ * Drives the `jobs_activate` Msg directly (the handler is a one-liner;
+ * everything happens in the reducer cascade). Walks each kind:
  *   stream-routed   → tab_switch to action tab + focus viewer
  *   stream-unrouted → focus viewer (no tab change)
  *   pty             → tab_switch to terminal tab + terminal_enter
@@ -19,9 +20,10 @@ const jobs = require('../feature/jobs');
 const dispatch = require('../dispatch/dispatch');
 const api = require('../panel/api');
 
+const NOW = 1717420000000;  // fixed timestamp for deterministic age math
+
 function _seedModel() {
   const m = runtime.init();
-  // Config: one group with a tabbed action + a terminal.
   m.config = {
     groups: {
       g: {
@@ -35,14 +37,16 @@ function _seedModel() {
   };
   m.currentGroup = 'g';
   runtime.setModel(m);
-  // Seed the layout instance slice via the layout Component update
-  // (test-runner already registered detail/layout/groups Components).
   return m;
 }
 
 function _resetJobs() { jobs._reset(); }
 
-describe('[handleJobsKey return] full cascade', () => {
+function _activate() {
+  dispatch.applyMsg({ type: 'jobs_activate', now: NOW });
+}
+
+describe('[jobs_activate] full cascade — one Msg, reducer-driven', () => {
   function setup(jobInfo) {
     _seedModel();
     _resetJobs();
@@ -61,12 +65,10 @@ describe('[handleJobsKey return] full cascade', () => {
       pid: 1,
       owner: { tabKey: 'make-check', groupName: 'g', cmd: 'make check' },
     });
-    dispatch._handleJobsKey('return', '');
+    _activate();
     eq(runtime.getModel().modes.jobsMode, false, 'overlay closed');
-    const detailSlice = api.getInstanceSlice('detail');
-    eq(detailSlice.tab, 1, 'tab_switch landed on action tab idx 1');
-    const layoutSlice = api.getInstanceSlice('layout');
-    eq(layoutSlice.focus, 'detail', 'focus on viewer pane');
+    eq(api.getInstanceSlice('detail').tab, 1, 'tab_switch landed on action tab idx 1');
+    eq(api.getInstanceSlice('layout').focus, 'detail', 'focus on viewer pane');
   });
 
   it('stream-unrouted → closes overlay, focus moves to viewer; no tab change', () => {
@@ -76,11 +78,9 @@ describe('[handleJobsKey return] full cascade', () => {
       pid: 2,
       owner: { cmd: 'docker logs nginx' },
     });
-    // Move detail tab off Info so we can verify it stays put.
-    const detail = require('../panel/viewer/viewer');
     const sliceBefore = { ...api.getInstanceSlice('detail'), tab: 0 };
     require('../leaves/route').setInstanceSlice('detail', sliceBefore);
-    dispatch._handleJobsKey('return', '');
+    _activate();
     eq(runtime.getModel().modes.jobsMode, false);
     eq(api.getInstanceSlice('detail').tab, 0, 'tab unchanged');
     eq(api.getInstanceSlice('layout').focus, 'detail', 'focus on viewer');
@@ -93,12 +93,11 @@ describe('[handleJobsKey return] full cascade', () => {
       pid: 3,
       owner: { ptyId: 'g_shell', cmd: 'bash' },
     });
-    dispatch._handleJobsKey('return', '');
+    _activate();
     eq(runtime.getModel().modes.jobsMode, false);
-    const detailSlice = api.getInstanceSlice('detail');
     // Tab strip: [Info, make-check, shell, ...]. shell is termTab idx 0
     // → absolute tab 1 (actionTabs.length) + 1 = 2.
-    eq(detailSlice.tab, 2, 'tab_switch landed on terminal tab idx 2');
+    eq(api.getInstanceSlice('detail').tab, 2, 'tab_switch landed on terminal tab idx 2');
     eq(runtime.getModel().modes.terminalMode, true, 'terminal_enter fired');
   });
 
@@ -109,7 +108,7 @@ describe('[handleJobsKey return] full cascade', () => {
       pid: 12345,
       owner: { cmd: 'rsync -av src/ dst/' },
     });
-    dispatch._handleJobsKey('return', '');
+    _activate();
     eq(runtime.getModel().modes.jobsMode, false);
     const lines = api.getInstanceSlice('detail').lines;
     assert(lines.length > 0, 'viewer has lines');
@@ -126,7 +125,7 @@ describe('[handleJobsKey return] full cascade', () => {
       pid: null,
       owner: { tmuxWindowName: 'worker', cmd: 'long-job.sh' },
     });
-    dispatch._handleJobsKey('return', '');
+    _activate();
     eq(runtime.getModel().modes.jobsMode, false);
     const lines = api.getInstanceSlice('detail').lines;
     assert(lines.some(l => l.includes('window:') && l.includes('worker')), 'window line present');
@@ -141,8 +140,18 @@ describe('[handleJobsKey return] full cascade', () => {
       modes: { ...runtime.getModel().modes, jobsMode: true },
       modal: { ...runtime.getModel().modal, jobs: { cursor: 0, scroll: 0 } },
     });
-    dispatch._handleJobsKey('return', '');
+    _activate();
     eq(runtime.getModel().modes.jobsMode, false);
+  });
+
+  it('non-jobsMode → activate is a no-op (defensive)', () => {
+    _seedModel();
+    _resetJobs();
+    // Don't set jobsMode. Register a job, dispatch activate — nothing happens.
+    jobs.register({ kind: 'stream-routed', label: 'x', pid: 1, owner: { tabKey: 'x', groupName: 'g' } });
+    const before = api.getInstanceSlice('layout').focus;
+    _activate();
+    eq(api.getInstanceSlice('layout').focus, before, 'focus untouched');
   });
 });
 

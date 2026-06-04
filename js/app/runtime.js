@@ -34,6 +34,11 @@
 const kb = require('../dispatch/keybindings');
 // Pure command-menu item builder (leaf), so menu_open can build inline.
 const menu = require('../leaves/menu');
+// Pure pane-tab info builder (leaf) — flatTabInfo for jobs_activate's
+// tab-idx resolution. Zero-dep leaf, safe direct import.
+const pt = require('../leaves/pane-tabs');
+// esc() for the jobs_activate info-card lines (background/tmux).
+const { esc } = require('../io/ansi');
 // Pure yank-register transforms (leaf) — push/promote/drop/clear taking
 // `model`, so the reducer owns register mutations; OSC52 is an emit_osc52 Cmd.
 const mreg = require('../leaves/register');
@@ -166,6 +171,20 @@ function setModel(next) {
 function _ghostSuffix(text, ghost) {
   if (!ghost || !ghost.startsWith(text) || text.length >= ghost.length) return '';
   return ghost.slice(text.length);
+}
+
+/** ptyId is `${group}_${key}`; group keys can contain underscores, so
+ *  match greedily against the live config. Falls back to the substring
+ *  before the first underscore. Used by the jobs_activate reducer arm
+ *  to resolve a target group when the registered job only carries the
+ *  ptyId (no explicit owner.groupName). */
+function _parsePtyIdGroup(model, ptyId) {
+  const groups = (model.config && model.config.groups) || {};
+  for (const name of Object.keys(groups)) {
+    if (ptyId.startsWith(`${name}_`)) return name;
+  }
+  const u = ptyId.indexOf('_');
+  return u < 0 ? ptyId : ptyId.slice(0, u);
 }
 
 // cmdline split + viewport size live in a zero-dep leaf so this file,
@@ -679,6 +698,75 @@ function update(model, msg) {
       scroll = Math.max(0, Math.min(scroll, Math.max(0, count - vh)));
       if (next === j.cursor && scroll === j.scroll) return [model, []];
       return [_withModal(model, { jobs: { cursor: next, scroll } }), []];
+    }
+    case 'jobs_activate': {
+      // Single-Msg cascade — handler stays a one-liner, reducer
+      // emits the Cmd list. msg.now is the dispatch-time timestamp
+      // (Date.now() at handler entry) so the reducer stays pure
+      // — feature/jobs.list() is the only out-of-TEA read.
+      if (!model.modes.jobsMode) return [model, []];
+      const list = require('../feature/jobs').list();
+      const cursor = (model.modal.jobs && model.modal.jobs.cursor | 0) || 0;
+      const job = list[cursor];
+      const closedModel = _withModes(model, { jobsMode: false });
+      if (!job) return [closedModel, []];
+
+      const { kind, owner = {} } = job;
+      const cmds = [];
+      const targetGroup = owner.groupName
+        || (owner.ptyId ? _parsePtyIdGroup(model, owner.ptyId) : null);
+      if (targetGroup && targetGroup !== model.currentGroup) {
+        cmds.push({ type: 'msg', msg: { type: 'set_current_group', group: targetGroup } });
+      }
+      const viewerTarget = route.resolveTarget('viewer') || 'detail';
+      const groupName = targetGroup || model.currentGroup;
+
+      if (kind === 'stream-routed' && owner.tabKey) {
+        const slice = route.getInstanceSlice(viewerTarget)
+          || { ephemeralTerminals: {}, contentTabs: {}, tab: 0 };
+        const info = pt.flatTabInfo(slice, model, groupName);
+        const idx = info.actionTabs.findIndex(([k]) => k === owner.tabKey);
+        if (idx >= 0) {
+          cmds.push({ type: 'msg', msg: route.wrap(viewerTarget, { type: 'tab_switch', idx: 1 + idx }) });
+          cmds.push({ type: 'msg', msg: route.wrap('layout', { type: 'focus_set', focus: viewerTarget }) });
+        }
+      } else if (kind === 'stream-unrouted') {
+        cmds.push({ type: 'msg', msg: route.wrap('layout', { type: 'focus_set', focus: viewerTarget }) });
+      } else if (kind === 'pty' && owner.ptyId) {
+        const slice = route.getInstanceSlice(viewerTarget)
+          || { ephemeralTerminals: {}, contentTabs: {}, tab: 0 };
+        const info = pt.flatTabInfo(slice, model, groupName);
+        let termIdx = -1;
+        for (let i = 0; i < info.termTabs.length; i++) {
+          if (`${groupName}_${info.termTabs[i][0]}` === owner.ptyId) { termIdx = i; break; }
+        }
+        if (termIdx >= 0) {
+          cmds.push({ type: 'msg', msg: route.wrap(viewerTarget, {
+            type: 'tab_switch', idx: 1 + info.actionTabs.length + termIdx,
+          }) });
+          cmds.push({ type: 'msg', msg: route.wrap('layout', { type: 'focus_set', focus: viewerTarget }) });
+          cmds.push({ type: 'msg', msg: { type: 'terminal_enter' } });
+        }
+      } else if (kind === 'background' || kind === 'tmux') {
+        const now = msg.now | 0;
+        const ageS = Math.max(0, Math.floor(((job.endedAt || now) - job.startedAt) / 1000));
+        const lines = [
+          `[dim]$ ${esc(job.label)}[/]`,
+          '',
+          `[dim]kind:[/]     ${kind}`,
+          kind === 'background'
+            ? `[dim]pid:[/]      ${job.pid == null ? '(unknown)' : job.pid}`
+            : `[dim]window:[/]   ${esc(owner.tmuxWindowName || '')}`,
+          `[dim]status:[/]   ${job.status}${job.exitCode == null ? '' : ` (exit ${job.exitCode})`}`,
+          `[dim]age:[/]      ${ageS}s`,
+          '',
+          `[dim]cmd:[/]`,
+          `  ${esc(owner.cmd || '(no cmd recorded)')}`,
+        ];
+        cmds.push({ type: 'msg', msg: route.wrap(viewerTarget, { type: 'viewer_set_content', lines }) });
+        cmds.push({ type: 'msg', msg: route.wrap('layout', { type: 'focus_set', focus: viewerTarget }) });
+      }
+      return [closedModel, cmds];
     }
     case 'menu_open':
       return [{
