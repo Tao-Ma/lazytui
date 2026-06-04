@@ -74,7 +74,13 @@ function actionRow([key, action], i) {
   const isSel = i === getSel('actions');
   const isFocused = instanceKind(getFocus()) === 'actions';
   const isMs = isMultiSel('actions', key);
-  const mark = isMs ? '*' : ((isLast || (isSel && !isFocused)) ? '>' : ' ');
+  // `>` means "last action run" (historical marker). Cursor position
+  // when unfocused is conveyed by the title's [N of M] count and the
+  // focused-panel border — no per-row glyph needed. Pre-fix, `>` was
+  // overloaded with `(isSel && !isFocused)` too, which produced two
+  // `>` markers (on different rows) whenever the cursor sat away
+  // from the last-run row.
+  const mark = isMs ? '*' : (isLast ? '>' : ' ');
   const confirmStr = action.confirm ? ' \\[confirm]' : '';
   const argsStr = action.args ? ` <${esc(action.args)}>` : '';
   if (isSel && isFocused) {
