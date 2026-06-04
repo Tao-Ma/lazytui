@@ -140,6 +140,16 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   (tabbed) stream is now safe (routed streams don't write to
   `slice.lines`).
 
+- **`config-branch` check-stale surfaces per-file diff.** The
+  generated script ran `diff -qr` to detect changes but redirected
+  the per-file output to `/dev/null`, leaving consumers with a bare
+  `DIFF: conf` label and no way to tell which file under `conf/`
+  had changed. The output is now captured and emitted indented
+  beneath each path label (`  Only in conf: ca.passthrough`,
+  `  Files .../serial and .../serial differ`, …). Registry-path
+  grouping is preserved; the `STALE=1` / `exit "$STALE"` contract
+  is unchanged.
+
 ### Migration
 
 Hand-conversion per [`docs/v0.6.2-migrate.md`](docs/v0.6.2-migrate.md);

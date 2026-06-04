@@ -138,11 +138,22 @@ describe('[5] check-stale: clean tree → rc 0; modified → rc 1 with DIFF repo
     eq(r.status, 0);
     assert(r.stdout.includes('no differences'), 'reports no differences');
   });
-  it('after local edit: reports DIFF, rc 1', () => {
+  it('after local edit: reports DIFF + indented per-file detail, rc 1', () => {
     fs.writeFileSync(path.join(TMP, 'client', 'id_ed25519'), 'PRIVATE-KEY-MUTATED\n');
     const r = run('branch:check-stale');
     eq(r.status, 1);
     assert(r.stdout.includes('DIFF: client'), 'reports the path');
+    assert(/^ {2}.*id_ed25519.*differ/m.test(r.stdout), 'per-file detail indented under label');
+  });
+  it('multi-path DIFF: each path gets its own label + indented detail', () => {
+    // client is still mutated from the previous case; also mutate ca.crt.
+    fs.writeFileSync(path.join(TMP, 'data', 'openvpn', 'ca.crt'), 'CA-CERT-MUTATED\n');
+    const r = run('branch:check-stale');
+    eq(r.status, 1);
+    assert(r.stdout.includes('DIFF: client'), 'client label');
+    assert(r.stdout.includes('DIFF: data/openvpn'), 'data/openvpn label');
+    assert(/^ {2}.*id_ed25519.*differ/m.test(r.stdout), 'client detail indented');
+    assert(/^ {2}.*ca\.crt.*differ/m.test(r.stdout), 'openvpn detail indented');
   });
   it('after deleting a local path: reports ONLY-BRANCH, rc 1', () => {
     // Restore client first so the prior assertion's mutation doesn't pollute
