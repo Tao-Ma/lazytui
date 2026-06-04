@@ -84,6 +84,46 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   both flanking columns for a panel boundary at `my` instead of just
   the cursor's column.
 
+### Fixed
+- **Action tab activation is view-only.** Clicking an action tab no
+  longer auto-runs the command. The Enter gesture on a focused
+  detail panel sitting on an action tab now runs the action (same
+  path as actions-panel Enter — `args:` / `confirm:` still apply).
+  Empty action tabs paint a `[press Enter to run]` placeholder.
+
+- **Per-action-tab output buffer (`slice.actionTabBuffers`).** Each
+  tabbed action streams into
+  `actionTabBuffers[groupName][actionKey] = { lines }`. Switching
+  away no longer kills the producer; the buffer keeps growing in
+  the background and `tab_switch` back restores `slice.lines` from
+  it with scroll pinned to the live tail (bottom-stick keeps
+  tracking subsequent appends). Singleton-stream invariant
+  preserved — a new run via Enter or `:run` still preempts the
+  previous one, stamping `Killed by next run.` +
+  `Press Enter to run again.` into the preempted buffer.
+
+- **Routed `stream_start` / `viewer_append`.** Both Msgs accept
+  optional `{tabKey, groupName}`. With them set: write the buffer
+  unconditionally, mirror to `slice.lines` only when the active
+  tab is that action's. With them unset: legacy `slice.lines`
+  write (preserved for ad-hoc verbs — docker logs/inspect, etc.).
+  `stream_start`'s routed path auto-jumps `slice.tab` to the
+  action's index AND emits `terminal_exit` so `terminalMode` doesn't
+  leak across the jump.
+
+- **`Press Enter to run again.` footer.** A finished or
+  killed-by-preempt routed stream appends the affordance text into
+  its buffer, so a stale tab doesn't look like a frozen log.
+
+- **`kill_proc` Cmd retired.** No emitter left after Phase 3 — the
+  preempt path inside `streamCommand` handles its own kill;
+  `tab_switch` no longer fires it. Effect registration removed.
+
+- **`isUnroutedStreaming()`** replaces `isStreaming()` for the
+  `viewer_show_info` gate — Info-pane refresh under a routed
+  (tabbed) stream is now safe (routed streams don't write to
+  `slice.lines`).
+
 ### Migration
 
 Hand-conversion per [`docs/v0.6.2-migrate.md`](docs/v0.6.2-migrate.md);

@@ -51,7 +51,7 @@ greppable.
      tick(ms, msg) → setTimeout      (async re-entry; not depth-counted)
      render        → scheduleRender (50ms debounce)
      focus / show_selected_info / setActiveTab
-     do_run / run_action / kill_proc / stream_action
+     do_run / run_action
      dockerFetch / dockerEventsStart / dockerExec / dockerShell
      loadDir / openFile
      cmdline_rebuild / cmdline_run / cmdline_clear
@@ -68,7 +68,7 @@ greppable.
    Component slices (js/leaves/route.js, nested store)
      layout         focus, viewMode, arrange, panelBounds, freeConfig
      detail         lines, scroll, tab, search, select,
-                    contentTabs, ephemeralTerminals
+                    contentTabs, ephemeralTerminals, actionTabBuffers
      groups         list, expanded:Set, tab
      docker         status, stats, inFlight, eventsStarted
      files          per-panel-type browsers
@@ -135,6 +135,21 @@ except the blessed render-side exceptions:
 per keystroke at the tail of `dispatch.handleKey`. The 50 ms
 `scheduleRender` debounce only fires for *async* producers (streamed
 action output, docker poll, refresh ticks) so they coalesce bursts.
+
+**Routed stream Msgs.** `stream_start { header, tabKey?, groupName? }`
+and `viewer_append { line, tabKey?, groupName? }` carry an optional
+routing key. With `{tabKey, groupName}` set, the viewer reducer
+writes to `slice.actionTabBuffers[groupName][tabKey].lines` and
+mirrors to `slice.lines` only when the active tab in the current
+group is that action's tab (`pt.activeActionTabIn`). `stream_start`'s
+routed path additionally auto-jumps `slice.tab` to the action's
+index and emits `terminal_exit` so `terminalMode` doesn't survive
+the jump. Unrouted Msgs preserve the legacy `slice.lines`-direct
+write (docker logs/inspect verbs and any ad-hoc producer). Per-
+action buffers survive `tab_switch`; producer lifetime is decoupled
+from tab visibility — `streamCommand`'s `killCurrentProc` is the
+only preempt path, and the only place that stamps the
+`Press Enter to run again.` footer.
 
 **See also.**
 - `docs/PRINCIPLES.md` §12 — the Component discipline rules.

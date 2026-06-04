@@ -391,6 +391,17 @@ nav chrome (`slice.nav[panel].cursor/scroll/multiSel`, Phase 4a). The
 layout Component owns the frame (focus, viewMode, freeConfig, panel
 arrangement) — slice-private but loaded via cross-layer Msgs.
 
+> **Producer survives the consumer's tab.** When a long-running
+> producer (streamed action, future job entry) outlives the user's
+> attention on its tab, give it a per-id buffer in the slice and
+> route its writes by id (e.g. `slice.actionTabBuffers[group][key]`).
+> The active-tab "viewer" then becomes a derived view: the reducer
+> mirrors to `slice.lines` only when the consumer is looking at that
+> id. Pre-Phase-2 the viewer's `slice.lines` doubled as "the active
+> tab's content" AND "the streaming producer's sink," forcing
+> kill-on-switch as the only way to avoid cross-talk. The two
+> concerns are separate; keep them separate.
+
 ## 13. Checklist for new features
 
 Before implementing, verify:
