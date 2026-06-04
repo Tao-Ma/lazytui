@@ -324,10 +324,9 @@ describe('[immutable] root reducer — cross-layer cascades', () => {
     assert(same[0] === next, 'same name: no allocation');
   });
 
-  it('reset_group_context clears terminalMode/listSelectMode + lastRunAction', () => {
+  it('reset_group_context clears terminalMode/listSelectMode', () => {
     const armed = { ...freshModel(),
       modes: { ...freshModel().modes, terminalMode: true, listSelectMode: true },
-      lastRunAction: 'something',
     };
     const [next, cmds] = expectNoMutation(
       'reset_group_context leaves input frozen',
@@ -336,15 +335,8 @@ describe('[immutable] root reducer — cross-layer cascades', () => {
     );
     eq(next.modes.terminalMode, false);
     eq(next.modes.listSelectMode, false);
-    eq(next.lastRunAction, '');
     // Cmd payload depends on Component registration; just assert it's an array.
     assert(Array.isArray(cmds), 'cascade Cmds emitted');
-  });
-
-  it('set_last_run_action identity-preserves on duplicate', () => {
-    const m = { ...freshModel(), lastRunAction: 'foo' };
-    const same = runtime.update(m, { type: 'set_last_run_action', action: 'foo' });
-    assert(same[0] === m, 'same action: no allocation');
   });
 });
 

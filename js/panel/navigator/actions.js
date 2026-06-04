@@ -68,19 +68,16 @@ function getInfo(item) {
  * confirm/args annotations.
  */
 function actionRow([key, action], i) {
-  const m = getModel();
   const tag = { spawn: ' ⧉', background: ' ⇱' }[action.type] || '';
-  const isLast = key === m.lastRunAction;
   const isSel = i === getSel('actions');
   const isFocused = instanceKind(getFocus()) === 'actions';
   const isMs = isMultiSel('actions', key);
-  // `>` means "last action run" (historical marker). Cursor position
-  // when unfocused is conveyed by the title's [N of M] count and the
-  // focused-panel border — no per-row glyph needed. Pre-fix, `>` was
-  // overloaded with `(isSel && !isFocused)` too, which produced two
-  // `>` markers (on different rows) whenever the cursor sat away
-  // from the last-run row.
-  const mark = isMs ? '*' : (isLast ? '>' : ' ');
+  // Actions panel is a clean list of what you CAN run. Runtime status
+  // (running / completed / killed) lives in the Running overlay
+  // (leader j) + the tab strip's ● indicator + feature/history. The
+  // per-row `>` marker that used to track lastRunAction was removed
+  // along with the lastRunAction field itself (no readers left).
+  const mark = isMs ? '*' : ' ';
   const confirmStr = action.confirm ? ' \\[confirm]' : '';
   const argsStr = action.args ? ` <${esc(action.args)}>` : '';
   if (isSel && isFocused) {

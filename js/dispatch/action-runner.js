@@ -27,8 +27,7 @@ function runAction(actionKey, action, args = []) {
   // every Component's update() as an 'action' Msg.
   require('../panel/api').dispatchMsg({ type: 'action', actionKey, args, actionType: action.type });
   // Gate on action.confirm — show modal y/N overlay; user-confirmed
-  // execution re-enters this fn through doRun(). Cancel is a no-op
-  // (lastRunAction stays whatever it was, no '>' marker drift).
+  // execution re-enters this fn through doRun(). Cancel is a no-op.
   // Re-read getModel() AFTER the dispatchMsg above so a Component
   // action-handler that flipped confirmMode (or any future cross-layer
   // apply_msg) is visible here. Same hazard class as 2be348a.
@@ -62,10 +61,6 @@ function shQuote(s) {
 let _spawnSeq = 0;
 
 function doRun(actionKey, action, args = []) {
-  // Routes through update (set_last_run_action Msg) so the reducer remains the
-  // single writer of model state — see docs/v0.5-layering.md. The marker the
-  // actions panel paints (`>` on the last-run row) reads model.lastRunAction.
-  require('./dispatch').applyMsg({ type: 'set_last_run_action', action: actionKey });
   // Parser normalizes both YAML `cmd:` and `script:` into `action.script`
   const cmd = action.script || '';
   const actionType = action.type || 'run';
@@ -77,9 +72,6 @@ function doRun(actionKey, action, args = []) {
     // as positional params: bare-spawn passes them via argv, tmux path
     // shell-escapes them into the new-window command string.
     const tmp = `/tmp/tui-${process.pid}-${Date.now()}.sh`;
-    // T7 — getModel() at the use site (set_last_run_action above already
-    // swapped the model ref); reading a captured pre-dispatch local would
-    // be the 2be348a hazard class.
     const body = `#!/bin/sh\nrm -- "$0"\ncd ${getModel().projectDir} && ${cmd}\n`;
     fs.writeFileSync(tmp, body, { mode: 0o700 });
     if (process.env.TMUX) {

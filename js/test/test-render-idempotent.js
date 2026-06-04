@@ -67,7 +67,6 @@ function setupState() {
   recomputeGroups();
   getModel().currentGroup = getInstanceSlice('groups').list[0].name;
   getInstanceSlice("layout").focus = 'groups';
-  getModel().lastRunAction = '';
   getInstanceSlice('detail').lines = ['[bold]Detail title[/]', '', 'body line 1', 'body line 2'];
   getInstanceSlice('detail').scroll = 0;
   getInstanceSlice('detail').tab = 0;

@@ -7,6 +7,11 @@
  * do_run Cmd is deferred via setImmediate (so the overlay-gone frame paints
  * before spawn), so accept tests observe the effect after setImmediate.
  *
+ * "Did the action run?" observable is the feature/jobs registry — every
+ * action-runner path (run / spawn / background) calls jobs.register
+ * inline after dispatch. Pre-v0.6.2 this test used model.lastRunAction
+ * (now retired — see commit retiring it for context).
+ *
  * Run: node js/test/test-confirm.js
  */
 'use strict';
@@ -14,15 +19,22 @@
 const { getModel } = require('../app/runtime');
 const dispatch = require('../dispatch/dispatch');
 const { runAction } = require('../dispatch/action-runner');
+const jobs = require('../feature/jobs');
 const { describe, it, section, eq, report } = require('./test-runner');
 
 function reset() {
   getModel().modes.confirmMode = false;
-  getModel().lastRunAction = '';
   getModel().modal.confirm = { message: '', cmd: null };
+  jobs._reset();
 }
 // Drive a key through the active mode handler (the confirm modeChain entry).
 function press(key, seq) { dispatch._dispatchActiveMode(key, seq); }
+
+/** Returns the label of the most-recent registered job, or '' if none. */
+function lastRanLabel() {
+  const list = jobs.list();
+  return list.length ? list[0].label : '';
+}
 
 const CONFIRM_ACTION = { script: 'true', type: 'background', confirm: 'sure?' };
 
@@ -32,7 +44,7 @@ describe('[1] runAction with confirm: stages the overlay, defers the action', ()
     runAction('stop', CONFIRM_ACTION);
     eq(getModel().modes.confirmMode, true, 'overlay opened');
     eq(getModel().modal.confirm.cmd.type, 'do_run', 'pending do_run Cmd staged (data, not a closure)');
-    eq(getModel().lastRunAction, '', 'execution deferred');
+    eq(lastRanLabel(), '', 'execution deferred (no job registered)');
   });
 });
 
@@ -42,14 +54,14 @@ describe('[3] n / escape reject without running', () => {
     runAction('stop', CONFIRM_ACTION);
     press('', 'n');
     eq(getModel().modes.confirmMode, false, 'mode cleared');
-    eq(getModel().lastRunAction, '', 'not run');
+    eq(lastRanLabel(), '', 'not run');
   });
   it('escape clears mode, no run', () => {
     reset();
     runAction('stop', CONFIRM_ACTION);
     press('escape', '');
     eq(getModel().modes.confirmMode, false, 'mode cleared');
-    eq(getModel().lastRunAction, '', 'not run');
+    eq(lastRanLabel(), '', 'not run');
   });
 });
 
@@ -59,7 +71,7 @@ describe('[5] stray keys swallowed', () => {
     runAction('stop', CONFIRM_ACTION);
     press('', 'q'); press('up', ''); press('', 'a');
     eq(getModel().modes.confirmMode, true, 'still active');
-    eq(getModel().lastRunAction, '', 'no run');
+    eq(lastRanLabel(), '', 'no run');
   });
 });
 
@@ -68,7 +80,7 @@ describe('[6] no-confirm action runs immediately (sync)', () => {
     reset();
     runAction('noop', { script: 'true', type: 'background' });
     eq(getModel().modes.confirmMode, false, 'no overlay');
-    eq(getModel().lastRunAction, 'noop', 'ran immediately');
+    eq(lastRanLabel(), 'noop', 'ran immediately');
   });
 });
 
@@ -79,9 +91,9 @@ reset();
 runAction('yes-run', CONFIRM_ACTION);
 press('', 'y');
 eq(getModel().modes.confirmMode, false, 'mode cleared synchronously on y');
-eq(getModel().lastRunAction, '', 'action NOT yet run (do_run deferred to next tick)');
+eq(lastRanLabel(), '', 'action NOT yet run (do_run deferred to next tick)');
 setImmediate(() => {
-  eq(getModel().lastRunAction, 'yes-run', 'action ran after setImmediate');
+  eq(lastRanLabel(), 'yes-run', 'action ran after setImmediate');
   runStep4();
 });
 
@@ -91,9 +103,9 @@ function runStep4() {
   runAction('ent-run', CONFIRM_ACTION);
   press('return', '');
   eq(getModel().modes.confirmMode, false, 'mode cleared on Enter');
-  eq(getModel().lastRunAction, '', 'deferred');
+  eq(lastRanLabel(), '', 'deferred');
   setImmediate(() => {
-    eq(getModel().lastRunAction, 'ent-run', 'Enter ran the action after setImmediate');
+    eq(lastRanLabel(), 'ent-run', 'Enter ran the action after setImmediate');
     report();
   });
 }

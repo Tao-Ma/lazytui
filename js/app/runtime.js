@@ -69,7 +69,7 @@ const mnav = require('../leaves/nav');
  *   - modal{ filter, menu, confirm, prompt, copy, registerPopup, cmdline }
  *                                    — modal sub-model editing buffers
  *   - config / projectDir / configPath — parsed config + paths
- *   - lastRunAction / focused / prefixNode / prefixSeq — misc
+ *   - focused / prefixNode / prefixSeq — misc
  *   - register                       — yank register
  */
 function init() {
@@ -129,7 +129,6 @@ function init() {
     config: null,
     projectDir: '.',
     configPath: '',
-    lastRunAction: '',
     // Set by io/stream.js's producer at stream lifecycle boundaries
     // when the stream is UNROUTED (writes directly to slice.lines —
     // docker logs/inspect verbs, type:run w/o tab:). Read by the
@@ -862,14 +861,6 @@ function update(model, msg) {
         { type: 'msg', msg: route.wrap(compName, { type: 'set_scroll', panel, offset: 0 }) },
       ]];
     }
-    case 'set_last_run_action': {
-      // The actions-panel `>`-marker reads model.lastRunAction; this is
-      // its single writer. `''` clears (e.g. on group change — the
-      // cascade in the groups Component sends reset_group_context).
-      const lastRunAction = typeof msg.action === 'string' ? msg.action : '';
-      if (lastRunAction === model.lastRunAction) return [model, []];
-      return [{ ...model, lastRunAction }, []];
-    }
     case 'set_unrouted_streaming': {
       // Single writer of model.unroutedStreaming — flipped by
       // io/stream.js's producer at stream start (true iff no tabKey)
@@ -907,13 +898,10 @@ function update(model, msg) {
     case 'reset_group_context': {
       // Cross-layer Msg emitted by the groups Component on a group
       // switch — the ROOT chrome half of resetGroupContext (per-group
-      // sel / filters / multiSel reset, mode flags off, lastRunAction
-      // clear). The viewer-slice half rides on viewer_reset_chrome →
-      // detail Component.
-      const next = {
-        ..._withModes(model, { terminalMode: false, listSelectMode: false }),
-        lastRunAction: '',
-      };
+      // sel / filters / multiSel reset, mode flags off). The
+      // viewer-slice half rides on viewer_reset_chrome → detail
+      // Component.
+      const next = _withModes(model, { terminalMode: false, listSelectMode: false });
       // actions/containers nav state lives on their own Component
       // slices; emit wrapped resets per panel only when the owning
       // Component is registered (tests that don't register
