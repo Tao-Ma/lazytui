@@ -232,6 +232,44 @@ function update(msg, slice) {
       const scroll = wasAtBottom ? Math.max(0, lines.length - innerH) : slice.scroll;
       return { ...slice, lines, scroll };
     }
+    case 'viewer_append_lines': {
+      // Bulk variant of viewer_append. Producers fire one Msg for
+      // multi-line bursts (preempt footer, stream-end footer, decoder
+      // tail flush) so the cascade is one reducer pass instead of N.
+      // Same routed/unrouted split as viewer_append; bottom-stick check
+      // happens once over the whole batch.
+      const incoming = Array.isArray(msg.lines) ? msg.lines : [];
+      if (incoming.length === 0) return slice;
+      if (msg.tabKey && msg.groupName) {
+        const all = slice.actionTabBuffers || {};
+        const group = all[msg.groupName] || {};
+        const buf = group[msg.tabKey] || { lines: [] };
+        const bufLines = [...buf.lines, ...incoming];
+        const nextAll = {
+          ...all,
+          [msg.groupName]: { ...group, [msg.tabKey]: { lines: bufLines } },
+        };
+        const m = getModel();
+        if (msg.groupName === m.currentGroup) {
+          const active = pt.activeActionTabIn(slice, m, m.currentGroup);
+          if (active && active[0] === msg.tabKey) {
+            const innerH = _innerH(slice);
+            const maxScroll = Math.max(0, slice.lines.length - innerH);
+            const wasAtBottom = slice.scroll >= maxScroll;
+            const lines = [...slice.lines, ...incoming];
+            const scroll = wasAtBottom ? Math.max(0, lines.length - innerH) : slice.scroll;
+            return { ...slice, actionTabBuffers: nextAll, lines, scroll };
+          }
+        }
+        return { ...slice, actionTabBuffers: nextAll };
+      }
+      const innerH = _innerH(slice);
+      const maxScroll = Math.max(0, slice.lines.length - innerH);
+      const wasAtBottom = slice.scroll >= maxScroll;
+      const lines = [...slice.lines, ...incoming];
+      const scroll = wasAtBottom ? Math.max(0, lines.length - innerH) : slice.scroll;
+      return { ...slice, lines, scroll };
+    }
     case 'stream_start': {
       // Routed (msg.tabKey set) → seed actionTabBuffers + auto-jump to
       // the action's tab so the user sees the new run regardless of

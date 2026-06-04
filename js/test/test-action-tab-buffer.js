@@ -134,6 +134,80 @@ describe('[viewer_append] routed → buffer + mirror-on-active', () => {
   });
 });
 
+describe('[viewer_append_lines] bulk append — atomic reducer pass', () => {
+  function seeded() {
+    const s0 = { ...viewer._init(), tab: 0 };
+    return applyUpdate(s0, {
+      type: 'stream_start',
+      header: '[dim]$ make-check[/]',
+      tabKey: 'make-check',
+      groupName: 'g',
+    }).next;
+  }
+
+  it('appends N lines in one pass; buffer grows by N; slice.lines mirrors when active', () => {
+    let s = seeded();  // tab=1, lines=[header]
+    s = applyUpdate(s, {
+      type: 'viewer_append_lines',
+      lines: ['a', 'b', 'c'],
+      tabKey: 'make-check',
+      groupName: 'g',
+    }).next;
+    eq(s.actionTabBuffers.g['make-check'].lines.length, 4, 'buffer = header + 3');
+    eq(s.lines.length, 4, 'slice mirrored');
+    eq(s.lines[3], 'c', 'tail of batch lands last');
+  });
+
+  it('off-tab → buffer grows, slice.lines untouched', () => {
+    let s = seeded();
+    s = { ...s, tab: 0, lines: [] };  // user on Info tab
+    s = applyUpdate(s, {
+      type: 'viewer_append_lines',
+      lines: ['bg-1', 'bg-2'],
+      tabKey: 'make-check',
+      groupName: 'g',
+    }).next;
+    eq(s.actionTabBuffers.g['make-check'].lines.length, 3, 'buffer = header + 2');
+    eq(s.lines.length, 0, 'slice untouched');
+  });
+
+  it('empty batch → no-op', () => {
+    const s = seeded();
+    const next = applyUpdate(s, {
+      type: 'viewer_append_lines',
+      lines: [],
+      tabKey: 'make-check',
+      groupName: 'g',
+    }).next;
+    eq(next, s, 'same ref');
+  });
+
+  it('bottom-stick: was-at-bottom checked once for the whole batch', () => {
+    let s = { ...seeded(), innerH: 3 };
+    // pre-load to push past viewport
+    s = applyUpdate(s, { type: 'viewer_append', line: 'x', tabKey: 'make-check', groupName: 'g' }).next;
+    s = applyUpdate(s, { type: 'viewer_append', line: 'y', tabKey: 'make-check', groupName: 'g' }).next;
+    s = applyUpdate(s, {
+      type: 'viewer_append_lines',
+      lines: ['p', 'q', 'r'],
+      tabKey: 'make-check',
+      groupName: 'g',
+    }).next;
+    eq(s.lines.length, 6, '1 header + 2 + 3 = 6');
+    eq(s.scroll, Math.max(0, 6 - 3), 'scroll bottom-stuck after batch');
+  });
+
+  it('unrouted → legacy slice.lines write', () => {
+    const s0 = { ...viewer._init(), lines: ['head'], innerH: 4 };
+    const next = applyUpdate(s0, {
+      type: 'viewer_append_lines',
+      lines: ['a', 'b'],
+    }).next;
+    eq(next.lines.length, 3);
+    eq(next.actionTabBuffers, s0.actionTabBuffers, 'buffer untouched');
+  });
+});
+
 describe('[tab_switch] action arm restores buffer + bottom-pin scroll', () => {
   function buildSliceWithBuffer(lines) {
     const s0 = { ...viewer._init(), tab: 0, innerH: 3 };

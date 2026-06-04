@@ -58,12 +58,14 @@ function killCurrentProc(opts = {}) {
     try { currentProc.kill('SIGTERM'); } catch {}
     if (currentStreamTarget && !opts.silent) {
       const { tabKey, groupName } = currentStreamTarget;
+      const batch = [];
       if (currentFlushTail) {
         const tail = currentFlushTail();
-        if (tail) appendDetailLine(esc(tail), tabKey, groupName);
+        if (tail) batch.push(esc(tail));
       }
-      appendDetailLine('[yellow]Killed by next run.[/]', tabKey, groupName);
-      appendDetailLine('[dim]Press Enter to run again.[/]', tabKey, groupName);
+      batch.push('[yellow]Killed by next run.[/]');
+      batch.push('[dim]Press Enter to run again.[/]');
+      appendDetailLines(batch, tabKey, groupName);
     }
     if (currentJobId) {
       jobs.close(currentJobId, { status: 'killed' });
@@ -80,10 +82,13 @@ function killCurrentProc(opts = {}) {
   }
 }
 
-// Async producer-side write. Destination resolves via route.resolveTarget;
+// Async producer-side writes. Destination resolves via route.resolveTarget;
 // dispatch is lazy-required to dodge the stream→dispatch→actions cycle.
-// tabKey+groupName route into actionTabBuffers (see viewer.js#viewer_append);
-// unset → legacy slice.lines write.
+// tabKey+groupName route into actionTabBuffers; unset → legacy slice.lines.
+//
+// appendDetailLine: single-line (the onData hot path — one Msg per line).
+// appendDetailLines: bulk variant for producer-event footers (one Msg for
+// the whole tail+status+rerun-hint batch — atomic reducer pass).
 function appendDetailLine(line, tabKey, groupName) {
   const route = require('../leaves/route');
   const target = route.resolveTarget('viewer');
@@ -92,6 +97,18 @@ function appendDetailLine(line, tabKey, groupName) {
   const msg = tabKey && groupName
     ? { type: 'viewer_append', line, tabKey, groupName }
     : { type: 'viewer_append', line };
+  api.dispatchMsg(api.wrap(target, msg));
+}
+
+function appendDetailLines(lines, tabKey, groupName) {
+  if (!lines || lines.length === 0) return;
+  const route = require('../leaves/route');
+  const target = route.resolveTarget('viewer');
+  if (target == null) return;
+  const api = require('../panel/api');
+  const msg = tabKey && groupName
+    ? { type: 'viewer_append_lines', lines, tabKey, groupName }
+    : { type: 'viewer_append_lines', lines };
   api.dispatchMsg(api.wrap(target, msg));
 }
 
@@ -175,16 +192,18 @@ function streamCommand(headerLabel, cmd, args = [], opts = {}) {
     currentFlushTail = null;
     currentRecord = null;
     _setUnroutedStreaming(false);
-    // Flush any dangling bytes the decoder is still holding (rare —
-    // means the stream closed mid-codepoint, which is a malformed
-    // sender; emit U+FFFD per Node's standard behavior).
+    // Coalesce decoder tail + status + re-run hint into one batched
+    // append (B — atomic reducer pass instead of 2-3 sequential
+    // viewer_append dispatches).
+    const batch = [];
     const tail = decoder.end();
     if (tail) buffer += tail;
-    if (buffer) { appendDetailLine(esc(buffer), tabKey, groupName); rec.append(buffer); buffer = ''; }
-    if (signal) { appendDetailLine(`[yellow]Killed (${signal})[/]`, tabKey, groupName); rec.end(`signal:${signal}`); }
-    else if (code === 0) { appendDetailLine('[green]Done.[/]', tabKey, groupName); rec.end(0); }
-    else { appendDetailLine(`[red]Exit ${code}[/]`, tabKey, groupName); rec.end(code); }
-    if (tabKey && groupName) appendDetailLine('[dim]Press Enter to run again.[/]', tabKey, groupName);
+    if (buffer) { batch.push(esc(buffer)); rec.append(buffer); buffer = ''; }
+    if (signal)            { batch.push(`[yellow]Killed (${signal})[/]`); rec.end(`signal:${signal}`); }
+    else if (code === 0)    { batch.push('[green]Done.[/]'); rec.end(0); }
+    else                    { batch.push(`[red]Exit ${code}[/]`); rec.end(code); }
+    if (tabKey && groupName) batch.push('[dim]Press Enter to run again.[/]');
+    appendDetailLines(batch, tabKey, groupName);
     scheduleRender();
   });
 
@@ -199,9 +218,10 @@ function streamCommand(headerLabel, cmd, args = [], opts = {}) {
     currentFlushTail = null;
     currentRecord = null;
     _setUnroutedStreaming(false);
-    appendDetailLine(`[red]Error: ${esc(err.message)}[/]`, tabKey, groupName);
+    const batch = [`[red]Error: ${esc(err.message)}[/]`];
     rec.append(`Error: ${err.message}`);
-    if (tabKey && groupName) appendDetailLine('[dim]Press Enter to run again.[/]', tabKey, groupName);
+    if (tabKey && groupName) batch.push('[dim]Press Enter to run again.[/]');
+    appendDetailLines(batch, tabKey, groupName);
     rec.end('error');
     scheduleRender();
   });
