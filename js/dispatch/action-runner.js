@@ -15,6 +15,7 @@ const { getInstanceSlice, dispatchMsg, wrap } = require('../panel/api');
 const { getModel } = require('../app/runtime');
 const { esc } = require('../io/ansi');
 const history = require('../feature/history');
+const jobs = require('../feature/jobs');
 
 function runAction(actionKey, action, args = []) {
   // Event log (PRINCIPLES.md §11 + CHANGELOG v0.2.0). Record the user
@@ -86,6 +87,16 @@ function doRun(actionKey, action, args = []) {
       const argStr = args.length ? ' ' + args.map(shQuote).join(' ') : '';
       spawn('tmux', ['new-window', '-n', actionKey, `${tmp}${argStr}; read`], { detached: true, stdio: 'ignore' });
       history.start(actionKey, cmd, { detached: true });
+      // Jobs registry — pid=null because the spawn returned is the tmux
+      // client which exits immediately after handing off to the server;
+      // the actual window lives inside tmux. tmuxWindowName is the
+      // durable handle for Phase 4.3+ liveness polling.
+      jobs.register({
+        kind: 'tmux',
+        label: actionKey,
+        pid: null,
+        owner: { tmuxWindowName: actionKey, cmd },
+      });
     } else {
       // Outside tmux: spawn into an embedded PTY tab in the detail
       // panel, auto-zoomed to viewMode='full' so the child gets the
@@ -129,8 +140,14 @@ function doRun(actionKey, action, args = []) {
   if (actionType === 'background') {
     setViewerContent(null, `[dim]$ ${esc(actionKey)}[/]\n[yellow]Started in background.[/]`);
     // -- delimiter so $0 = "--", $1 = first arg, $@ = arg list (POSIX).
-    spawn('sh', ['-c', cmd, '--', ...args], { cwd: getModel().projectDir, detached: true, stdio: 'ignore' });
+    const bgProc = spawn('sh', ['-c', cmd, '--', ...args], { cwd: getModel().projectDir, detached: true, stdio: 'ignore' });
     history.start(actionKey, cmd, { detached: true });
+    jobs.register({
+      kind: 'background',
+      label: actionKey,
+      pid: bgProc.pid,
+      owner: { cmd },
+    });
     return;
   }
 

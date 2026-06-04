@@ -18,10 +18,12 @@ const { esc } = require('./ansi');
 const { getModel } = require('../app/runtime');
 const { scheduleRender } = require('../render/render-queue');
 const history = require('../feature/history');
+const jobs = require('../feature/jobs');
 
 let currentProc = null;     // streaming child process, if any
 let currentRecord = null;    // history record handle for the active stream
 let currentStreamTarget = null;  // {tabKey, groupName} of the routed buffer, if any
+let currentJobId = null;    // jobs registry handle for the active stream
 // F5 — closure that flushes the StringDecoder + the pending-line buffer
 // at kill time. The close handler bails on SIGTERM'd procs, so without
 // this any partial multi-byte tail (or unterminated last line) is
@@ -53,6 +55,10 @@ function killCurrentProc(opts = {}) {
       }
       appendDetailLine('[yellow]Killed by next run.[/]', tabKey, groupName);
       appendDetailLine('[dim]Press Enter to run again.[/]', tabKey, groupName);
+    }
+    if (currentJobId) {
+      jobs.close(currentJobId, { status: 'killed' });
+      currentJobId = null;
     }
     currentProc = null;
   }
@@ -105,6 +111,12 @@ function streamCommand(headerLabel, cmd, args = [], opts = {}) {
   const proc = spawn('sh', ['-c', cmd, '--', ...args], { cwd: getModel().projectDir });
   currentProc = proc;
   currentStreamTarget = (tabKey && groupName) ? { tabKey, groupName } : null;
+  currentJobId = jobs.register({
+    kind: tabKey ? 'stream-routed' : 'stream-unrouted',
+    label: headerLabel,
+    pid: proc.pid,
+    owner: tabKey ? { tabKey, groupName, cmd } : { cmd },
+  });
   const rec = history.start(headerLabel, cmd);
   currentRecord = rec;
 
@@ -140,6 +152,13 @@ function streamCommand(headerLabel, cmd, args = [], opts = {}) {
 
   proc.on('close', (code, signal) => {
     if (proc !== currentProc) return;  // superseded
+    if (currentJobId) {
+      jobs.close(currentJobId, {
+        status: signal ? 'killed' : 'exited',
+        exitCode: signal ? null : (code == null ? null : (code | 0)),
+      });
+      currentJobId = null;
+    }
     currentProc = null;
     currentStreamTarget = null;
     currentFlushTail = null;
@@ -159,6 +178,10 @@ function streamCommand(headerLabel, cmd, args = [], opts = {}) {
 
   proc.on('error', (err) => {
     if (proc !== currentProc) return;
+    if (currentJobId) {
+      jobs.close(currentJobId, { status: 'killed' });
+      currentJobId = null;
+    }
     currentProc = null;
     currentStreamTarget = null;
     currentFlushTail = null;

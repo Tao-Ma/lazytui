@@ -20,6 +20,7 @@ const pty = require('node-pty');
 const { Terminal } = require('@xterm/headless');
 const { getModel } = require('../app/runtime');
 const { scheduleOverlay } = require('../render/render-queue');
+const jobs = require('../feature/jobs');
 
 const sessions = {};  // id -> { pty, xterm, cmd, exited, exitCode }
 
@@ -69,7 +70,17 @@ function ensureSession(id, cmd, cols, rows) {
   p.onExit(({ exitCode }) => {
     session.exited = true;
     session.exitCode = exitCode;
+    if (session.jobId) {
+      jobs.close(session.jobId, { status: 'exited', exitCode });
+      session.jobId = null;
+    }
     _onSessionExit(id, exitCode);
+  });
+  session.jobId = jobs.register({
+    kind: 'pty',
+    label: cmd,
+    pid: p.pid,
+    owner: { ptyId: id, cmd },
   });
   sessions[id] = session;
   return session;
@@ -114,6 +125,10 @@ function destroySession(id) {
   // can't call xterm.write on a disposed Terminal.
   if (s._onDataSub) { try { s._onDataSub.dispose(); } catch {} s._onDataSub = null; }
   if (!s.exited) try { s.pty.kill(); } catch {}
+  if (s.jobId) {
+    jobs.close(s.jobId, { status: 'killed' });
+    s.jobId = null;
+  }
   s.xterm.dispose();
   delete sessions[id];
 }
