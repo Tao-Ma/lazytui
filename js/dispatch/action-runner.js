@@ -10,7 +10,7 @@
 const { spawn } = require('child_process');
 const fs = require('fs');
 const { setViewerContent } = require('../app/state');
-const { streamCommand, killCurrentProc } = require('../io/stream');
+const { streamCommand, killAll } = require('../io/stream');
 const { getInstanceSlice, dispatchMsg, wrap } = require('../panel/api');
 const { getModel } = require('../app/runtime');
 const { esc } = require('../io/ansi');
@@ -151,4 +151,4 @@ function doRun(actionKey, action, args = []) {
 
 // Re-export streaming helpers so existing import sites
 // (dispatch.js, plugins/docker.js, cleanup.js) keep working.
-module.exports = { runAction, doRun, killCurrentProc, streamCommand };
+module.exports = { runAction, doRun, killAll, streamCommand };

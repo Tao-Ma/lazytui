@@ -1,14 +1,31 @@
 /**
  * Streamed shell-command output → detail panel.
  *
- * Lives separately from actions.js / layout.js to break what would
- * otherwise be a layout → detail → actions → layout cycle. Both detail
- * (action-tab streaming) and actions (type: run) need this; only this
- * module owns the child process and the detail-line append logic.
+ * v0.6.2 Large — multi-job. The singleton currentProc retires; each
+ * spawn lives in its own ProcCtx in the `procs` Map keyed by jobId.
  *
- * No dependency on layout — uses scheduleRender from render-queue, which
- * has zero deps. Initial header is painted on the next scheduled tick;
- * the caller is expected to render() afterward for user-driven flow.
+ * Slot semantics:
+ *   Routed   (opts.tabKey + opts.groupName) → slotKey =
+ *     `routed:${groupName}:${tabKey}`. One slot per action tab.
+ *     Different slots run concurrently; same-slot replays preempt
+ *     the previous run (e.g., re-Entering `make-check` while it's
+ *     alive still kills the previous; running Test alongside
+ *     Server log does NOT).
+ *   Unrouted (no tabKey) → slotKey = 'unrouted'. Singleton slot —
+ *     a new docker-logs preempts the previous (the legacy verb-
+ *     verb behavior). One unrouted at a time is enough; multiple
+ *     would interleave into slice.lines anyway.
+ *
+ * Lifecycle Cmds dispatched at boundaries:
+ *   stream_start  { header, tabKey?, groupName? }   — at spawn
+ *   viewer_append { line, tabKey?, groupName? }     — per output line
+ *   viewer_append_lines { lines, … }                — preempt + close batches
+ *   set_unrouted_streaming { active }               — when the
+ *     unrouted-slot occupancy flips
+ *
+ * No layout dependency — uses scheduleRender from render-queue. Lazy-
+ * requires dispatch.applyMsg / panel/api to dodge the
+ * stream → dispatch → actions → stream load cycle at module-load time.
  */
 'use strict';
 
@@ -20,66 +37,30 @@ const { scheduleRender } = require('../render/render-queue');
 const history = require('../feature/history');
 const jobs = require('../feature/jobs');
 
-let currentProc = null;     // streaming child process, if any
-let currentRecord = null;    // history record handle for the active stream
-let currentStreamTarget = null;  // {tabKey, groupName} of the routed buffer, if any
-let currentJobId = null;    // jobs registry handle for the active stream
-// F5 — closure that flushes the StringDecoder + the pending-line buffer
-// at kill time. The close handler bails on SIGTERM'd procs, so without
-// this any partial multi-byte tail (or unterminated last line) is
-// dropped on preempt.
-let currentFlushTail = null;
+/** ProcCtx fields:
+ *    proc       — spawned ChildProcess
+ *    record     — feature/history handle
+ *    target     — {tabKey, groupName} | null  (the routed buffer destination)
+ *    flushTail  — () → string (drains decoder + partial-line buffer on kill)
+ *    slotKey    — string (for slotIndex bookkeeping)
+ *    decoder    — StringDecoder (for the close-time flush)
+ *    headerCmd  — { headerLabel } stored only for completeness
+ */
+const procs = new Map();         // jobId → ProcCtx
+const slotIndex = new Map();      // slotKey → jobId
 
-/** Dispatch the model flag. Kept inline so producers stay sync-safe
- *  and the require cycle (dispatch → action-runner → stream) stays
- *  broken at the leaf. */
-function _setUnroutedStreaming(active) {
-  try {
-    require('../dispatch/dispatch').applyMsg({ type: 'set_unrouted_streaming', active });
-  } catch (_) { /* dispatch not loaded — CLI / test edge */ }
+function _slotKey(tabKey, groupName) {
+  return tabKey && groupName ? `routed:${groupName}:${tabKey}` : 'unrouted';
 }
 
-/** Kill any running streamed action.
- *  opts.silent = true suppresses the "Killed by next run." + re-run
- *  footer (TUI shutdown — slice is being torn down anyway, and the
- *  label would be wrong). Default emits both. */
-function killCurrentProc(opts = {}) {
-  if (currentProc) {
-    // T17 — detach the data listeners FIRST. SIGTERM doesn't flush
-    // kernel pipe buffers atomically; the dying child can fire one
-    // more `data` event between kill() and pipe close. Without the
-    // detach, those tail bytes call appendDetailLine — which now
-    // dispatches into the NEW stream's tab. Symptom: starting a
-    // second run-action shows the previous action's last few lines
-    // mixed into the new tab. The `close` handler is already gated
-    // by `proc !== currentProc`, but data listeners weren't.
-    try { currentProc.stdout.removeAllListeners('data'); } catch {}
-    try { currentProc.stderr.removeAllListeners('data'); } catch {}
-    try { currentProc.kill('SIGTERM'); } catch {}
-    if (currentStreamTarget && !opts.silent) {
-      const { tabKey, groupName } = currentStreamTarget;
-      const batch = [];
-      if (currentFlushTail) {
-        const tail = currentFlushTail();
-        if (tail) batch.push(esc(tail));
-      }
-      batch.push('[yellow]Killed by next run.[/]');
-      batch.push('[dim]Press Enter to run again.[/]');
-      appendDetailLines(batch, tabKey, groupName);
-    }
-    if (currentJobId) {
-      jobs.close(currentJobId, { status: 'killed' });
-      currentJobId = null;
-    }
-    currentProc = null;
-    _setUnroutedStreaming(false);
-  }
-  currentStreamTarget = null;
-  currentFlushTail = null;
-  if (currentRecord) {
-    currentRecord.kill();
-    currentRecord = null;
-  }
+/** Recompute and dispatch model.unroutedStreaming based on slotIndex.
+ *  Lazy require — module-load time cycle: stream → dispatch → actions →
+ *  stream. Silent no-op in test/CLI when dispatch isn't loaded. */
+function _refreshUnroutedFlag() {
+  const active = slotIndex.has('unrouted');
+  try {
+    require('../dispatch/dispatch').applyMsg({ type: 'set_unrouted_streaming', active });
+  } catch (_) { /* dispatch not loaded */ }
 }
 
 // Async producer-side writes. Destination resolves via route.resolveTarget;
@@ -112,20 +93,65 @@ function appendDetailLines(lines, tabKey, groupName) {
   api.dispatchMsg(api.wrap(target, msg));
 }
 
+/** Kill a single job. Removes it from procs + slotIndex, SIGTERMs the
+ *  proc, emits the preempt footer to its buffer unless opts.silent,
+ *  closes the registry entry, and refreshes the unrouted flag.
+ *  No-op if jobId isn't in the procs map (already finished). */
+function killJob(jobId, opts = {}) {
+  const ctx = procs.get(jobId);
+  if (!ctx) return;
+  // T17 — detach data listeners FIRST so SIGTERM's tail bytes don't
+  // re-enter appendDetailLine after the proc is already considered dead.
+  try { ctx.proc.stdout.removeAllListeners('data'); } catch {}
+  try { ctx.proc.stderr.removeAllListeners('data'); } catch {}
+  try { ctx.proc.kill('SIGTERM'); } catch {}
+  if (ctx.target && !opts.silent) {
+    const { tabKey, groupName } = ctx.target;
+    const batch = [];
+    if (ctx.flushTail) {
+      const tail = ctx.flushTail();
+      if (tail) batch.push(esc(tail));
+    }
+    batch.push('[yellow]Killed by next run.[/]');
+    batch.push('[dim]Press Enter to run again.[/]');
+    appendDetailLines(batch, tabKey, groupName);
+  }
+  jobs.close(jobId, { status: 'killed' });
+  if (ctx.record) ctx.record.kill();
+  procs.delete(jobId);
+  if (slotIndex.get(ctx.slotKey) === jobId) slotIndex.delete(ctx.slotKey);
+  _refreshUnroutedFlag();
+}
+
+/** Kill every active stream. cleanup.js on TUI shutdown; opts.silent
+ *  suppresses the per-buffer footer since the slice is being torn
+ *  down anyway. */
+function killAll(opts = {}) {
+  // Snapshot ids — killJob mutates procs during iteration.
+  for (const jobId of [...procs.keys()]) killJob(jobId, opts);
+}
+
 /**
  * Stream a shell command's stdout/stderr to the detail panel.
  *
  * opts.tabKey + opts.groupName route into actionTabBuffers (buffer per
- * tabbed action, see viewer.js); unset → legacy slice.lines write.
+ * tabbed action, see viewer.js); unset → legacy slice.lines write
+ * (singleton unrouted slot — new unrouted preempts previous).
  */
 function streamCommand(headerLabel, cmd, args = [], opts = {}) {
-  killCurrentProc();
   const route = require('../leaves/route');
   const target = route.resolveTarget('viewer');
-  if (target == null) return;     // no viewer registered — nothing to stream into
+  if (target == null) return;     // no viewer registered
   const api = require('../panel/api');
   const tabKey = opts.tabKey || null;
   const groupName = opts.groupName || null;
+  const slotKey = _slotKey(tabKey, groupName);
+
+  // Same-slot preempt — kill any existing run in this slot before
+  // starting a fresh one. Cross-slot runs are independent.
+  const occupying = slotIndex.get(slotKey);
+  if (occupying != null) killJob(occupying);
+
   // T32 — esc the dynamic header to prevent markup corruption from
   // user-supplied actionKey / verb strings.
   const startMsg = tabKey && groupName
@@ -136,34 +162,35 @@ function streamCommand(headerLabel, cmd, args = [], opts = {}) {
 
   // -- delimiter so $0 = "--", $1 = first arg, $@ = arg list (POSIX).
   const proc = spawn('sh', ['-c', cmd, '--', ...args], { cwd: getModel().projectDir });
-  currentProc = proc;
-  currentStreamTarget = (tabKey && groupName) ? { tabKey, groupName } : null;
-  currentJobId = jobs.register({
+  const jobId = jobs.register({
     kind: tabKey ? 'stream-routed' : 'stream-unrouted',
     label: headerLabel,
     pid: proc.pid,
     owner: tabKey ? { tabKey, groupName, cmd } : { cmd },
   });
-  _setUnroutedStreaming(!tabKey);
   const rec = history.start(headerLabel, cmd);
-  currentRecord = rec;
 
   let buffer = '';
   // T24 — StringDecoder buffers partial UTF-8 sequences across chunks.
-  // Pre-fix `data.toString('utf8')` decoded each chunk independently,
-  // so multi-byte codepoints split at chunk boundaries (extremely
-  // common: any docker log / shell output with non-ASCII text +
-  // chunked I/O) became U+FFFD replacement-char pairs. Verified by
-  // repro: `'café'` arriving split at byte 4 became `'caf��'`.
+  // Without it, multi-byte codepoints split at chunk boundaries become
+  // U+FFFD pairs (`'café'` → `'caf��'`).
   const decoder = new StringDecoder('utf8');
-  // F5 — close handler bails for SIGTERM'd procs; this is the only
-  // place that drains the decoder + partial-line buffer on preempt.
-  currentFlushTail = () => {
+  const flushTail = () => {
     const tail = decoder.end() || '';
     const combined = buffer + tail;
     buffer = '';
     return combined;
   };
+
+  const ctx = {
+    proc, record: rec,
+    target: tabKey && groupName ? { tabKey, groupName } : null,
+    flushTail, slotKey, decoder,
+  };
+  procs.set(jobId, ctx);
+  slotIndex.set(slotKey, jobId);
+  _refreshUnroutedFlag();
+
   const onData = (data) => {
     buffer += decoder.write(data);
     const lines = buffer.split('\n');
@@ -179,22 +206,19 @@ function streamCommand(headerLabel, cmd, args = [], opts = {}) {
   proc.stderr.on('data', onData);
 
   proc.on('close', (code, signal) => {
-    if (proc !== currentProc) return;  // superseded
-    if (currentJobId) {
-      jobs.close(currentJobId, {
-        status: signal ? 'killed' : 'exited',
-        exitCode: signal ? null : (code == null ? null : (code | 0)),
-      });
-      currentJobId = null;
-    }
-    currentProc = null;
-    currentStreamTarget = null;
-    currentFlushTail = null;
-    currentRecord = null;
-    _setUnroutedStreaming(false);
+    // If the slot was preempted, killJob already removed jobId from
+    // procs — bail to avoid double-close.
+    if (!procs.has(jobId)) return;
+    jobs.close(jobId, {
+      status: signal ? 'killed' : 'exited',
+      exitCode: signal ? null : (code == null ? null : (code | 0)),
+    });
+    procs.delete(jobId);
+    if (slotIndex.get(slotKey) === jobId) slotIndex.delete(slotKey);
+    _refreshUnroutedFlag();
     // Coalesce decoder tail + status + re-run hint into one batched
-    // append (B — atomic reducer pass instead of 2-3 sequential
-    // viewer_append dispatches).
+    // append — atomic reducer pass instead of 2-3 sequential
+    // viewer_append dispatches.
     const batch = [];
     const tail = decoder.end();
     if (tail) buffer += tail;
@@ -208,16 +232,11 @@ function streamCommand(headerLabel, cmd, args = [], opts = {}) {
   });
 
   proc.on('error', (err) => {
-    if (proc !== currentProc) return;
-    if (currentJobId) {
-      jobs.close(currentJobId, { status: 'killed' });
-      currentJobId = null;
-    }
-    currentProc = null;
-    currentStreamTarget = null;
-    currentFlushTail = null;
-    currentRecord = null;
-    _setUnroutedStreaming(false);
+    if (!procs.has(jobId)) return;
+    jobs.close(jobId, { status: 'killed' });
+    procs.delete(jobId);
+    if (slotIndex.get(slotKey) === jobId) slotIndex.delete(slotKey);
+    _refreshUnroutedFlag();
     const batch = [`[red]Error: ${esc(err.message)}[/]`];
     rec.append(`Error: ${err.message}`);
     if (tabKey && groupName) batch.push('[dim]Press Enter to run again.[/]');
@@ -227,4 +246,4 @@ function streamCommand(headerLabel, cmd, args = [], opts = {}) {
   });
 }
 
-module.exports = { streamCommand, killCurrentProc };
+module.exports = { streamCommand, killJob, killAll };

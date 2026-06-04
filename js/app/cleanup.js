@@ -14,10 +14,10 @@ const {
   disableMouse, disableFocusEvents, disableBracketedPaste,
 } = require('../io/term');
 const { destroyAll } = require('../io/terminal');
-const { killCurrentProc } = require('../dispatch/action-runner');
+const { killAll } = require('../dispatch/action-runner');
 
 function cleanup() {
-  killCurrentProc({ silent: true });
+  killAll({ silent: true });
   destroyAll();
   // Fire each Component's cleanup() hook (e.g. docker's `docker events`
   // stream) so no timer or child fires after quit. Lazy-required and
