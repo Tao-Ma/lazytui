@@ -134,7 +134,7 @@ function renderJobsOverlay() {
     }
   }
   lines.push('');
-  lines.push('[dim]\\[↑/↓] nav   \\[g/G] top/bottom   \\[Esc / J] close[/]');
+  lines.push('[dim]\\[↑/↓] nav   \\[g/G] top/bottom   \\[Esc] close[/]');
 
   renderOverlay({
     lines, title: 'Running',

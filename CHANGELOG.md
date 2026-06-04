@@ -64,7 +64,7 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   column actions emit info notices on success; column-edit refusals
   emit error notices.
 
-- **Running overlay (`<leader> J`).** Modal popup listing every live
+- **Running overlay (`<leader> j`).** Modal popup listing every live
   child lazytui spawned — streamed actions (routed + unrouted),
   ephemeral PTY sessions, `type:background` detached spawns, and
   tmux windows from `type:spawn` under `$TMUX`. Tracks

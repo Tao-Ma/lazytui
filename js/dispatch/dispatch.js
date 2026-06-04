@@ -319,7 +319,9 @@ function handleJobsKey(key, seq) {
   const overlay = require('../overlay/jobs');
   const count = require('../feature/jobs').list().length;
   const vh = overlay.viewportRows();
-  if (key === 'escape' || seq === 'J' || key === 'J') { applyMsg({ type: 'jobs_close' }); return; }
+  // Close via Esc only — `j` is used for nav inside the overlay so it
+  // can't double as the toggle-close gesture the way 'J' did pre-rebind.
+  if (key === 'escape') { applyMsg({ type: 'jobs_close' }); return; }
   if (key === 'up'   || seq === 'k') { applyMsg({ type: 'jobs_nav', dir: -1, count, vh }); return; }
   if (key === 'down' || seq === 'j') { applyMsg({ type: 'jobs_nav', dir: +1, count, vh }); return; }
   if (seq === 'g')                   { applyMsg({ type: 'jobs_nav', to: 'top',      count, vh }); return; }
@@ -508,7 +510,7 @@ function _registerBuiltinChords() {
   keybindings.registerKeyBinding('gg', { label: 'top',     run: () => handleAction('goto_top') },  b);
   keybindings.registerKeyBinding('ge', { label: 'bottom',  run: () => handleAction('goto_bottom') }, b);
   keybindings.registerKeyBinding('c',  { label: 'collapse', run: () => handleAction('toggle_collapse_focused') }, b);
-  keybindings.registerKeyBinding('J',  { label: 'running',  run: () => applyMsg({ type: 'jobs_open' }) }, b);
+  keybindings.registerKeyBinding('j',  { label: 'jobs (running)', run: () => applyMsg({ type: 'jobs_open' }) }, b);
   keybindings.labelSubtree('g', '+goto');
 }
 _registerBuiltinChords();
