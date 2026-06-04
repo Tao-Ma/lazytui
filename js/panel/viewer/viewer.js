@@ -443,7 +443,18 @@ function detailTitle(slice) {
   const layoutSlice = getInstanceSlice('layout');
   const dp = layoutSlice ? mpool.findDetailPane(layoutSlice.arrange) : null;
   const hotkey = dp ? dp.hotkey : '';
-  const built = buildTabStrip(tabInfo, slice.tab, hotkey);
+  // Running indicator (Phase 4.4) — set of action keys whose
+  // stream-routed job is alive in the current group. buildTabStrip
+  // prefixes those tab labels with a `●` glyph.
+  const m = getModel();
+  const jobsList = require('../../feature/jobs').list();
+  const runningActionKeys = new Set(
+    jobsList
+      .filter(j => j.kind === 'stream-routed' && j.status === 'running'
+                && j.owner && j.owner.groupName === m.currentGroup)
+      .map(j => j.owner.tabKey)
+  );
+  const built = buildTabStrip(tabInfo, slice.tab, hotkey, runningActionKeys);
   // Blessed exception (docs/v0.5-layering.md §5): the mouse hit-test
   // cache for the tab bar is a view-output write — populated during
   // the layout Component's render pass + consumed by input.js. Pure-

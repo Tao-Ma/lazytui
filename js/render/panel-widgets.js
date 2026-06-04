@@ -192,6 +192,9 @@ function hitTestCloseButton(mx, my) {
  *   activeTab — slice.tab (flat integer index)
  *   hotkey   — single-letter pane hotkey for x-offset math (the title
  *              starts after `╭─(hotkey)─`)
+ *   runningActionKeys — optional Set<actionKey> for stream-routed jobs
+ *              currently running in the active group. Prefixes those
+ *              action tab labels with a `●` running glyph.
  *
  * Returns { title, tabBounds }:
  *   title     — rich-markup string ready for renderPanel(title=…). The
@@ -204,20 +207,23 @@ function hitTestCloseButton(mx, my) {
  *               `b.tabs`). x is the column offset relative to the
  *               pane's left edge.
  */
-function buildTabStrip(tabInfo, activeTab, hotkey) {
+function buildTabStrip(tabInfo, activeTab, hotkey, runningActionKeys) {
   const { actionTabs, termTabs, contentTabs } = tabInfo;
   if (!actionTabs.length && !termTabs.length && !contentTabs.length) return null;
 
   const parts = [];
   const partMeta = [];
   const pushTab = (label, isActive, closeKey) => {
-    const text = esc(label);
     const close = closeKey ? ' \\[x]' : '';
-    parts.push(isActive ? `\\[${text}${close}]` : `${text}${close}`);
+    parts.push(isActive ? `\\[${label}${close}]` : `${label}${close}`);
     partMeta.push({ closeKey, activeWrap: isActive ? 1 : 0 });
   };
-  pushTab('Info', activeTab === 0, null);
-  actionTabs.forEach(([, action], i) => pushTab(action.label, activeTab === i + 1, null));
+  pushTab(esc('Info'), activeTab === 0, null);
+  actionTabs.forEach(([key, action], i) => {
+    const running = runningActionKeys && runningActionKeys.has(key);
+    const prefix = running ? '[yellow]●[/]' : '';
+    pushTab(prefix + esc(action.label), activeTab === i + 1, null);
+  });
   const termOffset = 1 + actionTabs.length;
   termTabs.forEach(([, term], i) => pushTab(term.label, activeTab === termOffset + i, null));
   const contentOffset = 1 + actionTabs.length + termTabs.length;

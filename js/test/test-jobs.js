@@ -259,6 +259,44 @@ describe('[jobs_nav] clamps + scrolls', () => {
   });
 });
 
+// --- Tab-strip running indicator (Phase 4.4) -------------------------------
+
+describe('[tab-strip indicator] ● prepended when a stream-routed job is running', () => {
+  const widgets = require('../render/panel-widgets');
+  const tabInfo = {
+    actionTabs: [['make-check', { label: 'Test' }], ['lint', { label: 'Lint' }]],
+    termTabs: [],
+    contentTabs: [],
+  };
+
+  it('no running jobs → no prefix', () => {
+    const built = widgets.buildTabStrip(tabInfo, 0, 'd', new Set());
+    eq(built.title, '\\[Info]─Test─Lint');
+  });
+
+  it('one running → exactly that action tab gets the ● prefix', () => {
+    const built = widgets.buildTabStrip(tabInfo, 0, 'd', new Set(['make-check']));
+    eq(built.title, '\\[Info]─[yellow]●[/]Test─Lint');
+  });
+
+  it('multiple running → both tabs prefixed', () => {
+    const built = widgets.buildTabStrip(tabInfo, 0, 'd', new Set(['make-check', 'lint']));
+    eq(built.title, '\\[Info]─[yellow]●[/]Test─[yellow]●[/]Lint');
+  });
+
+  it('running set covers an inactive tab; running tab itself wears both ● + active wrap', () => {
+    const built = widgets.buildTabStrip(tabInfo, 1, 'd', new Set(['make-check']));
+    // tab idx 1 = make-check, which is active AND running. Info (idx 0)
+    // is rendered as plain text since activeTab=1.
+    eq(built.title, 'Info─\\[[yellow]●[/]Test]─Lint');
+  });
+
+  it('omitting the set → no prefix (back-compat)', () => {
+    const built = widgets.buildTabStrip(tabInfo, 0, 'd');
+    eq(built.title, '\\[Info]─Test─Lint');
+  });
+});
+
 describe('[clearCompleted] drops closed entries, keeps running', () => {
   it('keeps running + drops exited/killed', () => {
     reset();
