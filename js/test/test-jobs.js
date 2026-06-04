@@ -11,6 +11,7 @@
 
 const { describe, it, assert, eq, report } = require('./test-runner');
 const jobs = require('../feature/jobs');
+const runtime = require('../app/runtime');
 
 function reset() { jobs._reset(); }
 
@@ -141,6 +142,120 @@ describe('[list] newest-first ordering', () => {
     eq(all.length, 2);
     eq(all[0].id, b, 'most-recent first');
     eq(all[1].id, a);
+  });
+});
+
+// --- Reducer arms — jobs_open / jobs_close / jobs_nav ----------------------
+
+function _newModel() {
+  // Build a fresh root model. setModel re-installs it as the live ref.
+  const m = runtime.init();
+  runtime.setModel(m);
+  return m;
+}
+
+describe('[jobs_open] flips jobsMode + resets cursor/scroll', () => {
+  it('opens with cursor=0 scroll=0', () => {
+    let m = _newModel();
+    m = { ...m, modal: { ...m.modal, jobs: { cursor: 5, scroll: 3 } } };
+    runtime.setModel(m);
+    const [next, cmds] = runtime.update(m, { type: 'jobs_open' });
+    eq(next.modes.jobsMode, true);
+    eq(next.modal.jobs.cursor, 0, 'cursor reset');
+    eq(next.modal.jobs.scroll, 0, 'scroll reset');
+    eq(cmds.length, 0);
+  });
+  it('idempotent — opening when already open is a no-op', () => {
+    let m = _newModel();
+    m = { ...m, modes: { ...m.modes, jobsMode: true } };
+    runtime.setModel(m);
+    const [next, cmds] = runtime.update(m, { type: 'jobs_open' });
+    assert(next === m, 'same ref');
+    eq(cmds.length, 0);
+  });
+});
+
+describe('[jobs_close] flips jobsMode off; idempotent', () => {
+  it('closes from open', () => {
+    let m = _newModel();
+    m = { ...m, modes: { ...m.modes, jobsMode: true } };
+    runtime.setModel(m);
+    const [next, cmds] = runtime.update(m, { type: 'jobs_close' });
+    eq(next.modes.jobsMode, false);
+    eq(cmds.length, 0);
+  });
+  it('no-op when not open', () => {
+    let m = _newModel();
+    runtime.setModel(m);
+    const [next, cmds] = runtime.update(m, { type: 'jobs_close' });
+    assert(next === m, 'same ref');
+  });
+});
+
+describe('[jobs_nav] clamps + scrolls', () => {
+  function withCursor(m, cursor, scroll = 0) {
+    return { ...m, modal: { ...m.modal, jobs: { cursor, scroll } } };
+  }
+  it('dir=+1 advances cursor', () => {
+    let m = _newModel();
+    m = withCursor(m, 0);
+    runtime.setModel(m);
+    const [next] = runtime.update(m, { type: 'jobs_nav', dir: +1, count: 5, vh: 3 });
+    eq(next.modal.jobs.cursor, 1);
+  });
+  it('clamps at top (cursor=0, dir=-1) → no-op', () => {
+    let m = _newModel();
+    m = withCursor(m, 0);
+    runtime.setModel(m);
+    const [next] = runtime.update(m, { type: 'jobs_nav', dir: -1, count: 5, vh: 3 });
+    assert(next === m, 'no-op when clamped');
+  });
+  it('clamps at bottom (cursor + scroll both at end → no-op)', () => {
+    let m = _newModel();
+    m = withCursor(m, 4, 2);  // vh=3 → cursor visible at scroll=2..4
+    runtime.setModel(m);
+    const [next] = runtime.update(m, { type: 'jobs_nav', dir: +1, count: 5, vh: 3 });
+    assert(next === m, 'no-op when at bottom');
+  });
+  it('to=top / to=bottom', () => {
+    let m = _newModel();
+    m = withCursor(m, 3);
+    runtime.setModel(m);
+    let [next] = runtime.update(m, { type: 'jobs_nav', to: 'top', count: 5, vh: 3 });
+    eq(next.modal.jobs.cursor, 0);
+    [next] = runtime.update(m, { type: 'jobs_nav', to: 'bottom', count: 5, vh: 3 });
+    eq(next.modal.jobs.cursor, 4);
+  });
+  it('scroll advances when cursor leaves viewport', () => {
+    let m = _newModel();
+    m = withCursor(m, 2);  // vh=3 → scroll=0 fits cursor 0..2
+    runtime.setModel(m);
+    const [next] = runtime.update(m, { type: 'jobs_nav', dir: +1, count: 10, vh: 3 });
+    eq(next.modal.jobs.cursor, 3);
+    eq(next.modal.jobs.scroll, 1, 'scroll bumped so cursor stays visible');
+  });
+  it('scroll retreats when cursor moves above viewport', () => {
+    let m = _newModel();
+    m = withCursor(m, 4, 4);  // cursor==scroll, vh=3 → cursor is on first visible
+    runtime.setModel(m);
+    const [next] = runtime.update(m, { type: 'jobs_nav', dir: -1, count: 10, vh: 3 });
+    eq(next.modal.jobs.cursor, 3);
+    eq(next.modal.jobs.scroll, 3, 'scroll dragged with cursor');
+  });
+  it('to=pageup / to=pagedown jump by vh', () => {
+    let m = _newModel();
+    m = withCursor(m, 5, 3);
+    runtime.setModel(m);
+    let [next] = runtime.update(m, { type: 'jobs_nav', to: 'pagedown', count: 20, vh: 4 });
+    eq(next.modal.jobs.cursor, 9, 'cursor += vh');
+    [next] = runtime.update(m, { type: 'jobs_nav', to: 'pageup', count: 20, vh: 4 });
+    eq(next.modal.jobs.cursor, 1, 'cursor -= vh');
+  });
+  it('empty list (count=0) → no-op', () => {
+    let m = _newModel();
+    runtime.setModel(m);
+    const [next] = runtime.update(m, { type: 'jobs_nav', dir: +1, count: 0, vh: 3 });
+    assert(next === m);
   });
 });
 

@@ -310,6 +310,23 @@ function handleTabListKey(key, seq) {
   }
 }
 
+function handleJobsKey(key, seq) {
+  // Routes overlay keys into the jobs reducer. The list is read live
+  // from feature/jobs at every key event; vh from the overlay module
+  // (clamped against the viewport the renderer just drew).
+  const overlay = require('../overlay/jobs');
+  const count = require('../feature/jobs').list().length;
+  const vh = overlay.viewportRows();
+  if (key === 'escape' || seq === 'J' || key === 'J') { applyMsg({ type: 'jobs_close' }); return; }
+  if (key === 'up'   || seq === 'k') { applyMsg({ type: 'jobs_nav', dir: -1, count, vh }); return; }
+  if (key === 'down' || seq === 'j') { applyMsg({ type: 'jobs_nav', dir: +1, count, vh }); return; }
+  if (seq === 'g')                   { applyMsg({ type: 'jobs_nav', to: 'top',      count, vh }); return; }
+  if (seq === 'G')                   { applyMsg({ type: 'jobs_nav', to: 'bottom',   count, vh }); return; }
+  if (seq === ',' || key === 'pageup')   { applyMsg({ type: 'jobs_nav', to: 'pageup',   count, vh }); return; }
+  if (seq === '.' || key === 'pagedown') { applyMsg({ type: 'jobs_nav', to: 'pagedown', count, vh }); return; }
+  // Enter is a no-op in Phase 4.2 (kind-specific jump lands in 4.3).
+}
+
 function handleDetailSearchKey(key, seq) {
   // viewer_search_* Msgs are handled by the viewer Component's update —
   // route via the Component fan-out, not the root reducer. v0.6.1 Phase
@@ -489,6 +506,7 @@ function _registerBuiltinChords() {
   keybindings.registerKeyBinding('gg', { label: 'top',     run: () => handleAction('goto_top') },  b);
   keybindings.registerKeyBinding('ge', { label: 'bottom',  run: () => handleAction('goto_bottom') }, b);
   keybindings.registerKeyBinding('c',  { label: 'collapse', run: () => handleAction('toggle_collapse_focused') }, b);
+  keybindings.registerKeyBinding('J',  { label: 'running',  run: () => applyMsg({ type: 'jobs_open' }) }, b);
   keybindings.labelSubtree('g', '+goto');
 }
 _registerBuiltinChords();
@@ -605,6 +623,7 @@ const _modeHandlers = {
   // refresh needed.
   cmdMode:             (key, seq) => handleCmdlineKey(key, seq),
   tabListMode:         (key, seq) => handleTabListKey(key, seq),
+  jobsMode:            (key, seq) => handleJobsKey(key, seq),
 };
 
 const modeChain = modes.CHAIN_MODES.map(flag => {

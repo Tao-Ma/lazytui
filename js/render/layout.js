@@ -48,6 +48,7 @@ const { getFreeConfigFooter } = require('../panel/free-config-view');
 const { injectTopRowChrome } = require('./panel-widgets');
 const { renderPanelListOverlay } = require('../overlay/panel-list');
 const { renderTabList, injectTabTrigger } = require('../overlay/tab-list');
+const { renderJobsOverlay } = require('../overlay/jobs');
 const { collectViewContributions } = require('../panel/api');
 const { filterCurrentText } = require('../panel/api');
 
@@ -711,6 +712,7 @@ function render(model = getModel()) {
   // injectTabTrigger inside renderNormal (sibling of injectTopRowChrome
   // for [_]/[X]), so paintColumns writes the glyph atomically.
   if (md.tabListMode) renderTabList();
+  if (md.jobsMode)    renderJobsOverlay();
 
   // Cursor visibility — derived from mode state, single emission site.
   // Cursor *position* is set inline by renderTerminalOverlay (when in

@@ -75,7 +75,8 @@ function init() {
       confirmMode: false, promptMode: false, freeConfigTitleEditMode: false,
       freeConfigMode: false, menuOpen: false, filterMode: false, copyMode: false,
       detailSearchMode: false, registerPopupMode: false, prefixMode: false,
-      cmdMode: false, tabListMode: false, terminalMode: false, listSelectMode: false,
+      cmdMode: false, tabListMode: false, jobsMode: false,
+      terminalMode: false, listSelectMode: false,
     },
     currentGroup: '',
     // Transient per-mode editing buffers (the modal sub-models). The
@@ -110,6 +111,11 @@ function init() {
       cmdline: { text: '', sel: 0, scroll: 0, matches: [] },
       // Design-mode state lives on the layout Component's slice —
       // `getInstanceSlice('layout').freeConfig`.
+      // Running overlay (Phase 4.2) — cursor + scroll into the live jobs
+      // list. Item snapshot is NOT stored here; the renderer reads
+      // feature/jobs.list() at frame time so the overlay reflects
+      // mid-overlay arrivals + status flips.
+      jobs: { cursor: 0, scroll: 0 },
     },
     // Framework-level state: parsed config, paths, leader-mode buffers,
     // misc flags. The layout struct + freeConfig state + viewMode + focus
@@ -642,6 +648,38 @@ function update(model, msg) {
     // inline from the model on open; nav skips null separators;
     // activate emits a menu_action Cmd routing the chosen verb back
     // through dispatch.handleAction.
+    // --- Running overlay (Phase 4.2). Cursor/scroll live in
+    // model.modal.jobs; the items list is read live from
+    // feature/jobs.list() at render time. Clamping is the handler's
+    // responsibility — the reducer takes the count + vh in the Msg.
+    case 'jobs_open':
+      if (model.modes.jobsMode) return [model, []];
+      return [{
+        ..._withModes(model, { jobsMode: true }),
+        modal: { ...model.modal, jobs: { cursor: 0, scroll: 0 } },
+      }, []];
+    case 'jobs_close':
+      if (!model.modes.jobsMode) return [model, []];
+      return [_withModes(model, { jobsMode: false }), []];
+    case 'jobs_nav': {
+      const j = model.modal.jobs;
+      const count = msg.count | 0;
+      const vh = Math.max(1, msg.vh | 0);
+      if (count <= 0) return [model, []];
+      let next = j.cursor;
+      if (msg.to === 'top')           next = 0;
+      else if (msg.to === 'bottom')    next = count - 1;
+      else if (msg.to === 'pageup')    next = j.cursor - vh;
+      else if (msg.to === 'pagedown')  next = j.cursor + vh;
+      else                              next = j.cursor + ((msg.dir | 0) || 0);
+      next = Math.max(0, Math.min(count - 1, next));
+      let scroll = j.scroll | 0;
+      if (next < scroll)            scroll = next;
+      else if (next >= scroll + vh) scroll = next - vh + 1;
+      scroll = Math.max(0, Math.min(scroll, Math.max(0, count - vh)));
+      if (next === j.cursor && scroll === j.scroll) return [model, []];
+      return [_withModal(model, { jobs: { cursor: next, scroll } }), []];
+    }
     case 'menu_open':
       return [{
         ..._withModes(model, { menuOpen: true }),
