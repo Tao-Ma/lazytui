@@ -259,6 +259,29 @@ describe('[jobs_nav] clamps + scrolls', () => {
   });
 });
 
+// --- model-tracked unrouted-stream flag ------------------------------------
+
+describe('[set_unrouted_streaming] flips model.unroutedStreaming', () => {
+  it('default is false', () => {
+    const m = runtime.init();
+    eq(!!m.unroutedStreaming, false);
+  });
+  it('active:true sets the flag; idempotent on repeat', () => {
+    const m0 = runtime.init();
+    const [m1] = runtime.update(m0, { type: 'set_unrouted_streaming', active: true });
+    eq(m1.unroutedStreaming, true);
+    const [m2] = runtime.update(m1, { type: 'set_unrouted_streaming', active: true });
+    assert(m2 === m1, 'no-op when already set');
+  });
+  it('active:false clears; idempotent', () => {
+    const m0 = { ...runtime.init(), unroutedStreaming: true };
+    const [m1] = runtime.update(m0, { type: 'set_unrouted_streaming', active: false });
+    eq(m1.unroutedStreaming, false);
+    const [m2] = runtime.update(m1, { type: 'set_unrouted_streaming', active: false });
+    assert(m2 === m1, 'no-op when already cleared');
+  });
+});
+
 // --- Tab-strip running indicator (Phase 4.4) -------------------------------
 
 describe('[tab-strip indicator] ● prepended when a stream-routed job is running', () => {

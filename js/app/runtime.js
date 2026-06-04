@@ -130,6 +130,14 @@ function init() {
     projectDir: '.',
     configPath: '',
     lastRunAction: '',
+    // Set by io/stream.js's producer at stream lifecycle boundaries
+    // when the stream is UNROUTED (writes directly to slice.lines —
+    // docker logs/inspect verbs, type:run w/o tab:). Read by the
+    // viewer's `viewer_show_info` arm to avoid clobbering streamed
+    // output with focus-driven info refreshes. Routed streams write
+    // to actionTabBuffers and leave this flag alone — info-refresh
+    // is safe under a routed stream.
+    unroutedStreaming: false,
     focused: true,
     prefixNode: null,
     prefixSeq: [],
@@ -861,6 +869,16 @@ function update(model, msg) {
       const lastRunAction = typeof msg.action === 'string' ? msg.action : '';
       if (lastRunAction === model.lastRunAction) return [model, []];
       return [{ ...model, lastRunAction }, []];
+    }
+    case 'set_unrouted_streaming': {
+      // Single writer of model.unroutedStreaming — flipped by
+      // io/stream.js's producer at stream start (true iff no tabKey)
+      // and at close/error/preempt (false). Replaces the previous
+      // pattern where viewer_show_info called stream.js's
+      // isUnroutedStreaming() and read producer-local state.
+      const active = !!msg.active;
+      if (active === !!model.unroutedStreaming) return [model, []];
+      return [{ ...model, unroutedStreaming: active }, []];
     }
     case 'mode_clear':
       // Defensive: clear a single mode flag. Used by dispatch's wedge-guard

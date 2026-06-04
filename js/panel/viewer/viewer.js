@@ -32,7 +32,6 @@ const mpool = require('../../leaves/pool');
 const { buildTabStrip } = require('../../render/panel-widgets');
 const { getModel } = require('../../app/runtime');
 const { getSel } = require('../../app/state');
-const { isUnroutedStreaming } = require('../../io/stream');
 
 // --- internal slice transforms (pure return-new) ---
 //
@@ -173,7 +172,7 @@ function update(msg, slice) {
       // dispatches this after every command, and we don't want to clobber
       // stream output or content/term tabs.
       if (slice.tab !== 0) return slice;
-      if (isUnroutedStreaming()) return slice;
+      if (getModel().unroutedStreaming) return slice;
       const focus = getFocus();
       const def = getPanelDef(focus);
       if (!def || typeof def.getItems !== 'function' || typeof def.getInfo !== 'function') return slice;

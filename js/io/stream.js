@@ -30,6 +30,15 @@ let currentJobId = null;    // jobs registry handle for the active stream
 // dropped on preempt.
 let currentFlushTail = null;
 
+/** Dispatch the model flag. Kept inline so producers stay sync-safe
+ *  and the require cycle (dispatch → action-runner → stream) stays
+ *  broken at the leaf. */
+function _setUnroutedStreaming(active) {
+  try {
+    require('../dispatch/dispatch').applyMsg({ type: 'set_unrouted_streaming', active });
+  } catch (_) { /* dispatch not loaded — CLI / test edge */ }
+}
+
 /** Kill any running streamed action.
  *  opts.silent = true suppresses the "Killed by next run." + re-run
  *  footer (TUI shutdown — slice is being torn down anyway, and the
@@ -61,6 +70,7 @@ function killCurrentProc(opts = {}) {
       currentJobId = null;
     }
     currentProc = null;
+    _setUnroutedStreaming(false);
   }
   currentStreamTarget = null;
   currentFlushTail = null;
@@ -117,6 +127,7 @@ function streamCommand(headerLabel, cmd, args = [], opts = {}) {
     pid: proc.pid,
     owner: tabKey ? { tabKey, groupName, cmd } : { cmd },
   });
+  _setUnroutedStreaming(!tabKey);
   const rec = history.start(headerLabel, cmd);
   currentRecord = rec;
 
@@ -163,6 +174,7 @@ function streamCommand(headerLabel, cmd, args = [], opts = {}) {
     currentStreamTarget = null;
     currentFlushTail = null;
     currentRecord = null;
+    _setUnroutedStreaming(false);
     // Flush any dangling bytes the decoder is still holding (rare —
     // means the stream closed mid-codepoint, which is a malformed
     // sender; emit U+FFFD per Node's standard behavior).
@@ -186,6 +198,7 @@ function streamCommand(headerLabel, cmd, args = [], opts = {}) {
     currentStreamTarget = null;
     currentFlushTail = null;
     currentRecord = null;
+    _setUnroutedStreaming(false);
     appendDetailLine(`[red]Error: ${esc(err.message)}[/]`, tabKey, groupName);
     rec.append(`Error: ${err.message}`);
     if (tabKey && groupName) appendDetailLine('[dim]Press Enter to run again.[/]', tabKey, groupName);
@@ -194,11 +207,4 @@ function streamCommand(headerLabel, cmd, args = [], opts = {}) {
   });
 }
 
-/** True while an UNROUTED stream is producing output into slice.lines.
- *  Routed (tabbed) streams write to actionTabBuffers and DON'T clobber
- *  slice.lines for off-tab callers — info refresh on the Info tab is
- *  safe under a routed stream. The viewer's `viewer_show_info` gate
- *  uses this to avoid the over-broad pre-Phase-2 behavior. */
-function isUnroutedStreaming() { return currentProc !== null && currentStreamTarget === null; }
-
-module.exports = { streamCommand, killCurrentProc, isUnroutedStreaming };
+module.exports = { streamCommand, killCurrentProc };
