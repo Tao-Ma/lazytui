@@ -64,6 +64,22 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   column actions emit info notices on success; column-edit refusals
   emit error notices.
 
+- **Running overlay (`<leader> J`).** Modal popup listing every live
+  child lazytui spawned — streamed actions (routed + unrouted),
+  ephemeral PTY sessions, `type:background` detached spawns, and
+  tmux windows from `type:spawn` under `$TMUX`. Tracks
+  `{kind, label, pid, owner, status, exitCode, startedAt, endedAt}`
+  per job. Navigate with `j`/`k` / arrows, `g`/`G`, `PgUp`/`PgDn`;
+  Enter jumps to the relevant tab (action tab for streams, terminal
+  tab for PTYs, viewer info card for background/tmux); Esc or `J`
+  closes. Backed by an out-of-TEA `feature/jobs` registry — same
+  pattern as `feature/history` (slice-less producers report via
+  `register` / `update` / `close`).
+
+- **Action tab `●` running indicator.** Tab strip prefixes a yellow
+  `●` to action tabs whose stream-routed job is alive in the
+  current group. Glanceable hint without opening the overlay.
+
 ### Changed
 - **Msg signatures.** `pool_show({column: 'left'|'right'})` →
   `pool_show({columnIndex: int})`. Drag target shape `{kind, column,

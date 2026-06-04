@@ -61,8 +61,9 @@ greppable.
         ▼
 ═══════════════════════════ STATE ══════════════════════════════════
    Root model (js/app/runtime.js, _modelRef.current)
-     modes (13 modal flags)
-     modal.{ filter, prompt, menu, confirm, copy, registerPopup, cmdline }
+     modes (14 modal flags, incl. jobsMode for the Running overlay)
+     modal.{ filter, prompt, menu, confirm, copy, registerPopup,
+             cmdline, jobs }
      currentGroup, config, register, prefixSeq, focused, ...
 
    Component slices (js/leaves/route.js, nested store)
@@ -74,6 +75,12 @@ greppable.
      files          per-panel-type browsers
      config-status  tab, cache, branch, expanded
      nav[panelType] cursor, scroll, multiSel, filter
+
+   Out-of-TEA module-local stores (js/feature/*.js)
+     history        completion log of every action that ran
+     jobs           live state of every child lazytui spawned
+                    (streams, PTYs, background, tmux). See
+                    PRINCIPLES §12 for the slice-vs-module rule.
         │
         ▼
 ═══════════════════════════ RENDER ═════════════════════════════════

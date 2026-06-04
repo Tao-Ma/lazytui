@@ -402,6 +402,21 @@ arrangement) — slice-private but loaded via cross-layer Msgs.
 > kill-on-switch as the only way to avoid cross-talk. The two
 > concerns are separate; keep them separate.
 
+> **Out-of-TEA module-local stores.** Two cross-cutting registries
+> live OUTSIDE the slice graph: `feature/history` (completion log
+> of every action that's run) and `feature/jobs` (live state of
+> every child lazytui spawned — streams, PTYs, background, tmux).
+> Both: module-local `Map`, pure public API (`register` / `update` /
+> `close` / `list`), `scheduleRender()` on mutation, consumed by
+> render-time readers (the history navigator, the Running overlay).
+> No Component slice and no Msg fan-out — the data is global by
+> nature (cross-pane, cross-group, multi-producer) and forcing it
+> through a single-writer slice would be ceremony for no win. The
+> guardrail: producers report at lifecycle boundaries only (spawn
+> + close), and the registry mutator is the ONLY writer the
+> renderer reads from. Reach for this pattern only when the data
+> truly spans the slice graph; default to a slice.
+
 ## 13. Checklist for new features
 
 Before implementing, verify:
