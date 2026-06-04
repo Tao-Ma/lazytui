@@ -315,7 +315,8 @@ function handleJobsKey(key, seq) {
   // from feature/jobs at every key event; vh from the overlay module
   // (clamped against the viewport the renderer just drew).
   const overlay = require('../overlay/jobs');
-  const count = require('../feature/jobs').list().length;
+  const jobs = require('../feature/jobs');
+  const count = jobs.list().length;
   const vh = overlay.viewportRows();
   if (key === 'escape' || seq === 'J' || key === 'J') { applyMsg({ type: 'jobs_close' }); return; }
   if (key === 'up'   || seq === 'k') { applyMsg({ type: 'jobs_nav', dir: -1, count, vh }); return; }
@@ -324,7 +325,96 @@ function handleJobsKey(key, seq) {
   if (seq === 'G')                   { applyMsg({ type: 'jobs_nav', to: 'bottom',   count, vh }); return; }
   if (seq === ',' || key === 'pageup')   { applyMsg({ type: 'jobs_nav', to: 'pageup',   count, vh }); return; }
   if (seq === '.' || key === 'pagedown') { applyMsg({ type: 'jobs_nav', to: 'pagedown', count, vh }); return; }
-  // Enter is a no-op in Phase 4.2 (kind-specific jump lands in 4.3).
+  if (key === 'return') {
+    const list = jobs.list();
+    const j = list[getModel().modal.jobs.cursor | 0];
+    applyMsg({ type: 'jobs_close' });
+    if (j) _jobsActivate(j);
+    return;
+  }
+}
+
+/**
+ * Jump to the tab/pane that hosts the selected job. Cross-group jumps
+ * switch currentGroup first so the destination tab strip / PTY session
+ * is in scope. Phase 4.3 — overlay-close has already fired in the caller.
+ */
+function _jobsActivate(j) {
+  const { kind, owner = {} } = j;
+  const targetGroup = owner.groupName || (owner.ptyId ? _parsePtyIdGroup(owner.ptyId) : null);
+  if (targetGroup && targetGroup !== getModel().currentGroup) {
+    applyMsg({ type: 'set_current_group', group: targetGroup });
+  }
+  const viewerTarget = route.resolveTarget('viewer') || 'detail';
+
+  if (kind === 'stream-routed' && owner.tabKey) {
+    const pt = require('../leaves/pane-tabs');
+    const slice = getInstanceSlice(viewerTarget) || {};
+    const info = pt.flatTabInfo(slice, getModel(), getModel().currentGroup);
+    const idx = info.actionTabs.findIndex(([k]) => k === owner.tabKey);
+    if (idx >= 0) {
+      dispatchMsg(wrap(viewerTarget, { type: 'tab_switch', idx: 1 + idx }));
+      dispatchMsg(wrap('layout', { type: 'focus_set', focus: viewerTarget }));
+    }
+    return;
+  }
+  if (kind === 'stream-unrouted') {
+    dispatchMsg(wrap('layout', { type: 'focus_set', focus: viewerTarget }));
+    return;
+  }
+  if (kind === 'pty' && owner.ptyId) {
+    const pt = require('../leaves/pane-tabs');
+    const slice = getInstanceSlice(viewerTarget) || {};
+    const info = pt.flatTabInfo(slice, getModel(), getModel().currentGroup);
+    const grp = getModel().currentGroup;
+    let termIdx = -1;
+    for (let i = 0; i < info.termTabs.length; i++) {
+      if (`${grp}_${info.termTabs[i][0]}` === owner.ptyId) { termIdx = i; break; }
+    }
+    if (termIdx >= 0) {
+      dispatchMsg(wrap(viewerTarget, {
+        type: 'tab_switch', idx: 1 + info.actionTabs.length + termIdx,
+      }));
+      dispatchMsg(wrap('layout', { type: 'focus_set', focus: viewerTarget }));
+      applyMsg({ type: 'terminal_enter' });
+    }
+    return;
+  }
+  if (kind === 'background' || kind === 'tmux') {
+    // No tab to jump to — populate the viewer with a small info card.
+    const { esc } = require('../io/ansi');
+    const ageMs = (j.endedAt || Date.now()) - j.startedAt;
+    const ageS = Math.max(0, Math.floor(ageMs / 1000));
+    const lines = [
+      `[dim]$ ${esc(j.label)}[/]`,
+      '',
+      `[dim]kind:[/]     ${kind}`,
+      kind === 'background'
+        ? `[dim]pid:[/]      ${j.pid == null ? '(unknown)' : j.pid}`
+        : `[dim]window:[/]   ${esc(owner.tmuxWindowName || '')}`,
+      `[dim]status:[/]   ${j.status}${j.exitCode == null ? '' : ` (exit ${j.exitCode})`}`,
+      `[dim]age:[/]      ${ageS}s`,
+      '',
+      `[dim]cmd:[/]`,
+      `  ${esc(owner.cmd || '(no cmd recorded)')}`,
+    ];
+    dispatchMsg(wrap(viewerTarget, { type: 'viewer_set_content', lines }));
+    dispatchMsg(wrap('layout', { type: 'focus_set', focus: viewerTarget }));
+    return;
+  }
+}
+
+/** ptyId is `${group}_${key}`; group keys can contain underscores, so
+ *  we split greedily by trying progressively longer group prefixes
+ *  against the live config. Falls back to the substring before the
+ *  first underscore. */
+function _parsePtyIdGroup(ptyId) {
+  const groups = (getModel().config && getModel().config.groups) || {};
+  for (const name of Object.keys(groups)) {
+    if (ptyId.startsWith(`${name}_`)) return name;
+  }
+  const u = ptyId.indexOf('_');
+  return u < 0 ? ptyId : ptyId.slice(0, u);
 }
 
 function handleDetailSearchKey(key, seq) {
@@ -764,4 +854,6 @@ module.exports = {
   _handleNormalKey: handleNormalKey,
   _dispatchActiveMode,
   _isListPanel,
+  _handleJobsKey: handleJobsKey,
+  _jobsActivate,
 };
