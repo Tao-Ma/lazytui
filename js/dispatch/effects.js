@@ -168,6 +168,17 @@ function installBuiltins() {
   registerEffect('run_action', (eff) => {
     setImmediate(() => require('./action-runner').runAction(eff.actionKey, eff.action, eff.args));
   });
+  // unrouted_preempt_and_run: fired by confirm_accept when the user
+  // confirms "Kill running '<label>'?" on an unrouted-slot collision.
+  // Kills the prior stream (emits its "Killed previous:" footer into
+  // the viewerStreamBuffer), then starts the new stream.
+  registerEffect('unrouted_preempt_and_run', (eff) => {
+    setImmediate(() => {
+      const stream = require('../io/stream');
+      stream.killJob(eff.existingId, { silent: false });
+      stream.streamCommand(eff.headerLabel, eff.cmd, eff.args, eff.opts || {});
+    });
+  });
   // copy_commit: resolve the selected copy option's (module-held) content
   // thunk → OSC52, then drop the module options. idx<0 = cancel (just clear).
   registerEffect('copy_commit', (eff) => {

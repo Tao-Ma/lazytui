@@ -77,16 +77,26 @@ describe('[multi-job] same-slot re-run preempts', () => {
   });
 });
 
-describe('[multi-job] unrouted slot is singleton', () => {
-  it('two unrouted starts → only one alive', () => {
+describe('[multi-job] unrouted preempt stages confirm; default keeps existing alive', () => {
+  it('a second unrouted run does NOT silently replace the first', () => {
     seedModel();
     jobs._reset();
+    runtime.setModel({ ...runtime.getModel(), modes: { ...runtime.getModel().modes, confirmMode: false } });
     stream.streamCommand('docker logs nginx', 'sleep 5', []);
     stream.streamCommand('docker logs db',    'sleep 5', []);
+    // Existing stream still alive; new one is gated behind the confirm
+    // overlay (default action = reject, so the existing keeps running).
     const r = running();
-    eq(r.length, 1, 'unrouted singleton');
-    eq(r[0].label, 'docker logs db', 'newer unrouted is the survivor');
+    eq(r.length, 1, 'still exactly one running');
+    eq(r[0].label, 'docker logs nginx', 'previous unrouted preserved (NOT silently replaced)');
+    eq(runtime.getModel().modes.confirmMode, true, 'confirm overlay was staged');
+    eq(runtime.getModel().modal.confirm.cmd.type, 'unrouted_preempt_and_run',
+       'pending Cmd targets the unrouted-preempt path');
     stream.killAll({ silent: true });
+    runtime.setModel({ ...runtime.getModel(),
+      modes: { ...runtime.getModel().modes, confirmMode: false },
+      modal: { ...runtime.getModel().modal, confirm: { message: '', cmd: null } },
+    });
   });
 });
 

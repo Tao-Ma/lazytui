@@ -82,6 +82,15 @@ function _setCursor(slice, line, col, extend) {
   return next;
 }
 
+/** Cap an array of lines to maxLen by dropping the oldest. Returns
+ *  [cappedLines, droppedCount] so callers can adjust scroll for the
+ *  shift. */
+function _capLines(lines, maxLen) {
+  if (lines.length <= maxLen) return [lines, 0];
+  const dropped = lines.length - maxLen;
+  return [lines.slice(dropped), dropped];
+}
+
 function _scrollView(slice, delta) {
   const innerH = _innerH(slice);
   const maxScroll = Math.max(0, slice.lines.length - innerH);
@@ -125,6 +134,13 @@ function init() {
     // [groupName]: { [actionKey]: { lines } } — survives tab switches
     // so a tabbed action's output isn't lost when the user navigates away.
     actionTabBuffers: {},
+    // Singleton accumulator for unrouted streams (tabless type:run,
+    // docker logs/inspect verbs). Appends across commands; cap at 1000
+    // lines (drop oldest when over). Info tab (slice.tab===0) is the
+    // display home — on tab_switch to Info, slice.lines is restored
+    // from this buffer. Survives tab switches and group changes; only
+    // ever appended to (or capped) — never reset by the producer.
+    viewerStreamBuffer: { lines: [], cap: 1000 },
     // Tab-list overlay (the `[≡]` switcher anchored to detail's top-left).
     // `cursor` is the row index in the flat tab list (Info..actions..
     // terminals..content); `scroll` is the first visible row when the
@@ -168,11 +184,13 @@ function update(msg, slice) {
     case 'viewer_show_info': {
       // Pull focused-Navigator info into the viewer — the Navigator→Viewer
       // cascade rides the single-writer pathway. Skip if a non-Info tab is
-      // active or a live stream is filling the body; cmdline's mode wrapper
-      // dispatches this after every command, and we don't want to clobber
-      // stream output or content/term tabs.
+      // active, a live unrouted stream is filling the body, OR the viewer
+      // stream buffer has accumulated transcript content (don't clobber
+      // the user's history of ad-hoc command output).
       if (slice.tab !== 0) return slice;
       if (getModel().unroutedStreaming) return slice;
+      const vsb = slice.viewerStreamBuffer;
+      if (vsb && vsb.lines && vsb.lines.length > 0) return slice;
       const focus = getFocus();
       const def = getPanelDef(focus);
       if (!def || typeof def.getItems !== 'function' || typeof def.getInfo !== 'function') return slice;
@@ -201,7 +219,8 @@ function update(msg, slice) {
       //
       // Routed (msg.tabKey set) → write to actionTabBuffers[group][tabKey];
       // mirror to slice.lines only when the active tab in current group
-      // is that action's. Unrouted → legacy slice.lines write.
+      // is that action's. Unrouted → append to viewerStreamBuffer (capped
+      // ring); mirror to slice.lines only when on Info tab.
       if (msg.tabKey && msg.groupName) {
         const all = slice.actionTabBuffers || {};
         const group = all[msg.groupName] || {};
@@ -225,12 +244,22 @@ function update(msg, slice) {
         }
         return { ...slice, actionTabBuffers: nextAll };
       }
-      const innerH = _innerH(slice);
-      const maxScroll = Math.max(0, slice.lines.length - innerH);
-      const wasAtBottom = slice.scroll >= maxScroll;
-      const lines = [...slice.lines, msg.line];
-      const scroll = wasAtBottom ? Math.max(0, lines.length - innerH) : slice.scroll;
-      return { ...slice, lines, scroll };
+      // Unrouted: append to viewerStreamBuffer (cap-aware) + mirror
+      // to slice.lines IFF on Info tab.
+      const vsb = slice.viewerStreamBuffer || { lines: [], cap: 1000 };
+      const [vsbLines, dropped] = _capLines([...vsb.lines, msg.line], vsb.cap);
+      const nextBuf = { ...vsb, lines: vsbLines };
+      if (slice.tab === 0) {
+        const innerH = _innerH(slice);
+        const maxScroll = Math.max(0, slice.lines.length - innerH);
+        const wasAtBottom = slice.scroll >= maxScroll;
+        const [lines, _] = _capLines([...slice.lines, msg.line], vsb.cap);
+        const scroll = wasAtBottom
+          ? Math.max(0, lines.length - innerH)
+          : Math.max(0, (slice.scroll || 0) - dropped);
+        return { ...slice, viewerStreamBuffer: nextBuf, lines, scroll };
+      }
+      return { ...slice, viewerStreamBuffer: nextBuf };
     }
     case 'viewer_append_lines': {
       // Bulk variant of viewer_append. Producers fire one Msg for
@@ -263,12 +292,21 @@ function update(msg, slice) {
         }
         return { ...slice, actionTabBuffers: nextAll };
       }
-      const innerH = _innerH(slice);
-      const maxScroll = Math.max(0, slice.lines.length - innerH);
-      const wasAtBottom = slice.scroll >= maxScroll;
-      const lines = [...slice.lines, ...incoming];
-      const scroll = wasAtBottom ? Math.max(0, lines.length - innerH) : slice.scroll;
-      return { ...slice, lines, scroll };
+      // Unrouted bulk: same shape as the singular path, with `incoming`.
+      const vsb = slice.viewerStreamBuffer || { lines: [], cap: 1000 };
+      const [vsbLines, dropped] = _capLines([...vsb.lines, ...incoming], vsb.cap);
+      const nextBuf = { ...vsb, lines: vsbLines };
+      if (slice.tab === 0) {
+        const innerH = _innerH(slice);
+        const maxScroll = Math.max(0, slice.lines.length - innerH);
+        const wasAtBottom = slice.scroll >= maxScroll;
+        const [lines, _] = _capLines([...slice.lines, ...incoming], vsb.cap);
+        const scroll = wasAtBottom
+          ? Math.max(0, lines.length - innerH)
+          : Math.max(0, (slice.scroll || 0) - dropped);
+        return { ...slice, viewerStreamBuffer: nextBuf, lines, scroll };
+      }
+      return { ...slice, viewerStreamBuffer: nextBuf };
     }
     case 'stream_start': {
       // Routed (msg.tabKey set) → seed actionTabBuffers + auto-jump to
@@ -297,7 +335,22 @@ function update(msg, slice) {
         }
         return { ...slice, actionTabBuffers: nextAll };
       }
-      return { ...slice, lines: [msg.header], scroll: 0 };
+      // Unrouted stream_start: append header to viewerStreamBuffer
+      // (does NOT clear — the buffer is an accumulator across cmds).
+      // Auto-jump to Info so the user sees the running stream.
+      const vsb = slice.viewerStreamBuffer || { lines: [], cap: 1000 };
+      const [vsbLines] = _capLines([...vsb.lines, msg.header], vsb.cap);
+      const nextBuf = { ...vsb, lines: vsbLines };
+      const innerH = _innerH(slice);
+      const scroll = Math.max(0, vsbLines.length - innerH);
+      if (slice.tab !== 0) {
+        return [
+          { ...slice, viewerStreamBuffer: nextBuf, tab: 0, lines: vsbLines.slice(), scroll },
+          [{ type: 'msg', msg: { type: 'terminal_exit' } }],
+        ];
+      }
+      // Already on Info: mirror the cap-aware lines to slice.lines.
+      return { ...slice, viewerStreamBuffer: nextBuf, lines: vsbLines.slice(), scroll };
     }
     case 'viewer_set_tab': {
       const tab = msg.tab | 0;

@@ -388,13 +388,19 @@ function reduceTabMsg(msg, slice, ctx) {
         { type: 'msg', msg: { type: 'terminal_exit' } },
       ];
       if (idx === 0) {
-        // Wipe lines+scroll BEFORE show_selected_info fires. The Cmd
-        // repopulates iff focus is on a navigator; when focus is the
-        // pane (the common case after clicking Info on a non-Info
-        // tab), the show-info path bails and stale lines from the
-        // previous tab would otherwise paint under the Info label.
-        next = { ...next, lines: [], scroll: 0 };
-        effects.push({ type: 'msg', msg: wrap(paneId, { type: 'viewer_show_info' }) });
+        // Info tab is the viewer-stream destination — if the unrouted
+        // accumulator has content, restore from it (bottom-pin scroll).
+        // Otherwise wipe lines + ask viewer_show_info to repopulate
+        // (the Cmd no-ops if focus isn't on a navigator).
+        const vsb = slice.viewerStreamBuffer;
+        if (vsb && vsb.lines && vsb.lines.length > 0) {
+          const innerH = slice.innerH > 0 ? slice.innerH : 1;
+          const lines = vsb.lines.slice();
+          next = { ...next, lines, scroll: Math.max(0, lines.length - innerH) };
+        } else {
+          next = { ...next, lines: [], scroll: 0 };
+          effects.push({ type: 'msg', msg: wrap(paneId, { type: 'viewer_show_info' }) });
+        }
       } else if (idx <= actionTabs.length) {
         // View-only restore from actionTabBuffers, else placeholder.
         // Scroll pinned to bottom so the live tail is visible and the

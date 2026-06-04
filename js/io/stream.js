@@ -105,16 +105,24 @@ function killJob(jobId, opts = {}) {
   try { ctx.proc.stdout.removeAllListeners('data'); } catch {}
   try { ctx.proc.stderr.removeAllListeners('data'); } catch {}
   try { ctx.proc.kill('SIGTERM'); } catch {}
-  if (ctx.target && !opts.silent) {
-    const { tabKey, groupName } = ctx.target;
+  if (!opts.silent) {
     const batch = [];
     if (ctx.flushTail) {
       const tail = ctx.flushTail();
       if (tail) batch.push(esc(tail));
     }
-    batch.push('[yellow]Killed by next run.[/]');
-    batch.push('[dim]Press Enter to run again.[/]');
-    appendDetailLines(batch, tabKey, groupName);
+    if (ctx.target) {
+      // Routed: re-run-on-same-slot footer. Goes to the action's buffer.
+      batch.push('[yellow]Killed by next run.[/]');
+      batch.push('[dim]Press Enter to run again.[/]');
+      appendDetailLines(batch, ctx.target.tabKey, ctx.target.groupName);
+    } else {
+      // Unrouted: identify what was killed (the next stream is a
+      // different command, so "Killed by next run" reads oddly here).
+      // Goes to viewerStreamBuffer (no tabKey on the dispatch).
+      batch.push(`[yellow]Killed previous: ${esc(ctx.headerLabel || '<stream>')}.[/]`);
+      appendDetailLines(batch);
+    }
   }
   jobs.close(jobId, { status: 'killed' });
   if (ctx.record) ctx.record.kill();
@@ -147,8 +155,27 @@ function streamCommand(headerLabel, cmd, args = [], opts = {}) {
   const groupName = opts.groupName || null;
   const slotKey = _slotKey(tabKey, groupName);
 
-  // Same-slot preempt — kill any existing run in this slot before
-  // starting a fresh one. Cross-slot runs are independent.
+  // Confirm-before-preempt for the unrouted slot — protects the live
+  // viewer transcript from being wiped by an accidental command. Auto-
+  // jump to Info first so the user sees what's running, then stage a
+  // confirm overlay (default N → abandon the new cmd). Y → fire the
+  // `unrouted_preempt_and_run` Cmd which calls killJob + streamCommand.
+  // Routed slots preempt silently (same-slot re-runs are intentional).
+  if (slotKey === 'unrouted' && slotIndex.has('unrouted')) {
+    const existingId = slotIndex.get('unrouted');
+    const existing = procs.get(existingId);
+    const existingLabel = (existing && existing.headerLabel) || '<previous>';
+    api.dispatchMsg(api.wrap(target, { type: 'tab_switch', idx: 0 }));
+    require('../dispatch/dispatch').applyMsg({
+      type: 'confirm_enter',
+      message: `Kill running '${existingLabel}'?`,
+      cmd: { type: 'unrouted_preempt_and_run', existingId, headerLabel, cmd, args, opts },
+    });
+    return;
+  }
+
+  // Same-slot routed preempt — silent (same-slot re-runs are
+  // intentional; user explicitly re-Entered on the action).
   const occupying = slotIndex.get(slotKey);
   if (occupying != null) killJob(occupying);
 
@@ -185,7 +212,7 @@ function streamCommand(headerLabel, cmd, args = [], opts = {}) {
   const ctx = {
     proc, record: rec,
     target: tabKey && groupName ? { tabKey, groupName } : null,
-    flushTail, slotKey, decoder,
+    flushTail, slotKey, decoder, headerLabel,
   };
   procs.set(jobId, ctx);
   slotIndex.set(slotKey, jobId);
