@@ -50,6 +50,15 @@ function _groupOf(model, groupName) {
 // tab system read group.actions directly and missed plugin-synth
 // tab:true actions (postgres demo's `pg:status` was invisible). See
 // panel/api.js getMergedActions for the contract.
+//
+// PURITY CONTRACT: getMergedActions iterates every Component's
+// groupActions(group, name, config, model) hook — plugin code. Plugins
+// must implement groupActions as a pure projection (no I/O, no Date /
+// random, no module-local mutation). This function is called by the
+// leaf's reducer-side helpers (flatTabInfo, actionTabCount), so any
+// plugin impurity propagates into the reducer's purity guarantees. v0.7
+// candidate: project the merged set once per dispatch into a per-Msg
+// cache the leaf reads from, removing the live iteration from hot paths.
 function _mergedFor(model, groupName) {
   if (!_groupOf(model, groupName)) return {};
   return require('../panel/api').getMergedActions(groupName);

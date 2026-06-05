@@ -259,6 +259,15 @@ function init() {
 // the finalizer) and can be cleaned up incrementally. Identity-
 // preserving: when the reducer returns its input unchanged (no-op
 // branch), the finalizer passes through without allocating.
+// Resolves Info-tab content by calling the focused Navigator's plugin
+// hooks (def.getItems, def.getInfo). PURITY CONTRACT: both hooks must
+// be pure projections of (slice → items) and (item → display lines).
+// This function runs from the viewer's finalizer on every dispatch
+// (viewerLines for tab=0 consults it), so any side effect or
+// non-determinism in a plugin's getItems/getInfo will be amplified
+// 1:1 with Msg count. v0.7 candidate: move this read to the
+// dispatcher side (showSelectedInfo) and thread the resolved lines
+// through msg.lines so the finalizer can drop the plugin call.
 function _infoFromFocus() {
   const focus = getFocus();
   const def = require('../api').getPanelDef(focus);
@@ -371,15 +380,23 @@ function _updateInner(msg, slice) {
       // That mid-cascade handler read was a TEA-discipline smell;
       // folding the yank into the reducer itself eliminates the
       // observation between dispatches.
+      //
+      // v0.6.2 R1 — drop the redundant def.getInfo(item) lines
+      // computation. The finalizer's _withDerivedFields path calls
+      // viewerLines() which calls _infoFromFocus() → def.getInfo for
+      // tab=0 anyway; computing lines here was a dead double-call
+      // (overwritten by the finalizer's derivation moments later).
+      // The bail conditions still invoke def.getItems / def.getInfo
+      // for the precondition check; eliminating those from the reducer
+      // body entirely is a v0.7 task (move the plugin reads to the
+      // handler side via showSelectedInfo).
       const focus = getFocus();
       const def = getPanelDef(focus);
       if (!def || typeof def.getItems !== 'function' || typeof def.getInfo !== 'function') return slice;
       const items = getItems(focus);
       const item = items[getSel(focus)];
       if (!item) return slice;
-      const lines = def.getInfo(item);
-      if (!lines || lines.length === 0) return slice;
-      return { ...slice, tab: 0, lines: lines.join('\n').split('\n'), scroll: 0 };
+      return { ...slice, tab: 0, scroll: 0 };
     }
     case 'viewer_scroll': {
       // T2d — read displayed-lines length from viewerLines (derives
