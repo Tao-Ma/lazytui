@@ -326,7 +326,7 @@ function handleMouse(kind, x, y) {
   // of the focus+select loop so dragging across panels can extend a
   // selection that started in detail rather than losing it to a focus
   // change.
-  const sel = require('../overlay/select');
+  const sel = require('../panel/viewer/select');
   if (kind === 'motion' && sel.isActive()) {
     const db = getInstanceSlice('layout').panelBounds.detail;
     if (db) {

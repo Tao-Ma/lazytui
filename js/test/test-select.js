@@ -16,13 +16,13 @@ term.stdout.write = (chunk, ...rest) => {
 };
 
 const reg = require('../feature/register');
-const sel = require('../overlay/select');
+const sel = require('../panel/viewer/select');
 const { describe, it, eq, assert, report } = require('./test-runner');
 const { getModel } = require('../app/runtime');
 const { getInstanceSlice, dispatchKeyToFocused } = require('../panel/api');
 
 // (c)-era key-claim adapter: the keyboard visual-mode state machine
-// lives in the detail Component's update now, not in overlay/select.
+// lives in the detail Component's update now, not in panel/viewer/select.
 // `dispatchKeyToFocused` returns true when the focused Component
 // returned the `_claimed` sentinel — the same semantic the retired
 // `detailKey` exposed. Used by the visual-mode test section

@@ -36,9 +36,9 @@ const { getSel } = require('../../app/state');
 // --- internal slice transforms (pure return-new) ---
 //
 // Shared by the explicit `select_*` Msg arms (mouse path dispatches them via
-// overlay/select.js) and the visual-mode keyboard handler in the `key` arm.
+// panel/viewer/select.js) and the visual-mode keyboard handler in the `key` arm.
 // Each takes the slice + payload and returns a new slice. The `_moveCursor`
-// helper resolves display width through overlay/select.js's pure ANSI-aware
+// helper resolves display width through panel/viewer/select.js's pure ANSI-aware
 // reader.
 
 function _beginSelect(slice, line, col, kind) {
@@ -151,7 +151,7 @@ function _moveCursor(slice, dline, dcol) {
   if (n === 0) return slice;
   const newLine = Math.max(0, Math.min(n - 1, cur.line + dline));
   let newCol = (dcol === 0) ? cur.col : Math.max(0, cur.col + dcol);
-  const select = require('../../overlay/select');
+  const select = require('./select');
   const w = select.plainLineWidth(newLine);
   newCol = (w === 0) ? 0 : Math.min(w - 1, newCol);
   const active = !!(slice.select && slice.select.active);
@@ -765,7 +765,7 @@ function _updateInner(msg, slice) {
         : []];
     }
     // Committed-search adapter Msgs — exposed for the non-reducer
-    // facade (overlay/viewer-search.js) so its callers route through
+    // facade (panel/viewer/search.js) so its callers route through
     // viewer.update rather than writing the slice directly (single-
     // writer-per-slice per docs/PRINCIPLES.md §12).
     case 'viewer_search_clear_committed': return ms.clearCommitted(slice);
@@ -773,7 +773,7 @@ function _updateInner(msg, slice) {
     case 'viewer_search_recompute_for':   return ms.recomputeFor(slice, msg.term);
 
     // --- visual-mode select. The mouse path dispatches the select_* Msgs
-    // (overlay/select.js); the keyboard path lives in `case 'key':` below.
+    // (panel/viewer/select.js); the keyboard path lives in `case 'key':` below.
     // Both flow through the same pure slice transforms (`_beginSelect` /
     // `_setCursor` / `_scrollView` / `_moveCursor`) defined above the
     // reducer. The pure ANSI-aware reads (selectedText / plainLineWidth)
@@ -848,7 +848,7 @@ function _updateInner(msg, slice) {
       // y — commit + push to register. The text resolution + OSC52 ride out
       // as apply_msg → register_push (root reducer owns the register).
       if ((msg.seq === 'y' || msg.key === 'y') && active) {
-        const text = require('../../overlay/select').selectedText();
+        const text = require('./select').selectedText();
         const next = { ...slice, select: { ...slice.select, active: false } };
         const effects = [{ type: '_claimed' }];
         if (text) effects.push({ type: 'msg', msg: { type: 'register_push', text } });
@@ -880,7 +880,7 @@ function _updateInner(msg, slice) {
         return [_setCursor(slice, slice.cursor.line, 0, true), claim];
       }
       if (active && (msg.seq === '$' || msg.key === 'end')) {
-        const w = require('../../overlay/select').plainLineWidth(slice.cursor.line);
+        const w = require('./select').plainLineWidth(slice.cursor.line);
         return [_setCursor(slice, slice.cursor.line, Math.max(0, w - 1), true), claim];
       }
       return slice;
@@ -957,8 +957,8 @@ function render(panel, w, h, slice) {
   if (lines.length > innerH) {
     count = [slice.scroll + innerH, lines.length];
   }
-  const select = require('../../overlay/select');
-  const search = require('../../overlay/viewer-search');
+  const select = require('./select');
+  const search = require('./search');
   if (select.isActive()) {
     lines = select.decorateLines(lines);
   } else {

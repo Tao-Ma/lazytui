@@ -21,8 +21,8 @@
  */
 'use strict';
 
-const { getModel } = require('../app/runtime');
-const ms = require('../leaves/search');
+const { getModel } = require('../../app/runtime');
+const ms = require('../../leaves/search');
 
 // The typing-phase state + transforms live in the detail Component's
 // slice + update. Every wrapper here dispatches a viewer_search_* Msg
@@ -31,16 +31,16 @@ const ms = require('../leaves/search');
 // All Msgs target the focused-or-sticky viewer; v0.6.1 Phase 8 —
 // resolveTarget so multi-viewer routes searches into the right pane;
 // null = no viewer registered, drop.
-function _viewerTarget() { return require('../leaves/route').resolveTarget('viewer'); }
+function _viewerTarget() { return require('../../leaves/route').resolveTarget('viewer'); }
 function _dispatch(msg) {
   const target = _viewerTarget();
   if (!target) return;
-  const api = require('../panel/api');
+  const api = require('../api');
   return api.dispatchMsg(api.wrap(target, msg));
 }
 function _slice() {
   const target = _viewerTarget();
-  return target ? require('../panel/api').getInstanceSlice(target) : null;
+  return target ? require('../api').getInstanceSlice(target) : null;
 }
 
 function enter()            { _dispatch({ type: 'viewer_search_enter' }); }
@@ -96,7 +96,7 @@ function decorateLines(lines) {
  * line's existing markup (same v1 tradeoff as select.highlightLine).
  */
 function _multiHighlight(line, spans, activeIdx) {
-  const { stripMarkup, charWidth } = require('../io/ansi');
+  const { stripMarkup, charWidth } = require('../../io/ansi');
   const plain = stripMarkup(line);
   const chars = [...plain];
   // Codepoint-index → display-col cumulative array → map [col,col+len) → cp range.

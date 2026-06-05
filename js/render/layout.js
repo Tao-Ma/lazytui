@@ -763,7 +763,7 @@ function footerKeys(model) {
     return ` \\[terminal: ${esc(label)}] | Ctrl+\\ return to TUI`;
   }
   if (md.detailSearchMode) {
-    const ds = require('../overlay/viewer-search');
+    const ds = require('../panel/viewer/search');
     const term = ds.typingText();
     const search = getInstanceSlice('detail')?.search || { matches: [], idx: 0 };
     const n = (search.matches || []).length;

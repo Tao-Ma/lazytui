@@ -25,7 +25,7 @@ function _readSource(relPath) {
 /** Walk every `.js` file under `js/` excluding test/ + scripts/. The check
  *  scans the whole production tree rather than a hardcoded caller list so a
  *  new file adopting applyMsg gets covered automatically — the original
- *  caller list missed `dispatch/action-runner.js` and `overlay/select.js`. */
+ *  caller list missed `dispatch/action-runner.js` and `panel/viewer/select.js`. */
 function _walkProductionFiles() {
   const out = [];
   const skip = new Set(['test', 'scripts']);

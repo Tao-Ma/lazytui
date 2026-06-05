@@ -35,9 +35,9 @@
 // either through every call site. The detail-cluster fields all live in
 // the detail slice (`lines` / `select` / `cursor` / `scroll` / `search`);
 // the mode flags (visual / select) live in model.modes.
-const { getModel } = require('../app/runtime');
-const { stripMarkup, charWidth, esc } = require('../io/ansi');
-const {getInstanceSlice, getFocus } = require('../panel/api');
+const { getModel } = require('../../app/runtime');
+const { stripMarkup, charWidth, esc } = require('../../io/ansi');
+const {getInstanceSlice, getFocus } = require('../api');
 
 // All reads target the detail Component slice (lines / select / cursor /
 // scroll / search). Helper returns undefined if detail isn't registered
@@ -55,9 +55,9 @@ function _detail() { return getInstanceSlice('detail'); }
 // Phase 8 — resolveTarget so multi-viewer wires up correctly; null
 // = no viewer, drop.
 function _apply(msg) {
-  const target = require('../leaves/route').resolveTarget('viewer');
+  const target = require('../../leaves/route').resolveTarget('viewer');
   if (!target) return;
-  const api = require('../panel/api');
+  const api = require('../api');
   api.dispatchMsg(api.wrap(target, msg));
 }
 
@@ -205,7 +205,7 @@ function commit() {
   _apply({ type: 'select_cancel' });
   // register_push is a ROOT-reducer Msg (model.register lives on the root
   // model), so route via applyMsg, not the Component fan-out.
-  if (text) require('../dispatch/dispatch').applyMsg({ type: 'register_push', text });
+  if (text) require('../../dispatch/dispatch').applyMsg({ type: 'register_push', text });
   return text;
 }
 
