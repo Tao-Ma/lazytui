@@ -16,14 +16,17 @@
  * detach semantics that don't fit a non-interactive CLI.
  *
  * Plugin-synthesized actions (docker plugin's `groupActions` for groups
- * with `compose:`, future generic plugins like archive / config-branch)
- * are merged into config.groups[*].actions before resolution — YAML
- * wins on conflict, so explicit YAML actions still override the
- * plugin's defaults. The set of plugins consulted here is hard-coded
- * to built-ins that ship with lazytui (BUILT_IN_PLUGINS below); user
- * JS plugins loaded via the YAML `plugins:` map aren't yet consulted
- * in CLI mode and remain TUI-only — straightforward extension when
- * needed.
+ * with `compose:`, generic plugins like archive / config-branch) are
+ * merged on demand via `_mergeForGroup` — YAML wins on conflict, so
+ * explicit YAML actions still override the plugin's defaults. The
+ * config is NEVER mutated (v0.6.2 — pre-v0.6.2 `applyPluginGroupActions`
+ * mutated `group.actions` in place, retired for TEA-correctness
+ * symmetry with the TUI accessor `panel/api.getMergedActions`).
+ *
+ * The set of plugins consulted here is hard-coded to built-ins that
+ * ship with lazytui (`BUILT_IN_PLUGINS` below); user JS plugins loaded
+ * via the YAML `plugins:` map aren't yet consulted in CLI mode and
+ * remain TUI-only — straightforward extension when needed.
  */
 'use strict';
 
@@ -56,42 +59,34 @@ const BUILT_IN_PLUGINS = [
 ];
 
 /**
- * Walk every entry in BUILT_IN_PLUGINS, call its groupActions on each
- * group, and merge the result into config.groups[*].actions. YAML
- * actions are NEVER overwritten (matches the parser's plugin merge
- * rule). Mutates config in place; returns nothing.
- *
- * Failures in any single module are swallowed — a broken contributor
- * must never wedge the CLI.
+ * Compute the merged `{ ...plugin, ...YAML }` action set for one group.
+ * Pure — no config mutation; the returned object is fresh per call.
+ * Plugin failures swallowed so one broken contributor can't wedge the
+ * CLI. v0.6.2 — sibling of `panel/api.getMergedActions` (which uses
+ * the Component registry); CLI uses its own static plugin list since
+ * Components aren't booted in CLI mode.
  */
-function applyPluginGroupActions(config) {
-  const groups = (config && config.groups) || {};
+function _mergeForGroup(group, groupPath, config) {
+  const result = {};
   for (const pluginPath of BUILT_IN_PLUGINS) {
     let plugin;
     try { plugin = require(pluginPath); } catch (_) { continue; }
     if (typeof plugin.groupActions !== 'function') continue;
-    for (const [groupPath, group] of Object.entries(groups)) {
-      let synth;
-      try { synth = plugin.groupActions(group, groupPath, config) || {}; } catch (_) { continue; }
-      const keys = Object.keys(synth);
-      if (!keys.length) continue;
-      group.actions = group.actions || {};
-      for (const k of keys) {
-        if (!group.actions[k]) group.actions[k] = synth[k];
-      }
-    }
+    let synth;
+    try { synth = plugin.groupActions(group, groupPath, config) || {}; } catch (_) { continue; }
+    Object.assign(result, synth);
   }
+  return { ...result, ...((group && group.actions) || {}) };
 }
 
 /**
- * Walk groups → actions and yield { path, action } records. Includes
- * plugin-synthesized actions because applyPluginGroupActions is called
- * upstream of this in runCli / runList.
+ * Walk groups → actions and yield { path, action } records. Plugin-
+ * synthesized actions appear alongside YAML ones via `_mergeForGroup`.
  */
 function* iterActions(config) {
   const groups = (config && config.groups) || {};
   for (const [groupPath, group] of Object.entries(groups)) {
-    const actions = (group && group.actions) || {};
+    const actions = _mergeForGroup(group, groupPath, config);
     for (const [key, action] of Object.entries(actions)) {
       yield { path: `${groupPath}:${key}`, action };
     }
@@ -142,7 +137,7 @@ function resolveAction(config, actionPath) {
   if (!group) {
     return { error: `no group at "${groupPath}"` };
   }
-  const action = (group.actions || {})[actionKey];
+  const action = _mergeForGroup(group, groupPath, config)[actionKey];
   if (!action) {
     return { error: `group "${groupPath}" has no action "${actionKey}"` };
   }
@@ -160,7 +155,6 @@ function runCli(configPath, actionPath, actionArgs) {
   try { loadConfig(configPath); }
   catch (e) { process.stderr.write(`tui --exec: ${e.message}\n`); return Promise.resolve(1); }
   const config = getModel().config;
-  applyPluginGroupActions(config);
 
   const r = resolveAction(config, actionPath);
   if (r.error) {
@@ -237,7 +231,6 @@ function runList(configPath, filter) {
   // T18 — symmetric with runCli's loadConfig wrap.
   try { loadConfig(configPath); }
   catch (e) { process.stderr.write(`tui --list: ${e.message}\n`); return Promise.resolve(1); }
-  applyPluginGroupActions(getModel().config);
   const out = formatActionList(getModel().config, filter);
   process.stdout.write(out + '\n');
   return Promise.resolve(0);
@@ -245,5 +238,4 @@ function runList(configPath, filter) {
 
 module.exports = {
   runCli, runList, resolveAction, listActions, formatActionList,
-  applyPluginGroupActions,
 };

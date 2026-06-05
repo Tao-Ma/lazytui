@@ -208,10 +208,13 @@ groups:
           categories: [secret, config]
 ```
 
-Component hooks (`groupActions(group, name, config)` etc.) receive the
-full config, so a Component can read top-level state without
-snapshotting it. The Component's reads are pure functions of input;
-user state is the input, not the Component's possession.
+Component hooks (`groupActions(group, name, config, model)` etc.) receive
+the full config AND the live model, so a Component can read top-level
+state without snapshotting it. v0.6.2 added the `model` arg — the
+contract is that hooks remain pure projections (no IO, no mutation,
+same inputs → same outputs); `getMergedActions` calls them transitively
+on hot read paths, so a hook that shells out would block the event loop
+on every line of stream output.
 
 When a Component must accept the same data both ways (legacy explicit
 list *or* reference), expose `source:` as one alternative and validate

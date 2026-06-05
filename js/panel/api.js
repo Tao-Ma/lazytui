@@ -552,21 +552,53 @@ function cleanupComponents() {
 
 /**
  * Collect Component-contributed actions for a group. Components that
- * implement `groupActions(group, groupName)` can inject actions
- * automatically (e.g. docker synthesizes `up`/`down`/`logs` for groups
- * with `compose:`). Returns a flat object keyed by action name.
+ * implement `groupActions(group, groupName, config, model)` can inject
+ * actions (e.g. docker synthesizes `up`/`down`/`logs` for groups with
+ * `compose:`). Returns a flat object keyed by action name.
+ *
+ * `groupActions` is a PURE PROJECTION: same inputs → same outputs, no
+ * IO, no mutation of group/config/model. Hot read paths (viewer_append,
+ * render) call this transitively per frame; a plugin that shells out
+ * here would block the event loop on every line of stream output.
+ *
+ * v0.6.2 — `config` + `model` params added. Existing plugins that only
+ * declare `(group)` / `(group, name)` / `(group, name, config)` ignore
+ * the extras (JS arity slack).
  */
 function getGroupActions(group, groupName) {
+  const m = getModel();
   const result = {};
   for (const comp of Object.values(components)) {
     if (typeof comp.groupActions !== 'function') continue;
     try {
-      Object.assign(result, comp.groupActions(group, groupName) || {});
+      Object.assign(result, comp.groupActions(group, groupName, m.config, m) || {});
     } catch (e) {
       console.error(`[${comp.name}] groupActions error: ${e.message}`);
     }
   }
   return result;
+}
+
+/**
+ * Canonical "what actions exist for this group?" accessor.
+ *
+ * Returns a fresh `{ ...plugin-synthesized, ...YAML }` object — YAML
+ * wins on key collision (matches the parser-time precedence rule).
+ *
+ * Single source of truth — every reader that wants the actual action
+ * set (tab strip, actions panel, leader resolver, group-info hover,
+ * shadow check) routes through here. Pre-v0.6.2 this merge was done
+ * three different ways across the codebase, and four other readers
+ * went direct to `group.actions` and missed the plugin half (the
+ * `pg:status` invisible-tab bug). TEA-correct — `config` is NOT
+ * mutated (the pre-v0.6.2 `applyPluginGroupActions` boot trick is
+ * retired).
+ */
+function getMergedActions(groupName) {
+  const m = getModel();
+  const g = m.config && m.config.groups && m.config.groups[groupName];
+  if (!g) return {};
+  return { ...getGroupActions(g, groupName), ...(g.actions || {}) };
 }
 
 /**
@@ -645,7 +677,7 @@ module.exports = {
   hasInstance, disposeInstance, instanceKind, eachInstance,
   getPanelDef, getItems, idOf, selectedOrFocused,
   refreshAll, cleanupComponents,
-  getCommands, getGroupActions, statusFor,
+  getCommands, getGroupActions, getMergedActions, statusFor,
   // viewContributions registry — footerLeft / footerRight contributors
   // compose through `collectViewContributions`.
   collectViewContributions, _resetViewContributions,

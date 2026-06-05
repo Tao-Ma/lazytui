@@ -31,10 +31,20 @@
 
 // --- Pure read helpers ----------------------------------------------------
 
+// Merged-action lookup — yields YAML+plugin actions for `groupName`.
+// Lazy-require avoids a module-load cycle (panel/api itself imports
+// nothing from this leaf). Data flow stays pure: the leaf only READS
+// from the registry; nothing mutates here. v0.6.2 — pre-v0.6.2 the
+// tab system read group.actions directly and missed plugin-synth
+// tab:true actions (postgres demo's `pg:status` was invisible). See
+// panel/api.js getMergedActions for the contract.
+function _mergedFor(model, groupName) {
+  if (!model || !model.config || !model.config.groups || !model.config.groups[groupName]) return {};
+  return require('../panel/api').getMergedActions(groupName);
+}
+
 function actionTabCount(model, groupName) {
-  const group = model.config.groups[groupName];
-  if (!group) return 0;
-  return Object.values(group.actions || {}).filter(a => a.tab).length;
+  return Object.values(_mergedFor(model, groupName)).filter(a => a.tab).length;
 }
 
 /** Merged terminals: YAML-defined first, then runtime-ephemeral. */
@@ -54,14 +64,17 @@ function groupContentTabs(slice, groupName) {
 
 /** Flat tab info for a pane's slice + a group:
  *    { actionTabs, termTabs, contentTabs, total }
- *  actionTabs comes from group.actions[*].tab (YAML); termTabs merges
- *  group.terminals (YAML) + slice.ephemeralTerminals[groupName] (runtime);
- *  contentTabs comes from slice.contentTabs[groupName]. `total` includes
- *  the implicit Info tab at index 0. */
+ *  actionTabs comes from `group.actions[*].tab` merged with plugin-
+ *  synthesized actions (see panel/api.js getMergedActions — v0.6.2
+ *  fix for plugin tab:true actions that were invisible to this leaf
+ *  pre-merge). termTabs merges group.terminals (YAML) + slice.
+ *  ephemeralTerminals[groupName] (runtime); contentTabs comes from
+ *  slice.contentTabs[groupName]. `total` includes the implicit Info
+ *  tab at index 0. */
 function flatTabInfo(slice, model, groupName) {
   const group = model.config.groups[groupName];
   if (!group) return { actionTabs: [], termTabs: [], contentTabs: [], total: 1 };
-  const actionTabs = Object.entries(group.actions || {}).filter(([, a]) => a.tab);
+  const actionTabs = Object.entries(_mergedFor(model, groupName)).filter(([, a]) => a.tab);
   const termTabs = Object.entries(groupTerminals(model, slice, groupName));
   const contentTabs = Object.entries(groupContentTabs(slice, groupName));
   return {

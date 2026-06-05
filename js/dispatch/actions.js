@@ -24,7 +24,7 @@
 
 const { allPanels, getSel } = require('../app/state');
 const { runAction } = require('./action-runner');
-const { getPanelDef, getItems, getGroupActions, getInstanceSlice,
+const { getPanelDef, getItems, getMergedActions, getInstanceSlice,
         dispatchMsg, wrap, getFocus, instanceKind } = require('../panel/api');
 const { isTerminalTab, activeTerminalId, isActionTab, activeActionTab } = require('../panel/viewer/tabs');
 const { isSessionDead, restartSession } = require('../io/terminal');
@@ -154,14 +154,13 @@ function _runResolvedAction(key, act) {
 }
 
 /** Run a declared action by its key, searching every group. Resolves
- *  the SAME merged set the actions panel shows — plugin-synthesized
- *  actions (docker's `up`/`logs`/…) plus YAML `actions:` — so a leader
- *  binding to a plugin action isn't silently dead. First match wins. */
+ *  the SAME merged set the actions panel shows (via getMergedActions —
+ *  plugin-synthesized actions + YAML) so a leader binding to a plugin
+ *  action isn't silently dead. First match wins. */
 function _runActionByKey(key) {
   const groups = (getModel().config && getModel().config.groups) || {};
-  for (const [gname, g] of Object.entries(groups)) {
-    const merged = { ...getGroupActions(g, gname), ...(g.actions || {}) };
-    const act = merged[key];
+  for (const gname of Object.keys(groups)) {
+    const act = getMergedActions(gname)[key];
     if (!act) continue;
     _runResolvedAction(key, act);
     return true;

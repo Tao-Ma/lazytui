@@ -30,7 +30,7 @@ const mnav = require('../../leaves/nav');
 const {
   esc, wrapColor, theme, renderPanel,
   getSel, getScroll, isMultiSel,
-  statusFor,
+  statusFor, getMergedActions,
   getInstanceSlice, getFocus, instanceKind,
 } = require('../api');
 
@@ -272,14 +272,14 @@ function getInfo(group) {
       lines.push(`  ${esc(local)}`);
     }
   }
-  if (group.actions) {
-    const acts = Object.values(group.actions);
-    if (acts.length) {
-      lines.push('', `[dim]actions:[/] ${acts.length}`);
-      for (const a of acts) {
-        const tag = { spawn: ' ⧉', background: ' ⇱' }[a.type] || '';
-        lines.push(`  ${esc(a.label)}${tag}`);
-      }
+  // v0.6.2 — show the same merged set the actions panel + tab strip
+  // see, so auto-actions (`status`/`logs`/…) appear in group-info too.
+  const acts = Object.values(getMergedActions(group.name));
+  if (acts.length) {
+    lines.push('', `[dim]actions:[/] ${acts.length}`);
+    for (const a of acts) {
+      const tag = { spawn: ' ⧉', background: ' ⇱' }[a.type] || '';
+      lines.push(`  ${esc(a.label)}${tag}`);
     }
   }
   return lines;

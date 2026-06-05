@@ -132,7 +132,10 @@ module.exports = {
   // Optional cross-cutting contributions (collected by the framework).
   viewContributions: { footerLeft, footerRight },
   statusFor:    (name) => 'running' | null,
-  groupActions: (group, groupName) => ({ /* actionKey: action */ }),
+  groupActions: (group, groupName, config, model) => ({ /* actionKey: action */ }),
+  // Pure projection — no IO, no mutation; called transitively on hot
+  // read paths (viewer_append per stream line). v0.6.2 added the
+  // config + model args; older 2-arg impls still work.
   commands:     [ { name, desc, run(args) } ],
   getCommands:  (model) => [ /* state-derived verbs */ ],
   cleanup:      () => { /* tear down long-lived children */ },

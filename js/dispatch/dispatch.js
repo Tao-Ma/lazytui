@@ -541,9 +541,13 @@ const _SHADOWED_NORMAL_KEYS = new Set([
 
 function _collectActionKeys(config) {
   // Build a set of every action's short key for R14's resolution check.
+  // v0.6.2 — read the merged (YAML + plugin-synth) set via the
+  // canonical accessor so a leader bound to a plugin key (`status`,
+  // `up`, …) doesn't false-trip the shadow warning.
   const out = new Set();
-  for (const g of Object.values((config && config.groups) || {})) {
-    for (const k of Object.keys((g && g.actions) || {})) out.add(k);
+  const { getMergedActions } = require('../panel/api');
+  for (const gname of Object.keys((config && config.groups) || {})) {
+    for (const k of Object.keys(getMergedActions(gname))) out.add(k);
   }
   return out;
 }

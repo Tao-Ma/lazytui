@@ -13,7 +13,7 @@ const mnav = require('../../leaves/nav');
 const {
   esc, theme, renderPanel,
   getSel, getScroll, isMultiSel, getFilter,
-  getGroupActions, getItems: apiGetItems,
+  getMergedActions, getItems: apiGetItems,
   getInstanceSlice, getFocus, instanceKind,
 } = require('../api');
 
@@ -22,16 +22,10 @@ const {
  * centrally by api.getItems via `filterText: ([, a]) => a.label`.
  */
 function getItems() {
-  const m = getModel();
-  const group = m.config.groups[m.currentGroup];
-  if (!group) return [];
-  // Merge: plugin-contributed actions first (defaults), then YAML actions.
-  // YAML keys override plugin keys so users can customize / omit any.
-  const merged = {
-    ...getGroupActions(group, m.currentGroup),
-    ...(group.actions || {}),
-  };
-  return Object.entries(merged);
+  // Plugin-contributed defaults + YAML overrides via the canonical
+  // accessor (v0.6.2). Same merged set the tab strip, leader
+  // resolver, and shadow check now read.
+  return Object.entries(getMergedActions(getModel().currentGroup));
 }
 
 function copyOptions(item) {

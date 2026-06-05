@@ -150,6 +150,30 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   grouping is preserved; the `STALE=1` / `exit "$STALE"` contract
   is unchanged.
 
+- **Plugin-synthesized tab:true actions are visible to the tab
+  system.** The detail tab strip, the leader-shadow check, and
+  group-info hover all read `group.actions` directly; plugin
+  Components contributed via `groupActions` but the tab system
+  never saw them. Symptom in postgres demo: `pg:status` (docker
+  auto-action with `tab: true`) ran when invoked from the actions
+  panel, but its routed `viewer_append` output landed in
+  `slice.actionTabBuffers.pg.status` with no corresponding tab in
+  the strip — operator saw nothing. v0.6.1 and earlier hid this
+  because every stream wrote to `slice.lines` (Info); routed
+  buffers in v0.6.2 surfaced it. **Fix** — single canonical
+  accessor `panel/api.getMergedActions(groupName)` returns a fresh
+  `{ ...plugin-synth, ...YAML }` object on every call; seven
+  readers (tab strip, `actionTabCount`, actions panel, leader
+  resolver, shadow check, group-info display, CLI `--list` /
+  `--exec`) now route through it. The pre-existing
+  `applyPluginGroupActions` config-mutation trick is retired —
+  TEA-correct, `model.config` stays immutable. Plugin contract
+  extended to `groupActions(group, name, config, model)` —
+  backward compatible (existing plugins ignore unused args).
+  Plugins MUST be pure projections (no IO, no mutation) since
+  `getMergedActions` is called transitively on hot read paths
+  (`viewer_append` per output line).
+
 ### Migration
 
 Hand-conversion per [`docs/v0.6.2-migrate.md`](docs/v0.6.2-migrate.md);
