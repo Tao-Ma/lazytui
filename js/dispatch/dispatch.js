@@ -74,20 +74,21 @@ function navSelect(panelType, index) {
   // action tab, terminal, content tab), an explicit nav cursor move
   // in a list panel implies "show me what's here". Auto-jump back to
   // Info so the selection-info actually appears. tab_switch idx=0
-  // dispatches viewer_show_info internally; otherwise fire it directly.
+  // dispatches viewer_show_info internally; on Info we fire show_info
+  // directly. Single dispatchMsg either way.
+  //
   // Scoped to navSelect (NOT showSelectedInfo) because programmatic
   // cascades — focus_set after a fresh content tab opens — also fire
-  // show_selected_info AS PART of a flow that just set slice.tab on
+  // show_selected_info as part of a flow that just set slice.tab on
   // purpose. Folding the auto-jump into showSelectedInfo would yank
   // those flows back to Info too.
   const target = route.resolveTarget('viewer');
   if (target) {
     const slice = route.getInstanceSlice(target);
-    if (slice && (slice.tab | 0) !== 0) {
-      dispatchMsg(wrap(target, { type: 'tab_switch', idx: 0 }));
-    } else {
-      showSelectedInfo();
-    }
+    const onInfo = !slice || (slice.tab | 0) === 0;
+    dispatchMsg(wrap(target, onInfo
+      ? { type: 'viewer_show_info' }
+      : { type: 'tab_switch', idx: 0 }));
   }
   if (panelType === 'groups') {
     dispatchMsg(wrap('groups', { type: 'groups_selected', index }));

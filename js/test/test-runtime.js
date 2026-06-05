@@ -96,7 +96,6 @@ describe('[3] update — (model, msg) → [model, cmds], pure + Cmd descriptors'
     // set cascade after addContentTab fires show_selected_info too,
     // and that path MUST NOT auto-jump (the cascade is part of a
     // flow that just set slice.tab to the new content tab on purpose).
-    const state = require('../app/state');
     const route = require('../leaves/route');
     const dispatch = require('../dispatch/dispatch');
     // Park the viewer on Transcript (idx 1).
@@ -106,6 +105,24 @@ describe('[3] update — (model, msg) → [model, cmds], pure + Cmd descriptors'
     // Move cursor in actions — should yank tab back to Info.
     dispatch.navSelect('actions', 0);
     eq(route.getInstanceSlice('detail').tab, 0, 'auto-jumped back to Info');
+  });
+
+  it('navSelect: auto-jumps from any non-Info tab (action tab idx 3, not just Transcript)', () => {
+    // Pin that the auto-jump fires from ANY non-Info tab, not just
+    // Transcript. The only branch in navSelect's auto-yank code is
+    // `slice.tab !== 0`, so a future regression that special-cased
+    // Transcript would pass the previous case but fail this one.
+    const route = require('../leaves/route');
+    const dispatch = require('../dispatch/dispatch');
+    // Simulate viewer parked on what would be an action tab idx (3).
+    // No need for a real action tab to exist — the reducer's tab_switch
+    // idx=0 branch fires regardless of the starting tab, and flatTabInfo
+    // is hardened against bootless model state.
+    const sliceBefore = { ...route.getInstanceSlice('detail'), tab: 3 };
+    route.setInstanceSlice('detail', sliceBefore);
+    eq(route.getInstanceSlice('detail').tab, 3, 'precondition: on tab 3');
+    dispatch.navSelect('actions', 0);
+    eq(route.getInstanceSlice('detail').tab, 0, 'auto-jumped back to Info from tab 3');
   });
   it('escape / list_select: emit wrapped multisel_clear into the focused Component', () => {
     // Phase 4a — escape/list_select route multiSel clears through the
