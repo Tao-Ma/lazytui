@@ -282,7 +282,7 @@ function handleAction(action, arg) {
       break;
     }
     case 'show_help':
-      require('./help-text').showHelp();
+      require('../overlay/help').showHelp();
       break;
     case 'next_tab': applyMsg({ type: 'next_tab' }); break;
     case 'prev_tab': applyMsg({ type: 'prev_tab' }); break;

@@ -275,7 +275,7 @@ describe('[3] update — (model, msg) → [model, cmds], pure + Cmd descriptors'
     const m = runtime.init();
     const snap = JSON.stringify(m.focus);
     // show_help / quit no longer go through the reducer (R4.8) —
-    // actions.js calls help-text.showHelp() / cleanup() + process.exit
+    // actions.js calls overlay/help.showHelp() / cleanup() + process.exit
     // directly. next_tab / prev_tab keep their Cmd path.
     eq(runtime.update(m, { type: 'next_tab' })[1][0].msg.msg.dir, +1);
     eq(runtime.update(m, { type: 'prev_tab' })[1][0].msg.msg.dir, -1);

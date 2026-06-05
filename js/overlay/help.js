@@ -3,10 +3,15 @@
  * available right now, derived from the focused panel + plugin
  * keyHints + collected `:` cmdline commands.
  *
- * Lives outside dispatch.js so the framework default `:help` command
- * (registered in panel/api.js) can show help without dispatch
- * needing to import api back. dispatch.js's handleAction('show_help')
- * forwards to showHelp() here.
+ * v0.6.2 N7 — moved from dispatch/ to overlay/. The file builds
+ * viewer-bound content (setViewerContent(null, helpLines)) — a
+ * render-side content producer, not a Msg dispatcher. Peer to
+ * overlay/which-key.js (the leader-chord popup, another
+ * help-flavored content surface). Pre-N7 the file was in dispatch/
+ * "to dodge an api → dispatch → api cycle"; that's no longer a
+ * concern because the file doesn't reach into dispatch/ at all
+ * (only app/state, app/runtime, io/ansi, panel/api, and the
+ * dispatch/keybindings leaf for chord enumeration).
  *
  * Zero npm deps.
  */
@@ -16,7 +21,7 @@ const { allPanels, setViewerContent } = require('../app/state');
 const { getModel } = require('../app/runtime');
 const { esc } = require('../io/ansi');
 const {getCommands, getPanelDef, getInstanceSlice, getFocus, instanceKind } = require('../panel/api');
-const kb = require('./keybindings');
+const kb = require('../dispatch/keybindings');
 
 /** Walk the leader-tree depth-first, emitting `{seq, label}` for every
  *  LEAF (the actual bindings). Subtrees recurse; their internal labels

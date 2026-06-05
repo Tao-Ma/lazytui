@@ -20,8 +20,8 @@
  * closures here lazy-require them to break the cycle. `wrap` comes from the
  * zero-dep route leaf directly (api.js itself is just a re-exporter).
  *
- * Run closures are lazy on their imports too: `help` lazy-requires help-text
- * to avoid an api → help-text → api cycle at module-load time. `cleanup`
+ * Run closures are lazy on their imports too: `help` lazy-requires overlay/help
+ * to avoid an api → help → api cycle at module-load time. `cleanup`
  * lazy-requires `app/cleanup` because that file pulls `terminal` → `node-pty`,
  * which CLI mode (cli.js) needs to avoid — cli.js may require panel/api to
  * discover Component `groupActions` without booting the TUI runtime.
@@ -54,7 +54,7 @@ const FRAMEWORK_COMMANDS = [
   {
     name: 'help',
     desc: 'Show key help in detail panel',
-    run: () => { require('../dispatch/help-text').showHelp(); },
+    run: () => { require('../overlay/help').showHelp(); },
   },
   {
     name: 'save-layout',
