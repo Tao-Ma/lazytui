@@ -227,6 +227,32 @@ describe('[T27] cross-group mutators preserve current-group cursor + body', () =
   });
 });
 
+describe('[B8] tab_switch to content tab from non-content origin resets scroll', () => {
+  // Round 2 finding: the content-tab branch was guarded by
+  // `if (activeContentTab())` where activeContentTab reads the
+  // store-side _detailSlice (still reflecting PRE-transition
+  // slice.tab). When switching FROM Info / Action / Terminal TO a
+  // content tab, activeContentTab returned null → the
+  // `next.scroll = _resolveScroll(0, 0)` write was SKIPPED → scroll
+  // inherited the leaving tab's value via the `{...slice, tab: idx,
+  // ...}` earlier spread.
+  it('Info(scroll=50) → content:foo lands at scroll=0 (not inherited 50)', () => {
+    freshGroup();
+    tabs.addContentTab('g1', 'file:foo', 'foo', ['a', 'b', 'c']);
+    // After addContentTab the focus is on detail. Reset for a deterministic test:
+    // park on Info (idx 0) with scroll = 50 (deliberately mid-doc).
+    const route = require('../leaves/route');
+    const slice = route.getInstanceSlice('detail');
+    route.setInstanceSlice('detail', { ...slice, tab: 0, scroll: 50, innerH: 10 });
+    // Now tab_switch to the content tab (idx 2: Info=0, Transcript=1, content[foo]=2).
+    const viewer = require('../panel/viewer/viewer');
+    const r = viewer._update({ type: 'tab_switch', idx: 2 }, route.getInstanceSlice('detail'));
+    const next = Array.isArray(r) ? r[0] : r;
+    eq(next.tab, 2, 'on content:foo');
+    eq(next.scroll, 0, 'scroll reset to 0 (B8: pre-fix inherited Info\'s 50)');
+  });
+});
+
 describe('[R5] tab removal drops the matching tabState entry', () => {
   // Pre-R5: removeEphemeral / removeContent dropped the
   // ephemeralTerminals[g][k] / contentTabs[g][k] entry but left

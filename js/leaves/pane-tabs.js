@@ -630,10 +630,17 @@ function reduceTabMsg(msg, slice, ctx) {
       } else if (idx <= 1 + actionTabs.length + termTabs.length) {
         next = { ...next, scroll: _resolveScroll(0, 0) };
       } else {
-        const ct = activeContentTab();
-        if (ct) {
-          next = { ...next, scroll: _resolveScroll(0, 0) };
-        }
+        // v0.6.2 B8 — drop the `if (activeContentTab())` guard.
+        // activeContentTab() reads _detailSlice() from the store which
+        // still reflects the PRE-transition slice.tab. Switching FROM
+        // Info / Action / Terminal TO a content tab → ct = null → the
+        // scroll write was SKIPPED entirely, so next.scroll inherited
+        // the leaving tab's value (via the earlier `next = { ...slice,
+        // tab: idx, ... }` spread). With innerH > content-lines this
+        // rendered the content tab past EOF — blank panel. We're
+        // already in the content-idx range here, so unconditionally
+        // resolve scroll the same way every other kind does.
+        next = { ...next, scroll: _resolveScroll(0, 0) };
       }
       return [next, effects];
     }
