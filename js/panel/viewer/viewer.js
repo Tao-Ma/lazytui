@@ -161,7 +161,45 @@ function init() {
 
 // --- update (the viewer_* reducer; absorbed from runtime.update Phase B) ---
 
+// T2d — re-derive slice.lines from viewerLines() after every Msg so
+// the invariant `slice.lines === viewerLines(slice)` holds without
+// each reducer arm having to maintain the mirror explicitly. Manual
+// writes in reducer arms become harmless redundancy (overwritten by
+// the finalizer) and can be cleaned up incrementally. Identity-
+// preserving: when the reducer returns its input unchanged (no-op
+// branch), the finalizer passes through without allocating.
+function _infoFromFocus() {
+  const focus = getFocus();
+  const def = require('../api').getPanelDef(focus);
+  if (!def || typeof def.getItems !== 'function' || typeof def.getInfo !== 'function') return null;
+  const items = require('../api').getItems(focus);
+  const { getSel } = require('../../app/state');
+  const item = items[getSel(focus)];
+  if (!item) return null;
+  const out = def.getInfo(item);
+  if (!out || !out.length) return null;
+  return out.join('\n').split('\n');
+}
+function _finalize(result, originalSlice) {
+  if (result === undefined) return result;
+  if (Array.isArray(result)) {
+    const [next, cmds] = result;
+    if (!next || next === originalSlice) return result;
+    const m = getModel();
+    const lines = pt.viewerLines(next, m, m.currentGroup, { infoFromFocus: _infoFromFocus });
+    return [{ ...next, lines }, cmds];
+  }
+  if (result === originalSlice) return result;
+  const m = getModel();
+  const lines = pt.viewerLines(result, m, m.currentGroup, { infoFromFocus: _infoFromFocus });
+  return { ...result, lines };
+}
+
 function update(msg, slice) {
+  return _finalize(_updateInner(msg, slice), slice);
+}
+
+function _updateInner(msg, slice) {
   // Generic tab Msgs (tab_switch / tab_cycle / tab_list_* / viewer_add_* /
   // viewer_remove_* / viewer_update_content_tab_lines /
   // viewer_reorder_content_tab) lift through the pane-tabs leaf,
@@ -221,8 +259,14 @@ function update(msg, slice) {
       return { ...slice, tab: 0, lines: lines.join('\n').split('\n'), scroll: 0 };
     }
     case 'viewer_scroll': {
+      // T2d — read displayed-lines length from viewerLines (which
+      // derives from the active tab's source) rather than slice.lines
+      // (which the finalizer overrides anyway, but we need the right
+      // length DURING the reducer body for scroll bounds).
       const innerH = _innerH(slice);
-      const maxScroll = Math.max(0, slice.lines.length - innerH);
+      const m = getModel();
+      const displayed = pt.viewerLines(slice, m, m.currentGroup, { infoFromFocus: _infoFromFocus });
+      const maxScroll = Math.max(0, displayed.length - innerH);
       let next;
       if (msg.to === 'top') next = 0;
       else if (msg.to === 'bottom') next = maxScroll;
@@ -240,6 +284,10 @@ function update(msg, slice) {
       // mirror to slice.lines only when the active tab in current group
       // is that action's. Unrouted → append to viewerStreamBuffer (capped
       // ring); mirror to slice.lines only when on Info tab.
+      // T2d — scroll bookkeeping is computed from the BUFFER length
+      // (the source of truth), not slice.lines (the finalizer-derived
+      // mirror). slice.lines no longer needs a manual mirror write —
+      // the finalizer recomputes from viewerLines() post-reducer.
       if (msg.tabKey && msg.groupName) {
         const all = slice.actionTabBuffers || {};
         const group = all[msg.groupName] || {};
@@ -254,32 +302,28 @@ function update(msg, slice) {
           const active = pt.activeActionTabIn(slice, m, m.currentGroup);
           if (active && active[0] === msg.tabKey) {
             const innerH = _innerH(slice);
-            const maxScroll = Math.max(0, slice.lines.length - innerH);
-            const wasAtBottom = slice.scroll >= maxScroll;
-            const lines = [...slice.lines, msg.line];
-            const scroll = wasAtBottom ? Math.max(0, lines.length - innerH) : slice.scroll;
-            return { ...slice, actionTabBuffers: nextAll, lines, scroll };
+            const maxScrollOld = Math.max(0, buf.lines.length - innerH);
+            const wasAtBottom = slice.scroll >= maxScrollOld;
+            const scroll = wasAtBottom ? Math.max(0, bufLines.length - innerH) : slice.scroll;
+            return { ...slice, actionTabBuffers: nextAll, scroll };
           }
         }
         return { ...slice, actionTabBuffers: nextAll };
       }
-      // Unrouted: append to viewerStreamBuffer (cap-aware) + mirror
-      // to slice.lines IFF on the Transcript tab. v0.6.2 — pre-fix
-      // mirrored on Info; the Transcript-tab refactor moved the
-      // accumulator's display home off Info to its own tab.
+      // Unrouted: append to viewerStreamBuffer (cap-aware). Scroll
+      // bookkeeping from the buffer length when on Transcript.
       const vsb = slice.viewerStreamBuffer || { lines: [], cap: 1000 };
       const [vsbLines, dropped] = _capLines([...vsb.lines, msg.line], vsb.cap);
       const nextBuf = { ...vsb, lines: vsbLines };
       const info = pt.flatTabInfo(slice, getModel(), getModel().currentGroup);
       if (slice.tab === pt.transcriptTabIdx(info)) {
         const innerH = _innerH(slice);
-        const maxScroll = Math.max(0, slice.lines.length - innerH);
-        const wasAtBottom = slice.scroll >= maxScroll;
-        const [lines, _] = _capLines([...slice.lines, msg.line], vsb.cap);
+        const maxScrollOld = Math.max(0, vsb.lines.length - innerH);
+        const wasAtBottom = slice.scroll >= maxScrollOld;
         const scroll = wasAtBottom
-          ? Math.max(0, lines.length - innerH)
+          ? Math.max(0, vsbLines.length - innerH)
           : Math.max(0, (slice.scroll || 0) - dropped);
-        return { ...slice, viewerStreamBuffer: nextBuf, lines, scroll };
+        return { ...slice, viewerStreamBuffer: nextBuf, scroll };
       }
       return { ...slice, viewerStreamBuffer: nextBuf };
     }
@@ -291,6 +335,8 @@ function update(msg, slice) {
       // happens once over the whole batch.
       const incoming = Array.isArray(msg.lines) ? msg.lines : [];
       if (incoming.length === 0) return slice;
+      // T2d — scroll bookkeeping computed from buffer length; lines
+      // mirror retired (finalizer re-derives slice.lines post-reducer).
       if (msg.tabKey && msg.groupName) {
         const all = slice.actionTabBuffers || {};
         const group = all[msg.groupName] || {};
@@ -305,30 +351,27 @@ function update(msg, slice) {
           const active = pt.activeActionTabIn(slice, m, m.currentGroup);
           if (active && active[0] === msg.tabKey) {
             const innerH = _innerH(slice);
-            const maxScroll = Math.max(0, slice.lines.length - innerH);
-            const wasAtBottom = slice.scroll >= maxScroll;
-            const lines = [...slice.lines, ...incoming];
-            const scroll = wasAtBottom ? Math.max(0, lines.length - innerH) : slice.scroll;
-            return { ...slice, actionTabBuffers: nextAll, lines, scroll };
+            const maxScrollOld = Math.max(0, buf.lines.length - innerH);
+            const wasAtBottom = slice.scroll >= maxScrollOld;
+            const scroll = wasAtBottom ? Math.max(0, bufLines.length - innerH) : slice.scroll;
+            return { ...slice, actionTabBuffers: nextAll, scroll };
           }
         }
         return { ...slice, actionTabBuffers: nextAll };
       }
-      // Unrouted bulk: same shape as the singular path, with `incoming`.
-      // Mirrors to slice.lines IFF on Transcript tab. v0.6.2.
+      // Unrouted bulk.
       const vsb = slice.viewerStreamBuffer || { lines: [], cap: 1000 };
       const [vsbLines, dropped] = _capLines([...vsb.lines, ...incoming], vsb.cap);
       const nextBuf = { ...vsb, lines: vsbLines };
       const info = pt.flatTabInfo(slice, getModel(), getModel().currentGroup);
       if (slice.tab === pt.transcriptTabIdx(info)) {
         const innerH = _innerH(slice);
-        const maxScroll = Math.max(0, slice.lines.length - innerH);
-        const wasAtBottom = slice.scroll >= maxScroll;
-        const [lines, _] = _capLines([...slice.lines, ...incoming], vsb.cap);
+        const maxScrollOld = Math.max(0, vsb.lines.length - innerH);
+        const wasAtBottom = slice.scroll >= maxScrollOld;
         const scroll = wasAtBottom
-          ? Math.max(0, lines.length - innerH)
+          ? Math.max(0, vsbLines.length - innerH)
           : Math.max(0, (slice.scroll || 0) - dropped);
-        return { ...slice, viewerStreamBuffer: nextBuf, lines, scroll };
+        return { ...slice, viewerStreamBuffer: nextBuf, scroll };
       }
       return { ...slice, viewerStreamBuffer: nextBuf };
     }

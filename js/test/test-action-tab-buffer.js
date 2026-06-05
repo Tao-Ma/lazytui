@@ -136,21 +136,25 @@ describe('[viewer_append] routed → buffer + mirror-on-active', () => {
   });
 
   it('unrouted viewer_append: buffer always grows; slice.lines mirrors only on Transcript', () => {
-    // v0.6.2 — unrouted accumulator lives on the Transcript tab.
-    // On any other tab (Info, action, term, content), only the
-    // viewerStreamBuffer grows; slice.lines is left alone.
-    const s0 = { ...viewer._init(), tab: 0, lines: ['existing'], innerH: 4 };
+    // v0.6.2 T2d — slice.lines is now derived from viewerLines (buffer
+    // is source-of-truth). Seed buffer state, not slice.lines.
+    const s0 = { ...viewer._init(), tab: 0, innerH: 4 };
     const r1 = applyUpdate(s0, { type: 'viewer_append', line: 'y' }).next;
-    eq(r1.lines.length, 1, 'slice.lines NOT mirrored on Info');
+    eq(r1.lines.length, 0, 'slice.lines NOT mirrored on Info (Info derives from getInfo; no items here)');
     eq(r1.viewerStreamBuffer.lines.length, 1, 'buffer captured the line');
     eq(r1.actionTabBuffers, s0.actionTabBuffers, 'routed buffer untouched');
-    // Now on Transcript — both grow.
+    // Now on Transcript — both grow. Seed buffer with prior content.
     const info = pt.flatTabInfo(s0, getModel(), 'g');
     const tIdx = pt.transcriptTabIdx(info);
-    const s1 = { ...viewer._init(), tab: tIdx, lines: ['x'], innerH: 4 };
+    const s1 = {
+      ...viewer._init(),
+      tab: tIdx,
+      innerH: 4,
+      viewerStreamBuffer: { lines: ['x'], cap: 1000 },
+    };
     const r2 = applyUpdate(s1, { type: 'viewer_append', line: 'y' }).next;
-    eq(r2.lines.length, 2, 'slice.lines mirrors when on Transcript');
-    eq(r2.viewerStreamBuffer.lines.length, 1, 'buffer also grew');
+    eq(r2.lines.length, 2, 'slice.lines mirrors when on Transcript (derived from buffer)');
+    eq(r2.viewerStreamBuffer.lines.length, 2, 'buffer also grew');
   });
 });
 
@@ -218,17 +222,23 @@ describe('[viewer_append_lines] bulk append — atomic reducer pass', () => {
   });
 
   it('unrouted bulk: buffer grows; slice.lines mirrors only on Transcript', () => {
-    const s0 = { ...viewer._init(), tab: 0, lines: ['head'], innerH: 4 };
+    // v0.6.2 T2d — buffer is source of truth; seed buffer, not lines.
+    const s0 = { ...viewer._init(), tab: 0, innerH: 4 };
     const r1 = applyUpdate(s0, { type: 'viewer_append_lines', lines: ['a', 'b'] }).next;
-    eq(r1.lines.length, 1, 'slice.lines NOT mirrored on Info');
+    eq(r1.lines.length, 0, 'slice.lines NOT mirrored on Info (no items to derive from)');
     eq(r1.viewerStreamBuffer.lines.length, 2, 'buffer captured both lines');
-    // On Transcript — both grow.
+    // On Transcript — both grow. Seed buffer with prior content.
     const info = pt.flatTabInfo(s0, getModel(), 'g');
     const tIdx = pt.transcriptTabIdx(info);
-    const s1 = { ...viewer._init(), tab: tIdx, lines: ['head'], innerH: 4 };
+    const s1 = {
+      ...viewer._init(),
+      tab: tIdx,
+      innerH: 4,
+      viewerStreamBuffer: { lines: ['head'], cap: 1000 },
+    };
     const r2 = applyUpdate(s1, { type: 'viewer_append_lines', lines: ['a', 'b'] }).next;
-    eq(r2.lines.length, 3, 'slice.lines mirrors on Transcript');
-    eq(r2.viewerStreamBuffer.lines.length, 2, 'buffer grew too');
+    eq(r2.lines.length, 3, 'slice.lines mirrors on Transcript (derived from buffer)');
+    eq(r2.viewerStreamBuffer.lines.length, 3, 'buffer grew too');
   });
 });
 

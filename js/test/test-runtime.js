@@ -307,18 +307,29 @@ describe('[10] streamed output — stream_start / viewer_append (effect source)'
       'terminal_exit Cmd emitted');
   });
   it('viewer_append pins to bottom when already at bottom', () => {
-    // v0.6.2 — unrouted viewer_append mirrors to slice.lines only on
-    // Transcript. Test slice sits on Transcript (tab=1 with no per-
-    // group tabs).
+    // v0.6.2 T2d — slice.lines derives from viewerStreamBuffer on
+    // Transcript. Seed buffer state directly.
     const init = detail._init();
-    const slice = { ...init, lines: ['a', 'b', 'c'], scroll: 0, innerH: 3, tab: 1 };
+    const slice = {
+      ...init,
+      scroll: 0,
+      innerH: 3,
+      tab: 1,
+      viewerStreamBuffer: { lines: ['a', 'b', 'c'], cap: 1000 },
+    };
     const r = detail._update({ type: 'viewer_append', line: 'd' }, slice);
     eq(r.lines.length, 4);
     eq(r.scroll, 1, 'followed to the new bottom');
   });
   it('viewer_append leaves scroll alone when the user scrolled up', () => {
     const init = detail._init();
-    const slice = { ...init, lines: ['a', 'b', 'c', 'd', 'e'], scroll: 0, innerH: 3, tab: 1 };  // maxScroll = 2, user at top
+    const slice = {
+      ...init,
+      scroll: 0,
+      innerH: 3,
+      tab: 1,
+      viewerStreamBuffer: { lines: ['a', 'b', 'c', 'd', 'e'], cap: 1000 },
+    };  // maxScroll = 2, user at top
     const r = detail._update({ type: 'viewer_append', line: 'f' }, slice);
     eq(r.lines.length, 6);
     eq(r.scroll, 0, 'not yanked down — user was reading');

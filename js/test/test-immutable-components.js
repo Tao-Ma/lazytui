@@ -353,12 +353,15 @@ describe('[immutable] detail (viewer)', () => {
   });
 
   it('viewer_append spreads lines, follows bottom', () => {
-    // A1/B1 fix: innerH lives on detail's own slice; seed it in the
-    // test slice (was: panelHeights.detail = 5 → innerH 3 cross-slice).
-    // v0.6.2 — unrouted viewer_append mirrors to slice.lines only on
-    // the Transcript tab; with the test model's current group having
-    // no per-group tabs, Transcript idx = total - 1 = 2 - 1 = 1.
-    const slice = makeSlice({ lines: ['a', 'b', 'c'], scroll: 0, innerH: 3, tab: 1 });
+    // v0.6.2 T2d — slice.lines is derived from viewerLines (buffer is
+    // source of truth). Seed buffer state directly; tab=1 is Transcript
+    // in the test model's default (no per-group tabs → total=2 → idx 1).
+    const slice = makeSlice({
+      scroll: 0,
+      innerH: 3,
+      tab: 1,
+      viewerStreamBuffer: { lines: ['a', 'b', 'c'], cap: 1000 },
+    });
     const out = expectNoMutation(
       'viewer_append leaves input frozen',
       () => detail._update({ type: 'viewer_append', line: 'd' }, slice),
