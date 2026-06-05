@@ -150,6 +150,19 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   grouping is preserved; the `STALE=1` / `exit "$STALE"` contract
   is unchanged.
 
+- **Mouse paths join the auto-yank — keyboard / mouse parity.**
+  Pre-fix, the auto-yank from `30e24ec` only fired on keyboard j/k
+  because non-`groups` mouse handlers in `input.js` bypassed
+  `navSelect` (used `setSel` directly + a manual
+  `showSelectedInfo()` follow-up). Mouse-scrolling or clicking the
+  actions panel while parked on Transcript scrolled the cursor but
+  left the viewer stuck. Now: click on any list panel routes
+  through `navSelect`; wheel on the focused list panel does too
+  (unfocused wheel still uses `setSel`/`selectGroup` to preserve
+  the "side-panel wheel doesn't clobber detail" rule). The
+  trailing `showSelectedInfo()` in the click handler is dropped —
+  `navSelect` dispatches it.
+
 - **Nav cursor auto-yanks viewer back to Info from a non-Info tab.**
   When the detail panel is parked on Transcript (or an action tab,
   terminal, content tab) and the user moves the cursor in a list

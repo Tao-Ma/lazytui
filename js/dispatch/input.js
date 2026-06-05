@@ -22,7 +22,7 @@ const route = require('../leaves/route');
 const { isChainActive } = require('./modes');
 
 function _detail() { return getInstanceSlice('detail'); }
-const { handleKey, applyMsg, showSelectedInfo } = require('./dispatch');
+const { handleKey, applyMsg, showSelectedInfo, navSelect } = require('./dispatch');
 const { cleanup } = require('../app/cleanup');
 
 // --- Mouse handling ---
@@ -75,17 +75,21 @@ function _handleWheel(mx, my, delta) {
       const sel = getSel(p.type);
       const next = Math.max(0, Math.min(items.length - 1, sel + delta));
       if (next === sel) return false;
-      if (p.type === 'groups') {
-        // selectGroup has cascading side effects (resetGroupContext);
-        // wheel-over should behave the same as a click on row N.
+      // Focused-panel wheel: full nav cascade (cursor + auto-yank-or-
+      // refresh — same path keyboard j/k uses). Unfocused (side-panel)
+      // wheel: cursor only, no detail clobber. Groups still need the
+      // resetGroupContext cascade even unfocused — wheel-over a side
+      // groups panel should still switch the active group.
+      // v0.6.2 — used to split setSel/selectGroup unconditionally and
+      // call showSelectedInfo() if focused; folded into navSelect for
+      // the focused case so auto-yank parity with keyboard is automatic.
+      if (p.type === getFocus()) {
+        navSelect(p.type, next);
+      } else if (p.type === 'groups') {
         selectGroup(next);
       } else {
         setSel(p.type, next);
       }
-      // Refresh detail only when the wheel landed on the focused panel
-      // (so its info reflects the new selection); wheeling over a side
-      // panel without focus shouldn't clobber detail.
-      if (p.type === getFocus()) showSelectedInfo();
       return true;
     }
     return false;
@@ -414,12 +418,19 @@ function handleMouse(kind, x, y) {
         const items = getItems(p.type);
         const idx = itemRow + getScroll(p.type);
         if (idx < items.length) {
-          if (p.type === 'groups') selectGroup(idx);
-          else setSel(p.type, idx);
+          // v0.6.2 — single navSelect path. Sets cursor, fires the
+          // auto-yank-or-show_info cascade, and runs groups_selected
+          // cascade for groups. Replaces the prior setSel/selectGroup
+          // split that left non-groups clicks without auto-yank parity.
+          navSelect(p.type, idx);
         }
       }
     }
-    showSelectedInfo();
+    // navSelect already dispatched show_info (or tab_switch which
+    // cascades to it); no trailing showSelectedInfo() needed. The
+    // focus_set above also cascades show_info but it runs against
+    // the OLD selection (pre-cursor-write); the navSelect dispatch
+    // is what lands the visible refresh.
     mutated = true;
     break;
   }
