@@ -84,8 +84,8 @@ Multi-tab panes use the mapping form too:
 at runtime via `:switch-tab <pool-id>` (cmdline; autocomplete restricts
 to the focused pane's other tabs). Keyboard / mouse UX for tab
 cycling is deferred to v0.7; today `]`/`[` cycles the active viewer
-tab's inner strip (Info / action tabs / terminal tabs / content
-tabs), not pane-level tabs. See
+tab's inner strip (Info / Transcript / action tabs / terminal tabs
+/ content tabs), not pane-level tabs. See
 [`v0.6.1-migrate.md`](v0.6.1-migrate.md) for the conversion guide
 from v0.6.0 inline cells.
 
@@ -174,7 +174,7 @@ on rows that get repainted while a glyph sits over them.
 | `[X]` | red | top-right of non-detail panels | free-config mode only | `pool_hide` — unplaces the panel; the entry stays in the pool (reachable via `:show <id>` or the `w` panel-list overlay) |
 | `[_]` | yellow | top-right of non-detail panels (4-cell gap left of `[X]` when both visible) | always (normal + free-config) | `panel_collapse_toggle` — collapses the panel to a single header row |
 | `[+]` | green | replaces `[_]` when the panel is already collapsed | always | toggle back to expanded |
-| `[≡]` | theme accent | top-left of detail (immediately after `(o)`) | always; suppressed inside cmdline / menu / confirm / prompt / register-popup / filter / copy / detail-search / prefix / title-edit modes | opens the centered **tab-list overlay** for switching among detail's tabs (Info, action tabs, terminal tabs, content tabs) |
+| `[≡]` | theme accent | top-left of detail (immediately after `(o)`) | always; suppressed inside cmdline / menu / confirm / prompt / register-popup / filter / copy / detail-search / prefix / title-edit modes | opens the centered **tab-list overlay** for switching among detail's tabs (Info, Transcript, action tabs, terminal tabs, content tabs) |
 
 Detail's top row reads `╭─(o)[≡]─Detail─…─╮` — both the hotkey label
 and the tab-list trigger are visible, the trigger's 3-cell width
@@ -303,26 +303,55 @@ terminal — native text selection may not work while the TUI runs.
 
 ## Detail tabs
 
-Actions with `tab: true` appear as detail tabs alongside the implicit Info tab.
-`]`/`[` cycles between them. Tab actions execute silently (bypass confirm/args,
-don't mark as last-run). Navigating items on a non-info tab keeps the tab
-output; switch to Info tab to see item details.
+The detail strip has two implicit global tabs followed by per-group
+tabs:
+
+```
+[Info] [Transcript] [actionTabs...] [termTabs...] [contentTabs...]
+   0        1          2..1+A          2+A..1+A+T   2+A+T..1+A+T+C
+```
+
+- **Info** (idx 0) — pure selection-info. Refreshes as the cursor
+  moves in actions / groups / files / containers.
+- **Transcript** (idx 1, v0.6.2) — singleton accumulator for all
+  unrouted output: `type:run` streams without `tab: true`, spawn
+  launch confirmations, cmdline-verb outcomes. Cap 1000 lines,
+  bottom-pin on restore, `[dim](no transcript yet)[/]` placeholder
+  when empty.
+- **Action tabs** — actions with `tab: true` (see below).
+- **Terminal tabs** — `terminals:` PTYs.
+- **Content tabs** — files opened via `:open` / Enter on a file row.
+
+`]`/`[` cycles between them. Tab actions execute silently (bypass
+confirm/args, don't mark as last-run). Navigating items in a list
+panel auto-yanks the viewer back to Info from any non-Info tab, so
+selection-info always appears with the cursor (v0.6.2 — the unrouted
+transcript stays available via Transcript).
 
 ```yaml
 actions:
-  status:
-    cmd: docker compose ps
-    label: Status
-    tab: true          # appears in detail panel tabs
+  build:
+    cmd: make
+    label: Build
+    tab: true          # long-running stream → dedicated tab
   ssh:
     type: spawn
     label: SSH         # no tab — spawn opens a terminal
+  ps:
+    cmd: docker compose ps
+    label: PS          # no tab — one-shot snapshot → Transcript
 ```
+
+The rule for `tab: true`: opt in for long-running streams, multi-
+action concurrency, or output you'll diff across runs. One-shot
+snapshots and ad-hoc commands fit Transcript naturally and don't
+need their own tab.
 
 ## Terminal tabs
 
 Groups can define `terminals:` — interactive PTY sessions embedded as
-detail panel tabs. Tab order: Info → action tabs → terminal tabs.
+detail panel tabs. Strip position: after action tabs (i.e., starting
+at `idx = 2 + actionTabs.length`).
 
 ```yaml
 groups:

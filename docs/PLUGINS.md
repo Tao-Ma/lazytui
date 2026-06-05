@@ -50,7 +50,7 @@ const {
   // lifecycle
   refreshAll, cleanupComponents,
   // collectors
-  getCommands, getGroupActions, statusFor,
+  getCommands, getGroupActions, getMergedActions, statusFor,
   collectViewContributions, _resetViewContributions,
   // subsystems
   hub,
@@ -161,10 +161,17 @@ module.exports = {
       case 'key':
         if (msg.key === '+') return { ...slice, n: slice.n + 1, lastKey: msg.key };
         if (msg.key === '-') return { ...slice, n: slice.n - 1, lastKey: msg.key };
-        // Producer-side viewer write — state.setViewerContent(null, text)
-        // resolves to whatever viewer-kind tab is focused (or the sticky
-        // pointer / first-in-arrange fallbacks). Pass `null` to let
-        // resolveTarget pick; pass a specific tab id to address one.
+        // Producer-side viewer write. Two helpers in app/state.js:
+        //   setViewerContent(tabId, text)   — REPLACES slice.lines.
+        //                                     For discrete documents
+        //                                     (history replay, diff,
+        //                                     help text, job info).
+        //   appendViewerLines(text)         — APPENDS to the unrouted
+        //                                     accumulator (lands in
+        //                                     the Transcript tab).
+        //                                     For ephemeral event /
+        //                                     status messages.
+        // Pick by intent: "show me this document" vs "record this event."
         if (msg.key === 'i') {
           require('../app/state').setViewerContent(null, 'n = ' + slice.n);
           return { ...slice, lastKey: msg.key };

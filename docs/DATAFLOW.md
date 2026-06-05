@@ -144,19 +144,35 @@ per keystroke at the tail of `dispatch.handleKey`. The 50 ms
 action output, docker poll, refresh ticks) so they coalesce bursts.
 
 **Routed stream Msgs.** `stream_start { header, tabKey?, groupName? }`
-and `viewer_append { line, tabKey?, groupName? }` carry an optional
-routing key. With `{tabKey, groupName}` set, the viewer reducer
-writes to `slice.actionTabBuffers[groupName][tabKey].lines` and
-mirrors to `slice.lines` only when the active tab in the current
-group is that action's tab (`pt.activeActionTabIn`). `stream_start`'s
-routed path additionally auto-jumps `slice.tab` to the action's
-index and emits `terminal_exit` so `terminalMode` doesn't survive
-the jump. Unrouted Msgs preserve the legacy `slice.lines`-direct
-write (docker logs/inspect verbs and any ad-hoc producer). Per-
-action buffers survive `tab_switch`; producer lifetime is decoupled
-from tab visibility — `streamCommand`'s `killCurrentProc` is the
-only preempt path, and the only place that stamps the
-`Press Enter to run again.` footer.
+and `viewer_append { line, tabKey?, groupName? }` (+ bulk
+`viewer_append_lines`) carry an optional routing key. With
+`{tabKey, groupName}` set, the viewer reducer writes to
+`slice.actionTabBuffers[groupName][tabKey].lines` and mirrors to
+`slice.lines` only when the active tab is that action's
+(`pt.activeActionTabIn`). `stream_start`'s routed path additionally
+auto-jumps `slice.tab` to the action's index and emits
+`terminal_exit` so `terminalMode` doesn't survive the jump.
+
+**Unrouted accumulator (v0.6.2).** Without `{tabKey, groupName}`,
+streams flow into `slice.viewerStreamBuffer` (a singleton ring
+buffer, cap 1000) and the viewer's display home is the dedicated
+**Transcript** tab at strip idx 1 (between Info and per-group
+action tabs). Mirrors to `slice.lines` only when on Transcript;
+off-Transcript appends silently grow the buffer. `tab_switch` to
+Transcript restores from buffer with bottom-pin scroll (empty →
+`[dim](no transcript yet)[/]` placeholder). Spawn-launch and
+cmdline-verb status messages join the same buffer via
+`appendViewerLines` (`app/state.js`).
+
+Per-action buffers and the Transcript buffer survive `tab_switch`;
+producer lifetime is decoupled from tab visibility. `streamCommand`
+maintains a per-slot proc map (`procs.set(jobId, ctx)` keyed by
+`tabKey || 'unrouted'`) — concurrent routed streams across distinct
+slots run side-by-side. Same-slot routed re-runs preempt silently;
+cross-label unrouted preempts open a confirm overlay (default
+reject) to protect the live transcript. Stream-end footers
+(`Press Enter to run again.`) are stamped via batched
+`viewer_append_lines` for atomic reducer passes.
 
 **See also.**
 - `docs/PRINCIPLES.md` §12 — the Component discipline rules.

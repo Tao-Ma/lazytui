@@ -367,6 +367,26 @@ module.exports = {
   escape hatch).
 - Components also contribute `commands` / `groupActions` / `statusFor` /
   `viewContributions` / `cleanup`, collected by the framework.
+- **Single accessor per derived collection.** When state has BOTH a
+  YAML-declared half AND a Component-contributed half (today's
+  example: `group.actions`), give every reader ONE canonical
+  accessor that returns the merged view fresh. Pre-v0.6.2 had
+  three merge sites and four direct readers — the inconsistency
+  was a bug surface (`pg:status` invisible, etc.). The fix:
+  `panel/api.getMergedActions(groupName)` is the single source of
+  truth; every reader (tab strip, leader resolver, actions panel,
+  shadow check, group-info display, CLI `--list` / `--exec`)
+  routes through it. **No config mutation** — the merged set is a
+  pure derivation, not a baked-in side effect, so plugin output
+  can read live model state without going stale. Apply the same
+  shape to any future merged-collection surface.
+- **One role per display surface.** When a display surface drifts
+  into hosting two semantically different things (v0.6.2 example:
+  Info doubling as "selection info" + "unrouted transcript"), the
+  shared surface breeds guards / restore branches / divergent
+  mirrors. Separate into two surfaces (e.g., Transcript tab took
+  over the accumulator from Info). Each role gets a clean reducer
+  arm; cross-cutting cascades dissolve.
 
 ### Two homes for state
 

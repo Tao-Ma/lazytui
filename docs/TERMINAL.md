@@ -48,8 +48,12 @@ required.
  Ctrl+\ return to TUI ── terminal: SQL
 ```
 
-Tabs in order: **Info** (always) → **action tabs** (`tab: true`) →
-**terminal tabs** (`terminals:`). Cycle with `]`/`[`.
+Tabs in order: **Info** → **Transcript** (always, both implicit
+globals) → **action tabs** (`tab: true`) → **terminal tabs**
+(`terminals:`) → **content tabs** (file/docker opens). Cycle with
+`]`/`[`. Transcript was added in v0.6.2 to host the unrouted
+accumulator that pre-fix double-booked Info; details in
+`docs/DATAFLOW.md` § Unrouted accumulator.
 
 ## Why tabs, not panels
 
