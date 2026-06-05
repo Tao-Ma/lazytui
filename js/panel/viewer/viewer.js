@@ -561,6 +561,19 @@ function _updateInner(msg, slice) {
           ...all,
           [msg.groupName]: { ...group, [msg.tabKey]: { lines: [msg.header] } },
         };
+        // R4 — buffer reset invalidates the matching tabState entry.
+        // The captured search.matches and select.{anchor, cursor}
+        // reference line/col positions from the PRE-reset buffer;
+        // restoring them onto the fresh buffer (the next time the user
+        // visits this tab) would paint highlights / selection
+        // rectangle on wrong content. Drop the entry so the next visit
+        // gets fresh defaults via tab_switch's first-visit fallback.
+        const dropKey = `${msg.groupName}:action:${msg.tabKey}`;
+        let nextTabState = slice.tabState;
+        if (slice.tabState && (dropKey in slice.tabState)) {
+          const { [dropKey]: _drop, ...rest } = slice.tabState;
+          nextTabState = rest;
+        }
         const m = getModel();
         if (msg.groupName === m.currentGroup) {
           const info = pt.flatTabInfo(slice, m, m.currentGroup);
@@ -572,18 +585,33 @@ function _updateInner(msg, slice) {
             // B3 — clear viewerOverride on the auto-jump: the override
             // (e.g. job-info card from a Running-overlay activate) is
             // dismissed by the stream event that's taking over the
-            // visible viewer. Without this, viewerLines() returns the
-            // stale override and the user sees the override painted in
-            // place of the new action tab's incoming output.
+            // visible viewer.
+            // R4 — also reset slice.{search, select, cursor} for the
+            // auto-jump landing: the user is now viewing the fresh
+            // buffer, so view-state should be empty defaults (not the
+            // leaving tab's residual fields).
             return [
-              { ...slice, actionTabBuffers: nextAll, lines: [msg.header], scroll: 0, tab: 2 + idx, viewerOverride: null },
+              {
+                ...slice,
+                actionTabBuffers: nextAll,
+                tabState: nextTabState,
+                lines: [msg.header],
+                scroll: 0,
+                tab: 2 + idx,
+                viewerOverride: null,
+                search: { active: false, term: '', matches: [], idx: 0, typing: '' },
+                select: { active: false, kind: 'char', anchor: { line: 0, col: 0 }, cursor: { line: 0, col: 0 } },
+                cursor: { line: 0, col: 0 },
+              },
               [{ type: 'msg', msg: { type: 'terminal_exit' } }],
             ];
           }
         }
         // Cross-group: no auto-jump, no transition — override stays
         // (it's bound to whatever the user is currently viewing).
-        return { ...slice, actionTabBuffers: nextAll };
+        // R4 — still drop the target's tabState entry so the next visit
+        // doesn't restore stale matches onto the fresh buffer.
+        return { ...slice, actionTabBuffers: nextAll, tabState: nextTabState };
       }
       // Unrouted stream_start: append header to viewerStreamBuffer
       // (does NOT clear — the buffer is an accumulator across cmds).

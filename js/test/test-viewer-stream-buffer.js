@@ -487,6 +487,51 @@ describe('[B4 group-qualified tabState keys] two groups sharing an action name d
     eq(s.tabState['g1:action:test'].scroll, 30, 'g1:action:test preserved across group switch');
     eq(s.tabState['g2:action:test'].scroll, 60, 'g2:action:test recorded independently');
   });
+  it('R4: stream_start auto-jump drops tabState for the reset buffer', () => {
+    setModel({
+      currentGroup: 'g',
+      modes: {},
+      config: { groups: { g: { label: 'G', actions: { build: { label: 'Build', tab: 'Build', script: 'make' } } } } },
+    });
+    // Seed: user previously visited Build, captured search matches
+    // referencing line 80 of the (then-)buffer's content.
+    let s = { ...viewer._init(), tab: 0, innerH: 3 };
+    s = {
+      ...s,
+      tabState: {
+        'g:action:build': {
+          scroll: 80,
+          search: { active: true, term: 'foo', matches: [{ line: 80, col: 0 }], idx: 0, typing: '' },
+        },
+      },
+    };
+    // Fresh stream_start re-runs Build → buffer resets to [header].
+    const r = applyUpdate(s, { type: 'stream_start', tabKey: 'build', groupName: 'g', header: '$ make' });
+    eq(r.next.tab, 2, 'auto-jumped to Build');
+    assert(!('g:action:build' in r.next.tabState), 'tabState[g:action:build] dropped (matches reference pre-reset positions)');
+    eq(r.next.search.active, false, 'slice.search reset on auto-jump landing');
+    eq(r.next.scroll, 0, 'scroll reset');
+  });
+  it('R4: stream_start cross-group drops the target\'s tabState even without auto-jump', () => {
+    setModel({
+      currentGroup: 'g',
+      modes: {},
+      config: { groups: {
+        g:  { label: 'G',  actions: {} },
+        g2: { label: 'G2', actions: { build: { label: 'Build', tab: 'Build', script: 'make' } } },
+      } },
+    });
+    let s = { ...viewer._init(), tab: 0, innerH: 3 };
+    s = {
+      ...s,
+      tabState: {
+        'g2:action:build': { scroll: 50, search: { active: true, term: 'x', matches: [{ line: 50, col: 0 }], idx: 0, typing: '' } },
+      },
+    };
+    const r = applyUpdate(s, { type: 'stream_start', tabKey: 'build', groupName: 'g2', header: '$ make' });
+    eq(r.next.tab, 0, 'no auto-jump (cross-group)');
+    assert(!('g2:action:build' in r.next.tabState), 'tabState dropped for cross-group target too');
+  });
   it('Info and Transcript are unprefixed (group-independent)', () => {
     setModel({
       currentGroup: 'g',
