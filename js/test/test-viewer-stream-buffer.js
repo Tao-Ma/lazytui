@@ -735,6 +735,33 @@ describe('[B3 viewerOverride clear] tab-transitioning arms drop the stale overri
     eq(r.next.tab, 1, 'auto-jumped to Transcript');
     eq(r.next.viewerOverride, null, 'override cleared by unrouted auto-jump');
   });
+  it('B7: stream_start unrouted auto-jump resets slice.{search, select, cursor}', () => {
+    // Round 2 finding: the routed branch resets these fields on the
+    // auto-jump landing (R4 — landing on fresh buffer); the unrouted
+    // branch was the asymmetric oversight. Pre-B7 the FROM-tab's
+    // search-matches / visual-mode anchors painted highlights and
+    // selection rectangle on Transcript content using wrong-content
+    // line/col positions.
+    setModel({
+      currentGroup: 'g',
+      modes: {},
+      config: { groups: { g: { label: 'G', actions: {} } } },
+    });
+    // User on a content tab with active visual select + search.
+    let s = {
+      ...viewer._init(),
+      tab: 2, innerH: 5,
+      search: { active: true, term: 'err', matches: [{line:3,col:0,len:3}], idx:0, typing:'' },
+      select: { active: true, kind: 'char', anchor: {line:3,col:0}, cursor: {line:5,col:4} },
+      cursor: { line: 5, col: 4 },
+    };
+    const r = applyUpdate(s, { type: 'stream_start', header: '$ docker ps' });
+    eq(r.next.tab, 1, 'auto-jumped to Transcript');
+    eq(r.next.search.active, false, 'search reset');
+    eq(r.next.search.matches.length, 0, 'matches cleared');
+    eq(r.next.select.active, false, 'select reset');
+    eq(r.next.cursor.line, 0, 'cursor reset to {0,0}');
+  });
   it('stream_start unrouted while ALREADY on Transcript preserves override (no transition)', () => {
     setModel({
       currentGroup: 'g',

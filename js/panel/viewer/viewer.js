@@ -710,8 +710,24 @@ function _updateInner(msg, slice) {
         // as the routed branch above).
         // N2 — slice.lines mirror dropped; finalizer derives from
         // viewerStreamBuffer (nextBuf, just updated above).
+        // v0.6.2 B7 — also reset slice.{search, select, cursor} for
+        // the auto-jump landing (parity with the routed branch's R4
+        // reset). Pre-B7 the unrouted branch left the FROM tab's
+        // search-match list, visual-mode anchors, and cursor on slice,
+        // so the selection rectangle and search highlights painted on
+        // Transcript content using line/col positions from the
+        // wrong buffer.
         return [
-          { ...slice, viewerStreamBuffer: nextBuf, tab: tIdx, scroll, viewerOverride: null },
+          {
+            ...slice,
+            viewerStreamBuffer: nextBuf,
+            tab: tIdx,
+            scroll,
+            viewerOverride: null,
+            search: { active: false, term: '', matches: [], idx: 0, typing: '' },
+            select: { active: false, kind: 'char', anchor: { line: 0, col: 0 }, cursor: { line: 0, col: 0 } },
+            cursor: { line: 0, col: 0 },
+          },
           [{ type: 'msg', msg: { type: 'terminal_exit' } }],
         ];
       }
