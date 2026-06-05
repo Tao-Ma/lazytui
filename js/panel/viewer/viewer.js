@@ -491,16 +491,24 @@ function _updateInner(msg, slice) {
       // this arm too. Two cases:
       //   1. Already on Info (slice.tab === 0): item content changed
       //      (j/k in a Navigator), scroll resets to 0 (display new
-      //      item's info from line 0). search/select/cursor untouched
-      //      (they belong to the previous item but search-during-Info
-      //      is a rare niche and clearing on every Navigator keystroke
-      //      would defeat post-typing match navigation).
+      //      item's info from line 0). A4 — also drop stale
+      //      search.matches if a committed search is active: the
+      //      matches reference line/col positions in the PREVIOUS
+      //      item's text; preserving them paints highlights on the
+      //      wrong content. search.term is kept so the user can
+      //      `/[Up]` to recall and re-run.
       //   2. From another tab (slice.tab !== 0): yanking back to Info.
       //      Restore tabState['info'].{scroll, search, select, cursor}
       //      (same shape tab_switch performs). Without this restore,
       //      navSelect from an action tab landed on Info with scroll: 0
       //      and the user's saved Info scroll position was dropped.
-      if (slice.tab === 0) return { ...slice, scroll: 0 };
+      if (slice.tab === 0) {
+        const next = { ...slice, scroll: 0 };
+        if (slice.search && slice.search.matches && slice.search.matches.length > 0) {
+          next.search = { ...slice.search, matches: [], idx: 0 };
+        }
+        return next;
+      }
       const entry = (slice.tabState && slice.tabState.info) || null;
       return {
         ...slice,

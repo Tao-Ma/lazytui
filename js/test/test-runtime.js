@@ -174,6 +174,39 @@ describe('[3] update — (model, msg) → [model, cmds], pure + Cmd descriptors'
     eq(next.scroll, 47, 'restored Info scroll from tabState');
     eq(next.cursor.line, 47, 'restored Info cursor from tabState');
   });
+  it('A4: viewer_show_info on Info drops stale search.matches but keeps term', () => {
+    // Round 2 finding: with active committed search on Info, j/k in a
+    // Navigator re-fires viewer_show_info → previous matches reference
+    // the OLD item's text → highlights paint on wrong content.
+    // Fix: clear matches/idx on within-Info nav; keep term so the
+    // user can `/[Up]`-recall.
+    const route = require('../leaves/route');
+    const detail = require('../panel/viewer/viewer');
+    const m = runtime.getModel();
+    m.config = { groups: { g: { label: 'G', actions: {
+      a: { label: 'A', desc: 'an action', script: 'echo a' },
+    } } } };
+    m.currentGroup = 'g';
+    route.getInstanceSlice('layout').focus = 'actions';
+    const slice = {
+      ...route.getInstanceSlice('detail'),
+      tab: 0,
+      search: {
+        active: true,
+        term: 'foo',
+        matches: [{ line: 7, col: 0, len: 3 }, { line: 12, col: 4, len: 3 }],
+        idx: 0,
+        typing: '',
+      },
+    };
+    const r = detail._update({ type: 'viewer_show_info' }, slice);
+    const next = Array.isArray(r) ? r[0] : r;
+    eq(next.tab, 0, 'stayed on Info');
+    eq(next.search.matches.length, 0, 'stale matches dropped');
+    eq(next.search.idx, 0, 'idx reset');
+    eq(next.search.term, 'foo', 'term preserved for /[Up] recall');
+    eq(next.search.active, true, 'active flag preserved');
+  });
   it('R3: viewer_show_info while already on Info resets scroll to 0 (new item)', () => {
     // Within-Info case (j/k navigates to a new item, same tab): scroll
     // resets to 0 so the new item's getInfo displays from line 0.
