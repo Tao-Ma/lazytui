@@ -257,6 +257,38 @@ describe('[T3e per-tab cursor] tab remembers its cursor position across switches
   });
 });
 
+describe('[T3f-fix per-tab capture on stream_start bypass]', () => {
+  // T3f as initially shipped captured FROM-tab state only in
+  // tab_switch — bypass paths (stream_start auto-jump, viewer_set_tab)
+  // lost that state. T3f-fix moves the capture to the finalizer,
+  // detecting slice.tab change in any reducer arm. This pins the
+  // bypass-case behavior.
+  it('stream_start auto-jump (bypassing tab_switch) captures from-tab state', () => {
+    // User on Transcript, scrolled to a specific position.
+    let s = { ...viewer._init(), tab: 1, innerH: 3 };
+    s = applyUpdate(s, {
+      type: 'viewer_append_lines',
+      lines: ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'],
+    }).next;
+    s = applyUpdate(s, { type: 'viewer_scroll', to: 'top' }).next;
+    eq(s.scroll, 0, 'on Transcript at scroll 0');
+    // Now an UNROUTED stream_start fires — auto-jumps to Transcript
+    // (we're already on Transcript, so no transition). Use a routed
+    // one to action tab idx 2 instead — that's a true bypass.
+    // No actions configured here, so the routed branch falls through.
+    // Easier: directly fire viewer_set_tab as the bypass primitive.
+    s = applyUpdate(s, { type: 'viewer_set_tab', tab: 0 }).next;
+    eq(s.tab, 0, 'now on Info via the viewer_set_tab bypass');
+    // Despite NOT going through tab_switch, the finalizer should have
+    // captured Transcript's view state.
+    eq(s.tabState.transcript.scroll, 0, 'from-tab scroll captured even via bypass');
+    eq(s.tabState.transcript.bottomSticky, false, 'sticky captured (was at top)');
+    // Round-trip back via tab_switch — Transcript scroll restored.
+    s = applyUpdate(s, { type: 'tab_switch', idx: 1 }).next;
+    eq(s.scroll, 0, 'Transcript scroll restored after bypass + round-trip');
+  });
+});
+
 describe('[T3b per-tab scroll] tab remembers its scroll across switches', () => {
   // The fragility T3 is solving: pre-T3, slice.scroll was shared by
   // all tabs. Scrolling Build to line 500, switching to Info, switching

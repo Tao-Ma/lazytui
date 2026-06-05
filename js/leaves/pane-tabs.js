@@ -486,12 +486,10 @@ function reduceTabMsg(msg, slice, ctx) {
       const idx = msg.idx | 0;
       if (idx < 0 || idx >= total) return slice;
 
-      // T3f — capture leaving-tab's view state into tabState before
-      // the switch. Single sync point: per-tab persistence happens
-      // here, not via per-Msg mirrors in viewer_scroll / append /
-      // finalizer. The slice's scroll/search/select/cursor are the
-      // active-tab live view; this writes them to per-tab storage so
-      // the next visit can restore.
+      // T3f-fix — leaving-tab capture lives in viewer.js's finalizer
+      // (_withDerivedFields) so it catches every slice.tab transition
+      // path, not just tab_switch. This reducer focuses on the
+      // target-tab restore.
       const _resolveKey = (i) => {
         if (i === 0) return 'info';
         if (i === 1) return 'transcript';
@@ -501,24 +499,10 @@ function reduceTabMsg(msg, slice, ctx) {
         const ct = activeContentTab();
         return ct ? `content:${ct[0]}` : null;
       };
-      const fromKey = _resolveKey(slice.tab | 0);
-      const innerHCur = slice.innerH > 0 ? slice.innerH : 1;
-      const curLinesLen = (slice.lines || []).length;
-      const curMaxScroll = Math.max(0, curLinesLen - innerHCur);
-      const fromState = {
-        scroll: slice.scroll || 0,
-        bottomSticky: (slice.scroll || 0) >= curMaxScroll,
-        search: slice.search,
-        select: slice.select,
-        cursor: slice.cursor,
-      };
-      const tabStateBase = fromKey
-        ? { ...(slice.tabState || {}), [fromKey]: fromState }
-        : (slice.tabState || {});
 
       // T2c — tab_switch clears the discrete-doc override; the user's
       // navigation gesture dismisses whatever override was active.
-      let next = { ...slice, tab: idx, viewerOverride: null, tabState: tabStateBase };
+      let next = { ...slice, tab: idx, viewerOverride: null };
       // No kill_proc — the producer keeps writing into its buffer
       // while the user is off-tab. Singleton preempt happens inside
       // streamCommand when a new run starts.
@@ -541,8 +525,10 @@ function reduceTabMsg(msg, slice, ctx) {
         const ct = activeContentTab();
         if (ct) targetKey = `content:${ct[0]}`;
       }
-      // Read target tab's stored state from the just-captured tabState.
-      const tabEntry = tabStateBase && targetKey && tabStateBase[targetKey];
+      // Read target tab's stored state. The finalizer (running AFTER
+      // this reducer body) will capture the FROM-tab's view state;
+      // for the to-restore we read what's currently stored.
+      const tabEntry = slice.tabState && targetKey && slice.tabState[targetKey];
       const storedScroll = tabEntry ? tabEntry.scroll : undefined;
       const storedSticky = tabEntry ? !!tabEntry.bottomSticky : false;
       // T3c/d/e — restore the target tab's stored view state

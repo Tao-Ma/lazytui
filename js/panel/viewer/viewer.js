@@ -260,14 +260,34 @@ function _infoFromFocus() {
   if (!out || !out.length) return null;
   return out.join('\n').split('\n');
 }
-// T2d — derive slice.lines from viewerLines. The finalizer's only
-// job post-T3f is the lines re-derivation; per-tab state (scroll /
-// search / select / cursor) is persisted lazily by tab_switch on
-// the way out, not mirrored per-Msg.
-function _withDerivedFields(next, _originalSlice) {
+// T2d + T3f-fix — derive slice.lines, AND capture the leaving-tab's
+// view state into tabState when the reducer transitioned slice.tab.
+// Detecting the transition in the finalizer (vs in tab_switch) catches
+// every path that mutates slice.tab — tab_switch, stream_start's
+// auto-jump, viewer_set_tab, future Msgs — without each one having
+// to remember to capture. Single source of truth for "per-tab
+// persistence on transition."
+function _withDerivedFields(next, originalSlice) {
   const m = getModel();
   const lines = pt.viewerLines(next, m, m.currentGroup, { infoFromFocus: _infoFromFocus });
-  return { ...next, lines };
+  let updated = { ...next, lines };
+  if (originalSlice && next.tab !== originalSlice.tab) {
+    const fromKey = _activeTabKey(originalSlice, m);
+    if (fromKey) {
+      const innerH = originalSlice.innerH > 0 ? originalSlice.innerH : 1;
+      const linesLen = (originalSlice.lines || []).length;
+      const maxScroll = Math.max(0, linesLen - innerH);
+      const captured = {
+        scroll: originalSlice.scroll || 0,
+        bottomSticky: (originalSlice.scroll || 0) >= maxScroll,
+        search: originalSlice.search,
+        select: originalSlice.select,
+        cursor: originalSlice.cursor,
+      };
+      updated = _withTabFields(updated, fromKey, captured);
+    }
+  }
+  return updated;
 }
 function _finalize(result, originalSlice) {
   if (result === undefined) return result;
