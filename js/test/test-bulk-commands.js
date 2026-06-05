@@ -103,8 +103,15 @@ describe('[5] empty operand → no streamCommand call', () => {
   });
 });
 
-describe('[6] command resets activeTab and terminalMode', () => {
-  it('switches to Info tab + leaves terminal mode', () => {
+describe('[6] command leaves terminalMode (R6: tab transition handled by stream_start auto-jump)', () => {
+  it('leaves terminal mode + invokes streamCommand', () => {
+    // v0.6.2 R6 — the pre-stream setActiveTab(0) was dropped (legacy
+    // from pre-Transcript-tab era). In production, stream_start's
+    // unrouted-auto-jump puts the user on Transcript (idx 1) when
+    // the spawn fires; in this test streamCommand is mocked so no
+    // stream_start fires — slice.tab stays where it was. We only
+    // verify the synchronous side-effects: terminalMode cleared +
+    // streamCommand invoked with the right args.
     getModel().config = { groups: { g1: { name: 'g1', containers: ['c1'] } } };
     getInstanceSlice('detail').tab = 3;
     getModel().modes.terminalMode = true;
@@ -112,8 +119,8 @@ describe('[6] command resets activeTab and terminalMode', () => {
     clearMultiSel('containers');
     calls.length = 0;
     stopCmd.run([]);
-    eq(getInstanceSlice('detail').tab, 0, 'switched to Info tab');
     eq(getModel().modes.terminalMode, false, 'left terminal mode');
+    assert(calls.length === 1 && calls[0].cmd.startsWith('docker stop'), 'streamCommand invoked with docker stop');
   });
 });
 

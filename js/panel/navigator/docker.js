@@ -37,7 +37,7 @@ const {
   getSel, getScroll, isMultiSel, getFilter,
   execAsync,
   streamCommand, addEphemeralTab, scheduleRender,
-  setActiveTab, leaveTerminalMode,
+  leaveTerminalMode,
   getItems: apiGetItems, selectedOrFocused,
   getInstanceSlice, getFocus, dispatchMsg, wrap, instanceKind,
   registerEffect,
@@ -376,8 +376,15 @@ registerEffect('dockerEventsStart', () => {
 });
 
 registerEffect('dockerExec', (eff) => {
+  // R6 — dropped pre-stream setActiveTab(0). It was legacy from the
+  // pre-Transcript-tab era when the unrouted accumulator lived on
+  // Info; parking the user on Info first set up Info to receive the
+  // stream. Post-v0.6.2 the Transcript tab hosts the unrouted
+  // accumulator and stream_start's unrouted-auto-jump branch puts
+  // the user on Transcript directly (regardless of where they were
+  // before). The setActiveTab(0) was a brief stop on Info en route
+  // to Transcript — pure churn.
   const q = JSON.stringify(eff.item);
-  setActiveTab(0);
   leaveTerminalMode();
   if (eff.mode === 'inspect') {
     streamCommand(`inspect ${eff.item}`,
@@ -525,7 +532,8 @@ function bulkContainer(verb, opts = {}) {
       const names = selectedOrFocused('containers');
       if (!names.length) return;
       const quoted = names.map(n => JSON.stringify(n)).join(' ');
-      setActiveTab(0);
+      // R6 — same drop as dockerExec: stream_start unrouted auto-jumps
+      // to Transcript, so the pre-stream setActiveTab(0) is dead.
       leaveTerminalMode();
       const label = names.length === 1 ? `${verb} ${names[0]}` : `${verb} ${names.length} containers`;
       streamCommand(label, `docker ${verb} ${quoted}${cmdSuffix}`);
