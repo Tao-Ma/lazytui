@@ -109,7 +109,78 @@ bench('extend through 10k positions', 10_000, (n) => {
   }
 });
 
+// --- viewer_append routed, off-active-tab ---
+//
+// Real-world scenario: user runs Build (action tab), then switches to
+// Test to watch it. Build keeps streaming in the background — every
+// append is routed (tabKey='build') but the active tab is Test, so the
+// reducer's mirror branch doesn't fire. The buffer write + finalizer
+// pass still run. Pre-T3f-fix this path bypassed tabState; post-
+// T3f-fix the finalizer's transition-detect is a single ref check
+// (no transition during the bench), so we measure the routed-append
+// off-tab cost cleanly.
+console.log('\n[4] viewer_append routed, off-active-tab (background streaming while user is elsewhere)');
+// Set up a minimal group + actions so flatTabInfo recognizes two
+// action tabs. Park the user on the first; route appends to the second.
+const runtime_mod = require('../app/runtime');
+const m = runtime_mod.getModel();
+m.config = {
+  groups: { g: { label: 'G', actions: {
+    build: { label: 'Build', script: 'true', tab: true },
+    test:  { label: 'Test',  script: 'true', tab: true },
+  } } },
+};
+m.currentGroup = 'g';
+// Tab strip is now: [Info][Transcript][Build=2][Test=3]. Park on Build.
+detailSlice.tab = 2;
+bench('routed off-tab append (10k)', 10_000, (n) => {
+  for (let i = 0; i < n; i++) {
+    api.dispatchMsg(api.wrap('detail', {
+      type: 'viewer_append', line: `bg ${i}`,
+      tabKey: 'test', groupName: 'g',  // routed to Test, but user is on Build
+    }));
+  }
+});
+const testBufLen = ((api.getInstanceSlice('detail').actionTabBuffers || {}).g || {}).test || { lines: [] };
+console.log(`  final test buffer length: ${testBufLen.lines.length}`);
+
+// --- viewer_append_lines bulk variant ---
+//
+// Stream-end footers, preempt notices, decoder-tail flushes dispatch
+// viewer_append_lines (bulk) instead of N x viewer_append. One Msg per
+// batch = one finalizer pass per batch. Producers in stream.js use
+// this for the `Press Enter to run again.` + status footer pair.
+console.log('\n[5] viewer_append_lines bulk (one Msg per N-line batch)');
+detailSlice.tab = 1;  // back to Transcript so the unrouted mirror engages
+api.getInstanceSlice('detail').viewerStreamBuffer = { lines: [], cap: 1_000_000 };
+const _batch10 = () => Array.from({ length: 10 }, (_, i) => `b${i}`);
+bench('append_lines x1000 (10 lines/batch)', 1_000, (n) => {
+  const lines = _batch10();
+  for (let i = 0; i < n; i++) {
+    api.dispatchMsg(api.wrap('detail', { type: 'viewer_append_lines', lines }));
+  }
+});
+console.log(`  final buffer length: ${bufLen()}`);
+
+// --- pure finalizer cost (per-Msg overhead) ---
+//
+// What does the finalizer-+-update plumbing cost per Msg, when the
+// reducer arm itself does minimal work? Useful baseline for any future
+// finalizer addition. viewer_search_clear_committed always returns a
+// fresh slice with an empty search struct (no buffer scan, no
+// lines change) — closest synthetic for "single dispatch + finalizer
+// + minimal reducer alloc."
+console.log('\n[6] pure finalizer cost (viewer_search_clear_committed per Msg)');
+api.getInstanceSlice('detail').viewerStreamBuffer = { lines: [], cap: 1_000_000 };
+bench('search_clear x100k', 100_000, (n) => {
+  for (let i = 0; i < n; i++) {
+    api.dispatchMsg(api.wrap('detail', { type: 'viewer_search_clear_committed' }));
+  }
+});
+
 console.log('\n--- Interpretation ---');
 console.log('viewer_append target: docker logs -f sustains ~1k lines/sec; bursts to ~5k.');
 console.log('select_extend target: 60Hz mouse drag = 60 ops/sec; 100Hz = 100 ops/sec.');
-console.log('Pure-TEA spread cost grows linearly with buffer length for append; flat for select_extend.\n');
+console.log('off-tab append target: same hot path as foreground; mirror branch skipped — should be ≥ on-tab throughput.');
+console.log('append_lines bulk: one finalizer pass per N lines — per-line cost should beat singular viewer_append.');
+console.log('finalizer cost: per-Msg overhead floor; ≫ 10k ops/sec means finalizer is not a bottleneck.\n');
