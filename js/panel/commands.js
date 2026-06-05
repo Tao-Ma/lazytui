@@ -61,14 +61,14 @@ const FRAMEWORK_COMMANDS = [
     desc: 'Persist current panel layout to the YAML config',
     run: () => {
       const { writeLayoutToFile } = require('../feature/yaml-layout');
-      const { setViewerContent } = require('../app/state');
+      const { appendViewerLines } = require('../app/state');
       const m = require('../app/runtime').getModel();
       const { error } = writeLayoutToFile(route.getInstanceSlice('layout').arrange, m.configPath);
       if (error) {
-        setViewerContent(null, `[red]Layout save failed:[/] ${error.message}`);
+        appendViewerLines(`[red]Layout save failed:[/] ${error.message}`);
       } else {
         require('./api').dispatchMsg(wrap('layout', { type: 'set_arrange', dirty: false }));
-        setViewerContent(null, `[green]Layout saved to[/] ${m.configPath}`);
+        appendViewerLines(`[green]Layout saved to[/] ${m.configPath}`);
       }
     },
   },
@@ -82,8 +82,8 @@ const FRAMEWORK_COMMANDS = [
     run: (args) => {
       const input = (args && args.join(' ')) || '';
       if (!input) {
-        const { setViewerContent } = require('../app/state');
-        setViewerContent(null, '[red]:open requires a path[/] — usage: :open <path>');
+        const { appendViewerLines } = require('../app/state');
+        appendViewerLines('[red]:open requires a path[/] — usage: :open <path>');
         return;
       }
       // Strip wrapping quotes (the cmdline splits on whitespace; quoting
@@ -96,7 +96,7 @@ const FRAMEWORK_COMMANDS = [
     name: 'restore-layout',
     desc: 'Discard runtime changes; reload panel layout from YAML',
     run: () => {
-      const { setViewerContent } = require('../app/state');
+      const { appendViewerLines } = require('../app/state');
       const { rebuildLayoutFromConfig } = require('../leaves/arrange');
       const m = require('../app/runtime').getModel();
       const api = require('./api');
@@ -106,7 +106,7 @@ const FRAMEWORK_COMMANDS = [
       // The runtime layout the user was working with is gone; the
       // undo/redo history pointed at it is no longer meaningful.
       api.dispatchMsg(wrap('layout', { type: 'free_config_clear_undo' }));
-      setViewerContent(null, `[green]Layout restored from[/] ${m.configPath}`);
+      appendViewerLines(`[green]Layout restored from[/] ${m.configPath}`);
     },
   },
   {
@@ -133,8 +133,8 @@ const FRAMEWORK_COMMANDS = [
       // success.
       let position1 = (args && args.length > 0) ? Number(args[0]) : N;
       if (!Number.isInteger(position1)) {
-        const { setViewerContent } = require('../app/state');
-        setViewerContent(null, `[red]:add-column requires a 1-based integer position[/]`);
+        const { appendViewerLines } = require('../app/state');
+        appendViewerLines(`[red]:add-column requires a 1-based integer position[/]`);
         return;
       }
       api.dispatchMsg(wrap('layout', { type: 'add_column', position: position1 - 1 }));
@@ -146,14 +146,14 @@ const FRAMEWORK_COMMANDS = [
     run: (args) => {
       const api = require('./api');
       if (!args || args.length === 0) {
-        const { setViewerContent } = require('../app/state');
-        setViewerContent(null, `[red]:remove-column requires a column number[/]`);
+        const { appendViewerLines } = require('../app/state');
+        appendViewerLines(`[red]:remove-column requires a column number[/]`);
         return;
       }
       const n1 = Number(args[0]);
       if (!Number.isInteger(n1)) {
-        const { setViewerContent } = require('../app/state');
-        setViewerContent(null, `[red]:remove-column requires a 1-based integer column number[/]`);
+        const { appendViewerLines } = require('../app/state');
+        appendViewerLines(`[red]:remove-column requires a 1-based integer column number[/]`);
         return;
       }
       api.dispatchMsg(wrap('layout', { type: 'remove_column', columnIndex: n1 - 1 }));

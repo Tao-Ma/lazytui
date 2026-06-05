@@ -94,6 +94,65 @@ describe('[stream_start unrouted] auto-jumps to Info; preserves prior buffer', (
   });
 });
 
+describe('[viewer_append_lines unrouted] event-log accumulator (spawn/background status)', () => {
+  // Pins the v0.6.2 fix: spawn / background launch messages + cmdline
+  // outcomes used to call `setViewerContent` which dispatches
+  // `viewer_set_content` and CLOBBERS slice.lines wholesale — including
+  // whatever tab was active. They're now routed through
+  // `appendViewerLines` → `viewer_append_lines` unrouted, so:
+  //   1. They join the unrouted transcript in viewerStreamBuffer.
+  //   2. They mirror to slice.lines only when the user is on Info.
+  //   3. Switching tab away + back to Info restores them from the buffer.
+  // Multi-spawn doesn't lose history; off-Info tabs aren't clobbered.
+  it('two consecutive spawn-status appends accumulate in the buffer', () => {
+    let s = { ...viewer._init(), tab: 0, innerH: 5 };
+    s = applyUpdate(s, {
+      type: 'viewer_append_lines',
+      lines: ['[dim]$ logs[/]', '[yellow]Spawned in new tmux window.[/]'],
+    }).next;
+    s = applyUpdate(s, {
+      type: 'viewer_append_lines',
+      lines: ['[dim]$ psql[/]', '[yellow]Spawned in new tmux window.[/]'],
+    }).next;
+    eq(s.viewerStreamBuffer.lines.length, 4, 'both spawn messages retained');
+    eq(s.viewerStreamBuffer.lines[0], '[dim]$ logs[/]', 'first spawn preserved');
+    eq(s.viewerStreamBuffer.lines[2], '[dim]$ psql[/]', 'second spawn after the first');
+    eq(s.lines.length, 4, 'mirrored to slice.lines on Info');
+  });
+  it('spawn-status while on a non-Info tab leaves that tab untouched', () => {
+    // User is on action tab idx=1 looking at some other action's
+    // routed output. A spawn-status append must NOT clobber lines.
+    let s = { ...viewer._init(), tab: 1, innerH: 5, lines: ['other-tab-content'] };
+    s = applyUpdate(s, {
+      type: 'viewer_append_lines',
+      lines: ['[dim]$ logs[/]', '[yellow]Spawned.[/]'],
+    }).next;
+    eq(s.viewerStreamBuffer.lines.length, 2, 'buffer captured the spawn');
+    eq(s.lines.length, 1, 'foreign tab lines untouched');
+    eq(s.lines[0], 'other-tab-content', 'tab content survives');
+  });
+  it('tab_switch back to Info restores accumulated spawn history', () => {
+    let s = { ...viewer._init(), tab: 0, innerH: 5 };
+    // Two spawns while on Info — buffer + slice.lines both grow.
+    s = applyUpdate(s, {
+      type: 'viewer_append_lines', lines: ['[dim]$ logs[/]', 'sp1'],
+    }).next;
+    // User switches to action tab 1.
+    s = { ...s, tab: 1, lines: ['action-output'] };
+    // A new spawn fires while user is off-Info.
+    s = applyUpdate(s, {
+      type: 'viewer_append_lines', lines: ['[dim]$ psql[/]', 'sp2'],
+    }).next;
+    eq(s.lines[0], 'action-output', 'off-Info tab not touched by spawn');
+    eq(s.viewerStreamBuffer.lines.length, 4, 'buffer has both spawns');
+    // User switches back to Info — should see the full history.
+    const r = applyUpdate(s, { type: 'tab_switch', idx: 0 });
+    eq(r.next.lines.length, 4, 'slice.lines restored from buffer');
+    eq(r.next.lines[0], '[dim]$ logs[/]', 'first spawn first');
+    eq(r.next.lines[2], '[dim]$ psql[/]', 'second spawn second');
+  });
+});
+
 describe('[viewer_show_info] bails when buffer has content', () => {
   it('non-empty buffer → show_info is a no-op', () => {
     let s = { ...viewer._init(), tab: 0, innerH: 5 };

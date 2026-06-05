@@ -150,6 +150,27 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   grouping is preserved; the `STALE=1` / `exit "$STALE"` contract
   is unchanged.
 
+- **Spawn / background / cmdline status messages accumulate, don't
+  clobber.** Pre-fix the spawn arm of `doRun` (and the `:save-layout`,
+  `:open`, `:restore-layout`, `:add-column`, `:remove-column` cmdline
+  verbs) called `setViewerContent` which dispatches
+  `viewer_set_content` — a wholesale replace of `slice.lines` on
+  whatever tab was currently active. Two compounding symptoms:
+  (1) running a second spawn (e.g. `pg:psql` after `pg:logs`)
+  silently dropped the previous "Spawned in new tmux window."
+  status; (2) the replace clobbered non-Info tabs too — running
+  `:save-layout` while looking at `pg:build`'s routed output would
+  wipe that output and write `Layout saved to ...` in its place.
+  **Fix** — new `appendViewerLines` helper in `app/state.js`
+  dispatches `viewer_append_lines` unrouted, landing the message
+  in `slice.viewerStreamBuffer` (the same accumulator `type:run`
+  stream output writes to). Mirrors to `slice.lines` only when on
+  Info; off-Info tabs are untouched; `tab_switch` back to Info
+  restores the full accumulated transcript. Eight call sites
+  migrated. `setViewerContent` stays as the writer for genuinely
+  discrete content views (history replay, config-status diff,
+  help screen, Running-overlay job info).
+
 - **Plugin-synthesized tab:true actions are visible to the tab
   system.** The detail tab strip, the leader-shadow check, and
   group-info hover all read `group.actions` directly; plugin

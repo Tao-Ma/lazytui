@@ -7,7 +7,7 @@
  * (loadConfig + initState) plus the small set of read/write helpers the
  * rest of the codebase imports from `./state`: getSel / setSel /
  * getScroll / setScroll / toggleMultiSel / allPanels /
- * resetGroupContext / selectGroup / setViewerContent / recomputeGroups
+ * resetGroupContext / selectGroup / setViewerContent / appendViewerLines / recomputeGroups
  * (and friends).
  *
  * Helpers are thin routers: they resolve a panel type to its owning
@@ -261,9 +261,12 @@ function selectGroup(idx) {
 }
 
 function setViewerContent(tabId, text) {
-  // viewer_set_content is the single writer of the detail slice's
-  // body; every producer (history, config-status, help-text,
-  // commands, save-layout-message) ends up at this same Msg.
+  // viewer_set_content REPLACES the body — single-writer for producers
+  // that show a discrete document (history replay, config-status diff,
+  // help text, Running-overlay job info). For ephemeral event/status
+  // messages (spawn-status, cmdline outcomes), use appendViewerLines
+  // below — that path accumulates into viewerStreamBuffer and survives
+  // tab switches.
   //
   // `tabId` is the producer-side address. When null, the destination
   // resolves via route.resolveTarget('viewer') (focused viewer-kind
@@ -275,6 +278,33 @@ function setViewerContent(tabId, text) {
   }
   const api = require('../panel/api');
   api.dispatchMsg(api.wrap(tabId, { type: 'viewer_set_content', lines: text ? text.split('\n') : [] }));
+}
+
+/**
+ * Append an event/status message to the viewer's unrouted accumulator
+ * (`slice.viewerStreamBuffer`) — the same buffer streamed `type:run`
+ * output writes to. Use this for ephemeral "user did X" lines —
+ * spawn/background launch confirmations, cmdline verb outcomes —
+ * where the message should join the transcript instead of clobbering
+ * whatever tab is currently showing.
+ *
+ * The dispatch is unrouted (`viewer_append_lines` with no tabKey), so
+ * the reducer mirrors to `slice.lines` only when the user is on Info;
+ * on any other tab the lines stay in the buffer and reappear on
+ * tab_switch back to Info.
+ *
+ * v0.6.2 fix — pre-fix `setViewerContent` was used for these messages
+ * too, and clobbered whatever tab the user was on (not just Info).
+ */
+function appendViewerLines(text) {
+  if (!text) return;
+  const route = require('../leaves/route');
+  const tabId = route.resolveTarget('viewer');
+  if (tabId == null) return;
+  const lines = text.split('\n');
+  if (!lines.length) return;
+  const api = require('../panel/api');
+  api.dispatchMsg(api.wrap(tabId, { type: 'viewer_append_lines', lines }));
 }
 
 // --- Multi-select (bulk-operation operand) ---
@@ -306,7 +336,7 @@ function multiSelCount(panelType) {
 
 module.exports = {
   loadConfig, initState,
-  allPanels, selectGroup, resetGroupContext, setViewerContent,
+  allPanels, selectGroup, resetGroupContext, setViewerContent, appendViewerLines,
   getSel, setSel, getScroll, setScroll, syncPanelScroll,
   toggleMultiSel, isMultiSel, clearMultiSel, multiSelCount,
   expandGroup, collapseGroup, recomputeGroups, switchGroupsTab,
