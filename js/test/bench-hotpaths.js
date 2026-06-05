@@ -45,6 +45,13 @@ detailSlice.lines = [];
 // viewport (38 = panelH 40 minus 2-row border chrome). A1/B1 fix: this
 // lives on detail's own slice now, not cross-slice in layout.
 detailSlice.innerH = 38;
+// v0.6.2 — Transcript tab is the unrouted accumulator's display home;
+// park the bench on it so we exercise the active-tab mirror path (the
+// hot case streaming docker logs hits when the user is watching).
+detailSlice.tab = 1;
+// Helper — read the displayed buffer length (T2d: slice.lines is
+// derived, the buffer is the source of truth).
+const bufLen = () => (getInstanceSlice('detail').viewerStreamBuffer || { lines: [] }).lines.length;
 
 function bench(label, n, fn) {
   // One warmup pass so V8 has a chance to inline / optimize.
@@ -62,13 +69,13 @@ console.log('Each Msg goes through the full dispatch graph (dispatchMsg → Comp
 
 // --- viewer_append ---
 console.log('[1] viewer_append (streamed lines, bottom-stick scroll)');
-detailSlice.lines = [];
+detailSlice.viewerStreamBuffer = { lines: [], cap: 1_000_000 };  // bench-cap; production cap is 1000
 bench('append from empty', 10_000, (n) => {
   for (let i = 0; i < n; i++) {
     api.dispatchMsg(api.wrap('detail', { type: 'viewer_append', line: `line ${i}` }));
   }
 });
-console.log(`  final lines.length: ${getInstanceSlice('detail').lines.length}`);
+console.log(`  final buffer length: ${bufLen()}`);
 
 // Reset and benchmark the steady-state (large pre-existing buffer).
 console.log('\n[2] viewer_append (buffer already 10k lines — spread cost scales with length)');
@@ -77,11 +84,12 @@ bench('append to 10k buffer', 10_000, (n) => {
     api.dispatchMsg(api.wrap('detail', { type: 'viewer_append', line: `line ${i}` }));
   }
 });
-console.log(`  final lines.length: ${getInstanceSlice('detail').lines.length}`);
+console.log(`  final buffer length: ${bufLen()}`);
 
 console.log('\n[2b] viewer_append (buffer 50k lines — long-running stream)');
-// Build up to 50k without timing the warmup.
-while (getInstanceSlice('detail').lines.length < 50_000) {
+// Build up to 50k without timing the warmup. v0.6.2 T2d — read buffer
+// length directly (slice.lines is derived, not the source).
+while (bufLen() < 50_000) {
   api.dispatchMsg(api.wrap('detail', { type: 'viewer_append', line: 'x' }));
 }
 bench('append to 50k buffer', 5_000, (n) => {
@@ -89,7 +97,7 @@ bench('append to 50k buffer', 5_000, (n) => {
     api.dispatchMsg(api.wrap('detail', { type: 'viewer_append', line: `line ${i}` }));
   }
 });
-console.log(`  final lines.length: ${getInstanceSlice('detail').lines.length}`);
+console.log(`  final buffer length: ${bufLen()}`);
 
 // --- select_extend ---
 console.log('\n[3] select_extend (mouse drag, ~60Hz target = 60 ops/sec minimum)');
