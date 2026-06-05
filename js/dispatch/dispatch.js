@@ -70,26 +70,11 @@ function navSelect(panelType, index) {
   const compName = getComponentOwningPanel(panelType);
   if (!compName) return;
   dispatchMsg(wrap(compName, { type: 'set_cursor', panel: panelType, index }));
-  // v0.6.2 — when the viewer is parked on a non-Info tab (Transcript,
-  // action tab, terminal, content tab), an explicit nav cursor move
-  // in a list panel implies "show me what's here". Auto-jump back to
-  // Info so the selection-info actually appears. tab_switch idx=0
-  // dispatches viewer_show_info internally; on Info we fire show_info
-  // directly. Single dispatchMsg either way.
-  //
-  // Scoped to navSelect (NOT showSelectedInfo) because programmatic
-  // cascades — focus_set after a fresh content tab opens — also fire
-  // show_selected_info as part of a flow that just set slice.tab on
-  // purpose. Folding the auto-jump into showSelectedInfo would yank
-  // those flows back to Info too.
-  const target = route.resolveTarget('viewer');
-  if (target) {
-    const slice = route.getInstanceSlice(target);
-    const onInfo = !slice || (slice.tab | 0) === 0;
-    dispatchMsg(wrap(target, onInfo
-      ? { type: 'viewer_show_info' }
-      : { type: 'tab_switch', idx: 0 }));
-  }
+  // v0.6.2 T1 — viewer_show_info now folds the yank-to-Info semantic
+  // into the reducer itself (gated by its existing getInfo precondition
+  // — focus on a list panel yanks + populates; focus on detail/
+  // no-getInfo bails). No mid-cascade handler read needed.
+  showSelectedInfo();
   if (panelType === 'groups') {
     dispatchMsg(wrap('groups', { type: 'groups_selected', index }));
   }

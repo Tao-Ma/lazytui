@@ -182,15 +182,21 @@ function update(msg, slice) {
       return next;
     }
     case 'viewer_show_info': {
-      // Pull focused-Navigator info into the viewer — the Navigator→
-      // Viewer cascade rides the single-writer pathway. Info is now
-      // PURE selection-info: only guard is "not on Info" (the user is
-      // looking at some other tab). v0.6.2 — pre-fix had two extra
-      // guards (unroutedStreaming, viewerStreamBuffer non-empty) that
-      // existed because Info doubled as the unrouted transcript host;
-      // after the Transcript-tab refactor, Info doesn't host streams
-      // at all and the guards are vacuous.
-      if (slice.tab !== 0) return slice;
+      // Pull focused-Navigator info into the viewer + yank to Info as a
+      // single semantic. The getInfo precondition below is the gate:
+      // focus on a list panel with getInfo → yank to Info + populate;
+      // focus elsewhere (detail, no-getInfo panels like stats) → bail.
+      //
+      // The bail covers the `addContentTab → focus_set(detail)` cascade
+      // — `detail` has no getInfo, so we don't yank away from the
+      // freshly-opened content tab.
+      //
+      // v0.6.2 T1 — pre-T1 the reducer bailed on slice.tab !== 0 and
+      // navSelect read the slice from the handler to choose between
+      // viewer_show_info (on Info) and tab_switch idx=0 (off-Info).
+      // That mid-cascade handler read was a TEA-discipline smell;
+      // folding the yank into the reducer itself eliminates the
+      // observation between dispatches.
       const focus = getFocus();
       const def = getPanelDef(focus);
       if (!def || typeof def.getItems !== 'function' || typeof def.getInfo !== 'function') return slice;
@@ -199,7 +205,7 @@ function update(msg, slice) {
       if (!item) return slice;
       const lines = def.getInfo(item);
       if (!lines || lines.length === 0) return slice;
-      return { ...slice, lines: lines.join('\n').split('\n'), scroll: 0 };
+      return { ...slice, tab: 0, lines: lines.join('\n').split('\n'), scroll: 0 };
     }
     case 'viewer_scroll': {
       const innerH = _innerH(slice);
