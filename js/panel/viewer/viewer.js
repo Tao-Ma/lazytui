@@ -547,14 +547,13 @@ function _updateInner(msg, slice) {
       // Per the arc rule, no in-place exception: spread lines fresh each
       // call. Bench (js/test/bench-hotpaths.js) clears the 1k/sec target.
       //
-      // Routed (msg.tabKey set) → write to actionTabBuffers[group][tabKey];
-      // mirror to slice.lines only when the active tab in current group
-      // is that action's. Unrouted → append to viewerStreamBuffer (capped
-      // ring); mirror to slice.lines only when on Info tab.
-      // T2d — scroll bookkeeping is computed from the BUFFER length
-      // (the source of truth), not slice.lines (the finalizer-derived
-      // mirror). slice.lines no longer needs a manual mirror write —
-      // the finalizer recomputes from viewerLines() post-reducer.
+      // Routed (msg.tabKey set) → write to
+      // actionTabBuffers[group][tabKey]. Unrouted → append to
+      // viewerStreamBuffer (capped ring). slice.lines is finalizer-
+      // derived from the active tab's source via viewerLines() (T2d);
+      // this arm writes only to the buffer + scroll bookkeeping, never
+      // to slice.lines. Scroll bookkeeping reads from the BUFFER length
+      // (the source of truth), not slice.lines (the derived mirror).
       if (msg.tabKey && msg.groupName) {
         const all = slice.actionTabBuffers || {};
         const group = all[msg.groupName] || {};
@@ -791,6 +790,14 @@ function _updateInner(msg, slice) {
       if (slice.viewerOverride) return { ...slice, tab };
       const toKey = _activeTabKey({ ...slice, tab }, getModel());
       const entry = (slice.tabState && toKey) ? slice.tabState[toKey] : null;
+      // R12 (v0.7 candidate) — `bottomSticky` tail-tracking semantics
+      // differ from tab_switch's _resolveScroll. Today no production
+      // caller passes a non-zero `tab` to viewer_set_tab (the docker /
+      // history paths were retired in R6b/R6c), so the divergence is
+      // a future-risk only. If a future plugin restores
+      // setActiveTab(actionTabIdx) usage, mirror tab_switch's sticky
+      // resolution here (or factor _resolveScroll out as a shared
+      // helper).
       return {
         ...slice,
         tab,

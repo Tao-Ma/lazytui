@@ -13,7 +13,7 @@
  *
  * register.js keeps thin wrappers over these for the test-facing API +
  * the OSC52 effect (a leaf + a thin bridge module — same pattern as
- * leaves/search / viewer-search.js).
+ * leaves/search / panel/viewer/search.js).
  */
 'use strict';
 
