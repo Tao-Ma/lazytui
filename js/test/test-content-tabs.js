@@ -227,6 +227,52 @@ describe('[T27] cross-group mutators preserve current-group cursor + body', () =
   });
 });
 
+describe('[A7] tab removal with active viewerOverride dismisses the override', () => {
+  // Round 2 finding: removing the user's active content/terminal tab
+  // while viewerOverride was set left the override painting after
+  // the fallback to a sibling or Info. The user thought they closed
+  // the doc they were looking at (the override); actually they
+  // closed the underlying tab and the override survived → discrete-
+  // doc content paints on the wrong surface.
+  it('removeContentTab on active tab with override clears the override', () => {
+    const route = require('../leaves/route');
+    freshGroup();
+    tabs.addContentTab('g1', 'doc1', 'doc1', ['x', 'y']);
+    // Add a second content tab so removal falls back to a sibling.
+    tabs.addContentTab('g1', 'doc2', 'doc2', ['a', 'b']);
+    // Arm an override on the active content tab.
+    const slice = getInstanceSlice('detail');
+    route.setInstanceSlice('detail', {
+      ...slice,
+      viewerOverride: { lines: ['override line'] },
+    });
+    const tabBeforeRemove = getInstanceSlice('detail').tab;
+    // Find which key is active and remove it.
+    const activeKey = tabs.activeContentTab()[0];
+    tabs.removeContentTab('g1', activeKey);
+    const after = getInstanceSlice('detail');
+    assert(after.tab !== tabBeforeRemove || after.viewerOverride == null,
+      'either moved off the removed tab OR override cleared (both expected; either signal is enough)');
+    eq(after.viewerOverride, null, 'override cleared on active-tab removal');
+  });
+  it('removeContentTab on non-active tab preserves override', () => {
+    const route = require('../leaves/route');
+    freshGroup();
+    tabs.addContentTab('g1', 'doc1', 'doc1', ['x']);
+    tabs.addContentTab('g1', 'doc2', 'doc2', ['a']);
+    // Active is doc2 (just added). Override is on doc2.
+    const slice = getInstanceSlice('detail');
+    route.setInstanceSlice('detail', {
+      ...slice,
+      viewerOverride: { lines: ['override line'] },
+    });
+    // Remove doc1 (not the active tab).
+    tabs.removeContentTab('g1', 'doc1');
+    const after = getInstanceSlice('detail');
+    assert(after.viewerOverride, 'override preserved when non-active tab removed');
+  });
+});
+
 describe('[R14] N1 content-tab tabState restore (non-adjacent transition)', () => {
   // Pre-N1 the inline _resolveKey returned null for the content-tab
   // path when ACTIVECONTENTTAB() read the store-side stale slice.tab

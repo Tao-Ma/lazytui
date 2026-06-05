@@ -361,7 +361,12 @@ function removeEphemeral(slice, model, { groupName, key }) {
   }
 
   // N2 — slice.lines is finalizer-derived; mirror write retired.
-  return [{ ...sliceAfterDrop, ephemeralTerminals: ephAllNext, tab, scroll }, { sessionId: id, terminalExit }];
+  // A7 — clear viewerOverride when removing the active terminal tab
+  // (same rationale as removeContent: override was painting on the
+  // surface being closed).
+  const out = { ...sliceAfterDrop, ephemeralTerminals: ephAllNext, tab, scroll };
+  if (slice.tab === removedTabIdx && slice.viewerOverride) out.viewerOverride = null;
+  return [out, { sessionId: id, terminalExit }];
 }
 
 function addContent(slice, model, { groupName, key, label, lines }) {
@@ -458,7 +463,14 @@ function removeContent(slice, model, { groupName, key }) {
   }
 
   // N2 — slice.lines is finalizer-derived; mirror write retired.
-  return [{ ...sliceAfterDrop, contentTabs: ctAllNext, tab, scroll }, { needShowSelectedInfo }];
+  // A7 — when the removed tab WAS the user's active tab AND
+  // viewerOverride is set, clear the override too. The override was
+  // painting on that surface; closing the surface dismisses it.
+  // Falling back to a sibling or Info with the override still
+  // active would paint discrete-doc content on the wrong surface.
+  const out = { ...sliceAfterDrop, contentTabs: ctAllNext, tab, scroll };
+  if (slice.tab === removedTabIdx && slice.viewerOverride) out.viewerOverride = null;
+  return [out, { needShowSelectedInfo }];
 }
 
 /**
