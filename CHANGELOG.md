@@ -150,6 +150,17 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   grouping is preserved; the `STALE=1` / `exit "$STALE"` contract
   is unchanged.
 
+- **Docker auto-`status` drops `tab: true`.** The docker plugin's
+  auto-generated `status` action (`docker compose ps`) carried
+  `tab: true`, making it the only auto-action with a dedicated tab
+  (asymmetric with `up`/`down`/`build`/`restart`/`logs`). Pre-
+  Transcript that flag was the only way to make output "stick";
+  post-Transcript the one-shot snapshot fits the catch-all
+  accumulator. Output now flows into the Transcript tab like other
+  ad-hoc one-shots. `tab: true` stays available for YAML actions
+  whose output is substantial (long streams, multi-action
+  concurrency, diffable across runs).
+
 - **Transcript tab + unbundle Info's double-booking.** Pre-fix Info
   hosted two semantically different things on one display surface:
   selection info (cursor-driven; refreshes as you navigate

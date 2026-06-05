@@ -410,7 +410,13 @@ function groupActions(group) {
   const flag = (f === 'docker-compose.yml' || f === 'compose.yml') ? '' : ` -f ${f}`;
   const c = `docker compose${flag}`;
   return {
-    status: { script: `${c} ps`, type: 'run', label: 'Status', desc: 'Show container status', tab: true },
+    // v0.6.2 — dropped `tab: true`. `docker compose ps` is a one-shot
+    // snapshot, not a long-running stream; the dedicated tab made it
+    // the only auto-action with one (asymmetric with up/down/build/
+    // restart). Output now flows into Transcript like other one-shot
+    // ad-hoc output. `tab: true` stays available for YAML actions
+    // whose output is substantial (build/test) and deserves a home.
+    status: { script: `${c} ps`, type: 'run', label: 'Status', desc: 'Show container status' },
     up: { script: `${c} up -d --build`, type: 'run', label: 'Start', desc: 'Build and start all services' },
     down: { script: `${c} down`, type: 'run', label: 'Stop', desc: 'Stop and remove all containers',
             confirm: 'Stop all containers in this group?' },
