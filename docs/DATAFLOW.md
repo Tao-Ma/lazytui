@@ -50,7 +50,7 @@ greppable.
                                        (cycle cap @ 32 deep; T28)
      tick(ms, msg) → setTimeout      (async re-entry; not depth-counted)
      render        → scheduleRender (50ms debounce)
-     focus / show_selected_info / setActiveTab
+     show_selected_info
      do_run / run_action
      dockerFetch / dockerEventsStart / dockerExec / dockerShell
      loadDir / openFile
@@ -148,22 +148,29 @@ action output, docker poll, refresh ticks) so they coalesce bursts.
 and `viewer_append { line, tabKey?, groupName? }` (+ bulk
 `viewer_append_lines`) carry an optional routing key. With
 `{tabKey, groupName}` set, the viewer reducer writes to
-`slice.actionTabBuffers[groupName][tabKey].lines` and mirrors to
-`slice.lines` only when the active tab is that action's
-(`pt.activeActionTabIn`). `stream_start`'s routed path additionally
-auto-jumps `slice.tab` to the action's index and emits
-`terminal_exit` so `terminalMode` doesn't survive the jump.
+`slice.actionTabBuffers[groupName][tabKey].lines`; `slice.lines` is
+finalizer-derived from the active tab's source (T2d). `stream_start`'s
+routed path additionally auto-jumps `slice.tab` to the action's index,
+emits `terminal_exit` so `terminalMode` doesn't survive the jump,
+clears `slice.viewerOverride` (B3 — stream takeover dismisses any
+discrete-doc override), drops the matching `tabState` entry (R4 —
+buffer reset invalidates the captured search.matches / select
+references on the old buffer), and resets `slice.{search, select,
+cursor}` for the auto-jump landing (R4 — user is now viewing the
+fresh buffer).
 
 **Unrouted accumulator (v0.6.2).** Without `{tabKey, groupName}`,
 streams flow into `slice.viewerStreamBuffer` (a singleton ring
 buffer, cap 1000) and the viewer's display home is the dedicated
 **Transcript** tab at strip idx 1 (between Info and per-group
-action tabs). Mirrors to `slice.lines` only when on Transcript;
-off-Transcript appends silently grow the buffer. `tab_switch` to
-Transcript restores from buffer with bottom-pin scroll (empty →
-`[dim](no transcript yet)[/]` placeholder). Spawn-launch and
-cmdline-verb status messages join the same buffer via
-`appendViewerLines` (`app/state.js`).
+action tabs). `slice.lines` derives from the buffer when on Transcript;
+off-Transcript appends silently grow it. `stream_start`'s unrouted
+auto-jump to Transcript also clears `viewerOverride` (B3); already-on-
+Transcript appends preserve any pre-existing override (no transition).
+`tab_switch` to Transcript restores from buffer with bottom-pin
+scroll (empty → `[dim](no transcript yet)[/]` placeholder).
+Spawn-launch and cmdline-verb status messages join the same buffer
+via `appendViewerLines` (`app/state.js`).
 
 Per-action buffers and the Transcript buffer survive `tab_switch`;
 producer lifetime is decoupled from tab visibility. `streamCommand`
@@ -179,25 +186,57 @@ reject) to protect the live transcript. Stream-end footers
 are the active-tab live view; their off-tab persistence lives in
 `slice.tabState`, keyed by stable identity (`'info'`, `'transcript'`,
 `'<group>:action:<key>'`, `'<group>:terminal:<key>'`,
-`'<group>:content:<key>'` — resolved via `_activeTabKey`). Per-group
-kinds carry the group prefix (B4) so two groups sharing an action
-name don't collide; Info / Transcript stay unprefixed (Info is
+`'<group>:content:<key>'` — resolved via the canonical
+`pane-tabs.resolveTabKey` (N1 — single source of truth, called by
+both the finalizer's leaving capture and the inbound-restore arms;
+viewer.js's `_activeTabKey` is a thin delegate). Per-group kinds
+carry the group prefix (B4) so two groups sharing an action name
+don't collide; Info / Transcript stay unprefixed (Info is
 per-focus, Transcript is the singleton accumulator). String keys
-outlive numeric idx: adding/removing
-a content tab renumbers the strip but leaves stored entries correctly
-addressed. The sync point is the viewer's finalizer
-(`_withDerivedFields`) — post-reducer, when
-`next.tab !== originalSlice.tab`, the leaving tab's
-`{scroll, bottomSticky, search, select, cursor}` is captured into
-`tabState[fromKey]`. Single site catches every `slice.tab` transition:
-`tab_switch`, `stream_start`'s auto-jump (routed + unrouted), and the
-`viewer_set_tab` primitive (called from `setActiveTab()` in
-`panel/api.js`). Restore happens in `pane-tabs.tab_switch` reducer
-body (reads `tabState[toKey]` into `slice.{scroll, search, select,
-cursor}`); the `bottomSticky` bit distinguishes "literal restore"
-from "tail-track to the new bottom" for live-stream tabs.
-Per-Msg mirrors are *not* maintained — lazy persistence, single sync
-point, identity-preserving.
+outlive numeric idx: adding/removing a content tab renumbers the
+strip but leaves stored entries correctly addressed.
+
+*Capture (leaving).* The viewer's finalizer (`_withDerivedFields`)
+is the single sync point. Post-reducer, when `next.tab !==
+originalSlice.tab`, the leaving tab's `{scroll, bottomSticky, search,
+select, cursor}` is captured into `tabState[fromKey]`. Two
+carve-outs:
+  - Skip when `originalSlice.viewerOverride` was active (B2):
+    override-bound view state is per-doc, not per-tab — capturing
+    it would clobber the pre-override saved state.
+  - Skip when the leaving tab was REMOVED in this same Msg (R5):
+    `removeContent` / `removeEphemeral` drop the matching
+    `tabState` entry and suppress the would-be re-capture (the
+    finalizer checks `_tabKeyExistsIn(next, model, fromKey)` against
+    next's content/ephemeral stores).
+
+*Restore (entering).* Three reducer arms handle restore depending
+on the kind of transition:
+  - `pane-tabs.tab_switch` (user click / `tab_cycle`) — full
+    kind-specific cascade: restore `tabState[toKey]`, clear
+    `viewerOverride`, emit `terminal_exit`, handle `bottomSticky`
+    tail-tracking for live-stream tabs.
+  - `viewer.viewer_set_tab` (producer-initiated set-tab; history
+    replay, docker pre-stream) — restore `tabState[toKey]` minus
+    the cascade side effects. Skipped when `slice.viewerOverride`
+    is active (the override owns the view state; restoring
+    `tabState['info'].scroll` over the override's committed
+    `scroll: 0` would clobber the producer's setup).
+  - `viewer.viewer_show_info` (navSelect cascade) — restore
+    `tabState['info']` when transitioning to Info from another
+    tab; within-Info navSelect resets scroll to 0 (new item, fresh
+    content) without consulting `tabState`.
+
+*Override hygiene.* `slice.viewerOverride` clears on every transition
+that's "user-dismiss or producer-takeover": `tab_switch` (T2c),
+`stream_start` auto-jump routed + unrouted (B3), `viewer_reset_chrome`
+group switch (B3). It does NOT clear on `viewer_set_tab` (producer
+just set override + tab together), `viewer_set_content` itself
+(it's the override-writer), or in branches that don't transition
+(cross-group `stream_start`, already-on-Transcript unrouted append).
+
+Per-Msg mirrors are *not* maintained — lazy persistence, single
+sync point per concern, identity-preserving.
 
 **See also.**
 - `docs/PRINCIPLES.md` §12 — the Component discipline rules.

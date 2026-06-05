@@ -434,15 +434,39 @@ arrangement) — slice-private but loaded via cross-layer Msgs.
 > active mirror, and capture only on transition: a single sync point
 > in the **finalizer** compares `next.tab !== originalSlice.tab` and
 > writes the leaving tab's view-state into a keyed map
-> (`slice.tabState[key]`) exactly once per switch. Restore on entry
-> reads the map. The single capture site catches every path that
-> mutates the tab idx — `tab_switch` is obvious, but auto-jump paths
-> (`stream_start`) and primitive bypasses (`viewer_set_tab` from
-> `setActiveTab()`) flow through the same finalizer. T3f-fix landed
-> this after T3f shipped a tab_switch-only capture that missed three
-> bypass paths. Generalisation: **when N reducer arms mutate the same
-> field and a side-effect should fire on every transition, detect the
-> transition in the finalizer, not in each arm.**
+> (`slice.tabState[key]`) exactly once per switch. The capture site
+> catches every path that mutates the tab idx — `tab_switch`,
+> auto-jump (`stream_start` routed + unrouted), primitive bypasses
+> (`viewer_set_tab` from `setActiveTab()`), and the navSelect yank
+> (`viewer_show_info`). Generalisation: **when N reducer arms mutate
+> the same field and a side-effect should fire on every transition,
+> detect the transition in the finalizer, not in each arm.**
+>
+> *Carve-outs for the capture.* Two cases where the finalizer must
+> SKIP the FROM-capture:
+>   - **Override active on leave** (B2). When
+>     `originalSlice.viewerOverride` is set, `slice.{scroll, search,
+>     select, cursor}` belong to the discrete-doc, not to the
+>     underlying tab. Capturing them into `tabState[fromKey]` would
+>     clobber the user's real saved state on fromKey. The override is
+>     a transient lens over whatever tab is active; archiving its
+>     state as if it were per-tab is wrong by definition.
+>   - **FROM tab removed** (R5). When the leaving tab was destroyed
+>     in this same Msg (`removeContent` / `removeEphemeral`), the
+>     `tabState[fromKey]` entry was just dropped and there's nothing
+>     to come back to. Re-creating the entry from the about-to-vanish
+>     view state would silently undo the removal's hygiene. Detection:
+>     re-resolve fromKey against `next`'s content/ephemeral stores; if
+>     gone, skip.
+>
+> *Restore lives in multiple arms.* The capture is unified in the
+> finalizer; restore is split per kind of transition: `tab_switch`
+> runs the full user-initiated cascade (override clear + terminal
+> exit + bottomSticky tail-track), `viewer_set_tab` does the
+> minimal producer-initiated restore (skips when override is active —
+> the override owns view-state), `viewer_show_info` restores Info
+> on the navSelect yank. Each arm reads `tabState[toKey]` through
+> the same canonical resolver (`pane-tabs.resolveTabKey`).
 >
 > **Stable string keys outlive numeric indices.** Key per-element maps
 > (tabState entries, per-id buffers) by stable string identity
@@ -468,6 +492,17 @@ arrangement) — slice-private but loaded via cross-layer Msgs.
 > + close), and the registry mutator is the ONLY writer the
 > renderer reads from. Reach for this pattern only when the data
 > truly spans the slice graph; default to a slice.
+>
+> *Renderer-only-reader, enforced.* Reducer arms must NOT call
+> `feature/jobs.list()` / `feature/history.all()` inline — that
+> would break the renderer-only-reader half of the contract and
+> import producer-local state into pure-function-of-(slice, msg)
+> reducer bodies. Resolve the entry on the handler side and thread
+> it into the Msg payload. v0.6.2 R2 fixed exactly this in
+> `jobs_activate`: pre-R2 the reducer called
+> `require('../feature/jobs').list()` to look up the cursor; post-R2
+> the handler (`dispatch.handleJobsKey` at Return) resolves the
+> entry and passes it via `msg.job`, keeping the reducer pure.
 
 ## 13. Checklist for new features
 
