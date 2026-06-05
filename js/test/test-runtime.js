@@ -228,26 +228,37 @@ describe('[10] streamed output — stream_start / viewer_append (effect source)'
   const detail = require('../panel/viewer/viewer');
   // Phase 3 — _update returns the new slice; capture it instead of reading
   // the input after the call.
-  it('stream_start replaces detail with the header + resets scroll', () => {
+  it('stream_start replaces detail with the header + auto-jumps to Transcript', () => {
+    // v0.6.2 — unrouted stream_start auto-jumps to the Transcript tab
+    // (last in the strip; idx 1 with no per-group tabs). Returns
+    // [slice, cmds] when slice.tab !== transcriptIdx — the cmds carry
+    // a terminal_exit so terminalMode doesn't leak across the jump.
     const m = runtime.init();
     const init = detail._init();
-    const slice = { ...init, lines: ['old', 'stuff'], scroll: 5 };
+    const slice = { ...init, lines: ['old', 'stuff'], scroll: 5, tab: 0 };
     const r = detail._update({ type: 'stream_start', header: '$ run' }, slice);
-    eq(r.lines.length, 1);
-    eq(r.lines[0], '$ run');
-    eq(r.scroll, 0);
-    assert(!Array.isArray(r), 'no effects — bare slice return');
+    assert(Array.isArray(r), 'jump path returns [slice, cmds]');
+    const [next, cmds] = r;
+    eq(next.lines.length, 1);
+    eq(next.lines[0], '$ run');
+    eq(next.scroll, 0);
+    eq(next.tab, 1, 'auto-jumped to Transcript');
+    assert(cmds.some(c => c.type === 'msg' && c.msg && c.msg.type === 'terminal_exit'),
+      'terminal_exit Cmd emitted');
   });
   it('viewer_append pins to bottom when already at bottom', () => {
+    // v0.6.2 — unrouted viewer_append mirrors to slice.lines only on
+    // Transcript. Test slice sits on Transcript (tab=1 with no per-
+    // group tabs).
     const init = detail._init();
-    const slice = { ...init, lines: ['a', 'b', 'c'], scroll: 0, innerH: 3 };  // maxScroll = 0, at bottom
+    const slice = { ...init, lines: ['a', 'b', 'c'], scroll: 0, innerH: 3, tab: 1 };
     const r = detail._update({ type: 'viewer_append', line: 'd' }, slice);
     eq(r.lines.length, 4);
     eq(r.scroll, 1, 'followed to the new bottom');
   });
   it('viewer_append leaves scroll alone when the user scrolled up', () => {
     const init = detail._init();
-    const slice = { ...init, lines: ['a', 'b', 'c', 'd', 'e'], scroll: 0, innerH: 3 };  // maxScroll = 2, user at top
+    const slice = { ...init, lines: ['a', 'b', 'c', 'd', 'e'], scroll: 0, innerH: 3, tab: 1 };  // maxScroll = 2, user at top
     const r = detail._update({ type: 'viewer_append', line: 'f' }, slice);
     eq(r.lines.length, 6);
     eq(r.scroll, 0, 'not yanked down — user was reading');

@@ -150,41 +150,30 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   grouping is preserved; the `STALE=1` / `exit "$STALE"` contract
   is unchanged.
 
-- **Info navigation refresh works after stream / spawn output.**
-  `viewer_show_info` had a guard "bail when `viewerStreamBuffer`
-  has any content" intended to protect the live transcript from
-  being clobbered by a focus-driven info refresh. Side effect: ANY
-  accumulated content (a finished `type:run` stream's output, a
-  single spawn-status message) permanently disabled Info nav
-  refresh — moving the cursor in the actions / groups / files
-  panels stopped updating Info. The two remaining guards
-  (non-Info tab; `unroutedStreaming` flag set during a live
-  stream) cover the cases that actually need protection. Between
-  streams, nav now refreshes Info freely; the buffer survives
-  in `viewerStreamBuffer` and `tab_switch idx=0` restores it on
-  demand. The next `stream_start` re-syncs `slice.lines` to the
-  buffer, keeping the streaming mirror consistent.
-
-- **Spawn / background / cmdline status messages accumulate, don't
-  clobber.** Pre-fix the spawn arm of `doRun` (and the `:save-layout`,
-  `:open`, `:restore-layout`, `:add-column`, `:remove-column` cmdline
-  verbs) called `setViewerContent` which dispatches
-  `viewer_set_content` — a wholesale replace of `slice.lines` on
-  whatever tab was currently active. Two compounding symptoms:
-  (1) running a second spawn (e.g. `pg:psql` after `pg:logs`)
-  silently dropped the previous "Spawned in new tmux window."
-  status; (2) the replace clobbered non-Info tabs too — running
-  `:save-layout` while looking at `pg:build`'s routed output would
-  wipe that output and write `Layout saved to ...` in its place.
-  **Fix** — new `appendViewerLines` helper in `app/state.js`
-  dispatches `viewer_append_lines` unrouted, landing the message
-  in `slice.viewerStreamBuffer` (the same accumulator `type:run`
-  stream output writes to). Mirrors to `slice.lines` only when on
-  Info; off-Info tabs are untouched; `tab_switch` back to Info
-  restores the full accumulated transcript. Eight call sites
-  migrated. `setViewerContent` stays as the writer for genuinely
-  discrete content views (history replay, config-status diff,
-  help screen, Running-overlay job info).
+- **Transcript tab + unbundle Info's double-booking.** Pre-fix Info
+  hosted two semantically different things on one display surface:
+  selection info (cursor-driven; refreshes as you navigate
+  actions/groups/files) and the unrouted transcript (accumulates as
+  you run `type:run` streams + spawn-status + cmdline outcomes).
+  The shared surface bred a tower of guards in `viewer_show_info`
+  + a "restore from buffer" branch in `tab_switch idx=0` + a
+  divergent `slice.lines` mirror in `viewer_append`. Each new
+  producer (v0.6.2 spawn-status accumulator, etc.) added another
+  edge case. User-reported symptom: after running one command, j/k
+  in actions stopped updating Info — the transcript had won and
+  wouldn't yield. **Fix** — separate the surfaces. A new
+  **Transcript** tab (always last in the strip) now owns the
+  unrouted accumulator (`slice.viewerStreamBuffer`). Info is pure
+  selection-info; its reducer arm is 5 lines, no guards. Unrouted
+  `stream_start` / `viewer_append` / `viewer_append_lines` mirror
+  to `slice.lines` only when on Transcript; `tab_switch idx=0`
+  just clears + dispatches `viewer_show_info`; `tab_switch` to
+  Transcript restores from buffer with bottom-pin scroll (empty
+  buffer → `(no transcript yet)` placeholder). `appendViewerLines`
+  (the spawn/cmdline status helper) lands in the same buffer,
+  reachable via the Transcript tab. Replaces the over-greedy
+  buffer-guard removal from earlier in v0.6.2 with the
+  structurally-correct design — Info double-booking retired.
 
 - **Plugin-synthesized tab:true actions are visible to the tab
   system.** The detail tab strip, the leader-shadow check, and

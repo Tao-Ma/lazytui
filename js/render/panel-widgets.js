@@ -208,8 +208,10 @@ function hitTestCloseButton(mx, my) {
  *               pane's left edge.
  */
 function buildTabStrip(tabInfo, activeTab, hotkey, runningActionKeys) {
-  const { actionTabs, termTabs, contentTabs } = tabInfo;
-  if (!actionTabs.length && !termTabs.length && !contentTabs.length) return null;
+  const { actionTabs, termTabs, contentTabs, total } = tabInfo;
+  // total includes the implicit Info (idx 0) AND Transcript (idx
+  // total-1); we always render at least [Info] [Transcript]
+  // regardless of how empty the middle section is.
 
   const parts = [];
   const partMeta = [];
@@ -228,6 +230,11 @@ function buildTabStrip(tabInfo, activeTab, hotkey, runningActionKeys) {
   termTabs.forEach(([, term], i) => pushTab(term.label, activeTab === termOffset + i, null));
   const contentOffset = 1 + actionTabs.length + termTabs.length;
   contentTabs.forEach(([key, info], i) => pushTab(info.label, activeTab === contentOffset + i, key));
+  // Transcript — implicit, always last. v0.6.2 — replaces the
+  // pre-fix "Info doubles as transcript host" design that bred
+  // viewer_show_info guards. Empty-buffer state still renders the
+  // tab; tab_switch handler shows a placeholder.
+  pushTab(esc('Transcript'), activeTab === total - 1, null);
 
   const tabBounds = [];
   // Title starts at col 2 (after `╭─`); hotkey display occupies

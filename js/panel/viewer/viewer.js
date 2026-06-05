@@ -182,23 +182,15 @@ function update(msg, slice) {
       return next;
     }
     case 'viewer_show_info': {
-      // Pull focused-Navigator info into the viewer — the Navigator→Viewer
-      // cascade rides the single-writer pathway. Skip when a non-Info
-      // tab is active (the user is looking at something else) or a live
-      // unrouted stream is mid-flight (don't clobber the live mirror).
-      //
-      // v0.6.2 — the third pre-existing guard ("bail when
-      // viewerStreamBuffer has any content") was REMOVED. It made
-      // navigation in actions/groups/files stop updating Info as
-      // soon as ANY accumulated transcript existed — and with spawn
-      // / cmdline-verb statuses now also flowing into the buffer,
-      // a single spawn permanently disabled Info nav. Buffer
-      // contents survive in `viewerStreamBuffer`; `tab_switch idx=0`
-      // explicitly restores them when the user wants the transcript
-      // back. The next `stream_start` (unrouted) re-syncs slice.lines
-      // to the buffer so streaming mirror stays consistent.
+      // Pull focused-Navigator info into the viewer — the Navigator→
+      // Viewer cascade rides the single-writer pathway. Info is now
+      // PURE selection-info: only guard is "not on Info" (the user is
+      // looking at some other tab). v0.6.2 — pre-fix had two extra
+      // guards (unroutedStreaming, viewerStreamBuffer non-empty) that
+      // existed because Info doubled as the unrouted transcript host;
+      // after the Transcript-tab refactor, Info doesn't host streams
+      // at all and the guards are vacuous.
       if (slice.tab !== 0) return slice;
-      if (getModel().unroutedStreaming) return slice;
       const focus = getFocus();
       const def = getPanelDef(focus);
       if (!def || typeof def.getItems !== 'function' || typeof def.getInfo !== 'function') return slice;
@@ -253,11 +245,14 @@ function update(msg, slice) {
         return { ...slice, actionTabBuffers: nextAll };
       }
       // Unrouted: append to viewerStreamBuffer (cap-aware) + mirror
-      // to slice.lines IFF on Info tab.
+      // to slice.lines IFF on the Transcript tab. v0.6.2 — pre-fix
+      // mirrored on Info; the Transcript-tab refactor moved the
+      // accumulator's display home off Info to its own tab.
       const vsb = slice.viewerStreamBuffer || { lines: [], cap: 1000 };
       const [vsbLines, dropped] = _capLines([...vsb.lines, msg.line], vsb.cap);
       const nextBuf = { ...vsb, lines: vsbLines };
-      if (slice.tab === 0) {
+      const info = pt.flatTabInfo(slice, getModel(), getModel().currentGroup);
+      if (slice.tab === pt.transcriptTabIdx(info)) {
         const innerH = _innerH(slice);
         const maxScroll = Math.max(0, slice.lines.length - innerH);
         const wasAtBottom = slice.scroll >= maxScroll;
@@ -301,10 +296,12 @@ function update(msg, slice) {
         return { ...slice, actionTabBuffers: nextAll };
       }
       // Unrouted bulk: same shape as the singular path, with `incoming`.
+      // Mirrors to slice.lines IFF on Transcript tab. v0.6.2.
       const vsb = slice.viewerStreamBuffer || { lines: [], cap: 1000 };
       const [vsbLines, dropped] = _capLines([...vsb.lines, ...incoming], vsb.cap);
       const nextBuf = { ...vsb, lines: vsbLines };
-      if (slice.tab === 0) {
+      const info = pt.flatTabInfo(slice, getModel(), getModel().currentGroup);
+      if (slice.tab === pt.transcriptTabIdx(info)) {
         const innerH = _innerH(slice);
         const maxScroll = Math.max(0, slice.lines.length - innerH);
         const wasAtBottom = slice.scroll >= maxScroll;
@@ -345,19 +342,24 @@ function update(msg, slice) {
       }
       // Unrouted stream_start: append header to viewerStreamBuffer
       // (does NOT clear — the buffer is an accumulator across cmds).
-      // Auto-jump to Info so the user sees the running stream.
+      // Auto-jump to Transcript so the user sees the running stream.
+      // v0.6.2 — pre-fix jumped to Info because Info doubled as the
+      // transcript host; the refactor moved hosting to a dedicated
+      // tab and the auto-jump follows.
       const vsb = slice.viewerStreamBuffer || { lines: [], cap: 1000 };
       const [vsbLines] = _capLines([...vsb.lines, msg.header], vsb.cap);
       const nextBuf = { ...vsb, lines: vsbLines };
       const innerH = _innerH(slice);
       const scroll = Math.max(0, vsbLines.length - innerH);
-      if (slice.tab !== 0) {
+      const info = pt.flatTabInfo(slice, getModel(), getModel().currentGroup);
+      const tIdx = pt.transcriptTabIdx(info);
+      if (slice.tab !== tIdx) {
         return [
-          { ...slice, viewerStreamBuffer: nextBuf, tab: 0, lines: vsbLines.slice(), scroll },
+          { ...slice, viewerStreamBuffer: nextBuf, tab: tIdx, lines: vsbLines.slice(), scroll },
           [{ type: 'msg', msg: { type: 'terminal_exit' } }],
         ];
       }
-      // Already on Info: mirror the cap-aware lines to slice.lines.
+      // Already on Transcript: mirror the cap-aware lines to slice.lines.
       return { ...slice, viewerStreamBuffer: nextBuf, lines: vsbLines.slice(), scroll };
     }
     case 'viewer_set_tab': {

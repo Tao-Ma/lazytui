@@ -64,23 +64,39 @@ function groupContentTabs(slice, groupName) {
 
 /** Flat tab info for a pane's slice + a group:
  *    { actionTabs, termTabs, contentTabs, total }
+ *  Tab strip layout, left → right:
+ *    [Info] [actionTabs...] [termTabs...] [contentTabs...] [Transcript]
+ *       0     1..A             A+1..A+T     A+T+1..A+T+C    total-1
  *  actionTabs comes from `group.actions[*].tab` merged with plugin-
  *  synthesized actions (see panel/api.js getMergedActions — v0.6.2
  *  fix for plugin tab:true actions that were invisible to this leaf
  *  pre-merge). termTabs merges group.terminals (YAML) + slice.
  *  ephemeralTerminals[groupName] (runtime); contentTabs comes from
  *  slice.contentTabs[groupName]. `total` includes the implicit Info
- *  tab at index 0. */
+ *  tab at index 0 AND the implicit Transcript tab at index total-1
+ *  (v0.6.2 — Transcript took over hosting the unrouted accumulator
+ *  so Info could be pure selection-info). */
 function flatTabInfo(slice, model, groupName) {
   const group = model.config.groups[groupName];
-  if (!group) return { actionTabs: [], termTabs: [], contentTabs: [], total: 1 };
+  if (!group) return { actionTabs: [], termTabs: [], contentTabs: [], total: 2 };
   const actionTabs = Object.entries(_mergedFor(model, groupName)).filter(([, a]) => a.tab);
   const termTabs = Object.entries(groupTerminals(model, slice, groupName));
   const contentTabs = Object.entries(groupContentTabs(slice, groupName));
   return {
     actionTabs, termTabs, contentTabs,
-    total: 1 + actionTabs.length + termTabs.length + contentTabs.length,
+    total: 2 + actionTabs.length + termTabs.length + contentTabs.length,
   };
+}
+
+/** Flat-index of the Transcript tab — always the LAST tab in the strip. */
+function transcriptTabIdx(info) {
+  return info.total - 1;
+}
+
+/** True when the slice's active tab is the Transcript tab. */
+function isTranscriptTabIn(slice, model, groupName) {
+  const info = flatTabInfo(slice, model, groupName);
+  return (slice.tab | 0) === transcriptTabIdx(info);
 }
 
 /** True when the slice's active tab is a terminal tab in `groupName`. */
@@ -401,19 +417,24 @@ function reduceTabMsg(msg, slice, ctx) {
         { type: 'msg', msg: { type: 'terminal_exit' } },
       ];
       if (idx === 0) {
-        // Info tab is the viewer-stream destination — if the unrouted
-        // accumulator has content, restore from it (bottom-pin scroll).
-        // Otherwise wipe lines + ask viewer_show_info to repopulate
-        // (the Cmd no-ops if focus isn't on a navigator).
+        // Info — pure selection-info. Always clear + ask the focused
+        // Navigator to repopulate via show_selected_info. (v0.6.2 —
+        // the unrouted accumulator moved to the Transcript tab; Info
+        // no longer doubles as a transcript host.)
+        next = { ...next, lines: [], scroll: 0 };
+        effects.push({ type: 'msg', msg: wrap(paneId, { type: 'viewer_show_info' }) });
+      } else if (idx === total - 1) {
+        // Transcript — the unrouted accumulator's display home.
+        // Restore from viewerStreamBuffer with bottom-pin scroll so
+        // the live tail is visible and the viewer_append bottom-stick
+        // check (scroll >= maxScroll) keeps tracking new appends.
+        // Empty buffer → placeholder. v0.6.2.
         const vsb = slice.viewerStreamBuffer;
-        if (vsb && vsb.lines && vsb.lines.length > 0) {
-          const innerH = slice.innerH > 0 ? slice.innerH : 1;
-          const lines = vsb.lines.slice();
-          next = { ...next, lines, scroll: Math.max(0, lines.length - innerH) };
-        } else {
-          next = { ...next, lines: [], scroll: 0 };
-          effects.push({ type: 'msg', msg: wrap(paneId, { type: 'viewer_show_info' }) });
-        }
+        const lines = vsb && Array.isArray(vsb.lines) && vsb.lines.length > 0
+          ? vsb.lines.slice()
+          : ['[dim](no transcript yet)[/]'];
+        const innerH = slice.innerH > 0 ? slice.innerH : 1;
+        next = { ...next, lines, scroll: Math.max(0, lines.length - innerH) };
       } else if (idx <= actionTabs.length) {
         // View-only restore from actionTabBuffers, else placeholder.
         // Scroll pinned to bottom so the live tail is visible and the
@@ -568,7 +589,7 @@ function reduceTabMsg(msg, slice, ctx) {
 
 module.exports = {
   actionTabCount, groupTerminals, groupContentTabs,
-  flatTabInfo,
+  flatTabInfo, transcriptTabIdx, isTranscriptTabIn,
   isTerminalTabIn, isContentTabIn, isActionTabIn,
   activeContentTabIn, activeActionTabIn, activeTerminalIdIn, activeTerminalConfigIn,
   findEphemeralByIdIn,

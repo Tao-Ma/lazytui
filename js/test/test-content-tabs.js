@@ -32,7 +32,7 @@ describe('[1] addContentTab basics', () => {
     const info = tabs.getTabInfo();
     eq(info.actionTabs.length, 1, 'one action tab');
     eq(info.contentTabs.length, 1, 'one content tab');
-    eq(info.total, 1 + 1 + 0 + 1, 'info + action + term + content');
+    eq(info.total, 2 + 1 + 0 + 1, 'info + action + term + content + transcript');
     eq(getInstanceSlice('detail').tab, 2, 'content tab is at index 2');
     eq(getFocus(), 'detail', 'focus moved to detail');
     eq(getInstanceSlice('detail').lines.join('\n'), 'line one\nline two', 'lines loaded into detail');

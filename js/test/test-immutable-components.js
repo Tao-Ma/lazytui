@@ -352,7 +352,10 @@ describe('[immutable] detail (viewer)', () => {
   it('viewer_append spreads lines, follows bottom', () => {
     // A1/B1 fix: innerH lives on detail's own slice; seed it in the
     // test slice (was: panelHeights.detail = 5 → innerH 3 cross-slice).
-    const slice = makeSlice({ lines: ['a', 'b', 'c'], scroll: 0, innerH: 3 });
+    // v0.6.2 — unrouted viewer_append mirrors to slice.lines only on
+    // the Transcript tab; with the test model's current group having
+    // no per-group tabs, Transcript idx = total - 1 = 2 - 1 = 1.
+    const slice = makeSlice({ lines: ['a', 'b', 'c'], scroll: 0, innerH: 3, tab: 1 });
     const out = expectNoMutation(
       'viewer_append leaves input frozen',
       () => detail._update({ type: 'viewer_append', line: 'd' }, slice),
@@ -438,14 +441,20 @@ describe('[immutable] detail (viewer)', () => {
   });
 
   it('stream_start replaces lines, resets scroll', () => {
-    const slice = makeSlice({ lines: ['x'], scroll: 8 });
-    const out = expectNoMutation(
+    // v0.6.2 — unrouted stream_start now auto-jumps to the Transcript
+    // tab (last in the strip); with no per-group tabs in this test
+    // model's currentGroup, total=2 and transcript idx = 1. Returns
+    // [slice, cmds] when slice.tab !== transcriptIdx (the jump path).
+    const slice = makeSlice({ lines: ['x'], scroll: 8, tab: 0 });
+    const r = expectNoMutation(
       'stream_start leaves input frozen',
       () => detail._update({ type: 'stream_start', header: '$ cmd' }, slice),
       slice,
     );
+    const out = Array.isArray(r) ? r[0] : r;
     eq(out.lines, ['$ cmd']);
     eq(out.scroll, 0);
+    eq(out.tab, 1, 'auto-jumped to Transcript');
   });
 });
 

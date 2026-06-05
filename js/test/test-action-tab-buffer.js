@@ -21,7 +21,8 @@
 
 const { describe, it, assert, eq, report } = require('./test-runner');
 const viewer = require('../panel/viewer/viewer');
-const { setModel } = require('../app/runtime');
+const pt = require('../leaves/pane-tabs');
+const { setModel, getModel } = require('../app/runtime');
 
 setModel({
   currentGroup: 'g',
@@ -63,13 +64,21 @@ describe('[stream_start] routed seeds buffer + auto-jumps + emits terminal_exit'
       'terminal_exit Cmd emitted (so terminalMode doesn\'t leak across the auto-jump)');
   });
 
-  it('unrouted stream_start preserves legacy behavior (no buffer write, no jump)', () => {
+  it('unrouted stream_start seeds viewerStreamBuffer + auto-jumps to Transcript', () => {
+    // v0.6.2 — unrouted stream output's display home is the
+    // Transcript tab (was Info pre-refactor). stream_start auto-
+    // jumps slice.tab to Transcript and emits terminal_exit so
+    // terminalMode doesn't leak across the jump.
     const s0 = { ...viewer._init(), tab: 0 };
     const { next, cmds } = applyUpdate(s0, { type: 'stream_start', header: '[dim]$ raw[/]' });
-    eq(next.tab, 0, 'no auto-jump');
-    eq(next.lines.length, 1, 'lines set');
-    eq(next.actionTabBuffers, s0.actionTabBuffers, 'buffer untouched');
-    eq(cmds.length, 0, 'no Cmds');
+    const info = pt.flatTabInfo(next, getModel(), 'g');
+    const tIdx = pt.transcriptTabIdx(info);
+    eq(next.tab, tIdx, `auto-jump to Transcript (idx ${tIdx})`);
+    eq(next.lines.length, 1, 'mirror line set on Transcript');
+    eq(next.viewerStreamBuffer.lines.length, 1, 'buffer seeded');
+    eq(next.actionTabBuffers, s0.actionTabBuffers, 'routed buffer untouched');
+    assert(cmds.some(c => c.type === 'msg' && c.msg && c.msg.type === 'terminal_exit'),
+      'terminal_exit Cmd emitted on jump');
   });
 
   it('cross-group stream_start writes buffer but skips jump', () => {
@@ -126,11 +135,22 @@ describe('[viewer_append] routed → buffer + mirror-on-active', () => {
     eq(s.scroll, 2, 'scroll bottom-stuck (lines.length - innerH = 5 - 3 = 2)');
   });
 
-  it('unrouted viewer_append preserves legacy slice.lines write', () => {
-    const s0 = { ...viewer._init(), lines: ['x'], innerH: 4 };
-    const { next } = applyUpdate(s0, { type: 'viewer_append', line: 'y' });
-    eq(next.lines.length, 2, 'lines grew');
-    eq(next.actionTabBuffers, s0.actionTabBuffers, 'buffer untouched');
+  it('unrouted viewer_append: buffer always grows; slice.lines mirrors only on Transcript', () => {
+    // v0.6.2 — unrouted accumulator lives on the Transcript tab.
+    // On any other tab (Info, action, term, content), only the
+    // viewerStreamBuffer grows; slice.lines is left alone.
+    const s0 = { ...viewer._init(), tab: 0, lines: ['existing'], innerH: 4 };
+    const r1 = applyUpdate(s0, { type: 'viewer_append', line: 'y' }).next;
+    eq(r1.lines.length, 1, 'slice.lines NOT mirrored on Info');
+    eq(r1.viewerStreamBuffer.lines.length, 1, 'buffer captured the line');
+    eq(r1.actionTabBuffers, s0.actionTabBuffers, 'routed buffer untouched');
+    // Now on Transcript — both grow.
+    const info = pt.flatTabInfo(s0, getModel(), 'g');
+    const tIdx = pt.transcriptTabIdx(info);
+    const s1 = { ...viewer._init(), tab: tIdx, lines: ['x'], innerH: 4 };
+    const r2 = applyUpdate(s1, { type: 'viewer_append', line: 'y' }).next;
+    eq(r2.lines.length, 2, 'slice.lines mirrors when on Transcript');
+    eq(r2.viewerStreamBuffer.lines.length, 1, 'buffer also grew');
   });
 });
 
@@ -197,14 +217,18 @@ describe('[viewer_append_lines] bulk append — atomic reducer pass', () => {
     eq(s.scroll, Math.max(0, 6 - 3), 'scroll bottom-stuck after batch');
   });
 
-  it('unrouted → legacy slice.lines write', () => {
-    const s0 = { ...viewer._init(), lines: ['head'], innerH: 4 };
-    const next = applyUpdate(s0, {
-      type: 'viewer_append_lines',
-      lines: ['a', 'b'],
-    }).next;
-    eq(next.lines.length, 3);
-    eq(next.actionTabBuffers, s0.actionTabBuffers, 'buffer untouched');
+  it('unrouted bulk: buffer grows; slice.lines mirrors only on Transcript', () => {
+    const s0 = { ...viewer._init(), tab: 0, lines: ['head'], innerH: 4 };
+    const r1 = applyUpdate(s0, { type: 'viewer_append_lines', lines: ['a', 'b'] }).next;
+    eq(r1.lines.length, 1, 'slice.lines NOT mirrored on Info');
+    eq(r1.viewerStreamBuffer.lines.length, 2, 'buffer captured both lines');
+    // On Transcript — both grow.
+    const info = pt.flatTabInfo(s0, getModel(), 'g');
+    const tIdx = pt.transcriptTabIdx(info);
+    const s1 = { ...viewer._init(), tab: tIdx, lines: ['head'], innerH: 4 };
+    const r2 = applyUpdate(s1, { type: 'viewer_append_lines', lines: ['a', 'b'] }).next;
+    eq(r2.lines.length, 3, 'slice.lines mirrors on Transcript');
+    eq(r2.viewerStreamBuffer.lines.length, 2, 'buffer grew too');
   });
 });
 
