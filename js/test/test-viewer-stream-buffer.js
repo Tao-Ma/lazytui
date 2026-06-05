@@ -369,4 +369,66 @@ describe('[tab_switch] Info vs Transcript routing', () => {
   });
 });
 
+describe('[B2 viewer_set_tab inbound restore] producer-initiated set-tab restores tabState[toKey]', () => {
+  // Pre-B2: viewer_set_tab wrote only `{...slice, tab}` — slice.scroll/
+  // search/select/cursor retained the LEAVING tab's values. After
+  // setActiveTab(N), the user landed on tab N with stale per-tab view
+  // state. Post-B2: viewer_set_tab restores tabState[toKey] same as
+  // tab_switch (minus the cascade effects), unless viewerOverride is
+  // active (override owns the view state).
+  it('Transcript→Info via viewer_set_tab restores Info\'s stored scroll', () => {
+    let s = { ...viewer._init(), tab: 1, innerH: 3 };
+    // Land on Transcript at top, prime tabState['info'] = {scroll: 7}.
+    s = { ...s, tabState: { info: { scroll: 7 } } };
+    s = applyUpdate(s, { type: 'viewer_append_lines', lines: ['a','b','c','d','e','f','g','h','i','j'] }).next;
+    s = applyUpdate(s, { type: 'viewer_scroll', to: 'top' }).next;
+    eq(s.scroll, 0, 'Transcript at top');
+    // Producer set-tab to Info.
+    s = applyUpdate(s, { type: 'viewer_set_tab', tab: 0 }).next;
+    eq(s.tab, 0, 'on Info');
+    eq(s.scroll, 7, 'Info\'s stored scroll restored, not Transcript\'s 0');
+  });
+  it('viewer_set_tab with active override preserves slice.scroll (override owns view state)', () => {
+    let s = { ...viewer._init(), tab: 1, innerH: 3 };
+    // On Transcript at the bottom; tabState['info'] already has scroll: 42.
+    s = { ...s, tabState: { info: { scroll: 42 } } };
+    s = applyUpdate(s, { type: 'viewer_append_lines', lines: ['a','b','c','d','e'] }).next;
+    eq(s.scroll, Math.max(0, 5 - 3), 'Transcript bottom-pinned');
+    // Producer writes override (viewer_set_content commits scroll: 0)
+    // then issues viewer_set_tab. The combined effect: stay on the
+    // override's scroll: 0, NOT restore tabState['info'].scroll=42.
+    s = applyUpdate(s, { type: 'viewer_set_content', lines: ['override line 1', 'override line 2'] }).next;
+    eq(s.scroll, 0, 'override-writer set scroll: 0');
+    s = applyUpdate(s, { type: 'viewer_set_tab', tab: 0 }).next;
+    eq(s.tab, 0, 'on Info');
+    eq(s.scroll, 0, 'override-bound scroll preserved (NOT clobbered by tabState[\'info\'].scroll=42)');
+    assert(s.viewerOverride && s.viewerOverride.lines.length === 2, 'override still active');
+  });
+  it('finalizer skips FROM-capture when leaving slice had viewerOverride active', () => {
+    // Without this guard, a producer doing viewer_set_content (scroll:0)
+    // then viewer_set_tab(0) would write tabState['action:foo']={scroll:0}
+    // over the user's real saved Build scroll. Test: be on action:foo at
+    // scroll 100, override fires, set-tab to Info — tabState['action:foo']
+    // must keep its saved scroll, not the override's 0.
+    setModel({
+      currentGroup: 'g',
+      modes: {},
+      config: { groups: { g: { label: 'G', actions: { build: { label: 'Build', tab: 'Build', script: 'make' } } } } },
+    });
+    let s = { ...viewer._init(), tab: 2, innerH: 3, scroll: 100, lines: ['x','y','z'] };
+    s = { ...s, tabState: { 'action:build': { scroll: 100 } } };
+    // Producer writes override (scroll → 0, viewerOverride set).
+    s = applyUpdate(s, { type: 'viewer_set_content', lines: ['note1', 'note2'] }).next;
+    eq(s.scroll, 0, 'override committed scroll: 0');
+    assert(s.viewerOverride, 'override active');
+    // Producer's viewer_set_tab(0). Finalizer detects tab transition (2→0)
+    // but originalSlice.viewerOverride was active — skip FROM-capture.
+    const beforeAction = s.tabState['action:build'];
+    s = applyUpdate(s, { type: 'viewer_set_tab', tab: 0 }).next;
+    eq(s.tab, 0, 'on Info');
+    eq(s.tabState['action:build'].scroll, 100, 'tabState[action:build] PRESERVED (not clobbered by override-bound 0)');
+    eq(beforeAction.scroll, 100, 'sanity: was 100 before');
+  });
+});
+
 report();

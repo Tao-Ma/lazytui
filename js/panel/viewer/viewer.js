@@ -271,7 +271,14 @@ function _withDerivedFields(next, originalSlice) {
   const m = getModel();
   const lines = pt.viewerLines(next, m, m.currentGroup, { infoFromFocus: _infoFromFocus });
   let updated = { ...next, lines };
-  if (originalSlice && next.tab !== originalSlice.tab) {
+  // B2 — skip the FROM-tab capture when the leaving slice had
+  // viewerOverride active. Override-bound scroll/search/select/cursor
+  // belong to the discrete-doc, not to the underlying tab; capturing
+  // them into tabState[fromKey] would clobber the pre-override saved
+  // state (the user's real position on that tab).
+  if (originalSlice
+      && next.tab !== originalSlice.tab
+      && !originalSlice.viewerOverride) {
     const fromKey = _activeTabKey(originalSlice, m);
     if (fromKey) {
       const innerH = originalSlice.innerH > 0 ? originalSlice.innerH : 1;
@@ -545,7 +552,30 @@ function _updateInner(msg, slice) {
     case 'viewer_set_tab': {
       const tab = msg.tab | 0;
       if (tab === slice.tab) return slice;
-      return { ...slice, tab };
+      // B2 — Producer-initiated set-tab (history replay, docker pre-
+      // stream) also needs target-tab view-state restore. Without it,
+      // slice.{scroll, search, select, cursor} retain the LEAVING tab's
+      // values — visible as search highlights / selection rectangle
+      // painted onto the wrong content after setActiveTab.
+      //
+      // Skip restore when viewerOverride is active: the override is a
+      // discrete-doc with its own scroll/search/select/cursor (committed
+      // by the override-writer, viewer_set_content). Restoring tabState
+      // [toKey] would clobber what the producer just set.
+      //
+      // Unlike tab_switch, this does NOT clear viewerOverride or fire
+      // terminal_exit — those are the user-initiated cascade's concerns.
+      if (slice.viewerOverride) return { ...slice, tab };
+      const toKey = _activeTabKey({ ...slice, tab }, getModel());
+      const entry = (slice.tabState && toKey) ? slice.tabState[toKey] : null;
+      return {
+        ...slice,
+        tab,
+        scroll: (entry && entry.scroll !== undefined) ? entry.scroll : 0,
+        search: (entry && entry.search) || { active: false, term: '', matches: [], idx: 0, typing: '' },
+        select: (entry && entry.select) || { active: false, kind: 'char', anchor: { line: 0, col: 0 }, cursor: { line: 0, col: 0 } },
+        cursor: (entry && entry.cursor) || { line: 0, col: 0 },
+      };
     }
     case 'viewer_reset_chrome': {
       // Dispatched (via dispatch_msg Cmd) from the groups Component when a
