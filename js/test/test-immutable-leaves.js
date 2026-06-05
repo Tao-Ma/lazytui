@@ -121,7 +121,10 @@ describe('[immutable] leaves/pane-tabs.js', () => {
     );
     eq(info.focusDetail, true);
     eq(next.contentTabs.g.k1.label, 'L');
-    eq(next.lines, ['x']);
+    // v0.6.2 N2 — slice.lines is finalizer-derived; the content lives
+    // in contentTabs[group][key].lines. Pre-N2 the reducer also mirrored
+    // it to slice.lines; that mirror retired.
+    eq(next.contentTabs.g.k1.lines, ['x']);
     assert(slice.contentTabs.g === undefined, 'original contentTabs untouched');
   });
 

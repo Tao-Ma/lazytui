@@ -334,14 +334,18 @@ describe('[T3b per-tab scroll] tab remembers its scroll across switches', () => 
 });
 
 describe('[tab_switch] Info vs Transcript routing', () => {
-  it('switch to Info clears lines and emits viewer_show_info', () => {
+  it('switch to Info parks on tab 0 + emits viewer_show_info', () => {
     let s = { ...viewer._init(), tab: 1, innerH: 5, lines: ['transcript-content'] };
     const { next, cmds } = applyUpdate(s, { type: 'tab_switch', idx: 0 });
     eq(next.tab, 0, 'tab=0 (Info)');
-    eq(next.lines.length, 0, 'lines cleared');
     eq(next.scroll, 0, 'scroll reset');
-    // Cmd is `{ type:'msg', msg: { to:'detail', msg: { type:'viewer_show_info' } } }`
-    // — wrap() envelopes the inner Msg with the pane id.
+    // v0.6.2 N2 — slice.lines is finalizer-derived. For Info, the
+    // finalizer's _infoFromFocus reads the focused Navigator's
+    // getInfo; this unit test doesn't set up a focused def, so the
+    // viewerLines fallback returns slice.lines (the seeded value).
+    // The actual clear arrives via the viewer_show_info Cmd
+    // dispatched below (production: cascades and resolves
+    // _infoFromFocus → real Info content).
     assert(
       cmds.some(c => c.type === 'msg' && c.msg && c.msg.msg && c.msg.msg.type === 'viewer_show_info'),
       'viewer_show_info Cmd dispatched (focused-panel refresh)'

@@ -636,12 +636,13 @@ function _updateInner(msg, slice) {
             // auto-jump landing: the user is now viewing the fresh
             // buffer, so view-state should be empty defaults (not the
             // leaving tab's residual fields).
+            // N2 — slice.lines mirror dropped; the finalizer derives it
+            // from actionTabBuffers[group][tabKey] (just seeded above).
             return [
               {
                 ...slice,
                 actionTabBuffers: nextAll,
                 tabState: nextTabState,
-                lines: [msg.header],
                 scroll: 0,
                 tab: 2 + idx,
                 viewerOverride: null,
@@ -675,15 +676,18 @@ function _updateInner(msg, slice) {
       if (slice.tab !== tIdx) {
         // B3 — clear viewerOverride on the auto-jump (same rationale
         // as the routed branch above).
+        // N2 — slice.lines mirror dropped; finalizer derives from
+        // viewerStreamBuffer (nextBuf, just updated above).
         return [
-          { ...slice, viewerStreamBuffer: nextBuf, tab: tIdx, lines: vsbLines.slice(), scroll, viewerOverride: null },
+          { ...slice, viewerStreamBuffer: nextBuf, tab: tIdx, scroll, viewerOverride: null },
           [{ type: 'msg', msg: { type: 'terminal_exit' } }],
         ];
       }
-      // Already on Transcript: mirror the cap-aware lines to slice.lines.
-      // No transition, so any pre-existing override stays (user can
-      // dismiss it explicitly via tab_switch).
-      return { ...slice, viewerStreamBuffer: nextBuf, lines: vsbLines.slice(), scroll };
+      // Already on Transcript: no transition, so any pre-existing
+      // override stays (user can dismiss explicitly via tab_switch).
+      // N2 — slice.lines mirror dropped (finalizer-derived from
+      // nextBuf).
+      return { ...slice, viewerStreamBuffer: nextBuf, scroll };
     }
     case 'viewer_set_tab': {
       const tab = msg.tab | 0;

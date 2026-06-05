@@ -346,7 +346,6 @@ function removeEphemeral(slice, model, { groupName, key }) {
   const newCount = Object.keys({ ...yaml, ...ephGroupRest }).length;
 
   let tab = slice.tab;
-  let lines = slice.lines;
   let scroll = slice.scroll;
   let terminalExit = false;
   if (slice.tab === removedTabIdx) {
@@ -354,7 +353,6 @@ function removeEphemeral(slice, model, { groupName, key }) {
       tab = 2 + aCount + Math.min(removedTermIdx, newCount - 1);
     } else {
       tab = 0;
-      lines = [];
       scroll = 0;
     }
     terminalExit = true;
@@ -362,7 +360,8 @@ function removeEphemeral(slice, model, { groupName, key }) {
     tab = slice.tab - 1;
   }
 
-  return [{ ...sliceAfterDrop, ephemeralTerminals: ephAllNext, tab, lines, scroll }, { sessionId: id, terminalExit }];
+  // N2 — slice.lines is finalizer-derived; mirror write retired.
+  return [{ ...sliceAfterDrop, ephemeralTerminals: ephAllNext, tab, scroll }, { sessionId: id, terminalExit }];
 }
 
 function addContent(slice, model, { groupName, key, label, lines }) {
@@ -381,10 +380,11 @@ function addContent(slice, model, { groupName, key, label, lines }) {
 
   const aCount = actionTabCount(model, groupName);
   const tCount = Object.keys(groupTerminals(model, next, groupName)).length;
+  // N2 — slice.lines is finalizer-derived; the lines field is stored
+  // inside contentTabs (above), the slice mirror is dead.
   next = {
     ...next,
     tab: 2 + aCount + tCount + contentIdx,
-    lines: lines || [],
     scroll: 0,
   };
   if (next.search && next.search.active) {
@@ -407,7 +407,8 @@ function updateContentLines(slice, model, { groupName, key, lines }) {
   const tCount = Object.keys(groupTerminals(model, next, groupName)).length;
   const idx = next.tab - 2 - aCount - tCount;
   if (idx < 0 || idx >= order.length || order[idx] !== key) return [next, null];
-  return [{ ...next, lines: lines || [], scroll: 0 }, null];
+  // N2 — slice.lines is finalizer-derived; lines live in contentTabs.
+  return [{ ...next, scroll: 0 }, null];
 }
 
 /** Returns [newSlice, { needShowSelectedInfo }] — needShowSelectedInfo
@@ -438,7 +439,6 @@ function removeContent(slice, model, { groupName, key }) {
   const removedTabIdx = 2 + aCount + tCount + removedContentIdx;
 
   let tab = slice.tab;
-  let lines = slice.lines;
   let scroll = slice.scroll;
   let needShowSelectedInfo = false;
 
@@ -447,15 +447,9 @@ function removeContent(slice, model, { groupName, key }) {
     if (remainingKeys.length > 0) {
       const newContentIdx = Math.min(removedContentIdx, remainingKeys.length - 1);
       tab = 2 + aCount + tCount + newContentIdx;
-      const siblingKey = remainingKeys[newContentIdx];
-      const sibling = ctGroupRest[siblingKey];
-      if (sibling) {
-        lines = sibling.lines || [];
-        scroll = 0;
-      }
+      scroll = 0;
     } else {
       tab = 0;
-      lines = [];
       scroll = 0;
       needShowSelectedInfo = true;
     }
@@ -463,7 +457,8 @@ function removeContent(slice, model, { groupName, key }) {
     tab = slice.tab - 1;
   }
 
-  return [{ ...sliceAfterDrop, contentTabs: ctAllNext, tab, lines, scroll }, { needShowSelectedInfo }];
+  // N2 — slice.lines is finalizer-derived; mirror write retired.
+  return [{ ...sliceAfterDrop, contentTabs: ctAllNext, tab, scroll }, { needShowSelectedInfo }];
 }
 
 /**
@@ -599,43 +594,45 @@ function reduceTabMsg(msg, slice, ctx) {
         return defaultScroll;
       };
 
+      // N2 — slice.lines writes retired throughout this body. lines is
+      // computed locally only to derive `bottom` for the sticky-aware
+      // _resolveScroll — slice.lines itself is finalizer-derived from
+      // the kind-specific source (viewerLines's precedence chain).
       if (idx === 0) {
-        // Info — pure selection-info. Always clear + ask the focused
-        // Navigator to repopulate via show_selected_info.
-        next = { ...next, lines: [], scroll: _resolveScroll(0, 0) };
+        // Info — pure selection-info. Ask the focused Navigator to
+        // repopulate via show_selected_info.
+        next = { ...next, scroll: _resolveScroll(0, 0) };
         effects.push({ type: 'msg', msg: wrap(paneId, { type: 'viewer_show_info' }) });
       } else if (idx === 1) {
-        // Transcript — the unrouted accumulator's display home.
-        // Restore from viewerStreamBuffer. Bottom-pin on first visit
-        // or when sticky; literal restore otherwise.
+        // Transcript — bottom-pin on first visit or when sticky;
+        // literal restore otherwise. lines derived from
+        // viewerStreamBuffer; the local copy here is just for scroll
+        // bookkeeping.
         const vsb = slice.viewerStreamBuffer;
-        const lines = vsb && Array.isArray(vsb.lines) && vsb.lines.length > 0
-          ? vsb.lines.slice()
-          : ['[dim](no transcript yet)[/]'];
+        const linesLen = vsb && Array.isArray(vsb.lines) && vsb.lines.length > 0
+          ? vsb.lines.length : 1;  // placeholder counts as 1
         const innerH = slice.innerH > 0 ? slice.innerH : 1;
-        const bottom = Math.max(0, lines.length - innerH);
-        next = { ...next, lines, scroll: _resolveScroll(bottom, bottom) };
+        const bottom = Math.max(0, linesLen - innerH);
+        next = { ...next, scroll: _resolveScroll(bottom, bottom) };
       } else if (idx <= 1 + actionTabs.length) {
         // View-only restore from actionTabBuffers, else placeholder.
-        // Sticky → snap to new bottom (live tail); stored → literal
-        // restore; first visit → bottom-pin.
+        // Sticky → snap to new bottom; stored → literal; first visit
+        // → bottom-pin.
         const [actionKey] = actionTabs[idx - 2];
         const buf = slice.actionTabBuffers
           && slice.actionTabBuffers[groupName]
           && slice.actionTabBuffers[groupName][actionKey];
-        const lines = buf && Array.isArray(buf.lines) && buf.lines.length > 0
-          ? buf.lines.slice()
-          : ['[dim]Press Enter to run.[/]'];
+        const linesLen = buf && Array.isArray(buf.lines) && buf.lines.length > 0
+          ? buf.lines.length : 1;  // placeholder counts as 1
         const innerH = slice.innerH > 0 ? slice.innerH : 1;
-        const bottom = Math.max(0, lines.length - innerH);
-        next = { ...next, lines, scroll: _resolveScroll(bottom, bottom) };
+        const bottom = Math.max(0, linesLen - innerH);
+        next = { ...next, scroll: _resolveScroll(bottom, bottom) };
       } else if (idx <= 1 + actionTabs.length + termTabs.length) {
-        next = { ...next, lines: [], scroll: _resolveScroll(0, 0) };
+        next = { ...next, scroll: _resolveScroll(0, 0) };
       } else {
         const ct = activeContentTab();
         if (ct) {
-          const [, info] = ct;
-          next = { ...next, lines: (info.lines || []).slice(), scroll: _resolveScroll(0, 0) };
+          next = { ...next, scroll: _resolveScroll(0, 0) };
         }
       }
       return [next, effects];
