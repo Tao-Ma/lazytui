@@ -367,6 +367,33 @@ function update(msg, slice) {
   return _finalize(_updateInner(msg, slice), slice);
 }
 
+// MSG ROUTING — the viewer's update is split across two homes:
+//
+//   pane-tabs.reduceTabMsg (leaf, paneId-parameterized):
+//     tab_switch, tab_cycle,
+//     viewer_add_ephemeral_terminal, viewer_remove_ephemeral_terminal,
+//     viewer_add_content_tab, viewer_update_content_tab_lines,
+//     viewer_remove_content_tab, viewer_reorder_content_tab,
+//     tab_list_open / _close / _nav / _pick / _close_selected.
+//   These are the GENERIC pane-tab lifecycle + tab-list overlay Msgs.
+//   They're paneId-parameterized so a future multi-pane future routes
+//   identical reducer code through different slice instances.
+//
+//   viewer.js's switch (this file, below):
+//     viewer_set_content, viewer_show_info (content writers),
+//     viewer_set_tab, viewer_reset_chrome (primitive tab + group reset),
+//     viewer_scroll, viewer_append, viewer_append_lines, stream_start
+//     (scroll + streaming content),
+//     viewer_search_* (search), select_* (selection),
+//     key (key handler).
+//   These are VIEWER-SPECIFIC behaviors: scroll math, search, selection,
+//   content derivation — tied to the viewer's slice shape, not generic
+//   to any pane-with-tabs.
+//
+// When adding a tab-related Msg: if it's about tab lifecycle / tab-list
+// chrome, put it in the leaf. If it's about viewing content (scroll
+// math, search match navigation, content-tab body update with
+// viewer-specific semantics), put it here.
 function _updateInner(msg, slice) {
   // Generic tab Msgs (tab_switch / tab_cycle / tab_list_* / viewer_add_* /
   // viewer_remove_* / viewer_update_content_tab_lines /
