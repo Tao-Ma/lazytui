@@ -494,32 +494,59 @@ function reduceTabMsg(msg, slice, ctx) {
       const effects = [
         { type: 'msg', msg: { type: 'terminal_exit' } },
       ];
+      // T3b — resolve target tab key for per-tab scroll restore. Same
+      // mapping as viewer.js _activeTabKey; kept inline to keep the
+      // leaf import-free.
+      let targetKey = null;
+      const groupName = getModel().currentGroup;
+      if (idx === 0) targetKey = 'info';
+      else if (idx === 1) targetKey = 'transcript';
+      else if (idx <= 1 + actionTabs.length) {
+        targetKey = `action:${actionTabs[idx - 2][0]}`;
+      } else if (idx <= 1 + actionTabs.length + termTabs.length) {
+        const termIdx = idx - 2 - actionTabs.length;
+        targetKey = `terminal:${termTabs[termIdx][0]}`;
+      } else {
+        const ct = activeContentTab();
+        if (ct) targetKey = `content:${ct[0]}`;
+      }
+      const tabEntry = slice.tabState && targetKey && slice.tabState[targetKey];
+      const storedScroll = tabEntry ? tabEntry.scroll : undefined;
+      const storedSticky = tabEntry ? !!tabEntry.bottomSticky : false;
+      // T3b — resolve scroll for the target tab:
+      //   1. If the user left bottom-stuck, snap to the new bottom
+      //      (tail-tracking semantics — live streams that grew while
+      //      off-tab should show the new tail).
+      //   2. Else if a stored scroll exists, restore literally.
+      //   3. Else (first visit) fall back to the kind-specific default
+      //      (bottom-pin for buffers, 0 for everything else).
+      const _resolveScroll = (defaultScroll, currentBottom) => {
+        if (storedSticky) return currentBottom;
+        if (storedScroll !== undefined) return storedScroll;
+        return defaultScroll;
+      };
+
       if (idx === 0) {
         // Info — pure selection-info. Always clear + ask the focused
-        // Navigator to repopulate via show_selected_info. (v0.6.2 —
-        // the unrouted accumulator moved to the Transcript tab; Info
-        // no longer doubles as a transcript host.)
-        next = { ...next, lines: [], scroll: 0 };
+        // Navigator to repopulate via show_selected_info.
+        next = { ...next, lines: [], scroll: _resolveScroll(0, 0) };
         effects.push({ type: 'msg', msg: wrap(paneId, { type: 'viewer_show_info' }) });
       } else if (idx === 1) {
-        // Transcript — the unrouted accumulator's display home,
-        // placed right after Info so it stays adjacent regardless of
-        // how long the per-group strip grows. Restore from
-        // viewerStreamBuffer with bottom-pin scroll. Empty buffer →
-        // placeholder.
+        // Transcript — the unrouted accumulator's display home.
+        // Restore from viewerStreamBuffer. Bottom-pin on first visit
+        // or when sticky; literal restore otherwise.
         const vsb = slice.viewerStreamBuffer;
         const lines = vsb && Array.isArray(vsb.lines) && vsb.lines.length > 0
           ? vsb.lines.slice()
           : ['[dim](no transcript yet)[/]'];
         const innerH = slice.innerH > 0 ? slice.innerH : 1;
-        next = { ...next, lines, scroll: Math.max(0, lines.length - innerH) };
+        const bottom = Math.max(0, lines.length - innerH);
+        next = { ...next, lines, scroll: _resolveScroll(bottom, bottom) };
       } else if (idx <= 1 + actionTabs.length) {
         // View-only restore from actionTabBuffers, else placeholder.
-        // Scroll pinned to bottom so the live tail is visible and the
-        // viewer_append bottom-stick check (scroll>=maxScroll) keeps
-        // tracking new appends after restore.
+        // Sticky → snap to new bottom (live tail); stored → literal
+        // restore; first visit → bottom-pin.
         const [actionKey] = actionTabs[idx - 2];
-        const groupName = getModel().currentGroup;
         const buf = slice.actionTabBuffers
           && slice.actionTabBuffers[groupName]
           && slice.actionTabBuffers[groupName][actionKey];
@@ -527,14 +554,15 @@ function reduceTabMsg(msg, slice, ctx) {
           ? buf.lines.slice()
           : ['[dim]Press Enter to run.[/]'];
         const innerH = slice.innerH > 0 ? slice.innerH : 1;
-        next = { ...next, lines, scroll: Math.max(0, lines.length - innerH) };
+        const bottom = Math.max(0, lines.length - innerH);
+        next = { ...next, lines, scroll: _resolveScroll(bottom, bottom) };
       } else if (idx <= 1 + actionTabs.length + termTabs.length) {
-        next = { ...next, lines: [], scroll: 0 };
+        next = { ...next, lines: [], scroll: _resolveScroll(0, 0) };
       } else {
         const ct = activeContentTab();
         if (ct) {
           const [, info] = ct;
-          next = { ...next, lines: (info.lines || []).slice(), scroll: 0 };
+          next = { ...next, lines: (info.lines || []).slice(), scroll: _resolveScroll(0, 0) };
         }
       }
       return [next, effects];
