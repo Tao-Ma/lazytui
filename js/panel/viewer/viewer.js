@@ -390,6 +390,11 @@ function _updateInner(msg, slice) {
       // override before deriving per-tab content. Override clears on
       // tab_switch (pane-tabs.js reducer) — the user's navigation
       // gesture dismisses the override.
+      // R6 — optional msg.tab lets callers land on a specific tab in
+      // the same dispatch (history.replay parks on Info so the
+      // override has a clear "home"). Without this, history.replay
+      // dispatched viewer_set_content + viewer_set_tab in two
+      // imperative steps from its effect handler.
       const next = {
         ...slice,
         viewerOverride: { lines: Array.isArray(msg.lines) ? msg.lines : [] },
@@ -397,6 +402,9 @@ function _updateInner(msg, slice) {
       };
       if (slice.search && slice.search.active) {
         next.search = { active: false, term: '', matches: [], idx: 0, typing: '' };
+      }
+      if (typeof msg.tab === 'number') {
+        next.tab = msg.tab | 0;
       }
       return next;
     }

@@ -547,6 +547,36 @@ describe('[B4 group-qualified tabState keys] two groups sharing an action name d
   });
 });
 
+describe('[R6c viewer_set_content msg.tab] override + tab landing in one Msg', () => {
+  // Pre-R6 history.replay dispatched viewer_set_content + viewer_set_tab
+  // as two imperative side effects. Post-R6 the optional msg.tab on
+  // viewer_set_content lets the producer commit both in one reducer
+  // pass.
+  it('msg.tab set: writes both override and tab in one Msg', () => {
+    setModel({
+      currentGroup: 'g',
+      modes: {},
+      config: { groups: { g: { label: 'G', actions: {} } } },
+    });
+    let s = { ...viewer._init(), tab: 3, innerH: 3 };
+    const r = applyUpdate(s, { type: 'viewer_set_content', lines: ['doc line 1', 'doc line 2'], tab: 0 });
+    eq(r.next.tab, 0, 'tab updated by msg.tab');
+    assert(r.next.viewerOverride && r.next.viewerOverride.lines.length === 2, 'override set');
+    eq(r.next.scroll, 0, 'scroll reset');
+  });
+  it('msg.tab omitted: tab unchanged (backward-compat)', () => {
+    setModel({
+      currentGroup: 'g',
+      modes: {},
+      config: { groups: { g: { label: 'G', actions: {} } } },
+    });
+    let s = { ...viewer._init(), tab: 3, innerH: 3 };
+    const r = applyUpdate(s, { type: 'viewer_set_content', lines: ['doc'] });
+    eq(r.next.tab, 3, 'tab preserved when msg.tab omitted');
+    assert(r.next.viewerOverride, 'override set');
+  });
+});
+
 describe('[B3 viewerOverride clear] tab-transitioning arms drop the stale override', () => {
   // Pre-B3, only tab_switch cleared slice.viewerOverride. Three other
   // arms also mutate slice.tab but skipped the clear:

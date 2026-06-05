@@ -260,7 +260,7 @@ function selectGroup(idx) {
   require('../dispatch/dispatch').navSelect('groups', idx);
 }
 
-function setViewerContent(tabId, text) {
+function setViewerContent(tabId, text, opts) {
   // viewer_set_content REPLACES the body — single-writer for producers
   // that show a discrete document (history replay, config-status diff,
   // help text, Running-overlay job info). For ephemeral event/status
@@ -271,13 +271,21 @@ function setViewerContent(tabId, text) {
   // `tabId` is the producer-side address. When null, the destination
   // resolves via route.resolveTarget('viewer') (focused viewer-kind
   // tab / sticky lastViewerTab / first in arrange / any / null).
+  //
+  // `opts.tab` (v0.6.2 R6) lets the caller land on a specific tab in
+  // the SAME dispatch — e.g. history.replay parks on Info so the
+  // override paints with a clear home tab. Without opts.tab the
+  // tab idx is left unchanged (the override paints regardless via
+  // viewerLines's precedence chain).
   if (tabId == null) {
     const route = require('../leaves/route');
     tabId = route.resolveTarget('viewer');
     if (tabId == null) return;   // no viewer registered — drop the write
   }
   const api = require('../panel/api');
-  api.dispatchMsg(api.wrap(tabId, { type: 'viewer_set_content', lines: text ? text.split('\n') : [] }));
+  const inner = { type: 'viewer_set_content', lines: text ? text.split('\n') : [] };
+  if (opts && typeof opts.tab === 'number') inner.tab = opts.tab | 0;
+  api.dispatchMsg(api.wrap(tabId, inner));
 }
 
 /**
