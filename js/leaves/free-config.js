@@ -1,10 +1,10 @@
 /**
  * Pure free-config layout transforms — the reducer-owned half of the
- * free-config flow (the read-side overlay lives in `panel/free-config-view.js`).
+ * free-config flow (the read-side overlay lives in `render/free-config-view.js`).
  *
  * Like leaves/search / leaves/pane-tabs / leaves/register, this is a
  * dependency-free leaf the layout Component imports without a require
- * cycle (panel/free-config-view requires runtime + term + ansi, so the
+ * cycle (render/free-config-view requires runtime + term + ansi, so the
  * reducer can't call into it). Every
  * function takes the layout Component slice, returns a new slice (or the
  * same ref when the operation is a no-op). No I/O, no globals, no terminal
@@ -189,7 +189,7 @@ function redo(slice) {
 }
 
 /** Wipe undo/redo (free_config_enter, and :restore-layout via the
- *  panel/free-config-view shim). Tolerates the layout slice not existing yet. */
+ *  render/free-config-view shim). Tolerates the layout slice not existing yet. */
 function clearUndoStacks(slice) {
   if (!slice || !slice.freeConfig) return slice;
   if (slice.freeConfig.undo.length === 0 && slice.freeConfig.redo.length === 0) return slice;
