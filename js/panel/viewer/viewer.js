@@ -397,8 +397,40 @@ function _updateInner(msg, slice) {
       // override has a clear "home"). Without this, history.replay
       // dispatched viewer_set_content + viewer_set_tab in two
       // imperative steps from its effect handler.
+      //
+      // v0.6.2 B6 — when the arm CLEARS slice.{scroll, search} in
+      // place (the override-arming write below) WITHOUT changing
+      // slice.tab, no transition fires and the finalizer's auto-
+      // capture skips. The user's pre-override view-state on the
+      // current tab is silently lost. Capture it manually here,
+      // BEFORE the in-place clobber. Two conditions gate the capture:
+      //   1. !slice.viewerOverride — only the FIRST arming-write
+      //      (subsequent override rewrites have override-bound state
+      //      already, per the B2 carve-out logic; capturing again
+      //      would clobber the pre-override entry).
+      //   2. typeof msg.tab !== 'number' — when msg.tab is set, the
+      //      finalizer's auto-capture handles it (the originalSlice
+      //      doesn't have override yet, so the B2 skip doesn't apply
+      //      and the transition-detect captures correctly).
+      let captureFirst = slice;
+      if (!slice.viewerOverride && typeof msg.tab !== 'number') {
+        const fromKey = _activeTabKey(slice, getModel());
+        if (fromKey) {
+          const innerH = slice.innerH > 0 ? slice.innerH : 1;
+          const linesLen = (slice.lines || []).length;
+          const maxScroll = Math.max(0, linesLen - innerH);
+          const captured = {
+            scroll: slice.scroll || 0,
+            bottomSticky: (slice.scroll || 0) >= maxScroll,
+            search: slice.search,
+            select: slice.select,
+            cursor: slice.cursor,
+          };
+          captureFirst = _withTabFields(slice, fromKey, captured);
+        }
+      }
       const next = {
-        ...slice,
+        ...captureFirst,
         viewerOverride: { lines: Array.isArray(msg.lines) ? msg.lines : [] },
         scroll: 0,
       };

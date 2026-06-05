@@ -622,6 +622,63 @@ describe('[R6c viewer_set_content msg.tab] override + tab landing in one Msg', (
     eq(r.next.tab, 3, 'tab preserved when msg.tab omitted');
     assert(r.next.viewerOverride, 'override set');
   });
+  it('B6: msg.tab omitted captures pre-override view-state into tabState[currentKey]', () => {
+    // Round 2 adversarial finding: when viewer_set_content fires
+    // without msg.tab, slice.tab doesn't change → no transition →
+    // finalizer skips capture → the user's pre-override
+    // {scroll, search, select, cursor} on the current tab is
+    // silently destroyed (clobbered to scroll: 0 / search cleared
+    // by the in-place override-arm).
+    // Fix: arm captures into tabState BEFORE clobbering, gated by
+    // !slice.viewerOverride (first-arming only) && msg.tab absent
+    // (transition path handled by the finalizer).
+    setModel({
+      currentGroup: 'g',
+      modes: {},
+      config: { groups: { g: { label: 'G', actions: { build: { label: 'Build', tab: 'Build', script: 'echo b' } } } } },
+    });
+    let s = {
+      ...viewer._init(),
+      tab: 2,
+      scroll: 30,
+      innerH: 5,
+      search: { active: true, term: 'foo', matches: [{line:30,col:0}], idx:0, typing:'' },
+    };
+    // Producer fires viewer_set_content WITHOUT msg.tab (e.g.
+    // same-group background job's info card, config-status diff,
+    // ?-help on a non-Info tab).
+    const r = applyUpdate(s, { type: 'viewer_set_content', lines: ['override line'] });
+    eq(r.next.tab, 2, 'tab unchanged (no msg.tab)');
+    eq(r.next.scroll, 0, 'scroll clobbered (override-arming write)');
+    eq(r.next.search.active, false, 'search cleared');
+    assert(r.next.viewerOverride, 'override set');
+    // The critical assertion: pre-override state was captured.
+    assert(r.next.tabState && r.next.tabState['g:action:build'],
+      'pre-override state captured into tabState[g:action:build]');
+    eq(r.next.tabState['g:action:build'].scroll, 30,
+      'pre-override scroll=30 preserved');
+    eq(r.next.tabState['g:action:build'].search.term, 'foo',
+      'pre-override search "foo" preserved');
+  });
+  it('B6: subsequent viewer_set_content (override already active) does NOT re-capture', () => {
+    // When the override is rewritten (e.g., next history.replay
+    // immediately following the first), originalSlice.viewerOverride
+    // is already set — capturing again would clobber the first
+    // capture's pre-override state with the override-bound scroll: 0.
+    setModel({
+      currentGroup: 'g',
+      modes: {},
+      config: { groups: { g: { label: 'G', actions: { build: { label: 'Build', tab: 'Build', script: 'echo b' } } } } },
+    });
+    // First arming: capture the pre-override state.
+    let s = { ...viewer._init(), tab: 2, scroll: 30, innerH: 5 };
+    s = applyUpdate(s, { type: 'viewer_set_content', lines: ['doc 1'] }).next;
+    eq(s.tabState['g:action:build'].scroll, 30, 'first arming captured scroll=30');
+    // Second arming: override already set. Must NOT overwrite tabState.
+    const r = applyUpdate(s, { type: 'viewer_set_content', lines: ['doc 2'] });
+    eq(r.next.tabState['g:action:build'].scroll, 30,
+      'second arming preserves the pre-override capture (no double-capture clobber)');
+  });
 });
 
 describe('[B3 viewerOverride clear] tab-transitioning arms drop the stale override', () => {
