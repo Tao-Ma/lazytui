@@ -216,6 +216,47 @@ describe('[T3c per-tab search] tab remembers its search state across switches', 
   });
 });
 
+describe('[T3d per-tab select] tab remembers its visual selection across switches', () => {
+  it('select state survives tab switch round-trip', () => {
+    let s = { ...viewer._init(), tab: 1, innerH: 5 };
+    s = applyUpdate(s, {
+      type: 'viewer_append_lines', lines: ['a', 'b', 'c', 'd', 'e'],
+    }).next;
+    // Begin a selection on Transcript at (1,0)→(3,0).
+    s = applyUpdate(s, { type: 'select_begin', line: 1, col: 0, kind: 'char' }).next;
+    s = applyUpdate(s, { type: 'select_extend', line: 3, col: 0 }).next;
+    eq(s.select.active, true, 'select active');
+    eq(s.select.anchor.line, 1, 'anchor at line 1');
+    eq(s.select.cursor.line, 3, 'cursor at line 3');
+    // Switch to Info, then back.
+    s = applyUpdate(s, { type: 'tab_switch', idx: 0 }).next;
+    eq(s.select.active, false, 'Info has fresh default select');
+    s = applyUpdate(s, { type: 'tab_switch', idx: 1 }).next;
+    eq(s.select.active, true, 'Transcript select restored');
+    eq(s.select.anchor.line, 1);
+    eq(s.select.cursor.line, 3);
+  });
+});
+
+describe('[T3e per-tab cursor] tab remembers its cursor position across switches', () => {
+  it('cursor state survives tab switch round-trip', () => {
+    let s = { ...viewer._init(), tab: 1, innerH: 5 };
+    s = applyUpdate(s, {
+      type: 'viewer_append_lines', lines: ['line0', 'line1', 'line2', 'line3', 'line4'],
+    }).next;
+    // Begin select to move the cursor as a side effect (the
+    // _beginSelect helper writes cursor too).
+    s = applyUpdate(s, { type: 'select_begin', line: 2, col: 3, kind: 'char' }).next;
+    eq(s.cursor.line, 2, 'cursor at line 2');
+    eq(s.cursor.col, 3, 'cursor at col 3');
+    s = applyUpdate(s, { type: 'tab_switch', idx: 0 }).next;
+    eq(s.cursor.line, 0, 'Info has fresh default cursor');
+    s = applyUpdate(s, { type: 'tab_switch', idx: 1 }).next;
+    eq(s.cursor.line, 2, 'Transcript cursor restored');
+    eq(s.cursor.col, 3);
+  });
+});
+
 describe('[T3b per-tab scroll] tab remembers its scroll across switches', () => {
   // The fragility T3 is solving: pre-T3, slice.scroll was shared by
   // all tabs. Scrolling Build to line 500, switching to Info, switching

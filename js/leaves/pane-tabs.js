@@ -513,13 +513,20 @@ function reduceTabMsg(msg, slice, ctx) {
       const tabEntry = slice.tabState && targetKey && slice.tabState[targetKey];
       const storedScroll = tabEntry ? tabEntry.scroll : undefined;
       const storedSticky = tabEntry ? !!tabEntry.bottomSticky : false;
-      // T3c — restore the target tab's stored search state (cross-tab
-      // search leakage retired). Fresh default when never visited.
+      // T3c/d/e — restore the target tab's stored view state
+      // (search / select / cursor). Cross-tab leakage retired:
+      // each tab's selection / search / cursor refer to its own
+      // content, not whatever was on the previous tab. Fresh
+      // defaults when never visited.
       const _emptySearch = () => ({ active: false, term: '', matches: [], idx: 0, typing: '' });
-      const restoredSearch = tabEntry && tabEntry.search
-        ? tabEntry.search
-        : _emptySearch();
-      next = { ...next, search: restoredSearch };
+      const _emptySelect = () => ({ active: false, kind: 'char', anchor: { line: 0, col: 0 }, cursor: { line: 0, col: 0 } });
+      const _emptyCursor = () => ({ line: 0, col: 0 });
+      next = {
+        ...next,
+        search: (tabEntry && tabEntry.search)  || _emptySearch(),
+        select: (tabEntry && tabEntry.select)  || _emptySelect(),
+        cursor: (tabEntry && tabEntry.cursor)  || _emptyCursor(),
+      };
       // T3b — resolve scroll for the target tab:
       //   1. If the user left bottom-stuck, snap to the new bottom
       //      (tail-tracking semantics — live streams that grew while

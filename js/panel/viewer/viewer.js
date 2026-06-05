@@ -267,11 +267,18 @@ function _withDerivedFields(next, originalSlice) {
   const m = getModel();
   const lines = pt.viewerLines(next, m, m.currentGroup, { infoFromFocus: _infoFromFocus });
   let updated = { ...next, lines };
-  // T3c — search reference changed (search Msg arm fired) → mirror
-  // slice.search to per-tab so it survives a tab switch round-trip.
+  // T3c/d/e — per-tab field mirrors. When a reducer arm changed
+  // slice.{search, select, cursor}, mirror to tabState[activeKey] so
+  // tab_switch can restore the per-tab value on return.
+  const key = _activeTabKey(updated, m);
   if (next.search !== originalSlice.search) {
-    const key = _activeTabKey(updated, m);
     updated = _withTabField(updated, key, 'search', next.search);
+  }
+  if (next.select !== originalSlice.select) {
+    updated = _withTabField(updated, key, 'select', next.select);
+  }
+  if (next.cursor !== originalSlice.cursor) {
+    updated = _withTabField(updated, key, 'cursor', next.cursor);
   }
   return updated;
 }
