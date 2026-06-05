@@ -44,7 +44,7 @@ const { getModel } = require('./runtime');
 // coupled modules that don't tolerate CLI-mode startup." In practice
 // `require('../panel/navigator/docker')` transitively loads panel/
 // api → render/panel, render/themes, render/render-queue, render/
-// scrollbar, io/term, io/stream, panel/viewer/tabs,
+// scrollbar, io/term, dispatch/stream, panel/viewer/tabs,
 // dispatch/effects. CLI mode still doesn't pollute stdout/stderr
 // today because none of those have load-time side effects (no top-
 // level setRawMode / hideCursor / setInterval). The load-bearing

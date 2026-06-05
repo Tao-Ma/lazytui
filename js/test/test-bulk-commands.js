@@ -12,7 +12,7 @@
 'use strict';
 
 // Mock streamCommand BEFORE loading docker plugin.
-const stream = require('../io/stream');
+const stream = require('../dispatch/stream');
 const calls = [];
 stream.streamCommand = (label, cmd) => { calls.push({ label, cmd }); };
 

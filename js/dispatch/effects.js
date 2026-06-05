@@ -174,7 +174,7 @@ function installBuiltins() {
   // the viewerStreamBuffer), then starts the new stream.
   registerEffect('unrouted_preempt_and_run', (eff) => {
     setImmediate(() => {
-      const stream = require('../io/stream');
+      const stream = require('./stream');
       stream.killJob(eff.existingId, { silent: false });
       stream.streamCommand(eff.headerLabel, eff.cmd, eff.args, eff.opts || {});
     });

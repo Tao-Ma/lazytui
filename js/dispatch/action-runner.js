@@ -10,7 +10,7 @@
 const { spawn } = require('child_process');
 const fs = require('fs');
 const { appendViewerLines } = require('../app/state');
-const { streamCommand, killAll } = require('../io/stream');
+const { streamCommand, killAll } = require('./stream');
 const { getInstanceSlice, dispatchMsg, wrap } = require('../panel/api');
 const { getModel } = require('../app/runtime');
 const { esc } = require('../io/ansi');

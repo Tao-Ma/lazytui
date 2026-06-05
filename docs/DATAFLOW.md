@@ -11,7 +11,7 @@ greppable.
     focus events)           PTY data, etc.)     fetch resolved)
         │                       │                   │
         ▼                       ▼                   ▼
-   js/dispatch/input.js    js/io/stream.js     direct dispatchMsg
+   js/dispatch/input.js    js/dispatch/stream.js  direct dispatchMsg
    • SGR mouse parse        js/io/terminal.js   (from a setTimeout/
    • paste accumulator     • PTY mgmt            setImmediate cb)
         │

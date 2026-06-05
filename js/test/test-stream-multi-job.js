@@ -20,7 +20,7 @@
 'use strict';
 
 const { describe, it, assert, eq, report } = require('./test-runner');
-const stream = require('../io/stream');
+const stream = require('../dispatch/stream');
 const jobs = require('../feature/jobs');
 const runtime = require('../app/runtime');
 
@@ -139,7 +139,7 @@ describe('[multi-job] routed + unrouted independent', () => {
 });
 
 // v0.6.2 R9 — model.unroutedStreaming was retired. The field was
-// written by io/stream.js on every slot lifecycle event but no
+// written by dispatch/stream.js on every slot lifecycle event but no
 // production reader consumed it (the Transcript-tab refactor at
 // ab1a0dc removed the last reader — viewer_show_info's
 // off-Transcript-bail). The describe block that pinned the flag's

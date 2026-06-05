@@ -49,7 +49,7 @@ function getFilter(panelType) {
  *  by renderFooter to paint the `/text │` prompt. */
 function filterCurrentText() { return getModel().modal.filter.text; }
 
-const { streamCommand } = require('../io/stream');
+const { streamCommand } = require('../dispatch/stream');
 const { addEphemeralTab } = require('./viewer/tabs');
 const { scheduleRender } = require('../render/render-queue');
 

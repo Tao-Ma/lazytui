@@ -1,6 +1,16 @@
 /**
  * Streamed shell-command output → detail panel.
  *
+ * v0.6.2 R8 — moved from io/ to dispatch/. This module is primarily a
+ * Msg-dispatcher facade (stream_start / viewer_append / viewer_append_lines
+ * wrapped via panel/api + route, slot map for preempt semantics,
+ * confirm-overlay for cross-label unrouted preempt) that happens to wrap
+ * child_process.spawn underneath. Its lazy requires reach dispatch/,
+ * panel/, leaves/ — i.e. dispatch-layer modules — which is the wrong
+ * layering when filed under io/ (sibling io/ files like ansi/term/
+ * file-loader are pure leaves). Reclassifying restores the layer
+ * invariant.
+ *
  * v0.6.2 Large — multi-job. The singleton currentProc retires; each
  * spawn lives in its own ProcCtx in the `procs` Map keyed by jobId.
  *
@@ -29,7 +39,7 @@
 
 const { spawn } = require('child_process');
 const { StringDecoder } = require('string_decoder');
-const { esc } = require('./ansi');
+const { esc } = require('../io/ansi');
 const { getModel } = require('../app/runtime');
 const { scheduleRender } = require('../render/render-queue');
 const history = require('../feature/history');
@@ -154,7 +164,7 @@ function streamCommand(headerLabel, cmd, args = [], opts = {}) {
     const existingLabel = (existing && existing.headerLabel) || '<previous>';
     if (existingLabel !== headerLabel) {
       api.dispatchMsg(api.wrap(target, { type: 'tab_switch', idx: 0 }));
-      require('../dispatch/dispatch').applyMsg({
+      require('./dispatch').applyMsg({
         type: 'confirm_enter',
         message: `Kill running '${existingLabel}'?`,
         cmd: { type: 'unrouted_preempt_and_run', existingId, headerLabel, cmd, args, opts },
