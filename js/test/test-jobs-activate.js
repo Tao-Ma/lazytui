@@ -147,6 +147,33 @@ describe('[jobs_activate] full cascade — one Msg, reducer-driven', () => {
     eq(runtime.getModel().modes.jobsMode, false);
   });
 
+  it('cross-group routed → set_current_group fires with msg.name (not msg.group)', () => {
+    // Regression for B1: jobs_activate's cross-group cascade emitted
+    // { type: 'set_current_group', group: ... } but the reducer reads
+    // msg.name, so cross-group activation silently set currentGroup to ''.
+    _seedModel();
+    _resetJobs();
+    // Add a second group `g2` with its own action.
+    const m = runtime.getModel();
+    m.config.groups.g2 = {
+      label: 'G2',
+      actions: { 'g2-action': { label: 'G2', script: 'echo g2', tab: 'g2-action' } },
+    };
+    runtime.setModel({
+      ...m,
+      modes: { ...m.modes, jobsMode: true },
+      modal: { ...m.modal, jobs: { cursor: 0, scroll: 0 } },
+    });
+    jobs.register({
+      kind: 'stream-routed',
+      label: 'g2-action',
+      pid: 1,
+      owner: { tabKey: 'g2-action', groupName: 'g2', cmd: 'echo g2' },
+    });
+    _activate();
+    eq(runtime.getModel().currentGroup, 'g2', 'currentGroup switched to g2 (B1: msg.name, not msg.group)');
+  });
+
   it('non-jobsMode → activate is a no-op (defensive)', () => {
     _seedModel();
     _resetJobs();

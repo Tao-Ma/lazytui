@@ -723,7 +723,7 @@ function update(model, msg) {
       const targetGroup = owner.groupName
         || (owner.ptyId ? _parsePtyIdGroup(model, owner.ptyId) : null);
       if (targetGroup && targetGroup !== model.currentGroup) {
-        cmds.push({ type: 'msg', msg: { type: 'set_current_group', group: targetGroup } });
+        cmds.push({ type: 'msg', msg: { type: 'set_current_group', name: targetGroup } });
       }
       const viewerTarget = route.resolveTarget('viewer') || 'detail';
       const groupName = targetGroup || model.currentGroup;
