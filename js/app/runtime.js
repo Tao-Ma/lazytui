@@ -707,14 +707,15 @@ function update(model, msg) {
       return [_withModal(model, { jobs: { cursor: next, scroll } }), []];
     }
     case 'jobs_activate': {
-      // Single-Msg cascade — handler stays a one-liner, reducer
-      // emits the Cmd list. msg.now is the dispatch-time timestamp
-      // (Date.now() at handler entry) so the reducer stays pure
-      // — feature/jobs.list() is the only out-of-TEA read.
+      // Single-Msg cascade — handler resolves the (out-of-TEA)
+      // feature/jobs entry by cursor and threads it via msg.job; the
+      // reducer emits the Cmd list from msg.job + msg.now. Reducer is
+      // pure (R2 — pre-fix this arm read feature/jobs.list() inline,
+      // violating the renderer-only-reader contract for out-of-TEA
+      // stores per PRINCIPLES §12). msg.now is the dispatch-time
+      // timestamp for the background/tmux age display.
       if (!model.modes.jobsMode) return [model, []];
-      const list = require('../feature/jobs').list();
-      const cursor = (model.modal.jobs && model.modal.jobs.cursor | 0) || 0;
-      const job = list[cursor];
+      const job = msg.job || null;
       const closedModel = _withModes(model, { jobsMode: false });
       if (!job) return [closedModel, []];
 

@@ -332,7 +332,17 @@ function handleJobsKey(key, seq) {
   if (seq === 'G')                   { applyMsg({ type: 'jobs_nav', to: 'bottom',   count, vh }); return; }
   if (seq === ',' || key === 'pageup')   { applyMsg({ type: 'jobs_nav', to: 'pageup',   count, vh }); return; }
   if (seq === '.' || key === 'pagedown') { applyMsg({ type: 'jobs_nav', to: 'pagedown', count, vh }); return; }
-  if (key === 'return') { applyMsg({ type: 'jobs_activate', now: Date.now() }); return; }
+  if (key === 'return') {
+    // R2 — resolve the cursor's job entry HERE (out-of-TEA store read
+    // is handler-side). Reducer at runtime.update#jobs_activate uses
+    // msg.job directly — stays pure, no require('feature/jobs').list()
+    // call from inside the reducer body.
+    const m = require('../app/runtime').getModel();
+    const cursor = (m.modal.jobs && m.modal.jobs.cursor | 0) || 0;
+    const job = require('../feature/jobs').list()[cursor] || null;
+    applyMsg({ type: 'jobs_activate', now: Date.now(), job });
+    return;
+  }
 }
 
 function handleDetailSearchKey(key, seq) {

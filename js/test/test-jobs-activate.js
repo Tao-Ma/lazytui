@@ -43,7 +43,13 @@ function _seedModel() {
 function _resetJobs() { jobs._reset(); }
 
 function _activate() {
-  dispatch.applyMsg({ type: 'jobs_activate', now: NOW });
+  // R2 — production handler resolves the cursor's job entry and threads
+  // it via msg.job (reducer stays pure). Mirror that here in tests so
+  // the reducer arm receives msg.job, not the bare cursor lookup.
+  const m = runtime.getModel();
+  const cursor = (m.modal && m.modal.jobs && m.modal.jobs.cursor | 0) || 0;
+  const job = jobs.list()[cursor] || null;
+  dispatch.applyMsg({ type: 'jobs_activate', now: NOW, job });
 }
 
 describe('[jobs_activate] full cascade — one Msg, reducer-driven', () => {
