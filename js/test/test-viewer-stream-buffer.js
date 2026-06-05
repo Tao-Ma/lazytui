@@ -181,6 +181,41 @@ describe('[viewer_show_info] — only off-Info guard remains', () => {
   });
 });
 
+describe('[T3c per-tab search] tab remembers its search state across switches', () => {
+  it('search state survives a tab switch round-trip', () => {
+    // Park on Transcript with content. Enter and commit a search.
+    let s = { ...viewer._init(), tab: 1, innerH: 5 };
+    s = applyUpdate(s, {
+      type: 'viewer_append_lines',
+      lines: ['foo', 'BAR', 'baz', 'BAR again', 'qux'],
+    }).next;
+    s = applyUpdate(s, { type: 'viewer_search_enter' }).next;
+    s = applyUpdate(s, { type: 'viewer_search_key', seq: 'B' }).next;
+    s = applyUpdate(s, { type: 'viewer_search_key', seq: 'A' }).next;
+    s = applyUpdate(s, { type: 'viewer_search_key', seq: 'R' }).next;
+    s = applyUpdate(s, { type: 'viewer_search_commit' }).next;
+    eq(s.search.active, true, 'search committed');
+    eq(s.search.term, 'BAR', 'term set');
+    eq(s.search.matches.length, 2, 'two matches');
+    // Switch to Info, then back to Transcript.
+    s = applyUpdate(s, { type: 'tab_switch', idx: 0 }).next;
+    eq(s.search.active, false, 'Info search starts fresh (default empty)');
+    s = applyUpdate(s, { type: 'tab_switch', idx: 1 }).next;
+    eq(s.search.active, true, 'Transcript search restored');
+    eq(s.search.term, 'BAR', 'term restored');
+    eq(s.search.matches.length, 2, 'matches restored');
+  });
+  it('first-visit tab gets a fresh empty search', () => {
+    let s = { ...viewer._init(), tab: 0, innerH: 5 };
+    // No prior interactions on this tab. tab_switch to it sets a
+    // clean search state.
+    s = applyUpdate(s, { type: 'tab_switch', idx: 1 }).next;
+    eq(s.search.active, false);
+    eq(s.search.term, '');
+    eq(s.search.matches.length, 0);
+  });
+});
+
 describe('[T3b per-tab scroll] tab remembers its scroll across switches', () => {
   // The fragility T3 is solving: pre-T3, slice.scroll was shared by
   // all tabs. Scrolling Build to line 500, switching to Info, switching

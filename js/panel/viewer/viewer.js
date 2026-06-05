@@ -260,19 +260,30 @@ function _infoFromFocus() {
   if (!out || !out.length) return null;
   return out.join('\n').split('\n');
 }
+// T2d + T3c — derive slice.lines from viewerLines and mirror per-tab
+// fields (search) when the reducer changed them. Returns a fresh
+// result; identity-preserves no-op returns at the caller.
+function _withDerivedFields(next, originalSlice) {
+  const m = getModel();
+  const lines = pt.viewerLines(next, m, m.currentGroup, { infoFromFocus: _infoFromFocus });
+  let updated = { ...next, lines };
+  // T3c — search reference changed (search Msg arm fired) → mirror
+  // slice.search to per-tab so it survives a tab switch round-trip.
+  if (next.search !== originalSlice.search) {
+    const key = _activeTabKey(updated, m);
+    updated = _withTabField(updated, key, 'search', next.search);
+  }
+  return updated;
+}
 function _finalize(result, originalSlice) {
   if (result === undefined) return result;
   if (Array.isArray(result)) {
     const [next, cmds] = result;
     if (!next || next === originalSlice) return result;
-    const m = getModel();
-    const lines = pt.viewerLines(next, m, m.currentGroup, { infoFromFocus: _infoFromFocus });
-    return [{ ...next, lines }, cmds];
+    return [_withDerivedFields(next, originalSlice), cmds];
   }
   if (result === originalSlice) return result;
-  const m = getModel();
-  const lines = pt.viewerLines(result, m, m.currentGroup, { infoFromFocus: _infoFromFocus });
-  return { ...result, lines };
+  return _withDerivedFields(result, originalSlice);
 }
 
 function update(msg, slice) {

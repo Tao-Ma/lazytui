@@ -513,6 +513,13 @@ function reduceTabMsg(msg, slice, ctx) {
       const tabEntry = slice.tabState && targetKey && slice.tabState[targetKey];
       const storedScroll = tabEntry ? tabEntry.scroll : undefined;
       const storedSticky = tabEntry ? !!tabEntry.bottomSticky : false;
+      // T3c — restore the target tab's stored search state (cross-tab
+      // search leakage retired). Fresh default when never visited.
+      const _emptySearch = () => ({ active: false, term: '', matches: [], idx: 0, typing: '' });
+      const restoredSearch = tabEntry && tabEntry.search
+        ? tabEntry.search
+        : _emptySearch();
+      next = { ...next, search: restoredSearch };
       // T3b — resolve scroll for the target tab:
       //   1. If the user left bottom-stuck, snap to the new bottom
       //      (tail-tracking semantics — live streams that grew while
