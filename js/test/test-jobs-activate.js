@@ -110,11 +110,13 @@ describe('[jobs_activate] full cascade — one Msg, reducer-driven', () => {
     });
     _activate();
     eq(runtime.getModel().modes.jobsMode, false);
-    const lines = api.getInstanceSlice('detail').lines;
-    assert(lines.length > 0, 'viewer has lines');
-    assert(lines[0].includes('bg-rsync'), 'header has label');
-    assert(lines.some(l => l.includes('pid:') && l.includes('12345')), 'pid line present');
-    assert(lines.some(l => l.includes('rsync -av src/ dst/')), 'cmd line present');
+    // v0.6.2 T2c — job-info card writes slice.viewerOverride via
+    // setViewerContent; render's viewerLines() consults override first.
+    const ov = api.getInstanceSlice('detail').viewerOverride;
+    assert(ov && Array.isArray(ov.lines) && ov.lines.length > 0, 'viewer has override lines');
+    assert(ov.lines[0].includes('bg-rsync'), 'header has label');
+    assert(ov.lines.some(l => l.includes('pid:') && l.includes('12345')), 'pid line present');
+    assert(ov.lines.some(l => l.includes('rsync -av src/ dst/')), 'cmd line present');
     eq(api.getInstanceSlice('layout').focus, 'detail', 'focus moved to viewer');
   });
 
@@ -127,9 +129,10 @@ describe('[jobs_activate] full cascade — one Msg, reducer-driven', () => {
     });
     _activate();
     eq(runtime.getModel().modes.jobsMode, false);
-    const lines = api.getInstanceSlice('detail').lines;
-    assert(lines.some(l => l.includes('window:') && l.includes('worker')), 'window line present');
-    assert(lines.some(l => l.includes('long-job.sh')), 'cmd line present');
+    const ov = api.getInstanceSlice('detail').viewerOverride;
+    assert(ov && Array.isArray(ov.lines), 'override populated');
+    assert(ov.lines.some(l => l.includes('window:') && l.includes('worker')), 'window line present');
+    assert(ov.lines.some(l => l.includes('long-job.sh')), 'cmd line present');
   });
 
   it('empty list (cursor on nothing) → close only, no crash', () => {

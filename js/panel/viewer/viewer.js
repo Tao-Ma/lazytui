@@ -178,9 +178,15 @@ function update(msg, slice) {
 
   switch (msg.type) {
     case 'viewer_set_content': {
+      // T2c — discrete-doc writers (history replay, config-status
+      // diff, help text, Running-overlay job info) route here. Write
+      // to slice.viewerOverride; render's viewerLines() consults
+      // override before deriving per-tab content. Override clears on
+      // tab_switch (pane-tabs.js reducer) — the user's navigation
+      // gesture dismisses the override.
       const next = {
         ...slice,
-        lines: Array.isArray(msg.lines) ? msg.lines : [],
+        viewerOverride: { lines: Array.isArray(msg.lines) ? msg.lines : [] },
         scroll: 0,
       };
       if (slice.search && slice.search.active) {
@@ -595,11 +601,28 @@ function render(panel, w, h, slice) {
       focused: isFocused,
     });
   }
+  // T2c — display lines come from viewerLines() (derives from active
+  // tab + buffers + override + focused-Navigator's getInfo). Falls
+  // back to slice.lines for tabs whose reducer arms still maintain
+  // it; T2d retires the fallback.
+  const _infoFromFocus = () => {
+    const focus = getFocus();
+    const def = require('../api').getPanelDef(focus);
+    if (!def || typeof def.getItems !== 'function' || typeof def.getInfo !== 'function') return null;
+    const items = require('../api').getItems(focus);
+    const { getSel } = require('../../app/state');
+    const item = items[getSel(focus)];
+    if (!item) return null;
+    const out = def.getInfo(item);
+    if (!out || !out.length) return null;
+    return out.join('\n').split('\n');
+  };
+  const derived = pt.viewerLines(slice, m, m.currentGroup, { infoFromFocus: _infoFromFocus });
+  let lines = derived;
   let count = null;
-  if (slice.lines.length > innerH) {
-    count = [slice.scroll + innerH, slice.lines.length];
+  if (lines.length > innerH) {
+    count = [slice.scroll + innerH, lines.length];
   }
-  let lines = slice.lines;
   const select = require('../../overlay/select');
   const search = require('../../overlay/viewer-search');
   if (select.isActive()) {

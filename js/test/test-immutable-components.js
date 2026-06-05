@@ -327,7 +327,10 @@ describe('[immutable] detail (viewer)', () => {
     ...overrides,
   });
 
-  it('viewer_set_content replaces lines, resets scroll, clears active search', () => {
+  it('viewer_set_content writes viewerOverride, resets scroll, clears active search', () => {
+    // v0.6.2 T2c — viewer_set_content now writes slice.viewerOverride
+    // (discrete-doc slot) instead of slice.lines. Render's viewerLines()
+    // consults override first; tab_switch clears it.
     const slice = makeSlice({
       scroll: 5,
       search: { active: true, term: 'old', matches: [{ line: 0, col: 0 }], idx: 0, typing: '' },
@@ -337,7 +340,7 @@ describe('[immutable] detail (viewer)', () => {
       () => detail._update({ type: 'viewer_set_content', lines: ['new'] }, slice),
       slice,
     );
-    eq(out.lines, ['new']);
+    eq(out.viewerOverride.lines, ['new']);
     eq(out.scroll, 0);
     eq(out.search.active, false);
     assert(out !== slice, 'fresh ref');

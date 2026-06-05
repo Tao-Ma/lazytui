@@ -485,7 +485,9 @@ function reduceTabMsg(msg, slice, ctx) {
       const { actionTabs, termTabs, total } = getTabInfo();
       const idx = msg.idx | 0;
       if (idx < 0 || idx >= total) return slice;
-      let next = { ...slice, tab: idx };
+      // T2c — tab_switch clears the discrete-doc override; the user's
+      // navigation gesture dismisses whatever override was active.
+      let next = { ...slice, tab: idx, viewerOverride: null };
       // No kill_proc — the producer keeps writing into its buffer
       // while the user is off-tab. Singleton preempt happens inside
       // streamCommand when a new run starts.

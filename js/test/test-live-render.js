@@ -119,12 +119,18 @@ describe('[3b] focus moves through the update spine — live', () => {
 });
 
 describe('[4] detail content flows model → view — live', () => {
-  it('detail slice lines (now model.viewer.lines) renders into the Detail panel', () => {
+  it('detail viewerOverride flows into the rendered Detail panel', () => {
+    // v0.6.2 T2c — render reads viewerLines() which prefers
+    // slice.viewerOverride for discrete-doc content (history replay,
+    // diff, help text). Poking slice.lines directly no longer reaches
+    // the frame — render derives from active tab + buffers + override.
     capture(() => { handleKey('_', '_'); handleKey('_', '_'); });  // normal view
-    getInstanceSlice('detail').lines = ['ZZ-DETAIL-MARKER-ZZ'];
+    getInstanceSlice('detail').viewerOverride = { lines: ['ZZ-DETAIL-MARKER-ZZ'] };
     getInstanceSlice('detail').scroll = 0;
     const frame = capture(() => render());
     assert(/ZZ-DETAIL-MARKER-ZZ/.test(frame), 'detail content (via the model) reached the rendered frame');
+    // Cleanup so subsequent tests aren't sticky-overridden.
+    getInstanceSlice('detail').viewerOverride = null;
   });
 });
 

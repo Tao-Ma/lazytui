@@ -426,8 +426,12 @@ describe('[8] diffFor — preview shape per status', () => {
     const r = cs._update({ type: 'key', key: 'return' }, slice);
     assert(Array.isArray(r) && r[1][0].type === 'cfgStatusDiff', 'Enter on a file emits cfgStatusDiff');
     effects.runEffects(r[1]);  // run the diff effect → setViewerContent → viewer slice
+    // v0.6.2 T2c — setViewerContent writes slice.viewerOverride (the
+    // discrete-doc slot) instead of slice.lines. Render's viewerLines()
+    // consults override first.
     const md = require('../panel/api').getInstanceSlice('detail');
-    assert(Array.isArray(md.lines) && md.lines.length > 2, 'detail populated');
+    assert(md.viewerOverride && Array.isArray(md.viewerOverride.lines) && md.viewerOverride.lines.length > 2,
+      'detail populated via viewerOverride');
     eq(md.scroll, 0, 'scroll reset');
   });
 });
