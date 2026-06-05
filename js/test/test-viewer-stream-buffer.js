@@ -406,9 +406,9 @@ describe('[B2 viewer_set_tab inbound restore] producer-initiated set-tab restore
   });
   it('finalizer skips FROM-capture when leaving slice had viewerOverride active', () => {
     // Without this guard, a producer doing viewer_set_content (scroll:0)
-    // then viewer_set_tab(0) would write tabState['action:foo']={scroll:0}
+    // then viewer_set_tab(0) would write tabState['g:action:foo']={scroll:0}
     // over the user's real saved Build scroll. Test: be on action:foo at
-    // scroll 100, override fires, set-tab to Info — tabState['action:foo']
+    // scroll 100, override fires, set-tab to Info — tabState['g:action:foo']
     // must keep its saved scroll, not the override's 0.
     setModel({
       currentGroup: 'g',
@@ -416,18 +416,89 @@ describe('[B2 viewer_set_tab inbound restore] producer-initiated set-tab restore
       config: { groups: { g: { label: 'G', actions: { build: { label: 'Build', tab: 'Build', script: 'make' } } } } },
     });
     let s = { ...viewer._init(), tab: 2, innerH: 3, scroll: 100, lines: ['x','y','z'] };
-    s = { ...s, tabState: { 'action:build': { scroll: 100 } } };
+    s = { ...s, tabState: { 'g:action:build': { scroll: 100 } } };
     // Producer writes override (scroll → 0, viewerOverride set).
     s = applyUpdate(s, { type: 'viewer_set_content', lines: ['note1', 'note2'] }).next;
     eq(s.scroll, 0, 'override committed scroll: 0');
     assert(s.viewerOverride, 'override active');
     // Producer's viewer_set_tab(0). Finalizer detects tab transition (2→0)
     // but originalSlice.viewerOverride was active — skip FROM-capture.
-    const beforeAction = s.tabState['action:build'];
+    const beforeAction = s.tabState['g:action:build'];
     s = applyUpdate(s, { type: 'viewer_set_tab', tab: 0 }).next;
     eq(s.tab, 0, 'on Info');
-    eq(s.tabState['action:build'].scroll, 100, 'tabState[action:build] PRESERVED (not clobbered by override-bound 0)');
+    eq(s.tabState['g:action:build'].scroll, 100, 'tabState[g:action:build] PRESERVED (not clobbered by override-bound 0)');
     eq(beforeAction.scroll, 100, 'sanity: was 100 before');
+  });
+});
+
+describe('[B4 group-qualified tabState keys] two groups sharing an action name don\'t collide', () => {
+  // Pre-B4 keys were 'action:<key>'. Two groups both having a `test`
+  // action would share tabState['action:test'] — group A's view state
+  // restored when the user landed on group B's `test` tab. Post-B4
+  // keys are '<group>:action:<key>', so the two are addressed
+  // independently. Info / Transcript stay unprefixed.
+  it('action tab in group A vs group B store + restore independently', () => {
+    setModel({
+      currentGroup: 'g1',
+      modes: {},
+      config: { groups: {
+        g1: { label: 'G1', actions: { test: { label: 'Test', tab: 'Test', script: 'echo a' } } },
+        g2: { label: 'G2', actions: { test: { label: 'Test', tab: 'Test', script: 'echo b' } } },
+      } },
+    });
+    // Land on g1's `test` tab (idx 2). Route a stream into g1.test's
+    // buffer so the action tab has content (viewer_scroll clamps to 0
+    // otherwise — viewerLines returns empty for an unseeded action tab).
+    let s = { ...viewer._init(), tab: 2, innerH: 3 };
+    s = applyUpdate(s, {
+      type: 'viewer_append_lines',
+      tabKey: 'test', groupName: 'g1',
+      lines: Array.from({length: 80}, (_, i) => `g1-line-${i}`),
+    }).next;
+    // Set a known scroll (the routed append doesn't bottom-pin since
+    // it's not the user's active source... actually it does for active
+    // tab — scroll back to a deterministic position).
+    s = applyUpdate(s, { type: 'viewer_scroll', to: 'top' }).next;
+    s = applyUpdate(s, { type: 'viewer_scroll', delta: 30 }).next;
+    eq(s.scroll, 30, 'g1.test scrolled to 30');
+    // Leave g1.test via tab_switch — finalizer captures.
+    s = applyUpdate(s, { type: 'tab_switch', idx: 0 }).next;
+    eq(s.tabState['g1:action:test'].scroll, 30, 'g1:action:test captured at 30');
+    assert(!('action:test' in s.tabState), 'unprefixed action:test NOT used (would be collision)');
+    // Switch groups to g2; viewer_reset_chrome fires.
+    setModel({ ...require('../app/runtime').getModel(), currentGroup: 'g2' });
+    s = applyUpdate(s, { type: 'viewer_reset_chrome' }).next;
+    // Seed g2's `test` buffer (same idx 2 in the strip, but DIFFERENT key).
+    s = applyUpdate(s, {
+      type: 'viewer_append_lines',
+      tabKey: 'test', groupName: 'g2',
+      lines: Array.from({length: 80}, (_, i) => `g2-line-${i}`),
+    }).next;
+    s = applyUpdate(s, { type: 'tab_switch', idx: 2 }).next;
+    eq(s.tab, 2, 'on g2.test');
+    // First visit to g2.test — no stored state in tabState['g2:action:test'].
+    // Must NOT have inherited g1.test's scroll=30 (would be true if keys collided).
+    // Now scroll g2.test to a different position, capture on leave.
+    s = applyUpdate(s, { type: 'viewer_scroll', to: 'top' }).next;
+    s = applyUpdate(s, { type: 'viewer_scroll', delta: 60 }).next;
+    eq(s.scroll, 60, 'g2.test scrolled to 60');
+    s = applyUpdate(s, { type: 'tab_switch', idx: 0 }).next;
+    // Both g1's and g2's saved positions coexist.
+    eq(s.tabState['g1:action:test'].scroll, 30, 'g1:action:test preserved across group switch');
+    eq(s.tabState['g2:action:test'].scroll, 60, 'g2:action:test recorded independently');
+  });
+  it('Info and Transcript are unprefixed (group-independent)', () => {
+    setModel({
+      currentGroup: 'g',
+      modes: {},
+      config: { groups: { g: { label: 'G', actions: {} } } },
+    });
+    let s = { ...viewer._init(), tab: 1, innerH: 3 };
+    s = applyUpdate(s, { type: 'viewer_append_lines', lines: ['a','b','c','d','e'] }).next;
+    s = applyUpdate(s, { type: 'viewer_scroll', to: 'top' }).next;
+    s = applyUpdate(s, { type: 'tab_switch', idx: 0 }).next;
+    eq(s.tabState.transcript.scroll, 0, 'transcript key is unprefixed');
+    assert(!('g:transcript' in s.tabState), 'no group-prefixed transcript');
   });
 });
 

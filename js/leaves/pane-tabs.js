@@ -490,14 +490,18 @@ function reduceTabMsg(msg, slice, ctx) {
       // (_withDerivedFields) so it catches every slice.tab transition
       // path, not just tab_switch. This reducer focuses on the
       // target-tab restore.
+      // B4 — per-group kinds (action / terminal / content) get a
+      // group prefix to prevent cross-group collision. Keep this
+      // helper in sync with viewer.js _activeTabKey.
+      const _gn = getModel().currentGroup;
       const _resolveKey = (i) => {
         if (i === 0) return 'info';
         if (i === 1) return 'transcript';
-        if (i <= 1 + actionTabs.length) return `action:${actionTabs[i - 2][0]}`;
+        if (i <= 1 + actionTabs.length) return `${_gn}:action:${actionTabs[i - 2][0]}`;
         const tBase = 2 + actionTabs.length;
-        if (i < tBase + termTabs.length) return `terminal:${termTabs[i - tBase][0]}`;
+        if (i < tBase + termTabs.length) return `${_gn}:terminal:${termTabs[i - tBase][0]}`;
         const ct = activeContentTab();
-        return ct ? `content:${ct[0]}` : null;
+        return ct ? `${_gn}:content:${ct[0]}` : null;
       };
 
       // T2c — tab_switch clears the discrete-doc override; the user's
@@ -517,13 +521,13 @@ function reduceTabMsg(msg, slice, ctx) {
       if (idx === 0) targetKey = 'info';
       else if (idx === 1) targetKey = 'transcript';
       else if (idx <= 1 + actionTabs.length) {
-        targetKey = `action:${actionTabs[idx - 2][0]}`;
+        targetKey = `${groupName}:action:${actionTabs[idx - 2][0]}`;
       } else if (idx <= 1 + actionTabs.length + termTabs.length) {
         const termIdx = idx - 2 - actionTabs.length;
-        targetKey = `terminal:${termTabs[termIdx][0]}`;
+        targetKey = `${groupName}:terminal:${termTabs[termIdx][0]}`;
       } else {
         const ct = activeContentTab();
-        if (ct) targetKey = `content:${ct[0]}`;
+        if (ct) targetKey = `${groupName}:content:${ct[0]}`;
       }
       // Read target tab's stored state. The finalizer (running AFTER
       // this reducer body) will capture the FROM-tab's view state;

@@ -68,8 +68,9 @@ greppable.
 
    Component slices (js/leaves/route.js, nested store)
      layout         focus, viewMode, arrange, panelBounds, freeConfig
-     detail         lines, scroll, tab, search, select,
-                    contentTabs, ephemeralTerminals, actionTabBuffers
+     detail         lines, scroll, tab, search, select, cursor,
+                    contentTabs, ephemeralTerminals, actionTabBuffers,
+                    viewerStreamBuffer, viewerOverride, tabState
      groups         list, expanded:Set, tab
      docker         status, stats, inFlight, eventsStarted
      files          per-panel-type browsers
@@ -173,6 +174,30 @@ cross-label unrouted preempts open a confirm overlay (default
 reject) to protect the live transcript. Stream-end footers
 (`Press Enter to run again.`) are stamped via batched
 `viewer_append_lines` for atomic reducer passes.
+
+**Per-tab view state (T3).** `slice.{scroll, search, select, cursor}`
+are the active-tab live view; their off-tab persistence lives in
+`slice.tabState`, keyed by stable identity (`'info'`, `'transcript'`,
+`'<group>:action:<key>'`, `'<group>:terminal:<key>'`,
+`'<group>:content:<key>'` — resolved via `_activeTabKey`). Per-group
+kinds carry the group prefix (B4) so two groups sharing an action
+name don't collide; Info / Transcript stay unprefixed (Info is
+per-focus, Transcript is the singleton accumulator). String keys
+outlive numeric idx: adding/removing
+a content tab renumbers the strip but leaves stored entries correctly
+addressed. The sync point is the viewer's finalizer
+(`_withDerivedFields`) — post-reducer, when
+`next.tab !== originalSlice.tab`, the leaving tab's
+`{scroll, bottomSticky, search, select, cursor}` is captured into
+`tabState[fromKey]`. Single site catches every `slice.tab` transition:
+`tab_switch`, `stream_start`'s auto-jump (routed + unrouted), and the
+`viewer_set_tab` primitive (called from `setActiveTab()` in
+`panel/api.js`). Restore happens in `pane-tabs.tab_switch` reducer
+body (reads `tabState[toKey]` into `slice.{scroll, search, select,
+cursor}`); the `bottomSticky` bit distinguishes "literal restore"
+from "tail-track to the new bottom" for live-stream tabs.
+Per-Msg mirrors are *not* maintained — lazy persistence, single sync
+point, identity-preserving.
 
 **See also.**
 - `docs/PRINCIPLES.md` §12 — the Component discipline rules.

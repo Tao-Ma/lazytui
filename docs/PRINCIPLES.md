@@ -425,6 +425,35 @@ arrangement) — slice-private but loaded via cross-layer Msgs.
 > kill-on-switch as the only way to avoid cross-talk. The two
 > concerns are separate; keep them separate.
 
+> **Consumer view-state survives the tab switch.** Complement to the
+> producer rule: per-tab *view* state (scroll position, search match
+> index, selection range, cursor) also wants to outlive the active tab.
+> Resist the temptation to mirror it to a per-tab map on every Msg
+> (v0.6.2 T3b-e shipped that and the redundancy bit back). Keep the
+> live view in `slice.{scroll, search, select, cursor}` as a single
+> active mirror, and capture only on transition: a single sync point
+> in the **finalizer** compares `next.tab !== originalSlice.tab` and
+> writes the leaving tab's view-state into a keyed map
+> (`slice.tabState[key]`) exactly once per switch. Restore on entry
+> reads the map. The single capture site catches every path that
+> mutates the tab idx — `tab_switch` is obvious, but auto-jump paths
+> (`stream_start`) and primitive bypasses (`viewer_set_tab` from
+> `setActiveTab()`) flow through the same finalizer. T3f-fix landed
+> this after T3f shipped a tab_switch-only capture that missed three
+> bypass paths. Generalisation: **when N reducer arms mutate the same
+> field and a side-effect should fire on every transition, detect the
+> transition in the finalizer, not in each arm.**
+>
+> **Stable string keys outlive numeric indices.** Key per-element maps
+> (tabState entries, per-id buffers) by stable string identity
+> (`'<group>:action:<name>'`, `'<group>:content:<id>'`), not by
+> position. Adding or removing siblings renumbers the strip; stored
+> entries should remain correctly addressed. Stable AND unique: when
+> per-group surfaces share the same domain key (`test` action in
+> every group), prefix with the disambiguator (the group name) so two
+> groups don't collide on `tabState['action:test']` (B4 regression —
+> pre-fix, group A's view state restored onto group B's tab).
+
 > **Out-of-TEA module-local stores.** Two cross-cutting registries
 > live OUTSIDE the slice graph: `feature/history` (completion log
 > of every action that's run) and `feature/jobs` (live state of

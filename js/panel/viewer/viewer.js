@@ -87,6 +87,13 @@ function _setCursor(slice, line, col, extend) {
 // numeric idx: adding/removing a content tab shifts indices but the
 // remaining tabs' keys are identical, so their `tabState` entries
 // survive the renumbering automatically.
+// B4 — per-group kinds (action / terminal / content) are
+// group-qualified: two groups whose YAML share an action name (a
+// common pattern — every group has a `test`) would otherwise collide
+// on `tabState['action:test']`, restoring group A's view state onto
+// group B's tab. Info and Transcript stay unprefixed: Info's content
+// is per-focus (not strictly per-group) and Transcript's buffer is a
+// singleton accumulator cross-group.
 function _activeTabKey(slice, model) {
   const idx = (slice && slice.tab) | 0;
   if (idx === 0) return 'info';
@@ -96,17 +103,17 @@ function _activeTabKey(slice, model) {
   const info = pt.flatTabInfo(slice || {}, model, groupName);
   if (idx >= 2 && idx <= 1 + info.actionTabs.length) {
     const [key] = info.actionTabs[idx - 2];
-    return `action:${key}`;
+    return `${groupName}:action:${key}`;
   }
   const termBase = 2 + info.actionTabs.length;
   if (idx >= termBase && idx < termBase + info.termTabs.length) {
     const [key] = info.termTabs[idx - termBase];
-    return `terminal:${key}`;
+    return `${groupName}:terminal:${key}`;
   }
   const contentBase = 2 + info.actionTabs.length + info.termTabs.length;
   if (idx >= contentBase && idx < contentBase + info.contentTabs.length) {
     const [key] = info.contentTabs[idx - contentBase];
-    return `content:${key}`;
+    return `${groupName}:content:${key}`;
   }
   return null;
 }
@@ -219,9 +226,13 @@ function init() {
     // all tabs); the resulting cross-tab leakage (scroll/search/
     // select/cursor referencing wrong content) was fragile.
     //
-    // Keys: 'info' | 'transcript' | 'action:<key>' | 'terminal:<key>'
-    // | 'content:<key>'. Resolved per-render from (slice.tab, model)
-    // via the _activeTabKey helper.
+    // Keys: 'info' | 'transcript' | '<group>:action:<key>' |
+    // '<group>:terminal:<key>' | '<group>:content:<key>'. Per-group
+    // kinds carry a group prefix (B4) so two groups sharing an action
+    // name don't collide. Info / Transcript are intentionally
+    // unprefixed: Info is per-focus, Transcript is the singleton
+    // unrouted accumulator. Resolved per-render from (slice.tab,
+    // model) via the _activeTabKey helper.
     //
     // T3b ships per-tab scroll only. slice.scroll still mirrors the
     // active tab's scroll for backward-compat (search/select/render
