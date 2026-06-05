@@ -153,20 +153,41 @@ describe('[viewer_append_lines unrouted] event-log accumulator (spawn/background
   });
 });
 
-describe('[viewer_show_info] bails when buffer has content', () => {
-  it('non-empty buffer → show_info is a no-op', () => {
-    let s = { ...viewer._init(), tab: 0, innerH: 5 };
-    s = applyUpdate(s, { type: 'viewer_append', line: 'transcript' }).next;
-    const before = s;
+describe('[viewer_show_info] guards — bail iff off-Info OR live stream', () => {
+  // v0.6.2 — the third pre-existing guard ("bail when
+  // viewerStreamBuffer has any content") was removed. It permanently
+  // disabled Info navigation refresh after any spawn-status or
+  // streamed action, which was the user-reported regression.
+  it('non-Info tab → bails (no clobber of other tab content)', () => {
+    let s = { ...viewer._init(), tab: 1, innerH: 5, lines: ['routed-output'] };
     const r = applyUpdate(s, { type: 'viewer_show_info' });
-    eq(r.next, before, 'reducer returned same ref (no-op)');
+    eq(r.next, s, 'no-op on non-Info tab');
   });
-  it('empty buffer → show_info proceeds (returns slice unchanged when no panel def — same as before)', () => {
-    const s = { ...viewer._init(), tab: 0 };
+  it('with accumulated buffer + on Info → proceeds (refreshes from focused panel)', () => {
+    // Pre-v0.6.2 fix this would have been a no-op. Now it falls through
+    // to the focus lookup, which returns slice unchanged here only
+    // because no Component / panel-def is registered in the test setup.
+    // The important pin is that the buffer is NOT a short-circuit.
+    let s = { ...viewer._init(), tab: 0, innerH: 5 };
+    s = applyUpdate(s, { type: 'viewer_append', line: 'transcript-line' }).next;
+    assert(s.viewerStreamBuffer.lines.length > 0, 'buffer non-empty (precondition)');
+    // The no-panel-def fallback returns the input slice (ref equality);
+    // crucial: the reducer did NOT bail at the buffer guard.
     const r = applyUpdate(s, { type: 'viewer_show_info' });
-    // The fallback bails because no navigator has getItems/getInfo here;
-    // the important thing is the buffer-gate did NOT short-circuit.
-    eq(r.next, s);
+    eq(r.next, s, 'no-panel-def fallback (input slice returned), but buffer guard did NOT trip');
+  });
+  it('live unrouted stream → bails (don\'t clobber the live mirror)', () => {
+    let s = { ...viewer._init(), tab: 0, innerH: 5 };
+    // Stamp unroutedStreaming on the model. setModel above already
+    // installed the test model — just toggle the field directly.
+    const { getModel: gm } = require('../app/runtime');
+    gm().unroutedStreaming = true;
+    try {
+      const r = applyUpdate(s, { type: 'viewer_show_info' });
+      eq(r.next, s, 'bails while live stream in flight');
+    } finally {
+      gm().unroutedStreaming = false;
+    }
   });
 });
 

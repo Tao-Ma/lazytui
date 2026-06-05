@@ -150,6 +150,21 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   grouping is preserved; the `STALE=1` / `exit "$STALE"` contract
   is unchanged.
 
+- **Info navigation refresh works after stream / spawn output.**
+  `viewer_show_info` had a guard "bail when `viewerStreamBuffer`
+  has any content" intended to protect the live transcript from
+  being clobbered by a focus-driven info refresh. Side effect: ANY
+  accumulated content (a finished `type:run` stream's output, a
+  single spawn-status message) permanently disabled Info nav
+  refresh — moving the cursor in the actions / groups / files
+  panels stopped updating Info. The two remaining guards
+  (non-Info tab; `unroutedStreaming` flag set during a live
+  stream) cover the cases that actually need protection. Between
+  streams, nav now refreshes Info freely; the buffer survives
+  in `viewerStreamBuffer` and `tab_switch idx=0` restores it on
+  demand. The next `stream_start` re-syncs `slice.lines` to the
+  buffer, keeping the streaming mirror consistent.
+
 - **Spawn / background / cmdline status messages accumulate, don't
   clobber.** Pre-fix the spawn arm of `doRun` (and the `:save-layout`,
   `:open`, `:restore-layout`, `:add-column`, `:remove-column` cmdline

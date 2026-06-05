@@ -183,14 +183,22 @@ function update(msg, slice) {
     }
     case 'viewer_show_info': {
       // Pull focused-Navigator info into the viewer — the Navigator→Viewer
-      // cascade rides the single-writer pathway. Skip if a non-Info tab is
-      // active, a live unrouted stream is filling the body, OR the viewer
-      // stream buffer has accumulated transcript content (don't clobber
-      // the user's history of ad-hoc command output).
+      // cascade rides the single-writer pathway. Skip when a non-Info
+      // tab is active (the user is looking at something else) or a live
+      // unrouted stream is mid-flight (don't clobber the live mirror).
+      //
+      // v0.6.2 — the third pre-existing guard ("bail when
+      // viewerStreamBuffer has any content") was REMOVED. It made
+      // navigation in actions/groups/files stop updating Info as
+      // soon as ANY accumulated transcript existed — and with spawn
+      // / cmdline-verb statuses now also flowing into the buffer,
+      // a single spawn permanently disabled Info nav. Buffer
+      // contents survive in `viewerStreamBuffer`; `tab_switch idx=0`
+      // explicitly restores them when the user wants the transcript
+      // back. The next `stream_start` (unrouted) re-syncs slice.lines
+      // to the buffer so streaming mirror stays consistent.
       if (slice.tab !== 0) return slice;
       if (getModel().unroutedStreaming) return slice;
-      const vsb = slice.viewerStreamBuffer;
-      if (vsb && vsb.lines && vsb.lines.length > 0) return slice;
       const focus = getFocus();
       const def = getPanelDef(focus);
       if (!def || typeof def.getItems !== 'function' || typeof def.getInfo !== 'function') return slice;
