@@ -179,6 +179,31 @@ function transcriptTabIdx() {
   return 1;
 }
 
+// N1 — single canonical resolver for "tab idx → stable string key".
+// Three copies of this mapping used to exist (viewer.js _activeTabKey,
+// pane-tabs.js inline-in-tab_switch, pane-tabs.js dead _resolveKey).
+// All three are now thin wrappers / calls into this. Per-group kinds
+// carry the group prefix (B4); Info / Transcript are unprefixed.
+function resolveTabKey(idx, slice, model) {
+  if (idx === 0) return 'info';
+  if (idx === 1) return 'transcript';
+  if (!model || !model.config || !model.config.groups) return null;
+  const groupName = model.currentGroup;
+  const info = flatTabInfo(slice || {}, model, groupName);
+  if (idx >= 2 && idx <= 1 + info.actionTabs.length) {
+    return `${groupName}:action:${info.actionTabs[idx - 2][0]}`;
+  }
+  const termBase = 2 + info.actionTabs.length;
+  if (idx >= termBase && idx < termBase + info.termTabs.length) {
+    return `${groupName}:terminal:${info.termTabs[idx - termBase][0]}`;
+  }
+  const contentBase = 2 + info.actionTabs.length + info.termTabs.length;
+  if (idx >= contentBase && idx < contentBase + info.contentTabs.length) {
+    return `${groupName}:content:${info.contentTabs[idx - contentBase][0]}`;
+  }
+  return null;
+}
+
 /** True when the slice's active tab is the Transcript tab. */
 function isTranscriptTabIn(slice, _model, _groupName) {
   return (slice.tab | 0) === 1;
@@ -526,19 +551,6 @@ function reduceTabMsg(msg, slice, ctx) {
       // (_withDerivedFields) so it catches every slice.tab transition
       // path, not just tab_switch. This reducer focuses on the
       // target-tab restore.
-      // B4 — per-group kinds (action / terminal / content) get a
-      // group prefix to prevent cross-group collision. Keep this
-      // helper in sync with viewer.js _activeTabKey.
-      const _gn = getModel().currentGroup;
-      const _resolveKey = (i) => {
-        if (i === 0) return 'info';
-        if (i === 1) return 'transcript';
-        if (i <= 1 + actionTabs.length) return `${_gn}:action:${actionTabs[i - 2][0]}`;
-        const tBase = 2 + actionTabs.length;
-        if (i < tBase + termTabs.length) return `${_gn}:terminal:${termTabs[i - tBase][0]}`;
-        const ct = activeContentTab();
-        return ct ? `${_gn}:content:${ct[0]}` : null;
-      };
 
       // T2c — tab_switch clears the discrete-doc override; the user's
       // navigation gesture dismisses whatever override was active.
@@ -549,22 +561,11 @@ function reduceTabMsg(msg, slice, ctx) {
       const effects = [
         { type: 'msg', msg: { type: 'terminal_exit' } },
       ];
-      // T3b — resolve target tab key for per-tab scroll restore. Same
-      // mapping as viewer.js _activeTabKey; kept inline to keep the
-      // leaf import-free.
-      let targetKey = null;
+      // N1 — single canonical "tab idx → key" resolver. resolveTabKey
+      // (this leaf's export) is the same function viewer.js _activeTabKey
+      // delegates to.
       const groupName = getModel().currentGroup;
-      if (idx === 0) targetKey = 'info';
-      else if (idx === 1) targetKey = 'transcript';
-      else if (idx <= 1 + actionTabs.length) {
-        targetKey = `${groupName}:action:${actionTabs[idx - 2][0]}`;
-      } else if (idx <= 1 + actionTabs.length + termTabs.length) {
-        const termIdx = idx - 2 - actionTabs.length;
-        targetKey = `${groupName}:terminal:${termTabs[termIdx][0]}`;
-      } else {
-        const ct = activeContentTab();
-        if (ct) targetKey = `${groupName}:content:${ct[0]}`;
-      }
+      const targetKey = resolveTabKey(idx, { ...slice, tab: idx }, getModel());
       // Read target tab's stored state. The finalizer (running AFTER
       // this reducer body) will capture the FROM-tab's view state;
       // for the to-restore we read what's currently stored.
@@ -768,6 +769,7 @@ function reduceTabMsg(msg, slice, ctx) {
 module.exports = {
   actionTabCount, groupTerminals, groupContentTabs,
   flatTabInfo, transcriptTabIdx, isTranscriptTabIn,
+  resolveTabKey,
   viewerLines,
   isTerminalTabIn, isContentTabIn, isActionTabIn,
   activeContentTabIn, activeActionTabIn, activeTerminalIdIn, activeTerminalConfigIn,

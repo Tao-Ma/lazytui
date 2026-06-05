@@ -83,39 +83,14 @@ function _setCursor(slice, line, col, extend) {
 }
 
 // T3 — resolve `slice.tab` (a numeric idx into the flat strip) to a
-// stable string key for the per-tab state map. Keys outlive the
-// numeric idx: adding/removing a content tab shifts indices but the
-// remaining tabs' keys are identical, so their `tabState` entries
-// survive the renumbering automatically.
-// B4 — per-group kinds (action / terminal / content) are
-// group-qualified: two groups whose YAML share an action name (a
-// common pattern — every group has a `test`) would otherwise collide
-// on `tabState['action:test']`, restoring group A's view state onto
-// group B's tab. Info and Transcript stay unprefixed: Info's content
-// is per-focus (not strictly per-group) and Transcript's buffer is a
-// singleton accumulator cross-group.
+// stable string key for the per-tab state map. Thin wrapper over the
+// canonical pane-tabs.resolveTabKey (N1 — single source of truth, used
+// by both the finalizer's leaving capture and tab_switch's inbound
+// restore). See pane-tabs.js#resolveTabKey for the key-shape contract
+// (info / transcript unprefixed; per-group kinds carry the group
+// prefix to prevent cross-group collision).
 function _activeTabKey(slice, model) {
-  const idx = (slice && slice.tab) | 0;
-  if (idx === 0) return 'info';
-  if (idx === 1) return 'transcript';
-  if (!model || !model.config || !model.config.groups) return null;
-  const groupName = model.currentGroup;
-  const info = pt.flatTabInfo(slice || {}, model, groupName);
-  if (idx >= 2 && idx <= 1 + info.actionTabs.length) {
-    const [key] = info.actionTabs[idx - 2];
-    return `${groupName}:action:${key}`;
-  }
-  const termBase = 2 + info.actionTabs.length;
-  if (idx >= termBase && idx < termBase + info.termTabs.length) {
-    const [key] = info.termTabs[idx - termBase];
-    return `${groupName}:terminal:${key}`;
-  }
-  const contentBase = 2 + info.actionTabs.length + info.termTabs.length;
-  if (idx >= contentBase && idx < contentBase + info.contentTabs.length) {
-    const [key] = info.contentTabs[idx - contentBase];
-    return `${groupName}:content:${key}`;
-  }
-  return null;
+  return pt.resolveTabKey((slice && slice.tab) | 0, slice, model);
 }
 
 // T3 — read a per-tab field with a fallback. Returns the stored value
