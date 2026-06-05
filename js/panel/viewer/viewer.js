@@ -136,11 +136,18 @@ function init() {
     actionTabBuffers: {},
     // Singleton accumulator for unrouted streams (tabless type:run,
     // docker logs/inspect verbs). Appends across commands; cap at 1000
-    // lines (drop oldest when over). Info tab (slice.tab===0) is the
-    // display home — on tab_switch to Info, slice.lines is restored
-    // from this buffer. Survives tab switches and group changes; only
-    // ever appended to (or capped) — never reset by the producer.
+    // lines (drop oldest when over). Transcript tab (idx 1) is the
+    // display home — viewerLines() derives Transcript content from this
+    // buffer. Survives tab switches and group changes; only ever
+    // appended to (or capped) — never reset by the producer.
     viewerStreamBuffer: { lines: [], cap: 1000 },
+    // T2 override slot — discrete-document writers (history replay,
+    // config-status diff, help text, Running-overlay job info) write
+    // here instead of slice.lines. Render's viewerLines() consults
+    // this first; non-null override beats the per-tab derivation.
+    // Cleared on tab_switch (the user's navigation gesture clears
+    // the override; explicit setViewerContent re-arms it).
+    viewerOverride: null,
     // Tab-list overlay (the `[≡]` switcher anchored to detail's top-left).
     // `cursor` is the row index in the flat tab list (Info..actions..
     // terminals..content); `scroll` is the first visible row when the

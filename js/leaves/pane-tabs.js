@@ -59,6 +59,69 @@ function actionTabCount(model, groupName) {
   return Object.values(_mergedFor(model, groupName)).filter(a => a.tab).length;
 }
 
+// T2 — view-derived lines for the viewer's active tab. Pure projection
+// of (slice, model, focused-Navigator). Order of precedence:
+//   1. slice.viewerOverride — discrete-doc writers (history replay,
+//      config-status diff, help text, job info card). Cleared on
+//      tab_switch.
+//   2. Per-tab derivation by tab kind:
+//        idx 0 (Info)        → focused Navigator's getInfo(item)
+//        idx 1 (Transcript)  → slice.viewerStreamBuffer.lines
+//        action tab          → slice.actionTabBuffers[group][key].lines
+//                              (else "Press Enter to run." placeholder)
+//        term tab            → []  (PTY-rendered separately)
+//        content tab         → slice.contentTabs[group][key].lines
+//   3. Fallback to slice.lines (legacy field still maintained by some
+//      reducer arms in this transition; T2d retires it).
+//
+// Takes a `lookups` bag of host-bound helpers so the leaf stays
+// import-free for the cross-tier concerns (focused-panel resolution,
+// getInfo lookup). Caller supplies them via panel/viewer/tabs facade.
+function viewerLines(slice, model, groupName, lookups) {
+  if (slice && slice.viewerOverride && Array.isArray(slice.viewerOverride.lines)) {
+    return slice.viewerOverride.lines;
+  }
+  const tab = (slice && slice.tab) | 0;
+  // Info — derive from focused Navigator.
+  if (tab === 0) {
+    if (lookups && typeof lookups.infoFromFocus === 'function') {
+      const lines = lookups.infoFromFocus();
+      if (Array.isArray(lines) && lines.length > 0) return lines;
+    }
+    return (slice && slice.lines) || [];
+  }
+  // Transcript — unrouted accumulator.
+  if (tab === 1) {
+    const vsb = slice && slice.viewerStreamBuffer;
+    if (vsb && Array.isArray(vsb.lines) && vsb.lines.length > 0) return vsb.lines;
+    return ['[dim](no transcript yet)[/]'];
+  }
+  const info = flatTabInfo(slice || {}, model, groupName);
+  // Action tab.
+  if (tab >= 2 && tab <= 1 + info.actionTabs.length) {
+    const [actionKey] = info.actionTabs[tab - 2];
+    const buf = slice && slice.actionTabBuffers
+      && slice.actionTabBuffers[groupName]
+      && slice.actionTabBuffers[groupName][actionKey];
+    if (buf && Array.isArray(buf.lines) && buf.lines.length > 0) return buf.lines;
+    return ['[dim]Press Enter to run.[/]'];
+  }
+  // Term tab — PTY-rendered, no slice-side content.
+  const termBase = 2 + info.actionTabs.length;
+  if (tab >= termBase && tab < termBase + info.termTabs.length) return [];
+  // Content tab.
+  const contentBase = 2 + info.actionTabs.length + info.termTabs.length;
+  if (tab >= contentBase && tab < contentBase + info.contentTabs.length) {
+    const [contentKey] = info.contentTabs[tab - contentBase];
+    const ct = slice && slice.contentTabs
+      && slice.contentTabs[groupName]
+      && slice.contentTabs[groupName][contentKey];
+    if (ct && Array.isArray(ct.lines)) return ct.lines;
+  }
+  // Fallback (degenerate tab idx, etc.) — legacy slice.lines.
+  return (slice && slice.lines) || [];
+}
+
 /** Merged terminals: YAML-defined first, then runtime-ephemeral. */
 function groupTerminals(model, slice, groupName) {
   const group = _groupOf(model, groupName);
@@ -603,6 +666,7 @@ function reduceTabMsg(msg, slice, ctx) {
 module.exports = {
   actionTabCount, groupTerminals, groupContentTabs,
   flatTabInfo, transcriptTabIdx, isTranscriptTabIn,
+  viewerLines,
   isTerminalTabIn, isContentTabIn, isActionTabIn,
   activeContentTabIn, activeActionTabIn, activeTerminalIdIn, activeTerminalConfigIn,
   findEphemeralByIdIn,
