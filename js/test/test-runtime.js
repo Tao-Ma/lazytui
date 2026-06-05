@@ -148,6 +148,57 @@ describe('[3] update — (model, msg) → [model, cmds], pure + Cmd descriptors'
     eq(next.tab, 3, 'tab unchanged — yank skipped (detail focus has no getInfo)');
     eq(next.lines[0], 'content', 'lines unchanged');
   });
+  it('R3: viewer_show_info from off-Info restores tabState[info]', () => {
+    // Pre-R3 the reducer wrote { tab: 0, scroll: 0 } unconditionally.
+    // navSelect from an action tab dropped Info's saved scroll.
+    // Post-R3: when transitioning to Info from another tab, restore
+    // tabState['info'].{scroll, search, select, cursor}.
+    const route = require('../leaves/route');
+    const detail = require('../panel/viewer/viewer');
+    const m = runtime.getModel();
+    m.config = { groups: { g: { label: 'G', actions: {
+      a: { label: 'A', desc: 'an action', script: 'echo a' },
+    } } } };
+    m.currentGroup = 'g';
+    route.getInstanceSlice('layout').focus = 'actions';
+    // Land on action tab 3 with Info's tabState entry pre-seeded.
+    const slice = {
+      ...route.getInstanceSlice('detail'),
+      tab: 3,
+      scroll: 0,
+      tabState: { info: { scroll: 47, cursor: { line: 47, col: 0 } } },
+    };
+    const r = detail._update({ type: 'viewer_show_info' }, slice);
+    const next = Array.isArray(r) ? r[0] : r;
+    eq(next.tab, 0, 'transitioned to Info');
+    eq(next.scroll, 47, 'restored Info scroll from tabState');
+    eq(next.cursor.line, 47, 'restored Info cursor from tabState');
+  });
+  it('R3: viewer_show_info while already on Info resets scroll to 0 (new item)', () => {
+    // Within-Info case (j/k navigates to a new item, same tab): scroll
+    // resets to 0 so the new item's getInfo displays from line 0.
+    // tabState[info] is NOT consulted — the restore is only for
+    // off-Info transitions; within-Info, content changes per item and
+    // scroll: 0 is the natural fresh-content default.
+    const route = require('../leaves/route');
+    const detail = require('../panel/viewer/viewer');
+    const m = runtime.getModel();
+    m.config = { groups: { g: { label: 'G', actions: {
+      a: { label: 'A', desc: 'an action', script: 'echo a' },
+    } } } };
+    m.currentGroup = 'g';
+    route.getInstanceSlice('layout').focus = 'actions';
+    const slice = {
+      ...route.getInstanceSlice('detail'),
+      tab: 0,
+      scroll: 50,
+      tabState: { info: { scroll: 100 } },
+    };
+    const r = detail._update({ type: 'viewer_show_info' }, slice);
+    const next = Array.isArray(r) ? r[0] : r;
+    eq(next.tab, 0, 'stayed on Info');
+    eq(next.scroll, 0, 'within-Info navSelect resets scroll to 0');
+  });
   it('escape / list_select: emit wrapped multisel_clear into the focused Component', () => {
     // Phase 4a — escape/list_select route multiSel clears through the
     // focused Navigator's update (single-writer per slice). Read via the

@@ -396,7 +396,29 @@ function _updateInner(msg, slice) {
       const items = getItems(focus);
       const item = items[getSel(focus)];
       if (!item) return slice;
-      return { ...slice, tab: 0, scroll: 0 };
+      // v0.6.2 R3 — Info's per-tab view state needs to flow through
+      // this arm too. Two cases:
+      //   1. Already on Info (slice.tab === 0): item content changed
+      //      (j/k in a Navigator), scroll resets to 0 (display new
+      //      item's info from line 0). search/select/cursor untouched
+      //      (they belong to the previous item but search-during-Info
+      //      is a rare niche and clearing on every Navigator keystroke
+      //      would defeat post-typing match navigation).
+      //   2. From another tab (slice.tab !== 0): yanking back to Info.
+      //      Restore tabState['info'].{scroll, search, select, cursor}
+      //      (same shape tab_switch performs). Without this restore,
+      //      navSelect from an action tab landed on Info with scroll: 0
+      //      and the user's saved Info scroll position was dropped.
+      if (slice.tab === 0) return { ...slice, scroll: 0 };
+      const entry = (slice.tabState && slice.tabState.info) || null;
+      return {
+        ...slice,
+        tab: 0,
+        scroll: (entry && entry.scroll !== undefined) ? entry.scroll : 0,
+        search: (entry && entry.search) || { active: false, term: '', matches: [], idx: 0, typing: '' },
+        select: (entry && entry.select) || { active: false, kind: 'char', anchor: { line: 0, col: 0 }, cursor: { line: 0, col: 0 } },
+        cursor: (entry && entry.cursor) || { line: 0, col: 0 },
+      };
     }
     case 'viewer_scroll': {
       // T2d — read displayed-lines length from viewerLines (derives
