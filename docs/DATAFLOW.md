@@ -196,6 +196,15 @@ per-focus, Transcript is the singleton accumulator). String keys
 outlive numeric idx: adding/removing a content tab renumbers the
 strip but leaves stored entries correctly addressed.
 
+A consequence of the unprefixed Info / Transcript keys: their saved
+view state is global, not per-group. The user's last-seen Info
+scroll is MRU across groups — switching to group B, scrolling
+Info, switching back to group A → Info's scroll is B's, not A's.
+This matches the "Info is per-focus" framing (the displayed
+content already depends on the focused Navigator's item, which
+changes across groups). If per-group Info bookkeeping is wanted
+later, prefix the key the same way per-group kinds do.
+
 *Capture (leaving).* The viewer's finalizer (`_withDerivedFields`)
 is the single sync point. Post-reducer, when `next.tab !==
 originalSlice.tab`, the leaving tab's `{scroll, bottomSticky, search,
