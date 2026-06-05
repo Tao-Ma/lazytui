@@ -227,6 +227,44 @@ describe('[T27] cross-group mutators preserve current-group cursor + body', () =
   });
 });
 
+describe('[R14] N1 content-tab tabState restore (non-adjacent transition)', () => {
+  // Pre-N1 the inline _resolveKey returned null for the content-tab
+  // path when ACTIVECONTENTTAB() read the store-side stale slice.tab
+  // (switching FROM Info / Action / Terminal). So targetKey was null
+  // and tabState[content:<key>] never restored. N1 canonicalized via
+  // resolveTabKey(idx, slice, model) which resolves correctly
+  // regardless of the store-side stale state. Behavior change worth
+  // pinning explicitly.
+  it('switching FROM Info TO a content tab restores tabState[<g>:content:<key>] search/select/cursor', () => {
+    const route = require('../leaves/route');
+    const viewer = require('../panel/viewer/viewer');
+    freshGroup();
+    tabs.addContentTab('g1', 'doc1', 'doc1', ['x', 'y', 'z']);
+    // Seed: park on Info (idx 0), prime tabState['g1:content:doc1']
+    // with a saved cursor / search / select state.
+    const slice = getInstanceSlice('detail');
+    route.setInstanceSlice('detail', {
+      ...slice,
+      tab: 0,
+      innerH: 10,
+      tabState: {
+        'g1:content:doc1': {
+          scroll: 0,
+          search: { active: true, term: 'foo', matches: [], idx: 0, typing: '' },
+          select: { active: false, kind: 'line', anchor: { line: 1, col: 0 }, cursor: { line: 2, col: 0 } },
+          cursor: { line: 1, col: 0 },
+        },
+      },
+    });
+    const r = viewer._update({ type: 'tab_switch', idx: 2 }, getInstanceSlice('detail'));
+    const next = Array.isArray(r) ? r[0] : r;
+    eq(next.tab, 2, 'on content:doc1');
+    eq(next.search.term, 'foo', 'restored search term');
+    eq(next.cursor.line, 1, 'restored cursor line');
+    eq(next.select.kind, 'line', 'restored select kind');
+  });
+});
+
 describe('[R11] tab key parser handles `:` in group names', () => {
   // Pre-R11 _tabKeyExistsIn used /^([^:]+):(action|terminal|content):(.+)$/
   // which required group names without `:`. Group `proj:v2` → key
