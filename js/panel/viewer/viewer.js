@@ -744,11 +744,18 @@ function _updateInner(msg, slice) {
           [{ type: 'msg', msg: { type: 'terminal_exit' } }],
         ];
       }
-      // Already on Transcript: no transition, so any pre-existing
-      // override stays (user can dismiss explicitly via tab_switch).
+      // Already on Transcript: no tab transition, but a new stream is
+      // taking over the visible surface — clear viewerOverride (A5).
+      // Pre-A5 a user on Transcript viewing an override (e.g. a
+      // background-job info card armed via viewer_set_content) would
+      // see the override keep painting while the new stream's bytes
+      // accumulated INVISIBLY behind it (viewerLines consults
+      // viewerOverride first). Symmetric with the auto-jump branch
+      // above (B3: stream takeover dismisses any discrete-doc
+      // override).
       // N2 — slice.lines mirror dropped (finalizer-derived from
       // nextBuf).
-      return { ...slice, viewerStreamBuffer: nextBuf, scroll };
+      return { ...slice, viewerStreamBuffer: nextBuf, scroll, viewerOverride: null };
     }
     case 'viewer_set_tab': {
       // v0.6.2 R13 — clamp to in-range. Pre-R13 `msg.tab | 0` silently

@@ -790,7 +790,13 @@ describe('[B3 viewerOverride clear] tab-transitioning arms drop the stale overri
     eq(r.next.select.active, false, 'select reset');
     eq(r.next.cursor.line, 0, 'cursor reset to {0,0}');
   });
-  it('stream_start unrouted while ALREADY on Transcript preserves override (no transition)', () => {
+  it('A5 (supersedes earlier B3 contract): stream_start unrouted while ALREADY on Transcript CLEARS override', () => {
+    // Pre-A5: B3's no-transition branch preserved the override on the
+    // assumption "user can dismiss explicitly." But viewerLines
+    // consults viewerOverride FIRST, so the new stream's bytes
+    // accumulated invisibly behind the override — UX trap. Post-A5:
+    // the stream is the takeover gesture; override yields. Symmetric
+    // with the auto-jump branch above.
     setModel({
       currentGroup: 'g',
       modes: {},
@@ -800,7 +806,7 @@ describe('[B3 viewerOverride clear] tab-transitioning arms drop the stale overri
     s = applyUpdate(s, { type: 'viewer_set_content', lines: ['override'] }).next;
     const r = applyUpdate(s, { type: 'stream_start', header: '$ docker ps' });
     eq(r.next.tab, 1, 'still on Transcript (no transition)');
-    assert(r.next.viewerOverride, 'override survives');
+    eq(r.next.viewerOverride, null, 'override cleared by stream takeover');
   });
   it('viewer_reset_chrome (group switch) clears viewerOverride', () => {
     setModel({
