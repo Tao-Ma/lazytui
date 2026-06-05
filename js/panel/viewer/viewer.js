@@ -287,6 +287,39 @@ function _infoFromFocus() {
 // auto-jump, viewer_set_tab, future Msgs — without each one having
 // to remember to capture. Single source of truth for "per-tab
 // persistence on transition."
+// R5 — does fromKey still correspond to an existing tab in `next`?
+// When a tab is removed (removeContent / removeEphemeral), the FROM-
+// capture in the finalizer would otherwise re-create the tabState
+// entry we just dropped. Detection: parse the key shape and check
+// against next's content/ephemeral stores. Info / Transcript / action
+// (YAML+plugin sources, not removable via tab API) always count as
+// existing.
+function _tabKeyExistsIn(next, model, key) {
+  if (!key || key === 'info' || key === 'transcript') return true;
+  const m = key.match(/^([^:]+):(action|terminal|content):(.+)$/);
+  if (!m) return true;
+  const [, keyGroup, kind, restKey] = m;
+  if (kind === 'action') return true;  // action tabs derive from YAML/plugins
+  if (kind === 'content') {
+    const all = (next && next.contentTabs) || {};
+    const group = all[keyGroup];
+    return !!(group && group[restKey]);
+  }
+  if (kind === 'terminal') {
+    // Ephemeral terminal removal is the primary path. YAML-declared
+    // terminals are persistent and live in model.config; their keys
+    // wouldn't disappear via tab removal.
+    const eph = (next && next.ephemeralTerminals) || {};
+    const ephGroup = eph[keyGroup];
+    if (ephGroup && ephGroup[restKey]) return true;
+    const groupCfg = model && model.config && model.config.groups
+      && model.config.groups[keyGroup];
+    const yamlTerms = (groupCfg && groupCfg.terminals) || {};
+    return !!yamlTerms[restKey];
+  }
+  return true;
+}
+
 function _withDerivedFields(next, originalSlice) {
   const m = getModel();
   const lines = pt.viewerLines(next, m, m.currentGroup, { infoFromFocus: _infoFromFocus });
@@ -296,11 +329,14 @@ function _withDerivedFields(next, originalSlice) {
   // belong to the discrete-doc, not to the underlying tab; capturing
   // them into tabState[fromKey] would clobber the pre-override saved
   // state (the user's real position on that tab).
+  // R5 — also skip when the FROM tab was REMOVED (key no longer
+  // resolves in next). Otherwise removeContent / removeEphemeral's
+  // tabState drop is silently undone by this capture.
   if (originalSlice
       && next.tab !== originalSlice.tab
       && !originalSlice.viewerOverride) {
     const fromKey = _activeTabKey(originalSlice, m);
-    if (fromKey) {
+    if (fromKey && _tabKeyExistsIn(next, m, fromKey)) {
       const innerH = originalSlice.innerH > 0 ? originalSlice.innerH : 1;
       const linesLen = (originalSlice.lines || []).length;
       const maxScroll = Math.max(0, linesLen - innerH);

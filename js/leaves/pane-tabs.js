@@ -281,6 +281,18 @@ function addEphemeral(slice, model, { groupName, key, cmd, label }) {
   ];
 }
 
+// R5 — drop a tabState entry when its tab is removed. Without this,
+// tabState[<group>:<kind>:<key>] outlives the tab and gets restored
+// the next time the user creates a new tab with the same key (e.g.
+// reopening the same file path, recreating an ephemeral terminal
+// under the same key) — counter to the "first visit → kind-specific
+// default" rule in tab_switch's _resolveScroll.
+function _dropTabStateEntry(slice, key) {
+  if (!slice.tabState || !(key in slice.tabState)) return slice;
+  const { [key]: _drop, ...rest } = slice.tabState;
+  return { ...slice, tabState: rest };
+}
+
 function removeEphemeral(slice, model, { groupName, key }) {
   const eph = slice.ephemeralTerminals[groupName];
   if (!eph || !eph[key]) return [slice, { sessionId: null, terminalExit: false }];
@@ -292,8 +304,12 @@ function removeEphemeral(slice, model, { groupName, key }) {
   if (Object.keys(ephGroupRest).length === 0) delete ephAllNext[groupName];
   else ephAllNext[groupName] = ephGroupRest;
 
+  // R5 — drop the matching tabState entry for the removed terminal.
+  const dropKey = `${groupName}:terminal:${key}`;
+  const sliceAfterDrop = _dropTabStateEntry(slice, dropKey);
+
   if (groupName !== model.currentGroup) {
-    return [{ ...slice, ephemeralTerminals: ephAllNext }, { sessionId: id, terminalExit: false }];
+    return [{ ...sliceAfterDrop, ephemeralTerminals: ephAllNext }, { sessionId: id, terminalExit: false }];
   }
 
   const aCount = actionTabCount(model, groupName);
@@ -321,7 +337,7 @@ function removeEphemeral(slice, model, { groupName, key }) {
     tab = slice.tab - 1;
   }
 
-  return [{ ...slice, ephemeralTerminals: ephAllNext, tab, lines, scroll }, { sessionId: id, terminalExit }];
+  return [{ ...sliceAfterDrop, ephemeralTerminals: ephAllNext, tab, lines, scroll }, { sessionId: id, terminalExit }];
 }
 
 function addContent(slice, model, { groupName, key, label, lines }) {
@@ -382,8 +398,12 @@ function removeContent(slice, model, { groupName, key }) {
   if (Object.keys(ctGroupRest).length === 0) delete ctAllNext[groupName];
   else ctAllNext[groupName] = ctGroupRest;
 
+  // R5 — drop the matching tabState entry for the removed content tab.
+  const dropKey = `${groupName}:content:${key}`;
+  const sliceAfterDrop = _dropTabStateEntry(slice, dropKey);
+
   if (groupName !== model.currentGroup) {
-    return [{ ...slice, contentTabs: ctAllNext }, { needShowSelectedInfo: false }];
+    return [{ ...sliceAfterDrop, contentTabs: ctAllNext }, { needShowSelectedInfo: false }];
   }
 
   const aCount = actionTabCount(model, groupName);
@@ -418,7 +438,7 @@ function removeContent(slice, model, { groupName, key }) {
     tab = slice.tab - 1;
   }
 
-  return [{ ...slice, contentTabs: ctAllNext, tab, lines, scroll }, { needShowSelectedInfo }];
+  return [{ ...sliceAfterDrop, contentTabs: ctAllNext, tab, lines, scroll }, { needShowSelectedInfo }];
 }
 
 /**

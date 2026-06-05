@@ -227,4 +227,43 @@ describe('[T27] cross-group mutators preserve current-group cursor + body', () =
   });
 });
 
+describe('[R5] tab removal drops the matching tabState entry', () => {
+  // Pre-R5: removeEphemeral / removeContent dropped the
+  // ephemeralTerminals[g][k] / contentTabs[g][k] entry but left
+  // tabState['<g>:terminal:<k>'] / tabState['<g>:content:<k>']
+  // intact. Reopening the same key inherited the prior tab's stored
+  // scroll / search / select / cursor — counter to the kind-specific
+  // first-visit defaults tab_switch's _resolveScroll falls back to.
+  it('removeContentTab drops tabState[<group>:content:<key>]', () => {
+    freshGroup();
+    tabs.addContentTab('g1', 'file:foo', 'foo', ['x', 'y', 'z']);
+    // Simulate captured view state from a prior visit.
+    const slice = getInstanceSlice('detail');
+    slice.tabState = {
+      'g1:content:file:foo': { scroll: 7, cursor: { line: 7, col: 0 } },
+      'g1:content:other': { scroll: 99 },
+    };
+    require('../leaves/route').setInstanceSlice('detail', slice);
+    tabs.removeContentTab('g1', 'file:foo');
+    const after = getInstanceSlice('detail');
+    assert(!('g1:content:file:foo' in after.tabState), 'removed tab\'s entry dropped');
+    eq(after.tabState['g1:content:other'].scroll, 99, 'sibling entry untouched');
+  });
+  it('removeEphemeralTab drops tabState[<group>:terminal:<key>]', () => {
+    freshGroup({ terminals: { shell: { cmd: 'bash', label: 'Shell' } } });
+    // Force an ephemeral terminal entry directly (skip add-flow nuance).
+    const slice = getInstanceSlice('detail');
+    slice.ephemeralTerminals = { g1: { 'eph-1': { cmd: 'sh', label: 'Eph' } } };
+    slice.tabState = {
+      'g1:terminal:eph-1': { scroll: 12 },
+      'g1:terminal:shell': { scroll: 5 },
+    };
+    require('../leaves/route').setInstanceSlice('detail', slice);
+    tabs.removeEphemeralTab('g1', 'eph-1');
+    const after = getInstanceSlice('detail');
+    assert(!('g1:terminal:eph-1' in after.tabState), 'removed terminal\'s entry dropped');
+    eq(after.tabState['g1:terminal:shell'].scroll, 5, 'sibling entry untouched');
+  });
+});
+
 report();
