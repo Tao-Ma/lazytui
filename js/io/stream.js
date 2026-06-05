@@ -20,8 +20,6 @@
  *   stream_start  { header, tabKey?, groupName? }   — at spawn
  *   viewer_append { line, tabKey?, groupName? }     — per output line
  *   viewer_append_lines { lines, … }                — preempt + close batches
- *   set_unrouted_streaming { active }               — when the
- *     unrouted-slot occupancy flips
  *
  * No layout dependency — uses scheduleRender from render-queue. Lazy-
  * requires dispatch.applyMsg / panel/api to dodge the
@@ -51,16 +49,6 @@ const slotIndex = new Map();      // slotKey → jobId
 
 function _slotKey(tabKey, groupName) {
   return tabKey && groupName ? `routed:${groupName}:${tabKey}` : 'unrouted';
-}
-
-/** Recompute and dispatch model.unroutedStreaming based on slotIndex.
- *  Lazy require — module-load time cycle: stream → dispatch → actions →
- *  stream. Silent no-op in test/CLI when dispatch isn't loaded. */
-function _refreshUnroutedFlag() {
-  const active = slotIndex.has('unrouted');
-  try {
-    require('../dispatch/dispatch').applyMsg({ type: 'set_unrouted_streaming', active });
-  } catch (_) { /* dispatch not loaded */ }
 }
 
 // Async producer-side writes. Destination resolves via route.resolveTarget;
@@ -128,7 +116,6 @@ function killJob(jobId, opts = {}) {
   if (ctx.record) ctx.record.kill();
   procs.delete(jobId);
   if (slotIndex.get(ctx.slotKey) === jobId) slotIndex.delete(ctx.slotKey);
-  _refreshUnroutedFlag();
 }
 
 /** Kill every active stream. cleanup.js on TUI shutdown; opts.silent
@@ -219,7 +206,6 @@ function streamCommand(headerLabel, cmd, args = [], opts = {}) {
   };
   procs.set(jobId, ctx);
   slotIndex.set(slotKey, jobId);
-  _refreshUnroutedFlag();
 
   const onData = (data) => {
     buffer += decoder.write(data);
@@ -245,8 +231,7 @@ function streamCommand(headerLabel, cmd, args = [], opts = {}) {
     });
     procs.delete(jobId);
     if (slotIndex.get(slotKey) === jobId) slotIndex.delete(slotKey);
-    _refreshUnroutedFlag();
-    // Coalesce decoder tail + status + re-run hint into one batched
+      // Coalesce decoder tail + status + re-run hint into one batched
     // append — atomic reducer pass instead of 2-3 sequential
     // viewer_append dispatches.
     const batch = [];
@@ -266,8 +251,7 @@ function streamCommand(headerLabel, cmd, args = [], opts = {}) {
     jobs.close(jobId, { status: 'killed' });
     procs.delete(jobId);
     if (slotIndex.get(slotKey) === jobId) slotIndex.delete(slotKey);
-    _refreshUnroutedFlag();
-    const batch = [`[red]Error: ${esc(err.message)}[/]`];
+      const batch = [`[red]Error: ${esc(err.message)}[/]`];
     rec.append(`Error: ${err.message}`);
     if (tabKey && groupName) batch.push('[dim]Press Enter to run again.[/]');
     appendDetailLines(batch, tabKey, groupName);

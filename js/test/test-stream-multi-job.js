@@ -138,19 +138,11 @@ describe('[multi-job] routed + unrouted independent', () => {
   });
 });
 
-describe('[multi-job] model.unroutedStreaming reflects the unrouted slot', () => {
-  it('flag toggles with unrouted lifecycle; routed-only does not flip it', () => {
-    seedModel();
-    jobs._reset();
-    // Routed-only — flag stays false.
-    stream.streamCommand('test', 'sleep 5', [], { tabKey: 'test', groupName: 'g' });
-    eq(runtime.getModel().unroutedStreaming, false, 'routed-only — flag stays false');
-    // Unrouted start — flag flips true.
-    stream.streamCommand('docker logs', 'sleep 5', []);
-    eq(runtime.getModel().unroutedStreaming, true, 'unrouted alive — flag true');
-    stream.killAll({ silent: true });
-    eq(runtime.getModel().unroutedStreaming, false, 'all killed — flag clears');
-  });
-});
+// v0.6.2 R9 — model.unroutedStreaming was retired. The field was
+// written by io/stream.js on every slot lifecycle event but no
+// production reader consumed it (the Transcript-tab refactor at
+// ab1a0dc removed the last reader — viewer_show_info's
+// off-Transcript-bail). The describe block that pinned the flag's
+// toggling lifecycle was removed alongside the field.
 
 setTimeout(() => report(), 200);  // give onExit a tick to land for the test runner's count
