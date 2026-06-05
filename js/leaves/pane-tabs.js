@@ -31,6 +31,18 @@
 
 // --- Pure read helpers ----------------------------------------------------
 
+// Safe lookup of model.config.groups[groupName] — returns the group
+// object or null. Every reader in this leaf goes through this so
+// pre-loadConfig states (runtime.init() leaves `model.config: null`
+// until config loads; bootless tests reach this leaf directly) don't
+// crash on the raw `null.groups` read. The four guards below correspond
+// to: defended-against-null model / pre-loadConfig config / pre-parse
+// groups / unknown group name.
+function _groupOf(model, groupName) {
+  if (!model || !model.config || !model.config.groups) return null;
+  return model.config.groups[groupName] || null;
+}
+
 // Merged-action lookup — yields YAML+plugin actions for `groupName`.
 // Lazy-require avoids a module-load cycle (panel/api itself imports
 // nothing from this leaf). Data flow stays pure: the leaf only READS
@@ -39,7 +51,7 @@
 // tab:true actions (postgres demo's `pg:status` was invisible). See
 // panel/api.js getMergedActions for the contract.
 function _mergedFor(model, groupName) {
-  if (!model || !model.config || !model.config.groups || !model.config.groups[groupName]) return {};
+  if (!_groupOf(model, groupName)) return {};
   return require('../panel/api').getMergedActions(groupName);
 }
 
@@ -49,7 +61,7 @@ function actionTabCount(model, groupName) {
 
 /** Merged terminals: YAML-defined first, then runtime-ephemeral. */
 function groupTerminals(model, slice, groupName) {
-  const group = model.config.groups[groupName];
+  const group = _groupOf(model, groupName);
   if (!group) return {};
   const yaml = group.terminals || {};
   const eph = (slice.ephemeralTerminals && slice.ephemeralTerminals[groupName]) || {};
@@ -79,7 +91,7 @@ function groupContentTabs(slice, groupName) {
  *  it stays adjacent regardless of how long the per-group strip
  *  grows). */
 function flatTabInfo(slice, model, groupName) {
-  const group = model && model.config && model.config.groups && model.config.groups[groupName];
+  const group = _groupOf(model, groupName);
   if (!group) return { actionTabs: [], termTabs: [], contentTabs: [], total: 2 };
   const actionTabs = Object.entries(_mergedFor(model, groupName)).filter(([, a]) => a.tab);
   const termTabs = Object.entries(groupTerminals(model, slice, groupName));
@@ -173,7 +185,7 @@ function findEphemeralByIdIn(slice, id) {
 // --- Pure slice mutators (return [newSlice, info]) ------------------------
 
 function addEphemeral(slice, model, { groupName, key, cmd, label }) {
-  if (!model.config.groups[groupName]) return [slice, { focusDetail: false, terminalEnter: false }];
+  if (!_groupOf(model, groupName)) return [slice, { focusDetail: false, terminalEnter: false }];
 
   // T27 / R21 dup-key contract: when an entry already exists at this
   // key, the new {cmd, label} is INTENTIONALLY DROPPED — the call is
@@ -217,7 +229,7 @@ function removeEphemeral(slice, model, { groupName, key }) {
   const removedTermIdx = oldOrder.indexOf(key);
   const removedTabIdx = 2 + aCount + removedTermIdx;
 
-  const yaml = (model.config.groups[groupName] || {}).terminals || {};
+  const yaml = (_groupOf(model, groupName) || {}).terminals || {};
   const newCount = Object.keys({ ...yaml, ...ephGroupRest }).length;
 
   let tab = slice.tab;
@@ -241,7 +253,7 @@ function removeEphemeral(slice, model, { groupName, key }) {
 }
 
 function addContent(slice, model, { groupName, key, label, lines }) {
-  if (!model.config.groups[groupName]) return [slice, { focusDetail: false, terminalExit: false }];
+  if (!_groupOf(model, groupName)) return [slice, { focusDetail: false, terminalExit: false }];
 
   const ctAll = slice.contentTabs || {};
   const ctGroup = ctAll[groupName] || {};
