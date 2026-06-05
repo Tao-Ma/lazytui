@@ -444,7 +444,14 @@ function _updateInner(msg, slice) {
         next.search = { active: false, term: '', matches: [], idx: 0, typing: '' };
       }
       if (typeof msg.tab === 'number') {
-        next.tab = msg.tab | 0;
+        // v0.6.2 R13 — clamp to in-range. Pre-R13 `msg.tab | 0` silently
+        // accepted negative / non-numeric values: -5 | 0 === -5, 'foo'
+        // | 0 === 0, NaN | 0 === 0. Mirrors tab_switch's guard
+        // (pane-tabs.js: `if (idx < 0 || idx >= total) return slice`).
+        const m = getModel();
+        const info = pt.flatTabInfo(slice, m, m.currentGroup);
+        const tab = msg.tab | 0;
+        if (tab >= 0 && tab < info.total) next.tab = tab;
       }
       return next;
     }
@@ -744,7 +751,14 @@ function _updateInner(msg, slice) {
       return { ...slice, viewerStreamBuffer: nextBuf, scroll };
     }
     case 'viewer_set_tab': {
+      // v0.6.2 R13 — clamp to in-range. Pre-R13 `msg.tab | 0` silently
+      // accepted negative / non-numeric values: -5 | 0 === -5, 'foo'
+      // | 0 === 0, NaN | 0 === 0. Mirrors tab_switch's guard
+      // (pane-tabs.js: `if (idx < 0 || idx >= total) return slice`).
       const tab = msg.tab | 0;
+      const m = getModel();
+      const info = pt.flatTabInfo(slice, m, m.currentGroup);
+      if (tab < 0 || tab >= info.total) return slice;
       if (tab === slice.tab) return slice;
       // B2 — Producer-initiated set-tab (history replay, docker pre-
       // stream) also needs target-tab view-state restore. Without it,

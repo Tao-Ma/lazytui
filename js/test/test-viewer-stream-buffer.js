@@ -660,6 +660,34 @@ describe('[R6c viewer_set_content msg.tab] override + tab landing in one Msg', (
     eq(r.next.tabState['g:action:build'].search.term, 'foo',
       'pre-override search "foo" preserved');
   });
+  it('R13: viewer_set_content rejects negative / out-of-range msg.tab', () => {
+    setModel({
+      currentGroup: 'g',
+      modes: {},
+      config: { groups: { g: { label: 'G', actions: {} } } },  // total = 2
+    });
+    let s = { ...viewer._init(), tab: 1, innerH: 3 };
+    // Negative tab is silently dropped (slice.tab preserved).
+    const r1 = applyUpdate(s, { type: 'viewer_set_content', lines: ['x'], tab: -5 });
+    eq(r1.next.tab, 1, 'negative tab rejected, slice.tab preserved');
+    assert(r1.next.viewerOverride, 'override still set');
+    // Out-of-range positive tab is also dropped.
+    const r2 = applyUpdate(s, { type: 'viewer_set_content', lines: ['x'], tab: 99 });
+    eq(r2.next.tab, 1, 'out-of-range tab rejected');
+  });
+  it('R13: viewer_set_tab rejects negative / out-of-range msg.tab', () => {
+    setModel({
+      currentGroup: 'g',
+      modes: {},
+      config: { groups: { g: { label: 'G', actions: {} } } },  // total = 2
+    });
+    let s = { ...viewer._init(), tab: 1, innerH: 3 };
+    const r1 = applyUpdate(s, { type: 'viewer_set_tab', tab: -1 });
+    eq(r1.next.tab, 1, 'negative tab rejected — slice unchanged');
+    assert(r1.next === s || r1.next.tab === 1, 'no-op on out-of-range');
+    const r2 = applyUpdate(s, { type: 'viewer_set_tab', tab: 99 });
+    eq(r2.next.tab, 1, 'out-of-range positive tab rejected');
+  });
   it('B6: subsequent viewer_set_content (override already active) does NOT re-capture', () => {
     // When the override is rewritten (e.g., next history.replay
     // immediately following the first), originalSlice.viewerOverride

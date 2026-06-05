@@ -374,15 +374,18 @@ describe('[immutable] detail (viewer)', () => {
   });
 
   it('viewer_set_tab returns new slice on change, same ref on no-op', () => {
-    const slice = makeSlice({ tab: 2 });
-    const same = detail._update({ type: 'viewer_set_tab', tab: 2 }, slice);
+    // v0.6.2 R13 — msg.tab is range-validated against flatTabInfo's
+    // total. With no actions/terminals/content in the model, total = 2
+    // (Info + Transcript), so valid tabs here are 0 or 1.
+    const slice = makeSlice({ tab: 1 });
+    const same = detail._update({ type: 'viewer_set_tab', tab: 1 }, slice);
     assert(same === slice, 'no-op no-allocate');
     const next = expectNoMutation(
       'viewer_set_tab change leaves input frozen',
-      () => detail._update({ type: 'viewer_set_tab', tab: 5 }, slice),
+      () => detail._update({ type: 'viewer_set_tab', tab: 0 }, slice),
       slice,
     );
-    eq(next.tab, 5);
+    eq(next.tab, 0);
   });
 
   it('viewer_reset_chrome clears tab, cursor, select.active', () => {
