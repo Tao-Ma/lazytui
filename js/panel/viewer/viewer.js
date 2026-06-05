@@ -260,27 +260,14 @@ function _infoFromFocus() {
   if (!out || !out.length) return null;
   return out.join('\n').split('\n');
 }
-// T2d + T3c — derive slice.lines from viewerLines and mirror per-tab
-// fields (search) when the reducer changed them. Returns a fresh
-// result; identity-preserves no-op returns at the caller.
-function _withDerivedFields(next, originalSlice) {
+// T2d — derive slice.lines from viewerLines. The finalizer's only
+// job post-T3f is the lines re-derivation; per-tab state (scroll /
+// search / select / cursor) is persisted lazily by tab_switch on
+// the way out, not mirrored per-Msg.
+function _withDerivedFields(next, _originalSlice) {
   const m = getModel();
   const lines = pt.viewerLines(next, m, m.currentGroup, { infoFromFocus: _infoFromFocus });
-  let updated = { ...next, lines };
-  // T3c/d/e — per-tab field mirrors. When a reducer arm changed
-  // slice.{search, select, cursor}, mirror to tabState[activeKey] so
-  // tab_switch can restore the per-tab value on return.
-  const key = _activeTabKey(updated, m);
-  if (next.search !== originalSlice.search) {
-    updated = _withTabField(updated, key, 'search', next.search);
-  }
-  if (next.select !== originalSlice.select) {
-    updated = _withTabField(updated, key, 'select', next.select);
-  }
-  if (next.cursor !== originalSlice.cursor) {
-    updated = _withTabField(updated, key, 'cursor', next.cursor);
-  }
-  return updated;
+  return { ...next, lines };
 }
 function _finalize(result, originalSlice) {
   if (result === undefined) return result;
@@ -373,14 +360,11 @@ function _updateInner(msg, slice) {
       else next = slice.scroll + (msg.delta || 0);
       const scroll = Math.max(0, Math.min(maxScroll, next));
       if (scroll === slice.scroll) return slice;
-      // T3b: scrolling to the bottom re-arms sticky; scrolling away
-      // disarms it. Lets tab_switch re-snap to tail on return when
-      // sticky was set.
-      const key = _activeTabKey(slice, m);
-      return _withTabFields(
-        { ...slice, scroll },
-        key, { scroll, bottomSticky: scroll >= maxScroll },
-      );
+      // T3f — tab_switch captures slice.scroll into tabState on the
+      // way out; per-Msg mirror retired (was redundant — slice.scroll
+      // is the active-tab view, and tab_switch is the only point
+      // where we leave a tab).
+      return { ...slice, scroll };
     }
     case 'viewer_append': {
       // Hot path — streamed action output can fire 500-1000 lines/sec.
@@ -413,14 +397,7 @@ function _updateInner(msg, slice) {
             const wasAtBottom = slice.scroll >= maxScrollOld;
             const newMaxScroll = Math.max(0, bufLines.length - innerH);
             const scroll = wasAtBottom ? newMaxScroll : slice.scroll;
-            // T3b: mirror scroll + bottomSticky to per-tab. The sticky
-            // bit lets tab_switch re-snap to the new bottom when the
-            // user returns to a tab they'd left bottom-stuck.
-            const key = _activeTabKey(slice, m);
-            return _withTabFields(
-              { ...slice, actionTabBuffers: nextAll, scroll },
-              key, { scroll, bottomSticky: wasAtBottom },
-            );
+            return { ...slice, actionTabBuffers: nextAll, scroll };
           }
         }
         return { ...slice, actionTabBuffers: nextAll };
@@ -440,11 +417,7 @@ function _updateInner(msg, slice) {
         const scroll = wasAtBottom
           ? newMaxScroll
           : Math.max(0, (slice.scroll || 0) - dropped);
-        const key = _activeTabKey(slice, m);
-        return _withTabFields(
-          { ...slice, viewerStreamBuffer: nextBuf, scroll },
-          key, { scroll, bottomSticky: wasAtBottom },
-        );
+        return { ...slice, viewerStreamBuffer: nextBuf, scroll };
       }
       return { ...slice, viewerStreamBuffer: nextBuf };
     }
@@ -476,11 +449,7 @@ function _updateInner(msg, slice) {
             const wasAtBottom = slice.scroll >= maxScrollOld;
             const newMaxScroll = Math.max(0, bufLines.length - innerH);
             const scroll = wasAtBottom ? newMaxScroll : slice.scroll;
-            const key = _activeTabKey(slice, m);
-            return _withTabFields(
-              { ...slice, actionTabBuffers: nextAll, scroll },
-              key, { scroll, bottomSticky: wasAtBottom },
-            );
+            return { ...slice, actionTabBuffers: nextAll, scroll };
           }
         }
         return { ...slice, actionTabBuffers: nextAll };
@@ -499,11 +468,7 @@ function _updateInner(msg, slice) {
         const scroll = wasAtBottom
           ? newMaxScroll
           : Math.max(0, (slice.scroll || 0) - dropped);
-        const key = _activeTabKey(slice, m);
-        return _withTabFields(
-          { ...slice, viewerStreamBuffer: nextBuf, scroll },
-          key, { scroll, bottomSticky: wasAtBottom },
-        );
+        return { ...slice, viewerStreamBuffer: nextBuf, scroll };
       }
       return { ...slice, viewerStreamBuffer: nextBuf };
     }

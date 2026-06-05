@@ -261,45 +261,41 @@ describe('[T3b per-tab scroll] tab remembers its scroll across switches', () => 
   // The fragility T3 is solving: pre-T3, slice.scroll was shared by
   // all tabs. Scrolling Build to line 500, switching to Info, switching
   // back to Build = scroll reset (tab_switch arm bottom-pinned).
-  // Post-T3 each tab remembers its scroll independently.
+  // Post-T3 each tab remembers its scroll independently. T3f makes
+  // tab_switch the sole sync point (lazy persistence) — no per-Msg
+  // tabState mirroring.
   it('Transcript user-scrolled position survives a tab switch', () => {
-    // Start on Transcript with a populated buffer.
     let s = { ...viewer._init(), tab: 1, innerH: 3 };
     s = applyUpdate(s, {
       type: 'viewer_append_lines',
       lines: ['a', 'b', 'c', 'd', 'e', 'f', 'g'],
     }).next;
-    // Initially bottom-pinned (sticky on append).
     eq(s.scroll, Math.max(0, 7 - 3), 'bottom-pinned post-append');
-    // User scrolls up.
     s = applyUpdate(s, { type: 'viewer_scroll', to: 'top' }).next;
     eq(s.scroll, 0, 'scrolled to top');
-    eq(s.tabState.transcript.scroll, 0, 'per-tab scroll stored');
-    eq(s.tabState.transcript.bottomSticky, false, 'sticky disarmed (not at bottom)');
-    // Switch to Info, then back to Transcript.
+    // T3f: tabState.transcript is written when we switch AWAY (not
+    // per-Msg). End-to-end behavior is what matters — switch + back
+    // restores the user's scroll position.
     s = applyUpdate(s, { type: 'tab_switch', idx: 0 }).next;
+    eq(s.tabState.transcript.scroll, 0, 'switch-out captured Transcript scroll');
+    eq(s.tabState.transcript.bottomSticky, false, 'sticky disarmed (was at top, not bottom)');
     s = applyUpdate(s, { type: 'tab_switch', idx: 1 }).next;
     eq(s.scroll, 0, 'scroll restored to user-scrolled position (not bottom-pinned)');
   });
   it('Transcript bottom-stuck position re-snaps to new tail after background appends', () => {
-    // User was at bottom of a 3-line buffer; switches away; buffer grows
-    // to 7 lines; switches back. Should snap to the new bottom, not
-    // restore the literal scroll (0, which is no longer the bottom).
     let s = { ...viewer._init(), tab: 1, innerH: 3 };
     s = applyUpdate(s, {
       type: 'viewer_append_lines', lines: ['a', 'b', 'c'],
     }).next;
     eq(s.scroll, 0, 'bottom of 3 lines with innerH 3 is scroll 0');
-    eq(s.tabState.transcript.bottomSticky, true, 'sticky armed (was at bottom)');
-    // Switch off; simulate background growth via direct buffer poke
-    // (matches off-tab append semantics — buffer grows, tabState is
-    // unchanged because the active branch didn't fire).
+    // Switch off — tab_switch captures bottomSticky=true (scroll was
+    // at maxScroll). Background growth simulated by direct buffer poke.
     s = applyUpdate(s, { type: 'tab_switch', idx: 0 }).next;
+    eq(s.tabState.transcript.bottomSticky, true, 'sticky armed on switch-out');
     s = {
       ...s,
       viewerStreamBuffer: { lines: ['a', 'b', 'c', 'd', 'e', 'f', 'g'], cap: 1000 },
     };
-    // Switch back — sticky should re-snap to the new bottom.
     s = applyUpdate(s, { type: 'tab_switch', idx: 1 }).next;
     eq(s.scroll, Math.max(0, 7 - 3), 're-snapped to new bottom (sticky honored)');
   });
