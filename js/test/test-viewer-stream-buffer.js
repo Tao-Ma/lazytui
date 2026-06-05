@@ -431,4 +431,88 @@ describe('[B2 viewer_set_tab inbound restore] producer-initiated set-tab restore
   });
 });
 
+describe('[B3 viewerOverride clear] tab-transitioning arms drop the stale override', () => {
+  // Pre-B3, only tab_switch cleared slice.viewerOverride. Three other
+  // arms also mutate slice.tab but skipped the clear:
+  //   - stream_start routed (auto-jump to action tab)
+  //   - stream_start unrouted (auto-jump to Transcript)
+  //   - viewer_reset_chrome (group switch resets tab to 0)
+  // Visible repro: open Running overlay, activate a background job
+  // (writes override via setViewerContent), then trigger any routed
+  // action — the stream auto-jumps to the action tab but the user
+  // keeps seeing the background-job info card painted from
+  // viewerOverride while bytes silently fill an off-screen
+  // actionTabBuffers entry.
+  it('stream_start routed auto-jump clears viewerOverride', () => {
+    setModel({
+      currentGroup: 'g',
+      modes: {},
+      config: { groups: { g: { label: 'G', actions: { build: { label: 'Build', tab: 'Build', script: 'make' } } } } },
+    });
+    let s = { ...viewer._init(), tab: 0, innerH: 5 };
+    s = applyUpdate(s, { type: 'viewer_set_content', lines: ['override line'] }).next;
+    assert(s.viewerOverride, 'override armed');
+    const r = applyUpdate(s, { type: 'stream_start', tabKey: 'build', groupName: 'g', header: '$ make' });
+    eq(r.next.tab, 2, 'auto-jumped to action tab idx 2');
+    eq(r.next.viewerOverride, null, 'override cleared by routed auto-jump');
+  });
+  it('stream_start routed cross-group (no auto-jump) preserves viewerOverride', () => {
+    setModel({
+      currentGroup: 'g',
+      modes: {},
+      config: { groups: {
+        g:  { label: 'G',  actions: {} },
+        g2: { label: 'G2', actions: { build: { label: 'Build', tab: 'Build', script: 'make' } } },
+      } },
+    });
+    let s = { ...viewer._init(), tab: 0, innerH: 5 };
+    s = applyUpdate(s, { type: 'viewer_set_content', lines: ['override'] }).next;
+    // Stream targets g2 while currentGroup is g — no auto-jump.
+    const r = applyUpdate(s, { type: 'stream_start', tabKey: 'build', groupName: 'g2', header: '$ make' });
+    eq(r.next.tab, 0, 'no transition (cross-group)');
+    assert(r.next.viewerOverride, 'override survives — no auto-jump means no dismissal');
+  });
+  it('stream_start unrouted auto-jump to Transcript clears viewerOverride', () => {
+    setModel({
+      currentGroup: 'g',
+      modes: {},
+      config: { groups: { g: { label: 'G', actions: {} } } },
+    });
+    let s = { ...viewer._init(), tab: 0, innerH: 5 };
+    s = applyUpdate(s, { type: 'viewer_set_content', lines: ['override'] }).next;
+    assert(s.viewerOverride, 'override armed');
+    const r = applyUpdate(s, { type: 'stream_start', header: '$ docker ps' });
+    eq(r.next.tab, 1, 'auto-jumped to Transcript');
+    eq(r.next.viewerOverride, null, 'override cleared by unrouted auto-jump');
+  });
+  it('stream_start unrouted while ALREADY on Transcript preserves override (no transition)', () => {
+    setModel({
+      currentGroup: 'g',
+      modes: {},
+      config: { groups: { g: { label: 'G', actions: {} } } },
+    });
+    let s = { ...viewer._init(), tab: 1, innerH: 5 };
+    s = applyUpdate(s, { type: 'viewer_set_content', lines: ['override'] }).next;
+    const r = applyUpdate(s, { type: 'stream_start', header: '$ docker ps' });
+    eq(r.next.tab, 1, 'still on Transcript (no transition)');
+    assert(r.next.viewerOverride, 'override survives');
+  });
+  it('viewer_reset_chrome (group switch) clears viewerOverride', () => {
+    setModel({
+      currentGroup: 'g',
+      modes: {},
+      config: { groups: { g: { label: 'G', actions: {} } } },
+    });
+    let s = { ...viewer._init(), tab: 2, innerH: 5 };
+    s = applyUpdate(s, { type: 'viewer_set_content', lines: ['per-group override'] }).next;
+    assert(s.viewerOverride, 'override armed');
+    const r = applyUpdate(s, { type: 'viewer_reset_chrome' });
+    // viewer_reset_chrome returns either a slice OR [slice, effects]
+    // depending on whether tabListMode was set; in this scenario it's not.
+    const next = Array.isArray(r.next) ? r.next[0] : r.next;
+    eq(next.tab, 0, 'tab reset to Info');
+    eq(next.viewerOverride, null, 'group-switch dismisses the override');
+  });
+});
+
 report();

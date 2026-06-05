@@ -519,12 +519,20 @@ function _updateInner(msg, slice) {
             // Auto-jump skips tab_switch — emit terminal_exit so
             // terminalMode doesn't survive the jump. v0.6.2 — action
             // tabs start at idx 2 (Info=0, Transcript=1).
+            // B3 — clear viewerOverride on the auto-jump: the override
+            // (e.g. job-info card from a Running-overlay activate) is
+            // dismissed by the stream event that's taking over the
+            // visible viewer. Without this, viewerLines() returns the
+            // stale override and the user sees the override painted in
+            // place of the new action tab's incoming output.
             return [
-              { ...slice, actionTabBuffers: nextAll, lines: [msg.header], scroll: 0, tab: 2 + idx },
+              { ...slice, actionTabBuffers: nextAll, lines: [msg.header], scroll: 0, tab: 2 + idx, viewerOverride: null },
               [{ type: 'msg', msg: { type: 'terminal_exit' } }],
             ];
           }
         }
+        // Cross-group: no auto-jump, no transition — override stays
+        // (it's bound to whatever the user is currently viewing).
         return { ...slice, actionTabBuffers: nextAll };
       }
       // Unrouted stream_start: append header to viewerStreamBuffer
@@ -541,12 +549,16 @@ function _updateInner(msg, slice) {
       const info = pt.flatTabInfo(slice, getModel(), getModel().currentGroup);
       const tIdx = pt.transcriptTabIdx(info);
       if (slice.tab !== tIdx) {
+        // B3 — clear viewerOverride on the auto-jump (same rationale
+        // as the routed branch above).
         return [
-          { ...slice, viewerStreamBuffer: nextBuf, tab: tIdx, lines: vsbLines.slice(), scroll },
+          { ...slice, viewerStreamBuffer: nextBuf, tab: tIdx, lines: vsbLines.slice(), scroll, viewerOverride: null },
           [{ type: 'msg', msg: { type: 'terminal_exit' } }],
         ];
       }
       // Already on Transcript: mirror the cap-aware lines to slice.lines.
+      // No transition, so any pre-existing override stays (user can
+      // dismiss it explicitly via tab_switch).
       return { ...slice, viewerStreamBuffer: nextBuf, lines: vsbLines.slice(), scroll };
     }
     case 'viewer_set_tab': {
@@ -582,7 +594,11 @@ function _updateInner(msg, slice) {
       // tree cascade changes currentGroup. Single-writer per layer: root
       // chrome reset goes through the reset_group_context Msg; the viewer-
       // slice half lives here. See Phase A.
-      const next = { ...slice, tab: 0, cursor: { line: 0, col: 0 } };
+      // B3 — clear viewerOverride on group switch: the override is
+      // group-bound (job-info from a Running overlay activation, history
+      // replay of a per-group action, config-status diff for a group's
+      // worktree). Crossing groups invalidates it.
+      const next = { ...slice, tab: 0, cursor: { line: 0, col: 0 }, viewerOverride: null };
       if (slice.select) next.select = { ...slice.select, active: false };
       // Group switch closes the tab-list overlay too — the per-group tab
       // set is fundamentally different across groups, so lingering would
