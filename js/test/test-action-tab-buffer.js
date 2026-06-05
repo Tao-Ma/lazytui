@@ -72,7 +72,7 @@ describe('[stream_start] routed seeds buffer + auto-jumps + emits terminal_exit'
     const s0 = { ...viewer._init(), tab: 0 };
     const { next, cmds } = applyUpdate(s0, { type: 'stream_start', header: '[dim]$ raw[/]' });
     const info = pt.flatTabInfo(next, getModel(), 'g');
-    const tIdx = pt.transcriptTabIdx(info);
+    const tIdx = pt.transcriptTabIdx();
     eq(next.tab, tIdx, `auto-jump to Transcript (idx ${tIdx})`);
     eq(next.lines.length, 1, 'mirror line set on Transcript');
     eq(next.viewerStreamBuffer.lines.length, 1, 'buffer seeded');
@@ -145,7 +145,7 @@ describe('[viewer_append] routed → buffer + mirror-on-active', () => {
     eq(r1.actionTabBuffers, s0.actionTabBuffers, 'routed buffer untouched');
     // Now on Transcript — both grow. Seed buffer with prior content.
     const info = pt.flatTabInfo(s0, getModel(), 'g');
-    const tIdx = pt.transcriptTabIdx(info);
+    const tIdx = pt.transcriptTabIdx();
     const s1 = {
       ...viewer._init(),
       tab: tIdx,
@@ -229,7 +229,7 @@ describe('[viewer_append_lines] bulk append — atomic reducer pass', () => {
     eq(r1.viewerStreamBuffer.lines.length, 2, 'buffer captured both lines');
     // On Transcript — both grow. Seed buffer with prior content.
     const info = pt.flatTabInfo(s0, getModel(), 'g');
-    const tIdx = pt.transcriptTabIdx(info);
+    const tIdx = pt.transcriptTabIdx();
     const s1 = {
       ...viewer._init(),
       tab: tIdx,

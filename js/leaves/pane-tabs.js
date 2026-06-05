@@ -175,7 +175,7 @@ function flatTabInfo(slice, model, groupName) {
 }
 
 /** Flat-index of the Transcript tab — always 1 (right after Info). */
-function transcriptTabIdx(_info) {
+function transcriptTabIdx() {
   return 1;
 }
 
@@ -514,6 +514,13 @@ function reduceTabMsg(msg, slice, ctx) {
       const { actionTabs, termTabs, total } = getTabInfo();
       const idx = msg.idx | 0;
       if (idx < 0 || idx >= total) return slice;
+      // N4 — same-tab click is a no-op. Pre-N4 this still fired the full
+      // cascade: clear viewerOverride, emit terminal_exit, run the
+      // kind-specific restore body. Most of those are identity-preserving
+      // when applied to the slice's current state, but the cascade still
+      // allocates + the finalizer still runs. Early-out keeps clicking
+      // the active tab strictly free.
+      if (idx === slice.tab) return slice;
 
       // T3f-fix — leaving-tab capture lives in viewer.js's finalizer
       // (_withDerivedFields) so it catches every slice.tab transition

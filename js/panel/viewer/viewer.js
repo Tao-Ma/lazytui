@@ -557,7 +557,7 @@ function _updateInner(msg, slice) {
       const nextBuf = { ...vsb, lines: vsbLines };
       const m = getModel();
       const info = pt.flatTabInfo(slice, m, m.currentGroup);
-      if (slice.tab === pt.transcriptTabIdx(info)) {
+      if (slice.tab === pt.transcriptTabIdx()) {
         const innerH = _innerH(slice);
         const maxScrollOld = Math.max(0, vsb.lines.length - innerH);
         const wasAtBottom = slice.scroll >= maxScrollOld;
@@ -608,7 +608,7 @@ function _updateInner(msg, slice) {
       const nextBuf = { ...vsb, lines: vsbLines };
       const m = getModel();
       const info = pt.flatTabInfo(slice, m, m.currentGroup);
-      if (slice.tab === pt.transcriptTabIdx(info)) {
+      if (slice.tab === pt.transcriptTabIdx()) {
         const innerH = _innerH(slice);
         const maxScrollOld = Math.max(0, vsb.lines.length - innerH);
         const wasAtBottom = slice.scroll >= maxScrollOld;
@@ -696,7 +696,7 @@ function _updateInner(msg, slice) {
       const innerH = _innerH(slice);
       const scroll = Math.max(0, vsbLines.length - innerH);
       const info = pt.flatTabInfo(slice, getModel(), getModel().currentGroup);
-      const tIdx = pt.transcriptTabIdx(info);
+      const tIdx = pt.transcriptTabIdx();
       if (slice.tab !== tIdx) {
         // B3 — clear viewerOverride on the auto-jump (same rationale
         // as the routed branch above).

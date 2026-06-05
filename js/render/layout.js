@@ -34,7 +34,8 @@ const { isTerminalTab, activeTerminalId, activeTerminalConfig,
         getTabInfo, findEphemeralByid } = require('../panel/viewer/tabs');
 const { ensureSession, getSession, resizeSession } = require('../io/terminal');
 const {getPanelDef, getInstanceSlice, getFocus, getComponent, getComponentOwningPanel,
-       dispatchMsg, wrap, instanceKind } = require('../panel/api');
+       dispatchMsg, wrap, instanceKind,
+       collectViewContributions, filterCurrentText } = require('../panel/api');
 const { renderCopyMenu } = require('../overlay/copy');
 const { render: renderRegisterPopup } = require('../overlay/register-popup');
 const { renderMenu } = require('../overlay/menu');
@@ -49,8 +50,6 @@ const { injectTopRowChrome } = require('./panel-widgets');
 const { renderPanelListOverlay } = require('../overlay/panel-list');
 const { renderTabList, injectTabTrigger } = require('../overlay/tab-list');
 const { renderJobsOverlay } = require('../overlay/jobs');
-const { collectViewContributions } = require('../panel/api');
-const { filterCurrentText } = require('../panel/api');
 
 /**
  * Look up the render function for a panel type. Contract:
