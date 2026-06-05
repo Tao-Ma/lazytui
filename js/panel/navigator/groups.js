@@ -174,8 +174,19 @@ function _cascadeCmds(res) {
     cmds.push({ type: 'msg', msg: require('../api').wrap('groups', { type: 'set_cursor', panel: 'groups', index: res.newIdx }) });
   }
   if (res.groupChanged) {
-    cmds.push({ type: 'msg', msg: { type: 'set_current_group', name: res.newCurrentGroup } });
-    cmds.push({ type: 'msg', msg: { type: 'reset_group_context' } });
+    // v0.6.2 B5 — viewer_reset_chrome MUST run before set_current_group.
+    // The viewer's finalizer captures the leaving tab's view-state on
+    // slice.tab transition, resolving the fromKey via
+    // pane-tabs.resolveTabKey(originalSlice.tab, originalSlice, getModel()).
+    // resolveTabKey reads model.currentGroup to build per-group keys
+    // (`<group>:action:<key>` etc). If set_current_group runs FIRST,
+    // getModel().currentGroup is already the NEW group by the time the
+    // finalizer runs — so the FROM-capture lands under the WRONG group's
+    // key (poisoning the new group's tab AND losing the old group's
+    // saved state). Reordering keeps the finalizer reading the OLD
+    // group at capture time. set_current_group + reset_group_context
+    // don't touch the viewer slice, so their order relative to each
+    // other (and to viewer_reset_chrome) only matters for this read.
     // v0.6.1 Phase 5 — viewer reset routes through resolveTarget so
     // multi-viewer (Phase 6+) hits the right pane. With one viewer
     // (today) this resolves to 'detail' every time. null → no viewer
@@ -185,6 +196,8 @@ function _cascadeCmds(res) {
     if (target) {
       cmds.push({ type: 'msg', msg: require('../api').wrap(target, { type: 'viewer_reset_chrome' }) });
     }
+    cmds.push({ type: 'msg', msg: { type: 'set_current_group', name: res.newCurrentGroup } });
+    cmds.push({ type: 'msg', msg: { type: 'reset_group_context' } });
   }
   cmds.push({ type: 'show_selected_info' });
   return cmds;
@@ -210,14 +223,16 @@ function update(msg, slice) {
     // cursor already written by nav_select — don't re-emit set_panel_cursor.
     const cmds = [];
     if (res.groupChanged) {
-      cmds.push({ type: 'msg', msg: { type: 'set_current_group', name: res.newCurrentGroup } });
-      cmds.push({ type: 'msg', msg: { type: 'reset_group_context' } });
-      // v0.6.1 Phase 5 — viewer reset routes through resolveTarget.
+      // v0.6.2 B5 — viewer_reset_chrome before set_current_group (see
+      // selectAt cascade above for the full rationale: the finalizer's
+      // FROM-tab key resolution needs the OLD currentGroup).
       const route = require('../../leaves/route');
       const target = route.resolveTarget('viewer');
       if (target) {
         cmds.push({ type: 'msg', msg: require('../api').wrap(target, { type: 'viewer_reset_chrome' }) });
       }
+      cmds.push({ type: 'msg', msg: { type: 'set_current_group', name: res.newCurrentGroup } });
+      cmds.push({ type: 'msg', msg: { type: 'reset_group_context' } });
     }
     return [slice, cmds];
   }

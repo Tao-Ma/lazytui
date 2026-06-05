@@ -536,6 +536,49 @@ describe('[B4 group-qualified tabState keys] two groups sharing an action name d
     eq(r.next.tab, 0, 'no auto-jump (cross-group)');
     assert(!('g2:action:build' in r.next.tabState), 'tabState dropped for cross-group target too');
   });
+  it('B5: group-switch cascade emits viewer_reset_chrome BEFORE set_current_group', () => {
+    // Round 2 adversarial finding: the finalizer's FROM-tab key
+    // resolution reads getModel().currentGroup. If set_current_group
+    // runs first, currentGroup is the NEW group by the time
+    // viewer_reset_chrome's finalizer captures — so the FROM-tab state
+    // lands under the WRONG group's key (poisoning the new group AND
+    // losing the old group's saved state).
+    // Fix: emit viewer_reset_chrome FIRST so currentGroup still holds
+    // the OLD value at finalizer-time.
+    const groups = require('../panel/navigator/groups');
+    setModel({
+      currentGroup: 'g1',
+      modes: {},
+      config: { groups: {
+        g1: { label: 'G1', actions: {}, items: [{ name: 'a' }, { name: 'b' }] },
+        g2: { label: 'G2', actions: {}, items: [{ name: 'c' }] },
+      } },
+    });
+    // The groups Component's groups_selected emits the cascade. Build a
+    // slice with two group rows + simulate moving to index 1.
+    const initialSlice = groups.init();
+    // Recompute to populate slice.list (the groups Component's
+    // groups_recompute Msg).
+    const rec = groups._update({ type: 'groups_recompute' }, initialSlice);
+    const slice = Array.isArray(rec) ? rec[0] : rec;
+    // Dispatch groups_selected with the new index.
+    const res = groups._update({ type: 'groups_selected', index: 1 }, slice);
+    const cmds = Array.isArray(res) ? res[1] : [];
+    // Find the indices of the three relevant Cmds in the cascade.
+    const resetChromeIdx = cmds.findIndex(c =>
+      c.type === 'msg' && c.msg && c.msg.msg && c.msg.msg.type === 'viewer_reset_chrome');
+    const setGroupIdx = cmds.findIndex(c =>
+      c.type === 'msg' && c.msg && c.msg.type === 'set_current_group');
+    const resetCtxIdx = cmds.findIndex(c =>
+      c.type === 'msg' && c.msg && c.msg.type === 'reset_group_context');
+    assert(resetChromeIdx >= 0, 'viewer_reset_chrome Cmd present');
+    assert(setGroupIdx >= 0, 'set_current_group Cmd present');
+    assert(resetCtxIdx >= 0, 'reset_group_context Cmd present');
+    assert(resetChromeIdx < setGroupIdx,
+      `viewer_reset_chrome (idx ${resetChromeIdx}) MUST be before set_current_group (idx ${setGroupIdx}) — B5 contract`);
+    assert(setGroupIdx < resetCtxIdx,
+      `set_current_group (idx ${setGroupIdx}) before reset_group_context (idx ${resetCtxIdx}) — existing order`);
+  });
   it('Info and Transcript are unprefixed (group-independent)', () => {
     setModel({
       currentGroup: 'g',
