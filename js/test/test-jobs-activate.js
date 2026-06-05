@@ -67,7 +67,7 @@ describe('[jobs_activate] full cascade — one Msg, reducer-driven', () => {
     });
     _activate();
     eq(runtime.getModel().modes.jobsMode, false, 'overlay closed');
-    eq(api.getInstanceSlice('detail').tab, 1, 'tab_switch landed on action tab idx 1');
+    eq(api.getInstanceSlice('detail').tab, 2, 'tab_switch landed on action tab idx 2 (Info=0, Transcript=1, make-check=2)');
     eq(api.getInstanceSlice('layout').focus, 'detail', 'focus on viewer pane');
   });
 
@@ -95,9 +95,9 @@ describe('[jobs_activate] full cascade — one Msg, reducer-driven', () => {
     });
     _activate();
     eq(runtime.getModel().modes.jobsMode, false);
-    // Tab strip: [Info, make-check, shell, ...]. shell is termTab idx 0
-    // → absolute tab 1 (actionTabs.length) + 1 = 2.
-    eq(api.getInstanceSlice('detail').tab, 2, 'tab_switch landed on terminal tab idx 2');
+    // v0.6.2 tab strip: [Info, Transcript, make-check, shell, ...]. shell
+    // is termTab idx 0 → absolute tab = 2 + actionTabs.length(1) = 3.
+    eq(api.getInstanceSlice('detail').tab, 3, 'tab_switch landed on terminal tab idx 3');
     eq(runtime.getModel().modes.terminalMode, true, 'terminal_enter fired');
   });
 

@@ -734,7 +734,8 @@ function update(model, msg) {
         const info = pt.flatTabInfo(slice, model, groupName);
         const idx = info.actionTabs.findIndex(([k]) => k === owner.tabKey);
         if (idx >= 0) {
-          cmds.push({ type: 'msg', msg: route.wrap(viewerTarget, { type: 'tab_switch', idx: 1 + idx }) });
+          // v0.6.2 — action tabs start at idx 2 (Info=0, Transcript=1).
+          cmds.push({ type: 'msg', msg: route.wrap(viewerTarget, { type: 'tab_switch', idx: 2 + idx }) });
           cmds.push({ type: 'msg', msg: route.wrap('layout', { type: 'focus_set', focus: viewerTarget }) });
         }
       } else if (kind === 'stream-unrouted') {
@@ -748,8 +749,9 @@ function update(model, msg) {
           if (`${groupName}_${info.termTabs[i][0]}` === owner.ptyId) { termIdx = i; break; }
         }
         if (termIdx >= 0) {
+          // v0.6.2 — term tabs start at idx 2 + actionTabs.length.
           cmds.push({ type: 'msg', msg: route.wrap(viewerTarget, {
-            type: 'tab_switch', idx: 1 + info.actionTabs.length + termIdx,
+            type: 'tab_switch', idx: 2 + info.actionTabs.length + termIdx,
           }) });
           cmds.push({ type: 'msg', msg: route.wrap('layout', { type: 'focus_set', focus: viewerTarget }) });
           cmds.push({ type: 'msg', msg: { type: 'terminal_enter' } });

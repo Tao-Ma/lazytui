@@ -331,9 +331,10 @@ function update(msg, slice) {
           const idx = info.actionTabs.findIndex(([k]) => k === msg.tabKey);
           if (idx >= 0) {
             // Auto-jump skips tab_switch — emit terminal_exit so
-            // terminalMode doesn't survive the jump.
+            // terminalMode doesn't survive the jump. v0.6.2 — action
+            // tabs start at idx 2 (Info=0, Transcript=1).
             return [
-              { ...slice, actionTabBuffers: nextAll, lines: [msg.header], scroll: 0, tab: 1 + idx },
+              { ...slice, actionTabBuffers: nextAll, lines: [msg.header], scroll: 0, tab: 2 + idx },
               [{ type: 'msg', msg: { type: 'terminal_exit' } }],
             ];
           }

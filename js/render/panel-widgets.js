@@ -221,20 +221,22 @@ function buildTabStrip(tabInfo, activeTab, hotkey, runningActionKeys) {
     partMeta.push({ closeKey, activeWrap: isActive ? 1 : 0 });
   };
   pushTab(esc('Info'), activeTab === 0, null);
+  // Transcript — implicit, at idx 1 right after Info. v0.6.2 —
+  // hosts the unrouted accumulator (replaces the pre-fix
+  // "Info doubles as transcript host" design). Placed next to Info
+  // so the two globals stay adjacent regardless of how long the
+  // per-group strip grows. Empty-buffer state still renders the
+  // tab; tab_switch handler shows a placeholder.
+  pushTab(esc('Transcript'), activeTab === 1, null);
   actionTabs.forEach(([key, action], i) => {
     const running = runningActionKeys && runningActionKeys.has(key);
     const prefix = running ? '[yellow]●[/]' : '';
-    pushTab(prefix + esc(action.label), activeTab === i + 1, null);
+    pushTab(prefix + esc(action.label), activeTab === i + 2, null);
   });
-  const termOffset = 1 + actionTabs.length;
+  const termOffset = 2 + actionTabs.length;
   termTabs.forEach(([, term], i) => pushTab(term.label, activeTab === termOffset + i, null));
-  const contentOffset = 1 + actionTabs.length + termTabs.length;
+  const contentOffset = 2 + actionTabs.length + termTabs.length;
   contentTabs.forEach(([key, info], i) => pushTab(info.label, activeTab === contentOffset + i, key));
-  // Transcript — implicit, always last. v0.6.2 — replaces the
-  // pre-fix "Info doubles as transcript host" design that bred
-  // viewer_show_info guards. Empty-buffer state still renders the
-  // tab; tab_switch handler shows a placeholder.
-  pushTab(esc('Transcript'), activeTab === total - 1, null);
 
   const tabBounds = [];
   // Title starts at col 2 (after `╭─`); hotkey display occupies

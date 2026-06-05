@@ -55,7 +55,7 @@ describe('[stream_start] routed seeds buffer + auto-jumps + emits terminal_exit'
       tabKey: 'make-check',
       groupName: 'g',
     });
-    eq(next.tab, 1, 'auto-jump to make-check tab (idx 1, first action tab)');
+    eq(next.tab, 2, 'auto-jump to make-check tab (idx 2 — first action tab; Info=0, Transcript=1)');
     eq(next.lines.length, 1, 'slice.lines is header only');
     eq(next.lines[0], '[dim]$ make-check[/]', 'header text');
     eq(next.scroll, 0, 'scroll reset');
@@ -108,7 +108,7 @@ describe('[viewer_append] routed → buffer + mirror-on-active', () => {
   }
 
   it('appends to buffer AND mirrors to slice.lines when on the action tab', () => {
-    let s = seeded();  // slice.tab=1 (make-check)
+    let s = seeded();  // slice.tab=2 (make-check; Info=0, Transcript=1, make-check=2)
     s = applyUpdate(s, { type: 'viewer_append', line: 'foo', tabKey: 'make-check', groupName: 'g' }).next;
     s = applyUpdate(s, { type: 'viewer_append', line: 'bar', tabKey: 'make-check', groupName: 'g' }).next;
     eq(s.actionTabBuffers.g['make-check'].lines.length, 3, 'buffer grew to 3');
@@ -166,7 +166,7 @@ describe('[viewer_append_lines] bulk append — atomic reducer pass', () => {
   }
 
   it('appends N lines in one pass; buffer grows by N; slice.lines mirrors when active', () => {
-    let s = seeded();  // tab=1, lines=[header]
+    let s = seeded();  // tab=2, lines=[header]
     s = applyUpdate(s, {
       type: 'viewer_append_lines',
       lines: ['a', 'b', 'c'],
@@ -242,9 +242,10 @@ describe('[tab_switch] action arm restores buffer + bottom-pin scroll', () => {
   }
 
   it('restores from buffer when present, bottom-pin scroll', () => {
+    // v0.6.2 — make-check at idx 2 (Info=0, Transcript=1, make-check=2).
     const s = buildSliceWithBuffer(['h', 'a', 'b', 'c', 'd']);
-    const { next, cmds } = applyUpdate(s, { type: 'tab_switch', idx: 1 });
-    eq(next.tab, 1, 'on make-check tab');
+    const { next, cmds } = applyUpdate(s, { type: 'tab_switch', idx: 2 });
+    eq(next.tab, 2, 'on make-check tab');
     eq(next.lines.length, 5, 'lines restored from buffer');
     eq(next.scroll, Math.max(0, 5 - 3), 'scroll pinned to bottom (lines.length - innerH)');
     assert(!cmds.some(c => c.type === 'kill_proc'),
@@ -255,15 +256,15 @@ describe('[tab_switch] action arm restores buffer + bottom-pin scroll', () => {
 
   it('paints "Press Enter to run" placeholder when no buffer yet', () => {
     const s0 = { ...viewer._init(), tab: 0 };
-    const { next } = applyUpdate(s0, { type: 'tab_switch', idx: 1 });
-    eq(next.tab, 1, 'on make-check tab');
+    const { next } = applyUpdate(s0, { type: 'tab_switch', idx: 2 });
+    eq(next.tab, 2, 'on make-check tab');
     eq(next.lines.length, 1, 'one placeholder line');
     assert(next.lines[0].indexOf('Press Enter to run') >= 0, 'placeholder text');
   });
 
   it('post-restore appends continue bottom-sticking', () => {
     const s = buildSliceWithBuffer(['h', 'a', 'b', 'c', 'd']);
-    let { next } = applyUpdate(s, { type: 'tab_switch', idx: 1 });
+    let { next } = applyUpdate(s, { type: 'tab_switch', idx: 2 });
     next = applyUpdate(next, { type: 'viewer_append', line: 'e', tabKey: 'make-check', groupName: 'g' }).next;
     eq(next.lines.length, 6, '6 lines');
     eq(next.scroll, Math.max(0, 6 - 3), 'scroll advanced with new line');
@@ -280,19 +281,19 @@ describe('[Phase 3 invariant] background streaming survives tab leave', () => {
       tabKey: 'make-check',
       groupName: 'g',
     }).next;
-    eq(s.tab, 1, 'auto-jumped to make-check');
+    eq(s.tab, 2, 'auto-jumped to make-check (idx 2)');
     s = applyUpdate(s, { type: 'viewer_append', line: 'live-1', tabKey: 'make-check', groupName: 'g' }).next;
     s = applyUpdate(s, { type: 'viewer_append', line: 'live-2', tabKey: 'make-check', groupName: 'g' }).next;
-    // Switch to other-action
-    s = applyUpdate(s, { type: 'tab_switch', idx: 2 }).next;
-    eq(s.tab, 2);
+    // Switch to other-action (idx 3)
+    s = applyUpdate(s, { type: 'tab_switch', idx: 3 }).next;
+    eq(s.tab, 3);
     // Background appends to make-check (producer still alive in Phase 3)
     for (const line of ['bg-1', 'bg-2', 'bg-3']) {
       s = applyUpdate(s, { type: 'viewer_append', line, tabKey: 'make-check', groupName: 'g' }).next;
     }
     eq(s.actionTabBuffers.g['make-check'].lines.length, 6, 'background buffer grew to 6');
-    // Switch back
-    s = applyUpdate(s, { type: 'tab_switch', idx: 1 }).next;
+    // Switch back to make-check (idx 2)
+    s = applyUpdate(s, { type: 'tab_switch', idx: 2 }).next;
     eq(s.lines.length, 6, 'slice.lines reflects live state');
     eq(s.lines[5], 'bg-3', 'latest background line at the tail');
     eq(s.scroll, Math.max(0, 6 - 3), 'scroll pinned to bottom on re-entry');

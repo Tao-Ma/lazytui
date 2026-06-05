@@ -162,18 +162,20 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   edge case. User-reported symptom: after running one command, j/k
   in actions stopped updating Info — the transcript had won and
   wouldn't yield. **Fix** — separate the surfaces. A new
-  **Transcript** tab (always last in the strip) now owns the
-  unrouted accumulator (`slice.viewerStreamBuffer`). Info is pure
+  **Transcript** tab (placed at idx 1, right after Info) now owns
+  the unrouted accumulator (`slice.viewerStreamBuffer`). The two
+  global tabs sit adjacent so Transcript stays next to Info no
+  matter how long the per-group strip grows. Info is pure
   selection-info; its reducer arm is 5 lines, no guards. Unrouted
   `stream_start` / `viewer_append` / `viewer_append_lines` mirror
   to `slice.lines` only when on Transcript; `tab_switch idx=0`
-  just clears + dispatches `viewer_show_info`; `tab_switch` to
-  Transcript restores from buffer with bottom-pin scroll (empty
+  just clears + dispatches `viewer_show_info`; `tab_switch idx=1`
+  (Transcript) restores from buffer with bottom-pin scroll (empty
   buffer → `(no transcript yet)` placeholder). `appendViewerLines`
   (the spawn/cmdline status helper) lands in the same buffer,
-  reachable via the Transcript tab. Replaces the over-greedy
-  buffer-guard removal from earlier in v0.6.2 with the
-  structurally-correct design — Info double-booking retired.
+  reachable via the Transcript tab. **Tab strip layout:**
+  `[Info] [Transcript] [actionTabs...] [termTabs...] [contentTabs...]`
+  — per-group tabs shift +1 (action tabs now start at idx 2).
 
 - **Plugin-synthesized tab:true actions are visible to the tab
   system.** The detail tab strip, the leader-shadow check, and

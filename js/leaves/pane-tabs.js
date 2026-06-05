@@ -65,17 +65,19 @@ function groupContentTabs(slice, groupName) {
 /** Flat tab info for a pane's slice + a group:
  *    { actionTabs, termTabs, contentTabs, total }
  *  Tab strip layout, left → right:
- *    [Info] [actionTabs...] [termTabs...] [contentTabs...] [Transcript]
- *       0     1..A             A+1..A+T     A+T+1..A+T+C    total-1
+ *    [Info] [Transcript] [actionTabs...] [termTabs...] [contentTabs...]
+ *       0        1          2..1+A          2+A..1+A+T   2+A+T..1+A+T+C
+ *  Two implicit globals (Info, Transcript) lead; per-group tabs follow.
  *  actionTabs comes from `group.actions[*].tab` merged with plugin-
  *  synthesized actions (see panel/api.js getMergedActions — v0.6.2
  *  fix for plugin tab:true actions that were invisible to this leaf
  *  pre-merge). termTabs merges group.terminals (YAML) + slice.
  *  ephemeralTerminals[groupName] (runtime); contentTabs comes from
- *  slice.contentTabs[groupName]. `total` includes the implicit Info
- *  tab at index 0 AND the implicit Transcript tab at index total-1
+ *  slice.contentTabs[groupName]. `total` = 2 globals + A + T + C
  *  (v0.6.2 — Transcript took over hosting the unrouted accumulator
- *  so Info could be pure selection-info). */
+ *  so Info could be pure selection-info; placed right after Info so
+ *  it stays adjacent regardless of how long the per-group strip
+ *  grows). */
 function flatTabInfo(slice, model, groupName) {
   const group = model.config.groups[groupName];
   if (!group) return { actionTabs: [], termTabs: [], contentTabs: [], total: 2 };
@@ -88,22 +90,21 @@ function flatTabInfo(slice, model, groupName) {
   };
 }
 
-/** Flat-index of the Transcript tab — always the LAST tab in the strip. */
-function transcriptTabIdx(info) {
-  return info.total - 1;
+/** Flat-index of the Transcript tab — always 1 (right after Info). */
+function transcriptTabIdx(_info) {
+  return 1;
 }
 
 /** True when the slice's active tab is the Transcript tab. */
-function isTranscriptTabIn(slice, model, groupName) {
-  const info = flatTabInfo(slice, model, groupName);
-  return (slice.tab | 0) === transcriptTabIdx(info);
+function isTranscriptTabIn(slice, _model, _groupName) {
+  return (slice.tab | 0) === 1;
 }
 
 /** True when the slice's active tab is a terminal tab in `groupName`. */
 function isTerminalTabIn(slice, model, groupName) {
   const info = flatTabInfo(slice, model, groupName);
   if (info.termTabs.length === 0) return false;
-  const start = 1 + info.actionTabs.length;
+  const start = 2 + info.actionTabs.length;
   const t = slice.tab | 0;
   return t >= start && t < start + info.termTabs.length;
 }
@@ -113,13 +114,13 @@ function isActionTabIn(slice, model, groupName) {
   const info = flatTabInfo(slice, model, groupName);
   if (info.actionTabs.length === 0) return false;
   const t = slice.tab | 0;
-  return t >= 1 && t <= info.actionTabs.length;
+  return t >= 2 && t <= 1 + info.actionTabs.length;
 }
 
 /** [key, action] for the active action tab, or null. */
 function activeActionTabIn(slice, model, groupName) {
   const info = flatTabInfo(slice, model, groupName);
-  const idx = (slice.tab | 0) - 1;
+  const idx = (slice.tab | 0) - 2;
   if (idx < 0 || idx >= info.actionTabs.length) return null;
   return info.actionTabs[idx];
 }
@@ -128,7 +129,7 @@ function activeActionTabIn(slice, model, groupName) {
 function isContentTabIn(slice, model, groupName) {
   const info = flatTabInfo(slice, model, groupName);
   if (info.contentTabs.length === 0) return false;
-  const start = 1 + info.actionTabs.length + info.termTabs.length;
+  const start = 2 + info.actionTabs.length + info.termTabs.length;
   const t = slice.tab | 0;
   return t >= start && t < start + info.contentTabs.length;
 }
@@ -136,7 +137,7 @@ function isContentTabIn(slice, model, groupName) {
 /** [key, { label, lines }] for the active content tab, or null. */
 function activeContentTabIn(slice, model, groupName) {
   const info = flatTabInfo(slice, model, groupName);
-  const idx = (slice.tab | 0) - 1 - info.actionTabs.length - info.termTabs.length;
+  const idx = (slice.tab | 0) - 2 - info.actionTabs.length - info.termTabs.length;
   if (idx < 0 || idx >= info.contentTabs.length) return null;
   return info.contentTabs[idx];
 }
@@ -144,7 +145,7 @@ function activeContentTabIn(slice, model, groupName) {
 /** Session id (`${group}_${key}`) for the active terminal tab, or null. */
 function activeTerminalIdIn(slice, model, groupName) {
   const info = flatTabInfo(slice, model, groupName);
-  const idx = (slice.tab | 0) - 1 - info.actionTabs.length;
+  const idx = (slice.tab | 0) - 2 - info.actionTabs.length;
   if (idx < 0 || idx >= info.termTabs.length) return null;
   return `${groupName}_${info.termTabs[idx][0]}`;
 }
@@ -152,7 +153,7 @@ function activeTerminalIdIn(slice, model, groupName) {
 /** { cmd, label } for the active terminal tab, or null. */
 function activeTerminalConfigIn(slice, model, groupName) {
   const info = flatTabInfo(slice, model, groupName);
-  const idx = (slice.tab | 0) - 1 - info.actionTabs.length;
+  const idx = (slice.tab | 0) - 2 - info.actionTabs.length;
   if (idx < 0 || idx >= info.termTabs.length) return null;
   return info.termTabs[idx][1];
 }
@@ -191,7 +192,7 @@ function addEphemeral(slice, model, { groupName, key, cmd, label }) {
   const termIdx = Object.keys(groupTerminals(model, next, groupName)).indexOf(key);
   if (termIdx < 0) return [next, { focusDetail: false, terminalEnter: false }];
   return [
-    { ...next, tab: 1 + actionTabCount(model, groupName) + termIdx },
+    { ...next, tab: 2 + actionTabCount(model, groupName) + termIdx },
     { focusDetail: true, terminalEnter: true },
   ];
 }
@@ -214,7 +215,7 @@ function removeEphemeral(slice, model, { groupName, key }) {
   const aCount = actionTabCount(model, groupName);
   const oldOrder = Object.keys(groupTerminals(model, slice, groupName));
   const removedTermIdx = oldOrder.indexOf(key);
-  const removedTabIdx = 1 + aCount + removedTermIdx;
+  const removedTabIdx = 2 + aCount + removedTermIdx;
 
   const yaml = (model.config.groups[groupName] || {}).terminals || {};
   const newCount = Object.keys({ ...yaml, ...ephGroupRest }).length;
@@ -225,7 +226,7 @@ function removeEphemeral(slice, model, { groupName, key }) {
   let terminalExit = false;
   if (slice.tab === removedTabIdx) {
     if (newCount > 0) {
-      tab = 1 + aCount + Math.min(removedTermIdx, newCount - 1);
+      tab = 2 + aCount + Math.min(removedTermIdx, newCount - 1);
     } else {
       tab = 0;
       lines = [];
@@ -257,7 +258,7 @@ function addContent(slice, model, { groupName, key, label, lines }) {
   const tCount = Object.keys(groupTerminals(model, next, groupName)).length;
   next = {
     ...next,
-    tab: 1 + aCount + tCount + contentIdx,
+    tab: 2 + aCount + tCount + contentIdx,
     lines: lines || [],
     scroll: 0,
   };
@@ -279,7 +280,7 @@ function updateContentLines(slice, model, { groupName, key, lines }) {
   const order = Object.keys(ctGroupNext);
   const aCount = actionTabCount(model, groupName);
   const tCount = Object.keys(groupTerminals(model, next, groupName)).length;
-  const idx = next.tab - 1 - aCount - tCount;
+  const idx = next.tab - 2 - aCount - tCount;
   if (idx < 0 || idx >= order.length || order[idx] !== key) return [next, null];
   return [{ ...next, lines: lines || [], scroll: 0 }, null];
 }
@@ -305,7 +306,7 @@ function removeContent(slice, model, { groupName, key }) {
   const tCount = Object.keys(groupTerminals(model, slice, groupName)).length;
   const oldOrder = Object.keys(ct);
   const removedContentIdx = oldOrder.indexOf(key);
-  const removedTabIdx = 1 + aCount + tCount + removedContentIdx;
+  const removedTabIdx = 2 + aCount + tCount + removedContentIdx;
 
   let tab = slice.tab;
   let lines = slice.lines;
@@ -316,7 +317,7 @@ function removeContent(slice, model, { groupName, key }) {
     const remainingKeys = Object.keys(ctGroupRest);
     if (remainingKeys.length > 0) {
       const newContentIdx = Math.min(removedContentIdx, remainingKeys.length - 1);
-      tab = 1 + aCount + tCount + newContentIdx;
+      tab = 2 + aCount + tCount + newContentIdx;
       const siblingKey = remainingKeys[newContentIdx];
       const sibling = ctGroupRest[siblingKey];
       if (sibling) {
@@ -365,7 +366,7 @@ function reorderContent(slice, model, { groupName, fromIdx, toIdx }) {
 
   const aCount = actionTabCount(model, groupName);
   const tCount = Object.keys(groupTerminals(model, next, groupName)).length;
-  const contentBase = 1 + aCount + tCount;
+  const contentBase = 2 + aCount + tCount;
   const oldContentTab = slice.tab - contentBase;
   if (oldContentTab < 0 || oldContentTab >= n) return next;
 
@@ -423,24 +424,24 @@ function reduceTabMsg(msg, slice, ctx) {
         // no longer doubles as a transcript host.)
         next = { ...next, lines: [], scroll: 0 };
         effects.push({ type: 'msg', msg: wrap(paneId, { type: 'viewer_show_info' }) });
-      } else if (idx === total - 1) {
-        // Transcript — the unrouted accumulator's display home.
-        // Restore from viewerStreamBuffer with bottom-pin scroll so
-        // the live tail is visible and the viewer_append bottom-stick
-        // check (scroll >= maxScroll) keeps tracking new appends.
-        // Empty buffer → placeholder. v0.6.2.
+      } else if (idx === 1) {
+        // Transcript — the unrouted accumulator's display home,
+        // placed right after Info so it stays adjacent regardless of
+        // how long the per-group strip grows. Restore from
+        // viewerStreamBuffer with bottom-pin scroll. Empty buffer →
+        // placeholder.
         const vsb = slice.viewerStreamBuffer;
         const lines = vsb && Array.isArray(vsb.lines) && vsb.lines.length > 0
           ? vsb.lines.slice()
           : ['[dim](no transcript yet)[/]'];
         const innerH = slice.innerH > 0 ? slice.innerH : 1;
         next = { ...next, lines, scroll: Math.max(0, lines.length - innerH) };
-      } else if (idx <= actionTabs.length) {
+      } else if (idx <= 1 + actionTabs.length) {
         // View-only restore from actionTabBuffers, else placeholder.
         // Scroll pinned to bottom so the live tail is visible and the
         // viewer_append bottom-stick check (scroll>=maxScroll) keeps
         // tracking new appends after restore.
-        const [actionKey] = actionTabs[idx - 1];
+        const [actionKey] = actionTabs[idx - 2];
         const groupName = getModel().currentGroup;
         const buf = slice.actionTabBuffers
           && slice.actionTabBuffers[groupName]
@@ -450,7 +451,7 @@ function reduceTabMsg(msg, slice, ctx) {
           : ['[dim]Press Enter to run.[/]'];
         const innerH = slice.innerH > 0 ? slice.innerH : 1;
         next = { ...next, lines, scroll: Math.max(0, lines.length - innerH) };
-      } else if (idx <= actionTabs.length + termTabs.length) {
+      } else if (idx <= 1 + actionTabs.length + termTabs.length) {
         next = { ...next, lines: [], scroll: 0 };
       } else {
         const ct = activeContentTab();

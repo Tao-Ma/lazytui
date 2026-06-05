@@ -32,8 +32,9 @@ describe('[1] addContentTab basics', () => {
     const info = tabs.getTabInfo();
     eq(info.actionTabs.length, 1, 'one action tab');
     eq(info.contentTabs.length, 1, 'one content tab');
-    eq(info.total, 2 + 1 + 0 + 1, 'info + action + term + content + transcript');
-    eq(getInstanceSlice('detail').tab, 2, 'content tab is at index 2');
+    eq(info.total, 2 + 1 + 0 + 1, 'info + transcript + action + term + content');
+    // v0.6.2 layout: Info=0, Transcript=1, action(A)=2, content(file:foo)=3
+    eq(getInstanceSlice('detail').tab, 3, 'content tab is at index 3');
     eq(getFocus(), 'detail', 'focus moved to detail');
     eq(getInstanceSlice('detail').lines.join('\n'), 'line one\nline two', 'lines loaded into detail');
   });
@@ -69,12 +70,13 @@ describe('[2] isContentTab / activeContentTab', () => {
 
 describe('[3] removeContentTab arithmetic', () => {
   it('removes the entry and rewinds activeTab when it was the active one', () => {
+    // v0.6.2 layout: Info=0, Transcript=1, content(a)=2, content(b)=3
     freshGroup();
     tabs.addContentTab('g1', 'a', 'a', ['x']);
     tabs.addContentTab('g1', 'b', 'b', ['y']);
-    eq(getInstanceSlice('detail').tab, 2, 'b is active (idx 2)');
+    eq(getInstanceSlice('detail').tab, 3, 'b is active (idx 3)');
     tabs.removeContentTab('g1', 'b');
-    eq(getInstanceSlice('detail').tab, 1, 'fell back to previous sibling');
+    eq(getInstanceSlice('detail').tab, 2, 'fell back to previous sibling (a at idx 2)');
     eq(tabs.getTabInfo().contentTabs.length, 1);
   });
   it('removing the only content tab goes back to Info', () => {
@@ -85,12 +87,13 @@ describe('[3] removeContentTab arithmetic', () => {
     eq(tabs.getTabInfo().contentTabs.length, 0);
   });
   it('removing a non-active content tab shifts activeTab down by 1 if past it', () => {
+    // v0.6.2 layout: Info=0, Transcript=1, content(a)=2, content(b)=3
     freshGroup();
-    tabs.addContentTab('g1', 'a', 'a', ['x']);   // idx 1, active
-    tabs.addContentTab('g1', 'b', 'b', ['y']);   // idx 2, now active
-    getInstanceSlice('detail').tab = 2;                              // b active
+    tabs.addContentTab('g1', 'a', 'a', ['x']);   // idx 2, active
+    tabs.addContentTab('g1', 'b', 'b', ['y']);   // idx 3, now active
+    getInstanceSlice('detail').tab = 3;                              // b active
     tabs.removeContentTab('g1', 'a');             // remove the earlier one
-    eq(getInstanceSlice('detail').tab, 1, 'b is now at index 1');
+    eq(getInstanceSlice('detail').tab, 2, 'b is now at index 2');
     eq(tabs.activeContentTab()[0], 'b');
   });
 });
@@ -149,27 +152,28 @@ describe('[6] removeContentTab refreshes detail body', () => {
     // been left as-is OR cleared. Tighter assertion below.
   });
   it('falls back to sibling content tab and loads its lines', () => {
+    // v0.6.2 layout: Info=0, Transcript=1, content(a)=2, content(b)=3
     freshGroup();
     tabs.addContentTab('g1', 'a', 'a', ['from-a']);
     tabs.addContentTab('g1', 'b', 'b', ['from-b']);
     // active is now 'b' (last added)
     tabs.removeContentTab('g1', 'b');
-    eq(getInstanceSlice('detail').tab, 1, 'sibling content tab');
+    eq(getInstanceSlice('detail').tab, 2, 'sibling content tab (a at idx 2)');
     eq(getInstanceSlice('detail').lines.join('\n'), 'from-a', 'sibling lines loaded into detail');
   });
 });
 
 describe('[4] isTerminalTab unaffected by content tabs', () => {
   it('content tabs in the mix do not confuse isTerminalTab', () => {
+    // v0.6.2 layout: 0=Info, 1=Transcript, 2=term sh, 3=content a
     freshGroup({ terminals: { sh: { cmd: 'bash', label: 'sh' } } });
     tabs.addContentTab('g1', 'a', 'a', ['x']);
-    // tabs: 0=info, 1=term sh, 2=content a
-    getInstanceSlice('detail').tab = 1;
-    eq(tabs.isTerminalTab(), true,  'index 1 is term');
-    eq(tabs.isContentTab(),  false, 'index 1 is not content');
     getInstanceSlice('detail').tab = 2;
-    eq(tabs.isTerminalTab(), false, 'index 2 is not term');
-    eq(tabs.isContentTab(),  true,  'index 2 is content');
+    eq(tabs.isTerminalTab(), true,  'index 2 is term');
+    eq(tabs.isContentTab(),  false, 'index 2 is not content');
+    getInstanceSlice('detail').tab = 3;
+    eq(tabs.isTerminalTab(), false, 'index 3 is not term');
+    eq(tabs.isContentTab(),  true,  'index 3 is content');
   });
 });
 

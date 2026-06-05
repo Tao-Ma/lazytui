@@ -111,10 +111,11 @@ describe('[stream_start] routed Msg with plugin tabKey auto-jumps', () => {
       groupName: 'g',
     });
     // actionTabs ordering: plugin entries come first (plugin merge
-    // precedes YAML spread), so plugin-status is idx 0 → tab=1.
+    // precedes YAML spread), so plugin-status is idx 0. v0.6.2 — action
+    // tabs start at idx 2 (Info=0, Transcript=1).
     const info = pt.flatTabInfo(s0, getModel(), 'g');
     const expectedIdx = info.actionTabs.findIndex(([k]) => k === 'plugin-status');
-    eq(next.tab, 1 + expectedIdx, 'tab jumped to plugin-status idx');
+    eq(next.tab, 2 + expectedIdx, 'tab jumped to plugin-status idx');
     eq(next.actionTabBuffers.g['plugin-status'].lines.length, 1, 'plugin buffer seeded');
     assert(cmds.some(c => c.type === 'msg' && c.msg && c.msg.type === 'terminal_exit'),
       'terminal_exit Cmd emitted');
@@ -127,7 +128,7 @@ describe('[viewer_append] mirror-on-active works for the plugin tab', () => {
     const pluginIdx = info.actionTabs.findIndex(([k]) => k === 'plugin-status');
     const s0 = {
       ...viewer._init(),
-      tab: 1 + pluginIdx,
+      tab: 2 + pluginIdx,
       lines: ['[dim]$ plugin-status[/]'],
       actionTabBuffers: { g: { 'plugin-status': { lines: ['[dim]$ plugin-status[/]'] } } },
     };

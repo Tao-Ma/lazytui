@@ -290,35 +290,34 @@ describe('[tab-strip indicator] ● prepended when a stream-routed job is runnin
     actionTabs: [['make-check', { label: 'Test' }], ['lint', { label: 'Lint' }]],
     termTabs: [],
     contentTabs: [],
-    // total = 1 (Info) + 2 actions + 0 + 0 + 1 (Transcript) = 4
+    // v0.6.2: total = 1 (Info) + 1 (Transcript) + 2 actions + 0 + 0 = 4
     total: 4,
   };
 
   it('no running jobs → no prefix', () => {
     const built = widgets.buildTabStrip(tabInfo, 0, 'd', new Set());
-    eq(built.title, '\\[Info]─Test─Lint─Transcript');
+    eq(built.title, '\\[Info]─Transcript─Test─Lint');
   });
 
   it('one running → exactly that action tab gets the ● prefix', () => {
     const built = widgets.buildTabStrip(tabInfo, 0, 'd', new Set(['make-check']));
-    eq(built.title, '\\[Info]─[yellow]●[/]Test─Lint─Transcript');
+    eq(built.title, '\\[Info]─Transcript─[yellow]●[/]Test─Lint');
   });
 
   it('multiple running → both tabs prefixed', () => {
     const built = widgets.buildTabStrip(tabInfo, 0, 'd', new Set(['make-check', 'lint']));
-    eq(built.title, '\\[Info]─[yellow]●[/]Test─[yellow]●[/]Lint─Transcript');
+    eq(built.title, '\\[Info]─Transcript─[yellow]●[/]Test─[yellow]●[/]Lint');
   });
 
   it('running set covers an inactive tab; running tab itself wears both ● + active wrap', () => {
-    const built = widgets.buildTabStrip(tabInfo, 1, 'd', new Set(['make-check']));
-    // tab idx 1 = make-check, which is active AND running. Info (idx 0)
-    // and Transcript (idx 3) render as plain text since activeTab=1.
-    eq(built.title, 'Info─\\[[yellow]●[/]Test]─Lint─Transcript');
+    // tab idx 2 = make-check (Info=0, Transcript=1, make-check=2).
+    const built = widgets.buildTabStrip(tabInfo, 2, 'd', new Set(['make-check']));
+    eq(built.title, 'Info─Transcript─\\[[yellow]●[/]Test]─Lint');
   });
 
   it('omitting the set → no prefix (back-compat)', () => {
     const built = widgets.buildTabStrip(tabInfo, 0, 'd');
-    eq(built.title, '\\[Info]─Test─Lint─Transcript');
+    eq(built.title, '\\[Info]─Transcript─Test─Lint');
   });
 });
 

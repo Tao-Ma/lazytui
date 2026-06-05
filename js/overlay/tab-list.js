@@ -66,19 +66,23 @@ let _lastTop = 0;
 
 /** Flat tab list — same order as the tab bar. Each entry:
  *    { tabIdx, label, kind, closeable, closeKind?, closeKey? }
- *  tabIdx is the absolute index (0=Info, then actions, terminals,
- *  content tabs) — the same number `tab_switch` consumes. */
+ *  tabIdx is the absolute index. v0.6.2 layout:
+ *    0=Info, 1=Transcript, 2..1+A=actions, 2+A..1+A+T=terminals,
+ *    2+A+T..1+A+T+C=content. */
 function _flatTabs(paneId = 'detail') {
   const m = getModel();
   const slice = getInstanceSlice(paneId) || { ephemeralTerminals: {}, contentTabs: {}, tab: 0 };
   const info = pt.flatTabInfo(slice, m, m.currentGroup);
-  const out = [{ tabIdx: 0, label: 'Info', kind: '' }];
+  const out = [
+    { tabIdx: 0, label: 'Info', kind: '' },
+    { tabIdx: 1, label: 'Transcript', kind: '' },
+  ];
   info.actionTabs.forEach(([, a], i) => out.push({
-    tabIdx: 1 + i, label: a.label, kind: 'action',
+    tabIdx: 2 + i, label: a.label, kind: 'action',
   }));
   const eph = (slice.ephemeralTerminals || {})[m.currentGroup] || {};
   info.termTabs.forEach(([key, t], i) => out.push({
-    tabIdx: 1 + info.actionTabs.length + i,
+    tabIdx: 2 + info.actionTabs.length + i,
     label: t.label || key,
     kind: 'term',
     closeable: !!eph[key],          // YAML-declared terminals not closeable
@@ -89,7 +93,7 @@ function _flatTabs(paneId = 'detail') {
     if (key.startsWith('docker:')) k = 'docker';
     else if (key.startsWith('file:')) k = 'file';
     out.push({
-      tabIdx: 1 + info.actionTabs.length + info.termTabs.length + i,
+      tabIdx: 2 + info.actionTabs.length + info.termTabs.length + i,
       label: c.label || key,
       kind: k,
       closeable: true,
