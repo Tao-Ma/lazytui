@@ -150,6 +150,21 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   grouping is preserved; the `STALE=1` / `exit "$STALE"` contract
   is unchanged.
 
+- **Nav cursor auto-yanks viewer back to Info from a non-Info tab.**
+  When the detail panel is parked on Transcript (or an action tab,
+  terminal, content tab) and the user moves the cursor in a list
+  panel (`j`/`k` in actions / groups / files / containers), the
+  viewer now auto-switches back to Info so the selection-info
+  actually appears. Pre-fix: `viewer_show_info` bailed when off-Info,
+  so navigation cursor moves silently dropped on the floor and the
+  user kept staring at last command's transcript with no way to
+  refresh Info except a manual `tab_switch`. Scoped to `navSelect`
+  in `dispatch.js`, NOT folded into `showSelectedInfo` — the
+  focus-set cascade after `addContentTab` also fires
+  `show_selected_info`, and that path MUST stay on the freshly-
+  opened content tab (yanking it back to Info would defeat the
+  open).
+
 - **Docker auto-`status` drops `tab: true`.** The docker plugin's
   auto-generated `status` action (`docker compose ps`) carried
   `tab: true`, making it the only auto-action with a dedicated tab

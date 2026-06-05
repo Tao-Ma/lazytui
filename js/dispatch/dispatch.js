@@ -70,7 +70,25 @@ function navSelect(panelType, index) {
   const compName = getComponentOwningPanel(panelType);
   if (!compName) return;
   dispatchMsg(wrap(compName, { type: 'set_cursor', panel: panelType, index }));
-  showSelectedInfo();
+  // v0.6.2 — when the viewer is parked on a non-Info tab (Transcript,
+  // action tab, terminal, content tab), an explicit nav cursor move
+  // in a list panel implies "show me what's here". Auto-jump back to
+  // Info so the selection-info actually appears. tab_switch idx=0
+  // dispatches viewer_show_info internally; otherwise fire it directly.
+  // Scoped to navSelect (NOT showSelectedInfo) because programmatic
+  // cascades — focus_set after a fresh content tab opens — also fire
+  // show_selected_info AS PART of a flow that just set slice.tab on
+  // purpose. Folding the auto-jump into showSelectedInfo would yank
+  // those flows back to Info too.
+  const target = route.resolveTarget('viewer');
+  if (target) {
+    const slice = route.getInstanceSlice(target);
+    if (slice && (slice.tab | 0) !== 0) {
+      dispatchMsg(wrap(target, { type: 'tab_switch', idx: 0 }));
+    } else {
+      showSelectedInfo();
+    }
+  }
   if (panelType === 'groups') {
     dispatchMsg(wrap('groups', { type: 'groups_selected', index }));
   }

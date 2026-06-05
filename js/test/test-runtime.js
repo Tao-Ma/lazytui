@@ -88,6 +88,25 @@ describe('[3] update — (model, msg) → [model, cmds], pure + Cmd descriptors'
     require('../dispatch/dispatch').navSelect('groups', 1);
     eq(state.getSel('groups'), 1, 'groups cursor advanced');
   });
+
+  it('navSelect: auto-jumps viewer back to Info when parked on a non-Info tab', () => {
+    // v0.6.2 — explicit nav cursor move ("show me what's here") yanks
+    // the viewer back to Info if it's on Transcript, an action tab,
+    // a terminal, or a content tab. Scoped to navSelect — the focus-
+    // set cascade after addContentTab fires show_selected_info too,
+    // and that path MUST NOT auto-jump (the cascade is part of a
+    // flow that just set slice.tab to the new content tab on purpose).
+    const state = require('../app/state');
+    const route = require('../leaves/route');
+    const dispatch = require('../dispatch/dispatch');
+    // Park the viewer on Transcript (idx 1).
+    const sliceBefore = { ...route.getInstanceSlice('detail'), tab: 1 };
+    route.setInstanceSlice('detail', sliceBefore);
+    eq(route.getInstanceSlice('detail').tab, 1, 'precondition: on Transcript');
+    // Move cursor in actions — should yank tab back to Info.
+    dispatch.navSelect('actions', 0);
+    eq(route.getInstanceSlice('detail').tab, 0, 'auto-jumped back to Info');
+  });
   it('escape / list_select: emit wrapped multisel_clear into the focused Component', () => {
     // Phase 4a — escape/list_select route multiSel clears through the
     // focused Navigator's update (single-writer per slice). Read via the

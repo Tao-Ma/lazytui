@@ -79,7 +79,7 @@ function groupContentTabs(slice, groupName) {
  *  it stays adjacent regardless of how long the per-group strip
  *  grows). */
 function flatTabInfo(slice, model, groupName) {
-  const group = model.config.groups[groupName];
+  const group = model && model.config && model.config.groups && model.config.groups[groupName];
   if (!group) return { actionTabs: [], termTabs: [], contentTabs: [], total: 2 };
   const actionTabs = Object.entries(_mergedFor(model, groupName)).filter(([, a]) => a.tab);
   const termTabs = Object.entries(groupTerminals(model, slice, groupName));
