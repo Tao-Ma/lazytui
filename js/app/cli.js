@@ -54,7 +54,7 @@ const { getModel } = require('./runtime');
 const BUILT_IN_PLUGINS = [
   '../panel/navigator/docker',
   '../feature/archive',
-  '../panel/navigator/config-branch',
+  '../feature/config-branch',
   '../feature/image-backup',
 ];
 

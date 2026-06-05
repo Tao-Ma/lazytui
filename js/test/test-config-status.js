@@ -229,7 +229,7 @@ fs.writeFileSync(path.join(TMP, 'client', 'id_ed25519'), 'PRIVATE-V1\n');
 fs.writeFileSync(path.join(TMP, 'data', 'openvpn', 'ca.crt'), 'CA-V1\n');
 fs.writeFileSync(path.join(TMP, 'data', 'dev9', 'bashrc'), 'export FOO=bar\n');
 
-const cb = require('../panel/navigator/config-branch');
+const cb = require('../feature/config-branch');
 const saveScript = cb.groupActions({
   config_branch: { branch: 'config', paths: ['client', 'data/openvpn', 'data/dev9/bashrc'] },
 }).save.script;
