@@ -227,6 +227,35 @@ describe('[T27] cross-group mutators preserve current-group cursor + body', () =
   });
 });
 
+describe('[R11] tab key parser handles `:` in group names', () => {
+  // Pre-R11 _tabKeyExistsIn used /^([^:]+):(action|terminal|content):(.+)$/
+  // which required group names without `:`. Group `proj:v2` → key
+  // `proj:v2:action:Build` didn't match → bail returned `true`
+  // unconditionally → R5's removed-tab capture-skip silently disabled.
+  // Post-R11 the leading segment is non-greedy and the first
+  // `:action:` / `:terminal:` / `:content:` anchors the split.
+  it('removeContentTab drops tabState for group names with `:`', () => {
+    const route = require('../leaves/route');
+    const viewer = require('../panel/viewer/viewer');
+    getModel().config = { groups: { 'proj:v2': { actions: {}, terminals: {} } } };
+    getModel().currentGroup = 'proj:v2';
+    const slice = getInstanceSlice('detail');
+    // Seed a content tab + matching tabState entry.
+    route.setInstanceSlice('detail', {
+      ...slice,
+      tab: 0,
+      contentTabs: { 'proj:v2': { 'doc1': { label: 'd1', lines: ['x'] } } },
+      tabState: {
+        'proj:v2:content:doc1': { scroll: 42 },
+      },
+    });
+    tabs.removeContentTab('proj:v2', 'doc1');
+    const after = getInstanceSlice('detail');
+    assert(!('proj:v2:content:doc1' in (after.tabState || {})),
+      'tabState entry dropped despite `:` in group name');
+  });
+});
+
 describe('[B8] tab_switch to content tab from non-content origin resets scroll', () => {
   // Round 2 finding: the content-tab branch was guarded by
   // `if (activeContentTab())` where activeContentTab reads the

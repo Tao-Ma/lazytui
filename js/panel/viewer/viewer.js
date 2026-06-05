@@ -271,7 +271,13 @@ function _infoFromFocus() {
 // existing.
 function _tabKeyExistsIn(next, model, key) {
   if (!key || key === 'info' || key === 'transcript') return true;
-  const m = key.match(/^([^:]+):(action|terminal|content):(.+)$/);
+  // v0.6.2 R11 — non-greedy first segment so group names containing `:`
+  // (legitimate in YAML keys, e.g. `proj:v2`) parse correctly. The
+  // leftmost `:(action|terminal|content):` anchors the split; everything
+  // before is the group, everything after is the rest-key. Without
+  // this, the bail returned `true` unconditionally → R5's removed-tab
+  // skip was silently disabled for any config with `:` in a group name.
+  const m = key.match(/^(.+?):(action|terminal|content):(.+)$/);
   if (!m) return true;
   const [, keyGroup, kind, restKey] = m;
   if (kind === 'action') return true;  // action tabs derive from YAML/plugins
