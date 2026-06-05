@@ -67,17 +67,13 @@ function showSelectedInfo() {
 }
 
 function navSelect(panelType, index) {
-  const compName = getComponentOwningPanel(panelType);
-  if (!compName) return;
-  dispatchMsg(wrap(compName, { type: 'set_cursor', panel: panelType, index }));
-  // v0.6.2 T1 — viewer_show_info now folds the yank-to-Info semantic
-  // into the reducer itself (gated by its existing getInfo precondition
-  // — focus on a list panel yanks + populates; focus on detail/
-  // no-getInfo bails). No mid-cascade handler read needed.
-  showSelectedInfo();
-  if (panelType === 'groups') {
-    dispatchMsg(wrap('groups', { type: 'groups_selected', index }));
-  }
+  // v0.6.2 R6 — single Msg, reducer-emitted cascade. Pre-R6 this
+  // handler imperatively dispatched 2-3 Msgs (set_cursor →
+  // viewer_show_info → conditional groups_selected); the orchestration
+  // was invisible from the reducer's view. The nav_select arm in
+  // runtime.update emits the same Cmds in one return, keeping the
+  // TEA contract (handler stays a one-liner, reducer cascades).
+  applyMsg({ type: 'nav_select', panelType, index });
 }
 
 /**

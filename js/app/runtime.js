@@ -326,6 +326,26 @@ function update(model, msg) {
     // mapping here is what lets handleAction's arms collapse into update.
     case 'next_tab':    return _cycleViewerTab(model, +1);
     case 'prev_tab':    return _cycleViewerTab(model, -1);
+    case 'nav_select': {
+      // R6 — single-Msg cascade for "user selects row N in panel P,"
+      // formerly orchestrated by dispatch.navSelect's 2-3 imperative
+      // dispatches (set_cursor → showSelectedInfo → conditional
+      // groups_selected). Collapsing to one Msg + multi-Cmd return
+      // makes the cascade visible in the reducer instead of in the
+      // handler, satisfying the TEA discipline call-out in
+      // feedback_tea_reducer_discipline.
+      const { panelType, index } = msg;
+      const compName = route.componentForPanel(panelType);
+      if (!compName) return [model, []];
+      const cmds = [
+        { type: 'msg', msg: route.wrap(compName, { type: 'set_cursor', panel: panelType, index }) },
+        { type: 'show_selected_info' },
+      ];
+      if (panelType === 'groups') {
+        cmds.push({ type: 'msg', msg: route.wrap('groups', { type: 'groups_selected', index }) });
+      }
+      return [model, cmds];
+    }
     // --- confirm modal (folded into update). The caller stages a message +
     // a Cmd DESCRIPTOR (the deferred effect as data); `y` re-emits that Cmd,
     // `n`/Esc clears. No closure in the model.
