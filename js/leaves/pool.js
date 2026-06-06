@@ -336,17 +336,13 @@ function hasActionsPane(arrange) {
 function paneSelectItems(arrange, targetPaneId) {
   if (!arrange || !arrange.pool) return [];
   const items = [];
-  const seen = new Set();
-  // Resolve the target's current occupant via paneId scan.
-  let targetOccupantId = null;
-  for (let ci = 0; ci < (arrange.columns || []).length; ci++) {
-    const panels = (arrange.columns[ci] && arrange.columns[ci].panels) || [];
-    for (const p of panels) {
-      if (p && p.paneId === targetPaneId) { targetOccupantId = p.id; break; }
-    }
-    if (targetOccupantId) break;
-  }
-  // Walk placed panes in column-major order, skipping detail.
+  // `allPlaced` covers EVERY tab poolId, not just the active tab —
+  // non-active tabs of a multi-tab pane are "placed" too (they live
+  // inside a placed pane) and must NOT drift into the hidden bucket.
+  const allPlaced = placedIdSet(arrange);
+  // Walk placed panes in column-major order, skipping detail. One
+  // item per pane (keyed by the active tab's pool id) — non-active
+  // tabs are managed via tab-list on the detail pane, not here.
   for (let ci = 0; ci < (arrange.columns || []).length; ci++) {
     const panels = (arrange.columns[ci] && arrange.columns[ci].panels) || [];
     for (const p of panels) {
@@ -359,12 +355,13 @@ function paneSelectItems(arrange, targetPaneId) {
         id: entry.id, type: entry.type, title: entry.title,
         status, columnIndex: ci,
       });
-      seen.add(entry.id);
     }
   }
-  // Hidden entries in pool insertion order.
+  // Hidden entries in pool insertion order. `allPlaced` excludes
+  // non-active multi-tab tabs from this bucket (else picking one
+  // would route through REPLACE and double-place the id).
   for (const id of Object.keys(arrange.pool)) {
-    if (seen.has(id)) continue;
+    if (allPlaced.has(id)) continue;
     const entry = arrange.pool[id];
     if (isDetailPane(entry)) continue;
     items.push({

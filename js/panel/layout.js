@@ -343,9 +343,14 @@ function update(msg, slice) {
       const pickedLoc = mpool.findPaneLocation(arrange, p => p.id === pickedId);
       let nextArrange;
       if (pickedLoc) {
-        // SWAP — both placed. Trade their slots.
-        const newAtTarget = mpool.placementFromPoolEntry(pickedEntry, targetLoc.columnIndex);
-        const newAtPicked = mpool.placementFromPoolEntry(targetOldEntry, pickedLoc.columnIndex);
+        // SWAP — both placed. Splice the existing pane objects between
+        // slots (restamping only columnIndex) so multi-tab panes keep
+        // their tabs[] / paneId / activeTabId / heightPct / collapsed.
+        // Re-minting via placementFromPoolEntry would collapse a
+        // multi-tab pane to single-tab (wrapAsPane hardcodes
+        // tabs:[{single}]) and reset the custom paneId.
+        const newAtTarget = { ...pickedLoc.pane, columnIndex: targetLoc.columnIndex };
+        const newAtPicked = { ...targetLoc.pane, columnIndex: pickedLoc.columnIndex };
         let mid = arrange;
         if (targetLoc.columnIndex === pickedLoc.columnIndex) {
           mid = mpool.updateColumn(mid, targetLoc.columnIndex, panels => {

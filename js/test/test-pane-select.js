@@ -265,6 +265,76 @@ describe('[7] pool_swap_by_id — SWAP / REPLACE / invariants', () => {
     eq(getModel().modes.paneSelectMode, false, 'overlay closed');
     eq(paneIdsByCol()[0][0], 'groups', 'arrange unchanged');
   });
+
+  // Multi-tab pane fixtures — T1.1 + T1.2 regression coverage.
+  // A multi-tab `pane-multi` carries [tab-a (active), tab-b] in col 0.
+  function setupMultiTab() {
+    const layout = route.getInstanceSlice('layout');
+    layout.paneSelect = null;
+    layout.tabListOwnerPaneId = null;
+    layout.freeConfig = { drag: null, undo: [], redo: [], titleEdit: { text: '' }, notice: null, noticeKind: null };
+    layout.arrange = {
+      columns: [
+        { width: 24, panels: [
+          {
+            type: 'tab-a', id: 'tab-a', paneId: 'pane-multi', columnIndex: 0,
+            tabs: [{ id: 'tab-a', poolId: 'tab-a' }, { id: 'tab-b', poolId: 'tab-b' }],
+            activeTabId: 'tab-a',
+          },
+          { type: 'stats', id: 'stats', paneId: 'pane-stats', columnIndex: 0,
+            tabs: [{ id: 'stats', poolId: 'stats' }] },
+        ] },
+        { panels: [
+          { type: 'detail', id: 'detail', paneId: 'pane-detail',
+            tabs: [{ id: 'detail', poolId: 'detail' }] },
+        ] },
+      ],
+      pool: {
+        'tab-a':  { id: 'tab-a',  type: 'tab-a',  title: 'A' },
+        'tab-b':  { id: 'tab-b',  type: 'tab-b',  title: 'B' },
+        'stats':  { id: 'stats',  type: 'stats',  title: 'Stats' },
+        'detail': { id: 'detail', type: 'detail', title: 'Detail' },
+        'extra':  { id: 'extra',  type: 'extra',  title: 'Extra' },
+      },
+      detailHeightPct: 60,
+    };
+    getModel().modes.paneSelectMode = false;
+  }
+
+  it('T1.1 — SWAP preserves multi-tab pane (tabs[] / paneId / activeTabId)', () => {
+    setupMultiTab();
+    api.dispatchMsg(api.wrap('layout', { type: 'pane_select_open', paneId: 'pane-stats' }));
+    // Swap pane-stats with pane-multi (pickedId = 'tab-a', the active id).
+    api.dispatchMsg(api.wrap('layout', {
+      type: 'pool_swap_by_id', targetPaneId: 'pane-stats', pickedId: 'tab-a',
+    }));
+    const arr = route.getInstanceSlice('layout').arrange;
+    const movedToStatsSlot = arr.columns[0].panels[1];
+    eq(movedToStatsSlot.id, 'tab-a', 'multi-tab pane now at stats slot');
+    eq(movedToStatsSlot.paneId, 'pane-multi', 'custom paneId preserved');
+    eq(Array.isArray(movedToStatsSlot.tabs) && movedToStatsSlot.tabs.length, 2, 'both tabs preserved');
+    eq(movedToStatsSlot.tabs[0].poolId, 'tab-a');
+    eq(movedToStatsSlot.tabs[1].poolId, 'tab-b');
+    eq(movedToStatsSlot.activeTabId, 'tab-a');
+    // Pool invariant: tab-b stays placed (one occurrence via tabs[]).
+    const placed = require('../leaves/pool').placedIds(arr);
+    eq(placed.filter(id => id === 'tab-b').length, 1, 'tab-b placed exactly once');
+  });
+
+  it('T1.2 — non-active multi-tab tabs excluded from paneSelectItems', () => {
+    setupMultiTab();
+    const list = require('../leaves/pool').paneSelectItems(
+      route.getInstanceSlice('layout').arrange, 'pane-stats',
+    );
+    // tab-b is the non-active tab inside pane-multi. It must NOT
+    // appear in the list — picking it would route through REPLACE
+    // and double-place the id.
+    assert(!list.some(x => x.id === 'tab-b'), 'tab-b absent from list');
+    // tab-a is present (active tab, surfaces as the pane).
+    assert(list.some(x => x.id === 'tab-a' && x.status === 'placed'), 'tab-a present as placed');
+    // extra (genuinely hidden) is still listed.
+    assert(list.some(x => x.id === 'extra' && x.status === 'hidden'), 'extra still hidden');
+  });
 });
 
 describe('[4] modes registry has paneSelectMode', () => {
