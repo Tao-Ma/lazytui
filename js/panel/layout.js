@@ -270,8 +270,15 @@ function update(msg, slice) {
       return [next, [{ type: 'msg', msg: { type: 'mode_set', flag: 'paneSelectMode' } }]];
     }
     case 'pane_select_close': {
-      if (!slice.paneSelect && !getModel().modes.paneSelectMode) return slice;
-      const next = { ...slice, paneSelect: null };
+      // Pure reducer — no external state read. If slice was already
+      // clear (double-close), preserve identity; the mode_clear Cmd
+      // is idempotent at the runtime layer (runtime.js:885 guards
+      // the no-op short-circuit), so emitting it unconditionally
+      // handles the rare stuck-flag case without needing to read
+      // model.modes here. Atomic flag/slice clears (see set_arrange
+      // arm + this arm both emitting mode_clear) keep the pair in
+      // lockstep so the stuck-flag case shouldn't reach this code.
+      const next = slice.paneSelect ? { ...slice, paneSelect: null } : slice;
       return [next, [{ type: 'msg', msg: { type: 'mode_clear', flag: 'paneSelectMode' } }]];
     }
     // v0.6.3 D2 — cursor/scroll nav inside the pane-select overlay.

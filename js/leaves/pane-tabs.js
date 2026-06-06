@@ -722,7 +722,14 @@ function reduceTabMsg(msg, slice, ctx) {
       ];
     }
     case 'tab_list_close':
-      if (!getModel().modes.tabListMode) return slice;
+      // Pure leaf — no external state read. Dispatchers (chain key
+      // handler, mouse overlay routing) gate on tabListMode being on
+      // before firing this Msg, so the no-op-when-closed defensive
+      // read was unreachable in practice. mode_clear is idempotent
+      // at runtime (runtime.js:885); tab_list_set_owner identity-
+      // preserves; force_full_repaint is harmless in the
+      // already-closed case. Pre-cleanup version read
+      // getModel().modes.tabListMode for the early bail.
       return [
         slice,
         [
@@ -732,7 +739,9 @@ function reduceTabMsg(msg, slice, ctx) {
         ],
       ];
     case 'tab_list_nav': {
-      if (!getModel().modes.tabListMode) return slice;
+      // Pure leaf — dispatchers gate on tabListMode (chain handler
+      // only fires this Msg under tabListMode). Pre-cleanup read
+      // getModel().modes.tabListMode as a defensive guard.
       const tl = slice.tabList || { cursor: 0, scroll: 0 };
       const tabCount = msg.tabCount | 0 || 1;
       const vh = Math.max(1, msg.vh | 0);
@@ -752,7 +761,8 @@ function reduceTabMsg(msg, slice, ctx) {
       return { ...slice, tabList: { ...tl, cursor, scroll } };
     }
     case 'tab_list_pick': {
-      if (!getModel().modes.tabListMode) return slice;
+      // Pure leaf — dispatchers gate on tabListMode. Pre-cleanup
+      // read getModel().modes.tabListMode as a defensive guard.
       const tl = slice.tabList || { cursor: 0 };
       const idx = tl.cursor | 0;
       return [
