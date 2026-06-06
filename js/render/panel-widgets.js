@@ -49,6 +49,104 @@ const COLLAPSE_MIN_W = 9;
 const CLOSE_PLUS_COLLAPSE_MIN_W = 13;
 const CLOSE_GLYPH = '\\[X]';
 
+/**
+ * v0.6.3 P4.2 — pure derivation of which chrome glyphs a pane should
+ * carry. Returns a structured spec the renderer consumes (instead of
+ * computing the same info inline at three different injection sites).
+ *
+ *   pane:  arrange-entry — needs .type, .collapsed, .tabs (v0.6.1 panes-
+ *          as-containers shape).
+ *   ctx: {
+ *     freeConfigMode: bool,
+ *     dragging:       bool,
+ *     focused:        bool,
+ *     viewerTabCount: number — for the viewer-hosting pane only, the
+ *                              tab count from getTabInfo(). Allows the
+ *                              [≡]-on-multi-tab rule to apply uniformly
+ *                              across the detail viewer (with implicit
+ *                              Info + Transcript) and future multi-tab
+ *                              non-viewer panes (which use pane.tabs).
+ *     tabTriggerState: 'available' | 'open' | 'disabled' | 'hidden' —
+ *                              tab-list overlay state.
+ *   }
+ *
+ * Returns { collapse, close, tabTrigger }:
+ *   collapse:   null | 'collapse' (panel can be collapsed; renders [_]) |
+ *                'expand'   (panel is collapsed; renders [+])
+ *   close:      null | 'close'    (free-config quick-hide; renders [X])
+ *   tabTrigger: null | 'available' | 'open' | 'disabled' — feeds the
+ *               [≡] markup choice in renderPanel.
+ *
+ * Rules:
+ *   - detail is essential; no collapse/close.
+ *   - drag in flight suppresses ALL pane chrome.
+ *   - [≡] appears when the pane has ≥2 switchable tabs. For the
+ *     viewer-hosting pane (kind detail), viewerTabCount in ctx counts
+ *     Info + Transcript + actions/terminals/contents. For other panes,
+ *     pane.tabs.length is used (multi-tab panes have ≥2).
+ */
+function chromeFor(pane, ctx) {
+  const isDetail = pane && pane.type === 'detail';
+  if (ctx && ctx.dragging) return { collapse: null, close: null, tabTrigger: null };
+  let collapse = null, close = null;
+  if (!isDetail) {
+    collapse = pane.collapsed ? 'expand' : 'collapse';
+    if (ctx && ctx.freeConfigMode) close = 'close';
+  }
+  let tabTrigger = null;
+  const tabCount = isDetail
+    ? (ctx && Number.isFinite(ctx.viewerTabCount) ? ctx.viewerTabCount : 0)
+    : (pane && Array.isArray(pane.tabs) ? pane.tabs.length : 0);
+  if (tabCount >= 2) {
+    const state = (ctx && ctx.tabTriggerState) || 'available';
+    if (state !== 'hidden') tabTrigger = state;
+  }
+  return { collapse, close, tabTrigger };
+}
+
+/**
+ * Markup helpers — chosen so renderPanel can compose chrome glyphs
+ * into the top border directly (no regex post-mutation). Each returns
+ * a Rich-markup string with visible width equal to the glyph's cell
+ * count (3 cells for [_] / [+] / [X] / [≡]).
+ *
+ * `fc` is the panel border color; markup re-opens it after each
+ * chrome glyph's `[/]` so trailing border chars stay in fc.
+ */
+function _collapseGlyphMarkup(mode, focused, fc) {
+  const t = theme();
+  const base = mode === 'expand'
+    ? (t.chrome_expand   || 'green')
+    : (t.chrome_collapse || 'yellow');
+  const open = focused ? `[${base}]` : `[dim][${base}]`;
+  const glyph = mode === 'expand' ? '\\[+]' : '\\[_]';
+  return `${open}${glyph}[/]${fc ? `[${fc}]` : ''}`;
+}
+
+function _closeGlyphMarkup(focused, fc) {
+  const t = theme();
+  const base = t.chrome_close || 'red';
+  const open = focused ? `[${base}]` : `[dim][${base}]`;
+  return `${open}${CLOSE_GLYPH}[/]${fc ? `[${fc}]` : ''}`;
+}
+
+function _tabTriggerMarkup(state, focused, fc) {
+  const t = theme();
+  const base = t.chrome_trigger || 'bold cyan';
+  const colorOnly = base.replace(/^bold\s+/, '');
+  let open;
+  if      (state === 'disabled') open = '[dim]';
+  else if (state === 'open')     open = '[reverse]';
+  else if (focused)              open = `[${base}]`;
+  else                           open = `[dim][${colorOnly}]`;
+  // `\\[≡]` — escape only the opening `[` (only `[` triggers markup
+  // matching; richToAnsi has no `\]` handler). stripMarkup replaces
+  // `\[` with a sentinel, then strips real tags, then restores —
+  // leaving `[≡]` as visible cells. Matches the pattern overlay/
+  // tab-list.js#TRIGGER_GLYPH uses.
+  return `${open}\\[≡][/]${fc ? `[${fc}]` : ''}`;
+}
+
 function _collapseGlyphX0(b) { return b.x + b.w - 1 - GLYPH_W; }
 function _closeGlyphX0(b)    { return b.x + b.w - 1 - GLYPH_W - 1 - GLYPH_W; }
 
@@ -272,4 +370,9 @@ module.exports = {
   hitTestCollapseButton,
   hitTestCloseButton,
   buildTabStrip,
+  // v0.6.3 P4.2 — pane chrome as structured data.
+  chromeFor,
+  _collapseGlyphMarkup,
+  _closeGlyphMarkup,
+  _tabTriggerMarkup,
 };

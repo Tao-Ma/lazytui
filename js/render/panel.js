@@ -71,7 +71,7 @@ function truncate(text, maxWidth) {
 function renderPanel({
   width, height, lines = [], title = '', hotkey = '',
   focused = false, count = null, scrollOffset = 0, color = null,
-  panelType = null,
+  panelType = null, chrome = null,
 }) {
   const t = theme();
   const b = BORDER;
@@ -80,32 +80,70 @@ function renderPanel({
   const innerH = height - 2;
 
   // --- Top border ---
-  let titleText = '';
-  if (hotkey) titleText += `(${hotkey})`;
-  if (title) titleText += `─${title}`;
-  // Phase 5 — title-bar decoration framework retired; nothing in tree
-  // contributed and the extension point was unused. Components own their
-  // own title composition inline (e.g. groups' tab strip in _groupsTitle).
-  // Markup-aware truncation: titles can carry markup (`[dim]`, `\[…\]`,
-  // `[/]`) whose JS .length over-counts the visible width. A length-
-  // based slice would over-trigger AND could cut mid-tag, leaving an
-  // unclosed `[/` that the next `[…]` match greedily swallows along
-  // with the fill chars and `╮` corner. truncate() short-circuits when
-  // visibleLen ≤ maxWidth, so the common (fits) case is a no-op.
-  titleText = truncate(titleText, innerW - 2);
-  const fill = innerW - visibleLen(titleText);
-  // wrapColor() reopens fc after any nested `[/]` in titleText (e.g.
-  // files panel's `[dim]\[docker:pg][/]` chip), so the trailing fill
-  // + corner stay in border color. In normal view injectTopRowChrome
-  // also re-emits fc after each chrome glyph; in half/full view
-  // wrapColor is the only guard.
+  // v0.6.3 P4.2 — chrome glyphs ([_]/[+], [X], [≡]) compose directly
+  // into the top border via the `chrome` opt. Format:
+  //
+  //   ╭─(hk)[≡]─title──────[X] [_]╮
+  //
+  // [≡] sits after the hotkey display (3 visible cells); [X] and [_]
+  // sit at the right edge (3 cells each + 1 gap cell when both are
+  // present). The middle dashes fill whatever remains. Chrome that
+  // doesn't fit (panel too narrow) is silently omitted by reverting
+  // to the pre-P4 bare-border composition. Without `chrome` opt, the
+  // pre-P4 path runs verbatim.
   let top;
-  if (fill >= 2) {
-    top = wrapColor(fc, `${b.tl}${b.h}${titleText}${b.h.repeat(fill - 1)}${b.tr}`);
-  } else if (fill === 1) {
-    top = wrapColor(fc, `${b.tl}${titleText}${b.h}${b.tr}`);
-  } else {
-    top = wrapColor(fc, `${b.tl}${titleText}${b.tr}`);
+  const wantLeftTrigger  = chrome && chrome.tabTrigger;
+  const wantRightCollapse = chrome && chrome.collapse;
+  const wantRightClose    = chrome && chrome.close;
+  if (chrome && (wantLeftTrigger || wantRightCollapse || wantRightClose)) {
+    const W = require('./panel-widgets');
+    let leftPart = `${b.tl}${b.h}`;
+    if (hotkey) leftPart += `(${hotkey})`;
+    if (wantLeftTrigger) {
+      // Eat the title-separator dash so [≡] sits flush against `(hk)`,
+      // matching the post-injection geometry: `╭─(o)[≡]─title…`. When
+      // there's no hotkey, [≡] sits flush against the corner dash.
+      leftPart += W._tabTriggerMarkup(chrome.tabTrigger, focused, fc);
+    }
+    if (title) leftPart += `${b.h}${title}`;
+    leftPart = truncate(leftPart, innerW + 2 - 2);  // leave space for ╮ on right
+
+    let rightPart = '';
+    if (wantRightClose) rightPart += W._closeGlyphMarkup(focused, fc);
+    if (wantRightClose && wantRightCollapse) rightPart += b.h;
+    if (wantRightCollapse) rightPart += W._collapseGlyphMarkup(chrome.collapse, focused, fc);
+    rightPart += b.tr;
+
+    const leftVis  = visibleLen(leftPart);
+    const rightVis = visibleLen(rightPart);
+    const midFill = (innerW + 2) - leftVis - rightVis;
+    if (midFill >= 1) {
+      top = wrapColor(fc, leftPart + b.h.repeat(midFill) + rightPart);
+    } else {
+      // Chrome + title doesn't fit. Drop chrome; fall back to plain
+      // border so the title at least survives.
+      top = null;
+    }
+  }
+  if (top === null || (!chrome)) {
+    // Pre-P4 path: bare top border. Used when no chrome is requested,
+    // or chrome was requested but didn't fit (fallback).
+    let titleText = '';
+    if (hotkey) titleText += `(${hotkey})`;
+    if (title) titleText += `─${title}`;
+    // Markup-aware truncation: titles can carry markup (`[dim]`, `\[…\]`,
+    // `[/]`) whose JS .length over-counts the visible width. truncate()
+    // short-circuits when visibleLen ≤ maxWidth, so the common (fits)
+    // case is a no-op.
+    titleText = truncate(titleText, innerW - 2);
+    const fill = innerW - visibleLen(titleText);
+    if (fill >= 2) {
+      top = wrapColor(fc, `${b.tl}${b.h}${titleText}${b.h.repeat(fill - 1)}${b.tr}`);
+    } else if (fill === 1) {
+      top = wrapColor(fc, `${b.tl}${titleText}${b.h}${b.tr}`);
+    } else {
+      top = wrapColor(fc, `${b.tl}${titleText}${b.tr}`);
+    }
   }
 
   // --- Bottom border ---
