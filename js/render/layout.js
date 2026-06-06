@@ -763,7 +763,92 @@ function renderNormal(model) {
   return paintColumns(columnsOut);
 }
 
+/**
+ * v0.6.3 P3.5 — rect-path replacements for renderHalf + renderFull.
+ * Same env gate (LAZYTUI_RECT_PAINTER=1) as _renderNormalRectPath.
+ * Build a 1- or 2-rect Layout for the on-screen panels and route
+ * through painter.composeRows + painter.paintFrame.
+ *
+ * P3.6 deletes the old paintColumns paths below + the gate.
+ */
+function _renderHalfRectPath(model) {
+  calcLayout(model);
+  const layoutSlice = getInstanceSlice('layout');
+  const COLS = cols(), ROWS = rows();
+  const halfW = Math.floor(COLS / 2);
+  const availH = ROWS - 1;
+  const focusedPanel = allPanels().find(p => p.type === layoutSlice.focus);
+  if (!focusedPanel) return _renderNormalRectPath(model);
+  const detailPanel = mpool.findDetailPane(layoutSlice.arrange);
+  let leftPanel = focusedPanel;
+  if (mpool.isDetailPane(focusedPanel)) {
+    const all = allPanels();
+    leftPanel = all.find(p => p.type === layoutSlice.halfLeftPanel)
+             || all.find(p => !mpool.isDetailPane(p))
+             || focusedPanel;
+  }
+  layoutSlice.panelBounds = {};
+  const leftBounds = { x: 0, y: 0, w: halfW, h: availH };
+  layoutSlice.panelBounds[leftPanel.type] = leftBounds;
+  if (leftPanel.paneId) layoutSlice.panelBounds[leftPanel.paneId] = leftBounds;
+  const rightW = COLS - halfW;
+  if (detailPanel) {
+    const detailBounds = { x: halfW, y: 0, w: rightW, h: availH };
+    layoutSlice.panelBounds.detail = detailBounds;
+    if (detailPanel.paneId) layoutSlice.panelBounds[detailPanel.paneId] = detailBounds;
+  }
+  let leftContent = _safeRender(leftPanel, halfW, availH);
+  let rightContent = detailPanel ? _safeRender(detailPanel, rightW, availH) : '';
+  if (rightContent) rightContent = injectTabTrigger(rightContent, detailPanel);
+  const rects = [
+    { x: 0, y: 0, w: halfW, h: availH,
+      lines: leftContent === '' ? [] : leftContent.split('\n') },
+  ];
+  if (detailPanel) {
+    rects.push({
+      x: halfW, y: 0, w: rightW, h: availH,
+      lines: rightContent === '' ? [] : rightContent.split('\n'),
+    });
+  }
+  const newRows = painter.composeRows(rects, COLS, availH);
+  if (COLS !== _prevCols || newRows.length !== _prevRows.length) _forceFullRepaint = true;
+  _prevCols = COLS;
+  const { ansi, didFull } = painter.paintFrame(_prevRows, newRows, _forceFullRepaint);
+  if (didFull) _forceFullRepaint = false;
+  if (ansi) stdout.write(ansi);
+  _prevRows = newRows;
+  return didFull;
+}
+
+function _renderFullRectPath(model) {
+  calcLayout(model);
+  const layoutSlice = getInstanceSlice('layout');
+  const COLS = cols(), ROWS = rows();
+  const availH = ROWS - 1;
+  const focusedPanel = allPanels().find(p => p.type === layoutSlice.focus);
+  if (!focusedPanel) return _renderNormalRectPath(model);
+  layoutSlice.panelBounds = {};
+  const fullBounds = { x: 0, y: 0, w: COLS, h: availH };
+  layoutSlice.panelBounds[focusedPanel.type] = fullBounds;
+  if (focusedPanel.paneId) layoutSlice.panelBounds[focusedPanel.paneId] = fullBounds;
+  let content = _safeRender(focusedPanel, COLS, availH);
+  content = injectTabTrigger(content, focusedPanel);
+  const rects = [
+    { x: 0, y: 0, w: COLS, h: availH,
+      lines: content === '' ? [] : content.split('\n') },
+  ];
+  const newRows = painter.composeRows(rects, COLS, availH);
+  if (COLS !== _prevCols || newRows.length !== _prevRows.length) _forceFullRepaint = true;
+  _prevCols = COLS;
+  const { ansi, didFull } = painter.paintFrame(_prevRows, newRows, _forceFullRepaint);
+  if (didFull) _forceFullRepaint = false;
+  if (ansi) stdout.write(ansi);
+  _prevRows = newRows;
+  return didFull;
+}
+
 function renderHalf(model) {
+  if (process.env.LAZYTUI_RECT_PAINTER === '1') return _renderHalfRectPath(model);
   calcLayout(model);
   const COLS = cols(), ROWS = rows();
   const layoutSlice = getInstanceSlice('layout');
@@ -807,6 +892,7 @@ function renderHalf(model) {
 }
 
 function renderFull(model) {
+  if (process.env.LAZYTUI_RECT_PAINTER === '1') return _renderFullRectPath(model);
   calcLayout(model);
   const COLS = cols(), ROWS = rows();
   const layoutSlice = getInstanceSlice('layout');
