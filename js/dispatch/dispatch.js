@@ -310,6 +310,15 @@ function handleTabListKey(key, seq) {
   }
 }
 
+// v0.6.3 D1 — pane-select overlay key handler. D1 only wires Esc
+// (close); D2 lands up/down/Enter once the list body exists.
+function handlePaneSelectKey(key, seq) {
+  if (key === 'escape') {
+    applyMsg(wrap('layout', { type: 'pane_select_close' }));
+    return;
+  }
+}
+
 function handleJobsKey(key, seq) {
   // View-derived data (count + vh) is computed here and threaded into
   // the Msg payload — reducer stays pure. Return → jobs_activate is a
@@ -641,6 +650,7 @@ const _modeHandlers = {
   // refresh needed.
   cmdMode:             (key, seq) => handleCmdlineKey(key, seq),
   tabListMode:         (key, seq) => handleTabListKey(key, seq),
+  paneSelectMode:      (key, seq) => handlePaneSelectKey(key, seq),
   jobsMode:            (key, seq) => handleJobsKey(key, seq),
 };
 

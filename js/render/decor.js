@@ -97,11 +97,22 @@ function chromeFor(pane, ctx) {
     if (ctx && ctx.freeConfigMode) close = 'close';
   }
   let tabTrigger = null;
-  const tabCount = isDetail
-    ? (ctx && Number.isFinite(ctx.viewerTabCount) ? ctx.viewerTabCount : 0)
-    : (pane && Array.isArray(pane.tabs) ? pane.tabs.length : 0);
-  if (tabCount >= 2) {
-    const state = (ctx && ctx.tabTriggerState) || 'available';
+  if (isDetail) {
+    // Detail's [≡] = tab-list trigger; visible when the viewer has ≥2
+    // tabs (Info + Transcript + actions/terminals/content).
+    const tabCount = (ctx && Number.isFinite(ctx.viewerTabCount) ? ctx.viewerTabCount : 0);
+    if (tabCount >= 2) {
+      const state = (ctx && ctx.tabTriggerState) || 'available';
+      if (state !== 'hidden') tabTrigger = state;
+    }
+  } else {
+    // v0.6.3 D1 — non-detail [≡] = pane-select trigger (per-cell pool
+    // picker). The glyph is ALWAYS painted (user's "like tabs, always
+    // there" choice) — same position as detail's tab trigger, different
+    // click semantic (input.js routes by pane.type). 'open' is set only
+    // for the target pane during paneSelectMode; the others see
+    // 'disabled' so only the originating click can re-toggle.
+    const state = (ctx && ctx.paneSelectTriggerState) || 'available';
     if (state !== 'hidden') tabTrigger = state;
   }
   return { collapse, close, tabTrigger };

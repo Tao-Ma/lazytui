@@ -142,6 +142,13 @@ function init() {
     // anchoring). null when no overlay open. Written by pane-tabs
     // reducer's tab_list_open/tab_list_close via wrapped layout Msgs.
     tabListOwnerPaneId: null,
+    // v0.6.3 D1 — pane-select overlay state. Companion to
+    // model.modes.paneSelectMode: the mode flag says "an overlay is
+    // open"; this object says "this target pane's overlay is open
+    // and the cursor sits at row N". null when no overlay open.
+    // Written by the layout reducer's pane_select_open / _close arms.
+    // cursor/scroll get used by D2 once the list body lands.
+    paneSelect: null,
     // v0.6.1 Phase 5 — sticky pointer to the most recent viewer-kind
     // tab the user focused. resolveTarget('viewer') falls back to
     // this when no viewer-kind tab is currently focused (e.g. user
@@ -246,6 +253,21 @@ function update(msg, slice) {
       if (slice.tabListOwnerPaneId === paneId) return slice;
       return { ...slice, tabListOwnerPaneId: paneId };
     }
+    // v0.6.3 D1 — pane-select overlay open. Sets the target paneId
+    // (the cell the user clicked [≡] on) + arms paneSelectMode via
+    // an apply_msg Cmd (root chrome flag; single-writer per layer).
+    // D2 will seed cursor/scroll; for D1 we only need the open marker.
+    case 'pane_select_open': {
+      const paneId = msg.paneId;
+      if (!paneId) return slice;
+      const next = { ...slice, paneSelect: { targetPaneId: paneId, cursor: 0, scroll: 0 } };
+      return [next, [{ type: 'msg', msg: { type: 'mode_set', flag: 'paneSelectMode' } }]];
+    }
+    case 'pane_select_close': {
+      if (!slice.paneSelect && !getModel().modes.paneSelectMode) return slice;
+      const next = { ...slice, paneSelect: null };
+      return [next, [{ type: 'msg', msg: { type: 'mode_clear', flag: 'paneSelectMode' } }]];
+    }
     // Boot warnings — whole-array replace (state.initState dispatches
     // this once after parse). dismiss_warnings clears them. The footer
     // renderer paints `⚠ N config warning(s)` when length > 0.
@@ -292,6 +314,12 @@ function update(msg, slice) {
           next.panelList = { open: false, cursor: 0 };
         }
         if (next.tabListOwnerPaneId) next.tabListOwnerPaneId = null;
+        // v0.6.3 D1 — pane-select target paneId may name a pane that's
+        // no longer placed; defensive close. paneSelectMode itself
+        // doesn't clear here (set_arrange is a layout-internal write,
+        // not a Cmd-emitter); the next overlay-residue repaint covers
+        // the stale pixels.
+        if (next.paneSelect) next.paneSelect = null;
         const allPanes = mpool.allPanesInColumns(next.arrange);
         const focusStillPlaced = allPanes.some(p => p.type === next.focus);
         if (!focusStillPlaced && allPanes.length > 0) {

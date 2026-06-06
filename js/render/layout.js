@@ -607,6 +607,16 @@ function composeRects(layout, model) {
     triggerStateRaw = require('../overlay/tab-list')._triggerState();
   } catch (_) {}
   const tabTriggerState = triggerStateRaw === 'normal' ? 'available' : triggerStateRaw;
+  // v0.6.3 D1 — pane-select trigger state, computed PER pane (target
+  // shows 'open', siblings show 'disabled' during paneSelectMode).
+  const paneSelectMode = !!(model.modes && model.modes.paneSelectMode);
+  const paneSelectTargetPaneId = (layoutSlice.paneSelect && layoutSlice.paneSelect.targetPaneId) || null;
+  const paneSelectTriggerStateFor = (paneId) => {
+    if (paneSelectMode) return paneId === paneSelectTargetPaneId ? 'open' : 'disabled';
+    // Mirror tab-list: any chain mode disables peer triggers so the
+    // user's open overlay can't be re-triggered out from under them.
+    return require('../overlay/tab-list')._triggerState() === 'normal' ? 'available' : 'disabled';
+  };
 
   // Index rects for quick lookup by either key. paneId is preferred
   // (multi-instance forward-compat per v0.6.1 Phase 7); type is the
@@ -624,6 +634,7 @@ function composeRects(layout, model) {
     const focused = layoutSlice.focus === panel.type;
     const chrome = chromeFor(panel, {
       freeConfigMode, dragging, focused, viewerTabCount, tabTriggerState,
+      paneSelectTriggerState: paneSelectTriggerStateFor(panel.paneId),
     });
     const raw = panel.collapsed
       ? _renderCollapsed(panel, rect.w, chrome)
@@ -730,10 +741,21 @@ function renderHalf(model) {
     triggerStateRaw = require('../overlay/tab-list')._triggerState();
   } catch (_) {}
   const tabTriggerState = triggerStateRaw === 'normal' ? 'available' : triggerStateRaw;
+  // v0.6.3 D1 — half view also threads paneSelect state; only the left
+  // pane is non-detail (detail is always rightmost), so it's the only
+  // candidate for the pane-select trigger.
+  const halfPaneSelectMode = !!(model.modes && model.modes.paneSelectMode);
+  const halfPaneSelectTargetPaneId =
+    (layoutSlice.paneSelect && layoutSlice.paneSelect.targetPaneId) || null;
+  const halfPaneSelectStateFor = (paneId) =>
+    halfPaneSelectMode
+      ? (paneId === halfPaneSelectTargetPaneId ? 'open' : 'disabled')
+      : 'available';
   const leftChrome = chromeFor(leftPanel, {
     freeConfigMode, dragging,
     focused: layoutSlice.focus === leftPanel.type,
     viewerTabCount, tabTriggerState,
+    paneSelectTriggerState: halfPaneSelectStateFor(leftPanel.paneId),
   });
   const detailChrome = detailPanel ? chromeFor(detailPanel, {
     freeConfigMode, dragging,
@@ -787,11 +809,21 @@ function renderFull(model) {
   try {
     triggerStateRawF = require('../overlay/tab-list')._triggerState();
   } catch (_) {}
+  // v0.6.3 D1 — full view threads paneSelect state for the focused pane
+  // (only one pane is visible at full zoom; only relevant when it's
+  // non-detail).
+  const fullPaneSelectMode = !!(model.modes && model.modes.paneSelectMode);
+  const fullPaneSelectTargetPaneId =
+    (layoutSlice.paneSelect && layoutSlice.paneSelect.targetPaneId) || null;
+  const fullPaneSelectState = fullPaneSelectMode
+    ? (focusedPanel.paneId === fullPaneSelectTargetPaneId ? 'open' : 'disabled')
+    : 'available';
   const fullChrome = chromeForFull(focusedPanel, {
     freeConfigMode: freeConfigModeF, dragging: draggingF,
     focused: true,
     viewerTabCount: viewerTabCountF,
     tabTriggerState: triggerStateRawF === 'normal' ? 'available' : triggerStateRawF,
+    paneSelectTriggerState: fullPaneSelectState,
   });
   let content = _safeRender(focusedPanel, COLS, availH, { chrome: fullChrome });
   const rects = [
@@ -996,6 +1028,7 @@ function render(model = getModel()) {
   // composed inline by renderPanel({chrome}) per P4.2; the painter
   // stamps it atomically alongside the rest of the top border.
   if (md.tabListMode) renderTabList();
+  if (md.paneSelectMode) require('../overlay/pane-select').render();
   if (md.jobsMode)    renderJobsOverlay();
 
   // Cursor visibility — derived from mode state, single emission site.

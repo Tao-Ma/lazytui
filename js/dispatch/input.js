@@ -162,6 +162,21 @@ function handleMouse(kind, x, y) {
       render();
       return;
     }
+    // v0.6.3 D1 — pane-select [≡] trigger on any non-detail pane.
+    // Same glyph position as detail's tab-list trigger; click semantic
+    // differs by pane.type (input dispatches the right Msg). Toggles
+    // the overlay when clicked on the open target's own glyph.
+    const paneSelectOverlay = require('../overlay/pane-select');
+    const psTargetId = paneSelectOverlay.hitTestTrigger(mx, my);
+    if (psTargetId) {
+      if (model.modes.paneSelectMode) {
+        dispatchMsg(wrap('layout', { type: 'pane_select_close' }));
+      } else {
+        dispatchMsg(wrap('layout', { type: 'pane_select_open', paneId: psTargetId }));
+      }
+      render();
+      return;
+    }
   }
 
   // Tab-list overlay click + wheel — when the overlay is open, mouse
