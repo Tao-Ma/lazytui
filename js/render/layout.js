@@ -208,6 +208,14 @@ function distributeColumnHeights(panels, availH, isLastCol, minH, detailHeightPc
 // every calcLayout call (per-frame).
 let _panelHeights = {};
 
+// v0.6.3 P1.2 — module-local Layout publication. calcLayout assigns
+// at end of each pass; getCurrentLayout() exposes the most-recent
+// Layout to hit-test consumers (mouse, drag math) that today read
+// layoutSlice.panelBounds. The boundsFor() shim in P1.3 fronts both
+// sources; P1.4 stops the slice write and this becomes the sole
+// channel. Null pre-first-render — fallback callers must guard.
+let _currentLayout = null;
+
 /**
  * Inner viewport rows for a panel's CURRENTLY-RENDERED height, view-
  * mode aware. The on-screen panel in half/full view occupies the full
@@ -323,10 +331,26 @@ function calcLayout(model = getModel()) {
     }
   }
 
+  _currentLayout = {
+    rects, availH,
+    viewMode: layoutSlice.viewMode, cols: COLS, rows: ROWS,
+  };
+
   return {
     ranges, availH,
     rects, viewMode: layoutSlice.viewMode, cols: COLS, rows: ROWS,
   };
+}
+
+/**
+ * v0.6.3 P1.2 — read the most-recent Layout. Null before the first
+ * calcLayout pass (test fixtures that seed `layoutSlice.panelBounds`
+ * directly without a render pass get null here; boundsFor() in P1.3
+ * handles the fallback). Treat as read-only; the renderer is the
+ * single writer.
+ */
+function getCurrentLayout() {
+  return _currentLayout;
 }
 
 // --- Render modes ---
@@ -1000,6 +1024,11 @@ module.exports = {
   calcLayout, render, redraw, renderFooter, renderTerminalOverlay,
   forceFullRepaint, invalidateRows,
   getPanelViewportH,
+  // v0.6.3 P1.2 — most-recent Layout. Null pre-first-render. Will
+  // back the boundsFor() shim landing in P1.3 and become the sole
+  // hit-test channel after P1.4 stops the layoutSlice.panelBounds
+  // writes.
+  getCurrentLayout,
   // Test seam: distributeColumnHeights is a pure function that returns
   // a { [type]: rows } map. Exposed so collapsed-honor + heightPct
   // math can be unit-tested without bringing up the whole runtime.
