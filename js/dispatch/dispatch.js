@@ -247,7 +247,16 @@ function handleFreeConfigKey(key, seq) {
 
 function handleFreeConfigTitleEditKey(key, seq) {
   if (key === 'escape') { dispatchMsg(wrap('layout', { type: 'free_config_title_cancel' })); return; }
-  if (key === 'return') { dispatchMsg(wrap('layout', { type: 'free_config_title_submit' })); return; }
+  if (key === 'return') {
+    // Thread the active freeConfigTitleEditMode flag through the Msg
+    // so the reducer doesn't have to read getModel() (TEA: reducers
+    // pure of model.modes). The chain handler fires only when the
+    // flag is on, so this is always true here — but the reducer's
+    // gate uses it to preserve slice identity in the R1.4 no-panel
+    // case (see panel/layout.js comment).
+    dispatchMsg(wrap('layout', { type: 'free_config_title_submit', freeConfigTitleEditMode: true }));
+    return;
+  }
   dispatchMsg(wrap('layout', { type: 'free_config_title_key', key, seq }));
 }
 

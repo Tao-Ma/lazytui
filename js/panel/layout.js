@@ -580,12 +580,10 @@ function update(msg, slice) {
       // mode flag from flipping but the buffer reset can still race
       // here) should preserve slice identity. setSelectedTitle already
       // identity-preserves on no-op text.
-      // Title-edit "is currently open" is tracked by the root mode flag
-      // (`modes.freeConfigTitleEditMode`) — not duplicated on the slice
-      // (AR1). When R1.4's title_enter no-op left the flag clear (no
-      // panel selected), skip the buffer reset so slice identity is
-      // preserved.
-      if (getModel().modes.freeConfigTitleEditMode) {
+      // Title-edit "is currently open" arrives via msg.freeConfigTitleEditMode
+      // — the dispatcher (handleFreeConfigTitleEditKey) reads the flag
+      // and threads it. Pure reducer; no getModel() read here.
+      if (msg.freeConfigTitleEditMode) {
         next = { ...next, freeConfig: { ...next.freeConfig, titleEdit: { text: '' } } };
       }
       return [next, [{ type: 'msg', msg: { type: 'mode_clear', flag: 'freeConfigTitleEditMode' } }]];
