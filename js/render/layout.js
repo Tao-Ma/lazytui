@@ -466,18 +466,77 @@ function paintColumns(columnOutputs) {
   return didFull;
 }
 
+/**
+ * v0.6.3 P2 — Rect contract enforcement.
+ *
+ * Normalize a panel render's raw string output to exactly `h` lines,
+ * each `w` cells wide (visibleLen). Two modes:
+ *
+ *   - **Check mode** (`LAZYTUI_RENDER_CHECK=1`): debug-mode assert. A
+ *     wrong line count OR an off-width line throws — the failing
+ *     panel name and the offending line index are stamped in the
+ *     error message so the underlying renderer bug is locatable.
+ *   - **Release mode** (default): pad-and-fill. Short lines get
+ *     trailing spaces to reach `w`; missing trailing lines are
+ *     replaced with blank rows. Extra lines beyond `h` are dropped.
+ *     The column-pad in renderNormal (6d9ad31) used to do this only
+ *     at the column boundary; P2 lifts it to the per-panel boundary
+ *     so a single panel's contract violation doesn't shift the rest
+ *     of the column.
+ *
+ * Returns `string[]` of length `h`. _safeRender callers join with
+ * `\n` to preserve the existing string-return API; the array shape
+ * is the eventual P3 painter input.
+ */
+function _normalizeRender(panel, raw, w, h) {
+  if (h <= 0) return [];
+  if (raw === '' || raw == null) {
+    return Array(h).fill(' '.repeat(w));
+  }
+  const lines = raw.split('\n');
+  if (process.env.LAZYTUI_RENDER_CHECK === '1') {
+    if (lines.length !== h) {
+      throw new Error(
+        `[rect-contract] ${panel && panel.type}: expected ${h} lines, got ${lines.length}`,
+      );
+    }
+    for (let i = 0; i < lines.length; i++) {
+      const vl = visibleLen(lines[i]);
+      if (vl !== w) {
+        throw new Error(
+          `[rect-contract] ${panel && panel.type} line ${i}: visibleLen=${vl}, expected ${w}`,
+        );
+      }
+    }
+    return lines;
+  }
+  // Release: pad to (h × w). Truncation is left alone — visibleLen >
+  // w means the panel overflowed and the column-pad already lets the
+  // next column's content win; trimming markup-aware is non-trivial,
+  // so prefer overshoot-as-is (matches pre-P2 behavior).
+  const fixed = new Array(h);
+  for (let i = 0; i < h; i++) {
+    let line = lines[i] != null ? lines[i] : '';
+    const vl = visibleLen(line);
+    if (vl < w) line += ' '.repeat(w - vl);
+    fixed[i] = line;
+  }
+  return fixed;
+}
+
 // T28 — isolate render() throws to the failing panel. Pre-fix every
 // fn(panel, w, h) call was bare; a throw bubbled up through renderNormal/
 // Half/Full and killed the entire frame, not just the one panel. Now:
 // the throw is caught, logged to console.error + event-log (T11 channel,
 // so post-mortem inspectable from a recorded session), and the panel
-// renders as a single-line error marker so the rest of the layout keeps
-// painting. Same pattern as panel/api.js's update/key catches.
+// renders as an h-line block (error marker on row 0, blanks below) so
+// the rest of the layout keeps painting AND the panel's vertical slot
+// is preserved. Same pattern as panel/api.js's update/key catches.
 // Resolve panel.type → its Component's render fn + slice, then call.
 // Inlines what was rendererFor() (a per-frame closure-allocating
 // helper) — P5.7. Returns '' for unregistered types / missing
-// render(); on throw, renders an error marker so the rest of the
-// layout keeps painting (same pattern as panel/api.js update catches).
+// render(); on throw, renders an error block (P2 — was a 1-line
+// marker that shifted everything below it within the same column).
 function _safeRender(panel, w, h) {
   if (!panel) return '';
   const compName = getComponentOwningPanel(panel.type);
@@ -485,8 +544,10 @@ function _safeRender(panel, w, h) {
   const comp = getComponent(compName);
   const def = comp && comp.panelTypes && comp.panelTypes[panel.type];
   if (!def || typeof def.render !== 'function') return '';
-  try { return def.render(panel, w, h, getInstanceSlice(compName)); }
-  catch (e) {
+  let raw;
+  try {
+    raw = def.render(panel, w, h, getInstanceSlice(compName));
+  } catch (e) {
     console.error(`[render:${panel && panel.type}] ${e && e.message}`);
     try {
       require('../dispatch/event-log').record('error', {
@@ -500,8 +561,17 @@ function _safeRender(panel, w, h) {
     // around "render error: …" must also be escaped — without `\[`
     // and `\]`, richToAnsi treats the whole thing as a tag, looks it
     // up in CODES (miss), and emits RESET, swallowing the message.
-    return `[red]\\[render error: ${esc(String(panel && panel.type))} — ${esc(String(e && e.message))}\\][/]`;
+    //
+    // v0.6.3 P2 — expand from one-line marker to h-line block. The
+    // error message stays on row 0; rows 1..h-1 are blank-of-width-w
+    // so the panel's vertical slot is preserved.
+    const errLine = `[red]\\[render error: ${esc(String(panel && panel.type))} — ${esc(String(e && e.message))}\\][/]`;
+    const blank = ' '.repeat(w);
+    const rows = [errLine];
+    for (let i = 1; i < h; i++) rows.push(blank);
+    return rows.join('\n');
   }
+  return _normalizeRender(panel, raw, w, h).join('\n');
 }
 
 // renderNormal/Half/Full populate `layoutSlice.panelBounds` directly —
@@ -1100,6 +1170,11 @@ module.exports = {
   // a { [type]: rows } map. Exposed so collapsed-honor + heightPct
   // math can be unit-tested without bringing up the whole runtime.
   _distributeColumnHeights: distributeColumnHeights,
+  // v0.6.3 P2 test seam: _normalizeRender enforces the Rect contract
+  // (exactly h lines of width w). Exposed so test-rect-contract.js
+  // can exercise both check mode (env LAZYTUI_RENDER_CHECK=1 → throws
+  // on violation) and release mode (pads to h × w).
+  _normalizeRender,
   // Test seam: a {[type]: rows} map derived from _currentLayout.rects
   // (the column-share heights calcLayout last produced). NOT for
   // production use — production callers go through
