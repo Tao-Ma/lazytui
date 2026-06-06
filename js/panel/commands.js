@@ -87,8 +87,9 @@ const FRAMEWORK_COMMANDS = [
         return;
       }
       // Strip wrapping quotes (the cmdline splits on whitespace; quoting
-      // is the user's way of preserving a path with spaces).
-      const cleaned = input.replace(/^['"]|['"]$/g, '');
+      // is the user's way of preserving a path with spaces). Only strip
+      // a balanced pair — `"foo'` is not quoted.
+      const cleaned = input.replace(/^(['"])(.*)\1$/, '$2');
       require('../feature/open-target').openInput(cleaned);
     },
   },
