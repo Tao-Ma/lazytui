@@ -77,6 +77,14 @@ function hitTestTrigger(mx, my) {
   if (drag) return null;
   const modes = getModel().modes;
   if (!modes.paneSelectMode && isChainActive(modes)) return null;
+  // "Nothing to swap" — chromeFor returns 'hidden' (no glyph painted)
+  // when paneSelectItems(arrange).length < 2. The hit-test must agree
+  // so a click at the now-invisible glyph position doesn't still arm
+  // pane-select with a list of just `[here]`. Allow when paneSelectMode
+  // is already open (the target's own [≡] still toggles close even if
+  // the list contracted to 1 mid-overlay).
+  if (!modes.paneSelectMode
+      && mpool.paneSelectItems(layoutSlice.arrange, null).length < 2) return null;
   const openTargetId = (layoutSlice.paneSelect && layoutSlice.paneSelect.targetPaneId) || null;
   for (const p of mpool.allPanesInColumns(layoutSlice.arrange)) {
     if (p.type === 'detail') continue;

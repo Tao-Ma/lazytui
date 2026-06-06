@@ -178,11 +178,20 @@ function _placedWidgetTargets() {
   // v0.6.3 P1.3: lazy require to dodge the layout ↔ decor cycle
   // (layout.js imports decor at top-level, so a top-level
   // require('./layout') would yield the partial module without
-  // boundsFor; lazy resolves to the final exports).
-  const { boundsFor } = require('./layout');
+  // visibleBoundsFor; lazy resolves to the final exports).
+  //
+  // visibleBoundsFor — NOT boundsFor — so off-screen panes in half/
+  // full view don't show up here. The boundsFor fallback to
+  // _currentLayout.rects would return phantom normal-view rects for
+  // off-screen panes, letting a click on the visible left half fire
+  // panel_collapse_toggle on an off-screen pane (user returns to
+  // normal view → that pane is silently collapsed). Same bug class
+  // as the half-mode focus-revert fix in `visibleBoundsFor`'s intro
+  // commit — chrome-glyph hit-tests share the symptom.
+  const { visibleBoundsFor } = require('./layout');
   return panels
     .filter(p => p.type !== 'detail')
-    .map(p => ({ p, b: boundsFor(p.type) }))
+    .map(p => ({ p, b: visibleBoundsFor(p.type) }))
     .filter(({ b }) => b && b.h >= 1);
 }
 
