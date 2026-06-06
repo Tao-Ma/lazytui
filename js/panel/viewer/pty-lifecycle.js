@@ -26,6 +26,7 @@
 
 const tabs = require('./tabs');
 const api = require('../api');
+const { getModel } = require('../../app/runtime');
 const { scheduleRender } = require('../../render/render-queue');
 
 function handleExit(id, exitCode) {
@@ -37,6 +38,18 @@ function handleExit(id, exitCode) {
   let anyChange = false;
   const wasActive = tabs.activeTerminalId(paneId) === id;
   const layoutSlice = api.getInstanceSlice('layout');
+  // v0.6.3 P5.1 — clear terminalMode here when the user was actively
+  // interacting with the just-exited PTY. Pre-P5 this fired via a
+  // setImmediate from renderTerminalOverlay every render frame as a
+  // poll; routing it through handleExit makes it event-driven and
+  // closes one render-side dispatch (view → reducer impurity). Order:
+  // dispatch BEFORE view_set so view_set's reducer sees terminalMode
+  // already cleared (avoids the "drop full → normal while
+  // terminalMode still true" intermediate state).
+  if (wasActive && getModel().modes.terminalMode) {
+    api.dispatchMsg({ type: 'terminal_exit' });
+    anyChange = true;
+  }
   if (layoutSlice && layoutSlice.viewMode === 'full' && wasActive) {
     // view_set's reducer arm emits force_full_repaint on the full →
     // normal transition; the bare forceFullRepaint() that used to

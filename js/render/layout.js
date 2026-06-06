@@ -853,20 +853,12 @@ function renderTerminalOverlay(model = getModel()) {
     session.prevFrame[row] = text;
   }
 
-  // Show exit prompt if process died (overlay on bottom content row)
+  // Show exit prompt if process died (overlay on bottom content row).
+  // v0.6.3 P5.1 — the setImmediate terminal_exit dispatch that used to
+  // live here retired in favor of an event-driven dispatch from
+  // pty-lifecycle.handleExit (event-source = PTY's onExit, not render
+  // poll). One fewer render-side reducer dispatch.
   if (session.exited) {
-    // T14 — defer the stale-flag cleanup to the next tick. Dispatching
-    // applyMsg('terminal_exit') inline from a render path cascades
-    // synchronously (setModel → view_drop_full_to_normal → force_full_
-    // repaint Cmd → resets the layout-module-local _prevRows mid-paint
-    // + leaves the captured `model` arg in the caller stale). The
-    // setImmediate defer means the next render frame picks up the
-    // post-Msg state cleanly; this frame just paints the "Process
-    // exited" overlay on top of the still-terminalMode chrome — a
-    // single-frame harmless lag, not a structural mid-render mutation.
-    if (model.modes.terminalMode) {
-      setImmediate(() => require('../dispatch/dispatch').applyMsg({ type: 'terminal_exit' }));
-    }
     const msg = ` Process exited: ${session.exitCode} — Enter restart, x close `;
     const text = msg.length > innerW ? msg.slice(0, innerW) : msg;
     const padding = Math.max(0, Math.floor((innerW - text.length) / 2));
