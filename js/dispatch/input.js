@@ -240,11 +240,16 @@ function handleMouse(kind, x, y) {
     // the existing panel-move gesture still works when the user clicks
     // those parts of the tab bar.
     const db = require('../render/layout').boundsFor('detail');
-    if (kind === 'press' && db) {
-      if (my === db.y && Array.isArray(db.tabs)) {
+    // v0.6.3 P4.1: tab-bar hit-test cache moved off layoutSlice.panelBounds
+    // (was `db.tabs` — pre-P4 viewer wrote it onto layout's slice). Now
+    // lives on the viewer's own slice as slice.tabBounds. Read directly.
+    const detailSlice = getInstanceSlice('detail');
+    const detailTabBounds = detailSlice && Array.isArray(detailSlice.tabBounds) ? detailSlice.tabBounds : null;
+    if (kind === 'press' && db && detailTabBounds) {
+      if (my === db.y) {
         const localX = mx - db.x;
         let contentIdx = 0;
-        for (const t of db.tabs) {
+        for (const t of detailTabBounds) {
           if (t.closeKey == null) continue;
           if (localX >= t.x && localX < t.x + t.w) {
             dispatchMsg(wrap('layout', {
@@ -357,14 +362,16 @@ function handleMouse(kind, x, y) {
     if (!b) continue;
     if (mx < b.x || mx >= b.x + b.w || my < b.y || my >= b.y + b.h) continue;
 
-    // Top-border tab-strip — gated on `b.tabs` presence so ANY pane
-    // that publishes tab geometry (currently only detail; Phase 4
-    // expands) gets click routing. The wrap target uses p.type — for
-    // the singleton-detail Phase 2 caller that resolves to 'detail';
-    // Phase 4 retargets when Components are instance-keyed.
-    if (my === b.y && Array.isArray(b.tabs) && b.tabs.length > 0) {
+    // Top-border tab-strip — gated on a tabBounds list on the panel's
+    // own Component slice (v0.6.3 P4.1: moved off layoutSlice.panelBounds.
+    // .tabs). ANY pane whose Component publishes slice.tabBounds gets
+    // click routing — currently only detail; multi-viewer would have
+    // sibling viewers publish their own.
+    const compSlice = getInstanceSlice(p.type);
+    const paneTabs = compSlice && Array.isArray(compSlice.tabBounds) ? compSlice.tabBounds : null;
+    if (my === b.y && paneTabs && paneTabs.length > 0) {
       const localX = mx - b.x;
-      for (const tab of b.tabs) {
+      for (const tab of paneTabs) {
         if (localX >= tab.x && localX < tab.x + tab.w) {
           // Close-zone hit (content tabs only — the tab-strip builder
           // stamps `closeKey` on those entries). Wins over a tab-

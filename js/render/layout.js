@@ -385,23 +385,20 @@ function getCurrentLayout() {
  *      has been published yet (pre-first-render boot edge; tests
  *      that seed bounds without calling render).
  *
- * The viewer's tab-bar hit-test cache (`panelBounds.detail.tabs`,
- * viewer.js:1008) still lives on the slice in P1 — moving it onto
- * the viewer's own slice is N3, scheduled for P4 (decor). When a
- * caller asks for 'detail' (or any pane that has a tabs cache),
- * merge the slice's `tabs` field onto the rect so hit-test
- * consumers (input.js detail-press, tab-drag, tab-list overlay)
- * don't lose tab bounds during the P1 transition.
+ * v0.6.3 P4.1 — tabBounds cache moved off layoutSlice.panelBounds.detail.tabs
+ * onto the viewer's own slice. Hit-test consumers read it directly
+ * via `getInstanceSlice('detail').tabBounds`; boundsFor() no longer
+ * surfaces tabs.
  */
 function boundsFor(key) {
   const layoutSlice = getInstanceSlice('layout');
   const sliceBounds = layoutSlice && layoutSlice.panelBounds && layoutSlice.panelBounds[key];
   // P1.3 priority: slice first. Both sources are written together
   // during the P1 migration (renderNormal still writes panelBounds);
-  // the slice carries the viewer's `tabs` cache and is the source
-  // tests seed directly. P1.4 stops the slice writes — sliceBounds
-  // becomes null in production and the rect path below takes over
-  // transparently. No caller change needed at P1.4.
+  // tests seed slice.panelBounds directly. P1.4 stops the slice
+  // writes — sliceBounds becomes null in production and the rect
+  // path below takes over transparently. No caller change needed
+  // at P1.4.
   if (sliceBounds) return sliceBounds;
   if (_currentLayout && _currentLayout.rects) {
     const rect = _currentLayout.rects.find(r => r.paneId === key || r.type === key);

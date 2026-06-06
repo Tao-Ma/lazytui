@@ -999,15 +999,18 @@ function detailTitle(slice) {
       .map(j => j.owner.tabKey)
   );
   const built = buildTabStrip(tabInfo, slice.tab, hotkey, runningActionKeys);
-  // Blessed exception (docs/v0.5-layering.md §5): the mouse hit-test
-  // cache for the tab bar is a view-output write — populated during
-  // the layout Component's render pass + consumed by input.js. Pure-
-  // TEA doesn't apply to render-time writes into the owning Component's
-  // own slice; the alternative would be a parallel structure
-  // round-tripping per-frame.
-  if (layoutSlice && layoutSlice.panelBounds.detail) {
-    layoutSlice.panelBounds.detail.tabs = built ? built.tabBounds : [];
-  }
+  // v0.6.3 P4.1 (was N3 from [[v062-shipped]]): tab-bar hit-test cache
+  // moved from `layoutSlice.panelBounds.detail.tabs` to the viewer's
+  // own slice. Same view-output exception, but now writing OUR slice
+  // instead of layout's — single-writer-per-slice holds, and
+  // boundsFor()'s tabs-merge transitional code retires.
+  //
+  // The write is idempotent (same input arrange + tabs → same
+  // tabBounds), so PRINCIPLES §11 (render idempotence) holds. The
+  // alternative — routing tabBounds through a Msg per frame — would
+  // be ceremony for no gain since tabBounds is a pure derivation of
+  // the viewer's tab strip + the pane's geometry.
+  slice.tabBounds = built ? built.tabBounds : [];
   return built ? built.title : 'Detail';
 }
 

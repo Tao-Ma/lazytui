@@ -25,6 +25,7 @@ const mpool = require('../leaves/pool');
 const mpane = require('../leaves/pane');
 const route = require('../leaves/route');
 const { getModel } = require('../app/runtime');
+const { getInstanceSlice } = require('./api');
 
 
 /** Compare two drag drop targets for visual equality. Used by both
@@ -477,9 +478,15 @@ function update(msg, slice) {
       // 'detail'); v0.7 multi-viewer flips this to a per-pane id
       // without the leaf needing a route import.
       const targetKind = route.resolveTarget('viewer') || route.VIEWER_KIND;
+      // v0.6.3 P4.1: tabBounds moved off layoutSlice.panelBounds.detail.tabs
+      // onto the viewer's own slice. Resolve both here and thread them
+      // into the pure leaf as separate args.
+      const detailSlice = getInstanceSlice(targetKind);
+      const tabBounds = detailSlice && Array.isArray(detailSlice.tabBounds) ? detailSlice.tabBounds : null;
       return mtabDrag.tabDragMotion(
         slice, msg.mx, msg.my,
         require('../render/layout').boundsFor('detail'),
+        tabBounds,
         getModel().currentGroup,
         targetKind,
       );

@@ -15,10 +15,12 @@
  * panel) the drag stays armed but no reorder fires. Release clears the
  * drag in both cases.
  *
- * Pure leaf — no imports. Reads `slice.panelBounds.detail.tabs` (the
- * view-output hit-test cache populated by viewer.js#detailTitle), writes
- * the drag state on `slice.freeConfig.drag` (tagged union by `kind`, shares
- * the field with pool / panel / resize drags).
+ * Pure leaf — no imports. Reads bounds + tabBounds via parameters
+ * (v0.6.3 P4.1: tabBounds moved off layoutSlice.panelBounds.detail.tabs
+ * onto the viewer's own slice; the caller resolves and passes them in
+ * so the leaf stays slice-arg-pure). Writes the drag state on
+ * `slice.freeConfig.drag` (tagged union by `kind`, shares the field
+ * with pool / panel / resize drags).
  */
 'use strict';
 
@@ -31,12 +33,12 @@ function tabDragStart(slice, sourceKey, fromIdx, mx, my) {
   return { ...slice, freeConfig: { ...slice.freeConfig, drag } };
 }
 
-function _findContentIdxAt(panelBoundsDetail, mx, my) {
-  if (!panelBoundsDetail || !panelBoundsDetail.tabs) return -1;
-  if (my !== panelBoundsDetail.y) return -1;
-  const localX = mx - panelBoundsDetail.x;
+function _findContentIdxAt(detailBounds, tabBounds, mx, my) {
+  if (!detailBounds || !Array.isArray(tabBounds)) return -1;
+  if (my !== detailBounds.y) return -1;
+  const localX = mx - detailBounds.x;
   let contentIdx = 0;
-  for (const t of panelBoundsDetail.tabs) {
+  for (const t of tabBounds) {
     if (t.closeKey == null) continue;  // not a content tab
     if (localX >= t.x && localX < t.x + t.w) return contentIdx;
     contentIdx++;
@@ -44,14 +46,14 @@ function _findContentIdxAt(panelBoundsDetail, mx, my) {
   return -1;
 }
 
-function tabDragMotion(slice, mx, my, panelBoundsDetail, currentGroup, targetKind) {
+function tabDragMotion(slice, mx, my, detailBounds, tabBounds, currentGroup, targetKind) {
   const drag = slice.freeConfig && slice.freeConfig.drag;
   if (!drag || drag.kind !== 'tab-dragging') return [slice, []];
   if (mx === drag.startX && my === drag.startY) {
     // No movement — keep the cursor record without recomputing target.
     return [{ ...slice, freeConfig: { ...slice.freeConfig, drag: { ...drag, curX: mx, curY: my } } }, []];
   }
-  const toIdx = _findContentIdxAt(panelBoundsDetail, mx, my);
+  const toIdx = _findContentIdxAt(detailBounds, tabBounds, mx, my);
   const cursorOnly = {
     ...slice,
     freeConfig: { ...slice.freeConfig, drag: { ...drag, curX: mx, curY: my } },
