@@ -216,6 +216,44 @@ function handleMouse(kind, x, y) {
     }
   }
 
+  // v0.6.3 — pane-select overlay mouse routing. Mirrors tab-list:
+  //   wheel → pane_select_nav (cursor scroll)
+  //   press on a row → pool_swap_by_id (the arm emits the close Cmd)
+  //   press outside → pane_select_close
+  // The [≡] trigger toggle path at the top of this function still
+  // handles open-target self-click; this block covers everything
+  // else while the overlay is open.
+  if (model.modes.paneSelectMode) {
+    const psOverlay = require('../overlay/pane-select');
+    if (kind === 'wheel-up' || kind === 'wheel-down') {
+      const all = psOverlay.items();
+      dispatchMsg(wrap('layout', {
+        type: 'pane_select_nav',
+        dir: kind === 'wheel-up' ? -1 : +1,
+        n: all.length,
+        vh: psOverlay.viewportRows(),
+      }));
+      render();
+      return;
+    }
+    if (kind === 'press') {
+      const hit = psOverlay.hitTest(mx, my);
+      const layoutSlice = getInstanceSlice('layout');
+      const ps = layoutSlice && layoutSlice.paneSelect;
+      if (hit && ps) {
+        dispatchMsg(wrap('layout', {
+          type: 'pool_swap_by_id',
+          targetPaneId: ps.targetPaneId,
+          pickedId: hit.item.id,
+        }));
+      } else {
+        dispatchMsg(wrap('layout', { type: 'pane_select_close' }));
+      }
+      render();
+      return;
+    }
+  }
+
   // Design mode owns the entire mouse pipeline — the drag/resize state
   // machine lives on layout's slice (post-Phase-6 single-writer cleanup),
   // dispatched as wrapped `free_config_mouse_*` Msgs. cols() is resolved here

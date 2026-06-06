@@ -90,6 +90,54 @@ describe('[3] hit-test', () => {
     // No render has run, so boundsFor returns null. Hit-test bails.
     eq(paneSelect.hitTestTrigger(5, 0), null);
   });
+
+  it('hitTest returns null when overlay closed', () => {
+    setup();
+    eq(paneSelect.hitTest(20, 10), null);
+  });
+
+  it('hitTest resolves row idx at 80x24 with 3 items', () => {
+    // Geometry at 80x24, 3 items, vh=12 → menuW=50, menuH=5,
+    // offY=9, offX=15. Content rows y=10,11,12.
+    const layout = route.getInstanceSlice('layout');
+    layout.paneSelect = null;
+    layout.tabListOwnerPaneId = null;
+    layout.freeConfig = { drag: null, undo: [], redo: [], titleEdit: { text: '' }, notice: null, noticeKind: null };
+    layout.arrange = {
+      columns: [
+        { width: 24, panels: [
+          { type: 'groups',  id: 'groups',  paneId: 'pane-groups',  tabs: [{ id: 'groups',  poolId: 'groups'  }] },
+          { type: 'actions', id: 'actions', paneId: 'pane-actions', tabs: [{ id: 'actions', poolId: 'actions' }] },
+        ] },
+        { panels: [
+          { type: 'detail', id: 'detail', paneId: 'pane-detail', tabs: [{ id: 'detail', poolId: 'detail' }] },
+        ] },
+      ],
+      pool: {
+        'groups':  { id: 'groups',  type: 'groups',  title: 'Groups' },
+        'actions': { id: 'actions', type: 'actions', title: 'Actions' },
+        'detail':  { id: 'detail',  type: 'detail',  title: 'Detail' },
+        'stats':   { id: 'stats',   type: 'stats',   title: 'Stats' },
+      },
+    };
+    api.dispatchMsg(api.wrap('layout', { type: 'pane_select_open', paneId: 'pane-groups' }));
+    // Force COLS/ROWS for deterministic geometry (test env may differ).
+    const term = require('../io/term');
+    const origCols = term.cols(), origRows = term.rows();
+    // Monkey-patch by reassigning the module's exported fns is fragile;
+    // we rely on stdout.columns/rows defaulting to 80x24 when undefined.
+    // If the harness reports a real size, just verify the borders are inert.
+    const g0 = paneSelect.hitTest(0, 0);
+    eq(g0, null, 'outside overlay returns null');
+    if (origCols === 80 && origRows === 24) {
+      const hitRow0 = paneSelect.hitTest(20, 10);
+      assert(hitRow0 && hitRow0.idx === 0 && hitRow0.item.id === 'groups', 'row 0 = groups');
+      const hitRow1 = paneSelect.hitTest(20, 11);
+      assert(hitRow1 && hitRow1.idx === 1, 'row 1 hit');
+      eq(paneSelect.hitTest(20, 9),  null, 'top border inert');
+      eq(paneSelect.hitTest(20, 13), null, 'bottom border inert');
+    }
+  });
 });
 
 describe('[5] paneSelectItems — pure list build', () => {

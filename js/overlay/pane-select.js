@@ -114,6 +114,42 @@ function _statusLabel(it) {
   return `[cyan][in col ${it.columnIndex + 1}][/]`;
 }
 
+/** Overlay rect geometry — mirrors `renderOverlay`'s centering math so
+ *  the row hit-test and the painter agree on cell coordinates. Returns
+ *  { x, y, w, h, items, scroll } or null when the overlay isn't open. */
+function _geom() {
+  if (!getModel().modes.paneSelectMode) return null;
+  const layoutSlice = getInstanceSlice('layout');
+  if (!layoutSlice || !layoutSlice.paneSelect) return null;
+  const { cols, rows } = require('../io/term');
+  const all = items();
+  const vh = viewportRows();
+  const lineCount = all.length === 0 ? 1 : Math.min(vh, all.length);
+  const COLS = cols(), ROWS = rows();
+  const menuW = Math.min(MAX_W, COLS - 2);
+  const menuH = Math.min(lineCount + 2, ROWS - 2);
+  const offY = Math.max(0, Math.floor((ROWS - menuH) / 2));
+  const offX = Math.max(0, Math.floor((COLS - menuW) / 2));
+  const scroll = Math.max(0, layoutSlice.paneSelect.scroll || 0);
+  return { x: offX, y: offY, w: menuW, h: menuH, items: all, scroll };
+}
+
+/** Row hit-test for the open overlay. Returns { idx, item } when the
+ *  click lands on a list row, null for borders / outside / empty
+ *  state. Caller (dispatch/input.js paneSelectMode block) routes a
+ *  row hit to `pool_swap_by_id` and a null hit to `pane_select_close`. */
+function hitTest(mx, my) {
+  const g = _geom();
+  if (!g) return null;
+  if (mx < g.x || mx >= g.x + g.w) return null;
+  if (my < g.y || my >= g.y + g.h) return null;
+  if (my === g.y || my === g.y + g.h - 1) return null;
+  if (g.items.length === 0) return null;
+  const rowIdx = (my - g.y - 1) + g.scroll;
+  if (rowIdx < 0 || rowIdx >= g.items.length) return null;
+  return { idx: rowIdx, item: g.items[rowIdx] };
+}
+
 /** v0.6.3 D2 — list-body render. Item rows show:
  *    `▸ <type>  <status>`   (active row reverse-decorated)
  *  Empty state when the layout's pool has no non-detail entries. */
@@ -153,4 +189,4 @@ function render() {
   });
 }
 
-module.exports = { hitTestTrigger, render, items, viewportRows };
+module.exports = { hitTestTrigger, hitTest, render, items, viewportRows };
