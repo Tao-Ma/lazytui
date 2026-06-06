@@ -58,6 +58,41 @@ describe('[1] reducer arms', () => {
     eq(layout.paneSelect, null);
     eq(getModel().modes.paneSelectMode, false);
   });
+
+  it('T3.2 — pane_select_open is idempotent on same target (cursor/scroll preserved)', () => {
+    setup();
+    api.dispatchMsg(api.wrap('layout', { type: 'pane_select_open', paneId: 'pane-x' }));
+    // Move cursor + scroll.
+    api.dispatchMsg(api.wrap('layout', { type: 'pane_select_nav', dir: +3, n: 6, vh: 2 }));
+    const before = route.getInstanceSlice('layout').paneSelect;
+    eq(before.cursor, 3);
+    eq(before.scroll, 2);
+    // Re-open on the SAME paneId — must NOT reset cursor/scroll.
+    api.dispatchMsg(api.wrap('layout', { type: 'pane_select_open', paneId: 'pane-x' }));
+    const after = route.getInstanceSlice('layout').paneSelect;
+    eq(after.cursor, 3, 'cursor preserved on repeat open');
+    eq(after.scroll, 2, 'scroll preserved on repeat open');
+    eq(after, before, 'slice identity preserved (no-op)');
+  });
+
+  it('T3.1 — set_arrange clears paneSelectMode flag when paneSelect was non-null', () => {
+    setup();
+    api.dispatchMsg(api.wrap('layout', { type: 'pane_select_open', paneId: 'pane-groups' }));
+    eq(getModel().modes.paneSelectMode, true, 'mode armed');
+    // Replace arrange — defensive close should fire mode_clear Cmd.
+    api.dispatchMsg(api.wrap('layout', {
+      type: 'set_arrange',
+      arrange: {
+        columns: [
+          { width: 24, panels: [{ type: 'stats', tabs: [{ id: 'stats', poolId: 'stats' }] }] },
+          { panels: [{ type: 'detail', tabs: [{ id: 'detail', poolId: 'detail' }] }] },
+        ],
+        pool: { 'stats': { type: 'stats' }, 'detail': { type: 'detail' } },
+      },
+    }));
+    eq(route.getInstanceSlice('layout').paneSelect, null, 'paneSelect cleared');
+    eq(getModel().modes.paneSelectMode, false, 'paneSelectMode cleared in lockstep');
+  });
 });
 
 describe('[2] chromeFor — non-detail [≡] is pane-select trigger', () => {

@@ -262,6 +262,10 @@ function update(msg, slice) {
     case 'pane_select_open': {
       const paneId = msg.paneId;
       if (!paneId) return slice;
+      // Idempotent: re-opening on the same target preserves cursor /
+      // scroll. Without this guard, a stray repeat dispatch (e.g. the
+      // trigger-click toggle path re-firing) would reset nav state.
+      if (slice.paneSelect && slice.paneSelect.targetPaneId === paneId) return slice;
       const next = { ...slice, paneSelect: { targetPaneId: paneId, cursor: 0, scroll: 0 } };
       return [next, [{ type: 'msg', msg: { type: 'mode_set', flag: 'paneSelectMode' } }]];
     }
@@ -409,6 +413,7 @@ function update(msg, slice) {
     // wrapped Msgs dispatched into layout — single-writer.
     case 'set_arrange': {
       const next = { ...slice };
+      let hadPaneSelect = false;
       if (msg.arrange !== undefined) {
         // Reject malformed arrange (missing `columns` array) — accepting
         // it would replace a valid layout with a corrupt one and crash
@@ -438,10 +443,12 @@ function update(msg, slice) {
         }
         if (next.tabListOwnerPaneId) next.tabListOwnerPaneId = null;
         // v0.6.3 D1 — pane-select target paneId may name a pane that's
-        // no longer placed; defensive close. paneSelectMode itself
-        // doesn't clear here (set_arrange is a layout-internal write,
-        // not a Cmd-emitter); the next overlay-residue repaint covers
-        // the stale pixels.
+        // no longer placed; defensive close. Emit mode_clear so the
+        // flag/slice pair stays consistent (the pre-fix shape left
+        // paneSelectMode set after clearing paneSelect — a ghost
+        // chain mode that self-healed on next keypress but spent a
+        // window in inconsistent state).
+        hadPaneSelect = !!next.paneSelect;
         if (next.paneSelect) next.paneSelect = null;
         const allPanes = mpool.allPanesInColumns(next.arrange);
         const focusStillPlaced = allPanes.some(p => p.type === next.focus);
@@ -450,6 +457,9 @@ function update(msg, slice) {
         }
       }
       if (msg.dirty   !== undefined) next.dirty   = !!msg.dirty;
+      if (hadPaneSelect) {
+        return [next, [{ type: 'msg', msg: { type: 'mode_clear', flag: 'paneSelectMode' } }]];
+      }
       return next;
     }
     // Free-config state — pure return-new. The mfc leaf takes this
