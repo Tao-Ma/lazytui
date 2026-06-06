@@ -19,6 +19,8 @@ const mreg = require('../leaves/register');
 const mtabs = require('../leaves/pane-tabs');
 const ms = require('../leaves/search');
 const mfc = require('../leaves/free-config');
+const mfcCore = require('../leaves/free-config-core');
+const mfcMouse = require('../leaves/free-config-mouse');
 
 // --- leaves/nav ----------------------------------------------------------
 
@@ -236,7 +238,7 @@ describe('[immutable] leaves/free-config.js', () => {
     },
     // focus is the single source of truth for the active panel in
     // free-config (post-v0.6.x); the design.selectedIdx field is gone,
-    // mfc.selectedIdx(slice) derives the index from focus.
+    // mfcCore.selectedIdx(slice) derives the index from focus.
     focus: 'a',
     viewMode: 'normal',
   });
@@ -276,7 +278,7 @@ describe('[immutable] leaves/free-config.js', () => {
     // focus stays at 'a' (same type, new position); derived selectedIdx
     // is now 1 because 'a' moved to slot 1 of the left column.
     eq(out.focus, 'a', 'focus follows the panel by TYPE');
-    eq(mfc.selectedIdx(out), 1, 'derived index reflects the new position');
+    eq(mfcCore.selectedIdx(out), 1, 'derived index reflects the new position');
   });
 
   it('moveColumn left→right splices across columns', () => {
@@ -313,24 +315,24 @@ describe('[immutable] leaves/free-config.js', () => {
     const reordered = mfc.reorderWithin(slice, 1);
     const undone = expectNoMutation(
       'undo leaves input frozen',
-      () => mfc.undo(reordered),
+      () => mfcCore.undo(reordered),
       reordered,
     );
     eq(undone.arrange.columns[0].panels[0].type, 'a', 'a restored to slot 0');
     eq(undone.freeConfig.undo.length, 0, 'undo stack emptied');
     eq(undone.freeConfig.redo.length, 1, 'redo stack got the snapshot');
-    const redone = mfc.redo(undone);
+    const redone = mfcCore.redo(undone);
     eq(redone.arrange.columns[0].panels[0].type, 'b', 'redo replays the swap');
   });
 
   it('clearUndoStacks wipes both stacks; identity-preserve when empty', () => {
     const slice = makeSlice();
-    const same = mfc.clearUndoStacks(slice);
+    const same = mfcCore.clearUndoStacks(slice);
     assert(same === slice, 'already-empty stacks → same ref');
     const populated = mfc.reorderWithin(slice, 1);
     const cleared = expectNoMutation(
       'clearUndoStacks leaves input frozen',
-      () => mfc.clearUndoStacks(populated),
+      () => mfcCore.clearUndoStacks(populated),
       populated,
     );
     eq(cleared.freeConfig.undo.length, 0);
@@ -366,7 +368,7 @@ describe('[immutable] leaves/free-config.js', () => {
     const stale = { ...slice, focus: 'ghost' };
     const out = expectNoMutation(
       'clampSelected leaves input frozen',
-      () => mfc.clampSelected(stale),
+      () => mfcCore.clampSelected(stale),
       stale,
     );
     // First placed panel becomes the snap target.
@@ -377,7 +379,7 @@ describe('[immutable] leaves/free-config.js', () => {
     const slice = makeSlice();
     const out = expectNoMutation(
       'mousePress leaves input frozen',
-      () => mfc.mousePress(slice, 5, 5, 80),  // inside panel 'a'
+      () => mfcMouse.mousePress(slice, 5, 5, 80),  // inside panel 'a'
       slice,
     );
     eq(out.freeConfig.drag.kind, 'dragging');
@@ -389,10 +391,10 @@ describe('[immutable] leaves/free-config.js', () => {
   it('mouseMotion computes drop target on movement', () => {
     const slice = makeSlice();
     const model = makeModel();
-    const pressed = mfc.mousePress(slice, 5, 5, 80);
+    const pressed = mfcMouse.mousePress(slice, 5, 5, 80);
     const moved = expectNoMutation(
       'mouseMotion leaves input frozen',
-      () => mfc.mouseMotion(pressed, 5, 12, 80),  // drag down into 'b'
+      () => mfcMouse.mouseMotion(pressed, 5, 12, 80),  // drag down into 'b'
       pressed,
     );
     eq(moved.freeConfig.drag.kind, 'dragging');
@@ -402,11 +404,11 @@ describe('[immutable] leaves/free-config.js', () => {
   it('mouseRelease commits a valid drop + clears drag', () => {
     const slice = makeSlice();
     const model = makeModel();
-    let s = mfc.mousePress(slice, 5, 5, 80);   // press 'a'
-    s = mfc.mouseMotion(s, 5, 16, 80);                // drag below 'b'
+    let s = mfcMouse.mousePress(slice, 5, 5, 80);   // press 'a'
+    s = mfcMouse.mouseMotion(s, 5, 16, 80);                // drag below 'b'
     const out = expectNoMutation(
       'mouseRelease leaves input frozen',
-      () => mfc.mouseRelease(s),
+      () => mfcMouse.mouseRelease(s),
       s,
     );
     eq(out.freeConfig.drag, null, 'drag cleared');

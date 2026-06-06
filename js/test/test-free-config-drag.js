@@ -396,7 +396,7 @@ describe('[4] swap — middle-zone drag', () => {
 // pointToCellZone short-cell collapse: h<3 collapses the middle so very
 // short cells offer insert-only top/bottom (no impossible 0-row swap zone).
 describe('[5b] pointToCellZone — h<3 collapse', () => {
-  const mfc = require('../leaves/free-config');
+  const mfc = require('../leaves/free-config-mouse');
   it('h=1: only row is "top" (insert before)', () => {
     eq(mfc.pointToCellZone({ y: 0, h: 1 }, 0), 'top');
   });
@@ -421,7 +421,7 @@ describe('[5b] pointToCellZone — h<3 collapse', () => {
 // applyDrop would produce on release — that's the user-facing promise of
 // "what I see is what I get."
 describe('[5] computeDragPreviewArrange — what-if snapshot', () => {
-  const mfc = require('../leaves/free-config');
+  const mfc = require('../leaves/free-config-mouse');
 
   it('insert preview matches a containers→left:2 release', () => {
     setupFixture();

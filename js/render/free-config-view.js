@@ -26,7 +26,8 @@ const { esc } = require('../io/ansi');
 const { cols } = require('../io/term');
 const { getModel } = require('../app/runtime');
 const { getInstanceSlice } = require('../panel/api');
-const mfc = require('../leaves/free-config');
+const mfcCore = require('../leaves/free-config-core');
+const mfcMouse = require('../leaves/free-config-mouse');
 const mpool = require('../leaves/pool');
 
 // The layout Component's slice + its freeConfig sub-slice. Lazy because
@@ -101,7 +102,7 @@ function getFreeConfigFooter() {
   }
   const slice = _slice();
   const all = slice ? mpool.allPanesInColumns(slice.arrange) : [];
-  const sel = slice ? all[mfc.selectedIdx(slice)] : null;
+  const sel = slice ? all[mfcCore.selectedIdx(slice)] : null;
   return sel ? ` | ${esc(sel.title)} (col ${(sel.columnIndex != null ? sel.columnIndex + 1 : '?')})` : '';
 }
 
@@ -133,8 +134,8 @@ function onMouseEvent(kind, mx, my) {
   }
 }
 
-function pointToResizeTarget(mx, my) { return mfc.pointToResizeTarget(_slice(), mx, my, cols()); }
-function pointToDropTarget(srcType, mx, my) { return mfc.pointToDropTarget(_slice(), srcType, mx, my, cols()); }
+function pointToResizeTarget(mx, my) { return mfcMouse.pointToResizeTarget(_slice(), mx, my, cols()); }
+function pointToDropTarget(srcType, mx, my) { return mfcMouse.pointToDropTarget(_slice(), srcType, mx, my, cols()); }
 
 module.exports = {
   getFreeConfigFooter, titleEditText,

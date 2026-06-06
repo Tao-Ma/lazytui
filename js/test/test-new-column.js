@@ -21,6 +21,8 @@
 'use strict';
 
 const mfc = require('../leaves/free-config');
+const mfcCore = require('../leaves/free-config-core');
+const mfcMouse = require('../leaves/free-config-mouse');
 const mpoolDrag = require('../leaves/free-config-pool-drag');
 const mpool = require('../leaves/pool');
 const layout = require('../panel/layout');
@@ -83,12 +85,12 @@ describe('[1] newColumnZoneAt — edge + gap hit-tests', () => {
   const s = makeSlice();
 
   it('left edge: mx < EDGE_W → position 0', () => {
-    eq(mfc.newColumnZoneAt(s.arrange, 0, COLS), { position: 0 });
-    eq(mfc.newColumnZoneAt(s.arrange, 1, COLS), { position: 0 });
+    eq(mfcMouse.newColumnZoneAt(s.arrange, 0, COLS), { position: 0 });
+    eq(mfcMouse.newColumnZoneAt(s.arrange, 1, COLS), { position: 0 });
   });
 
   it('left edge boundary (mx === EDGE_W) NOT a new-col zone', () => {
-    eq(mfc.newColumnZoneAt(s.arrange, mfc.EDGE_W, COLS), null);
+    eq(mfcMouse.newColumnZoneAt(s.arrange, mfcCore.EDGE_W, COLS), null);
   });
 
   it('right edge: returns null (T2.1 — dead zone removed)', () => {
@@ -97,20 +99,20 @@ describe('[1] newColumnZoneAt — edge + gap hit-tests', () => {
     // falls through to the in-column 3-zone hit on the last column's
     // cells, giving the user usable drop targets in the rightmost
     // ~2 cells of the last column.
-    eq(mfc.newColumnZoneAt(s.arrange, COLS - 1, COLS), null);
-    eq(mfc.newColumnZoneAt(s.arrange, COLS - mfc.EDGE_W, COLS), null);
+    eq(mfcMouse.newColumnZoneAt(s.arrange, COLS - 1, COLS), null);
+    eq(mfcMouse.newColumnZoneAt(s.arrange, COLS - mfcCore.EDGE_W, COLS), null);
   });
 
   it('column gap: cursor near internal boundary → position i+1', () => {
     // col0.width=30 → boundary at x=30. Window: [29, 31].
-    eq(mfc.newColumnZoneAt(s.arrange, 29, COLS), { position: 1 });
-    eq(mfc.newColumnZoneAt(s.arrange, 30, COLS), { position: 1 });
-    eq(mfc.newColumnZoneAt(s.arrange, 31, COLS), { position: 1 });
+    eq(mfcMouse.newColumnZoneAt(s.arrange, 29, COLS), { position: 1 });
+    eq(mfcMouse.newColumnZoneAt(s.arrange, 30, COLS), { position: 1 });
+    eq(mfcMouse.newColumnZoneAt(s.arrange, 31, COLS), { position: 1 });
   });
 
   it('inside a column body (not near a boundary) → null', () => {
-    eq(mfc.newColumnZoneAt(s.arrange, 10, COLS), null);
-    eq(mfc.newColumnZoneAt(s.arrange, 60, COLS), null);
+    eq(mfcMouse.newColumnZoneAt(s.arrange, 10, COLS), null);
+    eq(mfcMouse.newColumnZoneAt(s.arrange, 60, COLS), null);
   });
 });
 
@@ -120,31 +122,31 @@ describe('[2] validateNewColumn — Phase 2 refusal rules', () => {
   const s = makeSlice();
 
   it('non-reserved source at position 0 (left edge) → valid', () => {
-    const t = mfc.validateNewColumn(s, 'containers', 0);
+    const t = mfcMouse.validateNewColumn(s, 'containers', 0);
     eq(t.valid, true);
     eq(t.kind, 'new_column');
     eq(t.position, 0);
   });
 
   it('non-reserved source at position 1 (column gap) → valid', () => {
-    const t = mfc.validateNewColumn(s, 'groups', 1);
+    const t = mfcMouse.validateNewColumn(s, 'groups', 1);
     eq(t.valid, true);
   });
 
   it('non-reserved source at position N (right edge) → refused', () => {
-    const t = mfc.validateNewColumn(s, 'containers', 2);  // N=2
+    const t = mfcMouse.validateNewColumn(s, 'containers', 2);  // N=2
     eq(t.valid, false);
     assert(/last column/.test(t.reason), `reason mentions last column: ${t.reason}`);
   });
 
   it('detail source at any position → refused', () => {
-    eq(mfc.validateNewColumn(s, 'detail', 0).valid, false);
-    eq(mfc.validateNewColumn(s, 'detail', 1).valid, false);
+    eq(mfcMouse.validateNewColumn(s, 'detail', 0).valid, false);
+    eq(mfcMouse.validateNewColumn(s, 'detail', 1).valid, false);
   });
 
   it('actions source at any position → refused', () => {
-    eq(mfc.validateNewColumn(s, 'actions', 0).valid, false);
-    eq(mfc.validateNewColumn(s, 'actions', 1).valid, false);
+    eq(mfcMouse.validateNewColumn(s, 'actions', 0).valid, false);
+    eq(mfcMouse.validateNewColumn(s, 'actions', 1).valid, false);
   });
 });
 
@@ -154,7 +156,7 @@ describe('[3] applyNewColumn — in-grid spawn', () => {
   it('left-edge spawn at position 0 — containers moves into a fresh first column', () => {
     const s = makeSlice();
     const target = { kind: 'new_column', position: 0, valid: true };
-    const out = mfc.applyNewColumn(s, 'containers', target);
+    const out = mfcMouse.applyNewColumn(s, 'containers', target);
     eq(out.dirty, true);
     // After: cols = [{containers}, {groups}, {actions, stats, detail}]
     eq(out.arrange.columns.length, 3, 'now 3 columns');
@@ -179,7 +181,7 @@ describe('[3] applyNewColumn — in-grid spawn', () => {
       panels.filter(p => p.type !== 'containers'));
     eq(s.arrange.columns[0].panels.length, 1, 'precondition: col 0 has only groups');
     const target = { kind: 'new_column', position: 1, valid: true };
-    const out = mfc.applyNewColumn(s, 'groups', target);
+    const out = mfcMouse.applyNewColumn(s, 'groups', target);
     // Source col 0 became empty → removed. New col was at position 1,
     // but col 0 removal shifts that to effective position 0. Final
     // layout: [{groups}, {actions, stats, detail}] = 2 cols.
@@ -191,7 +193,7 @@ describe('[3] applyNewColumn — in-grid spawn', () => {
   it('width stolen from explicit neighbor, last-col stays implicit', () => {
     const s = makeSlice();  // col 0 width=30, col 1 implicit
     const target = { kind: 'new_column', position: 1, valid: true };  // gap between col 0 and 1
-    const out = mfc.applyNewColumn(s, 'containers', target);
+    const out = mfcMouse.applyNewColumn(s, 'containers', target);
     // New column at position 1 takes some width from col 0 (the only
     // explicit-width neighbor on its left; col 1 is implicit so nothing
     // to steal from on the right). col 0 shrinks.
@@ -216,28 +218,28 @@ describe('[3] applyNewColumn — in-grid spawn', () => {
 describe('[4] pointToDropTarget — edge/gap zones take precedence', () => {
   it('cursor at left edge mx=1 returns new_column even though col 0 starts at x=0', () => {
     const s = makeSlice();
-    const t = mfc.pointToDropTarget(s, 'containers', 1, 5, COLS);
+    const t = mfcMouse.pointToDropTarget(s, 'containers', 1, 5, COLS);
     eq(t.kind, 'new_column');
     eq(t.position, 0);
   });
 
   it('cursor at column gap (mx=30) returns new_column at position 1', () => {
     const s = makeSlice();
-    const t = mfc.pointToDropTarget(s, 'containers', 30, 5, COLS);
+    const t = mfcMouse.pointToDropTarget(s, 'containers', 30, 5, COLS);
     eq(t.kind, 'new_column');
     eq(t.position, 1);
   });
 
   it('cursor inside col 0 body (mx=10, y=2) returns in-column insert', () => {
     const s = makeSlice();
-    const t = mfc.pointToDropTarget(s, 'groups', 10, 2, COLS);
+    const t = mfcMouse.pointToDropTarget(s, 'groups', 10, 2, COLS);
     eq(t.kind, 'insert');
     eq(t.columnIndex, 0);
   });
 
   it('detail source at left edge → new_column with valid:false', () => {
     const s = makeSlice();
-    const t = mfc.pointToDropTarget(s, 'detail', 1, 5, COLS);
+    const t = mfcMouse.pointToDropTarget(s, 'detail', 1, 5, COLS);
     eq(t.kind, 'new_column');
     eq(t.valid, false);
   });
@@ -252,7 +254,7 @@ describe('[5] computeDragPreviewArrange — new_column preview', () => {
       kind: 'dragging', sourceType: 'containers',
       target: { kind: 'new_column', position: 0, valid: true },
     } } };
-    const preview = mfc.computeDragPreviewArrange(slice);
+    const preview = mfcMouse.computeDragPreviewArrange(slice);
     assert(preview !== null, 'preview computed');
     eq(preview.columns.length, 3, 'preview has 3 columns');
     eq(preview.columns[0].panels[0].type, 'containers');
@@ -264,7 +266,7 @@ describe('[5] computeDragPreviewArrange — new_column preview', () => {
       kind: 'dragging', sourceType: 'detail',
       target: { kind: 'new_column', position: 0, valid: false },
     } } };
-    eq(mfc.computeDragPreviewArrange(slice), null);
+    eq(mfcMouse.computeDragPreviewArrange(slice), null);
   });
 });
 
@@ -470,8 +472,8 @@ describe('[13] pool_show_new_column success notice', () => {
 describe('[T3-defenses] T3.1/T3.3/T3.4/T3.5 hardening', () => {
   it('T3.1 — pointToDropTarget bails on negative mx (symmetric with pool-drag defense)', () => {
     const s = makeSlice();
-    eq(mfc.pointToDropTarget(s, 'containers', -1, 5, COLS), null, 'mx=-1 → null');
-    eq(mfc.pointToDropTarget(s, 'containers', -100, 5, COLS), null, 'mx=-100 → null');
+    eq(mfcMouse.pointToDropTarget(s, 'containers', -1, 5, COLS), null, 'mx=-1 → null');
+    eq(mfcMouse.pointToDropTarget(s, 'containers', -100, 5, COLS), null, 'mx=-100 → null');
   });
 
   it('T3.3 — pool_show with non-integer columnIndex is refused (no crash)', () => {
@@ -643,7 +645,7 @@ describe('[16] spawn → drag-back round-trip reclaims donor width', () => {
     const originalWidth = s.arrange.columns[0].width;
 
     // Step 1: spawn stats to a new column at position 1.
-    const s1 = mfc.applyNewColumn(s, 'stats', { kind: 'new_column', position: 1, valid: true });
+    const s1 = mfcMouse.applyNewColumn(s, 'stats', { kind: 'new_column', position: 1, valid: true });
     eq(s1.arrange.columns.length, 3, 'now 3 cols');
     assert(s1.arrange.columns[0].width < originalWidth, 'col 0 shrank to donate');
 
@@ -653,7 +655,7 @@ describe('[16] spawn → drag-back round-trip reclaims donor width', () => {
       kind: 'dragging', sourceType: 'stats',
       target: { kind: 'insert', columnIndex: 2, index: 0, valid: true },
     } } };
-    const result = mfc.mouseRelease(dragging);
+    const result = mfcMouse.mouseRelease(dragging);
     eq(result.arrange.columns.length, 2, 'auto-removed empty source col → back to 2 cols');
     eq(result.arrange.columns[0].width, originalWidth, 'col 0 width reclaimed');
     eq(result.arrange.columns[0].panels[0].type, 'containers', 'col 0 panes intact');
@@ -682,7 +684,7 @@ describe('[16] spawn → drag-back round-trip reclaims donor width', () => {
       kind: 'dragging', sourceType: 'containers',
       target: { kind: 'insert', columnIndex: 1, index: 0, valid: true },
     } } };
-    const out = mfc.mouseRelease(dragging);
+    const out = mfcMouse.mouseRelease(dragging);
     eq(out.arrange.columns.length, 2, 'still 2 cols (source col survives with groups)');
     eq(out.arrange.columns[0].width, originalWidth, 'source col width unchanged');
     eq(out.arrange.columns[0].panels.length, 1, 'one pane left in source col');
@@ -716,7 +718,7 @@ describe('[16] spawn → drag-back round-trip reclaims donor width', () => {
       kind: 'dragging', sourceType: 'containers',
       target: { kind: 'insert', columnIndex: 0, index: 2, valid: true },
     } } };
-    const out = mfc.mouseRelease(dragging);
+    const out = mfcMouse.mouseRelease(dragging);
     eq(out.arrange.columns.length, 2, 'still 2 cols');
     eq(out.arrange.columns[0].panels.length, 2, 'col 0 still has both panes');
     eq(out.arrange.columns[0].panels[1].type, 'containers', 'containers moved to end');
@@ -730,7 +732,7 @@ describe('[17] _dragTargetsEqual — new_column targets compare on `position`', 
   // panel/layout's exported test seam? Not exported. Skip — the
   // function is internal. Just sanity-check the field shape here.
   it('new_column target carries `position` not `columnIndex`/`index`', () => {
-    const t = mfc.validateNewColumn(makeSlice(), 'containers', 0);
+    const t = mfcMouse.validateNewColumn(makeSlice(), 'containers', 0);
     eq(t.position, 0);
     eq(t.columnIndex, undefined);
     eq(t.index, undefined);

@@ -27,8 +27,9 @@
  */
 'use strict';
 
-const mfc = require('./free-config');
-const { pointToCellZone, newColumnZoneAt } = mfc;
+const mfcCore = require('./free-config-core');
+const mfcMouse = require('./free-config-mouse');
+const { pointToCellZone, newColumnZoneAt } = mfcMouse;
 const mpool = require('./pool');
 const { placementFromPoolEntry } = mpool;
 
@@ -260,7 +261,7 @@ function computePoolDragPreviewArrange(slice) {
   const arrange = slice.arrange;
   if (t.kind === 'new_column') {
     const spawned = spawnNewColumnArrange(arrange, t.position, placementFromPoolEntry(entry, -1));
-    return mfc.reassignHotkeys(spawned);
+    return mfcCore.reassignHotkeys(spawned);
   }
   const placement = placementFromPoolEntry(entry, t.columnIndex);
   if (t.kind === 'replace') {
@@ -277,7 +278,7 @@ function computePoolDragPreviewArrange(slice) {
 /** Build a new arrange with a freshly-spawned column at `position`
  *  containing the single `placement` pane. Pure transform — used by
  *  the live preview AND the reducer's pool_show_new_column arm. Width
- *  allocation routes through `mfc.allocateNewColumnWidth` so the math
+ *  allocation routes through `mfcCore.allocateNewColumnWidth` so the math
  *  agrees with applyNewColumn (in-grid drag) and addColumn (cmdline).
  *  Position is guaranteed inside [0, columns.length - 1] by both
  *  callers — the position == N case was the "becomes new last" path
@@ -285,7 +286,7 @@ function computePoolDragPreviewArrange(slice) {
  *  previous last off "last"). */
 function spawnNewColumnArrange(arrange, position, placement) {
   const { columns: shrunk, newColWidth } =
-    mfc.allocateNewColumnWidth(arrange.columns || [], position);
+    mfcCore.allocateNewColumnWidth(arrange.columns || [], position);
   shrunk.splice(position, 0, { width: newColWidth, panels: [placement] });
   return { ...arrange, columns: shrunk };
 }

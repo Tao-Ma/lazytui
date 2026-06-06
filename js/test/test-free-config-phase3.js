@@ -198,7 +198,7 @@ describe('[3] drag-to-resize — detail-panel top edge', () => {
   });
   it('drag down shrinks detailHeightPct, clamped at dynamic min (13% on availH=40)', () => {
     setupFixture();
-    const { detailMinPct } = require('../leaves/free-config');
+    const { detailMinPct } = require('../leaves/free-config-core');
     onMouseEvent('press',  50, 15);
     onMouseEvent('motion', 50, 36);  // newDetailH = 4 rows; clamps to DETAIL_MIN_ROWS=5
     // detailMinPct(40) = max(5, ceil(5/40*100)) = 13 — five rows is the
@@ -333,7 +333,7 @@ describe('[3f] keyboard `]` / `[` — focused panel heightPct', () => {
     // Focus stats (right col, idx=3 in all). stats is just above detail.
     // detail starts at 60%. Repeated `]` should stop at detail hitting
     // the dynamic min (detailMinPct(availH) = 13% on availH=40).
-    const { detailMinPct } = require('../leaves/free-config');
+    const { detailMinPct } = require('../leaves/free-config-core');
     handleFreeConfigKey('j'); handleFreeConfigKey('j'); handleFreeConfigKey('j');  // → stats
     eq(getInstanceSlice("layout").arrange.columns[1].panels[1].type, 'stats');
     for (let i = 0; i < 20; i++) handleFreeConfigKey(']');

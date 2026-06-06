@@ -19,6 +19,8 @@
 // No in-place writes, no panel/api reach-around. Called from this
 // Component's update, preserving single-writer-per-slice.
 const mfc = require('../leaves/free-config');
+const mfcCore = require('../leaves/free-config-core');
+const mfcMouse = require('../leaves/free-config-mouse');
 const mpoolDrag = require('../leaves/free-config-pool-drag');
 const mtabDrag = require('../leaves/tab-drag');
 const mpool = require('../leaves/pool');
@@ -47,7 +49,7 @@ const { getInstanceSlice } = require('./api');
  *  and the dirty-flag write in lockstep. */
 function _commitArrange(slice, nextArrange, opts) {
   const skipUndo = opts && opts.skipUndo;
-  const withUndo = skipUndo ? slice : mfc.pushUndo(slice);
+  const withUndo = skipUndo ? slice : mfcCore.pushUndo(slice);
   return { ...withUndo, arrange: nextArrange, dirty: true };
 }
 
@@ -97,7 +99,7 @@ function init() {
     dirty: false,
     // Free-config working state — the reducer's drag/undo/title-edit
     // sub-state. The active panel (formerly `selectedIdx` here) is
-    // derived from `slice.focus` via `mfc.selectedIdx(slice)` — single
+    // derived from `slice.focus` via `mfcCore.selectedIdx(slice)` — single
     // source of truth.
     freeConfig: {
       drag: null,
@@ -364,7 +366,7 @@ function update(msg, slice) {
             return out;
           });
         }
-        nextArrange = mfc.reassignHotkeys(mid);
+        nextArrange = mfcCore.reassignHotkeys(mid);
       } else {
         // REPLACE — picked is hidden; place it at target's slot.
         // target's old occupant remains in arrange.pool (now hidden).
@@ -374,7 +376,7 @@ function update(msg, slice) {
           out[targetLoc.paneIndex] = newAtTarget;
           return out;
         });
-        nextArrange = mfc.reassignHotkeys(mid);
+        nextArrange = mfcCore.reassignHotkeys(mid);
       }
       const committed = _commitArrange(slice, nextArrange);
       // Focus follows the newly-shown entry at target's slot, matching
@@ -463,7 +465,7 @@ function update(msg, slice) {
       // when the pool has hidden entries — the discoverability hint
       // that there are more panels available than currently in the grid.
       // Preserve the current focus when it points at a placed panel
-      // (mfc.selectedIdx derives the index); fall back to the first
+      // (mfcCore.selectedIdx derives the index); fall back to the first
       // placed panel when current focus isn't in the layout (hidden in
       // the pool, or never set).
       const hasHidden = mpool.hiddenIds(slice.arrange).length > 0;
@@ -508,12 +510,12 @@ function update(msg, slice) {
       ]];
     }
     case 'free_config_nav':          return mfc.navSelect(slice, msg.dir);
-    case 'free_config_reorder':      return mfc.clampSelected(mfc.reorderWithin(slice, msg.dir));
-    case 'free_config_move_col':     return mfc.clampSelected(mfc.moveColumn(slice, msg.dir));
+    case 'free_config_reorder':      return mfcCore.clampSelected(mfc.reorderWithin(slice, msg.dir));
+    case 'free_config_move_col':     return mfcCore.clampSelected(mfc.moveColumn(slice, msg.dir));
     case 'free_config_resize':       return mfc.resizeWidthOrDetail(slice, msg.delta);
     case 'free_config_panel_height': return mfc.resizeFocusedPanelHeight(slice, msg.delta);
-    case 'free_config_undo':         return mfc.clampSelected(mfc.undo(slice));
-    case 'free_config_redo':         return mfc.clampSelected(mfc.redo(slice));
+    case 'free_config_undo':         return mfcCore.clampSelected(mfcCore.undo(slice));
+    case 'free_config_redo':         return mfcCore.clampSelected(mfcCore.redo(slice));
     case 'free_config_title_enter': {
       // titleEnter no-ops (returns the same slice ref) when no panel
       // is selected (`selectedIdx === -1`, e.g. focus is stale or the
@@ -544,13 +546,13 @@ function update(msg, slice) {
       }
       return [next, [{ type: 'msg', msg: { type: 'mode_clear', flag: 'freeConfigTitleEditMode' } }]];
     }
-    case 'free_config_mouse_press':  return mfc.mousePress(slice, msg.mx, msg.my, msg.cols);
+    case 'free_config_mouse_press':  return mfcMouse.mousePress(slice, msg.mx, msg.my, msg.cols);
     case 'free_config_mouse_motion': {
       // Diff-painter trap: between targets, panel content is frozen but
       // the layout reshuffles in the preview render — paintColumns can't
       // tell anything changed, so force a full repaint when the target
       // shifts. Same-zone motion no-ops.
-      const next = mfc.mouseMotion(slice, msg.mx, msg.my, msg.cols);
+      const next = mfcMouse.mouseMotion(slice, msg.mx, msg.my, msg.cols);
       if (next === slice) return slice;
       const ds = slice.freeConfig && slice.freeConfig.drag;
       const ns = next.freeConfig  && next.freeConfig.drag;
@@ -563,7 +565,7 @@ function update(msg, slice) {
       // looks like on release). Stored on drag.previewArrange; the render
       // path swaps slice.arrange for it during paint, restoring after so
       // hit-tests stay anchored to the original layout.
-      const previewArrange = mfc.computeDragPreviewArrange(next);
+      const previewArrange = mfcMouse.computeDragPreviewArrange(next);
       const withPreview = { ...next, freeConfig: { ...next.freeConfig, drag: { ...ns, previewArrange } } };
       return [withPreview, [{ type: 'force_full_repaint' }]];
     }
@@ -574,7 +576,7 @@ function update(msg, slice) {
       const wasNewColumnDrop = ds && ds.kind === 'dragging' && ds.target
                             && ds.target.kind === 'new_column' && ds.target.valid;
       const pos = wasNewColumnDrop ? ds.target.position : null;
-      const next = mfc.mouseRelease(slice);
+      const next = mfcMouse.mouseRelease(slice);
       if (pos !== null) return { ...next, freeConfig: { ...next.freeConfig, notice: `added new column at position ${pos + 1}`, noticeKind: 'info' } };
       return next;
     }
@@ -657,7 +659,7 @@ function update(msg, slice) {
     // because the runtime layout the user was editing is gone — the
     // history pointed at it no longer makes sense.
     case 'free_config_clear_undo':
-      return mfc.clearUndoStacks(slice);
+      return mfcCore.clearUndoStacks(slice);
     // Pool hide/show. The pool entry stays in the pool; only the
     // placement in arrange.columns[].panels changes. Detail is essential
     // (the layout invariant requires exactly one) — the overlay UX
@@ -726,14 +728,14 @@ function update(msg, slice) {
       // the hidden pane shared a column with them.
       const stripped = mpool.updateColumn(arrange, loc.columnIndex, panels =>
         panels.filter((_, i) => i !== loc.paneIndex));
-      const nextArrange = mfc.reassignHotkeys(stripped);
+      const nextArrange = mfcCore.reassignHotkeys(stripped);
       const next = _commitArrange(slice, nextArrange);
       // If the hidden panel was focused, focus is now stale (points at
       // a no-longer-placed type). clampSelected snaps it back to a
       // valid panel. When the snap actually moves focus, route through
       // _withFocus so halfLeftPanel + lastViewerTab + show_selected_info
       // stay in lockstep with the focus_set semantics.
-      const clamped = mfc.clampSelected(next);
+      const clamped = mfcCore.clampSelected(next);
       if (clamped.focus !== slice.focus) {
         return [_withFocus(clamped, clamped.focus), [{ type: 'show_selected_info' }]];
       }
@@ -868,7 +870,7 @@ function update(msg, slice) {
       // _skipUndo carried by compound ops (pool_drag replace) so only
       // the first hop pushes — see R2.1.
       const spliced = mpool.updateColumn(slice.arrange, columnIndex, () => inserted);
-      const nextArrange = mfc.reassignHotkeys(spliced);
+      const nextArrange = mfcCore.reassignHotkeys(spliced);
       const next = _commitArrange(slice, nextArrange, { skipUndo: msg._skipUndo });
       // Move focus to the newly-shown panel — matches the overlay UX
       // where picking from the pool surfaces it as the active one.
@@ -905,7 +907,7 @@ function update(msg, slice) {
       // Reassign hotkeys + stamp columnIndex across all columns —
       // splicing in shifts columns at index >= position by +1, so
       // every pane's columnIndex needs to be re-stamped.
-      const nextArrange = mfc.reassignHotkeys(spawned);
+      const nextArrange = mfcCore.reassignHotkeys(spawned);
       // Apply focus inline (halfLeftPanel + lastViewerTab + focus
       // stamped together via _withFocus) instead of re-dispatching
       // focus_set as a follow-up Cmd. The re-entry would trip the
@@ -945,7 +947,7 @@ function update(msg, slice) {
       // Clamp focus to a still-placed panel; if focus moved, route the
       // change through _withFocus + show_selected_info (same lockstep
       // contract as pool_hide / pool_show / focus_set).
-      const clamped = mfc.clampSelected(next);
+      const clamped = mfcCore.clampSelected(next);
       const status = { ...clamped, freeConfig: { ...clamped.freeConfig, notice: `removed column ${msg.columnIndex + 1}`, noticeKind: 'info' } };
       if (clamped.focus !== slice.focus) {
         return [_withFocus(status, clamped.focus), [{ type: 'show_selected_info' }]];
