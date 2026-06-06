@@ -205,66 +205,55 @@ describe('[viewer_reset_chrome] auto-closes the overlay on group switch', () => 
 // ===============================================================
 // Render-side regression: the [≡] trigger glyph is inserted AFTER (o),
 // not in place of it, so the user sees both the hotkey and the trigger.
-// Total visible width is preserved by eating 3 trailing fill dashes
-// from before the right corner.
-describe('[injectTabTrigger] (o)[≡] layout preserves panel width', () => {
+// v0.6.3 P4.2c — was `[injectTabTrigger]`. The regex injection
+// function retired; chrome glyphs compose inline via renderPanel
+// ({chrome}). The [≡] tab trigger is requested via
+// chrome.tabTrigger; renderPanel positions it after the hotkey
+// and the total visible width matches the requested width.
+describe('[chrome:tabTrigger] (o)[≡] layout preserves panel width', () => {
   const { renderPanel } = require('../render/panel');
-  const { injectTabTrigger } = require('../overlay/tab-list');
   const { richToAnsi, visibleLen } = require('../io/ansi');
-  const api = require('../panel/api');
-  const { getModel } = require('../app/runtime');
-  const layout = require('../panel/layout');
 
   function strip(s) { return s.replace(/\x1b\[[0-9;]*m/g, ''); }
-
-  // Register layout so its slice exists, then seed detail's panelBounds.
-  // Registry is idempotent on repeated calls within a test process.
-  try { api.registerComponent(layout); } catch (e) { /* already registered */ }
-  const layoutSlice = api.getInstanceSlice('layout');
-  layoutSlice.panelBounds = { detail: { x: 0, y: 0, w: 40, h: 10 } };
-  layoutSlice.focus = 'detail';
-  getModel().modes = getModel().modes || {};
-  getModel().modes.tabListMode = false;
-  getModel().modes.freeConfigMode = false;
 
   it('top row contains both (o) and [≡] with width preserved', () => {
     const out = renderPanel({
       width: 40, height: 10, lines: [], title: 'Detail', hotkey: 'o', focused: true,
+      chrome: { collapse: null, close: null, tabTrigger: 'available' },
     });
-    const withTrigger = injectTabTrigger(out, { type: 'detail' });
-    const topBefore = out.split('\n')[0];
-    const topAfter = withTrigger.split('\n')[0];
-    const visBefore = strip(richToAnsi(topBefore));
-    const visAfter  = strip(richToAnsi(topAfter));
-    eq(visibleLen(topBefore), 40, 'pre-inject width = 40');
-    eq(visibleLen(topAfter),  40, 'post-inject width still = 40 (3 dashes eaten)');
-    assert(visAfter.includes('(o)'),  `(o) preserved: ${visAfter}`);
-    assert(visAfter.includes('[≡]'), `[≡] inserted: ${visAfter}`);
-    // [≡] sits right after (o) — both adjacent in the visible row.
-    assert(visAfter.indexOf('(o)[≡]') >= 0, `(o)[≡] adjacent: ${visAfter}`);
+    const top = out.split('\n')[0];
+    const vis = strip(richToAnsi(top));
+    eq(visibleLen(top), 40, 'top-border width = 40 with chrome inline');
+    assert(vis.includes('(o)'),  `(o) preserved: ${vis}`);
+    assert(vis.includes('[≡]'), `[≡] inserted: ${vis}`);
+    assert(vis.indexOf('(o)[≡]') >= 0, `(o)[≡] adjacent: ${vis}`);
   });
 
-  it('narrow detail (no room for both) falls back to (o)-replaced-by-[≡]', () => {
-    // Width 10: `╭─(o)─T───╮` — only 2 trailing dashes before ╮.
-    layoutSlice.panelBounds = { detail: { x: 0, y: 0, w: 10, h: 10 } };
+  it('narrow detail (no room for both) drops chrome — bare border', () => {
+    // P4.2c behavior change vs the pre-P4 inject path: when chrome
+    // doesn't fit, renderPanel falls back to a bare border (no
+    // glyphs) instead of "replace (o) with [≡]" — the older fallback
+    // sacrificed the hotkey label to keep the trigger. The new path
+    // prefers consistency: narrow panes show no chrome at all.
     const out = renderPanel({
       width: 10, height: 10, lines: [], title: 'T', hotkey: 'o', focused: true,
+      chrome: { collapse: null, close: null, tabTrigger: 'available' },
     });
-    const withTrigger = injectTabTrigger(out, { type: 'detail' });
-    const visAfter = strip(richToAnsi(withTrigger.split('\n')[0]));
-    eq(visibleLen(withTrigger.split('\n')[0]), 10, 'width preserved in fallback');
-    assert(visAfter.includes('[≡]'), 'trigger still shows');
-    assert(!visAfter.includes('(o)'), 'hotkey hidden in narrow fallback');
-    // Restore for any later tests in the file.
-    layoutSlice.panelBounds = { detail: { x: 0, y: 0, w: 40, h: 10 } };
+    const top = out.split('\n')[0];
+    const vis = strip(richToAnsi(top));
+    eq(visibleLen(top), 10, 'width preserved in fallback');
+    assert(vis.includes('(o)'), 'hotkey shown in bare-border fallback');
+    assert(!vis.includes('[≡]'), 'trigger dropped on narrow pane');
   });
 });
 
-// T2.5 — exhaustive coverage of the four trigger states. Round-1 only
-// pinned the 'normal' state; the open/disabled/hidden branches were
-// drift-prone (4th state added without teaching isTriggerHit twice).
-describe('[trigger state machine] all four states render + click as documented', () => {
-  const { injectTabTrigger, isTriggerHit } = require('../overlay/tab-list');
+// T2.5 — exhaustive coverage of the trigger state machine. Round-1 only
+// pinned the 'normal' state; the open/disabled branches were drift-prone.
+// v0.6.3 P4.2c — render path moved from injectTabTrigger to
+// renderPanel({chrome.tabTrigger}); the state machine itself is
+// unchanged and still tested here.
+describe('[trigger state machine] all states render + click as documented', () => {
+  const { isTriggerHit, _triggerState } = require('../overlay/tab-list');
   const { renderPanel } = require('../render/panel');
   const { richToAnsi } = require('../io/ansi');
   const api = require('../panel/api');
@@ -285,20 +274,28 @@ describe('[trigger state machine] all four states render + click as documented',
     try { return fn(); } finally { for (const k of Object.keys(saved)) md[k] = saved[k]; }
   }
 
+  // P4.2c — map raw trigger state to renderPanel's chrome.tabTrigger:
+  // 'normal' → 'available' (default colored glyph), the rest passthrough.
+  function chromeStateFromMode() {
+    const raw = _triggerState();
+    return raw === 'normal' ? 'available' : raw;
+  }
+
   function renderAt() {
     const out = renderPanel({
       width: 40, height: 10, lines: [], title: 'Detail', hotkey: 'o', focused: true,
+      chrome: { collapse: null, close: null, tabTrigger: chromeStateFromMode() },
     });
-    const withTrigger = injectTabTrigger(out, { type: 'detail' });
-    const top = withTrigger.split('\n')[0];
+    const top = out.split('\n')[0];
     return strip(richToAnsi(top));
   }
 
   function ansiAt() {
     const out = renderPanel({
       width: 40, height: 10, lines: [], title: 'Detail', hotkey: 'o', focused: true,
+      chrome: { collapse: null, close: null, tabTrigger: chromeStateFromMode() },
     });
-    return richToAnsi(injectTabTrigger(out, { type: 'detail' }));
+    return richToAnsi(out.split('\n')[0]);
   }
 
   // Hit-test against `(o)`'s `[≡]` glyph: it lands a few cells past the

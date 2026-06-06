@@ -1,41 +1,42 @@
 /**
- * Panel-chrome widget glyphs — small interactive icons painted on each
- * placed panel's top border row. Split out of the free-config view
- * because they're not all free-config-specific:
+ * Panel-chrome widget glyphs — small interactive icons on each
+ * placed panel's top border row:
  *
  *   [_]/[+]  collapse-toggle — ALWAYS visible in normal view mode
  *            (free-config + non-free-config). Click → panel_collapse_toggle.
  *   [X]      quick-hide — free-config ONLY (the caller is the gatekeeper;
  *            input.js fires this hit-test inside its freeConfigMode
  *            branch). Click → pool_hide.
+ *   [≡]      tab-list trigger — visible on panes with ≥2 tabs. Click
+ *            → tab_list_open. Lives in overlay/tab-list.js but
+ *            shares this file's chrome geometry helpers.
  *
  * Glyph slots on each panel's top border row:
- *   ...─[X] [_]╮   ← when both painted (free-config)
- *   ...─    [_]╮   ← when only [_] painted (normal mode)
+ *   ╭─(hk)[≡]─title──────[X]─[_]╮   ← all three painted (free-config)
+ *   ╭─(hk)─title─────────────[_]╮   ← only [_] (normal mode)
+ *   ╭─(hk)[≡]─title───────────╮    ← only [≡] (multi-tab non-free-config)
  *
- * Geometry, both glyphs are 3 cells wide:
+ * Geometry, all glyphs are 3 cells wide:
  *   [_]/[+]  → cols [b.x+b.w-4, b.x+b.w-3, b.x+b.w-2]
- *   [X]      → cols [b.x+b.w-8, b.x+b.w-7, b.x+b.w-6]   (4-cell gap left of [_])
+ *   [X]      → cols [b.x+b.w-8, b.x+b.w-7, b.x+b.w-6]   (gap left of [_])
+ *   [≡]      → cols [b.x+TRIGGER_X_OFFSET, …]            (5-cell offset)
  *
  * Min top-border width to host the glyphs:
  *   normal       → 9  cols  (╭(hk)─[_]╮)
  *   free-config  → 13 cols  (╭(hk)─[X] [_]╮)
  *
  * Both renderers + hit-tests skip:
- *   - the detail panel (essential — neither hide nor collapse allowed)
+ *   - the detail panel for [_]/[X] (essential — neither hide nor
+ *     collapse allowed)
  *   - panels too narrow for the glyph
- *   - any panel while a drag is in flight (the drag overlays take over)
+ *   - any panel while a drag is in flight
  *
- * Baked into the panel's own top-border row markup (renderNormal calls
- * `injectTopRowChrome` before joining outputs). paintColumns then writes
- * the row WITH the glyph already in place — no second write, no cursor-
- * move back to overpaint. Pre-fix this module wrote each glyph in its
- * own stdout.write after paintColumns; even with both in one syscall the
- * terminal still saw "write `─` then write `[_]`" sequentially, so the
- * `[_]` cells visibly flickered as `─` whenever the row got repainted
- * (e.g. on every detail-scroll frame for lower-left panels). Hit-tests
- * are pure derivations over `slice.arrange` + `slice.panelBounds` (same
- * geometry the render pass wrote).
+ * v0.6.3 P4.2: chrome composes INLINE in renderPanel({chrome}) via
+ * chromeFor's structured spec. Previously injectTopRowChrome /
+ * injectTabTrigger regex-substituted glyphs into the rendered top
+ * border post-render; P4.2c deleted both. The painter stamps the
+ * row with glyphs already in place — no second write, no cursor-
+ * move back to overpaint, no fragile regex anchor.
  */
 'use strict';
 
@@ -172,91 +173,6 @@ function _placedWidgetTargets() {
     .filter(({ b }) => b && b.h >= 1);
 }
 
-/** Inject the panel-chrome glyphs into the top border row of `panelOutput`
- *  (the markup string produced by renderPanel / _renderCollapsed) so the
- *  glyph rides atomically in paintColumns' write. Returns the modified
- *  output. No-op when:
- *    - the panel is detail (excluded — `[_]` and `[X]` not allowed there)
- *    - a drag is in flight (drag affordance owns the screen)
- *    - the top row is too narrow to host the glyph(s)
- *    - the trailing fill (`─`-run before `╮[/]`) is shorter than the
- *      chrome width
- *
- *  The injection rewrites the very end of the first line — `─{N}╮[/]` —
- *  by replacing `N` trailing fills with `(N - chromeW)` fills plus the
- *  chrome markup, then the corner + close tag. The lazy-match anchored
- *  to end-of-line locks onto the final `─*` run, not any `─` chars inside
- *  the title text. */
-function injectTopRowChrome(panelOutput, p, b, freeConfigMode, fc, focused, dragging) {
-  if (!panelOutput || mpool.isDetailPane(p)) return panelOutput;
-  // Drag-in-flight suppresses chrome — caller hoists the freeConfig.drag
-  // read out of the per-panel loop and passes the boolean in (P5.9 —
-  // saves one slice lookup per panel per frame).
-  if (dragging) return panelOutput;
-  if (!b || b.h < 1 || b.w < COLLAPSE_MIN_W) return panelOutput;
-
-  // Build chrome markup + measure visible width. [X] sits 1 col left of
-  // [_] (4-cell gap including the literal `─` left untouched between
-  // them), matching the geometry the hit-tests assume. After each chrome
-  // glyph's `[/]` we re-emit `[fc]` so the cells AFTER it stay in the
-  // panel's border color — without this, richToAnsi's full-reset on
-  // `[/]` would leave the gap `─` and the `╮` corner in the terminal's
-  // default color (visibly black/uncolored on most terminals).
-  // Styles come from the theme — see themes.js#chrome_collapse / chrome_close.
-  // Fallbacks match the previous hardcoded defaults so a custom theme
-  // missing a slot still renders something sensible.
-  //
-  // When unfocused, prepend `[dim]` and KEEP the theme color, so the
-  // glyph reads as a darker shade of green/red rather than reverting
-  // to terminal-default-fg-dimmed (visually gray, no color identity).
-  // The composite is emitted as two adjacent markup tags `[dim][color]`
-  // because richToAnsi looks each tag up in CODES separately — there's
-  // no `[dim green]` entry. The terminal applies SGR sequentially, so
-  // the result is `\x1b[2m\x1b[32m` = dim + green = darker green.
-  // Two slots so the [_] (collapsible) and [+] (collapsed) glyphs can
-  // have different colors — Mac convention: yellow minimize, green
-  // zoom. The collapsed state's [+] uses chrome_expand; the not-yet-
-  // collapsed [_] uses chrome_collapse.
-  const t = theme();
-  const closeBase    = t.chrome_close    || 'red';
-  const collapseBase = p.collapsed
-    ? (t.chrome_expand   || 'green')
-    : (t.chrome_collapse || 'yellow');
-  const closeOpen    = focused ? `[${closeBase}]`    : `[dim][${closeBase}]`;
-  const collapseOpen = focused ? `[${collapseBase}]` : `[dim][${collapseBase}]`;
-  const fcRestore     = fc ? `[${fc}]` : '';
-  const collapseGlyph = p.collapsed ? '\\[+]' : '\\[_]';
-
-  let chromeW = GLYPH_W;
-  const wantClose = freeConfigMode && b.w >= CLOSE_PLUS_COLLAPSE_MIN_W;
-  if (wantClose) chromeW += GLYPH_W + 1;  // [X] + gap cell
-
-  const nlIdx = panelOutput.indexOf('\n');
-  const topRow  = nlIdx >= 0 ? panelOutput.slice(0, nlIdx) : panelOutput;
-  const restRows = nlIdx >= 0 ? panelOutput.slice(nlIdx) : '';
-
-  // Anchor to end-of-line so the captured `─*` is the FINAL fill run
-  // (not a `─` inside the title). The lazy `.*?` lets m[1] grow until
-  // the suffix matches; ─* is greedy so it grabs the whole final run.
-  const m = topRow.match(/^(.*?)(─*)╮\[\/\]$/);
-  if (!m) return panelOutput;
-  if (m[2].length < chromeW) return panelOutput;
-
-  const colMarkup = `${collapseOpen}${collapseGlyph}[/]${fcRestore}`;
-  let injected;
-  const kept = m[2].length - chromeW;
-  if (wantClose) {
-    // …─[X]─[_]╮ — keep one fill cell BETWEEN [X] and [_]. fcRestore
-    // after [X][/] keeps that gap `─` in fc color; fcRestore after
-    // [_][/] keeps the `╮` in fc.
-    const closeMarkup = `${closeOpen}${CLOSE_GLYPH}[/]${fcRestore}`;
-    injected = '─'.repeat(kept) + closeMarkup + '─' + colMarkup;
-  } else {
-    injected = '─'.repeat(kept) + colMarkup;
-  }
-  return m[1] + injected + '╮[/]' + restRows;
-}
-
 /** Hit-test the `[_]`/`[+]` glyphs. Returns the panel id under (mx, my)
  *  or null. */
 function hitTestCollapseButton(mx, my) {
@@ -366,11 +282,11 @@ function buildTabStrip(tabInfo, activeTab, hotkey, runningActionKeys) {
 }
 
 module.exports = {
-  injectTopRowChrome,
   hitTestCollapseButton,
   hitTestCloseButton,
   buildTabStrip,
-  // v0.6.3 P4.2 — pane chrome as structured data.
+  // v0.6.3 P4.2 — pane chrome as structured data (replaces the
+  // regex-based injectTopRowChrome that retired in P4.2c).
   chromeFor,
   _collapseGlyphMarkup,
   _closeGlyphMarkup,

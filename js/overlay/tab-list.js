@@ -39,12 +39,6 @@ const { isChainActive } = require('../dispatch/modes');
 const pt = require('../leaves/pane-tabs');
 
 const MAX_W = 50;
-// esc() escapes the literal `[` so richToAnsi doesn't treat `[≡]`
-// as an unknown markup tag and EAT the inner glyph (the bug the
-// first cut shipped with). Using esc() rather than hardcoding `\[≡]`
-// is the convention for ANY literal bracket entering richToAnsi —
-// same pattern as overlay/cmdline's _formatMatchLine.
-const TRIGGER_GLYPH = esc('[≡]');
 // Pane's top row is `╭─(o)[≡]─Title─…─╮`. Hotkey stays in the
 // conventional first position; the trigger sits immediately after.
 //   `╭`           col 0
@@ -254,79 +248,17 @@ function _maybeBlank() {
   _lastPanelH = 0;
 }
 
-/** Bake the `[≡]` trigger into a pane's top-border markup so it rides
- *  into paintColumns' single write — eliminates the flicker class the
- *  old paint-on-top suffered. Returns the modified panelOutput.
- *
- *  The trigger is inserted immediately after `(o)` (the hotkey display),
- *  so the row reads `╭─(o)[≡]─Title─…─╮`. To absorb the trigger's 3
- *  visible cells without widening the panel, 3 trailing fill dashes
- *  are eaten from before the right corner. `[fc]` is re-emitted after
- *  the trigger's `[/]` so the rest of the top row keeps its border
- *  color.
- *
- *  No-op when:
- *    - panelOutput is empty
- *    - the panel entry isn't the target pane (p.type !== paneId)
- *    - pane bounds aren't set or are too narrow
- *    - trigger is suppressed (free-config / chain modals)
- *    - the top row's hotkey display isn't single-char
- *    - the top row has fewer than 3 trailing fill dashes
- */
-function injectTabTrigger(panelOutput, p, paneId = 'detail') {
-  if (!panelOutput || p.type !== paneId) return panelOutput;
-  const paneB = _paneBounds(paneId);
-  if (!paneB || paneB.w < TRIGGER_X_OFFSET + TRIGGER_VIS_W + 2) return panelOutput;
-  const state = _triggerState();
-  if (state === 'hidden') return panelOutput;
-
-  const t = theme();
-  const focused = require('../panel/api').getFocus() === paneId || getModel().modes.terminalMode;
-  const fc = focused ? t.focus : t.dim;
-  // Strip the `bold ` prefix from chrome_trigger so the dim attribute
-  // composes with the remaining color (bold + dim conflict on most
-  // terminals; bold tends to win, defeating the dim).
-  const triggerBase = t.chrome_trigger || 'bold cyan';
-  const triggerColor = triggerBase.replace(/^bold\s+/, '');
-  let triggerOpen;
-  if      (state === 'disabled') triggerOpen = '[dim]';
-  else if (state === 'open')     triggerOpen = '[reverse]';
-  else if (focused)              triggerOpen = `[${triggerBase}]`;
-  else                           triggerOpen = `[dim][${triggerColor}]`;
-  const triggerMarkup = `${triggerOpen}${TRIGGER_GLYPH}[/][${fc}]`;
-
-  const nlIdx = panelOutput.indexOf('\n');
-  const topRow  = nlIdx >= 0 ? panelOutput.slice(0, nlIdx) : panelOutput;
-  const restRows = nlIdx >= 0 ? panelOutput.slice(nlIdx) : '';
-
-  // Match `╭─(X)` right after the opening color tag — `X` is a single
-  // hotkey char (the convention; renderPanel writes `(${hotkey})` from
-  // a positionally-assigned single-letter key). Lazy `.*?` lets m[1]
-  // grow until the first `╭─\(.\)` matches.
-  const m = topRow.match(/^(.*?╭─)(\([^)]\))(.*)$/);
-  if (!m) return panelOutput;
-  // Eat 3 trailing fill dashes from before `╮` to absorb the trigger's
-  // 3 visible cells. If there aren't 3 spare dashes, fall back to the
-  // old "replace (o) with [≡]" behavior — the hotkey display is the
-  // less essential of the two when there's no room for both.
-  const after = m[3];
-  const cornerIdx = after.indexOf('╮');
-  if (cornerIdx >= 3
-      && after[cornerIdx - 1] === '─'
-      && after[cornerIdx - 2] === '─'
-      && after[cornerIdx - 3] === '─') {
-    const trimmed = after.slice(0, cornerIdx - 3) + after.slice(cornerIdx);
-    return m[1] + m[2] + triggerMarkup + trimmed + restRows;
-  }
-  // Fallback: too narrow / title too long — replace (o) with [≡] so we
-  // still get the trigger at the cost of hiding the hotkey label.
-  return m[1] + triggerMarkup + after + restRows;
-}
+// v0.6.3 P4.2c — injectTabTrigger retired. Chrome glyphs (including
+// the [≡] tab trigger) now compose inline via renderPanel({chrome}).
+// chromeFor() in panel-widgets.js computes the spec; composeRects
+// threads it through the panel render signature; renderPanel stamps
+// it directly into the top border. No more regex post-mutation.
 
 // --- Trigger state machine ---------------------------------------------
 //
-// One tagged state drives both the render (injectTabTrigger) and the
-// click (isTriggerHit), so the two never drift. Four states:
+// One tagged state drives both the chrome render (via chromeFor +
+// renderPanel) and the click (isTriggerHit), so the two never drift.
+// Three states:
 //
 //   'open'     tabListMode is on → render [reverse] (inverted block).
 //              Clickable: click toggles the list closed.
@@ -382,7 +314,7 @@ function isTriggerHit(mx, my, paneId = 'detail') {
 function _resetRenderState() { _lastPanelH = 0; _lastTop = 0; }
 
 module.exports = {
-  renderTabList, injectTabTrigger, hitTest, isTriggerHit,
+  renderTabList, hitTest, isTriggerHit,
   viewportRows, _resetRenderState,
   // v0.6.3 P4.2 — exposed for chromeFor() in panel-widgets.js. Returns
   // 'open' (tab list open), 'disabled' (any other chain mode), or
