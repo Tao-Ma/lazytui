@@ -174,7 +174,8 @@ on rows that get repainted while a glyph sits over them.
 | `[X]` | red | top-right of non-detail panels | free-config mode only | `pool_hide` — unplaces the panel; the entry stays in the pool (reachable via `:show <id>` or the `w` panel-list overlay) |
 | `[_]` | yellow | top-right of non-detail panels (4-cell gap left of `[X]` when both visible) | always (normal + free-config) | `panel_collapse_toggle` — collapses the panel to a single header row |
 | `[+]` | green | replaces `[_]` when the panel is already collapsed | always | toggle back to expanded |
-| `[≡]` | theme accent | top-left of detail (immediately after `(o)`) | always; suppressed inside cmdline / menu / confirm / prompt / register-popup / filter / copy / detail-search / prefix / title-edit modes | opens the centered **tab-list overlay** for switching among detail's tabs (Info, Transcript, action tabs, terminal tabs, content tabs) |
+| `[≡]` | theme accent | top-left of **detail** (immediately after `(o)`) | always; suppressed inside cmdline / menu / confirm / prompt / register-popup / filter / copy / detail-search / prefix / title-edit modes | opens the centered **tab-list overlay** for switching among detail's tabs (Info, Transcript, action tabs, terminal tabs, content tabs) |
+| `[≡]` | theme accent | top-left of every **non-detail** panel (v0.6.3+) | always; suppressed during drag + chain modes (siblings disabled while pane-select is open on one cell) | opens the centered **pane-select dropdown** for swapping which pool entry occupies this cell (SWAP if picked is placed elsewhere, REPLACE if picked is hidden) |
 
 Detail's top row reads `╭─(o)[≡]─Detail─…─╮` — both the hotkey label
 and the tab-list trigger are visible, the trigger's 3-cell width

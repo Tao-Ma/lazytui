@@ -45,9 +45,9 @@ const { richToAnsi, RESET, visibleLen } = require('../io/ansi');
  * remainder of each row pads to `cols`.
  *
  * Overlap behavior: when two rects cover the same cell, the
- * later rect in sorted-by-x order wins — the painter advances
- * the row cursor past each rect's right edge, so a rect that
- * starts before the cursor effectively gets clipped. In normal
+ * FIRST rect in sorted-by-x order wins — the painter advances
+ * the row cursor past each rect's right edge, so any later rect
+ * whose x falls before the cursor is skipped entirely. In normal
  * use rects don't overlap (each panel claims a disjoint column
  * region); this is recovery behavior, not a feature.
  */
@@ -76,7 +76,7 @@ function composeRows(rects, cols, rows) {
     let cursor = 0;
     for (const rect of covering) {
       // Skip rects whose x has already been overtaken by the cursor
-      // (overlap — last-of-left-wins by construction).
+      // (overlap — first-of-left wins by construction).
       if (rect.x < cursor) continue;
       if (rect.x > cursor) {
         row += blank.repeat(rect.x - cursor);
