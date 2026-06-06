@@ -426,19 +426,33 @@ function boundsFor(key) {
 }
 
 // --- Render modes ---
-// _prevRows holds the markup string written for each screen row so the next
-// frame can write only rows that actually changed. clearScreen() on every
-// frame caused a visible flash; lazygit/tcell avoid it by diffing — same
-// trick the terminal overlay below already uses (session.prevFrame).
-let _prevRows = [];
-let _prevCols = 0;
-let _forceFullRepaint = true;
-// Set of overlay-flag names that were active on the previous frame.
-// Used to detect close + transition (any flag dropping out → force a
-// full repaint to wipe the closed overlay's pixels). Pure-open
-// transitions (no overlay → some overlay) don't force a repaint —
-// the new overlay paints cleanly on top of the existing frame.
-let _prevOverlayFlags = new Set();
+// v0.6.3 P6 — single-Frame cache. Six module-locals (was prevRows,
+// prevCols, forceFull, prevOverlayFlags, forceOverlayFull,
+// lastOverlayId — split across two `let` blocks) collapse to one
+// struct so the diff invariants (width/rowcount delta → force,
+// overlay drop → force, etc) all live in one shape that can be
+// reset atomically.
+//
+// prevRows holds the markup string written for each screen row so the
+// next frame writes only rows that actually changed. clearScreen()
+// every frame caused visible flash; lazygit/tcell avoid it by
+// diffing — same trick the terminal overlay's session.prevFrame does
+// (per-session cache, NOT folded into Frame here — different lifecycle).
+//
+// prevOverlayFlags tracks the overlay-flag set active on the previous
+// frame. Used to detect close + transition (any flag dropping out →
+// force full repaint to wipe the closed overlay's pixels). Pure-open
+// transitions don't force — the new overlay paints cleanly on the
+// existing frame.
+const _frame = {
+  prevRows:         [],
+  prevCols:         0,
+  forceFull:        true,
+  prevOverlayFlags: new Set(),
+  // PTY-overlay sub-state (session.prevFrame lives per session).
+  forceOverlayFull: true,
+  lastOverlayId:    null,
+};
 
 /**
  * v0.6.3 P2 — Rect contract enforcement.
@@ -655,12 +669,12 @@ function renderNormal(model) {
   const rectsWithLines = composeRects(layout, model);
   const COLS = cols();
   const newRows = painter.composeRows(rectsWithLines, COLS, layout.availH);
-  if (COLS !== _prevCols || newRows.length !== _prevRows.length) _forceFullRepaint = true;
-  _prevCols = COLS;
-  const { ansi, didFull } = painter.paintFrame(_prevRows, newRows, _forceFullRepaint);
-  if (didFull) _forceFullRepaint = false;
+  if (COLS !== _frame.prevCols || newRows.length !== _frame.prevRows.length) _frame.forceFull = true;
+  _frame.prevCols = COLS;
+  const { ansi, didFull } = painter.paintFrame(_frame.prevRows, newRows, _frame.forceFull);
+  if (didFull) _frame.forceFull = false;
   if (ansi) stdout.write(ansi);
-  _prevRows = newRows;
+  _frame.prevRows = newRows;
   return didFull;
 }
 
@@ -739,12 +753,12 @@ function renderHalf(model) {
     });
   }
   const newRows = painter.composeRows(rects, COLS, availH);
-  if (COLS !== _prevCols || newRows.length !== _prevRows.length) _forceFullRepaint = true;
-  _prevCols = COLS;
-  const { ansi, didFull } = painter.paintFrame(_prevRows, newRows, _forceFullRepaint);
-  if (didFull) _forceFullRepaint = false;
+  if (COLS !== _frame.prevCols || newRows.length !== _frame.prevRows.length) _frame.forceFull = true;
+  _frame.prevCols = COLS;
+  const { ansi, didFull } = painter.paintFrame(_frame.prevRows, newRows, _frame.forceFull);
+  if (didFull) _frame.forceFull = false;
   if (ansi) stdout.write(ansi);
-  _prevRows = newRows;
+  _frame.prevRows = newRows;
   return didFull;
 }
 
@@ -785,17 +799,15 @@ function renderFull(model) {
       lines: content === '' ? [] : content.split('\n') },
   ];
   const newRows = painter.composeRows(rects, COLS, availH);
-  if (COLS !== _prevCols || newRows.length !== _prevRows.length) _forceFullRepaint = true;
-  _prevCols = COLS;
-  const { ansi, didFull } = painter.paintFrame(_prevRows, newRows, _forceFullRepaint);
-  if (didFull) _forceFullRepaint = false;
+  if (COLS !== _frame.prevCols || newRows.length !== _frame.prevRows.length) _frame.forceFull = true;
+  _frame.prevCols = COLS;
+  const { ansi, didFull } = painter.paintFrame(_frame.prevRows, newRows, _frame.forceFull);
+  if (didFull) _frame.forceFull = false;
   if (ansi) stdout.write(ansi);
-  _prevRows = newRows;
+  _frame.prevRows = newRows;
   return didFull;
 }
 
-let _forceOverlayFull = true;
-let _lastOverlayId = null;
 
 function renderTerminalOverlay(model = getModel()) {
   if (!isTerminalTab()) return;
@@ -827,12 +839,12 @@ function renderTerminalOverlay(model = getModel()) {
   const isDragPreview = !!(layoutSlice && layoutSlice.freeConfig && layoutSlice.freeConfig.drag && layoutSlice.freeConfig.drag.previewArrange);
   if (!isDragPreview && (session.xterm.cols !== innerW || session.xterm.rows !== innerH)) {
     resizeSession(id, innerW, innerH);
-    _forceOverlayFull = true;
+    _frame.forceOverlayFull = true;
   }
   // Switching to a different session — force full redraw
-  if (id !== _lastOverlayId) {
-    _forceOverlayFull = true;
-    _lastOverlayId = id;
+  if (id !== _frame.lastOverlayId) {
+    _frame.forceOverlayFull = true;
+    _frame.lastOverlayId = id;
   }
 
   // Diff-based render: only rewrite rows whose content changed since the
@@ -840,8 +852,8 @@ function renderTerminalOverlay(model = getModel()) {
   // overwrite prior content within the changed row.
   const buffer = session.xterm.buffer.active;
   if (!session.prevFrame) session.prevFrame = [];
-  const force = _forceOverlayFull;
-  _forceOverlayFull = false;
+  const force = _frame.forceOverlayFull;
+  _frame.forceOverlayFull = false;
 
   let out = '';
   for (let row = 0; row < innerH; row++) {
@@ -894,10 +906,10 @@ function render(model = getModel()) {
   const md = model.modes;
   const curOverlayFlags = new Set();
   for (const m of modes.MODES) if (m.overlay && md[m.flag]) curOverlayFlags.add(m.flag);
-  for (const flag of _prevOverlayFlags) {
-    if (!curOverlayFlags.has(flag)) { _forceFullRepaint = true; break; }
+  for (const flag of _frame.prevOverlayFlags) {
+    if (!curOverlayFlags.has(flag)) { _frame.forceFull = true; break; }
   }
-  _prevOverlayFlags = curOverlayFlags;
+  _frame.prevOverlayFlags = curOverlayFlags;
 
   let mainDidFull;
   // viewMode lives on the layout Component slice (Phase 1b).
@@ -931,7 +943,7 @@ function render(model = getModel()) {
     // cleared the screen (resize, overlay-close, first frame). In the
     // steady state main paint is diff-based and leaves the PTY region
     // untouched, so the overlay's own diff cache is enough.
-    if (mainDidFull) _forceOverlayFull = true;
+    if (mainDidFull) _frame.forceOverlayFull = true;
     renderTerminalOverlay(model);
   } finally {
     // Restore the canonical slice unconditionally — _safeRender wraps
@@ -1199,8 +1211,8 @@ function renderFooter(model = getModel()) {
  * that returned.
  */
 function forceFullRepaint() {
-  _prevRows = [];
-  _forceFullRepaint = true;
+  _frame.prevRows = [];
+  _frame.forceFull = true;
 }
 
 /**
@@ -1212,8 +1224,8 @@ function forceFullRepaint() {
  */
 function invalidateRows(startY, endY) {
   for (let y = startY; y < endY; y++) {
-    if (y >= 0 && _prevRows[y] !== undefined) {
-      _prevRows[y] = '';
+    if (y >= 0 && _frame.prevRows[y] !== undefined) {
+      _frame.prevRows[y] = '';
     }
   }
 }
