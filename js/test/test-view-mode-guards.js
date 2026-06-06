@@ -76,31 +76,30 @@ describe('[1] free_config_enter from half/full → refused with notice', () => {
 });
 
 describe('[2] view_expand / view_shrink in free-config → refused with notice', () => {
+  // v0.6.3 TEA cleanup: the reducer no longer reads getModel().modes.
+  // Dispatchers (dispatch/actions.js#handleAction view_expand/view_shrink)
+  // thread the active freeConfigMode value through msg.freeConfigMode.
+  // Tests pass it directly to match the new contract.
   it('view_expand in free-config: refused; viewMode unchanged; notice set', () => {
-    setFreeConfig(true);
     const s = freshLayoutSlice('normal');
-    const result = layout.update({ type: 'view_expand' }, s);
+    const result = layout.update({ type: 'view_expand', freeConfigMode: true }, s);
     assert(!Array.isArray(result), 'refused returns plain slice (no repaint cmd)');
     eq(result.viewMode, 'normal', 'view unchanged');
     assert(result.freeConfig.notice && /free-config/.test(result.freeConfig.notice),
       `notice mentions free-config (got "${result.freeConfig.notice}")`);
-    setFreeConfig(false);
   });
 
   it('view_shrink in free-config: refused', () => {
-    setFreeConfig(true);
     const s = freshLayoutSlice('half');  // setup that would normally shrink to normal
-    const result = layout.update({ type: 'view_shrink' }, s);
+    const result = layout.update({ type: 'view_shrink', freeConfigMode: true }, s);
     assert(!Array.isArray(result));
     eq(result.viewMode, 'half', 'view unchanged');
     assert(result.freeConfig.notice, 'notice set');
-    setFreeConfig(false);
   });
 
   it('view_expand outside free-config: allowed', () => {
-    setFreeConfig(false);
     const s = freshLayoutSlice('normal');
-    const result = layout.update({ type: 'view_expand' }, s);
+    const result = layout.update({ type: 'view_expand', freeConfigMode: false }, s);
     assert(Array.isArray(result), 'allowed returns [slice, cmds]');
     const [next, cmds] = result;
     eq(next.viewMode, 'half', 'view expanded');
@@ -109,10 +108,9 @@ describe('[2] view_expand / view_shrink in free-config → refused with notice',
   });
 
   it('view_shrink success clears stale notice', () => {
-    setFreeConfig(false);
     const s = freshLayoutSlice('half');
     s.freeConfig = { ...s.freeConfig, notice: 'stale' };
-    const result = layout.update({ type: 'view_shrink' }, s);
+    const result = layout.update({ type: 'view_shrink', freeConfigMode: false }, s);
     assert(Array.isArray(result));
     const [next] = result;
     eq(next.viewMode, 'normal');
@@ -214,15 +212,13 @@ describe('[4] notice auto-clears on unrelated user intent', () => {
 
 describe('[5] repeated identical blocked attempts preserve slice ref', () => {
   it('view_expand × 2 in free-config returns identical slice ref on the 2nd attempt', () => {
-    setFreeConfig(true);
     const s = freshLayoutSlice('normal');
-    const r1 = layout.update({ type: 'view_expand' }, s);
+    const r1 = layout.update({ type: 'view_expand', freeConfigMode: true }, s);
     assert(!Array.isArray(r1));
     assert(r1 !== s, 'first attempt creates a new slice (set notice)');
     assert(r1.freeConfig.notice, 'first attempt sets notice');
-    const r2 = layout.update({ type: 'view_expand' }, r1);
+    const r2 = layout.update({ type: 'view_expand', freeConfigMode: true }, r1);
     assert(r2 === r1, 'second identical blocked attempt returns same slice ref (no churn)');
-    setFreeConfig(false);
   });
 
   it('free_config_enter × 2 from half view returns identical slice ref on the 2nd attempt', () => {

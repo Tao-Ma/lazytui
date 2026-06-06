@@ -204,7 +204,7 @@ function update(msg, slice) {
   // it'd fall through and the stale notice would linger).
   const t = msg.type;
   const willReassert =
-    ((t === 'view_expand' || t === 'view_shrink') && getModel().modes.freeConfigMode) ||
+    ((t === 'view_expand' || t === 'view_shrink') && msg.freeConfigMode) ||
     (t === 'free_config_enter' && slice.viewMode !== 'normal');
   const motion = t === 'free_config_mouse_motion' || t === 'pool_drag_motion' || t === 'tab_drag_motion';
   if (slice.freeConfig && slice.freeConfig.notice && !motion && !willReassert) {
@@ -224,9 +224,12 @@ function update(msg, slice) {
       // full don't show. Programmatic Msgs (`view_set` from cmdline /
       // pty-lifecycle, `view_drop_full_to_normal` from terminal exit)
       // are system-driven and stay unguarded.
-      const md = getModel().modes;
+      //
+      // freeConfigMode arrives via the Msg payload — handleAction reads
+      // it once at dispatch time and threads it in (msg.freeConfigMode).
+      // Pure reducer; no getModel() read here.
       const isUserInput = msg.type === 'view_expand' || msg.type === 'view_shrink';
-      if (md && md.freeConfigMode && isUserInput) {
+      if (msg.freeConfigMode && isUserInput) {
         const target = 'exit free-config (q) to change view mode';
         // Short-circuit: if notice already matches, slice ref is preserved
         // (the auto-clear above also preserved it via wouldReassert).

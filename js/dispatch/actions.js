@@ -321,10 +321,15 @@ function handleAction(action, arg) {
       // change re-exposes panels the diff cache can't tell changed). Phase
       // 1b moved viewMode out of the root reducer into layout's slice —
       // hence wrap('layout', …) instead of the usual applyMsg here.
-      dispatchMsg(wrap('layout', { type: 'view_expand' }));
+      //
+      // freeConfigMode threads in via the Msg payload — the reducer used
+      // to read it via getModel() (TEA smell: reducer reads external root
+      // state). Dispatchers are allowed to read model state to decide
+      // what to dispatch; reducers must be pure functions of (slice, msg).
+      dispatchMsg(wrap('layout', { type: 'view_expand', freeConfigMode: getModel().modes.freeConfigMode }));
       break;
     case 'view_shrink':
-      dispatchMsg(wrap('layout', { type: 'view_shrink' }));
+      dispatchMsg(wrap('layout', { type: 'view_shrink', freeConfigMode: getModel().modes.freeConfigMode }));
       break;
     case 'filter':
       // Reachable from the menu + `:filter`. The filterable gate lives in
