@@ -73,16 +73,19 @@ const mnav = require('../leaves/nav');
  *   - register                       — yank register
  */
 function init() {
+  // Derive the initial modes bag from dispatch/modes.js MODES registry —
+  // the registry is the single source of truth. Hardcoding the list
+  // here let v0.6.3 D1's paneSelectMode drift: the registry had it but
+  // init() didn't, so the mode_set Cmd's `flag in modes` guard refused
+  // to arm the flag, and the pane-select overlay never painted in
+  // production. (Tests pre-set the property in their setup() so they
+  // missed the bug.) Lazy require avoids the modes.js ↔ runtime.js
+  // module cycle.
+  const { MODES } = require('../dispatch/modes');
+  const initialModes = {};
+  for (const md of MODES) initialModes[md.flag] = false;
   const m = {
-    // The 14 modal-state flags. Maintained centrally in js/modes.js (registry +
-    // resetModes()); update branches and modeChain consult that single list.
-    modes: {
-      confirmMode: false, promptMode: false, freeConfigTitleEditMode: false,
-      freeConfigMode: false, menuOpen: false, filterMode: false, copyMode: false,
-      detailSearchMode: false, registerPopupMode: false, prefixMode: false,
-      cmdMode: false, tabListMode: false, jobsMode: false,
-      terminalMode: false, listSelectMode: false,
-    },
+    modes: initialModes,
     currentGroup: '',
     // Transient per-mode editing buffers (the modal sub-models). The
     // reducer owns them; each modal handler is an update branch.

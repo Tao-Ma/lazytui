@@ -568,6 +568,19 @@ describe('[4] modes registry has paneSelectMode', () => {
     const s = { paneSelectMode: true };
     eq(modes.isModal(s), false);
   });
+  // Regression: runtime.js#init must include every MODES entry, or
+  // mode_set/mode_clear refuses to flip the flag (the `in modes`
+  // guard short-circuits). Pre-fix, paneSelectMode was missing from
+  // init's hardcoded list — overlay never painted in production
+  // (tests masked it by writing m.modes.paneSelectMode = false in
+  // setup). Derived-init prevents the regression.
+  it('runtime model exposes every MODES flag (no init drift)', () => {
+    const fresh = require('../app/runtime').init();
+    for (const md of modes.MODES) {
+      assert(md.flag in fresh.modes, `${md.flag} missing from runtime init`);
+      eq(fresh.modes[md.flag], false, `${md.flag} not false on init`);
+    }
+  });
 });
 
 report();
