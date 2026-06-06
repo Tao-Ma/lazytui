@@ -353,6 +353,43 @@ function getCurrentLayout() {
   return _currentLayout;
 }
 
+/**
+ * v0.6.3 P1.3 — single accessor for "the rect at <key>", where <key>
+ * is a paneId, a panel type, or 'detail'. Bridges the two geometry
+ * sources during the P1 migration:
+ *
+ *   1. `_currentLayout.rects` — the per-frame Rect list produced by
+ *      calcLayout (P1.1). Preferred source.
+ *   2. `layoutSlice.panelBounds[key]` — legacy slice write produced
+ *      by renderNormal/Half/Full. Used as fallback when no Layout
+ *      has been published yet (pre-first-render boot edge; tests
+ *      that seed bounds without calling render).
+ *
+ * The viewer's tab-bar hit-test cache (`panelBounds.detail.tabs`,
+ * viewer.js:1008) still lives on the slice in P1 — moving it onto
+ * the viewer's own slice is N3, scheduled for P4 (decor). When a
+ * caller asks for 'detail' (or any pane that has a tabs cache),
+ * merge the slice's `tabs` field onto the rect so hit-test
+ * consumers (input.js detail-press, tab-drag, tab-list overlay)
+ * don't lose tab bounds during the P1 transition.
+ */
+function boundsFor(key) {
+  const layoutSlice = getInstanceSlice('layout');
+  const sliceBounds = layoutSlice && layoutSlice.panelBounds && layoutSlice.panelBounds[key];
+  // P1.3 priority: slice first. Both sources are written together
+  // during the P1 migration (renderNormal still writes panelBounds);
+  // the slice carries the viewer's `tabs` cache and is the source
+  // tests seed directly. P1.4 stops the slice writes — sliceBounds
+  // becomes null in production and the rect path below takes over
+  // transparently. No caller change needed at P1.4.
+  if (sliceBounds) return sliceBounds;
+  if (_currentLayout && _currentLayout.rects) {
+    const rect = _currentLayout.rects.find(r => r.paneId === key || r.type === key);
+    if (rect) return rect;
+  }
+  return null;
+}
+
 // --- Render modes ---
 // _prevRows holds the markup string written for each screen row so the next
 // frame can write only rows that actually changed. clearScreen() on every
@@ -1025,10 +1062,15 @@ module.exports = {
   forceFullRepaint, invalidateRows,
   getPanelViewportH,
   // v0.6.3 P1.2 — most-recent Layout. Null pre-first-render. Will
-  // back the boundsFor() shim landing in P1.3 and become the sole
-  // hit-test channel after P1.4 stops the layoutSlice.panelBounds
-  // writes.
+  // become the sole hit-test channel after P1.4 stops the
+  // layoutSlice.panelBounds writes.
   getCurrentLayout,
+  // v0.6.3 P1.3 — single accessor that consumers use to read pane
+  // bounds. Returns from _currentLayout when present, falls back to
+  // layoutSlice.panelBounds[key] otherwise. Merges the viewer's tabs
+  // cache (slice.panelBounds.detail.tabs, N3 — moves onto viewer's
+  // slice in P4) onto the returned rect.
+  boundsFor,
   // Test seam: distributeColumnHeights is a pure function that returns
   // a { [type]: rows } map. Exposed so collapsed-honor + heightPct
   // math can be unit-tested without bringing up the whole runtime.

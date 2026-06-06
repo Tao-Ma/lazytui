@@ -103,10 +103,11 @@ function _flatTabs(paneId = 'detail') {
   return out;
 }
 
-/** Pane bounds — null when layout hasn't rendered yet (boot edge). */
+/** Pane bounds — null when layout hasn't rendered yet (boot edge).
+ *  v0.6.3 P1.3: lazy require to dodge the layout ↔ tab-list cycle
+ *  (layout.js imports overlay/tab-list at top-level). */
 function _paneBounds(paneId = 'detail') {
-  const l = getInstanceSlice('layout');
-  return l && l.panelBounds && l.panelBounds[paneId];
+  return require('../render/layout').boundsFor(paneId);
 }
 
 /** Owner pane id companion to model.modes.tabListMode. The pane-tabs

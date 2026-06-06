@@ -479,7 +479,7 @@ function update(msg, slice) {
       const targetKind = route.resolveTarget('viewer') || route.VIEWER_KIND;
       return mtabDrag.tabDragMotion(
         slice, msg.mx, msg.my,
-        slice.panelBounds && slice.panelBounds.detail,
+        require('../render/layout').boundsFor('detail'),
         getModel().currentGroup,
         targetKind,
       );

@@ -46,8 +46,9 @@ const { cleanup } = require('../app/cleanup');
  * selection.
  */
 function _handleWheel(mx, my, delta) {
+  const { boundsFor } = require('../render/layout');
   for (const p of allPanels()) {
-    const b = getInstanceSlice('layout').panelBounds[p.type];
+    const b = boundsFor(p.type);
     if (!b) continue;
     if (mx < b.x || mx >= b.x + b.w || my < b.y || my >= b.y + b.h) continue;
 
@@ -238,8 +239,8 @@ function handleMouse(kind, x, y) {
     // action / yaml-terminal / info tabs fall through to free-config drag, so
     // the existing panel-move gesture still works when the user clicks
     // those parts of the tab bar.
-    if (kind === 'press' && slice && slice.panelBounds && slice.panelBounds.detail) {
-      const db = slice.panelBounds.detail;
+    const db = require('../render/layout').boundsFor('detail');
+    if (kind === 'press' && db) {
       if (my === db.y && Array.isArray(db.tabs)) {
         const localX = mx - db.x;
         let contentIdx = 0;
@@ -328,7 +329,7 @@ function handleMouse(kind, x, y) {
   // change.
   const sel = require('../panel/viewer/select');
   if (kind === 'motion' && sel.isActive()) {
-    const db = getInstanceSlice('layout').panelBounds.detail;
+    const db = require('../render/layout').boundsFor('detail');
     if (db) {
       const visibleLine = Math.max(0, Math.min(db.h - 3, my - db.y - 1));
       const col = Math.max(0, mx - db.x - 1);
@@ -350,8 +351,9 @@ function handleMouse(kind, x, y) {
 
   let mutated = false;
 
+  const { boundsFor } = require('../render/layout');
   for (const p of allPanels()) {
-    const b = getInstanceSlice('layout').panelBounds[p.type];
+    const b = boundsFor(p.type);
     if (!b) continue;
     if (mx < b.x || mx >= b.x + b.w || my < b.y || my >= b.y + b.h) continue;
 

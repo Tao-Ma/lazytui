@@ -120,8 +120,7 @@ function activateTerminal() {
   const id = activeTerminalId();
   if (!id) return;
   if (isSessionDead(id)) {
-    const slice = getInstanceSlice('layout');
-    const bounds = slice && slice.panelBounds.detail;
+    const bounds = require('../render/layout').boundsFor('detail');
     if (bounds) restartSession(id, bounds.w - 2, bounds.h - 2);
   }
   applyMsg({ type: 'terminal_enter' });

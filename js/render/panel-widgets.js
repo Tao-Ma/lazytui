@@ -63,9 +63,14 @@ function _placedWidgetTargets() {
   const drag = slice.freeConfig && slice.freeConfig.drag;
   if (drag) return null;  // drag affordance owns the screen; suppress widgets
   const panels = mpool.allPanesInColumns(slice.arrange);
+  // v0.6.3 P1.3: lazy require to dodge the layout ↔ panel-widgets
+  // cycle (layout.js imports panel-widgets at top-level, so a top-
+  // level require('./layout') would yield the partial module without
+  // boundsFor; lazy resolves to the final exports).
+  const { boundsFor } = require('./layout');
   return panels
     .filter(p => p.type !== 'detail')
-    .map(p => ({ p, b: slice.panelBounds[p.type] }))
+    .map(p => ({ p, b: boundsFor(p.type) }))
     .filter(({ b }) => b && b.h >= 1);
 }
 
