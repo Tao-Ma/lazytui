@@ -1014,18 +1014,20 @@ function detailTitle(slice) {
   return built ? built.title : 'Detail';
 }
 
-function render(panel, w, h, slice) {
+function render(panel, w, h, slice, opts) {
   const m = getModel();
   const innerH = h - 2;
   const dp = mpool.findDetailPane(getInstanceSlice('layout').arrange);
   const hotkey = dp ? dp.hotkey : '';
   const isFocused = instanceKind(getFocus()) === 'detail' || m.modes.terminalMode;
+  const chrome = opts && opts.chrome;
   if (isTerminalTab()) {
     return renderPanel({
       width: w, height: h, lines: [],
       title: detailTitle(slice), hotkey,
       panelType: 'detail',
       focused: isFocused,
+      chrome,
     });
   }
   // T2c — display lines come from viewerLines() (derives from active
@@ -1064,6 +1066,7 @@ function render(panel, w, h, slice) {
     focused: isFocused,
     count,
     scrollOffset: slice.scroll,
+    chrome,
   });
 }
 

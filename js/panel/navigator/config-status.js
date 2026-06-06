@@ -285,7 +285,7 @@ function rowText(item, isSelected) {
   return `  ${item.status}  ${esc(item.path)}`;
 }
 
-function render(panel, w, h, slice) {
+function render(panel, w, h, slice, opts) {
   const items = buildItems(slice, _files());
   const sel = getSel('config-status');
   const focused = instanceKind(getFocus()) === 'config-status';
@@ -295,6 +295,7 @@ function render(panel, w, h, slice) {
     width: w, height: h, title,
     panelType: 'config-status', lines, focused,
     hotkey: panel.hotkey, scrollOffset: getScroll('config-status'),
+    chrome: opts && opts.chrome,
   });
 }
 

@@ -268,7 +268,7 @@ function _copyOptionsFor(item, panelType) {
   return opts;
 }
 
-function _renderFor(panel, w, h, slice, panelType, hardcoded) {
+function _renderFor(panel, w, h, slice, panelType, hardcoded, opts) {
   const items = _itemsFor(slice, panelType, hardcoded);
   const innerW = w - 2;
   const sel = getSel(panelType);
@@ -314,6 +314,7 @@ function _renderFor(panel, w, h, slice, panelType, hardcoded) {
     focused: isFocused,
     count: items.length ? [sel + 1, items.length] : null,
     scrollOffset: getScroll(panelType),
+    chrome: opts && opts.chrome,
   });
 }
 
@@ -544,7 +545,7 @@ function _openFileAsTab(item, panelType) {
 // --- per-panel-type def factory ---
 
 function _makeDef(panelType, hardcoded) {
-  return {    render: (panel, w, h, slice) => _renderFor(panel, w, h, slice, panelType, hardcoded),
+  return {    render: (panel, w, h, slice, opts) => _renderFor(panel, w, h, slice, panelType, hardcoded, opts),
     getItems: (slice) => _itemsFor(slice, panelType, hardcoded),
     getInfo: (item) => _getInfoFor(item, panelType, hardcoded),
     copyOptions: (item) => _copyOptionsFor(item, panelType),

@@ -84,7 +84,7 @@ function _resolveSelection(panel) {
   return typeof item === 'string' ? item : null;
 }
 
-function _renderEmpty(panel, w, h, msg) {
+function _renderEmpty(panel, w, h, msg, chrome) {
   const t = theme();
   return renderPanel({
     width: w, height: h,
@@ -92,6 +92,7 @@ function _renderEmpty(panel, w, h, msg) {
     title: panel.title, hotkey: panel.hotkey,
     panelType: 'stats',
     focused: instanceKind(getFocus()) === 'stats',
+    chrome,
   });
 }
 
@@ -146,34 +147,32 @@ function _renderSection(metric, samples, schema, width, graphHeight) {
   return [header, ...colored];
 }
 
-function render(panel, w, h) {
+function render(panel, w, h, _slice, opts) {
+  const chrome = opts && opts.chrome;
   if (!panel.topic || !panel.select_from) {
-    return _renderEmpty(panel, w, h, '(stats panel needs topic + select_from)');
+    return _renderEmpty(panel, w, h, '(stats panel needs topic + select_from)', chrome);
   }
   const window = panel.window || 40;
   _ensureSub(panel.topic, window);
 
   const rowKey = _resolveSelection(panel);
-  if (!rowKey) return _renderEmpty(panel, w, h, '(no selection)');
+  if (!rowKey) return _renderEmpty(panel, w, h, '(no selection)', chrome);
 
   const samples = hub.history(panel.topic, rowKey, window);
-  if (!samples.length) return _renderEmpty(panel, w, h, '(no data yet)');
+  if (!samples.length) return _renderEmpty(panel, w, h, '(no data yet)', chrome);
 
   const schema = hub.schema(panel.topic) || { columns: {} };
   const metrics = panel.metrics || _defaultMetrics(schema);
-  if (!metrics.length) return _renderEmpty(panel, w, h, '(no graphable metrics)');
+  if (!metrics.length) return _renderEmpty(panel, w, h, '(no graphable metrics)', chrome);
 
   const innerW = w - 2;
   const innerH = h - 2;
-  // Each metric needs: 1 header row + ≥2 graph rows. Inter-metric
-  // spacing: 1 blank row between sections. Bail with a friendly empty
-  // when the panel doesn't have room.
   const sepRows = Math.max(0, metrics.length - 1);
   const headerRows = metrics.length;
   const graphRowsTotal = innerH - sepRows - headerRows;
   const perMetric = Math.floor(graphRowsTotal / metrics.length);
   if (perMetric < 2) {
-    return _renderEmpty(panel, w, h, '(panel too short for graph)');
+    return _renderEmpty(panel, w, h, '(panel too short for graph)', chrome);
   }
 
   const lines = [];
@@ -188,6 +187,7 @@ function render(panel, w, h) {
     hotkey: panel.hotkey,
     panelType: 'stats',
     focused: instanceKind(getFocus()) === 'stats',
+    chrome,
   });
 }
 

@@ -77,7 +77,7 @@ function copyOptions(entry) {
   return opts;
 }
 
-function render(panel, w, h) {
+function render(panel, w, h, _slice, opts) {
   const items = apiGetItems('history', null);
   const sel = getSel('history');
   const isFocused = instanceKind(getFocus()) === 'history';
@@ -101,6 +101,7 @@ function render(panel, w, h) {
     focused: isFocused,
     count: items.length ? [sel + 1, items.length] : null,
     scrollOffset: getScroll('history'),
+    chrome: opts && opts.chrome,
   });
 }
 

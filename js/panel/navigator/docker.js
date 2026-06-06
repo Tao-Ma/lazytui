@@ -446,7 +446,7 @@ function _getItems(/* slice */) {
   return group ? (group.containers || []) : [];
 }
 
-function render(panel, width, height) {
+function render(panel, width, height, _slice, opts) {
   const m = getModel();
   const group = m.config.groups[m.currentGroup];
   if (!group) return '';
@@ -478,6 +478,7 @@ function render(panel, width, height) {
     focused: isFocused,
     count: containers.length ? [sel + 1, containers.length] : null,
     scrollOffset: getScroll('containers'),
+    chrome: opts && opts.chrome,
   });
 }
 

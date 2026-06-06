@@ -58,9 +58,8 @@ const { renderCmdline } = require('../overlay/cmdline');
 const { renderConfirmOverlay } = require('../overlay/confirm');
 const { renderPromptOverlay } = require('../overlay/prompt');
 const { getFreeConfigFooter } = require('./free-config-view');
-const { injectTopRowChrome } = require('./panel-widgets');
 const { renderPanelListOverlay } = require('../overlay/panel-list');
-const { renderTabList, injectTabTrigger } = require('../overlay/tab-list');
+const { renderTabList } = require('../overlay/tab-list');
 const { renderJobsOverlay } = require('../overlay/jobs');
 
 /**
@@ -78,7 +77,7 @@ const { renderJobsOverlay } = require('../overlay/jobs');
  * layout owns this for-uniformity rendering of the minimized chrome.
  * Focus-aware color (matches renderPanel's top border).
  */
-function _renderCollapsed(p, w) {
+function _renderCollapsed(p, w, chrome) {
   const t = theme();
   const layoutSlice = getInstanceSlice('layout');
   const focused = layoutSlice && layoutSlice.focus === p.type;
@@ -87,14 +86,33 @@ function _renderCollapsed(p, w) {
   let titleText = '';
   if (p.hotkey) titleText += `(${p.hotkey})`;
   if (p.title)  titleText += `─${p.title}`;
-  // Markup-aware truncation — same trap as renderPanel: a length-based
-  // slice can cut mid-tag and let the next `[…]` match swallow the fill
-  // and right corner. truncate() is a no-op when visibleLen fits.
   titleText = truncate(titleText, innerW - 2);
+
+  // v0.6.3 P4.2 — chrome glyphs compose inline. For a collapsed pane,
+  // chrome.collapse === 'expand' (the [+] glyph signals "click to
+  // uncollapse"); close glyph still allowed in free-config. Width
+  // budget: titleText + chrome + 2 corners must fit in w; on tight
+  // widths, drop chrome and fall back to bare collapsed bar.
+  const W = require('./panel-widgets');
+  let rightPart = '';
+  if (chrome) {
+    if (chrome.close)    rightPart += W._closeGlyphMarkup(focused, fc);
+    if (chrome.close && chrome.collapse) rightPart += '─';
+    if (chrome.collapse) rightPart += W._collapseGlyphMarkup(chrome.collapse, focused, fc);
+  }
+  if (rightPart) {
+    rightPart += '╮';
+    const titleVis = visibleLen(titleText);
+    const rightVis = visibleLen(rightPart);
+    // leftPart is `╭─` + titleText = 2 + titleVis visible cells.
+    const midFill = w - 2 - titleVis - rightVis;
+    if (midFill >= 1) {
+      return wrapColor(fc, `╭─${titleText}${'─'.repeat(midFill)}${rightPart}`);
+    }
+    // Doesn't fit — fall through to bare collapsed bar.
+  }
+
   const fill = innerW - visibleLen(titleText);
-  // wrapColor() reopens fc after any nested `[/]` in titleText so
-  // the trailing fill + corner stay in border color — same fix as
-  // renderPanel's top border for the collapsed 1-row chrome bar.
   if (fill >= 2)      return wrapColor(fc, `╭─${titleText}${'─'.repeat(fill - 1)}╮`);
   else if (fill === 1) return wrapColor(fc, `╭${titleText}─╮`);
   else                 return wrapColor(fc, `╭${titleText}╮`);
@@ -493,7 +511,7 @@ function _normalizeRender(panel, raw, w, h) {
 // helper) — P5.7. Returns '' for unregistered types / missing
 // render(); on throw, renders an error block (P2 — was a 1-line
 // marker that shifted everything below it within the same column).
-function _safeRender(panel, w, h) {
+function _safeRender(panel, w, h, opts) {
   if (!panel) return '';
   const compName = getComponentOwningPanel(panel.type);
   if (!compName) return '';
@@ -502,7 +520,10 @@ function _safeRender(panel, w, h) {
   if (!def || typeof def.render !== 'function') return '';
   let raw;
   try {
-    raw = def.render(panel, w, h, getInstanceSlice(compName));
+    // v0.6.3 P4.2b — pass opts (carries chrome spec from composeRects)
+    // as a 5th arg. Existing panel renderers ignore unknown args; the
+    // ones updated in this commit pass opts.chrome to renderPanel.
+    raw = def.render(panel, w, h, getInstanceSlice(compName), opts);
   } catch (e) {
     console.error(`[render:${panel && panel.type}] ${e && e.message}`);
     try {
@@ -557,7 +578,22 @@ function composeRects(layout, model) {
   if (!layoutSlice || !layout || !layout.rects) return [];
   const freeConfigMode = !!(model && model.modes && model.modes.freeConfigMode);
   const dragging = !!(layoutSlice.freeConfig && layoutSlice.freeConfig.drag);
-  const t = theme();
+  // v0.6.3 P4.2 — chrome state computed structurally via chromeFor()
+  // and threaded into the panel renderer via opts. Was post-mutated
+  // string injection via injectTopRowChrome / injectTabTrigger; now
+  // renderPanel({chrome}) composes glyphs inline.
+  const { chromeFor } = require('./panel-widgets');
+  let viewerTabCount = 0;
+  try {
+    const tabInfo = require('../panel/viewer/tabs').getTabInfo();
+    viewerTabCount = tabInfo && Number.isFinite(tabInfo.total) ? tabInfo.total : 0;
+  } catch (_) {}
+  let triggerStateRaw = 'normal';
+  try {
+    triggerStateRaw = require('../overlay/tab-list')._triggerState();
+  } catch (_) {}
+  const tabTriggerState = triggerStateRaw === 'normal' ? 'available' : triggerStateRaw;
+
   // Index rects for quick lookup by either key. paneId is preferred
   // (multi-instance forward-compat per v0.6.1 Phase 7); type is the
   // fallback that still works under singleton-Components.
@@ -571,14 +607,13 @@ function composeRects(layout, model) {
   for (const panel of mpool.allPanesInColumns(layoutSlice.arrange)) {
     const rect = rectByPaneId[panel.paneId] || rectByType[panel.type];
     if (!rect) continue;
-    let raw = panel.collapsed
-      ? _renderCollapsed(panel, rect.w)
-      : _safeRender(panel, rect.w, rect.h);
-    const b = { x: rect.x, y: rect.y, w: rect.w, h: rect.h };
     const focused = layoutSlice.focus === panel.type;
-    const fc = focused ? t.focus : t.dim;
-    raw = injectTopRowChrome(raw, panel, b, freeConfigMode, fc, focused, dragging);
-    raw = injectTabTrigger(raw, panel);
+    const chrome = chromeFor(panel, {
+      freeConfigMode, dragging, focused, viewerTabCount, tabTriggerState,
+    });
+    const raw = panel.collapsed
+      ? _renderCollapsed(panel, rect.w, chrome)
+      : _safeRender(panel, rect.w, rect.h, { chrome });
     const lines = raw === '' ? [] : raw.split('\n');
     out.push({
       paneId: rect.paneId, type: rect.type,
@@ -666,11 +701,33 @@ function renderHalf(model) {
     layoutSlice.panelBounds.detail = detailBounds;
     if (detailPanel.paneId) layoutSlice.panelBounds[detailPanel.paneId] = detailBounds;
   }
-  let leftContent = _safeRender(leftPanel, halfW, availH);
-  let rightContent = detailPanel ? _safeRender(detailPanel, rightW, availH) : '';
-  // Bake the [≡] trigger into the detail render only — hit-test math
-  // reads panelBounds.detail (right side).
-  if (rightContent) rightContent = injectTabTrigger(rightContent, detailPanel);
+  // v0.6.3 P4.2 — chrome computed via chromeFor + threaded through
+  // renderPanel; half/full view paths don't need to inject post-render.
+  const { chromeFor } = require('./panel-widgets');
+  const freeConfigMode = !!(model.modes && model.modes.freeConfigMode);
+  const dragging = !!(layoutSlice.freeConfig && layoutSlice.freeConfig.drag);
+  let viewerTabCount = 0;
+  try {
+    const tabInfo = require('../panel/viewer/tabs').getTabInfo();
+    viewerTabCount = tabInfo && Number.isFinite(tabInfo.total) ? tabInfo.total : 0;
+  } catch (_) {}
+  let triggerStateRaw = 'normal';
+  try {
+    triggerStateRaw = require('../overlay/tab-list')._triggerState();
+  } catch (_) {}
+  const tabTriggerState = triggerStateRaw === 'normal' ? 'available' : triggerStateRaw;
+  const leftChrome = chromeFor(leftPanel, {
+    freeConfigMode, dragging,
+    focused: layoutSlice.focus === leftPanel.type,
+    viewerTabCount, tabTriggerState,
+  });
+  const detailChrome = detailPanel ? chromeFor(detailPanel, {
+    freeConfigMode, dragging,
+    focused: layoutSlice.focus === detailPanel.type,
+    viewerTabCount, tabTriggerState,
+  }) : null;
+  let leftContent = _safeRender(leftPanel, halfW, availH, { chrome: leftChrome });
+  let rightContent = detailPanel ? _safeRender(detailPanel, rightW, availH, { chrome: detailChrome }) : '';
   const rects = [
     { x: 0, y: 0, w: halfW, h: availH,
       lines: leftContent === '' ? [] : leftContent.split('\n') },
@@ -702,8 +759,27 @@ function renderFull(model) {
   const fullBounds = { x: 0, y: 0, w: COLS, h: availH };
   layoutSlice.panelBounds[focusedPanel.type] = fullBounds;
   if (focusedPanel.paneId) layoutSlice.panelBounds[focusedPanel.paneId] = fullBounds;
-  let content = _safeRender(focusedPanel, COLS, availH);
-  content = injectTabTrigger(content, focusedPanel);  // no-op if non-detail
+  // v0.6.3 P4.2 — chrome computed via chromeFor; full view also routes
+  // [≡] through renderPanel inline when the focused panel is detail.
+  const { chromeFor: chromeForFull } = require('./panel-widgets');
+  const freeConfigModeF = !!(model.modes && model.modes.freeConfigMode);
+  const draggingF = !!(layoutSlice.freeConfig && layoutSlice.freeConfig.drag);
+  let viewerTabCountF = 0;
+  try {
+    const tabInfo = require('../panel/viewer/tabs').getTabInfo();
+    viewerTabCountF = tabInfo && Number.isFinite(tabInfo.total) ? tabInfo.total : 0;
+  } catch (_) {}
+  let triggerStateRawF = 'normal';
+  try {
+    triggerStateRawF = require('../overlay/tab-list')._triggerState();
+  } catch (_) {}
+  const fullChrome = chromeForFull(focusedPanel, {
+    freeConfigMode: freeConfigModeF, dragging: draggingF,
+    focused: true,
+    viewerTabCount: viewerTabCountF,
+    tabTriggerState: triggerStateRawF === 'normal' ? 'available' : triggerStateRawF,
+  });
+  let content = _safeRender(focusedPanel, COLS, availH, { chrome: fullChrome });
   const rects = [
     { x: 0, y: 0, w: COLS, h: availH,
       lines: content === '' ? [] : content.split('\n') },
@@ -896,13 +972,12 @@ function render(model = getModel()) {
     }
   }
   renderFooter(model);
-  // Panel-chrome glyphs (`[_]`/`[+]` collapse, `[X]` close in free-config)
-  // are baked into each panel's top-border row by composeRects — see
-  // panel-widgets.js#injectTopRowChrome. The painter then stamps the
-  // row WITH the glyph in place, so there's no cursor-move-back-and-
-  // overpaint. Earlier "paint-on-top" approaches flickered on every
-  // detail-scroll frame because the row-paint momentarily restored `─`
-  // at the glyph cells. P4 retires this onto rect decor entirely.
+  // Panel-chrome glyphs (`[_]`/`[+]` collapse, `[X]` close in free-config,
+  // `[≡]` tab trigger) are composed INLINE in the panel's top border
+  // by renderPanel({chrome}) — v0.6.3 P4.2 retired the post-render
+  // regex injection (injectTopRowChrome / injectTabTrigger). The
+  // painter stamps the row with the glyphs already in place, so no
+  // second write and no cursor-move-back-and-overpaint flicker.
   // Overlays are mutually exclusive in practice (modeChain enforces it).
   // Order matches dispatch.js's modeChain: free-config > menu > copy.
   if (md.copyMode)    renderCopyMenu();
@@ -913,10 +988,9 @@ function render(model = getModel()) {
   if (md.promptMode)  renderPromptOverlay();
   if (md.registerPopupMode) renderRegisterPopup();
   if (md.prefixMode)  renderWhichKey();
-  // Tab list overlay (only when active). The `[≡]` trigger glyph used
-  // to paint here too — it's now baked into detail's top-row markup by
-  // injectTabTrigger inside composeRects (sibling of injectTopRowChrome
-  // for [_]/[X]), so the painter stamps the glyph atomically.
+  // Tab list overlay (only when active). The `[≡]` trigger glyph is
+  // composed inline by renderPanel({chrome}) per P4.2; the painter
+  // stamps it atomically alongside the rest of the top border.
   if (md.tabListMode) renderTabList();
   if (md.jobsMode)    renderJobsOverlay();
 

@@ -309,7 +309,7 @@ function _glyphFor(group, expanded) {
   return expanded.has(group.name) ? GLYPH_EXPANDED : GLYPH_COLLAPSED;
 }
 
-function render(panel, w, h, slice) {
+function render(panel, w, h, slice, opts) {
   const sel = getSel('groups');
   const isQuick = slice.tab === 'quick';
   const t = theme();
@@ -350,6 +350,7 @@ function render(panel, w, h, slice) {
     focused: instanceKind(getFocus()) === 'groups',
     count: [sel + 1, slice.list.length],
     scrollOffset: getScroll('groups'),
+    chrome: opts && opts.chrome,
   });
 }
 

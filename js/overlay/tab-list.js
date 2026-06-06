@@ -384,6 +384,10 @@ function _resetRenderState() { _lastPanelH = 0; _lastTop = 0; }
 module.exports = {
   renderTabList, injectTabTrigger, hitTest, isTriggerHit,
   viewportRows, _resetRenderState,
+  // v0.6.3 P4.2 — exposed for chromeFor() in panel-widgets.js. Returns
+  // 'open' (tab list open), 'disabled' (any other chain mode), or
+  // 'normal' (default).
+  _triggerState,
   // Exposed for tests
   _flatTabs, _geom,
 };

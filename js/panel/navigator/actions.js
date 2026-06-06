@@ -82,7 +82,7 @@ function actionRow([key, action], i) {
   return `${mark} ${esc(action.label)}${tag}${confirmDim}${argsDim}`;
 }
 
-function render(panel, w, h) {
+function render(panel, w, h, _slice, opts) {
   const actions = apiGetItems('actions');
   const sel = getSel('actions');
   const isFocused = instanceKind(getFocus()) === 'actions';
@@ -96,6 +96,7 @@ function render(panel, w, h) {
     focused: isFocused,
     count: actions.length ? [sel + 1, actions.length] : null,
     scrollOffset: getScroll('actions'),
+    chrome: opts && opts.chrome,
   });
 }
 
