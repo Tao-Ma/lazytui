@@ -101,6 +101,10 @@ describe('[2] chromeFor — non-detail [≡] is pane-select trigger', () => {
     const p = { type: 'groups', tabs: [{ id: 'groups' }] };
     eq(chromeFor(p, {}).tabTrigger, 'available');
   });
+  it('paneSelectTriggerState=hidden suppresses [≡] (nothing to swap)', () => {
+    const p = { type: 'groups', tabs: [{ id: 'groups' }] };
+    eq(chromeFor(p, { paneSelectTriggerState: 'hidden' }).tabTrigger, null);
+  });
   it('open state surfaces when paneSelectTriggerState=open', () => {
     const p = { type: 'groups', tabs: [{ id: 'groups' }] };
     eq(chromeFor(p, { paneSelectTriggerState: 'open' }).tabTrigger, 'open');
@@ -220,6 +224,41 @@ describe('[5] paneSelectItems — pure list build', () => {
   it('empty arrange returns empty list', () => {
     eq(mpool.paneSelectItems({ columns: [], pool: {} }, 'pane-x').length, 0);
     eq(mpool.paneSelectItems(null, 'pane-x').length, 0);
+  });
+
+  it('lone non-detail pane + no hidden = items.length === 1 (only `here`)', () => {
+    // Drives the "hide [≡] when nothing to swap" rule: trigger paints
+    // only when items.length >= 2 (current + at least one swap target).
+    const arr = {
+      columns: [
+        { width: 24, panels: [
+          { type: 'groups', id: 'groups', paneId: 'pane-groups' },
+        ] },
+        { panels: [{ type: 'detail', id: 'detail', paneId: 'pane-detail' }] },
+      ],
+      pool: {
+        'groups': { id: 'groups', type: 'groups' },
+        'detail': { id: 'detail', type: 'detail' },
+      },
+    };
+    eq(mpool.paneSelectItems(arr, 'pane-groups').length, 1, 'only `here`');
+  });
+
+  it('one placed + one hidden = items.length === 2 (here + hidden swap target)', () => {
+    const arr = {
+      columns: [
+        { width: 24, panels: [
+          { type: 'groups', id: 'groups', paneId: 'pane-groups' },
+        ] },
+        { panels: [{ type: 'detail', id: 'detail', paneId: 'pane-detail' }] },
+      ],
+      pool: {
+        'groups': { id: 'groups', type: 'groups' },
+        'detail': { id: 'detail', type: 'detail' },
+        'extra':  { id: 'extra',  type: 'extra'  },
+      },
+    };
+    eq(mpool.paneSelectItems(arr, 'pane-groups').length, 2);
   });
 });
 

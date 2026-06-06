@@ -611,8 +611,15 @@ function composeRects(layout, model) {
   // shows 'open', siblings show 'disabled' during paneSelectMode).
   const paneSelectMode = !!(model.modes && model.modes.paneSelectMode);
   const paneSelectTargetPaneId = (layoutSlice.paneSelect && layoutSlice.paneSelect.targetPaneId) || null;
+  // Hide the [≡] trigger when there's nothing useful to swap — i.e.
+  // paneSelectItems returns only the `here` row (length < 2 means no
+  // other placed pane AND no hidden entry to REPLACE with). Avoids
+  // painting an affordance whose click would be a no-op. Computed
+  // once per render — items length is invariant of targetPaneId.
+  const paneSelectHasSwap = mpool.paneSelectItems(layoutSlice.arrange, null).length >= 2;
   const paneSelectTriggerStateFor = (paneId) => {
     if (paneSelectMode) return paneId === paneSelectTargetPaneId ? 'open' : 'disabled';
+    if (!paneSelectHasSwap) return 'hidden';
     // Mirror tab-list: any chain mode disables peer triggers so the
     // user's open overlay can't be re-triggered out from under them.
     return require('../overlay/tab-list')._triggerState() === 'normal' ? 'available' : 'disabled';
@@ -747,10 +754,15 @@ function renderHalf(model) {
   const halfPaneSelectMode = !!(model.modes && model.modes.paneSelectMode);
   const halfPaneSelectTargetPaneId =
     (layoutSlice.paneSelect && layoutSlice.paneSelect.targetPaneId) || null;
-  const halfPaneSelectStateFor = (paneId) =>
-    halfPaneSelectMode
-      ? (paneId === halfPaneSelectTargetPaneId ? 'open' : 'disabled')
-      : 'available';
+  // Same hide-when-nothing-to-swap rule as renderNormal — half view
+  // shows one non-detail pane + detail; hide the trigger when there's
+  // nothing in the underlying arrange to swap to.
+  const halfPaneSelectHasSwap = mpool.paneSelectItems(layoutSlice.arrange, null).length >= 2;
+  const halfPaneSelectStateFor = (paneId) => {
+    if (halfPaneSelectMode) return paneId === halfPaneSelectTargetPaneId ? 'open' : 'disabled';
+    if (!halfPaneSelectHasSwap) return 'hidden';
+    return 'available';
+  };
   const leftChrome = chromeFor(leftPanel, {
     freeConfigMode, dragging,
     focused: layoutSlice.focus === leftPanel.type,
@@ -815,9 +827,12 @@ function renderFull(model) {
   const fullPaneSelectMode = !!(model.modes && model.modes.paneSelectMode);
   const fullPaneSelectTargetPaneId =
     (layoutSlice.paneSelect && layoutSlice.paneSelect.targetPaneId) || null;
+  // Same hide-when-nothing-to-swap rule. Full view only paints the
+  // focused pane; the trigger sits on it (non-detail only).
+  const fullPaneSelectHasSwap = mpool.paneSelectItems(layoutSlice.arrange, null).length >= 2;
   const fullPaneSelectState = fullPaneSelectMode
     ? (focusedPanel.paneId === fullPaneSelectTargetPaneId ? 'open' : 'disabled')
-    : 'available';
+    : (fullPaneSelectHasSwap ? 'available' : 'hidden');
   const fullChrome = chromeForFull(focusedPanel, {
     freeConfigMode: freeConfigModeF, dragging: draggingF,
     focused: true,
