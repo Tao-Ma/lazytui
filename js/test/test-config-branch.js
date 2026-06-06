@@ -311,6 +311,81 @@ describe('[X-source] groupActions resolves paths/excludes from config.files', ()
   });
 });
 
+// --- chmod 600 on sensitive files at load: end-to-end ---
+//
+// Isolated repo: file modes asserted here would entangle with the
+// [1-9] cases (which mutate state across describes). Tracks one OVPN
+// inline (glob match), one SSH key (exact-name match), one easy-rsa
+// pki/private entry (path match), and one sibling that should NOT
+// be tightened (id_ed25519.pub) to pin the negative case.
+
+const TMP3 = fs.mkdtempSync(path.join(os.tmpdir(), 'cb-test-chmod-'));
+process.on('exit', () => {
+  try { fs.rmSync(TMP3, { recursive: true, force: true }); } catch (_) {}
+});
+
+git(TMP3, 'init', '--quiet', '--initial-branch=main');
+git(TMP3, 'config', 'user.email', 'test@example.com');
+git(TMP3, 'config', 'user.name', 'Test');
+fs.writeFileSync(path.join(TMP3, 'README.md'), 'init\n');
+git(TMP3, 'add', 'README.md');
+git(TMP3, 'commit', '-m', 'init', '--quiet');
+
+fs.mkdirSync(path.join(TMP3, 'vpn'), { recursive: true });
+fs.mkdirSync(path.join(TMP3, 'ssh'), { recursive: true });
+fs.mkdirSync(path.join(TMP3, 'vpn', 'pki', 'private'), { recursive: true });
+fs.writeFileSync(path.join(TMP3, 'vpn', 'client.ovpn'), 'remote vpn.example\n');
+fs.writeFileSync(path.join(TMP3, 'ssh', 'id_ed25519'), 'PRIVATE-V1\n');
+fs.writeFileSync(path.join(TMP3, 'ssh', 'id_ed25519.pub'), 'PUBLIC-V1\n');
+fs.writeFileSync(path.join(TMP3, 'vpn', 'pki', 'private', 'server.key'), 'EASY-RSA-V1\n');
+
+const FIXTURE3 = path.join(TMP3, 'fixture.yml');
+fs.writeFileSync(FIXTURE3, `project_dir: .
+
+groups:
+  branch:
+    label: Branch sync
+    config_branch:
+      branch: config
+      paths:
+        - vpn
+        - ssh
+    actions:
+      info:
+        label: About
+        type: run
+        script: echo about
+`);
+
+function run3(action, ...rest) {
+  return spawnSync(process.execPath, [TUI, FIXTURE3, '--exec', action, ...rest], {
+    encoding: 'utf8', timeout: 15000, cwd: TMP3,
+  });
+}
+
+describe('[10] load chmods 0600 on sensitive files (SSH/OVPN/PKI)', () => {
+  it('save first', () => {
+    const r = run3('branch:save');
+    eq(r.status, 0, `rc 0 (stderr: ${r.stderr})`);
+  });
+  it('delete local, load, sensitive files come back at 0600', () => {
+    fs.rmSync(path.join(TMP3, 'vpn'), { recursive: true });
+    fs.rmSync(path.join(TMP3, 'ssh'), { recursive: true });
+    const r = run3('branch:load');
+    eq(r.status, 0, `rc 0 (stderr: ${r.stderr})`);
+    const modeOf = (p) => fs.statSync(path.join(TMP3, p)).mode & 0o777;
+    eq(modeOf('vpn/client.ovpn'), 0o600, '*.ovpn → 0600');
+    eq(modeOf('ssh/id_ed25519'), 0o600, 'id_ed25519 → 0600');
+    eq(modeOf('vpn/pki/private/server.key'), 0o600, 'pki/private/* → 0600');
+  });
+  it('the .pub sibling is NOT tightened', () => {
+    // id_ed25519.pub doesn't match `id_ed25519` (different name) — public
+    // keys are intentionally world-readable, and SSH won't complain.
+    const pubMode = fs.statSync(path.join(TMP3, 'ssh', 'id_ed25519.pub')).mode & 0o777;
+    assert(pubMode !== 0o600, `pub stayed at ${pubMode.toString(8)}, not 0600`);
+  });
+});
+
 describe('[9] excludes: check-stale ignores changes under excluded subpath', () => {
   it('clean state matches', () => {
     const r = run2('branch:check-stale');
