@@ -41,6 +41,7 @@ const { allPanels, syncPanelScroll, multiSelCount } = require('../app/state');
 const mpool = require('../leaves/pool');
 const { theme } = require('./themes');
 const { truncate } = require('./panel');
+const painter = require('./painter');
 const { isTerminalTab, activeTerminalId, activeTerminalConfig,
         getTabInfo, findEphemeralByid } = require('../panel/viewer/tabs');
 const { ensureSession, getSession, resizeSession } = require('../io/terminal');
@@ -634,11 +635,56 @@ function composeRects(layout, model) {
   return out;
 }
 
+/**
+ * v0.6.3 P3.3 — flag-gated rect-painter path. Replaces paintColumns'
+ * row-concatenation of per-column strings with painter.composeRows'
+ * absolute-positioned stamping of per-pane rects. Functionally
+ * equivalent in normal cases; structurally closes the v0.6.2
+ * column-shift bug class (6d9ad31) because rects no longer rely on
+ * "every column emits exactly availH lines" as an implicit invariant.
+ *
+ * Lit by env LAZYTUI_RECT_PAINTER=1. P3.4 runs both paths against
+ * 1000 random configs to prove ANSI parity; P3.6 deletes the old
+ * path + the column-pad helper above.
+ *
+ * Why pre-populate panelBounds: viewer.detailTitle (viewer.js:1008)
+ * writes layoutSlice.panelBounds.detail.tabs DURING _safeRender —
+ * needs the detail entry to exist before composeRects fires. Same
+ * order renderOne uses today (write bounds, then render).
+ */
+function _renderNormalRectPath(model) {
+  const layout = calcLayout(model);
+  const layoutSlice = getInstanceSlice('layout');
+  layoutSlice.panelBounds = {};
+  for (const rect of layout.rects) {
+    const b = { x: rect.x, y: rect.y, w: rect.w, h: rect.h };
+    layoutSlice.panelBounds[rect.type] = b;
+    if (rect.paneId) layoutSlice.panelBounds[rect.paneId] = b;
+  }
+  const rectsWithLines = composeRects(layout, model);
+  const COLS = cols();
+  const newRows = painter.composeRows(rectsWithLines, COLS, layout.availH);
+  // Width-or-row-count change → can't trust per-row diff (same trip-
+  // wire paintColumns has; share the module-locals _prevCols /
+  // _forceFullRepaint so old + new paths can swap mid-session via
+  // the env flag without leaving stale cache state behind).
+  if (COLS !== _prevCols || newRows.length !== _prevRows.length) _forceFullRepaint = true;
+  _prevCols = COLS;
+  const { ansi, didFull } = painter.paintFrame(_prevRows, newRows, _forceFullRepaint);
+  if (didFull) _forceFullRepaint = false;
+  if (ansi) stdout.write(ansi);
+  _prevRows = newRows;
+  return didFull;
+}
+
 // renderNormal/Half/Full populate `layoutSlice.panelBounds` directly —
 // the renderer-as-writer pattern documented in the file header (§5
 // view-derived data). Reset on every entry so stale entries from a
 // prior view-mode aren't hit-testable.
 function renderNormal(model) {
+  if (process.env.LAZYTUI_RECT_PAINTER === '1') {
+    return _renderNormalRectPath(model);
+  }
   const { ranges, availH, rects } = calcLayout(model);
   const layoutSlice = getInstanceSlice('layout');
   layoutSlice.panelBounds = {};
