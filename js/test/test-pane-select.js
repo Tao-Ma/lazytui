@@ -135,16 +135,17 @@ describe('[3] hit-test', () => {
     eq(paneSelect.hitTest(20, 10), null);
   });
 
-  it('hitTest resolves row idx at 80x24 with 3 items', () => {
-    // Geometry at 80x24, 3 items, vh=12 → menuW=50, menuH=5,
-    // offY=9, offX=15. Content rows y=10,11,12.
+  it('hitTest resolves row idx for anchored dropdown', () => {
+    // Anchored dropdown drops down from the target pane's top row
+    // (paneB.y + 1). Width clamps to pane.w (or MAX_W=50). Borders
+    // at y=top and y=top+h-1 are inert; content rows at y=top+1..top+h-2.
     const layout = route.getInstanceSlice('layout');
     layout.paneSelect = null;
     layout.tabListOwnerPaneId = null;
     layout.freeConfig = { drag: null, undo: [], redo: [], titleEdit: { text: '' }, notice: null, noticeKind: null };
     layout.arrange = {
       columns: [
-        { width: 24, panels: [
+        { width: 32, panels: [
           { type: 'groups',  id: 'groups',  paneId: 'pane-groups',  tabs: [{ id: 'groups',  poolId: 'groups'  }] },
           { type: 'actions', id: 'actions', paneId: 'pane-actions', tabs: [{ id: 'actions', poolId: 'actions' }] },
         ] },
@@ -159,23 +160,28 @@ describe('[3] hit-test', () => {
         'stats':   { id: 'stats',   type: 'stats',   title: 'Stats' },
       },
     };
+    // Seed panelBounds (renders skipped in tests).
+    layout.panelBounds = {
+      'pane-groups':  { x: 0, y: 0, w: 32, h: 12 },
+      'pane-actions': { x: 0, y: 12, w: 32, h: 12 },
+      'pane-detail':  { x: 32, y: 0, w: 48, h: 24 },
+    };
     api.dispatchMsg(api.wrap('layout', { type: 'pane_select_open', paneId: 'pane-groups' }));
-    // Force COLS/ROWS for deterministic geometry (test env may differ).
-    const term = require('../io/term');
-    const origCols = term.cols(), origRows = term.rows();
-    // Monkey-patch by reassigning the module's exported fns is fragile;
-    // we rely on stdout.columns/rows defaulting to 80x24 when undefined.
-    // If the harness reports a real size, just verify the borders are inert.
-    const g0 = paneSelect.hitTest(0, 0);
-    eq(g0, null, 'outside overlay returns null');
-    if (origCols === 80 && origRows === 24) {
-      const hitRow0 = paneSelect.hitTest(20, 10);
-      assert(hitRow0 && hitRow0.idx === 0 && hitRow0.item.id === 'groups', 'row 0 = groups');
-      const hitRow1 = paneSelect.hitTest(20, 11);
-      assert(hitRow1 && hitRow1.idx === 1, 'row 1 hit');
-      eq(paneSelect.hitTest(20, 9),  null, 'top border inert');
-      eq(paneSelect.hitTest(20, 13), null, 'bottom border inert');
-    }
+    // Dropdown anchors at pane-groups (x=0, y=0) — drops down to y=1.
+    // 3 items (groups[here] + actions[placed] + stats[hidden]),
+    // viewport caps innerH=3. Geometry: x=0, y=1, w=32, innerH=3, h=5.
+    // Content rows: y=2,3,4. Borders at y=1 and y=5 inert.
+    eq(paneSelect.hitTest(-1, 2), null, 'left of dropdown returns null');
+    eq(paneSelect.hitTest(40, 2), null, 'right of dropdown returns null');
+    eq(paneSelect.hitTest(5, 1),  null, 'top border inert');
+    eq(paneSelect.hitTest(5, 5),  null, 'bottom border inert');
+    const row0 = paneSelect.hitTest(5, 2);
+    assert(row0 && row0.idx === 0 && row0.item.id === 'groups', 'row 0 = groups');
+    const row1 = paneSelect.hitTest(5, 3);
+    assert(row1 && row1.idx === 1, 'row 1 hit');
+    const row2 = paneSelect.hitTest(5, 4);
+    assert(row2 && row2.idx === 2, 'row 2 hit');
+    eq(paneSelect.hitTest(5, 6),  null, 'past last row returns null');
   });
 });
 
