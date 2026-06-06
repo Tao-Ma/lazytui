@@ -268,6 +268,29 @@ function update(msg, slice) {
       const next = { ...slice, paneSelect: null };
       return [next, [{ type: 'msg', msg: { type: 'mode_clear', flag: 'paneSelectMode' } }]];
     }
+    // v0.6.3 D2 — cursor/scroll nav inside the pane-select overlay.
+    // Mirrors tab_list_nav: dir ±1 OR to ∈ { top, bottom, pageup,
+    // pagedown }. Viewport height (vh) + item count (n) are threaded
+    // in by the caller (handler/mouse-wheel side) so the reducer
+    // stays a pure function of (slice, msg).
+    case 'pane_select_nav': {
+      if (!slice.paneSelect) return slice;
+      const ps = slice.paneSelect;
+      const n = Math.max(0, msg.n | 0);
+      if (n === 0) return slice;
+      const vh = Math.max(1, msg.vh | 0);
+      let cursor = ps.cursor || 0;
+      if      (msg.to === 'top')      cursor = 0;
+      else if (msg.to === 'bottom')   cursor = n - 1;
+      else if (msg.to === 'pageup')   cursor = Math.max(0, cursor - vh);
+      else if (msg.to === 'pagedown') cursor = Math.min(n - 1, cursor + vh);
+      else                            cursor = Math.max(0, Math.min(n - 1, cursor + (msg.dir || 0)));
+      let scroll = ps.scroll || 0;
+      if (cursor < scroll) scroll = cursor;
+      else if (cursor >= scroll + vh) scroll = cursor - vh + 1;
+      if (cursor === (ps.cursor || 0) && scroll === (ps.scroll || 0)) return slice;
+      return { ...slice, paneSelect: { ...ps, cursor, scroll } };
+    }
     // Boot warnings — whole-array replace (state.initState dispatches
     // this once after parse). dismiss_warnings clears them. The footer
     // renderer paints `⚠ N config warning(s)` when length > 0.

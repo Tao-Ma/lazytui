@@ -29,7 +29,11 @@
 const { getModel } = require('../app/runtime');
 const { getInstanceSlice } = require('../panel/api');
 const { renderOverlay } = require('../render/panel');
+const { esc, visibleLen } = require('../io/ansi');
 const mpool = require('../leaves/pool');
+
+const MAX_W = 50;
+const VIEWPORT = 12;
 
 // [≡] glyph geometry — matches the tab-list trigger (same position,
 // same width). Kept duplicated rather than imported because the two
@@ -82,19 +86,71 @@ function hitTestTrigger(mx, my) {
   return null;
 }
 
-/** D1 skeleton render: paints a centered placeholder so the user
- *  sees feedback that the overlay opened. D2 replaces this with the
- *  real list. */
+/** v0.6.3 D2 — pure item list for the overlay. Shape:
+ *    [{ id, type, title, status: 'here'|'placed'|'hidden',
+ *       columnIndex: number | null }, …]
+ *  Returns []  when no layout yet. Exposed for tests + the handler
+ *  side (handlePaneSelectKey needs item count for clamp math). */
+function items() {
+  const layoutSlice = getInstanceSlice('layout');
+  if (!layoutSlice || !layoutSlice.paneSelect) return [];
+  const arrange = layoutSlice.arrange;
+  if (!arrange) return [];
+  return mpool.paneSelectItems(arrange, layoutSlice.paneSelect.targetPaneId);
+}
+
+/** Effective viewport row count — capped by terminal height. Exported
+ *  so the dispatch nav handler can fold it into pane_select_nav Msgs
+ *  (the reducer stays free of the terminal-size read). */
+function viewportRows() {
+  const { rows } = require('../io/term');
+  // Reserve room for the centered overlay border + footer line.
+  return Math.max(3, Math.min(VIEWPORT, rows() - 6));
+}
+
+function _statusLabel(it) {
+  if (it.status === 'here')   return '[dim][here][/]';
+  if (it.status === 'hidden') return '[yellow][hidden][/]';
+  return `[cyan][in col ${it.columnIndex + 1}][/]`;
+}
+
+/** v0.6.3 D2 — list-body render. Item rows show:
+ *    `▸ <type>  <status>`   (active row reverse-decorated)
+ *  Empty state when the layout's pool has no non-detail entries. */
 function render() {
   if (!getModel().modes.paneSelectMode) return;
   const layoutSlice = getInstanceSlice('layout');
-  const target = layoutSlice && layoutSlice.paneSelect && layoutSlice.paneSelect.targetPaneId;
-  if (!target) return;
-  const lines = [
-    `[dim]target:[/] ${target}`,
-    `[dim](pane-select — D2 fills the list)[/]`,
-  ];
-  renderOverlay({ lines, title: 'Pane select', maxWidth: 50 });
+  const ps = layoutSlice && layoutSlice.paneSelect;
+  if (!ps) return;
+  const all = items();
+  const vh = viewportRows();
+  const cursor = Math.max(0, Math.min(all.length - 1, ps.cursor || 0));
+  const scroll = Math.max(0, Math.min(Math.max(0, all.length - vh), ps.scroll || 0));
+  const lines = [];
+  if (all.length === 0) {
+    lines.push('[dim](no panes — pool is empty)[/]');
+  } else {
+    const end = Math.min(all.length, scroll + vh);
+    for (let i = scroll; i < end; i++) {
+      const it = all[i];
+      const marker = (i === cursor) ? '▸' : ' ';
+      const left = `${marker} ${esc(it.type)}`;
+      const right = _statusLabel(it);
+      const leftVis = visibleLen(left);
+      const rightVis = visibleLen(right);
+      // Budget = MAX_W - borders(2) - padding(2) = MAX_W - 4
+      const inner = MAX_W - 4;
+      const padLen = Math.max(1, inner - leftVis - rightVis);
+      const row = `${left}${' '.repeat(padLen)}${right}`;
+      lines.push((i === cursor) ? `[reverse]${row}[/]` : row);
+    }
+  }
+  renderOverlay({
+    lines,
+    title: 'Pane select',
+    count: all.length > 0 ? [cursor + 1, all.length] : null,
+    maxWidth: MAX_W,
+  });
 }
 
-module.exports = { hitTestTrigger, render };
+module.exports = { hitTestTrigger, render, items, viewportRows };

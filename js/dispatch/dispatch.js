@@ -310,10 +310,29 @@ function handleTabListKey(key, seq) {
   }
 }
 
-// v0.6.3 D1 — pane-select overlay key handler. D1 only wires Esc
-// (close); D2 lands up/down/Enter once the list body exists.
+// v0.6.3 D2 — pane-select overlay key handler. Mirrors tab-list:
+// up/down/Enter/Esc + page nav. D3 wires pick semantics; for now
+// pick simply closes (no-op acknowledgement) until pool_swap_by_id
+// lands.
 function handlePaneSelectKey(key, seq) {
   if (key === 'escape') {
+    applyMsg(wrap('layout', { type: 'pane_select_close' }));
+    return;
+  }
+  const overlay = require('../overlay/pane-select');
+  const all = overlay.items();
+  const n = all.length;
+  const vh = overlay.viewportRows();
+  if (key === 'up'   || seq === 'k') { applyMsg(wrap('layout', { type: 'pane_select_nav', dir: -1, n, vh })); return; }
+  if (key === 'down' || seq === 'j') { applyMsg(wrap('layout', { type: 'pane_select_nav', dir: +1, n, vh })); return; }
+  if (seq === 'g')                   { applyMsg(wrap('layout', { type: 'pane_select_nav', to: 'top',      n, vh })); return; }
+  if (seq === 'G')                   { applyMsg(wrap('layout', { type: 'pane_select_nav', to: 'bottom',   n, vh })); return; }
+  if (key === 'pageup'   || seq === ',') { applyMsg(wrap('layout', { type: 'pane_select_nav', to: 'pageup',   n, vh })); return; }
+  if (key === 'pagedown' || seq === '.') { applyMsg(wrap('layout', { type: 'pane_select_nav', to: 'pagedown', n, vh })); return; }
+  if (key === 'return') {
+    // D3 fills the real pick. For D2 we just close on Enter so the
+    // user gets a complete navigation loop without a half-wired
+    // "pick" that does nothing visible.
     applyMsg(wrap('layout', { type: 'pane_select_close' }));
     return;
   }

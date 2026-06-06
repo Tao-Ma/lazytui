@@ -92,6 +92,82 @@ describe('[3] hit-test', () => {
   });
 });
 
+describe('[5] paneSelectItems — pure list build', () => {
+  const mpool = require('../leaves/pool');
+  function buildArrange() {
+    return {
+      columns: [
+        { width: 24, panels: [
+          { type: 'groups', id: 'groups', paneId: 'pane-groups' },
+          { type: 'actions', id: 'actions', paneId: 'pane-actions' },
+        ] },
+        { panels: [
+          { type: 'detail', id: 'detail', paneId: 'pane-detail' },
+        ] },
+      ],
+      pool: {
+        'groups':  { id: 'groups',  type: 'groups',  title: 'Groups' },
+        'actions': { id: 'actions', type: 'actions', title: 'Actions' },
+        'detail':  { id: 'detail',  type: 'detail',  title: 'Detail' },
+        'stats':   { id: 'stats',   type: 'stats',   title: 'Stats' },
+      },
+    };
+  }
+  it('target = pane-groups → groups tagged here, actions placed, stats hidden, detail excluded', () => {
+    const arr = buildArrange();
+    const list = mpool.paneSelectItems(arr, 'pane-groups');
+    eq(list.length, 3);
+    eq(list[0].id, 'groups');
+    eq(list[0].status, 'here');
+    eq(list[1].id, 'actions');
+    eq(list[1].status, 'placed');
+    eq(list[1].columnIndex, 0);
+    eq(list[2].id, 'stats');
+    eq(list[2].status, 'hidden');
+    // detail must NOT appear (spec invariant)
+    assert(!list.some(x => x.id === 'detail'), 'detail excluded from pane-select list');
+  });
+  it('hidden entry remains hidden no matter the target', () => {
+    const arr = buildArrange();
+    const list = mpool.paneSelectItems(arr, 'pane-actions');
+    eq(list[0].status, 'placed', 'groups now elsewhere');
+    eq(list[1].status, 'here',   'actions is current target');
+    eq(list[2].status, 'hidden', 'stats still hidden');
+  });
+  it('empty arrange returns empty list', () => {
+    eq(mpool.paneSelectItems({ columns: [], pool: {} }, 'pane-x').length, 0);
+    eq(mpool.paneSelectItems(null, 'pane-x').length, 0);
+  });
+});
+
+describe('[6] pane_select_nav cursor + scroll math', () => {
+  it('dir +1 advances cursor; clamps at n-1', () => {
+    setup();
+    api.dispatchMsg(api.wrap('layout', { type: 'pane_select_open', paneId: 'pane-groups' }));
+    api.dispatchMsg(api.wrap('layout', { type: 'pane_select_nav', dir: +1, n: 3, vh: 8 }));
+    eq(route.getInstanceSlice('layout').paneSelect.cursor, 1);
+    // overshoot — clamps
+    api.dispatchMsg(api.wrap('layout', { type: 'pane_select_nav', dir: +99, n: 3, vh: 8 }));
+    eq(route.getInstanceSlice('layout').paneSelect.cursor, 2);
+  });
+  it('to=top resets cursor + scroll', () => {
+    setup();
+    api.dispatchMsg(api.wrap('layout', { type: 'pane_select_open', paneId: 'pane-groups' }));
+    api.dispatchMsg(api.wrap('layout', { type: 'pane_select_nav', dir: +2, n: 5, vh: 8 }));
+    api.dispatchMsg(api.wrap('layout', { type: 'pane_select_nav', to: 'top', n: 5, vh: 8 }));
+    eq(route.getInstanceSlice('layout').paneSelect.cursor, 0);
+    eq(route.getInstanceSlice('layout').paneSelect.scroll, 0);
+  });
+  it('nav with n=0 is a no-op (returns same ref)', () => {
+    setup();
+    api.dispatchMsg(api.wrap('layout', { type: 'pane_select_open', paneId: 'pane-groups' }));
+    const before = route.getInstanceSlice('layout').paneSelect;
+    api.dispatchMsg(api.wrap('layout', { type: 'pane_select_nav', dir: +1, n: 0, vh: 8 }));
+    const after = route.getInstanceSlice('layout').paneSelect;
+    eq(before, after, 'identity preserved');
+  });
+});
+
 describe('[4] modes registry has paneSelectMode', () => {
   const modes = require('../dispatch/modes');
   it('paneSelectMode is in CHAIN_MODES', () => {

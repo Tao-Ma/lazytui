@@ -311,6 +311,70 @@ function hasActionsPane(arrange) {
   return allPanesInColumns(arrange).some(isActionsPane);
 }
 
+/**
+ * Build the ordered item list for the pane-select overlay (v0.6.3 D2).
+ * Lists every non-detail pool entry tagged by status relative to the
+ * target paneId's current occupant:
+ *
+ *   here       — the target slot's current occupant (pick = close
+ *                no-op).
+ *   placed     — placed elsewhere; carries `columnIndex` for the
+ *                overlay label "[in col N]". Pick = SWAP (D3).
+ *   hidden     — in pool but not placed. Pick = REPLACE (D3, the
+ *                target's old occupant goes to pool).
+ *
+ * Items returned in stable order: placed entries first in column-major
+ * grid order, hidden entries after in pool insertion order. The 'here'
+ * entry lives wherever it lands in that order — it's just a placed
+ * entry with a different status string.
+ *
+ * Detail is excluded entirely (the spec invariant: detail can't be
+ * picked anywhere). Actions is INCLUDED so the user sees it as
+ * 'placed [in col N]'; the D3 validity guard refuses any pick that
+ * would land actions in a non-last column.
+ */
+function paneSelectItems(arrange, targetPaneId) {
+  if (!arrange || !arrange.pool) return [];
+  const items = [];
+  const seen = new Set();
+  // Resolve the target's current occupant via paneId scan.
+  let targetOccupantId = null;
+  for (let ci = 0; ci < (arrange.columns || []).length; ci++) {
+    const panels = (arrange.columns[ci] && arrange.columns[ci].panels) || [];
+    for (const p of panels) {
+      if (p && p.paneId === targetPaneId) { targetOccupantId = p.id; break; }
+    }
+    if (targetOccupantId) break;
+  }
+  // Walk placed panes in column-major order, skipping detail.
+  for (let ci = 0; ci < (arrange.columns || []).length; ci++) {
+    const panels = (arrange.columns[ci] && arrange.columns[ci].panels) || [];
+    for (const p of panels) {
+      if (!p || !p.id) continue;
+      if (isDetailPane(p)) continue;
+      const entry = arrange.pool[p.id];
+      if (!entry) continue;
+      const status = (p.paneId === targetPaneId) ? 'here' : 'placed';
+      items.push({
+        id: entry.id, type: entry.type, title: entry.title,
+        status, columnIndex: ci,
+      });
+      seen.add(entry.id);
+    }
+  }
+  // Hidden entries in pool insertion order.
+  for (const id of Object.keys(arrange.pool)) {
+    if (seen.has(id)) continue;
+    const entry = arrange.pool[id];
+    if (isDetailPane(entry)) continue;
+    items.push({
+      id: entry.id, type: entry.type, title: entry.title,
+      status: 'hidden', columnIndex: null,
+    });
+  }
+  return items;
+}
+
 module.exports = {
   columnCount, lastColumnIndex, getColumn,
   columnPanels, lastColumnPanels,
@@ -325,6 +389,7 @@ module.exports = {
   getPoolEntry,
   orphanPlacements,
   panelListItems,
+  paneSelectItems,
   placementFromPoolEntry,
   isDetailPane, isActionsPane, isReservedPane,
   findDetailPane, detailPaneIndex,
