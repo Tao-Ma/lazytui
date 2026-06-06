@@ -292,7 +292,41 @@ function calcLayout(model = getModel()) {
     syncPanelScroll(p.type, getPanelViewportH(p.type));
   }
 
-  return { ranges, availH };
+  // v0.6.3 P1.1 — build the Layout value alongside the existing return.
+  // Each Rect carries the column-view geometry for one placed pane
+  // (x, y, w, h, paneId, type, collapsed). Computed by walking each
+  // column's panels and accumulating y per the per-panel heights just
+  // distributed; same arithmetic renderNormal() does inline today —
+  // lifted here so the geometry is a return value, not a side effect.
+  //
+  // P1.1 ships this purely additive: no caller reads `rects` yet
+  // (boundsFor() ramp lands in P1.3). `viewMode` reflects the active
+  // mode for completeness, but in half/full the Rect list still
+  // describes the normal column layout — renderHalf/Full override with
+  // their own single-panel bounds. Unification of the rect list across
+  // view modes lands in P3 (composeRects).
+  const rects = [];
+  for (let ci = 0; ci < columns.length; ci++) {
+    const r = ranges[ci];
+    if (!r) continue;
+    const colPanels = mpool.columnPanels(layoutSlice.arrange, ci);
+    let y = 0;
+    for (const p of colPanels) {
+      const h = _panelHeights[p.type] || 0;
+      rects.push({
+        paneId: p.paneId,
+        type: p.type,
+        x: r.x, y, w: r.w, h,
+        collapsed: !!p.collapsed,
+      });
+      y += h;
+    }
+  }
+
+  return {
+    ranges, availH,
+    rects, viewMode: layoutSlice.viewMode, cols: COLS, rows: ROWS,
+  };
 }
 
 // --- Render modes ---
