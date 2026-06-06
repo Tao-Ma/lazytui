@@ -30,6 +30,7 @@ const { getModel } = require('../app/runtime');
 const { getInstanceSlice } = require('../panel/api');
 const { renderOverlay } = require('../render/panel');
 const { esc, visibleLen } = require('../io/ansi');
+const { isChainActive } = require('../dispatch/modes');
 const mpool = require('../leaves/pool');
 
 const MAX_W = 50;
@@ -53,20 +54,24 @@ function _paneBounds(paneId) {
 /** Mouse hit-test for any non-detail pane's [≡] trigger. Returns the
  *  paneId under (mx, my) or null. Suppression rules:
  *    - detail's [≡] is tab-list, not pane-select — skipped here.
- *    - drag in flight suppresses ALL pane chrome (caller-side gate
- *      via decor's chromeFor; we just re-check defensively).
- *    - any chain mode other than paneSelectMode disables peer
- *      triggers (matches tab-list's _triggerState rule).
+ *    - drag in flight suppresses ALL pane chrome.
+ *    - any chain mode OTHER than paneSelectMode itself disables every
+ *      trigger (mirrors the painted 'disabled' state from chromeFor;
+ *      the hit-test must agree with what the user sees).
+ *    - while paneSelectMode is active, siblings return null; only the
+ *      open target's own [≡] is clickable (toggles close).
  */
 function hitTestTrigger(mx, my) {
   const layoutSlice = getInstanceSlice('layout');
   if (!layoutSlice || !layoutSlice.arrange) return null;
   const drag = layoutSlice.freeConfig && layoutSlice.freeConfig.drag;
   if (drag) return null;
-  // While paneSelectMode is active the only legal click is on the
-  // open target's own [≡] (toggles close). Siblings show 'disabled'
-  // chrome and must not re-arm.
   const modes = getModel().modes;
+  // Any chain mode other than paneSelectMode means the trigger is
+  // painted disabled — refuse the click. Routes through
+  // dispatch/modes.isChainActive so adding a new chain mode lands
+  // here automatically.
+  if (!modes.paneSelectMode && isChainActive(modes)) return null;
   const openTargetId = (layoutSlice.paneSelect && layoutSlice.paneSelect.targetPaneId) || null;
   for (const p of mpool.allPanesInColumns(layoutSlice.arrange)) {
     if (p.type === 'detail') continue;
@@ -76,11 +81,9 @@ function hitTestTrigger(mx, my) {
     if (my !== b.y) continue;
     if (mx < b.x + TRIGGER_X_OFFSET) continue;
     if (mx >= b.x + TRIGGER_X_OFFSET + TRIGGER_VIS_W) continue;
-    // Hit. Allow the click ONLY if either no chain mode is active OR
-    // the click is on the currently-open pane's own trigger.
+    // Hit. While paneSelectMode is on, sibling triggers are inert —
+    // only the open target's own [≡] toggles close.
     if (modes.paneSelectMode && p.paneId !== openTargetId) return null;
-    // Other chain modes (cmd, menu, prompt, …) — caller's
-    // _suppressesChromeClicks already gates these; we don't re-check.
     return p.paneId;
   }
   return null;
