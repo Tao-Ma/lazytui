@@ -185,4 +185,78 @@ describe('[9] zero-width pattern does not infinite-loop', () => {
   });
 });
 
+describe('[10] B2 — committed search survives a lines-change (recompute)', () => {
+  // Pre-B2, viewer_show_info (and the unrouted-stream auto-jump) dropped
+  // search.matches when displayed lines changed → the user lost their
+  // highlights on every refresh. B2's finalizer-side recompute re-derives
+  // matches against the new content so the committed search survives.
+  it('viewer_append on Transcript re-derives matches against the new buffer', () => {
+    const viewer = require('../panel/viewer/viewer');
+    // Park on Transcript (tab 1) with one matching line in the buffer.
+    const s0 = {
+      ...viewer._init(),
+      tab: 1,
+      innerH: 8,
+      viewerStreamBuffer: { lines: ['target line one'], cap: 1000 },
+    };
+    // Commit a search by running it through the reducer (search.enter +
+    // keystrokes + commit) so the finalizer derives lines from the
+    // buffer and the search state lands `active=true`.
+    let s = viewer._update({ type: 'viewer_search_enter' }, s0);
+    s = Array.isArray(s) ? s[0] : s;
+    for (const c of 'target') {
+      s = viewer._update({ type: 'viewer_search_key', seq: c }, s);
+      s = Array.isArray(s) ? s[0] : s;
+    }
+    s = viewer._update({ type: 'viewer_search_commit' }, s);
+    s = Array.isArray(s) ? s[0] : s;
+    eq(s.search.active, true, 'search committed');
+    eq(s.search.matches.length, 1, 'one match before append');
+
+    // Append a second line that also matches /target.
+    const r = viewer._update({ type: 'viewer_append', line: 'another target' }, s);
+    const next = Array.isArray(r) ? r[0] : r;
+    eq(next.viewerStreamBuffer.lines.length, 2, 'buffer grew');
+    eq(next.search.matches.length, 2, 'matches re-derived against new lines (B2)');
+    eq(next.search.matches[1].line, 1, 'new match lands on line 1');
+  });
+
+  it('a non-matching append still re-derives — matches re-count to original', () => {
+    const viewer = require('../panel/viewer/viewer');
+    const s0 = {
+      ...viewer._init(),
+      tab: 1,
+      innerH: 8,
+      viewerStreamBuffer: { lines: ['target one', 'noise'], cap: 1000 },
+    };
+    let s = viewer._update({ type: 'viewer_search_enter' }, s0);
+    s = Array.isArray(s) ? s[0] : s;
+    for (const c of 'target') {
+      s = viewer._update({ type: 'viewer_search_key', seq: c }, s);
+      s = Array.isArray(s) ? s[0] : s;
+    }
+    s = viewer._update({ type: 'viewer_search_commit' }, s);
+    s = Array.isArray(s) ? s[0] : s;
+    eq(s.search.matches.length, 1, 'one match before append');
+
+    const r = viewer._update({ type: 'viewer_append', line: 'unrelated' }, s);
+    const next = Array.isArray(r) ? r[0] : r;
+    eq(next.search.matches.length, 1, 'still one match (no new hits)');
+  });
+
+  it('inactive search is not touched (gate respects search.active=false)', () => {
+    const viewer = require('../panel/viewer/viewer');
+    const s0 = {
+      ...viewer._init(),
+      tab: 1,
+      innerH: 8,
+      viewerStreamBuffer: { lines: ['line one'], cap: 1000 },
+    };
+    const r = viewer._update({ type: 'viewer_append', line: 'line two' }, s0);
+    const next = Array.isArray(r) ? r[0] : r;
+    eq(next.search.active, false, 'search still inactive');
+    eq(next.search.matches.length, 0, 'matches stay empty');
+  });
+});
+
 report();

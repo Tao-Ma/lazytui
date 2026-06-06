@@ -305,6 +305,25 @@ function _withDerivedFields(next, originalSlice) {
   const m = getModel();
   const lines = pt.viewerLines(next, m, m.currentGroup, { infoFromFocus: _infoFromFocus });
   let updated = { ...next, lines };
+  // B2 — auto-recompute a committed search against the new lines. Pre-
+  // B2, viewer_show_info (and the unrouted-stream auto-jump) cleared
+  // slice.search.matches when displayed content changed, so a user with
+  // `/term` active lost their highlights on every Info refresh / stream
+  // arrival. The drop is correct (matches reference line/col positions
+  // in the prior content); the fix is to follow it with a recompute
+  // against the new content so highlights survive instead of vanishing.
+  //
+  // Gate on updated.search.active (post-reducer state) — viewer_search_-
+  // clear_committed flips this to false and we want to respect that.
+  // Ref-equality on lines is fine for buffer-backed tabs (action/
+  // content/transcript return the source array directly); the Info-via-
+  // getInfo path returns a fresh array per call, which over-recomputes
+  // on every Msg — acceptable since Info content is small (focused
+  // navigator's getInfo output).
+  const us = updated.search;
+  if (us && us.active && us.term && originalSlice && originalSlice.lines !== lines) {
+    updated = ms.recomputeFor(updated, us.term);
+  }
   // B2 — skip the FROM-tab capture when the leaving slice had
   // viewerOverride active. Override-bound scroll/search/select/cursor
   // belong to the discrete-doc, not to the underlying tab; capturing
