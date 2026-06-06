@@ -574,6 +574,66 @@ function _safeRender(panel, w, h) {
   return _normalizeRender(panel, raw, w, h).join('\n');
 }
 
+/**
+ * v0.6.3 P3.2 — bridge layout.rects → rects-with-lines for the
+ * new painter. For each rect in `layout.rects`:
+ *
+ *   1. Locate the panel in `layoutSlice.arrange` by paneId or type.
+ *   2. Render its content via `_safeRender` (or `_renderCollapsed`
+ *      for collapsed panels).
+ *   3. Apply chrome injection (collapse/close glyphs + tab
+ *      trigger) — same regex-on-top-border post-mutation
+ *      renderNormal does today (P4 retires this onto decor).
+ *   4. Split the resulting string on `\n` into `lines: string[]`
+ *      and attach to the rect.
+ *
+ * Returns a fresh `[{paneId, type, x, y, w, h, collapsed, lines}]`
+ * array — input shape for `painter.composeRows`.
+ *
+ * Pure projection: reads model + layout + arrange, does NOT
+ * mutate slice (panelBounds writes stay in renderNormal's old
+ * path; new path will write them separately in P3.3 wiring).
+ * Wired in by P3.3 behind LAZYTUI_RECT_PAINTER=1; until then,
+ * the function is exported but unused.
+ */
+function composeRects(layout, model) {
+  const layoutSlice = getInstanceSlice('layout');
+  if (!layoutSlice || !layout || !layout.rects) return [];
+  const freeConfigMode = !!(model && model.modes && model.modes.freeConfigMode);
+  const dragging = !!(layoutSlice.freeConfig && layoutSlice.freeConfig.drag);
+  const t = theme();
+  // Index rects for quick lookup by either key. paneId is preferred
+  // (multi-instance forward-compat per v0.6.1 Phase 7); type is the
+  // fallback that still works under singleton-Components.
+  const rectByPaneId = {};
+  const rectByType = {};
+  for (const rect of layout.rects) {
+    if (rect.paneId) rectByPaneId[rect.paneId] = rect;
+    if (rect.type)   rectByType[rect.type]   = rect;
+  }
+  const out = [];
+  for (const panel of mpool.allPanesInColumns(layoutSlice.arrange)) {
+    const rect = rectByPaneId[panel.paneId] || rectByType[panel.type];
+    if (!rect) continue;
+    let raw = panel.collapsed
+      ? _renderCollapsed(panel, rect.w)
+      : _safeRender(panel, rect.w, rect.h);
+    const b = { x: rect.x, y: rect.y, w: rect.w, h: rect.h };
+    const focused = layoutSlice.focus === panel.type;
+    const fc = focused ? t.focus : t.dim;
+    raw = injectTopRowChrome(raw, panel, b, freeConfigMode, fc, focused, dragging);
+    raw = injectTabTrigger(raw, panel);
+    const lines = raw === '' ? [] : raw.split('\n');
+    out.push({
+      paneId: rect.paneId, type: rect.type,
+      x: rect.x, y: rect.y, w: rect.w, h: rect.h,
+      collapsed: !!panel.collapsed,
+      lines,
+    });
+  }
+  return out;
+}
+
 // renderNormal/Half/Full populate `layoutSlice.panelBounds` directly —
 // the renderer-as-writer pattern documented in the file header (§5
 // view-derived data). Reset on every entry so stale entries from a
@@ -1166,6 +1226,10 @@ module.exports = {
   // cache (slice.panelBounds.detail.tabs, N3 — moves onto viewer's
   // slice in P4) onto the returned rect.
   boundsFor,
+  // v0.6.3 P3.2 — projects layout.rects to {paneId, x, y, w, h,
+  // collapsed, lines} via _safeRender + chrome injection. Pure
+  // function; exported here for the P3.3 wiring + P3.4 stress test.
+  composeRects,
   // Test seam: distributeColumnHeights is a pure function that returns
   // a { [type]: rows } map. Exposed so collapsed-honor + heightPct
   // math can be unit-tested without bringing up the whole runtime.
