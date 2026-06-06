@@ -330,10 +330,21 @@ function handlePaneSelectKey(key, seq) {
   if (key === 'pageup'   || seq === ',') { applyMsg(wrap('layout', { type: 'pane_select_nav', to: 'pageup',   n, vh })); return; }
   if (key === 'pagedown' || seq === '.') { applyMsg(wrap('layout', { type: 'pane_select_nav', to: 'pagedown', n, vh })); return; }
   if (key === 'return') {
-    // D3 fills the real pick. For D2 we just close on Enter so the
-    // user gets a complete navigation loop without a half-wired
-    // "pick" that does nothing visible.
-    applyMsg(wrap('layout', { type: 'pane_select_close' }));
+    // v0.6.3 D3 — pick semantics. pool_swap_by_id handles SWAP /
+    // REPLACE / no-op + invariant guards; its arm also emits the
+    // close Cmd so Enter always exits the overlay (even on refused
+    // picks — the user can't tell "invalid" from "unchanged"
+    // without leaving).
+    const layoutSlice = require('../leaves/route').getInstanceSlice('layout');
+    const ps = layoutSlice && layoutSlice.paneSelect;
+    if (!ps) { applyMsg(wrap('layout', { type: 'pane_select_close' })); return; }
+    const item = all[ps.cursor || 0];
+    if (!item) { applyMsg(wrap('layout', { type: 'pane_select_close' })); return; }
+    applyMsg(wrap('layout', {
+      type: 'pool_swap_by_id',
+      targetPaneId: ps.targetPaneId,
+      pickedId: item.id,
+    }));
     return;
   }
 }

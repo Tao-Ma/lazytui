@@ -168,6 +168,105 @@ describe('[6] pane_select_nav cursor + scroll math', () => {
   });
 });
 
+describe('[7] pool_swap_by_id — SWAP / REPLACE / invariants', () => {
+  function setupRich() {
+    const layout = route.getInstanceSlice('layout');
+    layout.paneSelect = null;
+    layout.tabListOwnerPaneId = null;
+    layout.freeConfig = { drag: null, undo: [], redo: [], titleEdit: { text: '' }, notice: null, noticeKind: null };
+    layout.arrange = {
+      columns: [
+        { width: 24, panels: [
+          { type: 'groups',  id: 'groups',  paneId: 'pane-groups',  tabs: [{ id: 'groups',  poolId: 'groups'  }] },
+          { type: 'stats',   id: 'stats',   paneId: 'pane-stats',   tabs: [{ id: 'stats',   poolId: 'stats'   }] },
+        ] },
+        { panels: [
+          { type: 'detail',  id: 'detail',  paneId: 'pane-detail',  tabs: [{ id: 'detail',  poolId: 'detail'  }] },
+          { type: 'actions', id: 'actions', paneId: 'pane-actions', tabs: [{ id: 'actions', poolId: 'actions' }] },
+        ] },
+      ],
+      pool: {
+        'groups':  { id: 'groups',  type: 'groups',  title: 'Groups' },
+        'stats':   { id: 'stats',   type: 'stats',   title: 'Stats' },
+        'detail':  { id: 'detail',  type: 'detail',  title: 'Detail' },
+        'actions': { id: 'actions', type: 'actions', title: 'Actions' },
+        'extra':   { id: 'extra',   type: 'extra',   title: 'Extra' },
+      },
+      detailHeightPct: 60,
+    };
+    getModel().modes.paneSelectMode = false;
+  }
+  function paneIdsByCol() {
+    const arr = route.getInstanceSlice('layout').arrange;
+    return arr.columns.map(c => (c.panels || []).map(p => p.id));
+  }
+
+  it('REPLACE — picked is hidden; target old occupant becomes hidden', () => {
+    setupRich();
+    api.dispatchMsg(api.wrap('layout', { type: 'pane_select_open', paneId: 'pane-groups' }));
+    api.dispatchMsg(api.wrap('layout', {
+      type: 'pool_swap_by_id', targetPaneId: 'pane-groups', pickedId: 'extra',
+    }));
+    eq(paneIdsByCol()[0][0], 'extra', 'extra now at pane-groups slot');
+    assert(!paneIdsByCol()[0].includes('groups'), 'groups no longer placed');
+    // Overlay closes via emitted Cmd.
+    eq(getModel().modes.paneSelectMode, false);
+  });
+
+  it('SWAP — both placed; trade slots', () => {
+    setupRich();
+    api.dispatchMsg(api.wrap('layout', { type: 'pane_select_open', paneId: 'pane-groups' }));
+    api.dispatchMsg(api.wrap('layout', {
+      type: 'pool_swap_by_id', targetPaneId: 'pane-groups', pickedId: 'stats',
+    }));
+    // groups + stats swap within column 0 (paneIndex 0 ↔ 1).
+    eq(paneIdsByCol()[0][0], 'stats');
+    eq(paneIdsByCol()[0][1], 'groups');
+  });
+
+  it('GUARD — detail can\'t be picked anywhere (defensive)', () => {
+    setupRich();
+    api.dispatchMsg(api.wrap('layout', { type: 'pane_select_open', paneId: 'pane-groups' }));
+    const before = JSON.stringify(paneIdsByCol());
+    api.dispatchMsg(api.wrap('layout', {
+      type: 'pool_swap_by_id', targetPaneId: 'pane-groups', pickedId: 'detail',
+    }));
+    eq(JSON.stringify(paneIdsByCol()), before, 'arrange unchanged');
+    eq(getModel().modes.paneSelectMode, false, 'overlay still closes');
+  });
+
+  it('GUARD — actions can\'t end up in non-last column', () => {
+    setupRich();
+    api.dispatchMsg(api.wrap('layout', { type: 'pane_select_open', paneId: 'pane-groups' }));
+    const before = JSON.stringify(paneIdsByCol());
+    api.dispatchMsg(api.wrap('layout', {
+      type: 'pool_swap_by_id', targetPaneId: 'pane-groups', pickedId: 'actions',
+    }));
+    eq(JSON.stringify(paneIdsByCol()), before, 'arrange unchanged (actions can\'t go to col 0)');
+  });
+
+  it('GUARD — actions slot can\'t be replaced', () => {
+    setupRich();
+    api.dispatchMsg(api.wrap('layout', { type: 'pane_select_open', paneId: 'pane-actions' }));
+    const before = JSON.stringify(paneIdsByCol());
+    api.dispatchMsg(api.wrap('layout', {
+      type: 'pool_swap_by_id', targetPaneId: 'pane-actions', pickedId: 'extra',
+    }));
+    eq(JSON.stringify(paneIdsByCol()), before, 'arrange unchanged (actions is reserved)');
+  });
+
+  it('NO-OP — picked === target current occupant just closes', () => {
+    setupRich();
+    api.dispatchMsg(api.wrap('layout', { type: 'pane_select_open', paneId: 'pane-groups' }));
+    eq(getModel().modes.paneSelectMode, true, 'overlay open');
+    api.dispatchMsg(api.wrap('layout', {
+      type: 'pool_swap_by_id', targetPaneId: 'pane-groups', pickedId: 'groups',
+    }));
+    eq(getModel().modes.paneSelectMode, false, 'overlay closed');
+    eq(paneIdsByCol()[0][0], 'groups', 'arrange unchanged');
+  });
+});
+
 describe('[4] modes registry has paneSelectMode', () => {
   const modes = require('../dispatch/modes');
   it('paneSelectMode is in CHAIN_MODES', () => {

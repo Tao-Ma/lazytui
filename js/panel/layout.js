@@ -291,6 +291,99 @@ function update(msg, slice) {
       if (cursor === (ps.cursor || 0) && scroll === (ps.scroll || 0)) return slice;
       return { ...slice, paneSelect: { ...ps, cursor, scroll } };
     }
+    // v0.6.3 D3 — atomic pool-swap-by-id. Compound op: validates
+    // invariants → swaps OR replaces → closes the pane-select overlay.
+    //
+    // Semantics by pickedId state:
+    //   - pickedId === target's current occupant → no-op (close only).
+    //   - pickedId is HIDDEN in pool → REPLACE: target's old occupant
+    //     becomes hidden; picked is placed at target's slot.
+    //   - pickedId is PLACED elsewhere → SWAP: target's old occupant
+    //     moves to where picked was; picked moves to target's slot.
+    //
+    // Invariant guards (spec § Pane-select dropdown):
+    //   - detail can't be picked anywhere — picker excludes it; this
+    //     guard is defense-in-depth.
+    //   - detail / actions can't be replaced — if the target's
+    //     current occupant is reserved, refuse the swap (close still
+    //     fires so the user gets feedback the gesture was consumed).
+    //   - actions can't end up in non-last column — if picked is
+    //     actions AND target's column is not the last, refuse.
+    //
+    // The close + mode_clear Cmds always fire (even on no-op /
+    // refused) so Enter always closes the overlay — the user can't
+    // tell the difference between "your pick is invalid" and
+    // "your pick is unchanged" without leaving the overlay.
+    case 'pool_swap_by_id': {
+      const arrange = slice.arrange;
+      const { targetPaneId, pickedId } = msg;
+      const closeCmds = [
+        { type: 'msg', msg: { kind: 'layout', msg: { type: 'pane_select_close' } } },
+      ];
+      if (!targetPaneId || !pickedId) return [slice, closeCmds];
+      const targetLoc = mpool.findPaneLocation(arrange, p => p.paneId === targetPaneId);
+      if (!targetLoc) return [slice, closeCmds];
+      // detail / actions can't be replaced — target's current occupant
+      // is the one getting kicked out.
+      if (mpool.isReservedPane(targetLoc.pane)) return [slice, closeCmds];
+      const pickedEntry = (arrange.pool || {})[pickedId];
+      if (!pickedEntry) return [slice, closeCmds];
+      if (mpool.isDetailPane(pickedEntry)) return [slice, closeCmds];  // defensive
+      const lastIdx = mpool.lastColumnIndex(arrange);
+      if (mpool.isActionsPane(pickedEntry) && targetLoc.columnIndex !== lastIdx) {
+        return [slice, closeCmds];
+      }
+      // No-op: picked is already the target's occupant.
+      if (pickedId === targetLoc.pane.id) return [slice, closeCmds];
+
+      const targetOldEntry = (arrange.pool || {})[targetLoc.pane.id];
+      if (!targetOldEntry) return [slice, closeCmds];  // pool inconsistent — bail
+      const pickedLoc = mpool.findPaneLocation(arrange, p => p.id === pickedId);
+      let nextArrange;
+      if (pickedLoc) {
+        // SWAP — both placed. Trade their slots.
+        const newAtTarget = mpool.placementFromPoolEntry(pickedEntry, targetLoc.columnIndex);
+        const newAtPicked = mpool.placementFromPoolEntry(targetOldEntry, pickedLoc.columnIndex);
+        let mid = arrange;
+        if (targetLoc.columnIndex === pickedLoc.columnIndex) {
+          mid = mpool.updateColumn(mid, targetLoc.columnIndex, panels => {
+            const out = panels.slice();
+            out[targetLoc.paneIndex] = newAtTarget;
+            out[pickedLoc.paneIndex] = newAtPicked;
+            return out;
+          });
+        } else {
+          mid = mpool.updateColumn(mid, targetLoc.columnIndex, panels => {
+            const out = panels.slice();
+            out[targetLoc.paneIndex] = newAtTarget;
+            return out;
+          });
+          mid = mpool.updateColumn(mid, pickedLoc.columnIndex, panels => {
+            const out = panels.slice();
+            out[pickedLoc.paneIndex] = newAtPicked;
+            return out;
+          });
+        }
+        nextArrange = mfc.reassignHotkeys(mid);
+      } else {
+        // REPLACE — picked is hidden; place it at target's slot.
+        // target's old occupant remains in arrange.pool (now hidden).
+        const newAtTarget = mpool.placementFromPoolEntry(pickedEntry, targetLoc.columnIndex);
+        const mid = mpool.updateColumn(arrange, targetLoc.columnIndex, panels => {
+          const out = panels.slice();
+          out[targetLoc.paneIndex] = newAtTarget;
+          return out;
+        });
+        nextArrange = mfc.reassignHotkeys(mid);
+      }
+      const committed = _commitArrange(slice, nextArrange);
+      // Focus follows the newly-shown entry at target's slot, matching
+      // panel_list_pick's "surface as active" UX. If focus moved, emit
+      // show_selected_info so the detail body refreshes.
+      const focused = _withFocus(committed, pickedEntry.type);
+      const focusCmds = focused.focus !== slice.focus ? [{ type: 'show_selected_info' }] : [];
+      return [focused, [...focusCmds, ...closeCmds]];
+    }
     // Boot warnings — whole-array replace (state.initState dispatches
     // this once after parse). dismiss_warnings clears them. The footer
     // renderer paints `⚠ N config warning(s)` when length > 0.
