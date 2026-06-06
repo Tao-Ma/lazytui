@@ -46,9 +46,13 @@ const { cleanup } = require('../app/cleanup');
  * selection.
  */
 function _handleWheel(mx, my, delta) {
-  const { boundsFor } = require('../render/layout');
+  // Use visibleBoundsFor — in half/full view, off-screen panes are
+  // absent from panelBounds; boundsFor would fall back to their
+  // normal-view rects in _currentLayout and we'd scroll a phantom
+  // pane whose coords overlap with the visible half-view rect.
+  const { visibleBoundsFor } = require('../render/layout');
   for (const p of allPanels()) {
-    const b = boundsFor(p.type);
+    const b = visibleBoundsFor(p.type);
     if (!b) continue;
     if (mx < b.x || mx >= b.x + b.w || my < b.y || my >= b.y + b.h) continue;
 
@@ -409,9 +413,18 @@ function handleMouse(kind, x, y) {
 
   let mutated = false;
 
-  const { boundsFor } = require('../render/layout');
+  // Same reason as _handleWheel above: hit-test against ACTUALLY-
+  // VISIBLE pane bounds. In half view, panelBounds carries only
+  // halfLeftPanel + detail; boundsFor's _currentLayout fallback
+  // would return phantom normal-view coords for off-screen panes
+  // (containers/groups/files would all "exist" at their normal-
+  // view positions, and a click on the visible left half would
+  // dispatch focus_set to the first non-detail pane instead of to
+  // the actually-visible halfLeftPanel — silently reverting the
+  // user's right-arrow selection).
+  const { visibleBoundsFor } = require('../render/layout');
   for (const p of allPanels()) {
-    const b = boundsFor(p.type);
+    const b = visibleBoundsFor(p.type);
     if (!b) continue;
     if (mx < b.x || mx >= b.x + b.w || my < b.y || my >= b.y + b.h) continue;
 

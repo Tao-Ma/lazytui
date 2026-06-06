@@ -425,6 +425,18 @@ function boundsFor(key) {
   return null;
 }
 
+/** Bounds for a CURRENTLY-VISIBLE pane only — half/full view drops
+ *  off-screen panes from layoutSlice.panelBounds, so callers that
+ *  need "where the user can actually click this pane" want this
+ *  variant. boundsFor() in contrast also reports normal-view
+ *  geometry for off-screen panes (used by getPanelViewportH for
+ *  scroll-viewport clamping). The split prevents half-mode click
+ *  hit-tests from firing on a non-visible pane's phantom rect. */
+function visibleBoundsFor(key) {
+  const layoutSlice = getInstanceSlice('layout');
+  return (layoutSlice && layoutSlice.panelBounds && layoutSlice.panelBounds[key]) || null;
+}
+
 // --- Render modes ---
 // v0.6.3 P6 — single-Frame cache. Six module-locals (was prevRows,
 // prevCols, forceFull, prevOverlayFlags, forceOverlayFull,
@@ -1291,7 +1303,7 @@ module.exports = {
   // layoutSlice.panelBounds[key] otherwise. Merges the viewer's tabs
   // cache (slice.panelBounds.detail.tabs, N3 — moves onto viewer's
   // slice in P4) onto the returned rect.
-  boundsFor,
+  boundsFor, visibleBoundsFor,
   // v0.6.3 P3.2 — projects layout.rects to {paneId, x, y, w, h,
   // collapsed, lines} via _safeRender + chrome injection. Pure
   // function; exported here for the P3.3 wiring + P3.4 stress test.

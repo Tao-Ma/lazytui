@@ -51,10 +51,13 @@ let _lastLeft = 0;
 let _lastWidth = 0;
 
 /** Pane bounds via the layout-derived accessor. Null when layout
- *  hasn't rendered yet (boot edge). Lazy require to dodge the
- *  layout ↔ overlay cycle. */
+ *  hasn't rendered yet (boot edge), AND null for off-screen panes
+ *  in half/full view — visibleBoundsFor reads slice-only so a click
+ *  on the visible half can't accidentally fire pane-select on a
+ *  non-visible pane whose normal-view rect overlaps the click.
+ *  Lazy require to dodge the layout ↔ overlay cycle. */
 function _paneBounds(paneId) {
-  return require('../render/layout').boundsFor(paneId);
+  return require('../render/layout').visibleBoundsFor(paneId);
 }
 
 /** Mouse hit-test for any non-detail pane's [≡] trigger. Returns the
