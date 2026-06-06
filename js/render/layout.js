@@ -1,15 +1,26 @@
 /**
  * Layout calculation and view mode rendering.
  *
- * Geometry as view-derived data (docs/v0.5-layering.md §5). The layout
- * Component's slice holds `panelBounds` (spatial truth for mouse hit-
- * tests + drag math). Per-panel heights live in a MODULE-LOCAL map
- * `_panelHeights` here — recomputed per-frame from terminal size +
- * arrange settings — exposed ONLY through `getPanelViewportH(type)`
- * (view-mode-aware: half/full view's on-screen panel gets full availH,
- * not its normal-view column-share). Direct reads of the column-share
- * height would silently under-report in half/full view; the API hides
- * that footgun (fix arc 2026-06-03).
+ * Geometry as view-derived data (docs/v0.5-layering.md §5). Two
+ * sources during the v0.6.3 P1 migration:
+ *
+ *   - `layoutSlice.panelBounds` — legacy per-panel `{x,y,w,h}` map
+ *     written by renderNormal/Half/Full. Carries the viewer's tab-
+ *     bar hit-test cache as `.tabs` on detail's entry. Retires when
+ *     P1.4 lands (currently deferred — see docs/v0.6.3.md §Track A).
+ *
+ *   - `_currentLayout` — module-local Layout value `{rects, availH,
+ *     viewMode, cols, rows}` published by calcLayout (P1.2). The
+ *     `rects` array is the per-frame canonical geometry list.
+ *
+ * The `boundsFor(key)` accessor (P1.3) reads slice first, falls
+ * through to `_currentLayout.rects` when slice is empty. Hit-test
+ * consumers go through boundsFor; the per-panel height accessor
+ * `getPanelViewportH(type)` is view-mode-aware (half/full view's
+ * on-screen panel gets full availH, not its normal-view column-share)
+ * — direct reads of the column-share height would silently under-
+ * report in half/full view; the API hides that footgun (fix arc
+ * 2026-06-03).
  *
  * This is the one pattern that sits outside the otherwise-uniform
  * "Component update is the single writer of its slice" rule. The
@@ -202,18 +213,18 @@ function distributeColumnHeights(panels, availH, isLastCol, minH, detailHeightPc
   return out;
 }
 
-// Module-local height map — written by calcLayout, read by renderNormal
-// and getPanelViewportH. Lives outside the slice so external readers
-// can't read the wrong-for-half/full-view value directly. Reset on
-// every calcLayout call (per-frame).
-let _panelHeights = {};
-
 // v0.6.3 P1.2 — module-local Layout publication. calcLayout assigns
 // at end of each pass; getCurrentLayout() exposes the most-recent
 // Layout to hit-test consumers (mouse, drag math) that today read
 // layoutSlice.panelBounds. The boundsFor() shim in P1.3 fronts both
 // sources; P1.4 stops the slice write and this becomes the sole
 // channel. Null pre-first-render — fallback callers must guard.
+//
+// v0.6.3 P1.5 — the module-local _panelHeights map (was the prior
+// home for per-panel column-share heights) is retired in favor of
+// _currentLayout.rects. Inside calcLayout the heights are now a
+// function-local intermediate; getPanelViewportH and renderNormal
+// read rects via boundsFor / the calcLayout return value.
 let _currentLayout = null;
 
 /**
@@ -249,13 +260,13 @@ function getPanelViewportH(panelType) {
     visiblePanel = focus;
   }
   if (panelType === visiblePanel) return Math.max(1, availH - 2);
-  // Off-screen / normal-view: prefer _panelHeights (calcLayout-fresh).
-  // Fall back to panelBounds.h (post-render canonical) when no
-  // calcLayout pass has populated _panelHeights yet — covers tests
-  // that seed bounds directly.
-  const h = _panelHeights[panelType]
-         || (layoutSlice.panelBounds && layoutSlice.panelBounds[panelType] && layoutSlice.panelBounds[panelType].h)
-         || 4;
+  // Off-screen / normal-view: read via boundsFor() — prefers the
+  // slice during P1.3 transition (slice carries the viewer's tab
+  // cache); falls through to _currentLayout.rects when slice is
+  // empty (P1.5: _panelHeights module-local retired in favor of
+  // rects; this fallback is the only reader path now).
+  const b = boundsFor(panelType);
+  const h = (b && b.h) || 4;
   return Math.max(1, h - 2);
 }
 
@@ -274,18 +285,62 @@ function calcLayout(model = getModel()) {
   // Minimum panel height: 3 rows (border + 1 content line)
   const minH = 3;
 
-  _panelHeights = {};
+  // v0.6.3 P1.5 — heights map is now function-local (was module-local
+  // `_panelHeights`). Single use: build the Rect list below; nobody
+  // else reads it.
+  const heights = {};
   const detailHeightPct = layoutSlice.arrange.detailHeightPct;
   for (let ci = 0; ci < columns.length; ci++) {
     const colHeights = distributeColumnHeights(
       columns[ci].panels || [], availH, ci === lastIdx, minH, detailHeightPct);
-    Object.assign(_panelHeights, colHeights);
+    Object.assign(heights, colHeights);
   }
   // Ensure detail has a height even when the column traversal didn't
   // populate one (test fixtures without a placed detail panel).
-  if (!('detail' in _panelHeights)) {
-    _panelHeights.detail = Math.max(minH, Math.floor(availH * detailHeightPct / 100));
+  // Synthesizes the height map entry only — no rect is pushed for an
+  // unplaced detail.
+  if (!('detail' in heights)) {
+    heights.detail = Math.max(minH, Math.floor(availH * detailHeightPct / 100));
   }
+
+  // v0.6.3 P1.1 — build the Layout value. Each Rect carries the
+  // column-view geometry for one placed pane (x, y, w, h, paneId,
+  // type, collapsed). Computed by walking each column's panels and
+  // accumulating y per the per-panel heights just distributed.
+  //
+  // `viewMode` reflects the active mode for completeness, but in
+  // half/full the Rect list still describes the normal column layout
+  // — renderHalf/Full override with their own single-panel bounds.
+  // Unification of the rect list across view modes lands in P3
+  // (composeRects).
+  const rects = [];
+  for (let ci = 0; ci < columns.length; ci++) {
+    const r = ranges[ci];
+    if (!r) continue;
+    const colPanels = mpool.columnPanels(layoutSlice.arrange, ci);
+    let y = 0;
+    for (const p of colPanels) {
+      const h = heights[p.type] || 0;
+      rects.push({
+        paneId: p.paneId,
+        type: p.type,
+        x: r.x, y, w: r.w, h,
+        collapsed: !!p.collapsed,
+      });
+      y += h;
+    }
+  }
+
+  // P1.5 — publish _currentLayout BEFORE the scroll-clamp loop so
+  // getPanelViewportH (which reads via boundsFor → _currentLayout
+  // when no slice fallback) sees this frame's rects, not the prior
+  // frame's. Pre-P1.5 the loop read _panelHeights directly from the
+  // module-local; the reorder is a no-op for the slice-write fallback
+  // path but plugs the hole once that fallback retires.
+  _currentLayout = {
+    rects, availH,
+    viewMode: layoutSlice.viewMode, cols: COLS, rows: ROWS,
+  };
 
   // Keep each panel's scroll offset such that the selected item is in
   // view. syncPanelScroll → setScroll → a wrapped `set_scroll` Msg
@@ -299,42 +354,6 @@ function calcLayout(model = getModel()) {
     if (p.collapsed) continue;  // no content rows to scroll-clamp against
     syncPanelScroll(p.type, getPanelViewportH(p.type));
   }
-
-  // v0.6.3 P1.1 — build the Layout value alongside the existing return.
-  // Each Rect carries the column-view geometry for one placed pane
-  // (x, y, w, h, paneId, type, collapsed). Computed by walking each
-  // column's panels and accumulating y per the per-panel heights just
-  // distributed; same arithmetic renderNormal() does inline today —
-  // lifted here so the geometry is a return value, not a side effect.
-  //
-  // P1.1 ships this purely additive: no caller reads `rects` yet
-  // (boundsFor() ramp lands in P1.3). `viewMode` reflects the active
-  // mode for completeness, but in half/full the Rect list still
-  // describes the normal column layout — renderHalf/Full override with
-  // their own single-panel bounds. Unification of the rect list across
-  // view modes lands in P3 (composeRects).
-  const rects = [];
-  for (let ci = 0; ci < columns.length; ci++) {
-    const r = ranges[ci];
-    if (!r) continue;
-    const colPanels = mpool.columnPanels(layoutSlice.arrange, ci);
-    let y = 0;
-    for (const p of colPanels) {
-      const h = _panelHeights[p.type] || 0;
-      rects.push({
-        paneId: p.paneId,
-        type: p.type,
-        x: r.x, y, w: r.w, h,
-        collapsed: !!p.collapsed,
-      });
-      y += h;
-    }
-  }
-
-  _currentLayout = {
-    rects, availH,
-    viewMode: layoutSlice.viewMode, cols: COLS, rows: ROWS,
-  };
 
   return {
     ranges, availH,
@@ -490,7 +509,7 @@ function _safeRender(panel, w, h) {
 // view-derived data). Reset on every entry so stale entries from a
 // prior view-mode aren't hit-testable.
 function renderNormal(model) {
-  const { ranges, availH } = calcLayout(model);
+  const { ranges, availH, rects } = calcLayout(model);
   const layoutSlice = getInstanceSlice('layout');
   layoutSlice.panelBounds = {};
   const freeConfigMode = !!(model.modes && model.modes.freeConfigMode);
@@ -532,14 +551,20 @@ function renderNormal(model) {
     out = injectTabTrigger(out, p);
     return out;
   };
+  // v0.6.3 P1.5 — pre-index rects by paneId AND type for the inner
+  // per-panel lookup. Two-key index because rects carry paneId but the
+  // lookup uses either; rebuilt every frame because rects is too.
+  const rectByKey = {};
+  for (const rc of rects) {
+    if (rc.paneId) rectByKey[rc.paneId] = rc;
+    if (rc.type)   rectByKey[rc.type]   = rc;
+  }
   const columnsOut = ranges.map(r => {
     const panels = mpool.columnPanels(layoutSlice.arrange, r.columnIndex);
-    let y = 0;
     let out = panels.map(p => {
-      const h = _panelHeights[p.type] || 0;
-      const rendered = renderOne(p, r.w, h, r.x, y);
-      y += h;
-      return rendered;
+      const rc = rectByKey[p.paneId] || rectByKey[p.type];
+      if (!rc) return '';
+      return renderOne(p, rc.w, rc.h, rc.x, rc.y);
     }).join('\n');
     // v0.6.2 — pad column output to `availH` rows. When a column's
     // panels (e.g. all collapsed) cover fewer rows than the column's
@@ -1075,10 +1100,18 @@ module.exports = {
   // a { [type]: rows } map. Exposed so collapsed-honor + heightPct
   // math can be unit-tested without bringing up the whole runtime.
   _distributeColumnHeights: distributeColumnHeights,
-  // Test seam: read the raw module-local _panelHeights map (the column-
-  // share heights calcLayout last produced). NOT for production use —
-  // production callers go through `getPanelViewportH(type)` which is
-  // view-mode-aware. Exists so tests can assert calcLayout's column
-  // distribution math directly.
-  _getPanelHeights: () => ({ ..._panelHeights }),
+  // Test seam: a {[type]: rows} map derived from _currentLayout.rects
+  // (the column-share heights calcLayout last produced). NOT for
+  // production use — production callers go through
+  // `getPanelViewportH(type)` which is view-mode-aware. Exists so
+  // tests can assert calcLayout's column distribution math directly.
+  //
+  // v0.6.3 P1.5 — was a copy of the now-retired _panelHeights module-
+  // local; rebuilt per-call from rects to preserve the same shape.
+  _getPanelHeights: () => {
+    if (!_currentLayout || !_currentLayout.rects) return {};
+    const m = {};
+    for (const r of _currentLayout.rects) m[r.type] = r.h;
+    return m;
+  },
 };
