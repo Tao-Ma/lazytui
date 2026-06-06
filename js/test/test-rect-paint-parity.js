@@ -1,12 +1,14 @@
 /**
- * test-rect-paint-parity.js — old-path vs new-path ANSI parity
- * (v0.6.3 P3.4).
+ * test-rect-paint-parity.js — render smoke tests (v0.6.3 P3.4 → P3.6).
  *
- * The gate before P3.6 deletes paintColumns. For each arrange
- * config (golden cases + random seeds), render via:
- *   - the old paintColumns path (default; LAZYTUI_RECT_PAINTER unset)
- *   - the new rect-painter path (LAZYTUI_RECT_PAINTER=1)
- * and assert ANSI byte-equality. Drift here = bug.
+ * Originally written to gate P3.6 on byte-equality between the old
+ * paintColumns path and the new rect-painter path. P3.6 deleted the
+ * old path; the test still drives the renderer through 55 configs
+ * (golden + random seeds) and runs a flag flip that's now a no-op,
+ * but the smoke coverage (every config renders without throwing,
+ * captures non-trivial output) is worth keeping. The assertion is
+ * now reflexive — both captures route through the same painter and
+ * should always match.
  *
  * Run: node js/test/test-rect-paint-parity.js
  */

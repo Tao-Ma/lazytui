@@ -426,48 +426,6 @@ let _forceFullRepaint = true;
 let _prevOverlayFlags = new Set();
 
 /**
- * Paint column outputs to the screen. `columnOutputs` is an array of
- * markup strings (one per column), each already rendered by the panel
- * renderers and possibly multi-line. Rows are concatenated left-to-right.
- * Single-column modes (half/full) pass a single-element array.
- */
-function paintColumns(columnOutputs) {
-  const COLS = cols();
-  const splits = columnOutputs.map(s => s ? s.split('\n') : []);
-  const maxRows = splits.reduce((m, s) => Math.max(m, s.length), 0);
-  const newRows = new Array(maxRows);
-  for (let i = 0; i < maxRows; i++) {
-    let row = '';
-    for (const s of splits) row += (s[i] || '');
-    newRows[i] = row;
-  }
-
-  // Width or row-count change → layout reshapes, can't trust per-row diff.
-  if (COLS !== _prevCols || maxRows !== _prevRows.length) _forceFullRepaint = true;
-  _prevCols = COLS;
-
-  let out = '';
-  let didFull = false;
-  if (_forceFullRepaint) {
-    out += '\x1b[2J\x1b[H';
-    for (let i = 0; i < maxRows; i++) {
-      out += `\x1b[${i + 1};1H` + richToAnsi(newRows[i]) + RESET + '\x1b[K';
-    }
-    _forceFullRepaint = false;
-    didFull = true;
-  } else {
-    for (let i = 0; i < maxRows; i++) {
-      if (newRows[i] !== _prevRows[i]) {
-        out += `\x1b[${i + 1};1H` + richToAnsi(newRows[i]) + RESET + '\x1b[K';
-      }
-    }
-  }
-  _prevRows = newRows;
-  if (out) stdout.write(out);
-  return didFull;
-}
-
-/**
  * v0.6.3 P2 — Rect contract enforcement.
  *
  * Normalize a panel render's raw string output to exactly `h` lines,
@@ -635,24 +593,25 @@ function composeRects(layout, model) {
   return out;
 }
 
-/**
- * v0.6.3 P3.3 — flag-gated rect-painter path. Replaces paintColumns'
- * row-concatenation of per-column strings with painter.composeRows'
- * absolute-positioned stamping of per-pane rects. Functionally
- * equivalent in normal cases; structurally closes the v0.6.2
- * column-shift bug class (6d9ad31) because rects no longer rely on
- * "every column emits exactly availH lines" as an implicit invariant.
- *
- * Lit by env LAZYTUI_RECT_PAINTER=1. P3.4 runs both paths against
- * 1000 random configs to prove ANSI parity; P3.6 deletes the old
- * path + the column-pad helper above.
- *
- * Why pre-populate panelBounds: viewer.detailTitle (viewer.js:1008)
- * writes layoutSlice.panelBounds.detail.tabs DURING _safeRender —
- * needs the detail entry to exist before composeRects fires. Same
- * order renderOne uses today (write bounds, then render).
- */
-function _renderNormalRectPath(model) {
+// renderNormal/Half/Full populate `layoutSlice.panelBounds` directly —
+// the renderer-as-writer pattern documented in the file header (§5
+// view-derived data). Reset on every entry so stale entries from a
+// prior view-mode aren't hit-testable.
+//
+// v0.6.3 P3.6 — these used to row-concatenate per-column strings via
+// paintColumns; that implicit "every column emits availH rows"
+// invariant was the v0.6.2 column-shift bug class (6d9ad31). The
+// new path stamps absolute-positioned rects via painter.composeRows,
+// making the class structurally impossible. paintColumns deletes
+// in this commit along with the renderOne closure + the column-pad
+// safety net (no longer needed — rect compositing handles gaps).
+//
+// Why pre-populate panelBounds before composeRects: viewer.detailTitle
+// (viewer.js:1008) writes layoutSlice.panelBounds.detail.tabs DURING
+// _safeRender — needs the detail entry to exist by the time the
+// viewer's render fires. Same order the pre-P3 renderOne used (write
+// bounds, then render).
+function renderNormal(model) {
   const layout = calcLayout(model);
   const layoutSlice = getInstanceSlice('layout');
   layoutSlice.panelBounds = {};
@@ -664,10 +623,6 @@ function _renderNormalRectPath(model) {
   const rectsWithLines = composeRects(layout, model);
   const COLS = cols();
   const newRows = painter.composeRows(rectsWithLines, COLS, layout.availH);
-  // Width-or-row-count change → can't trust per-row diff (same trip-
-  // wire paintColumns has; share the module-locals _prevCols /
-  // _forceFullRepaint so old + new paths can swap mid-session via
-  // the env flag without leaving stale cache state behind).
   if (COLS !== _prevCols || newRows.length !== _prevRows.length) _forceFullRepaint = true;
   _prevCols = COLS;
   const { ansi, didFull } = painter.paintFrame(_prevRows, newRows, _forceFullRepaint);
@@ -677,108 +632,25 @@ function _renderNormalRectPath(model) {
   return didFull;
 }
 
-// renderNormal/Half/Full populate `layoutSlice.panelBounds` directly —
-// the renderer-as-writer pattern documented in the file header (§5
-// view-derived data). Reset on every entry so stale entries from a
-// prior view-mode aren't hit-testable.
-function renderNormal(model) {
-  if (process.env.LAZYTUI_RECT_PAINTER === '1') {
-    return _renderNormalRectPath(model);
-  }
-  const { ranges, availH, rects } = calcLayout(model);
-  const layoutSlice = getInstanceSlice('layout');
-  layoutSlice.panelBounds = {};
-  const freeConfigMode = !!(model.modes && model.modes.freeConfigMode);
-  // Hoist the drag check out of the per-panel injectTopRowChrome call
-  // (P5.9) — one slice read here instead of N reads per frame.
-  const dragging = !!(layoutSlice.freeConfig && layoutSlice.freeConfig.drag);
-  // Helper to render one panel + bake the chrome glyphs into its top
-  // border row. Baking (vs cursor-move overpaint) keeps paintColumns'
-  // write atomic — no flicker on rows that get repainted while a glyph
-  // sits over them. Two glyph classes:
-  //   `[_]` / `[X]` collapse + close on non-detail panels (injectTopRowChrome)
-  //   `[≡]` tab trigger on detail (injectTabTrigger)
-  //
-  // `fc` mirrors renderPanel's border-color rule — focused panel uses
-  // theme.focus, unfocused uses theme.dim. injectTopRowChrome re-emits
-  // it after each chrome `[/]` so the trailing `╮` stays in the panel's
-  // border color instead of falling back to the terminal default.
-  const t = theme();
-  const renderOne = (p, w, h, x, y) => {
-    // Bounds shape: { x, y, w, h, tabs? }. `tabs` is a hit-test cache
-    // populated only on detail's bounds by the viewer Component's
-    // detailTitle pass (viewer.js sets it; input.js consumers guard
-    // on Array.isArray). Don't pre-allocate `[]` on every panel —
-    // most panels never get a tab strip and the empty array is
-    // dead weight per frame (P5.2).
-    const b = { x, y, w, h };
-    // Dual-key write (v0.6.1 Phase 1). Type-keyed access stays the
-    // canonical read path; paneId-keyed write is forward-compat
-    // scaffolding consumed by Phase 7's mass flip from type-keyed to
-    // pane-keyed reads.
-    layoutSlice.panelBounds[p.type] = b;
-    if (p.paneId) layoutSlice.panelBounds[p.paneId] = b;
-    let out = p.collapsed
-      ? _renderCollapsed(p, w)
-      : _safeRender(p, w, h);
-    const focused = layoutSlice.focus === p.type;
-    const fc = focused ? t.focus : t.dim;
-    out = injectTopRowChrome(out, p, b, freeConfigMode, fc, focused, dragging);
-    out = injectTabTrigger(out, p);
-    return out;
-  };
-  // v0.6.3 P1.5 — pre-index rects by paneId AND type for the inner
-  // per-panel lookup. Two-key index because rects carry paneId but the
-  // lookup uses either; rebuilt every frame because rects is too.
-  const rectByKey = {};
-  for (const rc of rects) {
-    if (rc.paneId) rectByKey[rc.paneId] = rc;
-    if (rc.type)   rectByKey[rc.type]   = rc;
-  }
-  const columnsOut = ranges.map(r => {
-    const panels = mpool.columnPanels(layoutSlice.arrange, r.columnIndex);
-    let out = panels.map(p => {
-      const rc = rectByKey[p.paneId] || rectByKey[p.type];
-      if (!rc) return '';
-      return renderOne(p, rc.w, rc.h, rc.x, rc.y);
-    }).join('\n');
-    // v0.6.2 — pad column output to `availH` rows. When a column's
-    // panels (e.g. all collapsed) cover fewer rows than the column's
-    // allocated height, the remaining vertical slots MUST still occupy
-    // the column's horizontal span. Without this, paintColumns'
-    // per-row concatenation sees `splits[ci][i] || ''` and the next
-    // column's row shifts LEFT into the freed space — the right column
-    // would render at x=0 instead of x=leftColumnWidth for those rows.
-    // distributeColumnHeights' rounding-leftover-on-last-panel logic
-    // covers the normal case; the all-collapsed-column case needs the
-    // explicit pad here.
-    const linesNow = out === '' ? 0 : out.split('\n').length;
-    if (linesNow < availH) {
-      const blank = ' '.repeat(r.w);
-      const padding = Array(availH - linesNow).fill(blank).join('\n');
-      out = out === '' ? padding : out + '\n' + padding;
-    }
-    return out;
-  });
-  return paintColumns(columnsOut);
-}
-
-/**
- * v0.6.3 P3.5 — rect-path replacements for renderHalf + renderFull.
- * Same env gate (LAZYTUI_RECT_PAINTER=1) as _renderNormalRectPath.
- * Build a 1- or 2-rect Layout for the on-screen panels and route
- * through painter.composeRows + painter.paintFrame.
- *
- * P3.6 deletes the old paintColumns paths below + the gate.
- */
-function _renderHalfRectPath(model) {
+// renderHalf / renderFull — half/full view modes. Same v0.6.3 P3.6
+// rect-painter migration as renderNormal: a 1- or 2-rect Layout for
+// the on-screen panels, routed through painter.composeRows.
+//
+// Half view is "non-detail panel + detail" side-by-side. When focus
+// is ON detail (e.g., after a tab-bar click or content-area click
+// moves focus there), the left side falls back to slice.halfLeftPanel
+// — the most recently focused non-detail panel. Stale-handle
+// fallback: if halfLeftPanel was removed from the layout, pick the
+// first non-detail panel; if none, just render detail on the left as
+// a last resort.
+function renderHalf(model) {
   calcLayout(model);
   const layoutSlice = getInstanceSlice('layout');
   const COLS = cols(), ROWS = rows();
   const halfW = Math.floor(COLS / 2);
   const availH = ROWS - 1;
   const focusedPanel = allPanels().find(p => p.type === layoutSlice.focus);
-  if (!focusedPanel) return _renderNormalRectPath(model);
+  if (!focusedPanel) return renderNormal(model);
   const detailPanel = mpool.findDetailPane(layoutSlice.arrange);
   let leftPanel = focusedPanel;
   if (mpool.isDetailPane(focusedPanel)) {
@@ -799,6 +671,8 @@ function _renderHalfRectPath(model) {
   }
   let leftContent = _safeRender(leftPanel, halfW, availH);
   let rightContent = detailPanel ? _safeRender(detailPanel, rightW, availH) : '';
+  // Bake the [≡] trigger into the detail render only — hit-test math
+  // reads panelBounds.detail (right side).
   if (rightContent) rightContent = injectTabTrigger(rightContent, detailPanel);
   const rects = [
     { x: 0, y: 0, w: halfW, h: availH,
@@ -820,19 +694,19 @@ function _renderHalfRectPath(model) {
   return didFull;
 }
 
-function _renderFullRectPath(model) {
+function renderFull(model) {
   calcLayout(model);
   const layoutSlice = getInstanceSlice('layout');
   const COLS = cols(), ROWS = rows();
   const availH = ROWS - 1;
   const focusedPanel = allPanels().find(p => p.type === layoutSlice.focus);
-  if (!focusedPanel) return _renderNormalRectPath(model);
+  if (!focusedPanel) return renderNormal(model);
   layoutSlice.panelBounds = {};
   const fullBounds = { x: 0, y: 0, w: COLS, h: availH };
   layoutSlice.panelBounds[focusedPanel.type] = fullBounds;
   if (focusedPanel.paneId) layoutSlice.panelBounds[focusedPanel.paneId] = fullBounds;
   let content = _safeRender(focusedPanel, COLS, availH);
-  content = injectTabTrigger(content, focusedPanel);
+  content = injectTabTrigger(content, focusedPanel);  // no-op if non-detail
   const rects = [
     { x: 0, y: 0, w: COLS, h: availH,
       lines: content === '' ? [] : content.split('\n') },
@@ -845,69 +719,6 @@ function _renderFullRectPath(model) {
   if (ansi) stdout.write(ansi);
   _prevRows = newRows;
   return didFull;
-}
-
-function renderHalf(model) {
-  if (process.env.LAZYTUI_RECT_PAINTER === '1') return _renderHalfRectPath(model);
-  calcLayout(model);
-  const COLS = cols(), ROWS = rows();
-  const layoutSlice = getInstanceSlice('layout');
-  const halfW = Math.floor(COLS / 2);
-  const availH = ROWS - 1;  // only the footer is reserved
-  const focusedPanel = allPanels().find(p => p.type === layoutSlice.focus);
-  if (!focusedPanel) return renderNormal(model);
-  const detailPanel = mpool.findDetailPane(layoutSlice.arrange);
-  // Half view is "non-detail panel + detail" side-by-side. When focus is
-  // ON detail (e.g., after a tab-bar click or content-area click moves
-  // focus there), the left side falls back to slice.halfLeftPanel — the
-  // most recently focused non-detail panel. Without this fallback the
-  // left would render detail again, duplicating it on both halves.
-  // Stale-handle fallback: if halfLeftPanel was removed from the layout,
-  // pick the first non-detail panel available; if none, just render
-  // detail on the left as a last resort (matches old behavior).
-  let leftPanel = focusedPanel;
-  if (mpool.isDetailPane(focusedPanel)) {
-    const all = allPanels();
-    leftPanel = all.find(p => p.type === layoutSlice.halfLeftPanel)
-             || all.find(p => !mpool.isDetailPane(p))
-             || focusedPanel;
-  }
-  layoutSlice.panelBounds = {};
-  const leftBounds = { x: 0, y: 0, w: halfW, h: availH };
-  layoutSlice.panelBounds[leftPanel.type] = leftBounds;
-  if (leftPanel.paneId) layoutSlice.panelBounds[leftPanel.paneId] = leftBounds;
-  if (detailPanel) {
-    const detailBounds = { x: halfW, y: 0, w: COLS - halfW, h: availH };
-    layoutSlice.panelBounds.detail = detailBounds;
-    if (detailPanel.paneId) layoutSlice.panelBounds[detailPanel.paneId] = detailBounds;
-  }
-  let leftContent = _safeRender(leftPanel, halfW, availH);
-  let rightContent = detailPanel ? _safeRender(detailPanel, halfW, availH) : '';
-  // Bake the [≡] trigger into the detail render — same chrome as normal
-  // view so the user can open the tab list with the mouse in half view.
-  // Hit-test math reads `panelBounds.detail` (right side), so inject
-  // only on the right.
-  if (rightContent) rightContent = injectTabTrigger(rightContent, detailPanel);
-  return paintColumns([leftContent, rightContent]);
-}
-
-function renderFull(model) {
-  if (process.env.LAZYTUI_RECT_PAINTER === '1') return _renderFullRectPath(model);
-  calcLayout(model);
-  const COLS = cols(), ROWS = rows();
-  const layoutSlice = getInstanceSlice('layout');
-  const availH = ROWS - 1;  // only the footer is reserved
-  const focusedPanel = allPanels().find(p => p.type === layoutSlice.focus);
-  if (!focusedPanel) return renderNormal(model);
-  layoutSlice.panelBounds = {};
-  const fullBounds = { x: 0, y: 0, w: COLS, h: availH };
-  layoutSlice.panelBounds[focusedPanel.type] = fullBounds;
-  if (focusedPanel.paneId) layoutSlice.panelBounds[focusedPanel.paneId] = fullBounds;
-  let content = _safeRender(focusedPanel, COLS, availH);
-  // Bake the [≡] trigger when the full-view focused panel is detail —
-  // same parity with normal view.
-  content = injectTabTrigger(content, focusedPanel);  // no-op if non-detail
-  return paintColumns([content]);
 }
 
 let _forceOverlayFull = true;
@@ -1089,12 +900,12 @@ function render(model = getModel()) {
   }
   renderFooter(model);
   // Panel-chrome glyphs (`[_]`/`[+]` collapse, `[X]` close in free-config)
-  // are baked into each panel's top-border row by renderNormal — see
-  // panel-widgets.js#injectTopRowChrome. paintColumns then writes the
+  // are baked into each panel's top-border row by composeRects — see
+  // panel-widgets.js#injectTopRowChrome. The painter then stamps the
   // row WITH the glyph in place, so there's no cursor-move-back-and-
   // overpaint. Earlier "paint-on-top" approaches flickered on every
   // detail-scroll frame because the row-paint momentarily restored `─`
-  // at the glyph cells.
+  // at the glyph cells. P4 retires this onto rect decor entirely.
   // Overlays are mutually exclusive in practice (modeChain enforces it).
   // Order matches dispatch.js's modeChain: free-config > menu > copy.
   if (md.copyMode)    renderCopyMenu();
@@ -1107,8 +918,8 @@ function render(model = getModel()) {
   if (md.prefixMode)  renderWhichKey();
   // Tab list overlay (only when active). The `[≡]` trigger glyph used
   // to paint here too — it's now baked into detail's top-row markup by
-  // injectTabTrigger inside renderNormal (sibling of injectTopRowChrome
-  // for [_]/[X]), so paintColumns writes the glyph atomically.
+  // injectTabTrigger inside composeRects (sibling of injectTopRowChrome
+  // for [_]/[X]), so the painter stamps the glyph atomically.
   if (md.tabListMode) renderTabList();
   if (md.jobsMode)    renderJobsOverlay();
 
