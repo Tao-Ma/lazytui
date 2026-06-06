@@ -136,7 +136,8 @@ function _runResolvedAction(key, act) {
   if (act.args) {
     const initial = resolvePromptDefault(act);
     // Seed the autosuggest ghost from the yank register's top (first line).
-    const top = require('../feature/register').top();
+    const { getModel } = require('../app/runtime');
+    const top = require('../leaves/register').top(getModel().register);
     const ghost = String(top || '').split('\n')[0];
     // Stage the prompt through update with a base run_action Cmd — submit
     // parses args + re-enters runAction (so an action that's ALSO confirm:

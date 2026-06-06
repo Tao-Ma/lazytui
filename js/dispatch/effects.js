@@ -190,7 +190,7 @@ function installBuiltins() {
   // clipboard. History mutation already happened in the reducer (model-
   // register leaf); this just writes the escape sequence.
   registerEffect('emit_osc52', (eff) => {
-    require('../feature/register').emitOSC52(eff.text);
+    require('../io/term').emitOSC52(eff.text);
   });
   // cmdline_rebuild: text changed — re-query the registry from the plugin
   // facade and feed the render-safe projection back through update. The

@@ -135,7 +135,7 @@ function initState() {
   // configurable via top-level `register: { cap: N }` in YAML; default
   // 100. Init deferred to here so cap reflects the parsed config.
   // BLESSED outside-writer (docs/v0.5-layering.md §5).
-  require('../feature/register').init(config.register || {});
+  getModel().register = require('../leaves/register').init(config.register || {});
 
   // Soft-fail diagnostics from parse (today: column over soft cap).
   // Records one event-log entry per warning + seeds layout's bootWarnings

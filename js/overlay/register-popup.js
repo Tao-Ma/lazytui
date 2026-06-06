@@ -32,7 +32,7 @@
 const { getModel } = require('../app/runtime');
 const { esc, visibleLen } = require('../io/ansi');
 const { renderOverlay } = require('../render/panel');
-const register = require('../feature/register');
+const register = require('../leaves/register');
 
 const VIEWPORT = 12;
 
@@ -54,7 +54,7 @@ function _previewOf(text) {
 function render() {
   if (!getModel().modes.registerPopupMode) return;
   const { idx: _idx, scroll: _scroll } = getModel().modal.registerPopup;
-  const n = register.historyLen();
+  const n = register.historyLen(getModel().register);
   const vh = viewportRows();
   // Index column width sized for `cap` so the gutter doesn't jitter
   // as entries are added/dropped.
@@ -68,7 +68,7 @@ function render() {
     const end = Math.min(n, _scroll + vh);
     for (let i = _scroll; i < end; i++) {
       const indexStr = String(i + 1).padStart(idxWidth, ' ');
-      const preview = _previewOf(register.at(i));
+      const preview = _previewOf(register.at(getModel().register, i));
       // Budget = overlayMaxW - borders(2) - gutter for index + 2 spaces
       const budget = Math.max(8, overlayMaxW - 2 - idxWidth - 3);
       let text = preview;

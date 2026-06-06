@@ -18,7 +18,7 @@
 
 const { describe, it, eq, assert, expectNoMutation, report } = require('./test-runner');
 const runtime = require('../app/runtime');
-const register = require('../feature/register');
+const register = require('./_helpers/register');
 
 function freshModel() {
   const m = runtime.init();

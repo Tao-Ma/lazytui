@@ -24,7 +24,7 @@ term.stdout.write = (chunk, ...rest) => {
 };
 
 const runtime = require('../app/runtime');
-const register = require('../feature/register');
+const register = require('./_helpers/register');
 const { describe, it, eq, assert, report } = require('./test-runner');
 
 // Phase 4 — runtime.update is pure (returns a new model); thread the model

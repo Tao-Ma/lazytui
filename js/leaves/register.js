@@ -56,4 +56,28 @@ function clear(register) {
   return { ...register, history: [] };
 }
 
-module.exports = { push, promote, drop, clear };
+const DEFAULT_CAP = 100;
+
+/** Construct a fresh register slice. Used at boot for the one-shot
+ *  BLESSED init (state.js sets `m.register = init(opts)`). */
+function init(opts) {
+  const cap = (opts && Number.isInteger(opts.cap) && opts.cap > 0) ? opts.cap : DEFAULT_CAP;
+  return { history: [], cap };
+}
+
+/** Most-recent entry (or '' for empty / missing register). */
+function top(register) {
+  return (register && register.history[0]) || '';
+}
+
+/** Entry at history index `i` (or undefined). */
+function at(register, i) {
+  return register && register.history[i];
+}
+
+/** Number of entries (0 for empty / missing register). */
+function historyLen(register) {
+  return (register && register.history.length) || 0;
+}
+
+module.exports = { push, promote, drop, clear, init, top, at, historyLen, DEFAULT_CAP };
