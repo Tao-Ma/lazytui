@@ -96,7 +96,7 @@ function renderPanel({
   const wantRightCollapse = chrome && chrome.collapse;
   const wantRightClose    = chrome && chrome.close;
   if (chrome && (wantLeftTrigger || wantRightCollapse || wantRightClose)) {
-    const W = require('./panel-widgets');
+    const W = require('./decor');
     let leftPart = `${b.tl}${b.h}`;
     if (hotkey) leftPart += `(${hotkey})`;
     if (wantLeftTrigger) {

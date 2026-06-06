@@ -262,7 +262,7 @@ describe('[jobs_nav] clamps + scrolls', () => {
 // --- Tab-strip running indicator (Phase 4.4) -------------------------------
 
 describe('[tab-strip indicator] ● prepended when a stream-routed job is running', () => {
-  const widgets = require('../render/panel-widgets');
+  const widgets = require('../panel/viewer/tab-strip');
   const tabInfo = {
     actionTabs: [['make-check', { label: 'Test' }], ['lint', { label: 'Lint' }]],
     termTabs: [],

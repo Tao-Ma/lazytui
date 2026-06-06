@@ -93,7 +93,7 @@ function _renderCollapsed(p, w, chrome) {
   // uncollapse"); close glyph still allowed in free-config. Width
   // budget: titleText + chrome + 2 corners must fit in w; on tight
   // widths, drop chrome and fall back to bare collapsed bar.
-  const W = require('./panel-widgets');
+  const W = require('./decor');
   let rightPart = '';
   if (chrome) {
     if (chrome.close)    rightPart += W._closeGlyphMarkup(focused, fc);
@@ -596,7 +596,7 @@ function composeRects(layout, model) {
   // and threaded into the panel renderer via opts. Was post-mutated
   // string injection via injectTopRowChrome / injectTabTrigger; now
   // renderPanel({chrome}) composes glyphs inline.
-  const { chromeFor } = require('./panel-widgets');
+  const { chromeFor } = require('./decor');
   let viewerTabCount = 0;
   try {
     const tabInfo = require('../panel/viewer/tabs').getTabInfo();
@@ -717,7 +717,7 @@ function renderHalf(model) {
   }
   // v0.6.3 P4.2 — chrome computed via chromeFor + threaded through
   // renderPanel; half/full view paths don't need to inject post-render.
-  const { chromeFor } = require('./panel-widgets');
+  const { chromeFor } = require('./decor');
   const freeConfigMode = !!(model.modes && model.modes.freeConfigMode);
   const dragging = !!(layoutSlice.freeConfig && layoutSlice.freeConfig.drag);
   let viewerTabCount = 0;
@@ -775,7 +775,7 @@ function renderFull(model) {
   if (focusedPanel.paneId) layoutSlice.panelBounds[focusedPanel.paneId] = fullBounds;
   // v0.6.3 P4.2 — chrome computed via chromeFor; full view also routes
   // [≡] through renderPanel inline when the focused panel is detail.
-  const { chromeFor: chromeForFull } = require('./panel-widgets');
+  const { chromeFor: chromeForFull } = require('./decor');
   const freeConfigModeF = !!(model.modes && model.modes.freeConfigMode);
   const draggingF = !!(layoutSlice.freeConfig && layoutSlice.freeConfig.drag);
   let viewerTabCountF = 0;

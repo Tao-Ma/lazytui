@@ -29,7 +29,7 @@ const {
 const ms = require('../../leaves/search');
 const pt = require('../../leaves/pane-tabs');
 const mpool = require('../../leaves/pool');
-const { buildTabStrip } = require('../../render/panel-widgets');
+const { buildTabStrip } = require('./tab-strip');
 const { getModel } = require('../../app/runtime');
 const { getSel } = require('../../app/state');
 

@@ -1,6 +1,5 @@
 /**
- * Panel-chrome widget glyphs — small interactive icons on each
- * placed panel's top border row:
+ * Panel-chrome decor — glyphs, geometry, hit-tests.
  *
  *   [_]/[+]  collapse-toggle — ALWAYS visible in normal view mode
  *            (free-config + non-free-config). Click → panel_collapse_toggle.
@@ -37,12 +36,15 @@
  * border post-render; P4.2c deleted both. The painter stamps the
  * row with glyphs already in place — no second write, no cursor-
  * move back to overpaint, no fragile regex anchor.
+ *
+ * v0.6.3 C1: split out of `panel-widgets.js`. The tab-strip
+ * builder (buildTabStrip) moved to `panel/viewer/tab-strip.js`
+ * since it's viewer-specific.
  */
 'use strict';
 
 const { getInstanceSlice } = require('../panel/api');
 const { theme } = require('./themes');
-const { esc, visibleLen } = require('../io/ansi');
 const mpool = require('../leaves/pool');
 
 const GLYPH_W = 3;
@@ -162,9 +164,9 @@ function _placedWidgetTargets() {
   const drag = slice.freeConfig && slice.freeConfig.drag;
   if (drag) return null;  // drag affordance owns the screen; suppress widgets
   const panels = mpool.allPanesInColumns(slice.arrange);
-  // v0.6.3 P1.3: lazy require to dodge the layout ↔ panel-widgets
-  // cycle (layout.js imports panel-widgets at top-level, so a top-
-  // level require('./layout') would yield the partial module without
+  // v0.6.3 P1.3: lazy require to dodge the layout ↔ decor cycle
+  // (layout.js imports decor at top-level, so a top-level
+  // require('./layout') would yield the partial module without
   // boundsFor; lazy resolves to the final exports).
   const { boundsFor } = require('./layout');
   return panels
@@ -199,94 +201,9 @@ function hitTestCloseButton(mx, my) {
   return null;
 }
 
-// --- Tab-strip helper ------------------------------------------------------
-
-/**
- * Build the panel title string + tab-bounds array for a pane that hosts
- * a flat tab strip (Info | actions | terminals | content).
- *
- * Inputs:
- *   tabInfo  — { actionTabs, termTabs, contentTabs } (from
- *              pt.flatTabInfo or panel/viewer/tabs.getTabInfo())
- *   activeTab — slice.tab (flat integer index)
- *   hotkey   — single-letter pane hotkey for x-offset math (the title
- *              starts after `╭─(hotkey)─`)
- *   runningActionKeys — optional Set<actionKey> for stream-routed jobs
- *              currently running in the active group. Prefixes those
- *              action tab labels with a `●` running glyph.
- *
- * Returns { title, tabBounds }:
- *   title     — rich-markup string ready for renderPanel(title=…). The
- *               active tab is wrapped in `\[label]`; content tabs grow
- *               a trailing ` \[x]` close glyph; tabs join with `─`.
- *               When the pane has zero tabs, returns null — caller
- *               falls back to a plain title.
- *   tabBounds — Array<{ tabIdx, x, w, closeKey?, closeX?, closeW? }>
- *               for the mouse hit-test cache (input.js consumes
- *               `b.tabs`). x is the column offset relative to the
- *               pane's left edge.
- */
-function buildTabStrip(tabInfo, activeTab, hotkey, runningActionKeys) {
-  const { actionTabs, termTabs, contentTabs, total } = tabInfo;
-  // total includes the implicit Info (idx 0) AND Transcript (idx
-  // total-1); we always render at least [Info] [Transcript]
-  // regardless of how empty the middle section is.
-
-  const parts = [];
-  const partMeta = [];
-  const pushTab = (label, isActive, closeKey) => {
-    const close = closeKey ? ' \\[x]' : '';
-    parts.push(isActive ? `\\[${label}${close}]` : `${label}${close}`);
-    partMeta.push({ closeKey, activeWrap: isActive ? 1 : 0 });
-  };
-  pushTab(esc('Info'), activeTab === 0, null);
-  // Transcript — implicit, at idx 1 right after Info. v0.6.2 —
-  // hosts the unrouted accumulator (replaces the pre-fix
-  // "Info doubles as transcript host" design). Placed next to Info
-  // so the two globals stay adjacent regardless of how long the
-  // per-group strip grows. Empty-buffer state still renders the
-  // tab; tab_switch handler shows a placeholder.
-  pushTab(esc('Transcript'), activeTab === 1, null);
-  actionTabs.forEach(([key, action], i) => {
-    const running = runningActionKeys && runningActionKeys.has(key);
-    const prefix = running ? '[yellow]●[/]' : '';
-    pushTab(prefix + esc(action.label), activeTab === i + 2, null);
-  });
-  const termOffset = 2 + actionTabs.length;
-  termTabs.forEach(([, term], i) => pushTab(term.label, activeTab === termOffset + i, null));
-  const contentOffset = 2 + actionTabs.length + termTabs.length;
-  contentTabs.forEach(([key, info], i) => pushTab(info.label, activeTab === contentOffset + i, key));
-
-  const tabBounds = [];
-  // Title starts at col 2 (after `╭─`); hotkey display occupies
-  // `(h)` (3 cells) plus a `─` separator when present.
-  let xOffset = 2 + (hotkey ? 2 + hotkey.length : 0) + 1;
-  parts.forEach((part, i) => {
-    if (i > 0) xOffset += 1;  // `─` separator between tabs
-    const visLen = visibleLen(part);
-    const meta = partMeta[i];
-    const bound = { tabIdx: i, x: xOffset, w: visLen };
-    if (meta.closeKey) {
-      // Close glyph "[x]" sits at the end of the tab's visible text.
-      // For an active tab the trailing `]` of the `\[…]` wrapper sits
-      // one cell after the glyph (activeWrap=1), so the close zone
-      // shifts accordingly.
-      bound.closeKey = meta.closeKey;
-      bound.closeX = xOffset + visLen - meta.activeWrap - 3;
-      bound.closeW = 3;
-    }
-    tabBounds.push(bound);
-    xOffset += visLen;
-  });
-  return { title: parts.join('─'), tabBounds };
-}
-
 module.exports = {
   hitTestCollapseButton,
   hitTestCloseButton,
-  buildTabStrip,
-  // v0.6.3 P4.2 — pane chrome as structured data (replaces the
-  // regex-based injectTopRowChrome that retired in P4.2c).
   chromeFor,
   _collapseGlyphMarkup,
   _closeGlyphMarkup,

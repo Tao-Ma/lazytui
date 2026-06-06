@@ -250,7 +250,7 @@ function _maybeBlank() {
 
 // v0.6.3 P4.2c — injectTabTrigger retired. Chrome glyphs (including
 // the [≡] tab trigger) now compose inline via renderPanel({chrome}).
-// chromeFor() in panel-widgets.js computes the spec; composeRects
+// chromeFor() in render/decor.js computes the spec; composeRects
 // threads it through the panel render signature; renderPanel stamps
 // it directly into the top border. No more regex post-mutation.
 
@@ -316,7 +316,7 @@ function _resetRenderState() { _lastPanelH = 0; _lastTop = 0; }
 module.exports = {
   renderTabList, hitTest, isTriggerHit,
   viewportRows, _resetRenderState,
-  // v0.6.3 P4.2 — exposed for chromeFor() in panel-widgets.js. Returns
+  // v0.6.3 P4.2 — exposed for chromeFor() in render/decor.js. Returns
   // 'open' (tab list open), 'disabled' (any other chain mode), or
   // 'normal' (default).
   _triggerState,
