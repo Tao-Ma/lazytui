@@ -395,7 +395,7 @@ function _safeRender(panel, w, h) {
 // view-derived data). Reset on every entry so stale entries from a
 // prior view-mode aren't hit-testable.
 function renderNormal(model) {
-  const { ranges } = calcLayout(model);
+  const { ranges, availH } = calcLayout(model);
   const layoutSlice = getInstanceSlice('layout');
   layoutSlice.panelBounds = {};
   const freeConfigMode = !!(model.modes && model.modes.freeConfigMode);
@@ -440,12 +440,29 @@ function renderNormal(model) {
   const columnsOut = ranges.map(r => {
     const panels = mpool.columnPanels(layoutSlice.arrange, r.columnIndex);
     let y = 0;
-    return panels.map(p => {
+    let out = panels.map(p => {
       const h = _panelHeights[p.type] || 0;
-      const out = renderOne(p, r.w, h, r.x, y);
+      const rendered = renderOne(p, r.w, h, r.x, y);
       y += h;
-      return out;
+      return rendered;
     }).join('\n');
+    // v0.6.2 — pad column output to `availH` rows. When a column's
+    // panels (e.g. all collapsed) cover fewer rows than the column's
+    // allocated height, the remaining vertical slots MUST still occupy
+    // the column's horizontal span. Without this, paintColumns'
+    // per-row concatenation sees `splits[ci][i] || ''` and the next
+    // column's row shifts LEFT into the freed space — the right column
+    // would render at x=0 instead of x=leftColumnWidth for those rows.
+    // distributeColumnHeights' rounding-leftover-on-last-panel logic
+    // covers the normal case; the all-collapsed-column case needs the
+    // explicit pad here.
+    const linesNow = out === '' ? 0 : out.split('\n').length;
+    if (linesNow < availH) {
+      const blank = ' '.repeat(r.w);
+      const padding = Array(availH - linesNow).fill(blank).join('\n');
+      out = out === '' ? padding : out + '\n' + padding;
+    }
+    return out;
   });
   return paintColumns(columnsOut);
 }

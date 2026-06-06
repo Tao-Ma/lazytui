@@ -118,6 +118,81 @@ describe('[3b] focus moves through the update spine — live', () => {
   });
 });
 
+describe('[collapse-shift] all-collapsed column preserves its horizontal slot', () => {
+  // v0.6.2 — Round-2 bug discovered during postgres-demo manual
+  // verification: when ALL panels in the leftmost column were
+  // collapsed, the column produced fewer rendered rows than the
+  // available height, so paintColumns' per-row concatenation saw
+  // splits[0][i] === undefined for rows past the collapsed bars
+  // → '' substitute → the right column's content shifted LEFT to
+  // x=0 for those rows. Fix: pad each column's output to availH
+  // rows with blank space-of-column-width so the right column
+  // stays at its proper x-offset.
+  it('collapsed leftmost column reserves its horizontal space for all rows', () => {
+    capture(() => { handleKey('_', '_'); handleKey('_', '_'); });  // back to normal view
+    // The initState in this test file produces a 2-column layout:
+    // col 0 has containers (no groups in g1's containers, but the
+    // panel exists by default placement). Force all col-0 panels
+    // collapsed.
+    const layoutSlice = getInstanceSlice('layout');
+    const col0 = layoutSlice.arrange.columns[0];
+    const col0Panels = col0 && col0.panels || [];
+    for (const p of col0Panels) p.collapsed = true;
+    // Capture raw output WITHOUT stripping ANSI so we can decode
+    // cursor positions.
+    const chunks = [];
+    const orig = process.stdout.write;
+    process.stdout.write = (s) => { chunks.push(String(s)); return true; };
+    try { render(); } finally { process.stdout.write = orig; }
+    const raw = chunks.join('');
+    // Walk the bytes; collect (row, col) of each cursor-set move
+    // \x1b[N;1H plus any plain content emitted at that position.
+    const rowsMap = new Map();  // row → first-char column
+    let curRow = 1;
+    let curCol = 1;
+    let i = 0;
+    while (i < raw.length) {
+      const cur = raw.slice(i).match(/^\x1b\[(\d+);(\d+)H/);
+      if (cur) {
+        curRow = parseInt(cur[1], 10);
+        curCol = parseInt(cur[2], 10);
+        i += cur[0].length;
+        continue;
+      }
+      const otherEsc = raw.slice(i).match(/^\x1b\[[\d;?]*[A-Za-z]/);
+      if (otherEsc) { i += otherEsc[0].length; continue; }
+      const ch = raw[i];
+      if (ch === '\n' || ch === '\r') { i++; continue; }
+      // First non-blank char encountered for this row → record the col.
+      if (ch !== ' ' && !rowsMap.has(curRow)) rowsMap.set(curRow, curCol);
+      curCol++;
+      i++;
+    }
+    // Find the FIRST row that has content (col 0 collapsed bars at top).
+    // After the 3 collapsed bars, look at rows 4+ — assert their FIRST
+    // non-space char is at col > 1 (i.e., the left column's blank
+    // padding pushes right-column content to its proper offset).
+    // We don't hardcode the left column width because tests may differ
+    // — just assert "not at col 1" for rows beyond the collapsed bars.
+    const collapsedBarCount = col0Panels.length;  // each collapsed = 1 row
+    let pastCollapseFirstContentCol = null;
+    for (const [row, col] of rowsMap) {
+      if (row > collapsedBarCount && row < (process.stdout.rows || 24)) {
+        if (pastCollapseFirstContentCol === null || col < pastCollapseFirstContentCol) {
+          pastCollapseFirstContentCol = col;
+        }
+      }
+    }
+    if (pastCollapseFirstContentCol !== null) {
+      assert(pastCollapseFirstContentCol > 1,
+        `rows past collapsed bars should have content offset by left-col width; ` +
+        `first content col seen at ${pastCollapseFirstContentCol} (would be 1 pre-fix).`);
+    }
+    // Cleanup so subsequent tests aren't stuck collapsed.
+    for (const p of col0Panels) p.collapsed = false;
+  });
+});
+
 describe('[4] detail content flows model → view — live', () => {
   it('detail viewerOverride flows into the rendered Detail panel', () => {
     // v0.6.2 T2c — render reads viewerLines() which prefers
