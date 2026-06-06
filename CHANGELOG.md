@@ -4,6 +4,79 @@ All notable changes to lazytui are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning
 follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.3] — 2026-06-06
+
+### Added
+- **Pane-select dropdown.** Every non-detail panel now sports a
+  `[≡]` glyph at its top-left. Click it and a centered overlay opens
+  listing every pool entry tagged by status — `[here]` (current
+  cell), `[in col N]` (placed elsewhere), `[hidden]` (in pool but
+  unplaced). Pick one to swap which pool entry occupies that cell.
+  Picking a placed entry SWAPs the two slots; picking a hidden
+  entry REPLACEs (the displaced occupant becomes hidden). Navigate
+  with `j`/`k` / arrows / `g`/`G` / `PgUp`/`PgDn`, pick with Enter,
+  dismiss with Esc; mouse wheel scrolls the cursor, click on a row
+  picks, click outside closes. Invariants (detail can't be picked;
+  actions can't end up outside the last column; detail / actions
+  slots can't be replaced) are enforced at pick time. Detail's
+  `[≡]` still opens the tab-list overlay (unchanged).
+
+### Changed
+- **Render engine — Layout as value + single Frame struct.**
+  `model/layout.js` now returns a `Layout {rects, availH, viewMode,
+  …}` value; non-leaf readers route through `boundsFor(paneId)`.
+  Six render-side module-locals collapse into a single `Frame`
+  struct sharing one cache invalidation surface. `paintColumns`
+  retires in favor of a rect-list painter (`render/painter.js` —
+  `composeRows` / `composeRects` / `paintFrame`); rect-paint and
+  legacy paths shipped behind a feature gate, golden-tested for
+  ANSI parity, then the old path deleted. No user-visible change;
+  internal cleanup that makes overlay layering tractable.
+
+- **Module splits.** `render/panel-widgets.js` splits into
+  `render/decor.js` (chrome helpers + hit-tests) and
+  `panel/viewer/tab-strip.js` (`buildTabStrip`).
+  `feature/register.js` folds three ways — pure helpers to
+  `leaves/register.js`, production callers inlined, test wrappers
+  to `js/test/_helpers/register.js`. `leaves/free-config.js`
+  (1231 LOC) splits into `leaves/free-config-core.js` (358 — shared
+  helpers + hotkeys), `leaves/free-config.js` (333 — keyboard
+  transforms), `leaves/free-config-mouse.js` (632 — drag math).
+  All 9 importers migrated; no re-export shim.
+
+### Fixed
+- **Committed search recomputes on a lines change.** When the
+  displayed `lines` array changes (e.g. switching back to a tab
+  whose action accumulated new output), the finalizer re-runs the
+  committed search incrementally so navigation doesn't reference
+  stale row offsets.
+
+- **`:open <"quoted path">` strips only matched outer quote
+  pairs.** Previously a single mismatched leading quote could
+  consume the closing quote of an embedded string. The regex is
+  now anchored to balanced outer quotes only.
+
+- **Pane-select multi-tab preservation (pre-release fix).** A SWAP
+  through pane-select now splices the existing pane object between
+  slots, preserving `tabs[]` / `paneId` / `activeTabId` for
+  multi-tab panes. The pre-fix shape re-minted via the pool entry
+  and silently collapsed multi-tab panes to single-tab. In the
+  same arc, non-active multi-tab tabs are excluded from the
+  pane-select list (managed via tab-list on detail, not
+  pane-select) — picking one previously routed through REPLACE
+  and double-placed the id.
+
+- **Pane-select overlay mouse routing.** The overlay now handles
+  wheel scrolling (cursor nav), row clicks (`pool_swap_by_id`),
+  and click-outside (close). Previously only Esc/Enter and the
+  `[≡]` toggle path dismissed; clicks fell through to the
+  panel-under-overlay handler.
+
+- **Pane-select reducer polish.** Re-opening on the same target
+  is a no-op (cursor / scroll preserved). `set_arrange` now emits
+  `mode_clear` when it defensively clears `slice.paneSelect`,
+  keeping the flag / slice pair consistent.
+
 ## [0.6.2] — 2026-06-06
 
 ### Changed (BREAKING)
