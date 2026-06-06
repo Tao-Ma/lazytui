@@ -349,12 +349,22 @@ function update(msg, slice) {
       if (pickedLoc) {
         // SWAP — both placed. Splice the existing pane objects between
         // slots (restamping only columnIndex) so multi-tab panes keep
-        // their tabs[] / paneId / activeTabId / heightPct / collapsed.
-        // Re-minting via placementFromPoolEntry would collapse a
-        // multi-tab pane to single-tab (wrapAsPane hardcodes
-        // tabs:[{single}]) and reset the custom paneId.
+        // their tabs[] / paneId / activeTabId / collapsed. Re-minting
+        // via placementFromPoolEntry would collapse a multi-tab pane
+        // to single-tab (wrapAsPane hardcodes tabs:[{single}]) and
+        // reset the custom paneId.
+        //
+        // heightPct is column-local share — strip it on cross-column
+        // SWAP so we don't carry col-A's share into col-B (would
+        // distort both columns' panel ratios). Same-column SWAP keeps
+        // heightPct (pure rearrangement within one column).
+        const crossColumn = targetLoc.columnIndex !== pickedLoc.columnIndex;
         const newAtTarget = { ...pickedLoc.pane, columnIndex: targetLoc.columnIndex };
         const newAtPicked = { ...targetLoc.pane, columnIndex: pickedLoc.columnIndex };
+        if (crossColumn) {
+          delete newAtTarget.heightPct;
+          delete newAtPicked.heightPct;
+        }
         let mid = arrange;
         if (targetLoc.columnIndex === pickedLoc.columnIndex) {
           mid = mpool.updateColumn(mid, targetLoc.columnIndex, panels => {
@@ -378,6 +388,15 @@ function update(msg, slice) {
         nextArrange = mfcCore.reassignHotkeys(mid);
       } else {
         // REPLACE — picked is hidden; place it at target's slot.
+        // Refuse when target is multi-tab: REPLACE would silently
+        // decompose the multi-tab pane into separate hidden pool
+        // entries, losing the tabs[] grouping (and any
+        // user-customized paneId / activeTabId). User must drop a
+        // tab first via tab-list, then REPLACE can fire. Symmetric
+        // with the detail/actions reserved-pane refusal above.
+        if (Array.isArray(targetLoc.pane.tabs) && targetLoc.pane.tabs.length > 1) {
+          return [slice, closeCmds];
+        }
         // target's old occupant remains in arrange.pool (now hidden).
         const newAtTarget = mpool.placementFromPoolEntry(pickedEntry, targetLoc.columnIndex);
         const mid = mpool.updateColumn(arrange, targetLoc.columnIndex, panels => {

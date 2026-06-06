@@ -418,6 +418,102 @@ describe('[7] pool_swap_by_id — SWAP / REPLACE / invariants', () => {
     // extra (genuinely hidden) is still listed.
     assert(list.some(x => x.id === 'extra' && x.status === 'hidden'), 'extra still hidden');
   });
+
+  it('T2-b — REPLACE on multi-tab target refuses (preserves grouping)', () => {
+    setupMultiTab();
+    // pane-multi carries [tab-a, tab-b]. Open pane-select on it,
+    // pick `extra` (hidden) — REPLACE would decompose the multi-tab
+    // pane; refuse instead.
+    api.dispatchMsg(api.wrap('layout', { type: 'pane_select_open', paneId: 'pane-multi' }));
+    const before = JSON.stringify(route.getInstanceSlice('layout').arrange.columns
+      .map(c => (c.panels || []).map(p => ({ id: p.id, tabs: (p.tabs || []).map(t => t.poolId) }))));
+    api.dispatchMsg(api.wrap('layout', {
+      type: 'pool_swap_by_id', targetPaneId: 'pane-multi', pickedId: 'extra',
+    }));
+    const after = JSON.stringify(route.getInstanceSlice('layout').arrange.columns
+      .map(c => (c.panels || []).map(p => ({ id: p.id, tabs: (p.tabs || []).map(t => t.poolId) }))));
+    eq(after, before, 'multi-tab pane unchanged (REPLACE refused)');
+    eq(getModel().modes.paneSelectMode, false, 'overlay still closes on refuse');
+  });
+
+  it('T2-b — REPLACE on single-tab target still works', () => {
+    setupRich();
+    // pane-groups is single-tab. REPLACE with hidden `extra` should
+    // succeed as before — the refuse-guard only fires for multi-tab.
+    api.dispatchMsg(api.wrap('layout', { type: 'pane_select_open', paneId: 'pane-groups' }));
+    api.dispatchMsg(api.wrap('layout', {
+      type: 'pool_swap_by_id', targetPaneId: 'pane-groups', pickedId: 'extra',
+    }));
+    eq(paneIdsByCol()[0][0], 'extra', 'REPLACE succeeded on single-tab target');
+  });
+
+  it('T2-a — SWAP across columns strips heightPct (column-local share)', () => {
+    const layout = route.getInstanceSlice('layout');
+    layout.paneSelect = null;
+    layout.tabListOwnerPaneId = null;
+    layout.freeConfig = { drag: null, undo: [], redo: [], titleEdit: { text: '' }, notice: null, noticeKind: null };
+    layout.arrange = {
+      columns: [
+        { width: 24, panels: [
+          { type: 'groups', id: 'groups', paneId: 'pane-groups', columnIndex: 0,
+            heightPct: 60, tabs: [{ id: 'groups', poolId: 'groups' }] },
+          { type: 'stats',  id: 'stats',  paneId: 'pane-stats',  columnIndex: 0,
+            heightPct: 40, tabs: [{ id: 'stats', poolId: 'stats' }] },
+        ] },
+        { panels: [
+          { type: 'extra',  id: 'extra',  paneId: 'pane-extra',  columnIndex: 1,
+            heightPct: 70, tabs: [{ id: 'extra', poolId: 'extra' }] },
+          { type: 'detail', id: 'detail', paneId: 'pane-detail', columnIndex: 1,
+            tabs: [{ id: 'detail', poolId: 'detail' }] },
+        ] },
+      ],
+      pool: {
+        'groups': { id: 'groups', type: 'groups', title: 'Groups' },
+        'stats':  { id: 'stats',  type: 'stats',  title: 'Stats' },
+        'extra':  { id: 'extra',  type: 'extra',  title: 'Extra' },
+        'detail': { id: 'detail', type: 'detail', title: 'Detail' },
+      },
+      detailHeightPct: 60,
+    };
+    getModel().modes.paneSelectMode = false;
+    // SWAP groups (col 0, heightPct=60) with extra (col 1, heightPct=70).
+    api.dispatchMsg(api.wrap('layout', { type: 'pane_select_open', paneId: 'pane-groups' }));
+    api.dispatchMsg(api.wrap('layout', {
+      type: 'pool_swap_by_id', targetPaneId: 'pane-groups', pickedId: 'extra',
+    }));
+    const arr = route.getInstanceSlice('layout').arrange;
+    const movedExtra = arr.columns[0].panels[0];   // extra now in col 0
+    const movedGroups = arr.columns[1].panels[0];  // groups now in col 1
+    eq(movedExtra.id, 'extra', 'extra moved to col 0');
+    eq(movedGroups.id, 'groups', 'groups moved to col 1');
+    // Cross-column SWAP must strip heightPct on both moving panes —
+    // their old share is column-local.
+    eq(movedExtra.heightPct, undefined, 'extra heightPct stripped on cross-col move');
+    eq(movedGroups.heightPct, undefined, 'groups heightPct stripped on cross-col move');
+    // Sibling panes (stats in col 0, detail in col 1) untouched.
+    eq(arr.columns[0].panels[1].heightPct, 40, 'stats heightPct preserved');
+  });
+
+  it('T2-a — SWAP within same column preserves heightPct', () => {
+    setupRich();
+    // setupRich has groups + stats in col 0, both heightPct undefined.
+    // Inject heightPct to test in-column SWAP preserves them.
+    const arr = route.getInstanceSlice('layout').arrange;
+    arr.columns[0].panels[0].heightPct = 60;
+    arr.columns[0].panels[1].heightPct = 40;
+    api.dispatchMsg(api.wrap('layout', { type: 'pane_select_open', paneId: 'pane-groups' }));
+    api.dispatchMsg(api.wrap('layout', {
+      type: 'pool_swap_by_id', targetPaneId: 'pane-groups', pickedId: 'stats',
+    }));
+    const after = route.getInstanceSlice('layout').arrange;
+    // After SWAP within col 0, slot 0 holds stats (with its 40) and
+    // slot 1 holds groups (with its 60). Same-column = pure
+    // rearrangement, heightPcts ride along.
+    eq(after.columns[0].panels[0].id, 'stats');
+    eq(after.columns[0].panels[0].heightPct, 40, 'stats keeps its heightPct (same-col SWAP)');
+    eq(after.columns[0].panels[1].id, 'groups');
+    eq(after.columns[0].panels[1].heightPct, 60, 'groups keeps its heightPct (same-col SWAP)');
+  });
 });
 
 describe('[4] modes registry has paneSelectMode', () => {
