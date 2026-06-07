@@ -284,8 +284,13 @@ function handleMouse(kind, x, y) {
     }
 
     if (isTabDrag) {
-      if (kind === 'motion')       dispatchMsg(wrap('layout', { type: 'tab_drag_motion', mx, my }));
-      else if (kind === 'release') dispatchMsg(wrap('layout', { type: 'tab_drag_release' }));
+      if (kind === 'motion') {
+        // Thread currentGroup so the reducer arm doesn't have to read
+        // getModel() to fetch it (TEA: pure of model state).
+        dispatchMsg(wrap('layout', { type: 'tab_drag_motion', mx, my, currentGroup: model.currentGroup }));
+      } else if (kind === 'release') {
+        dispatchMsg(wrap('layout', { type: 'tab_drag_release' }));
+      }
       render();
       return;
     }
