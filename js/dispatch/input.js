@@ -19,6 +19,7 @@ const { isTerminalTab, activeTerminalId } = require('../panel/viewer/tabs');
 const { writeToSession, isSessionDead } = require('../io/terminal');
 const {getPanelDef, getItems, getInstanceSlice, dispatchMsg, wrap, getFocus, instanceKind } = require('../panel/api');
 const route = require('../leaves/route');
+const mpane = require('../leaves/pane');
 const { isChainActive } = require('./modes');
 
 function _detail() { return getInstanceSlice('detail'); }
@@ -90,7 +91,6 @@ function _handleWheel(mx, my, delta) {
       // the focused case so auto-yank parity with keyboard is automatic.
       // v0.6.3 B3 — getFocus() is a paneId; tolerant compare via paneMatchesFocus
       // so wheel-over-focused-pane still hits the full-cascade navSelect path.
-      const mpane = require('../leaves/pane');
       if (mpane.paneMatchesFocus(p, getFocus())) {
         navSelect(p.type, next);
       } else if (p.type === 'groups') {

@@ -249,5 +249,5 @@ sync point per concern, identity-preserving.
 
 **See also.**
 - `docs/PRINCIPLES.md` §12 — the Component discipline rules.
-- `docs/v0.5-layering.md` — single-writer + the blessed exceptions.
-- `docs/v0.5-tea.md` — the TEA shape and the two-homes state framing.
+- `docs/history/v0.5-layering.md` — single-writer + the blessed exceptions.
+- `docs/history/v0.5-tea.md` — the TEA shape and the two-homes state framing.

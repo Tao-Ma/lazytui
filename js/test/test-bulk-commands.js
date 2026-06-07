@@ -114,7 +114,7 @@ describe('[6] command leaves terminalMode (R6: tab transition handled by stream_
     // streamCommand invoked with the right args.
     getModel().config = { groups: { g1: { name: 'g1', containers: ['c1'] } } };
     getInstanceSlice('detail').tab = 3;
-    getModel().modes.terminalMode = true;
+    require('../dispatch/dispatch').applyMsg({ type: 'mode_set', flag: 'terminalMode' });
     setSel('containers', 0);
     clearMultiSel('containers');
     calls.length = 0;

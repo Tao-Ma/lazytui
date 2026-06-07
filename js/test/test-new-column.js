@@ -544,7 +544,10 @@ describe('[T3-defenses] T3.1/T3.3/T3.4/T3.5 hardening', () => {
     const slice = makeSlice();
     const newArrange = { ...slice.arrange, columns: slice.arrange.columns.slice() };
     const out = applyUpdate({ type: 'set_arrange', arrange: newArrange }, { ...slice, focus: 'groups' });
-    eq(out.focus, 'groups', 'focus survives when its type is still in the new arrange');
+    // v0.6.3 Phase B3 — set_arrange normalizes a still-placed
+    // type-form focus to paneId. Pre-arc this would have returned
+    // 'groups' verbatim; post-arc it's promoted to 'pane-groups'.
+    eq(out.focus, 'pane-groups', 'focus normalized to paneId when type is still placed (B3)');
   });
 });
 

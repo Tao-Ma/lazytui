@@ -52,6 +52,7 @@ const path = require('path');
 
 const { getModel } = require('../../app/runtime');
 const mnav = require('../../leaves/nav');
+const route = require('../../leaves/route');
 const {
   esc, visibleLen, theme, renderPanel,
   getSel, getScroll, getFilter, isMultiSel,
@@ -274,7 +275,7 @@ function _renderFor(panel, w, h, slice, panelType, hardcoded, opts) {
   const sel = getSel(panelType);
   // v0.6.3 B3 — getFocus() is a paneId; the renderer is called per-type
   // so compare via the route table (paneId → kind name).
-  const isFocused = require('../../leaves/route').instanceKind(getFocus()) === panelType;
+  const isFocused = route.instanceKind(getFocus()) === panelType;
   const t = theme();
   const source = _source(panelType, hardcoded);
   const lines = items.map((it, i) => {

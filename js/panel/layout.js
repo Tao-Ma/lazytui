@@ -516,9 +516,15 @@ function update(msg, slice) {
         const allPanes = mpool.allPanesInColumns(next.arrange);
         // v0.6.3 Phase B3 — focus is a paneId post-_withFocus normalization.
         // `paneMatchesFocus` tolerates pre-migration callers that still
-        // direct-set focus to a panel type or pool id.
+        // direct-set focus to a panel type or pool id; the resolver
+        // below normalizes the survivor to paneId so post-set_arrange
+        // slice.focus is always paneId-form (closes the boot-default
+        // type-form leak — init's `focus: 'groups'` placeholder gets
+        // promoted to `pane-groups` here).
         const focusStillPlaced = allPanes.some(p => mpane.paneMatchesFocus(p, next.focus));
-        if (!focusStillPlaced && allPanes.length > 0) {
+        if (focusStillPlaced) {
+          next.focus = _resolvePaneIdForFocus(next, next.focus);
+        } else if (allPanes.length > 0) {
           next.focus = allPanes[0].paneId || allPanes[0].type;
         }
       }

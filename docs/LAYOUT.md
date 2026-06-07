@@ -33,7 +33,7 @@ another tab kind, subject to the same pool/cell mechanics.
 
 v0.6.2 generalized the column model: `layout.left:` / `layout.right:`
 retire in favor of an ordered `layout.columns:` list (see
-[`v0.6.2-migrate.md`](v0.6.2-migrate.md) for the mechanical
+[`history/v0.6.2-migrate.md`](history/v0.6.2-migrate.md) for the mechanical
 hand-conversion).
 
 ```yaml
@@ -86,7 +86,7 @@ to the focused pane's other tabs). Keyboard / mouse UX for tab
 cycling is deferred to v0.7; today `]`/`[` cycles the active viewer
 tab's inner strip (Info / Transcript / action tabs / terminal tabs
 / content tabs), not pane-level tabs. See
-[`v0.6.1-migrate.md`](v0.6.1-migrate.md) for the conversion guide
+[`history/v0.6.1-migrate.md`](history/v0.6.1-migrate.md) for the conversion guide
 from v0.6.0 inline cells.
 
 **Default layout** generated when neither block is given.
@@ -258,7 +258,7 @@ filesystem; select with `source:` (`declared` / `filesystem` / `both` /
   default layout still places exactly one detail tab. The pool/tab
   mechanics let you co-locate other viewer-kind tabs in the same
   pane via `{tabs: [detail, history]}` mappings (see
-  [`v0.6.1-migrate.md`](v0.6.1-migrate.md)).
+  [`history/v0.6.1-migrate.md`](history/v0.6.1-migrate.md)).
 - Anchored to the **LAST column's LAST pane** by layout invariant
   (was "right column's last pane" pre-v0.6.2; the rule scales to
   N-column layouts).

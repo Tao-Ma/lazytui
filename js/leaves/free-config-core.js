@@ -24,6 +24,7 @@
 'use strict';
 
 const mpool = require('./pool');
+const mpane = require('./pane');
 const { hotkeyPoolForColumn } = require('./hotkeys');
 
 const MIN_PANEL_H = 3;
@@ -229,7 +230,6 @@ function _setPanelHeightPct(slice, panelType, pct) {
 function selectedIdx(slice) {
   // v0.6.3 Phase B3 — focus is a paneId; tolerant matcher catches
   // pre-migration callers (boot default, tests) seeding a panel-type.
-  const mpane = require('./pane');
   return mpool.allPanesInColumns(slice.arrange).findIndex(p => mpane.paneMatchesFocus(p, slice.focus));
 }
 
@@ -242,7 +242,6 @@ function selectedIdx(slice) {
  *  knows the kind, not the paneId, and there's a 1:1 in singleton);
  *  result is written as paneId. */
 function clampSelected(slice, preferredType) {
-  const mpane = require('./pane');
   const all = mpool.allPanesInColumns(slice.arrange);
   if (all.length === 0) return slice;
   if (preferredType) {

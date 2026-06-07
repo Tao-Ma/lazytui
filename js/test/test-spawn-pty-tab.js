@@ -75,7 +75,7 @@ function resetState() {
   getInstanceSlice('layout').viewMode = 'normal';
   getInstanceSlice('detail').tab = 0;
   getInstanceSlice("layout").focus = null;
-  getModel().modes.terminalMode = false;
+  require('../dispatch/dispatch').applyMsg({ type: 'mode_clear', flag: 'terminalMode' });
   spawnCalls.length = 0;
   historyStarts.length = 0;
   forceFullRepaintCalls = 0;
@@ -233,7 +233,7 @@ describe('[7] _handleTerminalModeData: Ctrl+\\ from zoom drops full+terminalMode
   // Bootstrap into the spawn-and-zoom state
   runAction('a:vim', { type: 'spawn', script: 'vim' }, []);
   forceFullRepaintCalls = 0;
-  getModel().modes.terminalMode = true;  // simulate having focused the PTY
+  require('../dispatch/dispatch').applyMsg({ type: 'mode_set', flag: 'terminalMode' });  // simulate having focused the PTY
 
   const handled = _handleTerminalModeData('\x1c');
 
@@ -252,7 +252,7 @@ describe('[7] _handleTerminalModeData: Ctrl+\\ from zoom drops full+terminalMode
 describe('[8] _handleTerminalModeData: Ctrl+\\ without zoom only flips terminalMode', () => {
   resetState();
   getInstanceSlice('layout').viewMode = 'normal';
-  getModel().modes.terminalMode = true;
+  require('../dispatch/dispatch').applyMsg({ type: 'mode_set', flag: 'terminalMode' });
 
   _handleTerminalModeData('\x1c');
 
@@ -268,7 +268,7 @@ describe('[9] _handleTerminalModeData: dead session also exits + drops zoom', ()
   resetState();
   runAction('a:dead', { type: 'spawn', script: 'true' }, []);
   forceFullRepaintCalls = 0;
-  getModel().modes.terminalMode = true;
+  require('../dispatch/dispatch').applyMsg({ type: 'mode_set', flag: 'terminalMode' });
   mockSessionDead = true;  // pretend the PTY exited under our feet
 
   _handleTerminalModeData('x');  // any non-Ctrl+\ key
@@ -290,7 +290,7 @@ describe('[9] _handleTerminalModeData: dead session also exits + drops zoom', ()
 describe('[10] _handleTerminalModeData: live session forwards bytes to PTY', () => {
   resetState();
   runAction('a:live', { type: 'spawn', script: 'cat' }, []);
-  getModel().modes.terminalMode = true;
+  require('../dispatch/dispatch').applyMsg({ type: 'mode_set', flag: 'terminalMode' });
   mockSessionDead = false;
 
   const beforeForce = forceFullRepaintCalls;

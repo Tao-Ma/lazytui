@@ -34,7 +34,7 @@ function freshGroup({ actions = {}, terminals = {} } = {}) {
   getInstanceSlice('detail').contentTabs = {};
   getInstanceSlice('detail').tab = 0;
   getInstanceSlice("layout").focus = 'groups';
-  getModel().modes.terminalMode = false;
+  require('../dispatch/dispatch').applyMsg({ type: 'mode_clear', flag: 'terminalMode' });
   getInstanceSlice('detail').lines = [];
   getInstanceSlice('detail').scroll = 0;
 }

@@ -32,7 +32,7 @@ Core TUI is a generic framework. Components own state (a slice) and
 respond to messages (`update(msg, slice)`); the framework owns slice
 storage and dispatch. See [PRINCIPLES.md §12](PRINCIPLES.md#12-tea-shape-and-the-component-discipline)
 for the discipline rules and the spec at
-[docs/v0.5-layout-component.md](v0.5-layout-component.md) for the live
+[docs/history/v0.5-layout-component.md](history/v0.5-layout-component.md) for the live
 arc.
 
 ### Component API surface

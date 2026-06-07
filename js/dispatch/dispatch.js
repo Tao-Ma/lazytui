@@ -36,6 +36,7 @@ const keybindings = require('./keybindings');
 const modes = require('./modes');
 const runtime = require('../app/runtime');
 const route = require('../leaves/route');
+const mpane = require('../leaves/pane');
 const { getModel } = runtime;
 // handleAction + _runActionByKey live in ./actions (carved out 2026-05-31).
 // Cycle-safe: actions.js lazy-requires this module's applyMsg/navSelect
@@ -237,8 +238,7 @@ function handleFreeConfigKey(key, seq) {
       // reducer; other invariants (drag in flight) are out of band
       // here since handleFreeConfigKey only runs on idle key input.
       const all = layoutSlice ? require('../leaves/pool').allPanesInColumns(layoutSlice.arrange) : [];
-      const _mpane = require('../leaves/pane');
-      const sel = all.find(p => _mpane.paneMatchesFocus(p, layoutSlice && layoutSlice.focus));
+      const sel = all.find(p => mpane.paneMatchesFocus(p, layoutSlice && layoutSlice.focus));
       if (sel) dispatch({ type: 'panel_collapse_toggle', id: sel.id });
       break;
     }

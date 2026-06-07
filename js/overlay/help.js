@@ -22,6 +22,8 @@ const { getModel } = require('../app/runtime');
 const { esc } = require('../io/ansi');
 const {getCommands, getPanelDef, getInstanceSlice, getFocus, instanceKind } = require('../panel/api');
 const kb = require('../dispatch/keybindings');
+const mpane = require('../leaves/pane');
+const route = require('../leaves/route');
 
 /** Walk the leader-tree depth-first, emitting `{seq, label}` for every
  *  LEAF (the actual bindings). Subtrees recurse; their internal labels
@@ -54,8 +56,6 @@ function _leaderChordLines() {
 function helpLines() {
   // v0.6.3 B3 — getFocus() is a paneId; resolve to the underlying
   // pane + its type so getPanelDef (keyed by panel-type) still hits.
-  const mpane = require('../leaves/pane');
-  const route = require('../leaves/route');
   const focusedPanel = allPanels().find(p => mpane.paneMatchesFocus(p, getFocus()));
   const focusName = focusedPanel ? focusedPanel.title : 'TUI';
   const def = getPanelDef(focusedPanel ? focusedPanel.type : route.instanceKind(getFocus()));

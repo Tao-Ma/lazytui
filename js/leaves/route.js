@@ -35,15 +35,30 @@ function componentForPanel(panelType) { return _panelOwner[panelType]; }
 
 // --- Instance-keyed slice store ----------------------------------------
 //
-// Canonical storage is `_instances[id] = { id, kind, slice }`. `id` is
-// the tab identity (singleton instances today use `id === kind`;
-// multi-instance mints per-tab ids on top of this seed). `kind` is the
-// Component name. `slice` is the per-instance state minted via
-// `spec.init()` and updated by the Component's `update`.
+// Canonical storage is `_instances[id] = { id, kind, slice }`.
+//
+// - `id` is the instance identity. v0.6.3 Phase B1: placed singleton
+//   panels mint with `id === paneId` (e.g. `pane-groups`); the
+//   register-time fallback (chrome Components like 'layout', and
+//   the docker `panelTypes` case where `components[p.type]` misses)
+//   uses `id === Component.name` (e.g. 'docker', 'layout').
+//
+// - `kind` is the value passed by the writer. registerComponent
+//   passes the Component name; the per-pane B1 mint in state.js
+//   passes `p.type` (which for singleton Components equals the
+//   Component name — they collapse — and for docker-style
+//   `panelTypes` would differ, but that code path is currently
+//   skipped). Treat `kind` as "the routing label the consumer of
+//   this instance uses to find it" rather than strictly one or the
+//   other; the two converge today.
+//
+// - `slice` is the per-instance state minted via `spec.init()` and
+//   updated by the Component's `update`.
 //
 // `_primaryByKind[kind]` maps a kind to the id of its primary
 // instance — the lookup `resolveTarget` and other consumers use to
-// pick "the canonical instance of a kind."
+// pick "the canonical instance of a kind." Phase B2 (v0.7) is the
+// retirement arc for the kind-name fallback paths.
 
 const _instances = Object.create(null);
 const _primaryByKind = Object.create(null);

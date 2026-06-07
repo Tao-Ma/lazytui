@@ -265,7 +265,7 @@ still permits:
   `slice.nav[panel].scroll` keep-in-view adjustments (Phase 4a) — during
   `calcLayout()`. These are *outputs* of the layout pass, consumed by
   mouse/input handlers between frames; panel renderers read them, don't
-  write them. (Blessed outside-writer; see `docs/v0.5-layering.md`.)
+  write them. (Blessed outside-writer; see `docs/history/v0.5-layering.md`.)
 - **Lazy hub subscriptions** (stats panel,
   `js/panel/monitor/stats.js#_ensureSub`) and **lazy initial-state
   fixup** (config-status panel) happen on first render and are

@@ -201,7 +201,7 @@ describe('[11] keyboard visual-mode — claim via detail Component update', () =
   function withDetail(lines) {
     setUp(lines);
     getInstanceSlice("layout").focus = 'detail';
-    getModel().modes.terminalMode = false;
+    require('../dispatch/dispatch').applyMsg({ type: 'mode_clear', flag: 'terminalMode' });
     getInstanceSlice('detail').cursor = { line: 0, col: 0 };
     // viewer.update reads slice.innerH directly (set by render's R4.9
     // direct write; tests seed it to drive selection geometry without

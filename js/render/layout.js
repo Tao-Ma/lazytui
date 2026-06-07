@@ -251,18 +251,20 @@ let _currentLayout = null;
  * Inner viewport rows for a panel's CURRENTLY-RENDERED height, view-
  * mode aware. The on-screen panel in half/full view occupies the full
  * `availH = max(6, rows - 1)` rows; otherwise the panel uses its
- * column-share (`panelHeights[type]`). Border + bottom border = 2
- * rows are subtracted, so the return is the content-row count.
+ * column-share read via `boundsFor(panelType)`. Border + bottom
+ * border = 2 rows are subtracted, so the return is the content-row
+ * count.
  *
  * Single source of truth for any scroll / page / wheel math that
- * needs "how many rows of content fit in this panel right now". The
- * `slice.panelHeights[type]` map is INTERNAL to the renderer's
- * normal-view column distribution — reading it directly from scroll
- * code is a bug class because it under-reports in half/full view
- * (see fix arc 2026-06-03 around the GPDATA scroll report).
+ * needs "how many rows of content fit in this panel right now".
+ * `boundsFor` prefers `slice.paneBounds[type]` then falls through
+ * to `_currentLayout.rects` (post-P1.5 — the legacy `_panelHeights`
+ * module-local was retired). Reading the column-share directly from
+ * scroll code is a bug class because it under-reports in half/full
+ * view (see fix arc 2026-06-03 around the GPDATA scroll report).
  *
- * Pre-first-render (panelHeights empty), returns a 1-row fallback so
- * callers don't divide-by-zero.
+ * Pre-first-render (layout slice empty + no `_currentLayout` yet),
+ * returns a 1-row fallback so callers don't divide-by-zero.
  */
 function getPanelViewportH(panelType) {
   const layoutSlice = getInstanceSlice('layout');
@@ -1013,6 +1015,15 @@ function render(model = getModel()) {
     // (syncPanelScroll → set_scroll) can throw past it. Without
     // try/finally the preview arrange would persist in the live slice
     // and every subsequent reducer write would build on top of it.
+    //
+    // v0.6.3 Phase D5 retired most render-side in-place writes in
+    // favor of `setInstanceSlice` (immutable spread). This pair is
+    // the surviving exception: it's a save/swap/restore around a
+    // single render call. Routing the restore through setInstanceSlice
+    // would emit a new model snapshot mid-render and trip the
+    // reactivity boundary (next frame would observe two diffs for
+    // one paint). Save the canonical refs above, paint with the
+    // preview, restore the refs here — no observer sees the swap.
     if (previewArrange) {
       layoutSlice.arrange = savedArrange;
       layoutSlice.paneBounds = savedBounds;

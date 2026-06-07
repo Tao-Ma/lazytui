@@ -31,6 +31,7 @@ const { isSessionDead, restartSession } = require('../io/terminal');
 const { execSync } = require('child_process');
 const { getModel } = require('../app/runtime');
 const route = require('../leaves/route');
+const mpane = require('../leaves/pane');
 
 // Lazy stub for the dispatch back-edge. Each invocation looks up the
 // cached module — Node caches require, so this is essentially free.
@@ -187,7 +188,6 @@ function handleAction(action, arg) {
     case 'focus_left': {
       // v0.6.3 Phase B3 — match by paneId-or-type via paneMatchesFocus;
       // pass paneId to focus_set so the post-_withFocus stamp is stable.
-      const mpane = require('../leaves/pane');
       const panes = allPanels();
       const idx = panes.findIndex(p => mpane.paneMatchesFocus(p, getFocus()));
       const target = (idx > 0) ? (panes[idx - 1].paneId || panes[idx - 1].type) : getFocus();
@@ -195,7 +195,6 @@ function handleAction(action, arg) {
       break;
     }
     case 'focus_right': {
-      const mpane = require('../leaves/pane');
       const panes = allPanels();
       const idx = panes.findIndex(p => mpane.paneMatchesFocus(p, getFocus()));
       const target = (idx >= 0 && idx < panes.length - 1)

@@ -1,8 +1,8 @@
 # Decorators — retired (v0.5 Phase 5)
 
 The slot-keyed decorator framework that used to live in `js/decorators.js`
-was retired on the `v0.5-tea` branch (Phase 5 of the layout-Component
-arc, spec: `docs/v0.5-layout-component.md`). Nothing in tree subscribed
+was retired on the `history/v0.5-tea` branch (Phase 5 of the layout-Component
+arc, spec: `docs/history/v0.5-layout-component.md`). Nothing in tree subscribed
 to it cross-Component; every "decoration" was a Component contributing
 to its own panel.
 
