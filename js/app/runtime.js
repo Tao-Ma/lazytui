@@ -825,7 +825,15 @@ function update(model, msg) {
           `[dim]cmd:[/]`,
           `  ${esc(owner.cmd || '(no cmd recorded)')}`,
         ];
-        cmds.push({ type: 'msg', msg: route.wrap(viewerTarget, { type: 'viewer_set_content', lines }) });
+        // v0.6.3 Phase D1 — thread root facts the viewer_set_content
+        // arm needs (currentGroup, fromTabKey). msg.tab is not used
+        // here so no `total` needed. Slice + model already in scope.
+        const vSlice = route.getInstanceSlice(viewerTarget) || { tab: 0 };
+        cmds.push({ type: 'msg', msg: route.wrap(viewerTarget, {
+          type: 'viewer_set_content', lines,
+          currentGroup: model.currentGroup,
+          fromTabKey: pt.resolveTabKey((vSlice.tab | 0), vSlice, model),
+        }) });
         cmds.push({ type: 'msg', msg: route.wrap('layout', { type: 'focus_set', focus: viewerTarget }) });
       }
       return [closedModel, cmds];

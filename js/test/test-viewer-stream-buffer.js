@@ -38,10 +38,7 @@ setModel({
 });
 
 function applyUpdate(s, msg) {
-  // v0.6.3 Phase 3d: thread targetKey + currentGroup into tab_switch
-  // so the reducer arm stays pure of getModel(). Production
-  // dispatchers thread the bundle; tests dispatching the bare Msg
-  // get the bundle patched in here.
+  // v0.6.3 Phase 3d: thread targetKey + currentGroup into tab_switch.
   if (msg && msg.type === 'tab_switch' && msg.targetKey == null) {
     const m = getModel();
     msg = {
@@ -49,6 +46,19 @@ function applyUpdate(s, msg) {
       targetKey: pt.resolveTabKey(msg.idx, { ...s, tab: msg.idx }, m),
       currentGroup: m.currentGroup,
     };
+  }
+  // v0.6.3 Phase D1: thread viewer_set_content bundle.
+  if (msg && msg.type === 'viewer_set_content' && msg.fromTabKey === undefined) {
+    const m = getModel();
+    const patched = {
+      ...msg,
+      currentGroup: m.currentGroup,
+      fromTabKey: pt.resolveTabKey((s.tab | 0), s, m),
+    };
+    if (typeof msg.tab === 'number') {
+      patched.total = pt.flatTabInfo(s, m, m.currentGroup).total;
+    }
+    msg = patched;
   }
   const r = viewer._update(msg, s);
   return Array.isArray(r) ? { next: r[0], cmds: r[1] || [] } : { next: r, cmds: [] };

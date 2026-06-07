@@ -441,7 +441,10 @@ function _updateInner(msg, slice) {
       //      and the transition-detect captures correctly).
       let captureFirst = slice;
       if (!slice.viewerOverride && typeof msg.tab !== 'number') {
-        const fromKey = _activeTabKey(slice, getModel());
+        // v0.6.3 Phase D1 — dispatcher threads msg.fromTabKey (the
+        // currently-active tab's stable key) so the reducer stays
+        // pure of getModel().
+        const fromKey = msg.fromTabKey;
         if (fromKey) {
           const innerH = slice.innerH > 0 ? slice.innerH : 1;
           const linesLen = (slice.lines || []).length;
@@ -469,10 +472,11 @@ function _updateInner(msg, slice) {
         // accepted negative / non-numeric values: -5 | 0 === -5, 'foo'
         // | 0 === 0, NaN | 0 === 0. Mirrors tab_switch's guard
         // (pane-tabs.js: `if (idx < 0 || idx >= total) return slice`).
-        const m = getModel();
-        const info = pt.flatTabInfo(slice, m, m.currentGroup);
+        // v0.6.3 Phase D1 — dispatcher threads msg.total (flatTabInfo
+        // total at dispatch time) so the reducer stays pure.
         const tab = msg.tab | 0;
-        if (tab >= 0 && tab < info.total) next.tab = tab;
+        const total = typeof msg.total === 'number' ? msg.total : Infinity;
+        if (tab >= 0 && tab < total) next.tab = tab;
       }
       return next;
     }

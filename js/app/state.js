@@ -283,8 +283,23 @@ function setViewerContent(tabId, text, opts) {
     if (tabId == null) return;   // no viewer registered — drop the write
   }
   const api = require('../panel/api');
-  const inner = { type: 'viewer_set_content', lines: text ? text.split('\n') : [] };
-  if (opts && typeof opts.tab === 'number') inner.tab = opts.tab | 0;
+  // v0.6.3 Phase D1 — thread root facts the viewer_set_content arm
+  // needs so the reducer stays pure of getModel():
+  //   currentGroup, fromTabKey (the FROM-tab key for view-state
+  //   capture), total (when msg.tab is set, for the in-range clamp).
+  const slice = api.getInstanceSlice(tabId) || { tab: 0 };
+  const model = require('./runtime').getModel();
+  const pt = require('../leaves/pane-tabs');
+  const inner = {
+    type: 'viewer_set_content',
+    lines: text ? text.split('\n') : [],
+    currentGroup: model.currentGroup,
+    fromTabKey: pt.resolveTabKey((slice.tab | 0), slice, model),
+  };
+  if (opts && typeof opts.tab === 'number') {
+    inner.tab = opts.tab | 0;
+    inner.total = pt.flatTabInfo(slice, model, model.currentGroup).total;
+  }
   api.dispatchMsg(api.wrap(tabId, inner));
 }
 
