@@ -309,9 +309,18 @@ describe('[3] update — (model, msg) → [model, cmds], pure + Cmd descriptors'
     const snap = JSON.stringify(m.focus);
     // show_help / quit no longer go through the reducer (R4.8) —
     // actions.js calls overlay/help.showHelp() / cleanup() + process.exit
-    // directly. next_tab / prev_tab keep their Cmd path.
-    eq(runtime.update(m, { type: 'next_tab' })[1][0].msg.msg.dir, +1);
-    eq(runtime.update(m, { type: 'prev_tab' })[1][0].msg.msg.dir, -1);
+    // directly. next_tab / prev_tab keep their Cmd path — v0.6.3
+    // Phase 3f retired the intermediate `tab_cycle` Msg; _cycleViewerTab
+    // now emits `tab_switch` directly (with precomputed idx + targetKey)
+    // so the pane-tabs leaf no longer needs ctx.getModel.
+    const cmdsNext = runtime.update(m, { type: 'next_tab' })[1];
+    const cmdsPrev = runtime.update(m, { type: 'prev_tab' })[1];
+    eq(cmdsNext[0].msg.msg.type, 'tab_switch');
+    eq(cmdsPrev[0].msg.msg.type, 'tab_switch');
+    // total=2 (Info + Transcript) with currentGroup=''; from tab=0,
+    // dir +1 → idx 1; dir -1 → idx 1 (wrap).
+    eq(cmdsNext[0].msg.msg.idx, 1);
+    eq(cmdsPrev[0].msg.msg.idx, 1);
     eq(JSON.stringify(m.focus), snap, 'model unchanged by Cmd-only verbs');
   });
   it('unknown msg: model untouched, no cmds', () => {

@@ -230,10 +230,26 @@ function _withModal(model, patch) {
 // `]`/`[` cycle the focused-or-sticky viewer's tab list. resolveTarget
 // picks the right viewer pane (focus / sticky / first-in-arrange); null
 // result (no viewer registered) drops the Cmd.
+//
+// v0.6.3 TEA Phase 3f: this arm used to emit a `tab_cycle` Msg that
+// the pane-tabs leaf decoded via ctx.getModel + ctx.getTabInfo to
+// compute the next idx and emit tab_switch. The intermediate Msg
+// existed only because the chain dispatcher didn't have model/slice
+// in scope. The root reducer DOES — its arg IS model — so compute
+// directly here and emit tab_switch. tab_cycle Msg retired.
 function _cycleViewerTab(model, dir) {
   const target = route.resolveTarget('viewer');
   if (!target) return [model, []];
-  return [model, [{ type: 'msg', msg: route.wrap(target, { type: 'tab_cycle', dir }) }]];
+  const slice = route.getInstanceSlice(target) || { tab: 0 };
+  const groupName = (model && model.currentGroup) || '';
+  const total = pt.flatTabInfo(slice, model, groupName).total;
+  if (total <= 1) return [model, []];
+  const next = (((slice.tab | 0) + (dir | 0) + total) % total + total) % total;
+  const targetKey = pt.resolveTabKey(next, { ...slice, tab: next }, model);
+  return [model, [{ type: 'msg', msg: route.wrap(target, {
+    type: 'tab_switch', idx: next,
+    targetKey, currentGroup: groupName,
+  }) }]];
 }
 
 /**

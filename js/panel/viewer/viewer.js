@@ -400,10 +400,12 @@ function _updateInner(msg, slice) {
   // viewer_reorder_content_tab) lift through the pane-tabs leaf,
   // parameterised by this pane's id. Returns null when msg isn't a tab
   // Msg, in which case the switch below handles it.
+  // v0.6.3 Phase 3f: ctx no longer carries getModel — every reducer
+  // arm reads currentGroup + targetKey from msg (threaded by
+  // dispatchers via pt.modelBundle / pt.resolveTabKey).
   const tabResult = pt.reduceTabMsg(msg, slice, {
     paneId: 'detail',
     wrap,
-    getModel,
     getTabInfo,
     activeContentTab,
   });

@@ -302,7 +302,20 @@ function handleTabListKey(key, seq) {
   const ownerPaneId = (layoutSlice && layoutSlice.tabListOwnerPaneId) || 'detail';
   const send = (m) => dispatchMsg(wrap(ownerPaneId, m));
   if (key === 'escape' || seq === 'T' || key === 'T') { send({ type: 'tab_list_close' }); return; }
-  if (key === 'return')              { send({ type: 'tab_list_pick' }); return; }
+  if (key === 'return') {
+    // v0.6.3 Phase 3f: thread targetKey + currentGroup so the leaf's
+    // tab_list_pick arm doesn't need ctx.getModel to resolve them.
+    const pt = require('../leaves/pane-tabs');
+    const ownerSlice = getInstanceSlice(ownerPaneId);
+    const idx = (ownerSlice && ownerSlice.tabList && (ownerSlice.tabList.cursor | 0)) || 0;
+    const m = getModel();
+    send({
+      type: 'tab_list_pick',
+      targetKey: pt.resolveTabKey(idx, { ...ownerSlice, tab: idx }, m),
+      currentGroup: m.currentGroup,
+    });
+    return;
+  }
   if (key === 'up' || seq === 'k')   { send({ type: 'tab_list_nav', dir: -1, vh, tabCount }); return; }
   if (key === 'down' || seq === 'j') { send({ type: 'tab_list_nav', dir: +1, vh, tabCount }); return; }
   if (seq === 'g')                   { send({ type: 'tab_list_nav', to: 'top',      vh, tabCount }); return; }

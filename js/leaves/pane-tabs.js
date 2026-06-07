@@ -16,7 +16,7 @@
  *        slice         → handled, no Cmds
  *        [next, cmds]  → handled with Cmds
  *
- *      ctx = { paneId, wrap, getModel, getTabInfo, activeContentTab }.
+ *      ctx = { paneId, wrap, getTabInfo, activeContentTab }.
  *      paneId-parameterised: every `wrap(paneId, …)` self-reference and
  *      every focus_set target uses ctx.paneId, so the same leaf can drive
  *      a non-detail pane once Phase 4 retargets the singleton call sites.
@@ -553,13 +553,22 @@ function reorderContent(slice, { groupName, fromIdx, toIdx, currentGroup, yamlTe
  *   paneId             — the pane this reducer represents. All
  *                        self-referential wrap() targets use this id.
  *   wrap(name, inner)  — Component-fan-out envelope.
- *   getModel()         — current model (for currentGroup reads).
  *   getTabInfo()       — flat tab info { actionTabs, termTabs,
  *                        contentTabs, total } for the active group.
  *   activeContentTab() — [key, info] | null for the active content tab.
+ *
+ * v0.6.3 Phase 3f: getModel() was retired from ctx. Reducer arms
+ * read currentGroup + targetKey from msg (threaded by dispatchers
+ * via pt.modelBundle / pt.resolveTabKey at dispatch time).
  */
 function reduceTabMsg(msg, slice, ctx) {
-  const { paneId, wrap, getModel, getTabInfo, activeContentTab } = ctx;
+  // v0.6.3 Phase 3f: ctx no longer carries getModel — every model
+  // read in this leaf was retired (mode-flag reads dropped or threaded
+  // via msg; currentGroup + targetKey threaded by dispatchers; tab_cycle
+  // Msg retired entirely). getTabInfo + activeContentTab still come
+  // through ctx because they're slice-derived view helpers, not direct
+  // model reads.
+  const { paneId, wrap, getTabInfo, activeContentTab } = ctx;
   switch (msg.type) {
     case 'tab_switch': {
       // Full tab-switch cascade — orchestrates the cross-layer concerns
@@ -683,22 +692,12 @@ function reduceTabMsg(msg, slice, ctx) {
       }
       return [next, effects];
     }
-    case 'tab_cycle': {
-      // next_tab / prev_tab keyboard verbs land here — compute the
-      // wrapped index and re-emit through tab_switch so both keyboard
-      // and mouse paths share the cascade. Phase 3d: precompute
-      // targetKey + currentGroup here so the downstream tab_switch
-      // arm doesn't need ctx.getModel().
-      const { total } = getTabInfo();
-      if (total <= 1) return slice;
-      const next = (slice.tab + (msg.dir | 0) + total) % total;
-      const m = getModel();
-      const targetKey = resolveTabKey(next, { ...slice, tab: next }, m);
-      return [slice, [{ type: 'msg', msg: wrap(paneId, {
-        type: 'tab_switch', idx: next,
-        targetKey, currentGroup: m.currentGroup,
-      }) }]];
-    }
+    // v0.6.3 TEA Phase 3f: tab_cycle Msg retired. The root reducer's
+    // _cycleViewerTab arm in app/runtime.js now computes the next
+    // tab idx + resolves targetKey directly (it has the model in
+    // scope) and emits tab_switch. Removed the intermediate Msg so
+    // the chain handler → tab_switch path doesn't need ctx.getModel
+    // in this leaf.
 
     // --- tab lifecycle ---
     case 'viewer_add_ephemeral_terminal': {
@@ -797,14 +796,12 @@ function reduceTabMsg(msg, slice, ctx) {
       return { ...slice, tabList: { ...tl, cursor, scroll } };
     }
     case 'tab_list_pick': {
-      // Pure leaf — dispatchers gate on tabListMode. Pre-cleanup
-      // read getModel().modes.tabListMode as a defensive guard.
-      // Phase 3d: precompute the tab_switch targetKey + currentGroup
-      // here too so the downstream arm doesn't need ctx.getModel().
+      // Pure leaf — dispatcher (handleTabListKey 'return' branch)
+      // threads targetKey + currentGroup via the Msg payload. The
+      // tab_switch Cmd this arm emits carries them through.
+      // Phase 3f: ctx.getModel() retired here.
       const tl = slice.tabList || { cursor: 0 };
       const idx = tl.cursor | 0;
-      const m = getModel();
-      const targetKey = resolveTabKey(idx, { ...slice, tab: idx }, m);
       return [
         slice,
         [
@@ -813,7 +810,8 @@ function reduceTabMsg(msg, slice, ctx) {
           { type: 'msg', msg: wrap('layout', { type: 'focus_set', focus: paneId }) },
           { type: 'msg', msg: wrap(paneId, {
             type: 'tab_switch', idx,
-            targetKey, currentGroup: m.currentGroup,
+            targetKey: msg.targetKey,
+            currentGroup: msg.currentGroup,
           }) },
           { type: 'force_full_repaint' },
         ],
