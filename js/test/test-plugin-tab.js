@@ -66,6 +66,19 @@ api.registerComponent(fakePlugin);
 api.registerComponent(require('../panel/viewer/viewer'));
 
 function applyUpdate(s, msg) {
+  // v0.6.3 Phase D1: stream_start routed branch threads currentGroup
+  // + actionTabIdx; tests dispatching the bare Msg get the bundle
+  // patched here so the reducer stays pure of getModel().
+  if (msg && msg.type === 'stream_start'
+      && msg.tabKey && msg.groupName && msg.currentGroup == null) {
+    const m = getModel();
+    const bundle = { currentGroup: m.currentGroup };
+    if (msg.groupName === m.currentGroup) {
+      const info = pt.flatTabInfo(s, m, msg.groupName);
+      bundle.actionTabIdx = info.actionTabs.findIndex(([k]) => k === msg.tabKey);
+    }
+    msg = { ...msg, ...bundle };
+  }
   const r = viewer._update(msg, s);
   return Array.isArray(r) ? { next: r[0], cmds: r[1] || [] } : { next: r, cmds: [] };
 }

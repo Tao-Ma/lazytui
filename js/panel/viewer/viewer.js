@@ -695,10 +695,12 @@ function _updateInner(msg, slice) {
           const { [dropKey]: _drop, ...rest } = slice.tabState;
           nextTabState = rest;
         }
-        const m = getModel();
-        if (msg.groupName === m.currentGroup) {
-          const info = pt.flatTabInfo(slice, m, m.currentGroup);
-          const idx = info.actionTabs.findIndex(([k]) => k === msg.tabKey);
+        // v0.6.3 Phase D1 — dispatcher threads msg.currentGroup +
+        // msg.actionTabIdx (the action's position in flatTabInfo.
+        // actionTabs at dispatch time); cross-group skips the
+        // jump branch entirely.
+        if (msg.groupName === msg.currentGroup) {
+          const idx = typeof msg.actionTabIdx === 'number' ? msg.actionTabIdx : -1;
           if (idx >= 0) {
             // Auto-jump skips tab_switch — emit terminal_exit so
             // terminalMode doesn't survive the jump. v0.6.2 — action
@@ -746,7 +748,8 @@ function _updateInner(msg, slice) {
       const nextBuf = { ...vsb, lines: vsbLines };
       const innerH = _innerH(slice);
       const scroll = Math.max(0, vsbLines.length - innerH);
-      const info = pt.flatTabInfo(slice, getModel(), getModel().currentGroup);
+      // v0.6.3 Phase D1 — was `const info = pt.flatTabInfo(...)` here,
+      // unused. Same dead-work as D2 (viewer_append).
       const tIdx = pt.transcriptTabIdx();
       if (slice.tab !== tIdx) {
         // B3 — clear viewerOverride on the auto-jump (same rationale

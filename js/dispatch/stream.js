@@ -219,9 +219,31 @@ function streamCommand(headerLabel, cmd, args = [], opts = {}) {
 
   // T32 — esc the dynamic header to prevent markup corruption from
   // user-supplied actionKey / verb strings.
-  const startMsg = tabKey && groupName
-    ? { type: 'stream_start', header: `[dim]$ ${esc(headerLabel)}[/]`, tabKey, groupName }
-    : { type: 'stream_start', header: `[dim]$ ${esc(headerLabel)}[/]` };
+  // v0.6.3 Phase D1 — routed branch threads currentGroup +
+  // actionTabIdx (the action's position in flatTabInfo.actionTabs)
+  // so the reducer arm stays pure of getModel(). Cross-group is
+  // a no-op auto-jump (reducer's existing groupName !== currentGroup
+  // path), so we still thread currentGroup unconditionally for the
+  // comparison.
+  let startMsg;
+  if (tabKey && groupName) {
+    const pt = require('../leaves/pane-tabs');
+    const slice = api.getInstanceSlice(target) || { tab: 0 };
+    const model = getModel();
+    const startBundle = { currentGroup: model.currentGroup };
+    if (groupName === model.currentGroup) {
+      const info = pt.flatTabInfo(slice, model, groupName);
+      startBundle.actionTabIdx = info.actionTabs.findIndex(([k]) => k === tabKey);
+    }
+    startMsg = {
+      type: 'stream_start',
+      header: `[dim]$ ${esc(headerLabel)}[/]`,
+      tabKey, groupName,
+      ...startBundle,
+    };
+  } else {
+    startMsg = { type: 'stream_start', header: `[dim]$ ${esc(headerLabel)}[/]` };
+  }
   api.dispatchMsg(api.wrap(target, startMsg));
   scheduleRender();
 

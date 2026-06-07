@@ -60,6 +60,18 @@ function applyUpdate(s, msg) {
     }
     msg = patched;
   }
+  // Phase D1: stream_start routed branch threads currentGroup +
+  // actionTabIdx.
+  if (msg && msg.type === 'stream_start'
+      && msg.tabKey && msg.groupName && msg.currentGroup == null) {
+    const m = getModel();
+    const bundle = { currentGroup: m.currentGroup };
+    if (msg.groupName === m.currentGroup) {
+      const info = pt.flatTabInfo(s, m, msg.groupName);
+      bundle.actionTabIdx = info.actionTabs.findIndex(([k]) => k === msg.tabKey);
+    }
+    msg = { ...msg, ...bundle };
+  }
   const r = viewer._update(msg, s);
   return Array.isArray(r) ? { next: r[0], cmds: r[1] || [] } : { next: r, cmds: [] };
 }
