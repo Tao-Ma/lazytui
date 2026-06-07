@@ -279,7 +279,9 @@ function getPanelViewportH(panelType) {
   } else if (viewMode === 'full') {
     visiblePanel = focus;
   }
-  if (panelType === visiblePanel) return Math.max(1, availH - 2);
+  // v0.6.3 B3 — visiblePanel is a paneId (post-_withFocus); panelType
+  // is the type-form caller arg. Resolve via the route table.
+  if (visiblePanel && instanceKind(visiblePanel) === panelType) return Math.max(1, availH - 2);
   // Off-screen / normal-view: read via boundsFor() — prefers the
   // slice during P1.3 transition (slice carries the viewer's tab
   // cache); falls through to _currentLayout.rects when slice is

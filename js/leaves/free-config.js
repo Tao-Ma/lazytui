@@ -63,7 +63,9 @@ function navSelect(slice, delta) {
   if (delta < 0) { if (idx > 0) idx--; }
   else           { if (idx < all.length - 1) idx++; }
   if (idx === curIdx) return slice;
-  const nextFocus = all[idx] ? all[idx].type : slice.focus;
+  // v0.6.3 B3 — write paneId (fall back to type if paneId is absent,
+  // e.g. test fixtures pre-paneId mint).
+  const nextFocus = all[idx] ? (all[idx].paneId || all[idx].type) : slice.focus;
   return { ...slice, focus: nextFocus };
 }
 

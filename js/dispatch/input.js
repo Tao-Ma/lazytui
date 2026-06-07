@@ -88,7 +88,10 @@ function _handleWheel(mx, my, delta) {
       // v0.6.2 — used to split setSel/selectGroup unconditionally and
       // call showSelectedInfo() if focused; folded into navSelect for
       // the focused case so auto-yank parity with keyboard is automatic.
-      if (p.type === getFocus()) {
+      // v0.6.3 B3 — getFocus() is a paneId; tolerant compare via paneMatchesFocus
+      // so wheel-over-focused-pane still hits the full-cascade navSelect path.
+      const mpane = require('../leaves/pane');
+      if (mpane.paneMatchesFocus(p, getFocus())) {
         navSelect(p.type, next);
       } else if (p.type === 'groups') {
         selectGroup(next);
@@ -115,9 +118,14 @@ function _suppressesChromeClicks(md) {
 
 // v0.6.3 Phase C1 — mouse-routing registry mirroring keyboard's
 // `_modeHandlers` in dispatch.js. Each handler takes
-// `(kind, mx, my, model)` and returns `true` if it consumed the event
-// (caller renders and stops). Walked by `_dispatchActiveModeMouse`
+// `(kind, mx, my, model)` and returns `true` if it consumed the
+// event (caller stops cascade). Walked by `_dispatchActiveModeMouse`
 // in CHAIN_MODES order — first active claiming handler wins.
+//
+// Handlers OWN their render() call — most dispatch a Msg and paint,
+// but some consume-no-render paths exist (panel-list header/footer
+// click, motion without an in-flight drag) and skip paint
+// deliberately as a perf optimization (P5.10).
 //
 // Handlers that DON'T consume (e.g. tabListMode on motion/release)
 // return false; the dispatcher falls through, and the subsequent
@@ -137,6 +145,7 @@ function _mouseHandleTabListMode(kind, mx, my, model) {
       vh: tabOverlay.viewportRows(),
       tabCount: tabOverlay._flatTabs().length,
     }));
+    render();
     return true;
   }
   if (kind === 'press') {
@@ -154,6 +163,7 @@ function _mouseHandleTabListMode(kind, mx, my, model) {
     } else {
       dispatchMsg(wrap(ownerPaneId, { type: 'tab_list_close' }));
     }
+    render();
     return true;
   }
   return false;
@@ -171,6 +181,7 @@ function _mouseHandlePaneSelectMode(kind, mx, my, _model) {
       n: all.length,
       vh: psOverlay.viewportRows(),
     }));
+    render();
     return true;
   }
   if (kind === 'press') {
@@ -186,6 +197,7 @@ function _mouseHandlePaneSelectMode(kind, mx, my, _model) {
     } else {
       dispatchMsg(wrap('layout', { type: 'pane_select_close' }));
     }
+    render();
     return true;
   }
   return false;
@@ -205,6 +217,7 @@ function _mouseHandleFreeConfigMode(kind, mx, my, model) {
   if (isPoolDrag) {
     if (kind === 'motion')       dispatchMsg(wrap('layout', { type: 'pool_drag_motion', mx, my, cols: cols() }));
     else if (kind === 'release') dispatchMsg(wrap('layout', { type: 'pool_drag_release' }));
+    render();
     return true;
   }
 
@@ -223,6 +236,7 @@ function _mouseHandleFreeConfigMode(kind, mx, my, model) {
     } else if (kind === 'release') {
       dispatchMsg(wrap('layout', { type: 'tab_drag_release' }));
     }
+    render();
     return true;
   }
 
@@ -242,6 +256,7 @@ function _mouseHandleFreeConfigMode(kind, mx, my, model) {
             sourceKey: t.closeKey, fromIdx: contentIdx,
             mx, my,
           }));
+          render();
           return true;
         }
         contentIdx++;
@@ -263,22 +278,25 @@ function _mouseHandleFreeConfigMode(kind, mx, my, model) {
           dispatchMsg(wrap('layout', { type: 'panel_list_open', cursor }));
         }
         dispatchMsg(wrap('layout', { type: 'pool_drag_start', id: item.id, mx, my }));
+        render();
         return true;
       }
       // Header/footer / essential row — swallow without dispatch.
-      // No state change, but mode still owns the click; return true
-      // to skip the render (mirrors prior `return;` on this path).
+      // No state change → no render needed (mirrors prior bare
+      // `return;` here). Returns true so dispatcher stops the cascade.
       return true;
     }
     // Click outside overlay: close it, then fall through to free-config drag.
     dispatchMsg(wrap('layout', { type: 'panel_list_close' }));
   }
 
-  // Motion without an in-flight drag is a no-op in the leaf — skip.
+  // Motion without an in-flight drag is a no-op in the leaf — skip
+  // dispatch AND render entirely (P5.10). Press / release always fire.
   if (kind === 'motion' && !drag) return true;
   if (kind === 'press')        dispatchMsg(wrap('layout', { type: 'free_config_mouse_press',  mx, my, cols: cols() }));
   else if (kind === 'motion')  dispatchMsg(wrap('layout', { type: 'free_config_mouse_motion', mx, my, cols: cols() }));
   else if (kind === 'release') dispatchMsg(wrap('layout', { type: 'free_config_mouse_release' }));
+  render();
   return true;
 }
 
@@ -288,15 +306,22 @@ const _modeMouseHandlers = {
   freeConfigMode:  _mouseHandleFreeConfigMode,
 };
 
-/** Walks CHAIN_MODES in precedence order, fires the first active
- *  handler with a registry entry. Returns true when a handler claimed
- *  the event (caller paints + stops). Wedge-guarded like
- *  `_dispatchActiveMode` for keyboard — a throwing handler clears its
- *  flag and falls through to normal-mode dispatch instead of trapping
- *  every subsequent click. */
+// Explicit precedence — pre-C1 source order was tabList → paneSelect
+// → freeConfig. CHAIN_MODES in `./modes` orders freeConfigMode FIRST
+// (idx 3) which would invert that. The three modes are mutually
+// exclusive by invariant today (mode_set/clear flips one at a time;
+// free-config disables the [≡] trigger), so the precedence is
+// observationally moot — pinning the order here is defense in depth
+// so a future invariant relax doesn't silently flip behavior.
+const _MOUSE_MODE_PRECEDENCE = ['tabListMode', 'paneSelectMode', 'freeConfigMode'];
+
+/** Walks _MOUSE_MODE_PRECEDENCE in order, fires the first active
+ *  handler. Returns true when a handler claimed the event (caller
+ *  stops). Wedge-guarded like `_dispatchActiveMode` for keyboard —
+ *  a throwing handler clears its flag so subsequent clicks don't
+ *  trap in the throwing path. */
 function _dispatchActiveModeMouse(kind, mx, my, model) {
-  const { CHAIN_MODES } = require('./modes');
-  for (const flag of CHAIN_MODES) {
+  for (const flag of _MOUSE_MODE_PRECEDENCE) {
     if (!model.modes[flag]) continue;
     const handler = _modeMouseHandlers[flag];
     if (!handler) continue;
@@ -391,13 +416,12 @@ function handleMouse(kind, x, y) {
   // v0.6.3 Phase C1 — modal mouse routing through the
   // `_modeMouseHandlers` registry (mirrors keyboard's `_modeHandlers`
   // in dispatch.js). Walks CHAIN_MODES in precedence order; the first
-  // active claiming handler wins. Handlers that don't claim (e.g.
-  // tabList on motion/release) return false and fall through to the
-  // `isChainActive` guard below.
-  if (_dispatchActiveModeMouse(kind, mx, my, model)) {
-    render();
-    return;
-  }
+  // active claiming handler wins. Handlers own their render() call so
+  // consume-no-render paths (panel-list header click, motion without
+  // drag) can skip paint as a perf optimization. Handlers that don't
+  // claim (e.g. tabList on motion/release) return false and fall
+  // through to the `isChainActive` guard below.
+  if (_dispatchActiveModeMouse(kind, mx, my, model)) return;
 
   // T13 — mirror keyboard modal gating: while any chain mode claims
   // keystrokes via the modeChain, mouse events must not cascade into

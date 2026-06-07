@@ -272,7 +272,9 @@ function _renderFor(panel, w, h, slice, panelType, hardcoded, opts) {
   const items = _itemsFor(slice, panelType, hardcoded);
   const innerW = w - 2;
   const sel = getSel(panelType);
-  const isFocused = getFocus() === panelType;
+  // v0.6.3 B3 — getFocus() is a paneId; the renderer is called per-type
+  // so compare via the route table (paneId → kind name).
+  const isFocused = require('../../leaves/route').instanceKind(getFocus()) === panelType;
   const t = theme();
   const source = _source(panelType, hardcoded);
   const lines = items.map((it, i) => {

@@ -77,10 +77,17 @@ function _resolvePaneIdForFocus(slice, focus) {
   const panes = mpool.allPanesInColumns(slice.arrange);
   // Already a paneId? Pass through.
   if (panes.some(p => p.paneId === focus)) return focus;
-  // Panel-type / kind → first matching pane's paneId. Multi-panel
-  // Components: returns whichever pane's type matches first
-  // (today singleton — one pane per type — so deterministic).
-  const match = panes.find(p => p.type === focus || p.id === focus);
+  // Panel-type / kind / active-tab-id → first matching pane's paneId.
+  // Multi-panel Components: returns whichever pane's type matches
+  // first (singleton today — deterministic).
+  let match = panes.find(p => p.type === focus || p.id === focus);
+  // Inactive-tab pool id in a multi-tab pane: pane.id/type mirror the
+  // ACTIVE tab; an inactive tab's pool id sits in pane.tabs[].id /
+  // .poolId. Scan tabs to map the pool id back to its host pane.
+  if (!match) {
+    match = panes.find(p =>
+      Array.isArray(p.tabs) && p.tabs.some(t => t.id === focus || t.poolId === focus));
+  }
   return match ? match.paneId : focus;
 }
 
@@ -508,7 +515,7 @@ function update(msg, slice) {
         // direct-set focus to a panel type or pool id.
         const focusStillPlaced = allPanes.some(p => mpane.paneMatchesFocus(p, next.focus));
         if (!focusStillPlaced && allPanes.length > 0) {
-          next.focus = allPanes[0].type;
+          next.focus = allPanes[0].paneId || allPanes[0].type;
         }
       }
       if (msg.dirty   !== undefined) next.dirty   = !!msg.dirty;
@@ -541,7 +548,7 @@ function update(msg, slice) {
       const hasHidden = mpool.hiddenIds(slice.arrange).length > 0;
       const all = mpool.allPanesInColumns(slice.arrange);
       const focusedIsPlaced = all.some(p => mpane.paneMatchesFocus(p, slice.focus));
-      const focus = focusedIsPlaced ? slice.focus : (all[0] ? all[0].type : slice.focus);
+      const focus = focusedIsPlaced ? slice.focus : (all[0] ? (all[0].paneId || all[0].type) : slice.focus);
       const wasOpen = slice.panelList && slice.panelList.open;
       const next = {
         ...slice,
@@ -775,7 +782,7 @@ function update(msg, slice) {
       // the alternative (pane-tabs.js producers). _withFocus stamps
       // focus + halfLeftPanel + lastViewerTab; emit show_selected_info
       // directly — sibling arms (pool_show, remove_column) do the same.
-      const wasFocused = slice.focus === pane.id || slice.focus === pane.paneId;
+      const wasFocused = mpane.paneMatchesFocus(pane, slice.focus);
       if (wasFocused) {
         return [_withFocus(next, tabPoolId), [{ type: 'show_selected_info' }]];
       }

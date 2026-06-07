@@ -533,8 +533,11 @@ describe('[T3-defenses] T3.1/T3.3/T3.4/T3.5 hardening', () => {
     const out = applyUpdate({ type: 'set_arrange', arrange: slimArrange }, { ...slice, focus: 'containers' });
     assert(out.focus !== 'containers', `focus moved off the dropped type (was 'containers', now '${out.focus}')`);
     const allPanes = require('../leaves/pool').allPanesInColumns(out.arrange);
-    assert(allPanes.some(p => p.type === out.focus),
-      `new focus type '${out.focus}' is a placed pane`);
+    // v0.6.3 B3 — stale-focus fallback now writes paneId (`pane-groups`),
+    // not type. Tolerant matcher catches both forms.
+    const mpane = require('../leaves/pane');
+    assert(allPanes.some(p => mpane.paneMatchesFocus(p, out.focus)),
+      `new focus '${out.focus}' identifies a placed pane`);
   });
 
   it('R2.3 — set_arrange preserves focus when focus type is still placed', () => {

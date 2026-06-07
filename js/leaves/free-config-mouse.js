@@ -149,7 +149,7 @@ function panelAt(slice, mx, my) {
   for (const p of mpool.allPanesInColumns(slice.arrange)) {
     const b = slice.paneBounds[p.type];
     if (!b) continue;
-    if (mx >= b.x && mx < b.x + b.w && my >= b.y && my < b.y + b.h) return p.type;
+    if (mx >= b.x && mx < b.x + b.w && my >= b.y && my < b.y + b.h) return p;
   }
   return null;
 }
@@ -531,9 +531,11 @@ function mousePress(slice, mx, my, COLS) {
   if (!hit) return { ...slice, freeConfig: { ...slice.freeConfig, drag: null } };
   // Click sets focus to the panel under the cursor — green border
   // tracks the click even if the user doesn't go on to drag.
-  // selectedIdx() derives from focus.
-  const drag = { kind: 'dragging', sourceType: hit, startX: mx, startY: my, curX: mx, curY: my, target: null };
-  return { ...slice, focus: hit, freeConfig: { ...slice.freeConfig, drag } };
+  // v0.6.3 B3 — focus is paneId; sourceType stays as the legacy
+  // type-form for the drag-engine's leaf hit-tests that key by type.
+  const focus = hit.paneId || hit.type;
+  const drag = { kind: 'dragging', sourceType: hit.type, startX: mx, startY: my, curX: mx, curY: my, target: null };
+  return { ...slice, focus, freeConfig: { ...slice.freeConfig, drag } };
 }
 
 /** Motion: resize kinds redistribute heights; a panel drag recomputes

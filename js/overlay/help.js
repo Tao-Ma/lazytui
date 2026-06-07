@@ -52,9 +52,13 @@ function _leaderChordLines() {
  * plugin registry; doesn't paint.
  */
 function helpLines() {
-  const focusedPanel = allPanels().find(p => p.type === getFocus());
+  // v0.6.3 B3 — getFocus() is a paneId; resolve to the underlying
+  // pane + its type so getPanelDef (keyed by panel-type) still hits.
+  const mpane = require('../leaves/pane');
+  const route = require('../leaves/route');
+  const focusedPanel = allPanels().find(p => mpane.paneMatchesFocus(p, getFocus()));
   const focusName = focusedPanel ? focusedPanel.title : 'TUI';
-  const def = getPanelDef(getFocus());
+  const def = getPanelDef(focusedPanel ? focusedPanel.type : route.instanceKind(getFocus()));
   const isList = !!(def && typeof def.getItems === 'function');
 
   const lines = [
