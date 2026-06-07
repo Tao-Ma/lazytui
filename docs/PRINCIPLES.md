@@ -338,12 +338,18 @@ module.exports = {
 
 ### Rules
 
-- A Component **may read** the root model via `require('../app/runtime').getModel()`
-  (focus, currentGroup, mode flags — anything app-global) but **never writes**
-  it. The Component's own slice is the only thing its `update` writes
-  directly. Cross-layer writes go out as a `{type:'msg', msg}` effect —
-  a wrapped Msg (`{kind, msg}`) fans out to the named Component, a flat
-  Msg re-dispatches through the root reducer. The framework runs them,
+- **Reducer arms stay pure of `getModel()`** (v0.6.3 Phase D). Within
+  `update(msg, slice) → (next, cmds)`, the arm body MUST NOT call
+  `getModel()`; root facts the arm needs are threaded via Msg payload
+  by the dispatcher (the `modelBundle` pattern — see
+  `[[elm-tea-discipline]]`). Component-level surfaces OUTSIDE arms
+  (handlers, finalizers, contributors registered with the framework)
+  may still read `getModel()`; the rule applies to the arm body only.
+- A Component **never writes** the root model. The Component's own
+  slice is the only thing its `update` writes directly. Cross-layer
+  writes go out as a `{type:'msg', msg}` effect — a wrapped Msg
+  (`{kind, msg}`) fans out to the named Component, a flat Msg
+  re-dispatches through the root reducer. The framework runs them,
   so single-writer per layer holds.
 - **Msg routing.** `refresh` / `hub` / `action` fan to every Component's
   `update`. **Key Msgs go ONLY to the Component owning the focused panel, and

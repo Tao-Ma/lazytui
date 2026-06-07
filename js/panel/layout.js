@@ -3,7 +3,11 @@
  *
  * The frame surrounding the panel grid. Owns:
  *   - arrange        — { columns: [{width?, panels}], detailHeightPct, pool }
- *   - focus          — currently focused panel type
+ *   - focus          — currently focused paneId (Phase B3; v0.7-faithful).
+ *                       `_withFocus` normalizes incoming type/id/kind to
+ *                       paneId; `mpane.paneMatchesFocus` is the transitional
+ *                       read-side comparator (paneId-first, type/id fallback)
+ *                       for pre-migration callers.
  *   - viewMode       — normal / half / full
  *   - dirty          — layout has unsaved changes (drives `:save-layout` hint)
  *   - freeConfig     — free-config working state (drag, undo/redo, titleEdit)

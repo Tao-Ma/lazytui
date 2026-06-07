@@ -211,6 +211,7 @@ for "the same thing but headless."
 | Decorator slots | Plugins add glyphs to rows / titles / tabs / footer without touching the renderer. |
 | Cmdline (`:`) | `:quit`, `:refresh`, `:help`, plus plugin-registered verbs, with positional-arg plumbing. |
 | Running overlay (`<leader> j`, v0.6.2+) | Modal listing every live child lazytui spawned (streamed actions, PTYs, background + tmux spawns). Enter jumps to the relevant tab; Esc closes. Action tabs with a running stream show a `●` indicator in the tab strip. |
+| Pane-select dropdown (v0.6.3+) | Every non-detail pane has a `[≡]` glyph at top-left; click to open a centered overlay listing all pool entries (placed in this cell / placed in another column / hidden). Pick one to swap which pool entry occupies that cell — placed-entry pick SWAPs; hidden-entry pick REPLACEs (displaced occupant becomes hidden). Mouse + keyboard nav. |
 | 6 themes + free-config mode | `:free-config` opens an interactive layout editor — drag/swap/resize/spawn columns and panels, hide/show from a pool of declared panel definitions, save back to YAML. |
 | `--spec` flag | Prints the plugin-authoring bundle for AI agents (every rule in one file). |
 
@@ -218,7 +219,7 @@ for "the same thing but headless."
 
 - **Renderer + parser**: Node.js. Runtime npm deps: `node-pty` and
   `@xterm/headless` for embedded PTY tabs, `js-yaml` for config parsing.
-- **Tests**: JS smoke suites under `js/test/` (71 files), plus a
+- **Tests**: JS smoke suites under `js/test/` (80 files), plus a
   live integration harness under `test/`. See [docs/TESTING.md](docs/TESTING.md).
 - **Two worked demos** at the time of initial public release; both ship
   with the human-authored intent (`.agent-prompt.md`) checked in so the
