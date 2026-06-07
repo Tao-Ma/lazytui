@@ -22,7 +22,12 @@ const route = require('../leaves/route');
 const mpane = require('../leaves/pane');
 const { isChainActive } = require('./modes');
 
-function _detail() { return getInstanceSlice('detail'); }
+function _detail() {
+  // v0.6.3 T1.4 — paneId-aware lookup (post-Phase B1). resolveTarget
+  // returns the focused viewer's paneId in multi-viewer setups; the
+  // 'detail' fallback covers the singleton boot case.
+  return getInstanceSlice(route.resolveTarget('viewer') || 'detail');
+}
 const { handleKey, applyMsg, showSelectedInfo, navSelect } = require('./dispatch');
 const { cleanup } = require('../app/cleanup');
 
@@ -241,8 +246,9 @@ function _mouseHandleFreeConfigMode(kind, mx, my, model) {
   }
 
   // Tab-bar press detection — click on a content tab arms a tab-drag.
+  // v0.6.3 T1.4 — paneId-aware lookup via the route registry.
   const db = require('../render/layout').boundsFor('detail');
-  const detailSlice = getInstanceSlice('detail');
+  const detailSlice = getInstanceSlice(route.resolveTarget('viewer') || 'detail');
   const detailTabBounds = detailSlice && Array.isArray(detailSlice.tabBounds) ? detailSlice.tabBounds : null;
   if (kind === 'press' && db && detailTabBounds) {
     if (my === db.y) {

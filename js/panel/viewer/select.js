@@ -39,10 +39,15 @@ const { getModel } = require('../../app/runtime');
 const { stripMarkup, charWidth, esc } = require('../../io/ansi');
 const {getInstanceSlice, getFocus } = require('../api');
 
-// All reads target the detail Component slice (lines / select / cursor /
-// scroll / search). Helper returns undefined if detail isn't registered
-// (callers null-guard).
-function _detail() { return getInstanceSlice('detail'); }
+// All reads target the active viewer Component slice (lines / select /
+// cursor / scroll / search). Routes via route.resolveTarget('viewer')
+// (post-Phase B1) so multi-viewer setups land on the focused viewer's
+// slice; falls back to the kind name for the legacy primary. Returns
+// undefined if no viewer is registered (callers null-guard).
+function _detail() {
+  const route = require('../../leaves/route');
+  return getInstanceSlice(route.resolveTarget('viewer') || 'detail');
+}
 
 // Selection writes fold onto the update spine (select_* Msgs). select.js
 // can't be imported by the reducer (it requires runtime → cycle), so the

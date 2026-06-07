@@ -301,8 +301,11 @@ function _tabKeyExistsIn(next, model, key) {
   return true;
 }
 
-function _withDerivedFields(next, originalSlice) {
-  const m = getModel();
+// v0.6.3 post-arch-arc T1.1 — `model` is now passed explicitly from
+// the boundary read at `update()` entry instead of re-read via
+// getModel() here. The finalizer is pure of the runtime accessor;
+// only the public update() reads model, exactly once per Msg.
+function _withDerivedFields(next, originalSlice, m) {
   const lines = pt.viewerLines(next, m, m.currentGroup, { infoFromFocus: _infoFromFocus });
   let updated = { ...next, lines };
   // B2 — auto-recompute a committed search against the new lines. Pre-
@@ -352,19 +355,24 @@ function _withDerivedFields(next, originalSlice) {
   }
   return updated;
 }
-function _finalize(result, originalSlice) {
+function _finalize(result, originalSlice, m) {
   if (result === undefined) return result;
   if (Array.isArray(result)) {
     const [next, cmds] = result;
     if (!next || next === originalSlice) return result;
-    return [_withDerivedFields(next, originalSlice), cmds];
+    return [_withDerivedFields(next, originalSlice, m), cmds];
   }
   if (result === originalSlice) return result;
-  return _withDerivedFields(result, originalSlice);
+  return _withDerivedFields(result, originalSlice, m);
 }
 
 function update(msg, slice) {
-  return _finalize(_updateInner(msg, slice), slice);
+  // v0.6.3 post-arch-arc T1.1 — single boundary read at update entry.
+  // Reducer arms stay pure of getModel() (Phase D); the finalizer is
+  // also pure of getModel() now, receiving model as an explicit arg.
+  // Same shape as the dispatcher's "read once at top" pattern.
+  const m = getModel();
+  return _finalize(_updateInner(msg, slice), slice, m);
 }
 
 // MSG ROUTING — the viewer's update is split across two homes:

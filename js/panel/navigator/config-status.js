@@ -51,31 +51,30 @@ const TRACKED = new Set([STATUS_MATCHES, STATUS_DIFFERS, STATUS_BRANCH_ONLY]);
 const DEFAULT_BRANCH = 'config';
 const WALK_LIMIT = 10;
 
-// --- framework reads (app-global, read explicitly per the Component contract) ---
-
-function _files()      { const c = getModel().config; return (c && c.files) || []; }
-function _projectDir() { return getModel().projectDir || '.'; }
-
-// v0.6.3 Phase D1 — config-status reads root model in three places:
-//   _files()      — config.files for buildItems
-//   _projectDir() — projectDir for computeStatus / diffFor
-//   _resolveBranch() — reads layout slice for its own pool-entry config
+// --- framework reads (init-time boundary + contributors only) ---
 //
-// Fully threading these would require either:
-//   (a) a per-Component keyMsgExtras(model) dispatcher hook
-//   (b) materializing config.files + projectDir + branch into this
-//       Component's own slice at init / on config_changed Msg
+// v0.6.3 post-arch-arc T1.2 — Phase D / D3 retired runtime getModel()
+// + cross-slice reads from reducer arms by caching the needed root
+// facts onto the Component's own slice:
 //
-// (b) is the cleanest fit but config_changed isn't a Msg yet (config
-// is direct-written at boot per app/state.js — Phase D3 target).
-// Once D3 routes config writes through Msgs, this Component can
-// subscribe and stash files+projectDir+branch on its slice; arms
-// read slice. For now, the reads stay as a documented v0.7 cleanup.
-/** Resolve the branch from the config-status panel's `config.branch`. */
-function _resolveBranch() {
-  const slice = getInstanceSlice('layout');
-  const ly = slice && slice.arrange;
-  const panels = ly ? require('../../leaves/pool').allPanesInColumns(ly) : [];
+//   slice.files       — mirrors model.config.files (snapshot)
+//   slice.projectDir  — mirrors model.projectDir (snapshot)
+//   slice.branch      — pool-entry config (set_arrange propagated)
+//
+// init() seeds them via boundary reads (init is the framework's
+// "first-touch" point; reading root here is explicit, one-time).
+// The `set_config` arm refreshes files+projectDir when the root
+// reducer rebroadcasts config. The `set_arrange` arm refreshes
+// branch when the layout's arrange shape changes. Reducer arms +
+// finalizer are then pure of getModel / getInstanceSlice.
+//
+// Contributors (`getItems`, `getInfo`, `keyHints`) are framework-
+// level surfaces, not reducer arms; they may still read root via
+// the documented Component contract.
+function _readFilesFromModel(m)        { return (m && m.config && m.config.files) || []; }
+function _readProjectDirFromModel(m)   { return (m && m.projectDir) || '.'; }
+function _branchFromArrange(arrange) {
+  const panels = arrange ? require('../../leaves/pool').allPanesInColumns(arrange) : [];
   const p = panels.find(pp => pp.type === 'config-status');
   const b = p && p.config && p.config.branch;
   return (typeof b === 'string' && b) ? b : DEFAULT_BRANCH;
@@ -301,7 +300,7 @@ function rowText(item, isSelected) {
 }
 
 function render(panel, w, h, slice, opts) {
-  const items = buildItems(slice, _files());
+  const items = buildItems(slice, slice.files || []);
   const sel = getSel('config-status');
   const focused = instanceKind(getFocus()) === 'config-status';
   const lines = items.map((item, i) => rowText(item, focused && i === sel));
@@ -373,8 +372,18 @@ function diffFor(item, branch, projectDir) {
 // --- update + effects (the TEA half) ---
 
 function init() {
+  // T1.2 — seed config-snapshot fields from root model at init time
+  // (the framework's documented first-touch boundary). Subsequent
+  // updates flow through set_config / set_arrange arms; reducer
+  // arms themselves stay pure of getModel + cross-slice reads.
+  const m = getModel();
+  const layoutSlice = getInstanceSlice('layout');
+  const arrange = layoutSlice && layoutSlice.arrange;
   return {
-    tab: 0, cache: null, branch: null, expanded: {}, computing: false,
+    tab: 0, cache: null, expanded: {}, computing: false,
+    files: _readFilesFromModel(m),
+    projectDir: _readProjectDirFromModel(m),
+    branch: _branchFromArrange(arrange),
     // v0.6.1 Phase 3 — single-panel Component, nav stores the entry directly.
     nav: mnav.init(),
   };
@@ -383,12 +392,26 @@ function init() {
 function update(msg, slice) {
   // Phase 4a — nav chrome Msgs handled by the shared leaf.
   if (mnav.isNavMsg(msg)) return mnav.apply(slice, msg);
+  // T1.2 — Phase D3 broadcasts set_config through the root reducer;
+  // mirror the snapshot onto our slice so reducer arms read locally.
+  if (msg.type === 'set_config') {
+    return {
+      ...slice,
+      files: _readFilesFromModel({ config: msg.config }),
+      projectDir: (msg.config && msg.config.project_dir) || '.',
+    };
+  }
   if (msg.type === 'refresh') {
     // Boot + explicit `r`/`:refresh` (refreshAll dispatches it; the periodic
     // loop does not). Recompute unless one is already in flight.
     if (slice.computing) return slice;
-    const branch = _resolveBranch();
-    return [{ ...slice, branch, computing: true }, [{ type: 'cfgStatusCompute', branch }]];
+    const branch = slice.branch || DEFAULT_BRANCH;
+    // T1.2 — thread files + projectDir into the effect payload so the
+    // off-tick worker doesn't read root model itself.
+    return [{ ...slice, branch, computing: true }, [{
+      type: 'cfgStatusCompute', branch,
+      files: slice.files || [], projectDir: slice.projectDir || '.',
+    }]];
   }
   if (msg.type === 'cfgStatusResult') {
     return [{ ...slice, cache: msg.cache, computing: false }, [{ type: 'render' }]];
@@ -401,9 +424,9 @@ function update(msg, slice) {
     if (msg.key === ']') return [{ ...slice, tab: (tabIdx(slice) + 1) % TAB_LABELS.length }, [{ type: '_claimed' }]];
     if (msg.key === '[') return [{ ...slice, tab: (tabIdx(slice) + TAB_LABELS.length - 1) % TAB_LABELS.length }, [{ type: '_claimed' }]];
     if (msg.key === 'return') {
-      // The key Msg carries no selected row — re-derive it from the slice +
-      // the framework cursor (getSel), the same list render uses.
-      const item = buildItems(slice, _files())[getSel('config-status')];
+      // T1.2 — read files snapshot from slice (cached via set_config arm),
+      // not via getModel(). Same cursor lookup as before.
+      const item = buildItems(slice, slice.files || [])[getSel('config-status')];
       // `return` is claimed regardless of what the row resolves to —
       // even an unclickable header row shouldn't ALSO trigger the
       // framework's run_selected default.
@@ -413,7 +436,11 @@ function update(msg, slice) {
         return [{ ...slice, expanded: { ...slice.expanded, [item.declaredPath]: Math.min(cur + WALK_LIMIT, item.total) } }, [{ type: '_claimed' }]];
       }
       if (item.kind === 'file') {
-        return [slice, [{ type: 'cfgStatusDiff', item, branch: slice.branch || DEFAULT_BRANCH }, { type: '_claimed' }]];
+        return [slice, [{
+          type: 'cfgStatusDiff', item,
+          branch: slice.branch || DEFAULT_BRANCH,
+          projectDir: slice.projectDir || '.',
+        }, { type: '_claimed' }]];
       }
       return [slice, [{ type: '_claimed' }]];
     }
@@ -429,14 +456,14 @@ function installEffects(registerEffect) {
   registerEffect('cfgStatusCompute', (eff) => {
     setImmediate(() => {
       let cache;
-      try { cache = computeStatus(eff.branch, _files(), _projectDir()); }
+      try { cache = computeStatus(eff.branch, eff.files || [], eff.projectDir || '.'); }
       catch (e) { cache = { branch: eff.branch, byPath: {}, children: {}, error: e.message, computedAt: Date.now() }; }
       require('../api').dispatchMsg(require('../api').wrap('config-status', { type: 'cfgStatusResult', cache }));
     });
   });
   registerEffect('cfgStatusDiff', (eff) => {
     const { setViewerContent } = require('../../app/state');
-    setViewerContent(null, diffFor(eff.item, eff.branch, _projectDir()).join('\n'));
+    setViewerContent(null, diffFor(eff.item, eff.branch, eff.projectDir || '.').join('\n'));
   });
 }
 
@@ -448,7 +475,7 @@ module.exports = {
   panelTypes: {
     'config-status': {
       render,
-      getItems: (slice) => buildItems(slice, _files()),
+      getItems: (slice) => buildItems(slice, slice.files || []),
       getInfo,
       keyHints: '[ ] tabs | r refresh | ⏎ diff',
       filterable: true,

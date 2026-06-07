@@ -29,12 +29,19 @@
 const { getModel } = require('../../app/runtime');
 const pt = require('../../leaves/pane-tabs');
 
-// --- Singleton-detail slice fetcher ---------------------------------------
+// --- Active-viewer slice fetcher ------------------------------------------
 
-/** Resolve the detail Component's slice. Empty fallback so callers don't
- *  have to guard before the Component is registered (mid-boot, tests). */
+/** Resolve the active viewer Component's slice. Routes via
+ *  `route.resolveTarget('viewer')` (paneId-aware post-Phase B1) so
+ *  multi-viewer setups land on the focused viewer's slice; falls back
+ *  to the kind-name lookup for the legacy primary. Empty fallback so
+ *  callers don't have to guard before the Component is registered
+ *  (mid-boot, tests). */
 function _detailSlice() {
-  return require('../api').getInstanceSlice('detail')
+  const api = require('../api');
+  const route = require('../../leaves/route');
+  const id = route.resolveTarget('viewer') || 'detail';
+  return api.getInstanceSlice(id)
       || { contentTabs: {}, ephemeralTerminals: {}, tab: 0 };
 }
 

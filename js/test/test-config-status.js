@@ -50,7 +50,10 @@ function freshSlice(statuses = {}) {
   for (const e of cf) { byPath[e.path] = statuses[e.path] || STATUS.UNKNOWN; children[e.path] = []; }
   return {
     cf,
+    // v0.6.3 T1.2 — config-status caches files + projectDir on slice
+    // (mirrored via set_config arm); reducer arms read locally.
     slice: { tab: 0, expanded: {}, branch: 'config', computing: false,
+             files: cf, projectDir: '.',
              cache: { byPath, children, branch: 'config', computedAt: 0 } },
   };
 }
@@ -61,11 +64,14 @@ function keyUpdate(slice, key) {
   return Array.isArray(r) ? r[0] : r;
 }
 
-// Point the framework cursor (which the Enter handler re-derives the selected
-// row from) + the files the reducer reads via _files().
+// Point the framework cursor (which the Enter handler re-derives the
+// selected row from) + the files the reducer reads from slice.files
+// (T1.2 — cached via the set_config arm; tests dispatch it to update
+// both root model and the Component's snapshot in lockstep).
 function setCursor(files, idx) {
   const m = getModel();
   m.config = { files };
+  api.dispatchMsg(api.wrap('config-status', { type: 'set_config', config: { files } }));
   // Phase 4a — cursor lives on the Component's nav slice; write via the
   // helper (which dispatches a wrapped set_cursor Msg → Component update).
   setSel('config-status', idx);
@@ -309,7 +315,11 @@ describe('[7] paginated dir expansion', () => {
   }
   const BIG_FILES = [{ path: 'big', category: 'config' }];
   function bigSlice() {
-    return { tab: 0, expanded: {}, branch: 'config', computing: false, cache: bigCache() };
+    return {
+      tab: 0, expanded: {}, branch: 'config', computing: false,
+      files: BIG_FILES, projectDir: '.',
+      cache: bigCache(),
+    };
   }
 
   it('default expansion shows WALK_LIMIT files + "more" marker', () => {
@@ -418,7 +428,10 @@ describe('[8] diffFor — preview shape per status', () => {
     baseline();
     fs.writeFileSync(path.join(TMP, 'data', 'dev9', 'bashrc'), 'export FOO=mutated\n');
     const cache = cs._computeStatus('config', E2E_FILES, TMP);
-    const slice = { tab: 0, expanded: {}, branch: 'config', computing: false, cache };
+    const slice = {
+      tab: 0, expanded: {}, branch: 'config', computing: false,
+      files: E2E_FILES, projectDir: TMP, cache,
+    };
     const items = cs._buildItems(slice, E2E_FILES);
     const idx = items.findIndex((i) => i.kind === 'file' && i.path === 'data/dev9/bashrc');
     assert(idx >= 0, 'fixture file present in items');

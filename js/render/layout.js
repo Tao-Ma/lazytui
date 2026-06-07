@@ -410,7 +410,7 @@ function getCurrentLayout() {
  *
  * v0.6.3 P4.1 — tabBounds cache moved off layoutSlice.paneBounds.detail.tabs
  * onto the viewer's own slice. Hit-test consumers read it directly
- * via `getInstanceSlice('detail').tabBounds`; boundsFor() no longer
+ * via `getInstanceSlice(require('../leaves/route').resolveTarget('viewer') || 'detail').tabBounds`; boundsFor() no longer
  * surfaces tabs.
  */
 function boundsFor(key) {
@@ -1124,7 +1124,7 @@ function footerKeys(model) {
   if (md.detailSearchMode) {
     const ds = require('../panel/viewer/search');
     const term = ds.typingText();
-    const search = getInstanceSlice('detail')?.search || { matches: [], idx: 0 };
+    const search = getInstanceSlice(require('../leaves/route').resolveTarget('viewer') || 'detail')?.search || { matches: [], idx: 0 };
     const n = (search.matches || []).length;
     const idx = n ? search.idx + 1 : 0;
     return ` /${esc(term)}│ \\[${idx}/${n}] | ↑↓ step | Esc cancel | Enter commit`;
@@ -1156,7 +1156,7 @@ function footerKeys(model) {
     } else {
       segs.push('x menu', 'q quit');
       segs.push('/ search');
-      const search = getInstanceSlice('detail')?.search;
+      const search = getInstanceSlice(require('../leaves/route').resolveTarget('viewer') || 'detail')?.search;
       if (search && search.active) {
         const n = search.matches.length;
         const idx = search.idx + 1;
@@ -1247,7 +1247,7 @@ function renderFooter(model = getModel()) {
   // on a non-list panel, where space falls back to the leader.)
   const focusDef = getPanelDef(getFocus());
   const selectActive = model.modes.listSelectMode && focusDef && typeof focusDef.getItems === 'function';
-  const sel = getInstanceSlice('detail')?.select;
+  const sel = getInstanceSlice(require('../leaves/route').resolveTarget('viewer') || 'detail')?.select;
   const selectTag = (sel && sel.active)
     ? ` \\[${sel.kind === 'line' ? 'v-line' : 'v-char'}]`
     : (selectActive ? ' \\[select]' : '');

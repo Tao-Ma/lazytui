@@ -57,8 +57,15 @@ function componentForPanel(panelType) { return _panelOwner[panelType]; }
 //
 // `_primaryByKind[kind]` maps a kind to the id of its primary
 // instance — the lookup `resolveTarget` and other consumers use to
-// pick "the canonical instance of a kind." Phase B2 (v0.7) is the
-// retirement arc for the kind-name fallback paths.
+// pick "the canonical instance of a kind." v0.6.3 post-arch-arc
+// T1.4 routed every remaining `getInstanceSlice('detail')` consumer
+// through `route.resolveTarget('viewer')`; the kind-name fallback
+// now serves only the bootstrap auto-register helpers in
+// `app/state.js` and the test harness. Multi-instance unlock is
+// thus structurally clear; remaining work for v0.7 is allowing
+// multiple paneIds of the same kind to coexist (today the per-pane
+// mint in `state.js initState` is idempotent against an existing
+// kind-keyed singleton).
 
 const _instances = Object.create(null);
 const _primaryByKind = Object.create(null);

@@ -19,6 +19,7 @@ const { getSel } = require('../app/state');
 const { getModel } = require('../app/runtime');
 const { stripMarkup, esc } = require('../io/ansi');
 const {getPanelDef, getItems, getInstanceSlice, getFocus } = require('../panel/api');
+const route = require('../leaves/route');
 const { renderOverlay } = require('../render/panel');
 
 // Module-held options (label + content thunk + cancel). The reducer mirrors
@@ -44,7 +45,8 @@ function collectOptions() {
       }
     }
   }
-  const detailSlice = getInstanceSlice('detail');
+  // v0.6.3 T1.4 — paneId-aware lookup (post-Phase B1).
+  const detailSlice = getInstanceSlice(route.resolveTarget('viewer') || 'detail');
   const detailLines = detailSlice ? detailSlice.lines : [];
   if (detailLines.length > 0) {
     options.push({
