@@ -254,13 +254,17 @@ describe('[immutable] groups', () => {
     } };
     m.currentGroup = 'g1';
   }
+  // v0.6.3 Phase D1: groups reducer arms read msg.ctx (threaded by
+  // dispatchers via groupsBundle); tests dispatching directly pass it.
+  const _ctx = () => ({ ...groups.groupsBundle(runtime.getModel()), tabListMode: false });
+  const _mk = (msg) => ({ ...msg, ctx: _ctx() });
 
   it('groups_recompute returns a new slice with rebuilt list', () => {
     setupConfig();
     const slice = { list: [], expanded: new Set(), tab: 'all', nav: {} };
     const out = expectNoMutation(
       'groups_recompute leaves input frozen',
-      () => groups._update({ type: 'groups_recompute' }, slice),
+      () => groups._update(_mk({ type: 'groups_recompute' }), slice),
       slice,
     );
     assert(out.list.length >= 2, 'list rebuilt with visible roots');
@@ -272,7 +276,7 @@ describe('[immutable] groups', () => {
     const slice = { list: [], expanded: new Set(), tab: 'all', nav: {} };
     const [next, cmds] = expectNoMutation(
       'toggle_group expand leaves input frozen',
-      () => groups._update({ type: 'toggle_group', name: 'g1' }, slice),
+      () => groups._update(_mk({ type: 'toggle_group', name: 'g1' }), slice),
       slice,
     );
     assert(next.expanded.has('g1'), 'g1 expanded in new Set');
@@ -284,10 +288,10 @@ describe('[immutable] groups', () => {
   it('toggle_group collapse builds a fresh Set without the path', () => {
     setupConfig();
     const init = { list: [], expanded: new Set(['g1']), tab: 'all', nav: {} };
-    const recomputed = groups._update({ type: 'groups_recompute' }, init);
+    const recomputed = groups._update(_mk({ type: 'groups_recompute' }), init);
     const [next] = expectNoMutation(
       'toggle_group collapse leaves input frozen',
-      () => groups._update({ type: 'toggle_group', name: 'g1' }, recomputed),
+      () => groups._update(_mk({ type: 'toggle_group', name: 'g1' }), recomputed),
       recomputed,
     );
     assert(!next.expanded.has('g1'), 'g1 collapsed in new Set');
@@ -297,10 +301,10 @@ describe('[immutable] groups', () => {
   it('toggle_groups_tab swaps tab + rebuilds list', () => {
     setupConfig();
     const init = { list: [], expanded: new Set(), tab: 'all', nav: {} };
-    const recomputed = groups._update({ type: 'groups_recompute' }, init);
+    const recomputed = groups._update(_mk({ type: 'groups_recompute' }), init);
     const [next] = expectNoMutation(
       'toggle_groups_tab leaves input frozen',
-      () => groups._update({ type: 'toggle_groups_tab' }, recomputed),
+      () => groups._update(_mk({ type: 'toggle_groups_tab' }), recomputed),
       recomputed,
     );
     eq(next.tab, 'quick', 'flipped to quick');

@@ -602,12 +602,14 @@ describe('[B4 group-qualified tabState keys] two groups sharing an action name d
     // The groups Component's groups_selected emits the cascade. Build a
     // slice with two group rows + simulate moving to index 1.
     const initialSlice = groups.init();
+    // v0.6.3 Phase D1: thread groups ctx so reducer stays pure.
+    const grpCtx = { ...groups.groupsBundle(getModel()), tabListMode: false };
     // Recompute to populate slice.list (the groups Component's
     // groups_recompute Msg).
-    const rec = groups._update({ type: 'groups_recompute' }, initialSlice);
+    const rec = groups._update({ type: 'groups_recompute', ctx: grpCtx }, initialSlice);
     const slice = Array.isArray(rec) ? rec[0] : rec;
     // Dispatch groups_selected with the new index.
-    const res = groups._update({ type: 'groups_selected', index: 1 }, slice);
+    const res = groups._update({ type: 'groups_selected', index: 1, ctx: grpCtx }, slice);
     const cmds = Array.isArray(res) ? res[1] : [];
     // Find the indices of the three relevant Cmds in the cascade.
     const resetChromeIdx = cmds.findIndex(c =>

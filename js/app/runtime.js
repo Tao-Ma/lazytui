@@ -353,7 +353,11 @@ function update(model, msg) {
         { type: 'show_selected_info' },
       ];
       if (panelType === 'groups') {
-        cmds.push({ type: 'msg', msg: route.wrap('groups', { type: 'groups_selected', index }) });
+        // v0.6.3 Phase D1: thread the groups ctx so the reducer arm
+        // stays pure of getModel().
+        const groupsComp = require('../panel/navigator/groups');
+        const ctx = { ...groupsComp.groupsBundle(model), tabListMode: !!model.modes.tabListMode };
+        cmds.push({ type: 'msg', msg: route.wrap('groups', { type: 'groups_selected', index, ctx }) });
       }
       return [model, cmds];
     }

@@ -232,7 +232,11 @@ function handleAction(action, arg) {
         if (row && row.children && row.children.length > 0) {
           // toggle_group moved to groups.update in Phase C — route via
           // the Component fan-out, not the root reducer.
-          dispatchMsg(wrap('groups', { type: 'toggle_group', name: row.name }));
+          // v0.6.3 Phase D1: thread groups ctx so the reducer stays pure.
+          const groupsComp = require('../panel/navigator/groups');
+          const m = getModel();
+          const ctx = { ...groupsComp.groupsBundle(m), tabListMode: !!m.modes.tabListMode };
+          dispatchMsg(wrap('groups', { type: 'toggle_group', name: row.name, ctx }));
           break;
         }
         // Leaf: drill into the actions panel (a plain focus change).

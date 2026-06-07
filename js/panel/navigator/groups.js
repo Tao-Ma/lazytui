@@ -42,20 +42,32 @@ const {
 // model.currentGroup, root chrome reset) are emitted by update() based on
 // the descriptor — single-writer per layer.
 
-/** Visible iff every ancestor is expanded. */
-function isVisible(slice, model, path) {
-  const all = model.config && model.config.groups;
-  if (!all) return false;
+/** Visible iff every ancestor is expanded. Takes ctx = {groups, ...}. */
+function isVisible(slice, ctx, path) {
+  const all = ctx.groups || {};
   const g = all[path];
   if (!g) return false;
   if (!g.parent) return true;
-  return slice.expanded.has(g.parent) && isVisible(slice, model, g.parent);
+  return slice.expanded.has(g.parent) && isVisible(slice, ctx, g.parent);
+}
+
+// v0.6.3 Phase D1 — helpers take `ctx = { groups, currentGroup }`
+// instead of the full root model. Reducer arms stay pure of
+// getModel(); the bundle is threaded per Msg from the dispatcher.
+// `groupsBundle(model)` is the single-line helper at the bundle
+// boundary.
+
+function groupsBundle(model) {
+  return {
+    groups: (model && model.config && model.config.groups) || {},
+    currentGroup: (model && model.currentGroup) || '',
+  };
 }
 
 /** Rebuild slice.list (the visible flattened tree) from config.groups + the
  *  expanded set, or the flat pinned list in 'quick'. Returns the new slice. */
-function recomputeList(slice, model) {
-  const all = (model.config && model.config.groups) || {};
+function recomputeList(slice, ctx) {
+  const all = ctx.groups || {};
   const out = [];
   if (slice.tab === 'quick') {
     for (const path of Object.keys(all)) {
@@ -63,18 +75,18 @@ function recomputeList(slice, model) {
     }
   } else {
     for (const path of Object.keys(all)) {
-      if (isVisible(slice, model, path)) out.push(all[path]);
+      if (isVisible(slice, ctx, path)) out.push(all[path]);
     }
   }
   return { ...slice, list: out };
 }
 
 /** Compute the cursor + currentGroup that should follow a tree-shape change.
- *  Read-only over `slice` + `model` — returns `{ newIdx, newCurrentGroup,
+ *  Read-only over `slice` + `ctx` — returns `{ newIdx, newCurrentGroup,
  *  groupChanged }`. update() emits the cascade Cmds. */
-function resolveCursor(slice, model) {
-  const all = (model.config && model.config.groups) || {};
-  let target = model.currentGroup;
+function resolveCursor(slice, ctx) {
+  const all = ctx.groups || {};
+  let target = ctx.currentGroup;
   let idx = slice.list.findIndex(g => g.name === target);
   while (idx === -1 && target) {
     target = all[target] ? all[target].parent : null;
@@ -83,32 +95,32 @@ function resolveCursor(slice, model) {
   }
   if (idx === -1) idx = 0;
   const newCurrentGroup = slice.list[idx] ? slice.list[idx].name : '';
-  return { newIdx: idx, newCurrentGroup, groupChanged: newCurrentGroup !== model.currentGroup };
+  return { newIdx: idx, newCurrentGroup, groupChanged: newCurrentGroup !== ctx.currentGroup };
 }
 
-const _noopDescriptor = (model) =>
-  ({ newIdx: 0, newCurrentGroup: model.currentGroup, groupChanged: false });
+const _noopDescriptor = (ctx) =>
+  ({ newIdx: 0, newCurrentGroup: ctx.currentGroup, groupChanged: false });
 
 /** Switch the groups panel between 'all' (tree) and 'quick' (flat pinned). */
-function switchTab(slice, model, tab) {
-  if (tab !== 'all' && tab !== 'quick') return [slice, _noopDescriptor(model)];
-  if (slice.tab === tab) return [slice, _noopDescriptor(model)];
-  const next = recomputeList({ ...slice, tab }, model);
-  return [next, resolveCursor(next, model)];
+function switchTab(slice, ctx, tab) {
+  if (tab !== 'all' && tab !== 'quick') return [slice, _noopDescriptor(ctx)];
+  if (slice.tab === tab) return [slice, _noopDescriptor(ctx)];
+  const next = recomputeList({ ...slice, tab }, ctx);
+  return [next, resolveCursor(next, ctx)];
 }
 
 /** Expand `path`. When `recursive`, also expand every descendant. No-op for
  *  leaves (empty children). The `expanded` Set is copied on write. */
-function expand(slice, model, path, recursive = false) {
-  const all = (model.config && model.config.groups) || {};
+function expand(slice, ctx, path, recursive = false) {
+  const all = ctx.groups || {};
   const g = all[path];
-  if (!g || !g.children || g.children.length === 0) return [slice, _noopDescriptor(model)];
+  if (!g || !g.children || g.children.length === 0) return [slice, _noopDescriptor(ctx)];
   const expanded = new Set(slice.expanded);
   expanded.add(path);
   if (recursive) _expandRecursive(expanded, all, g);
   const withSet = { ...slice, expanded };
-  const next = recomputeList(withSet, model);
-  return [next, resolveCursor(next, model)];
+  const next = recomputeList(withSet, ctx);
+  return [next, resolveCursor(next, ctx)];
 }
 
 function _expandRecursive(expanded, all, g) {
@@ -121,16 +133,16 @@ function _expandRecursive(expanded, all, g) {
 }
 
 /** Collapse `path` and (if recursive) every descendant. */
-function collapse(slice, model, path, recursive = false) {
-  const all = (model.config && model.config.groups) || {};
+function collapse(slice, ctx, path, recursive = false) {
+  const all = ctx.groups || {};
   const g = all[path];
-  if (!g) return [slice, _noopDescriptor(model)];
+  if (!g) return [slice, _noopDescriptor(ctx)];
   const expanded = new Set(slice.expanded);
   if (recursive) _collapseRecursive(expanded, all, g);
   expanded.delete(path);
   const withSet = { ...slice, expanded };
-  const next = recomputeList(withSet, model);
-  return [next, resolveCursor(next, model)];
+  const next = recomputeList(withSet, ctx);
+  return [next, resolveCursor(next, ctx)];
 }
 
 function _collapseRecursive(expanded, all, g) {
@@ -145,10 +157,10 @@ function _collapseRecursive(expanded, all, g) {
 /** Select the row at `idx`. Returns `{ newIdx, newCurrentGroup,
  *  groupChanged }`. Read-only — slice has no cursor field (that lives on
  *  slice.nav.groups, written by the nav leaf). */
-function selectAt(slice, model, idx) {
-  if (idx < 0 || idx >= slice.list.length) return { newIdx: -1, newCurrentGroup: model.currentGroup, groupChanged: false };
+function selectAt(slice, ctx, idx) {
+  if (idx < 0 || idx >= slice.list.length) return { newIdx: -1, newCurrentGroup: ctx.currentGroup, groupChanged: false };
   const newCurrentGroup = slice.list[idx].name;
-  return { newIdx: idx, newCurrentGroup, groupChanged: newCurrentGroup !== model.currentGroup };
+  return { newIdx: idx, newCurrentGroup, groupChanged: newCurrentGroup !== ctx.currentGroup };
 }
 
 // --- init ---
@@ -164,8 +176,9 @@ function init() {
 
 // --- update ---
 
-/** Build the cascade Cmds when a tree-shape change moved currentGroup. */
-function _cascadeCmds(res) {
+/** Build the cascade Cmds when a tree-shape change moved currentGroup.
+ *  Takes ctx = { tabListMode? }; reducer pure — no getModel(). */
+function _cascadeCmds(res, ctx) {
   const cmds = [];
   // Phase 4b — cursor lives on this Component's own nav slice; emit a
   // wrapped set_cursor Msg back to ourselves rather than routing via
@@ -176,31 +189,15 @@ function _cascadeCmds(res) {
   if (res.groupChanged) {
     // v0.6.2 B5 — viewer_reset_chrome MUST run before set_current_group.
     // The viewer's finalizer captures the leaving tab's view-state on
-    // slice.tab transition, resolving the fromKey via
-    // pane-tabs.resolveTabKey(originalSlice.tab, originalSlice, getModel()).
-    // resolveTabKey reads model.currentGroup to build per-group keys
-    // (`<group>:action:<key>` etc). If set_current_group runs FIRST,
-    // getModel().currentGroup is already the NEW group by the time the
-    // finalizer runs — so the FROM-capture lands under the WRONG group's
-    // key (poisoning the new group's tab AND losing the old group's
-    // saved state). Reordering keeps the finalizer reading the OLD
-    // group at capture time. set_current_group + reset_group_context
-    // don't touch the viewer slice, so their order relative to each
-    // other (and to viewer_reset_chrome) only matters for this read.
-    // v0.6.1 Phase 5 — viewer reset routes through resolveTarget so
-    // multi-viewer (Phase 6+) hits the right pane. With one viewer
-    // (today) this resolves to 'detail' every time. null → no viewer
-    // registered, drop the Cmd.
+    // slice.tab transition. If set_current_group runs FIRST, the
+    // finalizer's resolveTabKey sees the NEW group and the FROM-capture
+    // lands under the WRONG group's key. Reordering keeps the finalizer
+    // reading the OLD group at capture time.
     const route = require('../../leaves/route');
     const target = route.resolveTarget('viewer');
     if (target) {
-      // v0.6.3 Phase D1: thread tabListMode (read at dispatch time
-      // from getModel() — this dispatcher is inside the groups
-      // reducer; getModel() at the reducer boundary is acceptable
-      // for cross-Component Cmd emission).
-      const _gm = getModel();
       cmds.push({ type: 'msg', msg: require('../api').wrap(target, {
-        type: 'viewer_reset_chrome', tabListMode: !!_gm.modes.tabListMode,
+        type: 'viewer_reset_chrome', tabListMode: !!(ctx && ctx.tabListMode),
       }) });
     }
     cmds.push({ type: 'msg', msg: { type: 'set_current_group', name: res.newCurrentGroup } });
@@ -208,6 +205,16 @@ function _cascadeCmds(res) {
   }
   cmds.push({ type: 'show_selected_info' });
   return cmds;
+}
+
+// v0.6.3 Phase D1 — every external dispatcher of a groups Msg
+// threads msg.ctx = { groups, currentGroup, tabListMode? } via
+// groupsBundle (exported below). The reducer arm reads ctx from
+// msg and passes to helpers. Reducer is pure of getModel();
+// internal cascade Cmds emitted from _cascadeCmds also receive
+// the bundle so downstream Msgs stay threaded.
+function _msgCtx(msg) {
+  return msg.ctx || { groups: {}, currentGroup: '', tabListMode: false };
 }
 
 function update(msg, slice) {
@@ -218,14 +225,15 @@ function update(msg, slice) {
   if (mnav.isNavMsg(msg)) return mnav.apply(slice, msg);
   if (msg.type === 'groups_recompute') {
     // Boot / config reload — rebuild list from config.groups + slice state.
-    return recomputeList(slice, getModel());
+    return recomputeList(slice, _msgCtx(msg));
   }
   if (msg.type === 'groups_selected') {
     // nav_select for panel:'groups' wrote the cursor already (Phase 4a:
     // via a wrapped set_cursor Msg into this Component's nav slice); we
     // just emit the cascade Cmds (set_current_group + reset_group_context
     // + viewer reset) if the index actually moved the active group.
-    const res = selectAt(slice, getModel(), msg.index);
+    const ctx = _msgCtx(msg);
+    const res = selectAt(slice, ctx, msg.index);
     if (res.newIdx < 0) return slice;
     // cursor already written by nav_select — don't re-emit set_panel_cursor.
     const cmds = [];
@@ -236,14 +244,9 @@ function update(msg, slice) {
       const route = require('../../leaves/route');
       const target = route.resolveTarget('viewer');
       if (target) {
-        // v0.6.3 Phase D1: thread tabListMode (read at dispatch time
-      // from getModel() — this dispatcher is inside the groups
-      // reducer; getModel() at the reducer boundary is acceptable
-      // for cross-Component Cmd emission).
-      const _gm = getModel();
-      cmds.push({ type: 'msg', msg: require('../api').wrap(target, {
-        type: 'viewer_reset_chrome', tabListMode: !!_gm.modes.tabListMode,
-      }) });
+        cmds.push({ type: 'msg', msg: require('../api').wrap(target, {
+          type: 'viewer_reset_chrome', tabListMode: !!ctx.tabListMode,
+        }) });
       }
       cmds.push({ type: 'msg', msg: { type: 'set_current_group', name: res.newCurrentGroup } });
       cmds.push({ type: 'msg', msg: { type: 'reset_group_context' } });
@@ -253,15 +256,17 @@ function update(msg, slice) {
   if (msg.type === 'toggle_group') {
     // `recursive` only matters for the leader-key `"` chord (expand
     // every descendant) — interactive Enter on a row toggles one level.
+    const ctx = _msgCtx(msg);
     const [next, res] = slice.expanded.has(msg.name)
-      ? collapse(slice, getModel(), msg.name, !!msg.recursive)
-      : expand(slice, getModel(), msg.name, !!msg.recursive);
-    return [next, _cascadeCmds(res)];
+      ? collapse(slice, ctx, msg.name, !!msg.recursive)
+      : expand(slice, ctx, msg.name, !!msg.recursive);
+    return [next, _cascadeCmds(res, ctx)];
   }
   if (msg.type === 'toggle_groups_tab') {
     const target = slice.tab === 'quick' ? 'all' : 'quick';
-    const [next, res] = switchTab(slice, getModel(), target);
-    return [next, _cascadeCmds(res)];
+    const ctx = _msgCtx(msg);
+    const [next, res] = switchTab(slice, ctx, target);
+    return [next, _cascadeCmds(res, ctx)];
   }
   return slice;
 }
@@ -401,6 +406,7 @@ module.exports = {
       idOf: (g) => g.name,
     },
   },
+  groupsBundle,
   // Test-only exports.
   _init: init,
   _update: update,

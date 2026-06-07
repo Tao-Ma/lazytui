@@ -273,8 +273,10 @@ describe('[3] update — (model, msg) → [model, cmds], pure + Cmd descriptors'
 
     // Phase 3 — update() returns either a new slice or [newSlice, Cmds];
     // unwrap both shapes and thread through.
+    // v0.6.3 Phase D1 — thread groups ctx so the reducer arm stays pure.
+    const ctx = { ...groups.groupsBundle(m), tabListMode: false };
     const step = (sl, msg) => {
-      const out = groups._update(msg, sl);
+      const out = groups._update({ ...msg, ctx }, sl);
       return Array.isArray(out) ? out[0] : out;
     };
     let slice = groups._init();

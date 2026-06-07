@@ -165,23 +165,32 @@ function allPanels() {
 // reset_group_context / viewer_reset_chrome) fire as a consequence.
 // Kept here as named exports so non-reducer callers (mouse, recursive `"`
 // expand, tests) have a stable surface.
+// v0.6.3 Phase D1: thread the groupsBundle (+ tabListMode for the
+// cascade-emit case) so the reducer arms stay pure of getModel().
+function _groupsCtx() {
+  const groupsComp = require('../panel/navigator/groups');
+  const { getModel } = require('./runtime');
+  const m = getModel();
+  return { ...groupsComp.groupsBundle(m), tabListMode: !!m.modes.tabListMode };
+}
+
 function recomputeGroups() {
   const api = require('../panel/api');
-  api.dispatchMsg(api.wrap('groups', { type: 'groups_recompute' }));
+  api.dispatchMsg(api.wrap('groups', { type: 'groups_recompute', ctx: _groupsCtx() }));
 }
 function switchGroupsTab(/* tab */) {
   // toggle_groups_tab flips All↔Quick (the only transition we use today);
   // explicit-target setters belong to the Component if ever needed.
   const api = require('../panel/api');
-  api.dispatchMsg(api.wrap('groups', { type: 'toggle_groups_tab' }));
+  api.dispatchMsg(api.wrap('groups', { type: 'toggle_groups_tab', ctx: _groupsCtx() }));
 }
 function expandGroup(path, recursive = false) {
   const api = require('../panel/api');
-  api.dispatchMsg(api.wrap('groups', { type: 'toggle_group', name: path, recursive }));
+  api.dispatchMsg(api.wrap('groups', { type: 'toggle_group', name: path, recursive, ctx: _groupsCtx() }));
 }
 function collapseGroup(path, recursive = false) {
   const api = require('../panel/api');
-  api.dispatchMsg(api.wrap('groups', { type: 'toggle_group', name: path, recursive }));
+  api.dispatchMsg(api.wrap('groups', { type: 'toggle_group', name: path, recursive, ctx: _groupsCtx() }));
 }
 
 // Nav chrome (cursor / scroll / multiSel / filter) lives on each
