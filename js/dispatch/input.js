@@ -209,7 +209,18 @@ function handleMouse(kind, x, y) {
         // tab_list_pick Msg (which reads cursor off the slice); the
         // click already names the target tab directly.
         dispatchMsg(wrap('layout', { type: 'focus_set', focus: ownerPaneId }));
-        dispatchMsg(wrap(ownerPaneId, { type: 'tab_switch', idx: hit.tabIdx }));
+        // Phase 3d: thread targetKey + currentGroup so tab_switch
+        // stays pure of getModel(). Resolved via pt.resolveTabKey
+        // against the owner pane's slice with tab=hit.tabIdx.
+        {
+          const pt = require('../leaves/pane-tabs');
+          const slice = getInstanceSlice(ownerPaneId);
+          dispatchMsg(wrap(ownerPaneId, {
+            type: 'tab_switch', idx: hit.tabIdx,
+            targetKey: pt.resolveTabKey(hit.tabIdx, { ...slice, tab: hit.tabIdx }, model),
+            currentGroup: model.currentGroup,
+          }));
+        }
         dispatchMsg(wrap(ownerPaneId, { type: 'tab_list_close' }));
       } else {
         // Click outside overlay (and not on the trigger) → close.
@@ -468,7 +479,17 @@ function handleMouse(kind, x, y) {
             }));
           } else {
             dispatchMsg(wrap('layout', { type: 'focus_set', focus: p.type }));
-            dispatchMsg(wrap(p.type, { type: 'tab_switch', idx: tab.tabIdx }));
+            // Phase 3d: thread targetKey + currentGroup so the tab_switch
+            // reducer arm stays pure of getModel().
+            {
+              const pt = require('../leaves/pane-tabs');
+              const slice = getInstanceSlice(p.type);
+              dispatchMsg(wrap(p.type, {
+                type: 'tab_switch', idx: tab.tabIdx,
+                targetKey: pt.resolveTabKey(tab.tabIdx, { ...slice, tab: tab.tabIdx }, getModel()),
+                currentGroup: getModel().currentGroup,
+              }));
+            }
           }
           mutated = true;
           break;

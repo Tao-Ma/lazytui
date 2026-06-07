@@ -592,11 +592,23 @@ function reduceTabMsg(msg, slice, ctx) {
       const effects = [
         { type: 'msg', msg: { type: 'terminal_exit' } },
       ];
-      // N1 — single canonical "tab idx → key" resolver. resolveTabKey
-      // (this leaf's export) is the same function viewer.js _activeTabKey
-      // delegates to.
-      const groupName = getModel().currentGroup;
-      const targetKey = resolveTabKey(idx, { ...slice, tab: idx }, getModel());
+      // N1 — single canonical "tab idx → key" resolver. The PRODUCTION
+      // dispatcher (mouse handler / chain key handler / Cmd cascade
+      // emitter / internal cascades tab_cycle + tab_list_pick)
+      // precomputes targetKey via pt.resolveTabKey and threads
+      // targetKey + currentGroup via the Msg payload (Phase 3d).
+      //
+      // Test-only fallback to ctx.getModel(): unit tests dispatch
+      // tab_switch directly with just `{type, idx}` and don't thread
+      // these fields. Falling back keeps tests writable without
+      // duplicating the resolve at every test call site. Production
+      // never hits the fallback (every dispatch site is audited as
+      // threading the bundle). If the user is willing to add the
+      // fields to every test dispatch, the fallback can be deleted.
+      const groupName = msg.currentGroup != null ? msg.currentGroup : getModel().currentGroup;
+      const targetKey = msg.targetKey != null
+        ? msg.targetKey
+        : resolveTabKey(idx, { ...slice, tab: idx }, getModel());
       // Read target tab's stored state. The finalizer (running AFTER
       // this reducer body) will capture the FROM-tab's view state;
       // for the to-restore we read what's currently stored.
@@ -683,11 +695,18 @@ function reduceTabMsg(msg, slice, ctx) {
     case 'tab_cycle': {
       // next_tab / prev_tab keyboard verbs land here — compute the
       // wrapped index and re-emit through tab_switch so both keyboard
-      // and mouse paths share the cascade.
+      // and mouse paths share the cascade. Phase 3d: precompute
+      // targetKey + currentGroup here so the downstream tab_switch
+      // arm doesn't need ctx.getModel().
       const { total } = getTabInfo();
       if (total <= 1) return slice;
       const next = (slice.tab + (msg.dir | 0) + total) % total;
-      return [slice, [{ type: 'msg', msg: wrap(paneId, { type: 'tab_switch', idx: next }) }]];
+      const m = getModel();
+      const targetKey = resolveTabKey(next, { ...slice, tab: next }, m);
+      return [slice, [{ type: 'msg', msg: wrap(paneId, {
+        type: 'tab_switch', idx: next,
+        targetKey, currentGroup: m.currentGroup,
+      }) }]];
     }
 
     // --- tab lifecycle ---
@@ -789,15 +808,22 @@ function reduceTabMsg(msg, slice, ctx) {
     case 'tab_list_pick': {
       // Pure leaf — dispatchers gate on tabListMode. Pre-cleanup
       // read getModel().modes.tabListMode as a defensive guard.
+      // Phase 3d: precompute the tab_switch targetKey + currentGroup
+      // here too so the downstream arm doesn't need ctx.getModel().
       const tl = slice.tabList || { cursor: 0 };
       const idx = tl.cursor | 0;
+      const m = getModel();
+      const targetKey = resolveTabKey(idx, { ...slice, tab: idx }, m);
       return [
         slice,
         [
           { type: 'msg', msg: { type: 'mode_clear', flag: 'tabListMode' } },
           { type: 'msg', msg: wrap('layout', { type: 'tab_list_set_owner', paneId: null }) },
           { type: 'msg', msg: wrap('layout', { type: 'focus_set', focus: paneId }) },
-          { type: 'msg', msg: wrap(paneId, { type: 'tab_switch', idx }) },
+          { type: 'msg', msg: wrap(paneId, {
+            type: 'tab_switch', idx,
+            targetKey, currentGroup: m.currentGroup,
+          }) },
           { type: 'force_full_repaint' },
         ],
       ];

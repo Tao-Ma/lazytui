@@ -163,7 +163,14 @@ function streamCommand(headerLabel, cmd, args = [], opts = {}) {
     const existing = procs.get(existingId);
     const existingLabel = (existing && existing.headerLabel) || '<previous>';
     if (existingLabel !== headerLabel) {
-      api.dispatchMsg(api.wrap(target, { type: 'tab_switch', idx: 0 }));
+      // Phase 3d: thread targetKey + currentGroup so the tab_switch
+      // arm stays pure of getModel(). idx=0 is always Info; targetKey
+      // is the static 'info'. currentGroup read at dispatch time.
+      api.dispatchMsg(api.wrap(target, {
+        type: 'tab_switch', idx: 0,
+        targetKey: 'info',
+        currentGroup: require('../app/runtime').getModel().currentGroup,
+      }));
       require('./dispatch').applyMsg({
         type: 'confirm_enter',
         message: `Kill running '${existingLabel}'?`,

@@ -751,7 +751,14 @@ function update(model, msg) {
         const idx = info.actionTabs.findIndex(([k]) => k === owner.tabKey);
         if (idx >= 0) {
           // v0.6.2 — action tabs start at idx 2 (Info=0, Transcript=1).
-          cmds.push({ type: 'msg', msg: route.wrap(viewerTarget, { type: 'tab_switch', idx: 2 + idx }) });
+          // Phase 3d: thread targetKey + currentGroup so the tab_switch
+          // reducer arm stays pure of getModel().
+          const tabIdx = 2 + idx;
+          cmds.push({ type: 'msg', msg: route.wrap(viewerTarget, {
+            type: 'tab_switch', idx: tabIdx,
+            targetKey: pt.resolveTabKey(tabIdx, { ...slice, tab: tabIdx }, model),
+            currentGroup: model.currentGroup,
+          }) });
           cmds.push({ type: 'msg', msg: route.wrap('layout', { type: 'focus_set', focus: viewerTarget }) });
         }
       } else if (kind === 'stream-unrouted') {
@@ -766,8 +773,12 @@ function update(model, msg) {
         }
         if (termIdx >= 0) {
           // v0.6.2 — term tabs start at idx 2 + actionTabs.length.
+          // Phase 3d: thread targetKey + currentGroup.
+          const tabIdx = 2 + info.actionTabs.length + termIdx;
           cmds.push({ type: 'msg', msg: route.wrap(viewerTarget, {
-            type: 'tab_switch', idx: 2 + info.actionTabs.length + termIdx,
+            type: 'tab_switch', idx: tabIdx,
+            targetKey: pt.resolveTabKey(tabIdx, { ...slice, tab: tabIdx }, model),
+            currentGroup: model.currentGroup,
           }) });
           cmds.push({ type: 'msg', msg: route.wrap('layout', { type: 'focus_set', focus: viewerTarget }) });
           cmds.push({ type: 'msg', msg: { type: 'terminal_enter' } });
