@@ -603,8 +603,10 @@ function _updateInner(msg, slice) {
       const vsb = slice.viewerStreamBuffer || { lines: [], cap: 1000 };
       const [vsbLines, dropped] = _capLines([...vsb.lines, msg.line], vsb.cap);
       const nextBuf = { ...vsb, lines: vsbLines };
-      const m = getModel();
-      const info = pt.flatTabInfo(slice, m, m.currentGroup);
+      // v0.6.3 Phase D2 — was computing `const info = pt.flatTabInfo(...)`
+      // and `const m = getModel()` here without using either. flatTabInfo
+      // is the 71µs/op getMergedActions call (per bench-tea-overhead);
+      // the streaming hot path was paying it per-line for nothing.
       if (slice.tab === pt.transcriptTabIdx()) {
         const innerH = _innerH(slice);
         const maxScrollOld = Math.max(0, vsb.lines.length - innerH);
@@ -654,8 +656,7 @@ function _updateInner(msg, slice) {
       const vsb = slice.viewerStreamBuffer || { lines: [], cap: 1000 };
       const [vsbLines, dropped] = _capLines([...vsb.lines, ...incoming], vsb.cap);
       const nextBuf = { ...vsb, lines: vsbLines };
-      const m = getModel();
-      const info = pt.flatTabInfo(slice, m, m.currentGroup);
+      // v0.6.3 Phase D2 — same dead-work removal as viewer_append.
       if (slice.tab === pt.transcriptTabIdx()) {
         const innerH = _innerH(slice);
         const maxScrollOld = Math.max(0, vsb.lines.length - innerH);
