@@ -7,9 +7,23 @@
 'use strict';
 
 const tabs = require('../panel/viewer/tabs');
+const pt = require('../leaves/pane-tabs');
 const { describe, it, eq, assert, report } = require('./test-runner');
 const { getModel } = require('../app/runtime');
 const {getInstanceSlice, getFocus } = require('../panel/api');
+
+// v0.6.3 Phase 3d: tab_switch's reducer arm reads msg.currentGroup +
+// msg.targetKey (production dispatchers thread them via modelBundle +
+// resolveTabKey). Tests dispatching the bare Msg use this helper to
+// patch in the bundle so the arm doesn't need a getModel() fallback.
+function tabSwitchMsg(slice, idx) {
+  const m = getModel();
+  return {
+    type: 'tab_switch', idx,
+    targetKey: pt.resolveTabKey(idx, { ...slice, tab: idx }, m),
+    currentGroup: m.currentGroup,
+  };
+}
 
 
 function freshGroup({ actions = {}, terminals = {} } = {}) {
@@ -302,7 +316,8 @@ describe('[R14] N1 content-tab tabState restore (non-adjacent transition)', () =
         },
       },
     });
-    const r = viewer._update({ type: 'tab_switch', idx: 2 }, getInstanceSlice('detail'));
+    const sliceForSwitch = getInstanceSlice('detail');
+    const r = viewer._update(tabSwitchMsg(sliceForSwitch, 2), sliceForSwitch);
     const next = Array.isArray(r) ? r[0] : r;
     eq(next.tab, 2, 'on content:doc1');
     eq(next.search.term, 'foo', 'restored search term');
@@ -359,7 +374,8 @@ describe('[B8] tab_switch to content tab from non-content origin resets scroll',
     route.setInstanceSlice('detail', { ...slice, tab: 0, scroll: 50, innerH: 10 });
     // Now tab_switch to the content tab (idx 2: Info=0, Transcript=1, content[foo]=2).
     const viewer = require('../panel/viewer/viewer');
-    const r = viewer._update({ type: 'tab_switch', idx: 2 }, route.getInstanceSlice('detail'));
+    const sliceForSwitch = route.getInstanceSlice('detail');
+    const r = viewer._update(tabSwitchMsg(sliceForSwitch, 2), sliceForSwitch);
     const next = Array.isArray(r) ? r[0] : r;
     eq(next.tab, 2, 'on content:foo');
     eq(next.scroll, 0, 'scroll reset to 0 (B8: pre-fix inherited Info\'s 50)');

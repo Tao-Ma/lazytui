@@ -42,6 +42,18 @@ setModel({
 });
 
 function applyUpdate(s, msg) {
+  // v0.6.3 Phase 3d: tab_switch's reducer arm reads msg.currentGroup
+  // + msg.targetKey (production dispatchers thread them). Tests that
+  // dispatch tab_switch directly with `{type, idx}` get the bundle
+  // patched in here so the arm doesn't need a fallback to getModel().
+  if (msg && msg.type === 'tab_switch' && msg.targetKey == null) {
+    const m = getModel();
+    msg = {
+      ...msg,
+      targetKey: pt.resolveTabKey(msg.idx, { ...s, tab: msg.idx }, m),
+      currentGroup: m.currentGroup,
+    };
+  }
   const r = viewer._update(msg, s);
   return Array.isArray(r) ? { next: r[0], cmds: r[1] || [] } : { next: r, cmds: [] };
 }

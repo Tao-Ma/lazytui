@@ -28,7 +28,8 @@
 
 const { describe, it, assert, eq, report } = require('./test-runner');
 const viewer = require('../panel/viewer/viewer');
-const { setModel } = require('../app/runtime');
+const pt = require('../leaves/pane-tabs');
+const { setModel, getModel } = require('../app/runtime');
 
 setModel({
   currentGroup: 'g',
@@ -37,6 +38,18 @@ setModel({
 });
 
 function applyUpdate(s, msg) {
+  // v0.6.3 Phase 3d: thread targetKey + currentGroup into tab_switch
+  // so the reducer arm stays pure of getModel(). Production
+  // dispatchers thread the bundle; tests dispatching the bare Msg
+  // get the bundle patched in here.
+  if (msg && msg.type === 'tab_switch' && msg.targetKey == null) {
+    const m = getModel();
+    msg = {
+      ...msg,
+      targetKey: pt.resolveTabKey(msg.idx, { ...s, tab: msg.idx }, m),
+      currentGroup: m.currentGroup,
+    };
+  }
   const r = viewer._update(msg, s);
   return Array.isArray(r) ? { next: r[0], cmds: r[1] || [] } : { next: r, cmds: [] };
 }

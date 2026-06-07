@@ -592,23 +592,14 @@ function reduceTabMsg(msg, slice, ctx) {
       const effects = [
         { type: 'msg', msg: { type: 'terminal_exit' } },
       ];
-      // N1 — single canonical "tab idx → key" resolver. The PRODUCTION
-      // dispatcher (mouse handler / chain key handler / Cmd cascade
-      // emitter / internal cascades tab_cycle + tab_list_pick)
-      // precomputes targetKey via pt.resolveTabKey and threads
-      // targetKey + currentGroup via the Msg payload (Phase 3d).
-      //
-      // Test-only fallback to ctx.getModel(): unit tests dispatch
-      // tab_switch directly with just `{type, idx}` and don't thread
-      // these fields. Falling back keeps tests writable without
-      // duplicating the resolve at every test call site. Production
-      // never hits the fallback (every dispatch site is audited as
-      // threading the bundle). If the user is willing to add the
-      // fields to every test dispatch, the fallback can be deleted.
-      const groupName = msg.currentGroup != null ? msg.currentGroup : getModel().currentGroup;
-      const targetKey = msg.targetKey != null
-        ? msg.targetKey
-        : resolveTabKey(idx, { ...slice, tab: idx }, getModel());
+      // N1 — single canonical "tab idx → key" resolver. Every dispatcher
+      // (mouse handler / chain key handler / Cmd cascade emitter +
+      // internal cascades tab_cycle + tab_list_pick + tests via
+      // tabSwitchMsg helpers) precomputes targetKey via
+      // pt.resolveTabKey and threads targetKey + currentGroup through
+      // the Msg payload. Pure reducer arm — no getModel() fallback.
+      const groupName = msg.currentGroup || '';
+      const targetKey = msg.targetKey || null;
       // Read target tab's stored state. The finalizer (running AFTER
       // this reducer body) will capture the FROM-tab's view state;
       // for the to-restore we read what's currently stored.
