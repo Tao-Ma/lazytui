@@ -261,7 +261,7 @@ lazytui admits two intentional impurities the idempotence rule
 still permits:
 
 - **Layout calculation** writes derived state — `layout.slice.panelHeights`,
-  `layout.slice.panelBounds` (Phase 1e), and per-Navigator
+  `layout.slice.paneBounds` (Phase 1e), and per-Navigator
   `slice.nav[panel].scroll` keep-in-view adjustments (Phase 4a) — during
   `calcLayout()`. These are *outputs* of the layout pass, consumed by
   mouse/input handlers between frames; panel renderers read them, don't

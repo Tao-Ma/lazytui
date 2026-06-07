@@ -67,7 +67,7 @@ greppable.
      currentGroup, config, register, prefixSeq, focused, ...
 
    Component slices (js/leaves/route.js, nested store)
-     layout         focus, viewMode, arrange, panelBounds, freeConfig
+     layout         focus, viewMode, arrange, paneBounds, freeConfig
      detail         lines, scroll, tab, search, select, cursor,
                     contentTabs, ephemeralTerminals, actionTabBuffers,
                     viewerStreamBuffer, viewerOverride, tabState
@@ -86,7 +86,7 @@ greppable.
         ▼
 ═══════════════════════════ RENDER ═════════════════════════════════
    render()                       (js/render/layout.js)
-     1. calcLayout → panelHeights, panelBounds
+     1. calcLayout → panelHeights, paneBounds
         (fires keep-in-view set_scroll Msgs as a side output)
      2. for each panel in arrange:
           _safeRender(panel, w, h)
@@ -124,9 +124,9 @@ payload fans out to a Component, flat payload re-enters the root
 reducer) — no path where module X writes layer Y's state directly
 except the blessed render-side exceptions:
 
-  - `layout.panelHeights` / `panelBounds` written by `calcLayout` +
+  - `layout.panelHeights` / `paneBounds` written by `calcLayout` +
     each render-mode (the view-output geometry).
-  - `panelBounds.detail.tabs` written by the viewer's `detailTitle`
+  - `paneBounds.detail.tabs` written by the viewer's `detailTitle`
     (tab-bar hit-test cache).
   - keep-in-view `set_scroll` Msgs from `syncPanelScroll` into each
     Navigator's nav slice (Msgs, not direct writes).
@@ -134,7 +134,7 @@ except the blessed render-side exceptions:
     `innerH` (viewport cache so viewer reducers don't read layout
     cross-slice; R4.9 retired the prior `viewer_set_viewport` Msg —
     the Msg's only effect was this single-field write, now done inline
-    alongside the panelBounds writes).
+    alongside the paneBounds writes).
   - `setImmediate(terminal_exit)` from `renderTerminalOverlay` when
     the active PTY session has exited (T14 — deferred a tick so the
     cleanup cascade isn't inline in the render path).

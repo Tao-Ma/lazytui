@@ -11,7 +11,7 @@
 >   Phase 8 retired the `getComponentSlice` shim — for singleton
 >   instances the tab id equals the Component name).
 > - `S.detailLines` → `getInstanceSlice('detail').lines`.
-> - `S.panelBounds` → `getInstanceSlice('layout').panelBounds`.
+> - `S.paneBounds` → `getInstanceSlice('layout').paneBounds`.
 > - Direct assignment like `S.terminalMode = true` → dispatch the
 >   appropriate Msg (`terminal_enter` / `terminal_exit` for the flag,
 >   wrapped Msgs into the owning Component for slice writes).
@@ -268,7 +268,7 @@ function renderTerminalOverlay() {
   const session = getSession(id);
   if (!session) return;
 
-  const bounds = S.panelBounds.detail;
+  const bounds = S.paneBounds.detail;
   if (!bounds) return;
   const innerW = bounds.w - 2;
   const innerH = bounds.h - 2;

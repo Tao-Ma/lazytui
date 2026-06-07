@@ -4,7 +4,88 @@ All notable changes to lazytui are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning
 follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
-## [0.6.3] — 2026-06-06
+## [0.6.3] — 2026-06-07
+
+### Architecture (deep arch arc, 2026-06-07)
+- **Phase D — TEA completion.** 16 `getModel()` reads in
+  `viewer.js` reducer arms + 5 in `groups.js` retired via Msg-
+  payload threading (the `modelBundle` pattern — dispatcher reads
+  model at dispatch time, threads facts via Msg). Boot-time direct
+  root-model writes in `app/state.js` routed through `set_config`
+  / `set_register` Msgs. Cross-slice `tabBounds` read in
+  `panel/layout.js` + in-place render-time mutation in `viewer.js`
+  retired. Dead `flatTabInfo` compute killed in the streaming hot
+  path (D2 — was a 71µs/op per-append finding).
+- **Phase B core — slice keying by paneId.** Component slice
+  instances mint at PLACE time (per-pane in `initState`'s arrange
+  walk) instead of register-time-by-kind; the `route` table now
+  keys instances by `pane.paneId`, with `_primaryByKind` derived
+  as a fallback for legacy kind-name lookups. `slice.focus`
+  redefined as a paneId via `_withFocus(slice, focus)`
+  normalization. New `mpane.paneMatchesFocus(p, focus)`
+  transitional comparator (paneId-first, type/id fallback)
+  supports pre-migration callers during the unwind.
+- **Phase A1 — vocabulary rename.** Slice field
+  `panelBounds → paneBounds` (98 substitutions across 23 files).
+  v0.6.1 introduced the pane abstraction; this catches up the
+  field name.
+- **Phase C1 — mouse-routing registry.** Inline modal mouse
+  blocks in `handleMouse` (`tabListMode`, `paneSelectMode`,
+  `freeConfigMode` — ~200 LOC of straight-line branches) lifted
+  into a `_modeMouseHandlers` registry mirroring the keyboard
+  `_modeHandlers` shape. `_dispatchActiveModeMouse` walks an
+  explicit precedence array with wedge-guard (`mode_clear` on
+  throw, same as keyboard). `handleMouse` 440 → 244 lines. Each
+  handler owns its `render()` call so consume-no-render perf
+  optimizations (P5.10 motion-without-drag, panel-list no-op
+  click) preserve their pre-refactor semantics.
+
+Spec for the arch arc + the deferred Phase B2 / A2 / C2 +
+Track-3 hygiene items: [docs/v0.6.3-arch.md](docs/v0.6.3-arch.md).
+
+### Fixed (Round-6 post-arch-arc adversarial review)
+- **Wheel-over-focused-pane downgrade.** Post-B3 `getFocus()` returns
+  a paneId; the wheel handler still compared `p.type === getFocus()`,
+  which never matched → wheel on the focused pane silently fell
+  through to side-panel behavior (no auto-yank-or-refresh, no detail
+  update). Now uses `mpane.paneMatchesFocus`.
+- **Help overlay focus loss.** Same root cause: help title showed
+  `'TUI'` instead of the focused pane's title and list-mode
+  keybindings (j/k/g/G/PgUp/PgDn) disappeared from the help body
+  because `getPanelDef(getFocus())` keyed by panel-type returned
+  null. Now resolves focus → pane → type via `route.instanceKind`.
+- **Files panel lost focused highlight.** `getFocus() === panelType`
+  in `_renderFor` never matched. Now compares via `route.instanceKind`.
+- **`getPanelViewportH` half/full-view full-height bump broken.**
+  `panelType === visiblePanel` never matched (panelType is type-form,
+  visiblePanel is paneId) → focused half/full pane fell back to
+  `boundsFor` for content height, breaking scroll math. Fixed via
+  `instanceKind(visiblePanel) === panelType`.
+- **Producer leaks writing type-form focus.** Four sites still wrote
+  `panel.type` instead of paneId, masked downstream by the tolerant
+  comparator but violating the B3 invariant: free-config mouseDown,
+  `navSelect`, `set_arrange` + `free_config_enter` stale-focus
+  fallbacks, and the `set_active_tab` `wasFocused` predicate. All
+  fixed to write `paneId || type`.
+- **`_resolvePaneIdForFocus` inactive multi-tab id resolution.**
+  `pane.id` / `pane.type` mirror the ACTIVE tab; an inactive tab's
+  pool id lives in `pane.tabs[].id` / `.poolId`. Added a tabs[] scan
+  as the third fallback before returning unchanged so a pre-migration
+  caller passing an inactive tab id no longer leaks it into focus.
+- **C1 extra-render perf regressions.** Two pre-C1 `return;` paths
+  intentionally skipped `render()`: panel-list overlay
+  header/footer/essential row click (no-op) and free-config motion
+  without an in-flight drag (P5.10 — continuous while cursor moves).
+  The C1 dispatcher rendered on every truthy return, breaking those
+  optimizations. Restored per-handler `render()` ownership so
+  consume-no-render paths can `return true` without painting.
+- **C1 precedence-order defense in depth.** `_dispatchActiveModeMouse`
+  walked CHAIN_MODES which orders `freeConfigMode` first (idx 3),
+  inverting the pre-C1 source order (tabList → paneSelect →
+  freeConfig). Today the three modes are mutually exclusive by
+  invariant so this is observationally moot — pinned an explicit
+  `_MOUSE_MODE_PRECEDENCE` array so a future invariant relax
+  doesn't silently flip behavior.
 
 ### Added
 - **Pane-select dropdown.** Every non-detail panel now sports a
