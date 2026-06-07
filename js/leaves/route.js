@@ -64,12 +64,28 @@ function getInstance(id) { return _instances[id]; }
 
 function getInstanceSlice(id) {
   const inst = _instances[id];
-  return inst ? inst.slice : undefined;
+  if (inst) return inst.slice;
+  // v0.6.3 Phase B — backward-compat fallback: when id misses,
+  // treat it as a kind name and resolve via _primaryByKind. Pre-B
+  // singleton convention used id === kind, so this fallback was
+  // unreachable; post-B (slices keyed by paneId), legacy callers
+  // like `getInstanceSlice('detail')` still resolve via primary
+  // until they're migrated to thread paneId explicitly.
+  const primaryId = _primaryByKind[id];
+  if (primaryId && _instances[primaryId]) return _instances[primaryId].slice;
+  return undefined;
 }
 
 function setInstanceSlice(id, slice) {
-  const inst = _instances[id];
-  if (!inst) return;
+  let inst = _instances[id];
+  if (!inst) {
+    // v0.6.3 Phase B — kind-name → primary-by-kind fallback so legacy
+    // callers writing via `setInstanceSlice('detail', ...)` resolve
+    // to the paneId-keyed instance post-B.
+    const primaryId = _primaryByKind[id];
+    inst = primaryId ? _instances[primaryId] : null;
+    if (!inst) return;
+  }
   inst.slice = slice;
 }
 

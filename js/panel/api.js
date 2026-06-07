@@ -686,9 +686,15 @@ function leaveTerminalMode() {
   require('../dispatch/dispatch').applyMsg({ type: 'terminal_exit' });
 }
 
+// v0.6.3 Phase B — used by app/state.js#initState to walk placed
+// panes and mint per-pane instance slices. Internal accessor; not
+// part of the Component-facing surface.
+function _componentsMap() { return components; }
+
 module.exports = {
   // --- Component registry / lifecycle ---
   registerComponent, registerEffect, dispatchMsg, dispatchKeyToFocused, wrap,
+  _components: _componentsMap,  // v0.6.3 Phase B — internal use by initState
   getComponent, getComponentOwningPanel, getFocus,
   // Tab-instance registry surface.
   setInstance, getInstance, getInstanceSlice, setInstanceSlice,

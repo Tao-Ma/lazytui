@@ -130,6 +130,41 @@ function initState() {
     dirty: false,
   }));
 
+  // v0.6.3 Phase B — mint per-pane Component instances keyed by
+  // paneId. Pre-B used the singleton convention (id === kind ===
+  // Component name); post-B every PLACED pane gets its own instance
+  // with id = pane.paneId (e.g. 'pane-detail', 'pane-groups'). The
+  // kind-keyed instance that registerComponent minted earlier is
+  // disposed for each kind we re-mint per pane — _primaryByKind
+  // shifts to the new paneId. Components that aren't placeable
+  // (chrome like 'layout') stay singleton-keyed.
+  //
+  // Foundational for v0.7 multi-instance: a second pane of the
+  // same kind gets its own paneId, its own slice. Today every
+  // kind has exactly one pane; the convention just gets ready.
+  const route = require('../leaves/route');
+  const mpool = require('../leaves/pool');
+  const components = api._components ? api._components() : null;
+  if (components) {
+    const arrange = _layoutSlice().arrange;
+    const placedPanes = arrange ? mpool.allPanesInColumns(arrange) : [];
+    for (const p of placedPanes) {
+      const kind = p.type;
+      const paneId = p.paneId;
+      if (!paneId || !kind) continue;
+      const comp = components[kind];
+      if (!comp) continue;
+      // Dispose the kind-keyed singleton slice (minted at
+      // registerComponent), then mint fresh keyed by paneId.
+      if (route.hasInstance(kind) && kind !== paneId) {
+        route.disposeInstance(kind);
+      }
+      if (!route.hasInstance(paneId)) {
+        route.setInstance(paneId, kind, comp.init());
+      }
+    }
+  }
+
   // Rebuild the visible group list from config, then seed currentGroup
   // from the first visible row. recomputeGroups dispatches into the
   // groups Component; set_current_group rides through the root reducer.
