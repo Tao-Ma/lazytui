@@ -113,6 +113,211 @@ function _suppressesChromeClicks(md) {
       || md.freeConfigTitleEditMode || md.terminalMode;
 }
 
+// v0.6.3 Phase C1 — mouse-routing registry mirroring keyboard's
+// `_modeHandlers` in dispatch.js. Each handler takes
+// `(kind, mx, my, model)` and returns `true` if it consumed the event
+// (caller renders and stops). Walked by `_dispatchActiveModeMouse`
+// in CHAIN_MODES order — first active claiming handler wins.
+//
+// Handlers that DON'T consume (e.g. tabListMode on motion/release)
+// return false; the dispatcher falls through, and the subsequent
+// `isChainActive(model.modes) return;` guard catches the event so it
+// doesn't leak into normal-mode click/wheel routing.
+
+/** tab-list overlay — wheel scrolls cursor, press picks a row or
+ *  closes when clicked outside. Motion/release fall through. */
+function _mouseHandleTabListMode(kind, mx, my, model) {
+  const tabOverlay = require('../overlay/tab-list');
+  const layoutSlice = getInstanceSlice('layout');
+  const ownerPaneId = (layoutSlice && layoutSlice.tabListOwnerPaneId) || 'detail';
+  if (kind === 'wheel-up' || kind === 'wheel-down') {
+    dispatchMsg(wrap(ownerPaneId, {
+      type: 'tab_list_nav',
+      dir: kind === 'wheel-up' ? -1 : +1,
+      vh: tabOverlay.viewportRows(),
+      tabCount: tabOverlay._flatTabs().length,
+    }));
+    return true;
+  }
+  if (kind === 'press') {
+    const hit = tabOverlay.hitTest(mx, my);
+    if (hit) {
+      dispatchMsg(wrap('layout', { type: 'focus_set', focus: ownerPaneId }));
+      const pt = require('../leaves/pane-tabs');
+      const slice = getInstanceSlice(ownerPaneId);
+      dispatchMsg(wrap(ownerPaneId, {
+        type: 'tab_switch', idx: hit.tabIdx,
+        targetKey: pt.resolveTabKey(hit.tabIdx, { ...slice, tab: hit.tabIdx }, model),
+        currentGroup: model.currentGroup,
+      }));
+      dispatchMsg(wrap(ownerPaneId, { type: 'tab_list_close' }));
+    } else {
+      dispatchMsg(wrap(ownerPaneId, { type: 'tab_list_close' }));
+    }
+    return true;
+  }
+  return false;
+}
+
+/** pane-select overlay — wheel scrolls cursor, press picks a target
+ *  or closes when clicked outside. */
+function _mouseHandlePaneSelectMode(kind, mx, my, _model) {
+  const psOverlay = require('../overlay/pane-select');
+  if (kind === 'wheel-up' || kind === 'wheel-down') {
+    const all = psOverlay.items();
+    dispatchMsg(wrap('layout', {
+      type: 'pane_select_nav',
+      dir: kind === 'wheel-up' ? -1 : +1,
+      n: all.length,
+      vh: psOverlay.viewportRows(),
+    }));
+    return true;
+  }
+  if (kind === 'press') {
+    const hit = psOverlay.hitTest(mx, my);
+    const layoutSlice = getInstanceSlice('layout');
+    const ps = layoutSlice && layoutSlice.paneSelect;
+    if (hit && ps) {
+      dispatchMsg(wrap('layout', {
+        type: 'pool_swap_by_id',
+        targetPaneId: ps.targetPaneId,
+        pickedId: hit.item.id,
+      }));
+    } else {
+      dispatchMsg(wrap('layout', { type: 'pane_select_close' }));
+    }
+    return true;
+  }
+  return false;
+}
+
+/** free-config — owns the entire mouse pipeline. Routes pool-drag /
+ *  tab-drag / tab-bar press / panel-list overlay / free-config drag,
+ *  each via dispatchMsg into the layout slice. Always consumes (the
+ *  mode owns the mouse), so non-press/motion/release just short-circuit
+ *  to true. */
+function _mouseHandleFreeConfigMode(kind, mx, my, model) {
+  const slice = getInstanceSlice('layout');
+  const drag = slice && slice.freeConfig && slice.freeConfig.drag;
+  const isPoolDrag = drag && (drag.kind === 'pool-armed' || drag.kind === 'pool-dragging');
+  const isTabDrag = drag && (drag.kind === 'tab-armed' || drag.kind === 'tab-dragging');
+
+  if (isPoolDrag) {
+    if (kind === 'motion')       dispatchMsg(wrap('layout', { type: 'pool_drag_motion', mx, my, cols: cols() }));
+    else if (kind === 'release') dispatchMsg(wrap('layout', { type: 'pool_drag_release' }));
+    return true;
+  }
+
+  if (isTabDrag) {
+    if (kind === 'motion') {
+      const pt = require('../leaves/pane-tabs');
+      const groupName = model.currentGroup;
+      const targetKind = require('../leaves/route').resolveTarget('viewer') || 'detail';
+      const detailSlice = getInstanceSlice(targetKind);
+      const tabBounds = detailSlice && Array.isArray(detailSlice.tabBounds) ? detailSlice.tabBounds : null;
+      dispatchMsg(wrap('layout', {
+        type: 'tab_drag_motion', mx, my,
+        modelBundle: pt.modelBundle(model, groupName),
+        tabBounds,
+      }));
+    } else if (kind === 'release') {
+      dispatchMsg(wrap('layout', { type: 'tab_drag_release' }));
+    }
+    return true;
+  }
+
+  // Tab-bar press detection — click on a content tab arms a tab-drag.
+  const db = require('../render/layout').boundsFor('detail');
+  const detailSlice = getInstanceSlice('detail');
+  const detailTabBounds = detailSlice && Array.isArray(detailSlice.tabBounds) ? detailSlice.tabBounds : null;
+  if (kind === 'press' && db && detailTabBounds) {
+    if (my === db.y) {
+      const localX = mx - db.x;
+      let contentIdx = 0;
+      for (const t of detailTabBounds) {
+        if (t.closeKey == null) continue;
+        if (localX >= t.x && localX < t.x + t.w) {
+          dispatchMsg(wrap('layout', {
+            type: 'tab_drag_start',
+            sourceKey: t.closeKey, fromIdx: contentIdx,
+            mx, my,
+          }));
+          return true;
+        }
+        contentIdx++;
+      }
+    }
+  }
+
+  if (kind === 'press' && slice && slice.panelList && slice.panelList.open) {
+    const { hitTest } = require('../overlay/panel-list');
+    const mpool = require('../leaves/pool');
+    const hit = hitTest(mx, my);
+    if (hit) {
+      let cursor = slice.panelList.cursor;
+      if (hit.itemIdx !== null) cursor = hit.itemIdx;
+      const items = mpool.panelListItems(slice.arrange);
+      const item = items[cursor];
+      if (item && item.status !== 'essential') {
+        if (hit.itemIdx !== null && hit.itemIdx !== slice.panelList.cursor) {
+          dispatchMsg(wrap('layout', { type: 'panel_list_open', cursor }));
+        }
+        dispatchMsg(wrap('layout', { type: 'pool_drag_start', id: item.id, mx, my }));
+        return true;
+      }
+      // Header/footer / essential row — swallow without dispatch.
+      // No state change, but mode still owns the click; return true
+      // to skip the render (mirrors prior `return;` on this path).
+      return true;
+    }
+    // Click outside overlay: close it, then fall through to free-config drag.
+    dispatchMsg(wrap('layout', { type: 'panel_list_close' }));
+  }
+
+  // Motion without an in-flight drag is a no-op in the leaf — skip.
+  if (kind === 'motion' && !drag) return true;
+  if (kind === 'press')        dispatchMsg(wrap('layout', { type: 'free_config_mouse_press',  mx, my, cols: cols() }));
+  else if (kind === 'motion')  dispatchMsg(wrap('layout', { type: 'free_config_mouse_motion', mx, my, cols: cols() }));
+  else if (kind === 'release') dispatchMsg(wrap('layout', { type: 'free_config_mouse_release' }));
+  return true;
+}
+
+const _modeMouseHandlers = {
+  tabListMode:     _mouseHandleTabListMode,
+  paneSelectMode:  _mouseHandlePaneSelectMode,
+  freeConfigMode:  _mouseHandleFreeConfigMode,
+};
+
+/** Walks CHAIN_MODES in precedence order, fires the first active
+ *  handler with a registry entry. Returns true when a handler claimed
+ *  the event (caller paints + stops). Wedge-guarded like
+ *  `_dispatchActiveMode` for keyboard — a throwing handler clears its
+ *  flag and falls through to normal-mode dispatch instead of trapping
+ *  every subsequent click. */
+function _dispatchActiveModeMouse(kind, mx, my, model) {
+  const { CHAIN_MODES } = require('./modes');
+  for (const flag of CHAIN_MODES) {
+    if (!model.modes[flag]) continue;
+    const handler = _modeMouseHandlers[flag];
+    if (!handler) continue;
+    try {
+      if (handler(kind, mx, my, model)) return true;
+    } catch (e) {
+      console.error('[mode-mouse]', flag, e && e.message);
+      try {
+        require('./event-log').record('error', {
+          where: 'mouse_handler', flag, kind, mx, my,
+          message: e && e.message, stack: e && e.stack,
+        });
+      } catch (_) { /* event-log unavailable */ }
+      // Clear the wedged flag via update so single-writer holds.
+      try { applyMsg({ type: 'mode_clear', flag }); } catch (_) {}
+      return false;
+    }
+  }
+  return false;
+}
+
 function handleMouse(kind, x, y) {
   // Phase 4 — runtime.update returns NEW model objects; read getModel()
   // at entry so post-Msg state is what subsequent reads see.
@@ -183,214 +388,13 @@ function handleMouse(kind, x, y) {
     }
   }
 
-  // Tab-list overlay click + wheel — when the overlay is open, mouse
-  // events route to it (row click switches + closes; wheel scrolls the
-  // cursor; click outside closes). Mirrors the panel-list overlay's
-  // mouse routing. v0.6.1 Phase 8 — target the pane that owns the
-  // open overlay (layout.tabListOwnerPaneId), not a hardcoded 'detail'.
-  if (model.modes.tabListMode) {
-    const tabOverlay = require('../overlay/tab-list');
-    const layoutSlice = getInstanceSlice('layout');
-    const ownerPaneId = (layoutSlice && layoutSlice.tabListOwnerPaneId) || 'detail';
-    if (kind === 'wheel-up' || kind === 'wheel-down') {
-      dispatchMsg(wrap(ownerPaneId, {
-        type: 'tab_list_nav',
-        dir: kind === 'wheel-up' ? -1 : +1,
-        vh: tabOverlay.viewportRows(),
-        tabCount: tabOverlay._flatTabs().length,
-      }));
-      render();
-      return;
-    }
-    if (kind === 'press') {
-      const hit = tabOverlay.hitTest(mx, my);
-      if (hit) {
-        // Click on a row → switch + close. Bypasses cursor and the
-        // tab_list_pick Msg (which reads cursor off the slice); the
-        // click already names the target tab directly.
-        dispatchMsg(wrap('layout', { type: 'focus_set', focus: ownerPaneId }));
-        // Phase 3d: thread targetKey + currentGroup so tab_switch
-        // stays pure of getModel(). Resolved via pt.resolveTabKey
-        // against the owner pane's slice with tab=hit.tabIdx.
-        {
-          const pt = require('../leaves/pane-tabs');
-          const slice = getInstanceSlice(ownerPaneId);
-          dispatchMsg(wrap(ownerPaneId, {
-            type: 'tab_switch', idx: hit.tabIdx,
-            targetKey: pt.resolveTabKey(hit.tabIdx, { ...slice, tab: hit.tabIdx }, model),
-            currentGroup: model.currentGroup,
-          }));
-        }
-        dispatchMsg(wrap(ownerPaneId, { type: 'tab_list_close' }));
-      } else {
-        // Click outside overlay (and not on the trigger) → close.
-        dispatchMsg(wrap(ownerPaneId, { type: 'tab_list_close' }));
-      }
-      render();
-      return;
-    }
-  }
-
-  // v0.6.3 — pane-select overlay mouse routing. Mirrors tab-list:
-  //   wheel → pane_select_nav (cursor scroll)
-  //   press on a row → pool_swap_by_id (the arm emits the close Cmd)
-  //   press outside → pane_select_close
-  // The [≡] trigger toggle path at the top of this function still
-  // handles open-target self-click; this block covers everything
-  // else while the overlay is open.
-  if (model.modes.paneSelectMode) {
-    const psOverlay = require('../overlay/pane-select');
-    if (kind === 'wheel-up' || kind === 'wheel-down') {
-      const all = psOverlay.items();
-      dispatchMsg(wrap('layout', {
-        type: 'pane_select_nav',
-        dir: kind === 'wheel-up' ? -1 : +1,
-        n: all.length,
-        vh: psOverlay.viewportRows(),
-      }));
-      render();
-      return;
-    }
-    if (kind === 'press') {
-      const hit = psOverlay.hitTest(mx, my);
-      const layoutSlice = getInstanceSlice('layout');
-      const ps = layoutSlice && layoutSlice.paneSelect;
-      if (hit && ps) {
-        dispatchMsg(wrap('layout', {
-          type: 'pool_swap_by_id',
-          targetPaneId: ps.targetPaneId,
-          pickedId: hit.item.id,
-        }));
-      } else {
-        dispatchMsg(wrap('layout', { type: 'pane_select_close' }));
-      }
-      render();
-      return;
-    }
-  }
-
-  // Design mode owns the entire mouse pipeline — the drag/resize state
-  // machine lives on layout's slice (post-Phase-6 single-writer cleanup),
-  // dispatched as wrapped `free_config_mouse_*` Msgs. cols() is resolved here
-  // (the one terminal read the layout Component can't do without
-  // back-coupling) and threaded into the hit-tests. Non-press/motion/
-  // release events (wheel) are swallowed in free-config mode, as before.
-  //
-  // v0.6 Phase 5 — pool drag from the overlay. Press inside the panel-
-  // list overlay starts a pool-drag gesture (sourceId from the clicked
-  // row, or the cursor's current item if the click hits the overlay but
-  // not a specific row). Motion/release re-route to the pool-drag Msgs
-  // while drag.kind is `pool-*`; otherwise the existing free-config path runs.
-  if (model.modes.freeConfigMode) {
-    const slice = getInstanceSlice('layout');
-    const drag = slice && slice.freeConfig && slice.freeConfig.drag;
-    const isPoolDrag = drag && (drag.kind === 'pool-armed' || drag.kind === 'pool-dragging');
-    const isTabDrag = drag && (drag.kind === 'tab-armed' || drag.kind === 'tab-dragging');
-
-    if (isPoolDrag) {
-      if (kind === 'motion')       dispatchMsg(wrap('layout', { type: 'pool_drag_motion', mx, my, cols: cols() }));
-      else if (kind === 'release') dispatchMsg(wrap('layout', { type: 'pool_drag_release' }));
-      render();
-      return;
-    }
-
-    if (isTabDrag) {
-      if (kind === 'motion') {
-        // Thread the modelBundle so the reducer arm + tab-drag leaf
-        // + downstream reorderContent leaf all stay pure of getModel().
-        // The reorder Cmd emitted by tab-drag spreads the bundle so
-        // pane-tabs' reorderContent arm gets everything it needs.
-        // v0.6.3 Phase D4 — also thread the viewer's tabBounds so the
-        // layout reducer arm no longer cross-reads detail's slice.
-        const pt = require('../leaves/pane-tabs');
-        const groupName = model.currentGroup;
-        const targetKind = require('../leaves/route').resolveTarget('viewer') || 'detail';
-        const detailSlice = getInstanceSlice(targetKind);
-        const tabBounds = detailSlice && Array.isArray(detailSlice.tabBounds) ? detailSlice.tabBounds : null;
-        dispatchMsg(wrap('layout', {
-          type: 'tab_drag_motion', mx, my,
-          modelBundle: pt.modelBundle(model, groupName),
-          tabBounds,
-        }));
-      } else if (kind === 'release') {
-        dispatchMsg(wrap('layout', { type: 'tab_drag_release' }));
-      }
-      render();
-      return;
-    }
-
-    // Tab-reorder press detection. A click on a content tab in the detail
-    // panel's tab bar arms a tab drag instead of the usual free-config drag.
-    // closeKey is stamped only on content tabs (viewer.js#detailTitle);
-    // action / yaml-terminal / info tabs fall through to free-config drag, so
-    // the existing panel-move gesture still works when the user clicks
-    // those parts of the tab bar.
-    const db = require('../render/layout').boundsFor('detail');
-    // v0.6.3 P4.1: tab-bar hit-test cache moved off layoutSlice.paneBounds
-    // (was `db.tabs` — pre-P4 viewer wrote it onto layout's slice). Now
-    // lives on the viewer's own slice as slice.tabBounds. Read directly.
-    const detailSlice = getInstanceSlice('detail');
-    const detailTabBounds = detailSlice && Array.isArray(detailSlice.tabBounds) ? detailSlice.tabBounds : null;
-    if (kind === 'press' && db && detailTabBounds) {
-      if (my === db.y) {
-        const localX = mx - db.x;
-        let contentIdx = 0;
-        for (const t of detailTabBounds) {
-          if (t.closeKey == null) continue;
-          if (localX >= t.x && localX < t.x + t.w) {
-            dispatchMsg(wrap('layout', {
-              type: 'tab_drag_start',
-              sourceKey: t.closeKey, fromIdx: contentIdx,
-              mx, my,
-            }));
-            render();
-            return;
-          }
-          contentIdx++;
-        }
-      }
-    }
-
-    if (kind === 'press' && slice && slice.panelList && slice.panelList.open) {
-      const { hitTest } = require('../overlay/panel-list');
-      const mpool = require('../leaves/pool');
-      const hit = hitTest(mx, my);
-      if (hit) {
-        // Click inside overlay. If a specific item row was clicked,
-        // update the cursor to that row first; then start the drag.
-        // Clicks on the header/footer (itemIdx === null) start a drag
-        // from the existing cursor position.
-        let cursor = slice.panelList.cursor;
-        if (hit.itemIdx !== null) cursor = hit.itemIdx;
-        const items = mpool.panelListItems(slice.arrange);
-        const item = items[cursor];
-        if (item && item.status !== 'essential') {
-          if (hit.itemIdx !== null && hit.itemIdx !== slice.panelList.cursor) {
-            dispatchMsg(wrap('layout', { type: 'panel_list_open', cursor }));
-          }
-          dispatchMsg(wrap('layout', { type: 'pool_drag_start', id: item.id, mx, my }));
-          render();
-          return;
-        }
-        // Header/footer click or essential row — no-op (nothing
-        // dispatched, no state change). Just swallow so it doesn't
-        // leak through to free-config drag; no render needed.
-        return;
-      }
-      // Click outside overlay: close it, then fall through to free-config
-      // drag so the user can interact with the layout in the same click.
-      dispatchMsg(wrap('layout', { type: 'panel_list_close' }));
-    }
-
-    // Motion without an in-flight drag is a no-op in the leaf
-    // (mouseMotion returns same slice ref when !drag) — skip the
-    // dispatch + render entirely (P5.10). Press / release always
-    // fire: press may start a drag, release defensively clears any
-    // leftover drag state.
-    if (kind === 'motion' && !drag) return;
-    if (kind === 'press')        dispatchMsg(wrap('layout', { type: 'free_config_mouse_press',  mx, my, cols: cols() }));
-    else if (kind === 'motion')  dispatchMsg(wrap('layout', { type: 'free_config_mouse_motion', mx, my, cols: cols() }));
-    else if (kind === 'release') dispatchMsg(wrap('layout', { type: 'free_config_mouse_release' }));
+  // v0.6.3 Phase C1 — modal mouse routing through the
+  // `_modeMouseHandlers` registry (mirrors keyboard's `_modeHandlers`
+  // in dispatch.js). Walks CHAIN_MODES in precedence order; the first
+  // active claiming handler wins. Handlers that don't claim (e.g.
+  // tabList on motion/release) return false and fall through to the
+  // `isChainActive` guard below.
+  if (_dispatchActiveModeMouse(kind, mx, my, model)) {
     render();
     return;
   }
