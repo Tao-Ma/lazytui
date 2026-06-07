@@ -72,6 +72,16 @@ function applyUpdate(s, msg) {
     }
     msg = { ...msg, ...bundle };
   }
+  // Phase D1: viewer_set_tab threads total + toTabKey.
+  if (msg && msg.type === 'viewer_set_tab' && msg.total === undefined) {
+    const m = getModel();
+    const tab = msg.tab | 0;
+    msg = {
+      ...msg,
+      total: pt.flatTabInfo(s, m, m.currentGroup).total,
+      toTabKey: pt.resolveTabKey(tab, { ...s, tab }, m),
+    };
+  }
   const r = viewer._update(msg, s);
   return Array.isArray(r) ? { next: r[0], cmds: r[1] || [] } : { next: r, cmds: [] };
 }

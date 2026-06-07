@@ -661,8 +661,17 @@ function setActiveTab(tab) {
   // routed via the Component fan-out. resolveTarget picks the focused/
   // sticky viewer so producers (historyReplay, etc.) hit the right
   // viewer rather than a hardcoded 'detail' singleton.
+  // v0.6.3 Phase D1: thread the precomputed total + toTabKey so the
+  // reducer arm stays pure of getModel() / pt.flatTabInfo /
+  // _activeTabKey internally.
   const target = route.resolveTarget('viewer');
-  if (target) dispatchMsg(wrap(target, { type: 'viewer_set_tab', tab }));
+  if (!target) return;
+  const slice = route.getInstanceSlice(target) || { tab: 0 };
+  const model = getModel();
+  const pt = require('../leaves/pane-tabs');
+  const total = pt.flatTabInfo(slice, model, model.currentGroup).total;
+  const toTabKey = pt.resolveTabKey((tab | 0), { ...slice, tab: (tab | 0) }, model);
+  dispatchMsg(wrap(target, { type: 'viewer_set_tab', tab, total, toTabKey }));
 }
 function leaveTerminalMode() {
   require('../dispatch/dispatch').applyMsg({ type: 'terminal_exit' });

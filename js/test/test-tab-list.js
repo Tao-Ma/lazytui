@@ -18,6 +18,11 @@ const { describe, it, eq, assert, report } = require('./test-runner');
 const viewer = require('../panel/viewer/viewer');
 
 function applyUpdate(slice, msg) {
+  // v0.6.3 Phase D1: thread tabListMode into viewer_reset_chrome.
+  if (msg && msg.type === 'viewer_reset_chrome' && msg.tabListMode === undefined) {
+    const { getModel } = require('../app/runtime');
+    msg = { ...msg, tabListMode: !!getModel().modes.tabListMode };
+  }
   const r = viewer.update(msg, slice);
   const result = Array.isArray(r) ? { next: r[0], cmds: r[1] } : { next: r, cmds: [] };
   // AR2: tab-list open-state lives on model.modes.tabListMode, not the

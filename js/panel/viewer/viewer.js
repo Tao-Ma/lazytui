@@ -795,10 +795,12 @@ function _updateInner(msg, slice) {
       // accepted negative / non-numeric values: -5 | 0 === -5, 'foo'
       // | 0 === 0, NaN | 0 === 0. Mirrors tab_switch's guard
       // (pane-tabs.js: `if (idx < 0 || idx >= total) return slice`).
+      // v0.6.3 Phase D1 — dispatcher (panel/api.js#setActiveTab)
+      // threads msg.total + msg.toTabKey so the reducer stays pure
+      // of getModel() / pt.flatTabInfo / _activeTabKey.
       const tab = msg.tab | 0;
-      const m = getModel();
-      const info = pt.flatTabInfo(slice, m, m.currentGroup);
-      if (tab < 0 || tab >= info.total) return slice;
+      const total = typeof msg.total === 'number' ? msg.total : Infinity;
+      if (tab < 0 || tab >= total) return slice;
       if (tab === slice.tab) return slice;
       // B2 — Producer-initiated set-tab (history replay, docker pre-
       // stream) also needs target-tab view-state restore. Without it,
@@ -814,7 +816,7 @@ function _updateInner(msg, slice) {
       // Unlike tab_switch, this does NOT clear viewerOverride or fire
       // terminal_exit — those are the user-initiated cascade's concerns.
       if (slice.viewerOverride) return { ...slice, tab };
-      const toKey = _activeTabKey({ ...slice, tab }, getModel());
+      const toKey = msg.toTabKey || null;
       const entry = (slice.tabState && toKey) ? slice.tabState[toKey] : null;
       // R12 (v0.7 candidate) — `bottomSticky` tail-tracking semantics
       // differ from tab_switch's _resolveScroll. Today no production
@@ -848,7 +850,11 @@ function _updateInner(msg, slice) {
       // set is fundamentally different across groups, so lingering would
       // be confusing. v0.6.1 Phase 4 — clear the owner pane id companion
       // alongside the mode flag.
-      if (getModel().modes.tabListMode) {
+      // v0.6.3 Phase D1: dispatcher threads msg.tabListMode so the
+      // reducer stays pure. Three dispatchers (app/state.js,
+      // panel/navigator/groups.js × 2) all read modes.tabListMode at
+      // dispatch time.
+      if (msg.tabListMode) {
         return [next, [
           { type: 'msg', msg: { type: 'mode_clear', flag: 'tabListMode' } },
           { type: 'msg', msg: wrap('layout', { type: 'tab_list_set_owner', paneId: null }) },

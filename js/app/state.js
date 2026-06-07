@@ -246,7 +246,11 @@ function resetGroupContext() {
   const route = require('../leaves/route');
   dispatch.applyMsg({ type: 'reset_group_context' });
   const target = route.resolveTarget('viewer');
-  if (target) api.dispatchMsg(api.wrap(target, { type: 'viewer_reset_chrome' }));
+  if (target) {
+    // v0.6.3 Phase D1: thread tabListMode so the reducer stays pure.
+    const m = require('./runtime').getModel();
+    api.dispatchMsg(api.wrap(target, { type: 'viewer_reset_chrome', tabListMode: !!m.modes.tabListMode }));
+  }
 }
 
 /**

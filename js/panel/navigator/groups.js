@@ -194,7 +194,14 @@ function _cascadeCmds(res) {
     const route = require('../../leaves/route');
     const target = route.resolveTarget('viewer');
     if (target) {
-      cmds.push({ type: 'msg', msg: require('../api').wrap(target, { type: 'viewer_reset_chrome' }) });
+      // v0.6.3 Phase D1: thread tabListMode (read at dispatch time
+      // from getModel() — this dispatcher is inside the groups
+      // reducer; getModel() at the reducer boundary is acceptable
+      // for cross-Component Cmd emission).
+      const _gm = getModel();
+      cmds.push({ type: 'msg', msg: require('../api').wrap(target, {
+        type: 'viewer_reset_chrome', tabListMode: !!_gm.modes.tabListMode,
+      }) });
     }
     cmds.push({ type: 'msg', msg: { type: 'set_current_group', name: res.newCurrentGroup } });
     cmds.push({ type: 'msg', msg: { type: 'reset_group_context' } });
@@ -229,7 +236,14 @@ function update(msg, slice) {
       const route = require('../../leaves/route');
       const target = route.resolveTarget('viewer');
       if (target) {
-        cmds.push({ type: 'msg', msg: require('../api').wrap(target, { type: 'viewer_reset_chrome' }) });
+        // v0.6.3 Phase D1: thread tabListMode (read at dispatch time
+      // from getModel() — this dispatcher is inside the groups
+      // reducer; getModel() at the reducer boundary is acceptable
+      // for cross-Component Cmd emission).
+      const _gm = getModel();
+      cmds.push({ type: 'msg', msg: require('../api').wrap(target, {
+        type: 'viewer_reset_chrome', tabListMode: !!_gm.modes.tabListMode,
+      }) });
       }
       cmds.push({ type: 'msg', msg: { type: 'set_current_group', name: res.newCurrentGroup } });
       cmds.push({ type: 'msg', msg: { type: 'reset_group_context' } });
