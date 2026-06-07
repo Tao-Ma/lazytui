@@ -779,11 +779,13 @@ function reduceTabMsg(msg, slice, ctx) {
     case 'tab_list_close_selected': {
       // Caller (overlay key handler) resolves the row's closeable +
       // closeKind + closeKey from the flat tab list and threads them
-      // in. Non-closeable rows: silent no-op (msg.kind null).
+      // in alongside currentGroup. Non-closeable rows: silent no-op
+      // (msg.kind null). Pure leaf — currentGroup arrives via msg
+      // payload, not via getModel().
       if (!msg.closeKind || !msg.closeKey) return slice;
       const removeMsg = msg.closeKind === 'content'
-        ? { type: 'viewer_remove_content_tab', groupName: getModel().currentGroup, key: msg.closeKey }
-        : { type: 'viewer_remove_ephemeral_terminal', groupName: getModel().currentGroup, key: msg.closeKey };
+        ? { type: 'viewer_remove_content_tab', groupName: msg.currentGroup, key: msg.closeKey }
+        : { type: 'viewer_remove_ephemeral_terminal', groupName: msg.currentGroup, key: msg.closeKey };
       return [slice, [{ type: 'msg', msg: wrap(paneId, removeMsg) }]];
     }
 

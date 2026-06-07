@@ -315,7 +315,10 @@ function handleTabListKey(key, seq) {
     if (!tl || !tl.open) return;
     const row = flat[tl.cursor];
     if (!row || !row.closeable) return;  // Info / action / yaml-term: silent no-op
-    send({ type: 'tab_list_close_selected', closeKind: row.closeKind, closeKey: row.closeKey });
+    // Thread currentGroup so the reducer arm builds Cmd payloads
+    // (viewer_remove_content_tab / viewer_remove_ephemeral_terminal)
+    // without reading getModel() (TEA: pure of model state).
+    send({ type: 'tab_list_close_selected', closeKind: row.closeKind, closeKey: row.closeKey, currentGroup: getModel().currentGroup });
   }
 }
 
