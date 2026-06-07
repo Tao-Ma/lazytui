@@ -68,14 +68,40 @@ function _slotKey(tabKey, groupName) {
 // appendDetailLine: single-line (the onData hot path — one Msg per line).
 // appendDetailLines: bulk variant for producer-event footers (one Msg for
 // the whole tail+status+rerun-hint batch — atomic reducer pass).
+// v0.6.3 Phase D1 — routed-branch arms read msg.currentGroup +
+// msg.activeActionTabKey (when groupName === currentGroup); the
+// dispatcher precomputes both so the reducer arm stays pure of
+// getModel(). For unrouted dispatches (no tabKey/groupName) no
+// threading is needed — the reducer arm's unrouted path doesn't
+// read model.
+function _routedBundle(slice, model, groupName) {
+  if (groupName !== model.currentGroup) {
+    return { currentGroup: model.currentGroup };
+  }
+  // Compute the active action tab key once at dispatch time. Saves
+  // the reducer the 71µs pt.activeActionTabIn (getMergedActions
+  // iteration) per streamed line.
+  const pt = require('../leaves/pane-tabs');
+  const active = pt.activeActionTabIn(slice, model, groupName);
+  return {
+    currentGroup: model.currentGroup,
+    activeActionTabKey: active ? active[0] : null,
+  };
+}
+
 function appendDetailLine(line, tabKey, groupName) {
   const route = require('../leaves/route');
   const target = route.resolveTarget('viewer');
   if (target == null) return;
   const api = require('../panel/api');
-  const msg = tabKey && groupName
-    ? { type: 'viewer_append', line, tabKey, groupName }
-    : { type: 'viewer_append', line };
+  let msg;
+  if (tabKey && groupName) {
+    const slice = api.getInstanceSlice(target) || { tab: 0 };
+    const model = require('../app/runtime').getModel();
+    msg = { type: 'viewer_append', line, tabKey, groupName, ..._routedBundle(slice, model, groupName) };
+  } else {
+    msg = { type: 'viewer_append', line };
+  }
   api.dispatchMsg(api.wrap(target, msg));
 }
 
@@ -85,9 +111,14 @@ function appendDetailLines(lines, tabKey, groupName) {
   const target = route.resolveTarget('viewer');
   if (target == null) return;
   const api = require('../panel/api');
-  const msg = tabKey && groupName
-    ? { type: 'viewer_append_lines', lines, tabKey, groupName }
-    : { type: 'viewer_append_lines', lines };
+  let msg;
+  if (tabKey && groupName) {
+    const slice = api.getInstanceSlice(target) || { tab: 0 };
+    const model = require('../app/runtime').getModel();
+    msg = { type: 'viewer_append_lines', lines, tabKey, groupName, ..._routedBundle(slice, model, groupName) };
+  } else {
+    msg = { type: 'viewer_append_lines', lines };
+  }
   api.dispatchMsg(api.wrap(target, msg));
 }
 

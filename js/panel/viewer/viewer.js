@@ -584,17 +584,17 @@ function _updateInner(msg, slice) {
           ...all,
           [msg.groupName]: { ...group, [msg.tabKey]: { lines: bufLines } },
         };
-        const m = getModel();
-        if (msg.groupName === m.currentGroup) {
-          const active = pt.activeActionTabIn(slice, m, m.currentGroup);
-          if (active && active[0] === msg.tabKey) {
-            const innerH = _innerH(slice);
-            const maxScrollOld = Math.max(0, buf.lines.length - innerH);
-            const wasAtBottom = slice.scroll >= maxScrollOld;
-            const newMaxScroll = Math.max(0, bufLines.length - innerH);
-            const scroll = wasAtBottom ? newMaxScroll : slice.scroll;
-            return { ...slice, actionTabBuffers: nextAll, scroll };
-          }
+        // v0.6.3 Phase D1 — pure reducer: dispatcher (dispatch/stream.js)
+        // threads msg.currentGroup + (when groupName matches)
+        // msg.activeActionTabKey. Saves the 71µs activeActionTabIn
+        // (getMergedActions iteration) per streamed line.
+        if (msg.groupName === msg.currentGroup && msg.activeActionTabKey === msg.tabKey) {
+          const innerH = _innerH(slice);
+          const maxScrollOld = Math.max(0, buf.lines.length - innerH);
+          const wasAtBottom = slice.scroll >= maxScrollOld;
+          const newMaxScroll = Math.max(0, bufLines.length - innerH);
+          const scroll = wasAtBottom ? newMaxScroll : slice.scroll;
+          return { ...slice, actionTabBuffers: nextAll, scroll };
         }
         return { ...slice, actionTabBuffers: nextAll };
       }
@@ -638,17 +638,14 @@ function _updateInner(msg, slice) {
           ...all,
           [msg.groupName]: { ...group, [msg.tabKey]: { lines: bufLines } },
         };
-        const m = getModel();
-        if (msg.groupName === m.currentGroup) {
-          const active = pt.activeActionTabIn(slice, m, m.currentGroup);
-          if (active && active[0] === msg.tabKey) {
-            const innerH = _innerH(slice);
-            const maxScrollOld = Math.max(0, buf.lines.length - innerH);
-            const wasAtBottom = slice.scroll >= maxScrollOld;
-            const newMaxScroll = Math.max(0, bufLines.length - innerH);
-            const scroll = wasAtBottom ? newMaxScroll : slice.scroll;
-            return { ...slice, actionTabBuffers: nextAll, scroll };
-          }
+        // v0.6.3 Phase D1 — same threading shape as viewer_append.
+        if (msg.groupName === msg.currentGroup && msg.activeActionTabKey === msg.tabKey) {
+          const innerH = _innerH(slice);
+          const maxScrollOld = Math.max(0, buf.lines.length - innerH);
+          const wasAtBottom = slice.scroll >= maxScrollOld;
+          const newMaxScroll = Math.max(0, bufLines.length - innerH);
+          const scroll = wasAtBottom ? newMaxScroll : slice.scroll;
+          return { ...slice, actionTabBuffers: nextAll, scroll };
         }
         return { ...slice, actionTabBuffers: nextAll };
       }

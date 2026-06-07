@@ -54,6 +54,25 @@ function applyUpdate(s, msg) {
       currentGroup: m.currentGroup,
     };
   }
+  // v0.6.3 Phase D1: routed viewer_append / viewer_append_lines arms
+  // read msg.currentGroup + msg.activeActionTabKey (dispatcher in
+  // dispatch/stream.js threads them so the reducer stays pure of
+  // getModel()). Tests that build the Msg directly get the same
+  // patch so they don't need a fallback.
+  if (msg && (msg.type === 'viewer_append' || msg.type === 'viewer_append_lines')
+      && msg.tabKey && msg.groupName && msg.currentGroup == null) {
+    const m = getModel();
+    if (msg.groupName === m.currentGroup) {
+      const active = pt.activeActionTabIn(s, m, msg.groupName);
+      msg = {
+        ...msg,
+        currentGroup: m.currentGroup,
+        activeActionTabKey: active ? active[0] : null,
+      };
+    } else {
+      msg = { ...msg, currentGroup: m.currentGroup };
+    }
+  }
   const r = viewer._update(msg, s);
   return Array.isArray(r) ? { next: r[0], cmds: r[1] || [] } : { next: r, cmds: [] };
 }
