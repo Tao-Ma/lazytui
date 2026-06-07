@@ -760,6 +760,19 @@ function update(model, msg) {
       const viewerTarget = route.resolveTarget('viewer') || 'detail';
       const groupName = targetGroup || model.currentGroup;
 
+      // POST-CASCADE model view: when the cross-group set_current_group
+      // Cmd above is queued, it'll apply BEFORE tab_switch reduces. So
+      // anything we thread that the tab_switch reducer reads needs to
+      // reflect the POST-cascade currentGroup, not the captured model
+      // ref. Build a synthetic post-cascade model for resolveTabKey
+      // and thread groupName (already resolved to the post-cascade
+      // value at line 761) for currentGroup. Round-5 finding —
+      // Phase-3d shipped this with the captured model.currentGroup,
+      // which broke cross-group jobs_activate scroll restoration.
+      const postModel = (targetGroup && targetGroup !== model.currentGroup)
+        ? { ...model, currentGroup: groupName }
+        : model;
+
       if (kind === 'stream-routed' && owner.tabKey) {
         const slice = route.getInstanceSlice(viewerTarget)
           || { ephemeralTerminals: {}, contentTabs: {}, tab: 0 };
@@ -767,13 +780,11 @@ function update(model, msg) {
         const idx = info.actionTabs.findIndex(([k]) => k === owner.tabKey);
         if (idx >= 0) {
           // v0.6.2 — action tabs start at idx 2 (Info=0, Transcript=1).
-          // Phase 3d: thread targetKey + currentGroup so the tab_switch
-          // reducer arm stays pure of getModel().
           const tabIdx = 2 + idx;
           cmds.push({ type: 'msg', msg: route.wrap(viewerTarget, {
             type: 'tab_switch', idx: tabIdx,
-            targetKey: pt.resolveTabKey(tabIdx, { ...slice, tab: tabIdx }, model),
-            currentGroup: model.currentGroup,
+            targetKey: pt.resolveTabKey(tabIdx, { ...slice, tab: tabIdx }, postModel),
+            currentGroup: groupName,
           }) });
           cmds.push({ type: 'msg', msg: route.wrap('layout', { type: 'focus_set', focus: viewerTarget }) });
         }
@@ -789,12 +800,11 @@ function update(model, msg) {
         }
         if (termIdx >= 0) {
           // v0.6.2 — term tabs start at idx 2 + actionTabs.length.
-          // Phase 3d: thread targetKey + currentGroup.
           const tabIdx = 2 + info.actionTabs.length + termIdx;
           cmds.push({ type: 'msg', msg: route.wrap(viewerTarget, {
             type: 'tab_switch', idx: tabIdx,
-            targetKey: pt.resolveTabKey(tabIdx, { ...slice, tab: tabIdx }, model),
-            currentGroup: model.currentGroup,
+            targetKey: pt.resolveTabKey(tabIdx, { ...slice, tab: tabIdx }, postModel),
+            currentGroup: groupName,
           }) });
           cmds.push({ type: 'msg', msg: route.wrap('layout', { type: 'focus_set', focus: viewerTarget }) });
           cmds.push({ type: 'msg', msg: { type: 'terminal_enter' } });

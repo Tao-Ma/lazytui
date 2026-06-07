@@ -180,6 +180,48 @@ describe('[jobs_activate] full cascade — one Msg, reducer-driven', () => {
     eq(runtime.getModel().currentGroup, 'g2', 'currentGroup switched to g2 (B1: msg.name, not msg.group)');
   });
 
+  it('cross-group routed → tab_switch carries the TARGET group, not the captured currentGroup', () => {
+    // Round-5 regression: Phase-3d threaded `currentGroup: model.currentGroup`
+    // into the tab_switch Cmd, captured at the OLD value before the
+    // queued set_current_group Cmd applied. When that Cmd ran first,
+    // tab_switch reduced with the stale msg.currentGroup → the leaf
+    // looked up slice.actionTabBuffers[OLD_GROUP][actionKey] (undefined)
+    // → scroll fell to 0 instead of bottom-pinning the routed buffer.
+    _seedModel();
+    _resetJobs();
+    const m = runtime.getModel();
+    m.config.groups.g2 = {
+      label: 'G2',
+      actions: { 'g2-act': { label: 'G2', script: 'echo g2', tab: 'g2-act' } },
+    };
+    runtime.setModel({
+      ...m,
+      modes: { ...m.modes, jobsMode: true },
+      modal: { ...m.modal, jobs: { cursor: 0, scroll: 0 } },
+    });
+    // Seed a routed buffer for g2/g2-act with bottom-pin worth of lines.
+    // Also force slice.tab to 0 so the tab_switch arm doesn't early-return
+    // on same-tab (slice.tab leaks from prior tests in the same file).
+    const detail = api.getInstanceSlice('detail');
+    detail.actionTabBuffers = { g2: { 'g2-act': { lines: Array.from({ length: 90 }, (_, i) => `l${i}`) } } };
+    detail.innerH = 10;
+    detail.tab = 0;
+    detail.scroll = 0;
+    jobs.register({
+      kind: 'stream-routed',
+      label: 'g2-act',
+      pid: 1,
+      owner: { tabKey: 'g2-act', groupName: 'g2', cmd: 'echo g2' },
+    });
+    _activate();
+    eq(runtime.getModel().currentGroup, 'g2', 'currentGroup switched to g2');
+    eq(api.getInstanceSlice('detail').tab, 2, 'tab_switch landed on g2-act (idx 2 in g2)');
+    // The smoking gun: scroll should bottom-pin against the 90-line
+    // routed buffer (lines=90, innerH=10 → scroll=80). Pre-fix it
+    // landed at 0 because msg.currentGroup was the OLD group 'g'.
+    eq(api.getInstanceSlice('detail').scroll, 80, 'scroll bottom-pinned against routed buffer (g2)');
+  });
+
   it('non-jobsMode → activate is a no-op (defensive)', () => {
     _seedModel();
     _resetJobs();
