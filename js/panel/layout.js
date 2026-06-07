@@ -7,7 +7,7 @@
  *   - viewMode       — normal / half / full
  *   - dirty          — layout has unsaved changes (drives `:save-layout` hint)
  *   - freeConfig     — free-config working state (drag, undo/redo, titleEdit)
- *   - panelBounds — view-output, written by the render pass
+ *   - paneBounds — view-output, written by the render pass
  *   - panelList      — `w` overlay state (open, cursor)
  *
  * No `panelTypes` — this Component renders chrome, not panel content. Spec:
@@ -146,7 +146,7 @@ function init() {
     // (Per-panel heights live in a module-local map inside
     // `render/layout.js`, NOT on the slice — see `getPanelViewportH`
     // for the public view-mode-aware accessor.)
-    panelBounds: {},
+    paneBounds: {},
     // Panel-list overlay state. Opened by `w` (or auto-opened on
     // free-config entry when the pool has hidden entries). Arrow keys
     // navigate, Enter context-picks (hide if placed, show if hidden,
@@ -692,7 +692,7 @@ function update(msg, slice) {
       // 'detail'); v0.7 multi-viewer flips this to a per-pane id
       // without the leaf needing a route import.
       const targetKind = route.resolveTarget('viewer') || route.VIEWER_KIND;
-      // v0.6.3 P4.1: tabBounds moved off layoutSlice.panelBounds.detail.tabs
+      // v0.6.3 P4.1: tabBounds moved off layoutSlice.paneBounds.detail.tabs
       // onto the viewer's own slice.
       // v0.6.3 Phase D4 — tabBounds threaded via msg.tabBounds from
       // the input.js tab-drag dispatcher (which has the slice in

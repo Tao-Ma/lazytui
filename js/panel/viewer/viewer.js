@@ -167,7 +167,7 @@ function init() {
     tab: 0,
     // Effective viewport rows (panel height minus 2-row border chrome).
     // Written from render() via viewer_set_viewport once the layout pass
-    // settles a panelBounds.detail — owning slice, not cross-slice, so the
+    // settles a paneBounds.detail — owning slice, not cross-slice, so the
     // reducer is a pure function of (slice, msg). 0 = not-yet-rendered;
     // _innerH() falls back to lines.length in that degenerate so clamps
     // collapse to "everything fits".
@@ -1038,7 +1038,7 @@ function detailTitle(slice) {
   );
   const built = buildTabStrip(tabInfo, slice.tab, hotkey, runningActionKeys);
   // v0.6.3 P4.1 (was N3 from [[v062-shipped]]): tab-bar hit-test cache
-  // moved from `layoutSlice.panelBounds.detail.tabs` to the viewer's
+  // moved from `layoutSlice.paneBounds.detail.tabs` to the viewer's
   // own slice. Same view-output exception, but now writing OUR slice
   // instead of layout's — single-writer-per-slice holds.
   //

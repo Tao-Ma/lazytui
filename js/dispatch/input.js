@@ -47,7 +47,7 @@ const { cleanup } = require('../app/cleanup');
  */
 function _handleWheel(mx, my, delta) {
   // Use visibleBoundsFor — in half/full view, off-screen panes are
-  // absent from panelBounds; boundsFor would fall back to their
+  // absent from paneBounds; boundsFor would fall back to their
   // normal-view rects in _currentLayout and we'd scroll a phantom
   // pane whose coords overlap with the visible half-view rect.
   const { visibleBoundsFor } = require('../render/layout');
@@ -326,7 +326,7 @@ function handleMouse(kind, x, y) {
     // the existing panel-move gesture still works when the user clicks
     // those parts of the tab bar.
     const db = require('../render/layout').boundsFor('detail');
-    // v0.6.3 P4.1: tab-bar hit-test cache moved off layoutSlice.panelBounds
+    // v0.6.3 P4.1: tab-bar hit-test cache moved off layoutSlice.paneBounds
     // (was `db.tabs` — pre-P4 viewer wrote it onto layout's slice). Now
     // lives on the viewer's own slice as slice.tabBounds. Read directly.
     const detailSlice = getInstanceSlice('detail');
@@ -443,7 +443,7 @@ function handleMouse(kind, x, y) {
   let mutated = false;
 
   // Same reason as _handleWheel above: hit-test against ACTUALLY-
-  // VISIBLE pane bounds. In half view, panelBounds carries only
+  // VISIBLE pane bounds. In half view, paneBounds carries only
   // halfLeftPanel + detail; boundsFor's _currentLayout fallback
   // would return phantom normal-view coords for off-screen panes
   // (containers/groups/files would all "exist" at their normal-
@@ -458,7 +458,7 @@ function handleMouse(kind, x, y) {
     if (mx < b.x || mx >= b.x + b.w || my < b.y || my >= b.y + b.h) continue;
 
     // Top-border tab-strip — gated on a tabBounds list on the panel's
-    // own Component slice (v0.6.3 P4.1: moved off layoutSlice.panelBounds.
+    // own Component slice (v0.6.3 P4.1: moved off layoutSlice.paneBounds.
     // .tabs). ANY pane whose Component publishes slice.tabBounds gets
     // click routing — currently only detail; multi-viewer would have
     // sibling viewers publish their own.

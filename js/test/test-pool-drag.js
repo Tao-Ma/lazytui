@@ -23,7 +23,7 @@ const applyUpdate = (msg, slice) => {
   return Array.isArray(r) ? r[0] : r;
 };
 
-// Build a slice with panelBounds populated so pool-drop hit-tests have
+// Build a slice with paneBounds populated so pool-drop hit-tests have
 // something to read. Bounds mirror what render/layout writes at paint.
 function buildSlice() {
   const arrange = {
@@ -49,7 +49,7 @@ function buildSlice() {
   return {
     ...layout.init(),
     arrange,
-    panelBounds: {
+    paneBounds: {
       groups:  { x: 0,  y: 0,  w: 30, h: 10 },
       files:   { x: 0,  y: 10, w: 30, h: 10 },
       actions: { x: 30, y: 0,  w: 50, h: 8  },
@@ -180,8 +180,8 @@ describe('[poolDragMotion] promotes armed→dragging and computes drop target', 
     // Clear column 0 panels — pool-drag should still allow inserting at idx 0
     // anywhere in the left column area via the scan fallback.
     base.arrange.columns[0] = { ...base.arrange.columns[0], panels: [] };
-    base.panelBounds.groups = undefined;
-    base.panelBounds.files  = undefined;
+    base.paneBounds.groups = undefined;
+    base.paneBounds.files  = undefined;
     let s = mpoolDrag.poolDragStart(base, 'notes', 5, 5);
     s = mpoolDrag.poolDragMotion(s, 5, 12);
     const t = s.freeConfig.drag.target;

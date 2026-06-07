@@ -34,11 +34,11 @@ function setupTwoPanel() {
     ],
     detailHeightPct: 60,
   };
-  getInstanceSlice('layout').panelBounds = {
+  getInstanceSlice('layout').paneBounds = {
     hosts:  { x: 0,  y: 0, w: 30, h: 20 },
     detail: { x: 30, y: 0, w: 50, h: 20 },
   };
-  // panelHeights left the slice — wheel paths read panelBounds[type].h
+  // panelHeights left the slice — wheel paths read paneBounds[type].h
   // via getPanelViewportH for view-mode-aware inner viewport rows.
   getInstanceSlice("layout").focus = 'hosts';
   getInstanceSlice('detail').lines = Array.from({ length: 100 }, (_, i) => `line-${i}`);

@@ -92,33 +92,33 @@ describe('[free_config_exit] commits current focus to halfLeftPanel', () => {
 });
 
 describe('[visibleBoundsFor] half-mode click can\'t hit off-screen pane phantom', () => {
-  // Regression for the bug: in half view, panelBounds only carries the
+  // Regression for the bug: in half view, paneBounds only carries the
   // visible (halfLeftPanel + detail) pair, but boundsFor's fallback to
   // _currentLayout.rects exposed every pane's NORMAL-view rect. A click
   // on the visible left half matched the first non-detail pane's
   // phantom rect (containers in postgres demo) and dispatched focus_set
   // to the wrong pane, silently reverting the user's right-arrow
   // selection. visibleBoundsFor reads slice-only so it returns null
-  // for any pane absent from this frame's panelBounds.
+  // for any pane absent from this frame's paneBounds.
   const { getInstanceSlice } = require('../panel/api');
   const renderLayout = require('../render/layout');
 
-  it('visibleBoundsFor returns null for panes absent from panelBounds', () => {
+  it('visibleBoundsFor returns null for panes absent from paneBounds', () => {
     const slice = getInstanceSlice('layout');
-    slice.panelBounds = {
+    slice.paneBounds = {
       'files':  { x: 0,  y: 0, w: 32, h: 24 },   // halfLeftPanel
       'detail': { x: 32, y: 0, w: 48, h: 24 },
     };
-    // containers / groups are NOT in panelBounds (off-screen in half).
-    eq(renderLayout.visibleBoundsFor('files'), slice.panelBounds.files);
-    eq(renderLayout.visibleBoundsFor('detail'), slice.panelBounds.detail);
+    // containers / groups are NOT in paneBounds (off-screen in half).
+    eq(renderLayout.visibleBoundsFor('files'), slice.paneBounds.files);
+    eq(renderLayout.visibleBoundsFor('detail'), slice.paneBounds.detail);
     eq(renderLayout.visibleBoundsFor('containers'), null, 'off-screen returns null');
     eq(renderLayout.visibleBoundsFor('groups'),     null, 'off-screen returns null');
   });
 
-  it('visibleBoundsFor returns null when panelBounds is empty', () => {
+  it('visibleBoundsFor returns null when paneBounds is empty', () => {
     const slice = getInstanceSlice('layout');
-    slice.panelBounds = {};
+    slice.paneBounds = {};
     eq(renderLayout.visibleBoundsFor('anything'), null);
   });
 });
@@ -151,12 +151,12 @@ describe('[chrome glyphs] half-mode collapse-button click can\'t hit off-screen 
     };
     slice.freeConfig = { drag: null, undo: [], redo: [], titleEdit: { text: '' }, notice: null, noticeKind: null };
     // Half view: only `groups` + detail visible.
-    slice.panelBounds = {
+    slice.paneBounds = {
       'groups': { x: 0, y: 0, w: 60, h: 24 },
       'detail': { x: 60, y: 0, w: 60, h: 24 },
     };
     // `actions` is off-screen — its NORMAL-view rect (would be y=12,
-    // x=0, w=32, h=12) is in _currentLayout but NOT in panelBounds.
+    // x=0, w=32, h=12) is in _currentLayout but NOT in paneBounds.
     // The collapse-glyph hit-test must NOT fire on actions.
     // [_] sits at the right end of the pane: x = b.x + b.w - 3 to b.x + b.w - 1.
     // For an off-screen `actions` (normal-view bounds x=0..31, y=12),
@@ -202,7 +202,7 @@ describe('[pane-select trigger] hit-test honors hidden (nothing-to-swap) state',
     };
     slice.freeConfig = { drag: null, undo: [], redo: [], titleEdit: { text: '' }, notice: null, noticeKind: null };
     slice.paneSelect = null;
-    slice.panelBounds = {
+    slice.paneBounds = {
       'pane-groups': { x: 0, y: 0, w: 32, h: 24 },
       'pane-detail': { x: 32, y: 0, w: 48, h: 24 },
     };
@@ -231,7 +231,7 @@ describe('[pane-select trigger] hit-test honors hidden (nothing-to-swap) state',
     };
     slice.freeConfig = { drag: null, undo: [], redo: [], titleEdit: { text: '' }, notice: null, noticeKind: null };
     slice.paneSelect = null;
-    slice.panelBounds = {
+    slice.paneBounds = {
       'pane-groups':  { x: 0, y: 0, w: 32, h: 12 },
       'pane-actions': { x: 0, y: 12, w: 32, h: 12 },
       'pane-detail':  { x: 32, y: 0, w: 48, h: 24 },

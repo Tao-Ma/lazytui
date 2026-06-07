@@ -269,7 +269,7 @@ describe('[trigger state machine] all states render + click as documented', () =
 
   try { api.registerComponent(layout); } catch (e) { /* already registered */ }
   const layoutSlice = api.getInstanceSlice('layout');
-  layoutSlice.panelBounds = { detail: { x: 0, y: 0, w: 40, h: 10 } };
+  layoutSlice.paneBounds = { detail: { x: 0, y: 0, w: 40, h: 10 } };
   layoutSlice.focus = 'detail';
   const md = getModel().modes;
 

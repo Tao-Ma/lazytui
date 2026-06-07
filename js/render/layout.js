@@ -4,7 +4,7 @@
  * Geometry as view-derived data (docs/v0.5-layering.md §5). Two
  * sources during the v0.6.3 P1 migration:
  *
- *   - `layoutSlice.panelBounds` — legacy per-panel `{x,y,w,h}` map
+ *   - `layoutSlice.paneBounds` — legacy per-panel `{x,y,w,h}` map
  *     written by renderNormal/Half/Full. Carries the viewer's tab-
  *     bar hit-test cache as `.tabs` on detail's entry. Retires when
  *     P1.4 lands (currently deferred — see docs/v0.6.3.md §Track A).
@@ -27,7 +27,7 @@
  * justification is layering: the geometry is a pure function of view
  * state (term size, arrange, viewMode) and would be wasteful to route
  * through a Msg every frame. The viewer Component does the same for
- * `panelBounds.detail.tabs` (the tab-bar hit-test cache, viewer.js
+ * `paneBounds.detail.tabs` (the tab-bar hit-test cache, viewer.js
  * §detailTitle). Pure-TEA freeze tests on the layout slice must
  * whitelist these renderer-written fields.
  *
@@ -236,7 +236,7 @@ function distributeColumnHeights(panels, availH, isLastCol, minH, detailHeightPc
 // v0.6.3 P1.2 — module-local Layout publication. calcLayout assigns
 // at end of each pass; getCurrentLayout() exposes the most-recent
 // Layout to hit-test consumers (mouse, drag math) that today read
-// layoutSlice.panelBounds. The boundsFor() shim in P1.3 fronts both
+// layoutSlice.paneBounds. The boundsFor() shim in P1.3 fronts both
 // sources; P1.4 stops the slice write and this becomes the sole
 // channel. Null pre-first-render — fallback callers must guard.
 //
@@ -270,7 +270,7 @@ function getPanelViewportH(panelType) {
   refreshSize();
   const availH = Math.max(6, rows() - 1);
   // Half/full view: the on-screen panel takes the full availH — beats
-  // any stored height (panelBounds may carry a previous frame's bounds
+  // any stored height (paneBounds may carry a previous frame's bounds
   // across the viewMode-transition tick).
   const { viewMode, focus, halfLeftPanel } = layoutSlice;
   let visiblePanel = null;
@@ -383,7 +383,7 @@ function calcLayout(model = getModel()) {
 
 /**
  * v0.6.3 P1.2 — read the most-recent Layout. Null before the first
- * calcLayout pass (test fixtures that seed `layoutSlice.panelBounds`
+ * calcLayout pass (test fixtures that seed `layoutSlice.paneBounds`
  * directly without a render pass get null here; boundsFor() in P1.3
  * handles the fallback). Treat as read-only; the renderer is the
  * single writer.
@@ -399,22 +399,22 @@ function getCurrentLayout() {
  *
  *   1. `_currentLayout.rects` — the per-frame Rect list produced by
  *      calcLayout (P1.1). Preferred source.
- *   2. `layoutSlice.panelBounds[key]` — legacy slice write produced
+ *   2. `layoutSlice.paneBounds[key]` — legacy slice write produced
  *      by renderNormal/Half/Full. Used as fallback when no Layout
  *      has been published yet (pre-first-render boot edge; tests
  *      that seed bounds without calling render).
  *
- * v0.6.3 P4.1 — tabBounds cache moved off layoutSlice.panelBounds.detail.tabs
+ * v0.6.3 P4.1 — tabBounds cache moved off layoutSlice.paneBounds.detail.tabs
  * onto the viewer's own slice. Hit-test consumers read it directly
  * via `getInstanceSlice('detail').tabBounds`; boundsFor() no longer
  * surfaces tabs.
  */
 function boundsFor(key) {
   const layoutSlice = getInstanceSlice('layout');
-  const sliceBounds = layoutSlice && layoutSlice.panelBounds && layoutSlice.panelBounds[key];
+  const sliceBounds = layoutSlice && layoutSlice.paneBounds && layoutSlice.paneBounds[key];
   // P1.3 priority: slice first. Both sources are written together
-  // during the P1 migration (renderNormal still writes panelBounds);
-  // tests seed slice.panelBounds directly. P1.4 stops the slice
+  // during the P1 migration (renderNormal still writes paneBounds);
+  // tests seed slice.paneBounds directly. P1.4 stops the slice
   // writes — sliceBounds becomes null in production and the rect
   // path below takes over transparently. No caller change needed
   // at P1.4.
@@ -427,7 +427,7 @@ function boundsFor(key) {
 }
 
 /** Bounds for a CURRENTLY-VISIBLE pane only — half/full view drops
- *  off-screen panes from layoutSlice.panelBounds, so callers that
+ *  off-screen panes from layoutSlice.paneBounds, so callers that
  *  need "where the user can actually click this pane" want this
  *  variant. boundsFor() in contrast also reports normal-view
  *  geometry for off-screen panes (used by getPanelViewportH for
@@ -435,7 +435,7 @@ function boundsFor(key) {
  *  hit-tests from firing on a non-visible pane's phantom rect. */
 function visibleBoundsFor(key) {
   const layoutSlice = getInstanceSlice('layout');
-  return (layoutSlice && layoutSlice.panelBounds && layoutSlice.panelBounds[key]) || null;
+  return (layoutSlice && layoutSlice.paneBounds && layoutSlice.paneBounds[key]) || null;
 }
 
 // --- Render modes ---
@@ -595,7 +595,7 @@ function _safeRender(panel, w, h, opts) {
  * array — input shape for `painter.composeRows`.
  *
  * Pure projection: reads model + layout + arrange, does NOT
- * mutate slice (panelBounds writes stay in renderNormal's old
+ * mutate slice (paneBounds writes stay in renderNormal's old
  * path; new path will write them separately in P3.3 wiring).
  * Wired in by P3.3 behind LAZYTUI_RECT_PAINTER=1; until then,
  * the function is exported but unused.
@@ -670,7 +670,7 @@ function composeRects(layout, model) {
   return out;
 }
 
-// renderNormal/Half/Full populate `layoutSlice.panelBounds` directly —
+// renderNormal/Half/Full populate `layoutSlice.paneBounds` directly —
 // the renderer-as-writer pattern documented in the file header (§5
 // view-derived data). Reset on every entry so stale entries from a
 // prior view-mode aren't hit-testable.
@@ -683,19 +683,19 @@ function composeRects(layout, model) {
 // in this commit along with the renderOne closure + the column-pad
 // safety net (no longer needed — rect compositing handles gaps).
 //
-// Why pre-populate panelBounds before composeRects: viewer.detailTitle
-// (viewer.js:1008) writes layoutSlice.panelBounds.detail.tabs DURING
+// Why pre-populate paneBounds before composeRects: viewer.detailTitle
+// (viewer.js:1008) writes layoutSlice.paneBounds.detail.tabs DURING
 // _safeRender — needs the detail entry to exist by the time the
 // viewer's render fires. Same order the pre-P3 renderOne used (write
 // bounds, then render).
 function renderNormal(model) {
   const layout = calcLayout(model);
   const layoutSlice = getInstanceSlice('layout');
-  layoutSlice.panelBounds = {};
+  layoutSlice.paneBounds = {};
   for (const rect of layout.rects) {
     const b = { x: rect.x, y: rect.y, w: rect.w, h: rect.h };
-    layoutSlice.panelBounds[rect.type] = b;
-    if (rect.paneId) layoutSlice.panelBounds[rect.paneId] = b;
+    layoutSlice.paneBounds[rect.type] = b;
+    if (rect.paneId) layoutSlice.paneBounds[rect.paneId] = b;
   }
   const rectsWithLines = composeRects(layout, model);
   const COLS = cols();
@@ -736,15 +736,15 @@ function renderHalf(model) {
              || all.find(p => !mpool.isDetailPane(p))
              || focusedPanel;
   }
-  layoutSlice.panelBounds = {};
+  layoutSlice.paneBounds = {};
   const leftBounds = { x: 0, y: 0, w: halfW, h: availH };
-  layoutSlice.panelBounds[leftPanel.type] = leftBounds;
-  if (leftPanel.paneId) layoutSlice.panelBounds[leftPanel.paneId] = leftBounds;
+  layoutSlice.paneBounds[leftPanel.type] = leftBounds;
+  if (leftPanel.paneId) layoutSlice.paneBounds[leftPanel.paneId] = leftBounds;
   const rightW = COLS - halfW;
   if (detailPanel) {
     const detailBounds = { x: halfW, y: 0, w: rightW, h: availH };
-    layoutSlice.panelBounds.detail = detailBounds;
-    if (detailPanel.paneId) layoutSlice.panelBounds[detailPanel.paneId] = detailBounds;
+    layoutSlice.paneBounds.detail = detailBounds;
+    if (detailPanel.paneId) layoutSlice.paneBounds[detailPanel.paneId] = detailBounds;
   }
   // v0.6.3 P4.2 — chrome computed via chromeFor + threaded through
   // renderPanel; half/full view paths don't need to inject post-render.
@@ -816,10 +816,10 @@ function renderFull(model) {
   const availH = ROWS - 1;
   const focusedPanel = allPanels().find(p => mpane.paneMatchesFocus(p, layoutSlice.focus));
   if (!focusedPanel) return renderNormal(model);
-  layoutSlice.panelBounds = {};
+  layoutSlice.paneBounds = {};
   const fullBounds = { x: 0, y: 0, w: COLS, h: availH };
-  layoutSlice.panelBounds[focusedPanel.type] = fullBounds;
-  if (focusedPanel.paneId) layoutSlice.panelBounds[focusedPanel.paneId] = fullBounds;
+  layoutSlice.paneBounds[focusedPanel.type] = fullBounds;
+  if (focusedPanel.paneId) layoutSlice.paneBounds[focusedPanel.paneId] = fullBounds;
   // v0.6.3 P4.2 — chrome computed via chromeFor; full view also routes
   // [≡] through renderPanel inline when the focused panel is detail.
   const { chromeFor: chromeForFull } = require('./decor');
@@ -876,7 +876,7 @@ function renderTerminalOverlay(model = getModel()) {
   if (!id || !termConf) return;
 
   const layoutSlice = getInstanceSlice('layout');
-  const bounds = layoutSlice && layoutSlice.panelBounds.detail;
+  const bounds = layoutSlice && layoutSlice.paneBounds.detail;
   if (!bounds) return;
   const innerW = bounds.w - 2;
   const innerH = bounds.h - 2;
@@ -978,10 +978,10 @@ function render(model = getModel()) {
   // slice.arrange for the would-be-after-release arrange so the user
   // sees the actual outcome rather than an insertion-bar hint. The swap
   // stays in place through renderTerminalOverlay too — that overlay
-  // reads panelBounds.detail to position the xterm session, and the
+  // reads paneBounds.detail to position the xterm session, and the
   // screen shows detail at preview coords, so the terminal must paint
   // at preview coords to match. After that we restore both arrange AND
-  // panelBounds: the viewport dispatch + the next mouse hit-test read
+  // paneBounds: the viewport dispatch + the next mouse hit-test read
   // original-layout bounds, which keeps drop-target detection stable
   // when the cursor sits near a zone boundary (preview-derived bounds
   // would feed back into the next hit-test and ping-pong the layout
@@ -991,7 +991,7 @@ function render(model = getModel()) {
   let savedArrange = null, savedBounds = null;
   if (previewArrange) {
     savedArrange = layoutSlice.arrange;
-    savedBounds = layoutSlice.panelBounds;
+    savedBounds = layoutSlice.paneBounds;
     layoutSlice.arrange = previewArrange;
   }
   const viewMode = layoutSlice.viewMode;
@@ -1013,13 +1013,13 @@ function render(model = getModel()) {
     // and every subsequent reducer write would build on top of it.
     if (previewArrange) {
       layoutSlice.arrange = savedArrange;
-      layoutSlice.panelBounds = savedBounds;
+      layoutSlice.paneBounds = savedBounds;
     }
   }
   // Cache the detail panel's effective viewport on the viewer's own
   // slice so viewer.update can clamp scroll/cursor without reading
   // layout's render-time geometry across slices. Blessed render-side
-  // write — same documented exception as panelBounds (frame-derived,
+  // write — same documented exception as paneBounds (frame-derived,
   // pure function of layout). Uses the original (non-preview) bounds:
   // the viewer's actual state hasn't committed to the drag yet, so its
   // viewport tracks the real layout. R4.9: direct setInstanceSlice
@@ -1027,7 +1027,7 @@ function render(model = getModel()) {
   // — the Msg's only effect was this single-field write.
   const route = require('../leaves/route');
   const viewerTab = route.resolveTarget('viewer');
-  const viewerBounds = viewerTab && layoutSlice.panelBounds && layoutSlice.panelBounds[viewerTab];
+  const viewerBounds = viewerTab && layoutSlice.paneBounds && layoutSlice.paneBounds[viewerTab];
   if (viewerBounds) {
     const innerH = Math.max(0, viewerBounds.h - 2);
     const viewerSlice = getInstanceSlice(viewerTab);
@@ -1297,12 +1297,12 @@ module.exports = {
   getPanelViewportH,
   // v0.6.3 P1.2 — most-recent Layout. Null pre-first-render. Will
   // become the sole hit-test channel after P1.4 stops the
-  // layoutSlice.panelBounds writes.
+  // layoutSlice.paneBounds writes.
   getCurrentLayout,
   // v0.6.3 P1.3 — single accessor that consumers use to read pane
   // bounds. Returns from _currentLayout when present, falls back to
-  // layoutSlice.panelBounds[key] otherwise. Merges the viewer's tabs
-  // cache (slice.panelBounds.detail.tabs, N3 — moves onto viewer's
+  // layoutSlice.paneBounds[key] otherwise. Merges the viewer's tabs
+  // cache (slice.paneBounds.detail.tabs, N3 — moves onto viewer's
   // slice in P4) onto the returned rect.
   boundsFor, visibleBoundsFor,
   // v0.6.3 P3.2 — projects layout.rects to {paneId, x, y, w, h,

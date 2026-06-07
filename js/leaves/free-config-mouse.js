@@ -136,7 +136,7 @@ function pointToResizeTarget(slice, mx, my, COLS) {
  *  Boundary y = `upper.y + upper.h` (where the next panel's top border sits). */
 function boundaryNear(slice, panels, my) {
   for (let i = 0; i < panels.length - 1; i++) {
-    const b = slice.panelBounds[panels[i].type];
+    const b = slice.paneBounds[panels[i].type];
     if (!b) continue;
     const y = b.y + b.h;
     if (Math.abs(my - y) <= 1) return { upper: panels[i], lower: panels[i + 1], y };
@@ -147,7 +147,7 @@ function boundaryNear(slice, panels, my) {
 /** Panel type at (mx, my) per rendered bounds, or null (frame-synchronous). */
 function panelAt(slice, mx, my) {
   for (const p of mpool.allPanesInColumns(slice.arrange)) {
-    const b = slice.panelBounds[p.type];
+    const b = slice.paneBounds[p.type];
     if (!b) continue;
     if (mx >= b.x && mx < b.x + b.w && my >= b.y && my < b.y + b.h) return p.type;
   }
@@ -221,7 +221,7 @@ function validateNewColumn(slice, srcType, position) {
 function matchColumn(slice, panels, mx, my) {
   let anyXMatch = false;
   for (let i = 0; i < panels.length; i++) {
-    const b = slice.panelBounds[panels[i].type];
+    const b = slice.paneBounds[panels[i].type];
     if (!b) continue;
     if (mx < b.x || mx >= b.x + b.w) continue;
     anyXMatch = true;
@@ -517,8 +517,8 @@ function mousePress(slice, mx, my, COLS) {
       ds.columnIndex = columnIndex;
       ds.upperType = b.upper.type;
       ds.lowerType = b.lower.type;
-      ds.upperStartY = slice.panelBounds[b.upper.type].y;
-      ds.combinedH = slice.panelBounds[b.upper.type].h + slice.panelBounds[b.lower.type].h;
+      ds.upperStartY = slice.paneBounds[b.upper.type].y;
+      ds.combinedH = slice.paneBounds[b.upper.type].h + slice.paneBounds[b.lower.type].h;
       ds.availH = columnTotalH(slice, columnIndex);
       if (ds.availH < 1) ds.availH = 1;
       ds.detailIsUpper = mpool.isDetailPane(b.upper);

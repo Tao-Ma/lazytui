@@ -29,7 +29,7 @@
  *   - slice.freeConfig.{undo, redo, titleEdit}
  *   - slice.focus — cursor truth in free-config; active-panel INDEX is
  *     derived via `core.selectedIdx(slice)`.
- *   - slice.panelBounds (READ only — frame-derived, written by layout.js)
+ *   - slice.paneBounds (READ only — frame-derived, written by layout.js)
  */
 'use strict';
 

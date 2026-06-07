@@ -201,7 +201,7 @@ describe('[immutable] leaves/search.js', () => {
 // Representative coverage: nav (no-op + advance), reorder (column swap +
 // undo push), moveColumn (cross-column splice), resize (clamps),
 // undo/redo (snapshot round-trip), title edit, mouse press/motion/release.
-// `panelBounds` is set up to a plausible rendered geometry so the
+// `paneBounds` is set up to a plausible rendered geometry so the
 // hit-test math has values to read.
 
 describe('[immutable] leaves/free-config.js', () => {
@@ -234,7 +234,7 @@ describe('[immutable] leaves/free-config.js', () => {
       redo: [],
       titleEdit: { active: false, text: '' },
     },
-    panelBounds: {
+    paneBounds: {
       a:       { x: 0,  y: 0,  w: 30, h: 10 },
       b:       { x: 0,  y: 10, w: 30, h: 10 },
       detail:  { x: 30, y: 0,  w: 50, h: 15 },

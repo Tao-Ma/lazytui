@@ -79,7 +79,7 @@ function setupState() {
     ],
     detailHeightPct: 60,
   };
-  getInstanceSlice('layout').panelBounds = {};
+  getInstanceSlice('layout').paneBounds = {};
 }
 
 // Plugin panels export def via { panelType, def }; Component panels expose

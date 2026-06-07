@@ -21,7 +21,7 @@
  * drags share) and placementFromPoolEntry from leaves/pool (so the preview
  * builds the same placement object panel/layout.js's pool_show reducer
  * commits on release). Both are pure leaves with no back-edges, so no
- * cycle. Reads slice.panelBounds, slice.arrange, slice.panelList; writes
+ * cycle. Reads slice.paneBounds, slice.arrange, slice.panelList; writes
  * slice.panelList, slice.freeConfig.drag (the same field the in-grid mouse drag
  * uses; tagged union by `kind`).
  */
@@ -36,7 +36,7 @@ const { placementFromPoolEntry } = mpool;
 /** Compute the drop target for a pool drag at (mx, my). Returns
  *  `{ kind:'insert', columnIndex, index, valid }` or
  *  `{ kind:'replace', columnIndex, occupantId, valid }`, or null when
- *  outside the layout. Uses slice.panelBounds (view-derived, written by
+ *  outside the layout. Uses slice.paneBounds (view-derived, written by
  *  the render pass) for cell hit-tests, mirroring the in-grid drag's
  *  approach. The dragged pool entry's type (looked up via
  *  slice.freeConfig.drag.sourceId) is threaded into the validators so
@@ -58,7 +58,7 @@ function pointToPoolDropTarget(slice, mx, my, COLS) {
   const scan = (columnIndex, panels) => {
     if (panels.length === 0) return null;
     for (let i = 0; i < panels.length; i++) {
-      const b = slice.panelBounds[panels[i].type];
+      const b = slice.paneBounds[panels[i].type];
       if (!b) continue;
       if (mx < b.x || mx >= b.x + b.w) continue;
       const zone = pointToCellZone(b, my);
@@ -73,7 +73,7 @@ function pointToPoolDropTarget(slice, mx, my, COLS) {
     }
     // Inside the column's x-range but below the last cell → append.
     const last = panels[panels.length - 1];
-    const lb = slice.panelBounds[last.type];
+    const lb = slice.paneBounds[last.type];
     if (lb && mx >= lb.x && mx < lb.x + lb.w && my >= lb.y + lb.h) {
       return validateInsert(arrange, columnIndex, panels.length, sourceEntry);
     }
@@ -249,7 +249,7 @@ function poolDragRelease(slice) {
  *  the layout would look like on release. Mirrors what pool_show / pool_hide
  *  in panel/layout.js will do, but as a pure transform on arrange (no Cmd
  *  dispatch). Returns null when no preview should be painted. Like the
- *  in-grid variant, the render path swaps + restores panelBounds so the
+ *  in-grid variant, the render path swaps + restores paneBounds so the
  *  hit-test reference frame stays the original layout. */
 function computePoolDragPreviewArrange(slice) {
   const drag = slice.freeConfig && slice.freeConfig.drag;

@@ -160,8 +160,8 @@ describe('[3] hit-test', () => {
         'stats':   { id: 'stats',   type: 'stats',   title: 'Stats' },
       },
     };
-    // Seed panelBounds (renders skipped in tests).
-    layout.panelBounds = {
+    // Seed paneBounds (renders skipped in tests).
+    layout.paneBounds = {
       'pane-groups':  { x: 0, y: 0, w: 32, h: 12 },
       'pane-actions': { x: 0, y: 12, w: 32, h: 12 },
       'pane-detail':  { x: 32, y: 0, w: 48, h: 24 },

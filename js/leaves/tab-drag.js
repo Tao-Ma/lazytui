@@ -16,7 +16,7 @@
  * drag in both cases.
  *
  * Pure leaf — no imports. Reads bounds + tabBounds via parameters
- * (v0.6.3 P4.1: tabBounds moved off layoutSlice.panelBounds.detail.tabs
+ * (v0.6.3 P4.1: tabBounds moved off layoutSlice.paneBounds.detail.tabs
  * onto the viewer's own slice; the caller resolves and passes them in
  * so the leaf stays slice-arg-pure). Writes the drag state on
  * `slice.freeConfig.drag` (tagged union by `kind`, shares the field

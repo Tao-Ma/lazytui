@@ -165,7 +165,7 @@ function _collapseGlyphX0(b) { return b.x + b.w - 1 - GLYPH_W; }
 function _closeGlyphX0(b)    { return b.x + b.w - 1 - GLYPH_W - 1 - GLYPH_W; }
 
 /** Non-detail placed panels in current layout order, with the live
- *  `panelBounds[type]` attached. Both renderers + hit-tests walk this
+ *  `paneBounds[type]` attached. Both renderers + hit-tests walk this
  *  same set so the DRY helper avoids the slice-read fan-out that lived
  *  in v0.6 pre-cleanup. Returns [] when there's no layout slice yet
  *  (test/boot edge cases). */

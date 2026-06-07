@@ -67,7 +67,7 @@ function makeSlice() {
     focus: 'containers',
     viewMode: 'normal',
     freeConfig: { drag: null, undo: [], redo: [], titleEdit: { active: false, text: '' }, notice: null },
-    panelBounds: {
+    paneBounds: {
       containers: { x: 0, y: 0, w: 30, h: 10 },
       groups:     { x: 0, y: 10, w: 30, h: 10 },
       actions:    { x: 30, y: 0, w: 90, h: 5 },

@@ -8,7 +8,7 @@
  * the overlay itself stops caring about which pane it's drawing for.
  *
  * Anchors dynamically — works in normal / half / full view because both
- * the trigger and the overlay follow `panelBounds[paneId]`. The trigger
+ * the trigger and the overlay follow `paneBounds[paneId]`. The trigger
  * replaces the pane's `(o)` hotkey display (cols x+2..x+4); the panel's
  * `╭─` corner and `─` separator are preserved.
  *

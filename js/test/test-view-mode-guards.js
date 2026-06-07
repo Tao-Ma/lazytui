@@ -202,7 +202,7 @@ describe('[4] notice auto-clears on unrelated user intent', () => {
     };
     s.arrange = { ...s.arrange, columns: [{ panels: [{ id: 'a', type: 'a', columnIndex: 0, hotkey: '1' }] }] };
     s.focus = 'a';
-    s.panelBounds = { a: { x: 0, y: 0, w: 30, h: 10 } };
+    s.paneBounds = { a: { x: 0, y: 0, w: 30, h: 10 } };
     const result = layout.update({ type: 'free_config_mouse_motion', mx: 5, my: 6, cols: 120 }, s);
     const next = Array.isArray(result) ? result[0] : result;
     eq(next.freeConfig.notice, 'persistent through motion', 'motion preserves notice');

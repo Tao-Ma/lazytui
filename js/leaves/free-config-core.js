@@ -85,7 +85,7 @@ function columnTotalH(slice, columnIndex) {
   const panels = mpool.columnPanels(slice.arrange, columnIndex);
   let total = 0;
   for (const p of panels) {
-    const b = slice.panelBounds[p.type];
+    const b = slice.paneBounds[p.type];
     if (b) total += b.h;
   }
   return total;
@@ -94,7 +94,7 @@ function columnTotalH(slice, columnIndex) {
 function panelHeightPct(slice, p, availH) {
   if (mpool.isDetailPane(p)) return slice.arrange.detailHeightPct;
   if (typeof p.heightPct === 'number') return p.heightPct;
-  const b = slice.panelBounds[p.type];
+  const b = slice.paneBounds[p.type];
   return b ? Math.round(b.h / availH * 100) : 0;
 }
 
@@ -185,7 +185,7 @@ function freezeColumnFlex(slice, columnIndex, upperType, lowerType, availH) {
     if (p.type === upperType || p.type === lowerType) return p;
     if (mpool.isDetailPane(p)) return p;
     if (typeof p.heightPct === 'number') return p;
-    const b = slice.panelBounds[p.type];
+    const b = slice.paneBounds[p.type];
     if (!b) return p;
     changed = true;
     return { ...p, heightPct: Math.round((b.h / availH) * 100) };

@@ -25,7 +25,7 @@ function setupSlice(arrange, opts = {}) {
   slice.viewMode = opts.viewMode || 'normal';
   slice.focus = opts.focus || '';
   slice.halfLeftPanel = opts.halfLeftPanel || null;
-  slice.panelBounds = {};
+  slice.paneBounds = {};
   return slice;
 }
 
@@ -155,14 +155,14 @@ describe('[5] getCurrentLayout publishes after calcLayout', () => {
 });
 
 describe('[6] boundsFor (P1.3 shim): slice first, rects fallback', () => {
-  it('reads from slice.panelBounds when present', () => {
+  it('reads from slice.paneBounds when present', () => {
     setSize(120, 30);
     const slice = setupSlice({
       detailHeightPct: 60,
       columns: [{ panels: [pane('detail', 'pd', { hotkey: 'o', columnIndex: 0 })] }],
     });
     layout.calcLayout();  // populates _currentLayout
-    slice.panelBounds.detail = { x: 999, y: 999, w: 1, h: 1 };  // sentinel
+    slice.paneBounds.detail = { x: 999, y: 999, w: 1, h: 1 };  // sentinel
     const b = layout.boundsFor('detail');
     eq(b.x, 999, 'slice value wins (P1.3 priority)');
   });
@@ -178,7 +178,7 @@ describe('[6] boundsFor (P1.3 shim): slice first, rects fallback', () => {
       ],
     });
     layout.calcLayout();
-    slice.panelBounds = {};  // clear after render
+    slice.paneBounds = {};  // clear after render
     const b = layout.boundsFor('actions');
     assert(b, 'fall-through finds rect');
     eq(b.type, 'actions');

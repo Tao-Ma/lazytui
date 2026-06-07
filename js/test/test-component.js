@@ -312,9 +312,9 @@ describe('[8d] layout Component skeleton (Phase 1a)', () => {
     assert('freeConfig' in slice,       'slice has freeConfig (1f target)');
     // panelHeights moved off the slice — it lives in a module-local
     // in render/layout.js, accessed via `getPanelViewportH(type)`.
-    // panelBounds stays on the slice (mouse hit-tests + drag math
+    // paneBounds stays on the slice (mouse hit-tests + drag math
     // read it directly).
-    assert('panelBounds' in slice,  'slice has panelBounds (1e target)');
+    assert('paneBounds' in slice,  'slice has paneBounds (1e target)');
     // v0.6.1 Phase 3 — slice.panels retired. Component slices live in
     // route._instances keyed by tab id; the layout slice no longer
     // carries a sibling map.
