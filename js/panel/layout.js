@@ -65,11 +65,34 @@ function _commitArrange(slice, nextArrange, opts) {
  *  in this file would each grow to 3 lines of identical sticky-pointer
  *  logic, net +17 lines vs the 5-line helper. The helper carries real
  *  derivation (not just a spread); it stays. */
+// v0.6.3 Phase B3 — normalize incoming focus to paneId. Producers
+// historically passed a mix of paneId / panel-type / Component
+// kind; consumers compared via `p.type === slice.focus` which
+// worked by accident of singleton coincidence (type === paneId
+// === kind for one-pane-per-kind setups). Multi-instance breaks
+// that. Storing paneId is the v0.7-faithful contract; this helper
+// looks up the paneId when given a non-paneId value.
+function _resolvePaneIdForFocus(slice, focus) {
+  if (!focus || !slice || !slice.arrange) return focus;
+  const panes = mpool.allPanesInColumns(slice.arrange);
+  // Already a paneId? Pass through.
+  if (panes.some(p => p.paneId === focus)) return focus;
+  // Panel-type / kind → first matching pane's paneId. Multi-panel
+  // Components: returns whichever pane's type matches first
+  // (today singleton — one pane per type — so deterministic).
+  const match = panes.find(p => p.type === focus || p.id === focus);
+  return match ? match.paneId : focus;
+}
+
 function _withFocus(slice, focus) {
   if (focus == null) return slice;
-  const halfLeftPanel = route.instanceKind(focus) !== 'detail' ? focus : slice.halfLeftPanel;
-  const lastViewerTab = route.isViewerKind(focus) ? focus : slice.lastViewerTab;
-  return { ...slice, focus, halfLeftPanel, lastViewerTab };
+  const paneId = _resolvePaneIdForFocus(slice, focus);
+  // halfLeftPanel / lastViewerTab — store paneId too. instanceKind +
+  // isViewerKind operate on the kind name; with paneId-keyed
+  // instances they look up _instances[paneId].kind.
+  const halfLeftPanel = route.instanceKind(paneId) !== 'detail' ? paneId : slice.halfLeftPanel;
+  const lastViewerTab = route.isViewerKind(paneId) ? paneId : slice.lastViewerTab;
+  return { ...slice, focus: paneId, halfLeftPanel, lastViewerTab };
 }
 
 function _dragTargetsEqual(a, b) {
@@ -480,7 +503,10 @@ function update(msg, slice) {
         hadPaneSelect = !!next.paneSelect;
         if (next.paneSelect) next.paneSelect = null;
         const allPanes = mpool.allPanesInColumns(next.arrange);
-        const focusStillPlaced = allPanes.some(p => p.type === next.focus);
+        // v0.6.3 Phase B3 — focus is a paneId post-_withFocus normalization.
+        // `paneMatchesFocus` tolerates pre-migration callers that still
+        // direct-set focus to a panel type or pool id.
+        const focusStillPlaced = allPanes.some(p => mpane.paneMatchesFocus(p, next.focus));
         if (!focusStillPlaced && allPanes.length > 0) {
           next.focus = allPanes[0].type;
         }
@@ -514,7 +540,7 @@ function update(msg, slice) {
       // the pool, or never set).
       const hasHidden = mpool.hiddenIds(slice.arrange).length > 0;
       const all = mpool.allPanesInColumns(slice.arrange);
-      const focusedIsPlaced = all.some(p => p.type === slice.focus);
+      const focusedIsPlaced = all.some(p => mpane.paneMatchesFocus(p, slice.focus));
       const focus = focusedIsPlaced ? slice.focus : (all[0] ? all[0].type : slice.focus);
       const wasOpen = slice.panelList && slice.panelList.open;
       const next = {

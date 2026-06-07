@@ -39,6 +39,7 @@ const { RESET, richToAnsi, esc, visibleLen, wrapColor } = require('../io/ansi');
 const { refreshSize, cols, rows, stdout, showCursor, hideCursor } = require('../io/term');
 const { allPanels, syncPanelScroll, multiSelCount } = require('../app/state');
 const mpool = require('../leaves/pool');
+const mpane = require('../leaves/pane');
 const { theme } = require('./themes');
 const { truncate } = require('./panel');
 const painter = require('./painter');
@@ -80,7 +81,7 @@ const { renderJobsOverlay } = require('../overlay/jobs');
 function _renderCollapsed(p, w, chrome) {
   const t = theme();
   const layoutSlice = getInstanceSlice('layout');
-  const focused = layoutSlice && layoutSlice.focus === p.type;
+  const focused = !!(layoutSlice && mpane.paneMatchesFocus(p, layoutSlice.focus));
   const fc = focused ? t.focus : t.dim;
   const innerW = Math.max(0, w - 2);
   let titleText = '';
@@ -650,7 +651,7 @@ function composeRects(layout, model) {
   for (const panel of mpool.allPanesInColumns(layoutSlice.arrange)) {
     const rect = rectByPaneId[panel.paneId] || rectByType[panel.type];
     if (!rect) continue;
-    const focused = layoutSlice.focus === panel.type;
+    const focused = mpane.paneMatchesFocus(panel, layoutSlice.focus);
     const chrome = chromeFor(panel, {
       freeConfigMode, dragging, focused, viewerTabCount, tabTriggerState,
       paneSelectTriggerState: paneSelectTriggerStateFor(panel.paneId),
@@ -725,13 +726,13 @@ function renderHalf(model) {
   const COLS = cols(), ROWS = rows();
   const halfW = Math.floor(COLS / 2);
   const availH = ROWS - 1;
-  const focusedPanel = allPanels().find(p => p.type === layoutSlice.focus);
+  const focusedPanel = allPanels().find(p => mpane.paneMatchesFocus(p, layoutSlice.focus));
   if (!focusedPanel) return renderNormal(model);
   const detailPanel = mpool.findDetailPane(layoutSlice.arrange);
   let leftPanel = focusedPanel;
   if (mpool.isDetailPane(focusedPanel)) {
     const all = allPanels();
-    leftPanel = all.find(p => p.type === layoutSlice.halfLeftPanel)
+    leftPanel = all.find(p => mpane.paneMatchesFocus(p, layoutSlice.halfLeftPanel))
              || all.find(p => !mpool.isDetailPane(p))
              || focusedPanel;
   }
@@ -777,13 +778,13 @@ function renderHalf(model) {
   };
   const leftChrome = chromeFor(leftPanel, {
     freeConfigMode, dragging,
-    focused: layoutSlice.focus === leftPanel.type,
+    focused: mpane.paneMatchesFocus(leftPanel, layoutSlice.focus),
     viewerTabCount, tabTriggerState,
     paneSelectTriggerState: halfPaneSelectStateFor(leftPanel.paneId),
   });
   const detailChrome = detailPanel ? chromeFor(detailPanel, {
     freeConfigMode, dragging,
-    focused: layoutSlice.focus === detailPanel.type,
+    focused: mpane.paneMatchesFocus(detailPanel, layoutSlice.focus),
     viewerTabCount, tabTriggerState,
   }) : null;
   let leftContent = _safeRender(leftPanel, halfW, availH, { chrome: leftChrome });
@@ -813,7 +814,7 @@ function renderFull(model) {
   const layoutSlice = getInstanceSlice('layout');
   const COLS = cols(), ROWS = rows();
   const availH = ROWS - 1;
-  const focusedPanel = allPanels().find(p => p.type === layoutSlice.focus);
+  const focusedPanel = allPanels().find(p => mpane.paneMatchesFocus(p, layoutSlice.focus));
   if (!focusedPanel) return renderNormal(model);
   layoutSlice.panelBounds = {};
   const fullBounds = { x: 0, y: 0, w: COLS, h: availH };

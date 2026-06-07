@@ -120,7 +120,9 @@ describe('[set_active_tab] focus follow', () => {
     assert(Array.isArray(result), 'returns [slice, cmds]');
     const [next, cmds] = result;
     eq(next.arrange.columns[0].panels[0].activeTabId, 'logs', 'pane switched');
-    eq(next.focus, 'logs', 'focus retargeted inline to new active tab id (R4.7)');
+    // v0.6.3 Phase B3 — focus is the paneId post-_withFocus; renderer
+    // derives the active tab id via pane.activeTabId.
+    eq(next.focus, 'pane-docker', 'focus retargeted to paneId (B3)');
     assert(cmds.some(c => c.type === 'show_selected_info'),
       'show_selected_info Cmd emitted');
   });
@@ -131,7 +133,7 @@ describe('[set_active_tab] focus follow', () => {
     }, slice);
     assert(Array.isArray(result), 'cmds present');
     const [next, cmds] = result;
-    eq(next.focus, 'logs', 'focus retargeted via paneId path');
+    eq(next.focus, 'pane-docker', 'focus retargeted via paneId path (B3)');
     assert(cmds.some(c => c.type === 'show_selected_info'),
       'show_selected_info Cmd emitted');
   });

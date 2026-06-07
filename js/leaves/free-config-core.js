@@ -227,29 +227,36 @@ function _setPanelHeightPct(slice, panelType, pct) {
  *  slice field — focus is the single source of truth for the active
  *  panel in free-config; the index is just an arithmetic convenience. */
 function selectedIdx(slice) {
-  return mpool.allPanesInColumns(slice.arrange).findIndex(p => p.type === slice.focus);
+  // v0.6.3 Phase B3 — focus is a paneId; tolerant matcher catches
+  // pre-migration callers (boot default, tests) seeding a panel-type.
+  const mpane = require('./pane');
+  return mpool.allPanesInColumns(slice.arrange).findIndex(p => mpane.paneMatchesFocus(p, slice.focus));
 }
 
 /** Safety clamp after any mutation that can change the panel count.
  *  v0.6 invariant: `slice.focus` is the cursor truth — when a layout-
  *  shape change (undo/redo, applyDrop, pool_hide/show) leaves focus
  *  pointing at a panel that's no longer placed, snap it to whatever
- *  ends up at the same index, or to preferredType if supplied. */
+ *  ends up at the same index, or to preferredType if supplied.
+ *  v0.6.3 Phase B3 — preferredType matches by panel type (the caller
+ *  knows the kind, not the paneId, and there's a 1:1 in singleton);
+ *  result is written as paneId. */
 function clampSelected(slice, preferredType) {
+  const mpane = require('./pane');
   const all = mpool.allPanesInColumns(slice.arrange);
   if (all.length === 0) return slice;
   if (preferredType) {
     const pIdx = all.findIndex(p => p.type === preferredType);
     if (pIdx >= 0) {
-      const nextFocus = all[pIdx].type;
+      const nextFocus = all[pIdx].paneId || all[pIdx].type;
       if (nextFocus === slice.focus) return slice;
       return { ...slice, focus: nextFocus };
     }
   }
-  // focus already names a placed panel → no clamp needed
-  if (all.some(p => p.type === slice.focus)) return slice;
+  // focus already names a placed panel (by paneId or type) → no clamp needed
+  if (all.some(p => mpane.paneMatchesFocus(p, slice.focus))) return slice;
   // focus is stale — snap to the first placed panel
-  return { ...slice, focus: all[0].type };
+  return { ...slice, focus: all[0].paneId || all[0].type };
 }
 
 // ---------------------------------------------------------------- new-column width allocation

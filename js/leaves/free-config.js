@@ -69,7 +69,7 @@ function navSelect(slice, delta) {
 
 /** J/K — reorder the focused panel within its column (delta ±1). */
 function reorderWithin(slice, delta) {
-  const loc = mpool.findPaneLocation(slice.arrange, p => p.type === slice.focus);
+  const loc = mpool.findPaneLocation(slice.arrange, p => require('./pane').paneMatchesFocus(p, slice.focus));
   if (!loc) return slice;
   const panels = mpool.columnPanels(slice.arrange, loc.columnIndex);
   const targetIdx = loc.paneIndex + delta;
@@ -103,7 +103,7 @@ function reorderWithin(slice, delta) {
  *  Phase 1: refuses moves into/out of last column for reserved panes;
  *  clamps at the layout edges. Detail/actions stay in the last column. */
 function moveColumn(slice, dir) {
-  const loc = mpool.findPaneLocation(slice.arrange, p => p.type === slice.focus);
+  const loc = mpool.findPaneLocation(slice.arrange, p => require('./pane').paneMatchesFocus(p, slice.focus));
   if (!loc) return slice;
   const selPanel = loc.pane;
   const N = mpool.columnCount(slice.arrange);
@@ -140,7 +140,7 @@ function moveColumn(slice, dir) {
  *  2 (clamped [20,60]). Last-column non-detail panels: no-op (the last
  *  column's width is implicit; can't grow without shrinking a neighbor). */
 function resizeWidthOrDetail(slice, sign) {
-  const loc = mpool.findPaneLocation(slice.arrange, p => p.type === slice.focus);
+  const loc = mpool.findPaneLocation(slice.arrange, p => require('./pane').paneMatchesFocus(p, slice.focus));
   if (!loc) return slice;
   const selPanel = loc.pane;
   const lastIdx = mpool.lastColumnIndex(slice.arrange);
@@ -192,7 +192,7 @@ function resizeWidthOrDetail(slice, sign) {
 /** ] / [ — grow/shrink the focused panel's heightPct by Δ, stealing from the
  *  panel below in the same column (D1 semantics). No-op on detail / last row. */
 function resizeFocusedPanelHeight(slice, deltaPct) {
-  const loc = mpool.findPaneLocation(slice.arrange, p => p.type === slice.focus);
+  const loc = mpool.findPaneLocation(slice.arrange, p => require('./pane').paneMatchesFocus(p, slice.focus));
   if (!loc) return slice;
   const sel = loc.pane;
   if (mpool.isDetailPane(sel)) return slice;  // detail uses +/-

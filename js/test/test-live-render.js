@@ -110,11 +110,18 @@ describe('[3b] focus moves through the update spine — live', () => {
     capture(() => { handleKey('_', '_'); handleKey('_', '_'); });   // normal view (silenced)
     getInstanceSlice("layout").focus = 'groups';
     const fromGroups = capture(() => handleKey('right', 'right')); // focus_right → update
-    assert(getFocus() !== 'groups', `focus advanced off groups (now ${getFocus()})`);
+    // v0.6.3 Phase B3 — focus is paneId-form post-_withFocus; the
+    // first focus_right normalizes the seeded type → paneId before
+    // advancing, so groups → pane-groups (still groups conceptually)
+    // → pane-actions. left-arrow returns to pane-groups, not the
+    // original type-form 'groups'.
+    assert(getFocus() !== 'groups' && getFocus() !== 'pane-groups',
+      `focus advanced off groups (now ${getFocus()})`);
     assert(fromGroups.length > 0, 'a frame painted on focus change');
     const movedTo = getFocus();
     capture(() => handleKey('left', 'left'));                       // focus_left → back
-    assert(getFocus() === 'groups', `focus_left returned to groups from ${movedTo}`);
+    assert(getFocus() === 'pane-groups',
+      `focus_left returned to pane-groups from ${movedTo}`);
   });
 });
 

@@ -185,21 +185,29 @@ function handleAction(action, arg) {
     case 'nav_up':       moveSel(-1); break;
     case 'nav_down':     moveSel(+1); break;
     case 'focus_left': {
-      const order = allPanels().map(p => p.type);
-      const idx = order.indexOf(getFocus());
-      dispatchMsg(wrap('layout', { type: 'focus_set', focus: idx > 0 ? order[idx - 1] : getFocus() }));
+      // v0.6.3 Phase B3 — match by paneId-or-type via paneMatchesFocus;
+      // pass paneId to focus_set so the post-_withFocus stamp is stable.
+      const mpane = require('../leaves/pane');
+      const panes = allPanels();
+      const idx = panes.findIndex(p => mpane.paneMatchesFocus(p, getFocus()));
+      const target = (idx > 0) ? (panes[idx - 1].paneId || panes[idx - 1].type) : getFocus();
+      dispatchMsg(wrap('layout', { type: 'focus_set', focus: target }));
       break;
     }
     case 'focus_right': {
-      const order = allPanels().map(p => p.type);
-      const idx = order.indexOf(getFocus());
-      dispatchMsg(wrap('layout', { type: 'focus_set', focus: idx < order.length - 1 ? order[idx + 1] : getFocus() }));
+      const mpane = require('../leaves/pane');
+      const panes = allPanels();
+      const idx = panes.findIndex(p => mpane.paneMatchesFocus(p, getFocus()));
+      const target = (idx >= 0 && idx < panes.length - 1)
+        ? (panes[idx + 1].paneId || panes[idx + 1].type)
+        : getFocus();
+      dispatchMsg(wrap('layout', { type: 'focus_set', focus: target }));
       break;
     }
     case 'focus_panel': {
       let target = getFocus();
       for (const p of allPanels()) {
-        if (p.hotkey === arg) { target = p.type; break; }
+        if (p.hotkey === arg) { target = p.paneId || p.type; break; }
       }
       dispatchMsg(wrap('layout', { type: 'focus_set', focus: target }));
       break;

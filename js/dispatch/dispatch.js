@@ -237,7 +237,8 @@ function handleFreeConfigKey(key, seq) {
       // reducer; other invariants (drag in flight) are out of band
       // here since handleFreeConfigKey only runs on idle key input.
       const all = layoutSlice ? require('../leaves/pool').allPanesInColumns(layoutSlice.arrange) : [];
-      const sel = all.find(p => p.type === (layoutSlice && layoutSlice.focus));
+      const _mpane = require('../leaves/pane');
+      const sel = all.find(p => _mpane.paneMatchesFocus(p, layoutSlice && layoutSlice.focus));
       if (sel) dispatch({ type: 'panel_collapse_toggle', id: sel.id });
       break;
     }

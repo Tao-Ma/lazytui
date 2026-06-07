@@ -551,8 +551,9 @@ describe('[18] pool_show_new_column applies focus inline (T2.4 + R1.2)', () => {
     const r = layout.update({ type: 'pool_show_new_column', id: 'notes', position: 0 }, slice);
     assert(Array.isArray(r), 'returns [slice, cmds] tuple');
     const [next, cmds] = r;
-    eq(next.focus, 'history', 'focus stamped to just-placed pool entry type');
-    eq(next.halfLeftPanel, 'history', 'halfLeftPanel sticky updated (history is non-detail)');
+    // v0.6.3 Phase B3 — focus + halfLeftPanel are paneId post-_withFocus.
+    eq(next.focus, 'pane-notes', 'focus stamped to just-placed pool entry paneId (B3)');
+    eq(next.halfLeftPanel, 'pane-notes', 'halfLeftPanel sticky updated to paneId (history is non-detail)');
     const showInfo = cmds.find(c => c && c.type === 'show_selected_info');
     assert(showInfo, 'emits show_selected_info Cmd');
     const reEntry = cmds.find(c => c && c.type === 'msg'
