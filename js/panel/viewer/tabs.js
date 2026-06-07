@@ -124,12 +124,22 @@ function _viewerTarget(intent) {
 /** Add an ephemeral terminal tab at runtime. Used by plugins to open
  *  interactive shells against an item (e.g. docker exec). If a tab
  *  with the same key exists, switches to it. */
+// Dispatchers thread the model-derived bundle (currentGroup,
+// groupExists, yamlTerminals, actionCount) so the reducer arm and
+// the leaf can be pure of getModel(). pt.modelBundle is the single
+// helper that computes the bundle from (model, groupName).
+
+function _getModel() {
+  return require('../../app/runtime').getModel();
+}
+
 function addEphemeralTab(groupName, key, cmd, label) {
   const target = _viewerTarget('terminal');
   if (target == null) return;
   const api = require('../api');
   api.dispatchMsg(api.wrap(target,
-    { type: 'viewer_add_ephemeral_terminal', groupName, key, cmd, label }));
+    { type: 'viewer_add_ephemeral_terminal', groupName, key, cmd, label,
+      ...pt.modelBundle(_getModel(), groupName) }));
 }
 
 function removeEphemeralTab(groupName, key) {
@@ -137,7 +147,8 @@ function removeEphemeralTab(groupName, key) {
   if (target == null) return;
   const api = require('../api');
   api.dispatchMsg(api.wrap(target,
-    { type: 'viewer_remove_ephemeral_terminal', groupName, key }));
+    { type: 'viewer_remove_ephemeral_terminal', groupName, key,
+      ...pt.modelBundle(_getModel(), groupName) }));
 }
 
 function addContentTab(groupName, key, label, lines) {
@@ -145,7 +156,8 @@ function addContentTab(groupName, key, label, lines) {
   if (target == null) return;
   const api = require('../api');
   api.dispatchMsg(api.wrap(target,
-    { type: 'viewer_add_content_tab', groupName, key, label, lines }));
+    { type: 'viewer_add_content_tab', groupName, key, label, lines,
+      ...pt.modelBundle(_getModel(), groupName) }));
 }
 
 function updateContentTabLines(groupName, key, lines) {
@@ -153,7 +165,8 @@ function updateContentTabLines(groupName, key, lines) {
   if (target == null) return;
   const api = require('../api');
   api.dispatchMsg(api.wrap(target,
-    { type: 'viewer_update_content_tab_lines', groupName, key, lines }));
+    { type: 'viewer_update_content_tab_lines', groupName, key, lines,
+      ...pt.modelBundle(_getModel(), groupName) }));
 }
 
 function removeContentTab(groupName, key) {
@@ -161,7 +174,8 @@ function removeContentTab(groupName, key) {
   if (target == null) return;
   const api = require('../api');
   api.dispatchMsg(api.wrap(target,
-    { type: 'viewer_remove_content_tab', groupName, key }));
+    { type: 'viewer_remove_content_tab', groupName, key,
+      ...pt.modelBundle(_getModel(), groupName) }));
 }
 
 /** Hook called by terminal.ensureSession's `onExit` when a PTY

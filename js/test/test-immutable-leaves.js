@@ -102,6 +102,10 @@ describe('[immutable] leaves/register.js', () => {
 // --- leaves/pane-tabs ----------------------------------------------------
 
 describe('[immutable] leaves/pane-tabs.js', () => {
+  // v0.6.3 TEA Phase 3c: leaves now take a single (slice, msg) where
+  // msg carries the precomputed model bundle (currentGroup,
+  // groupExists, yamlTerminals, actionCount). modelBundle() is the
+  // single helper that computes it from (model, groupName).
   const makeModel = () => ({
     currentGroup: 'g',
     config: { groups: { g: { actions: {}, terminals: {} } } },
@@ -118,7 +122,7 @@ describe('[immutable] leaves/pane-tabs.js', () => {
     const slice = makeSlice();
     const [next, info] = expectNoMutation(
       'addContent leaves input frozen',
-      () => mtabs.addContent(slice, model, { groupName: 'g', key: 'k1', label: 'L', lines: ['x'] }),
+      () => mtabs.addContent(slice, { groupName: 'g', key: 'k1', label: 'L', lines: ['x'], ...mtabs.modelBundle(model, 'g') }),
       slice,
     );
     eq(info.focusDetail, true);
@@ -135,7 +139,7 @@ describe('[immutable] leaves/pane-tabs.js', () => {
     const slice = makeSlice();
     const [next, info] = expectNoMutation(
       'addEphemeral leaves input frozen',
-      () => mtabs.addEphemeral(slice, model, { groupName: 'g', key: 't1', cmd: 'sh', label: 'T' }),
+      () => mtabs.addEphemeral(slice, { groupName: 'g', key: 't1', cmd: 'sh', label: 'T', ...mtabs.modelBundle(model, 'g') }),
       slice,
     );
     eq(info.terminalEnter, true);

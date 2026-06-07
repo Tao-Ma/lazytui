@@ -280,9 +280,37 @@ function findEphemeralByIdIn(slice, id) {
 }
 
 // --- Pure slice mutators (return [newSlice, info]) ------------------------
+//
+// v0.6.3 TEA cleanup: these leaves used to take `(slice, model, msg)`
+// and read model.config.groups + model.currentGroup directly. They
+// now take `(slice, msg)` with the model-derived facts precomputed
+// by the dispatcher and threaded via msg: `currentGroup`,
+// `groupExists`, `yamlTerminals`, `actionCount`. Use `modelBundle()`
+// (exported below) to compute the bundle once per dispatch.
 
-function addEphemeral(slice, model, { groupName, key, cmd, label }) {
-  if (!_groupOf(model, groupName)) return [slice, { focusDetail: false, terminalEnter: false }];
+/** Precompute the model-derived facts these leaves need, so dispatchers
+ *  can thread them into each Msg payload and the leaves stay pure of
+ *  getModel(). The bundle covers the 6 content/ephemeral tab leaves
+ *  (addEphemeral / removeEphemeral / addContent / updateContentLines
+ *  / removeContent / reorderContent). Spread into the dispatched Msg:
+ *
+ *    api.dispatchMsg(api.wrap(target, {
+ *      type: 'viewer_add_content_tab', groupName, key, label, lines,
+ *      ...pt.modelBundle(model, groupName),
+ *    }));
+ */
+function modelBundle(model, groupName) {
+  const group = _groupOf(model, groupName);
+  return {
+    currentGroup: (model && model.currentGroup) || '',
+    groupExists: !!group,
+    yamlTerminals: group ? (group.terminals || {}) : null,
+    actionCount: group ? actionTabCount(model, groupName) : 0,
+  };
+}
+
+function addEphemeral(slice, { groupName, key, cmd, label, currentGroup, groupExists, yamlTerminals, actionCount }) {
+  if (!groupExists) return [slice, { focusDetail: false, terminalEnter: false }];
 
   // T27 / R21 dup-key contract: when an entry already exists at this
   // key, the new {cmd, label} is INTENTIONALLY DROPPED — the call is
@@ -296,12 +324,13 @@ function addEphemeral(slice, model, { groupName, key, cmd, label }) {
 
   // T27 — cross-group guard. Don't touch the current-group cursor when
   // the add lands in a group the user has switched away from.
-  if (groupName !== model.currentGroup) return [next, { focusDetail: false, terminalEnter: false }];
+  if (groupName !== currentGroup) return [next, { focusDetail: false, terminalEnter: false }];
 
-  const termIdx = Object.keys(groupTerminals(model, next, groupName)).indexOf(key);
+  const allTerms = { ...(yamlTerminals || {}), ...ephGroupNext };
+  const termIdx = Object.keys(allTerms).indexOf(key);
   if (termIdx < 0) return [next, { focusDetail: false, terminalEnter: false }];
   return [
-    { ...next, tab: 2 + actionTabCount(model, groupName) + termIdx },
+    { ...next, tab: 2 + actionCount + termIdx },
     { focusDetail: true, terminalEnter: true },
   ];
 }
@@ -318,7 +347,7 @@ function _dropTabStateEntry(slice, key) {
   return { ...slice, tabState: rest };
 }
 
-function removeEphemeral(slice, model, { groupName, key }) {
+function removeEphemeral(slice, { groupName, key, currentGroup, yamlTerminals, actionCount }) {
   const eph = slice.ephemeralTerminals[groupName];
   if (!eph || !eph[key]) return [slice, { sessionId: null, terminalExit: false }];
 
@@ -333,16 +362,15 @@ function removeEphemeral(slice, model, { groupName, key }) {
   const dropKey = `${groupName}:terminal:${key}`;
   const sliceAfterDrop = _dropTabStateEntry(slice, dropKey);
 
-  if (groupName !== model.currentGroup) {
+  if (groupName !== currentGroup) {
     return [{ ...sliceAfterDrop, ephemeralTerminals: ephAllNext }, { sessionId: id, terminalExit: false }];
   }
 
-  const aCount = actionTabCount(model, groupName);
-  const oldOrder = Object.keys(groupTerminals(model, slice, groupName));
+  const yaml = yamlTerminals || {};
+  const oldOrder = Object.keys({ ...yaml, ...eph });
   const removedTermIdx = oldOrder.indexOf(key);
-  const removedTabIdx = 2 + aCount + removedTermIdx;
+  const removedTabIdx = 2 + actionCount + removedTermIdx;
 
-  const yaml = (_groupOf(model, groupName) || {}).terminals || {};
   const newCount = Object.keys({ ...yaml, ...ephGroupRest }).length;
 
   let tab = slice.tab;
@@ -350,7 +378,7 @@ function removeEphemeral(slice, model, { groupName, key }) {
   let terminalExit = false;
   if (slice.tab === removedTabIdx) {
     if (newCount > 0) {
-      tab = 2 + aCount + Math.min(removedTermIdx, newCount - 1);
+      tab = 2 + actionCount + Math.min(removedTermIdx, newCount - 1);
     } else {
       tab = 0;
       scroll = 0;
@@ -369,8 +397,8 @@ function removeEphemeral(slice, model, { groupName, key }) {
   return [out, { sessionId: id, terminalExit }];
 }
 
-function addContent(slice, model, { groupName, key, label, lines }) {
-  if (!_groupOf(model, groupName)) return [slice, { focusDetail: false, terminalExit: false }];
+function addContent(slice, { groupName, key, label, lines, currentGroup, groupExists, yamlTerminals, actionCount }) {
+  if (!groupExists) return [slice, { focusDetail: false, terminalExit: false }];
 
   const ctAll = slice.contentTabs || {};
   const ctGroup = ctAll[groupName] || {};
@@ -378,18 +406,17 @@ function addContent(slice, model, { groupName, key, label, lines }) {
   const ctAllNext = { ...ctAll, [groupName]: ctGroupNext };
   let next = { ...slice, contentTabs: ctAllNext };
 
-  if (groupName !== model.currentGroup) return [next, { focusDetail: false, terminalExit: false }];
+  if (groupName !== currentGroup) return [next, { focusDetail: false, terminalExit: false }];
 
   const contentIdx = Object.keys(ctGroupNext).indexOf(key);
   if (contentIdx < 0) return [next, { focusDetail: false, terminalExit: false }];
 
-  const aCount = actionTabCount(model, groupName);
-  const tCount = Object.keys(groupTerminals(model, next, groupName)).length;
+  const tCount = Object.keys({ ...(yamlTerminals || {}), ...((next.ephemeralTerminals || {})[groupName] || {}) }).length;
   // N2 — slice.lines is finalizer-derived; the lines field is stored
   // inside contentTabs (above), the slice mirror is dead.
   next = {
     ...next,
-    tab: 2 + aCount + tCount + contentIdx,
+    tab: 2 + actionCount + tCount + contentIdx,
     scroll: 0,
   };
   if (next.search && next.search.active) {
@@ -398,7 +425,7 @@ function addContent(slice, model, { groupName, key, label, lines }) {
   return [next, { focusDetail: true, terminalExit: true }];
 }
 
-function updateContentLines(slice, model, { groupName, key, lines }) {
+function updateContentLines(slice, { groupName, key, lines, currentGroup, yamlTerminals, actionCount }) {
   const ctAll = slice.contentTabs;
   if (!ctAll || !ctAll[groupName] || !ctAll[groupName][key]) return [slice, null];
 
@@ -406,11 +433,10 @@ function updateContentLines(slice, model, { groupName, key, lines }) {
   const ctAllNext = { ...ctAll, [groupName]: ctGroupNext };
   let next = { ...slice, contentTabs: ctAllNext };
 
-  if (groupName !== model.currentGroup) return [next, null];
+  if (groupName !== currentGroup) return [next, null];
   const order = Object.keys(ctGroupNext);
-  const aCount = actionTabCount(model, groupName);
-  const tCount = Object.keys(groupTerminals(model, next, groupName)).length;
-  const idx = next.tab - 2 - aCount - tCount;
+  const tCount = Object.keys({ ...(yamlTerminals || {}), ...((next.ephemeralTerminals || {})[groupName] || {}) }).length;
+  const idx = next.tab - 2 - actionCount - tCount;
   if (idx < 0 || idx >= order.length || order[idx] !== key) return [next, null];
   // N2 — slice.lines is finalizer-derived; lines live in contentTabs.
   return [{ ...next, scroll: 0 }, null];
@@ -419,7 +445,7 @@ function updateContentLines(slice, model, { groupName, key, lines }) {
 /** Returns [newSlice, { needShowSelectedInfo }] — needShowSelectedInfo
  *  is true when the closed tab was the last content tab so the body
  *  falls back to Info (caller emits the Cmd). */
-function removeContent(slice, model, { groupName, key }) {
+function removeContent(slice, { groupName, key, currentGroup, yamlTerminals, actionCount }) {
   const ctAll = slice.contentTabs;
   const ct = ctAll && ctAll[groupName];
   if (!ct || !ct[key]) return [slice, { needShowSelectedInfo: false }];
@@ -433,15 +459,14 @@ function removeContent(slice, model, { groupName, key }) {
   const dropKey = `${groupName}:content:${key}`;
   const sliceAfterDrop = _dropTabStateEntry(slice, dropKey);
 
-  if (groupName !== model.currentGroup) {
+  if (groupName !== currentGroup) {
     return [{ ...sliceAfterDrop, contentTabs: ctAllNext }, { needShowSelectedInfo: false }];
   }
 
-  const aCount = actionTabCount(model, groupName);
-  const tCount = Object.keys(groupTerminals(model, slice, groupName)).length;
+  const tCount = Object.keys({ ...(yamlTerminals || {}), ...((slice.ephemeralTerminals || {})[groupName] || {}) }).length;
   const oldOrder = Object.keys(ct);
   const removedContentIdx = oldOrder.indexOf(key);
-  const removedTabIdx = 2 + aCount + tCount + removedContentIdx;
+  const removedTabIdx = 2 + actionCount + tCount + removedContentIdx;
 
   let tab = slice.tab;
   let scroll = slice.scroll;
@@ -451,7 +476,7 @@ function removeContent(slice, model, { groupName, key }) {
     const remainingKeys = Object.keys(ctGroupRest);
     if (remainingKeys.length > 0) {
       const newContentIdx = Math.min(removedContentIdx, remainingKeys.length - 1);
-      tab = 2 + aCount + tCount + newContentIdx;
+      tab = 2 + actionCount + tCount + newContentIdx;
       scroll = 0;
     } else {
       tab = 0;
@@ -480,7 +505,7 @@ function removeContent(slice, model, { groupName, key }) {
  * moved tab when active is the one moving; otherwise it adjusts so the
  * SAME content stays focused.
  */
-function reorderContent(slice, model, { groupName, fromIdx, toIdx }) {
+function reorderContent(slice, { groupName, fromIdx, toIdx, currentGroup, yamlTerminals, actionCount }) {
   const ctAll = slice.contentTabs || {};
   const ct = ctAll[groupName];
   if (!ct) return slice;
@@ -498,11 +523,10 @@ function reorderContent(slice, model, { groupName, fromIdx, toIdx }) {
   const ctAllNext = { ...ctAll, [groupName]: ctGroupNext };
   let next = { ...slice, contentTabs: ctAllNext };
 
-  if (groupName !== model.currentGroup) return next;
+  if (groupName !== currentGroup) return next;
 
-  const aCount = actionTabCount(model, groupName);
-  const tCount = Object.keys(groupTerminals(model, next, groupName)).length;
-  const contentBase = 2 + aCount + tCount;
+  const tCount = Object.keys({ ...(yamlTerminals || {}), ...((next.ephemeralTerminals || {})[groupName] || {}) }).length;
+  const contentBase = 2 + actionCount + tCount;
   const oldContentTab = slice.tab - contentBase;
   if (oldContentTab < 0 || oldContentTab >= n) return next;
 
@@ -668,36 +692,38 @@ function reduceTabMsg(msg, slice, ctx) {
 
     // --- tab lifecycle ---
     case 'viewer_add_ephemeral_terminal': {
-      const [next, info] = addEphemeral(slice, getModel(), msg);
+      // Pure reducer arm — model-derived facts arrive via msg payload
+      // (dispatcher calls modelBundle and spreads). See addEphemeral.
+      const [next, info] = addEphemeral(slice, msg);
       const effects = [];
       if (info.focusDetail)   effects.push({ type: 'msg', msg: wrap('layout', { type: 'focus_set', focus: paneId }) });
       if (info.terminalEnter) effects.push({ type: 'msg', msg: { type: 'terminal_enter' } });
       return [next, effects];
     }
     case 'viewer_remove_ephemeral_terminal': {
-      const [next, { sessionId, terminalExit }] = removeEphemeral(slice, getModel(), msg);
+      const [next, { sessionId, terminalExit }] = removeEphemeral(slice, msg);
       const effects = [];
       if (sessionId)    effects.push({ type: 'destroy_pty_session', id: sessionId });
       if (terminalExit) effects.push({ type: 'msg', msg: { type: 'terminal_exit' } });
       return [next, effects];
     }
     case 'viewer_add_content_tab': {
-      const [next, info] = addContent(slice, getModel(), msg);
+      const [next, info] = addContent(slice, msg);
       const effects = [];
       if (info.focusDetail)  effects.push({ type: 'msg', msg: wrap('layout', { type: 'focus_set', focus: paneId }) });
       if (info.terminalExit) effects.push({ type: 'msg', msg: { type: 'terminal_exit' } });
       return [next, effects];
     }
     case 'viewer_update_content_tab_lines': {
-      const [next] = updateContentLines(slice, getModel(), msg);
+      const [next] = updateContentLines(slice, msg);
       return next;
     }
     case 'viewer_remove_content_tab': {
-      const [next, { needShowSelectedInfo }] = removeContent(slice, getModel(), msg);
+      const [next, { needShowSelectedInfo }] = removeContent(slice, msg);
       return [next, needShowSelectedInfo ? [{ type: 'show_selected_info' }] : []];
     }
     case 'viewer_reorder_content_tab':
-      return reorderContent(slice, getModel(), msg);
+      return reorderContent(slice, msg);
 
     // --- tab-list overlay (the `[≡]` switcher anchored to the pane's
     // top-left). Cursor starts at the active tab; scroll keeps it in
@@ -804,5 +830,6 @@ module.exports = {
   findEphemeralByIdIn,
   addEphemeral, removeEphemeral,
   addContent, updateContentLines, removeContent, reorderContent,
+  modelBundle,
   reduceTabMsg,
 };

@@ -285,9 +285,16 @@ function handleMouse(kind, x, y) {
 
     if (isTabDrag) {
       if (kind === 'motion') {
-        // Thread currentGroup so the reducer arm doesn't have to read
-        // getModel() to fetch it (TEA: pure of model state).
-        dispatchMsg(wrap('layout', { type: 'tab_drag_motion', mx, my, currentGroup: model.currentGroup }));
+        // Thread the modelBundle so the reducer arm + tab-drag leaf
+        // + downstream reorderContent leaf all stay pure of getModel().
+        // The reorder Cmd emitted by tab-drag spreads the bundle so
+        // pane-tabs' reorderContent arm gets everything it needs.
+        const pt = require('../leaves/pane-tabs');
+        const groupName = model.currentGroup;
+        dispatchMsg(wrap('layout', {
+          type: 'tab_drag_motion', mx, my,
+          modelBundle: pt.modelBundle(model, groupName),
+        }));
       } else if (kind === 'release') {
         dispatchMsg(wrap('layout', { type: 'tab_drag_release' }));
       }
@@ -449,10 +456,15 @@ function handleMouse(kind, x, y) {
           // switch click since the close glyph sits inside the tab's
           // outer rect.
           if (tab.closeKey != null && localX >= tab.closeX && localX < tab.closeX + tab.closeW) {
+            // Thread the model bundle so the reducer + leaf stay pure
+            // of getModel(). v0.6.3 TEA Phase 3c.
+            const mForBundle = getModel();
+            const groupName = mForBundle.currentGroup;
             dispatchMsg(wrap(p.type, {
               type: 'viewer_remove_content_tab',
-              groupName: getModel().currentGroup,
+              groupName,
               key: tab.closeKey,
+              ...require('../leaves/pane-tabs').modelBundle(mForBundle, groupName),
             }));
           } else {
             dispatchMsg(wrap('layout', { type: 'focus_set', focus: p.type }));

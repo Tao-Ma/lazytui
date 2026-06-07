@@ -46,7 +46,7 @@ function _findContentIdxAt(detailBounds, tabBounds, mx, my) {
   return -1;
 }
 
-function tabDragMotion(slice, mx, my, detailBounds, tabBounds, currentGroup, targetKind) {
+function tabDragMotion(slice, mx, my, detailBounds, tabBounds, modelBundle, targetKind) {
   const drag = slice.freeConfig && slice.freeConfig.drag;
   if (!drag || drag.kind !== 'tab-dragging') return [slice, []];
   if (mx === drag.startX && my === drag.startY) {
@@ -67,13 +67,23 @@ function tabDragMotion(slice, mx, my, detailBounds, tabBounds, currentGroup, tar
   // multi-viewer will pass a per-pane id resolved by the caller via
   // `route.resolveTarget('viewer')`. The leaf takes it as an arg so it
   // stays pure (no `route` import).
+  //
+  // modelBundle (v0.6.3 TEA Phase 3c) is the precomputed
+  // {currentGroup, groupExists, yamlTerminals, actionCount} that the
+  // downstream reorderContent leaf needs. Spread into the emitted
+  // Cmd's Msg so it threads through to the pane-tabs reducer arm.
   const advanced = {
     ...cursorOnly,
     freeConfig: { ...cursorOnly.freeConfig, drag: { ...cursorOnly.freeConfig.drag, fromIdx: toIdx } },
   };
   const cmd = {
     type: 'msg',
-    msg: { kind: targetKind, msg: { type: 'viewer_reorder_content_tab', groupName: currentGroup, fromIdx: drag.fromIdx, toIdx } },
+    msg: { kind: targetKind, msg: {
+      type: 'viewer_reorder_content_tab',
+      groupName: modelBundle ? modelBundle.currentGroup : '',
+      fromIdx: drag.fromIdx, toIdx,
+      ...(modelBundle || {}),
+    } },
   };
   return [advanced, [cmd]];
 }

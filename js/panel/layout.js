@@ -671,14 +671,15 @@ function update(msg, slice) {
       // into the pure leaf as separate args.
       const detailSlice = getInstanceSlice(targetKind);
       const tabBounds = detailSlice && Array.isArray(detailSlice.tabBounds) ? detailSlice.tabBounds : null;
-      // currentGroup arrives via msg.currentGroup — dispatcher
-      // (dispatch/input.js tab-drag handler) reads it once at dispatch
-      // time. Pure reducer; no getModel() read here.
+      // Pure reducer — msg carries the precomputed modelBundle
+      // (currentGroup + facts the downstream reorderContent leaf
+      // needs). The dispatcher (dispatch/input.js tab-drag handler)
+      // reads model once and threads it.
       return mtabDrag.tabDragMotion(
         slice, msg.mx, msg.my,
         require('../render/layout').boundsFor('detail'),
         tabBounds,
-        msg.currentGroup,
+        msg.modelBundle,
         targetKind,
       );
     }
