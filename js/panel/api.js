@@ -402,7 +402,16 @@ function dispatchKeyToFocused(key, seq) {
 
   let claimed = false;
   try {
-    const result = comp.update({ type: 'key', key, seq }, inst.slice);
+    // v0.6.3 Phase D1 — thread terminalMode + focusKind so the
+    // viewer's `key` arm doesn't need to call getModel() / getFocus()
+    // (chain modes are already filtered upstream by _dispatchActiveMode;
+    // terminalMode is non-chain so the arm needs the flag to bail).
+    const _m = getModel();
+    const result = comp.update({
+      type: 'key', key, seq,
+      terminalMode: !!_m.modes.terminalMode,
+      focusKind: route.instanceKind(route.getFocus()),
+    }, inst.slice);
     if (result === undefined) return false;
     if (Array.isArray(result)) {
       const [next, effects] = result;

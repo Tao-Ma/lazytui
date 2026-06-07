@@ -551,10 +551,14 @@ function _updateInner(msg, slice) {
       // T3b — write per-tab scroll so the position survives a tab
       // switch round-trip. slice.scroll still tracks the active tab's
       // value as a mirror (search/select/render still read it).
+      // v0.6.3 Phase D1 — slice.lines is finalizer-derived (set by
+      // _withDerivedFields after the previous Msg). When this arm
+      // runs, slice.lines already reflects the current displayed
+      // content. Read .length from there instead of re-calling
+      // pt.viewerLines (which would need getModel + infoFromFocus).
+      // Reducer pure of getModel().
       const innerH = _innerH(slice);
-      const m = getModel();
-      const displayed = pt.viewerLines(slice, m, m.currentGroup, { infoFromFocus: _infoFromFocus });
-      const maxScroll = Math.max(0, displayed.length - innerH);
+      const maxScroll = Math.max(0, (slice.lines || []).length - innerH);
       let next;
       if (msg.to === 'top') next = 0;
       else if (msg.to === 'bottom') next = maxScroll;
@@ -935,12 +939,14 @@ function _updateInner(msg, slice) {
     //     v / V                   toggle off
     //     escape                  cancel
     case 'key': {
-      const m = getModel();
-      if (instanceKind(getFocus()) !== 'detail' || m.modes.terminalMode) return slice;
-      // Higher-priority modes (menu/cmd/etc.) are filtered upstream by the
-      // modeChain in dispatch.handleKey; this guard is belt-and-suspenders.
-      if (m.modes.menuOpen || m.modes.cmdMode || m.modes.confirmMode ||
-          m.modes.promptMode || m.modes.copyMode) return slice;
+      // v0.6.3 Phase D1: dispatcher (panel/api.js#dispatchKeyToFocused)
+      // threads msg.focusKind + msg.terminalMode so the reducer stays
+      // pure. Higher-priority chain modes (menu/cmd/confirm/prompt/copy)
+      // are already filtered upstream by _dispatchActiveMode in
+      // dispatch.handleKey; this arm only ever runs when NO chain mode
+      // is active. terminalMode is non-chain (per modes.js) so it has
+      // to be checked here.
+      if (msg.focusKind !== 'detail' || msg.terminalMode) return slice;
 
       const active = !!(slice.select && slice.select.active);
       const claim = [{ type: '_claimed' }];
