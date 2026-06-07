@@ -952,6 +952,23 @@ function update(model, msg) {
       if (name === model.currentGroup) return [model, []];
       return [{ ...model, currentGroup: name }, []];
     }
+    // v0.6.3 Phase D3 — boot-time root writes routed through Msgs.
+    // loadConfig parses + dispatches set_config; initState dispatches
+    // set_register. Pre-D3 these were direct `m.config = ...` /
+    // `m.register = ...` writes in app/state.js (BLESSED outside-
+    // writers per docs/v0.5-layering.md §5). Now the reducer is the
+    // sole writer to root model.
+    case 'set_config': {
+      return [{
+        ...model,
+        config: msg.config,
+        projectDir: (msg.config && msg.config.project_dir) || '.',
+        configPath: msg.configPath || model.configPath,
+      }, []];
+    }
+    case 'set_register': {
+      return [{ ...model, register: msg.register }, []];
+    }
     case 'reset_group_context': {
       // Cross-layer Msg emitted by the groups Component on a group
       // switch — the ROOT chrome half of resetGroupContext (per-group

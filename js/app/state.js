@@ -80,10 +80,10 @@ function _layoutSlice() {
 // --- Config loading ---
 
 function loadConfig(configPath) {
-  const m = getModel();
   const ext = path.extname(configPath);
+  let config;
   if (ext === '.json') {
-    m.config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
   } else {
     // In-process JS parser — was an out-of-process `python -m parser`
     // call until the parser was rewritten in JS. Errors thrown by
@@ -91,10 +91,17 @@ function loadConfig(configPath) {
     // them propagate so tui.js's top-level handler prints them and
     // exits non-zero (mirrors the old "parser: <msg>" stderr line).
     const { parse } = require('../parser');
-    m.config = parse(path.resolve(configPath));
+    config = parse(path.resolve(configPath));
   }
-  m.projectDir = m.config.project_dir || '.';
-  m.configPath = path.resolve(configPath);
+  // v0.6.3 Phase D3 — route the root-model write through a Msg so
+  // the reducer is the sole writer to model.config / projectDir /
+  // configPath. Pre-D3 was direct `m.config = ...` (the BLESSED
+  // outside-writer per docs/v0.5-layering.md §5).
+  require('../dispatch/dispatch').applyMsg({
+    type: 'set_config',
+    config,
+    configPath: path.resolve(configPath),
+  });
 }
 
 // --- Layout initialization ---
@@ -134,8 +141,12 @@ function initState() {
   // Yank register — bounded history, system-clipboard mirror. Cap is
   // configurable via top-level `register: { cap: N }` in YAML; default
   // 100. Init deferred to here so cap reflects the parsed config.
-  // BLESSED outside-writer (docs/v0.5-layering.md §5).
-  getModel().register = require('../leaves/register').init(config.register || {});
+  // v0.6.3 Phase D3 — routed through set_register Msg so the reducer
+  // is the sole writer to root.register. Was a BLESSED outside-writer.
+  require('../dispatch/dispatch').applyMsg({
+    type: 'set_register',
+    register: require('../leaves/register').init(config.register || {}),
+  });
 
   // Soft-fail diagnostics from parse (today: column over soft cap).
   // Records one event-log entry per warning + seeds layout's bootWarnings

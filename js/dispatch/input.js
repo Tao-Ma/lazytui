@@ -300,11 +300,17 @@ function handleMouse(kind, x, y) {
         // + downstream reorderContent leaf all stay pure of getModel().
         // The reorder Cmd emitted by tab-drag spreads the bundle so
         // pane-tabs' reorderContent arm gets everything it needs.
+        // v0.6.3 Phase D4 — also thread the viewer's tabBounds so the
+        // layout reducer arm no longer cross-reads detail's slice.
         const pt = require('../leaves/pane-tabs');
         const groupName = model.currentGroup;
+        const targetKind = require('../leaves/route').resolveTarget('viewer') || 'detail';
+        const detailSlice = getInstanceSlice(targetKind);
+        const tabBounds = detailSlice && Array.isArray(detailSlice.tabBounds) ? detailSlice.tabBounds : null;
         dispatchMsg(wrap('layout', {
           type: 'tab_drag_motion', mx, my,
           modelBundle: pt.modelBundle(model, groupName),
+          tabBounds,
         }));
       } else if (kind === 'release') {
         dispatchMsg(wrap('layout', { type: 'tab_drag_release' }));

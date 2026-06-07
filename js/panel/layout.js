@@ -667,18 +667,14 @@ function update(msg, slice) {
       // without the leaf needing a route import.
       const targetKind = route.resolveTarget('viewer') || route.VIEWER_KIND;
       // v0.6.3 P4.1: tabBounds moved off layoutSlice.panelBounds.detail.tabs
-      // onto the viewer's own slice. Resolve both here and thread them
-      // into the pure leaf as separate args.
-      const detailSlice = getInstanceSlice(targetKind);
-      const tabBounds = detailSlice && Array.isArray(detailSlice.tabBounds) ? detailSlice.tabBounds : null;
-      // Pure reducer — msg carries the precomputed modelBundle
-      // (currentGroup + facts the downstream reorderContent leaf
-      // needs). The dispatcher (dispatch/input.js tab-drag handler)
-      // reads model once and threads it.
+      // onto the viewer's own slice.
+      // v0.6.3 Phase D4 — tabBounds threaded via msg.tabBounds from
+      // the input.js tab-drag dispatcher (which has the slice in
+      // scope). Reducer no longer cross-reads detail's slice.
       return mtabDrag.tabDragMotion(
         slice, msg.mx, msg.my,
         require('../render/layout').boundsFor('detail'),
-        tabBounds,
+        msg.tabBounds || null,
         msg.modelBundle,
         targetKind,
       );

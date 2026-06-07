@@ -56,6 +56,21 @@ const WALK_LIMIT = 10;
 function _files()      { const c = getModel().config; return (c && c.files) || []; }
 function _projectDir() { return getModel().projectDir || '.'; }
 
+// v0.6.3 Phase D1 — config-status reads root model in three places:
+//   _files()      — config.files for buildItems
+//   _projectDir() — projectDir for computeStatus / diffFor
+//   _resolveBranch() — reads layout slice for its own pool-entry config
+//
+// Fully threading these would require either:
+//   (a) a per-Component keyMsgExtras(model) dispatcher hook
+//   (b) materializing config.files + projectDir + branch into this
+//       Component's own slice at init / on config_changed Msg
+//
+// (b) is the cleanest fit but config_changed isn't a Msg yet (config
+// is direct-written at boot per app/state.js — Phase D3 target).
+// Once D3 routes config writes through Msgs, this Component can
+// subscribe and stash files+projectDir+branch on its slice; arms
+// read slice. For now, the reads stay as a documented v0.7 cleanup.
 /** Resolve the branch from the config-status panel's `config.branch`. */
 function _resolveBranch() {
   const slice = getInstanceSlice('layout');

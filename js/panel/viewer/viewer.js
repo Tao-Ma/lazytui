@@ -1040,15 +1040,17 @@ function detailTitle(slice) {
   // v0.6.3 P4.1 (was N3 from [[v062-shipped]]): tab-bar hit-test cache
   // moved from `layoutSlice.panelBounds.detail.tabs` to the viewer's
   // own slice. Same view-output exception, but now writing OUR slice
-  // instead of layout's — single-writer-per-slice holds, and
-  // boundsFor()'s tabs-merge transitional code retires.
+  // instead of layout's — single-writer-per-slice holds.
   //
-  // The write is idempotent (same input arrange + tabs → same
-  // tabBounds), so PRINCIPLES §11 (render idempotence) holds. The
-  // alternative — routing tabBounds through a Msg per frame — would
-  // be ceremony for no gain since tabBounds is a pure derivation of
-  // the viewer's tab strip + the pane's geometry.
-  slice.tabBounds = built ? built.tabBounds : [];
+  // v0.6.3 Phase D5 — was an in-place mutation (`slice.tabBounds = …`).
+  // Other render-side slice writes use immutable spread via
+  // `route.setInstanceSlice`, so this gets the same treatment. The
+  // write is idempotent (same arrange + tabs → same tabBounds), so
+  // PRINCIPLES §11 (render idempotence) holds either way; immutable
+  // shape matches the rest of the codebase.
+  const nextTabBounds = built ? built.tabBounds : [];
+  const route = require('../../leaves/route');
+  route.setInstanceSlice('detail', { ...slice, tabBounds: nextTabBounds });
   return built ? built.title : 'Detail';
 }
 
