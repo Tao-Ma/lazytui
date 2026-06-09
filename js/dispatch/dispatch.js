@@ -21,7 +21,7 @@
  */
 'use strict';
 
-const { allPanels, getSel } = require('../app/state');
+const { allPanels, getSel, switchGroupsTab } = require('../app/state');
 const { render } = require('../render/layout');
 const { getPanelDef, getItems, idOf, getInstanceSlice,
        getComponentOwningPanel, dispatchMsg, dispatchKeyToFocused, wrap, getFocus,
@@ -92,7 +92,12 @@ function toggleMultiSelOnFocused() {
   // Component is the single writer for its own multiSel Set.
   const compName = getComponentOwningPanel(focus);
   if (!compName) return;
-  dispatchMsg(wrap(compName, { type: 'multisel_toggle', panel: focus, id: idOf(focus, item) }));
+  // v0.6.3 post-arch-arc — `focus` is a paneId; nav.apply's multi-panel
+  // branch indexes slice.nav by panel-type. Translate so the files /
+  // file-browser Components find their entry. Mirrors runtime.js arms
+  // (escape / list_select / nav_select).
+  const panelType = route.paneTypeOf(focus) || focus;
+  dispatchMsg(wrap(compName, { type: 'multisel_toggle', panel: panelType, id: idOf(focus, item) }));
 }
 
 /**
@@ -120,7 +125,9 @@ function selectAllVisible() {
   const ids = items.map(item => idOf(focus, item));
   const compName = getComponentOwningPanel(focus);
   if (!compName) return;
-  dispatchMsg(wrap(compName, { type: 'multisel_select_all', panel: focus, ids }));
+  // Translate paneId → panel-type (see toggleMultiSelOnFocused).
+  const panelType = route.paneTypeOf(focus) || focus;
+  dispatchMsg(wrap(compName, { type: 'multisel_select_all', panel: panelType, ids }));
 }
 
 /**
@@ -159,11 +166,17 @@ function handleMenuKey(key, seq) {
  * false) when the focused panel isn't filterable.
  */
 function _enterFilterMode() {
-  const def = getPanelDef(getFocus());
+  const focus = getFocus();
+  const def = getPanelDef(focus);
   if (!def || !def.filterable) return false;
+  // v0.6.3 post-arch-arc — seed modal.filter.panel as a panel-type so the
+  // downstream filter_key / filter_exit arms (which thread msg.panel to
+  // wrap(comp, set_cursor/set_filter/clear_filter)) reach nav.apply's
+  // multi-panel branch correctly. getFocus() returns a paneId post-Phase-B1.
   // Phase 4c — committed filter text lives on the panel's nav slice;
   // `filter.getFilter()` resolves it via the helper.
-  applyMsg({ type: 'filter_enter', panel: getFocus(), text: require('../panel/api').getFilter(getFocus()) });
+  const panelType = route.paneTypeOf(focus) || focus;
+  applyMsg({ type: 'filter_enter', panel: panelType, text: require('../panel/api').getFilter(focus) });
   return true;
 }
 
@@ -436,8 +449,11 @@ function handleNormalKey(key, seq) {
   // behavior for users hitting [ / ] from any other panel.
   if ((key === '[' || key === ']') && instanceKind(getFocus()) === 'groups' && _groupsHasQuick()) {
     // toggle_groups_tab moved to groups.update in Phase C — route via
-    // the Component fan-out, not the root reducer.
-    dispatchMsg(wrap('groups', { type: 'toggle_groups_tab' }));
+    // the Component fan-out, not the root reducer. state.switchGroupsTab
+    // threads the groupsBundle ctx that the reducer arm reads (without
+    // it, _msgCtx defaults to an empty groups map → recomputeList
+    // returns [] → cursor falls to idx 0 / currentGroup '').
+    switchGroupsTab();
     return;
   }
   switch (key) {

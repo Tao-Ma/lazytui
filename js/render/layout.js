@@ -1142,7 +1142,10 @@ function footerKeys(model) {
   }
   if (md.menuOpen)   return ' ↑↓ select | Esc close | Enter run';
 
-  if (instanceKind(getFocus()) === 'detail') {
+  // Hoist the resolver once — each instanceKind() can walk arrange for
+  // docker-style focus. Was called 3× sequentially below.
+  const focusKind = instanceKind(getFocus());
+  if (focusKind === 'detail') {
     const { total } = getTabInfo();
     const segs = ['←→ panel'];
     if (total > 1) segs.push(']\\[ tabs');
@@ -1165,10 +1168,10 @@ function footerKeys(model) {
     }
     return ' ' + segs.join(' | ');
   }
-  if (instanceKind(getFocus()) === 'actions') {
+  if (focusKind === 'actions') {
     return ' ↑↓ select | ←→ panel | / filter | +/_ view | x menu | q quit | Enter run';
   }
-  if (instanceKind(getFocus()) === 'groups') {
+  if (focusKind === 'groups') {
     return ' ↑↓ select | ←→ panel | / filter | +/_ view | x menu | q quit | Enter actions';
   }
   return ' ↑↓ select | ←→ panel | / filter | +/_ view | x menu | q quit';
@@ -1186,11 +1189,14 @@ function renderFooter(model = getModel()) {
   // Left side: mode message OR (panel hints + plugin keyHints +
   // multi-select indicator + footer:left decorator). Modal footers
   // own the row — no plugin contributions appended.
+  // Hoist focus + def once — used here and again at the list-select tag
+  // below. Each getPanelDef() can walk arrange for docker-style focus.
+  const focus = getFocus();
+  const focusDef = getPanelDef(focus);
   let keys = footerKeys(model);
   if (!inModal) {
-    const def = getPanelDef(getFocus());
-    if (def && def.keyHints) keys += ` | ${esc(def.keyHints)}`;
-    const msCount = multiSelCount(getFocus());
+    if (focusDef && focusDef.keyHints) keys += ` | ${esc(focusDef.keyHints)}`;
+    const msCount = multiSelCount(focus);
     if (msCount > 0) keys += ` | ${esc(`[${msCount} sel]`)}`;
     // Surface layout-dirty state to non-modal users too. They might
     // have left free-config mode with pending changes; the indicator
@@ -1245,7 +1251,7 @@ function renderFooter(model = getModel()) {
   // List-select tag only when the armed mode actually applies — i.e.
   // focus is on a list panel. (The flag can stay armed while focus is
   // on a non-list panel, where space falls back to the leader.)
-  const focusDef = getPanelDef(getFocus());
+  // focusDef hoisted at the top of this function.
   const selectActive = model.modes.listSelectMode && focusDef && typeof focusDef.getItems === 'function';
   const sel = getInstanceSlice(require('../leaves/route').resolveTarget('viewer') || 'detail')?.select;
   const selectTag = (sel && sel.active)

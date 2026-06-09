@@ -31,6 +31,31 @@ function registerPanelOwner(panelType, componentName) {
   _panelOwner[panelType] = componentName;
 }
 
+/** Walk the layout's arrange for a pane whose paneId matches `id`, and
+ *  return its panel-type. This is the "arm 3" shared by the three
+ *  resolvers below — docker-style `panelTypes` Components don't get
+ *  per-pane instances minted by state.js B1, so their panes are only
+ *  reachable through the arrange. Returns null when nothing resolves.
+ *
+ *  v0.6.3 post-arch-arc consolidation — was duplicated three times,
+ *  once per public resolver. Pre-consolidation, fixes to the walk had
+ *  to land in each copy (e.g. commits 9bafd04 / 633acde / 009b946 /
+ *  4ee00b7 each touched one resolver).
+ *
+ *  Pool-id → Component-name registry — instanceKind(non-default-pool-id)
+ *  returning null is a v0.7 fixup per docs/v0.6.3.md §"Out of scope". */
+function _typeByArrangePaneId(id) {
+  const layoutInst = _instances[_primaryByKind['layout']];
+  const arrange = layoutInst && layoutInst.slice && layoutInst.slice.arrange;
+  if (!arrange || !Array.isArray(arrange.columns)) return null;
+  for (const col of arrange.columns) {
+    for (const p of (col.panels || [])) {
+      if (p && p.paneId === id && _panelOwner[p.type]) return p.type;
+    }
+  }
+  return null;
+}
+
 function componentForPanel(id) {
   // v0.6.3 post-arch-arc T3.5 — accepts paneId or panel-type. Direct
   // panel-type lookup first (production registrations); paneId input
@@ -44,19 +69,10 @@ function componentForPanel(id) {
     const ownerByKind = _panelOwner[inst.kind];
     if (ownerByKind) return ownerByKind;
   }
-  // Docker-style `panelTypes` Components don't get per-pane instances
-  // minted by state.js B1 (the pane's `type` differs from the
-  // Component's `name`, so `components[type]` misses). Their panes
-  // still have paneIds in the arrange; resolve via the layout slice.
-  const layoutInst = _instances[_primaryByKind['layout']];
-  const arrange = layoutInst && layoutInst.slice && layoutInst.slice.arrange;
-  if (!arrange || !Array.isArray(arrange.columns)) return undefined;
-  for (const col of arrange.columns) {
-    for (const p of (col.panels || [])) {
-      if (p && p.paneId === id) return _panelOwner[p.type];
-    }
-  }
-  return undefined;
+  // Docker-style `panelTypes` Components: paneId in arrange but no
+  // per-pane instance.
+  const arrangeType = _typeByArrangePaneId(id);
+  return arrangeType ? _panelOwner[arrangeType] : undefined;
 }
 
 /** Strict panel-type lookup — true iff `id` is a registered panel-type
@@ -75,15 +91,7 @@ function paneTypeOf(id) {
   const inst = _instances[id];
   if (inst && _panelOwner[inst.kind]) return inst.kind;
   // Docker-style: paneId in arrange but no per-pane instance minted.
-  const layoutInst = _instances[_primaryByKind['layout']];
-  const arrange = layoutInst && layoutInst.slice && layoutInst.slice.arrange;
-  if (!arrange || !Array.isArray(arrange.columns)) return null;
-  for (const col of arrange.columns) {
-    for (const p of (col.panels || [])) {
-      if (p && p.paneId === id && _panelOwner[p.type]) return p.type;
-    }
-  }
-  return null;
+  return _typeByArrangePaneId(id);
 }
 
 // --- Instance-keyed slice store ----------------------------------------
@@ -214,15 +222,7 @@ function instanceKind(id) {
   const inst = _instances[id];
   if (inst) return inst.kind;
   if (_panelOwner[id]) return id;
-  const layoutInst = _instances[_primaryByKind['layout']];
-  const arrange = layoutInst && layoutInst.slice && layoutInst.slice.arrange;
-  if (!arrange || !Array.isArray(arrange.columns)) return null;
-  for (const col of arrange.columns) {
-    for (const p of (col.panels || [])) {
-      if (p && p.paneId === id && _panelOwner[p.type]) return p.type;
-    }
-  }
-  return null;
+  return _typeByArrangePaneId(id);
 }
 
 /** Iterate all instances. Order is insertion order. Used by the broadcast

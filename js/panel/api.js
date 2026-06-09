@@ -523,12 +523,18 @@ function getPanelDef(id) {
   // docker-style `panelTypes` Components whose panes don't get
   // per-pane instances). Result is the panel-type key for
   // `comp.panelTypes`.
-  const compName = route.componentForPanel(id);
+  //
+  // Resolve panelType FIRST, then look up the Component by panel-type —
+  // that hits `_panelOwner`'s direct map (arm 1) and skips a second
+  // arrange walk. Pre-consolidation this called both componentForPanel
+  // AND paneTypeOf with the same paneId input, walking the arrange twice.
+  const panelType = route.paneTypeOf(id);
+  if (!panelType) return null;
+  const compName = route.componentForPanel(panelType);
   if (!compName) return null;
   const comp = components[compName];
   if (!comp || !comp.panelTypes) return null;
-  const panelType = route.paneTypeOf(id);
-  return panelType ? comp.panelTypes[panelType] : null;
+  return comp.panelTypes[panelType] || null;
 }
 
 /**
