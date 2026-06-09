@@ -255,11 +255,10 @@ const mnav = require('../leaves/nav');
 // entry); multi-panel Components (docker) need the type form to
 // find the right nav[panelType] entry.
 function _resolvePanelType(id) {
-  const route = require('../leaves/route');
-  // Direct panel-type? Return as-is. Otherwise translate via the
-  // instance store (paneId → kind).
-  if (route.isPanelType(id)) return id;
-  return route.instanceKind(id) || id;
+  // Delegates to route.paneTypeOf — accepts paneId or panel-type and
+  // returns the panel-type form. Single canonical resolver across
+  // the codebase.
+  return require('../leaves/route').paneTypeOf(id) || id;
 }
 
 function _navEntry(id) {

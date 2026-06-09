@@ -353,8 +353,10 @@ function update(model, msg) {
       // as-is). Translate to the panel-type form before fanning out
       // — set_cursor's downstream nav.entryOf indexes by panel-type
       // for multi-panel Components, and the kind comparison below
-      // expects the type name.
-      const kindForNav = route.instanceKind(panelType) || panelType;
+      // expects the type name. `paneTypeOf` is the canonical
+      // resolver (handles docker-style panes that have no per-pane
+      // instance via arrange walk).
+      const kindForNav = route.paneTypeOf(panelType) || panelType;
       const cmds = [
         { type: 'msg', msg: route.wrap(compName, { type: 'set_cursor', panel: kindForNav, index }) },
         { type: 'show_selected_info' },

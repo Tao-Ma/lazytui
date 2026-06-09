@@ -497,19 +497,18 @@ function statusFor(name) {
  * @returns {object|null} { mode, render, getItems, getInfo, ... }
  */
 function getPanelDef(id) {
-  // v0.6.3 post-arch-arc T3.5 — accepts paneId or panel-type. Direct
-  // panelTypes[type] lookup first; paneId input resolves via
-  // `route.instanceKind` → panel-type. The two inputs are both
-  // first-class (focused-pane consumers have paneId, render-side
-  // type-keyed consumers have panel-type); not a "tolerant fallback"
-  // but the canonical dual-input shape.
+  // v0.6.3 post-arch-arc T3.5 — accepts paneId or panel-type.
+  // `route.paneTypeOf` does the canonical resolution (direct panel-
+  // type, paneId via instance.kind, or paneId via arrange walk for
+  // docker-style `panelTypes` Components whose panes don't get
+  // per-pane instances). Result is the panel-type key for
+  // `comp.panelTypes`.
   const compName = route.componentForPanel(id);
   if (!compName) return null;
   const comp = components[compName];
   if (!comp || !comp.panelTypes) return null;
-  if (comp.panelTypes[id]) return comp.panelTypes[id];
-  const kind = route.instanceKind(id);
-  return kind && comp.panelTypes[kind] ? comp.panelTypes[kind] : null;
+  const panelType = route.paneTypeOf(id);
+  return panelType ? comp.panelTypes[panelType] : null;
 }
 
 /**

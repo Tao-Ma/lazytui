@@ -40,7 +40,23 @@ function componentForPanel(id) {
   const direct = _panelOwner[id];
   if (direct) return direct;
   const inst = _instances[id];
-  return inst ? _panelOwner[inst.kind] : undefined;
+  if (inst) {
+    const ownerByKind = _panelOwner[inst.kind];
+    if (ownerByKind) return ownerByKind;
+  }
+  // Docker-style `panelTypes` Components don't get per-pane instances
+  // minted by state.js B1 (the pane's `type` differs from the
+  // Component's `name`, so `components[type]` misses). Their panes
+  // still have paneIds in the arrange; resolve via the layout slice.
+  const layoutInst = _instances[_primaryByKind['layout']];
+  const arrange = layoutInst && layoutInst.slice && layoutInst.slice.arrange;
+  if (!arrange || !Array.isArray(arrange.columns)) return undefined;
+  for (const col of arrange.columns) {
+    for (const p of (col.panels || [])) {
+      if (p && p.paneId === id) return _panelOwner[p.type];
+    }
+  }
+  return undefined;
 }
 
 /** Strict panel-type lookup — true iff `id` is a registered panel-type
@@ -48,6 +64,27 @@ function componentForPanel(id) {
  *  distinguish "the caller gave me a type" from "the caller gave me
  *  a paneId" — both `componentForPanel` arms succeed for both forms. */
 function isPanelType(id) { return _panelOwner[id] !== undefined; }
+
+/** Resolve `id` to its panel-type form. Accepts paneId or panel-type;
+ *  returns the panel-type string (the key under `comp.panelTypes` and
+ *  the form mnav.entryOf uses for multi-panel Components). Used by
+ *  `getPanelDef` and `_resolvePanelType` to get from
+ *  paneId-or-type → panel-type. Returns null when nothing resolves. */
+function paneTypeOf(id) {
+  if (_panelOwner[id]) return id;
+  const inst = _instances[id];
+  if (inst && _panelOwner[inst.kind]) return inst.kind;
+  // Docker-style: paneId in arrange but no per-pane instance minted.
+  const layoutInst = _instances[_primaryByKind['layout']];
+  const arrange = layoutInst && layoutInst.slice && layoutInst.slice.arrange;
+  if (!arrange || !Array.isArray(arrange.columns)) return null;
+  for (const col of arrange.columns) {
+    for (const p of (col.panels || [])) {
+      if (p && p.paneId === id && _panelOwner[p.type]) return p.type;
+    }
+  }
+  return null;
+}
 
 // --- Instance-keyed slice store ----------------------------------------
 //
@@ -272,7 +309,7 @@ function resolveTarget(intent, ctx) {
 
 module.exports = {
   wrap,
-  registerPanelOwner, componentForPanel, isPanelType,
+  registerPanelOwner, componentForPanel, isPanelType, paneTypeOf,
   getFocus,
   setInstance, getInstance, getInstanceSlice, setInstanceSlice,
   hasInstance, disposeInstance, instanceKind, eachInstance,
