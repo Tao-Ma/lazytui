@@ -304,7 +304,10 @@ function update(msg, slice) {
 }
 
 function _handleKey(msg, slice) {
-  if (instanceKind(getFocus()) !== 'docker') return slice;
+  // v0.6.3 post-arch-arc — instanceKind returns the panel-type
+  // ('containers'), not the Component name ('docker'). Sibling
+  // of the same fix at line 460.
+  if (instanceKind(getFocus()) !== 'containers') return slice;
   const item = _getItems(slice)[getSel('containers')];
   if (!item) return slice;
   if (msg.key === 'i') return [slice, [{ type: 'dockerExec', mode: 'inspect', item }]];

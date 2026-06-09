@@ -287,7 +287,9 @@ function handleAction(action, arg) {
       // the no-op skip the wrapped Msg entirely).
       const focus = getFocus();
       if (!focus || instanceKind(focus) === 'detail') break;
-      const p = allPanels().find(x => x.type === focus);
+      // v0.6.3 post-arch-arc — focus is paneId; pane.type is panel-type.
+      // Use the tolerant comparator so the find works for either form.
+      const p = allPanels().find(x => mpane.paneMatchesFocus(x, focus));
       if (!p) break;
       dispatchMsg(wrap('layout', { type: 'panel_collapse_toggle', id: p.id }));
       break;

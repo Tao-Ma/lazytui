@@ -247,8 +247,13 @@ function _frameworkDynamicCommands(m) {
     const focus = layoutSlice.focus;
     if (focus) {
       const all = mpool.allPanesInColumns(arrange);
+      // v0.6.3 post-arch-arc — focus is paneId post-T3.5. Match the
+      // owning pane via paneId first; legacy form (tab id / pool id)
+      // kept for any pre-migration caller that hands `focus` in raw.
+      const mpane = require('../leaves/pane');
       const focusedPane = all.find(p =>
-        (p.tabs && p.tabs.some(t => t.id === focus)) || p.id === focus
+        mpane.paneMatchesFocus(p, focus)
+        || (p.tabs && p.tabs.some(t => t.id === focus))
       );
       if (focusedPane && focusedPane.tabs && focusedPane.tabs.length > 1) {
         for (const t of focusedPane.tabs) {

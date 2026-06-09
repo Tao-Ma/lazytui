@@ -41,7 +41,10 @@ function getFilter(panelType) {
   if (m.modes.filterMode && m.modal.filter.panel === panelType) return m.modal.filter.text;
   const compName = route.componentForPanel(panelType);
   if (!compName) return '';
-  const entry = mnav.entryOf(route.getInstanceSlice(compName), panelType);
+  // v0.6.3 post-arch-arc — accepts paneId or panel-type; mnav indexes
+  // by panel-type for multi-panel Components (files: { files, file-browser }).
+  const typeKey = route.paneTypeOf(panelType) || panelType;
+  const entry = mnav.entryOf(route.getInstanceSlice(compName), typeKey);
   return (entry && entry.filter) || '';
 }
 
@@ -550,7 +553,10 @@ function getItems(panelType) {
   if (!def.filterable) return raw;
   if (def.customFilter) return raw;
   const mnav = require('../leaves/nav');
-  const navEntry = mnav.entryOf(getInstanceSlice(compName), panelType);
+  // v0.6.3 post-arch-arc — translate paneId → panel-type for the
+  // nav lookup (multi-panel files Component keys slice.nav by type).
+  const typeKey = route.paneTypeOf(panelType) || panelType;
+  const navEntry = mnav.entryOf(getInstanceSlice(compName), typeKey);
   const filterText = (navEntry && navEntry.filter) || '';
   if (!filterText) return raw;
   const lc = filterText.toLowerCase();

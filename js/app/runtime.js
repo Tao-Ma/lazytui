@@ -277,14 +277,20 @@ function update(model, msg) {
       // Navigator's update (each panel owns its own Set).
       const focus = route.getFocus();
       const compName = route.componentForPanel(focus);
-      const entry = compName ? mnav.entryOf(route.getInstanceSlice(compName), focus) : null;
+      // v0.6.3 post-arch-arc — focus is paneId; mnav indexes by
+      // panel-type. Translate via paneTypeOf for the entry lookup
+      // AND for the downstream Msg payload (each Component's
+      // set_cursor / multisel_clear arms index slice.nav by
+      // panel-type for multi-panel Components like files).
+      const panelType = route.paneTypeOf(focus) || focus;
+      const entry = compName ? mnav.entryOf(route.getInstanceSlice(compName), panelType) : null;
       const had = !!(entry && entry.multiSel && entry.multiSel.size > 0);
       if (model.modes.listSelectMode) {
         const next = _withModes(model, { listSelectMode: false });
-        if (compName) return [next, [{ type: 'msg', msg: route.wrap(compName, { type: 'multisel_clear', panel: focus }) }]];
+        if (compName) return [next, [{ type: 'msg', msg: route.wrap(compName, { type: 'multisel_clear', panel: panelType }) }]];
         return [next, []];
       } else if (had) {
-        return [model, [{ type: 'msg', msg: route.wrap(compName, { type: 'multisel_clear', panel: focus }) }]];
+        return [model, [{ type: 'msg', msg: route.wrap(compName, { type: 'multisel_clear', panel: panelType }) }]];
       }
       return [model, []];
     }
@@ -299,7 +305,8 @@ function update(model, msg) {
       const next = _withModes(model, { listSelectMode: nextOn });
       if (!nextOn) {
         const compName = route.componentForPanel(focus);
-        if (compName) return [next, [{ type: 'msg', msg: route.wrap(compName, { type: 'multisel_clear', panel: focus }) }]];
+        const panelType = route.paneTypeOf(focus) || focus;
+        if (compName) return [next, [{ type: 'msg', msg: route.wrap(compName, { type: 'multisel_clear', panel: panelType }) }]];
       }
       return [next, []];
     }

@@ -195,17 +195,25 @@ function disposeInstance(id) {
  *  panelType='containers') the fallback resolves 'containers' to
  *  'docker' so kind comparisons see the Component identity
  *  consistently. Returns null when neither lookup succeeds. */
+/** Returns the panel-type for `id` (paneId, panel-type, or registered
+ *  Component-name). Three arms, all returning the SAME space (panel-
+ *  type, NOT Component name) — the post-arch-arc convention:
+ *
+ *  - arm 1 (per-pane instance): `inst.kind` = `p.type` (B1 mint
+ *    stored panel-type there).
+ *  - arm 2 (registered panel-type): `id` itself (caller already
+ *    passed a panel-type literal).
+ *  - arm 3 (arrange walk for docker-style panes B1 skipped):
+ *    `p.type` from the matching pane.
+ *
+ *  Callers compare against the panel-type literal (`'containers'`,
+ *  `'groups'`, etc.), NOT the Component name (`'docker'`). For most
+ *  Components the two collapse (Component name == panel-type for
+ *  singleton kinds); for docker they differ — see docker.js#render. */
 function instanceKind(id) {
   const inst = _instances[id];
   if (inst) return inst.kind;
-  const compName = _panelOwner[id];
-  if (compName) return compName;
-  // v0.6.3 post-arch-arc — paneId for a docker-style `panelTypes`
-  // Component whose per-pane instance was skipped by B1 mint
-  // (components[p.type] miss). Walk the layout arrange to recover
-  // the panel-type; same shape as `componentForPanel` /
-  // `paneTypeOf`. Without this, render-side `instanceKind(getFocus())`
-  // returns null for docker panes → focus highlight never paints.
+  if (_panelOwner[id]) return id;
   const layoutInst = _instances[_primaryByKind['layout']];
   const arrange = layoutInst && layoutInst.slice && layoutInst.slice.arrange;
   if (!arrange || !Array.isArray(arrange.columns)) return null;
