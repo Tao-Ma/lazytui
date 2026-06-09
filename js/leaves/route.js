@@ -200,6 +200,20 @@ function instanceKind(id) {
   if (inst) return inst.kind;
   const compName = _panelOwner[id];
   if (compName) return compName;
+  // v0.6.3 post-arch-arc — paneId for a docker-style `panelTypes`
+  // Component whose per-pane instance was skipped by B1 mint
+  // (components[p.type] miss). Walk the layout arrange to recover
+  // the panel-type; same shape as `componentForPanel` /
+  // `paneTypeOf`. Without this, render-side `instanceKind(getFocus())`
+  // returns null for docker panes → focus highlight never paints.
+  const layoutInst = _instances[_primaryByKind['layout']];
+  const arrange = layoutInst && layoutInst.slice && layoutInst.slice.arrange;
+  if (!arrange || !Array.isArray(arrange.columns)) return null;
+  for (const col of arrange.columns) {
+    for (const p of (col.panels || [])) {
+      if (p && p.paneId === id && _panelOwner[p.type]) return p.type;
+    }
+  }
   return null;
 }
 
