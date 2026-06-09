@@ -351,14 +351,31 @@ function dispatchMsg(msg) {
   // to also carry `kind` / `msg` properties.
   if (msg && typeof msg.kind === 'string' && msg.msg !== undefined && msg.type === undefined) {
     const kind = msg.kind;
-    const comp = components[kind];
-    if (!comp) {
+    // v0.6.3 post-arch-arc — `kind` may be a Component name (legacy
+    // form, primary-instance routing) OR a paneId (post-B3 form,
+    // resolveTarget returns paneIds for multi-instance routing).
+    // Try paneId lookup first — if an instance exists with this id,
+    // route to it directly. Otherwise treat as a Component name and
+    // route to the primary instance.
+    let inst = route.getInstance(kind);
+    let comp;
+    if (inst) {
+      // paneId form. Find the Component for this instance's kind —
+      // either by direct Component-name match, or via the panel-type
+      // → Component-name table (docker-style `panelTypes` Components).
+      comp = components[inst.kind] || components[route.componentForPanel(inst.kind)];
+    } else {
+      // Component-name form. Look up via _primaryByKind for the
+      // canonical instance.
+      comp = components[kind];
+      const id = comp ? route.getPrimaryByKind(kind) : undefined;
+      if (id !== undefined) inst = route.getInstance(id);
+    }
+    if (!comp || !inst) {
       console.error(`[dispatch] wrapped Msg targeting unknown Component '${kind}'; dropped`);
       return;
     }
-    const id = route.getPrimaryByKind(kind);
-    if (id === undefined) return;  // registered but no instance — defensive
-    _runInstance(route.getInstance(id), comp, msg.msg);
+    _runInstance(inst, comp, msg.msg);
     return;
   }
   // Broadcast path. Only the 3 framework signals fan out; everything
