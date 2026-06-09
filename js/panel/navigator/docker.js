@@ -452,7 +452,12 @@ function render(panel, width, height, _slice, opts) {
   if (!group) return '';
   const containers = apiGetItems('containers');
   const sel = getSel('containers');
-  const isFocused = instanceKind(getFocus()) === 'docker';
+  // v0.6.3 post-arch-arc — `instanceKind(getFocus())` returns the
+  // panel-TYPE ('containers'), not the Component NAME ('docker').
+  // The B1 mint stores `kind = p.type`; the arrange-walk fallback
+  // for docker panes also returns `p.type`. Compare against the
+  // panel-type that this render function serves.
+  const isFocused = instanceKind(getFocus()) === 'containers';
   const t = theme();
   const lines = containers.map((name, i) => {
     const isSel = i === sel && isFocused;
