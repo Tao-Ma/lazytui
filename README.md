@@ -219,8 +219,9 @@ for "the same thing but headless."
 
 - **Renderer + parser**: Node.js. Runtime npm deps: `node-pty` and
   `@xterm/headless` for embedded PTY tabs, `js-yaml` for config parsing.
-- **Tests**: JS smoke suites under `js/test/` (80 files), plus a
-  live integration harness under `test/`. See [docs/TESTING.md](docs/TESTING.md).
+- **Tests**: JS unit suites under `js/test/` (81 files), an opt-in
+  pre-release smoke harness under `js/test/smoke/` (5 scenarios), and
+  a live integration harness under `test/`. See [docs/TESTING.md](docs/TESTING.md).
 - **Two worked demos** at the time of initial public release; both ship
   with the human-authored intent (`.agent-prompt.md`) checked in so the
   loop is reproducible by another agent.

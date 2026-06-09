@@ -4,7 +4,7 @@ All notable changes to lazytui are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning
 follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
-## [0.6.3] — 2026-06-07
+## [0.6.3] — 2026-06-10
 
 ### Architecture (deep arch arc, 2026-06-07)
 - **Phase D — TEA completion.** 16 `getModel()` reads in
@@ -157,6 +157,99 @@ Track-3 hygiene items: [docs/v0.6.3-arch.md](docs/v0.6.3-arch.md).
   is a no-op (cursor / scroll preserved). `set_arrange` now emits
   `mode_clear` when it defensively clears `slice.paneSelect`,
   keeping the flag / slice pair consistent.
+
+### Fixed (post-arch-arc tag-prep, 2026-06-08 → 10)
+
+Adversarial smoke + code-review pass on top of the arch-arc closure
+caught a class of paneId / panel-type comparator drift the audit
+hadn't reached.
+
+- **`[x]` tab close — hit-zone offset + stale content.** Two bugs
+  in the postgres demo's file-tab flow: clicking `[x]` did nothing
+  (hit-rect 3 cells left of the painted glyph because
+  `buildTabStrip` didn't account for renderPanel's `[≡]` trigger
+  injection between hotkey and title), and closing a tab left the
+  file's content visible (the Info-fallback `viewerLines` re-served
+  the closed tab's `slice.lines`; `removeContent` now clears
+  `slice.lines` when the active tab was closed AND fallback is to
+  Info).
+- **Six paneId / panel-type comparator mismatches.** Post-Phase-B3
+  `getFocus()` returns a paneId; six sites still compared against
+  type literals (`=== 'detail'`, `=== 'containers'`, etc.) and
+  silently disagreed. Sites: docker render (uses `instanceKind` for
+  the panel-type compare), wheel-on-focused (uses
+  `paneMatchesFocus`), files focus highlight, `getPanelViewportH`
+  half/full-view bump, help-overlay title resolution,
+  `_renderFor`'s focused-pane border. The audit-fix arc realigned
+  all six and instance lookups (`instanceKind` now walks the
+  arrange to resolve docker-style paneIds whose Component name
+  differs from their panel-type).
+- **`dispatchMsg` accepts paneId target.** `wrap(target, msg)` with
+  a paneId in target no longer triggers "unknown Component" + chain
+  break; the dispatcher resolves through `componentForPanel` /
+  `route.resolveTarget`.
+- **Boot default focus.** `set_arrange` no longer races with the
+  initial focus seed; first-paint focus honors the `groups` default
+  instead of falling through to the last-mounted pane.
+- **Framework API helpers accept paneId.** `getFilter`, `getItems`,
+  `getPanelDef` consume paneId-form input via `route.paneTypeOf`;
+  pre-fix, paneId input silently returned the panel's default for
+  multi-panel Components (`files` / `file-browser`).
+- **Strict T3.5 paneId migration + audit.** `panel/layout.js`,
+  `panel/viewer/viewer.js`, and `app/state.js` lookups that survived
+  Phase B / C / D switched from kind-name singleton convention to
+  paneId-keyed instance store. A systematic 3-agent audit found 6
+  more sibling paneId / type comparator drifts (docker / files /
+  actions / runtime / api / commands) and fixed them in one batch.
+- **Multisel + filter wrapped Msgs route to the right nav entry.**
+  `dispatch.js` `toggleMultiSelOnFocused` (Space-toggle row in
+  list-select), `selectAllVisible` (`*` shortcut), and
+  `_enterFilterMode` (`/`-filter) wrapped Msgs to the Component
+  with `panel: getFocus()` (paneId). The files Component is
+  multi-panel — `nav.apply`'s entry lookup indexes `slice.nav` by
+  panel-type, so paneId input silently dropped. All three call
+  sites now translate via `route.paneTypeOf` (mirrors the existing
+  pattern in `runtime.js` arms 285 / 308 / 366).
+- **`[/]` cycle on groups panel threads `_groupsCtx`.** The chord
+  dispatched `toggle_groups_tab` with no `ctx` payload; the post-D1
+  contract requires every dispatcher to thread the `groupsBundle`
+  so the reducer arm stays pure of `getModel()`. Without the
+  bundle, `recomputeList` iterated an empty groups map → cleared
+  `slice.list` → cursor fell to idx 0 / `currentGroup` ''. Routes
+  through the existing `state.switchGroupsTab()` which already
+  threads `_groupsCtx()`.
+- **Three-way resolver consolidation in `route.js`.** `componentForPanel`
+  / `paneTypeOf` / `instanceKind` previously carried three
+  independent copies of the arrange-walk arm — the same docker-
+  style fallback got patched four times across separate commits.
+  Extracted `_typeByArrangePaneId` as the shared walk; the three
+  resolvers project from it. No semantic change; future fixes land
+  in one place.
+- **`getPanelDef` walks the arrange once, not twice.** Pre-fix called
+  `componentForPanel` + `paneTypeOf` separately with the same
+  paneId input — each can walk the arrange for docker-style paneIds.
+  Now resolves panelType first via `paneTypeOf`, then looks up the
+  Component by panel-type (hits the `_panelOwner` direct map).
+  Affects every renderer + every dispatch chokepoint that asks for
+  a panel def.
+- **`renderFooter` resolves focus once per paint.** `focusKind`
+  hoisted in `footerKeys` and `focus` + `focusDef` hoisted at the
+  top of `renderFooter`; pre-fix called `instanceKind(getFocus())`
+  3× + `getPanelDef(getFocus())` 2× per paint with identical
+  arguments.
+
+### Added (post-arch-arc tag-prep)
+- **Pre-release smoke harness.** `js/test/smoke/` ships 5
+  end-to-end scenarios (`routing.js` 26 tests, `lifecycle.js` 17,
+  `hit-zones.js` 10, `action-tab.js` 16, `drag.js` 24) that drive
+  the real `dispatch` / `render` path to catch the bug class the
+  unit suite misses — paneId / type comparator drift, stale-content
+  on close, `[x]` hit-zone offset, producer-survives-switch, drag
+  via `dispatchMsg`. Aggregator at `js/scripts/run-smoke.js` mirrors
+  `run-tests.js`; opt-in before tag (`node js/scripts/run-smoke.js`
+  — ~530 ms total). Helper at `_helpers/smoke.js` (boot + capture +
+  step + driver wrappers; `stripAnsi` handles CSI / OSC / alt-
+  charset).
 
 ## [0.6.2] — 2026-06-06
 
