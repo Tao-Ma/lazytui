@@ -126,11 +126,13 @@ function init() {
     // replaces this default with the parsed config
     // (leaves/arrange.rebuildLayoutFromConfig).
     arrange: { columns: [{ width: 30, panels: [] }, { panels: [] }], detailHeightPct: 60, pool: {} },
-    // v0.6.3 post-arch-arc T3.5 — null at init; set_arrange's stale-
-    // focus fallback promotes to the first placed pane's paneId on
-    // first config seed. (Pre-T3.5 this was the type-form 'groups',
-    // which leaked through to comparators expecting paneId form.)
-    focus: null,
+    // Default focus = the `groups` panel by historical convention
+    // (most demo layouts want the user landing on the group tree at
+    // startup). state.js initState dispatches set_arrange which
+    // normalizes this type-form seed → paneId (`pane-groups`) via
+    // `_resolvePaneIdForFocus`. If `groups` isn't placed in the
+    // arrange, set_arrange clamps to the first placed pane.
+    focus: 'groups',
     viewMode: 'normal',
     dirty: false,
     // Free-config working state — the reducer's drag/undo/title-edit
@@ -538,9 +540,16 @@ function update(msg, slice) {
         // slice.focus is always paneId-form (closes the boot-default
         // type-form leak — init's `focus: 'groups'` placeholder gets
         // promoted to `pane-groups` here).
-        const focusStillPlaced = allPanes.some(p => mpane.paneMatchesFocus(p, next.focus));
+        // Resolve type/id/paneId-form focus → paneId first; THEN check
+        // whether it names a placed pane. Without the upfront resolve,
+        // a type-form boot default like 'groups' would never match the
+        // strict paneMatchesFocus comparator and we'd clamp to the
+        // arrange's first pane (containers) instead of honoring the
+        // declared default.
+        const resolvedFocus = _resolvePaneIdForFocus(next, next.focus);
+        const focusStillPlaced = allPanes.some(p => p.paneId === resolvedFocus);
         if (focusStillPlaced) {
-          next.focus = _resolvePaneIdForFocus(next, next.focus);
+          next.focus = resolvedFocus;
         } else if (allPanes.length > 0) {
           next.focus = allPanes[0].paneId || allPanes[0].type;
         }
