@@ -91,7 +91,11 @@ function viewerLines(slice, model, groupName, lookups) {
     return slice.viewerOverride.lines;
   }
   const tab = (slice && slice.tab) | 0;
-  // Info — derive from focused Navigator.
+  // Info — derive from focused Navigator. Falls back to slice.lines
+  // when no Navigator is focused (manual setViewerContent or
+  // explicit clear). Producers transitioning AWAY from a content
+  // tab (e.g. removeContent) MUST clear slice.lines themselves;
+  // otherwise stale content would persist here.
   if (tab === 0) {
     if (lookups && typeof lookups.infoFromFocus === 'function') {
       const lines = lookups.infoFromFocus();
@@ -493,8 +497,16 @@ function removeContent(slice, { groupName, key, currentGroup, yamlTerminals, act
   // painting on that surface; closing the surface dismisses it.
   // Falling back to a sibling or Info with the override still
   // active would paint discrete-doc content on the wrong surface.
+  //
+  // v0.6.3 post-arch-arc — when the removed content tab was active
+  // AND we fell back to Info (no remaining content tabs), clear
+  // slice.lines too. Otherwise viewerLines' tab=0 fallback to
+  // slice.lines would re-paint the closed tab's content (the
+  // file content stayed visible after the user closed the file
+  // tab, reported in postgres demo).
   const out = { ...sliceAfterDrop, contentTabs: ctAllNext, tab, scroll };
   if (slice.tab === removedTabIdx && slice.viewerOverride) out.viewerOverride = null;
+  if (slice.tab === removedTabIdx && needShowSelectedInfo) out.lines = [];
   return [out, { needShowSelectedInfo }];
 }
 

@@ -42,7 +42,7 @@ const { esc, visibleLen } = require('../../io/ansi');
  *               `b.tabs`). x is the column offset relative to the
  *               pane's left edge.
  */
-function buildTabStrip(tabInfo, activeTab, hotkey, runningActionKeys) {
+function buildTabStrip(tabInfo, activeTab, hotkey, runningActionKeys, hasTabTrigger) {
   const { actionTabs, termTabs, contentTabs } = tabInfo;
   // total includes the implicit Info (idx 0) AND Transcript (idx
   // total-1); we always render at least [Info] [Transcript]
@@ -75,8 +75,13 @@ function buildTabStrip(tabInfo, activeTab, hotkey, runningActionKeys) {
 
   const tabBounds = [];
   // Title starts at col 2 (after `╭─`); hotkey display occupies
-  // `(h)` (3 cells) plus a `─` separator when present.
-  let xOffset = 2 + (hotkey ? 2 + hotkey.length : 0) + 1;
+  // `(h)` (2 + hotkey.length cells) plus a `─` separator. When the
+  // pane's chrome includes the `[≡]` tab-list trigger (3 cells:
+  // `[`, `≡`, `]`), renderPanel injects it BETWEEN the hotkey and
+  // the title — shifting every tab right by 3. Without accounting
+  // for this, tabBounds.x is 3 cells left of the actual on-screen
+  // position and clicks on the [x] close glyph hit empty space.
+  let xOffset = 2 + (hotkey ? 2 + hotkey.length : 0) + (hasTabTrigger ? 3 : 0) + 1;
   parts.forEach((part, i) => {
     if (i > 0) xOffset += 1;  // `─` separator between tabs
     const visLen = visibleLen(part);

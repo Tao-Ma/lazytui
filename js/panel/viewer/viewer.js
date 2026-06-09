@@ -1044,7 +1044,13 @@ function detailTitle(slice) {
                 && j.owner && j.owner.groupName === m.currentGroup)
       .map(j => j.owner.tabKey)
   );
-  const built = buildTabStrip(tabInfo, slice.tab, hotkey, runningActionKeys);
+  // hasTabTrigger reflects chromeFor()'s decision for detail panes:
+  // `[≡]` is painted when the viewer has ≥2 tabs (Info + Transcript
+  // alone qualify). The trigger occupies 3 cells between `(hk)` and
+  // the title; buildTabStrip needs this to compute the correct x for
+  // each tab's hit-zone (the [x] close glyph in particular).
+  const hasTabTrigger = (tabInfo && Number.isFinite(tabInfo.total) ? tabInfo.total : 0) >= 2;
+  const built = buildTabStrip(tabInfo, slice.tab, hotkey, runningActionKeys, hasTabTrigger);
   // v0.6.3 P4.1 (was N3 from [[v062-shipped]]): tab-bar hit-test cache
   // moved from `layoutSlice.paneBounds.detail.tabs` to the viewer's
   // own slice. Same view-output exception, but now writing OUR slice
