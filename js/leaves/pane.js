@@ -23,19 +23,16 @@ function newPaneId(poolId) {
 }
 
 /**
- * Transitional focus comparator. v0.6.3 Phase B3 migrates `slice.focus`
- * to be a paneId (`pane-<poolId>`); some test fixtures and the boot
- * default still seed a panel-type string. Match on paneId first
- * (post-migration form), fall back to `type` / `id` (pre-migration).
- *
- * Once every pane-construction site mints paneId AND every
- * `slice.focus` write goes through `_withFocus` normalization, this can
- * collapse to `p.paneId === focus`.
+ * Strict focus comparator. v0.6.3 post-arch-arc T3.5 collapsed the
+ * Phase-B3 transitional fallback (type/id) — `slice.focus` is now
+ * canonically a paneId, seeded by `set_arrange` (which auto-mints
+ * `paneId` for panes missing one) and stamped by `_withFocus` on
+ * every focus write. Pre-migration callers that hand-set type-form
+ * focus must update to paneId-form.
  */
 function paneMatchesFocus(p, focus) {
   if (!p || focus == null) return false;
-  if (p.paneId === focus) return true;
-  return p.type === focus || p.id === focus;
+  return p.paneId === focus;
 }
 
 /**

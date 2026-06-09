@@ -166,7 +166,7 @@ function redo(slice) {
 }
 
 /** Wipe undo/redo (free_config_enter, and :restore-layout via the
- *  render/free-config-view shim). Tolerates the layout slice not existing yet. */
+ *  panel/free-config-view shim). Tolerates the layout slice not existing yet. */
 function clearUndoStacks(slice) {
   if (!slice || !slice.freeConfig) return slice;
   if (slice.freeConfig.undo.length === 0 && slice.freeConfig.redo.length === 0) return slice;
@@ -252,6 +252,12 @@ function clampSelected(slice, preferredType) {
       return { ...slice, focus: nextFocus };
     }
   }
+  // v0.6.3 post-arch-arc T3.5 — null is a valid "no focus yet"
+  // state (layout.init() seeds null pre-first-arrange). Don't
+  // proactively snap it to a pane here; callers that want focus
+  // assigned should dispatch focus_set (which routes through
+  // _withFocus normalization).
+  if (slice.focus == null) return slice;
   // focus already names a placed panel (by paneId or type) → no clamp needed
   if (all.some(p => mpane.paneMatchesFocus(p, slice.focus))) return slice;
   // focus is stale — snap to the first placed panel

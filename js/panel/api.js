@@ -497,17 +497,17 @@ function statusFor(name) {
  * @returns {object|null} { mode, render, getItems, getInfo, ... }
  */
 function getPanelDef(id) {
+  // v0.6.3 post-arch-arc T3.5 — accepts paneId or panel-type. Direct
+  // panelTypes[type] lookup first; paneId input resolves via
+  // `route.instanceKind` → panel-type. The two inputs are both
+  // first-class (focused-pane consumers have paneId, render-side
+  // type-keyed consumers have panel-type); not a "tolerant fallback"
+  // but the canonical dual-input shape.
   const compName = route.componentForPanel(id);
   if (!compName) return null;
   const comp = components[compName];
   if (!comp || !comp.panelTypes) return null;
-  // Direct lookup by panel-type (production callers).
   if (comp.panelTypes[id]) return comp.panelTypes[id];
-  // v0.6.3 post-arch-arc — paneId input. Translate paneId → panel-
-  // type via the instance store, then index panelTypes by type.
-  // Same fallback shape as `componentForPanel`; without it,
-  // `getPanelDef(getFocus())` returns null and nav helpers silently
-  // bail.
   const kind = route.instanceKind(id);
   return kind && comp.panelTypes[kind] ? comp.panelTypes[kind] : null;
 }

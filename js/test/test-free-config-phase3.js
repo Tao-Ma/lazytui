@@ -25,7 +25,7 @@ const {
   titleEditText,
   onMouseEvent, pointToResizeTarget,
   _clearUndoStacks, _getUndoDepth, _getRedoDepth,
-} = require('../render/free-config-view');
+} = require('../panel/free-config-view');
 const dispatch = require('../dispatch/dispatch');
 const { getModel } = require('../app/runtime');
 const { getInstanceSlice } = require('../panel/api');
@@ -51,13 +51,13 @@ function setupFixture() {
     detailHeightPct: 60,
     columns: [
       { width: 30, panels: [
-        { type: 'containers', id: 'containers', title: 'Containers', columnIndex: 0,  hotkey: '1' },
-        { type: 'groups',     id: 'groups',     title: 'Groups',     columnIndex: 0,  hotkey: '2' },
+        { type: 'containers', id: 'containers', paneId: 'pane-containers', title: 'Containers', columnIndex: 0,  hotkey: '1' },
+        { type: 'groups',     id: 'groups', paneId: 'pane-groups', title: 'Groups',     columnIndex: 0,  hotkey: '2' },
       ] },
       { panels: [
-        { type: 'actions', id: 'actions', title: 'Actions', columnIndex: 1, hotkey: '0' },
-        { type: 'stats',   id: 'stats',   title: 'Stats',   columnIndex: 1, hotkey: '' },
-        { type: 'detail',  id: 'detail',  title: 'Detail',  columnIndex: 1, hotkey: 'o' },
+        { type: 'actions', id: 'actions', paneId: 'pane-actions', title: 'Actions', columnIndex: 1, hotkey: '0' },
+        { type: 'stats',   id: 'stats', paneId: 'pane-stats', title: 'Stats',   columnIndex: 1, hotkey: '' },
+        { type: 'detail',  id: 'detail', paneId: 'pane-detail', title: 'Detail',  columnIndex: 1, hotkey: 'o' },
       ] },
     ],
   };
@@ -76,7 +76,7 @@ function setupFixture() {
   // = containers on entry, and `free_config_enter` now preserves focus when
   // it points at a placed panel (no longer resets to all[0]), so a
   // leftover focus from a prior test would otherwise leak in.
-  getInstanceSlice('layout').focus = 'containers';
+  getInstanceSlice('layout').focus = 'pane-containers';
   _clearUndoStacks();
   enterFreeConfig(getInstanceSlice("layout").arrange, '/dev/null', () => {});
 }
@@ -350,13 +350,13 @@ describe('[3e] calcLayout — heightPct distribution', () => {
       detailHeightPct: 60,
       columns: [
         { width: 30, panels: [
-          { type: 'containers', id: 'containers', title: 'C', columnIndex: 0, hotkey: '1' },
-          { type: 'groups',     id: 'groups',     title: 'G', columnIndex: 0, hotkey: '2' },
+          { type: 'containers', id: 'containers', paneId: 'pane-containers', title: 'C', columnIndex: 0, hotkey: '1' },
+          { type: 'groups',     id: 'groups', paneId: 'pane-groups', title: 'G', columnIndex: 0, hotkey: '2' },
         ] },
         { panels: [
-          { type: 'actions', id: 'actions', title: 'A', columnIndex: 1, hotkey: '0' },
-          { type: 'stats',   id: 'stats',   title: 'S', columnIndex: 1, hotkey: '' },
-          { type: 'detail',  id: 'detail',  title: 'D', columnIndex: 1, hotkey: 'o' },
+          { type: 'actions', id: 'actions', paneId: 'pane-actions', title: 'A', columnIndex: 1, hotkey: '0' },
+          { type: 'stats',   id: 'stats', paneId: 'pane-stats', title: 'S', columnIndex: 1, hotkey: '' },
+          { type: 'detail',  id: 'detail', paneId: 'pane-detail', title: 'D', columnIndex: 1, hotkey: 'o' },
         ] },
       ],
     };

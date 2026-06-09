@@ -64,7 +64,7 @@ function makeSlice() {
       ],
     },
     dirty: false,
-    focus: 'containers',
+    focus: 'pane-containers',
     viewMode: 'normal',
     freeConfig: { drag: null, undo: [], redo: [], titleEdit: { active: false, text: '' }, notice: null },
     paneBounds: {
@@ -530,7 +530,7 @@ describe('[T3-defenses] T3.1/T3.3/T3.4/T3.5 hardening', () => {
         slice.arrange.columns[1],
       ],
     };
-    const out = applyUpdate({ type: 'set_arrange', arrange: slimArrange }, { ...slice, focus: 'containers' });
+    const out = applyUpdate({ type: 'set_arrange', arrange: slimArrange }, { ...slice, focus: 'pane-containers' });
     assert(out.focus !== 'containers', `focus moved off the dropped type (was 'containers', now '${out.focus}')`);
     const allPanes = require('../leaves/pool').allPanesInColumns(out.arrange);
     // v0.6.3 B3 — stale-focus fallback now writes paneId (`pane-groups`),
@@ -543,7 +543,7 @@ describe('[T3-defenses] T3.1/T3.3/T3.4/T3.5 hardening', () => {
   it('R2.3 — set_arrange preserves focus when focus type is still placed', () => {
     const slice = makeSlice();
     const newArrange = { ...slice.arrange, columns: slice.arrange.columns.slice() };
-    const out = applyUpdate({ type: 'set_arrange', arrange: newArrange }, { ...slice, focus: 'groups' });
+    const out = applyUpdate({ type: 'set_arrange', arrange: newArrange }, { ...slice, focus: 'pane-groups' });
     // v0.6.3 Phase B3 — set_arrange normalizes a still-placed
     // type-form focus to paneId. Pre-arc this would have returned
     // 'groups' verbatim; post-arc it's promoted to 'pane-groups'.

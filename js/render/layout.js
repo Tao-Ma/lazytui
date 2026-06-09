@@ -58,7 +58,7 @@ const { getModel } = require('../app/runtime');
 const { renderCmdline } = require('../overlay/cmdline');
 const { renderConfirmOverlay } = require('../overlay/confirm');
 const { renderPromptOverlay } = require('../overlay/prompt');
-const { getFreeConfigFooter } = require('./free-config-view');
+const { getFreeConfigFooter } = require('../panel/free-config-view');
 const { renderPanelListOverlay } = require('../overlay/panel-list');
 const { renderTabList } = require('../overlay/tab-list');
 const { renderJobsOverlay } = require('../overlay/jobs');
@@ -1132,7 +1132,7 @@ function footerKeys(model) {
   if (md.filterMode) return ` /${esc(filterCurrentText())}│ | Esc clear | Enter ok`;
   if (md.copyMode)   return ' ↑↓ select | Esc cancel | Enter copy';
   if (md.freeConfigTitleEditMode) {
-    const { titleEditText } = require('./free-config-view');
+    const { titleEditText } = require('../panel/free-config-view');
     return ` rename: ${esc(titleEditText())}│ | Esc cancel | Enter ok`;
   }
   if (md.freeConfigMode) {

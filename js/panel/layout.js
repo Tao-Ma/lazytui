@@ -126,9 +126,11 @@ function init() {
     // replaces this default with the parsed config
     // (leaves/arrange.rebuildLayoutFromConfig).
     arrange: { columns: [{ width: 30, panels: [] }, { panels: [] }], detailHeightPct: 60, pool: {} },
-    // Default focus = first declared panel. state.js's initState() overrides
-    // this once the parsed layout is in.
-    focus: 'groups',
+    // v0.6.3 post-arch-arc T3.5 — null at init; set_arrange's stale-
+    // focus fallback promotes to the first placed pane's paneId on
+    // first config seed. (Pre-T3.5 this was the type-form 'groups',
+    // which leaked through to comparators expecting paneId form.)
+    focus: null,
     viewMode: 'normal',
     dirty: false,
     // Free-config working state — the reducer's drag/undo/title-edit
@@ -484,7 +486,22 @@ function update(msg, slice) {
         // valid arrange; direct programmatic dispatches that don't are
         // a bug and should no-op rather than break the live layout.
         if (!msg.arrange || !Array.isArray(msg.arrange.columns)) return slice;
-        next.arrange = msg.arrange;
+        // v0.6.3 post-arch-arc T3.5 — auto-mint paneId for any pane
+        // that's missing one. Production paths use `mpane.wrapAsPane`
+        // in the parser; tests + ad-hoc dispatchers that build arrange
+        // directly may skip that step. Promoting here means downstream
+        // comparators / lookups can collapse to strict paneId form
+        // without each fixture having to remember the paneId field.
+        // Spread to preserve pool / detailHeightPct / any other top-
+        // level arrange fields; replace `columns` with paneId-stamped
+        // copies (auto-mint helper above).
+        next.arrange = { ...msg.arrange,
+          columns: msg.arrange.columns.map(col => ({
+            ...col,
+            panels: (col.panels || []).map(p =>
+              (p && !p.paneId && p.id) ? { ...p, paneId: mpane.newPaneId(p.id) } : p),
+          })),
+        };
         // An arrange swap orphans every cross-arrange pointer on the
         // slice. Clear them so :restore-layout / set_arrange leaves a
         // self-consistent slice:

@@ -113,7 +113,11 @@ describe('[set_active_tab] flips active tab + rewrites legacy fields', () => {
 
 describe('[set_active_tab] focus follow', () => {
   it('retargets focus + emits show_selected_info when switched pane is focused (by pane.id)', () => {
-    const slice = { ...buildMultiTabSlice(), focus: 'docker' };  // focus on pane's active tab
+    // T3.5 — focus is canonically paneId-form post-arch-arc. The
+    // "by pane.id" assertion is now redundant with the paneId path
+    // below, but keeping both makes the failure surface clear if a
+    // future migration shifts the contract.
+    const slice = { ...buildMultiTabSlice(), focus: 'pane-docker' };
     const result = layout.update({
       type: 'set_active_tab', paneId: 'pane-docker', tabPoolId: 'logs',
     }, slice);

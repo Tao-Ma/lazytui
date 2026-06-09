@@ -32,21 +32,22 @@ function registerPanelOwner(panelType, componentName) {
 }
 
 function componentForPanel(id) {
-  // Direct panel-type lookup (production registration writes type →
-  // Component-name via registerPanelOwner).
+  // v0.6.3 post-arch-arc T3.5 — accepts paneId or panel-type. Direct
+  // panel-type lookup first (production registrations); paneId input
+  // falls through to the instance store and resolves via instance.kind.
+  // Both forms are first-class — no "tolerant fallback" framing — the
+  // helper is the canonical resolver and the only translation site.
   const direct = _panelOwner[id];
   if (direct) return direct;
-  // v0.6.3 post-arch-arc — paneId input (post-Phase-B3 `getFocus()`
-  // returns a paneId). Translate paneId → panelType via the instance
-  // store, then look up the owner by type. Without this, every
-  // `componentForPanel(getFocus())` consumer (key routing, nav APIs,
-  // getPanelDef, getItems, getSel) returns undefined and the focused
-  // panel becomes inert — up/down arrows do nothing, Enter doesn't
-  // fire, etc.
   const inst = _instances[id];
-  if (inst && _panelOwner[inst.kind]) return _panelOwner[inst.kind];
-  return undefined;
+  return inst ? _panelOwner[inst.kind] : undefined;
 }
+
+/** Strict panel-type lookup — true iff `id` is a registered panel-type
+ *  (NOT a paneId that resolves via the instance store). Use this to
+ *  distinguish "the caller gave me a type" from "the caller gave me
+ *  a paneId" — both `componentForPanel` arms succeed for both forms. */
+function isPanelType(id) { return _panelOwner[id] !== undefined; }
 
 // --- Instance-keyed slice store ----------------------------------------
 //
@@ -271,7 +272,7 @@ function resolveTarget(intent, ctx) {
 
 module.exports = {
   wrap,
-  registerPanelOwner, componentForPanel,
+  registerPanelOwner, componentForPanel, isPanelType,
   getFocus,
   setInstance, getInstance, getInstanceSlice, setInstanceSlice,
   hasInstance, disposeInstance, instanceKind, eachInstance,

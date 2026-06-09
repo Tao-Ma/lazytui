@@ -247,19 +247,19 @@ function collapseGroup(path, recursive = false) {
 
 const mnav = require('../leaves/nav');
 
-// v0.6.3 post-arch-arc — accept either panel-type or paneId. Post-B3
-// callers like `getSel(getFocus())` pass a paneId; mnav indexes by
-// panel-type so we resolve via the route table before reading /
-// dispatching. Single-panel Components don't care (slice.nav is a
-// flat entry); multi-panel Components (docker) need the type form
-// to find the right nav[panelType] entry.
+// v0.6.3 post-arch-arc T3.5 — canonical dual-input resolver:
+// accepts panel-type (production renderers, direct callers) or
+// paneId (post-B3 `getFocus()` consumers). Returns panel-type
+// (the form mnav.entryOf / Component.update use for keying).
+// Single-panel Components don't differentiate (slice.nav is a flat
+// entry); multi-panel Components (docker) need the type form to
+// find the right nav[panelType] entry.
 function _resolvePanelType(id) {
   const route = require('../leaves/route');
-  // Direct: id IS a panel-type (production callers).
-  if (route.componentForPanel(id)) return id;
-  // paneId form: translate via instance store.
-  const kind = route.instanceKind(id);
-  return kind || id;
+  // Direct panel-type? Return as-is. Otherwise translate via the
+  // instance store (paneId → kind).
+  if (route.isPanelType(id)) return id;
+  return route.instanceKind(id) || id;
 }
 
 function _navEntry(id) {

@@ -207,7 +207,10 @@ describe('[immutable] leaves/search.js', () => {
 describe('[immutable] leaves/free-config.js', () => {
   const makePanel = (type, title, hotkey, extra = {}) => {
     const ci = extra.columnIndex != null ? extra.columnIndex : 0;
-    return { type, title, hotkey, columnIndex: ci, ...extra, id: type };
+    // T3.5 — every pane carries a paneId (production: parser mints via
+    // `mpane.wrapAsPane`; this fixture mirrors that). focus is the
+    // paneId form too.
+    return { type, title, hotkey, columnIndex: ci, ...extra, id: type, paneId: `pane-${type}` };
   };
 
   // First column (width 30, 2 panels at y=0..10, y=10..20).
@@ -243,7 +246,7 @@ describe('[immutable] leaves/free-config.js', () => {
     // focus is the single source of truth for the active panel in
     // free-config (post-v0.6.x); the design.selectedIdx field is gone,
     // mfcCore.selectedIdx(slice) derives the index from focus.
-    focus: 'a',
+    focus: 'pane-a',
     viewMode: 'normal',
   });
 
@@ -256,8 +259,8 @@ describe('[immutable] leaves/free-config.js', () => {
       () => mfc.navSelect(slice, 1),
       slice,
     );
-    eq(out.focus, 'b', 'focus advanced to next panel');
-    eq(slice.focus, 'a', 'original untouched');
+    eq(out.focus, 'pane-b', 'focus advanced to next panel');
+    eq(slice.focus, 'pane-a', 'original untouched');
   });
 
   it('navSelect at boundary returns same ref (identity-preserve)', () => {
@@ -281,7 +284,7 @@ describe('[immutable] leaves/free-config.js', () => {
     eq(out.freeConfig.undo.length, 1, 'undo stack pushed');
     // focus stays at 'a' (same type, new position); derived selectedIdx
     // is now 1 because 'a' moved to slot 1 of the left column.
-    eq(out.focus, 'a', 'focus follows the panel by TYPE');
+    eq(out.focus, 'pane-a', 'focus follows the panel by TYPE');
     eq(mfcCore.selectedIdx(out), 1, 'derived index reflects the new position');
   });
 
@@ -369,14 +372,14 @@ describe('[immutable] leaves/free-config.js', () => {
     // post-v0.6.x: clampSelected restores the invariant by snapping
     // focus to a valid placed-panel type, not by clamping an integer.
     const slice = makeSlice();
-    const stale = { ...slice, focus: 'ghost' };
+    const stale = { ...slice, focus: 'pane-ghost' };
     const out = expectNoMutation(
       'clampSelected leaves input frozen',
       () => mfcCore.clampSelected(stale),
       stale,
     );
     // First placed panel becomes the snap target.
-    eq(out.focus, 'a', 'focus snapped to first placed panel');
+    eq(out.focus, 'pane-a', 'focus snapped to first placed panel');
   });
 
   it('mousePress on a panel arms the drag + sets focus to the clicked type', () => {
@@ -389,7 +392,7 @@ describe('[immutable] leaves/free-config.js', () => {
     eq(out.freeConfig.drag.kind, 'dragging');
     eq(out.freeConfig.drag.target, null, 'AR4 — target=null until motion');
     eq(out.freeConfig.drag.sourceType, 'a');
-    eq(out.focus, 'a', 'focus tracks the clicked panel');
+    eq(out.focus, 'pane-a', 'focus tracks the clicked panel');
   });
 
   it('mouseMotion computes drop target on movement', () => {

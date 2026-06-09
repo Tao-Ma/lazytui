@@ -83,7 +83,7 @@ describe('[2] viewMode flows model → view end-to-end (the v0.5 slice, live)', 
 describe('[3] chrome (sel/focus) flows through the model — live', () => {
   it('down-arrow moves the groups selection via the real key path', () => {
     capture(() => { handleKey('_', '_'); handleKey('_', '_'); });   // back to normal view (silenced)
-    getInstanceSlice("layout").focus = 'groups';
+    getInstanceSlice("layout").focus = 'pane-groups';
     setSel('groups', 0);
     const before = capture(() => render());
     // handleKey('down') → nav_down → moveSel on the focused panel.
@@ -94,7 +94,7 @@ describe('[3] chrome (sel/focus) flows through the model — live', () => {
   });
   it('down-arrow cascades currentGroup inline (the selectGroup transform in the reducer)', () => {
     capture(() => { handleKey('_', '_'); handleKey('_', '_'); });
-    getInstanceSlice("layout").focus = 'groups';
+    getInstanceSlice("layout").focus = 'pane-groups';
     setSel('groups', 0);
     selectGroup(0);   // anchor currentGroup on the first row
     eq(getModel().currentGroup, 'g1', 'anchored on g1');
@@ -108,7 +108,7 @@ describe('[3] chrome (sel/focus) flows through the model — live', () => {
 describe('[3b] focus moves through the update spine — live', () => {
   it('right/left arrow re-focus via applyMsg → update(focus_set) and repaint', () => {
     capture(() => { handleKey('_', '_'); handleKey('_', '_'); });   // normal view (silenced)
-    getInstanceSlice("layout").focus = 'groups';
+    getInstanceSlice("layout").focus = 'pane-groups';
     const fromGroups = capture(() => handleKey('right', 'right')); // focus_right → update
     // v0.6.3 Phase B3 — focus is paneId-form post-_withFocus; the
     // first focus_right normalizes the seeded type → paneId before

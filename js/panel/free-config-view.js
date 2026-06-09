@@ -17,15 +17,16 @@
  * pass). Save is decoupled: `:save-layout` writes the runtime layout
  * to YAML, `:restore-layout` reverts it and clears undo history.
  *
- * (Was `overlay/free-config.js` — moved to `panel/` since this file
- * does no overlay paint of its own; it serves the Component view.)
+ * (Was `overlay/free-config.js`, briefly lived in `render/` —
+ * v0.6.3 post-arch-arc T2.2 moves it to `panel/` next to layout.js;
+ * does no overlay paint of its own, it serves the Component view.)
  */
 'use strict';
 
 const { esc } = require('../io/ansi');
 const { cols } = require('../io/term');
 const { getModel } = require('../app/runtime');
-const { getInstanceSlice } = require('../panel/api');
+const { getInstanceSlice } = require("./api");
 const mfcCore = require('../leaves/free-config-core');
 const mfcMouse = require('../leaves/free-config-mouse');
 const mpool = require('../leaves/pool');
@@ -116,7 +117,7 @@ function titleEditText() {
  *  user resets the layout from disk. Production routes through the layout
  *  Component (`free_config_clear_undo` Msg); this test-only shim mirrors that. */
 function _clearUndoStacks() {
-  const api = require('../panel/api');
+  const api = require("./api");
   api.dispatchMsg(api.wrap('layout', { type: 'free_config_clear_undo' }));
 }
 
@@ -129,7 +130,7 @@ function onMouseEvent(kind, mx, my) {
             : kind === 'release' ? { type: 'free_config_mouse_release' }
             : null;
   if (msg) {
-    const api = require('../panel/api');
+    const api = require("./api");
     api.dispatchMsg(api.wrap('layout', msg));
   }
 }
