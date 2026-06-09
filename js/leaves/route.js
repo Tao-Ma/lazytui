@@ -31,7 +31,22 @@ function registerPanelOwner(panelType, componentName) {
   _panelOwner[panelType] = componentName;
 }
 
-function componentForPanel(panelType) { return _panelOwner[panelType]; }
+function componentForPanel(id) {
+  // Direct panel-type lookup (production registration writes type →
+  // Component-name via registerPanelOwner).
+  const direct = _panelOwner[id];
+  if (direct) return direct;
+  // v0.6.3 post-arch-arc — paneId input (post-Phase-B3 `getFocus()`
+  // returns a paneId). Translate paneId → panelType via the instance
+  // store, then look up the owner by type. Without this, every
+  // `componentForPanel(getFocus())` consumer (key routing, nav APIs,
+  // getPanelDef, getItems, getSel) returns undefined and the focused
+  // panel becomes inert — up/down arrows do nothing, Enter doesn't
+  // fire, etc.
+  const inst = _instances[id];
+  if (inst && _panelOwner[inst.kind]) return _panelOwner[inst.kind];
+  return undefined;
+}
 
 // --- Instance-keyed slice store ----------------------------------------
 //

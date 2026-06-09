@@ -496,11 +496,20 @@ function statusFor(name) {
  * @param {string} panelType
  * @returns {object|null} { mode, render, getItems, getInfo, ... }
  */
-function getPanelDef(panelType) {
-  const compName = route.componentForPanel(panelType);
+function getPanelDef(id) {
+  const compName = route.componentForPanel(id);
   if (!compName) return null;
   const comp = components[compName];
-  return comp && comp.panelTypes ? comp.panelTypes[panelType] : null;
+  if (!comp || !comp.panelTypes) return null;
+  // Direct lookup by panel-type (production callers).
+  if (comp.panelTypes[id]) return comp.panelTypes[id];
+  // v0.6.3 post-arch-arc — paneId input. Translate paneId → panel-
+  // type via the instance store, then index panelTypes by type.
+  // Same fallback shape as `componentForPanel`; without it,
+  // `getPanelDef(getFocus())` returns null and nav helpers silently
+  // bail.
+  const kind = route.instanceKind(id);
+  return kind && comp.panelTypes[kind] ? comp.panelTypes[kind] : null;
 }
 
 /**

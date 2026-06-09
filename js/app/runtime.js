@@ -348,11 +348,18 @@ function update(model, msg) {
       const { panelType, index } = msg;
       const compName = route.componentForPanel(panelType);
       if (!compName) return [model, []];
+      // v0.6.3 post-arch-arc — panelType may arrive as a paneId
+      // post-B3 (`getFocus()` returns paneId; navSelect threads it
+      // as-is). Translate to the panel-type form before fanning out
+      // — set_cursor's downstream nav.entryOf indexes by panel-type
+      // for multi-panel Components, and the kind comparison below
+      // expects the type name.
+      const kindForNav = route.instanceKind(panelType) || panelType;
       const cmds = [
-        { type: 'msg', msg: route.wrap(compName, { type: 'set_cursor', panel: panelType, index }) },
+        { type: 'msg', msg: route.wrap(compName, { type: 'set_cursor', panel: kindForNav, index }) },
         { type: 'show_selected_info' },
       ];
-      if (panelType === 'groups') {
+      if (kindForNav === 'groups') {
         // v0.6.3 Phase D1: thread the groups ctx so the reducer arm
         // stays pure of getModel().
         const groupsComp = require('../panel/navigator/groups');
