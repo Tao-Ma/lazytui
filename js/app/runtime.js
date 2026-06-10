@@ -231,24 +231,24 @@ function _withModal(model, patch) {
 // picks the right viewer pane (focus / sticky / first-in-arrange); null
 // result (no viewer registered) drops the Cmd.
 //
-// v0.6.3 TEA Phase 3f: this arm used to emit a `tab_cycle` Msg that
-// the pane-tabs leaf decoded via ctx.getModel + ctx.getTabInfo to
-// compute the next idx and emit tab_switch. The intermediate Msg
-// existed only because the chain dispatcher didn't have model/slice
-// in scope. The root reducer DOES — its arg IS model — so compute
-// directly here and emit tab_switch. tab_cycle Msg retired.
-function _cycleViewerTab(model, dir) {
+// v0.6.4 Theme C — pure of Component-slice reads. The viewer tab info
+// (curTab / total / resolved tab-key array) is threaded by the
+// next_tab/prev_tab handler (`actions._viewerTabBundle`); the arm keeps
+// only the routing read (resolveTarget — blessed chokepoint) and the
+// pure cycle math. (v0.6.3 Phase 3f had retired the tab_cycle Msg and
+// computed here by reading the slice directly; this keeps the
+// compute-in-reducer testability but moves the slice READ to the
+// handler.)
+function _cycleViewerTab(model, msg, dir) {
   const target = route.resolveTarget('viewer');
   if (!target) return [model, []];
-  const slice = route.getInstanceSlice(target) || { tab: 0 };
-  const groupName = (model && model.currentGroup) || '';
-  const total = pt.flatTabInfo(slice, model, groupName).total;
+  const total = msg.total | 0;
   if (total <= 1) return [model, []];
-  const next = (((slice.tab | 0) + (dir | 0) + total) % total + total) % total;
-  const targetKey = pt.resolveTabKey(next, { ...slice, tab: next }, model);
+  const next = (((msg.curTab | 0) + (dir | 0)) % total + total) % total;
+  const targetKey = (msg.tabKeys || [])[next] || null;
   return [model, [{ type: 'msg', msg: route.wrap(target, {
     type: 'tab_switch', idx: next,
-    targetKey, currentGroup: groupName,
+    targetKey, currentGroup: msg.currentGroup || (model.currentGroup || ''),
   }) }]];
 }
 
@@ -345,8 +345,8 @@ function update(model, msg) {
     // --- Cmd-only verbs: no model change, the reducer just routes the
     // Msg to a Cmd the effects layer runs. Centralizing the Msg→Cmd
     // mapping here is what lets handleAction's arms collapse into update.
-    case 'next_tab':    return _cycleViewerTab(model, +1);
-    case 'prev_tab':    return _cycleViewerTab(model, -1);
+    case 'next_tab':    return _cycleViewerTab(model, msg, +1);
+    case 'prev_tab':    return _cycleViewerTab(model, msg, -1);
     case 'nav_select': {
       // R6 — single-Msg cascade for "user selects row N in panel P,"
       // formerly orchestrated by dispatch.navSelect's 2-3 imperative

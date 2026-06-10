@@ -32,6 +32,21 @@ const { execSync } = require('child_process');
 const { getModel } = require('../app/runtime');
 const route = require('../panel/route');
 const mpane = require('../leaves/pane');
+const pt = require('../leaves/pane-tabs');
+
+/** v0.6.4 Theme C — compute the focused viewer's tab info HERE (handler,
+ *  impure) so the next_tab/prev_tab reducer arms stay pure of Component
+ *  slice reads: they get curTab + total + the resolved tab-key array and
+ *  do the (pure) cycle math. resolveTarget (routing) stays in the arm. */
+function _viewerTabBundle() {
+  const target = route.resolveTarget('viewer');
+  const slice = (target && getInstanceSlice(target)) || { tab: 0 };
+  const m = getModel();
+  const groupName = m.currentGroup || '';
+  const total = pt.flatTabInfo(slice, m, groupName).total;
+  const tabKeys = Array.from({ length: total }, (_, i) => pt.resolveTabKey(i, { ...slice, tab: i }, m));
+  return { curTab: slice.tab | 0, total, tabKeys, currentGroup: groupName };
+}
 
 // Lazy stub for the dispatch back-edge. Each invocation looks up the
 // cached module — Node caches require, so this is essentially free.
@@ -296,8 +311,8 @@ function handleAction(action, arg) {
     case 'show_help':
       require('../overlay/help').showHelp();
       break;
-    case 'next_tab': applyMsg({ type: 'next_tab' }); break;
-    case 'prev_tab': applyMsg({ type: 'prev_tab' }); break;
+    case 'next_tab': applyMsg({ type: 'next_tab', ..._viewerTabBundle() }); break;
+    case 'prev_tab': applyMsg({ type: 'prev_tab', ..._viewerTabBundle() }); break;
     case 'page_up': {
       // Paging is focus-aware: detail scrolls its content; list panels
       // jump the cursor by a full inner page (the nav_select cascade,

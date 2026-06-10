@@ -335,12 +335,12 @@ describe('[3] update — (model, msg) → [model, cmds], pure + Cmd descriptors'
     const snap = JSON.stringify(m.focus);
     // show_help / quit no longer go through the reducer (R4.8) —
     // actions.js calls overlay/help.showHelp() / cleanup() + process.exit
-    // directly. next_tab / prev_tab keep their Cmd path — v0.6.3
-    // Phase 3f retired the intermediate `tab_cycle` Msg; _cycleViewerTab
-    // now emits `tab_switch` directly (with precomputed idx + targetKey)
-    // so the pane-tabs leaf no longer needs ctx.getModel.
-    const cmdsNext = runtime.update(m, { type: 'next_tab' })[1];
-    const cmdsPrev = runtime.update(m, { type: 'prev_tab' })[1];
+    // directly. next_tab / prev_tab emit tab_switch — v0.6.4 Theme C: the
+    // viewer tab bundle (curTab/total/tabKeys) is threaded by the handler
+    // (actions._viewerTabBundle); the arm does the pure cycle math.
+    const bundle = { curTab: 0, total: 2, tabKeys: ['info', 'transcript'], currentGroup: '' };
+    const cmdsNext = runtime.update(m, { type: 'next_tab', ...bundle })[1];
+    const cmdsPrev = runtime.update(m, { type: 'prev_tab', ...bundle })[1];
     eq(cmdsNext[0].msg.msg.type, 'tab_switch');
     eq(cmdsPrev[0].msg.msg.type, 'tab_switch');
     // total=2 (Info + Transcript) with currentGroup=''; from tab=0,
