@@ -105,7 +105,15 @@ const _noopDescriptor = (ctx) =>
 function switchTab(slice, ctx, tab) {
   if (tab !== 'all' && tab !== 'quick') return [slice, _noopDescriptor(ctx)];
   if (slice.tab === tab) return [slice, _noopDescriptor(ctx)];
-  const next = recomputeList({ ...slice, tab }, ctx);
+  // Clear multi-select on tab toggle. All vs Quick expose different
+  // rows; multiSel ids carried forward from the prior tab reference
+  // group paths that may not exist in the new tab's list, surfacing
+  // as ghost selections on toggle-back (and operated on by bulk verbs
+  // even while invisible).
+  const cleanedNav = slice.nav && slice.nav.multiSel && slice.nav.multiSel.size > 0
+    ? { ...slice.nav, multiSel: new Set() }
+    : slice.nav;
+  const next = recomputeList({ ...slice, tab, nav: cleanedNav }, ctx);
   return [next, resolveCursor(next, ctx)];
 }
 

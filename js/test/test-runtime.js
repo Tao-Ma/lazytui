@@ -292,6 +292,30 @@ describe('[3] update — (model, msg) → [model, cmds], pure + Cmd descriptors'
     slice = step(slice, { type: 'toggle_group', name: 'g1' });
     eq(slice.expanded.has('g1'), false, 'collapsed after second toggle');
   });
+  it('toggle_groups_tab clears multiSel — selections from prior tab don\'t survive context change', () => {
+    // Round-2 regression: All-tab vs Quick-tab expose different group
+    // rows; multiSel ids from one tab reference rows that may not
+    // exist in the other. switchTab now clears multiSel on toggle.
+    const groups = require('../panel/navigator/groups');
+    const m = runtime.getModel();
+    m.config = { groups: {
+      g1: { name: 'g1', quick: true, children: [], parent: null },
+      g2: { name: 'g2', quick: true, children: [], parent: null },
+    } };
+    m.currentGroup = '';
+    const ctx = { ...groups.groupsBundle(m), tabListMode: false };
+    const step = (sl, msg) => {
+      const out = groups._update({ ...msg, ctx }, sl);
+      return Array.isArray(out) ? out[0] : out;
+    };
+    let slice = groups._init();
+    // Seed multiSel as if the user had picked two rows in All-tab.
+    slice = { ...slice, nav: { ...slice.nav, multiSel: new Set(['g1', 'g2']) } };
+    eq(slice.nav.multiSel.size, 2, 'seeded multiSel');
+    slice = step(slice, { type: 'toggle_groups_tab' });
+    eq(slice.tab, 'quick', 'toggled to quick');
+    eq(slice.nav.multiSel.size, 0, 'multiSel cleared on tab toggle');
+  });
   it('freeConfig: forwards a wrapped free_config_enter Msg (v0.6 — free-config is always available)', () => {
     // v0.5 gated this on layout.slice.freeConfig.enabled (the --design CLI
     // flag); v0.6 removed the gate — free-config mode is reachable from
