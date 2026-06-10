@@ -76,6 +76,36 @@ const { renderJobsOverlay } = require('../overlay/jobs');
 // first call lands after load). `||=` caches the ref.
 let _routeRef; const _route = () => (_routeRef ||= require('../panel/route'));
 let _decorRef; const _decor = () => (_decorRef ||= require('./decor'));
+let _tabsRef; const _tabs = () => (_tabsRef ||= require('../panel/viewer/tabs'));
+let _tablistRef; const _tablist = () => (_tablistRef ||= require('../overlay/tab-list'));
+
+// Shared chrome-glyph inputs for composeRects / renderHalf / renderFull.
+// v0.6.4 Theme B — the scalar setup (chromeFor, viewer tab count, tab-
+// trigger state, pane-select mode/target/has-swap) was triplicated
+// nearly verbatim across all three render modes; this is the single
+// source. The per-view pane-select TRIGGER fn is NOT shared — it
+// legitimately differs (normal view has multiple panes and mirrors
+// tab-list to disable peer triggers; half/full have a single trigger) —
+// so each caller builds its own from these scalars.
+function _chromeContext(model, layoutSlice) {
+  let viewerTabCount = 0;
+  try {
+    const tabInfo = _tabs().getTabInfo();
+    viewerTabCount = tabInfo && Number.isFinite(tabInfo.total) ? tabInfo.total : 0;
+  } catch (_) {}
+  let triggerStateRaw = 'normal';
+  try { triggerStateRaw = _tablist()._triggerState(); } catch (_) {}
+  return {
+    chromeFor: _decor().chromeFor,
+    freeConfigMode: !!(model.modes && model.modes.freeConfigMode),
+    dragging: !!(layoutSlice.freeConfig && layoutSlice.freeConfig.drag),
+    viewerTabCount,
+    tabTriggerState: triggerStateRaw === 'normal' ? 'available' : triggerStateRaw,
+    paneSelectMode: !!(model.modes && model.modes.paneSelectMode),
+    paneSelectTargetPaneId: (layoutSlice.paneSelect && layoutSlice.paneSelect.targetPaneId) || null,
+    paneSelectHasSwap: mpool.paneSelectItems(layoutSlice.arrange, null).length >= 2,
+  };
+}
 
 /**
  * Look up the render function for a panel type. Contract:
@@ -622,39 +652,20 @@ function _safeRender(panel, w, h, opts) {
 function composeRects(layout, model) {
   const layoutSlice = getInstanceSlice('layout');
   if (!layoutSlice || !layout || !layout.rects) return [];
-  const freeConfigMode = !!(model && model.modes && model.modes.freeConfigMode);
-  const dragging = !!(layoutSlice.freeConfig && layoutSlice.freeConfig.drag);
   // v0.6.3 P4.2 — chrome state computed structurally via chromeFor()
-  // and threaded into the panel renderer via opts. Was post-mutated
-  // string injection via injectTopRowChrome / injectTabTrigger; now
-  // renderPanel({chrome}) composes glyphs inline.
-  const { chromeFor } = _decor();
-  let viewerTabCount = 0;
-  try {
-    const tabInfo = require('../panel/viewer/tabs').getTabInfo();
-    viewerTabCount = tabInfo && Number.isFinite(tabInfo.total) ? tabInfo.total : 0;
-  } catch (_) {}
-  let triggerStateRaw = 'normal';
-  try {
-    triggerStateRaw = require('../overlay/tab-list')._triggerState();
-  } catch (_) {}
-  const tabTriggerState = triggerStateRaw === 'normal' ? 'available' : triggerStateRaw;
-  // v0.6.3 D1 — pane-select trigger state, computed PER pane (target
-  // shows 'open', siblings show 'disabled' during paneSelectMode).
-  const paneSelectMode = !!(model.modes && model.modes.paneSelectMode);
-  const paneSelectTargetPaneId = (layoutSlice.paneSelect && layoutSlice.paneSelect.targetPaneId) || null;
-  // Hide the [≡] trigger when there's nothing useful to swap — i.e.
-  // paneSelectItems returns only the `here` row (length < 2 means no
-  // other placed pane AND no hidden entry to REPLACE with). Avoids
-  // painting an affordance whose click would be a no-op. Computed
-  // once per render — items length is invariant of targetPaneId.
-  const paneSelectHasSwap = mpool.paneSelectItems(layoutSlice.arrange, null).length >= 2;
+  // and threaded into the panel renderer via opts. v0.6.4 Theme B —
+  // shared scalars from _chromeContext (deduped across the 3 render
+  // modes).
+  const { chromeFor, freeConfigMode, dragging, viewerTabCount, tabTriggerState,
+          paneSelectMode, paneSelectTargetPaneId, paneSelectHasSwap } = _chromeContext(model, layoutSlice);
+  // Normal view has MULTIPLE panes → trigger state is PER pane, and we
+  // mirror tab-list (any chain mode disables peer triggers so the user's
+  // open overlay can't be re-triggered out from under them). half/full
+  // have a single trigger and skip the peer-disable check.
   const paneSelectTriggerStateFor = (paneId) => {
     if (paneSelectMode) return paneId === paneSelectTargetPaneId ? 'open' : 'disabled';
     if (!paneSelectHasSwap) return 'hidden';
-    // Mirror tab-list: any chain mode disables peer triggers so the
-    // user's open overlay can't be re-triggered out from under them.
-    return require('../overlay/tab-list')._triggerState() === 'normal' ? 'available' : 'disabled';
+    return _tablist()._triggerState() === 'normal' ? 'available' : 'disabled';
   };
 
   // Index rects for quick lookup by either key. paneId is preferred
@@ -766,30 +777,13 @@ function renderHalf(model) {
     if (detailPanel.paneId) layoutSlice.paneBounds[detailPanel.paneId] = detailBounds;
   }
   // v0.6.3 P4.2 — chrome computed via chromeFor + threaded through
-  // renderPanel; half/full view paths don't need to inject post-render.
-  const { chromeFor } = _decor();
-  const freeConfigMode = !!(model.modes && model.modes.freeConfigMode);
-  const dragging = !!(layoutSlice.freeConfig && layoutSlice.freeConfig.drag);
-  let viewerTabCount = 0;
-  try {
-    const tabInfo = require('../panel/viewer/tabs').getTabInfo();
-    viewerTabCount = tabInfo && Number.isFinite(tabInfo.total) ? tabInfo.total : 0;
-  } catch (_) {}
-  let triggerStateRaw = 'normal';
-  try {
-    triggerStateRaw = require('../overlay/tab-list')._triggerState();
-  } catch (_) {}
-  const tabTriggerState = triggerStateRaw === 'normal' ? 'available' : triggerStateRaw;
-  // v0.6.3 D1 — half view also threads paneSelect state; only the left
-  // pane is non-detail (detail is always rightmost), so it's the only
-  // candidate for the pane-select trigger.
-  const halfPaneSelectMode = !!(model.modes && model.modes.paneSelectMode);
-  const halfPaneSelectTargetPaneId =
-    (layoutSlice.paneSelect && layoutSlice.paneSelect.targetPaneId) || null;
-  // Same hide-when-nothing-to-swap rule as renderNormal — half view
-  // shows one non-detail pane + detail; hide the trigger when there's
-  // nothing in the underlying arrange to swap to.
-  const halfPaneSelectHasSwap = mpool.paneSelectItems(layoutSlice.arrange, null).length >= 2;
+  // renderPanel. v0.6.4 Theme B — shared scalars from _chromeContext.
+  // Half view shows one non-detail pane (left) + detail (right); only
+  // the left is a pane-select candidate. Single trigger → no peer-
+  // disable check (plain 'available').
+  const { chromeFor, freeConfigMode, dragging, viewerTabCount, tabTriggerState,
+          paneSelectMode: halfPaneSelectMode, paneSelectTargetPaneId: halfPaneSelectTargetPaneId,
+          paneSelectHasSwap: halfPaneSelectHasSwap } = _chromeContext(model, layoutSlice);
   const halfPaneSelectStateFor = (paneId) => {
     if (halfPaneSelectMode) return paneId === halfPaneSelectTargetPaneId ? 'open' : 'disabled';
     if (!halfPaneSelectHasSwap) return 'hidden';
@@ -839,37 +833,18 @@ function renderFull(model) {
   const fullBounds = { x: 0, y: 0, w: COLS, h: availH };
   layoutSlice.paneBounds[focusedPanel.type] = fullBounds;
   if (focusedPanel.paneId) layoutSlice.paneBounds[focusedPanel.paneId] = fullBounds;
-  // v0.6.3 P4.2 — chrome computed via chromeFor; full view also routes
-  // [≡] through renderPanel inline when the focused panel is detail.
-  const { chromeFor: chromeForFull } = _decor();
-  const freeConfigModeF = !!(model.modes && model.modes.freeConfigMode);
-  const draggingF = !!(layoutSlice.freeConfig && layoutSlice.freeConfig.drag);
-  let viewerTabCountF = 0;
-  try {
-    const tabInfo = require('../panel/viewer/tabs').getTabInfo();
-    viewerTabCountF = tabInfo && Number.isFinite(tabInfo.total) ? tabInfo.total : 0;
-  } catch (_) {}
-  let triggerStateRawF = 'normal';
-  try {
-    triggerStateRawF = require('../overlay/tab-list')._triggerState();
-  } catch (_) {}
-  // v0.6.3 D1 — full view threads paneSelect state for the focused pane
-  // (only one pane is visible at full zoom; only relevant when it's
-  // non-detail).
-  const fullPaneSelectMode = !!(model.modes && model.modes.paneSelectMode);
-  const fullPaneSelectTargetPaneId =
-    (layoutSlice.paneSelect && layoutSlice.paneSelect.targetPaneId) || null;
-  // Same hide-when-nothing-to-swap rule. Full view only paints the
-  // focused pane; the trigger sits on it (non-detail only).
-  const fullPaneSelectHasSwap = mpool.paneSelectItems(layoutSlice.arrange, null).length >= 2;
-  const fullPaneSelectState = fullPaneSelectMode
-    ? (focusedPanel.paneId === fullPaneSelectTargetPaneId ? 'open' : 'disabled')
-    : (fullPaneSelectHasSwap ? 'available' : 'hidden');
-  const fullChrome = chromeForFull(focusedPanel, {
-    freeConfigMode: freeConfigModeF, dragging: draggingF,
+  // v0.6.3 P4.2 — chrome via chromeFor. v0.6.4 Theme B — shared scalars
+  // from _chromeContext. Full view paints ONE pane (the focused one):
+  // single trigger, no peer-disable.
+  const { chromeFor, freeConfigMode, dragging, viewerTabCount, tabTriggerState,
+          paneSelectMode, paneSelectTargetPaneId, paneSelectHasSwap } = _chromeContext(model, layoutSlice);
+  const fullPaneSelectState = paneSelectMode
+    ? (focusedPanel.paneId === paneSelectTargetPaneId ? 'open' : 'disabled')
+    : (paneSelectHasSwap ? 'available' : 'hidden');
+  const fullChrome = chromeFor(focusedPanel, {
+    freeConfigMode, dragging,
     focused: true,
-    viewerTabCount: viewerTabCountF,
-    tabTriggerState: triggerStateRawF === 'normal' ? 'available' : triggerStateRawF,
+    viewerTabCount, tabTriggerState,
     paneSelectTriggerState: fullPaneSelectState,
   });
   let content = _safeRender(focusedPanel, COLS, availH, { chrome: fullChrome });
