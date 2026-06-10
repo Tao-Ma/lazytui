@@ -538,7 +538,9 @@ function handleNormalKey(key, seq) {
         const ct = activeContentTab();
         if (ct) { removeContentTab(getModel().currentGroup, ct[0]); break; }
       }
-      applyMsg({ type: 'menu_open' });
+      // v0.6.4 Theme C — build the menu items HERE (handler reads the
+      // layout slice) and thread them; the menu_open arm stays pure.
+      applyMsg({ type: 'menu_open', items: require('../leaves/menu').buildItems(getInstanceSlice('layout')) });
       break;
     }
     case '?':              handleAction('show_help'); break;

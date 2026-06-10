@@ -33,7 +33,6 @@
 // the reducer can read it to walk the prefix tree without a require cycle.
 const kb = require('../dispatch/keybindings');
 // Pure command-menu item builder (leaf), so menu_open can build inline.
-const menu = require('../leaves/menu');
 // Pure pane-tab info builder (leaf) — flatTabInfo for jobs_activate's
 // tab-idx resolution. Zero-dep leaf, safe direct import.
 const pt = require('../leaves/pane-tabs');
@@ -768,6 +767,15 @@ function update(model, msg) {
       // violating the renderer-only-reader contract for out-of-TEA
       // stores per PRINCIPLES §12). msg.now is the dispatch-time
       // timestamp for the background/tmux age display.
+      //
+      // v0.6.4 Theme C — BLESSED root-reducer slice read (NOT threadable).
+      // The viewer-slice reads below (flatTabInfo / resolveTabKey to route
+      // a routed/pty/info job to its tab) depend on the POST-cascade
+      // currentGroup that THIS arm computes mid-flight (group switch above);
+      // the handler can't precompute them at dispatch time. Unlike escape /
+      // _cycleViewerTab / menu_open (whose inputs were hoistable), this
+      // orchestrator legitimately reads the viewer slice via route. Full
+      // purity is infeasible here; documented rather than forced.
       if (!model.modes.jobsMode) return [model, []];
       const job = msg.job || null;
       const closedModel = _withModes(model, { jobsMode: false });
@@ -862,9 +870,12 @@ function update(model, msg) {
       return [closedModel, cmds];
     }
     case 'menu_open':
+      // v0.6.4 Theme C — items are threaded by the menu_open handler
+      // (built from the layout slice there); the arm no longer reads the
+      // Component slice. `|| []` covers the degenerate / test path.
       return [{
         ..._withModes(model, { menuOpen: true }),
-        modal: { ...model.modal, menu: { items: menu.buildItems(route.getInstanceSlice('layout')), idx: 0 } },
+        modal: { ...model.modal, menu: { items: msg.items || [], idx: 0 } },
       }, []];
     case 'menu_close':
       if (!model.modes.menuOpen) return [model, []];
