@@ -345,6 +345,17 @@ module.exports = {
   `[[elm-tea-discipline]]`). Component-level surfaces OUTSIDE arms
   (handlers, finalizers, contributors registered with the framework)
   may still read `getModel()`; the rule applies to the arm body only.
+- **The ROOT reducer (`runtime.update`) is held to the same bar**
+  (v0.6.4 Theme C). Its arms may do ROUTING reads via `route`
+  (`getFocus` / `componentForPanel` / `paneTypeOf` / `resolveTarget` —
+  the blessed chokepoint), but MUST NOT read Component-slice *values*
+  (`multiSel.size`, `slice.tab`, `flatTabInfo`, `buildItems(slice)`) to
+  branch — those are threaded via Msg payload by the dispatching handler
+  (e.g. `escape`'s `hadMultiSel`, `next_tab`'s tab bundle, `menu_open`'s
+  `items`). The ONE documented exception is `jobs_activate`: its viewer
+  reads depend on the post-cascade `currentGroup` the arm computes
+  mid-flight, so they can't be hoisted to dispatch time — a genuine
+  intrinsic orchestrator read, not erosion.
 - A Component **never writes** the root model. The Component's own
   slice is the only thing its `update` writes directly. Cross-layer
   writes go out as a `{type:'msg', msg}` effect — a wrapped Msg
