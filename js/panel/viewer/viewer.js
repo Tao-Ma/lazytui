@@ -58,8 +58,9 @@ function _beginSelect(slice, line, col, kind) {
 }
 
 // Effective viewport for scroll/cursor clamps. The slice's `innerH` is
-// written from render() each frame (viewer_set_viewport Msg) so the
-// reducer stays a pure function of (slice, msg) — no cross-slice read of
+// written from render() each frame (direct setInstanceSlice on our own
+// slice — R4.9; was a wrapped viewer_set_viewport Msg) so the reducer
+// stays a pure function of (slice, msg) — no cross-slice read of
 // layout's render-time geometry. The pre-first-render fallback is `1`:
 // any viewer_scroll/append/cursor before paint still clamps inside
 // [0, lines.length - 1] instead of overshooting (the pre-fix bug was
@@ -166,9 +167,9 @@ function init() {
     scroll: 0,
     tab: 0,
     // Effective viewport rows (panel height minus 2-row border chrome).
-    // Written from render() via viewer_set_viewport once the layout pass
-    // settles a paneBounds.detail — owning slice, not cross-slice, so the
-    // reducer is a pure function of (slice, msg). 0 = not-yet-rendered;
+    // Written from render() via a direct setInstanceSlice (R4.9) once the
+    // layout pass settles our paneBounds — owning slice, not cross-slice,
+    // so the reducer is a pure function of (slice, msg). 0 = not-yet-rendered;
     // _innerH() falls back to lines.length in that degenerate so clamps
     // collapse to "everything fits".
     innerH: 0,
@@ -1087,19 +1088,8 @@ function render(panel, w, h, slice, opts) {
   // T2c — display lines come from viewerLines() (derives from active
   // tab + buffers + override + focused-Navigator's getInfo). Falls
   // back to slice.lines for tabs whose reducer arms still maintain
-  // it; T2d retires the fallback.
-  const _infoFromFocus = () => {
-    const focus = getFocus();
-    const def = require('../api').getPanelDef(focus);
-    if (!def || typeof def.getItems !== 'function' || typeof def.getInfo !== 'function') return null;
-    const items = require('../api').getItems(focus);
-    const { getSel } = require('../../app/state');
-    const item = items[getSel(focus)];
-    if (!item) return null;
-    const out = def.getInfo(item);
-    if (!out || !out.length) return null;
-    return out.join('\n').split('\n');
-  };
+  // it; T2d retires the fallback. infoFromFocus is the module-level
+  // helper (was an identical inline closure here pre-cleanup).
   const derived = pt.viewerLines(slice, m, m.currentGroup, { infoFromFocus: _infoFromFocus });
   let lines = derived;
   let count = null;

@@ -3,10 +3,12 @@
  *
  * Drives update(msg, slice) directly (no real docker) to verify the
  * self-armed poll loop: refresh arms the tick + emits a fetch, the inFlight
- * guard prevents overlapping fetches, dockerTick re-arms and is focus-gated,
- * dockerResult folds the maps + clears the guard, and i/t/s key Msgs emit the
- * right stream/shell effects. A small registered-component section checks that
- * statusFor/getInfo read the live slice.
+ * guard prevents overlapping fetches, dockerTick re-arms unconditionally
+ * (the focus + container-count gates live in the dockerFetch/dockerEventsStart
+ * effects, not the reducer — Phase-D purity), dockerResult folds the maps +
+ * clears the guard, and i/t/s key Msgs emit the right stream/shell effects.
+ * A small registered-component section checks that statusFor/getInfo read
+ * the live slice.
  *
  * Run: node js/test/test-docker-component.js
  */
@@ -64,11 +66,16 @@ describe('[1] refresh arms the recurring tick + an immediate fetch', () => {
     eq(tick.msg.msg.type, 'dockerTick', 'tick re-dispatches dockerTick');
     assert(slice.started && slice.inFlight && slice.eventsStarted, 'flags set');
   });
-  it('no containers: arms the tick but emits no fetch', () => {
+  it('no containers: reducer still emits the fetch Cmds (pure) — the effects gate', () => {
+    // Phase-D cleanup: the reducer no longer reads getModel().config to
+    // gate on container count. It emits dockerEventsStart + dockerFetch
+    // unconditionally; the dockerEventsStart effect no-ops on an empty
+    // container set and dockerFetch dispatches an empty dockerResult that
+    // clears the in-flight latch. The gate moved to the impure layer.
     setup([]);
     const { slice, effects } = step({ type: 'refresh' }, slice0());
-    eq(types(effects).join(','), 'tick', 'only the tick is armed');
-    assert(slice.started && !slice.inFlight, 'started, but nothing in flight');
+    eq(types(effects).join(','), 'tick,dockerEventsStart,dockerFetch', 'reducer emits the full set');
+    assert(slice.started && slice.inFlight, 'flags set (inFlight is cleared later by the effect)');
   });
 });
 
@@ -87,17 +94,23 @@ describe('[2] inFlight guards overlapping fetches', () => {
   });
 });
 
-describe('[3] dockerTick re-arms always; fetch is focus-gated', () => {
-  it('tick re-arms and fetches when focused + idle', () => {
+describe('[3] dockerTick re-arms always; fetch gating lives in the effect', () => {
+  it('tick re-arms and emits the fetch when idle', () => {
     setup(['c1'], true);
     const { effects } = step({ type: 'dockerTick' }, { ...slice0(), started: true, eventsStarted: true });
     assert(types(effects).includes('tick'), 're-armed');
     assert(types(effects).includes('dockerFetch'), 'fetched');
   });
-  it('tick re-arms but skips the fetch while blurred', () => {
+  it('tick re-arms and emits the fetch even while blurred — the effect skips the query', () => {
+    // Phase-D cleanup: the focus-pause gate moved from this arm to the
+    // dockerFetch effect (a live read — the tick fires async, so an
+    // arm-time focus value would be stale). The reducer emits dockerFetch
+    // regardless; the effect dispatches dockerResult WITHOUT querying
+    // docker when getModel().focused === false.
     setup(['c1'], false);  // getModel().focused = false
     const { effects } = step({ type: 'dockerTick' }, { ...slice0(), started: true, eventsStarted: true });
-    eq(types(effects).join(','), 'tick', 're-armed, no fetch while blurred');
+    assert(types(effects).includes('tick'), 're-armed');
+    assert(types(effects).includes('dockerFetch'), 'fetch emitted (the effect gates on focus, not the reducer)');
   });
 });
 

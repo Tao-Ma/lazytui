@@ -253,7 +253,13 @@ function init() {
  *  already in flight or there are no containers to watch. Pure: returns
  *  [nextSlice, effects]. */
 function _maybeFetch(slice) {
-  if (slice.inFlight || _containers().length === 0) return [slice, []];
+  // Pure gate — only the in-flight latch (slice state) lives in the
+  // reducer. Whether there are containers to query and whether the
+  // terminal is focused are LIVE runtime reads: the tick fires async,
+  // so an arm-time value would be stale. Those gates moved to the
+  // dockerFetch / dockerEventsStart effects (the impure layer), which
+  // makes this — and the dockerTick/refresh/dockerPoll arms — pure.
+  if (slice.inFlight) return [slice, []];
   const effects = [];
   const next = { ...slice, inFlight: true };
   if (!slice.eventsStarted) { next.eventsStarted = true; effects.push({ type: 'dockerEventsStart' }); }
@@ -276,9 +282,10 @@ function update(msg, slice) {
     return [n2, armed.concat(fx)];
   }
   if (msg.type === 'dockerTick') {
-    // Re-arm regardless (so cadence resumes after a blur), then poll if able.
+    // Re-arm regardless (so cadence resumes after a blur), then attempt a
+    // poll. The focus-pause gate moved to the dockerFetch effect (a live
+    // read — see _maybeFetch), so this arm is pure.
     const armed = [{ type: 'tick', ms: POLL_MS, msg: wrap('docker', { type: 'dockerTick' }) }];
-    if (require('../../app/runtime').getModel().focused === false) return [slice, armed];
     const [next, fx] = _maybeFetch(slice);
     return [next, armed.concat(fx)];
   }
@@ -329,6 +336,11 @@ function installEffects(registerEffect) {
   registerEffect('dockerFetch', () => {
     setImmediate(async () => {
       try {
+        // Live gates (the tick fired async). Skip the docker queries when
+        // the terminal is unfocused — but still dispatch dockerResult so
+        // the in-flight latch clears and the next tick can retry. A bare
+        // dockerResult (no maps) keeps the prior status/stats intact.
+        if (getModel().focused === false) { dispatchMsg(wrap('docker', { type: 'dockerResult' })); return; }
         const containers = _containers();
         if (!containers.length) { dispatchMsg(wrap('docker', { type: 'dockerResult', status: {}, stats: {} })); return; }
 
@@ -381,6 +393,12 @@ function installEffects(registerEffect) {
   });
 
   registerEffect('dockerEventsStart', () => {
+    // Don't spawn the events watcher until there's at least one tracked
+    // container — the reducer no longer gates on container count (live
+    // read). With a permanently empty container set (config is immutable
+    // post-boot) the latch stays effectively idle and no watcher starts,
+    // matching the pre-Phase-D behavior.
+    if (_containers().length === 0) return;
     startEventsStream(getModel().config);
   });
 

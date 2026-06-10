@@ -126,8 +126,10 @@ except the blessed render-side exceptions:
 
   - `layout.panelHeights` / `paneBounds` written by `calcLayout` +
     each render-mode (the view-output geometry).
-  - `paneBounds.detail.tabs` written by the viewer's `detailTitle`
-    (tab-bar hit-test cache).
+  - `viewer.slice.tabBounds` written by the viewer's `detailTitle`
+    (tab-bar hit-test cache). P4.1 moved this off `layout`'s slice onto
+    the viewer's OWN slice — an own-slice render-time write, not the
+    cross-slice one it used to be.
   - keep-in-view `set_scroll` Msgs from `syncPanelScroll` into each
     Navigator's nav slice (Msgs, not direct writes).
   - direct `route.setInstanceSlice` from `render()` into the viewer's

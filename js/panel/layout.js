@@ -30,7 +30,6 @@ const mtabDrag = require('../leaves/tab-drag');
 const mpool = require('../leaves/pool');
 const mpane = require('../leaves/pane');
 const route = require('../leaves/route');
-const { getModel } = require('../app/runtime');
 const { getInstanceSlice } = require('./api');
 
 
@@ -283,9 +282,13 @@ function update(msg, slice) {
     // leaves the value put.
     case 'focus_set': {
       // _withFocus stamps focus + sticky halfLeftPanel + sticky
-      // lastViewerTab. show_selected_info follows the focus change.
+      // lastViewerTab. show_selected_info follows the focus change —
+      // UNLESS msg.skipInfo: the caller will fire it itself against a
+      // freshly-written cursor (a row-click that follows with navSelect),
+      // so cascading here too would double-fire it against the stale
+      // pre-write item.
       const next = msg.focus != null ? msg.focus : slice.focus;
-      return [_withFocus(slice, next), [{ type: 'show_selected_info' }]];
+      return [_withFocus(slice, next), msg.skipInfo ? [] : [{ type: 'show_selected_info' }]];
     }
     // v0.6.1 Phase 4 — pane id that owns the open tab-list overlay.
     // Dispatched from the pane-tabs leaf reducer's tab_list_open

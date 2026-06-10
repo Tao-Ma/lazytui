@@ -568,27 +568,29 @@ function handleMouse(kind, x, y) {
     // outside the detail content area cancels any pending selection
     // (starting a new gesture here).
     sel.cancel();
-    dispatchMsg(wrap('layout', { type: 'focus_set', focus: p.type }));
+    // Resolve whether this click lands on a selectable row BEFORE the
+    // focus_set: if it does, navSelect (below) sets the cursor and fires
+    // show_selected_info against the NEW selection, so focus_set skips
+    // its own cascade (skipInfo) to avoid a double-fire — the first
+    // against the pre-cursor-write (stale) item. Off-row clicks keep
+    // focus_set's show_selected_info so Info still refreshes on focus.
     const itemRow = my - b.y - 1;  // -1 for top border
+    let navIdx = -1;
     if (itemRow >= 0) {
       const def = getPanelDef(p.type);
       if (def && typeof def.getItems === 'function') {
-        const items = getItems(p.type);
         const idx = itemRow + getScroll(p.type);
-        if (idx < items.length) {
-          // v0.6.2 — single navSelect path. Sets cursor, fires the
-          // auto-yank-or-show_info cascade, and runs groups_selected
-          // cascade for groups. Replaces the prior setSel/selectGroup
-          // split that left non-groups clicks without auto-yank parity.
-          navSelect(p.type, idx);
-        }
+        if (idx < getItems(p.type).length) navIdx = idx;
       }
     }
-    // navSelect already dispatched show_info (or tab_switch which
-    // cascades to it); no trailing showSelectedInfo() needed. The
-    // focus_set above also cascades show_info but it runs against
-    // the OLD selection (pre-cursor-write); the navSelect dispatch
-    // is what lands the visible refresh.
+    dispatchMsg(wrap('layout', { type: 'focus_set', focus: p.type, skipInfo: navIdx >= 0 }));
+    if (navIdx >= 0) {
+      // v0.6.2 — single navSelect path. Sets cursor, fires the
+      // auto-yank-or-show_info cascade, and runs groups_selected
+      // cascade for groups. Replaces the prior setSel/selectGroup
+      // split that left non-groups clicks without auto-yank parity.
+      navSelect(p.type, navIdx);
+    }
     mutated = true;
     break;
   }
