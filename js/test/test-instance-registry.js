@@ -96,4 +96,45 @@ describe('[v0.6.1 Phase 0] tab-instance registry', () => {
   });
 });
 
+describe('[v0.6.4 Theme A Phase 1] focused-instance key routing', () => {
+  // dispatchKeyToFocused must route the keystroke to the FOCUSED
+  // instance, not the kind's PRIMARY. Pre-fix it used
+  // getPrimaryByKind(compName) unconditionally, so with two same-kind
+  // panes the key always hit the first one regardless of focus.
+  it('two same-kind panes: the key lands on the FOCUSED pane, not the primary', () => {
+    resetRegistry();
+    // layout must register first (the focus reader needs a slice).
+    api.registerComponent({ name: 'layout', init: () => ({ focus: null }), update: (m, s) => s });
+    // A stub Navigator-ish Component owning panelType 'probe'; its
+    // update stamps the key it received onto the slice.
+    api.registerComponent({
+      name: 'probe',
+      // panelType needs render() or registerComponent skips the owner
+      // mapping (componentForPanel would then miss).
+      panelTypes: { probe: { render: () => [], getItems: () => [] } },
+      init: () => ({ gotKey: null }),
+      update: (msg, slice) => (msg.type === 'key' ? [{ ...slice, gotKey: msg.key }, []] : slice),
+    });
+    // Two instances of kind 'probe' in distinct slots; pane-a is primary
+    // (minted first), pane-b is the one we focus. Drop the singleton
+    // registerComponent minted so the primary is genuinely pane-a.
+    route.disposeInstance('probe');
+    route.setInstance('pane-a', 'probe', { gotKey: null });
+    route.setInstance('pane-b', 'probe', { gotKey: null });
+    eq(route.getPrimaryByKind('probe'), 'pane-a', 'pane-a is the primary');
+
+    // Focus the NON-primary pane, then dispatch a key.
+    route.setInstanceSlice('layout', { focus: 'pane-b' });
+    const claimed = api.dispatchKeyToFocused('x', 'x');
+
+    assert(claimed === false, 'stub did not claim (no _claimed sentinel)');
+    eq(route.getInstanceSlice('pane-b').gotKey, 'x', 'FOCUSED pane-b received the key');
+    assert(route.getInstanceSlice('pane-a').gotKey === null,
+      'primary pane-a did NOT receive it (pre-fix it would have)');
+
+    route.disposeInstance('pane-a');
+    route.disposeInstance('pane-b');
+  });
+});
+
 report();

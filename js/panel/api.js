@@ -412,11 +412,20 @@ function dispatchMsg(msg) {
  * branch that handles the key decides whether to suppress the default.
  */
 function dispatchKeyToFocused(key, seq) {
-  const compName = route.componentForPanel(route.getFocus());
+  const focus = route.getFocus();
+  const compName = route.componentForPanel(focus);
   if (!compName) return false;
   const comp = components[compName];
   if (!comp) return false;
-  const id = route.getPrimaryByKind(compName);
+  // v0.6.4 Theme A Phase 1 — route the keystroke to the FOCUSED
+  // instance: prefer the focused paneId directly (per-pane mint — the
+  // multi-instance path), else fall back to the kind's primary
+  // (docker-style `panelTypes` panes mint kind-keyed, not per-pane, so
+  // their paneId has no instance). No-op under single-pane configs —
+  // there the focused paneId IS the kind's primary. Was
+  // getPrimaryByKind unconditionally, which sent keys to the FIRST
+  // instance of the kind regardless of which same-kind pane was focused.
+  const id = route.hasInstance(focus) ? focus : route.getPrimaryByKind(compName);
   if (id === undefined) return false;
   const inst = route.getInstance(id);
 
