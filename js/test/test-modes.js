@@ -35,10 +35,22 @@ describe('[1] registry derivations', () => {
       eq(modes.isModal(s), modal.includes(f), `${f} modal`);
     }
   });
-  it('isOverlayActive / isModal are false when nothing is active', () => {
+  it('suppressesChromeClicks matches the pre-fold hand-rolled list', () => {
+    // v0.6.4 Theme D — folded input.js#_suppressesChromeClicks into the
+    // MODES `suppressChrome` column; this pins behavior-equivalence with
+    // the 8-mode list it replaced.
+    const suppress = ['cmdMode','menuOpen','copyMode','confirmMode','promptMode',
+                      'registerPopupMode','freeConfigTitleEditMode','terminalMode'];
+    for (const f of modes.MODES.map(m => m.flag)) {
+      const s = {}; s[f] = true;
+      eq(modes.suppressesChromeClicks(s), suppress.includes(f), `${f} suppressChrome`);
+    }
+  });
+  it('isOverlayActive / isModal / suppressesChromeClicks are false when nothing is active', () => {
     const s = {};
     eq(modes.isOverlayActive(s), false);
     eq(modes.isModal(s), false);
+    eq(modes.suppressesChromeClicks(s), false);
   });
 });
 

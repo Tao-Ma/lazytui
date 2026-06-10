@@ -20,7 +20,7 @@ const { writeToSession, isSessionDead } = require('../io/terminal');
 const {getPanelDef, getItems, getInstanceSlice, dispatchMsg, wrap, getFocus, instanceKind } = require('../panel/api');
 const route = require('../panel/route');
 const mpane = require('../leaves/pane');
-const { isChainActive, CHAIN_MODES } = require('./modes');
+const { isChainActive, CHAIN_MODES, suppressesChromeClicks } = require('./modes');
 
 function _detail() {
   // v0.6.3 T1.4 — paneId-aware lookup (post-Phase B1). resolveTarget
@@ -108,17 +108,6 @@ function _handleWheel(mx, my, delta) {
     return false;
   }
   return false;
-}
-
-/** Suppress chrome-glyph clicks when a mode owns the user's input or
- *  paints a centered popup over the chrome. Free-config is explicitly
- *  let through — the [_] widget is supposed to work there. Same for
- *  filter/detailSearch/prefix/listSelect (no centered overlay covering
- *  chrome). */
-function _suppressesChromeClicks(md) {
-  return md.cmdMode || md.menuOpen || md.copyMode
-      || md.confirmMode || md.promptMode || md.registerPopupMode
-      || md.freeConfigTitleEditMode || md.terminalMode;
 }
 
 // v0.6.3 Phase C1 — mouse-routing registry mirroring keyboard's
@@ -371,7 +360,7 @@ function handleMouse(kind, x, y) {
   // Suppression predicate is narrower than isChainActive: free-config
   // and the in-grid modes (filter/search/prefix/listSelect) still let
   // chrome clicks through; only input-owning modes block them.
-  if (kind === 'press' && !_suppressesChromeClicks(model.modes)) {
+  if (kind === 'press' && !suppressesChromeClicks(model.modes)) {
     const { hitTestCollapseButton, hitTestCloseButton } = require('../render/decor');
     const collapseId = hitTestCollapseButton(mx, my);
     if (collapseId) {
