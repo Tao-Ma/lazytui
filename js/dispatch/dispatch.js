@@ -21,7 +21,7 @@
  */
 'use strict';
 
-const { allPanels, getSel, switchGroupsTab } = require('../app/state');
+const { allPanels, getSel, switchGroupsTab, multiSelCount } = require('../app/state');
 const { render } = require('../render/geometry');
 const { getPanelDef, getItems, idOf, getInstanceSlice,
        getComponentOwningPanel, dispatchMsg, dispatchKeyToFocused, wrap, getFocus,
@@ -458,12 +458,17 @@ function handleNormalKey(key, seq) {
   }
   switch (key) {
     case 'q': { require('../app/cleanup').cleanup(); process.exit(0); break; }
-    case 'escape':
+    case 'escape': {
       // Esc exits list-select mode (and clears the selection). Outside
       // select mode it clears any lingering multi-selection. When
-      // neither applies it's a no-op. (All pure model writes — reducer.)
-      applyMsg({ type: 'escape' });
+      // neither applies it's a no-op.
+      // v0.6.4 Theme C — the handler (impure) reads the focused nav's
+      // multiSel count and threads `hadMultiSel`; the escape reducer arm
+      // no longer reaches into the Component slice.
+      const panelType = route.paneTypeOf(getFocus()) || getFocus();
+      applyMsg({ type: 'escape', hadMultiSel: multiSelCount(panelType) > 0 });
       break;
+    }
     case 'v':
       // `v` enters list-select mode on a list panel (mirrors the detail
       // panel's visual mode, which the detail Component claims via its

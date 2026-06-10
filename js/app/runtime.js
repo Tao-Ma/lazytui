@@ -283,8 +283,11 @@ function update(model, msg) {
       // set_cursor / multisel_clear arms index slice.nav by
       // panel-type for multi-panel Components like files).
       const panelType = route.paneTypeOf(focus) || focus;
-      const entry = compName ? mnav.entryOf(route.getInstanceSlice(compName), panelType) : null;
-      const had = !!(entry && entry.multiSel && entry.multiSel.size > 0);
+      // v0.6.4 Theme C — `hadMultiSel` is threaded by the escape handler
+      // (it read the focused nav's multiSel.size); the arm no longer
+      // reaches into the Component slice. Routing reads (getFocus /
+      // componentForPanel / paneTypeOf) stay — the blessed chokepoint.
+      const had = !!msg.hadMultiSel;
       if (model.modes.listSelectMode) {
         const next = _withModes(model, { listSelectMode: false });
         if (compName) return [next, [{ type: 'msg', msg: route.wrap(compName, { type: 'multisel_clear', panel: panelType }) }]];

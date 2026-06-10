@@ -249,12 +249,12 @@ describe('[3] update — (model, msg) → [model, cmds], pure + Cmd descriptors'
     state.toggleMultiSel('containers', 'a');
     state.toggleMultiSel('containers', 'b');
     eq(state.multiSelCount('containers'), 2, 'two items selected');
-    dispatch.applyMsg({ type: 'escape' });
+    dispatch.applyMsg({ type: 'escape', hadMultiSel: state.multiSelCount('containers') > 0 });
     eq(runtime.getModel().modes.listSelectMode, false, 'escape exits select mode');
     eq(state.multiSelCount('containers'), 0, 'escape clears the selection');
     // escape again with a lingering selection but not in select mode
     state.toggleMultiSel('containers', 'x');
-    dispatch.applyMsg({ type: 'escape' });
+    dispatch.applyMsg({ type: 'escape', hadMultiSel: state.multiSelCount('containers') > 0 });
     eq(state.multiSelCount('containers'), 0, 'escape clears lingering selection');
     // list_select on (the * path) forces it true
     dispatch.applyMsg({ type: 'list_select', mode: 'on' });
