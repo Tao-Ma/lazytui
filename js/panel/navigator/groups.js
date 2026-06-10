@@ -184,8 +184,38 @@ function init() {
 
 // --- update ---
 
+/** The viewer-reset + group-switch cascade emitted when a selection or
+ *  tree-shape change moved currentGroup. SINGLE source for this ordered
+ *  block — both `_cascadeCmds` (toggle_group / toggle_groups_tab) and
+ *  the `groups_selected` arm call it, so the load-bearing B5 ordering
+ *  can't drift between the two. Returns [] when the group didn't move.
+ *  Reducer-pure (ctx threaded, no getModel()). */
+function _groupChangeCmds(res, ctx) {
+  if (!res.groupChanged) return [];
+  const cmds = [];
+  // v0.6.2 B5 — viewer_reset_chrome MUST run before set_current_group.
+  // The viewer's finalizer captures the leaving tab's view-state on
+  // slice.tab transition. If set_current_group runs FIRST, the
+  // finalizer's resolveTabKey sees the NEW group and the FROM-capture
+  // lands under the WRONG group's key. Reordering keeps the finalizer
+  // reading the OLD group at capture time.
+  const route = require('../../leaves/route');
+  const target = route.resolveTarget('viewer');
+  if (target) {
+    cmds.push({ type: 'msg', msg: require('../api').wrap(target, {
+      type: 'viewer_reset_chrome', tabListMode: !!(ctx && ctx.tabListMode),
+    }) });
+  }
+  cmds.push({ type: 'msg', msg: { type: 'set_current_group', name: res.newCurrentGroup } });
+  cmds.push({ type: 'msg', msg: { type: 'reset_group_context' } });
+  return cmds;
+}
+
 /** Build the cascade Cmds when a tree-shape change moved currentGroup.
- *  Takes ctx = { tabListMode? }; reducer pure — no getModel(). */
+ *  Takes ctx = { tabListMode? }; reducer pure — no getModel(). Wraps the
+ *  shared group-change block with the cursor write + Info refresh that
+ *  the toggle_* paths need (the groups_selected path gets both from its
+ *  upstream nav_select cascade, so it calls _groupChangeCmds directly). */
 function _cascadeCmds(res, ctx) {
   const cmds = [];
   // Phase 4b — cursor lives on this Component's own nav slice; emit a
@@ -194,23 +224,7 @@ function _cascadeCmds(res, ctx) {
   if (res.newIdx >= 0) {
     cmds.push({ type: 'msg', msg: require('../api').wrap('groups', { type: 'set_cursor', panel: 'groups', index: res.newIdx }) });
   }
-  if (res.groupChanged) {
-    // v0.6.2 B5 — viewer_reset_chrome MUST run before set_current_group.
-    // The viewer's finalizer captures the leaving tab's view-state on
-    // slice.tab transition. If set_current_group runs FIRST, the
-    // finalizer's resolveTabKey sees the NEW group and the FROM-capture
-    // lands under the WRONG group's key. Reordering keeps the finalizer
-    // reading the OLD group at capture time.
-    const route = require('../../leaves/route');
-    const target = route.resolveTarget('viewer');
-    if (target) {
-      cmds.push({ type: 'msg', msg: require('../api').wrap(target, {
-        type: 'viewer_reset_chrome', tabListMode: !!(ctx && ctx.tabListMode),
-      }) });
-    }
-    cmds.push({ type: 'msg', msg: { type: 'set_current_group', name: res.newCurrentGroup } });
-    cmds.push({ type: 'msg', msg: { type: 'reset_group_context' } });
-  }
+  cmds.push(..._groupChangeCmds(res, ctx));
   cmds.push({ type: 'show_selected_info' });
   return cmds;
 }
@@ -243,23 +257,10 @@ function update(msg, slice) {
     const ctx = _msgCtx(msg);
     const res = selectAt(slice, ctx, msg.index);
     if (res.newIdx < 0) return slice;
-    // cursor already written by nav_select — don't re-emit set_panel_cursor.
-    const cmds = [];
-    if (res.groupChanged) {
-      // v0.6.2 B5 — viewer_reset_chrome before set_current_group (see
-      // selectAt cascade above for the full rationale: the finalizer's
-      // FROM-tab key resolution needs the OLD currentGroup).
-      const route = require('../../leaves/route');
-      const target = route.resolveTarget('viewer');
-      if (target) {
-        cmds.push({ type: 'msg', msg: require('../api').wrap(target, {
-          type: 'viewer_reset_chrome', tabListMode: !!ctx.tabListMode,
-        }) });
-      }
-      cmds.push({ type: 'msg', msg: { type: 'set_current_group', name: res.newCurrentGroup } });
-      cmds.push({ type: 'msg', msg: { type: 'reset_group_context' } });
-    }
-    return [slice, cmds];
+    // cursor + show_selected_info already come from the upstream
+    // nav_select cascade — emit ONLY the shared group-change block (the
+    // same B5-ordered Cmds the toggle_* paths use via _cascadeCmds).
+    return [slice, _groupChangeCmds(res, ctx)];
   }
   if (msg.type === 'toggle_group') {
     // `recursive` only matters for the leader-key `"` chord (expand
