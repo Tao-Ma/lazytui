@@ -114,6 +114,13 @@ function makeDriver() {
     // 'render' → no-op in the harness
   }
   function dispatch(msg) {
+    // The pure key arm reads the cursor from slice.nav (not the global
+    // registry); bridge the test's setSel() into the passed slice for
+    // key Msgs so the focused row resolves the same way it does in app.
+    if (msg.type === 'key' && msg.focusKind && slice.nav && slice.nav[msg.focusKind]) {
+      const cursor = getSel(msg.focusKind);
+      slice = { ...slice, nav: { ...slice.nav, [msg.focusKind]: { ...slice.nav[msg.focusKind], cursor } } };
+    }
     const result = filesComp._update(msg, slice);
     if (Array.isArray(result)) {
       slice = result[0];
@@ -248,7 +255,7 @@ describe('[8] Enter on a dir navigates — slice cwd advances + chrome resets', 
       const subIdx = items.findIndex(i => i.name === 'subdir');
       assert(subIdx >= 0, 'subdir present');
       setSel('file-browser', subIdx);
-      d.dispatch({ type: 'key', key: 'return', seq: '' });
+      d.dispatch({ type: 'key', key: 'return', seq: '', focusKind: 'file-browser' });
       eq(d.browser('file-browser').cwd, path.join(root, 'subdir'), 'cwd advanced');
       assert(d.items('file-browser', 'filesystem').some(i => i.name === 'gamma.txt'), 'subdir listing loaded');
       eq(getSel('file-browser'), 0, 'resetPanelChrome re-homed the cursor');
@@ -263,7 +270,7 @@ describe('[8] Enter on a dir navigates — slice cwd advances + chrome resets', 
       const items = d.items('file-browser', 'filesystem');
       const alphaIdx = items.findIndex(i => i.name === 'alpha.txt');
       setSel('file-browser', alphaIdx);
-      d.dispatch({ type: 'key', key: 'return', seq: '' });
+      d.dispatch({ type: 'key', key: 'return', seq: '', focusKind: 'file-browser' });
       eq(d.opened.length, 1, 'one openFile effect emitted');
       eq(d.opened[0].item.name, 'alpha.txt');
       eq(d.browser('file-browser').cwd, root, 'cwd unchanged when opening a file');

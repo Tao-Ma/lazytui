@@ -53,14 +53,20 @@ function freshSlice(statuses = {}) {
     // v0.6.3 T1.2 — config-status caches files + projectDir on slice
     // (mirrored via set_config arm); reducer arms read locally.
     slice: { tab: 0, expanded: {}, branch: 'config', computing: false,
-             files: cf, projectDir: '.',
+             files: cf, projectDir: '.', nav: require('../leaves/nav').init(),
              cache: { byPath, children, branch: 'config', computedAt: 0 } },
   };
 }
 
 // Apply a key Msg, returning the next slice (drops any effects).
+// The pure `return` key arm reads the cursor from slice.nav (not the
+// global registry), so mirror the test's setCursor() — which seeds the
+// global via setSel — into the passed slice's nav.
 function keyUpdate(slice, key) {
-  const r = cs._update({ type: 'key', key }, slice);
+  const mnav = require('../leaves/nav');
+  const cursor = require('../app/state').getSel('config-status');
+  const nav = { ...(slice.nav || mnav.init()), cursor };
+  const r = cs._update({ type: 'key', key }, { ...slice, nav });
   return Array.isArray(r) ? r[0] : r;
 }
 
@@ -436,6 +442,8 @@ describe('[8] diffFor — preview shape per status', () => {
     const idx = items.findIndex((i) => i.kind === 'file' && i.path === 'data/dev9/bashrc');
     assert(idx >= 0, 'fixture file present in items');
     setCursor(E2E_FILES, idx);
+    // Pure return arm reads the cursor from slice.nav (not the global).
+    slice.nav = { ...require('../leaves/nav').init(), cursor: idx };
     const r = cs._update({ type: 'key', key: 'return' }, slice);
     assert(Array.isArray(r) && r[1][0].type === 'cfgStatusDiff', 'Enter on a file emits cfgStatusDiff');
     effects.runEffects(r[1]);  // run the diff effect → setViewerContent → viewer slice

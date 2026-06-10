@@ -310,11 +310,13 @@ function update(msg, slice) {
 }
 
 function _handleKey(msg, slice) {
-  // v0.6.3 post-arch-arc — instanceKind returns the panel-type
-  // ('containers'), not the Component name ('docker'). Sibling
-  // of the same fix at line 460.
-  if (instanceKind(getFocus()) !== 'containers') return slice;
-  const item = _getItems(slice)[getSel('containers')];
+  // Pure key arm — both inputs come from the Msg + our own slice, not
+  // global reads: msg.focusKind is the focused pane's panel-type
+  // (threaded by dispatchKeyToFocused); the cursor comes from
+  // slice.nav via the nav leaf. (Was instanceKind(getFocus()) +
+  // getSel('containers') — the navigator-key-arm purity sweep.)
+  if (msg.focusKind !== 'containers') return slice;
+  const item = _getItems(slice)[mnav.cursorOf(slice, 'containers')];
   if (!item) return slice;
   if (msg.key === 'i') return [slice, [{ type: 'dockerExec', mode: 'inspect', item }]];
   if (msg.key === 't') return [slice, [{ type: 'dockerExec', mode: 'logs', item }]];

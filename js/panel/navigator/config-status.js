@@ -425,8 +425,9 @@ function update(msg, slice) {
     if (msg.key === '[') return [{ ...slice, tab: (tabIdx(slice) + TAB_LABELS.length - 1) % TAB_LABELS.length }, [{ type: '_claimed' }]];
     if (msg.key === 'return') {
       // T1.2 — read files snapshot from slice (cached via set_config arm),
-      // not via getModel(). Same cursor lookup as before.
-      const item = buildItems(slice, slice.files || [])[getSel('config-status')];
+      // not via getModel(). Cursor from our own slice.nav (via the nav
+      // leaf), not the getSel() global — navigator-key-arm purity sweep.
+      const item = buildItems(slice, slice.files || [])[mnav.cursorOf(slice, 'config-status')];
       // `return` is claimed regardless of what the row resolves to —
       // even an unclickable header row shouldn't ALSO trigger the
       // framework's run_selected default.

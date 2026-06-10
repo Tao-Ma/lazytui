@@ -415,13 +415,15 @@ function update(msg, slice) {
  */
 function _handleKey(msg, slice) {
   if (msg.key !== 'return') return slice;
-  // v0.6.3 post-arch-arc — getFocus() returns paneId; OWNED_TYPES is
-  // panel-type literals. Translate via the route registry. Without
-  // this, Enter on files / file-browser panes silently no-ops.
-  const panelType = require('../../leaves/route').paneTypeOf(getFocus()) || getFocus();
+  // Pure key arm — msg.focusKind is the focused pane's panel-type
+  // (threaded by dispatchKeyToFocused; equals paneTypeOf(getFocus())
+  // for the focused pane); the cursor comes from slice.nav via the
+  // nav leaf. No getFocus()/getSel() global reads. A non-owned focus
+  // falls through to `return slice`, same as the old paneId fallback.
+  const panelType = msg.focusKind;
   if (!OWNED_TYPES.includes(panelType)) return slice;
   const hardcoded = _hardcodedFor(panelType);
-  const item = _itemsFor(slice, panelType, hardcoded)[getSel(panelType)];
+  const item = _itemsFor(slice, panelType, hardcoded)[mnav.cursorOf(slice, panelType)];
   // `return` is claimed even when the row resolves to nothing actionable
   // (no item / loading) — the framework default would just call back
   // into the panel with no useful result.

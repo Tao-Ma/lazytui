@@ -58,6 +58,15 @@ function entryOf(slice, panelType) {
   return slice.nav[panelType] || null;
 }
 
+/** Cursor index for `panelType`, read from `slice` (the pure,
+ *  slice-param mirror of state.getSel, which reads the global
+ *  registry). Defaults to 0 when the entry is absent — same contract
+ *  as getSel — so reducer key arms can stay pure without a global read. */
+function cursorOf(slice, panelType) {
+  const e = entryOf(slice, panelType);
+  return e ? e.cursor : 0;
+}
+
 /**
  * Compute the next nav entry for `msg`. Pure: doesn't mutate `entry`.
  * Returns either the same entry (no-op for unknown msg.type — already
@@ -132,4 +141,4 @@ function apply(slice, msg) {
   return { ...slice, nav: { ...slice.nav, [msg.panel]: nextEntry } };
 }
 
-module.exports = { init, apply, entryOf, isNavMsg, NAV_TYPES };
+module.exports = { init, apply, entryOf, cursorOf, isNavMsg, NAV_TYPES };

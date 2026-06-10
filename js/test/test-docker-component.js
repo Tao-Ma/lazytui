@@ -141,21 +141,26 @@ describe('[4] dockerResult folds maps + clears the guard', () => {
 describe('[5] i/t/s key Msgs emit stream/shell effects on the focused row', () => {
   it('i → inspect, t → logs, s → shell, targeting the selected container', () => {
     setup(['c1', 'c2']);
-    setSel('containers', 1);  // c2 focused
-    const i = step({ type: 'key', key: 'i' }, slice0());
+    // Pure key arm: the cursor comes from the passed slice.nav and
+    // focusKind from the Msg (as dispatchKeyToFocused threads it) — not
+    // from the global registry.
+    const mnav = require('../leaves/nav');
+    const focused = { ...slice0(), nav: { ...mnav.init(), cursor: 1 } };  // c2 selected
+    const km = (key) => ({ type: 'key', key, focusKind: 'containers' });
+    const i = step(km('i'), focused);
     eq(i.effects[0].type, 'dockerExec');
     eq(i.effects[0].mode, 'inspect');
     eq(i.effects[0].item, 'c2');
-    const t = step({ type: 'key', key: 't' }, slice0());
+    const t = step(km('t'), focused);
     eq(t.effects[0].mode, 'logs');
-    const s = step({ type: 'key', key: 's' }, slice0());
+    const s = step(km('s'), focused);
     eq(s.effects[0].type, 'dockerShell');
     eq(s.effects[0].item, 'c2');
   });
   it('keys are ignored when the containers panel is not focused', () => {
     setup();
-    getInstanceSlice("layout").focus = 'groups';
-    const { effects } = step({ type: 'key', key: 'i' }, slice0());
+    // focusKind != 'containers' → the pure key arm bails (no global read).
+    const { effects } = step({ type: 'key', key: 'i', focusKind: 'groups' }, slice0());
     eq(effects.length, 0, 'no effect when unfocused');
   });
 });
