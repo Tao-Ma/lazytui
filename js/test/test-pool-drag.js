@@ -24,7 +24,7 @@ const applyUpdate = (msg, slice) => {
 };
 
 // Build a slice with paneBounds populated so pool-drop hit-tests have
-// something to read. Bounds mirror what render/layout writes at paint.
+// something to read. Bounds mirror what render/geometry writes at paint.
 function buildSlice() {
   const arrange = {
     detailHeightPct: 60,

@@ -12,7 +12,7 @@
  * drag/resize state machine all live in the reducer (runtime:
  * free_config_* / free_config_mouse_* Msgs) backed by the
  * dependency-free `leaves/free-config` leaf. The drag-target
- * affordance is the live layout preview painted by render/layout.js
+ * affordance is the live layout preview painted by render/geometry.js
  * (swaps slice.arrange for drag.previewArrange during the paint
  * pass). Save is decoupled: `:save-layout` writes the runtime layout
  * to YAML, `:restore-layout` reverts it and clears undo history.

@@ -156,9 +156,9 @@ function init() {
     },
     // View-output (written by the render pass, read by mouse hit-tests
     // and free-config drag math). The renderer-as-writer pattern is the
-    // documented exception to single-writer — see render/layout.js header.
+    // documented exception to single-writer — see render/geometry.js header.
     // (Per-panel heights live in a module-local map inside
-    // `render/layout.js`, NOT on the slice — see `getPanelViewportH`
+    // `render/geometry.js`, NOT on the slice — see `getPanelViewportH`
     // for the public view-mode-aware accessor.)
     paneBounds: {},
     // Panel-list overlay state. Opened by `w` (or auto-opened on
@@ -746,7 +746,7 @@ function update(msg, slice) {
       return mtabDrag.tabDragMotion(
         slice, msg.mx, msg.my,
         // v0.6.4 Phase 3 — focused viewer's bounds for the drag geometry.
-        require('../render/layout').boundsFor(route.resolveTarget('viewer') || 'detail'),
+        require('../render/geometry').boundsFor(route.resolveTarget('viewer') || 'detail'),
         msg.tabBounds || null,
         msg.modelBundle,
         targetKind,

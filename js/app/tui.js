@@ -147,7 +147,7 @@ function main() {
 
   // Lazy-load TUI runtime so CLI mode stays free of node-pty + render deps.
   const { hideCursor } = require('../io/term');
-  const { render, redraw, renderTerminalOverlay } = require('../render/layout');
+  const { render, redraw, renderTerminalOverlay } = require('../render/geometry');
   const { scheduleRender } = require('../render/render-queue');
   const { registerComponent, refreshAll } = require('../panel/api');
   const { setupKeyListener } = require('../dispatch/input');
@@ -214,7 +214,7 @@ function main() {
 
   // PTY exit fan-out — wires `panel/viewer/pty-lifecycle` into
   // `io/terminal.js` so the io layer stays a leaf (it used to lazy-
-  // require panel/viewer/tabs + panel/api + render/layout on every
+  // require panel/viewer/tabs + panel/api + render/geometry on every
   // session exit — a documented inversion). Must run AFTER the viewer
   // Component is registered so the handler's slice reads land.
   require('../panel/viewer/pty-lifecycle').install();

@@ -311,7 +311,7 @@ describe('[8d] layout Component skeleton (Phase 1a)', () => {
     assert('dirty' in slice,        'slice has dirty (1d target)');
     assert('freeConfig' in slice,       'slice has freeConfig (1f target)');
     // panelHeights moved off the slice — it lives in a module-local
-    // in render/layout.js, accessed via `getPanelViewportH(type)`.
+    // in render/geometry.js, accessed via `getPanelViewportH(type)`.
     // paneBounds stays on the slice (mouse hit-tests + drag math
     // read it directly).
     assert('paneBounds' in slice,  'slice has paneBounds (1e target)');

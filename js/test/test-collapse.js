@@ -96,7 +96,7 @@ describe('[panel_collapse_toggle] reducer', () => {
 
 // --- Section 2: render-side distribution (test seam: _distributeColumnHeights) ---
 describe('[distributeColumnHeights] honors collapsed = 1 row', () => {
-  const { _distributeColumnHeights } = require('../render/layout');
+  const { _distributeColumnHeights } = require('../render/geometry');
 
   function run(panels, availH, isLastCol = false) {
     // _distributeColumnHeights is now a pure function: takes panels +

@@ -48,7 +48,7 @@ function capture(fn) {
   return stripAnsi(chunks.join(''));
 }
 
-const { render } = require('../render/layout');
+const { render } = require('../render/geometry');
 
 describe('[1] live render pipeline boots + paints', () => {
   it('renders a frame without throwing, showing panel chrome', () => {

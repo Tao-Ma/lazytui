@@ -57,7 +57,7 @@ let _lastWidth = 0;
  *  non-visible pane whose normal-view rect overlaps the click.
  *  Lazy require to dodge the layout ↔ overlay cycle. */
 function _paneBounds(paneId) {
-  return require('../render/layout').visibleBoundsFor(paneId);
+  return require('../render/geometry').visibleBoundsFor(paneId);
 }
 
 /** Mouse hit-test for any non-detail pane's [≡] trigger. Returns the
@@ -218,7 +218,7 @@ function render() {
   }
   // Residue-blank rows the prior frame painted but this one doesn't.
   if (_lastPanelH > g.h && _lastTop === g.y && _lastLeft === g.x) {
-    const { invalidateRows } = require('../render/layout');
+    const { invalidateRows } = require('../render/geometry');
     invalidateRows(g.y + g.h, _lastTop + _lastPanelH);
     for (let y = g.y + g.h; y < _lastTop + _lastPanelH; y++) {
       buf += `\x1b[${y + 1};${g.x + 1}H${' '.repeat(_lastWidth)}`;
@@ -233,7 +233,7 @@ function render() {
 
 function _maybeBlank() {
   if (_lastPanelH === 0) return;
-  const { invalidateRows } = require('../render/layout');
+  const { invalidateRows } = require('../render/geometry');
   invalidateRows(_lastTop, _lastTop + _lastPanelH);
   _lastPanelH = 0;
 }

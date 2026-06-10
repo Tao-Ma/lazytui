@@ -27,7 +27,7 @@
 
 const { handleKey, applyMsg } = require('../../../dispatch/dispatch');
 const { handleMouse, _handleWheel } = require('../../../dispatch/input');
-const { render } = require('../../../render/layout');
+const { render } = require('../../../render/geometry');
 const { getModel } = require('../../../app/runtime');
 const { initState } = require('../../../app/state');
 const route = require('../../../panel/route');

@@ -7,7 +7,7 @@
  * Two-pane layout when the terminal is wide enough (≥ MIN_SIDE_BY_SIDE
  * cols total): left = entry list, right = preview of the highlighted
  * entry. Preview renders on demand via the panel type's Component
- * renderer (mirrors render/layout.js#rendererFor with a lazy require to
+ * renderer (mirrors render/geometry.js#rendererFor with a lazy require to
  * avoid the render → overlay → render cycle). Placed entries show a
  * placement indicator instead of duplicating their on-screen content.
  *
@@ -104,7 +104,7 @@ function _buildListLines(items, cursor, w) {
 // ----------------------- preview pane -------------------------
 
 /** Lazy-require the Component renderer for a panel type. Mirrors
- *  render/layout.js#rendererFor; duplicated here to break the
+ *  render/geometry.js#rendererFor; duplicated here to break the
  *  render → overlay → render require cycle. Returns null when
  *  the type has no registered Component. */
 function _rendererFor(type) {

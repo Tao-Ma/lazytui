@@ -107,7 +107,7 @@ function _jumpInListPanel(target) {
 
 function _pageStep(paneId) {
   // Single source of truth for view-mode-aware viewport rows (by paneId).
-  return require('../render/layout').getPanelViewportH(paneId);
+  return require('../render/geometry').getPanelViewportH(paneId);
 }
 
 /**
@@ -120,7 +120,7 @@ function activateTerminal() {
   if (!id) return;
   if (isSessionDead(id)) {
     // v0.6.4 Phase 3 — size the restarted session to the FOCUSED viewer.
-    const bounds = require('../render/layout').boundsFor(route.resolveTarget('viewer') || 'detail');
+    const bounds = require('../render/geometry').boundsFor(route.resolveTarget('viewer') || 'detail');
     if (bounds) restartSession(id, bounds.w - 2, bounds.h - 2);
   }
   applyMsg({ type: 'terminal_enter' });

@@ -18,7 +18,7 @@ const { describe, it, eq, assert, report } = require('./test-runner');
 const { getModel } = require('../app/runtime');
 const { getInstanceSlice } = require('../panel/api');
 const { initState } = require('../app/state');
-const { render, forceFullRepaint } = require('../render/layout');
+const { render, forceFullRepaint } = require('../render/geometry');
 
 // ---- boot a minimal-but-real app (mirrors test-live-render.js) ----
 

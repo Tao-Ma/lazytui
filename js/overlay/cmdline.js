@@ -5,7 +5,7 @@
  * build / scoring / run-closure stash). Lives under overlay/ for
  * symmetry with copy.js / register-popup.js / menu.js — dispatch
  * modules don't paint; overlays do. Pre-v0.6.x the render lived in
- * dispatch/cmdline.js, which forced render/layout.js to require
+ * dispatch/cmdline.js, which forced render/geometry.js to require
  * dispatch/ — a layering inversion.
  *
  * Reads model.modal.cmdline (text, sel, matches projection — all
@@ -83,7 +83,7 @@ function renderCmdline() {
     // terminals clamp to row 1 — cosmetic flicker but unintended.
     const oldTop = Math.max(0, ROWS - _lastPanelH - 1);
     const newTop = Math.max(0, ROWS - panelH - 1);
-    require('../render/layout').invalidateRows(oldTop, newTop);
+    require('../render/geometry').invalidateRows(oldTop, newTop);
     for (let y = oldTop; y < newTop; y++) {
       buf += `\x1b[${y + 1};1H\x1b[K`;
     }

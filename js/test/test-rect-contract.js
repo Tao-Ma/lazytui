@@ -20,7 +20,7 @@
 'use strict';
 
 const { describe, it, eq, assert, report } = require('./test-runner');
-const layout = require('../render/layout');
+const layout = require('../render/geometry');
 
 const panel = { type: 'fixture' };
 

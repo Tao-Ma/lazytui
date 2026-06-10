@@ -101,7 +101,7 @@ function _flatTabs(paneId = 'detail') {
  *  v0.6.3 P1.3: lazy require to dodge the layout ↔ tab-list cycle
  *  (layout.js imports overlay/tab-list at top-level). */
 function _paneBounds(paneId = 'detail') {
-  return require('../render/layout').boundsFor(paneId);
+  return require('../render/geometry').boundsFor(paneId);
 }
 
 /** Owner pane id companion to model.modes.tabListMode. The pane-tabs
@@ -230,7 +230,7 @@ function renderTabList(paneId) {
   }
   // Residue-blank rows the prior frame painted but this one doesn't.
   if (_lastPanelH > g.h && _lastTop === g.y) {
-    const { invalidateRows } = require('../render/layout');
+    const { invalidateRows } = require('../render/geometry');
     invalidateRows(g.y + g.h, _lastTop + _lastPanelH);
     for (let y = g.y + g.h; y < _lastTop + _lastPanelH; y++) {
       buf += `\x1b[${y + 1};${g.x + 1}H${' '.repeat(g.w)}`;
@@ -243,7 +243,7 @@ function renderTabList(paneId) {
 
 function _maybeBlank() {
   if (_lastPanelH === 0) return;
-  const { invalidateRows } = require('../render/layout');
+  const { invalidateRows } = require('../render/geometry');
   invalidateRows(_lastTop, _lastTop + _lastPanelH);
   _lastPanelH = 0;
 }

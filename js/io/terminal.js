@@ -2,12 +2,12 @@
  * Terminal session management — PTY + xterm-headless per session.
  * Owns lifecycle (spawn / resize / kill / restart), input routing,
  * and screen buffer reads. No tab-arithmetic, no panel/api or
- * render/layout knowledge — those live in higher layers and reach
+ * render/geometry knowledge — those live in higher layers and reach
  * THIS module, never the reverse.
  *
  * The PTY-exit fan-out (active-tab check, viewMode 'full' drop,
  * ephemeral-tab cleanup, force-full-repaint) used to be inlined here
- * via lazy-requires up to panel/viewer/tabs, panel/api, render/layout
+ * via lazy-requires up to panel/viewer/tabs, panel/api, render/geometry
  * — a documented layering inversion. v0.6 routes those side effects
  * through a registered handler (`setExitHandler`) wired at boot from
  * panel/viewer/pty-lifecycle.js. io/terminal.js stays a true leaf;

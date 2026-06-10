@@ -35,7 +35,7 @@ function setupTwoPanel() {
     detailHeightPct: 60,
   };
   // Dual-keyed (type AND paneId → same bounds object), mirroring the
-  // render's dual-write (render/layout.js:700-701). v0.6.4 Phase 2 flipped
+  // render's dual-write (render/geometry.js:700-701). v0.6.4 Phase 2 flipped
   // the hit-test loops to read paneBounds[paneId]; getPanelViewportH still
   // reads by type — both keys present so both resolve.
   const hostsB  = { x: 0,  y: 0, w: 30, h: 20 };

@@ -12,7 +12,7 @@
 'use strict';
 
 const { allPanels, selectGroup, setSel, getSel, getScroll } = require('../app/state');
-const { render } = require('../render/layout');
+const { render } = require('../render/geometry');
 const { getModel } = require('../app/runtime');
 const { enableMouse, enableFocusEvents, enableBracketedPaste, cols } = require('../io/term');
 const { isTerminalTab, activeTerminalId } = require('../panel/viewer/tabs');
@@ -56,7 +56,7 @@ function _handleWheel(mx, my, delta) {
   // absent from paneBounds; boundsFor would fall back to their
   // normal-view rects in _currentLayout and we'd scroll a phantom
   // pane whose coords overlap with the visible half-view rect.
-  const { visibleBoundsFor } = require('../render/layout');
+  const { visibleBoundsFor } = require('../render/geometry');
   for (const p of allPanels()) {
     const b = visibleBoundsFor(p.paneId);  // v0.6.4 Phase 2 — paneId, not type (two same-kind panes share a type key)
     if (!b) continue;
@@ -69,7 +69,7 @@ function _handleWheel(mx, my, delta) {
       // Single source of truth for the view-mode-aware viewport (P5
       // arc fix follow-up — panelHeights[type] would have given the
       // small normal-view share even in half/full view).
-      const innerH = require('../render/layout').getPanelViewportH(p.paneId);  // v0.6.4 Phase 3b — paneId
+      const innerH = require('../render/geometry').getPanelViewportH(p.paneId);  // v0.6.4 Phase 3b — paneId
       const maxScroll = Math.max(0, lines.length - innerH);
       const next = Math.max(0, Math.min(maxScroll, curScroll + delta));
       if (next === curScroll) return false;
@@ -240,7 +240,7 @@ function _mouseHandleFreeConfigMode(kind, mx, my, model) {
   // multi-viewer. No-op under singleton (resolveTarget → the one viewer's
   // paneId, which paneBounds dual-keys).
   const viewerId = route.resolveTarget('viewer') || 'detail';
-  const db = require('../render/layout').boundsFor(viewerId);
+  const db = require('../render/geometry').boundsFor(viewerId);
   const detailSlice = getInstanceSlice(viewerId);
   const detailTabBounds = detailSlice && Array.isArray(detailSlice.tabBounds) ? detailSlice.tabBounds : null;
   if (kind === 'press' && db && detailTabBounds) {
@@ -451,7 +451,7 @@ function handleMouse(kind, x, y) {
   const sel = require('../panel/viewer/select');
   if (kind === 'motion' && sel.isActive()) {
     // v0.6.4 Phase 3 — focused viewer's bounds (see tab-drag site above).
-    const db = require('../render/layout').boundsFor(route.resolveTarget('viewer') || 'detail');
+    const db = require('../render/geometry').boundsFor(route.resolveTarget('viewer') || 'detail');
     if (db) {
       const visibleLine = Math.max(0, Math.min(db.h - 3, my - db.y - 1));
       const col = Math.max(0, mx - db.x - 1);
@@ -482,7 +482,7 @@ function handleMouse(kind, x, y) {
   // dispatch focus_set to the first non-detail pane instead of to
   // the actually-visible halfLeftPanel — silently reverting the
   // user's right-arrow selection).
-  const { visibleBoundsFor } = require('../render/layout');
+  const { visibleBoundsFor } = require('../render/geometry');
   for (const p of allPanels()) {
     const b = visibleBoundsFor(p.paneId);  // v0.6.4 Phase 2 — paneId, not type (two same-kind panes share a type key)
     if (!b) continue;

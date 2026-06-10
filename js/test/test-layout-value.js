@@ -10,7 +10,7 @@
  */
 'use strict';
 
-const layout = require('../render/layout');
+const layout = require('../render/geometry');
 const { describe, it, eq, assert, report } = require('./test-runner');
 const { getInstanceSlice } = require('../panel/api');
 

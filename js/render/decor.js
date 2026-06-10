@@ -177,7 +177,7 @@ function _placedWidgetTargets() {
   const panels = mpool.allPanesInColumns(slice.arrange);
   // v0.6.3 P1.3: lazy require to dodge the layout ↔ decor cycle
   // (layout.js imports decor at top-level, so a top-level
-  // require('./layout') would yield the partial module without
+  // require('./geometry') would yield the partial module without
   // visibleBoundsFor; lazy resolves to the final exports).
   //
   // visibleBoundsFor — NOT boundsFor — so off-screen panes in half/
@@ -188,7 +188,7 @@ function _placedWidgetTargets() {
   // normal view → that pane is silently collapsed). Same bug class
   // as the half-mode focus-revert fix in `visibleBoundsFor`'s intro
   // commit — chrome-glyph hit-tests share the symptom.
-  const { visibleBoundsFor } = require('./layout');
+  const { visibleBoundsFor } = require('./geometry');
   return panels
     .filter(p => p.type !== 'detail')
     // v0.6.4 Phase 2 — hit-test by paneId, not type: two same-kind panes

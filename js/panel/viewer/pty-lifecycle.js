@@ -3,7 +3,7 @@
  * shell session ends.
  *
  * Used to live inside `io/terminal.js#_onSessionExit` via lazy-requires
- * up to panel/viewer/tabs, panel/api, render/layout — a layering
+ * up to panel/viewer/tabs, panel/api, render/geometry — a layering
  * inversion (io is supposed to be a leaf). v0.6 inverts the dependency:
  * io/terminal.js takes an `setExitHandler(fn)` callback; this file
  * supplies the handler and tui.js wires it at boot.
