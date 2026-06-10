@@ -246,13 +246,13 @@ function _mouseHandleFreeConfigMode(kind, mx, my, model) {
   }
 
   // Tab-bar press detection — click on a content tab arms a tab-drag.
-  // v0.6.3 T1.4 — paneId-aware lookup via the route registry.
-  // N13 bypass deferred to v0.7 per docs/v0.6.3.md §"Out of scope":
-  // with singleton-detail, `boundsFor('detail')` and `resolveTarget('viewer')`
-  // resolve to the same pane; the rename becomes load-bearing only
-  // under multi-viewer.
-  const db = require('../render/layout').boundsFor('detail');
-  const detailSlice = getInstanceSlice(route.resolveTarget('viewer') || 'detail');
+  // v0.6.4 Theme A Phase 3 (was N13) — bounds + slice both resolve via
+  // resolveTarget('viewer') so the FOCUSED viewer's tab strip wins under
+  // multi-viewer. No-op under singleton (resolveTarget → the one viewer's
+  // paneId, which paneBounds dual-keys).
+  const viewerId = route.resolveTarget('viewer') || 'detail';
+  const db = require('../render/layout').boundsFor(viewerId);
+  const detailSlice = getInstanceSlice(viewerId);
   const detailTabBounds = detailSlice && Array.isArray(detailSlice.tabBounds) ? detailSlice.tabBounds : null;
   if (kind === 'press' && db && detailTabBounds) {
     if (my === db.y) {
@@ -461,8 +461,8 @@ function handleMouse(kind, x, y) {
   // change.
   const sel = require('../panel/viewer/select');
   if (kind === 'motion' && sel.isActive()) {
-    // N13 bypass deferred to v0.7 (see tab-drag site above).
-    const db = require('../render/layout').boundsFor('detail');
+    // v0.6.4 Phase 3 — focused viewer's bounds (see tab-drag site above).
+    const db = require('../render/layout').boundsFor(route.resolveTarget('viewer') || 'detail');
     if (db) {
       const visibleLine = Math.max(0, Math.min(db.h - 3, my - db.y - 1));
       const col = Math.max(0, mx - db.x - 1);

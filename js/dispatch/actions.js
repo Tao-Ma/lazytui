@@ -121,7 +121,8 @@ function activateTerminal() {
   const id = activeTerminalId();
   if (!id) return;
   if (isSessionDead(id)) {
-    const bounds = require('../render/layout').boundsFor('detail');
+    // v0.6.4 Phase 3 — size the restarted session to the FOCUSED viewer.
+    const bounds = require('../render/layout').boundsFor(route.resolveTarget('viewer') || 'detail');
     if (bounds) restartSession(id, bounds.w - 2, bounds.h - 2);
   }
   applyMsg({ type: 'terminal_enter' });

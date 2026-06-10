@@ -879,7 +879,9 @@ function renderTerminalOverlay(model = getModel()) {
   if (!id || !termConf) return;
 
   const layoutSlice = getInstanceSlice('layout');
-  const bounds = layoutSlice && layoutSlice.paneBounds.detail;
+  // v0.6.4 Phase 3 — position the terminal overlay against the FOCUSED
+  // viewer's bounds (paneId-keyed), not the type-collided 'detail' key.
+  const bounds = layoutSlice && layoutSlice.paneBounds[require('../panel/route').resolveTarget('viewer') || 'detail'];
   if (!bounds) return;
   const innerW = bounds.w - 2;
   const innerH = bounds.h - 2;
