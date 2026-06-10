@@ -29,14 +29,20 @@ function setupTwoPanel() {
   // Pretend layout: hosts on the left (0..30, 0..20), detail on the right (30..80, 0..20)
   getInstanceSlice("layout").arrange = {
     columns: [
-      { width: 30, panels: [{ type: 'hosts' }] },
-      { panels: [{ type: 'detail' }] },
+      { width: 30, panels: [{ type: 'hosts', paneId: 'pane-hosts' }] },
+      { panels: [{ type: 'detail', paneId: 'pane-detail' }] },
     ],
     detailHeightPct: 60,
   };
+  // Dual-keyed (type AND paneId → same bounds object), mirroring the
+  // render's dual-write (render/layout.js:700-701). v0.6.4 Phase 2 flipped
+  // the hit-test loops to read paneBounds[paneId]; getPanelViewportH still
+  // reads by type — both keys present so both resolve.
+  const hostsB  = { x: 0,  y: 0, w: 30, h: 20 };
+  const detailB = { x: 30, y: 0, w: 50, h: 20 };
   getInstanceSlice('layout').paneBounds = {
-    hosts:  { x: 0,  y: 0, w: 30, h: 20 },
-    detail: { x: 30, y: 0, w: 50, h: 20 },
+    hosts: hostsB,  'pane-hosts': hostsB,
+    detail: detailB, 'pane-detail': detailB,
   };
   // panelHeights left the slice — wheel paths read paneBounds[type].h
   // via getPanelViewportH for view-mode-aware inner viewport rows.

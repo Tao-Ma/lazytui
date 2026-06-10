@@ -191,7 +191,9 @@ function _placedWidgetTargets() {
   const { visibleBoundsFor } = require('./layout');
   return panels
     .filter(p => p.type !== 'detail')
-    .map(p => ({ p, b: visibleBoundsFor(p.type) }))
+    // v0.6.4 Phase 2 — hit-test by paneId, not type: two same-kind panes
+    // share a type key in paneBounds, so the type lookup would collide.
+    .map(p => ({ p, b: visibleBoundsFor(p.paneId) }))
     .filter(({ b }) => b && b.h >= 1);
 }
 

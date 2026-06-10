@@ -58,7 +58,7 @@ function _handleWheel(mx, my, delta) {
   // pane whose coords overlap with the visible half-view rect.
   const { visibleBoundsFor } = require('../render/layout');
   for (const p of allPanels()) {
-    const b = visibleBoundsFor(p.type);
+    const b = visibleBoundsFor(p.paneId);  // v0.6.4 Phase 2 — paneId, not type (two same-kind panes share a type key)
     if (!b) continue;
     if (mx < b.x || mx >= b.x + b.w || my < b.y || my >= b.y + b.h) continue;
 
@@ -495,7 +495,7 @@ function handleMouse(kind, x, y) {
   // user's right-arrow selection).
   const { visibleBoundsFor } = require('../render/layout');
   for (const p of allPanels()) {
-    const b = visibleBoundsFor(p.type);
+    const b = visibleBoundsFor(p.paneId);  // v0.6.4 Phase 2 — paneId, not type (two same-kind panes share a type key)
     if (!b) continue;
     if (mx < b.x || mx >= b.x + b.w || my < b.y || my >= b.y + b.h) continue;
 
