@@ -67,6 +67,16 @@ const { renderPanelListOverlay } = require('../overlay/panel-list');
 const { renderTabList } = require('../overlay/tab-list');
 const { renderJobsOverlay } = require('../overlay/jobs');
 
+// v0.6.4 — memoized lazy module refs for the per-frame hot path. These
+// were inline `require(...)` calls re-evaluated EVERY render: route ×6
+// (resolveTarget for the viewer target), decor ×4 (chromeFor). The
+// relative-path require() resolution is ~70µs/call (see R1 / pane-tabs);
+// at 6+4 calls/frame that was ~0.7ms/frame on require alone. Resolve
+// once at runtime (kept late — decor cycles with this module — so the
+// first call lands after load). `||=` caches the ref.
+let _routeRef; const _route = () => (_routeRef ||= require('../panel/route'));
+let _decorRef; const _decor = () => (_decorRef ||= require('./decor'));
+
 /**
  * Look up the render function for a panel type. Contract:
  *   render(panel, width, height, state) → string
@@ -98,7 +108,7 @@ function _renderCollapsed(p, w, chrome) {
   // uncollapse"); close glyph still allowed in free-config. Width
   // budget: titleText + chrome + 2 corners must fit in w; on tight
   // widths, drop chrome and fall back to bare collapsed bar.
-  const W = require('./decor');
+  const W = _decor();
   let rightPart = '';
   if (chrome) {
     if (chrome.close)    rightPart += W._closeGlyphMarkup(focused, fc);
@@ -416,7 +426,7 @@ function getCurrentLayout() {
  *
  * v0.6.3 P4.1 — tabBounds cache moved off layoutSlice.paneBounds.detail.tabs
  * onto the viewer's own slice. Hit-test consumers read it directly
- * via `getInstanceSlice(require('../panel/route').resolveTarget('viewer') || 'detail').tabBounds`; boundsFor() no longer
+ * via `getInstanceSlice(_route().resolveTarget('viewer') || 'detail').tabBounds`; boundsFor() no longer
  * surfaces tabs.
  */
 function boundsFor(key) {
@@ -618,7 +628,7 @@ function composeRects(layout, model) {
   // and threaded into the panel renderer via opts. Was post-mutated
   // string injection via injectTopRowChrome / injectTabTrigger; now
   // renderPanel({chrome}) composes glyphs inline.
-  const { chromeFor } = require('./decor');
+  const { chromeFor } = _decor();
   let viewerTabCount = 0;
   try {
     const tabInfo = require('../panel/viewer/tabs').getTabInfo();
@@ -757,7 +767,7 @@ function renderHalf(model) {
   }
   // v0.6.3 P4.2 — chrome computed via chromeFor + threaded through
   // renderPanel; half/full view paths don't need to inject post-render.
-  const { chromeFor } = require('./decor');
+  const { chromeFor } = _decor();
   const freeConfigMode = !!(model.modes && model.modes.freeConfigMode);
   const dragging = !!(layoutSlice.freeConfig && layoutSlice.freeConfig.drag);
   let viewerTabCount = 0;
@@ -831,7 +841,7 @@ function renderFull(model) {
   if (focusedPanel.paneId) layoutSlice.paneBounds[focusedPanel.paneId] = fullBounds;
   // v0.6.3 P4.2 — chrome computed via chromeFor; full view also routes
   // [≡] through renderPanel inline when the focused panel is detail.
-  const { chromeFor: chromeForFull } = require('./decor');
+  const { chromeFor: chromeForFull } = _decor();
   const freeConfigModeF = !!(model.modes && model.modes.freeConfigMode);
   const draggingF = !!(layoutSlice.freeConfig && layoutSlice.freeConfig.drag);
   let viewerTabCountF = 0;
@@ -887,7 +897,7 @@ function renderTerminalOverlay(model = getModel()) {
   const layoutSlice = getInstanceSlice('layout');
   // v0.6.4 Phase 3 — position the terminal overlay against the FOCUSED
   // viewer's bounds (paneId-keyed), not the type-collided 'detail' key.
-  const bounds = layoutSlice && layoutSlice.paneBounds[require('../panel/route').resolveTarget('viewer') || 'detail'];
+  const bounds = layoutSlice && layoutSlice.paneBounds[_route().resolveTarget('viewer') || 'detail'];
   if (!bounds) return;
   const innerW = bounds.w - 2;
   const innerH = bounds.h - 2;
@@ -1045,7 +1055,7 @@ function render(model = getModel()) {
   // viewport tracks the real layout. R4.9: direct setInstanceSlice
   // instead of a wrapped viewer_set_viewport Msg + 5-line reducer arm
   // — the Msg's only effect was this single-field write.
-  const route = require('../panel/route');
+  const route = _route();
   const viewerTab = route.resolveTarget('viewer');
   const viewerBounds = viewerTab && layoutSlice.paneBounds && layoutSlice.paneBounds[viewerTab];
   if (viewerBounds) {
@@ -1099,7 +1109,7 @@ function render(model = getModel()) {
 function redraw() {
   // v0.6.1 Phase 6 — resolveTarget picks the destination viewer; null
   // result (no viewer registered) just skips the info refresh and paints.
-  const target = require('../panel/route').resolveTarget('viewer');
+  const target = _route().resolveTarget('viewer');
   if (target) dispatchMsg(wrap(target, { type: 'viewer_show_info' }));
   render();
 }
@@ -1131,7 +1141,7 @@ function footerKeys(model) {
   if (md.detailSearchMode) {
     const ds = require('../panel/viewer/search');
     const term = ds.typingText();
-    const search = getInstanceSlice(require('../panel/route').resolveTarget('viewer') || 'detail')?.search || { matches: [], idx: 0 };
+    const search = getInstanceSlice(_route().resolveTarget('viewer') || 'detail')?.search || { matches: [], idx: 0 };
     const n = (search.matches || []).length;
     const idx = n ? search.idx + 1 : 0;
     return ` /${esc(term)}│ \\[${idx}/${n}] | ↑↓ step | Esc cancel | Enter commit`;
@@ -1166,7 +1176,7 @@ function footerKeys(model) {
     } else {
       segs.push('x menu', 'q quit');
       segs.push('/ search');
-      const search = getInstanceSlice(require('../panel/route').resolveTarget('viewer') || 'detail')?.search;
+      const search = getInstanceSlice(_route().resolveTarget('viewer') || 'detail')?.search;
       if (search && search.active) {
         const n = search.matches.length;
         const idx = search.idx + 1;
@@ -1260,7 +1270,7 @@ function renderFooter(model = getModel()) {
   // on a non-list panel, where space falls back to the leader.)
   // focusDef hoisted at the top of this function.
   const selectActive = model.modes.listSelectMode && focusDef && typeof focusDef.getItems === 'function';
-  const sel = getInstanceSlice(require('../panel/route').resolveTarget('viewer') || 'detail')?.select;
+  const sel = getInstanceSlice(_route().resolveTarget('viewer') || 'detail')?.select;
   const selectTag = (sel && sel.active)
     ? ` \\[${sel.kind === 'line' ? 'v-line' : 'v-char'}]`
     : (selectActive ? ' \\[select]' : '');
