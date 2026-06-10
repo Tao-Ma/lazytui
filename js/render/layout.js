@@ -266,7 +266,7 @@ let _currentLayout = null;
  * Pre-first-render (layout slice empty + no `_currentLayout` yet),
  * returns a 1-row fallback so callers don't divide-by-zero.
  */
-function getPanelViewportH(panelType) {
+function getPanelViewportH(paneId) {
   const layoutSlice = getInstanceSlice('layout');
   if (!layoutSlice) return 1;
   refreshSize();
@@ -281,15 +281,15 @@ function getPanelViewportH(panelType) {
   } else if (viewMode === 'full') {
     visiblePanel = focus;
   }
-  // v0.6.3 B3 — visiblePanel is a paneId (post-_withFocus); panelType
-  // is the type-form caller arg. Resolve via the route table.
-  if (visiblePanel && instanceKind(visiblePanel) === panelType) return Math.max(1, availH - 2);
-  // Off-screen / normal-view: read via boundsFor() — prefers the
-  // slice during P1.3 transition (slice carries the viewer's tab
-  // cache); falls through to _currentLayout.rects when slice is
-  // empty (P1.5: _panelHeights module-local retired in favor of
-  // rects; this fallback is the only reader path now).
-  const b = boundsFor(panelType);
+  // v0.6.4 Phase 3b — paneId-keyed. focus / halfLeftPanel / visiblePanel
+  // are all paneIds (post-_withFocus), so compare the queried paneId
+  // directly: if it's the on-screen pane, it owns the full availH. Under
+  // multi-viewer this picks the SPECIFIC pane (not any same-kind one).
+  if (visiblePanel && visiblePanel === paneId) return Math.max(1, availH - 2);
+  // Off-screen / normal-view: the pane's actual bounds, keyed by paneId
+  // (boundsFor → slice.paneBounds[paneId], falling through to
+  // _currentLayout.rects when the slice is empty).
+  const b = boundsFor(paneId);
   const h = (b && b.h) || 4;
   return Math.max(1, h - 2);
 }
@@ -376,7 +376,9 @@ function calcLayout(model = getModel()) {
   for (const p of mpool.allPanesInColumns(layoutSlice.arrange)) {
     if (mpool.isDetailPane(p)) continue;
     if (p.collapsed) continue;  // no content rows to scroll-clamp against
-    syncPanelScroll(p.type, getPanelViewportH(p.type));
+    // v0.6.4 Phase 3b — viewport height by paneId; syncPanelScroll still
+    // addresses the nav slice by panel-type (nav-keying is Phase 5).
+    syncPanelScroll(p.type, getPanelViewportH(p.paneId));
   }
 
   return {

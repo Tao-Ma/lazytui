@@ -105,11 +105,9 @@ function _jumpInListPanel(target) {
   require('./dispatch').navSelect(getFocus(), next);
 }
 
-function _pageStep(panelType) {
-  // Single source of truth for view-mode-aware viewport rows.
-  // panelHeights[type] is the normal-view column-share regardless of
-  // viewMode; the API guards against reading it directly here.
-  return require('../render/layout').getPanelViewportH(panelType);
+function _pageStep(paneId) {
+  // Single source of truth for view-mode-aware viewport rows (by paneId).
+  return require('../render/layout').getPanelViewportH(paneId);
 }
 
 /**
@@ -307,13 +305,15 @@ function handleAction(action, arg) {
       // content) get no-op — they don't expose getItems(), so the
       // guard at the top of _pageInListPanel intentionally bails.
       const focus = getFocus();
-      if (instanceKind(focus) === 'detail') dispatchMsg(wrap(focus, { type: 'viewer_scroll', delta: -_pageStep('detail') }));
+      // v0.6.4 Phase 3b — _pageStep takes a paneId; in the viewer branch
+      // `focus` IS the focused viewer's paneId (was the 'detail' literal).
+      if (instanceKind(focus) === 'detail') dispatchMsg(wrap(focus, { type: 'viewer_scroll', delta: -_pageStep(focus) }));
       else                                  _pageInListPanel(-_pageStep(focus));
       break;
     }
     case 'page_down': {
       const focus = getFocus();
-      if (instanceKind(focus) === 'detail') dispatchMsg(wrap(focus, { type: 'viewer_scroll', delta: +_pageStep('detail') }));
+      if (instanceKind(focus) === 'detail') dispatchMsg(wrap(focus, { type: 'viewer_scroll', delta: +_pageStep(focus) }));
       else                                  _pageInListPanel(+_pageStep(focus));
       break;
     }
