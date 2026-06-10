@@ -167,6 +167,12 @@ describe('[3] click one column LEFT of closeX → switches, does not close', () 
     const stillThere = after.contentTabs && after.contentTabs.g1 && after.contentTabs.g1[closeTab.closeKey];
     assert(stillThere,
       `tab '${closeTab.closeKey}' MUST survive a click one column left of [x] — that's a switch zone, not a close zone`);
+    // Stronger invariant: the click must have moved activeTab to closeTab.
+    // The bare "tab still exists" check passes even if the click hit dead
+    // space (neither close nor switch fires); this assertion catches that
+    // class of off-by-one in the switch hit-rect compute.
+    eq(after.tab, closeTab.tabIdx,
+      `click in the switch zone MUST land activeTab on tabIdx=${closeTab.tabIdx} (was ${activeIdx})`);
   });
 });
 

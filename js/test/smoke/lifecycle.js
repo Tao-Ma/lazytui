@@ -89,6 +89,13 @@ describe('[2] close only content tab → fallback to Info, no stale body', () =>
     sm.bootFresh();
     tabs.addContentTab('g1', 'only-doc', 'only.txt', ['ONLY-DOC-MARKER', 'line 2']);
     eq(api.getInstanceSlice('detail').lines.join('\n'), 'ONLY-DOC-MARKER\nline 2', 'body loaded');
+    // Before closing: verify addContentTab actually auto-jumped to the
+    // new content tab. Without this check the post-close `tab === 0`
+    // assertion is ambiguous — bootFresh seeds tab=0, so an addContentTab
+    // auto-jump regression (tab stuck at 0 throughout) would mask the
+    // close-handler fallback the test was meant to catch.
+    const beforeTab = api.getInstanceSlice('detail').tab;
+    assert(beforeTab > 0, `addContentTab must auto-jump off Info (idx 0); got tab=${beforeTab}`);
 
     tabs.removeContentTab('g1', 'only-doc');
     const after = snapshotDetail();

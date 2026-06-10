@@ -152,10 +152,23 @@ describe('[5] focus=paneId still answers `is the focused panel of type T?` corre
   const layout = api.getInstanceSlice('layout');
   const origFocus = layout.focus;
   for (const { paneId, type } of PANES) {
-    it(`focus='${paneId}' → instanceKind(focus) === '${type}'`, () => {
+    it(`focus='${paneId}' (paneId form) → instanceKind(focus) === '${type}'`, () => {
       layout.focus = paneId;
       eq(route.instanceKind(route.getFocus()), type,
         `focused paneId comparator returns the panel-type (was the v0.6.3 bug class)`);
+    });
+  }
+  // Also exercise the panel-type-literal arm of instanceKind. The dual-
+  // input convention says it must work for either form; legacy producers
+  // that still write the kind-name to focus (or pre-_withFocus boot)
+  // surface here. Without this arm, a future regression of route.js arm 2
+  // (`if (_panelOwner[id]) return id`) would not be caught by the
+  // paneId-only loop above.
+  for (const { type } of PANES) {
+    it(`focus='${type}' (panel-type literal form) → instanceKind(focus) === '${type}'`, () => {
+      layout.focus = type;
+      eq(route.instanceKind(route.getFocus()), type,
+        `panel-type-literal focus must resolve to itself via the _panelOwner arm`);
     });
   }
   // Restore

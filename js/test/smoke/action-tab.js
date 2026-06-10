@@ -38,17 +38,24 @@ const VIEWER = 'detail';   // singleton viewer-kind id (route.resolveTarget('vie
 
 function streamStart(tabKey, groupName, header) {
   const m = getModel();
-  const slice = api.getInstanceSlice(VIEWER);
-  const info = pt.flatTabInfo(slice, m, groupName);
-  const actionTabIdx = info.actionTabs.findIndex(([k]) => k === tabKey);
-  return api.dispatchMsg(api.wrap(VIEWER, {
+  // Mirror dispatch/stream.js's bundle shape exactly: actionTabIdx is
+  // only included when the stream's group matches the active group
+  // (production gates the auto-jump on the same condition). Smoke
+  // shouldn't thread a key production omits — a reducer arm branching
+  // on `actionTabIdx === undefined` for cross-group would diverge.
+  const out = {
     type: 'stream_start',
     header,
     tabKey,
     groupName,
     currentGroup: m.currentGroup,
-    actionTabIdx,
-  }));
+  };
+  if (groupName === m.currentGroup) {
+    const slice = api.getInstanceSlice(VIEWER);
+    const info = pt.flatTabInfo(slice, m, groupName);
+    out.actionTabIdx = info.actionTabs.findIndex(([k]) => k === tabKey);
+  }
+  return api.dispatchMsg(api.wrap(VIEWER, out));
 }
 
 function viewerAppend(tabKey, groupName, line) {
@@ -164,8 +171,12 @@ describe('[3] background appends survive switch-away; switch-back restores live 
     eq(back.tab, 2, 'returned to make-check');
     eq(back.lines.length, 6, 'all six lines restored from buffer');
     eq(back.lines[5], 'bg-3', 'latest background line is at the tail');
-    eq(back.scroll, Math.max(0, 6 - back.innerH),
-      `scroll pinned to bottom (lines.length - innerH = 6 - ${back.innerH})`);
+    // Pin innerH separately so the bottom-pin formula isn't tautological
+    // (Math.max(0, lines - innerH) collapses to 0=0 when innerH >= lines).
+    // The setup at line 150 set innerH=3; if tab_switch resets it,
+    // catch that here rather than letting it mask the bottom-pin check.
+    eq(back.innerH, 3, 'innerH preserved across tab_switch');
+    eq(back.scroll, 3, 'scroll pinned to bottom (6 lines - innerH 3 = scroll 3)');
   });
 });
 
@@ -190,14 +201,22 @@ describe('[4] live render after switch-back paints the restored buffer', () => {
   });
 });
 
-// --- [5] tab_switch does NOT emit kill_proc (Phase-3 producer-survives) -
+// --- [5] tab_switch preserves the routed-action buffer ----------------
 //
-// The pre-Phase-3 implementation killed the producer on every
-// tab_switch. The fix: keep the producer alive (so off-tab appends
-// keep arriving). Pin the negative: no kill_proc Cmd lands.
+// Pins the slice-side half of the v0.6.2 Phase-3 invariant: the
+// actionTabBuffers entry survives a tab_switch (a regression that
+// nukes the buffer on switch — e.g. setting it to {} — fires here).
+//
+// The complementary half — that tab_switch does NOT emit a kill_proc
+// Cmd (so the running PTY child stays alive) — is verified at the
+// reducer level by `test-action-tab-buffer.js` [tab_switch] section,
+// which inspects the Cmds returned by `viewer._update` directly. The
+// smoke can't observe Cmds from outside the dispatch path without
+// reproducing that machinery; the buffer-preservation check here is
+// the user-visible consequence the unit test makes machinery for.
 
-describe('[5] tab_switch does not kill the running producer', () => {
-  it('switching away from an action tab does NOT clear the buffer', () => {
+describe('[5] tab_switch preserves the actionTabBuffers entry', () => {
+  it('buffer length + tail survive a switch off the action tab', () => {
     setupActionTab();
     streamStart('make-check', 'g1', '$ make check');
     viewerAppend('make-check', 'g1', 'pre');
