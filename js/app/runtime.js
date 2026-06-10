@@ -46,7 +46,7 @@ const mreg = require('../leaves/register');
 // `getFocus` for the cross-layer dispatches in `escape`, `filter_*`,
 // `reset_group_context`, etc. Direct import (zero deps) — no cycle.
 // Replaces the old lazy `require('../panel/api')` peppered through this file.
-const route = require('../leaves/route');
+const route = require('../panel/route');
 // Nav-entry shape reader — zero-dep leaf; the only consumer here is the
 // `escape` arm's multiSel probe.
 const mnav = require('../leaves/nav');
@@ -58,7 +58,7 @@ const mnav = require('../leaves/nav');
  *
  * Single owned object; `update` is its single writer. Component slices
  * (detail / groups / docker / files / config-status / layout) live in
- * the instance store (leaves/route.js) and are written only by their
+ * the instance store (panel/route.js) and are written only by their
  * own `update`. The layout slice owns the grid (arrange, focus,
  * viewMode, freeConfig); per-panel chrome (cursor/scroll/multiSel/filter)
  * lives on each Navigator's `slice.nav`.

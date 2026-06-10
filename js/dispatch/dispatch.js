@@ -35,7 +35,7 @@ const { isSessionDead } = require('../io/terminal');
 const keybindings = require('./keybindings');
 const modes = require('./modes');
 const runtime = require('../app/runtime');
-const route = require('../leaves/route');
+const route = require('../panel/route');
 const mpane = require('../leaves/pane');
 const { getModel } = runtime;
 // handleAction + _runActionByKey live in ./actions (carved out 2026-05-31).
@@ -374,7 +374,7 @@ function handlePaneSelectKey(key, seq) {
     // close Cmd so Enter always exits the overlay (even on refused
     // picks — the user can't tell "invalid" from "unchanged"
     // without leaving).
-    const layoutSlice = require('../leaves/route').getInstanceSlice('layout');
+    const layoutSlice = require('../panel/route').getInstanceSlice('layout');
     const ps = layoutSlice && layoutSlice.paneSelect;
     if (!ps) { applyMsg(wrap('layout', { type: 'pane_select_close' })); return; }
     const item = all[ps.cursor || 0];

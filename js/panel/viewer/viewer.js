@@ -1064,7 +1064,7 @@ function detailTitle(slice) {
   // PRINCIPLES §11 (render idempotence) holds either way; immutable
   // shape matches the rest of the codebase.
   const nextTabBounds = built ? built.tabBounds : [];
-  const route = require('../../leaves/route');
+  const route = require('../../panel/route');
   route.setInstanceSlice('detail', { ...slice, tabBounds: nextTabBounds });
   return built ? built.title : 'Detail';
 }

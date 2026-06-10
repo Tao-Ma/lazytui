@@ -18,7 +18,7 @@ const { enableMouse, enableFocusEvents, enableBracketedPaste, cols } = require('
 const { isTerminalTab, activeTerminalId } = require('../panel/viewer/tabs');
 const { writeToSession, isSessionDead } = require('../io/terminal');
 const {getPanelDef, getItems, getInstanceSlice, dispatchMsg, wrap, getFocus, instanceKind } = require('../panel/api');
-const route = require('../leaves/route');
+const route = require('../panel/route');
 const mpane = require('../leaves/pane');
 const { isChainActive, CHAIN_MODES } = require('./modes');
 
@@ -230,7 +230,7 @@ function _mouseHandleFreeConfigMode(kind, mx, my, model) {
     if (kind === 'motion') {
       const pt = require('../leaves/pane-tabs');
       const groupName = model.currentGroup;
-      const targetKind = require('../leaves/route').resolveTarget('viewer') || 'detail';
+      const targetKind = require('../panel/route').resolveTarget('viewer') || 'detail';
       const detailSlice = getInstanceSlice(targetKind);
       const tabBounds = detailSlice && Array.isArray(detailSlice.tabBounds) ? detailSlice.tabBounds : null;
       dispatchMsg(wrap('layout', {

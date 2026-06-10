@@ -249,7 +249,7 @@ describe('[A7] tab removal with active viewerOverride dismisses the override', (
   // closed the underlying tab and the override survived → discrete-
   // doc content paints on the wrong surface.
   it('removeContentTab on active tab with override clears the override', () => {
-    const route = require('../leaves/route');
+    const route = require('../panel/route');
     freshGroup();
     tabs.addContentTab('g1', 'doc1', 'doc1', ['x', 'y']);
     // Add a second content tab so removal falls back to a sibling.
@@ -270,7 +270,7 @@ describe('[A7] tab removal with active viewerOverride dismisses the override', (
     eq(after.viewerOverride, null, 'override cleared on active-tab removal');
   });
   it('removeContentTab on non-active tab preserves override', () => {
-    const route = require('../leaves/route');
+    const route = require('../panel/route');
     freshGroup();
     tabs.addContentTab('g1', 'doc1', 'doc1', ['x']);
     tabs.addContentTab('g1', 'doc2', 'doc2', ['a']);
@@ -296,7 +296,7 @@ describe('[R14] N1 content-tab tabState restore (non-adjacent transition)', () =
   // regardless of the store-side stale state. Behavior change worth
   // pinning explicitly.
   it('switching FROM Info TO a content tab restores tabState[<g>:content:<key>] search/select/cursor', () => {
-    const route = require('../leaves/route');
+    const route = require('../panel/route');
     const viewer = require('../panel/viewer/viewer');
     freshGroup();
     tabs.addContentTab('g1', 'doc1', 'doc1', ['x', 'y', 'z']);
@@ -334,7 +334,7 @@ describe('[R11] tab key parser handles `:` in group names', () => {
   // Post-R11 the leading segment is non-greedy and the first
   // `:action:` / `:terminal:` / `:content:` anchors the split.
   it('removeContentTab drops tabState for group names with `:`', () => {
-    const route = require('../leaves/route');
+    const route = require('../panel/route');
     const viewer = require('../panel/viewer/viewer');
     getModel().config = { groups: { 'proj:v2': { actions: {}, terminals: {} } } };
     getModel().currentGroup = 'proj:v2';
@@ -369,7 +369,7 @@ describe('[B8] tab_switch to content tab from non-content origin resets scroll',
     tabs.addContentTab('g1', 'file:foo', 'foo', ['a', 'b', 'c']);
     // After addContentTab the focus is on detail. Reset for a deterministic test:
     // park on Info (idx 0) with scroll = 50 (deliberately mid-doc).
-    const route = require('../leaves/route');
+    const route = require('../panel/route');
     const slice = route.getInstanceSlice('detail');
     route.setInstanceSlice('detail', { ...slice, tab: 0, scroll: 50, innerH: 10 });
     // Now tab_switch to the content tab (idx 2: Info=0, Transcript=1, content[foo]=2).
@@ -398,7 +398,7 @@ describe('[R5] tab removal drops the matching tabState entry', () => {
       'g1:content:file:foo': { scroll: 7, cursor: { line: 7, col: 0 } },
       'g1:content:other': { scroll: 99 },
     };
-    require('../leaves/route').setInstanceSlice('detail', slice);
+    require('../panel/route').setInstanceSlice('detail', slice);
     tabs.removeContentTab('g1', 'file:foo');
     const after = getInstanceSlice('detail');
     assert(!('g1:content:file:foo' in after.tabState), 'removed tab\'s entry dropped');
@@ -413,7 +413,7 @@ describe('[R5] tab removal drops the matching tabState entry', () => {
       'g1:terminal:eph-1': { scroll: 12 },
       'g1:terminal:shell': { scroll: 5 },
     };
-    require('../leaves/route').setInstanceSlice('detail', slice);
+    require('../panel/route').setInstanceSlice('detail', slice);
     tabs.removeEphemeralTab('g1', 'eph-1');
     const after = getInstanceSlice('detail');
     assert(!('g1:terminal:eph-1' in after.tabState), 'removed terminal\'s entry dropped');

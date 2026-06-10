@@ -19,7 +19,7 @@ const { getSel } = require('../app/state');
 const { getModel } = require('../app/runtime');
 const { stripMarkup, esc } = require('../io/ansi');
 const {getPanelDef, getItems, getInstanceSlice, getFocus } = require('../panel/api');
-const route = require('../leaves/route');
+const route = require('../panel/route');
 const { renderOverlay } = require('../render/panel');
 
 // Module-held options (label + content thunk + cancel). The reducer mirrors

@@ -23,7 +23,7 @@ const { esc } = require('../io/ansi');
 const {getCommands, getPanelDef, getInstanceSlice, getFocus, instanceKind } = require('../panel/api');
 const kb = require('../dispatch/keybindings');
 const mpane = require('../leaves/pane');
-const route = require('../leaves/route');
+const route = require('../panel/route');
 
 /** Walk the leader-tree depth-first, emitting `{seq, label}` for every
  *  LEAF (the actual bindings). Subtrees recurse; their internal labels

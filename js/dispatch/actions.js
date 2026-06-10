@@ -30,7 +30,7 @@ const { isTerminalTab, activeTerminalId, isActionTab, activeActionTab } = requir
 const { isSessionDead, restartSession } = require('../io/terminal');
 const { execSync } = require('child_process');
 const { getModel } = require('../app/runtime');
-const route = require('../leaves/route');
+const route = require('../panel/route');
 const mpane = require('../leaves/pane');
 
 // Lazy stub for the dispatch back-edge. Each invocation looks up the

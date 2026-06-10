@@ -90,7 +90,7 @@ function _routedBundle(slice, model, groupName) {
 }
 
 function appendDetailLine(line, tabKey, groupName) {
-  const route = require('../leaves/route');
+  const route = require('../panel/route');
   const target = route.resolveTarget('viewer');
   if (target == null) return;
   const api = require('../panel/api');
@@ -107,7 +107,7 @@ function appendDetailLine(line, tabKey, groupName) {
 
 function appendDetailLines(lines, tabKey, groupName) {
   if (!lines || lines.length === 0) return;
-  const route = require('../leaves/route');
+  const route = require('../panel/route');
   const target = route.resolveTarget('viewer');
   if (target == null) return;
   const api = require('../panel/api');
@@ -175,7 +175,7 @@ function killAll(opts = {}) {
  * (singleton unrouted slot — new unrouted preempts previous).
  */
 function streamCommand(headerLabel, cmd, args = [], opts = {}) {
-  const route = require('../leaves/route');
+  const route = require('../panel/route');
   const target = route.resolveTarget('viewer');
   if (target == null) return;     // no viewer registered
   const api = require('../panel/api');

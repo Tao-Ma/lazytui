@@ -94,7 +94,7 @@ describe('[3] update — (model, msg) → [model, cmds], pure + Cmd descriptors'
     // a list panel with getInfo → yank to Info + populate. focus on
     // detail / no-getInfo panels (stats) → bail. The
     // addContentTab → focus_set(detail) cascade is safe by the bail.
-    const route = require('../leaves/route');
+    const route = require('../panel/route');
     const dispatch = require('../dispatch/dispatch');
     // Seed a group + action so actions panel has items to feed getInfo.
     const m = runtime.getModel();
@@ -117,7 +117,7 @@ describe('[3] update — (model, msg) → [model, cmds], pure + Cmd descriptors'
     // Pin that yank fires from ANY non-Info tab. The reducer doesn't
     // special-case Transcript — the precondition is "focus has
     // getInfo," and the consequence is "tab=0 + populate."
-    const route = require('../leaves/route');
+    const route = require('../panel/route');
     const dispatch = require('../dispatch/dispatch');
     const m = runtime.getModel();
     m.config = { groups: { g: { label: 'G', actions: {
@@ -137,7 +137,7 @@ describe('[3] update — (model, msg) → [model, cmds], pure + Cmd descriptors'
     // the addContentTab → focus_set(detail) cascade: a freshly-opened
     // content tab must STAY on the content tab even though
     // show_selected_info fires from the cascade.
-    const route = require('../leaves/route');
+    const route = require('../panel/route');
     const detail = require('../panel/viewer/viewer');
     const layout = route.getInstanceSlice('layout');
     layout.focus = 'detail';
@@ -153,7 +153,7 @@ describe('[3] update — (model, msg) → [model, cmds], pure + Cmd descriptors'
     // navSelect from an action tab dropped Info's saved scroll.
     // Post-R3: when transitioning to Info from another tab, restore
     // tabState['info'].{scroll, search, select, cursor}.
-    const route = require('../leaves/route');
+    const route = require('../panel/route');
     const detail = require('../panel/viewer/viewer');
     const m = runtime.getModel();
     m.config = { groups: { g: { label: 'G', actions: {
@@ -180,7 +180,7 @@ describe('[3] update — (model, msg) → [model, cmds], pure + Cmd descriptors'
     // the OLD item's text → highlights paint on wrong content.
     // Fix: clear matches/idx on within-Info nav; keep term so the
     // user can `/[Up]`-recall.
-    const route = require('../leaves/route');
+    const route = require('../panel/route');
     const detail = require('../panel/viewer/viewer');
     const m = runtime.getModel();
     m.config = { groups: { g: { label: 'G', actions: {
@@ -213,7 +213,7 @@ describe('[3] update — (model, msg) → [model, cmds], pure + Cmd descriptors'
     // tabState[info] is NOT consulted — the restore is only for
     // off-Info transitions; within-Info, content changes per item and
     // scroll: 0 is the natural fresh-content default.
-    const route = require('../leaves/route');
+    const route = require('../panel/route');
     const detail = require('../panel/viewer/viewer');
     const m = runtime.getModel();
     m.config = { groups: { g: { label: 'G', actions: {

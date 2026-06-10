@@ -45,7 +45,7 @@ const {getInstanceSlice, getFocus } = require('../api');
 // slice; falls back to the kind name for the legacy primary. Returns
 // undefined if no viewer is registered (callers null-guard).
 function _detail() {
-  const route = require('../../leaves/route');
+  const route = require('../../panel/route');
   return getInstanceSlice(route.resolveTarget('viewer') || 'detail');
 }
 
@@ -60,7 +60,7 @@ function _detail() {
 // Phase 8 — resolveTarget so multi-viewer wires up correctly; null
 // = no viewer, drop.
 function _apply(msg) {
-  const target = require('../../leaves/route').resolveTarget('viewer');
+  const target = require('../../panel/route').resolveTarget('viewer');
   if (!target) return;
   const api = require('../api');
   api.dispatchMsg(api.wrap(target, msg));

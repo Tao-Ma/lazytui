@@ -3,7 +3,7 @@
  *
  * No mutable state lives here. The root model lives in runtime.js
  * (getModel()); Component slices live in the instance store
- * (leaves/route.js). This module is the boot/init layer
+ * (panel/route.js). This module is the boot/init layer
  * (loadConfig + initState) plus the small set of read/write helpers the
  * rest of the codebase imports from `./state`: getSel / setSel /
  * getScroll / setScroll / toggleMultiSel / allPanels /
@@ -142,7 +142,7 @@ function initState() {
   // Foundational for v0.7 multi-instance: a second pane of the
   // same kind gets its own paneId, its own slice. Today every
   // kind has exactly one pane; the convention just gets ready.
-  const route = require('../leaves/route');
+  const route = require('../panel/route');
   const mpool = require('../leaves/pool');
   const components = api._components ? api._components() : null;
   if (components) {
@@ -258,7 +258,7 @@ function _resolvePanelType(id) {
   // Delegates to route.paneTypeOf — accepts paneId or panel-type and
   // returns the panel-type form. Single canonical resolver across
   // the codebase.
-  return require('../leaves/route').paneTypeOf(id) || id;
+  return require('../panel/route').paneTypeOf(id) || id;
 }
 
 function _navEntry(id) {
@@ -314,7 +314,7 @@ function resetGroupContext() {
   // the viewer-half Cmd drops in that case.
   const dispatch = require('../dispatch/dispatch');
   const api = require('../panel/api');
-  const route = require('../leaves/route');
+  const route = require('../panel/route');
   dispatch.applyMsg({ type: 'reset_group_context' });
   const target = route.resolveTarget('viewer');
   if (target) {
@@ -353,7 +353,7 @@ function setViewerContent(tabId, text, opts) {
   // tab idx is left unchanged (the override paints regardless via
   // viewerLines's precedence chain).
   if (tabId == null) {
-    const route = require('../leaves/route');
+    const route = require('../panel/route');
     tabId = route.resolveTarget('viewer');
     if (tabId == null) return;   // no viewer registered — drop the write
   }
@@ -396,7 +396,7 @@ function setViewerContent(tabId, text, opts) {
  */
 function appendViewerLines(text) {
   if (!text) return;
-  const route = require('../leaves/route');
+  const route = require('../panel/route');
   const tabId = route.resolveTarget('viewer');
   if (tabId == null) return;
   const lines = text.split('\n');

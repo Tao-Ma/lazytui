@@ -199,7 +199,7 @@ function _groupChangeCmds(res, ctx) {
   // finalizer's resolveTabKey sees the NEW group and the FROM-capture
   // lands under the WRONG group's key. Reordering keeps the finalizer
   // reading the OLD group at capture time.
-  const route = require('../../leaves/route');
+  const route = require('../../panel/route');
   const target = route.resolveTarget('viewer');
   if (target) {
     cmds.push({ type: 'msg', msg: require('../api').wrap(target, {

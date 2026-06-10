@@ -29,7 +29,7 @@ const mpoolDrag = require('../leaves/free-config-pool-drag');
 const mtabDrag = require('../leaves/tab-drag');
 const mpool = require('../leaves/pool');
 const mpane = require('../leaves/pane');
-const route = require('../leaves/route');
+const route = require('../panel/route');
 const { getInstanceSlice } = require('./api');
 
 

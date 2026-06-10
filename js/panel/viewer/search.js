@@ -31,7 +31,7 @@ const ms = require('../../leaves/search');
 // All Msgs target the focused-or-sticky viewer; v0.6.1 Phase 8 —
 // resolveTarget so multi-viewer routes searches into the right pane;
 // null = no viewer registered, drop.
-function _viewerTarget() { return require('../../leaves/route').resolveTarget('viewer'); }
+function _viewerTarget() { return require('../../panel/route').resolveTarget('viewer'); }
 function _dispatch(msg) {
   const target = _viewerTarget();
   if (!target) return;

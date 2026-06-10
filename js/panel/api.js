@@ -5,7 +5,7 @@
  * `update(msg, slice)` / `panelTypes[type].render(panel, w, h, slice)`,
  * with optional cross-cutting contributions (`commands`, `groupActions`,
  * `statusFor`, `viewContributions`, `cleanup`). The framework owns slice
- * storage (leaves/route.js's instance store); each Component's `update`
+ * storage (panel/route.js's instance store); each Component's `update`
  * is the single writer for its own slice. See `docs/PRINCIPLES.md` §12
  * + the spec at `docs/v0.5-layout-component.md`.
  *
@@ -14,7 +14,7 @@
 'use strict';
 
 const hub = require('./hub');
-const route = require('../leaves/route');
+const route = require('../panel/route');
 
 // L0/L2 helpers re-exported as the Component-facing surface. Component
 // authors should import only from `./api` so the surface is one diff
@@ -490,7 +490,7 @@ function getComponent(name)              { return components[name]; }
 const { componentForPanel: getComponentOwningPanel, getFocus } = route;
 
 // Tab-instance registry surface. `getInstanceSlice(tabId)` is the
-// slice-read primitive every reader uses. See `leaves/route.js` for
+// slice-read primitive every reader uses. See `panel/route.js` for
 // the data model.
 const {
   setInstance, getInstance, getInstanceSlice, setInstanceSlice,

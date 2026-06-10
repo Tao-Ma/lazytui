@@ -7,7 +7,7 @@
 
 const { describe, it, eq, assert, report } = require('./test-runner');
 const { getModel } = require('../app/runtime');
-const route = require('../leaves/route');
+const route = require('../panel/route');
 const api = require('../panel/api');
 
 function setup() {

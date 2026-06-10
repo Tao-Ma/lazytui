@@ -28,7 +28,7 @@
  */
 'use strict';
 
-const route = require('../leaves/route');
+const route = require('../panel/route');
 const { wrap } = route;
 // Eager-require open-target scheme modules so their schemes register on
 // the registry before the first `:open` invocation (or first cmdline

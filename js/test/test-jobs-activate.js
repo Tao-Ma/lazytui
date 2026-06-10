@@ -85,7 +85,7 @@ describe('[jobs_activate] full cascade — one Msg, reducer-driven', () => {
       owner: { cmd: 'docker logs nginx' },
     });
     const sliceBefore = { ...api.getInstanceSlice('detail'), tab: 0 };
-    require('../leaves/route').setInstanceSlice('detail', sliceBefore);
+    require('../panel/route').setInstanceSlice('detail', sliceBefore);
     _activate();
     eq(runtime.getModel().modes.jobsMode, false);
     eq(api.getInstanceSlice('detail').tab, 0, 'tab unchanged');

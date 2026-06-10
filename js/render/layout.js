@@ -410,7 +410,7 @@ function getCurrentLayout() {
  *
  * v0.6.3 P4.1 — tabBounds cache moved off layoutSlice.paneBounds.detail.tabs
  * onto the viewer's own slice. Hit-test consumers read it directly
- * via `getInstanceSlice(require('../leaves/route').resolveTarget('viewer') || 'detail').tabBounds`; boundsFor() no longer
+ * via `getInstanceSlice(require('../panel/route').resolveTarget('viewer') || 'detail').tabBounds`; boundsFor() no longer
  * surfaces tabs.
  */
 function boundsFor(key) {
@@ -1037,7 +1037,7 @@ function render(model = getModel()) {
   // viewport tracks the real layout. R4.9: direct setInstanceSlice
   // instead of a wrapped viewer_set_viewport Msg + 5-line reducer arm
   // — the Msg's only effect was this single-field write.
-  const route = require('../leaves/route');
+  const route = require('../panel/route');
   const viewerTab = route.resolveTarget('viewer');
   const viewerBounds = viewerTab && layoutSlice.paneBounds && layoutSlice.paneBounds[viewerTab];
   if (viewerBounds) {
@@ -1091,7 +1091,7 @@ function render(model = getModel()) {
 function redraw() {
   // v0.6.1 Phase 6 — resolveTarget picks the destination viewer; null
   // result (no viewer registered) just skips the info refresh and paints.
-  const target = require('../leaves/route').resolveTarget('viewer');
+  const target = require('../panel/route').resolveTarget('viewer');
   if (target) dispatchMsg(wrap(target, { type: 'viewer_show_info' }));
   render();
 }
@@ -1123,7 +1123,7 @@ function footerKeys(model) {
   if (md.detailSearchMode) {
     const ds = require('../panel/viewer/search');
     const term = ds.typingText();
-    const search = getInstanceSlice(require('../leaves/route').resolveTarget('viewer') || 'detail')?.search || { matches: [], idx: 0 };
+    const search = getInstanceSlice(require('../panel/route').resolveTarget('viewer') || 'detail')?.search || { matches: [], idx: 0 };
     const n = (search.matches || []).length;
     const idx = n ? search.idx + 1 : 0;
     return ` /${esc(term)}│ \\[${idx}/${n}] | ↑↓ step | Esc cancel | Enter commit`;
@@ -1158,7 +1158,7 @@ function footerKeys(model) {
     } else {
       segs.push('x menu', 'q quit');
       segs.push('/ search');
-      const search = getInstanceSlice(require('../leaves/route').resolveTarget('viewer') || 'detail')?.search;
+      const search = getInstanceSlice(require('../panel/route').resolveTarget('viewer') || 'detail')?.search;
       if (search && search.active) {
         const n = search.matches.length;
         const idx = search.idx + 1;
@@ -1252,7 +1252,7 @@ function renderFooter(model = getModel()) {
   // on a non-list panel, where space falls back to the leader.)
   // focusDef hoisted at the top of this function.
   const selectActive = model.modes.listSelectMode && focusDef && typeof focusDef.getItems === 'function';
-  const sel = getInstanceSlice(require('../leaves/route').resolveTarget('viewer') || 'detail')?.select;
+  const sel = getInstanceSlice(require('../panel/route').resolveTarget('viewer') || 'detail')?.select;
   const selectTag = (sel && sel.active)
     ? ` \\[${sel.kind === 'line' ? 'v-line' : 'v-char'}]`
     : (selectActive ? ' \\[select]' : '');

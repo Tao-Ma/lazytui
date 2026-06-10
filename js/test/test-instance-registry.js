@@ -9,7 +9,7 @@
  */
 'use strict';
 
-const route = require('../leaves/route');
+const route = require('../panel/route');
 const api = require('../panel/api');
 const { describe, it, assert, eq, report } = require('./test-runner');
 

@@ -10,12 +10,15 @@
  *   - Focus reader (`getFocus`) — pulls from the layout instance.
  *   - `resolveTarget(intent)` — the navigator → viewer routing chokepoint.
  *
- * Lives under `leaves/` (not `panel/`) because it has no dependencies
- * and is structurally a pure registry — runtime imports it directly,
- * and panel/api re-exports its public surface for callers that want
- * the cohesive "panel system" import path. Importing `panel/api`
- * from runtime would cycle (api → runtime via `getModel`), so the
- * routing bits live down here on their own.
+ * Lives under `panel/` next to `hub.js` — the two stateful framework
+ * registries (route owns `_instances`, the Component-slice store; hub
+ * owns the pub/sub topic store). Despite the directory, route imports
+ * NOTHING from `panel/api`/`runtime`: it must stay zero-dep there so
+ * runtime can import it directly without a cycle (api → runtime via
+ * `getModel`). `panel/api` re-exports route's public surface for
+ * callers that want the cohesive "panel system" import path. (Moved
+ * out of `leaves/` — it's a mutable registry, not a pure transform,
+ * so the pure-leaves drawer was the wrong home.)
  */
 'use strict';
 
@@ -306,7 +309,7 @@ function resolveTarget(intent, ctx) {
   //     happens to equal VIEWER_KIND, but multi-instance panes mint
   //     distinct ids and the literal would be wrong.
   if (layout && layout.arrange && Array.isArray(layout.arrange.columns)) {
-    const mpool = require('./pool');
+    const mpool = require('../leaves/pool');
     for (const p of mpool.lastColumnPanels(layout.arrange)) {
       if (!p) continue;
       const tabs = Array.isArray(p.tabs) ? p.tabs : null;

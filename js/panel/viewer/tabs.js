@@ -39,7 +39,7 @@ const pt = require('../../leaves/pane-tabs');
  *  (mid-boot, tests). */
 function _detailSlice() {
   const api = require('../api');
-  const route = require('../../leaves/route');
+  const route = require('../../panel/route');
   const id = route.resolveTarget('viewer') || 'detail';
   return api.getInstanceSlice(id)
       || { contentTabs: {}, ephemeralTerminals: {}, tab: 0 };
@@ -103,7 +103,7 @@ function findEphemeralByid(id, paneId = 'detail') {
  *  owner. Scans every viewer-kind instance via the route registry —
  *  works for Phase 4 singletons and Phase 5+ multi-instance alike. */
 function paneForSessionId(id) {
-  const route = require('../../leaves/route');
+  const route = require('../../panel/route');
   let found = null;
   route.eachInstance(inst => {
     if (found) return;
@@ -125,7 +125,7 @@ function paneForSessionId(id) {
 // (no viewer registered) drops the dispatch silently.
 
 function _viewerTarget(intent) {
-  return require('../../leaves/route').resolveTarget(intent);
+  return require('../../panel/route').resolveTarget(intent);
 }
 
 /** Add an ephemeral terminal tab at runtime. Used by plugins to open

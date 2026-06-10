@@ -52,7 +52,7 @@ const path = require('path');
 
 const { getModel } = require('../../app/runtime');
 const mnav = require('../../leaves/nav');
-const route = require('../../leaves/route');
+const route = require('../../panel/route');
 const {
   esc, visibleLen, theme, renderPanel,
   getSel, getScroll, getFilter, isMultiSel,
