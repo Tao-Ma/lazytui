@@ -989,12 +989,28 @@ function update(model, msg) {
     // writers per docs/v0.5-layering.md §5). Now the reducer is the
     // sole writer to root model.
     case 'set_config': {
-      return [{
+      const next = {
         ...model,
         config: msg.config,
         projectDir: (msg.config && msg.config.project_dir) || '.',
         configPath: msg.configPath || model.configPath,
-      }, []];
+      };
+      // v0.6.3 Round-2 — fan set_config out to config-status, the only
+      // Component that snapshots config (files / projectDir) onto its
+      // slice for reducer-pure reads. Mirrors the reset_group_context
+      // fan-out a few arms below. Pre-fix the wrapped arm in
+      // config-status.update existed but was unreachable in production
+      // (only tests dispatched it directly via wrap('config-status', ...));
+      // production worked by accident because init() reads getModel().
+      // Sole listener today, hence per-component dispatch rather than
+      // a BROADCAST_TYPES entry. Gates on the Component being
+      // registered so tests that skip it don't trip "unknown Component".
+      const cmds = [];
+      const csOwner = route.componentForPanel('config-status');
+      if (csOwner) {
+        cmds.push({ type: 'msg', msg: route.wrap(csOwner, { type: 'set_config', config: msg.config }) });
+      }
+      return [next, cmds];
     }
     case 'set_register': {
       return [{ ...model, register: msg.register }, []];

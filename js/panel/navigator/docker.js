@@ -40,7 +40,6 @@ const {
   leaveTerminalMode,
   getItems: apiGetItems, selectedOrFocused,
   getInstanceSlice, getFocus, dispatchMsg, wrap, instanceKind,
-  registerEffect,
   hub,
 } = require('../api');
 const { getModel } = require('../../app/runtime');
@@ -316,98 +315,106 @@ function _handleKey(msg, slice) {
   return slice;
 }
 
-// dockerFetch: the polling effect. Runs the two docker queries off-tick,
-// publishes the numeric hub series, and folds the string maps back via
-// dockerResult. On failure it still dispatches dockerResult (no maps) so the
-// inFlight guard always clears.
-registerEffect('dockerFetch', () => {
-  setImmediate(async () => {
-    try {
-      const containers = _containers();
-      if (!containers.length) { dispatchMsg(wrap('docker', { type: 'dockerResult', status: {}, stats: {} })); return; }
+/** Called from registerComponent after init(). Mirrors the
+ *  config-status / files / history pattern — re-registering docker
+ *  via the framework lifecycle re-runs these (a top-level call
+ *  would not, because the module is cached, so a test path that
+ *  did `clearEffects()` + `installBuiltins()` would silently lose
+ *  every docker effect handler). See api.js:166-175. */
+function installEffects(registerEffect) {
+  // dockerFetch: the polling effect. Runs the two docker queries off-tick,
+  // publishes the numeric hub series, and folds the string maps back via
+  // dockerResult. On failure it still dispatches dockerResult (no maps) so the
+  // inFlight guard always clears.
+  registerEffect('dockerFetch', () => {
+    setImmediate(async () => {
+      try {
+        const containers = _containers();
+        if (!containers.length) { dispatchMsg(wrap('docker', { type: 'dockerResult', status: {}, stats: {} })); return; }
 
-      const status = {};
-      const args = containers.map(JSON.stringify).join(' ');
-      const inspectOut = await execAsync(
-        `docker inspect -f "{{.Name}}\t{{.State.Status}}" ${args} 2>/dev/null`,
-        { timeout: 5000 },
-      );
-      const seen = new Set();
-      for (const line of inspectOut.split('\n').filter(Boolean)) {
-        const [rawName, st] = line.split('\t');
-        if (!rawName) continue;
-        const name = unprefix(rawName);
-        seen.add(name);
-        status[name] = (st || '').trim() || 'unknown';
-      }
-      for (const name of containers) if (!seen.has(name)) status[name] = 'unknown';
-
-      const stats = {};
-      const running = containers.filter(c => status[c] === 'running');
-      if (running.length) {
-        const sargs = running.map(JSON.stringify).join(' ');
-        const statsOut = await execAsync(
-          `docker stats --no-stream --format "{{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}" ${sargs} 2>/dev/null`,
+        const status = {};
+        const args = containers.map(JSON.stringify).join(' ');
+        const inspectOut = await execAsync(
+          `docker inspect -f "{{.Name}}\t{{.State.Status}}" ${args} 2>/dev/null`,
           { timeout: 5000 },
         );
-        const ts = Date.now();
-        for (const line of statsOut.split('\n').filter(Boolean)) {
-          const [name, cpu, mem] = line.split('\t');
-          if (!name) continue;
-          stats[name] = { cpu: (cpu || '').trim(), mem: (mem || '').trim() };
-          // Publish a numeric sample each tick so the series advances even
-          // when the formatted strings repeat; drops cheaply if unsubscribed.
-          const memInfo = parseMem(stats[name].mem);
-          hub.publish('docker.stats', name, {
-            ts, cpu: parsePercent(stats[name].cpu), mem: memInfo.used, memLimit: memInfo.limit,
-          });
+        const seen = new Set();
+        for (const line of inspectOut.split('\n').filter(Boolean)) {
+          const [rawName, st] = line.split('\t');
+          if (!rawName) continue;
+          const name = unprefix(rawName);
+          seen.add(name);
+          status[name] = (st || '').trim() || 'unknown';
         }
-      }
-      // Drop the hub series for any tracked container that isn't running now.
-      for (const name of containers) if (!stats[name]) hub.delete('docker.stats', name);
+        for (const name of containers) if (!seen.has(name)) status[name] = 'unknown';
 
-      dispatchMsg(wrap('docker', { type: 'dockerResult', status, stats }));
-    } catch (e) {
-      console.error(`[docker:fetch] ${e.message}`);
-      dispatchMsg(wrap('docker', { type: 'dockerResult' }));  // keep prior maps, clear inFlight
+        const stats = {};
+        const running = containers.filter(c => status[c] === 'running');
+        if (running.length) {
+          const sargs = running.map(JSON.stringify).join(' ');
+          const statsOut = await execAsync(
+            `docker stats --no-stream --format "{{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}" ${sargs} 2>/dev/null`,
+            { timeout: 5000 },
+          );
+          const ts = Date.now();
+          for (const line of statsOut.split('\n').filter(Boolean)) {
+            const [name, cpu, mem] = line.split('\t');
+            if (!name) continue;
+            stats[name] = { cpu: (cpu || '').trim(), mem: (mem || '').trim() };
+            // Publish a numeric sample each tick so the series advances even
+            // when the formatted strings repeat; drops cheaply if unsubscribed.
+            const memInfo = parseMem(stats[name].mem);
+            hub.publish('docker.stats', name, {
+              ts, cpu: parsePercent(stats[name].cpu), mem: memInfo.used, memLimit: memInfo.limit,
+            });
+          }
+        }
+        // Drop the hub series for any tracked container that isn't running now.
+        for (const name of containers) if (!stats[name]) hub.delete('docker.stats', name);
+
+        dispatchMsg(wrap('docker', { type: 'dockerResult', status, stats }));
+      } catch (e) {
+        console.error(`[docker:fetch] ${e.message}`);
+        dispatchMsg(wrap('docker', { type: 'dockerResult' }));  // keep prior maps, clear inFlight
+      }
+    });
+  });
+
+  registerEffect('dockerEventsStart', () => {
+    startEventsStream(getModel().config);
+  });
+
+  registerEffect('dockerExec', (eff) => {
+    // R6 — dropped pre-stream setActiveTab(0). It was legacy from the
+    // pre-Transcript-tab era when the unrouted accumulator lived on
+    // Info; parking the user on Info first set up Info to receive the
+    // stream. Post-v0.6.2 the Transcript tab hosts the unrouted
+    // accumulator and stream_start's unrouted-auto-jump branch puts
+    // the user on Transcript directly (regardless of where they were
+    // before). The setActiveTab(0) was a brief stop on Info en route
+    // to Transcript — pure churn.
+    const q = JSON.stringify(eff.item);
+    leaveTerminalMode();
+    if (eff.mode === 'inspect') {
+      streamCommand(`inspect ${eff.item}`,
+        `docker inspect ${q} 2>&1 | (command -v jq >/dev/null && jq . || cat)`);
+    } else {
+      streamCommand(`logs ${eff.item}`, `docker logs --tail=200 -f ${q} 2>&1`);
     }
   });
-});
 
-registerEffect('dockerEventsStart', () => {
-  startEventsStream(getModel().config);
-});
-
-registerEffect('dockerExec', (eff) => {
-  // R6 — dropped pre-stream setActiveTab(0). It was legacy from the
-  // pre-Transcript-tab era when the unrouted accumulator lived on
-  // Info; parking the user on Info first set up Info to receive the
-  // stream. Post-v0.6.2 the Transcript tab hosts the unrouted
-  // accumulator and stream_start's unrouted-auto-jump branch puts
-  // the user on Transcript directly (regardless of where they were
-  // before). The setActiveTab(0) was a brief stop on Info en route
-  // to Transcript — pure churn.
-  const q = JSON.stringify(eff.item);
-  leaveTerminalMode();
-  if (eff.mode === 'inspect') {
-    streamCommand(`inspect ${eff.item}`,
-      `docker inspect ${q} 2>&1 | (command -v jq >/dev/null && jq . || cat)`);
-  } else {
-    streamCommand(`logs ${eff.item}`, `docker logs --tail=200 -f ${q} 2>&1`);
-  }
-});
-
-registerEffect('dockerShell', (eff) => {
-  const q = JSON.stringify(eff.item);
-  // bash if present, else sh. (`exec bash || exec sh` keeps the interactive
-  // prompt — readline writes it to stderr, which a 2>/dev/null would mute.)
-  addEphemeralTab(
-    getModel().currentGroup,
-    `shell-${eff.item}`,
-    `docker exec -it ${q} sh -c 'command -v bash >/dev/null && exec bash || exec sh'`,
-    `sh:${eff.item}`,
-  );
-});
+  registerEffect('dockerShell', (eff) => {
+    const q = JSON.stringify(eff.item);
+    // bash if present, else sh. (`exec bash || exec sh` keeps the interactive
+    // prompt — readline writes it to stderr, which a 2>/dev/null would mute.)
+    addEphemeralTab(
+      getModel().currentGroup,
+      `shell-${eff.item}`,
+      `docker exec -it ${q} sh -c 'command -v bash >/dev/null && exec bash || exec sh'`,
+      `sh:${eff.item}`,
+    );
+  });
+}
 
 // --- compose group actions ---
 //
@@ -564,6 +571,7 @@ module.exports = {
   name: 'docker',
   init,
   update,
+  installEffects,
   // Framework teardown (cleanupComponents on quit) — stop the long-lived
   // `docker events` child + its reconnect timer. process.on('exit') backstops.
   cleanup: stopEventsStream,
