@@ -625,8 +625,8 @@ module.exports = {
   pointToResizeTarget, pointToDropTarget, pointToCellZone,
   // validators
   validateNewColumn, validateTarget,
-  // drop apply
-  applyDrop, applyNewColumn, applyInsert, applySwap,
+  // drop apply (applyInsert / applySwap are internal — reached via applyDrop)
+  applyDrop, applyNewColumn,
   // state machine
   mousePress, mouseMotion, mouseRelease,
   // preview

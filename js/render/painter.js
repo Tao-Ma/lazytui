@@ -23,9 +23,10 @@
  * had the implicit invariant that every column emitted full-availH
  * rows; composeRows replaces it with explicit absolute positioning.
  *
- * P3.3 wires this up behind LAZYTUI_RECT_PAINTER=1; P3.6 deletes
- * paintColumns and the column-pad in renderNormal that was the
- * v0.6.2 (6d9ad31) local fix for the same bug class.
+ * P3.3 gated this behind LAZYTUI_RECT_PAINTER=1; P3.6 made composeRows
+ * the only painter — deleting paintColumns, the column-pad in
+ * renderNormal (the v0.6.2 6d9ad31 local fix for the same bug class),
+ * and the flag itself.
  */
 'use strict';
 

@@ -347,14 +347,12 @@ function _spliceAndReleaseWidth(columns, removedIndex) {
 }
 
 module.exports = {
-  // constants
-  MIN_PANEL_H, EDGE_W,
-  NEW_COL_DEFAULT_W, NEW_COL_DONOR_FLOOR, NEW_COL_DONOR_TAKE_MIN,
-  DETAIL_MIN_ROWS, MAX_UNDO,
+  // constants. NEW_COL_*, DETAIL_MIN_ROWS used only internally (the
+  // width-alloc + clamp math below) — not exported.
+  MIN_PANEL_H, EDGE_W, MAX_UNDO,
   // detail clamps
   detailMinPct, detailMaxPct,
-  // snapshot / undo
-  snapshot, _applySnapshot,
+  // undo (snapshot / _applySnapshot are internal undo plumbing — not exported)
   pushUndo: _pushUndoSlice,
   undo, redo, clearUndoStacks,
   // hotkey rekey

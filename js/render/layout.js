@@ -598,11 +598,10 @@ function _safeRender(panel, w, h, opts) {
  * Returns a fresh `[{paneId, type, x, y, w, h, collapsed, lines}]`
  * array — input shape for `painter.composeRows`.
  *
- * Pure projection: reads model + layout + arrange, does NOT
- * mutate slice (paneBounds writes stay in renderNormal's old
- * path; new path will write them separately in P3.3 wiring).
- * Wired in by P3.3 behind LAZYTUI_RECT_PAINTER=1; until then,
- * the function is exported but unused.
+ * Pure projection: reads model + layout + arrange, does NOT mutate
+ * slice. Live since the P3.6 migration — called by the render pass
+ * below (the old paintColumns path + the LAZYTUI_RECT_PAINTER gate
+ * are retired). Module-internal; not exported.
  */
 function composeRects(layout, model) {
   const layoutSlice = getInstanceSlice('layout');
@@ -1324,10 +1323,6 @@ module.exports = {
   // cache (slice.paneBounds.detail.tabs, N3 — moves onto viewer's
   // slice in P4) onto the returned rect.
   boundsFor, visibleBoundsFor,
-  // v0.6.3 P3.2 — projects layout.rects to {paneId, x, y, w, h,
-  // collapsed, lines} via _safeRender + chrome injection. Pure
-  // function; exported here for the P3.3 wiring + P3.4 stress test.
-  composeRects,
   // Test seam: distributeColumnHeights is a pure function that returns
   // a { [type]: rows } map. Exposed so collapsed-honor + heightPct
   // math can be unit-tested without bringing up the whole runtime.
