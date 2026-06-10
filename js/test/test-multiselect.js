@@ -139,4 +139,31 @@ describe('[9] selectedOrFocused with empty getItems', () => {
   });
 });
 
+describe('[10] filter_enter clears multiSel — selections from pre-filter context don\'t survive', () => {
+  // Round-2 regression: pre-filter selections reference ids that the
+  // filter may hide; carrying them across commit surfaces as ghosts
+  // when the filter is later cleared. Parallel to groups.switchTab's
+  // multiSel-clear on All↔Quick toggle.
+  it('filter_enter on a panel with multiSel clears the selection', () => {
+    const dispatch = require('../dispatch/dispatch');
+    toggleMultiSel('containers', 'a');
+    toggleMultiSel('containers', 'b');
+    eq(multiSelCount('containers'), 2, 'seeded two selections');
+    dispatch.applyMsg({ type: 'filter_enter', panel: 'containers', text: '' });
+    eq(multiSelCount('containers'), 0, 'multiSel cleared on filter_enter');
+    eq(getModel().modes.filterMode, true, 'filterMode set as side-effect');
+    // Restore so subsequent tests don't inherit filter mode.
+    dispatch.applyMsg({ type: 'filter_exit', keep: false });
+    eq(getModel().modes.filterMode, false, 'filterMode cleared');
+  });
+  it('filter_enter no-ops when panel had no selection', () => {
+    const dispatch = require('../dispatch/dispatch');
+    clearMultiSel('containers');
+    eq(multiSelCount('containers'), 0, 'starts empty');
+    dispatch.applyMsg({ type: 'filter_enter', panel: 'containers', text: '' });
+    eq(multiSelCount('containers'), 0, 'still empty after filter_enter');
+    dispatch.applyMsg({ type: 'filter_exit', keep: false });
+  });
+});
+
 report();

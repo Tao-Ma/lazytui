@@ -893,11 +893,25 @@ function update(model, msg) {
     // filterable gate + committed seed text, since the filterable check
     // is plugin-API (can't live in the reducer). The transforms are
     // pure model writes (no plugin API, no Cmd).
-    case 'filter_enter':
-      return [{
+    case 'filter_enter': {
+      const next = {
         ..._withModes(model, { filterMode: true }),
         modal: { ...model.modal, filter: { text: msg.text || '', panel: msg.panel } },
-      }, []];
+      };
+      // v0.6.3 Round-2 — clear multiSel on filter-session entry.
+      // Selections made before entering filter mode reference items
+      // the filter may hide; carrying them across the commit surfaces
+      // as ghost selections when the filter is later cleared.
+      // Parallel to groups.switchTab's multiSel-clear on All↔Quick
+      // toggle. multisel_clear is a no-op when the panel had no
+      // selection, so the Cmd is free in the common case.
+      const compName = route.componentForPanel(msg.panel);
+      if (!compName) return [next, []];
+      return [next, [{
+        type: 'msg',
+        msg: route.wrap(compName, { type: 'multisel_clear', panel: msg.panel }),
+      }]];
+    }
     case 'filter_key': {
       const f = model.modal.filter;
       let text = f.text;
