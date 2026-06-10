@@ -20,7 +20,7 @@ const { writeToSession, isSessionDead } = require('../io/terminal');
 const {getPanelDef, getItems, getInstanceSlice, dispatchMsg, wrap, getFocus, instanceKind } = require('../panel/api');
 const route = require('../leaves/route');
 const mpane = require('../leaves/pane');
-const { isChainActive } = require('./modes');
+const { isChainActive, CHAIN_MODES } = require('./modes');
 
 function _detail() {
   // v0.6.3 T1.4 — paneId-aware lookup (post-Phase B1). resolveTarget
@@ -316,14 +316,17 @@ const _modeMouseHandlers = {
   freeConfigMode:  _mouseHandleFreeConfigMode,
 };
 
-// Explicit precedence — pre-C1 source order was tabList → paneSelect
-// → freeConfig. CHAIN_MODES in `./modes` orders freeConfigMode FIRST
-// (idx 3) which would invert that. The three modes are mutually
-// exclusive by invariant today (mode_set/clear flips one at a time;
-// free-config disables the [≡] trigger), so the precedence is
-// observationally moot — pinning the order here is defense in depth
-// so a future invariant relax doesn't silently flip behavior.
-const _MOUSE_MODE_PRECEDENCE = ['tabListMode', 'paneSelectMode', 'freeConfigMode'];
+// Mouse mode precedence — DERIVED from the keyboard chain (CHAIN_MODES,
+// the single source of mode ordering in `./modes`), filtered to the
+// modes with a mouse handler. Pre-C1 this was a hand-pinned array
+// (tabList → paneSelect → freeConfig); deriving it keeps the mouse side
+// from silently disagreeing with the keyboard side — exactly what a
+// second hardcoded list risked. The three modes are mutually exclusive
+// by invariant today (mode_set/clear flips one at a time; free-config
+// disables the [≡] trigger), so the order is observationally moot; if
+// that invariant ever relaxes, mouse now resolves the SAME winner as
+// keyboard (freeConfig first) instead of the opposite.
+const _MOUSE_MODE_PRECEDENCE = CHAIN_MODES.filter(f => f in _modeMouseHandlers);
 
 /** Walks _MOUSE_MODE_PRECEDENCE in order, fires the first active
  *  handler. Returns true when a handler claimed the event (caller
