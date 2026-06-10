@@ -1,7 +1,7 @@
 /**
  * Layout calculation and view mode rendering. (v0.6.4 Theme B: renamed
  * from `render/layout.js` → `render/geometry.js` to kill the dir-twin
- * with `panel/layout.js` — the layout *Component*/state owner. This
+ * with `panel/layout.js` — the layout Component / state owner. This
  * file is the render-side geometry engine + view-mode paint dispatch
  * + footer; `panel/layout.js` owns the arrange/focus/viewMode slice.)
  *
