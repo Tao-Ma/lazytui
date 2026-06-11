@@ -352,4 +352,61 @@ describe('[trigger state machine] all states render + click as documented', () =
   });
 });
 
+// v0.6.4 — multi-viewer trigger routing. Each placed viewer paints its
+// own `[≡]` glyph; hitTestTrigger must return the SPECIFIC viewer whose
+// glyph was clicked (not the focused-or-first singleton). Regression for
+// the pre-release review HIGH: "cannot mouse-open the tab-list on a
+// non-first viewer" — every visible glyph must be live.
+describe('[hitTestTrigger] multi-viewer — each glyph opens its own pane', () => {
+  const tabList = require('../overlay/tab-list');
+  const api = require('../panel/api');
+  const layout = require('../panel/layout');
+  const { getModel } = require('../app/runtime');
+
+  try { api.registerComponent(layout); } catch (e) { /* already registered */ }
+  const layoutSlice = api.getInstanceSlice('layout');
+
+  // Two detail panes side by side. Glyph band is [x+5, x+8) on row y
+  // (TRIGGER_X_OFFSET=5, TRIGGER_VIS_W=3) → left at mx 6, right at mx 56.
+  function withTwoViewers(fn) {
+    const saved = { bounds: layoutSlice.paneBounds, arrange: layoutSlice.arrange };
+    const md = getModel().modes;
+    const savedModes = { tabListMode: md.tabListMode, freeConfigMode: md.freeConfigMode, cmdMode: md.cmdMode };
+    layoutSlice.paneBounds = {
+      'pane-left':  { x: 0,  y: 0, w: 40, h: 20 },
+      'pane-right': { x: 50, y: 0, w: 40, h: 20 },
+    };
+    layoutSlice.arrange = { columns: [
+      { panels: [{ paneId: 'pane-left',  type: 'detail' }] },
+      { panels: [{ paneId: 'pane-right', type: 'detail' }] },
+    ] };
+    md.tabListMode = false; md.freeConfigMode = false; md.cmdMode = false;
+    try { return fn(); } finally {
+      layoutSlice.paneBounds = saved.bounds;
+      layoutSlice.arrange = saved.arrange;
+      Object.assign(md, savedModes);
+    }
+  }
+
+  it('clicking the first viewer glyph returns pane-left', () => {
+    withTwoViewers(() => eq(tabList.hitTestTrigger(6, 0), 'pane-left'));
+  });
+  it('clicking the non-first viewer glyph returns pane-right (the HIGH fix)', () => {
+    withTwoViewers(() => eq(tabList.hitTestTrigger(56, 0), 'pane-right'));
+  });
+  it('clicking the gap / wrong row returns null', () => {
+    withTwoViewers(() => {
+      eq(tabList.hitTestTrigger(20, 0), null, 'gap between panes misses');
+      eq(tabList.hitTestTrigger(6, 5), null, 'wrong row misses');
+    });
+  });
+  it('not clickable while another chain mode owns input', () => {
+    withTwoViewers(() => {
+      getModel().modes.freeConfigMode = true;
+      eq(tabList.hitTestTrigger(6, 0), null, 'left glyph dead under chain mode');
+      eq(tabList.hitTestTrigger(56, 0), null, 'right glyph dead under chain mode');
+    });
+  });
+});
+
 report();

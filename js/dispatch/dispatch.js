@@ -322,14 +322,16 @@ function handleTabListKey(key, seq) {
   // `vh` (viewport rows of the overlay) and `tabCount` are view-derived
   // — resolved here off the overlay module so the reducer can stay pure.
   const overlay = require('../overlay/tab-list');
-  const flat = overlay._flatTabs();
-  const vh = overlay.viewportRows();
-  const tabCount = flat.length;
   // v0.6.1 Phase 8 — tab-list overlay key handler targets the pane that
   // owns the open overlay (layout.tabListOwnerPaneId), not the singleton
   // 'detail' kind. Fallback 'detail' covers the pre-init boot edge.
+  // v0.6.4 — vh/tabCount are per-pane; read them off the owner so the
+  // reducer clamps against the owner's tabs, not the primary's.
   const layoutSlice = getInstanceSlice('layout');
   const ownerPaneId = (layoutSlice && layoutSlice.tabListOwnerPaneId) || 'detail';
+  const flat = overlay._flatTabs(ownerPaneId);
+  const vh = overlay.viewportRows(ownerPaneId);
+  const tabCount = flat.length;
   const send = (m) => dispatchMsg(wrap(ownerPaneId, m));
   if (key === 'escape' || seq === 'T' || key === 'T') { send({ type: 'tab_list_close' }); return; }
   if (key === 'return') {
@@ -531,8 +533,8 @@ function handleNormalKey(key, seq) {
       const overlay = require('../overlay/tab-list');
       dispatchMsg(wrap(target, {
         type: 'tab_list_open',
-        vh: overlay.viewportRows(),
-        tabCount: overlay._flatTabs().length,
+        vh: overlay.viewportRows(target),
+        tabCount: overlay._flatTabs(target).length,
       }));
       break;
     }

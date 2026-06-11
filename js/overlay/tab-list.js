@@ -311,10 +311,27 @@ function isTriggerHit(mx, my, paneId = 'detail') {
       && mx < paneB.x + TRIGGER_X_OFFSET + TRIGGER_VIS_W;
 }
 
+/** v0.6.4 — multi-viewer trigger hit-test. Each placed viewer paints its
+ *  own `[≡]` glyph; this returns the paneId of the viewer whose glyph was
+ *  clicked, or null. Mirrors pane-select's hitTestTrigger so EVERY visible
+ *  glyph is live (focus-keyed resolution would leave non-focused viewers'
+ *  glyphs painted-but-dead). The caller opens/closes that specific pane. */
+function hitTestTrigger(mx, my) {
+  if (!_triggerClickable()) return null;
+  const layoutSlice = getInstanceSlice('layout');
+  if (!layoutSlice || !layoutSlice.arrange) return null;
+  const mpool = require('../leaves/pool');
+  for (const p of mpool.allPanesInColumns(layoutSlice.arrange)) {
+    if (p.type !== 'detail') continue;
+    if (isTriggerHit(mx, my, p.paneId)) return p.paneId;
+  }
+  return null;
+}
+
 function _resetRenderState() { _lastPanelH = 0; _lastTop = 0; }
 
 module.exports = {
-  renderTabList, hitTest, isTriggerHit,
+  renderTabList, hitTest, isTriggerHit, hitTestTrigger,
   viewportRows, _resetRenderState,
   // v0.6.3 P4.2 — exposed for chromeFor() in render/decor.js. Returns
   // 'open' (tab list open), 'disabled' (any other chain mode), or

@@ -151,14 +151,14 @@ function _mouseHandleTabListMode(kind, mx, my, model) {
     dispatchMsg(wrap(ownerPaneId, {
       type: 'tab_list_nav',
       dir: kind === 'wheel-up' ? -1 : +1,
-      vh: tabOverlay.viewportRows(),
-      tabCount: tabOverlay._flatTabs().length,
+      vh: tabOverlay.viewportRows(ownerPaneId),
+      tabCount: tabOverlay._flatTabs(ownerPaneId).length,
     }));
     render();
     return true;
   }
   if (kind === 'press') {
-    const hit = tabOverlay.hitTest(mx, my);
+    const hit = tabOverlay.hitTest(mx, my, ownerPaneId);
     if (hit) {
       dispatchMsg(wrap('layout', { type: 'focus_set', focus: ownerPaneId }));
       const pt = require('../leaves/pane-tabs');
@@ -526,23 +526,27 @@ function handleMouse(kind, x, y) {
         return;
       }
     }
-    // Tab-list `[≡]` trigger at the viewer pane's top-left. Toggles
-    // the overlay. Trigger's own suppression (free-config + modals)
-    // lives inside `isTriggerHit` so the click silently misses there.
-    // v0.6.1 Phase 8 — target the focused-or-sticky viewer (the pane
-    // whose trigger glyph the user can see); null = no viewer, drop.
+    // Tab-list `[≡]` trigger at a viewer pane's top-left. Toggles the
+    // overlay. Trigger's own suppression (free-config + modals) lives
+    // inside `isTriggerHit` so the click silently misses there.
+    // v0.6.4 — multi-viewer: hitTestTrigger returns the SPECIFIC viewer
+    // whose glyph was clicked (each paints its own), so opening targets
+    // and focuses that pane rather than the focused-or-sticky singleton.
     const tabOverlay = require('../overlay/tab-list');
-    if (tabOverlay.isTriggerHit(mx, my)) {
-      const target = route.resolveTarget('viewer');
-      // No viewer → click is a no-op; nothing changed, skip the render.
-      if (!target) return;
+    const triggerPaneId = tabOverlay.hitTestTrigger(mx, my);
+    if (triggerPaneId) {
       if (model.modes.tabListMode) {
-        dispatchMsg(wrap(target, { type: 'tab_list_close' }));
+        // Any visible glyph closes the open overlay; target its owner so
+        // close stays idempotent regardless of which glyph was clicked.
+        const ls = getInstanceSlice('layout');
+        const owner = (ls && ls.tabListOwnerPaneId) || triggerPaneId;
+        dispatchMsg(wrap(owner, { type: 'tab_list_close' }));
       } else {
-        dispatchMsg(wrap(target, {
+        dispatchMsg(wrap('layout', { type: 'focus_set', focus: triggerPaneId }));
+        dispatchMsg(wrap(triggerPaneId, {
           type: 'tab_list_open',
-          vh: tabOverlay.viewportRows(),
-          tabCount: tabOverlay._flatTabs().length,
+          vh: tabOverlay.viewportRows(triggerPaneId),
+          tabCount: tabOverlay._flatTabs(triggerPaneId).length,
         }));
       }
       render();
@@ -866,8 +870,15 @@ function _classifyPress(button, x, y, now) {
   if (button === 0) {
     const isDouble = x === _lastClickX && y === _lastClickY
       && (now - _lastClickTime) <= mouseBindings.doubleClickMs();
+    if (isDouble) {
+      // Reset the triple after a double so a 3rd rapid same-cell click
+      // starts a fresh press — otherwise it re-satisfies the window and
+      // emits a second `double` (a triple-click → two activations).
+      _lastClickX = -1; _lastClickY = -1; _lastClickTime = -Infinity;
+      return 'double';
+    }
     _lastClickX = x; _lastClickY = y; _lastClickTime = now;
-    return isDouble ? 'double' : 'press';
+    return 'press';
   }
   if (button === 2) return 'right';
   if (button === 1) return 'middle';

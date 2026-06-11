@@ -70,6 +70,17 @@ describe('[Theme F P3] _classifyPress — double-click window', () => {
     _classifyPress(2, 30, 1, 600100);              // right at same cell — must NOT touch the triple
     eq(_classifyPress(0, 30, 1, 600150), 'double', 'left→right→left same cell within window → double');
   });
+
+  it('a triple-click emits exactly one double (3rd click resets)', () => {
+    // After a `double` the triple resets, so a 3rd rapid same-cell
+    // click is a fresh single — not a second `double` (which would
+    // double-fire activate). Regression for the v0.6.4 review LOW.
+    eq(_classifyPress(0, 40, 5, 700000), 'press',  '1st click → press');
+    eq(_classifyPress(0, 40, 5, 700100), 'double', '2nd click → double');
+    eq(_classifyPress(0, 40, 5, 700200), 'press',  '3rd click → press (not a 2nd double)');
+    // …and a 4th immediately after the reset re-arms a normal double.
+    eq(_classifyPress(0, 40, 5, 700300), 'double', '4th click → double again');
+  });
 });
 
 report();

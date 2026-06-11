@@ -88,7 +88,7 @@ function hitTestTrigger(mx, my) {
   const openTargetId = (layoutSlice.paneSelect && layoutSlice.paneSelect.targetPaneId) || null;
   for (const p of mpool.allPanesInColumns(layoutSlice.arrange)) {
     if (p.type === 'detail') continue;
-    const b = _paneBounds(p.paneId) || _paneBounds(p.type);
+    const b = _paneBounds(p.paneId);
     if (!b) continue;
     if (b.w < TRIGGER_X_OFFSET + TRIGGER_VIS_W + 2) continue;
     if (my !== b.y) continue;
