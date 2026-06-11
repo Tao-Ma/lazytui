@@ -177,6 +177,44 @@ describe('[distributeColumnHeights] honors collapsed = 1 row', () => {
   });
 });
 
+// --- Section 2b: v0.6.4 paneId-keyed distribution (no same-type collision) ---
+describe('[distributeColumnHeights] keys by paneId — two same-type panes', () => {
+  const { _distributeColumnHeights } = require('../render/geometry');
+
+  it('two same-type panes in one column get their OWN heights', () => {
+    // Pre-v0.6.4 the height map was keyed by `p.type`, so two `files`
+    // panes collided on a single `files` slot — the second overwrote the
+    // first and both rendered at the same height. Keyed by paneId they
+    // are independent.
+    const panels = [
+      { type: 'files', paneId: 'pane-a', heightPct: 30 },
+      { type: 'files', paneId: 'pane-b', heightPct: 70 },
+    ];
+    const h = _distributeColumnHeights(panels, 40, false, 3, 60);
+    eq(h['pane-a'], 12, 'first files pane = 30% of 40');
+    eq(h['pane-b'], 28, 'second files pane = 70% of 40 (distinct, no collision)');
+    eq(h['pane-a'] + h['pane-b'], 40, 'column exactly filled');
+  });
+
+  it('legacy fixtures without paneId still key by type', () => {
+    const h = _distributeColumnHeights(
+      [{ type: 'groups', id: 'g' }, { type: 'files', id: 'f' }], 30, false, 3, 60);
+    eq(h.groups, 15);
+    eq(h.files, 15);
+  });
+
+  it('detail sizes from its own heightPct (per-pane), scalar arg is the fallback', () => {
+    // detail with its own heightPct overrides the scalar arg.
+    const seeded = _distributeColumnHeights(
+      [{ type: 'detail', paneId: 'pane-d', heightPct: 25 }], 40, true, 3, /*scalar*/ 60);
+    eq(seeded['pane-d'], 40, 'sole pane fills the column; 25% reserve + slack');
+    // an unseeded detail (no heightPct) falls back to the scalar arg.
+    const fallback = _distributeColumnHeights(
+      [{ type: 'detail', id: 'detail' }], 40, true, 3, 60);
+    assert(fallback.detail > 1, 'unseeded detail still gets a height from the scalar');
+  });
+});
+
 // --- Section 3: YAML serializer ---
 describe('[yaml-layout] collapsed serialization', () => {
   const yaml = require('../feature/yaml-layout');

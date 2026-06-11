@@ -130,14 +130,20 @@ function serializeLayoutCell(pane, indent, opts = {}) {
 
   // Placement overrides — pane-level fields lifted onto the cell.
   const overrides = {};
-  if (pane.heightPct !== undefined) overrides.heightPct = pane.heightPct;
-  if (pane.collapsed === true)      overrides.collapsed = true;
-  // Detail height: source from arrange.detailHeightPct, attach to the
-  // pane whose active tab kind is detail. Mirrors the parser, which
-  // only honors `height:` when the active tab is detail.
-  if (mpool.isDetailPane(pane) && opts.detailHeightPct !== undefined) {
-    overrides.height = `${opts.detailHeightPct}%`;
+  if (mpool.isDetailPane(pane)) {
+    // Detail height serializes as the detail-only `height: X%` cell form
+    // (the parser only honors `height:` on a detail active tab). v0.6.4
+    // sources it from the pane's own `heightPct` — detail self-describes
+    // its height like every other pane — falling back to the layout-level
+    // default for fixtures that build a detail pane without one. Emitting
+    // the generic `heightPct:` for detail is suppressed to avoid a
+    // double-emit (both forms would round-trip to the same field).
+    const pct = pane.heightPct !== undefined ? pane.heightPct : opts.detailHeightPct;
+    if (pct !== undefined) overrides.height = `${pct}%`;
+  } else if (pane.heightPct !== undefined) {
+    overrides.heightPct = pane.heightPct;
   }
+  if (pane.collapsed === true) overrides.collapsed = true;
 
   const isMulti = tabIds.length > 1;
   const emitActive = isMulti && activeTabId !== tabIds[0];

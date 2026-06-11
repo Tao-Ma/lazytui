@@ -307,6 +307,63 @@ describe('[4] serializeLayout — full layout block', () => {
   });
 });
 
+describe('[4b] v0.6.4 — per-pane detail height (heightPct unification)', () => {
+  it('detail pane serializes its OWN heightPct as the `height: X%` cell form', () => {
+    // v0.6.4: detail height lives on the pane (heightPct), not the layout
+    // scalar. Serialize emits the back-compat `height: X%` form sourced
+    // from the pane, and suppresses the generic `heightPct:` (no double).
+    const lines = serializeLayoutCell(
+      pane({ id: 'detail', type: 'detail', heightPct: 42 }), 8, { detailHeightPct: 99 });
+    const body = lines.join('\n');
+    assert(/height: 42%/.test(body), 'emits height from the pane heightPct, not opts');
+    assert(!/heightPct:/.test(body), 'no double-emit of heightPct on a detail cell');
+  });
+
+  it('a detail pane WITHOUT heightPct falls back to the layout default', () => {
+    const lines = serializeLayoutCell(
+      pane({ id: 'detail', type: 'detail' }), 8, { detailHeightPct: 55 });
+    assert(/height: 55%/.test(lines.join('\n')), 'fixtures without a seeded detail use the default');
+  });
+
+  it('non-detail panes still serialize as `heightPct: X`', () => {
+    const lines = serializeLayoutCell(pane({ id: 'groups', type: 'groups', heightPct: 30 }), 8, {});
+    assert(/heightPct: 30/.test(lines.join('\n')), 'non-detail keeps the heightPct form');
+  });
+
+  it('round-trips two stacked same-type panes + detail with INDEPENDENT heights', () => {
+    const tmp = path.join(os.tmpdir(), `lazytui-multi-h-${process.pid}.yml`);
+    const arrange = {
+      detailHeightPct: 60,
+      columns: [
+        { width: 30, panels: [
+          pane({ id: 'src',  type: 'files', heightPct: 35 }),
+          pane({ id: 'docs', type: 'files', heightPct: 65 }),
+        ] },
+        { panels: [pane({ id: 'detail', type: 'detail', heightPct: 50 })] },
+      ],
+      pool: {
+        src:  { id: 'src',  type: 'files', title: 'Src',  config: { source: 'filesystem', root: 'js' } },
+        docs: { id: 'docs', type: 'files', title: 'Docs', config: { source: 'filesystem', root: 'docs' } },
+        detail: { id: 'detail', type: 'detail', title: 'Detail', config: {} },
+      },
+    };
+    const fullYaml = `groups:\n  g1:\n    label: g1\n    actions:\n      noop:\n        label: noop\n        cmd: "true"\n\n${serializePanelsBlock(arrange)}\n\n${serializeLayout(arrange)}\n`;
+    fs.writeFileSync(tmp, fullYaml);
+    const { parse } = require('../parser');
+    const { rebuildLayoutFromConfig } = require('../leaves/arrange');
+    let rebuilt;
+    try { rebuilt = rebuildLayoutFromConfig(parse(tmp)); } finally { fs.unlinkSync(tmp); }
+
+    const placed = rebuilt.columns.flatMap(c => c.panels);
+    const src = placed.find(p => p.paneId === 'pane-src');
+    const docs = placed.find(p => p.paneId === 'pane-docs');
+    const detail = placed.find(p => p.type === 'detail');
+    eq(src.heightPct, 35, 'first files pane keeps its own height across the round-trip');
+    eq(docs.heightPct, 65, 'second files pane keeps a DIFFERENT height (no type collision)');
+    eq(detail.heightPct, 50, 'detail height round-trips on the pane via the `height: %` form');
+  });
+});
+
 describe('[5] writeLayoutToFile — splices both panels: and layout: blocks', () => {
   it('replaces existing blocks, preserves the rest of the file', () => {
     const tmp = path.join(os.tmpdir(), `lazytui-write-rt-${process.pid}.yml`);

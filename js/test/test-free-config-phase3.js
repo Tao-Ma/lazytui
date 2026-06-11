@@ -61,12 +61,14 @@ function setupFixture() {
       ] },
     ],
   };
+  // v0.6.4 — paneBounds is keyed by paneId (production writes both, but
+  // free-config now READS by paneId so two same-kind panes don't collide).
   getInstanceSlice('layout').paneBounds = {
-    containers: { x:  0, y:  0, w: 30, h: 10 },
-    groups:     { x:  0, y: 10, w: 30, h: 10 },
-    actions:    { x: 30, y:  0, w: 90, h:  5 },
-    stats:      { x: 30, y:  5, w: 90, h: 10 },
-    detail:     { x: 30, y: 15, w: 90, h: 25 },
+    'pane-containers': { x:  0, y:  0, w: 30, h: 10 },
+    'pane-groups':     { x:  0, y: 10, w: 30, h: 10 },
+    'pane-actions':    { x: 30, y:  0, w: 90, h:  5 },
+    'pane-stats':      { x: 30, y:  5, w: 90, h: 10 },
+    'pane-detail':     { x: 30, y: 15, w: 90, h: 25 },
   };
   getModel().modes.freeConfigMode = false;
   getModel().modes.freeConfigTitleEditMode = false;
@@ -193,7 +195,8 @@ describe('[3] drag-to-resize — detail-panel top edge', () => {
     // pct = 30/40 * 100 = 75
     onMouseEvent('press',  50, 15);
     onMouseEvent('motion', 50, 10);
-    eq(getInstanceSlice("layout").arrange.detailHeightPct, 75);
+    // v0.6.4 — detail height is per-pane now (detail = col1 panels[2]).
+    eq(getInstanceSlice("layout").arrange.columns[1].panels[2].heightPct, 75);
     eq(getInstanceSlice('layout').dirty, true);
   });
   it('drag down shrinks detailHeightPct, clamped at dynamic min (13% on availH=40)', () => {
@@ -203,7 +206,7 @@ describe('[3] drag-to-resize — detail-panel top edge', () => {
     onMouseEvent('motion', 50, 36);  // newDetailH = 4 rows; clamps to DETAIL_MIN_ROWS=5
     // detailMinPct(40) = max(5, ceil(5/40*100)) = 13 — five rows is the
     // physical floor (legible viewer slice); the dynamic % follows.
-    eq(getInstanceSlice("layout").arrange.detailHeightPct, detailMinPct(40));
+    eq(getInstanceSlice("layout").arrange.columns[1].panels[2].heightPct, detailMinPct(40));
   });
 });
 
@@ -237,7 +240,7 @@ describe('[3b] drag-to-resize — within-column boundary (right col, non-detail)
   // press at (60, 5) → right-boundary, both non-detail.
   it('press + motion redistributes actions/stats heightPct, detail untouched', () => {
     setupFixture();
-    const prevDetail = getInstanceSlice("layout").arrange.detailHeightPct;
+    const prevDetail = getInstanceSlice("layout").arrange.columns[1].panels[2].heightPct;
     onMouseEvent('press',  60, 5);
     onMouseEvent('motion', 60, 8);  // boundary moves down → actions grows
     // upperStartY=0, combinedH=actions.h(5)+stats.h(10)=15, availH=40.
@@ -245,7 +248,7 @@ describe('[3b] drag-to-resize — within-column boundary (right col, non-detail)
     // actions.heightPct = round(8/40*100) = 20. stats = round(7/40*100) = 18.
     eq(getInstanceSlice("layout").arrange.columns[1].panels[0].heightPct, 20, 'actions anchored');
     eq(getInstanceSlice("layout").arrange.columns[1].panels[1].heightPct, 18, 'stats anchored');
-    eq(getInstanceSlice("layout").arrange.detailHeightPct, prevDetail, 'detailHeightPct untouched');
+    eq(getInstanceSlice("layout").arrange.columns[1].panels[2].heightPct, prevDetail, 'detail pane height untouched');
   });
 });
 
@@ -261,7 +264,7 @@ describe('[3c] drag-to-resize — corner (col-separator × right boundary)', () 
     //   proposedUpperH = max(3, min(32, 12-5)) = 7. proposedLowerH = 28.
     //   detailHeightPct = round(28/40*100) = 70. stats.heightPct = round(7/40*100) = 18.
     eq(getInstanceSlice("layout").arrange.columns[0].width, 36, 'col0.width follows mx');
-    eq(getInstanceSlice("layout").arrange.detailHeightPct, 70, 'detailHeightPct follows my');
+    eq(getInstanceSlice("layout").arrange.columns[1].panels[2].heightPct, 70, 'detail pane height follows my');
     eq(getInstanceSlice("layout").arrange.columns[1].panels[1].heightPct, 18, 'stats anchored from the height axis');
   });
 });
@@ -298,6 +301,60 @@ describe('[3d] press freezes flex panels in the dragged column', () => {
   });
 });
 
+describe('[3g] v0.6.4 — two same-type panes resize INDEPENDENTLY', () => {
+  // The free-config two-instance unit: a column with two `files` panes
+  // stacked. Pre-v0.6.4 the resize keyed by panel TYPE, so both files
+  // panes shared one slot — dragging the boundary set BOTH to the same
+  // height (and the bounds reads collided). Keyed by paneId they move
+  // apart.
+  function twoFilesFixture() {
+    getInstanceSlice('layout').arrange = {
+      detailHeightPct: 60,
+      columns: [
+        { width: 30, panels: [
+          { type: 'files', id: 'fa', paneId: 'pane-fa', title: 'A', columnIndex: 0, hotkey: '1' },
+          { type: 'files', id: 'fb', paneId: 'pane-fb', title: 'B', columnIndex: 0, hotkey: '2' },
+        ] },
+        { panels: [
+          { type: 'detail', id: 'detail', paneId: 'pane-detail', title: 'Detail', columnIndex: 1, hotkey: 'o', heightPct: 60 },
+        ] },
+      ],
+    };
+    getInstanceSlice('layout').paneBounds = {
+      'pane-fa':     { x: 0, y: 0,  w: 30, h: 8 },
+      'pane-fb':     { x: 0, y: 8,  w: 30, h: 12 },
+      'pane-detail': { x: 30, y: 0, w: 90, h: 20 },
+    };
+    getModel().modes.freeConfigMode = false;
+    getModel().modes.freeConfigTitleEditMode = false;
+    getInstanceSlice('layout').dirty = false;
+    getInstanceSlice('layout').focus = 'pane-fa';
+    _clearUndoStacks();
+    enterFreeConfig(getInstanceSlice("layout").arrange, '/dev/null', () => {});
+  }
+
+  it('dragging the fa/fb boundary gives each its OWN heightPct', () => {
+    twoFilesFixture();
+    // boundary fa/fb at y=8 (fa.y+fa.h). availH=20, combinedH=20.
+    onMouseEvent('press',  10, 8);
+    onMouseEvent('motion', 10, 6);  // boundary up → fa shrinks to 6 rows
+    // fa = round(6/20*100) = 30; fb = round(14/20*100) = 70.
+    const col0 = getInstanceSlice("layout").arrange.columns[0].panels;
+    eq(col0[0].heightPct, 30, 'fa (pane-fa) gets its own height');
+    eq(col0[1].heightPct, 70, 'fb (pane-fb) gets a DIFFERENT height — not a shared type slot');
+    assert(col0[0].heightPct !== col0[1].heightPct, 'the two same-type panes are independent');
+  });
+
+  it('keyboard `]` on the focused files pane steals from its sibling only', () => {
+    twoFilesFixture();  // focus = pane-fa, fb below it
+    handleFreeConfigKey(']');  // fa +5, fb -5 (paneId-addressed)
+    const col0 = getInstanceSlice("layout").arrange.columns[0].panels;
+    // fa starts flex (h=8 → 40%), fb flex (h=12 → 60%). ] grows fa by 5.
+    eq(col0[0].heightPct, 45, 'fa grew');
+    eq(col0[1].heightPct, 55, 'fb shrank by the same amount');
+  });
+});
+
 describe('[3f] keyboard `]` / `[` — focused panel heightPct', () => {
   it('] grows focused left panel, steals from neighbor below', () => {
     setupFixture();
@@ -318,9 +375,9 @@ describe('[3f] keyboard `]` / `[` — focused panel heightPct', () => {
     // Fixture has 5 panels total; idx=4 (last) is detail.
     handleFreeConfigKey('j'); handleFreeConfigKey('j'); handleFreeConfigKey('j'); handleFreeConfigKey('j');
     eq(getInstanceSlice("layout").arrange.columns[1].panels[2].type, 'detail');
-    const prevDetail = getInstanceSlice("layout").arrange.detailHeightPct;
+    const prevDetail = getInstanceSlice("layout").arrange.columns[1].panels[2].heightPct;
     handleFreeConfigKey(']');
-    eq(getInstanceSlice("layout").arrange.detailHeightPct, prevDetail, 'detail untouched by `]`');
+    eq(getInstanceSlice("layout").arrange.columns[1].panels[2].heightPct, prevDetail, 'detail untouched by `]`');
   });
   it('last panel in column → ] no-op (nothing to steal from)', () => {
     setupFixture();
@@ -532,6 +589,11 @@ describe('[6] rebuildLayoutFromConfig — pure fn for :restore-layout', () => {
     eq(ly.columns[0].panels[0].hotkey, '1');
     eq(ly.columns[1].panels.length, 2);
     eq(ly.columns[1].panels[0].topic, 'docker.stats', 'plugin config keys spread onto panel');
+    // v0.6.4 — the detail pane is seeded with heightPct from the layout
+    // default (detail_height_pct), so geometry sizes it through the same
+    // per-pane heightPct path as every other pane.
+    eq(ly.columns[1].panels[1].type, 'detail');
+    eq(ly.columns[1].panels[1].heightPct, 70, 'detail pane seeded from detail_height_pct default');
   });
 
   it('returns a fresh object on each call (no mutation across calls)', () => {

@@ -48,6 +48,14 @@ function distributeColumnHeights(panels, availH, isLastCol, minH, detailHeightPc
   const out = {};
   if (panels.length === 0) return out;
 
+  // v0.6.4 — the height map is keyed by paneId so two same-type panes in
+  // one column don't collide (the pre-v0.6.4 `out[p.type]` overwrote the
+  // first with the second). Production panes always carry a `pane-*`
+  // paneId; hand-built fixtures that omit it fall back to type (they're
+  // single-instance, so no collision). calcLayout reads back with the
+  // same key.
+  const keyOf = (p) => p.paneId || p.type;
+
   // Collapsed placements get a hard 1-row reservation each. Their share
   // is subtracted from availH BEFORE detail/anchored/flex math so the
   // remaining height splits across the visible panels. detail can't be
@@ -55,7 +63,7 @@ function distributeColumnHeights(panels, availH, isLastCol, minH, detailHeightPc
   let collapsedTotal = 0;
   for (const p of panels) {
     if (p.collapsed && p.type !== 'detail') {
-      out[p.type] = 1;
+      out[keyOf(p)] = 1;
       collapsedTotal += 1;
     }
   }
@@ -66,7 +74,15 @@ function distributeColumnHeights(panels, availH, isLastCol, minH, detailHeightPc
   if (isLastCol) {
     detailPanel = panels.find(mpool.isDetailPane) || null;
     if (detailPanel) {
-      reserved = Math.max(minH, Math.floor(innerAvail * detailHeightPct / 100));
+      // v0.6.4 — detail height is per-pane (`heightPct`, seeded by the
+      // arrange rebuild from the layout default). Fall back to the scalar
+      // arg for fixtures that build a detail pane without one. detail
+      // stays "reserved" (protected from the anchored overflow-scale)
+      // when it's the first detail in the column; additional detail panes
+      // self-sized via the anchored heightPct path below.
+      const detailPct = (typeof detailPanel.heightPct === 'number' && isFinite(detailPanel.heightPct))
+        ? detailPanel.heightPct : detailHeightPct;
+      reserved = Math.max(minH, Math.floor(innerAvail * detailPct / 100));
     }
   }
 
@@ -116,24 +132,24 @@ function distributeColumnHeights(panels, availH, isLastCol, minH, detailHeightPc
     const baseH = Math.floor(flexTotalH / flex.length);
     flex.forEach((p, i) => {
       const h = i === flex.length - 1 ? flexTotalH - baseH * (flex.length - 1) : baseH;
-      out[p.type] = Math.max(minH, h);
+      out[keyOf(p)] = Math.max(minH, h);
     });
   }
-  for (const { p, h } of anchored) out[p.type] = h;
-  if (detailPanel) out[detailPanel.type] = reserved;
+  for (const { p, h } of anchored) out[keyOf(p)] = h;
+  if (detailPanel) out[keyOf(detailPanel)] = reserved;
 
   // Park rounding-leftover rows on the column's last non-collapsed
   // panel so the column exactly fills availH (matches the pre-heightPct
   // behavior and avoids a visually empty strip at the bottom). Collapsed
   // panels are locked at 1 row — never grow them with slack.
   let sum = 0;
-  for (const p of panels) sum += out[p.type];
+  for (const p of panels) sum += out[keyOf(p)];
   if (sum < availH) {
     let lastVisible = null;
     for (let i = panels.length - 1; i >= 0; i--) {
       if (!panels[i].collapsed) { lastVisible = panels[i]; break; }
     }
-    if (lastVisible) out[lastVisible.type] += availH - sum;
+    if (lastVisible) out[keyOf(lastVisible)] += availH - sum;
   }
   return out;
 }
@@ -224,13 +240,10 @@ function calcLayout(model = getModel()) {
       columns[ci].panels || [], availH, ci === lastIdx, minH, detailHeightPct);
     Object.assign(heights, colHeights);
   }
-  // Ensure detail has a height even when the column traversal didn't
-  // populate one (test fixtures without a placed detail panel).
-  // Synthesizes the height map entry only — no rect is pushed for an
-  // unplaced detail.
-  if (!('detail' in heights)) {
-    heights.detail = Math.max(minH, Math.floor(availH * detailHeightPct / 100));
-  }
+  // (v0.6.4 — the prior `if (!('detail' in heights))` synthesis was
+  // dropped: `heights` is keyed by paneId now and is function-local, read
+  // back only by the rect loop below via each pane's own key. An unplaced
+  // detail has no rect to read it, so synthesizing the entry was dead.)
 
   // v0.6.3 P1.1 — build the Layout value. Each Rect carries the
   // column-view geometry for one placed pane (x, y, w, h, paneId,
@@ -249,7 +262,7 @@ function calcLayout(model = getModel()) {
     const colPanels = mpool.columnPanels(layoutSlice.arrange, ci);
     let y = 0;
     for (const p of colPanels) {
-      const h = heights[p.type] || 0;
+      const h = heights[p.paneId || p.type] || 0;
       rects.push({
         paneId: p.paneId,
         type: p.type,

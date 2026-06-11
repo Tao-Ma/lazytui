@@ -148,48 +148,34 @@ function resizeWidthOrDetail(slice, sign) {
   const selPanel = loc.pane;
   const lastIdx = mpool.lastColumnIndex(slice.arrange);
 
-  let newDetail = slice.arrange.detailHeightPct;
-  let newColumns = slice.arrange.columns;
-  let changed = false;
-
-  if (sign > 0) {
-    if (mpool.isDetailPane(selPanel) && slice.arrange.detailHeightPct < 90) {
-      newDetail = Math.min(90, slice.arrange.detailHeightPct + 5);
-      changed = true;
-    } else if (loc.columnIndex < lastIdx) {
-      const col = slice.arrange.columns[loc.columnIndex];
-      const curW = col.width != null ? col.width : 30;
-      if (curW < 60) {
-        const w = Math.min(60, curW + 2);
-        newColumns = slice.arrange.columns.slice();
-        newColumns[loc.columnIndex] = { ...col, width: w };
-        changed = true;
-      } else return slice;
-    } else return slice;
-  } else {
-    if (mpool.isDetailPane(selPanel) && slice.arrange.detailHeightPct > 20) {
-      newDetail = Math.max(20, slice.arrange.detailHeightPct - 5);
-      changed = true;
-    } else if (loc.columnIndex < lastIdx) {
-      const col = slice.arrange.columns[loc.columnIndex];
-      const curW = col.width != null ? col.width : 30;
-      if (curW > 20) {
-        const w = Math.max(20, curW - 2);
-        newColumns = slice.arrange.columns.slice();
-        newColumns[loc.columnIndex] = { ...col, width: w };
-        changed = true;
-      } else return slice;
-    } else return slice;
+  // Detail selected → grow/shrink THIS detail pane's heightPct by 5
+  // (clamped [20, 90]). v0.6.4: per-pane, not the layout-wide scalar, so
+  // two detail panes resize independently.
+  if (mpool.isDetailPane(selPanel)) {
+    const cur = typeof selPanel.heightPct === 'number'
+      ? selPanel.heightPct : slice.arrange.detailHeightPct;
+    const newDetail = sign > 0 ? Math.min(90, cur + 5) : Math.max(20, cur - 5);
+    if (newDetail === cur) return slice;
+    const next = setPanelHeightPct(pushUndo(slice), selPanel.paneId || selPanel.type, newDetail);
+    return { ...next, dirty: true };
   }
-  if (!changed) return slice;
 
-  let next = pushUndo(slice);
-  next = {
-    ...next,
-    arrange: { ...slice.arrange, columns: newColumns, detailHeightPct: newDetail },
+  // Non-last-column panel selected → grow/shrink its column width by 2
+  // (clamped [20, 60]). Last-column non-detail panels are a no-op (the
+  // last column's width is implicit; can't grow without shrinking a
+  // neighbor).
+  if (loc.columnIndex >= lastIdx) return slice;
+  const col = slice.arrange.columns[loc.columnIndex];
+  const curW = col.width != null ? col.width : 30;
+  const newW = sign > 0 ? Math.min(60, curW + 2) : Math.max(20, curW - 2);
+  if (newW === curW) return slice;
+  const newColumns = slice.arrange.columns.slice();
+  newColumns[loc.columnIndex] = { ...col, width: newW };
+  return {
+    ...pushUndo(slice),
+    arrange: { ...slice.arrange, columns: newColumns },
     dirty: true,
   };
-  return next;
 }
 
 /** ] / [ — grow/shrink the focused panel's heightPct by Δ, stealing from the
@@ -207,7 +193,8 @@ function resizeFocusedPanelHeight(slice, deltaPct) {
   const availH = columnTotalH(slice, loc.columnIndex);
   if (availH < 6) return slice;
 
-  const frozen = freezeColumnFlex(slice, loc.columnIndex, sel.type, nextPanel.type, availH);
+  const frozen = freezeColumnFlex(slice, loc.columnIndex,
+    sel.paneId || sel.type, nextPanel.paneId || nextPanel.type, availH);
 
   const selCur  = panelHeightPct(frozen, sel, availH);
   const nextCur = panelHeightPct(frozen, nextPanel, availH);
@@ -227,8 +214,8 @@ function resizeFocusedPanelHeight(slice, deltaPct) {
   if (newSel === selCur && newNext === nextCur) return slice;
 
   let result = pushUndo(frozen);
-  result = setPanelHeightPct(result, sel.type, newSel);
-  result = setPanelHeightPct(result, nextPanel.type, newNext);
+  result = setPanelHeightPct(result, sel.paneId || sel.type, newSel);
+  result = setPanelHeightPct(result, nextPanel.paneId || nextPanel.type, newNext);
   return { ...result, dirty: true };
 }
 

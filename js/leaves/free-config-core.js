@@ -82,20 +82,35 @@ function _applySnapshot(arrange, snap) {
   };
 }
 
+/** Rendered bounds for a pane, addressed by paneId with a type fallback
+ *  (v0.6.4). renderNormal/Half/Full dual-write `paneBounds[paneId]` AND
+ *  `paneBounds[type]`, so the paneId read always hits first in production
+ *  — that's what lets two same-kind panes in one column read their OWN
+ *  height instead of colliding on the shared type key. The `[type]`
+ *  fallback only fires for legacy single-instance fixtures that still seed
+ *  bounds by type; it degrades to the same `null` a missing pane gives
+ *  once the type-keyed write is eventually retired. */
+function boundsOf(slice, p) {
+  return slice.paneBounds[p.paneId] || slice.paneBounds[p.type];
+}
+
 function columnTotalH(slice, columnIndex) {
   const panels = mpool.columnPanels(slice.arrange, columnIndex);
   let total = 0;
   for (const p of panels) {
-    const b = slice.paneBounds[p.type];
+    const b = boundsOf(slice, p);
     if (b) total += b.h;
   }
   return total;
 }
 
 function panelHeightPct(slice, p, availH) {
-  if (mpool.isDetailPane(p)) return slice.arrange.detailHeightPct;
+  // v0.6.4 — detail height is per-pane (heightPct) like every other pane;
+  // the `arrange.detailHeightPct` scalar is only a fallback for a detail
+  // pane that wasn't seeded (legacy / direct-built fixtures).
   if (typeof p.heightPct === 'number') return p.heightPct;
-  const b = slice.paneBounds[p.type];
+  if (mpool.isDetailPane(p)) return slice.arrange.detailHeightPct;
+  const b = boundsOf(slice, p);
   return b ? Math.round(b.h / availH * 100) : 0;
 }
 
@@ -179,14 +194,17 @@ function clearUndoStacks(slice) {
  *  pair, not detail) at their current rendered height, so a boundary drag
  *  steals only from the neighbor instead of being absorbed proportionally.
  *  Returns the same slice ref when nothing actually freezes. */
-function freezeColumnFlex(slice, columnIndex, upperType, lowerType, availH) {
+function freezeColumnFlex(slice, columnIndex, upperId, lowerId, availH) {
   const panels = mpool.columnPanels(slice.arrange, columnIndex);
   let changed = false;
   const newCol = panels.map(p => {
-    if (p.type === upperType || p.type === lowerType) return p;
+    // v0.6.4 — identify the active resize pair + bounds by paneId, not
+    // type, so two same-kind panes don't both get frozen / mis-read.
+    const key = p.paneId || p.type;
+    if (key === upperId || key === lowerId) return p;
     if (mpool.isDetailPane(p)) return p;
     if (typeof p.heightPct === 'number') return p;
-    const b = slice.paneBounds[p.type];
+    const b = boundsOf(slice, p);
     if (!b) return p;
     changed = true;
     return { ...p, heightPct: Math.round((b.h / availH) * 100) };
@@ -195,19 +213,17 @@ function freezeColumnFlex(slice, columnIndex, upperType, lowerType, availH) {
   return { ...slice, arrange: mpool.updateColumn(slice.arrange, columnIndex, () => newCol) };
 }
 
-/** Set a panel's heightPct by type. detail → arrange.detailHeightPct; other
- *  panels → the matching panel's heightPct in whichever column owns it.
- *  Identity-preserve when already at `pct`. */
-function _setPanelHeightPct(slice, panelType, pct) {
-  if (panelType === 'detail') {
-    if (slice.arrange.detailHeightPct === pct) return slice;
-    return { ...slice, arrange: { ...slice.arrange, detailHeightPct: pct } };
-  }
+/** Set a pane's heightPct, addressed by paneId (v0.6.4). Detail is no
+ *  longer special — its height lives on the pane's own `heightPct` like
+ *  every other pane, so two detail panes resize independently. Accepts
+ *  `p.type` as the key too (legacy / single-instance fixtures whose panes
+ *  have no paneId). Identity-preserve when already at `pct`. */
+function _setPanelHeightPct(slice, paneId, pct) {
   let changed = false;
   const nextColumns = slice.arrange.columns.map(col => {
     let colChanged = false;
     const panels = (col.panels || []).map(p => {
-      if (p.type !== panelType) return p;
+      if ((p.paneId || p.type) !== paneId) return p;
       if (p.heightPct === pct) return p;
       colChanged = true;
       return { ...p, heightPct: pct };
@@ -358,6 +374,7 @@ module.exports = {
   // hotkey rekey
   reassignHotkeys: _reassignHotkeys,
   // geometry
+  boundsOf,
   columnTotalH, panelHeightPct,
   freezeColumnFlex, setPanelHeightPct: _setPanelHeightPct,
   // focus

@@ -29,7 +29,7 @@ const {
   MIN_PANEL_H, EDGE_W,
   detailMinPct, detailMaxPct,
   pushUndo, freezeColumnFlex, setPanelHeightPct,
-  columnTotalH,
+  columnTotalH, boundsOf,
   reassignHotkeys,
   clampSelected,
   allocateNewColumnWidth, spliceAndReleaseWidth,
@@ -136,7 +136,7 @@ function pointToResizeTarget(slice, mx, my, COLS) {
  *  Boundary y = `upper.y + upper.h` (where the next panel's top border sits). */
 function boundaryNear(slice, panels, my) {
   for (let i = 0; i < panels.length - 1; i++) {
-    const b = slice.paneBounds[panels[i].type];
+    const b = boundsOf(slice, panels[i]);
     if (!b) continue;
     const y = b.y + b.h;
     if (Math.abs(my - y) <= 1) return { upper: panels[i], lower: panels[i + 1], y };
@@ -147,7 +147,7 @@ function boundaryNear(slice, panels, my) {
 /** Panel type at (mx, my) per rendered bounds, or null (frame-synchronous). */
 function panelAt(slice, mx, my) {
   for (const p of mpool.allPanesInColumns(slice.arrange)) {
-    const b = slice.paneBounds[p.type];
+    const b = boundsOf(slice, p);
     if (!b) continue;
     if (mx >= b.x && mx < b.x + b.w && my >= b.y && my < b.y + b.h) return p;
   }
@@ -221,7 +221,7 @@ function validateNewColumn(slice, srcType, position) {
 function matchColumn(slice, panels, mx, my) {
   let anyXMatch = false;
   for (let i = 0; i < panels.length; i++) {
-    const b = slice.paneBounds[panels[i].type];
+    const b = boundsOf(slice, panels[i]);
     if (!b) continue;
     if (mx < b.x || mx >= b.x + b.w) continue;
     anyXMatch = true;
@@ -335,17 +335,11 @@ function applyBoundaryResize(slice, my) {
   const upperPct = Math.round(upperH / ds.availH * 100);
   const lowerPct = Math.round(lowerH / ds.availH * 100);
 
-  let next = slice;
-  if (ds.detailIsUpper) {
-    next = setPanelHeightPct(next, 'detail', upperPct);
-    next = setPanelHeightPct(next, ds.lowerType, lowerPct);
-  } else if (ds.detailIsLower) {
-    next = setPanelHeightPct(next, 'detail', lowerPct);
-    next = setPanelHeightPct(next, ds.upperType, upperPct);
-  } else {
-    next = setPanelHeightPct(next, ds.upperType, upperPct);
-    next = setPanelHeightPct(next, ds.lowerType, lowerPct);
-  }
+  // v0.6.4 — write both sides by paneId. Detail is no longer special on
+  // the write (its height is a per-pane heightPct now); the detail clamp
+  // already shaped upperH/lowerH above, so this is a plain pair of sets.
+  let next = setPanelHeightPct(slice, ds.upperPaneId, upperPct);
+  next = setPanelHeightPct(next, ds.lowerPaneId, lowerPct);
   if (next === slice) return slice;
   return { ...next, dirty: true };
 }
@@ -515,15 +509,18 @@ function mousePress(slice, mx, my, COLS) {
       const columnIndex = resize.columnIndex;
       const b = resize.boundary;
       ds.columnIndex = columnIndex;
-      ds.upperType = b.upper.type;
-      ds.lowerType = b.lower.type;
-      ds.upperStartY = slice.paneBounds[b.upper.type].y;
-      ds.combinedH = slice.paneBounds[b.upper.type].h + slice.paneBounds[b.lower.type].h;
+      // v0.6.4 — capture the active resize pair by paneId so a same-kind
+      // sibling in the column isn't confused for one of the dragged panes.
+      ds.upperPaneId = b.upper.paneId || b.upper.type;
+      ds.lowerPaneId = b.lower.paneId || b.lower.type;
+      const ub = boundsOf(slice, b.upper), lb = boundsOf(slice, b.lower);
+      ds.upperStartY = ub.y;
+      ds.combinedH = ub.h + lb.h;
       ds.availH = columnTotalH(slice, columnIndex);
       if (ds.availH < 1) ds.availH = 1;
       ds.detailIsUpper = mpool.isDetailPane(b.upper);
       ds.detailIsLower = mpool.isDetailPane(b.lower);
-      next = freezeColumnFlex(next, columnIndex, b.upper.type, b.lower.type, ds.availH);
+      next = freezeColumnFlex(next, columnIndex, ds.upperPaneId, ds.lowerPaneId, ds.availH);
     }
     return { ...next, freeConfig: { ...next.freeConfig, drag: ds } };
   }

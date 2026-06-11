@@ -93,11 +93,17 @@ from v0.6.0 inline cells.
 
 **Per-panel height — `heightPct`.** Optional integer 1–100. Panels
 that set it are *anchored*; panels that don't are *flex* and share
-whatever's left in their column equally. Detail keeps its layout-
-level `height: N%` knob (becomes `detailHeightPct`). When anchored
-values + reserved (detail) leave less than 3 rows per flex panel,
-anchored values scale proportionally so every panel still meets the
-minimum.
+whatever's left in their column equally. The detail pane keeps its
+own `height: N%` cell knob, and as of v0.6.4 that height lives on the
+**pane itself** (the same per-pane `heightPct` every other panel uses)
+rather than a single layout-wide scalar — so two panes of the same
+kind, or a future second detail pane, each carry an independent height
+instead of colliding on a shared type slot. The top-level
+`detail_height_pct` (and the in-memory `arrange.detailHeightPct`)
+remain as the *default* seed for a detail pane that doesn't specify
+its own. When anchored values + reserved (detail) leave less than 3
+rows per flex panel, anchored values scale proportionally so every
+panel still meets the minimum.
 
 YAMLs without `heightPct` behave as before (equal-share within the
 column). The drag UX (below) materializes `heightPct` for any panel
@@ -461,7 +467,7 @@ Every seam between panels is a drag target:
 | Press on | Gesture | Mutates |
 |---|---|---|
 | Column separator (vertical line between two columns) | drag left/right | the left-side column's `width` (clamped 20–60) |
-| Boundary inside any column | drag up/down | the two adjacent panels' `heightPct` (or `detailHeightPct` when detail is one of the pair, clamped 20–90) |
+| Boundary inside any column | drag up/down | the two adjacent panes' own `heightPct` (detail's clamps to 20–90); addressed per-pane, so a same-kind sibling in the column is unaffected |
 | **Corner** — col-separator × any panel boundary | drag diagonally | both axes in one gesture (the corner falls back to the OTHER flanking column's panel boundary when the cursor's column has none at that y) |
 
 All drag gestures use ±1 cell tolerance so you don't have to land
@@ -475,7 +481,7 @@ of being smeared across the column.
 
 | Key | Mutates |
 |---|---|
-| `+` / `-` on detail panel focus | `detailHeightPct` ±5 |
+| `+` / `-` on detail panel focus | the focused detail pane's own `heightPct` ±5 (clamped 20–90) |
 | `+` / `-` on a non-last-column panel focus | that panel's column's `width` ±2 |
 | `]` / `[` on any non-detail panel | focused panel's `heightPct` ±5 (steals from the panel below; no-op at last position) |
 | `u` / `Ctrl+R` | undo / redo any layout mutation (max 50 in stack) |

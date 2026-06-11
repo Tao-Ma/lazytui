@@ -196,13 +196,22 @@ function buildPlacedPane(resolved, hotkey, columnIndex, detailHeightSetter, pool
   if (mpool.isDetailPane(active) && placement.collapsed === true) {
     throw new ParseError(`layout cell '${activeTabPoolId}': detail panel can't be collapsed`);
   }
+  // Detail height. The `height: X%` cell form is detail-only. v0.6.4
+  // unified detail height onto the per-pane `heightPct` field (every
+  // other pane already self-describes its height that way) — so we set
+  // BOTH: `detail_height_pct` stays as the layout-level default seed for
+  // newly-spawned detail panes, and `pane.heightPct` makes THIS detail
+  // pane self-contained so two detail panes can carry independent
+  // heights. Captured here, applied to the pane after it's built below.
+  let detailHeightPct;
   if (mpool.isDetailPane(active) && placement.height !== undefined) {
     const h = placement.height;
     if (typeof h === 'string' && h.endsWith('%')) {
-      detailHeightSetter(parseInt(h.slice(0, -1), 10));
+      detailHeightPct = parseInt(h.slice(0, -1), 10);
     } else if (typeof h === 'number' && Number.isInteger(h)) {
-      detailHeightSetter(h);
+      detailHeightPct = h;
     }
+    if (detailHeightPct !== undefined) detailHeightSetter(detailHeightPct);
   }
   const pane = {
     // Legacy Panel fields populated from the active tab's pool entry.
@@ -221,6 +230,10 @@ function buildPlacedPane(resolved, hotkey, columnIndex, detailHeightSetter, pool
     activeTabId: activeTabPoolId,
   };
   if (placement.heightPct !== undefined) pane.heightPct = placement.heightPct;
+  // Detail's `height: X%` becomes the same self-describing heightPct
+  // every other pane uses (v0.6.4). Set last so an explicit `height:`
+  // wins over any stray heightPct on a detail cell.
+  if (detailHeightPct !== undefined) pane.heightPct = detailHeightPct;
   if (placement.collapsed === true)      pane.collapsed = true;
   return pane;
 }

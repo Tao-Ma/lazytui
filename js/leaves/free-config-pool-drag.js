@@ -58,7 +58,7 @@ function pointToPoolDropTarget(slice, mx, my, COLS) {
   const scan = (columnIndex, panels) => {
     if (panels.length === 0) return null;
     for (let i = 0; i < panels.length; i++) {
-      const b = slice.paneBounds[panels[i].type];
+      const b = mfcCore.boundsOf(slice, panels[i]);
       if (!b) continue;
       if (mx < b.x || mx >= b.x + b.w) continue;
       const zone = pointToCellZone(b, my);
@@ -73,7 +73,7 @@ function pointToPoolDropTarget(slice, mx, my, COLS) {
     }
     // Inside the column's x-range but below the last cell → append.
     const last = panels[panels.length - 1];
-    const lb = slice.paneBounds[last.type];
+    const lb = mfcCore.boundsOf(slice, last);
     if (lb && mx >= lb.x && mx < lb.x + lb.w && my >= lb.y + lb.h) {
       return validateInsert(arrange, columnIndex, panels.length, sourceEntry);
     }

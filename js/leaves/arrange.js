@@ -67,6 +67,14 @@ function rebuildLayoutFromConfig(config) {
         columnIndex,
       };
       if (p.heightPct !== undefined) wide.heightPct = p.heightPct;
+      // v0.6.4 — detail height is per-pane (heightPct), like every other
+      // pane. A detail pane that didn't carry an explicit `height:` is
+      // seeded from the layout-level default so the invariant "every
+      // placed detail pane has heightPct" holds; geometry then sizes
+      // detail through the same heightPct path as all other panes.
+      if (p.type === 'detail' && wide.heightPct === undefined) {
+        wide.heightPct = out.detailHeightPct;
+      }
       if (p.collapsed === true)      wide.collapsed = true;
       if (p.paneId && Array.isArray(p.tabs) && p.tabs.length > 0) {
         wide.paneId = p.paneId;
