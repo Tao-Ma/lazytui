@@ -372,6 +372,11 @@ function handleAction(action, arg) {
       // the dispatch↔actions cycle.
       require('./dispatch')._enterFilterMode();
       break;
+    case 'copy_text':
+      // Context-menu "Copy …" — yank the resolved text onto the register,
+      // which mirrors to the OS clipboard via OSC52 (the same path as `y`).
+      if (arg) applyMsg({ type: 'register_push', text: arg });
+      break;
     case 'free_config':
       // Reachable from menu entry and `:design` cmdline. The design-enabled
       // gate lives in the reducer (update emits the start_free_config Cmd only

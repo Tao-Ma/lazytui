@@ -214,6 +214,24 @@ function commit() {
   return text;
 }
 
+/**
+ * Settle a mouse drag on release: push the selected text to the register
+ * (auto-copy, like commit) but KEEP the selection active so it persists —
+ * highlighted, and offered to the right-click "Copy selection" entry — until
+ * the next press starts/cancels a selection (the same persistent state a
+ * keyboard `v` selection has). A bare click (zero-width, no drag) has no text:
+ * clear it, so a plain click in the viewer doesn't trap keyboard nav in
+ * visual mode. Returns the text (or '').
+ */
+function settle() {
+  const sel = _detail()?.select;
+  if (!sel || !sel.active) return '';
+  const text = selectedText();
+  if (!text) { _apply({ type: 'select_cancel' }); return ''; }
+  require('../../dispatch/dispatch').applyMsg({ type: 'register_push', text });
+  return text;  // active stays true → persistent selection (highlight + copyable)
+}
+
 function isActive() {
   const sel = _detail()?.select;
   return !!(sel && sel.active);
@@ -285,7 +303,7 @@ function decorateLines(lines) {
 // selectedText, plainLine, plainLineWidth, _displayCol* helpers).
 
 module.exports = {
-  beginAt, extendTo, cancel, commit, isActive,
+  beginAt, extendTo, cancel, commit, settle, isActive,
   selectedRange, selectedText, plainLine, plainLineWidth,
   highlightLine, decorateLines,
   // exposed for testing only

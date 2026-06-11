@@ -197,16 +197,20 @@ function renderPanel({
  * @param {{x:number,y:number}} [opts.anchor] - 1-based cursor cell to open
  *   at (v0.6.4 Theme F: right-click context menu); null/absent → centered.
  */
-function renderOverlay({ lines, title, count = null, maxWidth = 44, anchor = null }) {
+/**
+ * Box geometry for an overlay popup — the single source the paint path
+ * (renderOverlay) and the hit-test path (overlay/menu.hitTest) BOTH read,
+ * so a click never lands on a cell the box didn't paint. Returns 0-based
+ * top-left {offX, offY} + {menuW, menuH} (outer dims, borders included).
+ *
+ * v0.6.4 Theme F Phase 3 — anchored placement: open the box's top-left at
+ * the cursor (1-based SGR cell → 0-based offset), clamped so the whole box
+ * stays on-screen. No anchor → centered.
+ */
+function overlayBox({ linesLen, anchor = null, maxWidth = 44 }) {
   const COLS = cols(), ROWS = rows();
   const menuW = Math.min(maxWidth, COLS - 2);
-  const menuH = Math.min(lines.length + 2, ROWS - 2);
-  const content = renderPanel({
-    width: menuW, height: menuH, lines, title, focused: true, count,
-  });
-  // v0.6.4 Theme F Phase 3 — anchored placement: open the overlay's top-left
-  // at the cursor (converting the 1-based SGR cell to a 0-based offset),
-  // clamped so the whole box stays on-screen. No anchor → center.
+  const menuH = Math.min(linesLen + 2, ROWS - 2);
   let offY, offX;
   if (anchor && Number.isFinite(anchor.x) && Number.isFinite(anchor.y)) {
     offX = Math.max(0, Math.min(anchor.x - 1, COLS - menuW));
@@ -215,6 +219,14 @@ function renderOverlay({ lines, title, count = null, maxWidth = 44, anchor = nul
     offY = Math.max(0, Math.floor((ROWS - menuH) / 2));
     offX = Math.max(0, Math.floor((COLS - menuW) / 2));
   }
+  return { offX, offY, menuW, menuH };
+}
+
+function renderOverlay({ lines, title, count = null, maxWidth = 44, anchor = null }) {
+  const { offX, offY, menuW, menuH } = overlayBox({ linesLen: lines.length, anchor, maxWidth });
+  const content = renderPanel({
+    width: menuW, height: menuH, lines, title, focused: true, count,
+  });
   const out = content.split('\n');
   // Build one string with embedded cursor moves, write once. Per-line
   // moveTo + stdout.write was a syscall per row; on a slow TTY that
@@ -226,4 +238,4 @@ function renderOverlay({ lines, title, count = null, maxWidth = 44, anchor = nul
   stdout.write(buf);
 }
 
-module.exports = { renderPanel, renderOverlay, truncate };
+module.exports = { renderPanel, renderOverlay, overlayBox, truncate };

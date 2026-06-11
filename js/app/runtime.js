@@ -93,7 +93,7 @@ function init() {
     // Navigator's `slice.nav[panel].filter`.
     modal: {
       filter: { text: '', panel: '' },
-      menu: { items: [], idx: 0, anchor: null },
+      menu: { items: [], idx: 0, anchor: null, title: null },
       // The pending confirm: a message + the Cmd DESCRIPTOR to emit on `y`
       // (data, not a closure — e.g. {type:'do_run', actionKey, action, args}).
       confirm: { message: '', cmd: null },
@@ -900,16 +900,17 @@ function update(model, msg) {
       // Component slice. `|| []` covers the degenerate / test path.
       // v0.6.4 Theme F Phase 3 — `msg.anchor` ({x,y} 1-based, or null/absent)
       // is stored so the menu render can open at a right-click's cursor; null
-      // (the keyboard `x` verb) keeps the menu centered.
+      // (the keyboard `x` verb) keeps the menu centered. `msg.title` overrides
+      // the overlay title (right-click context menu → 'Actions'); null = 'Menu'.
       return [{
         ..._withModes(model, { menuOpen: true }),
-        modal: { ...model.modal, menu: { items: msg.items || [], idx: 0, anchor: msg.anchor || null } },
+        modal: { ...model.modal, menu: { items: msg.items || [], idx: 0, anchor: msg.anchor || null, title: msg.title || null } },
       }, []];
     case 'menu_close':
       if (!model.modes.menuOpen) return [model, []];
       return [{
         ..._withModes(model, { menuOpen: false }),
-        modal: { ...model.modal, menu: { items: [], idx: 0, anchor: null } },
+        modal: { ...model.modal, menu: { items: [], idx: 0, anchor: null, title: null } },
       }, []];
     case 'menu_nav': {
       const mm = model.modal.menu;
@@ -923,13 +924,18 @@ function update(model, msg) {
     case 'menu_activate': {
       if (!model.modes.menuOpen) return [model, []];
       const mm = model.modal.menu;
-      const item = mm.items[mm.idx];
+      // Absolute idx (a mouse click on a specific row) overrides the cursor;
+      // keyboard Enter omits it and activates the highlighted row.
+      const i = (typeof msg.idx === 'number') ? msg.idx : mm.idx;
+      const item = mm.items[i];
       const next = {
         ..._withModes(model, { menuOpen: false }),
-        modal: { ...model.modal, menu: { items: [], idx: 0, anchor: null } },
+        modal: { ...model.modal, menu: { items: [], idx: 0, anchor: null, title: null } },
       };
       if (!item) return [next, []];
-      return [next, [{ type: 'menu_action', action: item[1] }]];
+      // item[2] (arg) rides along for verbs that take one (copy_text); bare
+      // command verbs leave it undefined.
+      return [next, [{ type: 'menu_action', action: item[1], arg: item[2] }]];
     }
     // --- `/`-filter mode. The caller (dispatch) resolves the panel +
     // filterable gate + committed seed text, since the filterable check

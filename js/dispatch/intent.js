@@ -42,7 +42,12 @@ const focusPane   = (paneId, opts = {}) => ({ kind: 'focus', paneId, skipInfo: !
 const selectBy    = (delta)       => ({ kind: 'select', delta });         // ±1 (keyboard)
 const selectAt    = (paneId, idx) => ({ kind: 'select', paneId, idx });   // absolute (mouse)
 const activate    = ()            => ({ kind: 'activate' });
-const context     = (anchor = null) => ({ kind: 'context', anchor });     // anchor {x,y}|null
+// `context` opens the menu modal. anchor {x,y}|null (null = keyboard `x`,
+// centered). opts.items (prebuilt [label,action,arg] rows) → a right-click
+// context menu; absent → the global command list. opts.title overrides the
+// overlay title (e.g. 'Actions' for the context menu).
+const context     = (anchor = null, opts = {}) =>
+  ({ kind: 'context', anchor, items: opts.items || null, title: opts.title || null });
 const scrollAt    = (mx, my, delta) => ({ kind: 'scroll', mx, my, delta }); // pointer (spatial)
 
 // --- Realizer (the single intent → Msg site) ---
@@ -90,8 +95,11 @@ function realize(intent) {
       // anchor keeps the menu centered (the keyboard `x` verb).
       return dispatch().applyMsg({
         type: 'menu_open',
-        items: menu().buildItems(api().getInstanceSlice('layout')),
+        // Prebuilt rows (right-click context menu) win; else the global
+        // command list (keyboard `x`).
+        items: intent.items || menu().buildItems(api().getInstanceSlice('layout')),
         anchor: intent.anchor || null,
+        title: intent.title || null,
       });
 
     default:

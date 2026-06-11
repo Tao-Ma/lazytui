@@ -309,7 +309,30 @@ function _mouseHandleFreeConfigMode(kind, mx, my, model) {
   return true;
 }
 
+/** menu overlay (command list `x` OR right-click context menu) — a click on
+ *  a row activates it; a click OUTSIDE the box closes the menu (the missing
+ *  dismiss); the wheel moves the highlight. Any button kind counts as a
+ *  click (a second right-click while open also dismisses/activates). Motion/
+ *  release fall through (caught by the isChainActive guard). */
+function _mouseHandleMenuMode(kind, mx, my, _model) {
+  if (kind === 'wheel-up' || kind === 'wheel-down') {
+    applyMsg({ type: 'menu_nav', dir: kind === 'wheel-up' ? -1 : +1 });
+    render();
+    return true;
+  }
+  if (kind === 'press' || kind === 'double' || kind === 'right' || kind === 'middle') {
+    const hit = require('../overlay/menu').hitTest(mx, my);
+    if (hit == null) applyMsg({ type: 'menu_close' });          // outside → dismiss
+    else if (hit.itemIdx != null) applyMsg({ type: 'menu_activate', idx: hit.itemIdx });
+    // else: inside the box on a border / separator — consume, no-op.
+    render();
+    return true;
+  }
+  return false;
+}
+
 const _modeMouseHandlers = {
+  menuOpen:        _mouseHandleMenuMode,
   tabListMode:     _mouseHandleTabListMode,
   paneSelectMode:  _mouseHandlePaneSelectMode,
   freeConfigMode:  _mouseHandleFreeConfigMode,
@@ -382,6 +405,53 @@ function _resolveBodyHit(mx, my) {
   return null;
 }
 
+// v0.6.4 Theme F follow-on — resolve the CONTEXT under a right-click for the
+// context menu: which pane, and the text the "Copy …" entry would yank. For a
+// viewer/detail pane that's the plain text of the line under the cursor; for a
+// list pane it's the row label; plus the active text selection (if any). Side-
+// effect-free (no focus/select change — a right-click only opens the menu).
+// Returns { paneKind, lineText, itemLabel, selectionText } or null (outside
+// every visible pane).
+function _itemText(def, item) {
+  if (item == null) return null;
+  if (typeof item === 'string') return item;
+  // Most navigators expose a filterText selector — the canonical "searchable
+  // label" of a row, exactly the display text we want to copy.
+  if (def && typeof def.filterText === 'function') {
+    try { const t = def.filterText(item); if (t) return String(t); } catch (_) { /* fall through */ }
+  }
+  return item.label || item.name || item.title || item.text || null;
+}
+
+function _resolveContextAt(mx, my) {
+  const { stripMarkup } = require('../io/ansi');
+  const sel = require('../panel/viewer/select');
+  const selectionText = sel.isActive() ? (sel.selectedText() || null) : null;
+  const { visibleBoundsFor } = require('../render/geometry');
+  for (const p of allPanels()) {
+    const b = visibleBoundsFor(p.paneId);
+    if (!b) continue;
+    if (mx < b.x || mx >= b.x + b.w || my < b.y || my >= b.y + b.h) continue;
+    const itemRow = my - b.y - 1;  // -1 for top border
+    if (instanceKind(p.type) === 'detail') {
+      const d = getInstanceSlice(p.paneId);
+      const lines = (d && d.lines) || [];
+      const li = itemRow + ((d && d.scroll) || 0);
+      const lineText = (itemRow >= 0 && li < lines.length) ? stripMarkup(lines[li]) : null;
+      return { paneKind: 'detail', lineText, itemLabel: null, selectionText };
+    }
+    const def = getPanelDef(p.type);
+    let itemLabel = null;
+    if (itemRow >= 0 && def && typeof def.getItems === 'function') {
+      const idx = itemRow + getScroll(p.paneId);
+      const items = getItems(p.paneId);
+      if (idx < items.length) itemLabel = _itemText(def, items[idx]);
+    }
+    return { paneKind: p.type, lineText: null, itemLabel, selectionText };
+  }
+  return null;
+}
+
 // Realize the intent a discrete button gesture is bound to (the gesture →
 // intent map's right-hand side). The supported vocabulary mirrors
 // parser/schema.js VALID_MOUSE_INTENTS. Each branch owns its render().
@@ -389,13 +459,18 @@ function _realizeButtonGesture(intentName, x, y, mx, my) {
   switch (intentName) {
     case 'noop':
       return;  // reserved-but-inert (the middle-click default)
-    case 'context':
-      // Open the context menu anchored AT the cursor (1-based SGR {x,y});
-      // the realizer threads it into menu_open and the menu render clamps +
-      // opens there.
-      intent.realize(intent.context({ x, y }));
+    case 'context': {
+      // Open the context menu anchored AT the cursor (1-based SGR {x,y}).
+      // Resolve what's under the pointer → build the rows: contextual copy
+      // entries when on a target, plus the always-present general section, so
+      // a right-click on EMPTY space (null ctx) still opens a populated menu.
+      const ctx = _resolveContextAt(mx, my) || {};
+      const items = require('../leaves/context-menu').buildContextItems(ctx);
+      if (!items.length) return;  // safety — the general section keeps this non-empty
+      intent.realize(intent.context({ x, y }, { items, title: 'Actions' }));
       render();
       return;
+    }
     case 'activate': {
       // Focus + select + activate the row under the cursor — the click body
       // arm's path, gated on landing ON a row.
@@ -553,7 +628,10 @@ function handleMouse(kind, x, y) {
   }
   if (kind === 'release') {
     if (sel.isActive()) {
-      sel.commit();
+      // v0.6.4 context-menu follow-on — settle (auto-copy) but PERSIST the
+      // selection (highlighted + offered to right-click "Copy selection")
+      // rather than clearing it; a bare click with no drag still clears.
+      sel.settle();
       render();
     }
     return;

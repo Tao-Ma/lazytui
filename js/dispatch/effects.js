@@ -218,12 +218,13 @@ function installBuiltins() {
   registerEffect('cmdline_revert_preview', () => {
     require('./cmdline').revertPreview();
   });
-  // menu_action: the verb the user picked in the command menu. focus_panel
-  // carries its hotkey as a suffix; everything else is a bare handleAction verb.
+  // menu_action: the verb the user picked in the menu. focus_panel carries
+  // its hotkey as a suffix; context-menu rows carry an explicit `eff.arg`
+  // (e.g. copy_text's text); everything else is a bare handleAction verb.
   registerEffect('menu_action', (eff) => {
     const dispatch = require('./dispatch');
     if (eff.action.startsWith('focus_panel:')) dispatch.handleAction('focus_panel', eff.action.split(':')[1]);
-    else dispatch.handleAction(eff.action);
+    else dispatch.handleAction(eff.action, eff.arg);
   });
   // run_binding: a resolved leader leaf. Surface sync throws + async
   // rejections (mirrors the `:` cmdline path) rather than swallowing them.

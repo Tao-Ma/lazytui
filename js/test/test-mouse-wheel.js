@@ -129,15 +129,20 @@ describe('[4] T13 regression: handleMouse modal gating', () => {
     eq(getModel().modes.filterMode, true, 'filterMode preserved');
     modes.resetModes();
   });
-  it('press over a panel during menuOpen does NOT change focus', () => {
+  it('press OUTSIDE the menu during menuOpen dismisses it, never changes focus', () => {
     setupTwoPanel();
     getInstanceSlice('layout').focus = 'hosts';
     modes.resetModes();
     getModel().modes.menuOpen = true;
-    // A click on detail would normally focus + begin selection.
+    // Empty menu (no items/anchor) → a small centered box; a press at (40,5)
+    // lands outside it. v0.6.4 context-menu feature: an outside-click now
+    // DISMISSES the menu (pre-feature it was swallowed and stayed open). The
+    // invariant this regression pins still holds — the click must NOT leak
+    // into the focus+select cascade (focus stays put; the menu's mouse
+    // handler consumes the event rather than falling through).
     handleMouse('press', 40, 5);
-    eq(getFocus(), 'hosts', 'focus unchanged under menu modal');
-    eq(getModel().modes.menuOpen, true, 'menuOpen preserved');
+    eq(getFocus(), 'hosts', 'focus unchanged — click did not leak into the focus cascade');
+    eq(getModel().modes.menuOpen, false, 'outside-click dismissed the menu');
     modes.resetModes();
   });
   it('wheel during prefixMode does NOT trigger groups cascade', () => {
