@@ -18,6 +18,16 @@ author contract, why `.agent-prompt.md` is checked in).
 | **[postgres](postgres/)** | PostgreSQL 16 from source | Single container, build → test → psql | Agent-produced artifacts shipped; verified end-to-end on Docker |
 | **[cloudberrydb](cloudberrydb/)** | Apache Cloudberry main | Wraps upstream's `devops/sandbox/` — lazytui adds the YAML/CLI verbs on top of upstream's docker. Visitor clones `apache/cloudberry` into `./upstream/` first | Agent-produced artifacts shipped; YAML parses, live build deferred (~30 min cold). See [POSTMORTEM_v1.md](cloudberrydb/POSTMORTEM_v1.md) for the upstream-pivot decision |
 
+## Feature showcases
+
+Hand-authored config examples (not loop demos — no OSS target, no
+`.agent-prompt.md`). They demonstrate one lazytui capability in the
+smallest useful config.
+
+| Showcase | Demonstrates | Run |
+|---|---|---|
+| **[dual-browser](dual-browser/)** | Multi-instance Components (v0.6.4) — two independent `files` panes (Source/js + Docs/docs) opening into one shared preview; a two-pane file manager à la Midnight Commander / ranger. Repoint the roots for your own project. | `cd demo/dual-browser && ./run` |
+
 ## Running a demo
 
 ```sh

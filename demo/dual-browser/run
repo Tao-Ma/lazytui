@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Launch the dual-browser demo. Forwards args to bin/lazytui.
+set -e
+HERE="$(cd "$(dirname "$0")" && pwd)"
+exec "$HERE/../../bin/lazytui" "$HERE/tui.yml" "$@"

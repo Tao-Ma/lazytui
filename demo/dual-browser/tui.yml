@@ -1,0 +1,71 @@
+# lazytui demo — dual-pane file manager (multi-instance showcase).
+#
+# Two `files` panes open at once, navigated independently, both opening
+# into one shared Detail preview — the classic two-pane file manager
+# (Midnight Commander / ranger / Total Commander), built from lazytui's
+# multi-instance Components (v0.6.4 Theme A).
+#
+# This config browses the lazytui repo itself: the left pane roots at
+# the source tree (js/), the right at the docs (docs/). Navigate each
+# independently — move the cursor in one, the other stays put; filter (/)
+# one, the other is unaffected — and press Enter on any file to open it
+# in the shared preview on the right.
+#
+# Generalize it to your own project by repointing the two roots, e.g.
+#   src/ + test/      — implementation beside its tests
+#   frontend/ + backend/   — a monorepo's two halves
+#   config/ + examples/    — config beside sample usage
+# For a richer pattern, one pane can be `source: docker` (a container
+# filesystem) beside a `source: filesystem` pane on your repo — compare
+# your config files against what's actually live in the container.
+#
+# Run:
+#   cd demo/dual-browser && ./run        # or: ./run --list  (headless)
+#   node js/app/tui.js demo/dual-browser/tui.yml   # equivalent, from repo root
+#
+# This same config is the fixture driven by the smoke scenario
+# js/test/smoke/multi-instance.js — keep them in sync.
+
+# Browse the repo root (this file lives at demo/dual-browser/).
+project_dir: ../..
+theme: monokai
+
+groups:
+  browse:
+    label: Dual browser
+    containers: []
+    actions:
+      grep:
+        label: git grep in repo
+        desc: |
+          Search the repo for a string with `git grep -n`. Streams hits
+          into the Detail preview.
+        type: run
+        tab: true
+        script: git grep -n "$1"
+
+panels:
+  src:
+    type: files
+    title: Source (js/)
+    source: filesystem
+    root: js
+  docs:
+    type: files
+    title: Docs (docs/)
+    source: filesystem
+    root: docs
+  detail:
+    type: detail
+    title: Preview
+
+layout:
+  columns:
+    - width: 34
+      panels:
+        - src
+    - width: 34
+      panels:
+        - docs
+    - panels:
+        - { tabs: [detail], height: 60% }

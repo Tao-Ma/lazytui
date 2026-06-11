@@ -193,11 +193,18 @@ describe('[6] getInstanceSlice — paneId path + Component-name fallback', () =>
   //     shifts to follow).
   //
   //  B) Docker-style: Component name ('docker') ≠ panel-type
-  //     ('containers'). state.js B1 looks up `components[p.type='containers']`
-  //     which misses — no per-pane mint. The slice is reachable ONLY via
-  //     the Component name (`getInstanceSlice('docker')`), NOT via paneId
-  //     and NOT via panel-type. componentForPanel still resolves the
-  //     paneId via the arrange-walk path (route.js arm 3).
+  //     ('containers'). Post-v0.6.4 Arc 2/3 there are now TWO distinct
+  //     slices:
+  //       - the per-pane NAV instance, minted at the paneId. state.js
+  //         resolves the owner via `components[componentForPanel(kind)]`
+  //         (the Arc 2 fallback for panelType-aliased panes), so the
+  //         mint is no longer skipped. Reachable via paneId AND via the
+  //         panel-type kind-name fallback — both return this same slice,
+  //         which self-identifies (`.paneId === paneId`).
+  //       - the CONTENT-OWNER singleton, keyed by the Component name
+  //         ('docker'), `.paneId == null` (Arc 3: one host-global
+  //         status/stats/events stream). Distinct object from the pane
+  //         slice; placed panes read shared content through it.
   //
   // Pin both shapes so a future refactor that flattens one onto the
   // other doesn't silently break docker-style reads or symmetric reads.
@@ -213,13 +220,19 @@ describe('[6] getInstanceSlice — paneId path + Component-name fallback', () =>
         assert(viaPaneId === viaKind, 'same object ref (fallback isn\'t a copy)');
       });
     } else {
-      it(`${type} (docker-style, owner='${owner}'): slice reachable via Component name only`, () => {
+      it(`${type} (docker-style, owner='${owner}'): per-pane nav + content-owner singleton`, () => {
         const viaPaneId = api.getInstanceSlice(paneId);
         const viaType = api.getInstanceSlice(type);
         const viaCompName = api.getInstanceSlice(owner);
-        eq(viaPaneId, undefined, 'paneId-keyed returns undefined (B1 mint skipped)');
-        eq(viaType, undefined, 'panel-type-keyed returns undefined (no kind=type instance)');
-        assert(viaCompName !== undefined, `Component-name-keyed slice ('${owner}') exists`);
+        assert(viaPaneId !== undefined, 'paneId-keyed nav instance exists (Arc 2 mint)');
+        eq(viaPaneId.paneId, paneId, 'pane slice self-identifies');
+        assert(viaType === viaPaneId, 'panel-type kind-name fallback resolves to the pane slice');
+        assert(viaCompName !== undefined, `content-owner singleton ('${owner}') exists`);
+        assert(viaCompName !== viaPaneId, 'content owner is a DISTINCT slice from the pane nav');
+        // The owner gate (docker.js: `slice.paneId != null`) is loose —
+        // the singleton stamps paneId: undefined. Assert the same nullish
+        // contract, not a strict null.
+        assert(viaCompName.paneId == null, 'content owner is the unplaced singleton (paneId == null)');
       });
     }
   }
