@@ -226,6 +226,24 @@ function _withModal(model, patch) {
   return { ...model, modal: { ...model.modal, ...patch } };
 }
 
+// v0.6.4 Theme A Phase 5 — split a pane address into the instance the
+// write should route to (`target`: the paneId when it's a live instance,
+// else the kind/Component name → primary) and the nav-entry key
+// (`navKey`: the panel-type, the form mnav.entryOf indexes multi-panel
+// Components by). The filter modal stores a paneId in `modal.filter.panel`
+// so the focused pane being filtered is the one written — this helper
+// turns that paneId back into a (route-to, key-by) pair. Returns null
+// when the address resolves to no Component. No-op under single-pane
+// configs (paneId === primary === type).
+function _navRoute(paneId) {
+  const compName = route.componentForPanel(paneId);
+  if (!compName) return null;
+  return {
+    target: route.hasInstance(paneId) ? paneId : compName,
+    navKey: route.paneTypeOf(paneId) || paneId,
+  };
+}
+
 // `]`/`[` cycle the focused-or-sticky viewer's tab list. resolveTarget
 // picks the right viewer pane (focus / sticky / first-in-arrange); null
 // result (no viewer registered) drops the Cmd.
@@ -366,8 +384,15 @@ function update(model, msg) {
       // resolver (handles docker-style panes that have no per-pane
       // instance via arrange walk).
       const kindForNav = route.paneTypeOf(panelType) || panelType;
+      // v0.6.4 Theme A Phase 5 — route set_cursor to THIS pane's
+      // instance when `panelType` is a live paneId (mouse wheel +
+      // actions.js pass getFocus(), a paneId), so the focused pane's
+      // cursor moves, not the kind's primary. `panel: kindForNav`
+      // still keys nav[panelType] inside multi-panel Components.
+      // No-op under single-pane configs (paneId === primary).
+      const target = route.hasInstance(panelType) ? panelType : compName;
       const cmds = [
-        { type: 'msg', msg: route.wrap(compName, { type: 'set_cursor', panel: kindForNav, index }) },
+        { type: 'msg', msg: route.wrap(target, { type: 'set_cursor', panel: kindForNav, index }) },
         { type: 'show_selected_info' },
       ];
       if (kindForNav === 'groups') {
@@ -919,11 +944,13 @@ function update(model, msg) {
       // Parallel to groups.switchTab's multiSel-clear on All↔Quick
       // toggle. multisel_clear is a no-op when the panel had no
       // selection, so the Cmd is free in the common case.
-      const compName = route.componentForPanel(msg.panel);
-      if (!compName) return [next, []];
+      // v0.6.4 Theme A Phase 5 — msg.panel is the focused PANEID; route
+      // the multiSel-clear to that instance, keyed by its panel-type.
+      const r = _navRoute(msg.panel);
+      if (!r) return [next, []];
       return [next, [{
         type: 'msg',
-        msg: route.wrap(compName, { type: 'multisel_clear', panel: msg.panel }),
+        msg: route.wrap(r.target, { type: 'multisel_clear', panel: r.navKey }),
       }]];
     }
     case 'filter_key': {
@@ -944,10 +971,11 @@ function update(model, msg) {
       }
       const next = _withModal(model, { filter: { ...f, text } });
       // Re-home the cursor as the filter narrows; the panel's nav slice
-      // is the writer.
-      const compName = route.componentForPanel(f.panel);
-      if (!compName) return [next, []];
-      return [next, [{ type: 'msg', msg: route.wrap(compName, { type: 'set_cursor', panel: f.panel, index: 0 }) }]];
+      // is the writer. v0.6.4 Theme A Phase 5 — f.panel is the focused
+      // paneId; re-home THIS pane's cursor, not the kind's primary.
+      const r = _navRoute(f.panel);
+      if (!r) return [next, []];
+      return [next, [{ type: 'msg', msg: route.wrap(r.target, { type: 'set_cursor', panel: r.navKey, index: 0 }) }]];
     }
     case 'filter_exit': {
       const f = model.modal.filter;
@@ -959,17 +987,21 @@ function update(model, msg) {
         modal: { ...model.modal, filter: { text: '', panel: '' } },
       };
       if (!panel) return [next, []];
-      const compName = route.componentForPanel(panel);
-      if (!compName) return [next, []];
+      // v0.6.4 Theme A Phase 5 — `panel` is the focused paneId; commit
+      // the filter + re-home cursor/scroll on THAT instance's nav slice
+      // (keyed by its panel-type), not the kind's primary.
+      const r = _navRoute(panel);
+      if (!r) return [next, []];
+      const { target, navKey } = r;
       // Commit/clear the filter on the panel's nav slice; the owning
       // Component is the single writer.
       const filterMsg = (keep && text)
-        ? { type: 'set_filter',   panel, text }
-        : { type: 'clear_filter', panel };
+        ? { type: 'set_filter',   panel: navKey, text }
+        : { type: 'clear_filter', panel: navKey };
       return [next, [
-        { type: 'msg', msg: route.wrap(compName, filterMsg) },
-        { type: 'msg', msg: route.wrap(compName, { type: 'set_cursor', panel, index: 0 }) },
-        { type: 'msg', msg: route.wrap(compName, { type: 'set_scroll', panel, offset: 0 }) },
+        { type: 'msg', msg: route.wrap(target, filterMsg) },
+        { type: 'msg', msg: route.wrap(target, { type: 'set_cursor', panel: navKey, index: 0 }) },
+        { type: 'msg', msg: route.wrap(target, { type: 'set_scroll', panel: navKey, offset: 0 }) },
       ]];
     }
     case 'mode_clear':

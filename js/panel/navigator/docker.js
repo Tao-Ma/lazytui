@@ -39,7 +39,7 @@ const {
   streamCommand, addEphemeralTab, scheduleRender,
   leaveTerminalMode,
   getItems: apiGetItems, selectedOrFocused,
-  getInstanceSlice, getFocus, dispatchMsg, wrap, instanceKind,
+  getInstanceSlice, dispatchMsg, wrap,
   hub,
 } = require('../api');
 const { getModel } = require('../../app/runtime');
@@ -480,14 +480,15 @@ function render(panel, width, height, _slice, opts) {
   const m = getModel();
   const group = m.config.groups[m.currentGroup];
   if (!group) return '';
-  const containers = apiGetItems('containers');
-  const sel = getSel('containers');
-  // v0.6.3 post-arch-arc — `instanceKind(getFocus())` returns the
-  // panel-TYPE ('containers'), not the Component NAME ('docker').
-  // The B1 mint stores `kind = p.type`; the arrange-walk fallback
-  // for docker panes also returns `p.type`. Compare against the
-  // panel-type that this render function serves.
-  const isFocused = instanceKind(getFocus()) === 'containers';
+  const containers = apiGetItems(panel.paneId);
+  const sel = getSel(panel.paneId);
+  // v0.6.4 Theme A Phase 5 — per-pane focus (opts.focused, from
+  // paneMatchesFocus) + per-pane nav reads (panel.paneId). docker is a
+  // `panelTypes` Component (panes not minted per-pane), so its nav slice
+  // stays SHARED across docker panes until Unit 4 keys the events stream
+  // + nav by paneId; the focus flag, though, is correctly per-pane now —
+  // only the focused docker pane highlights its selection.
+  const isFocused = !!(opts && opts.focused);
   const t = theme();
   const lines = containers.map((name, i) => {
     const isSel = i === sel && isFocused;
@@ -500,11 +501,11 @@ function render(panel, width, height, _slice, opts) {
                 : (st === 'stopped' || st === 'exited') ? t.stopped
                 : t.unknown;
     const lhead = isSel ? `${dot} ` : `[${color}]${dot}[/] `;
-    const gutter = isMultiSel('containers', name) ? '*' : ' ';
+    const gutter = isMultiSel(panel.paneId, name) ? '*' : ' ';
     if (isSel) return `[${t.selected}]${gutter}${lhead}${esc(name)}`;
     return `${gutter}${lhead}${esc(name)}`;
   });
-  const filterText = getFilter('containers');
+  const filterText = getFilter(panel.paneId);
   const title = filterText ? `${panel.title} /${esc(filterText)}` : panel.title;
   return renderPanel({
     width, height, lines,
@@ -512,7 +513,7 @@ function render(panel, width, height, _slice, opts) {
     panelType: 'containers',
     focused: isFocused,
     count: containers.length ? [sel + 1, containers.length] : null,
-    scrollOffset: getScroll('containers'),
+    scrollOffset: getScroll(panel.paneId),
     chrome: opts && opts.chrome,
   });
 }

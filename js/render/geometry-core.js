@@ -281,9 +281,9 @@ function calcLayout(model = getModel()) {
   for (const p of mpool.allPanesInColumns(layoutSlice.arrange)) {
     if (mpool.isDetailPane(p)) continue;
     if (p.collapsed) continue;  // no content rows to scroll-clamp against
-    // v0.6.4 Phase 3b — viewport height by paneId; syncPanelScroll still
-    // addresses the nav slice by panel-type (nav-keying is Phase 5).
-    syncPanelScroll(p.type, getPanelViewportH(p.paneId));
+    // v0.6.4 Phase 5 — scroll-clamp THIS pane's own nav slice (paneId,
+    // not panel-type), so two same-kind panes clamp independently.
+    syncPanelScroll(p.paneId, getPanelViewportH(p.paneId));
   }
 
   return {

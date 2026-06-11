@@ -78,14 +78,17 @@ function copyOptions(entry) {
 }
 
 function render(panel, w, h, _slice, opts) {
-  const items = apiGetItems('history', null);
-  const sel = getSel('history');
-  const isFocused = instanceKind(getFocus()) === 'history';
+  // v0.6.4 Theme A Phase 5 — per-pane nav reads (panel.paneId) + per-pane
+  // focus (opts.focused). history content is a global ring buffer, so
+  // multi-instance shares content; cursor/scroll/multiSel are per-pane.
+  const items = apiGetItems(panel.paneId, null);
+  const sel = getSel(panel.paneId);
+  const isFocused = !!(opts && opts.focused);
   const lines = items.map((entry, i) => {
     const time = fmtTime(entry.startedAt);
     const dur = fmtDuration(entry).padStart(5, ' ');
     const isSel = i === sel && isFocused;
-    const gutter = isMultiSel('history', String(entry.startedAt)) ? '*' : ' ';
+    const gutter = isMultiSel(panel.paneId, String(entry.startedAt)) ? '*' : ' ';
     if (isSel) {
       // Selected row: plain text in [reverse] (no inner markup, see PRINCIPLES §8).
       const plainGlyph = entry._detached ? '—' : entry.exitCode === null ? '⟳' : entry.exitCode === 0 ? '✓' : entry.exitCode === 'killed' ? '⊗' : '✗';
@@ -100,7 +103,7 @@ function render(panel, w, h, _slice, opts) {
     panelType: 'history',
     focused: isFocused,
     count: items.length ? [sel + 1, items.length] : null,
-    scrollOffset: getScroll('history'),
+    scrollOffset: getScroll(panel.paneId),
     chrome: opts && opts.chrome,
   });
 }

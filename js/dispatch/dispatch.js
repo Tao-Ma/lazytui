@@ -169,14 +169,16 @@ function _enterFilterMode() {
   const focus = getFocus();
   const def = getPanelDef(focus);
   if (!def || !def.filterable) return false;
-  // v0.6.3 post-arch-arc — seed modal.filter.panel as a panel-type so the
-  // downstream filter_key / filter_exit arms (which thread msg.panel to
-  // wrap(comp, set_cursor/set_filter/clear_filter)) reach nav.apply's
-  // multi-panel branch correctly. getFocus() returns a paneId post-Phase-B1.
-  // Phase 4c — committed filter text lives on the panel's nav slice;
-  // `filter.getFilter()` resolves it via the helper.
-  const panelType = route.paneTypeOf(focus) || focus;
-  applyMsg({ type: 'filter_enter', panel: panelType, text: require('../panel/api').getFilter(focus) });
+  // v0.6.4 Theme A Phase 5 — seed modal.filter.panel with the focused
+  // PANEID (not its panel-type). getFilter() compares modal.filter.panel
+  // against the pane being rendered (also a paneId now), so the live
+  // draft shows in the right pane; the filter_key / filter_exit arms
+  // derive the (route-to instance, nav-key type) pair via _navRoute, so
+  // the write lands on THIS pane — not the kind's primary — and still
+  // reaches nav.apply's multi-panel branch under the panel-type key.
+  // getFocus() returns a paneId post-Phase-B1. (Phase 4c — committed
+  // filter text lives on the panel's nav slice; getFilter resolves it.)
+  applyMsg({ type: 'filter_enter', panel: focus, text: require('../panel/api').getFilter(focus) });
   return true;
 }
 

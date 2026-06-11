@@ -137,4 +137,108 @@ describe('[v0.6.4 Theme A Phase 1] focused-instance key routing', () => {
   });
 });
 
+describe('[v0.6.4 Theme A Phase 5] per-pane nav READS', () => {
+  // Phase 1 proved the key WRITE lands on the focused instance. Phase 5
+  // closes the READ path: getSel/getScroll/getFilter/isMultiSel/getItems
+  // must read THIS pane's own slice when handed a paneId, not collapse
+  // every same-kind pane onto the kind's primary. Two same-kind panes
+  // ⇒ two independent cursors/scrolls/filters/selections.
+  const state = require('../app/state');
+  const mnav = require('../leaves/nav');
+
+  function setupTwoPanes() {
+    resetRegistry();
+    api.registerComponent({ name: 'layout', init: () => ({ focus: null }), update: (m, s) => s });
+    // Single-panel Navigator owning panelType 'p5'. Its update delegates
+    // nav Msgs to the nav leaf (the real navigator contract) and exposes
+    // a filterable item list so getItems() exercises the per-pane filter.
+    api.registerComponent({
+      name: 'p5',
+      panelTypes: {
+        p5: {
+          render: () => [],
+          getItems: (slice) => slice.rows,
+          filterable: true,
+          filterText: (it) => it,
+        },
+      },
+      init: () => ({ nav: mnav.init(), rows: ['alpha', 'beta', 'gamma'] }),
+      update: (msg, slice) => {
+        const navd = mnav.apply(slice, msg);
+        return navd !== undefined ? navd : slice;
+      },
+    });
+    // Drop the kind-keyed singleton registerComponent minted so the two
+    // placed panes are the only instances; pane-a is primary.
+    route.disposeInstance('p5');
+    route.setInstance('pane-a', 'p5', { nav: mnav.init(), rows: ['alpha', 'beta', 'gamma'] });
+    route.setInstance('pane-b', 'p5', { nav: mnav.init(), rows: ['alpha', 'beta', 'gamma'] });
+  }
+
+  it('cursor is independent per pane (was: both read the primary)', () => {
+    setupTwoPanes();
+    state.setSel('pane-a', 2);
+    state.setSel('pane-b', 0);
+    eq(state.getSel('pane-a'), 2, 'pane-a cursor = 2');
+    eq(state.getSel('pane-b'), 0, 'pane-b cursor = 0 (NOT pane-a\'s 2)');
+    // And the reverse, to prove neither aliases the primary.
+    state.setSel('pane-b', 1);
+    eq(state.getSel('pane-a'), 2, 'pane-a unchanged by pane-b write');
+    eq(state.getSel('pane-b'), 1, 'pane-b cursor = 1');
+  });
+
+  it('scroll is independent per pane', () => {
+    setupTwoPanes();
+    state.setScroll('pane-a', 5);
+    eq(state.getScroll('pane-a'), 5, 'pane-a scroll = 5');
+    eq(state.getScroll('pane-b'), 0, 'pane-b scroll = 0');
+  });
+
+  it('multiSel set is independent per pane', () => {
+    setupTwoPanes();
+    state.toggleMultiSel('pane-a', 'alpha');
+    state.toggleMultiSel('pane-a', 'beta');
+    state.toggleMultiSel('pane-b', 'gamma');
+    eq(state.multiSelCount('pane-a'), 2, 'pane-a has 2 selected');
+    eq(state.multiSelCount('pane-b'), 1, 'pane-b has 1 selected');
+    assert(state.isMultiSel('pane-a', 'alpha'), 'pane-a has alpha');
+    assert(!state.isMultiSel('pane-b', 'alpha'), 'pane-b does NOT have alpha');
+  });
+
+  it('committed filter + filtered getItems are independent per pane', () => {
+    setupTwoPanes();
+    // Commit a filter on pane-a only (set_filter routed to its instance).
+    api.dispatchMsg(api.wrap('pane-a', { type: 'set_filter', panel: 'p5', text: 'a' }));
+    eq(api.getFilter('pane-a'), 'a', 'pane-a filter committed');
+    eq(api.getFilter('pane-b'), '', 'pane-b filter still empty');
+    // getItems applies the per-pane committed filter: 'a' matches
+    // alpha/beta/gamma (all contain "a"); use a tighter filter to prove it.
+    api.dispatchMsg(api.wrap('pane-a', { type: 'set_filter', panel: 'p5', text: 'lph' }));
+    eq(api.getItems('pane-a').join(','), 'alpha', 'pane-a items filtered to alpha');
+    eq(api.getItems('pane-b').join(','), 'alpha,beta,gamma', 'pane-b items unfiltered');
+  });
+
+  it('filter MODAL (enter→commit) lands on the focused pane, not the primary', () => {
+    setupTwoPanes();
+    const dispatch = require('../dispatch/dispatch');
+    // Simulate the modal as if pane-b (the non-primary) is being filtered:
+    // _enterFilterMode seeds modal.filter.panel with the focused PANEID.
+    dispatch.applyMsg({ type: 'filter_enter', panel: 'pane-b', text: 'lph' });
+    // Live draft renders in pane-b only (getFilter compares paneId).
+    eq(api.getFilter('pane-b'), 'lph', 'live draft shows in the filtered pane-b');
+    eq(api.getFilter('pane-a'), '', 'pane-a shows no draft (not the filtered pane)');
+    // Commit: the filter writes to pane-b's nav slice, NOT pane-a.
+    dispatch.applyMsg({ type: 'filter_exit', keep: true });
+    eq(api.getFilter('pane-b'), 'lph', 'committed filter on pane-b');
+    eq(api.getFilter('pane-a'), '', 'pane-a uncommitted (pre-fix it took the write)');
+  });
+
+  it('the primary fallback still serves a kind-name read (legacy callers)', () => {
+    setupTwoPanes();
+    state.setSel('pane-a', 2);   // pane-a is the primary for kind p5
+    // A legacy caller passing the kind/Component name resolves to primary.
+    eq(state.getSel('p5'), 2, 'getSel(kind) falls back to the primary pane-a');
+  });
+});
+
 report();

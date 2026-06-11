@@ -162,6 +162,27 @@ function getInstanceSlice(id) {
   return undefined;
 }
 
+/** Read-path slice resolver: the slice the per-pane `id` should READ
+ *  from. Prefers `id`'s own per-pane instance when `id` is a live
+ *  paneId (multi-instance: each same-kind pane reads its own slice);
+ *  falls back to the `kind`'s primary instance when `id` has no
+ *  instance of its own (docker-style `panelTypes` panes that B1 mints
+ *  kind-keyed, and legacy callers that pass a kind/Component name).
+ *
+ *  This is the read-path mirror of the wrapped-Msg DISPATCH path's
+ *  `getInstance(kind)`-first resolution (`panel/api` dispatchMsg) and
+ *  the key path's `hasInstance(focus) ? focus : primary` (api.js#
+ *  dispatchKeyToFocused). v0.6.4 Theme A Phase 5 — closing the
+ *  read-path half so render/getItems/getFilter/nav reads stop
+ *  collapsing every same-kind pane onto the primary's slice.
+ *
+ *  No-op under single-pane configs: there `id === kind === primary`,
+ *  so both arms return the same instance. */
+function sliceForPane(id, kind) {
+  if (id != null && _instances[id]) return _instances[id].slice;
+  return getInstanceSlice(kind);
+}
+
 function setInstanceSlice(id, slice) {
   let inst = _instances[id];
   if (!inst) {
@@ -336,7 +357,7 @@ module.exports = {
   wrap,
   registerPanelOwner, componentForPanel, isPanelType, paneTypeOf,
   getFocus,
-  setInstance, getInstance, getInstanceSlice, setInstanceSlice,
+  setInstance, getInstance, getInstanceSlice, sliceForPane, setInstanceSlice,
   hasInstance, disposeInstance, instanceKind, eachInstance,
   getPrimaryByKind,
   // Navigator → focused-viewer routing chokepoint.

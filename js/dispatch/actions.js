@@ -248,8 +248,11 @@ function handleAction(action, arg) {
       // below opens or closes). Avoids the prior "drill to empty actions"
       // smell when a branch had no own actions.
       if (instanceKind(getFocus()) === 'groups') {
-        const items = getItems('groups');
-        const row = items[getSel('groups')];
+        // v0.6.4 Theme A Phase 5 — read the FOCUSED groups pane's items +
+        // cursor (getFocus() is its paneId), not the kind's primary.
+        const gfocus = getFocus();
+        const items = getItems(gfocus);
+        const row = items[getSel(gfocus)];
         if (row && row.children && row.children.length > 0) {
           // toggle_group moved to groups.update in Phase C — route via
           // the Component fan-out, not the root reducer.
@@ -270,8 +273,11 @@ function handleAction(action, arg) {
       // already carries args inline, so this only matters for the
       // actions-panel path.
       if (instanceKind(getFocus()) === 'actions') {
-        const items = getItems('actions');
-        const item = items[getSel('actions')];
+        // v0.6.4 Theme A Phase 5 — read the FOCUSED actions pane's items +
+        // cursor (getFocus() is its paneId), not the kind's primary.
+        const afocus = getFocus();
+        const items = getItems(afocus);
+        const item = items[getSel(afocus)];
         if (item) {
           const [key, act] = item;
           _runResolvedAction(key, act);

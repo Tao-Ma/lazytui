@@ -23,7 +23,6 @@ const {
   hub, esc, theme, renderPanel,
   getItems: apiGetItems,
   scheduleRender,
-  getInstanceSlice, getFocus, instanceKind,
 } = require('../api');
 const { rasterize } = require('./stats-graph');
 
@@ -84,14 +83,14 @@ function _resolveSelection(panel) {
   return typeof item === 'string' ? item : null;
 }
 
-function _renderEmpty(panel, w, h, msg, chrome) {
+function _renderEmpty(panel, w, h, msg, chrome, focused) {
   const t = theme();
   return renderPanel({
     width: w, height: h,
     lines: [`[${t.dim}]${esc(msg)}[/]`],
     title: panel.title, hotkey: panel.hotkey,
     panelType: 'stats',
-    focused: instanceKind(getFocus()) === 'stats',
+    focused: !!focused,
     chrome,
   });
 }
@@ -149,21 +148,25 @@ function _renderSection(metric, samples, schema, width, graphHeight) {
 
 function render(panel, w, h, _slice, opts) {
   const chrome = opts && opts.chrome;
+  // v0.6.4 Theme A Phase 5 — per-pane focus (opts.focused). stats reads
+  // ANOTHER pane's cursor via panel.select_from (cross-pane by design),
+  // so its own slice is empty; only the focus flag is per-pane here.
+  const focused = !!(opts && opts.focused);
   if (!panel.topic || !panel.select_from) {
-    return _renderEmpty(panel, w, h, '(stats panel needs topic + select_from)', chrome);
+    return _renderEmpty(panel, w, h, '(stats panel needs topic + select_from)', chrome, focused);
   }
   const window = panel.window || 40;
   _ensureSub(panel.topic, window);
 
   const rowKey = _resolveSelection(panel);
-  if (!rowKey) return _renderEmpty(panel, w, h, '(no selection)', chrome);
+  if (!rowKey) return _renderEmpty(panel, w, h, '(no selection)', chrome, focused);
 
   const samples = hub.history(panel.topic, rowKey, window);
-  if (!samples.length) return _renderEmpty(panel, w, h, '(no data yet)', chrome);
+  if (!samples.length) return _renderEmpty(panel, w, h, '(no data yet)', chrome, focused);
 
   const schema = hub.schema(panel.topic) || { columns: {} };
   const metrics = panel.metrics || _defaultMetrics(schema);
-  if (!metrics.length) return _renderEmpty(panel, w, h, '(no graphable metrics)', chrome);
+  if (!metrics.length) return _renderEmpty(panel, w, h, '(no graphable metrics)', chrome, focused);
 
   const innerW = w - 2;
   const innerH = h - 2;
@@ -186,7 +189,7 @@ function render(panel, w, h, _slice, opts) {
     title: `${panel.title}: ${esc(rowKey)}`,
     hotkey: panel.hotkey,
     panelType: 'stats',
-    focused: instanceKind(getFocus()) === 'stats',
+    focused,
     chrome,
   });
 }

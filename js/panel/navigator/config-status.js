@@ -31,7 +31,7 @@ const { spawnSync } = require('child_process');
 const {
   esc, theme, renderPanel,
   getScroll, getSel,
-  getInstanceSlice, getFocus, instanceKind,
+  getInstanceSlice,
 } = require('../api');
 const { getModel } = require('../../app/runtime');
 const mnav = require('../../leaves/nav');
@@ -300,15 +300,18 @@ function rowText(item, isSelected) {
 }
 
 function render(panel, w, h, slice, opts) {
+  // v0.6.4 Theme A Phase 5 — per-pane nav reads (panel.paneId) + per-pane
+  // focus (opts.focused). config-status content snapshots one config/branch
+  // (global), so multi-instance shares content; cursor/scroll are per-pane.
   const items = buildItems(slice, slice.files || []);
-  const sel = getSel('config-status');
-  const focused = instanceKind(getFocus()) === 'config-status';
+  const sel = getSel(panel.paneId);
+  const focused = !!(opts && opts.focused);
   const lines = items.map((item, i) => rowText(item, focused && i === sel));
   const title = `${panel.title || 'Config'} — ${TAB_LABELS[tabIdx(slice)]}`;
   return renderPanel({
     width: w, height: h, title,
     panelType: 'config-status', lines, focused,
-    hotkey: panel.hotkey, scrollOffset: getScroll('config-status'),
+    hotkey: panel.hotkey, scrollOffset: getScroll(panel.paneId),
     chrome: opts && opts.chrome,
   });
 }

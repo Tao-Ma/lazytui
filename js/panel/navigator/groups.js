@@ -31,7 +31,6 @@ const {
   esc, wrapColor, theme, renderPanel,
   getSel, getScroll, isMultiSel,
   statusFor, getMergedActions,
-  getInstanceSlice, getFocus, instanceKind,
 } = require('../api');
 
 // --- pure tree transforms (return-new slice + cascade descriptor) ---
@@ -338,11 +337,16 @@ function _glyphFor(group, expanded) {
 }
 
 function render(panel, w, h, slice, opts) {
-  const sel = getSel('groups');
+  // v0.6.4 Theme A Phase 5 — per-pane nav reads (panel.paneId, not the
+  // 'groups' literal) + per-pane focus (opts.focused, computed once in
+  // composeRects via paneMatchesFocus). Was instanceKind(getFocus()) ===
+  // 'groups', which lit up EVERY groups pane when any one was focused.
+  const sel = getSel(panel.paneId);
+  const focused = !!(opts && opts.focused);
   const isQuick = slice.tab === 'quick';
   const t = theme();
   const lines = slice.list.map((group, i) => {
-    const isSel = i === sel && instanceKind(getFocus()) === 'groups';
+    const isSel = i === sel && focused;
     let treeSeg;
     let labelStr;
     if (isQuick) {
@@ -358,7 +362,7 @@ function render(panel, w, h, slice, opts) {
     // Returns '' for groups with no containers.
     const right = _rowRightGroups(group, isSel);
     const rtail = right ? ` ${right}` : '';
-    const isMs  = isMultiSel('groups', group.name);
+    const isMs  = isMultiSel(panel.paneId, group.name);
     const mark  = isMs ? '*' : (isSel ? ' ' : (i === sel ? '>' : ' '));
     const labelText = `${mark} ${treeSeg}${labelStr}${rtail}`;
     if (isSel) return `[${t.selected}]${labelText}`;
@@ -375,9 +379,9 @@ function render(panel, w, h, slice, opts) {
     width: w, height: h, lines,
     title: _groupsTitle(panel.title, slice), hotkey: panel.hotkey,
     panelType: 'groups',
-    focused: instanceKind(getFocus()) === 'groups',
+    focused,
     count: [sel + 1, slice.list.length],
-    scrollOffset: getScroll('groups'),
+    scrollOffset: getScroll(panel.paneId),
     chrome: opts && opts.chrome,
   });
 }

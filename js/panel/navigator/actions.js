@@ -14,7 +14,6 @@ const {
   esc, theme, renderPanel,
   getSel, getScroll, isMultiSel, getFilter,
   getMergedActions, getItems: apiGetItems,
-  getInstanceSlice, getFocus, instanceKind,
 } = require('../api');
 
 /**
@@ -61,11 +60,10 @@ function getInfo(item) {
  * inner markup — see PRINCIPLES §8); unselected rows use [dim] for the
  * confirm/args annotations.
  */
-function actionRow([key, action], i) {
+function actionRow([key, action], i, paneId, isFocused) {
   const tag = { spawn: ' ⧉', background: ' ⇱' }[action.type] || '';
-  const isSel = i === getSel('actions');
-  const isFocused = instanceKind(getFocus()) === 'actions';
-  const isMs = isMultiSel('actions', key);
+  const isSel = i === getSel(paneId);
+  const isMs = isMultiSel(paneId, key);
   // Actions panel is a clean list of what you CAN run. Runtime status
   // (running / completed / killed) lives in the Running overlay
   // (leader j) + the tab strip's ● indicator + feature/history. The
@@ -83,11 +81,15 @@ function actionRow([key, action], i) {
 }
 
 function render(panel, w, h, _slice, opts) {
-  const actions = apiGetItems('actions');
-  const sel = getSel('actions');
-  const isFocused = instanceKind(getFocus()) === 'actions';
-  const lines = actions.map((item, i) => actionRow(item, i));
-  const filterText = getFilter('actions');
+  // v0.6.4 Theme A Phase 5 — per-pane nav reads (panel.paneId) + per-pane
+  // focus (opts.focused). actionRow takes both so its row highlight tracks
+  // THIS pane. (actions content is global — currentGroup's action set — so
+  // multi-instance shares content, but cursor/scroll are now per-pane.)
+  const isFocused = !!(opts && opts.focused);
+  const actions = apiGetItems(panel.paneId);
+  const sel = getSel(panel.paneId);
+  const lines = actions.map((item, i) => actionRow(item, i, panel.paneId, isFocused));
+  const filterText = getFilter(panel.paneId);
   const title = filterText ? `${panel.title} /${esc(filterText)}` : panel.title;
   return renderPanel({
     width: w, height: h, lines,
@@ -95,7 +97,7 @@ function render(panel, w, h, _slice, opts) {
     panelType: 'actions',
     focused: isFocused,
     count: actions.length ? [sel + 1, actions.length] : null,
-    scrollOffset: getScroll('actions'),
+    scrollOffset: getScroll(panel.paneId),
     chrome: opts && opts.chrome,
   });
 }

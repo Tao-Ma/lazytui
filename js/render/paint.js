@@ -37,7 +37,7 @@ const painter = require('./painter');
 const { isTerminalTab, activeTerminalId, activeTerminalConfig,
         getTabInfo } = require('../panel/viewer/tabs');
 const { ensureSession, resizeSession } = require('../io/terminal');
-const { getInstanceSlice, getComponent, getComponentOwningPanel,
+const { getInstanceSlice, sliceForPane, getComponent, getComponentOwningPanel,
        dispatchMsg, wrap } = require('../panel/api');
 const { renderCopyMenu } = require('../overlay/copy');
 const { render: renderRegisterPopup } = require('../overlay/register-popup');
@@ -264,7 +264,12 @@ function _safeRender(panel, w, h, opts) {
     // v0.6.3 P4.2b — pass opts (carries chrome spec from composeRects)
     // as a 5th arg. Existing panel renderers ignore unknown args; the
     // ones updated in this commit pass opts.chrome to renderPanel.
-    raw = def.render(panel, w, h, getInstanceSlice(compName), opts);
+    // v0.6.4 Theme A Phase 5 — read THIS pane's own slice (sliceForPane
+    // resolves panel.paneId → its instance; falls back to compName's
+    // primary for docker-style panes + singletons). Was
+    // getInstanceSlice(compName), which painted every same-kind pane
+    // from the primary's slice.
+    raw = def.render(panel, w, h, sliceForPane(panel.paneId, compName), opts);
   } catch (e) {
     console.error(`[render:${panel && panel.type}] ${e && e.message}`);
     try {
@@ -352,7 +357,7 @@ function composeRects(layout, model) {
     });
     const raw = panel.collapsed
       ? _renderCollapsed(panel, rect.w, chrome)
-      : _safeRender(panel, rect.w, rect.h, { chrome });
+      : _safeRender(panel, rect.w, rect.h, { chrome, focused });
     const lines = raw === '' ? [] : raw.split('\n');
     out.push({
       paneId: rect.paneId, type: rect.type,

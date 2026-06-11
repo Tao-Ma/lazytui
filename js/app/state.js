@@ -266,15 +266,27 @@ function _navEntry(id) {
   const panelType = _resolvePanelType(id);
   const compName = api.getComponentOwningPanel(panelType);
   if (!compName) return null;
-  return mnav.entryOf(api.getInstanceSlice(compName), panelType);
+  // v0.6.4 Theme A Phase 5 — read THIS pane's own nav entry. sliceForPane
+  // resolves `id` (paneId) → its own instance; falls back to compName's
+  // primary for docker-style panes + legacy kind-name callers. entryOf
+  // keys by panelType within the slice (multi-panel Components like files).
+  return mnav.entryOf(api.sliceForPane(id, compName), panelType);
 }
 
 function _navDispatch(id, msg) {
   const api = require('../panel/api');
+  const route = require('../panel/route');
   const panelType = _resolvePanelType(id);
   const compName = api.getComponentOwningPanel(panelType);
   if (!compName) return;
-  api.dispatchMsg(api.wrap(compName, { ...msg, panel: panelType }));
+  // v0.6.4 Theme A Phase 5 — route the write to THIS pane's instance
+  // when `id` is a live paneId (so setSel/setScroll/multisel land on the
+  // pane the user is acting on, not the kind's primary); else the
+  // kind/Component name (docker-style panes + legacy callers route to
+  // primary). `panel: panelType` still keys nav[panelType] inside
+  // multi-panel Components (files). No-op under single-pane configs.
+  const target = route.hasInstance(id) ? id : compName;
+  api.dispatchMsg(api.wrap(target, { ...msg, panel: panelType }));
 }
 
 /** Get selection index for a panel type (default 0). */

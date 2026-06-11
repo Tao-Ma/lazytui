@@ -44,7 +44,8 @@ function getFilter(panelType) {
   // v0.6.3 post-arch-arc — accepts paneId or panel-type; mnav indexes
   // by panel-type for multi-panel Components (files: { files, file-browser }).
   const typeKey = route.paneTypeOf(panelType) || panelType;
-  const entry = mnav.entryOf(route.getInstanceSlice(compName), typeKey);
+  // v0.6.4 Theme A Phase 5 — per-pane slice (panelType may be a paneId).
+  const entry = mnav.entryOf(route.sliceForPane(panelType, compName), typeKey);
   return (entry && entry.filter) || '';
 }
 
@@ -502,7 +503,7 @@ const { componentForPanel: getComponentOwningPanel, getFocus } = route;
 // slice-read primitive every reader uses. See `panel/route.js` for
 // the data model.
 const {
-  setInstance, getInstance, getInstanceSlice, setInstanceSlice,
+  setInstance, getInstance, getInstanceSlice, sliceForPane, setInstanceSlice,
   hasInstance, disposeInstance, instanceKind, eachInstance,
 } = route;
 
@@ -564,14 +565,16 @@ function getItems(panelType) {
   const def = getPanelDef(panelType);
   if (!def || typeof def.getItems !== 'function') return [];
   const compName = route.componentForPanel(panelType);
-  const raw = def.getItems(getInstanceSlice(compName));
+  // v0.6.4 Theme A Phase 5 — per-pane slice (panelType may be a paneId).
+  const slice = sliceForPane(panelType, compName);
+  const raw = def.getItems(slice);
   if (!def.filterable) return raw;
   if (def.customFilter) return raw;
   const mnav = require('../leaves/nav');
   // v0.6.3 post-arch-arc — translate paneId → panel-type for the
   // nav lookup (multi-panel files Component keys slice.nav by type).
   const typeKey = route.paneTypeOf(panelType) || panelType;
-  const navEntry = mnav.entryOf(getInstanceSlice(compName), typeKey);
+  const navEntry = mnav.entryOf(slice, typeKey);
   const filterText = (navEntry && navEntry.filter) || '';
   if (!filterText) return raw;
   const lc = filterText.toLowerCase();
@@ -743,7 +746,7 @@ module.exports = {
   _components: _componentsMap,  // v0.6.3 Phase B — internal use by initState
   getComponent, getComponentOwningPanel, getFocus,
   // Tab-instance registry surface.
-  setInstance, getInstance, getInstanceSlice, setInstanceSlice,
+  setInstance, getInstance, getInstanceSlice, sliceForPane, setInstanceSlice,
   hasInstance, disposeInstance, instanceKind, eachInstance,
   getPanelDef, getItems, idOf, selectedOrFocused,
   refreshAll, cleanupComponents,

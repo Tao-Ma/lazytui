@@ -81,9 +81,11 @@ function _handleWheel(mx, my, delta) {
 
     const def = getPanelDef(p.type);
     if (def && typeof def.getItems === 'function') {
-      const items = getItems(p.type);
+      // v0.6.4 Theme A Phase 5 — items + cursor for THIS pane (p.paneId),
+      // so wheel-over a same-kind pane reads/moves its own selection.
+      const items = getItems(p.paneId);
       if (!items.length) return false;
-      const sel = getSel(p.type);
+      const sel = getSel(p.paneId);
       const next = Math.max(0, Math.min(items.length - 1, sel + delta));
       if (next === sel) return false;
       // Focused-panel wheel: full nav cascade (cursor + auto-yank-or-
@@ -97,11 +99,11 @@ function _handleWheel(mx, my, delta) {
       // v0.6.3 B3 — getFocus() is a paneId; tolerant compare via paneMatchesFocus
       // so wheel-over-focused-pane still hits the full-cascade navSelect path.
       if (mpane.paneMatchesFocus(p, getFocus())) {
-        navSelect(p.type, next);
+        navSelect(p.paneId, next);
       } else if (p.type === 'groups') {
         selectGroup(next);
       } else {
-        setSel(p.type, next);
+        setSel(p.paneId, next);
       }
       return true;
     }
@@ -571,17 +573,21 @@ function handleMouse(kind, x, y) {
     if (itemRow >= 0) {
       const def = getPanelDef(p.type);
       if (def && typeof def.getItems === 'function') {
-        const idx = itemRow + getScroll(p.type);
-        if (idx < getItems(p.type).length) navIdx = idx;
+        // v0.6.4 Theme A Phase 5 — scroll + items for THIS pane (p.paneId).
+        const idx = itemRow + getScroll(p.paneId);
+        if (idx < getItems(p.paneId).length) navIdx = idx;
       }
     }
-    dispatchMsg(wrap('layout', { type: 'focus_set', focus: p.type, skipInfo: navIdx >= 0 }));
+    // v0.6.4 Theme A Phase 5 — focus THIS pane by paneId (paneMatchesFocus
+    // compares paneId), so clicking a same-kind pane focuses the one
+    // clicked, not the kind's primary. No-op under single-pane configs.
+    dispatchMsg(wrap('layout', { type: 'focus_set', focus: p.paneId, skipInfo: navIdx >= 0 }));
     if (navIdx >= 0) {
       // v0.6.2 — single navSelect path. Sets cursor, fires the
       // auto-yank-or-show_info cascade, and runs groups_selected
       // cascade for groups. Replaces the prior setSel/selectGroup
       // split that left non-groups clicks without auto-yank parity.
-      navSelect(p.type, navIdx);
+      navSelect(p.paneId, navIdx);
     }
     mutated = true;
     break;

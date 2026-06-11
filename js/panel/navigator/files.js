@@ -272,10 +272,13 @@ function _copyOptionsFor(item, panelType) {
 function _renderFor(panel, w, h, slice, panelType, hardcoded, opts) {
   const items = _itemsFor(slice, panelType, hardcoded);
   const innerW = w - 2;
-  const sel = getSel(panelType);
-  // v0.6.3 B3 — getFocus() is a paneId; the renderer is called per-type
-  // so compare via the route table (paneId → kind name).
-  const isFocused = route.instanceKind(getFocus()) === panelType;
+  // v0.6.4 Theme A Phase 5 — per-pane nav reads (panel.paneId) + per-pane
+  // focus (opts.focused). The per-pane `slice` (Unit 1) already carries
+  // this pane's browser state; cursor/scroll/multiSel now key off paneId
+  // too. (files' internal filter routing + async loadDir keying stay
+  // panelType-shaped — that's the Unit 3 collapse, deferred to Arc 2.)
+  const sel = getSel(panel.paneId);
+  const isFocused = !!(opts && opts.focused);
   const t = theme();
   const source = _source(panelType, hardcoded);
   const lines = items.map((it, i) => {
@@ -287,7 +290,7 @@ function _renderFor(panel, w, h, slice, panelType, hardcoded, opts) {
     else if (it.kind === 'declared') marker = source === 'both' ? '★ ' : '  ';
     else                              marker = '  ';
     const sizeStr = (it.kind === 'file' || it.kind === 'symlink') ? _formatSize(it.size || 0) : '';
-    const ms = it.kind === 'loading' ? ' ' : (isMultiSel(panelType, it.path) ? '*' : ' ');
+    const ms = it.kind === 'loading' ? ' ' : (isMultiSel(panel.paneId, it.path) ? '*' : ' ');
     const nameMax = Math.max(4, innerW - marker.length - sizeStr.length - 4);
     let name = it.name;
     if (name.length > nameMax) name = name.slice(0, nameMax - 1) + '…';
@@ -301,7 +304,7 @@ function _renderFor(panel, w, h, slice, panelType, hardcoded, opts) {
     return row;
   });
 
-  const filterText = getFilter(panelType);
+  const filterText = getFilter(panel.paneId);
   let title = panel.title;
   if (filterText) title += ` /${esc(filterText)}`;
   if (source === 'both') title += ' [dim]\\[both][/]';
@@ -316,7 +319,7 @@ function _renderFor(panel, w, h, slice, panelType, hardcoded, opts) {
     panelType,
     focused: isFocused,
     count: items.length ? [sel + 1, items.length] : null,
-    scrollOffset: getScroll(panelType),
+    scrollOffset: getScroll(panel.paneId),
     chrome: opts && opts.chrome,
   });
 }

@@ -24,7 +24,7 @@
 const { getTabInfo, isTerminalTab, activeContentTab } = require('./tabs');
 const {
   renderPanel,
-  getInstanceSlice, getFocus, getPanelDef, getItems, wrap, instanceKind,
+  getInstanceSlice, getFocus, getPanelDef, getItems, wrap,
 } = require('../api');
 const ms = require('../../leaves/search');
 const pt = require('../../leaves/pane-tabs');
@@ -1074,7 +1074,13 @@ function render(panel, w, h, slice, opts) {
   const innerH = h - 2;
   const dp = mpool.findDetailPane(getInstanceSlice('layout').arrange);
   const hotkey = dp ? dp.hotkey : '';
-  const isFocused = instanceKind(getFocus()) === 'detail' || m.modes.terminalMode;
+  // v0.6.4 Theme A Phase 5 — per-pane focus (opts.focused, from
+  // paneMatchesFocus). terminalMode keeps the viewer lit while a terminal
+  // tab is live regardless of focus. (Deeper multi-viewer plumbing —
+  // findDetailPane / the hardcoded 'detail' write below — stays singleton
+  // until a dedicated multi-viewer arc; resolveTarget already anticipates
+  // it.) No-op under single-pane configs.
+  const isFocused = !!(opts && opts.focused) || m.modes.terminalMode;
   const chrome = opts && opts.chrome;
   if (isTerminalTab()) {
     return renderPanel({
