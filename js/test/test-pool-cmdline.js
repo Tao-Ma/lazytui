@@ -78,13 +78,42 @@ describe('[pool_hide] removes placement, pool entry stays', () => {
     eq(next.arrange.columns[1].panels.map(p => p.id), ['actions', 'detail']);
     assert(next.dirty);
   });
-  it('refuses to hide detail (layout invariant)', () => {
+  it('refuses to hide the LAST detail (layout invariant)', () => {
     const slice = buildSlice({
       left:  [['groups', 'groups']],
       right: [['actions', 'actions'], ['detail', 'detail']],
     });
     const next = update({ type: 'pool_hide', id: 'detail' }, slice);
     eq(next, slice, 'no-op: same slice reference returned');
+  });
+  it('v0.6.4 — hides one of TWO detail panes; refuses the survivor (orphan guard)', () => {
+    const slice = buildSlice({
+      left:  [['groups', 'groups']],
+      right: [['actions', 'actions'], ['detail', 'detail'], ['detail2', 'detail']],
+    });
+    eq(mpool.detailPaneCount(slice.arrange), 2, 'precondition: two detail panes');
+    // Hiding one is allowed (another viewer remains).
+    const afterFirst = update({ type: 'pool_hide', id: 'detail2' }, slice);
+    assert(afterFirst !== slice && afterFirst.dirty, 'first detail hidden (slice changed)');
+    eq(mpool.detailPaneCount(afterFirst.arrange), 1, 'one detail remains');
+    // Now the survivor is the last one → refused.
+    const afterSecond = update({ type: 'pool_hide', id: 'detail' }, afterFirst);
+    eq(afterSecond, afterFirst, 'no-op: the last viewer can`t be hidden');
+  });
+  it('v0.6.4 — panelListItems marks detail essential only when it`s the last one', () => {
+    const two = buildSlice({
+      left:  [['groups', 'groups']],
+      right: [['actions', 'actions'], ['detail', 'detail'], ['detail2', 'detail']],
+    });
+    const itemsTwo = mpool.panelListItems(two.arrange);
+    const d2 = itemsTwo.find(i => i.id === 'detail');
+    eq(d2.status, 'placed', 'with two viewers a detail is an ordinary (hideable) placed entry');
+    const one = buildSlice({
+      left:  [['groups', 'groups']],
+      right: [['actions', 'actions'], ['detail', 'detail']],
+    });
+    const d1 = mpool.panelListItems(one.arrange).find(i => i.id === 'detail');
+    eq(d1.status, 'essential', 'the sole viewer is essential (unhideable)');
   });
   it('no-op on unknown id', () => {
     const slice = buildSlice({
@@ -115,16 +144,16 @@ describe('[pool_hide] removes placement, pool entry stays', () => {
 });
 
 describe('[pool_show] inserts placement from pool entry', () => {
-  it('shows a hidden pool entry on the right column INSERTED BEFORE detail', () => {
-    // Right column convention: detail stays at the end. pool_show
-    // inserts before detail (matches moveColumn behavior).
+  it('shows a hidden pool entry appended at the right column tail (v0.6.4 — no detail clamp)', () => {
+    // v0.6.4: detail is an ordinary pane, so pool_show appends at the
+    // tail (the old "insert before detail" clamp is gone).
     const slice = buildSlice({
       left:   [['groups', 'groups']],
       right:  [['actions', 'actions'], ['detail', 'detail']],
       hidden: [['notes', 'viewer']],
     });
     const next = update({ type: 'pool_show', id: 'notes' }, slice);
-    eq(mpool.placedIds(next.arrange), ['groups', 'actions', 'notes', 'detail']);
+    eq(mpool.placedIds(next.arrange), ['groups', 'actions', 'detail', 'notes']);
     eq(mpool.hiddenIds(next.arrange), []);
     assert(next.dirty);
   });
@@ -145,12 +174,12 @@ describe('[pool_show] inserts placement from pool entry', () => {
       hidden: [['notes', 'viewer']],
     });
     const next = update({ type: 'pool_show', id: 'notes' }, slice);
-    // Last column rekey runs through mfc.reassignHotkeys so actions
-    // keeps its '0' anchor and detail keeps its 'o' anchor. Notes
-    // (the new pane) takes whichever positional slot the leaf assigns
-    // — here position 1 in the last column → pool slot '8'.
+    // Last column rekey runs through mfc.reassignHotkeys so actions keeps
+    // its '0' anchor and detail keeps its 'o' anchor. v0.6.4: notes is now
+    // appended AFTER detail (no detail-at-end clamp) and takes the next
+    // positional pool slot.
     eq(next.arrange.columns[1].panels.map(p => [p.id, p.hotkey]),
-       [['actions', '0'], ['notes', '8'], ['detail', 'o']]);
+       [['actions', '0'], ['detail', 'o'], ['notes', '9']]);
   });
   it('no-op when already placed', () => {
     const slice = buildSlice({
@@ -168,14 +197,16 @@ describe('[pool_show] inserts placement from pool entry', () => {
     const next = update({ type: 'pool_show', id: 'ghost' }, slice);
     eq(next, slice);
   });
-  it('refuses to place a second detail panel', () => {
+  it('places a second detail panel (v0.6.4 multi-viewer — no longer refused)', () => {
     const slice = buildSlice({
       left:   [['groups', 'groups']],
       right:  [['actions', 'actions'], ['detail', 'detail']],
       hidden: [['detail2', 'detail']],
     });
     const next = update({ type: 'pool_show', id: 'detail2' }, slice);
-    eq(next, slice);
+    assert(next !== slice && next.dirty, 'placed (slice changed + dirty)');
+    assert(mpool.placedIds(next.arrange).includes('detail2'), 'detail2 is now placed');
+    eq(mpool.detailPaneCount(next.arrange), 2, 'two detail panes now placed');
   });
   it('refuses to place a second actions panel', () => {
     const slice = buildSlice({

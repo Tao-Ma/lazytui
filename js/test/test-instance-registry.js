@@ -260,4 +260,59 @@ describe('[v0.6.4 Theme A Phase 5] per-pane nav READS', () => {
   });
 });
 
+// v0.6.4 multi-viewer — two `detail` (viewer) instances are independent.
+// Drives the REAL viewer Component (init/update) rather than a stub, so
+// the Phase-0 keystone (slice.paneId self-identity + per-pane writes) and
+// Phase-1 scroll dispatch are both exercised.
+describe('[v0.6.4 multi-viewer] two detail instances scroll independently', () => {
+  const viewer = require('../panel/viewer/viewer');
+
+  function setupTwoViewers() {
+    resetRegistry();
+    // Mint two viewer instances the way state.js does: init(paneId).
+    route.setInstance('pane-left',  'detail', viewer._init('pane-left'));
+    route.setInstance('pane-right', 'detail', viewer._init('pane-right'));
+    // Seed each with content + a viewport so viewer_scroll has room.
+    route.setInstanceSlice('pane-left',  { ...route.getInstanceSlice('pane-left'),
+      lines: Array.from({ length: 50 }, (_, i) => `L${i}`), innerH: 10 });
+    route.setInstanceSlice('pane-right', { ...route.getInstanceSlice('pane-right'),
+      lines: Array.from({ length: 50 }, (_, i) => `R${i}`), innerH: 10 });
+  }
+
+  it('each instance self-identifies (Phase 0 keystone)', () => {
+    setupTwoViewers();
+    eq(route.getInstanceSlice('pane-left').paneId,  'pane-left');
+    eq(route.getInstanceSlice('pane-right').paneId, 'pane-right');
+  });
+
+  it('viewer_scroll routed to one pane leaves the other at 0', () => {
+    setupTwoViewers();
+    // Dispatch through the wrapped-Msg path, addressed by paneId.
+    api.dispatchMsg(route.wrap('pane-left', { type: 'viewer_scroll', delta: 5 }));
+    eq(route.getInstanceSlice('pane-left').scroll, 5, 'left scrolled');
+    eq(route.getInstanceSlice('pane-right').scroll, 0, 'right untouched');
+    // And the reverse — right scrolls without disturbing left.
+    api.dispatchMsg(route.wrap('pane-right', { type: 'viewer_scroll', delta: 3 }));
+    eq(route.getInstanceSlice('pane-right').scroll, 3, 'right scrolled');
+    eq(route.getInstanceSlice('pane-left').scroll, 5, 'left still at its own offset');
+  });
+
+  it('detailTitle writes tabBounds to the rendering pane`s OWN slice', () => {
+    setupTwoViewers();
+    // render() threads panel.paneId → detailTitle writes via slice.paneId,
+    // not the hardcoded primary. Render pane-right; pane-left`s tabBounds
+    // must not be the write target.
+    const paneRight = { paneId: 'pane-right', type: 'detail', hotkey: 'o', tabs: [] };
+    viewer._update;  // (no-op ref to keep the Component loaded)
+    // Invoke the panel def render the way paint.js does.
+    viewer.panelTypes.detail.render(paneRight, 40, 12, route.getInstanceSlice('pane-right'), { focused: true });
+    const right = route.getInstanceSlice('pane-right');
+    assert(Array.isArray(right.tabBounds), 'pane-right got its tabBounds written');
+    // pane-left was never rendered → no tabBounds clobber from pane-right.
+    const left = route.getInstanceSlice('pane-left');
+    assert(left.tabBounds === undefined || left.tabBounds.length === 0,
+      'pane-left tabBounds untouched by pane-right render');
+  });
+});
+
 report();

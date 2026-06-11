@@ -332,7 +332,7 @@ describe('layout invariants — detail / actions placement', () => {
   actions:    { type: actions,    title: A }
   detail:     { type: detail,     title: D }
 `;
-  it('detail outside the last column is rejected', () => {
+  it('detail outside the last column is now accepted (v0.6.4 multi-viewer)', () => {
     const p = tmpYaml(
       `groups:
   g: { label: G, actions: { a: { cmd: 'echo', label: A } } }
@@ -344,9 +344,10 @@ ${POOL_BLOCK}layout:
     - panels:
         - actions
 `);
-    expectThrow(/'detail' must be in the last column/, () => parse(p));
+    const cfg = parse(p);
+    assert(cfg.layout && cfg.layout.columns, 'parses with detail in a non-last column');
   });
-  it('detail not as the last cell in the last column is rejected', () => {
+  it('detail not as the last cell in its column is now accepted (v0.6.4 multi-viewer)', () => {
     const p = tmpYaml(
       `groups:
   g: { label: G, actions: { a: { cmd: 'echo', label: A } } }
@@ -358,7 +359,8 @@ ${POOL_BLOCK}layout:
         - detail
         - actions
 `);
-    expectThrow(/'detail' must be in the last pane of the last column/, () => parse(p));
+    const cfg = parse(p);
+    assert(cfg.layout && cfg.layout.columns, 'parses with detail not the last cell');
   });
   it('actions outside the last column is rejected', () => {
     const p = tmpYaml(

@@ -430,7 +430,15 @@ function renderHalf(model) {
   const availH = ROWS - 1;
   const focusedPanel = allPanels().find(p => mpane.paneMatchesFocus(p, layoutSlice.focus));
   if (!focusedPanel) return renderNormal(model);
-  const detailPanel = mpool.findDetailPane(layoutSlice.arrange);
+  // v0.6.4 multi-viewer — pair the right half with the MAJOR viewer
+  // (resolveViewerPaneId: focus-first → sticky lastViewerTab), not
+  // findDetailPane (first-found). When the focused pane is itself a
+  // viewer, focus-first resolves it → that viewer goes right and the
+  // left falls to halfLeftPanel below. No-op for a single viewer.
+  const detailPaneId = _route().resolveViewerPaneId();
+  const detailPanel = detailPaneId
+    ? allPanels().find(p => p.paneId === detailPaneId) || null
+    : null;
   let leftPanel = focusedPanel;
   if (mpool.isDetailPane(focusedPanel)) {
     const all = allPanels();

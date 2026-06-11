@@ -161,8 +161,15 @@ function _moveCursor(slice, dline, dcol) {
 
 // --- init ---
 
-function init() {
+function init(paneId) {
   return {
+    // v0.6.4 multi-viewer — the placed pane this slice belongs to (mirrors
+    // the files/docker Arc-2 self-identity pattern). state.js mints one
+    // instance per placed detail pane via comp.init(paneId); the slice
+    // carries its own paneId so detailTitle's tabBounds write + every
+    // dispatch lands on THIS pane, not the kind primary. null for the
+    // register-time singleton fallback (resolves to 'detail').
+    paneId: paneId || null,
     lines: [],
     scroll: 0,
     tab: 0,
@@ -416,7 +423,13 @@ function _updateInner(msg, slice) {
   // arm reads currentGroup + targetKey from msg (threaded by
   // dispatchers via pt.modelBundle / pt.resolveTabKey).
   const tabResult = pt.reduceTabMsg(msg, slice, {
-    paneId: 'detail',
+    // v0.6.4 multi-viewer — focus side-effects (add-content-tab /
+    // add-terminal / tab_list pick) must focus THIS pane, not the
+    // hardcoded 'detail' kind (which focus_set resolves to the PRIMARY
+    // viewer — stealing focus from a focused second viewer and stranding
+    // its async content-tab load on "Loading…" forever). slice.paneId is
+    // stamped by init(paneId); fall back to 'detail' for the singleton.
+    paneId: slice.paneId || 'detail',
     wrap,
     getTabInfo,
     activeContentTab,
@@ -1032,11 +1045,11 @@ function _updateInner(msg, slice) {
 
 // --- panel renderer (reads the slice directly) ---
 
-function detailTitle(slice) {
+function detailTitle(slice, hotkey) {
   const tabInfo = getTabInfo();
-  const layoutSlice = getInstanceSlice('layout');
-  const dp = layoutSlice ? mpool.findDetailPane(layoutSlice.arrange) : null;
-  const hotkey = dp ? dp.hotkey : '';
+  // v0.6.4 multi-viewer — hotkey comes from the rendering pane (threaded
+  // by render via panel.hotkey), not findDetailPane (which returns the
+  // FIRST detail and would mislabel a second viewer).
   // Running indicator (Phase 4.4) — set of action keys whose
   // stream-routed job is alive in the current group. buildTabStrip
   // prefixes those tab labels with a `●` glyph.
@@ -1068,27 +1081,30 @@ function detailTitle(slice) {
   // shape matches the rest of the codebase.
   const nextTabBounds = built ? built.tabBounds : [];
   const route = require('../../panel/route');
-  route.setInstanceSlice('detail', { ...slice, tabBounds: nextTabBounds });
+  // v0.6.4 multi-viewer — write the hit-test cache back to THIS pane's own
+  // slice (slice.paneId), not the hardcoded 'detail' primary, so two
+  // viewers don't clobber each other's tab-strip bounds. Falls back to
+  // 'detail' for the singleton/register-time slice (paneId null).
+  route.setInstanceSlice(slice.paneId || 'detail', { ...slice, tabBounds: nextTabBounds });
   return built ? built.title : 'Detail';
 }
 
 function render(panel, w, h, slice, opts) {
   const m = getModel();
   const innerH = h - 2;
-  const dp = mpool.findDetailPane(getInstanceSlice('layout').arrange);
-  const hotkey = dp ? dp.hotkey : '';
+  // v0.6.4 multi-viewer — hotkey from the pane being rendered (panel.hotkey),
+  // not findDetailPane (first-detail). Threaded into detailTitle so the
+  // tab strip labels THIS viewer's hotkey.
+  const hotkey = panel ? panel.hotkey : '';
   // v0.6.4 Theme A Phase 5 — per-pane focus (opts.focused, from
   // paneMatchesFocus). terminalMode keeps the viewer lit while a terminal
-  // tab is live regardless of focus. (Deeper multi-viewer plumbing —
-  // findDetailPane / the hardcoded 'detail' write below — stays singleton
-  // until a dedicated multi-viewer arc; resolveTarget already anticipates
-  // it.) No-op under single-pane configs.
+  // tab is live regardless of focus. No-op under single-pane configs.
   const isFocused = !!(opts && opts.focused) || m.modes.terminalMode;
   const chrome = opts && opts.chrome;
   if (isTerminalTab()) {
     return renderPanel({
       width: w, height: h, lines: [],
-      title: detailTitle(slice), hotkey,
+      title: detailTitle(slice, hotkey), hotkey,
       panelType: 'detail',
       focused: isFocused,
       chrome,
@@ -1114,7 +1130,7 @@ function render(panel, w, h, slice, opts) {
   }
   return renderPanel({
     width: w, height: h, lines,
-    title: detailTitle(slice), hotkey,
+    title: detailTitle(slice, hotkey), hotkey,
     panelType: 'detail',
     focused: isFocused,
     count,

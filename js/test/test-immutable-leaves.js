@@ -297,9 +297,11 @@ describe('[immutable] leaves/free-config.js', () => {
     );
     eq(out.arrange.columns[0].panels.length, 1, 'first column lost a panel');
     eq(out.arrange.columns[1].panels.length, 3, 'last column gained a panel');
-    // 'a' inserts before detail; new last order: a, detail, actions
-    eq(out.arrange.columns[1].panels[0].type, 'a');
-    eq(out.arrange.columns[1].panels[0].columnIndex, 1);
+    // v0.6.4 — 'a' appends at the tail (no detail-stays-at-end clamp):
+    // new last order: detail, actions, a
+    eq(out.arrange.columns[1].panels[2].type, 'a');
+    eq(out.arrange.columns[1].panels[2].columnIndex, 1);
+    eq(out.arrange.columns[1].panels[0].type, 'detail', 'detail unchanged at head');
     assert(out.dirty === true);
   });
 

@@ -1,0 +1,61 @@
+# lazytui demo — dual-viewer (multi-viewer showcase, v0.6.4).
+#
+# TWO independent `detail` (viewer) panes open side by side, fed from one
+# file browser. Open a file into the LEFT viewer, focus the RIGHT one
+# (l / click its border), open a second file into it — now you're reading
+# two files at once and can scroll, search, and tab each independently.
+#
+# This is the v0.6.4 multi-viewer capability: the "one detail pane" ceiling
+# is gone. Content always routes to the *focused* viewer (the "major"
+# viewer); focus the other to send the next file there. Each viewer owns
+# its own scroll / search / selection / tab strip.
+#
+# It browses the lazytui repo itself (root js/), so it's runnable as-is.
+# Generalize by repointing `root`, or add a third viewer column — the
+# parser accepts any number of detail panes (each must be the sole tab in
+# its pane).
+#
+# Run:
+#   cd demo/dual-viewer && ./run        # or: ./run --list  (headless)
+#   node js/app/tui.js demo/dual-viewer/tui.yml   # equivalent, from repo root
+#
+# This same config is the fixture driven by the smoke scenario
+# js/test/smoke/dual-viewer.js — keep them in sync.
+
+project_dir: ../..
+theme: monokai
+
+groups:
+  browse:
+    label: Dual viewer
+    containers: []
+    actions:
+      wc:
+        label: word-count file
+        desc: Count lines/words/bytes of the selected file into the focused viewer.
+        type: run
+        script: wc "$1"
+
+panels:
+  src:
+    type: files
+    title: Files (js/)
+    source: filesystem
+    root: js
+  left:
+    type: detail
+    title: Left preview
+  right:
+    type: detail
+    title: Right preview
+
+layout:
+  columns:
+    - width: 30
+      panels:
+        - src
+    - width: 35
+      panels:
+        - { tabs: [left], height: 60% }
+    - panels:
+        - { tabs: [right], height: 60% }

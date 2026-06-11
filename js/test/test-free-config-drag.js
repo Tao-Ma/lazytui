@@ -92,7 +92,7 @@ describe('[1] pointToDropTarget — 3-zone hit-test', () => {
   it('middle third of containers → swap with containers', () => {
     // y=5 inside mid zone [3,7)
     eq(JSON.stringify(pointToDropTarget('stats', 5, 5)),
-       JSON.stringify({ kind: 'swap', columnIndex: 0, index: 0, occupantType: 'containers', valid: true }));
+       JSON.stringify({ kind: 'swap', columnIndex: 0, index: 0, occupantType: 'containers', occupantPaneId: 'containers', valid: true }));
   });
 
   it('bottom third of containers → insert at left:1 (between containers and groups)', () => {
@@ -110,7 +110,7 @@ describe('[1] pointToDropTarget — 3-zone hit-test', () => {
   it('middle third of groups → swap with groups', () => {
     // y=14 inside groups mid zone [13,17)
     eq(JSON.stringify(pointToDropTarget('stats', 5, 14)),
-       JSON.stringify({ kind: 'swap', columnIndex: 0, index: 1, occupantType: 'groups', valid: true }));
+       JSON.stringify({ kind: 'swap', columnIndex: 0, index: 1, occupantType: 'groups', occupantPaneId: 'groups', valid: true }));
   });
 
   it('top third of actions → insert at right:0', () => {
@@ -119,11 +119,12 @@ describe('[1] pointToDropTarget — 3-zone hit-test', () => {
        JSON.stringify({ kind: 'insert', columnIndex: 1, index: 0, valid: true }));
   });
 
-  it('bottom third of detail → CLAMPED to insert at right:2 (detail stays at end)', () => {
-    // y=35 inside detail bot zone [32,40); insert-after-detail (idx 3) clamped to 2.
-    // Clamp also carries a reason — the footer surfaces it to the user.
+  it('bottom third of detail → insert AFTER detail (v0.6.4 — no detail-end clamp)', () => {
+    // y=35 inside detail bot zone [32,40); insert-after-detail (idx 3).
+    // Pre-v0.6.4 this was clamped to idx 2 to keep detail last; detail is
+    // now an ordinary pane, so the drop lands after it.
     eq(JSON.stringify(pointToDropTarget('containers', 50, 35)),
-       JSON.stringify({ kind: 'insert', columnIndex: 1, index: 2, valid: true, clamp: 'detail stays at end' }));
+       JSON.stringify({ kind: 'insert', columnIndex: 1, index: 3, valid: true }));
   });
 
   it('top third of detail → insert at right:2 (before detail)', () => {
@@ -132,27 +133,26 @@ describe('[1] pointToDropTarget — 3-zone hit-test', () => {
        JSON.stringify({ kind: 'insert', columnIndex: 1, index: 2, valid: true }));
   });
 
-  it('middle third of detail → swap with detail BLOCKED (detail must stay at end)', () => {
-    // y=27 inside detail mid zone [23,32)
+  it('middle third of detail → swap with detail is now VALID (v0.6.4)', () => {
+    // y=27 inside detail mid zone [23,32). Pre-v0.6.4 this was blocked
+    // ("detail must stay at end"); detail swaps like any pane now.
     const t = pointToDropTarget('containers', 50, 27);
     eq(t.kind, 'swap');
     eq(t.occupantType, 'detail');
-    eq(t.valid, false);
-    assert(t.reason.includes('detail'), `reason mentions detail (got "${t.reason}")`);
+    eq(t.valid, true);
   });
 
   it('middle third of stats → swap with stats (containers ↔ stats cross-column)', () => {
     // y=10 inside stats mid zone [8,12)
     eq(JSON.stringify(pointToDropTarget('containers', 50, 10)),
-       JSON.stringify({ kind: 'swap', columnIndex: 1, index: 1, occupantType: 'stats', valid: true }));
+       JSON.stringify({ kind: 'swap', columnIndex: 1, index: 1, occupantType: 'stats', occupantPaneId: 'stats', valid: true }));
   });
 
-  it('detail panel into left column → blocked (invalid insert)', () => {
+  it('detail panel into left column → now VALID (v0.6.4 — position is free)', () => {
     const t = pointToDropTarget('detail', 5, 1);
     eq(t.kind, 'insert');
     eq(t.columnIndex, 0);
-    eq(t.valid, false);
-    assert(t.reason.includes('detail'), `reason mentions detail (got "${t.reason}")`);
+    eq(t.valid, true);
   });
 
   it('actions panel into left column → blocked (invalid insert)', () => {
@@ -250,22 +250,26 @@ describe('[2] onMouseEvent — state machine transitions', () => {
 
   it('release on invalid target → snap back, no mutation, no dirty', () => {
     setupFixture();
-    // Try to drag detail into left column — blocked
-    onMouseEvent('press',   50, 20);  // press inside detail
-    onMouseEvent('motion',   5, 2);
-    onMouseEvent('release',  5, 2);
+    // Drag ACTIONS into the left column — still blocked (actions stays in
+    // the last column; detail moves freely now, so actions is the test
+    // case for a genuinely-refused move).
+    onMouseEvent('press',   50, 2);   // press inside actions (right col)
+    onMouseEvent('motion',   5, 5);   // containers mid zone (left col)
+    onMouseEvent('release',  5, 5);
     eq(_getDragState(), null);
     eq(getInstanceSlice('layout').dirty, false);
-    eq(getInstanceSlice("layout").arrange.columns[1].panels[2].type, 'detail', 'detail still in right column');
+    eq(getInstanceSlice("layout").arrange.columns[1].panels[0].type, 'actions', 'actions still in right column');
   });
 
-  it('release at the right-edge zone is refused (would push detail off last)', () => {
+  it('release far off-screen → no drop target, no mutation', () => {
     setupFixture();
     onMouseEvent('press',   5, 2);
-    onMouseEvent('motion', 200, 200);  // mx past COLS - EDGE_W → right-edge zone, refused
+    onMouseEvent('motion', 200, 200);  // off the layout entirely → no zone, no cell hit
     onMouseEvent('release', 200, 200);
-    // Invalid drop → mouseRelease skips applyDrop; layout unchanged.
-    eq(getInstanceSlice('layout').dirty, false, 'invalid drop → no mutation');
+    // No valid target → mouseRelease skips applyDrop; layout unchanged.
+    // (There is no right-edge new-column zone — newColumnZoneAt only
+    // matches the left edge + inter-column gaps.)
+    eq(getInstanceSlice('layout').dirty, false, 'no target → no mutation');
     eq(getInstanceSlice("layout").arrange.columns[0].panels[0].type, 'containers');
     eq(getInstanceSlice("layout").arrange.columns.length, 2, 'still 2 columns');
   });
@@ -339,17 +343,18 @@ describe('[4] swap — middle-zone drag', () => {
     eq(getInstanceSlice('layout').dirty, true);
   });
 
-  it('swap with detail is blocked → no mutation', () => {
+  it('swap with detail is now allowed → stats ↔ detail trade slots (v0.6.4)', () => {
     setupFixture();
     // y=10 inside stats body (y=5..14); avoids the y=5 actions/stats
     // boundary which would otherwise hit-test as a resize-seam press.
     onMouseEvent('press',   50, 10);
-    onMouseEvent('motion',  50, 27);  // detail mid zone [23,32) — swap blocked
+    onMouseEvent('motion',  50, 27);  // detail mid zone [23,32) — swap now valid
     onMouseEvent('release', 50, 27);
 
-    eq(getInstanceSlice("layout").arrange.columns[1].panels[1].type, 'stats',  'stats unchanged');
-    eq(getInstanceSlice("layout").arrange.columns[1].panels[2].type, 'detail', 'detail unchanged');
-    eq(getInstanceSlice('layout').dirty, false);
+    // col1 was [actions, stats, detail]; swapping stats↔detail → [actions, detail, stats].
+    eq(getInstanceSlice("layout").arrange.columns[1].panels[1].type, 'detail', 'detail moved up into stats slot');
+    eq(getInstanceSlice("layout").arrange.columns[1].panels[2].type, 'stats',  'stats moved down into detail slot');
+    eq(getInstanceSlice('layout').dirty, true);
   });
 
   it('swap that would put actions in left column is blocked', () => {
@@ -364,9 +369,8 @@ describe('[4] swap — middle-zone drag', () => {
   });
 
   it('self-swap with detail is VALID (no-op release, no error footer)', () => {
-    // Regression for C2: validateTarget used to block detail-onto-detail
-    // swap unconditionally via "detail must stay at end", but self-swap
-    // is harmless — mouseRelease detects it and skips applyDrop.
+    // Self-swap (the dragged pane IS the occupant) is a harmless no-op —
+    // mouseRelease detects it (by paneId) and skips applyDrop.
     setupFixture();
     // detail y=15..39, h=25, third=8, mid=[23,32). y=27 is mid of detail.
     const t = pointToDropTarget('detail', 50, 27);
@@ -375,20 +379,18 @@ describe('[4] swap — middle-zone drag', () => {
     eq(t.valid, true);
   });
 
-  it('drag right-column source past detail moves it BEFORE detail', () => {
-    // Regression for C1: validateTarget double-decremented when source
-    // was in the same column before detail — splice-shift was applied
-    // twice (once in effDetail's pre-shift, once in applyInsert), leaving
-    // the source pinned at its own slot. Expected: actions moves to just
-    // before detail; result before fix was [actions, stats, detail].
+  it('drag right-column source past detail moves it AFTER detail (v0.6.4 — no clamp)', () => {
+    // Pre-v0.6.4 a drop after detail was clamped to before-detail to keep
+    // detail at the column tail. Detail is ordinary now, so actions lands
+    // after it. col1 [actions, stats, detail] → [stats, detail, actions].
     setupFixture();
     // press actions (y=2, in actions y=0..4)
     onMouseEvent('press',   50, 2);
     onMouseEvent('motion',  50, 35);  // detail bot zone [32,40)
     onMouseEvent('release', 50, 35);
     eq(getInstanceSlice("layout").arrange.columns[1].panels[0].type, 'stats',   'stats moved up');
-    eq(getInstanceSlice("layout").arrange.columns[1].panels[1].type, 'actions', 'actions moved to just before detail');
-    eq(getInstanceSlice("layout").arrange.columns[1].panels[2].type, 'detail',  'detail still at end');
+    eq(getInstanceSlice("layout").arrange.columns[1].panels[1].type, 'detail',  'detail in the middle now');
+    eq(getInstanceSlice("layout").arrange.columns[1].panels[2].type, 'actions', 'actions landed after detail');
   });
 });
 
@@ -465,9 +467,11 @@ describe('[5] computeDragPreviewArrange — what-if snapshot', () => {
 
   it('invalid target → preview is null', () => {
     setupFixture();
-    // Press detail, drag to left column → blocked.
-    onMouseEvent('press',  50, 20);
-    onMouseEvent('motion',  5,  2);
+    // Press ACTIONS, drag to left column → still blocked (actions stays in
+    // the last column). Detail moves freely now, so actions is the
+    // genuinely-refused case.
+    onMouseEvent('press',  50, 2);
+    onMouseEvent('motion',  5, 5);
     const slice = getInstanceSlice('layout');
     const preview = mfc.computeDragPreviewArrange(slice);
     eq(preview, null);
@@ -591,6 +595,61 @@ describe('[6] free_config_mouse_motion — repaint emission across zone changes'
     [slice, cmds] = motion(slice, 50, 0);  // right actions top → insert@col1:0
     eq(slice.freeConfig.drag.target.columnIndex, 1);
     eq(cmds[0] && cmds[0].type, 'force_full_repaint');
+  });
+});
+
+// ===============================================================
+// v0.6.4 multi-viewer — the drag engine must address the dragged pane by
+// paneId, not by type. With two detail panes sharing type 'detail', a
+// type-keyed lookup would always resolve the FIRST one.
+describe('[7] multi-viewer drag — source resolved by paneId, not type', () => {
+  const mfc = require('../leaves/free-config-mouse');
+  const mpool = require('../leaves/pool');
+
+  // Two detail panes (pane-d1 in col0 tail, pane-d2 in col1 tail) + a
+  // groups pane. Panes carry paneIds so the disambiguation is real.
+  const twoDetail = () => ({
+    arrange: { detailHeightPct: 60, pool: {}, columns: [
+      { width: 30, panels: [
+        { type: 'groups', id: 'g', paneId: 'pane-g', columnIndex: 0 },
+        { type: 'detail', id: 'd1', paneId: 'pane-d1', columnIndex: 0 },
+      ] },
+      { panels: [
+        { type: 'detail', id: 'd2', paneId: 'pane-d2', columnIndex: 1 },
+      ] },
+    ] },
+    dirty: false,
+    freeConfig: { drag: null, undo: [], redo: [] },
+  });
+
+  it('insert addressed by the SECOND detail`s paneId moves THAT pane', () => {
+    const s = twoDetail();
+    // Move pane-d2 (col1) into col0 at index 0. Pass srcType 'detail' +
+    // srcPaneId 'pane-d2' — the type alone is ambiguous.
+    const out = mfc.applyDrop(s, 'detail', { kind: 'insert', columnIndex: 0, index: 0 }, 'pane-d2');
+    eq(out.arrange.columns[0].panels[0].paneId, 'pane-d2', 'the dragged (second) detail moved');
+    // pane-d1 stayed in col0 (now shifted down), pane-d2 is the one that moved.
+    const col0Ids = out.arrange.columns[0].panels.map(p => p.paneId);
+    assert(col0Ids.includes('pane-d1'), 'pane-d1 still present');
+    assert(col0Ids.includes('pane-d2'), 'pane-d2 now in col0');
+  });
+
+  it('swapping the two detail panes is NOT a self-swap (different paneIds)', () => {
+    const s = twoDetail();
+    // Swap pane-d1 (source) with pane-d2 (occupant at col1:0).
+    const target = { kind: 'swap', columnIndex: 1, index: 0, occupantType: 'detail', occupantPaneId: 'pane-d2' };
+    const out = mfc.applyDrop(s, 'detail', target, 'pane-d1');
+    // They traded columns.
+    eq(out.arrange.columns[1].panels[0].paneId, 'pane-d1', 'pane-d1 moved to col1');
+    const col0Ids = out.arrange.columns[0].panels.map(p => p.paneId);
+    assert(col0Ids.includes('pane-d2'), 'pane-d2 moved to col0');
+  });
+
+  it('validateTarget treats two distinct detail panes as a real (valid) swap', () => {
+    const s = twoDetail();
+    const t = mfc.validateTarget(s, 'detail', 1,
+      { kind: 'swap', index: 0, occupantType: 'detail', occupantPaneId: 'pane-d2' }, 'pane-d1');
+    eq(t.valid, true, 'distinct-detail swap is valid (not a self-swap no-op)');
   });
 });
 

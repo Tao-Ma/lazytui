@@ -302,9 +302,9 @@ panels:
   });
 });
 
-describe('[detail invariant] exactly one detail tab anywhere; last pane of right column', () => {
+describe('[detail policy] v0.6.4 multi-viewer — ≥1 detail; detail is the sole tab in its pane; position is free', () => {
   it('zero detail tabs → ParseError', () => {
-    expectThrow(/exactly one tab of kind 'detail'/, () => parse(tmpYaml(TRIVIAL_GROUPS + `
+    expectThrow(/at least one tab of kind 'detail'/, () => parse(tmpYaml(TRIVIAL_GROUPS + `
 panels:
   g: { type: groups }
   a: { type: actions }
@@ -315,22 +315,37 @@ layout:
 `)));
   });
 
-  it('two detail tabs (split across panes) → ParseError', () => {
-    expectThrow(/exactly one tab of kind 'detail'/, () => parse(tmpYaml(TRIVIAL_GROUPS + `
+  it('two detail panes side by side (distinct columns) → OK', () => {
+    const r = parse(tmpYaml(TRIVIAL_GROUPS + `
 panels:
   g:  { type: groups }
-  a:  { type: actions }
   d1: { type: detail, title: D1 }
   d2: { type: detail, title: D2 }
 layout:
   columns:
     - { panels: [g] }
-    - { panels: [a, d1, d2] }
-`)));
+    - { panels: [d1] }
+    - { panels: [d2] }
+`));
+    eq(r.layout.columns.length, 3, 'three columns parse');
   });
 
-  it('detail tab in non-last column → ParseError', () => {
-    expectThrow(/'detail' must be in the last column/, () => parse(tmpYaml(TRIVIAL_GROUPS + `
+  it('two detail panes stacked in the same column → OK', () => {
+    const r = parse(tmpYaml(TRIVIAL_GROUPS + `
+panels:
+  g:  { type: groups }
+  d1: { type: detail, title: D1 }
+  d2: { type: detail, title: D2 }
+layout:
+  columns:
+    - { panels: [g] }
+    - { panels: [d1, d2] }
+`));
+    assert(r && r.layout && r.layout.columns, 'parses with two stacked detail panes');
+  });
+
+  it('detail in a non-last column → OK (position is free)', () => {
+    const r = parse(tmpYaml(TRIVIAL_GROUPS + `
 panels:
   g: { type: groups }
   a: { type: actions }
@@ -339,23 +354,25 @@ layout:
   columns:
     - { panels: [g, d] }
     - { panels: [a] }
-`)));
+`));
+    assert(r && r.layout && r.layout.columns, 'detail need not be in the last column');
   });
 
-  it("detail tab not in last pane of last column → ParseError", () => {
-    expectThrow(/last pane of the last column/, () => parse(tmpYaml(TRIVIAL_GROUPS + `
+  it('detail not the last pane of its column → OK (position is free)', () => {
+    const r = parse(tmpYaml(TRIVIAL_GROUPS + `
 panels:
   g: { type: groups }
-  a: { type: actions }
   d: { type: detail }
+  h: { type: history, title: History }
 layout:
   columns:
     - { panels: [g] }
-    - { panels: [d, a] }
-`)));
+    - { panels: [d, h] }
+`));
+    assert(r && r.layout && r.layout.columns, 'detail need not be the last pane');
   });
 
-  it("detail tab sharing a pane with another tab → ParseError", () => {
+  it("detail sharing a pane with another tab → ParseError (sole-tab retained)", () => {
     expectThrow(/must be the only tab in its pane/, () => parse(tmpYaml(TRIVIAL_GROUPS + `
 panels:
   g:  { type: groups }
@@ -368,6 +385,21 @@ layout:
     - panels:
         - a
         - { tabs: [d, h] }
+`)));
+  });
+
+  it("detail sharing a pane with another tab in a NON-last column → ParseError too", () => {
+    expectThrow(/must be the only tab in its pane/, () => parse(tmpYaml(TRIVIAL_GROUPS + `
+panels:
+  g:  { type: groups }
+  a:  { type: actions }
+  d:  { type: detail }
+  h:  { type: history, title: History }
+layout:
+  columns:
+    - panels:
+        - { tabs: [d, h] }
+    - { panels: [g, a] }
 `)));
   });
 });

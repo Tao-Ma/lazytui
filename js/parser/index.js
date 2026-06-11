@@ -363,28 +363,28 @@ function parseLayout(layoutData, _hasContainers, _hasFiles, userPool) {
   const tabKinds = (pane) => pane.tabs.map(t => pool.get(t.poolId).type);
   const allTabKindsByCol = columns.map(c => c.panels.flatMap(tabKinds));
   const allTabKinds = allTabKindsByCol.flat();
-  const lastCol = columns[N - 1];
-  const lastColTabKinds = allTabKindsByCol[N - 1];
 
+  // v0.6.4 multi-viewer — the parser is the sole POLICY layer for detail
+  // placement; CORE (geometry/render/routing/free-config) is now
+  // count/position-agnostic. Two motivated restrictions survive; the old
+  // "last column / last pane of last column" geometry rules are dropped.
+  //
+  // (1) At least one detail tab — there must always be a viewer to route
+  //     content/search/select to (resolveTarget would otherwise no-op).
   const detailCount = allTabKinds.filter(t => t === 'detail').length;
-  if (detailCount !== 1) {
-    throw new ParseError(`layout must have exactly one tab of kind 'detail', found ${detailCount}`);
+  if (detailCount < 1) {
+    throw new ParseError(`layout must have at least one tab of kind 'detail', found ${detailCount}`);
   }
-  // detail must live in the last column.
-  for (let ci = 0; ci < N - 1; ci++) {
-    if (allTabKindsByCol[ci].includes('detail')) {
-      throw new ParseError(`tab of kind 'detail' must be in the last column, not column ${ci}`);
+  // (2) Each detail tab must be the SOLE tab in its pane — the
+  //     tab→instance map for a multi-tab pane hosting a viewer doesn't
+  //     exist (a real implementation gap, not geometry policy). Checked
+  //     per pane across every column, not just the last.
+  for (let ci = 0; ci < N; ci++) {
+    for (const pane of columns[ci].panels) {
+      if (pane.tabs.length > 1 && tabKinds(pane).includes('detail')) {
+        throw new ParseError(`tab of kind 'detail' must be the only tab in its pane (multi-tab panes hosting detail are deferred)`);
+      }
     }
-  }
-  // detail must live in the LAST pane of the last column.
-  const lastPane = lastCol.panels[lastCol.panels.length - 1];
-  if (!lastPane || !tabKinds(lastPane).includes('detail')) {
-    throw new ParseError(`tab of kind 'detail' must be in the last pane of the last column`);
-  }
-  // detail must be the ONLY tab in its pane (multi-tab + detail deferred
-  // to v0.7).
-  if (lastPane.tabs.length > 1) {
-    throw new ParseError(`tab of kind 'detail' must be the only tab in its pane (multi-tab panes hosting detail are deferred to v0.7)`);
   }
   const actionsCount = allTabKinds.filter(t => t === 'actions').length;
   if (actionsCount > 1) {

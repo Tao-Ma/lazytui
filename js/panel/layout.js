@@ -380,12 +380,16 @@ function update(msg, slice) {
       if (!targetPaneId || !pickedId) return [slice, closeCmds];
       const targetLoc = mpool.findPaneLocation(arrange, p => p.paneId === targetPaneId);
       if (!targetLoc) return [slice, closeCmds];
-      // detail / actions can't be replaced — target's current occupant
-      // is the one getting kicked out.
-      if (mpool.isReservedPane(targetLoc.pane)) return [slice, closeCmds];
+      // actions can't be replaced; a detail occupant can be replaced only
+      // when another viewer remains (v0.6.4 multi-viewer — refuse only the
+      // last detail). Detail panes aren't pane-select targets via the UI
+      // (they carry the [≡] tab-list trigger, not pane-select), so the
+      // detail arm is largely defensive.
+      if (mpool.isActionsPane(targetLoc.pane)) return [slice, closeCmds];
+      if (mpool.isDetailPane(targetLoc.pane) && mpool.detailPaneCount(arrange) <= 1) return [slice, closeCmds];
       const pickedEntry = (arrange.pool || {})[pickedId];
       if (!pickedEntry) return [slice, closeCmds];
-      if (mpool.isDetailPane(pickedEntry)) return [slice, closeCmds];  // defensive
+      if (mpool.isDetailPane(pickedEntry)) return [slice, closeCmds];  // defensive: detail isn't a pane-select item
       const lastIdx = mpool.lastColumnIndex(arrange);
       if (mpool.isActionsPane(pickedEntry) && targetLoc.columnIndex !== lastIdx) {
         return [slice, closeCmds];
@@ -834,7 +838,10 @@ function update(msg, slice) {
       const id = msg.id;
       const entry = (arrange.pool || {})[id];
       if (!entry) return slice;
-      if (mpool.isDetailPane(entry)) return slice;
+      // v0.6.4 multi-viewer — hiding a detail pane is allowed as long as
+      // another viewer remains; refuse only when it's the LAST one (the
+      // layout must always keep a viewer to route to).
+      if (mpool.isDetailPane(entry) && mpool.detailPaneCount(arrange) <= 1) return slice;
       const loc = mpool.findPaneLocation(arrange, p => p.id === id);
       if (!loc) return slice;  // already hidden
       // Strip the pane, then reassign hotkeys across all columns via
@@ -942,8 +949,8 @@ function update(msg, slice) {
       const entry = (arrange.pool || {})[id];
       if (!entry) return slice;
       if (mpool.placedIdSet(arrange).has(id)) return slice;  // already placed
-      // Invariant guard: refuse a second detail / actions.
-      if (mpool.isDetailPane(entry)  && mpool.hasDetailPane(arrange))  return slice;
+      // v0.6.4 multi-viewer — a SECOND detail is allowed now; only actions
+      // stays capped at one.
       if (mpool.isActionsPane(entry) && mpool.hasActionsPane(arrange)) return slice;
       const N = mpool.columnCount(arrange);
       const lastIdx = N - 1;
@@ -955,29 +962,26 @@ function update(msg, slice) {
       // `:add-column` Number.isInteger check.
       if (!Number.isInteger(columnIndex)) return slice;
       if (columnIndex < 0 || columnIndex >= N) return slice;
-      // detail / actions live in the last column only. Pool-drag's
-      // validateInsert already refuses to even propose other columns
-      // for them; this is the defense-in-depth guard for any future
-      // caller that emits pool_show with a non-last columnIndex directly.
-      if (columnIndex !== lastIdx && mpool.isReservedPane(entry)) return slice;
+      // v0.6.4 multi-viewer — only ACTIONS is last-column-only. Pool-drag's
+      // validateInsert already refuses to propose other columns for it;
+      // this is the defense-in-depth guard for any caller that emits
+      // pool_show with a non-last columnIndex directly. Detail places
+      // anywhere.
+      if (columnIndex !== lastIdx && mpool.isActionsPane(entry)) return slice;
       // Column caps are SOFT — exceeded at parse time emits a warning;
       // runtime placement just allows. The renderer's MIN_PANEL_H +
       // terminal-row floor is the only physical limit.
       const target = mpool.columnPanels(arrange, columnIndex);
       const placement = mpool.placementFromPoolEntry(entry, columnIndex);
-      // Last column keeps `detail` as the last cell (convention shared
-      // with moveColumn). When `msg.index` is supplied (pool-drag drops),
-      // splice at that position — clamped to detail's slot in last column.
-      // Without `index`, append at the tail (with the same detail clamp).
-      const isLast = columnIndex === lastIdx;
-      const detailIdx = isLast ? target.findIndex(mpool.isDetailPane) : -1;
+      // v0.6.4 multi-viewer — detail is an ordinary pane: insert at the
+      // requested index (pool-drag drop) or append (no index). The old
+      // "clamp before the last-column detail" rule is gone.
       let idx;
       if (typeof msg.index === 'number') {
         idx = Math.max(0, Math.min(msg.index, target.length));
       } else {
         idx = target.length;
       }
-      if (isLast && detailIdx >= 0 && idx > detailIdx) idx = detailIdx;
       const inserted = target.slice(0, idx).concat([placement], target.slice(idx));
       // Compound ops (e.g., pool_drag replace = pool_hide + pool_show)
       // set `_skipUndo: true` on the second hop so only the first
@@ -1000,23 +1004,19 @@ function update(msg, slice) {
     }
     // v0.6.2 Phase 2 — pool drag dropping at a screen edge / column
     // gap spawns a NEW column at `position`. The pool entry becomes
-    // the new column's only pane. Detail/actions sources are refused
-    // by the validator (defense-in-depth: they're rejected again
-    // here).
+    // the new column's only pane. v0.6.4 multi-viewer — only ACTIONS is
+    // refused (detail spawns a new column freely, including a new last
+    // column); the validator enforces the same, this is defense-in-depth.
     case 'pool_show_new_column': {
       const arrange = slice.arrange;
       const id = msg.id;
       const entry = (arrange.pool || {})[id];
       if (!entry) return slice;
       if (mpool.placedIdSet(arrange).has(id)) return slice;  // already placed
-      if (mpool.isReservedPane(entry)) return slice;
+      if (mpool.isActionsPane(entry)) return slice;
       const N = mpool.columnCount(arrange);
       const position = msg.position;
       if (typeof position !== 'number' || position < 0 || position > N) return slice;
-      // Right-edge spawn (position == N) is refused — it'd push the
-      // detail-bearing last column off "last". Same rule the validator
-      // enforces at hit-test time; defense-in-depth here.
-      if (position === N) return slice;
       const placement = mpool.placementFromPoolEntry(entry, position);
       // Reuse the leaf's pure transform so live preview + commit match.
       const spawned = mpoolDrag.spawnNewColumnArrange(arrange, position, placement);

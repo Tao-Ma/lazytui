@@ -178,7 +178,7 @@ function pointToCellZone(b, my) {
  * or `{ kind:'swap', columnIndex, index, occupantType, valid, reason? }` —
  * or null when the point isn't in any column.
  */
-function pointToDropTarget(slice, srcType, mx, my, COLS) {
+function pointToDropTarget(slice, srcType, mx, my, COLS, srcPaneId) {
   // Edge/gap zones first — spawn-new-column takes precedence over the
   // in-column 3-zone hit. Users still reach in-column inserts at the
   // top/middle/bot of any pane that lives strictly INSIDE the column
@@ -189,10 +189,10 @@ function pointToDropTarget(slice, srcType, mx, my, COLS) {
   for (const r of ranges) {
     const panels = mpool.columnPanels(slice.arrange, r.columnIndex);
     const hit = matchColumn(slice, panels, mx, my);
-    if (hit !== null) return validateTarget(slice, srcType, r.columnIndex, hit);
+    if (hit !== null) return validateTarget(slice, srcType, r.columnIndex, hit, srcPaneId);
     // Empty column: cursor in its x-range with no panes → insert@0.
     if (mx >= r.x && mx < r.x + r.w && panels.length === 0) {
-      return validateTarget(slice, srcType, r.columnIndex, { kind: 'insert', index: 0 });
+      return validateTarget(slice, srcType, r.columnIndex, { kind: 'insert', index: 0 }, srcPaneId);
     }
   }
   return null;
@@ -207,13 +207,27 @@ function pointToDropTarget(slice, srcType, mx, my, COLS) {
  *      last (where detail lives) off "last" and breaking the invariant.
  *      Phase 3's `:add-column` verb may relax this with explicit UX.
  *  Future arc can relax both. */
+// v0.6.4 multi-viewer — resolve the dragged SOURCE pane. Two same-type
+// panes share `srcType`, so prefer the explicit `srcPaneId` (paneId) the
+// drag threads; fall back to srcType for legacy/test callers and fixtures
+// built without paneIds. Matches against (paneId || type) so a fixture
+// pane lacking a paneId still resolves by type.
+function _findSource(arrange, srcType, srcPaneId) {
+  // With a threaded paneId (the production drag path), match the EXACT
+  // pane — disambiguates two same-type panes. Without one (legacy/test
+  // callers that pass only srcType), match by type, which works whether
+  // or not the fixture's panes carry paneIds.
+  if (srcPaneId != null) return mpool.findPaneLocation(arrange, p => (p.paneId || p.type) === srcPaneId);
+  return mpool.findPaneLocation(arrange, p => p.type === srcType);
+}
+
 function validateNewColumn(slice, srcType, position) {
-  if (srcType === 'detail' || srcType === 'actions') {
-    return { kind: 'new_column', position, valid: false, reason: `${srcType} must stay in the last column` };
-  }
-  const N = mpool.columnCount(slice.arrange);
-  if (position === N) {
-    return { kind: 'new_column', position, valid: false, reason: `can't push detail off the last column` };
+  // v0.6.4 multi-viewer — only ACTIONS is pinned to the last column;
+  // detail spawns into a fresh column freely, and appending a new last
+  // column (position === N) is allowed (detail no longer lives there by
+  // invariant).
+  if (srcType === 'actions') {
+    return { kind: 'new_column', position, valid: false, reason: `actions must stay in the last column` };
   }
   return { kind: 'new_column', position, valid: true };
 }
@@ -229,7 +243,10 @@ function matchColumn(slice, panels, mx, my) {
     if (my < b.y + b.h) {
       const zone = pointToCellZone(b, my);
       if (zone === 'top')    return { kind: 'insert', index: i };
-      if (zone === 'middle') return { kind: 'swap',   index: i, occupantType: panels[i].type };
+      // v0.6.4 multi-viewer — carry the occupant's paneId too, so swap
+      // identity (and self-swap detection) survives two same-type panes;
+      // occupantType is kept for the detail/actions policy checks.
+      if (zone === 'middle') return { kind: 'swap', index: i, occupantType: panels[i].type, occupantPaneId: panels[i].paneId || panels[i].type };
       return { kind: 'insert', index: i + 1 };
     }
   }
@@ -237,52 +254,39 @@ function matchColumn(slice, panels, mx, my) {
   return null;
 }
 
-function validateTarget(slice, srcType, columnIndex, target) {
+function validateTarget(slice, srcType, columnIndex, target, srcPaneId) {
   const lastIdx = mpool.lastColumnIndex(slice.arrange);
+  const srcKey = srcPaneId != null ? srcPaneId : srcType;
   if (target.kind === 'swap') {
     const occType = target.occupantType;
-    const base = { kind: 'swap', columnIndex, index: target.index, occupantType: occType };
-    // Self-swap (source == occupant) is always a valid no-op — mouseRelease
-    // detects it and skips applyDrop, so nothing moves. Marking it invalid
-    // would show a misleading "✗ blocked" footer when the user releases a
-    // drag onto its own middle third (release does nothing in either case).
-    if (occType === srcType) return { ...base, valid: true };
-    const fromLoc = mpool.findPaneLocation(slice.arrange, p => p.type === srcType);
+    const base = { kind: 'swap', columnIndex, index: target.index, occupantType: occType, occupantPaneId: target.occupantPaneId };
+    // Self-swap (source IS the occupant) is a valid no-op — mouseRelease
+    // detects it and skips applyDrop. v0.6.4 multi-viewer — compared by
+    // paneId, not type: two distinct detail panes are NOT a self-swap and
+    // must be allowed to trade slots.
+    if (target.occupantPaneId != null ? target.occupantPaneId === srcKey : occType === srcType) {
+      return { ...base, valid: true };
+    }
+    const fromLoc = _findSource(slice.arrange, srcType, srcPaneId);
     const fromCol = fromLoc ? fromLoc.columnIndex : -1;
-    // Dragged panel ends up in `columnIndex` — detail/actions can't live
-    // outside the last column.
-    if (columnIndex !== lastIdx && (srcType === 'detail' || srcType === 'actions')) {
-      return { ...base, valid: false, reason: `${srcType} must stay in the last column` };
+    // v0.6.4 multi-viewer — only ACTIONS is pinned to the last column;
+    // detail swaps anywhere. Dragged actions can't leave the last column…
+    if (columnIndex !== lastIdx && srcType === 'actions') {
+      return { ...base, valid: false, reason: `actions must stay in the last column` };
     }
-    // Occupant ends up in source's column — same rule going the other way.
-    if (fromCol !== lastIdx && (occType === 'detail' || occType === 'actions')) {
-      return { ...base, valid: false, reason: `${occType} must stay in the last column` };
-    }
-    // Last column keeps detail at the end. Any swap involving detail in
-    // the last column would move it off the tail.
-    if (columnIndex === lastIdx && occType === 'detail') {
-      return { ...base, valid: false, reason: `detail must stay at end` };
-    }
-    if (fromCol === lastIdx && srcType === 'detail') {
-      return { ...base, valid: false, reason: `detail must stay at end` };
+    // …and the occupant can't be pushed out of the last column either.
+    if (fromCol !== lastIdx && occType === 'actions') {
+      return { ...base, valid: false, reason: `actions must stay in the last column` };
     }
     return { ...base, valid: true };
   }
   // insert
   const index = target.index;
-  if (columnIndex !== lastIdx && (srcType === 'detail' || srcType === 'actions')) {
-    return { kind: 'insert', columnIndex, index, valid: false, reason: `${srcType} must stay in the last column` };
-  }
-  // Last column: detail stays at the end (same convention pool_show
-  // follows). Clamp any drop AFTER detail to detail's slot — applyInsert
-  // handles the splice-shift for same-column moves, so the clamp uses
-  // the pre-removal detailIdx. The `clamp` field marks that the target
-  // index was rewritten so the footer can surface "(clamped — <reason>)".
-  if (columnIndex === lastIdx && srcType !== 'detail') {
-    const detailIdx = mpool.detailPaneIndex(slice.arrange);
-    if (detailIdx >= 0 && index > detailIdx) {
-      return { kind: 'insert', columnIndex, index: detailIdx, valid: true, clamp: 'detail stays at end' };
-    }
+  // v0.6.4 multi-viewer — only ACTIONS is last-column-pinned; detail
+  // inserts into any column at any position (the detail-stays-at-end
+  // clamp is gone).
+  if (columnIndex !== lastIdx && srcType === 'actions') {
+    return { kind: 'insert', columnIndex, index, valid: false, reason: `actions must stay in the last column` };
   }
   return { kind: 'insert', columnIndex, index, valid: true };
 }
@@ -348,10 +352,10 @@ function applyBoundaryResize(slice, my) {
  *  slots with occupant), or new_column (splice a fresh column in at
  *  `position` containing the dragged pane). Re-derives hotkeys
  *  positionally; marks dirty. */
-function applyDrop(slice, srcType, target) {
-  if (target.kind === 'swap') return applySwap(slice, srcType, target);
-  if (target.kind === 'new_column') return applyNewColumn(slice, srcType, target);
-  return applyInsert(slice, srcType, target);
+function applyDrop(slice, srcType, target, srcPaneId) {
+  if (target.kind === 'swap') return applySwap(slice, srcType, target, srcPaneId);
+  if (target.kind === 'new_column') return applyNewColumn(slice, srcType, target, srcPaneId);
+  return applyInsert(slice, srcType, target, srcPaneId);
 }
 
 /** Spawn a new column at `target.position` containing the dragged
@@ -361,21 +365,23 @@ function applyDrop(slice, srcType, target) {
  *  validators refuse position == N so a "becomes the new last" outcome
  *  is unreachable here). Source column that ends up empty (the dragged
  *  pane was its only occupant) gets removed — keeps the UX clean. */
-function applyNewColumn(slice, srcType, target) {
+function applyNewColumn(slice, srcType, target, srcPaneId) {
   const arrange = slice.arrange;
-  const fromLoc = mpool.findPaneLocation(arrange, p => p.type === srcType);
+  const fromLoc = _findSource(arrange, srcType, srcPaneId);
   if (!fromLoc) return slice;
   const src = fromLoc.pane;
   const position = target.position;
   const N = mpool.columnCount(arrange);
-  const lastIdx = N - 1;
 
   // Build the source column minus the dragged pane.
   const fromCol = arrange.columns[fromLoc.columnIndex];
   const fromPanels = (fromCol.panels || []).filter((_, i) => i !== fromLoc.paneIndex);
   const sourceWillBeEmpty = fromPanels.length === 0;
-  // Can't remove the last column (detail invariant).
-  const removeSource = sourceWillBeEmpty && fromLoc.columnIndex !== lastIdx;
+  // v0.6.4 multi-viewer — auto-remove an emptied source column even when
+  // it was the last column (detail isn't pinned there anymore). The only
+  // floor is keeping ≥1 column; the dragged pane moves into a brand-new
+  // column here, so N stays ≥1 regardless.
+  const removeSource = sourceWillBeEmpty && N > 1;
 
   // Work against a transient copy of arrange.columns with the source
   // column either updated (with the dragged pane removed) or removed
@@ -404,8 +410,8 @@ function applyNewColumn(slice, srcType, target) {
   };
 }
 
-function applyInsert(slice, srcType, target) {
-  const fromLoc = mpool.findPaneLocation(slice.arrange, p => p.type === srcType);
+function applyInsert(slice, srcType, target, srcPaneId) {
+  const fromLoc = _findSource(slice.arrange, srcType, srcPaneId);
   if (!fromLoc) return slice;
   const src = fromLoc.pane;
   const fromCol = fromLoc.columnIndex;
@@ -413,7 +419,6 @@ function applyInsert(slice, srcType, target) {
   let toCol = target.columnIndex;
   let insertAt = target.index;
   if (fromCol === toCol && fromIdx < insertAt) insertAt--;
-  const lastIdx = mpool.lastColumnIndex(slice.arrange);
 
   // Build the target column's new panels array. If the source is moving
   // within the same column, mutate one column; otherwise mutate two.
@@ -430,14 +435,12 @@ function applyInsert(slice, srcType, target) {
     toPanels.splice(insertAt, 0, { ...src, columnIndex: toCol });
     nextArrange = mpool.updateColumn(slice.arrange, fromCol, () => fromPanels);
     nextArrange = mpool.updateColumn(nextArrange, toCol, () => toPanels);
-    // Source column became empty and isn't the last column → auto-
-    // remove it and release its width back to the left neighbor.
-    // Mirrors applyNewColumn's removeSource branch: an emptied source
-    // column would otherwise render as a blank gap (still occupying
-    // its `width` cells) instead of yielding the cells back to the
-    // donor neighbor. The drag-out + drag-back round-trip now
-    // restores the original layout.
-    if (fromPanels.length === 0 && fromCol !== lastIdx) {
+    // Source column became empty → auto-remove it and release its width
+    // back to the left neighbor. v0.6.4 multi-viewer — the old "and isn't
+    // the last column" guard is gone (detail no longer pins the last
+    // column); the dragged pane moved to `toCol`, so ≥1 column always
+    // remains. An emptied column would otherwise render as a blank gap.
+    if (fromPanels.length === 0 && mpool.columnCount(nextArrange) > 1) {
       const releasedColumns = spliceAndReleaseWidth(nextArrange.columns, fromCol);
       nextArrange = { ...nextArrange, columns: releasedColumns };
     }
@@ -455,8 +458,8 @@ function applyInsert(slice, srcType, target) {
  *  is a no-op (returns slice unchanged). Hotkeys re-derive positionally,
  *  so a panel's letter follows its slot, not its identity — same convention
  *  as applyInsert. */
-function applySwap(slice, srcType, target) {
-  const fromLoc = mpool.findPaneLocation(slice.arrange, p => p.type === srcType);
+function applySwap(slice, srcType, target, srcPaneId) {
+  const fromLoc = _findSource(slice.arrange, srcType, srcPaneId);
   if (!fromLoc) return slice;
   const src = fromLoc.pane;
   const fromCol = fromLoc.columnIndex;
@@ -531,7 +534,11 @@ function mousePress(slice, mx, my, COLS) {
   // v0.6.3 B3 — focus is paneId; sourceType stays as the legacy
   // type-form for the drag-engine's leaf hit-tests that key by type.
   const focus = hit.paneId || hit.type;
-  const drag = { kind: 'dragging', sourceType: hit.type, startX: mx, startY: my, curX: mx, curY: my, target: null };
+  // v0.6.4 multi-viewer — capture the dragged pane's paneId so the drop
+  // engine resolves THIS pane, not the first of its type (two same-type
+  // panes otherwise collapse onto the first). sourceType stays for the
+  // detail/actions policy checks.
+  const drag = { kind: 'dragging', sourceType: hit.type, sourcePaneId: hit.paneId || hit.type, startX: mx, startY: my, curX: mx, curY: my, target: null };
   return { ...slice, focus, freeConfig: { ...slice.freeConfig, drag } };
 }
 
@@ -553,7 +560,7 @@ function mouseMotion(slice, mx, my, COLS) {
     // No movement — keep the cursor record without recomputing target.
     return { ...slice, freeConfig: { ...d, drag: { ...ds, curX: mx, curY: my } } };
   }
-  const target = pointToDropTarget(slice, ds.sourceType, mx, my, COLS);
+  const target = pointToDropTarget(slice, ds.sourceType, mx, my, COLS, ds.sourcePaneId);
   return { ...slice, freeConfig: { ...d, drag: { ...ds, curX: mx, curY: my, target } } };
 }
 
@@ -571,10 +578,14 @@ function mouseRelease(slice) {
     // Self-swap (middle-zone drop on own cell) is a no-op — skip undo
     // push so it doesn't bloat the stack with empty entries.
     const t = ds.target;
-    const isSelfSwap = t.kind === 'swap' && t.occupantType === ds.sourceType;
+    // v0.6.4 multi-viewer — self-swap by paneId (two distinct same-type
+    // panes are a real swap, not a no-op).
+    const srcKey = ds.sourcePaneId != null ? ds.sourcePaneId : ds.sourceType;
+    const isSelfSwap = t.kind === 'swap'
+      && (t.occupantPaneId != null ? t.occupantPaneId === srcKey : t.occupantType === ds.sourceType);
     if (!isSelfSwap) {
       next = pushUndo(next);
-      next = applyDrop(next, ds.sourceType, ds.target);
+      next = applyDrop(next, ds.sourceType, ds.target, ds.sourcePaneId);
       droppedType = ds.sourceType;
     }
   }
@@ -600,7 +611,9 @@ function computeDragPreviewArrange(slice) {
   if (!drag || drag.kind !== 'dragging') return null;
   if (!drag.target || !drag.target.valid) return null;
   const t = drag.target;
-  if (t.kind === 'swap' && t.occupantType === drag.sourceType) return null;
+  // v0.6.4 multi-viewer — self-swap + source identity by paneId.
+  const srcKey = drag.sourcePaneId != null ? drag.sourcePaneId : drag.sourceType;
+  if (t.kind === 'swap' && (t.occupantPaneId != null ? t.occupantPaneId === srcKey : t.occupantType === drag.sourceType)) return null;
   // Same-position insert short-circuit: drop on top-third (target.index ==
   // fromIdx) or bottom-third (target.index == fromIdx + 1) of source's own
   // cell, same column. applyInsert's splice math produces an arrange that
@@ -608,10 +621,10 @@ function computeDragPreviewArrange(slice) {
   // dirty:true. Render would swap+paint identical pixels — wasted work.
   if (t.kind === 'insert') {
     const panels = mpool.columnPanels(slice.arrange, t.columnIndex);
-    const fromIdx = panels.findIndex(p => p.type === drag.sourceType);
+    const fromIdx = panels.findIndex(p => (p.paneId || p.type) === srcKey);
     if (fromIdx >= 0 && (t.index === fromIdx || t.index === fromIdx + 1)) return null;
   }
-  const next = applyDrop(slice, drag.sourceType, t);
+  const next = applyDrop(slice, drag.sourceType, t, drag.sourcePaneId);
   return next === slice ? null : next.arrange;
 }
 

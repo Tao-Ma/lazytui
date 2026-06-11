@@ -133,14 +133,14 @@ describe('[poolDragMotion] promotes armed→dragging and computes drop target', 
     eq(t.index, 1);  // detail is at idx 1
     eq(t.valid, true);
   });
-  it('bottom third of detail → insert CLAMPED to detail position (detail-at-end)', () => {
+  it('bottom third of detail → insert AFTER detail (v0.6.4 — no detail-at-end clamp)', () => {
     let s = mpoolDrag.poolDragStart(buildSlice(), 'notes', 50, 5);
     s = mpoolDrag.poolDragMotion(s, 50, 18);  // detail bot zone [16,20)
     const t = s.freeConfig.drag.target;
     eq(t.kind, 'insert');
-    eq(t.index, 1);  // would be 2, clamped to detail's idx (1)
+    eq(t.index, 2);  // lands after detail now (was clamped to 1)
     eq(t.valid, true);
-    eq(t.clamp, 'detail stays at end', 'clamp reason surfaces to footer');
+    eq(t.clamp, undefined, 'no clamp marker');
   });
   it('top third of detail → no clamp marker (target lands where cursor says)', () => {
     let s = mpoolDrag.poolDragStart(buildSlice(), 'notes', 50, 5);
@@ -149,14 +149,14 @@ describe('[poolDragMotion] promotes armed→dragging and computes drop target', 
     eq(t.index, 1);
     eq(t.clamp, undefined, 'no rewrite happened, no clamp marker');
   });
-  it('drop in dead zone below all right cells → append at right tail (clamped)', () => {
+  it('drop in dead zone below all right cells → append at right tail (v0.6.4 — no clamp)', () => {
     let s = mpoolDrag.poolDragStart(buildSlice(), 'notes', 50, 5);
     s = mpoolDrag.poolDragMotion(s, 50, 30);  // below detail
     const t = s.freeConfig.drag.target;
     eq(t.kind, 'insert');
     eq(t.columnIndex, 1);
-    // detail is at idx 1, append (idx 2) clamps to 1.
-    eq(t.index, 1);
+    // detail is at idx 1; append lands at the tail (idx 2), no clamp.
+    eq(t.index, 2);
     eq(t.valid, true);
   });
   it('top third of groups (left) → insert at left:0', () => {
@@ -334,12 +334,13 @@ describe('[pool_show with index] reducer splices at position', () => {
     eq(next.arrange.columns[1].panels[1].type, 'viewer');
     eq(next.arrange.columns[1].panels[2].type, 'detail', 'detail still at end');
   });
-  it('pool_show with index=99 (past detail) clamps to detail position', () => {
+  it('pool_show with index=99 clamps to the tail (v0.6.4 — appends after detail)', () => {
     const s = buildSlice();
     const next = applyUpdate({ type: 'pool_show', id: 'notes', columnIndex: 1, index: 99 }, s);
-    // index clamped to length=2, then clamped to detailIdx=1 → notes lands before detail
-    eq(next.arrange.columns[1].panels[1].type, 'viewer');
-    eq(next.arrange.columns[1].panels[2].type, 'detail');
+    // index clamps to length=2 → notes lands at the tail, after detail
+    // (the old detail-at-end clamp is gone).
+    eq(next.arrange.columns[1].panels[1].type, 'detail');
+    eq(next.arrange.columns[1].panels[2].type, 'viewer');
   });
   it('pool_show without index appends (existing behavior preserved)', () => {
     const s = buildSlice();

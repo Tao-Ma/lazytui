@@ -133,18 +133,17 @@ describe('[2] validateNewColumn — Phase 2 refusal rules', () => {
     eq(t.valid, true);
   });
 
-  it('non-reserved source at position N (right edge) → refused', () => {
+  it('non-reserved source at position N (right edge) → now valid (v0.6.4)', () => {
     const t = mfcMouse.validateNewColumn(s, 'containers', 2);  // N=2
-    eq(t.valid, false);
-    assert(/last column/.test(t.reason), `reason mentions last column: ${t.reason}`);
+    eq(t.valid, true);
   });
 
-  it('detail source at any position → refused', () => {
-    eq(mfcMouse.validateNewColumn(s, 'detail', 0).valid, false);
-    eq(mfcMouse.validateNewColumn(s, 'detail', 1).valid, false);
+  it('detail source at any position → now valid (v0.6.4 — detail not last-pinned)', () => {
+    eq(mfcMouse.validateNewColumn(s, 'detail', 0).valid, true);
+    eq(mfcMouse.validateNewColumn(s, 'detail', 1).valid, true);
   });
 
-  it('actions source at any position → refused', () => {
+  it('actions source at any position → still refused (actions stays last-column)', () => {
     eq(mfcMouse.validateNewColumn(s, 'actions', 0).valid, false);
     eq(mfcMouse.validateNewColumn(s, 'actions', 1).valid, false);
   });
@@ -237,11 +236,11 @@ describe('[4] pointToDropTarget — edge/gap zones take precedence', () => {
     eq(t.columnIndex, 0);
   });
 
-  it('detail source at left edge → new_column with valid:false', () => {
+  it('detail source at left edge → new_column now valid (v0.6.4)', () => {
     const s = makeSlice();
     const t = mfcMouse.pointToDropTarget(s, 'detail', 1, 5, COLS);
     eq(t.kind, 'new_column');
-    eq(t.valid, false);
+    eq(t.valid, true);
   });
 });
 
@@ -282,9 +281,9 @@ describe('[6] validatePoolNewColumn — Phase 2 rules for pool drag', () => {
     const t = mpoolDrag.validatePoolNewColumn(s.arrange, 0, s.arrange.pool.actions);
     eq(t.valid, false);
   });
-  it('right edge (position N) refused for any source', () => {
+  it('right edge (position N) now valid for a non-actions source (v0.6.4)', () => {
     const t = mpoolDrag.validatePoolNewColumn(s.arrange, 2, s.arrange.pool.notes);
-    eq(t.valid, false);
+    eq(t.valid, true);
   });
 });
 
@@ -323,10 +322,11 @@ describe('[8] pool_show_new_column — layout reducer', () => {
     assert(placedActions === null, 'actions stays in pool');
   });
 
-  it('right-edge spawn (position N) refused → slice unchanged', () => {
+  it('right-edge spawn (position N) now spawns a new last column (v0.6.4)', () => {
     const slice = makeSlice();
-    const out = layout.update({ type: 'pool_show_new_column', id: 'notes', position: 2 }, slice);
-    eq(out.arrange.columns.length, 2, 'still 2 columns');
+    const out = applyUpdate({ type: 'pool_show_new_column', id: 'notes', position: 2 }, slice);
+    eq(out.arrange.columns.length, 3, 'spawned a 3rd column');
+    eq(out.arrange.columns[2].panels[0].type, 'history', 'notes (history) in the new last column');
   });
 
   it('out-of-range position refused', () => {
@@ -363,12 +363,12 @@ describe('[10] addColumn — Phase 3 leaf helper', () => {
     eq(out.arrange.columns[1].panels[0].columnIndex, 1, 'columnIndex re-stamped');
   });
 
-  it('position N (right edge) refused', () => {
+  it('position N (right edge) now appends a new last column (v0.6.4)', () => {
     const s = makeSlice();
     const { slice: out, error } = mfc.addColumn(s, 2);  // N=2
-    assert(error !== null);
-    assert(/last column/.test(error), `error mentions last column: ${error}`);
-    eq(out, s, 'slice unchanged');
+    eq(error, null);
+    eq(out.arrange.columns.length, 3, 'appended a 3rd column');
+    eq(out.arrange.columns[2].panels.length, 0, 'new last column is empty');
   });
 
   it('out-of-range position refused', () => {
@@ -407,14 +407,22 @@ describe('[11] removeColumn — Phase 3 leaf helper', () => {
     eq(out, s);
   });
 
-  it('refuses removing the last column', () => {
+  it('refuses removing the last column while it is non-empty (v0.6.4 — via the empty-check)', () => {
     let s = makeSlice();
-    // Drain the last column wouldn't work (detail can't be hidden), so
-    // just test the guard directly — try to remove index N-1 = 1.
+    // v0.6.4: the last column is no longer special-cased; it's protected
+    // because it's non-empty (holds detail), so the empty-check refuses.
     const { slice: out, error } = mfc.removeColumn(s, 1);
     assert(error !== null);
-    assert(/last column/.test(error), `error mentions last column: ${error}`);
+    assert(/not empty/.test(error), `error mentions emptiness: ${error}`);
     eq(out, s);
+  });
+
+  it('refuses removing the only column', () => {
+    // Single-column floor: even an empty lone column can't be removed.
+    const s = { arrange: { detailHeightPct: 60, pool: {}, columns: [{ panels: [] }] }, freeConfig: { undo: [], redo: [] } };
+    const { error } = mfc.removeColumn(s, 0);
+    assert(error !== null);
+    assert(/only column/.test(error), `error mentions only column: ${error}`);
   });
 
   it('out-of-range index refused', () => {
@@ -435,9 +443,16 @@ describe('[12] add_column / remove_column Msg arms', () => {
     eq(out.freeConfig.noticeKind, 'info');
   });
 
-  it('add_column emits an error notice on refusal (position N)', () => {
+  it('add_column at position N now succeeds with an info notice (v0.6.4)', () => {
     const slice = makeSlice();
     const out = layout.update({ type: 'add_column', position: 2 }, slice);
+    eq(out.arrange.columns.length, 3, 'appended a 3rd column');
+    eq(out.freeConfig.noticeKind, 'info');
+  });
+
+  it('add_column emits an error notice on a genuine refusal (out-of-range)', () => {
+    const slice = makeSlice();
+    const out = layout.update({ type: 'add_column', position: 99 }, slice);
     eq(out.arrange.columns.length, 2, 'unchanged');
     assert(out.freeConfig.notice !== null);
     eq(out.freeConfig.noticeKind, 'error');

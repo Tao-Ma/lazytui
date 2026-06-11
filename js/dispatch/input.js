@@ -71,7 +71,11 @@ function _handleWheel(mx, my, delta) {
     if (mx < b.x || mx >= b.x + b.w || my < b.y || my >= b.y + b.h) continue;
 
     if (instanceKind(p.type) === 'detail') {
-      const d = _detail();
+      // v0.6.4 multi-viewer — clamp against the wheeled pane's OWN slice
+      // (not _detail()'s focused viewer), so wheeling an unfocused second
+      // viewer scrolls itself. sliceForPane falls back to the kind primary
+      // for the singleton.
+      const d = route.sliceForPane(p.paneId, 'detail');
       const lines = d?.lines || [];
       const curScroll = d?.scroll || 0;
       // Single source of truth for the view-mode-aware viewport (P5
@@ -81,9 +85,10 @@ function _handleWheel(mx, my, delta) {
       const maxScroll = Math.max(0, lines.length - innerH);
       const next = Math.max(0, Math.min(maxScroll, curScroll + delta));
       if (next === curScroll) return false;
-      // v0.6.1 Phase 8 — scroll the specific viewer tab that the wheel
-      // landed on (p.type is the panel/tab id for singleton placements).
-      dispatchMsg(wrap(p.type, { type: 'viewer_scroll', delta }));
+      // v0.6.1 Phase 8 — scroll the specific viewer the wheel landed on.
+      // v0.6.4 multi-viewer — address by paneId (was p.type, which collapsed
+      // two same-kind viewers onto the kind primary).
+      dispatchMsg(wrap(p.paneId, { type: 'viewer_scroll', delta }));
       return true;
     }
 
@@ -664,7 +669,7 @@ function handleMouse(kind, x, y) {
     // .tabs). ANY pane whose Component publishes slice.tabBounds gets
     // click routing — currently only detail; multi-viewer would have
     // sibling viewers publish their own.
-    const compSlice = getInstanceSlice(p.type);
+    const compSlice = route.sliceForPane(p.paneId, p.type);  // v0.6.4 multi-viewer — THIS pane's tabBounds
     const paneTabs = compSlice && Array.isArray(compSlice.tabBounds) ? compSlice.tabBounds : null;
     if (my === b.y && paneTabs && paneTabs.length > 0) {
       const localX = mx - b.x;
@@ -679,20 +684,20 @@ function handleMouse(kind, x, y) {
             // of getModel(). v0.6.3 TEA Phase 3c.
             const mForBundle = getModel();
             const groupName = mForBundle.currentGroup;
-            dispatchMsg(wrap(p.type, {
+            dispatchMsg(wrap(p.paneId, {
               type: 'viewer_remove_content_tab',
               groupName,
               key: tab.closeKey,
               ...require('../leaves/pane-tabs').modelBundle(mForBundle, groupName),
             }));
           } else {
-            dispatchMsg(wrap('layout', { type: 'focus_set', focus: p.type }));
+            dispatchMsg(wrap('layout', { type: 'focus_set', focus: p.paneId }));
             // Phase 3d: thread targetKey + currentGroup so the tab_switch
             // reducer arm stays pure of getModel().
             {
               const pt = require('../leaves/pane-tabs');
-              const slice = getInstanceSlice(p.type);
-              dispatchMsg(wrap(p.type, {
+              const slice = route.sliceForPane(p.paneId, p.type);
+              dispatchMsg(wrap(p.paneId, {
                 type: 'tab_switch', idx: tab.tabIdx,
                 targetKey: pt.resolveTabKey(tab.tabIdx, { ...slice, tab: tab.tabIdx }, getModel()),
                 currentGroup: getModel().currentGroup,
@@ -710,12 +715,14 @@ function handleMouse(kind, x, y) {
     // body. Stays detail-specific until Phase 4 lifts the selection
     // machinery onto a per-pane basis.
     if (require('../leaves/pool').isDetailPane(p)) {
-      dispatchMsg(wrap('layout', { type: 'focus_set', focus: 'detail' }));
+      // v0.6.4 multi-viewer — focus + select the CLICKED viewer pane by
+      // paneId (was hardcoded 'detail', which focused the primary).
+      dispatchMsg(wrap('layout', { type: 'focus_set', focus: p.paneId }));
       // Begin a selection iff the click landed in the content rows
       // and this tab actually has scrollable text content (skip
       // terminal tabs — the PTY handles its own input).
       const inContent = my > b.y && my < b.y + b.h - 1;
-      const d = _detail();
+      const d = route.sliceForPane(p.paneId, 'detail');
       if (inContent && !isTerminalTab() && d && d.lines.length > 0) {
         const visibleLine = my - b.y - 1;
         const col = Math.max(0, mx - b.x - 1);

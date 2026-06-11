@@ -103,27 +103,13 @@ function pointToPoolDropTarget(slice, mx, my, COLS) {
  *  a `clamp` reason so the footer can show "(clamped — …)". */
 function validateInsert(arrange, columnIndex, index, sourceEntry) {
   const lastIdx = mpool.lastColumnIndex(arrange);
-  const panels = mpool.columnPanels(arrange, columnIndex);
-  // detail/actions are last-column-only by convention. The in-grid drag's
-  // validateTarget blocks moving them outside; pool-drag must too or the
-  // user can land a hidden actions panel in a non-last column via the
-  // panel-list overlay.
-  if (sourceEntry && columnIndex !== lastIdx && mpool.isReservedPane(sourceEntry)) {
-    return { kind: 'insert', columnIndex, index, valid: false, reason: `${sourceEntry.type} must stay in the last column` };
+  // v0.6.4 multi-viewer — only ACTIONS is last-column-only; detail inserts
+  // anywhere (the detail-stays-at-end clamp is gone). The in-grid drag's
+  // validateTarget enforces the same rule.
+  if (sourceEntry && columnIndex !== lastIdx && mpool.isActionsPane(sourceEntry)) {
+    return { kind: 'insert', columnIndex, index, valid: false, reason: `actions must stay in the last column` };
   }
-  const valid = true;
-  let idx = index;
-  let clamp = null;
-  if (columnIndex === lastIdx) {
-    const detailIdx = panels.findIndex(mpool.isDetailPane);
-    if (detailIdx >= 0 && idx > detailIdx) {
-      idx = detailIdx;
-      clamp = 'detail stays at end';
-    }
-  }
-  const t = { kind: 'insert', columnIndex, index: idx, valid };
-  if (clamp) t.clamp = clamp;
-  return t;
+  return { kind: 'insert', columnIndex, index, valid: true };
 }
 
 /** Validity for a new-column drop from the pool. Phase 2 rules mirror
@@ -131,12 +117,11 @@ function validateInsert(arrange, columnIndex, index, sourceEntry) {
  *  position == N (right edge) refuses (it would push the current last
  *  column off "last" and break detail's invariant). */
 function validatePoolNewColumn(arrange, position, sourceEntry) {
-  if (sourceEntry && mpool.isReservedPane(sourceEntry)) {
-    return { kind: 'new_column', position, valid: false, reason: `${sourceEntry.type} must stay in the last column` };
-  }
-  const N = mpool.columnCount(arrange);
-  if (position === N) {
-    return { kind: 'new_column', position, valid: false, reason: `can't push detail off the last column` };
+  // v0.6.4 multi-viewer — only ACTIONS refuses a fresh column; detail
+  // spawns one freely (and appending a new last column is fine — detail
+  // no longer lives in the last column by invariant).
+  if (sourceEntry && mpool.isActionsPane(sourceEntry)) {
+    return { kind: 'new_column', position, valid: false, reason: `actions must stay in the last column` };
   }
   return { kind: 'new_column', position, valid: true };
 }
@@ -146,11 +131,15 @@ function validatePoolNewColumn(arrange, position, sourceEntry) {
  *  column. */
 function validateReplace(arrange, occupant, columnIndex, sourceEntry) {
   const lastIdx = mpool.lastColumnIndex(arrange);
-  if (mpool.isDetailPane(occupant)) {
+  // v0.6.4 multi-viewer — replacing a detail occupant is allowed as long
+  // as another viewer remains; refuse only when it's the LAST one (would
+  // orphan the layout's only viewer).
+  if (mpool.isDetailPane(occupant) && mpool.detailPaneCount(arrange) <= 1) {
     return { kind: 'replace', columnIndex, occupantId: occupant.id, valid: false };
   }
-  if (sourceEntry && columnIndex !== lastIdx && mpool.isReservedPane(sourceEntry)) {
-    return { kind: 'replace', columnIndex, occupantId: occupant.id, valid: false, reason: `${sourceEntry.type} must stay in the last column` };
+  // Only ACTIONS is last-column-pinned as a replacement source.
+  if (sourceEntry && columnIndex !== lastIdx && mpool.isActionsPane(sourceEntry)) {
+    return { kind: 'replace', columnIndex, occupantId: occupant.id, valid: false, reason: `actions must stay in the last column` };
   }
   return { kind: 'replace', columnIndex, occupantId: occupant.id, valid: true };
 }

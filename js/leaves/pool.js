@@ -213,11 +213,16 @@ function panelListItems(arrange) {
   if (!arrange || !arrange.pool) return [];
   const items = [];
   const seen = new Set();
+  // v0.6.4 multi-viewer — a detail pane is 'essential' (unhideable) ONLY
+  // when it's the last remaining viewer; with ≥2 viewers each is an
+  // ordinary 'placed' (hideable) entry, since hiding one still leaves a
+  // viewer to route to.
+  const soleDetail = detailPaneCount(arrange) <= 1;
   for (const p of allPanesInColumns(arrange)) {
     if (!p || !p.id) continue;
     const entry = arrange.pool[p.id];
     if (!entry) continue;
-    const status = isDetailPane(entry) ? 'essential' : 'placed';
+    const status = (isDetailPane(entry) && soleDetail) ? 'essential' : 'placed';
     items.push({ id: entry.id, type: entry.type, title: entry.title, status });
     seen.add(entry.id);
   }
@@ -272,11 +277,15 @@ function isReservedPane(pane) {
   return isDetailPane(pane) || isActionsPane(pane);
 }
 
-/** Find the detail pane in an arrange struct. Defensively scans every
- *  column even though the layout invariant places it in the last
- *  column's last cell — keeps consumers honest under in-flight
- *  migrations (drag, swap) where transient state can violate the
- *  invariant. Returns the pane object or null. */
+/** Find a detail pane in an arrange struct — the FIRST in arrange order
+ *  (last column, then earlier columns). Returns the pane object or null.
+ *
+ *  v0.6.4 multi-viewer — this is now a "first / boot / major-viewer
+ *  fallback" helper ONLY. With multiple viewers it returns an arbitrary
+ *  one; NEVER use it for "the pane the user is acting on" (address that
+ *  by paneId via resolveTarget/resolveViewerPaneId). Legitimate remaining
+ *  callers: boot / degenerate fallback where any viewer will do. For
+ *  count- or per-pane-aware logic use findAllDetailPanes / detailPaneCount. */
 function findDetailPane(arrange) {
   if (!arrange) return null;
   // Last column first — the canonical home.
@@ -291,18 +300,43 @@ function findDetailPane(arrange) {
   return null;
 }
 
-/** Index of the detail pane within the LAST column, or -1. The last
- *  column is the canonical home; callers wanting "detail anywhere" use
- *  `findDetailPane`. */
-function detailPaneIndex(arrange) {
-  if (!arrange) return -1;
-  return lastColumnPanels(arrange).findIndex(isDetailPane);
-}
-
 /** True if `arrange` (or its placed panes) already hosts a detail pane.
- *  Used by pool_show / drag-insert to refuse adding a second. */
+ *  v0.6.4 multi-viewer — a SECOND detail is now allowed, so this is no
+ *  longer a "refuse adding another" gate; it survives as a plain
+ *  presence test (e.g. boot sanity). Count-aware callers use
+ *  detailPaneCount. */
 function hasDetailPane(arrange) {
   return findDetailPane(arrange) !== null;
+}
+
+/** All detail panes in arrange order (last column first, then earlier).
+ *  v0.6.4 multi-viewer — the count/position-agnostic replacement for
+ *  findDetailPane wherever "every viewer" is meant. */
+function findAllDetailPanes(arrange) {
+  if (!arrange || !arrange.columns) return [];
+  const out = [];
+  for (const p of lastColumnPanels(arrange)) if (isDetailPane(p)) out.push(p);
+  for (let ci = 0; ci < arrange.columns.length - 1; ci++) {
+    const panels = (arrange.columns[ci] && arrange.columns[ci].panels) || [];
+    for (const p of panels) if (isDetailPane(p)) out.push(p);
+  }
+  return out;
+}
+
+/** Number of placed detail panes. */
+function detailPaneCount(arrange) {
+  return findAllDetailPanes(arrange).length;
+}
+
+/** True if removing the pane identified by `paneId` would leave ZERO
+ *  detail panes — the one retained placement invariant (the layout must
+ *  always keep at least one viewer). Shared by pool_hide, remove-column,
+ *  replace, and the free-config auto-empty-column path. A non-detail
+ *  paneId never orphans (returns false). */
+function wouldOrphanLastDetail(arrange, paneId) {
+  const dps = findAllDetailPanes(arrange);
+  if (dps.length !== 1) return false;          // 0 → nothing to orphan; ≥2 → survivors remain
+  return dps[0] && dps[0].paneId === paneId;   // removing the sole detail
 }
 
 /** True if `arrange` already hosts an actions pane. */
@@ -389,6 +423,7 @@ module.exports = {
   paneSelectItems,
   placementFromPoolEntry,
   isDetailPane, isActionsPane, isReservedPane,
-  findDetailPane, detailPaneIndex,
+  findDetailPane,
+  findAllDetailPanes, detailPaneCount, wouldOrphanLastDetail,
   hasDetailPane, hasActionsPane,
 };

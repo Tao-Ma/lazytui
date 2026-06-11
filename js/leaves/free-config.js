@@ -78,18 +78,10 @@ function reorderWithin(slice, delta) {
   const targetIdx = loc.paneIndex + delta;
   if (targetIdx < 0 || targetIdx >= panels.length) return slice;
 
-  // Last column keeps detail at the end. Refuse any swap that either
-  // moves detail off its slot OR moves a non-detail panel past it.
-  // Mirrors the validateTarget guard in applyDrop and the
-  // insert-before-detail logic in pool_show — same invariant, three
-  // entry points, one rule.
-  const lastIdx = mpool.lastColumnIndex(slice.arrange);
-  if (loc.columnIndex === lastIdx) {
-    if (mpool.isDetailPane(panels[loc.paneIndex]) || mpool.isDetailPane(panels[targetIdx])) {
-      return slice;
-    }
-  }
-
+  // v0.6.4 multi-viewer — detail panes reorder like any other pane;
+  // position is no longer pinned (the old "keep detail at the end of the
+  // last column" swap guard is gone — that was geometry policy, now
+  // dropped). Actions retains its own last-column rule elsewhere.
   const newCol = panels.slice();
   [newCol[loc.paneIndex], newCol[targetIdx]] = [newCol[targetIdx], newCol[loc.paneIndex]];
 
@@ -114,21 +106,18 @@ function moveColumn(slice, dir) {
   const fromIdx = loc.columnIndex;
   const toIdx = fromIdx + (dir < 0 ? -1 : +1);
   if (toIdx < 0 || toIdx >= N) return slice;
-  if (mpool.isReservedPane(selPanel) && toIdx !== lastIdx) return slice;
+  // v0.6.4 multi-viewer — only ACTIONS is pinned to the last column;
+  // detail moves between columns freely (it's an ordinary pane now).
+  if (mpool.isActionsPane(selPanel) && toIdx !== lastIdx) return slice;
 
   // Source column with the pane removed.
   const fromPanels = mpool.columnPanels(slice.arrange, fromIdx).slice();
   fromPanels.splice(loc.paneIndex, 1);
 
-  // Destination column: append; if moving into last column with detail,
-  // insert before detail so detail stays last.
+  // Destination column: append at the tail (detail no longer forces an
+  // insert-before clamp).
   const toPanels = mpool.columnPanels(slice.arrange, toIdx).slice();
-  let insertAt = toPanels.length;
-  if (toIdx === lastIdx) {
-    const detailIdx = toPanels.findIndex(mpool.isDetailPane);
-    if (detailIdx >= 0) insertAt = detailIdx;
-  }
-  toPanels.splice(insertAt, 0, { ...selPanel, columnIndex: toIdx, hotkey: '' });
+  toPanels.splice(toPanels.length, 0, { ...selPanel, columnIndex: toIdx, hotkey: '' });
 
   let nextArrange = mpool.updateColumn(slice.arrange, fromIdx, () => fromPanels);
   nextArrange = mpool.updateColumn(nextArrange, toIdx, () => toPanels);
@@ -184,8 +173,12 @@ function resizeFocusedPanelHeight(slice, deltaPct) {
   const loc = mpool.findPaneLocation(slice.arrange, p => mpane.paneMatchesFocus(p, slice.focus));
   if (!loc) return slice;
   const sel = loc.pane;
-  if (mpool.isDetailPane(sel)) return slice;  // detail uses +/-
-
+  // v0.6.4 multi-viewer — detail can participate in neighbor-steal height
+  // resize when it has a pane below it (possible now that detail isn't
+  // pinned to the column tail). A detail at the tail has no neighbor and
+  // no-ops via the next guard; standalone detail height is still also
+  // adjustable via +/- (resizeWidthOrDetail). The minPct/maxPct closures
+  // below already clamp detail to detailMin/Max.
   const panels = mpool.columnPanels(slice.arrange, loc.columnIndex);
   if (loc.paneIndex === panels.length - 1) return slice;  // no neighbor below
   const nextPanel = panels[loc.paneIndex + 1];
@@ -267,11 +260,10 @@ function addColumn(slice, position) {
     return { slice, error: 'position must be an integer' };
   }
   if (position < 0 || position > N) {
-    return { slice, error: `position out of range (0..${N - 1})` };
+    return { slice, error: `position out of range (0..${N})` };
   }
-  if (position === N) {
-    return { slice, error: `can't add a column at position ${N} — would push detail off the last column` };
-  }
+  // v0.6.4 multi-viewer — appending a new last column (position === N) is
+  // allowed now that detail isn't bound to the last column.
   const { columns: shrunk, newColWidth } =
     allocateNewColumnWidth(arrange.columns, position);
   shrunk.splice(position, 0, { width: newColWidth, panels: [] });
@@ -300,8 +292,13 @@ function removeColumn(slice, n) {
   if (n < 0 || n >= N) {
     return { slice, error: `column index out of range (0..${N - 1})` };
   }
-  if (n === N - 1) {
-    return { slice, error: `can't remove the last column — it holds detail` };
+  // v0.6.4 multi-viewer — the last column is removable now that detail
+  // isn't bound to it. Detail is protected transitively: an empty column
+  // (the next check) by definition holds no detail, and the sole detail
+  // can't be hidden (pool_hide guard), so it can never be emptied. The
+  // only structural floor is keeping at least one column.
+  if (N <= 1) {
+    return { slice, error: `can't remove the only column` };
   }
   const col = arrange.columns[n];
   if ((col.panels || []).length > 0) {

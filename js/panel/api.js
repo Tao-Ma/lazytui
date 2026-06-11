@@ -372,7 +372,17 @@ function dispatchMsg(msg) {
       // Component-name form. Look up via _primaryByKind for the
       // canonical instance.
       comp = components[kind];
-      const id = comp ? route.getPrimaryByKind(kind) : undefined;
+      let primaryKind = kind;
+      if (!comp) {
+        // v0.6.4 multi-viewer — `kind` may be a paneId whose per-pane
+        // instance wasn't minted (docker-style `panelTypes` panes, or a
+        // kind-keyed singleton harness). Resolve the Component + panel-
+        // type via the arrange, then route to the kind's primary. Mirrors
+        // sliceForPane's read-path fallback so wrap(paneId) is robust.
+        comp = components[route.componentForPanel(kind)];
+        primaryKind = route.paneTypeOf(kind) || primaryKind;
+      }
+      const id = comp ? route.getPrimaryByKind(primaryKind) : undefined;
       if (id !== undefined) inst = route.getInstance(id);
     }
     if (!comp || !inst) {

@@ -107,14 +107,16 @@ describe('[2] cross-column drag via dispatchMsg path', () => {
 // --- [3] Invalid drop snap-back: detail → left column ------------------
 
 describe('[3] invalid drop snaps back, no arrange mutation, no dirty', () => {
-  it('press detail → motion into left col → release → detail still in right col', () => {
+  it('press actions → motion into left col → release → actions still in right col', () => {
+    // v0.6.4 multi-viewer — detail moves between columns freely now, so
+    // ACTIONS (still last-column-pinned) is the genuinely-refused case.
     setupFixture();
-    press(50, 20);   // detail
-    motion(5, 2);    // left column — invalid for detail
-    release(5, 2);
+    press(50, 2);    // actions (y 0..5)
+    motion(5, 5);    // left column — invalid for actions
+    release(5, 5);
 
     const cols = api.getInstanceSlice('layout').arrange.columns;
-    eq(cols[1].panels[2].type, 'detail', 'detail still in right column slot 2');
+    eq(cols[1].panels[0].type, 'actions', 'actions still in right column slot 0');
     eq(cols[0].panels.length, 2, 'left column unchanged');
     eq(api.getInstanceSlice('layout').dirty, false, 'dirty stays false on snap-back');
     eq(api.getInstanceSlice('layout').freeConfig.drag, null, 'drag state cleared either way');
