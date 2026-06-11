@@ -124,12 +124,25 @@ function paneTypeOf(id) {
 // pick "the canonical instance of a kind." v0.6.3 post-arch-arc
 // T1.4 routed every remaining `getInstanceSlice('detail')` consumer
 // through `route.resolveTarget('viewer')`; the kind-name fallback
-// now serves only the bootstrap auto-register helpers in
-// `app/state.js` and the test harness. Multi-instance unlock is
-// thus structurally clear; remaining work for v0.7 is allowing
-// multiple paneIds of the same kind to coexist (today the per-pane
-// mint in `state.js initState` is idempotent against an existing
-// kind-keyed singleton).
+// now serves only genuine singletons — chrome Components never placed
+// as a pane (e.g. 'layout', read via `_primaryByKind['layout']`), the
+// host-global 'docker' self-read, and the bootstrap auto-register
+// helpers in `app/state.js` / the test harness.
+//
+// Multi-paneId-of-same-kind coexistence is DONE, not pending: the
+// `state.js initState` mint loop creates one instance per PLACED
+// paneId — it disposes the kind-keyed singleton on the first pane,
+// then mints each later same-kind pane under its own paneId — so two
+// same-kind panes get independent slices. Proven by
+// `test-instance-registry` (Phase-1 key WRITE → focused pane;
+// Phase-5 nav READS per-pane; multi-viewer two detail instances
+// scroll independently). The fallback below is therefore a
+// singleton/boot convenience, NOT a multi-instance collapse path:
+// a kind-name read of a kind that has >1 live instance resolves to
+// the primary AND records a `pane-collapse` diagnostic (visible in the
+// leader-e window), since that read silently drops the other panes —
+// which is why every multi-instance consumer threads a paneId (or
+// routes through resolveTarget).
 
 const _instances = Object.create(null);
 const _primaryByKind = Object.create(null);
@@ -148,6 +161,20 @@ function setInstance(id, kind, slice) {
 
 function getInstance(id) { return _instances[id]; }
 
+// Kinds we've already flagged as ambiguous, so the collapse warning
+// fires at most once per kind (a per-frame read would otherwise flood
+// the diagnostics buffer). disposeInstance clears the entry so a
+// reconfigure re-arms the check.
+const _warnedAmbiguous = new Set();
+
+// Count live instances of `kind`, short-circuiting at 2 (we only care
+// whether the kind-name read is ambiguous, not the exact count).
+function _instancesOfKind(kind) {
+  let n = 0;
+  for (const k in _instances) if (_instances[k].kind === kind && ++n > 1) break;
+  return n;
+}
+
 function getInstanceSlice(id) {
   const inst = _instances[id];
   if (inst) return inst.slice;
@@ -158,7 +185,20 @@ function getInstanceSlice(id) {
   // like `getInstanceSlice('detail')` still resolve via primary
   // until they're migrated to thread paneId explicitly.
   const primaryId = _primaryByKind[id];
-  if (primaryId && _instances[primaryId]) return _instances[primaryId].slice;
+  if (primaryId && _instances[primaryId]) {
+    // The fallback is a singleton/boot convenience. If the kind has >1
+    // live instance, a kind-name read SILENTLY collapses them onto the
+    // primary pane — almost always a missing-paneId bug. Surface it in
+    // the diagnostics window (leader e) instead of failing quietly.
+    if (!_warnedAmbiguous.has(id) && _instancesOfKind(id) > 1) {
+      _warnedAmbiguous.add(id);
+      try {
+        require('../dispatch/diag-log').warn('pane-collapse',
+          `getInstanceSlice('${id}') resolved to the primary pane, but multiple '${id}' instances exist — this read collapses them. Thread a paneId (or route through resolveTarget) to address a specific pane.`);
+      } catch (_) { /* diag-log unavailable (early boot / test) */ }
+    }
+    return _instances[primaryId].slice;
+  }
   return undefined;
 }
 
@@ -202,6 +242,9 @@ function disposeInstance(id) {
   const inst = _instances[id];
   if (!inst) return;
   delete _instances[id];
+  // Re-arm the ambiguity warning for this kind — a reconfigure that
+  // disposes then re-mints should warn again if it's still ambiguous.
+  _warnedAmbiguous.delete(inst.kind);
   // If this was the primary for its kind, demote and pick a successor
   // (insertion order). Singleton kinds never trip this.
   if (_primaryByKind[inst.kind] === id) {

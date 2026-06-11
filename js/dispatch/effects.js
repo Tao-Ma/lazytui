@@ -57,6 +57,16 @@ function runEffects(effects) {
 function _recordError(payload) {
   try { require('./event-log').record('error', payload); }
   catch (_) { /* event-log unavailable — already logged to console */ }
+  // Also surface in the diagnostics window (leader e) — event-log is the
+  // replay firehose (evicted fast); diag-log persists errors for review.
+  try {
+    const code = (payload && (payload.kind || payload.where)) || 'error';
+    const detail = payload && (payload.message || payload.effectType);
+    const msg = payload && payload.where && payload.effectType
+      ? `${payload.where}: '${payload.effectType}' ${detail || ''}`.trim()
+      : (detail || code);
+    require('./diag-log').error(code, msg);
+  } catch (_) { /* diag-log unavailable */ }
 }
 
 // T28 — cyclic apply_msg / dispatch_msg recursion guard. Both effects
@@ -125,6 +135,17 @@ function installBuiltins() {
   // registered, drop the Cmd silently.
   registerEffect('show_selected_info', () => {
     try { require('./dispatch').showSelectedInfo(); } catch (_) { /* no renderer (test) */ }
+  });
+  // diag_clear / diag_save: the diagnostics window's `c` / `s` keys.
+  // Buffer mutation + file I/O are side-effects, so the diag_log_clear /
+  // diag_log_save reducer arms emit these rather than touching the
+  // imperative diag-log buffer themselves.
+  registerEffect('diag_clear', () => {
+    try { require('./diag-log').clear(); } catch (_) {}
+  });
+  registerEffect('diag_save', () => {
+    try { require('./diag-log').save(); }
+    catch (e) { _recordError({ where: 'diag_save', kind: 'throw', message: e && e.message }); }
   });
   // destroy_pty_session: PTY teardown from the viewer-tab lifecycle (closing
   // an ephemeral terminal tab — emitted by detail.update's

@@ -200,7 +200,11 @@ function initState() {
   const warnings = Array.isArray(config.warnings) ? config.warnings : [];
   if (warnings.length > 0) {
     const log = require('../dispatch/event-log');
-    for (const w of warnings) log.record('warning', { code: w.code, message: w.message });
+    const diag = require('../dispatch/diag-log');
+    for (const w of warnings) {
+      log.record('warning', { code: w.code, message: w.message });
+      diag.warn(w.code || 'config', w.message);
+    }
     api.dispatchMsg(api.wrap('layout', {
       type: 'set_boot_warnings',
       warnings: warnings.map(w => w.message),

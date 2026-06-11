@@ -19,10 +19,10 @@ const { getModel } = require('../app/runtime');
 describe('[1] registry derivations', () => {
   it('CHAIN_MODES is the modeChain precedence order', () => {
     eq(modes.CHAIN_MODES.join(','),
-       'confirmMode,promptMode,freeConfigTitleEditMode,freeConfigMode,menuOpen,filterMode,copyMode,detailSearchMode,registerPopupMode,prefixMode,cmdMode,tabListMode,paneSelectMode,jobsMode');
+       'confirmMode,promptMode,freeConfigTitleEditMode,freeConfigMode,menuOpen,filterMode,copyMode,detailSearchMode,registerPopupMode,prefixMode,cmdMode,tabListMode,paneSelectMode,jobsMode,diagLogMode');
   });
   it('isOverlayActive matches the pre-registry hardcoded list', () => {
-    const overlay = ['copyMode','menuOpen','freeConfigMode','cmdMode','confirmMode','promptMode','registerPopupMode','prefixMode','tabListMode','paneSelectMode','jobsMode'];
+    const overlay = ['copyMode','menuOpen','freeConfigMode','cmdMode','confirmMode','promptMode','registerPopupMode','prefixMode','tabListMode','paneSelectMode','jobsMode','diagLogMode'];
     for (const f of modes.MODES.map(m => m.flag)) {
       const s = {}; s[f] = true;
       eq(modes.isOverlayActive(s), overlay.includes(f), `${f} overlay`);
@@ -40,7 +40,7 @@ describe('[1] registry derivations', () => {
     // MODES `suppressChrome` column; this pins behavior-equivalence with
     // the 8-mode list it replaced.
     const suppress = ['cmdMode','menuOpen','copyMode','confirmMode','promptMode',
-                      'registerPopupMode','freeConfigTitleEditMode','terminalMode'];
+                      'registerPopupMode','freeConfigTitleEditMode','terminalMode','diagLogMode'];
     for (const f of modes.MODES.map(m => m.flag)) {
       const s = {}; s[f] = true;
       eq(modes.suppressesChromeClicks(s), suppress.includes(f), `${f} suppressChrome`);

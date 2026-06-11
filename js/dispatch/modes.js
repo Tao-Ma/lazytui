@@ -47,6 +47,7 @@ const MODES = [
   { flag: 'tabListMode',             chain: true,  overlay: true,  modal: false, reset: true, suppressChrome: false },
   { flag: 'paneSelectMode',          chain: true,  overlay: true,  modal: false, reset: true, suppressChrome: false },
   { flag: 'jobsMode',                chain: true,  overlay: true,  modal: false, reset: true, suppressChrome: false },
+  { flag: 'diagLogMode',             chain: true,  overlay: true,  modal: false, reset: true, suppressChrome: true  },
   // Non-chain modes (see header).
   { flag: 'terminalMode',            chain: false, overlay: false, modal: true,  reset: true, suppressChrome: true  },
   { flag: 'listSelectMode',          chain: false, overlay: false, modal: false, reset: true, suppressChrome: false },

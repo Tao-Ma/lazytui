@@ -123,6 +123,11 @@ function init() {
       // feature/jobs.list() at frame time so the overlay reflects
       // mid-overlay arrivals + status flips.
       jobs: { cursor: 0, scroll: 0 },
+      // Diagnostics window (leader e) — cursor + scroll into the live
+      // dispatch/diag-log.js buffer. Like jobs, no item snapshot is
+      // stored: the renderer reads diag-log.snapshot() at frame time so
+      // a warning/error arriving while the window is open shows live.
+      diagLog: { cursor: 0, scroll: 0 },
     },
     // Framework-level state: parsed config, paths, leader-mode buffers,
     // misc flags. The layout struct + freeConfig state + viewMode + focus
@@ -790,6 +795,43 @@ function update(model, msg) {
       if (next === j.cursor && scroll === j.scroll) return [model, []];
       return [_withModal(model, { jobs: { cursor: next, scroll } }), []];
     }
+    // --- Diagnostics window (leader e). Mirrors jobs_*: open/close flip
+    // the mode + reset cursor; nav clamps against the handler-supplied
+    // count (the diag-log buffer is out-of-TEA, read renderer-side, so
+    // the count is threaded in like jobs). clear / save are effects.
+    case 'diag_log_open':
+      if (model.modes.diagLogMode) return [model, []];
+      return [{
+        ..._withModes(model, { diagLogMode: true }),
+        modal: { ...model.modal, diagLog: { cursor: 0, scroll: 0 } },
+      }, []];
+    case 'diag_log_close':
+      if (!model.modes.diagLogMode) return [model, []];
+      return [_withModes(model, { diagLogMode: false }), []];
+    case 'diag_log_nav': {
+      const d = model.modal.diagLog;
+      const count = msg.count | 0;
+      const vh = Math.max(1, msg.vh | 0);
+      if (count <= 0) return [model, []];
+      let next = d.cursor;
+      if (msg.to === 'top')           next = 0;
+      else if (msg.to === 'bottom')    next = count - 1;
+      else if (msg.to === 'pageup')    next = d.cursor - vh;
+      else if (msg.to === 'pagedown')  next = d.cursor + vh;
+      else                              next = d.cursor + ((msg.dir | 0) || 0);
+      next = Math.max(0, Math.min(count - 1, next));
+      let scroll = d.scroll | 0;
+      if (next < scroll)            scroll = next;
+      else if (next >= scroll + vh) scroll = next - vh + 1;
+      scroll = Math.max(0, Math.min(scroll, Math.max(0, count - vh)));
+      if (next === d.cursor && scroll === d.scroll) return [model, []];
+      return [_withModal(model, { diagLog: { cursor: next, scroll } }), []];
+    }
+    case 'diag_log_clear':
+      // Buffer mutation is a side-effect → Cmd. Reset the cursor here.
+      return [_withModal(model, { diagLog: { cursor: 0, scroll: 0 } }), [{ type: 'diag_clear' }]];
+    case 'diag_log_save':
+      return [model, [{ type: 'diag_save' }]];
     case 'jobs_activate': {
       // Single-Msg cascade — handler resolves the (out-of-TEA)
       // feature/jobs entry by cursor and threads it via msg.job; the

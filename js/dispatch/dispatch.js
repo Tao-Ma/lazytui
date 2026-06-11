@@ -437,6 +437,23 @@ function handleJobsKey(key, seq) {
   }
 }
 
+function handleDiagLogKey(key, seq) {
+  // View-derived count + vh threaded into the Msg so the reducer stays
+  // pure of the out-of-TEA diag-log buffer (same shape as handleJobsKey).
+  const overlay = require('../overlay/diag-log');
+  const count = require('./diag-log').size();
+  const vh = overlay.viewportRows();
+  if (key === 'escape') { applyMsg({ type: 'diag_log_close' }); return; }
+  if (key === 'up'   || seq === 'k') { applyMsg({ type: 'diag_log_nav', dir: -1, count, vh }); return; }
+  if (key === 'down' || seq === 'j') { applyMsg({ type: 'diag_log_nav', dir: +1, count, vh }); return; }
+  if (seq === 'g')                   { applyMsg({ type: 'diag_log_nav', to: 'top',      count, vh }); return; }
+  if (seq === 'G')                   { applyMsg({ type: 'diag_log_nav', to: 'bottom',   count, vh }); return; }
+  if (seq === ',' || key === 'pageup')   { applyMsg({ type: 'diag_log_nav', to: 'pageup',   count, vh }); return; }
+  if (seq === '.' || key === 'pagedown') { applyMsg({ type: 'diag_log_nav', to: 'pagedown', count, vh }); return; }
+  if (seq === 'c') { applyMsg({ type: 'diag_log_clear' }); return; }
+  if (seq === 's') { applyMsg({ type: 'diag_log_save' }); return; }
+}
+
 function handleDetailSearchKey(key, seq) {
   // viewer_search_* Msgs are handled by the viewer Component's update —
   // route via the Component fan-out, not the root reducer. v0.6.1 Phase
@@ -631,6 +648,7 @@ function _registerBuiltinChords() {
   keybindings.registerKeyBinding('ge', { label: 'bottom',  run: () => handleAction('goto_bottom') }, b);
   keybindings.registerKeyBinding('c',  { label: 'collapse', run: () => handleAction('toggle_collapse_focused') }, b);
   keybindings.registerKeyBinding('j',  { label: 'jobs (running)', run: () => applyMsg({ type: 'jobs_open' }) }, b);
+  keybindings.registerKeyBinding('e',  { label: 'diagnostics', run: () => applyMsg({ type: 'diag_log_open' }) }, b);
   keybindings.labelSubtree('g', '+goto');
 }
 _registerBuiltinChords();
@@ -783,6 +801,7 @@ const _modeHandlers = {
   tabListMode:         (key, seq) => handleTabListKey(key, seq),
   paneSelectMode:      (key, seq) => handlePaneSelectKey(key, seq),
   jobsMode:            (key, seq) => handleJobsKey(key, seq),
+  diagLogMode:         (key, seq) => handleDiagLogKey(key, seq),
 };
 
 const modeChain = modes.CHAIN_MODES.map(flag => {

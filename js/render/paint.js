@@ -753,6 +753,7 @@ function render(model = getModel()) {
   if (md.tabListMode) renderTabList();
   if (md.paneSelectMode) require('../overlay/pane-select').render();
   if (md.jobsMode)    renderJobsOverlay();
+  if (md.diagLogMode) require('../overlay/diag-log').renderDiagLog();
 
   // Cursor visibility — derived from mode state, single emission site.
   // Cursor *position* is set inline by renderTerminalOverlay (when in
