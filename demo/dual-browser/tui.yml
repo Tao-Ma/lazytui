@@ -42,6 +42,25 @@ mouse:
   middle-click: noop         # reserved — inert today
   double-click-ms: 250       # same-cell double-click window, in milliseconds
 
+# Extra right-click context-menu entries (v0.6.4 Theme F follow-on). Parallel
+# to `keys:` / `mouse:`: a list of rows appended to the right-click menu, after
+# the built-in Copy / Refresh / Help. Each row names ONE verb form —
+#   action:  a configured action's short key (here `grep`; runs via the same
+#            path as a leader `action:` binding — opens its `$1` prompt)
+#   builtin: a built-in verb (e.g. show_help, refresh)
+#   command: a `:`-cmdline command string
+# An optional `pane:` (a kind or a list of kinds) gates the row to that pane;
+# omit it to show everywhere (incl. empty space). Delete the block to remove
+# the extra rows — the built-in menu is unaffected.
+context-menu:
+  - label: git grep in repo…   # → opens the grep action's prompt
+    action: grep
+    pane: files                # only on a files pane (the two browsers)
+  - label: Help
+    builtin: show_help         # everywhere, incl. empty space
+  # - label: Reload listing    # command form (a `:`-cmdline command):
+  #   command: show-hidden     #   uncomment + name a command your config registers
+
 groups:
   browse:
     label: Dual browser

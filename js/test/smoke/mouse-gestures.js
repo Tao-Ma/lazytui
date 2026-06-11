@@ -349,4 +349,82 @@ describe('[5] right-click context menu — copy + dismiss', () => {
   });
 });
 
+// --- [6] YAML `context-menu:` entries — appear in the menu + route -----
+//
+// A config-declared entry is appended as a trailing section and, when
+// clicked, routes its verb through menu_action → handleAction. The
+// menu_action effect calls dispatch.handleAction (a captured re-export),
+// so spy THAT layer to observe the routed (verb, arg). pane: gates an entry
+// to its kind (shown there, hidden on empty space).
+
+const cm = require('../../leaves/context-menu');
+const { overlayBox } = require('../../render/panel');
+
+// Spy dispatch.handleAction (the menu_action effect's call target) to capture
+// the routed (verb, arg) without running the verb's downstream effect.
+function withDispatchActionSpy(fn) {
+  const calls = [];
+  const real = dispatch.handleAction;
+  dispatch.handleAction = (...a) => { calls.push(a); };
+  try { fn(); } finally { dispatch.handleAction = real; }
+  return calls;
+}
+
+// Click the painted cell of the menu row whose label === wantLabel, using the
+// shared overlayBox geometry (same technique as [5]'s Copy selection click).
+function clickMenuRow(wantLabel) {
+  const items = getModel().modal.menu.items;
+  const ci = items.findIndex(r => r && r[0] === wantLabel);
+  assert(ci >= 0, `menu offers '${wantLabel}' (saw: ${JSON.stringify(items.map(r => r && r[0]))})`);
+  const box = overlayBox({ linesLen: items.length, anchor: getModel().modal.menu.anchor, maxWidth: 44 });
+  sm.capture(() => sm.handleMouse('press', box.offX + 3, box.offY + 1 + ci + 1));
+}
+
+describe('[6] context-menu: config entries', () => {
+  it('a builtin entry appears after the built-ins and routes its verb on click', () => {
+    cm.configure([{ label: 'My Refresh', builtin: 'refresh' }]);
+    try {
+      sm.bootFresh();
+      sm.capture(() => sm.render());
+      const { cols, rows } = require('../../io/term');
+      sm.capture(() => sm.handleMouse('right', cols(), rows()));   // empty space → general + config
+      const labels = getModel().modal.menu.items.map(r => r && r[0]);
+      assert(labels.includes('My Refresh'), `config entry present (saw: ${JSON.stringify(labels)})`);
+      assert(labels.indexOf('My Refresh') > labels.indexOf('Help'), 'config section trails the built-ins');
+
+      const calls = withDispatchActionSpy(() => clickMenuRow('My Refresh'));
+      eq(getModel().modes.menuOpen, false, 'clicking the config row closed the menu');
+      assert(calls.some(c => c[0] === 'refresh'), `builtin verb routed (saw: ${JSON.stringify(calls)})`);
+    } finally { cm.reset(); }
+  });
+
+  it('an action entry routes ctx_run_action(key); a pane: gate scopes it', () => {
+    cm.configure([{ label: 'Grep', action: 'grep', pane: 'groups' }]);
+    try {
+      sm.bootFresh();
+      sm.capture(() => sm.render());
+      const { cols, rows } = require('../../io/term');
+
+      // Hidden on empty space (pane-gated, no pane under the cursor there).
+      sm.capture(() => sm.handleMouse('right', cols(), rows()));
+      assert(!getModel().modal.menu.items.some(r => r && r[0] === 'Grep'),
+        'pane-gated entry hidden on empty space');
+
+      // Fresh boot so the next right-click opens a NEW menu (a right-click
+      // while one is open just interacts with the existing modal).
+      sm.bootFresh();
+      sm.capture(() => sm.render());
+
+      // Shown on the groups pane it is gated to; click routes ctx_run_action.
+      const b = groupsBounds();
+      const [sx, sy] = sgr0(b.x + 3, b.y + 1);
+      sm.capture(() => sm.handleMouse('right', sx, sy));
+      const calls = withDispatchActionSpy(() => clickMenuRow('Grep'));
+      const ctxCall = calls.find(c => c[0] === 'ctx_run_action');
+      assert(ctxCall, `action entry routes ctx_run_action (saw: ${JSON.stringify(calls)})`);
+      eq(ctxCall[1], 'grep', 'with the configured action key as arg');
+    } finally { cm.reset(); }
+  });
+});
+
 report();

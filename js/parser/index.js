@@ -697,6 +697,11 @@ function parse(yamlPath) {
     // dispatch.loadMouseBindings merges these over the code defaults at boot.
     // Default empty — the built-in gesture map applies unchanged.
     mouse: data.mouse !== undefined ? data.mouse : {},
+    // Extra right-click context-menu entries (top-level `context-menu:`).
+    // v0.6.4 Theme F follow-on: dispatch.loadContextMenu hands these to the
+    // context-menu registry at boot. Default empty — only the built-in
+    // copy/refresh/help rows apply.
+    'context-menu': data['context-menu'] !== undefined ? data['context-menu'] : [],
     // Soft-fail diagnostics from validation (today: column over soft
     // cap). tui.js boot drains these into the event log + a brief
     // chrome notice; nothing else reads them.

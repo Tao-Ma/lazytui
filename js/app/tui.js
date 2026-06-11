@@ -252,6 +252,12 @@ function main() {
   // reads. No try/exit needed.
   require('../dispatch/dispatch').loadMouseBindings(getModel().config);
 
+  // v0.6.4 Theme F follow-on — install the top-level `context-menu:` block
+  // (extra right-click entries) into the context-menu registry. Schema-
+  // validated at parse time; loadContextMenu only warns (never throws) on an
+  // unresolved `action:`, so no try/exit needed.
+  require('../dispatch/dispatch').loadContextMenu(getModel().config);
+
   initState();
   // Post-T7: no captured `model` local at boot. handleKey / handleMouse
   // / render() all default to getModel() at entry; scheduleRender goes

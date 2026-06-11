@@ -377,6 +377,20 @@ function handleAction(action, arg) {
       // which mirrors to the OS clipboard via OSC52 (the same path as `y`).
       if (arg) applyMsg({ type: 'register_push', text: arg });
       break;
+    case 'ctx_run_action':
+      // A YAML `context-menu:` entry declared with `action:` — run the
+      // configured action by its short key, the SAME path the leader
+      // `action:` binding uses (_bindingRunner → _runActionByKey). The arg
+      // is the action key; the menu carries it as a pure-data row so no
+      // closure leaks into the model.
+      if (arg) _runActionByKey(arg);
+      break;
+    case 'ctx_run_command':
+      // A YAML `context-menu:` entry declared with `command:` — run the
+      // `:`-cmdline command string, the SAME path as the leader `command:`
+      // binding (_bindingRunner → runCommandString).
+      if (arg) require('./cmdline').runCommandString(arg);
+      break;
     case 'free_config':
       // Reachable from menu entry and `:design` cmdline. The design-enabled
       // gate lives in the reducer (update emits the start_free_config Cmd only

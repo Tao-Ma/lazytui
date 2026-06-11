@@ -10,8 +10,15 @@ const { SchemaError } = require('./errors');
 
 const VALID_ACTION_TYPES = new Set(['run', 'spawn', 'background']);
 
-const VALID_TOP_KEYS    = new Set(['project_dir', 'groups', 'vars', 'helpers', 'files', 'layout', 'theme', 'plugins', 'register', 'keys', 'mouse', 'panels']);
+const VALID_TOP_KEYS    = new Set(['project_dir', 'groups', 'vars', 'helpers', 'files', 'layout', 'theme', 'plugins', 'register', 'keys', 'mouse', 'context-menu', 'panels']);
 const VALID_KEY_BINDING_KEYS = new Set(['action', 'command', 'builtin', 'label', 'desc']);
+
+// v0.6.4 Theme F follow-on — the `context-menu:` block (extra right-click
+// entries). A list of `{ label, action|command|builtin, pane? }`; the three
+// verb forms mirror `keys:` (action = a configured action short key, command =
+// a `:`-cmdline command, builtin = a handleAction verb). `pane:` optionally
+// gates the entry to one or more pane kinds.
+const VALID_CONTEXT_MENU_KEYS = new Set(['label', 'action', 'command', 'builtin', 'pane']);
 
 // v0.6.4 Theme F Phase 4 — the `mouse:` block (gesture → intent overrides).
 // Only the three discrete button gestures + the double-click window are
@@ -73,6 +80,7 @@ function validate(data, _sourceFile, warnings) {
   if ('register' in data) validateRegister(data.register);
   if ('keys' in data)     validateKeys(data.keys);
   if ('mouse' in data)    validateMouse(data.mouse);
+  if ('context-menu' in data) validateContextMenu(data['context-menu']);
   if ('panels' in data)   validatePanels(data.panels);
   if ('layout' in data)   validateLayout(data.layout, warnings);
 
@@ -295,6 +303,42 @@ function validateMouse(mouseBlock) {
       throw new SchemaError("'mouse.double-click-ms' must be a positive integer", { context: 'mouse' });
     }
   }
+}
+
+function validateContextMenu(block) {
+  if (!Array.isArray(block)) {
+    throw new SchemaError(`'context-menu' must be a list, got ${typeName(block)}`);
+  }
+  block.forEach((entry, i) => {
+    const ctx = `context-menu[${i}]`;
+    if (!isMapping(entry)) {
+      throw new SchemaError(`entry must be a mapping, got ${typeName(entry)}`, { context: ctx });
+    }
+    checkUnknownKeys(entry, VALID_CONTEXT_MENU_KEYS, ctx);
+    if (typeof entry.label !== 'string' || !entry.label.trim()) {
+      throw new SchemaError("'label' must be a non-empty string", { context: ctx });
+    }
+    // Exactly one target verb — mirrors validateKeys.
+    const verbs = ['action', 'command', 'builtin'].filter(v => v in entry);
+    if (verbs.length === 0) {
+      throw new SchemaError("entry needs one of 'action', 'command', or 'builtin'", { context: ctx });
+    }
+    if (verbs.length > 1) {
+      throw new SchemaError(`entry has conflicting targets: ${verbs.join(', ')}`, { context: ctx });
+    }
+    const verb = verbs[0];
+    if (typeof entry[verb] !== 'string' || !entry[verb].trim()) {
+      throw new SchemaError(`'${verb}' must be a non-empty string`, { context: ctx });
+    }
+    if ('pane' in entry) {
+      const single = typeof entry.pane === 'string' && entry.pane.trim();
+      const list = Array.isArray(entry.pane) && entry.pane.length
+        && entry.pane.every(p => typeof p === 'string' && p.trim());
+      if (!single && !list) {
+        throw new SchemaError("'pane' must be a non-empty string or list of non-empty strings", { context: ctx });
+      }
+    }
+  });
 }
 
 function validateVars(varsBlock) {

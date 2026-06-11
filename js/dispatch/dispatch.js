@@ -717,6 +717,25 @@ function loadMouseBindings(config) {
   require('./mouse-bindings').configure(config && config.mouse);
 }
 
+/**
+ * Install the top-level `context-menu:` block (extra right-click entries) into
+ * the context-menu registry. v0.6.4 Theme F follow-on — schema validation
+ * already ran (parser/schema.validateContextMenu), so the shapes are sound.
+ * Parity with loadKeyBindings: warn (don't throw) on an `action:` whose short
+ * key doesn't resolve, since that would otherwise be a silent dead menu row.
+ * Called once at boot from tui.js alongside loadKeyBindings/loadMouseBindings.
+ */
+function loadContextMenu(config) {
+  const entries = (config && config['context-menu']) || [];
+  const actionKeys = _collectActionKeys(config);
+  for (const e of entries) {
+    if (e.action && !actionKeys.has(e.action)) {
+      console.error(`[context-menu] entry '${e.label}' targets action '${e.action}' but no action with that short key exists in config — the menu row will be a silent no-op`);
+    }
+  }
+  require('../leaves/context-menu').configure(entries);
+}
+
 // Mode → handler map. The ORDER and the membership of the modal set
 // live in js/modes.js (the single source of truth); here we only bind
 // each chain mode to its key handler. Precedence is modes.CHAIN_MODES
@@ -893,6 +912,7 @@ module.exports = {
   registerKeyFilter, clearKeyFilters,
   loadKeyBindings,
   loadMouseBindings,
+  loadContextMenu,
   // Exposed so actions.js (the carved-out handleAction switch) can lazy-
   // require _enterFilterMode for its `:filter` arm — keeps the filterable
   // gate single-sourced.

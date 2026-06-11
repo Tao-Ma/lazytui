@@ -134,6 +134,103 @@ describe('[ctx-menu] copy_text verb → register_push', () => {
   });
 });
 
+describe('[ctx-menu] configure — YAML `context-menu:` entries', () => {
+  const labelsOf = (items) => items.map(r => r && r[0]);
+  const rowFor = (items, label) => items.find(r => r && r[0] === label);
+
+  it('config entries append as a trailing section after the built-ins', () => {
+    cm.configure([{ label: 'Reload', builtin: 'refresh' }]);
+    try {
+      const items = cm.buildContextItems({ paneKind: 'detail', lineText: 'L' });
+      const labels = labelsOf(items);
+      assert(labels.includes('Copy line'), 'built-in target section still first');
+      assert(labels.includes('Refresh'), 'built-in general section present');
+      assert(labels.includes('Reload'), 'config entry appended');
+      // The config entry sits AFTER the built-in general 'Help' row.
+      assert(labels.indexOf('Reload') > labels.indexOf('Help'), 'config section trails the built-ins');
+      // A separator divides the built-in general section from the config one.
+      const sepCount = items.filter(r => r === null).length;
+      eq(sepCount, 2, 'target | general | config → two separators');
+    } finally { cm.reset(); }
+  });
+
+  it('the three verb forms map to pure-data rows (builtin / action / command)', () => {
+    cm.configure([
+      { label: 'B', builtin: 'show_help' },
+      { label: 'A', action: 'deploy' },
+      { label: 'C', command: 'logs web' },
+    ]);
+    try {
+      const items = cm.buildContextItems({});   // empty space → only config + general
+      eq(rowFor(items, 'B')[1], 'show_help', 'builtin verb passes through verbatim');
+      eq(rowFor(items, 'B').length, 2, 'builtin row carries no arg');
+      eq(rowFor(items, 'A')[1], 'ctx_run_action', 'action → ctx_run_action verb');
+      eq(rowFor(items, 'A')[2], 'deploy', 'action key threaded as arg');
+      eq(rowFor(items, 'C')[1], 'ctx_run_command', 'command → ctx_run_command verb');
+      eq(rowFor(items, 'C')[2], 'logs web', 'command string threaded as arg');
+    } finally { cm.reset(); }
+  });
+
+  it('`pane:` gates an entry to the matching pane kind(s)', () => {
+    cm.configure([
+      { label: 'OnDocker', builtin: 'refresh', pane: 'docker' },
+      { label: 'OnEither', builtin: 'refresh', pane: ['groups', 'detail'] },
+      { label: 'Always',   builtin: 'refresh' },
+    ]);
+    try {
+      const onDetail = labelsOf(cm.buildContextItems({ paneKind: 'detail' }));
+      assert(!onDetail.includes('OnDocker'), 'docker-gated hidden on a detail pane');
+      assert(onDetail.includes('OnEither'), 'list-gated shows on detail (in its list)');
+      assert(onDetail.includes('Always'), 'ungated always shows');
+      const onEmpty = labelsOf(cm.buildContextItems({}));   // no paneKind
+      assert(!onEmpty.includes('OnDocker') && !onEmpty.includes('OnEither'), 'pane-gated hidden on empty space');
+      assert(onEmpty.includes('Always'), 'ungated shows on empty space');
+    } finally { cm.reset(); }
+  });
+
+  it('configure is idempotent — a second call replaces the first set', () => {
+    cm.configure([{ label: 'First', builtin: 'refresh' }]);
+    cm.configure([{ label: 'Second', builtin: 'refresh' }]);
+    try {
+      const labels = labelsOf(cm.buildContextItems({}));
+      assert(labels.includes('Second'), 'second set present');
+      assert(!labels.includes('First'), 'first set replaced, not accumulated');
+    } finally { cm.reset(); }
+  });
+
+  it('reset / configure(null) clears config entries (only built-ins remain)', () => {
+    cm.configure([{ label: 'Gone', builtin: 'refresh' }]);
+    cm.configure(null);
+    const labels = labelsOf(cm.buildContextItems({}));
+    assert(!labels.includes('Gone'), 'configure(null) clears');
+    assert(labels.includes('Refresh'), 'built-in general section survives');
+  });
+});
+
+describe('[ctx-menu] ctx_run_action / ctx_run_command verbs', () => {
+  const actions = require('../dispatch/actions');
+
+  it('ctx_run_command routes the string through runCommandString', () => {
+    const cmdline = require('../dispatch/cmdline');
+    const seen = [];
+    const real = cmdline.runCommandString;
+    cmdline.runCommandString = (s) => { seen.push(s); };
+    try { actions.handleAction('ctx_run_command', 'logs web'); }
+    finally { cmdline.runCommandString = real; }
+    eq(seen[0], 'logs web', 'command string forwarded');
+  });
+
+  it('ctx_run_command with no arg is inert', () => {
+    const cmdline = require('../dispatch/cmdline');
+    const seen = [];
+    const real = cmdline.runCommandString;
+    cmdline.runCommandString = (s) => { seen.push(s); };
+    try { actions.handleAction('ctx_run_command', undefined); }
+    finally { cmdline.runCommandString = real; }
+    eq(seen.length, 0, 'no call without an arg');
+  });
+});
+
 describe('[ctx-menu] overlay menu.hitTest — cell → row, shared geometry', () => {
   const menu = require('../overlay/menu');
   const { getModel } = require('../app/runtime');

@@ -74,15 +74,58 @@ const SECTIONS = [
 // Flat view of every entry — for tests / introspection (id lookup).
 const ENTRIES = SECTIONS.flatMap(s => s.entries);
 
+// User-declared `context-menu:` entries (a top-level YAML block, parallel to
+// `keys:` / `mouse:`). Set by configure() at boot; appended as their OWN
+// section after the built-ins, so a custom set is visually separated. Each is
+// the schema-validated entry object `{ label, action|command|builtin, pane? }`
+// — a config typo can't reach here (parser/schema.validateContextMenu gates).
+let _configEntries = [];
+
+/**
+ * Install the parsed `context-menu:` block. Idempotent: replaces the prior
+ * set wholesale (a second call with a smaller block doesn't retain the
+ * first's entries), mirroring mouse-bindings.configure. Absent / null → none.
+ */
+function configure(entries) {
+  _configEntries = Array.isArray(entries) ? entries.slice() : [];
+}
+
+/** Reset to no config entries — for tests that called configure(). */
+function reset() { _configEntries = []; }
+
+// A config entry is offered when it declares no `pane:` filter, or the pane
+// under the cursor matches one of the named kinds. `ctx.paneKind` is the
+// clicked pane's type ('detail', 'groups', …) or undefined on empty space —
+// a pane-gated entry is hidden on empty space, an ungated one is shown.
+function _paneGate(entry, ctx) {
+  if (!entry.pane) return true;
+  const want = Array.isArray(entry.pane) ? entry.pane : [entry.pane];
+  return want.includes(ctx && ctx.paneKind);
+}
+
+// Map a config entry to a pure-data menu row `[label, verb, arg?]`. The three
+// verb forms reduce to handleAction verbs so the row carries no closure (the
+// menu modal stores items as data, threaded through menu_action):
+//   builtin: V → run V directly        action: K → ctx_run_action(K)
+//   command: C → ctx_run_command(C)
+// Mirrors keys'/_bindingRunner's three forms; same precedence (builtin first).
+function _configRow(entry) {
+  if (entry.builtin) return [entry.label, entry.builtin];
+  if (entry.action)  return [entry.label, 'ctx_run_action',  entry.action];
+  if (entry.command) return [entry.label, 'ctx_run_command', entry.command];
+  return null;  // unreachable post-schema (exactly one verb is required)
+}
+
 /**
  * Build the context-menu rows for a click context. Each section is filtered
  * by its entries' `show(ctx)` gate then `build(ctx)` (null = inapplicable,
  * dropped); empty sections vanish, and a `null` separator is inserted between
- * the populated ones. Result is a list of `[label, action, arg?]` rows (with
- * `null` separators) ready for `menu_open`.
+ * the populated ones. The user's `context-menu:` entries form a final section
+ * (filtered by their `pane:` gate). Result is a list of `[label, action,
+ * arg?]` rows (with `null` separators) ready for `menu_open`.
  */
 function buildContextItems(ctx = {}) {
-  const out = [];
+  const sections = [];
   for (const sec of SECTIONS) {
     const rows = [];
     for (const e of sec.entries) {
@@ -90,6 +133,13 @@ function buildContextItems(ctx = {}) {
       const row = e.build(ctx);
       if (row) rows.push(row);
     }
+    sections.push(rows);
+  }
+  // User-declared entries, gated by `pane:`, as a trailing section.
+  sections.push(_configEntries.filter(e => _paneGate(e, ctx)).map(_configRow).filter(Boolean));
+
+  const out = [];
+  for (const rows of sections) {
     if (!rows.length) continue;
     if (out.length) out.push(null);  // separator between populated sections
     out.push(...rows);
@@ -97,4 +147,4 @@ function buildContextItems(ctx = {}) {
   return out;
 }
 
-module.exports = { buildContextItems, SECTIONS, ENTRIES };
+module.exports = { buildContextItems, configure, reset, SECTIONS, ENTRIES };
