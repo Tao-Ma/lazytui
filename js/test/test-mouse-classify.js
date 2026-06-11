@@ -16,7 +16,7 @@
  * Date.now(). The module-local triple is stateful across calls, so each
  * `it` advances `now` past the window to start from a clean single.
  *
- *   node js/test/test-mouse-gestures.js
+ *   node js/test/test-mouse-classify.js
  */
 'use strict';
 

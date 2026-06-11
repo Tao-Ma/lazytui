@@ -148,7 +148,7 @@ describe('[7] half / full view thread opts.focused to the rendered pane', () => 
       api.dispatchMsg(api.wrap('layout', { type: 'view_set', mode }));
       const realWrite = process.stdout.write.bind(process.stdout);
       process.stdout.write = () => true;
-      try { require('../../render/paint').redraw(getModel()); } finally { process.stdout.write = realWrite; }
+      try { require('../../render/geometry').redraw(getModel()); } finally { process.stdout.write = realWrite; }
     } finally { def.render = orig; }
     return seen;
   }
