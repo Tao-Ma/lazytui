@@ -698,6 +698,17 @@ function loadKeyBindings(config) {
   }
 }
 
+/**
+ * Merge the top-level `mouse:` block (gesture → intent overrides) over the
+ * code defaults. v0.6.4 Theme F Phase 4 — the pointer analogue of
+ * loadKeyBindings; schema validation already ran (parser/schema validateMouse),
+ * so this just hands the block to the mouse-bindings registry. Called once at
+ * boot from tui.js alongside loadKeyBindings.
+ */
+function loadMouseBindings(config) {
+  require('./mouse-bindings').configure(config && config.mouse);
+}
+
 // Mode → handler map. The ORDER and the membership of the modal set
 // live in js/modes.js (the single source of truth); here we only bind
 // each chain mode to its key handler. Precedence is modes.CHAIN_MODES
@@ -873,6 +884,7 @@ module.exports = {
   showSelectedInfo,
   registerKeyFilter, clearKeyFilters,
   loadKeyBindings,
+  loadMouseBindings,
   // Exposed so actions.js (the carved-out handleAction switch) can lazy-
   // require _enterFilterMode for its `:filter` arm — keeps the filterable
   // gate single-sourced.

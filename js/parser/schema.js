@@ -10,8 +10,19 @@ const { SchemaError } = require('./errors');
 
 const VALID_ACTION_TYPES = new Set(['run', 'spawn', 'background']);
 
-const VALID_TOP_KEYS    = new Set(['project_dir', 'groups', 'vars', 'helpers', 'files', 'layout', 'theme', 'plugins', 'register', 'keys', 'panels']);
+const VALID_TOP_KEYS    = new Set(['project_dir', 'groups', 'vars', 'helpers', 'files', 'layout', 'theme', 'plugins', 'register', 'keys', 'mouse', 'panels']);
 const VALID_KEY_BINDING_KEYS = new Set(['action', 'command', 'builtin', 'label', 'desc']);
+
+// v0.6.4 Theme F Phase 4 — the `mouse:` block (gesture → intent overrides).
+// Only the three discrete button gestures + the double-click window are
+// overridable today; left-click / wheel keep their code defaults. The
+// realizable intent vocabulary for a button gesture is activate / context /
+// noop (mirrors dispatch/mouse-bindings.js); it grows as new intents land
+// (e.g. `paste` once a paste intent exists). Kept in sync by hand, same as
+// the keys-binding verb set.
+const VALID_MOUSE_KEYS    = new Set(['double-click', 'right-click', 'middle-click', 'double-click-ms']);
+const VALID_MOUSE_GESTURES = new Set(['double-click', 'right-click', 'middle-click']);
+const VALID_MOUSE_INTENTS = new Set(['activate', 'context', 'noop']);
 const VALID_REGISTER_KEYS = new Set(['cap']);
 const VALID_FILE_KEYS   = new Set(['path', 'var', 'desc', 'exclude', 'category']);
 const VALID_GROUP_KEYS  = new Set(['label', 'compose', 'containers', 'actions', 'terminals', 'children', 'quick', 'archive', 'config_branch', 'images']);
@@ -61,6 +72,7 @@ function validate(data, _sourceFile, warnings) {
   if ('files' in data)   validateFiles(data.files);
   if ('register' in data) validateRegister(data.register);
   if ('keys' in data)     validateKeys(data.keys);
+  if ('mouse' in data)    validateMouse(data.mouse);
   if ('panels' in data)   validatePanels(data.panels);
   if ('layout' in data)   validateLayout(data.layout, warnings);
 
@@ -262,6 +274,25 @@ function validateKeys(keysBlock) {
       if (opt in spec && typeof spec[opt] !== 'string') {
         throw new SchemaError(`'${opt}' must be a string`, { context: ctx });
       }
+    }
+  }
+}
+
+function validateMouse(mouseBlock) {
+  if (!isMapping(mouseBlock)) throw new SchemaError("'mouse' must be a mapping");
+  checkUnknownKeys(mouseBlock, VALID_MOUSE_KEYS, 'mouse');
+  for (const g of VALID_MOUSE_GESTURES) {
+    if (!(g in mouseBlock)) continue;
+    const intent = mouseBlock[g];
+    if (typeof intent !== 'string' || !VALID_MOUSE_INTENTS.has(intent)) {
+      const list = '[' + [...VALID_MOUSE_INTENTS].sort().map(s => `'${s}'`).join(', ') + ']';
+      throw new SchemaError(`'${g}' must be one of ${list}, got ${typeof intent === 'string' ? `'${intent}'` : typeName(intent)}`, { context: 'mouse' });
+    }
+  }
+  if ('double-click-ms' in mouseBlock) {
+    const ms = mouseBlock['double-click-ms'];
+    if (typeof ms !== 'number' || !Number.isInteger(ms) || ms <= 0) {
+      throw new SchemaError("'mouse.double-click-ms' must be a positive integer", { context: 'mouse' });
     }
   }
 }

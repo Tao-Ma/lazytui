@@ -26,6 +26,9 @@ const { isChainActive, CHAIN_MODES, suppressesChromeClicks } = require('./modes'
 // requires at load time, so this top-level require is load-order-safe
 // despite the intent↔input cycle (its `scroll` arm lazy-calls _handleWheel).
 const intent = require('./intent');
+// v0.6.4 Theme F Phase 4 — the gesture→intent map + tunable double-click
+// window. Dependency-free leaf, so this top-level require is cycle-safe.
+const mouseBindings = require('./mouse-bindings');
 
 function _detail() {
   // v0.6.3 T1.4 — paneId-aware lookup (post-Phase B1). resolveTarget
@@ -352,6 +355,66 @@ function _dispatchActiveModeMouse(kind, mx, my, model) {
   return false;
 }
 
+// v0.6.4 Theme F Phase 4 — side-effect-free hit resolution for a discrete
+// button gesture: which pane + which row sits under the cursor. Mirrors the
+// click body arm's geometry but WITHOUT its chrome/tab/detail/text-select
+// pre-resolution — a button gesture on chrome / a tab / the border lands
+// off-row (navIdx < 0) and is therefore inert for an `activate` mapping.
+// Returns { paneId, navIdx } (navIdx >= 0 iff on a selectable row), or null
+// when the cursor is outside every visible pane.
+function _resolveBodyHit(mx, my) {
+  const { visibleBoundsFor } = require('../render/geometry');
+  for (const p of allPanels()) {
+    const b = visibleBoundsFor(p.paneId);
+    if (!b) continue;
+    if (mx < b.x || mx >= b.x + b.w || my < b.y || my >= b.y + b.h) continue;
+    let navIdx = -1;
+    const itemRow = my - b.y - 1;  // -1 for top border
+    if (itemRow >= 0) {
+      const def = getPanelDef(p.type);
+      if (def && typeof def.getItems === 'function') {
+        const idx = itemRow + getScroll(p.paneId);
+        if (idx < getItems(p.paneId).length) navIdx = idx;
+      }
+    }
+    return { paneId: p.paneId, navIdx };
+  }
+  return null;
+}
+
+// Realize the intent a discrete button gesture is bound to (the gesture →
+// intent map's right-hand side). The supported vocabulary mirrors
+// parser/schema.js VALID_MOUSE_INTENTS. Each branch owns its render().
+function _realizeButtonGesture(intentName, x, y, mx, my) {
+  switch (intentName) {
+    case 'noop':
+      return;  // reserved-but-inert (the middle-click default)
+    case 'context':
+      // Open the context menu anchored AT the cursor (1-based SGR {x,y});
+      // the realizer threads it into menu_open and the menu render clamps +
+      // opens there.
+      intent.realize(intent.context({ x, y }));
+      render();
+      return;
+    case 'activate': {
+      // Focus + select + activate the row under the cursor — the click body
+      // arm's path, gated on landing ON a row.
+      const hit = _resolveBodyHit(mx, my);
+      if (hit && hit.navIdx >= 0) {
+        intent.realize(intent.focusPane(hit.paneId, { skipInfo: true }));
+        intent.realize(intent.selectAt(hit.paneId, hit.navIdx));
+        intent.realize(intent.activate());
+        render();
+      }
+      return;
+    }
+    default:
+      // Unknown intent — schema validation should make this unreachable;
+      // be inert rather than throw on a hot input path.
+      return;
+  }
+}
+
 function handleMouse(kind, x, y) {
   // Phase 4 — runtime.update returns NEW model objects; read getModel()
   // at entry so post-Msg state is what subsequent reads see.
@@ -359,12 +422,6 @@ function handleMouse(kind, x, y) {
   // x, y are 1-based from SGR; convert to 0-based
   const mx = x - 1;
   const my = y - 1;
-
-  // v0.6.4 Theme F Phase 3 — middle-click is reserved: the parser un-drops
-  // it (so a future binding is a pure additive resolver row), the resolver
-  // recognizes it and discards it. No mode/geometry work — it does nothing
-  // today regardless of context.
-  if (kind === 'middle') return;
 
   // Panel-chrome glyph clicks — single early hit-test site for both
   // [_]/[+] (collapse, always-on) and [X] (close, free-config-only).
@@ -448,14 +505,20 @@ function handleMouse(kind, x, y) {
   // the mouse pipeline. terminalMode is non-chain by design.
   if (isChainActive(model.modes)) return;
 
-  // v0.6.4 Theme F Phase 3 — right-click opens the context menu anchored
-  // AT THE CURSOR. The `context` intent threads the 1-based SGR {x,y}; the
-  // realizer carries it into menu_open and the menu render clamps + opens
-  // there (a null anchor — the keyboard `x` verb — stays centered). Gated by
-  // the same chain-mode guard above, so no menu pops behind an overlay.
-  if (kind === 'right') {
-    intent.realize(intent.context({ x, y }));
-    render();
+  // v0.6.4 Theme F Phase 3+4 — the discrete button gestures (double / right
+  // / middle) resolve their intent from the YAML-overridable mouse map
+  // (defaults: double→activate, right→context, middle→noop). Realization is
+  // uniform (`_realizeButtonGesture`), so a config may remap any of the three
+  // onto any supported intent. Chrome (press-only) already ran above; these
+  // are gated by the same isChainActive guard, so nothing fires behind an
+  // overlay. For a real double, the preceding single press already focused +
+  // selected the row via the click body arm below; the `activate` path
+  // re-runs focus+select idempotently (and makes a remapped button work too).
+  if (kind === 'double' || kind === 'right' || kind === 'middle') {
+    const gesture = kind === 'double' ? 'double-click'
+                  : kind === 'right'  ? 'right-click'
+                  : 'middle-click';
+    _realizeButtonGesture(mouseBindings.intentFor(gesture), x, y, mx, my);
     return;
   }
 
@@ -496,14 +559,10 @@ function handleMouse(kind, x, y) {
     return;
   }
 
-  // From here on: press only. v0.6.4 Theme F Phase 3 — `double` rides the
-  // SAME resolution as `press` (chrome already returned on the first press;
-  // tab-strip / detail arms break before the body arm), so a double on a
-  // list-pane body falls through to the focus+select arm where it ALSO
-  // realizes `activate`. The preceding single press already focused +
-  // selected the row, so the double's focus+select is idempotent and the
-  // activate runs against the correct selection.
-  if (kind !== 'press' && kind !== 'double') return;
+  // From here on: press only. The discrete button gestures (double / right /
+  // middle) are resolved above through the mouse-bindings map; only a plain
+  // left press reaches the chrome/tab/detail pre-resolution + focus+select.
+  if (kind !== 'press') return;
 
   let mutated = false;
 
@@ -624,10 +683,6 @@ function handleMouse(kind, x, y) {
       // form). Sets cursor + fires the auto-yank-or-show_info cascade +
       // the groups_selected cascade for groups.
       intent.realize(intent.selectAt(p.paneId, navIdx));
-      // v0.6.4 Theme F Phase 3 — a double-click on a row activates it
-      // (the GUI single-selects / double-opens convention). Focus + select
-      // above ran against the same row, so activate hits the right item.
-      if (kind === 'double') intent.realize(intent.activate());
     }
     mutated = true;
     break;
@@ -715,16 +770,17 @@ const _MOUSE_RE_G = /\x1b\[<(\d+);(\d+);(\d+)([Mm])/g;
 // the reducer hot path and out of the model. A fresh left press emits the
 // `double` gesture when it lands on the SAME 1-based cell as the previous
 // press within the window; otherwise `press` (and the triple advances).
-// Window is hardcoded here in Phase 3; Phase 4 makes `double-click-ms`
-// YAML-tunable. Right (2) → `right`, middle (1) → `middle` (reserved
-// no-op); any other button → null (dropped, as before).
-const _DOUBLE_CLICK_MS = 250;
+// Right (2) → `right`, middle (1) → `middle`; any other button → null
+// (dropped, as before).
+// v0.6.4 Phase 4 — the window is the YAML-tunable `mouse.double-click-ms`
+// (read from the mouse-bindings registry, required at the top of this file;
+// defaults to 250 ms).
 let _lastClickX = -1, _lastClickY = -1, _lastClickTime = -Infinity;
 
 function _classifyPress(button, x, y, now) {
   if (button === 0) {
     const isDouble = x === _lastClickX && y === _lastClickY
-      && (now - _lastClickTime) <= _DOUBLE_CLICK_MS;
+      && (now - _lastClickTime) <= mouseBindings.doubleClickMs();
     _lastClickX = x; _lastClickY = y; _lastClickTime = now;
     return isDouble ? 'double' : 'press';
   }

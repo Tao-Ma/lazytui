@@ -30,6 +30,18 @@
 project_dir: ../..
 theme: monokai
 
+# Mouse gesture → intent overrides (v0.6.4 Theme F). Parallel to `keys:`.
+# These four lines are the BUILT-IN DEFAULTS, shown here as a worked
+# example — deleting the whole block changes nothing. Bind a gesture to a
+# different intent to remap it (e.g. `right-click: activate` to open the
+# selected file on right-click), or to `noop` to disable it.
+#   intents: activate (run/open the row) · context (menu at cursor) · noop
+mouse:
+  double-click: activate     # double-click a row → open it (Enter-equivalent)
+  right-click:  context      # right-click → context menu at the cursor
+  middle-click: noop         # reserved — inert today
+  double-click-ms: 250       # same-cell double-click window, in milliseconds
+
 groups:
   browse:
     label: Dual browser

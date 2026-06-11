@@ -24,6 +24,7 @@ const sm = require('./_helpers/smoke');
 const api = sm.api;
 const { getModel } = require('../../app/runtime');
 const actions = require('../../dispatch/actions');
+const mb = require('../../dispatch/mouse-bindings');
 
 // 0-based pane grid → 1-based SGR coords (handleMouse subtracts 1).
 function sgr0(col0, row0) { return [col0 + 1, row0 + 1]; }
@@ -142,6 +143,54 @@ describe('[3] middle-click is a reserved no-op', () => {
     eq(getModel().modes.menuOpen, false, 'no menu opened');
     eq(api.getInstanceSlice('layout').focus, focusBefore, 'focus unchanged');
     assert(calls.length === 0, `middle-click fires nothing (saw: ${JSON.stringify(calls)})`);
+  });
+});
+
+// --- [4] Phase 4 — a YAML `mouse:` remap reassigns gesture → intent ----
+//
+// Prove the gesture→intent edge is data: swap the defaults so that
+// MIDDLE-click opens the context menu and RIGHT-click activates the row.
+// Behavior must follow the config, not the gesture name.
+
+describe('[4] mouse: remap — middle→context, right→activate', () => {
+  it('after remap, middle opens the menu and right activates the row', () => {
+    mb.configure({ 'middle-click': 'context', 'right-click': 'activate' });
+    try {
+      sm.bootFresh();
+      sm.capture(() => sm.render());
+      const b = groupsBounds();
+      const [sx, sy] = sgr0(b.x + 2, b.y + 1);
+
+      // Middle now opens the context menu (was a no-op under defaults).
+      sm.capture(() => sm.handleMouse('middle', sx, sy));
+      eq(getModel().modes.menuOpen, true, 'remapped middle-click opened the menu');
+      eq(getModel().modal.menu.anchor, { x: sx, y: sy }, 'menu anchored at the cursor');
+
+      // Right now activates the row (was context under defaults).
+      sm.bootFresh();
+      sm.capture(() => sm.render());
+      const right = withActionSpy(() => sm.capture(() => sm.handleMouse('right', sx, sy)));
+      assert(right.some(c => c[0] === 'run_selected'),
+        `remapped right-click MUST activate the row (saw: ${JSON.stringify(right)})`);
+      eq(getModel().modes.menuOpen, false, 'right-click no longer opens the menu');
+    } finally {
+      mb.reset();
+    }
+  });
+
+  it('right→activate OFF a row is inert (no menu, no activate)', () => {
+    mb.configure({ 'right-click': 'activate' });
+    try {
+      sm.bootFresh();
+      sm.capture(() => sm.render());
+      const b = groupsBounds();
+      const [sx, sy] = sgr0(b.x + 2, b.y);   // top border — off-row
+      const calls = withActionSpy(() => sm.capture(() => sm.handleMouse('right', sx, sy)));
+      eq(getModel().modes.menuOpen, false, 'no menu');
+      assert(!calls.some(c => c[0] === 'run_selected'), 'off-row activate is inert');
+    } finally {
+      mb.reset();
+    }
   });
 });
 

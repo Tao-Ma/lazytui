@@ -245,6 +245,13 @@ function main() {
     process.exit(1);
   }
 
+  // v0.6.4 Theme F Phase 4 — merge the top-level `mouse:` block (gesture →
+  // intent overrides + the double-click window) over the code defaults. The
+  // block is already schema-validated at parse time, so this can't throw on
+  // a bad shape; it just fills the mouse-bindings registry the input layer
+  // reads. No try/exit needed.
+  require('../dispatch/dispatch').loadMouseBindings(getModel().config);
+
   initState();
   // Post-T7: no captured `model` local at boot. handleKey / handleMouse
   // / render() all default to getModel() at entry; scheduleRender goes

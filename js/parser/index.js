@@ -693,6 +693,10 @@ function parse(yamlPath) {
     // registers each entry into the prefix-key tree at boot. Default
     // empty — the built-in chords are registered unconditionally.
     keys: data.keys !== undefined ? data.keys : {},
+    // Mouse gesture → intent overrides (top-level `mouse:`). v0.6.4 Theme F:
+    // dispatch.loadMouseBindings merges these over the code defaults at boot.
+    // Default empty — the built-in gesture map applies unchanged.
+    mouse: data.mouse !== undefined ? data.mouse : {},
     // Soft-fail diagnostics from validation (today: column over soft
     // cap). tui.js boot drains these into the event log + a brief
     // chrome notice; nothing else reads them.
