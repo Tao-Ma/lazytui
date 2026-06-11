@@ -28,8 +28,23 @@ greppable.
         │   (Component returns `_claimed` effect to gate    │
         │    the framework default)                         │
         ▼   (not claimed)                                   │
-   handleNormalKey switch ─→ handleAction ─→ applyMsg ──────┤
-                                          ─→ dispatchMsg ───┤
+   handleNormalKey switch                                   │
+     ├─ nav-core (j/k/h/l, Enter, hotkey, x) ──┐            │
+     │                                         │            │
+     └─ specialized verbs (/, :, y, v, ?,      │            │
+        +/_, [/], ") ─── skip the seam ───┐    │            │
+   handleMouse gesture                    │    │            │
+     → mouseBindings.intentFor(gesture) ──┼────┤            │
+        (button/wheel; YAML `mouse:`)     │    ▼            │
+                                          │  intent.realize │
+                                          │  (js/dispatch/  │
+                                          │   intent.js —   │
+                                          │   the key/mouse │
+                                          │   intent seam)  │
+                                          │    │            │
+                                          ▼    ▼            │
+                              handleAction ─→ applyMsg ─────┤
+                              navSelect / dispatchMsg ──────┤
                                                             │
 ════════════════════════════ REDUCERS ══════════════════════════════
                                                             │
@@ -116,6 +131,26 @@ direct `applyMsg`/`dispatchMsg` calls from async producers (PTY
 onExit, docker events, stream onData, the `tick` handler, the
 `cmdline_rebuild` writeback) are not depth-counted; they re-enter
 through ordinary JS event-loop turns.
+
+**Intent seam (v0.6.4 Theme F).** Keyboard and mouse converge on one
+semantic vocabulary before they reach a reducer. The nav/activation core
+— `j/k/h/l`, `Enter`, numeric hotkeys, and the `x` menu key on the
+keyboard side; left-click focus+select, double→`activate`, right→`context`,
+the wheel→`scroll`, and a reserved middle on the mouse side — builds an
+*intent* (`focus` / `select` / `activate` / `context` / `scroll`) that
+`intent.realize` (`js/dispatch/intent.js`) turns into the existing dispatch:
+`activate`→`handleAction('run_selected')`, `select`→`navSelect`,
+`focus`→`focus_set`, `context`→`menu_open` (cursor anchor threaded for a
+right-click), `scroll`→`_handleWheel`. The mouse gesture→intent edge is
+*data*: the SGR parser classifies a press into a gesture (`press` /
+`double` / `right` / `middle`, with the same-cell double-click window read
+live from `mouseBindings.doubleClickMs()`), and `mouseBindings.intentFor`
+maps the three discrete button gestures to intents — overridable via a
+top-level YAML `mouse:` block, the pointer analogue of `keys:`. Specialized
+keyboard verbs with no pointer analog (`/`, `:`, `y`, `v`, `?`, `+`/`_`,
+`[`/`]`, `"`) and mouse-direct manipulations (chrome glyphs, tab-strip,
+text-select drag) sit *outside* the five-intent set and keep their own
+dispatch. See [v0.6.4-input.md](v0.6.4-input.md).
 
 **Single-writer per layer is structural.** Only `runtime.update`
 writes the root model; only each Component's own `update` writes its
