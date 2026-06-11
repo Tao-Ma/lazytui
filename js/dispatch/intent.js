@@ -21,11 +21,12 @@
  */
 'use strict';
 
-let _api = null, _dispatch = null, _actions = null, _menu = null;
+let _api = null, _dispatch = null, _actions = null, _menu = null, _input = null;
 const api      = () => _api      || (_api      = require('../panel/api'));
 const dispatch = () => _dispatch || (_dispatch = require('./dispatch'));
 const actions  = () => _actions  || (_actions  = require('./actions'));
 const menu     = () => _menu     || (_menu     = require('../leaves/menu'));
+const input    = () => _input    || (_input    = require('./input'));
 
 // --- Intent constructors (the vocabulary) ---
 // Tagged plain objects. Kept as factory functions (not bare literals at
@@ -34,11 +35,15 @@ const menu     = () => _menu     || (_menu     = require('../leaves/menu'));
 // any load order.
 const focusDir    = (dir)         => ({ kind: 'focus', dir });            // 'left' | 'right'
 const focusHotkey = (hotkey)      => ({ kind: 'focus', hotkey });
-const focusPane   = (paneId)      => ({ kind: 'focus', paneId });         // absolute (mouse)
+// Absolute focus (mouse). `skipInfo` mirrors the click cascade's
+// optimization: when the same click also selects a row, focus_set skips
+// its own show_selected_info so navSelect's (against the new cursor) wins.
+const focusPane   = (paneId, opts = {}) => ({ kind: 'focus', paneId, skipInfo: !!opts.skipInfo });
 const selectBy    = (delta)       => ({ kind: 'select', delta });         // ±1 (keyboard)
 const selectAt    = (paneId, idx) => ({ kind: 'select', paneId, idx });   // absolute (mouse)
 const activate    = ()            => ({ kind: 'activate' });
 const context     = (anchor = null) => ({ kind: 'context', anchor });     // anchor {x,y}|null
+const scrollAt    = (mx, my, delta) => ({ kind: 'scroll', mx, my, delta }); // pointer (spatial)
 
 // --- Realizer (the single intent → Msg site) ---
 function realize(intent) {
@@ -49,8 +54,11 @@ function realize(intent) {
       if (intent.dir === 'left')  return actions().handleAction('focus_left');
       if (intent.dir === 'right') return actions().handleAction('focus_right');
       if (intent.hotkey != null)  return actions().handleAction('focus_panel', intent.hotkey);
-      // Absolute form (mouse, Phase 2) — focus a specific pane by id.
-      return api().dispatchMsg(api().wrap('layout', { type: 'focus_set', focus: intent.paneId }));
+      // Absolute form (mouse) — focus a specific pane by id, carrying the
+      // click cascade's skipInfo flag (byte-identical to the prior inline
+      // focus_set, which always stamped skipInfo).
+      return api().dispatchMsg(api().wrap('layout',
+        { type: 'focus_set', focus: intent.paneId, skipInfo: intent.skipInfo }));
 
     case 'select':
       // Relative form (keyboard) delegates to nav_up / nav_down.
@@ -62,6 +70,17 @@ function realize(intent) {
 
     case 'activate':
       return actions().handleAction('run_selected');
+
+    case 'scroll':
+      // Pointer scroll — spatial + per-pane heterogeneous: the resolution
+      // (which pane is under the cursor) and the behavior (detail scrolls
+      // its content; a list pane moves its own cursor, with focused / side /
+      // groups variants) live in input._handleWheel. Routing it through the
+      // realizer keeps handleMouse uniformly intent-driven; unifying the
+      // list arm into `select` and the detail arm into a content-scroll Msg
+      // is a later semantic pass (Theme F follow-on), not this no-op lift.
+      // Returns whether anything changed (the caller gates its paint on it).
+      return input()._handleWheel(intent.mx, intent.my, intent.delta);
 
     case 'context':
       // Build the menu items from the layout slice — identical to the `x`
@@ -80,5 +99,5 @@ function realize(intent) {
 
 module.exports = {
   realize,
-  focusDir, focusHotkey, focusPane, selectBy, selectAt, activate, context,
+  focusDir, focusHotkey, focusPane, selectBy, selectAt, activate, context, scrollAt,
 };

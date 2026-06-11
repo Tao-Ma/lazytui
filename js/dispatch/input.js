@@ -21,6 +21,11 @@ const {getPanelDef, getItems, getInstanceSlice, dispatchMsg, wrap, getFocus, ins
 const route = require('../panel/route');
 const mpane = require('../leaves/pane');
 const { isChainActive, CHAIN_MODES, suppressesChromeClicks } = require('./modes');
+// v0.6.4 Theme F Phase 2 — mouse gestures route through the shared intent
+// layer (the keyboard side joined in Phase 1). intent.js executes no
+// requires at load time, so this top-level require is load-order-safe
+// despite the intent↔input cycle (its `scroll` arm lazy-calls _handleWheel).
+const intent = require('./intent');
 
 function _detail() {
   // v0.6.3 T1.4 — paneId-aware lookup (post-Phase B1). resolveTarget
@@ -441,7 +446,11 @@ function handleMouse(kind, x, y) {
   // focus. Detail adjusts the detail scroll; list panels move their own
   // selection. No-op when the wheel landed outside any panel bounds.
   if (kind === 'wheel-up' || kind === 'wheel-down') {
-    if (_handleWheel(mx, my, kind === 'wheel-down' ? +1 : -1)) render();
+    // v0.6.4 Theme F Phase 2 — pointer scroll routes through the intent
+    // layer; realize delegates to _handleWheel (the spatial + per-pane
+    // resolution stays there) and returns whether anything changed, so the
+    // paint gating is unchanged.
+    if (intent.realize(intent.scrollAt(mx, my, kind === 'wheel-down' ? +1 : -1))) render();
     return;
   }
 
@@ -578,16 +587,20 @@ function handleMouse(kind, x, y) {
         if (idx < getItems(p.paneId).length) navIdx = idx;
       }
     }
-    // v0.6.4 Theme A Phase 5 — focus THIS pane by paneId (paneMatchesFocus
-    // compares paneId), so clicking a same-kind pane focuses the one
-    // clicked, not the kind's primary. No-op under single-pane configs.
-    dispatchMsg(wrap('layout', { type: 'focus_set', focus: p.paneId, skipInfo: navIdx >= 0 }));
+    // v0.6.4 Theme F Phase 2 — the spatial resolution above stays here
+    // (which pane, which row); the focus + select now route through the
+    // shared intent layer instead of inline dispatch, mirroring keyboard.
+    // focusPane carries skipInfo so, when a row is also selected, focus_set
+    // skips its show_selected_info and navSelect's (against the new cursor)
+    // wins — byte-identical to the prior inline focus_set.
+    // (Theme A Phase 5 — focus THIS pane by paneId, so clicking a same-kind
+    //  pane focuses the one clicked, not the kind's primary.)
+    intent.realize(intent.focusPane(p.paneId, { skipInfo: navIdx >= 0 }));
     if (navIdx >= 0) {
-      // v0.6.2 — single navSelect path. Sets cursor, fires the
-      // auto-yank-or-show_info cascade, and runs groups_selected
-      // cascade for groups. Replaces the prior setSel/selectGroup
-      // split that left non-groups clicks without auto-yank parity.
-      navSelect(p.paneId, navIdx);
+      // v0.6.2 — single navSelect path (the `select` intent's absolute
+      // form). Sets cursor + fires the auto-yank-or-show_info cascade +
+      // the groups_selected cascade for groups.
+      intent.realize(intent.selectAt(p.paneId, navIdx));
     }
     mutated = true;
     break;

@@ -17,6 +17,7 @@
 const intent   = require('../dispatch/intent');
 const actions  = require('../dispatch/actions');
 const dispatch = require('../dispatch/dispatch');
+const input    = require('../dispatch/input');
 const api      = require('../panel/api');
 const { describe, it, eq, assert, report } = require('./test-runner');
 
@@ -66,20 +67,36 @@ describe('[Theme F P1] keyboard intents delegate to the prior verbs', () => {
   });
 });
 
-describe('[Theme F P1] absolute intents (mouse, Phase 2) realize correctly', () => {
-  it('focusPane(id) → dispatchMsg(focus_set)', () => {
+describe('[Theme F P2] mouse intents realize to the prior dispatch', () => {
+  it('focusPane(id) → dispatchMsg(focus_set), skipInfo defaults false', () => {
     const calls = spy(api, 'dispatchMsg', () => intent.realize(intent.focusPane('pane-d2')));
     eq(calls.length, 1, 'one dispatchMsg');
-    // wrap('layout', msg) wraps the focus_set Msg; assert the inner type.
-    const wrapped = calls[0][0];
-    const inner = wrapped && (wrapped.msg || wrapped.payload || wrapped);
-    assert(JSON.stringify(wrapped).includes('focus_set'), 'wraps a focus_set');
-    assert(JSON.stringify(wrapped).includes('pane-d2'), 'targets pane-d2');
+    const s = JSON.stringify(calls[0][0]);  // wrap('layout', msg)
+    assert(s.includes('focus_set'), 'wraps a focus_set');
+    assert(s.includes('pane-d2'), 'targets pane-d2');
+    assert(s.includes('"skipInfo":false'), 'skipInfo:false by default');
+  });
+
+  it('focusPane(id, {skipInfo:true}) carries the flag through', () => {
+    const calls = spy(api, 'dispatchMsg', () => intent.realize(intent.focusPane('pane-d2', { skipInfo: true })));
+    assert(JSON.stringify(calls[0][0]).includes('"skipInfo":true'), 'skipInfo:true threaded');
   });
 
   it('selectAt(id, idx) → navSelect(id, idx)', () => {
     const calls = spy(dispatch, 'navSelect', () => intent.realize(intent.selectAt('pane-d2', 7)));
     eq(calls, [['pane-d2', 7]], 'navSelect(pane-d2, 7)');
+  });
+
+  it('scrollAt(mx,my,delta) → _handleWheel passthrough, returns its result', () => {
+    let ret;
+    const calls = spy(input, '_handleWheel', () => { ret = intent.realize(intent.scrollAt(5, 9, +1)); });
+    // spy() swaps in a recorder returning undefined; assert the delegate
+    // call shape. A separate check pins the return-value passthrough.
+    eq(calls, [[5, 9, 1]], '_handleWheel(5, 9, +1)');
+    const real = input._handleWheel;
+    input._handleWheel = () => true;
+    assert(intent.realize(intent.scrollAt(0, 0, -1)) === true, 'returns _handleWheel result for paint gating');
+    input._handleWheel = real;
   });
 });
 
