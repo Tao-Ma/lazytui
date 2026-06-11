@@ -58,12 +58,23 @@ describe('[Theme F P1] keyboard intents delegate to the prior verbs', () => {
        [['run_selected']], 'activate → run_selected');
   });
 
-  it('context() → menu_open with a built items list (anchor unread in P1)', () => {
+  it('context() → menu_open with a built items list, null anchor (keyboard)', () => {
     const calls = spy(dispatch, 'applyMsg', () => intent.realize(intent.context()));
     eq(calls.length, 1, 'one applyMsg');
     const msg = calls[0][0];
     eq(msg.type, 'menu_open', 'menu_open');
     assert(Array.isArray(msg.items), 'items is an array');
+    eq(msg.anchor, null, 'no anchor → centered (keyboard `x`)');
+  });
+});
+
+describe('[Theme F P3] context anchor threads through to menu_open', () => {
+  it('context({x,y}) → menu_open carrying the cursor anchor', () => {
+    const calls = spy(dispatch, 'applyMsg', () => intent.realize(intent.context({ x: 12, y: 4 })));
+    eq(calls.length, 1, 'one applyMsg');
+    const msg = calls[0][0];
+    eq(msg.type, 'menu_open', 'menu_open');
+    eq(msg.anchor, { x: 12, y: 4 }, 'anchor threaded (right-click opens at cursor)');
   });
 });
 

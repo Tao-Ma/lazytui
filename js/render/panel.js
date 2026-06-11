@@ -194,16 +194,27 @@ function renderPanel({
  * @param {string} opts.title - panel title
  * @param {[number,number]} [opts.count] - [current, total] for footer
  * @param {number} [opts.maxWidth=44] - cap on overlay width
+ * @param {{x:number,y:number}} [opts.anchor] - 1-based cursor cell to open
+ *   at (v0.6.4 Theme F: right-click context menu); null/absent → centered.
  */
-function renderOverlay({ lines, title, count = null, maxWidth = 44 }) {
+function renderOverlay({ lines, title, count = null, maxWidth = 44, anchor = null }) {
   const COLS = cols(), ROWS = rows();
   const menuW = Math.min(maxWidth, COLS - 2);
   const menuH = Math.min(lines.length + 2, ROWS - 2);
   const content = renderPanel({
     width: menuW, height: menuH, lines, title, focused: true, count,
   });
-  const offY = Math.max(0, Math.floor((ROWS - menuH) / 2));
-  const offX = Math.max(0, Math.floor((COLS - menuW) / 2));
+  // v0.6.4 Theme F Phase 3 — anchored placement: open the overlay's top-left
+  // at the cursor (converting the 1-based SGR cell to a 0-based offset),
+  // clamped so the whole box stays on-screen. No anchor → center.
+  let offY, offX;
+  if (anchor && Number.isFinite(anchor.x) && Number.isFinite(anchor.y)) {
+    offX = Math.max(0, Math.min(anchor.x - 1, COLS - menuW));
+    offY = Math.max(0, Math.min(anchor.y - 1, ROWS - menuH));
+  } else {
+    offY = Math.max(0, Math.floor((ROWS - menuH) / 2));
+    offX = Math.max(0, Math.floor((COLS - menuW) / 2));
+  }
   const out = content.split('\n');
   // Build one string with embedded cursor moves, write once. Per-line
   // moveTo + stdout.write was a syscall per row; on a slow TTY that

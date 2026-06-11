@@ -93,7 +93,7 @@ function init() {
     // Navigator's `slice.nav[panel].filter`.
     modal: {
       filter: { text: '', panel: '' },
-      menu: { items: [], idx: 0 },
+      menu: { items: [], idx: 0, anchor: null },
       // The pending confirm: a message + the Cmd DESCRIPTOR to emit on `y`
       // (data, not a closure — e.g. {type:'do_run', actionKey, action, args}).
       confirm: { message: '', cmd: null },
@@ -898,15 +898,18 @@ function update(model, msg) {
       // v0.6.4 Theme C — items are threaded by the menu_open handler
       // (built from the layout slice there); the arm no longer reads the
       // Component slice. `|| []` covers the degenerate / test path.
+      // v0.6.4 Theme F Phase 3 — `msg.anchor` ({x,y} 1-based, or null/absent)
+      // is stored so the menu render can open at a right-click's cursor; null
+      // (the keyboard `x` verb) keeps the menu centered.
       return [{
         ..._withModes(model, { menuOpen: true }),
-        modal: { ...model.modal, menu: { items: msg.items || [], idx: 0 } },
+        modal: { ...model.modal, menu: { items: msg.items || [], idx: 0, anchor: msg.anchor || null } },
       }, []];
     case 'menu_close':
       if (!model.modes.menuOpen) return [model, []];
       return [{
         ..._withModes(model, { menuOpen: false }),
-        modal: { ...model.modal, menu: { items: [], idx: 0 } },
+        modal: { ...model.modal, menu: { items: [], idx: 0, anchor: null } },
       }, []];
     case 'menu_nav': {
       const mm = model.modal.menu;
@@ -923,7 +926,7 @@ function update(model, msg) {
       const item = mm.items[mm.idx];
       const next = {
         ..._withModes(model, { menuOpen: false }),
-        modal: { ...model.modal, menu: { items: [], idx: 0 } },
+        modal: { ...model.modal, menu: { items: [], idx: 0, anchor: null } },
       };
       if (!item) return [next, []];
       return [next, [{ type: 'menu_action', action: item[1] }]];

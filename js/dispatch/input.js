@@ -360,6 +360,12 @@ function handleMouse(kind, x, y) {
   const mx = x - 1;
   const my = y - 1;
 
+  // v0.6.4 Theme F Phase 3 — middle-click is reserved: the parser un-drops
+  // it (so a future binding is a pure additive resolver row), the resolver
+  // recognizes it and discards it. No mode/geometry work — it does nothing
+  // today regardless of context.
+  if (kind === 'middle') return;
+
   // Panel-chrome glyph clicks — single early hit-test site for both
   // [_]/[+] (collapse, always-on) and [X] (close, free-config-only).
   // The close-button paint is itself gated on free-config in render(),
@@ -442,6 +448,17 @@ function handleMouse(kind, x, y) {
   // the mouse pipeline. terminalMode is non-chain by design.
   if (isChainActive(model.modes)) return;
 
+  // v0.6.4 Theme F Phase 3 — right-click opens the context menu anchored
+  // AT THE CURSOR. The `context` intent threads the 1-based SGR {x,y}; the
+  // realizer carries it into menu_open and the menu render clamps + opens
+  // there (a null anchor — the keyboard `x` verb — stays centered). Gated by
+  // the same chain-mode guard above, so no menu pops behind an overlay.
+  if (kind === 'right') {
+    intent.realize(intent.context({ x, y }));
+    render();
+    return;
+  }
+
   // Mouse wheel — scrolls the panel under the cursor without changing
   // focus. Detail adjusts the detail scroll; list panels move their own
   // selection. No-op when the wheel landed outside any panel bounds.
@@ -479,8 +496,14 @@ function handleMouse(kind, x, y) {
     return;
   }
 
-  // From here on: press only.
-  if (kind !== 'press') return;
+  // From here on: press only. v0.6.4 Theme F Phase 3 — `double` rides the
+  // SAME resolution as `press` (chrome already returned on the first press;
+  // tab-strip / detail arms break before the body arm), so a double on a
+  // list-pane body falls through to the focus+select arm where it ALSO
+  // realizes `activate`. The preceding single press already focused +
+  // selected the row, so the double's focus+select is idempotent and the
+  // activate runs against the correct selection.
+  if (kind !== 'press' && kind !== 'double') return;
 
   let mutated = false;
 
@@ -601,6 +624,10 @@ function handleMouse(kind, x, y) {
       // form). Sets cursor + fires the auto-yank-or-show_info cascade +
       // the groups_selected cascade for groups.
       intent.realize(intent.selectAt(p.paneId, navIdx));
+      // v0.6.4 Theme F Phase 3 — a double-click on a row activates it
+      // (the GUI single-selects / double-opens convention). Focus + select
+      // above ran against the same row, so activate hits the right item.
+      if (kind === 'double') intent.realize(intent.activate());
     }
     mutated = true;
     break;
@@ -682,6 +709,30 @@ const _PASTE_CLOSE = '\x1b[201~';
 // dropped all but the first. matchAll iterates every event.
 const _MOUSE_RE_G = /\x1b\[<(\d+);(\d+);(\d+)([Mm])/g;
 
+// v0.6.4 Theme F Phase 3 — double-click derivation lives HERE, in the
+// parser: it is the only layer that sees raw press timing, and a
+// self-contained {lastX,lastY,lastTime} triple keeps the derivation off
+// the reducer hot path and out of the model. A fresh left press emits the
+// `double` gesture when it lands on the SAME 1-based cell as the previous
+// press within the window; otherwise `press` (and the triple advances).
+// Window is hardcoded here in Phase 3; Phase 4 makes `double-click-ms`
+// YAML-tunable. Right (2) → `right`, middle (1) → `middle` (reserved
+// no-op); any other button → null (dropped, as before).
+const _DOUBLE_CLICK_MS = 250;
+let _lastClickX = -1, _lastClickY = -1, _lastClickTime = -Infinity;
+
+function _classifyPress(button, x, y, now) {
+  if (button === 0) {
+    const isDouble = x === _lastClickX && y === _lastClickY
+      && (now - _lastClickTime) <= _DOUBLE_CLICK_MS;
+    _lastClickX = x; _lastClickY = y; _lastClickTime = now;
+    return isDouble ? 'double' : 'press';
+  }
+  if (button === 2) return 'right';
+  if (button === 1) return 'middle';
+  return null;  // other buttons stay dropped
+}
+
 function setupKeyListener() {
   // Phase 4 — the stdin closure used to capture `model` and thread it
   // into handleMouse / handleKey / render(model). Post-pure-TEA the
@@ -759,9 +810,25 @@ function setupKeyListener() {
       }
       const motion = (btn & 0x20) !== 0;
       const button = btn & 3;
-      if (button !== 0) continue;  // left button only for non-wheel events
-      const kind = released ? 'release' : motion ? 'motion' : 'press';
-      handleMouse(kind, x, y);
+      // Motion + release stay left-only — text-select extend/commit have no
+      // right/middle analog, so a right/middle drag or release is dropped
+      // exactly as before. Released is checked first (a release-during-drag
+      // carries both the 'm' suffix and the motion bit).
+      if (released) {
+        if (button !== 0) continue;
+        handleMouse('release', x, y);
+        continue;
+      }
+      if (motion) {
+        if (button !== 0) continue;
+        handleMouse('motion', x, y);
+        continue;
+      }
+      // Fresh press — classify into press/double (left) or right/middle.
+      // v0.6.4 Theme F Phase 3 — was `if (button !== 0) continue`, which
+      // dropped every non-left button at the door.
+      const gesture = _classifyPress(button, x, y, Date.now());
+      if (gesture) handleMouse(gesture, x, y);
     }
     if (sawMouse) return;
 
@@ -813,4 +880,5 @@ module.exports = {
   _handleTerminalModeData,  // exported for tests
   _handleWheel,             // exported for tests
   handleMouse,              // exported for tests (T13 modal-gate regression)
+  _classifyPress,           // exported for tests (Theme F Phase 3 double-click derivation)
 };

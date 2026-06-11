@@ -84,12 +84,14 @@ function realize(intent) {
 
     case 'context':
       // Build the menu items from the layout slice — identical to the `x`
-      // key's prior inline dispatch (dispatch.js menu_open). Phase 3
-      // threads `intent.anchor` so a right-click opens at the cursor; the
-      // anchor is carried but unread today.
+      // key's prior inline dispatch (dispatch.js menu_open). v0.6.4 Phase 3:
+      // `intent.anchor` ({x,y} 1-based SGR coords, or null for keyboard) is
+      // threaded into menu_open so a right-click opens AT the cursor; a null
+      // anchor keeps the menu centered (the keyboard `x` verb).
       return dispatch().applyMsg({
         type: 'menu_open',
         items: menu().buildItems(api().getInstanceSlice('layout')),
+        anchor: intent.anchor || null,
       });
 
     default:
