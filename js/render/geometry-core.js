@@ -337,12 +337,13 @@ function getCurrentLayout() {
 function boundsFor(key) {
   const layoutSlice = getInstanceSlice('layout');
   const sliceBounds = layoutSlice && layoutSlice.paneBounds && layoutSlice.paneBounds[key];
-  // P1.3 priority: slice first. Both sources are written together
-  // during the P1 migration (renderNormal still writes paneBounds);
-  // tests seed slice.paneBounds directly. P1.4 stops the slice
-  // writes — sliceBounds becomes null in production and the rect
-  // path below takes over transparently. No caller change needed
-  // at P1.4.
+  // P1.3 priority: slice first. Production still writes paneBounds
+  // every frame, but v0.6.4 re-keyed those writes by paneId (was by
+  // type) — so the originally-planned P1.4 "stop the slice writes,
+  // fall through to rects" never happened; the writes were migrated,
+  // not retired. The rect path below remains the fallback for the
+  // pre-first-render boot edge and for tests that seed paneBounds
+  // without rendering.
   if (sliceBounds) return sliceBounds;
   if (_currentLayout && _currentLayout.rects) {
     const rect = _currentLayout.rects.find(r => r.paneId === key || r.type === key);
