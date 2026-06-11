@@ -382,18 +382,21 @@ function composeRects(layout, model) {
 // in this commit along with the renderOne closure + the column-pad
 // safety net (no longer needed — rect compositing handles gaps).
 //
-// Why pre-populate paneBounds before composeRects: viewer.detailTitle
-// (viewer.js:1008) writes layoutSlice.paneBounds.detail.tabs DURING
-// _safeRender — needs the detail entry to exist by the time the
-// viewer's render fires. Same order the pre-P3 renderOne used (write
-// bounds, then render).
+// Why pre-populate paneBounds before composeRects: a panel's render can
+// read its own bounds (getPanelViewportH → boundsFor) during _safeRender,
+// so the entry must exist by the time the panel renders. Same order the
+// pre-P3 renderOne used (write bounds, then render).
+//
+// v0.6.4 — keyed by paneId ONLY (the type-keyed write retired). The type
+// key was the half/full visible-bounds channel for readers that queried
+// by the viewer tab-id; those now resolve the container paneId via
+// route.resolveViewerPaneId(), so the per-paneId write is sufficient.
 function renderNormal(model) {
   const layout = geo.calcLayout(model);
   const layoutSlice = getInstanceSlice('layout');
   layoutSlice.paneBounds = {};
   for (const rect of layout.rects) {
     const b = { x: rect.x, y: rect.y, w: rect.w, h: rect.h };
-    layoutSlice.paneBounds[rect.type] = b;
     if (rect.paneId) layoutSlice.paneBounds[rect.paneId] = b;
   }
   const rectsWithLines = composeRects(layout, model);
@@ -437,12 +440,10 @@ function renderHalf(model) {
   }
   layoutSlice.paneBounds = {};
   const leftBounds = { x: 0, y: 0, w: halfW, h: availH };
-  layoutSlice.paneBounds[leftPanel.type] = leftBounds;
   if (leftPanel.paneId) layoutSlice.paneBounds[leftPanel.paneId] = leftBounds;
   const rightW = COLS - halfW;
   if (detailPanel) {
     const detailBounds = { x: halfW, y: 0, w: rightW, h: availH };
-    layoutSlice.paneBounds.detail = detailBounds;
     if (detailPanel.paneId) layoutSlice.paneBounds[detailPanel.paneId] = detailBounds;
   }
   // v0.6.3 P4.2 — chrome computed via chromeFor + threaded through
@@ -500,7 +501,6 @@ function renderFull(model) {
   if (!focusedPanel) return renderNormal(model);
   layoutSlice.paneBounds = {};
   const fullBounds = { x: 0, y: 0, w: COLS, h: availH };
-  layoutSlice.paneBounds[focusedPanel.type] = fullBounds;
   if (focusedPanel.paneId) layoutSlice.paneBounds[focusedPanel.paneId] = fullBounds;
   // v0.6.3 P4.2 — chrome via chromeFor. v0.6.4 Theme B — shared scalars
   // from _chromeContext. Full view paints ONE pane (the focused one):
@@ -539,9 +539,10 @@ function renderTerminalOverlay(model = getModel()) {
   if (!id || !termConf) return;
 
   const layoutSlice = getInstanceSlice('layout');
-  // v0.6.4 Phase 3 — position the terminal overlay against the FOCUSED
-  // viewer's bounds (paneId-keyed), not the type-collided 'detail' key.
-  const bounds = layoutSlice && layoutSlice.paneBounds[_route().resolveTarget('viewer') || 'detail'];
+  // v0.6.4 — position the terminal overlay against the FOCUSED viewer's
+  // CONTAINER pane bounds. resolveViewerPaneId bridges the viewer tab-id
+  // to its hosting paneId, the only key carrying half/full visible bounds.
+  const bounds = geo.boundsFor(_route().resolveViewerPaneId());
   if (!bounds) return;
   const innerW = bounds.w - 2;
   const innerH = bounds.h - 2;
@@ -700,9 +701,12 @@ function render(model = getModel()) {
   // instead of a wrapped viewer_set_viewport Msg + 5-line reducer arm
   // — the Msg's only effect was this single-field write.
   const route = _route();
+  // Bounds key = the viewer's CONTAINER paneId (carries half/full visible
+  // bounds); slice key = the viewer's own tab/instance id (where innerH
+  // lives). v0.6.4 — these two diverge once the type-keyed write retires.
   const viewerTab = route.resolveTarget('viewer');
-  const viewerBounds = viewerTab && layoutSlice.paneBounds && layoutSlice.paneBounds[viewerTab];
-  if (viewerBounds) {
+  const viewerBounds = geo.boundsFor(route.resolveViewerPaneId());
+  if (viewerTab && viewerBounds) {
     const innerH = Math.max(0, viewerBounds.h - 2);
     const viewerSlice = getInstanceSlice(viewerTab);
     if (viewerSlice && viewerSlice.innerH !== innerH) {

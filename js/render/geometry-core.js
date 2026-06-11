@@ -178,7 +178,8 @@ let _currentLayout = null;
  *
  * Single source of truth for any scroll / page / wheel math that
  * needs "how many rows of content fit in this panel right now".
- * `boundsFor` prefers `slice.paneBounds[type]` then falls through
+ * `boundsFor` prefers `slice.paneBounds[key]` (key = paneId; v0.6.4
+ * retired the type-keyed write) then falls through
  * to `_currentLayout.rects` (post-P1.5 — the legacy `_panelHeights`
  * module-local was retired). Reading the column-share directly from
  * scroll code is a bug class because it under-reports in half/full

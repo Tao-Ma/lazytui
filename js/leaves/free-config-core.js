@@ -83,13 +83,12 @@ function _applySnapshot(arrange, snap) {
 }
 
 /** Rendered bounds for a pane, addressed by paneId with a type fallback
- *  (v0.6.4). renderNormal/Half/Full dual-write `paneBounds[paneId]` AND
- *  `paneBounds[type]`, so the paneId read always hits first in production
- *  — that's what lets two same-kind panes in one column read their OWN
- *  height instead of colliding on the shared type key. The `[type]`
- *  fallback only fires for legacy single-instance fixtures that still seed
- *  bounds by type; it degrades to the same `null` a missing pane gives
- *  once the type-keyed write is eventually retired. */
+ *  (v0.6.4). renderNormal/Half/Full write `paneBounds[paneId]` ONLY (the
+ *  type-keyed write retired this release) — keying by paneId is what lets
+ *  two same-kind panes in one column read their OWN height instead of
+ *  colliding on the shared type key. The `[type]` fallback no longer fires
+ *  in production (every placed pane has a paneId); it survives only for
+ *  legacy unit fixtures that seed `paneBounds` by type without a render. */
 function boundsOf(slice, p) {
   return slice.paneBounds[p.paneId] || slice.paneBounds[p.type];
 }

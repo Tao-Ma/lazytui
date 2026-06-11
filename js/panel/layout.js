@@ -745,8 +745,9 @@ function update(msg, slice) {
       // scope). Reducer no longer cross-reads detail's slice.
       return mtabDrag.tabDragMotion(
         slice, msg.mx, msg.my,
-        // v0.6.4 Phase 3 — focused viewer's bounds for the drag geometry.
-        require('../render/geometry').boundsFor(route.resolveTarget('viewer') || 'detail'),
+        // v0.6.4 — focused viewer's CONTAINER pane bounds for the drag
+        // geometry (resolveViewerPaneId → half/full-correct hosting pane).
+        require('../render/geometry').boundsFor(route.resolveViewerPaneId()),
         msg.tabBounds || null,
         msg.modelBundle,
         targetKind,

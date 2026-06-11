@@ -353,6 +353,31 @@ function resolveTarget(intent, ctx) {
   return null;
 }
 
+// v0.6.4 — the CONTAINER paneId hosting the target viewer. resolveTarget
+// returns a viewer *tab/instance* id (singleton: 'detail'); paneBounds +
+// boundsFor are keyed by the *container* paneId ('pane-detail'), which is
+// the only key rebuilt per-view-mode and therefore the only one carrying
+// half/full visible bounds (rects always describe the normal column
+// layout). This bridges the two so viewer-geometry readers (terminal
+// overlay, viewer innerH, tab-drag/select bounds) get half/full-correct
+// geometry without depending on the type-aliased tab-id key. Under multi-
+// viewer each focused viewer resolves to its own hosting pane. Returns
+// null when no viewer is placed (caller no-ops, same as a missing pane).
+function resolveViewerPaneId(ctx) {
+  const tabId = resolveTarget('viewer', ctx);
+  if (tabId == null) return null;
+  const layoutId = _primaryByKind['layout'];
+  const layout = layoutId !== undefined ? _instances[layoutId].slice : null;
+  if (!layout || !layout.arrange) return null;
+  const mpool = require('../leaves/pool');
+  // resolveTarget may hand back a container paneId (tier-1 focus) OR a tab
+  // id (tier-3 arrange scan) — match either against the pane's identity.
+  const loc = mpool.findPaneLocation(layout.arrange, (p) =>
+    p.paneId === tabId || p.id === tabId || p.activeTabId === tabId ||
+    (Array.isArray(p.tabs) && p.tabs.some(t => t && t.id === tabId)));
+  return loc ? loc.pane.paneId : null;
+}
+
 module.exports = {
   wrap,
   registerPanelOwner, componentForPanel, isPanelType, paneTypeOf,
@@ -361,5 +386,5 @@ module.exports = {
   hasInstance, disposeInstance, instanceKind, eachInstance,
   getPrimaryByKind,
   // Navigator → focused-viewer routing chokepoint.
-  resolveTarget, isViewerKind, VIEWER_KIND,
+  resolveTarget, resolveViewerPaneId, isViewerKind, VIEWER_KIND,
 };

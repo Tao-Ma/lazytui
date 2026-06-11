@@ -245,12 +245,12 @@ function _mouseHandleFreeConfigMode(kind, mx, my, model) {
   }
 
   // Tab-bar press detection — click on a content tab arms a tab-drag.
-  // v0.6.4 Theme A Phase 3 (was N13) — bounds + slice both resolve via
-  // resolveTarget('viewer') so the FOCUSED viewer's tab strip wins under
-  // multi-viewer. No-op under singleton (resolveTarget → the one viewer's
-  // paneId, which paneBounds dual-keys).
+  // v0.6.4 — the FOCUSED viewer's tab strip wins under multi-viewer.
+  // Bounds key = the viewer's CONTAINER paneId (carries half/full visible
+  // bounds); slice key = the viewer's tab/instance id (tabBounds owner) —
+  // these diverge once the type-keyed write retires.
   const viewerId = route.resolveTarget('viewer') || 'detail';
-  const db = require('../render/geometry').boundsFor(viewerId);
+  const db = require('../render/geometry').boundsFor(route.resolveViewerPaneId());
   const detailSlice = getInstanceSlice(viewerId);
   const detailTabBounds = detailSlice && Array.isArray(detailSlice.tabBounds) ? detailSlice.tabBounds : null;
   if (kind === 'press' && db && detailTabBounds) {
@@ -616,8 +616,8 @@ function handleMouse(kind, x, y) {
   // change.
   const sel = require('../panel/viewer/select');
   if (kind === 'motion' && sel.isActive()) {
-    // v0.6.4 Phase 3 — focused viewer's bounds (see tab-drag site above).
-    const db = require('../render/geometry').boundsFor(route.resolveTarget('viewer') || 'detail');
+    // v0.6.4 — focused viewer's CONTAINER pane bounds (see tab-drag site above).
+    const db = require('../render/geometry').boundsFor(route.resolveViewerPaneId());
     if (db) {
       const visibleLine = Math.max(0, Math.min(db.h - 3, my - db.y - 1));
       const col = Math.max(0, mx - db.x - 1);
