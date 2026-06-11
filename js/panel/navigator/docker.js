@@ -48,6 +48,14 @@ const mnav = require('../../leaves/nav');
 const POLL_MS = 10000;
 
 // --- slice access (the polled state lives in the Component slice) ---
+//
+// v0.6.4 Theme A Phase 5 Arc 3 — `getInstanceSlice('docker')` resolves to
+// the CONTENT OWNER (the register-time singleton, kind 'docker', via
+// _primaryByKind['docker']). Status/stats are host-global — one daemon, one
+// container set — so every docker pane reads the owner's maps here, while
+// each pane keeps its own nav (cursor/scroll/filter) in its per-pane slice.
+// statusFor/getInfo/copyOptions/_status all route through here; only the
+// owner runs the fetch loop + events stream (see the gate in update()).
 
 function _slice()        { return getInstanceSlice('docker') || { status: {}, stats: {} }; }
 function _status(name)   { return _slice().status[name] || '?'; }
@@ -231,7 +239,7 @@ function unprefix(name) { return name.replace(/^\//, ''); }
 
 // --- update + effects (the TEA half) ---
 
-function init() {
+function init(paneId) {
   // Hub topic schema — feeds the stats panel's axis scaling + value formatting
   // (STATS.md §5 + HUB.md §17). Defined once at registration, before any publish.
   hub.defineTopic('docker.stats', {
@@ -246,6 +254,14 @@ function init() {
     status: {}, stats: {}, inFlight: false, started: false, eventsStarted: false,
     // v0.6.1 Phase 3 — single-panel Component, nav stores the entry directly.
     nav: mnav.init(),
+    // v0.6.4 Theme A Phase 5 Arc 3 — pane identity. The register-time
+    // singleton mints via init() (no arg → undefined): it is the CONTENT
+    // OWNER that drives the one host-global fetch loop + events stream and
+    // backs statusFor/_slice(). Placed panes mint via init(paneId) (set):
+    // they carry per-pane nav only and read shared content via _slice().
+    // The gate in update() keys on this. See the Arc 3 header note above
+    // _slice() and docs/v0.6.4.md §Unit 4.
+    paneId: paneId == null ? undefined : paneId,
   };
 }
 
@@ -270,6 +286,18 @@ function _maybeFetch(slice) {
 function update(msg, slice) {
   // Phase 4a — nav chrome Msgs handled by the shared leaf.
   if (mnav.isNavMsg(msg)) return mnav.apply(slice, msg);
+  if (msg.type === 'key') return _handleKey(msg, slice);
+  // v0.6.4 Theme A Phase 5 Arc 3 — content gate. The status/stats fetch
+  // loop + the `docker events` stream are HOST-GLOBAL (the same daemon,
+  // the same containers, regardless of how many docker panes are placed),
+  // so they run on ONE instance: the content owner (the register-time
+  // singleton, slice.paneId == null). Placed panes (paneId set) carry nav
+  // only — they handled their nav/key Msgs above and read shared content
+  // via _slice(). Without this gate every placed pane re-ran refresh →
+  // fetch → tick → eventsStart; the results were hardwired back to the
+  // owner (`wrap('docker')` in dockerResult/_eventPoll/dockerFetch), so a
+  // placed pane's content Msgs were pure waste + a stuck inFlight latch.
+  if (slice.paneId != null) return slice;
   if (msg.type === 'refresh') {
     // boot + r + :refresh. Arm the recurring tick once; poll immediately.
     let next = slice;
@@ -305,7 +333,6 @@ function update(msg, slice) {
       inFlight: false,
     }, [{ type: 'render' }]];
   }
-  if (msg.type === 'key') return _handleKey(msg, slice);
   return slice;
 }
 
@@ -483,11 +510,12 @@ function render(panel, width, height, _slice, opts) {
   const containers = apiGetItems(panel.paneId);
   const sel = getSel(panel.paneId);
   // v0.6.4 Theme A Phase 5 — per-pane focus (opts.focused, from
-  // paneMatchesFocus) + per-pane nav reads (panel.paneId). docker is a
-  // `panelTypes` Component (panes not minted per-pane), so its nav slice
-  // stays SHARED across docker panes until Unit 4 keys the events stream
-  // + nav by paneId; the focus flag, though, is correctly per-pane now —
-  // only the focused docker pane highlights its selection.
+  // paneMatchesFocus) + per-pane nav reads (panel.paneId). Arc 3: each
+  // docker pane mints its own instance, so nav (cursor/scroll/filter/
+  // selection) IS independent per pane — read via panel.paneId. The
+  // status/stats CONTENT, by contrast, is host-global and shared: _status
+  // reads the content owner via _slice() (see its header note). Only the
+  // focused docker pane highlights its selection.
   const isFocused = !!(opts && opts.focused);
   const t = theme();
   const lines = containers.map((name, i) => {

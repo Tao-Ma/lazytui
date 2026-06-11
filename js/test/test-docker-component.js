@@ -26,7 +26,7 @@ const { getInstanceSlice } = api;
 api.registerComponent(require('../panel/layout'));
 const docker = require('../panel/navigator/docker');
 api.registerComponent(docker);
-const { setSel } = require('../app/state');
+const { setSel, getSel } = require('../app/state');
 
 const { _update } = docker;
 
@@ -182,6 +182,70 @@ describe('[6] registered Component — slice-backed reads', () => {
     assert(info.some(l => l.includes('5%')), 'getInfo shows cpu');
     // getItems is config-derived (slice unused for the row list).
     eq(def.getItems(api.getInstanceSlice('docker')).join(','), 'c1');
+  });
+});
+
+describe('[7] Arc 3 — content gate: one host-global fetch loop, per-pane nav', () => {
+  const mnav = require('../leaves/nav');
+  it('a placed pane (paneId set) no-ops the content Msgs — owner only', () => {
+    setup();
+    const pane = { ...slice0(), paneId: 'docker-a' };
+    const r = step({ type: 'refresh' }, pane);
+    eq(r.effects.length, 0, 'no fetch/tick/events from a placed pane');
+    assert(!r.slice.started && !r.slice.inFlight && !r.slice.eventsStarted,
+      'no content flags set on a placed pane');
+    // dockerResult is owner-only too — a placed pane never folds status.
+    const res = step({ type: 'dockerResult', status: { c1: 'running' }, stats: {} }, pane);
+    eq(res.slice.status.c1, undefined, 'placed pane does not fold content');
+  });
+  it('the content owner (paneId == null) runs the full content loop', () => {
+    setup();
+    const { slice, effects } = step({ type: 'refresh' }, slice0());  // slice0 has no paneId
+    assert(types(effects).includes('dockerFetch'), 'owner fetches');
+    assert(types(effects).includes('dockerEventsStart'), 'owner starts the events stream');
+    assert(slice.started && slice.inFlight && slice.eventsStarted, 'owner flags set');
+  });
+  it('a placed pane still handles its own nav + keys', () => {
+    setup(['c1', 'c2']);
+    const pane = { ...slice0(), paneId: 'docker-a', nav: { ...mnav.init(), cursor: 1 } };
+    const navd = step({ type: 'set_cursor', index: 0, panel: 'containers' }, pane);
+    eq(mnav.cursorOf(navd.slice, 'containers'), 0, 'set_cursor applied on a placed pane');
+    const k = step({ type: 'key', key: 'i', focusKind: 'containers' }, pane);
+    eq(k.effects[0].type, 'dockerExec', 'i key handled on a placed pane');
+    eq(k.effects[0].item, 'c2', 'targets the placed pane\'s own cursor row');
+  });
+  it('two placed panes keep independent nav cursors (real mint + dispatch)', () => {
+    setup(['c1', 'c2']);
+    const route = require('../panel/route');
+    const mpool = require('../leaves/pool');
+    const arrange = {
+      columns: [
+        { width: 30, panels: [{ type: 'containers', paneId: 'docker-a', title: 'A', hotkey: '1', columnIndex: 0 }] },
+        { width: 30, panels: [{ type: 'containers', paneId: 'docker-b', title: 'B', hotkey: '2', columnIndex: 1 }] },
+      ],
+      detailHeightPct: 60,
+    };
+    getInstanceSlice('layout').arrange = arrange;
+    // Mirror state.js's per-pane mint loop.
+    const components = api._components();
+    for (const p of mpool.allPanesInColumns(arrange)) {
+      const comp = components[p.type] || components[route.componentForPanel(p.type)];
+      if (route.hasInstance(p.type) && p.type !== p.paneId) route.disposeInstance(p.type);
+      if (!route.hasInstance(p.paneId)) route.setInstance(p.paneId, p.type, comp.init(p.paneId));
+    }
+    try {
+      setSel('docker-a', 1);
+      setSel('docker-b', 0);
+      eq(getSel('docker-a'), 1, 'pane A cursor independent');
+      eq(getSel('docker-b'), 0, 'pane B cursor unaffected by A');
+      // The register-time singleton survives as the content owner.
+      assert(route.hasInstance('docker'), 'content owner instance present');
+      eq(route.getInstance('docker').slice.paneId, undefined, 'owner has no paneId');
+    } finally {
+      route.disposeInstance('docker-a');
+      route.disposeInstance('docker-b');
+      getInstanceSlice('layout').arrange = undefined;
+    }
   });
 });
 
