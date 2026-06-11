@@ -10,7 +10,7 @@
  * Scope: the branches that can be exercised WITHOUT global IO setup —
  *   docker          dockerResult
  *   files           dirLoaded, showHidden
- *   config-status   cfgStatusResult, key '['/']'
+ *   config-status   cfgStatusResult, key 't'/'s'
  *   stats           any-Msg no-op (identity)
  *   history         non-claim no-op + nav Msg (T9 coverage)
  *   actions         nav Msg + non-nav identity (T9 coverage)
@@ -131,7 +131,7 @@ describe('[immutable] files', () => {
 
 describe('[immutable] config-status', () => {
   const makeSlice = () => ({
-    tab: 0, cache: null, branch: 'main', expanded: {}, computing: true,
+    layout: 'tree', scope: 'all', cache: null, branch: 'main', expanded: {}, computing: true,
     nav: {},
   });
 
@@ -148,25 +148,26 @@ describe('[immutable] config-status', () => {
     eq(fx[0].type, 'render');
   });
 
-  it('] key advances the active tab', () => {
+  it('t key toggles layout (claimed, input frozen)', () => {
     const slice = makeSlice();
     const [next, fx] = expectNoMutation(
-      "config-status ']' leaves input frozen",
-      () => configStatus.update({ type: 'key', key: ']' }, slice),
+      "config-status 't' leaves input frozen",
+      () => configStatus.update({ type: 'key', key: 't' }, slice),
       slice,
     );
-    eq(next.tab, 1, 'tab advanced');
+    eq(next.layout, 'flat', 'layout toggled');
     eq(fx[0].type, '_claimed', 'key claimed');
   });
 
-  it('[ key reverses', () => {
-    const slice = { ...makeSlice(), tab: 1 };
-    const [next] = expectNoMutation(
-      "config-status '[' leaves input frozen",
-      () => configStatus.update({ type: 'key', key: '[' }, slice),
+  it('s key toggles scope (claimed, input frozen)', () => {
+    const slice = makeSlice();
+    const [next, fx] = expectNoMutation(
+      "config-status 's' leaves input frozen",
+      () => configStatus.update({ type: 'key', key: 's' }, slice),
       slice,
     );
-    eq(next.tab, 0, 'tab reversed');
+    eq(next.scope, 'tracked', 'scope toggled');
+    eq(fx[0].type, '_claimed', 'key claimed');
   });
 });
 

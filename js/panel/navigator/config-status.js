@@ -1,16 +1,20 @@
 /**
  * config-status — status-aware panel for declared config files (Component API).
  *
- * Reads `S.config.files` and presents them in a three-tab view (`]`/`[`):
- *   0  File tree     — every declared path, grouped by `category:`
- *   1  Tracked tree  — the "tracked" subset, same hierarchy
- *   2  Tracked flat  — the "tracked" subset, flat list (for /-filter)
+ * Reads `S.config.files` and presents them under two ORTHOGONAL view
+ * toggles (git-GUI style — `t` layout, `s` scope), both projections over
+ * one shared `cache` (no extra compute):
+ *   layout: 'tree' — grouped by `category:` hierarchy · 'flat' — flat list
+ *   scope:  'all'  — every declared path       · 'tracked' — the ✓ * ! subset
+ * All four combinations are valid (incl. all · flat, the combo the old
+ * 3-tab cycle could not express). `]`/`[` are NOT claimed here — they fall
+ * through to the framework's normal pane/tab cycle.
  *
  * Status badges: ✓ matches · * differs · + local-only · ! branch-only · ? unknown.
  * "Tracked" = the branch has a copy (✓ * !).
  *
  * Component (TEA) model — the panel's state lives in its SLICE, not on S:
- *   { tab, cache, branch, expanded, computing }
+ *   { layout, scope, cache, branch, expanded, computing }
  * A `refresh` Msg (dispatched at boot + on `r`/`:refresh` by refreshAll — the
  * periodic loop does NOT, it calls plugin.refresh() directly) kicks the
  * `cfgStatusCompute` effect, which mounts a temp worktree on the configured
@@ -36,10 +40,8 @@ const {
 const { getModel } = require('../../app/runtime');
 const mnav = require('../../leaves/nav');
 
-const TAB_FILE_TREE = 0;
-const TAB_TRACKED_TREE = 1;
-const TAB_TRACKED_FLAT = 2;
-const TAB_LABELS = ['File tree', 'Tracked tree', 'Tracked flat'];
+const DEFAULT_LAYOUT = 'tree';   // 'tree' | 'flat'
+const DEFAULT_SCOPE = 'all';     // 'all'  | 'tracked'
 
 const STATUS_UNKNOWN = '?';
 const STATUS_MATCHES = '✓';
@@ -82,9 +84,15 @@ function _branchFromArrange(arrange) {
 
 // --- slice helpers ---
 
-function tabIdx(slice) {
-  const t = slice && slice.tab;
-  return (typeof t === 'number' && t >= 0 && t < TAB_LABELS.length) ? t : 0;
+function layoutOf(slice) {
+  return (slice && slice.layout === 'flat') ? 'flat' : DEFAULT_LAYOUT;
+}
+function scopeOf(slice) {
+  return (slice && slice.scope === 'tracked') ? 'tracked' : DEFAULT_SCOPE;
+}
+// Predicate over a status badge for the current scope; null = include all.
+function scopePredicate(slice) {
+  return scopeOf(slice) === 'tracked' ? (s) => TRACKED.has(s) : null;
 }
 
 // --- status comparison (pure — no S, returns the cache) ---
@@ -238,13 +246,13 @@ function _byCategory(cf, slice, predicate) {
   return out;
 }
 
-function _flatTracked(cf, slice) {
+function _flat(cf, slice, predicate) {
   const items = [];
   for (const e of cf) {
     const expanded = expandEntry(e, slice);
     for (const f of expanded.items) {
       const status = statusFor(slice, f.path);
-      if (!TRACKED.has(status)) continue;
+      if (predicate && !predicate(status)) continue;
       items.push({
         kind: 'file', path: f.path, category: e.category || 'uncategorized',
         status, declaredPath: e.path, desc: e.desc,
@@ -265,15 +273,16 @@ function buildItems(slice, files) {
   const head = [];
   if (cache.error) head.push({ kind: 'note', text: cache.error });
 
-  const tab = tabIdx(slice);
-  if (tab === TAB_FILE_TREE) return [...head, ..._byCategory(cf, slice, null)];
-  if (tab === TAB_TRACKED_TREE) {
-    const items = _byCategory(cf, slice, (s) => TRACKED.has(s));
-    if (items.length === 0) return [...head, { kind: 'note', text: 'no tracked paths (try `r` to refresh)' }];
-    return [...head, ...items];
+  const predicate = scopePredicate(slice);
+  const items = layoutOf(slice) === 'flat'
+    ? _flat(cf, slice, predicate)
+    : _byCategory(cf, slice, predicate);
+  if (items.length === 0) {
+    const text = scopeOf(slice) === 'tracked'
+      ? 'no tracked paths (try `r` to refresh)'
+      : 'no files declared in YAML';
+    return [...head, { kind: 'note', text }];
   }
-  const items = _flatTracked(cf, slice);
-  if (items.length === 0) return [...head, { kind: 'note', text: 'no tracked paths (try `r` to refresh)' }];
   return [...head, ...items];
 }
 
@@ -307,7 +316,7 @@ function render(panel, w, h, slice, opts) {
   const sel = getSel(panel.paneId);
   const focused = !!(opts && opts.focused);
   const lines = items.map((item, i) => rowText(item, focused && i === sel));
-  const title = `${panel.title || 'Config'} — ${TAB_LABELS[tabIdx(slice)]}`;
+  const title = `${panel.title || 'Config'} — ${layoutOf(slice)} · ${scopeOf(slice)}`;
   return renderPanel({
     width: w, height: h, title,
     panelType: 'config-status', lines, focused,
@@ -383,7 +392,7 @@ function init() {
   const layoutSlice = getInstanceSlice('layout');
   const arrange = layoutSlice && layoutSlice.arrange;
   return {
-    tab: 0, cache: null, expanded: {}, computing: false,
+    layout: DEFAULT_LAYOUT, scope: DEFAULT_SCOPE, cache: null, expanded: {}, computing: false,
     files: _readFilesFromModel(m),
     projectDir: _readProjectDirFromModel(m),
     branch: _branchFromArrange(arrange),
@@ -420,12 +429,13 @@ function update(msg, slice) {
     return [{ ...slice, cache: msg.cache, computing: false }, [{ type: 'render' }]];
   }
   if (msg.type === 'key') {
-    // The Component owns ]/[/return on this panel: each branch returns
-    // the `_claimed` sentinel effect so the framework default (tab
-    // cycle / run_selected) doesn't ALSO fire. Other keys flow through
-    // to the framework as no-claim returns.
-    if (msg.key === ']') return [{ ...slice, tab: (tabIdx(slice) + 1) % TAB_LABELS.length }, [{ type: '_claimed' }]];
-    if (msg.key === '[') return [{ ...slice, tab: (tabIdx(slice) + TAB_LABELS.length - 1) % TAB_LABELS.length }, [{ type: '_claimed' }]];
+    // The Component owns t/s/return on this panel: each branch returns
+    // the `_claimed` sentinel effect so the framework default (e.g.
+    // run_selected, or a hotkey-jump) doesn't ALSO fire. `]`/`[` are NOT
+    // claimed — they fall through to the framework's pane/tab cycle like
+    // every other pane. Other keys flow through as no-claim returns.
+    if (msg.key === 't') return [{ ...slice, layout: layoutOf(slice) === 'tree' ? 'flat' : 'tree' }, [{ type: '_claimed' }]];
+    if (msg.key === 's') return [{ ...slice, scope: scopeOf(slice) === 'all' ? 'tracked' : 'all' }, [{ type: '_claimed' }]];
     if (msg.key === 'return') {
       // T1.2 — read files snapshot from slice (cached via set_config arm),
       // not via getModel(). Cursor from our own slice.nav (via the nav
@@ -481,7 +491,7 @@ module.exports = {
       render,
       getItems: (slice) => buildItems(slice, slice.files || []),
       getInfo,
-      keyHints: '[ ] tabs | r refresh | ⏎ diff',
+      keyHints: 't tree/flat | s all/tracked | r refresh | ⏎ diff',
       filterable: true,
       filterText: (item) => {
         if (!item) return '';
@@ -492,9 +502,11 @@ module.exports = {
     },
   },
   // Exposed for unit tests; not part of the public contract.
-  _tabIdx: tabIdx,
+  _layoutOf: layoutOf,
+  _scopeOf: scopeOf,
   _buildItems: buildItems,
   _byCategory,
+  _flat,
   _computeStatus: computeStatus,
   _statusFor: statusFor,
   _diffFor: diffFor,
@@ -504,5 +516,4 @@ module.exports = {
     UNKNOWN: STATUS_UNKNOWN, MATCHES: STATUS_MATCHES, DIFFERS: STATUS_DIFFERS,
     LOCAL_ONLY: STATUS_LOCAL_ONLY, BRANCH_ONLY: STATUS_BRANCH_ONLY,
   },
-  TAB_LABELS,
 };

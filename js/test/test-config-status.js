@@ -52,7 +52,7 @@ function freshSlice(statuses = {}) {
     cf,
     // v0.6.3 T1.2 — config-status caches files + projectDir on slice
     // (mirrored via set_config arm); reducer arms read locally.
-    slice: { tab: 0, expanded: {}, branch: 'config', computing: false,
+    slice: { layout: 'tree', scope: 'all', expanded: {}, branch: 'config', computing: false,
              files: cf, projectDir: '.', nav: require('../leaves/nav').init(),
              cache: { byPath, children, branch: 'config', computedAt: 0 } },
   };
@@ -83,27 +83,59 @@ function setCursor(files, idx) {
   setSel('config-status', idx);
 }
 
-describe('[1] tab cycling via the reducer', () => {
-  it('] advances 0 → 1 → 2 → 0', () => {
+describe('[1] view toggles via the reducer', () => {
+  it('t toggles layout tree ↔ flat', () => {
     let { slice } = freshSlice();
-    slice = keyUpdate(slice, ']'); eq(slice.tab, 1);
-    slice = keyUpdate(slice, ']'); eq(slice.tab, 2);
-    slice = keyUpdate(slice, ']'); eq(slice.tab, 0);
+    slice = keyUpdate(slice, 't'); eq(slice.layout, 'flat');
+    slice = keyUpdate(slice, 't'); eq(slice.layout, 'tree');
   });
-  it('[ retreats 0 → 2 → 1 → 0', () => {
+  it('s toggles scope all ↔ tracked', () => {
     let { slice } = freshSlice();
-    slice = keyUpdate(slice, '['); eq(slice.tab, 2);
-    slice = keyUpdate(slice, '['); eq(slice.tab, 1);
-    slice = keyUpdate(slice, '['); eq(slice.tab, 0);
+    slice = keyUpdate(slice, 's'); eq(slice.scope, 'tracked');
+    slice = keyUpdate(slice, 's'); eq(slice.scope, 'all');
   });
-  it('tabIdx tolerates a malformed slice', () => {
-    eq(cs._tabIdx({}), 0);
-    eq(cs._tabIdx({ tab: 'bad' }), 0);
-    eq(cs._tabIdx({ tab: 99 }), 0);
+  it('t and s are orthogonal (one does not touch the other)', () => {
+    let { slice } = freshSlice();
+    slice = keyUpdate(slice, 't');
+    eq(slice.scope, 'all');           // scope untouched by layout toggle
+    slice = keyUpdate(slice, 's');
+    eq(slice.layout, 'flat');         // layout untouched by scope toggle
+  });
+  it('layoutOf / scopeOf tolerate a malformed slice (default tree · all)', () => {
+    eq(cs._layoutOf({}), 'tree');
+    eq(cs._layoutOf({ layout: 'bad' }), 'tree');
+    eq(cs._scopeOf({}), 'all');
+    eq(cs._scopeOf({ scope: 99 }), 'all');
+  });
+  it('`]`/`[` are NOT claimed — fall through to the framework tab cycle', () => {
+    const { slice } = freshSlice();
+    // No-claim return = the bare slice (no _claimed effect), unchanged.
+    eq(keyUpdate(slice, ']'), slice);
+    eq(keyUpdate(slice, '['), slice);
   });
   it('an unrelated key leaves the slice unchanged', () => {
     const { slice } = freshSlice();
     eq(keyUpdate(slice, 'x'), slice);
+  });
+});
+
+describe('[1b] all four layout×scope combinations build', () => {
+  // tracked = ✓ * ! ; secret/app.conf=DIFFERS(✓tracked), others UNKNOWN(untracked)
+  function combo(layout, scope) {
+    const { cf, slice } = freshSlice();
+    return cs._buildItems({ ...slice, layout, scope }, cf);
+  }
+  it('all four produce items (incl. the new all · flat the old cycle could not express)', () => {
+    for (const layout of ['tree', 'flat']) {
+      for (const scope of ['all', 'tracked']) {
+        const items = combo(layout, scope);
+        assert(Array.isArray(items) && items.length > 0, `${layout} · ${scope} non-empty`);
+      }
+    }
+  });
+  it('flat layout emits no header rows; tree layout does', () => {
+    assert(combo('flat', 'all').every((i) => i.kind !== 'header'), 'flat has no headers');
+    assert(combo('tree', 'all').some((i) => i.kind === 'header'), 'tree has headers');
   });
 });
 
@@ -133,55 +165,62 @@ describe('[2] _byCategory orders headers (secret → config → other → uncate
   });
 });
 
-describe('[3] buildItems dispatches by current tab + applies cache statuses', () => {
-  it('tab 0 (file tree) — every declared path with cached status', () => {
+describe('[3] buildItems projects by layout × scope + applies cache statuses', () => {
+  it('tree · all — every declared path with cached status', () => {
     const { cf, slice } = freshSlice({
       'client/id_ed25519': STATUS.MATCHES,
       'data/dev9/bashrc': STATUS.DIFFERS,
     });
-    const items = cs._buildItems(slice, cf);
+    const items = cs._buildItems(slice, cf);   // default tree · all
     const files = items.filter((i) => i.kind === 'file');
     eq(files.length, 7);
     eq(files.find((f) => f.path === 'client/id_ed25519').status, STATUS.MATCHES);
     eq(files.find((f) => f.path === 'data/dev9/bashrc').status, STATUS.DIFFERS);
     eq(files.find((f) => f.path === 'extra.txt').status, STATUS.UNKNOWN, 'unknown for missing-from-cache fallback');
   });
-  it('tab 1 (tracked tree) — narrows to ✓ / * / ! only', () => {
+  it('tree · tracked (s) — narrows to ✓ / * / ! only', () => {
     let { cf, slice } = freshSlice({
       'client/id_ed25519': STATUS.MATCHES,
       'client/id_ed25519.pub': STATUS.LOCAL_ONLY,
       'data/openvpn/ca.crt': STATUS.BRANCH_ONLY,
       'data/dev9/bashrc': STATUS.DIFFERS,
     });
-    slice = keyUpdate(slice, ']');
+    slice = keyUpdate(slice, 's');
     const items = cs._buildItems(slice, cf);
     const files = items.filter((i) => i.kind === 'file');
     const paths = files.map((f) => f.path).sort();
     eq(paths.join(','), 'client/id_ed25519,data/dev9/bashrc,data/openvpn/ca.crt',
        '✓ * ! kept; + and ? excluded');
   });
-  it('tab 1 with no tracked files surfaces a note', () => {
+  it('scope=tracked with no tracked files surfaces a note', () => {
     let { cf, slice } = freshSlice();  // all paths default to ?, none tracked
-    slice = keyUpdate(slice, ']');
+    slice = keyUpdate(slice, 's');
     const items = cs._buildItems(slice, cf);
     eq(items.length, 1);
     eq(items[0].kind, 'note');
     assert(items[0].text.includes('no tracked paths'));
   });
-  it('tab 2 (tracked flat) — same set as tab 1, alphabetical (case-insensitive), no headers', () => {
+  it('flat · tracked (s then t) — same set as tree·tracked, alphabetical, no headers', () => {
     let { cf, slice } = freshSlice({
       'data/dev9/tmux.conf': STATUS.MATCHES,
       'client/id_ed25519': STATUS.DIFFERS,
       'README': STATUS.BRANCH_ONLY,
     });
-    slice = keyUpdate(slice, ']'); slice = keyUpdate(slice, ']');
+    slice = keyUpdate(slice, 's'); slice = keyUpdate(slice, 't');
     const items = cs._buildItems(slice, cf);
     const headers = items.filter((i) => i.kind === 'header');
     eq(headers.length, 0, 'flat view has no category headers');
     const paths = items.filter((i) => i.kind === 'file').map((f) => f.path);
     eq(paths.join(','), 'client/id_ed25519,data/dev9/tmux.conf,README');
   });
-  it('cache.error surfaces a head note in every tab', () => {
+  it('flat · all (t) — every declared path, flat, no headers (the new 4th combo)', () => {
+    let { cf, slice } = freshSlice({ 'client/id_ed25519': STATUS.MATCHES });
+    slice = keyUpdate(slice, 't');
+    const items = cs._buildItems(slice, cf);
+    eq(items.filter((i) => i.kind === 'header').length, 0, 'no headers in flat');
+    eq(items.filter((i) => i.kind === 'file').length, 7, 'all 7 paths, unfiltered');
+  });
+  it('cache.error surfaces a head note in every view', () => {
     const { cf, slice } = freshSlice();
     slice.cache.error = 'branch "config" does not exist';
     const items = cs._buildItems(slice, cf);
@@ -294,12 +333,12 @@ describe('[6] buildItems with a real cache — Tracked tabs hold the right subse
       fs.unlinkSync(path.join(TMP, 'data', 'dev9', 'missing.conf'));
     }
     const cache = cs._computeStatus('config', E2E_FILES, TMP);
-    let slice = { tab: 0, expanded: {}, branch: 'config', computing: false, cache };
+    let slice = { layout: 'tree', scope: 'all', expanded: {}, branch: 'config', computing: false, cache };
 
     const all = cs._buildItems(slice, E2E_FILES).filter((i) => i.kind === 'file').map((f) => f.path);
     eq(all.length, 4);
 
-    slice = keyUpdate(slice, ']');
+    slice = keyUpdate(slice, 's');
     const tracked = cs._buildItems(slice, E2E_FILES).filter((i) => i.kind === 'file').map((f) => f.path).sort();
     eq(tracked.join(','), 'client/id_ed25519,data/dev9/bashrc,data/openvpn/ca.crt',
        'tracked subset is the three saved files; the never-written one is excluded');
@@ -322,7 +361,7 @@ describe('[7] paginated dir expansion', () => {
   const BIG_FILES = [{ path: 'big', category: 'config' }];
   function bigSlice() {
     return {
-      tab: 0, expanded: {}, branch: 'config', computing: false,
+      layout: 'tree', scope: 'all', expanded: {}, branch: 'config', computing: false,
       files: BIG_FILES, projectDir: '.',
       cache: bigCache(),
     };
@@ -365,8 +404,8 @@ describe('[7] paginated dir expansion', () => {
     eq(items.filter((i) => i.kind === 'more').length, 0, 'no more marker');
   });
 
-  it('"more" marker hidden in tracked tabs (predicate filtering)', () => {
-    let slice = keyUpdate(bigSlice(), ']');  // tracked tree
+  it('"more" marker hidden when scope=tracked (predicate filtering)', () => {
+    let slice = keyUpdate(bigSlice(), 's');  // tree · tracked
     const items = cs._buildItems(slice, BIG_FILES);
     eq(items.filter((i) => i.kind === 'more').length, 0, 'no pagination marker under filtering');
     eq(items.filter((i) => i.kind === 'file').length, 25, 'all tracked rows present');

@@ -368,7 +368,7 @@ module.exports = {
   owns input, so the focused panel must not also see the key. To suppress
   the framework's default for a key the Component handles, its `update`
   returns a `_claimed` sentinel as one of the effects (e.g. files claims
-  `return`; config-status claims `] [ return`). The framework filters
+  `return`; config-status claims `t s return`). The framework filters
   `_claimed` out of the effect list and skips the global default.
 - **Wrapped Msgs.** Component-specific Msgs MUST be wrapped via
   `api.wrap('name', innerMsg)` (so the framework routes to exactly one
