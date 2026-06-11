@@ -83,40 +83,39 @@ describe('[immutable] docker', () => {
 // --- files ---------------------------------------------------------------
 
 describe('[immutable] files', () => {
-  it('dirLoaded updates the named browser, leaves others alone', () => {
+  // v0.6.4 Theme A Phase 5 Arc 2 — one instance per pane: a single
+  // `browser` + `nav` entry (the per-panelType maps collapsed out).
+  it('dirLoaded folds rows into the browser (input frozen)', () => {
     const slice = {
-      browsers: {
-        files: { cwd: '/', items: null, loading: true, seq: 1, lastError: null },
-        ssh: { cwd: '/etc', items: ['x'], loading: false, seq: 7, lastError: null },
-      },
+      paneId: 'files',
+      browser: { cwd: '/', items: null, loading: true, seq: 1, lastError: null },
       nav: {},
     };
-    const msg = { type: 'dirLoaded', panelType: 'files', seq: 1, items: [{ kind: 'file', name: 'a' }] };
+    const msg = { type: 'dirLoaded', seq: 1, items: [{ kind: 'file', name: 'a' }] };
     const [next, fx] = expectNoMutation(
       'files dirLoaded leaves input frozen',
       () => files.update(msg, slice),
       slice,
     );
-    eq(next.browsers.files.items.length, 1, 'items folded into named browser');
-    eq(next.browsers.files.loading, false, 'loading flag cleared');
-    eq(next.browsers.ssh, slice.browsers.ssh, 'other browsers ref-preserved');
+    eq(next.browser.items.length, 1, 'items folded into the browser');
+    eq(next.browser.loading, false, 'loading flag cleared');
     eq(fx[0].type, 'render');
   });
 
   it('dirLoaded with stale seq is a no-op', () => {
     const slice = {
-      browsers: { files: { cwd: '/', items: null, loading: true, seq: 5, lastError: null } },
+      paneId: 'files',
+      browser: { cwd: '/', items: null, loading: true, seq: 5, lastError: null },
       nav: {},
     };
-    const out = files.update({ type: 'dirLoaded', panelType: 'files', seq: 1, items: [] }, slice);
+    const out = files.update({ type: 'dirLoaded', seq: 1, items: [] }, slice);
     assert(out === slice, 'stale dirLoaded returns same ref');
   });
 
-  it('showHidden fans across browsers, marks each new', () => {
+  it('showHidden toggles the browser flag (input frozen)', () => {
     const slice = {
-      browsers: {
-        files: { cwd: '/', showHidden: false, items: null, loading: false, seq: 0 },
-      },
+      paneId: 'files',
+      browser: { cwd: '/', showHidden: false, items: null, loading: false, seq: 0 },
       nav: {},
     };
     const [next] = expectNoMutation(
@@ -124,9 +123,7 @@ describe('[immutable] files', () => {
       () => files.update({ type: 'showHidden', mode: 'on' }, slice),
       slice,
     );
-    eq(next.browsers.files.showHidden, true, 'flag toggled on');
-    // The other owned type gets seeded with the toggle applied
-    eq(next.browsers['file-browser'].showHidden, true, 'file-browser seeded with toggle');
+    eq(next.browser.showHidden, true, 'flag toggled on');
   });
 });
 

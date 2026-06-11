@@ -34,12 +34,16 @@ let _options = [];
  */
 function collectOptions() {
   const options = [];
-  const def = getPanelDef(getFocus());
+  const focus = getFocus();
+  const def = getPanelDef(focus);
   if (def && typeof def.copyOptions === 'function' && typeof def.getItems === 'function') {
-    const items = getItems(getFocus());
-    const item = items[getSel(getFocus())];
+    const items = getItems(focus);
+    const item = items[getSel(focus)];
     if (item) {
-      const provided = def.copyOptions(item) || [];
+      // v0.6.4 Theme A Phase 5 Arc 2 — thread the focused paneId so files'
+      // copyOptions resolves THIS pane's container/source. Arity-ignored
+      // by single-panel defs.
+      const provided = def.copyOptions(item, focus) || [];
       for (const o of provided) {
         if (o && o.label && o.content !== undefined) options.push(o);
       }

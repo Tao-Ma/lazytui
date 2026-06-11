@@ -252,7 +252,10 @@ function _infoFromFocus() {
   const { getSel } = require('../../app/state');
   const item = items[getSel(focus)];
   if (!item) return null;
-  const out = def.getInfo(item);
+  // v0.6.4 Theme A Phase 5 Arc 2 — thread the focused paneId so a
+  // multi-panelType Component (files) reads THIS pane's browser/config,
+  // not a first-of-type guess. Arity-ignored by single-panel defs.
+  const out = def.getInfo(item, focus);
   if (!out || !out.length) return null;
   return out.join('\n').split('\n');
 }

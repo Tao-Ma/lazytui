@@ -16,14 +16,21 @@
  *
  * Slice shape:
  *
- *   { browsers: { [tabId]: { cwd, showHidden, lastError, items, loading, seq } } }
+ *   { paneId, browser: { cwd, showHidden, lastError, items, loading, seq },
+ *     nav: { cursor, scroll, multiSel, filter } }
  *
- * Keyed by tab id so distinct panels get independent cwd / showHidden /
- * listing slots. In v0.6.1 Phase 3 the files Component owns a single
- * instance whose two panelTypes (`files` + `file-browser`) double as
- * tab ids — `browsers['files']` / `browsers['file-browser']`. Phase 4
- * mints separate instances per panelType, at which point each instance
- * carries one browser (no map needed) and the keys collapse out.
+ * v0.6.4 Theme A Phase 5 Arc 2 — one instance per placed pane (minted
+ * per-paneId in state.js, including the `file-browser` panelType, which
+ * resolves to this Component via the panel-type → owner table). Each
+ * instance carries exactly ONE `browser` and ONE `nav` entry; the slice
+ * stamps its own `paneId` (via `init(paneId)`) so every path — render
+ * (`panel`), getItems/key (`slice.paneId`), the broadcast `refresh`
+ * (`slice.paneId`, no call-site id), and getInfo/copyOptions (focused
+ * paneId threaded from the call site) — resolves "my pane" without a
+ * "first pane of this type" guess. The pre-Arc-2 design keyed a
+ * `browsers[panelType]` / `nav[panelType]` MAP off one shared instance
+ * (the only thing then separating a `files` pane from a `file-browser`
+ * pane); two same-type panes collided on the primary. The map is gone.
  *
  * Directory listings are loaded ASYNCHRONOUSLY through the effect loop, never
  * synchronously in getItems (which stays a pure projection of the slice):
@@ -56,7 +63,7 @@ const route = require('../../panel/route');
 const {
   esc, visibleLen, theme, renderPanel,
   getSel, getScroll, getFilter, isMultiSel,
-  getInstanceSlice, getFocus,
+  getInstanceSlice,
 } = require('../api');
 
 const { DEFAULT_MAX_BYTES, DEFAULT_HEX_AFTER } = require('../../io/file-loader');
@@ -88,15 +95,20 @@ function _allPanels() {
   return require('../../leaves/pool').allPanesInColumns(ly);
 }
 
-function _panelOf(panelType) {
-  return _allPanels().find(p => p.type === panelType);
+/** Resolve THIS instance's pane config by its paneId (the slice stamps
+ *  it via init(paneId)). Replaces the pre-Arc-2 `_panelOf(panelType)`
+ *  "first pane of this type" guess, which collapsed two same-type panes
+ *  onto one. Returns null for the degenerate no-paneId singleton (the
+ *  register-time slice, disposed once real panes mint) + tests. */
+function _paneById(paneId) {
+  if (!paneId) return null;
+  return _allPanels().find(p => p.paneId === paneId) || null;
 }
 
-/** Resolve effective `source` for a panel type (hardcoded alias wins, else
- *  the panel's `source:`, else filesystem). */
-function _source(panelType, hardcoded) {
+/** Resolve effective `source` for a pane (hardcoded alias wins, else the
+ *  pane's `source:`, else filesystem). */
+function _source(panel, hardcoded) {
   if (hardcoded) return hardcoded;
-  const panel = _panelOf(panelType);
   return (panel && panel.source) || 'filesystem';
 }
 
@@ -152,8 +164,9 @@ const LOADING_ROW = { kind: 'loading', name: 'Loading…', path: null };
  * here, so toggling visibility never needs a re-list.
  */
 function _itemsFor(slice, panelType, hardcoded) {
-  const source = _source(panelType, hardcoded);
-  const b = (slice.browsers && slice.browsers[panelType]) || {};
+  const panel = _paneById(slice.paneId);
+  const source = _source(panel, hardcoded);
+  const b = slice.browser || {};
   const showHidden = !!b.showHidden;
   const hideDot = (it) => showHidden || it.kind === 'parent' || it.kind === 'loading' || !it.name.startsWith('.');
 
@@ -166,7 +179,7 @@ function _itemsFor(slice, panelType, hardcoded) {
     const fsRows = b.items == null ? [LOADING_ROW] : b.items.filter(hideDot);
     items = declared.concat(fsRows);
   } else { // filesystem | docker
-    if (source === 'docker' && !(_panelOf(panelType) || {}).container) {
+    if (source === 'docker' && !(panel || {}).container) {
       items = [];
     } else if (b.items == null) {
       items = [LOADING_ROW];
@@ -174,7 +187,7 @@ function _itemsFor(slice, panelType, hardcoded) {
       items = b.items.filter(hideDot);
     }
   }
-  return _matchesFilter(items, getFilter(panelType));
+  return _matchesFilter(items, getFilter(slice.paneId));
 }
 
 // --- formatting helpers ---
@@ -201,11 +214,11 @@ function _parseSize(val, fallback) {
 
 // --- getInfo / copyOptions / render (kind-aware) ---
 
-function _getInfoFor(item, panelType, hardcoded) {
-  const slice = getInstanceSlice('files') || { browsers: {} };
-  const b = (slice.browsers && slice.browsers[panelType]) || {};
-  const source = _source(panelType, hardcoded);
-  const panel = _panelOf(panelType);
+function _getInfoFor(item, paneId, hardcoded) {
+  const slice = route.sliceForPane(paneId, 'files') || { browser: {} };
+  const b = slice.browser || {};
+  const panel = _paneById(paneId);
+  const source = _source(panel, hardcoded);
   const lines = [];
   if (source !== 'declared') {
     const cwdPrefix = source === 'docker' && panel && panel.container
@@ -245,7 +258,7 @@ function _getInfoFor(item, panelType, hardcoded) {
   return lines;
 }
 
-function _copyOptionsFor(item, panelType) {
+function _copyOptionsFor(item, paneId) {
   if (!item || item.kind === 'parent' || item.kind === 'loading') return [];
   const fsp = require('fs').promises;
   const opts = [
@@ -256,7 +269,7 @@ function _copyOptionsFor(item, panelType) {
     opts.push({ label: `Var: $${item.var}`, content: item.var });
   }
   if (item.kind === 'file' || item.kind === 'symlink' || item.kind === 'declared') {
-    const panel = _panelOf(panelType) || {};
+    const panel = _paneById(paneId) || {};
     const container = item.container || (panel.source === 'docker' ? panel.container : null);
     opts.push({
       label: 'File contents (text, up to cap)',
@@ -273,14 +286,13 @@ function _renderFor(panel, w, h, slice, panelType, hardcoded, opts) {
   const items = _itemsFor(slice, panelType, hardcoded);
   const innerW = w - 2;
   // v0.6.4 Theme A Phase 5 — per-pane nav reads (panel.paneId) + per-pane
-  // focus (opts.focused). The per-pane `slice` (Unit 1) already carries
-  // this pane's browser state; cursor/scroll/multiSel now key off paneId
-  // too. (files' internal filter routing + async loadDir keying stay
-  // panelType-shaped — that's the Unit 3 collapse, deferred to Arc 2.)
+  // focus (opts.focused). Arc 2: the per-pane `slice` carries one `browser`
+  // + one `nav` entry; source/cwd resolve from THIS `panel`, never a
+  // first-of-type guess.
   const sel = getSel(panel.paneId);
   const isFocused = !!(opts && opts.focused);
   const t = theme();
-  const source = _source(panelType, hardcoded);
+  const source = _source(panel, hardcoded);
   const lines = items.map((it, i) => {
     const isSel = i === sel && isFocused;
     let marker;
@@ -326,25 +338,29 @@ function _renderFor(panel, w, h, slice, panelType, hardcoded, opts) {
 
 // --- update + effects (the TEA half) ---
 
-function init() {
+function init(paneId) {
   return {
-    browsers: {},
-    // Phase 4a — nav chrome lives on the slice now. `files` owns two
-    // panel types — `files` and `file-browser` — so the `nav` map is
-    // keyed per-panel-type. A single Component, two independent nav
-    // entries; matches the per-panel-type semantics of the helpers.
-    nav: { files: mnav.init(), 'file-browser': mnav.init() },
+    // v0.6.4 Theme A Phase 5 Arc 2 — the slice self-identifies. state.js
+    // mints one instance per placed pane and passes its paneId here, so
+    // every update/getItems path (incl. the broadcast `refresh`, which
+    // gets no call-site id) resolves "my pane" from the slice. null for
+    // the register-time singleton (disposed once real panes mint).
+    paneId: paneId || null,
+    // One browser + one nav entry per instance — the per-panelType maps
+    // collapsed out (each pane is now its own instance).
+    browser: _newBrowser(),
+    nav: mnav.init(),
   };
 }
 
 /** Each refresh / navigation produces a fresh load with a bumped seq so a
  *  result from an abandoned cwd (user navigated away mid-flight) is dropped
  *  by the dirLoaded stale guard rather than clobbering the current listing. */
-function _kickLoad(b, panel, source, panelType, container) {
+function _kickLoad(b, panel, source, paneId, container) {
   const cwd = b.cwd || _resolveInitialCwd(panel, source);
   const seq = (b.seq || 0) + 1;
   const next = { ...b, cwd, items: null, loading: true, seq, lastError: null };
-  const effect = { type: 'loadDir', panelType, source, cwd, container: container || null, seq };
+  const effect = { type: 'loadDir', paneId, source, cwd, container: container || null, seq };
   return { next, effect };
 }
 
@@ -353,54 +369,41 @@ function update(msg, slice) {
   if (mnav.isNavMsg(msg)) return mnav.apply(slice, msg);
   if (msg.type === 'refresh') {
     // Boot + explicit `r`/`:refresh` (refreshAll dispatches refresh; the
-    // periodic loop does not). Re-list every owned fs/docker panel present in
-    // the layout — declared/both's declared half needs no I/O.
-    let browsers = slice.browsers;
-    const effects = [];
-    const seen = new Set();
-    for (const panel of _allPanels()) {
-      if (!OWNED_TYPES.includes(panel.type) || seen.has(panel.type)) continue;
-      seen.add(panel.type);
-      const panelType = panel.type;
-      const source = _source(panelType, _hardcodedFor(panelType));
-      if (source === 'declared') continue;
-      if (source === 'docker' && !panel.container) {
-        browsers = { ...browsers, [panelType]: {
-          ..._newBrowser(), ...browsers[panelType],
-          items: [], loading: false,
-          lastError: 'source: docker requires `container:` on the panel',
-        } };
-        continue;
-      }
-      const b = browsers[panelType] || _newBrowser();
-      const { next, effect } = _kickLoad(b, panel, source, panelType, panel.container);
-      browsers = { ...browsers, [panelType]: next };
-      effects.push(effect);
+    // periodic loop does not). Broadcast → one update per instance; each
+    // re-lists ONLY its own pane (resolved from slice.paneId). declared /
+    // both's declared half needs no I/O.
+    const panel = _paneById(slice.paneId);
+    if (!panel || !OWNED_TYPES.includes(panel.type)) return slice;
+    const hardcoded = _hardcodedFor(panel.type);
+    const source = _source(panel, hardcoded);
+    if (source === 'declared') return slice;
+    if (source === 'docker' && !panel.container) {
+      return [{ ...slice, browser: {
+        ..._newBrowser(), ...slice.browser,
+        items: [], loading: false,
+        lastError: 'source: docker requires `container:` on the panel',
+      } }, [{ type: 'render' }]];
     }
-    if (effects.length === 0) return slice;
-    return [{ ...slice, browsers }, effects];
+    const { next, effect } = _kickLoad(slice.browser, panel, source, slice.paneId, panel.container);
+    return [{ ...slice, browser: next }, [effect]];
   }
 
   if (msg.type === 'dirLoaded') {
-    const b = slice.browsers[msg.panelType];
+    const b = slice.browser;
     // Stale guard: a since-superseded load (navigated away) drops its result.
     if (!b || msg.seq !== b.seq) return slice;
     const next = { ...b, items: msg.items || [], loading: false, lastError: msg.error || null };
-    return [{ ...slice, browsers: { ...slice.browsers, [msg.panelType]: next } }, [{ type: 'render' }]];
+    return [{ ...slice, browser: next }, [{ type: 'render' }]];
   }
 
   if (msg.type === 'showHidden') {
-    // Fan out across every files-style slot (toggle is global from the user's
-    // perspective). Pre-seed the canonical types so the toggle works before
-    // the user has visited either panel. No re-list — the projection re-gates.
-    const browsers = { ...slice.browsers };
-    for (const pt of OWNED_TYPES) if (!browsers[pt]) browsers[pt] = _newBrowser();
-    for (const k of Object.keys(browsers)) {
-      const b = browsers[k];
-      const sh = msg.mode === 'on' ? true : msg.mode === 'off' ? false : !b.showHidden;
-      browsers[k] = { ...b, showHidden: sh };
-    }
-    return [{ ...slice, browsers }, [{ type: 'render' }]];
+    // Per-instance toggle. The :show-hidden command fans this Msg out to
+    // every files/file-browser instance (global from the user's view);
+    // each instance flips its own browser. No re-list — the projection
+    // re-gates dotfiles.
+    const b = slice.browser;
+    const sh = msg.mode === 'on' ? true : msg.mode === 'off' ? false : !b.showHidden;
+    return [{ ...slice, browser: { ...b, showHidden: sh } }, [{ type: 'render' }]];
   }
 
   if (msg.type === 'key') return _handleKey(msg, slice);
@@ -418,13 +421,14 @@ function update(msg, slice) {
  */
 function _handleKey(msg, slice) {
   if (msg.key !== 'return') return slice;
-  // Pure key arm — msg.focusKind is the focused pane's panel-type
-  // (threaded by dispatchKeyToFocused; equals paneTypeOf(getFocus())
-  // for the focused pane); the cursor comes from slice.nav via the
-  // nav leaf. No getFocus()/getSel() global reads. A non-owned focus
-  // falls through to `return slice`, same as the old paneId fallback.
-  const panelType = msg.focusKind;
-  if (!OWNED_TYPES.includes(panelType)) return slice;
+  // Pure key arm — the key path runs on the FOCUSED instance, so `slice`
+  // is the focused pane's slice and slice.paneId identifies it. Resolve
+  // the pane (source/cwd/container) from it; the cursor comes from
+  // slice.nav via the nav leaf. No getFocus()/getSel() global reads. A
+  // non-owned / unresolved pane falls through to `return slice`.
+  const panel = _paneById(slice.paneId);
+  if (!panel || !OWNED_TYPES.includes(panel.type)) return slice;
+  const panelType = panel.type;
   const hardcoded = _hardcodedFor(panelType);
   const item = _itemsFor(slice, panelType, hardcoded)[mnav.cursorOf(slice, panelType)];
   // `return` is claimed even when the row resolves to nothing actionable
@@ -432,18 +436,16 @@ function _handleKey(msg, slice) {
   // into the panel with no useful result.
   if (!item || item.kind === 'loading') return [slice, [{ type: '_claimed' }]];
   if (item.kind === 'parent' || item.kind === 'dir') {
-    const source = _source(panelType, hardcoded);
-    const panel = _panelOf(panelType) || {};
-    const b = slice.browsers[panelType] || _newBrowser();
+    const source = _source(panel, hardcoded);
     // Navigation forces a fresh cwd, so seed the load directly from item.path.
-    const { next, effect } = _kickLoad({ ...b, cwd: item.path }, panel, source, panelType, panel.container);
+    const { next, effect } = _kickLoad({ ...slice.browser, cwd: item.path }, panel, source, slice.paneId, panel.container);
     return [
-      { ...slice, browsers: { ...slice.browsers, [panelType]: next } },
-      [effect, { type: 'resetPanelChrome', panel: panelType }, { type: '_claimed' }],
+      { ...slice, browser: next },
+      [effect, { type: 'resetPanelChrome', paneId: slice.paneId }, { type: '_claimed' }],
     ];
   }
   // declared / file / symlink → open in a content tab
-  return [slice, [{ type: 'openFile', panelType, item }, { type: '_claimed' }]];
+  return [slice, [{ type: 'openFile', paneId: slice.paneId, item }, { type: '_claimed' }]];
 }
 
 // --- effects (registered once at module load) ---
@@ -484,7 +486,7 @@ function _readDirRows(cwd) {
  *  same path. */
 function installEffects(registerEffect) {
   registerEffect('loadDir', (eff) => {
-    const { panelType, source, cwd, container, seq } = eff;
+    const { paneId, source, cwd, container, seq } = eff;
     // Off-tick so a slow filesystem (NFS, sshfs) or a docker exec never blocks
     // the render/keypress tick; the result folds back via the dirLoaded Msg.
     setImmediate(async () => {
@@ -505,24 +507,27 @@ function installEffects(registerEffect) {
         const dn = source === 'docker' ? path.posix.dirname(cwd) : path.dirname(cwd);
         items = dn !== cwd ? [{ kind: 'parent', name: '..', path: dn }] : [];
       }
-      require('../api').dispatchMsg(require('../api').wrap('files', { type: 'dirLoaded', panelType, cwd, seq, items, error }));
+      // Wrap to the ORIGINATING paneId so the result lands on the pane
+      // that kicked the load — not the kind's primary (wrap('files') would
+      // route to _primaryByKind, clobbering the wrong pane under
+      // multi-instance). The instance store resolves a paneId directly.
+      require('../api').dispatchMsg(require('../api').wrap(paneId, { type: 'dirLoaded', cwd, seq, items, error }));
     });
   });
 
   registerEffect('openFile', (eff) => {
-    _openFileAsTab(eff.item, eff.panelType);
+    _openFileAsTab(eff.item, eff.paneId);
   });
 
-  // resetPanelChrome: re-home the panel's cursor/scroll/filter on
-  // navigation — all live on the owning Component's `slice.nav[panel]`
-  // and are written by its own update via wrapped Msgs.
+  // resetPanelChrome: re-home the pane's cursor/scroll/filter on
+  // navigation — they live on this instance's single `slice.nav` entry,
+  // written by its own update via wrapped Msgs targeting the paneId.
   registerEffect('resetPanelChrome', (eff) => {
     const api = require('../api');
-    const compName = api.getComponentOwningPanel(eff.panel);
-    if (!compName) return;
-    api.dispatchMsg(api.wrap(compName, { type: 'set_cursor',   panel: eff.panel, index: 0 }));
-    api.dispatchMsg(api.wrap(compName, { type: 'set_scroll',   panel: eff.panel, offset: 0 }));
-    api.dispatchMsg(api.wrap(compName, { type: 'clear_filter', panel: eff.panel }));
+    if (!api.getComponentOwningPanel(eff.paneId)) return;
+    api.dispatchMsg(api.wrap(eff.paneId, { type: 'set_cursor',   panel: eff.paneId, index: 0 }));
+    api.dispatchMsg(api.wrap(eff.paneId, { type: 'set_scroll',   panel: eff.paneId, offset: 0 }));
+    api.dispatchMsg(api.wrap(eff.paneId, { type: 'clear_filter', panel: eff.paneId }));
   });
 }
 
@@ -536,8 +541,8 @@ function installEffects(registerEffect) {
  * Future schemes (ssh, s3, …) automatically work for the files panel
  * once registered — no change needed here.
  */
-function _openFileAsTab(item, panelType) {
-  const panel = _panelOf(panelType) || {};
+function _openFileAsTab(item, paneId) {
+  const panel = _paneById(paneId) || {};
   const opts = {
     maxBytes: _parseSize(panel.max_bytes, DEFAULT_MAX_BYTES),
     hexAfter: _parseSize(panel.hex_after, DEFAULT_HEX_AFTER),
@@ -558,8 +563,11 @@ function _openFileAsTab(item, panelType) {
 function _makeDef(panelType, hardcoded) {
   return {    render: (panel, w, h, slice, opts) => _renderFor(panel, w, h, slice, panelType, hardcoded, opts),
     getItems: (slice) => _itemsFor(slice, panelType, hardcoded),
-    getInfo: (item) => _getInfoFor(item, panelType, hardcoded),
-    copyOptions: (item) => _copyOptionsFor(item, panelType),
+    // getInfo/copyOptions get the FOCUSED paneId threaded from the call
+    // site (viewer / copy overlay) — they receive no slice, so the paneId
+    // is how they resolve which pane's browser + config to read.
+    getInfo: (item, paneId) => _getInfoFor(item, paneId, hardcoded),
+    copyOptions: (item, paneId) => _copyOptionsFor(item, paneId),
     filterable: true,
     customFilter: true,
     filterText: (it) => it.name || it.path || '',
@@ -581,7 +589,18 @@ const commands = [
     run: (args) => {
       const arg = ((args && args[0]) || '').toLowerCase();
       const mode = arg === 'on' ? 'on' : arg === 'off' ? 'off' : 'toggle';
-      require('../api').dispatchMsg(require('../api').wrap('files', { type: 'showHidden', mode }));
+      const api = require('../api');
+      // Fan out to every files/file-browser instance — global from the
+      // user's view, but each pane owns its own browser slice post-collapse
+      // (wrap('files') would hit only the primary instance).
+      let any = false;
+      route.eachInstance(inst => {
+        if (!OWNED_TYPES.includes(inst.kind)) return;
+        any = true;
+        api.dispatchMsg(api.wrap(inst.id, { type: 'showHidden', mode }));
+      });
+      // Degenerate: no placed instance yet — hit the register-time primary.
+      if (!any) api.dispatchMsg(api.wrap('files', { type: 'showHidden', mode }));
     },
   },
 ];

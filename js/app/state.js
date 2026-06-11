@@ -152,7 +152,13 @@ function initState() {
       const kind = p.type;
       const paneId = p.paneId;
       if (!paneId || !kind) continue;
-      const comp = components[kind];
+      // v0.6.4 Theme A Phase 5 Arc 2 — resolve panelType-aliased panes
+      // (e.g. `file-browser`, owned by the `files` Component) to their
+      // owning Component. Was `components[kind]` only, which minted
+      // nothing for an aliased panel-type (its Component is keyed under
+      // a different name), leaving those panes to collapse onto the
+      // owner's primary slice.
+      const comp = components[kind] || components[route.componentForPanel(kind)];
       if (!comp) continue;
       // Dispose the kind-keyed singleton slice (minted at
       // registerComponent), then mint fresh keyed by paneId.
@@ -160,7 +166,12 @@ function initState() {
         route.disposeInstance(kind);
       }
       if (!route.hasInstance(paneId)) {
-        route.setInstance(paneId, kind, comp.init());
+        // Stamp the pane identity onto the slice (init(paneId)) so the
+        // Component can resolve "my pane" from its own slice on every
+        // path — including the broadcast `refresh` where no call-site
+        // paneId is available. init() arity-ignores it for Components
+        // that don't need identity.
+        route.setInstance(paneId, kind, comp.init(paneId));
       }
     }
   }

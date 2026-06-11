@@ -388,7 +388,13 @@ function dispatchMsg(msg) {
   // independently.
   if (msg && BROADCAST_TYPES.has(msg.type)) {
     route.eachInstance(inst => {
-      const comp = components[inst.kind];
+      // v0.6.4 Theme A Phase 5 Arc 2 — resolve panelType-aliased
+      // instances (e.g. a `file-browser` instance, kind 'file-browser',
+      // owned by the `files` Component) via the panel-type → Component
+      // table, mirroring the wrapped-Msg path above. Was
+      // `components[inst.kind]` only, which silently skipped aliased
+      // instances on every broadcast (refresh never reached them).
+      const comp = components[inst.kind] || components[route.componentForPanel(inst.kind)];
       if (!comp) return;  // defensive: orphan instance (Component unregistered)
       _runInstance(inst, comp, msg);
     });
