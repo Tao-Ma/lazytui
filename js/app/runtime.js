@@ -305,12 +305,16 @@ function update(model, msg) {
       // reaches into the Component slice. Routing reads (getFocus /
       // componentForPanel / paneTypeOf) stay — the blessed chokepoint.
       const had = !!msg.hadMultiSel;
+      // v0.6.4 Theme A Phase 5 — clear THIS pane's instance when focus is a
+      // live paneId, not the kind's primary (mirrors nav_select). No-op
+      // under single-pane (paneId === primary).
+      const target = route.hasInstance(focus) ? focus : compName;
       if (model.modes.listSelectMode) {
         const next = _withModes(model, { listSelectMode: false });
-        if (compName) return [next, [{ type: 'msg', msg: route.wrap(compName, { type: 'multisel_clear', panel: panelType }) }]];
+        if (compName) return [next, [{ type: 'msg', msg: route.wrap(target, { type: 'multisel_clear', panel: panelType }) }]];
         return [next, []];
       } else if (had) {
-        return [model, [{ type: 'msg', msg: route.wrap(compName, { type: 'multisel_clear', panel: panelType }) }]];
+        return [model, [{ type: 'msg', msg: route.wrap(target, { type: 'multisel_clear', panel: panelType }) }]];
       }
       return [model, []];
     }
@@ -326,7 +330,9 @@ function update(model, msg) {
       if (!nextOn) {
         const compName = route.componentForPanel(focus);
         const panelType = route.paneTypeOf(focus) || focus;
-        if (compName) return [next, [{ type: 'msg', msg: route.wrap(compName, { type: 'multisel_clear', panel: panelType }) }]];
+        // Clear the focused pane's instance, not the primary (see escape).
+        const target = route.hasInstance(focus) ? focus : compName;
+        if (compName) return [next, [{ type: 'msg', msg: route.wrap(target, { type: 'multisel_clear', panel: panelType }) }]];
       }
       return [next, []];
     }

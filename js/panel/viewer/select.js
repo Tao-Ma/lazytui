@@ -226,7 +226,17 @@ function commit() {
 function settle() {
   const sel = _detail()?.select;
   if (!sel || !sel.active) return '';
-  const text = selectedText();
+  // A bare click (press→release, no motion) leaves anchor === cursor — a
+  // zero-width char "selection". selectedText() would still return the one
+  // character under the cursor (endCol is char-inclusive at the boundary),
+  // so treating it as a real selection would yank a stray char to the
+  // register AND leave the viewer stuck in visual mode. Cancel it instead:
+  // a plain viewer click must never trap keyboard nav. (Line-kind clicks
+  // still settle — a single line-mode click is a deliberate full-line pick.)
+  const noDrag = sel.kind !== 'line'
+    && sel.anchor.line === sel.cursor.line
+    && sel.anchor.col === sel.cursor.col;
+  const text = noDrag ? '' : selectedText();
   if (!text) { _apply({ type: 'select_cancel' }); return ''; }
   require('../../dispatch/dispatch').applyMsg({ type: 'register_push', text });
   return text;  // active stays true → persistent selection (highlight + copyable)

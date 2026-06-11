@@ -103,7 +103,13 @@ function toggleMultiSelOnFocused() {
   // file-browser Components find their entry. Mirrors runtime.js arms
   // (escape / list_select / nav_select).
   const panelType = route.paneTypeOf(focus) || focus;
-  dispatchMsg(wrap(compName, { type: 'multisel_toggle', panel: panelType, id: idOf(focus, item) }));
+  // v0.6.4 Theme A Phase 5 — route to THIS pane's instance when `focus` is
+  // a live paneId (two same-type panes each own their multiSel Set), so the
+  // toggle lands on the focused pane, not the kind's primary. `panel:
+  // panelType` still keys nav[panelType] inside multi-panel Components.
+  // No-op under single-pane (paneId === primary). Mirrors nav_select.
+  const target = route.hasInstance(focus) ? focus : compName;
+  dispatchMsg(wrap(target, { type: 'multisel_toggle', panel: panelType, id: idOf(focus, item) }));
 }
 
 /**
@@ -133,7 +139,9 @@ function selectAllVisible() {
   if (!compName) return;
   // Translate paneId → panel-type (see toggleMultiSelOnFocused).
   const panelType = route.paneTypeOf(focus) || focus;
-  dispatchMsg(wrap(compName, { type: 'multisel_select_all', panel: panelType, ids }));
+  // Route to the focused pane's instance (see toggleMultiSelOnFocused).
+  const target = route.hasInstance(focus) ? focus : compName;
+  dispatchMsg(wrap(target, { type: 'multisel_select_all', panel: panelType, ids }));
 }
 
 /**
@@ -895,4 +903,5 @@ module.exports = {
   _handleNormalKey: handleNormalKey,
   _dispatchActiveMode,
   _isListPanel,
+  _toggleMultiSelOnFocused: toggleMultiSelOnFocused,
 };

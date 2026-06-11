@@ -313,6 +313,29 @@ describe('[5] right-click context menu — copy + dismiss', () => {
     eq(push.text, selText, 'copied the persisted selection text');
   });
 
+  it('a bare viewer click (press→release, no motion) does NOT yank or trap visual mode', () => {
+    // Regression: settle() used to treat a zero-width click as a 1-char
+    // selection — yanking a stray char to the register AND leaving the
+    // viewer stuck in visual mode (j/k extend instead of scroll).
+    const sel = require('../../panel/viewer/select');
+    sm.bootFresh();
+    sm.capture(() => sm.render());
+    const d = api.getInstanceSlice('detail');
+    d.lines = ['hello world foo bar', 'second line'];
+    d.scroll = 0;
+    sm.capture(() => sm.render());
+    const lay = api.getInstanceSlice('layout');
+    const b = lay.paneBounds['pane-detail'] || lay.paneBounds.detail;
+    const [px, py] = sgr0(b.x + 4, b.y + 1);     // land ON a char
+    const seen = withMsgSpy(() => {
+      sm.capture(() => sm.handleMouse('press', px, py));
+      sm.capture(() => sm.handleMouse('release', px, py));   // no motion
+    });
+    assert(!sel.isActive(), 'a bare click leaves NO active selection (not trapped in visual mode)');
+    assert(!seen.some(m => m.type === 'register_push'),
+      `a bare click must NOT push to the register (saw: ${JSON.stringify(seen.map(m => m.type))})`);
+  });
+
   it('right-click on empty space opens the general menu (no copy entry)', () => {
     sm.bootFresh();
     sm.capture(() => sm.render());

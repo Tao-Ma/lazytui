@@ -205,6 +205,25 @@ describe('[v0.6.4 Theme A Phase 5] per-pane nav READS', () => {
     assert(!state.isMultiSel('pane-b', 'alpha'), 'pane-b does NOT have alpha');
   });
 
+  it('multiSel WRITE via the dispatch path lands on the focused pane, not the primary', () => {
+    // Regression (v0.6.4 pre-release review, HIGH-1): toggleMultiSelOnFocused
+    // wrapped the Msg under the Component NAME, which dispatchMsg resolves to
+    // the kind's PRIMARY instance — so a multi-select toggle in the
+    // non-primary pane wrote to pane-a's Set while the focused pane showed
+    // nothing. The fix routes the wrap target on the focused paneId (mirrors
+    // nav_select). Same class of fix covers selectAllVisible + the escape /
+    // list_select multisel_clear arms.
+    setupTwoPanes();
+    const dispatch = require('../dispatch/dispatch');
+    // Focus the NON-primary pane (pane-a is primary; pane-b is the trap).
+    route.setInstanceSlice('layout', { focus: 'pane-b' });
+    state.setSel('pane-b', 0);                       // cursor on 'alpha'
+    dispatch._toggleMultiSelOnFocused();
+    eq(state.multiSelCount('pane-b'), 1, 'focused pane-b got the selection');
+    assert(state.isMultiSel('pane-b', 'alpha'), 'pane-b holds the toggled id');
+    eq(state.multiSelCount('pane-a'), 0, 'primary pane-a did NOT get it (was the bug)');
+  });
+
   it('committed filter + filtered getItems are independent per pane', () => {
     setupTwoPanes();
     // Commit a filter on pane-a only (set_filter routed to its instance).
