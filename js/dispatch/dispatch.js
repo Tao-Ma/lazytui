@@ -44,6 +44,12 @@ const { getModel } = runtime;
 // are complete.
 const { handleAction, _runActionByKey } = require('./actions');
 
+// v0.6.4 Theme F Phase 1 — core normal-mode nav keys route through the
+// shared intent layer (the pointer/keyboard chokepoint). The keyboard
+// forms delegate straight back to handleAction, so this is a behavioral
+// no-op; the seam is what mouse gestures (Phase 2) will also target.
+const intent = require('./intent');
+
 /**
  * Move the focused Navigator's cursor to `index`. Phase 4b — the uniform
  * `nav_select` Msg retires; cursor writes go straight to the owning
@@ -495,15 +501,15 @@ function handleNormalKey(key, seq) {
       if (_isListPanel(getFocus())) applyMsg({ type: 'list_select', mode: 'on' });
       selectAllVisible();
       break;
-    case 'up': case 'k':   handleAction('nav_up'); break;
-    case 'down': case 'j': handleAction('nav_down'); break;
-    case 'left': case 'h': handleAction('focus_left'); break;
-    case 'right': case 'l':handleAction('focus_right'); break;
+    case 'up': case 'k':   intent.realize(intent.selectBy(-1)); break;
+    case 'down': case 'j': intent.realize(intent.selectBy(+1)); break;
+    case 'left': case 'h': intent.realize(intent.focusDir('left')); break;
+    case 'right': case 'l':intent.realize(intent.focusDir('right')); break;
     case 'return':
       // Framework default — Component claims for Enter (e.g. config-status
       // expanding a "... N more" row) already returned `_claimed` from
       // their update and short-circuited dispatchKeyToFocused.
-      handleAction('run_selected');
+      intent.realize(intent.activate());
       break;
     case 'r':              handleAction('refresh'); break;
     case 'T': {
@@ -540,9 +546,13 @@ function handleNormalKey(key, seq) {
         const ct = activeContentTab();
         if (ct) { removeContentTab(getModel().currentGroup, ct[0]); break; }
       }
-      // v0.6.4 Theme C — build the menu items HERE (handler reads the
-      // layout slice) and thread them; the menu_open arm stays pure.
-      applyMsg({ type: 'menu_open', items: require('../leaves/menu').buildItems(getInstanceSlice('layout')) });
+      // The dead-terminal / content-tab closes above are keyboard-specific
+      // overloads of `x`; the genuine "open the context menu" meaning is the
+      // `context` intent (Theme F Phase 1). It builds items from the layout
+      // slice exactly as the prior inline dispatch did. Anchor stays null
+      // for keyboard (menu opens at its default position); right-click
+      // threads {x,y} in Phase 3.
+      intent.realize(intent.context());
       break;
     }
     case '?':              handleAction('show_help'); break;
@@ -573,7 +583,7 @@ function handleNormalKey(key, seq) {
       // is a no-op at the framework level; the focused Component
       // already saw it via the key Msg broadcast.
       if (allPanels().some(p => p.hotkey === key)) {
-        handleAction('focus_panel', key);
+        intent.realize(intent.focusHotkey(key));
       }
   }
 }

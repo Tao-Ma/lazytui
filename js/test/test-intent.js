@@ -1,0 +1,94 @@
+/**
+ * v0.6.4 Theme F Phase 1 — intent-layer identity.
+ *
+ * The intent layer is meant to be a transparent seam: routing a keyboard
+ * key through `intent.realize(intent.X())` must produce the SAME dispatch
+ * the key produced before (a direct `handleAction(verb)` / `applyMsg`).
+ * This test pins that mapping by spying on the realizer's delegate
+ * targets — `actions.handleAction`, `dispatch.applyMsg`/`navSelect`, and
+ * `api.dispatchMsg` — and asserting each intent fires exactly the expected
+ * downstream call. If a future edit changes what an intent realizes, this
+ * fails.
+ *
+ *   node js/test/test-intent.js
+ */
+'use strict';
+
+const intent   = require('../dispatch/intent');
+const actions  = require('../dispatch/actions');
+const dispatch = require('../dispatch/dispatch');
+const api      = require('../panel/api');
+const { describe, it, eq, assert, report } = require('./test-runner');
+
+// Swap a method on a module object for a recorder, run fn, restore. The
+// intent layer reads `actions().handleAction` (property access at call
+// time) through its memoized module ref, so patching the property here is
+// seen even after the ref is memoized.
+function spy(obj, name, fn) {
+  const calls = [];
+  const real = obj[name];
+  obj[name] = (...args) => { calls.push(args); };
+  try { fn(); } finally { obj[name] = real; }
+  return calls;
+}
+
+describe('[Theme F P1] keyboard intents delegate to the prior verbs', () => {
+  it('selectBy(±1) → nav_up / nav_down', () => {
+    eq(spy(actions, 'handleAction', () => intent.realize(intent.selectBy(-1))),
+       [['nav_up']], 'selectBy(-1) → nav_up');
+    eq(spy(actions, 'handleAction', () => intent.realize(intent.selectBy(+1))),
+       [['nav_down']], 'selectBy(+1) → nav_down');
+  });
+
+  it('focusDir(left/right) → focus_left / focus_right', () => {
+    eq(spy(actions, 'handleAction', () => intent.realize(intent.focusDir('left'))),
+       [['focus_left']], 'focusDir(left) → focus_left');
+    eq(spy(actions, 'handleAction', () => intent.realize(intent.focusDir('right'))),
+       [['focus_right']], 'focusDir(right) → focus_right');
+  });
+
+  it('focusHotkey(k) → focus_panel with the key arg', () => {
+    eq(spy(actions, 'handleAction', () => intent.realize(intent.focusHotkey('3'))),
+       [['focus_panel', '3']], 'focusHotkey(3) → focus_panel:3');
+  });
+
+  it('activate() → run_selected', () => {
+    eq(spy(actions, 'handleAction', () => intent.realize(intent.activate())),
+       [['run_selected']], 'activate → run_selected');
+  });
+
+  it('context() → menu_open with a built items list (anchor unread in P1)', () => {
+    const calls = spy(dispatch, 'applyMsg', () => intent.realize(intent.context()));
+    eq(calls.length, 1, 'one applyMsg');
+    const msg = calls[0][0];
+    eq(msg.type, 'menu_open', 'menu_open');
+    assert(Array.isArray(msg.items), 'items is an array');
+  });
+});
+
+describe('[Theme F P1] absolute intents (mouse, Phase 2) realize correctly', () => {
+  it('focusPane(id) → dispatchMsg(focus_set)', () => {
+    const calls = spy(api, 'dispatchMsg', () => intent.realize(intent.focusPane('pane-d2')));
+    eq(calls.length, 1, 'one dispatchMsg');
+    // wrap('layout', msg) wraps the focus_set Msg; assert the inner type.
+    const wrapped = calls[0][0];
+    const inner = wrapped && (wrapped.msg || wrapped.payload || wrapped);
+    assert(JSON.stringify(wrapped).includes('focus_set'), 'wraps a focus_set');
+    assert(JSON.stringify(wrapped).includes('pane-d2'), 'targets pane-d2');
+  });
+
+  it('selectAt(id, idx) → navSelect(id, idx)', () => {
+    const calls = spy(dispatch, 'navSelect', () => intent.realize(intent.selectAt('pane-d2', 7)));
+    eq(calls, [['pane-d2', 7]], 'navSelect(pane-d2, 7)');
+  });
+});
+
+describe('[Theme F P1] realizer guards', () => {
+  it('throws on an unknown intent kind', () => {
+    let threw = false;
+    try { intent.realize({ kind: 'nope' }); } catch (_) { threw = true; }
+    assert(threw, 'unknown kind throws');
+  });
+});
+
+report();
