@@ -125,6 +125,41 @@ describe('[5] tab switching is per-pane', () => {
   });
 });
 
+describe('[7] half / full view thread opts.focused to the rendered pane', () => {
+  // Regression: renderHalf/renderFull passed only { chrome } to _safeRender,
+  // not { focused } — so the panel renderers got opts.focused === undefined
+  // and drew no focus border ("no pane focus"), most visible when the
+  // focused pane is the viewer on the right. Spy the viewer's panel-def
+  // render (mutating the registered spec object, which the registry holds
+  // by reference — robust to the load-time renderPanel capture) and read
+  // the opts.focused it receives.
+  const viewerSpec = require('../../panel/viewer/viewer');
+  function focusedSeenFor(paneId, mode) {
+    const def = viewerSpec.panelTypes.detail;
+    const orig = def.render;
+    let seen = null;
+    def.render = (panel, w, h, slice, opts) => {
+      if (panel && panel.paneId === paneId) seen = !!(opts && opts.focused);
+      return orig(panel, w, h, slice, opts);
+    };
+    try {
+      api.dispatchMsg(api.wrap('layout', { type: 'view_set', mode: 'normal' }));
+      focus(paneId);
+      api.dispatchMsg(api.wrap('layout', { type: 'view_set', mode }));
+      const realWrite = process.stdout.write.bind(process.stdout);
+      process.stdout.write = () => true;
+      try { require('../../render/paint').redraw(getModel()); } finally { process.stdout.write = realWrite; }
+    } finally { def.render = orig; }
+    return seen;
+  }
+  it('half view: the focused viewer (right pane) renders with opts.focused', () => {
+    eq(focusedSeenFor(A, 'half'), true, 'focused viewer got opts.focused=true in half view');
+  });
+  it('full view: the focused viewer renders with opts.focused', () => {
+    eq(focusedSeenFor(A, 'full'), true, 'focused viewer got opts.focused=true in full view');
+  });
+});
+
 describe('[6] opening content into the focused viewer keeps focus there', () => {
   // Regression: viewer.js handed reduceTabMsg a hardcoded paneId 'detail',
   // so add-content-tab focused the PRIMARY viewer — stealing focus from a

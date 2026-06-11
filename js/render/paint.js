@@ -478,8 +478,14 @@ function renderHalf(model) {
     focused: mpane.paneMatchesFocus(detailPanel, layoutSlice.focus),
     viewerTabCount, tabTriggerState,
   }) : null;
-  let leftContent = _safeRender(leftPanel, halfW, availH, { chrome: leftChrome });
-  let rightContent = detailPanel ? _safeRender(detailPanel, rightW, availH, { chrome: detailChrome }) : '';
+  // v0.6.4 — thread opts.focused (Phase-5/Arc-1 moved focus styling there).
+  // Without it neither half-view pane shows the focused border — the
+  // "no pane focus" symptom, most visible when the focused pane is itself
+  // the viewer on the right.
+  const leftFocused = mpane.paneMatchesFocus(leftPanel, layoutSlice.focus);
+  const detailFocused = detailPanel ? mpane.paneMatchesFocus(detailPanel, layoutSlice.focus) : false;
+  let leftContent = _safeRender(leftPanel, halfW, availH, { chrome: leftChrome, focused: leftFocused });
+  let rightContent = detailPanel ? _safeRender(detailPanel, rightW, availH, { chrome: detailChrome, focused: detailFocused }) : '';
   const rects = [
     { x: 0, y: 0, w: halfW, h: availH,
       lines: leftContent === '' ? [] : leftContent.split('\n') },
@@ -524,7 +530,10 @@ function renderFull(model) {
     viewerTabCount, tabTriggerState,
     paneSelectTriggerState: fullPaneSelectState,
   });
-  let content = _safeRender(focusedPanel, COLS, availH, { chrome: fullChrome });
+  // v0.6.4 — thread opts.focused (full view always paints the focused
+  // pane). Phase-5/Arc-1 moved focus styling onto opts.focused; without it
+  // the full-screen pane renders unfocused (no border highlight).
+  let content = _safeRender(focusedPanel, COLS, availH, { chrome: fullChrome, focused: true });
   const rects = [
     { x: 0, y: 0, w: COLS, h: availH,
       lines: content === '' ? [] : content.split('\n') },
