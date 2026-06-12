@@ -1,9 +1,33 @@
 # Resize-as-Msg + update-layer scroll clamp
 
-Status: **DRAFT — awaiting user review** (drafted 2026-06-12).
+Status: **EXECUTED** (drafted + executed 2026-06-12; user said
+"execute the spec"). All 4 phases on branch v0.6.4, commits
+`fc54d44` (P1) → `8915bac` (P2) → `2abb00d` (P3) → `010f572` (P4),
+each suite-green (88/89, xz env-only + 9 smoke + 12/12 render probe).
 Follow-on to docs/wm-geometry-refactor.md — resolves its post-execution
 open item 1 by *redesign* rather than approval: the scroll-clamp leaves
 the render path entirely, and terminal resize becomes a first-class Msg.
+
+## Execution results (2026-06-12)
+
+- Open question 1 (Msg naming): **`term_resized`**, plain — as leaned.
+- Open question 2 (release target): STILL OPEN, travels with the wm-geo
+  commits ([[release-closes-when-user-says]] convention).
+- P4 found and fixed a real perf hazard: the finalizer benched ~19μs/Msg
+  pre-memo, and the comparison was further distorted by the repo mount's
+  slow-stat filesystem (lazy `require()` per call = ~35μs of fs stats
+  there). Fixes in `010f572`: (a) `_finalizeLayout` memoizes calcLayout
+  on (arrange, dims, viewMode) ref identity — correct because reducers
+  update those immutably; (b) app/state's nav hot trio got memoized
+  module refs (cycle-safe laziness without per-call re-resolution).
+  Same-fs bench vs pre-arc baseline `8eea6e9`: every case within noise,
+  single-dispatch latency slightly BETTER (13.5μs vs 14.6μs).
+- Render-purity pin landed as test-scroll-clamp [4]: a direct
+  (non-dispatch) scroll break survives a render untouched; the next
+  dispatch repairs it.
+- Behavior shift absorbed by two existing tests: test-scroll-clamp [1]
+  (cursor moves clamp at dispatch, not render) and the multi-instance
+  smoke's scroll-independence step (clamp-stable value now required).
 
 ## Why (the long-term argument)
 
