@@ -54,7 +54,8 @@ function snapshot() { return _buf.slice().reverse(); }
 
 function size() { return _buf.length; }
 
-/** { warn, error, total } — for a footer indicator or a test. */
+/** { warn, error, total }. Consumed by the test suite today; shaped for a
+ *  future footer badge (no footer indicator wires it in yet). */
 function counts() {
   let w = 0, e = 0;
   for (const x of _buf) (x.level === 'error' ? e++ : w++);

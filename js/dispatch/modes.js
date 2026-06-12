@@ -47,6 +47,9 @@ const MODES = [
   { flag: 'tabListMode',             chain: true,  overlay: true,  modal: false, reset: true, suppressChrome: false },
   { flag: 'paneSelectMode',          chain: true,  overlay: true,  modal: false, reset: true, suppressChrome: false },
   { flag: 'jobsMode',                chain: true,  overlay: true,  modal: false, reset: true, suppressChrome: false },
+  // diagLog is a read-only modal you Esc out of — NOT a pane selector like
+  // jobs/tabList/paneSelect — so it suppresses chrome-glyph clicks behind it
+  // (a stray click shouldn't collapse/close a pane underneath the window).
   { flag: 'diagLogMode',             chain: true,  overlay: true,  modal: false, reset: true, suppressChrome: true  },
   // Non-chain modes (see header).
   { flag: 'terminalMode',            chain: false, overlay: false, modal: true,  reset: true, suppressChrome: true  },
