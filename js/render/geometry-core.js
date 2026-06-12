@@ -39,7 +39,7 @@
 'use strict';
 
 const { refreshSize, cols, rows } = require('../io/term');
-const { syncPanelScroll, allPanels } = require('../app/state');
+const { allPanels } = require('../app/state');
 const mpool = require('../leaves/pool');
 const mpane = require('../leaves/pane');
 const { getInstanceSlice } = require('../panel/api');
@@ -338,20 +338,9 @@ function calcLayout(model = getModel()) {
     viewMode: layoutSlice.viewMode, cols: COLS, rows: ROWS,
   };
 
-  // Keep each panel's scroll offset such that the selected item is in
-  // view. syncPanelScroll → setScroll → a wrapped `set_scroll` Msg
-  // to the owning navigator's update (single writer for nav.scroll).
-  // The Msg-from-layout-pass pattern is documented per v0.5-layering.md
-  // §5; the `set_scroll` arm is pure + identity-preserving so re-
-  // renders don't ping-pong. Heights flow through getPanelViewportH —
-  // the view-mode-aware single source of truth.
-  for (const p of mpool.allPanesInColumns(layoutSlice.arrange)) {
-    if (mpool.isDetailPane(p)) continue;
-    if (p.collapsed) continue;  // no content rows to scroll-clamp against
-    // v0.6.4 Phase 5 — scroll-clamp THIS pane's own nav slice (paneId,
-    // not panel-type), so two same-kind panes clamp independently.
-    syncPanelScroll(p.paneId, getPanelViewportH(p.paneId));
-  }
+  // (wm-geometry P1.1 — the per-pane scroll-clamp loop that lived here
+  // moved to paint.js#_syncScrollClamp, called right after calcLayout in
+  // all three view modes. Layout math no longer dispatches Msgs.)
 
   return {
     ranges, availH,
