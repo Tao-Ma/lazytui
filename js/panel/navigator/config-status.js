@@ -61,23 +61,30 @@ const WALK_LIMIT = 10;
 //
 //   slice.files       — mirrors model.config.files (snapshot)
 //   slice.projectDir  — mirrors model.projectDir (snapshot)
-//   slice.branch      — pool-entry config (set_arrange propagated)
+//   slice.branch      — THIS pane's pool-entry branch (resolved by paneId)
 //
-// init() seeds them via boundary reads (init is the framework's
-// "first-touch" point; reading root here is explicit, one-time).
-// The `set_config` arm refreshes files+projectDir when the root
-// reducer rebroadcasts config. The `set_arrange` arm refreshes
-// branch when the layout's arrange shape changes. Reducer arms +
-// finalizer are then pure of getModel / getInstanceSlice.
+// init(paneId) seeds them via boundary reads (init is the framework's
+// "first-touch" point; reading root here is explicit, one-time) and
+// resolves branch from the pane carrying that paneId — so two
+// config-status panes can track different branches. The `set_config`
+// arm refreshes files+projectDir when the root reducer rebroadcasts
+// config. (branch is fixed at mint — a pane's `branch:` doesn't change
+// without a re-mint.) Reducer arms + finalizer are then pure of
+// getModel / getInstanceSlice.
 //
 // Contributors (`getItems`, `getInfo`, `keyHints`) are framework-
 // level surfaces, not reducer arms; they may still read root via
 // the documented Component contract.
 function _readFilesFromModel(m)        { return (m && m.config && m.config.files) || []; }
 function _readProjectDirFromModel(m)   { return (m && m.projectDir) || '.'; }
-function _branchFromArrange(arrange) {
+function _branchFromArrange(arrange, paneId) {
   const panels = arrange ? require('../../leaves/pool').allPanesInColumns(arrange) : [];
-  const p = panels.find(pp => pp.type === 'config-status');
+  // Resolve THIS instance's pane by its paneId (init stamps slice.paneId);
+  // the register-time singleton / unit tests pass no paneId → first-of-type
+  // (the pre-multi-instance fallback, safe under a single pane).
+  const p = paneId
+    ? panels.find(pp => pp.paneId === paneId)
+    : panels.find(pp => pp.type === 'config-status');
   const b = p && p.config && p.config.branch;
   return (typeof b === 'string' && b) ? b : DEFAULT_BRANCH;
 }
@@ -310,8 +317,9 @@ function rowText(item, isSelected) {
 
 function render(panel, w, h, slice, opts) {
   // v0.6.4 Theme A Phase 5 — per-pane nav reads (panel.paneId) + per-pane
-  // focus (opts.focused). config-status content snapshots one config/branch
-  // (global), so multi-instance shares content; cursor/scroll are per-pane.
+  // focus (opts.focused). #12 — content (branch + cache) is per-pane too:
+  // each instance resolves its own branch at init(paneId) and the compute
+  // result routes back to its paneId, so two panes can track distinct branches.
   const items = buildItems(slice, slice.files || []);
   const sel = getSel(panel.paneId);
   const focused = !!(opts && opts.focused);
@@ -383,19 +391,23 @@ function diffFor(item, branch, projectDir) {
 
 // --- update + effects (the TEA half) ---
 
-function init() {
+function init(paneId) {
   // T1.2 — seed config-snapshot fields from root model at init time
   // (the framework's documented first-touch boundary). Subsequent
-  // updates flow through set_config / set_arrange arms; reducer
-  // arms themselves stay pure of getModel + cross-slice reads.
+  // updates flow through the set_config arm; reducer arms themselves
+  // stay pure of getModel + cross-slice reads.
+  // v0.6.4 #12 — the slice self-identifies (init(paneId)) so branch +
+  // the compute result route per-pane (null for the register-time
+  // singleton, disposed once a real pane mints).
   const m = getModel();
   const layoutSlice = getInstanceSlice('layout');
   const arrange = layoutSlice && layoutSlice.arrange;
   return {
+    paneId: paneId || null,
     layout: DEFAULT_LAYOUT, scope: DEFAULT_SCOPE, cache: null, expanded: {}, computing: false,
     files: _readFilesFromModel(m),
     projectDir: _readProjectDirFromModel(m),
-    branch: _branchFromArrange(arrange),
+    branch: _branchFromArrange(arrange, paneId),
     // v0.6.1 Phase 3 — single-panel Component, nav stores the entry directly.
     nav: mnav.init(),
   };
@@ -421,7 +433,7 @@ function update(msg, slice) {
     // T1.2 — thread files + projectDir into the effect payload so the
     // off-tick worker doesn't read root model itself.
     return [{ ...slice, branch, computing: true }, [{
-      type: 'cfgStatusCompute', branch,
+      type: 'cfgStatusCompute', branch, paneId: slice.paneId || null,
       files: slice.files || [], projectDir: slice.projectDir || '.',
     }]];
   }
@@ -472,7 +484,12 @@ function installEffects(registerEffect) {
       let cache;
       try { cache = computeStatus(eff.branch, eff.files || [], eff.projectDir || '.'); }
       catch (e) { cache = { branch: eff.branch, byPath: {}, children: {}, error: e.message, computedAt: Date.now() }; }
-      require('../api').dispatchMsg(require('../api').wrap('config-status', { type: 'cfgStatusResult', cache }));
+      // Route the result to the pane that kicked the compute — NOT the
+      // kind's primary. `wrap('config-status')` would land every instance's
+      // result on the first pane, leaving the others stuck on "computing…"
+      // (the files Arc 2 / docker Arc 3 collapse-to-primary footgun).
+      const api = require('../api');
+      api.dispatchMsg(api.wrap(eff.paneId || 'config-status', { type: 'cfgStatusResult', cache }));
     });
   });
   registerEffect('cfgStatusDiff', (eff) => {
@@ -507,6 +524,7 @@ module.exports = {
   _buildItems: buildItems,
   _byCategory,
   _flat,
+  _branchFromArrange,
   _computeStatus: computeStatus,
   _statusFor: statusFor,
   _diffFor: diffFor,

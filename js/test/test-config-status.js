@@ -496,4 +496,41 @@ describe('[8] diffFor — preview shape per status', () => {
   });
 });
 
+// --- Multi-instance: content is per-pane (v0.6.4 #12) ---
+
+describe('[9] two config-status panes resolve + route content per-pane', () => {
+  // arrange with two config-status panes declaring DIFFERENT branches.
+  const arrange = { columns: [{ panels: [
+    { paneId: 'pane-a', type: 'config-status', config: { branch: 'config' } },
+    { paneId: 'pane-b', type: 'config-status', config: { branch: 'prod' } },
+  ] }] };
+
+  it('_branchFromArrange resolves THIS pane by paneId, not first-of-type', () => {
+    eq(cs._branchFromArrange(arrange, 'pane-a'), 'config', 'pane-a → its own branch');
+    eq(cs._branchFromArrange(arrange, 'pane-b'), 'prod', 'pane-b → its own branch (not first-of-type)');
+  });
+
+  it('no paneId (register-time singleton / tests) falls back to first-of-type', () => {
+    eq(cs._branchFromArrange(arrange, null), 'config', 'first config-status pane');
+    eq(cs._branchFromArrange(arrange, 'pane-missing'), 'config', 'unknown paneId → default branch');
+  });
+
+  it('init(paneId) stamps slice.paneId so the slice self-identifies', () => {
+    eq(cs._init('pane-b').paneId, 'pane-b', 'placed pane stamps its id');
+    eq(cs._init().paneId, null, 'register-time singleton is null');
+  });
+
+  it('refresh threads slice.paneId into cfgStatusCompute so the result routes home', () => {
+    // Without this, wrap("config-status") lands every pane's result on the
+    // primary — non-primary panes hang on "computing…" forever.
+    const r = cs._update({ type: 'refresh' }, {
+      paneId: 'pane-b', branch: 'prod', files: [], projectDir: '.', computing: false,
+    });
+    assert(Array.isArray(r), 'returns [slice, effects]');
+    eq(r[1][0].type, 'cfgStatusCompute', 'compute effect emitted');
+    eq(r[1][0].paneId, 'pane-b', 'effect carries the originating paneId');
+    eq(r[1][0].branch, 'prod', "this pane's branch, not first-of-type");
+  });
+});
+
 report();
