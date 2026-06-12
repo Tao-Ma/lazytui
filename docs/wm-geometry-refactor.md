@@ -1,10 +1,17 @@
 # WM geometry refactor — the "real A2" (de-conflate · purify · re-home)
 
-> Status: **PLANNED, not started.** Authored 2026-06-12. Execute in a fresh
-> session. Supersedes the file-shuffle framing of A2 in
-> [`v0.6.3-arch.md`](v0.6.3-arch.md) Track 1 (Phase A2 "carve `js/wm/`").
-> Target release: **TBD (user's call)** — likely the release after v0.6.4.
-> Not part of v0.6.4 scope.
+> Status: **EXECUTED 2026-06-12** — all 4 phases shipped on branch
+> v0.6.4 (`3d7e2d0..000534c`, 6 commits). Supersedes the file-shuffle
+> framing of A2 in [`v0.6.3-arch.md`](v0.6.3-arch.md) Track 1 (Phase A2
+> "carve `js/wm/`"). Decisions taken at execution: home = (a)
+> `leaves/geometry.js`; scroll-sync = per-frame in paint (NOT an
+> effect — preserves the every-frame safety-net semantics exactly; an
+> effect would have to enumerate every geometry-changing Msg). Release
+> target still **TBD (user's call)**.
+> Results: logical-graph cycles through the geometry math 1535 → 0;
+> global top-level-require SCC scan: zero load-time cycles; facade
+> deleted; new pin test `test-scroll-clamp.js` (also pins the
+> pre-existing one-frame clamp lag on resize — see Phase 1.1 note).
 
 ## Why (the finding that motivated this)
 
