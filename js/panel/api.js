@@ -23,9 +23,11 @@ const route = require('../panel/route');
 const { esc, visibleLen, stripMarkup, wrapColor } = require('../io/ansi');
 const { theme } = require('../render/themes');
 const { renderPanel } = require('../render/panel');
-const { getSel, getScroll, isMultiSel } = require('../app/state');
+const { getSel, getScroll, isMultiSel, syncPanelScroll } = require('../app/state');
 const { getModel } = require('../app/runtime');
 const mnav = require('../leaves/nav');
+const geo = require('../leaves/geometry');
+const mpool = require('../leaves/pool');
 const { execAsync } = require('../app/exec');
 
 /**
@@ -351,10 +353,33 @@ const BROADCAST_TYPES = new Set(['refresh', 'hub', 'action']);
 //
 // Writes stay single-writer: syncPanelScroll routes a wrapped
 // set_scroll Msg to the owning navigator's reducer (identity-
-// preserving — no ping-pong). Lazy requires: app/state requires
-// panel/api at load (cycle); leaves are cycle-safe but follow suit.
+// preserving — no ping-pong).
 let _dispatchDepth = 0;
 let _inScrollFinalize = false;
+
+// Layout memo for the finalizer. calcLayout's rects depend only on
+// (arrange, dims) — and the reducers update both IMMUTABLY (spread
+// per write; pinned by test-immutable-leaves), so reference equality
+// is a correct cache key. Most dispatches (viewer appends, cursor
+// moves, search) leave both refs untouched — the pass then costs a
+// few map reads per pane instead of a full calcLayout (the bench-
+// visible regression the memo exists for: ~135μs/Msg → ~μs).
+// viewMode is in the key only because the Layout value carries it.
+let _layoutMemo = null;
+
+function _finalizeLayout(layoutSlice) {
+  const m = _layoutMemo;
+  if (m && m.arrange === layoutSlice.arrange && m.dims === layoutSlice.dims
+        && m.viewMode === layoutSlice.viewMode) {
+    return m.layout;
+  }
+  const layout = geo.calcLayout(layoutSlice, layoutSlice.dims);
+  _layoutMemo = {
+    arrange: layoutSlice.arrange, dims: layoutSlice.dims,
+    viewMode: layoutSlice.viewMode, layout,
+  };
+  return layout;
+}
 
 function _finalizeDispatch() {
   if (_inScrollFinalize) return;
@@ -362,10 +387,7 @@ function _finalizeDispatch() {
   if (!layoutSlice || !layoutSlice.dims || !layoutSlice.arrange) return;
   _inScrollFinalize = true;
   try {
-    const geo = require('../leaves/geometry');
-    const mpool = require('../leaves/pool');
-    const { syncPanelScroll } = require('../app/state');
-    const layout = geo.calcLayout(layoutSlice, layoutSlice.dims);
+    const layout = _finalizeLayout(layoutSlice);
     for (const p of mpool.allPanesInColumns(layoutSlice.arrange)) {
       if (mpool.isDetailPane(p) || p.collapsed) continue;
       syncPanelScroll(p.paneId,

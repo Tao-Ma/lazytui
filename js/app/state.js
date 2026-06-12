@@ -22,6 +22,18 @@ const { setTheme } = require('../render/themes');
 const { getModel } = require('./runtime');
 const { rebuildLayoutFromConfig } = require('../leaves/arrange');
 
+// Memoized module refs for the nav hot path (_resolvePanelType /
+// _navEntry / _navDispatch — getSel/getScroll ride them on every
+// keystroke AND, since resize-as-Msg P2, every dispatch via the
+// finalizer). They must stay lazy (state ↔ panel/api load cycle), but
+// a bare require() per call re-RESOLVES the path — ~35μs of fs stats
+// per call on containerized filesystems (Node's stat cache only spans
+// startup), measured 1000× the actual lookup work. Resolve once at
+// first call, after the cycle has settled.
+let _apiRef = null, _routeRef = null;
+function _api()      { return _apiRef   || (_apiRef   = require('../panel/api')); }
+function _routeMod() { return _routeRef || (_routeRef = require('../panel/route')); }
+
 // --- Component slice resolution ---
 //
 // Lazy auto-register covers tests that touch state without explicit
@@ -281,11 +293,11 @@ function _resolvePanelType(id) {
   // Delegates to route.paneTypeOf — accepts paneId or panel-type and
   // returns the panel-type form. Single canonical resolver across
   // the codebase.
-  return require('../panel/route').paneTypeOf(id) || id;
+  return _routeMod().paneTypeOf(id) || id;
 }
 
 function _navEntry(id) {
-  const api = require('../panel/api');
+  const api = _api();
   const panelType = _resolvePanelType(id);
   const compName = api.getComponentOwningPanel(panelType);
   if (!compName) return null;
@@ -297,8 +309,8 @@ function _navEntry(id) {
 }
 
 function _navDispatch(id, msg) {
-  const api = require('../panel/api');
-  const route = require('../panel/route');
+  const api = _api();
+  const route = _routeMod();
   const panelType = _resolvePanelType(id);
   const compName = api.getComponentOwningPanel(panelType);
   if (!compName) return;
