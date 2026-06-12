@@ -344,8 +344,9 @@ function calcLayout(layoutSlice, dims) {
   };
 
   // (wm-geometry P1.1 — the per-pane scroll-clamp loop that lived here
-  // moved to paint.js#_syncScrollClamp, called right after calcLayout in
-  // all three view modes. Layout math no longer dispatches Msgs.)
+  // moved to paint.js#_syncScrollClamp, called after the paneBounds
+  // rewrite in all three view modes. Layout math no longer dispatches
+  // Msgs.)
 
   return {
     ranges, availH,

@@ -9,16 +9,16 @@
  * RESIZE, where no Msg fires at all and the render must re-clamp to the
  * shrunken viewport.
  *
- * One deliberate wrinkle this file pins AS-IS: the clamp reads the pane
- * viewport via getPanelViewportH → boundsFor → slice.paneBounds, and the
- * paneBounds rewrite happens AFTER the clamp in the frame sequence — so
- * the clamp always uses the PREVIOUS frame's bounds. Steady-state that's
- * identical; on the one frame where dims change (resize) the clamp is a
- * frame late and lands on the NEXT render ([3] below).
+ * The clamp reads the pane viewport via getPanelViewportH → boundsFor →
+ * slice.paneBounds, and runs AFTER the frame's paneBounds rewrite — so it
+ * judges against THIS frame's bounds and a resize re-clamps on the same
+ * render ([3] below). (Historical: the clamp originally ran before the
+ * rewrite, reading the previous frame's bounds — a one-frame clamp lag
+ * on resize, fixed post-P1.1 of the WM geometry refactor.)
  *
  * Pinned ahead of the WM geometry refactor (docs/wm-geometry-refactor.md
- * Phase 1.1), which lifts the clamp out of calcLayout into the paint
- * pass — behavior must hold identically across that move.
+ * Phase 1.1), which lifted the clamp out of calcLayout into the paint
+ * pass.
  *
  * Run: node js/test/test-scroll-clamp.js
  */
@@ -93,8 +93,8 @@ describe('[2] cursor above viewport: render pulls scroll up', () => {
   });
 });
 
-describe('[3] resize re-clamps (one frame late) with no Msg in between', () => {
-  it('shrinking the terminal pulls the cursor back into view by render #2', () => {
+describe('[3] resize re-clamps on the SAME render with no Msg in between', () => {
+  it('shrinking the terminal pulls the cursor back into view on render #1', () => {
     boot(40);                        // innerH ≈ 37 — cursor 30 fits unscrolled
     setSel('groups', 30);
     sm.capture(() => sm.render());
@@ -102,14 +102,11 @@ describe('[3] resize re-clamps (one frame late) with no Msg in between', () => {
     assert(inView(30, getScroll('groups'), tallInnerH), 'visible at 40 rows');
 
     setSize(100, 18);                // shrink — no key/Msg, just dims
-    sm.capture(() => sm.render());   // render #1: clamp saw the 40-row bounds
+    sm.capture(() => sm.render());   // render #1: clamp sees the fresh 18-row bounds
     const shortInnerH = groupsInnerH();
     assert(shortInnerH < tallInnerH, `viewport shrank (${tallInnerH} → ${shortInnerH})`);
-    eq(getScroll('groups'), 0, 'render #1: clamp is a frame late (stale bounds)');
-
-    sm.capture(() => sm.render());   // render #2: bounds now 18-row, clamp fires
     const scroll = getScroll('groups');
-    eq(scroll, 30 - shortInnerH + 1, 'render #2: bottom-aligned to the new viewport');
+    eq(scroll, 30 - shortInnerH + 1, 'render #1: bottom-aligned to the new viewport');
     assert(inView(30, scroll, shortInnerH),
       `cursor 30 back in view (scroll=${scroll}, innerH=${shortInnerH})`);
     eq(getSel('groups'), 30, 'cursor itself untouched');

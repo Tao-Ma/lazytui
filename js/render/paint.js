@@ -394,11 +394,11 @@ function composeRects(layout, model) {
 // per paneId, so two same-kind panes clamp independently.
 //
 // wm-geometry P1.1 — lifted out of calcLayout (leaves/geometry) so layout
-// math stays side-effect-free. Runs right after calcLayout in all three
-// view modes, BEFORE this frame's paneBounds rewrite: getPanelViewportH
-// therefore reads the previous frame's bounds — the exact sequence the
-// clamp had inside calcLayout. test-scroll-clamp.js pins the semantics,
-// including the resulting one-frame clamp lag on resize.
+// math stays side-effect-free. Runs AFTER this frame's paneBounds rewrite
+// in all three view modes, so getPanelViewportH judges against the fresh
+// bounds and a terminal shrink re-clamps on the same frame (the historical
+// one-frame clamp lag — clamp-before-rewrite reading the previous frame's
+// heights — was fixed post-P1.1). test-scroll-clamp.js pins the semantics.
 function _syncScrollClamp(layoutSlice, dims) {
   for (const p of mpool.allPanesInColumns(layoutSlice.arrange)) {
     if (mpool.isDetailPane(p)) continue;
@@ -411,12 +411,12 @@ function renderNormal(model) {
   const layoutSlice = getInstanceSlice('layout');
   const dims = termDims();
   const layout = geo.calcLayout(layoutSlice, dims);
-  _syncScrollClamp(layoutSlice, dims);
   layoutSlice.paneBounds = {};
   for (const rect of layout.rects) {
     const b = { x: rect.x, y: rect.y, w: rect.w, h: rect.h };
     if (rect.paneId) layoutSlice.paneBounds[rect.paneId] = b;
   }
+  _syncScrollClamp(layoutSlice, dims);
   const rectsWithLines = composeRects(layout, model);
   const COLS = cols();
   const newRows = painter.composeRows(rectsWithLines, COLS, layout.availH);
@@ -444,7 +444,6 @@ function renderHalf(model) {
   const layoutSlice = getInstanceSlice('layout');
   const dims = termDims();
   geo.calcLayout(layoutSlice, dims);
-  _syncScrollClamp(layoutSlice, dims);
   const COLS = cols(), ROWS = rows();
   const halfW = Math.floor(COLS / 2);
   const availH = ROWS - 1;
@@ -468,6 +467,7 @@ function renderHalf(model) {
     const detailBounds = { x: halfW, y: 0, w: rightW, h: availH };
     if (detailPanel.paneId) layoutSlice.paneBounds[detailPanel.paneId] = detailBounds;
   }
+  _syncScrollClamp(layoutSlice, dims);
   // v0.6.3 P4.2 — chrome computed via chromeFor + threaded through
   // renderPanel. v0.6.4 Theme B — shared scalars from _chromeContext.
   // Half view shows one non-detail pane (left) + detail (right); only
@@ -516,7 +516,6 @@ function renderFull(model) {
   const layoutSlice = getInstanceSlice('layout');
   const dims = termDims();
   geo.calcLayout(layoutSlice, dims);
-  _syncScrollClamp(layoutSlice, dims);
   const COLS = cols(), ROWS = rows();
   const availH = ROWS - 1;
   const focusedPanel = allPanels().find(p => mpane.paneMatchesFocus(p, layoutSlice.focus));
@@ -524,6 +523,7 @@ function renderFull(model) {
   layoutSlice.paneBounds = {};
   const fullBounds = { x: 0, y: 0, w: COLS, h: availH };
   if (focusedPanel.paneId) layoutSlice.paneBounds[focusedPanel.paneId] = fullBounds;
+  _syncScrollClamp(layoutSlice, dims);
   // v0.6.3 P4.2 — chrome via chromeFor. v0.6.4 Theme B — shared scalars
   // from _chromeContext. Full view paints ONE pane (the focused one):
   // single trigger, no peer-disable.
