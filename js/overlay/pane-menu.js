@@ -344,9 +344,12 @@ function render() {
   } else {
     const end = Math.min(g.items.length, scroll + g.innerH);
     const inner = Math.max(8, g.w - 4);
+    // Labeled dim divider between the Tabs and Panes sections — `─ panes ─…`.
+    const sepLabel = '─ panes ';
+    const sepRule = `[dim]${sepLabel}${'─'.repeat(Math.max(0, inner - visibleLen(sepLabel)))}[/]`;
     for (let i = scroll; i < end; i++) {
       if (g.items[i] === null) {            // section divider — dim, inert
-        lines.push(`[dim]${'─'.repeat(inner)}[/]`);
+        lines.push(sepRule);
         continue;
       }
       const text = _formatRow(g.items[i], paneId, g.w);
