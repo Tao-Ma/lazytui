@@ -252,8 +252,8 @@ describe('[9] Step 2 — the `[≡]` pane-menu DRIVES the projection in half vie
     api.dispatchMsg(api.wrap('layout', { type: 'view_set', mode: 'half' }));
     api.dispatchMsg(api.wrap('layout', { type: 'pane_menu_open', paneId: A }));
     const items = overlay.items(A);
-    assert(items.some(it => it.section === 'tab'), 'Tabs section present (A is a viewer)');
-    const rowB = items.find(it => it.section === 'pane' && it.paneId === B);
+    assert(items.some(it => it && it.section === "tab"), 'Tabs section present (A is a viewer)');
+    const rowB = items.find(it => it && it.section === "pane" && it.paneId === B);
     assert(rowB, 'the OTHER viewer (B) appears as a placeable pane row with its paneId');
   });
 
@@ -261,7 +261,7 @@ describe('[9] Step 2 — the `[≡]` pane-menu DRIVES the projection in half vie
     layoutSlice().halfView = { left: A, right: B };
     api.dispatchMsg(api.wrap('layout', { type: 'view_set', mode: 'half' }));
     api.dispatchMsg(api.wrap('layout', { type: 'pane_menu_open', paneId: A }));  // A = left slot
-    const rowB = overlay.items(A).find(it => it.section === 'pane' && it.paneId === B);
+    const rowB = overlay.items(A).find(it => it && it.section === "pane" && it.paneId === B);
     dispatch._paneMenuPick(A, rowB);   // pick B (in the right slot) for A's (left) slot
     const hv = layoutSlice().halfView;
     eq(hv.left, B, 'left slot now B (the pick)');

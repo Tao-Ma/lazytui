@@ -94,6 +94,15 @@ describe('[pane_menu_nav] cursor + auto-scroll (shared math)', () => {
     const s = open(0);
     eq(applyUpdate(s, { type: 'pane_menu_nav', dir: 1, n: 0, vh: 5 }).next, s);
   });
+  it('skips the section separator (sepIdx) in both directions', () => {
+    // List: tab0, tab1, [sep@2], pane3, pane4 (n=5). Cursor must never
+    // rest on the divider.
+    let s = open(1);  // on tab1
+    s = applyUpdate(s, { type: 'pane_menu_nav', dir: +1, n: 5, vh: 5, sepIdx: 2 }).next;
+    eq(s.paneMenu.cursor, 3, 'down from 1 jumps over sep@2 to 3');
+    s = applyUpdate(s, { type: 'pane_menu_nav', dir: -1, n: 5, vh: 5, sepIdx: 2 }).next;
+    eq(s.paneMenu.cursor, 1, 'up from 3 jumps over sep@2 to 1');
+  });
 });
 
 describe('[pane-menu items] section depends on the pane kind', () => {

@@ -151,17 +151,24 @@ function _paneRows(targetPaneId, mode) {
 }
 
 /** The selectable rows for the menu anchored on `paneId`: an optional
- *  Tabs section (viewers, ≥2 tabs) followed by the Panes section. Flat
- *  concatenation (the user's "flat, column-major" choice) — sections are
- *  distinguishable by row shape, and a flat list keeps cursor / nav /
- *  hit-test free of separator-skipping. */
+ *  Tabs section (viewers, ≥2 tabs) then the Panes section. When both are
+ *  present a `null` SEPARATOR row sits between them — a dim, non-selectable
+ *  divider (nav skips it; a click on it is inert). Column-major flat within
+ *  each section (the user's "flat" choice). */
 function items(paneId) {
   if (paneId == null) paneId = _targetPaneId();
   if (!paneId) return [];
   const mode = _viewMode();
   const tabs = _isViewer(paneId) ? _flatTabs(paneId) : [];
   const panes = _paneRows(paneId, mode);
-  return [...tabs, ...panes];
+  if (tabs.length && panes.length) return [...tabs, null, ...panes];
+  return tabs.length ? tabs : panes;
+}
+
+/** Index of the section separator in items(paneId), or -1 if none. The
+ *  nav handlers thread this so pane_menu_nav can skip the divider. */
+function separatorIndex(paneId) {
+  return items(paneId).indexOf(null);
 }
 
 // --- Open-state + anchoring -------------------------------------------
@@ -336,7 +343,12 @@ function render() {
     lines.push('[dim](no panes — pool is empty)[/]');
   } else {
     const end = Math.min(g.items.length, scroll + g.innerH);
+    const inner = Math.max(8, g.w - 4);
     for (let i = scroll; i < end; i++) {
+      if (g.items[i] === null) {            // section divider — dim, inert
+        lines.push(`[dim]${'─'.repeat(inner)}[/]`);
+        continue;
+      }
       const text = _formatRow(g.items[i], paneId, g.w);
       lines.push((i === cursor) ? `[reverse]${text}[/]` : text);
     }
@@ -377,7 +389,7 @@ function _maybeBlank() {
 function _resetRenderState() { _lastPanelH = 0; _lastTop = 0; _lastLeft = 0; _lastWidth = 0; }
 
 module.exports = {
-  hitTestTrigger, hitTest, render, items, viewportRows,
+  hitTestTrigger, hitTest, render, items, separatorIndex, viewportRows,
   triggerVisible, _triggerState, _flatTabs, _isViewer, _geom,
   _resetRenderState,
 };

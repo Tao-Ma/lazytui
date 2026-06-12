@@ -403,6 +403,13 @@ function update(msg, slice) {
       else if (msg.to === 'pageup')   cursor = Math.max(0, cursor - vh);
       else if (msg.to === 'pagedown') cursor = Math.min(n - 1, cursor + vh);
       else                            cursor = Math.max(0, Math.min(n - 1, cursor + (msg.dir || 0)));
+      // Skip the section separator (a non-selectable divider row) — step
+      // off it in the direction of travel so the cursor never rests there.
+      const sep = Number.isInteger(msg.sepIdx) ? msg.sepIdx : -1;
+      if (cursor === sep && sep >= 0) {
+        const goingUp = msg.to === 'top' || msg.to === 'pageup' || (msg.dir || 0) < 0;
+        cursor = goingUp ? Math.max(0, sep - 1) : Math.min(n - 1, sep + 1);
+      }
       let scroll = pm.scroll || 0;
       if (cursor < scroll) scroll = cursor;
       else if (cursor >= scroll + vh) scroll = cursor - vh + 1;

@@ -334,15 +334,16 @@ function handlePaneMenuKey(key, seq) {
   const all = overlay.items(target);
   const n = all.length;
   const vh = overlay.viewportRows(target);
+  const sepIdx = all.indexOf(null);   // section divider — nav skips it
   const cursor = (layoutSlice.paneMenu.cursor | 0) || 0;
   // Esc closes; `T` toggles the menu closed (matches the old tab-list T).
   if (key === 'escape' || seq === 'T' || key === 'T') { close(); return; }
-  if (key === 'up'   || seq === 'k') { dispatchMsg(wrap('layout', { type: 'pane_menu_nav', dir: -1, n, vh })); return; }
-  if (key === 'down' || seq === 'j') { dispatchMsg(wrap('layout', { type: 'pane_menu_nav', dir: +1, n, vh })); return; }
-  if (seq === 'g')                   { dispatchMsg(wrap('layout', { type: 'pane_menu_nav', to: 'top',      n, vh })); return; }
-  if (seq === 'G')                   { dispatchMsg(wrap('layout', { type: 'pane_menu_nav', to: 'bottom',   n, vh })); return; }
-  if (key === 'pageup'   || seq === ',') { dispatchMsg(wrap('layout', { type: 'pane_menu_nav', to: 'pageup',   n, vh })); return; }
-  if (key === 'pagedown' || seq === '.') { dispatchMsg(wrap('layout', { type: 'pane_menu_nav', to: 'pagedown', n, vh })); return; }
+  if (key === 'up'   || seq === 'k') { dispatchMsg(wrap('layout', { type: 'pane_menu_nav', dir: -1, n, vh, sepIdx })); return; }
+  if (key === 'down' || seq === 'j') { dispatchMsg(wrap('layout', { type: 'pane_menu_nav', dir: +1, n, vh, sepIdx })); return; }
+  if (seq === 'g')                   { dispatchMsg(wrap('layout', { type: 'pane_menu_nav', to: 'top',      n, vh, sepIdx })); return; }
+  if (seq === 'G')                   { dispatchMsg(wrap('layout', { type: 'pane_menu_nav', to: 'bottom',   n, vh, sepIdx })); return; }
+  if (key === 'pageup'   || seq === ',') { dispatchMsg(wrap('layout', { type: 'pane_menu_nav', to: 'pageup',   n, vh, sepIdx })); return; }
+  if (key === 'pagedown' || seq === '.') { dispatchMsg(wrap('layout', { type: 'pane_menu_nav', to: 'pagedown', n, vh, sepIdx })); return; }
   if (key === 'return') {
     const item = all[cursor];
     if (!item) { close(); return; }

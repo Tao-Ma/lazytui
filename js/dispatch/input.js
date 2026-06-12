@@ -151,11 +151,13 @@ function _mouseHandlePaneMenuMode(kind, mx, my, _model) {
   const target = (layoutSlice && layoutSlice.paneMenu && layoutSlice.paneMenu.targetPaneId) || null;
   if (!target) return false;
   if (kind === 'wheel-up' || kind === 'wheel-down') {
+    const all = overlay.items(target);
     dispatchMsg(wrap('layout', {
       type: 'pane_menu_nav',
       dir: kind === 'wheel-up' ? -1 : +1,
-      n: overlay.items(target).length,
+      n: all.length,
       vh: overlay.viewportRows(target),
+      sepIdx: all.indexOf(null),
     }));
     render();
     return true;
