@@ -238,4 +238,37 @@ describe('[8] half view is an API-driven projection — two viewers side-by-side
   });
 });
 
+describe('[9] Step 2 — the `[≡]` pane-menu DRIVES the projection in half view', () => {
+  // The user-facing path: in half view, the pane-menu's Panes section
+  // lists every placed pane (incl. viewers); picking one places it in the
+  // clicked pane's slot via view_place_pane (pane_menu_place), swapping
+  // when it already occupies the other slot.
+  const overlay = require('../../overlay/pane-menu');
+  const dispatch = require('../../dispatch/dispatch');
+  const layoutSlice = () => api.getInstanceSlice('layout');
+
+  it('a viewer pane-menu in half view lists the OTHER viewer as a placeable pane row', () => {
+    layoutSlice().halfView = { left: A, right: B };
+    api.dispatchMsg(api.wrap('layout', { type: 'view_set', mode: 'half' }));
+    api.dispatchMsg(api.wrap('layout', { type: 'pane_menu_open', paneId: A }));
+    const items = overlay.items(A);
+    assert(items.some(it => it.section === 'tab'), 'Tabs section present (A is a viewer)');
+    const rowB = items.find(it => it.section === 'pane' && it.paneId === B);
+    assert(rowB, 'the OTHER viewer (B) appears as a placeable pane row with its paneId');
+  });
+
+  it('picking the other viewer for THIS slot swaps the two slots', () => {
+    layoutSlice().halfView = { left: A, right: B };
+    api.dispatchMsg(api.wrap('layout', { type: 'view_set', mode: 'half' }));
+    api.dispatchMsg(api.wrap('layout', { type: 'pane_menu_open', paneId: A }));  // A = left slot
+    const rowB = overlay.items(A).find(it => it.section === 'pane' && it.paneId === B);
+    dispatch._paneMenuPick(A, rowB);   // pick B (in the right slot) for A's (left) slot
+    const hv = layoutSlice().halfView;
+    eq(hv.left, B, 'left slot now B (the pick)');
+    eq(hv.right, A, 'right slot got A (swap, not collapse)');
+    eq(getModel().modes.paneMenuMode, false, 'menu closed after the pick');
+    api.dispatchMsg(api.wrap('layout', { type: 'view_set', mode: 'normal' }));
+  });
+});
+
 report();

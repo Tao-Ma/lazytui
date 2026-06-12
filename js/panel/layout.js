@@ -202,20 +202,17 @@ function init() {
     // runtime focus-state fine-tuning, not a declared layout); slots are
     // cleared when their pane leaves `arrange` (set_arrange / pool_hide).
     halfView: { left: null, right: null },
-    // v0.6.1 Phase 4 — pane id that owns the open tab-list overlay.
-    // Companion to model.modes.tabListMode: the mode flag says "an
-    // overlay is open" (chain-mode keyboard routing); this field says
-    // "this specific pane's overlay is open" (geometry + slice
-    // anchoring). null when no overlay open. Written by pane-tabs
-    // reducer's tab_list_open/tab_list_close via wrapped layout Msgs.
-    tabListOwnerPaneId: null,
-    // v0.6.3 D1 — pane-select overlay state. Companion to
-    // model.modes.paneSelectMode: the mode flag says "an overlay is
-    // open"; this object says "this target pane's overlay is open
-    // and the cursor sits at row N". null when no overlay open.
-    // Written by the layout reducer's pane_select_open / _close arms.
-    // cursor/scroll get used by D2 once the list body lands.
-    paneSelect: null,
+    // v0.6.4 #1 Step 2 — the unified `[≡]` pane-menu overlay state.
+    // Companion to model.modes.paneMenuMode: the mode flag says "a menu
+    // is open" (chain-mode keyboard routing, the canonical open-bit);
+    // this object says "THIS pane's menu is open and the cursor sits at
+    // row N / scrolled to S". null-target when closed. Pane-type-
+    // agnostic: subsumes the former `layout.paneSelect` (navigator pool
+    // picker) + `layout.tabListOwnerPaneId` (viewer tab switcher) + the
+    // viewer slice's `tabList` nav state. Written by the layout
+    // reducer's pane_menu_open / _close / _nav arms; resolved by
+    // overlay/pane-menu.js.
+    paneMenu: { targetPaneId: null, cursor: 0, scroll: 0 },
     // v0.6.1 Phase 5 — sticky pointer to the most recent viewer-kind
     // tab the user focused. resolveTarget('viewer') falls back to
     // this when no viewer-kind tab is currently focused (e.g. user
@@ -324,6 +321,25 @@ function update(msg, slice) {
       const placed = _withFocus({ ...slice, halfView }, msg.paneId);
       return [placed, [{ type: 'force_full_repaint' }]];
     }
+    // v0.6.4 #1 Step 2 — half-view slot placement FROM the pane-menu (the
+    // dropdown pick). Sets halfView[slot] = paneId; if the picked pane
+    // already occupies the OTHER slot, SWAP: the pane currently in `slot`
+    // moves to the other slot so both stay visible (rather than collapsing
+    // via halfProjection's right===left rule). Focuses the placed pane.
+    // The half-view projection is read via halfProjection (registry-aware,
+    // same read renderHalf uses) so the swap matches what's on screen.
+    case 'pane_menu_place': {
+      const slot = msg.slot;
+      if (slot !== 'left' && slot !== 'right') return slice;
+      if (!mpool.findPaneLocation(slice.arrange, p => p.paneId === msg.paneId)) return slice;
+      const other = slot === 'left' ? 'right' : 'left';
+      const proj = require('../render/geometry-core').halfProjection(slice);
+      if (proj[slot] === msg.paneId) return slice;  // already in this slot — no-op
+      const halfView = { ...slice.halfView, [slot]: msg.paneId };
+      if (proj[other] === msg.paneId) halfView[other] = proj[slot] || null;  // SWAP
+      const placed = _withFocus({ ...slice, halfView }, msg.paneId);
+      return [placed, [{ type: 'force_full_repaint' }]];
+    }
     // focus. Stores the focused panel; refresh of the detail body for
     // the newly-focused panel is an effect (Cmd). msg.focus == null
     // leaves the value put.
@@ -337,63 +353,61 @@ function update(msg, slice) {
       const next = msg.focus != null ? msg.focus : slice.focus;
       return [_withFocus(slice, next), msg.skipInfo ? [] : [{ type: 'show_selected_info' }]];
     }
-    // v0.6.1 Phase 4 — pane id that owns the open tab-list overlay.
-    // Dispatched from the pane-tabs leaf reducer's tab_list_open
-    // (paneId set) / tab_list_close (paneId null). Identity-preserved
-    // on no-op so a redundant close doesn't churn the slice.
-    case 'tab_list_set_owner': {
-      const paneId = msg.paneId != null ? msg.paneId : null;
-      if (slice.tabListOwnerPaneId === paneId) return slice;
-      return { ...slice, tabListOwnerPaneId: paneId };
-    }
-    // v0.6.3 D1 — pane-select overlay open. Sets the target paneId
-    // (the cell the user clicked [≡] on) + arms paneSelectMode via
-    // an apply_msg Cmd (root chrome flag; single-writer per layer).
-    // D2 will seed cursor/scroll; for D1 we only need the open marker.
-    case 'pane_select_open': {
+    // v0.6.4 #1 Step 2 — unified `[≡]` pane-menu open. Sets the target
+    // paneId (the pane whose `[≡]` was clicked / `T` focused) + arms
+    // paneMenuMode via an apply_msg Cmd (root chrome flag; single-writer
+    // per layer). Initial cursor/scroll arrive on the Msg — for a viewer
+    // the caller seeds cursor at the active tab (mirrors the retired
+    // tab_list_open's at-active-tab positioning); navigators seed 0.
+    case 'pane_menu_open': {
       const paneId = msg.paneId;
       if (!paneId) return slice;
       // Idempotent: re-opening on the same target preserves cursor /
-      // scroll. Without this guard, a stray repeat dispatch (e.g. the
-      // trigger-click toggle path re-firing) would reset nav state.
-      if (slice.paneSelect && slice.paneSelect.targetPaneId === paneId) return slice;
-      const next = { ...slice, paneSelect: { targetPaneId: paneId, cursor: 0, scroll: 0 } };
-      return [next, [{ type: 'msg', msg: { type: 'mode_set', flag: 'paneSelectMode' } }]];
+      // scroll (a stray repeat dispatch from the toggle path mustn't
+      // reset nav state).
+      if (slice.paneMenu && slice.paneMenu.targetPaneId === paneId) return slice;
+      const next = { ...slice, paneMenu: {
+        targetPaneId: paneId,
+        cursor: Math.max(0, msg.cursor | 0),
+        scroll: Math.max(0, msg.scroll | 0),
+      } };
+      return [next, [{ type: 'msg', msg: { type: 'mode_set', flag: 'paneMenuMode' } }]];
     }
-    case 'pane_select_close': {
-      // Pure reducer — no external state read. If slice was already
-      // clear (double-close), preserve identity; the mode_clear Cmd
-      // is idempotent at the runtime layer (runtime.js:885 guards
-      // the no-op short-circuit), so emitting it unconditionally
-      // handles the rare stuck-flag case without needing to read
-      // model.modes here. Atomic flag/slice clears (see set_arrange
-      // arm + this arm both emitting mode_clear) keep the pair in
-      // lockstep so the stuck-flag case shouldn't reach this code.
-      const next = slice.paneSelect ? { ...slice, paneSelect: null } : slice;
-      return [next, [{ type: 'msg', msg: { type: 'mode_clear', flag: 'paneSelectMode' } }]];
+    case 'pane_menu_close': {
+      // Pure reducer. If already clear (double-close), preserve the
+      // target identity but still re-emit mode_clear (idempotent at the
+      // runtime layer, runtime.js:885) + force_full_repaint to wipe the
+      // dropdown pixels — the overlay is a slice sub-field, not its own
+      // diff-tracked surface (same reasoning as panel_list_close).
+      const next = (slice.paneMenu && slice.paneMenu.targetPaneId)
+        ? { ...slice, paneMenu: { targetPaneId: null, cursor: 0, scroll: 0 } }
+        : slice;
+      return [next, [
+        { type: 'msg', msg: { type: 'mode_clear', flag: 'paneMenuMode' } },
+        { type: 'force_full_repaint' },
+      ]];
     }
-    // v0.6.3 D2 — cursor/scroll nav inside the pane-select overlay.
-    // Mirrors tab_list_nav: dir ±1 OR to ∈ { top, bottom, pageup,
-    // pagedown }. Viewport height (vh) + item count (n) are threaded
-    // in by the caller (handler/mouse-wheel side) so the reducer
-    // stays a pure function of (slice, msg).
-    case 'pane_select_nav': {
-      if (!slice.paneSelect) return slice;
-      const ps = slice.paneSelect;
+    // cursor/scroll nav inside the open pane-menu. dir ±1 OR
+    // to ∈ { top, bottom, pageup, pagedown }. Viewport height (vh) +
+    // item count (n) are threaded in by the caller (handler / wheel) so
+    // the reducer stays a pure function of (slice, msg).
+    case 'pane_menu_nav': {
+      if (!slice.paneMenu || !slice.paneMenu.targetPaneId) return slice;
+      const pm = slice.paneMenu;
       const n = Math.max(0, msg.n | 0);
       if (n === 0) return slice;
       const vh = Math.max(1, msg.vh | 0);
-      let cursor = ps.cursor || 0;
+      let cursor = pm.cursor || 0;
       if      (msg.to === 'top')      cursor = 0;
       else if (msg.to === 'bottom')   cursor = n - 1;
       else if (msg.to === 'pageup')   cursor = Math.max(0, cursor - vh);
       else if (msg.to === 'pagedown') cursor = Math.min(n - 1, cursor + vh);
       else                            cursor = Math.max(0, Math.min(n - 1, cursor + (msg.dir || 0)));
-      let scroll = ps.scroll || 0;
+      let scroll = pm.scroll || 0;
       if (cursor < scroll) scroll = cursor;
       else if (cursor >= scroll + vh) scroll = cursor - vh + 1;
-      if (cursor === (ps.cursor || 0) && scroll === (ps.scroll || 0)) return slice;
-      return { ...slice, paneSelect: { ...ps, cursor, scroll } };
+      if (cursor === (pm.cursor || 0) && scroll === (pm.scroll || 0)) return slice;
+      return { ...slice, paneMenu: { ...pm, cursor, scroll } };
     }
     // v0.6.3 D3 — atomic pool-swap-by-id. Compound op: validates
     // invariants → swaps OR replaces → closes the pane-select overlay.
@@ -422,7 +436,7 @@ function update(msg, slice) {
       const arrange = slice.arrange;
       const { targetPaneId, pickedId } = msg;
       const closeCmds = [
-        { type: 'msg', msg: { kind: 'layout', msg: { type: 'pane_select_close' } } },
+        { type: 'msg', msg: { kind: 'layout', msg: { type: 'pane_menu_close' } } },
       ];
       if (!targetPaneId || !pickedId) return [slice, closeCmds];
       const targetLoc = mpool.findPaneLocation(arrange, p => p.paneId === targetPaneId);
@@ -565,7 +579,9 @@ function update(msg, slice) {
         //     and columns that no longer exist.
         //   - panelList.open + cursor: overlay geometry (computed
         //     from arrange) is stale; close defensively.
-        //   - tabListOwnerPaneId: paneId may no longer be placed.
+        //   - paneMenu.targetPaneId: paneId may no longer be placed
+        //     (cleared below, with mode_clear, to keep the flag/slice pair
+        //     consistent).
         //   - focus: may name a type that's no longer placed; clamp
         //     to the first placed pane in the new arrange.
         //   - halfLeftPanel / lastViewerTab: same staleness as focus;
@@ -577,15 +593,13 @@ function update(msg, slice) {
         if (next.panelList && next.panelList.open) {
           next.panelList = { open: false, cursor: 0 };
         }
-        if (next.tabListOwnerPaneId) next.tabListOwnerPaneId = null;
-        // v0.6.3 D1 — pane-select target paneId may name a pane that's
-        // no longer placed; defensive close. Emit mode_clear so the
-        // flag/slice pair stays consistent (the pre-fix shape left
-        // paneSelectMode set after clearing paneSelect — a ghost
-        // chain mode that self-healed on next keypress but spent a
-        // window in inconsistent state).
-        hadPaneSelect = !!next.paneSelect;
-        if (next.paneSelect) next.paneSelect = null;
+        // v0.6.4 #1 Step 2 — the unified pane-menu target paneId may name
+        // a pane that's no longer placed; defensive close. Emit mode_clear
+        // so the flag/slice pair stays consistent (leaving paneMenuMode
+        // set after clearing the target = a ghost chain mode that
+        // self-heals on next keypress but spends a window inconsistent).
+        hadPaneSelect = !!(next.paneMenu && next.paneMenu.targetPaneId);
+        if (hadPaneSelect) next.paneMenu = { targetPaneId: null, cursor: 0, scroll: 0 };
         const allPanes = mpool.allPanesInColumns(next.arrange);
         // v0.6.3 Phase B3 — focus is a paneId post-_withFocus normalization.
         // `paneMatchesFocus` tolerates pre-migration callers that still
@@ -615,7 +629,7 @@ function update(msg, slice) {
       }
       if (msg.dirty   !== undefined) next.dirty   = !!msg.dirty;
       if (hadPaneSelect) {
-        return [next, [{ type: 'msg', msg: { type: 'mode_clear', flag: 'paneSelectMode' } }]];
+        return [next, [{ type: 'msg', msg: { type: 'mode_clear', flag: 'paneMenuMode' } }]];
       }
       return next;
     }

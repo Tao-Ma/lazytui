@@ -233,13 +233,13 @@ describe('[chrome glyphs] half-mode collapse-button click can\'t hit off-screen 
   });
 });
 
-describe('[pane-select trigger] hit-test honors hidden (nothing-to-swap) state', () => {
-  // T2.1 regression: chromeFor returns 'hidden' when paneSelectItems
-  // length < 2 (no useful swap target). hitTestTrigger had no matching
-  // guard so a click at the invisible glyph position still armed the
-  // overlay. Both must agree.
+describe('[pane-menu trigger] hit-test honors hidden (nothing-to-swap) state', () => {
+  // v0.6.4 #1 Step 2 — the unified [≡] trigger hides when a navigator
+  // pane has < 2 pane rows (no useful swap target); hitTestTrigger's
+  // triggerVisible guard must agree with the painted state. (Viewers
+  // show via tab count, exercised elsewhere.)
   const { getInstanceSlice } = require('../panel/api');
-  const paneSelect = require('../overlay/pane-select');
+  const paneMenu = require('../overlay/pane-menu');
   const { getModel } = require('../app/runtime');
 
   it('hitTestTrigger returns null when nothing to swap (length === 1)', () => {
@@ -260,14 +260,14 @@ describe('[pane-select trigger] hit-test honors hidden (nothing-to-swap) state',
       },
     };
     slice.freeConfig = { drag: null, undo: [], redo: [], titleEdit: { text: '' }, notice: null, noticeKind: null };
-    slice.paneSelect = null;
+    slice.paneMenu = { targetPaneId: null, cursor: 0, scroll: 0 };
     slice.paneBounds = {
       'pane-groups': { x: 0, y: 0, w: 32, h: 24 },
       'pane-detail': { x: 32, y: 0, w: 48, h: 24 },
     };
-    getModel().modes.paneSelectMode = false;
+    getModel().modes.paneMenuMode = false;
     // Click at the trigger's normal position (x=6, y=0 — middle of [≡]).
-    eq(paneSelect.hitTestTrigger(6, 0), null, 'click ignored when nothing to swap');
+    eq(paneMenu.hitTestTrigger(6, 0), null, 'click ignored when nothing to swap');
   });
 
   it('hitTestTrigger still resolves when at least one swap target exists', () => {
@@ -289,15 +289,78 @@ describe('[pane-select trigger] hit-test honors hidden (nothing-to-swap) state',
       },
     };
     slice.freeConfig = { drag: null, undo: [], redo: [], titleEdit: { text: '' }, notice: null, noticeKind: null };
-    slice.paneSelect = null;
+    slice.paneMenu = { targetPaneId: null, cursor: 0, scroll: 0 };
     slice.paneBounds = {
       'pane-groups':  { x: 0, y: 0, w: 32, h: 12 },
       'pane-actions': { x: 0, y: 12, w: 32, h: 12 },
       'pane-detail':  { x: 32, y: 0, w: 48, h: 24 },
     };
-    getModel().modes.paneSelectMode = false;
+    getModel().modes.paneMenuMode = false;
     // Two non-detail panes → swap target exists → trigger live.
-    eq(paneSelect.hitTestTrigger(6, 0), 'pane-groups', 'returns paneId when swap available');
+    eq(paneMenu.hitTestTrigger(6, 0), 'pane-groups', 'returns paneId when swap available');
+  });
+});
+
+// v0.6.4 #1 Step 2 — half-view slot placement from the pane-menu pick.
+// pane_menu_place sets halfView[slot]; when the picked pane already sits
+// in the OTHER slot it SWAPS (the two slots trade) instead of collapsing.
+// Driven through the registered layout instance so halfProjection (which
+// reads allPanels()) resolves the placed panes.
+describe('[pane_menu_place] half-view slot set + swap', () => {
+  const api = require('../panel/api');
+  const route = require('../panel/route');
+  const { getModel } = require('../app/runtime');
+  try { api.registerComponent(layout); } catch (e) { /* already registered */ }
+
+  function seed(halfView) {
+    const slice = api.getInstanceSlice('layout');
+    slice.arrange = { detailHeightPct: 60, pool: {
+      f:  { id: 'f',  type: 'files' },
+      d1: { id: 'd1', type: 'detail' },
+      d2: { id: 'd2', type: 'detail' },
+    }, columns: [
+      { width: 30, panels: [{ type: 'files', id: 'f', paneId: 'pane-f' }] },
+      { panels: [
+        { type: 'detail', id: 'd1', paneId: 'pane-d1' },
+        { type: 'detail', id: 'd2', paneId: 'pane-d2' },
+      ] },
+    ] };
+    slice.viewMode = 'half';
+    slice.halfView = halfView || { left: null, right: null };
+    slice.freeConfig = { drag: null, undo: [], redo: [], titleEdit: { text: '' }, notice: null, noticeKind: null };
+    return slice;
+  }
+
+  it('places the picked pane into the slot', () => {
+    seed({ left: 'pane-f', right: 'pane-d1' });
+    api.dispatchMsg(api.wrap('layout', { type: 'pane_menu_place', slot: 'left', paneId: 'pane-d2' }));
+    const s = api.getInstanceSlice('layout');
+    eq(s.halfView.left, 'pane-d2', 'left slot now d2');
+    eq(s.halfView.right, 'pane-d1', 'right slot untouched (d2 was not in right)');
+    eq(s.focus, 'pane-d2', 'focus stamped to placed pane');
+  });
+
+  it('SWAP — picking a pane already in the OTHER slot trades the two', () => {
+    seed({ left: 'pane-f', right: 'pane-d1' });
+    // Pick d1 (currently RIGHT) for the LEFT slot → swap: left=d1, right=f.
+    api.dispatchMsg(api.wrap('layout', { type: 'pane_menu_place', slot: 'left', paneId: 'pane-d1' }));
+    const s = api.getInstanceSlice('layout');
+    eq(s.halfView.left, 'pane-d1', 'left slot now d1');
+    eq(s.halfView.right, 'pane-f', 'right slot got the displaced pane (swap, not collapse)');
+  });
+
+  it('picking the pane already in THIS slot is a no-op (identity preserved)', () => {
+    const s0 = seed({ left: 'pane-f', right: 'pane-d1' });
+    const before = s0.halfView;
+    api.dispatchMsg(api.wrap('layout', { type: 'pane_menu_place', slot: 'left', paneId: 'pane-f' }));
+    eq(api.getInstanceSlice('layout').halfView, before, 'halfView identity preserved');
+  });
+
+  it('an unplaced paneId is a no-op', () => {
+    const s0 = seed({ left: 'pane-f', right: 'pane-d1' });
+    const before = s0.halfView;
+    api.dispatchMsg(api.wrap('layout', { type: 'pane_menu_place', slot: 'left', paneId: 'pane-nope' }));
+    eq(api.getInstanceSlice('layout').halfView, before);
   });
 });
 

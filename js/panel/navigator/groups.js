@@ -202,7 +202,7 @@ function _groupChangeCmds(res, ctx) {
   const target = route.resolveTarget('viewer');
   if (target) {
     cmds.push({ type: 'msg', msg: require('../api').wrap(target, {
-      type: 'viewer_reset_chrome', tabListMode: !!(ctx && ctx.tabListMode),
+      type: 'viewer_reset_chrome', paneMenuMode: !!(ctx && ctx.paneMenuMode),
     }) });
   }
   cmds.push({ type: 'msg', msg: { type: 'set_current_group', name: res.newCurrentGroup } });
@@ -211,7 +211,7 @@ function _groupChangeCmds(res, ctx) {
 }
 
 /** Build the cascade Cmds when a tree-shape change moved currentGroup.
- *  Takes ctx = { tabListMode? }; reducer pure — no getModel(). Wraps the
+ *  Takes ctx = { paneMenuMode? }; reducer pure — no getModel(). Wraps the
  *  shared group-change block with the cursor write + Info refresh that
  *  the toggle_* paths need (the groups_selected path gets both from its
  *  upstream nav_select cascade, so it calls _groupChangeCmds directly). */
@@ -229,13 +229,13 @@ function _cascadeCmds(res, ctx) {
 }
 
 // v0.6.3 Phase D1 — every external dispatcher of a groups Msg
-// threads msg.ctx = { groups, currentGroup, tabListMode? } via
+// threads msg.ctx = { groups, currentGroup, paneMenuMode? } via
 // groupsBundle (exported below). The reducer arm reads ctx from
 // msg and passes to helpers. Reducer is pure of getModel();
 // internal cascade Cmds emitted from _cascadeCmds also receive
 // the bundle so downstream Msgs stay threaded.
 function _msgCtx(msg) {
-  return msg.ctx || { groups: {}, currentGroup: '', tabListMode: false };
+  return msg.ctx || { groups: {}, currentGroup: '', paneMenuMode: false };
 }
 
 function update(msg, slice) {

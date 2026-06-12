@@ -410,7 +410,7 @@ function update(model, msg) {
         // v0.6.3 Phase D1: thread the groups ctx so the reducer arm
         // stays pure of getModel().
         const groupsComp = require('../panel/navigator/groups');
-        const ctx = { ...groupsComp.groupsBundle(model), tabListMode: !!model.modes.tabListMode };
+        const ctx = { ...groupsComp.groupsBundle(model), paneMenuMode: !!model.modes.paneMenuMode };
         cmds.push({ type: 'msg', msg: route.wrap('groups', { type: 'groups_selected', index, ctx }) });
       }
       return [model, cmds];

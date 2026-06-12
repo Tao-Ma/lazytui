@@ -136,75 +136,36 @@ function _handleWheel(mx, my, delta) {
 // click, motion without an in-flight drag) and skip paint
 // deliberately as a perf optimization (P5.10).
 //
-// Handlers that DON'T consume (e.g. tabListMode on motion/release)
+// Handlers that DON'T consume (e.g. paneMenuMode on motion/release)
 // return false; the dispatcher falls through, and the subsequent
 // `isChainActive(model.modes) return;` guard catches the event so it
 // doesn't leak into normal-mode click/wheel routing.
 
-/** tab-list overlay — wheel scrolls cursor, press picks a row or
- *  closes when clicked outside. Motion/release fall through. */
-function _mouseHandleTabListMode(kind, mx, my, model) {
-  const tabOverlay = require('../overlay/tab-list');
+/** v0.6.4 #1 Step 2 — the unified `[≡]` pane-menu overlay. Wheel scrolls
+ *  the cursor; press picks a row (tab or pane, resolved by
+ *  dispatch._paneMenuPick) or closes when clicked outside. Motion/release
+ *  fall through. */
+function _mouseHandlePaneMenuMode(kind, mx, my, _model) {
+  const overlay = require('../overlay/pane-menu');
   const layoutSlice = getInstanceSlice('layout');
-  const ownerPaneId = (layoutSlice && layoutSlice.tabListOwnerPaneId) || 'detail';
+  const target = (layoutSlice && layoutSlice.paneMenu && layoutSlice.paneMenu.targetPaneId) || null;
+  if (!target) return false;
   if (kind === 'wheel-up' || kind === 'wheel-down') {
-    dispatchMsg(wrap(ownerPaneId, {
-      type: 'tab_list_nav',
-      dir: kind === 'wheel-up' ? -1 : +1,
-      vh: tabOverlay.viewportRows(ownerPaneId),
-      tabCount: tabOverlay._flatTabs(ownerPaneId).length,
-    }));
-    render();
-    return true;
-  }
-  if (kind === 'press') {
-    const hit = tabOverlay.hitTest(mx, my, ownerPaneId);
-    if (hit) {
-      dispatchMsg(wrap('layout', { type: 'focus_set', focus: ownerPaneId }));
-      const pt = require('../leaves/pane-tabs');
-      const slice = getInstanceSlice(ownerPaneId);
-      dispatchMsg(wrap(ownerPaneId, {
-        type: 'tab_switch', idx: hit.tabIdx,
-        targetKey: pt.resolveTabKey(hit.tabIdx, { ...slice, tab: hit.tabIdx }, model),
-        currentGroup: model.currentGroup,
-      }));
-      dispatchMsg(wrap(ownerPaneId, { type: 'tab_list_close' }));
-    } else {
-      dispatchMsg(wrap(ownerPaneId, { type: 'tab_list_close' }));
-    }
-    render();
-    return true;
-  }
-  return false;
-}
-
-/** pane-select overlay — wheel scrolls cursor, press picks a target
- *  or closes when clicked outside. */
-function _mouseHandlePaneSelectMode(kind, mx, my, _model) {
-  const psOverlay = require('../overlay/pane-select');
-  if (kind === 'wheel-up' || kind === 'wheel-down') {
-    const all = psOverlay.items();
     dispatchMsg(wrap('layout', {
-      type: 'pane_select_nav',
+      type: 'pane_menu_nav',
       dir: kind === 'wheel-up' ? -1 : +1,
-      n: all.length,
-      vh: psOverlay.viewportRows(),
+      n: overlay.items(target).length,
+      vh: overlay.viewportRows(target),
     }));
     render();
     return true;
   }
   if (kind === 'press') {
-    const hit = psOverlay.hitTest(mx, my);
-    const layoutSlice = getInstanceSlice('layout');
-    const ps = layoutSlice && layoutSlice.paneSelect;
-    if (hit && ps) {
-      dispatchMsg(wrap('layout', {
-        type: 'pool_swap_by_id',
-        targetPaneId: ps.targetPaneId,
-        pickedId: hit.item.id,
-      }));
+    const hit = overlay.hitTest(mx, my);
+    if (hit) {
+      require('./dispatch')._paneMenuPick(target, hit.item);
     } else {
-      dispatchMsg(wrap('layout', { type: 'pane_select_close' }));
+      dispatchMsg(wrap('layout', { type: 'pane_menu_close' }));
     }
     render();
     return true;
@@ -338,8 +299,7 @@ function _mouseHandleMenuMode(kind, mx, my, _model) {
 
 const _modeMouseHandlers = {
   menuOpen:        _mouseHandleMenuMode,
-  tabListMode:     _mouseHandleTabListMode,
-  paneSelectMode:  _mouseHandlePaneSelectMode,
+  paneMenuMode:    _mouseHandlePaneMenuMode,
   freeConfigMode:  _mouseHandleFreeConfigMode,
 };
 
@@ -526,43 +486,29 @@ function handleMouse(kind, x, y) {
         return;
       }
     }
-    // Tab-list `[≡]` trigger at a viewer pane's top-left. Toggles the
-    // overlay. Trigger's own suppression (free-config + modals) lives
-    // inside `isTriggerHit` so the click silently misses there.
-    // v0.6.4 — multi-viewer: hitTestTrigger returns the SPECIFIC viewer
-    // whose glyph was clicked (each paints its own), so opening targets
-    // and focuses that pane rather than the focused-or-sticky singleton.
-    const tabOverlay = require('../overlay/tab-list');
-    const triggerPaneId = tabOverlay.hitTestTrigger(mx, my);
+    // v0.6.4 #1 Step 2 — the unified `[≡]` pane-menu trigger on EVERY
+    // pane's top-left. hitTestTrigger returns the SPECIFIC pane whose
+    // glyph was clicked (each paints its own); suppression (free-config +
+    // modals + nothing-to-show) lives inside it so the click silently
+    // misses there. Opening focuses that pane and, for a viewer, seeds
+    // the cursor at its active tab (navigators seed 0, and — preserving
+    // the old pane-select behavior — don't move focus on open).
+    const paneMenu = require('../overlay/pane-menu');
+    const triggerPaneId = paneMenu.hitTestTrigger(mx, my);
     if (triggerPaneId) {
-      if (model.modes.tabListMode) {
-        // Any visible glyph closes the open overlay; target its owner so
-        // close stays idempotent regardless of which glyph was clicked.
-        const ls = getInstanceSlice('layout');
-        const owner = (ls && ls.tabListOwnerPaneId) || triggerPaneId;
-        dispatchMsg(wrap(owner, { type: 'tab_list_close' }));
+      if (model.modes.paneMenuMode) {
+        dispatchMsg(wrap('layout', { type: 'pane_menu_close' }));
       } else {
-        dispatchMsg(wrap('layout', { type: 'focus_set', focus: triggerPaneId }));
-        dispatchMsg(wrap(triggerPaneId, {
-          type: 'tab_list_open',
-          vh: tabOverlay.viewportRows(triggerPaneId),
-          tabCount: tabOverlay._flatTabs(triggerPaneId).length,
-        }));
-      }
-      render();
-      return;
-    }
-    // v0.6.3 D1 — pane-select [≡] trigger on any non-detail pane.
-    // Same glyph position as detail's tab-list trigger; click semantic
-    // differs by pane.type (input dispatches the right Msg). Toggles
-    // the overlay when clicked on the open target's own glyph.
-    const paneSelectOverlay = require('../overlay/pane-select');
-    const psTargetId = paneSelectOverlay.hitTestTrigger(mx, my);
-    if (psTargetId) {
-      if (model.modes.paneSelectMode) {
-        dispatchMsg(wrap('layout', { type: 'pane_select_close' }));
-      } else {
-        dispatchMsg(wrap('layout', { type: 'pane_select_open', paneId: psTargetId }));
+        let cursor = 0, scroll = 0;
+        if (paneMenu._isViewer(triggerPaneId)) {
+          const tabCount = paneMenu.items(triggerPaneId).length;
+          const vh = paneMenu.viewportRows(triggerPaneId);
+          const tab = (getInstanceSlice(triggerPaneId) || {}).tab | 0;
+          cursor = Math.max(0, Math.min(tab, Math.max(0, tabCount - 1)));
+          scroll = cursor >= vh ? Math.min(cursor - vh + 1, Math.max(0, tabCount - vh)) : 0;
+          dispatchMsg(wrap('layout', { type: 'focus_set', focus: triggerPaneId }));
+        }
+        dispatchMsg(wrap('layout', { type: 'pane_menu_open', paneId: triggerPaneId, cursor, scroll }));
       }
       render();
       return;

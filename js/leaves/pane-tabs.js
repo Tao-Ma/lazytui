@@ -624,7 +624,7 @@ function reduceTabMsg(msg, slice, ctx) {
       ];
       // N1 — single canonical "tab idx → key" resolver. Every dispatcher
       // (mouse handler / chain key handler / Cmd cascade emitter +
-      // internal cascades tab_cycle + tab_list_pick + tests via
+      // internal cascades tab_cycle + the pane-menu tab pick + tests via
       // tabSwitchMsg helpers) precomputes targetKey via
       // pt.resolveTabKey and threads targetKey + currentGroup through
       // the Msg payload. Pure reducer arm — no getModel() fallback.
@@ -755,101 +755,13 @@ function reduceTabMsg(msg, slice, ctx) {
     case 'viewer_reorder_content_tab':
       return reorderContent(slice, msg);
 
-    // --- tab-list overlay (the `[≡]` switcher anchored to the pane's
-    // top-left). Cursor starts at the active tab; scroll keeps it in
-    // view as it walks the list.
-    case 'tab_list_open': {
-      const vh = Math.max(1, msg.vh | 0);
-      const tabCount = msg.tabCount | 0 || 1;
-      const cursor = Math.max(0, Math.min(slice.tab | 0, tabCount - 1));
-      let scroll = 0;
-      if (cursor >= vh) scroll = Math.min(cursor - vh + 1, Math.max(0, tabCount - vh));
-      return [
-        { ...slice, tabList: { cursor, scroll } },
-        [
-          // Mode flag drives keyboard routing (chain mode) AND is the
-          // canonical "tab list is open" bit (AR2 — was duplicated on
-          // the per-pane slice as `tabList.open`).
-          { type: 'msg', msg: { type: 'mode_set', flag: 'tabListMode' } },
-          // v0.6.1 Phase 4 — record which pane the overlay anchors to,
-          // so the renderer + hit-test can stop assuming singleton-detail.
-          { type: 'msg', msg: wrap('layout', { type: 'tab_list_set_owner', paneId }) },
-        ],
-      ];
-    }
-    case 'tab_list_close':
-      // Pure leaf — no external state read. Dispatchers (chain key
-      // handler, mouse overlay routing) gate on tabListMode being on
-      // before firing this Msg, so the no-op-when-closed defensive
-      // read was unreachable in practice. mode_clear is idempotent
-      // at runtime (runtime.js:885); tab_list_set_owner identity-
-      // preserves; force_full_repaint is harmless in the
-      // already-closed case. Pre-cleanup version read
-      // getModel().modes.tabListMode for the early bail.
-      return [
-        slice,
-        [
-          { type: 'msg', msg: { type: 'mode_clear', flag: 'tabListMode' } },
-          { type: 'msg', msg: wrap('layout', { type: 'tab_list_set_owner', paneId: null }) },
-          { type: 'force_full_repaint' },
-        ],
-      ];
-    case 'tab_list_nav': {
-      // Pure leaf — dispatchers gate on tabListMode (chain handler
-      // only fires this Msg under tabListMode). Pre-cleanup read
-      // getModel().modes.tabListMode as a defensive guard.
-      const tl = slice.tabList || { cursor: 0, scroll: 0 };
-      const tabCount = msg.tabCount | 0 || 1;
-      const vh = Math.max(1, msg.vh | 0);
-      let cursor = tl.cursor;
-      if (msg.to === 'top')           cursor = 0;
-      else if (msg.to === 'bottom')   cursor = tabCount - 1;
-      else if (msg.to === 'pageup')   cursor = Math.max(0, tl.cursor - vh);
-      else if (msg.to === 'pagedown') cursor = Math.min(tabCount - 1, tl.cursor + vh);
-      else                            cursor = tl.cursor + (msg.dir | 0);
-      cursor = Math.max(0, Math.min(tabCount - 1, cursor));
-      let scroll = tl.scroll | 0;
-      const maxScroll = Math.max(0, tabCount - vh);
-      if (cursor < scroll)              scroll = cursor;
-      else if (cursor >= scroll + vh)   scroll = cursor - vh + 1;
-      scroll = Math.max(0, Math.min(scroll, maxScroll));
-      if (cursor === tl.cursor && scroll === tl.scroll) return slice;
-      return { ...slice, tabList: { ...tl, cursor, scroll } };
-    }
-    case 'tab_list_pick': {
-      // Pure leaf — dispatcher (handleTabListKey 'return' branch)
-      // threads targetKey + currentGroup via the Msg payload. The
-      // tab_switch Cmd this arm emits carries them through.
-      // Phase 3f: ctx.getModel() retired here.
-      const tl = slice.tabList || { cursor: 0 };
-      const idx = tl.cursor | 0;
-      return [
-        slice,
-        [
-          { type: 'msg', msg: { type: 'mode_clear', flag: 'tabListMode' } },
-          { type: 'msg', msg: wrap('layout', { type: 'tab_list_set_owner', paneId: null }) },
-          { type: 'msg', msg: wrap('layout', { type: 'focus_set', focus: paneId }) },
-          { type: 'msg', msg: wrap(paneId, {
-            type: 'tab_switch', idx,
-            targetKey: msg.targetKey,
-            currentGroup: msg.currentGroup,
-          }) },
-          { type: 'force_full_repaint' },
-        ],
-      ];
-    }
-    case 'tab_list_close_selected': {
-      // Caller (overlay key handler) resolves the row's closeable +
-      // closeKind + closeKey from the flat tab list and threads them
-      // in alongside currentGroup. Non-closeable rows: silent no-op
-      // (msg.kind null). Pure leaf — currentGroup arrives via msg
-      // payload, not via getModel().
-      if (!msg.closeKind || !msg.closeKey) return slice;
-      const removeMsg = msg.closeKind === 'content'
-        ? { type: 'viewer_remove_content_tab', groupName: msg.currentGroup, key: msg.closeKey }
-        : { type: 'viewer_remove_ephemeral_terminal', groupName: msg.currentGroup, key: msg.closeKey };
-      return [slice, [{ type: 'msg', msg: wrap(paneId, removeMsg) }]];
-    }
+    // v0.6.4 #1 Step 2 — the `[≡]` tab-list overlay arms (tab_list_open /
+    // _close / _nav / _pick / _close_selected) were retired here when the
+    // two `[≡]` overlays unioned into one pane-menu. Open/close/nav state
+    // now lives on `layout.paneMenu` (pane-type-agnostic, so a single
+    // cursor can span tabs + panes); the menu's tab PICK + tab-close are
+    // assembled by dispatch.handlePaneMenuKey, which still drives the
+    // viewer's own `tab_switch` / `viewer_remove_*` arms below.
 
     default:
       return null;

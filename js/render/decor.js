@@ -6,9 +6,11 @@
  *   [X]      quick-hide — free-config ONLY (the caller is the gatekeeper;
  *            input.js fires this hit-test inside its freeConfigMode
  *            branch). Click → pool_hide.
- *   [≡]      tab-list trigger — visible on panes with ≥2 tabs. Click
- *            → tab_list_open. Lives in overlay/tab-list.js but
- *            shares this file's chrome geometry helpers.
+ *   [≡]      pane-menu trigger — the one generalized control on every
+ *            pane (tabs + pane placement). Click → pane_menu_open. Lives
+ *            in overlay/pane-menu.js but shares this file's chrome
+ *            geometry helpers. (v0.6.4 #1 Step 2 unioned the former
+ *            tab-list + pane-select triggers here.)
  *
  * Glyph slots on each panel's top border row:
  *   ╭─(hk)[≡]─title──────[X]─[_]╮   ← all three painted (free-config)
@@ -63,14 +65,13 @@ const CLOSE_GLYPH = '\\[X]';
  *     freeConfigMode: bool,
  *     dragging:       bool,
  *     focused:        bool,
- *     viewerTabCount: number — for the viewer-hosting pane only, the
- *                              tab count from getTabInfo(). Allows the
- *                              [≡]-on-multi-tab rule to apply uniformly
- *                              across the detail viewer (with implicit
- *                              Info + Transcript) and future multi-tab
- *                              non-viewer panes (which use pane.tabs).
- *     tabTriggerState: 'available' | 'open' | 'disabled' | 'hidden' —
- *                              tab-list overlay state.
+ *     paneMenuTriggerState: 'available' | 'open' | 'disabled' | 'hidden'
+ *                           — the unified `[≡]` pane-menu trigger state
+ *                           for THIS pane, computed by the render pass
+ *                           (paint.js#_chromeContext paneMenuTriggerStateFor,
+ *                           which knows the arrange / open target / whether
+ *                           the pane has anything to show). 'hidden' ⇒ no
+ *                           glyph; chromeFor doesn't recompute visibility.
  *   }
  *
  * Returns { collapse, close, tabTrigger }:
@@ -83,10 +84,10 @@ const CLOSE_GLYPH = '\\[X]';
  * Rules:
  *   - detail is essential; no collapse/close.
  *   - drag in flight suppresses ALL pane chrome.
- *   - [≡] appears when the pane has ≥2 switchable tabs. For the
- *     viewer-hosting pane (kind detail), viewerTabCount in ctx counts
- *     Info + Transcript + actions/terminals/contents. For other panes,
- *     pane.tabs.length is used (multi-tab panes have ≥2).
+ *   - [≡] is the unified pane-menu trigger on every pane; its per-pane
+ *     visibility (a viewer with ≥2 tabs, or any pane with ≥2 pane rows)
+ *     is decided by the render pass and arrives as ctx.paneMenuTriggerState
+ *     ('hidden' ⇒ suppressed).
  */
 function chromeFor(pane, ctx) {
   const isDetail = pane && pane.type === 'detail';
@@ -96,25 +97,15 @@ function chromeFor(pane, ctx) {
     collapse = pane.collapsed ? 'expand' : 'collapse';
     if (ctx && ctx.freeConfigMode) close = 'close';
   }
+  // v0.6.4 #1 Step 2 — the `[≡]` glyph is the unified pane-menu trigger on
+  // EVERY pane (was split: detail → tab-list via viewerTabCount, others →
+  // pane-select). Its per-pane state (available / open / disabled /
+  // hidden) is computed by the render pass (paint.js#_chromeContext
+  // paneMenuTriggerStateFor — it knows the arrange, the open target, and
+  // whether this pane has anything to show); chromeFor just surfaces it.
   let tabTrigger = null;
-  if (isDetail) {
-    // Detail's [≡] = tab-list trigger; visible when the viewer has ≥2
-    // tabs (Info + Transcript + actions/terminals/content).
-    const tabCount = (ctx && Number.isFinite(ctx.viewerTabCount) ? ctx.viewerTabCount : 0);
-    if (tabCount >= 2) {
-      const state = (ctx && ctx.tabTriggerState) || 'available';
-      if (state !== 'hidden') tabTrigger = state;
-    }
-  } else {
-    // v0.6.3 D1 — non-detail [≡] = pane-select trigger (per-cell pool
-    // picker). The glyph is ALWAYS painted (user's "like tabs, always
-    // there" choice) — same position as detail's tab trigger, different
-    // click semantic (input.js routes by pane.type). 'open' is set only
-    // for the target pane during paneSelectMode; the others see
-    // 'disabled' so only the originating click can re-toggle.
-    const state = (ctx && ctx.paneSelectTriggerState) || 'available';
-    if (state !== 'hidden') tabTrigger = state;
-  }
+  const state = (ctx && ctx.paneMenuTriggerState) || 'available';
+  if (state !== 'hidden') tabTrigger = state;
   return { collapse, close, tabTrigger };
 }
 

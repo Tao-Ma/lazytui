@@ -222,14 +222,11 @@ function init(paneId) {
     // still read it). T3c-e will migrate search/select/cursor; T3f
     // drops the mirrors.
     tabState: {},
-    // Tab-list overlay (the `[≡]` switcher anchored to detail's top-left).
-    // `cursor` is the row index in the flat tab list (Info..actions..
-    // terminals..content); `scroll` is the first visible row when the
-    // overlay's body is smaller than the tab count.
-    // Open/closed is tracked by model.modes.tabListMode + layout's
-    // tabListOwnerPaneId. The per-pane slice holds the cursor/scroll
-    // bookkeeping only (AR2 — was a third co-replica of open-state).
-    tabList: { cursor: 0, scroll: 0 },
+    // v0.6.4 #1 Step 2 — the `[≡]` switcher's cursor/scroll moved OFF the
+    // viewer slice onto `layout.paneMenu` when the two `[≡]` overlays
+    // unioned into one pane-menu (a single cursor must span tabs + panes,
+    // so it lives in one pane-type-agnostic home). Open-state =
+    // model.modes.paneMenuMode; the target paneId + nav live on layout.
   };
 }
 
@@ -875,18 +872,17 @@ function _updateInner(msg, slice) {
       // worktree). Crossing groups invalidates it.
       const next = { ...slice, tab: 0, cursor: { line: 0, col: 0 }, viewerOverride: null };
       if (slice.select) next.select = { ...slice.select, active: false };
-      // Group switch closes the tab-list overlay too — the per-group tab
+      // Group switch closes the `[≡]` pane-menu too — the per-group tab
       // set is fundamentally different across groups, so lingering would
-      // be confusing. v0.6.1 Phase 4 — clear the owner pane id companion
-      // alongside the mode flag.
-      // v0.6.3 Phase D1: dispatcher threads msg.tabListMode so the
-      // reducer stays pure. Three dispatchers (app/state.js,
-      // panel/navigator/groups.js × 2) all read modes.tabListMode at
+      // be confusing. v0.6.4 #1 Step 2 — one `pane_menu_close` Cmd clears
+      // the mode flag + the menu target together (was a mode_clear +
+      // tab_list_set_owner pair). Dispatcher threads msg.paneMenuMode so
+      // the reducer stays pure. Three dispatchers (app/state.js,
+      // panel/navigator/groups.js × 2) read modes.paneMenuMode at
       // dispatch time.
-      if (msg.tabListMode) {
+      if (msg.paneMenuMode) {
         return [next, [
-          { type: 'msg', msg: { type: 'mode_clear', flag: 'tabListMode' } },
-          { type: 'msg', msg: wrap('layout', { type: 'tab_list_set_owner', paneId: null }) },
+          { type: 'msg', msg: wrap('layout', { type: 'pane_menu_close' }) },
         ]];
       }
       return next;

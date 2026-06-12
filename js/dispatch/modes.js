@@ -44,8 +44,9 @@ const MODES = [
   { flag: 'registerPopupMode',       chain: true,  overlay: true,  modal: false, reset: true, suppressChrome: true  },
   { flag: 'prefixMode',              chain: true,  overlay: true,  modal: true,  reset: true, suppressChrome: false },
   { flag: 'cmdMode',                 chain: true,  overlay: true,  modal: false, reset: true, suppressChrome: true  },
-  { flag: 'tabListMode',             chain: true,  overlay: true,  modal: false, reset: true, suppressChrome: false },
-  { flag: 'paneSelectMode',          chain: true,  overlay: true,  modal: false, reset: true, suppressChrome: false },
+  // v0.6.4 #1 Step 2 — the one `[≡]` pane-menu (unioned the former
+  // tabListMode + paneSelectMode; same column profile).
+  { flag: 'paneMenuMode',            chain: true,  overlay: true,  modal: false, reset: true, suppressChrome: false },
   { flag: 'jobsMode',                chain: true,  overlay: true,  modal: false, reset: true, suppressChrome: false },
   // diagLog is a read-only modal you Esc out of — NOT a pane selector like
   // jobs/tabList/paneSelect — so it suppresses chrome-glyph clicks behind it

@@ -260,7 +260,7 @@ function handleAction(action, arg) {
           // v0.6.3 Phase D1: thread groups ctx so the reducer stays pure.
           const groupsComp = require('../panel/navigator/groups');
           const m = getModel();
-          const ctx = { ...groupsComp.groupsBundle(m), tabListMode: !!m.modes.tabListMode };
+          const ctx = { ...groupsComp.groupsBundle(m), paneMenuMode: !!m.modes.paneMenuMode };
           dispatchMsg(wrap('groups', { type: 'toggle_group', name: row.name, ctx }));
           break;
         }

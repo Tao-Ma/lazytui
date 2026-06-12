@@ -522,17 +522,17 @@ describe('[T3-defenses] T3.1/T3.3/T3.4/T3.5 hardening', () => {
     eq(out3, slice, 'null arrange — slice unchanged');
   });
 
-  it('R2.3 — set_arrange closes panelList overlay + clears tabListOwnerPaneId', () => {
+  it('R2.3 — set_arrange closes panelList overlay + clears pane-menu target', () => {
     const slice = makeSlice();
     const dirty = { ...slice,
       panelList: { open: true, cursor: 3 },
-      tabListOwnerPaneId: 'pane-detail',
+      paneMenu: { targetPaneId: 'pane-detail', cursor: 2, scroll: 0 },
     };
     const newArrange = { ...slice.arrange, columns: slice.arrange.columns.slice() };
     const out = applyUpdate({ type: 'set_arrange', arrange: newArrange }, dirty);
     eq(out.panelList.open, false, 'panel-list overlay closed (geometry stale)');
     eq(out.panelList.cursor, 0, 'cursor reset');
-    eq(out.tabListOwnerPaneId, null, 'tab-list owner cleared');
+    eq(out.paneMenu.targetPaneId, null, 'pane-menu target cleared');
   });
 
   it('R2.3 — set_arrange clamps focus when focus type no longer placed', () => {

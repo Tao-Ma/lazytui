@@ -226,13 +226,13 @@ function allPanels() {
 // reset_group_context / viewer_reset_chrome) fire as a consequence.
 // Kept here as named exports so non-reducer callers (mouse, recursive `"`
 // expand, tests) have a stable surface.
-// v0.6.3 Phase D1: thread the groupsBundle (+ tabListMode for the
+// v0.6.3 Phase D1: thread the groupsBundle (+ paneMenuMode for the
 // cascade-emit case) so the reducer arms stay pure of getModel().
 function _groupsCtx() {
   const groupsComp = require('../panel/navigator/groups');
   const { getModel } = require('./runtime');
   const m = getModel();
-  return { ...groupsComp.groupsBundle(m), tabListMode: !!m.modes.tabListMode };
+  return { ...groupsComp.groupsBundle(m), paneMenuMode: !!m.modes.paneMenuMode };
 }
 
 function recomputeGroups() {
@@ -345,9 +345,9 @@ function resetGroupContext() {
   dispatch.applyMsg({ type: 'reset_group_context' });
   const target = route.resolveTarget('viewer');
   if (target) {
-    // v0.6.3 Phase D1: thread tabListMode so the reducer stays pure.
+    // v0.6.3 Phase D1: thread paneMenuMode so the reducer stays pure.
     const m = require('./runtime').getModel();
-    api.dispatchMsg(api.wrap(target, { type: 'viewer_reset_chrome', tabListMode: !!m.modes.tabListMode }));
+    api.dispatchMsg(api.wrap(target, { type: 'viewer_reset_chrome', paneMenuMode: !!m.modes.paneMenuMode }));
   }
 }
 

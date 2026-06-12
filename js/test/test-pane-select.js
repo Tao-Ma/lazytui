@@ -14,8 +14,7 @@ function setup() {
   // Reset layout slice + modes for each test (lazy isolation since
   // the test runner spawns a fresh Node per file).
   const layout = route.getInstanceSlice('layout');
-  layout.paneSelect = null;
-  layout.tabListOwnerPaneId = null;
+  layout.paneMenu = { targetPaneId: null, cursor: 0, scroll: 0 };
   layout.freeConfig = { drag: null, undo: [], redo: [], titleEdit: { text: '' }, notice: null, noticeKind: null };
   layout.arrange = {
     columns: [
@@ -29,56 +28,56 @@ function setup() {
     detailHeightPct: 60,
   };
   const m = getModel();
-  m.modes.paneSelectMode = false;
+  m.modes.paneMenuMode = false;
 }
 
 describe('[1] reducer arms', () => {
-  it('pane_select_open writes targetPaneId + arms mode via Cmd', () => {
+  it('pane_menu_open writes targetPaneId + arms mode via Cmd', () => {
     setup();
-    api.dispatchMsg(api.wrap('layout', { type: 'pane_select_open', paneId: 'p-groups' }));
+    api.dispatchMsg(api.wrap('layout', { type: 'pane_menu_open', paneId: 'p-groups' }));
     const layout = route.getInstanceSlice('layout');
-    eq(layout.paneSelect && layout.paneSelect.targetPaneId, 'p-groups');
-    eq(getModel().modes.paneSelectMode, true, 'mode armed by Cmd');
+    eq(layout.paneMenu && layout.paneMenu.targetPaneId, 'p-groups');
+    eq(getModel().modes.paneMenuMode, true, 'mode armed by Cmd');
   });
 
-  it('pane_select_close clears target + Cmd disarms mode', () => {
+  it('pane_menu_close clears target + Cmd disarms mode', () => {
     setup();
-    api.dispatchMsg(api.wrap('layout', { type: 'pane_select_open', paneId: 'p-groups' }));
-    eq(getModel().modes.paneSelectMode, true);
-    api.dispatchMsg(api.wrap('layout', { type: 'pane_select_close' }));
+    api.dispatchMsg(api.wrap('layout', { type: 'pane_menu_open', paneId: 'p-groups' }));
+    eq(getModel().modes.paneMenuMode, true);
+    api.dispatchMsg(api.wrap('layout', { type: 'pane_menu_close' }));
     const layout = route.getInstanceSlice('layout');
-    eq(layout.paneSelect, null);
-    eq(getModel().modes.paneSelectMode, false, 'mode disarmed by Cmd');
+    eq(layout.paneMenu.targetPaneId, null);
+    eq(getModel().modes.paneMenuMode, false, 'mode disarmed by Cmd');
   });
 
-  it('pane_select_open with no paneId is a no-op', () => {
+  it('pane_menu_open with no paneId is a no-op', () => {
     setup();
-    api.dispatchMsg(api.wrap('layout', { type: 'pane_select_open' }));
+    api.dispatchMsg(api.wrap('layout', { type: 'pane_menu_open' }));
     const layout = route.getInstanceSlice('layout');
-    eq(layout.paneSelect, null);
-    eq(getModel().modes.paneSelectMode, false);
+    eq(layout.paneMenu.targetPaneId, null);
+    eq(getModel().modes.paneMenuMode, false);
   });
 
-  it('T3.2 — pane_select_open is idempotent on same target (cursor/scroll preserved)', () => {
+  it('T3.2 — pane_menu_open is idempotent on same target (cursor/scroll preserved)', () => {
     setup();
-    api.dispatchMsg(api.wrap('layout', { type: 'pane_select_open', paneId: 'pane-x' }));
+    api.dispatchMsg(api.wrap('layout', { type: 'pane_menu_open', paneId: 'pane-x' }));
     // Move cursor + scroll.
-    api.dispatchMsg(api.wrap('layout', { type: 'pane_select_nav', dir: +3, n: 6, vh: 2 }));
-    const before = route.getInstanceSlice('layout').paneSelect;
+    api.dispatchMsg(api.wrap('layout', { type: 'pane_menu_nav', dir: +3, n: 6, vh: 2 }));
+    const before = route.getInstanceSlice('layout').paneMenu;
     eq(before.cursor, 3);
     eq(before.scroll, 2);
     // Re-open on the SAME paneId — must NOT reset cursor/scroll.
-    api.dispatchMsg(api.wrap('layout', { type: 'pane_select_open', paneId: 'pane-x' }));
-    const after = route.getInstanceSlice('layout').paneSelect;
+    api.dispatchMsg(api.wrap('layout', { type: 'pane_menu_open', paneId: 'pane-x' }));
+    const after = route.getInstanceSlice('layout').paneMenu;
     eq(after.cursor, 3, 'cursor preserved on repeat open');
     eq(after.scroll, 2, 'scroll preserved on repeat open');
     eq(after, before, 'slice identity preserved (no-op)');
   });
 
-  it('T3.1 — set_arrange clears paneSelectMode flag when paneSelect was non-null', () => {
+  it('T3.1 — set_arrange clears paneMenuMode flag when paneSelect was non-null', () => {
     setup();
-    api.dispatchMsg(api.wrap('layout', { type: 'pane_select_open', paneId: 'pane-groups' }));
-    eq(getModel().modes.paneSelectMode, true, 'mode armed');
+    api.dispatchMsg(api.wrap('layout', { type: 'pane_menu_open', paneId: 'pane-groups' }));
+    eq(getModel().modes.paneMenuMode, true, 'mode armed');
     // Replace arrange — defensive close should fire mode_clear Cmd.
     api.dispatchMsg(api.wrap('layout', {
       type: 'set_arrange',
@@ -90,40 +89,35 @@ describe('[1] reducer arms', () => {
         pool: { 'stats': { type: 'stats' }, 'detail': { type: 'detail' } },
       },
     }));
-    eq(route.getInstanceSlice('layout').paneSelect, null, 'paneSelect cleared');
-    eq(getModel().modes.paneSelectMode, false, 'paneSelectMode cleared in lockstep');
+    eq(route.getInstanceSlice('layout').paneMenu.targetPaneId, null, 'pane-menu target cleared');
+    eq(getModel().modes.paneMenuMode, false, 'paneMenuMode cleared in lockstep');
   });
 });
 
-describe('[2] chromeFor — non-detail [≡] is pane-select trigger', () => {
+describe('[2] chromeFor — [≡] surfaces the unified pane-menu trigger state', () => {
   const { chromeFor } = require('../render/decor');
-  it('non-detail singleton-tab pane gets pane-select [≡]', () => {
+  it('default (no ctx) → available', () => {
     const p = { type: 'groups', tabs: [{ id: 'groups' }] };
     eq(chromeFor(p, {}).tabTrigger, 'available');
   });
-  it('paneSelectTriggerState=hidden suppresses [≡] (nothing to swap)', () => {
+  it('paneMenuTriggerState=hidden suppresses [≡] (nothing to show)', () => {
     const p = { type: 'groups', tabs: [{ id: 'groups' }] };
-    eq(chromeFor(p, { paneSelectTriggerState: 'hidden' }).tabTrigger, null);
+    eq(chromeFor(p, { paneMenuTriggerState: 'hidden' }).tabTrigger, null);
   });
-  it('open state surfaces when paneSelectTriggerState=open', () => {
+  it('open / disabled states pass through', () => {
     const p = { type: 'groups', tabs: [{ id: 'groups' }] };
-    eq(chromeFor(p, { paneSelectTriggerState: 'open' }).tabTrigger, 'open');
+    eq(chromeFor(p, { paneMenuTriggerState: 'open' }).tabTrigger, 'open');
+    eq(chromeFor(p, { paneMenuTriggerState: 'disabled' }).tabTrigger, 'disabled');
   });
-  it('disabled state surfaces when paneSelectTriggerState=disabled', () => {
-    const p = { type: 'groups', tabs: [{ id: 'groups' }] };
-    eq(chromeFor(p, { paneSelectTriggerState: 'disabled' }).tabTrigger, 'disabled');
-  });
-  it('detail still uses tabTriggerState + viewerTabCount path', () => {
+  it('detail surfaces the same unified state (no special tab-count gate in chromeFor)', () => {
     const detail = { type: 'detail' };
-    // viewerTabCount<2 → no trigger even with paneSelectTriggerState
-    // (detail's [≡] is tab-list, not pane-select).
-    eq(chromeFor(detail, { viewerTabCount: 1, paneSelectTriggerState: 'available' }).tabTrigger, null);
-    eq(chromeFor(detail, { viewerTabCount: 3, tabTriggerState: 'available' }).tabTrigger, 'available');
+    eq(chromeFor(detail, { paneMenuTriggerState: 'hidden' }).tabTrigger, null);
+    eq(chromeFor(detail, { paneMenuTriggerState: 'available' }).tabTrigger, 'available');
   });
 });
 
 describe('[3] hit-test', () => {
-  const paneSelect = require('../overlay/pane-select');
+  const paneSelect = require('../overlay/pane-menu');
   it('returns null when no layout/bounds yet', () => {
     setup();
     // No render has run, so boundsFor returns null. Hit-test bails.
@@ -140,8 +134,7 @@ describe('[3] hit-test', () => {
     // (paneB.y + 1). Width clamps to pane.w (or MAX_W=50). Borders
     // at y=top and y=top+h-1 are inert; content rows at y=top+1..top+h-2.
     const layout = route.getInstanceSlice('layout');
-    layout.paneSelect = null;
-    layout.tabListOwnerPaneId = null;
+    layout.paneMenu = { targetPaneId: null, cursor: 0, scroll: 0 };
     layout.freeConfig = { drag: null, undo: [], redo: [], titleEdit: { text: '' }, notice: null, noticeKind: null };
     layout.arrange = {
       columns: [
@@ -166,7 +159,7 @@ describe('[3] hit-test', () => {
       'pane-actions': { x: 0, y: 12, w: 32, h: 12 },
       'pane-detail':  { x: 32, y: 0, w: 48, h: 24 },
     };
-    api.dispatchMsg(api.wrap('layout', { type: 'pane_select_open', paneId: 'pane-groups' }));
+    api.dispatchMsg(api.wrap('layout', { type: 'pane_menu_open', paneId: 'pane-groups' }));
     // Dropdown anchors at pane-groups (x=0, y=0) — drops down to y=1.
     // 3 items (groups[here] + actions[placed] + stats[hidden]),
     // viewport caps innerH=3. Geometry: x=0, y=1, w=32, innerH=3, h=5.
@@ -268,30 +261,30 @@ describe('[5] paneSelectItems — pure list build', () => {
   });
 });
 
-describe('[6] pane_select_nav cursor + scroll math', () => {
+describe('[6] pane_menu_nav cursor + scroll math', () => {
   it('dir +1 advances cursor; clamps at n-1', () => {
     setup();
-    api.dispatchMsg(api.wrap('layout', { type: 'pane_select_open', paneId: 'pane-groups' }));
-    api.dispatchMsg(api.wrap('layout', { type: 'pane_select_nav', dir: +1, n: 3, vh: 8 }));
-    eq(route.getInstanceSlice('layout').paneSelect.cursor, 1);
+    api.dispatchMsg(api.wrap('layout', { type: 'pane_menu_open', paneId: 'pane-groups' }));
+    api.dispatchMsg(api.wrap('layout', { type: 'pane_menu_nav', dir: +1, n: 3, vh: 8 }));
+    eq(route.getInstanceSlice('layout').paneMenu.cursor, 1);
     // overshoot — clamps
-    api.dispatchMsg(api.wrap('layout', { type: 'pane_select_nav', dir: +99, n: 3, vh: 8 }));
-    eq(route.getInstanceSlice('layout').paneSelect.cursor, 2);
+    api.dispatchMsg(api.wrap('layout', { type: 'pane_menu_nav', dir: +99, n: 3, vh: 8 }));
+    eq(route.getInstanceSlice('layout').paneMenu.cursor, 2);
   });
   it('to=top resets cursor + scroll', () => {
     setup();
-    api.dispatchMsg(api.wrap('layout', { type: 'pane_select_open', paneId: 'pane-groups' }));
-    api.dispatchMsg(api.wrap('layout', { type: 'pane_select_nav', dir: +2, n: 5, vh: 8 }));
-    api.dispatchMsg(api.wrap('layout', { type: 'pane_select_nav', to: 'top', n: 5, vh: 8 }));
-    eq(route.getInstanceSlice('layout').paneSelect.cursor, 0);
-    eq(route.getInstanceSlice('layout').paneSelect.scroll, 0);
+    api.dispatchMsg(api.wrap('layout', { type: 'pane_menu_open', paneId: 'pane-groups' }));
+    api.dispatchMsg(api.wrap('layout', { type: 'pane_menu_nav', dir: +2, n: 5, vh: 8 }));
+    api.dispatchMsg(api.wrap('layout', { type: 'pane_menu_nav', to: 'top', n: 5, vh: 8 }));
+    eq(route.getInstanceSlice('layout').paneMenu.cursor, 0);
+    eq(route.getInstanceSlice('layout').paneMenu.scroll, 0);
   });
   it('nav with n=0 is a no-op (returns same ref)', () => {
     setup();
-    api.dispatchMsg(api.wrap('layout', { type: 'pane_select_open', paneId: 'pane-groups' }));
-    const before = route.getInstanceSlice('layout').paneSelect;
-    api.dispatchMsg(api.wrap('layout', { type: 'pane_select_nav', dir: +1, n: 0, vh: 8 }));
-    const after = route.getInstanceSlice('layout').paneSelect;
+    api.dispatchMsg(api.wrap('layout', { type: 'pane_menu_open', paneId: 'pane-groups' }));
+    const before = route.getInstanceSlice('layout').paneMenu;
+    api.dispatchMsg(api.wrap('layout', { type: 'pane_menu_nav', dir: +1, n: 0, vh: 8 }));
+    const after = route.getInstanceSlice('layout').paneMenu;
     eq(before, after, 'identity preserved');
   });
 });
@@ -299,8 +292,7 @@ describe('[6] pane_select_nav cursor + scroll math', () => {
 describe('[7] pool_swap_by_id — SWAP / REPLACE / invariants', () => {
   function setupRich() {
     const layout = route.getInstanceSlice('layout');
-    layout.paneSelect = null;
-    layout.tabListOwnerPaneId = null;
+    layout.paneMenu = { targetPaneId: null, cursor: 0, scroll: 0 };
     layout.freeConfig = { drag: null, undo: [], redo: [], titleEdit: { text: '' }, notice: null, noticeKind: null };
     layout.arrange = {
       columns: [
@@ -322,7 +314,7 @@ describe('[7] pool_swap_by_id — SWAP / REPLACE / invariants', () => {
       },
       detailHeightPct: 60,
     };
-    getModel().modes.paneSelectMode = false;
+    getModel().modes.paneMenuMode = false;
   }
   function paneIdsByCol() {
     const arr = route.getInstanceSlice('layout').arrange;
@@ -331,19 +323,19 @@ describe('[7] pool_swap_by_id — SWAP / REPLACE / invariants', () => {
 
   it('REPLACE — picked is hidden; target old occupant becomes hidden', () => {
     setupRich();
-    api.dispatchMsg(api.wrap('layout', { type: 'pane_select_open', paneId: 'pane-groups' }));
+    api.dispatchMsg(api.wrap('layout', { type: 'pane_menu_open', paneId: 'pane-groups' }));
     api.dispatchMsg(api.wrap('layout', {
       type: 'pool_swap_by_id', targetPaneId: 'pane-groups', pickedId: 'extra',
     }));
     eq(paneIdsByCol()[0][0], 'extra', 'extra now at pane-groups slot');
     assert(!paneIdsByCol()[0].includes('groups'), 'groups no longer placed');
     // Overlay closes via emitted Cmd.
-    eq(getModel().modes.paneSelectMode, false);
+    eq(getModel().modes.paneMenuMode, false);
   });
 
   it('SWAP — both placed; trade slots', () => {
     setupRich();
-    api.dispatchMsg(api.wrap('layout', { type: 'pane_select_open', paneId: 'pane-groups' }));
+    api.dispatchMsg(api.wrap('layout', { type: 'pane_menu_open', paneId: 'pane-groups' }));
     api.dispatchMsg(api.wrap('layout', {
       type: 'pool_swap_by_id', targetPaneId: 'pane-groups', pickedId: 'stats',
     }));
@@ -354,18 +346,18 @@ describe('[7] pool_swap_by_id — SWAP / REPLACE / invariants', () => {
 
   it('GUARD — detail can\'t be picked anywhere (defensive)', () => {
     setupRich();
-    api.dispatchMsg(api.wrap('layout', { type: 'pane_select_open', paneId: 'pane-groups' }));
+    api.dispatchMsg(api.wrap('layout', { type: 'pane_menu_open', paneId: 'pane-groups' }));
     const before = JSON.stringify(paneIdsByCol());
     api.dispatchMsg(api.wrap('layout', {
       type: 'pool_swap_by_id', targetPaneId: 'pane-groups', pickedId: 'detail',
     }));
     eq(JSON.stringify(paneIdsByCol()), before, 'arrange unchanged');
-    eq(getModel().modes.paneSelectMode, false, 'overlay still closes');
+    eq(getModel().modes.paneMenuMode, false, 'overlay still closes');
   });
 
   it('GUARD — actions can\'t end up in non-last column', () => {
     setupRich();
-    api.dispatchMsg(api.wrap('layout', { type: 'pane_select_open', paneId: 'pane-groups' }));
+    api.dispatchMsg(api.wrap('layout', { type: 'pane_menu_open', paneId: 'pane-groups' }));
     const before = JSON.stringify(paneIdsByCol());
     api.dispatchMsg(api.wrap('layout', {
       type: 'pool_swap_by_id', targetPaneId: 'pane-groups', pickedId: 'actions',
@@ -375,7 +367,7 @@ describe('[7] pool_swap_by_id — SWAP / REPLACE / invariants', () => {
 
   it('GUARD — actions slot can\'t be replaced', () => {
     setupRich();
-    api.dispatchMsg(api.wrap('layout', { type: 'pane_select_open', paneId: 'pane-actions' }));
+    api.dispatchMsg(api.wrap('layout', { type: 'pane_menu_open', paneId: 'pane-actions' }));
     const before = JSON.stringify(paneIdsByCol());
     api.dispatchMsg(api.wrap('layout', {
       type: 'pool_swap_by_id', targetPaneId: 'pane-actions', pickedId: 'extra',
@@ -385,12 +377,12 @@ describe('[7] pool_swap_by_id — SWAP / REPLACE / invariants', () => {
 
   it('NO-OP — picked === target current occupant just closes', () => {
     setupRich();
-    api.dispatchMsg(api.wrap('layout', { type: 'pane_select_open', paneId: 'pane-groups' }));
-    eq(getModel().modes.paneSelectMode, true, 'overlay open');
+    api.dispatchMsg(api.wrap('layout', { type: 'pane_menu_open', paneId: 'pane-groups' }));
+    eq(getModel().modes.paneMenuMode, true, 'overlay open');
     api.dispatchMsg(api.wrap('layout', {
       type: 'pool_swap_by_id', targetPaneId: 'pane-groups', pickedId: 'groups',
     }));
-    eq(getModel().modes.paneSelectMode, false, 'overlay closed');
+    eq(getModel().modes.paneMenuMode, false, 'overlay closed');
     eq(paneIdsByCol()[0][0], 'groups', 'arrange unchanged');
   });
 
@@ -398,8 +390,7 @@ describe('[7] pool_swap_by_id — SWAP / REPLACE / invariants', () => {
   // A multi-tab `pane-multi` carries [tab-a (active), tab-b] in col 0.
   function setupMultiTab() {
     const layout = route.getInstanceSlice('layout');
-    layout.paneSelect = null;
-    layout.tabListOwnerPaneId = null;
+    layout.paneMenu = { targetPaneId: null, cursor: 0, scroll: 0 };
     layout.freeConfig = { drag: null, undo: [], redo: [], titleEdit: { text: '' }, notice: null, noticeKind: null };
     layout.arrange = {
       columns: [
@@ -426,12 +417,12 @@ describe('[7] pool_swap_by_id — SWAP / REPLACE / invariants', () => {
       },
       detailHeightPct: 60,
     };
-    getModel().modes.paneSelectMode = false;
+    getModel().modes.paneMenuMode = false;
   }
 
   it('T1.1 — SWAP preserves multi-tab pane (tabs[] / paneId / activeTabId)', () => {
     setupMultiTab();
-    api.dispatchMsg(api.wrap('layout', { type: 'pane_select_open', paneId: 'pane-stats' }));
+    api.dispatchMsg(api.wrap('layout', { type: 'pane_menu_open', paneId: 'pane-stats' }));
     // Swap pane-stats with pane-multi (pickedId = 'tab-a', the active id).
     api.dispatchMsg(api.wrap('layout', {
       type: 'pool_swap_by_id', targetPaneId: 'pane-stats', pickedId: 'tab-a',
@@ -469,7 +460,7 @@ describe('[7] pool_swap_by_id — SWAP / REPLACE / invariants', () => {
     // pane-multi carries [tab-a, tab-b]. Open pane-select on it,
     // pick `extra` (hidden) — REPLACE would decompose the multi-tab
     // pane; refuse instead.
-    api.dispatchMsg(api.wrap('layout', { type: 'pane_select_open', paneId: 'pane-multi' }));
+    api.dispatchMsg(api.wrap('layout', { type: 'pane_menu_open', paneId: 'pane-multi' }));
     const before = JSON.stringify(route.getInstanceSlice('layout').arrange.columns
       .map(c => (c.panels || []).map(p => ({ id: p.id, tabs: (p.tabs || []).map(t => t.poolId) }))));
     api.dispatchMsg(api.wrap('layout', {
@@ -478,14 +469,14 @@ describe('[7] pool_swap_by_id — SWAP / REPLACE / invariants', () => {
     const after = JSON.stringify(route.getInstanceSlice('layout').arrange.columns
       .map(c => (c.panels || []).map(p => ({ id: p.id, tabs: (p.tabs || []).map(t => t.poolId) }))));
     eq(after, before, 'multi-tab pane unchanged (REPLACE refused)');
-    eq(getModel().modes.paneSelectMode, false, 'overlay still closes on refuse');
+    eq(getModel().modes.paneMenuMode, false, 'overlay still closes on refuse');
   });
 
   it('T2-b — REPLACE on single-tab target still works', () => {
     setupRich();
     // pane-groups is single-tab. REPLACE with hidden `extra` should
     // succeed as before — the refuse-guard only fires for multi-tab.
-    api.dispatchMsg(api.wrap('layout', { type: 'pane_select_open', paneId: 'pane-groups' }));
+    api.dispatchMsg(api.wrap('layout', { type: 'pane_menu_open', paneId: 'pane-groups' }));
     api.dispatchMsg(api.wrap('layout', {
       type: 'pool_swap_by_id', targetPaneId: 'pane-groups', pickedId: 'extra',
     }));
@@ -494,8 +485,7 @@ describe('[7] pool_swap_by_id — SWAP / REPLACE / invariants', () => {
 
   it('T2-a — SWAP across columns strips heightPct (column-local share)', () => {
     const layout = route.getInstanceSlice('layout');
-    layout.paneSelect = null;
-    layout.tabListOwnerPaneId = null;
+    layout.paneMenu = { targetPaneId: null, cursor: 0, scroll: 0 };
     layout.freeConfig = { drag: null, undo: [], redo: [], titleEdit: { text: '' }, notice: null, noticeKind: null };
     layout.arrange = {
       columns: [
@@ -520,9 +510,9 @@ describe('[7] pool_swap_by_id — SWAP / REPLACE / invariants', () => {
       },
       detailHeightPct: 60,
     };
-    getModel().modes.paneSelectMode = false;
+    getModel().modes.paneMenuMode = false;
     // SWAP groups (col 0, heightPct=60) with extra (col 1, heightPct=70).
-    api.dispatchMsg(api.wrap('layout', { type: 'pane_select_open', paneId: 'pane-groups' }));
+    api.dispatchMsg(api.wrap('layout', { type: 'pane_menu_open', paneId: 'pane-groups' }));
     api.dispatchMsg(api.wrap('layout', {
       type: 'pool_swap_by_id', targetPaneId: 'pane-groups', pickedId: 'extra',
     }));
@@ -546,7 +536,7 @@ describe('[7] pool_swap_by_id — SWAP / REPLACE / invariants', () => {
     const arr = route.getInstanceSlice('layout').arrange;
     arr.columns[0].panels[0].heightPct = 60;
     arr.columns[0].panels[1].heightPct = 40;
-    api.dispatchMsg(api.wrap('layout', { type: 'pane_select_open', paneId: 'pane-groups' }));
+    api.dispatchMsg(api.wrap('layout', { type: 'pane_menu_open', paneId: 'pane-groups' }));
     api.dispatchMsg(api.wrap('layout', {
       type: 'pool_swap_by_id', targetPaneId: 'pane-groups', pickedId: 'stats',
     }));
@@ -561,24 +551,24 @@ describe('[7] pool_swap_by_id — SWAP / REPLACE / invariants', () => {
   });
 });
 
-describe('[4] modes registry has paneSelectMode', () => {
+describe('[4] modes registry has paneMenuMode', () => {
   const modes = require('../dispatch/modes');
-  it('paneSelectMode is in CHAIN_MODES', () => {
-    assert(modes.CHAIN_MODES.includes('paneSelectMode'));
+  it('paneMenuMode is in CHAIN_MODES', () => {
+    assert(modes.CHAIN_MODES.includes('paneMenuMode'));
   });
-  it('paneSelectMode is an overlay mode (full-repaint on close)', () => {
-    const s = { paneSelectMode: true };
+  it('paneMenuMode is an overlay mode (full-repaint on close)', () => {
+    const s = { paneMenuMode: true };
     eq(modes.isOverlayActive(s), true);
   });
-  it('paneSelectMode is NOT modal (footer not owned)', () => {
-    const s = { paneSelectMode: true };
+  it('paneMenuMode is NOT modal (footer not owned)', () => {
+    const s = { paneMenuMode: true };
     eq(modes.isModal(s), false);
   });
   // Regression: runtime.js#init must include every MODES entry, or
   // mode_set/mode_clear refuses to flip the flag (the `in modes`
-  // guard short-circuits). Pre-fix, paneSelectMode was missing from
+  // guard short-circuits). Pre-fix, paneMenuMode was missing from
   // init's hardcoded list — overlay never painted in production
-  // (tests masked it by writing m.modes.paneSelectMode = false in
+  // (tests masked it by writing m.modes.paneMenuMode = false in
   // setup). Derived-init prevents the regression.
   it('runtime model exposes every MODES flag (no init drift)', () => {
     const fresh = require('../app/runtime').init();
@@ -586,6 +576,50 @@ describe('[4] modes registry has paneSelectMode', () => {
       assert(md.flag in fresh.modes, `${md.flag} missing from runtime init`);
       eq(fresh.modes[md.flag], false, `${md.flag} not false on init`);
     }
+  });
+});
+
+describe('[8] paneMenuPanes — viewer-inclusive, mode-aware (v0.6.4 #1 Step 2)', () => {
+  const mpool = require('../leaves/pool');
+  function arr() {
+    return {
+      columns: [
+        { width: 24, panels: [
+          { type: 'groups', id: 'groups', paneId: 'pane-groups' },
+        ] },
+        { panels: [
+          { type: 'detail', id: 'd1', paneId: 'pane-d1' },
+          { type: 'detail', id: 'd2', paneId: 'pane-d2' },
+        ] },
+      ],
+      pool: {
+        groups: { id: 'groups', type: 'groups', title: 'Groups' },
+        d1: { id: 'd1', type: 'detail', title: 'V1' },
+        d2: { id: 'd2', type: 'detail', title: 'V2' },
+        hid: { id: 'hid', type: 'stats', title: 'Hidden' },
+      },
+    };
+  }
+  it('INCLUDES viewers (unlike paneSelectItems) + carries paneId', () => {
+    const list = mpool.paneMenuPanes(arr(), 'pane-d1', 'half');
+    const ids = list.map(x => x.id);
+    assert(ids.includes('d1') && ids.includes('d2'), 'both viewers listed');
+    assert(ids.includes('groups'), 'navigator listed');
+    const d1 = list.find(x => x.id === 'd1');
+    eq(d1.paneId, 'pane-d1', 'paneId carried for placed entries');
+    eq(d1.status, 'here', 'target tagged here');
+    eq(list.find(x => x.id === 'd2').status, 'placed');
+  });
+  it('half/full = placed only (hidden pool entries excluded)', () => {
+    const half = mpool.paneMenuPanes(arr(), 'pane-d1', 'half');
+    assert(!half.some(x => x.id === 'hid'), 'hidden excluded in half');
+    const full = mpool.paneMenuPanes(arr(), 'pane-d1', 'full');
+    assert(!full.some(x => x.id === 'hid'), 'hidden excluded in full');
+  });
+  it('normal = placed + hidden (pool_swap can place a hidden entry)', () => {
+    const normal = mpool.paneMenuPanes(arr(), 'pane-groups', 'normal');
+    const hid = normal.find(x => x.id === 'hid');
+    assert(hid && hid.status === 'hidden' && hid.paneId === null, 'hidden listed with null paneId');
   });
 });
 

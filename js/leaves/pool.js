@@ -406,6 +406,48 @@ function paneSelectItems(arrange, targetPaneId) {
   return items;
 }
 
+/** v0.6.4 #1 Step 2 — the Panes section for the unified `[≡]` pane-menu.
+ *  Like paneSelectItems but:
+ *    - INCLUDES viewers (no detail exclusion) — so two viewers can be
+ *      placed side-by-side in half view;
+ *    - carries each placed entry's `paneId` (view_place_pane / focus_set
+ *      address panes by paneId, not pool id);
+ *    - `mode` gates the hidden bucket: 'normal' lists placed + hidden
+ *      (pool_swap can place a hidden entry); 'half'/'full' list PLACED
+ *      ONLY (a projection can only show / focus an already-placed pane).
+ *  Each item: { id, paneId|null, type, title, status:'here'|'placed'|
+ *  'hidden', columnIndex|null }. */
+function paneMenuPanes(arrange, targetPaneId, mode) {
+  if (!arrange || !arrange.pool) return [];
+  const includeHidden = mode === 'normal' || mode == null;
+  const items = [];
+  for (let ci = 0; ci < (arrange.columns || []).length; ci++) {
+    const panels = (arrange.columns[ci] && arrange.columns[ci].panels) || [];
+    for (const p of panels) {
+      if (!p || !p.id) continue;
+      const entry = arrange.pool[p.id];
+      if (!entry) continue;
+      const status = (p.paneId === targetPaneId) ? 'here' : 'placed';
+      items.push({
+        id: entry.id, paneId: p.paneId || null, type: entry.type,
+        title: entry.title, status, columnIndex: ci,
+      });
+    }
+  }
+  if (includeHidden) {
+    const allPlaced = placedIdSet(arrange);
+    for (const id of Object.keys(arrange.pool)) {
+      if (allPlaced.has(id)) continue;
+      const entry = arrange.pool[id];
+      items.push({
+        id: entry.id, paneId: null, type: entry.type, title: entry.title,
+        status: 'hidden', columnIndex: null,
+      });
+    }
+  }
+  return items;
+}
+
 module.exports = {
   columnCount, lastColumnIndex, getColumn,
   columnPanels, lastColumnPanels,
@@ -421,6 +463,7 @@ module.exports = {
   orphanPlacements,
   panelListItems,
   paneSelectItems,
+  paneMenuPanes,
   placementFromPoolEntry,
   isDetailPane, isActionsPane, isReservedPane,
   findDetailPane,

@@ -26,14 +26,14 @@ const pane = (extras = {}) => ({
 // ---------- chromeFor projection ----------
 
 describe('[1] chromeFor: non-detail pane defaults', () => {
-  it('uncollapsed pane gets collapse=collapse, no close, [≡] always (D1 pane-select)', () => {
+  it('uncollapsed pane gets collapse=collapse, no close, [≡] passthrough', () => {
     const c = chromeFor(pane(), { freeConfigMode: false, dragging: false });
     eq(c.collapse, 'collapse');
     eq(c.close, null);
-    // v0.6.3 D1 — non-detail [≡] is now the ALWAYS-visible pane-select
-    // trigger (user's "like tabs, always there" choice); pre-D1 the
-    // glyph only painted when pane.tabs.length >= 2.
-    eq(c.tabTrigger, 'available', 'pane-select [≡] always present on non-detail');
+    // v0.6.4 #1 Step 2 — [≡] is the unified pane-menu trigger; chromeFor
+    // surfaces ctx.paneMenuTriggerState verbatim (visibility decided
+    // upstream in the render pass). Default (no ctx) = 'available'.
+    eq(c.tabTrigger, 'available', 'pane-menu [≡] default available');
   });
   it('collapsed pane gets collapse=expand (the [+] glyph)', () => {
     const c = chromeFor(pane({ collapsed: true }), { freeConfigMode: false, dragging: false });
@@ -49,24 +49,23 @@ describe('[1] chromeFor: non-detail pane defaults', () => {
 describe('[2] chromeFor: detail pane', () => {
   it('detail never gets collapse or close (essential)', () => {
     const detail = { type: 'detail', tabs: [{ id: 'detail', poolId: 'detail' }] };
-    const c = chromeFor(detail, { freeConfigMode: true, dragging: false, viewerTabCount: 5 });
+    const c = chromeFor(detail, { freeConfigMode: true, dragging: false, paneMenuTriggerState: 'available' });
     eq(c.collapse, null);
     eq(c.close, null, 'detail not closable even in free-config');
   });
-  it('[≡] tracks viewer tab count, not pane.tabs.length', () => {
+  it('detail [≡] surfaces paneMenuTriggerState like any pane (no special tab-count gate)', () => {
+    // v0.6.4 #1 Step 2 — the per-pane "has ≥2 tabs" visibility gate moved
+    // UPSTREAM (paint.js paneMenuTriggerStateFor). chromeFor is a uniform
+    // passthrough: 'hidden' → null, everything else → that state.
     const detail = { type: 'detail', tabs: [{ id: 'detail' }] };
-    const c1 = chromeFor(detail, { viewerTabCount: 5 });
-    eq(c1.tabTrigger, 'available', '5 tabs → [≡] shown');
-    const c2 = chromeFor(detail, { viewerTabCount: 1 });
-    eq(c2.tabTrigger, null, '1 tab → [≡] hidden');
-    const c3 = chromeFor(detail, { viewerTabCount: 2 });
-    eq(c3.tabTrigger, 'available', '2 tabs → [≡] shown');
+    eq(chromeFor(detail, { paneMenuTriggerState: 'available' }).tabTrigger, 'available');
+    eq(chromeFor(detail, { paneMenuTriggerState: 'hidden' }).tabTrigger, null);
   });
   it('[≡] state passes through (open/disabled/hidden)', () => {
     const detail = { type: 'detail', tabs: [{ id: 'detail' }] };
-    eq(chromeFor(detail, { viewerTabCount: 3, tabTriggerState: 'open' }).tabTrigger, 'open');
-    eq(chromeFor(detail, { viewerTabCount: 3, tabTriggerState: 'disabled' }).tabTrigger, 'disabled');
-    eq(chromeFor(detail, { viewerTabCount: 3, tabTriggerState: 'hidden' }).tabTrigger, null);
+    eq(chromeFor(detail, { paneMenuTriggerState: 'open' }).tabTrigger, 'open');
+    eq(chromeFor(detail, { paneMenuTriggerState: 'disabled' }).tabTrigger, 'disabled');
+    eq(chromeFor(detail, { paneMenuTriggerState: 'hidden' }).tabTrigger, null);
   });
 });
 
@@ -79,25 +78,20 @@ describe('[3] chromeFor: drag suppresses all chrome', () => {
   });
 });
 
-describe('[4] chromeFor: non-detail [≡] = pane-select trigger (D1)', () => {
-  // v0.6.3 D1 — non-detail [≡] is ALWAYS the pane-select trigger
-  // regardless of pane.tabs.length; tab.length doesn't gate.
-  it('singleton-tab pane still gets [≡] (was hidden pre-D1)', () => {
-    const p = pane({ tabs: [{ id: 'a' }] });
-    const c = chromeFor(p, { freeConfigMode: false });
+describe('[4] chromeFor: every pane surfaces paneMenuTriggerState', () => {
+  // v0.6.4 #1 Step 2 — the [≡] glyph is the unified pane-menu trigger on
+  // every pane; chromeFor is a dumb passthrough of ctx.paneMenuTriggerState
+  // (the render pass decides per-pane visibility / open / disabled).
+  it('default (no ctx) = available', () => {
+    const c = chromeFor(pane(), { freeConfigMode: false });
     eq(c.tabTrigger, 'available');
   });
-  it('multi-tab pane gets [≡] (unchanged)', () => {
-    const p = pane({ tabs: [{ id: 'a' }, { id: 'b' }] });
-    const c = chromeFor(p, { freeConfigMode: false });
-    eq(c.tabTrigger, 'available');
-  });
-  it('paneSelectTriggerState passes through (available/open/disabled/hidden)', () => {
+  it('paneMenuTriggerState passes through (available/open/disabled/hidden)', () => {
     const p = pane();
-    eq(chromeFor(p, { paneSelectTriggerState: 'open' }).tabTrigger, 'open');
-    eq(chromeFor(p, { paneSelectTriggerState: 'disabled' }).tabTrigger, 'disabled');
-    eq(chromeFor(p, { paneSelectTriggerState: 'hidden' }).tabTrigger, null);
-    eq(chromeFor(p, { paneSelectTriggerState: 'available' }).tabTrigger, 'available');
+    eq(chromeFor(p, { paneMenuTriggerState: 'open' }).tabTrigger, 'open');
+    eq(chromeFor(p, { paneMenuTriggerState: 'disabled' }).tabTrigger, 'disabled');
+    eq(chromeFor(p, { paneMenuTriggerState: 'hidden' }).tabTrigger, null);
+    eq(chromeFor(p, { paneMenuTriggerState: 'available' }).tabTrigger, 'available');
   });
 });
 

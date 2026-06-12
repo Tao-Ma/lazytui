@@ -317,93 +317,106 @@ function handleRegisterPopupKey(key, seq) {
   if (seq === 'd')                   { applyMsg({ type: 'register_popup_drop', vh }); return; }
 }
 
-function handleTabListKey(key, seq) {
-  // Routes overlay keys into the tabList reducer on the detail slice.
-  // `vh` (viewport rows of the overlay) and `tabCount` are view-derived
-  // — resolved here off the overlay module so the reducer can stay pure.
-  const overlay = require('../overlay/tab-list');
-  // v0.6.1 Phase 8 — tab-list overlay key handler targets the pane that
-  // owns the open overlay (layout.tabListOwnerPaneId), not the singleton
-  // 'detail' kind. Fallback 'detail' covers the pre-init boot edge.
-  // v0.6.4 — vh/tabCount are per-pane; read them off the owner so the
-  // reducer clamps against the owner's tabs, not the primary's.
+// v0.6.4 #1 Step 2 — the unified `[≡]` pane-menu key handler (merges the
+// former handleTabListKey + handlePaneSelectKey). Nav math is shared;
+// the PICK branches by the highlighted row's section (tab vs pane). vh +
+// item count are view-derived (read off overlay/pane-menu) so the
+// reducer stays pure.
+function handlePaneMenuKey(key, seq) {
+  const overlay = require('../overlay/pane-menu');
   const layoutSlice = getInstanceSlice('layout');
-  const ownerPaneId = (layoutSlice && layoutSlice.tabListOwnerPaneId) || 'detail';
-  const flat = overlay._flatTabs(ownerPaneId);
-  const vh = overlay.viewportRows(ownerPaneId);
-  const tabCount = flat.length;
-  const send = (m) => dispatchMsg(wrap(ownerPaneId, m));
-  if (key === 'escape' || seq === 'T' || key === 'T') { send({ type: 'tab_list_close' }); return; }
+  const target = (layoutSlice && layoutSlice.paneMenu && layoutSlice.paneMenu.targetPaneId) || null;
+  // Wrapped layout Msgs route via dispatchMsg (api), NOT applyMsg — applyMsg
+  // feeds the ROOT reducer, whose switch has no arm for {kind,msg} (it would
+  // silently no-op; this was a latent bug in the old pane-select handler).
+  const close = () => dispatchMsg(wrap('layout', { type: 'pane_menu_close' }));
+  if (!target) { close(); return; }  // defensive: stuck flag, no target
+  const all = overlay.items(target);
+  const n = all.length;
+  const vh = overlay.viewportRows(target);
+  const cursor = (layoutSlice.paneMenu.cursor | 0) || 0;
+  // Esc closes; `T` toggles the menu closed (matches the old tab-list T).
+  if (key === 'escape' || seq === 'T' || key === 'T') { close(); return; }
+  if (key === 'up'   || seq === 'k') { dispatchMsg(wrap('layout', { type: 'pane_menu_nav', dir: -1, n, vh })); return; }
+  if (key === 'down' || seq === 'j') { dispatchMsg(wrap('layout', { type: 'pane_menu_nav', dir: +1, n, vh })); return; }
+  if (seq === 'g')                   { dispatchMsg(wrap('layout', { type: 'pane_menu_nav', to: 'top',      n, vh })); return; }
+  if (seq === 'G')                   { dispatchMsg(wrap('layout', { type: 'pane_menu_nav', to: 'bottom',   n, vh })); return; }
+  if (key === 'pageup'   || seq === ',') { dispatchMsg(wrap('layout', { type: 'pane_menu_nav', to: 'pageup',   n, vh })); return; }
+  if (key === 'pagedown' || seq === '.') { dispatchMsg(wrap('layout', { type: 'pane_menu_nav', to: 'pagedown', n, vh })); return; }
   if (key === 'return') {
-    // v0.6.3 Phase 3f: thread targetKey + currentGroup so the leaf's
-    // tab_list_pick arm doesn't need ctx.getModel to resolve them.
-    const pt = require('../leaves/pane-tabs');
-    const ownerSlice = getInstanceSlice(ownerPaneId);
-    const idx = (ownerSlice && ownerSlice.tabList && (ownerSlice.tabList.cursor | 0)) || 0;
-    const m = getModel();
-    send({
-      type: 'tab_list_pick',
-      targetKey: pt.resolveTabKey(idx, { ...ownerSlice, tab: idx }, m),
-      currentGroup: m.currentGroup,
-    });
+    const item = all[cursor];
+    if (!item) { close(); return; }
+    _paneMenuPick(target, item);
     return;
   }
-  if (key === 'up' || seq === 'k')   { send({ type: 'tab_list_nav', dir: -1, vh, tabCount }); return; }
-  if (key === 'down' || seq === 'j') { send({ type: 'tab_list_nav', dir: +1, vh, tabCount }); return; }
-  if (seq === 'g')                   { send({ type: 'tab_list_nav', to: 'top',      vh, tabCount }); return; }
-  if (seq === 'G')                   { send({ type: 'tab_list_nav', to: 'bottom',   vh, tabCount }); return; }
-  if (seq === ',' || key === 'pageup')   { send({ type: 'tab_list_nav', to: 'pageup',   vh, tabCount }); return; }
-  if (seq === '.' || key === 'pagedown') { send({ type: 'tab_list_nav', to: 'pagedown', vh, tabCount }); return; }
   if (seq === 'x') {
-    const slice = getInstanceSlice(ownerPaneId);
-    const tl = slice && slice.tabList;
-    if (!tl || !tl.open) return;
-    const row = flat[tl.cursor];
-    if (!row || !row.closeable) return;  // Info / action / yaml-term: silent no-op
-    // Thread currentGroup so the reducer arm builds Cmd payloads
-    // (viewer_remove_content_tab / viewer_remove_ephemeral_terminal)
-    // without reading getModel() (TEA: pure of model state).
-    send({ type: 'tab_list_close_selected', closeKind: row.closeKind, closeKey: row.closeKey, currentGroup: getModel().currentGroup });
+    // Close the highlighted closeable TAB row (viewer content / ephemeral
+    // terminal). Non-closeable rows + pane rows: silent no-op. The menu
+    // stays open and re-renders with the row gone.
+    const item = all[cursor];
+    if (!item || item.section !== 'tab' || !item.closeable) return;
+    const m = getModel();
+    const removeMsg = item.closeKind === 'content'
+      ? { type: 'viewer_remove_content_tab', groupName: m.currentGroup, key: item.closeKey }
+      : { type: 'viewer_remove_ephemeral_terminal', groupName: m.currentGroup, key: item.closeKey };
+    dispatchMsg(wrap(target, removeMsg));
   }
 }
 
-// v0.6.3 D2 — pane-select overlay key handler. Mirrors tab-list:
-// up/down/Enter/Esc + page nav. D3 wires pick semantics; for now
-// pick simply closes (no-op acknowledgement) until pool_swap_by_id
-// lands.
-function handlePaneSelectKey(key, seq) {
-  if (key === 'escape') {
-    applyMsg(wrap('layout', { type: 'pane_select_close' }));
-    return;
-  }
-  const overlay = require('../overlay/pane-select');
-  const all = overlay.items();
-  const n = all.length;
-  const vh = overlay.viewportRows();
-  if (key === 'up'   || seq === 'k') { applyMsg(wrap('layout', { type: 'pane_select_nav', dir: -1, n, vh })); return; }
-  if (key === 'down' || seq === 'j') { applyMsg(wrap('layout', { type: 'pane_select_nav', dir: +1, n, vh })); return; }
-  if (seq === 'g')                   { applyMsg(wrap('layout', { type: 'pane_select_nav', to: 'top',      n, vh })); return; }
-  if (seq === 'G')                   { applyMsg(wrap('layout', { type: 'pane_select_nav', to: 'bottom',   n, vh })); return; }
-  if (key === 'pageup'   || seq === ',') { applyMsg(wrap('layout', { type: 'pane_select_nav', to: 'pageup',   n, vh })); return; }
-  if (key === 'pagedown' || seq === '.') { applyMsg(wrap('layout', { type: 'pane_select_nav', to: 'pagedown', n, vh })); return; }
-  if (key === 'return') {
-    // v0.6.3 D3 — pick semantics. pool_swap_by_id handles SWAP /
-    // REPLACE / no-op + invariant guards; its arm also emits the
-    // close Cmd so Enter always exits the overlay (even on refused
-    // picks — the user can't tell "invalid" from "unchanged"
-    // without leaving).
-    const layoutSlice = require('../panel/route').getInstanceSlice('layout');
-    const ps = layoutSlice && layoutSlice.paneSelect;
-    if (!ps) { applyMsg(wrap('layout', { type: 'pane_select_close' })); return; }
-    const item = all[ps.cursor || 0];
-    if (!item) { applyMsg(wrap('layout', { type: 'pane_select_close' })); return; }
-    applyMsg(wrap('layout', {
-      type: 'pool_swap_by_id',
-      targetPaneId: ps.targetPaneId,
-      pickedId: item.id,
+// Resolve a pane-menu pick → reducer Msg(s) by the row's section AND the
+// current view mode (the projection / policy layer). Routing reads
+// (getModel / view mode / half-view slot) stay out here — this is a
+// dispatcher, not the reducer.
+//   tab row            → switch the viewer's active tab (+ focus + close)
+//   pane row / normal   → pool_swap_by_id (edit arrange; policy guards)
+//   pane row / half     → view_place_pane the picked pane into THIS slot
+//                         (pane_menu_place handles swap-if-in-other-slot)
+//   pane row / full     → focus_set (full projects the focused pane)
+function _paneMenuPick(target, item) {
+  if (!item) return;
+  // Wrapped layout Msgs route via dispatchMsg (api), not applyMsg (root).
+  const close = () => dispatchMsg(wrap('layout', { type: 'pane_menu_close' }));
+  if (item.section === 'tab') {
+    // Replicate the retired tab_list_pick cascade: close the menu, focus
+    // the viewer, switch its active tab. targetKey + currentGroup are
+    // view-derived (threaded so the viewer's tab_switch arm stays pure).
+    const pt = require('../leaves/pane-tabs');
+    const slice = getInstanceSlice(target);
+    const idx = item.tabIdx | 0;
+    const m = getModel();
+    close();
+    dispatchMsg(wrap('layout', { type: 'focus_set', focus: target }));
+    dispatchMsg(wrap(target, {
+      type: 'tab_switch', idx,
+      targetKey: pt.resolveTabKey(idx, { ...slice, tab: idx }, m),
+      currentGroup: m.currentGroup,
     }));
     return;
   }
+  // Pane row — resolve by view mode.
+  const layoutSlice = getInstanceSlice('layout');
+  const mode = (layoutSlice && layoutSlice.viewMode) || 'normal';
+  if (mode === 'half') {
+    // half/full pane rows are placed-only, so item.paneId is set; guard
+    // defensively. Slot = the slot the clicked-on pane currently occupies.
+    if (!item.paneId) { close(); return; }
+    const proj = require('../render/geometry-core').halfProjection(layoutSlice);
+    const slot = proj.left === target ? 'left' : 'right';
+    dispatchMsg(wrap('layout', { type: 'pane_menu_place', slot, paneId: item.paneId }));
+    close();
+    return;
+  }
+  if (mode === 'full') {
+    if (!item.paneId) { close(); return; }
+    close();
+    dispatchMsg(wrap('layout', { type: 'focus_set', focus: item.paneId }));
+    return;
+  }
+  // normal — pool_swap_by_id handles SWAP / REPLACE / no-op + invariant
+  // guards; its arm emits the close Cmd so Enter always exits the menu.
+  dispatchMsg(wrap('layout', {
+    type: 'pool_swap_by_id', targetPaneId: target, pickedId: item.id,
+  }));
 }
 
 function handleJobsKey(key, seq) {
@@ -552,19 +565,21 @@ function handleNormalKey(key, seq) {
       break;
     case 'r':              handleAction('refresh'); break;
     case 'T': {
-      // Open the tab-list overlay anchored to the focused-or-sticky
-      // viewer's `[≡]` trigger. vh + tabCount are view-derived (read
-      // off overlay/tab-list); the reducer clamps cursor at the active
-      // tab + computes initial scroll. v0.6.1 Phase 8 — resolveTarget
-      // picks the destination pane; null = no viewer, drop.
+      // Open the unified pane-menu anchored to the focused-or-sticky
+      // viewer's `[≡]` trigger. The cursor seeds at the viewer's active
+      // tab (mirrors the retired tab_list_open positioning); scroll keeps
+      // it in view. v0.6.1 Phase 8 — resolveTarget picks the destination
+      // pane; null = no viewer, drop. (Phase 1 keeps `T` viewer-only;
+      // generalizing the keyboard opener to any focused pane is Phase 2.)
       const target = route.resolveTarget('viewer');
       if (!target) break;
-      const overlay = require('../overlay/tab-list');
-      dispatchMsg(wrap(target, {
-        type: 'tab_list_open',
-        vh: overlay.viewportRows(target),
-        tabCount: overlay._flatTabs(target).length,
-      }));
+      const overlay = require('../overlay/pane-menu');
+      const tabCount = overlay.items(target).length;
+      const vh = overlay.viewportRows(target);
+      const tab = (getInstanceSlice(target) || {}).tab | 0;
+      const cursor = Math.max(0, Math.min(tab, Math.max(0, tabCount - 1)));
+      const scroll = cursor >= vh ? Math.min(cursor - vh + 1, Math.max(0, tabCount - vh)) : 0;
+      dispatchMsg(wrap('layout', { type: 'pane_menu_open', paneId: target, cursor, scroll }));
       break;
     }
     case 'x': {
@@ -810,8 +825,7 @@ const _modeHandlers = {
   // route through `focus_set` → `show_selected_info`. No per-keystroke
   // refresh needed.
   cmdMode:             (key, seq) => handleCmdlineKey(key, seq),
-  tabListMode:         (key, seq) => handleTabListKey(key, seq),
-  paneSelectMode:      (key, seq) => handlePaneSelectKey(key, seq),
+  paneMenuMode:        (key, seq) => handlePaneMenuKey(key, seq),
   jobsMode:            (key, seq) => handleJobsKey(key, seq),
   diagLogMode:         (key, seq) => handleDiagLogKey(key, seq),
 };
@@ -942,6 +956,9 @@ function applyMsg(msg) {
 module.exports = {
   handleKey, handleAction, applyMsg, navSelect,
   showSelectedInfo,
+  // v0.6.4 #1 Step 2 — pane-menu pick resolution, shared with the mouse
+  // handler in input.js (single source for tab vs pane routing).
+  _paneMenuPick,
   registerKeyFilter, clearKeyFilters,
   loadKeyBindings,
   loadMouseBindings,

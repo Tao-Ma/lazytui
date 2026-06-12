@@ -19,10 +19,10 @@ const { getModel } = require('../app/runtime');
 describe('[1] registry derivations', () => {
   it('CHAIN_MODES is the modeChain precedence order', () => {
     eq(modes.CHAIN_MODES.join(','),
-       'confirmMode,promptMode,freeConfigTitleEditMode,freeConfigMode,menuOpen,filterMode,copyMode,detailSearchMode,registerPopupMode,prefixMode,cmdMode,tabListMode,paneSelectMode,jobsMode,diagLogMode');
+       'confirmMode,promptMode,freeConfigTitleEditMode,freeConfigMode,menuOpen,filterMode,copyMode,detailSearchMode,registerPopupMode,prefixMode,cmdMode,paneMenuMode,jobsMode,diagLogMode');
   });
   it('isOverlayActive matches the pre-registry hardcoded list', () => {
-    const overlay = ['copyMode','menuOpen','freeConfigMode','cmdMode','confirmMode','promptMode','registerPopupMode','prefixMode','tabListMode','paneSelectMode','jobsMode','diagLogMode'];
+    const overlay = ['copyMode','menuOpen','freeConfigMode','cmdMode','confirmMode','promptMode','registerPopupMode','prefixMode','paneMenuMode','jobsMode','diagLogMode'];
     for (const f of modes.MODES.map(m => m.flag)) {
       const s = {}; s[f] = true;
       eq(modes.isOverlayActive(s), overlay.includes(f), `${f} overlay`);
