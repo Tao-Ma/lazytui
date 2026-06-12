@@ -160,6 +160,24 @@ describe('[6] renderPanel without chrome opt: pre-P4.2 path (bare border)', () =
   });
 });
 
+describe('[6b] renderPanel: all-null chrome (the dragging shape) still draws the top border', () => {
+  it('chrome {collapse:null, close:null, tabTrigger:null} → bare border, not a blank row', () => {
+    // Regression (user-reported v0.6.4 RC): chromeFor returns this
+    // exact shape while ctx.dragging — `let top;` (undefined) skipped
+    // BOTH the chrome branch (no glyph wanted) and the bare-border
+    // fallback (gated on top === null), so every pane painted an
+    // EMPTY top row for the whole duration of any free-config drag.
+    const out = renderPanel({
+      width: 30, height: 5, lines: ['hi'], title: 'Groups', hotkey: '2', focused: false,
+      chrome: { collapse: null, close: null, tabTrigger: null },
+    });
+    const top = out.split('\n')[0];
+    const plain = stripMarkup(top);
+    assert(/^╭─\(2\)─Groups/.test(plain), `bare border drawn, got ${JSON.stringify(plain)}`);
+    eq(visibleLen(top), 30, 'full-width border row');
+  });
+});
+
 describe('[7] renderPanel: top border width is exactly width cells visible', () => {
   it('chrome opt → visible width matches', () => {
     const W = 40;

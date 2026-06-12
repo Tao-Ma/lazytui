@@ -91,7 +91,12 @@ function renderPanel({
   // doesn't fit (panel too narrow) is silently omitted by reverting
   // to the pre-P4 bare-border composition. Without `chrome` opt, the
   // pre-P4 path runs verbatim.
-  let top;
+  // null (not undefined): a truthy chrome object whose glyphs are ALL
+  // null (chromeFor's dragging shape) skips the chrome branch below,
+  // and the bare-border fallback gates on `top === null` — an
+  // undefined `top` slipped past BOTH and painted an empty row, so
+  // every pane lost its top border during any free-config drag.
+  let top = null;
   const wantLeftTrigger  = chrome && chrome.tabTrigger;
   const wantRightCollapse = chrome && chrome.collapse;
   const wantRightClose    = chrome && chrome.close;
