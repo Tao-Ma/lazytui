@@ -327,7 +327,67 @@ const { wrap } = route;
  */
 const BROADCAST_TYPES = new Set(['refresh', 'hub', 'action']);
 
+// ——— Post-dispatch invariant pass (resize-as-Msg P2) ———————————————
+//
+// After the OUTERMOST dispatch completes, re-clamp every navigator
+// pane's scroll so the selected row sits inside its viewport. The
+// safety-net property the per-frame render clamp had ("catches
+// cursor-off-viewport from ANY cause without enumerating Msgs")
+// carries over because every state change IS a dispatch — cursor
+// moves, list shrinks (refresh broadcasts), collapse, drag-resize,
+// view-mode switches, and (since P1) terminal resize all arrive here.
+//
+// Freshness: the pass computes calcLayout itself and threads the
+// Layout into getPanelViewportH — slice.paneBounds is the LAST
+// RENDER's write at dispatch time, stale by exactly the one-frame
+// class 8eea6e9 fixed on the render side.
+//
+// Depth counter: both top-level entries (dispatchMsg +
+// dispatchKeyToFocused) share it, so effect-chained nested dispatches
+// run the pass once, at depth-0 exit. The _inScrollFinalize flag makes
+// the pass's own set_scroll dispatches (syncPanelScroll → _navDispatch
+// → dispatchMsg) skip re-finalizing — explicit beats relying on
+// bounded-depth convergence.
+//
+// Writes stay single-writer: syncPanelScroll routes a wrapped
+// set_scroll Msg to the owning navigator's reducer (identity-
+// preserving — no ping-pong). Lazy requires: app/state requires
+// panel/api at load (cycle); leaves are cycle-safe but follow suit.
+let _dispatchDepth = 0;
+let _inScrollFinalize = false;
+
+function _finalizeDispatch() {
+  if (_inScrollFinalize) return;
+  const layoutSlice = route.getInstanceSlice('layout');
+  if (!layoutSlice || !layoutSlice.dims || !layoutSlice.arrange) return;
+  _inScrollFinalize = true;
+  try {
+    const geo = require('../leaves/geometry');
+    const mpool = require('../leaves/pool');
+    const { syncPanelScroll } = require('../app/state');
+    const layout = geo.calcLayout(layoutSlice, layoutSlice.dims);
+    for (const p of mpool.allPanesInColumns(layoutSlice.arrange)) {
+      if (mpool.isDetailPane(p) || p.collapsed) continue;
+      syncPanelScroll(p.paneId,
+        geo.getPanelViewportH(layoutSlice, p.paneId, layoutSlice.dims, layout));
+    }
+  } catch (e) {
+    console.error(`[dispatch] post-dispatch scroll clamp error: ${e.message}`);
+  } finally {
+    _inScrollFinalize = false;
+  }
+}
+
 function dispatchMsg(msg) {
+  _dispatchDepth++;
+  try { _dispatchMsgInner(msg); }
+  finally {
+    _dispatchDepth--;
+    if (_dispatchDepth === 0) _finalizeDispatch();
+  }
+}
+
+function _dispatchMsgInner(msg) {
   // Free-config freeze gate. While free-config mode is active, only
   // layout-wrapped Msgs flow (they drive the mode itself: free_config_*,
   // pool_*, focus_set, view_*, set_arrange). Broadcasts (refresh / hub
@@ -429,6 +489,15 @@ function dispatchMsg(msg) {
  * branch that handles the key decides whether to suppress the default.
  */
 function dispatchKeyToFocused(key, seq) {
+  _dispatchDepth++;
+  try { return _dispatchKeyToFocusedInner(key, seq); }
+  finally {
+    _dispatchDepth--;
+    if (_dispatchDepth === 0) _finalizeDispatch();
+  }
+}
+
+function _dispatchKeyToFocusedInner(key, seq) {
   const focus = route.getFocus();
   const compName = route.componentForPanel(focus);
   if (!compName) return false;

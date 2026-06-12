@@ -251,7 +251,7 @@ function halfProjection(layoutSlice) {
   return { left, right };
 }
 
-function getPanelViewportH(layoutSlice, paneId, dims) {
+function getPanelViewportH(layoutSlice, paneId, dims, layout) {
   if (!layoutSlice) return 1;
   const availH = Math.max(6, dims.rows - 1);
   // Half/full view: an on-screen panel takes the full availH — beats any
@@ -268,6 +268,16 @@ function getPanelViewportH(layoutSlice, paneId, dims) {
     onScreen = paneId === focus;
   }
   if (onScreen) return Math.max(1, availH - 2);
+  // resize-as-Msg P2 — optional precomputed-Layout override. The
+  // dispatch finalizer judges against the rects it JUST computed:
+  // at dispatch time slice.paneBounds still holds the last render's
+  // write (the same staleness class as the resize clamp lag fixed on
+  // the render side in 8eea6e9). Callers without a fresh Layout omit
+  // the param and keep the boundsFor path below.
+  if (layout && layout.rects) {
+    const rect = layout.rects.find(r => r.paneId === paneId);
+    if (rect) return Math.max(1, (rect.h || 4) - 2);
+  }
   // Off-screen / normal-view: the pane's actual bounds, keyed by paneId
   // (boundsFor → slice.paneBounds[paneId], falling through to
   // _currentLayout.rects when the slice is empty).

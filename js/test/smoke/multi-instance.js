@@ -154,8 +154,12 @@ describe('[4] cursor, scroll, filter, and multi-select are per-pane', () => {
     eq(api.getSel(A.paneId), 3, 'A unchanged by B write');
   });
   it('scroll is independent', () => {
-    state.setScroll(A.paneId, 7);
-    eq(api.getScroll(A.paneId), 7, 'A scroll = 7');
+    // resize-as-Msg P2 — the post-dispatch finalizer clamps scroll to
+    // the cursor at dispatch time, so the value must be clamp-stable:
+    // with A's cursor at 3 (previous step), any scroll in (3-innerH, 3]
+    // holds. The point pinned here is per-pane independence, not drift.
+    state.setScroll(A.paneId, 2);
+    eq(api.getScroll(A.paneId), 2, 'A scroll = 2');
     eq(api.getScroll(B.paneId), 0, 'B scroll = 0');
   });
   it('committed filter is independent', () => {

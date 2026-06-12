@@ -75,7 +75,9 @@ describe('[1] cursor below viewport: render pulls scroll down', () => {
     const innerH = groupsInnerH();
     assert(innerH < 35, `viewport smaller than list (innerH=${innerH})`);
     setSel('groups', 35);            // deep row, beyond the viewport
-    eq(getScroll('groups'), 0, 'set_cursor alone does not move scroll');
+    // (resize-as-Msg P2 — the post-dispatch finalizer clamps at
+    // dispatch time now; the render below re-asserts stability.)
+    eq(getScroll('groups'), 35 - innerH + 1, 'clamped at dispatch (P2 finalizer)');
     sm.capture(() => sm.render());
     const scroll = getScroll('groups');
     eq(scroll, 35 - innerH + 1, 'scroll = sel - innerH + 1 (bottom-aligned)');
