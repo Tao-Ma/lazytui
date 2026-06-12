@@ -122,7 +122,8 @@ function _jumpInListPanel(target) {
 
 function _pageStep(paneId) {
   // Single source of truth for view-mode-aware viewport rows (by paneId).
-  return require('../render/geometry').getPanelViewportH(paneId);
+  return require('../render/geometry').getPanelViewportH(
+    getInstanceSlice('layout'), paneId, require('../io/term').dims());
 }
 
 /**

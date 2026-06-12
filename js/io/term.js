@@ -42,6 +42,12 @@ function disableBracketedPaste() { stdout.write('\x1b[?2004l'); }
 function cols() { return COLS; }
 function rows() { return ROWS; }
 
+/** Refresh + snapshot the terminal dimensions as one `{cols, rows}`
+ *  value — what the pure geometry readers (render/geometry-core) take
+ *  as an explicit param now that they no longer read the terminal
+ *  themselves (wm-geo P1.2). */
+function dims() { refreshSize(); return { cols: COLS, rows: ROWS }; }
+
 /** OSC52 clipboard escape — `ESC]52;c;<base64>BEL`. Tells terminals
  *  that support OSC52 (kitty, iTerm2, WezTerm, modern xterm, tmux/screen
  *  with pass-through configured) to put `text` on the system clipboard.
@@ -60,5 +66,5 @@ module.exports = {
   enableFocusEvents, disableFocusEvents,
   enableBracketedPaste, disableBracketedPaste,
   emitOSC52,
-  cols, rows, stdout,
+  cols, rows, dims, stdout,
 };

@@ -455,7 +455,10 @@ describe('[3f] keyboard `]` / `[` — focused panel heightPct', () => {
 
 // ===============================================================
 describe('[3e] calcLayout — heightPct distribution', () => {
-  const { calcLayout } = require('../render/geometry');
+  // wm-geo P1.2 — calcLayout is pure: (layoutSlice, dims) → Layout.
+  const geo = require('../render/geometry');
+  const { dims } = require('../io/term');
+  const calcLayout = () => geo.calcLayout(getInstanceSlice('layout'), dims());
   function freshLayout() {
     getInstanceSlice("layout").arrange = {
       detailHeightPct: 60,

@@ -26,7 +26,7 @@
 'use strict';
 
 const { RESET, richToAnsi, esc, visibleLen, wrapColor } = require('../io/ansi');
-const { cols, rows, stdout, showCursor, hideCursor } = require('../io/term');
+const { cols, rows, dims: termDims, stdout, showCursor, hideCursor } = require('../io/term');
 const { allPanels, syncPanelScroll } = require('../app/state');
 const geo = require('./geometry-core');
 const mpool = require('../leaves/pool');
@@ -398,18 +398,19 @@ function composeRects(layout, model) {
 // therefore reads the previous frame's bounds — the exact sequence the
 // clamp had inside calcLayout. test-scroll-clamp.js pins the semantics,
 // including the resulting one-frame clamp lag on resize.
-function _syncScrollClamp(layoutSlice) {
+function _syncScrollClamp(layoutSlice, dims) {
   for (const p of mpool.allPanesInColumns(layoutSlice.arrange)) {
     if (mpool.isDetailPane(p)) continue;
     if (p.collapsed) continue;  // no content rows to scroll-clamp against
-    syncPanelScroll(p.paneId, geo.getPanelViewportH(p.paneId));
+    syncPanelScroll(p.paneId, geo.getPanelViewportH(layoutSlice, p.paneId, dims));
   }
 }
 
 function renderNormal(model) {
-  const layout = geo.calcLayout(model);
   const layoutSlice = getInstanceSlice('layout');
-  _syncScrollClamp(layoutSlice);
+  const dims = termDims();
+  const layout = geo.calcLayout(layoutSlice, dims);
+  _syncScrollClamp(layoutSlice, dims);
   layoutSlice.paneBounds = {};
   for (const rect of layout.rects) {
     const b = { x: rect.x, y: rect.y, w: rect.w, h: rect.h };
@@ -439,9 +440,10 @@ function renderNormal(model) {
 // (single-pane left-only). The same helper drives getPanelViewportH so the
 // scroll/viewport math agrees with what's painted.
 function renderHalf(model) {
-  geo.calcLayout(model);
   const layoutSlice = getInstanceSlice('layout');
-  _syncScrollClamp(layoutSlice);
+  const dims = termDims();
+  geo.calcLayout(layoutSlice, dims);
+  _syncScrollClamp(layoutSlice, dims);
   const COLS = cols(), ROWS = rows();
   const halfW = Math.floor(COLS / 2);
   const availH = ROWS - 1;
@@ -510,9 +512,10 @@ function renderHalf(model) {
 }
 
 function renderFull(model) {
-  geo.calcLayout(model);
   const layoutSlice = getInstanceSlice('layout');
-  _syncScrollClamp(layoutSlice);
+  const dims = termDims();
+  geo.calcLayout(layoutSlice, dims);
+  _syncScrollClamp(layoutSlice, dims);
   const COLS = cols(), ROWS = rows();
   const availH = ROWS - 1;
   const focusedPanel = allPanels().find(p => mpane.paneMatchesFocus(p, layoutSlice.focus));

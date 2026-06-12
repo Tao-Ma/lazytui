@@ -82,7 +82,8 @@ function _handleWheel(mx, my, delta) {
       // Single source of truth for the view-mode-aware viewport (P5
       // arc fix follow-up — panelHeights[type] would have given the
       // small normal-view share even in half/full view).
-      const innerH = require('../render/geometry').getPanelViewportH(p.paneId);  // v0.6.4 Phase 3b — paneId
+      const innerH = require('../render/geometry').getPanelViewportH(
+        layoutSlice, p.paneId, require('../io/term').dims());  // v0.6.4 Phase 3b — paneId
       const maxScroll = Math.max(0, lines.length - innerH);
       const next = Math.max(0, Math.min(maxScroll, curScroll + delta));
       if (next === curScroll) return false;

@@ -38,12 +38,13 @@
  */
 'use strict';
 
-const { refreshSize, cols, rows } = require('../io/term');
-const { allPanels } = require('../app/state');
+// wm-geo P1.2/P1.3 (docs/wm-geometry-refactor.md) — this module is now
+// a pure spatial model: every reader takes the layout slice (and, where
+// screen size matters, a `{cols, rows}` dims value — io/term.dims())
+// explicitly. No app/state, no panel/api, no app/runtime, no io/term:
+// the impure fetches moved to the call sites, which already had them.
 const mpool = require('../leaves/pool');
 const mpane = require('../leaves/pane');
-const { getInstanceSlice } = require('../panel/api');
-const { getModel } = require('../app/runtime');
 
 // Lazy route handle — geometry-core is loaded inside the render module;
 // requiring route at load time would close the layout ↔ render cycle.
@@ -219,7 +220,8 @@ let _currentLayout = null;
  * (render left-only — matches the single-pane path).
  */
 function halfProjection(layoutSlice) {
-  const all = allPanels();
+  const all = layoutSlice.arrange
+    ? mpool.allPanesInColumns(layoutSlice.arrange) : [];
   const placed = (id) => !!id && all.some(p => p.paneId === id);
   const focus = layoutSlice.focus;
 
@@ -242,11 +244,9 @@ function halfProjection(layoutSlice) {
   return { left, right };
 }
 
-function getPanelViewportH(paneId) {
-  const layoutSlice = getInstanceSlice('layout');
+function getPanelViewportH(layoutSlice, paneId, dims) {
   if (!layoutSlice) return 1;
-  refreshSize();
-  const availH = Math.max(6, rows() - 1);
+  const availH = Math.max(6, dims.rows - 1);
   // Half/full view: an on-screen panel takes the full availH — beats any
   // stored height (paneBounds may carry a previous frame's bounds across
   // the viewMode-transition tick). Half view's two slots come from the
@@ -269,10 +269,8 @@ function getPanelViewportH(paneId) {
   return Math.max(1, h - 2);
 }
 
-function calcLayout(model = getModel()) {
-  refreshSize();
-  const COLS = cols(), ROWS = rows();
-  const layoutSlice = getInstanceSlice('layout');
+function calcLayout(layoutSlice, dims) {
+  const COLS = dims.cols, ROWS = dims.rows;
 
   const columns = layoutSlice.arrange.columns || [];
   const ranges = mpool.distributeColumnWidths(layoutSlice.arrange, COLS);

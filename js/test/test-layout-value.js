@@ -13,11 +13,15 @@
 const layout = require('../render/geometry');
 const { describe, it, eq, assert, report } = require('./test-runner');
 const { getInstanceSlice } = require('../panel/api');
+const { dims } = require('../io/term');
 
 function setSize(cols, rows) {
   process.stdout.columns = cols;
   process.stdout.rows = rows;
 }
+
+// wm-geo P1.2 — calcLayout is pure: (layoutSlice, dims) → Layout.
+function calc() { return layout.calcLayout(getInstanceSlice('layout'), dims()); }
 
 function setupSlice(arrange, opts = {}) {
   const slice = getInstanceSlice('layout');
@@ -47,7 +51,7 @@ describe('[1] calcLayout return shape', () => {
         { panels: [pane('detail', 'pd', { hotkey: 'o', columnIndex: 1 })] },
       ],
     });
-    const out = layout.calcLayout();
+    const out = calc();
     assert(Array.isArray(out.ranges), 'ranges is array');
     eq(typeof out.availH, 'number');
     assert(Array.isArray(out.rects), 'rects is array');
@@ -73,7 +77,7 @@ describe('[2] rects: one per placed pane, column-x carried through', () => {
         ] },
       ],
     });
-    const out = layout.calcLayout();
+    const out = calc();
     eq(out.rects.length, 4);
     const rc = (type) => out.rects.find(r => r.type === type);
     eq(rc('containers').x, 0);
@@ -99,7 +103,7 @@ describe('[3] rects: y accumulates within a column, summing to availH', () => {
         { panels: [pane('detail', 'pd', { hotkey: 'o', columnIndex: 1 })] },
       ],
     });
-    const out = layout.calcLayout();
+    const out = calc();
     const a = out.rects.find(r => r.type === 'a');
     const b = out.rects.find(r => r.type === 'b');
     eq(a.y, 0);
@@ -123,7 +127,7 @@ describe('[4] all-collapsed column: rects sum below availH (the 6d9ad31 case)', 
         { panels: [pane('detail', 'pd', { hotkey: 'o', columnIndex: 1 })] },
       ],
     });
-    const out = layout.calcLayout();
+    const out = calc();
     const col0 = out.rects.filter(r => r.x === 0);
     eq(col0.length, 3);
     for (const r of col0) {
@@ -142,7 +146,7 @@ describe('[5] getCurrentLayout publishes after calcLayout', () => {
       detailHeightPct: 60,
       columns: [{ panels: [pane('detail', 'pd', { hotkey: 'o', columnIndex: 0 })] }],
     });
-    const ret = layout.calcLayout();
+    const ret = calc();
     const cur = layout.getCurrentLayout();
     assert(cur, 'getCurrentLayout returns non-null after calcLayout');
     eq(cur.viewMode, ret.viewMode);
@@ -161,7 +165,7 @@ describe('[6] boundsFor (P1.3 shim): slice first, rects fallback', () => {
       detailHeightPct: 60,
       columns: [{ panels: [pane('detail', 'pd', { hotkey: 'o', columnIndex: 0 })] }],
     });
-    layout.calcLayout();  // populates _currentLayout
+    calc();  // populates _currentLayout
     slice.paneBounds.detail = { x: 999, y: 999, w: 1, h: 1 };  // sentinel
     const b = layout.boundsFor(slice, 'detail');
     eq(b.x, 999, 'slice value wins (P1.3 priority)');
@@ -177,7 +181,7 @@ describe('[6] boundsFor (P1.3 shim): slice first, rects fallback', () => {
         ] },
       ],
     });
-    layout.calcLayout();
+    calc();
     slice.paneBounds = {};  // clear after render
     const b = layout.boundsFor(slice, 'actions');
     assert(b, 'fall-through finds rect');

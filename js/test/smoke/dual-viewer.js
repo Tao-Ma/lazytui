@@ -222,7 +222,8 @@ describe('[8] half view is an API-driven projection — two viewers side-by-side
 
   it('getPanelViewportH agrees: the RIGHT-slot viewer reports full content height', () => {
     const pb = renderNow();   // both slots still placed from the prior test
-    eq(geo.getPanelViewportH(B), pb[B].h - 2,
+    const { dims } = require('../../io/term');
+    eq(geo.getPanelViewportH(layoutSlice(), B, dims()), pb[B].h - 2,
        'right-slot viewer gets full availH-2 (geometry matches what was painted)');
   });
 
