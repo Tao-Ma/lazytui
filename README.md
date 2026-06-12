@@ -203,7 +203,7 @@ for "the same thing but headless."
 
 | Surface | What it does |
 |---|---|
-| N-column layout (v0.6.2+) | Ordered columns list, default 2 columns. Soft caps: 6 panes in the first, 3 in the last. Detail panel anchored to the last pane of the last column. YAML-configurable content + column count. Grow / shrink at runtime via drag-edge spawn or `:add-column` / `:remove-column`. |
+| N-column layout (v0.6.2+) | Ordered columns list, default 2 columns. Soft caps: 6 panes in the first, 3 in the last. Detail (viewer) panes live in any column — and since v0.6.4 a layout may declare several of them, each the sole tab of its pane. YAML-configurable content + column count. Grow / shrink at runtime via drag-edge spawn or `:add-column` / `:remove-column`. |
 | Action types | `run` (capture output), `spawn` (full-screen interactive), `background` (fire-and-forget). One uniform schema. |
 | Built-in panel types | `groups`, `actions`, `files`, `history`, `detail`, plus docker container / stats panels. |
 | Embedded terminals | PTY tabs inside the detail panel. Persistent across group switches. |
@@ -211,7 +211,8 @@ for "the same thing but headless."
 | Decorator slots | Plugins add glyphs to rows / titles / tabs / footer without touching the renderer. |
 | Cmdline (`:`) | `:quit`, `:refresh`, `:help`, plus plugin-registered verbs, with positional-arg plumbing. |
 | Running overlay (`<leader> j`, v0.6.2+) | Modal listing every live child lazytui spawned (streamed actions, PTYs, background + tmux spawns). Enter jumps to the relevant tab; Esc closes. Action tabs with a running stream show a `●` indicator in the tab strip. |
-| Pane-select dropdown (v0.6.3+) | Every non-detail pane has a `[≡]` glyph at top-left; click to open a centered overlay listing all pool entries (placed in this cell / placed in another column / hidden). Pick one to swap which pool entry occupies that cell — placed-entry pick SWAPs; hidden-entry pick REPLACEs (displaced occupant becomes hidden). Mouse + keyboard nav. |
+| Pane menu (`[≡]`, v0.6.3+, unified v0.6.4) | Every pane has a `[≡]` glyph at top-left; click (or `T`) opens one dropdown listing panes + this pane's tabs. The pick is projection-aware: in normal view it swaps which pool entry occupies the cell, in half view it places the pick into the clicked slot, in full view it switches focus. Mouse + keyboard nav. |
+| Mouse actions (v0.6.4+) | Left-click focuses + selects, double-click activates (Enter-equivalent), right-click opens a context menu at the cursor (copy line / copy selection + general entries; click-outside dismisses), wheel scrolls the pane under the cursor; drag-select persists like a `v` visual selection. Remappable via a YAML `mouse:` block; the context menu is extensible via a `context-menu:` block with keys-style verbs and per-pane gates. |
 | Diagnostics window (`<leader> e`, v0.6.4+) | Modal listing the warnings (`⚠`) and errors (`✕`) raised this session — boot config warnings, runtime errors, and multi-instance footgun guards. `j`/`k`/`g`/`G` nav, `y` copies the highlighted entry to the register + clipboard, `c` clears, `s` saves to `lazytui-diagnostics.json`, Esc closes. Backed by a dedicated buffer separate from the replay event-log so diagnostics aren't evicted by input noise. |
 | 6 themes + free-config mode | `:free-config` opens an interactive layout editor — drag/swap/resize/spawn columns and panels, hide/show from a pool of declared panel definitions, save back to YAML. |
 | `--spec` flag | Prints the plugin-authoring bundle for AI agents (every rule in one file). |
@@ -220,8 +221,8 @@ for "the same thing but headless."
 
 - **Renderer + parser**: Node.js. Runtime npm deps: `node-pty` and
   `@xterm/headless` for embedded PTY tabs, `js-yaml` for config parsing.
-- **Tests**: JS unit suites under `js/test/` (81 files), an opt-in
-  pre-release smoke harness under `js/test/smoke/` (5 scenarios), and
+- **Tests**: JS unit suites under `js/test/` (89 files), an opt-in
+  pre-release smoke harness under `js/test/smoke/` (9 scenarios), and
   a live integration harness under `test/`. See [docs/TESTING.md](docs/TESTING.md).
 - **Two worked demos** at the time of initial public release; both ship
   with the human-authored intent (`.agent-prompt.md`) checked in so the

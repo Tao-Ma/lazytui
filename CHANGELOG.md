@@ -6,7 +6,55 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.4] — 2026-06-12
+
 ### Added
+- **Mouse actions + a unified input intent layer.** Keyboard and mouse
+  now converge on one semantic vocabulary (focus / select / activate /
+  context / scroll) before reaching a reducer (`dispatch/intent.js`).
+  On top of it: **double-click activates** (Enter-equivalent, ~250 ms
+  same-cell window), **right-click opens a context menu at the
+  cursor**, middle-click is reserved (wired end-to-end as a no-op
+  gesture), and the wheel keeps scrolling the pane under the cursor.
+  All three button gestures are remappable via a top-level YAML
+  `mouse:` block (`double-click` / `right-click` / `middle-click` →
+  `activate` / `context` / `noop`, plus `double-click-ms`).
+- **Context menu.** Right-click anywhere: on a copyable target the
+  menu offers Copy line/item and Copy selection (both land in the yank
+  register + system clipboard); a general section (Refresh / Help) is
+  always present. Click-outside dismisses; the keyboard `x` command
+  menu gained the same click/dismiss behavior. Mouse drag-selections
+  now PERSIST like a keyboard `v` visual selection (extend with
+  `j`/`k`/`h`/`l`, yank with `y`, Esc clears). Extensible via a
+  top-level YAML `context-menu:` block — keys-style verb surface
+  (`builtin:` / `action:` / `command:`) plus an optional `pane:` gate.
+- **Multiple viewers.** A layout may now declare several detail
+  (viewer) panes — the parser's exactly-one / last-column / last-pane
+  policy is relaxed to "at least one, each the sole tab of its pane".
+  Viewers self-identify by paneId: independent tabs, scroll, content
+  routing; free-config drags them like any pane (two viewers swap for
+  real); hide/remove refuses only the LAST viewer. Content targets the
+  major viewer (the focused one, sticky `lastViewerTab`). Ships with
+  `demo/dual-viewer/`.
+- **Unified pane menu (`[≡]`).** One dropdown on every pane (panes +
+  this pane's tabs, tabs only when there are several), replacing the
+  separate pane-select and tab-list overlays. The pick is
+  projection-aware: normal view swaps pool entries, half view places
+  the pick into the clicked slot, full view switches focus.
+- **Half view is a projection.** Half/full are runtime focus-state
+  fine-tuning over the declared layout, never serialized. The two
+  half-view slots are an ephemeral, API-settable selection
+  (`view_place_pane`) defaulting to the historical focused-pane +
+  major-viewer derivation; either slot may hold any pane, so two
+  viewers can sit side-by-side.
+- **Per-pane detail height.** Each detail pane takes its own
+  `height: N%` in YAML; the old layout-wide scalar remains as the
+  default/fallback. Round-trips through free-config save.
+- **Config-status view toggles.** The three internal tabs became two
+  orthogonal toggles — `t` flips tree↔flat layout, `s` flips
+  all↔tracked scope — exposing all four combinations (the old linear
+  cycle couldn't express all·flat). `]`/`[` fall through to the
+  framework pane/tab cycle again.
 - **Diagnostics window (`<leader> e`).** A browsable log of the
   warnings and errors raised during a session — opened with the leader
   chord `e`, navigated like the register / Running overlays
@@ -22,6 +70,81 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   primary — the multi-instance footgun guard), and every runtime error
   funneled through the effects-layer error sink. Other call sites adopt
   `diag.warn()` / `diag.error()` opportunistically.
+
+### Architecture
+- **Multi-instance spine.** Two same-kind panes are now genuinely
+  independent. Arc 1: the read path resolves per-pane slices
+  (`route.sliceForPane`) — cursor / scroll / filter / multi-select /
+  items / focus styling keyed by paneId across all navigators. Arc 2:
+  `files` mints one instance per pane (`init(paneId)` self-identity;
+  per-panelType maps gone; refresh / effects address the originating
+  pane). Arc 3: docker's host-global status/stats + events stream run
+  on ONE content-owner instance; placed panes carry nav only — two
+  docker panes drive exactly one fetch loop.
+- **WM geometry refactor.** Layout math is pure and re-homed:
+  `calcLayout` / `boundsFor` / `getPanelViewportH` take an explicit
+  `(layoutSlice, dims)`, the `render/geometry.js` facade is deleted
+  (importers route math vs paint directly), and the math lives in
+  `leaves/geometry.js`. Logical require-cycles through the geometry
+  math: 1535 → 0.
+- **Resize is a Msg; render dispatches nothing.** Terminal dimensions
+  live in the model (`layout.dims`), written only by the new
+  `term_resized` arm; the stdout resize listener dispatches it.
+  The keep-in-view scroll clamp moved from the render pass to a
+  post-dispatch finalizer — every state change is a dispatch, resize
+  included, so the safety net needs no Msg enumeration and a terminal
+  shrink re-clamps before the repaint even fires. The render-side
+  `set_scroll` exception in DATAFLOW.md is CLOSED; render is a pure
+  Model → frame function (pinned by test).
+- **Render restructure.** `render/layout.js` split along its one-way
+  seam into geometry math + `render/paint.js`; footer extracted to
+  `render/footer.js`; the triplicated chrome-glyph setup folded into
+  `_chromeContext`.
+- **paneBounds keyed by paneId only.** The legacy type-keyed dual
+  write is retired; half/full visible bounds reach viewer-tab readers
+  via the new `route.resolveViewerPaneId()` bridge.
+- **Root-reducer purity.** The remaining root-reducer slice reads are
+  threaded via Msg payload (escape / tab-cycle / menu_open);
+  `jobs_activate` stays the one documented blessed exception. Chrome
+  click suppression became a declarative `suppressChrome` column on
+  the MODES table.
+
+### Fixed
+- **multiSel landed on the kind's primary, not the focused pane** —
+  the four multi-select verbs now route by focused paneId (reachable
+  on the dual-browser demo).
+- **A bare viewer click yanked one character and trapped visual
+  mode** — a no-drag click now cancels instead of settling a 1-char
+  selection.
+- **Tab-list `[≡]` was dead on any non-first viewer** — trigger
+  hit-test, overlay rows, and nav clamps now resolve the clicked
+  pane's own paneId.
+- **Triple-click double-fired activate** — the classifier resets its
+  click memory after emitting a double.
+- **Opening a second file on a focused second viewer loaded forever**
+  — a hardcoded `'detail'` in the tab-Msg context stole focus back to
+  the primary viewer; it now threads the pane's own identity.
+- **Half/full view lost the focus border** after the per-pane focus
+  migration — `renderHalf`/`renderFull` thread `opts.focused` again.
+- **One-frame resize clamp lag** — the scroll clamp judged against the
+  previous frame's pane heights; after a terminal shrink the selected
+  row could sit off-screen until the next render. Clamps immediately
+  now (subsumed by the resize-as-Msg redesign above).
+- **Plugin `tab: true` group actions were invisible** in panes whose
+  merged-action projection dropped them (`getMergedActions` is now the
+  single accessor).
+
+### Performance
+- **Hot-path require memoization sweep.** A bare lazy `require()` in a
+  per-keystroke / per-dispatch path re-resolves the module path every
+  call — ~35 µs of filesystem stats on slow-stat mounts (measured
+  1000× the work it guards). Memoized module refs in pane-tabs
+  (~130×), the nav read/write trio in `app/state`, and the render
+  path. The post-dispatch finalizer memoizes its layout on
+  `(arrange, dims, viewMode)` reference identity — correct because
+  reducers update those immutably. Bench: every hot-path case within
+  noise of the pre-arc baseline; single-dispatch latency slightly
+  better than before the resize-as-Msg arc.
 
 ## [0.6.3] — 2026-06-10
 
@@ -1937,7 +2060,10 @@ release tarballs. Full pre-squash development history is preserved
 on the internal gitea mirror under the `backup/main-history` branch
 and the `v0.1.0-pre-squash` tag.
 
-[Unreleased]: https://github.com/Tao-Ma/lazytui/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/Tao-Ma/lazytui/compare/v0.6.4...HEAD
+[0.6.4]: https://github.com/Tao-Ma/lazytui/compare/v0.6.3...v0.6.4
+[0.6.3]: https://github.com/Tao-Ma/lazytui/compare/v0.6.2...v0.6.3
+[0.6.2]: https://github.com/Tao-Ma/lazytui/compare/v0.5.0...v0.6.2
 [0.5.0]: https://github.com/Tao-Ma/lazytui/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/Tao-Ma/lazytui/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/Tao-Ma/lazytui/releases/tag/v0.3.0
