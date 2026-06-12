@@ -100,16 +100,20 @@ function viewerLines(slice, model, groupName, lookups) {
     return slice.viewerOverride.lines;
   }
   const tab = (slice && slice.tab) | 0;
-  // Info — derive from focused Navigator. Falls back to slice.lines
-  // when no Navigator is focused (manual setViewerContent or
-  // explicit clear). Producers transitioning AWAY from a content
-  // tab (e.g. removeContent) MUST clear slice.lines themselves;
-  // otherwise stale content would persist here.
+  // Info — P0 (viewer-lines selector arc): canonical home is
+  // slice.infoLines (written by viewer_show_info from dispatcher-
+  // computed msg.lines). The optional lookups.infoFromFocus hook is the
+  // RENDER-time live projection (display follows the focused Navigator
+  // even between show_selected_info events); reducer-side callers (the
+  // finalizer) omit it and read the stored basis. Sticky-by-storage
+  // replaces the old slice.lines fixed-point fallback; the slice.lines
+  // tail is transitional (test fixtures) and dies in P3.
   if (tab === 0) {
     if (lookups && typeof lookups.infoFromFocus === 'function') {
       const lines = lookups.infoFromFocus();
       if (Array.isArray(lines) && lines.length > 0) return lines;
     }
+    if (slice && Array.isArray(slice.infoLines)) return slice.infoLines;
     return (slice && slice.lines) || [];
   }
   // Transcript — unrouted accumulator.
@@ -669,9 +673,11 @@ function reduceTabMsg(msg, slice, ctx) {
       // the kind-specific source (viewerLines's precedence chain).
       if (idx === 0) {
         // Info — pure selection-info. Ask the focused Navigator to
-        // repopulate via show_selected_info.
+        // repopulate via show_selected_info. P0 (viewer-lines selector) —
+        // emit the dedicated Cmd (not a raw wrapped Msg) so the effects
+        // layer computes msg.lines at dispatch; paneId pins THIS pane.
         next = { ...next, scroll: _resolveScroll(0, 0) };
-        effects.push({ type: 'msg', msg: wrap(paneId, { type: 'viewer_show_info' }) });
+        effects.push({ type: 'show_selected_info', paneId });
       } else if (idx === 1) {
         // Transcript — bottom-pin on first visit or when sticky;
         // literal restore otherwise. lines derived from

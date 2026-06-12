@@ -24,14 +24,13 @@
 const { getTabInfo, isTerminalTab, activeContentTab } = require('./tabs');
 const {
   renderPanel,
-  getInstanceSlice, getFocus, getPanelDef, getItems, wrap,
+  getInstanceSlice, wrap,
 } = require('../api');
 const ms = require('../../leaves/search');
 const pt = require('../../leaves/pane-tabs');
 const mpool = require('../../leaves/pool');
 const { buildTabStrip } = require('./tab-strip');
 const { getModel } = require('../../app/runtime');
-const { getSel } = require('../../app/state');
 
 // --- internal slice transforms (pure return-new) ---
 //
@@ -249,19 +248,26 @@ function init(paneId) {
 // dispatcher side (showSelectedInfo) and thread the resolved lines
 // through msg.lines so the finalizer can drop the plugin call.
 function _infoFromFocus() {
-  const focus = getFocus();
-  const def = require('../api').getPanelDef(focus);
-  if (!def || typeof def.getItems !== 'function' || typeof def.getInfo !== 'function') return null;
-  const items = require('../api').getItems(focus);
-  const { getSel } = require('../../app/state');
-  const item = items[getSel(focus)];
-  if (!item) return null;
-  // v0.6.4 Theme A Phase 5 Arc 2 — thread the focused paneId so a
-  // multi-panelType Component (files) reads THIS pane's browser/config,
-  // not a first-of-type guess. Arity-ignored by single-panel defs.
-  const out = def.getInfo(item, focus);
-  if (!out || !out.length) return null;
-  return out.join('\n').split('\n');
+  // P0 (viewer-lines selector arc) — the implementation moved to
+  // api.infoLinesFromFocus (the dispatcher-side compute that
+  // showSelectedInfo threads as msg.lines). This wrapper remains for
+  // RENDER only: Info display stays a live view projection of the
+  // focused Navigator (TEA: derived in view), while slice.infoLines is
+  // the stored reducer-side basis (bounds/search). The two diverge only
+  // when item info changes without a show_selected_info — the same
+  // window slice.lines had (the viewer finalizer never ran on other
+  // Components' Msgs either).
+  return require('../api').infoLinesFromFocus();
+}
+
+// P0 — content equality for info payloads (length + per-line ===).
+// Info is small (a screenful); the scan is cheap and buys ref-stable
+// slice.infoLines across no-change refreshes.
+function _linesEq(a, b) {
+  if (a === b) return true;
+  if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
 }
 // T2d + T3f-fix — derive slice.lines, AND capture the leaving-tab's
 // view state into tabState when the reducer transitioned slice.tab.
@@ -314,7 +320,13 @@ function _tabKeyExistsIn(next, model, key) {
 // getModel() here. The finalizer is pure of the runtime accessor;
 // only the public update() reads model, exactly once per Msg.
 function _withDerivedFields(next, originalSlice, m) {
-  const lines = pt.viewerLines(next, m, m.currentGroup, { infoFromFocus: _infoFromFocus });
+  // P0 (viewer-lines selector arc) — no lookups bag: tab-0 reads the
+  // STORED slice.infoLines (canonical, written by viewer_show_info)
+  // instead of a live plugin getItems/getInfo call per Msg — that call
+  // was the expensive part of the per-Msg finalizer cost and was
+  // redundant for freshness (every show_selected_info producer already
+  // threads fresh content; render keeps its own live lookup).
+  const lines = pt.viewerLines(next, m, m.currentGroup);
   let updated = { ...next, lines };
   // B2 — auto-recompute a committed search against the new lines. Pre-
   // B2, viewer_show_info (and the unrouted-stream auto-jump) cleared
@@ -504,36 +516,24 @@ function _updateInner(msg, slice) {
     }
     case 'viewer_show_info': {
       // Pull focused-Navigator info into the viewer + yank to Info as a
-      // single semantic. The getInfo precondition below is the gate:
-      // focus on a list panel with getInfo → yank to Info + populate;
-      // focus elsewhere (detail, no-getInfo panels like stats) → bail.
+      // single semantic.
       //
-      // The bail covers the `addContentTab → focus_set(detail)` cascade
-      // — `detail` has no getInfo, so we don't yank away from the
-      // freshly-opened content tab.
+      // P0 (viewer-lines selector arc) — info content arrives
+      // PRECOMPUTED on msg.lines: dispatch.showSelectedInfo (the one
+      // chokepoint every producer routes through) resolves it via
+      // api.infoLinesFromFocus and SKIPS the dispatch when the focused
+      // pane has no getInfo / no selection — the old arm-side plugin-
+      // read bail (getFocus/getPanelDef/getItems/getSel), now retired
+      // from the reducer (the "v0.7 task" the R1 comment predicted).
+      // The skip still covers the `addContentTab → focus_set(detail)`
+      // cascade: `detail` has no getInfo, so no yank away from the
+      // freshly-opened content tab. A missing payload here = a
+      // legacy/test caller → same bail.
       //
-      // v0.6.2 T1 — pre-T1 the reducer bailed on slice.tab !== 0 and
-      // navSelect read the slice from the handler to choose between
-      // viewer_show_info (on Info) and tab_switch idx=0 (off-Info).
-      // That mid-cascade handler read was a TEA-discipline smell;
-      // folding the yank into the reducer itself eliminates the
-      // observation between dispatches.
-      //
-      // v0.6.2 R1 — drop the redundant def.getInfo(item) lines
-      // computation. The finalizer's _withDerivedFields path calls
-      // viewerLines() which calls _infoFromFocus() → def.getInfo for
-      // tab=0 anyway; computing lines here was a dead double-call
-      // (overwritten by the finalizer's derivation moments later).
-      // The bail conditions still invoke def.getItems / def.getInfo
-      // for the precondition check; eliminating those from the reducer
-      // body entirely is a v0.7 task (move the plugin reads to the
-      // handler side via showSelectedInfo).
-      const focus = getFocus();
-      const def = getPanelDef(focus);
-      if (!def || typeof def.getItems !== 'function' || typeof def.getInfo !== 'function') return slice;
-      const items = getItems(focus);
-      const item = items[getSel(focus)];
-      if (!item) return slice;
+      // The arm STORES the content as slice.infoLines — Info's
+      // canonical per-tab home (sticky: persists while focus sits on a
+      // no-getInfo pane, replacing the slice.lines fixed-point trick).
+      if (!Array.isArray(msg.lines)) return slice;
       // v0.6.2 R3 — Info's per-tab view state needs to flow through
       // this arm too. Two cases:
       //   1. Already on Info (slice.tab === 0): item content changed
@@ -549,9 +549,20 @@ function _updateInner(msg, slice) {
       //      (same shape tab_switch performs). Without this restore,
       //      navSelect from an action tab landed on Info with scroll: 0
       //      and the user's saved Info scroll position was dropped.
+      // Content-equal payloads keep the previous infoLines REF so the
+      // derived-lines ref stays stable across no-change refreshes
+      // (redraw() fires this before every paint) — downstream ref-
+      // equality (search recompute) then fires only on real change,
+      // where the old per-Msg fresh-array derivation over-recomputed.
+      const sameLines = _linesEq(slice.infoLines, msg.lines);
+      const infoLines = sameLines ? slice.infoLines : msg.lines;
       if (slice.tab === 0) {
-        const next = { ...slice, scroll: 0 };
-        if (slice.search && slice.search.matches && slice.search.matches.length > 0) {
+        const noMatches = !(slice.search && slice.search.matches && slice.search.matches.length > 0);
+        // True no-op (content + view state already in target shape) —
+        // return the input ref so dispatch bookkeeping sees no change.
+        if (sameLines && noMatches && (slice.scroll || 0) === 0) return slice;
+        const next = { ...slice, scroll: 0, infoLines };
+        if (!noMatches) {
           next.search = { ...slice.search, matches: [], idx: 0 };
         }
         return next;
@@ -560,6 +571,7 @@ function _updateInner(msg, slice) {
       return {
         ...slice,
         tab: 0,
+        infoLines,
         scroll: (entry && entry.scroll !== undefined) ? entry.scroll : 0,
         search: (entry && entry.search) || { active: false, term: '', matches: [], idx: 0, typing: '' },
         select: (entry && entry.select) || { active: false, kind: 'char', anchor: { line: 0, col: 0 }, cursor: { line: 0, col: 0 } },

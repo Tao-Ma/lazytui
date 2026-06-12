@@ -289,9 +289,11 @@ function handleAction(action, arg) {
       } else {
         // v0.6.1 Phase 5 — viewer body refresh routes through
         // resolveTarget so the right viewer pane wins under
-        // multi-viewer. null when no viewer is registered (no-op).
-        const target = route.resolveTarget('viewer');
-        if (target) dispatchMsg(wrap(target, { type: 'viewer_show_info' }));
+        // multi-viewer. P0 (viewer-lines selector) — route through the
+        // showSelectedInfo chokepoint so msg.lines is computed once
+        // there. Lazy require: actions.js was carved out of dispatch.js
+        // (same shape as the menu_action → dispatch.handleAction edge).
+        require('./dispatch').showSelectedInfo();
       }
       break;
     }

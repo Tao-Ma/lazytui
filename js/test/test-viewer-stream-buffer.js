@@ -384,16 +384,15 @@ describe('[tab_switch] Info vs Transcript routing', () => {
     const { next, cmds } = applyUpdate(s, { type: 'tab_switch', idx: 0 });
     eq(next.tab, 0, 'tab=0 (Info)');
     eq(next.scroll, 0, 'scroll reset');
-    // v0.6.2 N2 — slice.lines is finalizer-derived. For Info, the
-    // finalizer's _infoFromFocus reads the focused Navigator's
-    // getInfo; this unit test doesn't set up a focused def, so the
-    // viewerLines fallback returns slice.lines (the seeded value).
-    // The actual clear arrives via the viewer_show_info Cmd
-    // dispatched below (production: cascades and resolves
-    // _infoFromFocus → real Info content).
+    // v0.6.2 N2 — slice.lines is finalizer-derived. For Info, this unit
+    // test doesn't set up a focused def, so the viewerLines fallback
+    // returns slice.lines (the seeded value). The actual refresh arrives
+    // via the show_selected_info Cmd dispatched below (P0: the effects
+    // layer computes msg.lines at the showSelectedInfo chokepoint and
+    // targets eff.paneId — this pane — with the wrapped Msg).
     assert(
-      cmds.some(c => c.type === 'msg' && c.msg && c.msg.msg && c.msg.msg.type === 'viewer_show_info'),
-      'viewer_show_info Cmd dispatched (focused-panel refresh)'
+      cmds.some(c => c.type === 'show_selected_info'),
+      'show_selected_info Cmd dispatched (focused-panel refresh)'
     );
   });
   it('switch to Transcript with empty buffer shows placeholder', () => {

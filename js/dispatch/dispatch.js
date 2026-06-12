@@ -69,9 +69,20 @@ const intent = require('./intent');
 // null result drops the dispatch silently. Single source of truth:
 // the `show_selected_info` Cmd handler in effects.js delegates here,
 // and input.js imports this via the dispatch.js exports below.
-function showSelectedInfo() {
-  const target = route.resolveTarget('viewer');
-  if (target) dispatchMsg(wrap(target, { type: 'viewer_show_info' }));
+// viewer-lines-selector P0 — this is the ONE computing chokepoint:
+// info lines are resolved here (api.infoLinesFromFocus) and threaded as
+// msg.lines, so the viewer_show_info arm stays pure of plugin reads.
+// null lines (focused pane has no getInfo / no selection) skips the
+// dispatch entirely — the same net effect as the old arm-side bail,
+// minus a wasted dispatch. Optional paneId targets a specific viewer
+// (the pane-tabs tab_switch-to-Info effect); default resolves
+// focused/sticky via resolveTarget.
+function showSelectedInfo(paneId) {
+  const target = paneId || route.resolveTarget('viewer');
+  if (!target) return;
+  const lines = require('../panel/api').infoLinesFromFocus();
+  if (lines == null) return;
+  dispatchMsg(wrap(target, { type: 'viewer_show_info', lines }));
 }
 
 function navSelect(panelType, index) {

@@ -37,8 +37,8 @@ const { truncate } = require('./panel');
 const painter = require('./painter');
 const { isTerminalTab, activeTerminalId, activeTerminalConfig } = require('../panel/viewer/tabs');
 const { ensureSession, resizeSession } = require('../io/terminal');
-const { getInstanceSlice, sliceForPane, getComponent, getComponentOwningPanel,
-       dispatchMsg, wrap } = require('../panel/api');
+const { getInstanceSlice, sliceForPane, getComponent,
+       getComponentOwningPanel } = require('../panel/api');
 const { renderCopyMenu } = require('../overlay/copy');
 const { render: renderRegisterPopup } = require('../overlay/register-popup');
 const { renderMenu } = require('../overlay/menu');
@@ -766,10 +766,13 @@ function render(model = getModel()) {
  * collapses to a single paint with up-to-date info.
  */
 function redraw() {
-  // v0.6.1 Phase 6 — resolveTarget picks the destination viewer; null
-  // result (no viewer registered) just skips the info refresh and paints.
-  const target = _route().resolveTarget('viewer');
-  if (target) dispatchMsg(wrap(target, { type: 'viewer_show_info' }));
+  // v0.6.1 Phase 6 — resolveTarget (inside showSelectedInfo) picks the
+  // destination viewer; no viewer registered just skips the info refresh
+  // and paints. P0 (viewer-lines selector) — route through the
+  // showSelectedInfo chokepoint so msg.lines is computed there. Lazy
+  // require at call time (render → dispatch edge, same as _route()).
+  try { require('../dispatch/dispatch').showSelectedInfo(); }
+  catch (_) { /* dispatch unavailable (early boot / bare-render test) */ }
   render();
 }
 

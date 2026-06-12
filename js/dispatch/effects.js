@@ -133,8 +133,11 @@ function installBuiltins() {
   // v0.6.1 Phase 5 — resolveTarget picks the destination viewer (today:
   // 'detail' singleton; multi-viewer in Phase 6+). null → no viewer
   // registered, drop the Cmd silently.
-  registerEffect('show_selected_info', () => {
-    try { require('./dispatch').showSelectedInfo(); } catch (_) { /* no renderer (test) */ }
+  registerEffect('show_selected_info', (eff) => {
+    // eff.paneId (optional) targets a specific viewer — the pane-tabs
+    // tab_switch-to-Info path wants info on THE pane whose tab flipped,
+    // not whatever resolveTarget picks (viewer-lines-selector P0).
+    try { require('./dispatch').showSelectedInfo(eff && eff.paneId); } catch (_) { /* no renderer (test) */ }
   });
   // diag_clear / diag_save: the diagnostics window's `c` / `s` keys.
   // Buffer mutation + file I/O are side-effects, so the diag_log_clear /

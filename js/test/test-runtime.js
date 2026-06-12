@@ -168,7 +168,10 @@ describe('[3] update — (model, msg) → [model, cmds], pure + Cmd descriptors'
       scroll: 0,
       tabState: { info: { scroll: 47, cursor: { line: 47, col: 0 } } },
     };
-    const r = detail._update({ type: 'viewer_show_info' }, slice);
+    // P0 (viewer-lines selector) — info content arrives precomputed on
+    // msg.lines (the showSelectedInfo chokepoint threads it); a direct
+    // arm dispatch must carry it or the arm bails.
+    const r = detail._update({ type: 'viewer_show_info', lines: ['an action'] }, slice);
     const next = Array.isArray(r) ? r[0] : r;
     eq(next.tab, 0, 'transitioned to Info');
     eq(next.scroll, 47, 'restored Info scroll from tabState');
@@ -199,7 +202,8 @@ describe('[3] update — (model, msg) → [model, cmds], pure + Cmd descriptors'
         typing: '',
       },
     };
-    const r = detail._update({ type: 'viewer_show_info' }, slice);
+    // P0 — msg.lines threaded (new-item content); see the R3 test above.
+    const r = detail._update({ type: 'viewer_show_info', lines: ['an action'] }, slice);
     const next = Array.isArray(r) ? r[0] : r;
     eq(next.tab, 0, 'stayed on Info');
     eq(next.search.matches.length, 0, 'stale matches dropped');
@@ -227,10 +231,33 @@ describe('[3] update — (model, msg) → [model, cmds], pure + Cmd descriptors'
       scroll: 50,
       tabState: { info: { scroll: 100 } },
     };
-    const r = detail._update({ type: 'viewer_show_info' }, slice);
+    // P0 — msg.lines threaded (new-item content); see the R3 test above.
+    const r = detail._update({ type: 'viewer_show_info', lines: ['an action'] }, slice);
     const next = Array.isArray(r) ? r[0] : r;
     eq(next.tab, 0, 'stayed on Info');
     eq(next.scroll, 0, 'within-Info navSelect resets scroll to 0');
+  });
+  it('P0: viewer_show_info stores infoLines; equal content is ref-stable + no-op', () => {
+    // viewer-lines selector arc P0 — Info content's canonical home is
+    // slice.infoLines (msg.lines threaded by the showSelectedInfo
+    // chokepoint). Equal re-sends keep the previous ARRAY ref (so the
+    // derived-lines ref stays stable), and a true no-op (same content,
+    // scroll 0, no stale matches) returns the input SLICE ref so
+    // dispatch bookkeeping sees no change — redraw() fires this before
+    // every paint.
+    const route = require('../panel/route');
+    const detail = require('../panel/viewer/viewer');
+    route.getInstanceSlice('layout').focus = 'actions';
+    const slice = { ...route.getInstanceSlice('detail'), tab: 0, scroll: 0 };
+    const r1 = detail._update({ type: 'viewer_show_info', lines: ['a', 'b'] }, slice);
+    const s1 = Array.isArray(r1) ? r1[0] : r1;
+    eq(s1.infoLines.join('|'), 'a|b', 'infoLines stored');
+    const r2 = detail._update({ type: 'viewer_show_info', lines: ['a', 'b'] }, s1);
+    const s2 = Array.isArray(r2) ? r2[0] : r2;
+    assert(s2 === s1, 'equal content + clean view state → input ref returned (no-op)');
+    const r3 = detail._update({ type: 'viewer_show_info', lines: ['a', 'c'] }, s1);
+    const s3 = Array.isArray(r3) ? r3[0] : r3;
+    assert(s3 !== s1 && s3.infoLines[1] === 'c', 'changed content → new infoLines');
   });
   it('escape / list_select: emit wrapped multisel_clear into the focused Component', () => {
     // Phase 4a — escape/list_select route multiSel clears through the

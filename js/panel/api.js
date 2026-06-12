@@ -690,6 +690,29 @@ function getItems(panelType) {
 }
 
 /**
+ * Resolve the focused Navigator's selected-item info lines, or null when
+ * the focused pane has no getInfo / no selection (the caller should skip
+ * its viewer_show_info dispatch — same net effect as the old arm-side
+ * bail). viewer-lines-selector P0: this is the dispatcher-side compute
+ * that `dispatch.showSelectedInfo` threads as `msg.lines`, so the
+ * viewer_show_info reducer arm stays pure of plugin reads (the v0.7
+ * candidate noted at the old viewer._infoFromFocus).
+ */
+function infoLinesFromFocus() {
+  const focus = getFocus();
+  const def = getPanelDef(focus);
+  if (!def || typeof def.getItems !== 'function' || typeof def.getInfo !== 'function') return null;
+  const items = getItems(focus);
+  const item = items[getSel(focus)];
+  if (!item) return null;
+  // Thread the focused paneId so a multi-panelType Component (files)
+  // reads THIS pane's browser/config. Arity-ignored by single-panel defs.
+  const out = def.getInfo(item, focus);
+  if (!out || !out.length) return null;
+  return out.join('\n').split('\n');
+}
+
+/**
  * Fan a `refresh` Msg out to every Component's update(). Components that
  * drive their own polling (docker, files, config-status) self-arm via the
  * `tick` effect from their refresh handler; there's no framework poll
@@ -855,7 +878,7 @@ module.exports = {
   // Tab-instance registry surface.
   setInstance, getInstance, getInstanceSlice, sliceForPane, setInstanceSlice,
   hasInstance, disposeInstance, instanceKind, eachInstance,
-  getPanelDef, getItems, idOf, selectedOrFocused,
+  getPanelDef, getItems, idOf, selectedOrFocused, infoLinesFromFocus,
   refreshAll, cleanupComponents,
   getCommands, getGroupActions, getMergedActions, statusFor,
   // viewContributions registry — footerLeft / footerRight contributors
