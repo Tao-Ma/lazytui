@@ -563,7 +563,7 @@ function renderTerminalOverlay(model = getModel()) {
   // fall through to a phantom normal-view rect and mis-place the overlay.
   // null → no-op. Single-viewer: the viewer is always on-screen, so this is
   // byte-identical.
-  const bounds = geo.visibleBoundsFor(_route().resolveViewerPaneId());
+  const bounds = geo.visibleBoundsFor(layoutSlice, _route().resolveViewerPaneId());
   if (!bounds) return;
   const innerW = bounds.w - 2;
   const innerH = bounds.h - 2;
@@ -728,7 +728,7 @@ function render(model = getModel()) {
   const viewerTab = route.resolveTarget('viewer');
   // visibleBoundsFor: skip publishing innerH for an off-screen viewer in
   // half/full (boundsFor's phantom fallback would publish a stale height).
-  const viewerBounds = geo.visibleBoundsFor(route.resolveViewerPaneId());
+  const viewerBounds = geo.visibleBoundsFor(layoutSlice, route.resolveViewerPaneId());
   if (viewerTab && viewerBounds) {
     const innerH = Math.max(0, viewerBounds.h - 2);
     const viewerSlice = getInstanceSlice(viewerTab);

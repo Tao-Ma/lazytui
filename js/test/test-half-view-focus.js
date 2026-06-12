@@ -169,16 +169,16 @@ describe('[visibleBoundsFor] half-mode click can\'t hit off-screen pane phantom'
       'detail': { x: 32, y: 0, w: 48, h: 24 },
     };
     // containers / groups are NOT in paneBounds (off-screen in half).
-    eq(renderLayout.visibleBoundsFor('files'), slice.paneBounds.files);
-    eq(renderLayout.visibleBoundsFor('detail'), slice.paneBounds.detail);
-    eq(renderLayout.visibleBoundsFor('containers'), null, 'off-screen returns null');
-    eq(renderLayout.visibleBoundsFor('groups'),     null, 'off-screen returns null');
+    eq(renderLayout.visibleBoundsFor(slice, 'files'), slice.paneBounds.files);
+    eq(renderLayout.visibleBoundsFor(slice, 'detail'), slice.paneBounds.detail);
+    eq(renderLayout.visibleBoundsFor(slice, 'containers'), null, 'off-screen returns null');
+    eq(renderLayout.visibleBoundsFor(slice, 'groups'),     null, 'off-screen returns null');
   });
 
   it('visibleBoundsFor returns null when paneBounds is empty', () => {
     const slice = getInstanceSlice('layout');
     slice.paneBounds = {};
-    eq(renderLayout.visibleBoundsFor('anything'), null);
+    eq(renderLayout.visibleBoundsFor(slice, 'anything'), null);
   });
 });
 

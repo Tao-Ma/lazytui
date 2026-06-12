@@ -264,7 +264,7 @@ function getPanelViewportH(paneId) {
   // Off-screen / normal-view: the pane's actual bounds, keyed by paneId
   // (boundsFor → slice.paneBounds[paneId], falling through to
   // _currentLayout.rects when the slice is empty).
-  const b = boundsFor(paneId);
+  const b = boundsFor(layoutSlice, paneId);
   const h = (b && b.h) || 4;
   return Math.max(1, h - 2);
 }
@@ -376,8 +376,7 @@ function getCurrentLayout() {
  * via `getInstanceSlice(_route().resolveTarget('viewer') || 'detail').tabBounds`; boundsFor() no longer
  * surfaces tabs.
  */
-function boundsFor(key) {
-  const layoutSlice = getInstanceSlice('layout');
+function boundsFor(layoutSlice, key) {
   const sliceBounds = layoutSlice && layoutSlice.paneBounds && layoutSlice.paneBounds[key];
   // P1.3 priority: slice first. Production still writes paneBounds
   // every frame, but v0.6.4 re-keyed those writes by paneId (was by
@@ -401,8 +400,7 @@ function boundsFor(key) {
  *  geometry for off-screen panes (used by getPanelViewportH for
  *  scroll-viewport clamping). The split prevents half-mode click
  *  hit-tests from firing on a non-visible pane's phantom rect. */
-function visibleBoundsFor(key) {
-  const layoutSlice = getInstanceSlice('layout');
+function visibleBoundsFor(layoutSlice, key) {
   return (layoutSlice && layoutSlice.paneBounds && layoutSlice.paneBounds[key]) || null;
 }
 

@@ -163,7 +163,7 @@ describe('[6] boundsFor (P1.3 shim): slice first, rects fallback', () => {
     });
     layout.calcLayout();  // populates _currentLayout
     slice.paneBounds.detail = { x: 999, y: 999, w: 1, h: 1 };  // sentinel
-    const b = layout.boundsFor('detail');
+    const b = layout.boundsFor(slice, 'detail');
     eq(b.x, 999, 'slice value wins (P1.3 priority)');
   });
   it('falls through to _currentLayout.rects when slice is empty', () => {
@@ -179,7 +179,7 @@ describe('[6] boundsFor (P1.3 shim): slice first, rects fallback', () => {
     });
     layout.calcLayout();
     slice.paneBounds = {};  // clear after render
-    const b = layout.boundsFor('actions');
+    const b = layout.boundsFor(slice, 'actions');
     assert(b, 'fall-through finds rect');
     eq(b.type, 'actions');
     eq(b.x, 0);

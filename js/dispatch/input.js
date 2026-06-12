@@ -65,8 +65,9 @@ function _handleWheel(mx, my, delta) {
   // normal-view rects in _currentLayout and we'd scroll a phantom
   // pane whose coords overlap with the visible half-view rect.
   const { visibleBoundsFor } = require('../render/geometry');
+  const layoutSlice = getInstanceSlice('layout');
   for (const p of allPanels()) {
-    const b = visibleBoundsFor(p.paneId);  // v0.6.4 Phase 2 — paneId, not type (two same-kind panes share a type key)
+    const b = visibleBoundsFor(layoutSlice, p.paneId);  // v0.6.4 Phase 2 — paneId, not type (two same-kind panes share a type key)
     if (!b) continue;
     if (mx < b.x || mx >= b.x + b.w || my < b.y || my >= b.y + b.h) continue;
 
@@ -218,7 +219,7 @@ function _mouseHandleFreeConfigMode(kind, mx, my, model) {
   // bounds); slice key = the viewer's tab/instance id (tabBounds owner) —
   // these diverge once the type-keyed write retires.
   const viewerId = route.resolveTarget('viewer') || 'detail';
-  const db = require('../render/geometry').visibleBoundsFor(route.resolveViewerPaneId());
+  const db = require('../render/geometry').visibleBoundsFor(getInstanceSlice('layout'), route.resolveViewerPaneId());
   const detailSlice = getInstanceSlice(viewerId);
   const detailTabBounds = detailSlice && Array.isArray(detailSlice.tabBounds) ? detailSlice.tabBounds : null;
   if (kind === 'press' && db && detailTabBounds) {
@@ -354,8 +355,9 @@ function _dispatchActiveModeMouse(kind, mx, my, model) {
 // when the cursor is outside every visible pane.
 function _resolveBodyHit(mx, my) {
   const { visibleBoundsFor } = require('../render/geometry');
+  const layoutSlice = getInstanceSlice('layout');
   for (const p of allPanels()) {
-    const b = visibleBoundsFor(p.paneId);
+    const b = visibleBoundsFor(layoutSlice, p.paneId);
     if (!b) continue;
     if (mx < b.x || mx >= b.x + b.w || my < b.y || my >= b.y + b.h) continue;
     let navIdx = -1;
@@ -395,8 +397,9 @@ function _resolveContextAt(mx, my) {
   const sel = require('../panel/viewer/select');
   const selectionText = sel.isActive() ? (sel.selectedText() || null) : null;
   const { visibleBoundsFor } = require('../render/geometry');
+  const layoutSlice = getInstanceSlice('layout');
   for (const p of allPanels()) {
-    const b = visibleBoundsFor(p.paneId);
+    const b = visibleBoundsFor(layoutSlice, p.paneId);
     if (!b) continue;
     if (mx < b.x || mx >= b.x + b.w || my < b.y || my >= b.y + b.h) continue;
     const itemRow = my - b.y - 1;  // -1 for top border
@@ -574,7 +577,7 @@ function handleMouse(kind, x, y) {
   const sel = require('../panel/viewer/select');
   if (kind === 'motion' && sel.isActive()) {
     // v0.6.4 — focused viewer's CONTAINER pane bounds (see tab-drag site above).
-    const db = require('../render/geometry').visibleBoundsFor(route.resolveViewerPaneId());
+    const db = require('../render/geometry').visibleBoundsFor(getInstanceSlice('layout'), route.resolveViewerPaneId());
     if (db) {
       const visibleLine = Math.max(0, Math.min(db.h - 3, my - db.y - 1));
       const col = Math.max(0, mx - db.x - 1);
@@ -611,8 +614,9 @@ function handleMouse(kind, x, y) {
   // the actually-visible halfLeftPanel — silently reverting the
   // user's right-arrow selection).
   const { visibleBoundsFor } = require('../render/geometry');
+  const layoutSlice = getInstanceSlice('layout');
   for (const p of allPanels()) {
-    const b = visibleBoundsFor(p.paneId);  // v0.6.4 Phase 2 — paneId, not type (two same-kind panes share a type key)
+    const b = visibleBoundsFor(layoutSlice, p.paneId);  // v0.6.4 Phase 2 — paneId, not type (two same-kind panes share a type key)
     if (!b) continue;
     if (mx < b.x || mx >= b.x + b.w || my < b.y || my >= b.y + b.h) continue;
 

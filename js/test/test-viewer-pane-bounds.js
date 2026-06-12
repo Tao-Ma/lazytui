@@ -58,8 +58,8 @@ describe('v0.6.4 paneBounds — paneId-keyed only', () => {
 
 describe('v0.6.4 viewer bounds track the VISIBLE pane per view mode', () => {
   it('normal: boundsFor(resolveViewerPaneId()) is the column-positioned detail rect', () => {
-    renderIn('normal', 'pane-groups');
-    const b = geo.boundsFor(route.resolveViewerPaneId());
+    const layout = renderIn('normal', 'pane-groups');
+    const b = geo.boundsFor(layout, route.resolveViewerPaneId());
     assert(b, 'bounds resolved');
     // Detail sits in the right column, not at the origin.
     assert(b.x > 0, `right-column x (saw x=${b.x})`);
@@ -67,7 +67,7 @@ describe('v0.6.4 viewer bounds track the VISIBLE pane per view mode', () => {
 
   it('full (focus detail): bounds fill the screen — NOT the small normal rect', () => {
     const layout = renderIn('full', 'pane-detail');
-    const b = geo.boundsFor(route.resolveViewerPaneId());
+    const b = geo.boundsFor(layout, route.resolveViewerPaneId());
     assert(b, 'bounds resolved');
     eq(b.x, 0);
     eq(b.y, 0);
@@ -77,8 +77,8 @@ describe('v0.6.4 viewer bounds track the VISIBLE pane per view mode', () => {
   });
 
   it('half (focus detail): bounds are the right half at full height', () => {
-    renderIn('half', 'pane-detail');
-    const b = geo.boundsFor(route.resolveViewerPaneId());
+    const layout = renderIn('half', 'pane-detail');
+    const b = geo.boundsFor(layout, route.resolveViewerPaneId());
     assert(b, 'bounds resolved');
     assert(b.x > 0, `right half starts past mid-screen (saw x=${b.x})`);
     assert(b.y === 0, 'spans from top');
