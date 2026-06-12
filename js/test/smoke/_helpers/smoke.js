@@ -141,6 +141,9 @@ function bootFresh(opts) {
 function resize(cols, rows) {
   process.stdout.columns = cols;
   process.stdout.rows = rows;
+  // Mirror the production listener exactly: refresh io/term's
+  // COLS/ROWS (footer/overlay renderers read it) + dispatch the Msg.
+  require('../../../io/term').refreshSize();
   api.dispatchMsg(api.wrap('layout', { type: 'term_resized', cols, rows }));
 }
 

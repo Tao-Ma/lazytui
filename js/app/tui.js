@@ -297,6 +297,13 @@ function main() {
   // debounce. Besides initState's boot seed this listener is the only
   // live terminal-size read; everything downstream reads layoutSlice.dims.
   process.stdout.on('resize', () => {
+    // Keep io/term's COLS/ROWS mirror fresh. Pre-resize-as-Msg the
+    // render path refreshed it every frame (termDims → refreshSize);
+    // now geometry reads model dims, but footer/overlay/panel
+    // renderers still read cols()/rows() — without this the footer
+    // paints at the OLD bottom row every frame (mid-screen after a
+    // grow, covering a pane's top border).
+    require('../io/term').refreshSize();
     const api = require('../panel/api');
     api.dispatchMsg(api.wrap('layout', {
       type: 'term_resized',

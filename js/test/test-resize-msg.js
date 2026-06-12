@@ -147,6 +147,31 @@ describe('[6] P2 — scroll-away snaps back at dispatch time', () => {
   });
 });
 
+describe('[7] resize refreshes the io/term mirror (footer paints at the NEW bottom row)', () => {
+  it('grow 30→40: cols()/rows() fresh; no frame write below the old bottom lands at row 30', () => {
+    // Regression: resize-as-Msg P1 removed the per-frame refreshSize
+    // (rode on termDims) — io/term froze at boot size, so the footer
+    // painted at the OLD bottom row every frame, mid-screen after a
+    // grow, permanently covering a pane's top border (user-reported).
+    process.stdout.columns = 100;
+    process.stdout.rows = 30;
+    sm.bootFresh();
+    sm.capture(() => sm.render());
+
+    sm.resize(100, 40);              // production path incl. refreshSize
+    const term = require('../io/term');
+    eq(term.cols(), 100, 'io/term cols fresh');
+    eq(term.rows(), 40, 'io/term rows fresh (was frozen at 30)');
+
+    const { raw } = sm.capture(() => sm.render());
+    const writes = new Set();
+    const re = /\x1b\[(\d+);(\d+)H/g;
+    let m; while ((m = re.exec(raw))) writes.add(Number(m[1]));
+    assert(writes.has(40), 'footer row (40) painted');
+    assert(writes.has(1), 'top border row painted');
+  });
+});
+
 process.stdout.columns = 100;
 process.stdout.rows = 40;
 report();
