@@ -255,7 +255,7 @@ function _mouseHandleFreeConfigMode(kind, mx, my, model) {
   // bounds); slice key = the viewer's tab/instance id (tabBounds owner) —
   // these diverge once the type-keyed write retires.
   const viewerId = route.resolveTarget('viewer') || 'detail';
-  const db = require('../render/geometry').boundsFor(route.resolveViewerPaneId());
+  const db = require('../render/geometry').visibleBoundsFor(route.resolveViewerPaneId());
   const detailSlice = getInstanceSlice(viewerId);
   const detailTabBounds = detailSlice && Array.isArray(detailSlice.tabBounds) ? detailSlice.tabBounds : null;
   if (kind === 'press' && db && detailTabBounds) {
@@ -626,7 +626,7 @@ function handleMouse(kind, x, y) {
   const sel = require('../panel/viewer/select');
   if (kind === 'motion' && sel.isActive()) {
     // v0.6.4 — focused viewer's CONTAINER pane bounds (see tab-drag site above).
-    const db = require('../render/geometry').boundsFor(route.resolveViewerPaneId());
+    const db = require('../render/geometry').visibleBoundsFor(route.resolveViewerPaneId());
     if (db) {
       const visibleLine = Math.max(0, Math.min(db.h - 3, my - db.y - 1));
       const col = Math.max(0, mx - db.x - 1);

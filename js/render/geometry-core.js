@@ -39,10 +39,16 @@
 'use strict';
 
 const { refreshSize, cols, rows } = require('../io/term');
-const { syncPanelScroll } = require('../app/state');
+const { syncPanelScroll, allPanels } = require('../app/state');
 const mpool = require('../leaves/pool');
-const { getInstanceSlice, instanceKind } = require('../panel/api');
+const mpane = require('../leaves/pane');
+const { getInstanceSlice } = require('../panel/api');
 const { getModel } = require('../app/runtime');
+
+// Lazy route handle — geometry-core is loaded inside the render module;
+// requiring route at load time would close the layout ↔ render cycle.
+// Mirrors paint.js#_route.
+let _routeRef; const _route = () => (_routeRef ||= require('../panel/route'));
 
 function distributeColumnHeights(panels, availH, isLastCol, minH, detailHeightPct) {
   const out = {};
@@ -188,26 +194,73 @@ let _currentLayout = null;
  * Pre-first-render (layout slice empty + no `_currentLayout` yet),
  * returns a 1-row fallback so callers don't divide-by-zero.
  */
+/**
+ * Resolve the two panes a HALF view projects, as paneIds:
+ *   { left: paneId, right: paneId | null }
+ *
+ * Half/full are runtime PROJECTIONS of the layout state (`arrange`), not
+ * declared layouts. The selection is an ephemeral, API-settable override
+ * (`slice.halfView = { left, right }`, set by the `view_place_pane` Msg);
+ * when a slot is unset it falls back to the historical derivation, so a
+ * config that never touches it is a strict no-op. The selection NEVER
+ * mutates `arrange` and is not serialized.
+ *
+ * This is the SINGLE source of truth for "what does half view show" —
+ * `renderHalf` (paint.js) and `getPanelViewportH` (below) both consume it,
+ * replacing two derivations that previously had to agree but didn't (the
+ * left-fallback chain differed). Either slot may hold ANY pane, including a
+ * viewer, so two viewers can sit side-by-side.
+ *
+ * Defaults (the pre-override behavior): left = the focused non-detail pane,
+ * else sticky `halfLeftPanel`, else the first non-detail pane, else the
+ * focused pane; right = the major viewer (`resolveViewerPaneId`). A slot
+ * pointing at a pane no longer in `arrange` falls back to its default. If
+ * both slots resolve to the same pane the right slot collapses to null
+ * (render left-only — matches the single-pane path).
+ */
+function halfProjection(layoutSlice) {
+  const all = allPanels();
+  const placed = (id) => !!id && all.some(p => p.paneId === id);
+  const focus = layoutSlice.focus;
+
+  // default-left — faithful to the historical renderHalf chain.
+  const focusedPanel = all.find(p => mpane.paneMatchesFocus(p, focus)) || null;
+  let defLeft = focusedPanel ? focusedPanel.paneId : null;
+  if (focusedPanel && mpool.isDetailPane(focusedPanel)) {
+    const lp = all.find(p => mpane.paneMatchesFocus(p, layoutSlice.halfLeftPanel))
+            || all.find(p => !mpool.isDetailPane(p))
+            || focusedPanel;
+    defLeft = lp ? lp.paneId : null;
+  }
+  // default-right — the major viewer (focus-first → sticky lastViewerTab).
+  const defRight = _route().resolveViewerPaneId() || null;
+
+  const hv = layoutSlice.halfView || {};
+  let left  = placed(hv.left)  ? hv.left  : defLeft;
+  let right = placed(hv.right) ? hv.right : defRight;
+  if (right && right === left) right = null;
+  return { left, right };
+}
+
 function getPanelViewportH(paneId) {
   const layoutSlice = getInstanceSlice('layout');
   if (!layoutSlice) return 1;
   refreshSize();
   const availH = Math.max(6, rows() - 1);
-  // Half/full view: the on-screen panel takes the full availH — beats
-  // any stored height (paneBounds may carry a previous frame's bounds
-  // across the viewMode-transition tick).
-  const { viewMode, focus, halfLeftPanel } = layoutSlice;
-  let visiblePanel = null;
+  // Half/full view: an on-screen panel takes the full availH — beats any
+  // stored height (paneBounds may carry a previous frame's bounds across
+  // the viewMode-transition tick). Half view's two slots come from the
+  // shared halfProjection so this agrees with renderHalf exactly; BOTH
+  // projected panes are full-height (the right viewer too, not just left).
+  const { viewMode, focus } = layoutSlice;
+  let onScreen = false;
   if (viewMode === 'half') {
-    visiblePanel = instanceKind(focus) === 'detail' ? halfLeftPanel : focus;
+    const { left, right } = halfProjection(layoutSlice);
+    onScreen = paneId === left || paneId === right;
   } else if (viewMode === 'full') {
-    visiblePanel = focus;
+    onScreen = paneId === focus;
   }
-  // v0.6.4 Phase 3b — paneId-keyed. focus / halfLeftPanel / visiblePanel
-  // are all paneIds (post-_withFocus), so compare the queried paneId
-  // directly: if it's the on-screen pane, it owns the full availH. Under
-  // multi-viewer this picks the SPECIFIC pane (not any same-kind one).
-  if (visiblePanel && visiblePanel === paneId) return Math.max(1, availH - 2);
+  if (onScreen) return Math.max(1, availH - 2);
   // Off-screen / normal-view: the pane's actual bounds, keyed by paneId
   // (boundsFor → slice.paneBounds[paneId], falling through to
   // _currentLayout.rects when the slice is empty).
@@ -366,7 +419,7 @@ function visibleBoundsFor(key) {
 
 module.exports = {
   distributeColumnHeights, getPanelViewportH, calcLayout,
-  getCurrentLayout, boundsFor, visibleBoundsFor,
+  getCurrentLayout, boundsFor, visibleBoundsFor, halfProjection,
   // Test seam: distributeColumnHeights is a pure function that returns
   // a { [type]: rows } map. Exposed so collapsed-honor + heightPct
   // math can be unit-tested without bringing up the whole runtime.

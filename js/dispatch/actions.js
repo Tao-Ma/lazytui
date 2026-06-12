@@ -136,7 +136,7 @@ function activateTerminal() {
   if (isSessionDead(id)) {
     // v0.6.4 — size the restarted session to the FOCUSED viewer's
     // CONTAINER pane (resolveViewerPaneId → half/full-correct bounds).
-    const bounds = require('../render/geometry').boundsFor(route.resolveViewerPaneId());
+    const bounds = require('../render/geometry').visibleBoundsFor(route.resolveViewerPaneId());
     if (bounds) restartSession(id, bounds.w - 2, bounds.h - 2);
   }
   applyMsg({ type: 'terminal_enter' });

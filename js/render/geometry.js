@@ -39,6 +39,7 @@ module.exports = {
   getCurrentLayout: core.getCurrentLayout,
   boundsFor: core.boundsFor,
   visibleBoundsFor: core.visibleBoundsFor,
+  halfProjection: core.halfProjection,
   // Test seams
   _distributeColumnHeights: core._distributeColumnHeights,
   _getPanelHeights: core._getPanelHeights,

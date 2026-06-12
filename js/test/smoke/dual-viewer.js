@@ -181,4 +181,61 @@ describe('[6] opening content into the focused viewer keeps focus there', () => 
   });
 });
 
+describe('[8] half view is an API-driven projection — two viewers side-by-side', () => {
+  // v0.6.4 #1 Step 1. Half view used to hardcode "one navigator + the major
+  // viewer" and HIDE every other viewer. It's now a projection of two slots
+  // resolved by geo.halfProjection: an ephemeral, API-settable selection
+  // (view_place_pane) over a default that reproduces the old behavior.
+  const geo = require('../../render/geometry');
+  const layoutSlice = () => api.getInstanceSlice('layout');
+
+  function renderNow() {
+    const realWrite = process.stdout.write.bind(process.stdout);
+    process.stdout.write = () => true;
+    try { geo.redraw(getModel()); } finally { process.stdout.write = realWrite; }
+    return layoutSlice().paneBounds;
+  }
+
+  it('DEFAULT half (nothing placed): one non-viewer + the focused viewer; the OTHER viewer is hidden', () => {
+    layoutSlice().halfView = { left: null, right: null };
+    focus(A);  // focus a viewer → default-left falls to the sticky nav
+    api.dispatchMsg(api.wrap('layout', { type: 'view_set', mode: 'half' }));
+    const pb = renderNow();
+    const keys = Object.keys(pb);
+    eq(keys.length, 2, 'exactly two panes projected');
+    assert(keys.includes(A), 'the focused viewer (A) is on screen');
+    assert(!keys.includes(B), 'the OTHER viewer (B) is hidden — the historical default');
+  });
+
+  it('PLACING both slots projects two viewers side-by-side (no navigator)', () => {
+    api.dispatchMsg(api.wrap('layout', { type: 'view_place_pane', slot: 'left',  paneId: A }));
+    api.dispatchMsg(api.wrap('layout', { type: 'view_place_pane', slot: 'right', paneId: B }));
+    const pb = renderNow();
+    const keys = Object.keys(pb);
+    eq(keys.length, 2, 'exactly two panes projected');
+    assert(pb[A] && pb[B], 'BOTH viewers are on screen');
+    eq(pb[A].x, 0, 'A occupies the left slot (x=0)');
+    eq(pb[B].x, pb[A].x + pb[A].w, 'B begins where A ends (right slot)');
+    eq(pb[A].y, 0); eq(pb[B].y, 0);
+    eq(pb[A].h, pb[B].h, 'both full height');
+  });
+
+  it('getPanelViewportH agrees: the RIGHT-slot viewer reports full content height', () => {
+    const pb = renderNow();   // both slots still placed from the prior test
+    eq(geo.getPanelViewportH(B), pb[B].h - 2,
+       'right-slot viewer gets full availH-2 (geometry matches what was painted)');
+  });
+
+  it('clearing back to default (place the nav left) drops B again', () => {
+    // Restore the single-viewer-era shape by placing the nav on the left and
+    // re-defaulting the right via focus; proves the projection is reversible.
+    layoutSlice().halfView = { left: null, right: null };
+    focus(A);
+    api.dispatchMsg(api.wrap('layout', { type: 'view_set', mode: 'half' }));
+    const keys = Object.keys(renderNow());
+    assert(!keys.includes(B), 'B hidden again once the override is cleared');
+    api.dispatchMsg(api.wrap('layout', { type: 'view_set', mode: 'normal' }));
+  });
+});
+
 report();

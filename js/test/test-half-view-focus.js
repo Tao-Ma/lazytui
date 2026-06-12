@@ -67,6 +67,65 @@ describe('[focus_set] tracks halfLeftPanel for half-view rendering', () => {
   });
 });
 
+describe('[view_place_pane] sets the half-view projection slot (v0.6.4)', () => {
+  // A realistic arrange: a nav + two viewers, so findPaneLocation resolves.
+  const ARR = {
+    detailHeightPct: 60, pool: {},
+    columns: [
+      { width: 30, panels: [{ type: 'files', id: 'f', paneId: 'pane-f' }] },
+      { panels: [
+        { type: 'detail', id: 'd1', paneId: 'pane-d1' },
+        { type: 'detail', id: 'd2', paneId: 'pane-d2' },
+      ] },
+    ],
+  };
+  const sliceWith = (over) => ({ ...layout.init(), arrange: ARR, ...over });
+
+  it('init starts with both slots null', () => {
+    const s = layout.init();
+    eq(s.halfView.left, null); eq(s.halfView.right, null);
+  });
+
+  it('sets the slot, emits force_full_repaint, focuses the placed pane', () => {
+    const { next, cmds } = applyUpdate(sliceWith(), { type: 'view_place_pane', slot: 'right', paneId: 'pane-d2' });
+    eq(next.halfView.right, 'pane-d2', 'right slot set');
+    eq(next.halfView.left, null, 'left slot untouched');
+    assert(cmds.some(c => c.type === 'force_full_repaint'), 'force_full_repaint emitted');
+    eq(next.focus, 'pane-d2', 'focus stamped to the placed pane');
+  });
+
+  it('either slot accepts ANY pane — a viewer in the LEFT slot is allowed', () => {
+    const { next } = applyUpdate(sliceWith(), { type: 'view_place_pane', slot: 'left', paneId: 'pane-d1' });
+    eq(next.halfView.left, 'pane-d1', 'viewer placed in left slot (no detail exclusion)');
+  });
+
+  it('invalid slot is a no-op (preserves slice ref)', () => {
+    const s0 = sliceWith();
+    eq(layout.update({ type: 'view_place_pane', slot: 'middle', paneId: 'pane-d2' }, s0), s0);
+  });
+
+  it('an unplaced paneId is a no-op (preserves slice ref)', () => {
+    const s0 = sliceWith();
+    eq(layout.update({ type: 'view_place_pane', slot: 'left', paneId: 'pane-nope' }, s0), s0);
+  });
+
+  it('setting a slot to its current value is a no-op (preserves slice ref)', () => {
+    const s0 = sliceWith({ halfView: { left: 'pane-f', right: null } });
+    eq(layout.update({ type: 'view_place_pane', slot: 'left', paneId: 'pane-f' }, s0), s0);
+  });
+
+  it('set_arrange clears a slot whose pane the new arrange dropped, keeps the survivor', () => {
+    const s0 = sliceWith({ halfView: { left: 'pane-f', right: 'pane-d2' } });
+    const ARR2 = { ...ARR, columns: [
+      ARR.columns[0],
+      { panels: [{ type: 'detail', id: 'd1', paneId: 'pane-d1' }] },  // pane-d2 dropped
+    ] };
+    const { next } = applyUpdate(s0, { type: 'set_arrange', arrange: ARR2 });
+    eq(next.halfView.left, 'pane-f', 'still-placed slot kept');
+    eq(next.halfView.right, null, 'dropped-pane slot cleared');
+  });
+});
+
 describe('[free_config_exit] commits current focus to halfLeftPanel', () => {
   it('non-detail focus on exit → halfLeftPanel updated', () => {
     // Free-config nav (free_config_nav etc.) writes focus directly without

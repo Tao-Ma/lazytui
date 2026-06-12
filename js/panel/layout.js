@@ -53,7 +53,25 @@ const { getInstanceSlice } = require('./api');
 function _commitArrange(slice, nextArrange, opts) {
   const skipUndo = opts && opts.skipUndo;
   const withUndo = skipUndo ? slice : mfcCore.pushUndo(slice);
-  return { ...withUndo, arrange: nextArrange, dirty: true };
+  const committed = { ...withUndo, arrange: nextArrange, dirty: true };
+  // v0.6.4 — an arrange mutation (pool hide/show/swap, column ops, drag)
+  // can orphan a half-view projection slot pointing at a now-removed pane.
+  // Clear stale slots here, the shared commit point, so the persistent
+  // selection stays self-consistent across every arrange-mutating arm
+  // (halfProjection also falls back at read time, but this is authoritative).
+  return _clearStaleHalfView(committed);
+}
+
+/** Null out any halfView slot whose paneId is no longer placed in arrange.
+ *  Returns the slice unchanged (same ref) when both slots are still valid. */
+function _clearStaleHalfView(slice) {
+  const hv = slice.halfView;
+  if (!hv || (!hv.left && !hv.right)) return slice;
+  const stillPlaced = (id) => !!id && !!mpool.findPaneLocation(slice.arrange, p => p.paneId === id);
+  const left = stillPlaced(hv.left) ? hv.left : null;
+  const right = stillPlaced(hv.right) ? hv.right : null;
+  if (left === hv.left && right === hv.right) return slice;
+  return { ...slice, halfView: { left, right } };
 }
 
 /** Apply the focus-side fields of the `focus_set` Msg inline — focus,
@@ -174,6 +192,16 @@ function init() {
     // kind; stays sticky while focus sits on a viewer. Falls back to
     // first non-viewer panel if unset/stale.
     halfLeftPanel: null,
+    // v0.6.4 — explicit, ephemeral half-view PROJECTION selection: which
+    // pane occupies the left / right slot. An override layer over the
+    // historical derivation (focused non-detail + major viewer) — when a
+    // slot is null the projection falls back to that default, so an
+    // untouched config is a strict no-op. Either slot may hold ANY pane,
+    // including a viewer (two viewers side-by-side). Set by `view_place_pane`;
+    // resolved by geometry-core.halfProjection. NOT serialized (view mode is
+    // runtime focus-state fine-tuning, not a declared layout); slots are
+    // cleared when their pane leaves `arrange` (set_arrange / pool_hide).
+    halfView: { left: null, right: null },
     // v0.6.1 Phase 4 — pane id that owns the open tab-list overlay.
     // Companion to model.modes.tabListMode: the mode flag says "an
     // overlay is open" (chain-mode keyboard routing); this field says
@@ -276,6 +304,25 @@ function update(msg, slice) {
       const next = reduceViewMode(slice.viewMode, msg);
       if (next === slice.viewMode) return slice;
       return [{ ...slice, viewMode: next }, [{ type: 'force_full_repaint' }]];
+    }
+    // v0.6.4 — half-view PROJECTION selection. Sets which pane occupies the
+    // left / right slot (an ephemeral override of the default derivation;
+    // see slice.halfView + geometry-core.halfProjection). Any placed pane is
+    // valid in either slot — no detail/viewer exclusion — so two viewers can
+    // sit side-by-side. Pure: never mutates arrange. The seam the step-2
+    // tab/pane dropdown targets.
+    case 'view_place_pane': {
+      const slot = msg.slot;
+      if (slot !== 'left' && slot !== 'right') return slice;
+      // The paneId must be a currently-placed pane.
+      if (!mpool.findPaneLocation(slice.arrange, p => p.paneId === msg.paneId)) return slice;
+      if (slice.halfView[slot] === msg.paneId) return slice;  // no-op (preserve ref)
+      const halfView = { ...slice.halfView, [slot]: msg.paneId };
+      // Focus the just-placed pane: it's now guaranteed visible, so chrome
+      // focus-border + getPanelViewportH agree, and it seeds the sticky
+      // defaults the OTHER (unset) slot falls back to.
+      const placed = _withFocus({ ...slice, halfView }, msg.paneId);
+      return [placed, [{ type: 'force_full_repaint' }]];
     }
     // focus. Stores the focused panel; refresh of the detail body for
     // the newly-focused panel is an effect (Cmd). msg.focus == null
@@ -560,6 +607,11 @@ function update(msg, slice) {
         } else if (allPanes.length > 0) {
           next.focus = allPanes[0].paneId || allPanes[0].type;
         }
+        // v0.6.4 — half-view projection slots may name a pane the new
+        // arrange dropped; clear stale slots so the persistent selection
+        // stays self-consistent (set_arrange builds `next` directly rather
+        // than via _commitArrange, so apply the same clear here).
+        next.halfView = _clearStaleHalfView(next).halfView;
       }
       if (msg.dirty   !== undefined) next.dirty   = !!msg.dirty;
       if (hadPaneSelect) {
@@ -750,8 +802,11 @@ function update(msg, slice) {
       return mtabDrag.tabDragMotion(
         slice, msg.mx, msg.my,
         // v0.6.4 — focused viewer's CONTAINER pane bounds for the drag
-        // geometry (resolveViewerPaneId → half/full-correct hosting pane).
-        require('../render/geometry').boundsFor(route.resolveViewerPaneId()),
+        // geometry. visibleBoundsFor (not boundsFor): an off-screen viewer
+        // in half/full yields null (tabDragMotion no-ops) instead of a
+        // phantom normal-view rect. Single-viewer: the dragged viewer is
+        // always on-screen → byte-identical.
+        require('../render/geometry').visibleBoundsFor(route.resolveViewerPaneId()),
         msg.tabBounds || null,
         msg.modelBundle,
         targetKind,

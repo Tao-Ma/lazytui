@@ -415,13 +415,13 @@ function renderNormal(model) {
 // rect-painter migration as renderNormal: a 1- or 2-rect Layout for
 // the on-screen panels, routed through painter.composeRows.
 //
-// Half view is "non-detail panel + detail" side-by-side. When focus
-// is ON detail (e.g., after a tab-bar click or content-area click
-// moves focus there), the left side falls back to slice.halfLeftPanel
-// — the most recently focused non-detail panel. Stale-handle
-// fallback: if halfLeftPanel was removed from the layout, pick the
-// first non-detail panel; if none, just render detail on the left as
-// a last resort.
+// Half view projects two panes side-by-side, resolved by the shared
+// geo.halfProjection helper (see geometry-core): a left + right slot, each
+// an ephemeral API-settable selection that defaults to the historical
+// "focused non-detail pane + major viewer" derivation. Either slot may hold
+// any pane (two viewers side-by-side is allowed); the right slot may be null
+// (single-pane left-only). The same helper drives getPanelViewportH so the
+// scroll/viewport math agrees with what's painted.
 function renderHalf(model) {
   geo.calcLayout(model);
   const layoutSlice = getInstanceSlice('layout');
@@ -430,22 +430,16 @@ function renderHalf(model) {
   const availH = ROWS - 1;
   const focusedPanel = allPanels().find(p => mpane.paneMatchesFocus(p, layoutSlice.focus));
   if (!focusedPanel) return renderNormal(model);
-  // v0.6.4 multi-viewer — pair the right half with the MAJOR viewer
-  // (resolveViewerPaneId: focus-first → sticky lastViewerTab), not
-  // findDetailPane (first-found). When the focused pane is itself a
-  // viewer, focus-first resolves it → that viewer goes right and the
-  // left falls to halfLeftPanel below. No-op for a single viewer.
-  const detailPaneId = _route().resolveViewerPaneId();
-  const detailPanel = detailPaneId
-    ? allPanels().find(p => p.paneId === detailPaneId) || null
-    : null;
-  let leftPanel = focusedPanel;
-  if (mpool.isDetailPane(focusedPanel)) {
-    const all = allPanels();
-    leftPanel = all.find(p => mpane.paneMatchesFocus(p, layoutSlice.halfLeftPanel))
-             || all.find(p => !mpool.isDetailPane(p))
-             || focusedPanel;
-  }
+  // v0.6.4 — the two projected panes come from the shared halfProjection
+  // (geometry-core): an ephemeral, API-settable selection (`view_place_pane`)
+  // that falls back to the historical "focused non-detail + major viewer"
+  // derivation when unset. Either slot may hold ANY pane — including a
+  // viewer — so two viewers can sit side-by-side. getPanelViewportH reads
+  // the same helper, so half-view geometry agrees everywhere.
+  const all = allPanels();
+  const proj = geo.halfProjection(layoutSlice);
+  const leftPanel = (proj.left && all.find(p => p.paneId === proj.left)) || focusedPanel;
+  const detailPanel = proj.right ? all.find(p => p.paneId === proj.right) || null : null;
   layoutSlice.paneBounds = {};
   const leftBounds = { x: 0, y: 0, w: halfW, h: availH };
   if (leftPanel.paneId) layoutSlice.paneBounds[leftPanel.paneId] = leftBounds;
@@ -559,7 +553,12 @@ function renderTerminalOverlay(model = getModel()) {
   // v0.6.4 — position the terminal overlay against the FOCUSED viewer's
   // CONTAINER pane bounds. resolveViewerPaneId bridges the viewer tab-id
   // to its hosting paneId, the only key carrying half/full visible bounds.
-  const bounds = geo.boundsFor(_route().resolveViewerPaneId());
+  // visibleBoundsFor (not boundsFor): in half/full the resolved viewer may
+  // be OFF-SCREEN (e.g. two non-viewer panes projected) — boundsFor would
+  // fall through to a phantom normal-view rect and mis-place the overlay.
+  // null → no-op. Single-viewer: the viewer is always on-screen, so this is
+  // byte-identical.
+  const bounds = geo.visibleBoundsFor(_route().resolveViewerPaneId());
   if (!bounds) return;
   const innerW = bounds.w - 2;
   const innerH = bounds.h - 2;
@@ -722,7 +721,9 @@ function render(model = getModel()) {
   // bounds); slice key = the viewer's own tab/instance id (where innerH
   // lives). v0.6.4 — these two diverge once the type-keyed write retires.
   const viewerTab = route.resolveTarget('viewer');
-  const viewerBounds = geo.boundsFor(route.resolveViewerPaneId());
+  // visibleBoundsFor: skip publishing innerH for an off-screen viewer in
+  // half/full (boundsFor's phantom fallback would publish a stale height).
+  const viewerBounds = geo.visibleBoundsFor(route.resolveViewerPaneId());
   if (viewerTab && viewerBounds) {
     const innerH = Math.max(0, viewerBounds.h - 2);
     const viewerSlice = getInstanceSlice(viewerTab);
