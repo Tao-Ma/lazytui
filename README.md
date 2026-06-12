@@ -212,6 +212,7 @@ for "the same thing but headless."
 | Cmdline (`:`) | `:quit`, `:refresh`, `:help`, plus plugin-registered verbs, with positional-arg plumbing. |
 | Running overlay (`<leader> j`, v0.6.2+) | Modal listing every live child lazytui spawned (streamed actions, PTYs, background + tmux spawns). Enter jumps to the relevant tab; Esc closes. Action tabs with a running stream show a `●` indicator in the tab strip. |
 | Pane-select dropdown (v0.6.3+) | Every non-detail pane has a `[≡]` glyph at top-left; click to open a centered overlay listing all pool entries (placed in this cell / placed in another column / hidden). Pick one to swap which pool entry occupies that cell — placed-entry pick SWAPs; hidden-entry pick REPLACEs (displaced occupant becomes hidden). Mouse + keyboard nav. |
+| Diagnostics window (`<leader> e`, v0.6.4+) | Modal listing the warnings (`⚠`) and errors (`✕`) raised this session — boot config warnings, runtime errors, and multi-instance footgun guards. `j`/`k`/`g`/`G` nav, `c` clears, `s` saves to `lazytui-diagnostics.json`, Esc closes. Backed by a dedicated buffer separate from the replay event-log so diagnostics aren't evicted by input noise. |
 | 6 themes + free-config mode | `:free-config` opens an interactive layout editor — drag/swap/resize/spawn columns and panels, hide/show from a pool of declared panel definitions, save back to YAML. |
 | `--spec` flag | Prints the plugin-authoring bundle for AI agents (every rule in one file). |
 

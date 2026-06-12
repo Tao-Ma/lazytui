@@ -4,6 +4,23 @@ All notable changes to lazytui are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning
 follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Diagnostics window (`<leader> e`).** A browsable log of the
+  warnings and errors raised during a session — opened with the leader
+  chord `e`, navigated like the register / Running overlays
+  (`j`/`k`/`g`/`G`, `Esc` to close). `c` clears the buffer; `s` saves it
+  to `lazytui-diagnostics.json` for a bug report. Backed by a dedicated
+  in-memory ring buffer (`dispatch/diag-log.js`) kept separate from the
+  event-log replay firehose, so a diagnostic isn't evicted by key/mouse
+  noise before you can read it. Producers today: boot config warnings,
+  ambiguous same-kind slice reads (a `pane-collapse` warning when a
+  kind-name read would silently collapse two same-kind panes onto the
+  primary — the multi-instance footgun guard), and every runtime error
+  funneled through the effects-layer error sink. Other call sites adopt
+  `diag.warn()` / `diag.error()` opportunistically.
+
 ## [0.6.3] — 2026-06-10
 
 ### Architecture (deep arch arc, 2026-06-07)
