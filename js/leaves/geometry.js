@@ -1,11 +1,13 @@
 /**
  * Layout geometry — the WM spatial model: pure layout math, no paint.
  * (v0.6.4 Theme B split this out of the old `render/geometry.js`
- * god-file; the painting half lives in `render/paint.js`. The thin
- * facade that re-exported both was deleted in wm-geo P2 — math
- * consumers import this module directly, paint consumers import
- * `render/paint`. `panel/layout.js` still owns the arrange/focus/
- * viewMode slice.)
+ * god-file as `render/geometry-core.js`; the painting half lives in
+ * `render/paint.js`. wm-geo P2 deleted the thin facade that re-exported
+ * both, and P3 re-homed this file to `leaves/` — its dependency
+ * fingerprint (pool/pane only, zero render/overlay imports) is a WM
+ * primitive's, not a view's. Math consumers import this module
+ * directly, paint consumers import `render/paint`. `panel/layout.js`
+ * still owns the arrange/focus/viewMode slice.)
  *
  * Geometry as view-derived data (docs/v0.5-layering.md §5). Two
  * sources during the v0.6.3 P1 migration:
@@ -45,12 +47,15 @@
 // screen size matters, a `{cols, rows}` dims value — io/term.dims())
 // explicitly. No app/state, no panel/api, no app/runtime, no io/term:
 // the impure fetches moved to the call sites, which already had them.
-const mpool = require('../leaves/pool');
-const mpane = require('../leaves/pane');
+const mpool = require('./pool');
+const mpane = require('./pane');
 
-// Lazy route handle — geometry-core is loaded inside the render module;
-// requiring route at load time would close the layout ↔ render cycle.
-// Mirrors paint.js#_route.
+// Lazy route handle — the ONE non-leaf reach this module keeps:
+// halfProjection's default-right slot resolves the major viewer via
+// route.resolveViewerPaneId(). Lazy (call-time) so this leaf stays
+// load-order-independent of the panel/route → panel/api web; threading
+// the resolved id through every halfProjection caller is a possible
+// future purification. Mirrors paint.js#_route.
 let _routeRef; const _route = () => (_routeRef ||= require('../panel/route'));
 
 function distributeColumnHeights(panels, availH, isLastCol, minH, detailHeightPct) {

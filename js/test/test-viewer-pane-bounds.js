@@ -26,7 +26,7 @@
 const { describe, it, eq, assert, report } = require('./test-runner');
 const sm = require('./smoke/_helpers/smoke');
 const route = require('../panel/route');
-const geo = require('../render/geometry-core');
+const geo = require('../leaves/geometry');
 const { getInstanceSlice } = require('../panel/api');
 
 function renderIn(viewMode, focus) {

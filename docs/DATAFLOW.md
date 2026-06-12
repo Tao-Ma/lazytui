@@ -159,14 +159,19 @@ payload fans out to a Component, flat payload re-enters the root
 reducer) — no path where module X writes layer Y's state directly
 except the blessed render-side exceptions:
 
-  - `layout.panelHeights` / `paneBounds` written by `calcLayout` +
-    each render-mode (the view-output geometry).
+  - `layout.paneBounds` written by each render-mode in `render/paint.js`
+    (the view-output geometry). The layout *math* itself is pure since
+    the wm-geometry refactor: `leaves/geometry.js` (was
+    `render/geometry-core.js`) computes rects from an explicit
+    `(layoutSlice, dims)` and performs no writes.
   - `viewer.slice.tabBounds` written by the viewer's `detailTitle`
     (tab-bar hit-test cache). P4.1 moved this off `layout`'s slice onto
     the viewer's OWN slice — an own-slice render-time write, not the
     cross-slice one it used to be.
   - keep-in-view `set_scroll` Msgs from `syncPanelScroll` into each
-    Navigator's nav slice (Msgs, not direct writes).
+    Navigator's nav slice (Msgs, not direct writes). Dispatched by
+    `paint.js#_syncScrollClamp` right after `calcLayout` per frame —
+    wm-geo P1.1 lifted this out of the layout math.
   - direct `route.setInstanceSlice` from `render()` into the viewer's
     `innerH` (viewport cache so viewer reducers don't read layout
     cross-slice; R4.9 retired the prior `viewer_set_viewport` Msg —

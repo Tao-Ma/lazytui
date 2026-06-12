@@ -198,7 +198,7 @@ function init() {
     // slot is null the projection falls back to that default, so an
     // untouched config is a strict no-op. Either slot may hold ANY pane,
     // including a viewer (two viewers side-by-side). Set by `view_place_pane`;
-    // resolved by geometry-core.halfProjection. NOT serialized (view mode is
+    // resolved by leaves/geometry halfProjection. NOT serialized (view mode is
     // runtime focus-state fine-tuning, not a declared layout); slots are
     // cleared when their pane leaves `arrange` (set_arrange / pool_hide).
     halfView: { left: null, right: null },
@@ -304,7 +304,7 @@ function update(msg, slice) {
     }
     // v0.6.4 — half-view PROJECTION selection. Sets which pane occupies the
     // left / right slot (an ephemeral override of the default derivation;
-    // see slice.halfView + geometry-core.halfProjection). Any placed pane is
+    // see slice.halfView + leaves/geometry halfProjection). Any placed pane is
     // valid in either slot — no detail/viewer exclusion — so two viewers can
     // sit side-by-side. Pure: never mutates arrange. The seam the step-2
     // tab/pane dropdown targets.
@@ -333,7 +333,7 @@ function update(msg, slice) {
       if (slot !== 'left' && slot !== 'right') return slice;
       if (!mpool.findPaneLocation(slice.arrange, p => p.paneId === msg.paneId)) return slice;
       const other = slot === 'left' ? 'right' : 'left';
-      const proj = require('../render/geometry-core').halfProjection(slice);
+      const proj = require('../leaves/geometry').halfProjection(slice);
       if (proj[slot] === msg.paneId) return slice;  // already in this slot — no-op
       const halfView = { ...slice.halfView, [slot]: msg.paneId };
       if (proj[other] === msg.paneId) halfView[other] = proj[slot] || null;  // SWAP
@@ -829,7 +829,7 @@ function update(msg, slice) {
         // always on-screen → byte-identical. Reads from `slice` — this
         // reducer's own layout slice (wm-geo P1.2 made the accessor take
         // it explicitly; the old global fetch resolved to the same object).
-        require('../render/geometry-core').visibleBoundsFor(slice, route.resolveViewerPaneId()),
+        require('../leaves/geometry').visibleBoundsFor(slice, route.resolveViewerPaneId()),
         msg.tabBounds || null,
         msg.modelBundle,
         targetKind,

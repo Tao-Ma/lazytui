@@ -166,7 +166,7 @@ function _placedWidgetTargets() {
   const drag = slice.freeConfig && slice.freeConfig.drag;
   if (drag) return null;  // drag affordance owns the screen; suppress widgets
   const panels = mpool.allPanesInColumns(slice.arrange);
-  // wm-geo P2 — geometry-core is a pure leaf (deps: pool/pane only), so
+  // wm-geo P2/P3 — leaves/geometry is a pure leaf (deps: pool/pane only), so
   // this require no longer routes through the paint-bundling facade; it
   // stays inline only until the Phase-4 inline-require reclaim pass.
   //
@@ -178,7 +178,7 @@ function _placedWidgetTargets() {
   // normal view → that pane is silently collapsed). Same bug class
   // as the half-mode focus-revert fix in `visibleBoundsFor`'s intro
   // commit — chrome-glyph hit-tests share the symptom.
-  const { visibleBoundsFor } = require('./geometry-core');
+  const { visibleBoundsFor } = require('../leaves/geometry');
   return panels
     .filter(p => p.type !== 'detail')
     // v0.6.4 Phase 2 — hit-test by paneId, not type: two same-kind panes

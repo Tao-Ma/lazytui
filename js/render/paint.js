@@ -1,17 +1,17 @@
 /**
  * View painting — the rendering half of the render module. (v0.6.4
  * Theme B: split out of the old `render/geometry.js` god-file; the
- * layout math lives in `render/geometry-core.js`. The thin facade that
+ * layout math lives in `leaves/geometry.js`. The thin facade that
  * re-exported both was deleted in wm-geo P2 — paint consumers import
  * this module directly.) Owns the per-frame paint:
  * the three view-mode dispatchers (renderNormal/Half/Full), the Rect
  * compositing + diff cache (`_frame` → painter.paintFrame), the panel
  * chrome glyphs, the terminal overlay, and `render()` itself.
  *
- * Paint depends on geometry-core (one direction only): renderNormal/
+ * Paint depends on leaves/geometry (one direction only): renderNormal/
  * Half/Full call `geo.calcLayout(layoutSlice, dims)` to get the Rect
  * list; hit-test accessors (boundsFor / getPanelViewportH /
- * getCurrentLayout) live in geometry-core.
+ * getCurrentLayout) live in leaves/geometry.
  *
  * The renderer-as-writer pattern (renderNormal/Half/Full populate
  * `layoutSlice.paneBounds` directly) is documented in
@@ -29,7 +29,7 @@
 const { RESET, richToAnsi, esc, visibleLen, wrapColor } = require('../io/ansi');
 const { cols, rows, dims: termDims, stdout, showCursor, hideCursor } = require('../io/term');
 const { allPanels, syncPanelScroll } = require('../app/state');
-const geo = require('./geometry-core');
+const geo = require('../leaves/geometry');
 const mpool = require('../leaves/pool');
 const mpane = require('../leaves/pane');
 const { theme } = require('./themes');
@@ -393,7 +393,7 @@ function composeRects(layout, model) {
 // is pure + identity-preserving so re-renders don't ping-pong. Clamped
 // per paneId, so two same-kind panes clamp independently.
 //
-// wm-geometry P1.1 — lifted out of calcLayout (geometry-core) so layout
+// wm-geometry P1.1 — lifted out of calcLayout (leaves/geometry) so layout
 // math stays side-effect-free. Runs right after calcLayout in all three
 // view modes, BEFORE this frame's paneBounds rewrite: getPanelViewportH
 // therefore reads the previous frame's bounds — the exact sequence the
@@ -434,7 +434,7 @@ function renderNormal(model) {
 // the on-screen panels, routed through painter.composeRows.
 //
 // Half view projects two panes side-by-side, resolved by the shared
-// geo.halfProjection helper (see geometry-core): a left + right slot, each
+// geo.halfProjection helper (see leaves/geometry): a left + right slot, each
 // an ephemeral API-settable selection that defaults to the historical
 // "focused non-detail pane + major viewer" derivation. Either slot may hold
 // any pane (two viewers side-by-side is allowed); the right slot may be null
@@ -451,7 +451,7 @@ function renderHalf(model) {
   const focusedPanel = allPanels().find(p => mpane.paneMatchesFocus(p, layoutSlice.focus));
   if (!focusedPanel) return renderNormal(model);
   // v0.6.4 — the two projected panes come from the shared halfProjection
-  // (geometry-core): an ephemeral, API-settable selection (`view_place_pane`)
+  // (leaves/geometry): an ephemeral, API-settable selection (`view_place_pane`)
   // that falls back to the historical "focused non-detail + major viewer"
   // derivation when unset. Either slot may hold ANY pane — including a
   // viewer — so two viewers can sit side-by-side. getPanelViewportH reads

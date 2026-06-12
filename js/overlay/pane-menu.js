@@ -184,7 +184,7 @@ function _targetPaneId() {
  *  fire the menu on a non-visible pane whose normal-view rect overlaps.
  *  Lazy require to dodge the layout ↔ overlay cycle. */
 function _paneBounds(paneId) {
-  return require('../render/geometry-core').visibleBoundsFor(getInstanceSlice('layout'), paneId);
+  return require('../leaves/geometry').visibleBoundsFor(getInstanceSlice('layout'), paneId);
 }
 
 /** Trigger glyph state machine (drives both chrome paint + click):
