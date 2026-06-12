@@ -29,6 +29,7 @@ const {
 const ms = require('../../leaves/search');
 const pt = require('../../leaves/pane-tabs');
 const mpool = require('../../leaves/pool');
+const { stripMarkup, charWidth } = require('../../io/ansi');
 const { buildTabStrip } = require('./tab-strip');
 const { getModel } = require('../../app/runtime');
 
@@ -40,8 +41,8 @@ const { getModel } = require('../../app/runtime');
 // helper resolves display width through panel/viewer/select.js's pure ANSI-aware
 // reader.
 
-function _beginSelect(slice, line, col, kind) {
-  const n = slice.lines.length;
+function _beginSelect(slice, line, col, kind, lines) {
+  const n = lines.length;
   const l = n === 0 ? 0 : Math.max(0, Math.min(n - 1, line | 0));
   const c = Math.max(0, col | 0);
   return {
@@ -137,22 +138,33 @@ function _capLines(lines, maxLen) {
   return [lines.slice(dropped), dropped];
 }
 
-function _scrollView(slice, delta) {
+function _scrollView(slice, delta, lines) {
   const innerH = _innerH(slice);
-  const maxScroll = Math.max(0, slice.lines.length - innerH);
+  const maxScroll = Math.max(0, lines.length - innerH);
   const scroll = Math.max(0, Math.min(maxScroll, (slice.scroll || 0) + (delta || 0)));
   if (scroll === (slice.scroll || 0)) return slice;
   return { ...slice, scroll };
 }
 
-function _moveCursor(slice, dline, dcol) {
+// P2 (viewer-lines selector) — width computed from the boundary-derived
+// `lines` directly (was select.plainLineWidth, which re-read the STORED
+// slice mid-update — a stale-read wart this threading retires).
+function _lineWidth(lines, i) {
+  const ln = lines[i];
+  if (ln == null) return 0;
+  const plain = stripMarkup(ln);
+  let w = 0;
+  for (const ch of plain) w += charWidth(ch.codePointAt(0));
+  return w;
+}
+
+function _moveCursor(slice, dline, dcol, lines) {
   const cur = slice.cursor || { line: 0, col: 0 };
-  const n = slice.lines.length;
+  const n = lines.length;
   if (n === 0) return slice;
   const newLine = Math.max(0, Math.min(n - 1, cur.line + dline));
   let newCol = (dcol === 0) ? cur.col : Math.max(0, cur.col + dcol);
-  const select = require('./select');
-  const w = select.plainLineWidth(newLine);
+  const w = _lineWidth(lines, newLine);
   newCol = (w === 0) ? 0 : Math.min(w - 1, newCol);
   const active = !!(slice.select && slice.select.active);
   return _setCursor(slice, newLine, newCol, active);
@@ -379,7 +391,12 @@ function update(msg, slice) {
   // also pure of getModel() now, receiving model as an explicit arg.
   // Same shape as the dispatcher's "read once at top" pattern.
   const m = getModel();
-  return _finalize(_updateInner(msg, slice), slice, m);
+  // P2 (viewer-lines selector) — derive the active-tab lines ONCE at the
+  // boundary (same blessed chokepoint as the model read) and hand them
+  // to the arms as a fact. Replaces per-arm slice.lines reads; the
+  // stored field dies in P3.
+  const lines = pt.viewerLines(slice, m, m.currentGroup);
+  return _finalize(_updateInner(msg, slice, lines), slice, m);
 }
 
 // MSG ROUTING — the viewer's update is split across two homes:
@@ -409,7 +426,10 @@ function update(msg, slice) {
 // chrome, put it in the leaf. If it's about viewing content (scroll
 // math, search match navigation, content-tab body update with
 // viewer-specific semantics), put it here.
-function _updateInner(msg, slice) {
+function _updateInner(msg, slice, lines) {
+  // Boundary-derived active-tab lines. Direct test callers (and any
+  // legacy path) fall back to the stored field until P3 deletes it.
+  if (lines === undefined) lines = slice.lines || [];
   // Generic tab Msgs (tab_switch / tab_cycle / tab_list_* / viewer_add_* /
   // viewer_remove_* / viewer_update_content_tab_lines /
   // viewer_reorder_content_tab) lift through the pane-tabs leaf,
@@ -468,7 +488,7 @@ function _updateInner(msg, slice) {
         const fromKey = msg.fromTabKey;
         if (fromKey) {
           const innerH = slice.innerH > 0 ? slice.innerH : 1;
-          const linesLen = (slice.lines || []).length;
+          const linesLen = lines.length;
           const maxScroll = Math.max(0, linesLen - innerH);
           const captured = {
             scroll: slice.scroll || 0,
@@ -585,7 +605,7 @@ function _updateInner(msg, slice) {
       // pt.viewerLines (which would need getModel + infoFromFocus).
       // Reducer pure of getModel().
       const innerH = _innerH(slice);
-      const maxScroll = Math.max(0, (slice.lines || []).length - innerH);
+      const maxScroll = Math.max(0, lines.length - innerH);
       let next;
       if (msg.to === 'top') next = 0;
       else if (msg.to === 'bottom') next = maxScroll;
@@ -907,10 +927,10 @@ function _updateInner(msg, slice) {
     // typing-term's derived matches; lines = the active-tab content
     // (slice.lines until P3 threads it).
     case 'viewer_search_nav':    return msg.dir > 0
-      ? ms.next(slice, _innerH(slice), slice.lines || [], slice.search.typing || '')
-      : ms.prev(slice, _innerH(slice), slice.lines || [], slice.search.typing || '');
+      ? ms.next(slice, _innerH(slice), lines, slice.search.typing || '')
+      : ms.prev(slice, _innerH(slice), lines, slice.search.typing || '');
     case 'viewer_search_commit': {
-      const [next, info] = ms.commit(slice, _innerH(slice), slice.lines || []);
+      const [next, info] = ms.commit(slice, _innerH(slice), lines);
       return [next, info.disableSearchMode
         ? [{ type: 'msg', msg: { type: 'mode_clear', flag: 'detailSearchMode' } }]
         : []];
@@ -937,10 +957,10 @@ function _updateInner(msg, slice) {
     // reducer. The pure ANSI-aware reads (selectedText / plainLineWidth)
     // stay in select.js.
     case 'select_begin':
-      return _beginSelect(slice, msg.line, msg.col, msg.kind);
+      return _beginSelect(slice, msg.line, msg.col, msg.kind, lines);
     case 'select_extend': {
       if (!slice.select || !slice.select.active) return slice;
-      const n = slice.lines.length;
+      const n = lines.length;
       const l = n === 0 ? 0 : Math.max(0, Math.min(n - 1, msg.line | 0));
       return { ...slice, select: { ...slice.select, cursor: { line: l, col: Math.max(0, msg.col | 0) } } };
     }
@@ -950,7 +970,7 @@ function _updateInner(msg, slice) {
     case 'select_set_cursor':
       return _setCursor(slice, msg.line, msg.col, msg.extend);
     case 'select_scroll_view':
-      return _scrollView(slice, msg.delta);
+      return _scrollView(slice, msg.delta, lines);
 
     // --- keyboard: the detail-panel visual-mode state machine. Lives here
     // (instead of as a dispatch.js hijack) because the claim is conditional
@@ -986,8 +1006,8 @@ function _updateInner(msg, slice) {
       // Detail-search post-commit n/N nav; Esc clears. P1 — committed
       // phase steps the committed term's derived matches.
       if (slice.search && slice.search.active) {
-        if (msg.seq === 'n' || msg.key === 'n') return [ms.next(slice, _innerH(slice), slice.lines || [], slice.search.term || ''), claim];
-        if (msg.seq === 'N' || msg.key === 'N') return [ms.prev(slice, _innerH(slice), slice.lines || [], slice.search.term || ''), claim];
+        if (msg.seq === 'n' || msg.key === 'n') return [ms.next(slice, _innerH(slice), lines, slice.search.term || ''), claim];
+        if (msg.seq === 'N' || msg.key === 'N') return [ms.prev(slice, _innerH(slice), lines, slice.search.term || ''), claim];
         if (msg.key === 'escape' && !active)    return [ms.clearCommitted(slice), claim];
       }
 
@@ -996,13 +1016,13 @@ function _updateInner(msg, slice) {
       if (msg.seq === 'v' || msg.key === 'v') {
         const next = (active && slice.select.kind === 'char')
           ? { ...slice, select: { ...slice.select, active: false } }
-          : _beginSelect(slice, slice.scroll || 0, 0, 'char');
+          : _beginSelect(slice, slice.scroll || 0, 0, 'char', lines);
         return [next, claim];
       }
       if (msg.seq === 'V' || msg.key === 'V') {
         const next = (active && slice.select.kind === 'line')
           ? { ...slice, select: { ...slice.select, active: false } }
-          : _beginSelect(slice, slice.scroll || 0, 0, 'line');
+          : _beginSelect(slice, slice.scroll || 0, 0, 'line', lines);
         return [next, claim];
       }
 
@@ -1021,19 +1041,19 @@ function _updateInner(msg, slice) {
 
       // Vertical movement: reading → scroll view, visual → cursor + extend.
       if (msg.key === 'down' || msg.seq === 'j' || msg.key === 'j') {
-        const next = active ? _moveCursor(slice, +1, 0) : _scrollView(slice, +1);
+        const next = active ? _moveCursor(slice, +1, 0, lines) : _scrollView(slice, +1, lines);
         return [next, claim];
       }
       if (msg.key === 'up' || msg.seq === 'k' || msg.key === 'k') {
-        const next = active ? _moveCursor(slice, -1, 0) : _scrollView(slice, -1);
+        const next = active ? _moveCursor(slice, -1, 0, lines) : _scrollView(slice, -1, lines);
         return [next, claim];
       }
 
       // Horizontal h/l — only claim in visual mode so reading-mode focus-shift
       // still works (`l` to step out of detail into the next panel).
       if (active) {
-        if (msg.key === 'left'  || msg.seq === 'h' || msg.key === 'h') return [_moveCursor(slice, 0, -1), claim];
-        if (msg.key === 'right' || msg.seq === 'l' || msg.key === 'l') return [_moveCursor(slice, 0, +1), claim];
+        if (msg.key === 'left'  || msg.seq === 'h' || msg.key === 'h') return [_moveCursor(slice, 0, -1, lines), claim];
+        if (msg.key === 'right' || msg.seq === 'l' || msg.key === 'l') return [_moveCursor(slice, 0, +1, lines), claim];
       }
 
       // 0 / $ — line-start / line-end jumps. Only meaningful with a cursor.

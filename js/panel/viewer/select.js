@@ -49,6 +49,16 @@ function _detail() {
   return getInstanceSlice(route.resolveTarget('viewer') || 'detail');
 }
 
+// P2 (viewer-lines selector) — the active-tab lines DERIVE via the
+// pane-tabs projection (this module is dispatch-side; the model read is
+// fine here). Replaces the stored slice.lines read; the field dies in P3.
+function _lines() {
+  const sl = _detail();
+  if (!sl) return [];
+  const m = getModel();
+  return require('../../leaves/pane-tabs').viewerLines(sl, m, m.currentGroup);
+}
+
 // Selection writes fold onto the update spine (select_* Msgs). select.js
 // can't be imported by the reducer (it requires runtime → cycle), so the
 // writers resolve any ansi-dependent values here (plainLineWidth clamps)
@@ -68,7 +78,7 @@ function _apply(msg) {
 
 /** Plain text projection of detail line `i` (markup stripped). */
 function plainLine(i) {
-  const ln = _detail()?.lines?.[i];
+  const ln = _lines()[i];
   return ln == null ? '' : stripMarkup(ln);
 }
 
