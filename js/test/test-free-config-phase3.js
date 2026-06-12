@@ -353,6 +353,60 @@ describe('[3g] v0.6.4 — two same-type panes resize INDEPENDENTLY', () => {
     eq(col0[0].heightPct, 45, 'fa grew');
     eq(col0[1].heightPct, 55, 'fb shrank by the same amount');
   });
+
+  // v0.6.4 #2-residual — detail was the LAST kind to migrate off the
+  // layout-wide `arrange.detailHeightPct` scalar. Its +/- resize path
+  // (resizeWidthOrDetail) still reads that scalar as a fallback, so two
+  // detail panes are the one case that path could silently collapse onto
+  // a shared height. This pins them independent: +/- on one detail pane
+  // moves only THAT pane's heightPct, leaving the sibling AND the scalar
+  // untouched.
+  function twoDetailFixture() {
+    getInstanceSlice('layout').arrange = {
+      detailHeightPct: 60,
+      columns: [
+        { width: 30, panels: [
+          { type: 'files', id: 'f', paneId: 'pane-f', title: 'F', columnIndex: 0, hotkey: '1' },
+        ] },
+        { panels: [
+          { type: 'detail', id: 'd1', paneId: 'pane-d1', title: 'D1', columnIndex: 1, hotkey: 'o', heightPct: 60 },
+          { type: 'detail', id: 'd2', paneId: 'pane-d2', title: 'D2', columnIndex: 1, hotkey: 'O', heightPct: 40 },
+        ] },
+      ],
+    };
+    getInstanceSlice('layout').paneBounds = {
+      'pane-f':  { x:  0, y:  0, w: 30, h: 20 },
+      'pane-d1': { x: 30, y:  0, w: 90, h: 12 },
+      'pane-d2': { x: 30, y: 12, w: 90, h:  8 },
+    };
+    getModel().modes.freeConfigMode = false;
+    getModel().modes.freeConfigTitleEditMode = false;
+    getInstanceSlice('layout').dirty = false;
+    getInstanceSlice('layout').focus = 'pane-d1';
+    _clearUndoStacks();
+    enterFreeConfig(getInstanceSlice("layout").arrange, '/dev/null', () => {});
+  }
+
+  it('+ on one detail pane grows only THAT pane — sibling detail + scalar untouched', () => {
+    twoDetailFixture();           // focus = pane-d1 (60%), sibling pane-d2 (40%)
+    press('+', '+');              // detail focused → grow this pane's heightPct by 5
+    const col1 = getInstanceSlice('layout').arrange.columns[1].panels;
+    eq(col1[0].heightPct, 65, 'focused detail (pane-d1) grew 60→65');
+    eq(col1[1].heightPct, 40, 'sibling detail (pane-d2) unchanged');
+    eq(getInstanceSlice('layout').arrange.detailHeightPct, 60,
+       'layout-wide detailHeightPct scalar untouched (per-pane, not the scalar)');
+  });
+
+  it('- on the OTHER detail pane is independent of the first', () => {
+    twoDetailFixture();
+    getInstanceSlice('layout').focus = 'pane-d2';   // refocus the second detail
+    press('-', '-');              // shrink pane-d2 by 5: 40→35
+    const col1 = getInstanceSlice('layout').arrange.columns[1].panels;
+    eq(col1[0].heightPct, 60, 'pane-d1 unchanged');
+    eq(col1[1].heightPct, 35, 'pane-d2 shrank 40→35 independently');
+    assert(col1[0].heightPct !== col1[1].heightPct,
+           'the two detail panes hold independent heights');
+  });
 });
 
 describe('[3f] keyboard `]` / `[` — focused panel heightPct', () => {
