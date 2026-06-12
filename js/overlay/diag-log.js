@@ -19,6 +19,7 @@
  * Bindings (dispatch.handleDiagLogKey → diag_log_* Msgs):
  *   j / down   — move down        k / up     — move up
  *   g / G      — top / bottom     , / .      — page up / down
+ *   y          — yank highlighted entry to register + clipboard
  *   c          — clear the buffer
  *   s          — save to lazytui-diagnostics.json (cwd)
  *   Esc        — close
@@ -94,7 +95,7 @@ function renderDiagLog() {
     }
   }
   lines.push('');
-  lines.push('[dim]\\[↑/↓] nav   \\[g/G] top/bottom   \\[c] clear   \\[s] save   \\[Esc] close[/]');
+  lines.push('[dim]\\[↑/↓] nav   \\[g/G] top/bottom   \\[y] copy   \\[c] clear   \\[s] save   \\[Esc] close[/]');
 
   renderOverlay({
     lines, title: 'Diagnostics',

@@ -61,6 +61,14 @@ function counts() {
   return { warn: w, error: e, total: _buf.length };
 }
 
+/** One-line text for yanking an entry to the register / clipboard
+ *  (the diagnostics window's `y` key). Stable, paste-friendly shape:
+ *  `[level] code: message`. */
+function yankText(ev) {
+  if (!ev) return '';
+  return `[${ev.level}] ${ev.code}: ${ev.message}`;
+}
+
 function clear() { _buf = []; }
 
 function setCap(n) {
@@ -85,5 +93,5 @@ function save(filepath) {
 
 module.exports = {
   record, warn, error, snapshot, size, counts, clear, setCap, save,
-  DEFAULT_CAP,
+  yankText, DEFAULT_CAP,
 };

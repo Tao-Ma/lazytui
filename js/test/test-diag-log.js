@@ -34,6 +34,12 @@ describe('[diag-log] buffer', () => {
     eq(c.warn, 2, 'warn count'); eq(c.error, 1, 'error count'); eq(c.total, 3, 'total');
   });
 
+  it('yankText is a stable [level] code: message one-liner', () => {
+    eq(diag.yankText({ level: 'error', code: 'throw', message: 'boom' }),
+       '[error] throw: boom', 'formatted line');
+    eq(diag.yankText(null), '', 'null entry → empty string');
+  });
+
   it('cap evicts oldest', () => {
     diag.clear();
     diag.setCap(3);

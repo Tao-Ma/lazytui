@@ -10,8 +10,10 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 - **Diagnostics window (`<leader> e`).** A browsable log of the
   warnings and errors raised during a session — opened with the leader
   chord `e`, navigated like the register / Running overlays
-  (`j`/`k`/`g`/`G`, `Esc` to close). `c` clears the buffer; `s` saves it
-  to `lazytui-diagnostics.json` for a bug report. Backed by a dedicated
+  (`j`/`k`/`g`/`G`, `Esc` to close). `y` copies the highlighted entry
+  (`[level] code: message`) to the yank register + system clipboard;
+  `c` clears the buffer; `s` saves it to `lazytui-diagnostics.json` for
+  a bug report. Backed by a dedicated
   in-memory ring buffer (`dispatch/diag-log.js`) kept separate from the
   event-log replay firehose, so a diagnostic isn't evicted by key/mouse
   noise before you can read it. Producers today: boot config warnings,

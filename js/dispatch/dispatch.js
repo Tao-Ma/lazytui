@@ -452,6 +452,18 @@ function handleDiagLogKey(key, seq) {
   if (seq === '.' || key === 'pagedown') { applyMsg({ type: 'diag_log_nav', to: 'pagedown', count, vh }); return; }
   if (seq === 'c') { applyMsg({ type: 'diag_log_clear' }); return; }
   if (seq === 's') { applyMsg({ type: 'diag_log_save' }); return; }
+  if (seq === 'y') {
+    // Yank the highlighted entry to the register + clipboard. Resolve
+    // the out-of-TEA buffer entry HERE (handler-side, like jobs_activate)
+    // and route through register_push — the canonical yank Msg (dedup +
+    // cap + OSC52). Window stays open so multiple lines can be copied.
+    const diag = require('./diag-log');
+    const m = require('../app/runtime').getModel();
+    const cursor = (m.modal.diagLog && m.modal.diagLog.cursor | 0) || 0;
+    const ev = diag.snapshot()[cursor];
+    if (ev) applyMsg({ type: 'register_push', text: diag.yankText(ev) });
+    return;
+  }
 }
 
 function handleDetailSearchKey(key, seq) {
