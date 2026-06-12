@@ -177,7 +177,38 @@ The high-value, cycle-breaking core. Independently shippable.
 
 1. **Home for the pure module** — `leaves/geometry.js` (recommended) vs a
    new `js/wm/` dir (only if also moving `layout.js` + gesture family).
+   → TAKEN at execution: (a) `leaves/geometry.js`.
 2. **Scroll-sync new home (Phase 1.1)** — inline in `paint.render` after
    calcLayout, vs a dedicated `syncScroll` effect. (Lean: effect, cleaner
    TEA.)
+   → TAKEN at execution: **per-frame in paint** (`paint.js#_syncScrollClamp`,
+   right after calcLayout in all three view modes), AGAINST the lean.
+   Rationale: the clamp is a safety net — per-frame catches every cause of
+   cursor-off-viewport (cursor moves, collapse, drag-resize, view-mode
+   switches, terminal resize) without enumerating them; an effect fires on
+   Msgs, so it needs a maintained every-geometry-Msg list AND a resize
+   event source that doesn't exist (resize emits no Msg — the effect would
+   never fire for the most important case). Cost: one render-side Msg
+   dispatch survives as a DATAFLOW.md blessed exception. Revisit only if a
+   SIGWINCH → `term_resized` Msg pipeline is built first.
 3. **Release target** — its own point release, or fold into the next.
+   → STILL OPEN (user's call). The 7 wm-geo commits sit on branch v0.6.4.
+
+## Post-execution open items (user decisions, 2026-06-12)
+
+1. **Approve or overrule decision 2 above** (scroll-clamp stays per-frame
+   in paint vs invest in the effect + resize-Msg redesign).
+2. **One-frame resize clamp lag — fix or keep.** PRE-EXISTING (predates
+   this refactor; preserved bit-for-bit): the clamp reads viewport heights
+   via `boundsFor → slice.paneBounds`, but the current frame's paneBounds
+   is written AFTER the clamp runs — so the clamp always judges against
+   the PREVIOUS frame's heights. Steady state: identical. On the one frame
+   after a terminal shrink: the clamp sees the old taller viewport, does
+   nothing, and the selected row can sit off-screen until the next render
+   (any keypress/tick). Pinned literally in `test-scroll-clamp.js` [3]
+   ("render #1: clamp is a frame late"). FIX IF WANTED: clamp against the
+   freshly computed layout rects (or move the `_syncScrollClamp` call
+   after the paneBounds rewrite in renderNormal/Half/Full), then flip the
+   [3] expectations to clamp-immediately. Small, low-risk, user-visible
+   improvement — but a behavior change, so not shipped unbidden.
+3. **Release target** (decision 3 above).
