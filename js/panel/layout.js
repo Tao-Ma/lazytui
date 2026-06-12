@@ -153,6 +153,13 @@ function init() {
     focus: 'groups',
     viewMode: 'normal',
     dirty: false,
+    // Terminal dimensions — the model's copy of the screen size
+    // (resize-as-Msg, docs/resize-as-msg.md). Single writer: the
+    // `term_resized` arm below. Seeded with a sane default here;
+    // state.js initState dispatches the real size at boot, and the
+    // tui.js stdout 'resize' listener dispatches every change. All
+    // geometry reads go through THIS field, not io/term — one clock.
+    dims: { cols: 80, rows: 24 },
     // Free-config working state — the reducer's drag/undo/title-edit
     // sub-state. The active panel (formerly `selectedIdx` here) is
     // derived from `slice.focus` via `mfcCore.selectedIdx(slice)` — single
@@ -340,6 +347,17 @@ function update(msg, slice) {
       if (proj[other] === msg.paneId) halfView[other] = proj[slot] || null;  // SWAP
       const placed = _withFocus({ ...slice, halfView }, msg.paneId);
       return [placed, [{ type: 'force_full_repaint' }]];
+    }
+    // Terminal resized (resize-as-Msg P1). Payload from the stdout
+    // 'resize' listener (tui.js) or initState's boot seed. Identity-
+    // preserving on no-change so resize-event bursts that settle on
+    // the same size don't churn the slice ref. No repaint effect —
+    // the listener schedules the (debounced) render itself.
+    case 'term_resized': {
+      const cols = msg.cols | 0, rows = msg.rows | 0;
+      if (!cols || !rows) return slice;
+      if (slice.dims && slice.dims.cols === cols && slice.dims.rows === rows) return slice;
+      return { ...slice, dims: { cols, rows } };
     }
     // focus. Stores the focused panel; refresh of the detail body for
     // the newly-focused panel is an effect (Cmd). msg.focus == null

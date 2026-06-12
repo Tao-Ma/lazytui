@@ -24,7 +24,6 @@
 
 const { allPanels, getSel } = require('../app/state');
 const { getPanelViewportH, visibleBoundsFor } = require('../leaves/geometry');
-const { dims } = require('../io/term');
 const { runAction } = require('./action-runner');
 const { getPanelDef, getItems, getMergedActions, getInstanceSlice,
         dispatchMsg, wrap, getFocus, instanceKind } = require('../panel/api');
@@ -124,8 +123,9 @@ function _jumpInListPanel(target) {
 
 function _pageStep(paneId) {
   // Single source of truth for view-mode-aware viewport rows (by paneId).
-  return getPanelViewportH(
-    getInstanceSlice('layout'), paneId, dims());
+  // resize-as-Msg P1 — model dims, not a live io/term read.
+  const layoutSlice = getInstanceSlice('layout');
+  return getPanelViewportH(layoutSlice, paneId, layoutSlice.dims);
 }
 
 /**

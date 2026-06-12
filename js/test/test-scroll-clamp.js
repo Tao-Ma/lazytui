@@ -6,8 +6,8 @@
  * above the top pulls scroll up. `set_cursor` itself does NOT sync
  * scroll (leaves/nav._stepEntry only writes the cursor field), so this
  * per-frame clamp is the only mechanism — most visibly on a terminal
- * RESIZE, where no Msg fires at all and the render must re-clamp to the
- * shrunken viewport.
+ * RESIZE (a `term_resized` Msg since resize-as-Msg P1; the render
+ * re-clamps to the shrunken viewport).
  *
  * The clamp reads the pane viewport via getPanelViewportH → boundsFor →
  * slice.paneBounds, and runs AFTER the frame's paneBounds rewrite — so it
@@ -101,7 +101,7 @@ describe('[3] resize re-clamps on the SAME render with no Msg in between', () =>
     const tallInnerH = groupsInnerH();
     assert(inView(30, getScroll('groups'), tallInnerH), 'visible at 40 rows');
 
-    setSize(100, 18);                // shrink — no key/Msg, just dims
+    sm.resize(100, 18);              // shrink — stdout mutate + term_resized Msg (P1)
     sm.capture(() => sm.render());   // render #1: clamp sees the fresh 18-row bounds
     const shortInnerH = groupsInnerH();
     assert(shortInnerH < tallInnerH, `viewport shrank (${tallInnerH} → ${shortInnerH})`);

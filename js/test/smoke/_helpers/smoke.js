@@ -132,6 +132,18 @@ function bootFresh(opts) {
   if (firstGroup) getModel().currentGroup = firstGroup;
 }
 
+/** Simulate a terminal resize the way production experiences it
+ *  (resize-as-Msg P1): mutate process.stdout AND dispatch the
+ *  term_resized Msg — the model's dims are the only clock geometry
+ *  reads, so mutating stdout alone no longer changes layout. Mirrors
+ *  the tui.js 'resize' listener minus the scheduleRender (tests drive
+ *  renders explicitly). */
+function resize(cols, rows) {
+  process.stdout.columns = cols;
+  process.stdout.rows = rows;
+  api.dispatchMsg(api.wrap('layout', { type: 'term_resized', cols, rows }));
+}
+
 // --- Session — step + snapshot ring buffer -------------------------------
 
 /** Bounded history of (label, frame-tail, focus, activeTab) snapshots,
@@ -202,7 +214,7 @@ function createSession(opts) {
 // --- Direct exports (for scenarios that don't want a session) ------------
 
 module.exports = {
-  bootFresh, createSession, capture, stripAnsi,
+  bootFresh, createSession, capture, stripAnsi, resize,
   // Re-export the real drivers so scenarios don't have to import them
   // a second time.
   handleKey, handleMouse, _handleWheel, applyMsg, render,

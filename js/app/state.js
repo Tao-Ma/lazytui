@@ -130,6 +130,14 @@ function initState() {
     dirty: false,
   }));
 
+  // Seed the model's terminal dimensions (resize-as-Msg P1). The ONLY
+  // place besides the tui.js 'resize' listener that reads the live
+  // terminal size — everything downstream reads layoutSlice.dims.
+  const tdims = require('../io/term').dims();
+  api.dispatchMsg(api.wrap('layout', {
+    type: 'term_resized', cols: tdims.cols, rows: tdims.rows,
+  }));
+
   // v0.6.3 Phase B — mint per-pane Component instances keyed by
   // paneId. Pre-B used the singleton convention (id === kind ===
   // Component name); post-B every PLACED pane gets its own instance

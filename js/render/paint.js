@@ -27,7 +27,7 @@
 'use strict';
 
 const { RESET, richToAnsi, esc, visibleLen, wrapColor } = require('../io/ansi');
-const { cols, rows, dims: termDims, stdout, showCursor, hideCursor } = require('../io/term');
+const { cols, rows, stdout, showCursor, hideCursor } = require('../io/term');
 const { allPanels, syncPanelScroll } = require('../app/state');
 const geo = require('../leaves/geometry');
 const mpool = require('../leaves/pool');
@@ -409,7 +409,11 @@ function _syncScrollClamp(layoutSlice, dims) {
 
 function renderNormal(model) {
   const layoutSlice = getInstanceSlice('layout');
-  const dims = termDims();
+  // resize-as-Msg P1 — dims come from the model (written by the
+  // term_resized arm), not a live io/term read: render is a function
+  // of the model's clock. A resize landing mid-frame repaints when
+  // its Msg arrives.
+  const dims = layoutSlice.dims;
   const layout = geo.calcLayout(layoutSlice, dims);
   layoutSlice.paneBounds = {};
   for (const rect of layout.rects) {
@@ -418,7 +422,7 @@ function renderNormal(model) {
   }
   _syncScrollClamp(layoutSlice, dims);
   const rectsWithLines = composeRects(layout, model);
-  const COLS = cols();
+  const COLS = dims.cols;
   const newRows = painter.composeRows(rectsWithLines, COLS, layout.availH);
   if (COLS !== _frame.prevCols || newRows.length !== _frame.prevRows.length) _frame.forceFull = true;
   _frame.prevCols = COLS;
@@ -442,9 +446,9 @@ function renderNormal(model) {
 // scroll/viewport math agrees with what's painted.
 function renderHalf(model) {
   const layoutSlice = getInstanceSlice('layout');
-  const dims = termDims();
+  const dims = layoutSlice.dims;  // model clock (resize-as-Msg P1)
   geo.calcLayout(layoutSlice, dims);
-  const COLS = cols(), ROWS = rows();
+  const COLS = dims.cols, ROWS = dims.rows;
   const halfW = Math.floor(COLS / 2);
   const availH = ROWS - 1;
   const focusedPanel = allPanels().find(p => mpane.paneMatchesFocus(p, layoutSlice.focus));
@@ -514,9 +518,9 @@ function renderHalf(model) {
 
 function renderFull(model) {
   const layoutSlice = getInstanceSlice('layout');
-  const dims = termDims();
+  const dims = layoutSlice.dims;  // model clock (resize-as-Msg P1)
   geo.calcLayout(layoutSlice, dims);
-  const COLS = cols(), ROWS = rows();
+  const COLS = dims.cols, ROWS = dims.rows;
   const availH = ROWS - 1;
   const focusedPanel = allPanels().find(p => mpane.paneMatchesFocus(p, layoutSlice.focus));
   if (!focusedPanel) return renderNormal(model);

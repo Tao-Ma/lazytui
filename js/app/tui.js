@@ -290,10 +290,21 @@ function main() {
   // function returns immediately if no terminal tab is active.
   setInterval(() => renderTerminalOverlay(), 250);
 
-  // Handle resize. Debounced via scheduleRender — modern terminals
-  // emit 30+ resize events/sec during a window-edge drag; one paint per
-  // event would run a full calcLayout + force-full repaint each time.
-  process.stdout.on('resize', () => scheduleRender());
+  // Handle resize (resize-as-Msg P1). The Msg lands the new size in the
+  // model synchronously — the term_resized arm is a field write, cheap
+  // enough for the 30+ events/sec a window-edge drag emits — while the
+  // expensive part (painting) stays coalesced behind scheduleRender's
+  // debounce. Besides initState's boot seed this listener is the only
+  // live terminal-size read; everything downstream reads layoutSlice.dims.
+  process.stdout.on('resize', () => {
+    const api = require('../panel/api');
+    api.dispatchMsg(api.wrap('layout', {
+      type: 'term_resized',
+      cols: process.stdout.columns || 80,
+      rows: process.stdout.rows || 24,
+    }));
+    scheduleRender();
+  });
 
   // T12: PTY teardown rides on the global cleanup() handler registered
   // earlier in main — cleanup invokes destroyAll itself. The previous

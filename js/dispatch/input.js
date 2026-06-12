@@ -15,7 +15,7 @@ const { allPanels, selectGroup, setSel, getSel, getScroll } = require('../app/st
 const { visibleBoundsFor, getPanelViewportH } = require('../leaves/geometry');
 const { render } = require('../render/paint');
 const { getModel } = require('../app/runtime');
-const { enableMouse, enableFocusEvents, enableBracketedPaste, cols, dims } = require('../io/term');
+const { enableMouse, enableFocusEvents, enableBracketedPaste, cols } = require('../io/term');
 const { isTerminalTab, activeTerminalId } = require('../panel/viewer/tabs');
 const { writeToSession, isSessionDead } = require('../io/terminal');
 const {getPanelDef, getItems, getInstanceSlice, dispatchMsg, wrap, getFocus, instanceKind } = require('../panel/api');
@@ -83,7 +83,7 @@ function _handleWheel(mx, my, delta) {
       // arc fix follow-up — panelHeights[type] would have given the
       // small normal-view share even in half/full view).
       const innerH = getPanelViewportH(
-        layoutSlice, p.paneId, dims());  // v0.6.4 Phase 3b — paneId
+        layoutSlice, p.paneId, layoutSlice.dims);  // v0.6.4 Phase 3b — paneId; resize-as-Msg P1 — model dims
       const maxScroll = Math.max(0, lines.length - innerH);
       const next = Math.max(0, Math.min(maxScroll, curScroll + delta));
       if (next === curScroll) return false;
