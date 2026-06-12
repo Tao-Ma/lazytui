@@ -353,10 +353,10 @@ function calcLayout(layoutSlice, dims) {
     viewMode: layoutSlice.viewMode, cols: COLS, rows: ROWS,
   };
 
-  // (wm-geometry P1.1 — the per-pane scroll-clamp loop that lived here
-  // moved to paint.js#_syncScrollClamp, called after the paneBounds
-  // rewrite in all three view modes. Layout math no longer dispatches
-  // Msgs.)
+  // (wm-geometry P1.1 lifted the per-pane scroll-clamp loop that lived
+  // here into paint; resize-as-Msg P3 moved it again — to the post-
+  // dispatch finalizer in panel/api.js. Neither layout math nor render
+  // dispatches Msgs anymore.)
 
   return {
     ranges, availH,

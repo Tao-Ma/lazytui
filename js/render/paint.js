@@ -28,7 +28,7 @@
 
 const { RESET, richToAnsi, esc, visibleLen, wrapColor } = require('../io/ansi');
 const { cols, rows, stdout, showCursor, hideCursor } = require('../io/term');
-const { allPanels, syncPanelScroll } = require('../app/state');
+const { allPanels } = require('../app/state');
 const geo = require('../leaves/geometry');
 const mpool = require('../leaves/pool');
 const mpane = require('../leaves/pane');
@@ -386,26 +386,10 @@ function composeRects(layout, model) {
 // key was the half/full visible-bounds channel for readers that queried
 // by the viewer tab-id; those now resolve the container paneId via
 // route.resolveViewerPaneId(), so the per-paneId write is sufficient.
-// Per-frame scroll-clamp — keep each navigator pane's selected row in
-// view (cursor past the bottom pulls scroll down, above the top pulls
-// it up). syncPanelScroll → setScroll → a wrapped `set_scroll` Msg to
-// the owning navigator's update (single writer for nav.scroll); the arm
-// is pure + identity-preserving so re-renders don't ping-pong. Clamped
-// per paneId, so two same-kind panes clamp independently.
-//
-// wm-geometry P1.1 — lifted out of calcLayout (leaves/geometry) so layout
-// math stays side-effect-free. Runs AFTER this frame's paneBounds rewrite
-// in all three view modes, so getPanelViewportH judges against the fresh
-// bounds and a terminal shrink re-clamps on the same frame (the historical
-// one-frame clamp lag — clamp-before-rewrite reading the previous frame's
-// heights — was fixed post-P1.1). test-scroll-clamp.js pins the semantics.
-function _syncScrollClamp(layoutSlice, dims) {
-  for (const p of mpool.allPanesInColumns(layoutSlice.arrange)) {
-    if (mpool.isDetailPane(p)) continue;
-    if (p.collapsed) continue;  // no content rows to scroll-clamp against
-    syncPanelScroll(p.paneId, geo.getPanelViewportH(layoutSlice, p.paneId, dims));
-  }
-}
+// (The per-frame scroll-clamp that lived here — _syncScrollClamp —
+// moved to the post-dispatch finalizer in panel/api.js (resize-as-Msg
+// P3): every state change is a dispatch, so the clamp runs there, and
+// render dispatches NOTHING. test-scroll-clamp.js pins render purity.)
 
 function renderNormal(model) {
   const layoutSlice = getInstanceSlice('layout');
@@ -420,7 +404,6 @@ function renderNormal(model) {
     const b = { x: rect.x, y: rect.y, w: rect.w, h: rect.h };
     if (rect.paneId) layoutSlice.paneBounds[rect.paneId] = b;
   }
-  _syncScrollClamp(layoutSlice, dims);
   const rectsWithLines = composeRects(layout, model);
   const COLS = dims.cols;
   const newRows = painter.composeRows(rectsWithLines, COLS, layout.availH);
@@ -471,7 +454,6 @@ function renderHalf(model) {
     const detailBounds = { x: halfW, y: 0, w: rightW, h: availH };
     if (detailPanel.paneId) layoutSlice.paneBounds[detailPanel.paneId] = detailBounds;
   }
-  _syncScrollClamp(layoutSlice, dims);
   // v0.6.3 P4.2 — chrome computed via chromeFor + threaded through
   // renderPanel. v0.6.4 Theme B — shared scalars from _chromeContext.
   // Half view shows one non-detail pane (left) + detail (right); only
@@ -527,7 +509,6 @@ function renderFull(model) {
   layoutSlice.paneBounds = {};
   const fullBounds = { x: 0, y: 0, w: COLS, h: availH };
   if (focusedPanel.paneId) layoutSlice.paneBounds[focusedPanel.paneId] = fullBounds;
-  _syncScrollClamp(layoutSlice, dims);
   // v0.6.3 P4.2 — chrome via chromeFor. v0.6.4 Theme B — shared scalars
   // from _chromeContext. Full view paints ONE pane (the focused one):
   // single trigger, no peer-disable.
@@ -702,8 +683,7 @@ function render(model = getModel()) {
     renderTerminalOverlay(model);
   } finally {
     // Restore the canonical slice unconditionally — _safeRender wraps
-    // per-panel throws but renderTerminalOverlay + the inner dispatches
-    // (syncPanelScroll → set_scroll) can throw past it. Without
+    // per-panel throws but renderTerminalOverlay can throw past it. Without
     // try/finally the preview arrange would persist in the live slice
     // and every subsequent reducer write would build on top of it.
     //

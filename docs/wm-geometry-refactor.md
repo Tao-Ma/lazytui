@@ -196,8 +196,14 @@ The high-value, cycle-breaking core. Independently shippable.
 
 ## Post-execution open items (user decisions, 2026-06-12)
 
-1. **Approve or overrule decision 2 above** (scroll-clamp stays per-frame
-   in paint vs invest in the effect + resize-Msg redesign).
+1. **Scroll-clamp home — RESOLVED BY REDESIGN (user-directed,
+   2026-06-12).** The user weighed long-term architecture over cost and
+   chose the resize-Msg redesign: docs/resize-as-msg.md (executed) moves
+   the clamp into a post-dispatch finalizer (panel/api.js), makes
+   terminal dims model state written by a `term_resized` Msg, and
+   deletes the render-side dispatch — the DATAFLOW.md exception CLOSED
+   rather than blessed. Decision 2's per-frame-in-paint home was the
+   interim state, not the destination.
 2. **One-frame resize clamp lag — FIXED (user-approved 2026-06-12).**
    Was PRE-EXISTING (predated this refactor; the refactor preserved it
    bit-for-bit): the clamp read viewport heights via `boundsFor →

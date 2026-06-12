@@ -102,7 +102,8 @@ greppable.
 ═══════════════════════════ RENDER ═════════════════════════════════
    render()                       (js/render/layout.js)
      1. calcLayout → panelHeights, paneBounds
-        (fires keep-in-view set_scroll Msgs as a side output)
+        (pure — render dispatches nothing; the keep-in-view scroll
+        clamp runs in the post-dispatch finalizer, see Notes)
      2. for each panel in arrange:
           _safeRender(panel, w, h)
             (resolves comp + slice internally; P5.7)
@@ -168,10 +169,6 @@ except the blessed render-side exceptions:
     (tab-bar hit-test cache). P4.1 moved this off `layout`'s slice onto
     the viewer's OWN slice — an own-slice render-time write, not the
     cross-slice one it used to be.
-  - keep-in-view `set_scroll` Msgs from `syncPanelScroll` into each
-    Navigator's nav slice (Msgs, not direct writes). Dispatched by
-    `paint.js#_syncScrollClamp` right after `calcLayout` per frame —
-    wm-geo P1.1 lifted this out of the layout math.
   - direct `route.setInstanceSlice` from `render()` into the viewer's
     `innerH` (viewport cache so viewer reducers don't read layout
     cross-slice; R4.9 retired the prior `viewer_set_viewport` Msg —
@@ -180,6 +177,19 @@ except the blessed render-side exceptions:
   - `setImmediate(terminal_exit)` from `renderTerminalOverlay` when
     the active PTY session has exited (T14 — deferred a tick so the
     cleanup cascade isn't inline in the render path).
+
+**Resize is a Msg; the scroll clamp is a post-dispatch finalizer**
+(resize-as-Msg, docs/resize-as-msg.md). Terminal dimensions live in
+the model — `layout.dims`, written only by the `term_resized` arm;
+the stdout `'resize'` listener (tui.js) dispatches the Msg and the
+boot seed comes from `initState`. Geometry reads the model's dims,
+never the live terminal. After every OUTERMOST dispatch (`dispatchMsg`
+/ `dispatchKeyToFocused` share a depth counter), `panel/api`'s
+finalizer re-clamps each navigator pane's scroll against a freshly
+computed layout — the safety net needs no Msg enumeration because
+every state change IS a dispatch, resize included. Render dispatches
+nothing (the former `_syncScrollClamp` render-side exception CLOSED
+in P3; `test-scroll-clamp.js` [4] pins render purity).
 
 **Sync vs debounced render.** The steady state is one sync `render()`
 per keystroke at the tail of `dispatch.handleKey`. The 50 ms
