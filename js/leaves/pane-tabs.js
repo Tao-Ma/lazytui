@@ -437,7 +437,7 @@ function addContent(slice, { groupName, key, label, lines, currentGroup, groupEx
     scroll: 0,
   };
   if (next.search && next.search.active) {
-    next = { ...next, search: { active: false, term: '', matches: [], idx: 0, typing: '' } };
+    next = { ...next, search: { active: false, term: '', idx: 0, typing: '' } };
   }
   return [next, { focusDetail: true, terminalExit: true }];
 }
@@ -645,7 +645,7 @@ function reduceTabMsg(msg, slice, ctx) {
       // each tab's selection / search / cursor refer to its own
       // content, not whatever was on the previous tab. Fresh
       // defaults when never visited.
-      const _emptySearch = () => ({ active: false, term: '', matches: [], idx: 0, typing: '' });
+      const _emptySearch = () => ({ active: false, term: '', idx: 0, typing: '' });
       const _emptySelect = () => ({ active: false, kind: 'char', anchor: { line: 0, col: 0 }, cursor: { line: 0, col: 0 } });
       const _emptyCursor = () => ({ line: 0, col: 0 });
       next = {

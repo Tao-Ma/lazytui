@@ -14,7 +14,13 @@
  * Cmd for mode_set/mode_clear. Single-writer per layer.
  *
  * State homes (under slice.search): typing (in-progress buffer, separate
- * from the committed `term`), term, matches[{line,col,len}], idx, active.
+ * from the committed `term`), term, idx, active. P1 (viewer-lines
+ * selector arc) — matches are NOT stored: `matchesFor(lines, term)` is a
+ * ref-keyed memo (a chained selector over the displayed lines), so they
+ * can never go stale against content and the old recompute/transition-
+ * detect machinery is gone. Callers pass `lines` + the phase-correct
+ * term (typing during detailSearchMode, committed `term` after) — each
+ * call site knows its phase, the slice doesn't have to.
  * scrollToActive returns a new slice with updated `scroll` when a scroll
  * is needed; the caller threads `innerH` (the detail viewport's inner
  * height) since the leaf is dependency-free.
@@ -61,6 +67,30 @@ function computeMatches(lines, term) {
   return matches;
 }
 
+// --- the chained selector (P1, viewer-lines selector arc) ---
+
+const EMPTY_MATCHES = [];   // shared ref — no-term lookups are ref-stable
+
+// lines-array ref → { term, matches }. WeakMap keyed on the content
+// array: per-viewer-per-content entry (multi-viewer safe — two viewers
+// hold distinct arrays), GC-collected with the content, recomputed
+// exactly when the (lines ref, term) pair changes. This is the
+// replacement for BOTH the stored slice.search.matches AND the
+// finalizer's ref-equality transition-detect: derived matches cannot
+// go stale against content, so nothing has to notice content changed.
+const _matchMemo = new WeakMap();
+
+/** Matches of `term` over `lines` — memoized chained selector.
+ *  Same (lines ref, term) → same matches ref. */
+function matchesFor(lines, term) {
+  if (!term || !Array.isArray(lines) || lines.length === 0) return EMPTY_MATCHES;
+  const hit = _matchMemo.get(lines);
+  if (hit && hit.term === term) return hit.matches;
+  const matches = computeMatches(lines, term);
+  _matchMemo.set(lines, { term, matches });
+  return matches;
+}
+
 // --- pure transforms over slice.search ---
 //
 // Each public fn takes `slice` and returns `[newSlice, info]` (or just
@@ -74,80 +104,73 @@ function _withSearch(slice, patch) {
   return { ...slice, search: { ...slice.search, ...patch } };
 }
 
-/** Compute matches + reset idx. Pure: returns new slice. */
-function recomputeFor(slice, term) {
-  const matches = computeMatches(slice.lines || [], term);
-  return _withSearch(slice, { matches, idx: 0 });
-}
-
-/** Recompute against the typing buffer (or empty if no typing). */
-function recompute(slice) {
-  const typing = slice.search.typing == null ? '' : slice.search.typing;
-  if (!typing) return _withSearch(slice, { typing, matches: [], idx: 0 });
-  return recomputeFor(_withSearch(slice, { typing }), typing);
-}
-
 /** Enter typing-phase. Returns `[newSlice, { enableSearchMode: true }]`
  *  so the calling reducer branch dispatches mode_set for
  *  detailSearchMode (cross-layer flag write — model.modes is root
  *  chrome, not the viewer slice). */
 function enter(slice) {
   const seed = slice.search.term || '';
-  return [recompute(_withSearch(slice, { typing: seed })), { enableSearchMode: true }];
+  return [_withSearch(slice, { typing: seed, idx: 0 }), { enableSearchMode: true }];
 }
 
 function cancel(slice) {
-  // Esc during typing: drop the in-progress edit. No prior committed term →
-  // fully clear; else restore the committed highlights.
+  // Esc during typing: drop the in-progress edit. No prior committed
+  // term → fully clear; else the committed highlights reappear on their
+  // own (consumers derive from `term` once detailSearchMode drops).
   const s = slice.search;
-  let next;
-  if (!s.term) {
-    next = _withSearch(slice, { typing: '', matches: [], idx: 0, active: false });
-  } else {
-    next = recomputeFor(_withSearch(slice, { typing: '' }), s.term);
-  }
+  const next = s.term
+    ? _withSearch(slice, { typing: '', idx: 0 })
+    : _withSearch(slice, { typing: '', idx: 0, active: false });
   return [next, { disableSearchMode: true }];
 }
 
-function commit(slice, innerH) {
+function commit(slice, innerH, lines) {
   const term = slice.search.typing || '';
   if (!term) {
-    return [_withSearch(slice, { term: '', matches: [], idx: 0, active: false }), { disableSearchMode: true }];
+    return [_withSearch(slice, { term: '', idx: 0, active: false }), { disableSearchMode: true }];
   }
-  let next = recomputeFor(_withSearch(slice, { term }), term);
-  const active = next.search.matches.length > 0;
+  let next = _withSearch(slice, { term, idx: 0 });
+  const active = matchesFor(lines || [], term).length > 0;
   next = _withSearch(next, { active });
-  if (active) next = scrollToActive(next, innerH);
+  if (active) next = scrollToActive(next, innerH, lines, term);
   return [next, { disableSearchMode: true }];
 }
 
 function clearCommitted(slice) {
-  return _withSearch(slice, { typing: '', term: '', matches: [], idx: 0, active: false });
+  return _withSearch(slice, { typing: '', term: '', idx: 0, active: false });
 }
 
 function keystroke(slice, seq) {
   // Caller guards on detailSearchMode (modal handler ensures we're in
-  // typing phase before invoking this).
+  // typing phase before invoking this). idx resets per edit (the match
+  // list the idx points into derives from the new typing term).
   const typing = slice.search.typing == null ? '' : slice.search.typing;
-  if (seq === '\x7f') return recompute(_withSearch(slice, { typing: typing.slice(0, -1) }));
-  if (seq === '\x15') return recompute(_withSearch(slice, { typing: '' }));
+  if (seq === '\x7f') return _withSearch(slice, { typing: typing.slice(0, -1), idx: 0 });
+  if (seq === '\x15') return _withSearch(slice, { typing: '', idx: 0 });
   if (seq && seq.length === 1 && seq.charCodeAt(0) >= 32 && seq.charCodeAt(0) < 127) {
-    return recompute(_withSearch(slice, { typing: typing + seq }));
+    return _withSearch(slice, { typing: typing + seq, idx: 0 });
   }
   return slice;
 }
 
-function next(slice, innerH) {
-  const s = slice.search;
-  if (!s.matches.length) return slice;
-  return scrollToActive(_withSearch(slice, { idx: (s.idx + 1) % s.matches.length }), innerH);
+// next/prev take `lines` + the phase-correct `term` explicitly: the
+// viewer_search_nav arm (typing phase) passes search.typing; the n/N
+// key arm (committed phase) passes search.term. The call site knows
+// the phase — the slice doesn't have to store which term is live.
+// A stale idx (content shrank since it was set) re-enters at 0.
+function next(slice, innerH, lines, term) {
+  const matches = matchesFor(lines, term);
+  if (!matches.length) return slice;
+  const cur = slice.search.idx < matches.length ? slice.search.idx : -1;
+  return scrollToActive(_withSearch(slice, { idx: (cur + 1) % matches.length }), innerH, lines, term);
 }
 
-function prev(slice, innerH) {
-  const s = slice.search;
-  if (!s.matches.length) return slice;
-  const n = s.matches.length;
-  return scrollToActive(_withSearch(slice, { idx: (s.idx - 1 + n) % n }), innerH);
+function prev(slice, innerH, lines, term) {
+  const matches = matchesFor(lines, term);
+  if (!matches.length) return slice;
+  const n = matches.length;
+  const cur = slice.search.idx < n ? slice.search.idx : 1;
+  return scrollToActive(_withSearch(slice, { idx: (cur - 1 + n) % n }), innerH, lines, term);
 }
 
 /** Center the active match in the detail viewport when off-screen.
@@ -155,14 +178,14 @@ function prev(slice, innerH) {
  *  border) — the one terminal-derived value this leaf can't read pure.
  *  Returns a new slice with updated `scroll` only when a scroll is
  *  actually needed; same ref otherwise. */
-function scrollToActive(slice, innerH) {
-  const s = slice.search;
-  const m = s.matches[s.idx];
+function scrollToActive(slice, innerH, lines, term) {
+  const matches = matchesFor(lines, term);
+  const m = matches[slice.search.idx];
   if (!m) return slice;
   const h = Math.max(1, innerH || 4);
   const top = slice.scroll || 0;
   if (m.line < top || m.line >= top + h) {
-    const maxScroll = Math.max(0, slice.lines.length - h);
+    const maxScroll = Math.max(0, lines.length - h);
     const desired = Math.max(0, m.line - Math.floor(h / 2));
     const scroll = Math.max(0, Math.min(maxScroll, desired));
     return { ...slice, scroll };
@@ -171,7 +194,7 @@ function scrollToActive(slice, innerH) {
 }
 
 module.exports = {
-  computeMatches, _displayWidthBefore,
-  enter, cancel, commit, clearCommitted, keystroke, recompute, recomputeFor,
+  computeMatches, matchesFor, _displayWidthBefore,
+  enter, cancel, commit, clearCommitted, keystroke,
   next, prev, scrollToActive,
 };

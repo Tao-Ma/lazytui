@@ -179,7 +179,7 @@ function init(paneId) {
     // _innerH() falls back to lines.length in that degenerate so clamps
     // collapse to "everything fits".
     innerH: 0,
-    search: { active: false, term: '', matches: [], idx: 0, typing: '' },
+    search: { active: false, term: '', idx: 0, typing: '' },
     select: { active: false, kind: 'char', anchor: { line: 0, col: 0 }, cursor: { line: 0, col: 0 } },
     cursor: { line: 0, col: 0 },
     contentTabs: {},          // [groupName]: { [key]: { label, lines } }
@@ -328,25 +328,12 @@ function _withDerivedFields(next, originalSlice, m) {
   // threads fresh content; render keeps its own live lookup).
   const lines = pt.viewerLines(next, m, m.currentGroup);
   let updated = { ...next, lines };
-  // B2 — auto-recompute a committed search against the new lines. Pre-
-  // B2, viewer_show_info (and the unrouted-stream auto-jump) cleared
-  // slice.search.matches when displayed content changed, so a user with
-  // `/term` active lost their highlights on every Info refresh / stream
-  // arrival. The drop is correct (matches reference line/col positions
-  // in the prior content); the fix is to follow it with a recompute
-  // against the new content so highlights survive instead of vanishing.
-  //
-  // Gate on updated.search.active (post-reducer state) — viewer_search_-
-  // clear_committed flips this to false and we want to respect that.
-  // Ref-equality on lines is fine for buffer-backed tabs (action/
-  // content/transcript return the source array directly); the Info-via-
-  // getInfo path returns a fresh array per call, which over-recomputes
-  // on every Msg — acceptable since Info content is small (focused
-  // navigator's getInfo output).
-  const us = updated.search;
-  if (us && us.active && us.term && originalSlice && originalSlice.lines !== lines) {
-    updated = ms.recomputeFor(updated, us.term);
-  }
+  // P1 (viewer-lines selector) — the B2 transition-detect that lived
+  // here (ref-equality on lines → ms.recomputeFor) is GONE: matches are
+  // a chained selector (ms.matchesFor) over the displayed lines, so
+  // they recompute exactly when the (lines ref, term) pair changes and
+  // can never go stale. The machinery existed only because matches were
+  // stored state.
   // B2 — skip the FROM-tab capture when the leaving slice had
   // viewerOverride active. Override-bound scroll/search/select/cursor
   // belong to the discrete-doc, not to the underlying tab; capturing
@@ -499,7 +486,7 @@ function _updateInner(msg, slice) {
         scroll: 0,
       };
       if (slice.search && slice.search.active) {
-        next.search = { active: false, term: '', matches: [], idx: 0, typing: '' };
+        next.search = { active: false, term: '', idx: 0, typing: '' };
       }
       if (typeof msg.tab === 'number') {
         // v0.6.2 R13 — clamp to in-range. Pre-R13 `msg.tab | 0` silently
@@ -557,13 +544,19 @@ function _updateInner(msg, slice) {
       const sameLines = _linesEq(slice.infoLines, msg.lines);
       const infoLines = sameLines ? slice.infoLines : msg.lines;
       if (slice.tab === 0) {
-        const noMatches = !(slice.search && slice.search.matches && slice.search.matches.length > 0);
+        // P1 — the A4 stale-matches drop is gone with stored matches:
+        // highlights derive from the CURRENT content (ms.matchesFor),
+        // so they re-aim at the new item's text automatically (what A4
+        // + the finalizer recompute achieved in two steps — and without
+        // A4's wart of losing highlights when content was ref-equal).
+        // Only the match CURSOR resets on real content change.
+        const needIdxReset = !sameLines && slice.search && (slice.search.idx || 0) !== 0;
         // True no-op (content + view state already in target shape) —
         // return the input ref so dispatch bookkeeping sees no change.
-        if (sameLines && noMatches && (slice.scroll || 0) === 0) return slice;
+        if (sameLines && (slice.scroll || 0) === 0) return slice;
         const next = { ...slice, scroll: 0, infoLines };
-        if (!noMatches) {
-          next.search = { ...slice.search, matches: [], idx: 0 };
+        if (needIdxReset) {
+          next.search = { ...slice.search, idx: 0 };
         }
         return next;
       }
@@ -573,7 +566,7 @@ function _updateInner(msg, slice) {
         tab: 0,
         infoLines,
         scroll: (entry && entry.scroll !== undefined) ? entry.scroll : 0,
-        search: (entry && entry.search) || { active: false, term: '', matches: [], idx: 0, typing: '' },
+        search: (entry && entry.search) || { active: false, term: '', idx: 0, typing: '' },
         select: (entry && entry.select) || { active: false, kind: 'char', anchor: { line: 0, col: 0 }, cursor: { line: 0, col: 0 } },
         cursor: (entry && entry.cursor) || { line: 0, col: 0 },
       };
@@ -761,7 +754,7 @@ function _updateInner(msg, slice) {
                 scroll: 0,
                 tab: 2 + idx,
                 viewerOverride: null,
-                search: { active: false, term: '', matches: [], idx: 0, typing: '' },
+                search: { active: false, term: '', idx: 0, typing: '' },
                 select: { active: false, kind: 'char', anchor: { line: 0, col: 0 }, cursor: { line: 0, col: 0 } },
                 cursor: { line: 0, col: 0 },
               },
@@ -808,7 +801,7 @@ function _updateInner(msg, slice) {
             tab: tIdx,
             scroll,
             viewerOverride: null,
-            search: { active: false, term: '', matches: [], idx: 0, typing: '' },
+            search: { active: false, term: '', idx: 0, typing: '' },
             select: { active: false, kind: 'char', anchor: { line: 0, col: 0 }, cursor: { line: 0, col: 0 } },
             cursor: { line: 0, col: 0 },
           },
@@ -868,7 +861,7 @@ function _updateInner(msg, slice) {
         ...slice,
         tab,
         scroll: (entry && entry.scroll !== undefined) ? entry.scroll : 0,
-        search: (entry && entry.search) || { active: false, term: '', matches: [], idx: 0, typing: '' },
+        search: (entry && entry.search) || { active: false, term: '', idx: 0, typing: '' },
         select: (entry && entry.select) || { active: false, kind: 'char', anchor: { line: 0, col: 0 }, cursor: { line: 0, col: 0 } },
         cursor: (entry && entry.cursor) || { line: 0, col: 0 },
       };
@@ -910,9 +903,14 @@ function _updateInner(msg, slice) {
         : []];
     }
     case 'viewer_search_key':    return ms.keystroke(slice, msg.seq);
-    case 'viewer_search_nav':    return msg.dir > 0 ? ms.next(slice, _innerH(slice)) : ms.prev(slice, _innerH(slice));
+    // P1 (viewer-lines selector) — nav during the TYPING phase steps the
+    // typing-term's derived matches; lines = the active-tab content
+    // (slice.lines until P3 threads it).
+    case 'viewer_search_nav':    return msg.dir > 0
+      ? ms.next(slice, _innerH(slice), slice.lines || [], slice.search.typing || '')
+      : ms.prev(slice, _innerH(slice), slice.lines || [], slice.search.typing || '');
     case 'viewer_search_commit': {
-      const [next, info] = ms.commit(slice, _innerH(slice));
+      const [next, info] = ms.commit(slice, _innerH(slice), slice.lines || []);
       return [next, info.disableSearchMode
         ? [{ type: 'msg', msg: { type: 'mode_clear', flag: 'detailSearchMode' } }]
         : []];
@@ -923,13 +921,14 @@ function _updateInner(msg, slice) {
         ? [{ type: 'msg', msg: { type: 'mode_clear', flag: 'detailSearchMode' } }]
         : []];
     }
-    // Committed-search adapter Msgs — exposed for the non-reducer
+    // Committed-search adapter Msg — exposed for the non-reducer
     // facade (panel/viewer/search.js) so its callers route through
     // viewer.update rather than writing the slice directly (single-
     // writer-per-slice per docs/PRINCIPLES.md §12).
+    // P1 (viewer-lines selector) — viewer_search_recompute(_for) arms
+    // retired: matches derive via ms.matchesFor (chained selector), so
+    // there is no stored match list to refresh.
     case 'viewer_search_clear_committed': return ms.clearCommitted(slice);
-    case 'viewer_search_recompute':       return ms.recompute(slice);
-    case 'viewer_search_recompute_for':   return ms.recomputeFor(slice, msg.term);
 
     // --- visual-mode select. The mouse path dispatches the select_* Msgs
     // (panel/viewer/select.js); the keyboard path lives in `case 'key':` below.
@@ -984,10 +983,11 @@ function _updateInner(msg, slice) {
       const active = !!(slice.select && slice.select.active);
       const claim = [{ type: '_claimed' }];
 
-      // Detail-search post-commit n/N nav; Esc clears.
+      // Detail-search post-commit n/N nav; Esc clears. P1 — committed
+      // phase steps the committed term's derived matches.
       if (slice.search && slice.search.active) {
-        if (msg.seq === 'n' || msg.key === 'n') return [ms.next(slice, _innerH(slice)), claim];
-        if (msg.seq === 'N' || msg.key === 'N') return [ms.prev(slice, _innerH(slice)), claim];
+        if (msg.seq === 'n' || msg.key === 'n') return [ms.next(slice, _innerH(slice), slice.lines || [], slice.search.term || ''), claim];
+        if (msg.seq === 'N' || msg.key === 'N') return [ms.prev(slice, _innerH(slice), slice.lines || [], slice.search.term || ''), claim];
         if (msg.key === 'escape' && !active)    return [ms.clearCommitted(slice), claim];
       }
 

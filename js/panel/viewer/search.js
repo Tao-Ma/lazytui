@@ -54,8 +54,8 @@ function prev()             { _dispatch({ type: 'viewer_search_nav', dir: -1 });
 // holds. Pre-v0.6.1 these wrote route.setInstanceSlice directly —
 // a TEA back-channel the audit caught.
 function clearCommitted()    { _dispatch({ type: 'viewer_search_clear_committed' }); }
-function recompute()         { _dispatch({ type: 'viewer_search_recompute' }); }
-function _recomputeFor(term) { _dispatch({ type: 'viewer_search_recompute_for', term }); }
+// P1 (viewer-lines selector) — recompute/_recomputeFor retired: matches
+// derive via ms.matchesFor (chained selector); no stored list to refresh.
 
 function isActive() {
   const search = _slice()?.search;
@@ -72,14 +72,24 @@ function typingText() { return _slice()?.search?.typing || ''; }
  */
 function decorateLines(lines) {
   const search = _slice()?.search;
-  if (!search || !search.matches.length) return lines;
+  if (!search) return lines;
+  // P1 (viewer-lines selector) — matches DERIVE from the very lines
+  // being decorated (ms.matchesFor memo), so highlights always align
+  // with the displayed content. Phase picks the term: typing while the
+  // `/` prompt is open (live preview), committed `term` after.
+  const term = getModel().modes.detailSearchMode
+    ? (search.typing || '')
+    : (search.active ? (search.term || '') : '');
+  const matches = ms.matchesFor(lines, term);
+  if (!matches.length) return lines;
   // Group matches by line index for O(N) decoration.
   const byLine = new Map();
-  search.matches.forEach((m, i) => {
+  matches.forEach((m, i) => {
     if (!byLine.has(m.line)) byLine.set(m.line, []);
     byLine.get(m.line).push({ ...m, _i: i });
   });
-  const activeIdx = search.idx;
+  // Stale idx (content shrank since it was set) clamps into range.
+  const activeIdx = Math.min(search.idx || 0, matches.length - 1);
   return lines.map((line, i) => {
     const spans = byLine.get(i);
     if (!spans) return line;
@@ -142,5 +152,5 @@ module.exports = {
   next, prev, isActive, typingText,
   decorateLines,
   // exposed for tests
-  recompute, _recomputeFor, _displayWidthBefore: ms._displayWidthBefore,
+  _displayWidthBefore: ms._displayWidthBefore,
 };

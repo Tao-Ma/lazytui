@@ -177,12 +177,13 @@ describe('[3] update — (model, msg) → [model, cmds], pure + Cmd descriptors'
     eq(next.scroll, 47, 'restored Info scroll from tabState');
     eq(next.cursor.line, 47, 'restored Info cursor from tabState');
   });
-  it('A4: viewer_show_info on Info drops stale search.matches but keeps term', () => {
-    // Round 2 finding: with active committed search on Info, j/k in a
-    // Navigator re-fires viewer_show_info → previous matches reference
-    // the OLD item's text → highlights paint on wrong content.
-    // Fix: clear matches/idx on within-Info nav; keep term so the
-    // user can `/[Up]`-recall.
+  it('A4/P1: viewer_show_info on Info resets the match cursor on content change, keeps term', () => {
+    // Round 2 finding (A4): with active committed search on Info, j/k
+    // re-fires viewer_show_info with the NEW item's content. P1 retired
+    // the stored match list (highlights derive from the current content
+    // via ms.matchesFor, so they can't go stale); the arm's remaining
+    // job is resetting the match CURSOR when content actually changed.
+    // term stays so the user can `/[Up]`-recall.
     const route = require('../panel/route');
     const detail = require('../panel/viewer/viewer');
     const m = runtime.getModel();
@@ -194,20 +195,14 @@ describe('[3] update — (model, msg) → [model, cmds], pure + Cmd descriptors'
     const slice = {
       ...route.getInstanceSlice('detail'),
       tab: 0,
-      search: {
-        active: true,
-        term: 'foo',
-        matches: [{ line: 7, col: 0, len: 3 }, { line: 12, col: 4, len: 3 }],
-        idx: 0,
-        typing: '',
-      },
+      infoLines: ['previous item info'],
+      search: { active: true, term: 'foo', idx: 1, typing: '' },
     };
-    // P0 — msg.lines threaded (new-item content); see the R3 test above.
     const r = detail._update({ type: 'viewer_show_info', lines: ['an action'] }, slice);
     const next = Array.isArray(r) ? r[0] : r;
     eq(next.tab, 0, 'stayed on Info');
-    eq(next.search.matches.length, 0, 'stale matches dropped');
-    eq(next.search.idx, 0, 'idx reset');
+    eq(next.infoLines[0], 'an action', 'new content stored');
+    eq(next.search.idx, 0, 'match cursor reset on content change');
     eq(next.search.term, 'foo', 'term preserved for /[Up] recall');
     eq(next.search.active, true, 'active flag preserved');
   });

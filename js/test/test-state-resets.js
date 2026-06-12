@@ -48,14 +48,16 @@ describe('[2] viewer_reset_chrome clears VIEWER-slice transient state', () => {
 
 describe('[3] setViewerContent invalidates a committed search', () => {
   it('drops stale matches when content is replaced', () => {
-    getInstanceSlice('detail').search = { active: true, term: 'err', matches: [{ line: 0, col: 0 }, { line: 2, col: 3 }], idx: 1 };
+    // P1 (viewer-lines selector) — matches are derived (ms.matchesFor),
+    // not stored; "stale matches" can't exist. The reset contract is on
+    // the canonical fields: active off + term cleared.
+    getInstanceSlice('detail').search = { active: true, term: 'err', idx: 1 };
     setViewerContent(null, 'brand new\ncontent here');
     eq(getInstanceSlice('detail').search.active, false, 'search deactivated');
-    eq(getInstanceSlice('detail').search.matches.length, 0, 'stale matches dropped');
     eq(getInstanceSlice('detail').search.term, '', 'term cleared');
   });
   it('leaves an inactive search untouched (no needless churn)', () => {
-    getInstanceSlice('detail').search = { active: false, term: '', matches: [], idx: 0 };
+    getInstanceSlice('detail').search = { active: false, term: '', idx: 0 };
     const ref = getInstanceSlice('detail').search;
     setViewerContent(null, 'more content');
     eq(getInstanceSlice('detail').search, ref, 'same object — not reallocated when already inactive');

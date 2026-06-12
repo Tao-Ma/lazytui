@@ -7,9 +7,23 @@
 'use strict';
 
 const search = require('../panel/viewer/search');
+const ms = require('../leaves/search');
 const { describe, it, eq, assert, report } = require('./test-runner');
 const { getModel } = require('../app/runtime');
 const { getInstanceSlice } = require('../panel/api');
+
+// P1 (viewer-lines selector) — matches are DERIVED via the
+// ms.matchesFor(lines, term) memo, not stored on slice.search. Tests
+// read them the way production consumers do: derive from the slice's
+// lines + the phase-correct term.
+function typingMatches() {
+  const sl = getInstanceSlice('detail');
+  return ms.matchesFor(sl.lines, sl.search.typing || '');
+}
+function committedMatches() {
+  const sl = getInstanceSlice('detail');
+  return ms.matchesFor(sl.lines, sl.search.term || '');
+}
 
 
 function setup(lines, panelH = 10) {
@@ -19,7 +33,7 @@ function setup(lines, panelH = 10) {
   // on the detail slice (was: cross-slice into layout.panelHeights.detail).
   getInstanceSlice('detail').innerH = Math.max(1, panelH - 2);
   getModel().modes.detailSearchMode = false;
-  getInstanceSlice('detail').search = { active: false, term: '', matches: [], idx: 0 };
+  getInstanceSlice('detail').search = { active: false, term: '', idx: 0, typing: '' };
 }
 
 describe('[1] substring match (regex literal chars)', () => {
@@ -27,10 +41,10 @@ describe('[1] substring match (regex literal chars)', () => {
     setup(['hello world', 'world peace', 'hello again']);
     search.enter();
     'hello'.split('').forEach(c => search.keystroke(c));
-    eq(getInstanceSlice('detail').search.matches.length, 2, 'matches on line 0 and 2');
-    eq(getInstanceSlice('detail').search.matches[0].line, 0);
-    eq(getInstanceSlice('detail').search.matches[0].col, 0);
-    eq(getInstanceSlice('detail').search.matches[1].line, 2);
+    eq(typingMatches().length, 2, 'matches on line 0 and 2');
+    eq(typingMatches()[0].line, 0);
+    eq(typingMatches()[0].col, 0);
+    eq(typingMatches()[1].line, 2);
   });
 });
 
@@ -39,7 +53,7 @@ describe('[2] case-insensitive by default', () => {
     setup(['HELLO World', 'hello WORLD']);
     search.enter();
     'world'.split('').forEach(c => search.keystroke(c));
-    eq(getInstanceSlice('detail').search.matches.length, 2, 'both lines match');
+    eq(typingMatches().length, 2, 'both lines match');
   });
 });
 
@@ -48,13 +62,13 @@ describe('[3] regex meta-characters work', () => {
     setup(['error: foo', 'warn: bar', 'info: baz']);
     search.enter();
     'error|warn'.split('').forEach(c => search.keystroke(c));
-    eq(getInstanceSlice('detail').search.matches.length, 2, 'error + warn match');
+    eq(typingMatches().length, 2, 'error + warn match');
   });
   it('character class', () => {
     setup(['code 42', 'code 7', 'code XX']);
     search.enter();
     '[0-9]+'.split('').forEach(c => search.keystroke(c));
-    eq(getInstanceSlice('detail').search.matches.length, 2, 'two digit-runs found');
+    eq(typingMatches().length, 2, 'two digit-runs found');
   });
 });
 
@@ -63,11 +77,11 @@ describe('[4] invalid regex during typing is graceful', () => {
     setup(['line a', 'line b']);
     search.enter();
     search.keystroke('[');
-    eq(getInstanceSlice('detail').search.matches.length, 0, 'no matches on invalid pattern');
+    eq(typingMatches().length, 0, 'no matches on invalid pattern');
     // Continue typing to make it valid again
     search.keystroke('a');
     search.keystroke(']');
-    eq(getInstanceSlice('detail').search.matches.length, 1, 'recovers when pattern becomes valid');
+    eq(typingMatches().length, 1, 'recovers when pattern becomes valid');
   });
 });
 
@@ -79,10 +93,10 @@ describe('[5] commit + clear', () => {
     search.commit();
     eq(getModel().modes.detailSearchMode, false);
     eq(getInstanceSlice('detail').search.active, true);
-    assert(getInstanceSlice('detail').search.matches.length > 0);
+    assert(committedMatches().length > 0);
     search.clearCommitted();
     eq(getInstanceSlice('detail').search.active, false);
-    eq(getInstanceSlice('detail').search.matches.length, 0);
+    eq(committedMatches().length, 0, 'cleared term derives no matches');
     eq(getInstanceSlice('detail').search.term, '');
   });
   it('empty commit clears active', () => {
@@ -100,12 +114,12 @@ describe('[6] cancel during typing restores prior committed term', () => {
     'hello'.split('').forEach(c => search.keystroke(c));
     search.commit();
     eq(getInstanceSlice('detail').search.term, 'hello');
-    eq(getInstanceSlice('detail').search.matches.length, 2);
+    eq(committedMatches().length, 2);
     search.enter();      // reopen
     search.keystroke('X');
     search.cancel();     // Esc
     eq(getInstanceSlice('detail').search.term, 'hello', 'committed term restored');
-    eq(getInstanceSlice('detail').search.matches.length, 2);
+    eq(committedMatches().length, 2);
   });
 });
 
@@ -116,7 +130,7 @@ describe('[7] next/prev cycles + autoscroll', () => {
     search.enter();
     'row0'.split('').forEach(c => search.keystroke(c));
     search.commit();
-    eq(getInstanceSlice('detail').search.matches.length, 4);
+    eq(committedMatches().length, 4);
     eq(getInstanceSlice('detail').search.idx, 0);
     search.next();
     eq(getInstanceSlice('detail').search.idx, 1);
@@ -185,11 +199,11 @@ describe('[9] zero-width pattern does not infinite-loop', () => {
   });
 });
 
-describe('[10] B2 — committed search survives a lines-change (recompute)', () => {
-  // Pre-B2, viewer_show_info (and the unrouted-stream auto-jump) dropped
-  // search.matches when displayed lines changed → the user lost their
-  // highlights on every refresh. B2's finalizer-side recompute re-derives
-  // matches against the new content so the committed search survives.
+describe('[10] P1 — committed search survives a lines-change (derived matches)', () => {
+  // Historical B2 added a finalizer recompute so a committed search
+  // survived content changes. P1 deleted that machinery: matches DERIVE
+  // from (lines, term) via ms.matchesFor, so survival is structural —
+  // these tests pin the derived behavior across an append.
   it('viewer_append on Transcript re-derives matches against the new buffer', () => {
     const viewer = require('../panel/viewer/viewer');
     // Park on Transcript (tab 1) with one matching line in the buffer.
@@ -211,14 +225,15 @@ describe('[10] B2 — committed search survives a lines-change (recompute)', () 
     s = viewer._update({ type: 'viewer_search_commit' }, s);
     s = Array.isArray(s) ? s[0] : s;
     eq(s.search.active, true, 'search committed');
-    eq(s.search.matches.length, 1, 'one match before append');
+    eq(ms.matchesFor(s.lines, s.search.term).length, 1, 'one match before append');
 
     // Append a second line that also matches /target.
     const r = viewer._update({ type: 'viewer_append', line: 'another target' }, s);
     const next = Array.isArray(r) ? r[0] : r;
     eq(next.viewerStreamBuffer.lines.length, 2, 'buffer grew');
-    eq(next.search.matches.length, 2, 'matches re-derived against new lines (B2)');
-    eq(next.search.matches[1].line, 1, 'new match lands on line 1');
+    const derived = ms.matchesFor(next.lines, next.search.term);
+    eq(derived.length, 2, 'matches derive against new lines (P1)');
+    eq(derived[1].line, 1, 'new match lands on line 1');
   });
 
   it('a non-matching append still re-derives — matches re-count to original', () => {
@@ -237,11 +252,11 @@ describe('[10] B2 — committed search survives a lines-change (recompute)', () 
     }
     s = viewer._update({ type: 'viewer_search_commit' }, s);
     s = Array.isArray(s) ? s[0] : s;
-    eq(s.search.matches.length, 1, 'one match before append');
+    eq(ms.matchesFor(s.lines, s.search.term).length, 1, 'one match before append');
 
     const r = viewer._update({ type: 'viewer_append', line: 'unrelated' }, s);
     const next = Array.isArray(r) ? r[0] : r;
-    eq(next.search.matches.length, 1, 'still one match (no new hits)');
+    eq(ms.matchesFor(next.lines, next.search.term).length, 1, 'still one match (no new hits)');
   });
 
   it('inactive search is not touched (gate respects search.active=false)', () => {
@@ -255,7 +270,7 @@ describe('[10] B2 — committed search survives a lines-change (recompute)', () 
     const r = viewer._update({ type: 'viewer_append', line: 'line two' }, s0);
     const next = Array.isArray(r) ? r[0] : r;
     eq(next.search.active, false, 'search still inactive');
-    eq(next.search.matches.length, 0, 'matches stay empty');
+    eq(ms.matchesFor(next.lines, next.search.term || '').length, 0, 'no term derives no matches');
   });
 });
 

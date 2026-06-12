@@ -56,11 +56,14 @@ function footerKeys(model) {
     return ` \\[terminal: ${esc(label)}] | Ctrl+\\ return to TUI`;
   }
   if (md.detailSearchMode) {
+    // P1 (viewer-lines selector) — match count derives from the viewer's
+    // lines via the ms.matchesFor memo (typing term), not a stored list.
     const ds = require('../panel/viewer/search');
+    const ms = require('../leaves/search');
     const term = ds.typingText();
-    const search = getInstanceSlice(_route().resolveTarget('viewer') || 'detail')?.search || { matches: [], idx: 0 };
-    const n = (search.matches || []).length;
-    const idx = n ? search.idx + 1 : 0;
+    const vslice = getInstanceSlice(_route().resolveTarget('viewer') || 'detail');
+    const n = ms.matchesFor((vslice && vslice.lines) || [], term).length;
+    const idx = n ? Math.min((vslice && vslice.search && vslice.search.idx) || 0, n - 1) + 1 : 0;
     return ` /${esc(term)}│ \\[${idx}/${n}] | ↑↓ step | Esc cancel | Enter commit`;
   }
   if (md.filterMode) return ` /${esc(filterCurrentText())}│ | Esc clear | Enter ok`;
@@ -93,10 +96,13 @@ function footerKeys(model) {
     } else {
       segs.push('x menu', 'q quit');
       segs.push('/ search');
-      const search = getInstanceSlice(_route().resolveTarget('viewer') || 'detail')?.search;
+      // P1 — committed-phase count derives from (lines, term).
+      const vslice = getInstanceSlice(_route().resolveTarget('viewer') || 'detail');
+      const search = vslice?.search;
       if (search && search.active) {
-        const n = search.matches.length;
-        const idx = search.idx + 1;
+        const ms = require('../leaves/search');
+        const n = ms.matchesFor((vslice && vslice.lines) || [], search.term || '').length;
+        const idx = n ? Math.min(search.idx || 0, n - 1) + 1 : 0;
         segs.push(`n/N [${idx}/${n}]`, 'Esc clear');
       }
     }

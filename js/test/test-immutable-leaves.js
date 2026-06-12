@@ -150,13 +150,18 @@ describe('[immutable] leaves/pane-tabs.js', () => {
 // --- leaves/search -------------------------------------------------------
 
 describe('[immutable] leaves/search.js', () => {
+  // P1 (viewer-lines selector) — matches are NOT stored on the slice:
+  // ms.matchesFor(lines, term) is the chained-selector memo. Transforms
+  // take (slice, innerH, lines, term) where the caller passes the
+  // phase-correct term.
+  const LINES = ['hello world', 'foobar', 'world peace'];
   const makeSlice = () => ({
-    lines: ['hello world', 'foobar', 'world peace'],
+    lines: LINES,
     scroll: 0,
-    search: { active: false, term: '', matches: [], idx: 0, typing: '' },
+    search: { active: false, term: '', idx: 0, typing: '' },
   });
 
-  it('enter seeds typing + computes matches; returns [newSlice, info]', () => {
+  it('enter seeds typing; matches derive via matchesFor; returns [newSlice, info]', () => {
     const slice = makeSlice();
     slice.search = { ...slice.search, term: 'world' };
     const [next, info] = expectNoMutation(
@@ -166,7 +171,15 @@ describe('[immutable] leaves/search.js', () => {
     );
     eq(info.enableSearchMode, true);
     eq(next.search.typing, 'world');
-    assert(next.search.matches.length === 2, 'two matches found');
+    assert(ms.matchesFor(LINES, 'world').length === 2, 'two matches found');
+  });
+
+  it('matchesFor is a ref-keyed memo (same (lines, term) → same matches ref)', () => {
+    const a = ms.matchesFor(LINES, 'world');
+    const b = ms.matchesFor(LINES, 'world');
+    assert(a === b, 'memo hit returns the same ref');
+    const c = ms.matchesFor(LINES.slice(), 'world');
+    assert(c !== a && c.length === a.length, 'new lines ref recomputes');
   });
 
   it('keystroke returns new slice with updated typing', () => {
@@ -182,13 +195,10 @@ describe('[immutable] leaves/search.js', () => {
 
   it('next cycles match index + may scroll', () => {
     const slice = makeSlice();
-    slice.search = {
-      active: true, term: 'world', typing: 'world', idx: 0,
-      matches: [{ line: 0, col: 6, len: 5 }, { line: 2, col: 0, len: 5 }],
-    };
+    slice.search = { active: true, term: 'world', typing: 'world', idx: 0 };
     const next = expectNoMutation(
       'next leaves input frozen',
-      () => ms.next(slice),
+      () => ms.next(slice, 4, LINES, 'world'),
       slice,
     );
     eq(next.search.idx, 1, 'idx advanced');
