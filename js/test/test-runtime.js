@@ -254,6 +254,11 @@ describe('[3] update — (model, msg) → [model, cmds], pure + Cmd descriptors'
     const r3 = detail._update({ type: 'viewer_show_info', lines: ['a', 'c'] }, s1);
     const s3 = Array.isArray(r3) ? r3[0] : r3;
     assert(s3 !== s1 && s3.infoLines[1] === 'c', 'changed content → new infoLines');
+    // P4 review — sameLines but scroll > 0 still resets to 0 (the old
+    // arm's unconditional reset; the identity guard must not eat it).
+    const r4 = detail._update({ type: 'viewer_show_info', lines: ['a', 'b'] }, { ...s1, scroll: 7 });
+    const s4 = Array.isArray(r4) ? r4[0] : r4;
+    eq(s4.scroll, 0, 'scroll reset despite unchanged content');
   });
   it('escape / list_select: emit wrapped multisel_clear into the focused Component', () => {
     // Phase 4a — escape/list_select route multiSel clears through the

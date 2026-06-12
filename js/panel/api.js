@@ -708,7 +708,13 @@ function infoLinesFromFocus() {
   // Thread the focused paneId so a multi-panelType Component (files)
   // reads THIS pane's browser/config. Arity-ignored by single-panel defs.
   const out = def.getInfo(item, focus);
-  if (!out || !out.length) return null;
+  // P4 review fix — EMPTY getInfo output returns [] (not null): the old
+  // arm yanked to Info whenever def+item existed without inspecting the
+  // content, so the dispatch (and yank) must still happen for an
+  // empty-info item; only no-def/no-selection skips. (Old display then
+  // showed STALE previous content via the slice.lines fixed point;
+  // blank is the honest rendering.)
+  if (!out || !out.length) return [];
   return out.join('\n').split('\n');
 }
 

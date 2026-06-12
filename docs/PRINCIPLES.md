@@ -435,12 +435,17 @@ arrangement) — slice-private but loaded via cross-layer Msgs.
 > producer (streamed action, future job entry) outlives the user's
 > attention on its tab, give it a per-id buffer in the slice and
 > route its writes by id (e.g. `slice.actionTabBuffers[group][key]`).
-> The active-tab "viewer" then becomes a derived view: the reducer
-> mirrors to `slice.lines` only when the consumer is looking at that
-> id. Pre-Phase-2 the viewer's `slice.lines` doubled as "the active
-> tab's content" AND "the streaming producer's sink," forcing
-> kill-on-switch as the only way to avoid cross-talk. The two
-> concerns are separate; keep them separate.
+> The active-tab "viewer" is then a DERIVED view — computed from the
+> per-id homes via `pane-tabs.viewerLines` (and search matches via the
+> `ms.matchesFor` memo), never stored. Pre-Phase-2 the viewer's
+> `slice.lines` doubled as "the active tab's content" AND "the
+> streaming producer's sink," forcing kill-on-switch as the only way
+> to avoid cross-talk; the v0.6.4 viewer-lines selector arc finished
+> the separation by deleting the stored mirror entirely. The pattern:
+> canonical content lives in per-id homes; anything computable from
+> them is a memoized selector, not a slice field — stored derived
+> state carries a standing invariant every reviewer must re-learn and
+> every new write path can silently break.
 
 > **Consumer view-state survives the tab switch.** Complement to the
 > producer rule: per-tab *view* state (scroll position, search match

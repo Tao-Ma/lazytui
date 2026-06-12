@@ -1149,7 +1149,9 @@ function render(panel, w, h, slice, opts) {
   if (select.isActive()) {
     lines = select.decorateLines(lines);
   } else {
-    lines = search.decorateLines(lines);
+    // P4 review fix — thread THIS pane's slice so an unfocused viewer
+    // is decorated with its own search state (multi-viewer).
+    lines = search.decorateLines(lines, slice);
   }
   return renderPanel({
     width: w, height: h, lines,

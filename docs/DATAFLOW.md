@@ -200,8 +200,11 @@ action output, docker poll, refresh ticks) so they coalesce bursts.
 and `viewer_append { line, tabKey?, groupName? }` (+ bulk
 `viewer_append_lines`) carry an optional routing key. With
 `{tabKey, groupName}` set, the viewer reducer writes to
-`slice.actionTabBuffers[groupName][tabKey].lines`; `slice.lines` is
-finalizer-derived from the active tab's source (T2d). `stream_start`'s
+`slice.actionTabBuffers[groupName][tabKey].lines`; the displayed
+lines DERIVE from the active tab's source via `pane-tabs.viewerLines`
+(v0.6.4 viewer-lines selector — the stored `slice.lines` mirror is
+deleted; render, dispatch-side readers, and the viewer's update
+boundary all call the projection). `stream_start`'s
 routed path additionally auto-jumps `slice.tab` to the action's index,
 emits `terminal_exit` so `terminalMode` doesn't survive the jump,
 clears `slice.viewerOverride` (B3 — stream takeover dismisses any
@@ -215,8 +218,8 @@ fresh buffer).
 streams flow into `slice.viewerStreamBuffer` (a singleton ring
 buffer, cap 1000) and the viewer's display home is the dedicated
 **Transcript** tab at strip idx 1 (between Info and per-group
-action tabs). `slice.lines` derives from the buffer when on Transcript;
-off-Transcript appends silently grow it. `stream_start`'s unrouted
+action tabs). The displayed lines derive from the buffer when on
+Transcript; off-Transcript appends silently grow it. `stream_start`'s unrouted
 auto-jump to Transcript also clears `viewerOverride` (B3); already-on-
 Transcript appends preserve any pre-existing override (no transition).
 `tab_switch` to Transcript restores from buffer with bottom-pin

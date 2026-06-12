@@ -6,6 +6,23 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **`slice.lines` and `slice.search.matches` are deleted — viewer
+  content and search matches are now derived, not stored** (the
+  viewer-lines selector arc, `docs/viewer-lines-selector.md`). Info-tab
+  content gets a canonical home (`slice.infoLines`, written by
+  `viewer_show_info` from dispatcher-computed `msg.lines`); displayed
+  lines derive from the active tab's per-id home via
+  `pane-tabs.viewerLines`; search matches derive via the
+  `ms.matchesFor(lines, term)` memo, so they can never go stale against
+  content — the finalizer transition-detect and recompute machinery is
+  deleted with them. The per-Msg plugin `getItems`/`getInfo` call is
+  gone from the viewer finalizer (bench: parity-or-better, +19% on
+  append-from-empty). Two warts die structurally: committed-search
+  highlights lost on ref-equal Info refreshes, and the closed-content-
+  tab stale-repaint guard.
+
 ## [0.6.4] — 2026-06-12
 
 ### Added

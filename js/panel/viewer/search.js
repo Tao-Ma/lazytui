@@ -70,14 +70,25 @@ function typingText() { return _slice()?.search?.typing || ''; }
  * Render-side (reads the detail slice's `search`); composes with
  * select.decorateLines.
  */
-function decorateLines(lines) {
-  const search = _slice()?.search;
+function decorateLines(lines, slice) {
+  // P4 review fix (multi-viewer) — decorate with the RENDERED pane's
+  // search state, not the focused pane's. The render path passes its
+  // own slice; legacy callers without one fall back to the focused
+  // viewer (singleton-equivalent). Pre-arc this read the focused
+  // pane's stored matches and painted their POSITIONS onto whatever
+  // pane was being rendered — cross-pane in a worse way.
+  const focusedSlice = _slice();
+  const s = slice || focusedSlice;
+  const search = s?.search;
   if (!search) return lines;
   // P1 (viewer-lines selector) — matches DERIVE from the very lines
   // being decorated (ms.matchesFor memo), so highlights always align
   // with the displayed content. Phase picks the term: typing while the
-  // `/` prompt is open (live preview), committed `term` after.
-  const term = getModel().modes.detailSearchMode
+  // `/` prompt is open (live preview) — but the typing buffer belongs
+  // to the FOCUSED viewer only; an unfocused pane shows its own
+  // committed term.
+  const typingPhase = getModel().modes.detailSearchMode && s === focusedSlice;
+  const term = typingPhase
     ? (search.typing || '')
     : (search.active ? (search.term || '') : '');
   const matches = ms.matchesFor(lines, term);

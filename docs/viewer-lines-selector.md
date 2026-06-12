@@ -1,8 +1,35 @@
 # viewer-lines selector — retire `slice.lines` via derived selectors
 
-> Status: **IN PROGRESS** (v0.6.4, pre-tag). Spec written 2026-06-12.
-> Supersedes the B1 "defer" verdict (docs/v0.6.3.md Track B) — see the
-> analysis trail in auto-memory `viewer-lines-selector`.
+> Status: **EXECUTED 2026-06-12** (v0.6.4, pre-tag; commits
+> `5f17218..ffbc472` + doc-parity). Supersedes the B1 "defer" verdict
+> (docs/v0.6.3.md Track B) — analysis trail in auto-memory
+> `viewer-lines-selector`.
+>
+> **Execution deviations from this spec (all simplifications):**
+> 1. **P1 stores NOTHING** — no `matchTerm`-style field; each consumer
+>    knows its phase and passes typing vs committed term explicitly
+>    (`viewer_search_nav` arm = typing, n/N arm = term, render reads
+>    `modes.detailSearchMode`). `slice.search` = {active, term, typing,
+>    idx}.
+> 2. **P2 reshaped: boundary-derive, not producer-threading.** Instead
+>    of threading lines at ~7 dispatch sites, viewer.update derives the
+>    active-tab lines ONCE at its T1.1 boundary (where the blessed
+>    model read already happens) and passes them to arms as a fact.
+> 3. **The api.js finalizer viewer clamp was SKIPPED** — today's
+>    finalizer deliberately skips detail panes (viewer clamps
+>    arm-locally); adding one would have CHANGED behavior. Revisit only
+>    on a real overshoot repro.
+> 4. **P0's freshness model is dual, deliberately**: render keeps a
+>    live `infoFromFocus` projection (Info display tracks the focused
+>    Navigator between events — TEA derived-in-view); `slice.infoLines`
+>    is the stored reducer-side basis (bounds/search/sticky). They can
+>    diverge only in the same window the old `slice.lines` lagged
+>    render (the viewer finalizer never ran on other Components' Msgs).
+>
+> **Bench gate (same-fs A/B, interleaved runs):** parity within noise
+> on all cases; +19% on append-from-empty; the per-Msg plugin
+> getItems/getInfo call is gone from the finalizer. Suite 88/89 (xz
+> env-only), smoke 9/9 at every phase.
 
 ## Why
 

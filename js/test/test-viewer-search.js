@@ -187,6 +187,40 @@ describe('[8] decorateLines render integration', () => {
   });
 });
 
+describe('[8b] decorateLines decorates the RENDERED pane, not the focused one', () => {
+  // P4 review fix (multi-viewer) — an explicit slice arg wins over the
+  // focused-viewer resolution, and the typing-phase preview applies
+  // ONLY to the focused slice; an unfocused pane shows its own
+  // committed term.
+  it('explicit slice arg drives term + idx', () => {
+    setup(['focused content']);              // focused viewer: no search
+    const other = {
+      infoLines: ['target here', 'no hit', 'target again'],
+      search: { active: true, term: 'target', idx: 1, typing: '' },
+    };
+    const lines = other.infoLines;
+    const out = search.decorateLines(lines, other);
+    assert(out[0].includes('[yellow]'), 'unfocused pane decorated with ITS OWN committed term');
+    assert(out[2].includes('[reverse]'), 'active idx from the passed slice');
+    const focusedOut = search.decorateLines(displayedLines(getInstanceSlice('detail')));
+    eq(focusedOut[0], 'focused content', 'focused pane (no search) untouched');
+  });
+  it('typing preview applies only to the focused slice', () => {
+    setup(['alpha beta']);
+    search.enter();
+    'beta'.split('').forEach(c => search.keystroke(c));
+    // While detailSearchMode is ON, a DIFFERENT pane's decoration must
+    // not pick up the focused pane's typing buffer.
+    const other = {
+      infoLines: ['beta lives here'],
+      search: { active: false, term: '', idx: 0, typing: '' },
+    };
+    const out = search.decorateLines(other.infoLines, other);
+    eq(out[0], 'beta lives here', 'unfocused pane has no active search → no highlight');
+    search.cancel();
+  });
+});
+
 describe('[9] zero-width pattern does not infinite-loop', () => {
   it('pattern `a*` matches but the recompute terminates', () => {
     setup(['banana']);
