@@ -26,6 +26,7 @@ const sm = require('./_helpers/smoke');
 const api = sm.api;
 const { getModel } = require('../../app/runtime');
 const pt = require('../../leaves/pane-tabs');
+const { displayedLines } = require('../_helpers/viewer-lines');
 
 const VIEWER = 'detail';   // singleton viewer-kind id (route.resolveTarget('viewer') resolves here)
 
@@ -111,25 +112,25 @@ describe('[1] stream_start auto-jumps + header paints in the action tab', () => 
     const slice = api.getInstanceSlice(VIEWER);
     // Info=0, Transcript=1, make-check=2 (first action tab).
     eq(slice.tab, 2, 'auto-jumped to make-check (idx 2)');
-    assert(slice.lines.length === 1 && slice.lines[0].includes('make check'),
-      `slice.lines should be [header]; got ${JSON.stringify(slice.lines)}`);
+    assert(displayedLines(slice).length === 1 && displayedLines(slice)[0].includes('make check'),
+      `displayedLines(slice) should be [header]; got ${JSON.stringify(displayedLines(slice))}`);
     // Buffer seeded too — the source of truth for re-restore.
     const buf = slice.actionTabBuffers && slice.actionTabBuffers.g1 && slice.actionTabBuffers.g1['make-check'];
     assert(buf && buf.lines.length === 1, 'buffer seeded with header');
   });
 });
 
-// --- [2] live appends mirror to slice.lines while the action tab is active
+// --- [2] live appends mirror to displayedLines(slice) while the action tab is active
 
-describe('[2] live appends grow slice.lines while on the action tab', () => {
-  it('two viewer_append calls land in slice.lines (mirror-on-active)', () => {
+describe('[2] live appends grow displayedLines(slice) while on the action tab', () => {
+  it('two viewer_append calls land in displayedLines(slice) (mirror-on-active)', () => {
     setupActionTab();
     streamStart('make-check', 'g1', '$ make check');
     viewerAppend('make-check', 'g1', 'live-A');
     viewerAppend('make-check', 'g1', 'live-B');
     const s = api.getInstanceSlice(VIEWER);
-    eq(s.lines.length, 3, '1 header + 2 appends');
-    eq(s.lines[2], 'live-B', 'tail mirrors latest append');
+    eq(displayedLines(s).length, 3, '1 header + 2 appends');
+    eq(displayedLines(s)[2], 'live-B', 'tail mirrors latest append');
     eq(s.actionTabBuffers.g1['make-check'].lines.length, 3, 'buffer in sync');
   });
 });
@@ -141,7 +142,7 @@ describe('[2] live appends grow slice.lines while on the action tab', () => {
 // elsewhere, and re-entry should restore the full live state.
 
 describe('[3] background appends survive switch-away; switch-back restores live state', () => {
-  it('off-tab appends grow buffer but not slice.lines; back → full restore + bottom-pinned scroll', () => {
+  it('off-tab appends grow buffer but not displayedLines(slice); back → full restore + bottom-pinned scroll', () => {
     setupActionTab();
     streamStart('make-check', 'g1', '$ make check');
     viewerAppend('make-check', 'g1', 'pre-1');
@@ -163,14 +164,14 @@ describe('[3] background appends survive switch-away; switch-back restores live 
     eq(offTab.actionTabBuffers.g1['make-check'].lines.length, 6,
       'buffer grew to 6 while user was off-tab (1 header + 2 pre + 3 bg)');
     assert(!offTab.lines.includes('bg-3'),
-      'slice.lines does NOT mirror background appends while off-tab');
+      'displayedLines(slice) does NOT mirror background appends while off-tab');
 
     // Switch back to make-check.
     tabSwitch(2);
     const back = api.getInstanceSlice(VIEWER);
     eq(back.tab, 2, 'returned to make-check');
-    eq(back.lines.length, 6, 'all six lines restored from buffer');
-    eq(back.lines[5], 'bg-3', 'latest background line is at the tail');
+    eq(displayedLines(back).length, 6, 'all six lines restored from buffer');
+    eq(displayedLines(back)[5], 'bg-3', 'latest background line is at the tail');
     // Pin innerH separately so the bottom-pin formula isn't tautological
     // (Math.max(0, lines - innerH) collapses to 0=0 when innerH >= lines).
     // The setup at line 150 set innerH=3; if tab_switch resets it,

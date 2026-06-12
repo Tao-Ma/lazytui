@@ -24,7 +24,7 @@
  *   Unrouted (no tabKey) → slotKey = 'unrouted'. Singleton slot —
  *     a new docker-logs preempts the previous (the legacy verb-
  *     verb behavior). One unrouted at a time is enough; multiple
- *     would interleave into slice.lines anyway.
+ *     would interleave into the Transcript accumulator anyway.
  *
  * Lifecycle Cmds dispatched at boundaries:
  *   stream_start  { header, tabKey?, groupName? }   — at spawn
@@ -63,7 +63,8 @@ function _slotKey(tabKey, groupName) {
 
 // Async producer-side writes. Destination resolves via route.resolveTarget;
 // dispatch is lazy-required to dodge the stream→dispatch→actions cycle.
-// tabKey+groupName route into actionTabBuffers; unset → legacy slice.lines.
+// tabKey+groupName route into actionTabBuffers; unset → the unrouted
+// Transcript accumulator (viewerStreamBuffer).
 //
 // appendDetailLine: single-line (the onData hot path — one Msg per line).
 // appendDetailLines: bulk variant for producer-event footers (one Msg for
@@ -171,8 +172,8 @@ function killAll(opts = {}) {
  * Stream a shell command's stdout/stderr to the detail panel.
  *
  * opts.tabKey + opts.groupName route into actionTabBuffers (buffer per
- * tabbed action, see viewer.js); unset → legacy slice.lines write
- * (singleton unrouted slot — new unrouted preempts previous).
+ * tabbed action, see viewer.js); unset → the unrouted Transcript
+ * accumulator (singleton unrouted slot — new unrouted preempts previous).
  */
 function streamCommand(headerLabel, cmd, args = [], opts = {}) {
   const route = require('../panel/route');

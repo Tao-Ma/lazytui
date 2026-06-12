@@ -7,6 +7,7 @@
 'use strict';
 
 const tabs = require('../panel/viewer/tabs');
+const { displayedLines } = require('./_helpers/viewer-lines');
 const pt = require('../leaves/pane-tabs');
 const { describe, it, eq, assert, report } = require('./test-runner');
 const { getModel } = require('../app/runtime');
@@ -35,7 +36,7 @@ function freshGroup({ actions = {}, terminals = {} } = {}) {
   getInstanceSlice('detail').tab = 0;
   getInstanceSlice("layout").focus = 'groups';
   require('../dispatch/dispatch').applyMsg({ type: 'mode_clear', flag: 'terminalMode' });
-  getInstanceSlice('detail').lines = [];
+  getInstanceSlice('detail').infoLines = [];
   getInstanceSlice('detail').scroll = 0;
 }
 
@@ -50,7 +51,7 @@ describe('[1] addContentTab basics', () => {
     // v0.6.2 layout: Info=0, Transcript=1, action(A)=2, content(file:foo)=3
     eq(getInstanceSlice('detail').tab, 3, 'content tab is at index 3');
     eq(getFocus(), 'detail', 'focus moved to detail');
-    eq(getInstanceSlice('detail').lines.join('\n'), 'line one\nline two', 'lines loaded into detail');
+    eq(displayedLines(getInstanceSlice('detail')).join('\n'), 'line one\nline two', 'lines loaded into detail');
   });
   it('re-add with same key updates label/lines and re-switches', () => {
     freshGroup();
@@ -58,7 +59,7 @@ describe('[1] addContentTab basics', () => {
     eq(tabs.getTabInfo().contentTabs.length, 1);
     tabs.addContentTab('g1', 'file:x', 'x.txt (updated)', ['v2', 'v2b']);
     eq(tabs.getTabInfo().contentTabs.length, 1, 'still one tab — replaced in place');
-    eq(getInstanceSlice('detail').lines.join('\n'), 'v2\nv2b');
+    eq(displayedLines(getInstanceSlice('detail')).join('\n'), 'v2\nv2b');
   });
 });
 
@@ -130,7 +131,7 @@ describe('[5] updateContentTabLines — no focus steal', () => {
     tabs.addContentTab('g1', 'file:x', 'x', ['placeholder']);
     // Still on the content tab
     tabs.updateContentTabLines('g1', 'file:x', ['real', 'content']);
-    eq(getInstanceSlice('detail').lines.join('\n'), 'real\ncontent', 'setViewerContent re-fired');
+    eq(displayedLines(getInstanceSlice('detail')).join('\n'), 'real\ncontent', 'setViewerContent re-fired');
   });
   it('no-op for non-existent tab (after user closed it)', () => {
     freshGroup();
@@ -154,7 +155,7 @@ describe('[6] removeContentTab refreshes detail body', () => {
   it('falls back to Info when last content tab is closed', () => {
     freshGroup();
     tabs.addContentTab('g1', 'file:x', 'x', ['some text']);
-    eq(getInstanceSlice('detail').lines.join('\n'), 'some text');
+    eq(displayedLines(getInstanceSlice('detail')).join('\n'), 'some text');
     tabs.removeContentTab('g1', 'file:x');
     eq(getInstanceSlice('detail').tab, 0, 'back to Info');
     // detailLines should no longer hold the closed file's content
@@ -173,7 +174,7 @@ describe('[6] removeContentTab refreshes detail body', () => {
     // active is now 'b' (last added)
     tabs.removeContentTab('g1', 'b');
     eq(getInstanceSlice('detail').tab, 2, 'sibling content tab (a at idx 2)');
-    eq(getInstanceSlice('detail').lines.join('\n'), 'from-a', 'sibling lines loaded into detail');
+    eq(displayedLines(getInstanceSlice('detail')).join('\n'), 'from-a', 'sibling lines loaded into detail');
   });
 });
 
@@ -209,17 +210,17 @@ describe('[T27] cross-group mutators preserve current-group cursor + body', () =
     getModel().currentGroup = 'g1';
     getInstanceSlice('detail').ephemeralTerminals = {};
     getInstanceSlice('detail').contentTabs = {};
-    getInstanceSlice('detail').lines = ['g1 content'];
+    getInstanceSlice('detail').infoLines = ['g1 content'];
     getInstanceSlice('detail').scroll = 5;
     getInstanceSlice('detail').tab = 0;
     tabs.addContentTab('g1', 'file:a', 'a', ['g1 a-tab']);
     const tabBefore  = getInstanceSlice('detail').tab;
-    const linesBefore = getInstanceSlice('detail').lines.slice();
+    const linesBefore = displayedLines(getInstanceSlice('detail')).slice();
     // Now an async loadDir for g2 (the OTHER group) resolves. Pre-T27
     // this clobbered the current-group cursor + body.
     tabs.addContentTab('g2', 'file:b', 'b', ['g2 b-tab']);
     eq(getInstanceSlice('detail').tab, tabBefore, 'tab cursor unchanged');
-    eq(getInstanceSlice('detail').lines.join('\n'), linesBefore.join('\n'), 'lines unchanged');
+    eq(displayedLines(getInstanceSlice('detail')).join('\n'), linesBefore.join('\n'), 'lines unchanged');
     // But the cross-group tab IS now in the per-group map:
     const ct = getInstanceSlice('detail').contentTabs;
     assert(ct.g2 && ct.g2['file:b'], 'g2 content tab stored in map');
@@ -230,12 +231,12 @@ describe('[T27] cross-group mutators preserve current-group cursor + body', () =
     getModel().currentGroup = 'g2';
     getInstanceSlice('detail').ephemeralTerminals = {};
     getInstanceSlice('detail').contentTabs = { g1: { 'file:a': { label: 'a', lines: ['old'] } } };
-    getInstanceSlice('detail').lines = ['g2 view'];
+    getInstanceSlice('detail').infoLines = ['g2 view'];
     getInstanceSlice('detail').scroll = 3;
     getInstanceSlice('detail').tab = 0;
     tabs.removeContentTab('g1', 'file:a');  // remove from OTHER group
     eq(getInstanceSlice('detail').tab, 0, 'tab unchanged');
-    eq(getInstanceSlice('detail').lines.join('\n'), 'g2 view', 'lines unchanged');
+    eq(displayedLines(getInstanceSlice('detail')).join('\n'), 'g2 view', 'lines unchanged');
     eq(getInstanceSlice('detail').scroll, 3, 'scroll unchanged');
     assert(!getInstanceSlice('detail').contentTabs.g1, 'g1 map dropped (empty after remove)');
   });

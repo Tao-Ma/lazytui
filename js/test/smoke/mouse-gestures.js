@@ -259,7 +259,7 @@ describe('[5] right-click context menu — copy + dismiss', () => {
     // (doesn't run the viewer finalizer), so the lines persist for the
     // context resolver to read the line under the cursor.
     const d = api.getInstanceSlice('detail');
-    d.lines = ['alpha line', 'bravo line', 'charlie line'];
+    d.infoLines = ['alpha line', 'bravo line', 'charlie line'];  // P3 — Info canonical home
     d.scroll = 0;
     sm.capture(() => sm.render());
     const lay = api.getInstanceSlice('layout');

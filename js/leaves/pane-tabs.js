@@ -89,8 +89,8 @@ function actionTabCount(model, groupName) {
 //                              (else "Press Enter to run." placeholder)
 //        term tab            → []  (PTY-rendered separately)
 //        content tab         → slice.contentTabs[group][key].lines
-//   3. Fallback to slice.lines (legacy field still maintained by some
-//      reducer arms in this transition; T2d retires it).
+//   3. Degenerate tab idx falls back to empty (P3 — the legacy
+//      slice.lines field is DELETED; Info's home is slice.infoLines).
 //
 // Takes a `lookups` bag of host-bound helpers so the leaf stays
 // import-free for the cross-tier concerns (focused-panel resolution,
@@ -113,8 +113,7 @@ function viewerLines(slice, model, groupName, lookups) {
       const lines = lookups.infoFromFocus();
       if (Array.isArray(lines) && lines.length > 0) return lines;
     }
-    if (slice && Array.isArray(slice.infoLines)) return slice.infoLines;
-    return (slice && slice.lines) || [];
+    return (slice && slice.infoLines) || [];
   }
   // Transcript — unrouted accumulator.
   if (tab === 1) {
@@ -144,8 +143,8 @@ function viewerLines(slice, model, groupName, lookups) {
       && slice.contentTabs[groupName][contentKey];
     if (ct && Array.isArray(ct.lines)) return ct.lines;
   }
-  // Fallback (degenerate tab idx, etc.) — legacy slice.lines.
-  return (slice && slice.lines) || [];
+  // Fallback (degenerate tab idx, etc.) — nothing to show.
+  return [];
 }
 
 /** Merged terminals: YAML-defined first, then runtime-ephemeral. */
@@ -511,15 +510,12 @@ function removeContent(slice, { groupName, key, currentGroup, yamlTerminals, act
   // Falling back to a sibling or Info with the override still
   // active would paint discrete-doc content on the wrong surface.
   //
-  // v0.6.3 post-arch-arc — when the removed content tab was active
-  // AND we fell back to Info (no remaining content tabs), clear
-  // slice.lines too. Otherwise viewerLines' tab=0 fallback to
-  // slice.lines would re-paint the closed tab's content (the
-  // file content stayed visible after the user closed the file
-  // tab, reported in postgres demo).
+  // (The v0.6.3 "clear slice.lines on fall-back-to-Info" guard died in
+  // P3 with the field: Info derives from slice.infoLines, which never
+  // held the closed tab's content, so the stale-repaint wart can't
+  // recur. The needShowSelectedInfo effect refreshes info regardless.)
   const out = { ...sliceAfterDrop, contentTabs: ctAllNext, tab, scroll };
   if (slice.tab === removedTabIdx && slice.viewerOverride) out.viewerOverride = null;
-  if (slice.tab === removedTabIdx && needShowSelectedInfo) out.lines = [];
   return [out, { needShowSelectedInfo }];
 }
 

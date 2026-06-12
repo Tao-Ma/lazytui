@@ -274,9 +274,9 @@ describe('[v0.6.4 multi-viewer] two detail instances scroll independently', () =
     route.setInstance('pane-right', 'detail', viewer._init('pane-right'));
     // Seed each with content + a viewport so viewer_scroll has room.
     route.setInstanceSlice('pane-left',  { ...route.getInstanceSlice('pane-left'),
-      lines: Array.from({ length: 50 }, (_, i) => `L${i}`), innerH: 10 });
+      infoLines: Array.from({ length: 50 }, (_, i) => `L${i}`), innerH: 10 });
     route.setInstanceSlice('pane-right', { ...route.getInstanceSlice('pane-right'),
-      lines: Array.from({ length: 50 }, (_, i) => `R${i}`), innerH: 10 });
+      infoLines: Array.from({ length: 50 }, (_, i) => `R${i}`), innerH: 10 });
   }
 
   it('each instance self-identifies (Phase 0 keystone)', () => {

@@ -77,7 +77,10 @@ function _handleWheel(mx, my, delta) {
       // viewer scrolls itself. sliceForPane falls back to the kind primary
       // for the singleton.
       const d = route.sliceForPane(p.paneId, 'detail');
-      const lines = d?.lines || [];
+      // P3 (viewer-lines selector) — slice.lines is deleted; derive the
+      // wheeled pane's displayed lines (dispatch-side model read is fine).
+      const _m = getModel();
+      const lines = d ? require('../leaves/pane-tabs').viewerLines(d, _m, _m.currentGroup) : [];
       const curScroll = d?.scroll || 0;
       // Single source of truth for the view-mode-aware viewport (P5
       // arc fix follow-up — panelHeights[type] would have given the
@@ -404,7 +407,9 @@ function _resolveContextAt(mx, my) {
     const itemRow = my - b.y - 1;  // -1 for top border
     if (instanceKind(p.type) === 'detail') {
       const d = getInstanceSlice(p.paneId);
-      const lines = (d && d.lines) || [];
+      // P3 (viewer-lines selector) — derive the displayed lines.
+      const _m = getModel();
+      const lines = d ? require('../leaves/pane-tabs').viewerLines(d, _m, _m.currentGroup) : [];
       const li = itemRow + ((d && d.scroll) || 0);
       const lineText = (itemRow >= 0 && li < lines.length) ? stripMarkup(lines[li]) : null;
       return { paneKind: 'detail', lineText, itemLabel: null, selectionText };
@@ -677,7 +682,10 @@ function handleMouse(kind, x, y) {
       // terminal tabs — the PTY handles its own input).
       const inContent = my > b.y && my < b.y + b.h - 1;
       const d = route.sliceForPane(p.paneId, 'detail');
-      if (inContent && !isTerminalTab() && d && d.lines.length > 0) {
+      // P3 (viewer-lines selector) — derive the displayed lines.
+      const _dm = getModel();
+      const _dlines = d ? require('../leaves/pane-tabs').viewerLines(d, _dm, _dm.currentGroup) : [];
+      if (inContent && !isTerminalTab() && _dlines.length > 0) {
         const visibleLine = my - b.y - 1;
         const col = Math.max(0, mx - b.x - 1);
         sel.beginAt((d.scroll || 0) + visibleLine, col, 'char');

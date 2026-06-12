@@ -21,6 +21,7 @@
 'use strict';
 
 const { describe, it, eq, assert, report } = require('../test-runner');
+const { displayedLines } = require('../_helpers/viewer-lines');
 const sm = require('./_helpers/smoke');
 const api = sm.api;
 const tabs = sm.tabs;
@@ -30,7 +31,7 @@ function snapshotDetail() {
   const d = api.getInstanceSlice('detail');
   return {
     tab: d.tab,
-    lines: (d.lines || []).join('\n'),
+    lines: displayedLines(d).join('\n'),
     contentTabKeys: Object.keys((d.contentTabs && d.contentTabs[require('../../app/runtime').getModel().currentGroup]) || {}),
     tabStateKeys: Object.keys(d.tabState || {}),
     viewerOverride: d.viewerOverride,
@@ -67,7 +68,7 @@ describe('[1] close active content tab → body shows sibling, NOT closed-tab st
     // up the body to mimic the post-switch state).
     detail.lines = info.contentTabs[idxOfA][1].lines.slice();
     eq(activeContentTab()[0], 'doc-A', 'parked on doc-A');
-    eq(detail.lines.join('\n'), 'I am A\nA line 2', 'body shows A');
+    eq(displayedLines(detail).join('\n'), 'I am A\nA line 2', 'body shows A');
 
     // Close doc-A — the v0.6.3 bug class: body must not retain A's
     // text after the active tab vanishes.
@@ -88,7 +89,7 @@ describe('[2] close only content tab → fallback to Info, no stale body', () =>
   it('opens a single tab → close it → tab=0 (Info), body is not the closed tab text', () => {
     sm.bootFresh();
     tabs.addContentTab('g1', 'only-doc', 'only.txt', ['ONLY-DOC-MARKER', 'line 2']);
-    eq(api.getInstanceSlice('detail').lines.join('\n'), 'ONLY-DOC-MARKER\nline 2', 'body loaded');
+    eq(displayedLines(api.getInstanceSlice('detail')).join('\n'), 'ONLY-DOC-MARKER\nline 2', 'body loaded');
     // Before closing: verify addContentTab actually auto-jumped to the
     // new content tab. Without this check the post-close `tab === 0`
     // assertion is ambiguous — bootFresh seeds tab=0, so an addContentTab
@@ -157,13 +158,13 @@ describe('[5] cross-group remove preserves current-group cursor + body', () => {
     require('../../app/runtime').getModel().currentGroup = 'g1';
     tabs.addContentTab('g1', 'a', 'a.txt', ['g1-a-content']);
     const detail = api.getInstanceSlice('detail');
-    const before = { tab: detail.tab, lines: detail.lines.slice(), scroll: detail.scroll };
+    const before = { tab: detail.tab, lines: displayedLines(detail).slice(), scroll: detail.scroll };
     // Async loadDir for g2 resolves while user is parked in g1.
     tabs.addContentTab('g2', 'b', 'b.txt', ['g2-b-content']);
     // Now close g2's tab — must not touch the g1-parked viewer.
     tabs.removeContentTab('g2', 'b');
     eq(detail.tab, before.tab, 'tab cursor unchanged by cross-group remove');
-    eq(detail.lines.join('\n'), before.lines.join('\n'), 'body unchanged by cross-group remove');
+    eq(displayedLines(detail).join('\n'), before.lines.join('\n'), 'body unchanged by cross-group remove');
     eq(detail.scroll, before.scroll, 'scroll unchanged by cross-group remove');
   });
 });

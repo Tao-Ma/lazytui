@@ -40,7 +40,7 @@ term.stdout.write = (chunk, ...rest) => {
 try { require('../render/render-queue').scheduleRender = () => {}; } catch (_) {}
 
 const detailSlice = getInstanceSlice('detail');
-detailSlice.lines = [];
+// P3 — slice.lines deleted; buffers are the only content homes.
 // Seed innerH so viewer_append's bottom-stick math has a realistic
 // viewport (38 = panelH 40 minus 2-row border chrome). A1/B1 fix: this
 // lives on detail's own slice now, not cross-slice in layout.

@@ -16,18 +16,19 @@ const { getInstanceSlice } = require('../panel/api');
 // ms.matchesFor(lines, term) memo, not stored on slice.search. Tests
 // read them the way production consumers do: derive from the slice's
 // lines + the phase-correct term.
+const { displayedLines } = require('./_helpers/viewer-lines');
 function typingMatches() {
   const sl = getInstanceSlice('detail');
-  return ms.matchesFor(sl.lines, sl.search.typing || '');
+  return ms.matchesFor(displayedLines(sl), sl.search.typing || '');
 }
 function committedMatches() {
   const sl = getInstanceSlice('detail');
-  return ms.matchesFor(sl.lines, sl.search.term || '');
+  return ms.matchesFor(displayedLines(sl), sl.search.term || '');
 }
 
 
 function setup(lines, panelH = 10) {
-  getInstanceSlice('detail').lines = lines.slice();
+  getInstanceSlice('detail').infoLines = lines.slice();  // P3 — Info canonical home
   getInstanceSlice('detail').scroll = 0;
   // A1/B1 fix: viewer.update reads slice.innerH directly. Tests seed it
   // on the detail slice (was: cross-slice into layout.panelHeights.detail).
@@ -161,7 +162,7 @@ describe('[8] decorateLines render integration', () => {
     search.enter();
     'foo'.split('').forEach(c => search.keystroke(c));
     search.commit();
-    const out = search.decorateLines(getInstanceSlice('detail').lines);
+    const out = search.decorateLines(displayedLines(getInstanceSlice('detail')));
     eq(out[0], 'no match here', 'untouched');
     assert(out[1].includes('[yellow]'), 'matched line carries [yellow]');
   });
@@ -171,7 +172,7 @@ describe('[8] decorateLines render integration', () => {
     'foo'.split('').forEach(c => search.keystroke(c));
     search.commit();
     getInstanceSlice('detail').search.idx = 0;
-    const out = search.decorateLines(getInstanceSlice('detail').lines);
+    const out = search.decorateLines(displayedLines(getInstanceSlice('detail')));
     // First match (idx=0) → [reverse][yellow]
     assert(out[0].includes('[reverse][yellow]'), `expected active style: ${out[0]}`);
     // Second match (idx=1) → [yellow] only (no reverse)
@@ -181,8 +182,8 @@ describe('[8] decorateLines render integration', () => {
   });
   it('no matches → pass-through', () => {
     setup(['abc', 'def']);
-    const out = search.decorateLines(getInstanceSlice('detail').lines);
-    eq(out, getInstanceSlice('detail').lines);
+    const out = search.decorateLines(displayedLines(getInstanceSlice('detail')));
+    eq(out, displayedLines(getInstanceSlice('detail')));
   });
 });
 
@@ -225,13 +226,13 @@ describe('[10] P1 — committed search survives a lines-change (derived matches)
     s = viewer._update({ type: 'viewer_search_commit' }, s);
     s = Array.isArray(s) ? s[0] : s;
     eq(s.search.active, true, 'search committed');
-    eq(ms.matchesFor(s.lines, s.search.term).length, 1, 'one match before append');
+    eq(ms.matchesFor(displayedLines(s), s.search.term).length, 1, 'one match before append');
 
     // Append a second line that also matches /target.
     const r = viewer._update({ type: 'viewer_append', line: 'another target' }, s);
     const next = Array.isArray(r) ? r[0] : r;
     eq(next.viewerStreamBuffer.lines.length, 2, 'buffer grew');
-    const derived = ms.matchesFor(next.lines, next.search.term);
+    const derived = ms.matchesFor(displayedLines(next), next.search.term);
     eq(derived.length, 2, 'matches derive against new lines (P1)');
     eq(derived[1].line, 1, 'new match lands on line 1');
   });
@@ -252,11 +253,11 @@ describe('[10] P1 — committed search survives a lines-change (derived matches)
     }
     s = viewer._update({ type: 'viewer_search_commit' }, s);
     s = Array.isArray(s) ? s[0] : s;
-    eq(ms.matchesFor(s.lines, s.search.term).length, 1, 'one match before append');
+    eq(ms.matchesFor(displayedLines(s), s.search.term).length, 1, 'one match before append');
 
     const r = viewer._update({ type: 'viewer_append', line: 'unrelated' }, s);
     const next = Array.isArray(r) ? r[0] : r;
-    eq(ms.matchesFor(next.lines, next.search.term).length, 1, 'still one match (no new hits)');
+    eq(ms.matchesFor(displayedLines(next), next.search.term).length, 1, 'still one match (no new hits)');
   });
 
   it('inactive search is not touched (gate respects search.active=false)', () => {
@@ -270,7 +271,7 @@ describe('[10] P1 — committed search survives a lines-change (derived matches)
     const r = viewer._update({ type: 'viewer_append', line: 'line two' }, s0);
     const next = Array.isArray(r) ? r[0] : r;
     eq(next.search.active, false, 'search still inactive');
-    eq(ms.matchesFor(next.lines, next.search.term || '').length, 0, 'no term derives no matches');
+    eq(ms.matchesFor(displayedLines(next), next.search.term || '').length, 0, 'no term derives no matches');
   });
 });
 

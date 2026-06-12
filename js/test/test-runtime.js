@@ -10,6 +10,7 @@
 
 const { describe, it, eq, assert, report } = require('./test-runner');
 const runtime = require('../app/runtime');
+const { displayedLines } = require('./_helpers/viewer-lines');
 // Phase 4a — nav chrome (cursor/scroll/multiSel) lives on each Navigator
 // Component's slice. The tests below dispatch through wrapped Msgs and
 // read via state helpers, so the Components must be registered first.
@@ -60,7 +61,7 @@ describe('[3] update — (model, msg) → [model, cmds], pure + Cmd descriptors'
       return Array.isArray(out) ? out[0] : out;
     };
     let slice = detail._init();
-    slice = { ...slice, lines: new Array(100).fill('x'), innerH: 20 };  // maxScroll 80
+    slice = { ...slice, infoLines: new Array(100).fill('x'), innerH: 20 };  // maxScroll 80 (P3 — Info canonical home)
     slice = step(slice, { type: 'viewer_scroll', delta: 30 });
     eq(slice.scroll, 30);
     slice = step(slice, { type: 'viewer_scroll', delta: 999 });
@@ -141,12 +142,12 @@ describe('[3] update — (model, msg) → [model, cmds], pure + Cmd descriptors'
     const detail = require('../panel/viewer/viewer');
     const layout = route.getInstanceSlice('layout');
     layout.focus = 'detail';
-    const slice = { ...route.getInstanceSlice('detail'), tab: 3, lines: ['content'] };
+    const slice = { ...route.getInstanceSlice('detail'), tab: 3 };
     const r = detail._update({ type: 'viewer_show_info' }, slice);
     // Unwrap [slice, effects] or bare slice.
     const next = Array.isArray(r) ? r[0] : r;
     eq(next.tab, 3, 'tab unchanged — yank skipped (detail focus has no getInfo)');
-    eq(next.lines[0], 'content', 'lines unchanged');
+    eq(next.infoLines, slice.infoLines, 'infoLines untouched — yank skipped');
   });
   it('R3: viewer_show_info from off-Info restores tabState[info]', () => {
     // Pre-R3 the reducer wrote { tab: 0, scroll: 0 } unconditionally.
@@ -436,12 +437,12 @@ describe('[10] streamed output — stream_start / viewer_append (effect source)'
     // a terminal_exit so terminalMode doesn't leak across the jump.
     const m = runtime.init();
     const init = detail._init();
-    const slice = { ...init, lines: ['old', 'stuff'], scroll: 5, tab: 0 };
+    const slice = { ...init, infoLines: ['old', 'stuff'], scroll: 5, tab: 0 };
     const r = detail._update({ type: 'stream_start', header: '$ run' }, slice);
     assert(Array.isArray(r), 'jump path returns [slice, cmds]');
     const [next, cmds] = r;
-    eq(next.lines.length, 1);
-    eq(next.lines[0], '$ run');
+    eq(displayedLines(next).length, 1);
+    eq(displayedLines(next)[0], '$ run');
     eq(next.scroll, 0);
     eq(next.tab, 1, 'auto-jumped to Transcript');
     assert(cmds.some(c => c.type === 'msg' && c.msg && c.msg.type === 'terminal_exit'),
@@ -459,7 +460,7 @@ describe('[10] streamed output — stream_start / viewer_append (effect source)'
       viewerStreamBuffer: { lines: ['a', 'b', 'c'], cap: 1000 },
     };
     const r = detail._update({ type: 'viewer_append', line: 'd' }, slice);
-    eq(r.lines.length, 4);
+    eq(displayedLines(r).length, 4);
     eq(r.scroll, 1, 'followed to the new bottom');
   });
   it('viewer_append leaves scroll alone when the user scrolled up', () => {
@@ -472,7 +473,7 @@ describe('[10] streamed output — stream_start / viewer_append (effect source)'
       viewerStreamBuffer: { lines: ['a', 'b', 'c', 'd', 'e'], cap: 1000 },
     };  // maxScroll = 2, user at top
     const r = detail._update({ type: 'viewer_append', line: 'f' }, slice);
-    eq(r.lines.length, 6);
+    eq(displayedLines(r).length, 6);
     eq(r.scroll, 0, 'not yanked down — user was reading');
   });
 });

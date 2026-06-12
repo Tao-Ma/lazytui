@@ -47,7 +47,8 @@ function setupTwoPanel() {
   // panelHeights left the slice — wheel paths read paneBounds[type].h
   // via getPanelViewportH for view-mode-aware inner viewport rows.
   getInstanceSlice("layout").focus = 'hosts';
-  getInstanceSlice('detail').lines = Array.from({ length: 100 }, (_, i) => `line-${i}`);
+  // P3 — Info content's canonical home (slice.lines is deleted).
+  getInstanceSlice('detail').infoLines = Array.from({ length: 100 }, (_, i) => `line-${i}`);
   getInstanceSlice('detail').scroll = 0;
   // A1/B1 fix: viewer.update reads slice.innerH instead of layout's
   // panelHeights. Seed the detail slice's own viewport (panel h - 2 chrome).

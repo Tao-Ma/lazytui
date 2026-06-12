@@ -38,6 +38,7 @@ const actions       = require('../panel/navigator/actions');
 const groups        = require('../panel/navigator/groups');
 const detail        = require('../panel/viewer/viewer');
 const runtime       = require('../app/runtime');
+const { displayedLines } = require('./_helpers/viewer-lines');
 
 // --- docker --------------------------------------------------------------
 
@@ -318,10 +319,10 @@ describe('[immutable] groups', () => {
 
 describe('[immutable] detail (viewer)', () => {
   const makeSlice = (overrides = {}) => ({
-    lines: ['hello', 'world', 'third'],
+    infoLines: ['hello', 'world', 'third'],  // P3 — Info canonical home
     scroll: 0,
     tab: 0,
-    search: { active: false, term: '', matches: [], idx: 0, typing: '' },
+    search: { active: false, term: '', idx: 0, typing: '' },
     select: { active: false, kind: 'char', anchor: { line: 0, col: 0 }, cursor: { line: 0, col: 0 } },
     cursor: { line: 0, col: 0 },
     contentTabs: {},
@@ -369,10 +370,10 @@ describe('[immutable] detail (viewer)', () => {
       () => detail._update({ type: 'viewer_append', line: 'd' }, slice),
       slice,
     );
-    eq(out.lines.length, 4);
-    eq(out.lines[3], 'd');
+    eq(displayedLines(out).length, 4);
+    eq(displayedLines(out)[3], 'd');
     eq(out.scroll, 1, 'followed to bottom');
-    assert(out.lines !== slice.lines, 'lines array re-allocated');
+    assert(out.viewerStreamBuffer.lines !== slice.viewerStreamBuffer.lines, 'buffer array re-allocated');
   });
 
   it('viewer_set_tab returns new slice on change, same ref on no-op', () => {
@@ -456,14 +457,14 @@ describe('[immutable] detail (viewer)', () => {
     // tab (last in the strip); with no per-group tabs in this test
     // model's currentGroup, total=2 and transcript idx = 1. Returns
     // [slice, cmds] when slice.tab !== transcriptIdx (the jump path).
-    const slice = makeSlice({ lines: ['x'], scroll: 8, tab: 0 });
+    const slice = makeSlice({ infoLines: ['x'], scroll: 8, tab: 0 });
     const r = expectNoMutation(
       'stream_start leaves input frozen',
       () => detail._update({ type: 'stream_start', header: '$ cmd' }, slice),
       slice,
     );
     const out = Array.isArray(r) ? r[0] : r;
-    eq(out.lines, ['$ cmd']);
+    eq(displayedLines(out), ['$ cmd']);
     eq(out.scroll, 0);
     eq(out.tab, 1, 'auto-jumped to Transcript');
   });

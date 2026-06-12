@@ -181,7 +181,6 @@ function init(paneId) {
     // dispatch lands on THIS pane, not the kind primary. null for the
     // register-time singleton fallback (resolves to 'detail').
     paneId: paneId || null,
-    lines: [],
     scroll: 0,
     tab: 0,
     // Effective viewport rows (panel height minus 2-row border chrome).
@@ -332,20 +331,13 @@ function _tabKeyExistsIn(next, model, key) {
 // getModel() here. The finalizer is pure of the runtime accessor;
 // only the public update() reads model, exactly once per Msg.
 function _withDerivedFields(next, originalSlice, m) {
-  // P0 (viewer-lines selector arc) — no lookups bag: tab-0 reads the
-  // STORED slice.infoLines (canonical, written by viewer_show_info)
-  // instead of a live plugin getItems/getInfo call per Msg — that call
-  // was the expensive part of the per-Msg finalizer cost and was
-  // redundant for freshness (every show_selected_info producer already
-  // threads fresh content; render keeps its own live lookup).
-  const lines = pt.viewerLines(next, m, m.currentGroup);
-  let updated = { ...next, lines };
-  // P1 (viewer-lines selector) — the B2 transition-detect that lived
-  // here (ref-equality on lines → ms.recomputeFor) is GONE: matches are
-  // a chained selector (ms.matchesFor) over the displayed lines, so
-  // they recompute exactly when the (lines ref, term) pair changes and
-  // can never go stale. The machinery existed only because matches were
-  // stored state.
+  // P3 (viewer-lines selector) — the slice.lines derivation that named
+  // this function is GONE: the field is deleted; consumers derive via
+  // pt.viewerLines (content) and ms.matchesFor (search). What remains
+  // is T3f — capture the leaving tab's view state on a tab transition.
+  // (P1 already removed the B2 transition-detect: derived matches
+  // cannot go stale, so nothing has to notice content changed.)
+  //
   // B2 — skip the FROM-tab capture when the leaving slice had
   // viewerOverride active. Override-bound scroll/search/select/cursor
   // belong to the discrete-doc, not to the underlying tab; capturing
@@ -354,14 +346,17 @@ function _withDerivedFields(next, originalSlice, m) {
   // R5 — also skip when the FROM tab was REMOVED (key no longer
   // resolves in next). Otherwise removeContent / removeEphemeral's
   // tabState drop is silently undone by this capture.
+  let updated = next;
   if (originalSlice
       && next.tab !== originalSlice.tab
       && !originalSlice.viewerOverride) {
     const fromKey = _activeTabKey(originalSlice, m);
     if (fromKey && _tabKeyExistsIn(next, m, fromKey)) {
       const innerH = originalSlice.innerH > 0 ? originalSlice.innerH : 1;
-      const linesLen = (originalSlice.lines || []).length;
-      const maxScroll = Math.max(0, linesLen - innerH);
+      // bottomSticky derives from the ORIGINAL slice's displayed lines
+      // (tab transitions are rare — the derive is off the hot path).
+      const fromLines = pt.viewerLines(originalSlice, m, m.currentGroup);
+      const maxScroll = Math.max(0, fromLines.length - innerH);
       const captured = {
         scroll: originalSlice.scroll || 0,
         bottomSticky: (originalSlice.scroll || 0) >= maxScroll,
@@ -427,9 +422,9 @@ function update(msg, slice) {
 // math, search match navigation, content-tab body update with
 // viewer-specific semantics), put it here.
 function _updateInner(msg, slice, lines) {
-  // Boundary-derived active-tab lines. Direct test callers (and any
-  // legacy path) fall back to the stored field until P3 deletes it.
-  if (lines === undefined) lines = slice.lines || [];
+  // Boundary-derived active-tab lines (update() always passes them;
+  // bare internal calls degrade to empty).
+  if (lines === undefined) lines = [];
   // Generic tab Msgs (tab_switch / tab_cycle / tab_list_* / viewer_add_* /
   // viewer_remove_* / viewer_update_content_tab_lines /
   // viewer_reorder_content_tab) lift through the pane-tabs leaf,

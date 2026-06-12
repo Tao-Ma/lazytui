@@ -33,7 +33,8 @@ function detailKey(key, seq) { return dispatchKeyToFocused(key, seq); }
 function setUp(lines) {
   reg.init({ cap: 10 });
   reg.clear();
-  getInstanceSlice('detail').lines = lines.slice();
+  // P3 — Info content's canonical home (slice.lines is deleted).
+  getInstanceSlice('detail').infoLines = lines.slice();
   getInstanceSlice('detail').scroll = 0;
   // Force re-init of getInstanceSlice('detail').select.
   getInstanceSlice('detail').select = undefined;
@@ -172,7 +173,7 @@ describe('[10] decorateLines — multi-line render integration', () => {
     setUp(['before', 'sel-line', 'after']);
     sel.beginAt(1, 0, 'char');
     sel.extendTo(1, 99);
-    const out = sel.decorateLines(getInstanceSlice('detail').lines);
+    const out = sel.decorateLines(getInstanceSlice('detail').infoLines);
     eq(out[0], 'before', 'untouched');
     eq(out[2], 'after',  'untouched');
     assert(out[1].includes('[reverse]'), 'sel line carries [reverse]');
@@ -181,8 +182,8 @@ describe('[10] decorateLines — multi-line render integration', () => {
     setUp(['x']);
     getInstanceSlice("layout").focus = 'detail';
     sel.cancel();
-    const out = sel.decorateLines(getInstanceSlice('detail').lines);
-    eq(out, getInstanceSlice('detail').lines, 'pass-through; reading mode shows no cursor');
+    const out = sel.decorateLines(getInstanceSlice('detail').infoLines);
+    eq(out, getInstanceSlice('detail').infoLines, 'pass-through; reading mode shows no cursor');
   });
 });
 

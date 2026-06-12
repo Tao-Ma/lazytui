@@ -23,6 +23,7 @@ const { describe, it, assert, eq, report } = require('./test-runner');
 const viewer = require('../panel/viewer/viewer');
 const pt = require('../leaves/pane-tabs');
 const { setModel, getModel } = require('../app/runtime');
+const { displayedLines } = require('./_helpers/viewer-lines');
 
 setModel({
   currentGroup: 'g',
@@ -99,8 +100,8 @@ describe('[stream_start] routed seeds buffer + auto-jumps + emits terminal_exit'
       groupName: 'g',
     });
     eq(next.tab, 2, 'auto-jump to make-check tab (idx 2 — first action tab; Info=0, Transcript=1)');
-    eq(next.lines.length, 1, 'slice.lines is header only');
-    eq(next.lines[0], '[dim]$ make-check[/]', 'header text');
+    eq(displayedLines(next).length, 1, 'slice.lines is header only');
+    eq(displayedLines(next)[0], '[dim]$ make-check[/]', 'header text');
     eq(next.scroll, 0, 'scroll reset');
     eq(next.actionTabBuffers.g['make-check'].lines.length, 1, 'buffer seeded');
     assert(cmds.some(c => c.type === 'msg' && c.msg && c.msg.type === 'terminal_exit'),
@@ -117,7 +118,7 @@ describe('[stream_start] routed seeds buffer + auto-jumps + emits terminal_exit'
     const info = pt.flatTabInfo(next, getModel(), 'g');
     const tIdx = pt.transcriptTabIdx();
     eq(next.tab, tIdx, `auto-jump to Transcript (idx ${tIdx})`);
-    eq(next.lines.length, 1, 'mirror line set on Transcript');
+    eq(displayedLines(next).length, 1, 'mirror line set on Transcript');
     eq(next.viewerStreamBuffer.lines.length, 1, 'buffer seeded');
     eq(next.actionTabBuffers, s0.actionTabBuffers, 'routed buffer untouched');
     assert(cmds.some(c => c.type === 'msg' && c.msg && c.msg.type === 'terminal_exit'),
@@ -133,7 +134,7 @@ describe('[stream_start] routed seeds buffer + auto-jumps + emits terminal_exit'
       groupName: 'other-group',
     });
     eq(next.tab, 0, 'no jump (cross-group)');
-    eq(next.lines.length, 0, 'slice.lines untouched');
+    eq(displayedLines(next).length, 0, 'slice.lines untouched');
     eq(next.actionTabBuffers['other-group']['make-check'].lines.length, 1, 'buffer seeded for the other group');
     eq(cmds.length, 0, 'no Cmds');
   });
@@ -155,8 +156,8 @@ describe('[viewer_append] routed → buffer + mirror-on-active', () => {
     s = applyUpdate(s, { type: 'viewer_append', line: 'foo', tabKey: 'make-check', groupName: 'g' }).next;
     s = applyUpdate(s, { type: 'viewer_append', line: 'bar', tabKey: 'make-check', groupName: 'g' }).next;
     eq(s.actionTabBuffers.g['make-check'].lines.length, 3, 'buffer grew to 3');
-    eq(s.lines.length, 3, 'slice.lines mirrored');
-    eq(s.lines[2], 'bar', 'tail line in slice.lines');
+    eq(displayedLines(s).length, 3, 'slice.lines mirrored');
+    eq(displayedLines(s)[2], 'bar', 'tail line in slice.lines');
   });
 
   it('appends to buffer but NOT slice.lines when user has switched off the action tab', () => {
@@ -164,7 +165,7 @@ describe('[viewer_append] routed → buffer + mirror-on-active', () => {
     s = { ...s, tab: 0, lines: [] };  // simulate user on Info tab
     s = applyUpdate(s, { type: 'viewer_append', line: 'bg', tabKey: 'make-check', groupName: 'g' }).next;
     eq(s.actionTabBuffers.g['make-check'].lines.length, 2, 'buffer grew');
-    eq(s.lines.length, 0, 'slice.lines NOT mirrored (active tab is not make-check)');
+    eq(displayedLines(s).length, 0, 'slice.lines NOT mirrored (active tab is not make-check)');
   });
 
   it('bottom-stick on active mirror', () => {
@@ -174,7 +175,7 @@ describe('[viewer_append] routed → buffer + mirror-on-active', () => {
     for (const line of ['a', 'b', 'c', 'd']) {
       s = applyUpdate(s, { type: 'viewer_append', line, tabKey: 'make-check', groupName: 'g' }).next;
     }
-    eq(s.lines.length, 5, '5 lines (header + 4 appends)');
+    eq(displayedLines(s).length, 5, '5 lines (header + 4 appends)');
     eq(s.scroll, 2, 'scroll bottom-stuck (lines.length - innerH = 5 - 3 = 2)');
   });
 
@@ -183,7 +184,7 @@ describe('[viewer_append] routed → buffer + mirror-on-active', () => {
     // is source-of-truth). Seed buffer state, not slice.lines.
     const s0 = { ...viewer._init(), tab: 0, innerH: 4 };
     const r1 = applyUpdate(s0, { type: 'viewer_append', line: 'y' }).next;
-    eq(r1.lines.length, 0, 'slice.lines NOT mirrored on Info (Info derives from getInfo; no items here)');
+    eq(displayedLines(r1).length, 0, 'Info shows nothing (derives from infoLines; none here)');
     eq(r1.viewerStreamBuffer.lines.length, 1, 'buffer captured the line');
     eq(r1.actionTabBuffers, s0.actionTabBuffers, 'routed buffer untouched');
     // Now on Transcript — both grow. Seed buffer with prior content.
@@ -196,7 +197,7 @@ describe('[viewer_append] routed → buffer + mirror-on-active', () => {
       viewerStreamBuffer: { lines: ['x'], cap: 1000 },
     };
     const r2 = applyUpdate(s1, { type: 'viewer_append', line: 'y' }).next;
-    eq(r2.lines.length, 2, 'slice.lines mirrors when on Transcript (derived from buffer)');
+    eq(displayedLines(r2).length, 2, 'Transcript displays the buffer (derived)');
     eq(r2.viewerStreamBuffer.lines.length, 2, 'buffer also grew');
   });
 });
@@ -221,8 +222,8 @@ describe('[viewer_append_lines] bulk append — atomic reducer pass', () => {
       groupName: 'g',
     }).next;
     eq(s.actionTabBuffers.g['make-check'].lines.length, 4, 'buffer = header + 3');
-    eq(s.lines.length, 4, 'slice mirrored');
-    eq(s.lines[3], 'c', 'tail of batch lands last');
+    eq(displayedLines(s).length, 4, 'slice mirrored');
+    eq(displayedLines(s)[3], 'c', 'tail of batch lands last');
   });
 
   it('off-tab → buffer grows, slice.lines untouched', () => {
@@ -235,7 +236,7 @@ describe('[viewer_append_lines] bulk append — atomic reducer pass', () => {
       groupName: 'g',
     }).next;
     eq(s.actionTabBuffers.g['make-check'].lines.length, 3, 'buffer = header + 2');
-    eq(s.lines.length, 0, 'slice untouched');
+    eq(displayedLines(s).length, 0, 'slice untouched');
   });
 
   it('empty batch → no-op', () => {
@@ -260,7 +261,7 @@ describe('[viewer_append_lines] bulk append — atomic reducer pass', () => {
       tabKey: 'make-check',
       groupName: 'g',
     }).next;
-    eq(s.lines.length, 6, '1 header + 2 + 3 = 6');
+    eq(displayedLines(s).length, 6, '1 header + 2 + 3 = 6');
     eq(s.scroll, Math.max(0, 6 - 3), 'scroll bottom-stuck after batch');
   });
 
@@ -268,7 +269,7 @@ describe('[viewer_append_lines] bulk append — atomic reducer pass', () => {
     // v0.6.2 T2d — buffer is source of truth; seed buffer, not lines.
     const s0 = { ...viewer._init(), tab: 0, innerH: 4 };
     const r1 = applyUpdate(s0, { type: 'viewer_append_lines', lines: ['a', 'b'] }).next;
-    eq(r1.lines.length, 0, 'slice.lines NOT mirrored on Info (no items to derive from)');
+    eq(displayedLines(r1).length, 0, 'Info shows nothing (no infoLines seeded)');
     eq(r1.viewerStreamBuffer.lines.length, 2, 'buffer captured both lines');
     // On Transcript — both grow. Seed buffer with prior content.
     const info = pt.flatTabInfo(s0, getModel(), 'g');
@@ -280,7 +281,7 @@ describe('[viewer_append_lines] bulk append — atomic reducer pass', () => {
       viewerStreamBuffer: { lines: ['head'], cap: 1000 },
     };
     const r2 = applyUpdate(s1, { type: 'viewer_append_lines', lines: ['a', 'b'] }).next;
-    eq(r2.lines.length, 3, 'slice.lines mirrors on Transcript (derived from buffer)');
+    eq(displayedLines(r2).length, 3, 'Transcript displays the buffer (derived)');
     eq(r2.viewerStreamBuffer.lines.length, 3, 'buffer grew too');
   });
 });
@@ -299,7 +300,7 @@ describe('[tab_switch] action arm restores buffer + bottom-pin scroll', () => {
     const s = buildSliceWithBuffer(['h', 'a', 'b', 'c', 'd']);
     const { next, cmds } = applyUpdate(s, { type: 'tab_switch', idx: 2 });
     eq(next.tab, 2, 'on make-check tab');
-    eq(next.lines.length, 5, 'lines restored from buffer');
+    eq(displayedLines(next).length, 5, 'lines restored from buffer');
     eq(next.scroll, Math.max(0, 5 - 3), 'scroll pinned to bottom (lines.length - innerH)');
     assert(!cmds.some(c => c.type === 'kill_proc'),
       'Phase 3 — no kill_proc on tab_switch (producer keeps streaming)');
@@ -311,15 +312,15 @@ describe('[tab_switch] action arm restores buffer + bottom-pin scroll', () => {
     const s0 = { ...viewer._init(), tab: 0 };
     const { next } = applyUpdate(s0, { type: 'tab_switch', idx: 2 });
     eq(next.tab, 2, 'on make-check tab');
-    eq(next.lines.length, 1, 'one placeholder line');
-    assert(next.lines[0].indexOf('Press Enter to run') >= 0, 'placeholder text');
+    eq(displayedLines(next).length, 1, 'one placeholder line');
+    assert(displayedLines(next)[0].indexOf('Press Enter to run') >= 0, 'placeholder text');
   });
 
   it('post-restore appends continue bottom-sticking', () => {
     const s = buildSliceWithBuffer(['h', 'a', 'b', 'c', 'd']);
     let { next } = applyUpdate(s, { type: 'tab_switch', idx: 2 });
     next = applyUpdate(next, { type: 'viewer_append', line: 'e', tabKey: 'make-check', groupName: 'g' }).next;
-    eq(next.lines.length, 6, '6 lines');
+    eq(displayedLines(next).length, 6, '6 lines');
     eq(next.scroll, Math.max(0, 6 - 3), 'scroll advanced with new line');
   });
 });
@@ -347,8 +348,8 @@ describe('[Phase 3 invariant] background streaming survives tab leave', () => {
     eq(s.actionTabBuffers.g['make-check'].lines.length, 6, 'background buffer grew to 6');
     // Switch back to make-check (idx 2)
     s = applyUpdate(s, { type: 'tab_switch', idx: 2 }).next;
-    eq(s.lines.length, 6, 'slice.lines reflects live state');
-    eq(s.lines[5], 'bg-3', 'latest background line at the tail');
+    eq(displayedLines(s).length, 6, 'slice.lines reflects live state');
+    eq(displayedLines(s)[5], 'bg-3', 'latest background line at the tail');
     eq(s.scroll, Math.max(0, 6 - 3), 'scroll pinned to bottom on re-entry');
   });
 });

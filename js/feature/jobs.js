@@ -9,7 +9,7 @@
  *
  * Job kinds:
  *   stream-routed    type:run with action.tab set; writes to actionTabBuffers
- *   stream-unrouted  type:run w/o tab + docker logs/inspect verbs; writes to slice.lines
+ *   stream-unrouted  type:run w/o tab + docker logs/inspect verbs; writes to the unrouted Transcript accumulator
  *   pty              ensureSession in io/terminal (ephemeral terminals + docker shells)
  *   background       type:background — detached `sh -c` spawn, fire-and-forget
  *   tmux             type:spawn under $TMUX — detached `tmux new-window` spawn

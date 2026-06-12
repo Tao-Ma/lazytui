@@ -30,6 +30,7 @@ const { describe, it, assert, eq, report } = require('./test-runner');
 const viewer = require('../panel/viewer/viewer');
 const pt = require('../leaves/pane-tabs');
 const ms = require('../leaves/search');
+const { displayedLines } = require('./_helpers/viewer-lines');
 const { setModel, getModel } = require('../app/runtime');
 
 setModel({
@@ -97,15 +98,15 @@ describe('[viewer_append unrouted] appends to viewerStreamBuffer; mirrors on Tra
     s = applyUpdate(s, { type: 'viewer_append', line: 'a' }).next;
     s = applyUpdate(s, { type: 'viewer_append', line: 'b' }).next;
     eq(s.viewerStreamBuffer.lines.length, 2, 'buffer = 2');
-    eq(s.lines.length, 2, 'slice.lines mirrors on Transcript');
-    eq(s.lines[1], 'b');
+    eq(displayedLines(s).length, 2, 'slice.lines mirrors on Transcript');
+    eq(displayedLines(s)[1], 'b');
   });
   it('off-Transcript tab → buffer grows + slice.lines untouched', () => {
-    let s = { ...viewer._init(), tab: 0, innerH: 5, lines: ['info-content'] };
+    let s = { ...viewer._init(), tab: 0, innerH: 5, infoLines: ['info-content'] };
     s = applyUpdate(s, { type: 'viewer_append', line: 'background-1' }).next;
     eq(s.viewerStreamBuffer.lines.length, 1, 'buffer captured 1');
-    eq(s.lines.length, 1, 'slice.lines untouched');
-    eq(s.lines[0], 'info-content', 'foreign tab content preserved');
+    eq(displayedLines(s).length, 1, 'slice.lines untouched');
+    eq(displayedLines(s)[0], 'info-content', 'foreign tab content preserved');
   });
 });
 
@@ -120,7 +121,7 @@ describe('[viewer_append unrouted] ring-buffer cap', () => {
     eq(s.viewerStreamBuffer.lines.length, 10, 'capped at 10');
     eq(s.viewerStreamBuffer.lines[0], 'line-5', 'oldest 5 dropped');
     eq(s.viewerStreamBuffer.lines[9], 'line-14', 'newest preserved');
-    eq(s.lines.length, 10, 'slice.lines also capped (mirrored on Transcript)');
+    eq(displayedLines(s).length, 10, 'slice.lines also capped (mirrored on Transcript)');
   });
 });
 
@@ -138,12 +139,12 @@ describe('[stream_start unrouted] auto-jumps to Transcript; preserves prior buff
     eq(s.viewerStreamBuffer.lines[1], '$ new-cmd');
   });
   it('auto-jumps to Transcript when on a different tab + emits terminal_exit', () => {
-    let s = { ...viewer._init(), tab: 0, innerH: 5, lines: ['info-content'] };
+    let s = { ...viewer._init(), tab: 0, innerH: 5, infoLines: ['info-content'] };
     const r = applyUpdate(s, { type: 'stream_start', header: '$ cmd' });
     s = r.next;
     eq(s.tab, 1, 'auto-jumped to Transcript (idx 1)');
-    eq(s.lines.length, 1, 'lines now from buffer (just the header)');
-    eq(s.lines[0], '$ cmd');
+    eq(displayedLines(s).length, 1, 'lines now from buffer (just the header)');
+    eq(displayedLines(s)[0], '$ cmd');
     assert(r.cmds.some(c => c.type === 'msg' && c.msg && c.msg.type === 'terminal_exit'),
       'terminal_exit Cmd emitted');
   });
@@ -168,17 +169,17 @@ describe('[viewer_append_lines unrouted] event-log accumulator (spawn/background
     eq(s.viewerStreamBuffer.lines.length, 4, 'both spawn messages retained');
     eq(s.viewerStreamBuffer.lines[0], '[dim]$ logs[/]', 'first spawn preserved');
     eq(s.viewerStreamBuffer.lines[2], '[dim]$ psql[/]', 'second spawn after the first');
-    eq(s.lines.length, 4, 'mirrored to slice.lines on Transcript');
+    eq(displayedLines(s).length, 4, 'mirrored to slice.lines on Transcript');
   });
   it('spawn-status while on a non-Transcript tab leaves that tab untouched', () => {
-    let s = { ...viewer._init(), tab: 0, innerH: 5, lines: ['info-content'] };
+    let s = { ...viewer._init(), tab: 0, innerH: 5, infoLines: ['info-content'] };
     s = applyUpdate(s, {
       type: 'viewer_append_lines',
       lines: ['[dim]$ logs[/]', '[yellow]Spawned.[/]'],
     }).next;
     eq(s.viewerStreamBuffer.lines.length, 2, 'buffer captured the spawn');
-    eq(s.lines.length, 1, 'foreign tab lines untouched');
-    eq(s.lines[0], 'info-content', 'tab content survives');
+    eq(displayedLines(s).length, 1, 'foreign tab lines untouched');
+    eq(displayedLines(s)[0], 'info-content', 'tab content survives');
   });
   it('tab_switch to Transcript restores accumulated spawn history', () => {
     let s = { ...viewer._init(), tab: 1, innerH: 5 };
@@ -187,18 +188,18 @@ describe('[viewer_append_lines unrouted] event-log accumulator (spawn/background
       type: 'viewer_append_lines', lines: ['[dim]$ logs[/]', 'sp1'],
     }).next;
     // User switches to Info (tab 0).
-    s = { ...s, tab: 0, lines: ['some-info'] };
+    s = { ...s, tab: 0, infoLines: ['some-info'] };
     // A new spawn fires while user is off-Transcript.
     s = applyUpdate(s, {
       type: 'viewer_append_lines', lines: ['[dim]$ psql[/]', 'sp2'],
     }).next;
-    eq(s.lines[0], 'some-info', 'off-Transcript tab not touched by spawn');
+    eq(displayedLines(s)[0], 'some-info', 'off-Transcript tab not touched by spawn');
     eq(s.viewerStreamBuffer.lines.length, 4, 'buffer has both spawns');
     // User switches to Transcript — should see the full history.
     const r = applyUpdate(s, { type: 'tab_switch', idx: 1 });
-    eq(r.next.lines.length, 4, 'slice.lines restored from buffer');
-    eq(r.next.lines[0], '[dim]$ logs[/]', 'first spawn first');
-    eq(r.next.lines[2], '[dim]$ psql[/]', 'second spawn second');
+    eq(displayedLines(r.next).length, 4, 'restored from buffer');
+    eq(displayedLines(r.next)[0], '[dim]$ logs[/]', 'first spawn first');
+    eq(displayedLines(r.next)[2], '[dim]$ psql[/]', 'second spawn second');
   });
 });
 
@@ -243,14 +244,14 @@ describe('[T3c per-tab search] tab remembers its search state across switches', 
     eq(s.search.active, true, 'search committed');
     eq(s.search.term, 'BAR', 'term set');
     // P1 — matches derive from (lines, term) via the memo.
-    eq(ms.matchesFor(s.lines, s.search.term).length, 2, 'two matches');
+    eq(ms.matchesFor(displayedLines(s), s.search.term).length, 2, 'two matches');
     // Switch to Info, then back to Transcript.
     s = applyUpdate(s, { type: 'tab_switch', idx: 0 }).next;
     eq(s.search.active, false, 'Info search starts fresh (default empty)');
     s = applyUpdate(s, { type: 'tab_switch', idx: 1 }).next;
     eq(s.search.active, true, 'Transcript search restored');
     eq(s.search.term, 'BAR', 'term restored');
-    eq(ms.matchesFor(s.lines, s.search.term).length, 2, 'matches derive again');
+    eq(ms.matchesFor(displayedLines(s), s.search.term).length, 2, 'matches derive again');
   });
   it('first-visit tab gets a fresh empty search', () => {
     let s = { ...viewer._init(), tab: 0, innerH: 5 };
@@ -259,7 +260,7 @@ describe('[T3c per-tab search] tab remembers its search state across switches', 
     s = applyUpdate(s, { type: 'tab_switch', idx: 1 }).next;
     eq(s.search.active, false);
     eq(s.search.term, '');
-    eq(ms.matchesFor(s.lines, s.search.term).length, 0);
+    eq(ms.matchesFor(displayedLines(s), s.search.term).length, 0);
   });
 });
 
@@ -398,11 +399,11 @@ describe('[tab_switch] Info vs Transcript routing', () => {
     );
   });
   it('switch to Transcript with empty buffer shows placeholder', () => {
-    let s = { ...viewer._init(), tab: 0, innerH: 5, lines: ['info-content'] };
+    let s = { ...viewer._init(), tab: 0, innerH: 5, infoLines: ['info-content'] };
     const { next } = applyUpdate(s, { type: 'tab_switch', idx: 1 });
     eq(next.tab, 1, 'tab=1 (Transcript)');
-    eq(next.lines.length, 1, 'placeholder line');
-    assert(next.lines[0].includes('no transcript yet'), 'placeholder text');
+    eq(displayedLines(next).length, 1, 'placeholder line');
+    assert(displayedLines(next)[0].includes('no transcript yet'), 'placeholder text');
   });
   it('switch to Transcript with non-empty buffer restores from it', () => {
     let s = { ...viewer._init(), tab: 1, innerH: 3 };
@@ -414,7 +415,7 @@ describe('[tab_switch] Info vs Transcript routing', () => {
     s = { ...s, tab: 0, lines: [] };
     const { next } = applyUpdate(s, { type: 'tab_switch', idx: 1 });
     eq(next.tab, 1);
-    eq(next.lines.length, 5, 'restored from buffer');
+    eq(displayedLines(next).length, 5, 'restored from buffer');
     eq(next.scroll, Math.max(0, 5 - 3), 'bottom-pin scroll');
   });
 });

@@ -62,7 +62,9 @@ function footerKeys(model) {
     const ms = require('../leaves/search');
     const term = ds.typingText();
     const vslice = getInstanceSlice(_route().resolveTarget('viewer') || 'detail');
-    const n = ms.matchesFor((vslice && vslice.lines) || [], term).length;
+    const m = getModel();
+    const vlines = vslice ? require('../leaves/pane-tabs').viewerLines(vslice, m, m.currentGroup) : [];
+    const n = ms.matchesFor(vlines, term).length;
     const idx = n ? Math.min((vslice && vslice.search && vslice.search.idx) || 0, n - 1) + 1 : 0;
     return ` /${esc(term)}│ \\[${idx}/${n}] | ↑↓ step | Esc cancel | Enter commit`;
   }
@@ -101,7 +103,9 @@ function footerKeys(model) {
       const search = vslice?.search;
       if (search && search.active) {
         const ms = require('../leaves/search');
-        const n = ms.matchesFor((vslice && vslice.lines) || [], search.term || '').length;
+        const m = getModel();
+        const vlines = require('../leaves/pane-tabs').viewerLines(vslice, m, m.currentGroup);
+        const n = ms.matchesFor(vlines, search.term || '').length;
         const idx = n ? Math.min(search.idx || 0, n - 1) + 1 : 0;
         segs.push(`n/N [${idx}/${n}]`, 'Esc clear');
       }

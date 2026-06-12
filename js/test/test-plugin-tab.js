@@ -64,6 +64,7 @@ api.registerComponent(require('../panel/layout'));
 api.registerComponent(fakePlugin);
 // Register viewer so the reducer paths that touch viewer.slice work.
 api.registerComponent(require('../panel/viewer/viewer'));
+const { displayedLines } = require('./_helpers/viewer-lines');
 
 function applyUpdate(s, msg) {
   // v0.6.3 Phase D1: stream_start routed branch threads currentGroup
@@ -149,8 +150,8 @@ describe('[viewer_append] mirror-on-active works for the plugin tab', () => {
       type: 'viewer_append', line: 'hello', tabKey: 'plugin-status', groupName: 'g',
     });
     eq(next.actionTabBuffers.g['plugin-status'].lines.length, 2, 'plugin buffer grew');
-    eq(next.lines.length, 2, 'slice.lines mirrored');
-    eq(next.lines[1], 'hello', 'mirrored line text');
+    eq(displayedLines(next).length, 2, 'slice.lines mirrored');
+    eq(displayedLines(next)[1], 'hello', 'mirrored line text');
   });
 });
 

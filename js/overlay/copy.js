@@ -50,8 +50,11 @@ function collectOptions() {
     }
   }
   // v0.6.3 T1.4 — paneId-aware lookup (post-Phase B1).
+  // P3 (viewer-lines selector) — displayed lines derive via pane-tabs.
   const detailSlice = getInstanceSlice(route.resolveTarget('viewer') || 'detail');
-  const detailLines = detailSlice ? detailSlice.lines : [];
+  const _m = require('../app/runtime').getModel();
+  const detailLines = detailSlice
+    ? require('../leaves/pane-tabs').viewerLines(detailSlice, _m, _m.currentGroup) : [];
   if (detailLines.length > 0) {
     options.push({
       label: 'Detail panel (plain text)',

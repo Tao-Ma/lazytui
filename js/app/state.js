@@ -433,10 +433,10 @@ function setViewerContent(tabId, text, opts) {
  * where the message should join the transcript instead of clobbering
  * whatever tab is currently showing.
  *
- * The dispatch is unrouted (`viewer_append_lines` with no tabKey), so
- * the reducer mirrors to `slice.lines` only when the user is on Info;
- * on any other tab the lines stay in the buffer and reappear on
- * tab_switch back to Info.
+ * The dispatch is unrouted (`viewer_append_lines` with no tabKey) —
+ * the lines accumulate in viewerStreamBuffer and display on the
+ * Transcript tab (P3: the slice.lines mirror is gone; display always
+ * derives from the buffer).
  *
  * v0.6.2 fix — pre-fix `setViewerContent` was used for these messages
  * too, and clobbered whatever tab the user was on (not just Info).
