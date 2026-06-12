@@ -71,6 +71,14 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   funneled through the effects-layer error sink. Other call sites adopt
   `diag.warn()` / `diag.error()` opportunistically.
 
+### Changed
+- **The auto-generated docker `Logs` action pipes through a pager.**
+  The spawned window (tmux window, or embedded PTY tab outside tmux)
+  now runs `… logs -f | less --mouse -R +F` — follow like tail, wheel
+  to scroll back, `F` resumes the follow, `q` quits. Falls back to
+  `less -R +F` on older less and to the previous raw follow when less
+  is absent.
+
 ### Architecture
 - **Multi-instance spine.** Two same-kind panes are now genuinely
   independent. Arc 1: the read path resolves per-pane slices

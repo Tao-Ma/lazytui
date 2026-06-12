@@ -249,4 +249,20 @@ describe('[7] Arc 3 — content gate: one host-global fetch loop, per-pane nav',
   });
 });
 
+describe('[8] groupActions: logs spawns through a mouse-capable pager', () => {
+  it('logs pipes the follow into the less probe (mouse-scrollable spawned window)', () => {
+    const acts = docker.groupActions({ compose: 'docker-compose.yml' });
+    eq(acts.logs.type, 'spawn', 'still a spawn');
+    assert(acts.logs.script.includes('docker compose logs -f --tail=50'), 'follow command intact');
+    assert(acts.logs.script.includes('| $p'), 'output piped into the chosen pager');
+    assert(acts.logs.script.includes("less --mouse -R +F"), 'probes for less --mouse');
+    assert(acts.logs.script.startsWith('p=cat;'), 'cat fallback when less is absent');
+  });
+  it('compose-file flag still threads through', () => {
+    const acts = docker.groupActions({ compose: 'stack.yml' });
+    assert(acts.logs.script.includes('docker compose -f stack.yml logs -f --tail=50'),
+      'custom compose file preserved inside the pager pipeline');
+  });
+});
+
 report();

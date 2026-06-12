@@ -484,8 +484,17 @@ function groupActions(group) {
     up: { script: `${c} up -d --build`, type: 'run', label: 'Start', desc: 'Build and start all services' },
     down: { script: `${c} down`, type: 'run', label: 'Stop', desc: 'Stop and remove all containers',
             confirm: 'Stop all containers in this group?' },
-    logs: { script: `${c} logs -f --tail=50`, type: 'spawn', label: 'Logs',
-            desc: 'Tail logs from all containers (opens new window)' },
+    // logs — piped through a pager so the spawned window is mouse-
+    // scrollable (user ask, v0.6.4 RC): `less --mouse -R +F` follows
+    // like tail -f; wheel-up interrupts the follow and scrolls, `F`
+    // resumes, `q` quits. POSIX-sh capability probe: --mouse needs
+    // less ≥551, plain `less -R +F` below that, bare cat (the old
+    // raw-follow behavior) when less is absent. The pager also runs
+    // in the embedded-PTY branch (outside tmux), where j/k/F/q work
+    // via terminal-mode key forwarding.
+    logs: { script: `p=cat; command -v less >/dev/null 2>&1 && { p='less -R +F'; less --help 2>&1 | grep -q -e --mouse && p='less --mouse -R +F'; }; ${c} logs -f --tail=50 2>&1 | $p`,
+            type: 'spawn', label: 'Logs',
+            desc: 'Tail logs from all containers in a mouse-scrollable pager (opens new window)' },
     build: { script: `${c} build`, type: 'run', label: 'Build', desc: 'Build images without starting' },
     restart: { script: `${c} restart`, type: 'run', label: 'Restart', desc: 'Restart all containers',
                confirm: 'Restart all containers?' },
