@@ -29,6 +29,7 @@ const mpoolDrag = require('../leaves/free-config-pool-drag');
 const mtabDrag = require('../leaves/tab-drag');
 const mpool = require('../leaves/pool');
 const mpane = require('../leaves/pane');
+const { halfProjection, visibleBoundsFor } = require('../leaves/geometry');
 const route = require('../panel/route');
 const { getInstanceSlice } = require('./api');
 
@@ -333,7 +334,7 @@ function update(msg, slice) {
       if (slot !== 'left' && slot !== 'right') return slice;
       if (!mpool.findPaneLocation(slice.arrange, p => p.paneId === msg.paneId)) return slice;
       const other = slot === 'left' ? 'right' : 'left';
-      const proj = require('../leaves/geometry').halfProjection(slice);
+      const proj = halfProjection(slice);
       if (proj[slot] === msg.paneId) return slice;  // already in this slot — no-op
       const halfView = { ...slice.halfView, [slot]: msg.paneId };
       if (proj[other] === msg.paneId) halfView[other] = proj[slot] || null;  // SWAP
@@ -829,7 +830,7 @@ function update(msg, slice) {
         // always on-screen → byte-identical. Reads from `slice` — this
         // reducer's own layout slice (wm-geo P1.2 made the accessor take
         // it explicitly; the old global fetch resolved to the same object).
-        require('../leaves/geometry').visibleBoundsFor(slice, route.resolveViewerPaneId()),
+        visibleBoundsFor(slice, route.resolveViewerPaneId()),
         msg.tabBounds || null,
         msg.modelBundle,
         targetKind,

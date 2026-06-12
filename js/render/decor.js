@@ -48,6 +48,7 @@
 const { getInstanceSlice } = require('../panel/api');
 const { theme } = require('./themes');
 const mpool = require('../leaves/pool');
+const { visibleBoundsFor } = require('../leaves/geometry');
 
 const GLYPH_W = 3;
 const COLLAPSE_MIN_W = 9;
@@ -166,10 +167,6 @@ function _placedWidgetTargets() {
   const drag = slice.freeConfig && slice.freeConfig.drag;
   if (drag) return null;  // drag affordance owns the screen; suppress widgets
   const panels = mpool.allPanesInColumns(slice.arrange);
-  // wm-geo P2/P3 — leaves/geometry is a pure leaf (deps: pool/pane only), so
-  // this require no longer routes through the paint-bundling facade; it
-  // stays inline only until the Phase-4 inline-require reclaim pass.
-  //
   // visibleBoundsFor — NOT boundsFor — so off-screen panes in half/
   // full view don't show up here. The boundsFor fallback to
   // _currentLayout.rects would return phantom normal-view rects for
@@ -177,8 +174,8 @@ function _placedWidgetTargets() {
   // panel_collapse_toggle on an off-screen pane (user returns to
   // normal view → that pane is silently collapsed). Same bug class
   // as the half-mode focus-revert fix in `visibleBoundsFor`'s intro
-  // commit — chrome-glyph hit-tests share the symptom.
-  const { visibleBoundsFor } = require('../leaves/geometry');
+  // commit — chrome-glyph hit-tests share the symptom. (Top-level
+  // import since wm-geo P4 — leaves/geometry is a pure leaf, no cycle.)
   return panels
     .filter(p => p.type !== 'detail')
     // v0.6.4 Phase 2 — hit-test by paneId, not type: two same-kind panes

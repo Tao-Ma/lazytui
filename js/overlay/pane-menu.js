@@ -38,6 +38,7 @@ const { richToAnsi, RESET, esc, visibleLen } = require('../io/ansi');
 const { stdout, rows } = require('../io/term');
 const { isChainActive } = require('../dispatch/modes');
 const mpool = require('../leaves/pool');
+const { visibleBoundsFor } = require('../leaves/geometry');
 const pt = require('../leaves/pane-tabs');
 const route = require('../panel/route');
 
@@ -184,7 +185,7 @@ function _targetPaneId() {
  *  fire the menu on a non-visible pane whose normal-view rect overlaps.
  *  Lazy require to dodge the layout ↔ overlay cycle. */
 function _paneBounds(paneId) {
-  return require('../leaves/geometry').visibleBoundsFor(getInstanceSlice('layout'), paneId);
+  return visibleBoundsFor(getInstanceSlice('layout'), paneId);
 }
 
 /** Trigger glyph state machine (drives both chrome paint + click):

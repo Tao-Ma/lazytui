@@ -37,6 +37,7 @@ const modes = require('./modes');
 const runtime = require('../app/runtime');
 const route = require('../panel/route');
 const mpane = require('../leaves/pane');
+const { halfProjection } = require('../leaves/geometry');
 const { getModel } = runtime;
 // handleAction + _runActionByKey live in ./actions (carved out 2026-05-31).
 // Cycle-safe: actions.js lazy-requires this module's applyMsg/navSelect
@@ -401,7 +402,7 @@ function _paneMenuPick(target, item) {
     // half/full pane rows are placed-only, so item.paneId is set; guard
     // defensively. Slot = the slot the clicked-on pane currently occupies.
     if (!item.paneId) { close(); return; }
-    const proj = require('../leaves/geometry').halfProjection(layoutSlice);
+    const proj = halfProjection(layoutSlice);
     const slot = proj.left === target ? 'left' : 'right';
     dispatchMsg(wrap('layout', { type: 'pane_menu_place', slot, paneId: item.paneId }));
     close();

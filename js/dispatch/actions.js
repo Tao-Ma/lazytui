@@ -23,6 +23,8 @@
 'use strict';
 
 const { allPanels, getSel } = require('../app/state');
+const { getPanelViewportH, visibleBoundsFor } = require('../leaves/geometry');
+const { dims } = require('../io/term');
 const { runAction } = require('./action-runner');
 const { getPanelDef, getItems, getMergedActions, getInstanceSlice,
         dispatchMsg, wrap, getFocus, instanceKind } = require('../panel/api');
@@ -122,8 +124,8 @@ function _jumpInListPanel(target) {
 
 function _pageStep(paneId) {
   // Single source of truth for view-mode-aware viewport rows (by paneId).
-  return require('../leaves/geometry').getPanelViewportH(
-    getInstanceSlice('layout'), paneId, require('../io/term').dims());
+  return getPanelViewportH(
+    getInstanceSlice('layout'), paneId, dims());
 }
 
 /**
@@ -137,7 +139,7 @@ function activateTerminal() {
   if (isSessionDead(id)) {
     // v0.6.4 — size the restarted session to the FOCUSED viewer's
     // CONTAINER pane (resolveViewerPaneId → half/full-correct bounds).
-    const bounds = require('../leaves/geometry').visibleBoundsFor(getInstanceSlice('layout'), route.resolveViewerPaneId());
+    const bounds = visibleBoundsFor(getInstanceSlice('layout'), route.resolveViewerPaneId());
     if (bounds) restartSession(id, bounds.w - 2, bounds.h - 2);
   }
   applyMsg({ type: 'terminal_enter' });
