@@ -160,7 +160,7 @@ describe('[visibleBoundsFor] half-mode click can\'t hit off-screen pane phantom'
   // selection. visibleBoundsFor reads slice-only so it returns null
   // for any pane absent from this frame's paneBounds.
   const { getInstanceSlice } = require('../panel/api');
-  const renderLayout = require('../render/geometry');
+  const renderLayout = require('../render/geometry-core');
 
   it('visibleBoundsFor returns null for panes absent from paneBounds', () => {
     const slice = getInstanceSlice('layout');

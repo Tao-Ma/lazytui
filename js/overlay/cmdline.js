@@ -83,7 +83,7 @@ function renderCmdline() {
     // terminals clamp to row 1 — cosmetic flicker but unintended.
     const oldTop = Math.max(0, ROWS - _lastPanelH - 1);
     const newTop = Math.max(0, ROWS - panelH - 1);
-    require('../render/geometry').invalidateRows(oldTop, newTop);
+    require('../render/paint').invalidateRows(oldTop, newTop);
     for (let y = oldTop; y < newTop; y++) {
       buf += `\x1b[${y + 1};1H\x1b[K`;
     }

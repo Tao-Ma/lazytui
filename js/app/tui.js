@@ -147,7 +147,7 @@ function main() {
 
   // Lazy-load TUI runtime so CLI mode stays free of node-pty + render deps.
   const { hideCursor } = require('../io/term');
-  const { render, redraw, renderTerminalOverlay } = require('../render/geometry');
+  const { render, redraw, renderTerminalOverlay } = require('../render/paint');
   const { scheduleRender } = require('../render/render-queue');
   const { registerComponent, refreshAll } = require('../panel/api');
   const { setupKeyListener } = require('../dispatch/input');

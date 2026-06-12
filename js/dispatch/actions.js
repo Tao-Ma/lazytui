@@ -122,7 +122,7 @@ function _jumpInListPanel(target) {
 
 function _pageStep(paneId) {
   // Single source of truth for view-mode-aware viewport rows (by paneId).
-  return require('../render/geometry').getPanelViewportH(
+  return require('../render/geometry-core').getPanelViewportH(
     getInstanceSlice('layout'), paneId, require('../io/term').dims());
 }
 
@@ -137,7 +137,7 @@ function activateTerminal() {
   if (isSessionDead(id)) {
     // v0.6.4 — size the restarted session to the FOCUSED viewer's
     // CONTAINER pane (resolveViewerPaneId → half/full-correct bounds).
-    const bounds = require('../render/geometry').visibleBoundsFor(getInstanceSlice('layout'), route.resolveViewerPaneId());
+    const bounds = require('../render/geometry-core').visibleBoundsFor(getInstanceSlice('layout'), route.resolveViewerPaneId());
     if (bounds) restartSession(id, bounds.w - 2, bounds.h - 2);
   }
   applyMsg({ type: 'terminal_enter' });

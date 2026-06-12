@@ -829,7 +829,7 @@ function update(msg, slice) {
         // always on-screen → byte-identical. Reads from `slice` — this
         // reducer's own layout slice (wm-geo P1.2 made the accessor take
         // it explicitly; the old global fetch resolved to the same object).
-        require('../render/geometry').visibleBoundsFor(slice, route.resolveViewerPaneId()),
+        require('../render/geometry-core').visibleBoundsFor(slice, route.resolveViewerPaneId()),
         msg.tabBounds || null,
         msg.modelBundle,
         targetKind,

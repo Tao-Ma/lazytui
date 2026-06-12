@@ -172,7 +172,7 @@ function installBuiltins() {
   // the same `runEffects` interpreter as Component effects.
 
   registerEffect('force_full_repaint', () => {
-    try { require('../render/geometry').forceFullRepaint(); } catch (_) {}
+    try { require('../render/paint').forceFullRepaint(); } catch (_) {}
   });
   // `_claimed` is the framework-internal sentinel a Component returns from
   // its `key` update to suppress the framework default. The normal path

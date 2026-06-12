@@ -22,7 +22,7 @@
 'use strict';
 
 const { allPanels, getSel, switchGroupsTab, multiSelCount } = require('../app/state');
-const { render } = require('../render/geometry');
+const { render } = require('../render/paint');
 const { getPanelDef, getItems, idOf, getInstanceSlice,
        getComponentOwningPanel, dispatchMsg, dispatchKeyToFocused, wrap, getFocus,
        instanceKind } = require('../panel/api');

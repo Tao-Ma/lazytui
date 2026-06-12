@@ -1,16 +1,17 @@
 /**
  * View painting — the rendering half of the render module. (v0.6.4
- * Theme B: split out of `render/geometry.js`; the layout math lives in
- * `render/geometry-core.js`; `render/geometry.js` is now a thin facade
- * re-exporting both halves + the footer.) Owns the per-frame paint:
+ * Theme B: split out of the old `render/geometry.js` god-file; the
+ * layout math lives in `render/geometry-core.js`. The thin facade that
+ * re-exported both was deleted in wm-geo P2 — paint consumers import
+ * this module directly.) Owns the per-frame paint:
  * the three view-mode dispatchers (renderNormal/Half/Full), the Rect
  * compositing + diff cache (`_frame` → painter.paintFrame), the panel
  * chrome glyphs, the terminal overlay, and `render()` itself.
  *
  * Paint depends on geometry-core (one direction only): renderNormal/
- * Half/Full call `geo.calcLayout(model)` to get the Rect list; hit-test
- * accessors (boundsFor / getPanelViewportH / getCurrentLayout) live in
- * geometry-core and are re-exported through the facade.
+ * Half/Full call `geo.calcLayout(layoutSlice, dims)` to get the Rect
+ * list; hit-test accessors (boundsFor / getPanelViewportH /
+ * getCurrentLayout) live in geometry-core.
  *
  * The renderer-as-writer pattern (renderNormal/Half/Full populate
  * `layoutSlice.paneBounds` directly) is documented in

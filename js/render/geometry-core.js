@@ -1,8 +1,10 @@
 /**
- * Layout geometry — the pure(ish) math half of the render module.
- * (v0.6.4 Theme B: split out of `render/geometry.js`; the painting half
- * lives in `render/paint.js`; `render/geometry.js` is now a thin facade
- * re-exporting both. `panel/layout.js` still owns the arrange/focus/
+ * Layout geometry — the WM spatial model: pure layout math, no paint.
+ * (v0.6.4 Theme B split this out of the old `render/geometry.js`
+ * god-file; the painting half lives in `render/paint.js`. The thin
+ * facade that re-exported both was deleted in wm-geo P2 — math
+ * consumers import this module directly, paint consumers import
+ * `render/paint`. `panel/layout.js` still owns the arrange/focus/
  * viewMode slice.)
  *
  * Geometry as view-derived data (docs/v0.5-layering.md §5). Two

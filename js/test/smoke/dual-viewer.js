@@ -148,7 +148,7 @@ describe('[7] half / full view thread opts.focused to the rendered pane', () => 
       api.dispatchMsg(api.wrap('layout', { type: 'view_set', mode }));
       const realWrite = process.stdout.write.bind(process.stdout);
       process.stdout.write = () => true;
-      try { require('../../render/geometry').redraw(getModel()); } finally { process.stdout.write = realWrite; }
+      try { require('../../render/paint').redraw(getModel()); } finally { process.stdout.write = realWrite; }
     } finally { def.render = orig; }
     return seen;
   }
@@ -186,13 +186,14 @@ describe('[8] half view is an API-driven projection — two viewers side-by-side
   // viewer" and HIDE every other viewer. It's now a projection of two slots
   // resolved by geo.halfProjection: an ephemeral, API-settable selection
   // (view_place_pane) over a default that reproduces the old behavior.
-  const geo = require('../../render/geometry');
+  const geo = require('../../render/geometry-core');
+  const paint = require('../../render/paint');
   const layoutSlice = () => api.getInstanceSlice('layout');
 
   function renderNow() {
     const realWrite = process.stdout.write.bind(process.stdout);
     process.stdout.write = () => true;
-    try { geo.redraw(getModel()); } finally { process.stdout.write = realWrite; }
+    try { paint.redraw(getModel()); } finally { process.stdout.write = realWrite; }
     return layoutSlice().paneBounds;
   }
 

@@ -24,7 +24,7 @@ const child_process = require('child_process');
 const spawnCalls = [];
 child_process.spawn = (...args) => { spawnCalls.push(args); return { on() {}, kill() {} }; };
 
-const layout = require('../render/geometry');
+const layout = require('../render/paint');
 let forceFullRepaintCalls = 0;
 layout.forceFullRepaint = () => { forceFullRepaintCalls++; };
 layout.render = () => {};

@@ -456,7 +456,7 @@ describe('[3f] keyboard `]` / `[` — focused panel heightPct', () => {
 // ===============================================================
 describe('[3e] calcLayout — heightPct distribution', () => {
   // wm-geo P1.2 — calcLayout is pure: (layoutSlice, dims) → Layout.
-  const geo = require('../render/geometry');
+  const geo = require('../render/geometry-core');
   const { dims } = require('../io/term');
   const calcLayout = () => geo.calcLayout(getInstanceSlice('layout'), dims());
   function freshLayout() {
@@ -481,16 +481,16 @@ describe('[3e] calcLayout — heightPct distribution', () => {
     freshLayout();
     process.stdout.columns = 100; process.stdout.rows = 30; // availH = 29
     calcLayout();
-    eq(require('../render/geometry')._getPanelHeights().containers, 14);
-    eq(require('../render/geometry')._getPanelHeights().groups, 15, 'two flex split 29: 14 + 15 (last gets leftover)');
+    eq(require('../render/geometry-core')._getPanelHeights().containers, 14);
+    eq(require('../render/geometry-core')._getPanelHeights().groups, 15, 'two flex split 29: 14 + 15 (last gets leftover)');
   });
   it('anchored heightPct claims its share, flex absorbs remainder', () => {
     freshLayout();
     getInstanceSlice("layout").arrange.columns[0].panels[0].heightPct = 70;  // containers fixed at 70%
     process.stdout.columns = 100; process.stdout.rows = 30; // availH = 29
     calcLayout();
-    eq(require('../render/geometry')._getPanelHeights().containers, 20, 'floor(29 * 0.7) = 20');
-    eq(require('../render/geometry')._getPanelHeights().groups, 9, 'flex remainder');
+    eq(require('../render/geometry-core')._getPanelHeights().containers, 20, 'floor(29 * 0.7) = 20');
+    eq(require('../render/geometry-core')._getPanelHeights().groups, 9, 'flex remainder');
   });
   it('oversubscribed anchored values scale proportionally', () => {
     freshLayout();
@@ -498,9 +498,9 @@ describe('[3e] calcLayout — heightPct distribution', () => {
     getInstanceSlice("layout").arrange.columns[0].panels[1].heightPct = 90;
     process.stdout.columns = 100; process.stdout.rows = 30; // availH = 29
     calcLayout();
-    eq(require('../render/geometry')._getPanelHeights().containers + require('../render/geometry')._getPanelHeights().groups, 29, 'column fills availH after scaling');
-    assert(require('../render/geometry')._getPanelHeights().containers >= 3, 'containers ≥ minH');
-    assert(require('../render/geometry')._getPanelHeights().groups >= 3, 'groups ≥ minH');
+    eq(require('../render/geometry-core')._getPanelHeights().containers + require('../render/geometry-core')._getPanelHeights().groups, 29, 'column fills availH after scaling');
+    assert(require('../render/geometry-core')._getPanelHeights().containers >= 3, 'containers ≥ minH');
+    assert(require('../render/geometry-core')._getPanelHeights().groups >= 3, 'groups ≥ minH');
   });
 });
 

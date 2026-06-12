@@ -166,10 +166,9 @@ function _placedWidgetTargets() {
   const drag = slice.freeConfig && slice.freeConfig.drag;
   if (drag) return null;  // drag affordance owns the screen; suppress widgets
   const panels = mpool.allPanesInColumns(slice.arrange);
-  // v0.6.3 P1.3: lazy require to dodge the layout ↔ decor cycle
-  // (layout.js imports decor at top-level, so a top-level
-  // require('./geometry') would yield the partial module without
-  // visibleBoundsFor; lazy resolves to the final exports).
+  // wm-geo P2 — geometry-core is a pure leaf (deps: pool/pane only), so
+  // this require no longer routes through the paint-bundling facade; it
+  // stays inline only until the Phase-4 inline-require reclaim pass.
   //
   // visibleBoundsFor — NOT boundsFor — so off-screen panes in half/
   // full view don't show up here. The boundsFor fallback to
@@ -179,7 +178,7 @@ function _placedWidgetTargets() {
   // normal view → that pane is silently collapsed). Same bug class
   // as the half-mode focus-revert fix in `visibleBoundsFor`'s intro
   // commit — chrome-glyph hit-tests share the symptom.
-  const { visibleBoundsFor } = require('./geometry');
+  const { visibleBoundsFor } = require('./geometry-core');
   return panels
     .filter(p => p.type !== 'detail')
     // v0.6.4 Phase 2 — hit-test by paneId, not type: two same-kind panes

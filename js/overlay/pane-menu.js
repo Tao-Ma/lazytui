@@ -184,7 +184,7 @@ function _targetPaneId() {
  *  fire the menu on a non-visible pane whose normal-view rect overlaps.
  *  Lazy require to dodge the layout ↔ overlay cycle. */
 function _paneBounds(paneId) {
-  return require('../render/geometry').visibleBoundsFor(getInstanceSlice('layout'), paneId);
+  return require('../render/geometry-core').visibleBoundsFor(getInstanceSlice('layout'), paneId);
 }
 
 /** Trigger glyph state machine (drives both chrome paint + click):
@@ -369,7 +369,7 @@ function render() {
   }
   // Residue-blank rows the prior frame painted but this one doesn't.
   if (_lastPanelH > g.h && _lastTop === g.y && _lastLeft === g.x) {
-    const { invalidateRows } = require('../render/geometry');
+    const { invalidateRows } = require('../render/paint');
     invalidateRows(g.y + g.h, _lastTop + _lastPanelH);
     for (let y = g.y + g.h; y < _lastTop + _lastPanelH; y++) {
       buf += `\x1b[${y + 1};${g.x + 1}H${' '.repeat(_lastWidth)}`;
@@ -384,7 +384,7 @@ function render() {
 
 function _maybeBlank() {
   if (_lastPanelH === 0) return;
-  const { invalidateRows } = require('../render/geometry');
+  const { invalidateRows } = require('../render/paint');
   invalidateRows(_lastTop, _lastTop + _lastPanelH);
   _lastPanelH = 0;
 }

@@ -78,7 +78,7 @@ function installSuspendHandlers() {
     // The shell that ran during the suspend probably scrolled or
     // overwrote the screen — invalidate the diff cache so the next
     // paint is a full clear + redraw.
-    const { forceFullRepaint, render } = require('../render/geometry');
+    const { forceFullRepaint, render } = require('../render/paint');
     forceFullRepaint();
     render();
   };
