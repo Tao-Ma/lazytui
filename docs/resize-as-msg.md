@@ -28,6 +28,14 @@ the render path entirely, and terminal resize becomes a first-class Msg.
 - Behavior shift absorbed by two existing tests: test-scroll-clamp [1]
   (cursor moves clamp at dispatch, not render) and the multi-instance
   smoke's scroll-independence step (clamp-stable value now required).
+- HOTFIX `7c605cf` (user-reported during release-candidate testing):
+  P1 removed the render path's only `refreshSize()` caller, freezing
+  io/term's COLS/ROWS mirror at boot size — the footer then painted at
+  the OLD bottom row every frame, covering a pane's top border after a
+  grow. The resize listener (and sm.resize) now refresh the mirror at
+  the event. This is the sharp edge of the deferred "retire io/term
+  COLS/ROWS" item: until that lands, the mirror must be refreshed
+  wherever the size changes.
 
 ## Why (the long-term argument)
 
