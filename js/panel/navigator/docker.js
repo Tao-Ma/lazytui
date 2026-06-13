@@ -629,6 +629,13 @@ module.exports = {
   name: 'docker',
   init,
   update,
+  // Kind-global SERVICE slot (see panel/api registerComponent): the
+  // register-time instance is the CONTENT OWNER — it alone runs the
+  // fetch loop + `docker events` stream (the gate in update()), and
+  // `_slice()` resolves to it. Placed `containers` panes carry nav
+  // only. The slot is undisposable, so no config/mint path can kill
+  // the owner and silently stop fetching.
+  service: true,
   installEffects,
   // Framework teardown (cleanupComponents on quit) — stop the long-lived
   // `docker events` child + its reconnect timer. process.on('exit') backstops.

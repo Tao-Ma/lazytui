@@ -14,9 +14,11 @@ const api = require('../panel/api');
 const { describe, it, assert, eq, report } = require('./test-runner');
 
 // Helper — wipe any state a prior test left behind (defensive, the runner
-// shares process state across files).
+// shares process state across files). Full registry wipe: an
+// eachInstance+dispose loop can't remove service slots (dispose refuses),
+// so a stub 'layout' service would leak across cases.
 function resetRegistry() {
-  route.eachInstance((inst) => route.disposeInstance(inst.id));
+  route._resetRegistryForTest();
 }
 
 describe('[v0.6.1 Phase 0] tab-instance registry', () => {
@@ -312,6 +314,81 @@ describe('[v0.6.4 multi-viewer] two detail instances scroll independently', () =
     const left = route.getInstanceSlice('pane-left');
     assert(left.tabBounds === undefined || left.tabBounds.length === 0,
       'pane-left tabBounds untouched by pane-right render');
+  });
+});
+
+// _primaryByKind split arc P0 — service slots. A SERVICE is the
+// kind-global instance registerComponent mints for chrome Components
+// (no panelTypes) and `service: true` opt-ins (docker's content owner).
+// It lives inside _instances (broadcast + dispatch reach it unchanged)
+// but is undisposable and unoverwritable.
+describe('[service slots] kind-global instances are undisposable', () => {
+  it('setService registers a visible instance + the direct handle', () => {
+    resetRegistry();
+    route.setService('svc', { v: 1 });
+    assert(route.hasInstance('svc'), 'visible via hasInstance');
+    eq(route.getInstanceSlice('svc').v, 1, 'readable via getInstanceSlice (id read)');
+    eq(route.serviceSlice('svc').v, 1, 'readable via serviceSlice');
+    assert(route.isService('svc'), 'marked as service');
+    eq(route.getPrimaryByKind('svc'), 'svc', 'seeds the kind primary (dispatch fallback)');
+    assert(route.serviceSlice('nope') === undefined, 'unknown kind → undefined');
+  });
+
+  it('chrome Components (no panelTypes) auto-register as services', () => {
+    resetRegistry();
+    api.registerComponent({ name: 'layout', init: () => ({ focus: null }), update: (m, s) => s });
+    assert(route.isService('layout'), 'chrome Component is a service');
+  });
+
+  it('disposeInstance refuses a service slot', () => {
+    resetRegistry();
+    route.setService('svc', { v: 1 });
+    route.disposeInstance('svc');   // logs a refusal, no-op
+    assert(route.hasInstance('svc'), 'still present');
+    eq(route.serviceSlice('svc').v, 1, 'slice intact');
+  });
+
+  it('setInstance refuses to overwrite a service slot', () => {
+    resetRegistry();
+    route.setService('svc', { v: 1 });
+    route.setInstance('svc', 'svc', { v: 'clobbered' });   // logs a refusal, no-op
+    eq(route.serviceSlice('svc').v, 1, 'slice not clobbered');
+    assert(route.isService('svc'), 'still a service');
+  });
+
+  it('setInstanceSlice still WRITES a service slice (dispatch write-back path)', () => {
+    resetRegistry();
+    route.setService('svc', { v: 1 });
+    route.setInstanceSlice('svc', { v: 2 });
+    eq(route.serviceSlice('svc').v, 2, 'update applied');
+    assert(route.isService('svc'), 'service marker survives');
+  });
+
+  it('broadcast fan-out reaches a service Component', () => {
+    resetRegistry();
+    api.registerComponent({ name: 'layout', init: () => ({ focus: null }), update: (m, s) => s });
+    api.registerComponent({
+      name: 'svc-comp',
+      service: true,
+      panelTypes: { 'svc-panel': { render: () => [] } },
+      init: () => ({ refreshed: false }),
+      update: (msg, slice) => (msg.type === 'refresh' ? { ...slice, refreshed: true } : slice),
+    });
+    assert(route.isService('svc-comp'), 'service: true opt-in honored despite panelTypes');
+    api.dispatchMsg({ type: 'refresh' });
+    eq(route.getInstanceSlice('svc-comp').refreshed, true, 'refresh reached the service');
+    let seen = false;
+    route.eachInstance((inst) => { if (inst.id === 'svc-comp') seen = true; });
+    assert(seen, 'eachInstance iterates the service');
+  });
+
+  it('re-registration updates the service slice in place (wrapper identity preserved)', () => {
+    resetRegistry();
+    route.setService('svc', { v: 1 });
+    const wrapper = route.getInstance('svc');
+    route.setService('svc', { v: 2 });
+    assert(route.getInstance('svc') === wrapper, 'same wrapper object');
+    eq(route.serviceSlice('svc').v, 2, 'fresh slice');
   });
 });
 

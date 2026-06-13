@@ -226,10 +226,12 @@ describe('[7] Arc 3 — content gate: one host-global fetch loop, per-pane nav',
       detailHeightPct: 60,
     };
     getInstanceSlice('layout').arrange = arrange;
-    // Mirror state.js's per-pane mint loop.
+    // Mirror state.js's per-pane mint loop (panel-type registry only —
+    // NO Component-name arm; see initState).
     const components = api._components();
     for (const p of mpool.allPanesInColumns(arrange)) {
-      const comp = components[p.type] || components[route.componentForPanel(p.type)];
+      const comp = components[route.componentForPanel(p.type)];
+      if (!comp) continue;
       if (route.hasInstance(p.type) && p.type !== p.paneId) route.disposeInstance(p.type);
       if (!route.hasInstance(p.paneId)) route.setInstance(p.paneId, p.type, comp.init(p.paneId));
     }
@@ -244,6 +246,52 @@ describe('[7] Arc 3 — content gate: one host-global fetch loop, per-pane nav',
     } finally {
       route.disposeInstance('docker-a');
       route.disposeInstance('docker-b');
+      getInstanceSlice('layout').arrange = undefined;
+    }
+  });
+  it('a rogue `type: docker` pane cannot clobber the content owner (service slot)', () => {
+    // Regression — _primaryByKind split arc P0. Pre-split, the mint
+    // loop's `components[kind]` arm matched Component NAMES, so a config
+    // pane of `type: docker` resolved the docker Component, DISPOSED the
+    // register-time owner, and re-pointed the kind primary at a nav-only
+    // per-pane mint — the update() owner-gate then no-opped every content
+    // Msg and fetching silently died. Two independent fixes pin here:
+    // the name-arm is gone (rogue pane mints nothing), and the owner is
+    // a service slot (dispose refuses even if some path tries).
+    setup(['c1']);
+    const route = require('../panel/route');
+    const mpool = require('../leaves/pool');
+    assert(route.isService('docker'), 'owner is a service slot');
+    const arrange = {
+      columns: [
+        { width: 30, panels: [{ type: 'docker', paneId: 'pane-rogue', title: 'R', hotkey: '1', columnIndex: 0 }] },
+        { width: 30, panels: [{ type: 'containers', paneId: 'docker-c', title: 'C', hotkey: '2', columnIndex: 1 }] },
+      ],
+      detailHeightPct: 60,
+    };
+    getInstanceSlice('layout').arrange = arrange;
+    const components = api._components();
+    try {
+      for (const p of mpool.allPanesInColumns(arrange)) {
+        const comp = components[route.componentForPanel(p.type)];
+        if (!comp) continue;
+        if (route.hasInstance(p.type) && p.type !== p.paneId) route.disposeInstance(p.type);
+        if (!route.hasInstance(p.paneId)) route.setInstance(p.paneId, p.type, comp.init(p.paneId));
+      }
+      // 'docker' is a Component NAME, not a registered panel-type → the
+      // rogue pane resolves no Component and mints nothing.
+      assert(!route.hasInstance('pane-rogue'), 'rogue pane minted no instance');
+      assert(route.hasInstance('docker'), 'content owner survives the mint loop');
+      eq(route.getInstance('docker').slice.paneId, undefined, 'owner still has no paneId');
+      // Fetching provably alive: a dockerResult folds into the owner
+      // slice and statusFor reads it back through _slice().
+      api.dispatchMsg(api.wrap('docker', { type: 'dockerResult', status: { c1: 'running' }, stats: {} }));
+      eq(docker.statusFor('c1'), 'running', 'content path alive after the rogue config');
+      // Belt + braces: a direct dispose refuses on the service slot.
+      route.disposeInstance('docker');   // logs a refusal, no-op
+      assert(route.hasInstance('docker'), 'disposeInstance refused on the service slot');
+    } finally {
+      route.disposeInstance('docker-c');
       getInstanceSlice('layout').arrange = undefined;
     }
   });

@@ -54,7 +54,7 @@ describe('[diag-log] buffer', () => {
 });
 
 describe('[diag-log] same-kind collapse producer (route.getInstanceSlice)', () => {
-  function reset() { route.eachInstance((inst) => route.disposeInstance(inst.id)); diag.clear(); }
+  function reset() { route._resetRegistryForTest(); diag.clear(); }
 
   it('a kind-name read with >1 same-kind instance records a pane-collapse warn (once)', () => {
     reset();

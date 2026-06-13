@@ -128,6 +128,16 @@ function _validatePanelDef(compName, type, def) {
  * receive `key` Msgs since key arbitration routes to the focused
  * panel's owner.
  *
+ * **Service slots** — chrome Components register as a SERVICE
+ * (kind-global, undisposable — see route.js §Service slots): having no
+ * `panelTypes` means the Component can never be placed as a pane, so
+ * its register-time instance is definitionally its only instance.
+ * A placeable Component whose register-time instance owns kind-global
+ * content opts in with `service: true` (docker: the content owner that
+ * runs the fetch loop + events stream; placed panes carry nav only).
+ * Plain placeable Components get a kind-keyed singleton seed instead,
+ * which `initState` disposes when it mints per-pane instances.
+ *
  * The framework owns the slice. Refresh / hub / action Msgs fan out to
  * every Component's update(); a single update() returning a new slice
  * is the only mutation site. Dispatch stays sync.
@@ -163,9 +173,17 @@ function registerComponent(comp) {
   }
   // An init() throw propagates — boot fails fast at the actual
   // source. The component is already in `components` (set above) so
-  // a later registration sees this one as registered; only setInstance
-  // is skipped on throw.
-  route.setInstance(comp.name, comp.name, comp.init());
+  // a later registration sees this one as registered; only the
+  // instance write is skipped on throw.
+  //
+  // Chrome (no panelTypes) + explicit `service: true` → service slot
+  // (kind-global, undisposable); plain placeable → kind-keyed
+  // singleton seed that initState swaps for per-pane instances.
+  if (!comp.panelTypes || comp.service === true) {
+    route.setService(comp.name, comp.init());
+  } else {
+    route.setInstance(comp.name, comp.name, comp.init());
+  }
   // Per-Component effects (loadDir, openFile, historyReplay, …) — used
   // to be registered at module-top-level via top-level
   // `registerEffect(...)` calls in each file, which meant a test that
@@ -612,6 +630,7 @@ const { componentForPanel: getComponentOwningPanel, getFocus } = route;
 const {
   setInstance, getInstance, getInstanceSlice, sliceForPane, setInstanceSlice,
   hasInstance, disposeInstance, instanceKind, eachInstance,
+  setService, serviceSlice, isService,
 } = route;
 
 /**
@@ -884,6 +903,7 @@ module.exports = {
   // Tab-instance registry surface.
   setInstance, getInstance, getInstanceSlice, sliceForPane, setInstanceSlice,
   hasInstance, disposeInstance, instanceKind, eachInstance,
+  setService, serviceSlice, isService,
   getPanelDef, getItems, idOf, selectedOrFocused, infoLinesFromFocus,
   refreshAll, cleanupComponents,
   getCommands, getGroupActions, getMergedActions, statusFor,

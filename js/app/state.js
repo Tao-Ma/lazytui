@@ -156,8 +156,8 @@ function initState() {
   // with id = pane.paneId (e.g. 'pane-detail', 'pane-groups'). The
   // kind-keyed instance that registerComponent minted earlier is
   // disposed for each kind we re-mint per pane — _primaryByKind
-  // shifts to the new paneId. Components that aren't placeable
-  // (chrome like 'layout') stay singleton-keyed.
+  // shifts to the new paneId. Service slots (chrome like 'layout',
+  // content owners like 'docker') are never disposed — route refuses.
   //
   // Foundational for v0.7 multi-instance: a second pane of the
   // same kind gets its own paneId, its own slice. Today every
@@ -172,13 +172,16 @@ function initState() {
       const kind = p.type;
       const paneId = p.paneId;
       if (!paneId || !kind) continue;
-      // v0.6.4 Theme A Phase 5 Arc 2 — resolve panelType-aliased panes
-      // (e.g. `file-browser`, owned by the `files` Component) to their
-      // owning Component. Was `components[kind]` only, which minted
-      // nothing for an aliased panel-type (its Component is keyed under
-      // a different name), leaving those panes to collapse onto the
-      // owner's primary slice.
-      const comp = components[kind] || components[route.componentForPanel(kind)];
+      // v0.6.4 Theme A Phase 5 Arc 2 — resolve panes via the panel-type
+      // ownership registry (covers aliased types like `file-browser`,
+      // owned by the `files` Component). Deliberately NOT
+      // `components[kind]`: that arm matched Component NAMES too, so a
+      // config pane of `type: docker` / `type: layout` resolved here
+      // and disposed the kind-global service instance (docker's content
+      // owner — fetching silently died). Every legitimate placeable
+      // type is in the `_panelOwner` registry; a name-only kind now
+      // mints nothing (honest unknown-type failure).
+      const comp = components[route.componentForPanel(kind)];
       if (!comp) continue;
       // Dispose the kind-keyed singleton slice (minted at
       // registerComponent), then mint fresh keyed by paneId.

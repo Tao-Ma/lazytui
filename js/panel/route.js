@@ -48,8 +48,8 @@ function registerPanelOwner(panelType, componentName) {
  *  Pool-id → Component-name registry — instanceKind(non-default-pool-id)
  *  returning null is a v0.7 fixup per docs/v0.6.3.md §"Out of scope". */
 function _typeByArrangePaneId(id) {
-  const layoutInst = _instances[_primaryByKind['layout']];
-  const arrange = layoutInst && layoutInst.slice && layoutInst.slice.arrange;
+  const layout = _layoutSvcSlice();
+  const arrange = layout && layout.arrange;
   if (!arrange || !Array.isArray(arrange.columns)) return null;
   for (const col of arrange.columns) {
     for (const p of (col.panels || [])) {
@@ -150,6 +150,13 @@ const _primaryByKind = Object.create(null);
 function setInstance(id, kind, slice) {
   const existing = _instances[id];
   if (existing) {
+    // Service slots are written only via setService — refuse, so a
+    // config-supplied paneId colliding with a service kind can't
+    // overwrite kind-global content with a per-pane mint.
+    if (existing.service) {
+      console.error(`[route] setInstance('${id}') refused: '${id}' is a service slot — use setService`);
+      return;
+    }
     // Update in place — preserves the wrapper object identity. kind is
     // immutable per id; a mismatched kind on re-write is a caller bug.
     existing.slice = slice;
@@ -160,6 +167,73 @@ function setInstance(id, kind, slice) {
 }
 
 function getInstance(id) { return _instances[id]; }
+
+// --- Service slots ---------------------------------------------------------
+//
+// A SERVICE is a kind-global instance registered once by
+// `registerComponent` and never disposable: chrome Components (no
+// `panelTypes` — e.g. 'layout') and placeable Components that opt in
+// with `service: true` because their register-time instance owns
+// kind-global content (docker: one daemon → one status/stats map + one
+// events stream, shared by every placed pane, which carries nav only).
+//
+// Service wrappers live INSIDE `_instances` (id === kind === Component
+// name) so the broadcast fan-out (`eachInstance`) and wrapped-Msg
+// dispatch (`getInstance`) reach them unchanged; `_serviceByKind` is
+// the direct handle plus the undisposable marker.
+//
+// Why undisposable: `state.js initState` disposes kind-keyed seeds when
+// minting per-pane instances. Docker's content owner used to survive
+// that loop only by ACCIDENT — its panel-type ('containers') differs
+// from its Component name ('docker') — so any pane that resolved to
+// kind 'docker' would have disposed the owner, repointed the kind
+// primary at a nav-only pane, and silently killed all fetching (the
+// update() owner-gate no-ops content Msgs on placed panes). The service
+// slot makes that clobber impossible by construction: `disposeInstance`
+// and `setInstance` both refuse service ids.
+
+const _serviceByKind = Object.create(null);
+
+function setService(kind, slice) {
+  let inst = _instances[kind];
+  if (inst) {
+    // Re-registration (test harnesses re-run registerComponent): update
+    // in place — preserves wrapper identity, same as setInstance.
+    inst.slice = slice;
+    inst.service = true;
+  } else {
+    inst = { id: kind, kind, slice, service: true };
+    _instances[kind] = inst;
+  }
+  _serviceByKind[kind] = inst;
+  // Services seed the kind primary too — `dispatchKeyToFocused` and
+  // wrapped Component-name dispatch resolve via getPrimaryByKind, and
+  // a panes-only _primaryByKind would regress key routing for
+  // kind-keyed setups. Load-bearing; don't "clean up".
+  if (!_primaryByKind[kind]) _primaryByKind[kind] = kind;
+}
+
+/** Slice of the `kind` service slot, or undefined when none registered.
+ *  The explicit read for kind-global content (docker's `_slice()`,
+ *  layout boot helpers) — NOT a general kind-name resolver; per-pane
+ *  reads thread a paneId, kind-level pane reads use the primary. */
+function serviceSlice(kind) {
+  const inst = _serviceByKind[kind];
+  return inst ? inst.slice : undefined;
+}
+
+function isService(id) {
+  const inst = _instances[id];
+  return !!(inst && inst.service);
+}
+
+/** Direct handle on the layout service slice — the hottest registry
+ *  read (getFocus per keystroke; resolveTarget per viewer write; the
+ *  arrange walk per docker-style resolution). Pre-registration → null. */
+function _layoutSvcSlice() {
+  const inst = _serviceByKind['layout'];
+  return inst ? inst.slice : null;
+}
 
 // Kinds we've already flagged as ambiguous, so the collapse warning
 // fires at most once per kind (a per-frame read would otherwise flood
@@ -241,6 +315,12 @@ function hasInstance(id) { return id in _instances; }
 function disposeInstance(id) {
   const inst = _instances[id];
   if (!inst) return;
+  // Service slots live for the whole session — refusing here (not just
+  // in initState) means NO caller can kill kind-global content.
+  if (inst.service) {
+    console.error(`[route] disposeInstance('${id}') refused: service slot (registered by registerComponent, never disposed)`);
+    return;
+  }
   delete _instances[id];
   // Re-arm the ambiguity warning for this kind — a reconfigure that
   // disposes then re-mints should warn again if it's still ambiguous.
@@ -301,6 +381,17 @@ function eachInstance(fn) {
 /** Primary instance id for a kind, or undefined if none registered. */
 function getPrimaryByKind(kind) { return _primaryByKind[kind]; }
 
+/** TEST-ONLY: wipe the whole registry (instances, primaries, service
+ *  slots, warning dedup). Test files reset via this instead of an
+ *  eachInstance+dispose loop — dispose refuses service slots, so a
+ *  loop would leak them across cases. */
+function _resetRegistryForTest() {
+  for (const k in _instances) delete _instances[k];
+  for (const k in _primaryByKind) delete _primaryByKind[k];
+  for (const k in _serviceByKind) delete _serviceByKind[k];
+  _warnedAmbiguous.clear();
+}
+
 /** Focus read — the layout instance's slice owns `focus`. Pre-init
  *  returns null.
  *
@@ -311,9 +402,7 @@ function getPrimaryByKind(kind) { return _primaryByKind[kind]; }
  *  `instanceKind(getFocus()) === '<kind>'` (resilient to multi-instance,
  *  where tab id ≠ kind). */
 function getFocus() {
-  const id = _primaryByKind['layout'];
-  if (id === undefined) return null;
-  const s = _instances[id].slice;
+  const s = _layoutSvcSlice();
   return s ? s.focus : null;
 }
 
@@ -360,8 +449,7 @@ function resolveTarget(intent, ctx) {
   if (focused && isViewerKind(focused)) return focused;
 
   // (2) sticky lastViewerTab
-  const layoutId = _primaryByKind['layout'];
-  const layout = layoutId !== undefined ? _instances[layoutId].slice : null;
+  const layout = _layoutSvcSlice();
   if (layout && layout.lastViewerTab && isViewerKind(layout.lastViewerTab)) {
     return layout.lastViewerTab;
   }
@@ -409,8 +497,7 @@ function resolveTarget(intent, ctx) {
 function resolveViewerPaneId(ctx) {
   const tabId = resolveTarget('viewer', ctx);
   if (tabId == null) return null;
-  const layoutId = _primaryByKind['layout'];
-  const layout = layoutId !== undefined ? _instances[layoutId].slice : null;
+  const layout = _layoutSvcSlice();
   if (!layout || !layout.arrange) return null;
   const mpool = require('../leaves/pool');
   // resolveTarget may hand back a container paneId (tier-1 focus) OR a tab
@@ -427,7 +514,9 @@ module.exports = {
   getFocus,
   setInstance, getInstance, getInstanceSlice, sliceForPane, setInstanceSlice,
   hasInstance, disposeInstance, instanceKind, eachInstance,
+  setService, serviceSlice, isService,
   getPrimaryByKind,
+  _resetRegistryForTest,
   // Navigator → focused-viewer routing chokepoint.
   resolveTarget, resolveViewerPaneId, isViewerKind, VIEWER_KIND,
 };
