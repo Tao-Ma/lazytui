@@ -42,15 +42,18 @@ function _routeMod() { return _routeRef || (_routeRef = require('../panel/route'
 let _detailAutoRegistered = false;
 function _detailSlice() {
   const api = require('../panel/api');
-  let s = api.getInstanceSlice('detail');
+  // primarySliceOf, not getInstanceSlice: post-initState the kind-keyed
+  // seed is disposed and the slice lives on the primary PANE instance —
+  // an id read would miss and re-register the Component mid-session.
+  let s = api.primarySliceOf('detail');
   if (!s) {
     if (!_detailAutoRegistered) {
       try { require('../dispatch/effects').installBuiltins(); } catch (_) {}
       _detailAutoRegistered = true;
     }
-    _layoutSlice();   // layout must register first — focus reader's primary instance
+    _layoutSlice();   // layout must register first — focus reader's service slot
     api.registerComponent(require('../panel/viewer/viewer'));
-    s = api.getInstanceSlice('detail');
+    s = api.primarySliceOf('detail');
   }
   return s;
 }
@@ -58,15 +61,18 @@ function _detailSlice() {
 let _groupsAutoRegistered = false;
 function _groupsSlice() {
   const api = require('../panel/api');
-  let s = api.getInstanceSlice('groups');
+  // primarySliceOf for the same reason as _detailSlice — and this one
+  // IS hit post-mint in production: initState calls _groupsSlice()
+  // right after the mint loop disposed the 'groups' seed.
+  let s = api.primarySliceOf('groups');
   if (!s) {
     if (!_groupsAutoRegistered) {
       try { require('../dispatch/effects').installBuiltins(); } catch (_) {}
       _groupsAutoRegistered = true;
     }
-    _layoutSlice();   // layout must register first — focus reader's primary instance
+    _layoutSlice();   // layout must register first — focus reader's service slot
     api.registerComponent(require('../panel/navigator/groups'));
-    s = api.getInstanceSlice('groups');
+    s = api.primarySliceOf('groups');
   }
   return s;
 }
@@ -77,14 +83,15 @@ function _groupsSlice() {
 let _layoutAutoRegistered = false;
 function _layoutSlice() {
   const api = require('../panel/api');
-  let s = api.getInstanceSlice('layout');
+  // layout is a SERVICE slot (chrome Component) — explicit read.
+  let s = api.serviceSlice('layout');
   if (!s) {
     if (!_layoutAutoRegistered) {
       try { require('../dispatch/effects').installBuiltins(); } catch (_) {}
       _layoutAutoRegistered = true;
     }
     api.registerComponent(require('../panel/layout'));
-    s = api.getInstanceSlice('layout');
+    s = api.serviceSlice('layout');
   }
   return s;
 }

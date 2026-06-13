@@ -392,4 +392,33 @@ describe('[service slots] kind-global instances are undisposable', () => {
   });
 });
 
+// _primaryByKind split arc P1 — primarySliceOf is the ONLY sanctioned
+// kind-name slice read (callers declare kind-level intent); paneId
+// reads go through getInstanceSlice/sliceForPane.
+describe('[primarySliceOf] explicit kind-level slice read', () => {
+  it('resolves the kind primary (first-registered instance)', () => {
+    resetRegistry();
+    route.setInstance('pane-a', 'pk', { v: 'a' });
+    route.setInstance('pane-b', 'pk', { v: 'b' });
+    eq(route.primarySliceOf('pk').v, 'a', 'primary = first registered');
+    assert(route.primarySliceOf('nope') === undefined, 'unknown kind → undefined');
+  });
+
+  it('follows successor promotion after the primary is disposed', () => {
+    resetRegistry();
+    route.setInstance('pane-a', 'pk', { v: 'a' });
+    route.setInstance('pane-b', 'pk', { v: 'b' });
+    route.disposeInstance('pane-a');
+    eq(route.primarySliceOf('pk').v, 'b', 'promoted successor resolves');
+    route.disposeInstance('pane-b');
+    assert(route.primarySliceOf('pk') === undefined, 'no instances → undefined');
+  });
+
+  it('resolves service kinds (setService seeds the primary)', () => {
+    resetRegistry();
+    route.setService('svc', { v: 1 });
+    eq(route.primarySliceOf('svc').v, 1, 'service resolves via primary too');
+  });
+});
+
 report();

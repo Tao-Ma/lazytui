@@ -114,7 +114,10 @@ function _rendererFor(type) {
   const comp = api.getComponent(compName);
   const def = comp && comp.panelTypes && comp.panelTypes[type];
   if (!def || typeof def.render !== 'function') return null;
-  return (panel, w, h) => def.render(panel, w, h, api.getInstanceSlice(compName));
+  // compName is a Component NAME — explicit kind-level read (the
+  // preview renders the kind's canonical instance, whichever pane is
+  // primary; hidden pool entries have no pane instance of their own).
+  return (panel, w, h) => def.render(panel, w, h, api.primarySliceOf(compName));
 }
 
 /** Build the preview-pane rows for the highlighted entry. Returns an

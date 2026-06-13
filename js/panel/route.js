@@ -294,7 +294,11 @@ function getInstanceSlice(id) {
  *  so both arms return the same instance. */
 function sliceForPane(id, kind) {
   if (id != null && _instances[id]) return _instances[id].slice;
-  return getInstanceSlice(kind);
+  // Arm 2 is the INTENTIONAL kind-level fallback (docker-style panes
+  // whose content lives on the kind's canonical instance, and legacy
+  // kind-name callers) — explicit primary read, not the (post-P2
+  // deleted) getInstanceSlice fallback.
+  return primarySliceOf(kind);
 }
 
 function setInstanceSlice(id, slice) {
@@ -380,6 +384,18 @@ function eachInstance(fn) {
 
 /** Primary instance id for a kind, or undefined if none registered. */
 function getPrimaryByKind(kind) { return _primaryByKind[kind]; }
+
+/** Slice of the kind's PRIMARY instance — the explicit kind-level read.
+ *  Callers declare "I deliberately want the canonical instance of this
+ *  kind" (boot/test seeds before per-pane mints, docker-style panes
+ *  without their own instance, kind-level previews). This is the ONLY
+ *  sanctioned kind-name slice read; getInstanceSlice takes instance ids
+ *  and (post-P2) will not fall back. Resolves services too — setService
+ *  seeds the kind primary. */
+function primarySliceOf(kind) {
+  const id = _primaryByKind[kind];
+  return id !== undefined && _instances[id] ? _instances[id].slice : undefined;
+}
 
 /** TEST-ONLY: wipe the whole registry (instances, primaries, service
  *  slots, warning dedup). Test files reset via this instead of an
@@ -515,7 +531,7 @@ module.exports = {
   setInstance, getInstance, getInstanceSlice, sliceForPane, setInstanceSlice,
   hasInstance, disposeInstance, instanceKind, eachInstance,
   setService, serviceSlice, isService,
-  getPrimaryByKind,
+  getPrimaryByKind, primarySliceOf,
   _resetRegistryForTest,
   // Navigator → focused-viewer routing chokepoint.
   resolveTarget, resolveViewerPaneId, isViewerKind, VIEWER_KIND,

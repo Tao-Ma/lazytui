@@ -39,7 +39,7 @@ const {
   streamCommand, addEphemeralTab, scheduleRender,
   leaveTerminalMode,
   getItems: apiGetItems, selectedOrFocused,
-  getInstanceSlice, dispatchMsg, wrap,
+  serviceSlice, dispatchMsg, wrap,
   hub,
 } = require('../api');
 const { getModel } = require('../../app/runtime');
@@ -49,15 +49,15 @@ const POLL_MS = 10000;
 
 // --- slice access (the polled state lives in the Component slice) ---
 //
-// v0.6.4 Theme A Phase 5 Arc 3 — `getInstanceSlice('docker')` resolves to
-// the CONTENT OWNER (the register-time singleton, kind 'docker', via
-// _primaryByKind['docker']). Status/stats are host-global — one daemon, one
+// v0.6.4 Theme A Phase 5 Arc 3 — `serviceSlice('docker')` resolves to the
+// CONTENT OWNER (the register-time SERVICE slot — undisposable, see
+// `service: true` below). Status/stats are host-global — one daemon, one
 // container set — so every docker pane reads the owner's maps here, while
 // each pane keeps its own nav (cursor/scroll/filter) in its per-pane slice.
 // statusFor/getInfo/copyOptions/_status all route through here; only the
 // owner runs the fetch loop + events stream (see the gate in update()).
 
-function _slice()        { return getInstanceSlice('docker') || { status: {}, stats: {} }; }
+function _slice()        { return serviceSlice('docker') || { status: {}, stats: {} }; }
 function _status(name)   { return _slice().status[name] || '?'; }
 function _stats(name)    { return _slice().stats[name] || null; }
 

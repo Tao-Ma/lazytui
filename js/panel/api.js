@@ -275,7 +275,8 @@ function collectViewContributions(slot, ctx) {
   const items = [];
   for (const entry of bucket) {
     let result;
-    try { result = entry.fn(route.getInstanceSlice(entry.owner), ctx); }
+    // entry.owner is a Component NAME — explicit kind-level read.
+    try { result = entry.fn(route.primarySliceOf(entry.owner), ctx); }
     catch (e) {
       console.error(`[viewContributions:${entry.owner}] '${slot}' handler error: ${e.message}`);
       continue;
@@ -630,7 +631,7 @@ const { componentForPanel: getComponentOwningPanel, getFocus } = route;
 const {
   setInstance, getInstance, getInstanceSlice, sliceForPane, setInstanceSlice,
   hasInstance, disposeInstance, instanceKind, eachInstance,
-  setService, serviceSlice, isService,
+  setService, serviceSlice, isService, primarySliceOf,
 } = route;
 
 /**
@@ -903,7 +904,7 @@ module.exports = {
   // Tab-instance registry surface.
   setInstance, getInstance, getInstanceSlice, sliceForPane, setInstanceSlice,
   hasInstance, disposeInstance, instanceKind, eachInstance,
-  setService, serviceSlice, isService,
+  setService, serviceSlice, isService, primarySliceOf,
   getPanelDef, getItems, idOf, selectedOrFocused, infoLinesFromFocus,
   refreshAll, cleanupComponents,
   getCommands, getGroupActions, getMergedActions, statusFor,
