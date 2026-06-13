@@ -53,48 +53,47 @@ describe('[diag-log] buffer', () => {
   });
 });
 
-describe('[diag-log] same-kind collapse producer (route.getInstanceSlice)', () => {
+describe('[diag-log] strict-miss producer (route get/setInstanceSlice)', () => {
+  // Split-arc P2 — the silent kind-name fallback is DELETED; a miss
+  // whose id names a known kind records `strict-miss` (once per id)
+  // and resolves nothing. Replaces the old `pane-collapse` band-aid,
+  // which warned but returned the collapsed slice anyway.
   function reset() { route._resetRegistryForTest(); diag.clear(); }
 
-  it('a kind-name read with >1 same-kind instance records a pane-collapse warn (once)', () => {
+  it('a kind-name read records a strict-miss warn (once) and returns undefined', () => {
     reset();
     route.setInstance('amb-a', 'ambk', { v: 'a' });
     route.setInstance('amb-b', 'ambk', { v: 'b' });
     // paneId reads never warn — they resolve directly.
     route.getInstanceSlice('amb-a');
     eq(diag.size(), 0, 'paneId read does not warn');
-    // kind-name read collapses onto the primary → one warn.
-    const slice = route.getInstanceSlice('ambk');
-    eq(slice.v, 'a', 'resolved to primary (insertion order)');
-    eq(diag.counts().warn, 1, 'one collapse warning');
-    eq(diag.snapshot()[0].code, 'pane-collapse', 'tagged pane-collapse');
+    // kind-name read: strict → undefined + one warn, no collapse.
+    assert(route.getInstanceSlice('ambk') === undefined, 'kind-name read resolves nothing');
+    eq(diag.counts().warn, 1, 'one strict-miss warning');
+    eq(diag.snapshot()[0].code, 'strict-miss', 'tagged strict-miss');
     // deduped — a second kind-name read does not re-warn.
     route.getInstanceSlice('ambk');
     eq(diag.counts().warn, 1, 'deduped, still one');
     reset();
   });
 
-  it('a singleton kind-name read does NOT warn', () => {
+  it('a kind-name WRITE warns and mutates nothing', () => {
     reset();
-    route.setInstance('solo', 'solok', { v: 'x' });
-    route.getInstanceSlice('solok');   // 1 instance → not ambiguous
-    eq(diag.size(), 0, 'no warning for a singleton');
+    route.setInstance('w-a', 'wk', { v: 'a' });
+    route.setInstance('w-b', 'wk', { v: 'b' });
+    route.setInstanceSlice('wk', { v: 'clobber' });
+    eq(diag.counts().warn, 1, 'strict-miss warned');
+    eq(diag.snapshot()[0].code, 'strict-miss', 'tagged strict-miss');
+    eq(route.getInstanceSlice('w-a').v, 'a', 'primary NOT written (was the silent-write bug)');
+    eq(route.getInstanceSlice('w-b').v, 'b', 'other pane untouched');
     reset();
   });
 
-  it('dispose re-arms the warning for a reconfigure', () => {
+  it('an unknown-id miss stays quiet (normal pre-init read)', () => {
     reset();
-    route.setInstance('r-a', 'rk', {});
-    route.setInstance('r-b', 'rk', {});
-    route.getInstanceSlice('rk');
-    eq(diag.counts().warn, 1, 'warned once');
-    // Tear the kind down + rebuild ambiguous → should warn again.
-    route.disposeInstance('r-a'); route.disposeInstance('r-b');
-    diag.clear();
-    route.setInstance('r-c', 'rk', {});
-    route.setInstance('r-d', 'rk', {});
-    route.getInstanceSlice('rk');
-    eq(diag.counts().warn, 1, 're-armed after dispose');
+    assert(route.getInstanceSlice('nope') === undefined, 'undefined, no throw');
+    route.setInstanceSlice('nope', { x: 1 });
+    eq(diag.size(), 0, 'no warning for an id that names no kind');
     reset();
   });
 });

@@ -167,7 +167,7 @@ function createSession(opts) {
 
   function _snapshot(label, frame) {
     const layout = api.getInstanceSlice('layout');
-    const detail = api.getInstanceSlice('detail');
+    const detail = api.primarySliceOf('detail');
     _push({
       label,
       frame: (frame || '').slice(-FRAME_TAIL).replace(/\s+/g, ' ').trim(),

@@ -258,7 +258,7 @@ describe('[5] right-click context menu — copy + dismiss', () => {
     // Seed viewer content directly; right-click → menu_open is a root Msg
     // (doesn't run the viewer finalizer), so the lines persist for the
     // context resolver to read the line under the cursor.
-    const d = api.getInstanceSlice('detail');
+    const d = api.primarySliceOf('detail');
     d.infoLines = ['alpha line', 'bravo line', 'charlie line'];  // P3 — Info canonical home
     d.scroll = 0;
     sm.capture(() => sm.render());
@@ -283,7 +283,7 @@ describe('[5] right-click context menu — copy + dismiss', () => {
     const { overlayBox } = require('../../render/panel');
     sm.bootFresh();
     sm.capture(() => sm.render());
-    const d = api.getInstanceSlice('detail');
+    const d = api.primarySliceOf('detail');
     d.lines = ['hello world foo bar', 'second line'];
     d.scroll = 0;
     sm.capture(() => sm.render());
@@ -320,7 +320,7 @@ describe('[5] right-click context menu — copy + dismiss', () => {
     const sel = require('../../panel/viewer/select');
     sm.bootFresh();
     sm.capture(() => sm.render());
-    const d = api.getInstanceSlice('detail');
+    const d = api.primarySliceOf('detail');
     d.lines = ['hello world foo bar', 'second line'];
     d.scroll = 0;
     sm.capture(() => sm.render());

@@ -3,7 +3,7 @@
  *
  * Every read helper (getTabInfo / isTerminalTab / activeContentTab /
  * activeTerminalId / etc.) is a one-line call into leaves/pane-tabs,
- * pinning the slice = `getInstanceSlice('detail')` and the group =
+ * pinning the slice via `resolveTarget('viewer')` and the group =
  * `getModel().currentGroup`. Phase 4 will retarget these singleton
  * pins to real pane ids; the leaf's *In(slice, model, groupName)
  * variants are already paneId-agnostic.

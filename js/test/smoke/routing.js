@@ -43,7 +43,7 @@ function bootAllComponents() {
     ['../../panel/navigator/history',       'history'],
   ];
   for (const [modPath, name] of toRegister) {
-    if (api.getInstanceSlice(name)) continue;
+    if (api.getComponent(name)) continue;   // spec registry — survives seed disposal
     api.registerComponent(require(modPath));
   }
 }
@@ -175,36 +175,31 @@ describe('[5] focus=paneId still answers `is the focused panel of type T?` corre
   layout.focus = origFocus;
 });
 
-// --- [6] Slice retrieval: paneId vs kind-name fallback ------------------
+// --- [6] Slice retrieval: strict ids + explicit kind-level reads ---------
 //
-// `getInstanceSlice(id)` accepts paneId first, kind-name second (legacy
-// path for callers like getInstanceSlice('detail') that pre-date Phase B1).
-// Verify the fallback doesn't lie: when both resolve, they MUST return
-// the same slice object.
+// Split-arc P2: `getInstanceSlice(id)` takes INSTANCE ids only — the
+// kind-name fallback is deleted. Kind-level intent is explicit:
+// `primarySliceOf(kind)` (the kind's canonical pane instance) and
+// `serviceSlice(kind)` (the kind-global service slot).
 
-describe('[6] getInstanceSlice — paneId path + Component-name fallback', () => {
+describe('[6] slice retrieval — strict ids, primarySliceOf, serviceSlice', () => {
   // Two structural shapes exist post-Phase-B1:
   //
   //  A) Symmetric: Component name === panel-type (groups, files, actions,
-  //     detail). state.js B1 mints `pane-<type>` keyed by paneId AND
-  //     registerComponent earlier minted a kind-keyed singleton. Both
-  //     paths resolve to the SAME slice object (the kind-keyed one is
-  //     disposed at line 160 then re-minted at the paneId; primaryByKind
-  //     shifts to follow).
+  //     detail). state.js B1 disposed the kind-keyed seed and minted
+  //     `pane-<type>` keyed by paneId; the kind primary follows. A
+  //     kind-name ID read therefore MISSES (strict), while
+  //     primarySliceOf(type) resolves the same object the paneId read
+  //     returns.
   //
   //  B) Docker-style: Component name ('docker') ≠ panel-type
-  //     ('containers'). Post-v0.6.4 Arc 2/3 there are now TWO distinct
-  //     slices:
-  //       - the per-pane NAV instance, minted at the paneId. state.js
-  //         resolves the owner via `components[componentForPanel(kind)]`
-  //         (the Arc 2 fallback for panelType-aliased panes), so the
-  //         mint is no longer skipped. Reachable via paneId AND via the
-  //         panel-type kind-name fallback — both return this same slice,
-  //         which self-identifies (`.paneId === paneId`).
-  //       - the CONTENT-OWNER singleton, keyed by the Component name
-  //         ('docker'), `.paneId == null` (Arc 3: one host-global
-  //         status/stats/events stream). Distinct object from the pane
-  //         slice; placed panes read shared content through it.
+  //     ('containers'). TWO distinct slices:
+  //       - the per-pane NAV instance, minted at the paneId,
+  //         self-identifying (`.paneId === paneId`); also the kind
+  //         primary for 'containers' → primarySliceOf resolves it.
+  //       - the CONTENT-OWNER service slot, keyed by the Component name
+  //         ('docker'), `.paneId == null`, undisposable (split-arc P0);
+  //         read via serviceSlice. Distinct object from the pane slice.
   //
   // Pin both shapes so a future refactor that flattens one onto the
   // other doesn't silently break docker-style reads or symmetric reads.
@@ -212,27 +207,31 @@ describe('[6] getInstanceSlice — paneId path + Component-name fallback', () =>
     const owner = route.componentForPanel(paneId);
     const symmetric = (owner === type);
     if (symmetric) {
-      it(`${type} (symmetric): paneId-keyed === kind-keyed slice ref`, () => {
+      it(`${type} (symmetric): kind-name id misses; primarySliceOf resolves the pane slice`, () => {
         const viaPaneId = api.getInstanceSlice(paneId);
-        const viaKind = api.getInstanceSlice(type);
         assert(viaPaneId !== undefined, 'paneId-keyed slice exists');
-        assert(viaKind !== undefined, 'kind-keyed fallback resolves');
-        assert(viaPaneId === viaKind, 'same object ref (fallback isn\'t a copy)');
+        assert(api.getInstanceSlice(type) === undefined,
+          'kind-name ID read misses (strict — fallback deleted)');
+        assert(api.primarySliceOf(type) === viaPaneId,
+          'primarySliceOf resolves the same object ref (not a copy)');
       });
     } else {
-      it(`${type} (docker-style, owner='${owner}'): per-pane nav + content-owner singleton`, () => {
+      it(`${type} (docker-style, owner='${owner}'): per-pane nav + content-owner service`, () => {
         const viaPaneId = api.getInstanceSlice(paneId);
-        const viaType = api.getInstanceSlice(type);
-        const viaCompName = api.getInstanceSlice(owner);
         assert(viaPaneId !== undefined, 'paneId-keyed nav instance exists (Arc 2 mint)');
         eq(viaPaneId.paneId, paneId, 'pane slice self-identifies');
-        assert(viaType === viaPaneId, 'panel-type kind-name fallback resolves to the pane slice');
-        assert(viaCompName !== undefined, `content-owner singleton ('${owner}') exists`);
-        assert(viaCompName !== viaPaneId, 'content owner is a DISTINCT slice from the pane nav');
+        assert(api.getInstanceSlice(type) === undefined,
+          'panel-type ID read misses (strict — fallback deleted)');
+        assert(api.primarySliceOf(type) === viaPaneId,
+          'primarySliceOf(panel-type) resolves the pane slice');
+        const ownerSlice = api.serviceSlice(owner);
+        assert(ownerSlice !== undefined, `content-owner service ('${owner}') exists`);
+        assert(route.isService(owner), 'owner is a service slot (undisposable, P0)');
+        assert(ownerSlice !== viaPaneId, 'content owner is a DISTINCT slice from the pane nav');
         // The owner gate (docker.js: `slice.paneId != null`) is loose —
         // the singleton stamps paneId: undefined. Assert the same nullish
         // contract, not a strict null.
-        assert(viaCompName.paneId == null, 'content owner is the unplaced singleton (paneId == null)');
+        assert(ownerSlice.paneId == null, 'content owner is the unplaced service (paneId == null)');
       });
     }
   }

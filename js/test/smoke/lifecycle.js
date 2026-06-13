@@ -28,7 +28,7 @@ const tabs = sm.tabs;
 
 // Helper: snapshot detail-slice state worth asserting on.
 function snapshotDetail() {
-  const d = api.getInstanceSlice('detail');
+  const d = api.primarySliceOf('detail');
   return {
     tab: d.tab,
     lines: displayedLines(d).join('\n'),
@@ -51,7 +51,7 @@ describe('[1] close active content tab → body shows sibling, NOT closed-tab st
     tabs.addContentTab('g1', 'doc-B', 'B.txt', ['I am B', 'B line 2']);
     // After both adds, active tab is doc-B (last-added wins).
     // Switch back to doc-A so the close target IS active.
-    const detail = api.getInstanceSlice('detail');
+    const detail = api.primarySliceOf('detail');
     const { activeContentTab } = tabs;
     // doc-A is at the earlier content index. Switch via direct slice
     // poke (production switches via tab_switch Msg — covered separately).
@@ -89,13 +89,13 @@ describe('[2] close only content tab → fallback to Info, no stale body', () =>
   it('opens a single tab → close it → tab=0 (Info), body is not the closed tab text', () => {
     sm.bootFresh();
     tabs.addContentTab('g1', 'only-doc', 'only.txt', ['ONLY-DOC-MARKER', 'line 2']);
-    eq(displayedLines(api.getInstanceSlice('detail')).join('\n'), 'ONLY-DOC-MARKER\nline 2', 'body loaded');
+    eq(displayedLines(api.primarySliceOf('detail')).join('\n'), 'ONLY-DOC-MARKER\nline 2', 'body loaded');
     // Before closing: verify addContentTab actually auto-jumped to the
     // new content tab. Without this check the post-close `tab === 0`
     // assertion is ambiguous — bootFresh seeds tab=0, so an addContentTab
     // auto-jump regression (tab stuck at 0 throughout) would mask the
     // close-handler fallback the test was meant to catch.
-    const beforeTab = api.getInstanceSlice('detail').tab;
+    const beforeTab = api.primarySliceOf('detail').tab;
     assert(beforeTab > 0, `addContentTab must auto-jump off Info (idx 0); got tab=${beforeTab}`);
 
     tabs.removeContentTab('g1', 'only-doc');
@@ -113,14 +113,14 @@ describe('[3] close drops tabState entry for the closed tab', () => {
     sm.bootFresh();
     tabs.addContentTab('g1', 'file:notes', 'notes.txt', ['n1', 'n2', 'n3']);
     // Prime tabState as if the user had scrolled + searched.
-    const slice = api.getInstanceSlice('detail');
+    const slice = api.primarySliceOf('detail');
     slice.tabState = {
       ...(slice.tabState || {}),
       'g1:content:file:notes': { scroll: 42, cursor: { line: 2, col: 0 } },
     };
 
     tabs.removeContentTab('g1', 'file:notes');
-    const after = api.getInstanceSlice('detail');
+    const after = api.primarySliceOf('detail');
     assert(!('g1:content:file:notes' in (after.tabState || {})),
       `tabState entry for closed tab MUST be dropped (had: ${JSON.stringify(Object.keys(after.tabState || {}))})`);
   });
@@ -135,12 +135,12 @@ describe('[4] close active tab with viewerOverride → override clears', () => {
     tabs.addContentTab('g1', 'doc2', 'doc2', ['a', 'b']);
     // Active is doc2 (last added). Arm an override on it.
     sm.route.setInstanceSlice('detail', {
-      ...api.getInstanceSlice('detail'),
+      ...api.primarySliceOf('detail'),
       viewerOverride: { lines: ['override line'] },
     });
     const activeKey = tabs.activeContentTab()[0];
     tabs.removeContentTab('g1', activeKey);
-    const after = api.getInstanceSlice('detail');
+    const after = api.primarySliceOf('detail');
     eq(after.viewerOverride, null, 'override cleared on active-tab close');
   });
 });
@@ -157,7 +157,7 @@ describe('[5] cross-group remove preserves current-group cursor + body', () => {
     });
     require('../../app/runtime').getModel().currentGroup = 'g1';
     tabs.addContentTab('g1', 'a', 'a.txt', ['g1-a-content']);
-    const detail = api.getInstanceSlice('detail');
+    const detail = api.primarySliceOf('detail');
     const before = { tab: detail.tab, lines: displayedLines(detail).slice(), scroll: detail.scroll };
     // Async loadDir for g2 resolves while user is parked in g1.
     tabs.addContentTab('g2', 'b', 'b.txt', ['g2-b-content']);

@@ -13,7 +13,7 @@
 
 const { describe, it, assert, eq, report } = require('./test-runner');
 const { getModel } = require('../app/runtime');
-const {getInstanceSlice, getFocus } = require('../panel/api');
+const {getInstanceSlice, primarySliceOf, getFocus } = require('../panel/api');
 
 const { initState, getSel, setSel, selectGroup } = require('../app/state');
 
@@ -207,12 +207,15 @@ describe('[4] detail content flows model → view — live', () => {
     // diff, help text). Poking slice.lines directly no longer reaches
     // the frame — render derives from active tab + buffers + override.
     capture(() => { handleKey('_', '_'); handleKey('_', '_'); });  // normal view
-    getInstanceSlice('detail').viewerOverride = { lines: ['ZZ-DETAIL-MARKER-ZZ'] };
-    getInstanceSlice('detail').scroll = 0;
+    // primarySliceOf: this boot minted the viewer per-pane (the
+    // kind-keyed seed is disposed), and the intent here is "the
+    // config's one viewer" — a kind-level read.
+    primarySliceOf('detail').viewerOverride = { lines: ['ZZ-DETAIL-MARKER-ZZ'] };
+    primarySliceOf('detail').scroll = 0;
     const frame = capture(() => render());
     assert(/ZZ-DETAIL-MARKER-ZZ/.test(frame), 'detail content (via the model) reached the rendered frame');
     // Cleanup so subsequent tests aren't sticky-overridden.
-    getInstanceSlice('detail').viewerOverride = null;
+    primarySliceOf('detail').viewerOverride = null;
   });
 });
 

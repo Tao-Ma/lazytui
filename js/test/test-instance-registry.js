@@ -421,4 +421,42 @@ describe('[primarySliceOf] explicit kind-level slice read', () => {
   });
 });
 
+// _primaryByKind split arc P2 — get/setInstanceSlice are STRICT
+// (instance ids only). The v0.6.3 Phase-B kind-name fallback is
+// deleted: a kind-name read/write resolves nothing instead of
+// silently collapsing onto the primary pane.
+describe('[strict resolution] kind-name ids no longer resolve', () => {
+  it('kind-name READ of a multi-instance kind returns undefined', () => {
+    resetRegistry();
+    route.setInstance('pane-a', 'sk', { v: 'a' });
+    route.setInstance('pane-b', 'sk', { v: 'b' });
+    assert(route.getInstanceSlice('sk') === undefined, 'no collapse onto the primary');
+    eq(route.getInstanceSlice('pane-a').v, 'a', 'paneId reads unaffected');
+  });
+
+  it('kind-name WRITE mutates neither pane', () => {
+    resetRegistry();
+    route.setInstance('pane-a', 'sk', { v: 'a' });
+    route.setInstance('pane-b', 'sk', { v: 'b' });
+    route.setInstanceSlice('sk', { v: 'clobber' });
+    eq(route.getInstanceSlice('pane-a').v, 'a', 'primary untouched');
+    eq(route.getInstanceSlice('pane-b').v, 'b', 'sibling untouched');
+  });
+
+  it('disposed singleton: id read misses while primarySliceOf resolves the promoted pane', () => {
+    resetRegistry();
+    route.setInstance('sk', 'sk', { v: 'seed' });        // register-time-style seed
+    route.setInstance('pane-a', 'sk', { v: 'pane' });
+    route.disposeInstance('sk');                         // initState-style swap
+    assert(route.getInstanceSlice('sk') === undefined, 'kind-name id read misses post-swap');
+    eq(route.primarySliceOf('sk').v, 'pane', 'explicit kind-level read resolves the pane');
+  });
+
+  it('service ids still read directly (they ARE instance ids)', () => {
+    resetRegistry();
+    route.setService('svc', { v: 1 });
+    eq(route.getInstanceSlice('svc').v, 1, 'id === Component name → direct hit');
+  });
+});
+
 report();

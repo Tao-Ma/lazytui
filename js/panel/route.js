@@ -102,10 +102,10 @@ function paneTypeOf(id) {
 // Canonical storage is `_instances[id] = { id, kind, slice }`.
 //
 // - `id` is the instance identity. v0.6.3 Phase B1: placed singleton
-//   panels mint with `id === paneId` (e.g. `pane-groups`); the
-//   register-time fallback (chrome Components like 'layout', and
-//   the docker `panelTypes` case where `components[p.type]` misses)
-//   uses `id === Component.name` (e.g. 'docker', 'layout').
+//   panels mint with `id === paneId` (e.g. `pane-groups`); service
+//   slots (chrome Components like 'layout', content owners like
+//   'docker') and the plain register-time seeds use
+//   `id === Component.name` (e.g. 'docker', 'layout').
 //
 // - `kind` is the value passed by the writer. registerComponent
 //   passes the Component name; the per-pane B1 mint in state.js
@@ -120,14 +120,18 @@ function paneTypeOf(id) {
 //   updated by the Component's `update`.
 //
 // `_primaryByKind[kind]` maps a kind to the id of its primary
-// instance — the lookup `resolveTarget` and other consumers use to
-// pick "the canonical instance of a kind." v0.6.3 post-arch-arc
-// T1.4 routed every remaining `getInstanceSlice('detail')` consumer
-// through `route.resolveTarget('viewer')`; the kind-name fallback
-// now serves only genuine singletons — chrome Components never placed
-// as a pane (e.g. 'layout', read via `_primaryByKind['layout']`), the
-// host-global 'docker' self-read, and the bootstrap auto-register
-// helpers in `app/state.js` / the test harness.
+// instance — "the canonical instance of a kind." Post split-arc its
+// consumers are all EXPLICIT: `getPrimaryByKind` (the dispatch
+// fallback for Component-name Msgs + key routing), `primarySliceOf`
+// (the sanctioned kind-level slice read, incl. `sliceForPane` arm 2),
+// and successor promotion on dispose. `setService` seeds it too so
+// service kinds resolve uniformly. get/setInstanceSlice take INSTANCE
+// ids only — the v0.6.3 Phase-B kind-name fallback (id misses →
+// resolve via primary) is DELETED: it silently collapsed
+// multi-instance kinds onto the primary pane, the root of every
+// multi-instance bug shipped in 2026-06. A miss whose id names a
+// known kind now records a `strict-miss` diagnostic (leader e) and
+// returns undefined / no-ops.
 //
 // Multi-paneId-of-same-kind coexistence is DONE, not pending: the
 // `state.js initState` mint loop creates one instance per PLACED
@@ -136,13 +140,8 @@ function paneTypeOf(id) {
 // same-kind panes get independent slices. Proven by
 // `test-instance-registry` (Phase-1 key WRITE → focused pane;
 // Phase-5 nav READS per-pane; multi-viewer two detail instances
-// scroll independently). The fallback below is therefore a
-// singleton/boot convenience, NOT a multi-instance collapse path:
-// a kind-name read of a kind that has >1 live instance resolves to
-// the primary AND records a `pane-collapse` diagnostic (visible in the
-// leader-e window), since that read silently drops the other panes —
-// which is why every multi-instance consumer threads a paneId (or
-// routes through resolveTarget).
+// scroll independently). Service slots (chrome 'layout', docker's
+// content owner) sit outside that loop entirely — see §Service slots.
 
 const _instances = Object.create(null);
 const _primaryByKind = Object.create(null);
@@ -235,44 +234,34 @@ function _layoutSvcSlice() {
   return inst ? inst.slice : null;
 }
 
-// Kinds we've already flagged as ambiguous, so the collapse warning
-// fires at most once per kind (a per-frame read would otherwise flood
-// the diagnostics buffer). disposeInstance clears the entry so a
-// reconfigure re-arms the check.
-const _warnedAmbiguous = new Set();
+// Ids already flagged on a strict miss, so the diagnostic fires at
+// most once per id (these reads can sit on per-frame paths).
+const _warnedStrict = new Set();
 
-// Count live instances of `kind`, short-circuiting at 2 (we only care
-// whether the kind-name read is ambiguous, not the exact count).
-function _instancesOfKind(kind) {
-  let n = 0;
-  for (const k in _instances) if (_instances[k].kind === kind && ++n > 1) break;
-  return n;
+// Split-arc P2 tripwire: a get/setInstanceSlice miss whose id names a
+// KNOWN KIND is almost always a forgotten paneId — the bug class the
+// deleted kind-name fallback used to absorb silently (every shipped
+// multi-instance bug of 2026-06 was this collapse). Surface it once in
+// the diagnostics window (leader e). A miss on an unknown id is a
+// normal pre-init read and stays quiet.
+function _strictMiss(fn, id) {
+  if (_primaryByKind[id] === undefined || _warnedStrict.has(id)) return;
+  _warnedStrict.add(id);
+  try {
+    require('../dispatch/diag-log').warn('strict-miss',
+      `${fn}('${id}') is a kind name, not an instance id — thread a paneId, or declare kind-level intent via primarySliceOf/serviceSlice.`);
+  } catch (_) { /* diag-log unavailable (early boot / test) */ }
 }
 
 function getInstanceSlice(id) {
   const inst = _instances[id];
   if (inst) return inst.slice;
-  // v0.6.3 Phase B — backward-compat fallback: when id misses,
-  // treat it as a kind name and resolve via _primaryByKind. Pre-B
-  // singleton convention used id === kind, so this fallback was
-  // unreachable; post-B (slices keyed by paneId), legacy callers
-  // like `getInstanceSlice('detail')` still resolve via primary
-  // until they're migrated to thread paneId explicitly.
-  const primaryId = _primaryByKind[id];
-  if (primaryId && _instances[primaryId]) {
-    // The fallback is a singleton/boot convenience. If the kind has >1
-    // live instance, a kind-name read SILENTLY collapses them onto the
-    // primary pane — almost always a missing-paneId bug. Surface it in
-    // the diagnostics window (leader e) instead of failing quietly.
-    if (!_warnedAmbiguous.has(id) && _instancesOfKind(id) > 1) {
-      _warnedAmbiguous.add(id);
-      try {
-        require('../dispatch/diag-log').warn('pane-collapse',
-          `getInstanceSlice('${id}') resolved to the primary pane, but multiple '${id}' instances exist — this read collapses them. Thread a paneId (or route through resolveTarget) to address a specific pane.`);
-      } catch (_) { /* diag-log unavailable (early boot / test) */ }
-    }
-    return _instances[primaryId].slice;
-  }
+  // Strict store read — NO kind-name fallback (split-arc P2; the
+  // v0.6.3 Phase-B compat fallback resolved missed ids via
+  // _primaryByKind, silently collapsing multi-instance kinds onto the
+  // primary pane). Kind-level reads are explicit now: primarySliceOf /
+  // serviceSlice.
+  _strictMiss('getInstanceSlice', id);
   return undefined;
 }
 
@@ -302,15 +291,11 @@ function sliceForPane(id, kind) {
 }
 
 function setInstanceSlice(id, slice) {
-  let inst = _instances[id];
-  if (!inst) {
-    // v0.6.3 Phase B — kind-name → primary-by-kind fallback so legacy
-    // callers writing via `setInstanceSlice('detail', ...)` resolve
-    // to the paneId-keyed instance post-B.
-    const primaryId = _primaryByKind[id];
-    inst = primaryId ? _instances[primaryId] : null;
-    if (!inst) return;
-  }
+  const inst = _instances[id];
+  // Strict, mirroring getInstanceSlice: a missed write is a no-op (the
+  // pinned contract), with the kind-name tripwire — a silent write to
+  // "whichever pane is primary" was the worst flavor of the collapse.
+  if (!inst) { _strictMiss('setInstanceSlice', id); return; }
   inst.slice = slice;
 }
 
@@ -326,9 +311,6 @@ function disposeInstance(id) {
     return;
   }
   delete _instances[id];
-  // Re-arm the ambiguity warning for this kind — a reconfigure that
-  // disposes then re-mints should warn again if it's still ambiguous.
-  _warnedAmbiguous.delete(inst.kind);
   // If this was the primary for its kind, demote and pick a successor
   // (insertion order). Singleton kinds never trip this.
   if (_primaryByKind[inst.kind] === id) {
@@ -405,7 +387,7 @@ function _resetRegistryForTest() {
   for (const k in _instances) delete _instances[k];
   for (const k in _primaryByKind) delete _primaryByKind[k];
   for (const k in _serviceByKind) delete _serviceByKind[k];
-  _warnedAmbiguous.clear();
+  _warnedStrict.clear();
 }
 
 /** Focus read — the layout instance's slice owns `focus`. Pre-init

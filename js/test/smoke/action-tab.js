@@ -52,7 +52,7 @@ function streamStart(tabKey, groupName, header) {
     currentGroup: m.currentGroup,
   };
   if (groupName === m.currentGroup) {
-    const slice = api.getInstanceSlice(VIEWER);
+    const slice = api.primarySliceOf(VIEWER);
     const info = pt.flatTabInfo(slice, m, groupName);
     out.actionTabIdx = info.actionTabs.findIndex(([k]) => k === tabKey);
   }
@@ -61,7 +61,7 @@ function streamStart(tabKey, groupName, header) {
 
 function viewerAppend(tabKey, groupName, line) {
   const m = getModel();
-  const slice = api.getInstanceSlice(VIEWER);
+  const slice = api.primarySliceOf(VIEWER);
   const active = pt.activeActionTabIn(slice, m, groupName);
   return api.dispatchMsg(api.wrap(VIEWER, {
     type: 'viewer_append',
@@ -75,7 +75,7 @@ function viewerAppend(tabKey, groupName, line) {
 
 function tabSwitch(idx) {
   const m = getModel();
-  const slice = api.getInstanceSlice(VIEWER);
+  const slice = api.primarySliceOf(VIEWER);
   return api.dispatchMsg(api.wrap(VIEWER, {
     type: 'tab_switch',
     idx,
@@ -109,7 +109,7 @@ describe('[1] stream_start auto-jumps + header paints in the action tab', () => 
   it('after stream_start, the action tab is active and header is in lines', () => {
     setupActionTab();
     streamStart('make-check', 'g1', '$ make check');
-    const slice = api.getInstanceSlice(VIEWER);
+    const slice = api.primarySliceOf(VIEWER);
     // Info=0, Transcript=1, make-check=2 (first action tab).
     eq(slice.tab, 2, 'auto-jumped to make-check (idx 2)');
     assert(displayedLines(slice).length === 1 && displayedLines(slice)[0].includes('make check'),
@@ -128,7 +128,7 @@ describe('[2] live appends grow displayedLines(slice) while on the action tab', 
     streamStart('make-check', 'g1', '$ make check');
     viewerAppend('make-check', 'g1', 'live-A');
     viewerAppend('make-check', 'g1', 'live-B');
-    const s = api.getInstanceSlice(VIEWER);
+    const s = api.primarySliceOf(VIEWER);
     eq(displayedLines(s).length, 3, '1 header + 2 appends');
     eq(displayedLines(s)[2], 'live-B', 'tail mirrors latest append');
     eq(s.actionTabBuffers.g1['make-check'].lines.length, 3, 'buffer in sync');
@@ -148,11 +148,11 @@ describe('[3] background appends survive switch-away; switch-back restores live 
     viewerAppend('make-check', 'g1', 'pre-1');
     viewerAppend('make-check', 'g1', 'pre-2');
     // Force a small viewport so bottom-pin is meaningful.
-    api.getInstanceSlice(VIEWER).innerH = 3;
+    api.primarySliceOf(VIEWER).innerH = 3;
 
     // Switch to Info (idx 0).
     tabSwitch(0);
-    const onInfo = api.getInstanceSlice(VIEWER);
+    const onInfo = api.primarySliceOf(VIEWER);
     eq(onInfo.tab, 0, 'parked on Info');
 
     // Background appends — the producer is still alive.
@@ -160,7 +160,7 @@ describe('[3] background appends survive switch-away; switch-back restores live 
     viewerAppend('make-check', 'g1', 'bg-2');
     viewerAppend('make-check', 'g1', 'bg-3');
 
-    const offTab = api.getInstanceSlice(VIEWER);
+    const offTab = api.primarySliceOf(VIEWER);
     eq(offTab.actionTabBuffers.g1['make-check'].lines.length, 6,
       'buffer grew to 6 while user was off-tab (1 header + 2 pre + 3 bg)');
     assert(!offTab.lines.includes('bg-3'),
@@ -168,7 +168,7 @@ describe('[3] background appends survive switch-away; switch-back restores live 
 
     // Switch back to make-check.
     tabSwitch(2);
-    const back = api.getInstanceSlice(VIEWER);
+    const back = api.primarySliceOf(VIEWER);
     eq(back.tab, 2, 'returned to make-check');
     eq(displayedLines(back).length, 6, 'all six lines restored from buffer');
     eq(displayedLines(back)[5], 'bg-3', 'latest background line is at the tail');
@@ -191,7 +191,7 @@ describe('[4] live render after switch-back paints the restored buffer', () => {
   it('post-switch-back frame contains a background-append marker', () => {
     setupActionTab();
     streamStart('make-check', 'g1', '$ make check');
-    api.getInstanceSlice(VIEWER).innerH = 5;
+    api.primarySliceOf(VIEWER).innerH = 5;
     tabSwitch(0);    // away
     viewerAppend('make-check', 'g1', 'BG-MARKER-LINE-XYZ');
     tabSwitch(2);    // back
@@ -221,9 +221,9 @@ describe('[5] tab_switch preserves the actionTabBuffers entry', () => {
     setupActionTab();
     streamStart('make-check', 'g1', '$ make check');
     viewerAppend('make-check', 'g1', 'pre');
-    const bufBefore = api.getInstanceSlice(VIEWER).actionTabBuffers.g1['make-check'].lines.slice();
+    const bufBefore = api.primarySliceOf(VIEWER).actionTabBuffers.g1['make-check'].lines.slice();
     tabSwitch(0);
-    const bufAfter = api.getInstanceSlice(VIEWER).actionTabBuffers.g1['make-check'].lines;
+    const bufAfter = api.primarySliceOf(VIEWER).actionTabBuffers.g1['make-check'].lines;
     eq(bufAfter.length, bufBefore.length, 'buffer preserved across tab_switch');
     eq(bufAfter[bufAfter.length - 1], bufBefore[bufBefore.length - 1], 'tail unchanged');
   });

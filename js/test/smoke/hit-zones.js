@@ -94,7 +94,7 @@ describe('[1] paint-vs-hittest: closeX in tabBounds aligns with on-screen [x]', 
     const { raw } = sm.capture(() => sm.render());
     const grid = decodeFrame(raw);
     const layout = api.getInstanceSlice('layout');
-    const detail = api.getInstanceSlice('detail');
+    const detail = api.primarySliceOf('detail');
     const b = layout.paneBounds && (layout.paneBounds['pane-detail'] || layout.paneBounds.detail);
     assert(b, `paneBounds for detail present (saw keys: ${Object.keys(layout.paneBounds || {}).join(',')})`);
     const bounds = (detail.tabBounds || []).filter(t => t.closeKey != null);
@@ -125,7 +125,7 @@ describe('[2] click inside the [x] hit-rect closes the tab', () => {
     setupTwoContentTabs();
     sm.capture(() => sm.render());   // populate tabBounds + paneBounds
     const layout = api.getInstanceSlice('layout');
-    const detail = api.getInstanceSlice('detail');
+    const detail = api.primarySliceOf('detail');
     const b = layout.paneBounds['pane-detail'] || layout.paneBounds.detail;
     const closeTab = (detail.tabBounds || []).find(t => t.closeKey != null);
     assert(closeTab, 'a closeable tab exists');
@@ -134,7 +134,7 @@ describe('[2] click inside the [x] hit-rect closes the tab', () => {
     const [sx, sy] = sgr0(b.x + closeTab.closeX + Math.floor(closeTab.closeW / 2), b.y);
     sm.capture(() => sm.handleMouse('press', sx, sy));
 
-    const after = api.getInstanceSlice('detail');
+    const after = api.primarySliceOf('detail');
     const stillThere = (after.contentTabs && after.contentTabs.g1 && after.contentTabs.g1[closeTab.closeKey]);
     assert(!stillThere,
       `tab '${closeTab.closeKey}' MUST be closed; remaining keys: ${JSON.stringify(Object.keys((after.contentTabs && after.contentTabs.g1) || {}))}`);
@@ -151,7 +151,7 @@ describe('[3] click one column LEFT of closeX → switches, does not close', () 
     setupTwoContentTabs();
     sm.capture(() => sm.render());
     const layout = api.getInstanceSlice('layout');
-    const detail = api.getInstanceSlice('detail');
+    const detail = api.primarySliceOf('detail');
     const b = layout.paneBounds['pane-detail'] || layout.paneBounds.detail;
     // Pick a tab that is NOT currently active so a tab-switch click
     // actually changes activeTab — easier signal than "no change".
@@ -163,7 +163,7 @@ describe('[3] click one column LEFT of closeX → switches, does not close', () 
     const [sx, sy] = sgr0(b.x + closeTab.closeX - 1, b.y);
     sm.capture(() => sm.handleMouse('press', sx, sy));
 
-    const after = api.getInstanceSlice('detail');
+    const after = api.primarySliceOf('detail');
     const stillThere = after.contentTabs && after.contentTabs.g1 && after.contentTabs.g1[closeTab.closeKey];
     assert(stillThere,
       `tab '${closeTab.closeKey}' MUST survive a click one column left of [x] — that's a switch zone, not a close zone`);
@@ -186,7 +186,7 @@ describe('[4] click ONE column RIGHT of closeX+closeW → does not close', () =>
     setupTwoContentTabs();
     sm.capture(() => sm.render());
     const layout = api.getInstanceSlice('layout');
-    const detail = api.getInstanceSlice('detail');
+    const detail = api.primarySliceOf('detail');
     const b = layout.paneBounds['pane-detail'] || layout.paneBounds.detail;
     const closeTab = (detail.tabBounds || []).find(t => t.closeKey != null);
     assert(closeTab, 'a closeable tab exists');
@@ -194,7 +194,7 @@ describe('[4] click ONE column RIGHT of closeX+closeW → does not close', () =>
     const [sx, sy] = sgr0(b.x + closeTab.closeX + closeTab.closeW, b.y);
     sm.capture(() => sm.handleMouse('press', sx, sy));
 
-    const after = api.getInstanceSlice('detail');
+    const after = api.primarySliceOf('detail');
     const stillThere = after.contentTabs && after.contentTabs.g1 && after.contentTabs.g1[closeTab.closeKey];
     assert(stillThere,
       `tab '${closeTab.closeKey}' MUST survive a click one column right of [x]+closeW`);
