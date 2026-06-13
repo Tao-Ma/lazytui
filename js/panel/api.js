@@ -445,8 +445,13 @@ function _dispatchMsgInner(msg) {
     // back through this gate to permute detail's contentTabs. It's a
     // free-config-shape change (visible tab order), just within a panel
     // rather than across panels — same justification as pool_hide/show.
-    const isTabReorder = msg && msg.kind === 'detail'
-      && msg.msg && msg.msg.type === 'viewer_reorder_content_tab';
+    // isViewerKind, not a 'detail' literal: the kind here is a
+    // resolveTarget result, which is a mounted instance id
+    // ('pane-detail') post split-arc P2.1 — the literal matched only
+    // the legacy tier-3 tab-id form and silently dropped the reorder.
+    const isTabReorder = msg && msg.msg
+      && msg.msg.type === 'viewer_reorder_content_tab'
+      && typeof msg.kind === 'string' && route.isViewerKind(msg.kind);
     if (!isLayoutWrap && !isTabReorder) return;
   }
   // Wrapped-Msg path. Routes to exactly one Component instance (the

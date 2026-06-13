@@ -81,7 +81,15 @@ function activeActionTab() {
   return pt.activeActionTabIn(_detailSlice(), getModel(), getModel().currentGroup);
 }
 
-function activeTerminalId(paneId = 'detail') {
+function activeTerminalId(paneId) {
+  // No-arg callers mean "the viewer" — resolve like _detailSlice does.
+  // The old `paneId = 'detail'` default was a kind name that only the
+  // (deleted) getInstanceSlice fallback bridged to the minted pane
+  // instance; post split-arc P2 it strictly missed, returning the empty
+  // stub and breaking terminal activation/input/paint on real boots.
+  if (paneId == null) {
+    return pt.activeTerminalIdIn(_detailSlice(), getModel(), getModel().currentGroup);
+  }
   const slice = require('../api').getInstanceSlice(paneId)
               || { contentTabs: {}, ephemeralTerminals: {}, tab: 0 };
   return pt.activeTerminalIdIn(slice, getModel(), getModel().currentGroup);
@@ -91,7 +99,9 @@ function activeTerminalConfig() {
   return pt.activeTerminalConfigIn(_detailSlice(), getModel(), getModel().currentGroup);
 }
 
-function findEphemeralByid(id, paneId = 'detail') {
+function findEphemeralByid(id, paneId) {
+  // Same default rule as activeTerminalId — no-arg means "the viewer".
+  if (paneId == null) return pt.findEphemeralByIdIn(_detailSlice(), id);
   const slice = require('../api').getInstanceSlice(paneId)
               || { ephemeralTerminals: {} };
   return pt.findEphemeralByIdIn(slice, id);
@@ -191,9 +201,9 @@ function removeContentTab(groupName, key) {
  *  Returns true if a cleanup happened (caller can scheduleRender).
  *
  *  v0.6.1 Phase 4 — `paneId` threads the owning instance so multi-
- *  detail (future) routes the remove Msg to the right slice. For
- *  Phase 4 singleton defaults to 'detail'. */
-function handleSessionCleanExit(id, paneId = 'detail') {
+ *  detail routes the remove Msg to the right slice; no-arg resolves
+ *  the viewer (the sole production caller threads an explicit id). */
+function handleSessionCleanExit(id, paneId) {
   const found = findEphemeralByid(id, paneId);
   if (!found) return false;
   removeEphemeralTab(found.group, found.key);

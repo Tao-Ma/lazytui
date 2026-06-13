@@ -422,4 +422,29 @@ describe('[R5] tab removal drops the matching tabState entry', () => {
   });
 });
 
+// ---- split-arc P2.2 regression: no-arg terminal helpers must resolve the
+// mounted viewer. activeTerminalId/findEphemeralByid used to default
+// `paneId = 'detail'` — a kind name only the deleted getInstanceSlice
+// fallback bridged to the minted pane instance. On real boots (seed
+// disposed, 'pane-detail' minted) the strict miss returned the empty
+// stub: terminal activation, terminal-mode input, and the PTY overlay
+// paint all read null while the isTerminalTab gate (resolveTarget-based)
+// said true.
+describe('[P2.2] no-arg activeTerminalId resolves the mounted viewer pane', () => {
+  it('post-mint shape: seed disposed, pane-detail minted → terminal still found', () => {
+    const route = require('../panel/route');
+    freshGroup({ terminals: { sh: { cmd: 'bash', label: 'sh' } } });
+    const seed = route.getInstance('detail').slice;
+    route.disposeInstance('detail');
+    route.setInstance('pane-detail', 'detail', { ...seed, tab: 2 });  // 0=Info 1=Transcript 2=term sh
+    try {
+      eq(tabs.activeTerminalId(), 'g1_sh',
+         'no-arg default resolves via resolveTarget (pre-fix: strict miss → null)');
+    } finally {
+      route.disposeInstance('pane-detail');
+      route.setInstance('detail', 'detail', seed);
+    }
+  });
+});
+
 report();

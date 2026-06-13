@@ -54,6 +54,41 @@ describe('[gate off] dispatch flows normally when free-config mode is off', () =
   });
 });
 
+describe('[gate exception] tab reorder passes for a MOUNTED viewer paneId', () => {
+  // Split-arc P2.2 regression pin: the exception used to match
+  // `msg.kind === 'detail'` literally, but the free-config tab-drag
+  // emits the resolveTarget result — a mounted instance id
+  // ('pane-detail') post-P2.1 — so live tab reorder was silently
+  // dropped by the gate. The exception now matches isViewerKind.
+  it('wrap(<viewer paneId>, viewer_reorder_content_tab) reaches the instance under the gate', () => {
+    const route = require('../panel/route');
+    const viewer = require('../panel/viewer/viewer');
+    getModel().config = { groups: { g1: { actions: {}, terminals: {} } } };
+    getModel().currentGroup = 'g1';
+    // Real-boot shape: a per-pane viewer instance — the tab-drag Cmd
+    // targets the resolveTarget result, which is a paneId, not the
+    // 'detail' kind-keyed seed.
+    route.setInstance('pane-frz-v', 'detail', {
+      ...viewer._init('pane-frz-v'),
+      contentTabs: { g1: {
+        'file:a': { label: 'a', lines: [] },
+        'file:b': { label: 'b', lines: [] },
+      } },
+    });
+    setFreeConfig(true);
+    api.dispatchMsg(api.wrap('pane-frz-v', {
+      type: 'viewer_reorder_content_tab',
+      groupName: 'g1', fromIdx: 0, toIdx: 1,
+      currentGroup: 'g1', groupExists: true, yamlTerminals: {}, actionCount: 0,
+    }));
+    eq(Object.keys(route.getInstanceSlice('pane-frz-v').contentTabs.g1).join(','),
+       'file:b,file:a',
+       'reorder applied through the gate (pre-fix the paneId form was dropped)');
+    setFreeConfig(false);
+    route.disposeInstance('pane-frz-v');
+  });
+});
+
 describe('[gate on] dispatchMsg drops non-layout traffic while free-config is active', () => {
   it('wrapped Msg to a non-layout component is dropped', () => {
     setFreeConfig(true);

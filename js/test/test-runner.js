@@ -260,9 +260,12 @@ try {
   // layout MUST register first — chrome owner + focus reader's primary
   // instance. Production (tui.js) already orders this way; tests need
   // the same.
-  if (!api.getInstanceSlice('layout')) api.registerComponent(require('../panel/layout'));
-  if (!api.getInstanceSlice('detail')) api.registerComponent(require('../panel/viewer/viewer'));
-  if (!api.getInstanceSlice('groups')) api.registerComponent(require('../panel/navigator/groups'));
+  // getComponent (spec registry), not a slice read: post split-arc P2
+  // an instance probe strictly misses once initState swapped the seed
+  // for per-pane mints, and would re-register the Component mid-suite.
+  if (!api.getComponent('layout')) api.registerComponent(require('../panel/layout'));
+  if (!api.getComponent('detail')) api.registerComponent(require('../panel/viewer/viewer'));
+  if (!api.getComponent('groups')) api.registerComponent(require('../panel/navigator/groups'));
 } catch (_) { /* tests that don't need Components still load */ }
 
 module.exports = { describe, section, it, assert, eq, report, _state,

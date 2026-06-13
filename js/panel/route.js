@@ -189,7 +189,9 @@ function getInstance(id) { return _instances[id]; }
 // primary at a nav-only pane, and silently killed all fetching (the
 // update() owner-gate no-ops content Msgs on placed panes). The service
 // slot makes that clobber impossible by construction: `disposeInstance`
-// and `setInstance` both refuse service ids.
+// and `setInstance` both refuse service ids. (`setInstanceSlice` does
+// NOT refuse — it's the dispatch write-back path; "undisposable" guards
+// the slot's existence and identity, not every slice write.)
 
 const _serviceByKind = Object.create(null);
 
@@ -208,7 +210,10 @@ function setService(kind, slice) {
   // Services seed the kind primary too — `dispatchKeyToFocused` and
   // wrapped Component-name dispatch resolve via getPrimaryByKind, and
   // a panes-only _primaryByKind would regress key routing for
-  // kind-keyed setups. Load-bearing; don't "clean up".
+  // kind-keyed setups. Load-bearing; don't "clean up". First-writer-
+  // wins (set-once like setInstance): a pane instance registered
+  // BEFORE the service keeps the primary — production order
+  // (registerComponent before initState) makes the service first.
   if (!_primaryByKind[kind]) _primaryByKind[kind] = kind;
 }
 
@@ -235,7 +240,9 @@ function _layoutSvcSlice() {
 }
 
 // Ids already flagged on a strict miss, so the diagnostic fires at
-// most once per id (these reads can sit on per-frame paths).
+// most once per id (these reads can sit on per-frame paths). Process-
+// lifetime dedup, deliberately — the retired pane-collapse warning
+// re-armed per dispose/reconfigure; a tripwire doesn't need to.
 const _warnedStrict = new Set();
 
 // Split-arc P2 tripwire: a get/setInstanceSlice miss whose id names a
@@ -459,9 +466,14 @@ function resolveTarget(intent, ctx) {
   const focused = ctx.focusedTabId != null ? ctx.focusedTabId : getFocus();
   if (focused && isViewerKind(focused)) return focused;
 
-  // (2) sticky lastViewerTab
+  // (2) sticky lastViewerTab — only when it still RESOLVES. The sticky
+  //     pointer survives the instance it names (reconfigure disposes,
+  //     harness seed swaps); post-split reads are strict, so a stale id
+  //     must fall through to the arrange walk / instance scan instead
+  //     of strict-missing at the consumer.
   const layout = _layoutSvcSlice();
-  if (layout && layout.lastViewerTab && isViewerKind(layout.lastViewerTab)) {
+  if (layout && layout.lastViewerTab && _instances[layout.lastViewerTab]
+      && isViewerKind(layout.lastViewerTab)) {
     return layout.lastViewerTab;
   }
 

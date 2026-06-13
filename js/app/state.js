@@ -191,8 +191,10 @@ function initState() {
       const comp = components[route.componentForPanel(kind)];
       if (!comp) continue;
       // Dispose the kind-keyed singleton slice (minted at
-      // registerComponent), then mint fresh keyed by paneId.
-      if (route.hasInstance(kind) && kind !== paneId) {
+      // registerComponent), then mint fresh keyed by paneId. Service
+      // slots are skipped, not refused — dispose would no-op anyway,
+      // but a same-named service panelType would error-spam every boot.
+      if (route.hasInstance(kind) && kind !== paneId && !route.isService(kind)) {
         route.disposeInstance(kind);
       }
       if (!route.hasInstance(paneId)) {
