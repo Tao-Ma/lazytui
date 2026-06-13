@@ -457,6 +457,37 @@ describe('[strict resolution] kind-name ids no longer resolve', () => {
     route.setService('svc', { v: 1 });
     eq(route.getInstanceSlice('svc').v, 1, 'id === Component name → direct hit');
   });
+
+  it('resolveTarget arrange-walk returns a MOUNTED instance id, not the tab/pool id', () => {
+    // Regression — split-arc P2 follow-up. Tier 3 (arrange walk) used to
+    // return the viewer TAB id ('detail'); for singleton placements the
+    // instance is minted under the hosting pane's paneId ('pane-detail')
+    // and only the deleted kind-name fallback bridged the gap. Every
+    // production `getInstanceSlice(resolveTarget('viewer'))` read
+    // (footer/select/copy) returned undefined with the viewer unfocused.
+    resetRegistry();
+    api.registerComponent({
+      name: 'layout',
+      init: () => ({ focus: null, lastViewerTab: null, arrange: null }),
+      update: (m, s) => s,
+    });
+    api.registerComponent({
+      name: 'detail',
+      panelTypes: { detail: { render: () => [] } },
+      init: () => ({}),
+      update: (m, s) => s,
+    });
+    // initState-style swap: seed disposed, instance minted per-pane.
+    route.disposeInstance('detail');
+    route.setInstance('pane-detail', 'detail', { v: 'mounted' });
+    // Viewer unfocused + no sticky lastViewerTab → tier 3 fires.
+    route.setInstanceSlice('layout', {
+      focus: 'pane-groups', lastViewerTab: null,
+      arrange: { columns: [{ panels: [{ id: 'detail', paneId: 'pane-detail', type: 'detail' }] }] },
+    });
+    eq(route.resolveTarget('viewer'), 'pane-detail', 'mounted instance id, not the tab id');
+    eq(route.getInstanceSlice(route.resolveTarget('viewer')).v, 'mounted', 'strict read resolves');
+  });
 });
 
 report();

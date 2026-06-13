@@ -440,6 +440,19 @@ function isViewerKind(id) {
   return instanceKind(id) === VIEWER_KIND;
 }
 
+/** Map an arrange-walk hit (tab/pool id) to the MOUNTED instance id.
+ *  Tab ids are pool ids ('detail'); initState mints instances keyed by
+ *  the hosting pane's paneId ('pane-detail'). Pre-split, the
+ *  getInstanceSlice kind-name fallback bridged that gap for singleton
+ *  placements; post-P2 reads are strict, so resolveTarget must hand
+ *  back an id that resolves. Prefers the tab id itself (per-tab
+ *  instances + pre-init seeds), then the hosting pane's instance. */
+function _mountedViewerId(tabId, pane) {
+  if (_instances[tabId]) return tabId;
+  if (pane && pane.paneId && _instances[pane.paneId]) return pane.paneId;
+  return tabId;
+}
+
 function resolveTarget(intent, ctx) {
   ctx = ctx || {};
   // (1) focused viewer-kind
@@ -453,11 +466,11 @@ function resolveTarget(intent, ctx) {
   }
 
   // (3) first viewer-kind in last-column arrange order. Walk each
-  //     pane's tabs and return the first viewer-kind tab id; this is
-  //     the actually-mounted slice identity (instance keyed by id),
-  //     not the kind literal. For singleton placements the answer
-  //     happens to equal VIEWER_KIND, but multi-instance panes mint
-  //     distinct ids and the literal would be wrong.
+  //     pane's tabs for a viewer-kind hit, then map it to the MOUNTED
+  //     instance id via _mountedViewerId — tab/pool ids ('detail') and
+  //     minted instance ids ('pane-detail') differ for singleton
+  //     placements, and post-split reads are strict (no kind-name
+  //     bridge), so the returned id must actually resolve.
   if (layout && layout.arrange && Array.isArray(layout.arrange.columns)) {
     const mpool = require('../leaves/pool');
     for (const p of mpool.lastColumnPanels(layout.arrange)) {
@@ -465,10 +478,10 @@ function resolveTarget(intent, ctx) {
       const tabs = Array.isArray(p.tabs) ? p.tabs : null;
       if (tabs) {
         for (const t of tabs) {
-          if (t && isViewerKind(t.id)) return t.id;
+          if (t && isViewerKind(t.id)) return _mountedViewerId(t.id, p);
         }
       } else if (isViewerKind(p.id)) {
-        return p.id;
+        return _mountedViewerId(p.id, p);
       }
     }
   }
