@@ -257,8 +257,9 @@ Two options; pick one in the Decisions section:
   calls pure `calcLayout` / `buildTabStrip` on demand. No cache, no write, render
   pure. Simplest; costs a layout recompute per mouse event (bench-confirmed cheap).
 
-- **Files.** `js/render/paint.js` (delete writes), `js/render/geometry.js` /
-  `leaves/geometry.js` (selector or accessor), `js/dispatch/input.js` +
+- **Files.** `js/render/paint.js` (delete writes), `js/leaves/geometry.js`
+  (selector or accessor; the old `render/geometry.js` facade was deleted by
+  the wm-geometry refactor), `js/dispatch/input.js` +
   `js/panel/viewer/*` (hit-test read sites), `js/panel/layout.js:185` (drop the
   field if fully derived).
 - **Tests.** `test-mouse-wheel`, `test-viewer-pane-bounds`, tab-strip hit-test

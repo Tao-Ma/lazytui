@@ -272,10 +272,13 @@ still permits:
   effect at mount (`app/state.js#_wireSubscriptions`, the per-pane mint
   loop). This is the TEA `subscriptions` seam — render stays pure, the
   runtime owns the effect. (Stats was the lone lazy-subscriber via the old
-  `_ensureSub`; that blessed exception is retired.) **Lazy initial-state
-  fixup** (config-status panel) still happens on first render and is
-  idempotent on subsequent calls — the last lazy-render holdout; pure-render
-  would prefer an init hook, today it's an accepted middle ground.
+  `_ensureSub`; that blessed exception is retired.) **Initial-state fixup**
+  (config-status panel) is an init-time first-touch read, not a render-side
+  effect: `config-status.init(paneId)` reads `getModel()` (files/projectDir)
+  and `getInstanceSlice('layout')` (arrange → this pane's branch) to seed its
+  slice; `render()` itself is pure. It is the last cross-slice init read —
+  every other Component's init is self-contained — and an accepted middle
+  ground (a dedicated init-injection hook would retire it).
 
 **Why the rule matters:**
 
@@ -292,9 +295,10 @@ still permits:
 
 **Rule for new panel renders:** read the slice, return a string. Need a
 hub subscription? Declare it via the `subscriptions(paneDef)` hook — the
-framework wires it at mount (see `stats.js`). For any other unavoidable
-first-render side effect, make it idempotent and comment the lazy-init
-pattern (see config-status's initial-state fixup, the remaining example).
+framework wires it at mount (see `stats.js`). Need root/cross-slice facts to
+seed the initial slice? Read them once in `init()` at the first-touch
+boundary and comment it (see config-status's init-time initial-state fixup,
+the remaining example); keep `render()` pure of such reads.
 
 ## 12. TEA shape and the Component discipline
 
