@@ -346,14 +346,30 @@ no-op); a topic change re-subscribes (the case YAGNI deferred — now covered).
 
 ---
 
-## Phase F — Cosmetic (fold into whichever phase touches the file)
+## Phase F — Cosmetic — ✅ SHIPPED 2026-06-14
 
-- **`redraw()` is mis-homed** (`paint.js:768`). `render()` is pure; `redraw()` is
-  a dispatch-then-paint helper (`showSelectedInfo()` then `render()`). Move it to
-  the dispatch layer or `tui.js` (already imports it). Render module stops
-  containing a dispatch orchestration.
-- **Stale comment** `register.js:62` — claims `state.js sets m.register = init()`;
-  it's been a `set_register` Msg since D3. One-line fix.
+- ✅ **`redraw()` re-homed** `render/paint.js` → `dispatch/dispatch.js`.
+  `redraw()` is a dispatch-then-paint helper (`showSelectedInfo()` then
+  `render()`) — it dispatches a Msg, so it was a dispatch ORCHESTRATION, not a
+  render. It now lives next to `showSelectedInfo` in the dispatch layer and
+  lazy-requires `paint.render()`. **paint.js no longer requires
+  `dispatch/dispatch` at all** — its only remaining `dispatch/*` requires are
+  `dispatch/modes` (pure mode-table read, to know which overlays to paint) and
+  `dispatch/event-log` (error recording in `_safeRender`'s catch — diagnostic,
+  on-throw only). So the render module is a pure view: `model → output`, no
+  dispatch edge. Sole prod caller (`tui.js:278`) now imports `redraw` from
+  dispatch (and dropped the now-unused `render` import). `smoke/dual-viewer.js`
+  (2 sites) + its dead `paint` require updated.
+- ✅ **Stale comment** `leaves/register.js:62` fixed — it claimed `state.js sets
+  m.register = init()`; corrected to "state.js dispatches `set_register`"
+  (v0.6.3 D3; reducer is sole writer).
+
+**No-exception verdict.** With C + D + F landed, the render module dispatches
+nothing and writes no layout/Component state; the root reducer reads no
+Component-slice value (PRINCIPLES §12 has zero exceptions); hub subscriptions
+are declared + framework-wired. The only documented lazy-render side effect
+left anywhere is config-status's idempotent initial-state fixup (separate from
+this arc). Suite 89/90 (xz env-only) + 9/9 smokes.
 
 ---
 

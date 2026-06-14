@@ -85,6 +85,25 @@ function showSelectedInfo(paneId) {
   dispatchMsg(wrap(target, { type: 'viewer_show_info', lines }));
 }
 
+/**
+ * Refresh the focused panel's info into the viewer, then paint — a single
+ * frame with up-to-date info. The pre-TEA pattern was render(); refresh-info;
+ * render(); — two paints sandwiching an info update, where the leading paint
+ * showed stale info. `showSelectedInfo` writes the viewer slice's info Msg, so
+ * collapsing to dispatch-then-paint gives one correct frame.
+ *
+ * v0.6.4 Phase F — re-homed here from render/paint.js. It is a dispatch-then-
+ * paint ORCHESTRATION (it dispatches a Msg), not a render; keeping it out of
+ * the render module leaves paint.js a pure view (model → output, no dispatch).
+ * Lazy-require paint to keep the dispatch ↔ render edge one-directional.
+ */
+function redraw() {
+  // resolveTarget (inside showSelectedInfo) picks the destination viewer; no
+  // viewer registered just skips the info refresh and paints.
+  showSelectedInfo();
+  require('../render/paint').render();
+}
+
 function navSelect(panelType, index) {
   // v0.6.2 R6 — single Msg, reducer-emitted cascade. Pre-R6 this
   // handler imperatively dispatched 2-3 Msgs (set_cursor →
@@ -968,7 +987,7 @@ function applyMsg(msg) {
 
 module.exports = {
   handleKey, handleAction, applyMsg, navSelect,
-  showSelectedInfo,
+  showSelectedInfo, redraw,
   // v0.6.4 #1 Step 2 — pane-menu pick resolution, shared with the mouse
   // handler in input.js (single source for tab vs pane routing).
   _paneMenuPick,

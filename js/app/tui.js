@@ -147,7 +147,10 @@ function main() {
 
   // Lazy-load TUI runtime so CLI mode stays free of node-pty + render deps.
   const { hideCursor } = require('../io/term');
-  const { render, redraw, renderTerminalOverlay } = require('../render/paint');
+  const { renderTerminalOverlay } = require('../render/paint');
+  // v0.6.4 Phase F — redraw (dispatch-then-paint) lives in the dispatch
+  // layer now; paint.js is a pure view. tui orchestrates both.
+  const { redraw } = require('../dispatch/dispatch');
   const { scheduleRender } = require('../render/render-queue');
   const { registerComponent, refreshAll } = require('../panel/api');
   const { setupKeyListener } = require('../dispatch/input');

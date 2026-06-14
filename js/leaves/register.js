@@ -58,8 +58,9 @@ function clear(register) {
 
 const DEFAULT_CAP = 100;
 
-/** Construct a fresh register slice. Used at boot for the one-shot
- *  BLESSED init (state.js sets `m.register = init(opts)`). */
+/** Construct a fresh register slice. Used at boot to seed the register:
+ *  state.js dispatches `set_register` with this value (v0.6.3 D3 — the
+ *  reducer is the sole writer; no direct `m.register =` write). */
 function init(opts) {
   const cap = (opts && Number.isInteger(opts.cap) && opts.cap > 0) ? opts.cap : DEFAULT_CAP;
   return { history: [], cap };

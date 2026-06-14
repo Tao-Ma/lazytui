@@ -713,23 +713,9 @@ function render(model = getModel()) {
   else hideCursor();
 }
 
-/**
- * Refresh the focused panel's info into detail, then render. The previous
- * pattern was render(); refresh-info; render(); — two paints with an
- * info-update sandwiched. The viewer_show_info Msg writes the detail
- * slice's `lines`, so the leading render painted stale info. redraw()
- * collapses to a single paint with up-to-date info.
- */
-function redraw() {
-  // v0.6.1 Phase 6 — resolveTarget (inside showSelectedInfo) picks the
-  // destination viewer; no viewer registered just skips the info refresh
-  // and paints. P0 (viewer-lines selector) — route through the
-  // showSelectedInfo chokepoint so msg.lines is computed there. Lazy
-  // require at call time (render → dispatch edge, same as _route()).
-  try { require('../dispatch/dispatch').showSelectedInfo(); }
-  catch (_) { /* dispatch unavailable (early boot / bare-render test) */ }
-  render();
-}
+// v0.6.4 Phase F — `redraw()` (dispatch-then-paint: showSelectedInfo + render)
+// moved to dispatch/dispatch.js. It dispatched a Msg, so it was a dispatch
+// orchestration, not a render; paint.js is now a pure view (no dispatch edge).
 
 // Debouncing primitives live in render-queue.js (both terminal.js and
 // actions.js need scheduleOverlay / scheduleRender; render-queue.js has no
@@ -764,7 +750,7 @@ function invalidateRows(startY, endY) {
 }
 
 module.exports = {
-  render, redraw, renderTerminalOverlay,
+  render, renderTerminalOverlay,
   forceFullRepaint, invalidateRows,
   // v0.6.3 P2 test seam: _normalizeRender enforces the Rect contract
   // (exactly h lines of width w). Exposed so test-rect-contract.js

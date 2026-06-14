@@ -148,7 +148,8 @@ describe('[7] half / full view thread opts.focused to the rendered pane', () => 
       api.dispatchMsg(api.wrap('layout', { type: 'view_set', mode }));
       const realWrite = process.stdout.write.bind(process.stdout);
       process.stdout.write = () => true;
-      try { require('../../render/paint').redraw(getModel()); } finally { process.stdout.write = realWrite; }
+      // Phase F — redraw (dispatch-then-paint) moved to the dispatch layer.
+      try { require('../../dispatch/dispatch').redraw(); } finally { process.stdout.write = realWrite; }
     } finally { def.render = orig; }
     return seen;
   }
@@ -187,14 +188,13 @@ describe('[8] half view is an API-driven projection — two viewers side-by-side
   // resolved by geo.halfProjection: an ephemeral, API-settable selection
   // (view_place_pane) over a default that reproduces the old behavior.
   const geo = require('../../leaves/geometry');
-  const paint = require('../../render/paint');
   const layoutSlice = () => api.getInstanceSlice('layout');
 
   const mpool = require('../../leaves/pool');
   function renderNow() {
     const realWrite = process.stdout.write.bind(process.stdout);
     process.stdout.write = () => true;
-    try { paint.redraw(getModel()); } finally { process.stdout.write = realWrite; }
+    try { require('../../dispatch/dispatch').redraw(); } finally { process.stdout.write = realWrite; }
     // A.2 — paneBounds is no longer a render-written field; build the visible
     // map from the derived accessor (only on-screen panes resolve, exactly
     // what the old half-view paneBounds held).
