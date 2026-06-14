@@ -38,6 +38,27 @@ Already retired — do not re-track:
 The live exceptions collapse into **five root-cause clusters** plus one
 cosmetic. Phases below are ordered by leverage.
 
+**Standing sanctioned reads (NOT eliminated, by design — listed so the
+register is complete):** a deep TEA-purity sweep (2026-06-14) found two
+impure reads that are sanctioned, not bugs, and intentionally kept:
+
+- **`viewer.update()` boundary `getModel()` read** (`viewer.js:388`). The
+  only Component whose `update()` reads the global store. It reads once at
+  the entry boundary, derives the active-tab `lines`
+  (`viewerLines(slice, m, m.currentGroup)`), and threads model + lines into
+  the pure arms (`_updateInner`/`_finalize`). Permitted by PRINCIPLES §12
+  ("non-arm code may read `getModel()`; the rule applies to the arm body
+  only"). The modelBundle ideal would thread these via Msg payload, but the
+  viewer's line-derivation needs the whole model — a single boundary read
+  (mirroring the dispatcher's read-once-at-top) is the accepted shape. The
+  arms stay pure; no other Component does this.
+- **config-status init-time fixup** (`config-status.js:402-403`).
+  `init(paneId)` reads `getModel()` + `getInstanceSlice('layout')` to seed
+  its slice (the documented first-touch boundary); `render()` is pure. The
+  last cross-slice init read. See PRINCIPLES §11.
+
+Everything else below was an eliminable exception and has been removed.
+
 ---
 
 ## Phase E — Enforce the plugin purity contract — ✅ SHIPPED 2026-06-14 (uncommitted)

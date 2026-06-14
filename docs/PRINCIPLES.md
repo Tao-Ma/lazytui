@@ -354,6 +354,15 @@ module.exports = {
   `[[elm-tea-discipline]]`). Component-level surfaces OUTSIDE arms
   (handlers, finalizers, contributors registered with the framework)
   may still read `getModel()`; the rule applies to the arm body only.
+  The one concrete instance: **`viewer.update()` reads `getModel()` once
+  at the entry boundary** (`viewer.js:388`) — it derives the active-tab
+  `lines` (`viewerLines(slice, m, m.currentGroup)`) and threads model +
+  lines into the pure arms (`_updateInner`/`_finalize` take them as
+  explicit args). It is the only Component whose `update()` touches the
+  store; the modelBundle ideal would thread these via Msg payload instead,
+  but the viewer's line-derivation needs the whole model, so a single
+  boundary read (mirroring the dispatcher's read-once-at-top) is the
+  accepted shape. The arms stay pure.
 - **The ROOT reducer (`runtime.update`) is held to the same bar**
   (v0.6.4 Theme C). Its arms may do ROUTING reads via `route`
   (`getFocus` / `componentForPanel` / `paneTypeOf` / `resolveTarget` —
