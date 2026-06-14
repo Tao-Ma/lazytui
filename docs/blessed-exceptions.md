@@ -82,6 +82,59 @@ Everything else below was an eliminable exception and has been removed.
 
 ---
 
+## Remaining standing exceptions — recommended fix order
+
+Five exceptions remain unsolved (all sanctioned/benign today; none blocks
+the v0.6.4 tag). Recommended order below is by **(correctness value ×
+tractability)** with dependencies noted. Findings A and B are coupled (both
+change overlay/footer render signatures), so they form one arc, B first.
+
+**1. Finding B — unify the dims source (overlays + footer read `model.dims`).**
+   *Do first.* Highest correctness value: today the panel grid reads
+   `layoutSlice.dims` (model clock) while the footer + all 8 overlays +
+   `renderOverlay` read the `io/term` `cols()/rows()` singleton, so on a
+   resize the two can paint against different dimensions for a frame. The fix
+   is mechanical — thread `model.dims` into `renderOverlay`/`renderFooter`/
+   overlay render signatures, drop the `io/term` reads. Zero behavior change
+   in the steady state, no new concepts, and it establishes the "overlay
+   render receives model facts" plumbing that #2 then rides. Lowest risk.
+
+**2. Finding A — overlay age via a threaded/deterministic `now`.**
+   *Do second, on #1's plumbing.* `renderDiagLog`/`renderJobsOverlay` read
+   `Date.now()` live, so identical model state renders a changing age (breaks
+   render-replay/snapshot for those overlays). Two sub-options to decide at
+   implementation: (a) thread a render-time `now` deterministically (cheap,
+   keeps jobs/diag as out-of-TEA side stores), or (b) migrate the jobs +
+   diag-log registries into the model so the overlays become fully
+   model-driven (larger, also fixes the side-store split). Lower urgency —
+   age is inherently live; this is about replay/test determinism.
+
+**3. `viewer.update()` boundary `getModel()` → modelBundle.**
+   *Independent arc, medium risk.* Thread the model facts the viewer's
+   line-derivation needs (`currentGroup` + the slices `viewerLines` consults)
+   via the Msg payload (`modelBundle` pattern already used by other arms),
+   so `update()` stops reading the global store. Risk is in the viewer's
+   hottest reducer + the lines derivation, so it wants its own arc with the
+   existing viewer tests as the guard. Removes the last reducer-store read.
+
+**4. config-status init cross-slice read → init-injection hook.**
+   *After #3 (same "thread facts, don't read globals" theme).* Add a small
+   framework seam so the mint loop passes seed facts (root config snapshot +
+   the pane's layout branch) into `init(paneId, seed)`, instead of `init`
+   reaching for `getModel()` + `getInstanceSlice('layout')`. Generalizes init
+   and removes the last cross-slice init read. Runs once per pane, so low
+   frequency / low blast radius, but needs a framework change.
+
+**5. Plugin purity contract — enforce in production (or accept).**
+   *Last; likely wontfix-in-prod.* Today the read-only-proxy guard runs only
+   under `LAZYTUI_STRICT_PLUGINS=1`; production is an unguarded pass-through
+   for perf (the proxy wraps every `groupActions` call on hot read paths).
+   Promoting it to always-on trades that perf for hard enforcement — only
+   worth it if a real third-party-plugin impurity bug shows up. Otherwise the
+   contract stays documented-and-dev-enforced.
+
+---
+
 ## Phase E — Enforce the plugin purity contract — ✅ SHIPPED 2026-06-14 (uncommitted)
 
 **Highest leverage. Smallest change.**
