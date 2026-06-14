@@ -1068,47 +1068,45 @@ function _updateInner(msg, slice, lines) {
 
 // --- panel renderer (reads the slice directly) ---
 
-function detailTitle(slice, hotkey) {
-  const tabInfo = getTabInfo();
-  // v0.6.4 multi-viewer — hotkey comes from the rendering pane (threaded
-  // by render via panel.hotkey), not findDetailPane (which returns the
-  // FIRST detail and would mislabel a second viewer).
-  // Running indicator (Phase 4.4) — set of action keys whose
-  // stream-routed job is alive in the current group. buildTabStrip
-  // prefixes those tab labels with a `●` glyph.
-  const m = getModel();
-  const jobsList = require('../../feature/jobs').list();
+// Build ONE viewer pane's tab strip — pure (no slice write). Used by render
+// (for the title) and by the input hit-test (for the tab bounds). The hotkey
+// comes from the pane being acted on (render threads panel.hotkey; the input
+// layer resolves it from the pane def) — it shifts each tab's hit-zone x, so
+// title and bounds must agree on it. Reads the jobs list (out-of-TEA) for the
+// running-glyph set — fine at these render / handler boundaries (not a
+// reducer). `slice` is THIS pane's own slice, so two viewers don't share.
+function tabStripFor(slice, model, hotkey) {
+  const group = model.currentGroup;
+  const tabInfo = pt.flatTabInfo(slice, model, group);
+  // Running indicator (Phase 4.4) — action keys whose stream-routed job is
+  // alive in the current group; buildTabStrip prefixes those labels with `●`.
   const runningActionKeys = new Set(
-    jobsList
+    require('../../feature/jobs').list()
       .filter(j => j.kind === 'stream-routed' && j.status === 'running'
-                && j.owner && j.owner.groupName === m.currentGroup)
+                && j.owner && j.owner.groupName === group)
       .map(j => j.owner.tabKey)
   );
-  // hasTabTrigger reflects chromeFor()'s decision for detail panes:
-  // `[≡]` is painted when the viewer has ≥2 tabs (Info + Transcript
-  // alone qualify). The trigger occupies 3 cells between `(hk)` and
-  // the title; buildTabStrip needs this to compute the correct x for
-  // each tab's hit-zone (the [x] close glyph in particular).
+  // hasTabTrigger reflects chromeFor()'s decision for detail panes: `[≡]` is
+  // painted when the viewer has ≥2 tabs (Info + Transcript alone qualify). The
+  // trigger occupies 3 cells between `(hk)` and the title; buildTabStrip needs
+  // it to compute the correct x for each tab's hit-zone (the [x] glyph).
   const hasTabTrigger = (tabInfo && Number.isFinite(tabInfo.total) ? tabInfo.total : 0) >= 2;
-  const built = buildTabStrip(tabInfo, slice.tab, hotkey, runningActionKeys, hasTabTrigger);
-  // v0.6.3 P4.1 (was N3 from [[v062-shipped]]): tab-bar hit-test cache
-  // moved from `layoutSlice.paneBounds.detail.tabs` to the viewer's
-  // own slice. Same view-output exception, but now writing OUR slice
-  // instead of layout's — single-writer-per-slice holds.
-  //
-  // v0.6.3 Phase D5 — was an in-place mutation (`slice.tabBounds = …`).
-  // Other render-side slice writes use immutable spread via
-  // `route.setInstanceSlice`, so this gets the same treatment. The
-  // write is idempotent (same arrange + tabs → same tabBounds), so
-  // PRINCIPLES §11 (render idempotence) holds either way; immutable
-  // shape matches the rest of the codebase.
-  const nextTabBounds = built ? built.tabBounds : [];
-  const route = require('../../panel/route');
-  // v0.6.4 multi-viewer — write the hit-test cache back to THIS pane's own
-  // slice (slice.paneId), not the hardcoded 'detail' primary, so two
-  // viewers don't clobber each other's tab-strip bounds. Falls back to
-  // 'detail' for the singleton/register-time slice (paneId null).
-  route.setInstanceSlice(slice.paneId || 'detail', { ...slice, tabBounds: nextTabBounds });
+  return buildTabStrip(tabInfo, slice.tab, hotkey, runningActionKeys, hasTabTrigger);
+}
+
+// v0.6.4 blessed-exceptions tabBounds follow-on — the viewer tab-strip's
+// hit-test bounds, recomputed ON DEMAND by the input layer (was render-written
+// to `slice.tabBounds`, the last render-side slice write). render() is now a
+// pure view: it computes the strip only for the title and writes nothing. Mouse
+// hit-tests are rare vs frames, so recompute-on-read is cheap (same rationale
+// as the paneBounds selector). Returns the bounds array (empty if no strip).
+function tabBoundsFor(slice, model, hotkey) {
+  const built = tabStripFor(slice, model, hotkey);
+  return built ? built.tabBounds : [];
+}
+
+function detailTitle(slice, hotkey) {
+  const built = tabStripFor(slice, getModel(), hotkey);
   return built ? built.title : 'Detail';
 }
 
@@ -1171,6 +1169,10 @@ module.exports = {
   panelTypes: {
     detail: { render },
   },
+  // v0.6.4 blessed-exceptions tabBounds follow-on — the input layer
+  // recomputes the tab-strip hit-test bounds on demand (render no longer
+  // writes slice.tabBounds). Pure: (slice, model, hotkey) → bounds.
+  tabBoundsFor,
   // Test-only exports — not part of the Component contract.
   _init: init,
   _update: update,

@@ -299,21 +299,25 @@ describe('[v0.6.4 multi-viewer] two detail instances scroll independently', () =
     eq(route.getInstanceSlice('pane-left').scroll, 5, 'left still at its own offset');
   });
 
-  it('detailTitle writes tabBounds to the rendering pane`s OWN slice', () => {
+  it('render writes NO tabBounds (pure view); tabBoundsFor recomputes per-pane', () => {
+    // v0.6.4 blessed-exceptions tabBounds follow-on — the render-side
+    // slice.tabBounds WRITE is retired. render() is a pure view; the input
+    // layer recomputes the tab-strip hit-test bounds on demand via
+    // tabBoundsFor(slice, model, hotkey), keyed off THIS pane's own slice.
+    const { getModel } = require('../app/runtime');
     setupTwoViewers();
-    // render() threads panel.paneId → detailTitle writes via slice.paneId,
-    // not the hardcoded primary. Render pane-right; pane-left`s tabBounds
-    // must not be the write target.
     const paneRight = { paneId: 'pane-right', type: 'detail', hotkey: 'o', tabs: [] };
-    viewer._update;  // (no-op ref to keep the Component loaded)
-    // Invoke the panel def render the way paint.js does.
+    // Invoke the panel def render the way paint.js does — it must NOT mutate
+    // the slice (teeth: this fails against the pre-follow-on write).
     viewer.panelTypes.detail.render(paneRight, 40, 12, route.getInstanceSlice('pane-right'), { focused: true });
-    const right = route.getInstanceSlice('pane-right');
-    assert(Array.isArray(right.tabBounds), 'pane-right got its tabBounds written');
-    // pane-left was never rendered → no tabBounds clobber from pane-right.
-    const left = route.getInstanceSlice('pane-left');
-    assert(left.tabBounds === undefined || left.tabBounds.length === 0,
-      'pane-left tabBounds untouched by pane-right render');
+    assert(route.getInstanceSlice('pane-right').tabBounds === undefined,
+      'render did not write tabBounds onto the slice');
+    assert(route.getInstanceSlice('pane-left').tabBounds === undefined,
+      'render did not write tabBounds onto any sibling slice');
+    // On-demand recompute returns a bounds array per pane (independent slices).
+    const rb = viewer.tabBoundsFor(route.getInstanceSlice('pane-right'), getModel(), 'o');
+    const lb = viewer.tabBoundsFor(route.getInstanceSlice('pane-left'),  getModel(), 'p');
+    assert(Array.isArray(rb) && Array.isArray(lb), 'tabBoundsFor computes per-pane bounds on demand');
   });
 });
 

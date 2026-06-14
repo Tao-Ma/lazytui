@@ -37,6 +37,16 @@ function _detail() {
   // 'detail' fallback covers the singleton boot case.
   return getInstanceSlice(route.resolveTarget('viewer') || 'detail');
 }
+
+// v0.6.4 blessed-exceptions tabBounds follow-on — the focused viewer pane's
+// hotkey, needed to recompute its tab-strip bounds (the hotkey shifts each
+// tab's hit-zone x; must match render's `panel.hotkey`). Resolved from the
+// pane def for the major viewer's CONTAINER paneId (resolveViewerPaneId).
+function _viewerHotkey() {
+  const vpid = route.resolveViewerPaneId();
+  const p = allPanels().find(pp => pp.paneId === vpid);
+  return p ? p.hotkey : '';
+}
 const { handleKey, applyMsg, showSelectedInfo, navSelect } = require('./dispatch');
 const { cleanup } = require('../app/cleanup');
 
@@ -204,7 +214,11 @@ function _mouseHandleFreeConfigMode(kind, mx, my, model) {
       const groupName = model.currentGroup;
       const targetKind = require('../panel/route').resolveTarget('viewer') || 'detail';
       const detailSlice = getInstanceSlice(targetKind);
-      const tabBounds = detailSlice && Array.isArray(detailSlice.tabBounds) ? detailSlice.tabBounds : null;
+      // v0.6.4 blessed-exceptions tabBounds follow-on — recompute the viewer's
+      // tab-strip bounds on demand (render no longer writes slice.tabBounds).
+      const tabBounds = detailSlice
+        ? require('../panel/viewer/viewer').tabBoundsFor(detailSlice, model, _viewerHotkey())
+        : null;
       dispatchMsg(wrap('layout', {
         type: 'tab_drag_motion', mx, my,
         modelBundle: pt.modelBundle(model, groupName),
@@ -225,8 +239,11 @@ function _mouseHandleFreeConfigMode(kind, mx, my, model) {
   const viewerId = route.resolveTarget('viewer') || 'detail';
   const db = visibleBoundsFor(getInstanceSlice('layout'), route.resolveViewerPaneId());
   const detailSlice = getInstanceSlice(viewerId);
-  const detailTabBounds = detailSlice && Array.isArray(detailSlice.tabBounds) ? detailSlice.tabBounds : null;
-  if (kind === 'press' && db && detailTabBounds) {
+  // v0.6.4 blessed-exceptions tabBounds follow-on — recompute on demand.
+  const detailTabBounds = detailSlice
+    ? require('../panel/viewer/viewer').tabBoundsFor(detailSlice, model, _viewerHotkey())
+    : null;
+  if (kind === 'press' && db && detailTabBounds && detailTabBounds.length > 0) {
     if (my === db.y) {
       const localX = mx - db.x;
       let contentIdx = 0;
@@ -629,7 +646,11 @@ function handleMouse(kind, x, y) {
     // click routing — currently only detail; multi-viewer would have
     // sibling viewers publish their own.
     const compSlice = route.sliceForPane(p.paneId, p.type);  // v0.6.4 multi-viewer — THIS pane's tabBounds
-    const paneTabs = compSlice && Array.isArray(compSlice.tabBounds) ? compSlice.tabBounds : null;
+    // v0.6.4 blessed-exceptions tabBounds follow-on — only viewer panes have a
+    // tab strip; recompute its bounds on demand (render no longer writes them).
+    const paneTabs = (p.type === 'detail' && compSlice)
+      ? require('../panel/viewer/viewer').tabBoundsFor(compSlice, model, p.hotkey)
+      : null;
     if (my === b.y && paneTabs && paneTabs.length > 0) {
       const localX = mx - b.x;
       for (const tab of paneTabs) {

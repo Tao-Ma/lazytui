@@ -222,6 +222,29 @@ and write `innerH` there — part of the dispatch cycle, not render. Render's
 > paneBounds empty after render + bounds resolve for every pane.
 > **tabBounds** (viewer's OWN slice) left as a milder optional follow-on.
 
+### A.3 — tabBounds → compute-on-read (the follow-on) — ✅ SHIPPED 2026-06-14
+
+> **DONE.** The viewer tab-strip's hit-test bounds were the LAST render-side
+> slice write (`detailTitle` → `route.setInstanceSlice(..., { tabBounds })`).
+> Retired via **compute-on-read** (not the finalizer): a render-written cache
+> read by mouse hit-tests, and mouse events are rare vs frames — same rationale
+> as paneBounds, but compute-on-read here avoids churning the viewer slice's ref
+> identity every dispatch (a finalizer array-write would). Extracted a pure
+> `tabStripFor(slice, model, hotkey)` in `viewer.js` (the old `detailTitle`
+> prologue: `flatTabInfo` on THIS pane's slice + running-job glyph set +
+> `buildTabStrip`); `detailTitle` calls it for the title only and writes
+> NOTHING; new exported `tabBoundsFor(slice, model, hotkey)` returns the bounds.
+> The 3 input.js hit-test sites (tab-drag motion, tab-press detect, pane-click
+> loop) recompute via `tabBoundsFor` — hotkey from the pane def (`p.hotkey`, or
+> `_viewerHotkey()` for the focused viewer), matching render's `panel.hotkey`.
+> `slice.tabBounds` is fully retired (no writer, no reader). **Probe: a viewer
+> render now leaves the slice ref UNCHANGED (`before === after`)** — render is a
+> pure view. Tests: `test-instance-registry` rewritten (render writes no
+> tabBounds; tabBoundsFor recomputes per-pane), `smoke/hit-zones` recomputes via
+> `tabBoundsFor` (paint-vs-hittest parity + close behavior both still green).
+> Suite 89/90 (xz env-only) + 9/9 smokes. **With A.3, render writes NO slice
+> state at all — Phase A is fully complete.**
+
 Original plan (memoized selectors vs recompute):
 
 Two options; pick one in the Decisions section:

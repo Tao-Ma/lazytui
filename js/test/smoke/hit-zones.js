@@ -33,6 +33,18 @@ const geo = require('../../leaves/geometry');  // A.2: bounds are derived, not o
 const api = sm.api;
 const tabs = sm.tabs;
 const { getModel } = require('../../app/runtime');
+const viewer = require('../../panel/viewer/viewer');
+const mpool = require('../../leaves/pool');
+
+// v0.6.4 blessed-exceptions tabBounds follow-on — render no longer WRITES
+// slice.tabBounds; the input layer recomputes it on demand. Mirror that here:
+// tabBoundsFor with the detail pane's own hotkey (the value render painted
+// with), so the bounds this smoke checks are exactly what input.js hit-tests.
+function detailTabBounds() {
+  const layout = api.getInstanceSlice('layout');
+  const dp = mpool.allPanesInColumns(layout.arrange).find(p => p.type === 'detail');
+  return viewer.tabBoundsFor(api.primarySliceOf('detail'), getModel(), dp ? dp.hotkey : '');
+}
 
 // --- Decode cursor positions from the raw ANSI bytes so we can locate
 //     the painted `[x]` glyph on the actual screen coordinate grid.
@@ -98,7 +110,7 @@ describe('[1] paint-vs-hittest: closeX in tabBounds aligns with on-screen [x]', 
     const detail = api.primarySliceOf('detail');
     const b = geo.visibleBoundsFor(layout, 'pane-detail');
     assert(b, 'derived viewer bounds present');
-    const bounds = (detail.tabBounds || []).filter(t => t.closeKey != null);
+    const bounds = detailTabBounds().filter(t => t.closeKey != null);
     assert(bounds.length >= 1, `at least one tab carries a close glyph (saw ${bounds.length})`);
 
     for (const tb of bounds) {
@@ -128,7 +140,7 @@ describe('[2] click inside the [x] hit-rect closes the tab', () => {
     const layout = api.getInstanceSlice('layout');
     const detail = api.primarySliceOf('detail');
     const b = geo.visibleBoundsFor(layout, 'pane-detail');
-    const closeTab = (detail.tabBounds || []).find(t => t.closeKey != null);
+    const closeTab = detailTabBounds().find(t => t.closeKey != null);
     assert(closeTab, 'a closeable tab exists');
 
     // Click at the middle column of the close rect, on the top border row.
@@ -157,7 +169,7 @@ describe('[3] click one column LEFT of closeX → switches, does not close', () 
     // Pick a tab that is NOT currently active so a tab-switch click
     // actually changes activeTab — easier signal than "no change".
     const activeIdx = detail.tab;
-    const closeTab = (detail.tabBounds || []).find(t => t.closeKey != null && t.tabIdx !== activeIdx);
+    const closeTab = detailTabBounds().find(t => t.closeKey != null && t.tabIdx !== activeIdx);
     assert(closeTab, 'a non-active closeable tab exists');
 
     // ONE column LEFT of closeX. Use the same local-x math input.js does.
@@ -189,7 +201,7 @@ describe('[4] click ONE column RIGHT of closeX+closeW → does not close', () =>
     const layout = api.getInstanceSlice('layout');
     const detail = api.primarySliceOf('detail');
     const b = geo.visibleBoundsFor(layout, 'pane-detail');
-    const closeTab = (detail.tabBounds || []).find(t => t.closeKey != null);
+    const closeTab = detailTabBounds().find(t => t.closeKey != null);
     assert(closeTab, 'a closeable tab exists');
 
     const [sx, sy] = sgr0(b.x + closeTab.closeX + closeTab.closeW, b.y);
