@@ -24,6 +24,7 @@
 
 const { describe, it, eq, assert, report } = require('../test-runner');
 const sm = require('./_helpers/smoke');
+const geo = require('../../leaves/geometry');  // A.2: bounds are derived, not on slice.paneBounds
 const api = sm.api;
 const { getModel } = require('../../app/runtime');
 const actions = require('../../dispatch/actions');
@@ -44,8 +45,7 @@ function pressBytes(button, sx, sy) { return `\x1b[<${button};${sx};${sy}M`; }
 const [OFFX, OFFY] = [250, 90];
 
 function groupsBounds() {
-  const layout = api.getInstanceSlice('layout');
-  return layout.paneBounds['pane-groups'] || layout.paneBounds.groups;
+  return geo.visibleBoundsFor(api.getInstanceSlice('layout'), 'pane-groups');
 }
 
 // Spy on handleAction WITHOUT calling through — focus + select route via

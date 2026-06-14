@@ -190,4 +190,43 @@ describe('[6] boundsFor (P1.3 shim): slice first, rects fallback', () => {
   });
 });
 
+// blessed-exceptions Phase B — the drag-preview arrange is passed as a
+// PARAMETER, not by mutating layoutSlice.arrange. These guard that contract
+// (the override-honoring case FAILS on the pre-Phase-B calcLayout, which
+// ignored a 3rd arg and always read layoutSlice.arrange).
+describe('[8] calcLayout honors opts.arrangeOverride without touching the slice', () => {
+  it('computes from the override arrange, not the slice arrange', () => {
+    setSize(120, 30);
+    // Slice arrange: a SINGLE column (1 pane) → 1 rect.
+    const sliceArrange = {
+      detailHeightPct: 60,
+      columns: [{ panels: [pane('containers', 'pc', { columnIndex: 0 })] }],
+    };
+    const slice = setupSlice(sliceArrange);
+    // Override: TWO columns (2 panes) → 2 rects at distinct x.
+    const overrideArrange = {
+      detailHeightPct: 60,
+      columns: [
+        { width: 30, panels: [pane('containers', 'pc', { columnIndex: 0 })] },
+        { panels: [pane('detail', 'pd', { hotkey: 'o', columnIndex: 1 })] },
+      ],
+    };
+    const out = layout.calcLayout(slice, dims(), { arrangeOverride: overrideArrange });
+    eq(out.rects.length, 2, 'rects come from the OVERRIDE (2 panes), not the slice (1 pane)');
+    assert(out.rects.some(r => r.x > 0), 'second column is offset in x — override honored');
+    // The slice's own arrange is referentially unchanged.
+    assert(slice.arrange === sliceArrange, 'layoutSlice.arrange not reassigned');
+    eq(slice.arrange.columns.length, 1, 'slice arrange still single-column (not mutated)');
+  });
+
+  it('no override → uses the slice arrange (back-compat, 2-arg call)', () => {
+    setSize(120, 30);
+    setupSlice({
+      detailHeightPct: 60,
+      columns: [{ panels: [pane('containers', 'pc', { columnIndex: 0 })] }],
+    });
+    eq(calc().rects.length, 1, 'single-column slice arrange → 1 rect');
+  });
+});
+
 report();

@@ -1,23 +1,22 @@
 /**
- * v0.6.4 — paneBounds is keyed by CONTAINER paneId only (the type-keyed
- * write retired), and viewer-geometry readers resolve their container pane
- * via route.resolveViewerPaneId() so they get half/full-correct VISIBLE
- * bounds.
+ * Pane bounds (blessed-exceptions Phase A.2) — bounds are a PURE DERIVED
+ * value, not a render-side write. A real render leaves `slice.paneBounds`
+ * EMPTY; `visibleBoundsFor` / `boundsFor` compute the answer via the
+ * memoized selector (leaves/selector.js) from (arrange, dims, viewMode).
  *
- * Why this matters: `resolveTarget('viewer')` returns a viewer *tab/instance*
- * id (singleton: 'detail') which, before this change, aliased the type key.
- * Readers (terminal overlay, viewer innerH, tab-drag/select bounds) keyed by
- * that tab-id worked in half/full ONLY because the per-view-mode type write
- * overrode the slice with the rebuilt single-pane bounds. `_currentLayout`
- * rects can't supply that — they always describe the normal column layout.
- * After retiring the type write, those readers MUST key by the container
- * paneId (whose write is rebuilt per view mode). This pins both halves:
- *   1. a real render leaves no bare type key in paneBounds, and
- *   2. boundsFor(resolveViewerPaneId()) tracks the visible bounds in every
- *      view mode.
+ * Two accessors, two roles:
+ *   - `visibleBoundsFor(paneId)` — the CURRENTLY-VISIBLE pane's bounds, view-
+ *     mode-aware (normal column rect / full screen / half slot); null for an
+ *     off-screen pane. The hit-test + overlay-positioning accessor.
+ *   - `boundsFor(paneId)` — NORMAL-view geometry even for off-screen panes
+ *     (getPanelViewportH's scroll-clamp source). Stays the column rect in
+ *     half/full (getPanelViewportH handles the on-screen full-height case
+ *     before it ever calls boundsFor).
  *
- * Regression guard for the full/half "small normal-layout rect leaks through"
- * bug that dropping the type write would otherwise reintroduce.
+ * Both are keyed by CONTAINER paneId (resolveViewerPaneId bridges the viewer
+ * tab-id → its hosting paneId); a bare type key resolves to null. Regression
+ * guard for the full/half "small normal-layout rect leaks through" bug and
+ * for render accidentally resuming paneBounds writes.
  *
  * Run: node js/test/test-viewer-pane-bounds.js
  */
@@ -38,16 +37,18 @@ function renderIn(viewMode, focus) {
   return layout;
 }
 
-describe('v0.6.4 paneBounds — paneId-keyed only', () => {
-  it('a real render leaves no bare type key (every key is a container paneId)', () => {
+describe('A.2 paneBounds is DERIVED, not a render write', () => {
+  it('a real render leaves slice.paneBounds EMPTY (bounds are derived)', () => {
     const layout = renderIn('normal', 'pane-groups');
-    const keys = Object.keys(layout.paneBounds);
-    assert(keys.length > 0, 'paneBounds populated');
-    assert(keys.every(k => k.startsWith('pane-')),
-      `all keys are container paneIds (saw: ${keys.join(',')})`);
-    // The type-aliased key is specifically gone.
-    eq(layout.paneBounds.detail, undefined);
-    eq(layout.paneBounds.groups, undefined);
+    eq(Object.keys(layout.paneBounds).length, 0,
+      'render no longer writes paneBounds');
+  });
+
+  it('the derived bounds are keyed by container paneId; a bare type key → null', () => {
+    const layout = renderIn('normal', 'pane-groups');
+    assert(geo.visibleBoundsFor(layout, 'pane-detail'), 'container paneId resolves');
+    eq(geo.visibleBoundsFor(layout, 'detail'), null, 'no bare type key (detail)');
+    eq(geo.visibleBoundsFor(layout, 'groups'), null, 'no bare type key (groups)');
   });
 
   it("resolveViewerPaneId() returns the viewer's CONTAINER paneId", () => {
@@ -56,32 +57,41 @@ describe('v0.6.4 paneBounds — paneId-keyed only', () => {
   });
 });
 
-describe('v0.6.4 viewer bounds track the VISIBLE pane per view mode', () => {
-  it('normal: boundsFor(resolveViewerPaneId()) is the column-positioned detail rect', () => {
+describe('visibleBoundsFor tracks the VISIBLE pane per view mode (derived)', () => {
+  it('normal: the column-positioned detail rect', () => {
     const layout = renderIn('normal', 'pane-groups');
-    const b = geo.boundsFor(layout, route.resolveViewerPaneId());
+    const b = geo.visibleBoundsFor(layout, route.resolveViewerPaneId());
     assert(b, 'bounds resolved');
-    // Detail sits in the right column, not at the origin.
     assert(b.x > 0, `right-column x (saw x=${b.x})`);
   });
 
   it('full (focus detail): bounds fill the screen — NOT the small normal rect', () => {
     const layout = renderIn('full', 'pane-detail');
-    const b = geo.boundsFor(layout, route.resolveViewerPaneId());
+    const b = geo.visibleBoundsFor(layout, route.resolveViewerPaneId());
     assert(b, 'bounds resolved');
     eq(b.x, 0);
     eq(b.y, 0);
-    eq(b.w, layout.paneBounds['pane-detail'].w);
     // Full-screen width spans the whole terminal — wider than a column.
     assert(b.w >= 40, `full width (saw w=${b.w})`);
   });
 
   it('half (focus detail): bounds are the right half at full height', () => {
     const layout = renderIn('half', 'pane-detail');
-    const b = geo.boundsFor(layout, route.resolveViewerPaneId());
+    const b = geo.visibleBoundsFor(layout, route.resolveViewerPaneId());
     assert(b, 'bounds resolved');
     assert(b.x > 0, `right half starts past mid-screen (saw x=${b.x})`);
     assert(b.y === 0, 'spans from top');
+  });
+});
+
+describe('boundsFor reports NORMAL geometry (the off-screen scroll-clamp accessor)', () => {
+  it('full mode: boundsFor returns the normal column rect, not the full-screen one', () => {
+    const layout = renderIn('full', 'pane-detail');
+    const b = geo.boundsFor(layout, route.resolveViewerPaneId());
+    assert(b, 'bounds resolved');
+    // getPanelViewportH handles the on-screen full-height case before ever
+    // calling boundsFor, so boundsFor staying normal-geometry is correct.
+    assert(b.x > 0, `normal column x, not full-screen 0 (saw x=${b.x})`);
   });
 });
 

@@ -29,6 +29,7 @@
 
 const { describe, it, eq, assert, report } = require('../test-runner');
 const sm = require('./_helpers/smoke');
+const geo = require('../../leaves/geometry');  // A.2: bounds are derived, not on slice.paneBounds
 const api = sm.api;
 const tabs = sm.tabs;
 const { getModel } = require('../../app/runtime');
@@ -95,8 +96,8 @@ describe('[1] paint-vs-hittest: closeX in tabBounds aligns with on-screen [x]', 
     const grid = decodeFrame(raw);
     const layout = api.getInstanceSlice('layout');
     const detail = api.primarySliceOf('detail');
-    const b = layout.paneBounds && (layout.paneBounds['pane-detail'] || layout.paneBounds.detail);
-    assert(b, `paneBounds for detail present (saw keys: ${Object.keys(layout.paneBounds || {}).join(',')})`);
+    const b = geo.visibleBoundsFor(layout, 'pane-detail');
+    assert(b, 'derived viewer bounds present');
     const bounds = (detail.tabBounds || []).filter(t => t.closeKey != null);
     assert(bounds.length >= 1, `at least one tab carries a close glyph (saw ${bounds.length})`);
 
@@ -126,7 +127,7 @@ describe('[2] click inside the [x] hit-rect closes the tab', () => {
     sm.capture(() => sm.render());   // populate tabBounds + paneBounds
     const layout = api.getInstanceSlice('layout');
     const detail = api.primarySliceOf('detail');
-    const b = layout.paneBounds['pane-detail'] || layout.paneBounds.detail;
+    const b = geo.visibleBoundsFor(layout, 'pane-detail');
     const closeTab = (detail.tabBounds || []).find(t => t.closeKey != null);
     assert(closeTab, 'a closeable tab exists');
 
@@ -152,7 +153,7 @@ describe('[3] click one column LEFT of closeX → switches, does not close', () 
     sm.capture(() => sm.render());
     const layout = api.getInstanceSlice('layout');
     const detail = api.primarySliceOf('detail');
-    const b = layout.paneBounds['pane-detail'] || layout.paneBounds.detail;
+    const b = geo.visibleBoundsFor(layout, 'pane-detail');
     // Pick a tab that is NOT currently active so a tab-switch click
     // actually changes activeTab — easier signal than "no change".
     const activeIdx = detail.tab;
@@ -187,7 +188,7 @@ describe('[4] click ONE column RIGHT of closeX+closeW → does not close', () =>
     sm.capture(() => sm.render());
     const layout = api.getInstanceSlice('layout');
     const detail = api.primarySliceOf('detail');
-    const b = layout.paneBounds['pane-detail'] || layout.paneBounds.detail;
+    const b = geo.visibleBoundsFor(layout, 'pane-detail');
     const closeTab = (detail.tabBounds || []).find(t => t.closeKey != null);
     assert(closeTab, 'a closeable tab exists');
 

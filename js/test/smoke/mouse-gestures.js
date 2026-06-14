@@ -21,6 +21,7 @@
 
 const { describe, it, eq, assert, report } = require('../test-runner');
 const sm = require('./_helpers/smoke');
+const geo = require('../../leaves/geometry');  // A.2: bounds are derived, not on slice.paneBounds
 const api = sm.api;
 const { getModel } = require('../../app/runtime');
 const actions = require('../../dispatch/actions');
@@ -53,8 +54,7 @@ function decodeFrame(raw) {
 
 // Bounds of the groups navigator pane in the default layout.
 function groupsBounds() {
-  const layout = api.getInstanceSlice('layout');
-  return layout.paneBounds['pane-groups'] || layout.paneBounds.groups;
+  return geo.visibleBoundsFor(api.getInstanceSlice('layout'), 'pane-groups');
 }
 
 // Spy on handleAction WITHOUT calling through — focus + select route via
@@ -263,7 +263,7 @@ describe('[5] right-click context menu — copy + dismiss', () => {
     d.scroll = 0;
     sm.capture(() => sm.render());
     const lay = api.getInstanceSlice('layout');
-    const b = lay.paneBounds['pane-detail'] || lay.paneBounds.detail;
+    const b = geo.visibleBoundsFor(lay, 'pane-detail');
     assert(b, 'detail pane bounds present');
     const [sx, sy] = sgr0(b.x + 2, b.y + 1);   // first content row → 'alpha line'
 
@@ -288,7 +288,7 @@ describe('[5] right-click context menu — copy + dismiss', () => {
     d.scroll = 0;
     sm.capture(() => sm.render());
     const lay = api.getInstanceSlice('layout');
-    const b = lay.paneBounds['pane-detail'] || lay.paneBounds.detail;
+    const b = geo.visibleBoundsFor(lay, 'pane-detail');
     // Drag across the first content line: press → motion → release.
     const [px, py] = sgr0(b.x + 2, b.y + 1);      // first content row, col 0-ish
     sm.capture(() => sm.handleMouse('press', px, py));
@@ -325,7 +325,7 @@ describe('[5] right-click context menu — copy + dismiss', () => {
     d.scroll = 0;
     sm.capture(() => sm.render());
     const lay = api.getInstanceSlice('layout');
-    const b = lay.paneBounds['pane-detail'] || lay.paneBounds.detail;
+    const b = geo.visibleBoundsFor(lay, 'pane-detail');
     const [px, py] = sgr0(b.x + 4, b.y + 1);     // land ON a char
     const seen = withMsgSpy(() => {
       sm.capture(() => sm.handleMouse('press', px, py));

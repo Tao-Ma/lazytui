@@ -391,19 +391,20 @@ function composeRects(layout, model) {
 // P3): every state change is a dispatch, so the clamp runs there, and
 // render dispatches NOTHING. test-scroll-clamp.js pins render purity.)
 
-function renderNormal(model) {
+function renderNormal(model, arrangeOverride) {
   const layoutSlice = getInstanceSlice('layout');
   // resize-as-Msg P1 — dims come from the model (written by the
   // term_resized arm), not a live io/term read: render is a function
   // of the model's clock. A resize landing mid-frame repaints when
   // its Msg arrives.
   const dims = layoutSlice.dims;
-  const layout = geo.calcLayout(layoutSlice, dims);
-  layoutSlice.paneBounds = {};
-  for (const rect of layout.rects) {
-    const b = { x: rect.x, y: rect.y, w: rect.w, h: rect.h };
-    if (rect.paneId) layoutSlice.paneBounds[rect.paneId] = b;
-  }
+  // Phase B — drag preview is threaded as a param (arrangeOverride), so
+  // the preview layout is computed without mutating layoutSlice.arrange.
+  // Phase A.2 — render no longer WRITES layoutSlice.paneBounds; bounds are a
+  // pure derived value (geometry.boundsFor/visibleBoundsFor compute via the
+  // memoized selector). calcLayout still publishes _currentLayout for the
+  // boot-edge fallback.
+  const layout = geo.calcLayout(layoutSlice, dims, { arrangeOverride });
   const rectsWithLines = composeRects(layout, model);
   const COLS = dims.cols;
   const newRows = painter.composeRows(rectsWithLines, COLS, layout.availH);
@@ -427,15 +428,15 @@ function renderNormal(model) {
 // any pane (two viewers side-by-side is allowed); the right slot may be null
 // (single-pane left-only). The same helper drives getPanelViewportH so the
 // scroll/viewport math agrees with what's painted.
-function renderHalf(model) {
+function renderHalf(model, arrangeOverride) {
   const layoutSlice = getInstanceSlice('layout');
   const dims = layoutSlice.dims;  // model clock (resize-as-Msg P1)
-  geo.calcLayout(layoutSlice, dims);
+  geo.calcLayout(layoutSlice, dims, { arrangeOverride });
   const COLS = dims.cols, ROWS = dims.rows;
   const halfW = Math.floor(COLS / 2);
   const availH = ROWS - 1;
   const focusedPanel = allPanels().find(p => mpane.paneMatchesFocus(p, layoutSlice.focus));
-  if (!focusedPanel) return renderNormal(model);
+  if (!focusedPanel) return renderNormal(model, arrangeOverride);
   // v0.6.4 — the two projected panes come from the shared halfProjection
   // (leaves/geometry): an ephemeral, API-settable selection (`view_place_pane`)
   // that falls back to the historical "focused non-detail + major viewer"
@@ -446,14 +447,9 @@ function renderHalf(model) {
   const proj = geo.halfProjection(layoutSlice);
   const leftPanel = (proj.left && all.find(p => p.paneId === proj.left)) || focusedPanel;
   const detailPanel = proj.right ? all.find(p => p.paneId === proj.right) || null : null;
-  layoutSlice.paneBounds = {};
-  const leftBounds = { x: 0, y: 0, w: halfW, h: availH };
-  if (leftPanel.paneId) layoutSlice.paneBounds[leftPanel.paneId] = leftBounds;
+  // Phase A.2 — bounds are derived (geometry._halfBoundsMap mirrors this
+  // exact left/right projection); render no longer writes paneBounds.
   const rightW = COLS - halfW;
-  if (detailPanel) {
-    const detailBounds = { x: halfW, y: 0, w: rightW, h: availH };
-    if (detailPanel.paneId) layoutSlice.paneBounds[detailPanel.paneId] = detailBounds;
-  }
   // v0.6.3 P4.2 — chrome computed via chromeFor + threaded through
   // renderPanel. v0.6.4 Theme B — shared scalars from _chromeContext.
   // Half view shows one non-detail pane (left) + detail (right); only
@@ -498,17 +494,16 @@ function renderHalf(model) {
   return didFull;
 }
 
-function renderFull(model) {
+function renderFull(model, arrangeOverride) {
   const layoutSlice = getInstanceSlice('layout');
   const dims = layoutSlice.dims;  // model clock (resize-as-Msg P1)
-  geo.calcLayout(layoutSlice, dims);
+  geo.calcLayout(layoutSlice, dims, { arrangeOverride });
   const COLS = dims.cols, ROWS = dims.rows;
   const availH = ROWS - 1;
   const focusedPanel = allPanels().find(p => mpane.paneMatchesFocus(p, layoutSlice.focus));
-  if (!focusedPanel) return renderNormal(model);
-  layoutSlice.paneBounds = {};
-  const fullBounds = { x: 0, y: 0, w: COLS, h: availH };
-  if (focusedPanel.paneId) layoutSlice.paneBounds[focusedPanel.paneId] = fullBounds;
+  if (!focusedPanel) return renderNormal(model, arrangeOverride);
+  // Phase A.2 — bounds derived (geometry._fullBoundsMap mirrors this);
+  // render no longer writes paneBounds.
   // v0.6.3 P4.2 — chrome via chromeFor. v0.6.4 Theme B — shared scalars
   // from _chromeContext. Full view paints ONE pane (the focused one):
   // single trigger, no peer-disable.
@@ -537,7 +532,7 @@ function renderFull(model) {
 }
 
 
-function renderTerminalOverlay(model = getModel()) {
+function renderTerminalOverlay(model = getModel(), arrangeOverride) {
   if (!isTerminalTab()) return;
   const id = activeTerminalId();
   const termConf = activeTerminalConfig();
@@ -552,7 +547,12 @@ function renderTerminalOverlay(model = getModel()) {
   // fall through to a phantom normal-view rect and mis-place the overlay.
   // null → no-op. Single-viewer: the viewer is always on-screen, so this is
   // byte-identical.
-  const bounds = geo.visibleBoundsFor(layoutSlice, _route().resolveViewerPaneId());
+  // Phase A.2 — bounds derive from the slice's arrange. During a drag the
+  // overlay must follow the PREVIEW layout (its detail rect shifts to the
+  // would-be-after-release position), so compute against the preview arrange
+  // when one is threaded; otherwise the real slice.
+  const boundsSlice = arrangeOverride ? { ...layoutSlice, arrange: arrangeOverride } : layoutSlice;
+  const bounds = geo.visibleBoundsFor(boundsSlice, _route().resolveViewerPaneId());
   if (!bounds) return;
   const innerW = bounds.w - 2;
   const innerH = bounds.h - 2;
@@ -650,80 +650,35 @@ function render(model = getModel()) {
   let mainDidFull;
   // viewMode lives on the layout Component slice (Phase 1b).
   const layoutSlice = getInstanceSlice('layout') || { viewMode: 'normal' };
-  // Drag preview: during an active drag with a valid target, swap
-  // slice.arrange for the would-be-after-release arrange so the user
-  // sees the actual outcome rather than an insertion-bar hint. The swap
-  // stays in place through renderTerminalOverlay too — that overlay
-  // reads paneBounds.detail to position the xterm session, and the
-  // screen shows detail at preview coords, so the terminal must paint
-  // at preview coords to match. After that we restore both arrange AND
-  // paneBounds: the viewport dispatch + the next mouse hit-test read
-  // original-layout bounds, which keeps drop-target detection stable
-  // when the cursor sits near a zone boundary (preview-derived bounds
-  // would feed back into the next hit-test and ping-pong the layout
-  // under tiny cursor wobbles).
+  // Drag preview: during an active drag with a valid target, paint the
+  // would-be-after-release arrange so the user sees the actual outcome
+  // rather than an insertion-bar hint.
+  //
+  // Phase B threaded the preview arrange as a PARAMETER into the render
+  // functions (no `layoutSlice.arrange` mutation). Phase A.2 then dropped
+  // render's `paneBounds` writes entirely — bounds are a pure derived value
+  // keyed on the REAL `layoutSlice.arrange`, so a mouse hit-test mid-drag
+  // already reads original-layout geometry (no ping-pong, nothing to
+  // save/restore). The terminal overlay is the one consumer that wants the
+  // PREVIEW coords (its detail rect follows the would-be-after-release
+  // layout), so the preview arrange is passed to it explicitly.
   const drag = layoutSlice.freeConfig && layoutSlice.freeConfig.drag;
-  const previewArrange = drag && drag.previewArrange;
-  let savedArrange = null, savedBounds = null;
-  if (previewArrange) {
-    savedArrange = layoutSlice.arrange;
-    savedBounds = layoutSlice.paneBounds;
-    layoutSlice.arrange = previewArrange;
-  }
+  const previewArrange = (drag && drag.previewArrange) || null;
   const viewMode = layoutSlice.viewMode;
-  try {
-    if (viewMode === 'half') mainDidFull = renderHalf(model);
-    else if (viewMode === 'full') mainDidFull = renderFull(model);
-    else mainDidFull = renderNormal(model);
-    // Only force the terminal-overlay repaint when main paint actually
-    // cleared the screen (resize, overlay-close, first frame). In the
-    // steady state main paint is diff-based and leaves the PTY region
-    // untouched, so the overlay's own diff cache is enough.
-    if (mainDidFull) _frame.forceOverlayFull = true;
-    renderTerminalOverlay(model);
-  } finally {
-    // Restore the canonical slice unconditionally — _safeRender wraps
-    // per-panel throws but renderTerminalOverlay can throw past it. Without
-    // try/finally the preview arrange would persist in the live slice
-    // and every subsequent reducer write would build on top of it.
-    //
-    // v0.6.3 Phase D5 retired most render-side in-place writes in
-    // favor of `setInstanceSlice` (immutable spread). This pair is
-    // the surviving exception: it's a save/swap/restore around a
-    // single render call. Routing the restore through setInstanceSlice
-    // would emit a new model snapshot mid-render and trip the
-    // reactivity boundary (next frame would observe two diffs for
-    // one paint). Save the canonical refs above, paint with the
-    // preview, restore the refs here — no observer sees the swap.
-    if (previewArrange) {
-      layoutSlice.arrange = savedArrange;
-      layoutSlice.paneBounds = savedBounds;
-    }
-  }
-  // Cache the detail panel's effective viewport on the viewer's own
-  // slice so viewer.update can clamp scroll/cursor without reading
-  // layout's render-time geometry across slices. Blessed render-side
-  // write — same documented exception as paneBounds (frame-derived,
-  // pure function of layout). Uses the original (non-preview) bounds:
-  // the viewer's actual state hasn't committed to the drag yet, so its
-  // viewport tracks the real layout. R4.9: direct setInstanceSlice
-  // instead of a wrapped viewer_set_viewport Msg + 5-line reducer arm
-  // — the Msg's only effect was this single-field write.
-  const route = _route();
-  // Bounds key = the viewer's CONTAINER paneId (carries half/full visible
-  // bounds); slice key = the viewer's own tab/instance id (where innerH
-  // lives). v0.6.4 — these two diverge once the type-keyed write retires.
-  const viewerTab = route.resolveTarget('viewer');
-  // visibleBoundsFor: skip publishing innerH for an off-screen viewer in
-  // half/full (boundsFor's phantom fallback would publish a stale height).
-  const viewerBounds = geo.visibleBoundsFor(layoutSlice, route.resolveViewerPaneId());
-  if (viewerTab && viewerBounds) {
-    const innerH = Math.max(0, viewerBounds.h - 2);
-    const viewerSlice = getInstanceSlice(viewerTab);
-    if (viewerSlice && viewerSlice.innerH !== innerH) {
-      route.setInstanceSlice(viewerTab, { ...viewerSlice, innerH });
-    }
-  }
+  if (viewMode === 'half') mainDidFull = renderHalf(model, previewArrange);
+  else if (viewMode === 'full') mainDidFull = renderFull(model, previewArrange);
+  else mainDidFull = renderNormal(model, previewArrange);
+  // Only force the terminal-overlay repaint when main paint actually
+  // cleared the screen (resize, overlay-close, first frame). In the steady
+  // state main paint is diff-based and leaves the PTY region untouched, so
+  // the overlay's own diff cache is enough.
+  if (mainDidFull) _frame.forceOverlayFull = true;
+  renderTerminalOverlay(model, previewArrange);
+  // blessed-exceptions Phase A — render no longer produces layout's
+  // view-output caches: `innerH` is computed in the post-dispatch finalizer
+  // (A.1) and `paneBounds` is a pure derived selector (A.2). The only
+  // remaining render-side slice write is the viewer's OWN `tabBounds`
+  // (detailTitle), an own-slice cache — a milder, optional follow-on.
   renderFooter(model);
   // Panel-chrome glyphs (`[_]`/`[+]` collapse, `[X]` close in free-config,
   // `[≡]` tab trigger) are composed INLINE in the panel's top border

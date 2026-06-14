@@ -82,15 +82,23 @@ function _applySnapshot(arrange, snap) {
   };
 }
 
-/** Rendered bounds for a pane, addressed by paneId with a type fallback
- *  (v0.6.4). renderNormal/Half/Full write `paneBounds[paneId]` ONLY (the
- *  type-keyed write retired this release) — keying by paneId is what lets
- *  two same-kind panes in one column read their OWN height instead of
- *  colliding on the shared type key. The `[type]` fallback no longer fires
- *  in production (every placed pane has a paneId); it survives only for
- *  legacy unit fixtures that seed `paneBounds` by type without a render. */
+/** Rendered bounds for a pane, addressed by paneId with a type fallback.
+ *  blessed-exceptions Phase A.2 — routed through geometry.boundsFor: pane
+ *  bounds are a pure derived value now (production no longer writes
+ *  `slice.paneBounds`). boundsFor returns a seed/override first (legacy unit
+ *  fixtures that seed `paneBounds` by paneId/type without rendering), then
+ *  the memoized normal-layout selector. free-config is a normal-view mode,
+ *  so normal geometry is exactly what the drag/resize math wants. */
+let _geo; const _geometry = () => (_geo ||= require('./geometry'));
 function boundsOf(slice, p) {
-  return slice.paneBounds[p.paneId] || slice.paneBounds[p.type];
+  // Seed/override wins by EITHER key (legacy fixtures seed paneBounds by
+  // paneId or by type) — checked here so a type-seed isn't shadowed by the
+  // paneId selector path. Production paneBounds is empty → derive.
+  const pb = slice.paneBounds;
+  const seed = pb && (pb[p.paneId] || pb[p.type]);
+  if (seed) return seed;
+  const geo = _geometry();
+  return geo.boundsFor(slice, p.paneId) || (p.type ? geo.boundsFor(slice, p.type) : null);
 }
 
 function columnTotalH(slice, columnIndex) {

@@ -412,6 +412,22 @@ function _finalizeDispatch() {
       syncPanelScroll(p.paneId,
         geo.getPanelViewportH(layoutSlice, p.paneId, layoutSlice.dims, layout));
     }
+    // blessed-exceptions Phase A.1 — the viewer's `innerH` (the viewport-
+    // height cache its reducer reads for scroll/cursor clamps) is produced
+    // HERE, in the dispatch finalizer, not by render(). Computed from THIS
+    // dispatch's fresh Layout via getPanelViewportH — so it's strictly
+    // fresher than the prior render-side write, which read paneBounds one
+    // frame stale. One major/visible viewer (resolveTarget('viewer'),
+    // bounds via resolveViewerPaneId), mirroring the retired render write.
+    // The `!==` guard preserves the viewer slice's reference identity when
+    // unchanged (the layout memo + downstream ref-equality depend on it).
+    const viewerTab = route.resolveTarget('viewer');
+    const viewerPaneId = route.resolveViewerPaneId();
+    if (viewerTab && viewerPaneId) {
+      const innerH = geo.getPanelViewportH(layoutSlice, viewerPaneId, layoutSlice.dims, layout);
+      const vs = route.getInstanceSlice(viewerTab);
+      if (vs && vs.innerH !== innerH) route.setInstanceSlice(viewerTab, { ...vs, innerH });
+    }
   } catch (e) {
     console.error(`[dispatch] post-dispatch scroll clamp error: ${e.message}`);
   } finally {
@@ -780,6 +796,11 @@ function cleanupComponents() {
  * render) call this transitively per frame; a plugin that shells out
  * here would block the event loop on every line of stream output.
  *
+ * ENFORCED (blessed-exceptions Phase E) via `panel/plugin-guard.js`: under
+ * `LAZYTUI_STRICT_PLUGINS=1` (dev/test) the args are read-only-wrapped and
+ * the call is timed — a mutation or a slow (IO-ish) call is surfaced to the
+ * diagnostics window. Production is an unguarded pass-through (zero cost).
+ *
  * v0.6.2 — `config` + `model` params added. Existing plugins that only
  * declare `(group)` / `(group, name)` / `(group, name, config)` ignore
  * the extras (JS arity slack).
@@ -787,10 +808,14 @@ function cleanupComponents() {
 function getGroupActions(group, groupName) {
   const m = getModel();
   const result = {};
+  const guard = require('./plugin-guard');
   for (const comp of Object.values(components)) {
     if (typeof comp.groupActions !== 'function') continue;
     try {
-      Object.assign(result, comp.groupActions(group, groupName, m.config, m) || {});
+      // Routed through the purity guard: a no-op pass-through in production,
+      // but read-only-wraps + times the call under LAZYTUI_STRICT_PLUGINS=1
+      // so a mutating / IO-doing plugin is surfaced to the diag window.
+      Object.assign(result, guard.callGroupActions(comp, group, groupName, m.config, m) || {});
     } catch (e) {
       console.error(`[${comp.name}] groupActions error: ${e.message}`);
     }

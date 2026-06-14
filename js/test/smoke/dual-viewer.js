@@ -190,11 +190,21 @@ describe('[8] half view is an API-driven projection — two viewers side-by-side
   const paint = require('../../render/paint');
   const layoutSlice = () => api.getInstanceSlice('layout');
 
+  const mpool = require('../../leaves/pool');
   function renderNow() {
     const realWrite = process.stdout.write.bind(process.stdout);
     process.stdout.write = () => true;
     try { paint.redraw(getModel()); } finally { process.stdout.write = realWrite; }
-    return layoutSlice().paneBounds;
+    // A.2 — paneBounds is no longer a render-written field; build the visible
+    // map from the derived accessor (only on-screen panes resolve, exactly
+    // what the old half-view paneBounds held).
+    const ls = layoutSlice();
+    const map = {};
+    for (const p of mpool.allPanesInColumns(ls.arrange)) {
+      const b = geo.visibleBoundsFor(ls, p.paneId);
+      if (b) map[p.paneId] = b;
+    }
+    return map;
   }
 
   it('DEFAULT half (nothing placed): one non-viewer + the focused viewer; the OTHER viewer is hidden', () => {

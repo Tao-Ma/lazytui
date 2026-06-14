@@ -160,23 +160,25 @@ payload fans out to a Component, flat payload re-enters the root
 reducer) — no path where module X writes layer Y's state directly
 except the blessed render-side exceptions:
 
-  - `layout.paneBounds` written by each render-mode in `render/paint.js`
-    (the view-output geometry). The layout *math* itself is pure since
-    the wm-geometry refactor: `leaves/geometry.js` (was
-    `render/geometry-core.js`) computes rects from an explicit
-    `(layoutSlice, dims)` and performs no writes.
   - `viewer.slice.tabBounds` written by the viewer's `detailTitle`
     (tab-bar hit-test cache). P4.1 moved this off `layout`'s slice onto
     the viewer's OWN slice — an own-slice render-time write, not the
-    cross-slice one it used to be.
-  - direct `route.setInstanceSlice` from `render()` into the viewer's
-    `innerH` (viewport cache so viewer reducers don't read layout
-    cross-slice; R4.9 retired the prior `viewer_set_viewport` Msg —
-    the Msg's only effect was this single-field write, now done inline
-    alongside the paneBounds writes).
-  - `setImmediate(terminal_exit)` from `renderTerminalOverlay` when
-    the active PTY session has exited (T14 — deferred a tick so the
-    cleanup cascade isn't inline in the render path).
+    cross-slice one it used to be. (The last remaining render-side slice
+    write; an optional A.2 follow-on.)
+
+  RETIRED render-side writes (blessed-exceptions arc) — render is now a
+  pure reader of these:
+  - `layout.paneBounds` — was written by each render-mode; now a PURE
+    DERIVED value (Phase A.2). `geometry.boundsFor`/`visibleBoundsFor`
+    compute it from `(arrange, dims, viewMode, focus, halfView)` via the
+    memoized selector (`leaves/selector.js`). `slice.paneBounds` survives
+    only as an optional seed/override (boot edge + test fixtures); production
+    never writes it.
+  - viewer `innerH` — was a direct `setInstanceSlice` from `render()`; now
+    computed in the post-dispatch finalizer (`panel/api.js`, Phase A.1) off
+    that dispatch's fresh Layout.
+  - `setImmediate(terminal_exit)` from `renderTerminalOverlay` — retired
+    v0.6.3 P5.1; PTY exit is event-driven from `pty-lifecycle.handleExit`.
 
 **Resize is a Msg; the scroll clamp is a post-dispatch finalizer**
 (resize-as-Msg, docs/resize-as-msg.md). Terminal dimensions live in

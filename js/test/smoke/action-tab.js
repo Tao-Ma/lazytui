@@ -147,37 +147,37 @@ describe('[3] background appends survive switch-away; switch-back restores live 
     streamStart('make-check', 'g1', '$ make check');
     viewerAppend('make-check', 'g1', 'pre-1');
     viewerAppend('make-check', 'g1', 'pre-2');
-    // Force a small viewport so bottom-pin is meaningful.
-    api.primarySliceOf(VIEWER).innerH = 3;
-
     // Switch to Info (idx 0).
     tabSwitch(0);
     const onInfo = api.primarySliceOf(VIEWER);
     eq(onInfo.tab, 0, 'parked on Info');
 
-    // Background appends — the producer is still alive.
-    viewerAppend('make-check', 'g1', 'bg-1');
-    viewerAppend('make-check', 'g1', 'bg-2');
-    viewerAppend('make-check', 'g1', 'bg-3');
+    // Background appends — the producer is still alive. Append MORE than a
+    // viewport's worth so the bottom-pin is non-tautological. (blessed-
+    // exceptions A.1: innerH is finalizer-derived now — it reflects the real
+    // viewport and can't be hand-pinned across a dispatch, so derive the
+    // expected scroll from the actual innerH instead of forcing innerH=3.)
+    const BG = 30;
+    for (let i = 1; i <= BG; i++) viewerAppend('make-check', 'g1', `bg-${i}`);
+    const total = 3 + BG;  // 1 header + 2 pre + BG background lines
 
     const offTab = api.primarySliceOf(VIEWER);
-    eq(offTab.actionTabBuffers.g1['make-check'].lines.length, 6,
-      'buffer grew to 6 while user was off-tab (1 header + 2 pre + 3 bg)');
-    assert(!offTab.lines.includes('bg-3'),
+    eq(offTab.actionTabBuffers.g1['make-check'].lines.length, total,
+      `buffer grew to ${total} while user was off-tab`);
+    assert(!offTab.lines.includes(`bg-${BG}`),
       'displayedLines(slice) does NOT mirror background appends while off-tab');
 
     // Switch back to make-check.
     tabSwitch(2);
     const back = api.primarySliceOf(VIEWER);
     eq(back.tab, 2, 'returned to make-check');
-    eq(displayedLines(back).length, 6, 'all six lines restored from buffer');
-    eq(displayedLines(back)[5], 'bg-3', 'latest background line is at the tail');
-    // Pin innerH separately so the bottom-pin formula isn't tautological
-    // (Math.max(0, lines - innerH) collapses to 0=0 when innerH >= lines).
-    // The setup at line 150 set innerH=3; if tab_switch resets it,
-    // catch that here rather than letting it mask the bottom-pin check.
-    eq(back.innerH, 3, 'innerH preserved across tab_switch');
-    eq(back.scroll, 3, 'scroll pinned to bottom (6 lines - innerH 3 = scroll 3)');
+    eq(displayedLines(back).length, total, 'all lines restored from buffer');
+    eq(displayedLines(back)[total - 1], `bg-${BG}`, 'latest background line is at the tail');
+    const expectScroll = Math.max(0, total - back.innerH);
+    assert(back.innerH > 0 && total > back.innerH,
+      `viewport (innerH ${back.innerH}) smaller than content (${total}) — bottom-pin is meaningful`);
+    eq(back.scroll, expectScroll,
+      `scroll bottom-pinned (${total} lines - innerH ${back.innerH} = ${expectScroll})`);
   });
 });
 

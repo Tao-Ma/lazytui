@@ -172,6 +172,42 @@ describe('[7] resize refreshes the io/term mirror (footer paints at the NEW bott
   });
 });
 
+// blessed-exceptions Phase A.1 — the viewer's `innerH` viewport cache is
+// produced by the dispatch FINALIZER, not by render(). These tests never
+// call render(), so a correct innerH proves the finalizer is the writer
+// (and that it tracks a resize freshly, off this dispatch's Layout).
+describe('[9] viewer innerH is produced by the finalizer, not render', () => {
+  const route = require('../panel/route');
+  function viewerInnerH() {
+    const t = route.resolveTarget('viewer');
+    return t ? (getInstanceSlice(t) || {}).innerH : undefined;
+  }
+  function expectedInnerH() {
+    const ls = getInstanceSlice('layout');
+    const layout = geo.calcLayout(ls, ls.dims);
+    return geo.getPanelViewportH(ls, route.resolveViewerPaneId(), ls.dims, layout);
+  }
+
+  it('innerH is set after a dispatch with no render', () => {
+    boot(120, 40);
+    // A bare dispatch (no render anywhere in this test) runs the finalizer.
+    sm.api.dispatchMsg(sm.api.wrap('layout', { type: 'term_resized', cols: 120, rows: 40 }));
+    const ih = viewerInnerH();
+    assert(typeof ih === 'number' && ih > 0, `viewer innerH produced by finalizer: ${ih}`);
+    eq(ih, expectedInnerH(), 'innerH matches the viewer viewport height for this Layout');
+  });
+
+  it('innerH tracks a resize freshly (no render, no one-frame lag)', () => {
+    boot(120, 40);
+    sm.api.dispatchMsg(sm.api.wrap('layout', { type: 'term_resized', cols: 120, rows: 40 }));
+    const tall = viewerInnerH();
+    sm.api.dispatchMsg(sm.api.wrap('layout', { type: 'term_resized', cols: 120, rows: 20 }));
+    const short = viewerInnerH();
+    assert(short < tall, `innerH shrank with the terminal (${tall} → ${short}) on the resize dispatch`);
+    eq(short, expectedInnerH(), 'innerH equals the post-resize viewport height immediately');
+  });
+});
+
 process.stdout.columns = 100;
 process.stdout.rows = 40;
 report();

@@ -49,6 +49,7 @@
 // the impure fetches moved to the call sites, which already had them.
 const mpool = require('./pool');
 const mpane = require('./pane');
+const { createSelector } = require('./selector');
 
 // Lazy route handle — the ONE non-leaf reach this module keeps:
 // halfProjection's default-right slot resolves the major viewer via
@@ -286,11 +287,15 @@ function getPanelViewportH(layoutSlice, paneId, dims, layout) {
   return Math.max(1, h - 2);
 }
 
-function calcLayout(layoutSlice, dims) {
+// Pure normal-column layout: (arrange, dims) → {ranges, availH, rects,
+// cols, rows}. NO side effects (does not publish _currentLayout, does not
+// touch any slice). calcLayout wraps this with the _currentLayout publish;
+// the paneBounds selector (Phase A.2) consumes it directly so production
+// bounds are a pure derived value, not a render-side write.
+function _layoutRects(arrange, dims) {
   const COLS = dims.cols, ROWS = dims.rows;
-
-  const columns = layoutSlice.arrange.columns || [];
-  const ranges = mpool.distributeColumnWidths(layoutSlice.arrange, COLS);
+  const columns = arrange.columns || [];
+  const ranges = mpool.distributeColumnWidths(arrange, COLS);
   const lastIdx = columns.length - 1;
   // Only the footer is reserved at the bottom; panels fill everything
   // else. The yank register surfaces via the `"` popup, not an
@@ -299,36 +304,23 @@ function calcLayout(layoutSlice, dims) {
   // Minimum panel height: 3 rows (border + 1 content line)
   const minH = 3;
 
-  // v0.6.3 P1.5 — heights map is now function-local (was module-local
-  // `_panelHeights`). Single use: build the Rect list below; nobody
-  // else reads it.
   const heights = {};
-  const detailHeightPct = layoutSlice.arrange.detailHeightPct;
+  const detailHeightPct = arrange.detailHeightPct;
   for (let ci = 0; ci < columns.length; ci++) {
     const colHeights = distributeColumnHeights(
       columns[ci].panels || [], availH, ci === lastIdx, minH, detailHeightPct);
     Object.assign(heights, colHeights);
   }
-  // (v0.6.4 — the prior `if (!('detail' in heights))` synthesis was
-  // dropped: `heights` is keyed by paneId now and is function-local, read
-  // back only by the rect loop below via each pane's own key. An unplaced
-  // detail has no rect to read it, so synthesizing the entry was dead.)
 
-  // v0.6.3 P1.1 — build the Layout value. Each Rect carries the
-  // column-view geometry for one placed pane (x, y, w, h, paneId,
-  // type, collapsed). Computed by walking each column's panels and
-  // accumulating y per the per-panel heights just distributed.
-  //
-  // `viewMode` reflects the active mode for completeness, but in
-  // half/full the Rect list still describes the normal column layout
-  // — renderHalf/Full override with their own single-panel bounds.
-  // Unification of the rect list across view modes lands in P3
-  // (composeRects).
+  // Each Rect carries the column-view geometry for one placed pane (x, y,
+  // w, h, paneId, type, collapsed). half/full views describe their own
+  // single/double-pane bounds via _halfBoundsMap / _fullBoundsMap below;
+  // this rect list is always the NORMAL column layout.
   const rects = [];
   for (let ci = 0; ci < columns.length; ci++) {
     const r = ranges[ci];
     if (!r) continue;
-    const colPanels = mpool.columnPanels(layoutSlice.arrange, ci);
+    const colPanels = mpool.columnPanels(arrange, ci);
     let y = 0;
     for (const p of colPanels) {
       const h = heights[p.paneId || p.type] || 0;
@@ -341,26 +333,28 @@ function calcLayout(layoutSlice, dims) {
       y += h;
     }
   }
+  return { ranges, availH, rects, cols: COLS, rows: ROWS };
+}
 
-  // P1.5 — publish _currentLayout BEFORE the scroll-clamp loop so
-  // getPanelViewportH (which reads via boundsFor → _currentLayout
-  // when no slice fallback) sees this frame's rects, not the prior
-  // frame's. Pre-P1.5 the loop read _panelHeights directly from the
-  // module-local; the reorder is a no-op for the slice-write fallback
-  // path but plugs the hole once that fallback retires.
+function calcLayout(layoutSlice, dims, opts) {
+  // blessed-exceptions Phase B — the drag-preview arrange is passed AS A
+  // PARAMETER, not by swapping `layoutSlice.arrange` in place. Absent
+  // override → the real arrange (no-op).
+  const arrange = (opts && opts.arrangeOverride) || layoutSlice.arrange;
+  const lr = _layoutRects(arrange, dims);
+
+  // P1.5 — publish _currentLayout so getPanelViewportH / boundsFor have a
+  // last-resort source at the pre-first-dims boot edge. (Production bounds
+  // now derive from the pure selector below; this stays for the boot edge +
+  // getCurrentLayout() consumers.)
   _currentLayout = {
-    rects, availH,
-    viewMode: layoutSlice.viewMode, cols: COLS, rows: ROWS,
+    rects: lr.rects, availH: lr.availH,
+    viewMode: layoutSlice.viewMode, cols: lr.cols, rows: lr.rows,
   };
 
-  // (wm-geometry P1.1 lifted the per-pane scroll-clamp loop that lived
-  // here into paint; resize-as-Msg P3 moved it again — to the post-
-  // dispatch finalizer in panel/api.js. Neither layout math nor render
-  // dispatches Msgs anymore.)
-
   return {
-    ranges, availH,
-    rects, viewMode: layoutSlice.viewMode, cols: COLS, rows: ROWS,
+    ranges: lr.ranges, availH: lr.availH,
+    rects: lr.rects, viewMode: layoutSlice.viewMode, cols: lr.cols, rows: lr.rows,
   };
 }
 
@@ -375,33 +369,83 @@ function getCurrentLayout() {
   return _currentLayout;
 }
 
+// blessed-exceptions Phase A.2 — pane bounds are a PURE DERIVED value, no
+// longer a render-side write. The map keyed by paneId is computed from
+// (arrange, dims) and memoized via the shared selector model (leaves/
+// selector.js). `layoutSlice.paneBounds` survives ONLY as a seed/override
+// input (boot edge + test fixtures seed it directly); production never
+// writes it, so when absent these accessors compute the value.
+//
+// Normal view = the column layout (memoized; the hot per-pane hit-test +
+// per-row decor loops hit it). Half/full = the visible single/double-pane
+// projection (cheap, recomputed — few panes, called rarely).
+const _normalBoundsMap = createSelector(
+  (layoutSlice) => [layoutSlice.arrange, layoutSlice.dims],
+  (arrange, dims) => {
+    const m = {};
+    for (const r of _layoutRects(arrange, dims).rects) {
+      if (r.paneId) m[r.paneId] = { x: r.x, y: r.y, w: r.w, h: r.h };
+    }
+    return m;
+  });
+
+// Half view: two slots from halfProjection (mirrors renderHalf exactly —
+// leftPanel = projected-left-or-focused, detailPanel = projected-right).
+// No focused pane → renderHalf falls back to renderNormal, so do we.
+function _halfBoundsMap(layoutSlice) {
+  const dims = layoutSlice.dims;
+  const COLS = dims.cols, ROWS = dims.rows;
+  const all = mpool.allPanesInColumns(layoutSlice.arrange);
+  const focusedPanel = all.find(p => mpane.paneMatchesFocus(p, layoutSlice.focus));
+  if (!focusedPanel) return _normalBoundsMap(layoutSlice);
+  const halfW = Math.floor(COLS / 2), availH = ROWS - 1;
+  const proj = halfProjection(layoutSlice);
+  const leftPanel = (proj.left && all.find(p => p.paneId === proj.left)) || focusedPanel;
+  const detailPanel = proj.right ? all.find(p => p.paneId === proj.right) || null : null;
+  const m = {};
+  if (leftPanel.paneId) m[leftPanel.paneId] = { x: 0, y: 0, w: halfW, h: availH };
+  if (detailPanel && detailPanel.paneId) {
+    m[detailPanel.paneId] = { x: halfW, y: 0, w: COLS - halfW, h: availH };
+  }
+  return m;
+}
+
+// Full view: the focused pane fills the screen (mirrors renderFull); no
+// focused pane → renderNormal fallback.
+function _fullBoundsMap(layoutSlice) {
+  const dims = layoutSlice.dims;
+  const all = mpool.allPanesInColumns(layoutSlice.arrange);
+  const focusedPanel = all.find(p => mpane.paneMatchesFocus(p, layoutSlice.focus));
+  if (!focusedPanel) return _normalBoundsMap(layoutSlice);
+  const m = {};
+  if (focusedPanel.paneId) {
+    m[focusedPanel.paneId] = { x: 0, y: 0, w: dims.cols, h: dims.rows - 1 };
+  }
+  return m;
+}
+
+// The full visible-bounds map for the current view mode.
+function _visibleBoundsMap(layoutSlice) {
+  const vm = layoutSlice.viewMode;
+  if (vm === 'half') return _halfBoundsMap(layoutSlice);
+  if (vm === 'full') return _fullBoundsMap(layoutSlice);
+  return _normalBoundsMap(layoutSlice);
+}
+
 /**
- * v0.6.3 P1.3 — single accessor for "the rect at <key>", where <key>
- * is a paneId, a panel type, or 'detail'. Bridges the two geometry
- * sources during the P1 migration:
- *
- *   1. `_currentLayout.rects` — the per-frame Rect list produced by
- *      calcLayout (P1.1). Preferred source.
- *   2. `layoutSlice.paneBounds[key]` — legacy slice write produced
- *      by renderNormal/Half/Full. Used as fallback when no Layout
- *      has been published yet (pre-first-render boot edge; tests
- *      that seed bounds without calling render).
- *
- * v0.6.3 P4.1 — tabBounds cache moved off layoutSlice.paneBounds.detail.tabs
- * onto the viewer's own slice. Hit-test consumers read it directly
- * via `getInstanceSlice(_route().resolveTarget('viewer') || 'detail').tabBounds`; boundsFor() no longer
- * surfaces tabs.
+ * The rect at <key> (paneId, type, or 'detail'), reporting NORMAL-view
+ * geometry even for off-screen panes — used by getPanelViewportH for
+ * scroll-viewport clamping. Seed/override (layoutSlice.paneBounds) wins;
+ * else the memoized normal selector; else the last published _currentLayout
+ * (pre-first-dims boot edge + type-key matching).
  */
 function boundsFor(layoutSlice, key) {
-  const sliceBounds = layoutSlice && layoutSlice.paneBounds && layoutSlice.paneBounds[key];
-  // P1.3 priority: slice first. Production still writes paneBounds
-  // every frame, but v0.6.4 re-keyed those writes by paneId (was by
-  // type) — so the originally-planned P1.4 "stop the slice writes,
-  // fall through to rects" never happened; the writes were migrated,
-  // not retired. The rect path below remains the fallback for the
-  // pre-first-render boot edge and for tests that seed paneBounds
-  // without rendering.
-  if (sliceBounds) return sliceBounds;
+  const seed = layoutSlice && layoutSlice.paneBounds && layoutSlice.paneBounds[key];
+  if (seed) return seed;
+  if (layoutSlice && layoutSlice.dims && layoutSlice.arrange) {
+    const rect = _normalBoundsMap(layoutSlice)[key];
+    if (rect) return rect;
+  }
   if (_currentLayout && _currentLayout.rects) {
     const rect = _currentLayout.rects.find(r => r.paneId === key || r.type === key);
     if (rect) return rect;
@@ -410,14 +454,17 @@ function boundsFor(layoutSlice, key) {
 }
 
 /** Bounds for a CURRENTLY-VISIBLE pane only — half/full view drops
- *  off-screen panes from layoutSlice.paneBounds, so callers that
- *  need "where the user can actually click this pane" want this
- *  variant. boundsFor() in contrast also reports normal-view
- *  geometry for off-screen panes (used by getPanelViewportH for
- *  scroll-viewport clamping). The split prevents half-mode click
- *  hit-tests from firing on a non-visible pane's phantom rect. */
+ *  off-screen panes, so callers that need "where the user can actually
+ *  click this pane" want this variant (boundsFor() in contrast reports
+ *  normal-view geometry for off-screen panes too). Prevents half-mode
+ *  click hit-tests from firing on a non-visible pane's phantom rect.
+ *  Seed/override wins; else the view-mode-aware visible map. */
 function visibleBoundsFor(layoutSlice, key) {
-  return (layoutSlice && layoutSlice.paneBounds && layoutSlice.paneBounds[key]) || null;
+  if (!layoutSlice) return null;
+  const seed = layoutSlice.paneBounds && layoutSlice.paneBounds[key];
+  if (seed) return seed;
+  if (!layoutSlice.dims || !layoutSlice.arrange) return null;
+  return _visibleBoundsMap(layoutSlice)[key] || null;
 }
 
 module.exports = {
