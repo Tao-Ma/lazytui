@@ -32,11 +32,7 @@
 // keybindings is a dependency-free leaf (the leader-chord registry tree), so
 // the reducer can read it to walk the prefix tree without a require cycle.
 const kb = require('../dispatch/keybindings');
-// Pure command-menu item builder (leaf), so menu_open can build inline.
-// Pure pane-tab info builder (leaf) — flatTabInfo for jobs_activate's
-// tab-idx resolution. Zero-dep leaf, safe direct import.
-const pt = require('../leaves/pane-tabs');
-// esc() for the jobs_activate info-card lines (background/tmux).
+// esc() for the jobs_routed info-card lines (background/tmux).
 const { esc } = require('../io/ansi');
 // Pure yank-register transforms (leaf) — push/promote/drop/clear taking
 // `model`, so the reducer owns register mutations; OSC52 is an emit_osc52 Cmd.
@@ -833,61 +829,61 @@ function update(model, msg) {
     case 'diag_log_save':
       return [model, [{ type: 'diag_save' }]];
     case 'jobs_activate': {
-      // Single-Msg cascade — handler resolves the (out-of-TEA)
-      // feature/jobs entry by cursor and threads it via msg.job; the
-      // reducer emits the Cmd list from msg.job + msg.now. Reducer is
-      // pure (R2 — pre-fix this arm read feature/jobs.list() inline,
-      // violating the renderer-only-reader contract for out-of-TEA
-      // stores per PRINCIPLES §12). msg.now is the dispatch-time
-      // timestamp for the background/tmux age display.
+      // v0.6.4 Phase C — PURE orchestrator. The handler resolves the
+      // (out-of-TEA) feature/jobs entry by cursor and threads it via
+      // msg.job; msg.now is the dispatch-time timestamp for the
+      // background/tmux age display. This arm only closes the overlay,
+      // resolves the target group from the job payload (a model-only
+      // read), and queues the cascade — it performs NO Component-slice
+      // read.
       //
-      // v0.6.4 Theme C — BLESSED root-reducer slice read (NOT threadable).
-      // The viewer-slice reads below (flatTabInfo / resolveTabKey to route
-      // a routed/pty/info job to its tab) depend on the POST-cascade
-      // currentGroup that THIS arm computes mid-flight (group switch above);
-      // the handler can't precompute them at dispatch time. Unlike escape /
-      // _cycleViewerTab / menu_open (whose inputs were hoistable), this
-      // orchestrator legitimately reads the viewer slice via route. Full
-      // purity is infeasible here; documented rather than forced.
+      // The tab-routing that USED to live here read the viewer slice
+      // (flatTabInfo / resolveTabKey) and depended on the POST-switch
+      // currentGroup, so it had to synthesize a post-cascade model — the
+      // old "blessed" cross-slice reducer read. Phase C hands that off to
+      // the dispatch-side `jobs_route` Cmd, which runs AFTER the queued
+      // set_current_group commits and reads the committed group directly
+      // (no synthetic model), then threads the resolved tab into the pure
+      // `jobs_routed` tail below. "Not threadable within one Msg" was true;
+      // a second Msg makes it threadable.
       if (!model.modes.jobsMode) return [model, []];
       const job = msg.job || null;
       const closedModel = _withModes(model, { jobsMode: false });
       if (!job) return [closedModel, []];
 
-      const { kind, owner = {} } = job;
+      const { owner = {} } = job;
       const cmds = [];
       const targetGroup = owner.groupName
         || (owner.ptyId ? _parsePtyIdGroup(model, owner.ptyId) : null);
       if (targetGroup && targetGroup !== model.currentGroup) {
         cmds.push({ type: 'msg', msg: { type: 'set_current_group', name: targetGroup } });
       }
-      const viewerTarget = route.resolveTarget('viewer') || 'detail';
-      const groupName = targetGroup || model.currentGroup;
-
-      // POST-CASCADE model view: when the cross-group set_current_group
-      // Cmd above is queued, it'll apply BEFORE tab_switch reduces. So
-      // anything we thread that the tab_switch reducer reads needs to
-      // reflect the POST-cascade currentGroup, not the captured model
-      // ref. Build a synthetic post-cascade model for resolveTabKey
-      // and thread groupName (already resolved to the post-cascade
-      // value at line 761) for currentGroup. Round-5 finding —
-      // Phase-3d shipped this with the captured model.currentGroup,
-      // which broke cross-group jobs_activate scroll restoration.
-      const postModel = (targetGroup && targetGroup !== model.currentGroup)
-        ? { ...model, currentGroup: groupName }
-        : model;
+      // The routing read happens post-switch in the jobs_route effect; it
+      // re-dispatches the pure jobs_routed Msg with the destination threaded.
+      cmds.push({ type: 'jobs_route', job, now: msg.now });
+      return [closedModel, cmds];
+    }
+    case 'jobs_routed': {
+      // v0.6.4 Phase C — PURE tail of jobs_activate. The dispatch-side
+      // `jobs_route` effect already read the post-switch viewer slice and
+      // threaded the resolved destination (viewerTarget / groupName / tabIdx
+      // / targetKey / fromTabKey). This arm reads NO Component slice — it
+      // only emits the Cmd cascade (tab_switch + focus + terminal_enter /
+      // info card) from the threaded payload. msg.now feeds the
+      // background/tmux age display.
+      const job = msg.job || null;
+      if (!job) return [model, []];
+      const { kind, owner = {} } = job;
+      const viewerTarget = msg.viewerTarget || 'detail';
+      const groupName = msg.groupName || model.currentGroup;
+      const cmds = [];
 
       if (kind === 'stream-routed' && owner.tabKey) {
-        const slice = route.getInstanceSlice(viewerTarget)
-          || { ephemeralTerminals: {}, contentTabs: {}, tab: 0 };
-        const info = pt.flatTabInfo(slice, model, groupName);
-        const idx = info.actionTabs.findIndex(([k]) => k === owner.tabKey);
-        if (idx >= 0) {
-          // v0.6.2 — action tabs start at idx 2 (Info=0, Transcript=1).
-          const tabIdx = 2 + idx;
+        // tabIdx is set only when the effect found the action tab.
+        if (msg.tabIdx != null) {
           cmds.push({ type: 'msg', msg: route.wrap(viewerTarget, {
-            type: 'tab_switch', idx: tabIdx,
-            targetKey: pt.resolveTabKey(tabIdx, { ...slice, tab: tabIdx }, postModel),
+            type: 'tab_switch', idx: msg.tabIdx,
+            targetKey: msg.targetKey,
             currentGroup: groupName,
           }) });
           cmds.push({ type: 'msg', msg: route.wrap('layout', { type: 'focus_set', focus: viewerTarget }) });
@@ -895,19 +891,10 @@ function update(model, msg) {
       } else if (kind === 'stream-unrouted') {
         cmds.push({ type: 'msg', msg: route.wrap('layout', { type: 'focus_set', focus: viewerTarget }) });
       } else if (kind === 'pty' && owner.ptyId) {
-        const slice = route.getInstanceSlice(viewerTarget)
-          || { ephemeralTerminals: {}, contentTabs: {}, tab: 0 };
-        const info = pt.flatTabInfo(slice, model, groupName);
-        let termIdx = -1;
-        for (let i = 0; i < info.termTabs.length; i++) {
-          if (`${groupName}_${info.termTabs[i][0]}` === owner.ptyId) { termIdx = i; break; }
-        }
-        if (termIdx >= 0) {
-          // v0.6.2 — term tabs start at idx 2 + actionTabs.length.
-          const tabIdx = 2 + info.actionTabs.length + termIdx;
+        if (msg.tabIdx != null) {
           cmds.push({ type: 'msg', msg: route.wrap(viewerTarget, {
-            type: 'tab_switch', idx: tabIdx,
-            targetKey: pt.resolveTabKey(tabIdx, { ...slice, tab: tabIdx }, postModel),
+            type: 'tab_switch', idx: msg.tabIdx,
+            targetKey: msg.targetKey,
             currentGroup: groupName,
           }) });
           cmds.push({ type: 'msg', msg: route.wrap('layout', { type: 'focus_set', focus: viewerTarget }) });
@@ -929,18 +916,18 @@ function update(model, msg) {
           `[dim]cmd:[/]`,
           `  ${esc(owner.cmd || '(no cmd recorded)')}`,
         ];
-        // v0.6.3 Phase D1 — thread root facts the viewer_set_content
-        // arm needs (currentGroup, fromTabKey). msg.tab is not used
-        // here so no `total` needed. Slice + model already in scope.
-        const vSlice = route.getInstanceSlice(viewerTarget) || { tab: 0 };
+        // v0.6.3 Phase D1 — thread root facts the viewer_set_content arm
+        // needs (currentGroup, fromTabKey). fromTabKey was read from the
+        // viewer slice by the jobs_route effect; bg/tmux never switch group,
+        // so model.currentGroup here equals the pre-switch value.
         cmds.push({ type: 'msg', msg: route.wrap(viewerTarget, {
           type: 'viewer_set_content', lines,
           currentGroup: model.currentGroup,
-          fromTabKey: pt.resolveTabKey((vSlice.tab | 0), vSlice, model),
+          fromTabKey: msg.fromTabKey,
         }) });
         cmds.push({ type: 'msg', msg: route.wrap('layout', { type: 'focus_set', focus: viewerTarget }) });
       }
-      return [closedModel, cmds];
+      return [model, cmds];
     }
     case 'menu_open':
       // v0.6.4 Theme C — items are threaded by the menu_open handler

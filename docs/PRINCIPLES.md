@@ -352,10 +352,15 @@ module.exports = {
   (`multiSel.size`, `slice.tab`, `flatTabInfo`, `buildItems(slice)`) to
   branch — those are threaded via Msg payload by the dispatching handler
   (e.g. `escape`'s `hadMultiSel`, `next_tab`'s tab bundle, `menu_open`'s
-  `items`). The ONE documented exception is `jobs_activate`: its viewer
-  reads depend on the post-cascade `currentGroup` the arm computes
-  mid-flight, so they can't be hoisted to dispatch time — a genuine
-  intrinsic orchestrator read, not erosion.
+  `items`). There are now **no exceptions**: `jobs_activate`'s viewer reads
+  (the last holdout — they depend on the post-switch `currentGroup`, so
+  they couldn't be hoisted to dispatch *time*) were split out in v0.6.4
+  Phase C. `jobs_activate` is a pure orchestrator that closes the overlay,
+  queues the group switch, and emits a `jobs_route` Cmd; that effect runs
+  AFTER the switch commits, reads the now-correct viewer slice in the
+  dispatch layer, and threads the resolved tab into the pure `jobs_routed`
+  arm. "Not threadable within one Msg" was true — a second Msg makes it
+  threadable.
 - A Component **never writes** the root model. The Component's own
   slice is the only thing its `update` writes directly. Cross-layer
   writes go out as a `{type:'msg', msg}` effect — a wrapped Msg

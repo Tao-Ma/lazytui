@@ -246,9 +246,30 @@ Two options; pick one in the Decisions section:
 
 ---
 
-## Phase C — `jobs_activate`: split into a two-Msg cascade
+## Phase C — `jobs_activate`: split into a two-Msg cascade — ✅ SHIPPED 2026-06-14
 
 **Removes the last root-reducer cross-slice value read.**
+
+> **DONE.** Split into THREE pieces, each obeying the discipline:
+> `jobs_activate` (pure root arm) closes the overlay, resolves the target
+> group from the job payload (model-only read), queues `set_current_group`
+> (if cross-group) + a new `{type:'jobs_route', job, now}` Cmd, and reads NO
+> Component slice. The `jobs_route` **effect** (`effects.js`, modeled on
+> `cmdline_rebuild` — "the Cmd that reads then produces a Msg") runs AFTER
+> the queued switch commits, so `getModel().currentGroup` is the POST-switch
+> group — **the synthetic `postModel` is gone**; it reads the viewer slice
+> (`flatTabInfo`/`resolveTabKey`) in the dispatch layer and threads
+> `viewerTarget`/`groupName`/`tabIdx`/`targetKey`/`fromTabKey` into a flat
+> `jobs_routed` Msg. The `jobs_routed` **pure root arm** emits the Cmd
+> cascade (tab_switch + focus + terminal_enter / info card) from the threaded
+> payload — no slice read. The kind→Cmds cascade stays in the reducer (not
+> handler-orchestrated, per `[[tea-reducer-discipline]]`); only the
+> view-derived read moved to dispatch. Dead `pt` import removed from
+> runtime.js (reads now live in the effect). PRINCIPLES.md §12 updated: **no
+> exceptions remain** to the root-reducer no-cross-slice-read rule. Tests:
+> `test-jobs-activate.js` 25/25 unchanged (incl. the cross-group
+> scroll-bottom-pin regression that the old `postModel` existed for — now
+> correct by construction). Suite 89/90 (xz env-only); 9/9 smokes.
 
 **The exception.** `jobs_activate` (`runtime.js:835`) switches `currentGroup`,
 then *within the same Msg* reads the viewer slice (`flatTabInfo` /
