@@ -266,12 +266,16 @@ still permits:
   `calcLayout()`. These are *outputs* of the layout pass, consumed by
   mouse/input handlers between frames; panel renderers read them, don't
   write them. (Blessed outside-writer; see `docs/history/v0.5-layering.md`.)
-- **Lazy hub subscriptions** (stats panel,
-  `js/panel/monitor/stats.js#_ensureSub`) and **lazy initial-state
-  fixup** (config-status panel) happen on first render and are
-  idempotent on subsequent calls. Pure-render would prefer these
-  in an init hook fired at a guaranteed point; today the
-  idempotent lazy-init pattern is an accepted middle ground.
+- **Hub subscriptions** are DECLARED, not lazy-subscribed from render
+  (v0.6.4 Phase D). A Component exports a pure `subscriptions(paneDef) →
+  [{topic, window}]`; the framework performs the `hub.subscribe` side
+  effect at mount (`app/state.js#_wireSubscriptions`, the per-pane mint
+  loop). This is the TEA `subscriptions` seam — render stays pure, the
+  runtime owns the effect. (Stats was the lone lazy-subscriber via the old
+  `_ensureSub`; that blessed exception is retired.) **Lazy initial-state
+  fixup** (config-status panel) still happens on first render and is
+  idempotent on subsequent calls — the last lazy-render holdout; pure-render
+  would prefer an init hook, today it's an accepted middle ground.
 
 **Why the rule matters:**
 
@@ -286,10 +290,11 @@ still permits:
   non-idempotent the diff cache would silently desync — the user
   sees stale pixels.
 
-**Rule for new panel renders:** read the slice, return a string. If
-you need a side effect on first render, make it idempotent and add a
-comment explaining the lazy-init pattern (see `stats.js#_ensureSub`
-for the canonical example).
+**Rule for new panel renders:** read the slice, return a string. Need a
+hub subscription? Declare it via the `subscriptions(paneDef)` hook — the
+framework wires it at mount (see `stats.js`). For any other unavoidable
+first-render side effect, make it idempotent and comment the lazy-init
+pattern (see config-status's initial-state fixup, the remaining example).
 
 ## 12. TEA shape and the Component discipline
 

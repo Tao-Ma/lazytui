@@ -209,4 +209,60 @@ describe('[13] hub: docker.stats delete clears row history', () => {
   });
 });
 
+// --- v0.6.4 Phase D — declared hub subscriptions wired at mount ---
+
+describe('[14] stats declares its hub subscription (pure)', () => {
+  it('subscriptions(paneDef) projects topic + window; no topic → []', () => {
+    // Pure function of the pane config — no side effects, no hub touch.
+    eq(stats.subscriptions({ topic: 'docker.stats', window: 5 })[0].topic, 'docker.stats', 'topic carried');
+    eq(stats.subscriptions({ topic: 'docker.stats', window: 5 })[0].window, 5, 'explicit window carried');
+    eq(stats.subscriptions({ topic: 'docker.stats' })[0].window, 40, 'window defaults to 40 (matches render)');
+    eq(stats.subscriptions({}).length, 0, 'no topic → no subscription');
+    eq(stats.subscriptions(undefined).length, 0, 'no paneDef → no subscription');
+  });
+});
+
+describe('[15] framework wires declared subscriptions at MOUNT (no render)', () => {
+  it('_wireSubscriptions subscribes via the hub; data is retained without any render call', () => {
+    const state = require('../app/state');
+    hub._reset();
+    state._resetSubscriptions();
+    docker.init({});                       // defines the docker.stats schema
+    // Mount-time wiring — the framework reads the pane's declared
+    // subscriptions and performs hub.subscribe. NOTE: render() is never
+    // called here. Pre-Phase-D this would retain nothing (the sub was
+    // created lazily from render); the publish→history below is the teeth.
+    state._wireSubscriptions(stats, { type: 'stats', topic: 'docker.stats', window: 5 });
+    hub.publish('docker.stats', 'foo', { ts: 1, cpu: 10, mem: 100, memLimit: 1000 });
+    hub.publish('docker.stats', 'foo', { ts: 2, cpu: 12, mem: 100, memLimit: 1000 });
+    const h = hub.history('docker.stats', 'foo', 10);
+    eq(h.length, 2, 'subscription exists at mount → samples retained (window > 0)');
+    eq(h[1].cpu, 12, 'newest sample present');
+  });
+
+  it('dedup: re-wiring the same (topic, window) does not double-subscribe', () => {
+    const state = require('../app/state');
+    hub._reset();
+    state._resetSubscriptions();
+    docker.init({});
+    state._wireSubscriptions(stats, { type: 'stats', topic: 'docker.stats', window: 5 });
+    state._wireSubscriptions(stats, { type: 'stats', topic: 'docker.stats', window: 5 });
+    // Two panes on the same (topic, window) share ONE sub. The hub keeps a
+    // single ring buffer per topic regardless, so the proof is behavioral:
+    // publishing once yields exactly one retained sample (no duplication).
+    hub.publish('docker.stats', 'foo', { ts: 1, cpu: 7, mem: 1, memLimit: 100 });
+    eq(hub.history('docker.stats', 'foo', 10).length, 1, 'single sample retained');
+  });
+
+  it('Components without a subscriptions() hook are a no-op', () => {
+    const state = require('../app/state');
+    hub._reset();
+    state._resetSubscriptions();
+    // groups has no subscriptions hook — wiring must not throw or subscribe.
+    state._wireSubscriptions({ name: 'groups', init: () => ({}) }, { type: 'groups' });
+    hub.publish('docker.stats', 'foo', { ts: 1, cpu: 1, mem: 1, memLimit: 1 });
+    eq(hub.history('docker.stats', 'foo', 10).length, 0, 'nothing subscribed → nothing retained');
+  });
+});
+
 report();

@@ -9,9 +9,11 @@
  *
  *   - docker.render reads a runtime status cache fed by container events;
  *     setting that up isn't render's concern.
- *   - stats.render lazy-subscribes to the hub on first call (idempotent
- *     but not pure — see PRINCIPLES.md §11). Verifying its idempotence
- *     needs hub setup; covered separately by test-stats.js.
+ *   - stats.render reads hub history for the focused row; verifying it
+ *     needs hub setup, covered separately by test-stats.js. (As of v0.6.4
+ *     Phase D, stats.render is PURE — the hub subscription it used to
+ *     lazy-create on first render now happens at mount via the declared
+ *     `subscriptions` hook; see test-stats.js [12]/[13].)
  *   - config-status.render writes S.configStatusBranch on first call
  *     (idempotent lazy-init). Same story.
  *

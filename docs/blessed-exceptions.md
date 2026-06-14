@@ -302,11 +302,33 @@ that ordering; the test pins the cross-group case.
 
 ---
 
-## Phase D — `stats` subscription at mount, not first render
+## Phase D — `stats` subscription at mount, not first render — ✅ SHIPPED 2026-06-14
 
 **The exception.** `stats.js _ensureSub` (`stats.js:46`) registers a hub
 subscription lazily on first render — paint mixed with lifecycle. Blessed on
 YAGNI: no post-boot topic-change pathway exists today (the comment names the fix).
+
+> **DONE — chose the declared-subscriptions framework seam (the spec's
+> envisioned shape, picked over the minimal in-init variant after a
+> Cmd-vs-Sub analysis: a hub subscription is an ongoing `Sub`, so the
+> TEA-correct model is a declared subscription the runtime wires, not a
+> one-shot init Cmd).** stats exports a PURE `subscriptions(paneDef) →
+> [{topic, window}]`; render() no longer touches the hub (the `_ensureSub`
+> Set + call are deleted, `scheduleRender` import dropped). The framework
+> performs the side effect in `app/state.js#_wireSubscriptions`, called per
+> placed pane in the initState mint loop — deduped by `topic:window` (the
+> old module Set, now framework-owned; `onUpdate` is always a repaint).
+> No-op for Components without the hook. **No teardown yet** — no post-boot
+> topic-change / pane-dispose-unsubscribe path exists, but the framework is
+> now SHAPED to grow one (Component declares, runtime could diff +
+> unsubscribe). config-status's lazy initial-state fixup is now the LAST
+> lazy-render holdout (out of scope here). Tests: `test-stats.js` [14] (pure
+> hook: topic/window projection, default 40, empty cases) + [15] (framework
+> wires at mount with NO render — publish→history retained is the teeth;
+> dedup; no-hook no-op); live boot probe (loadConfig+initState, no render →
+> docker.stats retained) confirms the mint loop calls it end-to-end. Suite
+> 89/90 (xz env-only) + 9/9 smokes. PRINCIPLES.md §11 updated (declared-sub
+> rule replaces the `_ensureSub` canonical-example). Spec note below kept.
 
 **Fix.** Subscribe at **mount/init** — when the stats pane is minted — via an
 init effect keyed by the config-derived `(topic, window)`. The framework shape:

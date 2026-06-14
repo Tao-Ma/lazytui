@@ -34,6 +34,44 @@ let _apiRef = null, _routeRef = null;
 function _api()      { return _apiRef   || (_apiRef   = require('../panel/api')); }
 function _routeMod() { return _routeRef || (_routeRef = require('../panel/route')); }
 
+// v0.6.4 Phase D — declared hub subscriptions, wired at MOUNT (the
+// per-pane mint loop in initState), not lazily from a Component's
+// render(). A Component exports a PURE `subscriptions(paneDef) →
+// [{topic, window}]` declaring the hub topics it consumes; the framework
+// performs the hub.subscribe side effect here. This is the TEA
+// `subscriptions` seam — the Component stays pure, the runtime owns the
+// effect (replaces stats._ensureSub, the old paint-mixed-with-lifecycle
+// blessed exception). `onUpdate` is always a repaint: hub data drives
+// frames (see stats.js). Deduped by topic:window across all mints (two
+// panes on one topic share a sub; mirrors the pre-D module Set, now
+// framework-owned). NOTE no teardown yet — there is no post-boot
+// topic-change or pane-dispose-unsubscribe path today; growing one is a
+// follow-on the framework is now SHAPED for (the Component declares; the
+// runtime could diff + unsubscribe).
+const _wiredSubs = new Set();
+function _wireSubscriptions(comp, paneDef) {
+  if (!comp || typeof comp.subscriptions !== 'function') return;
+  let descriptors;
+  try { descriptors = comp.subscriptions(paneDef) || []; }
+  catch (e) {
+    console.error(`[${comp.name || '?'}] subscriptions() threw: ${e && e.message}`);
+    return;
+  }
+  const hub = require('../panel/hub');
+  const { scheduleRender } = require('../panel/api');
+  for (const d of descriptors) {
+    if (!d || !d.topic) continue;
+    const window = d.window || 1;
+    const key = `${d.topic}:${window}`;
+    if (_wiredSubs.has(key)) continue;
+    hub.subscribe(d.topic, { window, onUpdate: () => scheduleRender() });
+    _wiredSubs.add(key);
+  }
+}
+// Test-only — clears the wired-sub dedup ledger so a test can re-wire
+// after hub._reset() (mirrors hub._reset / jobs._reset).
+function _resetSubscriptions() { _wiredSubs.clear(); }
+
 // --- Component slice resolution ---
 //
 // Lazy auto-register covers tests that touch state without explicit
@@ -205,6 +243,11 @@ function initState() {
         // that don't need identity.
         route.setInstance(paneId, kind, comp.init(paneId));
       }
+      // v0.6.4 Phase D — wire the pane's DECLARED hub subscriptions at
+      // mount (no-op for Components without a subscriptions() hook;
+      // idempotent via the topic:window ledger). Replaces the old
+      // render-time lazy subscribe (stats._ensureSub).
+      _wireSubscriptions(comp, p);
     }
   }
 
@@ -497,4 +540,7 @@ module.exports = {
   getSel, setSel, getScroll, setScroll, syncPanelScroll,
   toggleMultiSel, isMultiSel, clearMultiSel, multiSelCount,
   expandGroup, collapseGroup, recomputeGroups, switchGroupsTab,
+  // v0.6.4 Phase D — exposed for tests: the declared-subscription wiring
+  // seam + its dedup-ledger reset.
+  _wireSubscriptions, _resetSubscriptions,
 };

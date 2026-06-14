@@ -22,32 +22,28 @@ const { getModel } = require('../../app/runtime');
 const {
   hub, esc, theme, renderPanel,
   getItems: apiGetItems,
-  scheduleRender,
 } = require('../api');
 const { rasterize } = require('./stats-graph');
 
-// Dedup hub.subscribe calls: one sub per (topic, window). Two stats
-// panels on the same topic share a sub; different windows produce
-// two subs and the hub keeps the larger window (HUB.md §6).
+// v0.6.4 Phase D — stats DECLARES its hub subscription; the framework
+// performs the hub.subscribe side effect at mount (app/state.js
+// `_wireSubscriptions`), NOT lazily from render(). This is the TEA
+// `subscriptions`-style seam: the Component is a pure function of its
+// inputs (render() no longer touches the hub's subscription list), and
+// the runtime owns the effect. Pre-D, `_ensureSub` ran from render() —
+// a paint-mixed-with-lifecycle blessed exception (v0.5-layering.md §5).
 //
-// `onUpdate: scheduleRender` is what makes the panel feel live —
-// docker.refresh's `changed` flag only flips when the formatted CPU%
-// / mem string actually changes between ticks (e.g. 0.0% → 0.0% does
-// not), so the host's render-on-changed loop can miss new samples.
-// The hub publishes every tick regardless; the onUpdate hook makes
-// sure each one drives a repaint.
-//
-// _ensureSub is called from render(). That mixes paint with lifecycle
-// — documented as a blessed exception per v0.5-layering.md §5 since
-// no current pathway triggers a topic change post-boot (a topic switch
-// would orphan the old sub). If hot-reload / live topic editing ever
-// ships, move this into a Component update lifecycle Msg.
-const _subKeys = new Set();
-function _ensureSub(topic, window) {
-  const key = `${topic}:${window}`;
-  if (_subKeys.has(key)) return;
-  hub.subscribe(topic, { window, onUpdate: () => scheduleRender() });
-  _subKeys.add(key);
+// The subscription's `onUpdate` (supplied by the framework) is a
+// repaint: docker.refresh's `changed` flag only flips when a formatted
+// value actually changes between ticks (e.g. 0.0% → 0.0% does not), so
+// the host's render-on-changed loop can miss new samples. The hub
+// publishes every tick regardless; the onUpdate hook drives a frame for
+// each. Two stats panes on the same (topic, window) share one sub;
+// different windows produce two subs and the hub keeps the larger
+// window (HUB.md §6). Pure projection of the pane config → descriptors:
+function subscriptions(paneDef) {
+  if (!paneDef || !paneDef.topic) return [];
+  return [{ topic: paneDef.topic, window: paneDef.window || 40 }];
 }
 
 function _defaultMetrics(schema) {
@@ -156,7 +152,6 @@ function render(panel, w, h, _slice, opts) {
     return _renderEmpty(panel, w, h, '(stats panel needs topic + select_from)', chrome, focused);
   }
   const window = panel.window || 40;
-  _ensureSub(panel.topic, window);
 
   const rowKey = _resolveSelection(panel);
   if (!rowKey) return _renderEmpty(panel, w, h, '(no selection)', chrome, focused);
@@ -202,6 +197,9 @@ module.exports = {
   name: 'stats',
   init: () => ({}),
   update: (msg, slice) => slice,
+  // v0.6.4 Phase D — declared hub subscriptions (pure); the framework
+  // wires them at mount. See the `subscriptions` comment above.
+  subscriptions,
   panelTypes: {
     stats: {
       render,
