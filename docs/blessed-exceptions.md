@@ -57,6 +57,27 @@ impure reads that are sanctioned, not bugs, and intentionally kept:
   its slice (the documented first-touch boundary); `render()` is pure. The
   last cross-slice init read. See PRINCIPLES §11.
 
+**Overlay-subsystem render exceptions** (found by a second, file-by-file
+code sweep 2026-06-14 that audited `js/overlay/` — the first sweep stopped
+at `panel/`/`leaves/`/`render/paint.js`). The overlay render layer never
+adopted the model-clock discipline; both reads below make overlay renders
+non-idempotent on equal *model* state. Benign, standing, by-design-ish:
+
+- **Wall-clock age columns.** `renderDiagLog()` (`overlay/diag-log.js:68`)
+  and `renderJobsOverlay()` (`overlay/jobs.js:109`) read `Date.now()` live
+  for `_fmtAge`. The reducer side threads `now` (msg.now/eff.now) to stay
+  pure; the view side does not. Root cause: both overlays render from
+  out-of-TEA side registries (`feature/jobs.js` Map; `dispatch/diag-log.js`
+  ring buffer), not the model — never model-idempotent to begin with. See
+  PRINCIPLES §11.
+- **Dims from the `io/term` singleton, not `model.dims`.** All 8 overlays +
+  `render/panel.js#renderOverlay` **+ the main-render footer**
+  (`render/footer.js#renderFooter`) read terminal size via `io/term.cols()/
+  rows()` (the module `COLS`/`ROWS` cache); none read `model.dims`. Only the
+  panel grid uses `layoutSlice.dims` (resize-as-Msg). `decor.js` chrome is
+  clean (works off `paneBounds`). The dims source-of-truth is split. See
+  PRINCIPLES §11.
+
 Everything else below was an eliminable exception and has been removed.
 
 ---

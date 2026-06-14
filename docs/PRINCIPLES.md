@@ -257,8 +257,9 @@ does not change anything that would alter a third call. Same for
 beyond writing pixels.
 
 This is **weaker than "render is pure"** (no mutation, no I/O).
-lazytui admits two intentional impurities the idempotence rule
-still permits:
+lazytui admits a handful of intentional impurities the idempotence rule
+still permits (and two narrower ones in the overlay subsystem, called out
+at the end):
 
 - **Layout calculation** writes derived state — `layout.slice.panelHeights`,
   `layout.slice.paneBounds` (Phase 1e), and per-Navigator
@@ -279,6 +280,34 @@ still permits:
   slice; `render()` itself is pure. It is the last cross-slice init read —
   every other Component's init is self-contained — and an accepted middle
   ground (a dedicated init-injection hook would retire it).
+
+**Overlay-subsystem exceptions** (`js/overlay/*` + `render/panel.js#renderOverlay`).
+The overlay render layer was NOT migrated to the model-clock discipline the
+main panel render follows; two reads make overlay renders non-idempotent on
+equal *model* state. Both are benign in practice, both are standing:
+
+- **Wall-clock age columns.** `renderDiagLog()` (`overlay/diag-log.js:68`)
+  and `renderJobsOverlay()` (`overlay/jobs.js:109`) read `Date.now()` live
+  and feed it to `_fmtAge(t, now)`, so identical model state renders a
+  different "age" as time passes. (Contrast the *reducer* side, which is
+  strict: `jobs_activate`/`jobs_route`/`jobs_routed` thread `msg.now`/`eff.now`
+  to stay pure of wall-clock — the discipline reached the reducer, not the
+  view.) Idempotent form would thread `now` through model state / a tick.
+  Root cause: both overlays render from **out-of-TEA side registries**
+  (`feature/jobs.js`'s `_jobs` Map via `jobs.list()`; `dispatch/diag-log.js`'s
+  ring buffer via `diag.snapshot()`), not the model — so they were never
+  model-idempotent renders to begin with.
+- **Terminal dims from a module singleton, not the model.** The dims
+  source-of-truth is split: the **panel grid** reads `layoutSlice.dims`
+  ("model clock", resize-as-Msg), but the **footer chrome**
+  (`render/footer.js#renderFooter`, called from the main render) and the
+  **entire overlay layer** (all 8 overlays + `render/panel.js#renderOverlay`)
+  read terminal size via `io/term.cols()/rows()` — the `COLS`/`ROWS` module
+  cache refreshed on SIGWINCH. No overlay (and not the footer) reads
+  `model.dims`. So footer + overlay geometry depend on a module-global
+  refreshed on a different clock than the model. (`decor.js` chrome is
+  clean — it works off `paneBounds` rects, which are dims-derived.) §11
+  holds only because that cache is stable between resizes.
 
 **Why the rule matters:**
 
