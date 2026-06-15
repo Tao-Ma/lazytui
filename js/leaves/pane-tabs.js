@@ -325,6 +325,24 @@ function modelBundle(model, groupName) {
   };
 }
 
+/** blessed-exceptions #3 — the full model fact-set the viewer's tab/content
+ *  readers (flatTabInfo / viewerLines / resolveTabKey + the `is*TabIn`
+ *  predicates) need, captured ONCE so `viewer.update` can read it from the
+ *  Msg payload instead of `getModel()`. `mergedActions` is the COMPUTED merge
+ *  (getMergedActions reads the live registry internally), so it must be
+ *  snapshotted here, in the impure shell, not recomputed in the reducer.
+ *  Pair with `flatTabInfoFromBundle` / `viewerLinesFromBundle` (P1). */
+function viewerModelBundle(model, groupName) {
+  const group = _groupOf(model, groupName);
+  if (!_api) _api = require('../panel/api');
+  return {
+    currentGroup: (model && model.currentGroup) || '',
+    group,
+    mergedActions: group ? _api.getMergedActions(groupName) : {},
+    yamlTerminals: group ? (group.terminals || {}) : null,
+  };
+}
+
 function addEphemeral(slice, { groupName, key, cmd, label, currentGroup, groupExists, yamlTerminals, actionCount }) {
   if (!groupExists) return [slice, { focusDetail: false, terminalEnter: false }];
 
@@ -781,5 +799,6 @@ module.exports = {
   addEphemeral, removeEphemeral,
   addContent, updateContentLines, removeContent, reorderContent,
   modelBundle,
+  viewerModelBundle,
   reduceTabMsg,
 };
