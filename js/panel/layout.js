@@ -341,7 +341,7 @@ function update(msg, slice) {
       if (slot !== 'left' && slot !== 'right') return slice;
       if (!mpool.findPaneLocation(slice.arrange, p => p.paneId === msg.paneId)) return slice;
       const other = slot === 'left' ? 'right' : 'left';
-      const proj = halfProjection(slice);
+      const proj = halfProjection(slice, route.resolveViewerPaneId());
       if (proj[slot] === msg.paneId) return slice;  // already in this slot — no-op
       const halfView = { ...slice.halfView, [slot]: msg.paneId };
       if (proj[other] === msg.paneId) halfView[other] = proj[slot] || null;  // SWAP

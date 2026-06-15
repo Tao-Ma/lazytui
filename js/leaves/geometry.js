@@ -42,22 +42,18 @@
  */
 'use strict';
 
-// wm-geo P1.2/P1.3 (docs/wm-geometry-refactor.md) — this module is now
-// a pure spatial model: every reader takes the layout slice (and, where
+// wm-geo P1.2/P1.3 (docs/wm-geometry-refactor.md) — this module is a
+// pure spatial model: every reader takes the layout slice (and, where
 // screen size matters, a `{cols, rows}` dims value — io/term.dims())
-// explicitly. No app/state, no panel/api, no app/runtime, no io/term:
-// the impure fetches moved to the call sites, which already had them.
+// explicitly. No app/state, no panel/api, no panel/route, no app/runtime,
+// no io/term: the impure fetches live at the call sites, which already
+// had them. v0.6.5 §3 — the last reach (route.resolveViewerPaneId for
+// halfProjection's default-right slot) was retired by threading the
+// resolved viewer paneId in as an argument; this leaf now imports only
+// sibling leaves.
 const mpool = require('./pool');
 const mpane = require('./pane');
 const { createSelector } = require('./selector');
-
-// Lazy route handle — the ONE non-leaf reach this module keeps:
-// halfProjection's default-right slot resolves the major viewer via
-// route.resolveViewerPaneId(). Lazy (call-time) so this leaf stays
-// load-order-independent of the panel/route → panel/api web; threading
-// the resolved id through every halfProjection caller is a possible
-// future purification. Mirrors paint.js#_route.
-let _routeRef; const _route = () => (_routeRef ||= require('../panel/route'));
 
 function distributeColumnHeights(panels, availH, isLastCol, minH, detailHeightPct) {
   const out = {};
@@ -222,12 +218,13 @@ let _currentLayout = null;
  *
  * Defaults (the pre-override behavior): left = the focused non-detail pane,
  * else sticky `halfLeftPanel`, else the first non-detail pane, else the
- * focused pane; right = the major viewer (`resolveViewerPaneId`). A slot
- * pointing at a pane no longer in `arrange` falls back to its default. If
- * both slots resolve to the same pane the right slot collapses to null
- * (render left-only — matches the single-pane path).
+ * focused pane; right = the major viewer, passed in as `viewerPaneId`
+ * (callers resolve it via `route.resolveViewerPaneId()` — kept out of this
+ * leaf, v0.6.5 §3). A slot pointing at a pane no longer in `arrange` falls
+ * back to its default. If both slots resolve to the same pane the right
+ * slot collapses to null (render left-only — matches the single-pane path).
  */
-function halfProjection(layoutSlice) {
+function halfProjection(layoutSlice, viewerPaneId) {
   const all = layoutSlice.arrange
     ? mpool.allPanesInColumns(layoutSlice.arrange) : [];
   const placed = (id) => !!id && all.some(p => p.paneId === id);
@@ -242,8 +239,9 @@ function halfProjection(layoutSlice) {
             || focusedPanel;
     defLeft = lp ? lp.paneId : null;
   }
-  // default-right — the major viewer (focus-first → sticky lastViewerTab).
-  const defRight = _route().resolveViewerPaneId() || null;
+  // default-right — the major viewer (focus-first → sticky lastViewerTab),
+  // resolved by the caller and threaded in (this leaf does not reach route).
+  const defRight = viewerPaneId || null;
 
   const hv = layoutSlice.halfView || {};
   let left  = placed(hv.left)  ? hv.left  : defLeft;

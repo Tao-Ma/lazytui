@@ -21,6 +21,15 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   `docs/v0.6.5.md`.)
 
 ### Changed
+- **The two `leaves/` modules that reached up into `panel/` no longer do.**
+  `leaves/geometry.js`'s `halfProjection` takes the resolved viewer paneId
+  as an argument (callers thread `route.resolveViewerPaneId()`) instead of
+  reaching for `panel/route`; `leaves/pane-tabs.js` gets its merged-actions
+  map from an injected provider (`setMergedActionsProvider`, wired once from
+  `panel/api` on load) instead of `require('../panel/api')`. `leaves/` now
+  imports only sibling leaves — and pane-tabs' hot paths shed the former
+  per-call require resolution. Internal layering cleanup, no behavior
+  change. (v0.6.5 §3.)
 - **`io/terminal.js` is now a true leaf.** It used to reach *up* into
   `app/runtime` (spawn cwd), `render/render-queue` (post-output repaint),
   and `feature/jobs` (job lifecycle) despite a header claiming otherwise.
