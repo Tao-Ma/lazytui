@@ -57,26 +57,29 @@ impure reads that are sanctioned, not bugs, and intentionally kept:
   its slice (the documented first-touch boundary); `render()` is pure. The
   last cross-slice init read. See PRINCIPLES §11.
 
-**Overlay-subsystem render exceptions** (found by a second, file-by-file
-code sweep 2026-06-14 that audited `js/overlay/` — the first sweep stopped
-at `panel/`/`leaves/`/`render/paint.js`). The overlay render layer never
-adopted the model-clock discipline; both reads below make overlay renders
-non-idempotent on equal *model* state. Benign, standing, by-design-ish:
+**Overlay-subsystem render exceptions — RESOLVED by the model-clock arc
+2026-06-15** (found by a second, file-by-file code sweep that audited
+`js/overlay/` — the first sweep stopped at `panel/`/`leaves/`/`render/paint.js`).
+Both reads that made overlay renders non-idempotent on equal *model* state
+have been brought under the model-clock discipline:
 
-- **Wall-clock age columns.** `renderDiagLog()` (`overlay/diag-log.js:68`)
-  and `renderJobsOverlay()` (`overlay/jobs.js:109`) read `Date.now()` live
-  for `_fmtAge`. The reducer side threads `now` (msg.now/eff.now) to stay
-  pure; the view side does not. Root cause: both overlays render from
-  out-of-TEA side registries (`feature/jobs.js` Map; `dispatch/diag-log.js`
-  ring buffer), not the model — never model-idempotent to begin with. See
-  PRINCIPLES §11.
-- **Dims from the `io/term` singleton, not `model.dims`.** All 8 overlays +
-  `render/panel.js#renderOverlay` **+ the main-render footer**
-  (`render/footer.js#renderFooter`) read terminal size via `io/term.cols()/
-  rows()` (the module `COLS`/`ROWS` cache); none read `model.dims`. Only the
-  panel grid uses `layoutSlice.dims` (resize-as-Msg). `decor.js` chrome is
-  clean (works off `paneBounds`). The dims source-of-truth is split. See
-  PRINCIPLES §11.
+- ✅ **Dims from the `io/term` singleton → `model.dims` (Finding B).** Overlays
+  + `renderOverlay` + the footer now resolve dims via
+  `render/panel.js#viewportDims()` (reads `layoutSlice.dims`; `io/term` is a
+  boot fallback only). The dims source-of-truth is unified; the 1-frame
+  resize desync is gone. `decor.js` was always clean (`paneBounds`). Pinned by
+  `test-overlay-dims.js`. See PRINCIPLES §11.
+- ✅ **Wall-clock age → threaded `now` (Finding A).** `renderDiagLog`/
+  `renderJobsOverlay` take `now` (threaded from `paint.render(model, now)`)
+  instead of reading `Date.now()` in-body, so each is a pure function of
+  (side-store, model, now) — replayable given a fixed `now`. Pinned by
+  `test-overlay-clock.js`. One residual frame-boundary read remains by design
+  (`paint.render`'s `now = Date.now()` default — the render analog of the
+  dispatcher's `msg.now`); a live-age display needs a clock somewhere, and a
+  model `now`/tick would remove even that at the cost of tick infrastructure.
+  Root context: both overlays render from out-of-TEA side registries
+  (`feature/jobs.js` Map; `dispatch/diag-log.js` ring buffer), not the model.
+  See PRINCIPLES §11.
 
 Everything else below was an eliminable exception and has been removed.
 
@@ -84,30 +87,25 @@ Everything else below was an eliminable exception and has been removed.
 
 ## Remaining standing exceptions — recommended fix order
 
-Five exceptions remain unsolved (all sanctioned/benign today; none blocks
-the v0.6.4 tag). Recommended order below is by **(correctness value ×
-tractability)** with dependencies noted. Findings A and B are coupled (both
-change overlay/footer render signatures), so they form one arc, B first.
+Three exceptions remain unsolved (all sanctioned/benign today; none blocks
+the v0.6.4 tag). Findings A + B — the overlay model-clock arc — are DONE
+(2026-06-15); kept here struck-through for the record. Order is by
+**(correctness value × tractability)** with dependencies noted.
 
-**1. Finding B — unify the dims source (overlays + footer read `model.dims`).**
-   *Do first.* Highest correctness value: today the panel grid reads
-   `layoutSlice.dims` (model clock) while the footer + all 8 overlays +
-   `renderOverlay` read the `io/term` `cols()/rows()` singleton, so on a
-   resize the two can paint against different dimensions for a frame. The fix
-   is mechanical — thread `model.dims` into `renderOverlay`/`renderFooter`/
-   overlay render signatures, drop the `io/term` reads. Zero behavior change
-   in the steady state, no new concepts, and it establishes the "overlay
-   render receives model facts" plumbing that #2 then rides. Lowest risk.
+**1. ✅ DONE — Finding B — unify the dims source (overlays + footer read
+   `model.dims`).** Shipped via `render/panel.js#viewportDims()`; overlays +
+   footer + `renderOverlay` read `layoutSlice.dims` (io/term = boot fallback).
+   Mechanical, removed the 1-frame resize desync, laid the plumbing #2 rode.
+   Pinned by `test-overlay-dims.js`.
 
-**2. Finding A — overlay age via a threaded/deterministic `now`.**
-   *Do second, on #1's plumbing.* `renderDiagLog`/`renderJobsOverlay` read
-   `Date.now()` live, so identical model state renders a changing age (breaks
-   render-replay/snapshot for those overlays). Two sub-options to decide at
-   implementation: (a) thread a render-time `now` deterministically (cheap,
-   keeps jobs/diag as out-of-TEA side stores), or (b) migrate the jobs +
-   diag-log registries into the model so the overlays become fully
-   model-driven (larger, also fixes the side-store split). Lower urgency —
-   age is inherently live; this is about replay/test determinism.
+**2. ✅ DONE — Finding A — overlay age via a threaded `now`.** Shipped:
+   `renderDiagLog`/`renderJobsOverlay` take `now` from `paint.render(model,
+   now = Date.now())`, so the render fns are pure of wall-clock (replayable
+   given a fixed `now`); the single clock read is concentrated to the frame
+   boundary (the render analog of the dispatcher's `msg.now`). Chose option
+   (a) (thread `now`, keep jobs/diag as out-of-TEA side stores) over (b)
+   (migrate the registries into the model) — (b) stays available if a future
+   need (e.g. full model-`now` tick) arises. Pinned by `test-overlay-clock.js`.
 
 **3. `viewer.update()` boundary `getModel()` → modelBundle.**
    *Independent arc, medium risk.* Thread the model facts the viewer's

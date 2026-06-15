@@ -60,11 +60,12 @@ function viewportRows() {
   return Math.max(1, h - 2 - FOOTER_ROWS);
 }
 
-function renderDiagLog() {
+// `now` is threaded from the paint frame (the single frame-clock read) so
+// this render is a pure function of (diag ring buffer, model, now) — Finding A.
+function renderDiagLog(now = Date.now()) {
   if (!getModel().modes.diagLogMode) return;
   const list = diag.snapshot();              // newest-first
   const d = getModel().modal.diagLog || { cursor: 0, scroll: 0 };
-  const now = Date.now();
   const COLS = viewportDims().cols;
   const wantW = Math.min(MAX_W, COLS - 4);
   const innerW = Math.max(20, wantW - 4);
