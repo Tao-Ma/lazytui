@@ -107,13 +107,50 @@ the v0.6.4 tag). Findings A + B — the overlay model-clock arc — are DONE
    (migrate the registries into the model) — (b) stays available if a future
    need (e.g. full model-`now` tick) arises. Pinned by `test-overlay-clock.js`.
 
-**3. `viewer.update()` boundary `getModel()` → modelBundle.**
-   *Independent arc, medium risk.* Thread the model facts the viewer's
-   line-derivation needs (`currentGroup` + the slices `viewerLines` consults)
-   via the Msg payload (`modelBundle` pattern already used by other arms),
-   so `update()` stops reading the global store. Risk is in the viewer's
-   hottest reducer + the lines derivation, so it wants its own arc with the
-   existing viewer tests as the guard. Removes the last reducer-store read.
+**3. `viewer.update()` boundary `getModel()` → threaded bundle. IN PROGRESS.**
+   *The riskiest remaining (hottest reducer).* Investigation (2026-06-15)
+   found the read is NOT a small-scalar swap: it feeds `viewerLines →
+   flatTabInfo`, which needs the **full current-group tab structure** (merged
+   actions + terminals), used both for the active-tab content AND the
+   tab-transition capture in `_withDerivedFields` (which needs `originalSlice`,
+   so it can't move to the post-dispatch finalizer). The model dependency
+   reduces to a `viewerModelBundle(model, groupName) = {currentGroup, group,
+   mergedActions, yamlTerminals}`, consumed by `flatTabInfo` / `viewerLines` /
+   `resolveTabKey` (+ viewer's `_activeTabKey` / `_tabKeyExistsIn`). Production
+   dispatch funnels through ONE choke point (`api._dispatchMsgInner`); only
+   tests call `update()` directly. NOTE: this RELOCATES the read from the
+   viewer reducer to the framework dispatcher (the impure shell) — it does not
+   remove the work; the gain is a `(msg, slice)`-pure viewer reducer + §12
+   reaching zero reducer-store reads. Plan (execute one phase per commit, full
+   viewer suite as the gate between each):
+
+   - **P0 — `pt.viewerModelBundle(model, groupName)` (pure leaf).** New
+     accessor capturing the fact-set the readers need from the model. One read
+     site. No callers yet; unit-test the shape.
+   - **P1 — parametrize the leaves to accept the bundle (back-compat, no
+     behavior change).** `flatTabInfo` / `viewerLines` / `resolveTabKey`
+     (+ viewer `_activeTabKey` / `_tabKeyExistsIn`) derive their facts from a
+     bundle; keep the `(…, model, …)` signatures working by computing the
+     bundle inline when handed a model, so render + existing dispatchers stay
+     green. Suite green.
+   - **P2 — thread the bundle at the framework choke point.** In
+     `api._dispatchMsgInner`, when the routed target resolves to a viewer
+     instance, compute `viewerModelBundle(getModel(), currentGroup)` once and
+     spread `viewerModel` into the msg before `comp.update`. Covers all
+     production dispatch (sync + async/effect); gated on viewer-kind so
+     non-viewer dispatch pays nothing. Cost ≈ today's per-update flatTabInfo
+     (relocated, not added).
+   - **P3 — `viewer.update` reads `msg.viewerModel`, drops `getModel()`.**
+     `update(msg, slice)` uses the threaded bundle for `viewerLines` +
+     `_withDerivedFields`. No `getModel()` in the update path. (Render-side
+     `viewerLines`/`detailTitle` keep reading `getModel()` — render may.)
+   - **P4 — update direct-call tests + add a guard test.** Thread the bundle
+     in tests that call `viewer.update` directly; add a test that spies
+     `getModel` and asserts ZERO calls while dispatching viewer msgs.
+   - **P5 — cleanup + docs.** Drop the dead `getModel` import from the update
+     path if fully removed; update PRINCIPLES §12 (zero reducer-store reads)
+     + this register. Decide the no-bundle fallback (require it vs a one-time
+     compute) at P3 and document the choice.
 
 **4. config-status init cross-slice read → init-injection hook.**
    *After #3 (same "thread facts, don't read globals" theme).* Add a small
