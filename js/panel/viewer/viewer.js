@@ -83,17 +83,6 @@ function _setCursor(slice, line, col, extend) {
   return next;
 }
 
-// T3 — resolve `slice.tab` (a numeric idx into the flat strip) to a
-// stable string key for the per-tab state map. Thin wrapper over the
-// canonical pane-tabs.resolveTabKey (N1 — single source of truth, used
-// by both the finalizer's leaving capture and tab_switch's inbound
-// restore). See pane-tabs.js#resolveTabKey for the key-shape contract
-// (info / transcript unprefixed; per-group kinds carry the group
-// prefix to prevent cross-group collision).
-function _activeTabKey(slice, model) {
-  return pt.resolveTabKey((slice && slice.tab) | 0, slice, model);
-}
-
 // T3 — read a per-tab field with a fallback. Returns the stored value
 // when present (even if 0 / null), else the fallback.
 function _tabFieldOf(slice, key, field, fallback) {
@@ -287,50 +276,17 @@ function _linesEq(a, b) {
 // auto-jump, viewer_set_tab, future Msgs — without each one having
 // to remember to capture. Single source of truth for "per-tab
 // persistence on transition."
-// R5 — does fromKey still correspond to an existing tab in `next`?
-// When a tab is removed (removeContent / removeEphemeral), the FROM-
-// capture in the finalizer would otherwise re-create the tabState
-// entry we just dropped. Detection: parse the key shape and check
-// against next's content/ephemeral stores. Info / Transcript / action
-// (YAML+plugin sources, not removable via tab API) always count as
-// existing.
-function _tabKeyExistsIn(next, model, key) {
-  if (!key || key === 'info' || key === 'transcript') return true;
-  // v0.6.2 R11 — non-greedy first segment so group names containing `:`
-  // (legitimate in YAML keys, e.g. `proj:v2`) parse correctly. The
-  // leftmost `:(action|terminal|content):` anchors the split; everything
-  // before is the group, everything after is the rest-key. Without
-  // this, the bail returned `true` unconditionally → R5's removed-tab
-  // skip was silently disabled for any config with `:` in a group name.
-  const m = key.match(/^(.+?):(action|terminal|content):(.+)$/);
-  if (!m) return true;
-  const [, keyGroup, kind, restKey] = m;
-  if (kind === 'action') return true;  // action tabs derive from YAML/plugins
-  if (kind === 'content') {
-    const all = (next && next.contentTabs) || {};
-    const group = all[keyGroup];
-    return !!(group && group[restKey]);
-  }
-  if (kind === 'terminal') {
-    // Ephemeral terminal removal is the primary path. YAML-declared
-    // terminals are persistent and live in model.config; their keys
-    // wouldn't disappear via tab removal.
-    const eph = (next && next.ephemeralTerminals) || {};
-    const ephGroup = eph[keyGroup];
-    if (ephGroup && ephGroup[restKey]) return true;
-    const groupCfg = model && model.config && model.config.groups
-      && model.config.groups[keyGroup];
-    const yamlTerms = (groupCfg && groupCfg.terminals) || {};
-    return !!yamlTerms[restKey];
-  }
-  return true;
-}
-
-// blessed-exceptions #3 — from-bundle twins of _activeTabKey / _tabKeyExistsIn,
-// used by the finalizer so it never reads getModel(). The tab-transition
-// capture only resolves CURRENT-group keys, which the bundle describes, so the
-// yaml-terminal check below keys off bundle.yamlTerminals (== the model path
-// for keyGroup === currentGroup).
+// blessed-exceptions #3 — the finalizer's tab-key helpers, keyed off the
+// threaded viewerModelBundle so it never reads getModel().
+//   _activeTabKeyFromBundle: slice.tab → stable per-tab key (info/transcript
+//     unprefixed; per-group kinds carry the group prefix).
+//   _tabKeyExistsInFromBundle: R5 — does fromKey still resolve in `next`?
+//     When a tab is removed the FROM-capture would otherwise re-create the
+//     tabState entry we just dropped. Info/Transcript/action always exist;
+//     content/terminal are checked against next's stores. The capture only
+//     resolves CURRENT-group keys, which the bundle describes, so the
+//     yaml-terminal check keys off bundle.yamlTerminals (== the model path
+//     for keyGroup === currentGroup).
 function _activeTabKeyFromBundle(slice, bundle) {
   return pt.resolveTabKeyFromBundle((slice && slice.tab) | 0, slice, bundle);
 }
