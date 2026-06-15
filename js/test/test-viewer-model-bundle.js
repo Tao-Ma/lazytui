@@ -15,8 +15,9 @@
 
 const { describe, it, eq, assert, report } = require('./test-runner');
 const sm = require('./smoke/_helpers/smoke');
-const { getModel } = require('../app/runtime');
+const { getModel, setModel } = require('../app/runtime');
 const pt = require('../leaves/pane-tabs');
+const viewer = require('../panel/viewer/viewer');
 
 describe('[P0] viewerModelBundle captures the model fact-set', () => {
   it('has currentGroup, group, mergedActions, yamlTerminals', () => {
@@ -99,6 +100,42 @@ describe('[P1] *FromBundle parity with the model-path readers', () => {
     eq(JSON.stringify(pt.viewerLinesFromBundle(sOv, bundle)),
        JSON.stringify(pt.viewerLines(sOv, m, g)),
        'viewerOverride parity');
+  });
+});
+
+// P3/P4 — viewer.update follows the THREADED bundle, never the live model.
+// Teeth: corrupt getModel()'s return; if update reintroduced a getModel read,
+// the tab-transition capture (which needs the group's tab structure) would
+// break. With the bundle threaded it must still resolve correctly.
+describe('[P4] viewer.update is pure of getModel (bundle-driven)', () => {
+  it('tab-transition capture uses the bundle group even when the live model is wrong', () => {
+    sm.bootFresh();
+    const m = getModel();
+    const g = m.currentGroup;
+    // A slice with a content tab in the current group.
+    const slice = {
+      tab: 0, scroll: 0, infoLines: ['i'],
+      contentTabs: { [g]: { log: { lines: ['L1', 'L2'] } } },
+      ephemeralTerminals: {}, actionTabBuffers: {},
+    };
+    const info = pt.flatTabInfo(slice, m, g);
+    const contentIdx = info.total - 1;                 // content tab is last
+    const goodBundle = pt.viewerModelBundle(m, g);
+
+    // Corrupt the live model: any stray getModel() read in update would now
+    // derive the WRONG group (or no groups) and skip/misplace the capture.
+    setModel({ ...m, currentGroup: '__wrong__', config: { groups: {} } });
+
+    // Switch FROM the content tab TO Info — triggers _withDerivedFields.
+    const fromSlice = { ...slice, tab: contentIdx, scroll: 1 };
+    const r = viewer._update(
+      { type: 'viewer_set_tab', tab: 0, total: 2, toTabKey: 'info', viewerModel: goodBundle },
+      fromSlice);
+    const next = Array.isArray(r) ? r[0] : r;
+    const key = `${g}:content:log`;
+    assert(next.tabState && next.tabState[key],
+      'captured the leaving content-tab state under the bundle-derived key');
+    eq(next.tabState[key].scroll, 1, 'captured the original scroll');
   });
 });
 

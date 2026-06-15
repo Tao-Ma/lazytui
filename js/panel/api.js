@@ -584,11 +584,15 @@ function _dispatchKeyToFocusedInner(key, seq) {
     // (chain modes are already filtered upstream by _dispatchActiveMode;
     // terminalMode is non-chain so the arm needs the flag to bail).
     const _m = getModel();
-    const result = comp.update({
+    let keyMsg = {
       type: 'key', key, seq,
       terminalMode: !!_m.modes.terminalMode,
       focusKind: route.instanceKind(route.getFocus()),
-    }, inst.slice);
+    };
+    // blessed-exceptions #3 — thread the Component's model bundle (viewer) so
+    // its key arm + finalizer stay pure of getModel(). See _runInstance.
+    if (comp.augmentMsg) keyMsg = comp.augmentMsg(keyMsg, _m);
+    const result = comp.update(keyMsg, inst.slice);
     if (result === undefined) return false;
     if (Array.isArray(result)) {
       const [next, effects] = result;
@@ -617,6 +621,12 @@ function _dispatchKeyToFocusedInner(key, seq) {
 // so multi-instance kinds update only their own slice.
 function _runInstance(inst, comp, msg) {
   try {
+    // blessed-exceptions #3 — optional Msg-enrichment hook. A Component that
+    // needs model-derived facts in its reducer declares augmentMsg(msg, model);
+    // the framework (the impure shell) computes them ONCE here and threads them
+    // into the Msg payload, so the Component's update(msg, slice) stays pure of
+    // getModel(). The viewer uses it to thread its tab-structure bundle.
+    if (comp && comp.augmentMsg) msg = comp.augmentMsg(msg, getModel());
     const result = comp.update(msg, inst.slice);
     if (result === undefined) return;
     if (Array.isArray(result)) {
