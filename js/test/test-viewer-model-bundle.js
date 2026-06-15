@@ -50,4 +50,56 @@ describe('[P0] viewerModelBundle captures the model fact-set', () => {
   });
 });
 
+// P1 — the *FromBundle readers must be byte-for-byte parity with the
+// model-path readers (so wiring them into viewer.update at P3 is safe).
+describe('[P1] *FromBundle parity with the model-path readers', () => {
+  it('flatTabInfo / viewerLines / resolveTabKey match across every tab idx', () => {
+    sm.bootFresh();
+    const m = getModel();
+    const g = m.currentGroup;
+    const bundle = pt.viewerModelBundle(m, g);
+    // Exercise a representative slice: a content tab + an ephemeral term so
+    // the action/term/content branches are all populated.
+    const slice = {
+      tab: 0,
+      infoLines: ['info-a', 'info-b'],
+      ephemeralTerminals: { [g]: { sh: { cmd: 'bash', label: 'sh' } } },
+      contentTabs: { [g]: { log: { lines: ['line-1', 'line-2'] } } },
+      actionTabBuffers: {},
+      viewerStreamBuffer: { lines: [], cap: 1000 },
+    };
+
+    const infoModel = pt.flatTabInfo(slice, m, g);
+    const infoBundle = pt.flatTabInfoFromBundle(slice, bundle);
+    eq(JSON.stringify(infoBundle), JSON.stringify(infoModel), 'flatTabInfo parity');
+
+    const total = infoModel.total;
+    for (let tab = 0; tab <= total + 1; tab++) {
+      const s = { ...slice, tab };
+      eq(JSON.stringify(pt.viewerLinesFromBundle(s, bundle)),
+         JSON.stringify(pt.viewerLines(s, m, g)),
+         `viewerLines parity @ tab ${tab}`);
+      eq(String(pt.resolveTabKeyFromBundle(tab, s, bundle)),
+         String(pt.resolveTabKey(tab, s, m)),
+         `resolveTabKey parity @ tab ${tab}`);
+    }
+  });
+
+  it('viewerOverride + infoFromFocus lookups behave identically', () => {
+    sm.bootFresh();
+    const m = getModel();
+    const g = m.currentGroup;
+    const bundle = pt.viewerModelBundle(m, g);
+    const lookups = { infoFromFocus: () => ['focus-line'] };
+    const s0 = { tab: 0, infoLines: ['stored'] };
+    eq(JSON.stringify(pt.viewerLinesFromBundle(s0, bundle, lookups)),
+       JSON.stringify(pt.viewerLines(s0, m, g, lookups)),
+       'infoFromFocus parity');
+    const sOv = { tab: 3, viewerOverride: { lines: ['ov-1'] } };
+    eq(JSON.stringify(pt.viewerLinesFromBundle(sOv, bundle)),
+       JSON.stringify(pt.viewerLines(sOv, m, g)),
+       'viewerOverride parity');
+  });
+});
+
 report();

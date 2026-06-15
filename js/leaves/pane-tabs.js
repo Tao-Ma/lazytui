@@ -95,7 +95,11 @@ function actionTabCount(model, groupName) {
 // Takes a `lookups` bag of host-bound helpers so the leaf stays
 // import-free for the cross-tier concerns (focused-panel resolution,
 // getInfo lookup). Caller supplies them via panel/viewer/tabs facade.
-function viewerLines(slice, model, groupName, lookups) {
+// Shared body for viewerLines / viewerLinesFromBundle. `infoFn` is a thunk
+// computing flatTabInfo, called LAZILY (only for tab>=2) so the hot
+// info/transcript tabs (0/1) never pay for it. `groupName` keys the
+// action/content buffers (== bundle.currentGroup in the from-bundle path).
+function _viewerLinesCore(slice, groupName, infoFn, lookups) {
   if (slice && slice.viewerOverride && Array.isArray(slice.viewerOverride.lines)) {
     return slice.viewerOverride.lines;
   }
@@ -105,9 +109,7 @@ function viewerLines(slice, model, groupName, lookups) {
   // computed msg.lines). The optional lookups.infoFromFocus hook is the
   // RENDER-time live projection (display follows the focused Navigator
   // even between show_selected_info events); reducer-side callers (the
-  // finalizer) omit it and read the stored basis. Sticky-by-storage
-  // replaces the old slice.lines fixed-point fallback; the slice.lines
-  // tail is transitional (test fixtures) and dies in P3.
+  // finalizer) omit it and read the stored basis.
   if (tab === 0) {
     if (lookups && typeof lookups.infoFromFocus === 'function') {
       const lines = lookups.infoFromFocus();
@@ -121,7 +123,7 @@ function viewerLines(slice, model, groupName, lookups) {
     if (vsb && Array.isArray(vsb.lines) && vsb.lines.length > 0) return vsb.lines;
     return ['[dim](no transcript yet)[/]'];
   }
-  const info = flatTabInfo(slice || {}, model, groupName);
+  const info = infoFn();
   // Action tab.
   if (tab >= 2 && tab <= 1 + info.actionTabs.length) {
     const [actionKey] = info.actionTabs[tab - 2];
@@ -145,6 +147,19 @@ function viewerLines(slice, model, groupName, lookups) {
   }
   // Fallback (degenerate tab idx, etc.) — nothing to show.
   return [];
+}
+
+function viewerLines(slice, model, groupName, lookups) {
+  return _viewerLinesCore(slice, groupName,
+    () => flatTabInfo(slice || {}, model, groupName), lookups);
+}
+
+// blessed-exceptions #3 P1 — the from-bundle twin of viewerLines. Same body,
+// facts sourced from a `viewerModelBundle` instead of the live model, so the
+// viewer reducer can derive lines without reading getModel().
+function viewerLinesFromBundle(slice, bundle, lookups) {
+  return _viewerLinesCore(slice, bundle && bundle.currentGroup,
+    () => flatTabInfoFromBundle(slice || {}, bundle), lookups);
 }
 
 /** Merged terminals: YAML-defined first, then runtime-ephemeral. */
@@ -190,6 +205,24 @@ function flatTabInfo(slice, model, groupName) {
   };
 }
 
+// blessed-exceptions #3 P1 — the from-bundle twin of flatTabInfo. Identical
+// result, sourced from a `viewerModelBundle` (mergedActions pre-computed,
+// group/yamlTerminals snapshotted) instead of the live model. `bundle.
+// currentGroup` is the group the bundle describes, so it keys ephemerals /
+// content exactly as the model-path `groupName` does.
+function flatTabInfoFromBundle(slice, bundle) {
+  if (!bundle || !bundle.group) return { actionTabs: [], termTabs: [], contentTabs: [], total: 2 };
+  const gn = bundle.currentGroup;
+  const actionTabs = Object.entries(bundle.mergedActions || {}).filter(([, a]) => a.tab);
+  const eph = (slice && slice.ephemeralTerminals && slice.ephemeralTerminals[gn]) || {};
+  const termTabs = Object.entries({ ...(bundle.yamlTerminals || {}), ...eph });
+  const contentTabs = Object.entries(groupContentTabs(slice || {}, gn));
+  return {
+    actionTabs, termTabs, contentTabs,
+    total: 2 + actionTabs.length + termTabs.length + contentTabs.length,
+  };
+}
+
 /** Flat-index of the Transcript tab — always 1 (right after Info). */
 function transcriptTabIdx() {
   return 1;
@@ -206,6 +239,27 @@ function resolveTabKey(idx, slice, model) {
   if (!model || !model.config || !model.config.groups) return null;
   const groupName = model.currentGroup;
   const info = flatTabInfo(slice || {}, model, groupName);
+  if (idx >= 2 && idx <= 1 + info.actionTabs.length) {
+    return `${groupName}:action:${info.actionTabs[idx - 2][0]}`;
+  }
+  const termBase = 2 + info.actionTabs.length;
+  if (idx >= termBase && idx < termBase + info.termTabs.length) {
+    return `${groupName}:terminal:${info.termTabs[idx - termBase][0]}`;
+  }
+  const contentBase = 2 + info.actionTabs.length + info.termTabs.length;
+  if (idx >= contentBase && idx < contentBase + info.contentTabs.length) {
+    return `${groupName}:content:${info.contentTabs[idx - contentBase][0]}`;
+  }
+  return null;
+}
+
+// blessed-exceptions #3 P1 — the from-bundle twin of resolveTabKey.
+function resolveTabKeyFromBundle(idx, slice, bundle) {
+  if (idx === 0) return 'info';
+  if (idx === 1) return 'transcript';
+  if (!bundle || !bundle.group) return null;
+  const groupName = bundle.currentGroup;
+  const info = flatTabInfoFromBundle(slice || {}, bundle);
   if (idx >= 2 && idx <= 1 + info.actionTabs.length) {
     return `${groupName}:action:${info.actionTabs[idx - 2][0]}`;
   }
@@ -336,7 +390,11 @@ function viewerModelBundle(model, groupName) {
   const group = _groupOf(model, groupName);
   if (!_api) _api = require('../panel/api');
   return {
-    currentGroup: (model && model.currentGroup) || '',
+    // `currentGroup` = the group this bundle describes (always the viewer's
+    // current group in practice). The `*FromBundle` readers key ephemerals /
+    // content / tab-key prefixes off it, so it MUST match the `groupName` the
+    // facts were computed for (parity with the model-path flatTabInfo).
+    currentGroup: groupName,
     group,
     mergedActions: group ? _api.getMergedActions(groupName) : {},
     yamlTerminals: group ? (group.terminals || {}) : null,
@@ -800,5 +858,8 @@ module.exports = {
   addContent, updateContentLines, removeContent, reorderContent,
   modelBundle,
   viewerModelBundle,
+  flatTabInfoFromBundle,
+  viewerLinesFromBundle,
+  resolveTabKeyFromBundle,
   reduceTabMsg,
 };
