@@ -384,15 +384,18 @@ module.exports = {
   `[[elm-tea-discipline]]`). Component-level surfaces OUTSIDE arms
   (handlers, finalizers, contributors registered with the framework)
   may still read `getModel()`; the rule applies to the arm body only.
-  The one concrete instance: **`viewer.update()` reads `getModel()` once
-  at the entry boundary** (`viewer.js:388`) — it derives the active-tab
-  `lines` (`viewerLines(slice, m, m.currentGroup)`) and threads model +
-  lines into the pure arms (`_updateInner`/`_finalize` take them as
-  explicit args). It is the only Component whose `update()` touches the
-  store; the modelBundle ideal would thread these via Msg payload instead,
-  but the viewer's line-derivation needs the whole model, so a single
-  boundary read (mirroring the dispatcher's read-once-at-top) is the
-  accepted shape. The arms stay pure.
+  **The framework provides a seam for Components that need model-derived
+  facts in their reducer: an optional `augmentMsg(msg, model)` hook**
+  (`api.js`, called at both `comp.update` sites). The impure dispatch shell
+  computes the facts ONCE and threads them into the Msg payload, so the
+  Component's whole `update` — arms AND finalizer — stays pure of
+  `getModel()`. The viewer uses it: `augmentMsg` attaches a
+  `pt.viewerModelBundle` (current group, its config, the COMPUTED merged
+  actions, yaml terminals) as `msg.viewerModel`, and `viewer.update` derives
+  its active-tab lines + tab-transition capture from that bundle via the
+  `*FromBundle` readers — **no Component reducer reads `getModel()` anymore**
+  (blessed-exceptions #3, 2026-06-15). Render still may (`detailTitle`/
+  `render` read the model as their view input — §11).
 - **The ROOT reducer (`runtime.update`) is held to the same bar**
   (v0.6.4 Theme C). Its arms may do ROUTING reads via `route`
   (`getFocus` / `componentForPanel` / `paneTypeOf` / `resolveTarget` —

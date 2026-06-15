@@ -42,16 +42,14 @@ cosmetic. Phases below are ordered by leverage.
 register is complete):** a deep TEA-purity sweep (2026-06-14) found two
 impure reads that are sanctioned, not bugs, and intentionally kept:
 
-- **`viewer.update()` boundary `getModel()` read** (`viewer.js:388`). The
-  only Component whose `update()` reads the global store. It reads once at
-  the entry boundary, derives the active-tab `lines`
-  (`viewerLines(slice, m, m.currentGroup)`), and threads model + lines into
-  the pure arms (`_updateInner`/`_finalize`). Permitted by PRINCIPLES §12
-  ("non-arm code may read `getModel()`; the rule applies to the arm body
-  only"). The modelBundle ideal would thread these via Msg payload, but the
-  viewer's line-derivation needs the whole model — a single boundary read
-  (mirroring the dispatcher's read-once-at-top) is the accepted shape. The
-  arms stay pure; no other Component does this.
+- ✅ **`viewer.update()` boundary `getModel()` read — ELIMINATED 2026-06-15
+  (#3).** Was the only Component whose `update()` read the global store.
+  Now the framework's `augmentMsg` hook threads a `pt.viewerModelBundle` as
+  `msg.viewerModel`, and `viewer.update` derives lines + the tab-transition
+  capture from it via the `*FromBundle` readers — no `getModel()` in the
+  update path. The read is RELOCATED to the dispatch shell (the work is the
+  same), but every Component reducer is now pure of the store. See the #3
+  entry below + PRINCIPLES §12.
 - **config-status init-time fixup** (`config-status.js:402-403`).
   `init(paneId)` reads `getModel()` + `getInstanceSlice('layout')` to seed
   its slice (the documented first-touch boundary); `render()` is pure. The
@@ -107,8 +105,20 @@ the v0.6.4 tag). Findings A + B — the overlay model-clock arc — are DONE
    (migrate the registries into the model) — (b) stays available if a future
    need (e.g. full model-`now` tick) arises. Pinned by `test-overlay-clock.js`.
 
-**3. `viewer.update()` boundary `getModel()` → threaded bundle. IN PROGRESS.**
-   *The riskiest remaining (hottest reducer).* Investigation (2026-06-15)
+**3. ✅ DONE 2026-06-15 — `viewer.update()` boundary `getModel()` → threaded
+   bundle.** Shipped across P0–P5 (commits `89201d8` → P5). The viewer reducer
+   is now pure of `getModel()`: the framework's `augmentMsg` hook threads a
+   `pt.viewerModelBundle` as `msg.viewerModel`, and `update` derives lines +
+   the tab-transition capture from it via the `*FromBundle` readers. The read
+   is RELOCATED to the dispatch shell (work unchanged); §12 now has zero
+   Component-reducer store reads. No-bundle fallback decision (P3): NO
+   `getModel` fallback in `update` — a missing bundle degrades safely
+   (info/transcript resolve, per-group tabs read empty); all production
+   dispatch threads it via the two augmented `comp.update` sites. Phase record
+   below.
+
+   *Original investigation (2026-06-15)* — the read was NOT a small-scalar swap:
+   it feeds `viewerLines →
    found the read is NOT a small-scalar swap: it feeds `viewerLines →
    flatTabInfo`, which needs the **full current-group tab structure** (merged
    actions + terminals), used both for the active-tab content AND the
