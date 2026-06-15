@@ -26,7 +26,7 @@ const { isTerminalTab, activeTerminalId, activeTerminalConfig,
 const { getSession } = require('../io/terminal');
 const { getPanelDef, getInstanceSlice, getFocus, instanceKind,
         collectViewContributions, filterCurrentText } = require('../panel/api');
-const modes = require('../dispatch/modes');
+const modes = require('../leaves/modes');
 const { getModel } = require('../app/runtime');
 const { getFreeConfigFooter } = require('../panel/free-config-view');
 
@@ -127,7 +127,7 @@ function renderFooter(model = getModel()) {
   // overwrites it.
   if (model.modes.cmdMode) return;
   const { cols: COLS, rows: ROWS } = viewportDims();
-  const inModal = modes.isModal();
+  const inModal = modes.isModal(model.modes);
   const layoutSlice = getInstanceSlice('layout') || { viewMode: 'normal', dirty: false };
 
   // Left side: mode message OR (panel hints + plugin keyHints +

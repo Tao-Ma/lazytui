@@ -114,26 +114,26 @@ describe('[3] wheel target ≠ focused panel: focus stays put', () => {
 
 const { handleMouse } = require('../dispatch/input');
 const { getModel } = require('../app/runtime');
-const modes = require('../dispatch/modes');
+const modes = require('../leaves/modes');
 
 describe('[4] T13 regression: handleMouse modal gating', () => {
   it('wheel over a panel during filterMode does NOT change focus or scroll', () => {
     setupTwoPanel();
     getInstanceSlice('detail').scroll = 0;
     getInstanceSlice('layout').focus = 'hosts';
-    modes.resetModes();
+    modes.resetModes(getModel().modes);
     getModel().modes.filterMode = true;
     // Wheel inside detail bounds — pre-T13 this would scroll detail.
     handleMouse('wheel-down', 40, 5);
     eq(getInstanceSlice('detail').scroll, 0, 'detail did not scroll under filter modal');
     eq(getFocus(), 'hosts', 'focus unchanged');
     eq(getModel().modes.filterMode, true, 'filterMode preserved');
-    modes.resetModes();
+    modes.resetModes(getModel().modes);
   });
   it('press OUTSIDE the menu during menuOpen dismisses it, never changes focus', () => {
     setupTwoPanel();
     getInstanceSlice('layout').focus = 'hosts';
-    modes.resetModes();
+    modes.resetModes(getModel().modes);
     getModel().modes.menuOpen = true;
     // Empty menu (no items/anchor) → a small centered box; a press at (40,5)
     // lands outside it. v0.6.4 context-menu feature: an outside-click now
@@ -144,7 +144,7 @@ describe('[4] T13 regression: handleMouse modal gating', () => {
     handleMouse('press', 40, 5);
     eq(getFocus(), 'hosts', 'focus unchanged — click did not leak into the focus cascade');
     eq(getModel().modes.menuOpen, false, 'outside-click dismissed the menu');
-    modes.resetModes();
+    modes.resetModes(getModel().modes);
   });
   it('wheel during prefixMode does NOT trigger groups cascade', () => {
     // The most subtle path the audit flagged: prefix-chord state
@@ -152,13 +152,13 @@ describe('[4] T13 regression: handleMouse modal gating', () => {
     // switch, so a wheel-over-groups during a leader chord used to
     // leave the partial chord bound against the new group's tree.
     setupTwoPanel();
-    modes.resetModes();
+    modes.resetModes(getModel().modes);
     getModel().modes.prefixMode = true;
     getModel().prefixSeq = ['g'];
     handleMouse('wheel-down', 5, 5);   // wheel over hosts panel
     eq(getModel().modes.prefixMode, true, 'prefixMode preserved');
     eq(getModel().prefixSeq.join(','), 'g', 'prefix chord preserved');
-    modes.resetModes();
+    modes.resetModes(getModel().modes);
     getModel().prefixSeq = [];
   });
   // Note: "wheel still works in normal mode" is covered end-to-end by

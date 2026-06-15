@@ -68,7 +68,7 @@ const mnav = require('../leaves/nav');
  *   - register                       — yank register
  */
 function init() {
-  // Derive the initial modes bag from dispatch/modes.js MODES registry —
+  // Derive the initial modes bag from leaves/modes.js MODES registry —
   // the registry is the single source of truth. Hardcoding the list
   // here let v0.6.3 D1's paneSelectMode drift: the registry had it but
   // init() didn't, so the mode_set Cmd's `flag in modes` guard refused
@@ -76,7 +76,7 @@ function init() {
   // production. (Tests pre-set the property in their setup() so they
   // missed the bug.) Lazy require avoids the modes.js ↔ runtime.js
   // module cycle.
-  const { MODES } = require('../dispatch/modes');
+  const { MODES } = require('../leaves/modes');
   const initialModes = {};
   for (const md of MODES) initialModes[md.flag] = false;
   const m = {

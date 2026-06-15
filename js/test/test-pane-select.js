@@ -552,7 +552,7 @@ describe('[7] pool_swap_by_id — SWAP / REPLACE / invariants', () => {
 });
 
 describe('[4] modes registry has paneMenuMode', () => {
-  const modes = require('../dispatch/modes');
+  const modes = require('../leaves/modes');
   it('paneMenuMode is in CHAIN_MODES', () => {
     assert(modes.CHAIN_MODES.includes('paneMenuMode'));
   });

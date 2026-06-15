@@ -1,19 +1,28 @@
 /**
  * Single source of truth for lazytui's modal UI states.
  *
- * Each mode is a boolean flag on `S`. Historically the set of modes was
- * duplicated across four hand-maintained lists that drifted apart (a
- * mode added to the dispatch chain but forgotten in the overlay-residue
- * list left stale pixels on close; forgotten in the reset list leaked
- * across re-init). This table is the one place a mode is declared; the
- * consumers derive their lists from it:
+ * A pure, dependency-free leaf: the MODES table + derivations over it.
+ * v0.6.5 §4 — re-homed here from `dispatch/modes.js`. It has no dispatch
+ * behavior (it's a registry consumed by dispatch / render / state alike),
+ * so living under `dispatch/` made `render → dispatch` read as a layer
+ * violation. The move also dropped the old `_modes()` `getModel()` default
+ * on the predicates — a leaf must not reach up into `app/runtime`, so
+ * every predicate now takes its modes-bag explicitly (callers already had
+ * one in hand; only `render/footer.js` relied on the default).
+ *
+ * Each mode is a boolean flag on the root model's `modes` bag. Historically
+ * the set of modes was duplicated across four hand-maintained lists that
+ * drifted apart (a mode added to the dispatch chain but forgotten in the
+ * overlay-residue list left stale pixels on close; forgotten in the reset
+ * list leaked across re-init). This table is the one place a mode is
+ * declared; the consumers derive their lists from it:
  *
  *   - dispatch.js  modeChain     ← CHAIN_MODES (array order = precedence)
  *   - layout.js    overlayActive ← isOverlayActive (centered box → must
  *                                   force a full repaint when it closes)
- *   - layout.js    inModal       ← isModal (footer owns the row → suppress
+ *   - render/footer inModal      ← isModal (footer owns the row → suppress
  *                                   panel hints + footer decorators)
- *   - state.js     initState     ← resetModes (cleared on (re-)init)
+ *   - input.js     chrome clicks ← suppressesChromeClicks
  *
  * `chain:false` modes are real modes but not key-claiming modeChain
  * entries: terminalMode is handled before the chain (input.js routes
@@ -60,22 +69,19 @@ const MODES = [
 // Ordered list of modeChain flags (precedence = array order).
 const CHAIN_MODES = MODES.filter(m => m.chain).map(m => m.flag);
 
-function _modes() { return require('../app/runtime').getModel().modes; }
-
-/** True when any mode that draws a centered overlay is active.
- *  Accepts an optional explicit modes-bag for test isolation; defaults
- *  to the live model's modes. */
-function isOverlayActive(md = _modes()) { return MODES.some(m => m.overlay && md[m.flag]); }
+/** True when any mode that draws a centered overlay is active. `md` is the
+ *  root model's modes bag. */
+function isOverlayActive(md) { return MODES.some(m => m.overlay && md[m.flag]); }
 
 /** True when any mode that owns the footer row is active. */
-function isModal(md = _modes()) { return MODES.some(m => m.modal && md[m.flag]); }
+function isModal(md) { return MODES.some(m => m.modal && md[m.flag]); }
 
 /** True when an active mode suppresses chrome-glyph clicks (the mode
  *  owns input or paints a centered popup over the chrome, so a click on
  *  [_]/[+]/[x] shouldn't fire "through" it). Derived from the
  *  `suppressChrome` column — the single source — replacing the former
  *  hand-rolled list in input.js. */
-function suppressesChromeClicks(md = _modes()) { return MODES.some(m => m.suppressChrome && md[m.flag]); }
+function suppressesChromeClicks(md) { return MODES.some(m => m.suppressChrome && md[m.flag]); }
 
 /** True when ANY modeChain mode is active — i.e. the keyboard side
  *  would route the next key through a modal handler rather than the
@@ -85,11 +91,11 @@ function suppressesChromeClicks(md = _modes()) { return MODES.some(m => m.suppre
  *  can't see through the overlay. The freeConfigMode special-case in
  *  handleMouse runs BEFORE this gate (design owns the mouse pipeline);
  *  terminalMode is non-chain by design and not covered here. */
-function isChainActive(md = _modes()) { return CHAIN_MODES.some(f => md[f]); }
+function isChainActive(md) { return CHAIN_MODES.some(f => md[f]); }
 
-/** Clear every resettable mode flag (called from initState). Non-flag
- *  buffers (prefixNode, detail-slice search state, etc.) are reset by
- *  their owners; this only flips the booleans. */
-function resetModes(md = _modes()) { for (const m of MODES) if (m.reset) md[m.flag] = false; }
+/** Clear every resettable mode flag on the given modes bag (mutates it
+ *  in place). Non-flag buffers (prefixNode, detail-slice search state,
+ *  etc.) are reset by their owners; this only flips the booleans. */
+function resetModes(md) { for (const m of MODES) if (m.reset) md[m.flag] = false; }
 
 module.exports = { MODES, CHAIN_MODES, isOverlayActive, isModal, isChainActive, suppressesChromeClicks, resetModes };

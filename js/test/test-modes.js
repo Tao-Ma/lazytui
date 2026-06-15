@@ -11,7 +11,7 @@
 'use strict';
 
 const { describe, it, eq, assert, report } = require('./test-runner');
-const modes = require('../dispatch/modes');
+const modes = require('../leaves/modes');
 const { getModel } = require('../app/runtime');
 
 // ---- [1] registry shape + derivations ----------------------------
@@ -100,7 +100,7 @@ describe('[4] wedge guard (_dispatchActiveMode)', () => {
     // post-mortem inspectable. Clear the buffer before driving.
     eventLog.clear();
     try {
-      modes.resetModes();
+      modes.resetModes(getModel().modes);
       getModel().modes.registerPopupMode = true;
       const claimed = dispatch._dispatchActiveMode('x', 'x');  // must not throw
       eq(claimed, true, 'mode claimed the key');
@@ -119,7 +119,7 @@ describe('[4] wedge guard (_dispatchActiveMode)', () => {
     assert(/boom/.test(last.payload.message), 'error message preserved');
   });
   it('returns false (falls through) when no mode is active', () => {
-    modes.resetModes();
+    modes.resetModes(getModel().modes);
     eq(dispatch._dispatchActiveMode('j', 'j'), false);
   });
 });
@@ -142,7 +142,7 @@ describe('[5] T6 regression: filterMode j/k navigates without wedging', () => {
     console.error = (...a) => { logged += a.join(' ') + '\n'; };
     try {
       for (const [key, seq] of [['', 'j'], ['', 'k'], ['up', ''], ['down', '']]) {
-        modes.resetModes();
+        modes.resetModes(getModel().modes);
         getModel().modes.filterMode = true;
         const claimed = dispatch._dispatchActiveMode(key, seq);
         eq(claimed, true, `${key||seq} claimed by filterMode handler`);
@@ -151,7 +151,7 @@ describe('[5] T6 regression: filterMode j/k navigates without wedging', () => {
       eq(logged, '', 'no wedge-guard error logged');
     } finally {
       console.error = origErr;
-      modes.resetModes();
+      modes.resetModes(getModel().modes);
     }
   });
 });

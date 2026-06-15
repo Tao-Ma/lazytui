@@ -20,6 +20,16 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   at the prompt snaps back to the live bottom. (v0.6.5 §5(a);
   `docs/v0.6.5.md`.)
 
+### Changed
+- **`dispatch/modes.js` re-homed to `leaves/modes.js` and purified.** The
+  modal-state registry has no dispatch behavior, so living under
+  `dispatch/` made `render → dispatch` read as a layer violation. It's now
+  a genuinely pure, dependency-free leaf: the predicates
+  (`isModal`/`isOverlayActive`/`isChainActive`/`suppressesChromeClicks`/
+  `resetModes`) no longer default their modes-bag via a lazy
+  `getModel()` reach into `app/runtime` — callers pass it explicitly
+  (internal cleanup, no behavior change). (v0.6.5 §4.)
+
 ## [0.6.4] — 2026-06-15
 
 ### Added
