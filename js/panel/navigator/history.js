@@ -11,7 +11,7 @@
 'use strict';
 
 const { setViewerContent } = require('../../app/state');
-const { getModel } = require('../../app/runtime');
+const { getModel } = require('../../model/store');
 const history = require('../../feature/history');
 const mnav = require('../../leaves/nav');
 const {

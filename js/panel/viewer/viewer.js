@@ -31,7 +31,7 @@ const pt = require('../../leaves/pane-tabs');
 const mpool = require('../../leaves/pool');
 const { stripMarkup, charWidth } = require('../../io/ansi');
 const { buildTabStrip } = require('./tab-strip');
-const { getModel } = require('../../app/runtime');
+const { getModel } = require('../../model/store');
 
 // --- internal slice transforms (pure return-new) ---
 //

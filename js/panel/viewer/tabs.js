@@ -26,7 +26,7 @@
  */
 'use strict';
 
-const { getModel } = require('../../app/runtime');
+const { getModel } = require('../../model/store');
 const pt = require('../../leaves/pane-tabs');
 
 // --- Active-viewer slice fetcher ------------------------------------------
@@ -147,7 +147,7 @@ function _viewerTarget(intent) {
 // helper that computes the bundle from (model, groupName).
 
 function _getModel() {
-  return require('../../app/runtime').getModel();
+  return getModel();
 }
 
 function addEphemeralTab(groupName, key, cmd, label) {

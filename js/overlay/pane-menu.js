@@ -31,7 +31,7 @@
  */
 'use strict';
 
-const { getModel } = require('../app/runtime');
+const { getModel } = require('../model/store');
 const { getInstanceSlice } = require('../panel/api');
 const { renderPanel, viewportDims } = require('../render/panel');
 const { richToAnsi, RESET, esc, visibleLen } = require('../io/ansi');

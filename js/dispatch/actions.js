@@ -30,7 +30,7 @@ const { getPanelDef, getItems, getMergedActions, getInstanceSlice,
 const { isTerminalTab, activeTerminalId, isActionTab, activeActionTab } = require('../panel/viewer/tabs');
 const { isSessionDead, restartSession } = require('../io/terminal');
 const { execSync } = require('child_process');
-const { getModel } = require('../app/runtime');
+const { getModel } = require('../model/store');
 const route = require('../panel/route');
 const mpane = require('../leaves/pane');
 const pt = require('../leaves/pane-tabs');
@@ -155,7 +155,6 @@ function _runResolvedAction(key, act) {
   if (act.args) {
     const initial = resolvePromptDefault(act);
     // Seed the autosuggest ghost from the yank register's top (first line).
-    const { getModel } = require('../app/runtime');
     const top = require('../leaves/register').top(getModel().register);
     const ghost = String(top || '').split('\n')[0];
     // Stage the prompt through update with a base run_action Cmd — submit

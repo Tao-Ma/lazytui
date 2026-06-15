@@ -14,7 +14,7 @@
  */
 'use strict';
 
-const { getModel } = require('../app/runtime');
+const { getModel } = require('../model/store');
 const { richToAnsi, RESET, visibleLen, esc } = require('../io/ansi');
 const { stdout } = require('../io/term');
 const { theme } = require('../render/themes');

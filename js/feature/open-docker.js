@@ -36,7 +36,7 @@ const { dockerList, dockerReadBytes, listRunningContainers } = require('./docker
 const { addContentTab, updateContentTabLines } = require('../panel/viewer/tabs');
 const { loadFile, DEFAULT_MAX_BYTES, DEFAULT_HEX_AFTER } = require('../io/file-loader');
 const { esc } = require('../io/ansi');
-const { getModel } = require('../app/runtime');
+const { getModel } = require('../model/store');
 const openTarget = require('./open-target');
 
 const DOCKER_PREFIX = /^docker:\/\/(.*)$/;
@@ -162,7 +162,7 @@ function _kickFetch(container, dir) {
  *  up newly-cached completions. No-op when cmdline isn't open. Mirrors
  *  the registerEffect('cmdline_rebuild', …) handler in dispatch/effects.js. */
 function _refireCmdlineRebuild() {
-  const runtime = require('../app/runtime');
+  const runtime = require('../model/store');
   if (!runtime.getModel().modes.cmdMode) return;
   const matches = require('../dispatch/cmdline').rebuild(runtime.getModel().modal.cmdline.text);
   require('../dispatch/dispatch').applyMsg({ type: 'cmdline_set_matches', matches });

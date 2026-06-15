@@ -19,7 +19,7 @@
 const fs = require('fs');
 const path = require('path');
 const { setTheme } = require('../render/themes');
-const { getModel } = require('./runtime');
+const { getModel } = require('../model/store');
 const { rebuildLayoutFromConfig } = require('../leaves/arrange');
 
 // Memoized module refs for the nav hot path (_resolvePanelType /
@@ -315,7 +315,6 @@ function allPanels() {
 // cascade-emit case) so the reducer arms stay pure of getModel().
 function _groupsCtx() {
   const groupsComp = require('../panel/navigator/groups');
-  const { getModel } = require('./runtime');
   const m = getModel();
   return { ...groupsComp.groupsBundle(m), paneMenuMode: !!m.modes.paneMenuMode };
 }
@@ -431,7 +430,7 @@ function resetGroupContext() {
   const target = route.resolveTarget('viewer');
   if (target) {
     // v0.6.3 Phase D1: thread paneMenuMode so the reducer stays pure.
-    const m = require('./runtime').getModel();
+    const m = getModel();
     api.dispatchMsg(api.wrap(target, { type: 'viewer_reset_chrome', paneMenuMode: !!m.modes.paneMenuMode }));
   }
 }
@@ -475,7 +474,7 @@ function setViewerContent(tabId, text, opts) {
   //   currentGroup, fromTabKey (the FROM-tab key for view-state
   //   capture), total (when msg.tab is set, for the in-range clamp).
   const slice = api.getInstanceSlice(tabId) || { tab: 0 };
-  const model = require('./runtime').getModel();
+  const model = getModel();
   const pt = require('../leaves/pane-tabs');
   const inner = {
     type: 'viewer_set_content',

@@ -14,7 +14,7 @@
 const { allPanels, selectGroup, setSel, getSel, getScroll } = require('../app/state');
 const { visibleBoundsFor, getPanelViewportH } = require('../leaves/geometry');
 const { render } = require('../render/paint');
-const { getModel } = require('../app/runtime');
+const { getModel } = require('../model/store');
 const { enableMouse, enableFocusEvents, enableBracketedPaste, cols } = require('../io/term');
 const { isTerminalTab, activeTerminalId } = require('../panel/viewer/tabs');
 const { writeToSession, isSessionDead } = require('../io/terminal');

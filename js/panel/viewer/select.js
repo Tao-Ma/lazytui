@@ -35,7 +35,7 @@
 // either through every call site. The detail-cluster fields all live in
 // the detail slice (`lines` / `select` / `cursor` / `scroll` / `search`);
 // the mode flags (visual / select) live in model.modes.
-const { getModel } = require('../../app/runtime');
+const { getModel } = require('../../model/store');
 const { stripMarkup, charWidth, esc } = require('../../io/ansi');
 const {getInstanceSlice, getFocus } = require('../api');
 

@@ -12,6 +12,7 @@
 'use strict';
 
 const { allPanels } = require('../app/state');
+const { getModel } = require('../model/store');
 const { esc } = require('../io/ansi');
 const { getCommands, getItems: apiGetItems, dispatchMsg, wrap } = require('../panel/api');
 
@@ -101,7 +102,7 @@ function previewAtSel(sel) {
     catch (e) { console.error('[cmdline preview teardown]', e && e.message); }
     _activeTeardown = null;
   }
-  const text = require('../app/runtime').getModel().modal.cmdline.text;
+  const text = getModel().modal.cmdline.text;
   if (!text) return;
   const match = _full[sel];
   if (!match || typeof match.preview !== 'function') return;

@@ -42,7 +42,7 @@ const {
   serviceSlice, dispatchMsg, wrap,
   hub,
 } = require('../api');
-const { getModel } = require('../../app/runtime');
+const { getModel } = require('../../model/store');
 const mnav = require('../../leaves/nav');
 
 const POLL_MS = 10000;

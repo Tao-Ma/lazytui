@@ -27,7 +27,7 @@ const { getSession } = require('../io/terminal');
 const { getPanelDef, getInstanceSlice, getFocus, instanceKind,
         collectViewContributions, filterCurrentText } = require('../panel/api');
 const modes = require('../leaves/modes');
-const { getModel } = require('../app/runtime');
+const { getModel } = require('../model/store');
 const { getFreeConfigFooter } = require('../panel/free-config-view');
 
 // Memoized lazy route ref — resolveTarget is read on the per-frame

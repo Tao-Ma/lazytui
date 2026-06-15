@@ -40,7 +40,7 @@
 const { spawn } = require('child_process');
 const { StringDecoder } = require('string_decoder');
 const { esc } = require('../io/ansi');
-const { getModel } = require('../app/runtime');
+const { getModel } = require('../model/store');
 const { scheduleRender } = require('../render/render-queue');
 const history = require('../feature/history');
 const jobs = require('../feature/jobs');
@@ -98,7 +98,7 @@ function appendDetailLine(line, tabKey, groupName) {
   let msg;
   if (tabKey && groupName) {
     const slice = api.getInstanceSlice(target) || { tab: 0 };
-    const model = require('../app/runtime').getModel();
+    const model = getModel();
     msg = { type: 'viewer_append', line, tabKey, groupName, ..._routedBundle(slice, model, groupName) };
   } else {
     msg = { type: 'viewer_append', line };
@@ -115,7 +115,7 @@ function appendDetailLines(lines, tabKey, groupName) {
   let msg;
   if (tabKey && groupName) {
     const slice = api.getInstanceSlice(target) || { tab: 0 };
-    const model = require('../app/runtime').getModel();
+    const model = getModel();
     msg = { type: 'viewer_append_lines', lines, tabKey, groupName, ..._routedBundle(slice, model, groupName) };
   } else {
     msg = { type: 'viewer_append_lines', lines };
@@ -201,7 +201,7 @@ function streamCommand(headerLabel, cmd, args = [], opts = {}) {
       api.dispatchMsg(api.wrap(target, {
         type: 'tab_switch', idx: 0,
         targetKey: 'info',
-        currentGroup: require('../app/runtime').getModel().currentGroup,
+        currentGroup: getModel().currentGroup,
       }));
       require('./dispatch').applyMsg({
         type: 'confirm_enter',

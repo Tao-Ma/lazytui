@@ -26,7 +26,7 @@
 
 const tabs = require('./tabs');
 const api = require('../api');
-const { getModel } = require('../../app/runtime');
+const { getModel } = require('../../model/store');
 const { scheduleRender } = require('../../render/render-queue');
 
 function handleExit(id, exitCode) {

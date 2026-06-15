@@ -57,7 +57,7 @@
 const fs   = require('fs');
 const path = require('path');
 
-const { getModel } = require('../../app/runtime');
+const { getModel } = require('../../model/store');
 const mnav = require('../../leaves/nav');
 const route = require('../../panel/route');
 const {

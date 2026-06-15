@@ -33,7 +33,7 @@
 const { spawn } = require('child_process');
 const path = require('path');
 const { loadConfig } = require('./state');
-const { getModel } = require('./runtime');
+const { getModel } = require('../model/store');
 
 // Built-in Components consulted for `groupActions(group, name)`
 // synthesis. Add new generic Components here as they ship — keep

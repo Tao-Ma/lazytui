@@ -25,7 +25,7 @@
  */
 'use strict';
 
-const { getModel } = require('../../app/runtime');
+const { getModel } = require('../../model/store');
 const mnav = require('../../leaves/nav');
 const {
   esc, wrapColor, theme, renderPanel,

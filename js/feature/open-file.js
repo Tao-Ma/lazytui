@@ -24,7 +24,7 @@ const fs = require('fs');
 const { addContentTab, updateContentTabLines } = require('../panel/viewer/tabs');
 const { loadFile, DEFAULT_MAX_BYTES, DEFAULT_HEX_AFTER } = require('../io/file-loader');
 const { esc } = require('../io/ansi');
-const { getModel } = require('../app/runtime');
+const { getModel } = require('../model/store');
 const openTarget = require('./open-target');
 
 const SCHEME_PREFIX = /^[a-z][a-z0-9+.-]*:\/\//;

@@ -17,7 +17,7 @@
 
 const { esc } = require('../io/ansi');
 const { renderOverlay, viewportDims } = require('../render/panel');
-const { getModel } = require('../app/runtime');
+const { getModel } = require('../model/store');
 const jobs = require('../feature/jobs');
 
 const MAX_W = 80;

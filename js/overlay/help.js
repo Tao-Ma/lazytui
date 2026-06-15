@@ -18,7 +18,7 @@
 'use strict';
 
 const { allPanels, setViewerContent } = require('../app/state');
-const { getModel } = require('../app/runtime');
+const { getModel } = require('../model/store');
 const { esc } = require('../io/ansi');
 const {getCommands, getPanelDef, getInstanceSlice, getFocus, instanceKind } = require('../panel/api');
 const kb = require('../dispatch/keybindings');
