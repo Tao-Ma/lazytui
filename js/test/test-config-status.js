@@ -499,25 +499,57 @@ describe('[8] diffFor — preview shape per status', () => {
 // --- Multi-instance: content is per-pane (v0.6.4 #12) ---
 
 describe('[9] two config-status panes resolve + route content per-pane', () => {
-  // arrange with two config-status panes declaring DIFFERENT branches.
-  const arrange = { columns: [{ panels: [
-    { paneId: 'pane-a', type: 'config-status', config: { branch: 'config' } },
-    { paneId: 'pane-b', type: 'config-status', config: { branch: 'prod' } },
-  ] }] };
+  // v0.6.4 #4 — init-injection: the mint loop resolves the pane def and
+  // threads it as seed.paneDef, so branch reads straight off the def (no
+  // pool lookup / arrange read). Two panes still track different branches.
+  //
+  // SHAPE NOTE (and #4 bugfix): rebuildLayoutFromConfig's widenPane spreads
+  // the pool entry's `config` keys onto the pane, so a PLACED pane carries
+  // `branch` at TOP LEVEL (no `.config`). The earlier hand-built
+  // `config: { branch }` fixture was a fiction the parser never emits — and
+  // pre-#4 the read of `.config.branch` always fell back to DEFAULT in
+  // production. Derive paneA/paneB through the REAL widening path so this
+  // test exercises the production shape and can't drift back to fiction.
+  const { rebuildLayoutFromConfig } = require('../leaves/arrange');
+  const { allPanesInColumns } = require('../leaves/pool');
+  const wideArrange = rebuildLayoutFromConfig({ layout: { columns: [{ panels: [
+    { id: 'cfg-a', type: 'config-status', config: { branch: 'config' } },
+    { id: 'cfg-b', type: 'config-status', config: { branch: 'prod' } },
+  ] }] } });
+  const wideCfg = allPanesInColumns(wideArrange).filter(p => p.type === 'config-status');
+  const paneA = wideCfg[0];
+  const paneB = wideCfg[1];
 
-  it('_branchFromArrange resolves THIS pane by paneId, not first-of-type', () => {
-    eq(cs._branchFromArrange(arrange, 'pane-a'), 'config', 'pane-a → its own branch');
-    eq(cs._branchFromArrange(arrange, 'pane-b'), 'prod', 'pane-b → its own branch (not first-of-type)');
+  it("_branchFromPaneDef reads THIS pane's top-level branch (real widened shape)", () => {
+    eq(paneB.branch, 'prod', 'sanity: widenPane puts branch at top level (no .config)');
+    eq(paneB.config, undefined, 'sanity: widened pane has no nested .config');
+    eq(cs._branchFromPaneDef(paneA), 'config', 'pane-a → its own branch');
+    eq(cs._branchFromPaneDef(paneB), 'prod', 'pane-b → its own branch (not DEFAULT) — the #4 bugfix');
   });
 
-  it('no paneId (register-time singleton / tests) falls back to first-of-type', () => {
-    eq(cs._branchFromArrange(arrange, null), 'config', 'first config-status pane');
-    eq(cs._branchFromArrange(arrange, 'pane-missing'), 'config', 'unknown paneId → default branch');
+  it('_branchFromPaneDef falls back to nested .config.branch (pool-entry shape)', () => {
+    eq(cs._branchFromPaneDef({ paneId: 'x', type: 'config-status', config: { branch: 'stage' } }), 'stage', 'nested shape still resolves');
   });
 
-  it('init(paneId) stamps slice.paneId so the slice self-identifies', () => {
-    eq(cs._init('pane-b').paneId, 'pane-b', 'placed pane stamps its id');
+  it('missing / branchless pane def falls back to default', () => {
+    eq(cs._branchFromPaneDef(null), 'config', 'no def (register-time singleton) → default');
+    eq(cs._branchFromPaneDef({ paneId: 'x', type: 'config-status', config: {} }), 'config', 'no branch: → default');
+  });
+
+  it('init(paneId, seed) stamps paneId + derives branch from the seed pane def', () => {
+    eq(cs._init('pane-b', { paneDef: paneB }).paneId, 'pane-b', 'placed pane stamps its id');
+    eq(cs._init('pane-b', { paneDef: paneB }).branch, 'prod', 'branch from the seed pane def');
     eq(cs._init().paneId, null, 'register-time singleton is null');
+    eq(cs._init().branch, 'config', 'seedless init → default branch');
+  });
+
+  it('init derives files + projectDir from the seed (no global read)', () => {
+    const files = [{ path: 'a.yml' }];
+    const s = cs._init('pane-a', { config: { files }, projectDir: '/proj', paneDef: paneA });
+    eq(s.files, files, 'files from seed.config.files');
+    eq(s.projectDir, '/proj', 'projectDir from seed.projectDir');
+    eq(cs._init('pane-a', {}).projectDir, '.', 'empty seed → default projectDir');
+    eq(cs._init('pane-a', {}).files.length, 0, 'empty seed → no files');
   });
 
   it('refresh threads slice.paneId into cfgStatusCompute so the result routes home', () => {

@@ -273,13 +273,16 @@ at the end):
   effect at mount (`app/state.js#_wireSubscriptions`, the per-pane mint
   loop). This is the TEA `subscriptions` seam — render stays pure, the
   runtime owns the effect. (Stats was the lone lazy-subscriber via the old
-  `_ensureSub`; that blessed exception is retired.) **Initial-state fixup**
-  (config-status panel) is an init-time first-touch read, not a render-side
-  effect: `config-status.init(paneId)` reads `getModel()` (files/projectDir)
-  and `getInstanceSlice('layout')` (arrange → this pane's branch) to seed its
-  slice; `render()` itself is pure. It is the last cross-slice init read —
-  every other Component's init is self-contained — and an accepted middle
-  ground (a dedicated init-injection hook would retire it).
+  `_ensureSub`; that blessed exception is retired.) **Initial-state seeding
+  — init-injection (v0.6.4 #4).** A Component that needs root/pane facts to
+  seed its initial slice receives them as an argument: the mint loop
+  (`app/state.js`, the impure first-touch shell) threads a seed
+  `{ config, projectDir, paneDef }` into `comp.init(paneId, seed)`.
+  config-status (the sole consumer) derives files/projectDir/branch from the
+  seed and reads NO globals — `init` is a pure function of `(paneId, seed)`.
+  This mirrors `register.init(config.register)` and retired the last
+  cross-slice init read (it previously reached for `getModel()` +
+  `getInstanceSlice('layout')`). Seed-blind inits arity-ignore the arg.
 
 **Overlay subsystem — the model-clock arc** (`js/overlay/*` +
 `render/panel.js#renderOverlay` + `render/footer.js`). The overlay render
@@ -325,10 +328,11 @@ resolved both:
 
 **Rule for new panel renders:** read the slice, return a string. Need a
 hub subscription? Declare it via the `subscriptions(paneDef)` hook — the
-framework wires it at mount (see `stats.js`). Need root/cross-slice facts to
-seed the initial slice? Read them once in `init()` at the first-touch
-boundary and comment it (see config-status's init-time initial-state fixup,
-the remaining example); keep `render()` pure of such reads.
+framework wires it at mount (see `stats.js`). Need root/pane facts to seed
+the initial slice? Take them from the mint-loop seed — `init(paneId, seed)`
+receives `{ config, projectDir, paneDef }` (see config-status); don't reach
+for `getModel()` / `getInstanceSlice()` in `init`, and keep `render()` pure
+of such reads.
 
 ## 12. TEA shape and the Component discipline
 

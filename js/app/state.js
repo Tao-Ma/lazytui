@@ -241,7 +241,17 @@ function initState() {
         // path — including the broadcast `refresh` where no call-site
         // paneId is available. init() arity-ignores it for Components
         // that don't need identity.
-        route.setInstance(paneId, kind, comp.init(paneId));
+        //
+        // v0.6.4 #4 — init-injection. The mint loop IS the framework's
+        // impure first-touch shell (getModel() is blessed here), so it
+        // threads the seed facts a Component's init would otherwise reach
+        // for as globals. Mirrors register.init(config.register || {}):
+        // init becomes a pure function of (paneId, seed). config-status is
+        // the sole consumer today (drops getModel + the getInstanceSlice
+        // ('layout') cross-slice read); seed-blind inits arity-ignore it.
+        const m = getModel();
+        const seed = { config: m.config, projectDir: m.projectDir, paneDef: p };
+        route.setInstance(paneId, kind, comp.init(paneId, seed));
       }
       // v0.6.4 Phase D — wire the pane's DECLARED hub subscriptions at
       // mount (no-op for Components without a subscriptions() hook;
