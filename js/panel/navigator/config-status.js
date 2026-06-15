@@ -23,7 +23,8 @@
  * `cfgStatusDiff` (git show/diff → the viewer via setViewerContent). `]`/`[`/Enter
  * are handled in update(); each returns the `_claimed` sentinel effect so the
  * framework's tab-cycle / run_selected defaults don't ALSO fire.
- * Branch comes from the panel's `config.branch` (default `config`).
+ * Branch comes from the pane's `branch:` config (default `config`) —
+ * threaded into init() via the mint-loop seed (v0.6.4 #4).
  */
 'use strict';
 
@@ -35,9 +36,7 @@ const { spawnSync } = require('child_process');
 const {
   esc, theme, renderPanel,
   getScroll, getSel,
-  getInstanceSlice,
 } = require('../api');
-const { getModel } = require('../../app/runtime');
 const mnav = require('../../leaves/nav');
 
 const DEFAULT_LAYOUT = 'tree';   // 'tree' | 'flat'
@@ -61,31 +60,39 @@ const WALK_LIMIT = 10;
 //
 //   slice.files       — mirrors model.config.files (snapshot)
 //   slice.projectDir  — mirrors model.projectDir (snapshot)
-//   slice.branch      — THIS pane's pool-entry branch (resolved by paneId)
+//   slice.branch      — THIS pane's `branch:` config (from the pane def)
 //
-// init(paneId) seeds them via boundary reads (init is the framework's
-// "first-touch" point; reading root here is explicit, one-time) and
-// resolves branch from the pane carrying that paneId — so two
-// config-status panes can track different branches. The `set_config`
+// v0.6.4 #4 — init-injection: the framework mint loop (state.js) threads
+// the seed { config, projectDir, paneDef } into init(paneId, seed) — the
+// runtime shell reads getModel() (blessed), init is a pure function of
+// (paneId, seed) with NO getModel / getInstanceSlice. Mirrors
+// register.init(config.register). branch comes from the pane def the mint
+// loop already resolved (no cross-slice layout read). The `set_config`
 // arm refreshes files+projectDir when the root reducer rebroadcasts
 // config. (branch is fixed at mint — a pane's `branch:` doesn't change
-// without a re-mint.) Reducer arms + finalizer are then pure of
-// getModel / getInstanceSlice.
+// without a re-mint.) Reducer arms + finalizer stay pure of getModel /
+// getInstanceSlice.
 //
 // Contributors (`getItems`, `getInfo`, `keyHints`) are framework-
 // level surfaces, not reducer arms; they may still read root via
 // the documented Component contract.
 function _readFilesFromModel(m)        { return (m && m.config && m.config.files) || []; }
-function _readProjectDirFromModel(m)   { return (m && m.projectDir) || '.'; }
-function _branchFromArrange(arrange, paneId) {
-  const panels = arrange ? require('../../leaves/pool').allPanesInColumns(arrange) : [];
-  // Resolve THIS instance's pane by its paneId (init stamps slice.paneId);
-  // the register-time singleton / unit tests pass no paneId → first-of-type
-  // (the pre-multi-instance fallback, safe under a single pane).
-  const p = paneId
-    ? panels.find(pp => pp.paneId === paneId)
-    : panels.find(pp => pp.type === 'config-status');
-  const b = p && p.config && p.config.branch;
+function _branchFromPaneDef(paneDef) {
+  // THIS pane's `branch:` config. The mint loop already resolved the pane
+  // (it iterates the placed panes), so init receives the def directly —
+  // no pool lookup, no arrange/layout-slice read. The register-time
+  // singleton / unit tests pass no def → DEFAULT_BRANCH (throwaway seed).
+  //
+  // v0.6.4 #4 bugfix — read TOP-LEVEL `branch`: rebuildLayoutFromConfig's
+  // widenPane spreads the pool entry's `config` keys onto the pane
+  // (`{ branch, id, type, paneId, ... }`), so a placed pane carries
+  // `branch` at top level with NO `.config`. The pre-#4 `_branchFromArrange`
+  // read `paneDef.config.branch` and so ALWAYS fell back to DEFAULT in
+  // production — a second pane's custom `branch:` silently never routed
+  // (masked because the single/default-branch case equals DEFAULT). The
+  // `.config.branch` fallback keeps the pool-entry / hand-built shape working.
+  const b = paneDef && (paneDef.branch != null ? paneDef.branch
+                        : (paneDef.config && paneDef.config.branch));
   return (typeof b === 'string' && b) ? b : DEFAULT_BRANCH;
 }
 
@@ -391,23 +398,22 @@ function diffFor(item, branch, projectDir) {
 
 // --- update + effects (the TEA half) ---
 
-function init(paneId) {
-  // T1.2 — seed config-snapshot fields from root model at init time
-  // (the framework's documented first-touch boundary). Subsequent
-  // updates flow through the set_config arm; reducer arms themselves
-  // stay pure of getModel + cross-slice reads.
-  // v0.6.4 #12 — the slice self-identifies (init(paneId)) so branch +
-  // the compute result route per-pane (null for the register-time
-  // singleton, disposed once a real pane mints).
-  const m = getModel();
-  const layoutSlice = getInstanceSlice('layout');
-  const arrange = layoutSlice && layoutSlice.arrange;
+function init(paneId, seed) {
+  // v0.6.4 #4 — init-injection. The framework mint loop threads the seed
+  // { config, projectDir, paneDef } (it reads getModel() in the blessed
+  // shell); init derives its snapshot from the seed and is a pure function
+  // of (paneId, seed) — no getModel / getInstanceSlice. A missing seed
+  // (the register-time singleton at api.js, disposed once a real pane
+  // mints) degrades to empty/defaults — that slice is throwaway.
+  // Subsequent updates flow through the set_config arm; reducer arms stay
+  // pure. v0.6.4 #12 — slice self-identifies (paneId) so branch + the
+  // compute result route per-pane.
   return {
     paneId: paneId || null,
     layout: DEFAULT_LAYOUT, scope: DEFAULT_SCOPE, cache: null, expanded: {}, computing: false,
-    files: _readFilesFromModel(m),
-    projectDir: _readProjectDirFromModel(m),
-    branch: _branchFromArrange(arrange, paneId),
+    files: _readFilesFromModel(seed && { config: seed.config }),
+    projectDir: (seed && seed.projectDir) || '.',
+    branch: _branchFromPaneDef(seed && seed.paneDef),
     // v0.6.1 Phase 3 — single-panel Component, nav stores the entry directly.
     nav: mnav.init(),
   };
@@ -524,7 +530,7 @@ module.exports = {
   _buildItems: buildItems,
   _byCategory,
   _flat,
-  _branchFromArrange,
+  _branchFromPaneDef,
   _computeStatus: computeStatus,
   _statusFor: statusFor,
   _diffFor: diffFor,

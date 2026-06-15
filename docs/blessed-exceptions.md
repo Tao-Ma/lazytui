@@ -50,10 +50,23 @@ impure reads that are sanctioned, not bugs, and intentionally kept:
   update path. The read is RELOCATED to the dispatch shell (the work is the
   same), but every Component reducer is now pure of the store. See the #3
   entry below + PRINCIPLES §12.
-- **config-status init-time fixup** (`config-status.js:402-403`).
-  `init(paneId)` reads `getModel()` + `getInstanceSlice('layout')` to seed
-  its slice (the documented first-touch boundary); `render()` is pure. The
-  last cross-slice init read. See PRINCIPLES §11.
+- ✅ **config-status init-time fixup — ELIMINATED 2026-06-15 (#4).** Was
+  the last cross-slice init read: `init(paneId)` reached for `getModel()` +
+  `getInstanceSlice('layout')` to seed its slice. Now the framework mint
+  loop (`state.js`) threads a seed `{ config, projectDir, paneDef }` into
+  `init(paneId, seed)` — the blessed shell reads `getModel()`, init is a
+  pure function of `(paneId, seed)` with NO `getModel` / `getInstanceSlice`.
+  Mirrors the existing `register.init(config.register)` precedent + Phase
+  D's `subscriptions(paneDef)` seam. config-status no longer imports either
+  global accessor. **Bug found + fixed in the same change:** the pre-#4
+  `_branchFromArrange` read `paneDef.config.branch`, but `widenPane` spreads
+  the pool entry's config onto the pane (`branch` lands TOP-LEVEL, no
+  `.config`), so a placed pane's custom `branch:` ALWAYS fell back to
+  DEFAULT in production (masked by the single/default-branch case + a unit
+  fixture that used a shape the parser never emits). `_branchFromPaneDef`
+  now reads top-level `branch` (nested fallback kept); the test derives
+  panes through the real `rebuildLayoutFromConfig` widening path. See
+  PRINCIPLES §11.
 
 **Overlay-subsystem render exceptions — RESOLVED by the model-clock arc
 2026-06-15** (found by a second, file-by-file code sweep that audited
@@ -85,10 +98,11 @@ Everything else below was an eliminable exception and has been removed.
 
 ## Remaining standing exceptions — recommended fix order
 
-Three exceptions remain unsolved (all sanctioned/benign today; none blocks
-the v0.6.4 tag). Findings A + B — the overlay model-clock arc — are DONE
-(2026-06-15); kept here struck-through for the record. Order is by
-**(correctness value × tractability)** with dependencies noted.
+One exception remains (#5 — sanctioned/benign; likely wontfix-in-prod;
+does not block the v0.6.4 tag). Findings A + B (overlay model-clock arc),
+#3 (viewer.update bundle), and #4 (config-status init-injection) are all
+DONE (2026-06-15); kept here for the record. Order is by **(correctness
+value × tractability)** with dependencies noted.
 
 **1. ✅ DONE — Finding B — unify the dims source (overlays + footer read
    `model.dims`).** Shipped via `render/panel.js#viewportDims()`; overlays +
@@ -162,13 +176,20 @@ the v0.6.4 tag). Findings A + B — the overlay model-clock arc — are DONE
      + this register. Decide the no-bundle fallback (require it vs a one-time
      compute) at P3 and document the choice.
 
-**4. config-status init cross-slice read → init-injection hook.**
-   *After #3 (same "thread facts, don't read globals" theme).* Add a small
-   framework seam so the mint loop passes seed facts (root config snapshot +
-   the pane's layout branch) into `init(paneId, seed)`, instead of `init`
-   reaching for `getModel()` + `getInstanceSlice('layout')`. Generalizes init
-   and removes the last cross-slice init read. Runs once per pane, so low
-   frequency / low blast radius, but needs a framework change.
+**4. ✅ DONE 2026-06-15 — config-status init cross-slice read →
+   init-injection hook.** The mint loop (`state.js`) threads a seed
+   `{ config, projectDir, paneDef }` into `init(paneId, seed)`; config-status
+   derives files/projectDir/branch from it and no longer imports `getModel` /
+   `getInstanceSlice`. Curated-seed shape chosen over passing the whole model
+   (consistent with `register.init(config.register)` + #3's narrow bundle —
+   both established precedents). The seam is generic: any Component's `init`
+   may take `(paneId, seed)`; seed-blind inits arity-ignore it. **Latent bug
+   fixed in the same change:** placed panes carry `branch` TOP-LEVEL (widenPane
+   spreads the pool config), so the old `.config.branch` read always defaulted
+   in production — `_branchFromPaneDef` now reads top-level branch; test derives
+   panes through the real widening path. Seam + fix verified by an end-to-end
+   boot probe (two panes, `config`/`prod` → routed correctly). Suite 92/93
+   (xz env-only) + 9/9 smokes.
 
 **5. Plugin purity contract — enforce in production (or accept).**
    *Last; likely wontfix-in-prod.* Today the read-only-proxy guard runs only
