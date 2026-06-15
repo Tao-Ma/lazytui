@@ -281,33 +281,34 @@ at the end):
   every other Component's init is self-contained — and an accepted middle
   ground (a dedicated init-injection hook would retire it).
 
-**Overlay-subsystem exceptions** (`js/overlay/*` + `render/panel.js#renderOverlay`).
-The overlay render layer was NOT migrated to the model-clock discipline the
-main panel render follows; two reads make overlay renders non-idempotent on
-equal *model* state. Both are benign in practice, both are standing:
+**Overlay subsystem — the model-clock arc** (`js/overlay/*` +
+`render/panel.js#renderOverlay` + `render/footer.js`). The overlay render
+layer originally read both its clocks (dims + time) outside the model, making
+overlay renders non-idempotent on equal *model* state. The model-clock arc
+resolved both:
 
-- **Wall-clock age columns.** `renderDiagLog()` (`overlay/diag-log.js:68`)
-  and `renderJobsOverlay()` (`overlay/jobs.js:109`) read `Date.now()` live
-  and feed it to `_fmtAge(t, now)`, so identical model state renders a
-  different "age" as time passes. (Contrast the *reducer* side, which is
-  strict: `jobs_activate`/`jobs_route`/`jobs_routed` thread `msg.now`/`eff.now`
-  to stay pure of wall-clock — the discipline reached the reducer, not the
-  view.) Idempotent form would thread `now` through model state / a tick.
-  Root cause: both overlays render from **out-of-TEA side registries**
-  (`feature/jobs.js`'s `_jobs` Map via `jobs.list()`; `dispatch/diag-log.js`'s
-  ring buffer via `diag.snapshot()`), not the model — so they were never
-  model-idempotent renders to begin with.
-- **Terminal dims from a module singleton, not the model.** The dims
-  source-of-truth is split: the **panel grid** reads `layoutSlice.dims`
-  ("model clock", resize-as-Msg), but the **footer chrome**
-  (`render/footer.js#renderFooter`, called from the main render) and the
-  **entire overlay layer** (all 8 overlays + `render/panel.js#renderOverlay`)
-  read terminal size via `io/term.cols()/rows()` — the `COLS`/`ROWS` module
-  cache refreshed on SIGWINCH. No overlay (and not the footer) reads
-  `model.dims`. So footer + overlay geometry depend on a module-global
-  refreshed on a different clock than the model. (`decor.js` chrome is
-  clean — it works off `paneBounds` rects, which are dims-derived.) §11
-  holds only because that cache is stable between resizes.
+- **Terminal dims — RESOLVED.** Overlays + the footer now resolve terminal
+  size from the model clock (`layoutSlice.dims`, resize-as-Msg) via
+  `render/panel.js#viewportDims()`, with `io/term.cols()/rows()` kept only as
+  a boot fallback. Previously the panel grid read `layoutSlice.dims` while the
+  footer + all 8 overlays + `renderOverlay` read the `io/term` singleton (the
+  upstream terminal cache), which could lead the model by a frame on resize.
+  The source-of-truth is now unified. (`decor.js` was always clean — works off
+  `paneBounds`, which are dims-derived.) Pinned by `test-overlay-dims.js`.
+- **Wall-clock age columns — concentrated to one frame-boundary read.**
+  `renderDiagLog`/`renderJobsOverlay` no longer read `Date.now()` in their
+  bodies; `now` is threaded from the paint frame, so each is a pure function
+  of (side-store, model, now) — replayable/snapshottable given a fixed `now`
+  (pinned by `test-overlay-clock.js`). The single wall-clock read now lives at
+  the frame boundary, `paint.render(model, now = Date.now())` — the render
+  analog of the dispatcher's `msg.now` (read once at the boundary, threaded
+  into the pure leaves). One residual: an argless `render()` re-reads the
+  default `now`, so back-to-back top-level paints still advance the age — an
+  inherent property of a live-age display (a model `now`/tick would remove
+  even that, at the cost of tick infrastructure). Root context: both overlays
+  render from **out-of-TEA side registries** (`feature/jobs.js`'s `_jobs` Map
+  via `jobs.list()`; `dispatch/diag-log.js`'s ring buffer via `diag.snapshot()`),
+  not the model.
 
 **Why the rule matters:**
 

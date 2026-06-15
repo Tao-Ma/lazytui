@@ -624,7 +624,14 @@ function renderTerminalOverlay(model = getModel(), arrangeOverride) {
   stdout.write(out);
 }
 
-function render(model = getModel()) {
+// `now` is the frame-clock boundary read — the render analog of the
+// dispatcher's `msg.now`. Read ONCE here (default arg) and threaded into the
+// age-displaying overlays (jobs/diag) so THEIR render fns are pure of
+// wall-clock: render(model, now) is a pure function of its inputs, and a
+// replay/snapshot test can pass a fixed `now` for deterministic output
+// (blessed-exceptions Finding A). The argless production call advances age
+// naturally per frame.
+function render(model = getModel(), now = Date.now()) {
   // `model` is the TEA root model (js/app/runtime.js), threaded in by the
   // owner (the program). The view reads migrated slices (currently
   // `viewMode`) from this param, not a global fetch. The `= getModel()`
@@ -700,8 +707,8 @@ function render(model = getModel()) {
   // composed inline by renderPanel({chrome}) per P4.2; the painter
   // stamps it atomically alongside the rest of the top border.
   if (md.paneMenuMode) _paneMenu().render();
-  if (md.jobsMode)    renderJobsOverlay();
-  if (md.diagLogMode) require('../overlay/diag-log').renderDiagLog();
+  if (md.jobsMode)    renderJobsOverlay(now);
+  if (md.diagLogMode) require('../overlay/diag-log').renderDiagLog(now);
 
   // Cursor visibility — derived from mode state, single emission site.
   // Cursor *position* is set inline by renderTerminalOverlay (when in
