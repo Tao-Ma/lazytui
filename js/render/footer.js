@@ -17,10 +17,10 @@
 'use strict';
 
 const { RESET, richToAnsi, esc, visibleLen, wrapColor } = require('../io/ansi');
-const { cols, rows, stdout } = require('../io/term');
+const { stdout } = require('../io/term');
 const { multiSelCount } = require('../app/state');
 const { theme } = require('./themes');
-const { truncate } = require('./panel');
+const { truncate, viewportDims } = require('./panel');
 const { isTerminalTab, activeTerminalId, activeTerminalConfig,
         getTabInfo, findEphemeralByid } = require('../panel/viewer/tabs');
 const { getSession } = require('../io/terminal');
@@ -126,7 +126,7 @@ function renderFooter(model = getModel()) {
   // footer first would flicker on every keystroke as renderCmdline() then
   // overwrites it.
   if (model.modes.cmdMode) return;
-  const COLS = cols(), ROWS = rows();
+  const { cols: COLS, rows: ROWS } = viewportDims();
   const inModal = modes.isModal();
   const layoutSlice = getInstanceSlice('layout') || { viewMode: 'normal', dirty: false };
 

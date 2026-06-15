@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY all_proxy ALL_PROXY no_proxy NO_PROXY)",
+      "Bash(grep -o '\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"[^\"]*\"' /root/.claude/projects/-root-exchange-lazytui/7a3a58f0-261d-4cd3-94a8-32ebf15aabf3.jsonl)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:deepwiki.com)"
+    ]
+  }
+}

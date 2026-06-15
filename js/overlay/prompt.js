@@ -12,8 +12,8 @@
 
 const { getModel, _ghostSuffix } = require('../app/runtime');
 const { esc, visibleLen } = require('../io/ansi');
-const { renderOverlay } = require('../render/panel');
-const { stdout, cols, rows } = require('../io/term');
+const { renderOverlay, viewportDims } = require('../render/panel');
+const { stdout } = require('../io/term');
 
 function renderPromptOverlay() {
   if (!getModel().modes.promptMode) return;
@@ -38,7 +38,7 @@ function renderPromptOverlay() {
   // Position the real cursor at the end of the typed text (before the dim
   // tail). Mirrors renderOverlay's offX/offY math. Visibility is flipped on
   // by layout.render when promptMode is true.
-  const COLS = cols(), ROWS = rows();
+  const { cols: COLS, rows: ROWS } = viewportDims();
   const W = Math.min(maxWidth, COLS - 2);
   const H = Math.min(lines.length + 2, ROWS - 2);
   const offY = Math.max(0, Math.floor((ROWS - H) / 2));

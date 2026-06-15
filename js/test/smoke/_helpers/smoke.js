@@ -141,8 +141,10 @@ function bootFresh(opts) {
 function resize(cols, rows) {
   process.stdout.columns = cols;
   process.stdout.rows = rows;
-  // Mirror the production listener exactly: refresh io/term's
-  // COLS/ROWS (footer/overlay renderers read it) + dispatch the Msg.
+  // Mirror the production listener exactly: refresh io/term's COLS/ROWS
+  // (the boot fallback + low-level term source) + dispatch the Msg that
+  // moves the model clock. Footer/overlays read the MODEL clock
+  // (layoutSlice.dims via render/panel.viewportDims), not io/term.
   require('../../../io/term').refreshSize();
   api.dispatchMsg(api.wrap('layout', { type: 'term_resized', cols, rows }));
 }

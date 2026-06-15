@@ -31,7 +31,7 @@
 
 const { getModel } = require('../app/runtime');
 const { esc, visibleLen } = require('../io/ansi');
-const { renderOverlay } = require('../render/panel');
+const { renderOverlay, viewportDims } = require('../render/panel');
 const register = require('../leaves/register');
 
 const VIEWPORT = 12;
@@ -40,9 +40,8 @@ const VIEWPORT = 12;
 // the dispatch key handler can fold it into the nav/drop Msgs — the reducer
 // stays free of the terminal-size read (view-derived, caller-resolved).
 function viewportRows() {
-  const { rows } = require('../io/term');
   // Leave breathing room for popup borders + count footer + screen edges.
-  return Math.max(3, Math.min(VIEWPORT, rows() - 6));
+  return Math.max(3, Math.min(VIEWPORT, viewportDims().rows - 6));
 }
 
 function _previewOf(text) {

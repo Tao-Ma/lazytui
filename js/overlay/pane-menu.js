@@ -33,9 +33,9 @@
 
 const { getModel } = require('../app/runtime');
 const { getInstanceSlice } = require('../panel/api');
-const { renderPanel } = require('../render/panel');
+const { renderPanel, viewportDims } = require('../render/panel');
 const { richToAnsi, RESET, esc, visibleLen } = require('../io/ansi');
-const { stdout, rows } = require('../io/term');
+const { stdout } = require('../io/term');
 const { isChainActive } = require('../dispatch/modes');
 const mpool = require('../leaves/pool');
 const { visibleBoundsFor } = require('../leaves/geometry');
@@ -249,7 +249,7 @@ function _geom(paneId) {
   if (!paneId) return null;
   const paneB = _paneBounds(paneId);
   if (!paneB) return null;
-  const ROWS = rows();
+  const ROWS = viewportDims().rows;
   const all = items(paneId);
   const innerCap = Math.max(1, ROWS - paneB.y - 3);
   const lineCount = all.length === 0 ? 1 : Math.min(VIEWPORT, all.length);
