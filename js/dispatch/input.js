@@ -21,7 +21,7 @@ const { writeToSession, isSessionDead } = require('../io/terminal');
 const {getPanelDef, getItems, getInstanceSlice, dispatchMsg, wrap, getFocus, instanceKind } = require('../panel/api');
 const route = require('../panel/route');
 const mpane = require('../leaves/pane');
-const { isChainActive, CHAIN_MODES, suppressesChromeClicks } = require('./modes');
+const { isChainActive, CHAIN_MODES, suppressesChromeClicks } = require('../leaves/modes');
 // v0.6.4 Theme F Phase 2 — mouse gestures route through the shared intent
 // layer (the keyboard side joined in Phase 1). intent.js executes no
 // requires at load time, so this top-level require is load-order-safe

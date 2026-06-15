@@ -111,8 +111,8 @@ function bootFresh(opts) {
   initState();
   getModel().projectDir = '.';
   // Clear modal flags that may have been set by an earlier scenario.
-  const modes = require('../../../dispatch/modes');
-  modes.resetModes();
+  const modes = require('../../../leaves/modes');
+  modes.resetModes(getModel().modes);
   // Wipe per-group tab maps + override on every viewer-kind slice.
   // Scenarios open tabs via tabs.addContentTab(); leaving the maps
   // populated between scenarios would produce phantom tabs.

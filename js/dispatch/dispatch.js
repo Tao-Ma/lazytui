@@ -33,7 +33,7 @@ const { isTerminalTab, activeTerminalId, findEphemeralByid,
         removeContentTab } = require('../panel/viewer/tabs');
 const { isSessionDead } = require('../io/terminal');
 const keybindings = require('./keybindings');
-const modes = require('./modes');
+const modes = require('../leaves/modes');
 const runtime = require('../app/runtime');
 const route = require('../panel/route');
 const mpane = require('../leaves/pane');
