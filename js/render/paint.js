@@ -558,7 +558,9 @@ function renderTerminalOverlay(model = getModel(), arrangeOverride) {
   const innerH = bounds.h - 2;
 
   // Lazy-create session on first render
-  const session = ensureSession(id, termConf.cmd, innerW, innerH);
+  // v0.6.5 §2 — io/terminal is a leaf; the spawn cwd (model.projectDir) is
+  // passed in rather than read from the model there.
+  const session = ensureSession(id, termConf.cmd, innerW, innerH, model.projectDir);
 
   // Resize if dimensions changed (also invalidates diff cache). Skipped
   // during a drag preview: the bounds here are preview-shifted (detail's

@@ -21,6 +21,15 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   `docs/v0.6.5.md`.)
 
 ### Changed
+- **`io/terminal.js` is now a true leaf.** It used to reach *up* into
+  `app/runtime` (spawn cwd), `render/render-queue` (post-output repaint),
+  and `feature/jobs` (job lifecycle) despite a header claiming otherwise.
+  Those are now injected at boot (cwd via an `ensureSession` argument;
+  `setRenderHook` / `setJobsHooks` wired from
+  `panel/viewer/pty-lifecycle.install`, mirroring `setExitHandler`), so the
+  module's only requires are `node-pty` + `@xterm/headless` and `io/` has
+  no upward imports. Internal layering cleanup, no behavior change.
+  (v0.6.5 §2.)
 - **`dispatch/modes.js` re-homed to `leaves/modes.js` and purified.** The
   modal-state registry has no dispatch behavior, so living under
   `dispatch/` made `render → dispatch` read as a layer violation. It's now

@@ -1,30 +1,43 @@
 /**
  * Terminal session management — PTY + xterm-headless per session.
  * Owns lifecycle (spawn / resize / kill / restart), input routing,
- * and screen buffer reads. No tab-arithmetic, no panel/api or
- * render/geometry knowledge — those live in higher layers and reach
- * THIS module, never the reverse.
+ * scrollback, and screen buffer reads. No tab-arithmetic, no app model,
+ * no panel/api, no render or jobs knowledge — those live in higher
+ * layers and reach THIS module, never the reverse. It is a true leaf:
+ * its only requires are node-pty + @xterm/headless.
  *
- * The PTY-exit fan-out (active-tab check, viewMode 'full' drop,
- * ephemeral-tab cleanup, force-full-repaint) used to be inlined here
- * via lazy-requires up to panel/viewer/tabs, panel/api, render/geometry
- * — a documented layering inversion. v0.6 routes those side effects
- * through a registered handler (`setExitHandler`) wired at boot from
- * panel/viewer/pty-lifecycle.js. io/terminal.js stays a true leaf;
- * if no handler is registered (tests / scripts that don't bring up
- * the full panel layer), PTY exits silently update session state.
+ * Everything it needs FROM higher layers is injected at boot from
+ * panel/viewer/pty-lifecycle.install (each unset = the effect is skipped,
+ * so the module runs standalone in tests/scripts):
+ *   - `setExitHandler(fn)` — the PTY-exit fan-out (active-tab check,
+ *     viewMode 'full' drop, ephemeral-tab cleanup, force-full-repaint).
+ *     Used to be inlined here via lazy-requires up to panel/viewer/tabs,
+ *     panel/api, render/geometry — a documented inversion, inverted in v0.6.
+ *   - `setRenderHook(fn)` — repaint after the PTY writes (scheduleOverlay).
+ *   - `setJobsHooks({register, close})` — the jobs-registry adapter.
+ * The spawn cwd rides in as an `ensureSession(..., cwd)` argument (the
+ * caller passes model.projectDir); v0.6.5 §2 dropped the former direct
+ * reaches into app/runtime, render/render-queue, and feature/jobs.
  */
 'use strict';
 
 const pty = require('node-pty');
 const { Terminal } = require('@xterm/headless');
-const { getModel } = require('../app/runtime');
-const { scheduleOverlay } = require('../render/render-queue');
-const jobs = require('../feature/jobs');
 
-const sessions = {};  // id -> { pty, xterm, cmd, exited, exitCode }
+const sessions = {};  // id -> { pty, xterm, cmd, cwd, exited, exitCode, jobId }
 
-let _exitHandler = null;
+// --- Injected environment (v0.6.5 §2) ------------------------------------
+//
+// io/terminal.js is a true leaf: it owns the PTY + xterm handles and knows
+// nothing about the app model, the render queue, or the job registry. The
+// three things it needs from higher layers are injected at boot (from
+// panel/viewer/pty-lifecycle.install), mirroring `setExitHandler` — and the
+// spawn cwd rides in as an ensureSession argument. When a hook is unset
+// (tests / scripts that don't bring up the full stack) the corresponding
+// effect is simply skipped, so the module still functions standalone.
+let _exitHandler = null;   // (id, exitCode) → panel-side exit fan-out
+let _renderHook = null;    // () → repaint after the PTY writes (scheduleOverlay)
+let _jobs = null;          // { register, close } → jobs-registry adapter
 
 /** Wire a fan-out handler invoked after each PTY session exit. Receives
  *  `(id, exitCode)`. Called once at boot from a higher layer; the io
@@ -32,19 +45,34 @@ let _exitHandler = null;
  *  setup can swap handlers between runs. */
 function setExitHandler(fn) { _exitHandler = (typeof fn === 'function') ? fn : null; }
 
+/** Wire the post-output repaint hook (production: render-queue
+ *  `scheduleOverlay`). Called once at boot; idempotent on re-registration. */
+function setRenderHook(fn) { _renderHook = (typeof fn === 'function') ? fn : null; }
+
+/** Wire the jobs-registry adapter — an object with `register({kind,label,
+ *  pid,owner}) → id` and `close(id, {status,exitCode})`. Called once at
+ *  boot; without it, sessions run without job tracking. */
+function setJobsHooks(j) {
+  _jobs = (j && typeof j.register === 'function' && typeof j.close === 'function') ? j : null;
+}
+
 /**
  * Create or return existing session. Lazy — created on first access
  * (first render of the active terminal tab).
  */
-function ensureSession(id, cmd, cols, rows) {
+function ensureSession(id, cmd, cols, rows, cwd) {
   if (sessions[id]) return sessions[id];
   const xterm = new Terminal({ cols, rows, allowProposedApi: true });
   const shell = process.env.SHELL || '/bin/bash';
+  // cwd is injected by the caller (the spawn directory = model.projectDir);
+  // io/terminal.js does not read the app model. Defaults to '.' (matching
+  // the old getModel().projectDir default) when unset.
+  const spawnCwd = cwd || '.';
   const p = pty.spawn(shell, ['-c', cmd], {
     name: 'xterm-256color',
     cols,
     rows,
-    cwd: getModel().projectDir,
+    cwd: spawnCwd,
     env: process.env,
   });
   // Declare `session` BEFORE registering `p.onData` so the closure's
@@ -52,7 +80,7 @@ function ensureSession(id, cmd, cols, rows) {
   // synchronous data chunk during spawn (today it doesn't, but a
   // future change would surface the latent hazard). Sub field gets
   // filled in immediately after subscription.
-  const session = { pty: p, xterm, cmd, exited: false, exitCode: null, _onDataSub: null };
+  const session = { pty: p, xterm, cmd, cwd: spawnCwd, exited: false, exitCode: null, _onDataSub: null };
   // Event-driven overlay refresh — render right after xterm finishes
   // parsing PTY output, so keystroke echo appears within ~16ms instead
   // of waiting for the polling tick. The write() callback fires after
@@ -65,23 +93,23 @@ function ensureSession(id, cmd, cols, rows) {
   // emitter).
   session._onDataSub = p.onData(data => {
     if (session.exited) return;  // belt-and-braces: also drop if exited
-    xterm.write(data, () => scheduleOverlay());
+    xterm.write(data, () => { if (_renderHook) _renderHook(); });
   });
   p.onExit(({ exitCode }) => {
     session.exited = true;
     session.exitCode = exitCode;
-    if (session.jobId) {
-      jobs.close(session.jobId, { status: 'exited', exitCode });
+    if (session.jobId && _jobs) {
+      _jobs.close(session.jobId, { status: 'exited', exitCode });
       session.jobId = null;
     }
     _onSessionExit(id, exitCode);
   });
-  session.jobId = jobs.register({
+  session.jobId = _jobs ? _jobs.register({
     kind: 'pty',
     label: cmd,
     pid: p.pid,
     owner: { ptyId: id, cmd },
-  });
+  }) : null;
   sessions[id] = session;
   return session;
 }
@@ -125,8 +153,8 @@ function destroySession(id) {
   // can't call xterm.write on a disposed Terminal.
   if (s._onDataSub) { try { s._onDataSub.dispose(); } catch {} s._onDataSub = null; }
   if (!s.exited) try { s.pty.kill(); } catch {}
-  if (s.jobId) {
-    jobs.close(s.jobId, { status: 'killed' });
+  if (s.jobId && _jobs) {
+    _jobs.close(s.jobId, { status: 'killed' });
     s.jobId = null;
   }
   s.xterm.dispose();
@@ -145,8 +173,9 @@ function restartSession(id, cols, rows) {
   const old = sessions[id];
   if (!old) return null;
   const cmd = old.cmd;
+  const cwd = old.cwd;
   destroySession(id);
-  return ensureSession(id, cmd, cols, rows);
+  return ensureSession(id, cmd, cols, rows, cwd);
 }
 
 /** Has the session exited? */
@@ -225,7 +254,7 @@ module.exports = {
   ensureSession, getSession, writeToSession,
   resizeSession, destroySession, destroyAll,
   restartSession, isSessionDead,
-  setExitHandler,
+  setExitHandler, setRenderHook, setJobsHooks,
   // v0.6.5 §5(a) — scrollback effects.
   scrollSession, scrollSessionPages, scrollSessionToTop, scrollSessionToBottom,
   sessionMouseMode, sessionScrollInfo,

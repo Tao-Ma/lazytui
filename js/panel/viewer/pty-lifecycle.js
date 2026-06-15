@@ -65,10 +65,15 @@ function handleExit(id, exitCode) {
   if (anyChange) scheduleRender();
 }
 
-/** Boot wiring — called from tui.js after the panel layer is
- *  registered. Installs `handleExit` as io/terminal.js's exit handler. */
+/** Boot wiring — called from tui.js after the panel layer is registered.
+ *  Injects io/terminal.js's environment (it's a leaf — see its header):
+ *  the exit fan-out, the post-output repaint hook (scheduleOverlay), and
+ *  the jobs-registry adapter. */
 function install() {
-  require('../../io/terminal').setExitHandler(handleExit);
+  const term = require('../../io/terminal');
+  term.setExitHandler(handleExit);
+  term.setRenderHook(require('../../render/render-queue').scheduleOverlay);
+  term.setJobsHooks(require('../../feature/jobs'));
 }
 
 module.exports = { handleExit, install };
