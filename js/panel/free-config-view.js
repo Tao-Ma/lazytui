@@ -25,7 +25,7 @@
 
 const { esc } = require('../io/ansi');
 const { cols } = require('../io/term');
-const { getModel } = require('../app/runtime');
+const { getModel } = require('../model/store');
 const { getInstanceSlice } = require("./api");
 const mfcCore = require('../leaves/free-config-core');
 const mfcMouse = require('../leaves/free-config-mouse');

@@ -28,7 +28,7 @@
 
 const { esc } = require('../io/ansi');
 const { renderOverlay, viewportDims } = require('../render/panel');
-const { getModel } = require('../app/runtime');
+const { getModel } = require('../model/store');
 const diag = require('../dispatch/diag-log');
 
 const MAX_W = 90;

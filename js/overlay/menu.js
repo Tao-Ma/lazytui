@@ -12,7 +12,7 @@
 
 const { esc } = require('../io/ansi');
 const { renderOverlay, overlayBox } = require('../render/panel');
-const { getModel } = require('../app/runtime');
+const { getModel } = require('../model/store');
 
 const MENU_MAX_WIDTH = 44;  // shared by renderMenu + hitTest (must match)
 

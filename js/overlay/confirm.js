@@ -8,7 +8,7 @@
  */
 'use strict';
 
-const { getModel } = require('../app/runtime');
+const { getModel } = require('../model/store');
 const { esc } = require('../io/ansi');
 const { renderOverlay } = require('../render/panel');
 

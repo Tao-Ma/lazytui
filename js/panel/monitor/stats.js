@@ -18,7 +18,7 @@
  */
 'use strict';
 
-const { getModel } = require('../../app/runtime');
+const { getModel } = require('../../model/store');
 const {
   hub, esc, theme, renderPanel,
   getItems: apiGetItems,

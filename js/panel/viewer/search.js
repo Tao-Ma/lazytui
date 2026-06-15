@@ -21,7 +21,7 @@
  */
 'use strict';
 
-const { getModel } = require('../../app/runtime');
+const { getModel } = require('../../model/store');
 const ms = require('../../leaves/search');
 
 // The typing-phase state + transforms live in the detail Component's

@@ -10,7 +10,8 @@
  */
 'use strict';
 
-const { getModel, _ghostSuffix } = require('../app/runtime');
+const { getModel } = require('../model/store');
+const { _ghostSuffix } = require('../app/runtime');
 const { esc, visibleLen } = require('../io/ansi');
 const { renderOverlay, viewportDims } = require('../render/panel');
 const { stdout } = require('../io/term');

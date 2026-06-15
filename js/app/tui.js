@@ -154,7 +154,7 @@ function main() {
   const { scheduleRender } = require('../render/render-queue');
   const { registerComponent, refreshAll } = require('../panel/api');
   const { setupKeyListener } = require('../dispatch/input');
-  const { getModel } = require('./runtime');
+  const { getModel } = require('../model/store');
   const { installSuspendHandlers } = require('./suspend');
   const { cleanup } = require('./cleanup');
 

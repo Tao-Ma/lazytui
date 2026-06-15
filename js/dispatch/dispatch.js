@@ -34,11 +34,13 @@ const { isTerminalTab, activeTerminalId, findEphemeralByid,
 const { isSessionDead } = require('../io/terminal');
 const keybindings = require('./keybindings');
 const modes = require('../leaves/modes');
+// The reducer (`update`) stays in app/runtime; getModel/setModel are the
+// bottom-layer store (v0.6.5 §1) — imported down, not off `runtime`.
 const runtime = require('../app/runtime');
 const route = require('../panel/route');
 const mpane = require('../leaves/pane');
 const { halfProjection } = require('../leaves/geometry');
-const { getModel } = runtime;
+const { getModel, setModel } = require('../model/store');
 // handleAction + _runActionByKey live in ./actions (carved out 2026-05-31).
 // Cycle-safe: actions.js lazy-requires this module's applyMsg/navSelect
 // inline at call sites, so by the time it reads them this module's exports
@@ -474,7 +476,7 @@ function handleJobsKey(key, seq) {
     // is handler-side). Reducer at runtime.update#jobs_activate uses
     // msg.job directly — stays pure, no require('feature/jobs').list()
     // call from inside the reducer body.
-    const m = require('../app/runtime').getModel();
+    const m = getModel();
     const cursor = (m.modal.jobs && m.modal.jobs.cursor | 0) || 0;
     const job = require('../feature/jobs').list()[cursor] || null;
     applyMsg({ type: 'jobs_activate', now: Date.now(), job });
@@ -503,7 +505,7 @@ function handleDiagLogKey(key, seq) {
     // and route through register_push — the canonical yank Msg (dedup +
     // cap + OSC52). Window stays open so multiple lines can be copied.
     const diag = require('./diag-log');
-    const m = require('../app/runtime').getModel();
+    const m = getModel();
     const cursor = (m.modal.diagLog && m.modal.diagLog.cursor | 0) || 0;
     const ev = diag.snapshot()[cursor];
     if (ev) applyMsg({ type: 'register_push', text: diag.yankText(ev) });
@@ -981,7 +983,7 @@ function applyMsg(msg) {
   // snapshot BEFORE runEffects so cross-layer Cmds (`apply_msg`,
   // `dispatch_msg`) re-entering the dispatch graph see post-Msg state.
   const [next, cmds] = runtime.update(getModel(), msg);
-  runtime.setModel(next);
+  setModel(next);
   require('./effects').runEffects(cmds);
 }
 

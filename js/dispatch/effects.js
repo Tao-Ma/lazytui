@@ -102,7 +102,7 @@ function clearEffects() { for (const k of Object.keys(_handlers)) delete _handle
  * Writes go through the reducer so update stays the single writer.
  */
 function installBuiltins() {
-  const { getModel } = require('../app/runtime');
+  const { getModel } = require('../model/store');
   const api = require('../panel/api');
   const renderQueue = require('../render/render-queue');
   // render: request a repaint (async effect results landing into a slice).

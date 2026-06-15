@@ -16,7 +16,7 @@
 'use strict';
 
 const { getSel } = require('../app/state');
-const { getModel } = require('../app/runtime');
+const { getModel } = require('../model/store');
 const { stripMarkup, esc } = require('../io/ansi');
 const {getPanelDef, getItems, getInstanceSlice, getFocus } = require('../panel/api');
 const route = require('../panel/route');
@@ -52,7 +52,7 @@ function collectOptions() {
   // v0.6.3 T1.4 — paneId-aware lookup (post-Phase B1).
   // P3 (viewer-lines selector) — displayed lines derive via pane-tabs.
   const detailSlice = getInstanceSlice(route.resolveTarget('viewer') || 'detail');
-  const _m = require('../app/runtime').getModel();
+  const _m = getModel();
   const detailLines = detailSlice
     ? require('../leaves/pane-tabs').viewerLines(detailSlice, _m, _m.currentGroup) : [];
   if (detailLines.length > 0) {

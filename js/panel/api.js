@@ -24,7 +24,7 @@ const { esc, visibleLen, stripMarkup, wrapColor } = require('../io/ansi');
 const { theme } = require('../render/themes');
 const { renderPanel } = require('../render/panel');
 const { getSel, getScroll, isMultiSel, syncPanelScroll } = require('../app/state');
-const { getModel } = require('../app/runtime');
+const { getModel } = require('../model/store');
 const mnav = require('../leaves/nav');
 const geo = require('../leaves/geometry');
 const mpool = require('../leaves/pool');
@@ -453,7 +453,7 @@ function _dispatchMsgInner(msg) {
   // the canvas stays stable under drag / resize / pool mutations. Mode
   // entry/exit themselves ride apply_msg Cmds through the root reducer,
   // not through here, so they always reach the modes table.
-  const m = require('../app/runtime').getModel();
+  const m = getModel();
   if (m && m.modes && m.modes.freeConfigMode) {
     const isLayoutWrap = msg && msg.kind === 'layout' && msg.type === undefined;
     // Narrow exception: the free-config tab-reorder gesture lives on

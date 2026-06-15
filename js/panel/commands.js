@@ -30,6 +30,7 @@
 
 const route = require('../panel/route');
 const { wrap } = route;
+const { getModel } = require('../model/store');
 // Eager-require open-target scheme modules so their schemes register on
 // the registry before the first `:open` invocation (or first cmdline
 // rebuild that consults argComplete).
@@ -62,7 +63,7 @@ const FRAMEWORK_COMMANDS = [
     run: () => {
       const { writeLayoutToFile } = require('../feature/yaml-layout');
       const { appendViewerLines } = require('../app/state');
-      const m = require('../app/runtime').getModel();
+      const m = getModel();
       const { error } = writeLayoutToFile(route.getInstanceSlice('layout').arrange, m.configPath);
       if (error) {
         appendViewerLines(`[red]Layout save failed:[/] ${error.message}`);
@@ -99,7 +100,7 @@ const FRAMEWORK_COMMANDS = [
     run: () => {
       const { appendViewerLines } = require('../app/state');
       const { rebuildLayoutFromConfig } = require('../leaves/arrange');
-      const m = require('../app/runtime').getModel();
+      const m = getModel();
       const api = require('./api');
       api.dispatchMsg(wrap('layout', {
         type: 'set_arrange', arrange: rebuildLayoutFromConfig(m.config), dirty: false,
