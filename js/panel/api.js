@@ -803,17 +803,18 @@ function cleanupComponents() {
  *
  * `groupActions` is a PURE PROJECTION: same inputs → same outputs, no
  * IO, no mutation of group/config/model. Hot read paths (viewer_append,
- * render) call this transitively per frame; a plugin that shells out
+ * render) call this transitively per frame; a Component that shells out
  * here would block the event loop on every line of stream output.
  *
- * ENFORCED (blessed-exceptions Phase E) via `panel/plugin-guard.js`: under
- * `LAZYTUI_STRICT_PLUGINS=1` (dev/test) the args are read-only-wrapped and
- * the call is timed — a mutation or a slow (IO-ish) call is surfaced to the
- * diagnostics window. Production is an unguarded pass-through (zero cost).
+ * ALWAYS ENFORCED via `panel/plugin-guard.js` (in production too): the args
+ * are read-only-wrapped + the call is timed, so a mutation or a slow (IO-ish)
+ * call is surfaced to the diagnostics window. A Component opts into a memoized
+ * fast path with `groupActionsMemo: true` (guarded once per group, then
+ * cached). See docs/PLUGINS.md §"The groupActions contract".
  *
- * v0.6.2 — `config` + `model` params added. Existing plugins that only
- * declare `(group)` / `(group, name)` / `(group, name, config)` ignore
- * the extras (JS arity slack).
+ * v0.6.2 — `config` + `model` params added. Components that only declare
+ * `(group)` / `(group, name)` / `(group, name, config)` ignore the extras
+ * (JS arity slack).
  */
 function getGroupActions(group, groupName) {
   const m = getModel();
@@ -822,9 +823,9 @@ function getGroupActions(group, groupName) {
   for (const comp of Object.values(components)) {
     if (typeof comp.groupActions !== 'function') continue;
     try {
-      // Routed through the purity guard: a no-op pass-through in production,
-      // but read-only-wraps + times the call under LAZYTUI_STRICT_PLUGINS=1
-      // so a mutating / IO-doing plugin is surfaced to the diag window.
+      // Always routed through the purity guard: read-only-wraps + times every
+      // call so a mutating / IO-doing Component is surfaced to the diag window
+      // (memoized Components are guarded once per group, then cached).
       Object.assign(result, guard.callGroupActions(comp, group, groupName, m.config, m) || {});
     } catch (e) {
       console.error(`[${comp.name}] groupActions error: ${e.message}`);

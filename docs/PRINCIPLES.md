@@ -214,7 +214,10 @@ state without snapshotting it. v0.6.2 added the `model` arg — the
 contract is that hooks remain pure projections (no IO, no mutation,
 same inputs → same outputs); `getMergedActions` calls them transitively
 on hot read paths, so a hook that shells out would block the event loop
-on every line of stream output.
+on every line of stream output. The `groupActions` contract is
+**always enforced** (read-only Proxy + timing via `panel/plugin-guard.js`,
+in production too), with a `groupActionsMemo: true` opt-in fast path — see
+docs/PLUGINS.md §"The groupActions contract".
 
 When a Component must accept the same data both ways (legacy explicit
 list *or* reference), expose `source:` as one alternative and validate
