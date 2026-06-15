@@ -432,7 +432,7 @@ function _paneMenuPick(target, item) {
     // half/full pane rows are placed-only, so item.paneId is set; guard
     // defensively. Slot = the slot the clicked-on pane currently occupies.
     if (!item.paneId) { close(); return; }
-    const proj = halfProjection(layoutSlice);
+    const proj = halfProjection(layoutSlice, route.resolveViewerPaneId());
     const slot = proj.left === target ? 'left' : 'right';
     dispatchMsg(wrap('layout', { type: 'pane_menu_place', slot, paneId: item.paneId }));
     close();

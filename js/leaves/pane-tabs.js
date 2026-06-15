@@ -59,18 +59,22 @@ function _groupOf(model, groupName) {
 // plugin impurity propagates into the reducer's purity guarantees. v0.7
 // candidate: project the merged set once per dispatch into a per-Msg
 // cache the leaf reads from, removing the live iteration from hot paths.
-// v0.6.4 R1 — memoize the lazy api ref. The require stays LATE (resolved
-// on first call at runtime, not module-load — preserves the cycle-safety
-// the inline require gave) but is resolved ONCE, not per call. Profiling
-// (bench-tea-overhead) found the per-call `require('../panel/api')` path
-// resolution dominated actionTabCount / flatTabInfo / modelBundle at
-// ~70µs/call (vs ~0.25µs for getMergedActions itself) — these run per
-// render / per ]/[ keystroke.
-let _api = null;
+// v0.6.5 §3 — the merged-actions map (YAML actions + plugin-synthesized
+// actions for a group) is a panel-registry computation this pure leaf must
+// NOT import. The provider is INJECTED at boot — `panel/api` wires it on
+// load, so every consumer (production + tests, which all touch the panel
+// layer) gets it — and called here. Unset → {} (graceful: a standalone
+// leaf load with no panel layer simply sees no plugin/action tabs).
+// Replaces the former lazy `require('../panel/api')` reach (profiled cheap
+// once memoized, but a layering inversion); the leaf's only requires are
+// now sibling leaves.
+let _mergedProvider = null;
+function setMergedActionsProvider(fn) {
+  _mergedProvider = (typeof fn === 'function') ? fn : null;
+}
 function _mergedFor(model, groupName) {
   if (!_groupOf(model, groupName)) return {};
-  if (!_api) _api = require('../panel/api');
-  return _api.getMergedActions(groupName);
+  return _mergedProvider ? _mergedProvider(groupName) : {};
 }
 
 function actionTabCount(model, groupName) {
@@ -388,7 +392,6 @@ function modelBundle(model, groupName) {
  *  Pair with `flatTabInfoFromBundle` / `viewerLinesFromBundle` (P1). */
 function viewerModelBundle(model, groupName) {
   const group = _groupOf(model, groupName);
-  if (!_api) _api = require('../panel/api');
   return {
     // `currentGroup` = the group this bundle describes (always the viewer's
     // current group in practice). The `*FromBundle` readers key ephemerals /
@@ -396,7 +399,7 @@ function viewerModelBundle(model, groupName) {
     // facts were computed for (parity with the model-path flatTabInfo).
     currentGroup: groupName,
     group,
-    mergedActions: group ? _api.getMergedActions(groupName) : {},
+    mergedActions: _mergedFor(model, groupName),
     yamlTerminals: group ? (group.terminals || {}) : null,
   };
 }
@@ -847,6 +850,7 @@ function reduceTabMsg(msg, slice, ctx) {
 }
 
 module.exports = {
+  setMergedActionsProvider,   // v0.6.5 §3 — boot injection (panel/api wires it)
   actionTabCount, groupTerminals, groupContentTabs,
   flatTabInfo, transcriptTabIdx, isTranscriptTabIn,
   resolveTabKey,

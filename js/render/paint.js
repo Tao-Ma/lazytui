@@ -444,7 +444,7 @@ function renderHalf(model, arrangeOverride) {
   // viewer — so two viewers can sit side-by-side. getPanelViewportH reads
   // the same helper, so half-view geometry agrees everywhere.
   const all = allPanels();
-  const proj = geo.halfProjection(layoutSlice);
+  const proj = geo.halfProjection(layoutSlice, _route().resolveViewerPaneId());
   const leftPanel = (proj.left && all.find(p => p.paneId === proj.left)) || focusedPanel;
   const detailPanel = proj.right ? all.find(p => p.paneId === proj.right) || null : null;
   // Phase A.2 — bounds are derived (geometry._halfBoundsMap mirrors this
