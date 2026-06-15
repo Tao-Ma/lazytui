@@ -84,6 +84,13 @@ function applyUpdate(s, msg) {
       toTabKey: pt.resolveTabKey(tab, { ...s, tab }, m),
     };
   }
+  // blessed-exceptions #3 — thread the viewer model bundle, exactly as the
+  // framework's augmentMsg hook does in production, so update() resolves tab
+  // structure + lines without reading getModel().
+  if (msg && msg.viewerModel === undefined) {
+    const m = getModel();
+    msg = { ...msg, viewerModel: pt.viewerModelBundle(m, m.currentGroup) };
+  }
   const r = viewer._update(msg, s);
   return Array.isArray(r) ? { next: r[0], cmds: r[1] || [] } : { next: r, cmds: [] };
 }

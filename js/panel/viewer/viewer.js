@@ -326,11 +326,40 @@ function _tabKeyExistsIn(next, model, key) {
   return true;
 }
 
-// v0.6.3 post-arch-arc T1.1 — `model` is now passed explicitly from
-// the boundary read at `update()` entry instead of re-read via
-// getModel() here. The finalizer is pure of the runtime accessor;
-// only the public update() reads model, exactly once per Msg.
-function _withDerivedFields(next, originalSlice, m) {
+// blessed-exceptions #3 — from-bundle twins of _activeTabKey / _tabKeyExistsIn,
+// used by the finalizer so it never reads getModel(). The tab-transition
+// capture only resolves CURRENT-group keys, which the bundle describes, so the
+// yaml-terminal check below keys off bundle.yamlTerminals (== the model path
+// for keyGroup === currentGroup).
+function _activeTabKeyFromBundle(slice, bundle) {
+  return pt.resolveTabKeyFromBundle((slice && slice.tab) | 0, slice, bundle);
+}
+function _tabKeyExistsInFromBundle(next, bundle, key) {
+  if (!key || key === 'info' || key === 'transcript') return true;
+  const mt = key.match(/^(.+?):(action|terminal|content):(.+)$/);
+  if (!mt) return true;
+  const [, keyGroup, kind, restKey] = mt;
+  if (kind === 'action') return true;
+  if (kind === 'content') {
+    const all = (next && next.contentTabs) || {};
+    const group = all[keyGroup];
+    return !!(group && group[restKey]);
+  }
+  if (kind === 'terminal') {
+    const eph = (next && next.ephemeralTerminals) || {};
+    const ephGroup = eph[keyGroup];
+    if (ephGroup && ephGroup[restKey]) return true;
+    const yamlTerms = (bundle && keyGroup === bundle.currentGroup && bundle.yamlTerminals) || {};
+    return !!yamlTerms[restKey];
+  }
+  return true;
+}
+
+// blessed-exceptions #3 — the finalizer reads the threaded `vm`
+// (pt.viewerModelBundle from msg.viewerModel), never getModel(). The
+// tab-transition capture only ever resolves CURRENT-group keys, which the
+// bundle describes, so the *FromBundle readers are exact here.
+function _withDerivedFields(next, originalSlice, vm) {
   // P3 (viewer-lines selector) — the slice.lines derivation that named
   // this function is GONE: the field is deleted; consumers derive via
   // pt.viewerLines (content) and ms.matchesFor (search). What remains
@@ -350,12 +379,12 @@ function _withDerivedFields(next, originalSlice, m) {
   if (originalSlice
       && next.tab !== originalSlice.tab
       && !originalSlice.viewerOverride) {
-    const fromKey = _activeTabKey(originalSlice, m);
-    if (fromKey && _tabKeyExistsIn(next, m, fromKey)) {
+    const fromKey = _activeTabKeyFromBundle(originalSlice, vm);
+    if (fromKey && _tabKeyExistsInFromBundle(next, vm, fromKey)) {
       const innerH = originalSlice.innerH > 0 ? originalSlice.innerH : 1;
       // bottomSticky derives from the ORIGINAL slice's displayed lines
       // (tab transitions are rare — the derive is off the hot path).
-      const fromLines = pt.viewerLines(originalSlice, m, m.currentGroup);
+      const fromLines = pt.viewerLinesFromBundle(originalSlice, vm);
       const maxScroll = Math.max(0, fromLines.length - innerH);
       const captured = {
         scroll: originalSlice.scroll || 0,
@@ -369,29 +398,29 @@ function _withDerivedFields(next, originalSlice, m) {
   }
   return updated;
 }
-function _finalize(result, originalSlice, m) {
+function _finalize(result, originalSlice, vm) {
   if (result === undefined) return result;
   if (Array.isArray(result)) {
     const [next, cmds] = result;
     if (!next || next === originalSlice) return result;
-    return [_withDerivedFields(next, originalSlice, m), cmds];
+    return [_withDerivedFields(next, originalSlice, vm), cmds];
   }
   if (result === originalSlice) return result;
-  return _withDerivedFields(result, originalSlice, m);
+  return _withDerivedFields(result, originalSlice, vm);
 }
 
 function update(msg, slice) {
-  // v0.6.3 post-arch-arc T1.1 — single boundary read at update entry.
-  // Reducer arms stay pure of getModel() (Phase D); the finalizer is
-  // also pure of getModel() now, receiving model as an explicit arg.
-  // Same shape as the dispatcher's "read once at top" pattern.
-  const m = getModel();
-  // P2 (viewer-lines selector) — derive the active-tab lines ONCE at the
-  // boundary (same blessed chokepoint as the model read) and hand them
-  // to the arms as a fact. Replaces per-arm slice.lines reads; the
-  // stored field dies in P3.
-  const lines = pt.viewerLines(slice, m, m.currentGroup);
-  return _finalize(_updateInner(msg, slice, lines), slice, m);
+  // blessed-exceptions #3 — the viewer reducer is now PURE of getModel().
+  // The model facts its line-derivation + tab-transition capture need are
+  // threaded in as `msg.viewerModel` (a pt.viewerModelBundle) by the
+  // framework's augmentMsg hook (api.js), computed once in the shell. The
+  // active-tab lines are still derived ONCE at the boundary and handed to the
+  // arms as a fact — now from the bundle, not getModel(). Bare/degenerate
+  // calls with no bundle degrade safely (info/transcript still resolve; per-
+  // group tabs read empty).
+  const vm = msg && msg.viewerModel;
+  const lines = pt.viewerLinesFromBundle(slice, vm);
+  return _finalize(_updateInner(msg, slice, lines), slice, vm);
 }
 
 // MSG ROUTING — the viewer's update is split across two homes:
@@ -1162,10 +1191,19 @@ function render(panel, w, h, slice, opts) {
   });
 }
 
+// blessed-exceptions #3 — the framework (api.js) calls this in the impure
+// dispatch shell to thread the viewer's model bundle into every Msg, so
+// update() stays pure of getModel(). Idempotent: a pre-attached bundle wins.
+function augmentMsg(msg, model) {
+  if (msg && msg.viewerModel) return msg;
+  return { ...msg, viewerModel: pt.viewerModelBundle(model, model && model.currentGroup) };
+}
+
 module.exports = {
   name: 'detail',
   init,
   update,
+  augmentMsg,
   panelTypes: {
     detail: { render },
   },
