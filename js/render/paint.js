@@ -36,7 +36,7 @@ const { theme } = require('./themes');
 const { truncate } = require('./panel');
 const painter = require('./painter');
 const { isTerminalTab, activeTerminalId, activeTerminalConfig } = require('../panel/viewer/tabs');
-const { ensureSession, resizeSession } = require('../io/terminal');
+const { ensureSession, resizeSession, sessionScrollInfo } = require('../io/terminal');
 const { getInstanceSlice, sliceForPane, getComponent,
        getComponentOwningPanel } = require('../panel/api');
 const { renderCopyMenu } = require('../overlay/copy');
@@ -588,7 +588,14 @@ function renderTerminalOverlay(model = getModel(), arrangeOverride) {
   // overwrite prior content within the changed row.
   const buffer = session.xterm.buffer.active;
   if (!session.prevFrame) session.prevFrame = [];
-  const force = _frame.forceOverlayFull;
+  // v0.6.5 §5(a) — scrollback: the overlay reads `buffer.viewportY`, which
+  // the scroll effects (terminal.scrollSession*) move. When the viewport
+  // position changes, every visible row shifts, so the per-row diff cache
+  // is stale — force a full inner repaint for that frame. This also clears
+  // the scroll indicator drawn below when the user returns to the bottom.
+  const scrolled = buffer.viewportY !== session.prevViewportY;
+  session.prevViewportY = buffer.viewportY;
+  const force = _frame.forceOverlayFull || scrolled;
   _frame.forceOverlayFull = false;
 
   let out = '';
@@ -599,6 +606,18 @@ function renderTerminalOverlay(model = getModel(), arrangeOverride) {
     if (!force && session.prevFrame[row] === text) continue;
     out += `\x1b[${bounds.y + row + 2};${bounds.x + 2}H${text}${RESET}`;
     session.prevFrame[row] = text;
+  }
+
+  // v0.6.5 §5(a) Phase 4 — scrollback position indicator. When the viewport
+  // sits above the live bottom, stamp a reverse-video `[↑N]` tag at the
+  // top-right inner cell. It overlays one cell of content while scrolled;
+  // any scroll change forces the inner rows to repaint (above), so the tag
+  // is self-clearing the frame the user returns to the bottom.
+  const scrollInfo = sessionScrollInfo(id);
+  if (!scrollInfo.atBottom && innerW > 6) {
+    const tag = `[↑${scrollInfo.linesBelow}]`;
+    const tx = bounds.x + 2 + innerW - tag.length;
+    out += `\x1b[${bounds.y + 2};${tx}H\x1b[7m${tag}\x1b[0m`;
   }
 
   // Show exit prompt if process died (overlay on bottom content row).

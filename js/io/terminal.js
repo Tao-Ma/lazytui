@@ -155,10 +155,82 @@ function isSessionDead(id) {
   return !!(s && s.exited);
 }
 
+// --- Scrollback (v0.6.5 §5(a)) -------------------------------------------
+//
+// The xterm buffer keeps a scrollback ring; `scrollLines`/`scrollPages`
+// move its own viewport (`buffer.active.viewportY`), which the overlay
+// render already reads. Scroll state lives on the session (out of TEA,
+// like the buffer content itself) — these are direct effects, the same
+// category as writeToSession. Each returns whether the viewport actually
+// moved so the caller can gate its repaint. Writing new PTY output while
+// scrolled up is sticky in xterm (baseY grows, viewportY stays), so the
+// view holds until the user returns to the bottom.
+
+/** Scroll a session's viewport by `amount` lines (negative = back into
+ *  scrollback, positive = toward the live bottom). */
+function scrollSession(id, amount) {
+  const s = sessions[id];
+  if (!s) return false;
+  const before = s.xterm.buffer.active.viewportY;
+  s.xterm.scrollLines(amount | 0);
+  return s.xterm.buffer.active.viewportY !== before;
+}
+
+/** Scroll a session's viewport by `n` pages (negative = back). */
+function scrollSessionPages(id, n) {
+  const s = sessions[id];
+  if (!s) return false;
+  const before = s.xterm.buffer.active.viewportY;
+  s.xterm.scrollPages(n | 0);
+  return s.xterm.buffer.active.viewportY !== before;
+}
+
+/** Snap a session's viewport to the top of scrollback. */
+function scrollSessionToTop(id) {
+  const s = sessions[id];
+  if (!s) return false;
+  const before = s.xterm.buffer.active.viewportY;
+  s.xterm.scrollToTop();
+  return s.xterm.buffer.active.viewportY !== before;
+}
+
+/** Snap a session's viewport to the live bottom (resume following output). */
+function scrollSessionToBottom(id) {
+  const s = sessions[id];
+  if (!s) return false;
+  const before = s.xterm.buffer.active.viewportY;
+  s.xterm.scrollToBottom();
+  return s.xterm.buffer.active.viewportY !== before;
+}
+
+/** The child's DEC mouse-tracking mode: 'none' when it hasn't enabled
+ *  mouse reporting (the framework owns the wheel for scrollback), else
+ *  one of x10/vt200/drag/any (forward mouse bytes raw to the child). */
+function sessionMouseMode(id) {
+  const s = sessions[id];
+  return s ? s.xterm.modes.mouseTrackingMode : 'none';
+}
+
+/** Scroll position: { atBottom, linesBelow } — linesBelow is how many
+ *  rows the viewport sits above the live bottom (0 = following). */
+function sessionScrollInfo(id) {
+  const s = sessions[id];
+  if (!s) return { atBottom: true, linesBelow: 0 };
+  const buf = s.xterm.buffer.active;
+  const linesBelow = Math.max(0, buf.baseY - buf.viewportY);
+  return { atBottom: linesBelow === 0, linesBelow };
+}
+
 module.exports = {
   ensureSession, getSession, writeToSession,
   resizeSession, destroySession, destroyAll,
   restartSession, isSessionDead,
   setExitHandler,
+  // v0.6.5 §5(a) — scrollback effects.
+  scrollSession, scrollSessionPages, scrollSessionToTop, scrollSessionToBottom,
+  sessionMouseMode, sessionScrollInfo,
   _onSessionExit,  // exported for tests (invokes the registered handler)
+  // Test-only: inject a session (a `{ xterm }` with a headless Terminal)
+  // so the scrollback effects can be exercised without spawning a PTY.
+  _setSessionForTest(id, session) { sessions[id] = session; },
 };

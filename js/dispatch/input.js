@@ -82,6 +82,17 @@ function _handleWheel(mx, my, delta) {
     if (mx < b.x || mx >= b.x + b.w || my < b.y || my >= b.y + b.h) continue;
 
     if (instanceKind(p.type) === 'detail') {
+      // v0.6.5 §5(a) Phase 2 — when this viewer's active tab is an embedded
+      // terminal, the wheel scrolls the PTY scrollback (xterm's own
+      // viewport), not the viewer slice's `scroll`. delta is -1 (wheel-up =
+      // back into history) / +1 (wheel-down = toward live bottom), which
+      // maps straight onto scrollSession's sign. A 3-line step matches the
+      // typical wheel notch. Returns whether the viewport moved so the
+      // caller's paint gating is unchanged.
+      const termId = require('../panel/viewer/tabs').activeTerminalId(p.paneId);
+      if (termId) {
+        return require('../io/terminal').scrollSession(termId, delta * 3);
+      }
       // v0.6.4 multi-viewer — clamp against the wheeled pane's OWN slice
       // (not _detail()'s focused viewer), so wheeling an unfocused second
       // viewer scrolls itself. sliceForPane falls back to the kind primary
@@ -781,6 +792,53 @@ function handleMouse(kind, x, y) {
  *    flip + zoom-drop, plus the keystroke is dropped on the floor.
  *  - Live session → writeToSession forwards the bytes to the PTY.
  */
+// v0.6.5 §5(a) Phase 3 — PURE classifier for a terminal-mode stdin chunk.
+// Decides, given the chunk and the child's DEC mouse-tracking mode, what
+// the impure handler should do. No I/O, no session access — unit-testable.
+// Returns one of:
+//   { kind:'scroll', pages?, toTop?, toBottom? } — a framework scrollback
+//        gesture (Shift+Page/Home/End), intercepted regardless of mouseMode.
+//   { kind:'forward', data, snap? } — forward raw to the PTY. `snap` asks
+//        the caller to return to the live bottom first (a keystroke at the
+//        prompt should leave scrollback).
+//   { kind:'mouse', lines, residue } — mouseMode is 'none' and the chunk
+//        carried SGR mouse bytes: `lines` is the net scrollback delta from
+//        wheel events, `residue` is the non-mouse remainder to forward.
+//        Non-wheel mouse is dropped (the child never enabled mouse reporting).
+function _classifyTerminalChunk(data, mouseMode) {
+  // Framework keyboard scrollback — Shift+Page/Home/End (xterm CSI `;2`
+  // modifier form). Plain Page/Home/End (no Shift) fall through to the
+  // child, which may use them (less / vim).
+  if (data === '\x1b[5;2~') return { kind: 'scroll', pages: -1 };   // Shift+PageUp
+  if (data === '\x1b[6;2~') return { kind: 'scroll', pages: +1 };   // Shift+PageDown
+  if (data === '\x1b[1;2H') return { kind: 'scroll', toTop: true };    // Shift+Home
+  if (data === '\x1b[1;2F') return { kind: 'scroll', toBottom: true }; // Shift+End
+
+  // Child enabled mouse reporting → forward everything raw (incl. mouse).
+  // Zero regression for mouse-aware children (vim, htop, less --mouse).
+  if (mouseMode !== 'none') return { kind: 'forward', data };
+
+  // mouseMode 'none', no mouse bytes → ordinary keystrokes: forward and
+  // snap to the live bottom so the user types at the prompt.
+  if (!data.includes('\x1b[<')) return { kind: 'forward', data, snap: true };
+
+  // mouseMode 'none' WITH SGR mouse bytes → intercept. Wheels become
+  // scrollback; non-wheel mouse drops; non-mouse residue forwards.
+  const re = /\x1b\[<(\d+);(\d+);(\d+)([Mm])/g;
+  let lines = 0, residue = '', last = 0, m;
+  while ((m = re.exec(data)) !== null) {
+    residue += data.slice(last, m.index);
+    last = m.index + m[0].length;
+    const btn = parseInt(m[1], 10);
+    if ((btn & 0x40) !== 0 && m[4] !== 'm') {     // wheel press (bit6); ignore release
+      lines += (btn & 1) ? 3 : -3;                // bit0: down → +3, up → -3
+    }
+    // non-wheel mouse (click/motion/release): dropped
+  }
+  residue += data.slice(last);
+  return { kind: 'mouse', lines, residue };
+}
+
 function _handleTerminalModeData(data) {
   // Ctrl+\ exits terminal mode; a dead/missing session exits too (and drops
   // the keystroke). Both flow through the terminal_exit Msg, which clears the
@@ -797,7 +855,34 @@ function _handleTerminalModeData(data) {
     render();
     return true;
   }
-  writeToSession(id, data);
+  // v0.6.5 §5(a) Phase 3 — scrollback + smart mouse forwarding.
+  const term = require('../io/terminal');
+  const plan = _classifyTerminalChunk(data, term.sessionMouseMode(id));
+  if (plan.kind === 'scroll') {
+    if (plan.toTop)            term.scrollSessionToTop(id);
+    else if (plan.toBottom)    term.scrollSessionToBottom(id);
+    else                       term.scrollSessionPages(id, plan.pages);
+    render();
+    return true;
+  }
+  if (plan.kind === 'mouse') {
+    let moved = false;
+    if (plan.lines) moved = term.scrollSession(id, plan.lines) || moved;
+    if (plan.residue) {
+      // A keystroke interleaved with the mouse bytes returns us to the
+      // prompt before it's forwarded.
+      term.scrollSessionToBottom(id);
+      writeToSession(id, plan.residue);
+      moved = true;
+    }
+    if (moved) render();
+    return true;
+  }
+  // forward — snap to the live bottom first if a keystroke arrived while
+  // scrolled back (only repaint when the snap actually moved the viewport;
+  // the PTY's own onData → scheduleOverlay drives the echo otherwise).
+  if (plan.snap && term.scrollSessionToBottom(id)) render();
+  writeToSession(id, plan.data);
   return true;
 }
 
@@ -1009,6 +1094,7 @@ function setupKeyListener() {
 module.exports = {
   setupKeyListener,
   _handleTerminalModeData,  // exported for tests
+  _classifyTerminalChunk,   // exported for tests (v0.6.5 PTY scrollback classifier)
   _handleWheel,             // exported for tests
   handleMouse,              // exported for tests (T13 modal-gate regression)
   _classifyPress,           // exported for tests (Theme F Phase 3 double-click derivation)
