@@ -16,8 +16,7 @@
 'use strict';
 
 const { esc } = require('../io/ansi');
-const { cols, rows } = require('../io/term');
-const { renderOverlay } = require('../render/panel');
+const { renderOverlay, viewportDims } = require('../render/panel');
 const { getModel } = require('../app/runtime');
 const jobs = require('../feature/jobs');
 
@@ -96,7 +95,7 @@ function _fmtHeader(labelW) {
  *  clamp). Re-derived each call from current term size + jobs count. */
 function viewportRows() {
   const list = jobs.list();
-  const ROWS = rows();
+  const ROWS = viewportDims().rows;
   const wantH = list.length + 2 /* borders */ + HEADER_ROWS + FOOTER_ROWS;
   const h = Math.min(wantH, ROWS - 2);
   return Math.max(1, h - 2 - HEADER_ROWS - FOOTER_ROWS);
@@ -107,7 +106,7 @@ function renderJobsOverlay() {
   const list = jobs.list();
   const j = getModel().modal.jobs || { cursor: 0, scroll: 0 };
   const now = Date.now();
-  const COLS = cols();
+  const COLS = viewportDims().cols;
   const wantW = Math.min(MAX_W, COLS - 4);
   const innerW = Math.max(20, wantW - 4);
   // labelW absorbs the slack: total = glyph(1) + "  "(2) + labelW + " "(1)

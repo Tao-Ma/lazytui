@@ -16,9 +16,9 @@
 
 const { getModel } = require('../app/runtime');
 const { richToAnsi, RESET, visibleLen, esc } = require('../io/ansi');
-const { cols, rows, stdout } = require('../io/term');
+const { stdout } = require('../io/term');
 const { theme } = require('../render/themes');
-const { renderPanel } = require('../render/panel');
+const { renderPanel, viewportDims } = require('../render/panel');
 const { DROPDOWN_VIEWPORT: MAX_DROPDOWN } = require('../leaves/cmdline-split');
 
 // Panel height (including borders) painted by the previous render.
@@ -47,8 +47,7 @@ function renderCmdline() {
   // match list (display/desc/kind) is enough to paint — run closures
   // stay module-held in dispatch/cmdline.js#_full.
   const { text: _text, sel: _sel, matches: _matches, scroll: _scroll = 0 } = getModel().modal.cmdline;
-  const COLS = cols();
-  const ROWS = rows();
+  const { cols: COLS, rows: ROWS } = viewportDims();
   const t = theme();
 
   // Visible window into the (possibly larger) match list. `_scroll` is

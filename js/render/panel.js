@@ -202,6 +202,23 @@ function renderPanel({
  * @param {{x:number,y:number}} [opts.anchor] - 1-based cursor cell to open
  *   at (v0.6.4 Theme F: right-click context menu); null/absent → centered.
  */
+// Model-clock terminal dims. `layoutSlice.dims` (resize-as-Msg) is the single
+// source of truth for terminal size; the panel grid reads it directly. The
+// footer + overlays read it through here so they paint against the SAME dims
+// as the grid — not the io/term singleton, which is the UPSTREAM terminal
+// cache and can lead the model by a frame on resize (panels would paint the
+// new size, overlays the old). io/term fallback covers boot before the first
+// term_resized (the layout slice seeds 80x24, so this is belt-and-suspenders).
+// Lazy + memoized require: panel/api → render/panel is a load cycle, so we
+// reach getInstanceSlice via panel/route (no back-edge) at call time.
+let _getInstanceSlice = null;
+function viewportDims() {
+  if (!_getInstanceSlice) _getInstanceSlice = require('../panel/route').getInstanceSlice;
+  const ls = _getInstanceSlice('layout');
+  const d = ls && ls.dims;
+  return (d && d.cols > 0 && d.rows > 0) ? { cols: d.cols, rows: d.rows } : { cols: cols(), rows: rows() };
+}
+
 /**
  * Box geometry for an overlay popup — the single source the paint path
  * (renderOverlay) and the hit-test path (overlay/menu.hitTest) BOTH read,
@@ -213,7 +230,7 @@ function renderPanel({
  * stays on-screen. No anchor → centered.
  */
 function overlayBox({ linesLen, anchor = null, maxWidth = 44 }) {
-  const COLS = cols(), ROWS = rows();
+  const { cols: COLS, rows: ROWS } = viewportDims();
   const menuW = Math.min(maxWidth, COLS - 2);
   const menuH = Math.min(linesLen + 2, ROWS - 2);
   let offY, offX;
@@ -243,4 +260,4 @@ function renderOverlay({ lines, title, count = null, maxWidth = 44, anchor = nul
   stdout.write(buf);
 }
 
-module.exports = { renderPanel, renderOverlay, overlayBox, truncate };
+module.exports = { renderPanel, renderOverlay, overlayBox, truncate, viewportDims };

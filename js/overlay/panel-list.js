@@ -18,8 +18,7 @@
 'use strict';
 
 const { esc, visibleLen, stripMarkup } = require('../io/ansi');
-const { cols, rows } = require('../io/term');
-const { renderOverlay, truncate } = require('../render/panel');
+const { renderOverlay, truncate, viewportDims } = require('../render/panel');
 const { getInstanceSlice } = require('../panel/api');
 const mpool = require('../leaves/pool');
 
@@ -214,8 +213,7 @@ function renderPanelListOverlay() {
   const items = mpool.panelListItems(slice.arrange);
   const cursor = slice.panelList.cursor || 0;
 
-  const termW = cols();
-  const termH = rows();
+  const { cols: termW, rows: termH } = viewportDims();
   const sideBySide = termW >= MIN_SIDE_BY_SIDE && items.length > 0;
   // Side-by-side: use most of the terminal so the preview is actually
   // useful, but leave a margin so the layout grid still peeks through.
@@ -284,8 +282,7 @@ function hitTest(mx, my) {
   if (!slice || !slice.panelList || !slice.panelList.open) return null;
   const items = mpool.panelListItems(slice.arrange);
 
-  const termW = cols();
-  const termH = rows();
+  const { cols: termW, rows: termH } = viewportDims();
   const sideBySide = termW >= MIN_SIDE_BY_SIDE && items.length > 0;
   const wantW = sideBySide
     ? Math.min(OVERLAY_MAX_WIDTH, termW - OVERLAY_W_MARGIN)

@@ -27,8 +27,7 @@
 'use strict';
 
 const { esc } = require('../io/ansi');
-const { cols, rows } = require('../io/term');
-const { renderOverlay } = require('../render/panel');
+const { renderOverlay, viewportDims } = require('../render/panel');
 const { getModel } = require('../app/runtime');
 const diag = require('../dispatch/diag-log');
 
@@ -55,7 +54,7 @@ function _msg(text, w) {
  *  Re-derived each call from current term size + diagnostic count. */
 function viewportRows() {
   const n = diag.size();
-  const ROWS = rows();
+  const ROWS = viewportDims().rows;
   const wantH = n + 2 /* borders */ + FOOTER_ROWS;
   const h = Math.min(wantH, ROWS - 2);
   return Math.max(1, h - 2 - FOOTER_ROWS);
@@ -66,7 +65,7 @@ function renderDiagLog() {
   const list = diag.snapshot();              // newest-first
   const d = getModel().modal.diagLog || { cursor: 0, scroll: 0 };
   const now = Date.now();
-  const COLS = cols();
+  const COLS = viewportDims().cols;
   const wantW = Math.min(MAX_W, COLS - 4);
   const innerW = Math.max(20, wantW - 4);
   // total = glyph(1) + " "(1) + TIME_W + " "(1) + CODE_W + " "(1) + msgW
