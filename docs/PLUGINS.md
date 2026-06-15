@@ -133,9 +133,11 @@ module.exports = {
   viewContributions: { footerLeft, footerRight },
   statusFor:    (name) => 'running' | null,
   groupActions: (group, groupName, config, model) => ({ /* actionKey: action */ }),
-  // Pure projection — no IO, no mutation; called transitively on hot
-  // read paths (viewer_append per stream line). v0.6.2 added the
-  // config + model args; older 2-arg impls still work.
+  groupActionsMemo: true,   // opt-in fast path — see "The groupActions contract"
+  // PURE PROJECTION — no IO, no mutation, same inputs → same outputs. ALWAYS
+  // enforced (read-only Proxy + timing, prod too). Called transitively on hot
+  // read paths (viewer_append per stream line). v0.6.2 added config + model;
+  // older 2-arg impls still work.
   commands:     [ { name, desc, run(args) } ],
   getCommands:  (model) => [ /* state-derived verbs */ ],
   cleanup:      () => { /* tear down long-lived children */ },
@@ -232,6 +234,63 @@ ignoring unknown types is forward-compatible.
 5. **Throwing from `update()`** is isolated — the failing
    Component's slice stays put; other Components keep processing the
    same Msg. The error is logged.
+
+### The `groupActions` contract
+
+A Component MAY expose `groupActions(group, groupName, config, model)` to
+**synthesize actions for a group** — e.g. `docker` turns a group's
+`compose:` into `up`/`down`/`logs`/`restart` actions. The framework merges
+every Component's contribution with the group's YAML `actions:`
+(`api.getMergedActions`), and it drives the tab strip, the actions panel,
+and leader-key resolution — so it is called transitively on **hot read
+paths**, including once per line of streamed output (`viewer_append`).
+
+Because of that, `groupActions` **MUST be a pure projection**:
+
+- **No mutation** of `group` / `config` / `model` (they are shared app
+  state owned by the reducers — mutating them corrupts the model).
+- **No IO / no shelling out / no `Date`/random** — same inputs → same
+  outputs. A blocking call here stalls the event loop on every frame.
+
+**This contract is ALWAYS ENFORCED — in production, not just dev.** The
+framework (`panel/plugin-guard.js`) wraps the args in a recursive read-only
+`Proxy` and times every call:
+
+- A **write** at any depth throws; the offending Component contributes
+  **nothing** for that call and a `plugin-impure` warning is recorded in the
+  diagnostics window (`leader e`). The real `config`/`model` are never
+  touched, so the rest of the app behaves identically.
+- A call slower than `SLOW_MS` (2 ms) records a `plugin-slow` warning naming
+  the Component (it is almost certainly doing IO).
+
+Warnings dedupe per `(code, key)` for the session.
+
+#### `groupActionsMemo` — the opt-in fast path
+
+The read-only `Proxy` makes every property access the Component does go
+through a trap, so a hook that reads a lot of `config`/`model` costs several
+× a raw call. Since `config` is **boot-static** (the `group` objects never
+change for the life of the session), a *pure* `groupActions` returns the
+**same result every call** — so there is no reason to recompute it.
+
+A Component declares this by setting **`groupActionsMemo: true`**. The
+framework then:
+
+1. runs `groupActions` **once per group, still under the guard** (so purity
+   is verified exactly once), then
+2. **caches** the result keyed on the `group` object and reuses it on every
+   later call — skipping both the call and the `Proxy`.
+
+A config reload mints new `group` objects, so the cache self-invalidates (a
+`WeakMap`); no invalidation logic is needed.
+
+The incentive is deliberate: **opting in is a purity promise** (the result
+must depend only on `group`), and only a pure hook can be safely memoized. A
+careful, pure Component pays the `Proxy` cost **once** and is free
+thereafter; a Component that does **not** opt in pays it on **every** call.
+Memoize when your `groupActions` is a pure function of the group; leave it
+off if it legitimately varies with live `model` state (and accept the
+per-call cost).
 
 ### Nav chrome and the `dispatch.navSelect` helper
 

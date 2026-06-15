@@ -8,6 +8,19 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **The `groupActions` Component contract is now always-enforced, with an
+  opt-in memoized fast path.** `groupActions(group, name, config, model)`
+  must be a pure projection (no mutation/IO); the framework now wraps its
+  args in a read-only Proxy and times every call **in production** (the old
+  `LAZYTUI_STRICT_PLUGINS` dev-only gate is retired) — a mutation or a slow
+  (IO-ish) call is surfaced to the diagnostics window (`leader e`) without
+  corrupting state or hard-failing. A Component sets `groupActionsMemo: true`
+  to declare its hook a pure function of `group`: it is then run once per
+  group (still guarded) and cached, so a pure Component pays the guard cost
+  once while a non-memoized one pays it per call. See
+  `docs/PLUGINS.md` §"The groupActions contract". (Completes the
+  blessed-exception elimination arc — the eliminable set is now empty.)
+
 - **`slice.lines` and `slice.search.matches` are deleted — viewer
   content and search matches are now derived, not stored** (the
   viewer-lines selector arc, `docs/viewer-lines-selector.md`). Info-tab

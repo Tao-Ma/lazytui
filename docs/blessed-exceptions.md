@@ -98,11 +98,11 @@ Everything else below was an eliminable exception and has been removed.
 
 ## Remaining standing exceptions — recommended fix order
 
-One exception remains (#5 — sanctioned/benign; likely wontfix-in-prod;
-does not block the v0.6.4 tag). Findings A + B (overlay model-clock arc),
-#3 (viewer.update bundle), and #4 (config-status init-injection) are all
-DONE (2026-06-15); kept here for the record. Order is by **(correctness
-value × tractability)** with dependencies noted.
+**All five recommended-fix-order items are now DONE (2026-06-15).** Findings
+A + B (overlay model-clock arc), #3 (viewer.update bundle), #4 (config-status
+init-injection), and #5 (`groupActions` contract enforced + memo) are all
+shipped — the eliminable-exception set is empty. Kept here for the record;
+order was by **(correctness value × tractability)**.
 
 **1. ✅ DONE — Finding B — unify the dims source (overlays + footer read
    `model.dims`).** Shipped via `render/panel.js#viewportDims()`; overlays +
@@ -191,13 +191,23 @@ value × tractability)** with dependencies noted.
    boot probe (two panes, `config`/`prod` → routed correctly). Suite 92/93
    (xz env-only) + 9/9 smokes.
 
-**5. Plugin purity contract — enforce in production (or accept).**
-   *Last; likely wontfix-in-prod.* Today the read-only-proxy guard runs only
-   under `LAZYTUI_STRICT_PLUGINS=1`; production is an unguarded pass-through
-   for perf (the proxy wraps every `groupActions` call on hot read paths).
-   Promoting it to always-on trades that perf for hard enforcement — only
-   worth it if a real third-party-plugin impurity bug shows up. Otherwise the
-   contract stays documented-and-dev-enforced.
+**5. ✅ DONE 2026-06-15 — `groupActions` purity contract enforced in
+   production + opt-in memoization.** Originally framed as enforce-vs-accept
+   (likely wontfix-in-prod). Resolved by a better split the binary framing
+   missed: the guard's two checks have very different cost (a benchmark put
+   the read-only Proxy at ~4–12× a raw call — but in absolute terms ~0.2–2 µs,
+   negligible at real call frequency; timing is free). So `plugin-guard` now
+   guards **every** call (the `LAZYTUI_STRICT_PLUGINS` gate is retired — always
+   strict), AND a Component opts into a fast path with **`groupActionsMemo:
+   true`**: guarded once per (boot-static) `group`, then cached in a `WeakMap`
+   → a pure Component pays the Proxy once, a non-memoized one pays every call
+   (the incentive to be pure). Note: the "plugin" concept was retired in v0.5
+   (everything is a Component); this is a **Component-contract** upgrade,
+   documented in docs/PLUGINS.md §"The groupActions contract". Verified the
+   only built-in `groupActions` (docker) is pure, so always-on is a no-op for
+   it. Tests: `test-plugin-purity.js` (always-enforced + memo: runs-once,
+   keyed-on-group, impure-caught-on-first-call, reset clears). Suite 92/93
+   (xz env-only) + 9/9 smokes.
 
 ---
 
@@ -205,8 +215,13 @@ value × tractability)** with dependencies noted.
 
 **Highest leverage. Smallest change.**
 
-> **DONE.** New `js/panel/plugin-guard.js` (recursive read-only Proxy +
-> timing, dedup'd warns to the diag window), wired into
+> **SUPERSEDED 2026-06-15 by item #5 above** — the guard is now ALWAYS-ON
+> (the `LAZYTUI_STRICT_PLUGINS` opt-in gate is retired) + `groupActionsMemo`
+> opt-in caching. The original Phase-E ship (dev-only opt-in) is recorded
+> below for the trail.
+>
+> **DONE (Phase E original).** New `js/panel/plugin-guard.js` (recursive
+> read-only Proxy + timing, dedup'd warns to the diag window), wired into
 > `api.getGroupActions`. Strict mode is opt-in via `LAZYTUI_STRICT_PLUGINS=1`
 > (dev/test); production is an unguarded pass-through. Decisions resolved:
 > **record-and-continue, not throw** — a violation drops the plugin's
