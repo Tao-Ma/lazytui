@@ -48,19 +48,28 @@ function classifyRequires(src) {
     // `require('...')` counts as a real edge). Keep string contents intact
     // so the require path survives.
     const noComment = line.replace(/\/\/.*$/, '');
-    // For brace-depth tracking, also blank out string contents.
+    // For brace-depth tracking, blank out string contents PRESERVING LENGTH so
+    // a require's column index in `noComment` aligns with `noStr`.
+    const blank = (m) => ' '.repeat(m.length);
     const noStr = noComment
-      .replace(/'(?:[^'\\]|\\.)*'/g, "''")
-      .replace(/"(?:[^"\\]|\\.)*"/g, '""')
-      .replace(/`(?:[^`\\]|\\.)*`/g, '``');
-    const reqMatch = noComment.match(/require\(\s*['"]([^'"]+)['"]\s*\)/g);
-    if (reqMatch) {
-      for (const m of reqMatch) {
-        const t = m.match(/require\(\s*['"]([^'"]+)['"]\s*\)/)[1];
-        reqs.push({ target: t, deferred: depth > 0, line: i + 1 });
+      .replace(/'(?:[^'\\]|\\.)*'/g, blank)
+      .replace(/"(?:[^"\\]|\\.)*"/g, blank)
+      .replace(/`(?:[^`\\]|\\.)*`/g, blank);
+    // Classify each require at ITS position: running depth + net braces opened
+    // earlier ON THIS LINE. So a one-line `function f(){ require(...) }` is
+    // correctly DEFERRED (was misclassified top-level when depth was read for
+    // the whole line before its own braces).
+    const reqRe = /require\(\s*['"]([^'"]+)['"]\s*\)/g;
+    let m;
+    while ((m = reqRe.exec(noComment)) !== null) {
+      let d = depth;
+      for (let k = 0; k < m.index; k++) {
+        if (noStr[k] === '{') d++;
+        else if (noStr[k] === '}') d = Math.max(0, d - 1);
       }
+      reqs.push({ target: m[1], deferred: d > 0, line: i + 1 });
     }
-    // update depth AFTER classifying this line's requires
+    // carry running depth to subsequent lines
     for (const ch of noStr) {
       if (ch === '{') depth++;
       else if (ch === '}') depth = Math.max(0, depth - 1);
