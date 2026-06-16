@@ -337,18 +337,25 @@ function update(msg, slice) {
 }
 
 function _handleKey(msg, slice) {
-  // Pure key arm — both inputs come from the Msg + our own slice, not
-  // global reads: msg.focusKind is the focused pane's panel-type
-  // (threaded by dispatchKeyToFocused); the cursor comes from
-  // slice.nav via the nav leaf. (Was instanceKind(getFocus()) +
-  // getSel('containers') — the navigator-key-arm purity sweep.)
+  // Pure key arm — all inputs come from the Msg + our own slice, not global
+  // reads: msg.focusKind is the focused pane's panel-type (threaded by
+  // dispatchKeyToFocused); msg.items is the active group's container list
+  // (threaded by augmentMsg, computed in the impure shell — was
+  // _getItems()→getModel()); the cursor comes from slice.nav via the nav leaf.
   if (msg.focusKind !== 'containers') return slice;
-  const item = _getItems(slice)[mnav.cursorOf(slice, 'containers')];
+  const item = (msg.items || [])[mnav.cursorOf(slice, 'containers')];
   if (!item) return slice;
   if (msg.key === 'i') return [slice, [{ type: 'dockerExec', mode: 'inspect', item }]];
   if (msg.key === 't') return [slice, [{ type: 'dockerExec', mode: 'logs', item }]];
   if (msg.key === 's') return [slice, [{ type: 'dockerShell', item }]];
   return slice;
+}
+
+// Msg-enrichment hook (panel/api _runInstance / dispatchKeyToFocused). The
+// impure shell threads the active group's container names so _handleKey stays
+// pure of getModel(). Only the key arm reads msg.items; always attaching is cheap.
+function augmentMsg(msg, model) {
+  return { ...msg, items: _itemsFromModel(model) };
 }
 
 /** Called from registerComponent after init(). Mirrors the
@@ -503,14 +510,18 @@ function groupActions(group) {
 
 // --- panel type: containers ---
 
-/** Raw container names from the active group's config; filtering applied
- *  centrally by api.getItems. The row list is config-derived (the slice holds
- *  status/stats, not the names), so the slice param is unused here. */
-function _getItems(/* slice */) {
-  const m = getModel();
-  const group = m.config.groups[m.currentGroup];
+/** PURE — the active group's declared container names from an explicit model.
+ *  The row list is config-derived (the slice holds status/stats, not names). */
+function _itemsFromModel(model) {
+  const groups = model && model.config && model.config.groups;
+  const group = groups && groups[model.currentGroup];
   return group ? (group.containers || []) : [];
 }
+
+/** Shell/render-side convenience (api.getItems + the `getItems` option) — reads
+ *  the LIVE model. NOT for the reducer: the key arm reads msg.items instead
+ *  (threaded by augmentMsg), so update() stays pure of getModel(). */
+function _getItems(/* slice */) { return _itemsFromModel(getModel()); }
 
 function render(panel, width, height, _slice, opts) {
   const m = getModel();
@@ -629,6 +640,7 @@ module.exports = {
   name: 'docker',
   init,
   update,
+  augmentMsg,
   // Kind-global SERVICE slot (see panel/api registerComponent): the
   // register-time instance is the CONTENT OWNER — it alone runs the
   // fetch loop + `docker events` stream (the gate in update()), and

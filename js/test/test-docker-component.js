@@ -47,8 +47,12 @@ function setup(containers = ['c1', 'c2'], focused = true) {
 }
 
 // update() returns either a bare slice or [slice, effects]; normalize.
+// Mirror the framework shell: thread model facts via augmentMsg before update
+// (panel/api _runInstance / dispatchKeyToFocused do this in production), so the
+// key arm sees msg.items without update() reaching for getModel().
 function step(msg, slice) {
-  const r = _update(msg, slice);
+  const m = docker.augmentMsg ? docker.augmentMsg(msg, getModel()) : msg;
+  const r = _update(m, slice);
   return Array.isArray(r) ? { slice: r[0], effects: r[1] || [] } : { slice: r, effects: [] };
 }
 const types = (effects) => effects.map(e => e.type);
