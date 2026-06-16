@@ -45,17 +45,27 @@ function registerPanelOwner(panelType, componentName) {
  *  to land in each copy (e.g. commits 9bafd04 / 633acde / 009b946 /
  *  4ee00b7 each touched one resolver).
  *
- *  Pool-id → Component-name registry — instanceKind(non-default-pool-id)
- *  returning null is a v0.7 fixup per docs/v0.6.3.md §"Out of scope". */
+ *  Pool-id → Component-name registry: resolves placed panes by paneId AND
+ *  pool-only (unplaced/hidden) panes by their declared pool id, so
+ *  instanceKind(declared-id) returns its kind even for a hidden pane (v0.6.5
+ *  §5(b3) — closes the v0.6.3 §"Out of scope" defer). */
 function _typeByArrangePaneId(id) {
   const layout = _layoutSvcSlice();
   const arrange = layout && layout.arrange;
-  if (!arrange || !Array.isArray(arrange.columns)) return null;
-  for (const col of arrange.columns) {
-    for (const p of (col.panels || [])) {
-      if (p && p.paneId === id && _panelOwner[p.type]) return p.type;
+  if (!arrange) return null;
+  if (Array.isArray(arrange.columns)) {
+    for (const col of arrange.columns) {
+      for (const p of (col.panels || [])) {
+        if (p && p.paneId === id && _panelOwner[p.type]) return p.type;
+      }
     }
   }
+  // Pool-only (unplaced / hidden) pane: pool entries are keyed by their
+  // declared id (`panels: { d: { type: detail } }` → arrange.pool.d) and carry
+  // `.type`. A hidden pane has no instance and is in no column, so this is the
+  // only arm that resolves its kind.
+  const entry = arrange.pool && arrange.pool[id];
+  if (entry && _panelOwner[entry.type]) return entry.type;
   return null;
 }
 

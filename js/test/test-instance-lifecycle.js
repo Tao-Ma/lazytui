@@ -71,6 +71,14 @@ describe('per-pane instance lifecycle — runtime mint/dispose (v0.6.5 §5(b))',
     assert(Object.keys(arrange().pool || {}).includes('v2'), 'v2 sits in the pool (unplaced)');
   });
 
+  it('a pool-only pane resolves its kind via instanceKind (§5(b3))', () => {
+    assert(!route.hasInstance('v2'), 'v2 has no instance (pool-only, never placed)');
+    // It is in no column either — only arrange.pool carries it. instanceKind
+    // must still report its declared kind so downstream `=== "detail"`
+    // comparisons hold for a hidden pane.
+    eq(route.instanceKind('v2'), 'detail', 'instanceKind resolves the declared kind from arrange.pool');
+  });
+
   it('pool_show mints an INDEPENDENT instance (no collapse onto the kind primary)', () => {
     api.dispatchMsg(api.wrap('layout', { type: 'pool_show', id: 'v2', columnIndex: 1 }));
     v2 = detailPaneIds().find(id => id !== v1);
