@@ -832,10 +832,10 @@ function _classifyTerminalChunk(data, mouseMode) {
     residue += data.slice(last, m.index);
     last = m.index + m[0].length;
     const btn = parseInt(m[1], 10);
-    if ((btn & 0x40) !== 0 && m[4] !== 'm') {     // wheel press (bit6); ignore release
+    if ((btn & 0x42) === 0x40 && m[4] !== 'm') {  // vertical wheel press (bit6 set, bit1 clear); ignore release
       lines += (btn & 1) ? 3 : -3;                // bit0: down → +3, up → -3
     }
-    // non-wheel mouse (click/motion/release): dropped
+    // horizontal wheel (66/67) + non-wheel mouse (click/motion/release): dropped
   }
   residue += data.slice(last);
   return { kind: 'mouse', lines, residue };
@@ -861,10 +861,11 @@ function _handleTerminalModeData(data) {
   const term = require('../io/terminal');
   const plan = _classifyTerminalChunk(data, term.sessionMouseMode(id));
   if (plan.kind === 'scroll') {
-    if (plan.toTop)            term.scrollSessionToTop(id);
-    else if (plan.toBottom)    term.scrollSessionToBottom(id);
-    else                       term.scrollSessionPages(id, plan.pages);
-    render();
+    let moved;
+    if (plan.toTop)            moved = term.scrollSessionToTop(id);
+    else if (plan.toBottom)    moved = term.scrollSessionToBottom(id);
+    else                       moved = term.scrollSessionPages(id, plan.pages);
+    if (moved) render();      // skip the repaint when already at the edge
     return true;
   }
   if (plan.kind === 'mouse') {

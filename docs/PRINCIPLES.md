@@ -313,7 +313,7 @@ resolved both:
   inherent property of a live-age display (a model `now`/tick would remove
   even that, at the cost of tick infrastructure). Root context: both overlays
   render from **out-of-TEA side registries** (`feature/jobs.js`'s `_jobs` Map
-  via `jobs.list()`; `dispatch/diag-log.js`'s ring buffer via `diag.snapshot()`),
+  via `jobs.list()`; `io/diag-log.js`'s ring buffer via `diag.snapshot()`),
   not the model.
 
 **Why the rule matters:**
