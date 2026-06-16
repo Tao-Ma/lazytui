@@ -702,11 +702,11 @@ function render(model = getModel(), now = Date.now()) {
   // the overlay's own diff cache is enough.
   if (mainDidFull) _frame.forceOverlayFull = true;
   renderTerminalOverlay(model, previewArrange);
-  // blessed-exceptions Phase A — render no longer produces layout's
-  // view-output caches: `innerH` is computed in the post-dispatch finalizer
-  // (A.1) and `paneBounds` is a pure derived selector (A.2). The only
-  // remaining render-side slice write is the viewer's OWN `tabBounds`
-  // (detailTitle), an own-slice cache — a milder, optional follow-on.
+  // blessed-exceptions Phase A — render produces NO slice writes: `innerH`
+  // is computed in the post-dispatch finalizer (A.1), `paneBounds` is a pure
+  // derived selector (A.2), and the former `tabBounds` render-write is gone
+  // (`tabBoundsFor` is a pure projection; input.js recomputes on demand).
+  // render() is now a pure `model -> output` view.
   renderFooter(model);
   // Panel-chrome glyphs (`[_]`/`[+]` collapse, `[X]` close in free-config,
   // `[≡]` tab trigger) are composed INLINE in the panel's top border
