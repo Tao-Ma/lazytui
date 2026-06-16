@@ -387,6 +387,12 @@ let _inScrollFinalize = false;
 // the boot layer; the finalizer just triggers it (mirrors setRenderHook /
 // setMergedActionsProvider). Gated on arrange-ref change so it fires only on
 // placement/removal (the reducer makes a new arrange), never on content Msgs.
+// NOTE — directionally this setter is the INVERSE of its siblings: the others
+// (setRenderHook/setJobsHooks/setMergedActionsProvider) push a lower-layer
+// capability UP so a leaf/io module can reach it without an upward import;
+// this one pushes an upper-layer (boot-shell) reconciler DOWN so the finalizer
+// can trigger getModel()-blessed minting without panel/ taking a static edge
+// to app/. Same cycle-break tactic, opposite layer direction.
 let _instanceReconciler = null;
 let _lastReconciledArrange;
 function setInstanceReconciler(fn) { _instanceReconciler = fn; }

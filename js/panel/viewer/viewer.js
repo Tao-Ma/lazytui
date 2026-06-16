@@ -58,10 +58,12 @@ function _beginSelect(slice, line, col, kind, lines) {
 }
 
 // Effective viewport for scroll/cursor clamps. The slice's `innerH` is
-// written from render() each frame (direct setInstanceSlice on our own
-// slice — R4.9; was a wrapped viewer_set_viewport Msg) so the reducer
-// stays a pure function of (slice, msg) — no cross-slice read of
-// layout's render-time geometry. The pre-first-render fallback is `1`:
+// written by the per-dispatch finalizer (`panel/api._finalizeDispatch`,
+// direct setInstanceSlice on our own slice — was a wrapped
+// viewer_set_viewport Msg) so the reducer stays a pure function of
+// (slice, msg) — no cross-slice read of layout's render-time geometry.
+// (Pre-resize-as-Msg this was written from render() each frame.)
+// The pre-first-render fallback is `1`:
 // any viewer_scroll/append/cursor before paint still clamps inside
 // [0, lines.length - 1] instead of overshooting (the pre-fix bug was
 // `(0 || 0) - 2 = -2` viewport → `maxScroll = lines.length + 2`, leaving

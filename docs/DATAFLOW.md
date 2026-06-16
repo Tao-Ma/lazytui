@@ -75,7 +75,7 @@ greppable.
         │
         ▼
 ═══════════════════════════ STATE ══════════════════════════════════
-   Root model (js/app/runtime.js, _modelRef.current)
+   Root model (js/model/store.js, _modelRef.current; re-exported from app/runtime.js)
      modes (14 modal flags, incl. jobsMode for the Running overlay)
      modal.{ filter, prompt, menu, confirm, copy, registerPopup,
              cmdline, jobs }
@@ -227,7 +227,7 @@ Transcript appends preserve any pre-existing override (no transition).
 `tab_switch` to Transcript restores from buffer with bottom-pin
 scroll (empty → `[dim](no transcript yet)[/]` placeholder).
 Spawn-launch and cmdline-verb status messages join the same buffer
-via `appendViewerLines` (`app/state.js`).
+via `appendViewerLines` (`panel/nav-state.js`; re-exported from `app/state.js`).
 
 Per-action buffers and the Transcript buffer survive `tab_switch`;
 producer lifetime is decoupled from tab visibility. `streamCommand`

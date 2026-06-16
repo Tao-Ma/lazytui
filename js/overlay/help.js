@@ -10,8 +10,8 @@
  * help-flavored content surface). Pre-N7 the file was in dispatch/
  * "to dodge an api → dispatch → api cycle"; that's no longer a
  * concern because the file doesn't reach into dispatch/ at all
- * (only app/state, app/runtime, io/ansi, panel/api, and the
- * dispatch/keybindings leaf for chord enumeration).
+ * (only panel/nav-state, model/store, io/ansi, panel/api, leaves/pane,
+ * panel/route, and the dispatch/keybindings leaf for chord enumeration).
  *
  * Zero npm deps.
  */

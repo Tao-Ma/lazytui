@@ -89,7 +89,7 @@ have been brought under the model-clock discipline:
   dispatcher's `msg.now`); a live-age display needs a clock somewhere, and a
   model `now`/tick would remove even that at the cost of tick infrastructure.
   Root context: both overlays render from out-of-TEA side registries
-  (`feature/jobs.js` Map; `dispatch/diag-log.js` ring buffer), not the model.
+  (`feature/jobs.js` Map; `io/diag-log.js` ring buffer), not the model.
   See PRINCIPLES §11.
 
 Everything else below was an eliminable exception and has been removed.
@@ -552,11 +552,11 @@ no-op); a topic change re-subscribes (the case YAGNI deferred — now covered).
   `redraw()` is a dispatch-then-paint helper (`showSelectedInfo()` then
   `render()`) — it dispatches a Msg, so it was a dispatch ORCHESTRATION, not a
   render. It now lives next to `showSelectedInfo` in the dispatch layer and
-  lazy-requires `paint.render()`. **paint.js no longer requires
-  `dispatch/dispatch` at all** — its only remaining `dispatch/*` requires are
-  `dispatch/modes` (pure mode-table read, to know which overlays to paint) and
-  `dispatch/event-log` (error recording in `_safeRender`'s catch — diagnostic,
-  on-throw only). So the render module is a pure view: `model → output`, no
+  lazy-requires `paint.render()`. **paint.js no longer requires any
+  `dispatch/*` module** — its mode-table read is now `leaves/modes` (pure, to
+  know which overlays to paint; re-homed out of `dispatch/` in v0.6.5 §4) and
+  its error recording in `_safeRender`'s catch is `io/event-log` (diagnostic,
+  on-throw only; re-homed out of `dispatch/` in v0.6.5 §1 Phase 3). So the render module is a pure view: `model → output`, no
   dispatch edge. Sole prod caller (`tui.js:278`) now imports `redraw` from
   dispatch (and dropped the now-unused `render` import). `smoke/dual-viewer.js`
   (2 sites) + its dead `paint` require updated.
