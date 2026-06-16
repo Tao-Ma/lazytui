@@ -159,6 +159,70 @@ function loadConfig(configPath) {
 
 // --- Layout initialization ---
 
+// Mint/dispose per-pane Component instances to MATCH the placed layout. Runs
+// at boot (initState) AND after every runtime placement/removal — the dispatch
+// finalizer calls it (via api.setInstanceReconciler) gated on arrange-ref
+// change. MINT: each placed pane lacking an instance, keyed by paneId — so a
+// second same-kind pane added at runtime (pool_show / pool-drag / pane-select)
+// gets its OWN slice instead of collapsing onto the kind primary (the v0.6.4
+// multi-viewer guarantee, previously honored only for config-declared panes).
+// DISPOSE: each per-pane instance whose pane left the layout (frees the slice).
+// This IS the framework's impure first-touch shell — getModel() is blessed
+// here, as it was in the boot mint loop; the reducer arms that place/remove
+// panes stay pure.
+function reconcilePaneInstances() {
+  const api = require('../panel/api');
+  const route = require('../panel/route');
+  const mpool = require('../leaves/pool');
+  const components = api._components ? api._components() : null;
+  if (!components) return;
+  const arrange = _layoutSlice().arrange;
+  const placedPanes = arrange ? mpool.allPanesInColumns(arrange) : [];
+
+  // MINT — resolve panes via the panel-type ownership registry (covers aliased
+  // types like `file-browser`, owned by `files`). Deliberately NOT
+  // `components[kind]`: that matched Component NAMES too, so a `type: docker`
+  // pane disposed the kind-global service instance (its content owner). A
+  // name-only kind mints nothing (honest unknown-type failure).
+  const placedIds = new Set();
+  for (const p of placedPanes) {
+    const kind = p.type;
+    const paneId = p.paneId;
+    if (!paneId || !kind) continue;
+    placedIds.add(paneId);
+    const comp = components[route.componentForPanel(kind)];
+    if (!comp) continue;
+    // Dispose the kind-keyed seed (minted at registerComponent) on the first
+    // per-pane mint; service slots are skipped (dispose refuses them anyway).
+    if (route.hasInstance(kind) && kind !== paneId && !route.isService(kind)) {
+      route.disposeInstance(kind);
+    }
+    if (!route.hasInstance(paneId)) {
+      // init-injection (v0.6.4 #4): thread the seed facts a Component's init
+      // would otherwise reach for as globals — init is a pure fn of (paneId,
+      // seed). init(paneId) also stamps pane identity so the Component resolves
+      // "my pane" from its own slice (incl. the broadcast refresh with no
+      // call-site id). Seed-blind inits arity-ignore the args.
+      const m = getModel();
+      const seed = { config: m.config, projectDir: m.projectDir, paneDef: p };
+      route.setInstance(paneId, kind, comp.init(paneId, seed));
+    }
+    // Wire the pane's DECLARED hub subscriptions at mount (no-op without a
+    // subscriptions() hook; idempotent via the topic:window ledger).
+    _wireSubscriptions(comp, p);
+  }
+
+  // DISPOSE — per-pane instances whose pane is no longer placed. Skip service
+  // slots (route refuses) and kind-seed singletons (id === kind: docker-style
+  // panelTypes content owners + un-replaced registry seeds — not placed panes).
+  const orphans = [];
+  route.eachInstance(inst => {
+    if (inst.service || inst.id === inst.kind) return;
+    if (!placedIds.has(inst.id)) orphans.push(inst.id);
+  });
+  for (const id of orphans) route.disposeInstance(id);
+}
+
 function initState() {
   const m = getModel();
   const config = m.config;
@@ -191,71 +255,12 @@ function initState() {
     type: 'term_resized', cols: tdims.cols, rows: tdims.rows,
   }));
 
-  // v0.6.3 Phase B — mint per-pane Component instances keyed by
-  // paneId. Pre-B used the singleton convention (id === kind ===
-  // Component name); post-B every PLACED pane gets its own instance
-  // with id = pane.paneId (e.g. 'pane-detail', 'pane-groups'). The
-  // kind-keyed instance that registerComponent minted earlier is
-  // disposed for each kind we re-mint per pane — _primaryByKind
-  // shifts to the new paneId. Service slots (chrome like 'layout',
-  // content owners like 'docker') are never disposed — route refuses.
-  //
-  // Foundational for v0.7 multi-instance: a second pane of the
-  // same kind gets its own paneId, its own slice. Today every
-  // kind has exactly one pane; the convention just gets ready.
-  const route = require('../panel/route');
-  const mpool = require('../leaves/pool');
-  const components = api._components ? api._components() : null;
-  if (components) {
-    const arrange = _layoutSlice().arrange;
-    const placedPanes = arrange ? mpool.allPanesInColumns(arrange) : [];
-    for (const p of placedPanes) {
-      const kind = p.type;
-      const paneId = p.paneId;
-      if (!paneId || !kind) continue;
-      // v0.6.4 Theme A Phase 5 Arc 2 — resolve panes via the panel-type
-      // ownership registry (covers aliased types like `file-browser`,
-      // owned by the `files` Component). Deliberately NOT
-      // `components[kind]`: that arm matched Component NAMES too, so a
-      // config pane of `type: docker` / `type: layout` resolved here
-      // and disposed the kind-global service instance (docker's content
-      // owner — fetching silently died). Every legitimate placeable
-      // type is in the `_panelOwner` registry; a name-only kind now
-      // mints nothing (honest unknown-type failure).
-      const comp = components[route.componentForPanel(kind)];
-      if (!comp) continue;
-      // Dispose the kind-keyed singleton slice (minted at
-      // registerComponent), then mint fresh keyed by paneId. Service
-      // slots are skipped, not refused — dispose would no-op anyway,
-      // but a same-named service panelType would error-spam every boot.
-      if (route.hasInstance(kind) && kind !== paneId && !route.isService(kind)) {
-        route.disposeInstance(kind);
-      }
-      if (!route.hasInstance(paneId)) {
-        // Stamp the pane identity onto the slice (init(paneId)) so the
-        // Component can resolve "my pane" from its own slice on every
-        // path — including the broadcast `refresh` where no call-site
-        // paneId is available. init() arity-ignores it for Components
-        // that don't need identity.
-        //
-        // v0.6.4 #4 — init-injection. The mint loop IS the framework's
-        // impure first-touch shell (getModel() is blessed here), so it
-        // threads the seed facts a Component's init would otherwise reach
-        // for as globals. Mirrors register.init(config.register || {}):
-        // init becomes a pure function of (paneId, seed). config-status is
-        // the sole consumer today (drops getModel + the getInstanceSlice
-        // ('layout') cross-slice read); seed-blind inits arity-ignore it.
-        const m = getModel();
-        const seed = { config: m.config, projectDir: m.projectDir, paneDef: p };
-        route.setInstance(paneId, kind, comp.init(paneId, seed));
-      }
-      // v0.6.4 Phase D — wire the pane's DECLARED hub subscriptions at
-      // mount (no-op for Components without a subscriptions() hook;
-      // idempotent via the topic:window ledger). Replaces the old
-      // render-time lazy subscribe (stats._ensureSub).
-      _wireSubscriptions(comp, p);
-    }
-  }
+  // v0.6.3 Phase B / v0.6.4 multi-viewer — per-pane Component instances keyed
+  // by paneId (every placed pane its own slice). The mint/dispose logic lives
+  // in reconcilePaneInstances so the dispatch finalizer can re-run it after
+  // runtime placement/removal; wire that injection, then do the boot mint.
+  api.setInstanceReconciler(reconcilePaneInstances);
+  reconcilePaneInstances();
 
   // Rebuild the visible group list from config, then seed currentGroup
   // from the first visible row. recomputeGroups dispatches into the
@@ -333,6 +338,9 @@ function selectGroup(idx) {
 module.exports = {
   // Boot layer + dispatch-layer group helpers, defined here.
   loadConfig, initState, selectGroup, resetGroupContext,
+  // Per-pane instance lifecycle — boot mint + the finalizer's runtime
+  // mint/dispose reconcile (wired via api.setInstanceReconciler).
+  reconcilePaneInstances,
   // v0.6.4 Phase D — exposed for tests: the declared-subscription wiring
   // seam + its dedup-ledger reset.
   _wireSubscriptions, _resetSubscriptions,

@@ -382,6 +382,15 @@ const BROADCAST_TYPES = new Set(['refresh', 'hub', 'action']);
 let _dispatchDepth = 0;
 let _inScrollFinalize = false;
 
+// Runtime per-pane instance lifecycle. `state.reconcilePaneInstances` is
+// injected at boot (setInstanceReconciler) — the impure mint shell stays in
+// the boot layer; the finalizer just triggers it (mirrors setRenderHook /
+// setMergedActionsProvider). Gated on arrange-ref change so it fires only on
+// placement/removal (the reducer makes a new arrange), never on content Msgs.
+let _instanceReconciler = null;
+let _lastReconciledArrange;
+function setInstanceReconciler(fn) { _instanceReconciler = fn; }
+
 // Layout memo for the finalizer. calcLayout's rects depend only on
 // (arrange, dims) — and the reducers update both IMMUTABLY (spread
 // per write; pinned by test-immutable-leaves), so reference equality
@@ -412,6 +421,14 @@ function _finalizeDispatch() {
   if (!layoutSlice || !layoutSlice.dims || !layoutSlice.arrange) return;
   _inScrollFinalize = true;
   try {
+    // Reconcile per-pane instances with the placed layout (mint newly-placed
+    // panes, dispose removed ones) BEFORE the scroll/innerH work that reads
+    // them. Gated on arrange-ref change — a placement/removal makes a new
+    // arrange; content Msgs leave it untouched, so this is a no-op then.
+    if (_instanceReconciler && layoutSlice.arrange !== _lastReconciledArrange) {
+      _lastReconciledArrange = layoutSlice.arrange;
+      _instanceReconciler();
+    }
     const layout = _finalizeLayout(layoutSlice);
     for (const p of mpool.allPanesInColumns(layoutSlice.arrange)) {
       if (mpool.isDetailPane(p) || p.collapsed) continue;
@@ -906,6 +923,7 @@ module.exports = {
   setInstance, getInstance, getInstanceSlice, sliceForPane, setInstanceSlice,
   hasInstance, disposeInstance, instanceKind, eachInstance,
   setService, serviceSlice, isService, primarySliceOf,
+  setInstanceReconciler,
   getPanelDef, getItems, idOf, selectedOrFocused, infoLinesFromFocus,
   refreshAll, cleanupComponents,
   getCommands, getMergedActions, statusFor,
