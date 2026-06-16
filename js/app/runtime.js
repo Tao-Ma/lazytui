@@ -17,6 +17,14 @@
  *   - The reducer performs no I/O; effects are Cmd DESCRIPTORS the
  *     effects layer (effects.runEffects, called from dispatch.applyMsg)
  *     interprets.
+ *   - NOT a strict pure function of (model, msg): a few arms read ROUTE
+ *     TOPOLOGY (`route.getFocus()` / `resolveTarget` / `componentForPanel` /
+ *     `paneTypeOf` — focus + pane→Component identity), which lives in the
+ *     route registry's mutable state, NOT in `model`. This is the one
+ *     deliberate, documented impurity — the "blessed chokepoint": route is a
+ *     topology oracle, the reads only pick a Cmd target, never mutate model,
+ *     and the result is emitted as a Cmd, not acted on. See
+ *     docs/blessed-exceptions.md.
  *   - Modal-close arms (confirm_reject / prompt_cancel / cmdline_cancel
  *     / register_popup_cancel / menu_close / copy_cancel / *_drop /
  *     *_accept / *_submit) guard on their mode flag — a stale double-
