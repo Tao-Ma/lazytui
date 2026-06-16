@@ -62,7 +62,7 @@ const FRAMEWORK_COMMANDS = [
     desc: 'Persist current panel layout to the YAML config',
     run: () => {
       const { writeLayoutToFile } = require('../feature/yaml-layout');
-      const { appendViewerLines } = require('../app/state');
+      const { appendViewerLines } = require('./nav-state');
       const m = getModel();
       const { error } = writeLayoutToFile(route.getInstanceSlice('layout').arrange, m.configPath);
       if (error) {
@@ -83,7 +83,7 @@ const FRAMEWORK_COMMANDS = [
     run: (args) => {
       const input = (args && args.join(' ')) || '';
       if (!input) {
-        const { appendViewerLines } = require('../app/state');
+        const { appendViewerLines } = require('./nav-state');
         appendViewerLines('[red]:open requires a path[/] — usage: :open <path>');
         return;
       }
@@ -98,7 +98,7 @@ const FRAMEWORK_COMMANDS = [
     name: 'restore-layout',
     desc: 'Discard runtime changes; reload panel layout from YAML',
     run: () => {
-      const { appendViewerLines } = require('../app/state');
+      const { appendViewerLines } = require('./nav-state');
       const { rebuildLayoutFromConfig } = require('../leaves/arrange');
       const m = getModel();
       const api = require('./api');
@@ -135,7 +135,7 @@ const FRAMEWORK_COMMANDS = [
       // success.
       let position1 = (args && args.length > 0) ? Number(args[0]) : N;
       if (!Number.isInteger(position1)) {
-        const { appendViewerLines } = require('../app/state');
+        const { appendViewerLines } = require('./nav-state');
         appendViewerLines(`[red]:add-column requires a 1-based integer position[/]`);
         return;
       }
@@ -148,13 +148,13 @@ const FRAMEWORK_COMMANDS = [
     run: (args) => {
       const api = require('./api');
       if (!args || args.length === 0) {
-        const { appendViewerLines } = require('../app/state');
+        const { appendViewerLines } = require('./nav-state');
         appendViewerLines(`[red]:remove-column requires a column number[/]`);
         return;
       }
       const n1 = Number(args[0]);
       if (!Number.isInteger(n1)) {
-        const { appendViewerLines } = require('../app/state');
+        const { appendViewerLines } = require('./nav-state');
         appendViewerLines(`[red]:remove-column requires a 1-based integer column number[/]`);
         return;
       }
@@ -169,7 +169,7 @@ const FRAMEWORK_COMMANDS = [
  */
 function _frameworkDynamicCommands(m) {
   const { setTheme, themeNames, activeThemeName } = require('../render/themes');
-  const { allPanels } = require('../app/state');
+  const { allPanels } = require('./nav-state');
   const api = require('./api');
   const out = [];
   for (const name of themeNames()) {

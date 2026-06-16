@@ -28,7 +28,7 @@
 
 const { RESET, richToAnsi, esc, visibleLen, wrapColor } = require('../io/ansi');
 const { cols, rows, stdout, showCursor, hideCursor } = require('../io/term');
-const { allPanels } = require('../app/state');
+const { allPanels } = require('../panel/nav-state');
 const geo = require('../leaves/geometry');
 const mpool = require('../leaves/pool');
 const mpane = require('../leaves/pane');

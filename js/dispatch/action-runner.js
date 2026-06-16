@@ -9,7 +9,7 @@
 
 const { spawn } = require('child_process');
 const fs = require('fs');
-const { appendViewerLines } = require('../app/state');
+const { appendViewerLines } = require('../panel/nav-state');
 const { streamCommand, killAll } = require('./stream');
 const { getInstanceSlice, dispatchMsg, wrap } = require('../panel/api');
 const { getModel } = require('../model/store');

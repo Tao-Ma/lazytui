@@ -71,7 +71,7 @@ function _resolveSelection(panel) {
   const items = apiGetItems(panel.select_from);
   // Phase 4a — read the cursor via the state helper (resolves the
   // owning Component's nav slice).
-  const sel = require('../../app/state').getSel(panel.select_from);
+  const sel = require('../nav-state').getSel(panel.select_from);
   const item = items[sel];
   if (!item) return null;
   // For string-row panels (containers, etc.) the row key IS the item.

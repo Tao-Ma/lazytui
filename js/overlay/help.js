@@ -17,7 +17,7 @@
  */
 'use strict';
 
-const { allPanels, setViewerContent } = require('../app/state');
+const { allPanels, setViewerContent } = require('../panel/nav-state');
 const { getModel } = require('../model/store');
 const { esc } = require('../io/ansi');
 const {getCommands, getPanelDef, getInstanceSlice, getFocus, instanceKind } = require('../panel/api');
