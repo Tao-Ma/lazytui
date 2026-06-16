@@ -47,14 +47,6 @@ function _detailSlice() {
 
 // --- Read helpers (used by the layout + render paths) ---------------------
 
-function getGroupTerminals(groupName) {
-  return pt.groupTerminals(getModel(), _detailSlice(), groupName);
-}
-
-function getGroupContentTabs(groupName) {
-  return pt.groupContentTabs(_detailSlice(), groupName);
-}
-
 /** Tab info for the current group: action + terminal + content tabs +
  *  total count (Info inclusive). */
 function getTabInfo() {
@@ -211,7 +203,7 @@ function handleSessionCleanExit(id, paneId) {
 }
 
 module.exports = {
-  getGroupTerminals, getGroupContentTabs, getTabInfo,
+  getTabInfo,
   isTerminalTab, activeTerminalId, activeTerminalConfig,
   isContentTab, activeContentTab,
   isActionTab, activeActionTab,

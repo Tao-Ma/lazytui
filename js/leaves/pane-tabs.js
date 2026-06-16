@@ -278,11 +278,6 @@ function resolveTabKeyFromBundle(idx, slice, bundle) {
   return null;
 }
 
-/** True when the slice's active tab is the Transcript tab. */
-function isTranscriptTabIn(slice, _model, _groupName) {
-  return (slice.tab | 0) === 1;
-}
-
 /** True when the slice's active tab is a terminal tab in `groupName`. */
 function isTerminalTabIn(slice, model, groupName) {
   const info = flatTabInfo(slice, model, groupName);
@@ -851,8 +846,8 @@ function reduceTabMsg(msg, slice, ctx) {
 
 module.exports = {
   setMergedActionsProvider,   // v0.6.5 §3 — boot injection (panel/api wires it)
-  actionTabCount, groupTerminals, groupContentTabs,
-  flatTabInfo, transcriptTabIdx, isTranscriptTabIn,
+  actionTabCount,
+  flatTabInfo, transcriptTabIdx,
   resolveTabKey,
   viewerLines,
   isTerminalTabIn, isContentTabIn, isActionTabIn,

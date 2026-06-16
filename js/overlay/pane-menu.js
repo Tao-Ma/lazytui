@@ -166,12 +166,6 @@ function items(paneId) {
   return tabs.length ? tabs : panes;
 }
 
-/** Index of the section separator in items(paneId), or -1 if none. The
- *  nav handlers thread this so pane_menu_nav can skip the divider. */
-function separatorIndex(paneId) {
-  return items(paneId).indexOf(null);
-}
-
 // --- Open-state + anchoring -------------------------------------------
 
 /** The pane id whose menu is currently open (null when closed). */
@@ -393,7 +387,7 @@ function _maybeBlank() {
 function _resetRenderState() { _lastPanelH = 0; _lastTop = 0; _lastLeft = 0; _lastWidth = 0; }
 
 module.exports = {
-  hitTestTrigger, hitTest, render, items, separatorIndex, viewportRows,
-  triggerVisible, _triggerState, _flatTabs, _isViewer, _geom,
+  hitTestTrigger, hitTest, render, items, viewportRows,
+  triggerVisible, _triggerState, _isViewer,
   _resetRenderState,
 };

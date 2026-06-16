@@ -78,12 +78,6 @@ function componentForPanel(id) {
   return arrangeType ? _panelOwner[arrangeType] : undefined;
 }
 
-/** Strict panel-type lookup — true iff `id` is a registered panel-type
- *  (NOT a paneId that resolves via the instance store). Use this to
- *  distinguish "the caller gave me a type" from "the caller gave me
- *  a paneId" — both `componentForPanel` arms succeed for both forms. */
-function isPanelType(id) { return _panelOwner[id] !== undefined; }
-
 /** Resolve `id` to its panel-type form. Accepts paneId or panel-type;
  *  returns the panel-type string (the key under `comp.panelTypes` and
  *  the form mnav.entryOf uses for multi-panel Components). Used by
@@ -595,7 +589,7 @@ function _resolveViewerPaneIdCompute(ctx, arrange) {
 
 module.exports = {
   wrap,
-  registerPanelOwner, componentForPanel, isPanelType, paneTypeOf,
+  registerPanelOwner, componentForPanel, paneTypeOf,
   getFocus,
   setInstance, getInstance, getInstanceSlice, sliceForPane, setInstanceSlice,
   hasInstance, disposeInstance, instanceKind, eachInstance,

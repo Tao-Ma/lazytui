@@ -215,6 +215,6 @@ module.exports = {
   dockerReadBytes,
   listRunningContainers,
   // Exposed for tests
-  _parseLsLine, _dockerExec,
+  _parseLsLine,
   DEFAULT_LIST_TIMEOUT_MS, DEFAULT_READ_TIMEOUT_MS,
 };

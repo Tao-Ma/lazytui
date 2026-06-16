@@ -308,5 +308,4 @@ module.exports = {
   // Exported for unit tests; not part of the public plugin contract.
   _saveScript: saveScript,
   _loadScript: loadScript,
-  _checkStaleScript: checkStaleScript,
 };

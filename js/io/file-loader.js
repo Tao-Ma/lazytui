@@ -240,6 +240,6 @@ function _wrapTextResult(text, totalSize, consumed, path, encoding) {
 module.exports = {
   loadFile,
   // Exposed for tests / advanced callers
-  hexdump, _isBinary, _readCapped, _detectBOM, _trimToUtf8Boundary,
+  hexdump, _isBinary, _detectBOM, _trimToUtf8Boundary,
   DEFAULT_MAX_BYTES, DEFAULT_HEX_AFTER,
 };

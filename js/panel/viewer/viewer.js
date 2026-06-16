@@ -1099,7 +1099,7 @@ function render(panel, w, h, slice, opts) {
   const m = getModel();
   const innerH = h - 2;
   // v0.6.4 multi-viewer — hotkey from the pane being rendered (panel.hotkey),
-  // not findDetailPane (first-detail). Threaded into detailTitle so the
+  // not the first/major-viewer fallback. Threaded into detailTitle so the
   // tab strip labels THIS viewer's hotkey.
   const hotkey = panel ? panel.hotkey : '';
   // v0.6.4 Theme A Phase 5 — per-pane focus (opts.focused, from
