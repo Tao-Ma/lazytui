@@ -250,7 +250,7 @@ function halfProjection(layoutSlice, viewerPaneId) {
   return { left, right };
 }
 
-function getPanelViewportH(layoutSlice, paneId, dims, layout) {
+function getPanelViewportH(layoutSlice, paneId, dims, layout, viewerPaneId) {
   if (!layoutSlice) return 1;
   const availH = Math.max(6, dims.rows - 1);
   // Half/full view: an on-screen panel takes the full availH — beats any
@@ -261,7 +261,9 @@ function getPanelViewportH(layoutSlice, paneId, dims, layout) {
   const { viewMode, focus } = layoutSlice;
   let onScreen = false;
   if (viewMode === 'half') {
-    const { left, right } = halfProjection(layoutSlice);
+    // viewerPaneId threaded so the right (viewer) slot resolves — the leaf
+    // can't reach route.resolveViewerPaneId() (v0.6.5 §3). Absent → right=null.
+    const { left, right } = halfProjection(layoutSlice, viewerPaneId);
     onScreen = paneId === left || paneId === right;
   } else if (viewMode === 'full') {
     onScreen = paneId === focus;
@@ -390,14 +392,14 @@ const _normalBoundsMap = createSelector(
 // Half view: two slots from halfProjection (mirrors renderHalf exactly —
 // leftPanel = projected-left-or-focused, detailPanel = projected-right).
 // No focused pane → renderHalf falls back to renderNormal, so do we.
-function _halfBoundsMap(layoutSlice) {
+function _halfBoundsMap(layoutSlice, viewerPaneId) {
   const dims = layoutSlice.dims;
   const COLS = dims.cols, ROWS = dims.rows;
   const all = mpool.allPanesInColumns(layoutSlice.arrange);
   const focusedPanel = all.find(p => mpane.paneMatchesFocus(p, layoutSlice.focus));
   if (!focusedPanel) return _normalBoundsMap(layoutSlice);
   const halfW = Math.floor(COLS / 2), availH = ROWS - 1;
-  const proj = halfProjection(layoutSlice);
+  const proj = halfProjection(layoutSlice, viewerPaneId);
   const leftPanel = (proj.left && all.find(p => p.paneId === proj.left)) || focusedPanel;
   const detailPanel = proj.right ? all.find(p => p.paneId === proj.right) || null : null;
   const m = {};
@@ -423,9 +425,9 @@ function _fullBoundsMap(layoutSlice) {
 }
 
 // The full visible-bounds map for the current view mode.
-function _visibleBoundsMap(layoutSlice) {
+function _visibleBoundsMap(layoutSlice, viewerPaneId) {
   const vm = layoutSlice.viewMode;
-  if (vm === 'half') return _halfBoundsMap(layoutSlice);
+  if (vm === 'half') return _halfBoundsMap(layoutSlice, viewerPaneId);
   if (vm === 'full') return _fullBoundsMap(layoutSlice);
   return _normalBoundsMap(layoutSlice);
 }
@@ -456,13 +458,15 @@ function boundsFor(layoutSlice, key) {
  *  click this pane" want this variant (boundsFor() in contrast reports
  *  normal-view geometry for off-screen panes too). Prevents half-mode
  *  click hit-tests from firing on a non-visible pane's phantom rect.
- *  Seed/override wins; else the view-mode-aware visible map. */
-function visibleBoundsFor(layoutSlice, key) {
+ *  Seed/override wins; else the view-mode-aware visible map. `viewerPaneId`
+ *  (route.resolveViewerPaneId(), threaded by the caller — v0.6.5 §3) lets the
+ *  half-view right slot resolve; omit it in normal/full where it's unused. */
+function visibleBoundsFor(layoutSlice, key, viewerPaneId) {
   if (!layoutSlice) return null;
   const seed = layoutSlice.paneBounds && layoutSlice.paneBounds[key];
   if (seed) return seed;
   if (!layoutSlice.dims || !layoutSlice.arrange) return null;
-  return _visibleBoundsMap(layoutSlice)[key] || null;
+  return _visibleBoundsMap(layoutSlice, viewerPaneId)[key] || null;
 }
 
 module.exports = {

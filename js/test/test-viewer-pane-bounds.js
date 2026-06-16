@@ -77,7 +77,10 @@ describe('visibleBoundsFor tracks the VISIBLE pane per view mode (derived)', () 
 
   it('half (focus detail): bounds are the right half at full height', () => {
     const layout = renderIn('half', 'pane-detail');
-    const b = geo.visibleBoundsFor(layout, route.resolveViewerPaneId());
+    // Half view: the caller threads viewerPaneId so the right (viewer) slot
+    // resolves — the leaf can't reach route.resolveViewerPaneId() (§3). This
+    // mirrors how paint.js / layout.js / input.js call it.
+    const b = geo.visibleBoundsFor(layout, route.resolveViewerPaneId(), route.resolveViewerPaneId());
     assert(b, 'bounds resolved');
     assert(b.x > 0, `right half starts past mid-screen (saw x=${b.x})`);
     assert(b.y === 0, 'spans from top');

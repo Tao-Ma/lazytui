@@ -430,7 +430,7 @@ function _finalizeDispatch() {
     const viewerTab = route.resolveTarget('viewer');
     const viewerPaneId = route.resolveViewerPaneId();
     if (viewerTab && viewerPaneId) {
-      const innerH = geo.getPanelViewportH(layoutSlice, viewerPaneId, layoutSlice.dims, layout);
+      const innerH = geo.getPanelViewportH(layoutSlice, viewerPaneId, layoutSlice.dims, layout, viewerPaneId);
       const vs = route.getInstanceSlice(viewerTab);
       if (vs && vs.innerH !== innerH) route.setInstanceSlice(viewerTab, { ...vs, innerH });
     }

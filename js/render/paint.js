@@ -552,7 +552,7 @@ function renderTerminalOverlay(model = getModel(), arrangeOverride) {
   // would-be-after-release position), so compute against the preview arrange
   // when one is threaded; otherwise the real slice.
   const boundsSlice = arrangeOverride ? { ...layoutSlice, arrange: arrangeOverride } : layoutSlice;
-  const bounds = geo.visibleBoundsFor(boundsSlice, _route().resolveViewerPaneId());
+  const bounds = geo.visibleBoundsFor(boundsSlice, _route().resolveViewerPaneId(), _route().resolveViewerPaneId());
   if (!bounds) return;
   const innerW = bounds.w - 2;
   const innerH = bounds.h - 2;

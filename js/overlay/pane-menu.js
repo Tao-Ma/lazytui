@@ -179,7 +179,7 @@ function _targetPaneId() {
  *  fire the menu on a non-visible pane whose normal-view rect overlaps.
  *  Lazy require to dodge the layout ↔ overlay cycle. */
 function _paneBounds(paneId) {
-  return visibleBoundsFor(getInstanceSlice('layout'), paneId);
+  return visibleBoundsFor(getInstanceSlice('layout'), paneId, route.resolveViewerPaneId());
 }
 
 /** Trigger glyph state machine (drives both chrome paint + click):

@@ -77,7 +77,7 @@ function _handleWheel(mx, my, delta) {
   // pane whose coords overlap with the visible half-view rect.
   const layoutSlice = getInstanceSlice('layout');
   for (const p of allPanels()) {
-    const b = visibleBoundsFor(layoutSlice, p.paneId);  // v0.6.4 Phase 2 — paneId, not type (two same-kind panes share a type key)
+    const b = visibleBoundsFor(layoutSlice, p.paneId, route.resolveViewerPaneId());  // v0.6.4 Phase 2 — paneId, not type (two same-kind panes share a type key)
     if (!b) continue;
     if (mx < b.x || mx >= b.x + b.w || my < b.y || my >= b.y + b.h) continue;
 
@@ -107,7 +107,7 @@ function _handleWheel(mx, my, delta) {
       // arc fix follow-up — panelHeights[type] would have given the
       // small normal-view share even in half/full view).
       const innerH = getPanelViewportH(
-        layoutSlice, p.paneId, layoutSlice.dims);  // v0.6.4 Phase 3b — paneId; resize-as-Msg P1 — model dims
+        layoutSlice, p.paneId, layoutSlice.dims, null, route.resolveViewerPaneId());  // v0.6.4 Phase 3b — paneId; resize-as-Msg P1 — model dims
       const maxScroll = Math.max(0, lines.length - innerH);
       const next = Math.max(0, Math.min(maxScroll, curScroll + delta));
       if (next === curScroll) return false;
@@ -250,7 +250,7 @@ function _mouseHandleFreeConfigMode(kind, mx, my, model) {
   // bounds); slice key = the viewer's tab/instance id (tabBounds owner) —
   // these diverge once the type-keyed write retires.
   const viewerId = route.resolveTarget('viewer') || 'detail';
-  const db = visibleBoundsFor(getInstanceSlice('layout'), route.resolveViewerPaneId());
+  const db = visibleBoundsFor(getInstanceSlice('layout'), route.resolveViewerPaneId(), route.resolveViewerPaneId());
   const detailSlice = getInstanceSlice(viewerId);
   // v0.6.4 blessed-exceptions tabBounds follow-on — recompute on demand.
   const detailTabBounds = detailSlice
@@ -390,7 +390,7 @@ function _dispatchActiveModeMouse(kind, mx, my, model) {
 function _resolveBodyHit(mx, my) {
   const layoutSlice = getInstanceSlice('layout');
   for (const p of allPanels()) {
-    const b = visibleBoundsFor(layoutSlice, p.paneId);
+    const b = visibleBoundsFor(layoutSlice, p.paneId, route.resolveViewerPaneId());
     if (!b) continue;
     if (mx < b.x || mx >= b.x + b.w || my < b.y || my >= b.y + b.h) continue;
     let navIdx = -1;
@@ -431,7 +431,7 @@ function _resolveContextAt(mx, my) {
   const selectionText = sel.isActive() ? (sel.selectedText() || null) : null;
   const layoutSlice = getInstanceSlice('layout');
   for (const p of allPanels()) {
-    const b = visibleBoundsFor(layoutSlice, p.paneId);
+    const b = visibleBoundsFor(layoutSlice, p.paneId, route.resolveViewerPaneId());
     if (!b) continue;
     if (mx < b.x || mx >= b.x + b.w || my < b.y || my >= b.y + b.h) continue;
     const itemRow = my - b.y - 1;  // -1 for top border
@@ -611,7 +611,7 @@ function handleMouse(kind, x, y) {
   const sel = require('../panel/viewer/select');
   if (kind === 'motion' && sel.isActive()) {
     // v0.6.4 — focused viewer's CONTAINER pane bounds (see tab-drag site above).
-    const db = visibleBoundsFor(getInstanceSlice('layout'), route.resolveViewerPaneId());
+    const db = visibleBoundsFor(getInstanceSlice('layout'), route.resolveViewerPaneId(), route.resolveViewerPaneId());
     if (db) {
       const visibleLine = Math.max(0, Math.min(db.h - 3, my - db.y - 1));
       const col = Math.max(0, mx - db.x - 1);
@@ -649,7 +649,7 @@ function handleMouse(kind, x, y) {
   // user's right-arrow selection).
   const layoutSlice = getInstanceSlice('layout');
   for (const p of allPanels()) {
-    const b = visibleBoundsFor(layoutSlice, p.paneId);  // v0.6.4 Phase 2 — paneId, not type (two same-kind panes share a type key)
+    const b = visibleBoundsFor(layoutSlice, p.paneId, route.resolveViewerPaneId());  // v0.6.4 Phase 2 — paneId, not type (two same-kind panes share a type key)
     if (!b) continue;
     if (mx < b.x || mx >= b.x + b.w || my < b.y || my >= b.y + b.h) continue;
 

@@ -125,7 +125,7 @@ function _pageStep(paneId) {
   // Single source of truth for view-mode-aware viewport rows (by paneId).
   // resize-as-Msg P1 — model dims, not a live io/term read.
   const layoutSlice = getInstanceSlice('layout');
-  return getPanelViewportH(layoutSlice, paneId, layoutSlice.dims);
+  return getPanelViewportH(layoutSlice, paneId, layoutSlice.dims, null, route.resolveViewerPaneId());
 }
 
 /**
@@ -139,7 +139,7 @@ function activateTerminal() {
   if (isSessionDead(id)) {
     // v0.6.4 — size the restarted session to the FOCUSED viewer's
     // CONTAINER pane (resolveViewerPaneId → half/full-correct bounds).
-    const bounds = visibleBoundsFor(getInstanceSlice('layout'), route.resolveViewerPaneId());
+    const bounds = visibleBoundsFor(getInstanceSlice('layout'), route.resolveViewerPaneId(), route.resolveViewerPaneId());
     if (bounds) restartSession(id, bounds.w - 2, bounds.h - 2);
   }
   applyMsg({ type: 'terminal_enter' });
