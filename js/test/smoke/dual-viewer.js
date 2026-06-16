@@ -200,8 +200,11 @@ describe('[8] half view is an API-driven projection — two viewers side-by-side
     // what the old half-view paneBounds held).
     const ls = layoutSlice();
     const map = {};
+    // Thread viewerPaneId so the default half-view right slot resolves — the
+    // leaf can't reach route (§3); mirrors paint.js / input.js callers.
+    const vpid = route.resolveViewerPaneId();
     for (const p of mpool.allPanesInColumns(ls.arrange)) {
-      const b = geo.visibleBoundsFor(ls, p.paneId);
+      const b = geo.visibleBoundsFor(ls, p.paneId, vpid);
       if (b) map[p.paneId] = b;
     }
     return map;
