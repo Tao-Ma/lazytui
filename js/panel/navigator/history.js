@@ -11,14 +11,12 @@
 'use strict';
 
 const { setViewerContent } = require('../nav-state');
-const { getModel } = require('../../model/store');
 const history = require('../../feature/history');
 const mnav = require('../../leaves/nav');
 const {
   esc, theme, renderPanel,
   getSel, getScroll, isMultiSel,
   getItems: apiGetItems,
-  getInstanceSlice, getFocus, instanceKind,
 } = require('../api');
 
 function getItems() { return history.all(); }
@@ -134,13 +132,25 @@ function update(msg, slice) {
   // Phase 4a — nav chrome Msgs handled by the shared leaf.
   if (mnav.isNavMsg(msg)) return mnav.apply(slice, msg);
   if (msg.type !== 'key' || msg.key !== 'return') return slice;
-  if (instanceKind(getFocus()) !== 'history') return slice;
-  const entry = history.all()[getSel('history')];
+  // Pure key arm — all global facts arrive via the Msg + our own slice:
+  // msg.focusKind is threaded by dispatchKeyToFocused; msg.entries is the
+  // captured-run ring buffer (threaded by augmentMsg); the cursor comes from
+  // slice.nav via the nav leaf. (Was instanceKind(getFocus()) + history.all()
+  // + getSel('history') — the last unmigrated navigator key arm.)
+  if (msg.focusKind !== 'history') return slice;
+  const entry = (msg.entries || [])[mnav.cursorOf(slice, 'history')];
   // Claim `return` even with no entry — the framework's run_selected
   // default (viewer_show_info) would just re-render the same Info pane
   // we're already on.
   if (!entry) return [slice, [{ type: '_claimed' }]];
   return [slice, [{ type: 'historyReplay', entry }, { type: '_claimed' }]];
+}
+
+// Msg-enrichment hook (panel/api). Threads the captured-run ring buffer
+// (feature/history — a decentralized state home written by stream.js) so the
+// key arm stays pure of history.all(). Only the key arm reads msg.entries.
+function augmentMsg(msg) {
+  return { ...msg, entries: history.all() };
 }
 
 /** Called from registerComponent after init(). Moving these out of
@@ -163,6 +173,7 @@ module.exports = {
   // v0.6.1 Phase 3 — single-panel Component, nav stores the entry directly.
   init: () => ({ nav: mnav.init() }),
   update,
+  augmentMsg,
   installEffects,
   panelTypes: {
     history: {
