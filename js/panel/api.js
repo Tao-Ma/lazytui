@@ -619,8 +619,10 @@ function _dispatchKeyToFocusedInner(key, seq) {
       focusKind: route.instanceKind(route.getFocus()),
     };
     // blessed-exceptions #3 — thread the Component's model bundle (viewer) so
-    // its key arm + finalizer stay pure of getModel(). See _runInstance.
-    if (comp.augmentMsg) keyMsg = comp.augmentMsg(keyMsg, _m);
+    // its key arm + finalizer stay pure of getModel(). See _runInstance. The
+    // instance's own slice is passed so per-pane Components (files) can resolve
+    // pane-specific facts (its pane def / declared items / filter).
+    if (comp.augmentMsg) keyMsg = comp.augmentMsg(keyMsg, _m, inst.slice);
     const result = comp.update(keyMsg, inst.slice);
     if (result === undefined) return false;
     if (Array.isArray(result)) {
@@ -651,11 +653,12 @@ function _dispatchKeyToFocusedInner(key, seq) {
 function _runInstance(inst, comp, msg) {
   try {
     // blessed-exceptions #3 — optional Msg-enrichment hook. A Component that
-    // needs model-derived facts in its reducer declares augmentMsg(msg, model);
-    // the framework (the impure shell) computes them ONCE here and threads them
-    // into the Msg payload, so the Component's update(msg, slice) stays pure of
-    // getModel(). The viewer uses it to thread its tab-structure bundle.
-    if (comp && comp.augmentMsg) msg = comp.augmentMsg(msg, getModel());
+    // needs model-derived facts in its reducer declares
+    // augmentMsg(msg, model, slice); the framework (the impure shell) computes
+    // them ONCE here and threads them into the Msg payload, so the Component's
+    // update(msg, slice) stays pure of getModel(). The viewer threads its
+    // tab-structure bundle (2-arg); files threads per-pane facts (uses slice).
+    if (comp && comp.augmentMsg) msg = comp.augmentMsg(msg, getModel(), inst.slice);
     const result = comp.update(msg, inst.slice);
     if (result === undefined) return;
     if (Array.isArray(result)) {

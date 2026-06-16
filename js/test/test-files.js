@@ -133,7 +133,11 @@ function makeDriver(paneId = 'files') {
     if (msg.type === 'key' && slice.nav && 'cursor' in slice.nav) {
       slice = { ...slice, nav: { ...slice.nav, cursor: getSel(slice.paneId) } };
     }
-    const result = filesComp._update(msg, slice);
+    // Mirror the framework shell: thread per-pane facts via augmentMsg before
+    // update (panel/api does this in production), so the reducer sees
+    // msg.filesModel without reaching for getModel()/getInstanceSlice().
+    const m = filesComp.augmentMsg(msg, getModel(), slice);
+    const result = filesComp._update(m, slice);
     if (Array.isArray(result)) {
       slice = result[0];
       for (const eff of (result[1] || [])) runEffect(eff);

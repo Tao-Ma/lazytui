@@ -112,14 +112,16 @@ function _source(panel, hardcoded) {
   return (panel && panel.source) || 'filesystem';
 }
 
-function _resolveInitialCwd(panel, source) {
+function _resolveInitialCwd(panel, source, projectDir) {
   // Docker roots are container-side absolute POSIX paths — pass through
   // verbatim (no host-side resolution) or default to '/'.
   if (source === 'docker') {
     if (panel && typeof panel.root === 'string' && panel.root) return panel.root;
     return '/';
   }
-  const base = getModel().projectDir || process.cwd();
+  // `projectDir` is the resolved base, threaded in by augmentMsg (was
+  // getModel().projectDir || process.cwd()) so the reducer stays pure.
+  const base = projectDir;
   if (panel && typeof panel.root === 'string' && panel.root) {
     return path.isAbsolute(panel.root) ? panel.root : path.resolve(base, panel.root);
   }
@@ -163,8 +165,11 @@ const LOADING_ROW = { kind: 'loading', name: 'Loading…', path: null };
  * filesystem/docker rows include dotfiles; the showHidden gate is applied
  * here, so toggling visibility never needs a re-list.
  */
-function _itemsFor(slice, panelType, hardcoded) {
-  const panel = _paneById(slice.paneId);
+// PURE — the filtered item list from the slice + an explicit facts bundle
+// ({ panel, declaredItems, filter }) instead of global reads. The reducer's
+// key arm calls this with msg.filesModel (threaded by augmentMsg).
+function _itemsForFrom(slice, panelType, hardcoded, bundle) {
+  const panel = bundle.panel;
   const source = _source(panel, hardcoded);
   const b = slice.browser || {};
   const showHidden = !!b.showHidden;
@@ -172,9 +177,9 @@ function _itemsFor(slice, panelType, hardcoded) {
 
   let items;
   if (source === 'declared') {
-    items = _declaredItems();
+    items = bundle.declaredItems;
   } else if (source === 'both') {
-    const declared = _declaredItems()
+    const declared = bundle.declaredItems
       .filter(it => showHidden || !path.basename(it.path).startsWith('.'));
     const fsRows = b.items == null ? [LOADING_ROW] : b.items.filter(hideDot);
     items = declared.concat(fsRows);
@@ -187,7 +192,37 @@ function _itemsFor(slice, panelType, hardcoded) {
       items = b.items.filter(hideDot);
     }
   }
-  return _matchesFilter(items, getFilter(slice.paneId));
+  return _matchesFilter(items, bundle.filter);
+}
+
+// Shell/render-side wrapper — reads the live globals. NOT for the reducer:
+// the key arm uses _itemsForFrom(…, msg.filesModel). Used by render() +
+// the `getItems` def option.
+function _itemsFor(slice, panelType, hardcoded) {
+  return _itemsForFrom(slice, panelType, hardcoded, {
+    panel: _paneById(slice.paneId),
+    declaredItems: _declaredItems(),
+    filter: getFilter(slice.paneId),
+  });
+}
+
+// Msg-enrichment hook (panel/api _runInstance / dispatchKeyToFocused). The
+// impure shell computes the per-pane facts the reducer needs — its pane def,
+// the resolved project base, the declared item rows, and the effective filter
+// — so update() stays pure of getModel()/getInstanceSlice()/getFilter().
+// `slice` is THIS instance's slice (paneId-stamped), so multi-pane files
+// resolve independently.
+function augmentMsg(msg, model, slice) {
+  const paneId = slice && slice.paneId;
+  return {
+    ...msg,
+    filesModel: {
+      panel: _paneById(paneId),
+      projectDir: model.projectDir || process.cwd(),
+      declaredItems: _declaredItems(),
+      filter: getFilter(paneId),
+    },
+  };
 }
 
 // --- formatting helpers ---
@@ -356,8 +391,8 @@ function init(paneId) {
 /** Each refresh / navigation produces a fresh load with a bumped seq so a
  *  result from an abandoned cwd (user navigated away mid-flight) is dropped
  *  by the dirLoaded stale guard rather than clobbering the current listing. */
-function _kickLoad(b, panel, source, paneId, container) {
-  const cwd = b.cwd || _resolveInitialCwd(panel, source);
+function _kickLoad(b, panel, source, paneId, container, projectDir) {
+  const cwd = b.cwd || _resolveInitialCwd(panel, source, projectDir);
   const seq = (b.seq || 0) + 1;
   const next = { ...b, cwd, items: null, loading: true, seq, lastError: null };
   const effect = { type: 'loadDir', paneId, source, cwd, container: container || null, seq };
@@ -372,7 +407,8 @@ function update(msg, slice) {
     // periodic loop does not). Broadcast → one update per instance; each
     // re-lists ONLY its own pane (resolved from slice.paneId). declared /
     // both's declared half needs no I/O.
-    const panel = _paneById(slice.paneId);
+    const fm = msg.filesModel || {};
+    const panel = fm.panel;
     if (!panel || !OWNED_TYPES.includes(panel.type)) return slice;
     const hardcoded = _hardcodedFor(panel.type);
     const source = _source(panel, hardcoded);
@@ -384,7 +420,7 @@ function update(msg, slice) {
         lastError: 'source: docker requires `container:` on the panel',
       } }, [{ type: 'render' }]];
     }
-    const { next, effect } = _kickLoad(slice.browser, panel, source, slice.paneId, panel.container);
+    const { next, effect } = _kickLoad(slice.browser, panel, source, slice.paneId, panel.container, fm.projectDir);
     return [{ ...slice, browser: next }, [effect]];
   }
 
@@ -421,16 +457,17 @@ function update(msg, slice) {
  */
 function _handleKey(msg, slice) {
   if (msg.key !== 'return') return slice;
-  // Pure key arm — the key path runs on the FOCUSED instance, so `slice`
-  // is the focused pane's slice and slice.paneId identifies it. Resolve
-  // the pane (source/cwd/container) from it; the cursor comes from
-  // slice.nav via the nav leaf. No getFocus()/getSel() global reads. A
-  // non-owned / unresolved pane falls through to `return slice`.
-  const panel = _paneById(slice.paneId);
+  // Pure key arm — all global facts arrive via msg.filesModel (threaded by
+  // augmentMsg in the shell): the pane def, the declared items, the filter,
+  // the project base. The cursor comes from slice.nav via the nav leaf. No
+  // getFocus()/getSel()/getModel()/getInstanceSlice() reads. A non-owned /
+  // unresolved pane falls through to `return slice`.
+  const fm = msg.filesModel || {};
+  const panel = fm.panel;
   if (!panel || !OWNED_TYPES.includes(panel.type)) return slice;
   const panelType = panel.type;
   const hardcoded = _hardcodedFor(panelType);
-  const item = _itemsFor(slice, panelType, hardcoded)[mnav.cursorOf(slice, panelType)];
+  const item = _itemsForFrom(slice, panelType, hardcoded, fm)[mnav.cursorOf(slice, panelType)];
   // `return` is claimed even when the row resolves to nothing actionable
   // (no item / loading) — the framework default would just call back
   // into the panel with no useful result.
@@ -438,7 +475,7 @@ function _handleKey(msg, slice) {
   if (item.kind === 'parent' || item.kind === 'dir') {
     const source = _source(panel, hardcoded);
     // Navigation forces a fresh cwd, so seed the load directly from item.path.
-    const { next, effect } = _kickLoad({ ...slice.browser, cwd: item.path }, panel, source, slice.paneId, panel.container);
+    const { next, effect } = _kickLoad({ ...slice.browser, cwd: item.path }, panel, source, slice.paneId, panel.container, fm.projectDir);
     return [
       { ...slice, browser: next },
       [effect, { type: 'resetPanelChrome', paneId: slice.paneId }, { type: '_claimed' }],
@@ -609,6 +646,7 @@ module.exports = {
   name: 'files',
   init,
   update,
+  augmentMsg,
   installEffects,
   panelTypes: {
     files:          _makeDef('files', null),
