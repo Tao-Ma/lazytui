@@ -60,9 +60,11 @@ function viewportRows() {
   return Math.max(1, h - 2 - FOOTER_ROWS);
 }
 
-// `now` is threaded from the paint frame (the single frame-clock read) so
-// this render is a pure function of (diag ring buffer, model, now) — Finding A.
-function renderDiagLog(now = Date.now()) {
+// `now` is threaded from the paint frame (model.now — the single frame
+// clock; docs/model-now-tick.md) so this render is a pure function of
+// (diag ring buffer, model, now). No Date.now() default: the one caller
+// (paint.render) always threads model.now; a bare call should fail loudly.
+function renderDiagLog(now) {
   if (!getModel().modes.diagLogMode) return;
   const list = diag.snapshot();              // newest-first
   const d = getModel().modal.diagLog || { cursor: 0, scroll: 0 };

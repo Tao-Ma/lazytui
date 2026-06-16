@@ -159,11 +159,16 @@ describe('[jobs_open] flips jobsMode + resets cursor/scroll', () => {
     let m = _newModel();
     m = { ...m, modal: { ...m.modal, jobs: { cursor: 5, scroll: 3 } } };
     runtime.setModel(m);
-    const [next, cmds] = runtime.update(m, { type: 'jobs_open' });
+    const [next, cmds] = runtime.update(m, { type: 'jobs_open', now: 123 });
     eq(next.modes.jobsMode, true);
     eq(next.modal.jobs.cursor, 0, 'cursor reset');
     eq(next.modal.jobs.scroll, 0, 'scroll reset');
-    eq(cmds.length, 0);
+    // Opening an age overlay seeds model.now + arms the frame clock
+    // (model.now / tick arc — docs/model-now-tick.md).
+    eq(next.now, 123, 'now seeded from msg.now');
+    eq(next.clockArmed, true, 'frame clock armed');
+    eq(cmds.length, 1);
+    eq(cmds[0].type, 'arm_clock');
   });
   it('idempotent — opening when already open is a no-op', () => {
     let m = _newModel();
@@ -189,6 +194,38 @@ describe('[jobs_close] flips jobsMode off; idempotent', () => {
     runtime.setModel(m);
     const [next, cmds] = runtime.update(m, { type: 'jobs_close' });
     assert(next === m, 'same ref');
+  });
+});
+
+describe('[clock_tick] gated frame clock (model.now / tick arc)', () => {
+  it('advances model.now from msg.now + re-arms while an age overlay is open', () => {
+    let m = _newModel();
+    m = { ...m, modes: { ...m.modes, jobsMode: true }, clockArmed: true };
+    runtime.setModel(m);
+    const [next, cmds] = runtime.update(m, { type: 'clock_tick', now: 5000 });
+    eq(next.now, 5000, 'now advanced');
+    eq(next.clockArmed, true, 'stays armed');
+    eq(cmds.length, 1, 're-armed');
+    eq(cmds[0].type, 'arm_clock');
+  });
+  it('lapses (clockArmed→false, no re-arm) when no age overlay is open', () => {
+    let m = _newModel();
+    m = { ...m, clockArmed: true };   // both overlays closed
+    runtime.setModel(m);
+    const [next, cmds] = runtime.update(m, { type: 'clock_tick', now: 6000 });
+    eq(next.now, 6000, 'now still advances on the final tick');
+    eq(next.clockArmed, false, 'disarmed — loop lapses');
+    eq(cmds.length, 0, 'no re-arm');
+  });
+  it('re-open while a tick is still pending does not double-arm', () => {
+    // clockArmed already true (pending tick) → jobs_open adds no arm_clock.
+    let m = _newModel();
+    m = { ...m, clockArmed: true };
+    runtime.setModel(m);
+    const [next, cmds] = runtime.update(m, { type: 'jobs_open', now: 1 });
+    eq(next.modes.jobsMode, true);
+    eq(next.clockArmed, true);
+    eq(cmds.length, 0, 'no second arm_clock — the pending tick re-arms');
   });
 });
 

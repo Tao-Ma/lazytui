@@ -645,14 +645,16 @@ function renderTerminalOverlay(model = getModel(), arrangeOverride) {
   stdout.write(out);
 }
 
-// `now` is the frame-clock boundary read — the render analog of the
-// dispatcher's `msg.now`. Read ONCE here (default arg) and threaded into the
-// age-displaying overlays (jobs/diag) so THEIR render fns are pure of
-// wall-clock: render(model, now) is a pure function of its inputs, and a
-// replay/snapshot test can pass a fixed `now` for deterministic output
-// (blessed-exceptions Finding A). The argless production call advances age
-// naturally per frame.
-function render(model = getModel(), now = Date.now()) {
+// `now` is the frame clock for the age-displaying overlays (jobs/diag),
+// read from `model.now` — NOT Date.now(). model.now is advanced by the
+// gated `clock_tick` reducer arm (docs/model-now-tick.md), so render() is a
+// pure function of the model and thus of the Msg log: replaying the same log
+// reproduces byte-identical frames. (Previously a Date.now() default here —
+// blessed exception D — made the frame depend on ambient wall-clock,
+// the one read that blocked deterministic render replay.) Threaded into the
+// overlay render fns so THEY stay pure of the clock too.
+function render(model = getModel()) {
+  const now = model.now;
   // `model` is the TEA root model (js/app/runtime.js), threaded in by the
   // owner (the program). The view reads migrated slices (currently
   // `viewMode`) from this param, not a global fetch. The `= getModel()`

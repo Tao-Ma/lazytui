@@ -101,9 +101,11 @@ function viewportRows() {
   return Math.max(1, h - 2 - HEADER_ROWS - FOOTER_ROWS);
 }
 
-// `now` is threaded from the paint frame (the single frame-clock read) so
-// this render is a pure function of (jobs registry, model, now) — Finding A.
-function renderJobsOverlay(now = Date.now()) {
+// `now` is threaded from the paint frame (model.now — the single frame
+// clock; docs/model-now-tick.md) so this render is a pure function of
+// (jobs registry, model, now). No Date.now() default: the one caller
+// (paint.render) always threads model.now; a bare call should fail loudly.
+function renderJobsOverlay(now) {
   if (!getModel().modes.jobsMode) return;
   const list = jobs.list();
   const j = getModel().modal.jobs || { cursor: 0, scroll: 0 };

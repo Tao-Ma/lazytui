@@ -169,6 +169,22 @@ function installBuiltins() {
     }, eff.ms);
     if (t && typeof t.unref === 'function') t.unref();
   });
+  // arm_clock: the frame-clock tick (model.now / tick arc —
+  // docs/model-now-tick.md). Unlike the generic `tick` (which re-dispatches
+  // a verbatim Msg), this reads the wall clock HERE in the impure shell
+  // (sanctioned — blessed exception C) and applyMsg's a `clock_tick` carrying
+  // the FRESH `now`, so the render path can drop its own Date.now(). It's a
+  // ROOT-reducer Msg → applyMsg, not api.dispatchMsg. The clock_tick arm
+  // re-emits this Cmd while an age overlay stays open; `unref` so a pending
+  // tick never holds the process open (clean teardown on quit + in tests).
+  registerEffect('arm_clock', (eff) => {
+    const ms = (eff && typeof eff.ms === 'number') ? eff.ms : 1000;
+    const t = setTimeout(() => {
+      try { require('./dispatch').applyMsg({ type: 'clock_tick', now: Date.now() }); }
+      catch (_) { /* registry gone */ }
+    }, ms);
+    if (t && typeof t.unref === 'function') t.unref();
+  });
 
   // --- Root-reducer Cmds ---
   // Emitted by `runtime.update` branches; run from `dispatch.applyMsg` via
