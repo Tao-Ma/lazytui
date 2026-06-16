@@ -18,7 +18,7 @@
 
 const { RESET, richToAnsi, esc, visibleLen, wrapColor } = require('../io/ansi');
 const { stdout } = require('../io/term');
-const { multiSelCount } = require('../app/state');
+const { multiSelCount } = require('../panel/nav-state');
 const { theme } = require('./themes');
 const { truncate, viewportDims } = require('./panel');
 const { isTerminalTab, activeTerminalId, activeTerminalConfig,

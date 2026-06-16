@@ -23,7 +23,13 @@ const route = require('../panel/route');
 const { esc, visibleLen, stripMarkup, wrapColor } = require('../io/ansi');
 const { theme } = require('../render/themes');
 const { renderPanel } = require('../render/panel');
-const { getSel, getScroll, isMultiSel, syncPanelScroll } = require('../app/state');
+// Panel-state accessors live in ./nav-state (v0.6.5 §1 Phase 2). api uses
+// syncPanelScroll (its per-dispatch finalizer clamps each pane) and re-exports
+// the nav readers + composites as part of its Component-facing surface (the
+// navigator Components read them from here). The nav-state writers require api
+// back lazily, so this top-level edge is one-directional (api → nav-state).
+const { getSel, getScroll, isMultiSel, syncPanelScroll,
+        selectedOrFocused, infoLinesFromFocus } = require('./nav-state');
 const { getModel } = require('../model/store');
 const mnav = require('../leaves/nav');
 const geo = require('../leaves/geometry');
@@ -740,34 +746,9 @@ function getItems(panelType) {
   return raw.filter(item => fieldOf(item).toLowerCase().includes(lc));
 }
 
-/**
- * Resolve the focused Navigator's selected-item info lines, or null when
- * the focused pane has no getInfo / no selection (the caller should skip
- * its viewer_show_info dispatch — same net effect as the old arm-side
- * bail). viewer-lines-selector P0: this is the dispatcher-side compute
- * that `dispatch.showSelectedInfo` threads as `msg.lines`, so the
- * viewer_show_info reducer arm stays pure of plugin reads (the v0.7
- * candidate noted at the old viewer._infoFromFocus).
- */
-function infoLinesFromFocus() {
-  const focus = getFocus();
-  const def = getPanelDef(focus);
-  if (!def || typeof def.getItems !== 'function' || typeof def.getInfo !== 'function') return null;
-  const items = getItems(focus);
-  const item = items[getSel(focus)];
-  if (!item) return null;
-  // Thread the focused paneId so a multi-panelType Component (files)
-  // reads THIS pane's browser/config. Arity-ignored by single-panel defs.
-  const out = def.getInfo(item, focus);
-  // P4 review fix — EMPTY getInfo output returns [] (not null): the old
-  // arm yanked to Info whenever def+item existed without inspecting the
-  // content, so the dispatch (and yank) must still happen for an
-  // empty-info item; only no-def/no-selection skips. (Old display then
-  // showed STALE previous content via the slice.lines fixed point;
-  // blank is the honest rendering.)
-  if (!out || !out.length) return [];
-  return out.join('\n').split('\n');
-}
+// infoLinesFromFocus + selectedOrFocused relocated to ./nav-state (v0.6.5
+// §1 Phase 2) — they read the nav chrome (getSel/multiSel), so they belong
+// with the other panel-state accessors. Callers import them from nav-state.
 
 /**
  * Fan a `refresh` Msg out to every Component's update(). Components that
@@ -868,27 +849,6 @@ function idOf(panelType, item) {
   return String(item);
 }
 
-/**
- * Bulk-operation operand resolver. Returns an array:
- *   - all multi-selected items in the panel, if any
- *   - else the single focused item (single-element array)
- *   - else []
- *
- * Bulk-capable Component commands call this with their panelType and act
- * on the result — same code path for one and many. See CMDMODE.md.
- */
-function selectedOrFocused(panelType) {
-  const items = getItems(panelType);
-  // nav chrome lives on the owning Component's slice — use the state.js
-  // helpers so this stays in lockstep with how renderers and navigation
-  // read the same values.
-  const state = require('../app/state');
-  const sel = state.getSel(panelType);
-  if (state.multiSelCount(panelType) > 0) {
-    return items.filter(item => state.isMultiSel(panelType, idOf(panelType, item)));
-  }
-  return items[sel] ? [items[sel]] : [];
-}
 
 /**
  * Collect commands for `:` cmdline mode (framework verbs + Component
@@ -963,7 +923,7 @@ module.exports = {
   theme,
   // panel
   renderPanel,
-  // state (read helpers — Components write via wrapped Msgs into their own slice)
+  // nav-state (read helpers — Components write via wrapped Msgs into their own slice)
   getSel, getScroll, isMultiSel,
   // filter
   getFilter, filterCurrentText,

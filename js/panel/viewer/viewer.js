@@ -257,7 +257,7 @@ function _infoFromFocus() {
   // when item info changes without a show_selected_info — the same
   // window slice.lines had (the viewer finalizer never ran on other
   // Components' Msgs either).
-  return require('../api').infoLinesFromFocus();
+  return require('../nav-state').infoLinesFromFocus();
 }
 
 // P0 — content equality for info payloads (length + per-line ===).

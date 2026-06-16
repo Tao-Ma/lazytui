@@ -21,18 +21,14 @@ const path = require('path');
 const { setTheme } = require('../render/themes');
 const { getModel } = require('../model/store');
 const { rebuildLayoutFromConfig } = require('../leaves/arrange');
+// Panel-state accessors (readers/writers/composites) moved to
+// panel/nav-state.js in v0.6.5 §1 Phase 2. This module keeps the boot layer
+// (loadConfig/initState) + the two dispatch-layer group helpers
+// (selectGroup/resetGroupContext) and RE-EXPORTS the accessors below so
+// existing `require('../app/state')` importers (notably the test suite) keep
+// working untouched; new code imports them from panel/nav-state directly.
+const navState = require('../panel/nav-state');
 
-// Memoized module refs for the nav hot path (_resolvePanelType /
-// _navEntry / _navDispatch — getSel/getScroll ride them on every
-// keystroke AND, since resize-as-Msg P2, every dispatch via the
-// finalizer). They must stay lazy (state ↔ panel/api load cycle), but
-// a bare require() per call re-RESOLVES the path — ~35μs of fs stats
-// per call on containerized filesystems (Node's stat cache only spans
-// startup), measured 1000× the actual lookup work. Resolve once at
-// first call, after the cycle has settled.
-let _apiRef = null, _routeRef = null;
-function _api()      { return _apiRef   || (_apiRef   = require('../panel/api')); }
-function _routeMod() { return _routeRef || (_routeRef = require('../panel/route')); }
 
 // v0.6.4 Phase D — declared hub subscriptions, wired at MOUNT (the
 // per-pane mint loop in initState), not lazily from a Component's
@@ -264,7 +260,7 @@ function initState() {
   // Rebuild the visible group list from config, then seed currentGroup
   // from the first visible row. recomputeGroups dispatches into the
   // groups Component; set_current_group rides through the root reducer.
-  recomputeGroups();
+  navState.recomputeGroups();
   const groupsAfter = _groupsSlice();
   const firstName = groupsAfter.list.length ? groupsAfter.list[0].name : '';
   require('../dispatch/dispatch').applyMsg({ type: 'set_current_group', name: firstName });
@@ -297,119 +293,6 @@ function initState() {
   }
 }
 
-function allPanels() {
-  const slice = _layoutSlice();
-  if (!slice) return [];
-  return require('../leaves/pool').allPanesInColumns(slice.arrange);
-}
-
-// --- Group tree (flatten + expand/collapse) ---
-//
-// The groups Component owns the tree slice + cascade logic. These wrappers
-// dispatch the right Msgs — slice mutations go through the Component's
-// update, and the cross-layer cascade Cmds (set_current_group /
-// reset_group_context / viewer_reset_chrome) fire as a consequence.
-// Kept here as named exports so non-reducer callers (mouse, recursive `"`
-// expand, tests) have a stable surface.
-// v0.6.3 Phase D1: thread the groupsBundle (+ paneMenuMode for the
-// cascade-emit case) so the reducer arms stay pure of getModel().
-function _groupsCtx() {
-  const groupsComp = require('../panel/navigator/groups');
-  const m = getModel();
-  return { ...groupsComp.groupsBundle(m), paneMenuMode: !!m.modes.paneMenuMode };
-}
-
-function recomputeGroups() {
-  const api = require('../panel/api');
-  api.dispatchMsg(api.wrap('groups', { type: 'groups_recompute', ctx: _groupsCtx() }));
-}
-function switchGroupsTab(/* tab */) {
-  // toggle_groups_tab flips All↔Quick (the only transition we use today);
-  // explicit-target setters belong to the Component if ever needed.
-  const api = require('../panel/api');
-  api.dispatchMsg(api.wrap('groups', { type: 'toggle_groups_tab', ctx: _groupsCtx() }));
-}
-function expandGroup(path, recursive = false) {
-  const api = require('../panel/api');
-  api.dispatchMsg(api.wrap('groups', { type: 'toggle_group', name: path, recursive, ctx: _groupsCtx() }));
-}
-function collapseGroup(path, recursive = false) {
-  const api = require('../panel/api');
-  api.dispatchMsg(api.wrap('groups', { type: 'toggle_group', name: path, recursive, ctx: _groupsCtx() }));
-}
-
-// Nav chrome (cursor / scroll / multiSel / filter) lives on each
-// Navigator Component's slice — single-panel Components store the
-// entry directly at `slice.nav`, multi-panel keep `slice.nav[panel]`.
-// The helpers walk panel-type → owning Component → entry; shape
-// detection is the `leaves/nav` reader.
-
-const mnav = require('../leaves/nav');
-
-// v0.6.3 post-arch-arc T3.5 — canonical dual-input resolver:
-// accepts panel-type (production renderers, direct callers) or
-// paneId (post-B3 `getFocus()` consumers). Returns panel-type
-// (the form mnav.entryOf / Component.update use for keying).
-// Single-panel Components don't differentiate (slice.nav is a flat
-// entry); multi-panel Components (docker) need the type form to
-// find the right nav[panelType] entry.
-function _resolvePanelType(id) {
-  // Delegates to route.paneTypeOf — accepts paneId or panel-type and
-  // returns the panel-type form. Single canonical resolver across
-  // the codebase.
-  return _routeMod().paneTypeOf(id) || id;
-}
-
-function _navEntry(id) {
-  const api = _api();
-  const panelType = _resolvePanelType(id);
-  const compName = api.getComponentOwningPanel(panelType);
-  if (!compName) return null;
-  // v0.6.4 Theme A Phase 5 — read THIS pane's own nav entry. sliceForPane
-  // resolves `id` (paneId) → its own instance; falls back to compName's
-  // primary for docker-style panes + legacy kind-name callers. entryOf
-  // keys by panelType within the slice (multi-panel Components like files).
-  return mnav.entryOf(api.sliceForPane(id, compName), panelType);
-}
-
-function _navDispatch(id, msg) {
-  const api = _api();
-  const route = _routeMod();
-  const panelType = _resolvePanelType(id);
-  const compName = api.getComponentOwningPanel(panelType);
-  if (!compName) return;
-  // v0.6.4 Theme A Phase 5 — route the write to THIS pane's instance
-  // when `id` is a live paneId (so setSel/setScroll/multisel land on the
-  // pane the user is acting on, not the kind's primary); else the
-  // kind/Component name (docker-style panes + legacy callers route to
-  // primary). `panel: panelType` still keys nav[panelType] inside
-  // multi-panel Components (files). No-op under single-pane configs.
-  const target = route.hasInstance(id) ? id : compName;
-  api.dispatchMsg(api.wrap(target, { ...msg, panel: panelType }));
-}
-
-/** Get selection index for a panel type (default 0). */
-function getSel(panelType) { const e = _navEntry(panelType); return e ? e.cursor : 0; }
-
-/** Set selection index for a panel type. */
-function setSel(panelType, idx) { _navDispatch(panelType, { type: 'set_cursor', index: idx | 0 }); }
-
-/** Get scroll offset for a panel type (default 0). */
-function getScroll(panelType) { const e = _navEntry(panelType); return e ? e.scroll : 0; }
-
-/** Set scroll offset for a panel type. */
-function setScroll(panelType, offset) { _navDispatch(panelType, { type: 'set_scroll', offset: offset | 0 }); }
-
-/**
- * Sync scroll offset so the selected item is visible within innerH rows.
- * Scrolls down if selection is past the viewport bottom; scrolls up if above.
- */
-function syncPanelScroll(panelType, innerH) {
-  const sel = getSel(panelType);
-  const scroll = getScroll(panelType);
-  if (sel >= scroll + innerH) setScroll(panelType, sel - innerH + 1);
-  else if (sel < scroll) setScroll(panelType, sel);
-}
 
 /**
  * Reset the per-group transient UI state. Called when the user navigates
@@ -446,110 +329,22 @@ function selectGroup(idx) {
   require('../dispatch/dispatch').navSelect('groups', idx);
 }
 
-function setViewerContent(tabId, text, opts) {
-  // viewer_set_content REPLACES the body — single-writer for producers
-  // that show a discrete document (history replay, config-status diff,
-  // help text, Running-overlay job info). For ephemeral event/status
-  // messages (spawn-status, cmdline outcomes), use appendViewerLines
-  // below — that path accumulates into viewerStreamBuffer and survives
-  // tab switches.
-  //
-  // `tabId` is the producer-side address. When null, the destination
-  // resolves via route.resolveTarget('viewer') (focused viewer-kind
-  // tab / sticky lastViewerTab / first in arrange / any / null).
-  //
-  // `opts.tab` (v0.6.2 R6) lets the caller land on a specific tab in
-  // the SAME dispatch — e.g. history.replay parks on Info so the
-  // override paints with a clear home tab. Without opts.tab the
-  // tab idx is left unchanged (the override paints regardless via
-  // viewerLines's precedence chain).
-  if (tabId == null) {
-    const route = require('../panel/route');
-    tabId = route.resolveTarget('viewer');
-    if (tabId == null) return;   // no viewer registered — drop the write
-  }
-  const api = require('../panel/api');
-  // v0.6.3 Phase D1 — thread root facts the viewer_set_content arm
-  // needs so the reducer stays pure of getModel():
-  //   currentGroup, fromTabKey (the FROM-tab key for view-state
-  //   capture), total (when msg.tab is set, for the in-range clamp).
-  const slice = api.getInstanceSlice(tabId) || { tab: 0 };
-  const model = getModel();
-  const pt = require('../leaves/pane-tabs');
-  const inner = {
-    type: 'viewer_set_content',
-    lines: text ? text.split('\n') : [],
-    currentGroup: model.currentGroup,
-    fromTabKey: pt.resolveTabKey((slice.tab | 0), slice, model),
-  };
-  if (opts && typeof opts.tab === 'number') {
-    inner.tab = opts.tab | 0;
-    inner.total = pt.flatTabInfo(slice, model, model.currentGroup).total;
-  }
-  api.dispatchMsg(api.wrap(tabId, inner));
-}
-
-/**
- * Append an event/status message to the viewer's unrouted accumulator
- * (`slice.viewerStreamBuffer`) — the same buffer streamed `type:run`
- * output writes to. Use this for ephemeral "user did X" lines —
- * spawn/background launch confirmations, cmdline verb outcomes —
- * where the message should join the transcript instead of clobbering
- * whatever tab is currently showing.
- *
- * The dispatch is unrouted (`viewer_append_lines` with no tabKey) —
- * the lines accumulate in viewerStreamBuffer and display on the
- * Transcript tab (P3: the slice.lines mirror is gone; display always
- * derives from the buffer).
- *
- * v0.6.2 fix — pre-fix `setViewerContent` was used for these messages
- * too, and clobbered whatever tab the user was on (not just Info).
- */
-function appendViewerLines(text) {
-  if (!text) return;
-  const route = require('../panel/route');
-  const tabId = route.resolveTarget('viewer');
-  if (tabId == null) return;
-  const lines = text.split('\n');
-  if (!lines.length) return;
-  const api = require('../panel/api');
-  api.dispatchMsg(api.wrap(tabId, { type: 'viewer_append_lines', lines }));
-}
-
-// --- Multi-select (bulk-operation operand) ---
-//
-// Each Navigator's `slice.nav[panelType].multiSel` is a Set of stable
-// item IDs. Identity comes from each panelType's `idOf(item)`
-// (panel/api.js#idOf), so selections are robust to filtering and
-// re-sorting — you select a thing, not a position. Writes go through
-// wrapped Msgs (multisel_toggle / multisel_select_all / multisel_clear)
-// so each Component owns its own multiSel Set.
-
-function toggleMultiSel(panelType, itemId) {
-  _navDispatch(panelType, { type: 'multisel_toggle', id: itemId });
-}
-
-function isMultiSel(panelType, itemId) {
-  const e = _navEntry(panelType);
-  return !!(e && e.multiSel.has(itemId));
-}
-
-function clearMultiSel(panelType) {
-  _navDispatch(panelType, { type: 'multisel_clear' });
-}
-
-function multiSelCount(panelType) {
-  const e = _navEntry(panelType);
-  return e ? e.multiSel.size : 0;
-}
 
 module.exports = {
-  loadConfig, initState,
-  allPanels, selectGroup, resetGroupContext, setViewerContent, appendViewerLines,
-  getSel, setSel, getScroll, setScroll, syncPanelScroll,
-  toggleMultiSel, isMultiSel, clearMultiSel, multiSelCount,
-  expandGroup, collapseGroup, recomputeGroups, switchGroupsTab,
+  // Boot layer + dispatch-layer group helpers, defined here.
+  loadConfig, initState, selectGroup, resetGroupContext,
   // v0.6.4 Phase D — exposed for tests: the declared-subscription wiring
   // seam + its dedup-ledger reset.
   _wireSubscriptions, _resetSubscriptions,
+  // Panel-state accessors — re-exported from panel/nav-state for back-compat
+  // (§1 Phase 2). New code should import these from panel/nav-state.
+  allPanels: navState.allPanels,
+  getSel: navState.getSel, setSel: navState.setSel,
+  getScroll: navState.getScroll, setScroll: navState.setScroll,
+  syncPanelScroll: navState.syncPanelScroll,
+  toggleMultiSel: navState.toggleMultiSel, isMultiSel: navState.isMultiSel,
+  clearMultiSel: navState.clearMultiSel, multiSelCount: navState.multiSelCount,
+  expandGroup: navState.expandGroup, collapseGroup: navState.collapseGroup,
+  recomputeGroups: navState.recomputeGroups, switchGroupsTab: navState.switchGroupsTab,
+  setViewerContent: navState.setViewerContent, appendViewerLines: navState.appendViewerLines,
 };

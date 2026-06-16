@@ -15,7 +15,7 @@
  */
 'use strict';
 
-const { getSel } = require('../app/state');
+const { getSel } = require('../panel/nav-state');
 const { getModel } = require('../model/store');
 const { stripMarkup, esc } = require('../io/ansi');
 const {getPanelDef, getItems, getInstanceSlice, getFocus } = require('../panel/api');

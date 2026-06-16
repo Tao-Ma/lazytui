@@ -11,7 +11,7 @@
  */
 'use strict';
 
-const { allPanels, selectGroup, setSel, getSel, getScroll } = require('../app/state');
+const { allPanels, setSel, getSel, getScroll } = require('../panel/nav-state');
 const { visibleBoundsFor, getPanelViewportH } = require('../leaves/geometry');
 const { render } = require('../render/paint');
 const { getModel } = require('../model/store');
@@ -140,7 +140,9 @@ function _handleWheel(mx, my, delta) {
       if (mpane.paneMatchesFocus(p, getFocus())) {
         navSelect(p.paneId, next);
       } else if (p.type === 'groups') {
-        selectGroup(next);
+        // selectGroup(next) inlined — it was just navSelect('groups', …)
+        // (v0.6.5 §1 Phase 2; navSelect already imported above).
+        navSelect('groups', next);
       } else {
         setSel(p.paneId, next);
       }

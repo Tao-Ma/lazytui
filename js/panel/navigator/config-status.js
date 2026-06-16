@@ -499,7 +499,7 @@ function installEffects(registerEffect) {
     });
   });
   registerEffect('cfgStatusDiff', (eff) => {
-    const { setViewerContent } = require('../../app/state');
+    const { setViewerContent } = require('../nav-state');
     setViewerContent(null, diffFor(eff.item, eff.branch, eff.projectDir || '.').join('\n'));
   });
 }

@@ -21,7 +21,7 @@
  */
 'use strict';
 
-const { allPanels, getSel, switchGroupsTab, multiSelCount } = require('../app/state');
+const { allPanels, getSel, switchGroupsTab, multiSelCount } = require('../panel/nav-state');
 const { render } = require('../render/paint');
 const { getPanelDef, getItems, idOf, getInstanceSlice,
        getComponentOwningPanel, dispatchMsg, dispatchKeyToFocused, wrap, getFocus,
@@ -82,7 +82,7 @@ const intent = require('./intent');
 function showSelectedInfo(paneId) {
   const target = paneId || route.resolveTarget('viewer');
   if (!target) return;
-  const lines = require('../panel/api').infoLinesFromFocus();
+  const lines = require('../panel/nav-state').infoLinesFromFocus();
   if (lines == null) return;
   dispatchMsg(wrap(target, { type: 'viewer_show_info', lines }));
 }

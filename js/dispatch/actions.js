@@ -22,7 +22,7 @@
  */
 'use strict';
 
-const { allPanels, getSel } = require('../app/state');
+const { allPanels, getSel } = require('../panel/nav-state');
 const { getPanelViewportH, visibleBoundsFor } = require('../leaves/geometry');
 const { runAction } = require('./action-runner');
 const { getPanelDef, getItems, getMergedActions, getInstanceSlice,

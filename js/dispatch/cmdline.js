@@ -11,7 +11,7 @@
  */
 'use strict';
 
-const { allPanels } = require('../app/state');
+const { allPanels } = require('../panel/nav-state');
 const { getModel } = require('../model/store');
 const { esc } = require('../io/ansi');
 const { getCommands, getItems: apiGetItems, dispatchMsg, wrap } = require('../panel/api');
