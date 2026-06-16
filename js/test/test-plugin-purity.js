@@ -14,7 +14,7 @@
 
 const { describe, it, assert, eq, report } = require('./test-runner');
 const guard = require('../panel/plugin-guard');
-const diag = require('../dispatch/diag-log');
+const diag = require('../io/diag-log');
 
 function fresh() { diag.clear(); guard.reset(); }
 function warnCodes() { return diag.snapshot().map(e => e.code); }

@@ -277,7 +277,7 @@ function _strictMiss(fn, id) {
   if (_primaryByKind[id] === undefined || _warnedStrict.has(id)) return;
   _warnedStrict.add(id);
   try {
-    require('../dispatch/diag-log').warn('strict-miss',
+    require('../io/diag-log').warn('strict-miss',
       `${fn}('${id}') is a kind name, not an instance id — thread a paneId, or declare kind-level intent via primarySliceOf/serviceSlice.`);
   } catch (_) { /* diag-log unavailable (early boot / test) */ }
 }

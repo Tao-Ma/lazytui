@@ -34,7 +34,7 @@ const { getModel } = require('../model/store');
 const mnav = require('../leaves/nav');
 const geo = require('../leaves/geometry');
 const mpool = require('../leaves/pool');
-const { execAsync } = require('../app/exec');
+const { execAsync } = require('../io/exec');
 
 /**
  * Active filter text for a panel. While in filter mode, the live
@@ -653,9 +653,9 @@ function _runInstance(inst, comp, msg) {
 // event log. The console.error above is invisible while the TUI is
 // drawing (the next render paints over it); the event log file is the
 // only place a thrown Component update is inspectable post-mortem.
-// Lazy-require avoids a panel/api ↔ dispatch/event-log cycle.
+// event-log is a bottom-layer io/ sink; required here in the error path.
 function _recordError(payload) {
-  try { require('../dispatch/event-log').record('error', payload); }
+  try { require('../io/event-log').record('error', payload); }
   catch (_) { /* event-log unavailable — already logged to console */ }
 }
 
@@ -760,7 +760,7 @@ async function refreshAll() {
   // Event log (PRINCIPLES.md §11). One record per tick — payload
   // empty because the tick itself is the input event; each
   // Component's refresh-Msg side-effects are responses.
-  require('../dispatch/event-log').record('refresh', null);
+  require('../io/event-log').record('refresh', null);
   dispatchMsg({ type: 'refresh' });
 }
 

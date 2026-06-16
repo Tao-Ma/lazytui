@@ -11,7 +11,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { describe, it, eq, assert, report } = require('./test-runner');
-const log = require('../dispatch/event-log');
+const log = require('../io/event-log');
 
 describe('[1] basic ring buffer', () => {
   log.clear();

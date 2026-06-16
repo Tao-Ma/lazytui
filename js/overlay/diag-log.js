@@ -1,7 +1,7 @@
 /**
  * Diagnostics window — opened with `leader e`.
  *
- * Centered modal listing every WARNING / ERROR in dispatch/diag-log.js,
+ * Centered modal listing every WARNING / ERROR in io/diag-log.js,
  * newest at top. Read at frame time (no snapshot pinned at open) so a
  * diagnostic that arrives while the window is open shows up live.
  * Cursor + scroll live in model.modal.diagLog.
@@ -29,7 +29,7 @@
 const { esc } = require('../io/ansi');
 const { renderOverlay, viewportDims } = require('../render/panel');
 const { getModel } = require('../model/store');
-const diag = require('../dispatch/diag-log');
+const diag = require('../io/diag-log');
 
 const MAX_W = 90;
 const FOOTER_ROWS = 2;   // blank + hint

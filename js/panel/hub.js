@@ -94,7 +94,7 @@ function publish(topic, rowKey, sample) {
   // the retention/dedup branches so the recording reflects every
   // publish call as the producer saw it — even ones that the hub
   // drops because no subscribers ask for the topic.
-  require('../dispatch/event-log').record('publish', { topic, rowKey, sample });
+  require('../io/event-log').record('publish', { topic, rowKey, sample });
   // Component Msg dispatch (v0.3.0). Hub publishes fan out to every
   // Component's update() as a 'hub' Msg.
   require('./api').dispatchMsg({ type: 'hub', topic, rowKey, sample });

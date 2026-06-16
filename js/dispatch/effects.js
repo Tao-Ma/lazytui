@@ -55,7 +55,7 @@ function runEffects(effects) {
 // invisible to anyone trying to debug from a recorded session.
 // Lazy-require keeps effects.js dep-light + importable from tests.
 function _recordError(payload) {
-  try { require('./event-log').record('error', payload); }
+  try { require('../io/event-log').record('error', payload); }
   catch (_) { /* event-log unavailable — already logged to console */ }
   // Also surface in the diagnostics window (leader e) — event-log is the
   // replay firehose (evicted fast); diag-log persists errors for review.
@@ -65,7 +65,7 @@ function _recordError(payload) {
     const msg = payload && payload.where && payload.effectType
       ? `${payload.where}: '${payload.effectType}' ${detail || ''}`.trim()
       : (detail || code);
-    require('./diag-log').error(code, msg);
+    require('../io/diag-log').error(code, msg);
   } catch (_) { /* diag-log unavailable */ }
 }
 
@@ -144,10 +144,10 @@ function installBuiltins() {
   // diag_log_save reducer arms emit these rather than touching the
   // imperative diag-log buffer themselves.
   registerEffect('diag_clear', () => {
-    try { require('./diag-log').clear(); } catch (_) {}
+    try { require('../io/diag-log').clear(); } catch (_) {}
   });
   registerEffect('diag_save', () => {
-    try { require('./diag-log').save(); }
+    try { require('../io/diag-log').save(); }
     catch (e) { _recordError({ where: 'diag_save', kind: 'throw', message: e && e.message }); }
   });
   // destroy_pty_session: PTY teardown from the viewer-tab lifecycle (closing

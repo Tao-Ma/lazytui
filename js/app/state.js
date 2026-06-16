@@ -280,8 +280,8 @@ function initState() {
   // so the footer paints "⚠ N config warning(s)" until dismissed.
   const warnings = Array.isArray(config.warnings) ? config.warnings : [];
   if (warnings.length > 0) {
-    const log = require('../dispatch/event-log');
-    const diag = require('../dispatch/diag-log');
+    const log = require('../io/event-log');
+    const diag = require('../io/diag-log');
     for (const w of warnings) {
       log.record('warning', { code: w.code, message: w.message });
       diag.warn(w.code || 'config', w.message);

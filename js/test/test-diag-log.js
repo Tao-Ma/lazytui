@@ -5,7 +5,7 @@
  */
 'use strict';
 
-const diag = require('../dispatch/diag-log');
+const diag = require('../io/diag-log');
 const route = require('../panel/route');
 const { update } = require('../app/runtime');
 const { describe, it, assert, eq, report } = require('./test-runner');
