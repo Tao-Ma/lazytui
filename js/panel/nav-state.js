@@ -24,6 +24,12 @@
  *     is required lazily here (cached once in `_api()`), so the TOP-LEVEL
  *     import graph stays acyclic and honest. This is an intra-panel edge, not
  *     the cross-layer cycle §1 targets.
+ *
+ *     Caching the ref is safe only because no WRITER runs during the require
+ *     cycle: every `_api()` caller is a runtime (dispatch-time) writer, by
+ *     which point `panel/api`'s `module.exports = {…}` has fully executed.
+ *     A writer invoked at LOAD time would cache a pre-reassignment ref and
+ *     go permanently stale — so keep nav-state writers off the boot path.
  */
 'use strict';
 

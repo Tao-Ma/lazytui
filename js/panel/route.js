@@ -151,13 +151,16 @@ const _instances = Object.create(null);
 const _primaryByKind = Object.create(null);
 
 // Monotonic version of the instance SET (ids + their kinds), bumped on
-// every add/replace/dispose. resolveTarget / resolveViewerPaneId memoize
-// on this (their tier-4 scan reads the set) plus the layout slice's
-// focus/lastViewerTab/arrange — see the memo at resolveTarget. Mutating
-// an existing instance's slice (setInstanceSlice, the per-Msg viewer
-// append) does NOT bump it, so the memo stays valid across streamed
-// appends — the whole point. Over-bumping only forces a recompute; it's
-// never incorrect, so bump generously rather than reason finely.
+// every add/dispose (and setService). resolveTarget / resolveViewerPaneId
+// memoize on this (their tier-4 scan reads the set) plus the layout slice's
+// focus/lastViewerTab/arrange — see the memo at resolveTarget. Mutating an
+// existing instance's slice (setInstanceSlice, the per-Msg viewer append;
+// and setInstance's in-place re-write) does NOT bump it — the set is
+// unchanged and resolution never reads slice content, so the memo stays
+// valid across streamed appends, which is the whole point. Over-bumping
+// only forces a recompute (never incorrect), so the remaining bumps stay
+// generous rather than finely reasoned; we just don't bump where the set
+// provably didn't change.
 let _instVer = 0;
 // Memo cells for resolveTarget / resolveViewerPaneId (defined far below).
 // Keyed on (intent, focus, lastViewerTab, arrange-ref, _instVer) — every
@@ -171,7 +174,6 @@ let _rtMemo = null;
 let _rvpMemo = null;
 
 function setInstance(id, kind, slice) {
-  _instVer++;
   const existing = _instances[id];
   if (existing) {
     // Service slots are written only via setService — refuse, so a
@@ -181,11 +183,15 @@ function setInstance(id, kind, slice) {
       console.error(`[route] setInstance('${id}') refused: '${id}' is a service slot — use setService`);
       return;
     }
-    // Update in place — preserves the wrapper object identity. kind is
-    // immutable per id; a mismatched kind on re-write is a caller bug.
+    // Update in place — preserves the wrapper object identity. The instance
+    // SET is unchanged (same id, same kind — kind is immutable per id; a
+    // mismatched kind on re-write is a caller bug), so DON'T bump _instVer:
+    // this mirrors setInstanceSlice's no-bump contract for content-only writes.
     existing.slice = slice;
     return;
   }
+  // New id → the SET changed; bump so resolveTarget/resolveViewerPaneId recompute.
+  _instVer++;
   _instances[id] = { id, kind, slice };
   if (!_primaryByKind[kind]) _primaryByKind[kind] = id;
 }
