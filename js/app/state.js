@@ -247,20 +247,25 @@ function initState() {
     dirty: false,
   }));
 
+  // v0.6.3 Phase B / v0.6.4 multi-viewer — per-pane Component instances keyed
+  // by paneId (every placed pane its own slice). The mint/dispose logic lives
+  // in reconcilePaneInstances so the dispatch finalizer can re-run it after
+  // runtime placement/removal. Wire the injection BEFORE seeding dims: the
+  // term_resized dispatch below runs the finalizer with arrange + dims both
+  // set, so the boot mint happens THROUGH the gate (which records
+  // _lastReconciledArrange) — one unified reconcile path, no separate direct
+  // boot call that would leave the gate's bookkeeping stale (→ a redundant
+  // re-mint on the first post-boot dispatch).
+  api.setInstanceReconciler(reconcilePaneInstances);
+
   // Seed the model's terminal dimensions (resize-as-Msg P1). The ONLY
   // place besides the tui.js 'resize' listener that reads the live
-  // terminal size — everything downstream reads layoutSlice.dims.
+  // terminal size — everything downstream reads layoutSlice.dims. This
+  // dispatch's finalizer also performs the boot instance mint (see above).
   const tdims = require('../io/term').dims();
   api.dispatchMsg(api.wrap('layout', {
     type: 'term_resized', cols: tdims.cols, rows: tdims.rows,
   }));
-
-  // v0.6.3 Phase B / v0.6.4 multi-viewer — per-pane Component instances keyed
-  // by paneId (every placed pane its own slice). The mint/dispose logic lives
-  // in reconcilePaneInstances so the dispatch finalizer can re-run it after
-  // runtime placement/removal; wire that injection, then do the boot mint.
-  api.setInstanceReconciler(reconcilePaneInstances);
-  reconcilePaneInstances();
 
   // Rebuild the visible group list from config, then seed currentGroup
   // from the first visible row. recomputeGroups dispatches into the
