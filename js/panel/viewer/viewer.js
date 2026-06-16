@@ -936,8 +936,9 @@ function _updateInner(msg, slice, lines) {
     // (panel/viewer/select.js); the keyboard path lives in `case 'key':` below.
     // Both flow through the same pure slice transforms (`_beginSelect` /
     // `_setCursor` / `_scrollView` / `_moveCursor`) defined above the
-    // reducer. The pure ANSI-aware reads (selectedText / plainLineWidth)
-    // stay in select.js.
+    // reducer. The ANSI-aware reads the key arms need (selectedTextFrom /
+    // plainLineWidthFrom) are select.js's PURE variants — fed the threaded
+    // `lines` + our own `slice`, so no getModel()/resolveTarget reach.
     case 'select_begin':
       return _beginSelect(slice, msg.line, msg.col, msg.kind, lines);
     case 'select_extend': {
@@ -1011,7 +1012,7 @@ function _updateInner(msg, slice, lines) {
       // y — commit + push to register. The text resolution + OSC52 ride out
       // as apply_msg → register_push (root reducer owns the register).
       if ((msg.seq === 'y' || msg.key === 'y') && active) {
-        const text = require('./select').selectedText();
+        const text = require('./select').selectedTextFrom(lines, slice.select);
         const next = { ...slice, select: { ...slice.select, active: false } };
         const effects = [{ type: '_claimed' }];
         if (text) effects.push({ type: 'msg', msg: { type: 'register_push', text } });
@@ -1043,7 +1044,7 @@ function _updateInner(msg, slice, lines) {
         return [_setCursor(slice, slice.cursor.line, 0, true), claim];
       }
       if (active && (msg.seq === '$' || msg.key === 'end')) {
-        const w = require('./select').plainLineWidth(slice.cursor.line);
+        const w = require('./select').plainLineWidthFrom(lines, slice.cursor.line);
         return [_setCursor(slice, slice.cursor.line, Math.max(0, w - 1), true), claim];
       }
       return slice;
