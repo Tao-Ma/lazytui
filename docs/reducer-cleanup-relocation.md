@@ -1,10 +1,39 @@
 # Reducer / cleanup relocation arc — extracting `app` from the layer SCC (F3)
 
-**Status:** SPEC (future dedicated arch arc). Records the design for the one
-structural move the v0.6.5 re-audit's F3 re-verification found real-but-big:
-relocating the reducer + cleanup out of `app/` to break the upward edges that
-trap `app` in the layer SCC. See `docs/v0.6.5-tea-reaudit.md` F3 + the F3
-LAYERING ledger entry.
+**Status:** ☑ SHIPPED 2026-06-17 (option (a) — shim kept). `app` is now OUT of
+the layer SCC: `dep-walker.js` reports `[feature,overlay,render,panel,dispatch]`
+(5, down from 6) for BOTH top-level and all-edges analyses. The reducer + cleanup
+moved out of `app/`; this doc is now the as-built record.
+
+As-built deltas from the spec below:
+- Reducer `update` + helpers → `js/dispatch/reducer.js` (`git mv` from
+  `app/runtime.js`; only `../dispatch/keybindings` → `./keybindings` changed —
+  every other `../` path resolves the same from `dispatch/` as from `app/`).
+- Cleanup → `js/dispatch/cleanup.js` (`git mv`; `../dispatch/action-runner` →
+  `./action-runner`). `app/cleanup.js` deleted (no test imported it).
+- `_ghostSuffix` → `js/leaves/ghost.js` as `ghostSuffix` (used by the reducer
+  AND `overlay/prompt.js` — a leaf is the shared home; a shim re-export
+  wouldn't fix the `overlay→app` edge since that's upward).
+- File disposition: **option (a)** — `app/runtime.js` is now a 1-line shim
+  (`module.exports = require('../dispatch/reducer')`) so the ~15 tests that
+  `require('app/runtime')` are untouched. dep-walker skips `test/`, so the shim
+  (imported only by tests) doesn't keep `app` in the SCC.
+- Repointed production importers: `dispatch/dispatch.js` (reducer + `q` cleanup),
+  `dispatch/actions.js` + `dispatch/input.js` (cleanup), `panel/commands.js`
+  (lazy → `../dispatch/cleanup`, now a deferred panel→dispatch edge, was
+  panel→app), `overlay/prompt.js` (→ `leaves/ghost`).
+- `test-msg-routing.js` now scans `dispatch/reducer.js` (was `app/runtime.js`).
+- Stale "reducer lives in app/runtime" comments fixed (`model/store.js`,
+  `leaves/pane-tabs.js`, `leaves/cmdline-split.js`, `render/paint.js`).
+- **Verified:** suite 1/95 (xz only), smoke 9/9, bench parity (the move is
+  logic-free; require-path change is load-time only). No `require('app/runtime')`
+  or `require('app/cleanup')` in production (only the shim + comments remain).
+
+Residual 5-cycle `{dispatch,panel,render,overlay,feature}` is UNCHANGED and
+out-of-scope, exactly as the spec said (see "Out of scope" below).
+
+---
+*Original spec follows (design as proposed; the deltas above are what shipped).*
 
 ## Honest scope (read this first)
 

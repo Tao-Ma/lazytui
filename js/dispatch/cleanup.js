@@ -14,7 +14,7 @@ const {
   disableMouse, disableFocusEvents, disableBracketedPaste,
 } = require('../io/term');
 const { destroyAll } = require('../io/terminal');
-const { killAll } = require('../dispatch/action-runner');
+const { killAll } = require('./action-runner');
 
 function cleanup() {
   killAll({ silent: true });

@@ -67,7 +67,7 @@ function _extractReducerCases(src) {
 }
 
 describe('Msg routing — applyMsg targets the root reducer', () => {
-  const reducerSrc = _readSource('app/runtime.js');
+  const reducerSrc = _readSource('dispatch/reducer.js');  // F3 — reducer moved here from app/runtime.js
   const reducerCases = _extractReducerCases(reducerSrc);
   const productionFiles = _walkProductionFiles();
 

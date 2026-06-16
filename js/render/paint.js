@@ -655,7 +655,8 @@ function renderTerminalOverlay(model = getModel(), arrangeOverride) {
 // overlay render fns so THEY stay pure of the clock too.
 function render(model = getModel()) {
   const now = model.now;
-  // `model` is the TEA root model (js/app/runtime.js), threaded in by the
+  // `model` is the TEA root model (js/model/store.js; reduced by
+  // js/dispatch/reducer.js), threaded in by the
   // owner (the program). The view reads migrated slices (currently
   // `viewMode`) from this param, not a global fetch. The `= getModel()`
   // default keeps every existing `render()` call site working during
