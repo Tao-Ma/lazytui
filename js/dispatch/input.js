@@ -367,7 +367,7 @@ function _dispatchActiveModeMouse(kind, mx, my, model) {
     } catch (e) {
       console.error('[mode-mouse]', flag, e && e.message);
       try {
-        require('./event-log').record('error', {
+        require('../io/event-log').record('error', {
           where: 'mouse_handler', flag, kind, mx, my,
           message: e && e.message, stack: e && e.stack,
         });
@@ -976,7 +976,7 @@ function setupKeyListener() {
       _pasteBuffer += data;
       if (_pasteBuffer.length > _PASTE_MAX) {
         console.error(`[input] bracketed paste exceeded ${_PASTE_MAX} bytes — dropped`);
-        require('./event-log').record('input', { kind: 'paste_oversize', size: _pasteBuffer.length });
+        require('../io/event-log').record('input', { kind: 'paste_oversize', size: _pasteBuffer.length });
         _pasteBuffer = '';
         return;
       }
@@ -1070,7 +1070,7 @@ function setupKeyListener() {
     // event-log so a maintainer reading a recorded session can see
     // what unknown sequences fired.
     if (data.charCodeAt(0) === 0x1b) {
-      require('./event-log').record('input', {
+      require('../io/event-log').record('input', {
         kind: 'unknown_escape',
         bytes: data.length > 64 ? data.slice(0, 64) + '...' : data,
       });

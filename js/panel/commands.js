@@ -304,7 +304,7 @@ function collectCommands(componentsList, m) {
     if (warned.has(key)) return;
     warned.add(key);
     console.error(`[commands] duplicate name '${cmd.name}': '${prior}' and '${cmd._source}' both contribute (both will appear in the cmdline)`);
-    try { require('../dispatch/event-log').record('error', {
+    try { require('../io/event-log').record('error', {
       where: 'commands', kind: 'duplicate_name',
       name: cmd.name, owners: [prior, cmd._source],
     }); } catch (_) {}

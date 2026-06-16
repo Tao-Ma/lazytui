@@ -89,7 +89,7 @@ describe('[4] wedge guard (_dispatchActiveMode)', () => {
     // (registerPopup.viewportRows, to build the nav Msgs), so we can force
     // it to throw.
     const rp = require('../overlay/register-popup');
-    const eventLog = require('../dispatch/event-log');
+    const eventLog = require('../io/event-log');
     const orig = rp.viewportRows;
     const origErr = console.error;
     let logged = '';

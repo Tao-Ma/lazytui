@@ -488,7 +488,7 @@ function handleDiagLogKey(key, seq) {
   // View-derived count + vh threaded into the Msg so the reducer stays
   // pure of the out-of-TEA diag-log buffer (same shape as handleJobsKey).
   const overlay = require('../overlay/diag-log');
-  const count = require('./diag-log').size();
+  const count = require('../io/diag-log').size();
   const vh = overlay.viewportRows();
   if (key === 'escape') { applyMsg({ type: 'diag_log_close' }); return; }
   if (key === 'up'   || seq === 'k') { applyMsg({ type: 'diag_log_nav', dir: -1, count, vh }); return; }
@@ -504,7 +504,7 @@ function handleDiagLogKey(key, seq) {
     // the out-of-TEA buffer entry HERE (handler-side, like jobs_activate)
     // and route through register_push — the canonical yank Msg (dedup +
     // cap + OSC52). Window stays open so multiple lines can be copied.
-    const diag = require('./diag-log');
+    const diag = require('../io/diag-log');
     const m = getModel();
     const cursor = (m.modal.diagLog && m.modal.diagLog.cursor | 0) || 0;
     const ev = diag.snapshot()[cursor];
@@ -909,7 +909,7 @@ function handleKey(key, seq) {
   // at the dispatch boundary so both modal and normal-key paths land
   // in the log identically. Silent + idempotent when the log is
   // disabled.
-  require('./event-log').record('key', { key, seq });
+  require('../io/event-log').record('key', { key, seq });
   // A modal mode (filter / menu / cmdline / confirm / …) owns keyboard input
   // while active, so the focused Component must NOT also see the key — else
   // Enter-to-commit-a-/-filter would ALSO navigate a files panel, and typing
@@ -952,7 +952,7 @@ function _dispatchActiveMode(key, seq) {
         // gets painted over by the next render; the event log file is
         // where future occurrences can be inspected post-mortem.
         try {
-          require('./event-log').record('error', {
+          require('../io/event-log').record('error', {
             where: 'mode_handler', flag: m.flag, key, seq,
             message: e && e.message, stack: e && e.stack,
           });

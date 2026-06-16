@@ -93,7 +93,7 @@ function init() {
       // mid-overlay arrivals + status flips.
       jobs: { cursor: 0, scroll: 0 },
       // Diagnostics window (leader e) — cursor + scroll into the live
-      // dispatch/diag-log.js buffer. Like jobs, no item snapshot is
+      // io/diag-log.js buffer. Like jobs, no item snapshot is
       // stored: the renderer reads diag-log.snapshot() at frame time so
       // a warning/error arriving while the window is open shows live.
       diagLog: { cursor: 0, scroll: 0 },

@@ -278,7 +278,7 @@ function _safeRender(panel, w, h, opts) {
   } catch (e) {
     console.error(`[render:${panel && panel.type}] ${e && e.message}`);
     try {
-      require('../dispatch/event-log').record('error', {
+      require('../io/event-log').record('error', {
         where: 'component_render', component: panel && panel.type,
         message: e && e.message, stack: e && e.stack,
       });

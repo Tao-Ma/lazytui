@@ -36,7 +36,7 @@ const SLOW_MS = 2;
 let _diag = null;
 function diag() {
   if (_diag === null) {
-    try { _diag = require('../dispatch/diag-log'); }
+    try { _diag = require('../io/diag-log'); }
     catch (_) { _diag = false; } // unavailable in early boot / bare tests
   }
   return _diag || null;
