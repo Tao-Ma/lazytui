@@ -1,10 +1,32 @@
 # Reducer route-topology purity arc — eliminating blessed-exception A
 
-**Status:** SPEC (future dedicated arc). Records the design for removing
-blessed-exception **A** (`docs/v0.6.5-tea-reaudit.md`, ledger row A): the root
-reducer (`app/runtime.js update()`) reads route topology
-(`route.getFocus`/`resolveTarget`/`componentForPanel`/`paneTypeOf`/`hasInstance`)
-— state that lives in the `panel/route.js` registry, not in `model`.
+**Status:** ☑ SHIPPED 2026-06-16 (option (a) — Flavor 1 threaded; the two
+constant-id Flavor-2 lookups deliberately kept). Removed the focus-routing half
+of blessed-exception **A** (`docs/v0.6.5-tea-reaudit.md`, ledger row A): the
+root reducer no longer reads `getFocus`/`resolveTarget`/`paneTypeOf`/`hasInstance`.
+This doc is now the as-built record (spec + what landed).
+
+As-built deltas from the spec below:
+- Added `route.bundle(id) → {compName, panelType, target}` (`panel/route.js`),
+  replacing the in-reducer `_navRoute` helper (deleted from `app/runtime.js`).
+- Handlers stamp the bundle: `escape`/`list_select` (`dispatch.js`),
+  `navSelect` (`dispatch.js`), `_enterFilterMode` (`dispatch.js`); the viewer-tab
+  arms get `target` from `_viewerTabBundle` (`actions.js`).
+- Arms read `msg.route` (escape/list_select/nav_select) or `msg.target`
+  (next_tab/prev_tab). The filter session caches the bundle on
+  `modal.filter.route` (added to `model/store.js init`), stamped once at
+  `filter_enter` and reused by `filter_key`/`filter_exit` (the filtered pane is
+  fixed for the session).
+- **Verified:** the only `route.*` topology reads left in `runtime.js` are the
+  two Flavor-2 `componentForPanel(<constant>)` lookups (`set_config`,
+  `reset_group_context`); a live probe confirmed **0** `getFocus` calls during
+  the escape/nav_select/next_tab arms. Contract bullet (`runtime.js`) updated.
+- Tests threading bare Msgs now thread the bundle (test-runtime,
+  test-immutable-runtime, test-multiselect, test-instance-registry). Suite 1/95
+  (xz only), smoke 9/9.
+
+---
+*Original spec follows (design as proposed; the deltas above are what shipped).*
 
 ## Why this exists (and why it's lower-priority than D)
 

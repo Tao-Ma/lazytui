@@ -347,7 +347,9 @@ describe('[immutable] root reducer — Cmd-only verbs are identity-preserving', 
     // (R4.5 + R4.8) — actions.js calls the side-effects directly.
     // v0.6.4 Theme C — the arm reads the viewer tab bundle from the Msg
     // (handler-threaded), not the slice; thread total>1 so it emits.
-    const bundle = { curTab: 0, total: 2, tabKeys: ['info', 'transcript'], currentGroup: '' };
+    // blessed-A — `target` is part of the bundle now (was resolveTarget in
+    // the arm); thread it so the arm doesn't early-return on a null target.
+    const bundle = { target: 'detail', curTab: 0, total: 2, tabKeys: ['info', 'transcript'], currentGroup: '' };
     for (const t of ['next_tab', 'prev_tab']) {
       const [next, cmds] = runtime.update(m, { type: t, ...bundle });
       assert(next === m, `${t} returns same ref`);

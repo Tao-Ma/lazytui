@@ -113,7 +113,9 @@ function navSelect(panelType, index) {
   // was invisible from the reducer's view. The nav_select arm in
   // runtime.update emits the same Cmds in one return, keeping the
   // TEA contract (handler stays a one-liner, reducer cascades).
-  applyMsg({ type: 'nav_select', panelType, index });
+  // v0.6.5 blessed-A — stamp the route bundle ({compName, panelType, target})
+  // so the nav_select arm fans out without reading route topology itself.
+  applyMsg({ type: 'nav_select', panelType, index, route: route.bundle(panelType) });
 }
 
 /**
@@ -225,7 +227,10 @@ function _enterFilterMode() {
   // reaches nav.apply's multi-panel branch under the panel-type key.
   // getFocus() returns a paneId post-Phase-B1. (Phase 4c — committed
   // filter text lives on the panel's nav slice; getFilter resolves it.)
-  applyMsg({ type: 'filter_enter', panel: focus, text: require('../panel/api').getFilter(focus) });
+  // v0.6.5 blessed-A — stamp the route bundle for the filtered pane; the
+  // filter arms (enter/key/exit) reuse it (stored on modal.filter.route)
+  // instead of re-reading route topology in the reducer.
+  applyMsg({ type: 'filter_enter', panel: focus, text: require('../panel/api').getFilter(focus), route: route.bundle(focus) });
   return true;
 }
 
@@ -558,16 +563,21 @@ function handleNormalKey(key, seq) {
       // neither applies it's a no-op.
       // v0.6.4 Theme C — the handler (impure) reads the focused nav's
       // multiSel count and threads `hadMultiSel`; the escape reducer arm
-      // no longer reaches into the Component slice.
-      const panelType = route.paneTypeOf(getFocus()) || getFocus();
-      applyMsg({ type: 'escape', hadMultiSel: multiSelCount(panelType) > 0 });
+      // no longer reaches into the Component slice. v0.6.5 blessed-A — also
+      // stamp the focus route bundle so the arm reads no route topology.
+      const focus = getFocus();
+      const r = route.bundle(focus);
+      const panelType = (r && r.panelType) || focus;
+      applyMsg({ type: 'escape', hadMultiSel: multiSelCount(panelType) > 0, route: r });
       break;
     }
     case 'v':
       // `v` enters list-select mode on a list panel (mirrors the detail
       // panel's visual mode, which the detail Component claims via its
       // own update when focus=detail). A second `v` exits.
-      if (_isListPanel(getFocus())) applyMsg({ type: 'list_select', mode: 'toggle' });
+      // v0.6.5 blessed-A — stamp the focus route bundle; the arm uses it
+      // only when the toggle turns select mode OFF (to clear the selection).
+      if (_isListPanel(getFocus())) applyMsg({ type: 'list_select', mode: 'toggle', route: route.bundle(getFocus()) });
       break;
     case ' ':
       // Space is the leader EXCEPT inside list-select mode on a list

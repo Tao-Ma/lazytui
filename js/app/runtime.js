@@ -17,14 +17,18 @@
  *   - The reducer performs no I/O; effects are Cmd DESCRIPTORS the
  *     effects layer (effects.runEffects, called from dispatch.applyMsg)
  *     interprets.
- *   - NOT a strict pure function of (model, msg): a few arms read ROUTE
- *     TOPOLOGY (`route.getFocus()` / `resolveTarget` / `componentForPanel` /
- *     `paneTypeOf` — focus + pane→Component identity), which lives in the
- *     route registry's mutable state, NOT in `model`. This is the one
- *     deliberate, documented impurity — the "blessed chokepoint": route is a
- *     topology oracle, the reads only pick a Cmd target, never mutate model,
- *     and the result is emitted as a Cmd, not acted on. See
- *     docs/blessed-exceptions.md.
+ *   - ALMOST a pure function of (model, msg). The focus-routing arms
+ *     (escape / list_select / nav_select / next_tab / prev_tab / filter_*) no
+ *     longer read route topology: the handler stamps the resolved bundle
+ *     (`route.bundle(id)` → {compName, panelType, target}, or `msg.target` for
+ *     the viewer-tab arms) onto the Msg, and the arm reads `msg.route` (blessed-
+ *     exception A elimination — docs/reducer-route-purity.md). TWO residual
+ *     reads remain, both `route.componentForPanel(<constant>)` on a literal
+ *     panel-type (`set_config` → 'config-status'; `reset_group_context` →
+ *     'actions'/'containers') — a static ownership-registry lookup, NOT a
+ *     focus/topology read. These are deliberately left (threading a constant
+ *     just relocates an unambiguous lookup). `route.wrap` (a pure Msg ctor) is
+ *     not a topology read. See docs/blessed-exceptions.md.
  *   - Modal-close arms (confirm_reject / prompt_cancel / cmdline_cancel
  *     / register_popup_cancel / menu_close / copy_cancel / *_drop /
  *     *_accept / *_submit) guard on their mode flag — a stale double-
@@ -140,23 +144,12 @@ function _withModal(model, patch) {
   return { ...model, modal: { ...model.modal, ...patch } };
 }
 
-// v0.6.4 Theme A Phase 5 — split a pane address into the instance the
-// write should route to (`target`: the paneId when it's a live instance,
-// else the kind/Component name → primary) and the nav-entry key
-// (`navKey`: the panel-type, the form mnav.entryOf indexes multi-panel
-// Components by). The filter modal stores a paneId in `modal.filter.panel`
-// so the focused pane being filtered is the one written — this helper
-// turns that paneId back into a (route-to, key-by) pair. Returns null
-// when the address resolves to no Component. No-op under single-pane
-// configs (paneId === primary === type).
-function _navRoute(paneId) {
-  const compName = route.componentForPanel(paneId);
-  if (!compName) return null;
-  return {
-    target: route.hasInstance(paneId) ? paneId : compName,
-    navKey: route.paneTypeOf(paneId) || paneId,
-  };
-}
+// blessed-exception A elimination (docs/reducer-route-purity.md) — the
+// focus-routing arms (escape / list_select / nav_select / filter_*) no longer
+// resolve a pane address inline. The HANDLER stamps `route.bundle(id)` (the
+// `{ compName, panelType, target }` triple) onto the Msg; the arm reads it.
+// `route.bundle` replaces the old in-reducer `_navRoute` helper — same triple,
+// resolved one layer up so the reducer reads no route topology.
 
 // `]`/`[` cycle the focused-or-sticky viewer's tab list. resolveTarget
 // picks the right viewer pane (focus / sticky / first-in-arrange); null
@@ -165,13 +158,11 @@ function _navRoute(paneId) {
 // v0.6.4 Theme C — pure of Component-slice reads. The viewer tab info
 // (curTab / total / resolved tab-key array) is threaded by the
 // next_tab/prev_tab handler (`actions._viewerTabBundle`); the arm keeps
-// only the routing read (resolveTarget — blessed chokepoint) and the
-// pure cycle math. (v0.6.3 Phase 3f had retired the tab_cycle Msg and
-// computed here by reading the slice directly; this keeps the
-// compute-in-reducer testability but moves the slice READ to the
-// handler.)
+// only the pure cycle math. v0.6.5 blessed-A elimination — the routing
+// read (`resolveTarget('viewer')`) also moved to the handler:
+// `_viewerTabBundle` now stamps `msg.target`, so the arm reads no route.
 function _cycleViewerTab(model, msg, dir) {
-  const target = route.resolveTarget('viewer');
+  const target = msg.target;
   if (!target) return [model, []];
   const total = msg.total | 0;
   if (total <= 1) return [model, []];
@@ -206,29 +197,22 @@ function update(model, msg) {
       // selection), else clears any lingering multi-selection; otherwise
       // a no-op. The multiSel clear dispatches into the focused
       // Navigator's update (each panel owns its own Set).
-      const focus = route.getFocus();
-      const compName = route.componentForPanel(focus);
-      // v0.6.3 post-arch-arc — focus is paneId; mnav indexes by
-      // panel-type. Translate via paneTypeOf for the entry lookup
-      // AND for the downstream Msg payload (each Component's
-      // set_cursor / multisel_clear arms index slice.nav by
-      // panel-type for multi-panel Components like files).
-      const panelType = route.paneTypeOf(focus) || focus;
       // v0.6.4 Theme C — `hadMultiSel` is threaded by the escape handler
-      // (it read the focused nav's multiSel.size); the arm no longer
-      // reaches into the Component slice. Routing reads (getFocus /
-      // componentForPanel / paneTypeOf) stay — the blessed chokepoint.
+      // (it read the focused nav's multiSel.size). v0.6.5 blessed-A
+      // elimination — the routing triple is also threaded: the handler
+      // stamps `msg.route = route.bundle(getFocus())` ({compName, panelType,
+      // target}); null when focus owns no Component. The arm reads no route.
       const had = !!msg.hadMultiSel;
-      // v0.6.4 Theme A Phase 5 — clear THIS pane's instance when focus is a
-      // live paneId, not the kind's primary (mirrors nav_select). No-op
-      // under single-pane (paneId === primary).
-      const target = route.hasInstance(focus) ? focus : compName;
+      const r = msg.route;
+      // multisel_clear targets THIS pane's instance (r.target), keyed by its
+      // panel-type (r.panelType — multi-panel Components index nav by type).
+      const clearCmd = () => (r
+        ? [{ type: 'msg', msg: route.wrap(r.target, { type: 'multisel_clear', panel: r.panelType }) }]
+        : []);
       if (model.modes.listSelectMode) {
-        const next = _withModes(model, { listSelectMode: false });
-        if (compName) return [next, [{ type: 'msg', msg: route.wrap(target, { type: 'multisel_clear', panel: panelType }) }]];
-        return [next, []];
+        return [_withModes(model, { listSelectMode: false }), clearCmd()];
       } else if (had) {
-        return [model, [{ type: 'msg', msg: route.wrap(target, { type: 'multisel_clear', panel: panelType }) }]];
+        return [model, clearCmd()];
       }
       return [model, []];
     }
@@ -237,16 +221,15 @@ function update(model, msg) {
       // operand selection. `mode:'on'` (*) forces it on (the caller then
       // fires selectAllVisible as an effect). The _isListPanel guard is
       // view derivation — the caller already applied it.
-      const focus = route.getFocus();
       if (msg.mode === 'on') return [_withModes(model, { listSelectMode: true }), []];
       const nextOn = !model.modes.listSelectMode;
       const next = _withModes(model, { listSelectMode: nextOn });
       if (!nextOn) {
-        const compName = route.componentForPanel(focus);
-        const panelType = route.paneTypeOf(focus) || focus;
-        // Clear the focused pane's instance, not the primary (see escape).
-        const target = route.hasInstance(focus) ? focus : compName;
-        if (compName) return [next, [{ type: 'msg', msg: route.wrap(target, { type: 'multisel_clear', panel: panelType }) }]];
+        // Turning select mode OFF clears the operand selection. v0.6.5
+        // blessed-A — the toggle handler stamps `msg.route` (focus bundle);
+        // clear THIS pane's instance, keyed by its panel-type (see escape).
+        const r = msg.route;
+        if (r) return [next, [{ type: 'msg', msg: route.wrap(r.target, { type: 'multisel_clear', panel: r.panelType }) }]];
       }
       return [next, []];
     }
@@ -292,27 +275,19 @@ function update(model, msg) {
       // makes the cascade visible in the reducer instead of in the
       // handler, satisfying the TEA discipline call-out in
       // feedback_tea_reducer_discipline.
-      const { panelType, index } = msg;
-      const compName = route.componentForPanel(panelType);
-      if (!compName) return [model, []];
-      // v0.6.3 post-arch-arc — panelType may arrive as a paneId
-      // post-B3 (`getFocus()` returns paneId; navSelect threads it
-      // as-is). Translate to the panel-type form before fanning out
-      // — set_cursor's downstream nav.entryOf indexes by panel-type
-      // for multi-panel Components, and the kind comparison below
-      // expects the type name. `paneTypeOf` is the canonical
-      // resolver (handles docker-style panes that have no per-pane
-      // instance via arrange walk).
-      const kindForNav = route.paneTypeOf(panelType) || panelType;
-      // v0.6.4 Theme A Phase 5 — route set_cursor to THIS pane's
-      // instance when `panelType` is a live paneId (mouse wheel +
-      // actions.js pass getFocus(), a paneId), so the focused pane's
-      // cursor moves, not the kind's primary. `panel: kindForNav`
-      // still keys nav[panelType] inside multi-panel Components.
-      // No-op under single-pane configs (paneId === primary).
-      const target = route.hasInstance(panelType) ? panelType : compName;
+      const { index } = msg;
+      // v0.6.5 blessed-A — the navSelect handler stamps `msg.route =
+      // route.bundle(panelType)` ({compName, panelType, target}); null when
+      // the address owns no Component. Was three inline route reads here
+      // (componentForPanel / paneTypeOf / hasInstance). r.panelType is the
+      // canonical panel-type (set_cursor's nav.entryOf indexes multi-panel
+      // Components by it); r.target routes to THIS pane's instance (a live
+      // paneId) vs the kind's primary; both no-op under single-pane configs.
+      const r = msg.route;
+      if (!r) return [model, []];
+      const kindForNav = r.panelType;
       const cmds = [
-        { type: 'msg', msg: route.wrap(target, { type: 'set_cursor', panel: kindForNav, index }) },
+        { type: 'msg', msg: route.wrap(r.target, { type: 'set_cursor', panel: kindForNav, index }) },
         { type: 'show_selected_info' },
       ];
       if (kindForNav === 'groups') {
@@ -907,9 +882,15 @@ function update(model, msg) {
     // is plugin-API (can't live in the reducer). The transforms are
     // pure model writes (no plugin API, no Cmd).
     case 'filter_enter': {
+      // v0.6.5 blessed-A — the handler stamps `msg.route = route.bundle(
+      // msg.panel)`. Store it on the filter modal so filter_key / filter_exit
+      // reuse it without re-resolving (the filtered pane is fixed for the
+      // whole session — filter mode locks input). Was an in-reducer
+      // `_navRoute(msg.panel)` route read on every filter arm.
+      const r = msg.route || null;
       const next = {
         ..._withModes(model, { filterMode: true }),
-        modal: { ...model.modal, filter: { text: msg.text || '', panel: msg.panel } },
+        modal: { ...model.modal, filter: { text: msg.text || '', panel: msg.panel, route: r } },
       };
       // v0.6.3 Round-2 — clear multiSel on filter-session entry.
       // Selections made before entering filter mode reference items
@@ -918,13 +899,10 @@ function update(model, msg) {
       // Parallel to groups.switchTab's multiSel-clear on All↔Quick
       // toggle. multisel_clear is a no-op when the panel had no
       // selection, so the Cmd is free in the common case.
-      // v0.6.4 Theme A Phase 5 — msg.panel is the focused PANEID; route
-      // the multiSel-clear to that instance, keyed by its panel-type.
-      const r = _navRoute(msg.panel);
       if (!r) return [next, []];
       return [next, [{
         type: 'msg',
-        msg: route.wrap(r.target, { type: 'multisel_clear', panel: r.navKey }),
+        msg: route.wrap(r.target, { type: 'multisel_clear', panel: r.panelType }),
       }]];
     }
     case 'filter_key': {
@@ -945,37 +923,35 @@ function update(model, msg) {
       }
       const next = _withModal(model, { filter: { ...f, text } });
       // Re-home the cursor as the filter narrows; the panel's nav slice
-      // is the writer. v0.6.4 Theme A Phase 5 — f.panel is the focused
-      // paneId; re-home THIS pane's cursor, not the kind's primary.
-      const r = _navRoute(f.panel);
+      // is the writer. v0.6.5 blessed-A — reuse the session route bundle
+      // stored at filter_enter (f.route) rather than re-resolving here.
+      const r = f.route;
       if (!r) return [next, []];
-      return [next, [{ type: 'msg', msg: route.wrap(r.target, { type: 'set_cursor', panel: r.navKey, index: 0 }) }]];
+      return [next, [{ type: 'msg', msg: route.wrap(r.target, { type: 'set_cursor', panel: r.panelType, index: 0 }) }]];
     }
     case 'filter_exit': {
       const f = model.modal.filter;
-      const panel = f.panel;
       const text = f.text;
       const keep = !!msg.keep;
       const next = {
         ..._withModes(model, { filterMode: false }),
-        modal: { ...model.modal, filter: { text: '', panel: '' } },
+        modal: { ...model.modal, filter: { text: '', panel: '', route: null } },
       };
-      if (!panel) return [next, []];
-      // v0.6.4 Theme A Phase 5 — `panel` is the focused paneId; commit
-      // the filter + re-home cursor/scroll on THAT instance's nav slice
-      // (keyed by its panel-type), not the kind's primary.
-      const r = _navRoute(panel);
+      // v0.6.5 blessed-A — reuse the session route bundle stored at
+      // filter_enter (f.route); commit/clear the filter + re-home
+      // cursor/scroll on THAT instance's nav slice (keyed by its panel-type).
+      const r = f.route;
       if (!r) return [next, []];
-      const { target, navKey } = r;
+      const { target, panelType } = r;
       // Commit/clear the filter on the panel's nav slice; the owning
       // Component is the single writer.
       const filterMsg = (keep && text)
-        ? { type: 'set_filter',   panel: navKey, text }
-        : { type: 'clear_filter', panel: navKey };
+        ? { type: 'set_filter',   panel: panelType, text }
+        : { type: 'clear_filter', panel: panelType };
       return [next, [
         { type: 'msg', msg: route.wrap(target, filterMsg) },
-        { type: 'msg', msg: route.wrap(target, { type: 'set_cursor', panel: navKey, index: 0 }) },
-        { type: 'msg', msg: route.wrap(target, { type: 'set_scroll', panel: navKey, offset: 0 }) },
+        { type: 'msg', msg: route.wrap(target, { type: 'set_cursor', panel: panelType, index: 0 }) },
+        { type: 'msg', msg: route.wrap(target, { type: 'set_scroll', panel: panelType, offset: 0 }) },
       ]];
     }
     case 'mode_clear':

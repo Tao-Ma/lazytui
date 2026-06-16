@@ -71,7 +71,11 @@ function init() {
     // is being filtered); the COMMITTED filter text lives on each
     // Navigator's `slice.nav[panel].filter`.
     modal: {
-      filter: { text: '', panel: '' },
+      // `route` caches the filtered pane's {compName, panelType, target}
+      // bundle for the session (stamped by the filter handler at
+      // filter_enter), so the filter arms route without re-reading topology
+      // — blessed-A elimination (docs/reducer-route-purity.md).
+      filter: { text: '', panel: '', route: null },
       menu: { items: [], idx: 0, anchor: null, title: null },
       // The pending confirm: a message + the Cmd DESCRIPTOR to emit on `y`
       // (data, not a closure — e.g. {type:'do_run', actionKey, action, args}).
