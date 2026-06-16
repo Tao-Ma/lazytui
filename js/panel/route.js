@@ -146,7 +146,28 @@ function paneTypeOf(id) {
 const _instances = Object.create(null);
 const _primaryByKind = Object.create(null);
 
+// Monotonic version of the instance SET (ids + their kinds), bumped on
+// every add/replace/dispose. resolveTarget / resolveViewerPaneId memoize
+// on this (their tier-4 scan reads the set) plus the layout slice's
+// focus/lastViewerTab/arrange — see the memo at resolveTarget. Mutating
+// an existing instance's slice (setInstanceSlice, the per-Msg viewer
+// append) does NOT bump it, so the memo stays valid across streamed
+// appends — the whole point. Over-bumping only forces a recompute; it's
+// never incorrect, so bump generously rather than reason finely.
+let _instVer = 0;
+// Memo cells for resolveTarget / resolveViewerPaneId (defined far below).
+// Keyed on (intent, focus, lastViewerTab, arrange-ref, _instVer) — every
+// input those two read. The per-Msg dispatch finalizer calls both; before
+// this memo each call walked the arrange tiers and allocated short-lived
+// arrays/closures (mpool.lastColumnPanels / findPaneLocation predicate),
+// churning GC (~70-136µs/op amortized). The memo collapses the steady
+// state (streamed appends: focus/arrange/instances all unchanged) to a
+// few primitive compares.
+let _rtMemo = null;
+let _rvpMemo = null;
+
 function setInstance(id, kind, slice) {
+  _instVer++;
   const existing = _instances[id];
   if (existing) {
     // Service slots are written only via setService — refuse, so a
@@ -196,6 +217,7 @@ function getInstance(id) { return _instances[id]; }
 const _serviceByKind = Object.create(null);
 
 function setService(kind, slice) {
+  _instVer++;
   let inst = _instances[kind];
   if (inst) {
     // Re-registration (test harnesses re-run registerComponent): update
@@ -318,6 +340,7 @@ function disposeInstance(id) {
     return;
   }
   delete _instances[id];
+  _instVer++;
   // If this was the primary for its kind, demote and pick a successor
   // (insertion order). Singleton kinds never trip this.
   if (_primaryByKind[inst.kind] === id) {
@@ -395,6 +418,9 @@ function _resetRegistryForTest() {
   for (const k in _primaryByKind) delete _primaryByKind[k];
   for (const k in _serviceByKind) delete _serviceByKind[k];
   _warnedStrict.clear();
+  _instVer++;
+  _rtMemo = null;
+  _rvpMemo = null;
 }
 
 /** Focus read — the layout instance's slice owns `focus`. Pre-init
@@ -462,8 +488,26 @@ function _mountedViewerId(tabId, pane) {
 
 function resolveTarget(intent, ctx) {
   ctx = ctx || {};
-  // (1) focused viewer-kind
+  // `focused` folds in the ctx override; the layout slice carries the
+  // other inputs. These reads are cheap (object props) — the win is
+  // skipping the tier-3 arrange walk + its allocation on a memo hit.
   const focused = ctx.focusedTabId != null ? ctx.focusedTabId : getFocus();
+  const layout = _layoutSvcSlice();
+  const lastViewerTab = layout ? layout.lastViewerTab : null;
+  const arrange = layout ? layout.arrange : null;
+  const m = _rtMemo;
+  if (m && m.intent === intent && m.focused === focused
+        && m.lastViewerTab === lastViewerTab && m.arrange === arrange
+        && m.instVer === _instVer) {
+    return m.value;
+  }
+  const value = _resolveTargetCompute(intent, focused, layout, lastViewerTab);
+  _rtMemo = { intent, focused, lastViewerTab, arrange, instVer: _instVer, value };
+  return value;
+}
+
+function _resolveTargetCompute(intent, focused, layout, lastViewerTab) {
+  // (1) focused viewer-kind
   if (focused && isViewerKind(focused)) return focused;
 
   // (2) sticky lastViewerTab — only when it still RESOLVES. The sticky
@@ -471,10 +515,9 @@ function resolveTarget(intent, ctx) {
   //     harness seed swaps); post-split reads are strict, so a stale id
   //     must fall through to the arrange walk / instance scan instead
   //     of strict-missing at the consumer.
-  const layout = _layoutSvcSlice();
-  if (layout && layout.lastViewerTab && _instances[layout.lastViewerTab]
-      && isViewerKind(layout.lastViewerTab)) {
-    return layout.lastViewerTab;
+  if (lastViewerTab && _instances[lastViewerTab]
+      && isViewerKind(lastViewerTab)) {
+    return lastViewerTab;
   }
 
   // (3) first viewer-kind in last-column arrange order. Walk each
@@ -518,14 +561,33 @@ function resolveTarget(intent, ctx) {
 // viewer each focused viewer resolves to its own hosting pane. Returns
 // null when no viewer is placed (caller no-ops, same as a missing pane).
 function resolveViewerPaneId(ctx) {
+  ctx = ctx || {};
+  // Same memo key as resolveTarget — this result is a pure function of the
+  // resolveTarget result (itself keyed on these) + layout.arrange. The
+  // findPaneLocation walk below allocates a fresh predicate closure per
+  // call, so memoizing matters even though resolveTarget is already cached.
+  const focused = ctx.focusedTabId != null ? ctx.focusedTabId : getFocus();
+  const layout = _layoutSvcSlice();
+  const lastViewerTab = layout ? layout.lastViewerTab : null;
+  const arrange = layout ? layout.arrange : null;
+  const m = _rvpMemo;
+  if (m && m.focused === focused && m.lastViewerTab === lastViewerTab
+        && m.arrange === arrange && m.instVer === _instVer) {
+    return m.value;
+  }
+  const value = _resolveViewerPaneIdCompute(ctx, arrange);
+  _rvpMemo = { focused, lastViewerTab, arrange, instVer: _instVer, value };
+  return value;
+}
+
+function _resolveViewerPaneIdCompute(ctx, arrange) {
   const tabId = resolveTarget('viewer', ctx);
   if (tabId == null) return null;
-  const layout = _layoutSvcSlice();
-  if (!layout || !layout.arrange) return null;
+  if (!arrange) return null;
   const mpool = require('../leaves/pool');
   // resolveTarget may hand back a container paneId (tier-1 focus) OR a tab
   // id (tier-3 arrange scan) — match either against the pane's identity.
-  const loc = mpool.findPaneLocation(layout.arrange, (p) =>
+  const loc = mpool.findPaneLocation(arrange, (p) =>
     p.paneId === tabId || p.id === tabId || p.activeTabId === tabId ||
     (Array.isArray(p.tabs) && p.tabs.some(t => t && t.id === tabId)));
   return loc ? loc.pane.paneId : null;
