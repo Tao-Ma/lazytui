@@ -76,19 +76,28 @@ function _apply(msg) {
   api.dispatchMsg(api.wrap(target, msg));
 }
 
-/** Plain text projection of detail line `i` (markup stripped). */
-function plainLine(i) {
-  const ln = _lines()[i];
+// PURE projections — take the threaded `lines` array explicitly so the
+// viewer's reducer arms (y / $) can call them without reaching for
+// getModel()/resolveTarget. The impure wrappers below delegate to these for
+// non-reducer callers (mouse path, commit/settle) that don't have `lines` in
+// hand.
+/** Plain text projection of line `i` from an explicit lines array (pure). */
+function plainLineFrom(lines, i) {
+  const ln = lines[i];
   return ln == null ? '' : stripMarkup(ln);
 }
-
-/** Display width of the plain text projection of a line. */
-function plainLineWidth(i) {
-  const s = plainLine(i);
+/** Display width of the plain projection of line `i` from explicit lines (pure). */
+function plainLineWidthFrom(lines, i) {
   let w = 0;
-  for (const ch of s) w += charWidth(ch.codePointAt(0));
+  for (const ch of plainLineFrom(lines, i)) w += charWidth(ch.codePointAt(0));
   return w;
 }
+
+/** Plain text projection of detail line `i` (markup stripped). */
+function plainLine(i) { return plainLineFrom(_lines(), i); }
+
+/** Display width of the plain text projection of a line. */
+function plainLineWidth(i) { return plainLineWidthFrom(_lines(), i); }
 
 /**
  * START boundary: convert displayCol to the codepoint index of the
@@ -154,8 +163,8 @@ function cancel() {
  * Normalize anchor/cursor so the returned range has start <= end.
  * For 'line' kind, cols are coerced to span the full line.
  */
-function selectedRange() {
-  const sel = _detail()?.select;
+// PURE — resolve an explicit selection object (no global read).
+function selectedRangeOf(sel) {
   if (!sel || !sel.active) return null;
   const { anchor, cursor, kind } = sel;
   let s = anchor, e = cursor;
@@ -175,6 +184,7 @@ function selectedRange() {
     startCol: s.col, endCol: e.col,
   };
 }
+function selectedRange() { return selectedRangeOf(_detail()?.select); }
 
 /**
  * Resolve the selection to a plain-text string. Char mode: from
@@ -183,31 +193,34 @@ function selectedRange() {
  * that lands ON a char includes that char). Line mode: full lines
  * joined with `\n`.
  */
-function selectedText() {
-  const r = selectedRange();
+// PURE — resolve from explicit lines + selection (the viewer y-arm path).
+function selectedTextFrom(lines, sel) {
+  const r = selectedRangeOf(sel);
   if (!r) return '';
+  const pl = (i) => plainLineFrom(lines, i);
   if (r.kind === 'line') {
     const out = [];
-    for (let i = r.startLine; i <= r.endLine; i++) out.push(plainLine(i));
+    for (let i = r.startLine; i <= r.endLine; i++) out.push(pl(i));
     return out.join('\n');
   }
   // char mode
   if (r.startLine === r.endLine) {
-    const plain = plainLine(r.startLine);
+    const plain = pl(r.startLine);
     const a = _displayColToCharIdx(plain, r.startCol);
     const b = _displayColToCharIdxEnd(plain, r.endCol);
     return _codepointSlice(plain, a, b);
   }
   const out = [];
-  const first = plainLine(r.startLine);
+  const first = pl(r.startLine);
   const a = _displayColToCharIdx(first, r.startCol);
   out.push(_codepointSlice(first, a, Infinity));
-  for (let i = r.startLine + 1; i < r.endLine; i++) out.push(plainLine(i));
-  const last = plainLine(r.endLine);
+  for (let i = r.startLine + 1; i < r.endLine; i++) out.push(pl(i));
+  const last = pl(r.endLine);
   const b = _displayColToCharIdxEnd(last, r.endCol);
   out.push(_codepointSlice(last, 0, b));
   return out.join('\n');
 }
+function selectedText() { return selectedTextFrom(_lines(), _detail()?.select); }
 
 /**
  * Commit the current selection: push to register, clear active flag.
@@ -325,5 +338,7 @@ function decorateLines(lines) {
 module.exports = {
   beginAt, extendTo, cancel, commit, settle, isActive,
   selectedText, plainLineWidth,
+  // PURE variants for the viewer reducer arms (lines threaded in, no global read):
+  selectedTextFrom, plainLineWidthFrom,
   highlightLine, decorateLines,
 };
