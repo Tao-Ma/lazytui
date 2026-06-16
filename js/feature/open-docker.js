@@ -282,5 +282,5 @@ openTarget.registerOpenScheme('docker', {
 // the docker-ps cost at boot for users who never `:open docker://`.
 
 module.exports = {
-  dockerOpenFileAsTab, dockerComplete,
+  dockerOpenFileAsTab,
 };

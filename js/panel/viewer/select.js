@@ -324,6 +324,6 @@ function decorateLines(lines) {
 
 module.exports = {
   beginAt, extendTo, cancel, commit, settle, isActive,
-  selectedRange, selectedText, plainLine, plainLineWidth,
+  selectedText, plainLineWidth,
   highlightLine, decorateLines,
 };

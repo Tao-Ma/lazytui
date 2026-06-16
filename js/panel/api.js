@@ -908,7 +908,7 @@ module.exports = {
   setService, serviceSlice, isService, primarySliceOf,
   getPanelDef, getItems, idOf, selectedOrFocused, infoLinesFromFocus,
   refreshAll, cleanupComponents,
-  getCommands, getGroupActions, getMergedActions, statusFor,
+  getCommands, getMergedActions, statusFor,
   // viewContributions registry — footerLeft / footerRight contributors
   // compose through `collectViewContributions`.
   collectViewContributions, _resetViewContributions,

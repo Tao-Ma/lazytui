@@ -372,7 +372,7 @@ function _spliceAndReleaseWidth(columns, removedIndex) {
 module.exports = {
   // constants. NEW_COL_*, DETAIL_MIN_ROWS used only internally (the
   // width-alloc + clamp math below) — not exported.
-  MIN_PANEL_H, EDGE_W, MAX_UNDO,
+  MIN_PANEL_H, EDGE_W,
   // detail clamps
   detailMinPct, detailMaxPct,
   // undo (snapshot / _applySnapshot are internal undo plumbing — not exported)

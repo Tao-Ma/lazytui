@@ -399,7 +399,7 @@ function paneMenuPanes(arrange, targetPaneId, mode) {
 }
 
 module.exports = {
-  columnCount, lastColumnIndex, getColumn,
+  columnCount, lastColumnIndex,
   columnPanels, lastColumnPanels,
   allPanesInColumns, findPaneLocation, updateColumn,
   distributeColumnWidths,
@@ -416,6 +416,6 @@ module.exports = {
   paneMenuPanes,
   placementFromPoolEntry,
   isDetailPane, isActionsPane,
-  findAllDetailPanes, detailPaneCount,
+  detailPaneCount,
   hasActionsPane,
 };

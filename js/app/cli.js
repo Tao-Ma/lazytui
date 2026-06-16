@@ -237,5 +237,5 @@ function runList(configPath, filter) {
 }
 
 module.exports = {
-  runCli, runList, resolveAction, listActions, formatActionList,
+  runCli, runList,
 };
