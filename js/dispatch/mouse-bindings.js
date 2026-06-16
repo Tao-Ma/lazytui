@@ -70,5 +70,4 @@ function reset() {
 
 module.exports = {
   configure, intentFor, doubleClickMs, reset,
-  DEFAULTS, DEFAULT_DOUBLE_CLICK_MS,
 };

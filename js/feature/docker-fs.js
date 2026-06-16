@@ -216,5 +216,4 @@ module.exports = {
   listRunningContainers,
   // Exposed for tests
   _parseLsLine,
-  DEFAULT_LIST_TIMEOUT_MS, DEFAULT_READ_TIMEOUT_MS,
 };

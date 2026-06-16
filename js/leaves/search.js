@@ -194,7 +194,7 @@ function scrollToActive(slice, innerH, lines, term) {
 }
 
 module.exports = {
-  computeMatches, matchesFor, _displayWidthBefore,
+  matchesFor, _displayWidthBefore,
   enter, cancel, commit, clearCommitted, keystroke,
-  next, prev, scrollToActive,
+  next, prev,
 };

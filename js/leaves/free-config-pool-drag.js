@@ -281,7 +281,6 @@ function spawnNewColumnArrange(arrange, position, placement) {
 }
 
 module.exports = {
-  pointToPoolDropTarget,
   poolDragStart, poolDragMotion, poolDragRelease,
   computePoolDragPreviewArrange,
   spawnNewColumnArrange,
