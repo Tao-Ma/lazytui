@@ -103,8 +103,6 @@ function detachStream() {
   _streamPath = null;
 }
 
-function streamPath() { return _streamPath; }
-
 // LAZYTUI_LOG env var: if set, attach a stream automatically at
 // module load. Skipped under test runners that load this module
 // without intending to write logs (no env var means no behavior
@@ -146,6 +144,6 @@ function save(filepath) {
 
 module.exports = {
   record, enable, isEnabled, setCap, clear, snapshot, size, save,
-  attachStream, detachStream, streamPath,
+  attachStream, detachStream,
   DEFAULT_CAP,
 };

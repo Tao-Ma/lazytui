@@ -326,6 +326,4 @@ module.exports = {
   beginAt, extendTo, cancel, commit, settle, isActive,
   selectedRange, selectedText, plainLine, plainLineWidth,
   highlightLine, decorateLines,
-  // exposed for testing only
-  _displayColToCharIdx, _displayColToCharIdxEnd, _codepointSlice,
 };

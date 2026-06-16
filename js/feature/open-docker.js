@@ -283,6 +283,4 @@ openTarget.registerOpenScheme('docker', {
 
 module.exports = {
   dockerOpenFileAsTab, dockerComplete,
-  // Exposed for tests
-  _parseDockerUri, _containerCache,
 };

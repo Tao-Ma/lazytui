@@ -261,9 +261,6 @@ function placementFromPoolEntry(entry, columnIndex) {
 // every reader through these helpers lets the multi-instance / per-tab
 // kind lookup (v0.7) change the implementation here without touching
 // consumers. Same for actions (the second reserved-kind invariant).
-//
-// `isReservedPane` is the combined "detail OR actions" check that
-// appears in column-placement and free-config rule guards.
 
 function isDetailPane(pane) {
   return !!(pane && pane.type === 'detail');
@@ -273,45 +270,9 @@ function isActionsPane(pane) {
   return !!(pane && pane.type === 'actions');
 }
 
-function isReservedPane(pane) {
-  return isDetailPane(pane) || isActionsPane(pane);
-}
-
-/** Find a detail pane in an arrange struct — the FIRST in arrange order
- *  (last column, then earlier columns). Returns the pane object or null.
- *
- *  v0.6.4 multi-viewer — this is now a "first / boot / major-viewer
- *  fallback" helper ONLY. With multiple viewers it returns an arbitrary
- *  one; NEVER use it for "the pane the user is acting on" (address that
- *  by paneId via resolveTarget/resolveViewerPaneId). Legitimate remaining
- *  callers: boot / degenerate fallback where any viewer will do. For
- *  count- or per-pane-aware logic use findAllDetailPanes / detailPaneCount. */
-function findDetailPane(arrange) {
-  if (!arrange) return null;
-  // Last column first — the canonical home.
-  const last = lastColumnPanels(arrange);
-  for (const p of last) if (isDetailPane(p)) return p;
-  // Then scan earlier columns (transient-state defense).
-  if (!arrange.columns) return null;
-  for (let ci = 0; ci < arrange.columns.length - 1; ci++) {
-    const panels = (arrange.columns[ci] && arrange.columns[ci].panels) || [];
-    for (const p of panels) if (isDetailPane(p)) return p;
-  }
-  return null;
-}
-
-/** True if `arrange` (or its placed panes) already hosts a detail pane.
- *  v0.6.4 multi-viewer — a SECOND detail is now allowed, so this is no
- *  longer a "refuse adding another" gate; it survives as a plain
- *  presence test (e.g. boot sanity). Count-aware callers use
- *  detailPaneCount. */
-function hasDetailPane(arrange) {
-  return findDetailPane(arrange) !== null;
-}
-
 /** All detail panes in arrange order (last column first, then earlier).
- *  v0.6.4 multi-viewer — the count/position-agnostic replacement for
- *  findDetailPane wherever "every viewer" is meant. */
+ *  v0.6.4 multi-viewer — the count/position-agnostic accessor used
+ *  wherever "every viewer" is meant. */
 function findAllDetailPanes(arrange) {
   if (!arrange || !arrange.columns) return [];
   const out = [];
@@ -326,17 +287,6 @@ function findAllDetailPanes(arrange) {
 /** Number of placed detail panes. */
 function detailPaneCount(arrange) {
   return findAllDetailPanes(arrange).length;
-}
-
-/** True if removing the pane identified by `paneId` would leave ZERO
- *  detail panes — the one retained placement invariant (the layout must
- *  always keep at least one viewer). Shared by pool_hide, remove-column,
- *  replace, and the free-config auto-empty-column path. A non-detail
- *  paneId never orphans (returns false). */
-function wouldOrphanLastDetail(arrange, paneId) {
-  const dps = findAllDetailPanes(arrange);
-  if (dps.length !== 1) return false;          // 0 → nothing to orphan; ≥2 → survivors remain
-  return dps[0] && dps[0].paneId === paneId;   // removing the sole detail
 }
 
 /** True if `arrange` already hosts an actions pane. */
@@ -465,8 +415,7 @@ module.exports = {
   paneSelectItems,
   paneMenuPanes,
   placementFromPoolEntry,
-  isDetailPane, isActionsPane, isReservedPane,
-  findDetailPane,
-  findAllDetailPanes, detailPaneCount, wouldOrphanLastDetail,
-  hasDetailPane, hasActionsPane,
+  isDetailPane, isActionsPane,
+  findAllDetailPanes, detailPaneCount,
+  hasActionsPane,
 };
