@@ -272,17 +272,22 @@ describe('[3] update — (model, msg) → [model, cmds], pure + Cmd descriptors'
     // Phase 4 — runtime.update is pure; applyMsg threads the new model
     // through setModel(), so subsequent reads must go through getModel().
     const dispatch = require('../dispatch/dispatch');
-    dispatch.applyMsg({ type: 'list_select', mode: 'toggle' });
+    // blessed-A — the reducer arms read `msg.route`; the production handler
+    // stamps it. Driving applyMsg directly bypasses the handler, so thread
+    // the bundle here (mirrors the shell — same as F1's augmentMsg tests).
+    const route = require('../panel/route');
+    const rb = () => route.bundle('containers');
+    dispatch.applyMsg({ type: 'list_select', mode: 'toggle', route: rb() });
     eq(runtime.getModel().modes.listSelectMode, true, 'toggle on');
     state.toggleMultiSel('containers', 'a');
     state.toggleMultiSel('containers', 'b');
     eq(state.multiSelCount('containers'), 2, 'two items selected');
-    dispatch.applyMsg({ type: 'escape', hadMultiSel: state.multiSelCount('containers') > 0 });
+    dispatch.applyMsg({ type: 'escape', hadMultiSel: state.multiSelCount('containers') > 0, route: rb() });
     eq(runtime.getModel().modes.listSelectMode, false, 'escape exits select mode');
     eq(state.multiSelCount('containers'), 0, 'escape clears the selection');
     // escape again with a lingering selection but not in select mode
     state.toggleMultiSel('containers', 'x');
-    dispatch.applyMsg({ type: 'escape', hadMultiSel: state.multiSelCount('containers') > 0 });
+    dispatch.applyMsg({ type: 'escape', hadMultiSel: state.multiSelCount('containers') > 0, route: rb() });
     eq(state.multiSelCount('containers'), 0, 'escape clears lingering selection');
     // list_select on (the * path) forces it true
     dispatch.applyMsg({ type: 'list_select', mode: 'on' });
@@ -364,9 +369,11 @@ describe('[3] update — (model, msg) → [model, cmds], pure + Cmd descriptors'
     // show_help / quit no longer go through the reducer (R4.8) —
     // actions.js calls overlay/help.showHelp() / cleanup() + process.exit
     // directly. next_tab / prev_tab emit tab_switch — v0.6.4 Theme C: the
-    // viewer tab bundle (curTab/total/tabKeys) is threaded by the handler
-    // (actions._viewerTabBundle); the arm does the pure cycle math.
-    const bundle = { curTab: 0, total: 2, tabKeys: ['info', 'transcript'], currentGroup: '' };
+    // viewer tab bundle (curTab/total/tabKeys + the Cmd `target`) is threaded
+    // by the handler (actions._viewerTabBundle); the arm does the pure cycle
+    // math. blessed-A — `target` moved into the bundle (was resolveTarget in
+    // the arm), so thread it here too.
+    const bundle = { target: 'detail', curTab: 0, total: 2, tabKeys: ['info', 'transcript'], currentGroup: '' };
     const cmdsNext = runtime.update(m, { type: 'next_tab', ...bundle })[1];
     const cmdsPrev = runtime.update(m, { type: 'prev_tab', ...bundle })[1];
     eq(cmdsNext[0].msg.msg.type, 'tab_switch');

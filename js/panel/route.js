@@ -101,6 +101,32 @@ function paneTypeOf(id) {
   return _typeByArrangePaneId(id);
 }
 
+/** Resolve a pane id (a focused paneId OR a panel-type) to the routing
+ *  bundle a reducer arm needs to fan a Msg out to the owning Component:
+ *    { compName, panelType, target }
+ *  - compName  — the owning Component name (componentForPanel)
+ *  - panelType — the panel-type key (paneTypeOf; the form nav.entryOf and
+ *                multi-panel Components index slice.nav by)
+ *  - target    — the Cmd target: the live instance id when one exists
+ *                (hasInstance), else the Component name (kind primary)
+ *  Returns null when `id` owns no Component (caller becomes a no-op).
+ *
+ *  This composes the three topology reads that the root reducer's focus-
+ *  routing arms (escape / list_select / nav_select / filter_*) used to make
+ *  inline. The HANDLER calls this and stamps the result onto the Msg so the
+ *  reducer stays pure of route topology — blessed-exception A elimination
+ *  (docs/reducer-route-purity.md). Pure of `model`; reads only the route
+ *  registry (which is itself mutated only via Msg dispatch → deterministic). */
+function bundle(id) {
+  const compName = componentForPanel(id);
+  if (!compName) return null;
+  return {
+    compName,
+    panelType: paneTypeOf(id) || id,
+    target: hasInstance(id) ? id : compName,
+  };
+}
+
 // --- Instance-keyed slice store ----------------------------------------
 //
 // Canonical storage is `_instances[id] = { id, kind, slice }`.
@@ -605,7 +631,7 @@ function _resolveViewerPaneIdCompute(ctx, arrange) {
 
 module.exports = {
   wrap,
-  registerPanelOwner, componentForPanel, paneTypeOf,
+  registerPanelOwner, componentForPanel, paneTypeOf, bundle,
   getFocus,
   setInstance, getInstance, getInstanceSlice, sliceForPane, setInstanceSlice,
   hasInstance, disposeInstance, instanceKind, eachInstance,

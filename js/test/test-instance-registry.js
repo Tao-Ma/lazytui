@@ -244,7 +244,9 @@ describe('[v0.6.4 Theme A Phase 5] per-pane nav READS', () => {
     const dispatch = require('../dispatch/dispatch');
     // Simulate the modal as if pane-b (the non-primary) is being filtered:
     // _enterFilterMode seeds modal.filter.panel with the focused PANEID.
-    dispatch.applyMsg({ type: 'filter_enter', panel: 'pane-b', text: 'lph' });
+    // blessed-A — the handler stamps msg.route; filter_key/exit reuse the
+    // session bundle stored at enter, so only filter_enter needs it threaded.
+    dispatch.applyMsg({ type: 'filter_enter', panel: 'pane-b', text: 'lph', route: route.bundle('pane-b') });
     // Live draft renders in pane-b only (getFilter compares paneId).
     eq(api.getFilter('pane-b'), 'lph', 'live draft shows in the filtered pane-b');
     eq(api.getFilter('pane-a'), '', 'pane-a shows no draft (not the filtered pane)');

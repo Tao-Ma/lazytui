@@ -146,10 +146,12 @@ describe('[10] filter_enter clears multiSel — selections from pre-filter conte
   // multiSel-clear on All↔Quick toggle.
   it('filter_enter on a panel with multiSel clears the selection', () => {
     const dispatch = require('../dispatch/dispatch');
+    const route = require('../panel/route');
     toggleMultiSel('containers', 'a');
     toggleMultiSel('containers', 'b');
     eq(multiSelCount('containers'), 2, 'seeded two selections');
-    dispatch.applyMsg({ type: 'filter_enter', panel: 'containers', text: '' });
+    // blessed-A — the filter arm reads msg.route (handler-stamped); thread it.
+    dispatch.applyMsg({ type: 'filter_enter', panel: 'containers', text: '', route: route.bundle('containers') });
     eq(multiSelCount('containers'), 0, 'multiSel cleared on filter_enter');
     eq(getModel().modes.filterMode, true, 'filterMode set as side-effect');
     // Restore so subsequent tests don't inherit filter mode.

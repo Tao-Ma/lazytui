@@ -38,7 +38,9 @@ const pt = require('../leaves/pane-tabs');
 /** v0.6.4 Theme C — compute the focused viewer's tab info HERE (handler,
  *  impure) so the next_tab/prev_tab reducer arms stay pure of Component
  *  slice reads: they get curTab + total + the resolved tab-key array and
- *  do the (pure) cycle math. resolveTarget (routing) stays in the arm. */
+ *  do the (pure) cycle math. v0.6.5 blessed-A — also resolve the Cmd
+ *  `target` here (was `resolveTarget('viewer')` inside the arm) and thread
+ *  it, so the arm reads no route topology either. */
 function _viewerTabBundle() {
   const target = route.resolveTarget('viewer');
   const slice = (target && getInstanceSlice(target)) || { tab: 0 };
@@ -46,7 +48,7 @@ function _viewerTabBundle() {
   const groupName = m.currentGroup || '';
   const total = pt.flatTabInfo(slice, m, groupName).total;
   const tabKeys = Array.from({ length: total }, (_, i) => pt.resolveTabKey(i, { ...slice, tab: i }, m));
-  return { curTab: slice.tab | 0, total, tabKeys, currentGroup: groupName };
+  return { target, curTab: slice.tab | 0, total, tabKeys, currentGroup: groupName };
 }
 
 // Lazy stub for the dispatch back-edge. Each invocation looks up the
