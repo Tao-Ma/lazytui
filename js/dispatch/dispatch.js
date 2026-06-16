@@ -708,8 +708,11 @@ function _registerBuiltinChords() {
   keybindings.registerKeyBinding('gg', { label: 'top',     run: () => handleAction('goto_top') },  b);
   keybindings.registerKeyBinding('ge', { label: 'bottom',  run: () => handleAction('goto_bottom') }, b);
   keybindings.registerKeyBinding('c',  { label: 'collapse', run: () => handleAction('toggle_collapse_focused') }, b);
-  keybindings.registerKeyBinding('j',  { label: 'jobs (running)', run: () => applyMsg({ type: 'jobs_open' }) }, b);
-  keybindings.registerKeyBinding('e',  { label: 'diagnostics', run: () => applyMsg({ type: 'diag_log_open' }) }, b);
+  // `now` stamped here in the impure shell (blessed exception C) so the
+  // reducer's *_open arm seeds model.now without reading the clock itself —
+  // the first overlay frame shows a fresh age (model.now / tick arc).
+  keybindings.registerKeyBinding('j',  { label: 'jobs (running)', run: () => applyMsg({ type: 'jobs_open', now: Date.now() }) }, b);
+  keybindings.registerKeyBinding('e',  { label: 'diagnostics', run: () => applyMsg({ type: 'diag_log_open', now: Date.now() }) }, b);
   keybindings.labelSubtree('g', '+goto');
 }
 _registerBuiltinChords();

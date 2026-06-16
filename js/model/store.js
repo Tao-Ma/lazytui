@@ -35,6 +35,7 @@
  * Field map:
  *   - modes{}                        — 14 modal flags (single registry; see leaves/modes.js)
  *   - currentGroup                   — current group (chrome)
+ *   - now / clockArmed               — frame clock + gated-tick latch (docs/model-now-tick.md)
  *   - modal{ filter, menu, confirm, prompt, copy, registerPopup, cmdline }
  *                                    — modal sub-model editing buffers
  *   - config / projectDir / configPath — parsed config + paths
@@ -55,6 +56,15 @@ function init() {
   const m = {
     modes: initialModes,
     currentGroup: '',
+    // Frame clock (model.now / tick arc — docs/model-now-tick.md). `now`
+    // is the last-ticked wall-clock ms; the render path reads it instead
+    // of Date.now() so a frame is a pure function of the model (and thus
+    // of the Msg log → replayable). `clockArmed` gates the self-re-arming
+    // tick: it runs ONLY while an age-display overlay (jobs/diag) is open,
+    // so an idle TUI emits no ticks and the replay log stays quiet. Both
+    // are written only by the reducer (clock_tick / *_open arms).
+    now: 0,
+    clockArmed: false,
     // Transient per-mode editing buffers (the modal sub-models). The
     // reducer owns them; each modal handler is an update branch.
     // `filter` here is the live `/`-filter draft (text + which panel

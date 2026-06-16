@@ -1,8 +1,26 @@
 # `model.now` / tick arc — eliminating the render-side wall-clock read
 
-**Status:** SPEC (future dedicated arc, not v0.6.5). Records the design for
-removing blessed-exception **D** (`docs/v0.6.5-tea-reaudit.md`): the
-`Date.now()` default in `render()` (`paint.js:655`).
+**Status:** ☑ SHIPPED 2026-06-16. Removed blessed-exception **D**
+(`docs/v0.6.5-tea-reaudit.md`): the `Date.now()` default in `render()`. This
+doc is now the as-built record (spec + what landed). Chose the **gated tick**
+(option b). Pinned by `test-overlay-clock.js` + the `clock_tick` reducer tests
+(test-jobs.js / test-diag-log.js). The remaining half of an end-to-end replay
+feature — persisting/re-feeding the Msg log (§5) — stays a separate future arc.
+
+As-built deltas from the spec below:
+- `model.now` + `model.clockArmed` added in `js/model/store.js init()`.
+- Reducer (`js/app/runtime.js`): `_armClock` helper + `CLOCK_MS=1000`;
+  `jobs_open`/`diag_log_open` seed `now` from `msg.now` and arm; `clock_tick`
+  arm advances `now` and re-arms while an age overlay is open, else lapses.
+- Dedicated **`arm_clock`** effect (`js/dispatch/effects.js`) — NOT the generic
+  `tick` (which re-dispatches a verbatim Msg and so can't carry a fresh `now`);
+  `arm_clock` reads `Date.now()` in the shell and `applyMsg`s `clock_tick`.
+- Handlers stamp `now` on open (`js/dispatch/dispatch.js` leader `j`/`e`).
+- `render()` → `render(model = getModel())` + `const now = model.now`; both
+  overlay render fns dropped their `Date.now()` defaults.
+
+---
+*Original spec follows (design as proposed; the deltas above are what shipped).*
 
 ## Why this exists (the problem, restated precisely)
 

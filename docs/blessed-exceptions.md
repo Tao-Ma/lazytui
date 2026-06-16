@@ -80,17 +80,19 @@ have been brought under the model-clock discipline:
   boot fallback only). The dims source-of-truth is unified; the 1-frame
   resize desync is gone. `decor.js` was always clean (`paneBounds`). Pinned by
   `test-overlay-dims.js`. See PRINCIPLES §11.
-- ✅ **Wall-clock age → threaded `now` (Finding A).** `renderDiagLog`/
-  `renderJobsOverlay` take `now` (threaded from `paint.render(model, now)`)
-  instead of reading `Date.now()` in-body, so each is a pure function of
-  (side-store, model, now) — replayable given a fixed `now`. Pinned by
-  `test-overlay-clock.js`. One residual frame-boundary read remains by design
-  (`paint.render`'s `now = Date.now()` default — the render analog of the
-  dispatcher's `msg.now`); a live-age display needs a clock somewhere, and a
-  model `now`/tick would remove even that at the cost of tick infrastructure.
-  Root context: both overlays render from out-of-TEA side registries
-  (`feature/jobs.js` Map; `io/diag-log.js` ring buffer), not the model.
-  See PRINCIPLES §11.
+- ✅ **Wall-clock age → threaded `now` → `model.now` (Finding A, FULLY
+  ELIMINATED).** `renderDiagLog`/`renderJobsOverlay` take `now` (threaded from
+  `paint.render(model)`) instead of reading `Date.now()` in-body. The former
+  residual frame-boundary read (`paint.render`'s `now = Date.now()` default)
+  is now GONE: `render()` reads `model.now`, advanced by a gated `clock_tick`
+  reducer arm (the self-re-arming clock runs only while an age overlay is open;
+  the wall-clock read lives in the `arm_clock` effect — the impure shell). So
+  the rendered frame is a pure function of the model → of the Msg log →
+  deterministically replayable. This was the last exception D / the render-
+  replay blocker. See docs/model-now-tick.md. Pinned by `test-overlay-clock.js`
+  + the `clock_tick` reducer tests. Root context: both overlays still render
+  from out-of-TEA side registries (`feature/jobs.js` Map; `io/diag-log.js` ring
+  buffer), not the model. See PRINCIPLES §11.
 
 Everything else below was an eliminable exception and has been removed.
 
@@ -110,14 +112,17 @@ order was by **(correctness value × tractability)**.
    Mechanical, removed the 1-frame resize desync, laid the plumbing #2 rode.
    Pinned by `test-overlay-dims.js`.
 
-**2. ✅ DONE — Finding A — overlay age via a threaded `now`.** Shipped:
-   `renderDiagLog`/`renderJobsOverlay` take `now` from `paint.render(model,
-   now = Date.now())`, so the render fns are pure of wall-clock (replayable
-   given a fixed `now`); the single clock read is concentrated to the frame
-   boundary (the render analog of the dispatcher's `msg.now`). Chose option
-   (a) (thread `now`, keep jobs/diag as out-of-TEA side stores) over (b)
-   (migrate the registries into the model) — (b) stays available if a future
-   need (e.g. full model-`now` tick) arises. Pinned by `test-overlay-clock.js`.
+**2. ✅ DONE — Finding A — overlay age via a threaded `now`, THEN `model.now`.**
+   Shipped in two steps. First: `renderDiagLog`/`renderJobsOverlay` take `now`
+   from `paint.render`, so the render fns are pure of wall-clock; the single
+   clock read was concentrated to the frame boundary. Then (model.now / tick
+   arc, docs/model-now-tick.md) that residual boundary read was eliminated too:
+   `render()` reads `model.now`, advanced by a gated `clock_tick` reducer arm
+   (clock runs only while an age overlay is open; the wall-clock read moved to
+   the `arm_clock` effect — the impure shell). The frame is now a pure function
+   of the model → of the Msg log → deterministically replayable. (This is what
+   the re-audit tracked as blessed exception D / the render-replay blocker.)
+   Pinned by `test-overlay-clock.js` + the `clock_tick` reducer tests.
 
 **3. ✅ DONE 2026-06-15 — `viewer.update()` boundary `getModel()` → threaded
    bundle.** Shipped across P0–P5 (commits `89201d8` → P5). The viewer reducer

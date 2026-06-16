@@ -122,6 +122,20 @@ function _clampRegisterPopup(rp, n, vh) {
 function _withModes(model, patch) {
   return { ...model, modes: { ...model.modes, ...patch } };
 }
+// Frame-clock cadence (model.now / tick arc — docs/model-now-tick.md).
+// 1s matches the human-visible age resolution of the jobs/diag overlays.
+const CLOCK_MS = 1000;
+// Arm the gated frame-clock loop if it isn't already running. Returns the
+// [model, cmds] pair so an *_open arm can `return _armClock(opened)`. The
+// `arm_clock` effect reads the wall clock in the impure shell (blessed
+// exception C) and dispatches `clock_tick` carrying the fresh `now`; the
+// clock_tick arm re-emits this Cmd while an age overlay stays open and lets
+// it lapse (clockArmed→false) otherwise. Idempotent: a second open while
+// armed adds no Cmd, so jobs+diag open together never double-arm.
+function _armClock(model) {
+  if (model.clockArmed) return [model, []];
+  return [{ ...model, clockArmed: true }, [{ type: 'arm_clock', ms: CLOCK_MS }]];
+}
 function _withModal(model, patch) {
   return { ...model, modal: { ...model.modal, ...patch } };
 }
@@ -664,13 +678,29 @@ function update(model, msg) {
     // responsibility — the reducer takes the count + vh in the Msg.
     case 'jobs_open':
       if (model.modes.jobsMode) return [model, []];
-      return [{
+      // Stamp `now` from the handler (msg.now) so the first frame shows a
+      // fresh age, then arm the frame clock (gated on age overlays open).
+      return _armClock({
         ..._withModes(model, { jobsMode: true }),
         modal: { ...model.modal, jobs: { cursor: 0, scroll: 0 } },
-      }, []];
+        now: msg.now || model.now,
+      });
     case 'jobs_close':
       if (!model.modes.jobsMode) return [model, []];
       return [_withModes(model, { jobsMode: false }), []];
+    // Frame-clock tick (docs/model-now-tick.md). Advance model.now from the
+    // shell-stamped msg.now, then re-arm ONLY while an age overlay is still
+    // open — otherwise drop clockArmed so the loop lapses (idle = no ticks).
+    // A close needs no work: the next tick observes both modes false and
+    // stops; a re-open before that tick fires sees clockArmed still true and
+    // skips re-arming (the pending tick re-arms once it sees the mode back on).
+    case 'clock_tick': {
+      const advanced = { ...model, now: msg.now || model.now };
+      if (advanced.modes.jobsMode || advanced.modes.diagLogMode) {
+        return [advanced, [{ type: 'arm_clock', ms: CLOCK_MS }]];
+      }
+      return [{ ...advanced, clockArmed: false }, []];
+    }
     case 'jobs_nav': {
       const j = model.modal.jobs;
       const count = msg.count | 0;
@@ -696,10 +726,11 @@ function update(model, msg) {
     // the count is threaded in like jobs). clear / save are effects.
     case 'diag_log_open':
       if (model.modes.diagLogMode) return [model, []];
-      return [{
+      return _armClock({
         ..._withModes(model, { diagLogMode: true }),
         modal: { ...model.modal, diagLog: { cursor: 0, scroll: 0 } },
-      }, []];
+        now: msg.now || model.now,
+      });
     case 'diag_log_close':
       if (!model.modes.diagLogMode) return [model, []];
       return [_withModes(model, { diagLogMode: false }), []];
