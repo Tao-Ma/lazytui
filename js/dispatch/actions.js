@@ -407,7 +407,7 @@ function handleAction(action, arg) {
       applyMsg({ type: 'free_config' });
       break;
     case 'quit':
-      require('../app/cleanup').cleanup();
+      require('./cleanup').cleanup();
       process.exit(0);
       break;
   }

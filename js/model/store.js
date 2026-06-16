@@ -6,12 +6,13 @@
  * is the most-depended-on module in the system: every Component, every
  * dispatcher, every overlay/render reader calls `getModel()`. It lives
  * here — below `panel/` and `dispatch/` — so those layers depend *down*
- * on the store instead of reaching *up* into `app/runtime`. Extracting
- * it (v0.6.5 §1) is what cut the {app, dispatch, panel} require cycle:
+ * on the store instead of reaching *up* into the reducer. Extracting it
+ * (v0.6.5 §1) is what cut the {app, dispatch, panel} require cycle:
  * the store imports only `leaves/modes` (a pure leaf), nothing upward.
  *
- * The reducer `update(model, msg)` stays in `app/runtime.js` — it reads
- * `panel/route`, so it can't live this low. The store knows nothing
+ * The reducer `update(model, msg)` lives in `dispatch/reducer.js` (F3 —
+ * docs/reducer-cleanup-relocation.md) — it reads `panel/route`, so it sits
+ * at `dispatch`, above this store but below `app`. The store knows nothing
  * about the reducer; `setModel` is called by the dispatch boundary
  * (`dispatch/dispatch.applyMsg`) after the reducer returns.
  *
@@ -25,7 +26,7 @@
 /**
  * The root model.
  *
- * Single owned object; the reducer (`app/runtime.update`) is its single
+ * Single owned object; the reducer (`dispatch/reducer.update`) is its single
  * writer. Component slices (detail / groups / docker / files /
  * config-status / layout) live in the instance store (panel/route.js)
  * and are written only by their own `update`. The layout slice owns the

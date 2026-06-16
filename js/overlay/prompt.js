@@ -11,7 +11,7 @@
 'use strict';
 
 const { getModel } = require('../model/store');
-const { _ghostSuffix } = require('../app/runtime');
+const { ghostSuffix } = require('../leaves/ghost');
 const { esc, visibleLen } = require('../io/ansi');
 const { renderOverlay, viewportDims } = require('../render/panel');
 const { stdout } = require('../io/term');
@@ -24,7 +24,7 @@ function renderPromptOverlay() {
   lines.push('');
   // Autosuggest tail (dim, after the typed text) — empty unless the typed
   // text is a strict prefix of the ghost.
-  const tail = _ghostSuffix(p.text, p.ghost);
+  const tail = ghostSuffix(p.text, p.ghost);
   const tailMarkup = tail ? `[dim]${esc(tail)}[/]` : '';
   const inputLine = `> ${esc(p.text)}${tailMarkup}`;
   const inputLineIdx = lines.length;

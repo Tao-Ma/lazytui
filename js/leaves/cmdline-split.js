@@ -25,7 +25,7 @@ function splitQuery(text) {
 // Visible row count of the `:` cmdline match dropdown. The reducer
 // scrolls the viewport so the selected match stays in view; the
 // renderer paints the same window. Shared from this leaf so the
-// reducer (app/runtime) and the overlay paint (overlay/cmdline) can
+// reducer (dispatch/reducer) and the overlay paint (overlay/cmdline) can
 // never drift out of sync.
 const DROPDOWN_VIEWPORT = 8;
 

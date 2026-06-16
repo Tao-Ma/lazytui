@@ -48,7 +48,7 @@ function _viewerHotkey() {
   return p ? p.hotkey : '';
 }
 const { handleKey, applyMsg, showSelectedInfo, navSelect } = require('./dispatch');
-const { cleanup } = require('../app/cleanup');
+const { cleanup } = require('./cleanup');
 
 // --- Mouse handling ---
 

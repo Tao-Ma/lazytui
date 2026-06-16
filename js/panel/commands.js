@@ -22,9 +22,10 @@
  *
  * Run closures are lazy on their imports too: `help` lazy-requires overlay/help
  * to avoid an api → help → api cycle at module-load time. `cleanup`
- * lazy-requires `app/cleanup` because that file pulls `terminal` → `node-pty`,
- * which CLI mode (cli.js) needs to avoid — cli.js may require panel/api to
- * discover Component `groupActions` without booting the TUI runtime.
+ * lazy-requires `dispatch/cleanup` because that file pulls `terminal` →
+ * `node-pty`, which CLI mode (cli.js) needs to avoid — cli.js may require
+ * panel/api to discover Component `groupActions` without booting the TUI
+ * runtime. (Lazy keeps this a deferred panel→dispatch edge, not a load-time one.)
  */
 'use strict';
 
@@ -42,7 +43,7 @@ const FRAMEWORK_COMMANDS = [
     name: 'quit',
     desc: 'Exit the TUI',
     run: () => {
-      const { cleanup } = require('../app/cleanup');
+      const { cleanup } = require('../dispatch/cleanup');
       cleanup();
       process.exit(0);
     },

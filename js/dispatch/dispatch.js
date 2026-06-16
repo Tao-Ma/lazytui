@@ -34,9 +34,9 @@ const { isTerminalTab, activeTerminalId, findEphemeralByid,
 const { isSessionDead } = require('../io/terminal');
 const keybindings = require('./keybindings');
 const modes = require('../leaves/modes');
-// The reducer (`update`) stays in app/runtime; getModel/setModel are the
-// bottom-layer store (v0.6.5 §1) — imported down, not off `runtime`.
-const runtime = require('../app/runtime');
+// The reducer (`update`) lives in dispatch/reducer.js (F3 — intra-layer);
+// getModel/setModel are the bottom-layer store (v0.6.5 §1), imported down.
+const runtime = require('./reducer');
 const route = require('../panel/route');
 const mpane = require('../leaves/pane');
 const { halfProjection } = require('../leaves/geometry');
@@ -556,7 +556,7 @@ function handleNormalKey(key, seq) {
     return;
   }
   switch (key) {
-    case 'q': { require('../app/cleanup').cleanup(); process.exit(0); break; }
+    case 'q': { require('./cleanup').cleanup(); process.exit(0); break; }
     case 'escape': {
       // Esc exits list-select mode (and clears the selection). Outside
       // select mode it clears any lingering multi-selection. When
