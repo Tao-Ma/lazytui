@@ -272,7 +272,7 @@ describe('[4] serializeLayout — full layout block', () => {
   });
 
   it('round-trips a plugin files panel\'s string extras (source/container/root)', () => {
-    // Regression for design-mode save → reload dropping plugin panel
+    // Regression for free-config save → reload dropping plugin panel
     // options. The pool-entry form carries the string extras; a save
     // (serialize) followed by reload (parse) must preserve them.
     const tmp = path.join(os.tmpdir(), `lazytui-yaml-rt2-${process.pid}.yml`);
