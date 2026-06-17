@@ -46,7 +46,7 @@
 'use strict';
 
 const { getInstanceSlice } = require('../panel/api');
-const { theme } = require('./themes');
+const { theme } = require('../leaves/themes');
 const mpool = require('../leaves/pool');
 const { visibleBoundsFor } = require('../leaves/geometry');
 

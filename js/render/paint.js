@@ -32,9 +32,9 @@ const { allPanels } = require('../panel/nav-state');
 const geo = require('../leaves/geometry');
 const mpool = require('../leaves/pool');
 const mpane = require('../leaves/pane');
-const { theme } = require('./themes');
+const { theme } = require('../leaves/themes');
 const { truncate } = require('./panel');
-const painter = require('./painter');
+const painter = require('../leaves/painter');
 const { isTerminalTab, activeTerminalId, activeTerminalConfig } = require('../panel/viewer/tabs');
 const { ensureSession, resizeSession, sessionScrollInfo } = require('../io/terminal');
 const { getInstanceSlice, sliceForPane, getComponent,
@@ -751,7 +751,7 @@ function render(model = getModel()) {
 // Debouncing primitives live in render-queue.js (both terminal.js and
 // actions.js need scheduleOverlay / scheduleRender; render-queue.js has no
 // dependencies, breaking what would otherwise be a cycle through layout).
-require('./render-queue').setRenderers({ render, overlay: renderTerminalOverlay });
+require('../leaves/render-queue').setRenderers({ render, overlay: renderTerminalOverlay });
 
 /**
  * Invalidate the per-row diff cache so the next render() does a

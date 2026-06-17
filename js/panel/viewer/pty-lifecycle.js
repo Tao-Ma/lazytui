@@ -27,7 +27,7 @@
 const tabs = require('./tabs');
 const api = require('../api');
 const { getModel } = require('../../model/store');
-const { scheduleRender } = require('../../render/render-queue');
+const { scheduleRender } = require('../../leaves/render-queue');
 
 function handleExit(id, exitCode) {
   // v0.6.1 Phase 4 — resolve which viewer-kind instance hosts this
@@ -72,7 +72,7 @@ function handleExit(id, exitCode) {
 function install() {
   const term = require('../../io/terminal');
   term.setExitHandler(handleExit);
-  term.setRenderHook(require('../../render/render-queue').scheduleOverlay);
+  term.setRenderHook(require('../../leaves/render-queue').scheduleOverlay);
   term.setJobsHooks(require('../../feature/jobs'));
 }
 

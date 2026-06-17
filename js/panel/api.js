@@ -21,7 +21,7 @@ const route = require('../panel/route');
 // away from any future API change. Direct imports from `../ansi` etc.
 // still work but are not part of the contract.
 const { esc, visibleLen, stripMarkup, wrapColor } = require('../io/ansi');
-const { theme } = require('../render/themes');
+const { theme } = require('../leaves/themes');
 const { renderPanel } = require('../render/panel');
 // Panel-state accessors live in ./nav-state (v0.6.5 §1 Phase 2). api uses
 // syncPanelScroll (its per-dispatch finalizer clamps each pane) and re-exports
@@ -63,7 +63,7 @@ function filterCurrentText() { return getModel().modal.filter.text; }
 
 const { streamCommand } = require('../dispatch/stream');
 const { addEphemeralTab } = require('./viewer/tabs');
-const { scheduleRender } = require('../render/render-queue');
+const { scheduleRender } = require('../leaves/render-queue');
 
 // Components — the TEA-shaped strict-discipline shape used by every
 // in-tree panel. A Component owns a state slice via init() and accepts

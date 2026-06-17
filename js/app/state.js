@@ -18,7 +18,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { setTheme } = require('../render/themes');
+const { setTheme } = require('../leaves/themes');
 const { getModel } = require('../model/store');
 const { rebuildLayoutFromConfig } = require('../leaves/arrange');
 // Panel-state accessors (readers/writers/composites) moved to

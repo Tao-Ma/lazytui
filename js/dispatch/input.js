@@ -1003,7 +1003,7 @@ function setupKeyListener() {
     if (data === '\x1b[I') {
       const wasUnfocused = !getModel().focused;
       applyMsg({ type: 'focus_event', focused: true });
-      if (wasUnfocused) require('../render/render-queue').scheduleRender();
+      if (wasUnfocused) require('../leaves/render-queue').scheduleRender();
       return;
     }
     if (data === '\x1b[O') {

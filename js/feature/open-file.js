@@ -50,12 +50,12 @@ function openHostFileAsTab(filepath, opts = {}) {
   };
   loadFile(absPath, loadOpts).then(result => {
     updateContentTabLines(originGroup, key, result.lines);
-    require('../render/render-queue').scheduleRender();
+    require('../leaves/render-queue').scheduleRender();
   }).catch(err => {
     updateContentTabLines(originGroup, key, [
       '[red]Failed to load:[/]', '', `[dim]${esc(err.message)}[/]`,
     ]);
-    require('../render/render-queue').scheduleRender();
+    require('../leaves/render-queue').scheduleRender();
   });
 }
 
