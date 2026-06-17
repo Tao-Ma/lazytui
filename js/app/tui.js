@@ -156,7 +156,7 @@ function main() {
   const { setupKeyListener } = require('../dispatch/input');
   const { getModel } = require('../model/store');
   const { installSuspendHandlers } = require('./suspend');
-  const { cleanup } = require('./cleanup');
+  const { cleanup } = require('../dispatch/cleanup');
 
   // Register the global cleanup handler FIRST — any throw between here
   // and the input pump starting (loadConfig, registerComponent, the
