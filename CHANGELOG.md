@@ -19,6 +19,11 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   `[↑N]` indicator shows how far back the view sits, and any keystroke
   at the prompt snaps back to the live bottom. (v0.6.5 §5(a);
   `docs/v0.6.5.md`.)
+- **Runtime mint/dispose of per-pane Component instances.** Component
+  slice instances are now created and disposed as panes are placed or
+  removed at runtime (not just at boot), reconciled once per dispatch
+  through the post-dispatch finalizer gate. Backs same-kind multi-pane
+  and multi-viewer layouts that change live. (v0.6.5 §5(b).)
 
 ### Changed
 - **The two `leaves/` modules that reached up into `panel/` no longer do.**
@@ -47,6 +52,62 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   `resetModes`) no longer default their modes-bag via a lazy
   `getModel()` reach into `app/runtime` — callers pass it explicitly
   (internal cleanup, no behavior change). (v0.6.5 §4.)
+- **Render reads time from the model, not the wall clock.** The
+  render-side `Date.now()` (drag-preview / animation timing) is replaced
+  by `model.now`, advanced by a `tick` Msg. Rendering is now a pure
+  function of the model, so a recorded Msg log replays deterministically.
+  (blessed-exception D; `5488146`.)
+
+### Architecture
+
+This release makes the module layer graph **fully acyclic** (`dep-walker`
+reports no layer SCCs in either mode) through a sequence of structural
+arcs. Specs: [docs/v0.6.5.md](docs/v0.6.5.md), `v0.6.5-tea-reaudit.md`,
+`v0.6.5-render-exit.md`, `v0.6.5-dispatch-loop.md`,
+`v0.6.5-reducer-cleanup-relocation.md`.
+
+- **Render-exit (layer SCC 5→4).** The pure render tier moved down into
+  `leaves/`: the panel renderer → `leaves/draw.js`, plus
+  scrollbar/painter/themes/render-queue; `decor` split into a pure half
+  (`leaves/draw`) and the slice-reading hit-tests
+  (`panel/chrome-hittest.js`). Dispatch/overlay painting now routes
+  through the render-queue seam. `render/` is down to `paint.js` +
+  `footer.js`.
+- **Domain-detangle (layer SCC 4→3→0).** `feature` was extracted to the
+  bottom via injected seams, then the remaining `{overlay, panel,
+  dispatch}` cycle was dissolved with `leaves/panel-host.js` — an injected
+  dispatch port wired at boot by `dispatch/host-wiring.js`.
+- **Dispatch-loop relocation.** The Component fan-out + post-dispatch
+  finalizer moved from `panel/api.js` to `dispatch/fanout.js` — the
+  runtime now lives in the dispatch layer, above the Components it drives.
+  Every former panel→runtime call became an explicit injected dispatch
+  host (effect handlers, subscriptions, nav-state writers, command
+  run-closures, viewer write-helpers). Result: `panel → dispatch` import
+  edges = 0. `panel/api.js` is now a pure component-framework surface
+  (registry + reads + view contributions).
+- **App-SCC extraction (F3).** The root reducer + cleanup relocated from
+  `app/runtime.js` to `dispatch/`; `app/runtime.js` is now a thin
+  back-compat re-export.
+- **TEA re-audit (F1–F5).** The viewer (`y`/`$`), docker, files, and
+  history reducer arms are now pure — model facts are threaded through the
+  Msg payload (the `augmentMsg` pattern) instead of read via `getModel()`
+  inside a reducer. The focus-routing half of blessed-exception A was
+  eliminated (route topology is stamped onto the Msg by the handler).
+- **Static-layering pass (§1).** Extracted `model/store.js`; split the
+  `app/state` read helpers into `panel/nav-state.js`; re-homed the io
+  sinks (`app/exec`, `dispatch/{event,diag}-log`) into `io/`; memoized
+  `resolveTarget` / `resolveViewerPaneId` on the per-Msg finalizer path.
+
+### Fixed
+
+- **Embedded-PTY exit while in terminal mode was silently dropped.** The
+  `terminal_exit` Msg was routed through the Component fan-out, which
+  drops unwrapped root Msgs (it was error-logged and only cleared on the
+  next keystroke). It now goes through the root reducer, consistently with
+  every other `terminal_exit` site. (`1a5c018`.)
+- **Hidden (pool-only) panes resolved the wrong Component kind.**
+  `route.instanceKind` now resolves pool-only / hidden panes instead of
+  only placed ones. (v0.6.5 §5(b3); `f465ef8`.)
 
 ## [0.6.4] — 2026-06-15
 
