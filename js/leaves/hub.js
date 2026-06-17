@@ -12,16 +12,17 @@
  * (subscribers, ring buffers) but stateful ≠ non-leaf — a leaf is just the
  * bottom of the import graph. Its one upward call (fan a publish out to
  * Components as a `hub` Msg) is INJECTED via setDispatch (wired from
- * panel/api at boot) so the hub never imports panel — keeping it a true
- * bottom layer (render-exit-style seam; see docs/v0.6.5-render-exit.md).
+ * dispatch/fanout at boot — the Component fan-out's home since v0.6.5 B/S6) so
+ * the hub never imports panel/dispatch — keeping it a true bottom layer
+ * (render-exit-style seam; see docs/v0.6.5-dispatch-loop.md).
  */
 'use strict';
 
 // --- Internal state ---
 
-// Injected Component-Msg dispatcher (panel/api.dispatchMsg). null until the
-// boot wiring runs; a publish before then simply doesn't fan out (the same
-// drop the old lazy require could hit before api loaded).
+// Injected Component-Msg dispatcher (dispatch/fanout.dispatchMsg). null until
+// the boot wiring runs; a publish before then simply doesn't fan out (the same
+// drop the old lazy require could hit before the fan-out loaded).
 let _dispatch = null;
 function setDispatch(fn) { _dispatch = fn; }
 
