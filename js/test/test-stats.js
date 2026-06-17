@@ -9,7 +9,7 @@
 'use strict';
 
 const { describe, it, assert, eq, report } = require('./test-runner');
-const hub = require('../panel/hub');
+const hub = require('../leaves/hub');
 const { rasterize, BLOCKS } = require('../panel/monitor/stats-graph');
 const stats = require('../panel/monitor/stats');
 const docker = require('../panel/navigator/docker');

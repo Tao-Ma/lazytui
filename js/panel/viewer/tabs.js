@@ -212,3 +212,8 @@ module.exports = {
   addContentTab, removeContentTab, updateContentTabLines,
   handleSessionCleanExit,
 };
+
+// Feature-host seam: feature/open-file + open-docker push file content into a
+// viewer tab through these injected fns instead of importing panel (keeps
+// feature a bottom layer). See leaves/feature-host.js + docs/v0.6.5-render-exit.md.
+require('../../leaves/feature-host').setFeatureHost({ addContentTab, updateContentTabLines });

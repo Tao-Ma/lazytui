@@ -7,7 +7,7 @@
  */
 'use strict';
 
-const hub = require('../panel/hub');
+const hub = require('../leaves/hub');
 const { describe, it, assert, eq, report } = require('./test-runner');
 
 // Per-suite harness: history.js subscribes to actions.lifecycle on first

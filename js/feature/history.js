@@ -17,7 +17,7 @@
  */
 'use strict';
 
-const hub = require('../panel/hub');
+const hub = require('../leaves/hub');
 
 const TOPIC = 'actions.lifecycle';
 const HISTORY_MAX = 100;

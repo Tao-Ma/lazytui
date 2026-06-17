@@ -33,7 +33,7 @@
 
 const path = require('path');
 const { dockerList, dockerReadBytes, listRunningContainers } = require('./docker-fs');
-const { addContentTab, updateContentTabLines } = require('../panel/viewer/tabs');
+const { addContentTab, updateContentTabLines, refireCmdlineRebuild } = require('../leaves/feature-host');
 const { loadFile, DEFAULT_MAX_BYTES, DEFAULT_HEX_AFTER } = require('../io/file-loader');
 const { esc } = require('../io/ansi');
 const { getModel } = require('../model/store');
@@ -150,23 +150,12 @@ function _kickFetch(container, dir) {
   dockerList(container, dir).then(res => {
     _inflightFetches.delete(key);
     _dirCache[key] = (res && res.error) ? null : (res.items || []);
-    _refireCmdlineRebuild();
+    refireCmdlineRebuild();
   }).catch(() => {
     _inflightFetches.delete(key);
     _dirCache[key] = null;
-    _refireCmdlineRebuild();
+    refireCmdlineRebuild();
   });
-}
-
-/** Re-fire the cmdline_rebuild effect's logic so the dropdown picks
- *  up newly-cached completions. No-op when cmdline isn't open. Mirrors
- *  the registerEffect('cmdline_rebuild', …) handler in dispatch/effects.js. */
-function _refireCmdlineRebuild() {
-  const runtime = require('../model/store');
-  if (!runtime.getModel().modes.cmdMode) return;
-  const matches = require('../dispatch/cmdline').rebuild(runtime.getModel().modal.cmdline.text);
-  require('../dispatch/dispatch').applyMsg({ type: 'cmdline_set_matches', matches });
-  require('../leaves/render-queue').scheduleRender();
 }
 
 function _completePath(container, fullPath) {

@@ -8,14 +8,22 @@
  * wildcard). Zero subscribers → publish drops; cost scales with
  * what's rendered, not what's possible.
  *
- * Lives under `panel/` (alongside api, route, layout) because it's
- * panel-framework infrastructure: the data bus panels publish to and
- * subscribe from. Module-private state (subscribers, ring buffers)
- * is stateful — not a leaf. Zero npm dependencies; pure JS.
+ * A pure-JS leaf (zero npm deps; only io/event-log). It's stateful
+ * (subscribers, ring buffers) but stateful ≠ non-leaf — a leaf is just the
+ * bottom of the import graph. Its one upward call (fan a publish out to
+ * Components as a `hub` Msg) is INJECTED via setDispatch (wired from
+ * panel/api at boot) so the hub never imports panel — keeping it a true
+ * bottom layer (render-exit-style seam; see docs/v0.6.5-render-exit.md).
  */
 'use strict';
 
 // --- Internal state ---
+
+// Injected Component-Msg dispatcher (panel/api.dispatchMsg). null until the
+// boot wiring runs; a publish before then simply doesn't fan out (the same
+// drop the old lazy require could hit before api loaded).
+let _dispatch = null;
+function setDispatch(fn) { _dispatch = fn; }
 
 const buffers = new Map();      // topic -> Map<rowKey, sample[]>
 const schemas = new Map();      // topic -> { rowKey?, columns? }
@@ -96,8 +104,9 @@ function publish(topic, rowKey, sample) {
   // drops because no subscribers ask for the topic.
   require('../io/event-log').record('publish', { topic, rowKey, sample });
   // Component Msg dispatch (v0.3.0). Hub publishes fan out to every
-  // Component's update() as a 'hub' Msg.
-  require('./api').dispatchMsg({ type: 'hub', topic, rowKey, sample });
+  // Component's update() as a 'hub' Msg — via the injected dispatcher so
+  // the hub stays a leaf (no import up into panel/api).
+  if (_dispatch) _dispatch({ type: 'hub', topic, rowKey, sample });
   // Wildcard subscriptions don't pre-populate the cache for topics they'd
   // match (the topic name isn't known until first publish). Compute on
   // demand and cache so the second publish is hot.
@@ -255,6 +264,7 @@ function _reset() {
 }
 
 module.exports = {
+  setDispatch,
   publish, defineTopic, delete: deleteRow,
   subscribe, unsubscribe,
   history, snapshot, matrix,
