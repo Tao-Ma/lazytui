@@ -656,10 +656,12 @@ function handleNormalKey(key, seq) {
       break;
     }
     case '?':              handleAction('show_help'); break;
-    // Tab keys: framework default cycles detail tabs. Panels that own
-    // their own ]/[ behavior (config-status's tab cycle) return the
-    // `_claimed` sentinel from their update and short-circuit before
-    // we reach this switch.
+    // Tab keys: framework default cycles the viewer's tabs. The groups
+    // quick-tab override is handled EARLIER in this fn (the [/] fork at the
+    // top). config-status deliberately does NOT claim [/] — it lets them
+    // fall through to this cycle (it claims t/s/return only). A focused
+    // Component could still claim [/] via the `_claimed` sentinel from its
+    // update and short-circuit before we reach here, but none does today.
     case ']':              handleAction('next_tab'); break;
     case '[':              handleAction('prev_tab'); break;
     case 'pageup': case ',': handleAction('page_up'); break;
