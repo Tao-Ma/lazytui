@@ -104,7 +104,7 @@ function clearEffects() { for (const k of Object.keys(_handlers)) delete _handle
 function installBuiltins() {
   const { getModel } = require('../model/store');
   const api = require('../panel/api');
-  const renderQueue = require('../render/render-queue');
+  const renderQueue = require('../leaves/render-queue');
   // render: request a repaint (async effect results landing into a slice).
   registerEffect('render', () => {
     try { renderQueue.scheduleRender(); } catch (_) { /* no renderer */ }

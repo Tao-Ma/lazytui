@@ -8,7 +8,7 @@
 'use strict';
 
 const { describe, it, eq, assert, report } = require('./test-runner');
-const { composeRows, paintFrame } = require('../render/painter');
+const { composeRows, paintFrame } = require('../leaves/painter');
 
 const R = (x, y, w, h, lines) => ({ x, y, w, h, lines });
 

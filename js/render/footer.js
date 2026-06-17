@@ -19,7 +19,7 @@
 const { RESET, richToAnsi, esc, visibleLen, wrapColor } = require('../io/ansi');
 const { stdout } = require('../io/term');
 const { multiSelCount } = require('../panel/nav-state');
-const { theme } = require('./themes');
+const { theme } = require('../leaves/themes');
 const { truncate, viewportDims } = require('./panel');
 const { isTerminalTab, activeTerminalId, activeTerminalConfig,
         getTabInfo, findEphemeralByid } = require('../panel/viewer/tabs');

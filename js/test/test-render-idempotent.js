@@ -26,7 +26,7 @@ const { getModel } = require('../app/runtime');
 const { getInstanceSlice } = require('../panel/api');
 
 const { recomputeGroups } = require('../app/state');
-const { setTheme } = require('../render/themes');
+const { setTheme } = require('../leaves/themes');
 const groups = require('../panel/navigator/groups');
 const actions = require('../panel/navigator/actions');
 const detail = require('../panel/viewer/viewer');

@@ -17,7 +17,7 @@
 const { getModel } = require('../model/store');
 const { richToAnsi, RESET, visibleLen, esc } = require('../io/ansi');
 const { stdout } = require('../io/term');
-const { theme } = require('../render/themes');
+const { theme } = require('../leaves/themes');
 const { renderPanel, viewportDims } = require('../render/panel');
 const { DROPDOWN_VIEWPORT: MAX_DROPDOWN } = require('../leaves/cmdline-split');
 

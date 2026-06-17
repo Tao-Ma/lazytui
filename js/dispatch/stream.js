@@ -41,7 +41,7 @@ const { spawn } = require('child_process');
 const { StringDecoder } = require('string_decoder');
 const { esc } = require('../io/ansi');
 const { getModel } = require('../model/store');
-const { scheduleRender } = require('../render/render-queue');
+const { scheduleRender } = require('../leaves/render-queue');
 const history = require('../feature/history');
 const jobs = require('../feature/jobs');
 

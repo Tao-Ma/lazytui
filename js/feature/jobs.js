@@ -19,7 +19,7 @@
  */
 'use strict';
 
-const { scheduleRender } = require('../render/render-queue');
+const { scheduleRender } = require('../leaves/render-queue');
 
 const _jobs = new Map();   // id → JobInfo
 let _seq = 0;

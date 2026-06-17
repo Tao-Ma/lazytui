@@ -6,8 +6,8 @@
 'use strict';
 
 const { visibleLen, stripMarkup, charWidth, richToAnsi, wrapColor, RESET } = require('../io/ansi');
-const { scrollbar } = require('./scrollbar');
-const { theme } = require('./themes');
+const { scrollbar } = require('../leaves/scrollbar');
+const { theme } = require('../leaves/themes');
 const { cols, rows, stdout } = require('../io/term');
 
 const BORDER = { tl: '╭', tr: '╮', bl: '╰', br: '╯', h: '─', v: '│' };

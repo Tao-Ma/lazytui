@@ -169,7 +169,7 @@ const FRAMEWORK_COMMANDS = [
  * candidates depend on current state (loaded themes, configured panels).
  */
 function _frameworkDynamicCommands(m) {
-  const { setTheme, themeNames, activeThemeName } = require('../render/themes');
+  const { setTheme, themeNames, activeThemeName } = require('../leaves/themes');
   const { allPanels } = require('./nav-state');
   const api = require('./api');
   const out = [];
