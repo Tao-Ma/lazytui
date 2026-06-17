@@ -15,23 +15,34 @@
  *     renderTerminalOverlay makes repeat calls cheap (no-op rewrites
  *     for unchanged rows), so bursty `cat large_file` is handled fine.
  *
+ * It also doubles as the render-exit seam: paintNow / forceFullRepaint /
+ * invalidateRows let dispatch + overlay drive the compositor WITHOUT a
+ * static import of render/paint (the edge that kept render in the layer
+ * SCC). paintNow is SYNCHRONOUS — it is a re-route of the old direct
+ * render() call, not the debounced scheduleRender, so paint timing is
+ * unchanged. See docs/v0.6.5-render-exit.md.
+ *
  * Zero dependencies.
  */
 'use strict';
 
 let _renderFn = null;
 let _overlayFn = null;
+let _forceFn = null;
+let _invalidateFn = null;
 let _renderPending = false;
 let _overlayRendering = false;
 
 /**
  * Register the actual paint callbacks. Called once during boot from
- * layout.js — must run before any plugin or PTY callback fires, otherwise
- * the early scheduleRender / scheduleOverlay calls are dropped.
+ * render/paint.js — must run before any plugin or PTY callback fires,
+ * otherwise the early scheduleRender / scheduleOverlay calls are dropped.
  */
-function setRenderers({ render, overlay } = {}) {
+function setRenderers({ render, overlay, forceFull, invalidate } = {}) {
   if (render) _renderFn = render;
   if (overlay) _overlayFn = overlay;
+  if (forceFull) _forceFn = forceFull;
+  if (invalidate) _invalidateFn = invalidate;
 }
 
 function scheduleRender() {
@@ -46,4 +57,17 @@ function scheduleOverlay() {
   try { _overlayFn(); } finally { _overlayRendering = false; }
 }
 
-module.exports = { setRenderers, scheduleRender, scheduleOverlay };
+/** Synchronous immediate repaint — the seam form of the old direct
+ *  render() call (same timing). No-op until renderers are registered. */
+function paintNow() { if (_renderFn) _renderFn(); }
+
+/** Force a full (non-diff) repaint — chrome reclaims the screen. */
+function forceFullRepaint() { if (_forceFn) _forceFn(); }
+
+/** Mark screen rows [startY,endY) dirty so the next frame repaints them. */
+function invalidateRows(startY, endY) { if (_invalidateFn) _invalidateFn(startY, endY); }
+
+module.exports = {
+  setRenderers, scheduleRender, scheduleOverlay,
+  paintNow, forceFullRepaint, invalidateRows,
+};
