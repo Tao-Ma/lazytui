@@ -18,7 +18,7 @@
 'use strict';
 
 const { esc, visibleLen, stripMarkup } = require('../io/ansi');
-const { renderOverlay, truncate, viewportDims } = require('../render/panel');
+const { renderOverlay, truncate, viewportDims } = require('../leaves/draw');
 const { getInstanceSlice } = require('../panel/api');
 const mpool = require('../leaves/pool');
 

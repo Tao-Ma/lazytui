@@ -20,7 +20,7 @@ const { getModel } = require('../model/store');
 const { stripMarkup, esc } = require('../io/ansi');
 const {getPanelDef, getItems, getInstanceSlice, getFocus } = require('../panel/api');
 const route = require('../panel/route');
-const { renderOverlay } = require('../render/panel');
+const { renderOverlay } = require('../leaves/draw');
 
 // Module-held options (label + content thunk + cancel). The reducer mirrors
 // only the render-safe {label, cancel} + idx in model.modal.copy; the thunks

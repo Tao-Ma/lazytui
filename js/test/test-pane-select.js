@@ -95,7 +95,7 @@ describe('[1] reducer arms', () => {
 });
 
 describe('[2] chromeFor — [≡] surfaces the unified pane-menu trigger state', () => {
-  const { chromeFor } = require('../render/decor');
+  const { chromeFor } = require('../leaves/draw');
   it('default (no ctx) → available', () => {
     const p = { type: 'groups', tabs: [{ id: 'groups' }] };
     eq(chromeFor(p, {}).tabTrigger, 'available');

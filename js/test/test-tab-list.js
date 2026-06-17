@@ -148,7 +148,7 @@ describe('[pane-menu items] section depends on the pane kind', () => {
 // Render-side: the [≡] trigger glyph is inserted AFTER (o), so the user
 // sees both the hotkey and the trigger; total width is preserved.
 describe('[chrome:tabTrigger] (o)[≡] layout preserves panel width', () => {
-  const { renderPanel } = require('../render/panel');
+  const { renderPanel } = require('../leaves/draw');
   const { richToAnsi, visibleLen } = require('../io/ansi');
   function strip(s) { return s.replace(/\x1b\[[0-9;]*m/g, ''); }
 

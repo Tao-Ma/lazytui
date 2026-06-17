@@ -1,17 +1,21 @@
 /**
- * Panel renderer — bordered panels with scrollbar.
- * Produces Rich-markup strings (convert to ANSI before writing to terminal).
- * Zero dependencies (uses local ansi.js and scrollbar.js).
+ * Panel renderer — bordered panels with scrollbar + pure chrome-glyph
+ * derivation. Produces Rich-markup strings (convert to ANSI before writing
+ * to terminal). A pure leaf: depends only on io/ansi + io/term + sibling
+ * leaves (scrollbar, themes). Terminal dims arrive via an injected provider
+ * (setDimsProvider) so the leaf never reaches up into panel for the model —
+ * see docs/v0.6.5-render-exit.md.
  */
 'use strict';
 
 const { visibleLen, stripMarkup, charWidth, richToAnsi, wrapColor, RESET } = require('../io/ansi');
-const { scrollbar } = require('../leaves/scrollbar');
-const { theme } = require('../leaves/themes');
+const { scrollbar } = require('./scrollbar');
+const { theme } = require('./themes');
 const { cols, rows, stdout } = require('../io/term');
 
 const BORDER = { tl: '╭', tr: '╮', bl: '╰', br: '╯', h: '─', v: '│' };
 const THUMB = '▐';
+const CLOSE_GLYPH = '\\[X]';
 
 /**
  * Truncate text to max visible width.
@@ -101,22 +105,21 @@ function renderPanel({
   const wantRightCollapse = chrome && chrome.collapse;
   const wantRightClose    = chrome && chrome.close;
   if (chrome && (wantLeftTrigger || wantRightCollapse || wantRightClose)) {
-    const W = require('./decor');
     let leftPart = `${b.tl}${b.h}`;
     if (hotkey) leftPart += `(${hotkey})`;
     if (wantLeftTrigger) {
       // Eat the title-separator dash so [≡] sits flush against `(hk)`,
       // matching the post-injection geometry: `╭─(o)[≡]─title…`. When
       // there's no hotkey, [≡] sits flush against the corner dash.
-      leftPart += W._tabTriggerMarkup(chrome.tabTrigger, focused, fc);
+      leftPart += _tabTriggerMarkup(chrome.tabTrigger, focused, fc);
     }
     if (title) leftPart += `${b.h}${title}`;
     leftPart = truncate(leftPart, innerW + 2 - 2);  // leave space for ╮ on right
 
     let rightPart = '';
-    if (wantRightClose) rightPart += W._closeGlyphMarkup(focused, fc);
+    if (wantRightClose) rightPart += _closeGlyphMarkup(focused, fc);
     if (wantRightClose && wantRightCollapse) rightPart += b.h;
-    if (wantRightCollapse) rightPart += W._collapseGlyphMarkup(chrome.collapse, focused, fc);
+    if (wantRightCollapse) rightPart += _collapseGlyphMarkup(chrome.collapse, focused, fc);
     rightPart += b.tr;
 
     const leftVis  = visibleLen(leftPart);
@@ -209,14 +212,80 @@ function renderPanel({
 // cache and can lead the model by a frame on resize (panels would paint the
 // new size, overlays the old). io/term fallback covers boot before the first
 // term_resized (the layout slice seeds 80x24, so this is belt-and-suspenders).
-// Lazy + memoized require: panel/api → render/panel is a load cycle, so we
-// reach getInstanceSlice via panel/route (no back-edge) at call time.
-let _getInstanceSlice = null;
+//
+// Render-exit seam: this leaf can't read the model (panel layer). The dims
+// source is injected at boot via setDimsProvider — panel/api wires it to read
+// the layout slice — so the model-read stays in panel and the frame stays a
+// pure function of the model. io/term remains the boot/no-provider fallback.
+let _dimsProvider = null;
+function setDimsProvider(fn) { _dimsProvider = fn; }
 function viewportDims() {
-  if (!_getInstanceSlice) _getInstanceSlice = require('../panel/route').getInstanceSlice;
-  const ls = _getInstanceSlice('layout');
-  const d = ls && ls.dims;
+  const d = _dimsProvider && _dimsProvider();
   return (d && d.cols > 0 && d.rows > 0) ? { cols: d.cols, rows: d.rows } : { cols: cols(), rows: rows() };
+}
+
+// --- Pure chrome-glyph derivation (moved from render/decor.js in the
+// render-exit arc; the slice-reading hit-tests went to panel/chrome-hittest).
+// chromeFor decides which glyphs a pane carries; the *Markup builders emit
+// the Rich markup renderPanel composes into the top border. All pure. ---
+
+/**
+ * Pure derivation of which chrome glyphs a pane should carry. Returns a
+ * structured spec the renderer consumes. See panel/chrome-hittest.js for
+ * the geometry/hit-test half.
+ *
+ *   pane: arrange-entry — .type, .collapsed, .tabs.
+ *   ctx:  { freeConfigMode, dragging, focused, paneMenuTriggerState }.
+ * Returns { collapse: null|'collapse'|'expand', close: null|'close',
+ *           tabTrigger: null|'available'|'open'|'disabled' }.
+ */
+function chromeFor(pane, ctx) {
+  const isDetail = pane && pane.type === 'detail';
+  if (ctx && ctx.dragging) return { collapse: null, close: null, tabTrigger: null };
+  let collapse = null, close = null;
+  if (!isDetail) {
+    collapse = pane.collapsed ? 'expand' : 'collapse';
+    if (ctx && ctx.freeConfigMode) close = 'close';
+  }
+  let tabTrigger = null;
+  const state = (ctx && ctx.paneMenuTriggerState) || 'available';
+  if (state !== 'hidden') tabTrigger = state;
+  return { collapse, close, tabTrigger };
+}
+
+/**
+ * Markup helpers — renderPanel composes these chrome glyphs into the top
+ * border directly (no regex post-mutation). Each returns Rich markup whose
+ * visible width equals the glyph's cell count (3 cells). `fc` is the panel
+ * border color; markup re-opens it after each glyph's `[/]`.
+ */
+function _collapseGlyphMarkup(mode, focused, fc) {
+  const t = theme();
+  const base = mode === 'expand'
+    ? (t.chrome_expand   || 'green')
+    : (t.chrome_collapse || 'yellow');
+  const open = focused ? `[${base}]` : `[dim][${base}]`;
+  const glyph = mode === 'expand' ? '\\[+]' : '\\[_]';
+  return `${open}${glyph}[/]${fc ? `[${fc}]` : ''}`;
+}
+
+function _closeGlyphMarkup(focused, fc) {
+  const t = theme();
+  const base = t.chrome_close || 'red';
+  const open = focused ? `[${base}]` : `[dim][${base}]`;
+  return `${open}${CLOSE_GLYPH}[/]${fc ? `[${fc}]` : ''}`;
+}
+
+function _tabTriggerMarkup(state, focused, fc) {
+  const t = theme();
+  const base = t.chrome_trigger || 'bold cyan';
+  const colorOnly = base.replace(/^bold\s+/, '');
+  let open;
+  if      (state === 'disabled') open = '[dim]';
+  else if (state === 'open')     open = '[reverse]';
+  else if (focused)              open = `[${base}]`;
+  else                           open = `[dim][${colorOnly}]`;
+  return `${open}\\[≡][/]${fc ? `[${fc}]` : ''}`;
 }
 
 /**
@@ -260,4 +329,7 @@ function renderOverlay({ lines, title, count = null, maxWidth = 44, anchor = nul
   stdout.write(buf);
 }
 
-module.exports = { renderPanel, renderOverlay, overlayBox, truncate, viewportDims };
+module.exports = {
+  renderPanel, renderOverlay, overlayBox, truncate, viewportDims, setDimsProvider,
+  chromeFor, _collapseGlyphMarkup, _closeGlyphMarkup, _tabTriggerMarkup,
+};

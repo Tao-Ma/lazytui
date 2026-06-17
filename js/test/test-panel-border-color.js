@@ -18,7 +18,7 @@
  */
 'use strict';
 
-const { renderPanel } = require('../render/panel');
+const { renderPanel } = require('../leaves/draw');
 const { describe, it, assert, eq, report } = require('./test-runner');
 
 describe('renderPanel — title with embedded [/] preserves border color', () => {

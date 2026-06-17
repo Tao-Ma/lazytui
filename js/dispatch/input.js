@@ -510,7 +510,7 @@ function handleMouse(kind, x, y) {
   // and the in-grid modes (filter/search/prefix/listSelect) still let
   // chrome clicks through; only input-owning modes block them.
   if (kind === 'press' && !suppressesChromeClicks(model.modes)) {
-    const { hitTestCollapseButton, hitTestCloseButton } = require('../render/decor');
+    const { hitTestCollapseButton, hitTestCloseButton } = require('../panel/chrome-hittest');
     const collapseId = hitTestCollapseButton(mx, my);
     if (collapseId) {
       dispatchMsg(wrap('layout', { type: 'panel_collapse_toggle', id: collapseId }));

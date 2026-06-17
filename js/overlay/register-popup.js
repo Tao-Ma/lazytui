@@ -31,7 +31,7 @@
 
 const { getModel } = require('../model/store');
 const { esc, visibleLen } = require('../io/ansi');
-const { renderOverlay, viewportDims } = require('../render/panel');
+const { renderOverlay, viewportDims } = require('../leaves/draw');
 const register = require('../leaves/register');
 
 const VIEWPORT = 12;

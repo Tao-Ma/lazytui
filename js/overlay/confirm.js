@@ -10,7 +10,7 @@
 
 const { getModel } = require('../model/store');
 const { esc } = require('../io/ansi');
-const { renderOverlay } = require('../render/panel');
+const { renderOverlay } = require('../leaves/draw');
 
 function renderConfirmOverlay() {
   const c = getModel().modal.confirm;

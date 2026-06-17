@@ -33,7 +33,7 @@
 
 const { getModel } = require('../model/store');
 const { getInstanceSlice } = require('../panel/api');
-const { renderPanel, viewportDims } = require('../render/panel');
+const { renderPanel, viewportDims } = require('../leaves/draw');
 const { richToAnsi, RESET, esc, visibleLen } = require('../io/ansi');
 const { stdout } = require('../io/term');
 const { isChainActive } = require('../leaves/modes');

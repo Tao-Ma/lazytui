@@ -280,7 +280,7 @@ describe('[5] right-click context menu — copy + dismiss', () => {
 
   it('a viewer drag-selection PERSISTS, and right-click → Copy selection copies it', () => {
     const sel = require('../../panel/viewer/select');
-    const { overlayBox } = require('../../render/panel');
+    const { overlayBox } = require('../../leaves/draw');
     sm.bootFresh();
     sm.capture(() => sm.render());
     const d = api.primarySliceOf('detail');
@@ -358,7 +358,7 @@ describe('[5] right-click context menu — copy + dismiss', () => {
 // to its kind (shown there, hidden on empty space).
 
 const cm = require('../../leaves/context-menu');
-const { overlayBox } = require('../../render/panel');
+const { overlayBox } = require('../../leaves/draw');
 
 // Spy dispatch.handleAction (the menu_action effect's call target) to capture
 // the routed (verb, arg) without running the verb's downstream effect.

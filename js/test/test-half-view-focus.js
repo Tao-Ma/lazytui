@@ -188,7 +188,7 @@ describe('[chrome glyphs] half-mode collapse-button click can\'t hit off-screen 
   // pane whose normal-view rect overlapped the click. Same bug class
   // as the focus revert fixed by visibleBoundsFor.
   const { getInstanceSlice } = require('../panel/api');
-  const decor = require('../render/decor');
+  const decor = require('../panel/chrome-hittest');
 
   it('hitTestCollapseButton ignores off-screen panes in half view', () => {
     const slice = getInstanceSlice('layout');
