@@ -58,7 +58,7 @@ function _beginSelect(slice, line, col, kind, lines) {
 }
 
 // Effective viewport for scroll/cursor clamps. The slice's `innerH` is
-// written by the per-dispatch finalizer (`panel/api._finalizeDispatch`,
+// written by the per-dispatch finalizer (`dispatch/fanout._finalizeDispatch`,
 // direct setInstanceSlice on our own slice — was a wrapped
 // viewer_set_viewport Msg) so the reducer stays a pure function of
 // (slice, msg) — no cross-slice read of layout's render-time geometry.
@@ -974,7 +974,7 @@ function _updateInner(msg, slice, lines) {
     //     v / V                   toggle off
     //     escape                  cancel
     case 'key': {
-      // v0.6.3 Phase D1: dispatcher (panel/api.js#dispatchKeyToFocused)
+      // v0.6.3 Phase D1: dispatcher (dispatch/fanout#dispatchKeyToFocused)
       // threads msg.focusKind + msg.terminalMode so the reducer stays
       // pure. Higher-priority chain modes (menu/cmd/confirm/prompt/copy)
       // are already filtered upstream by _dispatchActiveMode in

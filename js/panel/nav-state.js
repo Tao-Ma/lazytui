@@ -5,8 +5,9 @@
  * composites.
  *
  * Re-homed from `app/state.js` in v0.6.5 §1 Phase 2: these are panel-domain
- * operations (they resolve panel→instance via `panel/route` and write via
- * `panel/api.dispatchMsg`), so they belong in `panel/`, not at the top
+ * operations (they resolve panel→instance via `panel/route` and write via an
+ * injected dispatch host — the fan-out lives in `dispatch/fanout` since B/S6),
+ * so they belong in `panel/`, not at the top
  * `app` layer. The move turns the old upward `dispatch/* → app/state` and
  * `panel/* → app/state` edges into downward `dispatch → panel` /
  * intra-panel edges. `app/state.js` re-exports these for back-compat so the

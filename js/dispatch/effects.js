@@ -6,7 +6,7 @@
  *   - Root reducer (`runtime.update`) returns Cmd descriptors;
  *     `dispatch.applyMsg` runs them via `runEffects` here.
  *   - Component `update(msg, slice)` returns effect descriptors;
- *     `panel/api.dispatchMsg` runs them via `runEffects` here.
+ *     `dispatch/fanout.dispatchMsg` runs them via `runEffects` here.
  *
  * Cmds and effects are the same thing — plain descriptors
  * (`{ type: 'show_selected_info' }`, `{ type: 'msg', msg }`).
@@ -35,8 +35,8 @@ function registerEffect(type, fn) {
 // `(dispatch, props)`). A Component's effect handler (which runs HERE, in the
 // dispatch layer, often async/off-tick) feeds Msgs back through this host
 // instead of importing `panel/api` upward. Built lazily on first runEffects so
-// the requires resolve after boot, never eagerly. dispatchMsg's home is
-// `panel/api` today; when the fan-out relocates (S6) only this line changes.
+// the requires resolve after boot, never eagerly. dispatchMsg comes from
+// `dispatch/fanout` (the Component fan-out's home since B/S6).
 // See docs/v0.6.5-dispatch-loop.md "formalize injection".
 let _host = null;
 function _effectHost() {

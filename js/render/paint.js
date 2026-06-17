@@ -388,7 +388,7 @@ function composeRects(layout, model) {
 // by the viewer tab-id; those now resolve the container paneId via
 // route.resolveViewerPaneId(), so the per-paneId write is sufficient.
 // (The per-frame scroll-clamp that lived here — _syncScrollClamp —
-// moved to the post-dispatch finalizer in panel/api.js (resize-as-Msg
+// moved to the post-dispatch finalizer in dispatch/fanout.js (resize-as-Msg
 // P3): every state change is a dispatch, so the clamp runs there, and
 // render dispatches NOTHING. test-scroll-clamp.js pins render purity.)
 
