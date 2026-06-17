@@ -13,7 +13,7 @@
 
 const { allPanels, setSel, getSel, getScroll } = require('../panel/nav-state');
 const { visibleBoundsFor, getPanelViewportH } = require('../leaves/geometry');
-const { render } = require('../render/paint');
+const { paintNow: render } = require('../leaves/render-queue');
 const { getModel } = require('../model/store');
 const { enableMouse, enableFocusEvents, enableBracketedPaste, cols } = require('../io/term');
 const { isTerminalTab, activeTerminalId } = require('../panel/viewer/tabs');
