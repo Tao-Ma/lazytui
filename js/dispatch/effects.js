@@ -367,4 +367,10 @@ function installBuiltins() {
   });
 }
 
-module.exports = { registerEffect, runEffects, clearEffects, installBuiltins, _handlers };
+// Exposed so boot-wired subscription handlers that AREN'T started by an effect
+// (e.g. pty-lifecycle, wired in tui.js#main) get the same injected dispatch host
+// the effect runner hands to effect handlers. Effect-STARTED subscriptions
+// (docker events) capture the host from their starting handler instead.
+function effectHost() { return _effectHost(); }
+
+module.exports = { registerEffect, runEffects, clearEffects, installBuiltins, effectHost, _handlers };

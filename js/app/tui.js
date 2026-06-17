@@ -226,7 +226,7 @@ function main() {
   // require panel/viewer/tabs + panel/api + render/geometry on every
   // session exit — a documented inversion). Must run AFTER the viewer
   // Component is registered so the handler's slice reads land.
-  require('../panel/viewer/pty-lifecycle').install();
+  require('../panel/viewer/pty-lifecycle').install(require('../dispatch/effects').effectHost());
 
   // Phase 6 — the runtime Plugin API retired. External authors write
   // Components and register them the same way the built-ins above do.
