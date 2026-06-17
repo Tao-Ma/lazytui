@@ -522,7 +522,7 @@ function _readDirRows(cwd) {
  *  that clear+reinstall effects can drive registration through the
  *  same path. */
 function installEffects(registerEffect) {
-  registerEffect('loadDir', (eff) => {
+  registerEffect('loadDir', (eff, host) => {
     const { paneId, source, cwd, container, seq } = eff;
     // Off-tick so a slow filesystem (NFS, sshfs) or a docker exec never blocks
     // the render/keypress tick; the result folds back via the dirLoaded Msg.
@@ -548,7 +548,7 @@ function installEffects(registerEffect) {
       // that kicked the load — not the kind's primary (wrap('files') would
       // route to _primaryByKind, clobbering the wrong pane under
       // multi-instance). The instance store resolves a paneId directly.
-      require('../api').dispatchMsg(require('../api').wrap(paneId, { type: 'dirLoaded', cwd, seq, items, error }));
+      host.dispatchMsg(host.wrap(paneId, { type: 'dirLoaded', cwd, seq, items, error }));
     });
   });
 
@@ -559,12 +559,11 @@ function installEffects(registerEffect) {
   // resetPanelChrome: re-home the pane's cursor/scroll/filter on
   // navigation — they live on this instance's single `slice.nav` entry,
   // written by its own update via wrapped Msgs targeting the paneId.
-  registerEffect('resetPanelChrome', (eff) => {
-    const api = require('../api');
-    if (!api.getComponentOwningPanel(eff.paneId)) return;
-    api.dispatchMsg(api.wrap(eff.paneId, { type: 'set_cursor',   panel: eff.paneId, index: 0 }));
-    api.dispatchMsg(api.wrap(eff.paneId, { type: 'set_scroll',   panel: eff.paneId, offset: 0 }));
-    api.dispatchMsg(api.wrap(eff.paneId, { type: 'clear_filter', panel: eff.paneId }));
+  registerEffect('resetPanelChrome', (eff, host) => {
+    if (!require('../api').getComponentOwningPanel(eff.paneId)) return;
+    host.dispatchMsg(host.wrap(eff.paneId, { type: 'set_cursor',   panel: eff.paneId, index: 0 }));
+    host.dispatchMsg(host.wrap(eff.paneId, { type: 'set_scroll',   panel: eff.paneId, offset: 0 }));
+    host.dispatchMsg(host.wrap(eff.paneId, { type: 'clear_filter', panel: eff.paneId }));
   });
 }
 

@@ -30,8 +30,29 @@ function registerEffect(type, fn) {
   _handlers[type] = fn;
 }
 
+// The dispatch HOST handed to every effect handler as its 2nd arg — the
+// formalized-injection model (Elmish `Sub = Dispatch -> unit`, Hyperapp
+// `(dispatch, props)`). A Component's effect handler (which runs HERE, in the
+// dispatch layer, often async/off-tick) feeds Msgs back through this host
+// instead of importing `panel/api` upward. Built lazily on first runEffects so
+// the requires resolve after boot, never eagerly. dispatchMsg's home is
+// `panel/api` today; when the fan-out relocates (S6) only this line changes.
+// See docs/v0.6.5-dispatch-loop.md "formalize injection".
+let _host = null;
+function _effectHost() {
+  if (!_host) {
+    const api = require('../panel/api');
+    const { applyMsg } = require('./dispatch');
+    const { wrap } = require('../panel/route');
+    const { streamCommand } = require('./stream');
+    _host = { dispatchMsg: api.dispatchMsg, applyMsg, wrap, streamCommand };
+  }
+  return _host;
+}
+
 function runEffects(effects) {
   if (!Array.isArray(effects)) return;
+  const host = _effectHost();
   for (const eff of effects) {
     if (!eff || typeof eff.type !== 'string') continue;
     const fn = _handlers[eff.type];
@@ -40,7 +61,7 @@ function runEffects(effects) {
       _recordError({ where: 'effects', kind: 'no_handler', effectType: eff.type });
       continue;
     }
-    try { fn(eff); }
+    try { fn(eff, host); }
     catch (e) {
       console.error(`[effects] '${eff.type}' failed: ${e && e.message}`);
       _recordError({ where: 'effects', kind: 'throw', effectType: eff.type,
