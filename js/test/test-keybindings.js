@@ -15,7 +15,7 @@ const { describe, it, eq, assert, report } = require('./test-runner');
 const { getModel } = require('../app/runtime');
 const { getInstanceSlice } = require('../panel/api');
 
-const kb = require('../dispatch/keybindings');
+const kb = require('../leaves/keybindings');
 
 // ---- [1] parseSeq -------------------------------------------------
 

@@ -50,7 +50,7 @@
 // so importing them here introduces no require cycle.
 // keybindings is a dependency-free leaf (the leader-chord registry tree), so
 // the reducer can read it to walk the prefix tree without a require cycle.
-const kb = require('./keybindings');
+const kb = require('../leaves/keybindings');
 // esc() for the jobs_routed info-card lines (background/tmux).
 const { esc } = require('../io/ansi');
 // Pure yank-register transforms (leaf) — push/promote/drop/clear taking
