@@ -223,6 +223,18 @@ function dispatchKeyToFocused(key, seq) {
   }
 }
 
+// blessed-exceptions #3 — apply a Component's optional augmentMsg enrichment
+// hook in ONE place (the impure shell). When a Component declares
+// augmentMsg(msg, model, slice), the shell reads the model and lets it thread
+// model-derived facts into the Msg, so update(msg, slice) stays pure of
+// getModel(); the instance's own slice is passed so per-pane Components (files)
+// resolve pane-specific facts. `model` lets a caller that already read it (the
+// key path, for terminalMode/focusKind) avoid a second read.
+function _augment(comp, msg, slice, model) {
+  if (!comp || !comp.augmentMsg) return msg;
+  return comp.augmentMsg(msg, model || getModel(), slice);
+}
+
 function _dispatchKeyToFocusedInner(key, seq) {
   const components = _reg();
   const focus = route.getFocus();
@@ -247,10 +259,7 @@ function _dispatchKeyToFocusedInner(key, seq) {
       terminalMode: !!_m.modes.terminalMode,
       focusKind: route.instanceKind(route.getFocus()),
     };
-    // blessed-exceptions #3 — thread the Component's model bundle so its key arm
-    // + finalizer stay pure of getModel(). The instance's own slice is passed
-    // so per-pane Components (files) resolve pane-specific facts.
-    if (comp.augmentMsg) keyMsg = comp.augmentMsg(keyMsg, _m, inst.slice);
+    keyMsg = _augment(comp, keyMsg, inst.slice, _m);
     const result = comp.update(keyMsg, inst.slice);
     if (result === undefined) return false;
     if (Array.isArray(result)) {
@@ -278,11 +287,7 @@ function _dispatchKeyToFocusedInner(key, seq) {
 // Shared by the wrapped and broadcast dispatch paths.
 function _runInstance(inst, comp, msg) {
   try {
-    // blessed-exceptions #3 — optional Msg-enrichment hook. A Component that
-    // needs model-derived facts in its reducer declares augmentMsg(msg, model,
-    // slice); the framework (the impure shell) computes them ONCE here and
-    // threads them into the Msg, so update(msg, slice) stays pure of getModel().
-    if (comp && comp.augmentMsg) msg = comp.augmentMsg(msg, getModel(), inst.slice);
+    msg = _augment(comp, msg, inst.slice);
     const result = comp.update(msg, inst.slice);
     if (result === undefined) return;
     if (Array.isArray(result)) {
