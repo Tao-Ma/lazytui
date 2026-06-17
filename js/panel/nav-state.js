@@ -16,20 +16,19 @@
  *   - READERS (`getSel`/`getScroll`/`isMultiSel`/`multiSelCount`/`allPanels`)
  *     are `panel/api`-free — they use `panel/route` + leaves only, so they
  *     import cleanly at top level.
- *   - WRITERS + composites need `api.dispatchMsg` (and `api`'s read helpers).
- *     `panel/api` in turn imports THIS module (`syncPanelScroll`, used in its
- *     per-dispatch finalizer), so api↔nav-state are mutually dependent — an
- *     irreducible intra-panel cycle (the dispatch core references a writer; a
- *     writer references the dispatch core). We break it the cheap way: `api`
- *     is required lazily here (cached once in `_api()`), so the TOP-LEVEL
- *     import graph stays acyclic and honest. This is an intra-panel edge, not
- *     the cross-layer cycle §1 targets.
+ *   - WRITERS dispatch through an INJECTED host (`setNavDispatch`, wired at
+ *     boot) rather than importing the fan-out — so panel takes no static edge
+ *     to the (relocating) dispatch core. v0.6.5 B/S3 formalized-injection.
+ *   - COMPOSITES (`selectedOrFocused`/`infoLinesFromFocus`) still need `api`'s
+ *     READ helpers (getItems/idOf/getPanelDef). `panel/api` in turn imports
+ *     THIS module (`syncPanelScroll`, used in its per-dispatch finalizer), so
+ *     api↔nav-state remain mutually dependent for reads — an intra-panel edge,
+ *     broken the cheap way: `api` is required lazily (cached once in `_api()`),
+ *     so the TOP-LEVEL import graph stays acyclic.
  *
- *     Caching the ref is safe only because no WRITER runs during the require
- *     cycle: every `_api()` caller is a runtime (dispatch-time) writer, by
- *     which point `panel/api`'s `module.exports = {…}` has fully executed.
- *     A writer invoked at LOAD time would cache a pre-reassignment ref and
- *     go permanently stale — so keep nav-state writers off the boot path.
+ *     Caching the ref is safe only because no `_api()` caller runs during the
+ *     require cycle: every caller is a runtime (dispatch-time) read, by which
+ *     point `panel/api`'s `module.exports = {…}` has fully executed.
  */
 'use strict';
 
@@ -42,8 +41,18 @@ const { getModel } = require('../model/store');
 // Lazy + cached panel/api ref — see the header note on the api↔nav-state
 // intra-panel cycle. A bare require() per call re-resolves the path
 // (~0.24µs of module-cache lookup); resolve once after load settles.
+// Used by the READ composites only (getItems/idOf/getPanelDef) now that the
+// writers dispatch through the injected host below.
 let _apiRef = null;
 function _api() { return _apiRef || (_apiRef = require('./api')); }
+
+// Injected dispatch host (set at boot via setNavDispatch). nav-state's writers
+// feed Msgs back through it instead of importing the (relocating) fan-out — the
+// formalized-injection model (the runtime hands a panel writer module dispatch
+// at boot). Wired from tui.js#main + the test-runner auto-setup, before any
+// dispatch. See docs/v0.6.5-dispatch-loop.md.
+let _host = null;
+function setNavDispatch(host) { _host = host; }
 
 // --- panel-type resolution + nav-entry access ---
 
@@ -67,9 +76,8 @@ function _navEntry(id) {
   return mnav.entryOf(route.sliceForPane(id, compName), panelType);
 }
 
-// Write-side: routes a nav Msg to the owning Component via api.dispatchMsg.
+// Write-side: routes a nav Msg to the owning Component via the injected host.
 function _navDispatch(id, msg) {
-  const api = _api();
   const panelType = _resolvePanelType(id);
   const compName = route.componentForPanel(panelType);
   if (!compName) return;
@@ -79,7 +87,7 @@ function _navDispatch(id, msg) {
   // (docker-style panes + legacy callers route to primary). `panel: panelType`
   // still keys nav[panelType] inside multi-panel Components (files).
   const target = route.hasInstance(id) ? id : compName;
-  api.dispatchMsg(route.wrap(target, { ...msg, panel: panelType }));
+  _host.dispatchMsg(route.wrap(target, { ...msg, panel: panelType }));
 }
 
 /** Get selection index for a panel type (default 0). */
@@ -130,22 +138,18 @@ function _groupsCtx() {
 }
 
 function recomputeGroups() {
-  const api = _api();
-  api.dispatchMsg(route.wrap('groups', { type: 'groups_recompute', ctx: _groupsCtx() }));
+  _host.dispatchMsg(route.wrap('groups', { type: 'groups_recompute', ctx: _groupsCtx() }));
 }
 function switchGroupsTab(/* tab */) {
   // toggle_groups_tab flips All↔Quick (the only transition we use today);
   // explicit-target setters belong to the Component if ever needed.
-  const api = _api();
-  api.dispatchMsg(route.wrap('groups', { type: 'toggle_groups_tab', ctx: _groupsCtx() }));
+  _host.dispatchMsg(route.wrap('groups', { type: 'toggle_groups_tab', ctx: _groupsCtx() }));
 }
 function expandGroup(path, recursive = false) {
-  const api = _api();
-  api.dispatchMsg(route.wrap('groups', { type: 'toggle_group', name: path, recursive, ctx: _groupsCtx() }));
+  _host.dispatchMsg(route.wrap('groups', { type: 'toggle_group', name: path, recursive, ctx: _groupsCtx() }));
 }
 function collapseGroup(path, recursive = false) {
-  const api = _api();
-  api.dispatchMsg(route.wrap('groups', { type: 'toggle_group', name: path, recursive, ctx: _groupsCtx() }));
+  _host.dispatchMsg(route.wrap('groups', { type: 'toggle_group', name: path, recursive, ctx: _groupsCtx() }));
 }
 
 // --- Viewer content writers ---
@@ -164,7 +168,6 @@ function setViewerContent(tabId, text, opts) {
     tabId = route.resolveTarget('viewer');
     if (tabId == null) return;   // no viewer registered — drop the write
   }
-  const api = _api();
   // v0.6.3 Phase D1 — thread root facts the viewer_set_content arm needs so
   // the reducer stays pure of getModel(): currentGroup, fromTabKey (the
   // FROM-tab key for view-state capture), total (when msg.tab is set).
@@ -180,7 +183,7 @@ function setViewerContent(tabId, text, opts) {
     inner.tab = opts.tab | 0;
     inner.total = pt.flatTabInfo(slice, model, model.currentGroup).total;
   }
-  api.dispatchMsg(route.wrap(tabId, inner));
+  _host.dispatchMsg(route.wrap(tabId, inner));
 }
 
 /**
@@ -196,8 +199,7 @@ function appendViewerLines(text) {
   if (tabId == null) return;
   const lines = text.split('\n');
   if (!lines.length) return;
-  const api = _api();
-  api.dispatchMsg(route.wrap(tabId, { type: 'viewer_append_lines', lines }));
+  _host.dispatchMsg(route.wrap(tabId, { type: 'viewer_append_lines', lines }));
 }
 
 // --- Multi-select (bulk-operation operand) ---
@@ -257,6 +259,7 @@ function infoLinesFromFocus() {
 }
 
 module.exports = {
+  setNavDispatch,
   getSel, setSel, getScroll, setScroll, syncPanelScroll,
   allPanels,
   toggleMultiSel, isMultiSel, clearMultiSel, multiSelCount,
