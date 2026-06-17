@@ -3,7 +3,7 @@
  * render/decor.js (the pure glyph derivation moved to leaves/draw.js in the
  * render-exit arc). These read the live layout slice to map a click cell to
  * the pane whose `[_]`/`[+]` or `[X]` glyph sits there. Consumed by
- * dispatch/input.js (dispatch→panel, legal).
+ * dispatch/control/input.js (dispatch→panel, legal).
  *
  * Glyph geometry (all glyphs are 3 cells wide):
  *   [_]/[+]  → cols [b.x+b.w-4 .. b.x+b.w-2]

@@ -339,7 +339,7 @@ section('[9] file open → content tab (real effect loop, async loader)');
   try {
     // Install the built-in effect handlers (render) + register the Component so
     // the real loadDir/openFile effects run and dispatchMsg routes key events.
-    require('../dispatch/effects').installBuiltins();
+    require('../dispatch/runtime/effects').installBuiltins();
     api.registerComponent(filesComp);
     freshState(root, 'file-browser');
     // Arc 2 — mint the real per-pane instance the way state.js does

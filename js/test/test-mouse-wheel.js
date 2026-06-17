@@ -17,7 +17,7 @@ term.stdout.write = (chunk, ...rest) => {
   return _origWrite(chunk, ...rest);
 };
 
-const { _handleWheel } = require('../dispatch/input');
+const { _handleWheel } = require('../dispatch/control/input');
 const { describe, it, eq, report } = require('./test-runner');
 const {getInstanceSlice, getFocus } = require('../panel/api');
 
@@ -112,7 +112,7 @@ describe('[3] wheel target ≠ focused panel: focus stays put', () => {
 // groups path during filter mode was the smoking gun (modal sub-model
 // stayed bound to the OLD current-group). Pin the post-fix behavior.
 
-const { handleMouse } = require('../dispatch/input');
+const { handleMouse } = require('../dispatch/control/input');
 const { getModel } = require('../app/runtime');
 const modes = require('../leaves/modes');
 

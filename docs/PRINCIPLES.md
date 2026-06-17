@@ -138,7 +138,7 @@ and breaking `visibleLen()` width calculation, misaligning borders.
   `  \\[1] Containers  Status of containers in selected group`
   ```
 
-`esc()` replaces `[` → `\[`. Defined in `js/io/ansi.js`.
+`esc()` replaces `[` → `\[`. Defined in `js/leaves/ansi.js` (a pure leaf).
 
 ## 8. Selected lines: plain text in `[reverse]`, no inner markup
 

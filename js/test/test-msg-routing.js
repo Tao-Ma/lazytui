@@ -25,7 +25,7 @@ function _readSource(relPath) {
 /** Walk every `.js` file under `js/` excluding test/ + scripts/. The check
  *  scans the whole production tree rather than a hardcoded caller list so a
  *  new file adopting applyMsg gets covered automatically — the original
- *  caller list missed `dispatch/action-runner.js` and `panel/viewer/select.js`. */
+ *  caller list missed `dispatch/runtime/action-runner.js` and `panel/viewer/select.js`. */
 function _walkProductionFiles() {
   const out = [];
   const skip = new Set(['test', 'scripts']);
@@ -67,7 +67,7 @@ function _extractReducerCases(src) {
 }
 
 describe('Msg routing — applyMsg targets the root reducer', () => {
-  const reducerSrc = _readSource('dispatch/reducer.js');  // F3 — reducer moved here from app/runtime.js
+  const reducerSrc = _readSource('dispatch/update/reducer.js');  // F3 — reducer moved from app/runtime.js; regrouped into dispatch/update/
   const reducerCases = _extractReducerCases(reducerSrc);
   const productionFiles = _walkProductionFiles();
 

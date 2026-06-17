@@ -25,7 +25,7 @@
 'use strict';
 
 const api = require('../panel/api');
-require('../dispatch/effects').installBuiltins();
+require('../dispatch/runtime/effects').installBuiltins();
 api.registerComponent(require('../panel/layout'));
 api.registerComponent(require('../panel/viewer/viewer'));
 

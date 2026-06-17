@@ -19,14 +19,14 @@
  */
 'use strict';
 
-const route = require('../panel/route');
+const route = require('../../panel/route');
 const { wrap } = route;
-const { getModel } = require('../model/store');
+const { getModel } = require('../../model/store');
 const { runEffects } = require('./effects');
-const geo = require('../leaves/geometry');
-const mpool = require('../leaves/pool');
-const { syncPanelScroll } = require('../panel/nav-state');
-const hub = require('../leaves/hub');
+const geo = require('../../leaves/geometry');
+const mpool = require('../../leaves/pool');
+const { syncPanelScroll } = require('../../panel/nav-state');
+const hub = require('../../leaves/hub');
 
 // Render-exit-style seam: leaves/hub fans publishes out to Components as a
 // `hub` Msg, but a leaf can't import panel/dispatch. Inject the dispatcher here
@@ -37,7 +37,7 @@ hub.setDispatch(dispatchMsg);
 // stable — registerComponent mutates it in place) so this module never eagerly
 // drags api in at load. Cached after first dispatch (post-boot).
 let _comps = null;
-function _reg() { return _comps || (_comps = require('../panel/api')._components()); }
+function _reg() { return _comps || (_comps = require('../../panel/api')._components()); }
 
 // Broadcast lane — only the three framework signals fan out to every Component;
 // every Component-specific Msg must arrive wrapped (via wrap()).
@@ -308,7 +308,7 @@ function _runInstance(inst, comp, msg) {
 // console.error above is painted over by the next render; the event log is the
 // only place a thrown Component update is inspectable post-mortem.
 function _recordError(payload) {
-  try { require('../io/event-log').record('error', payload); }
+  try { require('../../io/event-log').record('error', payload); }
   catch (_) { /* event-log unavailable — already logged to console */ }
 }
 

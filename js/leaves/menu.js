@@ -1,7 +1,7 @@
 /**
  * Pure builder for the command-menu item list (the menu's sub-model).
  *
- * Dependency-free leaf (only imports `io/ansi` for `esc`). Caller
+ * Dependency-free leaf (only imports `leaves/ansi` for `esc`). Caller
  * (runtime.update's menu_open branch) threads the layout slice in —
  * the menu needs the current panel arrangement (for hotkeys). No
  * `panel/api` reach-around.
@@ -13,7 +13,7 @@
  */
 'use strict';
 
-const { esc } = require('../io/ansi');
+const { esc } = require('./ansi');
 const mpool = require('./pool');
 
 function buildItems(layoutSlice) {

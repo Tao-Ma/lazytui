@@ -26,7 +26,7 @@ const {
   onMouseEvent, pointToResizeTarget,
   _clearUndoStacks, _getUndoDepth, _getRedoDepth,
 } = require('../panel/free-config-view');
-const dispatch = require('../dispatch/dispatch');
+const dispatch = require('../dispatch/control/dispatch');
 const { getModel } = require('../app/runtime');
 const { getInstanceSlice } = require('../panel/api');
 const { describe, it, assert, eq, report } = require('./test-runner');

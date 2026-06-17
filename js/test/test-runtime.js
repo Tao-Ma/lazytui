@@ -84,9 +84,9 @@ describe('[3] update — (model, msg) → [model, cmds], pure + Cmd descriptors'
     const state = require('../app/state');
     state.setSel('actions', 0);
     state.setSel('groups',  0);
-    require('../dispatch/dispatch').navSelect('actions', 3);
+    require('../dispatch/control/dispatch').navSelect('actions', 3);
     eq(state.getSel('actions'), 3, 'actions cursor advanced');
-    require('../dispatch/dispatch').navSelect('groups', 1);
+    require('../dispatch/control/dispatch').navSelect('groups', 1);
     eq(state.getSel('groups'), 1, 'groups cursor advanced');
   });
 
@@ -96,7 +96,7 @@ describe('[3] update — (model, msg) → [model, cmds], pure + Cmd descriptors'
     // detail / no-getInfo panels (stats) → bail. The
     // addContentTab → focus_set(detail) cascade is safe by the bail.
     const route = require('../panel/route');
-    const dispatch = require('../dispatch/dispatch');
+    const dispatch = require('../dispatch/control/dispatch');
     // Seed a group + action so actions panel has items to feed getInfo.
     const m = runtime.getModel();
     m.config = { groups: { g: { label: 'G', actions: {
@@ -119,7 +119,7 @@ describe('[3] update — (model, msg) → [model, cmds], pure + Cmd descriptors'
     // special-case Transcript — the precondition is "focus has
     // getInfo," and the consequence is "tab=0 + populate."
     const route = require('../panel/route');
-    const dispatch = require('../dispatch/dispatch');
+    const dispatch = require('../dispatch/control/dispatch');
     const m = runtime.getModel();
     m.config = { groups: { g: { label: 'G', actions: {
       a: { label: 'A', desc: 'an action', script: 'echo a' },
@@ -271,7 +271,7 @@ describe('[3] update — (model, msg) → [model, cmds], pure + Cmd descriptors'
     // Seed: arm select mode + put two ids in the multiSel set.
     // Phase 4 — runtime.update is pure; applyMsg threads the new model
     // through setModel(), so subsequent reads must go through getModel().
-    const dispatch = require('../dispatch/dispatch');
+    const dispatch = require('../dispatch/control/dispatch');
     // blessed-A — the reducer arms read `msg.route`; the production handler
     // stamps it. Driving applyMsg directly bypasses the handler, so thread
     // the bundle here (mirrors the shell — same as F1's augmentMsg tests).

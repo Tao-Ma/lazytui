@@ -23,7 +23,7 @@
  */
 'use strict';
 
-const { esc } = require('../io/ansi');
+const { esc } = require('../leaves/ansi');
 const { cols } = require('../io/term');
 const { getModel } = require('../model/store');
 const { getInstanceSlice } = require("./api");

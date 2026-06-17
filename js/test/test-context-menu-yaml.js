@@ -103,7 +103,7 @@ describe('[2] parser', () => {
 
 // ---- [3] dispatch.loadContextMenu ---------------------------------
 
-const dispatch = require('../dispatch/dispatch');
+const dispatch = require('../dispatch/control/dispatch');
 const { getModel } = require('../app/runtime');
 
 describe('[3] loadContextMenu', () => {

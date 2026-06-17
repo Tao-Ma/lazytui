@@ -22,7 +22,7 @@ term.stdout.write = (chunk, ...rest) => {
 
 const { Terminal } = require('@xterm/headless');
 const { describe, it, eq, assert, report } = require('./test-runner');
-const { _classifyTerminalChunk } = require('../dispatch/input');
+const { _classifyTerminalChunk } = require('../dispatch/control/input');
 const terminal = require('../io/terminal');
 
 // --- Pure classifier --------------------------------------------------------

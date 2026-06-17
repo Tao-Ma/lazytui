@@ -1,17 +1,20 @@
 /**
  * Panel renderer — bordered panels with scrollbar + pure chrome-glyph
  * derivation. Produces Rich-markup strings (convert to ANSI before writing
- * to terminal). A pure leaf: depends only on io/ansi + io/term + sibling
- * leaves (scrollbar, themes). Terminal dims arrive via an injected provider
- * (setDimsProvider) so the leaf never reaches up into panel for the model —
- * see docs/v0.6.5-render-exit.md.
+ * to terminal). A pure leaf: depends only on sibling leaves (ansi, scrollbar,
+ * themes) — no io. Terminal dims + the overlay paint-write arrive via injected
+ * seams (setDimsProvider / setWriter) so the leaf never reaches up into panel
+ * for the model nor into io for stdout — see docs/v0.6.5-render-exit.md.
  */
 'use strict';
 
-const { visibleLen, stripMarkup, charWidth, richToAnsi, wrapColor, RESET } = require('../io/ansi');
+const { visibleLen, stripMarkup, charWidth, richToAnsi, wrapColor, RESET } = require('./ansi');
 const { scrollbar } = require('./scrollbar');
 const { theme } = require('./themes');
-const { cols, rows, stdout } = require('../io/term');
+// No io import: terminal dims arrive via the injected _dimsProvider (below)
+// and the overlay paint write via the injected _writer (setWriter), both wired
+// at boot. Keeping this leaf free of io is what lets io/file-loader depend DOWN
+// on the pure leaves/ansi without forming an io↔leaves cycle.
 
 const BORDER = { tl: '╭', tr: '╮', bl: '╰', br: '╯', h: '─', v: '│' };
 const THUMB = '▐';
@@ -213,16 +216,28 @@ function renderPanel({
 // new size, overlays the old). io/term fallback covers boot before the first
 // term_resized (the layout slice seeds 80x24, so this is belt-and-suspenders).
 //
-// Render-exit seam: this leaf can't read the model (panel layer). The dims
-// source is injected at boot via setDimsProvider — panel/api wires it to read
-// the layout slice — so the model-read stays in panel and the frame stays a
-// pure function of the model. io/term remains the boot/no-provider fallback.
+// Render-exit seam: this leaf can't read the model (panel layer) nor import
+// io. The dims source is injected via setDimsProvider — panel/api wires it to
+// resolve the layout slice's model clock first, then io/term as the boot
+// fallback — so both the model-read and the io-read stay in panel and the
+// frame stays a pure function of the model. The 80x24 here is only the
+// last-resort when NO provider is wired at all (e.g. a unit test that calls
+// this leaf without booting); it matches the layout slice's own seed.
 let _dimsProvider = null;
 function setDimsProvider(fn) { _dimsProvider = fn; }
 function viewportDims() {
   const d = _dimsProvider && _dimsProvider();
-  return (d && d.cols > 0 && d.rows > 0) ? { cols: d.cols, rows: d.rows } : { cols: cols(), rows: rows() };
+  return (d && d.cols > 0 && d.rows > 0) ? { cols: d.cols, rows: d.rows } : { cols: 80, rows: 24 };
 }
+
+// Overlay-paint write seam. renderOverlay (below) emits the composed buffer
+// through this injected writer instead of importing io/term's stdout — same
+// reason as the dims seam: keep the leaf free of io. Wired at boot by
+// render/paint.js to `buf => stdout.write(buf)`. Unset in CLI/tests (no paint
+// path loaded) → renderOverlay no-ops the write, which is what those callers
+// want (they assert overlay geometry/state, never pixels).
+let _writer = null;
+function setWriter(fn) { _writer = fn; }
 
 // --- Pure chrome-glyph derivation (moved from render/decor.js in the
 // render-exit arc; the slice-reading hit-tests went to panel/chrome-hittest).
@@ -326,10 +341,11 @@ function renderOverlay({ lines, title, count = null, maxWidth = 44, anchor = nul
   for (let i = 0; i < out.length; i++) {
     buf += `\x1b[${offY + i + 1};${offX + 1}H` + richToAnsi(out[i]) + RESET;
   }
-  stdout.write(buf);
+  if (_writer) _writer(buf);
 }
 
 module.exports = {
   renderPanel, renderOverlay, overlayBox, truncate, viewportDims, setDimsProvider,
+  setWriter,
   chromeFor, _collapseGlyphMarkup, _closeGlyphMarkup,
 };

@@ -34,12 +34,12 @@ const VIEWER = 'detail';   // singleton viewer-kind id (route.resolveTarget('vie
 //
 // Production threads bundle fields (currentGroup, actionTabIdx,
 // activeActionTabKey, targetKey) into stream/tab Msgs through
-// dispatch/stream.js. For an e2e smoke, we mirror that threading
+// dispatch/runtime/stream.js. For an e2e smoke, we mirror that threading
 // inline so the routed reducer arms receive the same shape.
 
 function streamStart(tabKey, groupName, header) {
   const m = getModel();
-  // Mirror dispatch/stream.js's bundle shape exactly: actionTabIdx is
+  // Mirror dispatch/runtime/stream.js's bundle shape exactly: actionTabIdx is
   // only included when the stream's group matches the active group
   // (production gates the auto-jump on the same condition). Smoke
   // shouldn't thread a key production omits — a reducer arm branching

@@ -12,7 +12,7 @@
 
 const { getModel } = require('../model/store');
 const { ghostSuffix } = require('../leaves/ghost');
-const { esc, visibleLen } = require('../io/ansi');
+const { esc, visibleLen } = require('../leaves/ansi');
 const { renderOverlay, viewportDims } = require('../leaves/draw');
 const { stdout } = require('../io/term');
 

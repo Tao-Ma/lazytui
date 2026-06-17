@@ -41,13 +41,13 @@ function registerEffect(type, fn) {
 let _host = null;
 function _effectHost() {
   if (!_host) {
-    const api = require('../panel/api');
+    const api = require('../../panel/api');
     const { dispatchMsg } = require('./fanout');
-    const { applyMsg } = require('./dispatch');
-    const { wrap } = require('../panel/route');
+    const { applyMsg } = require('../control/dispatch');
+    const { wrap } = require('../../panel/route');
     const { streamCommand } = require('./stream');
     const { cleanup } = require('./cleanup');
-    const { showHelp } = require('../overlay/help');
+    const { showHelp } = require('../../overlay/help');
     _host = {
       dispatchMsg, applyMsg, wrap, streamCommand,
       refreshAll: api.refreshAll, cleanup, showHelp,
@@ -82,7 +82,7 @@ function runEffects(effects) {
 // invisible to anyone trying to debug from a recorded session.
 // Lazy-require keeps effects.js dep-light + importable from tests.
 function _recordError(payload) {
-  try { require('../io/event-log').record('error', payload); }
+  try { require('../../io/event-log').record('error', payload); }
   catch (_) { /* event-log unavailable — already logged to console */ }
   // Also surface in the diagnostics window (leader e) — event-log is the
   // replay firehose (evicted fast); diag-log persists errors for review.
@@ -92,7 +92,7 @@ function _recordError(payload) {
     const msg = payload && payload.where && payload.effectType
       ? `${payload.where}: '${payload.effectType}' ${detail || ''}`.trim()
       : (detail || code);
-    require('../io/diag-log').error(code, msg);
+    require('../../io/diag-log').error(code, msg);
   } catch (_) { /* diag-log unavailable */ }
 }
 
@@ -136,21 +136,21 @@ function clearEffects() { for (const k of Object.keys(_handlers)) delete _handle
  * (Was feature/open-docker.js#_refireCmdlineRebuild.)
  */
 function refireCmdlineRebuild() {
-  const m = require('../model/store').getModel();
+  const m = require('../../model/store').getModel();
   if (!m.modes.cmdMode) return;
-  const matches = require('./cmdline').rebuild(m.modal.cmdline.text);
-  require('./dispatch').applyMsg({ type: 'cmdline_set_matches', matches });
-  require('../leaves/render-queue').scheduleRender();
+  const matches = require('../control/cmdline').rebuild(m.modal.cmdline.text);
+  require('../control/dispatch').applyMsg({ type: 'cmdline_set_matches', matches });
+  require('../../leaves/render-queue').scheduleRender();
 }
 
 function installBuiltins() {
-  const { getModel } = require('../model/store');
-  const api = require('../panel/api');
-  const renderQueue = require('../leaves/render-queue');
+  const { getModel } = require('../../model/store');
+  const api = require('../../panel/api');
+  const renderQueue = require('../../leaves/render-queue');
   // Feature-host seam: feature/ workflows trigger a cmdline rebuild through
   // this injected fn instead of importing dispatch (keeps feature a bottom
   // layer). See leaves/feature-host.js + docs/v0.6.5-render-exit.md.
-  require('../leaves/feature-host').setFeatureHost({ refireCmdlineRebuild });
+  require('../../leaves/feature-host').setFeatureHost({ refireCmdlineRebuild });
   // render: request a repaint (async effect results landing into a slice).
   registerEffect('render', () => {
     try { renderQueue.scheduleRender(); } catch (_) { /* no renderer */ }
@@ -167,7 +167,7 @@ function installBuiltins() {
     if (!_enterCrossLayer('msg', eff)) return;
     try {
       if (eff.msg && eff.msg.kind) require('./fanout').dispatchMsg(eff.msg);
-      else require('./dispatch').applyMsg(eff.msg);
+      else require('../control/dispatch').applyMsg(eff.msg);
     } finally { _exitCrossLayer(); }
   });
   // show_selected_info: Component-level access to the framework Cmd that
@@ -183,24 +183,24 @@ function installBuiltins() {
     // eff.paneId (optional) targets a specific viewer — the pane-tabs
     // tab_switch-to-Info path wants info on THE pane whose tab flipped,
     // not whatever resolveTarget picks (viewer-lines-selector P0).
-    try { require('./dispatch').showSelectedInfo(eff && eff.paneId); } catch (_) { /* no renderer (test) */ }
+    try { require('../control/dispatch').showSelectedInfo(eff && eff.paneId); } catch (_) { /* no renderer (test) */ }
   });
   // diag_clear / diag_save: the diagnostics window's `c` / `s` keys.
   // Buffer mutation + file I/O are side-effects, so the diag_log_clear /
   // diag_log_save reducer arms emit these rather than touching the
   // imperative diag-log buffer themselves.
   registerEffect('diag_clear', () => {
-    try { require('../io/diag-log').clear(); } catch (_) {}
+    try { require('../../io/diag-log').clear(); } catch (_) {}
   });
   registerEffect('diag_save', () => {
-    try { require('../io/diag-log').save(); }
+    try { require('../../io/diag-log').save(); }
     catch (e) { _recordError({ where: 'diag_save', kind: 'throw', message: e && e.message }); }
   });
   // destroy_pty_session: PTY teardown from the viewer-tab lifecycle (closing
   // an ephemeral terminal tab — emitted by detail.update's
   // viewer_remove_ephemeral_terminal branch).
   registerEffect('destroy_pty_session', (eff) => {
-    try { require('../io/terminal').destroySession(eff.id); } catch (_) {}
+    try { require('../../io/terminal').destroySession(eff.id); } catch (_) {}
   });
   // tick: the recurring-timer primitive — the self-re-arming-tick Cmd.
   // Waits `ms`, then re-dispatches `msg` as a Component Msg. A Component drives
@@ -226,7 +226,7 @@ function installBuiltins() {
   registerEffect('arm_clock', (eff) => {
     const ms = (eff && typeof eff.ms === 'number') ? eff.ms : 1000;
     const t = setTimeout(() => {
-      try { require('./dispatch').applyMsg({ type: 'clock_tick', now: Date.now() }); }
+      try { require('../control/dispatch').applyMsg({ type: 'clock_tick', now: Date.now() }); }
       catch (_) { /* registry gone */ }
     }, ms);
     if (t && typeof t.unref === 'function') t.unref();
@@ -237,7 +237,7 @@ function installBuiltins() {
   // the same `runEffects` interpreter as Component effects.
 
   registerEffect('force_full_repaint', () => {
-    try { require('../leaves/render-queue').forceFullRepaint(); } catch (_) {}
+    try { require('../../leaves/render-queue').forceFullRepaint(); } catch (_) {}
   });
   // `_claimed` is the framework-internal sentinel a Component returns from
   // its `key` update to suppress the framework default. The normal path
@@ -277,8 +277,8 @@ function installBuiltins() {
   registerEffect('jobs_route', (eff) => {
     const job = eff && eff.job;
     if (!job) return;
-    const route = require('../panel/route');
-    const pt = require('../leaves/pane-tabs');
+    const route = require('../../panel/route');
+    const pt = require('../../leaves/pane-tabs');
     const m = getModel();
     const viewerTarget = route.resolveTarget('viewer') || 'detail';
     const groupName = m.currentGroup;
@@ -313,12 +313,12 @@ function installBuiltins() {
       out.fromTabKey = pt.resolveTabKey((vSlice.tab | 0), vSlice, m);
     }
     // stream-unrouted: focus-only, nothing to resolve.
-    require('./dispatch').applyMsg(out);
+    require('../control/dispatch').applyMsg(out);
   });
   // copy_commit: resolve the selected copy option's (module-held) content
   // thunk → OSC52, then drop the module options. idx<0 = cancel (just clear).
   registerEffect('copy_commit', (eff) => {
-    const copy = require('../overlay/copy');
+    const copy = require('../../overlay/copy');
     if (eff.idx >= 0) copy.copySelect(eff.idx);
     copy.clearOptions();
   });
@@ -326,39 +326,39 @@ function installBuiltins() {
   // clipboard. History mutation already happened in the reducer (model-
   // register leaf); this just writes the escape sequence.
   registerEffect('emit_osc52', (eff) => {
-    require('../io/term').emitOSC52(eff.text);
+    require('../../io/term').emitOSC52(eff.text);
   });
   // cmdline_rebuild: text changed — re-query the registry from the plugin
   // facade and feed the render-safe projection back through update. The
   // one Cmd that produces a Msg.
   registerEffect('cmdline_rebuild', () => {
     const m = getModel();
-    const matches = require('./cmdline').rebuild(m.modal.cmdline.text);
-    require('./dispatch').applyMsg({ type: 'cmdline_set_matches', matches });
+    const matches = require('../control/cmdline').rebuild(m.modal.cmdline.text);
+    require('../control/dispatch').applyMsg({ type: 'cmdline_set_matches', matches });
   });
   // cmdline_run: invoke the held match at the selected index.
   registerEffect('cmdline_run', (eff) => {
-    require('./cmdline').runAt(eff.sel, eff.args);
+    require('../control/cmdline').runAt(eff.sel, eff.args);
   });
   // cmdline_clear: drop the held registry + reset render residue (submit/cancel).
-  registerEffect('cmdline_clear', () => { require('./cmdline').clear(); });
+  registerEffect('cmdline_clear', () => { require('../control/cmdline').clear(); });
   // cmdline_preview: drive the live-preview teardown/apply for the selected
   // match. Emitted from cmdline_set_matches + cmdline_nav (any sel change).
   // Generic — the framework knows nothing about themes; entries opt in by
   // exporting `preview: () => () => void` (effect + teardown closure).
   registerEffect('cmdline_preview', (eff) => {
-    require('./cmdline').previewAtSel(eff.sel);
+    require('../control/cmdline').previewAtSel(eff.sel);
   });
   // cmdline_revert_preview: call any active teardown without dropping the
   // registry — emitted from cmdline_cancel so Esc restores previewed state.
   registerEffect('cmdline_revert_preview', () => {
-    require('./cmdline').revertPreview();
+    require('../control/cmdline').revertPreview();
   });
   // menu_action: the verb the user picked in the menu. focus_panel carries
   // its hotkey as a suffix; context-menu rows carry an explicit `eff.arg`
   // (e.g. copy_text's text); everything else is a bare handleAction verb.
   registerEffect('menu_action', (eff) => {
-    const dispatch = require('./dispatch');
+    const dispatch = require('../control/dispatch');
     if (eff.action.startsWith('focus_panel:')) dispatch.handleAction('focus_panel', eff.action.split(':')[1]);
     else dispatch.handleAction(eff.action, eff.arg);
   });

@@ -24,7 +24,7 @@ const VALID_CONTEXT_MENU_KEYS = new Set(['label', 'action', 'command', 'builtin'
 // Only the three discrete button gestures + the double-click window are
 // overridable today; left-click / wheel keep their code defaults. The
 // realizable intent vocabulary for a button gesture is activate / context /
-// noop (mirrors dispatch/mouse-bindings.js); it grows as new intents land
+// noop (mirrors dispatch/control/mouse-bindings.js); it grows as new intents land
 // (e.g. `paste` once a paste intent exists). Kept in sync by hand, same as
 // the keys-binding verb set.
 const VALID_MOUSE_KEYS    = new Set(['double-click', 'right-click', 'middle-click', 'double-click-ms']);

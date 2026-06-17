@@ -8,7 +8,7 @@
 'use strict';
 
 const { describe, it, eq, assert, report } = require('./test-runner');
-const dispatch = require('../dispatch/dispatch');
+const dispatch = require('../dispatch/control/dispatch');
 
 // We don't want to drive the real handleKey here (it requires a fully
 // set-up framework + would render). Instead, mock the bits the filter

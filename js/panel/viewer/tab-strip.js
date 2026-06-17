@@ -15,7 +15,7 @@
  */
 'use strict';
 
-const { esc, visibleLen } = require('../../io/ansi');
+const { esc, visibleLen } = require('../../leaves/ansi');
 
 /**
  * Build the panel title string + tab-bounds array for a pane that hosts

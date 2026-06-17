@@ -77,7 +77,7 @@ describe('[1] free_config_enter from half/full → refused with notice', () => {
 
 describe('[2] view_expand / view_shrink in free-config → refused with notice', () => {
   // v0.6.3 TEA cleanup: the reducer no longer reads getModel().modes.
-  // Dispatchers (dispatch/actions.js#handleAction view_expand/view_shrink)
+  // Dispatchers (dispatch/control/actions.js#handleAction view_expand/view_shrink)
   // thread the active freeConfigMode value through msg.freeConfigMode.
   // Tests pass it directly to match the new contract.
   it('view_expand in free-config: refused; viewMode unchanged; notice set', () => {

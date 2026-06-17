@@ -149,7 +149,7 @@ describe('[7] half / full view thread opts.focused to the rendered pane', () => 
       const realWrite = process.stdout.write.bind(process.stdout);
       process.stdout.write = () => true;
       // Phase F — redraw (dispatch-then-paint) moved to the dispatch layer.
-      try { require('../../dispatch/dispatch').redraw(); } finally { process.stdout.write = realWrite; }
+      try { require('../../dispatch/control/dispatch').redraw(); } finally { process.stdout.write = realWrite; }
     } finally { def.render = orig; }
     return seen;
   }
@@ -194,7 +194,7 @@ describe('[8] half view is an API-driven projection — two viewers side-by-side
   function renderNow() {
     const realWrite = process.stdout.write.bind(process.stdout);
     process.stdout.write = () => true;
-    try { require('../../dispatch/dispatch').redraw(); } finally { process.stdout.write = realWrite; }
+    try { require('../../dispatch/control/dispatch').redraw(); } finally { process.stdout.write = realWrite; }
     // A.2 — paneBounds is no longer a render-written field; build the visible
     // map from the derived accessor (only on-screen panes resolve, exactly
     // what the old half-view paneBounds held).
@@ -259,7 +259,7 @@ describe('[9] Step 2 — the `[≡]` pane-menu DRIVES the projection in half vie
   // clicked pane's slot via view_place_pane (pane_menu_place), swapping
   // when it already occupies the other slot.
   const overlay = require('../../overlay/pane-menu');
-  const dispatch = require('../../dispatch/dispatch');
+  const dispatch = require('../../dispatch/control/dispatch');
   const layoutSlice = () => api.getInstanceSlice('layout');
 
   it('a viewer pane-menu in half view lists the OTHER viewer as a placeable pane row', () => {

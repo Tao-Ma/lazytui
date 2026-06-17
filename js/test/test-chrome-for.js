@@ -14,7 +14,7 @@
 const { describe, it, eq, assert, report } = require('./test-runner');
 const { chromeFor } = require('../leaves/draw');
 const { renderPanel } = require('../leaves/draw');
-const { visibleLen, stripMarkup } = require('../io/ansi');
+const { visibleLen, stripMarkup } = require('../leaves/ansi');
 
 const pane = (extras = {}) => ({
   type: 'groups', id: 'groups', paneId: 'p-groups',

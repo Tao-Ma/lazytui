@@ -162,7 +162,7 @@ describe('[6] integration — dispatch.handleKey reaches Components', () => {
       panelTypes: { keyrec: { render: () => '' } },
     });
     api.getInstanceSlice("layout").focus = 'keyrec';
-    // Use require('../dispatch/dispatch') indirectly via a key-filter that
+    // Use require('../dispatch/control/dispatch') indirectly via a key-filter that
     // suppresses — we want the dispatch fan-out, not the downstream
     // render. The key-filter terminator drops the event AFTER the
     // existing record + dispatchMsg calls fire (filter runs at the

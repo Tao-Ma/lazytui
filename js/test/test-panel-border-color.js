@@ -68,7 +68,7 @@ describe('renderPanel — title with embedded [/] preserves border color', () =>
 });
 
 describe('wrapColor — markup wrapper that survives nested [/]', () => {
-  const { wrapColor, richToAnsi } = require('../io/ansi');
+  const { wrapColor, richToAnsi } = require('../leaves/ansi');
 
   it('plain content wraps to [color]content[/]', () => {
     eq(wrapColor('red', 'plain'), '[red]plain[/]');
@@ -141,7 +141,7 @@ describe('wrapColor — markup wrapper that survives nested [/]', () => {
 
 describe('richToAnsi — confirm `[/]` is a hard reset (the underlying invariant)', () => {
   it('[outer][inner]…[/][/] resets to default after the first [/]', () => {
-    const { richToAnsi } = require('../io/ansi');
+    const { richToAnsi } = require('../leaves/ansi');
     const ansi = richToAnsi('[blue]A[bold red]B[/]C[/]');
     // After the first `[/]`, color resets to terminal default. The `C`
     // emits without any SGR open. This is the load-bearing assumption

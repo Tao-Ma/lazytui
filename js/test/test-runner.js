@@ -259,21 +259,21 @@ try {
   // tui.js#main before installBuiltins so panel's inverted up-calls (runEffects,
   // applyMsg, streamCommand, cleanup, showHelp) resolve. Tests miss main(), so
   // mirror it here. Must precede installBuiltins, exactly as in production.
-  require('../dispatch/host-wiring').wirePanelHost();
+  require('../dispatch/runtime/host-wiring').wirePanelHost();
   // nav-state writers dispatch through an injected host (B/S3) — wire it like
   // production (tui.js#main) so tests that drive writers / the finalizer work.
-  require('../panel/nav-state').setNavDispatch(require('../dispatch/effects').effectHost());
-  require('../panel/commands').setCommandsDispatch(require('../dispatch/effects').effectHost());
-  require('../dispatch/effects').installBuiltins();
+  require('../panel/nav-state').setNavDispatch(require('../dispatch/runtime/effects').effectHost());
+  require('../panel/commands').setCommandsDispatch(require('../dispatch/runtime/effects').effectHost());
+  require('../dispatch/runtime/effects').installBuiltins();
   const api = require('../panel/api');
   // B/S6 test shim — the Component fan-out (dispatchMsg / dispatchKeyToFocused)
-  // + setInstanceReconciler relocated to dispatch/fanout.js (the runtime lives
+  // + setInstanceReconciler relocated to dispatch/runtime/fanout.js (the runtime lives
   // in the dispatch layer now). Production code calls them from there; the many
   // existing tests that drive them as `api.dispatchMsg(...)` keep working by
   // re-exposing them on the api object HERE (test-only; test/ is layering-exempt,
   // and api === fanout for these so assertions are unchanged). New tests should
-  // require('../dispatch/fanout') directly.
-  const fanout = require('../dispatch/fanout');
+  // require('../dispatch/runtime/fanout') directly.
+  const fanout = require('../dispatch/runtime/fanout');
   api.dispatchMsg = fanout.dispatchMsg;
   api.dispatchKeyToFocused = fanout.dispatchKeyToFocused;
   api.setInstanceReconciler = fanout.setInstanceReconciler;

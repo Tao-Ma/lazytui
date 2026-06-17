@@ -28,7 +28,7 @@
 'use strict';
 
 const { safeRegex } = require('./regex-guard');
-const { stripMarkup, charWidth } = require('../io/ansi');
+const { stripMarkup, charWidth } = require('./ansi');
 
 /** Display-column count of plain text up to (not including) codepoint index
  *  `charIdx` (a UTF-16 index). Translates regex match positions into columns. */

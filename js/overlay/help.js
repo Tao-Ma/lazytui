@@ -10,7 +10,7 @@
  * help-flavored content surface). Pre-N7 the file was in dispatch/
  * "to dodge an api → dispatch → api cycle"; that's no longer a
  * concern because the file doesn't reach into dispatch/ at all
- * (only panel/nav-state, model/store, io/ansi, panel/api, leaves/pane,
+ * (only panel/nav-state, model/store, leaves/ansi, panel/api, leaves/pane,
  * panel/route, and the leaves/keybindings registry for chord enumeration).
  *
  * Zero npm deps.
@@ -19,7 +19,7 @@
 
 const { allPanels, setViewerContent } = require('../panel/nav-state');
 const { getModel } = require('../model/store');
-const { esc } = require('../io/ansi');
+const { esc } = require('../leaves/ansi');
 const {getCommands, getPanelDef, getInstanceSlice, getFocus, instanceKind } = require('../panel/api');
 const kb = require('../leaves/keybindings');
 const mpane = require('../leaves/pane');

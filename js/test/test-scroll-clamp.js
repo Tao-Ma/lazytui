@@ -2,7 +2,7 @@
  * test-scroll-clamp.js — the scroll-clamp safety net + render purity.
  *
  * Since resize-as-Msg P3 (docs/resize-as-msg.md) the clamp lives in
- * the POST-DISPATCH finalizer (dispatch/fanout.js): after every outermost
+ * the POST-DISPATCH finalizer (dispatch/runtime/fanout.js): after every outermost
  * dispatch, each navigator pane's selected row is pulled back inside
  * its viewport — cursor past the bottom pulls scroll down, above the
  * top pulls it up. `set_cursor` itself still doesn't touch scroll

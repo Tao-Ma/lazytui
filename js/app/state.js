@@ -82,7 +82,7 @@ function _detailSlice() {
   let s = api.primarySliceOf('detail');
   if (!s) {
     if (!_detailAutoRegistered) {
-      try { require('../dispatch/effects').installBuiltins(); } catch (_) {}
+      try { require('../dispatch/runtime/effects').installBuiltins(); } catch (_) {}
       _detailAutoRegistered = true;
     }
     _layoutSlice();   // layout must register first — focus reader's service slot
@@ -101,7 +101,7 @@ function _groupsSlice() {
   let s = api.primarySliceOf('groups');
   if (!s) {
     if (!_groupsAutoRegistered) {
-      try { require('../dispatch/effects').installBuiltins(); } catch (_) {}
+      try { require('../dispatch/runtime/effects').installBuiltins(); } catch (_) {}
       _groupsAutoRegistered = true;
     }
     _layoutSlice();   // layout must register first — focus reader's service slot
@@ -121,7 +121,7 @@ function _layoutSlice() {
   let s = api.serviceSlice('layout');
   if (!s) {
     if (!_layoutAutoRegistered) {
-      try { require('../dispatch/effects').installBuiltins(); } catch (_) {}
+      try { require('../dispatch/runtime/effects').installBuiltins(); } catch (_) {}
       _layoutAutoRegistered = true;
     }
     api.registerComponent(require('../panel/layout'));
@@ -150,7 +150,7 @@ function loadConfig(configPath) {
   // the reducer is the sole writer to model.config / projectDir /
   // configPath. Pre-D3 was direct `m.config = ...` (the BLESSED
   // outside-writer per docs/v0.5-layering.md §5).
-  require('../dispatch/dispatch').applyMsg({
+  require('../dispatch/control/dispatch').applyMsg({
     type: 'set_config',
     config,
     configPath: path.resolve(configPath),
@@ -241,7 +241,7 @@ function initState() {
   // Component.init() defaults; only config-derived seeds (arrange,
   // currentGroup, register cap) and the theme set need a write here.
   const api = require('../panel/api');
-  require('../dispatch/fanout').dispatchMsg(api.wrap('layout', {
+  require('../dispatch/runtime/fanout').dispatchMsg(api.wrap('layout', {
     type: 'set_arrange',
     arrange: rebuildLayoutFromConfig(config),
     dirty: false,
@@ -256,14 +256,14 @@ function initState() {
   // _lastReconciledArrange) — one unified reconcile path, no separate direct
   // boot call that would leave the gate's bookkeeping stale (→ a redundant
   // re-mint on the first post-boot dispatch).
-  require('../dispatch/fanout').setInstanceReconciler(reconcilePaneInstances);
+  require('../dispatch/runtime/fanout').setInstanceReconciler(reconcilePaneInstances);
 
   // Seed the model's terminal dimensions (resize-as-Msg P1). The ONLY
   // place besides the tui.js 'resize' listener that reads the live
   // terminal size — everything downstream reads layoutSlice.dims. This
   // dispatch's finalizer also performs the boot instance mint (see above).
   const tdims = require('../io/term').dims();
-  require('../dispatch/fanout').dispatchMsg(api.wrap('layout', {
+  require('../dispatch/runtime/fanout').dispatchMsg(api.wrap('layout', {
     type: 'term_resized', cols: tdims.cols, rows: tdims.rows,
   }));
 
@@ -273,14 +273,14 @@ function initState() {
   navState.recomputeGroups();
   const groupsAfter = _groupsSlice();
   const firstName = groupsAfter.list.length ? groupsAfter.list[0].name : '';
-  require('../dispatch/dispatch').applyMsg({ type: 'set_current_group', name: firstName });
+  require('../dispatch/control/dispatch').applyMsg({ type: 'set_current_group', name: firstName });
 
   // Yank register — bounded history, system-clipboard mirror. Cap is
   // configurable via top-level `register: { cap: N }` in YAML; default
   // 100. Init deferred to here so cap reflects the parsed config.
   // v0.6.3 Phase D3 — routed through set_register Msg so the reducer
   // is the sole writer to root.register. Was a BLESSED outside-writer.
-  require('../dispatch/dispatch').applyMsg({
+  require('../dispatch/control/dispatch').applyMsg({
     type: 'set_register',
     register: require('../leaves/register').init(config.register || {}),
   });
@@ -296,7 +296,7 @@ function initState() {
       log.record('warning', { code: w.code, message: w.message });
       diag.warn(w.code || 'config', w.message);
     }
-    require('../dispatch/fanout').dispatchMsg(api.wrap('layout', {
+    require('../dispatch/runtime/fanout').dispatchMsg(api.wrap('layout', {
       type: 'set_boot_warnings',
       warnings: warnings.map(w => w.message),
     }));
@@ -316,7 +316,7 @@ function resetGroupContext() {
   // viewer-slice half is its own Msg dispatched to the resolved viewer
   // target. resolveTarget returns null when no viewer is registered —
   // the viewer-half Cmd drops in that case.
-  const dispatch = require('../dispatch/dispatch');
+  const dispatch = require('../dispatch/control/dispatch');
   const api = require('../panel/api');
   const route = require('../panel/route');
   dispatch.applyMsg({ type: 'reset_group_context' });
@@ -324,7 +324,7 @@ function resetGroupContext() {
   if (target) {
     // v0.6.3 Phase D1: thread paneMenuMode so the reducer stays pure.
     const m = getModel();
-    require('../dispatch/fanout').dispatchMsg(api.wrap(target, { type: 'viewer_reset_chrome', paneMenuMode: !!m.modes.paneMenuMode }));
+    require('../dispatch/runtime/fanout').dispatchMsg(api.wrap(target, { type: 'viewer_reset_chrome', paneMenuMode: !!m.modes.paneMenuMode }));
   }
 }
 
@@ -336,7 +336,7 @@ function selectGroup(idx) {
   // dispatch.navSelect does the per-Component routing (set_cursor →
   // owning Component + show_selected_info + the groups_selected
   // cascade).
-  require('../dispatch/dispatch').navSelect('groups', idx);
+  require('../dispatch/control/dispatch').navSelect('groups', idx);
 }
 
 

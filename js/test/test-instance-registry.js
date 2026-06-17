@@ -216,7 +216,7 @@ describe('[v0.6.4 Theme A Phase 5] per-pane nav READS', () => {
     // nav_select). Same class of fix covers selectAllVisible + the escape /
     // list_select multisel_clear arms.
     setupTwoPanes();
-    const dispatch = require('../dispatch/dispatch');
+    const dispatch = require('../dispatch/control/dispatch');
     // Focus the NON-primary pane (pane-a is primary; pane-b is the trap).
     route.setInstanceSlice('layout', { focus: 'pane-b' });
     state.setSel('pane-b', 0);                       // cursor on 'alpha'
@@ -241,7 +241,7 @@ describe('[v0.6.4 Theme A Phase 5] per-pane nav READS', () => {
 
   it('filter MODAL (enter→commit) lands on the focused pane, not the primary', () => {
     setupTwoPanes();
-    const dispatch = require('../dispatch/dispatch');
+    const dispatch = require('../dispatch/control/dispatch');
     // Simulate the modal as if pane-b (the non-primary) is being filtered:
     // _enterFilterMode seeds modal.filter.panel with the focused PANEID.
     // blessed-A — the handler stamps msg.route; filter_key/exit reuse the

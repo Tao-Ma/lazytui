@@ -22,7 +22,10 @@
 'use strict';
 
 const fsp = require('fs').promises;
-const { esc } = require('./ansi');
+// ansi is a pure leaf (markup escaping for display); io depends DOWN on it.
+// This edge is cycle-free now that the leaves layer imports no io (the hub +
+// draw seams) — see docs/v0.6.5-render-exit.md.
+const { esc } = require('../leaves/ansi');
 
 const DEFAULT_MAX_BYTES = 1024 * 1024;        // 1MB for text
 const DEFAULT_HEX_AFTER  = 256 * 1024;        // 256KB for hex

@@ -74,14 +74,14 @@ describe('[3] dispatch modeChain completeness', () => {
     // dispatch.js builds modeChain at module load and throws if any
     // CHAIN_MODES flag lacks a handler — so a clean require IS the test.
     let ok = true;
-    try { require('../dispatch/dispatch'); } catch { ok = false; }
+    try { require('../dispatch/control/dispatch'); } catch { ok = false; }
     assert(ok, 'dispatch loaded; modeChain fully wired');
   });
 });
 
 // ---- [4] T2 wedge guard -------------------------------------------
 
-const dispatch = require('../dispatch/dispatch');
+const dispatch = require('../dispatch/control/dispatch');
 
 describe('[4] wedge guard (_dispatchActiveMode)', () => {
   it('a throwing mode handler is caught, flag cleared, key claimed', () => {

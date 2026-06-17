@@ -17,8 +17,8 @@
 'use strict';
 
 const { getModel } = require('../app/runtime');
-const dispatch = require('../dispatch/dispatch');
-const { runAction } = require('../dispatch/action-runner');
+const dispatch = require('../dispatch/control/dispatch');
+const { runAction } = require('../dispatch/runtime/action-runner');
 const jobs = require('../feature/jobs');
 const { describe, it, section, eq, report } = require('./test-runner');
 

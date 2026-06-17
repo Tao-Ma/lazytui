@@ -30,7 +30,7 @@
 'use strict';
 
 const { getModel } = require('../model/store');
-const { esc, visibleLen } = require('../io/ansi');
+const { esc, visibleLen } = require('../leaves/ansi');
 const { renderOverlay, viewportDims } = require('../leaves/draw');
 const register = require('../leaves/register');
 

@@ -20,7 +20,7 @@
  */
 'use strict';
 
-const { _classifyPress } = require('../dispatch/input');
+const { _classifyPress } = require('../dispatch/control/input');
 const { describe, it, eq, report } = require('./test-runner');
 
 describe('[Theme F P3] _classifyPress — buttons', () => {

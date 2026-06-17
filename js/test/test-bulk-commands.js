@@ -14,7 +14,7 @@
 // Mock streamCommand BEFORE loading docker plugin. docker reaches it through
 // the panel-host seam (api re-exports panelHost.streamCommand), so override the
 // seam slot directly — independent of when test-runner wires the real one.
-const stream = require('../dispatch/stream');
+const stream = require('../dispatch/runtime/stream');
 const calls = [];
 stream.streamCommand = (label, cmd) => { calls.push({ label, cmd }); };
 require('../leaves/panel-host').setPanelHost({ streamCommand: stream.streamCommand });
@@ -117,7 +117,7 @@ describe('[6] command leaves terminalMode (R6: tab transition handled by stream_
     // streamCommand invoked with the right args.
     getModel().config = { groups: { g1: { name: 'g1', containers: ['c1'] } } };
     getInstanceSlice('detail').tab = 3;
-    require('../dispatch/dispatch').applyMsg({ type: 'mode_set', flag: 'terminalMode' });
+    require('../dispatch/control/dispatch').applyMsg({ type: 'mode_set', flag: 'terminalMode' });
     setSel('containers', 0);
     clearMultiSel('containers');
     calls.length = 0;
@@ -134,7 +134,7 @@ describe('[7] full cmdline path: type "inspect" + Enter → bulk command runs', 
   // dispatch end-to-end.
   it('cmdline-dispatched run reaches the docker plugin', () => {
     const { getModel } = require('../app/runtime');
-    const dispatch = require('../dispatch/dispatch');
+    const dispatch = require('../dispatch/control/dispatch');
     const m = getModel();
     getModel().config = { groups: { g1: { name: 'g1', containers: ['c1', 'c2'] } } };
     getModel().currentGroup = 'g1';

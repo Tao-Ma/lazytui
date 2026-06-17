@@ -39,11 +39,11 @@
 
 const { spawn } = require('child_process');
 const { StringDecoder } = require('string_decoder');
-const { esc } = require('../io/ansi');
-const { getModel } = require('../model/store');
-const { scheduleRender } = require('../leaves/render-queue');
-const history = require('../feature/history');
-const jobs = require('../feature/jobs');
+const { esc } = require('../../leaves/ansi');
+const { getModel } = require('../../model/store');
+const { scheduleRender } = require('../../leaves/render-queue');
+const history = require('../../feature/history');
+const jobs = require('../../feature/jobs');
 
 /** ProcCtx fields:
  *    proc       — spawned ChildProcess
@@ -82,7 +82,7 @@ function _routedBundle(slice, model, groupName) {
   // Compute the active action tab key once at dispatch time. Saves
   // the reducer the 71µs pt.activeActionTabIn (getMergedActions
   // iteration) per streamed line.
-  const pt = require('../leaves/pane-tabs');
+  const pt = require('../../leaves/pane-tabs');
   const active = pt.activeActionTabIn(slice, model, groupName);
   return {
     currentGroup: model.currentGroup,
@@ -91,10 +91,10 @@ function _routedBundle(slice, model, groupName) {
 }
 
 function appendDetailLine(line, tabKey, groupName) {
-  const route = require('../panel/route');
+  const route = require('../../panel/route');
   const target = route.resolveTarget('viewer');
   if (target == null) return;
-  const api = require('../panel/api');
+  const api = require('../../panel/api');
   let msg;
   if (tabKey && groupName) {
     const slice = api.getInstanceSlice(target) || { tab: 0 };
@@ -108,10 +108,10 @@ function appendDetailLine(line, tabKey, groupName) {
 
 function appendDetailLines(lines, tabKey, groupName) {
   if (!lines || lines.length === 0) return;
-  const route = require('../panel/route');
+  const route = require('../../panel/route');
   const target = route.resolveTarget('viewer');
   if (target == null) return;
-  const api = require('../panel/api');
+  const api = require('../../panel/api');
   let msg;
   if (tabKey && groupName) {
     const slice = api.getInstanceSlice(target) || { tab: 0 };
@@ -176,10 +176,10 @@ function killAll(opts = {}) {
  * accumulator (singleton unrouted slot — new unrouted preempts previous).
  */
 function streamCommand(headerLabel, cmd, args = [], opts = {}) {
-  const route = require('../panel/route');
+  const route = require('../../panel/route');
   const target = route.resolveTarget('viewer');
   if (target == null) return;     // no viewer registered
-  const api = require('../panel/api');
+  const api = require('../../panel/api');
   const tabKey = opts.tabKey || null;
   const groupName = opts.groupName || null;
   const slotKey = _slotKey(tabKey, groupName);
@@ -203,7 +203,7 @@ function streamCommand(headerLabel, cmd, args = [], opts = {}) {
         targetKey: 'info',
         currentGroup: getModel().currentGroup,
       }));
-      require('./dispatch').applyMsg({
+      require('../control/dispatch').applyMsg({
         type: 'confirm_enter',
         message: `Kill running '${existingLabel}'?`,
         cmd: { type: 'unrouted_preempt_and_run', existingId, headerLabel, cmd, args, opts },
@@ -228,7 +228,7 @@ function streamCommand(headerLabel, cmd, args = [], opts = {}) {
   // comparison.
   let startMsg;
   if (tabKey && groupName) {
-    const pt = require('../leaves/pane-tabs');
+    const pt = require('../../leaves/pane-tabs');
     const slice = api.getInstanceSlice(target) || { tab: 0 };
     const model = getModel();
     const startBundle = { currentGroup: model.currentGroup };

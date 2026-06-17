@@ -116,7 +116,7 @@ function decorateLines(lines, slice) {
  * line's existing markup (same v1 tradeoff as select.highlightLine).
  */
 function _multiHighlight(line, spans, activeIdx) {
-  const { stripMarkup, charWidth } = require('../../io/ansi');
+  const { stripMarkup, charWidth } = require('../../leaves/ansi');
   const plain = stripMarkup(line);
   const chars = [...plain];
   // Codepoint-index → display-col cumulative array → map [col,col+len) → cp range.

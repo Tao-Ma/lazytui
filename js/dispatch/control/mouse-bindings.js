@@ -12,7 +12,7 @@
  *
  * The override surface is the **gesture → intent edge** (not gesture → Msg):
  * configs bind to stable semantic intents, the same way `keys:` binds to
- * verbs, so internal Msg renames never break a config. `dispatch/input.js`
+ * verbs, so internal Msg renames never break a config. `dispatch/control/input.js`
  * reads `intentFor(gesture)` when resolving a discrete button gesture, and
  * the SGR parser reads `doubleClickMs()` for the double-tap window.
  *

@@ -17,7 +17,7 @@
  */
 'use strict';
 
-const { esc, visibleLen, stripMarkup } = require('../io/ansi');
+const { esc, visibleLen, stripMarkup } = require('../leaves/ansi');
 const { renderOverlay, truncate, viewportDims } = require('../leaves/draw');
 const { getInstanceSlice } = require('../panel/api');
 const mpool = require('../leaves/pool');

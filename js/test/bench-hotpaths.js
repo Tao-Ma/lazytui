@@ -22,13 +22,13 @@
 const api = require('../panel/api');
 const runtime = require('../app/runtime');
 const { getInstanceSlice } = api;
-// B/S6 — the Component fan-out relocated to dispatch/fanout.js; wire the
+// B/S6 — the Component fan-out relocated to dispatch/runtime/fanout.js; wire the
 // injected hosts like production boot so dispatchMsg + the finalizer resolve.
-const fanout = require('../dispatch/fanout');
-require('../dispatch/host-wiring').wirePanelHost();
-require('../panel/nav-state').setNavDispatch(require('../dispatch/effects').effectHost());
+const fanout = require('../dispatch/runtime/fanout');
+require('../dispatch/runtime/host-wiring').wirePanelHost();
+require('../panel/nav-state').setNavDispatch(require('../dispatch/runtime/effects').effectHost());
 
-require('../dispatch/effects').installBuiltins();
+require('../dispatch/runtime/effects').installBuiltins();
 api.registerComponent(require('../panel/layout'));
 api.registerComponent(require('../panel/viewer/viewer'));
 

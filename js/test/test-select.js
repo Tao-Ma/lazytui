@@ -20,7 +20,7 @@ const sel = require('../panel/viewer/select');
 const { describe, it, eq, assert, report } = require('./test-runner');
 const { getModel } = require('../app/runtime');
 const { getInstanceSlice } = require('../panel/api');
-const { dispatchKeyToFocused } = require('../dispatch/fanout');
+const { dispatchKeyToFocused } = require('../dispatch/runtime/fanout');
 
 // (c)-era key-claim adapter: the keyboard visual-mode state machine
 // lives in the detail Component's update now, not in panel/viewer/select.
@@ -203,7 +203,7 @@ describe('[11] keyboard visual-mode — claim via detail Component update', () =
   function withDetail(lines) {
     setUp(lines);
     getInstanceSlice("layout").focus = 'detail';
-    require('../dispatch/dispatch').applyMsg({ type: 'mode_clear', flag: 'terminalMode' });
+    require('../dispatch/control/dispatch').applyMsg({ type: 'mode_clear', flag: 'terminalMode' });
     getInstanceSlice('detail').cursor = { line: 0, col: 0 };
     // viewer.update reads slice.innerH directly (set by render's R4.9
     // direct write; tests seed it to drive selection geometry without

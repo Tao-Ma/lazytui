@@ -9,7 +9,7 @@
 'use strict';
 
 const { getModel } = require('../model/store');
-const { esc } = require('../io/ansi');
+const { esc } = require('../leaves/ansi');
 const { renderOverlay } = require('../leaves/draw');
 
 function renderConfirmOverlay() {

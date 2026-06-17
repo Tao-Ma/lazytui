@@ -22,19 +22,19 @@
  */
 'use strict';
 
-const { allPanels, getSel } = require('../panel/nav-state');
-const { getPanelViewportH, visibleBoundsFor } = require('../leaves/geometry');
-const { runAction } = require('./action-runner');
+const { allPanels, getSel } = require('../../panel/nav-state');
+const { getPanelViewportH, visibleBoundsFor } = require('../../leaves/geometry');
+const { runAction } = require('../runtime/action-runner');
 const { getPanelDef, getItems, getMergedActions, getInstanceSlice,
-        wrap, getFocus, instanceKind } = require('../panel/api');
-const { dispatchMsg } = require('./fanout');
-const { isTerminalTab, activeTerminalId, isActionTab, activeActionTab } = require('../panel/viewer/tabs');
-const { isSessionDead, restartSession } = require('../io/terminal');
+        wrap, getFocus, instanceKind } = require('../../panel/api');
+const { dispatchMsg } = require('../runtime/fanout');
+const { isTerminalTab, activeTerminalId, isActionTab, activeActionTab } = require('../../panel/viewer/tabs');
+const { isSessionDead, restartSession } = require('../../io/terminal');
 const { execSync } = require('child_process');
-const { getModel } = require('../model/store');
-const route = require('../panel/route');
-const mpane = require('../leaves/pane');
-const pt = require('../leaves/pane-tabs');
+const { getModel } = require('../../model/store');
+const route = require('../../panel/route');
+const mpane = require('../../leaves/pane');
+const pt = require('../../leaves/pane-tabs');
 
 /** v0.6.4 Theme C — compute the focused viewer's tab info HERE (handler,
  *  impure) so the next_tab/prev_tab reducer arms stay pure of Component
@@ -158,7 +158,7 @@ function _runResolvedAction(key, act) {
   if (act.args) {
     const initial = resolvePromptDefault(act);
     // Seed the autosuggest ghost from the yank register's top (first line).
-    const top = require('../leaves/register').top(getModel().register);
+    const top = require('../../leaves/register').top(getModel().register);
     const ghost = String(top || '').split('\n')[0];
     // Stage the prompt through update with a base run_action Cmd — submit
     // parses args + re-enters runAction (so an action that's ALSO confirm:
@@ -263,7 +263,7 @@ function handleAction(action, arg) {
           // toggle_group moved to groups.update in Phase C — route via
           // the Component fan-out, not the root reducer.
           // v0.6.3 Phase D1: thread groups ctx so the reducer stays pure.
-          const groupsComp = require('../panel/navigator/groups');
+          const groupsComp = require('../../panel/navigator/groups');
           const m = getModel();
           const ctx = { ...groupsComp.groupsBundle(m), paneMenuMode: !!m.modes.paneMenuMode };
           dispatchMsg(wrap('groups', { type: 'toggle_group', name: row.name, ctx }));
@@ -306,7 +306,7 @@ function handleAction(action, arg) {
       // "something happened" even before refresh completes. Direct
       // call (R4.5) — the older `applyMsg → Cmd → effects → refreshAll`
       // chain had no model side at the runtime arm (no-op + Cmd).
-      require('../panel/api').refreshAll();
+      require('../../panel/api').refreshAll();
       break;
     case 'toggle_collapse_focused': {
       // v0.6 — `<leader> c` chord in normal mode. Toggles the focused
@@ -325,7 +325,7 @@ function handleAction(action, arg) {
     case 'show_help':
       // Direct call (R4.5-deliberate, same rationale as 'refresh' above) —
       // a show_help Cmd would add a no-op runtime arm for no gain.
-      require('../overlay/help').showHelp();
+      require('../../overlay/help').showHelp();
       break;
     case 'next_tab': applyMsg({ type: 'next_tab', ..._viewerTabBundle() }); break;
     case 'prev_tab': applyMsg({ type: 'prev_tab', ..._viewerTabBundle() }); break;
@@ -408,7 +408,7 @@ function handleAction(action, arg) {
       applyMsg({ type: 'free_config' });
       break;
     case 'quit':
-      require('./cleanup').cleanup();
+      require('../runtime/cleanup').cleanup();
       process.exit(0);
       break;
   }

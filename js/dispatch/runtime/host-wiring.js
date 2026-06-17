@@ -14,11 +14,11 @@
  */
 'use strict';
 
-const panelHost = require('../leaves/panel-host');
+const panelHost = require('../../leaves/panel-host');
 
 function wirePanelHost() {
   const { dispatchMsg } = require('./fanout');   // the relocated Component fan-out (B/S6)
-  const { applyMsg } = require('./dispatch');
+  const { applyMsg } = require('../control/dispatch');
   const { registerEffect } = require('./effects');
   const { streamCommand } = require('./stream');
   panelHost.setPanelHost({ dispatchMsg, applyMsg, registerEffect, streamCommand });

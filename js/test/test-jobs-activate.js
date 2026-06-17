@@ -17,7 +17,7 @@
 const { describe, it, assert, eq, report } = require('./test-runner');
 const runtime = require('../app/runtime');
 const jobs = require('../feature/jobs');
-const dispatch = require('../dispatch/dispatch');
+const dispatch = require('../dispatch/control/dispatch');
 const api = require('../panel/api');
 
 const NOW = 1717420000000;  // fixed timestamp for deterministic age math

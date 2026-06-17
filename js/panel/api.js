@@ -20,18 +20,26 @@ const route = require('../panel/route');
 // authors should import only from `./api` so the surface is one diff
 // away from any future API change. Direct imports from `../ansi` etc.
 // still work but are not part of the contract.
-const { esc, visibleLen, stripMarkup, wrapColor } = require('../io/ansi');
+const { esc, visibleLen, stripMarkup, wrapColor } = require('../leaves/ansi');
 const { theme } = require('../leaves/themes');
 const { renderPanel, setDimsProvider } = require('../leaves/draw');
 
 // Render-exit seam (docs/v0.6.5-render-exit.md): leaves/draw can't read the
-// model (panel layer). Inject the terminal-dims source — the layout slice's
-// resize-as-Msg dims — so viewportDims() resolves them without the leaf
-// reaching up into panel. The model-read stays here (panel), keeping the
-// rendered frame a pure function of the model. io/term is the boot fallback.
+// model (panel layer) NOR import io (it's a pure bottom leaf). Inject the full
+// terminal-dims resolution here: the layout slice's resize-as-Msg dims (the
+// model clock) first, then the io/term singleton as the boot/no-Msg fallback
+// before the first term_resized lands. Both the model-read and the io read
+// live here (panel — which may depend on model + io); the leaf only consumes
+// the resolved {cols,rows}. This is what lets draw drop its io/term import
+// while preserving the "io/term is the boot fallback" behavior overlays rely
+// on (test-overlay-dims §2). The frame stays a pure function of the model
+// whenever the clock is live.
+const _term = require('../io/term');
 setDimsProvider(() => {
   const ls = route.getInstanceSlice('layout');
-  return ls && ls.dims;
+  const d = ls && ls.dims;
+  if (d && d.cols > 0 && d.rows > 0) return d;
+  return { cols: _term.cols(), rows: _term.rows() };
 });
 
 // Panel-state accessors live in ./nav-state (v0.6.5 §1 Phase 2). api re-exports
@@ -582,7 +590,7 @@ function _componentsMap() { return components; }
 module.exports = {
   // --- Component registry / lifecycle ---
   // dispatchMsg / dispatchKeyToFocused / setInstanceReconciler relocated to
-  // dispatch/fanout.js (B/S6 — the runtime lives in the dispatch layer now).
+  // dispatch/runtime/fanout.js (B/S6 — the runtime lives in the dispatch layer now).
   registerComponent, registerEffect, wrap,
   _components: _componentsMap,  // v0.6.3 Phase B — internal use by initState + fanout
   getComponent, getComponentOwningPanel, getFocus,

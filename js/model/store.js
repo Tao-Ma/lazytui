@@ -10,7 +10,7 @@
  * (v0.6.5 §1) is what cut the {app, dispatch, panel} require cycle:
  * the store imports only `leaves/modes` (a pure leaf), nothing upward.
  *
- * The reducer `update(model, msg)` lives in `dispatch/reducer.js` (F3 —
+ * The reducer `update(model, msg)` lives in `dispatch/update/reducer.js` (F3 —
  * docs/reducer-cleanup-relocation.md) — it reads `panel/route`, so it sits
  * at `dispatch`, above this store but below `app`. The store knows nothing
  * about the reducer; `setModel` is called by the dispatch boundary

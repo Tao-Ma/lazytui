@@ -16,7 +16,7 @@ const fs = require('fs');
 const os = require('os');
 const { spawnSync } = require('child_process');
 const cs = require('../panel/navigator/config-status');
-const effects = require('../dispatch/effects');
+const effects = require('../dispatch/runtime/effects');
 const { getModel } = require('../app/runtime');
 const api = require('../panel/api');
 // test-runner FIRST — its auto-setup wires the panel-host seam (so cs's
