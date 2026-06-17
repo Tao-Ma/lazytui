@@ -42,7 +42,7 @@ const { truncate, setWriter: _setDrawWriter } = require('../leaves/draw');
 _setDrawWriter((buf) => stdout.write(buf));
 const painter = require('../leaves/painter');
 const { isTerminalTab, activeTerminalId, activeTerminalConfig } = require('../panel/viewer/tabs');
-const { ensureSession, resizeSession, sessionScrollInfo } = require('../io/terminal');
+const { getSession, sessionScrollInfo } = require('../io/terminal');
 const { getInstanceSlice, sliceForPane, getComponent,
        getComponentOwningPanel } = require('../panel/api');
 const { renderCopyMenu } = require('../overlay/copy');
@@ -191,6 +191,12 @@ const _frame = {
   // PTY-overlay sub-state (session.prevFrame lives per session).
   forceOverlayFull: true,
   lastOverlayId:    null,
+  // v0.6.5 §5 — last overlay's displayed inner dims. The PTY resize moved to
+  // the dispatch finalizer, so render no longer sets forceOverlayFull off the
+  // resize itself; instead it NOTICES a dim change here (like lastOverlayId
+  // notices a session switch) to refresh the per-row diff cache.
+  lastOverlayW:     0,
+  lastOverlayH:     0,
 };
 
 /**
@@ -564,32 +570,28 @@ function renderTerminalOverlay(model = getModel(), arrangeOverride) {
   const innerW = bounds.w - 2;
   const innerH = bounds.h - 2;
 
-  // Lazy-create session on first render
-  // v0.6.5 §2 — io/terminal is a leaf; the spawn cwd (model.projectDir) is
-  // passed in rather than read from the model there.
-  const session = ensureSession(id, termConf.cmd, innerW, innerH, model.projectDir);
+  // v0.6.5 §5 — render is READ-ONLY for the PTY overlay. The session's
+  // lifecycle (lazy spawn on first activation + resize to the committed pane
+  // geometry) is reconciled by the dispatch finalizer
+  // (dispatch/runtime/fanout.js), the same runtime step that mints pane
+  // instances and derives the viewer's innerH. Here we just read the buffer.
+  // A null session means the finalizer hasn't spawned it yet (no activation
+  // dispatch has run) — skip this frame; the next render shows it.
+  const session = getSession(id);
+  if (!session) return;
 
-  // Resize if dimensions changed (also invalidates diff cache). Skipped
-  // during a drag preview: the bounds here are preview-shifted (detail's
-  // y/h follow the would-be-after-release arrangement), but the user
-  // hasn't committed the layout change yet. Resizing the PTY child on
-  // every zone crossing would fire SIGWINCH repeatedly and churn the
-  // child's rendering. Pixels still paint at preview coords (the screen
-  // matches), but the session keeps its committed dimensions until
-  // release. Bottom rows of a taller-preview detail show as blank;
-  // a shorter-preview detail clips the bottom of the xterm buffer
-  // visually but the layout's borders cover the overflow. After
-  // release/cancel the next render fires a single resize to the real
-  // (committed) detail size.
-  const isDragPreview = !!(layoutSlice && layoutSlice.freeConfig && layoutSlice.freeConfig.drag && layoutSlice.freeConfig.drag.previewArrange);
-  if (!isDragPreview && (session.xterm.cols !== innerW || session.xterm.rows !== innerH)) {
-    resizeSession(id, innerW, innerH);
-    _frame.forceOverlayFull = true;
-  }
-  // Switching to a different session — force full redraw
-  if (id !== _frame.lastOverlayId) {
+  // Switching session OR the overlay's displayed inner dims changed → force a
+  // full overlay repaint so the per-row diff cache is rebuilt at the new
+  // shape. The PTY resize itself lives in the finalizer now; render only
+  // NOTICES the change. During a free-config drag the displayed bounds are
+  // preview-shifted while the PTY holds its committed dims (the finalizer
+  // sizes off the committed arrange) — the dim-change force keeps the shifted
+  // overlay region clean.
+  if (id !== _frame.lastOverlayId || innerW !== _frame.lastOverlayW || innerH !== _frame.lastOverlayH) {
     _frame.forceOverlayFull = true;
     _frame.lastOverlayId = id;
+    _frame.lastOverlayW = innerW;
+    _frame.lastOverlayH = innerH;
   }
 
   // Diff-based render: only rewrite rows whose content changed since the
