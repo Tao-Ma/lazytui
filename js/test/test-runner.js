@@ -263,6 +263,7 @@ try {
   // nav-state writers dispatch through an injected host (B/S3) — wire it like
   // production (tui.js#main) so tests that drive writers / the finalizer work.
   require('../panel/nav-state').setNavDispatch(require('../dispatch/effects').effectHost());
+  require('../panel/commands').setCommandsDispatch(require('../dispatch/effects').effectHost());
   require('../dispatch/effects').installBuiltins();
   const api = require('../panel/api');
   // layout MUST register first — chrome owner + focus reader's primary
