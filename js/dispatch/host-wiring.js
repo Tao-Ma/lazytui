@@ -1,11 +1,11 @@
 /**
  * Boot wiring for the panel-host seam (leaves/panel-host.js).
  *
- * The `panel/` layer invokes a handful of dispatch + overlay capabilities
- * through that seam instead of importing upward. This module — a dispatch-
- * layer module that legitimately imports its dispatch siblings and reaches
- * DOWN-to-up into overlay/help (dispatch→overlay, legal) — registers the
- * real functions into the seam once, at boot.
+ * The `panel/` layer invokes a few dispatch capabilities (the relocated
+ * Component fan-out `dispatchMsg`, the root `applyMsg`, `registerEffect`, and
+ * `streamCommand`) through that seam instead of importing upward. This dispatch-
+ * layer module imports its dispatch siblings + the relocated fan-out and
+ * registers the real functions into the seam once, at boot.
  *
  * Must run before the first dispatch (called from app/tui.js#main, ahead of
  * installBuiltins / component registration). The requires are resolved here,
@@ -19,14 +19,9 @@ const panelHost = require('../leaves/panel-host');
 function wirePanelHost() {
   const { dispatchMsg } = require('./fanout');   // the relocated Component fan-out (B/S6)
   const { applyMsg } = require('./dispatch');
-  const { runEffects, registerEffect } = require('./effects');
+  const { registerEffect } = require('./effects');
   const { streamCommand } = require('./stream');
-  const { cleanup } = require('./cleanup');
-  const { showHelp } = require('../overlay/help');
-  panelHost.setPanelHost({
-    dispatchMsg,
-    applyMsg, runEffects, registerEffect, streamCommand, cleanup, showHelp,
-  });
+  panelHost.setPanelHost({ dispatchMsg, applyMsg, registerEffect, streamCommand });
 }
 
 module.exports = { wirePanelHost };

@@ -38,12 +38,10 @@ setDimsProvider(() => {
 // the nav readers + composites as part of its Component-facing surface (the
 // navigator Components read them from here). The nav-state writers require api
 // back lazily, so this top-level edge is one-directional (api → nav-state).
-const { getSel, getScroll, isMultiSel, syncPanelScroll,
+const { getSel, getScroll, isMultiSel,
         selectedOrFocused, infoLinesFromFocus } = require('./nav-state');
 const { getModel } = require('../model/store');
 const mnav = require('../leaves/nav');
-const geo = require('../leaves/geometry');
-const mpool = require('../leaves/pool');
 const { execAsync } = require('../io/exec');
 
 /**
