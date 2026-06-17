@@ -751,7 +751,10 @@ function render(model = getModel()) {
 // Debouncing primitives live in render-queue.js (both terminal.js and
 // actions.js need scheduleOverlay / scheduleRender; render-queue.js has no
 // dependencies, breaking what would otherwise be a cycle through layout).
-require('../leaves/render-queue').setRenderers({ render, overlay: renderTerminalOverlay });
+require('../leaves/render-queue').setRenderers({
+  render, overlay: renderTerminalOverlay,
+  forceFull: forceFullRepaint, invalidate: invalidateRows,
+});
 
 /**
  * Invalidate the per-row diff cache so the next render() does a
