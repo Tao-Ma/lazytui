@@ -27,6 +27,11 @@ const geo = require('../../leaves/geometry');
 const mpool = require('../../leaves/pool');
 const { syncPanelScroll } = require('../../panel/nav-state');
 const hub = require('../../leaves/hub');
+// v0.6.5 §5 — the finalizer reconciles the active terminal tab's PTY session
+// (spawn-on-demand + resize), moved out of render so the view is read-only for
+// the overlay. dispatch→io and dispatch→panel are legal down-edges.
+const terminal = require('../../io/terminal');
+const tabs = require('../../panel/viewer/tabs');
 
 // Render-exit-style seam: leaves/hub fans publishes out to Components as a
 // `hub` Msg, but a leaf can't import panel/dispatch. Inject the dispatcher here
@@ -116,6 +121,33 @@ function _finalizeDispatch() {
       const innerH = geo.getPanelViewportH(layoutSlice, viewerPaneId, layoutSlice.dims, layout, viewerPaneId);
       const vs = route.getInstanceSlice(viewerTab);
       if (vs && vs.innerH !== innerH) route.setInstanceSlice(viewerTab, { ...vs, innerH });
+
+      // v0.6.5 §5 — PTY-session reconcile for the active terminal tab. This is
+      // the side-effect that used to run in render (paint.js's
+      // ensureSession/resizeSession); moving it here makes render a pure read
+      // of the session buffer. It is the SAME dispatch-runtime reconcile
+      // category as the instance-mint above and the innerH write: ensure the
+      // active terminal's PTY exists, and size it to the viewer pane's
+      // COMMITTED geometry. visibleBoundsFor reads the committed arrange (not
+      // render's drag-preview override), so the PTY holds its committed dims
+      // through a free-config drag — no SIGWINCH churn per zone crossing.
+      // Lazy: only the ACTIVE terminal tab spawns; tabs never visited never do.
+      // ensureSession is idempotent, so re-running per dispatch is a no-op once
+      // the session exists. activeTerminalId()/activeTerminalConfig() resolve
+      // the same focused viewer render did (resolveTarget('viewer')).
+      if (tabs.isTerminalTab()) {
+        const ptyId = tabs.activeTerminalId();
+        const tconf = tabs.activeTerminalConfig();
+        const tb = (ptyId && tconf)
+          ? geo.visibleBoundsFor(layoutSlice, viewerPaneId, viewerPaneId) : null;
+        if (tb) {
+          const cols = tb.w - 2, rows = tb.h - 2;
+          const session = terminal.ensureSession(ptyId, tconf.cmd, cols, rows, getModel().projectDir);
+          if (session.xterm.cols !== cols || session.xterm.rows !== rows) {
+            terminal.resizeSession(ptyId, cols, rows);
+          }
+        }
+      }
     }
   } catch (e) {
     console.error(`[dispatch] post-dispatch scroll clamp error: ${e.message}`);

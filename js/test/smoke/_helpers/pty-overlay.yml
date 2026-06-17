@@ -1,0 +1,39 @@
+# Config for the PTY-overlay smoke (js/test/smoke/pty-overlay.js).
+# A viewer with ONE terminal tab whose command echoes a unique marker, then
+# sleeps (keeps the session alive so the marker stays in the buffer). Switching
+# to the terminal tab makes the dispatch finalizer spawn the PTY and render
+# paint its buffer — the v0.6.5 §5 "render is read-only for the overlay" arc.
+# Minimal + self-contained: no docker / postgres / external service.
+project_dir: ../../..
+
+groups:
+  term:
+    label: PTY smoke
+    containers: []
+    actions:
+      noop:
+        label: noop
+        desc: A no-op action so the group is valid; never run by the smoke.
+        type: run
+        script: 'true'
+        tab: false
+    terminals:
+      sh:
+        cmd: 'echo PTYMARKER_4F2A; sleep 30'
+        label: Shell
+
+panels:
+  files:
+    type: files
+    title: Files
+  detail:
+    type: detail
+    title: Detail
+
+layout:
+  columns:
+    - width: 30
+      panels:
+        - files
+    - panels:
+        - detail
