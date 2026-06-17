@@ -117,7 +117,7 @@ function titleEditText() {
  *  user resets the layout from disk. Production routes through the layout
  *  Component (`free_config_clear_undo` Msg); this test-only shim mirrors that. */
 function _clearUndoStacks() {
-  require('../leaves/panel-host').dispatchMsg(require('./route').wrap('layout', { type: 'free_config_clear_undo' }));
+  require('../ports/panel-host').dispatchMsg(require('./route').wrap('layout', { type: 'free_config_clear_undo' }));
 }
 
 // --- test-facing shims (production drives these via input.js → applyMsg /
@@ -129,7 +129,7 @@ function onMouseEvent(kind, mx, my) {
             : kind === 'release' ? { type: 'free_config_mouse_release' }
             : null;
   if (msg) {
-    require('../leaves/panel-host').dispatchMsg(require('./route').wrap('layout', msg));
+    require('../ports/panel-host').dispatchMsg(require('./route').wrap('layout', msg));
   }
 }
 

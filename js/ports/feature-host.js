@@ -6,8 +6,14 @@
  * that other layers invoke (panel components, dispatch). To keep feature a
  * pure BOTTOM layer (no feature→panel / feature→dispatch import edges that
  * would re-form the layer cycle), the few calls feature needs to make back
- * up are injected here and called through this leaf — the same render-exit
- * seam pattern as render-queue / draw's dims provider.
+ * up are injected here and called through this port.
+ *
+ * Lives in `ports/` (its own bottom layer), NOT `leaves/`: like panel-host it
+ * is a PURE injection port (injected fn slots + delegating wrappers, no
+ * transform logic), so it sits apart from the pure-transform leaves
+ * (TEA-review follow-up #6). Same render-exit seam mechanism as the
+ * seam-bearing leaves render-queue / draw's dims provider — those keep real
+ * pure logic, so they stay leaves; these two are nothing but the seam.
  *
  * Wired at boot:
  *   - panel/viewer/tabs.js  → addContentTab, updateContentTabLines

@@ -73,7 +73,7 @@ function _apply(msg) {
   const route = require('../../panel/route');
   const target = route.resolveTarget('viewer');
   if (!target) return;
-  require('../../leaves/panel-host').dispatchMsg(route.wrap(target, msg));
+  require('../../ports/panel-host').dispatchMsg(route.wrap(target, msg));
 }
 
 // PURE projections — take the threaded `lines` array explicitly so the
@@ -230,7 +230,7 @@ function commit() {
   _apply({ type: 'select_cancel' });
   // register_push is a ROOT-reducer Msg (model.register lives on the root
   // model), so route via applyMsg, not the Component fan-out.
-  if (text) require('../../leaves/panel-host').applyMsg({ type: 'register_push', text });
+  if (text) require('../../ports/panel-host').applyMsg({ type: 'register_push', text });
   return text;
 }
 
@@ -258,7 +258,7 @@ function settle() {
     && sel.anchor.col === sel.cursor.col;
   const text = noDrag ? '' : selectedText();
   if (!text) { _apply({ type: 'select_cancel' }); return ''; }
-  require('../../leaves/panel-host').applyMsg({ type: 'register_push', text });
+  require('../../ports/panel-host').applyMsg({ type: 'register_push', text });
   return text;  // active stays true → persistent selection (highlight + copyable)
 }
 

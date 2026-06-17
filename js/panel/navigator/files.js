@@ -625,7 +625,7 @@ const commands = [
     run: (args) => {
       const arg = ((args && args[0]) || '').toLowerCase();
       const mode = arg === 'on' ? 'on' : arg === 'off' ? 'off' : 'toggle';
-      const panelHost = require('../../leaves/panel-host');
+      const panelHost = require('../../ports/panel-host');
       // Fan out to every files/file-browser instance — global from the
       // user's view, but each pane owns its own browser slice post-collapse
       // (wrap('files') would hit only the primary instance).
