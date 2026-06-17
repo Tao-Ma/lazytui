@@ -180,7 +180,7 @@ function main() {
   process.on('uncaughtException',  _onFatal('uncaughtException'));
   process.on('unhandledRejection', _onFatal('unhandledRejection'));
 
-  // Wire the panel-host seam (leaves/panel-host) before any dispatch — the
+  // Wire the panel-host seam (ports/panel-host) before any dispatch — the
   // `panel/` layer invokes dispatch + overlay capabilities through it instead
   // of importing upward (the cut that dissolves the {dispatch,overlay,panel}
   // layer cycle). See docs/v0.6.5-render-exit.md "Domain detangle".

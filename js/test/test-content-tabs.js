@@ -449,7 +449,7 @@ describe('[P2.2] no-arg activeTerminalId resolves the mounted viewer pane', () =
 
 // Stage-1 domain-detangle guard (docs/v0.6.5-render-exit.md "domain detangle"):
 // feature/open-file no longer imports panel/viewer/tabs — it pushes content
-// through the leaves/feature-host port, wired by tabs.js on load. This proves
+// through the ports/feature-host port, wired by tabs.js on load. This proves
 // the workflow still creates the tab end-to-end; if the seam wiring breaks,
 // host.addContentTab is null and openHostFileAsTab throws here.
 describe('[feature-host] open-file routes through the injected port', () => {

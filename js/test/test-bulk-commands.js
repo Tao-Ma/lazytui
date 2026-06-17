@@ -17,7 +17,7 @@
 const stream = require('../dispatch/runtime/stream');
 const calls = [];
 stream.streamCommand = (label, cmd) => { calls.push({ label, cmd }); };
-require('../leaves/panel-host').setPanelHost({ streamCommand: stream.streamCommand });
+require('../ports/panel-host').setPanelHost({ streamCommand: stream.streamCommand });
 
 const { toggleMultiSel, setSel, clearMultiSel } = require('../app/state');
 const api = require('../panel/api');
