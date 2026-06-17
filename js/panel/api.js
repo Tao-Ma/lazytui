@@ -13,7 +13,7 @@
  */
 'use strict';
 
-const hub = require('./hub');
+const hub = require('../leaves/hub');
 const route = require('../panel/route');
 
 // L0/L2 helpers re-exported as the Component-facing surface. Component
@@ -33,6 +33,11 @@ setDimsProvider(() => {
   const ls = route.getInstanceSlice('layout');
   return ls && ls.dims;
 });
+
+// Render-exit-style seam: leaves/hub fans publishes out to Components as a
+// `hub` Msg, but a leaf can't import panel. Inject the dispatcher here so the
+// hub stays a bottom leaf. dispatchMsg is a hoisted fn declaration below.
+hub.setDispatch(dispatchMsg);
 // Panel-state accessors live in ./nav-state (v0.6.5 §1 Phase 2). api uses
 // syncPanelScroll (its per-dispatch finalizer clamps each pane) and re-exports
 // the nav readers + composites as part of its Component-facing surface (the

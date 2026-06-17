@@ -447,4 +447,20 @@ describe('[P2.2] no-arg activeTerminalId resolves the mounted viewer pane', () =
   });
 });
 
+// Stage-1 domain-detangle guard (docs/v0.6.5-render-exit.md "domain detangle"):
+// feature/open-file no longer imports panel/viewer/tabs — it pushes content
+// through the leaves/feature-host port, wired by tabs.js on load. This proves
+// the workflow still creates the tab end-to-end; if the seam wiring breaks,
+// host.addContentTab is null and openHostFileAsTab throws here.
+describe('[feature-host] open-file routes through the injected port', () => {
+  it('openHostFileAsTab creates a content tab via the wired port', () => {
+    freshGroup();
+    const { openHostFileAsTab } = require('../feature/open-file');
+    openHostFileAsTab('/tmp/detangle-stage1-probe.txt');  // sync tab add fires before async load
+    const info = tabs.getTabInfo();
+    eq(info.contentTabs.length, 1, 'one content tab created by the feature workflow');
+    eq(info.contentTabs[0][0], 'file:/tmp/detangle-stage1-probe.txt', 'keyed by absolute path');
+  });
+});
+
 report();

@@ -101,10 +101,29 @@ function clearEffects() { for (const k of Object.keys(_handlers)) delete _handle
  * per refresh tick) don't re-traverse the require cache on each call.
  * Writes go through the reducer so update stays the single writer.
  */
+/**
+ * Re-fire the cmdline dropdown rebuild — the guarded variant the feature
+ * layer triggers after an async completion fetch resolves (docker dir
+ * listing). No-op when cmdline isn't open. Owned here (dispatch) and handed
+ * to the feature-host port so feature/open-docker doesn't import dispatch.
+ * (Was feature/open-docker.js#_refireCmdlineRebuild.)
+ */
+function refireCmdlineRebuild() {
+  const m = require('../model/store').getModel();
+  if (!m.modes.cmdMode) return;
+  const matches = require('./cmdline').rebuild(m.modal.cmdline.text);
+  require('./dispatch').applyMsg({ type: 'cmdline_set_matches', matches });
+  require('../leaves/render-queue').scheduleRender();
+}
+
 function installBuiltins() {
   const { getModel } = require('../model/store');
   const api = require('../panel/api');
   const renderQueue = require('../leaves/render-queue');
+  // Feature-host seam: feature/ workflows trigger a cmdline rebuild through
+  // this injected fn instead of importing dispatch (keeps feature a bottom
+  // layer). See leaves/feature-host.js + docs/v0.6.5-render-exit.md.
+  require('../leaves/feature-host').setFeatureHost({ refireCmdlineRebuild });
   // render: request a repaint (async effect results landing into a slice).
   registerEffect('render', () => {
     try { renderQueue.scheduleRender(); } catch (_) { /* no renderer */ }

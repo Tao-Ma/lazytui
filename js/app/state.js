@@ -53,7 +53,7 @@ function _wireSubscriptions(comp, paneDef) {
     console.error(`[${comp.name || '?'}] subscriptions() threw: ${e && e.message}`);
     return;
   }
-  const hub = require('../panel/hub');
+  const hub = require('../leaves/hub');
   const { scheduleRender } = require('../panel/api');
   for (const d of descriptors) {
     if (!d || !d.topic) continue;

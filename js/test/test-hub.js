@@ -8,7 +8,7 @@
  */
 'use strict';
 
-const hub = require('../panel/hub');
+const hub = require('../leaves/hub');
 const { describe, it, assert, eq, report } = require('./test-runner');
 
 describe('[1] lazy drop with no subscribers', () => {

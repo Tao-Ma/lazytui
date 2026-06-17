@@ -130,7 +130,7 @@ describe('[5] hooks fire from the wired sources', () => {
 
   it('hub.publish appends a "publish" event', () => {
     log.clear();
-    const hub = require('../panel/hub');
+    const hub = require('../leaves/hub');
     // Need a subscriber so the publish actually retains; recording
     // happens regardless but exercising the real path is cleaner.
     hub.subscribe('test.topic', { window: 5 });
