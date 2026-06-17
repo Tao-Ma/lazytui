@@ -260,6 +260,9 @@ try {
   // applyMsg, streamCommand, cleanup, showHelp) resolve. Tests miss main(), so
   // mirror it here. Must precede installBuiltins, exactly as in production.
   require('../dispatch/host-wiring').wirePanelHost();
+  // nav-state writers dispatch through an injected host (B/S3) — wire it like
+  // production (tui.js#main) so tests that drive writers / the finalizer work.
+  require('../panel/nav-state').setNavDispatch(require('../dispatch/effects').effectHost());
   require('../dispatch/effects').installBuiltins();
   const api = require('../panel/api');
   // layout MUST register first — chrome owner + focus reader's primary

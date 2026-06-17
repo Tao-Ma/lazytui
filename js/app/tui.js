@@ -185,6 +185,10 @@ function main() {
   // of importing upward (the cut that dissolves the {dispatch,overlay,panel}
   // layer cycle). See docs/v0.6.5-render-exit.md "Domain detangle".
   require('../dispatch/host-wiring').wirePanelHost();
+  // Inject the dispatch host into nav-state's writers (formalized injection —
+  // they feed Msgs back through it instead of importing the relocating fan-out).
+  // Before initState/refreshAll, whose finalizer runs syncPanelScroll→setScroll.
+  require('../panel/nav-state').setNavDispatch(require('../dispatch/effects').effectHost());
 
   // Install the Component effect handlers (focus/render/apply_msg/...) before
   // any Component registers — a Component's update→effects must resolve at
