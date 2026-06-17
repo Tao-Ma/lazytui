@@ -19,13 +19,15 @@ const cs = require('../panel/navigator/config-status');
 const effects = require('../dispatch/effects');
 const { getModel } = require('../app/runtime');
 const api = require('../panel/api');
+// test-runner FIRST — its auto-setup wires the panel-host seam (so cs's
+// installEffects → api.registerEffect resolves) before we register cs below.
+const { describe, it, assert, eq, report } = require('./test-runner');
 // Phase 4a — `getSel('config-status')` walks panel-type → owning
 // Component → that Component's slice.nav, so the Component must be
 // registered (layout first per Phase 3) for the helper to resolve.
 api.registerComponent(require('../panel/layout'));
 api.registerComponent(cs);
 const { setSel } = require('../app/state');
-const { describe, it, assert, eq, report } = require('./test-runner');
 
 const STATUS = cs.STATUS;
 
