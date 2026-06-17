@@ -625,7 +625,7 @@ const commands = [
     run: (args) => {
       const arg = ((args && args[0]) || '').toLowerCase();
       const mode = arg === 'on' ? 'on' : arg === 'off' ? 'off' : 'toggle';
-      const api = require('../api');
+      const panelHost = require('../../leaves/panel-host');
       // Fan out to every files/file-browser instance — global from the
       // user's view, but each pane owns its own browser slice post-collapse
       // (wrap('files') would hit only the primary instance).
@@ -633,10 +633,10 @@ const commands = [
       route.eachInstance(inst => {
         if (!OWNED_TYPES.includes(inst.kind)) return;
         any = true;
-        api.dispatchMsg(api.wrap(inst.id, { type: 'showHidden', mode }));
+        panelHost.dispatchMsg(route.wrap(inst.id, { type: 'showHidden', mode }));
       });
       // Degenerate: no placed instance yet — hit the register-time primary.
-      if (!any) api.dispatchMsg(api.wrap('files', { type: 'showHidden', mode }));
+      if (!any) panelHost.dispatchMsg(route.wrap('files', { type: 'showHidden', mode }));
     },
   },
 ];

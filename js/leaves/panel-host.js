@@ -20,6 +20,7 @@
  */
 'use strict';
 
+let _dispatchMsg = null;
 let _applyMsg = null;
 let _runEffects = null;
 let _registerEffect = null;
@@ -27,7 +28,8 @@ let _streamCommand = null;
 let _cleanup = null;
 let _showHelp = null;
 
-function setPanelHost({ applyMsg, runEffects, registerEffect, streamCommand, cleanup, showHelp } = {}) {
+function setPanelHost({ dispatchMsg, applyMsg, runEffects, registerEffect, streamCommand, cleanup, showHelp } = {}) {
+  if (dispatchMsg) _dispatchMsg = dispatchMsg;
   if (applyMsg) _applyMsg = applyMsg;
   if (runEffects) _runEffects = runEffects;
   if (registerEffect) _registerEffect = registerEffect;
@@ -37,6 +39,9 @@ function setPanelHost({ applyMsg, runEffects, registerEffect, streamCommand, cle
 }
 
 // dispatch capabilities (panel → dispatch, inverted)
+// dispatchMsg = the Component fan-out (lives in panel/api today; relocates to
+// dispatch/ in B/S6 — only host-wiring's source line changes, callers don't).
+function dispatchMsg(...args) { return _dispatchMsg(...args); }
 function applyMsg(...args) { return _applyMsg(...args); }
 function runEffects(...args) { return _runEffects(...args); }
 function registerEffect(...args) { return _registerEffect(...args); }
@@ -47,5 +52,5 @@ function showHelp(...args) { return _showHelp(...args); }
 
 module.exports = {
   setPanelHost,
-  applyMsg, runEffects, registerEffect, streamCommand, cleanup, showHelp,
+  dispatchMsg, applyMsg, runEffects, registerEffect, streamCommand, cleanup, showHelp,
 };
