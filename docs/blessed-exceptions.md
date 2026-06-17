@@ -76,9 +76,10 @@ have been brought under the model-clock discipline:
 
 - ✅ **Dims from the `io/term` singleton → `model.dims` (Finding B).** Overlays
   + `renderOverlay` + the footer now resolve dims via
-  `render/panel.js#viewportDims()` (reads `layoutSlice.dims`; `io/term` is a
-  boot fallback only). The dims source-of-truth is unified; the 1-frame
-  resize desync is gone. `decor.js` was always clean (`paneBounds`). Pinned by
+  `leaves/draw.js#viewportDims()` (the layout-slice dims arrive through the
+  `setDimsProvider` seam wired from `panel/api` since the render-exit arc moved
+  the renderer to a leaf; `io/term` is a boot fallback only). The dims
+  source-of-truth is unified; the 1-frame resize desync is gone. Pinned by
   `test-overlay-dims.js`. See PRINCIPLES §11.
 - ✅ **Wall-clock age → threaded `now` → `model.now` (Finding A, FULLY
   ELIMINATED).** `renderDiagLog`/`renderJobsOverlay` take `now` (threaded from
@@ -107,8 +108,10 @@ shipped — the eliminable-exception set is empty. Kept here for the record;
 order was by **(correctness value × tractability)**.
 
 **1. ✅ DONE — Finding B — unify the dims source (overlays + footer read
-   `model.dims`).** Shipped via `render/panel.js#viewportDims()`; overlays +
-   footer + `renderOverlay` read `layoutSlice.dims` (io/term = boot fallback).
+   `model.dims`).** Shipped via `leaves/draw.js#viewportDims()` (renderer moved
+   to a leaf in the render-exit arc; dims via the `setDimsProvider` seam);
+   overlays + footer + `renderOverlay` read `layoutSlice.dims` (io/term = boot
+   fallback).
    Mechanical, removed the 1-frame resize desync, laid the plumbing #2 rode.
    Pinned by `test-overlay-dims.js`.
 

@@ -288,19 +288,21 @@ at the end):
   `getInstanceSlice('layout')`). Seed-blind inits arity-ignore the arg.
 
 **Overlay subsystem — the model-clock arc** (`js/overlay/*` +
-`render/panel.js#renderOverlay` + `render/footer.js`). The overlay render
+`leaves/draw.js#renderOverlay` + `render/footer.js`). The overlay render
 layer originally read both its clocks (dims + time) outside the model, making
 overlay renders non-idempotent on equal *model* state. The model-clock arc
 resolved both:
 
 - **Terminal dims — RESOLVED.** Overlays + the footer now resolve terminal
   size from the model clock (`layoutSlice.dims`, resize-as-Msg) via
-  `render/panel.js#viewportDims()`, with `io/term.cols()/rows()` kept only as
+  `leaves/draw.js#viewportDims()`, with `io/term.cols()/rows()` kept only as
   a boot fallback. Previously the panel grid read `layoutSlice.dims` while the
   footer + all 8 overlays + `renderOverlay` read the `io/term` singleton (the
   upstream terminal cache), which could lead the model by a frame on resize.
-  The source-of-truth is now unified. (`decor.js` was always clean — works off
-  `paneBounds`, which are dims-derived.) Pinned by `test-overlay-dims.js`.
+  The source-of-truth is now unified. (Since the render-exit arc moved the panel
+  renderer to the `leaves/draw` leaf, the model-read is an injected
+  `setDimsProvider` seam wired from `panel/api` — the leaf never reaches up into
+  panel; see `docs/v0.6.5-render-exit.md`.) Pinned by `test-overlay-dims.js`.
 - **Wall-clock age columns — concentrated to one frame-boundary read.**
   `renderDiagLog`/`renderJobsOverlay` no longer read `Date.now()` in their
   bodies; `now` is threaded from the paint frame, so each is a pure function
