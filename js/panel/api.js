@@ -76,7 +76,11 @@ function getFilter(panelType) {
  *  by renderFooter to paint the `/text │` prompt. */
 function filterCurrentText() { return getModel().modal.filter.text; }
 
-const { streamCommand } = require('../dispatch/stream');
+// panel→dispatch / panel→overlay calls are inverted through the panel-host
+// seam (wired at boot) so panel stays a clean lower layer than dispatch.
+// See leaves/panel-host.js + docs/v0.6.5-render-exit.md "Domain detangle".
+const panelHost = require('../leaves/panel-host');
+const { streamCommand } = panelHost;       // re-exported below for docker
 const { addEphemeralTab } = require('./viewer/tabs');
 const { scheduleRender } = require('../leaves/render-queue');
 
@@ -648,7 +652,7 @@ function _dispatchKeyToFocusedInner(key, seq) {
         if (e && e.type === '_claimed') claimed = true;
         else if (e) filtered.push(e);
       }
-      if (filtered.length) require('../dispatch/effects').runEffects(filtered);
+      if (filtered.length) panelHost.runEffects(filtered);
     } else {
       route.setInstanceSlice(inst.id, result);
     }
@@ -679,7 +683,7 @@ function _runInstance(inst, comp, msg) {
     if (Array.isArray(result)) {
       const [next, effects] = result;
       if (next !== undefined) route.setInstanceSlice(inst.id, next);
-      require('../dispatch/effects').runEffects(effects);
+      panelHost.runEffects(effects);
     } else {
       route.setInstanceSlice(inst.id, result);
     }
@@ -910,7 +914,7 @@ function getCommands() {
 // via `registerEffect` (e.g. config-status' cfgStatusCompute); proxy
 // to the effects registry so api.js stays the single import for
 // Component authors.
-function registerEffect(type, fn) { require('../dispatch/effects').registerEffect(type, fn); }
+function registerEffect(type, fn) { panelHost.registerEffect(type, fn); }
 
 function setActiveTab(tab) {
   // viewer_set_tab is handled by the viewer Component's update —
@@ -930,7 +934,7 @@ function setActiveTab(tab) {
   dispatchMsg(wrap(target, { type: 'viewer_set_tab', tab, total, toTabKey }));
 }
 function leaveTerminalMode() {
-  require('../dispatch/dispatch').applyMsg({ type: 'terminal_exit' });
+  panelHost.applyMsg({ type: 'terminal_exit' });
 }
 
 // v0.6.3 Phase B — used by app/state.js#initState to walk placed

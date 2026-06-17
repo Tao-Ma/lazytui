@@ -255,6 +255,11 @@ function _state() {
 // start — same convenience the legacy `S` shim provided via lazy auto-
 // register, but explicit at the test-harness level.
 try {
+  // Wire the panel-host seam (leaves/panel-host) — production does this in
+  // tui.js#main before installBuiltins so panel's inverted up-calls (runEffects,
+  // applyMsg, streamCommand, cleanup, showHelp) resolve. Tests miss main(), so
+  // mirror it here. Must precede installBuiltins, exactly as in production.
+  require('../dispatch/host-wiring').wirePanelHost();
   require('../dispatch/effects').installBuiltins();
   const api = require('../panel/api');
   // layout MUST register first — chrome owner + focus reader's primary

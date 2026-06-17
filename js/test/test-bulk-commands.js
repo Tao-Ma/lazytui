@@ -11,10 +11,13 @@
  */
 'use strict';
 
-// Mock streamCommand BEFORE loading docker plugin.
+// Mock streamCommand BEFORE loading docker plugin. docker reaches it through
+// the panel-host seam (api re-exports panelHost.streamCommand), so override the
+// seam slot directly — independent of when test-runner wires the real one.
 const stream = require('../dispatch/stream');
 const calls = [];
 stream.streamCommand = (label, cmd) => { calls.push({ label, cmd }); };
+require('../leaves/panel-host').setPanelHost({ streamCommand: stream.streamCommand });
 
 const { toggleMultiSel, setSel, clearMultiSel } = require('../app/state');
 const api = require('../panel/api');

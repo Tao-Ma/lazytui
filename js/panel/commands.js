@@ -20,12 +20,13 @@
  * closures here lazy-require them to break the cycle. `wrap` comes from the
  * zero-dep route leaf directly (api.js itself is just a re-exporter).
  *
- * Run closures are lazy on their imports too: `help` lazy-requires overlay/help
- * to avoid an api → help → api cycle at module-load time. `cleanup`
- * lazy-requires `dispatch/cleanup` because that file pulls `terminal` →
- * `node-pty`, which CLI mode (cli.js) needs to avoid — cli.js may require
- * panel/api to discover Component `groupActions` without booting the TUI
- * runtime. (Lazy keeps this a deferred panel→dispatch edge, not a load-time one.)
+ * The `help` (overlay) and `quit` (dispatch/cleanup) framework commands reach
+ * UP out of the panel layer, so they go through the panel-host seam
+ * (leaves/panel-host) — `showHelp` / `cleanup` are wired into it at boot. This
+ * keeps panel a clean lower layer than dispatch/overlay (no panel→dispatch /
+ * panel→overlay import edge — the cut that dissolved the layer cycle) and, as a
+ * bonus, keeps node-pty (pulled in by dispatch/cleanup→terminal) out of CLI
+ * mode's load path. See docs/v0.6.5-render-exit.md "Domain detangle".
  */
 'use strict';
 
@@ -43,8 +44,7 @@ const FRAMEWORK_COMMANDS = [
     name: 'quit',
     desc: 'Exit the TUI',
     run: () => {
-      const { cleanup } = require('../dispatch/cleanup');
-      cleanup();
+      require('../leaves/panel-host').cleanup();
       process.exit(0);
     },
   },
@@ -56,7 +56,7 @@ const FRAMEWORK_COMMANDS = [
   {
     name: 'help',
     desc: 'Show key help in detail panel',
-    run: () => { require('../overlay/help').showHelp(); },
+    run: () => { require('../leaves/panel-host').showHelp(); },
   },
   {
     name: 'save-layout',

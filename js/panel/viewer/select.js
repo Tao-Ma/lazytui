@@ -233,7 +233,7 @@ function commit() {
   _apply({ type: 'select_cancel' });
   // register_push is a ROOT-reducer Msg (model.register lives on the root
   // model), so route via applyMsg, not the Component fan-out.
-  if (text) require('../../dispatch/dispatch').applyMsg({ type: 'register_push', text });
+  if (text) require('../../leaves/panel-host').applyMsg({ type: 'register_push', text });
   return text;
 }
 
@@ -261,7 +261,7 @@ function settle() {
     && sel.anchor.col === sel.cursor.col;
   const text = noDrag ? '' : selectedText();
   if (!text) { _apply({ type: 'select_cancel' }); return ''; }
-  require('../../dispatch/dispatch').applyMsg({ type: 'register_push', text });
+  require('../../leaves/panel-host').applyMsg({ type: 'register_push', text });
   return text;  // active stays true → persistent selection (highlight + copyable)
 }
 
