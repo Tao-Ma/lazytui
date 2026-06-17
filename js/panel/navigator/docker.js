@@ -39,7 +39,7 @@ const {
   streamCommand, addEphemeralTab, scheduleRender,
   leaveTerminalMode,
   getItems: apiGetItems, selectedOrFocused,
-  serviceSlice, dispatchMsg, wrap,
+  serviceSlice, wrap,
   hub,
 } = require('../api');
 const { getModel } = require('../../model/store');
@@ -122,10 +122,19 @@ function handleEventLine(line, config, refreshFn, renderFn) {
   return true;
 }
 
+// Dispatch host captured when the events subscription starts (dockerEventsStart
+// effect handler) — the events stream is a long-lived subscription, so it holds
+// the injected dispatch the way a Hyperapp/Elmish subscription captures dispatch.
+// See docs/v0.6.5-dispatch-loop.md "formalize injection".
+let _subHost = null;
+
 // Production event → Msg bridge: a tracked event injects a one-shot poll Msg.
 // (Returns true so handleEventLine's renderFn fires — the real data update
 // rides back on dockerResult's render effect.)
-function _eventPoll() { dispatchMsg(wrap('docker', { type: 'dockerPoll' })); return true; }
+function _eventPoll() {
+  if (_subHost) _subHost.dispatchMsg(_subHost.wrap('docker', { type: 'dockerPoll' }));
+  return true;
+}
 
 /**
  * Idempotent: start the events stream if not already running. Auto-reconnects
@@ -428,7 +437,8 @@ function installEffects(registerEffect) {
     });
   });
 
-  registerEffect('dockerEventsStart', () => {
+  registerEffect('dockerEventsStart', (_eff, host) => {
+    _subHost = host;   // hold dispatch for the events subscription's lifetime
     // Don't spawn the events watcher until there's at least one tracked
     // container — the reducer no longer gates on container count (live
     // read). With a permanently empty container set (config is immutable

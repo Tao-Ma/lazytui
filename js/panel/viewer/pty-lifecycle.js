@@ -29,6 +29,12 @@ const api = require('../api');
 const { getModel } = require('../../model/store');
 const { scheduleRender } = require('../../leaves/render-queue');
 
+// Injected dispatch host (set by install() from tui.js boot). handleExit is a
+// boot-wired PTY-exit subscription — it holds dispatch the way a Hyperapp/Elmish
+// subscription does, rather than importing the (relocating) fan-out upward.
+// See docs/v0.6.5-dispatch-loop.md "formalize injection".
+let _host = null;
+
 function handleExit(id, exitCode) {
   // v0.6.1 Phase 4 — resolve which viewer-kind instance hosts this
   // PTY session before reading per-pane state. For Phase 4 singleton
@@ -47,7 +53,7 @@ function handleExit(id, exitCode) {
   // already cleared (avoids the "drop full → normal while
   // terminalMode still true" intermediate state).
   if (wasActive && getModel().modes.terminalMode) {
-    api.dispatchMsg({ type: 'terminal_exit' });
+    _host.applyMsg({ type: 'terminal_exit' });
     anyChange = true;
   }
   if (layoutSlice && layoutSlice.viewMode === 'full' && wasActive) {
@@ -69,7 +75,8 @@ function handleExit(id, exitCode) {
  *  Injects io/terminal.js's environment (it's a leaf — see its header):
  *  the exit fan-out, the post-output repaint hook (scheduleOverlay), and
  *  the jobs-registry adapter. */
-function install() {
+function install(host) {
+  _host = host;
   const term = require('../../io/terminal');
   term.setExitHandler(handleExit);
   term.setRenderHook(require('../../leaves/render-queue').scheduleOverlay);
