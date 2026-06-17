@@ -150,13 +150,13 @@ function main() {
   const { renderTerminalOverlay } = require('../render/paint');
   // v0.6.4 Phase F — redraw (dispatch-then-paint) lives in the dispatch
   // layer now; paint.js is a pure view. tui orchestrates both.
-  const { redraw } = require('../dispatch/dispatch');
+  const { redraw } = require('../dispatch/control/dispatch');
   const { scheduleRender } = require('../leaves/render-queue');
   const { registerComponent, refreshAll } = require('../panel/api');
-  const { setupKeyListener } = require('../dispatch/input');
+  const { setupKeyListener } = require('../dispatch/control/input');
   const { getModel } = require('../model/store');
   const { installSuspendHandlers } = require('./suspend');
-  const { cleanup } = require('../dispatch/cleanup');
+  const { cleanup } = require('../dispatch/runtime/cleanup');
 
   // Register the global cleanup handler FIRST — any throw between here
   // and the input pump starting (loadConfig, registerComponent, the
@@ -184,18 +184,18 @@ function main() {
   // `panel/` layer invokes dispatch + overlay capabilities through it instead
   // of importing upward (the cut that dissolves the {dispatch,overlay,panel}
   // layer cycle). See docs/v0.6.5-render-exit.md "Domain detangle".
-  require('../dispatch/host-wiring').wirePanelHost();
+  require('../dispatch/runtime/host-wiring').wirePanelHost();
   // Inject the dispatch host into nav-state's writers (formalized injection —
   // they feed Msgs back through it instead of importing the relocating fan-out).
   // Before initState/refreshAll, whose finalizer runs syncPanelScroll→setScroll.
-  require('../panel/nav-state').setNavDispatch(require('../dispatch/effects').effectHost());
+  require('../panel/nav-state').setNavDispatch(require('../dispatch/runtime/effects').effectHost());
   // Inject the same host into the command run-closures (cmdline / leader).
-  require('../panel/commands').setCommandsDispatch(require('../dispatch/effects').effectHost());
+  require('../panel/commands').setCommandsDispatch(require('../dispatch/runtime/effects').effectHost());
 
   // Install the Component effect handlers (focus/render/apply_msg/...) before
   // any Component registers — a Component's update→effects must resolve at
   // first dispatch.
-  require('../dispatch/effects').installBuiltins();
+  require('../dispatch/runtime/effects').installBuiltins();
 
   // Friendly one-line error instead of a Node stack trace if the config
   // is missing, empty, or malformed — every other config-shaped error
@@ -232,7 +232,7 @@ function main() {
   // require panel/viewer/tabs + panel/api + render/geometry on every
   // session exit — a documented inversion). Must run AFTER the viewer
   // Component is registered so the handler's slice reads land.
-  require('../panel/viewer/pty-lifecycle').install(require('../dispatch/effects').effectHost());
+  require('../panel/viewer/pty-lifecycle').install(require('../dispatch/runtime/effects').effectHost());
 
   // Phase 6 — the runtime Plugin API retired. External authors write
   // Components and register them the same way the built-ins above do.
@@ -254,7 +254,7 @@ function main() {
   // conflict between two user bindings throws — surface it as a clean
   // config error and exit rather than crashing the boot with a raw stack.
   try {
-    require('../dispatch/dispatch').loadKeyBindings(getModel().config);
+    require('../dispatch/control/dispatch').loadKeyBindings(getModel().config);
   } catch (e) {
     console.error(`keys: ${e.message}`);
     process.exit(1);
@@ -265,13 +265,13 @@ function main() {
   // block is already schema-validated at parse time, so this can't throw on
   // a bad shape; it just fills the mouse-bindings registry the input layer
   // reads. No try/exit needed.
-  require('../dispatch/dispatch').loadMouseBindings(getModel().config);
+  require('../dispatch/control/dispatch').loadMouseBindings(getModel().config);
 
   // v0.6.4 Theme F follow-on — install the top-level `context-menu:` block
   // (extra right-click entries) into the context-menu registry. Schema-
   // validated at parse time; loadContextMenu only warns (never throws) on an
   // unresolved `action:`, so no try/exit needed.
-  require('../dispatch/dispatch').loadContextMenu(getModel().config);
+  require('../dispatch/control/dispatch').loadContextMenu(getModel().config);
 
   initState();
   // Post-T7: no captured `model` local at boot. handleKey / handleMouse
@@ -320,7 +320,7 @@ function main() {
     // grow, covering a pane's top border).
     require('../io/term').refreshSize();
     const api = require('../panel/api');
-    require('../dispatch/fanout').dispatchMsg(api.wrap('layout', {
+    require('../dispatch/runtime/fanout').dispatchMsg(api.wrap('layout', {
       type: 'term_resized',
       cols: process.stdout.columns || 80,
       rows: process.stdout.rows || 24,

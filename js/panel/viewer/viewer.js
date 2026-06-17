@@ -29,7 +29,7 @@ const {
 const ms = require('../../leaves/search');
 const pt = require('../../leaves/pane-tabs');
 const mpool = require('../../leaves/pool');
-const { stripMarkup, charWidth } = require('../../io/ansi');
+const { stripMarkup, charWidth } = require('../../leaves/ansi');
 const { buildTabStrip } = require('./tab-strip');
 const { getModel } = require('../../model/store');
 
@@ -408,6 +408,19 @@ function update(msg, slice) {
 // chrome, put it in the leaf. If it's about viewing content (scroll
 // math, search match navigation, content-tab body update with
 // viewer-specific semantics), put it here.
+// Enter detail-search: step the slice into search-typing state and arm the
+// `detailSearchMode` chain flag when leaves/search says to. Shared by the
+// `viewer_search_enter` Msg arm (programmatic entry — panel/viewer/search.js)
+// and the `/` key claim in `case 'key'` below, so the keyboard path is a
+// single self-contained gesture the viewer owns rather than a focus-checked
+// dispatch in the controller (dispatch.js). Returns `[nextSlice, effects]`.
+function _enterSearchReturn(slice) {
+  const [next, info] = ms.enter(slice);
+  return [next, info.enableSearchMode
+    ? [{ type: 'msg', msg: { type: 'mode_set', flag: 'detailSearchMode' } }]
+    : []];
+}
+
 function _updateInner(msg, slice, lines) {
   // Boundary-derived active-tab lines (update() always passes them;
   // bare internal calls degrade to empty).
@@ -621,7 +634,7 @@ function _updateInner(msg, slice, lines) {
           ...all,
           [msg.groupName]: { ...group, [msg.tabKey]: { lines: bufLines } },
         };
-        // v0.6.3 Phase D1 — pure reducer: dispatcher (dispatch/stream.js)
+        // v0.6.3 Phase D1 — pure reducer: dispatcher (dispatch/runtime/stream.js)
         // threads msg.currentGroup + (when groupName matches)
         // msg.activeActionTabKey. Saves the 71µs activeActionTabIn
         // (getMergedActions iteration) per streamed line.
@@ -898,12 +911,8 @@ function _updateInner(msg, slice, lines) {
     // --- viewer-search (typing phase, folded into the viewer Component).
     // leaves/search returns [newSlice, info]; the detailSearchMode flag
     // (root chrome) is set/cleared via apply_msg → mode_set / mode_clear.
-    case 'viewer_search_enter': {
-      const [next, info] = ms.enter(slice);
-      return [next, info.enableSearchMode
-        ? [{ type: 'msg', msg: { type: 'mode_set', flag: 'detailSearchMode' } }]
-        : []];
-    }
+    case 'viewer_search_enter':
+      return _enterSearchReturn(slice);
     case 'viewer_search_key':    return ms.keystroke(slice, msg.seq);
     // P1 (viewer-lines selector) — nav during the TYPING phase steps the
     // typing-term's derived matches; lines = the active-tab content
@@ -985,6 +994,16 @@ function _updateInner(msg, slice, lines) {
 
       const active = !!(slice.select && slice.select.active);
       const claim = [{ type: '_claimed' }];
+
+      // `/` enters detail-search. The viewer owns its own `/` now that it's the
+      // focused pane (dispatch.js no longer focus-checks + dispatches it). Fires
+      // before the post-commit n/N block so `/` re-opens the typing phase from
+      // any search state — matching the prior controller behavior. The
+      // `viewer_search_enter` Msg path stays for programmatic entry (search.js).
+      if (msg.seq === '/' || msg.key === '/') {
+        const [next, fx] = _enterSearchReturn(slice);
+        return [next, [{ type: '_claimed' }, ...fx]];
+      }
 
       // Detail-search post-commit n/N nav; Esc clears. P1 — committed
       // phase steps the committed term's derived matches.

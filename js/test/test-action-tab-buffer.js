@@ -57,7 +57,7 @@ function applyUpdate(s, msg) {
   }
   // v0.6.3 Phase D1: routed viewer_append / viewer_append_lines arms
   // read msg.currentGroup + msg.activeActionTabKey (dispatcher in
-  // dispatch/stream.js threads them so the reducer stays pure of
+  // dispatch/runtime/stream.js threads them so the reducer stays pure of
   // getModel()). Tests that build the Msg directly get the same
   // patch so they don't need a fallback.
   if (msg && (msg.type === 'viewer_append' || msg.type === 'viewer_append_lines')

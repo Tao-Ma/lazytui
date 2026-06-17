@@ -4,6 +4,13 @@
  * Supports: [bold], [dim], [reverse], [green], [red], [yellow], [cyan],
  * [on dark_blue], [/], and escaped brackets \[text].
  * Zero dependencies.
+ *
+ * Lives in `leaves/` (not `io/`): every export here is a pure string
+ * transform — it builds ANSI/markup strings but performs no I/O (no
+ * stdout write, no spawn, no fs). Filing it under `io/` made the pure
+ * reducer's `esc` import look like an `update → io` edge and inflated
+ * the `panel/overlay/render → io` coupling counts with what are really
+ * "→ pure helper" edges. As a leaf the dependency direction reads true.
  */
 'use strict';
 

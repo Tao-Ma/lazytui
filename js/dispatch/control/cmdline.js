@@ -11,11 +11,11 @@
  */
 'use strict';
 
-const { allPanels } = require('../panel/nav-state');
-const { getModel } = require('../model/store');
-const { esc } = require('../io/ansi');
-const { getCommands, getItems: apiGetItems, wrap } = require('../panel/api');
-const { dispatchMsg } = require('./fanout');
+const { allPanels } = require('../../panel/nav-state');
+const { getModel } = require('../../model/store');
+const { esc } = require('../../leaves/ansi');
+const { getCommands, getItems: apiGetItems, wrap } = require('../../panel/api');
+const { dispatchMsg } = require('../runtime/fanout');
 
 // Render moved to overlay/cmdline.js (v0.6 layering cleanup — dispatch
 // modules don't paint). This file owns: registry build, fuzzy scoring,
@@ -79,7 +79,7 @@ function runAt(sel, args) {
 function clear() {
   _full = [];
   _activeTeardown = null;
-  require('../overlay/cmdline')._resetRenderState();
+  require('../../overlay/cmdline')._resetRenderState();
 }
 
 /** Drive the live preview for the selected match. Called from the
@@ -139,7 +139,7 @@ function revertPreview() {
 // splitQuery moved to the zero-dep leaves/cmdline-split leaf so
 // runtime.js can import the same impl without the back-cycle that
 // kept the duplicate around pre-v0.6.x.
-const { splitQuery } = require('../leaves/cmdline-split');
+const { splitQuery } = require('../../leaves/cmdline-split');
 
 function buildRegistry() {
   const reg = [];
@@ -178,7 +178,7 @@ function buildRegistry() {
       display: action.label,
       desc: action.desc || `Run ${key}`,
       kind: 'action',
-      run: (args) => { require('./action-runner').runAction(key, action, args); },
+      run: (args) => { require('../runtime/action-runner').runAction(key, action, args); },
     });
   }
 

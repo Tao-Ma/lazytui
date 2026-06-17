@@ -22,7 +22,7 @@ term.stdout.write = (chunk, ...rest) => {
 };
 
 const { getModel } = require('../app/runtime');
-const dispatch = require('../dispatch/dispatch');
+const dispatch = require('../dispatch/control/dispatch');
 const reg = require('./_helpers/register');
 const { describe, it, eq, report } = require('./test-runner');
 

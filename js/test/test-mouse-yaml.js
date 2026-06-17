@@ -16,8 +16,8 @@ const path = require('path');
 const { describe, it, eq, assert, report } = require('./test-runner');
 const { validate } = require('../parser/schema');
 const { parse } = require('../parser');
-const mb = require('../dispatch/mouse-bindings');
-const input = require('../dispatch/input');
+const mb = require('../dispatch/control/mouse-bindings');
+const input = require('../dispatch/control/input');
 
 function base(extra) {
   return Object.assign({

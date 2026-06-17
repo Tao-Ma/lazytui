@@ -11,7 +11,7 @@
  *
  * Wired at boot:
  *   - panel/viewer/tabs.js  → addContentTab, updateContentTabLines
- *   - dispatch/effects.js   → refireCmdlineRebuild
+ *   - dispatch/runtime/effects.js   → refireCmdlineRebuild
  *
  * See docs/v0.6.5-render-exit.md (the layering arc) for the pattern.
  */

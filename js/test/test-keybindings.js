@@ -112,7 +112,7 @@ describe('[3] resolve helpers', () => {
 
 // ---- [4] dispatch: prefix walk ------------------------------------
 
-const dispatch = require('../dispatch/dispatch');
+const dispatch = require('../dispatch/control/dispatch');
 
 describe('[4] prefix dispatch', () => {
   it('walk descends a subtree then runs the leaf, exiting after', () => {

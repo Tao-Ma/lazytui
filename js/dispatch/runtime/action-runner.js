@@ -9,21 +9,21 @@
 
 const { spawn } = require('child_process');
 const fs = require('fs');
-const { appendViewerLines } = require('../panel/nav-state');
+const { appendViewerLines } = require('../../panel/nav-state');
 const { streamCommand, killAll } = require('./stream');
-const { getInstanceSlice, wrap } = require('../panel/api');
+const { getInstanceSlice, wrap } = require('../../panel/api');
 const { dispatchMsg } = require('./fanout');
-const { getModel } = require('../model/store');
-const { esc } = require('../io/ansi');
-const history = require('../feature/history');
-const jobs = require('../feature/jobs');
+const { getModel } = require('../../model/store');
+const { esc } = require('../../leaves/ansi');
+const history = require('../../feature/history');
+const jobs = require('../../feature/jobs');
 
 function runAction(actionKey, action, args = []) {
   // Event log (PRINCIPLES.md §11 + CHANGELOG v0.2.0). Record the user
   // invocation here — at the entry point, before confirm gating —
   // so the log captures "user pressed Enter on action X" once. The
   // doRun() path is the response.
-  require('../io/event-log').record('action', { actionKey, args, type: action.type });
+  require('../../io/event-log').record('action', { actionKey, args, type: action.type });
   // Component Msg dispatch (v0.3.0). Action invocations fan out to
   // every Component's update() as an 'action' Msg.
   dispatchMsg({ type: 'action', actionKey, args, actionType: action.type });
@@ -36,7 +36,7 @@ function runAction(actionKey, action, args = []) {
     // Stage the confirm through the reducer — `y` re-emits the do_run Cmd
     // (a DATA descriptor, not a closure). Lazy require breaks the
     // dispatch↔actions load cycle; this is "an effect dispatches a Msg".
-    require('./dispatch').applyMsg({
+    require('../control/dispatch').applyMsg({
       type: 'confirm_enter',
       message: action.confirm,
       cmd: { type: 'do_run', actionKey, action, args },
@@ -104,7 +104,7 @@ function doRun(actionKey, action, args = []) {
       // The tmux branch above is still preferred when $TMUX is set —
       // a real OS-level new window beats an in-process tab for
       // long-lived interactive sessions.
-      const { addEphemeralTab } = require('../panel/viewer/tabs');
+      const { addEphemeralTab } = require('../../panel/viewer/tabs');
       const argStr = args.length ? ' ' + args.map(shQuote).join(' ') : '';
       const tabKey = `spawn-${actionKey}-${Date.now()}-${++_spawnSeq}`;
       // addEphemeralTab side-effects: detail slice's `tab` + ephemeral-

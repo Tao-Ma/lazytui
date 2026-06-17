@@ -11,13 +11,13 @@ greppable.
     focus events)           PTY data, etc.)     fetch resolved)
         │                       │                   │
         ▼                       ▼                   ▼
-   js/dispatch/input.js    js/dispatch/stream.js  direct dispatchMsg
+   js/dispatch/control/input.js    js/dispatch/runtime/stream.js  direct dispatchMsg
    • SGR mouse parse        js/io/terminal.js   (from a setTimeout/
    • paste accumulator     • PTY mgmt            setImmediate cb)
         │
         ▼
 ════════════════════════════ DISPATCH ══════════════════════════════
-   handleKey / handleMouse                (js/dispatch/dispatch.js)
+   handleKey / handleMouse                (js/dispatch/control/dispatch.js)
         │
         ├──── modeChain active? ──yes──→ mode handler ──→ applyMsg
         │     (filter, menu, cmdline,                       │
@@ -60,7 +60,7 @@ greppable.
         │
         ▼
 ═══════════════════════════ EFFECTS ════════════════════════════════
-   runEffects(effects)                 (js/dispatch/effects.js)
+   runEffects(effects)                 (js/dispatch/runtime/effects.js)
      msg           → applyMsg / dispatchMsg routed by msg.kind
                                        (cycle cap @ 32 deep; T28)
      tick(ms, msg) → setTimeout      (async re-entry; not depth-counted)
@@ -139,7 +139,7 @@ semantic vocabulary before they reach a reducer. The nav/activation core
 keyboard side; left-click focus+select, double→`activate`, right→`context`,
 the wheel→`scroll`, and a reserved middle on the mouse side — builds an
 *intent* (`focus` / `select` / `activate` / `context` / `scroll`) that
-`intent.realize` (`js/dispatch/intent.js`) turns into the existing dispatch:
+`intent.realize` (`js/dispatch/control/intent.js`) turns into the existing dispatch:
 `activate`→`handleAction('run_selected')`, `select`→`navSelect`,
 `focus`→`focus_set`, `context`→`menu_open` (cursor anchor threaded for a
 right-click), `scroll`→`_handleWheel`. The mouse gesture→intent edge is
@@ -175,7 +175,7 @@ except the blessed render-side exceptions:
     only as an optional seed/override (boot edge + test fixtures); production
     never writes it.
   - viewer `innerH` — was a direct `setInstanceSlice` from `render()`; now
-    computed in the post-dispatch finalizer (`dispatch/fanout.js`, Phase A.1) off
+    computed in the post-dispatch finalizer (`dispatch/runtime/fanout.js`, Phase A.1) off
     that dispatch's fresh Layout.
   - `setImmediate(terminal_exit)` from `renderTerminalOverlay` — retired
     v0.6.3 P5.1; PTY exit is event-driven from `pty-lifecycle.handleExit`.
@@ -186,7 +186,7 @@ the model — `layout.dims`, written only by the `term_resized` arm;
 the stdout `'resize'` listener (tui.js) dispatches the Msg and the
 boot seed comes from `initState`. Geometry reads the model's dims,
 never the live terminal. After every OUTERMOST dispatch (`dispatchMsg`
-/ `dispatchKeyToFocused` share a depth counter), `dispatch/fanout`'s
+/ `dispatchKeyToFocused` share a depth counter), `dispatch/runtime/fanout`'s
 finalizer re-clamps each navigator pane's scroll against a freshly
 computed layout — the safety net needs no Msg enumeration because
 every state change IS a dispatch, resize included. Render dispatches

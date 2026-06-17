@@ -149,7 +149,7 @@ describe('[pane-menu items] section depends on the pane kind', () => {
 // sees both the hotkey and the trigger; total width is preserved.
 describe('[chrome:tabTrigger] (o)[≡] layout preserves panel width', () => {
   const { renderPanel } = require('../leaves/draw');
-  const { richToAnsi, visibleLen } = require('../io/ansi');
+  const { richToAnsi, visibleLen } = require('../leaves/ansi');
   function strip(s) { return s.replace(/\x1b\[[0-9;]*m/g, ''); }
 
   it('top row contains both (o) and [≡] with width preserved', () => {

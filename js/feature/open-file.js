@@ -23,7 +23,7 @@ const path = require('path');
 const fs = require('fs');
 const { addContentTab, updateContentTabLines } = require('../leaves/feature-host');
 const { loadFile, DEFAULT_MAX_BYTES, DEFAULT_HEX_AFTER } = require('../io/file-loader');
-const { esc } = require('../io/ansi');
+const { esc } = require('../leaves/ansi');
 const { getModel } = require('../model/store');
 const openTarget = require('./open-target');
 

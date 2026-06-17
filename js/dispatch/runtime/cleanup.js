@@ -8,12 +8,12 @@
  */
 'use strict';
 
-const { RESET } = require('../io/ansi');
+const { RESET } = require('../../leaves/ansi');
 const {
   showCursor, moveTo, stdout, clearScreen,
   disableMouse, disableFocusEvents, disableBracketedPaste,
-} = require('../io/term');
-const { destroyAll } = require('../io/terminal');
+} = require('../../io/term');
+const { destroyAll } = require('../../io/terminal');
 const { killAll } = require('./action-runner');
 
 function cleanup() {
@@ -22,7 +22,7 @@ function cleanup() {
   // Fire each Component's cleanup() hook (e.g. docker's `docker events`
   // stream) so no timer or child fires after quit. Lazy-required and
   // guarded: CLI mode (--exec/--list) never loaded the Component API.
-  try { require('../panel/api').cleanupComponents(); }
+  try { require('../../panel/api').cleanupComponents(); }
   catch { /* Component API not initialized (CLI path) */ }
   disableMouse();
   disableFocusEvents();

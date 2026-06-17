@@ -16,7 +16,7 @@
  */
 'use strict';
 
-const { RESET, richToAnsi, esc, visibleLen, wrapColor } = require('../io/ansi');
+const { RESET, richToAnsi, esc, visibleLen, wrapColor } = require('../leaves/ansi');
 const { stdout } = require('../io/term');
 const { multiSelCount } = require('../panel/nav-state');
 const { theme } = require('../leaves/themes');

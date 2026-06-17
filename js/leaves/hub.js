@@ -8,13 +8,18 @@
  * wildcard). Zero subscribers → publish drops; cost scales with
  * what's rendered, not what's possible.
  *
- * A pure-JS leaf (zero npm deps; only io/event-log). It's stateful
+ * A pure-JS leaf (zero npm deps, zero imports). It's stateful
  * (subscribers, ring buffers) but stateful ≠ non-leaf — a leaf is just the
- * bottom of the import graph. Its one upward call (fan a publish out to
- * Components as a `hub` Msg) is INJECTED via setDispatch (wired from
- * dispatch/fanout at boot — the Component fan-out's home since v0.6.5 B/S6) so
- * the hub never imports panel/dispatch — keeping it a true bottom layer
- * (render-exit-style seam; see docs/v0.6.5-dispatch-loop.md).
+ * bottom of the import graph. Its two upward calls are both INJECTED so the
+ * hub imports nothing above it (a true bottom layer):
+ *   - fan a publish out to Components as a `hub` Msg — via setDispatch
+ *     (wired from dispatch/fanout at boot — the Component fan-out's home
+ *     since v0.6.5 B/S6);
+ *   - record each publish to the event log — via setRecorder (wired from
+ *     io/event-log at load). Was a direct import of io/event-log, the lone
+ *     leaf→io edge; injecting it lets io/file-loader depend DOWN on the pure
+ *     leaves/ansi without forming an io↔leaves cycle.
+ * Both are render-exit-style seams; see docs/v0.6.5-dispatch-loop.md.
  */
 'use strict';
 
@@ -25,6 +30,13 @@
 // drop the old lazy require could hit before the fan-out loaded).
 let _dispatch = null;
 function setDispatch(fn) { _dispatch = fn; }
+
+// Injected event-log recorder (io/event-log.record bound to 'publish'). null
+// until io/event-log loads and wires it; a publish before then simply isn't
+// recorded (the same drop the old lazy require could hit before event-log
+// loaded). Keeps the hub free of any io import.
+let _recorder = null;
+function setRecorder(fn) { _recorder = fn; }
 
 const buffers = new Map();      // topic -> Map<rowKey, sample[]>
 const schemas = new Map();      // topic -> { rowKey?, columns? }
@@ -102,8 +114,10 @@ function publish(topic, rowKey, sample) {
   // Event log (PRINCIPLES.md §11 + CHANGELOG v0.2.0). Record before
   // the retention/dedup branches so the recording reflects every
   // publish call as the producer saw it — even ones that the hub
-  // drops because no subscribers ask for the topic.
-  require('../io/event-log').record('publish', { topic, rowKey, sample });
+  // drops because no subscribers ask for the topic. Routed through the
+  // injected recorder (io/event-log wires it at load) so the hub imports
+  // no io.
+  if (_recorder) _recorder({ topic, rowKey, sample });
   // Component Msg dispatch (v0.3.0). Hub publishes fan out to every
   // Component's update() as a 'hub' Msg — via the injected dispatcher so
   // the hub stays a leaf (no import up into panel/api).
@@ -265,7 +279,7 @@ function _reset() {
 }
 
 module.exports = {
-  setDispatch,
+  setDispatch, setRecorder,
   publish, defineTopic, delete: deleteRow,
   subscribe, unsubscribe,
   history, snapshot, matrix,

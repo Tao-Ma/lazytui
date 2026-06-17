@@ -172,7 +172,7 @@ describe('[5] i/t/s key Msgs emit stream/shell effects on the focused row', () =
 describe('[6] registered Component — slice-backed reads', () => {
   it('statusFor + getInfo reflect the folded slice', () => {
     const api = require('../panel/api');
-    require('../dispatch/effects').installBuiltins();
+    require('../dispatch/runtime/effects').installBuiltins();
     api.registerComponent(docker);
     setup(['c1']);
     // Fold a result into the REGISTERED slice via the real dispatch path.

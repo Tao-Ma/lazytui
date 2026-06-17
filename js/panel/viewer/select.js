@@ -36,7 +36,7 @@
 // the detail slice (`lines` / `select` / `cursor` / `scroll` / `search`);
 // the mode flags (visual / select) live in model.modes.
 const { getModel } = require('../../model/store');
-const { stripMarkup, charWidth, esc } = require('../../io/ansi');
+const { stripMarkup, charWidth, esc } = require('../../leaves/ansi');
 const {getInstanceSlice, getFocus } = require('../api');
 
 // All reads target the active viewer Component slice (lines / select /

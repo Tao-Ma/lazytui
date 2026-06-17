@@ -21,7 +21,7 @@
  *
  * Producers today: boot config warnings (app/state.js), the
  * same-kind-collapse guard (panel/route.js getInstanceSlice), and every
- * runtime error funneled through dispatch/effects.js `_recordError`.
+ * runtime error funneled through dispatch/runtime/effects.js `_recordError`.
  * Other call sites adopt warn()/error() opportunistically.
  */
 'use strict';

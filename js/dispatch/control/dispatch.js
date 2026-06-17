@@ -21,27 +21,27 @@
  */
 'use strict';
 
-const { allPanels, getSel, switchGroupsTab, multiSelCount } = require('../panel/nav-state');
-const { paintNow: render } = require('../leaves/render-queue');
+const { allPanels, getSel, switchGroupsTab, multiSelCount } = require('../../panel/nav-state');
+const { paintNow: render } = require('../../leaves/render-queue');
 const { getPanelDef, getItems, idOf, getInstanceSlice,
        getComponentOwningPanel, wrap, getFocus,
-       instanceKind } = require('../panel/api');
-const { dispatchMsg, dispatchKeyToFocused } = require('./fanout');
-const copy = require('../overlay/copy');
-const registerPopup = require('../overlay/register-popup');
+       instanceKind } = require('../../panel/api');
+const { dispatchMsg, dispatchKeyToFocused } = require('../runtime/fanout');
+const copy = require('../../overlay/copy');
+const registerPopup = require('../../overlay/register-popup');
 const { isTerminalTab, activeTerminalId, findEphemeralByid,
         removeEphemeralTab, isContentTab, activeContentTab,
-        removeContentTab } = require('../panel/viewer/tabs');
-const { isSessionDead } = require('../io/terminal');
-const keybindings = require('../leaves/keybindings');
-const modes = require('../leaves/modes');
-// The reducer (`update`) lives in dispatch/reducer.js (F3 — intra-layer);
+        removeContentTab } = require('../../panel/viewer/tabs');
+const { isSessionDead } = require('../../io/terminal');
+const keybindings = require('../../leaves/keybindings');
+const modes = require('../../leaves/modes');
+// The reducer (`update`) lives in dispatch/update/reducer.js (F3 — intra-layer);
 // getModel/setModel are the bottom-layer store (v0.6.5 §1), imported down.
-const runtime = require('./reducer');
-const route = require('../panel/route');
-const mpane = require('../leaves/pane');
-const { halfProjection } = require('../leaves/geometry');
-const { getModel, setModel } = require('../model/store');
+const runtime = require('../update/reducer');
+const route = require('../../panel/route');
+const mpane = require('../../leaves/pane');
+const { halfProjection } = require('../../leaves/geometry');
+const { getModel, setModel } = require('../../model/store');
 // handleAction + _runActionByKey live in ./actions (carved out 2026-05-31).
 // Cycle-safe: actions.js lazy-requires this module's applyMsg/navSelect
 // inline at call sites, so by the time it reads them this module's exports
@@ -83,7 +83,7 @@ const intent = require('./intent');
 function showSelectedInfo(paneId) {
   const target = paneId || route.resolveTarget('viewer');
   if (!target) return;
-  const lines = require('../panel/nav-state').infoLinesFromFocus();
+  const lines = require('../../panel/nav-state').infoLinesFromFocus();
   if (lines == null) return;
   dispatchMsg(wrap(target, { type: 'viewer_show_info', lines }));
 }
@@ -232,7 +232,7 @@ function _enterFilterMode() {
   // v0.6.5 blessed-A — stamp the route bundle for the filtered pane; the
   // filter arms (enter/key/exit) reuse it (stored on modal.filter.route)
   // instead of re-reading route topology in the reducer.
-  applyMsg({ type: 'filter_enter', panel: focus, text: require('../panel/api').getFilter(focus), route: route.bundle(focus) });
+  applyMsg({ type: 'filter_enter', panel: focus, text: require('../../panel/api').getFilter(focus), route: route.bundle(focus) });
   return true;
 }
 
@@ -274,7 +274,7 @@ function handleFreeConfigKey(key, seq) {
   // when slice.panelList.open, keys route to the list (nav / pick /
   // close) instead of free-config. Outer Esc/q still exits the whole mode.
   const dispatch = (m) => dispatchMsg(wrap('layout', m));
-  const { getInstanceSlice } = require('../panel/api');
+  const { getInstanceSlice } = require('../../panel/api');
   const layoutSlice = getInstanceSlice('layout');
   if (layoutSlice && layoutSlice.panelList && layoutSlice.panelList.open) {
     switch (key) {
@@ -306,7 +306,7 @@ function handleFreeConfigKey(key, seq) {
       // under the green focus border). detail is rejected by the
       // reducer; other invariants (drag in flight) are out of band
       // here since handleFreeConfigKey only runs on idle key input.
-      const all = layoutSlice ? require('../leaves/pool').allPanesInColumns(layoutSlice.arrange) : [];
+      const all = layoutSlice ? require('../../leaves/pool').allPanesInColumns(layoutSlice.arrange) : [];
       const sel = all.find(p => mpane.paneMatchesFocus(p, layoutSlice && layoutSlice.focus));
       if (sel) dispatch({ type: 'panel_collapse_toggle', id: sel.id });
       break;
@@ -363,7 +363,7 @@ function handleRegisterPopupKey(key, seq) {
 // item count are view-derived (read off overlay/pane-menu) so the
 // reducer stays pure.
 function handlePaneMenuKey(key, seq) {
-  const overlay = require('../overlay/pane-menu');
+  const overlay = require('../../overlay/pane-menu');
   const layoutSlice = getInstanceSlice('layout');
   const target = (layoutSlice && layoutSlice.paneMenu && layoutSlice.paneMenu.targetPaneId) || null;
   // Wrapped layout Msgs route via dispatchMsg (api), NOT applyMsg — applyMsg
@@ -421,7 +421,7 @@ function _paneMenuPick(target, item) {
     // Replicate the retired tab_list_pick cascade: close the menu, focus
     // the viewer, switch its active tab. targetKey + currentGroup are
     // view-derived (threaded so the viewer's tab_switch arm stays pure).
-    const pt = require('../leaves/pane-tabs');
+    const pt = require('../../leaves/pane-tabs');
     const slice = getInstanceSlice(target);
     const idx = item.tabIdx | 0;
     const m = getModel();
@@ -466,8 +466,8 @@ function handleJobsKey(key, seq) {
   // single Msg; the reducer expands it into the Cmd cascade (close +
   // optional group switch + tab_switch + focus + terminal_enter / info
   // card). msg.now feeds the background/tmux age display.
-  const overlay = require('../overlay/jobs');
-  const count = require('../feature/jobs').list().length;
+  const overlay = require('../../overlay/jobs');
+  const count = require('../../feature/jobs').list().length;
   const vh = overlay.viewportRows();
   // Close via Esc only — `j` is used for nav inside the overlay so it
   // can't double as the toggle-close gesture the way 'J' did pre-rebind.
@@ -485,7 +485,7 @@ function handleJobsKey(key, seq) {
     // call from inside the reducer body.
     const m = getModel();
     const cursor = (m.modal.jobs && m.modal.jobs.cursor | 0) || 0;
-    const job = require('../feature/jobs').list()[cursor] || null;
+    const job = require('../../feature/jobs').list()[cursor] || null;
     applyMsg({ type: 'jobs_activate', now: Date.now(), job });
     return;
   }
@@ -494,8 +494,8 @@ function handleJobsKey(key, seq) {
 function handleDiagLogKey(key, seq) {
   // View-derived count + vh threaded into the Msg so the reducer stays
   // pure of the out-of-TEA diag-log buffer (same shape as handleJobsKey).
-  const overlay = require('../overlay/diag-log');
-  const count = require('../io/diag-log').size();
+  const overlay = require('../../overlay/diag-log');
+  const count = require('../../io/diag-log').size();
   const vh = overlay.viewportRows();
   if (key === 'escape') { applyMsg({ type: 'diag_log_close' }); return; }
   if (key === 'up'   || seq === 'k') { applyMsg({ type: 'diag_log_nav', dir: -1, count, vh }); return; }
@@ -511,7 +511,7 @@ function handleDiagLogKey(key, seq) {
     // the out-of-TEA buffer entry HERE (handler-side, like jobs_activate)
     // and route through register_push — the canonical yank Msg (dedup +
     // cap + OSC52). Window stays open so multiple lines can be copied.
-    const diag = require('../io/diag-log');
+    const diag = require('../../io/diag-log');
     const m = getModel();
     const cursor = (m.modal.diagLog && m.modal.diagLog.cursor | 0) || 0;
     const ev = diag.snapshot()[cursor];
@@ -558,7 +558,7 @@ function handleNormalKey(key, seq) {
     return;
   }
   switch (key) {
-    case 'q': { require('./cleanup').cleanup(); process.exit(0); break; }
+    case 'q': { require('../runtime/cleanup').cleanup(); process.exit(0); break; }
     case 'escape': {
       // Esc exits list-select mode (and clears the selection). Outside
       // select mode it clears any lingering multi-selection. When
@@ -619,7 +619,7 @@ function handleNormalKey(key, seq) {
       // generalizing the keyboard opener to any focused pane is Phase 2.)
       const target = route.resolveTarget('viewer');
       if (!target) break;
-      const overlay = require('../overlay/pane-menu');
+      const overlay = require('../../overlay/pane-menu');
       const tabCount = overlay.items(target).length;
       const vh = overlay.viewportRows(target);
       const tab = (getInstanceSlice(target) || {}).tab | 0;
@@ -669,11 +669,14 @@ function handleNormalKey(key, seq) {
     case '+':              handleAction('view_expand'); break;
     case '_':              handleAction('view_shrink'); break;
     case '/':
-      // Filter doesn't apply to the (non-list) detail panel — overload
-      // `/` there as vim/less-style search instead. Same key, different
-      // mode based on focus.
-      if (instanceKind(getFocus()) === 'detail') dispatchMsg(wrap(getFocus(), { type: 'viewer_search_enter' }));
-      else                                        _enterFilterMode();
+      // Filter mode for list panels. The detail viewer overloads `/` as
+      // vim/less-style search, but it claims the key in its own update now
+      // (viewer.js `case 'key'`) — so by the time we reach here the focus is
+      // never the viewer, and this is the plain filter-enter path. (Was a
+      // `instanceKind(getFocus()) === 'detail'` fork dispatching
+      // viewer_search_enter; that decision moved into the component that owns
+      // the behavior — #3 controller-thinning.)
+      _enterFilterMode();
       break;
     case 'y':              enterCopyMode(); break;
     case '"':              applyMsg({ type: 'register_popup_enter' }); break;
@@ -759,7 +762,7 @@ function _collectActionKeys(config) {
   // canonical accessor so a leader bound to a plugin key (`status`,
   // `up`, …) doesn't false-trip the shadow warning.
   const out = new Set();
-  const { getMergedActions } = require('../panel/api');
+  const { getMergedActions } = require('../../panel/api');
   for (const gname of Object.keys((config && config.groups) || {})) {
     for (const k of Object.keys(getMergedActions(gname))) out.add(k);
   }
@@ -829,7 +832,7 @@ function loadContextMenu(config) {
       console.error(`[context-menu] entry '${e.label}' targets action '${e.action}' but no action with that short key exists in config — the menu row will be a silent no-op`);
     }
   }
-  require('../leaves/context-menu').configure(entries);
+  require('../../leaves/context-menu').configure(entries);
 }
 
 // Mode → handler map. The ORDER and the membership of the modal set
@@ -924,7 +927,7 @@ function handleKey(key, seq) {
   // at the dispatch boundary so both modal and normal-key paths land
   // in the log identically. Silent + idempotent when the log is
   // disabled.
-  require('../io/event-log').record('key', { key, seq });
+  require('../../io/event-log').record('key', { key, seq });
   // A modal mode (filter / menu / cmdline / confirm / …) owns keyboard input
   // while active, so the focused Component must NOT also see the key — else
   // Enter-to-commit-a-/-filter would ALSO navigate a files panel, and typing
@@ -967,7 +970,7 @@ function _dispatchActiveMode(key, seq) {
         // gets painted over by the next render; the event log file is
         // where future occurrences can be inspected post-mortem.
         try {
-          require('../io/event-log').record('error', {
+          require('../../io/event-log').record('error', {
             where: 'mode_handler', flag: m.flag, key, seq,
             message: e && e.message, stack: e && e.stack,
           });
@@ -999,7 +1002,7 @@ function applyMsg(msg) {
   // `dispatch_msg`) re-entering the dispatch graph see post-Msg state.
   const [next, cmds] = runtime.update(getModel(), msg);
   setModel(next);
-  require('./effects').runEffects(cmds);
+  require('../runtime/effects').runEffects(cmds);
 }
 
 module.exports = {

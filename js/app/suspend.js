@@ -29,7 +29,7 @@ const {
   enableBracketedPaste, disableBracketedPaste,
   stdout,
 } = require('../io/term');
-const { RESET } = require('../io/ansi');
+const { RESET } = require('../leaves/ansi');
 
 let _suspendHandler;
 let _resumeHandler;

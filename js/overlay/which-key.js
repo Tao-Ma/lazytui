@@ -14,7 +14,7 @@
  */
 'use strict';
 
-const { esc } = require('../io/ansi');
+const { esc } = require('../leaves/ansi');
 const { renderOverlay } = require('../leaves/draw');
 const { getModel } = require('../model/store');
 const kb = require('../leaves/keybindings');

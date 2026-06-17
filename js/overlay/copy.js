@@ -17,7 +17,7 @@
 
 const { getSel } = require('../panel/nav-state');
 const { getModel } = require('../model/store');
-const { stripMarkup, esc } = require('../io/ansi');
+const { stripMarkup, esc } = require('../leaves/ansi');
 const {getPanelDef, getItems, getInstanceSlice, getFocus } = require('../panel/api');
 const route = require('../panel/route');
 const { renderOverlay } = require('../leaves/draw');

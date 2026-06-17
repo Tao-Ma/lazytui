@@ -3,7 +3,7 @@
  *
  * Module-local Map mirroring the feature/history pattern (no slice,
  * no Msgs — same out-of-TEA store rationale; see docs/PRINCIPLES.md §12).
- * Producers (dispatch/stream.js, io/terminal.js, dispatch/action-runner.js)
+ * Producers (dispatch/runtime/stream.js, io/terminal.js, dispatch/runtime/action-runner.js)
  * call register / update / close at spawn lifecycle boundaries.
  * The Running overlay (Phase 4.2) reads list() at render time.
  *

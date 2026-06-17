@@ -147,3 +147,11 @@ module.exports = {
   attachStream, detachStream,
   DEFAULT_CAP,
 };
+
+// Wire the hub's publish-recorder seam at load. The hub (a pure leaf) used to
+// `require('../io/event-log')` directly — the lone leaf→io edge. Inverting it
+// (io reaches DOWN to the leaf to install the hook) keeps the hub import-free
+// AND lets io/file-loader depend on the pure leaves/ansi without forming an
+// io↔leaves cycle. Behavior is identical: any code path that touches the event
+// log loads this module, which arms the recorder before the first publish.
+require('../leaves/hub').setRecorder((payload) => record('publish', payload));

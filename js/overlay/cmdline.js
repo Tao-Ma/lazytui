@@ -1,21 +1,21 @@
 /**
  * Cmdline overlay — `:` modal prompt + match dropdown.
  *
- * The render half of dispatch/cmdline.js (which keeps the registry
+ * The render half of dispatch/control/cmdline.js (which keeps the registry
  * build / scoring / run-closure stash). Lives under overlay/ for
  * symmetry with copy.js / register-popup.js / menu.js — dispatch
  * modules don't paint; overlays do. Pre-v0.6.x the render lived in
- * dispatch/cmdline.js, which forced render/geometry.js to require
+ * dispatch/control/cmdline.js, which forced render/geometry.js to require
  * dispatch/ — a layering inversion.
  *
  * Reads model.modal.cmdline (text, sel, matches projection — all
  * model-resident; the closures-only `_full` array stays in
- * dispatch/cmdline.js since it's effectful).
+ * dispatch/control/cmdline.js since it's effectful).
  */
 'use strict';
 
 const { getModel } = require('../model/store');
-const { richToAnsi, RESET, visibleLen, esc } = require('../io/ansi');
+const { richToAnsi, RESET, visibleLen, esc } = require('../leaves/ansi');
 const { stdout } = require('../io/term');
 const { theme } = require('../leaves/themes');
 const { renderPanel, viewportDims } = require('../leaves/draw');
@@ -45,7 +45,7 @@ function renderCmdline() {
   if (!getModel().modes.cmdMode) return;
   // Buffer state lives on the model (folded onto update); the render-safe
   // match list (display/desc/kind) is enough to paint — run closures
-  // stay module-held in dispatch/cmdline.js#_full.
+  // stay module-held in dispatch/control/cmdline.js#_full.
   const { text: _text, sel: _sel, matches: _matches, scroll: _scroll = 0 } = getModel().modal.cmdline;
   const { cols: COLS, rows: ROWS } = viewportDims();
   const t = theme();

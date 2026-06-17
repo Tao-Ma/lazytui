@@ -30,7 +30,7 @@ getModel().config = {
 initState();
 getModel().projectDir = '.';
 
-const { handleKey } = require('../dispatch/dispatch');
+const { handleKey } = require('../dispatch/control/dispatch');
 // The program owns the model and threads it into handleKey; the harness
 // plays that owner role here.
 const model = getModel();

@@ -35,7 +35,7 @@ const path = require('path');
 const { dockerList, dockerReadBytes, listRunningContainers } = require('./docker-fs');
 const { addContentTab, updateContentTabLines, refireCmdlineRebuild } = require('../leaves/feature-host');
 const { loadFile, DEFAULT_MAX_BYTES, DEFAULT_HEX_AFTER } = require('../io/file-loader');
-const { esc } = require('../io/ansi');
+const { esc } = require('../leaves/ansi');
 const { getModel } = require('../model/store');
 const openTarget = require('./open-target');
 

@@ -145,7 +145,7 @@ describe('[10] filter_enter clears multiSel — selections from pre-filter conte
   // when the filter is later cleared. Parallel to groups.switchTab's
   // multiSel-clear on All↔Quick toggle.
   it('filter_enter on a panel with multiSel clears the selection', () => {
-    const dispatch = require('../dispatch/dispatch');
+    const dispatch = require('../dispatch/control/dispatch');
     const route = require('../panel/route');
     toggleMultiSel('containers', 'a');
     toggleMultiSel('containers', 'b');
@@ -159,7 +159,7 @@ describe('[10] filter_enter clears multiSel — selections from pre-filter conte
     eq(getModel().modes.filterMode, false, 'filterMode cleared');
   });
   it('filter_enter no-ops when panel had no selection', () => {
-    const dispatch = require('../dispatch/dispatch');
+    const dispatch = require('../dispatch/control/dispatch');
     clearMultiSel('containers');
     eq(multiSelCount('containers'), 0, 'starts empty');
     dispatch.applyMsg({ type: 'filter_enter', panel: 'containers', text: '' });

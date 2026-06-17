@@ -108,8 +108,8 @@ describe('[ctx-menu] menu_activate — absolute idx + arg threading', () => {
 
 describe('[ctx-menu] copy_text verb → register_push', () => {
   it('handleAction("copy_text", text) pushes the text onto the register', () => {
-    const dispatch = require('../dispatch/dispatch');
-    const actions = require('../dispatch/actions');
+    const dispatch = require('../dispatch/control/dispatch');
+    const actions = require('../dispatch/control/actions');
     const seen = [];
     const real = dispatch.applyMsg;
     dispatch.applyMsg = (m) => { seen.push(m); };   // actions reads dispatch.applyMsg at call time
@@ -124,8 +124,8 @@ describe('[ctx-menu] copy_text verb → register_push', () => {
   });
 
   it('copy_text with no arg is inert', () => {
-    const dispatch = require('../dispatch/dispatch');
-    const actions = require('../dispatch/actions');
+    const dispatch = require('../dispatch/control/dispatch');
+    const actions = require('../dispatch/control/actions');
     const seen = [];
     const real = dispatch.applyMsg;
     dispatch.applyMsg = (m) => { seen.push(m); };
@@ -208,10 +208,10 @@ describe('[ctx-menu] configure — YAML `context-menu:` entries', () => {
 });
 
 describe('[ctx-menu] ctx_run_action / ctx_run_command verbs', () => {
-  const actions = require('../dispatch/actions');
+  const actions = require('../dispatch/control/actions');
 
   it('ctx_run_command routes the string through runCommandString', () => {
-    const cmdline = require('../dispatch/cmdline');
+    const cmdline = require('../dispatch/control/cmdline');
     const seen = [];
     const real = cmdline.runCommandString;
     cmdline.runCommandString = (s) => { seen.push(s); };
@@ -221,7 +221,7 @@ describe('[ctx-menu] ctx_run_action / ctx_run_command verbs', () => {
   });
 
   it('ctx_run_command with no arg is inert', () => {
-    const cmdline = require('../dispatch/cmdline');
+    const cmdline = require('../dispatch/control/cmdline');
     const seen = [];
     const real = cmdline.runCommandString;
     cmdline.runCommandString = (s) => { seen.push(s); };

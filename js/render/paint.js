@@ -26,14 +26,20 @@
  */
 'use strict';
 
-const { RESET, richToAnsi, esc, visibleLen, wrapColor } = require('../io/ansi');
+const { RESET, richToAnsi, esc, visibleLen, wrapColor } = require('../leaves/ansi');
 const { cols, rows, stdout, showCursor, hideCursor } = require('../io/term');
 const { allPanels } = require('../panel/nav-state');
 const geo = require('../leaves/geometry');
 const mpool = require('../leaves/pool');
 const mpane = require('../leaves/pane');
 const { theme } = require('../leaves/themes');
-const { truncate } = require('../leaves/draw');
+const { truncate, setWriter: _setDrawWriter } = require('../leaves/draw');
+// Wire the overlay-paint write seam: draw.renderOverlay (a pure leaf) emits its
+// composed buffer through this instead of importing io/term's stdout directly.
+// Done here because paint.js is the render layer that legitimately owns stdout.
+// (CLI/tests never load paint.js, so the leaf's writer stays unset there and
+// renderOverlay no-ops its write — they assert overlay state, not pixels.)
+_setDrawWriter((buf) => stdout.write(buf));
 const painter = require('../leaves/painter');
 const { isTerminalTab, activeTerminalId, activeTerminalConfig } = require('../panel/viewer/tabs');
 const { ensureSession, resizeSession, sessionScrollInfo } = require('../io/terminal');
@@ -388,7 +394,7 @@ function composeRects(layout, model) {
 // by the viewer tab-id; those now resolve the container paneId via
 // route.resolveViewerPaneId(), so the per-paneId write is sufficient.
 // (The per-frame scroll-clamp that lived here — _syncScrollClamp —
-// moved to the post-dispatch finalizer in dispatch/fanout.js (resize-as-Msg
+// moved to the post-dispatch finalizer in dispatch/runtime/fanout.js (resize-as-Msg
 // P3): every state change is a dispatch, so the clamp runs there, and
 // render dispatches NOTHING. test-scroll-clamp.js pins render purity.)
 
@@ -657,7 +663,7 @@ function renderTerminalOverlay(model = getModel(), arrangeOverride) {
 function render(model = getModel()) {
   const now = model.now;
   // `model` is the TEA root model (js/model/store.js; reduced by
-  // js/dispatch/reducer.js), threaded in by the
+  // js/dispatch/update/reducer.js), threaded in by the
   // owner (the program). The view reads migrated slices (currently
   // `viewMode`) from this param, not a global fetch. The `= getModel()`
   // default keeps every existing `render()` call site working during
@@ -746,7 +752,7 @@ function render(model = getModel()) {
 }
 
 // v0.6.4 Phase F — `redraw()` (dispatch-then-paint: showSelectedInfo + render)
-// moved to dispatch/dispatch.js. It dispatched a Msg, so it was a dispatch
+// moved to dispatch/control/dispatch.js. It dispatched a Msg, so it was a dispatch
 // orchestration, not a render; paint.js is now a pure view (no dispatch edge).
 
 // Debouncing primitives live in render-queue.js (both terminal.js and

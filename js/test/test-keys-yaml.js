@@ -104,7 +104,7 @@ describe('[2] parser', () => {
 
 const kb = require('../leaves/keybindings');
 const api = require('../panel/api');
-const dispatch = require('../dispatch/dispatch');
+const dispatch = require('../dispatch/control/dispatch');
 
 // A stub Component command so the {command:…} path resolves without UI.
 let cmdRan = null;
@@ -160,7 +160,7 @@ describe('[3] loadKeyBindings', () => {
 
 // ---- [4] command binding resolves by EXACT name only --------------
 
-const { runCommandString } = require('../dispatch/cmdline');
+const { runCommandString } = require('../dispatch/control/cmdline');
 
 describe('[4] runCommandString exact match', () => {
   it('runs the exact-named command with args', () => {
@@ -181,7 +181,7 @@ describe('[4] runCommandString exact match', () => {
 
 // ---- [5] action binding with args: routes through the prompt ------
 
-const dispatch2 = require('../dispatch/dispatch');
+const dispatch2 = require('../dispatch/control/dispatch');
 
 describe('[5] action binding honors args:', () => {
   it('an action with args: opens the prompt instead of running argless', () => {

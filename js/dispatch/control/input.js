@@ -11,18 +11,18 @@
  */
 'use strict';
 
-const { allPanels, setSel, getSel, getScroll } = require('../panel/nav-state');
-const { visibleBoundsFor, getPanelViewportH } = require('../leaves/geometry');
-const { paintNow: render } = require('../leaves/render-queue');
-const { getModel } = require('../model/store');
-const { enableMouse, enableFocusEvents, enableBracketedPaste, cols } = require('../io/term');
-const { isTerminalTab, activeTerminalId } = require('../panel/viewer/tabs');
-const { writeToSession, isSessionDead } = require('../io/terminal');
-const {getPanelDef, getItems, getInstanceSlice, wrap, getFocus, instanceKind } = require('../panel/api');
-const { dispatchMsg } = require('./fanout');
-const route = require('../panel/route');
-const mpane = require('../leaves/pane');
-const { isChainActive, CHAIN_MODES, suppressesChromeClicks } = require('../leaves/modes');
+const { allPanels, setSel, getSel, getScroll } = require('../../panel/nav-state');
+const { visibleBoundsFor, getPanelViewportH } = require('../../leaves/geometry');
+const { paintNow: render } = require('../../leaves/render-queue');
+const { getModel } = require('../../model/store');
+const { enableMouse, enableFocusEvents, enableBracketedPaste, cols } = require('../../io/term');
+const { isTerminalTab, activeTerminalId } = require('../../panel/viewer/tabs');
+const { writeToSession, isSessionDead } = require('../../io/terminal');
+const {getPanelDef, getItems, getInstanceSlice, wrap, getFocus, instanceKind } = require('../../panel/api');
+const { dispatchMsg } = require('../runtime/fanout');
+const route = require('../../panel/route');
+const mpane = require('../../leaves/pane');
+const { isChainActive, CHAIN_MODES, suppressesChromeClicks } = require('../../leaves/modes');
 // v0.6.4 Theme F Phase 2 — mouse gestures route through the shared intent
 // layer (the keyboard side joined in Phase 1). intent.js executes no
 // requires at load time, so this top-level require is load-order-safe
@@ -49,7 +49,7 @@ function _viewerHotkey() {
   return p ? p.hotkey : '';
 }
 const { handleKey, applyMsg, showSelectedInfo, navSelect } = require('./dispatch');
-const { cleanup } = require('./cleanup');
+const { cleanup } = require('../runtime/cleanup');
 
 // --- Mouse handling ---
 
@@ -90,9 +90,9 @@ function _handleWheel(mx, my, delta) {
       // maps straight onto scrollSession's sign. A 3-line step matches the
       // typical wheel notch. Returns whether the viewport moved so the
       // caller's paint gating is unchanged.
-      const termId = require('../panel/viewer/tabs').activeTerminalId(p.paneId);
+      const termId = require('../../panel/viewer/tabs').activeTerminalId(p.paneId);
       if (termId) {
-        return require('../io/terminal').scrollSession(termId, delta * 3);
+        return require('../../io/terminal').scrollSession(termId, delta * 3);
       }
       // v0.6.4 multi-viewer — clamp against the wheeled pane's OWN slice
       // (not _detail()'s focused viewer), so wheeling an unfocused second
@@ -102,7 +102,7 @@ function _handleWheel(mx, my, delta) {
       // P3 (viewer-lines selector) — slice.lines is deleted; derive the
       // wheeled pane's displayed lines (dispatch-side model read is fine).
       const _m = getModel();
-      const lines = d ? require('../leaves/pane-tabs').viewerLines(d, _m, _m.currentGroup) : [];
+      const lines = d ? require('../../leaves/pane-tabs').viewerLines(d, _m, _m.currentGroup) : [];
       const curScroll = d?.scroll || 0;
       // Single source of truth for the view-mode-aware viewport (P5
       // arc fix follow-up — panelHeights[type] would have given the
@@ -175,7 +175,7 @@ function _handleWheel(mx, my, delta) {
  *  dispatch._paneMenuPick) or closes when clicked outside. Motion/release
  *  fall through. */
 function _mouseHandlePaneMenuMode(kind, mx, my, _model) {
-  const overlay = require('../overlay/pane-menu');
+  const overlay = require('../../overlay/pane-menu');
   const layoutSlice = getInstanceSlice('layout');
   const target = (layoutSlice && layoutSlice.paneMenu && layoutSlice.paneMenu.targetPaneId) || null;
   if (!target) return false;
@@ -224,14 +224,14 @@ function _mouseHandleFreeConfigMode(kind, mx, my, model) {
 
   if (isTabDrag) {
     if (kind === 'motion') {
-      const pt = require('../leaves/pane-tabs');
+      const pt = require('../../leaves/pane-tabs');
       const groupName = model.currentGroup;
-      const targetKind = require('../panel/route').resolveTarget('viewer') || 'detail';
+      const targetKind = require('../../panel/route').resolveTarget('viewer') || 'detail';
       const detailSlice = getInstanceSlice(targetKind);
       // v0.6.4 blessed-exceptions tabBounds follow-on — recompute the viewer's
       // tab-strip bounds on demand (render no longer writes slice.tabBounds).
       const tabBounds = detailSlice
-        ? require('../panel/viewer/viewer').tabBoundsFor(detailSlice, model, _viewerHotkey())
+        ? require('../../panel/viewer/viewer').tabBoundsFor(detailSlice, model, _viewerHotkey())
         : null;
       dispatchMsg(wrap('layout', {
         type: 'tab_drag_motion', mx, my,
@@ -255,7 +255,7 @@ function _mouseHandleFreeConfigMode(kind, mx, my, model) {
   const detailSlice = getInstanceSlice(viewerId);
   // v0.6.4 blessed-exceptions tabBounds follow-on — recompute on demand.
   const detailTabBounds = detailSlice
-    ? require('../panel/viewer/viewer').tabBoundsFor(detailSlice, model, _viewerHotkey())
+    ? require('../../panel/viewer/viewer').tabBoundsFor(detailSlice, model, _viewerHotkey())
     : null;
   if (kind === 'press' && db && detailTabBounds && detailTabBounds.length > 0) {
     if (my === db.y) {
@@ -278,8 +278,8 @@ function _mouseHandleFreeConfigMode(kind, mx, my, model) {
   }
 
   if (kind === 'press' && slice && slice.panelList && slice.panelList.open) {
-    const { hitTest } = require('../overlay/panel-list');
-    const mpool = require('../leaves/pool');
+    const { hitTest } = require('../../overlay/panel-list');
+    const mpool = require('../../leaves/pool');
     const hit = hitTest(mx, my);
     if (hit) {
       let cursor = slice.panelList.cursor;
@@ -325,7 +325,7 @@ function _mouseHandleMenuMode(kind, mx, my, _model) {
     return true;
   }
   if (kind === 'press' || kind === 'double' || kind === 'right' || kind === 'middle') {
-    const hit = require('../overlay/menu').hitTest(mx, my);
+    const hit = require('../../overlay/menu').hitTest(mx, my);
     if (hit == null) applyMsg({ type: 'menu_close' });          // outside → dismiss
     else if (hit.itemIdx != null) applyMsg({ type: 'menu_activate', idx: hit.itemIdx });
     // else: inside the box on a border / separator — consume, no-op.
@@ -368,7 +368,7 @@ function _dispatchActiveModeMouse(kind, mx, my, model) {
     } catch (e) {
       console.error('[mode-mouse]', flag, e && e.message);
       try {
-        require('../io/event-log').record('error', {
+        require('../../io/event-log').record('error', {
           where: 'mouse_handler', flag, kind, mx, my,
           message: e && e.message, stack: e && e.stack,
         });
@@ -427,8 +427,8 @@ function _itemText(def, item) {
 }
 
 function _resolveContextAt(mx, my) {
-  const { stripMarkup } = require('../io/ansi');
-  const sel = require('../panel/viewer/select');
+  const { stripMarkup } = require('../../leaves/ansi');
+  const sel = require('../../panel/viewer/select');
   const selectionText = sel.isActive() ? (sel.selectedText() || null) : null;
   const layoutSlice = getInstanceSlice('layout');
   for (const p of allPanels()) {
@@ -440,7 +440,7 @@ function _resolveContextAt(mx, my) {
       const d = getInstanceSlice(p.paneId);
       // P3 (viewer-lines selector) — derive the displayed lines.
       const _m = getModel();
-      const lines = d ? require('../leaves/pane-tabs').viewerLines(d, _m, _m.currentGroup) : [];
+      const lines = d ? require('../../leaves/pane-tabs').viewerLines(d, _m, _m.currentGroup) : [];
       const li = itemRow + ((d && d.scroll) || 0);
       const lineText = (itemRow >= 0 && li < lines.length) ? stripMarkup(lines[li]) : null;
       return { paneKind: 'detail', lineText, itemLabel: null, selectionText };
@@ -470,7 +470,7 @@ function _realizeButtonGesture(intentName, x, y, mx, my) {
       // entries when on a target, plus the always-present general section, so
       // a right-click on EMPTY space (null ctx) still opens a populated menu.
       const ctx = _resolveContextAt(mx, my) || {};
-      const items = require('../leaves/context-menu').buildContextItems(ctx);
+      const items = require('../../leaves/context-menu').buildContextItems(ctx);
       if (!items.length) return;  // safety — the general section keeps this non-empty
       intent.realize(intent.context({ x, y }, { items, title: 'Actions' }));
       render();
@@ -511,7 +511,7 @@ function handleMouse(kind, x, y) {
   // and the in-grid modes (filter/search/prefix/listSelect) still let
   // chrome clicks through; only input-owning modes block them.
   if (kind === 'press' && !suppressesChromeClicks(model.modes)) {
-    const { hitTestCollapseButton, hitTestCloseButton } = require('../panel/chrome-hittest');
+    const { hitTestCollapseButton, hitTestCloseButton } = require('../../panel/chrome-hittest');
     const collapseId = hitTestCollapseButton(mx, my);
     if (collapseId) {
       dispatchMsg(wrap('layout', { type: 'panel_collapse_toggle', id: collapseId }));
@@ -533,7 +533,7 @@ function handleMouse(kind, x, y) {
     // misses there. Opening focuses that pane and, for a viewer, seeds
     // the cursor at its active tab (navigators seed 0, and — preserving
     // the old pane-select behavior — don't move focus on open).
-    const paneMenu = require('../overlay/pane-menu');
+    const paneMenu = require('../../overlay/pane-menu');
     const triggerPaneId = paneMenu.hitTestTrigger(mx, my);
     if (triggerPaneId) {
       if (model.modes.paneMenuMode) {
@@ -609,7 +609,7 @@ function handleMouse(kind, x, y) {
   // of the focus+select loop so dragging across panels can extend a
   // selection that started in detail rather than losing it to a focus
   // change.
-  const sel = require('../panel/viewer/select');
+  const sel = require('../../panel/viewer/select');
   if (kind === 'motion' && sel.isActive()) {
     // v0.6.4 — focused viewer's CONTAINER pane bounds (see tab-drag site above).
     const db = visibleBoundsFor(getInstanceSlice('layout'), route.resolveViewerPaneId(), route.resolveViewerPaneId());
@@ -663,7 +663,7 @@ function handleMouse(kind, x, y) {
     // v0.6.4 blessed-exceptions tabBounds follow-on — only viewer panes have a
     // tab strip; recompute its bounds on demand (render no longer writes them).
     const paneTabs = (p.type === 'detail' && compSlice)
-      ? require('../panel/viewer/viewer').tabBoundsFor(compSlice, model, p.hotkey)
+      ? require('../../panel/viewer/viewer').tabBoundsFor(compSlice, model, p.hotkey)
       : null;
     if (my === b.y && paneTabs && paneTabs.length > 0) {
       const localX = mx - b.x;
@@ -682,14 +682,14 @@ function handleMouse(kind, x, y) {
               type: 'viewer_remove_content_tab',
               groupName,
               key: tab.closeKey,
-              ...require('../leaves/pane-tabs').modelBundle(mForBundle, groupName),
+              ...require('../../leaves/pane-tabs').modelBundle(mForBundle, groupName),
             }));
           } else {
             dispatchMsg(wrap('layout', { type: 'focus_set', focus: p.paneId }));
             // Phase 3d: thread targetKey + currentGroup so the tab_switch
             // reducer arm stays pure of getModel().
             {
-              const pt = require('../leaves/pane-tabs');
+              const pt = require('../../leaves/pane-tabs');
               const slice = route.sliceForPane(p.paneId, p.type);
               dispatchMsg(wrap(p.paneId, {
                 type: 'tab_switch', idx: tab.tabIdx,
@@ -708,7 +708,7 @@ function handleMouse(kind, x, y) {
     // Detail panel content area — text selection on a click inside the
     // body. Stays detail-specific until Phase 4 lifts the selection
     // machinery onto a per-pane basis.
-    if (require('../leaves/pool').isDetailPane(p)) {
+    if (require('../../leaves/pool').isDetailPane(p)) {
       // v0.6.4 multi-viewer — focus + select the CLICKED viewer pane by
       // paneId (was hardcoded 'detail', which focused the primary).
       dispatchMsg(wrap('layout', { type: 'focus_set', focus: p.paneId }));
@@ -719,7 +719,7 @@ function handleMouse(kind, x, y) {
       const d = route.sliceForPane(p.paneId, 'detail');
       // P3 (viewer-lines selector) — derive the displayed lines.
       const _dm = getModel();
-      const _dlines = d ? require('../leaves/pane-tabs').viewerLines(d, _dm, _dm.currentGroup) : [];
+      const _dlines = d ? require('../../leaves/pane-tabs').viewerLines(d, _dm, _dm.currentGroup) : [];
       if (inContent && !isTerminalTab() && _dlines.length > 0) {
         const visibleLine = my - b.y - 1;
         const col = Math.max(0, mx - b.x - 1);
@@ -859,7 +859,7 @@ function _handleTerminalModeData(data) {
     return true;
   }
   // v0.6.5 §5(a) Phase 3 — scrollback + smart mouse forwarding.
-  const term = require('../io/terminal');
+  const term = require('../../io/terminal');
   const plan = _classifyTerminalChunk(data, term.sessionMouseMode(id));
   if (plan.kind === 'scroll') {
     let moved;
@@ -978,7 +978,7 @@ function setupKeyListener() {
       _pasteBuffer += data;
       if (_pasteBuffer.length > _PASTE_MAX) {
         console.error(`[input] bracketed paste exceeded ${_PASTE_MAX} bytes — dropped`);
-        require('../io/event-log').record('input', { kind: 'paste_oversize', size: _pasteBuffer.length });
+        require('../../io/event-log').record('input', { kind: 'paste_oversize', size: _pasteBuffer.length });
         _pasteBuffer = '';
         return;
       }
@@ -1004,7 +1004,7 @@ function setupKeyListener() {
     if (data === '\x1b[I') {
       const wasUnfocused = !getModel().focused;
       applyMsg({ type: 'focus_event', focused: true });
-      if (wasUnfocused) require('../leaves/render-queue').scheduleRender();
+      if (wasUnfocused) require('../../leaves/render-queue').scheduleRender();
       return;
     }
     if (data === '\x1b[O') {
@@ -1072,7 +1072,7 @@ function setupKeyListener() {
     // event-log so a maintainer reading a recorded session can see
     // what unknown sequences fired.
     if (data.charCodeAt(0) === 0x1b) {
-      require('../io/event-log').record('input', {
+      require('../../io/event-log').record('input', {
         kind: 'unknown_escape',
         bytes: data.length > 64 ? data.slice(0, 64) + '...' : data,
       });

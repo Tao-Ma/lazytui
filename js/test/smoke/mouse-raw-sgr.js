@@ -27,9 +27,9 @@ const sm = require('./_helpers/smoke');
 const geo = require('../../leaves/geometry');  // A.2: bounds are derived, not on slice.paneBounds
 const api = sm.api;
 const { getModel } = require('../../app/runtime');
-const actions = require('../../dispatch/actions');
-const input = require('../../dispatch/input');
-const mb = require('../../dispatch/mouse-bindings');
+const actions = require('../../dispatch/control/actions');
+const input = require('../../dispatch/control/input');
+const mb = require('../../dispatch/control/mouse-bindings');
 
 // 0-based pane grid → 1-based SGR coords (handleMouse subtracts 1).
 function sgr0(col0, row0) { return [col0 + 1, row0 + 1]; }

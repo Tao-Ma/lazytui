@@ -34,7 +34,7 @@
 const { getModel } = require('../model/store');
 const { getInstanceSlice } = require('../panel/api');
 const { renderPanel, viewportDims } = require('../leaves/draw');
-const { richToAnsi, RESET, esc, visibleLen } = require('../io/ansi');
+const { richToAnsi, RESET, esc, visibleLen } = require('../leaves/ansi');
 const { stdout } = require('../io/term');
 const { isChainActive } = require('../leaves/modes');
 const mpool = require('../leaves/pool');

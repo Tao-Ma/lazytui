@@ -309,4 +309,29 @@ describe('[10] P1 — committed search survives a lines-change (derived matches)
   });
 });
 
+describe('[N] "/" key enters search via the viewer itself (#3 controller-thinning)', () => {
+  // The viewer claims `/` in its own `case 'key'` now that it's the focused
+  // pane — dispatch.js no longer focus-checks + dispatches viewer_search_enter.
+  // Same end state as the `viewer_search_enter` Msg path (search.js), reached
+  // through the key claim.
+  it('focused detail: "/" claims the key and arms detailSearchMode', () => {
+    const viewer = require('../panel/viewer/viewer');
+    const s0 = { ...viewer._init(), infoLines: ['alpha', 'beta'], innerH: 8 };
+    const r = viewer._update({ type: 'key', key: '/', focusKind: 'detail' }, s0);
+    assert(Array.isArray(r), 'returns [slice, effects] (claimed)');
+    const effects = r[1];
+    assert(effects.some(e => e.type === '_claimed'), 'claims the keystroke');
+    assert(
+      effects.some(e => e.type === 'msg' && e.msg && e.msg.type === 'mode_set' && e.msg.flag === 'detailSearchMode'),
+      'arms the detailSearchMode chain flag (same as viewer_search_enter)',
+    );
+  });
+
+  it('non-detail focus: "/" is left for the controller (filter mode)', () => {
+    const viewer = require('../panel/viewer/viewer');
+    const r = viewer._update({ type: 'key', key: '/', focusKind: 'groups' }, { ...viewer._init() });
+    assert(!Array.isArray(r), 'returns the bare slice (unclaimed) so handleNormalKey runs _enterFilterMode');
+  });
+});
+
 report();

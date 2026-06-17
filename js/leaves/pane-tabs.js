@@ -790,7 +790,7 @@ function reduceTabMsg(msg, slice, ctx) {
       return [next, effects];
     }
     // v0.6.3 TEA Phase 3f: tab_cycle Msg retired. The root reducer's
-    // _cycleViewerTab arm in dispatch/reducer.js now computes the next
+    // _cycleViewerTab arm in dispatch/update/reducer.js now computes the next
     // tab idx + resolves targetKey directly (it has the model in
     // scope) and emits tab_switch. Removed the intermediate Msg so
     // the chain handler → tab_switch path doesn't need ctx.getModel
