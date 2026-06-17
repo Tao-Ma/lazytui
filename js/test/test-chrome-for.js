@@ -12,8 +12,8 @@
 'use strict';
 
 const { describe, it, eq, assert, report } = require('./test-runner');
-const { chromeFor } = require('../render/decor');
-const { renderPanel } = require('../render/panel');
+const { chromeFor } = require('../leaves/draw');
+const { renderPanel } = require('../leaves/draw');
 const { visibleLen, stripMarkup } = require('../io/ansi');
 
 const pane = (extras = {}) => ({

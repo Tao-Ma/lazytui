@@ -27,7 +27,7 @@
 'use strict';
 
 const { esc } = require('../io/ansi');
-const { renderOverlay, viewportDims } = require('../render/panel');
+const { renderOverlay, viewportDims } = require('../leaves/draw');
 const { getModel } = require('../model/store');
 const diag = require('../io/diag-log');
 

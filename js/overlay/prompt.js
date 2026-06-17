@@ -13,7 +13,7 @@
 const { getModel } = require('../model/store');
 const { ghostSuffix } = require('../leaves/ghost');
 const { esc, visibleLen } = require('../io/ansi');
-const { renderOverlay, viewportDims } = require('../render/panel');
+const { renderOverlay, viewportDims } = require('../leaves/draw');
 const { stdout } = require('../io/term');
 
 function renderPromptOverlay() {

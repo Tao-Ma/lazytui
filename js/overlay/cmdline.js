@@ -18,7 +18,7 @@ const { getModel } = require('../model/store');
 const { richToAnsi, RESET, visibleLen, esc } = require('../io/ansi');
 const { stdout } = require('../io/term');
 const { theme } = require('../leaves/themes');
-const { renderPanel, viewportDims } = require('../render/panel');
+const { renderPanel, viewportDims } = require('../leaves/draw');
 const { DROPDOWN_VIEWPORT: MAX_DROPDOWN } = require('../leaves/cmdline-split');
 
 // Panel height (including borders) painted by the previous render.

@@ -22,7 +22,17 @@ const route = require('../panel/route');
 // still work but are not part of the contract.
 const { esc, visibleLen, stripMarkup, wrapColor } = require('../io/ansi');
 const { theme } = require('../leaves/themes');
-const { renderPanel } = require('../render/panel');
+const { renderPanel, setDimsProvider } = require('../leaves/draw');
+
+// Render-exit seam (docs/v0.6.5-render-exit.md): leaves/draw can't read the
+// model (panel layer). Inject the terminal-dims source — the layout slice's
+// resize-as-Msg dims — so viewportDims() resolves them without the leaf
+// reaching up into panel. The model-read stays here (panel), keeping the
+// rendered frame a pure function of the model. io/term is the boot fallback.
+setDimsProvider(() => {
+  const ls = route.getInstanceSlice('layout');
+  return ls && ls.dims;
+});
 // Panel-state accessors live in ./nav-state (v0.6.5 §1 Phase 2). api uses
 // syncPanelScroll (its per-dispatch finalizer clamps each pane) and re-exports
 // the nav readers + composites as part of its Component-facing surface (the

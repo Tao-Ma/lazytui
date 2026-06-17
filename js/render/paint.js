@@ -33,7 +33,7 @@ const geo = require('../leaves/geometry');
 const mpool = require('../leaves/pool');
 const mpane = require('../leaves/pane');
 const { theme } = require('../leaves/themes');
-const { truncate } = require('./panel');
+const { truncate } = require('../leaves/draw');
 const painter = require('../leaves/painter');
 const { isTerminalTab, activeTerminalId, activeTerminalConfig } = require('../panel/viewer/tabs');
 const { ensureSession, resizeSession, sessionScrollInfo } = require('../io/terminal');
@@ -56,13 +56,14 @@ const { renderFooter } = require('./footer');
 
 // v0.6.4 — memoized lazy module refs for the per-frame hot path. These
 // were inline `require(...)` calls re-evaluated EVERY render: route ×6
-// (resolveTarget for the viewer target), decor ×4 (chromeFor). The
+// (resolveTarget for the viewer target), chrome ×4 (chromeFor). The
 // relative-path require() resolution is ~70µs/call (see R1 / pane-tabs);
 // at 6+4 calls/frame that was ~0.7ms/frame on require alone. Resolve
-// once at runtime (kept late — decor cycles with this module — so the
-// first call lands after load). `||=` caches the ref.
+// once at runtime. `||=` caches the ref. (chromeFor + the glyph-markup
+// builders are pure chrome derivation, now in leaves/draw — render→leaf,
+// no cycle; the slice-reading hit-tests went to panel/chrome-hittest.)
 let _routeRef; const _route = () => (_routeRef ||= require('../panel/route'));
-let _decorRef; const _decor = () => (_decorRef ||= require('./decor'));
+let _decorRef; const _decor = () => (_decorRef ||= require('../leaves/draw'));
 let _tabsRef; const _tabs = () => (_tabsRef ||= require('../panel/viewer/tabs'));
 let _paneMenuRef; const _paneMenu = () => (_paneMenuRef ||= require('../overlay/pane-menu'));
 
