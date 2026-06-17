@@ -189,6 +189,8 @@ function main() {
   // they feed Msgs back through it instead of importing the relocating fan-out).
   // Before initState/refreshAll, whose finalizer runs syncPanelScroll→setScroll.
   require('../panel/nav-state').setNavDispatch(require('../dispatch/effects').effectHost());
+  // Inject the same host into the command run-closures (cmdline / leader).
+  require('../panel/commands').setCommandsDispatch(require('../dispatch/effects').effectHost());
 
   // Install the Component effect handlers (focus/render/apply_msg/...) before
   // any Component registers — a Component's update→effects must resolve at

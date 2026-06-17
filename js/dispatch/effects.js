@@ -45,7 +45,12 @@ function _effectHost() {
     const { applyMsg } = require('./dispatch');
     const { wrap } = require('../panel/route');
     const { streamCommand } = require('./stream');
-    _host = { dispatchMsg: api.dispatchMsg, applyMsg, wrap, streamCommand };
+    const { cleanup } = require('./cleanup');
+    const { showHelp } = require('../overlay/help');
+    _host = {
+      dispatchMsg: api.dispatchMsg, applyMsg, wrap, streamCommand,
+      refreshAll: api.refreshAll, cleanup, showHelp,
+    };
   }
   return _host;
 }

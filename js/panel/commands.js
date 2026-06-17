@@ -16,17 +16,14 @@
  *
  * Carved out of panel/api.js — api.js's `getCommands()` is now a thin
  * wrapper that calls `collectCommands(Object.values(components), getModel())`.
- * Dispatch primitives (dispatchMsg, refreshAll) live in api.js; the run
- * closures here lazy-require them to break the cycle. `wrap` comes from the
- * zero-dep route leaf directly (api.js itself is just a re-exporter).
  *
- * The `help` (overlay) and `quit` (dispatch/cleanup) framework commands reach
- * UP out of the panel layer, so they go through the panel-host seam
- * (leaves/panel-host) — `showHelp` / `cleanup` are wired into it at boot. This
- * keeps panel a clean lower layer than dispatch/overlay (no panel→dispatch /
- * panel→overlay import edge — the cut that dissolved the layer cycle) and, as a
- * bonus, keeps node-pty (pulled in by dispatch/cleanup→terminal) out of CLI
- * mode's load path. See docs/v0.6.5-render-exit.md "Domain detangle".
+ * Run closures execute in the dispatch layer (cmdline / leader-key), so every
+ * runtime ask they make — dispatchMsg, refreshAll, cleanup (:quit), showHelp
+ * (:help) — goes through the injected dispatch host (`setCommandsDispatch`,
+ * wired at boot), not an upward import. `wrap` is the zero-dep route leaf. This
+ * keeps panel below dispatch/overlay (no panel→dispatch import) and keeps
+ * node-pty (pulled in by dispatch/cleanup→terminal) off CLI mode's load path.
+ * The formalized-injection model — see docs/v0.6.5-dispatch-loop.md.
  */
 'use strict';
 
@@ -39,24 +36,32 @@ const { getModel } = require('../model/store');
 require('../feature/open-file');     // host scheme (catch-all)
 require('../feature/open-docker');   // docker scheme (docker://<container>/<path>)
 
+// Injected dispatch host (set at boot via setCommandsDispatch). Command run
+// closures execute in dispatch (cmdline / leader), so they feed Msgs + runtime
+// asks (dispatchMsg/refreshAll/cleanup/showHelp) back through this host instead
+// of importing the relocating fan-out / panel-host seam. Closures run only
+// AFTER boot, so _host is always set by call time. See docs/v0.6.5-dispatch-loop.md.
+let _host = null;
+function setCommandsDispatch(host) { _host = host; }
+
 const FRAMEWORK_COMMANDS = [
   {
     name: 'quit',
     desc: 'Exit the TUI',
     run: () => {
-      require('../leaves/panel-host').cleanup();
+      _host.cleanup();
       process.exit(0);
     },
   },
   {
     name: 'refresh',
     desc: 'Re-fan a refresh Msg to every Component',
-    run: async () => { await require('./api').refreshAll(); },
+    run: async () => { await _host.refreshAll(); },
   },
   {
     name: 'help',
     desc: 'Show key help in detail panel',
-    run: () => { require('../leaves/panel-host').showHelp(); },
+    run: () => { _host.showHelp(); },
   },
   {
     name: 'save-layout',
@@ -69,7 +74,7 @@ const FRAMEWORK_COMMANDS = [
       if (error) {
         appendViewerLines(`[red]Layout save failed:[/] ${error.message}`);
       } else {
-        require('./api').dispatchMsg(wrap('layout', { type: 'set_arrange', dirty: false }));
+        _host.dispatchMsg(wrap('layout', { type: 'set_arrange', dirty: false }));
         appendViewerLines(`[green]Layout saved to[/] ${m.configPath}`);
       }
     },
@@ -102,13 +107,12 @@ const FRAMEWORK_COMMANDS = [
       const { appendViewerLines } = require('./nav-state');
       const { rebuildLayoutFromConfig } = require('../leaves/arrange');
       const m = getModel();
-      const api = require('./api');
-      api.dispatchMsg(wrap('layout', {
+      _host.dispatchMsg(wrap('layout', {
         type: 'set_arrange', arrange: rebuildLayoutFromConfig(m.config), dirty: false,
       }));
       // The runtime layout the user was working with is gone; the
       // undo/redo history pointed at it is no longer meaningful.
-      api.dispatchMsg(wrap('layout', { type: 'free_config_clear_undo' }));
+      _host.dispatchMsg(wrap('layout', { type: 'free_config_clear_undo' }));
       appendViewerLines(`[green]Layout restored from[/] ${m.configPath}`);
     },
   },
@@ -116,14 +120,13 @@ const FRAMEWORK_COMMANDS = [
     name: 'dismiss-warnings',
     desc: 'Clear the config-warning chrome notice',
     run: () => {
-      require('./api').dispatchMsg(wrap('layout', { type: 'dismiss_warnings' }));
+      _host.dispatchMsg(wrap('layout', { type: 'dismiss_warnings' }));
     },
   },
   {
     name: 'add-column',
     desc: 'Insert an empty column — :add-column [position]  (default: just before the last column)',
     run: (args) => {
-      const api = require('./api');
       const layoutSlice = route.getInstanceSlice('layout');
       const mpool = require('../leaves/pool');
       const N = mpool.columnCount(layoutSlice && layoutSlice.arrange);
@@ -140,14 +143,13 @@ const FRAMEWORK_COMMANDS = [
         appendViewerLines(`[red]:add-column requires a 1-based integer position[/]`);
         return;
       }
-      api.dispatchMsg(wrap('layout', { type: 'add_column', position: position1 - 1 }));
+      _host.dispatchMsg(wrap('layout', { type: 'add_column', position: position1 - 1 }));
     },
   },
   {
     name: 'remove-column',
     desc: 'Remove an empty column — :remove-column <n>  (1-based; refused on last column or non-empty)',
     run: (args) => {
-      const api = require('./api');
       if (!args || args.length === 0) {
         const { appendViewerLines } = require('./nav-state');
         appendViewerLines(`[red]:remove-column requires a column number[/]`);
@@ -159,7 +161,7 @@ const FRAMEWORK_COMMANDS = [
         appendViewerLines(`[red]:remove-column requires a 1-based integer column number[/]`);
         return;
       }
-      api.dispatchMsg(wrap('layout', { type: 'remove_column', columnIndex: n1 - 1 }));
+      _host.dispatchMsg(wrap('layout', { type: 'remove_column', columnIndex: n1 - 1 }));
     },
   },
 ];
@@ -171,7 +173,6 @@ const FRAMEWORK_COMMANDS = [
 function _frameworkDynamicCommands(m) {
   const { setTheme, themeNames, activeThemeName } = require('../leaves/themes');
   const { allPanels } = require('./nav-state');
-  const api = require('./api');
   const out = [];
   for (const name of themeNames()) {
     out.push({
@@ -198,7 +199,7 @@ function _frameworkDynamicCommands(m) {
       // Component fan-out so the cascade (show_selected_info Cmd) runs.
       // Writing getFocus() directly would skip the refresh.
       run: () => {
-        api.dispatchMsg(wrap('layout', { type: 'focus_set', focus: p.type }));
+        _host.dispatchMsg(wrap('layout', { type: 'focus_set', focus: p.type }));
       },
     });
   }
@@ -207,7 +208,7 @@ function _frameworkDynamicCommands(m) {
     out.push({
       name: 'free-config',
       desc: 'Open free-config mode (layout edit + pool overlay)',
-      run: () => { require('./api').dispatchMsg(wrap('layout', { type: 'free_config_enter' })); },
+      run: () => { _host.dispatchMsg(wrap('layout', { type: 'free_config_enter' })); },
     });
   }
   // v0.6 Phase 2 — pool hide/show. One verb per id makes autocomplete
@@ -228,7 +229,7 @@ function _frameworkDynamicCommands(m) {
       out.push({
         name: `hide ${id}`,
         desc: `Hide the ${entry.title || id} panel (stays in pool)`,
-        run: () => { api.dispatchMsg(wrap('layout', { type: 'pool_hide', id })); },
+        run: () => { _host.dispatchMsg(wrap('layout', { type: 'pool_hide', id })); },
       });
     }
     for (const id of mpool.hiddenIds(arrange)) {
@@ -237,7 +238,7 @@ function _frameworkDynamicCommands(m) {
       out.push({
         name: `show ${id}`,
         desc: `Show the hidden ${entry.title || id} panel`,
-        run: () => { api.dispatchMsg(wrap('layout', { type: 'pool_show', id })); },
+        run: () => { _host.dispatchMsg(wrap('layout', { type: 'pool_show', id })); },
       });
     }
     // v0.6.1 — :switch-tab <pool-id> flips the active tab in the
@@ -265,7 +266,7 @@ function _frameworkDynamicCommands(m) {
           out.push({
             name: `switch-tab ${t.id}`,
             desc: `Switch to '${title}' tab in this pane`,
-            run: () => { api.dispatchMsg(wrap('layout', {
+            run: () => { _host.dispatchMsg(wrap('layout', {
               type: 'set_active_tab', paneId: focusedPane.paneId, tabPoolId: t.id,
             })); },
           });
@@ -333,4 +334,4 @@ function collectCommands(componentsList, m) {
   return out;
 }
 
-module.exports = { FRAMEWORK_COMMANDS, collectCommands };
+module.exports = { setCommandsDispatch, FRAMEWORK_COMMANDS, collectCommands };
