@@ -11,7 +11,7 @@
  * "to dodge an api → dispatch → api cycle"; that's no longer a
  * concern because the file doesn't reach into dispatch/ at all
  * (only panel/nav-state, model/store, io/ansi, panel/api, leaves/pane,
- * panel/route, and the dispatch/keybindings leaf for chord enumeration).
+ * panel/route, and the leaves/keybindings registry for chord enumeration).
  *
  * Zero npm deps.
  */
@@ -21,7 +21,7 @@ const { allPanels, setViewerContent } = require('../panel/nav-state');
 const { getModel } = require('../model/store');
 const { esc } = require('../io/ansi');
 const {getCommands, getPanelDef, getInstanceSlice, getFocus, instanceKind } = require('../panel/api');
-const kb = require('../dispatch/keybindings');
+const kb = require('../leaves/keybindings');
 const mpane = require('../leaves/pane');
 const route = require('../panel/route');
 

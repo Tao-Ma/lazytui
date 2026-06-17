@@ -32,7 +32,7 @@ const { isTerminalTab, activeTerminalId, findEphemeralByid,
         removeEphemeralTab, isContentTab, activeContentTab,
         removeContentTab } = require('../panel/viewer/tabs');
 const { isSessionDead } = require('../io/terminal');
-const keybindings = require('./keybindings');
+const keybindings = require('../leaves/keybindings');
 const modes = require('../leaves/modes');
 // The reducer (`update`) lives in dispatch/reducer.js (F3 — intra-layer);
 // getModel/setModel are the bottom-layer store (v0.6.5 §1), imported down.
