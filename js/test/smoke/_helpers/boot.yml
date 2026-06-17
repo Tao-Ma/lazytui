@@ -1,0 +1,33 @@
+# Minimal config for the boot smoke (js/test/smoke/boot.js).
+# A static file browser over the repo + the viewer — so a real-binary
+# boot resolves every boot-path require and reaches the first paint
+# WITHOUT touching docker / postgres / any external service. Keep it
+# small and self-contained.
+project_dir: ../../..
+
+groups:
+  browse:
+    label: Boot smoke
+    containers: []
+    actions:
+      echo:
+        label: echo
+        desc: A no-op action so the group is valid; never run by the smoke.
+        type: run
+        script: 'true'
+
+panels:
+  files:
+    type: files
+    title: Files
+  detail:
+    type: detail
+    title: Detail
+
+layout:
+  columns:
+    - width: 30
+      panels:
+        - files
+    - panels:
+        - detail
