@@ -363,7 +363,7 @@ function findEphemeralByIdIn(slice, id) {
  *  (addEphemeral / removeEphemeral / addContent / updateContentLines
  *  / removeContent / reorderContent). Spread into the dispatched Msg:
  *
- *    api.dispatchMsg(api.wrap(target, {
+ *    panelHost.dispatchMsg(wrap(target, {
  *      type: 'viewer_add_content_tab', groupName, key, label, lines,
  *      ...pt.modelBundle(model, groupName),
  *    }));

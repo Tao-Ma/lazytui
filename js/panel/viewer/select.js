@@ -61,7 +61,7 @@ function _lines() {
 
 // Selection writes fold onto the update spine (select_* Msgs). select.js
 // can't be imported by the reducer (it requires runtime → cycle), so the
-// writers resolve any ansi-dependent values here (plainLineWidth clamps)
+// writers resolve any ansi-dependent values here (plainLineWidthFrom clamps)
 // and dispatch via the Component fan-out (handled by detail.update). The
 // text/column READS (selectedText, decorateLines, …) stay here — reads
 // don't break single-writer.
@@ -93,11 +93,8 @@ function plainLineWidthFrom(lines, i) {
   return w;
 }
 
-/** Plain text projection of detail line `i` (markup stripped). */
-function plainLine(i) { return plainLineFrom(_lines(), i); }
-
-/** Display width of the plain text projection of a line. */
-function plainLineWidth(i) { return plainLineWidthFrom(_lines(), i); }
+// (plainLine / plainLineWidth impure wrappers removed — unused; reducer arms
+// and the mouse path use the pure *From variants above.)
 
 /**
  * START boundary: convert displayCol to the codepoint index of the
@@ -333,11 +330,11 @@ function decorateLines(lines) {
 // The mouse path still uses this module's service API (beginAt/extendTo/
 // cancel/commit) to start/extend/finish a drag selection, and the render
 // path uses the pure reads (isActive, decorateLines, highlightLine,
-// selectedText, plainLine, plainLineWidth, _displayCol* helpers).
+// selectedText, _displayCol* helpers).
 
 module.exports = {
   beginAt, extendTo, cancel, commit, settle, isActive,
-  selectedText, plainLineWidth,
+  selectedText,
   // PURE variants for the viewer reducer arms (lines threaded in, no global read):
   selectedTextFrom, plainLineWidthFrom,
   highlightLine, decorateLines,

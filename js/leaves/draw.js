@@ -331,5 +331,5 @@ function renderOverlay({ lines, title, count = null, maxWidth = 44, anchor = nul
 
 module.exports = {
   renderPanel, renderOverlay, overlayBox, truncate, viewportDims, setDimsProvider,
-  chromeFor, _collapseGlyphMarkup, _closeGlyphMarkup, _tabTriggerMarkup,
+  chromeFor, _collapseGlyphMarkup, _closeGlyphMarkup,
 };

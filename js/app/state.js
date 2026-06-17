@@ -343,9 +343,6 @@ function selectGroup(idx) {
 module.exports = {
   // Boot layer + dispatch-layer group helpers, defined here.
   loadConfig, initState, selectGroup, resetGroupContext,
-  // Per-pane instance lifecycle — boot mint + the finalizer's runtime
-  // mint/dispose reconcile (wired via api.setInstanceReconciler).
-  reconcilePaneInstances,
   // v0.6.4 Phase D — exposed for tests: the declared-subscription wiring
   // seam + its dedup-ledger reset.
   _wireSubscriptions, _resetSubscriptions,
