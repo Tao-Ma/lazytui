@@ -369,16 +369,16 @@ function installEffects(registerEffect) {
   // publishes the numeric hub series, and folds the string maps back via
   // dockerResult. On failure it still dispatches dockerResult (no maps) so the
   // inFlight guard always clears.
-  registerEffect('dockerFetch', () => {
+  registerEffect('dockerFetch', (_eff, host) => {
     setImmediate(async () => {
       try {
         // Live gates (the tick fired async). Skip the docker queries when
         // the terminal is unfocused — but still dispatch dockerResult so
         // the in-flight latch clears and the next tick can retry. A bare
         // dockerResult (no maps) keeps the prior status/stats intact.
-        if (getModel().focused === false) { dispatchMsg(wrap('docker', { type: 'dockerResult' })); return; }
+        if (getModel().focused === false) { host.dispatchMsg(host.wrap('docker', { type: 'dockerResult' })); return; }
         const containers = _containers();
-        if (!containers.length) { dispatchMsg(wrap('docker', { type: 'dockerResult', status: {}, stats: {} })); return; }
+        if (!containers.length) { host.dispatchMsg(host.wrap('docker', { type: 'dockerResult', status: {}, stats: {} })); return; }
 
         const status = {};
         const args = containers.map(JSON.stringify).join(' ');
@@ -420,10 +420,10 @@ function installEffects(registerEffect) {
         // Drop the hub series for any tracked container that isn't running now.
         for (const name of containers) if (!stats[name]) hub.delete('docker.stats', name);
 
-        dispatchMsg(wrap('docker', { type: 'dockerResult', status, stats }));
+        host.dispatchMsg(host.wrap('docker', { type: 'dockerResult', status, stats }));
       } catch (e) {
         console.error(`[docker:fetch] ${e.message}`);
-        dispatchMsg(wrap('docker', { type: 'dockerResult' }));  // keep prior maps, clear inFlight
+        host.dispatchMsg(host.wrap('docker', { type: 'dockerResult' }));  // keep prior maps, clear inFlight
       }
     });
   });
@@ -438,7 +438,7 @@ function installEffects(registerEffect) {
     startEventsStream(getModel().config);
   });
 
-  registerEffect('dockerExec', (eff) => {
+  registerEffect('dockerExec', (eff, host) => {
     // R6 — dropped pre-stream setActiveTab(0). It was legacy from the
     // pre-Transcript-tab era when the unrouted accumulator lived on
     // Info; parking the user on Info first set up Info to receive the
@@ -448,12 +448,12 @@ function installEffects(registerEffect) {
     // before). The setActiveTab(0) was a brief stop on Info en route
     // to Transcript — pure churn.
     const q = JSON.stringify(eff.item);
-    leaveTerminalMode();
+    host.applyMsg({ type: 'terminal_exit' });
     if (eff.mode === 'inspect') {
-      streamCommand(`inspect ${eff.item}`,
+      host.streamCommand(`inspect ${eff.item}`,
         `docker inspect ${q} 2>&1 | (command -v jq >/dev/null && jq . || cat)`);
     } else {
-      streamCommand(`logs ${eff.item}`, `docker logs --tail=200 -f ${q} 2>&1`);
+      host.streamCommand(`logs ${eff.item}`, `docker logs --tail=200 -f ${q} 2>&1`);
     }
   });
 

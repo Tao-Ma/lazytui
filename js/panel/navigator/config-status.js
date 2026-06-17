@@ -485,7 +485,7 @@ function update(msg, slice) {
  *  work off-tick / folds results back via Msgs — never writing the
  *  slice directly. */
 function installEffects(registerEffect) {
-  registerEffect('cfgStatusCompute', (eff) => {
+  registerEffect('cfgStatusCompute', (eff, host) => {
     setImmediate(() => {
       let cache;
       try { cache = computeStatus(eff.branch, eff.files || [], eff.projectDir || '.'); }
@@ -494,8 +494,7 @@ function installEffects(registerEffect) {
       // kind's primary. `wrap('config-status')` would land every instance's
       // result on the first pane, leaving the others stuck on "computing…"
       // (the files Arc 2 / docker Arc 3 collapse-to-primary footgun).
-      const api = require('../api');
-      api.dispatchMsg(api.wrap(eff.paneId || 'config-status', { type: 'cfgStatusResult', cache }));
+      host.dispatchMsg(host.wrap(eff.paneId || 'config-status', { type: 'cfgStatusResult', cache }));
     });
   });
   registerEffect('cfgStatusDiff', (eff) => {
