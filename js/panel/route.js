@@ -338,9 +338,9 @@ function getInstanceSlice(id) {
  *  kind-keyed, and legacy callers that pass a kind/Component name).
  *
  *  This is the read-path mirror of the wrapped-Msg DISPATCH path's
- *  `getInstance(kind)`-first resolution (`panel/api` dispatchMsg) and
- *  the key path's `hasInstance(focus) ? focus : primary` (api.js#
- *  dispatchKeyToFocused). v0.6.4 Theme A Phase 5 — closing the
+ *  `getInstance(kind)`-first resolution (`dispatch/fanout` dispatchMsg)
+ *  and the key path's `hasInstance(focus) ? focus : primary`
+ *  (dispatch/fanout#dispatchKeyToFocused). v0.6.4 Theme A Phase 5 — closing the
  *  read-path half so render/getItems/getFilter/nav reads stop
  *  collapsing every same-kind pane onto the primary's slice.
  *

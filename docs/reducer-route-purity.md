@@ -37,7 +37,7 @@ already added an honest Contract bullet saying so (`runtime.js:20-28`).
 **Crucial framing — A is NOT a replay/correctness hazard (unlike D).** The state
 A reads (the layout service slice's `focus`/`arrange`/`lastViewerTab` +
 `_instances`/`_panelOwner`) is mutated ONLY through Msg dispatch (Component
-`update`s write their slice back via `api.js` `_runInstance → setInstanceSlice`;
+`update`s write their slice back via `dispatch/fanout` `_runInstance → setInstanceSlice`;
 the lone non-update writer is the `innerH` finalizer — blessed exception B,
 which doesn't touch focus/arrange). So route topology is itself a deterministic
 function of the Msg log. Replaying the log reconstructs it identically; the

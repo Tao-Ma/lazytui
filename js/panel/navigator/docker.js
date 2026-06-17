@@ -360,7 +360,7 @@ function _handleKey(msg, slice) {
   return slice;
 }
 
-// Msg-enrichment hook (panel/api _runInstance / dispatchKeyToFocused). The
+// Msg-enrichment hook (dispatch/fanout _runInstance / dispatchKeyToFocused). The
 // impure shell threads the active group's container names so _handleKey stays
 // pure of getModel(). Only the key arm reads msg.items; always attaching is cheap.
 function augmentMsg(msg, model) {
