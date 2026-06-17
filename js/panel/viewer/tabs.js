@@ -28,6 +28,8 @@
 
 const { getModel } = require('../../model/store');
 const pt = require('../../leaves/pane-tabs');
+const panelHost = require('../../leaves/panel-host');   // dispatchMsg (injected, B/S5)
+const { wrap } = require('../../panel/route');
 
 // --- Active-viewer slice fetcher ------------------------------------------
 
@@ -145,8 +147,7 @@ function _getModel() {
 function addEphemeralTab(groupName, key, cmd, label) {
   const target = _viewerTarget('terminal');
   if (target == null) return;
-  const api = require('../api');
-  api.dispatchMsg(api.wrap(target,
+  panelHost.dispatchMsg(wrap(target,
     { type: 'viewer_add_ephemeral_terminal', groupName, key, cmd, label,
       ...pt.modelBundle(_getModel(), groupName) }));
 }
@@ -154,8 +155,7 @@ function addEphemeralTab(groupName, key, cmd, label) {
 function removeEphemeralTab(groupName, key) {
   const target = _viewerTarget('terminal');
   if (target == null) return;
-  const api = require('../api');
-  api.dispatchMsg(api.wrap(target,
+  panelHost.dispatchMsg(wrap(target,
     { type: 'viewer_remove_ephemeral_terminal', groupName, key,
       ...pt.modelBundle(_getModel(), groupName) }));
 }
@@ -163,8 +163,7 @@ function removeEphemeralTab(groupName, key) {
 function addContentTab(groupName, key, label, lines) {
   const target = _viewerTarget('viewer_tab_add');
   if (target == null) return;
-  const api = require('../api');
-  api.dispatchMsg(api.wrap(target,
+  panelHost.dispatchMsg(wrap(target,
     { type: 'viewer_add_content_tab', groupName, key, label, lines,
       ...pt.modelBundle(_getModel(), groupName) }));
 }
@@ -172,8 +171,7 @@ function addContentTab(groupName, key, label, lines) {
 function updateContentTabLines(groupName, key, lines) {
   const target = _viewerTarget('viewer_tab_add');
   if (target == null) return;
-  const api = require('../api');
-  api.dispatchMsg(api.wrap(target,
+  panelHost.dispatchMsg(wrap(target,
     { type: 'viewer_update_content_tab_lines', groupName, key, lines,
       ...pt.modelBundle(_getModel(), groupName) }));
 }
@@ -181,8 +179,7 @@ function updateContentTabLines(groupName, key, lines) {
 function removeContentTab(groupName, key) {
   const target = _viewerTarget('viewer_tab_add');
   if (target == null) return;
-  const api = require('../api');
-  api.dispatchMsg(api.wrap(target,
+  panelHost.dispatchMsg(wrap(target,
     { type: 'viewer_remove_content_tab', groupName, key,
       ...pt.modelBundle(_getModel(), groupName) }));
 }

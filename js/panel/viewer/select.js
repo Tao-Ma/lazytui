@@ -70,10 +70,10 @@ function _lines() {
 // Phase 8 — resolveTarget so multi-viewer wires up correctly; null
 // = no viewer, drop.
 function _apply(msg) {
-  const target = require('../../panel/route').resolveTarget('viewer');
+  const route = require('../../panel/route');
+  const target = route.resolveTarget('viewer');
   if (!target) return;
-  const api = require('../api');
-  api.dispatchMsg(api.wrap(target, msg));
+  require('../../leaves/panel-host').dispatchMsg(route.wrap(target, msg));
 }
 
 // PURE projections — take the threaded `lines` array explicitly so the

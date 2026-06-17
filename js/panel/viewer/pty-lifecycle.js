@@ -62,7 +62,7 @@ function handleExit(id, exitCode) {
     // follow here was a redundant double-invalidate (P5.5). For the
     // not-full case, the tab strip / viewer body changes show up as
     // different row text and the diff cache catches them naturally.
-    api.dispatchMsg(api.wrap('layout', { type: 'view_set', mode: 'normal' }));
+    _host.dispatchMsg(_host.wrap('layout', { type: 'view_set', mode: 'normal' }));
     anyChange = true;
   }
   if (exitCode === 0 && tabs.handleSessionCleanExit(id, paneId)) {
