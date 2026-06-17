@@ -19,6 +19,7 @@ const actions  = require('../dispatch/actions');
 const dispatch = require('../dispatch/dispatch');
 const input    = require('../dispatch/input');
 const api      = require('../panel/api');
+const fanout   = require('../dispatch/fanout');   // B/S6 — dispatchMsg relocated here
 const { describe, it, eq, assert, report } = require('./test-runner');
 
 // Swap a method on a module object for a recorder, run fn, restore. The
@@ -80,7 +81,7 @@ describe('[Theme F P3] context anchor threads through to menu_open', () => {
 
 describe('[Theme F P2] mouse intents realize to the prior dispatch', () => {
   it('focusPane(id) → dispatchMsg(focus_set), skipInfo defaults false', () => {
-    const calls = spy(api, 'dispatchMsg', () => intent.realize(intent.focusPane('pane-d2')));
+    const calls = spy(fanout, 'dispatchMsg', () => intent.realize(intent.focusPane('pane-d2')));
     eq(calls.length, 1, 'one dispatchMsg');
     const s = JSON.stringify(calls[0][0]);  // wrap('layout', msg)
     assert(s.includes('focus_set'), 'wraps a focus_set');
@@ -89,7 +90,7 @@ describe('[Theme F P2] mouse intents realize to the prior dispatch', () => {
   });
 
   it('focusPane(id, {skipInfo:true}) carries the flag through', () => {
-    const calls = spy(api, 'dispatchMsg', () => intent.realize(intent.focusPane('pane-d2', { skipInfo: true })));
+    const calls = spy(fanout, 'dispatchMsg', () => intent.realize(intent.focusPane('pane-d2', { skipInfo: true })));
     assert(JSON.stringify(calls[0][0]).includes('"skipInfo":true'), 'skipInfo:true threaded');
   });
 

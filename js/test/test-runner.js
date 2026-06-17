@@ -266,6 +266,17 @@ try {
   require('../panel/commands').setCommandsDispatch(require('../dispatch/effects').effectHost());
   require('../dispatch/effects').installBuiltins();
   const api = require('../panel/api');
+  // B/S6 test shim — the Component fan-out (dispatchMsg / dispatchKeyToFocused)
+  // + setInstanceReconciler relocated to dispatch/fanout.js (the runtime lives
+  // in the dispatch layer now). Production code calls them from there; the many
+  // existing tests that drive them as `api.dispatchMsg(...)` keep working by
+  // re-exposing them on the api object HERE (test-only; test/ is layering-exempt,
+  // and api === fanout for these so assertions are unchanged). New tests should
+  // require('../dispatch/fanout') directly.
+  const fanout = require('../dispatch/fanout');
+  api.dispatchMsg = fanout.dispatchMsg;
+  api.dispatchKeyToFocused = fanout.dispatchKeyToFocused;
+  api.setInstanceReconciler = fanout.setInstanceReconciler;
   // layout MUST register first — chrome owner + focus reader's primary
   // instance. Production (tui.js) already orders this way; tests need
   // the same.

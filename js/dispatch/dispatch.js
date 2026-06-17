@@ -24,8 +24,9 @@
 const { allPanels, getSel, switchGroupsTab, multiSelCount } = require('../panel/nav-state');
 const { paintNow: render } = require('../leaves/render-queue');
 const { getPanelDef, getItems, idOf, getInstanceSlice,
-       getComponentOwningPanel, dispatchMsg, dispatchKeyToFocused, wrap, getFocus,
+       getComponentOwningPanel, wrap, getFocus,
        instanceKind } = require('../panel/api');
+const { dispatchMsg, dispatchKeyToFocused } = require('./fanout');
 const copy = require('../overlay/copy');
 const registerPopup = require('../overlay/register-popup');
 const { isTerminalTab, activeTerminalId, findEphemeralByid,

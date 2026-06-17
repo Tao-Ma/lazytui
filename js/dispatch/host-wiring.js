@@ -17,16 +17,14 @@
 const panelHost = require('../leaves/panel-host');
 
 function wirePanelHost() {
-  const api = require('../panel/api');
+  const { dispatchMsg } = require('./fanout');   // the relocated Component fan-out (B/S6)
   const { applyMsg } = require('./dispatch');
   const { runEffects, registerEffect } = require('./effects');
   const { streamCommand } = require('./stream');
   const { cleanup } = require('./cleanup');
   const { showHelp } = require('../overlay/help');
   panelHost.setPanelHost({
-    // dispatchMsg lives in panel/api today; B/S6 relocates it to dispatch/fanout
-    // — only this source line changes then, never the panel callers.
-    dispatchMsg: api.dispatchMsg,
+    dispatchMsg,
     applyMsg, runEffects, registerEffect, streamCommand, cleanup, showHelp,
   });
 }
