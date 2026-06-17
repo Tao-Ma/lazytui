@@ -22,7 +22,7 @@
 'use strict';
 
 const { allPanels, getSel, switchGroupsTab, multiSelCount } = require('../panel/nav-state');
-const { render } = require('../render/paint');
+const { paintNow: render } = require('../leaves/render-queue');
 const { getPanelDef, getItems, idOf, getInstanceSlice,
        getComponentOwningPanel, dispatchMsg, dispatchKeyToFocused, wrap, getFocus,
        instanceKind } = require('../panel/api');
@@ -97,13 +97,14 @@ function showSelectedInfo(paneId) {
  * v0.6.4 Phase F — re-homed here from render/paint.js. It is a dispatch-then-
  * paint ORCHESTRATION (it dispatches a Msg), not a render; keeping it out of
  * the render module leaves paint.js a pure view (model → output, no dispatch).
- * Lazy-require paint to keep the dispatch ↔ render edge one-directional.
+ * The paint itself goes through the render-queue seam (paintNow, aliased
+ * `render`) so dispatch carries no static edge into render — render-exit arc.
  */
 function redraw() {
   // resolveTarget (inside showSelectedInfo) picks the destination viewer; no
   // viewer registered just skips the info refresh and paints.
   showSelectedInfo();
-  require('../render/paint').render();
+  render();
 }
 
 function navSelect(panelType, index) {

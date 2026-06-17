@@ -24,9 +24,14 @@ const child_process = require('child_process');
 const spawnCalls = [];
 child_process.spawn = (...args) => { spawnCalls.push(args); return { on() {}, kill() {} }; };
 
+// Loading paint registers the real render/forceFull/invalidate fns into the
+// render-queue seam. Production (effects.js force_full_repaint) drives the
+// repaint THROUGH that seam now (render-exit arc), so spy at the seam — a
+// live require().forceFullRepaint lookup picks up this stub.
 const layout = require('../render/paint');
+const renderQueue = require('../leaves/render-queue');
 let forceFullRepaintCalls = 0;
-layout.forceFullRepaint = () => { forceFullRepaintCalls++; };
+renderQueue.forceFullRepaint = () => { forceFullRepaintCalls++; };
 layout.render = () => {};
 
 const history = require('../feature/history');
