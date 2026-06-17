@@ -34,12 +34,7 @@ setDimsProvider(() => {
   return ls && ls.dims;
 });
 
-// Render-exit-style seam: leaves/hub fans publishes out to Components as a
-// `hub` Msg, but a leaf can't import panel. Inject the dispatcher here so the
-// hub stays a bottom leaf. dispatchMsg is a hoisted fn declaration below.
-hub.setDispatch(dispatchMsg);
-// Panel-state accessors live in ./nav-state (v0.6.5 §1 Phase 2). api uses
-// syncPanelScroll (its per-dispatch finalizer clamps each pane) and re-exports
+// Panel-state accessors live in ./nav-state (v0.6.5 §1 Phase 2). api re-exports
 // the nav readers + composites as part of its Component-facing surface (the
 // navigator Components read them from here). The nav-state writers require api
 // back lazily, so this top-level edge is one-directional (api → nav-state).
@@ -347,362 +342,6 @@ function _resetViewContributions() {
  */
 const { wrap } = route;
 
-/**
- * Dispatch a Msg. Two shapes are accepted:
- *
- * 1. **Wrapped Msg**: `{ kind: <ComponentName>, msg: <inner> }` —
- *    routes ONLY to the Component named `kind`. The Component's
- *    update() sees the unwrapped inner msg. Unknown `kind` is
- *    logged and dropped.
- *
- * 2. **Broadcast Msg**: one of the three framework signals —
- *    `refresh`, `hub`, `action`. Fans out to every registered
- *    Component's update(msg, slice). (Key events go through
- *    `dispatchKeyToFocused`, not the broadcast path — they need a
- *    return value to gate the framework default.)
- *
- * Every Component-specific Msg MUST be wrapped (via api.wrap). An
- * unwrapped Component-specific Msg is logged as an error and dropped —
- * the missed wrap site needs fixing.
- *
- * Failures in one Component's update don't stop dispatch to the
- * others — error logged, that Component's slice is left as-is.
- *
- * Effects returned via `[slice, effects]` flow through the unified
- * effects registry regardless of shape.
- */
-const BROADCAST_TYPES = new Set(['refresh', 'hub', 'action']);
-
-// ——— Post-dispatch invariant pass (resize-as-Msg P2) ———————————————
-//
-// After the OUTERMOST dispatch completes, re-clamp every navigator
-// pane's scroll so the selected row sits inside its viewport. The
-// safety-net property the per-frame render clamp had ("catches
-// cursor-off-viewport from ANY cause without enumerating Msgs")
-// carries over because every state change IS a dispatch — cursor
-// moves, list shrinks (refresh broadcasts), collapse, drag-resize,
-// view-mode switches, and (since P1) terminal resize all arrive here.
-//
-// Freshness: the pass computes calcLayout itself and threads the
-// Layout into getPanelViewportH — slice.paneBounds is the LAST
-// RENDER's write at dispatch time, stale by exactly the one-frame
-// class 8eea6e9 fixed on the render side.
-//
-// Depth counter: both top-level entries (dispatchMsg +
-// dispatchKeyToFocused) share it, so effect-chained nested dispatches
-// run the pass once, at depth-0 exit. The _inScrollFinalize flag makes
-// the pass's own set_scroll dispatches (syncPanelScroll → _navDispatch
-// → dispatchMsg) skip re-finalizing — explicit beats relying on
-// bounded-depth convergence.
-//
-// Writes stay single-writer: syncPanelScroll routes a wrapped
-// set_scroll Msg to the owning navigator's reducer (identity-
-// preserving — no ping-pong).
-let _dispatchDepth = 0;
-let _inScrollFinalize = false;
-
-// Runtime per-pane instance lifecycle. `state.reconcilePaneInstances` is
-// injected at boot (setInstanceReconciler) — the impure mint shell stays in
-// the boot layer; the finalizer just triggers it (mirrors setRenderHook /
-// setMergedActionsProvider). Gated on arrange-ref change so it fires only on
-// placement/removal (the reducer makes a new arrange), never on content Msgs.
-// NOTE — directionally this setter is the INVERSE of its siblings: the others
-// (setRenderHook/setJobsHooks/setMergedActionsProvider) push a lower-layer
-// capability UP so a leaf/io module can reach it without an upward import;
-// this one pushes an upper-layer (boot-shell) reconciler DOWN so the finalizer
-// can trigger getModel()-blessed minting without panel/ taking a static edge
-// to app/. Same cycle-break tactic, opposite layer direction.
-let _instanceReconciler = null;
-let _lastReconciledArrange;
-function setInstanceReconciler(fn) { _instanceReconciler = fn; }
-
-// Layout memo for the finalizer. calcLayout's rects depend only on
-// (arrange, dims) — and the reducers update both IMMUTABLY (spread
-// per write; pinned by test-immutable-leaves), so reference equality
-// is a correct cache key. Most dispatches (viewer appends, cursor
-// moves, search) leave both refs untouched — the pass then costs a
-// few map reads per pane instead of a full calcLayout (the bench-
-// visible regression the memo exists for: ~135μs/Msg → ~μs).
-// viewMode is in the key only because the Layout value carries it.
-let _layoutMemo = null;
-
-function _finalizeLayout(layoutSlice) {
-  const m = _layoutMemo;
-  if (m && m.arrange === layoutSlice.arrange && m.dims === layoutSlice.dims
-        && m.viewMode === layoutSlice.viewMode) {
-    return m.layout;
-  }
-  const layout = geo.calcLayout(layoutSlice, layoutSlice.dims);
-  _layoutMemo = {
-    arrange: layoutSlice.arrange, dims: layoutSlice.dims,
-    viewMode: layoutSlice.viewMode, layout,
-  };
-  return layout;
-}
-
-function _finalizeDispatch() {
-  if (_inScrollFinalize) return;
-  const layoutSlice = route.getInstanceSlice('layout');
-  if (!layoutSlice || !layoutSlice.dims || !layoutSlice.arrange) return;
-  _inScrollFinalize = true;
-  try {
-    // Reconcile per-pane instances with the placed layout (mint newly-placed
-    // panes, dispose removed ones) BEFORE the scroll/innerH work that reads
-    // them. Gated on arrange-ref change — a placement/removal makes a new
-    // arrange; content Msgs leave it untouched, so this is a no-op then.
-    if (_instanceReconciler && layoutSlice.arrange !== _lastReconciledArrange) {
-      _lastReconciledArrange = layoutSlice.arrange;
-      _instanceReconciler();
-    }
-    const layout = _finalizeLayout(layoutSlice);
-    for (const p of mpool.allPanesInColumns(layoutSlice.arrange)) {
-      if (mpool.isDetailPane(p) || p.collapsed) continue;
-      syncPanelScroll(p.paneId,
-        geo.getPanelViewportH(layoutSlice, p.paneId, layoutSlice.dims, layout));
-    }
-    // blessed-exceptions Phase A.1 — the viewer's `innerH` (the viewport-
-    // height cache its reducer reads for scroll/cursor clamps) is produced
-    // HERE, in the dispatch finalizer, not by render(). Computed from THIS
-    // dispatch's fresh Layout via getPanelViewportH — so it's strictly
-    // fresher than the prior render-side write, which read paneBounds one
-    // frame stale. One major/visible viewer (resolveTarget('viewer'),
-    // bounds via resolveViewerPaneId), mirroring the retired render write.
-    // The `!==` guard preserves the viewer slice's reference identity when
-    // unchanged (the layout memo + downstream ref-equality depend on it).
-    const viewerTab = route.resolveTarget('viewer');
-    const viewerPaneId = route.resolveViewerPaneId();
-    if (viewerTab && viewerPaneId) {
-      const innerH = geo.getPanelViewportH(layoutSlice, viewerPaneId, layoutSlice.dims, layout, viewerPaneId);
-      const vs = route.getInstanceSlice(viewerTab);
-      if (vs && vs.innerH !== innerH) route.setInstanceSlice(viewerTab, { ...vs, innerH });
-    }
-  } catch (e) {
-    console.error(`[dispatch] post-dispatch scroll clamp error: ${e.message}`);
-  } finally {
-    _inScrollFinalize = false;
-  }
-}
-
-function dispatchMsg(msg) {
-  _dispatchDepth++;
-  try { _dispatchMsgInner(msg); }
-  finally {
-    _dispatchDepth--;
-    if (_dispatchDepth === 0) _finalizeDispatch();
-  }
-}
-
-function _dispatchMsgInner(msg) {
-  // Free-config freeze gate. While free-config mode is active, only
-  // layout-wrapped Msgs flow (they drive the mode itself: free_config_*,
-  // pool_*, focus_set, view_*, set_arrange). Broadcasts (refresh / hub
-  // / action) and wrapped Msgs to non-layout components are dropped —
-  // each Component renders its last snapshot until the mode exits, so
-  // the canvas stays stable under drag / resize / pool mutations. Mode
-  // entry/exit themselves ride apply_msg Cmds through the root reducer,
-  // not through here, so they always reach the modes table.
-  const m = getModel();
-  if (m && m.modes && m.modes.freeConfigMode) {
-    const isLayoutWrap = msg && msg.kind === 'layout' && msg.type === undefined;
-    // Narrow exception: the free-config tab-reorder gesture lives on
-    // layout's slice but emits a viewer_reorder_content_tab dispatch_msg
-    // back through this gate to permute detail's contentTabs. It's a
-    // free-config-shape change (visible tab order), just within a panel
-    // rather than across panels — same justification as pool_hide/show.
-    // isViewerKind, not a 'detail' literal: the kind here is a
-    // resolveTarget result, which is a mounted instance id
-    // ('pane-detail') post split-arc P2.1 — the literal matched only
-    // the legacy tier-3 tab-id form and silently dropped the reorder.
-    const isTabReorder = msg && msg.msg
-      && msg.msg.type === 'viewer_reorder_content_tab'
-      && typeof msg.kind === 'string' && route.isViewerKind(msg.kind);
-    if (!isLayoutWrap && !isTabReorder) return;
-  }
-  // Wrapped-Msg path. Routes to exactly one Component instance (the
-  // primary instance for that kind today; multi-instance can pick a
-  // specific id). Discriminator: `{ kind: string, msg: any }` AND no
-  // top-level `type` field — rules out any flat Msg shape that happens
-  // to also carry `kind` / `msg` properties.
-  if (msg && typeof msg.kind === 'string' && msg.msg !== undefined && msg.type === undefined) {
-    const kind = msg.kind;
-    // v0.6.3 post-arch-arc — `kind` may be a Component name (legacy
-    // form, primary-instance routing) OR a paneId (post-B3 form,
-    // resolveTarget returns paneIds for multi-instance routing).
-    // Try paneId lookup first — if an instance exists with this id,
-    // route to it directly. Otherwise treat as a Component name and
-    // route to the primary instance.
-    let inst = route.getInstance(kind);
-    let comp;
-    if (inst) {
-      // paneId form. Find the Component for this instance's kind —
-      // either by direct Component-name match, or via the panel-type
-      // → Component-name table (docker-style `panelTypes` Components).
-      comp = components[inst.kind] || components[route.componentForPanel(inst.kind)];
-    } else {
-      // Component-name form. Look up via _primaryByKind for the
-      // canonical instance.
-      comp = components[kind];
-      let primaryKind = kind;
-      if (!comp) {
-        // v0.6.4 multi-viewer — `kind` may be a paneId whose per-pane
-        // instance wasn't minted (docker-style `panelTypes` panes, or a
-        // kind-keyed singleton harness). Resolve the Component + panel-
-        // type via the arrange, then route to the kind's primary. Mirrors
-        // sliceForPane's read-path fallback so wrap(paneId) is robust.
-        comp = components[route.componentForPanel(kind)];
-        primaryKind = route.paneTypeOf(kind) || primaryKind;
-      }
-      const id = comp ? route.getPrimaryByKind(primaryKind) : undefined;
-      if (id !== undefined) inst = route.getInstance(id);
-    }
-    if (!comp || !inst) {
-      console.error(`[dispatch] wrapped Msg targeting unknown Component '${kind}'; dropped`);
-      return;
-    }
-    _runInstance(inst, comp, msg.msg);
-    return;
-  }
-  // Broadcast path. Only the 3 framework signals fan out; everything
-  // else must arrive wrapped. Iterates instances (not specs) so a
-  // Component with multiple instances has each one's update called
-  // independently.
-  if (msg && BROADCAST_TYPES.has(msg.type)) {
-    route.eachInstance(inst => {
-      // v0.6.4 Theme A Phase 5 Arc 2 — resolve panelType-aliased
-      // instances (e.g. a `file-browser` instance, kind 'file-browser',
-      // owned by the `files` Component) via the panel-type → Component
-      // table, mirroring the wrapped-Msg path above. Was
-      // `components[inst.kind]` only, which silently skipped aliased
-      // instances on every broadcast (refresh never reached them).
-      const comp = components[inst.kind] || components[route.componentForPanel(inst.kind)];
-      if (!comp) return;  // defensive: orphan instance (Component unregistered)
-      _runInstance(inst, comp, msg);
-    });
-    return;
-  }
-  // Any other flat Msg is a missed wrap site.
-  const ty = msg && msg.type ? `'${msg.type}'` : '(no type)';
-  console.error(`[dispatch] unwrapped Component-specific Msg ${ty}; dropped. Wrap with api.wrap('<component>', msg).`);
-}
-
-/**
- * Dispatch a `key` Msg to the focused Component and return whether the
- * Component claimed the keystroke (i.e. asked the framework to skip its
- * default for this key). The claim shows up as a `_claimed` sentinel
- * effect in the Component's `[slice, effects]` return; the framework
- * consumes it here and runs the remaining effects normally.
- *
- * The key arbitration is identical to the old broadcast path — only the
- * focused-panel Component receives the keystroke. Chrome-only
- * Components never see it. The return-value contract is what makes the
- * claim work without a separate `claimsKeys` declaration: the same
- * branch that handles the key decides whether to suppress the default.
- */
-function dispatchKeyToFocused(key, seq) {
-  _dispatchDepth++;
-  try { return _dispatchKeyToFocusedInner(key, seq); }
-  finally {
-    _dispatchDepth--;
-    if (_dispatchDepth === 0) _finalizeDispatch();
-  }
-}
-
-function _dispatchKeyToFocusedInner(key, seq) {
-  const focus = route.getFocus();
-  const compName = route.componentForPanel(focus);
-  if (!compName) return false;
-  const comp = components[compName];
-  if (!comp) return false;
-  // v0.6.4 Theme A Phase 1 — route the keystroke to the FOCUSED
-  // instance: prefer the focused paneId directly (per-pane mint — the
-  // multi-instance path), else fall back to the kind's primary
-  // (docker-style `panelTypes` panes mint kind-keyed, not per-pane, so
-  // their paneId has no instance). No-op under single-pane configs —
-  // there the focused paneId IS the kind's primary. Was
-  // getPrimaryByKind unconditionally, which sent keys to the FIRST
-  // instance of the kind regardless of which same-kind pane was focused.
-  const id = route.hasInstance(focus) ? focus : route.getPrimaryByKind(compName);
-  if (id === undefined) return false;
-  const inst = route.getInstance(id);
-
-  let claimed = false;
-  try {
-    // v0.6.3 Phase D1 — thread terminalMode + focusKind so the
-    // viewer's `key` arm doesn't need to call getModel() / getFocus()
-    // (chain modes are already filtered upstream by _dispatchActiveMode;
-    // terminalMode is non-chain so the arm needs the flag to bail).
-    const _m = getModel();
-    let keyMsg = {
-      type: 'key', key, seq,
-      terminalMode: !!_m.modes.terminalMode,
-      focusKind: route.instanceKind(route.getFocus()),
-    };
-    // blessed-exceptions #3 — thread the Component's model bundle (viewer) so
-    // its key arm + finalizer stay pure of getModel(). See _runInstance. The
-    // instance's own slice is passed so per-pane Components (files) can resolve
-    // pane-specific facts (its pane def / declared items / filter).
-    if (comp.augmentMsg) keyMsg = comp.augmentMsg(keyMsg, _m, inst.slice);
-    const result = comp.update(keyMsg, inst.slice);
-    if (result === undefined) return false;
-    if (Array.isArray(result)) {
-      const [next, effects] = result;
-      if (next !== undefined) route.setInstanceSlice(inst.id, next);
-      const filtered = [];
-      for (const e of (effects || [])) {
-        if (e && e.type === '_claimed') claimed = true;
-        else if (e) filtered.push(e);
-      }
-      if (filtered.length) panelHost.runEffects(filtered);
-    } else {
-      route.setInstanceSlice(inst.id, result);
-    }
-  } catch (e) {
-    console.error(`[component:${compName}] key update error: ${e.message}`);
-    _recordError({ where: 'component_key', component: compName, instance: inst.id,
-      message: e && e.message, stack: e && e.stack });
-  }
-  return claimed;
-}
-
-// Inner helper — runs ONE instance's update, handles the
-// undefined / slice / [slice, effects] return contract, and isolates
-// throws. Shared by the wrapped and broadcast dispatch paths. Reads
-// inst.slice and writes back via route.setInstanceSlice(inst.id, …)
-// so multi-instance kinds update only their own slice.
-function _runInstance(inst, comp, msg) {
-  try {
-    // blessed-exceptions #3 — optional Msg-enrichment hook. A Component that
-    // needs model-derived facts in its reducer declares
-    // augmentMsg(msg, model, slice); the framework (the impure shell) computes
-    // them ONCE here and threads them into the Msg payload, so the Component's
-    // update(msg, slice) stays pure of getModel(). The viewer threads its
-    // tab-structure bundle (2-arg); files threads per-pane facts (uses slice).
-    if (comp && comp.augmentMsg) msg = comp.augmentMsg(msg, getModel(), inst.slice);
-    const result = comp.update(msg, inst.slice);
-    if (result === undefined) return;
-    if (Array.isArray(result)) {
-      const [next, effects] = result;
-      if (next !== undefined) route.setInstanceSlice(inst.id, next);
-      panelHost.runEffects(effects);
-    } else {
-      route.setInstanceSlice(inst.id, result);
-    }
-  } catch (e) {
-    console.error(`[component:${inst.kind}] update error: ${e.message}`);
-    _recordError({ where: 'component_update', component: inst.kind, instance: inst.id,
-      message: e && e.message, stack: e && e.stack });
-  }
-}
-
-// Persist diagnostics from the Component fan-out paths (key + Msg) to the
-// event log. The console.error above is invisible while the TUI is
-// drawing (the next render paints over it); the event log file is the
-// only place a thrown Component update is inspectable post-mortem.
-// event-log is a bottom-layer io/ sink; required here in the error path.
-function _recordError(payload) {
-  try { require('../io/event-log').record('error', payload); }
-  catch (_) { /* event-log unavailable — already logged to console */ }
-}
 
 function getComponent(name)              { return components[name]; }
 const { componentForPanel: getComponentOwningPanel, getFocus } = route;
@@ -806,7 +445,7 @@ async function refreshAll() {
   // empty because the tick itself is the input event; each
   // Component's refresh-Msg side-effects are responses.
   require('../io/event-log').record('refresh', null);
-  dispatchMsg({ type: 'refresh' });
+  panelHost.dispatchMsg({ type: 'refresh' });
 }
 
 /** Fire each Component's optional cleanup() hook, isolated. Lets a
@@ -931,7 +570,7 @@ function setActiveTab(tab) {
   const pt = require('../leaves/pane-tabs');
   const total = pt.flatTabInfo(slice, model, model.currentGroup).total;
   const toTabKey = pt.resolveTabKey((tab | 0), { ...slice, tab: (tab | 0) }, model);
-  dispatchMsg(wrap(target, { type: 'viewer_set_tab', tab, total, toTabKey }));
+  panelHost.dispatchMsg(wrap(target, { type: 'viewer_set_tab', tab, total, toTabKey }));
 }
 function leaveTerminalMode() {
   panelHost.applyMsg({ type: 'terminal_exit' });
@@ -944,14 +583,15 @@ function _componentsMap() { return components; }
 
 module.exports = {
   // --- Component registry / lifecycle ---
-  registerComponent, registerEffect, dispatchMsg, dispatchKeyToFocused, wrap,
-  _components: _componentsMap,  // v0.6.3 Phase B — internal use by initState
+  // dispatchMsg / dispatchKeyToFocused / setInstanceReconciler relocated to
+  // dispatch/fanout.js (B/S6 — the runtime lives in the dispatch layer now).
+  registerComponent, registerEffect, wrap,
+  _components: _componentsMap,  // v0.6.3 Phase B — internal use by initState + fanout
   getComponent, getComponentOwningPanel, getFocus,
   // Tab-instance registry surface.
   setInstance, getInstance, getInstanceSlice, sliceForPane, setInstanceSlice,
   hasInstance, disposeInstance, instanceKind, eachInstance,
   setService, serviceSlice, isService, primarySliceOf,
-  setInstanceReconciler,
   getPanelDef, getItems, idOf, selectedOrFocused, infoLinesFromFocus,
   refreshAll, cleanupComponents,
   getCommands, getMergedActions, statusFor,

@@ -320,7 +320,7 @@ function main() {
     // grow, covering a pane's top border).
     require('../io/term').refreshSize();
     const api = require('../panel/api');
-    api.dispatchMsg(api.wrap('layout', {
+    require('../dispatch/fanout').dispatchMsg(api.wrap('layout', {
       type: 'term_resized',
       cols: process.stdout.columns || 80,
       rows: process.stdout.rows || 24,

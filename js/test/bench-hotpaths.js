@@ -22,6 +22,11 @@
 const api = require('../panel/api');
 const runtime = require('../app/runtime');
 const { getInstanceSlice } = api;
+// B/S6 — the Component fan-out relocated to dispatch/fanout.js; wire the
+// injected hosts like production boot so dispatchMsg + the finalizer resolve.
+const fanout = require('../dispatch/fanout');
+require('../dispatch/host-wiring').wirePanelHost();
+require('../panel/nav-state').setNavDispatch(require('../dispatch/effects').effectHost());
 
 require('../dispatch/effects').installBuiltins();
 api.registerComponent(require('../panel/layout'));
@@ -72,7 +77,7 @@ console.log('[1] viewer_append (streamed lines, bottom-stick scroll)');
 detailSlice.viewerStreamBuffer = { lines: [], cap: 1_000_000 };  // bench-cap; production cap is 1000
 bench('append from empty', 10_000, (n) => {
   for (let i = 0; i < n; i++) {
-    api.dispatchMsg(api.wrap('detail', { type: 'viewer_append', line: `line ${i}` }));
+    fanout.dispatchMsg(api.wrap('detail', { type: 'viewer_append', line: `line ${i}` }));
   }
 });
 console.log(`  final buffer length: ${bufLen()}`);
@@ -81,7 +86,7 @@ console.log(`  final buffer length: ${bufLen()}`);
 console.log('\n[2] viewer_append (buffer already 10k lines — spread cost scales with length)');
 bench('append to 10k buffer', 10_000, (n) => {
   for (let i = 0; i < n; i++) {
-    api.dispatchMsg(api.wrap('detail', { type: 'viewer_append', line: `line ${i}` }));
+    fanout.dispatchMsg(api.wrap('detail', { type: 'viewer_append', line: `line ${i}` }));
   }
 });
 console.log(`  final buffer length: ${bufLen()}`);
@@ -90,11 +95,11 @@ console.log('\n[2b] viewer_append (buffer 50k lines — long-running stream)');
 // Build up to 50k without timing the warmup. v0.6.2 T2d — read buffer
 // length directly (slice.lines is derived, not the source).
 while (bufLen() < 50_000) {
-  api.dispatchMsg(api.wrap('detail', { type: 'viewer_append', line: 'x' }));
+  fanout.dispatchMsg(api.wrap('detail', { type: 'viewer_append', line: 'x' }));
 }
 bench('append to 50k buffer', 5_000, (n) => {
   for (let i = 0; i < n; i++) {
-    api.dispatchMsg(api.wrap('detail', { type: 'viewer_append', line: `line ${i}` }));
+    fanout.dispatchMsg(api.wrap('detail', { type: 'viewer_append', line: `line ${i}` }));
   }
 });
 console.log(`  final buffer length: ${bufLen()}`);
@@ -102,10 +107,10 @@ console.log(`  final buffer length: ${bufLen()}`);
 // --- select_extend ---
 console.log('\n[3] select_extend (mouse drag, ~60Hz target = 60 ops/sec minimum)');
 // Seed with a select_begin so isActive() returns true and select_extend hits.
-api.dispatchMsg(api.wrap('detail', { type: 'select_begin', line: 0, col: 0, kind: 'char' }));
+fanout.dispatchMsg(api.wrap('detail', { type: 'select_begin', line: 0, col: 0, kind: 'char' }));
 bench('extend through 10k positions', 10_000, (n) => {
   for (let i = 0; i < n; i++) {
-    api.dispatchMsg(api.wrap('detail', { type: 'select_extend', line: i % 100, col: i % 50 }));
+    fanout.dispatchMsg(api.wrap('detail', { type: 'select_extend', line: i % 100, col: i % 50 }));
   }
 });
 
@@ -135,7 +140,7 @@ m.currentGroup = 'g';
 detailSlice.tab = 2;
 bench('routed off-tab append (10k)', 10_000, (n) => {
   for (let i = 0; i < n; i++) {
-    api.dispatchMsg(api.wrap('detail', {
+    fanout.dispatchMsg(api.wrap('detail', {
       type: 'viewer_append', line: `bg ${i}`,
       tabKey: 'test', groupName: 'g',  // routed to Test, but user is on Build
     }));
@@ -157,7 +162,7 @@ const _batch10 = () => Array.from({ length: 10 }, (_, i) => `b${i}`);
 bench('append_lines x1000 (10 lines/batch)', 1_000, (n) => {
   const lines = _batch10();
   for (let i = 0; i < n; i++) {
-    api.dispatchMsg(api.wrap('detail', { type: 'viewer_append_lines', lines }));
+    fanout.dispatchMsg(api.wrap('detail', { type: 'viewer_append_lines', lines }));
   }
 });
 console.log(`  final buffer length: ${bufLen()}`);
@@ -174,7 +179,7 @@ console.log('\n[6] pure finalizer cost (viewer_search_clear_committed per Msg)')
 api.getInstanceSlice('detail').viewerStreamBuffer = { lines: [], cap: 1_000_000 };
 bench('search_clear x100k', 100_000, (n) => {
   for (let i = 0; i < n; i++) {
-    api.dispatchMsg(api.wrap('detail', { type: 'viewer_search_clear_committed' }));
+    fanout.dispatchMsg(api.wrap('detail', { type: 'viewer_search_clear_committed' }));
   }
 });
 
