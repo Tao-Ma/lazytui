@@ -66,6 +66,25 @@ function findPaneLocation(arrange, predicate) {
   return null;
 }
 
+/** The panel-TYPE of a pane in this arrange — the placed column pane matched
+ *  by paneId (its `.type` mirrors its active tab), else a pool entry keyed by
+ *  id, else null. Pure mirror of route's arrange→type fallback, but operating
+ *  on a PASSED arrange: lets a reducer (layout.update) classify the focused
+ *  pane from its OWN slice.arrange instead of reaching into the global instance
+ *  registry (route.instanceKind). Callers compare against the viewer kind
+ *  ('detail') themselves — this stays generic arrange math, no viewer knowledge.
+ *  Focus is always normalized to a column pane's paneId before this is called
+ *  (layout._resolvePaneIdForFocus), so a column scan + pool fallback suffices;
+ *  no tab descent needed. */
+function paneTypeIn(arrange, paneId) {
+  if (!arrange || paneId == null) return null;
+  for (const p of allPanesInColumns(arrange)) {
+    if (p && p.paneId === paneId) return p.type || null;
+  }
+  const entry = arrange.pool && arrange.pool[paneId];
+  return (entry && entry.type) || null;
+}
+
 /** Return a new arrange with column `columnIndex`'s panels replaced by
  *  `panelsFn(oldPanels)`. The column's other fields (width) survive. */
 function updateColumn(arrange, columnIndex, panelsFn) {
@@ -401,7 +420,7 @@ function paneMenuPanes(arrange, targetPaneId, mode) {
 module.exports = {
   columnCount, lastColumnIndex,
   columnPanels, lastColumnPanels,
-  allPanesInColumns, findPaneLocation, updateColumn,
+  allPanesInColumns, findPaneLocation, paneTypeIn, updateColumn,
   distributeColumnWidths,
   placedIds,
   placedIdSet,

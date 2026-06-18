@@ -23,6 +23,24 @@ function applyUpdate(slice, msg) {
   return Array.isArray(r) ? { next: r[0], cmds: r[1] } : { next: r, cmds: [] };
 }
 
+// A realistic arrange so _withFocus can classify the focused pane from
+// slice.arrange (its `.type`) — #1 made it derive the kind from the layout's
+// OWN slice instead of the global route/_instances registry, so the panes must
+// actually exist in the slice (production always has them; init()'s arrange is
+// empty). paneId === kind-name here so focus-by-kind maps to itself and the
+// assertions below read naturally.
+const ARR = {
+  detailHeightPct: 60, pool: {},
+  columns: [
+    { width: 30, panels: [
+      { type: 'groups',     id: 'groups',     paneId: 'groups' },
+      { type: 'containers', id: 'containers', paneId: 'containers' },
+    ] },
+    { panels: [{ type: 'detail', id: 'detail', paneId: 'detail' }] },
+  ],
+};
+const seedSlice = () => ({ ...layout.init(), arrange: ARR });
+
 describe('[focus_set] tracks halfLeftPanel for half-view rendering', () => {
   it('init starts with halfLeftPanel = null', () => {
     const s = layout.init();
@@ -30,14 +48,14 @@ describe('[focus_set] tracks halfLeftPanel for half-view rendering', () => {
   });
 
   it('focus_set to a non-detail panel updates halfLeftPanel', () => {
-    let s = layout.init();
+    let s = seedSlice();
     s = applyUpdate(s, { type: 'focus_set', focus: 'groups' }).next;
     eq(s.focus, 'groups');
     eq(s.halfLeftPanel, 'groups');
   });
 
   it('focus_set to detail leaves halfLeftPanel untouched (sticky)', () => {
-    let s = layout.init();
+    let s = seedSlice();
     s = applyUpdate(s, { type: 'focus_set', focus: 'containers' }).next;
     eq(s.halfLeftPanel, 'containers');
     s = applyUpdate(s, { type: 'focus_set', focus: 'detail' }).next;
@@ -46,7 +64,7 @@ describe('[focus_set] tracks halfLeftPanel for half-view rendering', () => {
   });
 
   it('focus_set bounces detail → other non-detail → detail correctly', () => {
-    let s = layout.init();
+    let s = seedSlice();
     s = applyUpdate(s, { type: 'focus_set', focus: 'groups' }).next;
     eq(s.halfLeftPanel, 'groups');
     s = applyUpdate(s, { type: 'focus_set', focus: 'detail' }).next;
@@ -58,7 +76,7 @@ describe('[focus_set] tracks halfLeftPanel for half-view rendering', () => {
   });
 
   it('msg.focus == null is a no-op (preserves both focus and halfLeftPanel)', () => {
-    let s = layout.init();
+    let s = seedSlice();
     s = applyUpdate(s, { type: 'focus_set', focus: 'groups' }).next;
     const before = s.halfLeftPanel;
     s = applyUpdate(s, { type: 'focus_set', focus: null }).next;
@@ -131,7 +149,7 @@ describe('[free_config_exit] commits current focus to halfLeftPanel', () => {
     // Free-config nav (free_config_nav etc.) writes focus directly without
     // routing through focus_set, so halfLeftPanel may not have tracked
     // in-mode movement. free_config_exit catches it up.
-    let s = layout.init();
+    let s = seedSlice();
     s = applyUpdate(s, { type: 'focus_set', focus: 'groups' }).next;
     eq(s.halfLeftPanel, 'groups');
     // Simulate free-config in-mode focus drift (direct write, not focus_set).
@@ -142,7 +160,7 @@ describe('[free_config_exit] commits current focus to halfLeftPanel', () => {
   });
 
   it('detail focus on exit → halfLeftPanel unchanged (no detail in left)', () => {
-    let s = layout.init();
+    let s = seedSlice();
     s = applyUpdate(s, { type: 'focus_set', focus: 'groups' }).next;
     s = { ...s, focus: 'detail' };
     s = applyUpdate(s, { type: 'free_config_exit' }).next;

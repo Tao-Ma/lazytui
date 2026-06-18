@@ -225,8 +225,12 @@ function _mouseHandleFreeConfigMode(kind, mx, my, model) {
   if (isTabDrag) {
     if (kind === 'motion') {
       const pt = require('../../leaves/pane-tabs');
+      const route = require('../../panel/route');
       const groupName = model.currentGroup;
-      const targetKind = require('../../panel/route').resolveTarget('viewer') || 'detail';
+      const targetKind = route.resolveTarget('viewer') || 'detail';
+      // Resolve the container pane id here (impure shell) and thread it +
+      // targetKind so layout's tab_drag_motion arm reads no route topology (#1).
+      const viewerPaneId = route.resolveViewerPaneId();
       const detailSlice = getInstanceSlice(targetKind);
       // v0.6.4 blessed-exceptions tabBounds follow-on — recompute the viewer's
       // tab-strip bounds on demand (render no longer writes slice.tabBounds).
@@ -237,6 +241,8 @@ function _mouseHandleFreeConfigMode(kind, mx, my, model) {
         type: 'tab_drag_motion', mx, my,
         modelBundle: pt.modelBundle(model, groupName),
         tabBounds,
+        viewerTarget: targetKind,
+        viewerPaneId,
       }));
     } else if (kind === 'release') {
       dispatchMsg(wrap('layout', { type: 'tab_drag_release' }));

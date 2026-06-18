@@ -116,11 +116,18 @@ function _resolvePaneIdForFocus(slice, focus) {
 function _withFocus(slice, focus) {
   if (focus == null) return slice;
   const paneId = _resolvePaneIdForFocus(slice, focus);
-  // halfLeftPanel / lastViewerTab — store paneId too. instanceKind +
-  // isViewerKind operate on the kind name; with paneId-keyed
-  // instances they look up _instances[paneId].kind.
-  const halfLeftPanel = route.instanceKind(paneId) !== 'detail' ? paneId : slice.halfLeftPanel;
-  const lastViewerTab = route.isViewerKind(paneId) ? paneId : slice.lastViewerTab;
+  // halfLeftPanel / lastViewerTab — store paneId too. Classify the focused
+  // pane from layout's OWN slice.arrange (its `.type`, which mirrors the
+  // active tab) rather than reaching into the global route/_instances
+  // registry. _resolvePaneIdForFocus already normalized `focus` to a column
+  // pane's paneId, so mpool.paneTypeIn resolves it purely. Equivalent to the
+  // old route.instanceKind for the singleton case, and MORE correct mid-
+  // placement (the in-flight arrange has the just-placed pane before its
+  // instance is minted by the post-dispatch reconcile). VIEWER_KIND is a
+  // constant, not a topology read. (#1 — layout.update is now pure of route.)
+  const kind = mpool.paneTypeIn(slice.arrange, paneId);
+  const halfLeftPanel = kind !== route.VIEWER_KIND ? paneId : slice.halfLeftPanel;
+  const lastViewerTab = kind === route.VIEWER_KIND ? paneId : slice.lastViewerTab;
   return { ...slice, focus: paneId, halfLeftPanel, lastViewerTab };
 }
 
@@ -341,7 +348,10 @@ function update(msg, slice) {
       if (slot !== 'left' && slot !== 'right') return slice;
       if (!mpool.findPaneLocation(slice.arrange, p => p.paneId === msg.paneId)) return slice;
       const other = slot === 'left' ? 'right' : 'left';
-      const proj = halfProjection(slice, route.resolveViewerPaneId());
+      // viewerPaneId threaded by the dispatching handler (dispatch.js, the
+      // impure shell that already resolves it for its own halfProjection) so
+      // this arm reads no route topology. (#1)
+      const proj = halfProjection(slice, msg.viewerPaneId);
       if (proj[slot] === msg.paneId) return slice;  // already in this slot — no-op
       const halfView = { ...slice.halfView, [slot]: msg.paneId };
       if (proj[other] === msg.paneId) halfView[other] = proj[slot] || null;  // SWAP
@@ -829,11 +839,13 @@ function update(msg, slice) {
       return [next, [{ type: 'force_full_repaint' }]];
     }
     case 'tab_drag_motion': {
-      // Resolve the viewer instance id for the reorder dispatch. Today
-      // viewer is singleton (`route.resolveTarget('viewer')` returns
-      // 'detail'); v0.7 multi-viewer flips this to a per-pane id
-      // without the leaf needing a route import.
-      const targetKind = route.resolveTarget('viewer') || route.VIEWER_KIND;
+      // viewerTarget (the reorder dispatch's instance id) + viewerPaneId (the
+      // container pane for the drag geometry) are resolved by the dispatching
+      // handler (input.js, the impure shell) and threaded on the Msg, so this
+      // arm reads no route topology. Today viewer is singleton (viewerTarget
+      // == 'detail'); v0.7 multi-viewer changes only the handler's resolution.
+      // (#1 — layout.update is now pure of route.)
+      const targetKind = msg.viewerTarget || route.VIEWER_KIND;
       // v0.6.3 P4.1: tabBounds moved off layoutSlice.paneBounds.detail.tabs
       // onto the viewer's own slice.
       // v0.6.3 Phase D4 — tabBounds threaded via msg.tabBounds from
@@ -848,7 +860,8 @@ function update(msg, slice) {
         // always on-screen → byte-identical. Reads from `slice` — this
         // reducer's own layout slice (wm-geo P1.2 made the accessor take
         // it explicitly; the old global fetch resolved to the same object).
-        visibleBoundsFor(slice, route.resolveViewerPaneId(), route.resolveViewerPaneId()),
+        // viewerPaneId threaded from the handler (impure shell) — no route read.
+        visibleBoundsFor(slice, msg.viewerPaneId, msg.viewerPaneId),
         msg.tabBounds || null,
         msg.modelBundle,
         targetKind,
