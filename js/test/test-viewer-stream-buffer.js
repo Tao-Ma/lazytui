@@ -612,7 +612,10 @@ describe('[B4 group-qualified tabState keys] two groups sharing an action name d
     // slice with two group rows + simulate moving to index 1.
     const initialSlice = groups.init();
     // v0.6.3 Phase D1: thread groups ctx so reducer stays pure.
-    const grpCtx = { ...groups.groupsBundle(getModel()), tabListMode: false };
+    // #D10: the cascade's viewer destination now rides on ctx.viewerTarget
+    // (the impure-shell dispatcher resolves it via route.resolveTarget('viewer'));
+    // a truthy target is the precondition for the viewer_reset_chrome Cmd.
+    const grpCtx = { ...groups.groupsBundle(getModel()), tabListMode: false, viewerTarget: 'detail' };
     // Recompute to populate slice.list (the groups Component's
     // groups_recompute Msg).
     const rec = groups._update({ type: 'groups_recompute', ctx: grpCtx }, initialSlice);
