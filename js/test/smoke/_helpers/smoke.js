@@ -29,6 +29,10 @@ const { handleKey, applyMsg } = require('../../../dispatch/control/dispatch');
 const { handleMouse, _handleWheel } = require('../../../dispatch/control/input');
 const { render } = require('../../../render/paint');
 const { getModel } = require('../../../app/runtime');
+// #D6 — production render(model) takes the model explicitly (no getModel()
+// default). The smoke harness plays the "program" role for these tests, so it
+// threads the current model; scenarios keep calling sm.render() unchanged.
+const renderCurrent = () => render(getModel());
 const { initState } = require('../../../app/state');
 const route = require('../../../panel/route');
 const api = require('../../../panel/api');
@@ -196,7 +200,7 @@ function createSession(opts) {
   function wheel(mx, my, delta) { return capture(() => _handleWheel(mx, my, delta)); }
   function msg(m) { return capture(() => applyMsg(m)); }
 
-  function frame() { return capture(() => render()).frame; }
+  function frame() { return capture(renderCurrent).frame; }
 
   /** Print the snapshot history to stderr. Call from inside an `it`
    *  block when an assertion fails to get a step-by-step trace. */
@@ -225,7 +229,10 @@ module.exports = {
   bootFresh, createSession, capture, stripAnsi, resize,
   // Re-export the real drivers so scenarios don't have to import them
   // a second time.
-  handleKey, handleMouse, _handleWheel, applyMsg, render,
+  handleKey, handleMouse, _handleWheel, applyMsg,
+  // #D6 — re-export the model-threading wrapper so `sm.render()` works without
+  // each scenario fetching getModel itself (the production render takes model).
+  render: renderCurrent,
   // And the route helpers, which scenarios use for the post-T3.5
   // paneId-vs-type comparators.
   route, api, tabs,

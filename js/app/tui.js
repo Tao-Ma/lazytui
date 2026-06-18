@@ -275,9 +275,11 @@ function main() {
 
   initState();
   // Post-T7: no captured `model` local at boot. handleKey / handleMouse
-  // / render() all default to getModel() at entry; scheduleRender goes
-  // through render-queue. Anything that needs current model state reads
-  // it AT the read site, not from a frozen-at-boot snapshot.
+  // read getModel() at entry; the paint path threads the current model
+  // through the render-queue seam thunk (#D6 — render(model) is pure, the
+  // thunk fetches at paint time); scheduleRender goes through render-queue.
+  // Anything that needs current model state reads it AT the read site, not
+  // from a frozen-at-boot snapshot.
   hideCursor();
   installSuspendHandlers();   // Ctrl+Z: restore terminal → suspend → resume
   // Initial refresh broadcasts a `{type:'refresh'}` Msg to every
@@ -303,7 +305,7 @@ function main() {
   // internal state changes without parse events. Always-on so ephemeral
   // terminals (created at runtime by Components) are covered too. The
   // function returns immediately if no terminal tab is active.
-  setInterval(() => renderTerminalOverlay(), 250);
+  setInterval(() => renderTerminalOverlay(getModel()), 250);
 
   // Handle resize (resize-as-Msg P1). The Msg lands the new size in the
   // model synchronously — the term_resized arm is a field write, cheap
