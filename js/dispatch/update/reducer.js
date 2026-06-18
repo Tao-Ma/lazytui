@@ -24,18 +24,18 @@
  *   - The reducer performs no I/O; effects are Cmd DESCRIPTORS the
  *     effects layer (effects.runEffects, called from dispatch.applyMsg)
  *     interprets.
- *   - ALMOST a pure function of (model, msg). The focus-routing arms
- *     (escape / list_select / nav_select / next_tab / prev_tab / filter_*) no
- *     longer read route topology: the handler stamps the resolved bundle
+ *   - A pure function of (model, msg). The focus-routing arms
+ *     (escape / list_select / nav_select / next_tab / prev_tab / filter_*) read
+ *     no route topology: the handler stamps the resolved bundle
  *     (`route.bundle(id)` → {compName, panelType, target}, or `msg.target` for
  *     the viewer-tab arms) onto the Msg, and the arm reads `msg.route` (blessed-
- *     exception A elimination — docs/reducer-route-purity.md). TWO residual
- *     reads remain, both `route.componentForPanel(<constant>)` on a literal
- *     panel-type (`set_config` → 'config-status'; `reset_group_context` →
- *     'actions'/'containers') — a static ownership-registry lookup, NOT a
- *     focus/topology read. These are deliberately left (threading a constant
- *     just relocates an unambiguous lookup). `route.wrap` (a pure Msg ctor) is
- *     not a topology read. See docs/blessed-exceptions.md.
+ *     exception A elimination — docs/reducer-route-purity.md). The two former
+ *     residual `route.componentForPanel(<constant>)` reads are gone too (#D9):
+ *     `set_config` reads `msg.csOwner` and `reset_group_context` reads
+ *     `msg.owners` (`{ panelType: ownerName }`), both resolved by the impure-
+ *     shell dispatcher (`route.resetGroupOwners` is the single source of the
+ *     reset panel list) and stamped on the Msg. `route.wrap` (a pure Msg ctor)
+ *     is not a topology read. See docs/blessed-exceptions.md.
  *   - Modal-close arms (confirm_reject / prompt_cancel / cmdline_cancel
  *     / register_popup_cancel / menu_close / copy_cancel / *_drop /
  *     *_accept / *_submit) guard on their mode flag — a stale double-
@@ -290,12 +290,13 @@ function update(model, msg) {
       ];
       if (kindForNav === 'groups') {
         // v0.6.3 Phase D1: thread the groups ctx so the reducer arm
-        // stays pure of getModel(). viewerTarget rides in on msg (stamped by
-        // the navSelect handler, impure shell) so neither the reducer nor
-        // groups.update reads route topology for the cascade — #D10.
+        // stays pure of getModel(). viewerTarget + resetOwners ride in on msg
+        // (stamped by the navSelect handler, impure shell) so neither the
+        // reducer nor groups.update reads route topology / the ownership
+        // registry for the cascade — #D10 / #D9.
         const groupsComp = require('../../panel/navigator/groups');
         const ctx = { ...groupsComp.groupsBundle(model), paneMenuMode: !!model.modes.paneMenuMode,
-                      viewerTarget: msg.viewerTarget };
+                      viewerTarget: msg.viewerTarget, resetOwners: msg.resetOwners };
         cmds.push({ type: 'msg', msg: route.wrap('groups', { type: 'groups_selected', index, ctx }) });
       }
       return [model, cmds];
@@ -1009,14 +1010,14 @@ function update(model, msg) {
       // (only tests dispatched it directly via wrap('config-status', ...));
       // production worked by accident because init() reads getModel().
       // Sole listener today, hence per-component dispatch rather than
-      // a BROADCAST_TYPES entry. Gates on the Component being
-      // registered so tests that skip it don't trip "unknown Component".
-      const cmds = [];
-      const csOwner = route.componentForPanel('config-status');
-      if (csOwner) {
-        cmds.push({ type: 'msg', msg: route.wrap(csOwner, { type: 'set_config', config: msg.config }) });
-      }
-      return [next, cmds];
+      // a BROADCAST_TYPES entry.
+      // #D9 — the config-status owner is resolved by the dispatcher (impure
+      // shell, app/state.loadConfig) and stamped on msg.csOwner, so the reducer
+      // reads no ownership registry (extends the blessed-A handler-stamp pattern
+      // to this arm). null owner (Component unregistered) drops the fan-out.
+      return [next, msg.csOwner
+        ? [{ type: 'msg', msg: route.wrap(msg.csOwner, { type: 'set_config', config: msg.config }) }]
+        : []];
     }
     case 'set_register': {
       return [{ ...model, register: msg.register }, []];
@@ -1028,13 +1029,16 @@ function update(model, msg) {
       // viewer-slice half rides on viewer_reset_chrome → detail
       // Component.
       const next = _withModes(model, { terminalMode: false, listSelectMode: false });
-      // actions/containers nav state lives on their own Component
-      // slices; emit wrapped resets per panel only when the owning
-      // Component is registered (tests that don't register
-      // actions/docker shouldn't trigger "unknown Component" warnings).
+      // actions/containers nav state lives on their own Component slices.
+      // #D9 — the panel→owner map is resolved by the dispatcher (impure shell)
+      // and stamped on msg.owners (`{ <panelType>: <ownerComponentName> }`), so
+      // the reducer reads no ownership registry (extends the blessed-A handler-
+      // stamp pattern). The map's KEYS are WHICH panels reset (route.resetGroupOwners
+      // is the single source of that list); null owner skips that panel (the old
+      // `if (compName)` gate). Routing by Component NAME (not panel-type) so the
+      // fanout resolves to the kind's primary instance (containers → docker).
       const cmds = [];
-      for (const panel of ['actions', 'containers']) {
-        const compName = route.componentForPanel(panel);
+      for (const [panel, compName] of Object.entries(msg.owners || {})) {
         if (!compName) continue;
         cmds.push({ type: 'msg', msg: route.wrap(compName, { type: 'set_cursor', panel, index: 0 }) });
         cmds.push({ type: 'msg', msg: route.wrap(compName, { type: 'multisel_clear', panel }) });

@@ -117,12 +117,14 @@ function navSelect(panelType, index) {
   // TEA contract (handler stays a one-liner, reducer cascades).
   // v0.6.5 blessed-A — stamp the route bundle ({compName, panelType, target})
   // so the nav_select arm fans out without reading route topology itself.
-  // viewerTarget — resolved here (impure shell) so the groups_selected ctx the
-  // reducer emits carries the cascade's viewer destination without the reducer
-  // (or groups.update) reading route topology (#D10). Memoized resolveTarget,
-  // cheap on the per-keystroke nav path; only the groups cascade consumes it.
+  // viewerTarget / resetOwners — resolved here (impure shell) so the
+  // groups_selected ctx the reducer emits carries the cascade's viewer
+  // destination + per-panel reset owners without the reducer (or groups.update)
+  // reading route topology / the ownership registry (#D10 / #D9). Memoized
+  // resolveTarget, cheap on the per-keystroke nav path; only the groups
+  // cascade consumes them.
   applyMsg({ type: 'nav_select', panelType, index, route: route.bundle(panelType),
-             viewerTarget: route.resolveTarget('viewer') });
+             viewerTarget: route.resolveTarget('viewer'), resetOwners: route.resetGroupOwners() });
 }
 
 /**

@@ -210,7 +210,10 @@ function _groupChangeCmds(res, ctx) {
     }) });
   }
   cmds.push({ type: 'msg', msg: { type: 'set_current_group', name: res.newCurrentGroup } });
-  cmds.push({ type: 'msg', msg: { type: 'reset_group_context' } });
+  // #D9 — owners (per-panel reset targets) are resolved by the dispatcher and
+  // threaded on ctx, so the root reducer's reset_group_context arm reads no
+  // ownership registry (same handler-stamp discipline as viewerTarget above).
+  cmds.push({ type: 'msg', msg: { type: 'reset_group_context', owners: ctx && ctx.resetOwners } });
   return cmds;
 }
 
@@ -241,7 +244,7 @@ function _cascadeCmds(res, ctx) {
 // threaded. viewerTarget (the cascade's viewer_reset_chrome destination)
 // is resolved by the impure-shell dispatcher — see _groupChangeCmds.
 function _msgCtx(msg) {
-  return msg.ctx || { groups: {}, currentGroup: '', paneMenuMode: false, viewerTarget: null };
+  return msg.ctx || { groups: {}, currentGroup: '', paneMenuMode: false, viewerTarget: null, resetOwners: {} };
 }
 
 function update(msg, slice) {

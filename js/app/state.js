@@ -153,6 +153,9 @@ function loadConfig(configPath) {
     type: 'set_config',
     config,
     configPath: path.resolve(configPath),
+    // #D9 — resolve the config-status owner here (impure shell) so the
+    // reducer's set_config arm stays pure of the ownership registry.
+    csOwner: require('../panel/route').componentForPanel('config-status'),
   });
 }
 
@@ -324,7 +327,9 @@ function resetGroupContext() {
   const dispatch = require('../dispatch/control/dispatch');
   const api = require('../panel/api');
   const route = require('../panel/route');
-  dispatch.applyMsg({ type: 'reset_group_context' });
+  // #D9 — resolve the per-panel owners here (impure shell) so the reducer's
+  // reset_group_context arm stays pure of the ownership registry.
+  dispatch.applyMsg({ type: 'reset_group_context', owners: route.resetGroupOwners() });
   const target = route.resolveTarget('viewer');
   if (target) {
     // v0.6.3 Phase D1: thread paneMenuMode so the reducer stays pure.
