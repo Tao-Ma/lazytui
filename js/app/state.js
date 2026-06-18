@@ -52,7 +52,7 @@ function _wireSubscriptions(comp, paneDef) {
     console.error(`[${comp.name || '?'}] subscriptions() threw: ${e && e.message}`);
     return;
   }
-  const hub = require('../leaves/hub');
+  const hub = require('../leaves/infra/hub');
   const { scheduleRender } = require('../panel/api');
   for (const d of descriptors) {
     if (!d || !d.topic) continue;
@@ -231,7 +231,7 @@ function initState() {
   // Theme is model state (model.theme) — seed it through the reducer like the
   // other boot Msgs below, not by poking the palette cache. The `set_theme`
   // effect (registered by installBuiltins, which runs before initState in both
-  // tui.js#main and the test harness) syncs leaves/themes from model.theme.
+  // tui.js#main and the test harness) syncs leaves/infra/themes from model.theme.
   // This is the init→Cmd shape: initial model carries the theme, an initial
   // Msg applies the configured one.
   require('../dispatch/control/dispatch').applyMsg({ type: 'set_theme', name: config.theme || 'default' });

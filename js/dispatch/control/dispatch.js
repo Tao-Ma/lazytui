@@ -22,7 +22,7 @@
 'use strict';
 
 const { allPanels, getSel, switchGroupsTab, multiSelCount } = require('../../panel/nav-state');
-const { paintNow: render } = require('../../leaves/render-queue');
+const { paintNow: render } = require('../../leaves/infra/render-queue');
 const { getPanelDef, getItems, idOf, getInstanceSlice,
        getComponentOwningPanel, wrap, getFocus,
        instanceKind } = require('../../panel/api');

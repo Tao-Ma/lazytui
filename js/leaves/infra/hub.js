@@ -8,10 +8,14 @@
  * wildcard). Zero subscribers → publish drops; cost scales with
  * what's rendered, not what's possible.
  *
- * A pure-JS leaf (zero npm deps, zero imports). It's stateful
- * (subscribers, ring buffers) but stateful ≠ non-leaf — a leaf is just the
- * bottom of the import graph. Its one upward call is INJECTED so the hub
- * imports nothing above it (a true bottom layer):
+ * Lives in `leaves/infra/` (#D1 2026-06-18). The bottom-of-import-graph tier
+ * splits two ways now: `leaves/` proper = PURE transforms (the load-bearing
+ * "safe to call from a reducer/render" contract); `leaves/infra/` = modules that
+ * are still bottom-of-graph (zero upward imports) but STATEFUL/effectful, so the
+ * directory no longer implies purity. This bus (subscribers + ring buffers),
+ * the render-queue scheduler, and the themes palette cache are its three
+ * residents. Zero npm deps, zero imports here; its one upward call is INJECTED
+ * so the hub imports nothing above it (a true bottom layer):
  *   - record each publish to the event log — via setRecorder (wired from
  *     io/event-log at load). Was a direct import of io/event-log, the lone
  *     leaf→io edge; injecting it lets io/file-loader depend DOWN on the pure

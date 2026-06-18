@@ -140,13 +140,13 @@ function refireCmdlineRebuild() {
   if (!m.modes.cmdMode) return;
   const matches = require('../control/cmdline').rebuild(m.modal.cmdline.text);
   require('../control/dispatch').applyMsg({ type: 'cmdline_set_matches', matches });
-  require('../../leaves/render-queue').scheduleRender();
+  require('../../leaves/infra/render-queue').scheduleRender();
 }
 
 function installBuiltins() {
   const { getModel } = require('../../model/store');
   const api = require('../../panel/api');
-  const renderQueue = require('../../leaves/render-queue');
+  const renderQueue = require('../../leaves/infra/render-queue');
   // Feature-host seam: feature/ workflows trigger a cmdline rebuild through
   // this injected fn instead of importing dispatch (keeps feature a bottom
   // layer). See ports/feature-host.js + docs/v0.6.5-render-exit.md.
@@ -231,13 +231,13 @@ function installBuiltins() {
     }, ms);
     if (t && typeof t.unref === 'function') t.unref();
   });
-  // set_theme: sync the leaves/themes palette cache (the `active` projection
+  // set_theme: sync the leaves/infra/themes palette cache (the `active` projection
   // the pure render leaves read) from model.theme. The impure-shell write that
   // keeps the cache a single-writer derived view of the model — same shape as
   // arm_clock syncing the wall clock. setTheme has exactly ONE caller (here),
   // so model.theme is the sole source of truth and the cache can't drift.
   registerEffect('set_theme', (eff) => {
-    try { require('../../leaves/themes').setTheme(eff.name); } catch (_) { /* unknown theme → leaf falls back */ }
+    try { require('../../leaves/infra/themes').setTheme(eff.name); } catch (_) { /* unknown theme → leaf falls back */ }
   });
 
   // --- Root-reducer Cmds ---
@@ -245,7 +245,7 @@ function installBuiltins() {
   // the same `runEffects` interpreter as Component effects.
 
   registerEffect('force_full_repaint', () => {
-    try { require('../../leaves/render-queue').forceFullRepaint(); } catch (_) {}
+    try { require('../../leaves/infra/render-queue').forceFullRepaint(); } catch (_) {}
   });
   // `_claimed` is the framework-internal sentinel a Component returns from
   // its `key` update to suppress the framework default. The normal path

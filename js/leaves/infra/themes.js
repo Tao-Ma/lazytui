@@ -3,6 +3,12 @@
  * Uses basic 16 ANSI colors (actual appearance depends on terminal theme).
  * User selects via YAML: theme: dracula
  * Zero dependencies.
+ *
+ * Lives in `leaves/infra/` (#D1 2026-06-18): the THEMES table is pure data, but
+ * this module also holds the STATEFUL palette cache (`active`/`activeName`,
+ * mutated by setTheme — the #D8 two-store synced from model.theme), so it sits
+ * in the stateful-infra sub-tier, not `leaves/` proper (pure transforms). See
+ * infra/hub.js for the tier contract.
  */
 'use strict';
 

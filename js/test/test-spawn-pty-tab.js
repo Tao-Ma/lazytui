@@ -29,7 +29,7 @@ child_process.spawn = (...args) => { spawnCalls.push(args); return { on() {}, ki
 // repaint THROUGH that seam now (render-exit arc), so spy at the seam — a
 // live require().forceFullRepaint lookup picks up this stub.
 const layout = require('../render/paint');
-const renderQueue = require('../leaves/render-queue');
+const renderQueue = require('../leaves/infra/render-queue');
 let forceFullRepaintCalls = 0;
 renderQueue.forceFullRepaint = () => { forceFullRepaintCalls++; };
 layout.render = () => {};

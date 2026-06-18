@@ -81,7 +81,7 @@ function installSuspendHandlers() {
     // seam (paintNow → the model-fetching render thunk) rather than calling
     // paint's render() directly, so this shell never reaches the pure view
     // with a missing model arg.
-    const { forceFullRepaint, paintNow } = require('../leaves/render-queue');
+    const { forceFullRepaint, paintNow } = require('../leaves/infra/render-queue');
     forceFullRepaint();
     paintNow();
   };

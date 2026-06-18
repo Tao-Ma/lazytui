@@ -13,7 +13,7 @@
  */
 'use strict';
 
-const hub = require('../leaves/hub');
+const hub = require('../leaves/infra/hub');
 const route = require('../panel/route');
 
 // L0/L2 helpers re-exported as the Component-facing surface. Component
@@ -21,7 +21,7 @@ const route = require('../panel/route');
 // away from any future API change. Direct imports from `../ansi` etc.
 // still work but are not part of the contract.
 const { esc, visibleLen, stripMarkup, wrapColor } = require('../leaves/ansi');
-const { theme } = require('../leaves/themes');
+const { theme } = require('../leaves/infra/themes');
 const { renderPanel, setDimsProvider } = require('../leaves/draw');
 
 // Render-exit seam (docs/v0.6.5-render-exit.md): leaves/draw can't read the
@@ -86,7 +86,7 @@ function filterCurrentText() { return getModel().modal.filter.text; }
 const panelHost = require('../ports/panel-host');
 const { streamCommand } = panelHost;       // re-exported below for docker
 const { addEphemeralTab } = require('./viewer/tabs');
-const { scheduleRender } = require('../leaves/render-queue');
+const { scheduleRender } = require('../leaves/infra/render-queue');
 
 // Components — the TEA-shaped strict-discipline shape used by every
 // in-tree panel. A Component owns a state slice via init() and accepts

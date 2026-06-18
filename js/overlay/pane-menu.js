@@ -364,7 +364,7 @@ function render() {
   }
   // Residue-blank rows the prior frame painted but this one doesn't.
   if (_lastPanelH > g.h && _lastTop === g.y && _lastLeft === g.x) {
-    const { invalidateRows } = require('../leaves/render-queue');
+    const { invalidateRows } = require('../leaves/infra/render-queue');
     invalidateRows(g.y + g.h, _lastTop + _lastPanelH);
     for (let y = g.y + g.h; y < _lastTop + _lastPanelH; y++) {
       buf += `\x1b[${y + 1};${g.x + 1}H${' '.repeat(_lastWidth)}`;
@@ -379,7 +379,7 @@ function render() {
 
 function _maybeBlank() {
   if (_lastPanelH === 0) return;
-  const { invalidateRows } = require('../leaves/render-queue');
+  const { invalidateRows } = require('../leaves/infra/render-queue');
   invalidateRows(_lastTop, _lastTop + _lastPanelH);
   _lastPanelH = 0;
 }

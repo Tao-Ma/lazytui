@@ -171,7 +171,7 @@ const FRAMEWORK_COMMANDS = [
  * candidates depend on current state (loaded themes, configured panels).
  */
 function _frameworkDynamicCommands(m) {
-  const { themeNames } = require('../leaves/themes');
+  const { themeNames } = require('../leaves/infra/themes');
   const { allPanels } = require('./nav-state');
   const out = [];
   for (const name of themeNames()) {

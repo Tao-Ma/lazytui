@@ -17,7 +17,7 @@
 const { getModel } = require('../model/store');
 const { richToAnsi, RESET, visibleLen, esc } = require('../leaves/ansi');
 const { stdout } = require('../io/term');
-const { theme } = require('../leaves/themes');
+const { theme } = require('../leaves/infra/themes');
 const { renderPanel, viewportDims } = require('../leaves/draw');
 const { DROPDOWN_VIEWPORT: MAX_DROPDOWN } = require('../leaves/cmdline-split');
 
@@ -82,7 +82,7 @@ function renderCmdline() {
     // terminals clamp to row 1 — cosmetic flicker but unintended.
     const oldTop = Math.max(0, ROWS - _lastPanelH - 1);
     const newTop = Math.max(0, ROWS - panelH - 1);
-    require('../leaves/render-queue').invalidateRows(oldTop, newTop);
+    require('../leaves/infra/render-queue').invalidateRows(oldTop, newTop);
     for (let y = oldTop; y < newTop; y++) {
       buf += `\x1b[${y + 1};1H\x1b[K`;
     }
