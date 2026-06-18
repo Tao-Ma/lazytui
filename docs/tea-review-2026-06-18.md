@@ -62,7 +62,15 @@ judgment call — see Decisions Ledger) · `FORWARD` (parked for a later pass to
 - **D6 — `render(model = getModel())` default.** The view self-fetches the global model
   when not threaded (`paint.js:665`), so its signature isn't pure-by-construction. Finish
   threading the model through all call sites and drop the default, or keep it and document
-  why. Evidence: F2.2. *Undecided.*
+  why. Evidence: F2.2.
+  **RESOLVED (drop default)** — `render(model)` and `renderTerminalOverlay(model, …)` no longer
+  default to `getModel()`; the signatures are pure-by-construction. The render-queue seam (a
+  pure leaf, invokes callbacks arg-less) is wired with model-fetching THUNKS
+  (`render: () => render(getModel())`, `overlay: () => renderTerminalOverlay(getModel())`) — the
+  correct runtime boundary for a deferred repaint (reads the latest model at paint time). Direct
+  callers threaded: `suspend.js` routes through the `paintNow` seam; `tui.js`'s 250ms timer passes
+  `getModel()`. Test harness threads it too (smoke re-exports a `() => render(getModel())` wrapper;
+  test-live-render threads `getModel()`). Suite 96/96, smoke 11/11, acyclic, benches parity.
 - **D7 — Single-writer violation for the layout slice (renderer-as-writer).** The paint
   pass writes `layoutSlice.paneBounds` (and the viewer writes `paneBounds.detail.tabs`)
   into Component slices during render (`paint.js:16-23`), so the layout slice has a second

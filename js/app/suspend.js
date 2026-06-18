@@ -77,10 +77,13 @@ function installSuspendHandlers() {
     process.on('SIGTSTP', _suspendHandler);
     // The shell that ran during the suspend probably scrolled or
     // overwrote the screen — invalidate the diff cache so the next
-    // paint is a full clear + redraw.
-    const { forceFullRepaint, render } = require('../render/paint');
+    // paint is a full clear + redraw. #D6 — go through the render-queue
+    // seam (paintNow → the model-fetching render thunk) rather than calling
+    // paint's render() directly, so this shell never reaches the pure view
+    // with a missing model arg.
+    const { forceFullRepaint, paintNow } = require('../leaves/render-queue');
     forceFullRepaint();
-    render();
+    paintNow();
   };
 
   process.on('SIGTSTP', _suspendHandler);

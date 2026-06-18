@@ -52,7 +52,7 @@ const { render } = require('../render/paint');
 
 describe('[1] live render pipeline boots + paints', () => {
   it('renders a frame without throwing, showing panel chrome', () => {
-    const frame = capture(() => render());
+    const frame = capture(() => render(getModel()));
     assert(frame.length > 0, 'something was painted');
     // The footer hint line is always present in normal mode.
     assert(/q quit/.test(frame), `footer painted: ${JSON.stringify(frame.slice(-80))}`);
@@ -61,7 +61,7 @@ describe('[1] live render pipeline boots + paints', () => {
 
 describe('[2] viewMode flows model → view end-to-end (the v0.5 slice, live)', () => {
   it('normal mode shows no [half]/[full] tag', () => {
-    const frame = capture(() => render());
+    const frame = capture(() => render(getModel()));
     assert(!/\[half\]|\[full\]/.test(frame), 'no view-mode tag in normal');
   });
   it('pressing + (the real key path) renders the [half] footer tag', () => {
@@ -85,7 +85,7 @@ describe('[3] chrome (sel/focus) flows through the model — live', () => {
     capture(() => { handleKey('_', '_'); handleKey('_', '_'); });   // back to normal view (silenced)
     getInstanceSlice("layout").focus = 'pane-groups';
     setSel('groups', 0);
-    const before = capture(() => render());
+    const before = capture(() => render(getModel()));
     // handleKey('down') → nav_down → moveSel on the focused panel.
     // Phase 4a — cursor lives on the groups Component's slice.nav.groups.
     const after = capture(() => handleKey('down', 'down'));
@@ -150,7 +150,7 @@ describe('[collapse-shift] all-collapsed column preserves its horizontal slot', 
     const chunks = [];
     const orig = process.stdout.write;
     process.stdout.write = (s) => { chunks.push(String(s)); return true; };
-    try { render(); } finally { process.stdout.write = orig; }
+    try { render(getModel()); } finally { process.stdout.write = orig; }
     const raw = chunks.join('');
     // Walk the bytes; collect (row, col) of each cursor-set move
     // \x1b[N;1H plus any plain content emitted at that position.
@@ -212,7 +212,7 @@ describe('[4] detail content flows model → view — live', () => {
     // config's one viewer" — a kind-level read.
     primarySliceOf('detail').viewerOverride = { lines: ['ZZ-DETAIL-MARKER-ZZ'] };
     primarySliceOf('detail').scroll = 0;
-    const frame = capture(() => render());
+    const frame = capture(() => render(getModel()));
     assert(/ZZ-DETAIL-MARKER-ZZ/.test(frame), 'detail content (via the model) reached the rendered frame');
     // Cleanup so subsequent tests aren't sticky-overridden.
     primarySliceOf('detail').viewerOverride = null;

@@ -545,7 +545,11 @@ function renderFull(model, arrangeOverride) {
 }
 
 
-function renderTerminalOverlay(model = getModel(), arrangeOverride) {
+// #D6 — model is threaded in (no `= getModel()` default), same as render():
+// pure-by-construction signature. The overlay seam thunk below fetches the
+// current model (`overlay: () => renderTerminalOverlay(getModel())`); the
+// 250ms safety-net timer (app/tui.js) threads getModel() at its call site.
+function renderTerminalOverlay(model, arrangeOverride) {
   if (!isTerminalTab()) return;
   const id = activeTerminalId();
   const termConf = activeTerminalConfig();
@@ -662,14 +666,17 @@ function renderTerminalOverlay(model = getModel(), arrangeOverride) {
 // blessed exception D — made the frame depend on ambient wall-clock,
 // the one read that blocked deterministic render replay.) Threaded into the
 // overlay render fns so THEY stay pure of the clock too.
-function render(model = getModel()) {
+function render(model) {
   const now = model.now;
   // `model` is the TEA root model (js/model/store.js; reduced by
-  // js/dispatch/update/reducer.js), threaded in by the
-  // owner (the program). The view reads migrated slices (currently
-  // `viewMode`) from this param, not a global fetch. The `= getModel()`
-  // default keeps every existing `render()` call site working during
-  // the v0.5 migration; it'll be removed once all callers thread it.
+  // js/dispatch/update/reducer.js), threaded in by the owner (the program).
+  // The view reads migrated slices (currently `viewMode`) from this param,
+  // not a global fetch. #D6 — the signature is pure-by-construction (no
+  // `= getModel()` default): `render(model)` cannot bind to ambient state.
+  // The ONE place that fetches the current model is the render-queue seam
+  // thunk below (`render: () => render(getModel())`) — the runtime boundary
+  // where "repaint now" reads the latest model — plus the app shell
+  // (suspend resume) and the test harness, all impure-shell by definition.
   // Force-full-repaint when any overlay drops out — close OR transition.
   // Pure opens (no overlay → some overlay) don't trigger: the new overlay
   // paints cleanly on top of the still-valid frame, no flash. A transition
@@ -760,8 +767,15 @@ function render(model = getModel()) {
 // Debouncing primitives live in render-queue.js (both terminal.js and
 // actions.js need scheduleOverlay / scheduleRender; render-queue.js has no
 // dependencies, breaking what would otherwise be a cycle through layout).
+// #D6 — the render-queue invokes its callbacks with no args (it's a pure
+// leaf that can't import the model). Register model-fetching THUNKS so the
+// view fns stay pure-by-construction (`render(model)`, no default) while the
+// seam still reads the CURRENT model at paint time — the correct runtime
+// boundary for a deferred/debounced repaint (latest state, not a snapshot
+// captured when scheduleRender was called).
 require('../leaves/render-queue').setRenderers({
-  render, overlay: renderTerminalOverlay,
+  render: () => render(getModel()),
+  overlay: () => renderTerminalOverlay(getModel()),
   forceFull: forceFullRepaint, invalidate: invalidateRows,
 });
 
