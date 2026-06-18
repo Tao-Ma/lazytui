@@ -49,8 +49,8 @@ const BROADCAST_TYPES = new Set(['refresh', 'action']);
 // After the OUTERMOST dispatch completes, re-clamp every navigator pane's
 // scroll so the selected row sits inside its viewport — a safety net that
 // catches cursor-off-viewport from ANY cause because every state change IS a
-// dispatch. The pass computes calcLayout itself (slice.paneBounds is the last
-// render's stale write at dispatch time).
+// dispatch. The pass computes calcLayout itself (the derived bounds still
+// reflect the last render — stale vs the just-dispatched state).
 //
 // Depth counter: both top-level entries (dispatchMsg + dispatchKeyToFocused)
 // share it, so effect-chained nested dispatches run the pass once, at depth-0

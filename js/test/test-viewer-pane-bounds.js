@@ -1,8 +1,9 @@
 /**
- * Pane bounds (blessed-exceptions Phase A.2) — bounds are a PURE DERIVED
- * value, not a render-side write. A real render leaves `slice.paneBounds`
- * EMPTY; `visibleBoundsFor` / `boundsFor` compute the answer via the
- * memoized selector (leaves/selector.js) from (arrange, dims, viewMode).
+ * Pane bounds (blessed-exceptions Phase A.2; field deleted by #D7 2026-06-18)
+ * — bounds are a PURE DERIVED value, not a render-side write, and there is no
+ * `slice.paneBounds` production field at all. A real render adds none;
+ * `visibleBoundsFor` / `boundsFor` compute the answer via the memoized
+ * selector (leaves/selector.js) from (arrange, dims, viewMode).
  *
  * Two accessors, two roles:
  *   - `visibleBoundsFor(paneId)` — the CURRENTLY-VISIBLE pane's bounds, view-
@@ -16,7 +17,7 @@
  * Both are keyed by CONTAINER paneId (resolveViewerPaneId bridges the viewer
  * tab-id → its hosting paneId); a bare type key resolves to null. Regression
  * guard for the full/half "small normal-layout rect leaks through" bug and
- * for render accidentally resuming paneBounds writes.
+ * for render accidentally resurrecting a paneBounds slice write.
  *
  * Run: node js/test/test-viewer-pane-bounds.js
  */
@@ -38,10 +39,13 @@ function renderIn(viewMode, focus) {
 }
 
 describe('A.2 paneBounds is DERIVED, not a render write', () => {
-  it('a real render leaves slice.paneBounds EMPTY (bounds are derived)', () => {
+  it('a real render adds NO slice.paneBounds (bounds are derived)', () => {
     const layout = renderIn('normal', 'pane-groups');
-    eq(Object.keys(layout.paneBounds).length, 0,
-      'render no longer writes paneBounds');
+    // #D7 2026-06-18 — paneBounds is no longer a production slice field at all
+    // (was retired as a render-write by A.2; the field itself is now gone). A
+    // real render must not resurrect it; the geometry accessors derive instead.
+    eq(layout.paneBounds, undefined,
+      'render does not write paneBounds, and it is not a production field');
   });
 
   it('the derived bounds are keyed by container paneId; a bare type key → null', () => {

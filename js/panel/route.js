@@ -601,8 +601,8 @@ function _resolveTargetCompute(intent, focused, layout, lastViewerTab) {
 }
 
 // v0.6.4 — the CONTAINER paneId hosting the target viewer. resolveTarget
-// returns a viewer *tab/instance* id (singleton: 'detail'); paneBounds +
-// boundsFor are keyed by the *container* paneId ('pane-detail'), which is
+// returns a viewer *tab/instance* id (singleton: 'detail'); boundsFor /
+// visibleBoundsFor are keyed by the *container* paneId ('pane-detail'), which is
 // the only key rebuilt per-view-mode and therefore the only one carrying
 // half/full visible bounds (rects always describe the normal column
 // layout). This bridges the two so viewer-geometry readers (terminal

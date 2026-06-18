@@ -11,8 +11,10 @@
  *   - viewMode       — normal / half / full
  *   - dirty          — layout has unsaved changes (drives `:save-layout` hint)
  *   - freeConfig     — free-config working state (drag, undo/redo, titleEdit)
- *   - paneBounds — view-output, written by the render pass
  *   - panelList      — `w` overlay state (open, cursor)
+ *
+ * No `paneBounds` field — pane geometry is a pure derived value (see the
+ * `getInstanceSlice` init note + geometry.boundsFor/visibleBoundsFor).
  *
  * No `panelTypes` — this Component renders chrome, not panel content. Spec:
  * docs/v0.5-layout-component.md.
@@ -187,13 +189,15 @@ function init() {
       // when the field was missing, masking the gap.
       noticeKind: null,
     },
-    // View-output (written by the render pass, read by mouse hit-tests
-    // and free-config drag math). The renderer-as-writer pattern is the
-    // documented exception to single-writer — see render/geometry.js header.
-    // (Per-panel heights live in a module-local map inside
-    // `render/geometry.js`, NOT on the slice — see `getPanelViewportH`
-    // for the public view-mode-aware accessor.)
-    paneBounds: {},
+    // NOTE: no `paneBounds` field. Pane geometry is a pure DERIVED value —
+    // geometry.boundsFor/visibleBoundsFor compute it from arrange + dims via a
+    // memoized selector. (#D7 2026-06-18 retired BOTH the old render-side write
+    // — already gone since blessed-exceptions A.2 — AND this production slice
+    // field.) Per-panel heights likewise live in geometry, not the slice — see
+    // `getPanelViewportH` for the view-mode-aware accessor. The geometry
+    // accessors still honor a `slice.paneBounds` OVERRIDE when present, but ONLY
+    // unit fixtures set it (injecting known bounds to keep hit-test-math tests
+    // decoupled from layout-math); production leaves it unset.
     // Panel-list overlay state. Opened by `w` (or auto-opened on
     // free-config entry when the pool has hidden entries). Arrow keys
     // navigate, Enter context-picks (hide if placed, show if hidden,

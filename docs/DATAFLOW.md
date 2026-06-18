@@ -82,7 +82,8 @@ greppable.
      currentGroup, config, register, prefixSeq, focused, ...
 
    Component slices (js/leaves/route.js, nested store)
-     layout         focus, viewMode, arrange, paneBounds, freeConfig
+     layout         focus, viewMode, arrange, freeConfig
+                    (no paneBounds field — pane geometry is pure-derived, #D7)
      detail         lines, scroll, tab, search, select, cursor,
                     contentTabs, ephemeralTerminals, actionTabBuffers,
                     viewerStreamBuffer, viewerOverride, tabState
@@ -101,7 +102,8 @@ greppable.
         ▼
 ═══════════════════════════ RENDER ═════════════════════════════════
    render()                       (js/render/layout.js)
-     1. calcLayout → panelHeights, paneBounds
+     1. calcLayout → layout rects (pure derived pane geometry + heights;
+        no slice write)
         (pure — render dispatches nothing; the keep-in-view scroll
         clamp runs in the post-dispatch finalizer, see Notes)
      2. for each panel in arrange:
@@ -171,9 +173,10 @@ except the blessed render-side exceptions:
   - `layout.paneBounds` — was written by each render-mode; now a PURE
     DERIVED value (Phase A.2). `geometry.boundsFor`/`visibleBoundsFor`
     compute it from `(arrange, dims, viewMode, focus, halfView)` via the
-    memoized selector (`leaves/selector.js`). `slice.paneBounds` survives
-    only as an optional seed/override (boot edge + test fixtures); production
-    never writes it.
+    memoized selector (`leaves/selector.js`). The production slice has NO
+    `paneBounds` field at all (#D7 2026-06-18 deleted it); the accessors
+    honor a test-only `slice.paneBounds` override when a unit fixture injects
+    one (to keep hit-test-math tests decoupled from layout-math).
   - viewer `innerH` — was a direct `setInstanceSlice` from `render()`; now
     computed in the post-dispatch finalizer (`dispatch/runtime/fanout.js`, Phase A.1) off
     that dispatch's fresh Layout.

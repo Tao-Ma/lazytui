@@ -84,19 +84,18 @@ function _applySnapshot(arrange, snap) {
 
 /** Rendered bounds for a pane, addressed by paneId with a type fallback.
  *  blessed-exceptions Phase A.2 — routed through geometry.boundsFor: pane
- *  bounds are a pure derived value now (production no longer writes
- *  `slice.paneBounds`). boundsFor returns a seed/override first (legacy unit
- *  fixtures that seed `paneBounds` by paneId/type without rendering), then
- *  the memoized normal-layout selector. free-config is a normal-view mode,
- *  so normal geometry is exactly what the drag/resize math wants. */
+ *  bounds are a pure derived value (production has NO `slice.paneBounds`
+ *  field; #D7 2026-06-18 deleted it). free-config is a normal-view mode, so
+ *  normal geometry is exactly what the drag/resize math wants. A test-only
+ *  `slice.paneBounds` override is honored when a unit fixture injects one
+ *  (by paneId OR type) to keep hit-test-math tests decoupled from layout-
+ *  math — checked here so a type-override isn't shadowed by the paneId
+ *  selector path. */
 let _geo; const _geometry = () => (_geo ||= require('./geometry'));
 function boundsOf(slice, p) {
-  // Seed/override wins by EITHER key (legacy fixtures seed paneBounds by
-  // paneId or by type) — checked here so a type-seed isn't shadowed by the
-  // paneId selector path. Production paneBounds is empty → derive.
-  const pb = slice.paneBounds;
-  const seed = pb && (pb[p.paneId] || pb[p.type]);
-  if (seed) return seed;
+  const pb = slice.paneBounds;            // unset in production → derive below
+  const override = pb && (pb[p.paneId] || pb[p.type]);
+  if (override) return override;
   const geo = _geometry();
   return geo.boundsFor(slice, p.paneId) || (p.type ? geo.boundsFor(slice, p.type) : null);
 }

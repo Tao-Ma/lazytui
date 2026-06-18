@@ -26,11 +26,11 @@ const CLOSE_PLUS_COLLAPSE_MIN_W = 13;
 function _collapseGlyphX0(b) { return b.x + b.w - 1 - GLYPH_W; }
 function _closeGlyphX0(b)    { return b.x + b.w - 1 - GLYPH_W - 1 - GLYPH_W; }
 
-/** Non-detail placed panels in current layout order, with the live
- *  `paneBounds[type]` attached. Both renderers + hit-tests walk this
- *  same set so the DRY helper avoids the slice-read fan-out that lived
- *  in v0.6 pre-cleanup. Returns null when there's no layout slice yet
- *  (test/boot edge cases) or during a drag. */
+/** Non-detail placed panels in current layout order, with each pane's live
+ *  visible bounds (visibleBoundsFor by paneId) attached. Both renderers +
+ *  hit-tests walk this same set so the DRY helper avoids the slice-read
+ *  fan-out that lived in v0.6 pre-cleanup. Returns null when there's no
+ *  layout slice yet (test/boot edge cases) or during a drag. */
 function _placedWidgetTargets() {
   const slice = getInstanceSlice('layout');
   if (!slice || !slice.arrange) return null;
@@ -46,7 +46,7 @@ function _placedWidgetTargets() {
   return panels
     .filter(p => p.type !== 'detail')
     // v0.6.4 Phase 2 — hit-test by paneId, not type: two same-kind panes
-    // share a type key in paneBounds, so the type lookup would collide.
+    // share a type key, so a type lookup would collide.
     .map(p => ({ p, b: visibleBoundsFor(slice, p.paneId) }))
     .filter(({ b }) => b && b.h >= 1);
 }

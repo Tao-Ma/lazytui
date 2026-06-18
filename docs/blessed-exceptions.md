@@ -407,6 +407,20 @@ and write `innerH` there — part of the dispatch cycle, not render. Render's
 > production. Full field deletion = a separate ~20-fixture rewrite, available
 > as a follow-on.
 >
+> **UPDATE — #D7 2026-06-18: production FIELD declaration deleted; override
+> branch KEPT as a test-only seam.** The `paneBounds: {}` slice init is gone
+> (`panel/layout.js`), so the production model shape no longer advertises a
+> field it never writes, and `test-component` now asserts its ABSENCE. The
+> geometry/`boundsOf` override read-branches stay — they're now documented as
+> a **test-only** affordance. The *full* migration (force the ~20 fixtures
+> onto real `calcLayout` geometry, deleting the override) was investigated and
+> **declined**: those fixtures set NO `dims` and seed deliberately-simplified
+> rects to **decouple the hit-test-math unit tests from the layout-math** (a
+> legitimate test-isolation device, not laziness). Re-running it confirmed 9
+> files / ~90 assertions would need recomputing against derived geometry, and
+> the result would couple two subsystems in the tests — which is why P1.3's
+> flip was reverted. So the override survives as an explicitly test-only seam.
+>
 > **One production read needed routing:** `free-config-core.boundsOf` read
 > `slice.paneBounds` directly → now seed-first (both keys) then `geo.boundsFor`.
 > Tests migrated: `test-viewer-pane-bounds` rewritten for the derived

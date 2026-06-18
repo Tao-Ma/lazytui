@@ -259,17 +259,21 @@ does not change anything that would alter a third call. Same for
 `render()` at the layout level — calling it back-to-back is a no-op
 beyond writing pixels.
 
-This is **weaker than "render is pure"** (no mutation, no I/O).
-lazytui admits a handful of intentional impurities the idempotence rule
-still permits (and two narrower ones in the overlay subsystem, called out
-at the end):
+This is **weaker than "render is pure"** (no mutation, no I/O). lazytui
+once admitted a layout-write impurity here; it has since been retired
+(first bullet), leaving the seams that keep render pure (and two narrower
+overlay-subsystem reads, called out at the end):
 
-- **Layout calculation** writes derived state — `layout.slice.panelHeights`,
-  `layout.slice.paneBounds` (Phase 1e), and per-Navigator
-  `slice.nav[panel].scroll` keep-in-view adjustments (Phase 4a) — during
-  `calcLayout()`. These are *outputs* of the layout pass, consumed by
-  mouse/input handlers between frames; panel renderers read them, don't
-  write them. (Blessed outside-writer; see `docs/history/v0.5-layering.md`.)
+- **Layout geometry is pure-derived, not written** — RETIRED outside-writer
+  exception. Pane bounds and per-panel heights are computed on demand from
+  `(arrange, dims, viewMode)` via memoized selectors in `leaves/geometry.js`
+  — there is no `slice.paneBounds`/`slice.panelHeights` field and no
+  calcLayout/render write (blessed-exceptions A.2/A.3 retired the writes;
+  #D7 2026-06-18 deleted the `paneBounds` field). The per-Navigator
+  keep-in-view scroll clamp likewise no longer rides `calcLayout()`: it runs
+  in the post-dispatch finalizer and routes through a `set_scroll` Msg
+  (resize-as-Msg arc), so it is a dispatch-time single-writer update, not a
+  render-side write. (History: `docs/history/v0.5-layering.md`.)
 - **Hub subscriptions** are DECLARED, not lazy-subscribed from render
   (v0.6.4 Phase D). A Component exports a pure `subscriptions(paneDef) →
   [{topic, window}]`; the framework performs the `hub.subscribe` side
