@@ -52,7 +52,7 @@
 // sibling leaves.
 const mpool = require('./pool');
 const mpane = require('./pane');
-const { createSelector } = require('./selector');
+const { createSelector } = require('../selector');
 
 function distributeColumnHeights(panels, availH, isLastCol, minH, detailHeightPct) {
   const out = {};

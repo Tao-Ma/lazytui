@@ -14,13 +14,13 @@
 
 const { describe, it, eq, assert, expectNoMutation, report } = require('./test-runner');
 
-const mnav = require('../leaves/nav');
+const mnav = require('../leaves/wm/nav');
 const mreg = require('../leaves/register');
-const mtabs = require('../leaves/pane-tabs');
-const ms = require('../leaves/search');
-const mfc = require('../leaves/free-config');
-const mfcCore = require('../leaves/free-config-core');
-const mfcMouse = require('../leaves/free-config-mouse');
+const mtabs = require('../leaves/wm/pane-tabs');
+const ms = require('../leaves/text/search');
+const mfc = require('../leaves/free-config/free-config');
+const mfcCore = require('../leaves/free-config/free-config-core');
+const mfcMouse = require('../leaves/free-config/free-config-mouse');
 
 // --- leaves/nav ----------------------------------------------------------
 

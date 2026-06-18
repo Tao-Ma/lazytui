@@ -11,7 +11,7 @@
 'use strict';
 
 const { describe, it, eq, assert, report } = require('./test-runner');
-const modes = require('../leaves/modes');
+const modes = require('../leaves/input/modes');
 const { getModel } = require('../app/runtime');
 
 // ---- [1] registry shape + derivations ----------------------------

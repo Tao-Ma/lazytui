@@ -26,10 +26,10 @@ const {
   renderPanel,
   getInstanceSlice, wrap,
 } = require('../api');
-const ms = require('../../leaves/search');
-const pt = require('../../leaves/pane-tabs');
-const mpool = require('../../leaves/pool');
-const { stripMarkup, charWidth } = require('../../leaves/ansi');
+const ms = require('../../leaves/text/search');
+const pt = require('../../leaves/wm/pane-tabs');
+const mpool = require('../../leaves/wm/pool');
+const { stripMarkup, charWidth } = require('../../leaves/text/ansi');
 const { buildTabStrip } = require('./tab-strip');
 const { getModel } = require('../../model/store');
 

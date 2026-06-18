@@ -27,7 +27,7 @@
 'use strict';
 
 const { getModel } = require('../../model/store');
-const pt = require('../../leaves/pane-tabs');
+const pt = require('../../leaves/wm/pane-tabs');
 const panelHost = require('../../ports/panel-host');   // dispatchMsg (injected, B/S5)
 const { wrap } = require('../../panel/route');
 

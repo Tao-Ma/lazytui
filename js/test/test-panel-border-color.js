@@ -18,7 +18,7 @@
  */
 'use strict';
 
-const { renderPanel } = require('../leaves/draw');
+const { renderPanel } = require('../leaves/render/draw');
 const { describe, it, assert, eq, report } = require('./test-runner');
 
 describe('renderPanel — title with embedded [/] preserves border color', () => {
@@ -68,7 +68,7 @@ describe('renderPanel — title with embedded [/] preserves border color', () =>
 });
 
 describe('wrapColor — markup wrapper that survives nested [/]', () => {
-  const { wrapColor, richToAnsi } = require('../leaves/ansi');
+  const { wrapColor, richToAnsi } = require('../leaves/text/ansi');
 
   it('plain content wraps to [color]content[/]', () => {
     eq(wrapColor('red', 'plain'), '[red]plain[/]');
@@ -141,7 +141,7 @@ describe('wrapColor — markup wrapper that survives nested [/]', () => {
 
 describe('richToAnsi — confirm `[/]` is a hard reset (the underlying invariant)', () => {
   it('[outer][inner]…[/][/] resets to default after the first [/]', () => {
-    const { richToAnsi } = require('../leaves/ansi');
+    const { richToAnsi } = require('../leaves/text/ansi');
     const ansi = richToAnsi('[blue]A[bold red]B[/]C[/]');
     // After the first `[/]`, color resets to terminal default. The `C`
     // emits without any SGR open. This is the load-bearing assumption

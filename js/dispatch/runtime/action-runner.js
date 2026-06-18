@@ -14,7 +14,7 @@ const { streamCommand, killAll } = require('./stream');
 const { getInstanceSlice, wrap } = require('../../panel/api');
 const { dispatchMsg } = require('./loop');
 const { getModel } = require('../../model/store');
-const { esc } = require('../../leaves/ansi');
+const { esc } = require('../../leaves/text/ansi');
 const history = require('../../feature/history');
 const jobs = require('../../feature/jobs');
 

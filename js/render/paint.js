@@ -26,21 +26,21 @@
  */
 'use strict';
 
-const { RESET, richToAnsi, esc, visibleLen, wrapColor } = require('../leaves/ansi');
+const { RESET, richToAnsi, esc, visibleLen, wrapColor } = require('../leaves/text/ansi');
 const { cols, rows, stdout, showCursor, hideCursor } = require('../io/term');
 const { allPanels } = require('../panel/nav-state');
-const geo = require('../leaves/geometry');
-const mpool = require('../leaves/pool');
-const mpane = require('../leaves/pane');
+const geo = require('../leaves/wm/geometry');
+const mpool = require('../leaves/wm/pool');
+const mpane = require('../leaves/wm/pane');
 const { theme } = require('../leaves/infra/themes');
-const { truncate, setWriter: _setDrawWriter } = require('../leaves/draw');
+const { truncate, setWriter: _setDrawWriter } = require('../leaves/render/draw');
 // Wire the overlay-paint write seam: draw.renderOverlay (a pure leaf) emits its
 // composed buffer through this instead of importing io/term's stdout directly.
 // Done here because paint.js is the render layer that legitimately owns stdout.
 // (CLI/tests never load paint.js, so the leaf's writer stays unset there and
 // renderOverlay no-ops its write — they assert overlay state, not pixels.)
 _setDrawWriter((buf) => stdout.write(buf));
-const painter = require('../leaves/painter');
+const painter = require('../leaves/render/painter');
 const { isTerminalTab, activeTerminalId, activeTerminalConfig } = require('../panel/viewer/tabs');
 const { getSession, sessionScrollInfo } = require('../io/terminal');
 const { getInstanceSlice, sliceForPane, getComponent,
@@ -49,7 +49,7 @@ const { renderCopyMenu } = require('../overlay/copy');
 const { render: renderRegisterPopup } = require('../overlay/register-popup');
 const { renderMenu } = require('../overlay/menu');
 const { renderWhichKey } = require('../overlay/which-key');
-const modes = require('../leaves/modes');
+const modes = require('../leaves/input/modes');
 const { getModel } = require('../model/store');
 const { renderCmdline } = require('../overlay/cmdline');
 const { renderConfirmOverlay } = require('../overlay/confirm');
@@ -69,7 +69,7 @@ const { renderFooter } = require('./footer');
 // builders are pure chrome derivation, now in leaves/draw — render→leaf,
 // no cycle; the slice-reading hit-tests went to panel/chrome-hittest.)
 let _routeRef; const _route = () => (_routeRef ||= require('../panel/route'));
-let _decorRef; const _decor = () => (_decorRef ||= require('../leaves/draw'));
+let _decorRef; const _decor = () => (_decorRef ||= require('../leaves/render/draw'));
 let _tabsRef; const _tabs = () => (_tabsRef ||= require('../panel/viewer/tabs'));
 let _paneMenuRef; const _paneMenu = () => (_paneMenuRef ||= require('../overlay/pane-menu'));
 

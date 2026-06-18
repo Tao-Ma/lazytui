@@ -19,7 +19,7 @@
 const fs = require('fs');
 const path = require('path');
 const { getModel } = require('../model/store');
-const { rebuildLayoutFromConfig } = require('../leaves/arrange');
+const { rebuildLayoutFromConfig } = require('../leaves/wm/arrange');
 // Panel-state accessors (readers/writers/composites) moved to
 // panel/nav-state.js in v0.6.5 §1 Phase 2. This module keeps the boot layer
 // (loadConfig/initState) + the two dispatch-layer group helpers
@@ -175,7 +175,7 @@ function loadConfig(configPath) {
 function reconcilePaneInstances() {
   const api = require('../panel/api');
   const route = require('../panel/route');
-  const mpool = require('../leaves/pool');
+  const mpool = require('../leaves/wm/pool');
   const components = api._components ? api._components() : null;
   if (!components) return;
   const arrange = _layoutSlice().arrange;

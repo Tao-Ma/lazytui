@@ -18,7 +18,7 @@
 const { describe, it, eq, assert, report } = require('./test-runner');
 const sm = require('./smoke/_helpers/smoke');
 const { getInstanceSlice } = require('../panel/api');
-const geo = require('../leaves/geometry');
+const geo = require('../leaves/wm/geometry');
 
 function boot(cols, rows) {
   process.stdout.columns = cols;

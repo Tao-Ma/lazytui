@@ -12,9 +12,9 @@
 'use strict';
 
 const { describe, it, eq, assert, report } = require('./test-runner');
-const { chromeFor } = require('../leaves/draw');
-const { renderPanel } = require('../leaves/draw');
-const { visibleLen, stripMarkup } = require('../leaves/ansi');
+const { chromeFor } = require('../leaves/render/draw');
+const { renderPanel } = require('../leaves/render/draw');
+const { visibleLen, stripMarkup } = require('../leaves/text/ansi');
 
 const pane = (extras = {}) => ({
   type: 'groups', id: 'groups', paneId: 'p-groups',

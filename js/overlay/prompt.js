@@ -11,9 +11,9 @@
 'use strict';
 
 const { getModel } = require('../model/store');
-const { ghostSuffix } = require('../leaves/ghost');
-const { esc, visibleLen } = require('../leaves/ansi');
-const { renderOverlay, viewportDims } = require('../leaves/draw');
+const { ghostSuffix } = require('../leaves/render/ghost');
+const { esc, visibleLen } = require('../leaves/text/ansi');
+const { renderOverlay, viewportDims } = require('../leaves/render/draw');
 const { stdout } = require('../io/term');
 
 function renderPromptOverlay() {

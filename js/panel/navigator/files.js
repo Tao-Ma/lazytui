@@ -58,7 +58,7 @@ const fs   = require('fs');
 const path = require('path');
 
 const { getModel } = require('../../model/store');
-const mnav = require('../../leaves/nav');
+const mnav = require('../../leaves/wm/nav');
 const route = require('../../panel/route');
 const {
   esc, visibleLen, theme, renderPanel,
@@ -92,7 +92,7 @@ function _allPanels() {
   const slice = getInstanceSlice('layout');
   const ly = slice && slice.arrange;
   if (!ly) return [];
-  return require('../../leaves/pool').allPanesInColumns(ly);
+  return require('../../leaves/wm/pool').allPanesInColumns(ly);
 }
 
 /** Resolve THIS instance's pane config by its paneId (the slice stamps
@@ -149,7 +149,7 @@ function _matchesFilter(items, pattern) {
   if (!pattern) return items;
   // safeRegex rejects oversize / catastrophic-backtracking patterns; null
   // means "don't filter" (friendlier than blinking to empty mid-type).
-  const { safeRegex } = require('../../leaves/regex-guard');
+  const { safeRegex } = require('../../leaves/text/regex-guard');
   const rx = safeRegex(pattern, 'i');
   if (!rx) return items;
   // Never filter out parent / loading rows — navigation + status must stay

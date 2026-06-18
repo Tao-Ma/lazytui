@@ -23,7 +23,7 @@
 const { describe, it, assert, eq, report } = require('./test-runner');
 const api = require('../panel/api');
 const viewer = require('../panel/viewer/viewer');
-const pt = require('../leaves/pane-tabs');
+const pt = require('../leaves/wm/pane-tabs');
 const { setModel, getModel } = require('../app/runtime');
 
 // Synthetic Component that contributes a tab:true action when the

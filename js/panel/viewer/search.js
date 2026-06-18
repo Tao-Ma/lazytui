@@ -22,7 +22,7 @@
 'use strict';
 
 const { getModel } = require('../../model/store');
-const ms = require('../../leaves/search');
+const ms = require('../../leaves/text/search');
 
 // The typing-phase state + transforms live in the detail Component's
 // slice + update. Every wrapper here dispatches a viewer_search_* Msg
@@ -116,7 +116,7 @@ function decorateLines(lines, slice) {
  * line's existing markup (same v1 tradeoff as select.highlightLine).
  */
 function _multiHighlight(line, spans, activeIdx) {
-  const { stripMarkup, charWidth } = require('../../leaves/ansi');
+  const { stripMarkup, charWidth } = require('../../leaves/text/ansi');
   const plain = stripMarkup(line);
   const chars = [...plain];
   // Codepoint-index → display-col cumulative array → map [col,col+len) → cp range.

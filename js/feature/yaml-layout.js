@@ -33,7 +33,7 @@
 'use strict';
 
 const fs = require('fs');
-const mpool = require('../leaves/pool');
+const mpool = require('../leaves/wm/pool');
 
 // Bookkeeping fields on pool entries that never round-trip.
 const POOL_RUNTIME_KEYS = new Set(['id', '_synthesized']);

@@ -12,7 +12,7 @@
 
 const { setViewerContent } = require('../nav-state');
 const history = require('../../feature/history');
-const mnav = require('../../leaves/nav');
+const mnav = require('../../leaves/wm/nav');
 const {
   esc, theme, renderPanel,
   getSel, getScroll, isMultiSel,

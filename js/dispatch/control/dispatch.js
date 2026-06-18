@@ -33,11 +33,11 @@ const { isTerminalTab, activeTerminalId, findEphemeralByid,
         removeEphemeralTab, isContentTab, activeContentTab,
         removeContentTab } = require('../../panel/viewer/tabs');
 const { isSessionDead } = require('../../io/terminal');
-const keybindings = require('../../leaves/keybindings');
-const modes = require('../../leaves/modes');
+const keybindings = require('../../leaves/input/keybindings');
+const modes = require('../../leaves/input/modes');
 const route = require('../../panel/route');
-const mpane = require('../../leaves/pane');
-const { halfProjection } = require('../../leaves/geometry');
+const mpane = require('../../leaves/wm/pane');
+const { halfProjection } = require('../../leaves/wm/geometry');
 // getModel is the bottom-layer store (v0.6.5 §1), imported down.
 const { getModel } = require('../../model/store');
 // #D4b — the root-Msg pump (applyMsg) now lives in the runtime loop alongside
@@ -318,7 +318,7 @@ function handleFreeConfigKey(key, seq) {
       // under the green focus border). detail is rejected by the
       // reducer; other invariants (drag in flight) are out of band
       // here since handleFreeConfigKey only runs on idle key input.
-      const all = layoutSlice ? require('../../leaves/pool').allPanesInColumns(layoutSlice.arrange) : [];
+      const all = layoutSlice ? require('../../leaves/wm/pool').allPanesInColumns(layoutSlice.arrange) : [];
       const sel = all.find(p => mpane.paneMatchesFocus(p, layoutSlice && layoutSlice.focus));
       if (sel) dispatch({ type: 'panel_collapse_toggle', id: sel.id });
       break;
@@ -433,7 +433,7 @@ function _paneMenuPick(target, item) {
     // Replicate the retired tab_list_pick cascade: close the menu, focus
     // the viewer, switch its active tab. targetKey + currentGroup are
     // view-derived (threaded so the viewer's tab_switch arm stays pure).
-    const pt = require('../../leaves/pane-tabs');
+    const pt = require('../../leaves/wm/pane-tabs');
     const slice = getInstanceSlice(target);
     const idx = item.tabIdx | 0;
     const m = getModel();
@@ -849,7 +849,7 @@ function loadContextMenu(config) {
       console.error(`[context-menu] entry '${e.label}' targets action '${e.action}' but no action with that short key exists in config — the menu row will be a silent no-op`);
     }
   }
-  require('../../leaves/context-menu').configure(entries);
+  require('../../leaves/input/context-menu').configure(entries);
 }
 
 // Mode → handler map. The ORDER and the membership of the modal set

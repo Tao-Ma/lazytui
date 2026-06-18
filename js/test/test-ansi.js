@@ -12,7 +12,7 @@
 'use strict';
 
 const { describe, it, eq, assert, report } = require('./test-runner');
-const { esc, richToAnsi, stripControls } = require('../leaves/ansi');
+const { esc, richToAnsi, stripControls } = require('../leaves/text/ansi');
 
 describe('[1] stripControls — preserves SGR, strips dangerous escapes', () => {
   it('strips CSI cursor-move / screen-clear (non-SGR)', () => {
@@ -85,7 +85,7 @@ describe('[3] T22 verified-repro pinning', () => {
 // advances to the next 8-col tab stop. Without expansion, padding +
 // border calculations overrun the panel width and corrupt the next row
 // (postgresql.conf line `#data_directory = 'ConfigDir'\t\t# ...`).
-const { visibleLen } = require('../leaves/ansi');
+const { visibleLen } = require('../leaves/text/ansi');
 describe('[3] esc() — expands \\t to spaces against 8-col tab stops', () => {
   it('two tabs after a col-29 prefix expand to 3+8 spaces', () => {
     const line = "#data_directory = 'ConfigDir'\t\t# use data";

@@ -17,10 +17,10 @@
  */
 'use strict';
 
-const { esc, visibleLen, stripMarkup } = require('../leaves/ansi');
-const { renderOverlay, truncate, viewportDims } = require('../leaves/draw');
+const { esc, visibleLen, stripMarkup } = require('../leaves/text/ansi');
+const { renderOverlay, truncate, viewportDims } = require('../leaves/render/draw');
 const { getInstanceSlice } = require('../panel/api');
-const mpool = require('../leaves/pool');
+const mpool = require('../leaves/wm/pool');
 
 // Side-by-side overlay sizing — middle ground between the v0.6 Phase 4
 // "preview is too tiny" cap (90×10) and the "fills the screen" pass

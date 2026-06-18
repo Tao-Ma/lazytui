@@ -191,7 +191,7 @@ describe('[end-to-end] parse multi-tab YAML → switch active tab', () => {
     const os = require('os');
     const path = require('path');
     const { parse } = require('../parser');
-    const { rebuildLayoutFromConfig } = require('../leaves/arrange');
+    const { rebuildLayoutFromConfig } = require('../leaves/wm/arrange');
     const yaml = `groups:
   g: { label: G, actions: { a: { cmd: 'echo', label: A } } }
 panels:
@@ -233,7 +233,7 @@ layout:
     const os = require('os');
     const path = require('path');
     const { parse } = require('../parser');
-    const { rebuildLayoutFromConfig } = require('../leaves/arrange');
+    const { rebuildLayoutFromConfig } = require('../leaves/wm/arrange');
     const { serializeLayout, writeLayoutToFile } = require('../feature/yaml-layout');
     const yaml = `groups:
   g: { label: G, actions: { a: { cmd: 'echo', label: A } } }

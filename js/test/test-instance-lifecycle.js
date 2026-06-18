@@ -25,7 +25,7 @@ const path = require('path');
 const { describe, it, eq, assert, report } = require('./test-runner');
 const api = require('../panel/api');
 const route = require('../panel/route');
-const mpool = require('../leaves/pool');
+const mpool = require('../leaves/wm/pool');
 const { getModel } = require('../model/store');
 const { parse } = require('../parser');
 

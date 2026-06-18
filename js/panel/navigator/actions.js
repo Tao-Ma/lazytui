@@ -9,7 +9,7 @@
 'use strict';
 
 const { getModel } = require('../../model/store');
-const mnav = require('../../leaves/nav');
+const mnav = require('../../leaves/wm/nav');
 const {
   esc, theme, renderPanel,
   getSel, getScroll, isMultiSel, getFilter,

@@ -105,7 +105,7 @@ const FRAMEWORK_COMMANDS = [
     desc: 'Discard runtime changes; reload panel layout from YAML',
     run: () => {
       const { appendViewerLines } = require('./nav-state');
-      const { rebuildLayoutFromConfig } = require('../leaves/arrange');
+      const { rebuildLayoutFromConfig } = require('../leaves/wm/arrange');
       const m = getModel();
       _host.dispatchMsg(wrap('layout', {
         type: 'set_arrange', arrange: rebuildLayoutFromConfig(m.config), dirty: false,
@@ -128,7 +128,7 @@ const FRAMEWORK_COMMANDS = [
     desc: 'Insert an empty column — :add-column [position]  (default: just before the last column)',
     run: (args) => {
       const layoutSlice = route.getInstanceSlice('layout');
-      const mpool = require('../leaves/pool');
+      const mpool = require('../leaves/wm/pool');
       const N = mpool.columnCount(layoutSlice && layoutSlice.arrange);
       // Default: insert just before the last column (so it sits between
       // the navigators and the viewer-side last column). 1-based for
@@ -218,7 +218,7 @@ function _frameworkDynamicCommands(m) {
   // restrict to valid targets and gives `desc` somewhere to land. Same
   // pattern as `theme <name>` / `focus <name>` above.
   if (layoutSlice && layoutSlice.arrange && layoutSlice.arrange.pool) {
-    const mpool = require('../leaves/pool');
+    const mpool = require('../leaves/wm/pool');
     const arrange = layoutSlice.arrange;
     // :hide accepts the ACTIVE tab id of a placed pane (pool_hide
     // looks up by `p.id` which mirrors the active tab in v0.6.1). For
@@ -256,7 +256,7 @@ function _frameworkDynamicCommands(m) {
       // v0.6.3 post-arch-arc — focus is paneId post-T3.5. Match the
       // owning pane via paneId first; legacy form (tab id / pool id)
       // kept for any pre-migration caller that hands `focus` in raw.
-      const mpane = require('../leaves/pane');
+      const mpane = require('../leaves/wm/pane');
       const focusedPane = all.find(p =>
         mpane.paneMatchesFocus(p, focus)
         || (p.tabs && p.tabs.some(t => t.id === focus))

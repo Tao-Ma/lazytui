@@ -25,7 +25,7 @@ const { describe, it, eq, assert, report } = require('../test-runner');
 const sm = require('./_helpers/smoke');
 const api = sm.api;
 const { getModel } = require('../../app/runtime');
-const pt = require('../../leaves/pane-tabs');
+const pt = require('../../leaves/wm/pane-tabs');
 const { displayedLines } = require('../_helpers/viewer-lines');
 
 const VIEWER = 'detail';   // singleton viewer-kind id (route.resolveTarget('viewer') resolves here)

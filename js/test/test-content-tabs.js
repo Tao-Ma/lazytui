@@ -8,7 +8,7 @@
 
 const tabs = require('../panel/viewer/tabs');
 const { displayedLines } = require('./_helpers/viewer-lines');
-const pt = require('../leaves/pane-tabs');
+const pt = require('../leaves/wm/pane-tabs');
 const { describe, it, eq, assert, report } = require('./test-runner');
 const { getModel } = require('../app/runtime');
 const {getInstanceSlice, getFocus } = require('../panel/api');

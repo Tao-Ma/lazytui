@@ -28,8 +28,8 @@
 
 const { describe, it, assert, eq, report } = require('./test-runner');
 const viewer = require('../panel/viewer/viewer');
-const pt = require('../leaves/pane-tabs');
-const ms = require('../leaves/search');
+const pt = require('../leaves/wm/pane-tabs');
+const ms = require('../leaves/text/search');
 const { displayedLines } = require('./_helpers/viewer-lines');
 const { setModel, getModel } = require('../app/runtime');
 

@@ -37,7 +37,7 @@ const {
   esc, theme, renderPanel,
   getScroll, getSel,
 } = require('../api');
-const mnav = require('../../leaves/nav');
+const mnav = require('../../leaves/wm/nav');
 
 const DEFAULT_LAYOUT = 'tree';   // 'tree' | 'flat'
 const DEFAULT_SCOPE = 'all';     // 'all'  | 'tracked'

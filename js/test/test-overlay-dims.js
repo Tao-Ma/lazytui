@@ -14,7 +14,7 @@
 const { describe, it, eq, report } = require('./test-runner');
 const sm = require('./smoke/_helpers/smoke');
 const { getInstanceSlice, setInstanceSlice } = require('../panel/api');
-const { viewportDims } = require('../leaves/draw');
+const { viewportDims } = require('../leaves/render/draw');
 const term = require('../io/term');
 
 describe('[1] viewportDims reads the model clock, not the io/term singleton', () => {

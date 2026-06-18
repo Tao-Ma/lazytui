@@ -27,7 +27,7 @@ const { describe, it, eq, assert, report } = require('./test-runner');
 const sm = require('./smoke/_helpers/smoke');
 const { getInstanceSlice } = require('../panel/api');
 const { getSel, setSel, getScroll, setScroll } = require('../app/state');
-const geo = require('../leaves/geometry');
+const geo = require('../leaves/wm/geometry');
 
 // 40 groups → the groups navigator has enough rows to scroll at any
 // terminal height used below.

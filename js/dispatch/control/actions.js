@@ -23,7 +23,7 @@
 'use strict';
 
 const { allPanels, getSel } = require('../../panel/nav-state');
-const { getPanelViewportH, visibleBoundsFor } = require('../../leaves/geometry');
+const { getPanelViewportH, visibleBoundsFor } = require('../../leaves/wm/geometry');
 const { runAction } = require('../runtime/action-runner');
 const { getPanelDef, getItems, getMergedActions, getInstanceSlice,
         wrap, getFocus, instanceKind } = require('../../panel/api');
@@ -33,8 +33,8 @@ const { isSessionDead, restartSession } = require('../../io/terminal');
 const { execSync } = require('child_process');
 const { getModel } = require('../../model/store');
 const route = require('../../panel/route');
-const mpane = require('../../leaves/pane');
-const pt = require('../../leaves/pane-tabs');
+const mpane = require('../../leaves/wm/pane');
+const pt = require('../../leaves/wm/pane-tabs');
 
 /** v0.6.4 Theme C — compute the focused viewer's tab info HERE (handler,
  *  impure) so the next_tab/prev_tab reducer arms stay pure of Component

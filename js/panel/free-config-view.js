@@ -23,13 +23,13 @@
  */
 'use strict';
 
-const { esc } = require('../leaves/ansi');
+const { esc } = require('../leaves/text/ansi');
 const { cols } = require('../io/term');
 const { getModel } = require('../model/store');
 const { getInstanceSlice } = require("./api");
-const mfcCore = require('../leaves/free-config-core');
-const mfcMouse = require('../leaves/free-config-mouse');
-const mpool = require('../leaves/pool');
+const mfcCore = require('../leaves/free-config/free-config-core');
+const mfcMouse = require('../leaves/free-config/free-config-mouse');
+const mpool = require('../leaves/wm/pool');
 
 // The layout Component's slice + its freeConfig sub-slice. Lazy because
 // tests can boot without layout. Read helpers take the slice directly —

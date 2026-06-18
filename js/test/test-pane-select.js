@@ -95,7 +95,7 @@ describe('[1] reducer arms', () => {
 });
 
 describe('[2] chromeFor — [≡] surfaces the unified pane-menu trigger state', () => {
-  const { chromeFor } = require('../leaves/draw');
+  const { chromeFor } = require('../leaves/render/draw');
   it('default (no ctx) → available', () => {
     const p = { type: 'groups', tabs: [{ id: 'groups' }] };
     eq(chromeFor(p, {}).tabTrigger, 'available');
@@ -179,7 +179,7 @@ describe('[3] hit-test', () => {
 });
 
 describe('[5] paneSelectItems — pure list build', () => {
-  const mpool = require('../leaves/pool');
+  const mpool = require('../leaves/wm/pool');
   function buildArrange() {
     return {
       columns: [
@@ -436,13 +436,13 @@ describe('[7] pool_swap_by_id — SWAP / REPLACE / invariants', () => {
     eq(movedToStatsSlot.tabs[1].poolId, 'tab-b');
     eq(movedToStatsSlot.activeTabId, 'tab-a');
     // Pool invariant: tab-b stays placed (one occurrence via tabs[]).
-    const placed = require('../leaves/pool').placedIds(arr);
+    const placed = require('../leaves/wm/pool').placedIds(arr);
     eq(placed.filter(id => id === 'tab-b').length, 1, 'tab-b placed exactly once');
   });
 
   it('T1.2 — non-active multi-tab tabs excluded from paneSelectItems', () => {
     setupMultiTab();
-    const list = require('../leaves/pool').paneSelectItems(
+    const list = require('../leaves/wm/pool').paneSelectItems(
       route.getInstanceSlice('layout').arrange, 'pane-stats',
     );
     // tab-b is the non-active tab inside pane-multi. It must NOT
@@ -552,7 +552,7 @@ describe('[7] pool_swap_by_id — SWAP / REPLACE / invariants', () => {
 });
 
 describe('[4] modes registry has paneMenuMode', () => {
-  const modes = require('../leaves/modes');
+  const modes = require('../leaves/input/modes');
   it('paneMenuMode is in CHAIN_MODES', () => {
     assert(modes.CHAIN_MODES.includes('paneMenuMode'));
   });
@@ -580,7 +580,7 @@ describe('[4] modes registry has paneMenuMode', () => {
 });
 
 describe('[8] paneMenuPanes — viewer-inclusive, mode-aware (v0.6.4 #1 Step 2)', () => {
-  const mpool = require('../leaves/pool');
+  const mpool = require('../leaves/wm/pool');
   function arr() {
     return {
       columns: [

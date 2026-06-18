@@ -39,7 +39,7 @@
 
 const { spawn } = require('child_process');
 const { StringDecoder } = require('string_decoder');
-const { esc } = require('../../leaves/ansi');
+const { esc } = require('../../leaves/text/ansi');
 const { getModel } = require('../../model/store');
 const { scheduleRender } = require('../../leaves/infra/render-queue');
 const history = require('../../feature/history');
@@ -82,7 +82,7 @@ function _routedBundle(slice, model, groupName) {
   // Compute the active action tab key once at dispatch time. Saves
   // the reducer the 71µs pt.activeActionTabIn (getMergedActions
   // iteration) per streamed line.
-  const pt = require('../../leaves/pane-tabs');
+  const pt = require('../../leaves/wm/pane-tabs');
   const active = pt.activeActionTabIn(slice, model, groupName);
   return {
     currentGroup: model.currentGroup,
@@ -228,7 +228,7 @@ function streamCommand(headerLabel, cmd, args = [], opts = {}) {
   // comparison.
   let startMsg;
   if (tabKey && groupName) {
-    const pt = require('../../leaves/pane-tabs');
+    const pt = require('../../leaves/wm/pane-tabs');
     const slice = api.getInstanceSlice(target) || { tab: 0 };
     const model = getModel();
     const startBundle = { currentGroup: model.currentGroup };

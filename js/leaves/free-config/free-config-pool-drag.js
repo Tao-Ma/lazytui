@@ -31,7 +31,7 @@
 const mfcCore = require('./free-config-core');
 const mfcMouse = require('./free-config-mouse');
 const { pointToCellZone, newColumnZoneAt } = mfcMouse;
-const mpool = require('./pool');
+const mpool = require('../wm/pool');
 const { placementFromPoolEntry } = mpool;
 
 /** Compute the drop target for a pool drag at (mx, my). Returns

@@ -17,9 +17,9 @@ const { ParseError } = require('./errors');
 const { validate } = require('./schema');
 const { passthroughCmd, resolveScript } = require('./resolver');
 
-const { LEFT_HOTKEY_POOL, RIGHT_HOTKEY_POOL, hotkeyPoolForColumn } = require('../leaves/hotkeys');
-const mpane = require('../leaves/pane');
-const mpool = require('../leaves/pool');
+const { LEFT_HOTKEY_POOL, RIGHT_HOTKEY_POOL, hotkeyPoolForColumn } = require('../leaves/input/hotkeys');
+const mpane = require('../leaves/wm/pane');
+const mpool = require('../leaves/wm/pool');
 
 // Reserved layout keys consumed by the framework; everything else
 // passes through as plugin-specific panel config (e.g. stats panel's

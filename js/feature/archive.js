@@ -40,7 +40,7 @@
  */
 'use strict';
 
-const { shEscape } = require('../leaves/sh-escape');
+const { shEscape } = require('../leaves/text/sh-escape');
 
 // Pick a checksum tool at runtime so the same script works on macOS
 // (shasum) and Linux (sha256sum) without per-host config.

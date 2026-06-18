@@ -15,7 +15,7 @@ const { describe, it, eq, assert, report } = require('./test-runner');
 const { getModel } = require('../app/runtime');
 const { getInstanceSlice } = require('../panel/api');
 
-const kb = require('../leaves/keybindings');
+const kb = require('../leaves/input/keybindings');
 
 // ---- [1] parseSeq -------------------------------------------------
 
@@ -156,7 +156,7 @@ const api = require('../panel/api');
 // list-select multi-toggle reads/writes the new per-Navigator nav slice
 // via the helpers. The shared leaves/nav leaf handles set_cursor /
 // multisel_*; init seeds the panel's nav entry.
-const mnav = require('../leaves/nav');
+const mnav = require('../leaves/wm/nav');
 api.registerComponent({
   name: 'kb-test',
   init: () => ({ nav: { listy: mnav.init() } }),

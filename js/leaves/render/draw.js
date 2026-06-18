@@ -8,9 +8,9 @@
  */
 'use strict';
 
-const { visibleLen, stripMarkup, charWidth, richToAnsi, wrapColor, RESET } = require('./ansi');
+const { visibleLen, stripMarkup, charWidth, richToAnsi, wrapColor, RESET } = require('../text/ansi');
 const { scrollbar } = require('./scrollbar');
-const { theme } = require('./infra/themes');
+const { theme } = require('../infra/themes');
 // No io import: terminal dims arrive via the injected _dimsProvider (below)
 // and the overlay paint write via the injected _writer (setWriter), both wired
 // at boot. Keeping this leaf free of io is what lets io/file-loader depend DOWN

@@ -20,7 +20,7 @@
  */
 'use strict';
 
-const { rebuildLayoutFromConfig } = require('../leaves/arrange');
+const { rebuildLayoutFromConfig } = require('../leaves/wm/arrange');
 const {
   titleEditText,
   onMouseEvent, pointToResizeTarget,
@@ -201,7 +201,7 @@ describe('[3] drag-to-resize — detail-panel top edge', () => {
   });
   it('drag down shrinks detailHeightPct, clamped at dynamic min (13% on availH=40)', () => {
     setupFixture();
-    const { detailMinPct } = require('../leaves/free-config-core');
+    const { detailMinPct } = require('../leaves/free-config/free-config-core');
     onMouseEvent('press',  50, 15);
     onMouseEvent('motion', 50, 36);  // newDetailH = 4 rows; clamps to DETAIL_MIN_ROWS=5
     // detailMinPct(40) = max(5, ceil(5/40*100)) = 13 — five rows is the
@@ -444,7 +444,7 @@ describe('[3f] keyboard `]` / `[` — focused panel heightPct', () => {
     // Focus stats (right col, idx=3 in all). stats is just above detail.
     // detail starts at 60%. Repeated `]` should stop at detail hitting
     // the dynamic min (detailMinPct(availH) = 13% on availH=40).
-    const { detailMinPct } = require('../leaves/free-config-core');
+    const { detailMinPct } = require('../leaves/free-config/free-config-core');
     handleFreeConfigKey('j'); handleFreeConfigKey('j'); handleFreeConfigKey('j');  // → stats
     eq(getInstanceSlice("layout").arrange.columns[1].panels[1].type, 'stats');
     for (let i = 0; i < 20; i++) handleFreeConfigKey(']');
@@ -456,7 +456,7 @@ describe('[3f] keyboard `]` / `[` — focused panel heightPct', () => {
 // ===============================================================
 describe('[3e] calcLayout — heightPct distribution', () => {
   // wm-geo P1.2 — calcLayout is pure: (layoutSlice, dims) → Layout.
-  const geo = require('../leaves/geometry');
+  const geo = require('../leaves/wm/geometry');
   const { dims } = require('../io/term');
   const calcLayout = () => geo.calcLayout(getInstanceSlice('layout'), dims());
   function freshLayout() {
@@ -481,16 +481,16 @@ describe('[3e] calcLayout — heightPct distribution', () => {
     freshLayout();
     process.stdout.columns = 100; process.stdout.rows = 30; // availH = 29
     calcLayout();
-    eq(require('../leaves/geometry')._getPanelHeights().containers, 14);
-    eq(require('../leaves/geometry')._getPanelHeights().groups, 15, 'two flex split 29: 14 + 15 (last gets leftover)');
+    eq(require('../leaves/wm/geometry')._getPanelHeights().containers, 14);
+    eq(require('../leaves/wm/geometry')._getPanelHeights().groups, 15, 'two flex split 29: 14 + 15 (last gets leftover)');
   });
   it('anchored heightPct claims its share, flex absorbs remainder', () => {
     freshLayout();
     getInstanceSlice("layout").arrange.columns[0].panels[0].heightPct = 70;  // containers fixed at 70%
     process.stdout.columns = 100; process.stdout.rows = 30; // availH = 29
     calcLayout();
-    eq(require('../leaves/geometry')._getPanelHeights().containers, 20, 'floor(29 * 0.7) = 20');
-    eq(require('../leaves/geometry')._getPanelHeights().groups, 9, 'flex remainder');
+    eq(require('../leaves/wm/geometry')._getPanelHeights().containers, 20, 'floor(29 * 0.7) = 20');
+    eq(require('../leaves/wm/geometry')._getPanelHeights().groups, 9, 'flex remainder');
   });
   it('oversubscribed anchored values scale proportionally', () => {
     freshLayout();
@@ -498,9 +498,9 @@ describe('[3e] calcLayout — heightPct distribution', () => {
     getInstanceSlice("layout").arrange.columns[0].panels[1].heightPct = 90;
     process.stdout.columns = 100; process.stdout.rows = 30; // availH = 29
     calcLayout();
-    eq(require('../leaves/geometry')._getPanelHeights().containers + require('../leaves/geometry')._getPanelHeights().groups, 29, 'column fills availH after scaling');
-    assert(require('../leaves/geometry')._getPanelHeights().containers >= 3, 'containers ≥ minH');
-    assert(require('../leaves/geometry')._getPanelHeights().groups >= 3, 'groups ≥ minH');
+    eq(require('../leaves/wm/geometry')._getPanelHeights().containers + require('../leaves/wm/geometry')._getPanelHeights().groups, 29, 'column fills availH after scaling');
+    assert(require('../leaves/wm/geometry')._getPanelHeights().containers >= 3, 'containers ≥ minH');
+    assert(require('../leaves/wm/geometry')._getPanelHeights().groups >= 3, 'groups ≥ minH');
   });
 });
 

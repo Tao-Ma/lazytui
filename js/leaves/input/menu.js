@@ -13,8 +13,8 @@
  */
 'use strict';
 
-const { esc } = require('./ansi');
-const mpool = require('./pool');
+const { esc } = require('../text/ansi');
+const mpool = require('../wm/pool');
 
 function buildItems(layoutSlice) {
   const arrange = (layoutSlice && layoutSlice.arrange) || { columns: [] };

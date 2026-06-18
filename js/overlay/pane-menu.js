@@ -33,13 +33,13 @@
 
 const { getModel } = require('../model/store');
 const { getInstanceSlice } = require('../panel/api');
-const { renderPanel, viewportDims } = require('../leaves/draw');
-const { richToAnsi, RESET, esc, visibleLen } = require('../leaves/ansi');
+const { renderPanel, viewportDims } = require('../leaves/render/draw');
+const { richToAnsi, RESET, esc, visibleLen } = require('../leaves/text/ansi');
 const { stdout } = require('../io/term');
-const { isChainActive } = require('../leaves/modes');
-const mpool = require('../leaves/pool');
-const { visibleBoundsFor } = require('../leaves/geometry');
-const pt = require('../leaves/pane-tabs');
+const { isChainActive } = require('../leaves/input/modes');
+const mpool = require('../leaves/wm/pool');
+const { visibleBoundsFor } = require('../leaves/wm/geometry');
+const pt = require('../leaves/wm/pane-tabs');
 const route = require('../panel/route');
 
 const MAX_W = 50;

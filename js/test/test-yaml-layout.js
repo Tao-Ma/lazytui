@@ -350,7 +350,7 @@ describe('[4b] v0.6.4 — per-pane detail height (heightPct unification)', () =>
     const fullYaml = `groups:\n  g1:\n    label: g1\n    actions:\n      noop:\n        label: noop\n        cmd: "true"\n\n${serializePanelsBlock(arrange)}\n\n${serializeLayout(arrange)}\n`;
     fs.writeFileSync(tmp, fullYaml);
     const { parse } = require('../parser');
-    const { rebuildLayoutFromConfig } = require('../leaves/arrange');
+    const { rebuildLayoutFromConfig } = require('../leaves/wm/arrange');
     let rebuilt;
     try { rebuilt = rebuildLayoutFromConfig(parse(tmp)); } finally { fs.unlinkSync(tmp); }
 

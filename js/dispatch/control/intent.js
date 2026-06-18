@@ -25,7 +25,7 @@ let _api = null, _dispatch = null, _actions = null, _menu = null, _input = null;
 const api      = () => _api      || (_api      = require('../../panel/api'));
 const dispatch = () => _dispatch || (_dispatch = require('./dispatch'));
 const actions  = () => _actions  || (_actions  = require('./actions'));
-const menu     = () => _menu     || (_menu     = require('../../leaves/menu'));
+const menu     = () => _menu     || (_menu     = require('../../leaves/input/menu'));
 const input    = () => _input    || (_input    = require('./input'));
 
 // --- Intent constructors (the vocabulary) ---

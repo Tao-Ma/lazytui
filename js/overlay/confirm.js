@@ -9,8 +9,8 @@
 'use strict';
 
 const { getModel } = require('../model/store');
-const { esc } = require('../leaves/ansi');
-const { renderOverlay } = require('../leaves/draw');
+const { esc } = require('../leaves/text/ansi');
+const { renderOverlay } = require('../leaves/render/draw');
 
 function renderConfirmOverlay() {
   const c = getModel().modal.confirm;

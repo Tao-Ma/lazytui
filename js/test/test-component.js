@@ -433,7 +433,7 @@ describe('[8a] chrome-only Component (no panelTypes) is supported', () => {
 
 describe('[8] getItems reads the component slice (list panel)', () => {
   it('rows come from the slice; the framework filter applies over them', () => {
-    const mnav = require('../leaves/nav');
+    const mnav = require('../leaves/wm/nav');
     api.registerComponent({
       name: 'list',
       // Phase 4c — filter text lives on `slice.nav[panelType].filter`;

@@ -24,7 +24,7 @@
 
 const { describe, it, eq, assert, report } = require('../test-runner');
 const sm = require('./_helpers/smoke');
-const geo = require('../../leaves/geometry');  // A.2: bounds are derived, not on slice.paneBounds
+const geo = require('../../leaves/wm/geometry');  // A.2: bounds are derived, not on slice.paneBounds
 const api = sm.api;
 const { getModel } = require('../../app/runtime');
 const actions = require('../../dispatch/control/actions');

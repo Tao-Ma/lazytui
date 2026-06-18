@@ -43,7 +43,7 @@ const {
   hub,
 } = require('../api');
 const { getModel } = require('../../model/store');
-const mnav = require('../../leaves/nav');
+const mnav = require('../../leaves/wm/nav');
 
 const POLL_MS = 10000;
 

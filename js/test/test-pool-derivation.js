@@ -15,9 +15,9 @@ const os = require('os');
 const path = require('path');
 
 const { describe, it, eq, assert, report } = require('./test-runner');
-const pool = require('../leaves/pool');
+const pool = require('../leaves/wm/pool');
 const { parse } = require('../parser');
-const { rebuildLayoutFromConfig } = require('../leaves/arrange');
+const { rebuildLayoutFromConfig } = require('../leaves/wm/arrange');
 
 let _tmpDir = null;
 function tmpYaml(content, name = 'test.yml') {

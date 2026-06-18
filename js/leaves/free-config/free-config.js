@@ -34,8 +34,8 @@
  */
 'use strict';
 
-const mpool = require('./pool');
-const mpane = require('./pane');
+const mpool = require('../wm/pool');
+const mpane = require('../wm/pane');
 const core = require('./free-config-core');
 const {
   MIN_PANEL_H, EDGE_W,

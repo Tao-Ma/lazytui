@@ -96,7 +96,7 @@ describe('[panel_collapse_toggle] reducer', () => {
 
 // --- Section 2: render-side distribution (test seam: _distributeColumnHeights) ---
 describe('[distributeColumnHeights] honors collapsed = 1 row', () => {
-  const { _distributeColumnHeights } = require('../leaves/geometry');
+  const { _distributeColumnHeights } = require('../leaves/wm/geometry');
 
   function run(panels, availH, isLastCol = false) {
     // _distributeColumnHeights is now a pure function: takes panels +
@@ -179,7 +179,7 @@ describe('[distributeColumnHeights] honors collapsed = 1 row', () => {
 
 // --- Section 2b: v0.6.4 paneId-keyed distribution (no same-type collision) ---
 describe('[distributeColumnHeights] keys by paneId — two same-type panes', () => {
-  const { _distributeColumnHeights } = require('../leaves/geometry');
+  const { _distributeColumnHeights } = require('../leaves/wm/geometry');
 
   it('two same-type panes in one column get their OWN heights', () => {
     // Pre-v0.6.4 the height map was keyed by `p.type`, so two `files`
