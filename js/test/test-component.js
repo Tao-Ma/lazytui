@@ -60,14 +60,13 @@ describe('[2] registration stores spec + initial slice', () => {
 });
 
 describe('[3] dispatch — non-key fans to all; key goes to the focused panel via dispatchKeyToFocused', () => {
-  it('refresh/hub reach every component; a key reaches only the focused owner', () => {
+  it('refresh broadcast reaches every component; a key reaches only the focused owner', () => {
     // Use fresh names to avoid carry-over from earlier tests.
     api.registerComponent(makeRecorder('fanA'));
     api.registerComponent(makeRecorder('fanB'));
 
-    // Non-key Msgs fan to every component (the §12 contract holds for these).
+    // Broadcast Msgs fan to every component (the §12 contract holds for these).
     api.dispatchMsg({ type: 'refresh' });
-    api.dispatchMsg({ type: 'hub', topic: 'foo', rowKey: 'r', sample: 1 });
     // Key events have their own dispatch path — they need a return
     // value to gate the framework default — and route only to the
     // focused panel's Component.
@@ -76,8 +75,8 @@ describe('[3] dispatch — non-key fans to all; key goes to the focused panel vi
 
     const a = api.getInstanceSlice('fanA');
     const b = api.getInstanceSlice('fanB');
-    eq(a.msgs.join(','), 'refresh,hub,key', 'fanA: non-key Msgs + the focused key');
-    eq(b.msgs.join(','), 'refresh,hub', 'fanB: non-key only — not the key (unfocused)');
+    eq(a.msgs.join(','), 'refresh,key', 'fanA: broadcast + the focused key');
+    eq(b.msgs.join(','), 'refresh', 'fanB: broadcast only — not the key (unfocused)');
   });
 });
 
@@ -326,7 +325,6 @@ describe('[8d] layout Component skeleton (Phase 1a)', () => {
   it('layout update is inert during Phase 1a — flat Msgs touch nothing', () => {
     const before = api.getInstanceSlice('layout');
     api.dispatchMsg({ type: 'refresh' });
-    api.dispatchMsg({ type: 'hub', topic: 't', rowKey: 'r', sample: 1 });
     // update returns the same slice; the registry stores whatever update returns.
     // Phase 1a's update returns slice unchanged, so the slice identity is preserved.
     eq(api.getInstanceSlice('layout'), before,
@@ -411,8 +409,7 @@ describe('[8a] chrome-only Component (no panelTypes) is supported', () => {
        'no panel ownership claimed');
     // Fan-out Msgs reach it (non-key)
     api.dispatchMsg({ type: 'refresh' });
-    api.dispatchMsg({ type: 'hub', topic: 't', rowKey: 'r', sample: 1 });
-    eq(api.getInstanceSlice('chrome-rec').msgs.join(','), 'refresh,hub',
+    eq(api.getInstanceSlice('chrome-rec').msgs.join(','), 'refresh',
        'fan-out Msgs delivered to chrome-only Component');
   });
 

@@ -101,7 +101,6 @@ module.exports = {
     switch (msg.type) {
       case 'key':     return /* ... */;
       case 'refresh': return /* ... */;
-      case 'hub':     return /* ... */;
       case 'action':  return /* ... */;
       default:        return slice;     // unknown Msg type
     }
@@ -201,7 +200,6 @@ data, different consumer.
 |---|---|---|
 | `'key'` | Every key event after key-filter middleware (focused panel's Component only) | `key` (string, e.g. `'up'`, `'q'`, `'a'`), `seq` (raw bytes for paste etc.) |
 | `'refresh'` | Boot, `r`, `:refresh` | (none) |
-| `'hub'` | Every `hub.publish()` call, before retention dedup | `topic`, `rowKey`, `sample` |
 | `'action'` | Every action invocation, before confirm gating | `actionKey`, `args`, `actionType` (`'run'` / `'spawn'` / `'background'`) |
 | _Wrapped Msgs_ | Routed via `api.dispatchMsg(api.wrap('name', innerMsg))` | inner msg's payload — the wrapper is unwrapped by the framework |
 

@@ -128,7 +128,13 @@ judgment call — see Decisions Ledger) · `FORWARD` (parked for a later pass to
   consumes it** (grep-confirmed) — so each publish runs N no-op updates + a depth-0
   finalizer purely as overhead; the actual repaint comes from the separate
   `onUpdate → scheduleRender`. Drop it (YAGNI) vs keep + document the cost. Evidence: F5.2.
-  *Undecided.*
+  **RESOLVED (drop)** — removed the `_dispatch({type:'hub'})` emit from `hub.publish`, the
+  now-dead `setDispatch`/`_dispatch` seam in `hub.js`, the `hub.setDispatch` wiring in
+  `fanout.js`, and `'hub'` from `BROADCAST_TYPES` (down to `refresh`/`action`). Hub publishes
+  now reach observers solely via the `onUpdate → scheduleRender` subscription (renderer reads
+  hub data live); the event-log recorder is untouched. Living docs swept (PRINCIPLES.md §Msg
+  routing + example, PLUGINS.md skeleton + Msg table). Suite 96/96, acyclic both modes, benches
+  parity. (`action` is also update-unconsumed but low-frequency + user-triggered — out of scope.)
 
 ---
 
