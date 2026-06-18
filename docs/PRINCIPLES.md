@@ -303,20 +303,22 @@ resolved both:
   renderer to the `leaves/draw` leaf, the model-read is an injected
   `setDimsProvider` seam wired from `panel/api` — the leaf never reaches up into
   panel; see `docs/v0.6.5-render-exit.md`.) Pinned by `test-overlay-dims.js`.
-- **Wall-clock age columns — concentrated to one frame-boundary read.**
-  `renderDiagLog`/`renderJobsOverlay` no longer read `Date.now()` in their
-  bodies; `now` is threaded from the paint frame, so each is a pure function
-  of (side-store, model, now) — replayable/snapshottable given a fixed `now`
-  (pinned by `test-overlay-clock.js`). The single wall-clock read now lives at
-  the frame boundary, `paint.render(model, now = Date.now())` — the render
-  analog of the dispatcher's `msg.now` (read once at the boundary, threaded
-  into the pure leaves). One residual: an argless `render()` re-reads the
-  default `now`, so back-to-back top-level paints still advance the age — an
-  inherent property of a live-age display (a model `now`/tick would remove
-  even that, at the cost of tick infrastructure). Root context: both overlays
-  render from **out-of-TEA side registries** (`feature/jobs.js`'s `_jobs` Map
-  via `jobs.list()`; `io/diag-log.js`'s ring buffer via `diag.snapshot()`),
-  not the model.
+- **Wall-clock age columns — under the model (`model.now`/tick).**
+  `renderDiagLog`/`renderJobsOverlay` read `now` threaded from the paint frame,
+  never `Date.now()` in their bodies, so each is a pure function of
+  (side-store, model, now) — snapshottable given a fixed `now` (pinned by
+  `test-overlay-clock.js`). The wall-clock read itself is now under the model:
+  `render(model)` reads `model.now` (a pure-by-construction view — no
+  `getModel()` default, #D6), and `model.now` is advanced only by the gated
+  `clock_tick` reducer arm (the self-re-arming tick runs ONLY while an age
+  overlay is open; see `docs/model-now-tick.md`). So the wall clock is
+  replay-safe data in the model, not a per-paint read. Residual / root context:
+  both overlays render from **out-of-TEA side registries**
+  (`feature/jobs.js`'s `_jobs` Map via `jobs.list()`; `io/diag-log.js`'s ring
+  buffer via `diag.snapshot()`), NOT the model — so the frame is pure of the
+  wall clock but still NOT a pure function of the model. That broader gap (the
+  jobs / diag / history / PTY / theme live stores the frame reads) is the **#D5
+  replayability boundary** — see `model/store.js` §Replayability boundary.
 
 **Why the rule matters:**
 

@@ -218,11 +218,12 @@ function renderPanel({
 //
 // Render-exit seam: this leaf can't read the model (panel layer) nor import
 // io. The dims source is injected via setDimsProvider — panel/api wires it to
-// resolve the layout slice's model clock first, then io/term as the boot
-// fallback — so both the model-read and the io-read stay in panel and the
-// frame stays a pure function of the model. The 80x24 here is only the
-// last-resort when NO provider is wired at all (e.g. a unit test that calls
-// this leaf without booting); it matches the layout slice's own seed.
+// resolve the layout slice's model dims first, then io/term as the boot
+// fallback — so both the model-read and the io-read stay in panel and the leaf
+// only consumes resolved {cols,rows} (the dims source is unified on the model).
+// The 80x24 here is only the last-resort when NO provider is wired at all
+// (e.g. a unit test that calls this leaf without booting); it matches the
+// layout slice's own seed.
 let _dimsProvider = null;
 function setDimsProvider(fn) { _dimsProvider = fn; }
 function viewportDims() {

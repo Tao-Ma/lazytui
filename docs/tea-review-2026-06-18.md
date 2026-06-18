@@ -58,7 +58,24 @@ judgment call — see Decisions Ledger) · `FORWARD` (parked for a later pass to
   boundary ("frame = f(model + named live stores); replay reproduces model, not live
   stores"); (b) bring the live stores under TEA — a `Sub` pushes samples into the model via
   Msgs so the model holds the latest snapshot and the frame is genuinely `f(model)`.
-  Evidence: F2.1. *Undecided.*
+  Evidence: F2.1.
+  **RESOLVED (option a — documentation correction; user-directed 2026-06-18)** — corrected the
+  overclaim everywhere it lived and stated the real boundary: the frame is a pure function of
+  `(model + named off-model live stores)`, NOT of the model alone; replaying the Msg log
+  reconstructs the MODEL but not the live stores (jobs / diag-log / history / PTY sessions /
+  theme palette cache / dims mirror — all enumerated). `model.now`/`model.theme` are the two
+  reads that WERE pulled under the model, so the wall clock + theme NAME are replay-safe; the
+  rest are not. The PTY terminal pane is explicitly bounded as a NON-TEA region (model holds
+  lifecycle, xterm holds screen contents; replay excludes terminal output). Swept: NEW
+  `model/store.js` §Replayability boundary (the canonical home) + corrected `now` field comment;
+  `paint.js` render-clock comment; `panel/api.js` + `leaves/draw.js` dims comments;
+  `docs/model-now-tick.md` (Target invariant + §5 scoped to wall-clock half); `PRINCIPLES.md`
+  §11 (also un-staled the model.now/tick + #D6 render-signature refs); `blessed-exceptions.md`
+  (both D-instances); `reducer-route-purity.md` (D-vs-A framing); `v0.6.5-tea-reaudit.md` D-row
+  forward-pointer. Option (b) — bring the live stores under TEA via `Sub`s — is NOT done; it
+  remains a future arc, and the doc now names it as the path to genuine `f(model)`. D8 (theme),
+  D14 (PTY island), D15 (250ms timer) — their CODE is unchanged (still open forks); D5's doc
+  correction bounds/names them honestly. Suite 96/96 (comment-only; benches N/A — no code path).
 - **D6 — `render(model = getModel())` default.** The view self-fetches the global model
   when not threaded (`paint.js:665`), so its signature isn't pure-by-construction. Finish
   threading the model through all call sites and drop the default, or keep it and document

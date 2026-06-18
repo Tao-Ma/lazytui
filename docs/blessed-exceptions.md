@@ -88,12 +88,14 @@ have been brought under the model-clock discipline:
   is now GONE: `render()` reads `model.now`, advanced by a gated `clock_tick`
   reducer arm (the self-re-arming clock runs only while an age overlay is open;
   the wall-clock read lives in the `arm_clock` effect — the impure shell). So
-  the rendered frame is a pure function of the model → of the Msg log →
-  deterministically replayable. This was the last exception D / the render-
-  replay blocker. See docs/model-now-tick.md. Pinned by `test-overlay-clock.js`
-  + the `clock_tick` reducer tests. Root context: both overlays still render
-  from out-of-TEA side registries (`feature/jobs.js` Map; `io/diag-log.js` ring
-  buffer), not the model. See PRINCIPLES §11.
+  the rendered frame is now pure of the WALL CLOCK — exception D was specifically
+  the wall-clock render read, and it is gone. This does NOT make the frame a pure
+  function of the model: both overlays still render from out-of-TEA side
+  registries (`feature/jobs.js` Map; `io/diag-log.js` ring buffer), not the model,
+  and the frame reads other live stores too (history / PTY / theme cache). That
+  broader gap is the **#D5 replayability boundary** (see `model/store.js`
+  §Replayability boundary). See docs/model-now-tick.md. Pinned by
+  `test-overlay-clock.js` + the `clock_tick` reducer tests. See PRINCIPLES §11.
 
 Everything else below was an eliminable exception and has been removed.
 
@@ -122,9 +124,12 @@ order was by **(correctness value × tractability)**.
    arc, docs/model-now-tick.md) that residual boundary read was eliminated too:
    `render()` reads `model.now`, advanced by a gated `clock_tick` reducer arm
    (clock runs only while an age overlay is open; the wall-clock read moved to
-   the `arm_clock` effect — the impure shell). The frame is now a pure function
-   of the model → of the Msg log → deterministically replayable. (This is what
-   the re-audit tracked as blessed exception D / the render-replay blocker.)
+   the `arm_clock` effect — the impure shell). The frame is now pure of the
+   WALL CLOCK (this was exception D / the render-replay blocker for the clock
+   dimension). It is NOT a pure function of the model — the render path still
+   reads off-model live stores (jobs / diag / history / PTY / theme cache); that
+   broader gap is the #D5 replayability boundary (see `model/store.js`
+   §Replayability boundary).
    Pinned by `test-overlay-clock.js` + the `clock_tick` reducer tests.
 
 **3. ✅ DONE 2026-06-15 — `viewer.update()` boundary `getModel()` → threaded

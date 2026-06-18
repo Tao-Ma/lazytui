@@ -20,6 +20,33 @@
  *   - Readers use `getModel()` (no caching across Msg dispatches — the
  *     ref is swapped per state-changing Msg; see v0.5-layering.md).
  *   - All writes flow through the reducer; `setModel` commits its result.
+ *
+ * Replayability boundary (#D5 — what the frame ACTUALLY depends on):
+ *   The render path is a pure function of `(model + a small set of NAMED
+ *   module-local live stores)`, NOT of the model alone. Replaying the Msg log
+ *   reconstructs the MODEL (Msgs → reducer → model) but does NOT re-run effects,
+ *   so on replay those live stores sit at their module defaults and the replayed
+ *   frame differs. The live stores the frame reads at paint time:
+ *     - feature/jobs.list()        — Running overlay (overlay/jobs.js)
+ *     - io/diag-log.snapshot()     — diagnostics window (overlay/diag-log.js)
+ *     - feature/history.all()      — history navigator (panel/navigator/history.js)
+ *     - io/terminal.getSession(id) — terminal-pane screen contents (paint.js / footer.js)
+ *     - leaves/themes.theme()      — resolved palette cache (footer / overlay/cmdline)
+ *     - io/term.cols()/rows()      — terminal dims mirror (render reads this, not model.dims)
+ *   This is deliberate, not a bug: the jobs/diag overlays read live ON PURPOSE
+ *   (a warning/job arriving while the window is open shows without re-opening).
+ *   `model.now` (frame clock) and `model.theme` (theme NAME) are the two reads
+ *   that WERE pulled under the model — so the wall clock and theme SELECTION are
+ *   replay-safe; the stores above are not. Bringing the rest under TEA (a `Sub`
+ *   feeding samples in via Msgs so the model holds the latest snapshot) is a
+ *   possible future arc; the honest statement TODAY is the boundary above, not
+ *   "frame = f(model)".
+ *
+ *   Terminal panes are an explicitly NON-TEA region: the model holds the PTY
+ *   *lifecycle* (which tab, session id), but the screen contents live in the
+ *   off-model xterm buffer (io/terminal), mutated by the PTY `onData` callback
+ *   OUTSIDE the Msg loop and painted by reading `getSession()` live. Replay does
+ *   not reproduce terminal output.
  */
 'use strict';
 
@@ -60,11 +87,15 @@ function init() {
     currentGroup: '',
     // Frame clock (model.now / tick arc — docs/model-now-tick.md). `now`
     // is the last-ticked wall-clock ms; the render path reads it instead
-    // of Date.now() so a frame is a pure function of the model (and thus
-    // of the Msg log → replayable). `clockArmed` gates the self-re-arming
-    // tick: it runs ONLY while an age-display overlay (jobs/diag) is open,
-    // so an idle TUI emits no ticks and the replay log stays quiet. Both
-    // are written only by the reducer (clock_tick / *_open arms).
+    // of Date.now() so the frame is pure of the WALL CLOCK — the one read
+    // that would otherwise differ on every paint. (This does NOT make the
+    // frame a pure function of the model: it still reads named off-model
+    // live stores — see the §Replayability boundary note in the module
+    // header. model.now removes the wall-clock read specifically.)
+    // `clockArmed` gates the self-re-arming tick: it runs ONLY while an
+    // age-display overlay (jobs/diag) is open, so an idle TUI emits no ticks
+    // and the replay log stays quiet. Both are written only by the reducer
+    // (clock_tick / *_open arms).
     now: 0,
     clockArmed: false,
     // Active theme NAME — the single source of truth for theme selection
