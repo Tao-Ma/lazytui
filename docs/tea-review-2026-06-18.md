@@ -40,13 +40,31 @@ judgment call — see Decisions Ledger) · `FORWARD` (parked for a later pass to
   "bottom of the import graph"). Options: (a) split into a truly-pure tier + a
   stateful-bottom-infra tier; (b) rename `leaves/` so it stops implying purity; (c) keep
   as-is and document the redefinition at the directory level, not just inside `hub.js`.
-  Evidence: F1.1. *Undecided.*
+  Evidence: F1.1.
+  **RESOLVED (option a — split the tier; user-directed 2026-06-18).** Carved the three
+  STATEFUL residents — `hub` (pub/sub bus), `render-queue` (scheduler), `themes` (palette
+  cache) — into `leaves/infra/`. `leaves/` proper now means PURE transforms (the load-bearing
+  "safe from a reducer/render" contract); `leaves/infra/` means bottom-of-import-graph but
+  stateful/effectful. Verified first-hand that the carve is clean: the 3 files import NOTHING
+  (so moving them down a level needed no internal-path fixes), and the only *pure* leaf that
+  imports a stateful one is `draw → themes` (the #D8 palette read, now `./infra/themes`). The
+  directory contract is documented at the tier head (`infra/hub.js`) + the #6 taxonomy note in
+  `v0.6.5-tea-reaudit.md`. ~30 importer paths rewired; acyclic both modes, suite 96/96, smoke
+  11/11. (The leaf-vs-port distinction from the 2026-06-17 #6 follow-up still holds; this adds
+  the pure-vs-stateful split *within* leaves.)
 - **D2 — Should `leaves/` be sub-grouped by domain?** It is a flat 30-file / ~6.1k-LOC
   bucket mixing a layout-editor subsystem, tab-state, render primitives, a pub/sub bus,
   text utilities, and input registries. Evidence: F1.2. *Undecided.*
 - **D3 — Is the `render/` vs `leaves/draw.*` bisection of the view layer intended,** and
   if the split axis is purity, why does the impure `render-queue.js` sit on the `leaves/`
-  side? Evidence: F1.3. *Undecided.*
+  side? Evidence: F1.3.
+  **RESOLVED (with D1 — the one anomaly moved).** The bisection's split axis IS purity and
+  it's now clean: `render/` = impure paint orchestration (`paint.js`, `footer.js`); the pure
+  render primitives (`draw`, `painter`, `scrollbar`, `ghost`) stay in `leaves/`; and the one
+  impure module that broke the rule — `render-queue.js` (setTimeout + triggers paint) — moved
+  to `leaves/infra/` with the other stateful infra (#D1). So no impure module sits on the
+  pure side anymore. (D2 may additionally sub-group the pure render primitives under
+  `leaves/render/`, but that's navigability, not the purity-axis fix D3 asked for.)
 - **D4 — Should the TEA "program/runtime" loop have a single identifiable home?**
   Today the cycle is smeared across `control/dispatch.js`, `runtime/fanout.js`, and
   `runtime/effects.js`, with two parallel dispatch pumps (root-Msg vs Component-Msg).

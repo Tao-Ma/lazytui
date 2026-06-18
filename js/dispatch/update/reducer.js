@@ -681,7 +681,7 @@ function update(model, msg) {
     case 'set_theme': {
       // Theme selection flows through update like any other state change.
       // model.theme is the canonical record; the `set_theme` Cmd syncs the
-      // leaves/themes palette cache (the impure-shell projection the pure
+      // leaves/infra/themes palette cache (the impure-shell projection the pure
       // render leaves read). No-op identity-preserve when unchanged so a
       // redundant `:theme X` while already on X doesn't churn the model.
       if (msg.name === model.theme) return [model, []];

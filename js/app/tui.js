@@ -151,7 +151,7 @@ function main() {
   // v0.6.4 Phase F — redraw (dispatch-then-paint) lives in the dispatch
   // layer now; paint.js is a pure view. tui orchestrates both.
   const { redraw } = require('../dispatch/control/dispatch');
-  const { scheduleRender } = require('../leaves/render-queue');
+  const { scheduleRender } = require('../leaves/infra/render-queue');
   const { registerComponent, refreshAll } = require('../panel/api');
   const { setupKeyListener } = require('../dispatch/control/input');
   const { getModel } = require('../model/store');

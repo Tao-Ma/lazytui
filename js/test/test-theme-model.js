@@ -23,7 +23,7 @@ const { describe, it, eq, assert, report } = require('./test-runner');
 const { getModel } = require('../model/store');
 require('../dispatch/runtime/effects').installBuiltins();
 const dispatch = require('../dispatch/control/dispatch');
-const themes = require('../leaves/themes');
+const themes = require('../leaves/infra/themes');
 
 const names = themes.themeNames();
 const A = getModel().theme;                         // current

@@ -42,7 +42,7 @@ term.stdout.write = (chunk, ...rest) => {
   if (s.startsWith('\x1b]52;') || s.startsWith('\x1b[')) return true;
   return _origWrite(chunk, ...rest);
 };
-try { require('../leaves/render-queue').scheduleRender = () => {}; } catch (_) {}
+try { require('../leaves/infra/render-queue').scheduleRender = () => {}; } catch (_) {}
 
 const detailSlice = getInstanceSlice('detail');
 // P3 — slice.lines deleted; buffers are the only content homes.

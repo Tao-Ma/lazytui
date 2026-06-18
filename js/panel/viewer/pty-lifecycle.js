@@ -27,7 +27,7 @@
 const tabs = require('./tabs');
 const api = require('../api');
 const { getModel } = require('../../model/store');
-const { scheduleRender } = require('../../leaves/render-queue');
+const { scheduleRender } = require('../../leaves/infra/render-queue');
 
 // Injected dispatch host (set by install() from tui.js boot). handleExit is a
 // boot-wired PTY-exit subscription — it holds dispatch the way a Hyperapp/Elmish
@@ -79,7 +79,7 @@ function install(host) {
   _host = host;
   const term = require('../../io/terminal');
   term.setExitHandler(handleExit);
-  term.setRenderHook(require('../../leaves/render-queue').scheduleOverlay);
+  term.setRenderHook(require('../../leaves/infra/render-queue').scheduleOverlay);
   term.setJobsHooks(require('../../feature/jobs'));
 }
 

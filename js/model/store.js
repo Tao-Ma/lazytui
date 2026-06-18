@@ -31,7 +31,7 @@
  *     - io/diag-log.snapshot()     — diagnostics window (overlay/diag-log.js)
  *     - feature/history.all()      — history navigator (panel/navigator/history.js)
  *     - io/terminal.getSession(id) — terminal-pane screen contents (paint.js / footer.js)
- *     - leaves/themes.theme()      — resolved palette cache (footer / overlay/cmdline)
+ *     - leaves/infra/themes.theme()      — resolved palette cache (footer / overlay/cmdline)
  *     - io/term.cols()/rows()      — terminal dims mirror (render reads this, not model.dims)
  *   This is deliberate, not a bug: the jobs/diag overlays read live ON PURPOSE
  *   (a warning/job arriving while the window is open shows without re-opening).
@@ -79,7 +79,7 @@ function init() {
   // production. (Tests pre-set the property in their setup() so they
   // missed the bug.)
   const { MODES } = require('../leaves/modes');
-  const { DEFAULT_THEME } = require('../leaves/themes');
+  const { DEFAULT_THEME } = require('../leaves/infra/themes');
   const initialModes = {};
   for (const md of MODES) initialModes[md.flag] = false;
   const m = {
@@ -100,7 +100,7 @@ function init() {
     clockArmed: false,
     // Active theme NAME — the single source of truth for theme selection
     // (replayable: a `set_theme` Msg in the log reproduces it). The palette
-    // OBJECT read by the pure render leaves lives in leaves/themes (`active`),
+    // OBJECT read by the pure render leaves lives in leaves/infra/themes (`active`),
     // which can't read the model — so it's a derived projection synced from
     // model.theme by the `set_theme` effect (single writer), the same shape
     // as model.now driving the frame clock. Seeded to match the leaf cache's

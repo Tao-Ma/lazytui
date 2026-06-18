@@ -1,6 +1,12 @@
 /**
  * Render-debounce queue — coalesces rapid repaint requests into one paint.
  *
+ * Lives in `leaves/infra/` (#D1 2026-06-18): bottom-of-import-graph but
+ * STATEFUL (latched render fns + pending flags) and effectful (setTimeout,
+ * invokes the paint callback → terminal I/O), so it sits in the stateful-infra
+ * sub-tier, not `leaves/` proper (pure transforms). See infra/hub.js for the
+ * tier contract.
+ *
  * Exists to break the terminal ↔ layout module cycle. Both terminal.js
  * (PTY data callback) and actions.js (streamed stdout) want to ask "render
  * soon" without importing layout.js, while layout.js owns the actual paint

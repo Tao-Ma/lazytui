@@ -154,4 +154,4 @@ module.exports = {
 // AND lets io/file-loader depend on the pure leaves/ansi without forming an
 // io↔leaves cycle. Behavior is identical: any code path that touches the event
 // log loads this module, which arms the recorder before the first publish.
-require('../leaves/hub').setRecorder((payload) => record('publish', payload));
+require('../leaves/infra/hub').setRecorder((payload) => record('publish', payload));

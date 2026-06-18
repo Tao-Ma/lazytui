@@ -32,7 +32,7 @@ const { allPanels } = require('../panel/nav-state');
 const geo = require('../leaves/geometry');
 const mpool = require('../leaves/pool');
 const mpane = require('../leaves/pane');
-const { theme } = require('../leaves/themes');
+const { theme } = require('../leaves/infra/themes');
 const { truncate, setWriter: _setDrawWriter } = require('../leaves/draw');
 // Wire the overlay-paint write seam: draw.renderOverlay (a pure leaf) emits its
 // composed buffer through this instead of importing io/term's stdout directly.
@@ -769,7 +769,7 @@ function render(model) {
 // seam still reads the CURRENT model at paint time — the correct runtime
 // boundary for a deferred/debounced repaint (latest state, not a snapshot
 // captured when scheduleRender was called).
-require('../leaves/render-queue').setRenderers({
+require('../leaves/infra/render-queue').setRenderers({
   render: () => render(getModel()),
   overlay: () => renderTerminalOverlay(getModel()),
   forceFull: forceFullRepaint, invalidate: invalidateRows,
