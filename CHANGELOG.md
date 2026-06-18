@@ -57,6 +57,14 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   by `model.now`, advanced by a `tick` Msg. Rendering is now a pure
   function of the model, so a recorded Msg log replays deterministically.
   (blessed-exception D; `5488146`.)
+- **Theme selection is model state.** The active theme used to live only
+  in a `leaves/themes` module global, set imperatively (with a hand-rolled
+  `:theme` undo). It's now `model.theme`, updated by a `set_theme` Msg
+  whose Cmd syncs the palette cache the pure render leaves read — so the
+  cache is a single-writer derived view of the model (the same shape as
+  `model.now`). The theme is part of the model snapshot: `:theme`
+  preview/restore flow through the Msg, and a recorded Msg log replays the
+  theme too. (`a23d785`.)
 
 ### Architecture
 
@@ -72,11 +80,20 @@ arcs. Specs: [docs/v0.6.5.md](docs/v0.6.5.md), `v0.6.5-tea-reaudit.md`,
   (`leaves/draw`) and the slice-reading hit-tests
   (`panel/chrome-hittest.js`). Dispatch/overlay painting now routes
   through the render-queue seam. `render/` is down to `paint.js` +
-  `footer.js`.
+  `footer.js`. A follow-up moved the embedded-terminal PTY spawn + resize
+  out of the render pass into the dispatch finalizer (the runtime reconcile
+  that already derives viewport geometry), so render only READS the session
+  buffer — it never creates or sizes external state. (`2bd1c3f`.)
 - **Domain-detangle (layer SCC 4→3→0).** `feature` was extracted to the
   bottom via injected seams, then the remaining `{overlay, panel,
-  dispatch}` cycle was dissolved with `leaves/panel-host.js` — an injected
-  dispatch port wired at boot by `dispatch/host-wiring.js`.
+  dispatch}` cycle was dissolved with an injected dispatch port
+  (`ports/panel-host.js`) wired at boot by `dispatch/host-wiring.js`.
+- **Pure injection ports → a `ports/` layer.** The two pure-delegation
+  host ports (`panel-host`, `feature-host` — nothing but injected fn slots
+  + delegating wrappers, no transform logic) moved out of `leaves/` into a
+  dedicated bottom `ports/` layer, so `leaves/` is purely pure-transform
+  modules; seam-bearing modules that DO carry real logic (`hub`, `draw`,
+  `render-queue`) stay leaves. (`781552a`.)
 - **Dispatch-loop relocation.** The Component fan-out + post-dispatch
   finalizer moved from `panel/api.js` to `dispatch/fanout.js` — the
   runtime now lives in the dispatch layer, above the Components it drives.
@@ -93,10 +110,33 @@ arcs. Specs: [docs/v0.6.5.md](docs/v0.6.5.md), `v0.6.5-tea-reaudit.md`,
   Msg payload (the `augmentMsg` pattern) instead of read via `getModel()`
   inside a reducer. The focus-routing half of blessed-exception A was
   eliminated (route topology is stamped onto the Msg by the handler).
+- **`layout.update` no longer reads route topology.** layout was the last
+  Component reaching into the global instance/route registry from its
+  reducer (`instanceKind`/`isViewerKind`/`resolveTarget`/
+  `resolveViewerPaneId`). It now classifies the focused pane from its own
+  `slice.arrange` (a new pure `leaves/pool.paneTypeIn`) and reads
+  handler-stamped `viewerPaneId`/`viewerTarget` off the Msg. Every
+  Component `update` is now pure of route topology. (`70497b8`.)
 - **Static-layering pass (§1).** Extracted `model/store.js`; split the
   `app/state` read helpers into `panel/nav-state.js`; re-homed the io
   sinks (`app/exec`, `dispatch/{event,diag}-log`) into `io/`; memoized
   `resolveTarget` / `resolveViewerPaneId` on the per-Msg finalizer path.
+- **`leaves/` became the pure-bottom layer.** `io/ansi.js` (pure
+  color/escape string transforms) moved to `leaves/ansi.js`, and the two
+  latent `leaves → io` edges were severed via injected seams
+  (`hub.setRecorder` wired from `io/event-log`; `draw.setWriter` wired from
+  paint, with the `io/term` dims fallback moving into the `panel/api` dims
+  provider). `leaves/` now imports only sibling leaves, and `io/` can depend
+  down on it without a cycle. (`a569ebf`.)
+- **`dispatch/` regrouped into `update/` + `runtime/` + `control/` tiers.**
+  13 files re-homed by role (reducer vs effect-runtime vs input/control);
+  layer-invisible — `dep-walker` keys on the first path segment, so the
+  subdirs collapse to `dispatch` and SCCs / cross-layer edges are unchanged.
+  (`a569ebf`.)
+- **The viewer owns its `/` key.** `viewer.update` claims `/` (enter search)
+  itself instead of `dispatch.js` focus-checking and dispatching
+  `viewer_search_enter` — the behavior moved into the Component that owns it.
+  (`a569ebf`.)
 
 ### Fixed
 
