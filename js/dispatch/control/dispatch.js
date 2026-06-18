@@ -441,9 +441,12 @@ function _paneMenuPick(target, item) {
     // half/full pane rows are placed-only, so item.paneId is set; guard
     // defensively. Slot = the slot the clicked-on pane currently occupies.
     if (!item.paneId) { close(); return; }
-    const proj = halfProjection(layoutSlice, route.resolveViewerPaneId());
+    // Resolve the viewer container pane ONCE here (impure shell) and thread it
+    // so layout's pane_menu_place arm stays pure of route topology (#1).
+    const viewerPaneId = route.resolveViewerPaneId();
+    const proj = halfProjection(layoutSlice, viewerPaneId);
     const slot = proj.left === target ? 'left' : 'right';
-    dispatchMsg(wrap('layout', { type: 'pane_menu_place', slot, paneId: item.paneId }));
+    dispatchMsg(wrap('layout', { type: 'pane_menu_place', slot, paneId: item.paneId, viewerPaneId }));
     close();
     return;
   }
