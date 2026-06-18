@@ -660,12 +660,15 @@ function renderTerminalOverlay(model, arrangeOverride) {
 
 // `now` is the frame clock for the age-displaying overlays (jobs/diag),
 // read from `model.now` — NOT Date.now(). model.now is advanced by the
-// gated `clock_tick` reducer arm (docs/model-now-tick.md), so render() is a
-// pure function of the model and thus of the Msg log: replaying the same log
-// reproduces byte-identical frames. (Previously a Date.now() default here —
-// blessed exception D — made the frame depend on ambient wall-clock,
-// the one read that blocked deterministic render replay.) Threaded into the
-// overlay render fns so THEY stay pure of the clock too.
+// gated `clock_tick` reducer arm (docs/model-now-tick.md), so render() is pure
+// of the WALL CLOCK: the same Msg log replays to the same age values regardless
+// of real time. (Previously a Date.now() default here — blessed exception D —
+// made the frame depend on ambient wall-clock, the one read that blocked
+// deterministic render replay.) Threaded into the overlay render fns so THEY
+// stay pure of the clock too. NOTE this does NOT make the frame a pure function
+// of the model — render still reads off-model live stores (jobs / diag / history
+// / PTY sessions / theme cache); that is the #D5 replayability boundary, see
+// model/store.js §Replayability boundary.
 function render(model) {
   const now = model.now;
   // `model` is the TEA root model (js/model/store.js; reduced by

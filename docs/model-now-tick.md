@@ -48,14 +48,21 @@ But the read is **independent of the Msg stream**, and that is the real defect:
 recorded history. It is NOT a correctness bug today; it is the prerequisite for
 that feature.
 
-## Target invariant
+## Target invariant (this arc: the wall-clock half)
 
-> The rendered frame is a pure function of the model. The model is a pure
-> function of the Msg log. Therefore the frame is a pure function of the Msg
-> log — replay reproduces pixels exactly.
+> The rendered frame is pure of the WALL CLOCK: the model is a pure function of
+> the Msg log, and `render` reads `model.now` (not `Date.now()`), so two replays
+> of the same log at different real times paint the same age values.
 
 To get there, wall-clock time must enter the model as data (a Msg), and
 `render()` must read `model.now`, never `Date.now()`.
+
+> ⚠️ This arc closes the wall-clock read ONLY. It does NOT make the frame a pure
+> function of the *model* — the render path still reads several named off-model
+> live stores (jobs / diag-log / history / PTY sessions / theme palette cache)
+> that replay does not reproduce. That broader gap is the #D5 *replayability
+> boundary*, documented at `model/store.js` (§Replayability boundary) and in §5
+> below; "replay reproduces pixels exactly" needs it closed too, not just `now`.
 
 ## Design
 
@@ -104,12 +111,17 @@ Msgs. Two options — **pick during the arc, not now:**
 Cadence: 1 s matches the current human-visible age resolution (`_fmtAge`).
 
 ### 5. Replay completeness (separate, larger prerequisite)
-This arc makes the FRAME a pure function of the model. A full replay feature
-ALSO needs the Msg log itself to be persisted and re-feedable end-to-end
-(record every `applyMsg`, including the injected `now` on each). That is a
-distinct piece of work; `model.now`/tick is necessary-but-not-sufficient for
-replay. Scope this arc to the render-purity half and note the log-persistence
-half as the follow-on.
+This arc makes the frame pure of the WALL CLOCK — NOT a pure function of the
+model. A full pixel-replay feature ALSO needs, beyond `model.now`:
+  (a) the Msg log itself persisted and re-feedable end-to-end (record every
+      `applyMsg`, including the injected `now`); and
+  (b) the off-model live stores the frame reads — `feature/jobs.list()`,
+      `io/diag-log.snapshot()`, `feature/history.all()`, `io/terminal.getSession()`,
+      the `leaves/themes` palette cache — brought under TEA (a `Sub` feeding
+      samples into the model via Msgs) OR explicitly excluded from replay.
+`model.now`/tick is necessary-but-not-sufficient. The (b) gap is the #D5
+replayability boundary (see `model/store.js` §Replayability boundary). Scope
+THIS arc to the wall-clock half; (a) and (b) are follow-on arcs.
 
 ## What stays out of scope
 - Persisting/replaying the Msg log (item 5) — separate arc.

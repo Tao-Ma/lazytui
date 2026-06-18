@@ -44,7 +44,9 @@ function of the Msg log. Replaying the log reconstructs it identically; the
 reducer reading it stays deterministic. Therefore:
 
 - D was worth shipping: `Date.now()` was ambient → it broke deterministic frame
-  replay. Eliminating it unblocked a feature.
+  replay. Eliminating it removed the wall-clock blocker — ONE prerequisite for
+  pixel-replay (the #D5 off-model live stores the frame reads remain; see
+  `model/store.js` §Replayability boundary), not the whole feature.
 - A is **signature honesty + locality only**: the reducer depends on more than
   its two declared args, but the dependency is deterministic and replay-safe.
   Eliminating it is architectural tidiness, not a feature unblock.

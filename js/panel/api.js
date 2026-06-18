@@ -32,8 +32,11 @@ const { renderPanel, setDimsProvider } = require('../leaves/draw');
 // live here (panel — which may depend on model + io); the leaf only consumes
 // the resolved {cols,rows}. This is what lets draw drop its io/term import
 // while preserving the "io/term is the boot fallback" behavior overlays rely
-// on (test-overlay-dims §2). The frame stays a pure function of the model
-// whenever the clock is live.
+// on (test-overlay-dims §2). So the DIMS the frame reads come from the model
+// (resize-as-Msg `layoutSlice.dims`) once the first term_resized has landed,
+// with io/term only as the pre-first-resize boot fallback. (This unifies the
+// dims source; it does not by itself make the whole frame a pure function of
+// the model — see the #D5 replayability boundary in model/store.js.)
 const _term = require('../io/term');
 setDimsProvider(() => {
   const ls = route.getInstanceSlice('layout');
