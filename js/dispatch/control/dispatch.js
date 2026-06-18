@@ -35,13 +35,15 @@ const { isTerminalTab, activeTerminalId, findEphemeralByid,
 const { isSessionDead } = require('../../io/terminal');
 const keybindings = require('../../leaves/keybindings');
 const modes = require('../../leaves/modes');
-// The reducer (`update`) lives in dispatch/update/reducer.js (F3 — intra-layer);
-// getModel/setModel are the bottom-layer store (v0.6.5 §1), imported down.
-const runtime = require('../update/reducer');
 const route = require('../../panel/route');
 const mpane = require('../../leaves/pane');
 const { halfProjection } = require('../../leaves/geometry');
-const { getModel, setModel } = require('../../model/store');
+// getModel is the bottom-layer store (v0.6.5 §1), imported down.
+const { getModel } = require('../../model/store');
+// #D4b — the root-Msg pump (applyMsg) now lives in the runtime loop alongside
+// the Component pump; this layer drives it and re-exports it for the
+// input-handler ecosystem + the test API. (One-way edge: control → loop.)
+const { applyMsg } = require('../runtime/loop');
 // handleAction + _runActionByKey live in ./actions (carved out 2026-05-31).
 // Cycle-safe: actions.js lazy-requires this module's applyMsg/navSelect
 // inline at call sites, so by the time it reads them this module's exports
@@ -1004,21 +1006,10 @@ function _dispatchActiveMode(key, seq) {
 
 // --- update spine ---
 //
-// The reducer (runtime.update) is pure and returns Cmd DESCRIPTORS — it
-// performs no effects itself. The interpreter lives in `effects.js`
-// (shared with Component `update` so both paths run through the same
-// registry); `applyMsg` is the bridge handleAction arms call to feed a
-// Msg through update + run the resulting Cmds.
-function applyMsg(msg) {
-  // Phase 4 — the reducer is pure; the natural source of truth is
-  // `getModel()` (a stale captured ref would lose intermediate writes
-  // across cascades), so callers pass only `msg`. setModel commits the
-  // snapshot BEFORE runEffects so cross-layer Cmds (`apply_msg`,
-  // `dispatch_msg`) re-entering the dispatch graph see post-Msg state.
-  const [next, cmds] = runtime.update(getModel(), msg);
-  setModel(next);
-  require('../runtime/effects').runEffects(cmds);
-}
+// applyMsg (the root-Msg pump) moved to the runtime loop (#D4b,
+// dispatch/runtime/loop.js) so both pumps live in one place. It's imported at
+// the top of this file (handlers call it) and re-exported below for the
+// established control/test API.
 
 module.exports = {
   handleKey, handleAction, applyMsg, navSelect,
