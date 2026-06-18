@@ -46,6 +46,14 @@ let _instanceReconciler = null;
 let _lastReconciledArrange;
 function setInstanceReconciler(fn) { _instanceReconciler = fn; }
 
+// #D13 — the Model → Sub reconciler (app/state.reconcileSubscriptions), injected
+// at boot. The finalizer calls it each outermost dispatch (canonical "subs are a
+// function of the model, re-evaluated each update + diffed"). Injected (not
+// imported) so this runtime module stays free of an app/ back-edge — same seam
+// as the instance reconciler above.
+let _subscriptionReconciler = null;
+function setSubscriptionReconciler(fn) { _subscriptionReconciler = fn; }
+
 // Layout memo for the finalizer. calcLayout's rects depend only on
 // (arrange, dims) — updated IMMUTABLY by the reducers — so reference equality is
 // a correct cache key. Most dispatches leave both refs untouched.
@@ -78,6 +86,13 @@ function finalizeDispatch() {
       _lastReconciledArrange = layoutSlice.arrange;
       _instanceReconciler();
     }
+    // #D13 — reconcile hub subscriptions against the model (canonical Model →
+    // Sub). Ungated: the desired set is recomputed + diffed every outermost
+    // dispatch so a sub whose existence depends on model state (today: which
+    // panes are placed) starts/stops correctly — incl. tearing down a disposed
+    // pane's topic. The diff no-ops when unchanged (the common case), so the
+    // steady-state cost is one cheap desired-set build + Map compare.
+    if (_subscriptionReconciler) _subscriptionReconciler(getModel());
     const layout = _finalizeLayout(layoutSlice);
     for (const p of mpool.allPanesInColumns(layoutSlice.arrange)) {
       if (mpool.isDetailPane(p) || p.collapsed) continue;
@@ -131,4 +146,4 @@ function finalizeDispatch() {
   }
 }
 
-module.exports = { finalizeDispatch, setInstanceReconciler };
+module.exports = { finalizeDispatch, setInstanceReconciler, setSubscriptionReconciler };

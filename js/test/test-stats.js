@@ -222,46 +222,62 @@ describe('[14] stats declares its hub subscription (pure)', () => {
   });
 });
 
-describe('[15] framework wires declared subscriptions at MOUNT (no render)', () => {
-  it('_wireSubscriptions subscribes via the hub; data is retained without any render call', () => {
-    const state = require('../app/state');
-    hub._reset();
-    state._resetSubscriptions();
-    docker.init({});                       // defines the docker.stats schema
-    // Mount-time wiring — the framework reads the pane's declared
-    // subscriptions and performs hub.subscribe. NOTE: render() is never
-    // called here. Pre-Phase-D this would retain nothing (the sub was
-    // created lazily from render); the publish→history below is the teeth.
-    state._wireSubscriptions(stats, { type: 'stats', topic: 'docker.stats', window: 5 });
+describe('[15] framework reconciles declared subscriptions (Model → Sub, #D13)', () => {
+  const state = require('../app/state');
+  const api = require('../panel/api');
+  const route = require('../panel/route');
+  const layout = require('../panel/layout');
+  const { getModel } = require('../model/store');
+
+  // Place `panes` in the layout arrange so reconcileSubscriptions sees them
+  // (the desired set is a pure projection of the placed panes). Registers the
+  // 'layout' service slot (the arrange holder) + the 'stats' owner so the
+  // reconciler resolves them via componentForPanel.
+  function _place(panes) {
+    api.registerComponent(layout);
+    api.registerComponent(stats);
+    const cur = api.serviceSlice('layout') || {};
+    route.setInstanceSlice('layout', { ...cur, arrange: { columns: [{ panels: panes }] } });
+  }
+  const STATS_PANE = { type: 'stats', paneId: 'pane-stats', topic: 'docker.stats', window: 5 };
+
+  it('a placed stats pane subscribes; removing it TEARS THE SUB DOWN', () => {
+    hub._reset(); state._resetSubscriptions(); docker.init({});
+    _place([STATS_PANE]);
+    state.reconcileSubscriptions(getModel());
     hub.publish('docker.stats', 'foo', { ts: 1, cpu: 10, mem: 100, memLimit: 1000 });
+    eq(hub.history('docker.stats', 'foo', 10).length, 1, 'placed → subscribed → sample retained (no render)');
+    // Remove the pane and re-reconcile — the sub MUST be torn down (the leak
+    // the old mount-time wiring left live). #D13 — Model→Sub start/stop.
+    _place([]);
+    state.reconcileSubscriptions(getModel());
     hub.publish('docker.stats', 'foo', { ts: 2, cpu: 12, mem: 100, memLimit: 1000 });
-    const h = hub.history('docker.stats', 'foo', 10);
-    eq(h.length, 2, 'subscription exists at mount → samples retained (window > 0)');
-    eq(h[1].cpu, 12, 'newest sample present');
+    eq(hub.history('docker.stats', 'foo', 10).length, 0, 'removed → unsubscribed → nothing retained (teardown)');
   });
 
-  it('dedup: re-wiring the same (topic, window) does not double-subscribe', () => {
-    const state = require('../app/state');
-    hub._reset();
-    state._resetSubscriptions();
-    docker.init({});
-    state._wireSubscriptions(stats, { type: 'stats', topic: 'docker.stats', window: 5 });
-    state._wireSubscriptions(stats, { type: 'stats', topic: 'docker.stats', window: 5 });
-    // Two panes on the same (topic, window) share ONE sub. The hub keeps a
-    // single ring buffer per topic regardless, so the proof is behavioral:
-    // publishing once yields exactly one retained sample (no duplication).
+  it('dedup: two stats panes on the same (topic, window) share ONE sub', () => {
+    hub._reset(); state._resetSubscriptions(); docker.init({});
+    _place([STATS_PANE, { ...STATS_PANE, paneId: 'pane-stats-2' }]);
+    state.reconcileSubscriptions(getModel());
+    // One ring buffer per topic regardless → publishing once yields exactly
+    // one retained sample (no duplication from the second pane).
     hub.publish('docker.stats', 'foo', { ts: 1, cpu: 7, mem: 1, memLimit: 100 });
     eq(hub.history('docker.stats', 'foo', 10).length, 1, 'single sample retained');
   });
 
-  it('Components without a subscriptions() hook are a no-op', () => {
-    const state = require('../app/state');
-    hub._reset();
-    state._resetSubscriptions();
-    // groups has no subscriptions hook — wiring must not throw or subscribe.
-    state._wireSubscriptions({ name: 'groups', init: () => ({}) }, { type: 'groups' });
+  it('a pane whose Component declares no subscriptions() is a no-op', () => {
+    hub._reset(); state._resetSubscriptions(); docker.init({});
+    _place([{ type: 'groups', paneId: 'pane-groups' }]);  // groups has no subscriptions hook
+    state.reconcileSubscriptions(getModel());
     hub.publish('docker.stats', 'foo', { ts: 1, cpu: 1, mem: 1, memLimit: 1 });
     eq(hub.history('docker.stats', 'foo', 10).length, 0, 'nothing subscribed → nothing retained');
+  });
+
+  it('_desiredSubs is a pure projection of the placed panes (keyed by topic:window)', () => {
+    _place([STATS_PANE]);
+    const desired = state._desiredSubs(getModel());
+    eq(desired.size, 1, 'one desired sub for the placed stats pane');
+    assert(desired.has('docker.stats:5'), 'keyed by topic:window');
   });
 });
 

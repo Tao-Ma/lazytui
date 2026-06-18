@@ -29,43 +29,84 @@ const { rebuildLayoutFromConfig } = require('../leaves/wm/arrange');
 const navState = require('../panel/nav-state');
 
 
-// v0.6.4 Phase D — declared hub subscriptions, wired at MOUNT (the
-// per-pane mint loop in initState), not lazily from a Component's
-// render(). A Component exports a PURE `subscriptions(paneDef) →
-// [{topic, window}]` declaring the hub topics it consumes; the framework
-// performs the hub.subscribe side effect here. This is the TEA
-// `subscriptions` seam — the Component stays pure, the runtime owns the
-// effect (replaces stats._ensureSub, the old paint-mixed-with-lifecycle
-// blessed exception). `onUpdate` is always a repaint: hub data drives
-// frames (see stats.js). Deduped by topic:window across all mints (two
-// panes on one topic share a sub; mirrors the pre-D module Set, now
-// framework-owned). NOTE no teardown yet — there is no post-boot
-// topic-change or pane-dispose-unsubscribe path today; growing one is a
-// follow-on the framework is now SHAPED for (the Component declares; the
-// runtime could diff + unsubscribe).
-const _wiredSubs = new Set();
-function _wireSubscriptions(comp, paneDef) {
-  if (!comp || typeof comp.subscriptions !== 'function') return;
-  let descriptors;
-  try { descriptors = comp.subscriptions(paneDef) || []; }
-  catch (e) {
-    console.error(`[${comp.name || '?'}] subscriptions() threw: ${e && e.message}`);
-    return;
+// #D13 (2026-06-18) — hub subscriptions as canonical `Model → Sub`. A Component
+// exports a PURE `subscriptions(paneDef, model) → [{topic, window}]` declaring
+// the hub topics it consumes for the current state; the framework re-evaluates
+// the WHOLE desired set each update (the post-dispatch finalizer calls
+// `reconcileSubscriptions` via the injected hook), DIFFS it against the live
+// set, and starts/stops the delta. Replaces the v0.6.4 Phase D mount-time
+// wiring, which subscribed on pane-mint but never tore down (a disposed pane's
+// topic leaked a live sub + a wasted repaint per publish). Now a pane leaving
+// the layout — or, in future, a sub whose existence depends on model state —
+// reconciles correctly: the desired set is recomputed and the gone topic is
+// unsubscribed. `onUpdate` is always a repaint (hub data drives frames; see
+// stats.js). Deduped by topic:window (two panes on one topic share one sub).
+//
+// Memoized module refs (the reconciler runs per outermost dispatch; a fresh
+// relative require() each time is the ~tens-of-µs/call fs cost paint.js's hot
+// path also memoizes away). Cycle-safe: lazy + cached, like reconcilePaneInstances.
+let _apiRef, _routeRef, _mpoolRef, _hubRef;
+const _api = () => (_apiRef ||= require('../panel/api'));
+const _route = () => (_routeRef ||= require('../panel/route'));
+const _mpool = () => (_mpoolRef ||= require('../leaves/wm/pool'));
+const _hub = () => (_hubRef ||= require('../leaves/infra/hub'));
+
+// Live subscriptions: "topic:window" → hub token. The single source of what's
+// currently subscribed; the reconcile diff is computed against it.
+const _liveSubs = new Map();
+
+// Pure projection: the DESIRED subscription set for the current state. Walks the
+// placed panes (layout arrange) and asks each pane's Component for its declared
+// subs, passing the root `model` so a sub can depend on model state (canonical
+// Model → Sub). Returns Map "topic:window" → { topic, window }.
+function _desiredSubs(model) {
+  const components = _api()._components ? _api()._components() : null;
+  const out = new Map();
+  if (!components) return out;
+  const arrange = _layoutSlice() && _layoutSlice().arrange;
+  const placed = arrange ? _mpool().allPanesInColumns(arrange) : [];
+  for (const p of placed) {
+    const comp = components[_route().componentForPanel(p.type)];
+    if (!comp || typeof comp.subscriptions !== 'function') continue;
+    let descriptors;
+    try { descriptors = comp.subscriptions(p, model) || []; }
+    catch (e) { console.error(`[${comp.name || '?'}] subscriptions() threw: ${e && e.message}`); continue; }
+    for (const d of descriptors) {
+      if (!d || !d.topic) continue;
+      const window = d.window || 1;
+      out.set(`${d.topic}:${window}`, { topic: d.topic, window });
+    }
   }
-  const hub = require('../leaves/infra/hub');
-  const { scheduleRender } = require('../panel/api');
-  for (const d of descriptors) {
-    if (!d || !d.topic) continue;
-    const window = d.window || 1;
-    const key = `${d.topic}:${window}`;
-    if (_wiredSubs.has(key)) continue;
-    hub.subscribe(d.topic, { window, onUpdate: () => scheduleRender() });
-    _wiredSubs.add(key);
+  return out;
+}
+
+// Reconcile the live hub subscriptions to match `_desiredSubs(model)`: subscribe
+// the newly-desired, unsubscribe the no-longer-desired. Called by the dispatch
+// finalizer each outermost dispatch (#D13); the diff makes it a no-op when the
+// desired set is unchanged (the common case). The hub's unsubscribe recomputes
+// the topic's retention window, so tearing one of several subs on a topic is safe.
+function reconcileSubscriptions(model) {
+  const hub = _hub();
+  const { scheduleRender } = _api();
+  const desired = _desiredSubs(model);
+  // stop — live topics no longer desired (e.g. a disposed pane's sub).
+  for (const [key, token] of _liveSubs) {
+    if (!desired.has(key)) { hub.unsubscribe(token); _liveSubs.delete(key); }
+  }
+  // start — desired topics not yet live.
+  for (const [key, { topic, window }] of desired) {
+    if (_liveSubs.has(key)) continue;
+    _liveSubs.set(key, hub.subscribe(topic, { window, onUpdate: () => scheduleRender() }));
   }
 }
-// Test-only — clears the wired-sub dedup ledger so a test can re-wire
-// after hub._reset() (mirrors hub._reset / jobs._reset).
-function _resetSubscriptions() { _wiredSubs.clear(); }
+
+// Test-only — tear down every live sub + clear the ledger (mirrors hub._reset /
+// jobs._reset), so a test starts from a clean subscription set.
+function _resetSubscriptions() {
+  const hub = _hub();
+  for (const token of _liveSubs.values()) hub.unsubscribe(token);
+  _liveSubs.clear();
+}
 
 // --- Component slice resolution ---
 //
@@ -209,9 +250,9 @@ function reconcilePaneInstances() {
       const seed = { config: m.config, projectDir: m.projectDir, paneDef: p };
       route.setInstance(paneId, kind, comp.init(paneId, seed));
     }
-    // Wire the pane's DECLARED hub subscriptions at mount (no-op without a
-    // subscriptions() hook; idempotent via the topic:window ledger).
-    _wireSubscriptions(comp, p);
+    // (#D13 — hub subscriptions are no longer wired per-pane here; the dispatch
+    // finalizer reconciles the whole desired set against the live set each
+    // dispatch via reconcileSubscriptions, so a disposed pane's sub is torn down.)
   }
 
   // DISPOSE — per-pane instances whose pane is no longer placed. Skip service
@@ -265,6 +306,10 @@ function initState() {
   // boot call that would leave the gate's bookkeeping stale (→ a redundant
   // re-mint on the first post-boot dispatch).
   require('../dispatch/runtime/finalize').setInstanceReconciler(reconcilePaneInstances);
+  // #D13 — hub subscriptions reconcile each outermost dispatch (canonical
+  // Model → Sub). Wired BEFORE the term_resized dispatch below, so its finalizer
+  // performs the boot sub-wiring through the same path as the boot instance mint.
+  require('../dispatch/runtime/finalize').setSubscriptionReconciler(reconcileSubscriptions);
 
   // Seed the model's terminal dimensions (resize-as-Msg P1). The ONLY
   // place besides the tui.js 'resize' listener that reads the live
@@ -353,9 +398,9 @@ function selectGroup(idx) {
 module.exports = {
   // Boot layer + dispatch-layer group helpers, defined here.
   loadConfig, initState, selectGroup, resetGroupContext,
-  // v0.6.4 Phase D — exposed for tests: the declared-subscription wiring
-  // seam + its dedup-ledger reset.
-  _wireSubscriptions, _resetSubscriptions,
+  // #D13 — exposed for tests: the Model→Sub reconciler, its pure desired-set
+  // projection, and the live-set teardown/reset.
+  reconcileSubscriptions, _desiredSubs, _resetSubscriptions,
   // Panel-state accessors — re-exported from panel/nav-state for back-compat
   // (§1 Phase 2). New code should import these from panel/nav-state.
   allPanels: navState.allPanels,

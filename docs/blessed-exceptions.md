@@ -537,6 +537,13 @@ that ordering; the test pins the cross-group case.
 
 ## Phase D — `stats` subscription at mount, not first render — ✅ SHIPPED 2026-06-14
 
+> **SUPERSEDED 2026-06-18 by #D13** — Phase D moved the subscribe off render
+> to a declared seam wired at MOUNT, but with no teardown (a placed-then-removed
+> pane leaked a live sub). #D13 completed it into a canonical `Model → Sub`
+> reconciler: `app/state.reconcileSubscriptions` re-evaluates the desired set
+> each dispatch (via the finalizer) and diffs/starts/stops — so subs now tear
+> down on pane-remove. `_wireSubscriptions` is gone. See PRINCIPLES §subscriptions.
+
 **The exception.** `stats.js _ensureSub` (`stats.js:46`) registers a hub
 subscription lazily on first render — paint mixed with lifecycle. Blessed on
 YAGNI: no post-boot topic-change pathway exists today (the comment names the fix).

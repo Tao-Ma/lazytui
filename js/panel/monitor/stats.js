@@ -25,13 +25,16 @@ const {
 } = require('../api');
 const { rasterize } = require('./stats-graph');
 
-// v0.6.4 Phase D — stats DECLARES its hub subscription; the framework
-// performs the hub.subscribe side effect at mount (app/state.js
-// `_wireSubscriptions`), NOT lazily from render(). This is the TEA
-// `subscriptions`-style seam: the Component is a pure function of its
-// inputs (render() no longer touches the hub's subscription list), and
-// the runtime owns the effect. Pre-D, `_ensureSub` ran from render() —
-// a paint-mixed-with-lifecycle blessed exception (v0.5-layering.md §5).
+// stats DECLARES its hub subscription; the framework owns the hub.subscribe
+// side effect. This is the canonical TEA `subscriptions : Model → Sub` seam
+// (#D13): the runtime re-evaluates the desired set each dispatch and reconciles
+// (app/state.reconcileSubscriptions, via the dispatch finalizer) — subscribe on
+// pane-place, unsubscribe on pane-remove. The Component stays a pure function of
+// its inputs (render() never touches the hub's subscription list). The `model`
+// arg is available for a sub whose existence depends on model state; stats's
+// only depends on its pane config, so it ignores it. (v0.6.4 Phase D introduced
+// the declared seam wired at mount; #D13 made it a full reconciler with teardown.
+// Pre-D, `_ensureSub` ran from render() — a paint-mixed-with-lifecycle exception.)
 //
 // The subscription's `onUpdate` (supplied by the framework) is a
 // repaint: docker.refresh's `changed` flag only flips when a formatted
@@ -41,7 +44,7 @@ const { rasterize } = require('./stats-graph');
 // each. Two stats panes on the same (topic, window) share one sub;
 // different windows produce two subs and the hub keeps the larger
 // window (HUB.md §6). Pure projection of the pane config → descriptors:
-function subscriptions(paneDef) {
+function subscriptions(paneDef, _model) {
   if (!paneDef || !paneDef.topic) return [];
   return [{ topic: paneDef.topic, window: paneDef.window || 40 }];
 }
