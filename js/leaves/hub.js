@@ -10,26 +10,24 @@
  *
  * A pure-JS leaf (zero npm deps, zero imports). It's stateful
  * (subscribers, ring buffers) but stateful ≠ non-leaf — a leaf is just the
- * bottom of the import graph. Its two upward calls are both INJECTED so the
- * hub imports nothing above it (a true bottom layer):
- *   - fan a publish out to Components as a `hub` Msg — via setDispatch
- *     (wired from dispatch/fanout at boot — the Component fan-out's home
- *     since v0.6.5 B/S6);
+ * bottom of the import graph. Its one upward call is INJECTED so the hub
+ * imports nothing above it (a true bottom layer):
  *   - record each publish to the event log — via setRecorder (wired from
  *     io/event-log at load). Was a direct import of io/event-log, the lone
  *     leaf→io edge; injecting it lets io/file-loader depend DOWN on the pure
  *     leaves/ansi without forming an io↔leaves cycle.
- * Both are render-exit-style seams; see docs/v0.6.5-dispatch-loop.md.
+ * A render-exit-style seam; see docs/v0.6.5-dispatch-loop.md.
+ *
+ * Consumers observe a publish via the `onUpdate` subscription callback
+ * (which schedules a render; the renderer reads hub data live). A publish
+ * does NOT fan a Component Msg out — the `{type:'hub'}` broadcast was an
+ * extension point no Component's update ever consumed, so it was dropped
+ * (#D17): it cost N no-op updates + a finalizer pass per sample (and
+ * docker-stats / monitors sample continuously) for no functional effect.
  */
 'use strict';
 
 // --- Internal state ---
-
-// Injected Component-Msg dispatcher (dispatch/fanout.dispatchMsg). null until
-// the boot wiring runs; a publish before then simply doesn't fan out (the same
-// drop the old lazy require could hit before the fan-out loaded).
-let _dispatch = null;
-function setDispatch(fn) { _dispatch = fn; }
 
 // Injected event-log recorder (io/event-log.record bound to 'publish'). null
 // until io/event-log loads and wires it; a publish before then simply isn't
@@ -118,10 +116,8 @@ function publish(topic, rowKey, sample) {
   // injected recorder (io/event-log wires it at load) so the hub imports
   // no io.
   if (_recorder) _recorder({ topic, rowKey, sample });
-  // Component Msg dispatch (v0.3.0). Hub publishes fan out to every
-  // Component's update() as a 'hub' Msg — via the injected dispatcher so
-  // the hub stays a leaf (no import up into panel/api).
-  if (_dispatch) _dispatch({ type: 'hub', topic, rowKey, sample });
+  // #D17 — no Component-Msg fan-out: the `{type:'hub'}` broadcast had no
+  // consumer. Observers learn of a publish via onUpdate (below) → render.
   // Wildcard subscriptions don't pre-populate the cache for topics they'd
   // match (the topic name isn't known until first publish). Compute on
   // demand and cache so the second publish is hot.
@@ -279,7 +275,7 @@ function _reset() {
 }
 
 module.exports = {
-  setDispatch, setRecorder,
+  setRecorder,
   publish, defineTopic, delete: deleteRow,
   subscribe, unsubscribe,
   history, snapshot, matrix,

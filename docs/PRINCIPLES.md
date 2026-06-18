@@ -368,7 +368,6 @@ module.exports = {
       // Async work is an EFFECT, never done inline (keep update pure):
       case 'refresh':      return [{ ...slice, loading: true }, [{ type: 'fetchItems' }]];
       case 'itemsLoaded':  return [{ ...slice, items: msg.items, loading: false }, [{ type: 'render' }]];
-      case 'hub':          return { ...slice, last: msg.sample };
       default:             return slice;
     }
   },
@@ -427,7 +426,7 @@ module.exports = {
   (`{kind, msg}`) fans out to the named Component, a flat Msg
   re-dispatches through the root reducer. The framework runs them,
   so single-writer per layer holds.
-- **Msg routing.** `refresh` / `hub` / `action` fan to every Component's
+- **Msg routing.** `refresh` / `action` fan to every Component's
   `update`. **Key Msgs go ONLY to the Component owning the focused panel, and
   ONLY when no modal mode is active** — a modal (filter / menu / cmdline / …)
   owns input, so the focused panel must not also see the key. To suppress
@@ -437,7 +436,7 @@ module.exports = {
   `_claimed` out of the effect list and skips the global default.
 - **Wrapped Msgs.** Component-specific Msgs MUST be wrapped via
   `api.wrap('name', innerMsg)` (so the framework routes to exactly one
-  Component); only the four framework signals above fan out unwrapped.
+  Component); only the three framework signals above fan out unwrapped.
 - **Effects stay out of `update`** — return `[slice, effects]`, never perform
   I/O inline (keeps `update` pure + replayable). The framework runs effects;
   an effect's async result re-enters as a Msg.

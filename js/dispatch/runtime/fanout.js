@@ -26,17 +26,11 @@ const { runEffects } = require('./effects');
 const geo = require('../../leaves/geometry');
 const mpool = require('../../leaves/pool');
 const { syncPanelScroll } = require('../../panel/nav-state');
-const hub = require('../../leaves/hub');
 // v0.6.5 §5 — the finalizer reconciles the active terminal tab's PTY session
 // (spawn-on-demand + resize), moved out of render so the view is read-only for
 // the overlay. dispatch→io and dispatch→panel are legal down-edges.
 const terminal = require('../../io/terminal');
 const tabs = require('../../panel/viewer/tabs');
-
-// Render-exit-style seam: leaves/hub fans publishes out to Components as a
-// `hub` Msg, but a leaf can't import panel/dispatch. Inject the dispatcher here
-// (dispatchMsg is a hoisted fn declaration below). Was panel/api.js.
-hub.setDispatch(dispatchMsg);
 
 // Component registry lives in panel/api; read it lazily (the object ref is
 // stable — registerComponent mutates it in place) so this module never eagerly
@@ -44,9 +38,11 @@ hub.setDispatch(dispatchMsg);
 let _comps = null;
 function _reg() { return _comps || (_comps = require('../../panel/api')._components()); }
 
-// Broadcast lane — only the three framework signals fan out to every Component;
-// every Component-specific Msg must arrive wrapped (via wrap()).
-const BROADCAST_TYPES = new Set(['refresh', 'hub', 'action']);
+// Broadcast lane — the framework signals that fan out to every Component;
+// every Component-specific Msg must arrive wrapped (via wrap()). The `hub`
+// broadcast was removed (#D17 — no Component consumed it; hub publishes now
+// reach observers only via the onUpdate→render subscription path).
+const BROADCAST_TYPES = new Set(['refresh', 'action']);
 
 // ——— Post-dispatch invariant pass (resize-as-Msg P2) ———————————————
 //
@@ -159,7 +155,7 @@ function _finalizeDispatch() {
 /**
  * Dispatch a Msg. Two shapes: a WRAPPED Msg `{ kind, msg }` routes only to the
  * Component named `kind` (its update() sees the unwrapped inner); a BROADCAST
- * Msg (refresh / hub / action) fans out to every instance. Every other flat Msg
+ * Msg (refresh / action) fans out to every instance. Every other flat Msg
  * is a missed wrap site (logged + dropped). Failures in one Component's update
  * don't stop the others.
  */

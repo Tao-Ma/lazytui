@@ -106,13 +106,8 @@ describe('[gate on] dispatchMsg drops non-layout traffic while free-config is ac
     eq(api.getInstanceSlice('frz-B').count, beforeB, 'B untouched');
     setFreeConfig(false);
   });
-  it('hub broadcast is dropped', () => {
-    setFreeConfig(true);
-    const before = api.getInstanceSlice('frz-A').count;
-    api.dispatchMsg({ type: 'hub', topic: 't', rowKey: 'r', sample: 1 });
-    eq(api.getInstanceSlice('frz-A').count, before);
-    setFreeConfig(false);
-  });
+  // (#D17 removed the `hub` broadcast Msg; free-config broadcast suppression
+  // is covered by the `refresh` case above — the remaining broadcast types.)
   it('layout-wrapped Msg still flows (mode-internal)', () => {
     // The layout Component must receive its own Msgs while in
     // free-config — that's how drag, hide, show, focus_set work.
