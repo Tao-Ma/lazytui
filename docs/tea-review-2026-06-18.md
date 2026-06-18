@@ -166,7 +166,25 @@ judgment call — see Decisions Ledger) · `FORWARD` (parked for a later pass to
   through a `set_scroll` Msg (`nav-state.js:101`). Same family as D7 (`paneBounds`): both
   are runtime-computed derived viewport geometry written into slices. **Resolve D7 + D16
   together** — either both go via Msgs, or both move to render/finalizer-local state out of
-  the slices. Evidence: F5.1. *Undecided.*
+  the slices. Evidence: F5.1.
+  **RESOLVED (KEEP exception B — doc reconciliation; user-directed 2026-06-18).** The
+  "resolve D7 + D16 together, the same way" framing turned out to be **wrong on inspection**:
+  the two are no longer the same category. D7's `paneBounds` is render-/hit-test-consumed
+  only, so it became a pure derived selector (see D7 — field now fully deleted). `innerH` is
+  consumed by the *viewer's own reducer* (scroll/cursor clamps read `slice.innerH`), so it
+  CANNOT be render/finalizer-local without making the reducer impure — it must live in the
+  slice. Its only TEA-clean alternative is write-through-`update` via a re-introduced
+  `viewer_set_viewport` Msg. User chose **KEEP**: the direct finalizer write + `!==` ref-guard
+  is the flat-registry adaptation of Bubble Tea's `viewport.Height` (stored-on-component,
+  runtime-written). The fresh review's strongest point — the scroll-clamp routes a `set_scroll`
+  Msg from the SAME finalizer while `innerH` is written direct — was examined and accepted,
+  not glossed: the scroll clamp reuses the navigator's **existing** `set_scroll` arm (free,
+  identity-preserving), whereas Msg-routing `innerH` would re-add a **dedicated copy-only** arm
+  + re-dispatch for a resize-rare value. Corrected an imprecise history in the process: the
+  direct write came from **v0.6.2 R4.9** (`f6af542`, render-side fold), relocated render→finalizer
+  by blessed-exception **A.1** (`65c67ab`) — it PREDATES the finalizer, so the prior "made direct
+  to avoid dispatching in the finalizer" gloss is wrong. Swept: `v0.6.5-tea-reaudit.md` (B row +
+  the alternatives note), `panel/viewer/viewer.js` innerH-writer comment. No code change.
 - **D17 — Remove the unconsumed broadcast `hub` Msg, or keep it as a documented (unused)
   extension point.** Every `hub.publish` synchronously fans a `{type:'hub'}` Msg to *every*
   instance (`hub.js:124`, `fanout.js:49` BROADCAST_TYPES), but **no Component's `update`
