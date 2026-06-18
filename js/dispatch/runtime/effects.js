@@ -231,6 +231,14 @@ function installBuiltins() {
     }, ms);
     if (t && typeof t.unref === 'function') t.unref();
   });
+  // set_theme: sync the leaves/themes palette cache (the `active` projection
+  // the pure render leaves read) from model.theme. The impure-shell write that
+  // keeps the cache a single-writer derived view of the model — same shape as
+  // arm_clock syncing the wall clock. setTheme has exactly ONE caller (here),
+  // so model.theme is the sole source of truth and the cache can't drift.
+  registerEffect('set_theme', (eff) => {
+    try { require('../../leaves/themes').setTheme(eff.name); } catch (_) { /* unknown theme → leaf falls back */ }
+  });
 
   // --- Root-reducer Cmds ---
   // Emitted by `runtime.update` branches; run from `dispatch.applyMsg` via
