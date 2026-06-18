@@ -6,6 +6,18 @@
  * layers and reach THIS module, never the reverse. It is a true leaf:
  * its only requires are node-pty + @xterm/headless.
  *
+ * #D14 — this is an EXPLICITLY NON-TEA ISLAND, and that is by design. The
+ * terminal's screen state lives in the @xterm/headless buffer (this module),
+ * NOT in the TEA model: PTY `onData` writes the off-model buffer and triggers a
+ * repaint via the injected `_renderHook` directly, bypassing the Msg loop —
+ * because xterm.js IS the terminal emulator and funnelling every PTY byte
+ * through a Msg into the model would be heavy and redundant. The model holds the
+ * terminal pane's LIFECYCLE (which tab, which cmd, placed/active); xterm holds
+ * its CONTENTS. Consequence (bounded + documented): replaying the Msg log
+ * reconstructs the model but NOT the terminal screen — see model/store.js
+ * §Replayability boundary (#D5). The overlay's repaint is fully event-driven
+ * (no wall-clock poll — #D15): `_renderHook` on write, dispatch render otherwise.
+ *
  * Everything it needs FROM higher layers is injected at boot from
  * panel/viewer/pty-lifecycle.install (each unset = the effect is skipped,
  * so the module runs standalone in tests/scripts):

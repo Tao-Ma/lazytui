@@ -252,11 +252,13 @@ function update(model, msg) {
     }
     case 'set_theme': {
       // Theme selection flows through update like any other state change.
-      // model.theme is the canonical record; the `set_theme` Cmd syncs the
-      // leaves/infra/themes palette cache (the impure-shell projection the
-      // pure render leaves read). No-op identity-preserve when unchanged.
+      // model.theme is the SINGLE source of truth; the palette cache the pure
+      // render leaves read is projected from it at the render entry (#D8 —
+      // paint.js render(model) → themes.setTheme), so no Cmd/effect is needed
+      // and the frame is replay-safe of the theme. No-op identity-preserve when
+      // unchanged so a redundant `:theme X` while already on X doesn't churn.
       if (msg.name === model.theme) return [model, []];
-      return [{ ...model, theme: msg.name }, [{ type: 'set_theme', name: msg.name }]];
+      return [{ ...model, theme: msg.name }, []];
     }
     case 'mode_clear':
       // Defensive: clear a single mode flag. Used by dispatch's wedge-guard
