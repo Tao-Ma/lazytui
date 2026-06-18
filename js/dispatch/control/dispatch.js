@@ -244,8 +244,11 @@ function _enterFilterMode() {
 }
 
 function handleFilterKey(key, seq) {
-  if (key === 'escape') { applyMsg({ type: 'filter_exit', keep: false }); showSelectedInfo(); return; }
-  if (key === 'return') { applyMsg({ type: 'filter_exit', keep: true  }); showSelectedInfo(); return; }
+  // #D11 — filter_exit's reducer arm emits the show_selected_info cascade, so
+  // the handler is a single applyMsg (was applyMsg + an imperative
+  // showSelectedInfo() — two dispatch entry points for one gesture).
+  if (key === 'escape') { applyMsg({ type: 'filter_exit', keep: false }); return; }
+  if (key === 'return') { applyMsg({ type: 'filter_exit', keep: true  }); return; }
   if (key === 'up'   || seq === 'k') { handleAction('nav_up');   return; }
   if (key === 'down' || seq === 'j') { handleAction('nav_down'); return; }
   // T26 — thread `key` through so the reducer can detect paste

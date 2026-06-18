@@ -110,7 +110,18 @@ judgment call — see Decisions Ledger) · `FORWARD` (parked for a later pass to
   reducer-emitted `show_selected_info` Cmd (correct) and the imperative
   `showSelectedInfo()` / `redraw()` handler helpers that resolve route + dispatch
   (`dispatch.js:83-108`). Sweep the imperative call sites onto the Cmd so one gesture →
-  one Msg → reducer-decided cascade. Evidence: F3.3. *Undecided.*
+  one Msg → reducer-decided cascade. Evidence: F3.3.
+  **RESOLVED (the two-step smell)** — `handleFilterKey`'s Esc/Enter did `applyMsg(filter_exit)`
+  THEN an imperative `showSelectedInfo()` (two dispatch entry points for one gesture, the
+  cascade decided in the handler). Moved the `show_selected_info` Cmd into the `filter_exit`
+  reducer arm; the handler is now a single `applyMsg`. The remaining direct `showSelectedInfo()`
+  callers are (a) the `show_selected_info` Cmd handler itself (`effects.js` — this IS the pathway,
+  correct), and (b) two SINGLE-step impure-shell refreshes — the `run_selected` else-branch
+  (`actions.js`, Enter on a non-actions/non-groups nav panel; no preceding Msg to attach to) and
+  the boot `redraw()` (a one-time bootstrap, not a gesture). F3.3 explicitly sanctions
+  route-resolution in the impure shell; these aren't the two-dispatch-entry-points smell, so they
+  stay as honest single-step shell calls (un-enshrined — not a blessed exception). Suite 96/96,
+  smoke 11/11, acyclic, benches parity.
 - **D12 — Decompose the reducer monolith (cohesion, not purity).** 1,055 LOC / 59-arm
   switch / all Cmd descriptors + the modal sub-machines (confirm/prompt/copy/cmdline/
   register-popup) inline. Consider nested sub-`update`s per modal sub-model (canonical TEA

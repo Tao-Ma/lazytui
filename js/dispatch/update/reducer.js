@@ -952,7 +952,11 @@ function update(model, msg) {
       // filter_enter (f.route); commit/clear the filter + re-home
       // cursor/scroll on THAT instance's nav slice (keyed by its panel-type).
       const r = f.route;
-      if (!r) return [next, []];
+      // #D11 — the body-refresh that exiting filter triggers is the reducer's
+      // decision (emit the show_selected_info Cmd), not a second imperative
+      // dispatch in handleFilterKey. One gesture (Esc/Enter in filter) → one
+      // Msg → reducer-decided cascade.
+      if (!r) return [next, [{ type: 'show_selected_info' }]];
       const { target, panelType } = r;
       // Commit/clear the filter on the panel's nav slice; the owning
       // Component is the single writer.
@@ -963,6 +967,7 @@ function update(model, msg) {
         { type: 'msg', msg: route.wrap(target, filterMsg) },
         { type: 'msg', msg: route.wrap(target, { type: 'set_cursor', panel: panelType, index: 0 }) },
         { type: 'msg', msg: route.wrap(target, { type: 'set_scroll', panel: panelType, offset: 0 }) },
+        { type: 'show_selected_info' },
       ]];
     }
     case 'mode_clear':
