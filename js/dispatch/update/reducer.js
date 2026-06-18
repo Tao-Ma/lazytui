@@ -290,9 +290,12 @@ function update(model, msg) {
       ];
       if (kindForNav === 'groups') {
         // v0.6.3 Phase D1: thread the groups ctx so the reducer arm
-        // stays pure of getModel().
+        // stays pure of getModel(). viewerTarget rides in on msg (stamped by
+        // the navSelect handler, impure shell) so neither the reducer nor
+        // groups.update reads route topology for the cascade — #D10.
         const groupsComp = require('../../panel/navigator/groups');
-        const ctx = { ...groupsComp.groupsBundle(model), paneMenuMode: !!model.modes.paneMenuMode };
+        const ctx = { ...groupsComp.groupsBundle(model), paneMenuMode: !!model.modes.paneMenuMode,
+                      viewerTarget: msg.viewerTarget };
         cmds.push({ type: 'msg', msg: route.wrap('groups', { type: 'groups_selected', index, ctx }) });
       }
       return [model, cmds];

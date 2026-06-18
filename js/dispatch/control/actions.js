@@ -263,9 +263,11 @@ function handleAction(action, arg) {
           // toggle_group moved to groups.update in Phase C — route via
           // the Component fan-out, not the root reducer.
           // v0.6.3 Phase D1: thread groups ctx so the reducer stays pure.
+          // viewerTarget resolved here (impure shell) for the cascade — #D10.
           const groupsComp = require('../../panel/navigator/groups');
           const m = getModel();
-          const ctx = { ...groupsComp.groupsBundle(m), paneMenuMode: !!m.modes.paneMenuMode };
+          const ctx = { ...groupsComp.groupsBundle(m), paneMenuMode: !!m.modes.paneMenuMode,
+                        viewerTarget: route.resolveTarget('viewer') };
           dispatchMsg(wrap('groups', { type: 'toggle_group', name: row.name, ctx }));
           break;
         }

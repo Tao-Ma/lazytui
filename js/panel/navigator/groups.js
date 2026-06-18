@@ -188,7 +188,12 @@ function init() {
  *  block — both `_cascadeCmds` (toggle_group / toggle_groups_tab) and
  *  the `groups_selected` arm call it, so the load-bearing B5 ordering
  *  can't drift between the two. Returns [] when the group didn't move.
- *  Reducer-pure (ctx threaded, no getModel()). */
+ *  Genuinely reducer-pure: the viewer destination is `ctx.viewerTarget`,
+ *  resolved by the dispatcher (impure shell) and threaded on msg.ctx —
+ *  this helper reads no route topology (mirrors layout.js's msg.viewerTarget
+ *  and the root reducer's handler-stamped route bundle). null target (no
+ *  viewer registered) drops the reset Cmd, same as the old resolveTarget
+ *  null result. */
 function _groupChangeCmds(res, ctx) {
   if (!res.groupChanged) return [];
   const cmds = [];
@@ -198,8 +203,7 @@ function _groupChangeCmds(res, ctx) {
   // finalizer's resolveTabKey sees the NEW group and the FROM-capture
   // lands under the WRONG group's key. Reordering keeps the finalizer
   // reading the OLD group at capture time.
-  const route = require('../../panel/route');
-  const target = route.resolveTarget('viewer');
+  const target = ctx && ctx.viewerTarget;
   if (target) {
     cmds.push({ type: 'msg', msg: require('../api').wrap(target, {
       type: 'viewer_reset_chrome', paneMenuMode: !!(ctx && ctx.paneMenuMode),
@@ -229,13 +233,15 @@ function _cascadeCmds(res, ctx) {
 }
 
 // v0.6.3 Phase D1 — every external dispatcher of a groups Msg
-// threads msg.ctx = { groups, currentGroup, paneMenuMode? } via
-// groupsBundle (exported below). The reducer arm reads ctx from
-// msg and passes to helpers. Reducer is pure of getModel();
-// internal cascade Cmds emitted from _cascadeCmds also receive
-// the bundle so downstream Msgs stay threaded.
+// threads msg.ctx = { groups, currentGroup, paneMenuMode?, viewerTarget? }
+// via groupsBundle (exported below) + a dispatcher-resolved viewerTarget.
+// The reducer arm reads ctx from msg and passes to helpers. Reducer is
+// pure of getModel() AND of route topology; internal cascade Cmds emitted
+// from _cascadeCmds also receive the bundle so downstream Msgs stay
+// threaded. viewerTarget (the cascade's viewer_reset_chrome destination)
+// is resolved by the impure-shell dispatcher — see _groupChangeCmds.
 function _msgCtx(msg) {
-  return msg.ctx || { groups: {}, currentGroup: '', paneMenuMode: false };
+  return msg.ctx || { groups: {}, currentGroup: '', paneMenuMode: false, viewerTarget: null };
 }
 
 function update(msg, slice) {

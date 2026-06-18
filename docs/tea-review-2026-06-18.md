@@ -84,7 +84,11 @@ judgment call — see Decisions Ledger) · `FORWARD` (parked for a later pass to
   calls `route.resolveTarget('viewer')` (`groups.js:201-202`) from `update`. Stamp the
   resolved viewer target onto `msg.ctx` in the groups dispatcher (mirrors the root reducer's
   blessed-A fix and `layout.js`), so the arm reads `ctx.viewerTarget`. Recommended:
-  do it (it's a true impurity, not a stylistic one). Evidence: F3.2. *Undecided.*
+  do it (it's a true impurity, not a stylistic one). Evidence: F3.2.
+  **RESOLVED** — `viewerTarget` now resolved by the impure-shell dispatchers (`nav-state.js`
+  `_groupsCtx`, `actions.js`, and `dispatch.js` `navSelect` → threaded through the reducer's
+  `nav_select` arm into the `groups_selected` ctx); `_groupChangeCmds` reads `ctx.viewerTarget`
+  and the false "Reducer-pure" comment is now true. Suite 96/96, benches parity.
 - **D11 — Unify the "refresh viewer info" pathway.** Two ways reach the same effect: the
   reducer-emitted `show_selected_info` Cmd (correct) and the imperative
   `showSelectedInfo()` / `redraw()` handler helpers that resolve route + dispatch

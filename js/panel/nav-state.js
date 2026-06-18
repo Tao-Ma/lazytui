@@ -135,7 +135,14 @@ function allPanels() {
 function _groupsCtx() {
   const groupsComp = require('../panel/navigator/groups');
   const m = getModel();
-  return { ...groupsComp.groupsBundle(m), paneMenuMode: !!m.modes.paneMenuMode };
+  // viewerTarget — the cascade's viewer_reset_chrome destination, resolved
+  // here in the impure shell so groups.update reads it off msg.ctx instead
+  // of reading route topology at reduce time (#D10).
+  return {
+    ...groupsComp.groupsBundle(m),
+    paneMenuMode: !!m.modes.paneMenuMode,
+    viewerTarget: route.resolveTarget('viewer'),
+  };
 }
 
 function recomputeGroups() {
