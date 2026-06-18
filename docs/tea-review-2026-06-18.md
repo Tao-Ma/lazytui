@@ -204,7 +204,26 @@ judgment call — see Decisions Ledger) · `FORWARD` (parked for a later pass to
   re-evaluates `Model → Sub Msg` each update and reconciles. The code self-admits "no
   teardown yet … the framework is now SHAPED for" one. Evolve toward model-driven
   start/stop (+ pane-dispose unsubscribe), or keep static and document the boundary.
-  Evidence: F4.1. *Undecided.*
+  Evidence: F4.1.
+  **RESOLVED (full canonical `Model → Sub` reconciler; user-directed 2026-06-18).** Built the
+  model-driven path the code was "shaped for." A Component now exports
+  `subscriptions(paneDef, model)` (model added — a sub may depend on model state); the framework
+  re-evaluates the WHOLE desired set each dispatch (`app/state.reconcileSubscriptions`, called by
+  the post-dispatch finalizer `dispatch/runtime/finalize.js` via a new injected
+  `setSubscriptionReconciler` hook — mirrors `setInstanceReconciler`), DIFFS it against a live
+  `topic:window → token` map, and starts/stops the delta. So a pane leaving the layout now tears
+  its sub down (`hub.unsubscribe`) — the leak (a placed-then-removed pane left a live sub + a
+  wasted repaint per publish) is gone. The mount-time `_wireSubscriptions` per-pane call is
+  removed; boot wiring rides the same `term_resized` finalizer the boot instance-mint uses.
+  **Homework that shaped it:** only `stats` declares subscriptions (a pure projection of pane
+  config → topics; one topic in practice — `docker.stats`), the hub already had `unsubscribe`
+  (window-recompute-safe for multi-subscriber topics), and subs were already wired per-pane at
+  RUNTIME (the reconciler ran them on mint) but never torn down — a half-reconcile. Chose (A) full
+  Model→Sub over (B) arrange-gated reconcile so the framework supports model-dependent subs, not
+  just placed-pane-derived ones. Memoized the reconciler's module refs (it runs per dispatch — avoids
+  the ~tens-of-µs/call relative-require fs cost). Test: `test-stats.js [15]` rewritten to drive the
+  reconciler, incl. a TEARDOWN test (place→subscribe→retained, remove→unsubscribe→dropped) + a pure
+  `_desiredSubs` projection test. Suite 96/96, smoke 11/11, acyclic both modes, finalizer-bench parity.
 - **D14 — The PTY/terminal pane is a non-TEA island; bound it explicitly or model it.**
   PTY `onData` mutates the off-model xterm buffer and calls the render hook directly
   (`terminal.js:94-96`), bypassing the Msg loop; the rendered content is never in the model

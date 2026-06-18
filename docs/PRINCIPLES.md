@@ -274,13 +274,17 @@ overlay-subsystem reads, called out at the end):
   in the post-dispatch finalizer and routes through a `set_scroll` Msg
   (resize-as-Msg arc), so it is a dispatch-time single-writer update, not a
   render-side write. (History: `docs/history/v0.5-layering.md`.)
-- **Hub subscriptions** are DECLARED, not lazy-subscribed from render
-  (v0.6.4 Phase D). A Component exports a pure `subscriptions(paneDef) →
-  [{topic, window}]`; the framework performs the `hub.subscribe` side
-  effect at mount (`app/state.js#_wireSubscriptions`, the per-pane mint
-  loop). This is the TEA `subscriptions` seam — render stays pure, the
-  runtime owns the effect. (Stats was the lone lazy-subscriber via the old
-  `_ensureSub`; that blessed exception is retired.) **Initial-state seeding
+- **Hub subscriptions** are DECLARED + RECONCILED — canonical TEA
+  `subscriptions : Model → Sub` (#D13). A Component exports a pure
+  `subscriptions(paneDef, model) → [{topic, window}]`; the framework
+  re-evaluates the whole desired set each dispatch (the post-dispatch
+  finalizer calls `app/state.js#reconcileSubscriptions`), DIFFS it against the
+  live set, and starts/stops the delta — `hub.subscribe` on pane-place,
+  `hub.unsubscribe` on pane-remove. Render stays pure; the runtime owns the
+  effect. (v0.6.4 Phase D introduced the declared seam wired at mount but with
+  no teardown — a placed-then-removed pane leaked a live sub; #D13 made it a
+  full reconciler. Stats was the pre-D lazy-subscriber via `_ensureSub`; that
+  exception is long retired.) **Initial-state seeding
   — init-injection (v0.6.4 #4).** A Component that needs root/pane facts to
   seed its initial slice receives them as an argument: the mint loop
   (`app/state.js`, the impure first-touch shell) threads a seed
