@@ -73,8 +73,8 @@ const { cleanup } = require('../runtime/cleanup');
  */
 function _handleWheel(mx, my, delta) {
   // Use visibleBoundsFor — in half/full view, off-screen panes are
-  // absent from paneBounds; boundsFor would fall back to their
-  // normal-view rects in _currentLayout and we'd scroll a phantom
+  // absent from the derived visible-bounds map; boundsFor would fall back to
+  // their normal-view rects in _currentLayout and we'd scroll a phantom
   // pane whose coords overlap with the visible half-view rect.
   const layoutSlice = getInstanceSlice('layout');
   for (const p of allPanels()) {
@@ -646,7 +646,7 @@ function handleMouse(kind, x, y) {
   let mutated = false;
 
   // Same reason as _handleWheel above: hit-test against ACTUALLY-
-  // VISIBLE pane bounds. In half view, paneBounds carries only
+  // VISIBLE pane bounds. In half view, the visible-bounds map carries only
   // halfLeftPanel + detail; boundsFor's _currentLayout fallback
   // would return phantom normal-view coords for off-screen panes
   // (containers/groups/files would all "exist" at their normal-

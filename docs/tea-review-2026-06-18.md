@@ -93,7 +93,31 @@ judgment call — see Decisions Ledger) · `FORWARD` (parked for a later pass to
   into Component slices during render (`paint.js:16-23`), so the layout slice has a second
   writer besides the layout Component's `update`. Keep (publish geometry from paint, freeze
   tests whitelist the fields) vs relocate `paneBounds` out of the slice into render-local
-  state / route it via a Msg. Evidence: F2.3. *Undecided.*
+  state / route it via a Msg. Evidence: F2.3.
+  **RESOLVED (the finding's premise was already stale; production field deleted —
+  user-directed 2026-06-18).** First-hand reads overturned the premise: render does NOT
+  write `paneBounds` and the viewer does NOT write `paneBounds.detail.tabs` — both were
+  retired by blessed-exceptions **A.2** (paneBounds → memoized pure selector) and **A.3**
+  (tabBounds → compute-on-read) BEFORE this review. The single production write was the
+  slice init `paneBounds: {}` (`panel/layout.js`); the doc-blind review was tripped by the
+  STALE module header at `paint.js:16-23` that still narrated the long-removed
+  "renderer-as-writer" pattern. So D7's real residue was stale comments. Resolution: (1)
+  **deleted the production `paneBounds` field declaration** — the model shape no longer
+  advertises a field production never writes; `test-component` asserts its absence; the
+  geometry/`boundsOf` override read-branches stay as an explicitly **test-only** seam. (2)
+  **Corrected the stale comments** across `paint.js` (header + renderNormal block),
+  `leaves/geometry.js` (header + accessors + body), `panel/layout.js`, `free-config*.js`,
+  `panel/route.js`, `panel/chrome-hittest.js`, `dispatch/runtime/fanout.js`,
+  `dispatch/control/input.js`, plus living docs (`DATAFLOW.md`, `PRINCIPLES.md`,
+  `blessed-exceptions.md`). The "relocate out of the slice via a Msg" option named here was
+  the WRONG frame for `paneBounds` (it's render/hit-test-consumed → a pure derived selector,
+  not a Msg) — that contrast is also why D7 ≠ D16 (see D16). The *full* fixture migration
+  (force ~20 fixtures onto real `calcLayout` geometry, deleting the override) was
+  investigated and **declined**: those fixtures seed deliberately-simplified rects with no
+  `dims` to decouple hit-test-math tests from layout-math (a legitimate test-isolation
+  device); re-running it confirmed 9 files / ~90 assertions would need recomputing and the
+  result would couple two subsystems — which is why P1.3's earlier flip was reverted. Suite
+  96/96, smoke 11/11, acyclic, benches parity.
 - **D8 — Theme two-store.** `model.theme` (name, source of truth) + `leaves/themes.active`
   (palette object cache), one-way-synced by the `set_theme` effect (`effects.js:240`).
   Render reads the cache, not `model.theme`. An instance of D5 (cache not reproduced on

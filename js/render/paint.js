@@ -13,14 +13,14 @@
  * list; hit-test accessors (boundsFor / getPanelViewportH /
  * getCurrentLayout) live in leaves/geometry.
  *
- * The renderer-as-writer pattern (renderNormal/Half/Full populate
- * `layoutSlice.paneBounds` directly) is documented in
- * docs/v0.5-layering.md §5 — geometry is a pure function of view state
- * (term size, arrange, viewMode), so it's published from the paint
- * pass rather than routed through a Msg every frame. The viewer
- * Component does the same for `paneBounds.detail.tabs`. Pure-TEA freeze
- * tests on the layout slice must whitelist these renderer-written
- * fields.
+ * Render writes NO slice state: pane geometry is a pure DERIVED value
+ * (geometry.boundsFor/visibleBoundsFor compute it from arrange + dims via
+ * memoized selectors), and the viewer's tab-bar bounds are compute-on-read
+ * (`tabBoundsFor`). The old "renderer-as-writer" pattern — renderNormal/
+ * Half/Full populating `layoutSlice.paneBounds`, the viewer writing
+ * `.detail.tabs` — was retired by blessed-exceptions A.2/A.3, and #D7
+ * (2026-06-18) deleted the `paneBounds` slice field itself. render() is a
+ * pure `model -> output` view (see the render() epilogue at the bottom).
  *
  * Zero npm dependencies (uses local modules).
  */
@@ -377,10 +377,12 @@ function composeRects(layout, model) {
   return out;
 }
 
-// renderNormal/Half/Full populate `layoutSlice.paneBounds` directly —
-// the renderer-as-writer pattern documented in the file header (§5
-// view-derived data). Reset on every entry so stale entries from a
-// prior view-mode aren't hit-testable.
+// renderNormal/Half/Full — the three view-mode paint dispatchers. They
+// WRITE NO slice state (#D7 / blessed-exceptions A.2): pane geometry is a
+// pure derived value, so a panel that needs its own bounds during
+// _safeRender reads them via getPanelViewportH → geometry.boundsFor (the
+// memoized selector keyed on the SAME arrange these compute from), not a
+// pre-populated slice cache.
 //
 // v0.6.3 P3.6 — these used to row-concatenate per-column strings via
 // paintColumns; that implicit "every column emits availH rows"
@@ -390,15 +392,6 @@ function composeRects(layout, model) {
 // in this commit along with the renderOne closure + the column-pad
 // safety net (no longer needed — rect compositing handles gaps).
 //
-// Why pre-populate paneBounds before composeRects: a panel's render can
-// read its own bounds (getPanelViewportH → boundsFor) during _safeRender,
-// so the entry must exist by the time the panel renders. Same order the
-// pre-P3 renderOne used (write bounds, then render).
-//
-// v0.6.4 — keyed by paneId ONLY (the type-keyed write retired). The type
-// key was the half/full visible-bounds channel for readers that queried
-// by the viewer tab-id; those now resolve the container paneId via
-// route.resolveViewerPaneId(), so the per-paneId write is sufficient.
 // (The per-frame scroll-clamp that lived here — _syncScrollClamp —
 // moved to the post-dispatch finalizer in dispatch/runtime/fanout.js (resize-as-Msg
 // P3): every state change is a dispatch, so the clamp runs there, and

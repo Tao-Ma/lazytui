@@ -310,10 +310,12 @@ describe('[8d] layout Component skeleton (Phase 1a)', () => {
     assert('dirty' in slice,        'slice has dirty (1d target)');
     assert('freeConfig' in slice,       'slice has freeConfig (1f target)');
     // panelHeights moved off the slice — it lives in a module-local
-    // in render/geometry.js, accessed via `getPanelViewportH(type)`.
-    // paneBounds stays on the slice (mouse hit-tests + drag math
-    // read it directly).
-    assert('paneBounds' in slice,  'slice has paneBounds (1e target)');
+    // in leaves/geometry.js, accessed via `getPanelViewportH(type)`.
+    // paneBounds is NOT a production field (#D7 2026-06-18): pane geometry
+    // is a pure derived value (geometry.boundsFor/visibleBoundsFor). The
+    // geometry accessors honor a slice.paneBounds override only when a unit
+    // fixture injects one; a fresh production slice has no such field.
+    assert(!('paneBounds' in slice), 'slice has NO paneBounds field (derived)');
     // v0.6.1 Phase 3 — slice.panels retired. Component slices live in
     // route._instances keyed by tab id; the layout slice no longer
     // carries a sibling map.

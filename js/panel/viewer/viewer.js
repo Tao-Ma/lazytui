@@ -1108,7 +1108,7 @@ function tabStripFor(slice, model, hotkey) {
 // to `slice.tabBounds`, the last render-side slice write). render() is now a
 // pure view: it computes the strip only for the title and writes nothing. Mouse
 // hit-tests are rare vs frames, so recompute-on-read is cheap (same rationale
-// as the paneBounds selector). Returns the bounds array (empty if no strip).
+// as the derived pane-bounds selector). Returns the bounds array (empty if no strip).
 function tabBoundsFor(slice, model, hotkey) {
   const built = tabStripFor(slice, model, hotkey);
   return built ? built.tabBounds : [];

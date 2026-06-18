@@ -21,9 +21,10 @@
  * drags share) and placementFromPoolEntry from leaves/pool (so the preview
  * builds the same placement object panel/layout.js's pool_show reducer
  * commits on release). Both are pure leaves with no back-edges, so no
- * cycle. Reads slice.paneBounds, slice.arrange, slice.panelList; writes
- * slice.panelList, slice.freeConfig.drag (the same field the in-grid mouse drag
- * uses; tagged union by `kind`).
+ * cycle. Reads pane bounds (via core.boundsOf → geometry, derived),
+ * slice.arrange, slice.panelList; writes slice.panelList,
+ * slice.freeConfig.drag (the same field the in-grid mouse drag uses; tagged
+ * union by `kind`).
  */
 'use strict';
 
@@ -36,8 +37,8 @@ const { placementFromPoolEntry } = mpool;
 /** Compute the drop target for a pool drag at (mx, my). Returns
  *  `{ kind:'insert', columnIndex, index, valid }` or
  *  `{ kind:'replace', columnIndex, occupantId, valid }`, or null when
- *  outside the layout. Uses slice.paneBounds (view-derived, written by
- *  the render pass) for cell hit-tests, mirroring the in-grid drag's
+ *  outside the layout. Uses derived pane bounds (via core.boundsOf →
+ *  geometry) for cell hit-tests, mirroring the in-grid drag's
  *  approach. The dragged pool entry's type (looked up via
  *  slice.freeConfig.drag.sourceId) is threaded into the validators so
  *  they can refuse detail/actions outside the last column — same
@@ -237,9 +238,11 @@ function poolDragRelease(slice) {
 /** Compute the preview arrange for a pool drag at the current target — what
  *  the layout would look like on release. Mirrors what pool_show / pool_hide
  *  in panel/layout.js will do, but as a pure transform on arrange (no Cmd
- *  dispatch). Returns null when no preview should be painted. Like the
- *  in-grid variant, the render path swaps + restores paneBounds so the
- *  hit-test reference frame stays the original layout. */
+ *  dispatch). Returns null when no preview should be painted. The preview is
+ *  threaded to paint as an `arrangeOverride` param (Phase B) and bounds are a
+ *  pure derived value (Phase A.2), so a mid-drag hit-test reads original-layout
+ *  geometry off the REAL `slice.arrange` — no paneBounds swap/restore (the old
+ *  save/restore is gone; there is no slice field to swap). */
 function computePoolDragPreviewArrange(slice) {
   const drag = slice.freeConfig && slice.freeConfig.drag;
   if (!drag || drag.kind !== 'pool-dragging') return null;

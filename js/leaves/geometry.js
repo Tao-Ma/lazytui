@@ -9,34 +9,33 @@
  * directly, paint consumers import `render/paint`. `panel/layout.js`
  * still owns the arrange/focus/viewMode slice.)
  *
- * Geometry as view-derived data (docs/v0.5-layering.md §5). Two
- * sources during the v0.6.3 P1 migration:
- *
- *   - `layoutSlice.paneBounds` — legacy per-panel `{x,y,w,h}` map
- *     written by renderNormal/Half/Full (in paint.js). Carries the
- *     viewer's tab-bar hit-test cache as `.tabs` on detail's entry.
- *     Retires when P1.4 lands (currently deferred — see
- *     docs/v0.6.3.md §Track A).
+ * Geometry as view-derived data (docs/v0.5-layering.md §5). Pane bounds
+ * are a PURE DERIVED value — computed from `(arrange, dims, viewMode)`
+ * via memoized selectors, with NO slice field behind them in production:
  *
  *   - `_currentLayout` — module-local Layout value `{rects, availH,
  *     viewMode, cols, rows}` published by calcLayout (P1.2). The
  *     `rects` array is the per-frame canonical geometry list.
  *
- * The `boundsFor(key)` accessor (P1.3) reads slice first, falls
- * through to `_currentLayout.rects` when slice is empty. Hit-test
- * consumers go through boundsFor; the per-panel height accessor
- * `getPanelViewportH(type)` is view-mode-aware (half/full view's
- * on-screen panel gets full availH, not its normal-view column-share)
- * — direct reads of the column-share height would silently under-
- * report in half/full view; the API hides that footgun (fix arc
- * 2026-06-03).
+ * History (resolved): a `layoutSlice.paneBounds` map used to be WRITTEN
+ * by renderNormal/Half/Full each frame (the old "renderer-as-writer"
+ * exception, with the viewer's tab-bar bounds hung off `.detail.tabs`).
+ * blessed-exceptions A.2/A.3 retired those writes (bounds became memoized
+ * selectors; tab bounds became compute-on-read), and #D7 (2026-06-18)
+ * deleted the production slice field itself — so render writes no slice
+ * state and the single-writer rule has NO carve-out here anymore. The
+ * accessors still honor a `slice.paneBounds` OVERRIDE when one is present,
+ * but ONLY unit fixtures set it (injecting known bounds to keep
+ * hit-test-math tests decoupled from layout-math); production never does.
  *
- * This is the one pattern that sits outside the otherwise-uniform
- * "Component update is the single writer of its slice" rule. The
- * justification is layering: the geometry is a pure function of view
- * state (term size, arrange, viewMode) and would be wasteful to route
- * through a Msg every frame. Pure-TEA freeze tests on the layout slice
- * must whitelist these renderer-written fields.
+ * The `boundsFor(key)` accessor reads that override first (if a test set
+ * one), else the memoized normal selector, else the last published
+ * `_currentLayout.rects` (boot edge). Hit-test consumers go through
+ * boundsFor; the per-panel height accessor `getPanelViewportH(type)` is
+ * view-mode-aware (half/full view's on-screen panel gets full availH, not
+ * its normal-view column-share) — direct reads of the column-share height
+ * would silently under-report in half/full view; the API hides that
+ * footgun (fix arc 2026-06-03).
  *
  * Zero npm dependencies (uses local modules).
  */
@@ -253,9 +252,9 @@ function halfProjection(layoutSlice, viewerPaneId) {
 function getPanelViewportH(layoutSlice, paneId, dims, layout, viewerPaneId) {
   if (!layoutSlice) return 1;
   const availH = Math.max(6, dims.rows - 1);
-  // Half/full view: an on-screen panel takes the full availH — beats any
-  // stored height (paneBounds may carry a previous frame's bounds across
-  // the viewMode-transition tick). Half view's two slots come from the
+  // Half/full view: an on-screen panel takes the full availH — beats the
+  // normal-view column-share that boundsFor/_currentLayout would otherwise
+  // report (e.g. lagging across the viewMode-transition tick). Half view's two slots come from the
   // shared halfProjection so this agrees with renderHalf exactly; BOTH
   // projected panes are full-height (the right viewer too, not just left).
   const { viewMode, focus } = layoutSlice;
@@ -271,17 +270,18 @@ function getPanelViewportH(layoutSlice, paneId, dims, layout, viewerPaneId) {
   if (onScreen) return Math.max(1, availH - 2);
   // resize-as-Msg P2 — optional precomputed-Layout override. The
   // dispatch finalizer judges against the rects it JUST computed:
-  // at dispatch time slice.paneBounds still holds the last render's
-  // write (the same staleness class as the resize clamp lag fixed on
-  // the render side in 8eea6e9). Callers without a fresh Layout omit
-  // the param and keep the boundsFor path below.
+  // at dispatch time the derived bounds (boundsFor → selector /
+  // _currentLayout) still reflect the LAST render, stale vs the
+  // just-dispatched state (the same staleness class as the resize clamp
+  // lag fixed on the render side in 8eea6e9). Callers without a fresh
+  // Layout omit the param and keep the boundsFor path below.
   if (layout && layout.rects) {
     const rect = layout.rects.find(r => r.paneId === paneId);
     if (rect) return Math.max(1, (rect.h || 4) - 2);
   }
   // Off-screen / normal-view: the pane's actual bounds, keyed by paneId
-  // (boundsFor → slice.paneBounds[paneId], falling through to
-  // _currentLayout.rects when the slice is empty).
+  // (boundsFor → the memoized normal selector, falling through to
+  // _currentLayout.rects at the boot edge; a test override wins if set).
   const b = boundsFor(layoutSlice, paneId);
   const h = (b && b.h) || 4;
   return Math.max(1, h - 2);
@@ -372,9 +372,9 @@ function getCurrentLayout() {
 // blessed-exceptions Phase A.2 — pane bounds are a PURE DERIVED value, no
 // longer a render-side write. The map keyed by paneId is computed from
 // (arrange, dims) and memoized via the shared selector model (leaves/
-// selector.js). `layoutSlice.paneBounds` survives ONLY as a seed/override
-// input (boot edge + test fixtures seed it directly); production never
-// writes it, so when absent these accessors compute the value.
+// selector.js). `layoutSlice.paneBounds` survives ONLY as a test-only
+// override a unit fixture may inject (#D7 2026-06-18 deleted the production
+// field); production never has it, so these accessors always compute.
 //
 // Normal view = the column layout (memoized; the hot per-pane hit-test +
 // per-row decor loops hit it). Half/full = the visible single/double-pane
@@ -435,9 +435,10 @@ function _visibleBoundsMap(layoutSlice, viewerPaneId) {
 /**
  * The rect at <key> (paneId, type, or 'detail'), reporting NORMAL-view
  * geometry even for off-screen panes — used by getPanelViewportH for
- * scroll-viewport clamping. Seed/override (layoutSlice.paneBounds) wins;
- * else the memoized normal selector; else the last published _currentLayout
- * (pre-first-dims boot edge + type-key matching).
+ * scroll-viewport clamping. A test-only `slice.paneBounds` override wins
+ * (unit fixtures only — see file header); else the memoized normal selector;
+ * else the last published _currentLayout (pre-first-dims boot edge + type-key
+ * matching).
  */
 function boundsFor(layoutSlice, key) {
   const seed = layoutSlice && layoutSlice.paneBounds && layoutSlice.paneBounds[key];
@@ -458,7 +459,8 @@ function boundsFor(layoutSlice, key) {
  *  click this pane" want this variant (boundsFor() in contrast reports
  *  normal-view geometry for off-screen panes too). Prevents half-mode
  *  click hit-tests from firing on a non-visible pane's phantom rect.
- *  Seed/override wins; else the view-mode-aware visible map. `viewerPaneId`
+ *  A test-only `slice.paneBounds` override wins; else the view-mode-aware
+ *  visible map. `viewerPaneId`
  *  (route.resolveViewerPaneId(), threaded by the caller — v0.6.5 §3) lets the
  *  half-view right slot resolve; omit it in normal/full where it's unused. */
 function visibleBoundsFor(layoutSlice, key, viewerPaneId) {
