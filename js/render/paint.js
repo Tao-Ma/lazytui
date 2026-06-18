@@ -32,7 +32,7 @@ const { allPanels } = require('../panel/nav-state');
 const geo = require('../leaves/wm/geometry');
 const mpool = require('../leaves/wm/pool');
 const mpane = require('../leaves/wm/pane');
-const { theme } = require('../leaves/infra/themes');
+const { theme, setTheme } = require('../leaves/infra/themes');
 const { truncate, setWriter: _setDrawWriter } = require('../leaves/render/draw');
 // Wire the overlay-paint write seam: draw.renderOverlay (a pure leaf) emits its
 // composed buffer through this instead of importing io/term's stdout directly.
@@ -664,6 +664,15 @@ function renderTerminalOverlay(model, arrangeOverride) {
 // model/store.js §Replayability boundary.
 function render(model) {
   const now = model.now;
+  // #D8 — project model.theme onto the palette cache the pure render leaves read
+  // (themes.theme()). The cache is now a per-frame derivation of model.theme
+  // (mirrors `now = model.now` above), NOT an effect-synced store: replaying the
+  // Msg log reconstructs model.theme → this sync reproduces the palette, so the
+  // frame is replay-safe of the theme. (Was the `set_theme` effect, which replay
+  // skips; that effect + its Cmd are retired. theme()'s readers are all
+  // render-time, so syncing here covers them; setTheme is a cheap THEMES[name] +
+  // 2 field writes.)
+  setTheme(model.theme);
   // `model` is the TEA root model (js/model/store.js; reduced by
   // js/dispatch/update/reducer.js), threaded in by the owner (the program).
   // The view reads migrated slices (currently `viewMode`) from this param,

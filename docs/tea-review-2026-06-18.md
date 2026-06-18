@@ -153,7 +153,19 @@ judgment call — see Decisions Ledger) · `FORWARD` (parked for a later pass to
   (palette object cache), one-way-synced by the `set_theme` effect (`effects.js:240`).
   Render reads the cache, not `model.theme`. An instance of D5 (cache not reproduced on
   replay). Keep the injected cache vs pass the resolved palette through render args.
-  Evidence: F2.4. *Undecided.*
+  Evidence: F2.4.
+  **RESOLVED (make-pure: render-time projection; user-directed 2026-06-18).** Took neither
+  literal option — instead of threading the palette through render args (invasive: `theme()` has
+  22 readers across 13 modules) the palette cache is now PROJECTED from `model.theme` at the render
+  entry (`paint.js render(model) → themes.setTheme(model.theme)`), a per-frame derivation that
+  replay reproduces — the same shape as `now = model.now` driving the frame clock. The `set_theme`
+  EFFECT (which replay skipped — the actual D5/replay gap) is RETIRED, and the reducer's `set_theme`
+  arm drops its Cmd (just sets `model.theme`). Safe because ALL palette reads (`theme()`) are
+  render-time and `activeThemeName()` is unused, and the `:theme` live-preview already routes through
+  `applyMsg(set_theme)` → `model.theme`. Net: the theme leaves D5's off-model-store list (the frame is
+  now replay-safe of the theme — name AND palette). Swept `store.js` §Replayability + `model.theme`
+  field comment + PRINCIPLES. test-theme-model rewritten (the Msg alone no longer syncs; render
+  projects — pins the replay-safety contract). Suite 96/96, smoke 11/11, bench parity.
 - **D9 — Finish the route-read elimination in the root reducer, or accept 2 residual reads.**
   The reducer header self-describes as "ALMOST a pure function of (model, msg)"
   (`reducer.js:27`): two `route.componentForPanel(<constant>)` reads of the ownership
@@ -228,11 +240,30 @@ judgment call — see Decisions Ledger) · `FORWARD` (parked for a later pass to
   PTY `onData` mutates the off-model xterm buffer and calls the render hook directly
   (`terminal.js:94-96`), bypassing the Msg loop; the rendered content is never in the model
   and isn't reproduced by replay. Accept as an explicitly-documented boundary (xterm.js owns
-  terminal emulation) vs route PTY state through the model. Evidence: F4.2. *Undecided.*
+  terminal emulation) vs route PTY state through the model. Evidence: F4.2.
+  **RESOLVED (accept as an explicitly-documented non-TEA boundary; user-directed 2026-06-18).**
+  Modeling the terminal (routing every PTY byte through a Msg into the model) is heavy and wrong —
+  xterm.js IS the terminal emulator; the review agrees. The boundary is now stated AT THE SITE: a
+  `#D14` header on `io/terminal.js` — the model holds the PTY *lifecycle* (tab / cmd / active),
+  xterm holds the *contents*; `onData` writes the off-model buffer + repaints directly, bypassing
+  the Msg loop, by design; replay reconstructs the model but not the terminal screen (cross-ref
+  `store.js` §Replayability / #D5). No code change — the island is honestly bounded, not eliminated.
 - **D15 — The 250ms blind repaint timer (`tui.js:306`).** An always-on wall-clock repaint,
   not state-driven — a safety net for off-model xterm changes that arrive without an
   `onData` event. Tied to D14: keep as a bounded safety net (document why), or eliminate it
-  if PTY state becomes observable/event-driven. Evidence: F4.3. *Undecided.*
+  if PTY state becomes observable/event-driven. Evidence: F4.3.
+  **RESOLVED (examined + KEPT — elimination empirically disproved; user-directed 2026-06-18).**
+  The user picked "rework" (narrow/eliminate). Homework suggested it was redundant (headless xterm
+  has no renderer/blink; the overlay's repaint triggers are event-driven: PTY write→scheduleOverlay,
+  tab-activation/resize/any-dispatch→render). I removed the timer — and `smoke/pty-overlay.js`
+  IMMEDIATELY caught the regression: the terminal command marker stopped painting. The PTY output is
+  ASYNC + off-model, so output arriving around tab-activation lands in the xterm buffer with NO
+  subsequent write to repaint the now-visible overlay — a race the event triggers miss and the poll
+  backstops. So the timer STAYS (restored). It's eliminable only if xterm exposes a buffer-change
+  signal (D14's island), which it does not. Net change: the vague "edge cases" comment is replaced by
+  the PROVEN rationale (+ the smoke that pins it); `renderTerminalOverlay` early-returns when no
+  terminal tab is active, so the poll is a no-op except while the island is on-screen. Reclassified
+  accept-bounded (like D14). Good outcome of running the smoke: a plausible-but-wrong analysis caught.
 - **D16 — Finalizer writes derived viewport geometry (`viewer.innerH`) straight into the
   slice — route it via a Msg or relocate it.** `fanout.js:123`
   (`route.setInstanceSlice(viewerTab, {...vs, innerH})`) bypasses the Msg channel and the

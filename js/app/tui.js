@@ -300,11 +300,19 @@ function main() {
   // from their `refresh`-Msg handler via a `tick` effect; the cadence is
   // entirely Component-owned (the self-re-arming-tick Cmd pattern).
 
-  // Safety-net poll for terminal overlay — primary updates come from
-  // xterm.write callback (event-driven). This catches edge cases where
-  // internal state changes without parse events. Always-on so ephemeral
-  // terminals (created at runtime by Components) are covered too. The
-  // function returns immediately if no terminal tab is active.
+  // #D15 (2026-06-18, examined + KEPT) — eventual-consistency repaint of the
+  // terminal overlay, the safety-net backstop for the off-model PTY island
+  // (#D14). The event-driven triggers (PTY write→scheduleOverlay; tab-activation /
+  // resize / any dispatch→render) cover the common cases, BUT the PTY's output is
+  // ASYNC + off-model and has race windows the events miss — e.g. output that
+  // arrives around tab-activation lands in the xterm buffer with no *subsequent*
+  // write to repaint the now-visible overlay. We tried to eliminate this poll
+  // (the review's D15) and `smoke/pty-overlay.js` EMPIRICALLY caught the
+  // regression (the command marker stopped painting) — so it stays. It's the
+  // adapted "render outside the loop" cost of the deliberately non-TEA xterm
+  // island; renderTerminalOverlay early-returns when no terminal tab is active,
+  // so the poll is a no-op except while the island is on-screen. Eliminable only
+  // if xterm exposes a buffer-change signal (D14) — it does not.
   setInterval(() => renderTerminalOverlay(getModel()), 250);
 
   // Handle resize (resize-as-Msg P1). The Msg lands the new size in the

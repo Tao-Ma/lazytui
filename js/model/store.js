@@ -31,15 +31,17 @@
  *     - io/diag-log.snapshot()     — diagnostics window (overlay/diag-log.js)
  *     - feature/history.all()      — history navigator (panel/navigator/history.js)
  *     - io/terminal.getSession(id) — terminal-pane screen contents (paint.js / footer.js)
- *     - leaves/infra/themes.theme()      — resolved palette cache (footer / overlay/cmdline)
  *     - io/term.cols()/rows()      — terminal dims mirror (render reads this, not model.dims)
  *   This is deliberate, not a bug: the jobs/diag overlays read live ON PURPOSE
  *   (a warning/job arriving while the window is open shows without re-opening).
- *   `model.now` (frame clock) and `model.theme` (theme NAME) are the two reads
- *   that WERE pulled under the model — so the wall clock and theme SELECTION are
- *   replay-safe; the stores above are not. Bringing the rest under TEA (a `Sub`
- *   feeding samples in via Msgs so the model holds the latest snapshot) is a
- *   possible future arc; the honest statement TODAY is the boundary above, not
+ *   `model.now` (frame clock) and `model.theme` (theme) are pulled under the
+ *   model — so the wall clock AND the theme are replay-safe: render reads
+ *   `model.now`, and (#D8) projects the leaves/infra/themes palette cache from
+ *   `model.theme` at the render entry each frame, so the palette is a per-frame
+ *   derivation replay reproduces (NOT an effect-synced store). The stores above
+ *   are not yet under the model. Bringing the rest under TEA (a `Sub` feeding
+ *   samples in via Msgs so the model holds the latest snapshot) is a possible
+ *   future arc; the honest statement TODAY is the boundary above, not
  *   "frame = f(model)".
  *
  *   Terminal panes are an explicitly NON-TEA region: the model holds the PTY
@@ -100,11 +102,13 @@ function init() {
     clockArmed: false,
     // Active theme NAME — the single source of truth for theme selection
     // (replayable: a `set_theme` Msg in the log reproduces it). The palette
-    // OBJECT read by the pure render leaves lives in leaves/infra/themes (`active`),
-    // which can't read the model — so it's a derived projection synced from
-    // model.theme by the `set_theme` effect (single writer), the same shape
-    // as model.now driving the frame clock. Seeded to match the leaf cache's
-    // module default; boot dispatches set_theme(config.theme).
+    // OBJECT the pure render leaves read lives in leaves/infra/themes (`active`),
+    // which can't import the model — so render projects it from model.theme at
+    // the frame entry (#D8: paint.render(model) → themes.setTheme(model.theme)),
+    // a per-frame derivation, the same shape as model.now driving the frame
+    // clock. (Was synced by a `set_theme` effect, which replay skips; #D8 moved
+    // the sync to render so the palette is replay-safe.) Seeded to match the
+    // leaf cache's module default; boot dispatches set_theme(config.theme).
     theme: DEFAULT_THEME,
     // Transient per-mode editing buffers (the modal sub-models). The
     // reducer owns them; each modal handler is an update branch.

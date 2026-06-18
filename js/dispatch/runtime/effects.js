@@ -231,14 +231,12 @@ function installBuiltins() {
     }, ms);
     if (t && typeof t.unref === 'function') t.unref();
   });
-  // set_theme: sync the leaves/infra/themes palette cache (the `active` projection
-  // the pure render leaves read) from model.theme. The impure-shell write that
-  // keeps the cache a single-writer derived view of the model — same shape as
-  // arm_clock syncing the wall clock. setTheme has exactly ONE caller (here),
-  // so model.theme is the sole source of truth and the cache can't drift.
-  registerEffect('set_theme', (eff) => {
-    try { require('../../leaves/infra/themes').setTheme(eff.name); } catch (_) { /* unknown theme → leaf falls back */ }
-  });
+  // (#D8 — the `set_theme` effect that synced the leaves/infra/themes palette
+  // cache from model.theme is RETIRED. The palette is now projected from
+  // model.theme at the render entry (paint.js render(model) → themes.setTheme),
+  // a per-frame derivation that replay reproduces — so the frame is replay-safe
+  // of the theme without an effect. The reducer's set_theme arm just sets
+  // model.theme now; no Cmd.)
 
   // --- Root-reducer Cmds ---
   // Emitted by `runtime.update` branches; run from `dispatch.applyMsg` via
