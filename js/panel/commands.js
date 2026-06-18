@@ -171,24 +171,27 @@ const FRAMEWORK_COMMANDS = [
  * candidates depend on current state (loaded themes, configured panels).
  */
 function _frameworkDynamicCommands(m) {
-  const { setTheme, themeNames, activeThemeName } = require('../leaves/themes');
+  const { themeNames } = require('../leaves/themes');
   const { allPanels } = require('./nav-state');
   const out = [];
   for (const name of themeNames()) {
     out.push({
       name: `theme ${name}`,
       desc: `Switch to ${name} theme`,
-      // Live preview while the user navigates cmdline matches — captures
-      // the active theme at preview-time and returns the closure that
-      // restores it (the cmdline framework calls it when sel moves off
-      // or the user cancels). On submit, run() does the same setTheme
-      // so the preview is the committed state.
+      // Live preview while the user navigates cmdline matches. Theme is model
+      // state now (model.theme), so preview / commit / restore all flow through
+      // the `set_theme` Msg instead of poking the palette cache directly — the
+      // model always reflects what's on screen, and the restore is a dispatch
+      // (not the old imperative setTheme(orig)). `orig` reads getModel().theme
+      // FRESH at preview-time (not the build-time `m`, which is stale during
+      // arrow-nav; the framework runs the prior teardown before this preview,
+      // so the read sees the committed value).
       preview: () => {
-        const orig = activeThemeName();
-        setTheme(name);
-        return () => setTheme(orig);
+        const orig = getModel().theme;
+        _host.applyMsg({ type: 'set_theme', name });
+        return () => _host.applyMsg({ type: 'set_theme', name: orig });
       },
-      run: () => { setTheme(name); },
+      run: () => _host.applyMsg({ type: 'set_theme', name }),
     });
   }
   for (const p of allPanels()) {

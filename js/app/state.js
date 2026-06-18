@@ -18,7 +18,6 @@
 
 const fs = require('fs');
 const path = require('path');
-const { setTheme } = require('../leaves/themes');
 const { getModel } = require('../model/store');
 const { rebuildLayoutFromConfig } = require('../leaves/arrange');
 // Panel-state accessors (readers/writers/composites) moved to
@@ -226,7 +225,13 @@ function reconcilePaneInstances() {
 function initState() {
   const m = getModel();
   const config = m.config;
-  setTheme(config.theme || 'default');
+  // Theme is model state (model.theme) — seed it through the reducer like the
+  // other boot Msgs below, not by poking the palette cache. The `set_theme`
+  // effect (registered by installBuiltins, which runs before initState in both
+  // tui.js#main and the test harness) syncs leaves/themes from model.theme.
+  // This is the init→Cmd shape: initial model carries the theme, an initial
+  // Msg applies the configured one.
+  require('../dispatch/control/dispatch').applyMsg({ type: 'set_theme', name: config.theme || 'default' });
 
   // Force-register the layout / groups / detail Components — production
   // (tui.js) already did, but the test harness path may have skipped them.

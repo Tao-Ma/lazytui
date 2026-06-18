@@ -52,6 +52,7 @@ function init() {
   // production. (Tests pre-set the property in their setup() so they
   // missed the bug.)
   const { MODES } = require('../leaves/modes');
+  const { DEFAULT_THEME } = require('../leaves/themes');
   const initialModes = {};
   for (const md of MODES) initialModes[md.flag] = false;
   const m = {
@@ -66,6 +67,14 @@ function init() {
     // are written only by the reducer (clock_tick / *_open arms).
     now: 0,
     clockArmed: false,
+    // Active theme NAME — the single source of truth for theme selection
+    // (replayable: a `set_theme` Msg in the log reproduces it). The palette
+    // OBJECT read by the pure render leaves lives in leaves/themes (`active`),
+    // which can't read the model — so it's a derived projection synced from
+    // model.theme by the `set_theme` effect (single writer), the same shape
+    // as model.now driving the frame clock. Seeded to match the leaf cache's
+    // module default; boot dispatches set_theme(config.theme).
+    theme: DEFAULT_THEME,
     // Transient per-mode editing buffers (the modal sub-models). The
     // reducer owns them; each modal handler is an update branch.
     // `filter` here is the live `/`-filter draft (text + which panel
