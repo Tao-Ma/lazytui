@@ -30,8 +30,8 @@
 
 const route = require('../../panel/route');
 const { getModel } = require('../../model/store');
-const geo = require('../../leaves/geometry');
-const mpool = require('../../leaves/pool');
+const geo = require('../../leaves/wm/geometry');
+const mpool = require('../../leaves/wm/pool');
 const { syncPanelScroll } = require('../../panel/nav-state');
 const terminal = require('../../io/terminal');
 const tabs = require('../../panel/viewer/tabs');

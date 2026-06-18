@@ -10,7 +10,7 @@
  */
 'use strict';
 
-const pt = require('../../leaves/pane-tabs');
+const pt = require('../../leaves/wm/pane-tabs');
 const { getModel } = require('../../app/runtime');
 
 function displayedLines(slice, model) {

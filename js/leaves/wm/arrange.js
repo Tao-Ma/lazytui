@@ -15,7 +15,7 @@
  * Zero deps beyond other leaves (pane, hotkeys).
  */
 'use strict';
-const { hotkeyPoolForColumn } = require('./hotkeys');
+const { hotkeyPoolForColumn } = require('../input/hotkeys');
 const mpane = require('./pane');
 
 /**

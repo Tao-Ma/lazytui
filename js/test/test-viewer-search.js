@@ -7,7 +7,7 @@
 'use strict';
 
 const search = require('../panel/viewer/search');
-const ms = require('../leaves/search');
+const ms = require('../leaves/text/search');
 const { describe, it, eq, assert, report } = require('./test-runner');
 const { getModel } = require('../app/runtime');
 const { getInstanceSlice } = require('../panel/api');

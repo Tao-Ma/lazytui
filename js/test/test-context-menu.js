@@ -17,7 +17,7 @@
 'use strict';
 
 const { describe, it, eq, assert, report } = require('./test-runner');
-const cm = require('../leaves/context-menu');
+const cm = require('../leaves/input/context-menu');
 const runtime = require('../app/runtime');
 
 describe('[ctx-menu] buildContextItems — registry → rows', () => {

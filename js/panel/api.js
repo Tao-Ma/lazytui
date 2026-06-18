@@ -20,9 +20,9 @@ const route = require('../panel/route');
 // authors should import only from `./api` so the surface is one diff
 // away from any future API change. Direct imports from `../ansi` etc.
 // still work but are not part of the contract.
-const { esc, visibleLen, stripMarkup, wrapColor } = require('../leaves/ansi');
+const { esc, visibleLen, stripMarkup, wrapColor } = require('../leaves/text/ansi');
 const { theme } = require('../leaves/infra/themes');
-const { renderPanel, setDimsProvider } = require('../leaves/draw');
+const { renderPanel, setDimsProvider } = require('../leaves/render/draw');
 
 // Render-exit seam (docs/v0.6.5-render-exit.md): leaves/draw can't read the
 // model (panel layer) NOR import io (it's a pure bottom leaf). Inject the full
@@ -52,7 +52,7 @@ setDimsProvider(() => {
 const { getSel, getScroll, isMultiSel,
         selectedOrFocused, infoLinesFromFocus } = require('./nav-state');
 const { getModel } = require('../model/store');
-const mnav = require('../leaves/nav');
+const mnav = require('../leaves/wm/nav');
 const { execAsync } = require('../io/exec');
 
 /**
@@ -427,7 +427,7 @@ function getItems(panelType) {
   const raw = def.getItems(slice);
   if (!def.filterable) return raw;
   if (def.customFilter) return raw;
-  const mnav = require('../leaves/nav');
+  const mnav = require('../leaves/wm/nav');
   // v0.6.3 post-arch-arc — translate paneId → panel-type for the
   // nav lookup (multi-panel files Component keys slice.nav by type).
   const typeKey = route.paneTypeOf(panelType) || panelType;
@@ -576,7 +576,7 @@ function setActiveTab(tab) {
   if (!target) return;
   const slice = route.getInstanceSlice(target) || { tab: 0 };
   const model = getModel();
-  const pt = require('../leaves/pane-tabs');
+  const pt = require('../leaves/wm/pane-tabs');
   const total = pt.flatTabInfo(slice, model, model.currentGroup).total;
   const toTabKey = pt.resolveTabKey((tab | 0), { ...slice, tab: (tab | 0) }, model);
   panelHost.dispatchMsg(wrap(target, { type: 'viewer_set_tab', tab, total, toTabKey }));
@@ -640,4 +640,4 @@ module.exports = {
 // every consumer: anything touching the panel layer requires this module,
 // and pane-tabs no longer imports back, so the edge is a clean downward
 // panel → leaf one (no cycle).
-require('../leaves/pane-tabs').setMergedActionsProvider(getMergedActions);
+require('../leaves/wm/pane-tabs').setMergedActionsProvider(getMergedActions);

@@ -102,7 +102,7 @@ describe('[2] parser', () => {
 
 // ---- [3] dispatch.loadKeyBindings ---------------------------------
 
-const kb = require('../leaves/keybindings');
+const kb = require('../leaves/input/keybindings');
 const api = require('../panel/api');
 const dispatch = require('../dispatch/control/dispatch');
 

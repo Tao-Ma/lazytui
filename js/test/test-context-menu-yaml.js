@@ -15,7 +15,7 @@ const path = require('path');
 const { describe, it, eq, assert, report } = require('./test-runner');
 const { validate } = require('../parser/schema');
 const { parse } = require('../parser');
-const cm = require('../leaves/context-menu');
+const cm = require('../leaves/input/context-menu');
 
 // Minimal valid base config; vary `context-menu` on top.
 function base(extra) {

@@ -23,9 +23,9 @@
  */
 'use strict';
 
-const mpool = require('./pool');
-const mpane = require('./pane');
-const { hotkeyPoolForColumn } = require('./hotkeys');
+const mpool = require('../wm/pool');
+const mpane = require('../wm/pane');
+const { hotkeyPoolForColumn } = require('../input/hotkeys');
 
 const MIN_PANEL_H = 3;
 // Width allocation cells reserved for the edge/gap drop zones that
@@ -91,7 +91,7 @@ function _applySnapshot(arrange, snap) {
  *  (by paneId OR type) to keep hit-test-math tests decoupled from layout-
  *  math — checked here so a type-override isn't shadowed by the paneId
  *  selector path. */
-let _geo; const _geometry = () => (_geo ||= require('./geometry'));
+let _geo; const _geometry = () => (_geo ||= require('../wm/geometry'));
 function boundsOf(slice, p) {
   const pb = slice.paneBounds;            // unset in production → derive below
   const override = pb && (pb[p.paneId] || pb[p.type]);

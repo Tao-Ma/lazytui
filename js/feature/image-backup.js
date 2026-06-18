@@ -30,7 +30,7 @@
 'use strict';
 
 const crypto = require('crypto');
-const { shEscape } = require('../leaves/sh-escape');
+const { shEscape } = require('../leaves/text/sh-escape');
 
 /** Filename-safe key for a docker image ref. Replaces `/` and `:` with
  *  `_` AND appends an 8-char hash of the ORIGINAL ref so collisions

@@ -15,8 +15,8 @@
  */
 'use strict';
 
-const { esc } = require('../leaves/ansi');
-const { renderOverlay, viewportDims } = require('../leaves/draw');
+const { esc } = require('../leaves/text/ansi');
+const { renderOverlay, viewportDims } = require('../leaves/render/draw');
 const { getModel } = require('../model/store');
 const jobs = require('../feature/jobs');
 

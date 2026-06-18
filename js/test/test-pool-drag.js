@@ -11,7 +11,7 @@
 'use strict';
 
 const { describe, it, eq, assert, report } = require('./test-runner');
-const mpoolDrag = require('../leaves/free-config-pool-drag');
+const mpoolDrag = require('../leaves/free-config/free-config-pool-drag');
 const layout = require('../panel/layout');
 
 // Unwrap Component.update's optional [slice, cmds] tuple — R1.3 made

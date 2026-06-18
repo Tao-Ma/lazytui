@@ -24,14 +24,14 @@
 // Pure leaves — take this Component's slice and return a new one.
 // No in-place writes, no panel/api reach-around. Called from this
 // Component's update, preserving single-writer-per-slice.
-const mfc = require('../leaves/free-config');
-const mfcCore = require('../leaves/free-config-core');
-const mfcMouse = require('../leaves/free-config-mouse');
-const mpoolDrag = require('../leaves/free-config-pool-drag');
-const mtabDrag = require('../leaves/tab-drag');
-const mpool = require('../leaves/pool');
-const mpane = require('../leaves/pane');
-const { halfProjection, visibleBoundsFor } = require('../leaves/geometry');
+const mfc = require('../leaves/free-config/free-config');
+const mfcCore = require('../leaves/free-config/free-config-core');
+const mfcMouse = require('../leaves/free-config/free-config-mouse');
+const mpoolDrag = require('../leaves/free-config/free-config-pool-drag');
+const mtabDrag = require('../leaves/wm/tab-drag');
+const mpool = require('../leaves/wm/pool');
+const mpane = require('../leaves/wm/pane');
+const { halfProjection, visibleBoundsFor } = require('../leaves/wm/geometry');
 const route = require('../panel/route');
 const { getInstanceSlice } = require('./api');
 

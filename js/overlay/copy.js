@@ -17,10 +17,10 @@
 
 const { getSel } = require('../panel/nav-state');
 const { getModel } = require('../model/store');
-const { stripMarkup, esc } = require('../leaves/ansi');
+const { stripMarkup, esc } = require('../leaves/text/ansi');
 const {getPanelDef, getItems, getInstanceSlice, getFocus } = require('../panel/api');
 const route = require('../panel/route');
-const { renderOverlay } = require('../leaves/draw');
+const { renderOverlay } = require('../leaves/render/draw');
 
 // Module-held options (label + content thunk + cancel). The reducer mirrors
 // only the render-safe {label, cancel} + idx in model.modal.copy; the thunks
@@ -54,7 +54,7 @@ function collectOptions() {
   const detailSlice = getInstanceSlice(route.resolveTarget('viewer') || 'detail');
   const _m = getModel();
   const detailLines = detailSlice
-    ? require('../leaves/pane-tabs').viewerLines(detailSlice, _m, _m.currentGroup) : [];
+    ? require('../leaves/wm/pane-tabs').viewerLines(detailSlice, _m, _m.currentGroup) : [];
   if (detailLines.length > 0) {
     options.push({
       label: 'Detail panel (plain text)',

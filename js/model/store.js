@@ -78,7 +78,7 @@ function init() {
   // to arm the flag, and the pane-select overlay never painted in
   // production. (Tests pre-set the property in their setup() so they
   // missed the bug.)
-  const { MODES } = require('../leaves/modes');
+  const { MODES } = require('../leaves/input/modes');
   const { DEFAULT_THEME } = require('../leaves/infra/themes');
   const initialModes = {};
   for (const md of MODES) initialModes[md.flag] = false;

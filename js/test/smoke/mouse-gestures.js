@@ -21,7 +21,7 @@
 
 const { describe, it, eq, assert, report } = require('../test-runner');
 const sm = require('./_helpers/smoke');
-const geo = require('../../leaves/geometry');  // A.2: bounds are derived, not on slice.paneBounds
+const geo = require('../../leaves/wm/geometry');  // A.2: bounds are derived, not on slice.paneBounds
 const api = sm.api;
 const { getModel } = require('../../app/runtime');
 const actions = require('../../dispatch/control/actions');
@@ -280,7 +280,7 @@ describe('[5] right-click context menu — copy + dismiss', () => {
 
   it('a viewer drag-selection PERSISTS, and right-click → Copy selection copies it', () => {
     const sel = require('../../panel/viewer/select');
-    const { overlayBox } = require('../../leaves/draw');
+    const { overlayBox } = require('../../leaves/render/draw');
     sm.bootFresh();
     sm.capture(() => sm.render());
     const d = api.primarySliceOf('detail');
@@ -357,8 +357,8 @@ describe('[5] right-click context menu — copy + dismiss', () => {
 // so spy THAT layer to observe the routed (verb, arg). pane: gates an entry
 // to its kind (shown there, hidden on empty space).
 
-const cm = require('../../leaves/context-menu');
-const { overlayBox } = require('../../leaves/draw');
+const cm = require('../../leaves/input/context-menu');
+const { overlayBox } = require('../../leaves/render/draw');
 
 // Spy dispatch.handleAction (the menu_action effect's call target) to capture
 // the routed (verb, arg) without running the verb's downstream effect.

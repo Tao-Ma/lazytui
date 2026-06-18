@@ -55,7 +55,7 @@ function freshSlice(statuses = {}) {
     // v0.6.3 T1.2 — config-status caches files + projectDir on slice
     // (mirrored via set_config arm); reducer arms read locally.
     slice: { layout: 'tree', scope: 'all', expanded: {}, branch: 'config', computing: false,
-             files: cf, projectDir: '.', nav: require('../leaves/nav').init(),
+             files: cf, projectDir: '.', nav: require('../leaves/wm/nav').init(),
              cache: { byPath, children, branch: 'config', computedAt: 0 } },
   };
 }
@@ -65,7 +65,7 @@ function freshSlice(statuses = {}) {
 // global registry), so mirror the test's setCursor() — which seeds the
 // global via setSel — into the passed slice's nav.
 function keyUpdate(slice, key) {
-  const mnav = require('../leaves/nav');
+  const mnav = require('../leaves/wm/nav');
   const cursor = require('../app/state').getSel('config-status');
   const nav = { ...(slice.nav || mnav.init()), cursor };
   const r = cs._update({ type: 'key', key }, { ...slice, nav });
@@ -484,7 +484,7 @@ describe('[8] diffFor — preview shape per status', () => {
     assert(idx >= 0, 'fixture file present in items');
     setCursor(E2E_FILES, idx);
     // Pure return arm reads the cursor from slice.nav (not the global).
-    slice.nav = { ...require('../leaves/nav').init(), cursor: idx };
+    slice.nav = { ...require('../leaves/wm/nav').init(), cursor: idx };
     const r = cs._update({ type: 'key', key: 'return' }, slice);
     assert(Array.isArray(r) && r[1][0].type === 'cfgStatusDiff', 'Enter on a file emits cfgStatusDiff');
     effects.runEffects(r[1]);  // run the diff effect → setViewerContent → viewer slice
@@ -512,8 +512,8 @@ describe('[9] two config-status panes resolve + route content per-pane', () => {
   // pre-#4 the read of `.config.branch` always fell back to DEFAULT in
   // production. Derive paneA/paneB through the REAL widening path so this
   // test exercises the production shape and can't drift back to fiction.
-  const { rebuildLayoutFromConfig } = require('../leaves/arrange');
-  const { allPanesInColumns } = require('../leaves/pool');
+  const { rebuildLayoutFromConfig } = require('../leaves/wm/arrange');
+  const { allPanesInColumns } = require('../leaves/wm/pool');
   const wideArrange = rebuildLayoutFromConfig({ layout: { columns: [{ panels: [
     { id: 'cfg-a', type: 'config-status', config: { branch: 'config' } },
     { id: 'cfg-b', type: 'config-status', config: { branch: 'prod' } },

@@ -54,7 +54,20 @@ judgment call — see Decisions Ledger) · `FORWARD` (parked for a later pass to
   the pure-vs-stateful split *within* leaves.)
 - **D2 — Should `leaves/` be sub-grouped by domain?** It is a flat 30-file / ~6.1k-LOC
   bucket mixing a layout-editor subsystem, tab-state, render primitives, a pub/sub bus,
-  text utilities, and input registries. Evidence: F1.2. *Undecided.*
+  text utilities, and input registries. Evidence: F1.2.
+  **RESOLVED (full sub-grouping; user-directed 2026-06-18).** Sub-grouped the pure leaves by
+  domain: `leaves/free-config/` (the layout-editor subsystem — free-config + -core + -mouse +
+  -pool-drag), `leaves/render/` (draw, painter, scrollbar, ghost), `leaves/text/` (ansi, search,
+  sh-escape, regex-guard, cmdline-split), `leaves/input/` (keybindings, hotkeys, context-menu,
+  menu, modes), `leaves/wm/` (geometry, pool, pane, arrange, nav, pane-tabs, tab-drag); `selector`
+  + `register` (cross-cutting primitives) stay at `leaves/` root; `leaves/infra/` (#D1) holds the
+  stateful three. **Verified first-hand it is purely cosmetic to the layer graph:** the dep-walker
+  keys `layerOf` on the FIRST path segment (`leaves`) and excludes intra-layer edges, so every
+  subdir file stays in the `leaves` layer and the acyclic analysis is unchanged (`[]` both modes).
+  ~22 files moved; intra-leaves relative paths + all external importers rewired (full filenames
+  kept — `leaves/free-config/free-config-core.js`; no rename churn). Suite 96/96, smoke 11/11,
+  benches clean. (Doc references to the old flat `leaves/<x>` paths in era-stamped arc docs are
+  left accurate-to-era per the relocation-sweep discipline.)
 - **D3 — Is the `render/` vs `leaves/draw.*` bisection of the view layer intended,** and
   if the split axis is purity, why does the impure `render-queue.js` sit on the `leaves/`
   side? Evidence: F1.3.

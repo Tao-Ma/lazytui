@@ -8,7 +8,7 @@
  */
 'use strict';
 
-const { RESET } = require('../../leaves/ansi');
+const { RESET } = require('../../leaves/text/ansi');
 const {
   showCursor, moveTo, stdout, clearScreen,
   disableMouse, disableFocusEvents, disableBracketedPaste,

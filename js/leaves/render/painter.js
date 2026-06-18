@@ -30,7 +30,7 @@
  */
 'use strict';
 
-const { richToAnsi, RESET, visibleLen } = require('./ansi');
+const { richToAnsi, RESET, visibleLen } = require('../text/ansi');
 
 /**
  * Stamp a list of rects into a screen-sized row array.

@@ -16,17 +16,17 @@
  */
 'use strict';
 
-const { RESET, richToAnsi, esc, visibleLen, wrapColor } = require('../leaves/ansi');
+const { RESET, richToAnsi, esc, visibleLen, wrapColor } = require('../leaves/text/ansi');
 const { stdout } = require('../io/term');
 const { multiSelCount } = require('../panel/nav-state');
 const { theme } = require('../leaves/infra/themes');
-const { truncate, viewportDims } = require('../leaves/draw');
+const { truncate, viewportDims } = require('../leaves/render/draw');
 const { isTerminalTab, activeTerminalId, activeTerminalConfig,
         getTabInfo, findEphemeralByid } = require('../panel/viewer/tabs');
 const { getSession } = require('../io/terminal');
 const { getPanelDef, getInstanceSlice, getFocus, instanceKind,
         collectViewContributions, filterCurrentText } = require('../panel/api');
-const modes = require('../leaves/modes');
+const modes = require('../leaves/input/modes');
 const { getModel } = require('../model/store');
 const { getFreeConfigFooter } = require('../panel/free-config-view');
 
@@ -59,11 +59,11 @@ function footerKeys(model) {
     // P1 (viewer-lines selector) — match count derives from the viewer's
     // lines via the ms.matchesFor memo (typing term), not a stored list.
     const ds = require('../panel/viewer/search');
-    const ms = require('../leaves/search');
+    const ms = require('../leaves/text/search');
     const term = ds.typingText();
     const vslice = getInstanceSlice(_route().resolveTarget('viewer') || 'detail');
     const m = getModel();
-    const vlines = vslice ? require('../leaves/pane-tabs').viewerLines(vslice, m, m.currentGroup) : [];
+    const vlines = vslice ? require('../leaves/wm/pane-tabs').viewerLines(vslice, m, m.currentGroup) : [];
     const n = ms.matchesFor(vlines, term).length;
     const idx = n ? Math.min((vslice && vslice.search && vslice.search.idx) || 0, n - 1) + 1 : 0;
     return ` /${esc(term)}│ \\[${idx}/${n}] | ↑↓ step | Esc cancel | Enter commit`;
@@ -102,9 +102,9 @@ function footerKeys(model) {
       const vslice = getInstanceSlice(_route().resolveTarget('viewer') || 'detail');
       const search = vslice?.search;
       if (search && search.active) {
-        const ms = require('../leaves/search');
+        const ms = require('../leaves/text/search');
         const m = getModel();
-        const vlines = require('../leaves/pane-tabs').viewerLines(vslice, m, m.currentGroup);
+        const vlines = require('../leaves/wm/pane-tabs').viewerLines(vslice, m, m.currentGroup);
         const n = ms.matchesFor(vlines, search.term || '').length;
         const idx = n ? Math.min(search.idx || 0, n - 1) + 1 : 0;
         segs.push(`n/N [${idx}/${n}]`, 'Esc clear');

@@ -286,7 +286,7 @@ function installBuiltins() {
     const job = eff && eff.job;
     if (!job) return;
     const route = require('../../panel/route');
-    const pt = require('../../leaves/pane-tabs');
+    const pt = require('../../leaves/wm/pane-tabs');
     const m = getModel();
     const viewerTarget = route.resolveTarget('viewer') || 'detail';
     const groupName = m.currentGroup;

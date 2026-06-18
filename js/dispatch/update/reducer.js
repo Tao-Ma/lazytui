@@ -50,9 +50,9 @@
 // so importing them here introduces no require cycle.
 // keybindings is a dependency-free leaf (the leader-chord registry tree), so
 // the reducer can read it to walk the prefix tree without a require cycle.
-const kb = require('../../leaves/keybindings');
+const kb = require('../../leaves/input/keybindings');
 // esc() for the jobs_routed info-card lines (background/tmux).
-const { esc } = require('../../leaves/ansi');
+const { esc } = require('../../leaves/text/ansi');
 // Pure yank-register transforms (leaf) — push/promote/drop/clear taking
 // `model`, so the reducer owns register mutations; OSC52 is an emit_osc52 Cmd.
 const mreg = require('../../leaves/register');
@@ -63,7 +63,7 @@ const mreg = require('../../leaves/register');
 const route = require('../../panel/route');
 // Nav-entry shape reader — zero-dep leaf; the only consumer here is the
 // `escape` arm's multiSel probe.
-const mnav = require('../../leaves/nav');
+const mnav = require('../../leaves/wm/nav');
 // leaves/pane-tabs + leaves/search are leaves of the detail Component's
 // update. The root reducer doesn't import them directly.
 
@@ -74,7 +74,7 @@ const mnav = require('../../leaves/nav');
 const { init, getModel, setModel } = require('../../model/store');
 // Pending suffix of the autosuggest ghost (prompt_key Tab/Right accept). Pure
 // leaf — shared with the prompt overlay render. Moved out of this file in F3.
-const { ghostSuffix } = require('../../leaves/ghost');
+const { ghostSuffix } = require('../../leaves/render/ghost');
 
 /** ptyId is `${group}_${key}`; group keys can contain underscores, so
  *  match greedily against the live config. Falls back to the substring
@@ -92,7 +92,7 @@ function _parsePtyIdGroup(model, ptyId) {
 
 // cmdline split + viewport size live in a zero-dep leaf so this file,
 // dispatch/control/cmdline.js, and overlay/cmdline.js all read the same values.
-const { splitQuery: _cmdlineSplit, DROPDOWN_VIEWPORT: CMDLINE_VW } = require('../../leaves/cmdline-split');
+const { splitQuery: _cmdlineSplit, DROPDOWN_VIEWPORT: CMDLINE_VW } = require('../../leaves/text/cmdline-split');
 
 /**
  * Clamp the register-popup cursor + scroll into bounds against the history

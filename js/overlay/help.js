@@ -19,10 +19,10 @@
 
 const { allPanels, setViewerContent } = require('../panel/nav-state');
 const { getModel } = require('../model/store');
-const { esc } = require('../leaves/ansi');
+const { esc } = require('../leaves/text/ansi');
 const {getCommands, getPanelDef, getInstanceSlice, getFocus, instanceKind } = require('../panel/api');
-const kb = require('../leaves/keybindings');
-const mpane = require('../leaves/pane');
+const kb = require('../leaves/input/keybindings');
+const mpane = require('../leaves/wm/pane');
 const route = require('../panel/route');
 
 /** Walk the leader-tree depth-first, emitting `{seq, label}` for every

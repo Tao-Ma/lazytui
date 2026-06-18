@@ -187,10 +187,10 @@ describe('[8] half view is an API-driven projection — two viewers side-by-side
   // viewer" and HIDE every other viewer. It's now a projection of two slots
   // resolved by geo.halfProjection: an ephemeral, API-settable selection
   // (view_place_pane) over a default that reproduces the old behavior.
-  const geo = require('../../leaves/geometry');
+  const geo = require('../../leaves/wm/geometry');
   const layoutSlice = () => api.getInstanceSlice('layout');
 
-  const mpool = require('../../leaves/pool');
+  const mpool = require('../../leaves/wm/pool');
   function renderNow() {
     const realWrite = process.stdout.write.bind(process.stdout);
     process.stdout.write = () => true;

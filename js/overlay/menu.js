@@ -10,8 +10,8 @@
  */
 'use strict';
 
-const { esc } = require('../leaves/ansi');
-const { renderOverlay, overlayBox } = require('../leaves/draw');
+const { esc } = require('../leaves/text/ansi');
+const { renderOverlay, overlayBox } = require('../leaves/render/draw');
 const { getModel } = require('../model/store');
 
 const MENU_MAX_WIDTH = 44;  // shared by renderMenu + hitTest (must match)

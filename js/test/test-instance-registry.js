@@ -146,7 +146,7 @@ describe('[v0.6.4 Theme A Phase 5] per-pane nav READS', () => {
   // every same-kind pane onto the kind's primary. Two same-kind panes
   // ⇒ two independent cursors/scrolls/filters/selections.
   const state = require('../app/state');
-  const mnav = require('../leaves/nav');
+  const mnav = require('../leaves/wm/nav');
 
   function setupTwoPanes() {
     resetRegistry();

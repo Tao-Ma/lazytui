@@ -577,7 +577,7 @@ function _resolveTargetCompute(intent, focused, layout, lastViewerTab) {
   //     placements, and post-split reads are strict (no kind-name
   //     bridge), so the returned id must actually resolve.
   if (layout && layout.arrange && Array.isArray(layout.arrange.columns)) {
-    const mpool = require('../leaves/pool');
+    const mpool = require('../leaves/wm/pool');
     for (const p of mpool.lastColumnPanels(layout.arrange)) {
       if (!p) continue;
       const tabs = Array.isArray(p.tabs) ? p.tabs : null;
@@ -634,7 +634,7 @@ function _resolveViewerPaneIdCompute(ctx, arrange) {
   const tabId = resolveTarget('viewer', ctx);
   if (tabId == null) return null;
   if (!arrange) return null;
-  const mpool = require('../leaves/pool');
+  const mpool = require('../leaves/wm/pool');
   // resolveTarget may hand back a container paneId (tier-1 focus) OR a tab
   // id (tier-3 arrange scan) — match either against the pane's identity.
   const loc = mpool.findPaneLocation(arrange, (p) =>

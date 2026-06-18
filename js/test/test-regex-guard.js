@@ -7,7 +7,7 @@
  */
 'use strict';
 
-const { safeRegex, MAX_PATTERN_LEN } = require('../leaves/regex-guard');
+const { safeRegex, MAX_PATTERN_LEN } = require('../leaves/text/regex-guard');
 const { describe, it, eq, assert, report } = require('./test-runner');
 
 describe('[1] returns a RegExp for safe patterns', () => {

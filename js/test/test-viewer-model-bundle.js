@@ -16,7 +16,7 @@
 const { describe, it, eq, assert, report } = require('./test-runner');
 const sm = require('./smoke/_helpers/smoke');
 const { getModel, setModel } = require('../app/runtime');
-const pt = require('../leaves/pane-tabs');
+const pt = require('../leaves/wm/pane-tabs');
 const viewer = require('../panel/viewer/viewer');
 
 describe('[P0] viewerModelBundle captures the model fact-set', () => {

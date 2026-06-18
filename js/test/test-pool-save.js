@@ -21,7 +21,7 @@ const path = require('path');
 
 const { describe, it, eq, assert, report } = require('./test-runner');
 const { parse } = require('../parser');
-const { rebuildLayoutFromConfig } = require('../leaves/arrange');
+const { rebuildLayoutFromConfig } = require('../leaves/wm/arrange');
 const {
   serializeLayout,
   serializePanelsBlock,
@@ -189,7 +189,7 @@ describe('[show] re-placing a hidden entry uses pool-ref cell on save', () => {
     eq(arrange.columns[0].panels.find(x => x.id === 'notes'), undefined,
        'notes starts hidden');
     // Place notes — synthesize a pane from the pool entry.
-    const mpane = require('../leaves/pane');
+    const mpane = require('../leaves/wm/pane');
     const entry = arrange.pool.notes;
     arrange.columns[0].panels.push(mpane.wrapAsPane({
       id: entry.id, type: entry.type, title: entry.title,

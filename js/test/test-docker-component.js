@@ -148,7 +148,7 @@ describe('[5] i/t/s key Msgs emit stream/shell effects on the focused row', () =
     // Pure key arm: the cursor comes from the passed slice.nav and
     // focusKind from the Msg (as dispatchKeyToFocused threads it) — not
     // from the global registry.
-    const mnav = require('../leaves/nav');
+    const mnav = require('../leaves/wm/nav');
     const focused = { ...slice0(), nav: { ...mnav.init(), cursor: 1 } };  // c2 selected
     const km = (key) => ({ type: 'key', key, focusKind: 'containers' });
     const i = step(km('i'), focused);
@@ -190,7 +190,7 @@ describe('[6] registered Component — slice-backed reads', () => {
 });
 
 describe('[7] Arc 3 — content gate: one host-global fetch loop, per-pane nav', () => {
-  const mnav = require('../leaves/nav');
+  const mnav = require('../leaves/wm/nav');
   it('a placed pane (paneId set) no-ops the content Msgs — owner only', () => {
     setup();
     const pane = { ...slice0(), paneId: 'docker-a' };
@@ -221,7 +221,7 @@ describe('[7] Arc 3 — content gate: one host-global fetch loop, per-pane nav',
   it('two placed panes keep independent nav cursors (real mint + dispatch)', () => {
     setup(['c1', 'c2']);
     const route = require('../panel/route');
-    const mpool = require('../leaves/pool');
+    const mpool = require('../leaves/wm/pool');
     const arrange = {
       columns: [
         { width: 30, panels: [{ type: 'containers', paneId: 'docker-a', title: 'A', hotkey: '1', columnIndex: 0 }] },
@@ -264,7 +264,7 @@ describe('[7] Arc 3 — content gate: one host-global fetch loop, per-pane nav',
     // a service slot (dispose refuses even if some path tries).
     setup(['c1']);
     const route = require('../panel/route');
-    const mpool = require('../leaves/pool');
+    const mpool = require('../leaves/wm/pool');
     assert(route.isService('docker'), 'owner is a service slot');
     const arrange = {
       columns: [

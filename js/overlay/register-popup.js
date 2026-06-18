@@ -30,8 +30,8 @@
 'use strict';
 
 const { getModel } = require('../model/store');
-const { esc, visibleLen } = require('../leaves/ansi');
-const { renderOverlay, viewportDims } = require('../leaves/draw');
+const { esc, visibleLen } = require('../leaves/text/ansi');
+const { renderOverlay, viewportDims } = require('../leaves/render/draw');
 const register = require('../leaves/register');
 
 const VIEWPORT = 12;

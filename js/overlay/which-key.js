@@ -14,10 +14,10 @@
  */
 'use strict';
 
-const { esc } = require('../leaves/ansi');
-const { renderOverlay } = require('../leaves/draw');
+const { esc } = require('../leaves/text/ansi');
+const { renderOverlay } = require('../leaves/render/draw');
 const { getModel } = require('../model/store');
-const kb = require('../leaves/keybindings');
+const kb = require('../leaves/input/keybindings');
 
 /** Build the popup body lines for a binding node (markup strings). */
 function whichKeyLines(node) {

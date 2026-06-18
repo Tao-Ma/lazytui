@@ -30,8 +30,8 @@ api.registerComponent(require('../panel/layout'));
 api.registerComponent(require('../panel/viewer/viewer'));
 
 const { setModel } = require('../app/runtime');
-const pt = require('../leaves/pane-tabs');
-const mpool = require('../leaves/pool');
+const pt = require('../leaves/wm/pane-tabs');
+const mpool = require('../leaves/wm/pool');
 
 // Realistic medium-sized model: 6 panes (postgres-demo shape) + a
 // group with 8 actions (3 tabbed), 2 YAML terminals.

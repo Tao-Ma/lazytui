@@ -13,7 +13,7 @@
 
 const { allPanels } = require('../../panel/nav-state');
 const { getModel } = require('../../model/store');
-const { esc } = require('../../leaves/ansi');
+const { esc } = require('../../leaves/text/ansi');
 const { getCommands, getItems: apiGetItems, wrap } = require('../../panel/api');
 const { dispatchMsg } = require('../runtime/loop');
 
@@ -139,7 +139,7 @@ function revertPreview() {
 // splitQuery moved to the zero-dep leaves/cmdline-split leaf so
 // runtime.js can import the same impl without the back-cycle that
 // kept the duplicate around pre-v0.6.x.
-const { splitQuery } = require('../../leaves/cmdline-split');
+const { splitQuery } = require('../../leaves/text/cmdline-split');
 
 function buildRegistry() {
   const reg = [];

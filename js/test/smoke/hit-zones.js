@@ -29,12 +29,12 @@
 
 const { describe, it, eq, assert, report } = require('../test-runner');
 const sm = require('./_helpers/smoke');
-const geo = require('../../leaves/geometry');  // A.2: bounds are derived, not on slice.paneBounds
+const geo = require('../../leaves/wm/geometry');  // A.2: bounds are derived, not on slice.paneBounds
 const api = sm.api;
 const tabs = sm.tabs;
 const { getModel } = require('../../app/runtime');
 const viewer = require('../../panel/viewer/viewer');
-const mpool = require('../../leaves/pool');
+const mpool = require('../../leaves/wm/pool');
 
 // v0.6.4 blessed-exceptions tabBounds follow-on — render no longer WRITES
 // slice.tabBounds; the input layer recomputes it on demand. Mirror that here:

@@ -114,7 +114,7 @@ describe('[3] wheel target ≠ focused panel: focus stays put', () => {
 
 const { handleMouse } = require('../dispatch/control/input');
 const { getModel } = require('../app/runtime');
-const modes = require('../leaves/modes');
+const modes = require('../leaves/input/modes');
 
 describe('[4] T13 regression: handleMouse modal gating', () => {
   it('wheel over a panel during filterMode does NOT change focus or scroll', () => {

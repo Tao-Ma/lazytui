@@ -12,7 +12,7 @@
 'use strict';
 
 const { allPanels, setSel, getSel, getScroll } = require('../../panel/nav-state');
-const { visibleBoundsFor, getPanelViewportH } = require('../../leaves/geometry');
+const { visibleBoundsFor, getPanelViewportH } = require('../../leaves/wm/geometry');
 const { paintNow: render } = require('../../leaves/infra/render-queue');
 const { getModel } = require('../../model/store');
 const { enableMouse, enableFocusEvents, enableBracketedPaste, cols } = require('../../io/term');
@@ -21,8 +21,8 @@ const { writeToSession, isSessionDead } = require('../../io/terminal');
 const {getPanelDef, getItems, getInstanceSlice, wrap, getFocus, instanceKind } = require('../../panel/api');
 const { dispatchMsg } = require('../runtime/loop');
 const route = require('../../panel/route');
-const mpane = require('../../leaves/pane');
-const { isChainActive, CHAIN_MODES, suppressesChromeClicks } = require('../../leaves/modes');
+const mpane = require('../../leaves/wm/pane');
+const { isChainActive, CHAIN_MODES, suppressesChromeClicks } = require('../../leaves/input/modes');
 // v0.6.4 Theme F Phase 2 — mouse gestures route through the shared intent
 // layer (the keyboard side joined in Phase 1). intent.js executes no
 // requires at load time, so this top-level require is load-order-safe
@@ -102,7 +102,7 @@ function _handleWheel(mx, my, delta) {
       // P3 (viewer-lines selector) — slice.lines is deleted; derive the
       // wheeled pane's displayed lines (dispatch-side model read is fine).
       const _m = getModel();
-      const lines = d ? require('../../leaves/pane-tabs').viewerLines(d, _m, _m.currentGroup) : [];
+      const lines = d ? require('../../leaves/wm/pane-tabs').viewerLines(d, _m, _m.currentGroup) : [];
       const curScroll = d?.scroll || 0;
       // Single source of truth for the view-mode-aware viewport (P5
       // arc fix follow-up — panelHeights[type] would have given the
@@ -224,7 +224,7 @@ function _mouseHandleFreeConfigMode(kind, mx, my, model) {
 
   if (isTabDrag) {
     if (kind === 'motion') {
-      const pt = require('../../leaves/pane-tabs');
+      const pt = require('../../leaves/wm/pane-tabs');
       const route = require('../../panel/route');
       const groupName = model.currentGroup;
       const targetKind = route.resolveTarget('viewer') || 'detail';
@@ -285,7 +285,7 @@ function _mouseHandleFreeConfigMode(kind, mx, my, model) {
 
   if (kind === 'press' && slice && slice.panelList && slice.panelList.open) {
     const { hitTest } = require('../../overlay/panel-list');
-    const mpool = require('../../leaves/pool');
+    const mpool = require('../../leaves/wm/pool');
     const hit = hitTest(mx, my);
     if (hit) {
       let cursor = slice.panelList.cursor;
@@ -433,7 +433,7 @@ function _itemText(def, item) {
 }
 
 function _resolveContextAt(mx, my) {
-  const { stripMarkup } = require('../../leaves/ansi');
+  const { stripMarkup } = require('../../leaves/text/ansi');
   const sel = require('../../panel/viewer/select');
   const selectionText = sel.isActive() ? (sel.selectedText() || null) : null;
   const layoutSlice = getInstanceSlice('layout');
@@ -446,7 +446,7 @@ function _resolveContextAt(mx, my) {
       const d = getInstanceSlice(p.paneId);
       // P3 (viewer-lines selector) — derive the displayed lines.
       const _m = getModel();
-      const lines = d ? require('../../leaves/pane-tabs').viewerLines(d, _m, _m.currentGroup) : [];
+      const lines = d ? require('../../leaves/wm/pane-tabs').viewerLines(d, _m, _m.currentGroup) : [];
       const li = itemRow + ((d && d.scroll) || 0);
       const lineText = (itemRow >= 0 && li < lines.length) ? stripMarkup(lines[li]) : null;
       return { paneKind: 'detail', lineText, itemLabel: null, selectionText };
@@ -476,7 +476,7 @@ function _realizeButtonGesture(intentName, x, y, mx, my) {
       // entries when on a target, plus the always-present general section, so
       // a right-click on EMPTY space (null ctx) still opens a populated menu.
       const ctx = _resolveContextAt(mx, my) || {};
-      const items = require('../../leaves/context-menu').buildContextItems(ctx);
+      const items = require('../../leaves/input/context-menu').buildContextItems(ctx);
       if (!items.length) return;  // safety — the general section keeps this non-empty
       intent.realize(intent.context({ x, y }, { items, title: 'Actions' }));
       render();
@@ -688,14 +688,14 @@ function handleMouse(kind, x, y) {
               type: 'viewer_remove_content_tab',
               groupName,
               key: tab.closeKey,
-              ...require('../../leaves/pane-tabs').modelBundle(mForBundle, groupName),
+              ...require('../../leaves/wm/pane-tabs').modelBundle(mForBundle, groupName),
             }));
           } else {
             dispatchMsg(wrap('layout', { type: 'focus_set', focus: p.paneId }));
             // Phase 3d: thread targetKey + currentGroup so the tab_switch
             // reducer arm stays pure of getModel().
             {
-              const pt = require('../../leaves/pane-tabs');
+              const pt = require('../../leaves/wm/pane-tabs');
               const slice = route.sliceForPane(p.paneId, p.type);
               dispatchMsg(wrap(p.paneId, {
                 type: 'tab_switch', idx: tab.tabIdx,
@@ -714,7 +714,7 @@ function handleMouse(kind, x, y) {
     // Detail panel content area — text selection on a click inside the
     // body. Stays detail-specific until Phase 4 lifts the selection
     // machinery onto a per-pane basis.
-    if (require('../../leaves/pool').isDetailPane(p)) {
+    if (require('../../leaves/wm/pool').isDetailPane(p)) {
       // v0.6.4 multi-viewer — focus + select the CLICKED viewer pane by
       // paneId (was hardcoded 'detail', which focused the primary).
       dispatchMsg(wrap('layout', { type: 'focus_set', focus: p.paneId }));
@@ -725,7 +725,7 @@ function handleMouse(kind, x, y) {
       const d = route.sliceForPane(p.paneId, 'detail');
       // P3 (viewer-lines selector) — derive the displayed lines.
       const _dm = getModel();
-      const _dlines = d ? require('../../leaves/pane-tabs').viewerLines(d, _dm, _dm.currentGroup) : [];
+      const _dlines = d ? require('../../leaves/wm/pane-tabs').viewerLines(d, _dm, _dm.currentGroup) : [];
       if (inContent && !isTerminalTab() && _dlines.length > 0) {
         const visibleLine = my - b.y - 1;
         const col = Math.max(0, mx - b.x - 1);

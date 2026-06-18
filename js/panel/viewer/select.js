@@ -36,7 +36,7 @@
 // the detail slice (`lines` / `select` / `cursor` / `scroll` / `search`);
 // the mode flags (visual / select) live in model.modes.
 const { getModel } = require('../../model/store');
-const { stripMarkup, charWidth, esc } = require('../../leaves/ansi');
+const { stripMarkup, charWidth, esc } = require('../../leaves/text/ansi');
 const {getInstanceSlice, getFocus } = require('../api');
 
 // All reads target the active viewer Component slice (lines / select /
@@ -56,7 +56,7 @@ function _lines() {
   const sl = _detail();
   if (!sl) return [];
   const m = getModel();
-  return require('../../leaves/pane-tabs').viewerLines(sl, m, m.currentGroup);
+  return require('../../leaves/wm/pane-tabs').viewerLines(sl, m, m.currentGroup);
 }
 
 // Selection writes fold onto the update spine (select_* Msgs). select.js

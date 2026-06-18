@@ -15,11 +15,11 @@
 'use strict';
 
 const { getModel } = require('../model/store');
-const { richToAnsi, RESET, visibleLen, esc } = require('../leaves/ansi');
+const { richToAnsi, RESET, visibleLen, esc } = require('../leaves/text/ansi');
 const { stdout } = require('../io/term');
 const { theme } = require('../leaves/infra/themes');
-const { renderPanel, viewportDims } = require('../leaves/draw');
-const { DROPDOWN_VIEWPORT: MAX_DROPDOWN } = require('../leaves/cmdline-split');
+const { renderPanel, viewportDims } = require('../leaves/render/draw');
+const { DROPDOWN_VIEWPORT: MAX_DROPDOWN } = require('../leaves/text/cmdline-split');
 
 // Panel height (including borders) painted by the previous render.
 // When the new render is shorter (user typed more chars, match set

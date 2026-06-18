@@ -16,8 +16,8 @@
 'use strict';
 
 const { getInstanceSlice } = require('./api');
-const mpool = require('../leaves/pool');
-const { visibleBoundsFor } = require('../leaves/geometry');
+const mpool = require('../leaves/wm/pool');
+const { visibleBoundsFor } = require('../leaves/wm/geometry');
 
 const GLYPH_W = 3;
 const COLLAPSE_MIN_W = 9;

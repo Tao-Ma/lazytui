@@ -11,7 +11,7 @@
 
 const { describe, it, eq, assert, report } = require('./test-runner');
 const layout = require('../panel/layout');
-const mpool = require('../leaves/pool');
+const mpool = require('../leaves/wm/pool');
 
 // Component.update returns either `slice` or `[slice, cmds]` — the
 // runtime's `_runInstance` handles both forms. Tests only assert on

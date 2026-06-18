@@ -11,7 +11,7 @@
 
 const { describe, it, eq, assert, report } = require('./test-runner');
 const layout = require('../panel/layout');
-const mpool = require('../leaves/pool');
+const mpool = require('../leaves/wm/pool');
 
 function buildSlice({ left = [], right = [], hidden = [] } = {}) {
   const pool = {};
