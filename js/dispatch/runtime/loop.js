@@ -22,7 +22,8 @@
 
 const route = require('../../panel/route');
 const { wrap } = route;
-const { getModel } = require('../../model/store');
+const { getModel, setModel } = require('../../model/store');
+const runtime = require('../update/reducer');
 const { runEffects } = require('./effects');
 // #D4 — the post-dispatch invariant pass (scroll clamp + viewer innerH + PTY +
 // instance reconcile) lives in its own after-update-phase module now; the loop
@@ -48,6 +49,26 @@ const BROADCAST_TYPES = new Set(['refresh', 'action']);
 // gates it here. finalize's own re-entrancy guard makes the set_scroll Msgs it
 // dispatches skip re-finalizing.
 let _dispatchDepth = 0;
+
+// ——— The root-Msg pump (#D4b — moved here from control/dispatch.js) ———
+//
+// applyMsg is the root reducer's driver — the twin of the Component pump
+// below. The reducer (`runtime.update`) is pure and returns Cmd DESCRIPTORS;
+// the interpreter is `./effects` (shared with the Component path so both run
+// through one registry). control/dispatch.js re-exports applyMsg for its
+// input-handler ecosystem + the test API, but the loop is its home: this is
+// where the two pumps live side by side.
+//
+// The reducer is pure; the natural source of truth is getModel() (a stale
+// captured ref would lose intermediate writes across cascades), so callers pass
+// only `msg`. setModel commits the snapshot BEFORE runEffects so cross-layer
+// Cmds (apply_msg / dispatch_msg) re-entering the dispatch graph see post-Msg
+// state. applyMsg does NOT run the finalizer (root Msgs don't move panes).
+function applyMsg(msg) {
+  const [next, cmds] = runtime.update(getModel(), msg);
+  setModel(next);
+  runEffects(cmds);
+}
 
 /**
  * Dispatch a Msg. Two shapes: a WRAPPED Msg `{ kind, msg }` routes only to the
@@ -237,4 +258,4 @@ function _recordError(payload) {
   catch (_) { /* event-log unavailable — already logged to console */ }
 }
 
-module.exports = { dispatchMsg, dispatchKeyToFocused, wrap };
+module.exports = { applyMsg, dispatchMsg, dispatchKeyToFocused, wrap };
