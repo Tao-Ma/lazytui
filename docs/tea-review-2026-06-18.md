@@ -87,7 +87,16 @@ judgment call — see Decisions Ledger) · `FORWARD` (parked for a later pass to
   (`reducer.js:27`): two `route.componentForPanel(<constant>)` reads of the ownership
   registry remain (`:1012` set_config, `:1034` reset_group_context). The handler-stamped
   bundle pattern (already applied to the focus arms) would remove them. Drive-to-empty vs
-  bless-the-two. Evidence: F3.1. *Undecided.*
+  bless-the-two. Evidence: F3.1.
+  **RESOLVED (drive-to-empty)** — both reads eliminated via the handler-stamp pattern. The
+  reducer is now a pure function of (model, msg): `set_config` reads `msg.csOwner`,
+  `reset_group_context` reads `msg.owners` (`{ panelType: ownerName }`), both resolved by the
+  impure-shell dispatchers and stamped on the Msg. New `route.resetGroupOwners()` is the single
+  source of the reset panel-list + owner resolution; the groups-cascade path threads `resetOwners`
+  through the same groups ctx as `viewerTarget` (D10). *Rejected an earlier "wrap by panel-type,
+  let the fanout resolve" approach* — it silently mis-routes (`getPrimaryByKind` is keyed by
+  Component NAME, not panel-type: `containers`→docker primary doesn't resolve) and floods the
+  "unknown Component" diagnostic with expected noise. Suite 96/96, smoke 11/11, acyclic, benches parity.
 - **D10 — Make `groups.js` `update` pure (it reads route topology today).** `_groupChangeCmds`
   calls `route.resolveTarget('viewer')` (`groups.js:201-202`) from `update`. Stamp the
   resolved viewer target onto `msg.ctx` in the groups dispatcher (mirrors the root reducer's

@@ -127,6 +127,20 @@ function bundle(id) {
   };
 }
 
+// #D9 — the per-group reset (reset_group_context) fans owner-targeted resets
+// to the group-scoped nav panels. The SINGLE source of WHICH panels reset
+// plus their owner resolution: callers (the impure-shell dispatchers) stamp
+// the result on the Msg so the root reducer reads no ownership registry.
+// Returns `{ <panelType>: <ownerComponentName> | undefined }` — undefined
+// owner (Component unregistered, e.g. a partial test boot) makes the reducer
+// skip that panel, preserving the old `if (compName)` gate.
+const RESET_GROUP_PANELS = ['actions', 'containers'];
+function resetGroupOwners() {
+  const out = {};
+  for (const p of RESET_GROUP_PANELS) out[p] = componentForPanel(p);
+  return out;
+}
+
 // --- Instance-keyed slice store ----------------------------------------
 //
 // Canonical storage is `_instances[id] = { id, kind, slice }`.
@@ -631,7 +645,7 @@ function _resolveViewerPaneIdCompute(ctx, arrange) {
 
 module.exports = {
   wrap,
-  registerPanelOwner, componentForPanel, paneTypeOf, bundle,
+  registerPanelOwner, componentForPanel, paneTypeOf, bundle, resetGroupOwners,
   getFocus,
   setInstance, getInstance, getInstanceSlice, sliceForPane, setInstanceSlice,
   hasInstance, disposeInstance, instanceKind, eachInstance,

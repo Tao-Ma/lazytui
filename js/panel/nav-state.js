@@ -137,11 +137,14 @@ function _groupsCtx() {
   const m = getModel();
   // viewerTarget — the cascade's viewer_reset_chrome destination, resolved
   // here in the impure shell so groups.update reads it off msg.ctx instead
-  // of reading route topology at reduce time (#D10).
+  // of reading route topology at reduce time (#D10). resetOwners — the
+  // per-panel reset targets for the reset_group_context cascade, likewise
+  // resolved here so the root reducer reads no ownership registry (#D9).
   return {
     ...groupsComp.groupsBundle(m),
     paneMenuMode: !!m.modes.paneMenuMode,
     viewerTarget: route.resolveTarget('viewer'),
+    resetOwners: route.resetGroupOwners(),
   };
 }
 
