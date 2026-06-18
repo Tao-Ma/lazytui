@@ -17,7 +17,7 @@
 const panelHost = require('../../ports/panel-host');
 
 function wirePanelHost() {
-  const { dispatchMsg } = require('./fanout');   // the relocated Component fan-out (B/S6)
+  const { dispatchMsg } = require('./loop');   // the relocated Component fan-out (B/S6)
   const { applyMsg } = require('../control/dispatch');
   const { registerEffect } = require('./effects');
   const { streamCommand } = require('./stream');

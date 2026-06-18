@@ -15,7 +15,7 @@ const { allPanels } = require('../../panel/nav-state');
 const { getModel } = require('../../model/store');
 const { esc } = require('../../leaves/ansi');
 const { getCommands, getItems: apiGetItems, wrap } = require('../../panel/api');
-const { dispatchMsg } = require('../runtime/fanout');
+const { dispatchMsg } = require('../runtime/loop');
 
 // Render moved to overlay/cmdline.js (v0.6 layering cleanup — dispatch
 // modules don't paint). This file owns: registry build, fuzzy scoring,

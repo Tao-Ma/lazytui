@@ -153,7 +153,7 @@ function resize(cols, rows) {
   // Mirror production (tui.js): the Component fan-out lives in dispatch/fanout
   // (v0.6.5 B/S6). Call it directly rather than via the test-runner shim on the
   // api object, so this helper is robust even without a scenario's test-runner.
-  require('../../../dispatch/runtime/fanout').dispatchMsg(api.wrap('layout', { type: 'term_resized', cols, rows }));
+  require('../../../dispatch/runtime/loop').dispatchMsg(api.wrap('layout', { type: 'term_resized', cols, rows }));
 }
 
 // --- Session — step + snapshot ring buffer -------------------------------

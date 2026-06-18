@@ -27,7 +27,7 @@ const { getPanelViewportH, visibleBoundsFor } = require('../../leaves/geometry')
 const { runAction } = require('../runtime/action-runner');
 const { getPanelDef, getItems, getMergedActions, getInstanceSlice,
         wrap, getFocus, instanceKind } = require('../../panel/api');
-const { dispatchMsg } = require('../runtime/fanout');
+const { dispatchMsg } = require('../runtime/loop');
 const { isTerminalTab, activeTerminalId, isActionTab, activeActionTab } = require('../../panel/viewer/tabs');
 const { isSessionDead, restartSession } = require('../../io/terminal');
 const { execSync } = require('child_process');

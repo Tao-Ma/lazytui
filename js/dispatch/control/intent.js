@@ -62,7 +62,7 @@ function realize(intent) {
       // Absolute form (mouse) — focus a specific pane by id, carrying the
       // click cascade's skipInfo flag (byte-identical to the prior inline
       // focus_set, which always stamped skipInfo).
-      return require('../runtime/fanout').dispatchMsg(api().wrap('layout',
+      return require('../runtime/loop').dispatchMsg(api().wrap('layout',
         { type: 'focus_set', focus: intent.paneId, skipInfo: intent.skipInfo }));
 
     case 'select':

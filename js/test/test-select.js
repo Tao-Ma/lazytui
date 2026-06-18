@@ -20,7 +20,7 @@ const sel = require('../panel/viewer/select');
 const { describe, it, eq, assert, report } = require('./test-runner');
 const { getModel } = require('../app/runtime');
 const { getInstanceSlice } = require('../panel/api');
-const { dispatchKeyToFocused } = require('../dispatch/runtime/fanout');
+const { dispatchKeyToFocused } = require('../dispatch/runtime/loop');
 
 // (c)-era key-claim adapter: the keyboard visual-mode state machine
 // lives in the detail Component's update now, not in panel/viewer/select.

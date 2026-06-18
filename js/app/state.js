@@ -249,7 +249,7 @@ function initState() {
   // Component.init() defaults; only config-derived seeds (arrange,
   // currentGroup, register cap) and the theme set need a write here.
   const api = require('../panel/api');
-  require('../dispatch/runtime/fanout').dispatchMsg(api.wrap('layout', {
+  require('../dispatch/runtime/loop').dispatchMsg(api.wrap('layout', {
     type: 'set_arrange',
     arrange: rebuildLayoutFromConfig(config),
     dirty: false,
@@ -264,14 +264,14 @@ function initState() {
   // _lastReconciledArrange) — one unified reconcile path, no separate direct
   // boot call that would leave the gate's bookkeeping stale (→ a redundant
   // re-mint on the first post-boot dispatch).
-  require('../dispatch/runtime/fanout').setInstanceReconciler(reconcilePaneInstances);
+  require('../dispatch/runtime/finalize').setInstanceReconciler(reconcilePaneInstances);
 
   // Seed the model's terminal dimensions (resize-as-Msg P1). The ONLY
   // place besides the tui.js 'resize' listener that reads the live
   // terminal size — everything downstream reads layoutSlice.dims. This
   // dispatch's finalizer also performs the boot instance mint (see above).
   const tdims = require('../io/term').dims();
-  require('../dispatch/runtime/fanout').dispatchMsg(api.wrap('layout', {
+  require('../dispatch/runtime/loop').dispatchMsg(api.wrap('layout', {
     type: 'term_resized', cols: tdims.cols, rows: tdims.rows,
   }));
 
@@ -304,7 +304,7 @@ function initState() {
       log.record('warning', { code: w.code, message: w.message });
       diag.warn(w.code || 'config', w.message);
     }
-    require('../dispatch/runtime/fanout').dispatchMsg(api.wrap('layout', {
+    require('../dispatch/runtime/loop').dispatchMsg(api.wrap('layout', {
       type: 'set_boot_warnings',
       warnings: warnings.map(w => w.message),
     }));
@@ -334,7 +334,7 @@ function resetGroupContext() {
   if (target) {
     // v0.6.3 Phase D1: thread paneMenuMode so the reducer stays pure.
     const m = getModel();
-    require('../dispatch/runtime/fanout').dispatchMsg(api.wrap(target, { type: 'viewer_reset_chrome', paneMenuMode: !!m.modes.paneMenuMode }));
+    require('../dispatch/runtime/loop').dispatchMsg(api.wrap(target, { type: 'viewer_reset_chrome', paneMenuMode: !!m.modes.paneMenuMode }));
   }
 }
 

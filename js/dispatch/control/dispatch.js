@@ -26,7 +26,7 @@ const { paintNow: render } = require('../../leaves/render-queue');
 const { getPanelDef, getItems, idOf, getInstanceSlice,
        getComponentOwningPanel, wrap, getFocus,
        instanceKind } = require('../../panel/api');
-const { dispatchMsg, dispatchKeyToFocused } = require('../runtime/fanout');
+const { dispatchMsg, dispatchKeyToFocused } = require('../runtime/loop');
 const copy = require('../../overlay/copy');
 const registerPopup = require('../../overlay/register-popup');
 const { isTerminalTab, activeTerminalId, findEphemeralByid,
