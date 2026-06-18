@@ -1,21 +1,22 @@
 /**
- * Component fan-out + post-dispatch finalizer — the TEA runtime for the
- * Component layer.
+ * The Component fan-out pump — the TEA runtime for the Component layer (#D4:
+ * renamed from `fanout.js`; this is "the loop", a routing name undersold it).
  *
- * v0.6.5 domain-detangle Stage 2-B: relocated here from `panel/api.js`. This is
- * the update loop (route a Msg to the right Component instance, run its
- * `update`, run the returned effects) plus the once-per-dispatch finalizer
- * (scroll clamp + viewer innerH derivation + per-pane instance reconcile). It
+ * Route a Msg to the right Component instance, run its `update`, run the
+ * returned effects. Components return `[slice, effects]` and never call back up;
+ * the few async/subscription paths receive dispatch via an injected host (see
+ * docs/v0.6.5-dispatch-loop.md "formalize injection"). The once-per-dispatch
+ * after-update phase (scroll clamp + viewer innerH + PTY + instance reconcile)
+ * was split out to `./finalize` (#D4 — it's the after-update phase, not
+ * routing); this file gates it at depth-0 exit via the shared depth counter.
+ *
+ * v0.6.5 domain-detangle Stage 2-B relocated this here from `panel/api.js`: it
  * is *runtime* code — it belongs in the dispatch layer, ABOVE the Components it
- * drives, not among them. Components return `[slice, effects]` and never call
- * back up; the few async/subscription paths receive dispatch via an injected
- * host (see docs/v0.6.5-dispatch-loop.md "formalize injection").
- *
- * Reads the Component registry from `panel/api` (dispatch→panel, a legal
- * down-edge) and runs effects via `./effects` (intra-dispatch). The root
- * reducer driver (`applyMsg`) lives in `./dispatch`; this is its Component-side
- * twin. `applyMsg` does NOT run the finalizer (root Msgs don't move panes);
- * only the Component path here does.
+ * drives, not among them. Reads the Component registry from `panel/api`
+ * (dispatch→panel, a legal down-edge) and runs effects via `./effects`
+ * (intra-dispatch). The root-Msg pump (`applyMsg`) is its twin — see `./dispatch`
+ * (it lands here too once #D4b co-locates the two pumps). `applyMsg` does NOT run
+ * the finalizer (root Msgs don't move panes); only the Component path here does.
  */
 'use strict';
 
@@ -23,14 +24,10 @@ const route = require('../../panel/route');
 const { wrap } = route;
 const { getModel } = require('../../model/store');
 const { runEffects } = require('./effects');
-const geo = require('../../leaves/geometry');
-const mpool = require('../../leaves/pool');
-const { syncPanelScroll } = require('../../panel/nav-state');
-// v0.6.5 §5 — the finalizer reconciles the active terminal tab's PTY session
-// (spawn-on-demand + resize), moved out of render so the view is read-only for
-// the overlay. dispatch→io and dispatch→panel are legal down-edges.
-const terminal = require('../../io/terminal');
-const tabs = require('../../panel/viewer/tabs');
+// #D4 — the post-dispatch invariant pass (scroll clamp + viewer innerH + PTY +
+// instance reconcile) lives in its own after-update-phase module now; the loop
+// only gates it at depth-0 exit. One-way edge: loop → finalize.
+const { finalizeDispatch } = require('./finalize');
 
 // Component registry lives in panel/api; read it lazily (the object ref is
 // stable — registerComponent mutates it in place) so this module never eagerly
@@ -44,113 +41,13 @@ function _reg() { return _comps || (_comps = require('../../panel/api')._compone
 // reach observers only via the onUpdate→render subscription path).
 const BROADCAST_TYPES = new Set(['refresh', 'action']);
 
-// ——— Post-dispatch invariant pass (resize-as-Msg P2) ———————————————
-//
-// After the OUTERMOST dispatch completes, re-clamp every navigator pane's
-// scroll so the selected row sits inside its viewport — a safety net that
-// catches cursor-off-viewport from ANY cause because every state change IS a
-// dispatch. The pass computes calcLayout itself (the derived bounds still
-// reflect the last render — stale vs the just-dispatched state).
-//
-// Depth counter: both top-level entries (dispatchMsg + dispatchKeyToFocused)
-// share it, so effect-chained nested dispatches run the pass once, at depth-0
-// exit. _inScrollFinalize makes the pass's own set_scroll dispatches
-// (syncPanelScroll → nav-state writer → dispatchMsg) skip re-finalizing.
+// Dispatch depth counter: both top-level entries (dispatchMsg +
+// dispatchKeyToFocused) share it, so effect-chained nested dispatches run the
+// after-update phase ONCE, at depth-0 exit. The pass itself (scroll clamp +
+// viewer innerH + PTY + instance reconcile) lives in ./finalize; the loop just
+// gates it here. finalize's own re-entrancy guard makes the set_scroll Msgs it
+// dispatches skip re-finalizing.
 let _dispatchDepth = 0;
-let _inScrollFinalize = false;
-
-// Runtime per-pane instance lifecycle. `state.reconcilePaneInstances` is
-// injected at boot (setInstanceReconciler) — the impure mint shell stays in the
-// boot layer; the finalizer just triggers it, gated on arrange-ref change so it
-// fires only on placement/removal.
-let _instanceReconciler = null;
-let _lastReconciledArrange;
-function setInstanceReconciler(fn) { _instanceReconciler = fn; }
-
-// Layout memo for the finalizer. calcLayout's rects depend only on
-// (arrange, dims) — updated IMMUTABLY by the reducers — so reference equality is
-// a correct cache key. Most dispatches leave both refs untouched.
-let _layoutMemo = null;
-
-function _finalizeLayout(layoutSlice) {
-  const m = _layoutMemo;
-  if (m && m.arrange === layoutSlice.arrange && m.dims === layoutSlice.dims
-        && m.viewMode === layoutSlice.viewMode) {
-    return m.layout;
-  }
-  const layout = geo.calcLayout(layoutSlice, layoutSlice.dims);
-  _layoutMemo = {
-    arrange: layoutSlice.arrange, dims: layoutSlice.dims,
-    viewMode: layoutSlice.viewMode, layout,
-  };
-  return layout;
-}
-
-function _finalizeDispatch() {
-  if (_inScrollFinalize) return;
-  const layoutSlice = route.getInstanceSlice('layout');
-  if (!layoutSlice || !layoutSlice.dims || !layoutSlice.arrange) return;
-  _inScrollFinalize = true;
-  try {
-    // Reconcile per-pane instances with the placed layout (mint newly-placed
-    // panes, dispose removed ones) BEFORE the scroll/innerH work that reads
-    // them. Gated on arrange-ref change.
-    if (_instanceReconciler && layoutSlice.arrange !== _lastReconciledArrange) {
-      _lastReconciledArrange = layoutSlice.arrange;
-      _instanceReconciler();
-    }
-    const layout = _finalizeLayout(layoutSlice);
-    for (const p of mpool.allPanesInColumns(layoutSlice.arrange)) {
-      if (mpool.isDetailPane(p) || p.collapsed) continue;
-      syncPanelScroll(p.paneId,
-        geo.getPanelViewportH(layoutSlice, p.paneId, layoutSlice.dims, layout));
-    }
-    // blessed-exceptions Phase A.1 — the viewer's `innerH` (the viewport-height
-    // cache its reducer reads for scroll/cursor clamps) is produced HERE, in
-    // the dispatch finalizer, from THIS dispatch's fresh Layout. One major/
-    // visible viewer. The `!==` guard preserves the viewer slice's reference
-    // identity when unchanged (the layout memo + downstream ref-equality
-    // depend on it).
-    const viewerTab = route.resolveTarget('viewer');
-    const viewerPaneId = route.resolveViewerPaneId();
-    if (viewerTab && viewerPaneId) {
-      const innerH = geo.getPanelViewportH(layoutSlice, viewerPaneId, layoutSlice.dims, layout, viewerPaneId);
-      const vs = route.getInstanceSlice(viewerTab);
-      if (vs && vs.innerH !== innerH) route.setInstanceSlice(viewerTab, { ...vs, innerH });
-
-      // v0.6.5 §5 — PTY-session reconcile for the active terminal tab. This is
-      // the side-effect that used to run in render (paint.js's
-      // ensureSession/resizeSession); moving it here makes render a pure read
-      // of the session buffer. It is the SAME dispatch-runtime reconcile
-      // category as the instance-mint above and the innerH write: ensure the
-      // active terminal's PTY exists, and size it to the viewer pane's
-      // COMMITTED geometry. visibleBoundsFor reads the committed arrange (not
-      // render's drag-preview override), so the PTY holds its committed dims
-      // through a free-config drag — no SIGWINCH churn per zone crossing.
-      // Lazy: only the ACTIVE terminal tab spawns; tabs never visited never do.
-      // ensureSession is idempotent, so re-running per dispatch is a no-op once
-      // the session exists. activeTerminalId()/activeTerminalConfig() resolve
-      // the same focused viewer render did (resolveTarget('viewer')).
-      if (tabs.isTerminalTab()) {
-        const ptyId = tabs.activeTerminalId();
-        const tconf = tabs.activeTerminalConfig();
-        const tb = (ptyId && tconf)
-          ? geo.visibleBoundsFor(layoutSlice, viewerPaneId, viewerPaneId) : null;
-        if (tb) {
-          const cols = tb.w - 2, rows = tb.h - 2;
-          const session = terminal.ensureSession(ptyId, tconf.cmd, cols, rows, getModel().projectDir);
-          if (session.xterm.cols !== cols || session.xterm.rows !== rows) {
-            terminal.resizeSession(ptyId, cols, rows);
-          }
-        }
-      }
-    }
-  } catch (e) {
-    console.error(`[dispatch] post-dispatch scroll clamp error: ${e.message}`);
-  } finally {
-    _inScrollFinalize = false;
-  }
-}
 
 /**
  * Dispatch a Msg. Two shapes: a WRAPPED Msg `{ kind, msg }` routes only to the
@@ -164,7 +61,7 @@ function dispatchMsg(msg) {
   try { _dispatchMsgInner(msg); }
   finally {
     _dispatchDepth--;
-    if (_dispatchDepth === 0) _finalizeDispatch();
+    if (_dispatchDepth === 0) finalizeDispatch();
   }
 }
 
@@ -247,7 +144,7 @@ function dispatchKeyToFocused(key, seq) {
   try { return _dispatchKeyToFocusedInner(key, seq); }
   finally {
     _dispatchDepth--;
-    if (_dispatchDepth === 0) _finalizeDispatch();
+    if (_dispatchDepth === 0) finalizeDispatch();
   }
 }
 
@@ -340,4 +237,4 @@ function _recordError(payload) {
   catch (_) { /* event-log unavailable — already logged to console */ }
 }
 
-module.exports = { dispatchMsg, dispatchKeyToFocused, setInstanceReconciler, wrap };
+module.exports = { dispatchMsg, dispatchKeyToFocused, wrap };

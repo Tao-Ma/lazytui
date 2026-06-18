@@ -272,8 +272,8 @@ try {
   // existing tests that drive them as `api.dispatchMsg(...)` keep working by
   // re-exposing them on the api object HERE (test-only; test/ is layering-exempt,
   // and api === fanout for these so assertions are unchanged). New tests should
-  // require('../dispatch/runtime/fanout') directly.
-  const fanout = require('../dispatch/runtime/fanout');
+  // require('../dispatch/runtime/loop') directly.
+  const fanout = require('../dispatch/runtime/loop');
   api.dispatchMsg = fanout.dispatchMsg;
   api.dispatchKeyToFocused = fanout.dispatchKeyToFocused;
   api.setInstanceReconciler = fanout.setInstanceReconciler;

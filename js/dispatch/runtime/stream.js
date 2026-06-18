@@ -103,7 +103,7 @@ function appendDetailLine(line, tabKey, groupName) {
   } else {
     msg = { type: 'viewer_append', line };
   }
-  require('./fanout').dispatchMsg(api.wrap(target, msg));
+  require('./loop').dispatchMsg(api.wrap(target, msg));
 }
 
 function appendDetailLines(lines, tabKey, groupName) {
@@ -120,7 +120,7 @@ function appendDetailLines(lines, tabKey, groupName) {
   } else {
     msg = { type: 'viewer_append_lines', lines };
   }
-  require('./fanout').dispatchMsg(api.wrap(target, msg));
+  require('./loop').dispatchMsg(api.wrap(target, msg));
 }
 
 /** Kill a single job. Removes it from procs + slotIndex, SIGTERMs the
@@ -198,7 +198,7 @@ function streamCommand(headerLabel, cmd, args = [], opts = {}) {
       // Phase 3d: thread targetKey + currentGroup so the tab_switch
       // arm stays pure of getModel(). idx=0 is always Info; targetKey
       // is the static 'info'. currentGroup read at dispatch time.
-      require('./fanout').dispatchMsg(api.wrap(target, {
+      require('./loop').dispatchMsg(api.wrap(target, {
         type: 'tab_switch', idx: 0,
         targetKey: 'info',
         currentGroup: getModel().currentGroup,
@@ -245,7 +245,7 @@ function streamCommand(headerLabel, cmd, args = [], opts = {}) {
   } else {
     startMsg = { type: 'stream_start', header: `[dim]$ ${esc(headerLabel)}[/]` };
   }
-  require('./fanout').dispatchMsg(api.wrap(target, startMsg));
+  require('./loop').dispatchMsg(api.wrap(target, startMsg));
   scheduleRender();
 
   // -- delimiter so $0 = "--", $1 = first arg, $@ = arg list (POSIX).

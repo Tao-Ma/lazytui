@@ -19,7 +19,7 @@ const actions  = require('../dispatch/control/actions');
 const dispatch = require('../dispatch/control/dispatch');
 const input    = require('../dispatch/control/input');
 const api      = require('../panel/api');
-const fanout   = require('../dispatch/runtime/fanout');   // B/S6 — dispatchMsg relocated here
+const fanout   = require('../dispatch/runtime/loop');   // B/S6 — dispatchMsg relocated here
 const { describe, it, eq, assert, report } = require('./test-runner');
 
 // Swap a method on a module object for a recorder, run fn, restore. The

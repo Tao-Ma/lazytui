@@ -24,7 +24,7 @@ const runtime = require('../app/runtime');
 const { getInstanceSlice } = api;
 // B/S6 — the Component fan-out relocated to dispatch/runtime/fanout.js; wire the
 // injected hosts like production boot so dispatchMsg + the finalizer resolve.
-const fanout = require('../dispatch/runtime/fanout');
+const fanout = require('../dispatch/runtime/loop');
 require('../dispatch/runtime/host-wiring').wirePanelHost();
 require('../panel/nav-state').setNavDispatch(require('../dispatch/runtime/effects').effectHost());
 

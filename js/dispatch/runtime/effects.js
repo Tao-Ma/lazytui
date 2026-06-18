@@ -42,7 +42,7 @@ let _host = null;
 function _effectHost() {
   if (!_host) {
     const api = require('../../panel/api');
-    const { dispatchMsg } = require('./fanout');
+    const { dispatchMsg } = require('./loop');
     const { applyMsg } = require('../control/dispatch');
     const { wrap } = require('../../panel/route');
     const { streamCommand } = require('./stream');
@@ -166,7 +166,7 @@ function installBuiltins() {
   registerEffect('msg', (eff) => {
     if (!_enterCrossLayer('msg', eff)) return;
     try {
-      if (eff.msg && eff.msg.kind) require('./fanout').dispatchMsg(eff.msg);
+      if (eff.msg && eff.msg.kind) require('./loop').dispatchMsg(eff.msg);
       else require('../control/dispatch').applyMsg(eff.msg);
     } finally { _exitCrossLayer(); }
   });
@@ -211,7 +211,7 @@ function installBuiltins() {
   registerEffect('tick', (eff) => {
     if (!eff || typeof eff.ms !== 'number' || !eff.msg) return;
     const t = setTimeout(() => {
-      try { require('./fanout').dispatchMsg(eff.msg); } catch (_) { /* registry gone */ }
+      try { require('./loop').dispatchMsg(eff.msg); } catch (_) { /* registry gone */ }
     }, eff.ms);
     if (t && typeof t.unref === 'function') t.unref();
   });
