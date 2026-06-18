@@ -175,11 +175,13 @@ function init(paneId) {
     scroll: 0,
     tab: 0,
     // Effective viewport rows (panel height minus 2-row border chrome).
-    // Written from render() via a direct setInstanceSlice (R4.9) once the
-    // layout pass settles our paneBounds — owning slice, not cross-slice,
-    // so the reducer is a pure function of (slice, msg). 0 = not-yet-rendered;
-    // _innerH() falls back to lines.length in that degenerate so clamps
-    // collapse to "everything fits".
+    // Written by the per-dispatch finalizer (dispatch/fanout._finalizeDispatch)
+    // via a direct setInstanceSlice on our OWN slice (blessed-exception B) once a
+    // dispatch settles the layout — owning slice, not cross-slice, so the reducer
+    // is a pure function of (slice, msg). 0 = not-yet-dispatched; _innerH() falls
+    // back to 1 in that degenerate (see _innerH) so clamps collapse to
+    // "everything fits". See docs/v0.6.5-tea-reaudit.md (exception B) for why this
+    // stays a direct write while the adjacent scroll-clamp routes a set_scroll Msg.
     innerH: 0,
     search: { active: false, term: '', idx: 0, typing: '' },
     select: { active: false, kind: 'char', anchor: { line: 0, col: 0 }, cursor: { line: 0, col: 0 } },
