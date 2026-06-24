@@ -217,7 +217,7 @@ function init() {
     // slot is null the projection falls back to that default, so an
     // untouched config is a strict no-op. Either slot may hold ANY pane,
     // including a viewer (two viewers side-by-side). Set by `view_place_pane`;
-    // resolved by leaves/geometry halfProjection. NOT serialized (view mode is
+    // resolved by leaves/wm/geometry halfProjection. NOT serialized (view mode is
     // runtime focus-state fine-tuning, not a declared layout); slots are
     // cleared when their pane leaves `arrange` (set_arrange / pool_hide).
     halfView: { left: null, right: null },
@@ -323,7 +323,7 @@ function update(msg, slice) {
     }
     // v0.6.4 — half-view PROJECTION selection. Sets which pane occupies the
     // left / right slot (an ephemeral override of the default derivation;
-    // see slice.halfView + leaves/geometry halfProjection). Any placed pane is
+    // see slice.halfView + leaves/wm/geometry halfProjection). Any placed pane is
     // valid in either slot — no detail/viewer exclusion — so two viewers can
     // sit side-by-side. Pure: never mutates arrange. The seam the step-2
     // tab/pane dropdown targets.

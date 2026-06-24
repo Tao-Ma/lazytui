@@ -310,7 +310,7 @@ describe('[8d] layout Component skeleton (Phase 1a)', () => {
     assert('dirty' in slice,        'slice has dirty (1d target)');
     assert('freeConfig' in slice,       'slice has freeConfig (1f target)');
     // panelHeights moved off the slice — it lives in a module-local
-    // in leaves/geometry.js, accessed via `getPanelViewportH(type)`.
+    // in leaves/wm/geometry.js, accessed via `getPanelViewportH(type)`.
     // paneBounds is NOT a production field (#D7 2026-06-18): pane geometry
     // is a pure derived value (geometry.boundsFor/visibleBoundsFor). The
     // geometry accessors honor a slice.paneBounds override only when a unit

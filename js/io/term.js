@@ -43,7 +43,7 @@ function cols() { return COLS; }
 function rows() { return ROWS; }
 
 /** Refresh + snapshot the terminal dimensions as one `{cols, rows}`
- *  value — what the pure geometry readers (leaves/geometry) take
+ *  value — what the pure geometry readers (leaves/wm/geometry) take
  *  as an explicit param now that they no longer read the terminal
  *  themselves (wm-geo P1.2). */
 function dims() { refreshSize(); return { cols: COLS, rows: ROWS }; }

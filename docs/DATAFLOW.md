@@ -178,7 +178,7 @@ except the blessed render-side exceptions:
     honor a test-only `slice.paneBounds` override when a unit fixture injects
     one (to keep hit-test-math tests decoupled from layout-math).
   - viewer `innerH` — was a direct `setInstanceSlice` from `render()`; now
-    computed in the post-dispatch finalizer (`dispatch/runtime/fanout.js`, Phase A.1) off
+    computed in the post-dispatch finalizer (`dispatch/runtime/finalize.js`, Phase A.1) off
     that dispatch's fresh Layout.
   - `setImmediate(terminal_exit)` from `renderTerminalOverlay` — retired
     v0.6.3 P5.1; PTY exit is event-driven from `pty-lifecycle.handleExit`.
@@ -189,7 +189,7 @@ the model — `layout.dims`, written only by the `term_resized` arm;
 the stdout `'resize'` listener (tui.js) dispatches the Msg and the
 boot seed comes from `initState`. Geometry reads the model's dims,
 never the live terminal. After every OUTERMOST dispatch (`dispatchMsg`
-/ `dispatchKeyToFocused` share a depth counter), `dispatch/runtime/fanout`'s
+/ `dispatchKeyToFocused` share a depth counter), `dispatch/runtime/finalize`'s
 finalizer re-clamps each navigator pane's scroll against a freshly
 computed layout — the safety net needs no Msg enumeration because
 every state change IS a dispatch, resize included. Render dispatches

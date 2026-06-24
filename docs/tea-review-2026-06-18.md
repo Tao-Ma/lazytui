@@ -59,7 +59,7 @@ judgment call — see Decisions Ledger) · `FORWARD` (parked for a later pass to
 | F4.1 | 4 | Subscriptions wired once at mount, never re-evaluated/torn down | **D13** | Canonical `Model → Sub` reconciler each dispatch; pane-remove now unsubscribes (leak fixed) | `dc1cf84` |
 | F4.2 | 4 | PTY data bypasses the Msg loop into an off-model xterm island | **D14** | Accept-bounded — `#D14` header at `io/terminal.js`; model holds lifecycle, xterm holds contents | `b66abfe` |
 | F4.3 | 4 | 250ms blind repaint timer drives render off the wall clock | **D15** | Examined + KEPT — removal regressed `smoke/pty-overlay.js` (async PTY race); load-bearing | `b66abfe` |
-| F4.4 | 4 | `Cmd`s are pure `{type,…}` data; unavoidable closures held by index | **FINE** → **hardened** | Upholds "Cmds serializable." Conformed already; the caveat (nothing asserted the index↔projection `_options`/`_full` vs `model.modal.*` stay aligned) is now closed — use-site guards (`copy.copySelect`, `cmdline.runAt`) trip on a label/display divergence + `test-index-align.js` pins both construction parallelism and the guard predicate | guard+test |
+| F4.4 | 4 | `Cmd`s are pure `{type,…}` data; unavoidable closures held by index | **FINE** → **hardened** | Upholds "Cmds serializable." The caveat (nothing asserted the index↔projection stays aligned) is closed by a use-site guard (`copy.copySelect`, `cmdline.runAt` abort a mismatched closure). The pre-release review caught the guard's first cut as VACUOUS (re-read the already-cleared model → never tripped); reworked to carry the selected entry's `display`/`label` ON the Cmd, + a live-path test. See the Pass-4 F4.4 "Hardened" + "Pre-release-review correction" notes | guard+test (reworked) |
 | F4.5 | 4 | Does `render` emit any Msg/dispatch/model write? | **FINE** | `grep` clean — render is pure on the dispatch axis (unidirectional queue seam). No action | — |
 | — (add.) | 4 | Terminal dims double-stored (`model.dims` + `io/term` mirror render reads) | folded **D5** | Recorded under D5's off-model-read family; covered by the boundary doc correction | `1f520c8` |
 | F5.1 | 5 | Finalizer writes `viewer.innerH` direct into slice, vs `set_scroll` Msg beside it | **D16** | KEEP exception B — `innerH` is reducer-read so must stay in-slice; D7≠D16; history corrected | `620ecf2` |
@@ -91,6 +91,20 @@ judgment call — see Decisions Ledger) · `FORWARD` (parked for a later pass to
   `v0.6.5-tea-reaudit.md`. ~30 importer paths rewired; acyclic both modes, suite 96/96, smoke
   11/11. (The leaf-vs-port distinction from the 2026-06-17 #6 follow-up still holds; this adds
   the pure-vs-stateful split *within* leaves.)
+  **Caveat (pre-release review, 2026-06-24 — the "leaves/ proper = pure" wall has ONE documented
+  residual).** The 4-track pre-release review's file-layout track flagged that `leaves/wm/geometry.js`
+  holds `let _currentLayout`, **re-published every `calcLayout()` call** (per-frame, during render) —
+  render-written module state, the *same category* as the `themes` palette cache that was carved to
+  `infra/`. So the "pure transforms" claim below (F1.2 lists `geometry` among them) is not 100%
+  literal. **Disposition: KEEP in `leaves/wm/` (do NOT relocate).** Unlike the `infra/` three, this is
+  ~350 lines of pure layout math with a single last-write-wins mirror that exists only as a
+  **boot-edge fallback** for `getPanelViewportH`/`boundsFor` before the first dims + for
+  `getCurrentLayout()` consumers (production bounds derive from the pure memoized selector — the field
+  is on a documented phase-out path; see the `geometry.js:179` header). It is `wm`-domain, not generic
+  infra, and is written only from the render pass (never a reducer — verified by the purity track).
+  Relocating it would mis-file the math; the honest fix is this caveat, recorded here + already
+  thoroughly documented at the field. Elimination (so geometry becomes literally pure) is a future arc,
+  not a pre-release change.
 - **D2 — Should `leaves/` be sub-grouped by domain?** It is a flat 30-file / ~6.1k-LOC
   bucket mixing a layout-editor subsystem, tab-state, render primitives, a pub/sub bus,
   text utilities, and input registries. Evidence: F1.2.
@@ -937,17 +951,28 @@ keystroke), so they stay synced — but it is a *parallel state channel*, and a 
 that rebuilds one without the other would silently invoke the wrong closure. Worth a guard
 or a test asserting the lengths/identities stay aligned. Not a defect today. **FINE.**
 
-**Hardened (post-review, 2026-06-24).** Took both halves of the suggestion. (1) A **use-site
-guard** — a pure `_aligned(shown, held)` predicate in each module, checked in `cmdline.runAt`
-(display) and `copy.copySelect` (label) right before the closure fires: if the held entry's
-identity ever diverges from the model projection the user actually saw, the run/copy is
-aborted with a diagnostic instead of silently invoking the wrong closure. It sits on the
-**cold path** (one invoke per gesture — not the per-keystroke rebuild), so it's free, and it
-currently never trips (the two are built in lockstep). (2) A **test** — `test-index-align.js`
-pins both the construction parallelism on the real `rebuild()` path (`projection[i].display
-=== _full[i].display` for all `i`, incl. after a narrowing query) and the guard predicate's
-trip/no-trip behavior for both copy and cmdline. Suite 97/97 (the new file), smoke 11/11,
-acyclic both modes, hot-path benches unaffected (guards are cold-path only).
+**Hardened (post-review, 2026-06-24).** Took both halves of the suggestion: a **use-site
+guard** (`cmdline.runAt` / `copy.copySelect` abort rather than invoke a mismatched closure) +
+a **test** (`test-index-align.js`).
+
+**Pre-release-review correction (the guard's first cut was VACUOUS).** The 4-track pre-release
+review's code track (Track 3) caught that the first cut compared the held entry against a
+**re-read of the model** (`getModel().modal.cmdline.matches[sel]` / `.copy.options[idx]`) — but
+the `cmdline_submit` / `copy_select` reducer arm **clears that projection** (`matches: []` /
+`options: []`) into the committed model BEFORE emitting the `cmdline_run` / `copy_commit` Cmd,
+and `applyMsg` commits before `runEffects`. So at use-site the model read was always
+`undefined`, the predicate's `!shown` clause short-circuited to "aligned", and the guard could
+**never trip** — safe (no crash, copy/run still worked) but inert theater on the live path; only
+the unit test's direct predicate calls had teeth. **Fix:** the selected entry's identity
+(`display`/`label`) is now **captured at reduce time and carried ON the Cmd**
+(`cmdline_run {sel, args, display}`, `copy_commit {idx, label}`); the use-site guard compares the
+held closure against that carried value (no model re-read), so it survives the projection clear
+and is genuinely load-bearing. This also made the Cmd more self-contained (TEA-cleaner — no
+ambient `getModel()` reach at effect time). The test grew a **live-path** case: `_setFull` /
+`_setOptions` inject controllable closures, then `runAt`/`copySelect` are driven with a
+deliberately-misaligned carried identity and asserted to **abort** (the diagnostic fires) — the
+coverage Track 3 said was missing. Cold path (one invoke per gesture, not the per-keystroke
+rebuild); inert on a healthy build. Suite 97/97, smoke 11/11, acyclic both modes, benches parity.
 
 ---
 

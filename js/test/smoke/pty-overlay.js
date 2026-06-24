@@ -3,7 +3,7 @@
  *
  * v0.6.5 §5 routed the embedded-terminal PTY spawn + resize OUT of the render
  * pass (paint.js's ensureSession/resizeSession) and INTO the dispatch finalizer
- * (dispatch/runtime/fanout.js), so render is a pure READ of the session buffer.
+ * (dispatch/runtime/finalize.js), so render is a pure READ of the session buffer.
  * The unit suite never seeds layout geometry, so its finalizer early-returns and
  * never spawns a real PTY — only a real boot exercises the whole chain:
  * tab-activation → finalizer spawn → read-only render paints the buffer.

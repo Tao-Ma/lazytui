@@ -104,11 +104,14 @@ arcs. Specs: [docs/v0.6.5.md](docs/v0.6.5.md), `v0.6.5-tea-reaudit.md`,
   reconciliations corrected the frame-purity boundary claim (D5) and the stale
   renderer-as-writer / `innerH` history (D7/D16). A post-review hardening closed the
   review's one residual: a use-site alignment guard for the closure-by-index Cmds
-  (`copy_commit`/`cmdline_run`) trips if a held closure table ever diverges from the
-  model projection the user saw, instead of silently invoking the wrong closure
-  (F4.4; `test-index-align.js`). No intended behavior change beyond the D13 leak fix
-  (the F4.4 guard is an inert tripwire today); suite 97/97, smoke 11/11, acyclic both
-  modes, benches parity per commit. (tip `b66abfe`.)
+  (`copy_commit`/`cmdline_run`) aborts rather than invoke the wrong closure if a held
+  closure table ever diverges from the entry the user selected. The selected entry's
+  identity (display/label) is captured at reduce time and carried on the Cmd, so the
+  guard stays load-bearing even though the submit/select arm has cleared the model
+  projection by the time the effect runs (F4.4; `test-index-align.js` pins both
+  construction parallelism and the live abort). No intended behavior change beyond the
+  D13 leak fix (the guard is an inert tripwire on a healthy build); suite 97/97, smoke
+  11/11, acyclic both modes, benches parity per commit. (`tea-review-fixes` branch.)
 - **Render-exit (layer SCC 5→4).** The pure render tier moved down into
   `leaves/`: the panel renderer → `leaves/draw.js`, plus
   scrollbar/painter/themes/render-queue; `decor` split into a pure half

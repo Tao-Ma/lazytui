@@ -351,18 +351,27 @@ their schema.
 
 ## 12. Subscription lifecycle and panel coupling
 
-A panel-bound consumer must unsubscribe when the panel is removed from
-layout. Two strategies:
+Subscriptions are **declared, not hand-managed** — canonical TEA
+`subscriptions : Model → Sub` (#D13). A Component exports a pure factory:
 
-- **Subscribe in `init()`** — for stable, Component-lifetime
-  subscriptions. Most cases.
-- **Subscribe per-render** — for transient consumers. Costs a
-  subscribe/unsubscribe per frame. Discouraged.
+```js
+subscriptions(paneDef, model) → [{ topic, window }]
+```
 
-If a Component is loaded but its panels aren't in the active layout,
-consumers still subscribe (cheap) but no rendering happens. The hub
-doesn't care; window stays small if the Component is the only
-subscriber and only needs latest.
+The framework re-evaluates the whole desired set on every dispatch (the
+post-dispatch finalizer calls `app/state.js#reconcileSubscriptions`), diffs
+it against the live set, and starts/stops only the delta — `hub.subscribe`
+when a pane is placed, `hub.unsubscribe` when it is removed. A Component
+author **never** calls `hub.subscribe`/`unsubscribe` directly and **never**
+hand-rolls teardown: declaring the topic is the entire contract, and a pane
+leaving the layout tears its subscription down automatically.
+
+Because the desired set is a pure function of the model, a subscription
+exists exactly while the model says it should — conditional subscriptions
+("only while this pane is placed / its group is current") fall out for free.
+A Component that is loaded but has no placed pane contributes no
+subscription, so there is no wasted hub work. (See PRINCIPLES.md §"Hub
+subscriptions" for the reducer/finalizer wiring.)
 
 ## 13. Threading / concurrency
 

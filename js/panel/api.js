@@ -24,7 +24,7 @@ const { esc, visibleLen, stripMarkup, wrapColor } = require('../leaves/text/ansi
 const { theme } = require('../leaves/infra/themes');
 const { renderPanel, setDimsProvider } = require('../leaves/render/draw');
 
-// Render-exit seam (docs/v0.6.5-render-exit.md): leaves/draw can't read the
+// Render-exit seam (docs/v0.6.5-render-exit.md): leaves/render/draw can't read the
 // model (panel layer) NOR import io (it's a pure bottom leaf). Inject the full
 // terminal-dims resolution here: the layout slice's resize-as-Msg dims (the
 // model clock) first, then the io/term singleton as the boot/no-Msg fallback
@@ -593,7 +593,7 @@ function _componentsMap() { return components; }
 module.exports = {
   // --- Component registry / lifecycle ---
   // dispatchMsg / dispatchKeyToFocused / setInstanceReconciler relocated to
-  // dispatch/runtime/fanout.js (B/S6 — the runtime lives in the dispatch layer now).
+  // dispatch/runtime/loop.js (B/S6 — the runtime lives in the dispatch layer now).
   registerComponent, registerEffect, wrap,
   _components: _componentsMap,  // v0.6.3 Phase B — internal use by initState + fanout
   getComponent, getComponentOwningPanel, getFocus,

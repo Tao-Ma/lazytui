@@ -353,11 +353,13 @@ already pure (`leaves/geometry.js`); these are write-backs so the input layer
 
 ### A.1 — innerH into the finalizer — ✅ SHIPPED 2026-06-14 (uncommitted)
 
-> **Location update (v0.6.5 B/S6):** the finalizer (`_finalizeDispatch`, this
-> innerH write = blessed-exception B) relocated `panel/api.js` →
-> `dispatch/fanout.js` when the Component fan-out moved to the dispatch layer.
-> The v0.6.4 text below is historically accurate for the render→finalizer move;
-> the current home is `dispatch/fanout.js`. See docs/v0.6.5-dispatch-loop.md.
+> **Location update (v0.6.5 B/S6, then #D4):** the finalizer (`finalizeDispatch`,
+> this innerH write = blessed-exception B) relocated `panel/api.js` →
+> `dispatch/fanout.js` when the Component fan-out moved to the dispatch layer
+> (B/S6), then #D4 (2026-06-18) split the fan-out file into `runtime/loop.js`
+> (the pump) + `runtime/finalize.js` (the after-update phase). The v0.6.4 text
+> below is historically accurate for the render→finalizer move; the current home
+> of this write is `dispatch/runtime/finalize.js`. See docs/v0.6.5-dispatch-loop.md.
 
 > **DONE.** The viewer `innerH` write moved from `render()` (`paint.js`) into
 > the post-dispatch finalizer (`panel/api.js _finalizeDispatch`). Computed via

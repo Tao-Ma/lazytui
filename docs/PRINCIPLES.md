@@ -266,7 +266,7 @@ overlay-subsystem reads, called out at the end):
 
 - **Layout geometry is pure-derived, not written** — RETIRED outside-writer
   exception. Pane bounds and per-panel heights are computed on demand from
-  `(arrange, dims, viewMode)` via memoized selectors in `leaves/geometry.js`
+  `(arrange, dims, viewMode)` via memoized selectors in `leaves/wm/geometry.js`
   — there is no `slice.paneBounds`/`slice.panelHeights` field and no
   calcLayout/render write (blessed-exceptions A.2/A.3 retired the writes;
   #D7 2026-06-18 deleted the `paneBounds` field). The per-Navigator
@@ -296,19 +296,19 @@ overlay-subsystem reads, called out at the end):
   `getInstanceSlice('layout')`). Seed-blind inits arity-ignore the arg.
 
 **Overlay subsystem — the model-clock arc** (`js/overlay/*` +
-`leaves/draw.js#renderOverlay` + `render/footer.js`). The overlay render
+`leaves/render/draw.js#renderOverlay` + `render/footer.js`). The overlay render
 layer originally read both its clocks (dims + time) outside the model, making
 overlay renders non-idempotent on equal *model* state. The model-clock arc
 resolved both:
 
 - **Terminal dims — RESOLVED.** Overlays + the footer now resolve terminal
   size from the model clock (`layoutSlice.dims`, resize-as-Msg) via
-  `leaves/draw.js#viewportDims()`, with `io/term.cols()/rows()` kept only as
+  `leaves/render/draw.js#viewportDims()`, with `io/term.cols()/rows()` kept only as
   a boot fallback. Previously the panel grid read `layoutSlice.dims` while the
   footer + all 8 overlays + `renderOverlay` read the `io/term` singleton (the
   upstream terminal cache), which could lead the model by a frame on resize.
   The source-of-truth is now unified. (Since the render-exit arc moved the panel
-  renderer to the `leaves/draw` leaf, the model-read is an injected
+  renderer to the `leaves/render/draw` leaf, the model-read is an injected
   `setDimsProvider` seam wired from `panel/api` — the leaf never reaches up into
   panel; see `docs/v0.6.5-render-exit.md`.) Pinned by `test-overlay-dims.js`.
 - **Wall-clock age columns — under the model (`model.now`/tick).**
