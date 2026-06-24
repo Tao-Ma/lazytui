@@ -68,10 +68,13 @@ the visible record.
 
 As of v0.3.0, `package.json` has `"private": false` and
 `release.yml` includes a `Publish to npm` step that runs after the
-tarball build on every non-pre-release tag push. The step is gated
-by `if: ${{ !contains(github.ref, '-') }}` so `vX.Y.Z-rc1` tags
-still produce a GitHub Release for download without leaking
-pre-release builds to the public npm registry.
+tarball build. The step is gated by
+`if: ${{ !contains(github.ref, '-') && env.HAS_NPM_TOKEN == 'true' }}`,
+so it runs only on a non-pre-release tag (`vX.Y.Z`, no hyphen) AND
+only when the `NPM_TOKEN` repo secret is configured
+(`HAS_NPM_TOKEN: ${{ secrets.NPM_TOKEN != '' }}`). A `vX.Y.Z-rc1` tag —
+or any repo without the secret — still produces a GitHub Release for
+download; the publish step simply **skips**, it does not fail.
 
 **Prerequisite — one-time setup per repo:**
 - Create an npm automation token at npmjs.com (Settings → Access
@@ -79,9 +82,13 @@ pre-release builds to the public npm registry.
 - Add it to the GitHub repo as a secret named `NPM_TOKEN`
   (Settings → Secrets and variables → Actions).
 
-Without `NPM_TOKEN`, the publish step fails the whole workflow and
-the GitHub Release isn't created — fix the secret, then delete and
-re-push the tag (see "If the release workflow fails" above).
+Without `NPM_TOKEN`, the publish step is **skipped** (the
+`HAS_NPM_TOKEN` guard) — the workflow stays green and the GitHub
+Release is still created with both tarballs; the package just isn't
+pushed to npm. (This is what happened for v0.6.5: shipped to GitHub,
+not to npm.) To publish a release that went out without npm: add the
+secret, then delete and re-push the tag (see "If the release workflow
+fails" above), or run `npm publish` locally from the tagged commit.
 
 **First publish:** if you want the extra safety of a manual sanity
 check, run `npm publish` locally from the tagged commit before the
