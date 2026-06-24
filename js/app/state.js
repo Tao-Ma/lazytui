@@ -29,18 +29,25 @@ const { rebuildLayoutFromConfig } = require('../leaves/wm/arrange');
 const navState = require('../panel/nav-state');
 
 
-// #D13 (2026-06-18) — hub subscriptions as canonical `Model → Sub`. A Component
-// exports a PURE `subscriptions(paneDef, model) → [{topic, window}]` declaring
-// the hub topics it consumes for the current state; the framework re-evaluates
+// #D13 (2026-06-18) — subscriptions as canonical `Model → Sub`. A Component
+// exports a PURE `subscriptions(paneDef, model) → [descriptor]` declaring the
+// ongoing sources it needs for the current state; the framework re-evaluates
 // the WHOLE desired set each update (the post-dispatch finalizer calls
 // `reconcileSubscriptions` via the injected hook), DIFFS it against the live
 // set, and starts/stops the delta. Replaces the v0.6.4 Phase D mount-time
 // wiring, which subscribed on pane-mint but never tore down (a disposed pane's
-// topic leaked a live sub + a wasted repaint per publish). Now a pane leaving
-// the layout — or, in future, a sub whose existence depends on model state —
-// reconciles correctly: the desired set is recomputed and the gone topic is
-// unsubscribed. `onUpdate` is always a repaint (hub data drives frames; see
-// stats.js). Deduped by topic:window (two panes on one topic share one sub).
+// topic leaked a live sub + a wasted repaint per publish). A pane leaving the
+// layout — or a sub whose existence depends on model state — reconciles
+// correctly: the desired set is recomputed and the gone source is stopped.
+//
+// v0.6.6 FIX-3 Phase 1 — the reconciler is KIND-DISPATCHED. Each descriptor
+// carries a `kind`; the `_subKinds` registry maps kind → {normalize, key,
+// start, stop}, so the diff loop is source-agnostic. Today only `hub` is
+// registered (a pure refactor — bare `{topic, window}` descriptors default to
+// the hub kind: `onUpdate` is a repaint, deduped by topic+window). Later phases
+// register `interval` / `resize` / `process-stream` and an app-global
+// `appSubscriptions(model)` source beside the per-pane component subs. See
+// docs/v0.6.6.md §7.
 //
 // Memoized module refs (the reconciler runs per outermost dispatch; a fresh
 // relative require() each time is the ~tens-of-µs/call fs cost paint.js's hot
@@ -51,14 +58,30 @@ const _route = () => (_routeRef ||= require('../panel/route'));
 const _mpool = () => (_mpoolRef ||= require('../leaves/wm/pool'));
 const _hub = () => (_hubRef ||= require('../leaves/infra/hub'));
 
-// Live subscriptions: "topic:window" → hub token. The single source of what's
-// currently subscribed; the reconcile diff is computed against it.
+// Live subscriptions: key → { kind, token }. The single source of what's
+// currently running; the reconcile diff is computed against it. `stop` routes
+// the token back through its kind handler.
 const _liveSubs = new Map();
+
+// Sub-kind handler registry — how each kind of ongoing source is keyed,
+// started, and stopped. The reconciler is kind-agnostic; new external-source
+// kinds (interval / resize / process-stream — FIX-3 later phases) plug in here.
+// `ctx` carries what a handler may use to feed events back into the loop
+// (today: scheduleRender; later: dispatch / applyMsg).
+const _subKinds = {
+  // Hub topics (#D13). Bare `{topic, window}` descriptors; repaint on publish.
+  hub: {
+    normalize: (d) => (d && d.topic ? { topic: d.topic, window: d.window || 1 } : null),
+    key: (d) => `${d.topic}:${d.window}`,
+    start: (d, ctx) => _hub().subscribe(d.topic, { window: d.window, onUpdate: () => ctx.scheduleRender() }),
+    stop: (token) => _hub().unsubscribe(token),
+  },
+};
 
 // Pure projection: the DESIRED subscription set for the current state. Walks the
 // placed panes (layout arrange) and asks each pane's Component for its declared
 // subs, passing the root `model` so a sub can depend on model state (canonical
-// Model → Sub). Returns Map "topic:window" → { topic, window }.
+// Model → Sub). Returns Map "<kind>:<handler key>" → { kind, desc }.
 function _desiredSubs(model) {
   const components = _api()._components ? _api()._components() : null;
   const out = new Map();
@@ -71,40 +94,58 @@ function _desiredSubs(model) {
     let descriptors;
     try { descriptors = comp.subscriptions(p, model) || []; }
     catch (e) { console.error(`[${comp.name || '?'}] subscriptions() threw: ${e && e.message}`); continue; }
-    for (const d of descriptors) {
-      if (!d || !d.topic) continue;
-      const window = d.window || 1;
-      out.set(`${d.topic}:${window}`, { topic: d.topic, window });
-    }
+    for (const d of descriptors) _addDesired(out, d);
   }
   return out;
 }
 
-// Reconcile the live hub subscriptions to match `_desiredSubs(model)`: subscribe
-// the newly-desired, unsubscribe the no-longer-desired. Called by the dispatch
-// finalizer each outermost dispatch (#D13); the diff makes it a no-op when the
-// desired set is unchanged (the common case). The hub's unsubscribe recomputes
-// the topic's retention window, so tearing one of several subs on a topic is safe.
+// Normalize + key one descriptor through its kind handler into the desired-set.
+// Bare `{topic, window}` (no `kind`) = the hub kind (back-compat). Unknown kinds,
+// or descriptors a kind rejects (e.g. hub without a topic), are skipped. Keyed
+// `<kind>:<handler key>` so kinds never collide on a shared key. (FIX-3
+// app-global subs will route through here from an appSubscriptions(model) source
+// too.)
+function _addDesired(out, d) {
+  if (!d) return;
+  const kind = d.kind || 'hub';
+  const h = _subKinds[kind];
+  if (!h) { console.error(`[subscriptions] unknown sub kind: ${kind}`); return; }
+  const desc = h.normalize ? h.normalize(d) : d;
+  if (!desc) return;
+  out.set(`${kind}:${h.key(desc)}`, { kind, desc });
+}
+
+// Reconcile the live subscriptions to match `_desiredSubs(model)`: start the
+// newly-desired, stop the no-longer-desired, each routed through its kind
+// handler. Called by the dispatch finalizer each outermost dispatch (#D13); the
+// diff makes it a no-op when the desired set is unchanged (the common case) —
+// so a live source is NOT torn down + restarted while its key is stable.
 function reconcileSubscriptions(model) {
-  const hub = _hub();
-  const { scheduleRender } = _api();
+  const ctx = _subCtx();
   const desired = _desiredSubs(model);
-  // stop — live topics no longer desired (e.g. a disposed pane's sub).
-  for (const [key, token] of _liveSubs) {
-    if (!desired.has(key)) { hub.unsubscribe(token); _liveSubs.delete(key); }
+  // stop — live sources no longer desired (e.g. a disposed pane's sub).
+  for (const [key, live] of _liveSubs) {
+    if (!desired.has(key)) { _subKinds[live.kind].stop(live.token); _liveSubs.delete(key); }
   }
-  // start — desired topics not yet live.
-  for (const [key, { topic, window }] of desired) {
+  // start — desired sources not yet live.
+  for (const [key, { kind, desc }] of desired) {
     if (_liveSubs.has(key)) continue;
-    _liveSubs.set(key, hub.subscribe(topic, { window, onUpdate: () => scheduleRender() }));
+    _liveSubs.set(key, { kind, token: _subKinds[kind].start(desc, ctx) });
   }
+}
+
+// The handler context — what a kind's `start` may use to feed its source back
+// into the loop. Today just `scheduleRender` (the hub kind's repaint-on-publish).
+// FIX-3 later phases add `dispatch` / `applyMsg` for interval/resize/process.
+function _subCtx() {
+  const { scheduleRender } = _api();
+  return { scheduleRender };
 }
 
 // Test-only — tear down every live sub + clear the ledger (mirrors hub._reset /
 // jobs._reset), so a test starts from a clean subscription set.
 function _resetSubscriptions() {
-  const hub = _hub();
-  for (const token of _liveSubs.values()) hub.unsubscribe(token);
+  for (const { kind, token } of _liveSubs.values()) _subKinds[kind].stop(token);
   _liveSubs.clear();
 }
 
