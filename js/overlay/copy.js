@@ -90,9 +90,30 @@ function copyOption(opt) {
     .catch(e => console.error('[copy] thunk error:', e && e.message));
 }
 
-/** Copy the module-held option at `idx` (the copy_commit Cmd). */
+/** Alignment tripwire (#F4.4). `_options` is parallel-indexed to
+ *  `model.modal.copy.options` — `collectOptions()` builds both in one shot
+ *  (the reducer mirrors the render-safe `{label, cancel}` into the model at
+ *  `copy_enter`), so `_options[i]` is the content-thunk for the option shown
+ *  at `model.modal.copy.options[i]`. Pure predicate; a missing side can't trip it. */
+function _aligned(shown, held) {
+  return !shown || !held || shown.label === held.label;
+}
+
+/** Copy the module-held option at `idx` (the copy_commit Cmd).
+ *
+ *  Guards the index↔projection invariant at the use-site (#F4.4): if a future
+ *  change ever rebuilds `_options` without the parallel `model.modal.copy.options`
+ *  (or reorders one side), the index would copy a DIFFERENT option than the
+ *  highlighted label. Cold path — one copy per gesture; currently never fires. */
 function copySelect(idx) {
-  if (idx >= 0 && idx < _options.length) copyOption(_options[idx]);
+  if (idx < 0 || idx >= _options.length) return;
+  const held = _options[idx];
+  const shown = getModel().modal.copy.options[idx];
+  if (!_aligned(shown, held)) {
+    console.error(`[copy] index misalignment at idx=${idx}: shown "${shown.label}" vs held "${held.label}" — copy aborted`);
+    return;
+  }
+  copyOption(held);
 }
 
 /** Drop the module-held options (after commit/cancel). */
@@ -119,4 +140,7 @@ function renderCopyMenu() {
 
 module.exports = {
   collectOptions, copyOption, copySelect, clearOptions, renderCopyMenu, emitOSC52,
+  // Test-only — pins the #F4.4 index↔projection alignment invariant
+  // (test-index-align.js): the guard predicate.
+  _aligned,
 };
