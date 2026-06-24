@@ -9,10 +9,13 @@
  *     gated on arrange-ref change;
  *   - keep-in-view scroll clamp over every navigator pane (routes a `set_scroll`
  *     Msg via nav-state — single-writer; resize-as-Msg P2);
- *   - the viewer's derived `innerH` viewport-height (blessed-exception B — a
- *     direct same-slice write; see docs/v0.6.5-tea-reaudit.md);
  *   - the active terminal tab's PTY session reconcile (spawn-on-demand + resize;
  *     v0.6.5 §5).
+ *
+ * v0.6.6 FIX-2: the viewer's derived `innerH` is no longer written here.
+ * Blessed-exception B (the finalizer's direct same-slice write) is RETIRED — the
+ * value is threaded onto each viewer Msg by the viewer's `augmentMsg` and the
+ * viewer's own pure reducer commits it. See docs/v0.6.6.md.
  *
  * Was inlined in the Component fan-out file (`fanout.js`); #D4 split it out so
  * the loop's two pumps and this after-update phase have distinct, findable
@@ -99,24 +102,17 @@ function finalizeDispatch() {
       syncPanelScroll(p.paneId,
         geo.getPanelViewportH(layoutSlice, p.paneId, layoutSlice.dims, layout));
     }
-    // blessed-exceptions Phase A.1 — the viewer's `innerH` (the viewport-height
-    // cache its reducer reads for scroll/cursor clamps) is produced HERE, in
-    // the dispatch finalizer, from THIS dispatch's fresh Layout. One major/
-    // visible viewer. The `!==` guard preserves the viewer slice's reference
-    // identity when unchanged (the layout memo + downstream ref-equality
-    // depend on it).
-    const viewerTab = route.resolveTarget('viewer');
+    // v0.6.6 FIX-2 — the viewer's `innerH` is NO LONGER written here
+    // (blessed-exception B retired). It rides onto each viewer Msg via the
+    // viewer's `augmentMsg` (computed from the pane's committed geometry) and
+    // the viewer's own reducer commits it. What remains is the PTY reconcile.
     const viewerPaneId = route.resolveViewerPaneId();
-    if (viewerTab && viewerPaneId) {
-      const innerH = geo.getPanelViewportH(layoutSlice, viewerPaneId, layoutSlice.dims, layout, viewerPaneId);
-      const vs = route.getInstanceSlice(viewerTab);
-      if (vs && vs.innerH !== innerH) route.setInstanceSlice(viewerTab, { ...vs, innerH });
-
+    if (viewerPaneId) {
       // v0.6.5 §5 — PTY-session reconcile for the active terminal tab. This is
       // the side-effect that used to run in render (paint.js's
       // ensureSession/resizeSession); moving it here makes render a pure read
       // of the session buffer. It is the SAME dispatch-runtime reconcile
-      // category as the instance-mint above and the innerH write: ensure the
+      // category as the instance-mint above: ensure the
       // active terminal's PTY exists, and size it to the viewer pane's
       // COMMITTED geometry. visibleBoundsFor reads the committed arrange (not
       // render's drag-preview override), so the PTY holds its committed dims

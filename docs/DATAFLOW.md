@@ -178,9 +178,11 @@ is now retired:
     `paneBounds` field at all (#D7 2026-06-18 deleted it); the accessors
     honor a test-only `slice.paneBounds` override when a unit fixture injects
     one (to keep hit-test-math tests decoupled from layout-math).
-  - viewer `innerH` — was a direct `setInstanceSlice` from `render()`; now
-    computed in the post-dispatch finalizer (`dispatch/runtime/finalize.js`, Phase A.1) off
-    that dispatch's fresh Layout.
+  - viewer `innerH` — was a direct `setInstanceSlice` from `render()`; A.1 moved
+    it to the post-dispatch finalizer, then **v0.6.6 FIX-2 moved it again to the
+    viewer's OWN reducer**: `augmentMsg` stamps `msg.innerH` (the pane's committed
+    viewport height) onto each viewer Msg and the reducer commits it. No outside
+    writer remains — **blessed-exception B is retired** (`docs/v0.6.6.md`).
   - `setImmediate(terminal_exit)` from `renderTerminalOverlay` — retired
     v0.6.3 P5.1; PTY exit is event-driven from `pty-lifecycle.handleExit`.
 

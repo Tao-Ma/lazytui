@@ -353,6 +353,14 @@ already pure (`leaves/geometry.js`); these are write-backs so the input layer
 
 ### A.1 — innerH into the finalizer — ✅ SHIPPED 2026-06-14 (uncommitted)
 
+> **⚠️ SUPERSEDED — exception B RETIRED in v0.6.6 FIX-2 (2026-06-24).** A.1 moved
+> the `innerH` write from `render()` into the finalizer, which became
+> blessed-exception B (a runtime same-slice write). v0.6.6 eliminated B entirely:
+> `viewer.augmentMsg` now stamps `msg.innerH` (computed in the shell from the
+> pane's committed geometry) and the viewer's OWN pure reducer commits it, so
+> there is no outside writer of `slice.innerH`. The finalizer's innerH block is
+> deleted. See `docs/v0.6.6.md`. The A.1 record below is kept accurate-to-era.
+
 > **Location update (v0.6.5 B/S6, then #D4):** the finalizer (`finalizeDispatch`,
 > this innerH write = blessed-exception B) relocated `panel/api.js` →
 > `dispatch/fanout.js` when the Component fan-out moved to the dispatch layer
