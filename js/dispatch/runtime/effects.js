@@ -6,7 +6,7 @@
  *   - Root reducer (`runtime.update`) returns Cmd descriptors;
  *     `dispatch.applyMsg` runs them via `runEffects` here.
  *   - Component `update(msg, slice)` returns effect descriptors;
- *     `dispatch/fanout.dispatchMsg` runs them via `runEffects` here.
+ *     `dispatch/runtime/loop.dispatchMsg` runs them via `runEffects` here.
  *
  * Cmds and effects are the same thing — plain descriptors
  * (`{ type: 'show_selected_info' }`, `{ type: 'msg', msg }`).
@@ -36,7 +36,7 @@ function registerEffect(type, fn) {
 // dispatch layer, often async/off-tick) feeds Msgs back through this host
 // instead of importing `panel/api` upward. Built lazily on first runEffects so
 // the requires resolve after boot, never eagerly. dispatchMsg comes from
-// `dispatch/fanout` (the Component fan-out's home since B/S6).
+// `dispatch/runtime/loop` (the Component fan-out's home since B/S6).
 // See docs/v0.6.5-dispatch-loop.md "formalize injection".
 let _host = null;
 function _effectHost() {
@@ -325,7 +325,7 @@ function installBuiltins() {
   // thunk → OSC52, then drop the module options. idx<0 = cancel (just clear).
   registerEffect('copy_commit', (eff) => {
     const copy = require('../../overlay/copy');
-    if (eff.idx >= 0) copy.copySelect(eff.idx);
+    if (eff.idx >= 0) copy.copySelect(eff.idx, eff.label);
     copy.clearOptions();
   });
   // emit_osc52: the register's only effect — mirror a value to the OS
@@ -344,7 +344,7 @@ function installBuiltins() {
   });
   // cmdline_run: invoke the held match at the selected index.
   registerEffect('cmdline_run', (eff) => {
-    require('../control/cmdline').runAt(eff.sel, eff.args);
+    require('../control/cmdline').runAt(eff.sel, eff.args, eff.display);
   });
   // cmdline_clear: drop the held registry + reset render residue (submit/cancel).
   registerEffect('cmdline_clear', () => { require('../control/cmdline').clear(); });
