@@ -72,8 +72,43 @@ This release makes the module layer graph **fully acyclic** (`dep-walker`
 reports no layer SCCs in either mode) through a sequence of structural
 arcs. Specs: [docs/v0.6.5.md](docs/v0.6.5.md), `v0.6.5-tea-reaudit.md`,
 `v0.6.5-render-exit.md`, `v0.6.5-dispatch-loop.md`,
-`v0.6.5-reducer-cleanup-relocation.md`.
+`v0.6.5-reducer-cleanup-relocation.md`, `tea-review-2026-06-18.md`.
 
+- **TEA-conformance review #3 (D1–D17).** A fresh doc-/memory-blind re-read
+  of the source against canonical TEA produced 17 decisions, all resolved
+  on the `tea-review-fixes` branch (ledger:
+  [docs/tea-review-2026-06-18.md](docs/tea-review-2026-06-18.md)). The graph
+  was already acyclic and stayed so throughout. **Layering/file-layout:**
+  the stateful bottom-of-graph residents (`hub`, `render-queue`, `themes`)
+  carved into `leaves/infra/` so `leaves/` proper means *pure transform*
+  (D1/D3); the rest of `leaves/` sub-grouped by domain —
+  `free-config/ render/ text/ input/ wm/` (D2, cosmetic to the layer graph);
+  the runtime loop given a single home — `runtime/fanout.js` → `runtime/loop.js`
+  with the after-update phase split to `runtime/finalize.js` and the root-Msg
+  pump `applyMsg` co-located beside the Component pump (D4). **Purity/correctness:**
+  `render(model)` no longer defaults to `getModel()` — pure by construction (D6);
+  the theme palette is now *projected from `model.theme` at render entry* and the
+  `set_theme` effect retired, so a replayed Msg log reproduces the theme palette,
+  not just its name (D8); the root reducer is now pure of the ownership registry
+  (handler-stamped `msg.csOwner`/`msg.owners`, D9), `groups.update` reads a
+  handler-stamped `viewerTarget` instead of resolving route topology (D10), and the
+  dual "refresh viewer info" pathway collapsed to one Msg-driven cascade (D11).
+  **Cohesion:** the reducer monolith decomposed into nine per-modal sub-reducers
+  under `dispatch/update/modal/`, 1,055 → 343 LOC (D12). **Subscriptions:** a
+  canonical `Model → Sub` reconciler re-evaluated each dispatch — a pane leaving the
+  layout now tears its subscription down, fixing a placed-then-removed-pane sub leak
+  (D13). **Bounded non-TEA islands documented at the site:** the PTY/xterm pane (D14)
+  and its 250ms safety-net repaint, which an attempt to remove proved load-bearing
+  via `smoke/pty-overlay.js` (D15). Dead code dropped: the unconsumed broadcast
+  `{type:'hub'}` Msg that ran N no-op updates per publish (D17). Doc-only
+  reconciliations corrected the frame-purity boundary claim (D5) and the stale
+  renderer-as-writer / `innerH` history (D7/D16). A post-review hardening closed the
+  review's one residual: a use-site alignment guard for the closure-by-index Cmds
+  (`copy_commit`/`cmdline_run`) trips if a held closure table ever diverges from the
+  model projection the user saw, instead of silently invoking the wrong closure
+  (F4.4; `test-index-align.js`). No intended behavior change beyond the D13 leak fix
+  (the F4.4 guard is an inert tripwire today); suite 97/97, smoke 11/11, acyclic both
+  modes, benches parity per commit. (tip `b66abfe`.)
 - **Render-exit (layer SCC 5→4).** The pure render tier moved down into
   `leaves/`: the panel renderer → `leaves/draw.js`, plus
   scrollbar/painter/themes/render-queue; `decor` split into a pure half

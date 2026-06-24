@@ -14,9 +14,10 @@
  * is *runtime* code — it belongs in the dispatch layer, ABOVE the Components it
  * drives, not among them. Reads the Component registry from `panel/api`
  * (dispatch→panel, a legal down-edge) and runs effects via `./effects`
- * (intra-dispatch). The root-Msg pump (`applyMsg`) is its twin — see `./dispatch`
- * (it lands here too once #D4b co-locates the two pumps). `applyMsg` does NOT run
- * the finalizer (root Msgs don't move panes); only the Component path here does.
+ * (intra-dispatch). The root-Msg pump (`applyMsg`) is its twin and now lives in
+ * this same file (#D4b co-located the two pumps here; `./dispatch` re-exports
+ * `applyMsg`). `applyMsg` does NOT run the finalizer (root Msgs don't move panes);
+ * only the Component path here does.
  */
 'use strict';
 

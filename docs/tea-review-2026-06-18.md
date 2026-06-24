@@ -31,6 +31,45 @@ judgment call — see Decisions Ledger) · `FORWARD` (parked for a later pass to
 
 ---
 
+## Coverage & disposition — every reviewed item (all 5 passes)
+
+> Complete at-a-glance record of **everything the review examined** — not only the 17
+> decisions, but also the surfaces examined and found conforming (`FINE`) and the
+> methodology notes (`NOTE`). The 17 decisions carry full as-built `**RESOLVED**` prose in
+> the Decisions Ledger below; the `FINE`/`NOTE` rows had no collected disposition before and
+> are recorded here so the review's coverage is fully traceable. **Outcome: all 17 decisions
+> resolved on branch `tea-review-fixes` (tip `b66abfe`); the conformance findings needed no
+> change.** Suite 96/96 · smoke 11/11 · acyclic both modes · benches parity, held per commit.
+
+| Finding | Pass | What was examined | Disposition | Resolution (as built) | Commit |
+|---------|------|-------------------|-------------|-----------------------|--------|
+| F1.1 | 1 | `leaves/` conflates "pure" with "bottom-of-import-graph" | **D1** | Carved stateful `hub`/`render-queue`/`themes` → `leaves/infra/`; `leaves/` proper = pure | `a76be2a` |
+| F1.2 | 1 | `leaves/` is a flat 30-file domain grab-bag | **D2** | Sub-grouped by domain (`free-config/ render/ text/ input/ wm/`); cosmetic to layer graph | `42830a6` |
+| F1.3 | 1 | View layer bisected `render/` ↔ `leaves/`; impure `render-queue` on pure side | **D3** | One anomaly moved with D1; split axis now cleanly purity | `a76be2a` |
+| F1.4 | 1 | TEA runtime loop has no single home (smeared across 3 files) | **D4** | `fanout.js`→`runtime/loop.js` + `finalize.js` split; `applyMsg` co-located; two-pump shape named not unified | `c642b82`,`b659ada` |
+| F1.5 | 1 | Mapper agent claimed two `ports/` dirs; only `js/ports/` exists | **NOTE** | Methodology only — agent output must be source-verified; no arch defect. No action | — |
+| F2.1 | 2 | Frame is not pure of the model; replayability overclaimed (≥5 off-model live reads) | **D5** | Doc correction — stated real boundary `f(model + named live stores)`; enumerated them | `1f520c8` |
+| F2.2 | 2 | `render(model = getModel())` self-fetches the global model | **D6** | Dropped default; signature pure-by-construction; queue seam uses model-fetching thunks | `ad4b1ba` |
+| F2.3 | 2 | Renderer writes `paneBounds` into the layout slice (2nd writer) | **D7** | Premise already stale (A.2/A.3 retired it); deleted dead field decl + fixed stale comments | `d18304d` |
+| F2.4 | 2 | Theme stored twice (model name + leaf palette cache) | **D8** | Make-pure — palette projected from `model.theme` at render entry; `set_theme` effect retired | `b66abfe` |
+| F3.1 | 3 | Root reducer "ALMOST pure" — 2 residual ownership-registry reads | **D9** | Drive-to-empty — handler-stamps `msg.csOwner`/`msg.owners`; reducer now pure of registry | `b01106c` |
+| F3.2 | 3 | `groups.update` reads route topology behind a false "Reducer-pure" comment | **D10** | `viewerTarget` resolved in impure shell, threaded via `ctx`; comment now true | `8bdcf39` |
+| F3.3 | 3 | Dual "refresh viewer info" pathway (reducer Cmd vs imperative helper) | **D11** | `show_selected_info` folded into `filter_exit` arm; handler now a single `applyMsg` | `4c56393` |
+| F3.4 | 3 | Reducer monolith (1,055 LOC / 59-arm switch + inline modal sub-machines) | **D12** | Decomposed into 9 per-modal sub-reducers under `dispatch/update/modal/`; 1,055→343 LOC | `c962bd0` |
+| F4.1 | 4 | Subscriptions wired once at mount, never re-evaluated/torn down | **D13** | Canonical `Model → Sub` reconciler each dispatch; pane-remove now unsubscribes (leak fixed) | `dc1cf84` |
+| F4.2 | 4 | PTY data bypasses the Msg loop into an off-model xterm island | **D14** | Accept-bounded — `#D14` header at `io/terminal.js`; model holds lifecycle, xterm holds contents | `b66abfe` |
+| F4.3 | 4 | 250ms blind repaint timer drives render off the wall clock | **D15** | Examined + KEPT — removal regressed `smoke/pty-overlay.js` (async PTY race); load-bearing | `b66abfe` |
+| F4.4 | 4 | `Cmd`s are pure `{type,…}` data; unavoidable closures held by index | **FINE** → **hardened** | Upholds "Cmds serializable." Conformed already; the caveat (nothing asserted the index↔projection `_options`/`_full` vs `model.modal.*` stay aligned) is now closed — use-site guards (`copy.copySelect`, `cmdline.runAt`) trip on a label/display divergence + `test-index-align.js` pins both construction parallelism and the guard predicate | guard+test |
+| F4.5 | 4 | Does `render` emit any Msg/dispatch/model write? | **FINE** | `grep` clean — render is pure on the dispatch axis (unidirectional queue seam). No action | — |
+| — (add.) | 4 | Terminal dims double-stored (`model.dims` + `io/term` mirror render reads) | folded **D5** | Recorded under D5's off-model-read family; covered by the boundary doc correction | `1f520c8` |
+| F5.1 | 5 | Finalizer writes `viewer.innerH` direct into slice, vs `set_scroll` Msg beside it | **D16** | KEEP exception B — `innerH` is reducer-read so must stay in-slice; D7≠D16; history corrected | `620ecf2` |
+| F5.2 | 5 | `hub.publish` broadcasts an unconsumed `{type:'hub'}` Msg to every instance | **D17** | Drop (YAGNI) — removed emit + dead `setDispatch` seam; `'hub'` out of `BROADCAST_TYPES` | `1f4b879` |
+| F5.3 | 5 | Routing / commit-before-effects ordering / re-entrancy cap | **FINE** | Examined — sound TEA runtime mechanics (state commits before effects, depth-gated finalizer, recursion cap 32). No action | — |
+
+**Tally.** 21 findings across 5 passes → 17 became decisions (all RESOLVED), 3 examined-and-conforming (`FINE`: F4.4, F4.5, F5.3), 1 methodology `NOTE` (F1.5), 1 addendum folded into D5. **No open residuals:** F4.4's lone hardening suggestion (the index↔projection alignment guard/test) was added after the review — use-site tripwires in `copy.copySelect` / `cmdline.runAt` plus `test-index-align.js` — so every reviewed item is now either resolved, hardened, or examined-and-conforming.
+
+---
+
 ## Decisions Ledger (running — appended by every pass)
 
 > Open judgment calls surfaced by the review. Nothing here is applied; each awaits a call.
@@ -81,7 +120,24 @@ judgment call — see Decisions Ledger) · `FORWARD` (parked for a later pass to
 - **D4 — Should the TEA "program/runtime" loop have a single identifiable home?**
   Today the cycle is smeared across `control/dispatch.js`, `runtime/fanout.js`, and
   `runtime/effects.js`, with two parallel dispatch pumps (root-Msg vs Component-Msg).
-  Evidence: F1.4. *Undecided.*
+  Evidence: F1.4.
+  **RESOLVED (give the loop a single home; two-pump shape confirmed essential, so named
+  not unified — user-directed 2026-06-18).** Two commits. **D4a (`c642b82`):** renamed
+  `runtime/fanout.js` → `runtime/loop.js` — the file IS the TEA runtime for the Component
+  layer; the routing name "fanout" undersold it — and split the once-per-dispatch
+  after-update phase (scroll clamp + viewer `innerH` + PTY reconcile + instance reconcile,
+  gated at depth-0 exit) out into its own `runtime/finalize.js`, because that phase is "the
+  runtime's after-update hook," NOT routing (F1.4's specific complaint about the finalizer's
+  home). **D4b (`b659ada`):** moved the root-Msg pump `applyMsg` out of `control/dispatch.js`
+  (where it sat under a dir that otherwise means "input→Msg") **into `runtime/loop.js`**,
+  co-locating it with the Component-Msg pump `dispatchMsg`; `control/dispatch.js` re-exports
+  it for callers. So both pumps now live in ONE identifiable home (`runtime/loop.js`) and the
+  after-update phase is its own named module. The duplication was examined and judged
+  **essential, not accidental** — the root model and per-instance Component slices are
+  genuinely different state homes with different writers — so the two pumps are *named and
+  placed together*, not merged into one. The asymmetry is documented at the site: `applyMsg`
+  does NOT run the finalizer (root Msgs don't move panes); only the Component path does.
+  Spec `docs/v0.6.5-dispatch-loop.md`. Suite 96/96, smoke 11/11, acyclic both modes, benches parity.
 - **D5 — Frame purity is overclaimed; reconcile it.** `store.js:61-77` asserts "a frame
   is a pure function of the model (and thus of the Msg log → replayable)," yet the render
   path reads ≥5 module-global live stores not reproduced by replaying Msgs (jobs, diag-log,
@@ -209,7 +265,22 @@ judgment call — see Decisions Ledger) · `FORWARD` (parked for a later pass to
 - **D12 — Decompose the reducer monolith (cohesion, not purity).** 1,055 LOC / 59-arm
   switch / all Cmd descriptors + the modal sub-machines (confirm/prompt/copy/cmdline/
   register-popup) inline. Consider nested sub-`update`s per modal sub-model (canonical TEA
-  scaling) vs keeping the flat switch (also legitimate). Evidence: F3.4. *Undecided.*
+  scaling) vs keeping the flat switch (also legitimate). Evidence: F3.4.
+  **RESOLVED (decompose into per-modal sub-reducers — user-directed 2026-06-18; `c962bd0`).**
+  Carved the nine self-contained modal state machines out of the root switch into
+  `dispatch/update/modal/*.js` — `confirm`, `prompt`, `copy`, `cmdline`, `register-popup`,
+  `filter`, `jobs`, `menu`, `diag-log` — each exporting `{ TYPES, update }` (its own Msg-type
+  list + its own arm-set). The root reducer now **delegates** via a `type → sub-reducer` Map
+  built from those `TYPES`, and keeps only the nav / chrome / lifecycle arms inline; shared
+  transforms used by more than one sub-reducer moved to `dispatch/update/model-ops.js`
+  (cycle-safe — a pure leaf of the update layer). `reducer.js` dropped **1,055 → 343 LOC**.
+  This is the cohesion improvement F3.4 named, with no correctness/purity change (every arm
+  was already a clean return-new transform). **One nuance recorded:** the textbook *nested*
+  sub-update (`updateCmdline(msg, model.modal.cmdline) → [nextCmdline, cmds]` over an isolated
+  modal sub-model) did NOT fit cleanly, because several modals also flip *shared* `model.modes`
+  flags — so the carve is by **file/cohesion over the full model**, not by walling each modal
+  to its own sub-slice. `test-msg-routing.js` updated to exercise delegation through the Map.
+  Suite 96/96, smoke 11/11, acyclic both modes, benches parity.
 - **D13 — Subscriptions: model-driven reconciliation vs mount-time-static.** Subs are wired
   once at Component mount (`state.js:47-65`), topic-keyed + deduped, never torn down
   (except app exit), and their existence can't depend on model state. Canonical TEA
@@ -865,6 +936,18 @@ Today they're rebuilt together (cmdline rebuilds `_full` alongside `matches` eac
 keystroke), so they stay synced — but it is a *parallel state channel*, and a future change
 that rebuilds one without the other would silently invoke the wrong closure. Worth a guard
 or a test asserting the lengths/identities stay aligned. Not a defect today. **FINE.**
+
+**Hardened (post-review, 2026-06-24).** Took both halves of the suggestion. (1) A **use-site
+guard** — a pure `_aligned(shown, held)` predicate in each module, checked in `cmdline.runAt`
+(display) and `copy.copySelect` (label) right before the closure fires: if the held entry's
+identity ever diverges from the model projection the user actually saw, the run/copy is
+aborted with a diagnostic instead of silently invoking the wrong closure. It sits on the
+**cold path** (one invoke per gesture — not the per-keystroke rebuild), so it's free, and it
+currently never trips (the two are built in lockstep). (2) A **test** — `test-index-align.js`
+pins both the construction parallelism on the real `rebuild()` path (`projection[i].display
+=== _full[i].display` for all `i`, incl. after a narrowing query) and the guard predicate's
+trip/no-trip behavior for both copy and cmdline. Suite 97/97 (the new file), smoke 11/11,
+acyclic both modes, hot-path benches unaffected (guards are cold-path only).
 
 ---
 
