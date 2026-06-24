@@ -578,6 +578,14 @@ arrangement) — slice-private but loaded via cross-layer Msgs.
 > groups don't collide on `tabState['action:test']` (B4 regression —
 > pre-fix, group A's view state restored onto group B's tab).
 
+> **⚠️ Being narrowed (v0.6.6 FIX-1).** The pattern below was the
+> pragmatic choice for "global by nature" data, but it is the #D5
+> render-reads-live-stores boundary. v0.6.6 folds `feature/jobs` /
+> `io/diag-log` / `feature/history` INTO the Model (sampled via Subs —
+> see "Live external state" below), so `render` reads only the Model.
+> The description that follows is kept accurate to the pre-FIX-1 code; do
+> NOT reach for it in new Components — use the Cmd/Sub recipe below.
+>
 > **Out-of-TEA module-local stores.** Two cross-cutting registries
 > live OUTSIDE the slice graph: `feature/history` (completion log
 > of every action that's run) and `feature/jobs` (live state of
@@ -604,6 +612,67 @@ arrangement) — slice-private but loaded via cross-layer Msgs.
 > the handler (`dispatch.handleJobsKey` at Return) resolves the
 > entry and passes it via `msg.job`, keeping the reducer pure.
 
+### Live external state — Model, Cmd, Sub (the consistent pattern)
+
+The golden rule: **`render` reads only the Model** (root model + the
+Component's slice). Nothing in `render` may reach into a module-local
+mutable store, the wall clock, the network, or a live process. Everything
+external reaches the screen by first being folded into the Model as a Msg.
+There are exactly two ways to produce that Msg:
+
+- **Cmd** — a one-shot effect descriptor returned from `update` as
+  `[next, cmds]`: "do this side effect once and feed the result back as a
+  Msg." Async fetches, file reads, clipboard writes, spawning a process.
+  Register the handler with `api.registerEffect(type, fn)`; it does the I/O
+  and `dispatchMsg`es the result.
+- **Sub** — a declared ongoing source: "while the model looks like this,
+  keep turning this source's events into Msgs." A Component exports
+  `subscriptions(paneDef, model) → [descriptors]`; `app/state.reconcileSubscriptions`
+  (#D13) diffs the desired set each dispatch and starts/stops the delta
+  (automatic teardown when the pane leaves the layout).
+
+Pick the primitive by feature shape:
+
+| Feature shape | Example | Use |
+|---|---|---|
+| One-shot effect with a result | copy to clipboard, read a file | **Cmd** → result Msg |
+| Async request / response | fetch docker containers, load a dir | **Cmd** → data Msg |
+| Ongoing external event source | timer tick, terminal resize, file watch, a streaming process, "the jobs registry changed" | **Sub** → one Msg per event |
+| Live external resource you must show | running procs, a log ring, command history | **Sub samples it into the Model**; `render` reads the mirror |
+| Foreign reactive system you cannot model | PTY / xterm buffer | **non-TEA island** (#D14) — documented boundary, kept minimal |
+
+The first four rows are pure TEA; only the last is an exception, and there
+is exactly one (`io/terminal.js`). This is the SAME shape that already makes
+the wall clock and theme replay-safe (`clock_tick → model.now`,
+`model.theme`): sample the impure source into the Model, then read the Model.
+
+**Recipe for a new Component with live state:**
+
+1. No module-local store that `render` reads. If it's on screen, it's in the
+   slice (or model).
+2. External input enters as Msgs — the impure shell (an effect body or a Sub
+   callback) reads the world ONCE and dispatches; `update(msg, slice)` stays
+   pure `(msg, slice) → [next, cmds]`.
+3. Ongoing source → a declared **Sub**, never a raw `setTimeout`/listener
+   (you get start/stop/teardown for free).
+4. One-shot work → a **Cmd** descriptor + a `registerEffect` handler.
+5. A model/registry fact needed inside the reducer → stamp it in
+   `augmentMsg`, don't read it in `update`.
+6. A truly foreign reactive widget → an **island**, documented like
+   `io/terminal.js`, with the live-read surface kept tiny.
+
+**Status + the one narrowing (v0.6.6).** The Sub seam today covers hub
+topics (inter-Component pub/sub); external OS sources (docker-events, the
+stdout resize listener, the terminal-overlay poll) are still hand-rolled
+timers — **FIX-3** extends the declarative seam to cover them so every
+ongoing source is declared uniformly. And the "Out-of-TEA module-local
+stores" pattern above (`feature/jobs`, `io/diag-log`, `feature/history`) is
+being **folded into the Model** (**FIX-1**, retiring the #D5 render-reads-
+live-stores boundary). Going forward: reserve out-of-TEA stores / islands
+for the irreducible foreign-reactive case, NOT as a default for "global"
+data. New Components follow the recipe above, not the legacy store pattern.
+(See `docs/v0.6.6.md`.)
+
 ## 13. Checklist for new features
 
 Before implementing, verify:
@@ -623,3 +692,4 @@ Before implementing, verify:
 - [ ] Does each piece of state live in the right home — Component slice for slice-shaped state with async work, root model for cross-cutting chrome (modes, modal sub-models, currentGroup)? (§12)
 - [ ] Does `update()` return a new slice (or `[slice, effects]`) rather than mutate root model, keep effects/I-O out of `update`, and never write any layer it doesn't own? Does it return a `_claimed` sentinel effect for keys it handles? (§12)
 - [ ] Are Component-specific Msgs wrapped via `api.wrap('name', msg)` at the dispatch site? (§12)
+- [ ] For live/external state: does it enter the Model via a **Cmd** (one-shot) or **Sub** (ongoing), with `render` reading only the Model — never a module-local store? Is any truly foreign reactive system an explicit, minimal island (not a default)? (§12 "Live external state")
