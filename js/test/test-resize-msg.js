@@ -224,6 +224,26 @@ describe('[9] viewer innerH is reducer-owned, threaded via augmentMsg (FIX-2)', 
   });
 });
 
+describe('[10] resize is a declared app-global Sub (FIX-3 Phase 2)', () => {
+  it('a real stdout "resize" event drives term_resized through the Sub', () => {
+    boot(120, 40);
+    // bootFresh → initState wires the subscription reconciler and runs a boot
+    // dispatch, so the app-global `resize` Sub (app/state.js#_subKinds.resize)
+    // is attached to process.stdout. Emitting the REAL event (not sm.resize,
+    // which dispatches term_resized directly) exercises the migrated listener:
+    // it must refresh the io/term mirror, dispatch term_resized, and land the
+    // new dims in the model.
+    eq(getInstanceSlice('layout').dims.cols, 120, 'boot dims');
+    process.stdout.columns = 88;
+    process.stdout.rows = 30;
+    process.stdout.emit('resize');
+    const after = getInstanceSlice('layout').dims;
+    eq(after.cols, 88, 'Sub listener dispatched term_resized → cols updated');
+    eq(after.rows, 30, 'rows updated');
+    eq(require('../io/term').cols(), 88, 'io/term mirror refreshed by the Sub');
+  });
+});
+
 process.stdout.columns = 100;
 process.stdout.rows = 40;
 report();

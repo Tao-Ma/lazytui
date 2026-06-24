@@ -151,7 +151,6 @@ function main() {
   // v0.6.4 Phase F — redraw (dispatch-then-paint) lives in the dispatch
   // layer now; paint.js is a pure view. tui orchestrates both.
   const { redraw } = require('../dispatch/control/dispatch');
-  const { scheduleRender } = require('../leaves/infra/render-queue');
   const { registerComponent, refreshAll } = require('../panel/api');
   const { setupKeyListener } = require('../dispatch/control/input');
   const { getModel } = require('../model/store');
@@ -315,28 +314,12 @@ function main() {
   // if xterm exposes a buffer-change signal (D14) — it does not.
   setInterval(() => renderTerminalOverlay(getModel()), 250);
 
-  // Handle resize (resize-as-Msg P1). The Msg lands the new size in the
-  // model synchronously — the term_resized arm is a field write, cheap
-  // enough for the 30+ events/sec a window-edge drag emits — while the
-  // expensive part (painting) stays coalesced behind scheduleRender's
-  // debounce. Besides initState's boot seed this listener is the only
-  // live terminal-size read; everything downstream reads layoutSlice.dims.
-  process.stdout.on('resize', () => {
-    // Keep io/term's COLS/ROWS mirror fresh. Pre-resize-as-Msg the
-    // render path refreshed it every frame (termDims → refreshSize);
-    // now geometry reads model dims, but footer/overlay/panel
-    // renderers still read cols()/rows() — without this the footer
-    // paints at the OLD bottom row every frame (mid-screen after a
-    // grow, covering a pane's top border).
-    require('../io/term').refreshSize();
-    const api = require('../panel/api');
-    require('../dispatch/runtime/loop').dispatchMsg(api.wrap('layout', {
-      type: 'term_resized',
-      cols: process.stdout.columns || 80,
-      rows: process.stdout.rows || 24,
-    }));
-    scheduleRender();
-  });
+  // Resize (resize-as-Msg P1) is now a declared app-global `resize` Sub
+  // (v0.6.6 FIX-3 Phase 2 — `app/state.js#_subKinds.resize`): the reconciler
+  // attaches the `process.stdout.on('resize')` listener, which refreshes
+  // io/term's mirror, dispatches `term_resized` (lands dims in the model), and
+  // repaints. Besides initState's boot seed this is the only live terminal-size
+  // read; everything downstream reads layoutSlice.dims.
 
   // T12: PTY teardown rides on the global cleanup() handler registered
   // earlier in main — cleanup invokes destroyAll itself. The previous

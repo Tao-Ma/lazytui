@@ -52,7 +52,7 @@ const navState = require('../panel/nav-state');
 // Memoized module refs (the reconciler runs per outermost dispatch; a fresh
 // relative require() each time is the ~tens-of-µs/call fs cost paint.js's hot
 // path also memoizes away). Cycle-safe: lazy + cached, like reconcilePaneInstances.
-let _apiRef, _routeRef, _mpoolRef, _hubRef;
+let _apiRef, _routeRef, _mpoolRef, _hubRef, _loopRef, _termRef;
 const _api = () => (_apiRef ||= require('../panel/api'));
 const _route = () => (_routeRef ||= require('../panel/route'));
 const _mpool = () => (_mpoolRef ||= require('../leaves/wm/pool'));
@@ -76,15 +76,49 @@ const _subKinds = {
     start: (d, ctx) => _hub().subscribe(d.topic, { window: d.window, onUpdate: () => ctx.scheduleRender() }),
     stop: (token) => _hub().unsubscribe(token),
   },
+  // Terminal resize (FIX-3 Phase 2) — the app-global SIGWINCH source. Was
+  // tui.js's `process.stdout.on('resize')` listener. On each resize: refresh
+  // io/term's COLS/ROWS mirror (footer/overlay/panel renderers still read
+  // cols()/rows()), dispatch the `term_resized` layout Msg (lands dims in the
+  // model — resize-as-Msg), and repaint. Singleton: one descriptor `{kind:'resize'}`.
+  resize: {
+    normalize: () => ({}),
+    key: () => 'resize',
+    start: (d, ctx) => {
+      const onResize = () => {
+        (_termRef ||= require('../io/term')).refreshSize();
+        ctx.dispatch(ctx.wrap('layout', {
+          type: 'term_resized',
+          cols: process.stdout.columns || 80,
+          rows: process.stdout.rows || 24,
+        }));
+        ctx.scheduleRender();
+      };
+      process.stdout.on('resize', onResize);
+      return onResize;
+    },
+    stop: (onResize) => process.stdout.removeListener('resize', onResize),
+  },
 };
+
+// App-global subscriptions — ongoing sources not owned by any pane. Pure
+// projection of the model, merged into the per-pane component subs by
+// `_desiredSubs`. (FIX-3 Phase 2: resize. Later phases: the terminal-overlay
+// poll + clock.) Always-desired today; future entries may be model-conditional
+// (e.g. the overlay poll only while a terminal tab is on-screen).
+function _appSubscriptions(/* model */) {
+  return [{ kind: 'resize' }];
+}
 
 // Pure projection: the DESIRED subscription set for the current state. Walks the
 // placed panes (layout arrange) and asks each pane's Component for its declared
 // subs, passing the root `model` so a sub can depend on model state (canonical
 // Model → Sub). Returns Map "<kind>:<handler key>" → { kind, desc }.
 function _desiredSubs(model) {
-  const components = _api()._components ? _api()._components() : null;
   const out = new Map();
+  // App-global sources first (resize today), then per-pane component subs.
+  for (const d of _appSubscriptions(model)) _addDesired(out, d);
+  const components = _api()._components ? _api()._components() : null;
   if (!components) return out;
   const arrange = _layoutSlice() && _layoutSlice().arrange;
   const placed = arrange ? _mpool().allPanesInColumns(arrange) : [];
@@ -138,8 +172,12 @@ function reconcileSubscriptions(model) {
 // into the loop. Today just `scheduleRender` (the hub kind's repaint-on-publish).
 // FIX-3 later phases add `dispatch` / `applyMsg` for interval/resize/process.
 function _subCtx() {
-  const { scheduleRender } = _api();
-  return { scheduleRender };
+  const api = _api();
+  return {
+    scheduleRender: api.scheduleRender,
+    wrap: api.wrap,
+    dispatch: (msg) => (_loopRef ||= require('../dispatch/runtime/loop')).dispatchMsg(msg),
+  };
 }
 
 // Test-only — tear down every live sub + clear the ledger (mirrors hub._reset /
