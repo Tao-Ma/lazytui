@@ -6,6 +6,8 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.5] — 2026-06-24
+
 ### Added
 
 - **Embedded-PTY scrollback + mouse.** The embedded terminal tab
@@ -2277,7 +2279,8 @@ release tarballs. Full pre-squash development history is preserved
 on the internal gitea mirror under the `backup/main-history` branch
 and the `v0.1.0-pre-squash` tag.
 
-[Unreleased]: https://github.com/Tao-Ma/lazytui/compare/v0.6.4...HEAD
+[Unreleased]: https://github.com/Tao-Ma/lazytui/compare/v0.6.5...HEAD
+[0.6.5]: https://github.com/Tao-Ma/lazytui/compare/v0.6.4...v0.6.5
 [0.6.4]: https://github.com/Tao-Ma/lazytui/compare/v0.6.3...v0.6.4
 [0.6.3]: https://github.com/Tao-Ma/lazytui/compare/v0.6.2...v0.6.3
 [0.6.2]: https://github.com/Tao-Ma/lazytui/compare/v0.5.0...v0.6.2
