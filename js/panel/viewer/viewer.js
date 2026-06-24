@@ -57,12 +57,13 @@ function _beginSelect(slice, line, col, kind, lines) {
   };
 }
 
-// Effective viewport for scroll/cursor clamps. The slice's `innerH` is
-// written by the per-dispatch finalizer (`dispatch/runtime/finalize.finalizeDispatch`,
-// direct setInstanceSlice on our own slice — was a wrapped
-// viewer_set_viewport Msg) so the reducer stays a pure function of
-// (slice, msg) — no cross-slice read of layout's render-time geometry.
-// (Pre-resize-as-Msg this was written from render() each frame.)
+// Effective viewport for scroll/cursor clamps. The slice's `innerH` is set by
+// the viewer's OWN reducer (`update`) from the `msg.innerH` fact that
+// `augmentMsg` stamps onto every viewer Msg (v0.6.6 FIX-2 — retired
+// blessed-exception B, the finalizer's direct same-slice write; before that
+// it was finalizer-written, and before resize-as-Msg, render-written). The
+// reducer stays a pure function of (slice, msg) — no cross-slice read of
+// layout geometry; the read lives in the impure shell (augmentMsg).
 // The pre-first-render fallback is `1`:
 // any viewer_scroll/append/cursor before paint still clamps inside
 // [0, lines.length - 1] instead of overshooting (the pre-fix bug was
@@ -370,6 +371,18 @@ function _finalize(result, originalSlice, vm) {
 }
 
 function update(msg, slice) {
+  // v0.6.6 FIX-2 — `innerH` (the pane's viewport height) arrives as a stamped
+  // Msg fact (augmentMsg computes it in the shell from the pane's committed
+  // geometry), so the viewer's OWN reducer is the single writer of
+  // slice.innerH — retiring blessed-exception B (the finalizer's direct
+  // setInstanceSlice into our slice). Project it onto the working slice at
+  // entry so every arm + delegated leaf reducer reads it through the usual
+  // `_innerH(slice)` / `slice.innerH` path with no signature changes. The
+  // `!==` guard preserves slice ref-identity when innerH is unchanged (the
+  // layout memo + downstream ref-equality depend on it). Tests that seed
+  // slice.innerH directly still work: they call update() with no msg.innerH,
+  // so the seeded value is preserved.
+  if (msg && msg.innerH > 0 && slice.innerH !== msg.innerH) slice = { ...slice, innerH: msg.innerH };
   // blessed-exceptions #3 — the viewer reducer is now PURE of getModel().
   // The model facts its line-derivation + tab-transition capture need are
   // threaded in as `msg.viewerModel` (a pt.viewerModelBundle) by the
@@ -1171,12 +1184,39 @@ function render(panel, w, h, slice, opts) {
   });
 }
 
-// blessed-exceptions #3 — the framework (api.js) calls this in the impure
-// dispatch shell to thread the viewer's model bundle into every Msg, so
-// update() stays pure of getModel(). Idempotent: a pre-attached bundle wins.
-function augmentMsg(msg, model) {
-  if (msg && msg.viewerModel) return msg;
-  return { ...msg, viewerModel: pt.viewerModelBundle(model, model && model.currentGroup) };
+// v0.6.6 FIX-2 — the pane's viewport height, computed in the impure shell so
+// the reducer reads it as a stamped fact (`msg.innerH`) rather than from a
+// finalizer-written slice field (retires blessed-exception B). Per-pane via the
+// slice's own paneId, falling back to the resolved primary viewer for the
+// singleton. Lazy requires keep the panel-layer edges cycle-safe (deferred,
+// like the rest of panel/). Returns 0 when geometry is unavailable (pre-boot /
+// no layout) → augmentMsg leaves msg.innerH unset and the slice fallback wins.
+let _routeRef, _geoRef;
+function _paneInnerH(slice) {
+  const route = (_routeRef || (_routeRef = require('../route')));
+  const geo = (_geoRef || (_geoRef = require('../../leaves/wm/geometry')));
+  const ls = route.serviceSlice('layout');
+  if (!ls || !ls.dims) return 0;
+  const viewerPaneId = route.resolveViewerPaneId();
+  const paneId = (slice && slice.paneId) || viewerPaneId;
+  if (!paneId) return 0;
+  return geo.getPanelViewportH(ls, paneId, ls.dims, undefined, viewerPaneId) || 0;
+}
+
+// blessed-exceptions #3 — the framework (loop._augment) calls this in the impure
+// dispatch shell to thread the viewer's model bundle + viewport height into
+// every Msg, so update() stays pure of getModel() and of layout geometry.
+// Idempotent: pre-attached facts win.
+function augmentMsg(msg, model, slice) {
+  let out = msg;
+  if (!out.viewerModel) {
+    out = { ...out, viewerModel: pt.viewerModelBundle(model, model && model.currentGroup) };
+  }
+  if (!(out.innerH > 0)) {
+    const ih = _paneInnerH(slice);
+    if (ih > 0) out = { ...out, innerH: ih };
+  }
+  return out;
 }
 
 module.exports = {

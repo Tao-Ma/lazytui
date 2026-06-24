@@ -874,16 +874,28 @@ single recurring "impurity", and it is *blessed-exception C* by design.
 
 The genuinely mutable surface is **concentrated and named**:
 - the **impure shell** (`dispatch/control/*` + `effects.js`) — reads + I/O (exc. C);
-- the **finalizer `innerH` write** (exc. B) — one same-slice runtime write;
 - the **#D5 boundary** — render reads off-model live stores (jobs/diag/history/
   PTY/term), and the terminal pane is a non-TEA island.
+
+(Exception **B** — the finalizer's `innerH` same-slice write — was RETIRED in
+v0.6.6 FIX-2; innerH is now threaded onto viewer Msgs and reducer-committed. §9.2.)
 
 ### 9.2 Standing blessed exceptions (the live set)
 
 | ID | Name | Site | Why kept | Status |
 |---|---|---|---|---|
-| **B** | Runtime-written derived viewport geometry (`innerH`) | `dispatch/runtime/finalize.js` (`setInstanceSlice(viewerTab, {...vs, innerH})`) | The viewer reducer *reads* `innerH` for scroll/cursor clamps → must be in-slice; it is a pure fn of layout, written once per dispatch by the runtime, not by render. | KEPT (TEA review #3 D16) |
 | **C** | Impure-shell model read (`getModel` / wall clock) | handlers in `dispatch/control/*`; `effects.js` (`arm_clock`'s `Date.now()`); the `augmentMsg` seam; `getModel()` in the pumps | The shell is impure by design; it reads ONCE and threads facts into Msgs so the reducers/Components stay pure. Removing it would only move the read, not eliminate it. | KEPT (by design) |
+
+**Exception B — RETIRED (v0.6.6 FIX-2).** Was: the finalizer wrote the viewer's
+derived `innerH` directly onto its slice (`setInstanceSlice(viewerTab, {...vs, innerH})`),
+the one structural same-slice runtime write. TEA review #3 D16 KEPT it on the
+premise "innerH is reducer-read so must stay in-slice" — but that premise only
+held if the value wasn't threaded. v0.6.6 threads it: `viewer.augmentMsg` stamps
+`msg.innerH` (computed in the shell from the pane's committed geometry) and the
+viewer's OWN pure reducer projects + commits it. The finalizer write is gone; the
+viewer's `update` is the single writer of `slice.innerH`. Zero test migration
+(`slice.innerH` stays a seed/fallback) and it fixes a latent multi-viewer bug
+(the finalizer only refreshed the *primary* viewer's innerH). See `docs/v0.6.6.md`.
 
 ### 9.3 #D5 replayability boundary (NOT an exception — a documented limit)
 
@@ -990,12 +1002,12 @@ A grep-diff of the catalog against the whole `js/` tree (excl. tests):
 decision layer** — every one of the ~150 Msg types resolves to a pure reducer
 arm `(state, msg) → [state, cmds]`, and every side effect is a data descriptor
 run by one interpreter. The mutable surface is **concentrated, named, and
-commented**: exception **B** (the finalizer's `innerH` same-slice write),
-exception **C** (the impure-shell reads — the input verbs of §10, the
-`augmentMsg` hooks of §7, and the effect bodies of §8, all of which read the
+commented**: exception **C** (the impure-shell reads — the input verbs of §10,
+the `augmentMsg` hooks of §7, and the effect bodies of §8, all of which read the
 model/registry and thread facts forward so reducers stay pure), and the **#D5
 boundary** (render reads off-model live stores; the terminal pane is a non-TEA
-island). There is **no scattered mutation** — the impurity is exactly the shell
+island). Exception **B** (the finalizer's `innerH` write) was RETIRED in v0.6.6
+FIX-2. There is **no scattered mutation** — the impurity is exactly the shell
 that the pure core is wrapped in, by design.
 
 ---

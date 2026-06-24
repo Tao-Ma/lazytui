@@ -176,35 +176,51 @@ describe('[7] resize refreshes the io/term mirror (footer paints at the NEW bott
 // produced by the dispatch FINALIZER, not by render(). These tests never
 // call render(), so a correct innerH proves the finalizer is the writer
 // (and that it tracks a resize freshly, off this dispatch's Layout).
-describe('[9] viewer innerH is produced by the finalizer, not render', () => {
+describe('[9] viewer innerH is reducer-owned, threaded via augmentMsg (FIX-2)', () => {
+  // v0.6.6 FIX-2 — innerH is no longer finalizer-written (blessed-exception B
+  // retired). It rides on each viewer Msg (augmentMsg stamps msg.innerH from
+  // the pane's committed geometry); the viewer's reducer projects + commits it.
+  // So it refreshes on the NEXT VIEWER Msg after a resize, not on the resize
+  // (layout) dispatch itself — and that's fine: slice.innerH is read only by
+  // the viewer's own reducer arms, which run only on viewer Msgs that carry the
+  // fresh value.
   const route = require('../panel/route');
   function viewerInnerH() {
     const t = route.resolveTarget('viewer');
     return t ? (getInstanceSlice(t) || {}).innerH : undefined;
   }
   function expectedInnerH() {
+    // Mirror augmentMsg's computation exactly (boundsFor path, no fresh layout
+    // — commit-fresh post-A.2).
     const ls = getInstanceSlice('layout');
-    const layout = geo.calcLayout(ls, ls.dims);
-    return geo.getPanelViewportH(ls, route.resolveViewerPaneId(), ls.dims, layout);
+    const vp = route.resolveViewerPaneId();
+    return geo.getPanelViewportH(ls, vp, ls.dims, undefined, vp);
+  }
+  // A no-op viewer Msg routes through loop._augment → viewer.augmentMsg (stamps
+  // msg.innerH) → the viewer's reducer projects + commits it. No render needed.
+  function pokeViewer() {
+    sm.api.dispatchMsg(sm.api.wrap('detail', { type: 'viewer_scroll', delta: 0 }));
   }
 
-  it('innerH is set after a dispatch with no render', () => {
+  it('innerH matches the viewport after a viewer Msg (no render)', () => {
     boot(120, 40);
-    // A bare dispatch (no render anywhere in this test) runs the finalizer.
     sm.api.dispatchMsg(sm.api.wrap('layout', { type: 'term_resized', cols: 120, rows: 40 }));
+    pokeViewer();
     const ih = viewerInnerH();
-    assert(typeof ih === 'number' && ih > 0, `viewer innerH produced by finalizer: ${ih}`);
+    assert(typeof ih === 'number' && ih > 0, `viewer innerH committed by reducer: ${ih}`);
     eq(ih, expectedInnerH(), 'innerH matches the viewer viewport height for this Layout');
   });
 
-  it('innerH tracks a resize freshly (no render, no one-frame lag)', () => {
+  it('innerH tracks a resize on the next viewer Msg (no render)', () => {
     boot(120, 40);
     sm.api.dispatchMsg(sm.api.wrap('layout', { type: 'term_resized', cols: 120, rows: 40 }));
+    pokeViewer();
     const tall = viewerInnerH();
     sm.api.dispatchMsg(sm.api.wrap('layout', { type: 'term_resized', cols: 120, rows: 20 }));
+    pokeViewer();
     const short = viewerInnerH();
-    assert(short < tall, `innerH shrank with the terminal (${tall} → ${short}) on the resize dispatch`);
-    eq(short, expectedInnerH(), 'innerH equals the post-resize viewport height immediately');
+    assert(short < tall, `innerH shrank with the terminal (${tall} → ${short}) after the resize`);
+    eq(short, expectedInnerH(), 'innerH equals the post-resize viewport height');
   });
 });
 

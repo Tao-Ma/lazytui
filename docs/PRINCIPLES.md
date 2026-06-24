@@ -273,7 +273,11 @@ overlay-subsystem reads, called out at the end):
   keep-in-view scroll clamp likewise no longer rides `calcLayout()`: it runs
   in the post-dispatch finalizer and routes through a `set_scroll` Msg
   (resize-as-Msg arc), so it is a dispatch-time single-writer update, not a
-  render-side write. (History: `docs/history/v0.5-layering.md`.)
+  render-side write. (History: `docs/history/v0.5-layering.md`.) The viewer's
+  `innerH` (the viewport height its reducer reads for scroll/cursor clamps) is
+  likewise no longer an outside-writer field: `viewer.augmentMsg` threads
+  `msg.innerH` onto each viewer Msg and the viewer's own reducer commits it
+  (v0.6.6 FIX-2 — retired blessed-exception B, the finalizer's same-slice write).
 - **Hub subscriptions** are DECLARED + RECONCILED — canonical TEA
   `subscriptions : Model → Sub` (#D13). A Component exports a pure
   `subscriptions(paneDef, model) → [{topic, window}]`; the framework
