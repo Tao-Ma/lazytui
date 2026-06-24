@@ -26,11 +26,16 @@ function update(model, msg) {
     case 'copy_select': {
       if (!model.modes.copyMode) return [model, []];
       const idx = model.modal.copy.idx;
+      // #F4.4 — carry the chosen option's `label` on the Cmd so the use-site
+      // alignment guard compares against what the user saw. Captured HERE
+      // (reduce time) because `next` clears `options`, so the effect can no
+      // longer read it back from the model.
+      const chosen = model.modal.copy.options[idx];
       const next = {
         ..._withModes(model, { copyMode: false }),
         modal: { ...model.modal, copy: { options: [], idx: 0 } },
       };
-      return [next, [{ type: 'copy_commit', idx }]];
+      return [next, [{ type: 'copy_commit', idx, label: chosen ? chosen.label : undefined }]];
     }
     case 'copy_cancel':
       if (!model.modes.copyMode) return [model, []];

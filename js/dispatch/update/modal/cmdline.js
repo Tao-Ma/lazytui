@@ -127,7 +127,13 @@ function update(model, msg) {
       };
       // cmdline_run resolves the module-held closure at `sel` + runs it with
       // the parsed args; cmdline_clear drops the held registry afterward.
-      return [next, had ? [{ type: 'cmdline_run', sel, args }, { type: 'cmdline_clear' }] : [{ type: 'cmdline_clear' }]];
+      // #F4.4 — carry the chosen entry's `display` on the Cmd so the use-site
+      // alignment guard can compare against what the user actually saw. It must
+      // be captured HERE (reduce time) because `next` clears `matches`, so the
+      // effect can no longer read it back from the model.
+      return [next, had
+        ? [{ type: 'cmdline_run', sel, args, display: chosen ? chosen.display : undefined }, { type: 'cmdline_clear' }]
+        : [{ type: 'cmdline_clear' }]];
     }
     case 'cmdline_cancel':
       if (!model.modes.cmdMode) return [model, []];

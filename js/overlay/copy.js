@@ -94,23 +94,27 @@ function copyOption(opt) {
  *  `model.modal.copy.options` — `collectOptions()` builds both in one shot
  *  (the reducer mirrors the render-safe `{label, cancel}` into the model at
  *  `copy_enter`), so `_options[i]` is the content-thunk for the option shown
- *  at `model.modal.copy.options[i]`. Pure predicate; a missing side can't trip it. */
-function _aligned(shown, held) {
-  return !shown || !held || shown.label === held.label;
+ *  at `model.modal.copy.options[i]`. `expectedLabel` is the label the user SAW,
+ *  captured at reduce time and carried on the `copy_commit` Cmd (NOT re-read
+ *  from the model — `copy_select` has already cleared `options`). Pure predicate;
+ *  `expectedLabel == null` can't trip it. */
+function _aligned(expectedLabel, held) {
+  return expectedLabel == null || !held || held.label === expectedLabel;
 }
 
 /** Copy the module-held option at `idx` (the copy_commit Cmd).
  *
  *  Guards the index↔projection invariant at the use-site (#F4.4): if a future
  *  change ever rebuilds `_options` without the parallel `model.modal.copy.options`
- *  (or reorders one side), the index would copy a DIFFERENT option than the
- *  highlighted label. Cold path — one copy per gesture; currently never fires. */
-function copySelect(idx) {
+ *  (or reorders one side), `_options[idx]` would be a DIFFERENT option than the
+ *  one the user selected — so we abort rather than copy the wrong content. Cold
+ *  path (one copy per gesture); compares against `expectedLabel` carried on the
+ *  Cmd, so it stays load-bearing even though the model projection is cleared. */
+function copySelect(idx, expectedLabel) {
   if (idx < 0 || idx >= _options.length) return;
   const held = _options[idx];
-  const shown = getModel().modal.copy.options[idx];
-  if (!_aligned(shown, held)) {
-    console.error(`[copy] index misalignment at idx=${idx}: shown "${shown.label}" vs held "${held.label}" — copy aborted`);
+  if (!_aligned(expectedLabel, held)) {
+    console.error(`[copy] index misalignment at idx=${idx}: expected "${expectedLabel}" vs held "${held.label}" — copy aborted`);
     return;
   }
   copyOption(held);
@@ -141,6 +145,8 @@ function renderCopyMenu() {
 module.exports = {
   collectOptions, copyOption, copySelect, clearOptions, renderCopyMenu, emitOSC52,
   // Test-only — pins the #F4.4 index↔projection alignment invariant
-  // (test-index-align.js): the guard predicate.
+  // (test-index-align.js): the guard predicate + a setter to drive the live
+  // copySelect() guard with controllable options.
   _aligned,
+  _setOptions: (o) => { _options = o; },
 };

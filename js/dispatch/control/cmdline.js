@@ -63,10 +63,13 @@ function rebuild(text) {
 /** Alignment tripwire (#F4.4). `_full` is parallel-indexed to
  *  `model.modal.cmdline.matches` — `rebuild()` builds both in one shot and the
  *  `cmdline_set_matches` reducer arm stores `matches` without reordering, so
- *  `_full[i]` is the run-closure for the entry shown at `matches[i]`. Pure
- *  predicate (no Msg, no closure invoke), so a missing side can't trip it. */
-function _aligned(shown, held) {
-  return !shown || !held || shown.display === held.display;
+ *  `_full[i]` is the run-closure for the entry shown at `matches[i]`.
+ *  `expectedDisplay` is the display the user SAW, captured at reduce time and
+ *  carried on the `cmdline_run` Cmd (NOT re-read from the model — `cmdline_submit`
+ *  has already cleared `matches` by the time this runs). Pure predicate;
+ *  `expectedDisplay == null` (no entry chosen) can't trip it. */
+function _aligned(expectedDisplay, held) {
+  return expectedDisplay == null || !held || held.display === expectedDisplay;
 }
 
 /** Run the module-held match at `sel` (the cmdline_run Cmd). Plugin commands
@@ -74,15 +77,16 @@ function _aligned(shown, held) {
  *
  *  Guards the index↔projection invariant at the use-site (#F4.4): if a future
  *  change ever rebuilds `_full` without the parallel `matches` (or reorders one
- *  side), the index the user selected would invoke a DIFFERENT closure than the
- *  highlighted label. Cold path — one run per gesture — so the check is free;
- *  it currently never fires (the two are built in lockstep). */
-function runAt(sel, args) {
+ *  side), `_full[sel]` would be a DIFFERENT closure than the entry the user
+ *  selected — so we abort rather than run the wrong command. Cold path (one run
+ *  per gesture); the check compares the held entry against `expectedDisplay`
+ *  carried on the Cmd, so it stays load-bearing even though the model projection
+ *  is already cleared. */
+function runAt(sel, args, expectedDisplay) {
   const match = _full[sel];
   if (!match) return;
-  const shown = getModel().modal.cmdline.matches[sel];
-  if (!_aligned(shown, match)) {
-    console.error(`[cmdline] index misalignment at sel=${sel}: shown "${shown.display}" vs held "${match.display}" — run aborted`);
+  if (!_aligned(expectedDisplay, match)) {
+    console.error(`[cmdline] index misalignment at sel=${sel}: expected "${expectedDisplay}" vs held "${match.display}" — run aborted`);
     return;
   }
   Promise.resolve(match.run(args)).catch(e => console.error('[cmd]', e.message));
@@ -335,7 +339,9 @@ module.exports = {
   // Test-only export — buffer parsing reused by test-cmdline-args.js.
   _splitQuery: splitQuery,
   // Test-only — pins the #F4.4 index↔projection alignment invariant
-  // (test-index-align.js): the guard predicate + the held displays.
+  // (test-index-align.js): the guard predicate, the held displays, and a
+  // setter to drive the live runAt() guard with controllable closures.
   _aligned,
   _fullDisplays: () => _full.map(e => e.display),
+  _setFull: (f) => { _full = f; },
 };
