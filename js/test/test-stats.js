@@ -273,11 +273,12 @@ describe('[15] framework reconciles declared subscriptions (Model → Sub, #D13)
     eq(hub.history('docker.stats', 'foo', 10).length, 0, 'nothing subscribed → nothing retained');
   });
 
-  it('_desiredSubs is a pure projection of the placed panes (keyed by topic:window)', () => {
+  it('_desiredSubs is a pure projection of the placed panes (keyed by kind:topic:window)', () => {
     _place([STATS_PANE]);
     const desired = state._desiredSubs(getModel());
     eq(desired.size, 1, 'one desired sub for the placed stats pane');
-    assert(desired.has('docker.stats:5'), 'keyed by topic:window');
+    assert(desired.has('hub:docker.stats:5'), 'keyed by <kind>:topic:window (FIX-3 Phase 1)');
+    eq(desired.get('hub:docker.stats:5').kind, 'hub', 'descriptor tagged with its kind');
   });
 });
 
