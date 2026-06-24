@@ -206,7 +206,7 @@ function _itemsFor(slice, panelType, hardcoded) {
   });
 }
 
-// Msg-enrichment hook (dispatch/fanout _runInstance / dispatchKeyToFocused). The
+// Msg-enrichment hook (dispatch/runtime/loop _runInstance / dispatchKeyToFocused). The
 // impure shell computes the per-pane facts the reducer needs — its pane def,
 // the resolved project base, the declared item rows, and the effective filter
 // — so update() stays pure of getModel()/getInstanceSlice()/getFilter().

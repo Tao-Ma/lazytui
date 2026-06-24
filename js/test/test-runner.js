@@ -267,7 +267,7 @@ try {
   require('../dispatch/runtime/effects').installBuiltins();
   const api = require('../panel/api');
   // B/S6 test shim — the Component fan-out (dispatchMsg / dispatchKeyToFocused)
-  // + setInstanceReconciler relocated to dispatch/runtime/fanout.js (the runtime lives
+  // + setInstanceReconciler relocated to dispatch/runtime/loop.js (the runtime lives
   // in the dispatch layer now). Production code calls them from there; the many
   // existing tests that drive them as `api.dispatchMsg(...)` keep working by
   // re-exposing them on the api object HERE (test-only; test/ is layering-exempt,

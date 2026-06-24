@@ -24,7 +24,7 @@
  * wrapper may be imported (panel→ports, legal down-edge) before its slot is
  * wired — only the eventual call must come after boot.
  *
- * `dispatchMsg`'s implementation lives in dispatch/runtime/fanout.js (B/S6 relocated the
+ * `dispatchMsg`'s implementation lives in dispatch/runtime/loop.js (B/S6 relocated the
  * Component fan-out to the dispatch layer); the seam just points at it.
  *
  * Wired at boot by dispatch/runtime/host-wiring.js#wirePanelHost (before the first

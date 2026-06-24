@@ -1,17 +1,17 @@
 /**
  * View painting — the rendering half of the render module. (v0.6.4
  * Theme B: split out of the old `render/geometry.js` god-file; the
- * layout math lives in `leaves/geometry.js`. The thin facade that
+ * layout math lives in `leaves/wm/geometry.js`. The thin facade that
  * re-exported both was deleted in wm-geo P2 — paint consumers import
  * this module directly.) Owns the per-frame paint:
  * the three view-mode dispatchers (renderNormal/Half/Full), the Rect
  * compositing + diff cache (`_frame` → painter.paintFrame), the panel
  * chrome glyphs, the terminal overlay, and `render()` itself.
  *
- * Paint depends on leaves/geometry (one direction only): renderNormal/
+ * Paint depends on leaves/wm/geometry (one direction only): renderNormal/
  * Half/Full call `geo.calcLayout(layoutSlice, dims)` to get the Rect
  * list; hit-test accessors (boundsFor / getPanelViewportH /
- * getCurrentLayout) live in leaves/geometry.
+ * getCurrentLayout) live in leaves/wm/geometry.
  *
  * Render writes NO slice state: pane geometry is a pure DERIVED value
  * (geometry.boundsFor/visibleBoundsFor compute it from arrange + dims via
@@ -66,7 +66,7 @@ const { renderFooter } = require('./footer');
 // relative-path require() resolution is ~70µs/call (see R1 / pane-tabs);
 // at 6+4 calls/frame that was ~0.7ms/frame on require alone. Resolve
 // once at runtime. `||=` caches the ref. (chromeFor + the glyph-markup
-// builders are pure chrome derivation, now in leaves/draw — render→leaf,
+// builders are pure chrome derivation, now in leaves/render/draw — render→leaf,
 // no cycle; the slice-reading hit-tests went to panel/chrome-hittest.)
 let _routeRef; const _route = () => (_routeRef ||= require('../panel/route'));
 let _decorRef; const _decor = () => (_decorRef ||= require('../leaves/render/draw'));
@@ -393,7 +393,7 @@ function composeRects(layout, model) {
 // safety net (no longer needed — rect compositing handles gaps).
 //
 // (The per-frame scroll-clamp that lived here — _syncScrollClamp —
-// moved to the post-dispatch finalizer in dispatch/runtime/fanout.js (resize-as-Msg
+// moved to the post-dispatch finalizer in dispatch/runtime/finalize.js (resize-as-Msg
 // P3): every state change is a dispatch, so the clamp runs there, and
 // render dispatches NOTHING. test-scroll-clamp.js pins render purity.)
 
@@ -428,7 +428,7 @@ function renderNormal(model, arrangeOverride) {
 // the on-screen panels, routed through painter.composeRows.
 //
 // Half view projects two panes side-by-side, resolved by the shared
-// geo.halfProjection helper (see leaves/geometry): a left + right slot, each
+// geo.halfProjection helper (see leaves/wm/geometry): a left + right slot, each
 // an ephemeral API-settable selection that defaults to the historical
 // "focused non-detail pane + major viewer" derivation. Either slot may hold
 // any pane (two viewers side-by-side is allowed); the right slot may be null
@@ -444,7 +444,7 @@ function renderHalf(model, arrangeOverride) {
   const focusedPanel = allPanels().find(p => mpane.paneMatchesFocus(p, layoutSlice.focus));
   if (!focusedPanel) return renderNormal(model, arrangeOverride);
   // v0.6.4 — the two projected panes come from the shared halfProjection
-  // (leaves/geometry): an ephemeral, API-settable selection (`view_place_pane`)
+  // (leaves/wm/geometry): an ephemeral, API-settable selection (`view_place_pane`)
   // that falls back to the historical "focused non-detail + major viewer"
   // derivation when unset. Either slot may hold ANY pane — including a
   // viewer — so two viewers can sit side-by-side. getPanelViewportH reads
@@ -570,7 +570,7 @@ function renderTerminalOverlay(model, arrangeOverride) {
   // v0.6.5 §5 — render is READ-ONLY for the PTY overlay. The session's
   // lifecycle (lazy spawn on first activation + resize to the committed pane
   // geometry) is reconciled by the dispatch finalizer
-  // (dispatch/runtime/fanout.js), the same runtime step that mints pane
+  // (dispatch/runtime/finalize.js), the same runtime step that mints pane
   // instances and derives the viewer's innerH. Here we just read the buffer.
   // A null session means the finalizer hasn't spawned it yet (no activation
   // dispatch has run) — skip this frame; the next render shows it.
