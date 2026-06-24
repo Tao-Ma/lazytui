@@ -71,7 +71,7 @@ greppable.
      loadDir / openFile
      cmdline_rebuild / cmdline_run / cmdline_clear
      destroy_pty_session / emit_osc52 / copy_commit
-     force_full_repaint / quit / run_binding / menu_action
+     force_full_repaint / run_binding / menu_action
         │
         ▼
 ═══════════════════════════ STATE ══════════════════════════════════
@@ -159,17 +159,18 @@ dispatch. See [v0.6.4-input.md](v0.6.4-input.md).
 writes the root model; only each Component's own `update` writes its
 slice. Cross-layer writes have a Msg channel (the `msg` Cmd — wrapped
 payload fans out to a Component, flat payload re-enters the root
-reducer) — no path where module X writes layer Y's state directly
-except the blessed render-side exceptions:
-
-  - `viewer.slice.tabBounds` written by the viewer's `detailTitle`
-    (tab-bar hit-test cache). P4.1 moved this off `layout`'s slice onto
-    the viewer's OWN slice — an own-slice render-time write, not the
-    cross-slice one it used to be. (The last remaining render-side slice
-    write; an optional A.2 follow-on.)
+reducer) — no path where module X writes layer Y's state directly.
+Render writes NO slice state at all; every former render-side write
+is now retired:
 
   RETIRED render-side writes (blessed-exceptions arc) — render is now a
   pure reader of these:
+  - `viewer.slice.tabBounds` — was written by the viewer's `detailTitle`
+    (tab-bar hit-test cache). Retired in A.3 (2026-06-14): now
+    compute-on-read via `viewer.tabBoundsFor`, a pure
+    `(slice, model, hotkey) → bounds` projection the input layer
+    recomputes on demand. render() builds the strip only for the title
+    and writes nothing; `slice.tabBounds` has no writer or reader.
   - `layout.paneBounds` — was written by each render-mode; now a PURE
     DERIVED value (Phase A.2). `geometry.boundsFor`/`visibleBoundsFor`
     compute it from `(arrange, dims, viewMode, focus, halfView)` via the
