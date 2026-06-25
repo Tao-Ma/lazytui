@@ -104,16 +104,15 @@ describe('[diag-log] reducer arms', () => {
     return { modes: { diagLogMode: false }, modal: { diagLog: { cursor: 0, scroll: 0 } } };
   }
 
-  it('diag_log_open flips the mode + resets cursor + arms the frame clock', () => {
+  it('diag_log_open flips the mode + resets cursor + seeds model.now', () => {
     const [m, cmds] = update(model(), { type: 'diag_log_open', now: 777 });
     eq(m.modes.diagLogMode, true, 'mode on');
     eq(m.modal.diagLog.cursor, 0, 'cursor reset');
-    // Age overlay open seeds model.now + arms the gated frame clock
-    // (model.now / tick arc — docs/model-now-tick.md).
+    // Age overlay open seeds model.now; the frame clock ticks via the
+    // model-conditional `clock` interval Sub (FIX-3 Phase 6), so the open arm
+    // emits NO Cmd (was an arm_clock).
     eq(m.now, 777, 'now seeded from msg.now');
-    eq(m.clockArmed, true, 'frame clock armed');
-    eq(cmds.length, 1, 'arm_clock cmd');
-    eq(cmds[0].type, 'arm_clock');
+    eq(cmds.length, 0, 'no Cmd — the clock is a declared Sub');
   });
 
   it('diag_log_open is a no-op when already open', () => {

@@ -202,35 +202,12 @@ function installBuiltins() {
   registerEffect('destroy_pty_session', (eff) => {
     try { require('../../io/terminal').destroySession(eff.id); } catch (_) {}
   });
-  // tick: the recurring-timer primitive — the self-re-arming-tick Cmd.
-  // Waits `ms`, then re-dispatches `msg` as a Component Msg. A Component drives
-  // a periodic loop by RE-EMITTING this effect from the handler for its tick
-  // Msg (self-arming, owned by the model — not a framework poll loop). `unref`
-  // so a pending tick never keeps the process alive (clean teardown on quit +
-  // in tests).
-  registerEffect('tick', (eff) => {
-    if (!eff || typeof eff.ms !== 'number' || !eff.msg) return;
-    const t = setTimeout(() => {
-      try { require('./loop').dispatchMsg(eff.msg); } catch (_) { /* registry gone */ }
-    }, eff.ms);
-    if (t && typeof t.unref === 'function') t.unref();
-  });
-  // arm_clock: the frame-clock tick (model.now / tick arc —
-  // docs/model-now-tick.md). Unlike the generic `tick` (which re-dispatches
-  // a verbatim Msg), this reads the wall clock HERE in the impure shell
-  // (sanctioned — blessed exception C) and applyMsg's a `clock_tick` carrying
-  // the FRESH `now`, so the render path can drop its own Date.now(). It's a
-  // ROOT-reducer Msg → applyMsg, not api.dispatchMsg. The clock_tick arm
-  // re-emits this Cmd while an age overlay stays open; `unref` so a pending
-  // tick never holds the process open (clean teardown on quit + in tests).
-  registerEffect('arm_clock', (eff) => {
-    const ms = (eff && typeof eff.ms === 'number') ? eff.ms : 1000;
-    const t = setTimeout(() => {
-      try { require('../control/dispatch').applyMsg({ type: 'clock_tick', now: Date.now() }); }
-      catch (_) { /* registry gone */ }
-    }, ms);
-    if (t && typeof t.unref === 'function') t.unref();
-  });
+  // (FIX-3 Phase 6 — the `tick` (generic self-re-arming-timer Cmd) and
+  // `arm_clock` (frame-clock self-re-arm) effects are RETIRED. Recurring work
+  // is now a declared `interval` subscription (app/state.js#_subKinds.interval):
+  // docker's poll and the frame clock both ride it, and the runtime owns the
+  // timer + teardown instead of a Component re-emitting a Cmd. See
+  // docs/v0.6.6.md §7 + PRINCIPLES §12.)
   // (#D8 — the `set_theme` effect that synced the leaves/infra/themes palette
   // cache from model.theme is RETIRED. The palette is now projected from
   // model.theme at the render entry (paint.js render(model) → themes.setTheme),

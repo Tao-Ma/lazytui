@@ -163,12 +163,11 @@ describe('[jobs_open] flips jobsMode + resets cursor/scroll', () => {
     eq(next.modes.jobsMode, true);
     eq(next.modal.jobs.cursor, 0, 'cursor reset');
     eq(next.modal.jobs.scroll, 0, 'scroll reset');
-    // Opening an age overlay seeds model.now + arms the frame clock
-    // (model.now / tick arc — docs/model-now-tick.md).
+    // Opening an age overlay seeds model.now; the frame clock ticks via the
+    // model-conditional `clock` interval Sub (FIX-3 Phase 6), so the open arm
+    // emits NO Cmd (was an arm_clock).
     eq(next.now, 123, 'now seeded from msg.now');
-    eq(next.clockArmed, true, 'frame clock armed');
-    eq(cmds.length, 1);
-    eq(cmds[0].type, 'arm_clock');
+    eq(cmds.length, 0, 'no Cmd — the clock is a declared Sub, not an armed tick');
   });
   it('idempotent — opening when already open is a no-op', () => {
     let m = _newModel();
@@ -197,35 +196,31 @@ describe('[jobs_close] flips jobsMode off; idempotent', () => {
   });
 });
 
-describe('[clock_tick] gated frame clock (model.now / tick arc)', () => {
-  it('advances model.now from msg.now + re-arms while an age overlay is open', () => {
+describe('[clock_tick] advances model.now (cadence is the `clock` interval Sub)', () => {
+  it('advances model.now from msg.now — NO re-arm Cmd (FIX-3 Phase 6)', () => {
     let m = _newModel();
-    m = { ...m, modes: { ...m.modes, jobsMode: true }, clockArmed: true };
+    m = { ...m, modes: { ...m.modes, jobsMode: true } };
     runtime.setModel(m);
     const [next, cmds] = runtime.update(m, { type: 'clock_tick', now: 5000 });
     eq(next.now, 5000, 'now advanced');
-    eq(next.clockArmed, true, 'stays armed');
-    eq(cmds.length, 1, 're-armed');
-    eq(cmds[0].type, 'arm_clock');
+    eq(cmds.length, 0, 'no re-arm — the `clock` interval Sub drives cadence');
   });
-  it('lapses (clockArmed→false, no re-arm) when no age overlay is open', () => {
-    let m = _newModel();
-    m = { ...m, clockArmed: true };   // both overlays closed
+  it('advances now regardless of overlay state (the Sub gates declaration, not the arm)', () => {
+    let m = _newModel();   // both overlays closed
     runtime.setModel(m);
     const [next, cmds] = runtime.update(m, { type: 'clock_tick', now: 6000 });
-    eq(next.now, 6000, 'now still advances on the final tick');
-    eq(next.clockArmed, false, 'disarmed — loop lapses');
-    eq(cmds.length, 0, 'no re-arm');
+    eq(next.now, 6000, 'now advances');
+    eq(cmds.length, 0, 'no Cmd');
   });
-  it('re-open while a tick is still pending does not double-arm', () => {
-    // clockArmed already true (pending tick) → jobs_open adds no arm_clock.
-    let m = _newModel();
-    m = { ...m, clockArmed: true };
-    runtime.setModel(m);
-    const [next, cmds] = runtime.update(m, { type: 'jobs_open', now: 1 });
-    eq(next.modes.jobsMode, true);
-    eq(next.clockArmed, true);
-    eq(cmds.length, 0, 'no second arm_clock — the pending tick re-arms');
+});
+
+describe('[clock Sub] declared only while an age overlay is open', () => {
+  const state = require('../app/state');
+  it('jobsMode → a `clock` interval Sub is in the desired set; closed → not', () => {
+    const open = state._desiredSubs({ modes: { jobsMode: true } });
+    assert(open.has('interval:clock:1000'), 'clock interval declared while jobs overlay open');
+    const closed = state._desiredSubs({ modes: {} });
+    assert(!closed.has('interval:clock:1000'), 'no clock interval when no age overlay is open');
   });
 });
 

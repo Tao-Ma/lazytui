@@ -22,20 +22,10 @@ function withModal(model, patch) {
   return { ...model, modal: { ...model.modal, ...patch } };
 }
 
-// Frame-clock cadence (model.now / tick arc — docs/model-now-tick.md).
-// 1s matches the human-visible age resolution of the jobs/diag overlays.
-const CLOCK_MS = 1000;
+// (FIX-3 Phase 6 — the gated frame-clock loop is no longer armed here. The
+// `*_open` arms just set their mode + seed `now`; the clock ticks via the
+// model-conditional `clock` interval Sub, declared while an age overlay is
+// open — app/state.js#_appSubscriptions. The old `armClock`/`arm_clock`/
+// `CLOCK_MS` self-re-arm is retired.)
 
-// Arm the gated frame-clock loop if it isn't already running. Returns the
-// [model, cmds] pair so an *_open arm can `return armClock(opened)`. The
-// `arm_clock` effect reads the wall clock in the impure shell (blessed
-// exception C) and dispatches `clock_tick` carrying the fresh `now`; the
-// clock_tick arm re-emits this Cmd while an age overlay stays open and lets
-// it lapse (clockArmed→false) otherwise. Idempotent: a second open while
-// armed adds no Cmd, so jobs+diag open together never double-arm.
-function armClock(model) {
-  if (model.clockArmed) return [model, []];
-  return [{ ...model, clockArmed: true }, [{ type: 'arm_clock', ms: CLOCK_MS }]];
-}
-
-module.exports = { withModes, withModal, armClock, CLOCK_MS };
+module.exports = { withModes, withModal };

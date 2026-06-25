@@ -52,7 +52,7 @@ const navState = require('../panel/nav-state');
 // Memoized module refs (the reconciler runs per outermost dispatch; a fresh
 // relative require() each time is the ~tens-of-µs/call fs cost paint.js's hot
 // path also memoizes away). Cycle-safe: lazy + cached, like reconcilePaneInstances.
-let _apiRef, _routeRef, _mpoolRef, _hubRef, _loopRef, _termRef, _paintRef;
+let _apiRef, _routeRef, _mpoolRef, _hubRef, _loopRef, _termRef, _paintRef, _dispatchRef;
 const _api = () => (_apiRef ||= require('../panel/api'));
 const _route = () => (_routeRef ||= require('../panel/route'));
 const _mpool = () => (_mpoolRef ||= require('../leaves/wm/pool'));
@@ -175,10 +175,10 @@ const _subKinds = {
 
 // App-global subscriptions — ongoing sources not owned by any pane. Pure
 // projection of the model, merged into the per-pane component subs by
-// `_desiredSubs`. (FIX-3 Phase 2: resize. Later phases: the terminal-overlay
-// poll + clock.) Always-desired today; future entries may be model-conditional
-// (e.g. the overlay poll only while a terminal tab is on-screen).
-function _appSubscriptions(/* model */) {
+// `_desiredSubs`. (FIX-3: resize [always]; terminal-overlay poll [Phase 3,
+// while a terminal tab is on-screen]; frame clock [Phase 6, while an age
+// overlay is open].)
+function _appSubscriptions(model) {
   const subs = [{ kind: 'resize' }];
   // #D15 terminal-overlay repaint backstop — only WHILE a terminal tab is
   // on-screen (FIX-3 Phase 3). The off-model PTY/xterm buffer (#D14) has async
@@ -193,6 +193,17 @@ function _appSubscriptions(/* model */) {
     subs.push({
       kind: 'interval', id: 'overlay-repaint', ms: 250,
       onTick: () => (_paintRef ||= require('../render/paint')).renderTerminalOverlay(getModel()),
+    });
+  }
+  // Frame clock (model.now) — ticks ONLY while an age overlay (jobs/diag) is
+  // open, so an idle TUI emits no ticks and the replay log stays quiet (FIX-3
+  // Phase 6; was the arm_clock self-re-arm gated on model.clockArmed). onTick
+  // reads the wall clock in the shell (blessed exc. C) and applyMsg's a flat
+  // `clock_tick` carrying the fresh `now`.
+  if (model && model.modes && (model.modes.jobsMode || model.modes.diagLogMode)) {
+    subs.push({
+      kind: 'interval', id: 'clock', ms: 1000,
+      onTick: (ctx) => ctx.applyMsg({ type: 'clock_tick', now: Date.now() }),
     });
   }
   return subs;
@@ -272,7 +283,10 @@ function _subCtx() {
   return {
     scheduleRender: api.scheduleRender,
     wrap: api.wrap,
+    // dispatch = the wrapped-Msg pump (Component Msgs); applyMsg = the root
+    // pump (flat root-reducer Msgs, e.g. clock_tick).
     dispatch: (msg) => (_loopRef ||= require('../dispatch/runtime/loop')).dispatchMsg(msg),
+    applyMsg: (msg) => (_dispatchRef ||= require('../dispatch/control/dispatch')).applyMsg(msg),
   };
 }
 

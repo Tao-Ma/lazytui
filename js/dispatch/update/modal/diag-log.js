@@ -7,7 +7,7 @@
  */
 'use strict';
 
-const { withModes: _withModes, withModal: _withModal, armClock: _armClock } = require('../model-ops');
+const { withModes: _withModes, withModal: _withModal } = require('../model-ops');
 
 const TYPES = ['diag_log_open', 'diag_log_close', 'diag_log_nav', 'diag_log_clear', 'diag_log_save'];
 
@@ -15,11 +15,13 @@ function update(model, msg) {
   switch (msg.type) {
     case 'diag_log_open':
       if (model.modes.diagLogMode) return [model, []];
-      return _armClock({
+      // `now` stamped by the handler; the frame clock ticks via the
+      // model-conditional `clock` interval Sub (FIX-3 Phase 6).
+      return [{
         ..._withModes(model, { diagLogMode: true }),
         modal: { ...model.modal, diagLog: { cursor: 0, scroll: 0 } },
         now: msg.now || model.now,
-      });
+      }, []];
     case 'diag_log_close':
       if (!model.modes.diagLogMode) return [model, []];
       return [_withModes(model, { diagLogMode: false }), []];

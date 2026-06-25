@@ -11,7 +11,7 @@
  * per-modal sub-reducers under `./modal/`, each `(model, msg) → [model, cmds]`
  * over its own `model.modal.<name>` + mode flag. This file keeps the
  * nav/chrome/lifecycle arms and DELEGATES modal Msgs via the `_MODAL_BY_TYPE`
- * map below. The shared write helpers (`withModes` / `withModal` / `armClock`)
+ * map below. The shared write helpers (`withModes` / `withModal`)
  * live in `./model-ops` so both this reducer and the modal modules import them
  * without a cycle (reducer → modal/* → model-ops; the modals never import back).
  *
@@ -56,7 +56,7 @@ const route = require('../../panel/route');
 // three are re-exported below for back-compat (the app/runtime shim + tests).
 const { init, getModel, setModel } = require('../../model/store');
 // Shared root-model write helpers (#D12) — also used by the modal sub-reducers.
-const { withModes: _withModes, CLOCK_MS } = require('./model-ops');
+const { withModes: _withModes } = require('./model-ops');
 
 // Per-modal sub-reducers (#D12). Each exports { TYPES, update(model,msg) }.
 const confirm = require('./modal/confirm');
@@ -239,17 +239,12 @@ function update(model, msg) {
       return [{ ...model, focused }, []];
     }
     // Frame-clock tick (docs/model-now-tick.md). Advance model.now from the
-    // shell-stamped msg.now, then re-arm ONLY while an age overlay (jobs /
-    // diag) is still open — otherwise drop clockArmed so the loop lapses
-    // (idle = no ticks). The *_open arms (in modal/jobs + modal/diag-log)
-    // arm the clock; this chrome arm keeps it running.
-    case 'clock_tick': {
-      const advanced = { ...model, now: msg.now || model.now };
-      if (advanced.modes.jobsMode || advanced.modes.diagLogMode) {
-        return [advanced, [{ type: 'arm_clock', ms: CLOCK_MS }]];
-      }
-      return [{ ...advanced, clockArmed: false }, []];
-    }
+    // shell-stamped msg.now. FIX-3 Phase 6: the cadence is the model-conditional
+    // `clock` interval Sub (app/state.js#_appSubscriptions — declared while an
+    // age overlay is open, torn down when it closes), so this arm no longer
+    // self-re-arms or tracks a clockArmed latch.
+    case 'clock_tick':
+      return [{ ...model, now: msg.now || model.now }, []];
     case 'set_theme': {
       // Theme selection flows through update like any other state change.
       // model.theme is the SINGLE source of truth; the palette cache the pure
