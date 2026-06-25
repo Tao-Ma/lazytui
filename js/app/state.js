@@ -52,12 +52,13 @@ const navState = require('../panel/nav-state');
 // Memoized module refs (the reconciler runs per outermost dispatch; a fresh
 // relative require() each time is the ~tens-of-µs/call fs cost paint.js's hot
 // path also memoizes away). Cycle-safe: lazy + cached, like reconcilePaneInstances.
-let _apiRef, _routeRef, _mpoolRef, _hubRef, _loopRef, _termRef, _paintRef, _dispatchRef, _historyRef;
+let _apiRef, _routeRef, _mpoolRef, _hubRef, _loopRef, _termRef, _paintRef, _dispatchRef, _historyRef, _diagRef;
 const _api = () => (_apiRef ||= require('../panel/api'));
 const _route = () => (_routeRef ||= require('../panel/route'));
 const _mpool = () => (_mpoolRef ||= require('../leaves/wm/pool'));
 const _hub = () => (_hubRef ||= require('../leaves/infra/hub'));
 const _history = () => (_historyRef ||= require('../feature/history'));
+const _diag = () => (_diagRef ||= require('../io/diag-log'));
 
 // Live subscriptions: key → { kind, token }. The single source of what's
 // currently running; the reconcile diff is computed against it. `stop` routes
@@ -239,6 +240,10 @@ function _appSubscriptions(model) {
   subs.push({
     kind: 'store-mirror', id: 'history',
     store: _history(), msgType: 'history_synced', field: 'history',
+  });
+  subs.push({
+    kind: 'store-mirror', id: 'diag',
+    store: _diag(), msgType: 'diag_synced', field: 'diagLog',
   });
   return subs;
 }

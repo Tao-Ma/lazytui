@@ -53,6 +53,23 @@ describe('[diag-log] buffer', () => {
   });
 });
 
+describe('[diag-log] setOnChange contract (store-mirror seam, FIX-1)', () => {
+  it('fires cb on every mutation (record / clear); null unregisters', () => {
+    diag.clear();
+    let fires = 0;
+    diag.setOnChange(() => { fires++; });
+    diag.warn('a', '1');            // record → fire
+    diag.error('b', '2');           // record → fire
+    eq(fires, 2, 'each record fired the change cb');
+    diag.clear();                   // clear → fire
+    eq(fires, 3, 'clear fired the change cb');
+    diag.setOnChange(null);         // unregister
+    diag.warn('c', '3');
+    eq(fires, 3, 'no fire after setOnChange(null)');
+    diag.clear();
+  });
+});
+
 describe('[diag-log] strict-miss producer (route get/setInstanceSlice)', () => {
   // Split-arc P2 — the silent kind-name fallback is DELETED; a miss
   // whose id names a known kind records `strict-miss` (once per id)
@@ -151,6 +168,13 @@ describe('[diag-log] reducer arms', () => {
     const open = model(); open.modes.diagLogMode = true;
     const [m] = update(open, { type: 'diag_log_close' });
     eq(m.modes.diagLogMode, false, 'mode off');
+  });
+
+  it('diag_synced lands the whole snapshot on model.diagLog (FIX-1)', () => {
+    const snap = [{ level: 'warn', code: 'x', message: 'y', t: 1 }];
+    const [m, cmds] = update(model(), { type: 'diag_synced', diagLog: snap });
+    eq(m.diagLog, snap, 'model.diagLog is the synced snapshot');
+    eq(cmds.length, 0, 'no Cmd — pure model write');
   });
 });
 

@@ -29,7 +29,6 @@
 const { esc } = require('../leaves/text/ansi');
 const { renderOverlay, viewportDims } = require('../leaves/render/draw');
 const { getModel } = require('../model/store');
-const diag = require('../io/diag-log');
 
 const MAX_W = 90;
 const FOOTER_ROWS = 2;   // blank + hint
@@ -53,7 +52,7 @@ function _msg(text, w) {
 /** Visible body rows (used by the dispatch diag_log_nav clamp).
  *  Re-derived each call from current term size + diagnostic count. */
 function viewportRows() {
-  const n = diag.size();
+  const n = (getModel().diagLog || []).length;
   const ROWS = viewportDims().rows;
   const wantH = n + 2 /* borders */ + FOOTER_ROWS;
   const h = Math.min(wantH, ROWS - 2);
@@ -66,7 +65,11 @@ function viewportRows() {
 // (paint.render) always threads model.now; a bare call should fail loudly.
 function renderDiagLog(now) {
   if (!getModel().modes.diagLogMode) return;
-  const list = diag.snapshot();              // newest-first
+  // FIX-1 stage 2 — read the store-mirror'd snapshot off the model, not the
+  // off-model io/diag-log buffer live. The store-mirror cb keeps model.diagLog
+  // current on each diag mutation, so a diagnostic arriving while the window is
+  // open still shows (now via diag_synced). newest-first.
+  const list = getModel().diagLog || [];
   const d = getModel().modal.diagLog || { cursor: 0, scroll: 0 };
   const COLS = viewportDims().cols;
   const wantW = Math.min(MAX_W, COLS - 4);

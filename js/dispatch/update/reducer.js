@@ -252,6 +252,11 @@ function update(model, msg) {
     // list-shape changes (start/end), so every dispatch IS a change.
     case 'history_synced':
       return [{ ...model, history: msg.history }, []];
+    // v0.6.6 FIX-1 stage 2 — the diagnostics ring (io/diag-log) mirrors itself
+    // into the model via the store-mirror Sub. Whole-snapshot; the diag overlay
+    // reads model.diagLog. Fires on every diag mutation (low-frequency).
+    case 'diag_synced':
+      return [{ ...model, diagLog: msg.diagLog }, []];
     case 'set_theme': {
       // Theme selection flows through update like any other state change.
       // model.theme is the SINGLE source of truth; the palette cache the pure
