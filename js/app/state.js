@@ -52,7 +52,7 @@ const navState = require('../panel/nav-state');
 // Memoized module refs (the reconciler runs per outermost dispatch; a fresh
 // relative require() each time is the ~tens-of-µs/call fs cost paint.js's hot
 // path also memoizes away). Cycle-safe: lazy + cached, like reconcilePaneInstances.
-let _apiRef, _routeRef, _mpoolRef, _hubRef, _loopRef, _termRef;
+let _apiRef, _routeRef, _mpoolRef, _hubRef, _loopRef, _termRef, _paintRef;
 const _api = () => (_apiRef ||= require('../panel/api'));
 const _route = () => (_routeRef ||= require('../panel/route'));
 const _mpool = () => (_mpoolRef ||= require('../leaves/wm/pool'));
@@ -99,6 +99,31 @@ const _subKinds = {
     },
     stop: (onResize) => process.stdout.removeListener('resize', onResize),
   },
+  // Recurring timer (FIX-3 Phase 3). Descriptor `{kind:'interval', id, ms, onTick}`.
+  // `id` makes the key stable + unique per logical source so the reconciler
+  // never restarts a live interval across dispatches. `onTick(ctx)` runs each
+  // tick — the canonical Sub→Msg form is `(ctx) => ctx.dispatch(msg)`; the
+  // overlay-repaint poll uses a direct paint. Self-re-arming setTimeout (NOT
+  // setInterval) so a slow tick can't pile up, and `unref` so a pending tick
+  // never holds the process open (clean teardown on quit + in tests).
+  interval: {
+    normalize: (d) => (d && d.id && d.ms > 0 && typeof d.onTick === 'function' ? d : null),
+    key: (d) => `${d.id}:${d.ms}`,
+    start: (d, ctx) => {
+      let timer = null;
+      let stopped = false;
+      const tick = () => {
+        if (stopped) return;
+        try { d.onTick(ctx); } catch (e) { console.error(`[sub:interval:${d.id}] ${e && e.message}`); }
+        timer = setTimeout(tick, d.ms);
+        if (timer && timer.unref) timer.unref();
+      };
+      timer = setTimeout(tick, d.ms);
+      if (timer && timer.unref) timer.unref();
+      return () => { stopped = true; if (timer) clearTimeout(timer); };
+    },
+    stop: (cancel) => cancel(),
+  },
 };
 
 // App-global subscriptions — ongoing sources not owned by any pane. Pure
@@ -107,7 +132,31 @@ const _subKinds = {
 // poll + clock.) Always-desired today; future entries may be model-conditional
 // (e.g. the overlay poll only while a terminal tab is on-screen).
 function _appSubscriptions(/* model */) {
-  return [{ kind: 'resize' }];
+  const subs = [{ kind: 'resize' }];
+  // #D15 terminal-overlay repaint backstop — only WHILE a terminal tab is
+  // on-screen (FIX-3 Phase 3). The off-model PTY/xterm buffer (#D14) has async
+  // race windows the event-driven repaints (PTY write / tab-activation / any
+  // dispatch) miss; this is the eventual-consistency poll. Was tui.js's
+  // always-on `setInterval(renderTerminalOverlay, 250)` — now a model-conditional
+  // Sub: the timer EXISTS only while a terminal tab is active (the reconciler
+  // starts it on activation, stops it on switch-away), instead of running idle
+  // forever. `onTick` reads getModel() LIVE (ticks fire 250ms later, after the
+  // declaring model is stale). Guarded by smoke/pty-overlay.
+  if (_termTabOnScreen()) {
+    subs.push({
+      kind: 'interval', id: 'overlay-repaint', ms: 250,
+      onTick: () => (_paintRef ||= require('../render/paint')).renderTerminalOverlay(getModel()),
+    });
+  }
+  return subs;
+}
+
+// Is the active viewer showing a terminal tab? Decides whether the #D15 overlay
+// poll is desired. Defensive try/catch: early boot / unit setups without a
+// resolvable detail slice answer "no" (so the poll isn't declared there).
+function _termTabOnScreen() {
+  try { return require('../panel/viewer/tabs').isTerminalTab(); }
+  catch (_) { return false; }
 }
 
 // Pure projection: the DESIRED subscription set for the current state. Walks the

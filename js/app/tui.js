@@ -147,7 +147,13 @@ function main() {
 
   // Lazy-load TUI runtime so CLI mode stays free of node-pty + render deps.
   const { hideCursor } = require('../io/term');
-  const { renderTerminalOverlay } = require('../render/paint');
+  // Load paint.js for its SIDE EFFECT: at module load it registers its
+  // renderers into the render-queue seam (`setRenderers`, paint.js bottom).
+  // `paintNow()`/`scheduleRender()` no-op until that runs, so this must happen
+  // before the first `redraw()` below. (Until v0.6.6 FIX-3 this load rode in on
+  // the `renderTerminalOverlay` import used by the overlay-poll setInterval;
+  // that poll is now a model-conditional Sub, but the load-order anchor stays.)
+  require('../render/paint');
   // v0.6.4 Phase F — redraw (dispatch-then-paint) lives in the dispatch
   // layer now; paint.js is a pure view. tui orchestrates both.
   const { redraw } = require('../dispatch/control/dispatch');
@@ -309,10 +315,11 @@ function main() {
   // (the review's D15) and `smoke/pty-overlay.js` EMPIRICALLY caught the
   // regression (the command marker stopped painting) — so it stays. It's the
   // adapted "render outside the loop" cost of the deliberately non-TEA xterm
-  // island; renderTerminalOverlay early-returns when no terminal tab is active,
-  // so the poll is a no-op except while the island is on-screen. Eliminable only
-  // if xterm exposes a buffer-change signal (D14) — it does not.
-  setInterval(() => renderTerminalOverlay(getModel()), 250);
+  // island. As of v0.6.6 FIX-3 Phase 3 it's a model-conditional `interval` Sub
+  // (`app/state.js#_appSubscriptions`): declared + running ONLY while a terminal
+  // tab is on-screen, instead of an always-on `setInterval` that no-op'd
+  // otherwise. Eliminable only if xterm exposes a buffer-change signal (D14) —
+  // it does not.
 
   // Resize (resize-as-Msg P1) is now a declared app-global `resize` Sub
   // (v0.6.6 FIX-3 Phase 2 — `app/state.js#_subKinds.resize`): the reconciler
