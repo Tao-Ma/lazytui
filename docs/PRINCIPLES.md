@@ -138,7 +138,7 @@ and breaking `visibleLen()` width calculation, misaligning borders.
   `  \\[1] Containers  Status of containers in selected group`
   ```
 
-`esc()` replaces `[` → `\[`. Defined in `js/leaves/ansi.js` (a pure leaf).
+`esc()` replaces `[` → `\[`. Defined in `js/leaves/text/ansi.js` (a pure leaf).
 
 ## 8. Selected lines: plain text in `[reverse]`, no inner markup
 
@@ -341,7 +341,8 @@ resolved both:
 - **Snapshot tests.** Same-state-twice can be asserted in unit
   tests without elaborate setup. `js/test/test-render-idempotent.js`
   is the canonical example.
-- **Diff repaint.** `layout.js#paintColumns()` writes only the rows
+- **Diff repaint.** `leaves/render/painter.js` (`composeRows` +
+  `paintFrame`, driven from `render/paint.js`) writes only the rows
   that changed since the previous frame. If render were
   non-idempotent the diff cache would silently desync — the user
   sees stale pixels.

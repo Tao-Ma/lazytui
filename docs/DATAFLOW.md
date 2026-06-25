@@ -11,9 +11,9 @@ greppable.
     focus events)           PTY data, etc.)     fetch resolved)
         │                       │                   │
         ▼                       ▼                   ▼
-   js/dispatch/control/input.js    js/dispatch/runtime/stream.js  direct dispatchMsg
-   • SGR mouse parse        js/io/terminal.js   (from a setTimeout/
-   • paste accumulator     • PTY mgmt            setImmediate cb)
+   js/dispatch/control/input.js    js/dispatch/runtime/stream.js  a declared Sub cb
+   • SGR mouse parse        js/io/terminal.js   (interval/process-stream/
+   • paste accumulator     • PTY mgmt            resize; app/state.js)
         │
         ▼
 ════════════════════════════ DISPATCH ══════════════════════════════
@@ -54,24 +54,25 @@ greppable.
      runEffects(cmds)                 (chrome / modal /     │
                                        framework state)    │
    dispatchMsg({ kind, msg })     ←───────────────────────┤
-     [slice', effects] = comp.update(msg, route.getSlice(kind))
-     route.setSlice(kind, slice') ←── Component reducer
-     runEffects(effects)              (single-writer per slice)
+     [slice', effects] = comp.update(msg, route.getInstanceSlice(id))
+     route.setInstanceSlice(id, slice') ←── Component reducer
+     runEffects(effects)              (single-writer per slice; id = routed instance)
         │
         ▼
 ═══════════════════════════ EFFECTS ════════════════════════════════
    runEffects(effects)                 (js/dispatch/runtime/effects.js)
      msg           → applyMsg / dispatchMsg routed by msg.kind
                                        (cycle cap @ 32 deep; T28)
-     tick(ms, msg) → setTimeout      (async re-entry; not depth-counted)
      render        → scheduleRender (50ms debounce)
      show_selected_info
      do_run / run_action
-     dockerFetch / dockerEventsStart / dockerExec / dockerShell
+     dockerFetch / dockerExec / dockerShell
      loadDir / openFile
      cmdline_rebuild / cmdline_run / cmdline_clear
      destroy_pty_session / emit_osc52 / copy_commit
      force_full_repaint / run_binding / menu_action
+   (recurring work + ongoing external sources are NOT effects — they are
+    declared Subs reconciled by app/state.js, FIX-3; see STATE + Notes)
         │
         ▼
 ═══════════════════════════ STATE ══════════════════════════════════
@@ -86,7 +87,7 @@ greppable.
                                 throttled metrics-mirror Sub, Finding B — the
                                 stats graph reads this, not the hub live)
 
-   Component slices (js/leaves/route.js, nested store)
+   Component slices (js/panel/route.js, nested instance store)
      layout         focus, viewMode, arrange, freeConfig
                     (no paneBounds field — pane geometry is pure-derived, #D7)
      detail         lines, scroll, tab, search, select, cursor,
@@ -111,7 +112,7 @@ greppable.
         │
         ▼
 ═══════════════════════════ RENDER ═════════════════════════════════
-   render()                       (js/render/layout.js)
+   render()                       (js/render/paint.js)
      1. calcLayout → layout rects (pure derived pane geometry + heights;
         no slice write)
         (pure — render dispatches nothing; the keep-in-view scroll
@@ -141,9 +142,11 @@ a multi-step cascade (e.g. groups switch → reset_group_context →
 3× set_cursor + multisel_clear + clear_filter + viewer_reset_chrome).
 T28 caps depth at 32 around the `msg` Cmd handler specifically —
 direct `applyMsg`/`dispatchMsg` calls from async producers (PTY
-onExit, docker events, stream onData, the `tick` handler, the
-`cmdline_rebuild` writeback) are not depth-counted; they re-enter
-through ordinary JS event-loop turns.
+onExit, stream onData, a declared Sub's callback — `interval` /
+`process-stream` / `resize` / `store-mirror` / `metrics-mirror`,
+reconciled by `app/state.js`, FIX-3 — and the `cmdline_rebuild`
+writeback) are not depth-counted; they re-enter through ordinary JS
+event-loop turns.
 
 **Intent seam (v0.6.4 Theme F).** Keyboard and mouse converge on one
 semantic vocabulary before they reach a reducer. The nav/activation core
