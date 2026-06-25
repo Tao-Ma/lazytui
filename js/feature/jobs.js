@@ -24,11 +24,13 @@ let _seq = 0;
 
 // Mirrorable-store contract (v0.6.6 FIX-1, docs/v0.6.6.md §8.1): the single
 // change-notify seam the store-mirror Sub injects its cb into, so the registry
-// mirrors itself into model.jobs without importing the dispatch loop. Replaces
-// the direct `scheduleRender()` calls below 1:1 (the cb dispatches jobs_synced,
-// which repaints via the normal dispatch→render path — so no new dispatches vs
-// the old scheduleRender). Low-frequency (a handful of live jobs), so it fires
-// on every mutation (register / update / close / clearCompleted).
+// mirrors itself into model.jobs without importing the dispatch loop. The cb
+// dispatches jobs_synced, whose reducer arm emits a `render` Cmd — that Cmd is
+// what repaints (applyMsg does NOT repaint on its own; the pre-release review
+// caught that swapping the old direct `scheduleRender()` calls for this cb 1:1
+// had dropped the repaint, restored as the render Cmd). Low-frequency (a handful
+// of live jobs), so it fires on every mutation (register / update / close /
+// clearCompleted).
 let _onChange = null;
 function setOnChange(cb) { _onChange = cb || null; }
 function _notify() { if (_onChange) _onChange(); }

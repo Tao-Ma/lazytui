@@ -8,6 +8,7 @@
 'use strict';
 
 const hub = require('../leaves/infra/hub');
+const { update } = require('../app/runtime');
 const { describe, it, assert, eq, report } = require('./test-runner');
 
 // Per-suite harness: history.js subscribes to actions.lifecycle on first
@@ -153,6 +154,17 @@ describe('[11] setOnChange contract (store-mirror seam, FIX-1)', () => {
     h.setOnChange(null);                 // unregister
     h.start('after-unregister', '');
     eq(fires, 2, 'no fire after setOnChange(null)');
+  });
+});
+
+describe('[12] history_synced arm lands the snapshot on model.history + render Cmd', () => {
+  it('whole-snapshot write + render Cmd', () => {
+    const snap = [{ id: 1, label: 'build', startedAt: 1, endedAt: 2 }];
+    const [m, cmds] = update({ history: [] }, { type: 'history_synced', history: snap });
+    eq(m.history, snap, 'model.history is the synced snapshot');
+    // Arrives via the store-mirror's ctx.applyMsg (no implicit repaint); render
+    // Cmd repaints the history navigator (v0.6.6 pre-release review fix).
+    eq(cmds.length, 1, 'one Cmd'); eq(cmds[0].type, 'render', 'render Cmd repaints');
   });
 });
 

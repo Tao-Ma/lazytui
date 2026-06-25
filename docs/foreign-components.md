@@ -44,9 +44,11 @@ keep `frame = f(model)`; a foreign component does not.
   carry the contents (the screen grid, the rendered widget state).
 - **An imperative reconcile step drives the real resource to match the model.**
   The post-dispatch finalizer (`dispatch/runtime/finalize.js`) ensures the live
-  instances match the model's descriptor each dispatch: spawn newly-desired ones,
-  resize to committed geometry, dispose removed ones. (This is the
-  "render-the-desired-set, reconcile imperatively" pattern.)
+  instances match the model's descriptor each dispatch: spawn newly-desired ones
+  and resize to committed geometry. (This is the "render-the-desired-set,
+  reconcile imperatively" pattern.) Disposal of a removed instance may ride the
+  same reconcile or, as in the terminal, be teardown-driven (a `destroy_*` Cmd
+  effect + a quit-time `destroyAll`) — either way it is imperative, off-model work.
 - **The boundary is message-passing.** Input/intents go **down** (a write call);
   coarse events come **up** as Msgs through the dispatch loop (exited, bell,
   title-change, resize-needed). The foreign component **never writes the model or a

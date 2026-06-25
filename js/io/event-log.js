@@ -7,10 +7,15 @@
  * What gets recorded — *inputs to the system*, not outputs:
  *
  *   - `key`     — every key event passed through dispatch.handleKey
- *   - `mouse`   — mouse click hits (panel coords + button)
  *   - `refresh` — each refreshAll tick start (no payload — just the marker)
- *   - `publish` — hub.publish(topic, rowKey, sample)
- *   - `action`  — action invocation: { group, key }
+ *   - `publish` — hub.publish(topic, rowKey, sample) (via the hub `setRecorder` seam)
+ *   - `action`  — action invocation: { actionKey, args, type }
+ *   - `input`   — edge-case input markers (oversize paste, unknown escape seq)
+ *   - `warning` / `error` — diagnostics funneled here for the recorded trail
+ *
+ * NOTE: mouse events are NOT recorded today — the recorder is incomplete even as
+ * an input log (and is input-level, not a Msg-level log; see
+ * docs/v0.6.6-replay-readiness.md for what a future replay feature actually needs).
  *
  * What is NOT recorded — render calls, internal state mutations,
  * panel renders. These are responses, not inputs, and would flood the
