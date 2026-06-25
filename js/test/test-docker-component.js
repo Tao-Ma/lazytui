@@ -5,7 +5,7 @@
  * loop: refresh/dockerPoll emit a fetch (the recurring cadence is a declared
  * `interval` Sub — subscriptions() — not a self-armed tick, FIX-3 Phase 4),
  * the inFlight guard prevents overlapping fetches (the focus + container-count
- * gates live in the dockerFetch/dockerEventsStart effects, not the reducer —
+ * gates live in the dockerFetch effect, not the reducer —
  * Phase-D purity), dockerResult folds the maps + clears the guard, and i/t/s
  * key Msgs emit the right stream/shell effects.
  * A small registered-component section checks that statusFor/getInfo read
@@ -33,7 +33,7 @@ const { _update } = docker;
 
 // Fresh literal slice (avoid _init() — it re-defines the hub topic each call).
 function slice0() {
-  return { status: {}, stats: {}, inFlight: false, eventsStarted: false };
+  return { status: {}, stats: {}, inFlight: false };
 }
 
 function setup(containers = ['c1', 'c2'], focused = true) {
@@ -58,55 +58,59 @@ function step(msg, slice) {
 }
 const types = (effects) => effects.map(e => e.type);
 
-describe('[1] refresh polls now (cadence is a declared interval Sub, not a tick)', () => {
-  it('first refresh: events-start + fetch, flags set — NO self-armed tick', () => {
+describe('[1] refresh polls now (just a fetch — cadence + events are declared Subs)', () => {
+  it('first refresh: dockerFetch only, inFlight set — NO tick, NO dockerEventsStart', () => {
     setup();
     const { slice, effects } = step({ type: 'refresh' }, slice0());
-    // FIX-3 Phase 4: the recurring cadence moved to docker.subscriptions()'s
-    // `interval` Sub, so refresh no longer arms a `tick` Cmd.
-    assert(!types(effects).includes('tick'), 'no self-armed tick (the interval Sub drives cadence)');
-    assert(types(effects).includes('dockerFetch'), 'immediate fetch');
-    assert(types(effects).includes('dockerEventsStart'), 'events subscription started');
-    assert(slice.inFlight && slice.eventsStarted, 'flags set');
+    // FIX-3: the recurring cadence is the interval Sub and the events watcher
+    // is the process-stream Sub (both in subscriptions()), so refresh just polls.
+    eq(types(effects).join(','), 'dockerFetch', 'refresh emits only the fetch (no tick, no events-start)');
+    assert(slice.inFlight, 'inFlight set (cleared later by the effect)');
   });
-  it('no containers: reducer still emits the fetch Cmds (pure) — the effects gate', () => {
-    // Phase-D cleanup: the reducer no longer reads getModel().config to
-    // gate on container count. It emits dockerEventsStart + dockerFetch
-    // unconditionally; the dockerEventsStart effect no-ops on an empty
-    // container set and dockerFetch dispatches an empty dockerResult that
-    // clears the in-flight latch. The gate moved to the impure layer.
+  it('no containers: still just the fetch (the dockerFetch effect gates on count)', () => {
     setup([]);
     const { slice, effects } = step({ type: 'refresh' }, slice0());
-    eq(types(effects).join(','), 'dockerEventsStart,dockerFetch', 'reducer emits the fetch set (no tick)');
-    assert(slice.inFlight, 'inFlight set (cleared later by the effect)');
+    eq(types(effects).join(','), 'dockerFetch', 'reducer emits only the fetch');
+    assert(slice.inFlight, 'inFlight set');
   });
 });
 
-describe('[1b] subscriptions() declares the recurring poll as an interval Sub', () => {
-  it('returns one interval descriptor dispatching dockerPoll on each tick', () => {
-    const subs = docker.subscriptions({ type: 'containers', paneId: 'docker-a' }, getModel());
-    eq(subs.length, 1, 'one sub');
-    eq(subs[0].kind, 'interval', 'interval kind');
-    eq(subs[0].id, 'docker-poll', 'stable id (dedups multiple docker panes to one loop)');
-    assert(subs[0].ms > 0, 'has a cadence');
-    // onTick dispatches a wrapped dockerPoll — capture via a fake ctx.
-    let dispatched = null;
-    subs[0].onTick({ dispatch: (m) => { dispatched = m; }, wrap: (k, m) => ({ kind: k, msg: m }) });
-    eq(dispatched.kind, 'docker', 'wrapped to docker');
-    eq(dispatched.msg.type, 'dockerPoll', 'ticks dispatch dockerPoll');
+describe('[1b] subscriptions() declares the poll + events-watcher Subs', () => {
+  const PANE = { type: 'containers', paneId: 'docker-a' };
+  it('with a tracked container: interval poll + process-stream events watcher', () => {
+    setup(['c1']);
+    const subs = docker.subscriptions(PANE, getModel());
+    const interval = subs.find(s => s.kind === 'interval');
+    const proc = subs.find(s => s.kind === 'process-stream');
+    assert(interval && interval.id === 'docker-poll', 'interval poll declared (stable id)');
+    assert(proc && proc.id === 'docker-events', 'process-stream events watcher declared');
+    eq(proc.cmd, 'docker', 'spawns docker');
+    eq(proc.args[0], 'events', 'docker events');
+    assert(proc.reconnectMs > 0, 'has a reconnect backoff');
+    // interval onTick dispatches a wrapped dockerPoll
+    let polled = null;
+    interval.onTick({ dispatch: (m) => { polled = m; }, wrap: (k, m) => ({ kind: k, msg: m }) });
+    eq(polled.kind, 'docker', 'wrapped to docker');
+    eq(polled.msg.type, 'dockerPoll', 'interval ticks dispatch dockerPoll');
+  });
+  it('no tracked container: only the interval poll (no events watcher to spawn)', () => {
+    setup([]);
+    const subs = docker.subscriptions(PANE, getModel());
+    assert(subs.some(s => s.kind === 'interval'), 'interval poll still declared');
+    assert(!subs.some(s => s.kind === 'process-stream'), 'no process-stream without a tracked container');
   });
 });
 
 describe('[2] inFlight guards overlapping fetches', () => {
   it('refresh while a fetch is in flight does not emit another', () => {
     setup();
-    const busy = { ...slice0(), inFlight: true, eventsStarted: true };
+    const busy = { ...slice0(), inFlight: true };
     const { effects } = step({ type: 'refresh' }, busy);
     assert(!types(effects).includes('dockerFetch'), 'no second fetch');
   });
   it('dockerPoll while in flight is a no-op', () => {
     setup();
-    const busy = { ...slice0(), inFlight: true, eventsStarted: true };
+    const busy = { ...slice0(), inFlight: true };
     const { effects } = step({ type: 'dockerPoll' }, busy);
     eq(effects.length, 0, 'no effects');
   });
@@ -115,7 +119,7 @@ describe('[2] inFlight guards overlapping fetches', () => {
 describe('[3] dockerPoll polls without arming a tick (cadence is the interval Sub)', () => {
   it('emits the fetch when idle — no tick re-arm', () => {
     setup(['c1'], true);
-    const { effects } = step({ type: 'dockerPoll' }, { ...slice0(), eventsStarted: true });
+    const { effects } = step({ type: 'dockerPoll' }, slice0());
     assert(!types(effects).includes('tick'), 'no self-armed tick (FIX-3 Phase 4 — the interval Sub drives cadence)');
     assert(types(effects).includes('dockerFetch'), 'fetched');
   });
@@ -125,7 +129,7 @@ describe('[3] dockerPoll polls without arming a tick (cadence is the interval Su
     // reducer emits dockerFetch regardless; the effect dispatches dockerResult
     // WITHOUT querying docker when getModel().focused === false.
     setup(['c1'], false);  // getModel().focused = false
-    const { effects } = step({ type: 'dockerPoll' }, { ...slice0(), eventsStarted: true });
+    const { effects } = step({ type: 'dockerPoll' }, slice0());
     assert(types(effects).includes('dockerFetch'), 'fetch emitted (the effect gates on focus, not the reducer)');
   });
 });
@@ -133,7 +137,7 @@ describe('[3] dockerPoll polls without arming a tick (cadence is the interval Su
 describe('[4] dockerResult folds maps + clears the guard', () => {
   it('stores status/stats and requests a render', () => {
     setup();
-    const busy = { ...slice0(), inFlight: true, eventsStarted: true };
+    const busy = { ...slice0(), inFlight: true };
     const { slice, effects } = step({
       type: 'dockerResult',
       status: { c1: 'running', c2: 'exited' },
@@ -208,18 +212,16 @@ describe('[7] Arc 3 — content gate: one host-global fetch loop, per-pane nav',
     const pane = { ...slice0(), paneId: 'docker-a' };
     const r = step({ type: 'refresh' }, pane);
     eq(r.effects.length, 0, 'no fetch/events from a placed pane');
-    assert(!r.slice.inFlight && !r.slice.eventsStarted,
-      'no content flags set on a placed pane');
+    assert(!r.slice.inFlight, 'no content flags set on a placed pane');
     // dockerResult is owner-only too — a placed pane never folds status.
     const res = step({ type: 'dockerResult', status: { c1: 'running' }, stats: {} }, pane);
     eq(res.slice.status.c1, undefined, 'placed pane does not fold content');
   });
-  it('the content owner (paneId == null) runs the full content loop', () => {
+  it('the content owner (paneId == null) runs the fetch loop', () => {
     setup();
     const { slice, effects } = step({ type: 'refresh' }, slice0());  // slice0 has no paneId
     assert(types(effects).includes('dockerFetch'), 'owner fetches');
-    assert(types(effects).includes('dockerEventsStart'), 'owner starts the events stream');
-    assert(slice.inFlight && slice.eventsStarted, 'owner flags set');
+    assert(slice.inFlight, 'owner inFlight set');
   });
   it('a placed pane still handles its own nav + keys', () => {
     setup(['c1', 'c2']);
