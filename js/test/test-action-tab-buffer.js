@@ -44,15 +44,17 @@ setModel({
 
 function applyUpdate(s, msg) {
   // v0.6.3 Phase 3d: tab_switch's reducer arm reads msg.currentGroup
-  // + msg.targetKey (production dispatchers thread them). Tests that
-  // dispatch tab_switch directly with `{type, idx}` get the bundle
-  // patched in here so the arm doesn't need a fallback to getModel().
+  // + msg.targetKey (production dispatchers thread them). v0.6.6: it also
+  // reads msg.viewerModel for tab counts (pure flatTabInfoFromBundle twin
+  // replaced the live getTabInfo() read; viewer.augmentMsg stamps it in
+  // production). Tests dispatching the bare Msg get all three patched in here.
   if (msg && msg.type === 'tab_switch' && msg.targetKey == null) {
     const m = getModel();
     msg = {
       ...msg,
       targetKey: pt.resolveTabKey(msg.idx, { ...s, tab: msg.idx }, m),
       currentGroup: m.currentGroup,
+      viewerModel: pt.viewerModelBundle(m, m.currentGroup),
     };
   }
   // v0.6.3 Phase D1: routed viewer_append / viewer_append_lines arms

@@ -15,14 +15,17 @@ const {getInstanceSlice, getFocus } = require('../panel/api');
 
 // v0.6.3 Phase 3d: tab_switch's reducer arm reads msg.currentGroup +
 // msg.targetKey (production dispatchers thread them via modelBundle +
-// resolveTabKey). Tests dispatching the bare Msg use this helper to
-// patch in the bundle so the arm doesn't need a getModel() fallback.
+// resolveTabKey). v0.6.6: it also reads msg.viewerModel for tab counts (the
+// pure flatTabInfoFromBundle twin replaced the live getTabInfo() read).
+// viewer.augmentMsg stamps viewerModel on every viewer Msg in production; this
+// helper mirrors that so the bare-Msg dispatch carries the same facts.
 function tabSwitchMsg(slice, idx) {
   const m = getModel();
   return {
     type: 'tab_switch', idx,
     targetKey: pt.resolveTabKey(idx, { ...slice, tab: idx }, m),
     currentGroup: m.currentGroup,
+    viewerModel: pt.viewerModelBundle(m, m.currentGroup),
   };
 }
 
@@ -324,6 +327,33 @@ describe('[R14] N1 content-tab tabState restore (non-adjacent transition)', () =
     eq(next.search.term, 'foo', 'restored search term');
     eq(next.cursor.line, 1, 'restored cursor line');
     eq(next.select.kind, 'line', 'restored select kind');
+  });
+});
+
+describe('[purity] tab_switch reads msg.viewerModel, not the live model', () => {
+  // v0.6.6 code-only TEA review: the tab_switch arm used to read getModel()
+  // via ctx.getTabInfo() for the {actionTabs, termTabs, total} guard — a live
+  // model read inside a reducer. It now derives those from msg.viewerModel via
+  // the pure flatTabInfoFromBundle twin. This proves the swap: make the bundle
+  // DISAGREE with the live model (bundle carries an action tab → total 3; live
+  // model has none → total 2) and confirm idx=2 is honored from the BUNDLE.
+  it('honors a tab idx present in the bundle even when the live model lacks it', () => {
+    const viewer = require('../panel/viewer/viewer');
+    freshGroup({ actions: {} });               // live model: group g1, NO action tabs → total 2
+    const slice = getInstanceSlice('detail');
+    const r = viewer._update({
+      type: 'tab_switch', idx: 2,              // out-of-range if read from the live model
+      targetKey: 'g1:action:a',
+      currentGroup: 'g1',
+      viewerModel: {                           // bundle disagrees: one action tab → total 3
+        currentGroup: 'g1',
+        group: { actions: {}, terminals: {} },
+        mergedActions: { a: { tab: true, label: 'A' } },
+        yamlTerminals: {},
+      },
+    }, slice);
+    const next = Array.isArray(r) ? r[0] : r;
+    eq(next.tab, 2, 'switched to idx=2 from the bundle (live model total=2 would have rejected it)');
   });
 });
 
