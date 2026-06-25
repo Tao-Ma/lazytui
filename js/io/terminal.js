@@ -6,9 +6,11 @@
  * layers and reach THIS module, never the reverse. It is a true leaf:
  * its only requires are node-pty + @xterm/headless.
  *
- * #D14 — this is an EXPLICITLY NON-TEA ISLAND, and that is by design. The
- * terminal's screen state lives in the @xterm/headless buffer (this module),
- * NOT in the TEA model: PTY `onData` writes the off-model buffer and triggers a
+ * #D14 — this is the reference FOREIGN COMPONENT: an explicitly non-TEA region,
+ * by design, implementing the foreign-component contract (docs/foreign-components.md
+ * — read it before adding another). The terminal's screen state lives in the
+ * @xterm/headless buffer (this module, an isolated "island"), NOT in the TEA
+ * model: PTY `onData` writes the off-model buffer and triggers a
  * repaint via the injected `_renderHook` directly, bypassing the Msg loop —
  * because xterm.js IS the terminal emulator and funnelling every PTY byte
  * through a Msg into the model would be heavy and redundant. The model holds the
