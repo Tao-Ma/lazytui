@@ -52,11 +52,12 @@ const navState = require('../panel/nav-state');
 // Memoized module refs (the reconciler runs per outermost dispatch; a fresh
 // relative require() each time is the ~tens-of-µs/call fs cost paint.js's hot
 // path also memoizes away). Cycle-safe: lazy + cached, like reconcilePaneInstances.
-let _apiRef, _routeRef, _mpoolRef, _hubRef, _loopRef, _termRef, _paintRef, _dispatchRef;
+let _apiRef, _routeRef, _mpoolRef, _hubRef, _loopRef, _termRef, _paintRef, _dispatchRef, _historyRef;
 const _api = () => (_apiRef ||= require('../panel/api'));
 const _route = () => (_routeRef ||= require('../panel/route'));
 const _mpool = () => (_mpoolRef ||= require('../leaves/wm/pool'));
 const _hub = () => (_hubRef ||= require('../leaves/infra/hub'));
+const _history = () => (_historyRef ||= require('../feature/history'));
 
 // Live subscriptions: key → { kind, token }. The single source of what's
 // currently running; the reconcile diff is computed against it. `stop` routes
@@ -171,6 +172,30 @@ const _subKinds = {
       if (token.proc) { try { token.proc.kill(); } catch (_) { /* already dead */ } token.proc = null; }
     },
   },
+  // Mirror a module-local live store into the model (v0.6.6 FIX-1). Descriptor
+  // `{kind:'store-mirror', id, store, msgType, field}` — `store` is the
+  // mirrorable-store contract `{snapshot(), setOnChange(cb)}` (docs/v0.6.6.md
+  // §8.1). The store fires its injected `cb` on each mutation; `cb` applyMsg's a
+  // whole-snapshot `{type: msgType, [field]: store.snapshot()}`, the reducer's
+  // *_synced arm lands it on `model[field]`, and render reads `model[field]` —
+  // so the frame is f(model) (#D5) instead of reading the off-model store live.
+  // The store imports NO dispatch (cb is injected); this keeps the feature/io
+  // layer below dispatch. Does NOT prime synchronously: `start` runs inside the
+  // reconciler BEFORE `_liveSubs.set`, so a nested dispatch would re-enter
+  // reconcile and re-start this same sub (recursion) — instead the model field
+  // is seeded `[]` in store.init() (mirrors the store's empty boot state) and
+  // the cb drives every update from there.
+  'store-mirror': {
+    normalize: (d) => (d && d.id && d.msgType && d.field && d.store
+      && typeof d.store.snapshot === 'function'
+      && typeof d.store.setOnChange === 'function' ? d : null),
+    key: (d) => d.id,
+    start: (d, ctx) => {
+      d.store.setOnChange(() => ctx.applyMsg({ type: d.msgType, [d.field]: d.store.snapshot() }));
+      return d.store;
+    },
+    stop: (store) => store.setOnChange(null),
+  },
 };
 
 // App-global subscriptions — ongoing sources not owned by any pane. Pure
@@ -206,6 +231,15 @@ function _appSubscriptions(model) {
       onTick: (ctx) => ctx.applyMsg({ type: 'clock_tick', now: Date.now() }),
     });
   }
+  // FIX-1 — mirror the module-local live stores into the model so render reads
+  // model.{history,…} (frame = f(model), #D5). Always-active: the model must
+  // always reflect the store. The store-mirror kind injects a cb that dispatches
+  // a whole-snapshot `*_synced` Msg on each store mutation; the store imports no
+  // dispatch (the {snapshot, setOnChange} contract — docs/v0.6.6.md §8.1).
+  subs.push({
+    kind: 'store-mirror', id: 'history',
+    store: _history(), msgType: 'history_synced', field: 'history',
+  });
   return subs;
 }
 

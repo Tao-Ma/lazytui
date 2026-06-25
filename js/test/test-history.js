@@ -45,10 +45,10 @@ describe('[1] start() returns handle + entry with stable fields', () => {
 });
 
 describe('[2] newest-first ordering', () => {
-  it('all() returns entries with newest at index 0', () => {
+  it('snapshot() returns entries with newest at index 0', () => {
     h1.start('second', '');
     h1.start('third', '');
-    const list = h1.all();
+    const list = h1.snapshot();
     assert(list.length >= 3, 'at least 3 entries present');
     eq(list[0].label, 'third', 'newest first');
     eq(list[1].label, 'second', 'second-newest next');
@@ -114,7 +114,7 @@ describe('[8] ring trim past HISTORY_MAX', () => {
   it('newest survives, oldest evicted at 100-entry cap', () => {
     const h2 = freshHistory();
     for (let n = 1; n <= 130; n++) h2.start(`run-${n}`, '');
-    const trimmed = h2.all();
+    const trimmed = h2.snapshot();
     eq(trimmed.length, 100, 'ring trimmed to 100 entries');
     eq(trimmed[0].label, 'run-130', 'newest survives');
     eq(trimmed[trimmed.length - 1].label, 'run-31', 'oldest 30 evicted');
@@ -134,6 +134,25 @@ describe('[10] entries stored on actions.lifecycle topic', () => {
     const direct = hub.history('actions.lifecycle', '_', 5);
     assert(direct.length > 0, 'hub direct read returns samples');
     assert(direct[direct.length - 1].label.startsWith('run-'), 'hub stores the same entries');
+  });
+});
+
+describe('[11] setOnChange contract (store-mirror seam, FIX-1)', () => {
+  it('fires cb on start + end, NOT on per-line append; null unregisters', () => {
+    const h = freshHistory();
+    let fires = 0;
+    h.setOnChange(() => { fires++; });
+    const r = h.start('mirrored', '');   // list-shape change → fire
+    eq(fires, 1, 'start() fired the change cb');
+    r.append('line-a'); r.append('line-b');
+    eq(fires, 1, 'per-line append() does NOT fire (high-frequency, §8.1)');
+    r.end(0);                            // completed → fire
+    eq(fires, 2, 'end() fired the change cb');
+    // The cb sees the current snapshot via the store's reader.
+    eq(h.snapshot()[0].label, 'mirrored', 'snapshot reflects the entry');
+    h.setOnChange(null);                 // unregister
+    h.start('after-unregister', '');
+    eq(fires, 2, 'no fire after setOnChange(null)');
   });
 });
 
