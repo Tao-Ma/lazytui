@@ -21,7 +21,7 @@
  */
 'use strict';
 
-const { getTabInfo, isTerminalTab, activeContentTab } = require('./tabs');
+const { isTerminalTab } = require('./tabs');
 const {
   renderPanel,
   getInstanceSlice, wrap,
@@ -457,8 +457,6 @@ function _updateInner(msg, slice, lines) {
     // stamped by init(paneId); fall back to 'detail' for the singleton.
     paneId: slice.paneId || 'detail',
     wrap,
-    getTabInfo,
-    activeContentTab,
   });
   if (tabResult !== null) return tabResult;
 

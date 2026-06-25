@@ -16,7 +16,7 @@
  *        slice         → handled, no Cmds
  *        [next, cmds]  → handled with Cmds
  *
- *      ctx = { paneId, wrap, getTabInfo, activeContentTab }.
+ *      ctx = { paneId, wrap }.
  *      paneId-parameterised: every `wrap(paneId, …)` self-reference and
  *      every focus_set target uses ctx.paneId, so the same leaf can drive
  *      a non-detail pane once Phase 4 retargets the singleton call sites.
@@ -648,22 +648,22 @@ function reorderContent(slice, { groupName, fromIdx, toIdx, currentGroup, yamlTe
  *   paneId             — the pane this reducer represents. All
  *                        self-referential wrap() targets use this id.
  *   wrap(name, inner)  — Component-fan-out envelope.
- *   getTabInfo()       — flat tab info { actionTabs, termTabs,
- *                        contentTabs, total } for the active group.
- *   activeContentTab() — [key, info] | null for the active content tab.
  *
+ * v0.6.6: getTabInfo/activeContentTab were retired from ctx — the only arm that
+ * used getTabInfo (tab_switch) now derives counts from msg.viewerModel via the
+ * pure flatTabInfoFromBundle twin, so ctx no longer carries any live-model read.
  * v0.6.3 Phase 3f: getModel() was retired from ctx. Reducer arms
  * read currentGroup + targetKey from msg (threaded by dispatchers
  * via pt.modelBundle / pt.resolveTabKey at dispatch time).
  */
 function reduceTabMsg(msg, slice, ctx) {
-  // v0.6.3 Phase 3f: ctx no longer carries getModel — every model
-  // read in this leaf was retired (mode-flag reads dropped or threaded
-  // via msg; currentGroup + targetKey threaded by dispatchers; tab_cycle
-  // Msg retired entirely). getTabInfo + activeContentTab still come
-  // through ctx because they're slice-derived view helpers, not direct
-  // model reads.
-  const { paneId, wrap, getTabInfo, activeContentTab } = ctx;
+  // v0.6.3 Phase 3f: ctx no longer carries getModel — every model read in
+  // this leaf was retired (mode-flag reads dropped or threaded via msg;
+  // currentGroup + targetKey threaded by dispatchers; tab_cycle Msg retired).
+  // v0.6.6: the tab_switch arm's last live read (getTabInfo() → getModel()) is
+  // gone too — it now derives tab counts from msg.viewerModel via the pure
+  // flatTabInfoFromBundle twin, so ctx carries only paneId + wrap.
+  const { paneId, wrap } = ctx;
   switch (msg.type) {
     case 'tab_switch': {
       // Full tab-switch cascade — orchestrates the cross-layer concerns
@@ -671,7 +671,11 @@ function reduceTabMsg(msg, slice, ctx) {
       // per-kind body update) that the bare `viewer_set_tab` primitive
       // doesn't. Emitted from the mouse tab-click in input.js and from
       // `tab_cycle`.
-      const { actionTabs, termTabs, total } = getTabInfo();
+      // Tab counts come from the threaded msg.viewerModel bundle via the pure
+      // flatTabInfoFromBundle twin — NOT a live getModel() read (the bundle is
+      // stamped by viewer.augmentMsg on every viewer Msg, from the same model
+      // this reducer runs on). Keeps the arm a pure fn of (slice, msg).
+      const { actionTabs, termTabs, total } = flatTabInfoFromBundle(slice, msg.viewerModel);
       const idx = msg.idx | 0;
       if (idx < 0 || idx >= total) return slice;
       // N4 — same-tab click is a no-op. Pre-N4 this still fired the full
