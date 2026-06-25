@@ -2,9 +2,10 @@
  * v0.6.2 Phase 4.2 — Running overlay.
  *
  * Centered modal listing every live child lazytui spawned, read from
- * feature/jobs.list() at frame time (no item snapshot — overlay
- * reflects mid-overlay arrivals + status flips). Cursor + scroll live
- * in model.modal.jobs.
+ * model.jobs at frame time (FIX-1: the feature/jobs registry mirrors itself
+ * into the model via the store-mirror Sub, so the overlay still reflects
+ * mid-overlay arrivals + status flips — now via jobs_synced). Cursor + scroll
+ * live in model.modal.jobs.
  *
  * Cells are PADDED TO FIXED VISIBLE WIDTHS so header + non-cursor +
  * cursor rows line up. Cursor rows must NOT contain an inner `[/]` —
@@ -18,7 +19,6 @@
 const { esc } = require('../leaves/text/ansi');
 const { renderOverlay, viewportDims } = require('../leaves/render/draw');
 const { getModel } = require('../model/store');
-const jobs = require('../feature/jobs');
 
 const MAX_W = 80;
 const FOOTER_ROWS = 2;   // blank + hint
@@ -94,7 +94,7 @@ function _fmtHeader(labelW) {
 /** Visible rows in the overlay body (used by the dispatch jobs_nav
  *  clamp). Re-derived each call from current term size + jobs count. */
 function viewportRows() {
-  const list = jobs.list();
+  const list = getModel().jobs || [];
   const ROWS = viewportDims().rows;
   const wantH = list.length + 2 /* borders */ + HEADER_ROWS + FOOTER_ROWS;
   const h = Math.min(wantH, ROWS - 2);
@@ -107,7 +107,11 @@ function viewportRows() {
 // (paint.render) always threads model.now; a bare call should fail loudly.
 function renderJobsOverlay(now) {
   if (!getModel().modes.jobsMode) return;
-  const list = jobs.list();
+  // FIX-1 stage 3 — read the store-mirror'd snapshot off the model, not the
+  // off-model feature/jobs registry live. The store-mirror cb keeps model.jobs
+  // current on each mutation, so a job arriving/flipping while the window is
+  // open still shows (now via jobs_synced). newest-first.
+  const list = getModel().jobs || [];
   const j = getModel().modal.jobs || { cursor: 0, scroll: 0 };
   const COLS = viewportDims().cols;
   const wantW = Math.min(MAX_W, COLS - 4);

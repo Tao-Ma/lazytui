@@ -22,33 +22,28 @@
  *   - All writes flow through the reducer; `setModel` commits its result.
  *
  * Replayability boundary (#D5 — what the frame ACTUALLY depends on):
- *   The render path is a pure function of `(model + a small set of NAMED
- *   module-local live stores)`, NOT of the model alone. Replaying the Msg log
- *   reconstructs the MODEL (Msgs → reducer → model) but does NOT re-run effects,
- *   so on replay those live stores sit at their module defaults and the replayed
- *   frame differs. The live stores the frame reads at paint time:
- *     - feature/jobs.list()        — Running overlay (overlay/jobs.js)
+ *   The render path is a pure function of `(model + the terminal island)`. As of
+ *   v0.6.6 FIX-1 the frame is `f(model)` for EVERYTHING except the irreducible
+ *   PTY (#D14, below). Replaying the Msg log reconstructs the model (Msgs →
+ *   reducer → model) and so reconstructs the frame — terminal output excepted.
+ *
+ *   How the formerly-off-model live stores got here — the `store-mirror` Sub
+ *   (app/state.js#_appSubscriptions): each store exposes the `{snapshot,
+ *   setOnChange}` contract (docs/v0.6.6.md §8.1), fires an injected cb on
+ *   mutation, the cb applyMsg's a whole-snapshot `*_synced` Msg, the reducer
+ *   lands it on the model, and render reads `model.*`. The overlays still update
+ *   live mid-display ON PURPOSE (a job/warning arriving while the window is open
+ *   shows without re-opening) — now because the cb fires per mutation, via Msg:
+ *     - feature/history → model.history (history navigator)
+ *     - io/diag-log     → model.diagLog (leader-e diagnostics overlay)
+ *     - feature/jobs    → model.jobs    (Running overlay + viewer running-glyph)
+ *   `model.now` (frame clock, via the `clock` interval Sub) and `model.theme`
+ *   (projected to the leaves/infra/themes palette cache at the render entry, #D8)
+ *   are likewise replay-safe — the wall clock and theme are read off the model.
+ *
+ *   The one remaining off-model render read is the terminal island:
  *     - io/terminal.getSession(id) — terminal-pane screen contents (paint.js / footer.js)
  *     - io/term.cols()/rows()      — terminal dims mirror (render reads this, not model.dims)
- *   This is deliberate, not a bug: the jobs overlay reads live ON PURPOSE
- *   (a job arriving while the window is open shows without re-opening) — and the
- *   store-mirror Sub keeps the moved-under stores live the same way (its cb
- *   fires on each mutation, so a mid-overlay arrival still shows, now via Msg).
- *   `model.now` (frame clock) and `model.theme` (theme) are pulled under the
- *   model — so the wall clock AND the theme are replay-safe: render reads
- *   `model.now`, and (#D8) projects the leaves/infra/themes palette cache from
- *   `model.theme` at the render entry each frame, so the palette is a per-frame
- *   derivation replay reproduces (NOT an effect-synced store).
- *
- *   v0.6.6 FIX-1 is bringing the rest under the model via the `store-mirror` Sub
- *   (app/state.js#_appSubscriptions): the store fires an injected cb on mutation,
- *   the cb applyMsg's a whole-snapshot `*_synced` Msg, render reads `model.*`.
- *   DONE so far: **feature/history → model.history** + **io/diag-log →
- *   model.diagLog** (the history navigator + diagnostics overlay now read
- *   f(model)). PENDING: jobs → model.jobs. When that lands, the only off-model
- *   render reads left are the terminal island (io/terminal + io/term — the
- *   irreducible #D14 PTY). Until then the honest statement is the boundary
- *   above, not a blanket "frame = f(model)".
  *
  *   Terminal panes are an explicitly NON-TEA region: the model holds the PTY
  *   *lifecycle* (which tab, session id), but the screen contents live in the
@@ -152,15 +147,16 @@ function init() {
       cmdline: { text: '', sel: 0, scroll: 0, matches: [] },
       // Design-mode state lives on the layout Component's slice —
       // `getInstanceSlice('layout').freeConfig`.
-      // Running overlay (Phase 4.2) — cursor + scroll into the live jobs
-      // list. Item snapshot is NOT stored here; the renderer reads
-      // feature/jobs.list() at frame time so the overlay reflects
-      // mid-overlay arrivals + status flips.
+      // Running overlay (Phase 4.2) — cursor + scroll into the jobs list. The
+      // list itself is NOT stored here; it lives on model.jobs (FIX-1 — the
+      // feature/jobs registry mirrored in via the store-mirror Sub), which the
+      // renderer reads at frame time so the overlay reflects mid-overlay
+      // arrivals + status flips.
       jobs: { cursor: 0, scroll: 0 },
-      // Diagnostics window (leader e) — cursor + scroll into the live
-      // io/diag-log.js buffer. Like jobs, no item snapshot is
-      // stored: the renderer reads diag-log.snapshot() at frame time so
-      // a warning/error arriving while the window is open shows live.
+      // Diagnostics window (leader e) — cursor + scroll into the diag list.
+      // Like jobs, the list lives on model.diagLog (FIX-1 — io/diag-log
+      // mirrored in), read at frame time so a warning/error arriving while the
+      // window is open shows live.
       diagLog: { cursor: 0, scroll: 0 },
     },
     // Framework-level state: parsed config, paths, leader-mode buffers,
@@ -181,6 +177,7 @@ function init() {
     // update via the *_synced Msg. Both newest-first.
     history: [],     // operation history (feature/history) → history navigator
     diagLog: [],     // diagnostics ring (io/diag-log)      → leader-e overlay
+    jobs: [],        // live-jobs registry (feature/jobs)   → Running overlay
   };
   return m;
 }

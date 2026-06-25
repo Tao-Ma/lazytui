@@ -1,9 +1,9 @@
 /**
  * v0.6.2 Phase 4.1 — feature/jobs.js registry API.
  *
- *   register / update / close / list / clearCompleted lifecycle.
+ *   register / update / close / snapshot / clearCompleted lifecycle.
  *   Unique jobId generation, idempotent close, unknown-id no-ops,
- *   newest-first ordering.
+ *   newest-first ordering. Plus the FIX-1 store-mirror seam + jobs_synced arm.
  *
  * Run: node js/test/test-jobs.js
  */
@@ -21,7 +21,7 @@ describe('[register] generates ids + seeds running state', () => {
     const id = jobs.register({ kind: 'stream-routed', label: 'a', pid: 1, owner: {} });
     assert(typeof id === 'string' && id.length > 0, 'id is a non-empty string');
     assert(id.startsWith('job-'), 'id has expected prefix');
-    const [j] = jobs.list();
+    const [j] = jobs.snapshot();
     eq(j.id, id);
     eq(j.kind, 'stream-routed');
     eq(j.label, 'a');
@@ -43,7 +43,7 @@ describe('[register] generates ids + seeds running state', () => {
     reset();
     jobs.register({ kind: 'tmux', label: 't', pid: null, owner: {} });
     jobs.register({ kind: 'tmux', label: 't2', owner: {} });
-    const all = jobs.list();
+    const all = jobs.snapshot();
     eq(all[0].pid, null);
     eq(all[1].pid, null);
   });
@@ -51,7 +51,7 @@ describe('[register] generates ids + seeds running state', () => {
   it('null/undefined owner normalises to {}', () => {
     reset();
     const id = jobs.register({ kind: 'pty', label: 'x', pid: 1 });
-    const [j] = jobs.list();
+    const [j] = jobs.snapshot();
     eq(j.owner, {});
   });
 });
@@ -61,7 +61,7 @@ describe('[update] shallow-merges, no-op on unknown id', () => {
     reset();
     const id = jobs.register({ kind: 'pty', label: 'a', pid: 1, owner: { ptyId: 'g_a' } });
     jobs.update(id, { label: 'b' });
-    const [j] = jobs.list();
+    const [j] = jobs.snapshot();
     eq(j.label, 'b');
     eq(j.pid, 1);
     eq(j.owner.ptyId, 'g_a', 'owner survives merge (not replaced)');
@@ -70,7 +70,7 @@ describe('[update] shallow-merges, no-op on unknown id', () => {
   it('unknown id is a no-op', () => {
     reset();
     jobs.update('job-not-registered', { label: 'oops' });
-    eq(jobs.list().length, 0);
+    eq(jobs.snapshot().length, 0);
   });
 
   it('null/undefined patch is a no-op', () => {
@@ -78,7 +78,7 @@ describe('[update] shallow-merges, no-op on unknown id', () => {
     const id = jobs.register({ kind: 'pty', label: 'a', pid: 1, owner: {} });
     jobs.update(id, null);
     jobs.update(id, undefined);
-    eq(jobs.list()[0].label, 'a');
+    eq(jobs.snapshot()[0].label, 'a');
   });
 });
 
@@ -87,7 +87,7 @@ describe('[close] flips status, sets endedAt + exitCode, idempotent', () => {
     reset();
     const id = jobs.register({ kind: 'stream-routed', label: 'a', pid: 1, owner: {} });
     jobs.close(id, { status: 'exited', exitCode: 0 });
-    const [j] = jobs.list();
+    const [j] = jobs.snapshot();
     eq(j.status, 'exited');
     eq(j.exitCode, 0);
     assert(j.endedAt && j.endedAt >= j.startedAt, 'endedAt >= startedAt');
@@ -97,7 +97,7 @@ describe('[close] flips status, sets endedAt + exitCode, idempotent', () => {
     reset();
     const id = jobs.register({ kind: 'stream-routed', label: 'a', pid: 1, owner: {} });
     jobs.close(id, { status: 'killed' });
-    const [j] = jobs.list();
+    const [j] = jobs.snapshot();
     eq(j.status, 'killed');
     eq(j.exitCode, null);
   });
@@ -106,7 +106,7 @@ describe('[close] flips status, sets endedAt + exitCode, idempotent', () => {
     reset();
     const id = jobs.register({ kind: 'pty', label: 'a', pid: 1, owner: {} });
     jobs.close(id);
-    const [j] = jobs.list();
+    const [j] = jobs.snapshot();
     eq(j.status, 'exited');
     eq(j.exitCode, null);
   });
@@ -115,9 +115,9 @@ describe('[close] flips status, sets endedAt + exitCode, idempotent', () => {
     reset();
     const id = jobs.register({ kind: 'pty', label: 'a', pid: 1, owner: {} });
     jobs.close(id, { status: 'exited', exitCode: 0 });
-    const firstEndedAt = jobs.list()[0].endedAt;
+    const firstEndedAt = jobs.snapshot()[0].endedAt;
     jobs.close(id, { status: 'killed', exitCode: 99 });
-    const [j] = jobs.list();
+    const [j] = jobs.snapshot();
     eq(j.status, 'exited', 'status frozen at first close');
     eq(j.exitCode, 0,       'exitCode frozen at first close');
     eq(j.endedAt, firstEndedAt, 'endedAt frozen');
@@ -126,7 +126,7 @@ describe('[close] flips status, sets endedAt + exitCode, idempotent', () => {
   it('unknown id is a no-op', () => {
     reset();
     jobs.close('job-no-such', { status: 'exited' });
-    eq(jobs.list().length, 0);
+    eq(jobs.snapshot().length, 0);
   });
 });
 
@@ -138,7 +138,7 @@ describe('[list] newest-first ordering', () => {
     // tiny busy-wait so Date.now() advances at least 1ms
     const t0 = Date.now(); while (Date.now() === t0) { /* spin */ }
     const b = jobs.register({ kind: 'pty', label: 'b', pid: 2, owner: {} });
-    const all = jobs.list();
+    const all = jobs.snapshot();
     eq(all.length, 2);
     eq(all[0].id, b, 'most-recent first');
     eq(all[1].id, a);
@@ -221,6 +221,35 @@ describe('[clock Sub] declared only while an age overlay is open', () => {
     assert(open.has('interval:clock:1000'), 'clock interval declared while jobs overlay open');
     const closed = state._desiredSubs({ modes: {} });
     assert(!closed.has('interval:clock:1000'), 'no clock interval when no age overlay is open');
+  });
+});
+
+describe('[setOnChange] store-mirror seam (FIX-1)', () => {
+  it('fires cb on every mutation (register/update/close/clearCompleted); null unregisters', () => {
+    reset();
+    let fires = 0;
+    jobs.setOnChange(() => { fires++; });
+    const id = jobs.register({ kind: 'pty', label: 'a', pid: 1, owner: {} });
+    eq(fires, 1, 'register fired');
+    jobs.update(id, { label: 'b' });
+    eq(fires, 2, 'update fired');
+    jobs.close(id, { status: 'exited', exitCode: 0 });
+    eq(fires, 3, 'close fired');
+    jobs.clearCompleted();
+    eq(fires, 4, 'clearCompleted fired');
+    jobs.setOnChange(null);             // unregister
+    jobs.register({ kind: 'pty', label: 'c', pid: 2, owner: {} });
+    eq(fires, 4, 'no fire after setOnChange(null)');
+    jobs.setOnChange(null); reset();
+  });
+});
+
+describe('[jobs_synced] arm lands the snapshot on model.jobs (FIX-1)', () => {
+  it('whole-snapshot write, no Cmd', () => {
+    const snap = [{ id: 'job-1', kind: 'pty', label: 'x', status: 'running' }];
+    const [m, cmds] = runtime.update({ jobs: [] }, { type: 'jobs_synced', jobs: snap });
+    eq(m.jobs, snap, 'model.jobs is the synced snapshot');
+    eq(cmds.length, 0, 'no Cmd — pure model write');
   });
 });
 
@@ -339,7 +368,7 @@ describe('[clearCompleted] drops closed entries, keeps running', () => {
     jobs.close(a, { status: 'exited' });
     jobs.close(c, { status: 'killed' });
     jobs.clearCompleted();
-    const all = jobs.list();
+    const all = jobs.snapshot();
     eq(all.length, 1);
     eq(all[0].id, b, 'only the running entry survives');
   });

@@ -1,7 +1,8 @@
 /**
  * Running-overlay (jobs) sub-reducer (#D12 — Phase 4.2). Cursor/scroll live in
- * model.modal.jobs; the items list is read live from feature/jobs.list() at
- * render time, so clamping takes the count + vh in the Msg. Also hosts the job
+ * model.modal.jobs; the items list is read from model.jobs (FIX-1 — the
+ * feature/jobs registry mirrored in via the store-mirror Sub) at render time,
+ * so clamping takes the count + vh in the Msg. Also hosts the job
  * ROUTING cascade (jobs_activate → jobs_route effect → jobs_routed): activate
  * closes the overlay + queues the group switch, the effect reads the post-switch
  * viewer slice, and the pure jobs_routed tail emits the tab/focus/info cascade.
