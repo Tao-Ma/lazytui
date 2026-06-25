@@ -29,7 +29,6 @@
  *   frame differs. The live stores the frame reads at paint time:
  *     - feature/jobs.list()        — Running overlay (overlay/jobs.js)
  *     - io/diag-log.snapshot()     — diagnostics window (overlay/diag-log.js)
- *     - feature/history.all()      — history navigator (panel/navigator/history.js)
  *     - io/terminal.getSession(id) — terminal-pane screen contents (paint.js / footer.js)
  *     - io/term.cols()/rows()      — terminal dims mirror (render reads this, not model.dims)
  *   This is deliberate, not a bug: the jobs/diag overlays read live ON PURPOSE
@@ -38,11 +37,16 @@
  *   model — so the wall clock AND the theme are replay-safe: render reads
  *   `model.now`, and (#D8) projects the leaves/infra/themes palette cache from
  *   `model.theme` at the render entry each frame, so the palette is a per-frame
- *   derivation replay reproduces (NOT an effect-synced store). The stores above
- *   are not yet under the model. Bringing the rest under TEA (a `Sub` feeding
- *   samples in via Msgs so the model holds the latest snapshot) is a possible
- *   future arc; the honest statement TODAY is the boundary above, not
- *   "frame = f(model)".
+ *   derivation replay reproduces (NOT an effect-synced store).
+ *
+ *   v0.6.6 FIX-1 is bringing the rest under the model via the `store-mirror` Sub
+ *   (app/state.js#_appSubscriptions): the store fires an injected cb on mutation,
+ *   the cb applyMsg's a whole-snapshot `*_synced` Msg, render reads `model.*`.
+ *   DONE so far: **feature/history → model.history** (the history navigator now
+ *   reads f(model)). PENDING: diag-log → model.diagLog, jobs → model.jobs. When
+ *   those land, the only off-model render reads left are the terminal island
+ *   (io/terminal + io/term — the irreducible #D14 PTY). Until then the honest
+ *   statement is the boundary above, not a blanket "frame = f(model)".
  *
  *   Terminal panes are an explicitly NON-TEA region: the model holds the PTY
  *   *lifecycle* (which tab, session id), but the screen contents live in the
@@ -168,6 +172,12 @@ function init() {
     prefixNode: null,
     prefixSeq: [],
     register: null,                  // yank register {history, cap} (register.js)
+    // v0.6.6 FIX-1 — the operation-history ring (feature/history) mirrored into
+    // the model by the store-mirror Sub (app/state.js#_appSubscriptions), so the
+    // history navigator renders f(model) instead of reading the off-model store
+    // live (#D5). Seeded [] (the store is empty at boot); the store's setOnChange
+    // cb drives every update via history_synced. Newest-first.
+    history: [],
   };
   return m;
 }

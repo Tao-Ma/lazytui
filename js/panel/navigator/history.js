@@ -11,7 +11,7 @@
 'use strict';
 
 const { setViewerContent } = require('../nav-state');
-const history = require('../../feature/history');
+const { getModel } = require('../../model/store');
 const mnav = require('../../leaves/wm/nav');
 const {
   esc, theme, renderPanel,
@@ -19,7 +19,11 @@ const {
   getItems: apiGetItems,
 } = require('../api');
 
-function getItems() { return history.all(); }
+// v0.6.6 FIX-1 — the history ring mirrors itself into model.history (the
+// store-mirror Sub, app/state.js#_appSubscriptions); render reads the model,
+// not the off-model store live. getModel() here is the render-time impure-shell
+// read (#D5) — strictly purer than the prior feature/history.all() live read.
+function getItems() { return getModel().history; }
 
 function fmtTime(ms) {
   const d = new Date(ms);
@@ -146,11 +150,12 @@ function update(msg, slice) {
   return [slice, [{ type: 'historyReplay', entry }, { type: '_claimed' }]];
 }
 
-// Msg-enrichment hook (panel/api). Threads the captured-run ring buffer
-// (feature/history — a decentralized state home written by stream.js) so the
-// key arm stays pure of history.all(). Only the key arm reads msg.entries.
-function augmentMsg(msg) {
-  return { ...msg, entries: history.all() };
+// Msg-enrichment hook (panel/api). Threads the history list so the key arm
+// stays pure. Reads model.history (the store-mirror'd snapshot, FIX-1) — the
+// same array render's getItems() shows, so the cursor indexes it consistently.
+// Only the key arm reads msg.entries.
+function augmentMsg(msg, model) {
+  return { ...msg, entries: model.history };
 }
 
 /** Called from registerComponent after init(). Moving these out of

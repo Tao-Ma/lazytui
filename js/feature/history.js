@@ -27,6 +27,18 @@ const OUTPUT_BYTES_MAX = 4 * 1024;
 let _nextId = 1;
 let _initialized = false;
 
+// Mirrorable-store contract (v0.6.6 FIX-1, docs/v0.6.6.md §8.1): a single
+// change-notify seam the store-mirror Sub injects its cb into, so the store
+// mirrors itself into model.history without importing the dispatch loop. Fired
+// on list-shape changes — `start` (entry added) + `end` (entry completed) —
+// NOT on per-line `appendOutput`: that is high-frequency on a streaming
+// `docker logs -f`, the entry is a shared ref so a growing `entry.output` is
+// already visible through model.history, and the viewer's own per-line append
+// dispatch supplies the repaint (same cadence as before FIX-1).
+let _onChange = null;
+function setOnChange(cb) { _onChange = cb || null; }
+function _notify() { if (_onChange) _onChange(); }
+
 function ensureInit() {
   if (_initialized) return;
   // Panel-lifetime subscription — the history panel always exists, so the
@@ -75,6 +87,7 @@ function start(label, cmd, opts = {}) {
   if (opts.detached) entry.endedAt = now;
 
   hub.publish(TOPIC, '_', entry);
+  _notify();   // new entry — sync model.history (store-mirror, §8.1)
 
   return {
     entry,
@@ -101,13 +114,15 @@ function endEntry(entry, exitCode) {
   if (entry.endedAt !== null && entry.exitCode !== null) return;
   entry.endedAt = Date.now();
   entry.exitCode = exitCode;
+  _notify();   // entry completed — sync the finalized status/duration (§8.1)
 }
 
 /**
- * Newest-first list of entries. Hub stores oldest-first (push order); the
- * panel and original API both expect newest-first, so reverse on read.
+ * Newest-first snapshot of entries (the mirrorable-store contract reader,
+ * §8.1 — was `all()`). Hub stores oldest-first (push order); the panel and
+ * original API both expect newest-first, so reverse on read.
  */
-function all() {
+function snapshot() {
   ensureInit();
   const samples = hub.history(TOPIC, '_', HISTORY_MAX);
   // slice() because hub returns its own copy already, but reverse is
@@ -115,4 +130,4 @@ function all() {
   return samples.slice().reverse();
 }
 
-module.exports = { start, all };
+module.exports = { start, snapshot, setOnChange };

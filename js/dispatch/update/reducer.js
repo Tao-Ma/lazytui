@@ -245,6 +245,13 @@ function update(model, msg) {
     // self-re-arms or tracks a clockArmed latch.
     case 'clock_tick':
       return [{ ...model, now: msg.now || model.now }, []];
+    // v0.6.6 FIX-1 — the history ring mirrors itself into the model via the
+    // store-mirror Sub (app/state.js#_appSubscriptions). Whole-snapshot; render
+    // reads model.history (frame = f(model), #D5). No identity-preserve guard:
+    // snapshot() is a fresh array each fire, and the store fires only on real
+    // list-shape changes (start/end), so every dispatch IS a change.
+    case 'history_synced':
+      return [{ ...model, history: msg.history }, []];
     case 'set_theme': {
       // Theme selection flows through update like any other state change.
       // model.theme is the SINGLE source of truth; the palette cache the pure
