@@ -8,7 +8,7 @@
  * Component (TEA) model — the polled state lives in the SLICE, not module-
  * global caches:
  *
- *   { status: {name:status}, stats: {name:{cpu,mem}}, inFlight, eventsStarted }
+ *   { status: {name:status}, stats: {name:{cpu,mem}}, inFlight }
  *
  * Periodic refresh is a declared `interval` subscription (FIX-3 Phase 4 — was a
  * self-re-armed `tick` Cmd). `subscriptions(paneDef)` declares the poll while a
@@ -24,15 +24,16 @@
  *                        publishes the hub stats series, and folds the result
  *                        back via a dockerResult Msg (inFlight guards overlap).
  *
- * The long-lived `docker events --filter type=container` stream is a
- * subscription: a `dockerEventsStart` effect spawns it and, on a debounced
- * tracked-container event, injects a `dockerPoll` Msg (the TEA "external event
- * → Program.Send(msg)" pattern). i/t/s per-row keys arrive as key Msgs and
- * emit stream/shell effects.
+ * The long-lived `docker events --filter type=container` stream is a declared
+ * `process-stream` subscription (subscriptions(); FIX-3 Phase 5). The generic
+ * kind (app/state.js) owns spawn + line-split + reconnect/backoff + teardown;
+ * docker's `onLine` is `handleEventLine` (parse/filter/debounce), which injects
+ * a `dockerPoll` Msg on a tracked-container event (the TEA "external event →
+ * Program.Send(msg)" pattern). i/t/s per-row keys arrive as key Msgs and emit
+ * stream/shell effects.
  */
 'use strict';
 
-const { spawn } = require('child_process');
 
 const {
   esc, theme, renderPanel,
@@ -81,13 +82,12 @@ function _containers() {
 // The tick keeps running as a safety net (catches missed events + refreshes
 // stats — `docker events` carries no cpu/mem numbers).
 
-let _eventsProc = null;
-let _eventsBuf = '';
+// Events-debounce timer (docker-local — coalesces a burst of tracked-container
+// events into one poll). The process/reconnect state lives in the
+// `process-stream` Sub's token now (FIX-3 Phase 5), not here.
 let _eventsRefreshTimer = null;
-let _eventsReconnectTimer = null;       // T17: tracked so stopEventsStream can cancel
-let _eventsExitHandler = null;
 const EVENTS_DEBOUNCE_MS = 200;
-const EVENTS_RECONNECT_MS = 5000;
+const EVENTS_RECONNECT_MS = 5000;   // passed to the process-stream Sub as reconnectMs
 
 /** True when `name` appears in any group's `containers:` list. */
 function isTrackedContainer(name, config) {
@@ -121,96 +121,22 @@ function handleEventLine(line, config, refreshFn, renderFn) {
       console.error(`[docker:events] refresh after event failed: ${e.message}`);
     }
   }, EVENTS_DEBOUNCE_MS);
+  // unref so a pending debounce never holds the process at quit (the Sub
+  // teardown kills the proc; this docker-local timer isn't Sub-managed).
+  if (_eventsRefreshTimer.unref) _eventsRefreshTimer.unref();
   return true;
 }
 
-// Dispatch host captured when the events subscription starts (dockerEventsStart
-// effect handler) — the events stream is a long-lived subscription, so it holds
-// the injected dispatch the way a Hyperapp/Elmish subscription captures dispatch.
-// See docs/v0.6.5-dispatch-loop.md "formalize injection".
-let _subHost = null;
+// FIX-3 Phase 5 — the spawn + line-split + reconnect/backoff (and the T17
+// spawn-fail edge) moved to the generic `process-stream` Sub kind
+// (app/state.js); the dispatch host is the Sub `ctx`, not a captured `_subHost`.
+// What remains docker-local is the parse/filter/debounce (handleEventLine) and
+// the debounce-timer cleanup below.
 
-// Production event → Msg bridge: a tracked event injects a one-shot poll Msg.
-// (Returns true so handleEventLine's renderFn fires — the real data update
-// rides back on dockerResult's render effect.)
-function _eventPoll() {
-  if (_subHost) _subHost.dispatchMsg(_subHost.wrap('docker', { type: 'dockerPoll' }));
-  return true;
-}
-
-/**
- * Idempotent: start the events stream if not already running. Auto-reconnects
- * on stream death (docker daemon restart, etc.).
- */
-function startEventsStream(config) {
-  if (_eventsProc) return;
-  let proc;
-  try {
-    proc = spawn('docker',
-      ['events', '--filter', 'type=container', '--format', '{{json .}}'],
-      { stdio: ['ignore', 'pipe', 'ignore'] });
-  } catch (e) {
-    // T17 — pre-fix, a spawn failure (no `docker` on PATH) left the
-    // slice's `eventsStarted: true` latch on with no reconnect path
-    // ever firing (proc.on('exit') needs a proc). Schedule a retry
-    // through the same reconnect timer so a later `docker` install
-    // (or PATH fix) eventually picks the stream up.
-    console.error(`[docker:events] spawn failed: ${e.message}`);
-    if (!_eventsReconnectTimer) {
-      _eventsReconnectTimer = setTimeout(() => {
-        _eventsReconnectTimer = null;
-        startEventsStream(config);
-      }, EVENTS_RECONNECT_MS);
-      _eventsReconnectTimer.unref();
-    }
-    return;
-  }
-  _eventsProc = proc;
-  _eventsBuf = '';
-  proc.stdout.setEncoding('utf8');
-  proc.stdout.on('data', (chunk) => {
-    _eventsBuf += chunk;
-    let nl;
-    while ((nl = _eventsBuf.indexOf('\n')) >= 0) {
-      const line = _eventsBuf.slice(0, nl).trim();
-      _eventsBuf = _eventsBuf.slice(nl + 1);
-      if (line) handleEventLine(line, config, _eventPoll, scheduleRender);
-    }
-  });
-  proc.on('exit', () => {
-    if (_eventsProc === proc) _eventsProc = null;
-    if (!proc.killed) {
-      // T17 — track the reconnect timer and .unref() it so we don't
-      // keep the process alive during the 5s reconnect window. Without
-      // the handle, stopEventsStream couldn't cancel it; without
-      // .unref(), Node would hang for 5s after the user's quit just
-      // to fire a reconnect that immediately gets killed.
-      _eventsReconnectTimer = setTimeout(() => {
-        _eventsReconnectTimer = null;
-        startEventsStream(config);
-      }, EVENTS_RECONNECT_MS);
-      _eventsReconnectTimer.unref();
-    }
-  });
-  proc.on('error', (e) => {
-    console.error(`[docker:events] stream error: ${e.message}`);
-  });
-  if (!_eventsExitHandler) {
-    _eventsExitHandler = stopEventsStream;
-    process.on('exit', _eventsExitHandler);
-  }
-}
-
+// Clear a pending events-debounce timer. Exported for tests; in production the
+// debounce timer is unref'd so it never holds the process at quit.
 function stopEventsStream() {
   if (_eventsRefreshTimer) { clearTimeout(_eventsRefreshTimer); _eventsRefreshTimer = null; }
-  // T17 — cancel the pending reconnect too so cleanup() doesn't race
-  // with a fresh `docker events` spawn after the TUI quit. Symmetric
-  // with the debounce-timer cleanup above.
-  if (_eventsReconnectTimer) { clearTimeout(_eventsReconnectTimer); _eventsReconnectTimer = null; }
-  if (_eventsProc) {
-    try { _eventsProc.kill(); } catch { /* already dead */ }
-    _eventsProc = null;
-  }
 }
 
 // --- Stats string parsers (numeric forms for the hub series) ---
@@ -262,7 +188,7 @@ function init(paneId) {
     },
   });
   return {
-    status: {}, stats: {}, inFlight: false, eventsStarted: false,
+    status: {}, stats: {}, inFlight: false,
     // v0.6.1 Phase 3 — single-panel Component, nav stores the entry directly.
     nav: mnav.init(),
     // v0.6.4 Theme A Phase 5 Arc 3 — pane identity. The register-time
@@ -282,16 +208,15 @@ function init(paneId) {
 function _maybeFetch(slice) {
   // Pure gate — only the in-flight latch (slice state) lives in the
   // reducer. Whether there are containers to query and whether the
-  // terminal is focused are LIVE runtime reads: the tick fires async,
-  // so an arm-time value would be stale. Those gates moved to the
-  // dockerFetch / dockerEventsStart effects (the impure layer), which
-  // makes this — and the refresh/dockerPoll arms — pure.
+  // terminal is focused are LIVE runtime reads: the poll fires async,
+  // so an arm-time value would be stale. That gate lives in the
+  // dockerFetch effect (the impure layer), which makes this — and the
+  // refresh/dockerPoll arms — pure.
   if (slice.inFlight) return [slice, []];
-  const effects = [];
-  const next = { ...slice, inFlight: true };
-  if (!slice.eventsStarted) { next.eventsStarted = true; effects.push({ type: 'dockerEventsStart' }); }
-  effects.push({ type: 'dockerFetch' });
-  return [next, effects];
+  // FIX-3 Phase 5 — no more eventsStarted/dockerEventsStart here: the events
+  // watcher is a declared `process-stream` Sub (subscriptions()), started by the
+  // reconciler on pane placement, not lazily on first fetch.
+  return [{ ...slice, inFlight: true }, [{ type: 'dockerFetch' }]];
 }
 
 function update(msg, slice) {
@@ -305,9 +230,9 @@ function update(msg, slice) {
   // singleton, slice.paneId == null). Placed panes (paneId set) carry nav
   // only — they handled their nav/key Msgs above and read shared content
   // via _slice(). Without this gate every placed pane re-ran refresh →
-  // fetch → tick → eventsStart; the results were hardwired back to the
-  // owner (`wrap('docker')` in dockerResult/_eventPoll/dockerFetch), so a
-  // placed pane's content Msgs were pure waste + a stuck inFlight latch.
+  // fetch; the results were hardwired back to the owner (`wrap('docker')`
+  // in dockerResult/dockerFetch), so a placed pane's content Msgs were
+  // pure waste + a stuck inFlight latch.
   if (slice.paneId != null) return slice;
   if (msg.type === 'refresh' || msg.type === 'dockerPoll') {
     // Poll now. `refresh` = boot / r / :refresh; `dockerPoll` = the recurring
@@ -423,16 +348,10 @@ function installEffects(registerEffect) {
     });
   });
 
-  registerEffect('dockerEventsStart', (_eff, host) => {
-    _subHost = host;   // hold dispatch for the events subscription's lifetime
-    // Don't spawn the events watcher until there's at least one tracked
-    // container — the reducer no longer gates on container count (live
-    // read). With a permanently empty container set (config is immutable
-    // post-boot) the latch stays effectively idle and no watcher starts,
-    // matching the pre-Phase-D behavior.
-    if (_containers().length === 0) return;
-    startEventsStream(getModel().config);
-  });
+  // FIX-3 Phase 5 — the `dockerEventsStart` effect is retired. The events
+  // watcher is now a declared `process-stream` Sub (subscriptions()); the
+  // reconciler owns its lifecycle (start on placement-with-containers, stop on
+  // pane-remove) instead of this lazy first-fetch effect.
 
   registerEffect('dockerExec', (eff, host) => {
     // R6 — dropped pre-stream setActiveTab(0). It was legacy from the
@@ -639,12 +558,36 @@ const containerCommands = [
 // gate in update(). The reconciler tears it down when the last docker pane
 // leaves the layout — the old self-arm tick polled forever once refreshed.
 function subscriptions(/* paneDef, model */) {
-  return [{
+  const subs = [{
     kind: 'interval',
     id: 'docker-poll',
     ms: POLL_MS,
     onTick: (ctx) => ctx.dispatch(ctx.wrap('docker', { type: 'dockerPoll' })),
   }];
+  // FIX-3 Phase 5 — the long-lived `docker events` watcher is a `process-stream`
+  // Sub: spawn + line-split + reconnect/backoff (incl. the T17 spawn-fail edge)
+  // are the generic kind's job (app/state.js); onLine is docker's parse/filter/
+  // debounce (handleEventLine), which dispatches a one-shot `dockerPoll` on a
+  // tracked-container event. Declared ONLY while there's a tracked container
+  // (config is immutable post-boot — matches the old dockerEventsStart gate);
+  // the reconciler tears the child down on pane-remove, and quit teardown runs
+  // via tui.js's teardownSubscriptions (a spawned child does NOT die with us).
+  if (_containers().length > 0) {
+    subs.push({
+      kind: 'process-stream',
+      id: 'docker-events',
+      cmd: 'docker',
+      args: ['events', '--filter', 'type=container', '--format', '{{json .}}'],
+      reconnectMs: EVENTS_RECONNECT_MS,
+      onLine: (line, ctx) => handleEventLine(
+        line,
+        getModel().config,
+        () => { ctx.dispatch(ctx.wrap('docker', { type: 'dockerPoll' })); return true; },
+        ctx.scheduleRender,
+      ),
+    });
+  }
+  return subs;
 }
 
 module.exports = {
@@ -661,9 +604,10 @@ module.exports = {
   // the owner and silently stop fetching.
   service: true,
   installEffects,
-  // Framework teardown (cleanupComponents on quit) — stop the long-lived
-  // `docker events` child + its reconnect timer. process.on('exit') backstops.
-  cleanup: stopEventsStream,
+  // FIX-3 Phase 5 — no `cleanup` hook: the `docker events` child is owned by
+  // the `process-stream` Sub (subscriptions()), torn down by the reconciler on
+  // pane-remove and by tui.js's teardownSubscriptions on quit. The debounce
+  // timer is unref'd, so nothing docker-local needs quit cleanup.
   // statusFor: generic provider contract — lets the core groups renderer show
   // running/stopped without knowing docker exists. Reads the Component slice.
   statusFor: (name) => {

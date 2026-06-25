@@ -171,6 +171,12 @@ function main() {
   // escape codes are no-ops when already off) so the symmetric call from
   // the `quit` effect on user-quit is safe to fire too.
   process.on('exit', cleanup);
+  // FIX-3 Phase 5 — tear down every live subscription on quit: stop the
+  // `process-stream` Subs (kill their children — e.g. `docker events`, which
+  // does NOT die with the parent), cancel intervals, remove the resize
+  // listener. Replaces docker's old `cleanup: stopEventsStream` hook + its
+  // `process.on('exit')` backstop now that the events stream is a declared Sub.
+  process.on('exit', () => { try { require('./state').teardownSubscriptions(); } catch (_) {} });
   // Backstop: process.on('exit') runs only when Node exits NORMALLY.
   // An uncaught throw (async PTY handler after dispose, a hub publish
   // inside an effect that rethrows, etc.) would bypass it — terminal

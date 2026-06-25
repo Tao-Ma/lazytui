@@ -124,6 +124,53 @@ const _subKinds = {
     },
     stop: (cancel) => cancel(),
   },
+  // Long-lived child process whose stdout lines are events (FIX-3 Phase 5).
+  // Descriptor `{kind:'process-stream', id, cmd, args, stdio?, reconnectMs?, onLine}`.
+  // start spawns the child, splits stdout into lines → `onLine(line, ctx)`, and
+  // auto-reconnects on exit OR spawn failure (backoff, unref'd — the T17 edge:
+  // a missing binary still schedules a retry). stop kills the child + cancels a
+  // pending reconnect. The reconnect/buffer state lives in the TOKEN, never the
+  // model. A spawned child does NOT die with the parent, so the Sub MUST be
+  // stopped on quit (teardownSubscriptions, wired from the app boot).
+  'process-stream': {
+    normalize: (d) => (d && d.id && d.cmd && typeof d.onLine === 'function' ? d : null),
+    key: (d) => d.id,
+    start: (d, ctx) => {
+      const { spawn } = require('child_process');
+      const token = { proc: null, buf: '', reconnectTimer: null, stopped: false };
+      const reconnect = () => {
+        if (token.stopped || token.reconnectTimer) return;
+        token.reconnectTimer = setTimeout(() => { token.reconnectTimer = null; launch(); }, d.reconnectMs || 5000);
+        if (token.reconnectTimer.unref) token.reconnectTimer.unref();
+      };
+      const launch = () => {
+        if (token.stopped) return;
+        let proc;
+        try { proc = spawn(d.cmd, d.args || [], { stdio: d.stdio || ['ignore', 'pipe', 'ignore'] }); }
+        catch (e) { console.error(`[sub:process:${d.id}] spawn failed: ${e && e.message}`); reconnect(); return; }
+        token.proc = proc; token.buf = '';
+        proc.stdout.setEncoding('utf8');
+        proc.stdout.on('data', (chunk) => {
+          token.buf += chunk;
+          let nl;
+          while ((nl = token.buf.indexOf('\n')) >= 0) {
+            const line = token.buf.slice(0, nl).trim();
+            token.buf = token.buf.slice(nl + 1);
+            if (line) { try { d.onLine(line, ctx); } catch (e) { console.error(`[sub:process:${d.id}] onLine: ${e && e.message}`); } }
+          }
+        });
+        proc.on('exit', () => { if (token.proc === proc) token.proc = null; if (!proc.killed && !token.stopped) reconnect(); });
+        proc.on('error', (e) => console.error(`[sub:process:${d.id}] stream error: ${e && e.message}`));
+      };
+      launch();
+      return token;
+    },
+    stop: (token) => {
+      token.stopped = true;
+      if (token.reconnectTimer) { clearTimeout(token.reconnectTimer); token.reconnectTimer = null; }
+      if (token.proc) { try { token.proc.kill(); } catch (_) { /* already dead */ } token.proc = null; }
+    },
+  },
 };
 
 // App-global subscriptions — ongoing sources not owned by any pane. Pure
@@ -529,6 +576,10 @@ module.exports = {
   // #D13 — exposed for tests: the Model→Sub reconciler, its pure desired-set
   // projection, and the live-set teardown/reset.
   reconcileSubscriptions, _desiredSubs, _resetSubscriptions,
+  // Production quit-teardown: stop every live Sub (kill process-stream
+  // children, cancel intervals, remove the resize listener). Same impl as the
+  // test reset; wired to process exit from tui.js (FIX-3 Phase 5).
+  teardownSubscriptions: _resetSubscriptions,
   // Panel-state accessors — re-exported from panel/nav-state for back-compat
   // (§1 Phase 2). New code should import these from panel/nav-state.
   allPanels: navState.allPanels,
