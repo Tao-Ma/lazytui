@@ -507,10 +507,11 @@ function handleJobsKey(key, seq) {
 }
 
 function handleDiagLogKey(key, seq) {
-  // View-derived count + vh threaded into the Msg so the reducer stays
-  // pure of the out-of-TEA diag-log buffer (same shape as handleJobsKey).
+  // View-derived count + vh threaded into the Msg so the reducer stays pure of
+  // the diag list (same shape as handleJobsKey). FIX-1 stage 2 — count reads
+  // model.diagLog (the store-mirror'd snapshot), the same source render shows.
   const overlay = require('../../overlay/diag-log');
-  const count = require('../../io/diag-log').size();
+  const count = (getModel().diagLog || []).length;
   const vh = overlay.viewportRows();
   if (key === 'escape') { applyMsg({ type: 'diag_log_close' }); return; }
   if (key === 'up'   || seq === 'k') { applyMsg({ type: 'diag_log_nav', dir: -1, count, vh }); return; }
@@ -522,15 +523,15 @@ function handleDiagLogKey(key, seq) {
   if (seq === 'c') { applyMsg({ type: 'diag_log_clear' }); return; }
   if (seq === 's') { applyMsg({ type: 'diag_log_save' }); return; }
   if (seq === 'y') {
-    // Yank the highlighted entry to the register + clipboard. Resolve
-    // the out-of-TEA buffer entry HERE (handler-side, like jobs_activate)
-    // and route through register_push — the canonical yank Msg (dedup +
-    // cap + OSC52). Window stays open so multiple lines can be copied.
-    const diag = require('../../io/diag-log');
+    // Yank the highlighted entry to the register + clipboard. FIX-1 stage 2 —
+    // resolve the entry from model.diagLog (the SAME array render highlighted,
+    // so cursor indexes consistently) and route through register_push — the
+    // canonical yank Msg (dedup + cap + OSC52). yankText is the pure formatter.
+    // Window stays open so multiple lines can be copied.
     const m = getModel();
     const cursor = (m.modal.diagLog && m.modal.diagLog.cursor | 0) || 0;
-    const ev = diag.snapshot()[cursor];
-    if (ev) applyMsg({ type: 'register_push', text: diag.yankText(ev) });
+    const ev = (m.diagLog || [])[cursor];
+    if (ev) applyMsg({ type: 'register_push', text: require('../../io/diag-log').yankText(ev) });
     return;
   }
 }

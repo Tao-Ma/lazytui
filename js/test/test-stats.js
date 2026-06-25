@@ -273,14 +273,15 @@ describe('[15] framework reconciles declared subscriptions (Model → Sub, #D13)
     eq(hub.history('docker.stats', 'foo', 10).length, 0, 'nothing subscribed → nothing retained');
   });
 
-  it('_desiredSubs is a pure projection: app-global resize + history mirror + the placed stats pane', () => {
+  it('_desiredSubs is a pure projection: app-global resize + store mirrors + the placed stats pane', () => {
     _place([STATS_PANE]);
     const desired = state._desiredSubs(getModel());
-    // App-global subs always desired: `resize` (FIX-3 Phase 2) + the history
-    // `store-mirror` (FIX-1), plus the stats pane's hub sub → three.
-    eq(desired.size, 3, 'app-global resize + history mirror + one stats hub sub');
+    // App-global subs always desired: `resize` (FIX-3 Phase 2) + the history &
+    // diag `store-mirror`s (FIX-1), plus the stats pane's hub sub → four.
+    eq(desired.size, 4, 'resize + history mirror + diag mirror + one stats hub sub');
     assert(desired.has('resize:resize'), 'app-global resize sub present (FIX-3 Phase 2)');
     assert(desired.has('store-mirror:history'), 'app-global history store-mirror present (FIX-1)');
+    assert(desired.has('store-mirror:diag'), 'app-global diag store-mirror present (FIX-1)');
     eq(desired.get('store-mirror:history').kind, 'store-mirror', 'tagged store-mirror');
     assert(desired.has('hub:docker.stats:5'), 'keyed by <kind>:topic:window (FIX-3 Phase 1)');
     eq(desired.get('hub:docker.stats:5').kind, 'hub', 'descriptor tagged with its kind');

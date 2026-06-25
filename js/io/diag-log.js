@@ -34,6 +34,16 @@ const DEFAULT_CAP = 200;
 let _cap = DEFAULT_CAP;
 let _buf = [];
 
+// Mirrorable-store contract (v0.6.6 FIX-1, docs/v0.6.6.md §8.1): a single
+// change-notify seam the store-mirror Sub injects its cb into, so the buffer
+// mirrors itself into model.diagLog without importing the dispatch loop. This
+// is the store that had NO notification before FIX-1 (render just sampled it
+// each frame) — it now actively drives diag_synced. Low-frequency throughout
+// (warnings/errors), so it fires on EVERY mutation.
+let _onChange = null;
+function setOnChange(cb) { _onChange = cb || null; }
+function _notify() { if (_onChange) _onChange(); }
+
 /** Append a diagnostic. `level` normalizes to 'warn' unless 'error'. */
 function record(level, code, message) {
   const lvl = level === 'error' ? 'error' : 'warn';
@@ -44,6 +54,7 @@ function record(level, code, message) {
     message: String(message == null ? '' : message),
   });
   if (_buf.length > _cap) _buf.shift();
+  _notify();
 }
 
 function warn(code, message)  { record('warn', code, message); }
@@ -70,11 +81,12 @@ function yankText(ev) {
   return `[${ev.level}] ${ev.code}: ${ev.message}`;
 }
 
-function clear() { _buf = []; }
+function clear() { _buf = []; _notify(); }
 
 function setCap(n) {
   _cap = Math.max(1, n | 0);
   while (_buf.length > _cap) _buf.shift();
+  _notify();
 }
 
 /**
@@ -94,5 +106,5 @@ function save(filepath) {
 
 module.exports = {
   record, warn, error, snapshot, size, counts, clear, setCap, save,
-  yankText, DEFAULT_CAP,
+  yankText, DEFAULT_CAP, setOnChange,
 };

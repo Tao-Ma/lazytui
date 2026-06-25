@@ -28,11 +28,12 @@
  *   so on replay those live stores sit at their module defaults and the replayed
  *   frame differs. The live stores the frame reads at paint time:
  *     - feature/jobs.list()        — Running overlay (overlay/jobs.js)
- *     - io/diag-log.snapshot()     — diagnostics window (overlay/diag-log.js)
  *     - io/terminal.getSession(id) — terminal-pane screen contents (paint.js / footer.js)
  *     - io/term.cols()/rows()      — terminal dims mirror (render reads this, not model.dims)
- *   This is deliberate, not a bug: the jobs/diag overlays read live ON PURPOSE
- *   (a warning/job arriving while the window is open shows without re-opening).
+ *   This is deliberate, not a bug: the jobs overlay reads live ON PURPOSE
+ *   (a job arriving while the window is open shows without re-opening) — and the
+ *   store-mirror Sub keeps the moved-under stores live the same way (its cb
+ *   fires on each mutation, so a mid-overlay arrival still shows, now via Msg).
  *   `model.now` (frame clock) and `model.theme` (theme) are pulled under the
  *   model — so the wall clock AND the theme are replay-safe: render reads
  *   `model.now`, and (#D8) projects the leaves/infra/themes palette cache from
@@ -42,11 +43,12 @@
  *   v0.6.6 FIX-1 is bringing the rest under the model via the `store-mirror` Sub
  *   (app/state.js#_appSubscriptions): the store fires an injected cb on mutation,
  *   the cb applyMsg's a whole-snapshot `*_synced` Msg, render reads `model.*`.
- *   DONE so far: **feature/history → model.history** (the history navigator now
- *   reads f(model)). PENDING: diag-log → model.diagLog, jobs → model.jobs. When
- *   those land, the only off-model render reads left are the terminal island
- *   (io/terminal + io/term — the irreducible #D14 PTY). Until then the honest
- *   statement is the boundary above, not a blanket "frame = f(model)".
+ *   DONE so far: **feature/history → model.history** + **io/diag-log →
+ *   model.diagLog** (the history navigator + diagnostics overlay now read
+ *   f(model)). PENDING: jobs → model.jobs. When that lands, the only off-model
+ *   render reads left are the terminal island (io/terminal + io/term — the
+ *   irreducible #D14 PTY). Until then the honest statement is the boundary
+ *   above, not a blanket "frame = f(model)".
  *
  *   Terminal panes are an explicitly NON-TEA region: the model holds the PTY
  *   *lifecycle* (which tab, session id), but the screen contents live in the
@@ -172,12 +174,13 @@ function init() {
     prefixNode: null,
     prefixSeq: [],
     register: null,                  // yank register {history, cap} (register.js)
-    // v0.6.6 FIX-1 — the operation-history ring (feature/history) mirrored into
-    // the model by the store-mirror Sub (app/state.js#_appSubscriptions), so the
-    // history navigator renders f(model) instead of reading the off-model store
-    // live (#D5). Seeded [] (the store is empty at boot); the store's setOnChange
-    // cb drives every update via history_synced. Newest-first.
-    history: [],
+    // v0.6.6 FIX-1 — module-local live stores mirrored into the model by the
+    // store-mirror Sub (app/state.js#_appSubscriptions), so the readers render
+    // f(model) instead of reading the off-model store live (#D5). Seeded []
+    // (each store is empty at boot); the store's setOnChange cb drives every
+    // update via the *_synced Msg. Both newest-first.
+    history: [],     // operation history (feature/history) → history navigator
+    diagLog: [],     // diagnostics ring (io/diag-log)      → leader-e overlay
   };
   return m;
 }
