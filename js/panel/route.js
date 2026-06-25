@@ -327,7 +327,11 @@ function _strictMiss(fn, id) {
   if (_primaryByKind[id] === undefined || _warnedStrict.has(id)) return;
   _warnedStrict.add(id);
   try {
-    require('../io/diag-log').warn('strict-miss',
+    // DEFERRED, not warn(): these reads sit on per-frame render paths, and a
+    // synchronous warn() fires the diag store-mirror → a re-entrant applyMsg
+    // from inside render. recordDeferred queues it; the dispatch finalizer
+    // drains it (docs/v0.6.6.md §9 follow-up — render-path purity).
+    require('../io/diag-log').warnDeferred('strict-miss',
       `${fn}('${id}') is a kind name, not an instance id — thread a paneId, or declare kind-level intent via primarySliceOf/serviceSlice.`);
   } catch (_) { /* diag-log unavailable (early boot / test) */ }
 }

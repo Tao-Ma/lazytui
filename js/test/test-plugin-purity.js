@@ -8,6 +8,11 @@
  * A Component opts into a memoized fast path with `groupActionsMemo: true`
  * (guarded once per group, then cached).
  *
+ * v0.6.6 §9 follow-up: callGroupActions runs on render paths, so the guard
+ * recordDeferred()s its warns rather than warn()ing synchronously (render-path
+ * purity). These tests flushDeferred() before reading diag state — modelling
+ * the dispatch finalizer's drain.
+ *
  * Run: node js/test/test-plugin-purity.js
  */
 'use strict';
@@ -17,7 +22,9 @@ const guard = require('../panel/plugin-guard');
 const diag = require('../io/diag-log');
 
 function fresh() { diag.clear(); guard.reset(); }
-function warnCodes() { return diag.snapshot().map(e => e.code); }
+// The guard defers its warns (render-path purity); drain before reading, as the
+// dispatch finalizer does in production.
+function warnCodes() { diag.flushDeferred(); return diag.snapshot().map(e => e.code); }
 
 const pure = {
   name: 'pure-plugin',
@@ -60,6 +67,7 @@ describe('[guard] callGroupActions is always enforced', () => {
     fresh();
     const out = guard.callGroupActions(pure, { tag: true }, 'g', {}, {});
     assert(out && out.a, 'pure plugin output present');
+    diag.flushDeferred();
     eq(diag.size(), 0, 'no diagnostics for a pure plugin');
   });
 
@@ -108,6 +116,7 @@ describe('[guard] callGroupActions is always enforced', () => {
     guard.callGroupActions(mutator, config.groups.g, 'g', config, {});
     guard.callGroupActions(mutator, config.groups.g, 'g', config, {});
     guard.callGroupActions(mutator, config.groups.g, 'g', config, {});
+    diag.flushDeferred();
     eq(diag.counts().warn, 1, 'three calls → one warn (deduped)');
   });
 });

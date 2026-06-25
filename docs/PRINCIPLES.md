@@ -696,10 +696,11 @@ the live hub bus** at render — closed by the `metrics-mirror` Sub
 (continuous-source throttle, above) sampling the hub series into
 `model.metrics[topic]`. The #D5 render-reads-live-stores boundary is now gone:
 `frame = f(model)` holds for every panel + overlay except the one irreducible
-island (`io/terminal`, #D14). (Two latent, content-irrelevant render-path
-*write* side-effects remain — the plugin-call timing `diag.warn` and the
-strict-miss tripwire; they don't change frame output, so they're noted, not
-chased.) Going forward: reserve out-of-TEA stores / islands for the irreducible
+island (`io/terminal`, #D14). (The two render-path diagnostic *writes* — the
+plugin-call timing `diag.warn` and the strict-miss tripwire — were the last
+read-path side-effects; both now `recordDeferred` into a queue the dispatch
+finalizer drains, so the read path is pure. See Finding C in `docs/v0.6.6.md`.)
+Going forward: reserve out-of-TEA stores / islands for the irreducible
 foreign-reactive case, NOT as a default for "global" data. New Components follow
 the recipe above, not the legacy store pattern. (See `docs/v0.6.6.md`.)
 

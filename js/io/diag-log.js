@@ -19,9 +19,12 @@
  * Storage: newest at the END of `_buf` (push); `snapshot()` returns a
  * newest-FIRST copy for display. Cap defaults to 200; oldest drop.
  *
- * Producers today: boot config warnings (app/state.js), the
- * same-kind-collapse guard (panel/route.js getInstanceSlice), and every
- * runtime error funneled through dispatch/runtime/effects.js `_recordError`.
+ * Producers today: boot config warnings (app/state.js), and every runtime
+ * error funneled through dispatch/runtime/effects.js `_recordError` — these are
+ * effect/boot-path, so they record() synchronously. The two RENDER/READ-path
+ * producers (the strict-miss tripwire in panel/route.js, the plugin
+ * purity/timing guard in panel/plugin-guard.js) use the DEFERRED lane instead
+ * (recordDeferred → flushDeferred); see that lane's note below for why.
  * Other call sites adopt warn()/error() opportunistically.
  */
 'use strict';
@@ -44,21 +47,53 @@ let _onChange = null;
 function setOnChange(cb) { _onChange = cb || null; }
 function _notify() { if (_onChange) _onChange(); }
 
-/** Append a diagnostic. `level` normalizes to 'warn' unless 'error'. */
-function record(level, code, message) {
-  const lvl = level === 'error' ? 'error' : 'warn';
+function _push(level, code, message) {
   _buf.push({
     t: Date.now(),
-    level: lvl,
+    level: level === 'error' ? 'error' : 'warn',
     code: String(code == null ? '' : code),
     message: String(message == null ? '' : message),
   });
   if (_buf.length > _cap) _buf.shift();
-  _notify();
 }
+
+/** Append a diagnostic. `level` normalizes to 'warn' unless 'error'. */
+function record(level, code, message) { _push(level, code, message); _notify(); }
 
 function warn(code, message)  { record('warn', code, message); }
 function error(code, message) { record('error', code, message); }
+
+// Deferred lane (v0.6.6 §9 follow-up — render-path purity). A render/read-path
+// detection must NOT mutate the buffer synchronously: a write here fires
+// _notify → the store-mirror's `diag_synced` dispatch, i.e. a re-entrant
+// applyMsg from INSIDE render, feeding model.diagLog (the very frame being
+// drawn). Those producers recordDeferred() into this queue instead — no
+// _notify, no dispatch, and no Date.now() (the timestamp is stamped at flush),
+// so the read path stays a pure function of the model. The dispatch finalizer
+// (dispatch/runtime/finalize) drains it once per outermost dispatch via
+// flushDeferred(), landing the warn through the normal diag_synced flow from a
+// dispatch-side context. Dedup stays at the call site, so the queue can't flood.
+let _pending = [];
+
+/** Queue a diagnostic detected on a render/read path. No notify, no Date.now();
+ *  drained by flushDeferred() from the dispatch finalizer. */
+function recordDeferred(level, code, message) {
+  _pending.push({ level: level === 'error' ? 'error' : 'warn', code, message });
+}
+function warnDeferred(code, message)  { recordDeferred('warn', code, message); }
+function errorDeferred(code, message) { recordDeferred('error', code, message); }
+
+/** Drain the deferred queue into the buffer and fire ONE change-notify for the
+ *  whole batch (→ one diag_synced dispatch regardless of how many detections
+ *  coalesced). No-op when empty (the steady state), so it is cheap to call every
+ *  dispatch. `t` is stamped here (dispatch-side), in detection order. */
+function flushDeferred() {
+  if (_pending.length === 0) return;
+  const batch = _pending;
+  _pending = [];
+  for (const e of batch) _push(e.level, e.code, e.message);
+  _notify();
+}
 
 /** Newest-first copy for display. */
 function snapshot() { return _buf.slice().reverse(); }
@@ -81,7 +116,7 @@ function yankText(ev) {
   return `[${ev.level}] ${ev.code}: ${ev.message}`;
 }
 
-function clear() { _buf = []; _notify(); }
+function clear() { _buf = []; _pending = []; _notify(); }
 
 function setCap(n) {
   _cap = Math.max(1, n | 0);
@@ -107,4 +142,5 @@ function save(filepath) {
 module.exports = {
   record, warn, error, snapshot, size, counts, clear, setCap, save,
   yankText, DEFAULT_CAP, setOnChange,
+  recordDeferred, warnDeferred, errorDeferred, flushDeferred,
 };
