@@ -11,8 +11,10 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 This release drives the decision layer to the honest pure-TEA ceiling:
 `frame = f(model)` now holds for every panel and overlay except the one
 irreducible terminal island (the PTY/xterm screen buffer, which a child
-process mutates outside the message loop). Spec:
-[docs/v0.6.6.md](docs/v0.6.6.md).
+process mutates outside the message loop) — now formalized as the
+**foreign-component contract**
+([docs/foreign-components.md](docs/foreign-components.md)), with the terminal
+as its reference implementation. Spec: [docs/v0.6.6.md](docs/v0.6.6.md).
 
 - **Live external state is now declarative `Model → Sub` for every source.**
   The subscription reconciler (previously hub-topics-only) became
