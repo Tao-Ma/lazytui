@@ -245,11 +245,14 @@ describe('[setOnChange] store-mirror seam (FIX-1)', () => {
 });
 
 describe('[jobs_synced] arm lands the snapshot on model.jobs (FIX-1)', () => {
-  it('whole-snapshot write, no Cmd', () => {
+  it('whole-snapshot write + render Cmd', () => {
     const snap = [{ id: 'job-1', kind: 'pty', label: 'x', status: 'running' }];
     const [m, cmds] = runtime.update({ jobs: [] }, { type: 'jobs_synced', jobs: snap });
     eq(m.jobs, snap, 'model.jobs is the synced snapshot');
-    eq(cmds.length, 0, 'no Cmd — pure model write');
+    // jobs_synced arrives via the store-mirror's ctx.applyMsg (no implicit
+    // repaint); the render Cmd is what repaints the Running overlay / running-
+    // glyph on an async status flip (v0.6.6 pre-release review regression fix).
+    eq(cmds.length, 1, 'one Cmd'); eq(cmds[0].type, 'render', 'render Cmd repaints');
   });
 });
 
