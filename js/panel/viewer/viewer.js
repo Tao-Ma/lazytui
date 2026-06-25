@@ -1201,6 +1201,13 @@ function _paneInnerH(slice) {
   const viewerPaneId = route.resolveViewerPaneId();
   const paneId = (slice && slice.paneId) || viewerPaneId;
   if (!paneId) return 0;
+  // `undefined` = no precomputed-layout override. On-screen viewers (half/full
+  // view — the interactive case) get a fresh `availH-2` directly. An OFF-screen
+  // pane in normal multi-column view reads boundsFor→_currentLayout, which lags
+  // one dispatch during a resize. Accepted by design (v0.6.6 pre-release review,
+  // RISK): that pane isn't visible and the next dispatch corrects it; threading
+  // a fresh layout here would mean a calcLayout on every viewer Msg (a hot path)
+  // to fix an invisible frame.
   return geo.getPanelViewportH(ls, paneId, ls.dims, undefined, viewerPaneId) || 0;
 }
 

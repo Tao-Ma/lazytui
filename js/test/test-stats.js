@@ -223,6 +223,25 @@ describe('[14] stats declares its metrics-mirror subscription (pure)', () => {
     eq(stats.subscriptions({}).length, 0, 'no topic → no subscription');
     eq(stats.subscriptions(undefined).length, 0, 'no paneDef → no subscription');
   });
+
+  it('two panes on one topic coalesce to ONE metrics-mirror at the MAX window', () => {
+    // metrics-mirror keys by topic (it writes the single model.metrics[topic]
+    // field), so two same-topic stats panes with different windows must merge,
+    // not last-write-clobber — the wider-history pane would otherwise be starved.
+    const state = require('../app/state');
+    const out = new Map();
+    state._addDesired(out, { kind: 'metrics-mirror', topic: 'docker.stats', window: 40, ms: 250 });
+    state._addDesired(out, { kind: 'metrics-mirror', topic: 'docker.stats', window: 120, ms: 100 });
+    eq(out.size, 1, 'same topic → one mirror, not two');
+    const desc = [...out.values()][0].desc;
+    eq(desc.window, 120, 'max window retained (not the last-written 40 if order flips)');
+    eq(desc.ms, 100, 'tightest cadence retained');
+    // Order-independent: adding the larger first still yields the max.
+    const out2 = new Map();
+    state._addDesired(out2, { kind: 'metrics-mirror', topic: 'docker.stats', window: 120 });
+    state._addDesired(out2, { kind: 'metrics-mirror', topic: 'docker.stats', window: 40 });
+    eq([...out2.values()][0].desc.window, 120, 'max window regardless of add order');
+  });
 });
 
 describe('[15] framework reconciles declared subscriptions (Model → Sub, #D13)', () => {

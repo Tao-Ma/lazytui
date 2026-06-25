@@ -128,11 +128,12 @@ const _subKinds = {
     stop: (cancel) => cancel(),
   },
   // Long-lived child process whose stdout lines are events (FIX-3 Phase 5).
-  // Descriptor `{kind:'process-stream', id, cmd, args, stdio?, reconnectMs?, onLine}`.
+  // Descriptor `{kind:'process-stream', id, cmd, args, stdio?, reconnectMs?, onLine, onStop?}`.
   // start spawns the child, splits stdout into lines → `onLine(line, ctx)`, and
   // auto-reconnects on exit OR spawn failure (backoff, unref'd — the T17 edge:
   // a missing binary still schedules a retry). stop kills the child + cancels a
-  // pending reconnect. The reconnect/buffer state lives in the TOKEN, never the
+  // pending reconnect + invokes the optional `onStop()` for consumer-side
+  // cleanup (e.g. a line-debounce timer). The reconnect/buffer state lives in the TOKEN, never the
   // model. A spawned child does NOT die with the parent, so the Sub MUST be
   // stopped on quit (teardownSubscriptions, wired from the app boot).
   'process-stream': {
@@ -140,7 +141,7 @@ const _subKinds = {
     key: (d) => d.id,
     start: (d, ctx) => {
       const { spawn } = require('child_process');
-      const token = { proc: null, buf: '', reconnectTimer: null, stopped: false };
+      const token = { proc: null, buf: '', reconnectTimer: null, stopped: false, onStop: d.onStop };
       const reconnect = () => {
         if (token.stopped || token.reconnectTimer) return;
         token.reconnectTimer = setTimeout(() => { token.reconnectTimer = null; launch(); }, d.reconnectMs || 5000);
@@ -172,6 +173,10 @@ const _subKinds = {
       token.stopped = true;
       if (token.reconnectTimer) { clearTimeout(token.reconnectTimer); token.reconnectTimer = null; }
       if (token.proc) { try { token.proc.kill(); } catch (_) { /* already dead */ } token.proc = null; }
+      // Optional consumer-side cleanup on teardown (e.g. docker cancels its
+      // line-debounce timer so a pane-remove mid-window can't fire one stray
+      // poll after the stream is gone).
+      if (typeof token.onStop === 'function') { try { token.onStop(); } catch (_) { /* best-effort */ } }
     },
   },
   // Mirror a module-local live store into the model (v0.6.6 FIX-1). Descriptor
@@ -217,6 +222,11 @@ const _subKinds = {
   'metrics-mirror': {
     normalize: (d) => (d && d.topic ? { topic: d.topic, window: d.window || 40, ms: d.ms || 250 } : null),
     key: (d) => d.topic,
+    // Two panes on the same topic share ONE mirror (it writes the single
+    // model.metrics[topic] field) — coalesce to the LARGEST window so the
+    // wider-history pane isn't starved, and the tightest cadence. Each pane
+    // still slices its own `window` from the shared series at render.
+    merge: (a, b) => ({ topic: b.topic, window: Math.max(a.window, b.window), ms: Math.min(a.ms, b.ms) }),
     start: (d, ctx) => {
       const token = { hubToken: null, timer: null, stopped: false };
       const sample = () => {
@@ -340,7 +350,12 @@ function _addDesired(out, d) {
   if (!h) { console.error(`[subscriptions] unknown sub kind: ${kind}`); return; }
   const desc = h.normalize ? h.normalize(d) : d;
   if (!desc) return;
-  out.set(`${kind}:${h.key(desc)}`, { kind, desc });
+  // Same key already desired? A kind may define `merge` to coalesce the two
+  // descriptors (e.g. metrics-mirror takes the max window); otherwise
+  // last-write wins (the prior behavior).
+  const key = `${kind}:${h.key(desc)}`;
+  const prior = out.get(key);
+  out.set(key, { kind, desc: (prior && h.merge) ? h.merge(prior.desc, desc) : desc });
 }
 
 // Reconcile the live subscriptions to match `_desiredSubs(model)`: start the
@@ -675,8 +690,8 @@ module.exports = {
   // Boot layer + dispatch-layer group helpers, defined here.
   loadConfig, initState, selectGroup, resetGroupContext,
   // #D13 — exposed for tests: the Model→Sub reconciler, its pure desired-set
-  // projection, and the live-set teardown/reset.
-  reconcileSubscriptions, _desiredSubs, _resetSubscriptions,
+  // projection, the per-descriptor add/merge, and the live-set teardown/reset.
+  reconcileSubscriptions, _desiredSubs, _addDesired, _resetSubscriptions,
   // Production quit-teardown: stop every live Sub (kill process-stream
   // children, cancel intervals, remove the resize listener). Same impl as the
   // test reset; wired to process exit from tui.js (FIX-3 Phase 5).
