@@ -34,9 +34,12 @@
  *   lands it on the model, and render reads `model.*`. The overlays still update
  *   live mid-display ON PURPOSE (a job/warning arriving while the window is open
  *   shows without re-opening) — now because the cb fires per mutation, via Msg:
- *     - feature/history → model.history (history navigator)
- *     - io/diag-log     → model.diagLog (leader-e diagnostics overlay)
- *     - feature/jobs    → model.jobs    (Running overlay + viewer running-glyph)
+ *     - feature/history → model.history (history navigator)         [store-mirror]
+ *     - io/diag-log     → model.diagLog (leader-e diagnostics overlay) [store-mirror]
+ *     - feature/jobs    → model.jobs    (Running overlay + viewer running-glyph) [store-mirror]
+ *     - hub metrics     → model.metrics[topic] (stats graph)        [metrics-mirror,
+ *                         v0.6.6 Finding B — a continuous sampler, so a THROTTLED
+ *                         snapshot Sub, not per-publish; see docs/v0.6.6.md §9]
  *   `model.now` (frame clock, via the `clock` interval Sub) and `model.theme`
  *   (projected to the leaves/infra/themes palette cache at the render entry, #D8)
  *   are likewise replay-safe — the wall clock and theme are read off the model.
@@ -178,6 +181,12 @@ function init() {
     history: [],     // operation history (feature/history) → history navigator
     diagLog: [],     // diagnostics ring (io/diag-log)      → leader-e overlay
     jobs: [],        // live-jobs registry (feature/jobs)   → Running overlay
+    // v0.6.6 Finding B — hub metrics time-series, keyed by topic, sampled in by
+    // the throttled `metrics-mirror` Sub: { [topic]: { series:{rowKey:samples[]},
+    // schema } }. The stats panel renders f(model.metrics[topic]) instead of
+    // reading the off-model hub bus live. Seeded {} (no topic until a consumer
+    // pane is placed + its first sample lands).
+    metrics: {},
   };
   return m;
 }

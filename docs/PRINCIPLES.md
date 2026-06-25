@@ -637,13 +637,35 @@ Pick the primitive by feature shape:
 | One-shot effect with a result | copy to clipboard, read a file | **Cmd** → result Msg |
 | Async request / response | fetch docker containers, load a dir | **Cmd** → data Msg |
 | Ongoing external event source | timer tick, terminal resize, file watch, a streaming process, "the jobs registry changed" | **Sub** → one Msg per event |
-| Live external resource you must show | running procs, a log ring, command history | **Sub samples it into the Model**; `render` reads the mirror |
+| Live external resource you must show | running procs, a log ring, command history | **Sub mirrors it into the Model**; `render` reads the mirror (see the mirror sub-table) |
 | Foreign reactive system you cannot model | PTY / xterm buffer | **non-TEA island** (#D14) — documented boundary, kept minimal |
 
 The first four rows are pure TEA; only the last is an exception, and there
 is exactly one (`io/terminal.js`). This is the SAME shape that already makes
 the wall clock and theme replay-safe (`clock_tick → model.now`,
 `model.theme`): sample the impure source into the Model, then read the Model.
+
+**Mirroring a live source into the Model — pick by *source rate* × *what the view needs*.**
+"Sample it into the Model" is one idea with three shapes; the choice is **not**
+poll-vs-push (a poll is just a stream with boundaries) — it's the source's
+*change rate* crossed with whether the view needs every event (APPEND) or only
+the current state (SNAPSHOT):
+
+| View needs | Source rate | Mechanism | In this codebase |
+|---|---|---|---|
+| **APPEND** (order + every event matters; you scroll back) | any | fold each event into a model list/buffer (one Msg per event/batch) | viewer stream buffers (`viewer_append*`) — logs / `tail -f` |
+| **SNAPSHOT** (only current state matters; view redraws) | **discrete / low-freq** | **`store-mirror`** Sub — cb fires per mutation → whole-snapshot Msg | jobs / diag / history → `model.{jobs,diagLog,history}` |
+| **SNAPSHOT** | **continuous / high-freq** | **`metrics-mirror`** Sub — *throttle*: sample at a bounded cadence, one Msg per window | hub metrics → `model.metrics[topic]` (stats graph) |
+
+The throttle (`metrics-mirror`) is the canonical TEA handling of a fast source
+feeding a derived view: **sample at a display cadence, don't fold every sample.**
+Using the discrete `store-mirror` for a continuous source is the trap — it
+dispatches per sample, the cost the hub's #D17 deleted. Conversely, throttle-
+sampling a *log* would drop/reorder lines — logs are APPEND, not snapshot.
+A poll-driven producer (docker's 10 s loop) feeds the throttled mirror as a
+low-rate stream; a future push source (a metrics websocket) feeds the *same*
+`model.metrics[topic]` shape with no consumer change — the destination is
+uniform (topic-keyed), the feed is matched to the source.
 
 **Recipe for a new Component with live state:**
 
@@ -665,13 +687,21 @@ the wall clock and theme replay-safe (`clock_tick → model.now`,
 (inter-Component pub/sub) to all the external OS sources that were hand-rolled
 timers — docker poll, docker-events, the stdout resize listener, the
 terminal-overlay poll, the frame clock — and retired the self-re-arm pattern.
-**FIX-1** then folded the three out-of-TEA stores (`feature/jobs`, `io/diag-log`,
-`feature/history`) into the Model via the `store-mirror` Sub. The #D5
-render-reads-live-stores boundary is gone: `frame = f(model)` holds except the
-one irreducible island (`io/terminal`, #D14). Going forward: reserve out-of-TEA
-stores / islands for the irreducible foreign-reactive case, NOT as a default for
-"global" data. New Components follow the recipe above, not the legacy store
-pattern. (See `docs/v0.6.6.md`.)
+**FIX-1** then folded the three discrete out-of-TEA stores (`feature/jobs`,
+`io/diag-log`, `feature/history`) into the Model via the `store-mirror` Sub.
+A subsequent **code-only TEA re-review** ("forget docs/comments") caught the
+last two leaks: the `tab_switch` reducer arm still read `getModel()` (fixed —
+reads the threaded `msg.viewerModel` bundle), and the **stats panel still read
+the live hub bus** at render — closed by the `metrics-mirror` Sub
+(continuous-source throttle, above) sampling the hub series into
+`model.metrics[topic]`. The #D5 render-reads-live-stores boundary is now gone:
+`frame = f(model)` holds for every panel + overlay except the one irreducible
+island (`io/terminal`, #D14). (Two latent, content-irrelevant render-path
+*write* side-effects remain — the plugin-call timing `diag.warn` and the
+strict-miss tripwire; they don't change frame output, so they're noted, not
+chased.) Going forward: reserve out-of-TEA stores / islands for the irreducible
+foreign-reactive case, NOT as a default for "global" data. New Components follow
+the recipe above, not the legacy store pattern. (See `docs/v0.6.6.md`.)
 
 ## 13. Checklist for new features
 

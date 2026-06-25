@@ -198,6 +198,49 @@ const _subKinds = {
     },
     stop: (store) => store.setOnChange(null),
   },
+  // Throttled snapshot-mirror of a hub metrics topic into model.metrics[topic]
+  // (v0.6.6 Finding B). Descriptor `{kind:'metrics-mirror', topic, window, ms?}`.
+  // This is the canonical TEA shape for a HIGH-FREQUENCY external source feeding
+  // a DERIVED VIEW (a graph): SAMPLE at a bounded cadence, not once per event
+  // (the throttle-the-subscription pattern TEA prescribes for fast sources — the
+  // same shape as a frame-rate / time-sampled subscription). Contrast the
+  // `store-mirror` kind, which fires per mutation: correct for DISCRETE
+  // low-frequency stores (jobs/diag/history), but for a continuous sampler it
+  // would re-introduce exactly the per-publish dispatch the hub's #D17 removed.
+  // Mechanism: subscribe to the hub (so it RETAINS `window` samples) and, on each
+  // publish, schedule ONE trailing sample `ms` later that mirrors hub.matrix(topic)
+  // → a `metrics_synced` Msg; a burst of publishes coalesces to one dispatch per
+  // `ms`. Keyed by topic — multiple consumer panes on one topic share a single
+  // mirror. Render reads model.metrics[topic] (frame = f(model), #D5). Poll-driven
+  // producers (docker's 10s loop) ride this as a low-rate stream; future push
+  // sources slot in unchanged. See docs/v0.6.6.md §9.
+  'metrics-mirror': {
+    normalize: (d) => (d && d.topic ? { topic: d.topic, window: d.window || 40, ms: d.ms || 250 } : null),
+    key: (d) => d.topic,
+    start: (d, ctx) => {
+      const token = { hubToken: null, timer: null, stopped: false };
+      const sample = () => {
+        token.timer = null;
+        if (token.stopped) return;
+        const hub = _hub();
+        const series = {};
+        for (const [rk, rows] of hub.matrix(d.topic, d.window)) series[rk] = rows;
+        ctx.applyMsg({ type: 'metrics_synced', topic: d.topic, series, schema: hub.schema(d.topic) || { columns: {} } });
+      };
+      const schedule = () => {
+        if (token.stopped || token.timer) return;          // coalesce a burst → one sample
+        token.timer = setTimeout(sample, d.ms);
+        if (token.timer.unref) token.timer.unref();         // a pending sample never holds the process open
+      };
+      token.hubToken = _hub().subscribe(d.topic, { window: d.window, onUpdate: schedule });
+      return token;
+    },
+    stop: (token) => {
+      token.stopped = true;
+      if (token.timer) { clearTimeout(token.timer); token.timer = null; }
+      if (token.hubToken != null) _hub().unsubscribe(token.hubToken);
+    },
+  },
 };
 
 // App-global subscriptions — ongoing sources not owned by any pane. Pure

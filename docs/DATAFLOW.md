@@ -80,8 +80,11 @@ greppable.
      modal.{ filter, prompt, menu, confirm, copy, registerPopup,
              cmdline, jobs }
      currentGroup, config, register, prefixSeq, focused, now, theme, ...
-     history / diagLog / jobs  (live stores mirrored in via the store-mirror Sub,
-                                FIX-1 — render reads these, not the stores live)
+     history / diagLog / jobs  (discrete live stores mirrored in via the
+                                store-mirror Sub, FIX-1 — render reads these)
+     metrics[topic]            (continuous hub time-series mirrored in via the
+                                throttled metrics-mirror Sub, Finding B — the
+                                stats graph reads this, not the hub live)
 
    Component slices (js/leaves/route.js, nested store)
      layout         focus, viewMode, arrange, freeConfig
@@ -95,16 +98,16 @@ greppable.
      config-status  tab, cache, branch, expanded
      nav[panelType] cursor, scroll, multiSel, filter
 
-   Mirrorable backing stores (js/feature/*.js, js/io/diag-log.js) — FIX-1
-     history        completion log of every action that ran
-     jobs           live state of every child lazytui spawned
-                    (streams, PTYs, background, tmux)
-     diag-log       warning/error ring (leader-e overlay)
-                    All three are module-local stores exposing the
-                    {snapshot, setOnChange} contract; the store-mirror Sub
-                    mirrors each into model.{history,jobs,diagLog}, so RENDER
-                    reads the model copy (above), not these live. The #D5
-                    boundary now = the terminal island only. See PRINCIPLES §12.
+   Mirrorable backing stores — render reads the MODEL copy (above), not these live
+     history        completion log of every action that ran           ┐ FIX-1:
+     jobs           live state of every child lazytui spawned          │ {snapshot,
+                    (streams, PTYs, background, tmux)                   │ setOnChange}
+     diag-log       warning/error ring (leader-e overlay)              ┘ store-mirror
+                    → model.{history,jobs,diagLog} (per mutation, discrete)
+     hub metrics    docker.stats time-series (the stats graph)        ┐ Finding B:
+                    → model.metrics[topic] via the throttled            ┘ metrics-mirror
+                    metrics-mirror Sub (sampled per window — continuous source)
+                    The #D5 boundary now = the terminal island only. See PRINCIPLES §12.
         │
         ▼
 ═══════════════════════════ RENDER ═════════════════════════════════

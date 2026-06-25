@@ -121,7 +121,7 @@ route topology; runs I/O) by design.
 
 | Home | Module | Writer | Examples |
 |---|---|---|---|
-| **Root model** (centralized chrome) | `model/store.js` (`_modelRef.current`) | `reducer.update` + `modal/*` ONLY | `modes{}` (modal flags), `modal{}` (editing buffers), `currentGroup`, `now`, `theme`, `history`/`diagLog`/`jobs` (store-mirror'd, FIX-1), `config`, `register`, `focused`, `prefixNode/Seq` |
+| **Root model** (centralized chrome) | `model/store.js` (`_modelRef.current`) | `reducer.update` + `modal/*` ONLY | `modes{}` (modal flags), `modal{}` (editing buffers), `currentGroup`, `now`, `theme`, `history`/`diagLog`/`jobs` (store-mirror'd, FIX-1), `metrics[topic]` (metrics-mirror'd, Finding B), `config`, `register`, `focused`, `prefixNode/Seq` |
 | **Component slices** (decentralized) | `panel/route.js` instance store | each Component's own `update` ONLY | `layout` (focus/viewMode/arrange/freeConfig), `detail` (viewer tabs/buffers/view-state), `groups` (tree/expanded), `docker`, `files`, `config-status`, `nav[panelType]` (cursor/scroll/multiSel/filter) |
 | **Out-of-TEA stores** (global-by-nature) | `feature/*`, `io/*` | module-local mutators | `feature/jobs` (live child procs), `feature/history`, `io/diag-log` (ring buffer), `io/terminal` (xterm buffers) |
 
@@ -158,16 +158,19 @@ stores.** Concretely, four tiers:
    review #3 D16 examined and **KEPT** this. The single same-slice
    runtime-written field.
 
-4. **#D5 REPLAYABILITY BOUNDARY — the terminal island (v0.6.6 FIX-1).** Render
-   is pure of the *wall clock* (`model.now`) and the *theme* (projected from
-   `model.theme`), and as of **FIX-1** the three formerly-off-model live stores
-   are mirrored into the model by the `store-mirror` Sub — render reads
-   `model.history` / `model.diagLog` / `model.jobs`, not `feature/history` /
-   `io/diag-log` / `feature/jobs` live. So `frame === f(model)` now holds for
-   everything EXCEPT the terminal island: `io/terminal.getSession()` +
-   `io/term.cols/rows()`, an explicitly non-TEA region (PTY `onData` mutates the
-   xterm buffer outside the Msg loop, #D14). The overlays still update live
-   mid-display — now because the store-mirror cb fires per mutation, via Msg.
+4. **#D5 REPLAYABILITY BOUNDARY — the terminal island (v0.6.6).** Render is pure
+   of the *wall clock* (`model.now`) and the *theme* (projected from
+   `model.theme`); **FIX-1** mirrored the three discrete off-model stores into
+   the model via the `store-mirror` Sub (`model.history` / `model.diagLog` /
+   `model.jobs`); and **Finding B** mirrored the continuous hub metrics series
+   via the throttled `metrics-mirror` Sub (`model.metrics[topic]` — the stats
+   graph). So `frame === f(model)` now holds for every panel + overlay EXCEPT the
+   terminal island: `io/terminal.getSession()` + `io/term.cols/rows()`, an
+   explicitly non-TEA region (PTY `onData` mutates the xterm buffer outside the
+   Msg loop, #D14). The overlays/graph still update live mid-display — now because
+   the mirror Sub feeds the model (store-mirror per mutation; metrics-mirror per
+   throttle window). (Two latent render-path diag *writes* remain — content-
+   irrelevant, see docs/v0.6.6.md §9.)
 
 **Single-writer invariant.** Only `reducer.update`/`modal/*` write the root
 model; only a Component's own `update` writes its slice. Cross-layer writes
@@ -904,14 +907,17 @@ viewer's `update` is the single writer of `slice.innerH`. Zero test migration
 
 ### 9.3 #D5 replayability boundary (NOT an exception — a documented limit)
 
-`frame === f(model)` EXCEPT the terminal island (v0.6.6 FIX-1). `model.now` +
-`model.theme` are under the model (wall clock + theme replay-safe), and FIX-1
-brought the three live stores under it too: `feature/history` / `io/diag-log` /
-`feature/jobs` are mirrored into `model.{history,diagLog,jobs}` by the
-`store-mirror` Sub (a `Sub` sampling them into the model — exactly the arc this
-note used to defer), so render reads the model. The one remaining off-model
-render read is `io/terminal.getSession()` + `io/term.cols/rows()` (the #D14 PTY
-island). Replaying the Msg log reconstructs the model and so the frame —
+`frame === f(model)` EXCEPT the terminal island (v0.6.6). `model.now` +
+`model.theme` are under the model (wall clock + theme replay-safe); **FIX-1**
+brought the three discrete live stores under it (`feature/history` /
+`io/diag-log` / `feature/jobs` → `model.{history,diagLog,jobs}` via the
+`store-mirror` Sub); and **Finding B** (the code-only re-review) brought the
+continuous hub metrics series under it (`hub.matrix(topic)` →
+`model.metrics[topic]` via the throttled `metrics-mirror` Sub — sample at a
+cadence, not per publish, so a continuous sampler doesn't churn the loop). So
+render reads the model everywhere. The one remaining off-model render read is
+`io/terminal.getSession()` + `io/term.cols/rows()` (the #D14 PTY island).
+Replaying the Msg log reconstructs the model and so the frame —
 terminal output excepted. See `model/store.js §Replayability boundary`.
 
 ### 9.4 Retired exceptions (for context — do NOT re-track)

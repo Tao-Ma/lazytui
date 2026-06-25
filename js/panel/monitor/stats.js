@@ -20,7 +20,7 @@
 
 const { getModel } = require('../../model/store');
 const {
-  hub, esc, theme, renderPanel,
+  esc, theme, renderPanel,
   getItems: apiGetItems,
 } = require('../api');
 const { rasterize } = require('./stats-graph');
@@ -36,17 +36,20 @@ const { rasterize } = require('./stats-graph');
 // the declared seam wired at mount; #D13 made it a full reconciler with teardown.
 // Pre-D, `_ensureSub` ran from render() — a paint-mixed-with-lifecycle exception.)
 //
-// The subscription's `onUpdate` (supplied by the framework) is a
-// repaint: docker.refresh's `changed` flag only flips when a formatted
-// value actually changes between ticks (e.g. 0.0% → 0.0% does not), so
-// the host's render-on-changed loop can miss new samples. The hub
-// publishes every tick regardless; the onUpdate hook drives a frame for
-// each. Two stats panes on the same (topic, window) share one sub;
-// different windows produce two subs and the hub keeps the larger
-// window (HUB.md §6). Pure projection of the pane config → descriptors:
+// v0.6.6 Finding B — stats declares a `metrics-mirror` Sub, NOT a bare hub sub.
+// The mirror (app/state.js) subscribes to the hub (so it RETAINS `window`
+// samples) AND throttle-samples hub.matrix(topic) into model.metrics[topic], so
+// render reads the MODEL (frame = f(model), #D5) instead of the off-model hub
+// bus live. The throttle (trailing, default 250ms) is the canonical TEA handler
+// for a high-frequency external source feeding a graph — sample at a bounded
+// cadence, not per publish; it also subsumes the old repaint role (the
+// metrics_synced dispatch repaints) without re-introducing the per-publish
+// dispatch the hub's #D17 deleted. Multiple stats
+// panes on one topic share a single mirror (keyed by topic; render slices to its
+// own pane window). Pure projection of the pane config → descriptors:
 function subscriptions(paneDef, _model) {
   if (!paneDef || !paneDef.topic) return [];
-  return [{ topic: paneDef.topic, window: paneDef.window || 40 }];
+  return [{ kind: 'metrics-mirror', topic: paneDef.topic, window: paneDef.window || 40 }];
 }
 
 function _defaultMetrics(schema) {
@@ -159,10 +162,15 @@ function render(panel, w, h, _slice, opts) {
   const rowKey = _resolveSelection(panel);
   if (!rowKey) return _renderEmpty(panel, w, h, '(no selection)', chrome, focused);
 
-  const samples = hub.history(panel.topic, rowKey, window);
+  // Finding B — read the store-mirror'd snapshot off the model, not the hub bus
+  // live. The metrics-mirror Sub keeps model.metrics[topic] current (throttled);
+  // selection changes (a different rowKey) repaint via their own nav dispatch and
+  // read the row already present here. Slice to this pane's window.
+  const metric = getModel().metrics[panel.topic];
+  const samples = ((metric && metric.series[rowKey]) || []).slice(-window);
   if (!samples.length) return _renderEmpty(panel, w, h, '(no data yet)', chrome, focused);
 
-  const schema = hub.schema(panel.topic) || { columns: {} };
+  const schema = (metric && metric.schema) || { columns: {} };
   const metrics = panel.metrics || _defaultMetrics(schema);
   if (!metrics.length) return _renderEmpty(panel, w, h, '(no graphable metrics)', chrome, focused);
 
@@ -192,16 +200,17 @@ function render(panel, w, h, _slice, opts) {
   });
 }
 
-// Stateless Component — `stats` is a pure render over the hub bus (where
-// docker.js publishes docker.stats time series). The data lives in the hub,
-// not in a Component slice; the empty slice + no-op update are the API-
-// uniformity cost. See docs/v0.5-layering.md.
+// Stateless Component — `stats` is a pure render over model.metrics[topic]
+// (v0.6.6 Finding B; the `metrics-mirror` Sub samples docker.js's hub time series
+// into the model). It owns no slice of its own — the empty slice + no-op update
+// are the API-uniformity cost; the series it renders is cross-cutting model
+// state. See docs/v0.5-layering.md + docs/v0.6.6.md §9.
 module.exports = {
   name: 'stats',
   init: () => ({}),
   update: (msg, slice) => slice,
-  // v0.6.4 Phase D — declared hub subscriptions (pure); the framework
-  // wires them at mount. See the `subscriptions` comment above.
+  // v0.6.6 Finding B — declares a `metrics-mirror` Sub (pure projection of the
+  // pane config); the framework reconciles it. See the `subscriptions` comment.
   subscriptions,
   panelTypes: {
     stats: {
