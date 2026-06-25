@@ -6,6 +6,57 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Architecture
+
+This release drives the decision layer to the honest pure-TEA ceiling:
+`frame = f(model)` now holds for every panel and overlay except the one
+irreducible terminal island (the PTY/xterm screen buffer, which a child
+process mutates outside the message loop). Spec:
+[docs/v0.6.6.md](docs/v0.6.6.md).
+
+- **Live external state is now declarative `Model → Sub` for every source.**
+  The subscription reconciler (previously hub-topics-only) became
+  kind-dispatched, and the four hand-rolled OS sources — the stdout resize
+  listener, the terminal-overlay repaint poll, the docker container poll, and
+  the `docker events` stream — moved onto it as `resize` / `interval` /
+  `process-stream` subscriptions, each started, stopped, and torn down as a
+  pure function of the model (on layout change and on quit; a spawned child no
+  longer outlives the TUI). The frame clock joined them as a model-conditional
+  `interval` subscription, and the self-re-arming-timer pattern was retired.
+  Periodic work and external events are subscriptions now, never raw
+  `setTimeout`/listeners. (FIX-3.)
+- **The three discrete off-model stores are mirrored into the model.** Jobs,
+  the diagnostics ring, and command history are sampled into
+  `model.{jobs,diagLog,history}` by a `store-mirror` subscription over a uniform
+  `{snapshot, setOnChange}` store contract, so the Running overlay, the
+  diagnostics window, and the history navigator render from the model instead
+  of reaching into module-local stores. (FIX-1.)
+- **The stats graph reads the model, not the live metrics bus.** A throttled
+  `metrics-mirror` subscription samples the metrics time-series into
+  `model.metrics[topic]` at a bounded cadence (one message per window), so the
+  stats panel renders as a pure function of the model without re-introducing a
+  per-sample dispatch. (Finding B.)
+- **The single same-slice finalizer write was retired.** The post-dispatch
+  finalizer no longer writes the viewer's derived viewport height onto its
+  slice; the value is stamped on each viewer message and committed by the
+  viewer's own reducer, so the viewer is the single writer of its own state.
+  (FIX-2.)
+- **The decision layer is fully pure of the live model.** The viewer's
+  tab-switch reducer derives its tab counts from a threaded message bundle
+  instead of reading the live model, so every reducer/component-update arm is a
+  pure `(state, message) → [state, commands]`. (Finding A.)
+- **Render-path diagnostic writes deferred off the read path.** The plugin
+  purity/timing guard and the strict-miss tripwire queue their warnings, and the
+  dispatch finalizer drains them once per dispatch, so drawing a frame no longer
+  triggers a re-entrant dispatch or a wall-clock read. (Finding C.)
+
+### Fixed
+
+- **Multi-viewer viewport height.** Each viewer pane now derives its own
+  viewport height; the previous single finalizer write only refreshed the
+  primary viewer's, so scroll- and cursor-clamping could use a stale height in a
+  layout with two or more viewers.
+
 ## [0.6.5] — 2026-06-24
 
 ### Added

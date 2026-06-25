@@ -107,13 +107,16 @@ route topology; runs I/O) by design.
   finalize.js   • reconcile per-pane instances (mint/dispose), gated on arrange-ref
                 • reconcile hub subscriptions (Model → Sub diff)            [#D13]
                 • keep-in-view scroll clamp → set_scroll Msg per nav pane   [resize-as-Msg]
-                • viewer innerH = f(layout) → DIRECT slice write   ← EXCEPTION B
+                • viewer innerH: NO finalizer write — stamped on each viewer
+                  Msg by augmentMsg, committed by the viewer's reducer  [v0.6.6 FIX-2]
                 • active terminal PTY ensure/resize                [v0.6.5 §5]
                                    │
                                    ▼
   RENDER      render(model)                                   paint.js / footer.js
                 projects theme palette from model.theme (per-frame, #D8)
-                reads slices + model.now + off-model live stores (#D5 boundary)
+                reads slices + model.now + model.{jobs,diagLog,history,metrics}
+                the ONLY off-model read is the terminal island (PTY screen
+                buffer + term dims, #D14/#D5)
                 returns ANSI; paintColumns diffs vs prev frame → stdout
 ```
 
@@ -130,8 +133,8 @@ route topology; runs I/O) by design.
 ## 2. The purity model — "pure TEA or mutable?"
 
 **Short answer: the reducer layer is pure TEA; the shell around it is
-deliberately impure; render is pure of the wall clock but reads off-model live
-stores.** Concretely, four tiers:
+deliberately impure; render is pure of the wall clock and reads the model
+everywhere except the terminal island.** Concretely, three tiers:
 
 1. **PURE — the reducers.** `reducer.update(model, msg) → [next, cmds]` and
    every `modal/*.update` and every `Component.update(msg, slice) → [next,
@@ -150,15 +153,7 @@ stores.** Concretely, four tiers:
    removing the work. **This relocation is blessed-exception C** ("impure-shell
    model read"): sanctioned, not a bug.
 
-3. **EXCEPTION B — the finalizer's `innerH` write.** The post-dispatch
-   finalizer writes the viewer's derived `innerH` (viewport height) DIRECTLY
-   onto the viewer slice via `setInstanceSlice`, bypassing the viewer's own
-   `update`. Kept because the viewer reducer *reads* `innerH` for scroll/cursor
-   clamps (so it must live in-slice) and it is a pure function of layout. TEA
-   review #3 D16 examined and **KEPT** this. The single same-slice
-   runtime-written field.
-
-4. **#D5 REPLAYABILITY BOUNDARY — the terminal island (v0.6.6).** Render is pure
+3. **#D5 REPLAYABILITY BOUNDARY — the terminal island (v0.6.6).** Render is pure
    of the *wall clock* (`model.now`) and the *theme* (projected from
    `model.theme`); **FIX-1** mirrored the three discrete off-model stores into
    the model via the `store-mirror` Sub (`model.history` / `model.diagLog` /
@@ -176,14 +171,16 @@ stores.** Concretely, four tiers:
 **Single-writer invariant.** Only `reducer.update`/`modal/*` write the root
 model; only a Component's own `update` writes its slice. Cross-layer writes
 have NO direct path — they go out as a `{type:'msg', msg}` Cmd that re-enters a
-pump (wrapped → Component fan-out, flat → root reducer). The lone structural
-deviation is exception B above.
+pump (wrapped → Component fan-out, flat → root reducer). The invariant holds
+with **no structural exception** — since v0.6.6 FIX-2 retired exception B, even
+the viewer's derived `innerH` is committed by the viewer's OWN reducer
+(`augmentMsg` stamps it, the viewer `update` writes it).
 
 **So: is it pure TEA or mutable?** It is **pure TEA at the decision layer**
 (every state transition is a pure reducer), wrapped in an **intentionally
-impure shell** (effects + handlers), with **exactly two standing exceptions**
-(B: finalizer `innerH`; C: impure-shell reads) and one **boundary** (#D5: render
-reads live stores). The mutability you see is concentrated, named, and
+impure shell** (effects + handlers), with **exactly one standing exception**
+(C: impure-shell reads) and one **boundary** (#D5/#D14: render reads the
+terminal island). The mutability you see is concentrated, named, and
 commented at its site — not scattered.
 
 ---
@@ -202,7 +199,8 @@ Each Msg row records its full route:
   - `✓` pure reducer arm (the norm)
   - `shell` pure arm, but depends on facts the **impure shell** stamped (the
     handler read `getModel`/topology — exception C lives in the handler, not here)
-  - `B` / `C` touches blessed-exception B / C directly
+  - `C` touches blessed-exception C directly (superscript `ᴮ` = reads the
+    viewer's derived `innerH` for a clamp; not a blessed exception since FIX-2)
   - `fx` this is an effect/Cmd handler — impure by design (the interpreter tier)
 
 ---
@@ -450,25 +448,28 @@ reducer first, the Component's own arms second. The viewer is the same shape
 **Coverage:** §7.2 shared nav + §7.4 **viewer/detail** verified this loop;
 §7.3 lists the rest (pending loops 3+).
 
-### 7.1 The Component-update / finalizer / exception-B relationship
+### 7.1 The Component-update / finalizer relationship
 
 ```
   dispatchMsg(wrapped) ─┐
                         ▼
    msg = comp.augmentMsg(msg, model, slice)   ← IMPURE SHELL (exc. C): viewer threads
                         │                        viewerModel = pt.viewerModelBundle(model)
-   [next, fx] = comp.update(msg, slice)        ← PURE reducer (+ viewer's OWN _finalize:
-                        │                          per-tab view-state capture on tab transition)
+                        │                        + stamps msg.innerH (FIX-2)
+   [next, fx] = comp.update(msg, slice)        ← PURE reducer (commits innerH; +
+                        │                          viewer's OWN _finalize: per-tab
+                        │                          view-state capture on tab transition)
    route.setInstanceSlice(id, next)
    runEffects(fx)
        … (depth-0 exit) …
-   finalizeDispatch()  ← writes viewer slice.innerH DIRECTLY  ← EXCEPTION B
+   finalizeDispatch()  ← reconciles instances/subs + scroll clamp (NO innerH write)
 ```
 Two distinct "finalizers": (1) the viewer's OWN `_finalize`/`_withDerivedFields`
 runs *inside* `update` and is pure (captures the leaving tab's view-state); (2)
-the *dispatch-runtime* `finalizeDispatch` runs once at depth-0 exit and is where
-exception B (the `innerH` same-slice write) lives. Viewer arms READ `innerH`
-(`_innerH`) for scroll clamps — which is exactly why B must stay in-slice.
+the *dispatch-runtime* `finalizeDispatch` runs once at depth-0 exit. Since v0.6.6
+FIX-2 the finalizer no longer touches `innerH`: `augmentMsg` stamps `msg.innerH`
+(derived from the pane's committed geometry) and the viewer's OWN reducer is the
+single writer. Viewer arms READ `innerH` (`_innerH`) for scroll clamps.
 
 ### 7.2 Shared Navigator nav reducer (`leaves/wm/nav.js`) — verified
 
@@ -512,8 +513,7 @@ The richest Component: tab routing, streaming buffers, per-tab view-state,
 search, visual-mode selection. `update(msg, slice)` derives active-tab `lines`
 once from `msg.viewerModel` (the threaded bundle), lifts generic tab Msgs
 through `pt.reduceTabMsg`, then handles its own arms, then runs its pure
-`_finalize`. **The only Component with `augmentMsg`; the only slice exception B
-touches.** All arms pure — verified.
+`_finalize`. **The only Component with `augmentMsg`.** All arms pure — verified.
 
 **(a) Generic tab-lifecycle Msgs — via `pt.reduceTabMsg(msg, slice, ctx)` (pane-tabs leaf, paneId-parameterized)**
 
@@ -560,8 +560,9 @@ touches.** All arms pure — verified.
 | `select_scroll_view{delta}` | `_scrollView` | — | ✓ |
 | `key{key,seq,focusKind,terminalMode}` | the visual-mode state machine: reading→scroll, visual→cursor+extend, `v`/`V` toggle, `0`/`$` jumps, `/` search-enter, `n`/`N` search-nav, Esc cancel | `_claimed` (gate default); `y`→`msg→register_push{text}`; `/`→`msg→mode_set` via search-enter | shell⁸ |
 
-ᴮ Reads `slice.innerH` (the **exception-B** finalizer-written value) for scroll
-  clamps — the arm is otherwise pure; it doesn't write innerH.
+ᴮ Reads `slice.innerH` for scroll clamps — the arm is otherwise pure; it
+  doesn't write innerH. Since v0.6.6 FIX-2 `innerH` is stamped on the Msg by
+  `augmentMsg` and committed by the viewer's OWN reducer (exception B retired).
 ⁴ `fromTabKey`/`total`/`toTabKey` threaded by the dispatcher (`nav-state.setViewerContent` / `api.setActiveTab`) — the reducer reads no `getModel`/`flatTabInfo`.
 ⁵ `msg.lines` is precomputed by `dispatch.showSelectedInfo` via `nav-state.infoLinesFromFocus` (the plugin `getInfo` read happens in the shell, not the arm); a missing payload safely bails.
 ⁶ Hot path (500–1000 lines/sec). The dispatcher (`dispatch/runtime/stream.js`) threads `currentGroup` + `activeActionTabKey` / `actionTabIdx` so the arm avoids the ~71µs `getMergedActions` call per line.
@@ -585,7 +586,8 @@ touches.** All arms pure — verified.
 
 **Verdict (§7.4): pure TEA.** Every viewer arm is a pure `(msg, slice) →
 [slice, effects]`. The single model read is hoisted to `augmentMsg` (exc. C);
-`innerH` is read but written by the runtime finalizer (exc. B). The viewer is
+`innerH` is read for clamps; it is stamped on each viewer Msg by `augmentMsg`
+and committed by the viewer's OWN reducer (FIX-2 retired exc. B). The viewer is
 the densest concentration of *threaded facts* in the system — almost every arm
 has a footnote because so much was deliberately moved to the shell to keep the
 reducer pure. This is the clearest worked example of "why the impurity exists
@@ -730,16 +732,16 @@ rule across all their effects: **route async results to the ORIGINATING
 `paneId`** (`host.wrap(eff.paneId || kind, …)`), never the kind's primary — else
 multi-instance panes clobber each other (the "collapse-to-primary footgun").
 
-**docker (`kind: 'docker'`)** — `slice.{status, stats, inFlight, started}`.
-Self-driven polling; `augmentMsg` threads container `items`.
+**docker (`kind: 'docker'`)** — `slice.{status, stats, inFlight}`. The container
+poll is a declared `interval` Sub and `docker events` a `process-stream` Sub
+(FIX-3 Phase 4/5 — the `started` flag + self-re-arm are gone); `augmentMsg`
+threads container `items`.
 
 | Msg | Writes | Emits | Purity |
 |---|---|---|---|
 | *(content gate)* | — | — | a placed pane (`slice.paneId != null`) `return slice` — host-global content runs only on the singleton owner¹ |
 | `key{focusKind,items}` | — | `i`→`dockerExec{inspect}` · `t`→`dockerExec{logs}` · `s`→`dockerShell` | shell² |
-| `refresh` | `started` | `tick{dockerTick}` (once) + `dockerFetch` | ✓ |
-| `dockerTick` | — | `tick{dockerTick}` (re-arm) + `dockerFetch` | ✓ |
-| `dockerPoll` | — | `dockerFetch` | ✓ |
+| `refresh` / `dockerPoll` | — | `dockerFetch` (inFlight-guarded) | ✓ |
 | `dockerResult{status,stats}` | `status`, `stats`, `inFlight→false` | `render` | ✓ |
 
 **files (`kind: 'files'` + `file-browser`)** — `slice.browser` (per-pane dir
@@ -857,7 +859,6 @@ footgun.
 | Cmd | Owner | Body / re-entry |
 |---|---|---|
 | `dockerFetch` | docker | `setImmediate` → `docker inspect`/`docker stats` exec; `hub.publish('docker.stats')`; → `dockerResult` Msg. Reads `getModel().focused` (skip when blurred, still clears `inFlight`). |
-| `dockerEventsStart` | docker | spawn `docker events` watcher (if any container tracked); change → `dockerPoll`. Reads `getModel().config`. |
 | `dockerExec{mode,item}` | docker | `applyMsg(terminal_exit)` + `host.streamCommand(inspect|logs)` |
 | `dockerShell{item}` | docker | `addEphemeralTab(getModel().currentGroup, …)` (exec interactive shell) |
 | `loadDir{paneId,source,cwd,…}` | files | `setImmediate` → `readdir`/`dockerList` → `dirLoaded` Msg (wrapped to `paneId`) |
@@ -883,8 +884,10 @@ single recurring "impurity", and it is *blessed-exception C* by design.
 
 The genuinely mutable surface is **concentrated and named**:
 - the **impure shell** (`dispatch/control/*` + `effects.js`) — reads + I/O (exc. C);
-- the **#D5 boundary** — render reads off-model live stores (jobs/diag/history/
-  PTY/term), and the terminal pane is a non-TEA island.
+- the **#D5/#D14 boundary** — render reads the terminal island only (the PTY
+  screen buffer via `io/terminal.getSession` + dims via `io/term.cols/rows`), a
+  non-TEA region; the former off-model stores (jobs/diag/history/metrics) are
+  now under the model via the store-mirror / metrics-mirror Subs (FIX-1 / Finding B).
 
 (Exception **B** — the finalizer's `innerH` same-slice write — was RETIRED in
 v0.6.6 FIX-2; innerH is now threaded onto viewer Msgs and reducer-committed. §9.2.)
@@ -991,11 +994,14 @@ throughout §4–§7). Same model: read once in the shell, stamp onto the Msg.
 A grep-diff of the catalog against the whole `js/` tree (excl. tests):
 
 - **Every reducer/modal/Component Msg type is documented.** Cross-checked all
-  `case '…'` / `msg.type === '…'` handlers, INCLUDING the 6 camelCase Component
-  Msgs the first pass's `[a-z_]+` grep missed (`dockerTick`, `dockerPoll`,
-  `dockerResult`, `dirLoaded`, `showHidden`, `cfgStatusResult` — all in §7.8).
-- **Every effect is documented.** All 35 `registerEffect('…')` types appear in
-  §8.1 (framework, 23) or §8.2 (component, 10) or are the 2 test-only fixtures.
+  `case '…'` / `msg.type === '…'` handlers, INCLUDING the 5 camelCase Component
+  Msgs the first pass's `[a-z_]+` grep missed (`dockerPoll`, `dockerResult`,
+  `dirLoaded`, `showHidden`, `cfgStatusResult` — all in §7.8). (The `dockerTick`
+  self-re-arm Msg was retired in v0.6.6 FIX-3 — the poll is an `interval` Sub.)
+- **Every effect is documented.** All 34 `registerEffect('…')` types appear in
+  §8.1 (framework, 23) or §8.2 (component, 9) or are the 2 test-only fixtures.
+  (Was 35 — the `dockerEventsStart` component effect was retired in v0.6.6 FIX-3;
+  the `docker events` watcher is now the generic `process-stream` Sub kind.)
 - **`viewer_set_viewport` is comment-only** (`viewer.js:63`) — a referenced-but-
   never-implemented Msg; correctly NOT in the catalog.
 - **The non-Msg `case` strings** the broad grep surfaced are the input-verb /
@@ -1018,9 +1024,10 @@ arm `(state, msg) → [state, cmds]`, and every side effect is a data descriptor
 run by one interpreter. The mutable surface is **concentrated, named, and
 commented**: exception **C** (the impure-shell reads — the input verbs of §10,
 the `augmentMsg` hooks of §7, and the effect bodies of §8, all of which read the
-model/registry and thread facts forward so reducers stay pure), and the **#D5
-boundary** (render reads off-model live stores; the terminal pane is a non-TEA
-island). Exception **B** (the finalizer's `innerH` write) was RETIRED in v0.6.6
+model/registry and thread facts forward so reducers stay pure), and the
+**#D5/#D14 boundary** (render reads the model everywhere; the one off-model read
+is the terminal island — the PTY screen buffer + term dims — a non-TEA region).
+Exception **B** (the finalizer's `innerH` write) was RETIRED in v0.6.6
 FIX-2. There is **no scattered mutation** — the impurity is exactly the shell
 that the pure core is wrapped in, by design.
 
@@ -1034,7 +1041,7 @@ that the pure core is wrapped in, by design.
   index. Sources read in full: `loop.js`, `reducer.js`, `finalize.js`,
   `effects.js`, `store.js`, `model-ops.js`, all 9 `modal/*.js`, `nav-state.js`,
   `PRINCIPLES.md`, `DATAFLOW.md`, `blessed-exceptions.md`.
-- **Loop 2 (2026-06-24, done):** §7.1 the Component-update/finalizer/exception-B
+- **Loop 2 (2026-06-24, done):** §7.1 the Component-update/finalizer
   relationship; §7.2 **shared nav reducer** (`leaves/wm/nav.js`, verified — and
   the reason `actions`/`history` need no own arms); §7.4 **viewer/detail** full
   route table — generic tab Msgs (`pt.reduceTabMsg`), 22 viewer-specific arms,
@@ -1054,8 +1061,8 @@ that the pure core is wrapped in, by design.
   `files.js#update`+effects, `config-status.js#update`+effects, `stats.js`,
   `history.js#update`+effect. **§7 is now COMPLETE — every Component verified.**
 - **Loop 5 (2026-06-24, done — CATALOG COMPLETE):** grep-diff verification (§11)
-  proved every Msg/effect is documented (incl. the 6 camelCase Component Msgs +
-  all 35 effects; `viewer_set_viewport` confirmed comment-only). Added §10 — the
+  proved every Msg/effect is documented (incl. the 5 camelCase Component Msgs +
+  all 34 effects; `viewer_set_viewport` confirmed comment-only). Added §10 — the
   **input-verb layer** (`intent.realize` + `handleAction`) so each feature is
   traceable end-to-end from its entry verb to its Msg. Noted 2 DATAFLOW.md lags
   as observations (no edits — task is doc-only, no refactor). Sources read in
@@ -1066,7 +1073,7 @@ purity model, every Msg route (root / modal / Component / broadcast), every
 effect, the producer (verb) layer, and the blessed-exception index — all verified
 against source. What remains is OUT OF SCOPE by the task's own terms ("don't
 refactor, just write the code case down"): the **refactor discussion** (§9 lists
-the live exceptions B/C + the #D5 boundary as the candidates; turning any into a
-plan is a separate, opt-in exercise). Re-invoke the loop only to (a) deepen a
+the live exception C + the #D5/#D14 boundary as the candidates; turning either
+into a plan is a separate, opt-in exercise). Re-invoke the loop only to (a) deepen a
 specific Component, (b) re-verify after code changes, or (c) open the refactor
 conversation.

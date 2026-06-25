@@ -120,50 +120,57 @@ Lives in `panel/monitor/stats.js` (framework code, alongside
 
 ```javascript
 // panel/monitor/stats.js  (sketch)
-const { S } = require('../../state');
-const { hub, esc, theme, renderPanel, getSel, getItems: apiGetItems } = require('../api');
-
-const subTokens = new Map();   // panelId -> hub subscription token
-
-function init(panel) {
-  // Subscribe with the configured window so the hub retains enough samples.
-  const tok = hub.subscribe(panel.topic, { window: panel.window || 40 });
-  subTokens.set(panel.id, tok);
-}
+const { getModel } = require('../../model/store');
+const { esc, renderPanel } = require('../api');
 
 function render(panel, w, h) {
-  const rowKey = resolveSelection(panel, S);   // → '_'-able row key, or null
+  const rowKey = resolveSelection(panel);   // → row key, or null
   if (!rowKey) return renderEmpty('(no selection)');
-  const samples = hub.history(panel.topic, rowKey, panel.window || 40);
+  // Finding B (v0.6.6): read the store-mirror'd snapshot off the model, NOT
+  // the hub bus live. The `metrics-mirror` Sub keeps model.metrics[topic]
+  // current (throttled). Each topic's value is { series, schema }.
+  const metric = getModel().metrics[panel.topic];
+  const samples = ((metric && metric.series[rowKey]) || []).slice(-(panel.window || 40));
   if (!samples.length) return renderEmpty('(no data yet)');
-  const schema = hub.schema(panel.topic) || { columns: {} };
+  const schema = (metric && metric.schema) || { columns: {} };
   const metrics = panel.metrics || defaultMetrics(schema);
   // Split available height across metrics, render one line graph per.
   // ...
 }
 
 module.exports = {
-  panelType: 'stats',
-  def: { mode: 'content', render, init },
+  name: 'stats',
+  init: () => ({}),
+  update: (msg, slice) => slice,   // no-op — stats holds no Msg state
+  subscriptions,                   // declares the `metrics-mirror` Sub
+  // ... render, def
 };
 ```
 
-**Lifecycle.** Each `type: stats` panel in the layout subscribes once
-at init with its configured window; the hub computes the per-topic
-retention as the max across all subscribers, so two stats panels on
-the same topic with different windows share storage at the larger.
+**Lifecycle.** Each `type: stats` panel declares a `metrics-mirror`
+subscription (`subscriptions(paneDef) → [{kind:'metrics-mirror', topic,
+window}]`); the framework reconciles the desired set each dispatch
+(`app/state.reconcileSubscriptions`). The mirror subscribes to the hub
+with the configured window (so the hub retains enough samples) AND
+throttle-samples `hub.matrix(topic)` into `model.metrics[topic]`. The
+hub computes per-topic retention as the max across all subscribers, so
+two stats panels on the same topic with different windows share storage
+at the larger.
 
 **Mode: `content`.** The panel is read-only — no list semantics, no
 selection state of its own. Selection is *projected* from `select_from`.
 
-**No `getItems`.** The data flow is hub-pull on render, not
-panel-collect. Filtering, sorting, idOf — none apply.
+**No `getItems`.** The data flow is a **model read on render** — `render`
+reads `model.metrics[topic]`; the `metrics-mirror` Sub does the throttled
+hub pull OFF the render path (so `frame === f(model)`, #D5). Filtering,
+sorting, idOf — none apply.
 
 ## 5. Producer wiring — docker.js
 
-The docker Component already polls `docker stats` every 10s
-(`refresh()`#L192–217). The publish is a 5-line addition inside the
-existing parse loop, plus parsing the strings into numbers:
+The docker Component already polls `docker stats` every 10s (a declared
+`interval` Sub at `POLL_MS = 10000` drives a `dockerPoll` Msg → the
+`dockerFetch` effect). The publish lives inside `dockerFetch`'s parse
+loop, alongside parsing the strings into numbers:
 
 ```javascript
 // In refresh(), after the stats parse loop:
@@ -208,8 +215,8 @@ The stats panel needs to know "which row are we showing?". Today's
 framework state already has the answer:
 
 ```javascript
-// In panel/monitor/stats.js render()
-const { getSel } = require('../state');
+// In panel/monitor/stats.js
+const { getSel } = require('../nav-state');   // Phase-4a per-Navigator nav slice
 function resolveSelection(panel) {
   const items = apiGetItems(panel.select_from);
   return items[getSel(panel.select_from)] || null;
@@ -235,12 +242,15 @@ re-renders naturally when the user moves up/down in the Containers
 list. No new framework hook for that path.
 
 **Live samples DO need `onUpdate`** (caught during live exercise).
-docker.refresh's `changed` flag flips only when the formatted CPU% /
+docker's `changed` flag flips only when the formatted CPU% /
 mem string changes between ticks — `0.0% → 0.0%` leaves it `false`,
 so the host's render-on-changed loop skips paints even though the hub
-got a new sample. The stats panel subscribes with
-`onUpdate: scheduleRender` so each new publish drives a debounced
-repaint, bypassing the producer's `changed` heuristic.
+got a new sample. Since v0.6.6 (Finding B) the `metrics-mirror` Sub
+subscribes to the hub with an `onUpdate` that schedules a *throttled*
+trailing sample (`ms`, default ~the poll interval): it mirrors
+`hub.matrix(topic)` into `model.metrics[topic]` via a `metrics_synced`
+Msg, whose model change drives the repaint — bypassing the producer's
+`changed` heuristic without re-introducing a per-publish dispatch.
 
 ## 7. Rendering — line graph rasterizer
 
@@ -306,7 +316,7 @@ behavior, `assert/eq`, exception isolation per test.
    exact output line-by-line. Pin the visual contract.
 6. **Rasterizer scaling.** `percent` clamps 0–100 regardless of
    sample range; `bytes` scales to local max.
-7. **Selection projection.** Mock `S.sel.containers` and
+7. **Selection projection.** Mock `nav-state.getSel('containers')` and
    `getItems('containers')`; assert the panel reads the right row key.
 8. **Empty states.** No selection → `(no selection)`. Selection but
    no samples → `(no data yet)`.

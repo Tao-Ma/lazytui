@@ -360,9 +360,11 @@ Every panel is a **Component**: the framework owns a state slice per
 Component, messages arrive through `update(msg, slice)` which returns
 either the next slice or `[nextSlice, effects]`. Effects are plain data
 descriptors (`{ type, … }`) the effects layer runs: async work, a
-viewer write, a repaint, a recurring `tick`, a `msg` re-dispatch
+viewer write, a repaint, a `msg` re-dispatch
 (routed by `msg.kind` — wrapped → Component fan-out, flat → root
-reducer). An effect's async result feeds back
+reducer). (Recurring work is no longer an effect — the generic `tick`
+was retired in FIX-3; periodic sources are declared `interval`
+subscriptions, see §12.) An effect's async result feeds back
 as a Msg (`dispatchMsg`). Render receives the slice, not the root
 model. Key events arrive as `{ type:'key' }` Msgs — only to the
 focused Component, only when no modal owns input.
