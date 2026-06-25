@@ -44,7 +44,7 @@ describe('[1] jobs overlay render is pure of wall-clock (threaded now)', () => {
     jobs.register({ kind: 'stream', label: 'demo', pid: null, owner: {} });
     openJobsMode();
 
-    const start = jobs.list()[0].startedAt;
+    const start = jobs.snapshot()[0].startedAt;
     const a = paintAt(start + 5000);
     const b = paintAt(start + 5000);
     assert(a.length > 0, 'overlay actually painted');
@@ -58,7 +58,7 @@ describe('[1] jobs overlay render is pure of wall-clock (threaded now)', () => {
     jobs.register({ kind: 'stream', label: 'demo', pid: null, owner: {} });
     openJobsMode();
 
-    const start = jobs.list()[0].startedAt;
+    const start = jobs.snapshot()[0].startedAt;
     const early = paintAt(start + 5000);       // ~5s
     const later = paintAt(start + 5 * 60000);  // ~5m
     assert(early !== later, 'different now → different age column');

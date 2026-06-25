@@ -48,7 +48,7 @@ function _activate() {
   // the reducer arm receives msg.job, not the bare cursor lookup.
   const m = runtime.getModel();
   const cursor = (m.modal && m.modal.jobs && m.modal.jobs.cursor | 0) || 0;
-  const job = jobs.list()[cursor] || null;
+  const job = jobs.snapshot()[cursor] || null;
   dispatch.applyMsg({ type: 'jobs_activate', now: NOW, job });
 }
 

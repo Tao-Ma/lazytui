@@ -42,7 +42,7 @@ function seedModel() {
 }
 
 function running() {
-  return jobs.list().filter(j => j.status === 'running');
+  return jobs.snapshot().filter(j => j.status === 'running');
 }
 
 describe('[multi-job] cross-slot routed streams run concurrently', () => {
@@ -70,7 +70,7 @@ describe('[multi-job] same-slot re-run preempts', () => {
     stream.streamCommand('test', 'sleep 5', [], { tabKey: 'test', groupName: 'g' });
     const r = running();
     eq(r.length, 1, 'only one alive in the slot');
-    const all = jobs.list();
+    const all = jobs.snapshot();
     const prior = all.find(j => j.id === firstId);
     eq(prior.status, 'killed', 'previous slot occupant marked killed');
     stream.killAll({ silent: true });
@@ -116,7 +116,7 @@ describe('[multi-job] unrouted preempt — same label silent restart', () => {
     const r = running();
     eq(r.length, 1, 'exactly one alive');
     assert(r[0].id !== firstId, 'new job replaced the old one');
-    const all = jobs.list();
+    const all = jobs.snapshot();
     const prior = all.find(j => j.id === firstId);
     eq(prior.status, 'killed', 'prior marked killed');
     stream.killAll({ silent: true });

@@ -482,7 +482,7 @@ function handleJobsKey(key, seq) {
   // optional group switch + tab_switch + focus + terminal_enter / info
   // card). msg.now feeds the background/tmux age display.
   const overlay = require('../../overlay/jobs');
-  const count = require('../../feature/jobs').list().length;
+  const count = (getModel().jobs || []).length;
   const vh = overlay.viewportRows();
   // Close via Esc only — `j` is used for nav inside the overlay so it
   // can't double as the toggle-close gesture the way 'J' did pre-rebind.
@@ -494,13 +494,14 @@ function handleJobsKey(key, seq) {
   if (seq === ',' || key === 'pageup')   { applyMsg({ type: 'jobs_nav', to: 'pageup',   count, vh }); return; }
   if (seq === '.' || key === 'pagedown') { applyMsg({ type: 'jobs_nav', to: 'pagedown', count, vh }); return; }
   if (key === 'return') {
-    // R2 — resolve the cursor's job entry HERE (out-of-TEA store read
-    // is handler-side). Reducer at runtime.update#jobs_activate uses
-    // msg.job directly — stays pure, no require('feature/jobs').list()
-    // call from inside the reducer body.
+    // R2 — resolve the cursor's job entry HERE and thread it via msg.job; the
+    // reducer at jobs_activate reads msg.job directly (stays pure, no store read
+    // in the reducer body). FIX-1 stage 3 — resolve from model.jobs (the SAME
+    // array render highlighted, so the cursor indexes consistently) rather than
+    // the off-model registry live.
     const m = getModel();
     const cursor = (m.modal.jobs && m.modal.jobs.cursor | 0) || 0;
-    const job = require('../../feature/jobs').list()[cursor] || null;
+    const job = (m.jobs || [])[cursor] || null;
     applyMsg({ type: 'jobs_activate', now: Date.now(), job });
     return;
   }

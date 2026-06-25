@@ -257,6 +257,12 @@ function update(model, msg) {
     // reads model.diagLog. Fires on every diag mutation (low-frequency).
     case 'diag_synced':
       return [{ ...model, diagLog: msg.diagLog }, []];
+    // v0.6.6 FIX-1 stage 3 — the live-jobs registry (feature/jobs) mirrors
+    // itself into the model via the store-mirror Sub. Whole-snapshot; the
+    // Running overlay + the viewer tab-strip running-glyph read model.jobs. The
+    // jobs_activate cursor lookup still threads msg.job (handler-side, exc. C).
+    case 'jobs_synced':
+      return [{ ...model, jobs: msg.jobs }, []];
     case 'set_theme': {
       // Theme selection flows through update like any other state change.
       // model.theme is the SINGLE source of truth; the palette cache the pure

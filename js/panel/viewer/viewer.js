@@ -1102,8 +1102,10 @@ function tabStripFor(slice, model, hotkey) {
   const tabInfo = pt.flatTabInfo(slice, model, group);
   // Running indicator (Phase 4.4) — action keys whose stream-routed job is
   // alive in the current group; buildTabStrip prefixes those labels with `●`.
+  // FIX-1 stage 3 — read model.jobs (the store-mirror'd snapshot), not the
+  // off-model feature/jobs registry live.
   const runningActionKeys = new Set(
-    require('../../feature/jobs').list()
+    (model.jobs || [])
       .filter(j => j.kind === 'stream-routed' && j.status === 'running'
                 && j.owner && j.owner.groupName === group)
       .map(j => j.owner.tabKey)

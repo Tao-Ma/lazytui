@@ -19,10 +19,19 @@
  */
 'use strict';
 
-const { scheduleRender } = require('../leaves/infra/render-queue');
-
 const _jobs = new Map();   // id → JobInfo
 let _seq = 0;
+
+// Mirrorable-store contract (v0.6.6 FIX-1, docs/v0.6.6.md §8.1): the single
+// change-notify seam the store-mirror Sub injects its cb into, so the registry
+// mirrors itself into model.jobs without importing the dispatch loop. Replaces
+// the direct `scheduleRender()` calls below 1:1 (the cb dispatches jobs_synced,
+// which repaints via the normal dispatch→render path — so no new dispatches vs
+// the old scheduleRender). Low-frequency (a handful of live jobs), so it fires
+// on every mutation (register / update / close / clearCompleted).
+let _onChange = null;
+function setOnChange(cb) { _onChange = cb || null; }
+function _notify() { if (_onChange) _onChange(); }
 
 function _genId(startedAt) {
   _seq += 1;
@@ -51,7 +60,7 @@ function register({ kind, label, pid, owner }) {
     exitCode: null,
     endedAt: null,
   });
-  scheduleRender();
+  _notify();
   return id;
 }
 
@@ -60,7 +69,7 @@ function update(id, patch) {
   const j = _jobs.get(id);
   if (!j || !patch) return;
   Object.assign(j, patch);
-  scheduleRender();
+  _notify();
 }
 
 /**
@@ -75,11 +84,12 @@ function close(id, { status = 'exited', exitCode = null } = {}) {
   j.status = status;
   j.exitCode = exitCode;
   j.endedAt = Date.now();
-  scheduleRender();
+  _notify();
 }
 
-/** All jobs, newest-first. */
-function list() {
+/** All jobs, newest-first (the mirrorable-store contract reader, §8.1 — was
+ *  `list()`). */
+function snapshot() {
   return [..._jobs.values()].sort((a, b) => b.startedAt - a.startedAt);
 }
 
@@ -88,7 +98,7 @@ function clearCompleted() {
   for (const [id, j] of _jobs) {
     if (j.status !== 'running') _jobs.delete(id);
   }
-  scheduleRender();
+  _notify();
 }
 
 /** Test-only — wipe registry + reset seq counter. */
@@ -97,4 +107,4 @@ function _reset() {
   _seq = 0;
 }
 
-module.exports = { register, update, close, list, clearCompleted, _reset };
+module.exports = { register, update, close, snapshot, clearCompleted, setOnChange, _reset };

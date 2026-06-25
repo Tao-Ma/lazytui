@@ -32,7 +32,7 @@ function press(key, seq) { dispatch._dispatchActiveMode(key, seq); }
 
 /** Returns the label of the most-recent registered job, or '' if none. */
 function lastRanLabel() {
-  const list = jobs.list();
+  const list = jobs.snapshot();
   return list.length ? list[0].label : '';
 }
 
