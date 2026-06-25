@@ -48,11 +48,12 @@
  *     - io/terminal.getSession(id) — terminal-pane screen contents (paint.js / footer.js)
  *     - io/term.cols()/rows()      — terminal dims mirror (render reads this, not model.dims)
  *
- *   Terminal panes are an explicitly NON-TEA region: the model holds the PTY
- *   *lifecycle* (which tab, session id), but the screen contents live in the
- *   off-model xterm buffer (io/terminal), mutated by the PTY `onData` callback
- *   OUTSIDE the Msg loop and painted by reading `getSession()` live. Replay does
- *   not reproduce terminal output.
+ *   Terminal panes are an explicitly NON-TEA region — the reference FOREIGN
+ *   COMPONENT (the documented non-TEA-region contract, docs/foreign-components.md):
+ *   the model holds the PTY *lifecycle* (which tab, session id), but the screen
+ *   contents live in the off-model xterm buffer (io/terminal), mutated by the PTY
+ *   `onData` callback OUTSIDE the Msg loop and painted by reading `getSession()`
+ *   live. Replay does not reproduce terminal output.
  */
 'use strict';
 

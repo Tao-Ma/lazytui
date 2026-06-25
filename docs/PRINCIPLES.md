@@ -640,10 +640,10 @@ Pick the primitive by feature shape:
 | Async request / response | fetch docker containers, load a dir | **Cmd** → data Msg |
 | Ongoing external event source | timer tick, terminal resize, file watch, a streaming process, "the jobs registry changed" | **Sub** → one Msg per event |
 | Live external resource you must show | running procs, a log ring, command history | **Sub mirrors it into the Model**; `render` reads the mirror (see the mirror sub-table) |
-| Foreign reactive system you cannot model | PTY / xterm buffer | **non-TEA island** (#D14) — documented boundary, kept minimal |
+| Foreign reactive system you cannot model | PTY / xterm buffer | **foreign component** (#D14) — a documented, minimal non-TEA region; see `docs/foreign-components.md` |
 
 The first four rows are pure TEA; only the last is an exception, and there
-is exactly one (`io/terminal.js`). This is the SAME shape that already makes
+is exactly one (`io/terminal.js`, the reference **foreign component**). This is the SAME shape that already makes
 the wall clock and theme replay-safe (`clock_tick → model.now`,
 `model.theme`): sample the impure source into the Model, then read the Model.
 
@@ -681,8 +681,10 @@ uniform (topic-keyed), the feed is matched to the source.
 4. One-shot work → a **Cmd** descriptor + a `registerEffect` handler.
 5. A model/registry fact needed inside the reducer → stamp it in
    `augmentMsg`, don't read it in `update`.
-6. A truly foreign reactive widget → an **island**, documented like
-   `io/terminal.js`, with the live-read surface kept tiny.
+6. A truly foreign reactive widget → a **foreign component** (the documented,
+   minimal non-TEA region pattern — `docs/foreign-components.md`), like
+   `io/terminal.js`, with the live-read surface kept tiny. Last resort, not a
+   default escape hatch.
 
 **Status (v0.6.6 — shipped).** The Sub seam now covers every ongoing source.
 **FIX-3** extended the declarative `Model → Sub` seam from hub topics
