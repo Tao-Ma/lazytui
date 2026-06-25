@@ -498,8 +498,14 @@ function installEffects(registerEffect) {
     });
   });
   registerEffect('cfgStatusDiff', (eff) => {
-    const { setViewerContent } = require('../nav-state');
-    setViewerContent(null, diffFor(eff.item, eff.branch, eff.projectDir || '.').join('\n'));
+    // Two-phase, mirroring cfgStatusCompute: run the git show/diff OFF-tick so a
+    // slow diff never blocks the event loop. The content lands via the
+    // viewer_set_content Msg that setViewerContent dispatches (recordable,
+    // single-writer) — not a direct slice write.
+    setImmediate(() => {
+      const { setViewerContent } = require('../nav-state');
+      setViewerContent(null, diffFor(eff.item, eff.branch, eff.projectDir || '.').join('\n'));
+    });
   });
 }
 

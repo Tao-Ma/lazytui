@@ -585,6 +585,10 @@ function subscriptions(/* paneDef, model */) {
         () => { ctx.dispatch(ctx.wrap('docker', { type: 'dockerPoll' })); return true; },
         ctx.scheduleRender,
       ),
+      // On teardown (pane removed / quit) cancel any pending events-debounce
+      // timer, so a tracked event arriving just before the last docker pane is
+      // removed can't fire one stray dockerPoll after the stream is gone.
+      onStop: stopEventsStream,
     });
   }
   return subs;
@@ -607,7 +611,9 @@ module.exports = {
   // FIX-3 Phase 5 — no `cleanup` hook: the `docker events` child is owned by
   // the `process-stream` Sub (subscriptions()), torn down by the reconciler on
   // pane-remove and by tui.js's teardownSubscriptions on quit. The debounce
-  // timer is unref'd, so nothing docker-local needs quit cleanup.
+  // timer is unref'd (never holds the process at quit) AND cancelled on stream
+  // teardown via the Sub's `onStop: stopEventsStream` (so a pane-remove
+  // mid-debounce can't fire one stray poll after the stream is gone).
   // statusFor: generic provider contract — lets the core groups renderer show
   // running/stopped without knowing docker exists. Reads the Component slice.
   statusFor: (name) => {

@@ -487,7 +487,13 @@ describe('[8] diffFor — preview shape per status', () => {
     slice.nav = { ...require('../leaves/wm/nav').init(), cursor: idx };
     const r = cs._update({ type: 'key', key: 'return' }, slice);
     assert(Array.isArray(r) && r[1][0].type === 'cfgStatusDiff', 'Enter on a file emits cfgStatusDiff');
-    effects.runEffects(r[1]);  // run the diff effect → setViewerContent → viewer slice
+    // The cfgStatusDiff effect now runs git OFF-tick (setImmediate), like
+    // cfgStatusCompute, so it can't be observed synchronously via runEffects.
+    // Test the two phases separately: the emission above, and the content-land
+    // below — exactly what the effect's setImmediate body does
+    // (setViewerContent → viewer_set_content → viewerOverride).
+    const { setViewerContent } = require('../panel/nav-state');
+    setViewerContent(null, cs._diffFor(items[idx], 'config', TMP).join('\n'));
     // v0.6.2 T2c — setViewerContent writes slice.viewerOverride (the
     // discrete-doc slot) instead of slice.lines. Render's viewerLines()
     // consults override first.
