@@ -38,6 +38,7 @@ const mpool = require('../../leaves/wm/pool');
 const { syncPanelScroll } = require('../../panel/nav-state');
 const terminal = require('../../io/terminal');
 const tabs = require('../../panel/viewer/tabs');
+const diag = require('../../io/diag-log');
 
 let _inScrollFinalize = false;
 
@@ -78,6 +79,12 @@ function _finalizeLayout(layoutSlice) {
 
 function finalizeDispatch() {
   if (_inScrollFinalize) return;
+  // v0.6.6 §9 follow-up — drain render-path diagnostic detections (strict-miss
+  // tripwire, plugin purity/timing guard). They recordDeferred during the
+  // frame; here, OFF the read path, one flush lands the whole batch through the
+  // normal diag store-mirror → diag_synced dispatch. Before the layout guard
+  // below so it drains regardless of layout state; no-op (cheap) when empty.
+  diag.flushDeferred();
   const layoutSlice = route.getInstanceSlice('layout');
   if (!layoutSlice || !layoutSlice.dims || !layoutSlice.arrange) return;
   _inScrollFinalize = true;

@@ -169,8 +169,9 @@ stores.** Concretely, four tiers:
    explicitly non-TEA region (PTY `onData` mutates the xterm buffer outside the
    Msg loop, #D14). The overlays/graph still update live mid-display — now because
    the mirror Sub feeds the model (store-mirror per mutation; metrics-mirror per
-   throttle window). (Two latent render-path diag *writes* remain — content-
-   irrelevant, see docs/v0.6.6.md §9.)
+   throttle window). (The two render-path diag *writes* — strict-miss tripwire +
+   plugin guard — are now deferred off the read path and drained by the dispatch
+   finalizer; see Finding C in docs/v0.6.6.md §9.)
 
 **Single-writer invariant.** Only `reducer.update`/`modal/*` write the root
 model; only a Component's own `update` writes its slice. Cross-layer writes

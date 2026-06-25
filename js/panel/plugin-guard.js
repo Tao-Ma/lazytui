@@ -48,7 +48,11 @@ function _warnOnce(code, key, message) {
   if (_warned.has(k)) return;
   _warned.add(k);
   const d = diag();
-  if (d) d.warn(code, message);
+  // DEFERRED, not warn(): callGroupActions runs on render paths (tab strip,
+  // actions panel), where a synchronous warn() fires the diag store-mirror → a
+  // re-entrant applyMsg from inside render. The dispatch finalizer drains the
+  // queue (docs/v0.6.6.md §9 follow-up — render-path purity).
+  if (d) d.warnDeferred(code, message);
 }
 
 // Per-Component memo of the groupActions contribution, keyed on the
