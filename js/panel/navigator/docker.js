@@ -178,7 +178,7 @@ function unprefix(name) { return name.replace(/^\//, ''); }
 
 function init(paneId) {
   // Hub topic schema — feeds the stats panel's axis scaling + value formatting
-  // (STATS.md §5 + HUB.md §17). Defined once at registration, before any publish.
+  // (STATS.md §5 + HUB.md §16). Defined once at registration, before any publish.
   hub.defineTopic('docker.stats', {
     rowKey: 'container_name',
     columns: {

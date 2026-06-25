@@ -4,8 +4,9 @@
 
 The TUI is a **lazytui** framework — a reusable N-column layout. The
 pattern is fixed at the structural level (column-major grid, bordered
-panes, detail/actions anchored to the last column); the panel content
-and column count are YAML-configurable.
+panes, `actions` anchored to the last column — `detail` places
+anywhere since v0.6.4 multi-viewer); the panel content and column
+count are YAML-configurable.
 
 ### Pattern (fixed)
 - Ordered list of columns, left-to-right. Each column carries an
@@ -13,8 +14,8 @@ and column count are YAML-configurable.
   remainder of the terminal. Two columns is the default shape; three
   or more is supported (run-time via drag-edge spawn / `:add-column`).
 - Bordered panels with scrollbar, focus color, position counter
-- Detail panel with tabs, scroll, anchored to the LAST column's last
-  pane (layout invariant)
+- Detail panel(s) with tabs, scroll — position-agnostic since v0.6.4
+  multi-viewer (any column, any pane; one or more)
 - Footer bar, `x` menu popup, `?` help
 
 ### Configuration (YAML `panels:` + `layout:` sections, both optional)
@@ -82,10 +83,10 @@ Multi-tab panes use the mapping form too:
 
 `activeTab` is optional — defaults to `tabs[0]`. Switch active tab
 at runtime via `:switch-tab <pool-id>` (cmdline; autocomplete restricts
-to the focused pane's other tabs). Keyboard / mouse UX for tab
-cycling is deferred to v0.7; today `]`/`[` cycles the active viewer
-tab's inner strip (Info / Transcript / action tabs / terminal tabs
-/ content tabs), not pane-level tabs. See
+to the focused pane's other tabs) or from the unified `[≡]` pane-menu's
+Tabs section (mouse). `]`/`[` still cycles the active viewer tab's
+inner strip (Info / Transcript / action tabs / terminal tabs /
+content tabs), not pane-level tabs. See
 [`history/v0.6.1-migrate.md`](history/v0.6.1-migrate.md) for the conversion guide
 from v0.6.0 inline cells.
 
@@ -114,17 +115,21 @@ new values appear in the YAML.
 - First column: soft cap of 6 panes, hotkeys `1`–`6` auto-assigned
   by position
 - Last column: soft cap of 3 panes, hotkeys `7`–`9` auto-assigned
-- Middle columns (only when N ≥ 3): no auto-hotkey pool — panes must
+- Middle columns (only when N ≥ 3): soft cap of 6 panes (the
+  non-last-column cap applies), but no auto-hotkey pool — panes must
   specify `hotkey:` explicitly or accept an empty hotkey (still
   reachable via mouse / `:focus <title>`)
 - Per-pane override via YAML `hotkey: <char>` (on the cell);
   auto-assignment skips keys already claimed explicitly
 - Soft caps warn at parse but don't refuse — the renderer's
   MIN_PANEL_H + terminal-row floor is the only hard limit
-- Exactly one tab of kind `detail` anywhere — in the LAST column, in
-  the LAST pane of that column
+- At least one tab of kind `detail` anywhere — any column, any pane
+  (the last-column / last-pane geometry rule was dropped in v0.6.4
+  multi-viewer; the parser only refuses zero detail tabs)
 - At most one tab of kind `actions` anywhere — in the last column
-- No `detail` / `actions` tab outside the last column
+- No `actions` tab outside the last column; `detail` places anywhere
+- A `detail` tab must be the only tab in its pane (multi-tab panes
+  hosting detail are deferred)
 - No two tabs of the same kind inside one pane
 
 ### `pool.type` (kind) vs pool / tab `id` — two roles
@@ -180,11 +185,10 @@ on rows that get repainted while a glyph sits over them.
 | `[X]` | red | top-right of non-detail panels | free-config mode only | `pool_hide` — unplaces the panel; the entry stays in the pool (reachable via `:show <id>` or the `w` panel-list overlay) |
 | `[_]` | yellow | top-right of non-detail panels (4-cell gap left of `[X]` when both visible) | always (normal + free-config) | `panel_collapse_toggle` — collapses the panel to a single header row |
 | `[+]` | green | replaces `[_]` when the panel is already collapsed | always | toggle back to expanded |
-| `[≡]` | theme accent | top-left of **detail** (immediately after `(o)`) | always; suppressed inside cmdline / menu / confirm / prompt / register-popup / filter / copy / detail-search / prefix / title-edit modes | opens the centered **tab-list overlay** for switching among detail's tabs (Info, Transcript, action tabs, terminal tabs, content tabs) |
-| `[≡]` | theme accent | top-left of every **non-detail** panel (v0.6.3+) | always; suppressed during drag + chain modes (siblings disabled while pane-select is open on one cell) | opens the centered **pane-select dropdown** for swapping which pool entry occupies this cell (SWAP if picked is placed elsewhere, REPLACE if picked is hidden) |
+| `[≡]` | theme accent | top-left of **every** panel (immediately after the hotkey), v0.6.4 unified | shown per-pane when there's something to pick (a viewer with ≥2 tabs, any other pane with ≥2 pane rows); suppressed during drag, and siblings disable while the menu is open on one cell | opens the centered **pane-menu** — one projection-aware overlay (subsumes the former tab-list + pane-select dropdown) with a **Tabs** section (Info, Transcript, action / terminal / content tabs — viewers only) and a **Panes** section for swapping which pool entry occupies this slot (SWAP if picked is placed elsewhere, REPLACE if picked is hidden; half/full views place side-by-side viewers via `pane_menu_place`) |
 
 Detail's top row reads `╭─(o)[≡]─Detail─…─╮` — both the hotkey label
-and the tab-list trigger are visible, the trigger's 3-cell width
+and the pane-menu trigger are visible, the trigger's 3-cell width
 absorbed by eating 3 trailing fill dashes before the right corner.
 When that absorption can't fit (very narrow detail or very long
 title), the trigger replaces `(o)` instead so the affordance still
@@ -261,13 +265,15 @@ filesystem; select with `source:` (`declared` / `filesystem` / `both` /
 **detail** (positional hotkey) — Tabbed info/output display
 - In v0.6.1+ the `detail` kind is one of many possible tab kinds in
   a pane — the singleton-detail assumption retired, even though the
-  default layout still places exactly one detail tab. The pool/tab
-  mechanics let you co-locate other viewer-kind tabs in the same
-  pane via `{tabs: [detail, history]}` mappings (see
+  default layout still places exactly one detail tab. A detail tab
+  must be the SOLE tab in its pane, so `{tabs: [detail, history]}`
+  is rejected at parse — multi-tab panes hosting a viewer are
+  deferred (see
   [`history/v0.6.1-migrate.md`](history/v0.6.1-migrate.md)).
-- Anchored to the **LAST column's LAST pane** by layout invariant
-  (was "right column's last pane" pre-v0.6.2; the rule scales to
-  N-column layouts).
+- Position-agnostic since v0.6.4 multi-viewer — a detail pane can
+  live in any column and any position; there is no last-column /
+  last-pane anchor invariant, and a layout may place two or more
+  detail panes.
 - **Tab 0 (Info)**: always present — shows `info()` for selected item
 - **Tab 1+**: actions with `tab: true`, terminal sessions, and
   content tabs opened via `:open` or file-browser Enter
@@ -425,8 +431,8 @@ Each pool entry shows with a status marker:
 | Marker | Status | Pick action (Enter) |
 |---|---|---|
 | `[green]●[/]` | Placed in the grid | hide (returns to pool) |
-| `[dim]●[/]` | Essential (detail) | no-op (the layout invariant requires exactly one detail) |
-| `[yellow]○[/]` | Hidden — pool only | show (places at the last column's tail, before detail when present) |
+| `[dim]●[/]` | Essential (sole detail) | no-op — only when it's the last remaining viewer; with ≥2 detail panes each is an ordinary hideable `[green]●[/]` entry |
+| `[yellow]○[/]` | Hidden — pool only | show (appends at the last column's tail) |
 
 | Key | Effect |
 |---|---|
@@ -441,10 +447,9 @@ rule as in-grid reorder):
 | Drop zone (within a cell) | Effect |
 |---|---|
 | Top third | **Insert before** this cell. |
-| Middle third | **Replace** — occupant returns to the pool; source lands in the occupant's slot. Detail refuses (essential); `detail` / `actions` refuse if the slot is outside the last column. |
+| Middle third | **Replace** — occupant returns to the pool; source lands in the occupant's slot. A detail occupant refuses only when it's the sole viewer (essential); `actions` refuses if the slot is outside the last column. |
 | Bottom third | **Insert after** this cell. Bottom-of-last-cell = append at tail. |
-| Last column past detail | **Clamped** to `insert before detail` — detail must stay at the column's end. The footer surfaces `(clamped — detail stays at end)` so the rewrite isn't silent. |
-| Screen edge / column gap (v0.6.2) | **Spawn a new column** at that position (left edge → position 0; column gap → between the two adjacent columns). The right edge is NOT a spawn zone — the rightmost cells fall through to the last column's in-column 3-zone hit (`:add-column N_cols+1` refuses at the cmdline: would push detail off the last column). Detail / actions sources refuse all new-column spawns. |
+| Screen edge / column gap (v0.6.2) | **Spawn a new column** at that position (left edge → position 0; column gap → between the two adjacent columns). The right edge is NOT a spawn zone — the rightmost cells fall through to the last column's in-column 3-zone hit. `actions` sources refuse all new-column spawns (it must stay in the last column); detail spawns freely. |
 | Outside the layout | Cancel; the overlay reopens if it was open at drag-start. |
 
 While a drag has a valid target, the layout reshuffles in real time —
@@ -458,7 +463,8 @@ valid no-op surfaced in the footer as `(no-op — release to cancel)`.
 The same 3-zone scheme applies to in-grid reorder (drag an already-
 placed panel), with the middle third meaning **swap** instead of
 replace — the dragged panel and the occupant trade slots
-(cross-column supported, detail-at-end invariant preserved).
+(cross-column supported; only `actions` stays pinned to the last
+column, detail swaps anywhere since v0.6.4 multi-viewer).
 
 ### Resizing — drag (mouse)
 
@@ -497,15 +503,16 @@ from the command line. Same Msgs the overlay drives:
 
 | Verb | Effect |
 |---|---|
-| `:hide <id>` | Remove that panel's placement from the grid; pool entry stays. Refused on detail. |
-| `:show <id>` | Place a hidden pool entry at the last column's tail (before detail when present). Refused on unknown / already-placed / second-detail / second-actions. Column caps are SOFT — placement is allowed past them. |
+| `:hide <id>` | Remove that panel's placement from the grid; pool entry stays. Refused on a detail pane only when it's the sole remaining viewer. |
+| `:show <id>` | Append a hidden pool entry at the last column's tail (a second detail is allowed since v0.6.4 multi-viewer). Refused on unknown / already-placed / second-actions. Column caps are SOFT — placement is allowed past them. |
 | `:add-column [N]` (v0.6.2) | Insert an empty column at 1-based position `N` (default: just before the last column). Refused at the right-edge slot and out-of-range. |
 | `:remove-column <N>` (v0.6.2) | Remove the empty column at 1-based index `N`. Refused for the last column, non-empty columns, and out-of-range. |
 
 Autocomplete restricts the id argument to currently-valid targets
 (placed panels for hide; hidden panels for show). The dynamic
-registration in `panel/api.js#_frameworkDynamicCommands` regenerates
-the verb list every cmdline open.
+registration in `panel/commands.js#_frameworkDynamicCommands`
+(reached via `panel/api.js#getCommands` → `commands.collectCommands`)
+regenerates the verb list every cmdline open.
 
 ## Context-sensitive detail (Info tab)
 

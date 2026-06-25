@@ -9,8 +9,9 @@
  * Storage is the event hub on topic `actions.lifecycle` (single-stream,
  * rowKey '_') with window=HISTORY_MAX. Entries are mutable: published
  * once at start(), then appended-to / closed via the returned handle.
- * The hub stores the reference, so the history panel always reads live
- * state on render.
+ * The hub stores the reference; v0.6.6 FIX-1 mirrors the ring into
+ * `model.history` via the store-mirror Sub, and the history navigator
+ * renders from the model (not the hub live).
  *
  * Output is capped per entry (lines + bytes) so a noisy `docker logs -f`
  * can't blow up memory.

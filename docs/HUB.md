@@ -412,4 +412,7 @@ fine. If someone requests gigabytes, that's a bug, not a hub problem.
 - `history.js` — action-history ring buffer on `actions.lifecycle`
   (rowKey `'_'`, window 100). See §9.
 - Stats panel (STATS.md) — consumes `docker.stats` for time-series
-  graphs. Docker Component is the producer.
+  graphs *indirectly*: a throttled `metrics-mirror` Sub (Finding B) samples
+  `hub.matrix('docker.stats')` into `model.metrics['docker.stats']`, and
+  `stats.render` reads the model — not the hub live. Docker Component is the
+  producer; the mirror is the hub consumer. See §9.
