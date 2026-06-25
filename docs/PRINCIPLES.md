@@ -454,10 +454,13 @@ module.exports = {
 - **Effects stay out of `update`** — return `[slice, effects]`, never perform
   I/O inline (keeps `update` pure + replayable). The framework runs effects;
   an effect's async result re-enters as a Msg.
-- **Periodic work is self-driven.** No framework poll loop — a
-  Component drives its own cadence by re-emitting a `tick` effect from
-  its tick-Msg handler (docker polls this way — the self-re-arming-tick
-  Cmd pattern).
+- **Periodic work is a declared `interval` subscription.** A Component
+  (or the app) declares it — `subscriptions(…) → [{kind:'interval', id,
+  ms, onTick}]` — and the runtime owns the timer + teardown (start on
+  placement / a model condition, stop on removal). FIX-3 retired the
+  self-re-arming `tick`/`arm_clock` Cmds: docker's container poll and the
+  frame clock (`clock_tick`, gated on an age overlay being open) both ride
+  the `interval` Sub now. See §"Live external state" + docs/v0.6.6.md §7.
 - An `update()` returning `undefined` leaves the slice unchanged (no-op
   escape hatch).
 - Components also contribute `commands` / `groupActions` / `statusFor` /

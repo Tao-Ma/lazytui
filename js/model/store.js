@@ -65,7 +65,7 @@
  * Field map:
  *   - modes{}                        — 14 modal flags (single registry; see leaves/modes.js)
  *   - currentGroup                   — current group (chrome)
- *   - now / clockArmed               — frame clock + gated-tick latch (docs/model-now-tick.md)
+ *   - now                            — frame clock (docs/model-now-tick.md; cadence = the `clock` interval Sub)
  *   - modal{ filter, menu, confirm, prompt, copy, registerPopup, cmdline }
  *                                    — modal sub-model editing buffers
  *   - config / projectDir / configPath — parsed config + paths
@@ -94,12 +94,12 @@ function init() {
     // frame a pure function of the model: it still reads named off-model
     // live stores — see the §Replayability boundary note in the module
     // header. model.now removes the wall-clock read specifically.)
-    // `clockArmed` gates the self-re-arming tick: it runs ONLY while an
-    // age-display overlay (jobs/diag) is open, so an idle TUI emits no ticks
-    // and the replay log stays quiet. Both are written only by the reducer
-    // (clock_tick / *_open arms).
+    // model.now is written only by the reducer's clock_tick arm; the tick
+    // CADENCE is the model-conditional `clock` interval Sub (FIX-3 Phase 6,
+    // app/state.js#_appSubscriptions), declared while an age-display overlay
+    // (jobs/diag) is open so an idle TUI emits no ticks and the replay log
+    // stays quiet.
     now: 0,
-    clockArmed: false,
     // Active theme NAME — the single source of truth for theme selection
     // (replayable: a `set_theme` Msg in the log reproduces it). The palette
     // OBJECT the pure render leaves read lives in leaves/infra/themes (`active`),

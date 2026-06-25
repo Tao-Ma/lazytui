@@ -9,7 +9,7 @@
  */
 'use strict';
 
-const { withModes: _withModes, withModal: _withModal, armClock: _armClock, CLOCK_MS } = require('../model-ops');
+const { withModes: _withModes, withModal: _withModal } = require('../model-ops');
 const route = require('../../../panel/route');
 // esc() for the jobs_routed info-card lines (background/tmux).
 const { esc } = require('../../../leaves/text/ansi');
@@ -34,13 +34,15 @@ function update(model, msg) {
   switch (msg.type) {
     case 'jobs_open':
       if (model.modes.jobsMode) return [model, []];
-      // Stamp `now` from the handler (msg.now) so the first frame shows a
-      // fresh age, then arm the frame clock (gated on age overlays open).
-      return _armClock({
+      // Stamp `now` from the handler (msg.now) so the first frame shows a fresh
+      // age. The frame clock ticks via the model-conditional `clock` interval
+      // Sub (app/state.js#_appSubscriptions, declared while an age overlay is
+      // open) — FIX-3 Phase 6 retired the self-re-armed arm_clock Cmd.
+      return [{
         ..._withModes(model, { jobsMode: true }),
         modal: { ...model.modal, jobs: { cursor: 0, scroll: 0 } },
         now: msg.now || model.now,
-      });
+      }, []];
     case 'jobs_close':
       if (!model.modes.jobsMode) return [model, []];
       return [_withModes(model, { jobsMode: false }), []];
