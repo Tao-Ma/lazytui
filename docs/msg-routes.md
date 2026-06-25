@@ -98,7 +98,8 @@ route topology; runs I/O) by design.
   EFFECTS     runEffects(cmds)                                effects.js  ── IMPURE ──
               every Cmd is plain DATA ({type, …}); a handler runs the side effect.
               'msg' re-enters a pump (routed by msg.kind)  → the cyclic spine (cap 32).
-              'tick'/'arm_clock' → setTimeout → re-dispatch (async re-entry).
+              periodic + external re-entry rides Subs (app/state.js interval /
+                resize / store-mirror / process-stream kinds → applyMsg/dispatch, async).
               async results (stream onData, fetch, PTY) → dispatchMsg back in.
                                    │
                                    ▼
@@ -120,7 +121,7 @@ route topology; runs I/O) by design.
 
 | Home | Module | Writer | Examples |
 |---|---|---|---|
-| **Root model** (centralized chrome) | `model/store.js` (`_modelRef.current`) | `reducer.update` + `modal/*` ONLY | `modes{}` (modal flags), `modal{}` (editing buffers), `currentGroup`, `now`, `clockArmed`, `theme`, `config`, `register`, `focused`, `prefixNode/Seq` |
+| **Root model** (centralized chrome) | `model/store.js` (`_modelRef.current`) | `reducer.update` + `modal/*` ONLY | `modes{}` (modal flags), `modal{}` (editing buffers), `currentGroup`, `now`, `theme`, `history`/`diagLog`/`jobs` (store-mirror'd, FIX-1), `config`, `register`, `focused`, `prefixNode/Seq` |
 | **Component slices** (decentralized) | `panel/route.js` instance store | each Component's own `update` ONLY | `layout` (focus/viewMode/arrange/freeConfig), `detail` (viewer tabs/buffers/view-state), `groups` (tree/expanded), `docker`, `files`, `config-status`, `nav[panelType]` (cursor/scroll/multiSel/filter) |
 | **Out-of-TEA stores** (global-by-nature) | `feature/*`, `io/*` | module-local mutators | `feature/jobs` (live child procs), `feature/history`, `io/diag-log` (ring buffer), `io/terminal` (xterm buffers) |
 
@@ -157,15 +158,16 @@ stores.** Concretely, four tiers:
    review #3 D16 examined and **KEPT** this. The single same-slice
    runtime-written field.
 
-4. **#D5 REPLAYABILITY BOUNDARY — render reads off-model live stores.** Render
-   is pure of the *wall clock* (`model.now`) and the *theme*
-   (projected from `model.theme`), but still reads off-model live stores at
-   paint time: `feature/jobs.list()`, `io/diag-log.snapshot()`,
-   `feature/history.all()`, `io/terminal.getSession()`, `io/term.cols/rows()`.
-   So `frame === f(model)` is **false**; the honest statement is
-   `frame === f(model + named live stores)`. Deliberate (a job arriving while
-   the Running overlay is open shows live). Terminal panes are an explicitly
-   non-TEA island (PTY `onData` mutates the xterm buffer outside the Msg loop).
+4. **#D5 REPLAYABILITY BOUNDARY — the terminal island (v0.6.6 FIX-1).** Render
+   is pure of the *wall clock* (`model.now`) and the *theme* (projected from
+   `model.theme`), and as of **FIX-1** the three formerly-off-model live stores
+   are mirrored into the model by the `store-mirror` Sub — render reads
+   `model.history` / `model.diagLog` / `model.jobs`, not `feature/history` /
+   `io/diag-log` / `feature/jobs` live. So `frame === f(model)` now holds for
+   everything EXCEPT the terminal island: `io/terminal.getSession()` +
+   `io/term.cols/rows()`, an explicitly non-TEA region (PTY `onData` mutates the
+   xterm buffer outside the Msg loop, #D14). The overlays still update live
+   mid-display — now because the store-mirror cb fires per mutation, via Msg.
 
 **Single-writer invariant.** Only `reducer.update`/`modal/*` write the root
 model; only a Component's own `update` writes its slice. Cross-layer writes
@@ -219,7 +221,7 @@ identity-preserves on no-op. **All 19 arms are pure** — verified.
 | `terminal_enter` | enter-terminal verb | `modes.terminalMode→true` | — | ✓ |
 | `terminal_exit` | exit-terminal / dead PTY | `modes.terminalMode→false` | `msg→view_drop_full_to_normal` (layout) | ✓ |
 | `focus_event` | DEC 1004 focus in/out | `model.focused` | — | ✓ |
-| `clock_tick` | `arm_clock` effect | `model.now=msg.now`; `clockArmed→false` unless age overlay open | `arm_clock` (re-arm) while jobs/diag open | ✓⁵ |
+| `clock_tick` | `clock` interval Sub | `model.now=msg.now` | — | ✓⁵ |
 | `set_theme` | `:theme` / boot | `model.theme` | — | ✓ |
 | `mode_clear` | wedge-guard / panic recovery | `modes[msg.flag]→false` | — | ✓ |
 | `mode_set` | viewer search-enter etc. | `modes[msg.flag]→true` | — | ✓ |
@@ -240,8 +242,10 @@ identity-preserves on no-op. **All 19 arms are pure** — verified.
 ⁴ navSelect handler stamps `msg.route`, `msg.viewerTarget`, `msg.resetOwners`.
   The `groups` branch builds `ctx` via `groups.groupsBundle(model)` — a pure
   projection of the **`model` arg** (NOT `getModel()`), so the arm stays pure.
-⁵ `msg.now` is threaded from the `arm_clock` effect, which reads the wall clock
-  in the impure shell (exception C). The arm itself is pure of the clock.
+⁵ `msg.now` is threaded from the `clock` interval Sub's `onTick`, which reads the
+  wall clock in the impure shell (exception C). The arm itself is pure of the
+  clock, and no longer re-arms — the Sub owns the cadence (FIX-3 Phase 6; the
+  `arm_clock` effect + `clockArmed` latch are retired).
 ⁶ `msg.csOwner` (the config-status owner) is resolved by `app/state.loadConfig`
   (impure shell), so the reducer reads no ownership registry (#D9).
 ⁷ `msg.owners` (`{panelType: ownerComponentName}`) is resolved by the dispatch
@@ -338,16 +342,18 @@ closures stay module-held in `dispatch/control/cmdline.js`.
 
 | Msg | Writes | Emits | Purity |
 |---|---|---|---|
-| `jobs_open` | `modes.jobsMode→true`, reset cursor, `now=msg.now` | `arm_clock` (gated frame clock) | shell¹ |
+| `jobs_open` | `modes.jobsMode→true`, reset cursor, `now=msg.now` | — (the `clock` interval Sub self-declares while `jobsMode`) | shell¹ |
 | `jobs_close` | `modes.jobsMode→false` (guarded) | — | ✓ |
 | `jobs_nav` | `modal.jobs.{cursor,scroll}` (clamp vs `msg.count`/`msg.vh`) | — | shell² |
 | `jobs_activate` | closes overlay (guarded); resolves target group from `msg.job` (model-only) | `set_current_group` (if cross-group) + `jobs_route{job,now}` | shell³ |
 | `jobs_routed` | — | per job kind: `tab_switch`+`focus_set` (routed/pty) · `terminal_enter` (pty) · `viewer_set_content`+`focus_set` (bg/tmux info card) · `focus_set` (unrouted) | shell⁴ |
 
 ¹ `msg.now` threaded from handler (wall clock = exception C).
-² `msg.count` (live `feature/jobs.list().length`) + `msg.vh` threaded by handler
-  — the reducer never calls `jobs.list()` (renderer-only-reader rule, PRINCIPLES §12).
-³ `msg.job` is the resolved out-of-TEA job entry, threaded by `handleJobsKey`.
+² `msg.count` (`model.jobs.length`, since FIX-1) + `msg.vh` threaded by handler
+  — the reducer never reads the jobs list inline (renderer-only-reader rule, PRINCIPLES §12).
+³ `msg.job` is the resolved job entry, threaded by `handleJobsKey` from
+  `model.jobs` (the store-mirror'd snapshot, since FIX-1 — the same array render
+  highlighted; was `feature/jobs.list()[cursor]`).
 ⁴ **The Phase-C split** (`docs/blessed-exceptions.md`): `jobs_activate` is a pure
   orchestrator (closes + queues group switch + emits `jobs_route`). The
   `jobs_route` *effect* runs AFTER the switch commits, reads the now-correct
@@ -359,7 +365,7 @@ closures stay module-held in `dispatch/control/cmdline.js`.
 
 | Msg | Writes | Emits | Purity |
 |---|---|---|---|
-| `diag_log_open` | `modes.diagLogMode→true`, reset cursor, `now=msg.now` | `arm_clock` | shell¹ |
+| `diag_log_open` | `modes.diagLogMode→true`, reset cursor, `now=msg.now` | — (the `clock` interval Sub self-declares while `diagLogMode`) | shell¹ |
 | `diag_log_close` | `modes.diagLogMode→false` (guarded) | — | ✓ |
 | `diag_log_nav` | `modal.diagLog.{cursor,scroll}` (clamp vs `msg.count`/`msg.vh`) | — | shell² |
 | `diag_log_clear` | resets cursor | `diag_clear` (buffer mutation is a side effect) | ✓ |
@@ -768,8 +774,9 @@ ring buffer. `augmentMsg` threads `entries`.
 ³ `filesModel` (pane def + declared items + projectDir) threaded by `augmentMsg`.
 ⁴ `t`/`s`/`return` are `_claimed` so the framework default doesn't also fire;
   `]`/`[` deliberately NOT claimed (fall through to the pane/tab cycle).
-⁵ `entries` (the ring buffer) threaded by `augmentMsg` (renderer-only-reader rule
-  kept: the arm doesn't call `history.all()` itself).
+⁵ `entries` threaded by `augmentMsg` from `model.history` (the store-mirror'd
+  snapshot, since FIX-1; was `feature/history.all()`) — renderer-only-reader rule
+  kept: the arm doesn't read the store/model list inline.
 
 **Verdict (§7.8): pure TEA.** Every navigator arm is a pure `(msg, slice) →
 [slice, effects]`. All I/O is in effects; every model/registry read the arms
@@ -815,8 +822,6 @@ handlers are tier-`fx` (impure by design).**
 | `msg` | routes `eff.msg` by `msg.kind`: wrapped → `dispatchMsg`, flat → `applyMsg` | **yes** (the cyclic spine; cap 32) |
 | `render` | `renderQueue.scheduleRender()` (50ms debounce) | no |
 | `show_selected_info` | `dispatch.showSelectedInfo(eff.paneId?)` → resolves focused info lines → viewer | yes (→ `viewer_show_info`) |
-| `tick` | `setTimeout(ms)` → `dispatchMsg(eff.msg)` (`unref`) | yes (async; not depth-counted) |
-| `arm_clock` | `setTimeout(ms)` → `applyMsg(clock_tick{now: Date.now()})` — **reads wall clock (exc. C)** | yes (async) |
 | `force_full_repaint` | `renderQueue.forceFullRepaint()` | no |
 | `_claimed` | no-op (sentinel consumed earlier in `dispatchKeyToFocused`) | no |
 | `do_run` / `run_action` | `setImmediate` → `action-runner.doRun/runAction` (spawn after the overlay-gone frame paints) | via action lifecycle |
@@ -884,7 +889,7 @@ v0.6.6 FIX-2; innerH is now threaded onto viewer Msgs and reducer-committed. §9
 
 | ID | Name | Site | Why kept | Status |
 |---|---|---|---|---|
-| **C** | Impure-shell model read (`getModel` / wall clock) | handlers in `dispatch/control/*`; `effects.js` (`arm_clock`'s `Date.now()`); the `augmentMsg` seam; `getModel()` in the pumps | The shell is impure by design; it reads ONCE and threads facts into Msgs so the reducers/Components stay pure. Removing it would only move the read, not eliminate it. | KEPT (by design) |
+| **C** | Impure-shell model read (`getModel` / wall clock) | handlers in `dispatch/control/*`; the `clock` interval Sub's `onTick` (`Date.now()`, app/state.js); the `augmentMsg` seam; `getModel()` in the pumps | The shell is impure by design; it reads ONCE and threads facts into Msgs so the reducers/Components stay pure. Removing it would only move the read, not eliminate it. | KEPT (by design) |
 
 **Exception B — RETIRED (v0.6.6 FIX-2).** Was: the finalizer wrote the viewer's
 derived `innerH` directly onto its slice (`setInstanceSlice(viewerTab, {...vs, innerH})`),
@@ -899,13 +904,15 @@ viewer's `update` is the single writer of `slice.innerH`. Zero test migration
 
 ### 9.3 #D5 replayability boundary (NOT an exception — a documented limit)
 
-`frame === f(model + named live stores)`, not `f(model)`. Render reads
-`feature/jobs.list()`, `io/diag-log.snapshot()`, `feature/history.all()`,
-`io/terminal.getSession()`, `io/term.cols/rows()` live. `model.now` + `model.theme`
-ARE under the model (wall clock + theme are replay-safe). Bringing the rest under
-TEA (a `Sub` sampling them into the model) is a possible future arc; the honest
-statement today is the boundary, not full frame purity. See
-`model/store.js §Replayability boundary`.
+`frame === f(model)` EXCEPT the terminal island (v0.6.6 FIX-1). `model.now` +
+`model.theme` are under the model (wall clock + theme replay-safe), and FIX-1
+brought the three live stores under it too: `feature/history` / `io/diag-log` /
+`feature/jobs` are mirrored into `model.{history,diagLog,jobs}` by the
+`store-mirror` Sub (a `Sub` sampling them into the model — exactly the arc this
+note used to defer), so render reads the model. The one remaining off-model
+render read is `io/terminal.getSession()` + `io/term.cols/rows()` (the #D14 PTY
+island). Replaying the Msg log reconstructs the model and so the frame —
+terminal output excepted. See `model/store.js §Replayability boundary`.
 
 ### 9.4 Retired exceptions (for context — do NOT re-track)
 

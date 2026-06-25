@@ -318,19 +318,20 @@ resolved both:
 - **Wall-clock age columns — under the model (`model.now`/tick).**
   `renderDiagLog`/`renderJobsOverlay` read `now` threaded from the paint frame,
   never `Date.now()` in their bodies, so each is a pure function of
-  (side-store, model, now) — snapshottable given a fixed `now` (pinned by
+  (model, now) — snapshottable given a fixed `now` (pinned by
   `test-overlay-clock.js`). The wall-clock read itself is now under the model:
   `render(model)` reads `model.now` (a pure-by-construction view — no
-  `getModel()` default, #D6), and `model.now` is advanced only by the gated
-  `clock_tick` reducer arm (the self-re-arming tick runs ONLY while an age
-  overlay is open; see `docs/model-now-tick.md`). So the wall clock is
-  replay-safe data in the model, not a per-paint read. Residual / root context:
-  both overlays render from **out-of-TEA side registries**
-  (`feature/jobs.js`'s `_jobs` Map via `jobs.list()`; `io/diag-log.js`'s ring
-  buffer via `diag.snapshot()`), NOT the model — so the frame is pure of the
-  wall clock but still NOT a pure function of the model. That broader gap (the
-  jobs / diag / history / PTY / theme live stores the frame reads) is the **#D5
-  replayability boundary** — see `model/store.js` §Replayability boundary.
+  `getModel()` default, #D6), and `model.now` is advanced only by the
+  `clock_tick` reducer arm (its cadence is the model-conditional `clock`
+  interval Sub — declared ONLY while an age overlay is open, FIX-3 Phase 6; see
+  `docs/model-now-tick.md`). So the wall clock is replay-safe data in the model,
+  not a per-paint read. And as of **v0.6.6 FIX-1**, the overlays no longer read
+  off-model side registries either: `feature/jobs` / `io/diag-log` /
+  `feature/history` are mirrored into `model.{jobs,diagLog,history}` by the
+  `store-mirror` Sub, so both overlays render from the model. The **#D5**
+  boundary has therefore shrunk to its irreducible core — the terminal island
+  (the PTY/xterm buffer + `io/term` dims, #D14). `frame = f(model)` now holds
+  for everything except that island — see `model/store.js` §Replayability boundary.
 
 **Why the rule matters:**
 
@@ -581,39 +582,34 @@ arrangement) — slice-private but loaded via cross-layer Msgs.
 > groups don't collide on `tabState['action:test']` (B4 regression —
 > pre-fix, group A's view state restored onto group B's tab).
 
-> **⚠️ Being narrowed (v0.6.6 FIX-1).** The pattern below was the
-> pragmatic choice for "global by nature" data, but it is the #D5
-> render-reads-live-stores boundary. v0.6.6 folds `feature/jobs` /
-> `io/diag-log` / `feature/history` INTO the Model (sampled via Subs —
-> see "Live external state" below), so `render` reads only the Model.
-> The description that follows is kept accurate to the pre-FIX-1 code; do
-> NOT reach for it in new Components — use the Cmd/Sub recipe below.
+> **✅ RETIRED (v0.6.6 FIX-1).** The pattern below — three cross-cutting
+> registries (`feature/history`, `feature/jobs`, `io/diag-log`) living OUTSIDE
+> the slice graph as module-local stores that `render` read LIVE — was the
+> pragmatic choice for "global by nature" data, but it WAS the #D5
+> render-reads-live-stores boundary. FIX-1 folded all three INTO the Model: each
+> now exposes the `{snapshot, setOnChange}` mirrorable-store contract and is
+> mirrored into `model.{history,jobs,diagLog}` by the `store-mirror` Sub (see
+> "Live external state" below + `docs/v0.6.6.md` §8), so `render` reads only the
+> Model. Do NOT reach for the legacy pattern in new Components — use the Cmd/Sub
+> recipe below. Kept here as history.
 >
-> **Out-of-TEA module-local stores.** Two cross-cutting registries
-> live OUTSIDE the slice graph: `feature/history` (completion log
-> of every action that's run) and `feature/jobs` (live state of
-> every child lazytui spawned — streams, PTYs, background, tmux).
-> Both: module-local `Map`, pure public API (`register` / `update` /
-> `close` / `list`), `scheduleRender()` on mutation, consumed by
-> render-time readers (the history navigator, the Running overlay).
-> No Component slice and no Msg fan-out — the data is global by
-> nature (cross-pane, cross-group, multi-producer) and forcing it
-> through a single-writer slice would be ceremony for no win. The
-> guardrail: producers report at lifecycle boundaries only (spawn
-> + close), and the registry mutator is the ONLY writer the
-> renderer reads from. Reach for this pattern only when the data
-> truly spans the slice graph; default to a slice.
+> *How it used to work (pre-FIX-1, for the record).* Each store was a
+> module-local `Map`/ring with a pure public API, calling `scheduleRender()` on
+> mutation, consumed directly by render-time readers (no Component slice, no Msg
+> fan-out). The argument was that the data is global by nature (cross-pane,
+> cross-group, multi-producer) so a single-writer slice would be ceremony. FIX-1
+> showed the third way: keep the global store, but mirror it into the model via
+> a Sub so `render` stays a function of the model — the store no longer needs to
+> import `scheduleRender` at all (the `*_synced` dispatch repaints).
 >
-> *Renderer-only-reader, enforced.* Reducer arms must NOT call
-> `feature/jobs.list()` / `feature/history.all()` inline — that
-> would break the renderer-only-reader half of the contract and
-> import producer-local state into pure-function-of-(slice, msg)
-> reducer bodies. Resolve the entry on the handler side and thread
-> it into the Msg payload. v0.6.2 R2 fixed exactly this in
-> `jobs_activate`: pre-R2 the reducer called
-> `require('../feature/jobs').list()` to look up the cursor; post-R2
-> the handler (`dispatch.handleJobsKey` at Return) resolves the
-> entry and passes it via `msg.job`, keeping the reducer pure.
+> *Renderer-only-reader — the surviving discipline.* Reducer arms must NOT read
+> a live store inline; that would import producer-local state into a
+> pure-function-of-(slice, msg) reducer body. This rule OUTLIVES the stores: the
+> residual handler-side cursor lookups (`jobs_activate`'s `msg.job`; the diag
+> `y`-yank entry) still resolve in the impure shell and thread the result via
+> the Msg — now reading `model.{jobs,diagLog}` (the SAME array `render`
+> highlighted) rather than the store. v0.6.2 R2 first established this for
+> `jobs_activate`; FIX-1 kept it and moved its source under the model.
 
 ### Live external state — Model, Cmd, Sub (the consistent pattern)
 
@@ -664,17 +660,18 @@ the wall clock and theme replay-safe (`clock_tick → model.now`,
 6. A truly foreign reactive widget → an **island**, documented like
    `io/terminal.js`, with the live-read surface kept tiny.
 
-**Status + the one narrowing (v0.6.6).** The Sub seam today covers hub
-topics (inter-Component pub/sub); external OS sources (docker-events, the
-stdout resize listener, the terminal-overlay poll) are still hand-rolled
-timers — **FIX-3** extends the declarative seam to cover them so every
-ongoing source is declared uniformly. And the "Out-of-TEA module-local
-stores" pattern above (`feature/jobs`, `io/diag-log`, `feature/history`) is
-being **folded into the Model** (**FIX-1**, retiring the #D5 render-reads-
-live-stores boundary). Going forward: reserve out-of-TEA stores / islands
-for the irreducible foreign-reactive case, NOT as a default for "global"
-data. New Components follow the recipe above, not the legacy store pattern.
-(See `docs/v0.6.6.md`.)
+**Status (v0.6.6 — shipped).** The Sub seam now covers every ongoing source.
+**FIX-3** extended the declarative `Model → Sub` seam from hub topics
+(inter-Component pub/sub) to all the external OS sources that were hand-rolled
+timers — docker poll, docker-events, the stdout resize listener, the
+terminal-overlay poll, the frame clock — and retired the self-re-arm pattern.
+**FIX-1** then folded the three out-of-TEA stores (`feature/jobs`, `io/diag-log`,
+`feature/history`) into the Model via the `store-mirror` Sub. The #D5
+render-reads-live-stores boundary is gone: `frame = f(model)` holds except the
+one irreducible island (`io/terminal`, #D14). Going forward: reserve out-of-TEA
+stores / islands for the irreducible foreign-reactive case, NOT as a default for
+"global" data. New Components follow the recipe above, not the legacy store
+pattern. (See `docs/v0.6.6.md`.)
 
 ## 13. Checklist for new features
 
