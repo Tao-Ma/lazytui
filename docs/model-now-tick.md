@@ -7,7 +7,17 @@ doc is now the as-built record (spec + what landed). Chose the **gated tick**
 (test-jobs.js / test-diag-log.js). The remaining half of an end-to-end replay
 feature — persisting/re-feeding the Msg log (§5) — stays a separate future arc.
 
-As-built deltas from the spec below:
+> **⚠️ Superseded mechanism (v0.6.6 FIX-3 Phase 6).** This arc shipped the
+> clock as a self-re-arming `arm_clock` effect gated on a `model.clockArmed`
+> latch (the as-built deltas just below). FIX-3 Phase 6 replaced that with the
+> model-conditional **`clock` interval Sub** (`app/state.js#_appSubscriptions`,
+> declared while `jobsMode || diagLogMode`): the `arm_clock` effect, the
+> `clockArmed` latch, and the `clock_tick` re-arm are all RETIRED. The OUTCOME
+> is unchanged — `model.now` advances ~1 s while an age overlay is open, idle
+> otherwise — only the cadence owner moved (reducer self-re-arm → declared Sub).
+> The rest of this doc is kept accurate to the original arc.
+
+As-built deltas from the spec below (original arc; cadence since superseded — see above):
 - `model.now` + `model.clockArmed` added in `js/model/store.js init()`.
 - Reducer (`js/app/runtime.js`): `_armClock` helper + `CLOCK_MS=1000`;
   `jobs_open`/`diag_log_open` seed `now` from `msg.now` and arm; `clock_tick`
@@ -115,10 +125,20 @@ This arc makes the frame pure of the WALL CLOCK — NOT a pure function of the
 model. A full pixel-replay feature ALSO needs, beyond `model.now`:
   (a) the Msg log itself persisted and re-feedable end-to-end (record every
       `applyMsg`, including the injected `now`); and
-  (b) the off-model live stores the frame reads — `feature/jobs.list()`,
-      `io/diag-log.snapshot()`, `feature/history.all()`, `io/terminal.getSession()`,
+  (b) the off-model live stores the frame reads — `feature/jobs`,
+      `io/diag-log`, `feature/history`, `io/terminal.getSession()`,
       the `leaves/themes` palette cache — brought under TEA (a `Sub` feeding
       samples into the model via Msgs) OR explicitly excluded from replay.
+
+> **Update (v0.6.6 FIX-1 + #D8).** The (b) gap is now largely closed: the
+> `leaves/themes` palette cache is projected from `model.theme` at the render
+> entry (#D8), and `feature/jobs` / `io/diag-log` / `feature/history` are
+> mirrored into `model.{jobs,diagLog,history}` by the `store-mirror` Sub exactly
+> as (b) anticipated. The only off-model read the frame still makes is the
+> terminal island (`io/terminal.getSession()` + `io/term` dims, #D14). So
+> `frame = f(model)` holds except that island; (a) — persisting + re-feeding the
+> Msg log — remains the open prerequisite for full pixel-replay.
+
 `model.now`/tick is necessary-but-not-sufficient. The (b) gap is the #D5
 replayability boundary (see `model/store.js` §Replayability boundary). Scope
 THIS arc to the wall-clock half; (a) and (b) are follow-on arcs.

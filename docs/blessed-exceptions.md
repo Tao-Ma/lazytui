@@ -85,16 +85,19 @@ have been brought under the model-clock discipline:
   ELIMINATED).** `renderDiagLog`/`renderJobsOverlay` take `now` (threaded from
   `paint.render(model)`) instead of reading `Date.now()` in-body. The former
   residual frame-boundary read (`paint.render`'s `now = Date.now()` default)
-  is now GONE: `render()` reads `model.now`, advanced by a gated `clock_tick`
-  reducer arm (the self-re-arming clock runs only while an age overlay is open;
-  the wall-clock read lives in the `arm_clock` effect — the impure shell). So
-  the rendered frame is now pure of the WALL CLOCK — exception D was specifically
-  the wall-clock render read, and it is gone. This does NOT make the frame a pure
-  function of the model: both overlays still render from out-of-TEA side
-  registries (`feature/jobs.js` Map; `io/diag-log.js` ring buffer), not the model,
-  and the frame reads other live stores too (history / PTY / theme cache). That
-  broader gap is the **#D5 replayability boundary** (see `model/store.js`
-  §Replayability boundary). See docs/model-now-tick.md. Pinned by
+  is now GONE: `render()` reads `model.now`, advanced by the `clock_tick`
+  reducer arm (its cadence is the model-conditional `clock` interval Sub —
+  declared only while an age overlay is open, FIX-3 Phase 6; the wall-clock read
+  is in the Sub's `onTick`, the impure shell). So the rendered frame is now pure
+  of the WALL CLOCK — exception D was specifically the wall-clock render read,
+  and it is gone. The residual #D5 gap this entry once noted (overlays rendering
+  from out-of-TEA `feature/jobs` / `io/diag-log` registries; the frame reading
+  history / theme too) has since been closed: **v0.6.6 FIX-1** mirrored jobs /
+  diag / history into `model.{jobs,diagLog,history}` (the store-mirror Sub), and
+  the theme palette is projected from `model.theme` at the render entry (#D8).
+  The **#D5 replayability boundary** has therefore shrunk to the terminal island
+  alone (the PTY/xterm buffer + `io/term` dims) — see `model/store.js`
+  §Replayability boundary. See docs/model-now-tick.md. Pinned by
   `test-overlay-clock.js` + the `clock_tick` reducer tests. See PRINCIPLES §11.
 
 Everything else below was an eliminable exception and has been removed.
@@ -122,14 +125,17 @@ order was by **(correctness value × tractability)**.
    from `paint.render`, so the render fns are pure of wall-clock; the single
    clock read was concentrated to the frame boundary. Then (model.now / tick
    arc, docs/model-now-tick.md) that residual boundary read was eliminated too:
-   `render()` reads `model.now`, advanced by a gated `clock_tick` reducer arm
-   (clock runs only while an age overlay is open; the wall-clock read moved to
-   the `arm_clock` effect — the impure shell). The frame is now pure of the
-   WALL CLOCK (this was exception D / the render-replay blocker for the clock
-   dimension). It is NOT a pure function of the model — the render path still
-   reads off-model live stores (jobs / diag / history / PTY / theme cache); that
-   broader gap is the #D5 replayability boundary (see `model/store.js`
-   §Replayability boundary).
+   `render()` reads `model.now`, advanced by the `clock_tick` reducer arm (its
+   cadence is the model-conditional `clock` interval Sub — declared only while an
+   age overlay is open, FIX-3 Phase 6; the wall-clock read is in the Sub's
+   `onTick`, the impure shell). The frame is now pure of the WALL CLOCK (this was
+   exception D / the render-replay blocker for the clock dimension). The broader
+   "not a pure function of the model" gap this entry noted (render reading
+   off-model jobs / diag / history / theme) has since been closed by **FIX-1**
+   (jobs/diag/history mirrored into the model via the store-mirror Sub) + **#D8**
+   (theme projected from `model.theme`); the only off-model frame read left is the
+   terminal island (PTY). That residual is the #D5 replayability boundary (see
+   `model/store.js` §Replayability boundary).
    Pinned by `test-overlay-clock.js` + the `clock_tick` reducer tests.
 
 **3. ✅ DONE 2026-06-15 — `viewer.update()` boundary `getModel()` → threaded

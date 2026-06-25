@@ -305,14 +305,18 @@ case in the hub.
 `history.js` publishes each action lifecycle as one sample on
 `actions.lifecycle` (rowKey `'_'`, window 100). The entry object is
 mutable and held by reference — `start()` publishes once, then
-`append(line)` and `end(exitCode)` mutate the same object so the panel
-always reads live state on render. No `onUpdate` callback needed: the
-existing render-queue tick already drives history-panel repaint.
+`append(line)` and `end(exitCode)` mutate the same object so a read always
+reflects live state.
 
-The panel reads via `history.all()` which wraps
-`hub.history('actions.lifecycle', '_', 100)` and reverses for newest-
-first display. Public API (`history.start`, `history.all`) is unchanged
-from the pre-hub implementation; this is a pure refactor.
+`history.snapshot()` (renamed from `all()` in v0.6.6 FIX-1) wraps
+`hub.history('actions.lifecycle', '_', 100)` and reverses for newest-first
+display. Since FIX-1 the hub is the STORAGE backend but no longer the panel's
+read path: `history` is a mirrorable store (`{snapshot, setOnChange}`), mirrored
+into `model.history` by the `store-mirror` Sub, and the navigator renders
+`model.history`. `setOnChange`'s cb fires on `start`/`end` (a `history_synced`
+Msg → repaint via the dispatch path); per-line `append` does not fire it (the
+shared-ref entry + the viewer's own append dispatch cover the growing output).
+See `docs/v0.6.6.md` §8.
 
 ## 10. Tables — what the hub gives you, what's still on the panel
 

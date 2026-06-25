@@ -79,7 +79,9 @@ greppable.
      modes (14 modal flags, incl. jobsMode for the Running overlay)
      modal.{ filter, prompt, menu, confirm, copy, registerPopup,
              cmdline, jobs }
-     currentGroup, config, register, prefixSeq, focused, ...
+     currentGroup, config, register, prefixSeq, focused, now, theme, ...
+     history / diagLog / jobs  (live stores mirrored in via the store-mirror Sub,
+                                FIX-1 — render reads these, not the stores live)
 
    Component slices (js/leaves/route.js, nested store)
      layout         focus, viewMode, arrange, freeConfig
@@ -88,16 +90,21 @@ greppable.
                     contentTabs, ephemeralTerminals, actionTabBuffers,
                     viewerStreamBuffer, viewerOverride, tabState
      groups         list, expanded:Set, tab
-     docker         status, stats, inFlight, eventsStarted
+     docker         status, stats, inFlight
      files          per-panel-type browsers
      config-status  tab, cache, branch, expanded
      nav[panelType] cursor, scroll, multiSel, filter
 
-   Out-of-TEA module-local stores (js/feature/*.js)
+   Mirrorable backing stores (js/feature/*.js, js/io/diag-log.js) — FIX-1
      history        completion log of every action that ran
      jobs           live state of every child lazytui spawned
-                    (streams, PTYs, background, tmux). See
-                    PRINCIPLES §12 for the slice-vs-module rule.
+                    (streams, PTYs, background, tmux)
+     diag-log       warning/error ring (leader-e overlay)
+                    All three are module-local stores exposing the
+                    {snapshot, setOnChange} contract; the store-mirror Sub
+                    mirrors each into model.{history,jobs,diagLog}, so RENDER
+                    reads the model copy (above), not these live. The #D5
+                    boundary now = the terminal island only. See PRINCIPLES §12.
         │
         ▼
 ═══════════════════════════ RENDER ═════════════════════════════════
