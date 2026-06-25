@@ -79,7 +79,7 @@ Three commands are available without any Component contribution:
 | `:refresh` | Re-fan a `refresh` Msg to every Component |
 | `:help` | Render per-context help into the detail panel |
 
-These live in `panel/api.js#FRAMEWORK_COMMANDS`. They're collected by
+These live in `js/panel/commands.js#FRAMEWORK_COMMANDS`. They're collected by
 `getCommands()` alongside Component-contributed commands; the `_source`
 field tags each entry's origin (a Component name, or `<framework>` for
 the built-ins).
@@ -92,8 +92,9 @@ A Component is a module exporting:
 module.exports = {
   name: 'my-component',
 
-  // Called once at registration; returns the initial slice.
-  init: () => ({ /* per-Component state */ }),
+  // Called once per instance to mint the initial slice. `seed` is
+  // { config, projectDir, paneDef }; seed-blind inits ignore both args.
+  init: (paneId, seed) => ({ /* per-Component state */ }),
 
   // Pure: returns the next slice, or [slice, effects], or undefined
   // to leave the slice unchanged.
@@ -140,6 +141,22 @@ module.exports = {
   commands:     [ { name, desc, run(args) } ],
   getCommands:  (model) => [ /* state-derived verbs */ ],
   cleanup:      () => { /* tear down long-lived children */ },
+
+  // Optional: declarative Model→Sub. PURE projection of the pane def →
+  // subscription descriptors (`interval` / `process-stream` /
+  // `metrics-mirror`); the framework reconciles them each dispatch — this
+  // is how recurring/external work is declared (the replacement for the
+  // retired `tick` self-re-arm). docker.js / stats.js are the examples.
+  subscriptions: (paneDef, model) => [ /* descriptors */ ],
+  // Optional impure-shell hook: stamps model-derived facts onto a Msg
+  // (so `update` stays pure of getModel()). docker.js augmentMsg.
+  augmentMsg:   (msg, model, slice) => ({ ...msg /* + derived facts */ }),
+  // Optional: register the Component's Cmd-effect handlers so a
+  // [slice, [{ type: 'myEffect' }]] return actually runs. api.js / docker.js.
+  installEffects: (registerEffect) => { /* registerEffect('myEffect', fn) */ },
+  // Optional: kind-global service-slot flag (one shared instance per kind,
+  // paneId == null) — e.g. docker's host-global daemon owner.
+  service:      true,
 };
 ```
 
@@ -149,7 +166,7 @@ Register with `api.registerComponent(component)`.
 
 ```javascript
 // components/counter.js
-const mnav = require('../leaves/nav');
+const mnav = require('../leaves/wm/nav');
 module.exports = {
   name: 'counter',
   init: () => ({
@@ -162,8 +179,9 @@ module.exports = {
       case 'key':
         if (msg.key === '+') return { ...slice, n: slice.n + 1, lastKey: msg.key };
         if (msg.key === '-') return { ...slice, n: slice.n - 1, lastKey: msg.key };
-        // Producer-side viewer write. Two helpers in app/state.js:
-        //   setViewerContent(tabId, text)   — REPLACES slice.lines.
+        // Producer-side viewer write. Two helpers re-exported from
+        // app/state.js (canonical home: panel/nav-state.js):
+        //   setViewerContent(tabId, text, opts) — REPLACES slice.lines.
         //                                     For discrete documents
         //                                     (history replay, diff,
         //                                     help text, job info).
@@ -205,7 +223,7 @@ data, different consumer.
 
 Plus the shared nav-chrome Msgs (`set_cursor`, `set_scroll`,
 `multisel_toggle`, `multisel_select_all`, `multisel_clear`) handled by
-`js/leaves/nav.js`.
+`js/leaves/wm/nav.js`.
 
 Future Msg types will be additive — a Component's `default:` arm
 ignoring unknown types is forward-compatible.
@@ -214,7 +232,8 @@ ignoring unknown types is forward-compatible.
 
 1. **Components MAY read the root model** for app-global concerns
    (focus, currentGroup, mode flags). Use
-   `require('../app/runtime').getModel()`. The model is not passed as an
+   `require('../app/runtime').getModel()` (re-export; canonical home is
+   `require('../model/store').getModel()`). The model is not passed as an
    argument.
 2. **Components MUST NOT write the root model.** A Component's own
    slice is the only thing its `update` writes directly; cross-layer
@@ -225,8 +244,9 @@ ignoring unknown types is forward-compatible.
 3. **`update()` is pure.** No I/O, no `setTimeout`, no side effects.
    The output is the next slice (or `[slice, effects]`). Async work
    is an effect: return a Cmd descriptor, the framework runs it, the
-   result re-enters as a Msg (often via the `tick` self-re-arming-Cmd
-   pattern — see docker.js for an example).
+   result re-enters as a Msg. Recurring or external work is declared
+   instead as a **subscription** — see `subscriptions(paneDef, model)`
+   below (docker.js's `subscriptions()` is the canonical example).
 4. **Returning `undefined`** from `update()` leaves the slice
    unchanged. Explicit escape hatch for "this Msg is a no-op for me."
 5. **Throwing from `update()`** is isolated — the failing
@@ -294,7 +314,7 @@ per-call cost).
 
 Every Navigator panel's `slice.nav[panelType] = { cursor, scroll,
 multiSel, filter }` is the canonical per-panel chrome (Phase 4a + 4c).
-The shared `js/leaves/nav.js` leaf handles seven uniform Msg shapes
+The shared `js/leaves/wm/nav.js` leaf handles seven uniform Msg shapes
 (`set_cursor` / `set_scroll` / `multisel_toggle` /
 `multisel_select_all` / `multisel_clear` / `set_filter` /
 `clear_filter`) — every Navigator's `update` should call
@@ -302,7 +322,7 @@ The shared `js/leaves/nav.js` leaf handles seven uniform Msg shapes
 
 For cursor moves with cascade behavior (refresh detail body; on the
 groups panel also fire the currentGroup-change cascade), use the
-`dispatch.navSelect(model, panelType, index)` helper instead of
+`dispatch.navSelect(panelType, index)` helper instead of
 emitting `set_cursor` by hand. It bundles:
 
 1. `dispatchMsg(wrap(<owner>, { type: 'set_cursor', panel, index }))`

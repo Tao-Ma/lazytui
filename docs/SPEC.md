@@ -25,7 +25,7 @@ correctly.
 A Component is a CommonJS module. The smallest viable one:
 
 ```javascript
-// js/panel/hello.js
+// js/panel/navigator/hello.js
 module.exports = {
   name: 'hello',
   init: () => ({}),

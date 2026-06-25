@@ -55,7 +55,7 @@ Two consequences worth internalizing:
 
 The framework guarantees, regardless of project:
 
-- YAML schema validation, var/helper resolution (parser/)
+- YAML schema validation, var/helper resolution (`js/parser/`)
 - Layout, panel rendering, navigation, themes, free-config mode
   (interactive layout + pool editing — see `docs/LAYOUT.md`)
 - Action execution by `type` (`run` / `spawn` / `background`)
@@ -63,8 +63,9 @@ The framework guarantees, regardless of project:
   `detail` (viewer), `docker` (containers), `files`, `config-status`,
   `stats`
 - Built-in `:` commands: `:quit`, `:refresh`, `:help`
-- Component lifecycle (`init`, `update(msg, slice)`, `cleanup`,
-  `refresh`, `groupActions`, `panelTypes`)
+- Component lifecycle (`init(paneId, seed)`, `update(msg, slice)`,
+  `augmentMsg`, `subscriptions`, `cleanup`, `groupActions`, `panelTypes`)
+  — `refresh` is a framework Msg fanned into `update`, not a hook
 - Hub pub/sub, viewContributions (footer slots), copy menu, filter, multi-select
 
 Things the framework will never know:
@@ -162,10 +163,10 @@ that the in-tree built-ins do).
 After this contract is in place, this should hold:
 
 ```sh
-git grep -i '<your-project-name>' js parser   # inside the lazytui repo
+git grep -i '<your-project-name>' js   # inside the lazytui repo (js/parser/ included)
 # → only test fixtures, no production code matches
 ```
 
 If framework code mentions your project by name, the framework has
-leaked. Move the reference into your YAML or plugin and clean it
+leaked. Move the reference into your YAML or Component and clean it
 out — the framework is reusable only as long as it's generic.
