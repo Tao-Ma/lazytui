@@ -10,6 +10,7 @@
 
 const { describe, it, assert, eq, report } = require('./test-runner');
 const hub = require('../leaves/infra/hub');
+const { update } = require('../app/runtime');
 const { rasterize, BLOCKS } = require('../panel/monitor/stats-graph');
 const stats = require('../panel/monitor/stats');
 const docker = require('../panel/navigator/docker');
@@ -211,9 +212,11 @@ describe('[13] hub: docker.stats delete clears row history', () => {
 
 // --- v0.6.4 Phase D — declared hub subscriptions wired at mount ---
 
-describe('[14] stats declares its hub subscription (pure)', () => {
-  it('subscriptions(paneDef) projects topic + window; no topic → []', () => {
+describe('[14] stats declares its metrics-mirror subscription (pure)', () => {
+  it('subscriptions(paneDef) projects a metrics-mirror descriptor; no topic → []', () => {
     // Pure function of the pane config — no side effects, no hub touch.
+    // v0.6.6 Finding B — declares a `metrics-mirror` Sub (was a bare hub sub).
+    eq(stats.subscriptions({ topic: 'docker.stats', window: 5 })[0].kind, 'metrics-mirror', 'metrics-mirror kind');
     eq(stats.subscriptions({ topic: 'docker.stats', window: 5 })[0].topic, 'docker.stats', 'topic carried');
     eq(stats.subscriptions({ topic: 'docker.stats', window: 5 })[0].window, 5, 'explicit window carried');
     eq(stats.subscriptions({ topic: 'docker.stats' })[0].window, 40, 'window defaults to 40 (matches render)');
@@ -277,16 +280,35 @@ describe('[15] framework reconciles declared subscriptions (Model → Sub, #D13)
     _place([STATS_PANE]);
     const desired = state._desiredSubs(getModel());
     // App-global subs always desired: `resize` (FIX-3 Phase 2) + the three
-    // `store-mirror`s (FIX-1: history / diag / jobs), plus the stats pane's hub
-    // sub → five.
-    eq(desired.size, 5, 'resize + 3 store mirrors + one stats hub sub');
+    // `store-mirror`s (FIX-1: history / diag / jobs), plus the stats pane's
+    // `metrics-mirror` (Finding B) → five.
+    eq(desired.size, 5, 'resize + 3 store mirrors + one stats metrics-mirror');
     assert(desired.has('resize:resize'), 'app-global resize sub present (FIX-3 Phase 2)');
     assert(desired.has('store-mirror:history'), 'app-global history store-mirror present (FIX-1)');
     assert(desired.has('store-mirror:diag'), 'app-global diag store-mirror present (FIX-1)');
     assert(desired.has('store-mirror:jobs'), 'app-global jobs store-mirror present (FIX-1)');
     eq(desired.get('store-mirror:jobs').kind, 'store-mirror', 'tagged store-mirror');
-    assert(desired.has('hub:docker.stats:5'), 'keyed by <kind>:topic:window (FIX-3 Phase 1)');
-    eq(desired.get('hub:docker.stats:5').kind, 'hub', 'descriptor tagged with its kind');
+    // Finding B — the stats pane's metrics-mirror, keyed by topic (not topic:window).
+    assert(desired.has('metrics-mirror:docker.stats'), 'placed stats pane → metrics-mirror keyed by topic');
+    eq(desired.get('metrics-mirror:docker.stats').kind, 'metrics-mirror', 'descriptor tagged with its kind');
+  });
+});
+
+describe('[16] metrics_synced arm — hub series mirrored into model.metrics (Finding B)', () => {
+  it('lands { series, schema } under model.metrics[topic] (pure, no Cmd)', () => {
+    const series = { foo: [{ ts: 1, cpu: 10 }, { ts: 2, cpu: 20 }] };
+    const schema = { columns: { cpu: { type: 'percent' } } };
+    const [m, cmds] = update({ metrics: {} }, { type: 'metrics_synced', topic: 'docker.stats', series, schema });
+    eq(m.metrics['docker.stats'].series, series, 'series stored under the topic');
+    eq(m.metrics['docker.stats'].schema, schema, 'schema stored under the topic');
+    eq(cmds.length, 0, 'no Cmd — pure model write (render reads model.metrics, not the hub)');
+  });
+
+  it('merges topics — a new topic does not clobber others', () => {
+    const base = { metrics: { 'a.x': { series: { r: [] }, schema: {} } } };
+    const [m] = update(base, { type: 'metrics_synced', topic: 'b.y', series: { s: [] }, schema: {} });
+    assert(m.metrics['a.x'], 'pre-existing topic preserved');
+    assert(m.metrics['b.y'], 'new topic added');
   });
 });
 

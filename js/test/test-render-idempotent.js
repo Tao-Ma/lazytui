@@ -9,11 +9,11 @@
  *
  *   - docker.render reads a runtime status cache fed by container events;
  *     setting that up isn't render's concern.
- *   - stats.render reads hub history for the focused row; verifying it
- *     needs hub setup, covered separately by test-stats.js. (As of v0.6.4
- *     Phase D, stats.render is PURE — the hub subscription it used to
- *     lazy-create on first render now happens at mount via the declared
- *     `subscriptions` hook; see test-stats.js [12]/[13].)
+ *   - stats.render reads model.metrics[topic] for the focused row (v0.6.6
+ *     Finding B — the `metrics-mirror` Sub samples the hub series into the
+ *     model, so render is f(model)). Verifying the graph needs a populated
+ *     model.metrics + a select_from selection; covered separately by
+ *     test-stats.js (the metrics_synced arm + reconcile/desired-set tests).
  *   - config-status.render writes S.configStatusBranch on first call
  *     (idempotent lazy-init). Same story.
  *

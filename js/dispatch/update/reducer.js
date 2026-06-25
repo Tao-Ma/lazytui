@@ -263,6 +263,14 @@ function update(model, msg) {
     // jobs_activate cursor lookup still threads msg.job (handler-side, exc. C).
     case 'jobs_synced':
       return [{ ...model, jobs: msg.jobs }, []];
+    // v0.6.6 Finding B — a hub metrics topic's windowed time-series, sampled into
+    // the model by the throttled `metrics-mirror` Sub (app/state.js). Keyed by
+    // topic: model.metrics[topic] = { series: {rowKey: samples[]}, schema }. The
+    // stats panel reads model.metrics[topic] (frame = f(model), #D5) instead of
+    // the off-model hub bus. Whole-snapshot per topic; bounded to one per
+    // throttle window, so a continuous sampler doesn't churn the loop.
+    case 'metrics_synced':
+      return [{ ...model, metrics: { ...model.metrics, [msg.topic]: { series: msg.series, schema: msg.schema } } }, []];
     case 'set_theme': {
       // Theme selection flows through update like any other state change.
       // model.theme is the SINGLE source of truth; the palette cache the pure
