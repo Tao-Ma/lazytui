@@ -48,7 +48,6 @@ describe('[immutable] docker', () => {
       status: { old: 'running' },
       stats: { old: { cpu: '1%', mem: '10M' } },
       inFlight: true,
-      started: true,
       eventsStarted: true,
       nav: {},
     };

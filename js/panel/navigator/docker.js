@@ -8,16 +8,18 @@
  * Component (TEA) model — the polled state lives in the SLICE, not module-
  * global caches:
  *
- *   { status: {name:status}, stats: {name:{cpu,mem}}, inFlight, started, eventsStarted }
+ *   { status: {name:status}, stats: {name:{cpu,mem}}, inFlight, eventsStarted }
  *
- * Periodic refresh is self-driven (there is no framework poll loop for
- * Components — that's the non-TEA artifact v0.5 is removing). The recurrence
- * is a re-armed `tick` effect — the TEA self-re-arming-tick Cmd pattern:
+ * Periodic refresh is a declared `interval` subscription (FIX-3 Phase 4 — was a
+ * self-re-armed `tick` Cmd). `subscriptions(paneDef)` declares the poll while a
+ * `containers` pane is placed, so the reconciler STARTS it on placement and
+ * TEARS IT DOWN when the last docker pane leaves (the old self-arm tick ran
+ * forever once refreshed). The Msgs:
  *
- *   refresh Msg (boot / r / :refresh)  → arm the tick once + poll now.
- *   dockerTick Msg (the re-armed tick) → re-arm + poll (unless blurred or a
- *                                        fetch is already in flight).
- *   dockerPoll Msg (from the events stream, debounced) → one-shot poll.
+ *   refresh Msg (boot / r / :refresh)  → poll now (no tick to arm).
+ *   dockerPoll Msg → poll now: dispatched by the recurring `interval` Sub OR by
+ *                    the events stream (debounced). inFlight guards overlap;
+ *                    the focus-pause gate lives in the dockerFetch effect.
  *   dockerFetch effect → runs `docker inspect`/`docker stats` OFF-tick,
  *                        publishes the hub stats series, and folds the result
  *                        back via a dockerResult Msg (inFlight guards overlap).
@@ -39,7 +41,7 @@ const {
   streamCommand, addEphemeralTab, scheduleRender,
   leaveTerminalMode,
   getItems: apiGetItems, selectedOrFocused,
-  serviceSlice, wrap,
+  serviceSlice,
   hub,
 } = require('../api');
 const { getModel } = require('../../model/store');
@@ -260,7 +262,7 @@ function init(paneId) {
     },
   });
   return {
-    status: {}, stats: {}, inFlight: false, started: false, eventsStarted: false,
+    status: {}, stats: {}, inFlight: false, eventsStarted: false,
     // v0.6.1 Phase 3 — single-panel Component, nav stores the entry directly.
     nav: mnav.init(),
     // v0.6.4 Theme A Phase 5 Arc 3 — pane identity. The register-time
@@ -283,7 +285,7 @@ function _maybeFetch(slice) {
   // terminal is focused are LIVE runtime reads: the tick fires async,
   // so an arm-time value would be stale. Those gates moved to the
   // dockerFetch / dockerEventsStart effects (the impure layer), which
-  // makes this — and the dockerTick/refresh/dockerPoll arms — pure.
+  // makes this — and the refresh/dockerPoll arms — pure.
   if (slice.inFlight) return [slice, []];
   const effects = [];
   const next = { ...slice, inFlight: true };
@@ -307,29 +309,13 @@ function update(msg, slice) {
   // owner (`wrap('docker')` in dockerResult/_eventPoll/dockerFetch), so a
   // placed pane's content Msgs were pure waste + a stuck inFlight latch.
   if (slice.paneId != null) return slice;
-  if (msg.type === 'refresh') {
-    // boot + r + :refresh. Arm the recurring tick once; poll immediately.
-    let next = slice;
-    const armed = [];
-    if (!slice.started) {
-      next = { ...next, started: true };
-      armed.push({ type: 'tick', ms: POLL_MS, msg: wrap('docker', { type: 'dockerTick' }) });
-    }
-    const [n2, fx] = _maybeFetch(next);
-    return [n2, armed.concat(fx)];
-  }
-  if (msg.type === 'dockerTick') {
-    // Re-arm regardless (so cadence resumes after a blur), then attempt a
-    // poll. The focus-pause gate moved to the dockerFetch effect (a live
-    // read — see _maybeFetch), so this arm is pure.
-    const armed = [{ type: 'tick', ms: POLL_MS, msg: wrap('docker', { type: 'dockerTick' }) }];
-    const [next, fx] = _maybeFetch(slice);
-    return [next, armed.concat(fx)];
-  }
-  if (msg.type === 'dockerPoll') {
-    // One-shot poll requested by the events stream — no tick involvement.
-    const [next, fx] = _maybeFetch(slice);
-    return [next, fx];
+  if (msg.type === 'refresh' || msg.type === 'dockerPoll') {
+    // Poll now. `refresh` = boot / r / :refresh; `dockerPoll` = the recurring
+    // `interval` Sub (subscriptions()) OR the events stream's debounced
+    // one-shot. The cadence is the Sub, not a self-armed tick (FIX-3 Phase 4
+    // retired the `tick`/`dockerTick` self-re-arm). inFlight guards overlapping
+    // fetches; the focus-pause gate lives in the dockerFetch effect.
+    return _maybeFetch(slice);
   }
   if (msg.type === 'dockerResult') {
     // Fold the fetched maps (or keep the prior ones on a failed fetch) and
@@ -646,11 +632,27 @@ const containerCommands = [
   }),
 ];
 
+// FIX-3 Phase 4 — the recurring container poll is a declared `interval` Sub
+// (was a self-re-armed `tick` Cmd from refresh/dockerTick). Called per placed
+// `containers` pane; the stable `id` dedups multiple docker panes to ONE poll
+// loop, and the poll Msg lands on the service owner (paneId == null) via the
+// gate in update(). The reconciler tears it down when the last docker pane
+// leaves the layout — the old self-arm tick polled forever once refreshed.
+function subscriptions(/* paneDef, model */) {
+  return [{
+    kind: 'interval',
+    id: 'docker-poll',
+    ms: POLL_MS,
+    onTick: (ctx) => ctx.dispatch(ctx.wrap('docker', { type: 'dockerPoll' })),
+  }];
+}
+
 module.exports = {
   name: 'docker',
   init,
   update,
   augmentMsg,
+  subscriptions,
   // Kind-global SERVICE slot (see panel/api registerComponent): the
   // register-time instance is the CONTENT OWNER — it alone runs the
   // fetch loop + `docker events` stream (the gate in update()), and
