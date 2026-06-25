@@ -186,7 +186,7 @@ Two flags carry the AI-augmented loop.
 
 **`--spec` is how the agent learns the contract.** It prints the
 consolidated authoring bundle — SPEC, PRINCIPLES, PLUGINS, PROJECT,
-HUB, DECORATORS, LAYOUT — to stdout in one shot. Hand it to your
+HUB, LAYOUT — to stdout in one shot. Hand it to your
 agent and every rule it needs to produce a valid project is in a
 single file.
 
@@ -206,7 +206,7 @@ for "the same thing but headless."
 | N-column layout (v0.6.2+) | Ordered columns list, default 2 columns. Soft caps: 6 panes in the first, 3 in the last. Detail (viewer) panes live in any column — and since v0.6.4 a layout may declare several of them, each the sole tab of its pane. YAML-configurable content + column count. Grow / shrink at runtime via drag-edge spawn or `:add-column` / `:remove-column`. |
 | Action types | `run` (capture output), `spawn` (full-screen interactive), `background` (fire-and-forget). One uniform schema. |
 | Built-in panel types | `groups`, `actions`, `files`, `history`, `detail`, plus docker container / stats panels. |
-| Embedded terminals | PTY tabs inside the detail panel. Persistent across group switches. |
+| Embedded terminals | PTY tabs inside the detail panel, persistent across group switches. Scrollback via mouse-wheel and `Shift+PageUp`/`PageDown`/`Home`/`End`, with smart mouse-forwarding — bytes reach the child only when it enabled mouse reporting (vim, htop, `less --mouse`); otherwise the wheel scrolls scrollback, and a `[↑N]` indicator shows how far back the view sits (v0.6.5). |
 | Event hub | In-process pub/sub for plugins. Time-series, snapshot, matrix shapes. Cost scales with subscribers. |
 | Decorator slots | Plugins add glyphs to rows / titles / tabs / footer without touching the renderer. |
 | Cmdline (`:`) | `:quit`, `:refresh`, `:help`, plus plugin-registered verbs, with positional-arg plumbing. |
@@ -221,8 +221,8 @@ for "the same thing but headless."
 
 - **Renderer + parser**: Node.js. Runtime npm deps: `node-pty` and
   `@xterm/headless` for embedded PTY tabs, `js-yaml` for config parsing.
-- **Tests**: JS unit suites under `js/test/` (89 files), an opt-in
-  pre-release smoke harness under `js/test/smoke/` (9 scenarios), and
+- **Tests**: JS unit suites under `js/test/` (97 files), an opt-in
+  pre-release smoke harness under `js/test/smoke/` (11 scenarios), and
   a live integration harness under `test/`. See [docs/TESTING.md](docs/TESTING.md).
 - **Two worked demos** at the time of initial public release; both ship
   with the human-authored intent (`.agent-prompt.md`) checked in so the
