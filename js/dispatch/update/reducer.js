@@ -245,24 +245,35 @@ function update(model, msg) {
     // self-re-arms or tracks a clockArmed latch.
     case 'clock_tick':
       return [{ ...model, now: msg.now || model.now }, []];
+    // The four mirror-sync arms below land an external source's snapshot on the
+    // model and emit a `render` Cmd. The render Cmd is LOAD-BEARING: these Msgs
+    // arrive via the mirror Sub's `ctx.applyMsg` (app/state.js store-mirror /
+    // metrics-mirror), and applyMsg runs `update → setModel → runEffects` with NO
+    // implicit repaint — setModel is a bare ref swap. Async, non-input mutations
+    // (a background job exiting, a throttled metrics sample) would otherwise
+    // update the model invisibly until some unrelated dispatch repainted. The
+    // `render` Cmd restores the repaint the pre-FIX-1 stores did directly (the
+    // old hub-sub `onUpdate: scheduleRender`, jobs' per-mutation scheduleRender).
+    // Same shape as the dockerResult arm. (v0.6.6 pre-release review.)
+    //
     // v0.6.6 FIX-1 — the history ring mirrors itself into the model via the
     // store-mirror Sub (app/state.js#_appSubscriptions). Whole-snapshot; render
     // reads model.history (frame = f(model), #D5). No identity-preserve guard:
     // snapshot() is a fresh array each fire, and the store fires only on real
     // list-shape changes (start/end), so every dispatch IS a change.
     case 'history_synced':
-      return [{ ...model, history: msg.history }, []];
+      return [{ ...model, history: msg.history }, [{ type: 'render' }]];
     // v0.6.6 FIX-1 stage 2 — the diagnostics ring (io/diag-log) mirrors itself
     // into the model via the store-mirror Sub. Whole-snapshot; the diag overlay
     // reads model.diagLog. Fires on every diag mutation (low-frequency).
     case 'diag_synced':
-      return [{ ...model, diagLog: msg.diagLog }, []];
+      return [{ ...model, diagLog: msg.diagLog }, [{ type: 'render' }]];
     // v0.6.6 FIX-1 stage 3 — the live-jobs registry (feature/jobs) mirrors
     // itself into the model via the store-mirror Sub. Whole-snapshot; the
     // Running overlay + the viewer tab-strip running-glyph read model.jobs. The
     // jobs_activate cursor lookup still threads msg.job (handler-side, exc. C).
     case 'jobs_synced':
-      return [{ ...model, jobs: msg.jobs }, []];
+      return [{ ...model, jobs: msg.jobs }, [{ type: 'render' }]];
     // v0.6.6 Finding B — a hub metrics topic's windowed time-series, sampled into
     // the model by the throttled `metrics-mirror` Sub (app/state.js). Keyed by
     // topic: model.metrics[topic] = { series: {rowKey: samples[]}, schema }. The
@@ -270,7 +281,7 @@ function update(model, msg) {
     // the off-model hub bus. Whole-snapshot per topic; bounded to one per
     // throttle window, so a continuous sampler doesn't churn the loop.
     case 'metrics_synced':
-      return [{ ...model, metrics: { ...model.metrics, [msg.topic]: { series: msg.series, schema: msg.schema } } }, []];
+      return [{ ...model, metrics: { ...model.metrics, [msg.topic]: { series: msg.series, schema: msg.schema } } }, [{ type: 'render' }]];
     case 'set_theme': {
       // Theme selection flows through update like any other state change.
       // model.theme is the SINGLE source of truth; the palette cache the pure

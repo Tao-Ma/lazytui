@@ -295,13 +295,16 @@ describe('[15] framework reconciles declared subscriptions (Model → Sub, #D13)
 });
 
 describe('[16] metrics_synced arm — hub series mirrored into model.metrics (Finding B)', () => {
-  it('lands { series, schema } under model.metrics[topic] (pure, no Cmd)', () => {
+  it('lands { series, schema } under model.metrics[topic] + emits a render Cmd', () => {
     const series = { foo: [{ ts: 1, cpu: 10 }, { ts: 2, cpu: 20 }] };
     const schema = { columns: { cpu: { type: 'percent' } } };
     const [m, cmds] = update({ metrics: {} }, { type: 'metrics_synced', topic: 'docker.stats', series, schema });
     eq(m.metrics['docker.stats'].series, series, 'series stored under the topic');
     eq(m.metrics['docker.stats'].schema, schema, 'schema stored under the topic');
-    eq(cmds.length, 0, 'no Cmd — pure model write (render reads model.metrics, not the hub)');
+    // The trailing metrics-mirror sample arrives via ctx.applyMsg (no implicit
+    // repaint), so the arm must emit render or the graph never refreshes between
+    // unrelated dispatches (v0.6.6 pre-release review regression fix).
+    eq(cmds.length, 1, 'one Cmd'); eq(cmds[0].type, 'render', 'render Cmd repaints the graph');
   });
 
   it('merges topics — a new topic does not clobber others', () => {

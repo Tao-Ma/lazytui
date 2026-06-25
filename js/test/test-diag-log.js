@@ -245,11 +245,13 @@ describe('[diag-log] reducer arms', () => {
     eq(m.modes.diagLogMode, false, 'mode off');
   });
 
-  it('diag_synced lands the whole snapshot on model.diagLog (FIX-1)', () => {
+  it('diag_synced lands the whole snapshot on model.diagLog + render Cmd', () => {
     const snap = [{ level: 'warn', code: 'x', message: 'y', t: 1 }];
     const [m, cmds] = update(model(), { type: 'diag_synced', diagLog: snap });
     eq(m.diagLog, snap, 'model.diagLog is the synced snapshot');
-    eq(cmds.length, 0, 'no Cmd — pure model write');
+    // Arrives via the store-mirror's ctx.applyMsg (no implicit repaint); render
+    // Cmd repaints the diagnostics window (v0.6.6 pre-release review fix).
+    eq(cmds.length, 1, 'one Cmd'); eq(cmds[0].type, 'render', 'render Cmd repaints');
   });
 });
 
