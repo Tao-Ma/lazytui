@@ -1092,9 +1092,10 @@ function _updateInner(msg, slice, lines) {
 // (for the title) and by the input hit-test (for the tab bounds). The hotkey
 // comes from the pane being acted on (render threads panel.hotkey; the input
 // layer resolves it from the pane def) — it shifts each tab's hit-zone x, so
-// title and bounds must agree on it. Reads the jobs list (out-of-TEA) for the
-// running-glyph set — fine at these render / handler boundaries (not a
-// reducer). `slice` is THIS pane's own slice, so two viewers don't share.
+// title and bounds must agree on it. Reads model.jobs (the store-mirror'd
+// snapshot, FIX-1) for the running-glyph set — a pure model read at these
+// render / handler boundaries. `slice` is THIS pane's own slice, so two
+// viewers don't share.
 function tabStripFor(slice, model, hotkey) {
   const group = model.currentGroup;
   const tabInfo = pt.flatTabInfo(slice, model, group);
