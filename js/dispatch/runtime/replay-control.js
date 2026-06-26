@@ -237,6 +237,11 @@ function seekToCheckpoint(i) {
 }
 function stepSeq(dir) { if (S) _moveTo(S.idx + (dir | 0)); }
 function seekToEnd(which) { if (S) _moveTo(which < 0 ? 0 : S.log.length - 1); }
+// Seek to a position fraction (0..1) of the log — the mini-bar click target.
+function seekToFraction(f) {
+  if (!S) return;
+  _moveTo(Math.round(Math.max(0, Math.min(1, f)) * (S.log.length - 1)));
+}
 
 // --- playback -----------------------------------------------------------
 
@@ -349,7 +354,7 @@ function renderData() {
 
 module.exports = {
   active, enter, exit,
-  seekToCheckpoint, stepSeq, seekToEnd, play, pause, setRatio,
+  seekToCheckpoint, stepSeq, seekToEnd, seekToFraction, play, pause, setRatio,
   toggleMode, cycleIdleCap, cyclePane,
   handleKey, renderData,
   // test seams
