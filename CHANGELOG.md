@@ -70,7 +70,10 @@ as its reference implementation. Spec: [docs/v0.6.6.md](docs/v0.6.6.md).
   recording, one is written automatically every ~256 KB of log (a bytes-primary cadence,
   since re-feeding recorded terminal output is what makes a seek expensive — with a high
   entry-count safety ceiling), so even a long session stays fast to recover (a repeated
-  `:record-save` while already recording is a no-op).
+  `:record-save` while already recording is a no-op). `:record-load` opens an **interactive
+  control pane** — a float listing the checkpoints by timestamp, with a cursor to scrub and
+  play / pause / fast-forward / reverse through the recording; the panels underneath
+  reconstruct to the current point, and exiting restores the live session.
   Spec: [docs/v0.6.6-replay.md](docs/v0.6.6-replay.md).
 - **Terminal-emulator port.** The embedded terminal's emulator now sits behind a
   defined screen port (`io/term-screen.js`) — the one module that imports it — so the

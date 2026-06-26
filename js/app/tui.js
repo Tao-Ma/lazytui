@@ -181,6 +181,9 @@ function main() {
   // the `renderTerminalOverlay` import used by the overlay-poll setInterval;
   // that poll is now a model-conditional Sub, but the load-order anchor stays.)
   require('../render/paint');
+  // v0.6.6 replay arc — wire the interactive replay-control pane's render-data
+  // seam (module-held controller → render, by injection, no dispatch import).
+  require('../render/paint').setReplaySource(require('../dispatch/runtime/replay-control').renderData);
   // v0.6.4 Phase F — redraw (dispatch-then-paint) lives in the dispatch
   // layer now; paint.js is a pure view. tui orchestrates both.
   const { redraw } = require('../dispatch/control/dispatch');

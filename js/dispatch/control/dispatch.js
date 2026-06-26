@@ -931,6 +931,11 @@ function clearKeyFilters() {
 // arg threaded down from setupKeyListener at boot; post-Phase-4 that
 // ref froze on the first dispatch). Every downstream call resolves
 // state via getModel() / getFocus() / getItems() fresh.
+// v0.6.6 replay arc — memoized ref to the interactive replay controller (lazy:
+// it's require-free at top, but keep dispatch.js's hot path off a per-call require).
+let _rcRef;
+const _replayControl = () => (_rcRef ||= require('../runtime/replay-control'));
+
 function handleKey(key, seq) {
   // Filter middleware runs first — before logging, before dispatch.
   // A filter that returns null wholly suppresses the event (no log
@@ -947,6 +952,10 @@ function handleKey(key, seq) {
   // in the log identically. Silent + idempotent when the log is
   // disabled.
   require('../../io/event-log').record('key', { key, seq });
+  // v0.6.6 replay arc — interactive replay captures ALL input (the recorded
+  // session reconstructed underneath is NOT driven). Module-held, so checked
+  // before the normal mode chain; the controller schedules its own render.
+  if (_replayControl().active()) { _replayControl().handleKey(key, seq); return; }
   // A modal mode (filter / menu / cmdline / confirm / …) owns keyboard input
   // while active, so the focused Component must NOT also see the key — else
   // Enter-to-commit-a-/-filter would ALSO navigate a files panel, and typing
