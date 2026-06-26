@@ -8,12 +8,12 @@
  *
  * Three passes over an in-process WAL (root + comp + key lanes):
  *   A. CLOCK/RANDOM/IO tripwire — record EVERY read (not throw: a read the app
- *      catches internally is still recorded). Assert:
- *        - ZERO fs / child_process reads on the fold+render path, and
- *        - every wall-clock read is the groupActions purity-guard's own timing
- *          (plugin-guard.js — instrumentation whose value is discarded; proven
- *          output-neutral by Pass B). This PINS that single known exception: a
- *          NEW clock read anywhere else on the path fails the test.
+ *      catches internally is still recorded). Assert ZERO fs / child_process AND
+ *      ZERO wall-clock reads on the fold+render path. The groupActions purity
+ *      guard (plugin-guard.js) is reached on this path; it must verify its
+ *      contract clock-free (the memo is reset before arming so its determinism
+ *      re-call runs UNDER the tripwire). A new Date.now / new Date() /
+ *      Math.random anywhere on the path fails this.
  *   B. DETERMINISM — fold twice from the same baseline, force a full repaint
  *      (bypassing the incremental cell-diff cache), assert byte-identical frames.
  *   C. MUTATION — deep-freeze (model,msg) into the root reducer AND (msg,slice)
@@ -114,21 +114,19 @@ function disarm() {
   for (const m of Object.keys(savedFs)) fsm[m] = savedFs[m];
   for (const m of Object.keys(savedCp)) cpm[m] = savedCp[m];
 }
-const isGuard = (s) => s.includes('/js/panel/plugin-guard.js:');
 
 // ===== Pass A — clock/random/IO tripwire =====================================
 fold();                                   // warm caches/lazy requires (no tripwire)
 const refFrame = renderFull();
-// Clear the groupActions memo so the guard's timing fires UNDER the tripwire
-// (else the warmup cached it and the armed pass sees zero — a cleaner result,
-// but it would make the "guard is the sole clock source" check vacuous).
+// Clear the guard's memo + verify state so its determinism check (a back-to-back
+// re-call of groupActions) runs UNDER the tripwire — proving that verification is
+// itself clock-free, not just that the steady state is.
 require('../panel/plugin-guard').reset();
 arm();
 let frameA = null;
 try { fold(); frameA = renderFull(); } finally { disarm(); }
 const ioV = V.filter(v => /^fs\.|^child_process/.test(v.what));
 const clockV = V.filter(v => /Date|hrtime|random/.test(v.what));
-const clockNonGuard = clockV.filter(v => !isGuard(v.stack));
 
 describe('[A] clock/random/IO tripwire over the real fold + full render', () => {
   it('the frame is non-trivial (purity assertions are not vacuous)', () => {
@@ -138,33 +136,13 @@ describe('[A] clock/random/IO tripwire over the real fold + full render', () => 
     if (ioV.length) console.error('   IO reads:\n' + ioV.map(v => '    ' + v.what + '\n' + v.stack.split('\n')[2]).join('\n'));
     eq(ioV.length, 0, 'zero fs/spawn reads');
   });
-  it('reads NO wall clock on the path except the groupActions purity guard', () => {
-    // With a minimal config (no Component defines groupActions) this is ZERO
-    // clock reads — the purest result. The guard's discarded timing is the only
-    // sanctioned source (exercised + pinned in [A2]); a Date.now / new Date() /
-    // Math.random added to any reducer, leaf, or render would surface here as a
-    // non-guard read and fail the test.
-    if (clockNonGuard.length) console.error('   non-guard clock reads:\n' + clockNonGuard.map(v => '    ' + v.what + '\n' + v.stack.split('\n').slice(1, 5).join('\n')).join('\n'));
-    eq(clockNonGuard.length, 0, `no non-guard clock reads (total clock reads on this path: ${clockV.length})`);
-  });
-});
-
-// Pin the ONE documented exception deterministically + self-contained: the
-// groupActions purity guard times the projection with the wall clock to warn on
-// a blocking plugin. The read is confined to plugin-guard.js and its value is
-// discarded (proven output-neutral by [B]).
-describe('[A2] the sole sanctioned clock read — the groupActions purity-guard timing', () => {
-  const guard = require('../panel/plugin-guard');
-  const probe = { name: 'probe', groupActions: () => ({ x: { label: 'x' } }) };  // a pure projection
-  guard.reset();
-  arm();
-  try { guard.callGroupActions(probe, { actions: {} }, 'g1', {}, getModel()); } finally { disarm(); }
-  const gClock = V.filter(v => /Date|hrtime|random/.test(v.what));
-  it('the guard DOES time groupActions via the wall clock', () => {
-    assert(gClock.length > 0, `guard clock reads: ${gClock.length}`);
-  });
-  it('and every such read is confined to plugin-guard.js', () => {
-    eq(gClock.filter(v => !isGuard(v.stack)).length, 0, 'all guard-path clock reads are in plugin-guard.js');
+  it('reads NO wall clock ANYWHERE on the fold+render path (incl. the groupActions guard)', () => {
+    // The guard is reached on this path AND its memo was reset before arming, so
+    // its determinism re-call runs here too — yet reads no clock. A Date.now /
+    // new Date() / Math.random added to any reducer, leaf, render, or the guard
+    // itself would surface here and fail the test.
+    if (clockV.length) console.error('   clock reads:\n' + clockV.map(v => '    ' + v.what + '\n' + v.stack.split('\n').slice(1, 5).join('\n')).join('\n'));
+    eq(clockV.length, 0, 'zero wall-clock reads on the path');
   });
 });
 

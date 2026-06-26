@@ -9,29 +9,43 @@
  * actions panel, per-render), so an impure one corrupts reducer purity and/or
  * blocks the event loop per call.
  *
- * The contract is ALWAYS ENFORCED — in production, not just dev (this replaces
- * the old opt-in LAZYTUI_STRICT_PLUGINS gate). Two checks, both surfaced to the
+ * Purity is a STATIC property of the plugin's code, so the guard checks the
+ * contract DIRECTLY and at most ONCE per (group, Component) — never by reading
+ * the wall clock on the render path (the guard must not itself be impure). An
+ * earlier version timed each call with Date.now as a "slow ≈ IO" proxy; that
+ * both read the clock on an otherwise-pure path AND was imprecise (it missed a
+ * fast `Date.now()`-reading plugin — the exact "no Date/random" violation — and
+ * false-alarmed on a heavy-but-pure projection). Checks, all surfaced to the
  * diagnostics window (leader e), never hard-failing production:
- *   - MUTATION — args are wrapped in a recursive read-only Proxy that throws
- *     on any write at any depth. The Proxy NEVER mutates the real object, so
- *     the legit render-side / finalizer writers of model/config are unaffected
- *     (Object.freeze on the real objects would break them). A violating
- *     Component contributes nothing for that call (its actions are dropped) +
- *     a warn is recorded; the rest of the app behaves identically.
- *   - SLOWNESS — calls over SLOW_MS are flagged (a pure projection of in-memory
- *     data is sub-millisecond; slowness ≈ IO / shelling out).
+ *   - MUTATION (always-on, every call) — args are wrapped in a recursive
+ *     read-only Proxy that throws on any write at any depth. The Proxy NEVER
+ *     mutates the real object, so the legit render-side / finalizer writers of
+ *     model/config are unaffected (Object.freeze on the real objects would break
+ *     them). A violating Component contributes nothing for that call (its actions
+ *     dropped) + a warn is recorded; the rest of the app behaves identically.
+ *   - DETERMINISM (always-on, clock-free, once per group+Component) — on first
+ *     use the projection is run a SECOND time with the SAME args and the two
+ *     outputs compared (`model` is an input, so the two calls must be back-to-
+ *     back on the same snapshot — comparing across renders would false-flag a
+ *     legitimately model-dependent projection). Differing output ⇒ it read
+ *     Date/random or did varying IO. One extra call on first use only; zero
+ *     steady-state cost (the pair is marked verified and never re-checked).
+ *   - IO (opt-in: LAZYTUI_VERIFY_PLUGINS=1, once per group+Component) — the
+ *     projection is run once more with fs/child_process intercepted, flagging
+ *     blocking/constant IO the determinism compare can't see. It patches globals,
+ *     so it is off by default — for plugin authors / CI.
  *
  * Fast path: a Component that sets `groupActionsMemo: true` is run ONCE per
- * group (still guarded), then its result is cached (keyed on the boot-static
- * group object) — so a careful, pure Component pays the Proxy cost once;
- * a non-memoized one pays it every call. See callGroupActions.
+ * group (still guarded + verified on that call), then its result is cached
+ * (keyed on the boot-static group object) — so a careful, pure Component pays
+ * the cost once; a non-memoized one is guarded every call (verified only once).
+ * See callGroupActions.
  *
  * Warnings dedupe per (code, key) for the session so a per-frame call can't
- * flood the ring buffer. reset() re-arms + clears the memo (test suite).
+ * flood the ring buffer. reset() re-arms + clears the memo + verify state
+ * (test suite).
  */
 'use strict';
-
-const SLOW_MS = 2;
 
 let _diag = null;
 function diag() {
@@ -59,9 +73,12 @@ function _warnOnce(code, key, message) {
 // (boot-static) `group` object. A Component opts in with
 // `groupActionsMemo: true` — see callGroupActions.
 let _memo = new WeakMap(); // group(object) -> Map<compName, result>
+// Which (group, Component) pairs have had their contract verified (determinism
+// + opt-in IO) — verify once, since purity is static. group -> Set<compName>.
+let _verified = new WeakMap();
 
-/** Clear the dedupe set + memo (reset for tests). */
-function reset() { _warned.clear(); _memo = new WeakMap(); }
+/** Clear the dedupe set + memo + verify state (reset for tests). */
+function reset() { _warned.clear(); _memo = new WeakMap(); _verified = new WeakMap(); }
 
 class PluginImpurityError extends Error {
   constructor(compName, propPath) {
@@ -92,18 +109,23 @@ function readonly(obj, label, compName) {
   });
 }
 
+function _safeJson(x) { try { return JSON.stringify(x); } catch (_) { return null; } }
+function _sameResult(a, b) {
+  if (a === b) return true;
+  const ja = _safeJson(a), jb = _safeJson(b);
+  if (ja == null || jb == null) return true; // unserializable (fn/cycle) — can't compare, don't false-warn
+  return ja === jb;
+}
+
 /**
- * One guarded invocation: read-only-wrap the args, time the call. A purity
- * violation (mutation) records a warn and returns {} (the Component
- * contributes nothing this call); a slow call (likely IO) records a warn; a
- * genuine bug (any other throw) is re-thrown for api.js's catch to log.
- * This ALWAYS runs — the contract is enforced in production, not just dev.
+ * One read-only-wrapped invocation (the MUTATION guard). A mutation records a
+ * warn and returns {} (the Component contributes nothing this call); a genuine
+ * bug (any other throw) is re-thrown for api.js's catch to log. This ALWAYS
+ * runs — the mutation contract is enforced in production, not just dev.
  */
-function _guardedCall(comp, group, groupName, config, model) {
-  const start = Date.now();
-  let out;
+function _call(comp, group, groupName, config, model) {
   try {
-    out = comp.groupActions(
+    return comp.groupActions(
       readonly(group, 'group', comp.name),
       groupName,
       readonly(config, 'config', comp.name),
@@ -116,11 +138,59 @@ function _guardedCall(comp, group, groupName, config, model) {
     }
     throw e; // a real bug — let the caller's catch handle it
   }
-  const ms = Date.now() - start;
-  if (ms > SLOW_MS) {
-    _warnOnce('plugin-slow', comp.name,
-      `[${comp.name}] groupActions took ${ms}ms (>${SLOW_MS}ms) — likely IO/blocking; `
-      + `groupActions must be a pure projection`);
+}
+
+// IO detection (opt-in). Run the projection once more with fs/child_process
+// intercepted; warn if it touches either. groupActions is synchronous, so the
+// patch window contains nothing but this call; restored in `finally`.
+const _FS_IO = ['readFileSync','writeFileSync','appendFileSync','openSync','existsSync','statSync','lstatSync','readdirSync','mkdirSync','createReadStream','createWriteStream','readFile','writeFile','appendFile'];
+const _CP_IO = ['spawn','spawnSync','exec','execSync','execFile','execFileSync','fork'];
+function _assertNoIO(comp, group, groupName, config, model) {
+  const fs = require('fs'), cp = require('child_process');
+  const saved = [];
+  let touched = null;
+  const patch = (obj, names, tag) => {
+    for (const m of names) if (typeof obj[m] === 'function') {
+      const real = obj[m]; saved.push([obj, m, real]);
+      obj[m] = (...a) => { if (!touched) touched = `${tag}.${m}`; return real.apply(obj, a); };
+    }
+  };
+  patch(fs, _FS_IO, 'fs'); patch(cp, _CP_IO, 'child_process');
+  try { _call(comp, group, groupName, config, model); }
+  catch (_) { /* mutation/throw already surfaced on the primary call */ }
+  finally { for (const [obj, m, real] of saved) obj[m] = real; }
+  if (touched) {
+    _warnOnce('plugin-io', comp.name,
+      `[${comp.name}] groupActions performs IO (${touched}) — it must be a pure projection `
+      + `(no fs / child_process)`);
+  }
+}
+
+/**
+ * One guarded invocation: the always-on MUTATION guard, then — once per
+ * (group, Component) — the DETERMINISM check (clock-free) and, opt-in, the IO
+ * check. Verifying once is sufficient because purity is a static property.
+ */
+function _guardedCall(comp, group, groupName, config, model) {
+  const out = _call(comp, group, groupName, config, model);
+  if (group !== null && typeof group === 'object') {
+    let names = _verified.get(group);
+    if (!names) { names = new Set(); _verified.set(group, names); }
+    if (!names.has(comp.name)) {
+      names.add(comp.name);
+      // DETERMINISM — a second call with the SAME args must give the same output
+      // (a difference ⇒ reads Date/random or does varying IO). Back-to-back on
+      // the same snapshot: `model` is an input, so cross-render comparison would
+      // false-flag a legitimately model-dependent projection. Clock-free; one
+      // extra call on first use only.
+      if (!_sameResult(out, _call(comp, group, groupName, config, model))) {
+        _warnOnce('plugin-nondeterministic', comp.name,
+          `[${comp.name}] groupActions is not a pure projection — same inputs gave different `
+          + `outputs (reads Date/random or does varying IO); it must be deterministic`);
+      }
+      // IO — opt-in (patches globals), one-shot; catches blocking/constant IO.
+      if (process.env.LAZYTUI_VERIFY_PLUGINS === '1') _assertNoIO(comp, group, groupName, config, model);
+    }
   }
   return out;
 }
@@ -128,8 +198,8 @@ function _guardedCall(comp, group, groupName, config, model) {
 /**
  * Invoke a Component's `groupActions` through the purity guard. The contract
  * (a PURE PROJECTION: no IO, no mutation of group/config/model, no Date/random,
- * same inputs → same outputs) is ALWAYS enforced — the args are read-only-
- * wrapped on every call, in production too.
+ * same inputs → same outputs) is ALWAYS enforced — args are read-only-wrapped on
+ * every call and the projection is verified once per (group, Component).
  *
  * Fast path (opt-in): a Component that sets `groupActionsMemo: true` declares
  * its groupActions a pure function of `group`. We then run it exactly ONCE per
@@ -153,5 +223,5 @@ function callGroupActions(comp, group, groupName, config, model) {
 }
 
 module.exports = {
-  callGroupActions, readonly, reset, PluginImpurityError, SLOW_MS,
+  callGroupActions, readonly, reset, PluginImpurityError,
 };

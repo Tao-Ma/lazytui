@@ -76,7 +76,7 @@ describe('[diag-log] deferred lane (render-path producers, v0.6.6 §9)', () => {
     let fires = 0;
     diag.setOnChange(() => { fires++; });
     diag.warnDeferred('strict-miss', 'a');
-    diag.warnDeferred('plugin-slow', 'b');
+    diag.warnDeferred('plugin-nondeterministic', 'b');
     eq(diag.size(), 0, 'nothing in the buffer yet');
     eq(fires, 0, 'no change-notify from a deferred record');
     diag.setOnChange(null);

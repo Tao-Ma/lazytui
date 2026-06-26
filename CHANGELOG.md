@@ -48,9 +48,21 @@ as its reference implementation. Spec: [docs/v0.6.6.md](docs/v0.6.6.md).
   instead of reading the live model, so every reducer/component-update arm is a
   pure `(state, message) → [state, commands]`. (Finding A.)
 - **Render-path diagnostic writes deferred off the read path.** The plugin
-  purity/timing guard and the strict-miss tripwire queue their warnings, and the
+  purity guard and the strict-miss tripwire queue their warnings, and the
   dispatch finalizer drains them once per dispatch, so drawing a frame no longer
-  triggers a re-entrant dispatch or a wall-clock read. (Finding C.)
+  triggers a re-entrant dispatch. (Finding C.)
+- **The `groupActions` purity guard no longer reads the wall clock.** It had
+  enforced the "no IO/blocking" clause by timing each call with `Date.now` on
+  the render path — itself an impurity, and an imprecise proxy (it missed a fast
+  `Date.now`-reading projection and false-alarmed on a heavy-but-pure one). It
+  now verifies the contract **directly**, clock-free: mutation via the read-only
+  `Proxy` (every call), determinism via a one-shot back-to-back re-call + compare
+  (`plugin-nondeterministic`), and — opt-in via `LAZYTUI_VERIFY_PLUGINS=1` — IO
+  via an `fs`/`child_process` intercept (`plugin-io`). The `plugin-slow` warning
+  and `SLOW_MS` are retired. The reduce/render path is now provably clock-read-
+  free, enforced by a new semantic purity harness (`test-purity-tripwire.js`)
+  that folds a recorded session through the real reduce→render path with the
+  clock/random/IO primitives sandboxed.
 
 ### Added
 
