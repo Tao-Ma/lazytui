@@ -44,8 +44,9 @@ function _miniParts(data) {
   const dt = ((data.t - data.firstT) / 1000).toFixed(1);
   const cpN = (data.checkpoints || []).length;
   const cpLabel = cpN ? `  cp ${data.cursor + 1}/${cpN}` : '';
+  const diffLabel = data.diffMode && data.diffMode !== 'off' ? `  d:${data.diffMode}` : '';
   const head = `${_sym(data)} ${data.ratio}×`;            // bolded in render
-  const tail = ` ${data.pos}/${data.total}${cpLabel}  +${dt}s  `;
+  const tail = ` ${data.pos}/${data.total}${cpLabel}${diffLabel}  +${dt}s  `;
   return { head, tail, plain: head + tail };               // `plain` = visible width before the bar
 }
 
@@ -101,8 +102,9 @@ function renderFull(data) {
   const mode = data.mode === 'even'
     ? 'even'
     : `realtime ${data.idleCap === Infinity ? '∞' : (data.idleCap / 1000) + 's'}`;
+  const diffLabel = data.diffMode && data.diffMode !== 'off' ? `  diff:${data.diffMode}` : '';
   const lines = [
-    `[bold]${_sym(data)}[/] ${data.ratio}×  ${mode}   seq ${data.pos}/${data.total}  +${dt}s`,
+    `[bold]${_sym(data)}[/] ${data.ratio}×  ${mode}   seq ${data.pos}/${data.total}  +${dt}s${diffLabel}`,
     '[dim]────────────────────────────[/]',
   ];
 
@@ -123,7 +125,7 @@ function renderFull(data) {
 
   lines.push('');
   lines.push('[dim]j/k seek  space play  b rev  +/- speed  \\[ \\] step[/]');
-  lines.push('[dim]m mode  i cap  g/G ends  p view  q exit[/]');
+  lines.push('[dim]m mode  i cap  d diff  g/G ends  p view  q exit[/]');
 
   renderOverlay({
     lines, title: 'Replay',

@@ -31,6 +31,7 @@
 'use strict';
 
 const { richToAnsi, RESET, visibleLen } = require('../text/ansi');
+const cellDiff = require('./cell-diff');
 
 /**
  * Stamp a list of rects into a screen-sized row array.
@@ -110,10 +111,16 @@ function composeRows(rects, cols, rows) {
  * diff caches (today's terminal-overlay prevFrame). Pure — no
  * stdout side-effect, no module-local mutation.
  */
-function paintFrame(prevRows, newRows, force) {
+// `opts` (optional): `{ mode: 'line'|'cell', hlOn?, hlOff? }` — replay change
+// highlighting. Only the INCREMENTAL branch decorates: on a full repaint every
+// row is "new", so highlighting would tint the whole screen. `prevRows`/`newRows`
+// stay plain markup (the highlight lives only in the emitted ANSI), so the diff
+// baseline the caller stores is never polluted.
+function paintFrame(prevRows, newRows, force, opts) {
   const n = newRows.length;
   let ansi = '';
   let didFull = false;
+  const hl = opts && opts.mode && opts.mode !== 'off' ? opts : null;
   if (force || prevRows.length !== n) {
     ansi += '\x1b[2J\x1b[H';
     for (let i = 0; i < n; i++) {
@@ -123,7 +130,10 @@ function paintFrame(prevRows, newRows, force) {
   } else {
     for (let i = 0; i < n; i++) {
       if (newRows[i] !== prevRows[i]) {
-        ansi += `\x1b[${i + 1};1H` + richToAnsi(newRows[i]) + RESET + '\x1b[K';
+        const body = hl
+          ? cellDiff.highlightRow(prevRows[i], newRows[i], hl.mode, hl.hlOn, hl.hlOff)
+          : richToAnsi(newRows[i]);
+        ansi += `\x1b[${i + 1};1H` + body + RESET + '\x1b[K';
       }
     }
   }

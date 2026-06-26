@@ -67,6 +67,10 @@ function active() { return S !== null; }
 // progress only) so playback is watchable without the box covering the view;
 // 'hidden' = nothing (only `p` to cycle back / `q`,esc to exit still act).
 const PANE_CYCLE = { full: 'mini', mini: 'hidden', hidden: 'full' };
+// Change-highlight modes: off → whole-row → changed-cells → off. Drives the
+// main-frame paintFrame tint (render reads S.diffMode via renderData). DISPLAY
+// concern only — never touches the reconstructed model.
+const DIFF_CYCLE = { off: 'line', line: 'cell', cell: 'off' };
 
 function _clampIdx(i) { return Math.max(0, Math.min((S.log.length - 1) | 0, i | 0)); }
 
@@ -198,7 +202,7 @@ function enter(file, opts = {}) {
     clock: tl.clockForIdx(timeline, idx, 'realtime'),
     anchorClock: 0, anchorReal: 0,
     cursor: Math.max(0, checkpoints.length - 1),
-    playing: null, ratio: 1, paneView: 'full',
+    playing: null, ratio: 1, paneView: 'full', diffMode: 'off',
     liveSnapshot: _replay().snapshotState(),
     // The terminal is the off-model island — snapshot the live session screens
     // too, so exit() can scrub replay bytes off any colliding live pane (the
@@ -313,6 +317,7 @@ function _rearm() {
 function _stopTimer() { if (S && S.timer) { _clearTimer(S.timer); S.timer = null; } }
 
 function cyclePane() { if (S) { S.paneView = PANE_CYCLE[S.paneView] || 'full'; _render(); } }
+function cycleDiff() { if (S) { S.diffMode = DIFF_CYCLE[S.diffMode] || 'off'; _render(); } }
 
 // --- input --------------------------------------------------------------
 
@@ -320,6 +325,7 @@ function handleKey(key, seq) {
   if (!S) return;
   if (key === 'escape' || seq === 'q') { exit(); return; }
   if (seq === 'p') { cyclePane(); return; }
+  if (seq === 'd') { cycleDiff(); return; }
   // All playback/seek controls act in EVERY view state (full / mini / hidden) —
   // paneView only changes what the pane DRAWS, never what the keys do. (Hidden is
   // a watch-with-no-overlay state, not a controls-off state.)
@@ -343,6 +349,7 @@ function renderData() {
   if (!S) return null;
   return {
     paneView: S.paneView,
+    diffMode: S.diffMode,
     checkpoints: S.checkpoints,
     cursor: S.cursor,
     idx: S.idx,
@@ -361,7 +368,7 @@ function renderData() {
 module.exports = {
   active, enter, exit,
   seekToCheckpoint, stepSeq, seekToEnd, seekToFraction, play, pause, setRatio,
-  toggleMode, cycleIdleCap, cyclePane,
+  toggleMode, cycleIdleCap, cyclePane, cycleDiff,
   handleKey, renderData,
   // test seams
   _state: () => S,

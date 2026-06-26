@@ -118,6 +118,13 @@ function boot() {
   replayControl.cyclePane();                       // → full (restore)
   const cycledBackView = replayControl._state().paneView;
 
+  // change-highlight diff mode: 'd' cycles off → line → cell → off; renderData exposes it
+  const diffStart = replayControl.renderData().diffMode;
+  replayControl.handleKey('d', 'd'); const diffLine = replayControl._state().diffMode;
+  const diffLineData = replayControl.renderData().diffMode;
+  replayControl.handleKey('d', 'd'); const diffCell = replayControl._state().diffMode;
+  replayControl.handleKey('d', 'd'); const diffBack = replayControl._state().diffMode;
+
   // exit → live restored
   const activeBeforeExit = replayControl.active();
   replayControl.exit();
@@ -158,6 +165,12 @@ function boot() {
     it('up/down navigate checkpoints while in mini', () => { eq(cpAfterUp, 0); eq(cpAfterDown, 1); });
     it('hidden renders nothing', () => eq(hiddenFrame, ''));
     it('playback keys still act while hidden', () => eq(idxAfterHiddenKey, Math.max(0, idxBeforeHiddenKey - 1)));
+  });
+  describe('[4c] change-highlight diff mode cycles off → line → cell', () => {
+    it('default is off, d cycles through and back', () => {
+      eq(diffStart, 'off'); eq(diffLine, 'line'); eq(diffCell, 'cell'); eq(diffBack, 'off');
+    });
+    it('renderData exposes the current diff mode', () => eq(diffLineData, 'line'));
   });
   describe('[5] exit restores the live session', () => {
     it('was active, now inactive', () => { assert(activeBeforeExit, 'active during replay'); eq(activeAfterExit, false); });
