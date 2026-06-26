@@ -58,22 +58,22 @@ as its reference implementation. Spec: [docs/v0.6.6.md](docs/v0.6.6.md).
   single append-only log of the ordered message stream plus the terminal's output byte
   stream under one global sequence — started by `--record-save <file>` (from boot) or
   the `:record-save` cmdline verb (mid-session, which checkpoints the current state
-  first so the file is self-contained), and ended by `:record-stop`. `node tui.js
-  --record-load <file>` reconstructs the screen by re-applying that log through the pure
-  reducers with side effects suppressed — no config needed (the log carries it), no real
-  terminal spawned; the `:record-load` verb recovers a recording into the live windows.
-  Because every state change flows through a message, the reconstructed model and frame
-  are identical to the original (the embedded terminal is reconstructed from its recorded
-  byte stream — the materialized proof of `frame = f(model)` for everything except, and
-  now including via the side-channel, the terminal island). **Checkpoints** snapshot the
-  full state so reconstruction can seek instead of folding from the start; while
-  recording, one is written automatically every ~256 KB of log (a bytes-primary cadence,
-  since re-feeding recorded terminal output is what makes a seek expensive — with a high
-  entry-count safety ceiling), so even a long session stays fast to recover (a repeated
-  `:record-save` while already recording is a no-op). `:record-load` opens an **interactive
-  control pane** — a float listing the checkpoints by timestamp, with a cursor to scrub and
-  play / pause / fast-forward / reverse through the recording; the panels underneath
-  reconstruct to the current point, and exiting restores the live session.
+  first so the file is self-contained), and ended by `:record-stop`. A recording is
+  reconstructed by re-applying that log through the pure reducers with side effects
+  suppressed — no config needed (the log carries it), no real terminal spawned. Because
+  every state change flows through a message, the reconstructed model and frame are
+  identical to the original (the embedded terminal is reconstructed from its recorded byte
+  stream — the materialized proof of `frame = f(model)` for everything except, and now
+  including via the side-channel, the terminal island). **Checkpoints** snapshot the full
+  state so reconstruction can seek instead of folding from the start; while recording, one
+  is written automatically every ~256 KB of log (a bytes-primary cadence, since re-feeding
+  recorded terminal output is what makes a seek expensive — with a high entry-count safety
+  ceiling), so even a long session stays fast to recover (a repeated `:record-save` while
+  already recording is a no-op). `--record-load <file>` (or the `:record-load` verb in a
+  running session) opens the recording in an **interactive control pane** — a float listing
+  the checkpoints by timestamp, with a cursor to scrub and play / pause / fast-forward /
+  reverse; the panels underneath reconstruct to the current point. (`--record-print <file>`
+  is the headless variant — reconstruct, print the frame, exit — for scripts / CI.)
   Spec: [docs/v0.6.6-replay.md](docs/v0.6.6-replay.md).
 - **Terminal-emulator port.** The embedded terminal's emulator now sits behind a
   defined screen port (`io/term-screen.js`) — the one module that imports it — so the
