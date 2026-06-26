@@ -204,6 +204,10 @@ const _frame = {
   // notices a session switch) to refresh the per-row diff cache.
   lastOverlayW:     0,
   lastOverlayH:     0,
+  // v0.6.6 replay arc — change-highlight opts for paintFrame, or null. Set per
+  // render() from the replay scrubber's diff mode; passed to the main-frame
+  // paintFrame calls so changed rows/cells tint. Never touches prevRows.
+  hl:               null,
 };
 
 /**
@@ -423,7 +427,7 @@ function renderNormal(model, arrangeOverride) {
   const newRows = painter.composeRows(rectsWithLines, COLS, layout.availH);
   if (COLS !== _frame.prevCols || newRows.length !== _frame.prevRows.length) _frame.forceFull = true;
   _frame.prevCols = COLS;
-  const { ansi, didFull } = painter.paintFrame(_frame.prevRows, newRows, _frame.forceFull);
+  const { ansi, didFull } = painter.paintFrame(_frame.prevRows, newRows, _frame.forceFull, _frame.hl);
   if (didFull) _frame.forceFull = false;
   if (ansi) stdout.write(ansi);
   _frame.prevRows = newRows;
@@ -500,7 +504,7 @@ function renderHalf(model, arrangeOverride) {
   const newRows = painter.composeRows(rects, COLS, availH);
   if (COLS !== _frame.prevCols || newRows.length !== _frame.prevRows.length) _frame.forceFull = true;
   _frame.prevCols = COLS;
-  const { ansi, didFull } = painter.paintFrame(_frame.prevRows, newRows, _frame.forceFull);
+  const { ansi, didFull } = painter.paintFrame(_frame.prevRows, newRows, _frame.forceFull, _frame.hl);
   if (didFull) _frame.forceFull = false;
   if (ansi) stdout.write(ansi);
   _frame.prevRows = newRows;
@@ -537,7 +541,7 @@ function renderFull(model, arrangeOverride) {
   const newRows = painter.composeRows(rects, COLS, availH);
   if (COLS !== _frame.prevCols || newRows.length !== _frame.prevRows.length) _frame.forceFull = true;
   _frame.prevCols = COLS;
-  const { ansi, didFull } = painter.paintFrame(_frame.prevRows, newRows, _frame.forceFull);
+  const { ansi, didFull } = painter.paintFrame(_frame.prevRows, newRows, _frame.forceFull, _frame.hl);
   if (didFull) _frame.forceFull = false;
   if (ansi) stdout.write(ansi);
   _frame.prevRows = newRows;
@@ -715,6 +719,11 @@ function render(model) {
   const replayView = replayData ? replayData.paneView : 'none';
   if (_frame.prevReplayView && _frame.prevReplayView !== replayView) _frame.forceFull = true;
   _frame.prevReplayView = replayView;
+  // v0.6.6 replay arc — change-highlight mode (off/line/cell) drives whether the
+  // main-frame paintFrame tints what each step/seek changed. Replay-only: null
+  // when not replaying, so the live paint path is byte-for-byte unchanged.
+  const diffMode = (replayData && replayData.diffMode) || 'off';
+  _frame.hl = diffMode !== 'off' ? { mode: diffMode } : null;
 
   let mainDidFull;
   // viewMode lives on the layout Component slice (Phase 1b).

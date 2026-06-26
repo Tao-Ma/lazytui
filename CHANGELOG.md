@@ -84,6 +84,11 @@ as its reference implementation. Spec: [docs/v0.6.6.md](docs/v0.6.6.md).
   air never freezes playback, and **even**, a fixed entries/sec review pace. Forward play
   folds only the new entries; reverse uses a bounded per-checkpoint-interval model snapshot
   ladder for flat per-frame cost. Spec: [docs/v0.6.6-replay.md](docs/v0.6.6-replay.md).
+- **Replay change highlighting.** The replay scrubber's `d` key cycles a change-highlight
+  mode (off → line → cell) that tints what changed since the previously-displayed frame —
+  whole changed rows, or (cell mode) just the changed columns, glyph-only. It reuses the
+  renderer's existing per-row diff, applies the highlight only to emitted output (never to the
+  diff baseline), and is replay-only, so the live paint path is unchanged.
 - **Terminal-emulator port.** The embedded terminal's emulator now sits behind a
   defined screen port (`io/term-screen.js`) — the one module that imports it — so the
   session layer, render, and the replay snapshot all reach the screen through a small
