@@ -1,5 +1,8 @@
 /**
- * Replay-control float pane — the scrubber UI for interactive replay.
+ * Replay scrubber — the float-pane UI for interactive replay. This is the
+ * VIEW half; the controller engine (session state, playback, checkpoints) is
+ * dispatch/runtime/replay-control.js. (Renamed from overlay/replay-control.js
+ * in the v0.6.6 pre-tag review to end the shared-basename confusion.)
  *
  * PURE of dispatch: `render(data)` takes the controller's `renderData()` snapshot
  * (passed in by render/paint via the injected seam) and draws a centered box via

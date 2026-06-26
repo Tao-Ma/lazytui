@@ -52,7 +52,7 @@ const navState = require('../panel/nav-state');
 // Memoized module refs (the reconciler runs per outermost dispatch; a fresh
 // relative require() each time is the ~tens-of-µs/call fs cost paint.js's hot
 // path also memoizes away). Cycle-safe: lazy + cached, like reconcilePaneInstances.
-let _apiRef, _routeRef, _mpoolRef, _hubRef, _loopRef, _termRef, _paintRef, _dispatchRef, _historyRef, _diagRef, _jobsRef;
+let _apiRef, _routeRef, _mpoolRef, _hubRef, _loopRef, _termRef, _paintRef, _dispatchRef, _historyRef, _diagRef, _jobsRef, _replayRef;
 const _api = () => (_apiRef ||= require('../panel/api'));
 const _route = () => (_routeRef ||= require('../panel/route'));
 const _mpool = () => (_mpoolRef ||= require('../leaves/wm/pool'));
@@ -60,6 +60,7 @@ const _hub = () => (_hubRef ||= require('../leaves/infra/hub'));
 const _history = () => (_historyRef ||= require('../feature/history'));
 const _diag = () => (_diagRef ||= require('../io/diag-log'));
 const _jobs = () => (_jobsRef ||= require('../feature/jobs'));
+const _replay = () => (_replayRef ||= require('../dispatch/runtime/replay'));
 
 // Live subscriptions: key → { kind, token }. The single source of what's
 // currently running; the reconcile diff is computed against it. `stop` routes
@@ -272,7 +273,15 @@ function _appSubscriptions(model) {
   if (_termTabOnScreen()) {
     subs.push({
       kind: 'interval', id: 'overlay-repaint', ms: 250,
-      onTick: () => (_paintRef ||= require('../render/paint')).renderTerminalOverlay(getModel()),
+      // Skip under replay: the controller schedules a FULL render on every seek/
+      // play tick, and the live-PTY async race this poll backstops (#D14/#D15)
+      // can't occur against PTY-less replay screens — so the tick is pure
+      // redundancy during a fold. (The Sub itself stays declared; the finalizer
+      // skips sub-reconcile under replay, so this is the cheap in-tick guard.)
+      onTick: () => {
+        if (_replay().isReplaying()) return;
+        (_paintRef ||= require('../render/paint')).renderTerminalOverlay(getModel());
+      },
     });
   }
   // Frame clock (model.now) — ticks ONLY while an age overlay (jobs/diag) is
