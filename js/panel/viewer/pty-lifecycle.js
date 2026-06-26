@@ -81,6 +81,9 @@ function install(host) {
   term.setExitHandler(handleExit);
   term.setRenderHook(require('../../leaves/infra/render-queue').scheduleOverlay);
   term.setJobsHooks(require('../../feature/jobs'));
+  // v0.6.6 replay arc — feed the terminal's off-model byte stream + lifecycle
+  // into the session WAL (a near-no-op when recording is disabled, the default).
+  term.setSessionRecorder(require('../../io/session-log').recordTerm);
 }
 
 module.exports = { handleExit, install };

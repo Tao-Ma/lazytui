@@ -25,7 +25,10 @@
  *   The render path is a pure function of `(model + the terminal island)`. As of
  *   v0.6.6 FIX-1 the frame is `f(model)` for EVERYTHING except the irreducible
  *   PTY (#D14, below). Replaying the Msg log reconstructs the model (Msgs →
- *   reducer → model) and so reconstructs the frame — terminal output excepted.
+ *   reducer → model) and so reconstructs the frame; the terminal contents are
+ *   reconstructed from a SEPARATE recorded byte-stream side-channel (NOT the Msg
+ *   log — the terminal stays off-model), so the full frame replays. (v0.6.6
+ *   replay arc — docs/v0.6.6-replay.md.)
  *
  *   How the formerly-off-model live stores got here — the `store-mirror` Sub
  *   (app/state.js#_appSubscriptions): each store exposes the `{snapshot,
@@ -51,9 +54,11 @@
  *   Terminal panes are an explicitly NON-TEA region — the reference FOREIGN
  *   COMPONENT (the documented non-TEA-region contract, docs/foreign-components.md):
  *   the model holds the PTY *lifecycle* (which tab, session id), but the screen
- *   contents live in the off-model xterm buffer (io/terminal), mutated by the PTY
- *   `onData` callback OUTSIDE the Msg loop and painted by reading `getSession()`
- *   live. Replay does not reproduce terminal output.
+ *   contents live in the off-model emulator buffer (io/terminal, behind the
+ *   io/term-screen port), mutated by the PTY `onData` callback OUTSIDE the Msg
+ *   loop and painted by reading `getSession()` live. Replay reconstructs the
+ *   contents by re-feeding the recorded PTY byte stream (the foreign-component
+ *   side-channel), never via the Msg log.
  */
 'use strict';
 

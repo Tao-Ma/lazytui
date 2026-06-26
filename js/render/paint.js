@@ -42,7 +42,7 @@ const { truncate, setWriter: _setDrawWriter } = require('../leaves/render/draw')
 _setDrawWriter((buf) => stdout.write(buf));
 const painter = require('../leaves/render/painter');
 const { isTerminalTab, activeTerminalId, activeTerminalConfig } = require('../panel/viewer/tabs');
-const { getSession, sessionScrollInfo } = require('../io/terminal');
+const { getSession, sessionScrollInfo, sessionViewportRows } = require('../io/terminal');
 const { getInstanceSlice, sliceForPane, getComponent,
        getComponentOwningPanel } = require('../panel/api');
 const { renderCopyMenu } = require('../overlay/copy');
@@ -594,22 +594,24 @@ function renderTerminalOverlay(model, arrangeOverride) {
   // Diff-based render: only rewrite rows whose content changed since the
   // previous overlay write. trimRight=false + pad so shorter lines fully
   // overwrite prior content within the changed row.
-  const buffer = session.xterm.buffer.active;
+  // Read the visible viewport (plain-text rows + viewportY) through the
+  // emulator screen port — render never touches the emulator buffer directly
+  // (v0.6.6 replay arc: io/term-screen is the one emulator-aware module).
+  const { viewportY, rows } = sessionViewportRows(id, innerH, innerW);
   if (!session.prevFrame) session.prevFrame = [];
-  // v0.6.5 §5(a) — scrollback: the overlay reads `buffer.viewportY`, which
-  // the scroll effects (terminal.scrollSession*) move. When the viewport
-  // position changes, every visible row shifts, so the per-row diff cache
-  // is stale — force a full inner repaint for that frame. This also clears
-  // the scroll indicator drawn below when the user returns to the bottom.
-  const scrolled = buffer.viewportY !== session.prevViewportY;
-  session.prevViewportY = buffer.viewportY;
+  // v0.6.5 §5(a) — scrollback: the overlay reads `viewportY`, which the scroll
+  // effects (terminal.scrollSession*) move. When the viewport position changes,
+  // every visible row shifts, so the per-row diff cache is stale — force a full
+  // inner repaint for that frame. This also clears the scroll indicator drawn
+  // below when the user returns to the bottom.
+  const scrolled = viewportY !== session.prevViewportY;
+  session.prevViewportY = viewportY;
   const force = _frame.forceOverlayFull || scrolled;
   _frame.forceOverlayFull = false;
 
   let out = '';
   for (let row = 0; row < innerH; row++) {
-    const line = buffer.getLine(row + buffer.viewportY);
-    let text = line ? line.translateToString(false, 0, innerW) : '';
+    let text = rows[row] || '';
     if (text.length < innerW) text += ' '.repeat(innerW - text.length);
     if (!force && session.prevFrame[row] === text) continue;
     out += `\x1b[${bounds.y + row + 2};${bounds.x + 2}H${text}${RESET}`;
