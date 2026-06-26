@@ -81,8 +81,11 @@ function _syncCursorToIdx() {
 // --- lifecycle ----------------------------------------------------------
 
 /** Enter interactive replay: snapshot the live session, load the WAL,
- *  reconstruct to the end, open the pane. Returns the path or null. */
-function enter(file) {
+ *  reconstruct to the end, open the pane. `opts.onExit` (optional) replaces the
+ *  default exit behavior (restore the live session) — the `--record-load` boot
+ *  passes a quit callback since there's no live session to return to. Returns
+ *  the path or null. */
+function enter(file, opts = {}) {
   let log;
   try { log = _sessionLog().load(file); }
   catch (e) { _diag(`record-load: ${e.message}`); return null; }
@@ -97,6 +100,7 @@ function enter(file) {
     playing: null, ratio: 1, paneOpen: true,
     liveSnapshot: _replay().snapshotState(),
     timer: null,
+    onExit: typeof opts.onExit === 'function' ? opts.onExit : null,
   };
   // Reconstruct off the current dispatch tick (this runs inside the cmdline
   // effect; fold at depth-0 so finalizers land cleanly).
@@ -105,13 +109,15 @@ function enter(file) {
   return file;
 }
 
-/** Exit replay: stop the timer, restore the live session, deactivate. */
+/** Exit replay: stop the timer, deactivate, then either run the onExit hook
+ *  (boot-replay → quit) or restore the live session (`:record-load`). */
 function exit() {
   if (!S) return;
   _stopTimer();
-  const snap = S.liveSnapshot;
+  const { onExit, liveSnapshot } = S;
   S = null;
-  _replay().restoreState(snap);
+  if (onExit) { onExit(); return; }
+  _replay().restoreState(liveSnapshot);
   _render();
 }
 

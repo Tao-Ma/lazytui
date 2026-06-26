@@ -29,10 +29,11 @@ Options:
   --spec                     Print the Component authoring spec to stdout
   --record-save <file>       Record this session to <file> from boot (also via
                              the :record-save cmdline verb mid-session).
-  --record-load <file>       Reconstruct a recorded session and print the frame.
-                             Headless; --seq <n> renders the frame at WAL
-                             sequence n (default: end). The :record-load verb
-                             recovers into the live windows instead.
+  --record-load <file>       Launch the TUI in interactive replay of <file> — a
+                             scrubber pane (checkpoints, play/pause/reverse).
+                             Takes no config; the recording carries it.
+  --record-print <file>      Headless: reconstruct <file>, print the frame, exit.
+                             --seq <n> picks a WAL sequence (default: end).
   -h, --help                 Show this help, then exit
 
 Examples:
@@ -94,6 +95,7 @@ function main() {
   let listMode = false;
   let listFilter = null;
   let recordLoadFile = null;
+  let recordPrintFile = null;
   let recordSaveFile = null;
   let replaySeq = null;
   const configArgs = [];
@@ -108,6 +110,9 @@ function main() {
     } else if (a === '--record-load') {
       if (i + 1 >= args.length) { console.error('--record-load requires <session.jsonl>'); process.exit(2); }
       recordLoadFile = args[++i];
+    } else if (a === '--record-print') {
+      if (i + 1 >= args.length) { console.error('--record-print requires <session.jsonl>'); process.exit(2); }
+      recordPrintFile = args[++i];
     } else if (a === '--record-save') {
       if (i + 1 >= args.length) { console.error('--record-save requires <session.jsonl>'); process.exit(2); }
       recordSaveFile = args[++i];
@@ -136,16 +141,18 @@ function main() {
       process.exit(2);
     } else configArgs.push(a);
   }
-  // Record-load (headless) — reconstruct a recorded session from its WAL and
-  // print the frame. No TTY, no PTY spawn, no subscriptions; takes no config
-  // (the recorded set_config Msg carries it). The in-TUI `:record-load` verb is
-  // the live-windows recover; this flag is its headless sibling. v0.6.6 replay arc.
-  if (recordLoadFile !== null) {
+  // --record-print (headless) — reconstruct a recorded session from its WAL and
+  // print the frame, then exit. No TTY, no PTY spawn, no subscriptions; takes no
+  // config (the recorded set_config Msg carries it). For scripts / CI / dumping a
+  // bug-report frame. The INTERACTIVE replay is --record-load (below). v0.6.6.
+  if (recordPrintFile !== null) {
     const { runReplay } = require('./replay-cli');
-    process.exit(runReplay(recordLoadFile, { seq: Number.isFinite(replaySeq) ? replaySeq : undefined }));
+    process.exit(runReplay(recordPrintFile, { seq: Number.isFinite(replaySeq) ? replaySeq : undefined }));
   }
 
-  if (configArgs.length < 1) {
+  // --record-load takes no config (the recorded WAL carries it); it boots the
+  // interactive TUI straight into replay (the scrubber pane) in the branch below.
+  if (configArgs.length < 1 && recordLoadFile === null) {
     console.error(USAGE);
     process.exit(1);
   }
@@ -242,11 +249,28 @@ function main() {
   // set_config Msg is the first recorded entry → a self-contained WAL). The
   // in-session `:record-save` verb checkpoints-then-streams instead; this flag
   // streams from the start. v0.6.6 replay arc.
-  if (recordSaveFile) {
+  if (recordSaveFile && !recordLoadFile) {
     const sessionLog = require('../io/session-log');
     sessionLog.enable(true);
     sessionLog.setCheckpointCadence(sessionLog.DEFAULT_CHECKPOINT_CADENCE);
     sessionLog.attachStream(recordSaveFile);
+  }
+
+  // --record-load: boot the interactive TUI straight into REPLAY. No config (the
+  // recorded WAL carries it) — register the runtime + reconcilers via the headless
+  // harness's scaffolding, then enter replay (the scrubber pane). Input + render
+  // run as normal; the controller captures input + drives reconstruction. `q`/esc
+  // in the pane quits. v0.6.6 replay arc.
+  if (recordLoadFile) {
+    require('./replay-cli')._installRuntime();
+    hideCursor();
+    installSuspendHandlers();
+    require('../dispatch/runtime/replay-control').enter(recordLoadFile, {
+      onExit: () => { try { cleanup(); } finally { process.exit(0); } },
+    });
+    redraw();
+    setupKeyListener();
+    return;
   }
 
   // Friendly one-line error instead of a Node stack trace if the config

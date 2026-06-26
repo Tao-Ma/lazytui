@@ -1,9 +1,9 @@
 /**
- * v0.6.6 replay arc — Phase E: file persistence + the --record-load CLI.
+ * v0.6.6 replay arc — Phase E: file persistence + the --record-load + --record-print CLI.
  *
  * Records a full headless boot + a few ops to a WAL FILE, then reconstructs it
  *   (1) in-process via app/replay-cli.runReplay after resetting all state, and
- *   (2) in a genuinely fresh subprocess: `node js/app/tui.js --record-load <file>`.
+ *   (2) in a genuinely fresh subprocess: `node js/app/tui.js --record-print <file>`.
  * Both must reproduce the recorded screen (content presence) — proving the
  * single-file JSONL format round-trips and the harness boots from bare.
  *
@@ -78,7 +78,7 @@ const inProcOut = capture(() => replayCli.runReplay(walPath));
 let subprocOut = '';
 let subprocOk = true;
 try {
-  subprocOut = execFileSync('node', [path.join(REPO, 'js/app/tui.js'), '--record-load', walPath],
+  subprocOut = execFileSync('node', [path.join(REPO, 'js/app/tui.js'), '--record-print', walPath],
     { cwd: REPO, encoding: 'utf8', timeout: 30000 });
 } catch (e) {
   subprocOk = false;
@@ -96,13 +96,13 @@ describe('[1] the WAL file persists a full boot', () => {
   });
 });
 
-describe('[2] --record-load reconstructs the screen in-process', () => {
+describe('[2] --record-print reconstructs the screen in-process', () => {
   it('the reconstructed frame shows the configured group', () => {
     assert(/Group One/.test(inProcOut), `frame: ${JSON.stringify(inProcOut.slice(0, 200))}`);
   });
 });
 
-describe('[3] --record-load reconstructs the screen in a fresh subprocess', () => {
+describe('[3] --record-print reconstructs the screen in a fresh subprocess', () => {
   it('the subprocess exits 0', () => assert(subprocOk, subprocOut.slice(0, 400)));
   it('its reconstructed frame shows the configured group', () => {
     assert(/Group One/.test(subprocOut), `subproc frame: ${JSON.stringify(subprocOut.slice(0, 200))}`);
