@@ -111,6 +111,93 @@ function replayEntries(entries, opts = {}) {
   finally { setReplaying(false); sessionLog.enable(wasEnabled); }
 }
 
+/**
+ * Incremental forward fold (interactive play). Apply ONLY entries `(fromIdx,
+ * toIdx]` to the CURRENT live state — no checkpoint/state restore. The caller
+ * guarantees the stores already hold the model at `fromIdx` (the previous
+ * frame left them there), so appending the next entries is equivalent to a
+ * restore-and-fold but avoids the O(n) re-fold-from-checkpoint every frame
+ * (the play-loop sawtooth). `_applyEntry` skips checkpoint entries, so a
+ * checkpoint inside the range is a no-op — crossing one mid-fold is safe.
+ * Terminal `out` bytes append to the persistent emulator (proven equivalent to
+ * a bulk feed — see test-replay.js / test-replay-advance.js). A no-op when
+ * `toIdx <= fromIdx`; reverse motion uses `replayTo` instead.
+ */
+function advance(log, fromIdx, toIdx) {
+  if (toIdx <= fromIdx) return;
+  const sessionLog = require('../../io/session-log');
+  const wasEnabled = sessionLog.isEnabled();
+  sessionLog.enable(false);
+  setReplaying(true);
+  try { for (let i = fromIdx + 1; i <= toIdx; i++) _applyEntry(log[i]); }
+  finally { setReplaying(false); sessionLog.enable(wasEnabled); }
+}
+
+/**
+ * Model-only forward fold of `(fromIdx, toIdx]` — applies `msg` entries, skips
+ * the `term` side-channel. The interactive REVERSE ladder uses this to build a
+ * ladder of cheap {model, slices} base snapshots inside a checkpoint interval
+ * (terminal grids are NOT snapshotted — they would race the async xterm feed;
+ * `reverseTo` instead anchors terminal on the WAL checkpoint grids, which were
+ * drained at record time). A no-op when `toIdx <= fromIdx`.
+ */
+function foldMsgs(log, fromIdx, toIdx) {
+  if (toIdx <= fromIdx) return;
+  const sessionLog = require('../../io/session-log');
+  const wasEnabled = sessionLog.isEnabled();
+  sessionLog.enable(false);
+  setReplaying(true);
+  try { for (let i = fromIdx + 1; i <= toIdx; i++) if (log[i].kind === 'msg') _applyEntry(log[i]); }
+  finally { setReplaying(false); sessionLog.enable(wasEnabled); }
+}
+
+/**
+ * Reconstruct the frame at `targetIdx` for REVERSE playback, using a ladder
+ * `base` = `{idx, state}` (a model/slices snapshot at `base.idx <= targetIdx`).
+ * A single ordered pass applies the two side-channels from their own starts:
+ *
+ *   - MODEL  — restore `base.state`, then re-apply `msg` entries `(base.idx,
+ *     targetIdx]`. Short (≤ interval/B entries) ⇒ flat per-frame cost, killing
+ *     the reverse re-fold-from-checkpoint sawtooth.
+ *   - TERMINAL — restore the nearest checkpoint's materialized grids (≤ target;
+ *     valid because they were snapshotted from live, drained screens at record
+ *     time), then re-feed `term` entries from just after that checkpoint. Bounded
+ *     by the checkpoint cadence (~256 KB). With no checkpoint before the target,
+ *     reset the spawned sessions and feed terminal from 0.
+ *
+ * Equivalent to `replayTo(seq_target)` (proven in test-replay-reverse.js) but
+ * with the model fold starting from a closer base.
+ */
+function reverseTo(log, targetIdx, base) {
+  const sessionLog = require('../../io/session-log');
+  const terminal = require('../../io/terminal');
+  let cpIdx = -1;
+  for (let i = 0; i <= targetIdx; i++) if (log[i].kind === 'checkpoint') cpIdx = i;
+  const wasEnabled = sessionLog.isEnabled();
+  sessionLog.enable(false);
+  setReplaying(true);
+  try {
+    restoreState(base.state);
+    let termStart;
+    if (cpIdx >= 0 && log[cpIdx].grids) {
+      const grids = log[cpIdx].grids;
+      for (const id of Object.keys(grids)) terminal.restoreReplaySession(id, grids[id]);
+      termStart = cpIdx;
+    } else {
+      // No checkpoint before target → reset spawned sessions, feed terminal from 0.
+      for (let i = 0; i <= targetIdx; i++) {
+        if (log[i].kind === 'term' && log[i].ev === 'spawn') terminal.destroySession(log[i].id);
+      }
+      termStart = -1;
+    }
+    for (let i = Math.min(base.idx, termStart) + 1; i <= targetIdx; i++) {
+      const e = log[i];
+      if (e.kind === 'msg' && i > base.idx) _applyEntry(e);
+      else if (e.kind === 'term' && i > termStart) _applyEntry(e);
+    }
+  } finally { setReplaying(false); sessionLog.enable(wasEnabled); }
+}
+
 /** Record a checkpoint into the live WAL: the full {model, slices} state,
  *  Set-encoded to plain JSON. Its `seq` marks the resumable point. (Terminal
  *  grids: a checkpoint marks the seq; replayTo reconstructs post-checkpoint
@@ -179,6 +266,6 @@ function replayTo(log, targetSeq = Infinity, opts = {}) {
 
 module.exports = {
   isReplaying, setReplaying,
-  snapshotState, restoreState, replayEntries,
+  snapshotState, restoreState, replayEntries, advance, foldMsgs, reverseTo,
   checkpointNow, maybeCheckpoint, replayTo,
 };

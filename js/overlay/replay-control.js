@@ -32,8 +32,11 @@ function render(data) {
 
   const sym = data.playing === 'fwd' ? '▶' : data.playing === 'rev' ? '◀' : '⏸';
   const dt = ((data.t - data.firstT) / 1000).toFixed(1);
+  const mode = data.mode === 'even'
+    ? 'even'
+    : `realtime ${data.idleCap === Infinity ? '∞' : (data.idleCap / 1000) + 's'}`;
   const lines = [
-    `[bold]${sym}[/]  ${data.ratio}×   seq ${data.pos}/${data.total}   +${dt}s`,
+    `[bold]${sym}[/] ${data.ratio}×  ${mode}   seq ${data.pos}/${data.total}  +${dt}s`,
     '[dim]────────────────────────────[/]',
   ];
 
@@ -53,7 +56,8 @@ function render(data) {
   }
 
   lines.push('');
-  lines.push('[dim]j/k seek  space play  b rev  +/- speed  \\[ \\] step  p hide  q exit[/]');
+  lines.push('[dim]j/k seek  space play  b rev  +/- speed  \\[ \\] step[/]');
+  lines.push('[dim]m mode  i cap  g/G ends  p hide  q exit[/]');
 
   renderOverlay({
     lines, title: 'Replay',

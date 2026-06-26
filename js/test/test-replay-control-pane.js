@@ -127,6 +127,81 @@ function boot() {
     it('live state restored exactly', () => eq(afterExitEnc, liveEnc));
   });
 
+  // ===== [6] deterministic clock-driven playback (injected clock + manual _tick) =====
+  const { EVEN_RATE } = require('../leaves/replay/timeline');
+  let vt = 0;
+  const noTimer = { unref() {} };
+  replayControl._setClock({ now: () => vt, setTimer: () => noTimer, clearTimer: () => {} });
+  let renderCount = 0;
+  const origSched = api.scheduleRender;
+  api.scheduleRender = () => { renderCount++; };
+
+  replayControl.enter(wal);
+  await new Promise(res => setImmediate(res));
+  replayControl.toggleMode();                 // realtime → even (index-based, deterministic)
+  const end = replayControl._state().log.length - 1;
+  // ms to reach entry index i at ratio 1 in even mode.
+  const tForIdx = (i, ratio = 1) => Math.ceil((i * 1000) / (ratio * EVEN_RATE));
+
+  // --- forward advancement: the timer actually advances idx ---
+  replayControl.seekToEnd(-1);                 // idx 0
+  vt = 0; replayControl.play('fwd');           // anchor at vt=0
+  vt = tForIdx(2); replayControl._tick();
+  const idxA = replayControl._state().idx;     // expect 2
+  vt = tForIdx(4); replayControl._tick();
+  const idxB = replayControl._state().idx;     // expect 4
+
+  // --- no-op skip: a sub-entry clock bump renders NOTHING ---
+  renderCount = 0;
+  vt = tForIdx(4) + 1; replayControl._tick();  // still floor → idx 4
+  const idxNoop = replayControl._state().idx;
+  const renderOnNoop = renderCount;
+
+  // --- ratio re-anchor: doubling speed must NOT retroactively rescale ---
+  replayControl.setRatio(+1);                  // ratio 2, re-anchors at idx 4 / vt
+  vt = vt + tForIdx(2, 2);                     // +2 entries at 2× over this span
+  replayControl._tick();
+  const idxAfterRatio = replayControl._state().idx;  // expect 6, NOT the buggy ~12
+
+  // --- end-stop: clock far past the end settles + pauses ---
+  vt = 10_000_000; replayControl._tick();
+  const idxAtEnd = replayControl._state().idx;
+  const playingAtEnd = replayControl._state().playing;
+
+  // --- reverse play via the ladder reconstructs correctly ---
+  replayControl.setRatio(-1);                  // back to ratio 1
+  replayControl.seekToEnd(+1);                 // idx end
+  vt = 1_000_000; replayControl.play('rev');   // anchor
+  vt = 1_000_000 + tForIdx(2); replayControl._tick();
+  const idxRev = replayControl._state().idx;   // ~ end-2
+  const revState = enc(replay.snapshotState());
+  // reference: a full checkpoint-anchored replayTo at the same index
+  const rlog = replayControl._state().log;
+  replay.replayTo(rlog, rlog[idxRev].seq, { useCheckpoints: true });
+  const revRef = enc(replay.snapshotState());
+
+  // --- mode toggle + idle-cap cycle preserve the current position ---
+  replayControl.pause();
+  const idxBeforeToggle = replayControl._state().idx;
+  replayControl.toggleMode();
+  const idxAfterToggle = replayControl._state().idx;
+  replayControl.cycleIdleCap();
+  const idxAfterCap = replayControl._state().idx;
+  const capChanged = replayControl._state().idleCap;
+
+  api.scheduleRender = origSched;
+  replayControl.exit();
+
+  describe('[6] clock-driven playback (deterministic, injected clock)', () => {
+    it('the session is long enough to exercise playback', () => assert(end >= 6, `end=${end}`));
+    it('forward play advances idx with the clock', () => { eq(idxA, 2); eq(idxB, 4); });
+    it('a sub-entry tick is a no-op (idx stable, NO render)', () => { eq(idxNoop, 4); eq(renderOnNoop, 0); });
+    it('ratio change re-anchors (no retroactive jump)', () => eq(idxAfterRatio, 6));
+    it('play stops at the end', () => { eq(idxAtEnd, end); eq(playingAtEnd, null); });
+    it('reverse play reconstructs == replayTo at the same idx', () => { assert(idxRev < end, `idxRev ${idxRev} < end ${end}`); eq(revState, revRef); });
+    it('mode toggle + idle-cap cycle preserve position', () => { eq(idxAfterToggle, idxBeforeToggle); eq(idxAfterCap, idxBeforeToggle); assert(capChanged !== 1000, 'cap advanced from default'); });
+  });
+
   try { fs.unlinkSync(wal); } catch {}
   report();
 })();
