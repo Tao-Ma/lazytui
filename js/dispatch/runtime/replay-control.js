@@ -54,6 +54,7 @@ function _setClock(o = {}) {
 let S = null;  // active session, or null when not replaying
 
 const _replay = () => require('./replay');
+const _terminal = () => require('../../io/terminal');
 const _sessionLog = () => require('../../io/session-log');
 const _timeline = () => require('../../leaves/replay/timeline');
 const _render = () => require('../../panel/api').scheduleRender();
@@ -199,6 +200,10 @@ function enter(file, opts = {}) {
     cursor: Math.max(0, checkpoints.length - 1),
     playing: null, ratio: 1, paneView: 'full',
     liveSnapshot: _replay().snapshotState(),
+    // The terminal is the off-model island — snapshot the live session screens
+    // too, so exit() can scrub replay bytes off any colliding live pane (the
+    // reconstruct fold writes into them; ids deterministically collide). #D14.
+    liveGrids: _terminal().snapshotAllSessions(),
     timer: null, reverseCache: null,
     onExit: typeof opts.onExit === 'function' ? opts.onExit : null,
   };
@@ -221,10 +226,11 @@ function enter(file, opts = {}) {
 function exit() {
   if (!S) return;
   _stopTimer();
-  const { onExit, liveSnapshot } = S;
+  const { onExit, liveSnapshot, liveGrids } = S;
   S = null;
   if (onExit) { onExit(); return; }
   _replay().restoreState(liveSnapshot);
+  _terminal().restoreLiveSessions(liveGrids);   // scrub replay bytes off live panes (#D14 island)
   _render();
 }
 

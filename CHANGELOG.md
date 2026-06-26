@@ -91,6 +91,12 @@ as its reference implementation. Spec: [docs/v0.6.6.md](docs/v0.6.6.md).
 
 ### Fixed
 
+- **Replay exit restores live terminals.** Exiting an in-session `:record-load`
+  replay now restores the live terminal screens, not just the model. Terminal
+  session ids are deterministic, so replaying a recording made from the same
+  config wrote replay bytes into the live emulator screens; exit previously left
+  those panes showing replay output. (The rebuilt screen is frozen at the live
+  grid — see [docs/v0.6.6-replay.md](docs/v0.6.6-replay.md).)
 - **Multi-viewer viewport height.** Each viewer pane now derives its own
   viewport height; the previous single finalizer write only refreshed the
   primary viewer's, so scroll- and cursor-clamping could use a stale height in a

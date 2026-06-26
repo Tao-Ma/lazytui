@@ -186,6 +186,20 @@ function restoreReplaySession(id, snap, cb) {
   return sessions[id];
 }
 
+/** Replay teardown (`:record-load` exit): restore the sessions that were live
+ *  when replay began — `grids` is the `snapshotAllSessions()` map captured then.
+ *  Sessions ids deterministically collide with live ones (`group_key`), so the
+ *  fold writes replay bytes into live screens; without this, exit would leave
+ *  those panes showing replay output. Sessions present now but NOT in the
+ *  snapshot were spawned during replay → destroyed. Each snapshotted screen is
+ *  rebuilt PTY-less (a `:record-load` over live terminals freezes them at the
+ *  live grid rather than resurrecting the PTY — see docs/v0.6.6-replay.md). */
+function restoreLiveSessions(grids) {
+  grids = grids || {};
+  for (const id of Object.keys(sessions)) if (!(id in grids)) destroySession(id);
+  for (const id of Object.keys(grids)) restoreReplaySession(id, grids[id]);
+}
+
 /** Write data (keystrokes) to a session's PTY. */
 function writeToSession(id, data) {
   const s = sessions[id];
@@ -280,7 +294,7 @@ module.exports = {
   resizeSession, destroySession, destroyAll,
   restartSession, isSessionDead,
   ensureReplaySession, feedReplay, markReplayExit,
-  snapshotSession, snapshotAllSessions, restoreReplaySession,
+  snapshotSession, snapshotAllSessions, restoreReplaySession, restoreLiveSessions,
   setExitHandler, setRenderHook, setJobsHooks, setSessionRecorder,
   // v0.6.5 §5(a) — scrollback effects.
   scrollSession, scrollSessionPages, scrollSessionToTop, scrollSessionToBottom,
