@@ -43,29 +43,44 @@ function drive(n) {
   });
 }
 
-// --- cadence ON: checkpoints appear automatically ---
-boot();
-sessionLog.enable(true);
-sessionLog.setCheckpointCadence(5);
-sessionLog.clear();
-drive(12);
-const autoCount = sessionLog.snapshot().filter(e => e.kind === 'checkpoint').length;
-sessionLog.enable(false); sessionLog.setCheckpointCadence(0); sessionLog.clear();
+const cpCount = () => sessionLog.snapshot().filter(e => e.kind === 'checkpoint').length;
 
-// --- cadence OFF: no auto-checkpoints ---
+// --- BYTES-primary: small byte threshold → periodic checkpoints ---
 boot();
 sessionLog.enable(true);
-sessionLog.setCheckpointCadence(0);
+sessionLog.setCheckpointCadence({ bytes: 300 });   // entries OFF
 sessionLog.clear();
 drive(12);
-const offCount = sessionLog.snapshot().filter(e => e.kind === 'checkpoint').length;
+const byteCount = cpCount();
+sessionLog.enable(false); sessionLog.setCheckpointCadence(); sessionLog.clear();
+
+// --- COUNT backstop: bytes OFF, small entry ceiling → periodic checkpoints ---
+boot();
+sessionLog.enable(true);
+sessionLog.setCheckpointCadence({ entries: 4 });   // bytes OFF
+sessionLog.clear();
+drive(12);
+const entryCount = cpCount();
+sessionLog.enable(false); sessionLog.setCheckpointCadence(); sessionLog.clear();
+
+// --- OFF: both thresholds 0 → no auto-checkpoints ---
+boot();
+sessionLog.enable(true);
+sessionLog.setCheckpointCadence();
+sessionLog.clear();
+drive(12);
+const offCount = cpCount();
 sessionLog.enable(false); sessionLog.clear();
 
-describe('[1] auto-cadence writes periodic checkpoints while recording', () => {
-  it('a small cadence yields ≥1 auto checkpoint', () => assert(autoCount >= 1, `auto checkpoints: ${autoCount}`));
+describe('[1] bytes-primary cadence writes periodic checkpoints', () => {
+  it('a small byte threshold yields ≥1 auto checkpoint', () => assert(byteCount >= 1, `byte-cadence checkpoints: ${byteCount}`));
 });
 
-describe('[2] cadence 0 disables auto-checkpointing', () => {
+describe('[2] entry-count backstop also triggers (bytes off)', () => {
+  it('a small entry ceiling yields ≥1 auto checkpoint', () => assert(entryCount >= 1, `count-cadence checkpoints: ${entryCount}`));
+});
+
+describe('[3] both thresholds 0 disables auto-checkpointing', () => {
   it('no checkpoints when cadence is off', () => eq(offCount, 0));
 });
 
