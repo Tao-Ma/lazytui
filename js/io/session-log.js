@@ -45,28 +45,41 @@ let _seq = 0;
 let _buf = [];
 let _streamPath = null;
 
-// Auto-cadence checkpointing: write a checkpoint every `_checkpointCadence`
-// recorded entries so a long recording stays fast to seek (the finalizer calls
-// replay.maybeCheckpoint, which consults checkpointDue). 0 = off; record-save
-// turns it on at the default cadence. `_sinceCheckpoint` counts non-checkpoint
-// entries since the last checkpoint.
-let _sinceCheckpoint = 0;
-let _checkpointCadence = 0;
-const DEFAULT_CHECKPOINT_CADENCE = 250;
+// Auto-cadence checkpointing: write a checkpoint when enough has been recorded
+// since the last one, so a long recording stays fast to seek (the finalizer
+// calls replay.maybeCheckpoint, which consults checkpointDue). The metric is
+// BYTES-primary — the dominant fold cost (re-feeding recorded terminal output)
+// scales with bytes, not entry count — with a high ENTRY-count ceiling as a
+// safety cap (compaction + pathological Msg spam). Both 0 = off; record-save
+// turns them on at the defaults. The counters track the WAL gap since the last
+// checkpoint (a checkpoint resets them — it isn't re-folded, it's restored).
+let _sinceCheckpoint = 0;       // non-checkpoint entries since last checkpoint
+let _bytesSinceCheckpoint = 0;  // serialized bytes since last checkpoint
+let _cadenceBytes = 0;          // byte threshold (primary)
+let _cadenceEntries = 0;        // entry-count ceiling (safety backstop)
+const DEFAULT_CHECKPOINT_CADENCE = { bytes: 256 * 1024, entries: 5000 };
 
 function _nextSeq() { return ++_seq; }
 
 /**
  * Append one entry. Silent no-op (returns -1) when disabled. Returns the
- * assigned global `seq`. Writes a JSONL line to the attached stream, if any.
+ * assigned global `seq`. Writes a JSONL line to the attached stream, if any,
+ * and accrues the byte/entry cadence counters (a checkpoint resets them).
  */
 function record(kind, fields) {
   if (!_enabled) return -1;
   const entry = { seq: _nextSeq(), t: Date.now(), kind, ...fields };
   _buf.push(entry);
-  if (kind === 'checkpoint') _sinceCheckpoint = 0; else _sinceCheckpoint++;
+  // Serialize once if we need it — for the stream append and/or byte cadence.
+  const line = (_streamPath || _cadenceBytes > 0) ? JSON.stringify(entry) : null;
+  if (kind === 'checkpoint') {
+    _sinceCheckpoint = 0; _bytesSinceCheckpoint = 0;
+  } else {
+    _sinceCheckpoint++;
+    if (line !== null) _bytesSinceCheckpoint += Buffer.byteLength(line) + 1;  // +1 newline
+  }
   if (_streamPath) {
-    try { fs.appendFileSync(_streamPath, JSON.stringify(entry) + '\n'); }
+    try { fs.appendFileSync(_streamPath, line + '\n'); }
     catch (e) { _streamPath = null; }   // file vanished/full — drop, don't crash
   }
   return entry.seq;
@@ -199,12 +212,19 @@ function decodeJson(v) {
 
 function enable(yes = true) { _enabled = !!yes; }
 function isEnabled()        { return _enabled; }
-function clear()            { _buf = []; _seq = 0; _sinceCheckpoint = 0; }
+function clear()            { _buf = []; _seq = 0; _sinceCheckpoint = 0; _bytesSinceCheckpoint = 0; }
 
-// Auto-cadence: entries between checkpoints (0 = off). record-save sets the
-// default; record-stop clears it.
-function setCheckpointCadence(n) { _checkpointCadence = Math.max(0, n | 0); }
-function checkpointDue()         { return _checkpointCadence > 0 && _sinceCheckpoint >= _checkpointCadence; }
+// Auto-cadence: `{ bytes, entries }` thresholds (each 0 = that metric off).
+// record-save sets the defaults; record-stop clears them.
+function setCheckpointCadence(opts = {}) {
+  _cadenceBytes = Math.max(0, opts.bytes | 0);
+  _cadenceEntries = Math.max(0, opts.entries | 0);
+}
+// Due when EITHER threshold is crossed (bytes-primary; entries = safety cap).
+function checkpointDue() {
+  return (_cadenceBytes > 0 && _bytesSinceCheckpoint >= _cadenceBytes)
+      || (_cadenceEntries > 0 && _sinceCheckpoint >= _cadenceEntries);
+}
 function snapshot()         { return _buf.slice(); }
 function size()             { return _buf.length; }
 
@@ -221,6 +241,6 @@ module.exports = {
 // Mirrors io/event-log's LAZYTUI_LOG auto-attach.
 if (process.env.LAZYTUI_REPLAY_LOG) {
   _enabled = true;
-  _checkpointCadence = DEFAULT_CHECKPOINT_CADENCE;
+  setCheckpointCadence(DEFAULT_CHECKPOINT_CADENCE);
   _openStream(process.env.LAZYTUI_REPLAY_LOG);
 }

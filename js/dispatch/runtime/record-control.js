@@ -67,7 +67,7 @@ function load(file) {
 function stop() {
   sessionLog.detachStream();
   sessionLog.enable(false);
-  sessionLog.setCheckpointCadence(0);
+  sessionLog.setCheckpointCadence();   // both thresholds off
 }
 
 module.exports = { save, load, stop };
