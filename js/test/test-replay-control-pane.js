@@ -148,12 +148,11 @@ function boot() {
     it('cyclePane walks the three states and back', () => {
       eq(fullView, 'full'); eq(miniView, 'mini'); eq(hiddenView, 'hidden'); eq(cycledBackView, 'full');
     });
-    it('mini shows speed + seq + checkpoint cursor + a progress bar with ticks, but NOT the legend', () => {
+    it('mini shows speed + seq + checkpoint cursor + a progress bar, but NOT the legend', () => {
       assert(/×/.test(miniFrame), 'speed (ratio) shown');
       assert(/\d+\/\d+/.test(miniFrame), 'seq shown');
       assert(/cp \d+\/\d+/.test(miniFrame), 'checkpoint cursor shown');
       assert(/[█░]/.test(miniFrame), 'progress bar shown');
-      assert(/┃/.test(miniFrame), 'checkpoint ticks on the bar');
       assert(!/seek/.test(miniFrame), 'no key legend in mini');
     });
     it('up/down navigate checkpoints while in mini', () => { eq(cpAfterUp, 0); eq(cpAfterDown, 1); });

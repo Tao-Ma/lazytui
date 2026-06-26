@@ -37,38 +37,20 @@ function render(data) {
   return renderFull(data);
 }
 
-// A progress bar `w` cells wide: filled to the current position, with checkpoint
-// positions marked by ticks (so checkpoint nav — j/k / up/down — is visible in
-// mini even without the list). Filled span is bold, the rest dim.
-//
-// Ticks are drawn ONLY when checkpoints are sparse enough to stay distinct
-// (≤ w/2). With more, every cell would become a tick and bury the position fill
-// (which is the bar's primary job) — so the ticks are dropped and the `cp X/N`
-// label carries the checkpoint position instead.
-function _miniBar(data, w) {
-  const total = data.total;
-  const frac = total > 1 ? data.idx / (total - 1) : 1;
-  const fill = Math.max(0, Math.min(w, Math.round(frac * w)));
-  const cells = [];
-  for (let i = 0; i < w; i++) cells.push(i < fill ? '█' : '░');
-  const cps = data.checkpoints || [];
-  if (cps.length && cps.length <= w / 2) {
-    for (const cp of cps) {
-      const p = total > 1 ? Math.round((cp.idx / (total - 1)) * (w - 1)) : 0;
-      if (p >= 0 && p < w) cells[p] = '┃';
-    }
-  }
-  return `[bold]${cells.slice(0, fill).join('')}[/][dim]${cells.slice(fill).join('')}[/]`;
-}
-
 // Compact bottom bar — play state / speed / seq / checkpoint cursor / elapsed /
-// progress only. Anchored bottom-left, width hugs the content.
+// progress. Anchored bottom-left, width hugs the content. The progress fill
+// shows position; pressing j/k/up/down jumps the fill to the target checkpoint
+// and `cp X/N` gives its index (no per-checkpoint tick glyphs — they buried the
+// fill once checkpoints got dense and added a glyph dependency for no real gain).
 function renderMini(data) {
   const { cols: COLS, rows: ROWS } = viewportDims();
   const dt = ((data.t - data.firstT) / 1000).toFixed(1);
   const cpN = (data.checkpoints || []).length;
   const cpLabel = cpN ? `  cp ${data.cursor + 1}/${cpN}` : '';
-  const bar = _miniBar(data, MINI_BAR);
+  const total = data.total;
+  const frac = total > 1 ? data.idx / (total - 1) : 1;
+  const fill = Math.max(0, Math.min(MINI_BAR, Math.round(frac * MINI_BAR)));
+  const bar = `[bold]${'█'.repeat(fill)}[/][dim]${'░'.repeat(MINI_BAR - fill)}[/]`;
   const line = `[bold]${_sym(data)} ${data.ratio}×[/] ${data.pos}/${data.total}${cpLabel}  +${dt}s  ${bar}`;
   const plainLen = line.replace(/\[[^\]]*\]/g, '').length;   // strip markup to size the box
   renderOverlay({
