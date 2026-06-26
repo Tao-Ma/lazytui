@@ -17,6 +17,16 @@ const { getModel } = require('../../model/store');
 const { esc } = require('../../leaves/text/ansi');
 const history = require('../../feature/history');
 const jobs = require('../../feature/jobs');
+const sessionLog = require('../../io/session-log');
+
+// type:spawn uses a real `tmux new-window` ONLY when running under tmux AND we
+// are NOT recording. While recording, force the embedded-PTY path even under
+// tmux: a tmux window's output is external to the app (never in the WAL), so it
+// would not replay — and a recording is meant to replay anywhere, possibly on a
+// different host with no tmux. The embedded PTY's output IS captured (the WAL
+// side-channel), so the recorded session stays fully replayable + position-
+// independent. v0.6.6 replay arc.
+function _spawnUsesTmux() { return !!process.env.TMUX && !sessionLog.isEnabled(); }
 
 function runAction(actionKey, action, args = []) {
   // Event log (PRINCIPLES.md §11 + CHANGELOG v0.2.0). Record the user
@@ -75,7 +85,7 @@ function doRun(actionKey, action, args = []) {
     const tmp = `/tmp/tui-${process.pid}-${Date.now()}.sh`;
     const body = `#!/bin/sh\nrm -- "$0"\ncd ${getModel().projectDir} && ${cmd}\n`;
     fs.writeFileSync(tmp, body, { mode: 0o700 });
-    if (process.env.TMUX) {
+    if (_spawnUsesTmux()) {
       appendViewerLines(`[dim]$ ${esc(actionKey)}[/]\n[yellow]Spawned in new tmux window.[/]`);
       const argStr = args.length ? ' ' + args.map(shQuote).join(' ') : '';
       spawn('tmux', ['new-window', '-n', actionKey, `${tmp}${argStr}; read`], { detached: true, stdio: 'ignore' });
@@ -152,4 +162,4 @@ function doRun(actionKey, action, args = []) {
 
 // Re-export streaming helpers so existing import sites
 // (dispatch.js, plugins/docker.js, cleanup.js) keep working.
-module.exports = { runAction, doRun, killAll, streamCommand };
+module.exports = { runAction, doRun, killAll, streamCommand, _spawnUsesTmux };
