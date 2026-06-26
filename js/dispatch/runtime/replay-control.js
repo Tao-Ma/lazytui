@@ -309,9 +309,9 @@ function handleKey(key, seq) {
   if (!S) return;
   if (key === 'escape' || seq === 'q') { exit(); return; }
   if (seq === 'p') { cyclePane(); return; }
-  if (S.paneView === 'hidden') return;   // hidden: only p (cycle back) / q,esc act
-  // full AND mini both accept the full playback control surface; they differ
-  // only in what the pane DRAWS (the checkpoint list vs the compact bar).
+  // All playback/seek controls act in EVERY view state (full / mini / hidden) —
+  // paneView only changes what the pane DRAWS, never what the keys do. (Hidden is
+  // a watch-with-no-overlay state, not a controls-off state.)
   if (key === 'up'   || seq === 'k') { seekToCheckpoint(S.cursor - 1); return; }
   if (key === 'down' || seq === 'j') { seekToCheckpoint(S.cursor + 1); return; }
   if (seq === 'g') { seekToEnd(-1); return; }
