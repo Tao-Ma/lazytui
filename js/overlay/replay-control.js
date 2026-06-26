@@ -40,15 +40,23 @@ function render(data) {
 // A progress bar `w` cells wide: filled to the current position, with checkpoint
 // positions marked by ticks (so checkpoint nav — j/k / up/down — is visible in
 // mini even without the list). Filled span is bold, the rest dim.
+//
+// Ticks are drawn ONLY when checkpoints are sparse enough to stay distinct
+// (≤ w/2). With more, every cell would become a tick and bury the position fill
+// (which is the bar's primary job) — so the ticks are dropped and the `cp X/N`
+// label carries the checkpoint position instead.
 function _miniBar(data, w) {
   const total = data.total;
   const frac = total > 1 ? data.idx / (total - 1) : 1;
   const fill = Math.max(0, Math.min(w, Math.round(frac * w)));
   const cells = [];
   for (let i = 0; i < w; i++) cells.push(i < fill ? '█' : '░');
-  for (const cp of (data.checkpoints || [])) {
-    const p = total > 1 ? Math.round((cp.idx / (total - 1)) * (w - 1)) : 0;
-    if (p >= 0 && p < w) cells[p] = '┃';
+  const cps = data.checkpoints || [];
+  if (cps.length && cps.length <= w / 2) {
+    for (const cp of cps) {
+      const p = total > 1 ? Math.round((cp.idx / (total - 1)) * (w - 1)) : 0;
+      if (p >= 0 && p < w) cells[p] = '┃';
+    }
   }
   return `[bold]${cells.slice(0, fill).join('')}[/][dim]${cells.slice(fill).join('')}[/]`;
 }
