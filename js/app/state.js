@@ -696,6 +696,10 @@ module.exports = {
   // children, cancel intervals, remove the resize listener). Same impl as the
   // test reset; wired to process exit from tui.js (FIX-3 Phase 5).
   teardownSubscriptions: _resetSubscriptions,
+  // The per-pane instance reconciler — wired to the dispatch finalizer at boot
+  // (initState) AND by the replay harness (app/replay-cli) so a replayed
+  // set_arrange mints the same per-pane slices. Exported for that second caller.
+  reconcilePaneInstances,
   // Panel-state accessors — re-exported from panel/nav-state for back-compat
   // (§1 Phase 2). New code should import these from panel/nav-state.
   allPanels: navState.allPanels,

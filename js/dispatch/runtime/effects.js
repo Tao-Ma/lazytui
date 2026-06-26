@@ -21,6 +21,10 @@
  */
 'use strict';
 
+// Replay flag (zero-dependency sibling — safe to top-require; no load cycle).
+// Read on the hot runEffects path, so top-require avoids a per-call require().
+const replay = require('./replay');
+
 const _handlers = Object.create(null);
 
 function registerEffect(type, fn) {
@@ -58,6 +62,11 @@ function _effectHost() {
 
 function runEffects(effects) {
   if (!Array.isArray(effects)) return;
+  // Replay: skip ALL effects. Every effect either re-dispatches a Msg (itself
+  // recorded) or does IO whose result returns as a recorded Msg, so the
+  // recorded Msg stream alone reconstructs state — re-running here would
+  // double-apply. (v0.6.6 replay arc; see ./replay.)
+  if (replay.isReplaying()) return;
   const host = _effectHost();
   for (const eff of effects) {
     if (!eff || typeof eff.type !== 'string') continue;

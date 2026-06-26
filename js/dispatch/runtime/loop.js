@@ -30,6 +30,11 @@ const { runEffects } = require('./effects');
 // instance reconcile) lives in its own after-update-phase module now; the loop
 // only gates it at depth-0 exit. One-way edge: loop → finalize.
 const { finalizeDispatch } = require('./finalize');
+// Replay recorder (io leaf — legal down-edge, like the event-log require below).
+// Records every Msg at the three entry points below; a near-no-op when disabled
+// (the default). The replay driver disables it during a fold, so replayed Msgs
+// are not re-recorded. v0.6.6 replay arc.
+const sessionLog = require('../../io/session-log');
 
 // Component registry lives in panel/api; read it lazily (the object ref is
 // stable — registerComponent mutates it in place) so this module never eagerly
@@ -66,6 +71,7 @@ let _dispatchDepth = 0;
 // Cmds (apply_msg / dispatch_msg) re-entering the dispatch graph see post-Msg
 // state. applyMsg does NOT run the finalizer (root Msgs don't move panes).
 function applyMsg(msg) {
+  sessionLog.recordMsg({ lane: 'root', msg });
   const [next, cmds] = runtime.update(getModel(), msg);
   setModel(next);
   runEffects(cmds);
@@ -79,6 +85,7 @@ function applyMsg(msg) {
  * don't stop the others.
  */
 function dispatchMsg(msg) {
+  sessionLog.recordMsg({ lane: 'comp', msg });
   _dispatchDepth++;
   try { _dispatchMsgInner(msg); }
   finally {
@@ -162,6 +169,7 @@ function _dispatchMsgInner(msg) {
  * The claim is a `_claimed` sentinel effect in the Component's return.
  */
 function dispatchKeyToFocused(key, seq) {
+  sessionLog.recordMsg({ lane: 'key', key, keySeq: seq });
   _dispatchDepth++;
   try { return _dispatchKeyToFocusedInner(key, seq); }
   finally {

@@ -52,6 +52,24 @@ as its reference implementation. Spec: [docs/v0.6.6.md](docs/v0.6.6.md).
   dispatch finalizer drains them once per dispatch, so drawing a frame no longer
   triggers a re-entrant dispatch or a wall-clock read. (Finding C.)
 
+### Added
+
+- **Session replay.** A session can be recorded and reconstructed. The recorder
+  (`LAZYTUI_REPLAY_LOG=<file>`, off by default) writes a single append-only log of
+  the ordered message stream plus the terminal's output byte stream, under one global
+  sequence. `node tui.js --replay <file>` reconstructs the screen by re-applying that
+  log through the pure reducers with side effects suppressed — no config needed (the
+  log carries it), no real terminal spawned. Because every state change flows through a
+  message, the reconstructed model and frame are identical to the original (the
+  embedded terminal is reconstructed from its recorded byte stream, the materialized
+  proof of `frame = f(model)` for everything except — and now including, via the
+  side-channel — the terminal island). Periodic **checkpoints** make long sessions
+  resumable. Spec: [docs/v0.6.6-replay.md](docs/v0.6.6-replay.md).
+- **Terminal-emulator port.** The embedded terminal's emulator now sits behind a
+  defined screen port (`io/term-screen.js`) — the one module that imports it — so the
+  session layer, render, and the replay snapshot all reach the screen through a small
+  stable interface. Swapping the emulator means reimplementing one adapter.
+
 ### Fixed
 
 - **Multi-viewer viewport height.** Each viewer pane now derives its own

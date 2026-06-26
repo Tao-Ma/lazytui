@@ -86,7 +86,7 @@ describe('_classifyTerminalChunk — wheel extraction (mouseMode none)', () => {
 
 function freshSession(id, rows = 4, cols = 20) {
   const xterm = new Terminal({ cols, rows, allowProposedApi: true });
-  terminal._setSessionForTest(id, { xterm, exited: false });
+  terminal._setSessionForTest(id, { screen: xterm, exited: false });
   return xterm;
 }
 

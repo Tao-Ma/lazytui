@@ -27,6 +27,9 @@ Options:
   --list [filter]            Print every YAML action (path, label, desc).
                              Optional substring filters by path.
   --spec                     Print the Component authoring spec to stdout
+  --replay <session.jsonl>   Reconstruct a recorded session (LAZYTUI_REPLAY_LOG)
+                             and print the frame. Headless; --seq <n> renders
+                             the frame at WAL sequence n (default: end).
   -h, --help                 Show this help, then exit
 
 Examples:
@@ -87,6 +90,8 @@ function main() {
   let execArgs = [];
   let listMode = false;
   let listFilter = null;
+  let replayFile = null;
+  let replaySeq = null;
   const configArgs = [];
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
@@ -96,6 +101,12 @@ function main() {
     } else if (a === '--spec') {
       printSpec();
       process.exit(0);
+    } else if (a === '--replay') {
+      if (i + 1 >= args.length) { console.error('--replay requires <session.jsonl>'); process.exit(2); }
+      replayFile = args[++i];
+    } else if (a === '--seq') {
+      if (i + 1 >= args.length) { console.error('--seq requires <n>'); process.exit(2); }
+      replaySeq = parseInt(args[++i], 10);
     } else if (a === '--exec') {
       if (i + 1 >= args.length) {
         console.error('--exec requires <group>:<action>');
@@ -118,6 +129,14 @@ function main() {
       process.exit(2);
     } else configArgs.push(a);
   }
+  // Replay mode — reconstruct a recorded session from its WAL and print the
+  // frame. Headless (no TTY, no PTY spawn, no subscriptions); takes no config
+  // (the recorded set_config Msg carries it). v0.6.6 replay arc.
+  if (replayFile !== null) {
+    const { runReplay } = require('./replay-cli');
+    process.exit(runReplay(replayFile, { seq: Number.isFinite(replaySeq) ? replaySeq : undefined }));
+  }
+
   if (configArgs.length < 1) {
     console.error(USAGE);
     process.exit(1);
@@ -215,28 +234,10 @@ function main() {
   try { loadConfig(configArgs[0]); }
   catch (e) { console.error(`config: ${e.message}`); process.exit(1); }
 
-  // Built-in Components (TEA shape). The first three OWN state in their slices
-  // (genuine isolation — poll loops, browsers, git cache); the rest are
-  // stateless Components (empty slice + no-op update) — the API-uniformity tax
-  // for keeping ONE panel shape across the stateless view set. See
-  // docs/v0.5-layering.md.
-  // layout (chrome-only) — the frame Component (Phase 1a skeleton; subsequent
-  // sub-phases migrate focus/viewMode/freeConfig/arrange into its slice). See
-  // docs/v0.5-layout-component.md.
-  registerComponent(require('../panel/layout'));
-  registerComponent(require('../panel/navigator/docker'));
-  registerComponent(require('../panel/navigator/config-status'));
-  registerComponent(require('../panel/navigator/files'));
-  registerComponent(require('../panel/navigator/actions'));
-  registerComponent(require('../panel/monitor/stats'));
-  registerComponent(require('../panel/navigator/history'));
-  // detail (the viewer) — owns the viewer slice + update; the last panel
-  // migrated to the Component shape in v0.5 Phase B.
-  registerComponent(require('../panel/viewer/viewer'));
-  // groups (last in-tree migration, v0.5 Phase C). Owns the tree slice
-  // (list / expanded / tab); the cascade (currentGroup / per-group root
-  // chrome reset / viewer reset) goes out as apply_msg / dispatch_msg Cmds.
-  registerComponent(require('../panel/navigator/groups'));
+  // Built-in Components (TEA shape), in registration order. The list is
+  // single-sourced in app/components.js so the replay harness registers the
+  // identical set. See that file + docs/v0.5-layering.md.
+  for (const comp of require('./components').BUILTIN_COMPONENTS) registerComponent(comp);
 
   // PTY exit fan-out — wires `panel/viewer/pty-lifecycle` into
   // `io/terminal.js` so the io layer stays a leaf (it used to lazy-

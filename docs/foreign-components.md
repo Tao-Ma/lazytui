@@ -106,19 +106,31 @@ method names are mapped in the next section.)
  */
 ```
 
-### Replay
+### Replay (implemented for the terminal)
 
 A foreign component's **contents are outside the Msg-log replay boundary** (`#D5`).
 Replaying the Msg log reconstructs the model — including the component's *descriptor*
-(which instances exist, their size/focus) — but **not its contents**. A replay
-harness must therefore: skip the lifecycle reconcile (do not spawn the real
-resource), and accept that the region replays blank.
+(which instances exist, their size/focus) — but **not its contents**. The contents are
+instead a deterministic fold over the foreign system's **input stream**, recorded as a
+**separate side-channel** — orthogonal to, and never mixed into, the Msg log. Do **not**
+move the contents into the model.
 
-If you ever need to replay the *contents*, do **not** move them into the model.
-The contents are a deterministic fold over the foreign system's input stream
-(e.g. a terminal grid is a deterministic function of its PTY byte stream + resize
-events), so record that **input stream as a separate side-channel** and re-feed it
-on replay — orthogonal to, and never mixed into, the Msg log.
+The terminal implements this (v0.6.6 — see [docs/v0.6.6-replay.md](v0.6.6-replay.md)):
+
+- The PTY **output byte stream** is recorded as the side-channel (the injected
+  `setSessionRecorder` hook → `io/session-log` `term`/`out` entries, sharing the one
+  global `seq` with the Msg log). A terminal grid is a deterministic function of that
+  byte stream + resize events, so re-feeding it into a PTY-less screen
+  (`ensureReplaySession`/`feedReplay`) reconstructs the grid exactly. The byte stream is
+  **emulator-agnostic** — it reconstructs on any emulator.
+- A **checkpoint** materializes each live screen (`snapshotSession` → a text grid; the
+  render is monochrome text, so text is faithful) so resume need not re-feed from spawn.
+- The replay harness skips the lifecycle reconcile (no real PTY spawned) and reconstructs
+  the region from the side-channel.
+
+The concrete emulator (xterm) is isolated behind the screen **port** `io/term-screen.js`
+(the one module that imports it); the byte-stream recorder, snapshot, and PTY-less replay
+screen all live behind that port.
 
 ## Reference implementation — `io/terminal.js` (`#D14`)
 

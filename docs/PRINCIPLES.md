@@ -335,9 +335,14 @@ resolved both:
 
 **Why the rule matters:**
 
-- **Replay tests.** If render output is a function of state alone,
-  a stored state snapshot replays to a known string. The
-  TEA-inspired event log (planned for v0.2.x) needs this guarantee.
+- **Replay.** If render output is a function of state alone, the recorded
+  message stream replays through the pure reducers to an identical model and
+  frame. This is no longer hypothetical: **session replay shipped in v0.6.6**
+  (`node tui.js --replay <file>`; recorder behind `LAZYTUI_REPLAY_LOG`), and
+  `js/test/test-replay.js` asserts `model = fold(reducer, MsgLog)` end-to-end —
+  the materialized proof of this rule. The terminal island is reconstructed from
+  its recorded byte stream (the foreign-component side-channel). See
+  `docs/v0.6.6-replay.md`.
 - **Snapshot tests.** Same-state-twice can be asserted in unit
   tests without elaborate setup. `js/test/test-render-idempotent.js`
   is the canonical example.

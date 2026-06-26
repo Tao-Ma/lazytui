@@ -39,6 +39,8 @@ const { syncPanelScroll } = require('../../panel/nav-state');
 const terminal = require('../../io/terminal');
 const tabs = require('../../panel/viewer/tabs');
 const diag = require('../../io/diag-log');
+// Replay flag (zero-dependency sibling — safe to top-require; no load cycle).
+const replay = require('./replay');
 
 let _inScrollFinalize = false;
 
@@ -96,6 +98,13 @@ function finalizeDispatch() {
       _lastReconciledArrange = layoutSlice.arrange;
       _instanceReconciler();
     }
+    // v0.6.6 replay arc — under replay the finalizer does the per-pane instance
+    // reconcile ONLY (deterministic slice creation, regenerated from the
+    // recorded layout Msgs). Skip the rest: the scroll-clamp's `set_scroll`
+    // Msgs are in the recorded log (re-clamping would double-apply); the
+    // subscription reconcile + PTY ensure/resize are live IO (would spawn
+    // subs/PTYs during replay). The `finally` below still clears the guard.
+    if (replay.isReplaying()) return;
     // #D13 — reconcile hub subscriptions against the model (canonical Model →
     // Sub). Ungated: the desired set is recomputed + diffed every outermost
     // dispatch so a sub whose existence depends on model state (today: which
@@ -135,8 +144,9 @@ function finalizeDispatch() {
           ? geo.visibleBoundsFor(layoutSlice, viewerPaneId, viewerPaneId) : null;
         if (tb) {
           const cols = tb.w - 2, rows = tb.h - 2;
-          const session = terminal.ensureSession(ptyId, tconf.cmd, cols, rows, getModel().projectDir);
-          if (session.xterm.cols !== cols || session.xterm.rows !== rows) {
+          terminal.ensureSession(ptyId, tconf.cmd, cols, rows, getModel().projectDir);
+          const sz = terminal.sessionSize(ptyId);
+          if (sz && (sz.cols !== cols || sz.rows !== rows)) {
             terminal.resizeSession(ptyId, cols, rows);
           }
         }
