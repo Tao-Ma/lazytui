@@ -39,28 +39,14 @@ function save(file) {
   return { path, skipped: false };
 }
 
-/** Recover a recorded session into the LIVE TUI: clear the windows and re-apply
- *  the WAL (seeking the nearest checkpoint; mint-on-restore rebuilds the pane
- *  set), then repaint. Runs off the current dispatch tick so the fold lands at
- *  depth-0. Returns the resolved path, or null if the file can't be read. */
+/** Enter INTERACTIVE replay of a recorded session: snapshot the live session
+ *  aside, load the WAL, reconstruct it, and open the replay-control pane (scrub
+ *  / play / pause / reverse). `q`/`esc` in the pane restores the live session.
+ *  Returns the resolved path, or null if the file can't be read. */
 function load(file) {
   const path = file || sessionLog.streamPath() || sessionLog.DEFAULT_SESSION_FILE;
   stop();                        // don't record the reconstruction itself
-  let log;
-  try { log = sessionLog.load(path); }
-  catch (e) {
-    try { require('../../io/diag-log').error('replay', `record-load: ${e.message}`); } catch (_) {}
-    return null;
-  }
-  setImmediate(() => {
-    try {
-      replay.replayTo(log, Infinity, { useCheckpoints: true });
-      require('../../panel/api').scheduleRender();
-    } catch (e) {
-      try { require('../../io/diag-log').error('replay', `record-load fold: ${e.message}`); } catch (_) {}
-    }
-  });
-  return path;
+  return require('./replay-control').enter(path);
 }
 
 /** Stop recording: detach the stream, disable the recorder, clear auto-cadence. */

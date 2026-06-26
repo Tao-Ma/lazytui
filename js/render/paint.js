@@ -60,6 +60,13 @@ const { renderJobsOverlay } = require('../overlay/jobs');
 // geometry only calls renderFooter() once per frame from render().
 const { renderFooter } = require('./footer');
 
+// v0.6.6 replay arc — the interactive replay-control pane's render data comes
+// from the module-held controller (dispatch/runtime/replay-control), wired in at
+// boot via setReplaySource. INJECTED (not imported) so render keeps no dispatch
+// edge; the getter returns null when not replaying.
+let _replaySource = null;
+function setReplaySource(fn) { _replaySource = fn; }
+
 // v0.6.4 — memoized lazy module refs for the per-frame hot path. These
 // were inline `require(...)` calls re-evaluated EVERY render: route ×6
 // (resolveTarget for the viewer target), chrome ×4 (chromeFor). The
@@ -700,6 +707,12 @@ function render(model) {
     if (!curOverlayFlags.has(flag)) { _frame.forceFull = true; break; }
   }
   _frame.prevOverlayFlags = curOverlayFlags;
+  // v0.6.6 replay arc — the replay-control pane is module-flagged (not in
+  // model.modes), so track its open/close here for the same force-full-on-drop.
+  const replayData = _replaySource ? _replaySource() : null;
+  const replayPaneOpen = !!(replayData && replayData.paneOpen);
+  if (_frame.prevReplayPane && !replayPaneOpen) _frame.forceFull = true;
+  _frame.prevReplayPane = replayPaneOpen;
 
   let mainDidFull;
   // viewMode lives on the layout Component slice (Phase 1b).
@@ -756,6 +769,8 @@ function render(model) {
   if (md.paneMenuMode) _paneMenu().render();
   if (md.jobsMode)    renderJobsOverlay(now);
   if (md.diagLogMode) require('../overlay/diag-log').renderDiagLog(now);
+  // v0.6.6 replay arc — interactive replay-control pane (floats over all).
+  if (replayPaneOpen) require('../overlay/replay-control').render(replayData);
 
   // Cursor visibility — derived from mode state, single emission site.
   // Cursor *position* is set inline by renderTerminalOverlay (when in
@@ -815,7 +830,7 @@ function invalidateRows(startY, endY) {
 
 module.exports = {
   render, renderTerminalOverlay,
-  forceFullRepaint, invalidateRows,
+  forceFullRepaint, invalidateRows, setReplaySource,
   // v0.6.3 P2 test seam: _normalizeRender enforces the Rect contract
   // (exactly h lines of width w). Exposed so test-rect-contract.js
   // can exercise both check mode (env LAZYTUI_RENDER_CHECK=1 → throws

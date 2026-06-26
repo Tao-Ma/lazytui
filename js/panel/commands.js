@@ -178,12 +178,14 @@ const FRAMEWORK_COMMANDS = [
   },
   {
     name: 'record-load',
-    desc: 'Recover a recorded session into the live windows — :record-load [file]',
+    desc: 'Replay a recorded session interactively — :record-load [file]  (p: controls, q: exit)',
     run: (args) => {
       const { appendViewerLines } = require('./nav-state');
       const file = (args && args.join(' ').trim().replace(/^(['"])(.*)\1$/, '$2')) || undefined;
       const path = _host.recordLoad(file);
-      appendViewerLines(path ? `[green]Recovering session ←[/] ${path}` : `[red]:record-load — no session file[/]`);
+      appendViewerLines(path
+        ? `[green]Replaying[/] ${path}  [dim]— j/k seek · space play · b reverse · q exit[/]`
+        : `[red]:record-load — no session file[/]`);
     },
   },
   {
