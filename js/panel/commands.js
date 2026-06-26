@@ -164,6 +164,35 @@ const FRAMEWORK_COMMANDS = [
       _host.dispatchMsg(wrap('layout', { type: 'remove_column', columnIndex: n1 - 1 }));
     },
   },
+  {
+    name: 'record-save',
+    desc: 'Record the session — :record-save [file]  (checkpoints state, then logs follow-ups)',
+    run: (args) => {
+      const { appendViewerLines } = require('./nav-state');
+      const file = (args && args.join(' ').trim().replace(/^(['"])(.*)\1$/, '$2')) || undefined;
+      const path = _host.recordSave(file);
+      appendViewerLines(`[green]Recording session →[/] ${path}`);
+    },
+  },
+  {
+    name: 'record-load',
+    desc: 'Recover a recorded session into the live windows — :record-load [file]',
+    run: (args) => {
+      const { appendViewerLines } = require('./nav-state');
+      const file = (args && args.join(' ').trim().replace(/^(['"])(.*)\1$/, '$2')) || undefined;
+      const path = _host.recordLoad(file);
+      appendViewerLines(path ? `[green]Recovering session ←[/] ${path}` : `[red]:record-load — no session file[/]`);
+    },
+  },
+  {
+    name: 'record-stop',
+    desc: 'Stop recording the session',
+    run: () => {
+      const { appendViewerLines } = require('./nav-state');
+      _host.recordStop();
+      appendViewerLines('[green]Recording stopped[/]');
+    },
+  },
 ];
 
 /**

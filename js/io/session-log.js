@@ -97,6 +97,31 @@ function attachStream(filepath) {
 
 function detachStream() { _streamPath = null; }
 
+/** Begin live streaming to `filepath`, SEEDED with the current buffer so the
+ *  file is self-contained: writes a header + every buffered entry (e.g. a
+ *  checkpoint just recorded by record-save), then appends subsequent entries.
+ *  This is the mid-session `record-save` path — vs attachStream, which appends
+ *  only future entries. */
+function streamTo(filepath) {
+  detachStream();
+  try {
+    const lines = [JSON.stringify({ kind: 'header', lazytui: version, t: Date.now() })];
+    for (const e of _buf) lines.push(JSON.stringify(e));
+    fs.writeFileSync(filepath, lines.join('\n') + '\n');
+    _streamPath = filepath;
+  } catch (e) {
+    process.stderr.write(`session-log: cannot open ${filepath}: ${e.message}\n`);
+    _streamPath = null;
+  }
+  return _streamPath;
+}
+
+/** The file currently being streamed to, or null. */
+function streamPath() { return _streamPath; }
+
+// Default session-file path when a record-save/load command omits one.
+const DEFAULT_SESSION_FILE = 'lazytui-session.jsonl';
+
 // --- Persistence ----------------------------------------------------------
 
 /** Write the full buffer to `filepath` as JSONL (header line + one entry per
@@ -171,7 +196,7 @@ function size()             { return _buf.length; }
 module.exports = {
   record, recordMsg, recordTerm, recordCheckpoint,
   enable, isEnabled, clear, snapshot, size,
-  attachStream, detachStream, save, load,
+  attachStream, detachStream, streamTo, streamPath, DEFAULT_SESSION_FILE, save, load,
   encodeJson, decodeJson,
 };
 

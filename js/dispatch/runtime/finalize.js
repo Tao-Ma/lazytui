@@ -56,7 +56,7 @@ function setInstanceReconciler(fn) { _instanceReconciler = fn; }
 // Used by replay's checkpoint restore (./replay restoreState) to recreate the
 // per-pane instance set from a restored arrange BEFORE the per-pane slices are
 // written — "mint-on-restore", so a checkpoint can be restored into a BARE
-// registry (the --replay CLI), not only an already-booted app. Calls the same
+// registry (the --record-load CLI), not only an already-booted app. Calls the same
 // injected reconciler the finalizer uses (no dispatch→app import here), then
 // syncs the arrange gate so the next finalizeDispatch doesn't redundantly redo
 // it. No-op if no reconciler is wired.
