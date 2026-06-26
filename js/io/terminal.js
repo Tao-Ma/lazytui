@@ -130,6 +130,13 @@ function sessionViewportRows(id, height, width) {
   return s ? emu.readViewport(s.screen, height, width) : { viewportY: 0, rows: [] };
 }
 
+/** The session's cursor position within the viewport ({x, y}, 0-based), or null
+ *  — render places the real screen cursor here in terminal mode. */
+function sessionCursor(id) {
+  const s = sessions[id];
+  return s ? emu.screenCursor(s.screen) : null;
+}
+
 /** A session's screen geometry { cols, rows } (the finalizer's resize check). */
 function sessionSize(id) {
   const s = sessions[id];
@@ -179,8 +186,13 @@ function snapshotAllSessions() {
 }
 
 /** Replay: create a PTY-less session from a checkpoint snapshot (instant resume
- *  without re-feeding from spawn). `cb` fires once the screen is reconstructed. */
+ *  without re-feeding from spawn). `cb` fires once the screen is reconstructed.
+ *  Disposes any existing session for `id` FIRST — reverseTo/replayTo restore over
+ *  the same ids every frame/seek, and restoreLiveSessions restores over a live
+ *  (PTY-backed) id; without this the old emulator screen (and, for a live id, its
+ *  PTY + onData listener) would leak. */
 function restoreReplaySession(id, snap, cb) {
+  if (sessions[id]) destroySession(id);
   sessions[id] = { pty: null, screen: emu.restoreScreen(snap, cb), cmd: null, cwd: null,
     exited: false, exitCode: null, _onDataSub: null, replay: true };
   return sessions[id];
@@ -290,7 +302,7 @@ function sessionScrollInfo(id) {
 
 module.exports = {
   ensureSession, getSession, writeToSession,
-  sessionViewportRows, sessionSize,
+  sessionViewportRows, sessionCursor, sessionSize,
   resizeSession, destroySession, destroyAll,
   restartSession, isSessionDead,
   ensureReplaySession, feedReplay, markReplayExit,

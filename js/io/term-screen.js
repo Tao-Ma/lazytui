@@ -73,6 +73,13 @@ function screenScrollInfo(screen) {
 /** The child's DEC mouse-tracking mode ('none' | x10 | vt200 | drag | any). */
 function screenMouseMode(screen) { return screen.modes.mouseTrackingMode; }
 
+/** The cursor position within the viewport ({x, y}, 0-based) — for placing the
+ *  real screen cursor over the embedded terminal in terminal mode. */
+function screenCursor(screen) {
+  const buf = screen.buffer.active;
+  return { x: buf.cursorX, y: buf.cursorY };
+}
+
 /** The visible viewport as plain-text rows (the render read). `rows[i]` is the
  *  i-th visible line via translateToString (caller pads to width). */
 function readViewport(screen, height, width) {
@@ -113,6 +120,6 @@ function restoreScreen(snap, cb) {
 module.exports = {
   createScreen, writeScreen, resizeScreen, disposeScreen, screenSize,
   scrollScreen, scrollScreenPages, scrollScreenToTop, scrollScreenToBottom,
-  screenScrollInfo, screenMouseMode, readViewport,
+  screenScrollInfo, screenMouseMode, readViewport, screenCursor,
   serializeScreen, restoreScreen,
 };

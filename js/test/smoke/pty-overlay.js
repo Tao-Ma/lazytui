@@ -32,6 +32,8 @@ const MARKER = 'PTYMARKER_4F2A';
 const BOOT_MS = 2000;       // boot + first paint (matches boot.js settle)
 const AFTER_KEY_MS = 2000;  // PTY spawn + echo + overlay paint
 const RESIZE_MS = 1200;     // resize → term_resized → finalizer resizeSession
+const TERM_MODE_MS = 1000;  // Enter → terminal_enter → terminalMode render (cursor path)
+const delay = (ms) => new Promise(r => setTimeout(r, ms));
 
 function run() {
   return new Promise((resolve) => {
@@ -42,23 +44,29 @@ function run() {
     });
     term.onData((d) => { out += d; });
     term.onExit((e) => { exitCode = e.exitCode; });
-    setTimeout(() => {
+    (async () => {
+      await delay(BOOT_MS);
+      try { term.write('\x1b[C'); } catch (_) {}   // focus the viewer pane (right column)
+      await delay(300);
       // Cycle the viewer to its terminal tab. `]` is next_tab.
       try { term.write(']'); } catch (_) {}
-      setTimeout(() => {
-        try { term.write(']'); } catch (_) {}
-        setTimeout(() => {
-          // Resize the outer terminal → term_resized Msg → finalizer →
-          // resizeSession on the active PTY. Must not crash.
-          try { term.resize(100, 30); } catch (_) {}
-          setTimeout(() => {
-            const captured = out;
-            try { term.kill(); } catch (_) {}
-            resolve({ out: captured, exitCode });
-          }, RESIZE_MS);
-        }, AFTER_KEY_MS);
-      }, 300);
-    }, BOOT_MS);
+      await delay(300);
+      try { term.write(']'); } catch (_) {}
+      await delay(AFTER_KEY_MS);
+      // Resize the outer terminal → term_resized Msg → finalizer →
+      // resizeSession on the active PTY. Must not crash.
+      try { term.resize(100, 30); } catch (_) {}
+      await delay(RESIZE_MS);
+      // Enter on the focused terminal tab → terminal_enter → terminalMode, whose
+      // render positions the screen cursor at the PTY cursor (via the io/term-screen
+      // port). The v0.6.6 port refactor regressed this into a `buffer is not defined`
+      // ReferenceError → fatal exit; this step is the regression guard.
+      try { term.write('\r'); } catch (_) {}
+      await delay(TERM_MODE_MS);
+      const captured = out;
+      try { term.kill(); } catch (_) {}
+      resolve({ out: captured, exitCode });
+    })();
   });
 }
 
@@ -80,6 +88,15 @@ function run() {
       const seen = out.includes(MARKER);
       if (!seen) console.error(`  ↳ marker '${MARKER}' not found; output tail:\n${out.slice(-800)}`);
       assert(seen, `terminal command output '${MARKER}' rendered in the overlay`);
+    });
+
+    it('survives entering terminal mode — renders the PTY cursor, no undefined-buffer crash', () => {
+      // The terminalMode render reads the cursor via the io/term-screen port; the
+      // v0.6.6 port refactor left a dangling `buffer` reference there → fatal
+      // ReferenceError on focus-in. A crash exits 1 + logs to stderr (captured).
+      const crashed = /uncaughtException|ReferenceError|is not defined/.test(out);
+      if (crashed) console.error(`  ↳ crash entering terminal mode:\n${out.slice(-800)}`);
+      assert(exitCode === null && !crashed, 'no crash on terminal_enter (cursor render path)');
     });
   });
 

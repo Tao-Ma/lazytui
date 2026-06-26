@@ -1,6 +1,6 @@
 /**
- * `--replay <session.jsonl>` — reconstruct a recorded session from its WAL and
- * print the frame. Headless: no TTY required, no PTY spawned, no subscriptions
+ * `--record-print <session.jsonl>` — reconstruct a recorded session from its WAL
+ * and print the frame. Headless: no TTY required, no PTY spawned, no subscriptions
  * armed (the replay flag suppresses effects + the finalizer's IO; the recorded
  * Msg stream alone drives state). Takes no config — the recorded `set_config`
  * Msg carries it.
@@ -66,7 +66,7 @@ function runReplay(file, opts = {}) {
 
   let log;
   try { log = sessionLog.load(file); }
-  catch (e) { console.error(`--replay: cannot read ${file}: ${e.message}`); return 1; }
+  catch (e) { console.error(`--record-print: cannot read ${file}: ${e.message}`); return 1; }
 
   const targetSeq = (opts.seq != null && Number.isFinite(opts.seq)) ? opts.seq : Infinity;
   // Seek to the nearest checkpoint and fold forward (mint-on-restore recreates

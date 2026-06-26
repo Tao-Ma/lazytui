@@ -368,7 +368,7 @@ function renderData() {
 module.exports = {
   active, enter, exit,
   seekToCheckpoint, stepSeq, seekToEnd, seekToFraction, play, pause, setRatio,
-  toggleMode, cycleIdleCap, cyclePane, cycleDiff,
+  toggleMode, cycleIdleCap, cyclePane,
   handleKey, renderData,
   // test seams
   _state: () => S,
