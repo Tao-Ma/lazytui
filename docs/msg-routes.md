@@ -998,10 +998,10 @@ A grep-diff of the catalog against the whole `js/` tree (excl. tests):
   Msgs the first pass's `[a-z_]+` grep missed (`dockerPoll`, `dockerResult`,
   `dirLoaded`, `showHidden`, `cfgStatusResult` — all in §7.8). (The `dockerTick`
   self-re-arm Msg was retired in v0.6.6 FIX-3 — the poll is an `interval` Sub.)
-- **Every effect is documented.** All 34 `registerEffect('…')` types appear in
-  §8.1 (framework, 23) or §8.2 (component, 9) or are the 2 test-only fixtures.
-  (Was 35 — the `dockerEventsStart` component effect was retired in v0.6.6 FIX-3;
-  the `docker events` watcher is now the generic `process-stream` Sub kind.)
+- **Every effect is documented.** Every `registerEffect('…')` type appears in
+  §8.1 (framework) or §8.2 (component) or is one of the test-only fixtures.
+  (The `dockerEventsStart` component effect was retired in v0.6.6 FIX-3 — the
+  `docker events` watcher is now the generic `process-stream` Sub kind.)
 - **`viewer_set_viewport` is comment-only** (`viewer.js:63`) — a referenced-but-
   never-implemented Msg; correctly NOT in the catalog.
 - **The non-Msg `case` strings** the broad grep surfaced are the input-verb /
