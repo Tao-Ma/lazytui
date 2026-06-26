@@ -74,7 +74,13 @@ as its reference implementation. Spec: [docs/v0.6.6.md](docs/v0.6.6.md).
   the checkpoints by timestamp, with a cursor to scrub and play / pause / fast-forward /
   reverse; the panels underneath reconstruct to the current point. (`--record-print <file>`
   is the headless variant — reconstruct, print the frame, exit — for scripts / CI.)
-  Spec: [docs/v0.6.6-replay.md](docs/v0.6.6-replay.md).
+  Playback runs on a **monotonic-anchored presentation clock** (drift-free, self-correcting)
+  with a steady ~30 fps scheduler that skips frames that don't change — so speed is smooth
+  regardless of per-frame reconstruction cost. Two modes (toggle `m`): **realtime**, which
+  reproduces the recording's pacing but **caps idle gaps** (cycle the cap with `i`) so dead
+  air never freezes playback, and **even**, a fixed entries/sec review pace. Forward play
+  folds only the new entries; reverse uses a bounded per-checkpoint-interval model snapshot
+  ladder for flat per-frame cost. Spec: [docs/v0.6.6-replay.md](docs/v0.6.6-replay.md).
 - **Terminal-emulator port.** The embedded terminal's emulator now sits behind a
   defined screen port (`io/term-screen.js`) — the one module that imports it — so the
   session layer, render, and the replay snapshot all reach the screen through a small
