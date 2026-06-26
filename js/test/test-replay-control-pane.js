@@ -94,11 +94,11 @@ function boot() {
   const pausedNull = replayControl._state().playing;
 
   // overlay render (pane is open — default 'full')
-  const overlayFrame = stripAnsi(capOut(() => require('../overlay/replay-control').render(replayControl.renderData())));
+  const overlayFrame = stripAnsi(capOut(() => require('../overlay/replay-scrubber').render(replayControl.renderData())));
   const fullView = replayControl._state().paneView;
 
   // cycle the pane view: full → mini → hidden → full
-  const drawPane = () => stripAnsi(capOut(() => require('../overlay/replay-control').render(replayControl.renderData())));
+  const drawPane = () => stripAnsi(capOut(() => require('../overlay/replay-scrubber').render(replayControl.renderData())));
   replayControl.cyclePane();                       // → mini
   const miniView = replayControl._state().paneView;
   const miniFrame = drawPane();
@@ -272,7 +272,7 @@ function boot() {
   describe('[7] mini-bar click hit-test → seek fraction', () => {
     const draw = require('../leaves/render/draw');
     draw.setDimsProvider(() => ({ cols: 100, rows: 30 }));
-    const ov = require('../overlay/replay-control');
+    const ov = require('../overlay/replay-scrubber');
     const data = { paneView: 'mini', checkpoints: [{ seq: 1, t: 0, idx: 0 }, { seq: 9, t: 0, idx: 9 }], cursor: 0, idx: 5, pos: 5, total: 20, t: 1000, firstT: 1000, lastT: 2000, playing: null, ratio: 1, mode: 'realtime', idleCap: 1000 };
     const row = ov._miniGeom(data).box.offY + 1;
     let first = null, last = null;

@@ -787,7 +787,7 @@ function render(model) {
   if (md.jobsMode)    renderJobsOverlay(now);
   if (md.diagLogMode) require('../overlay/diag-log').renderDiagLog(now);
   // v0.6.6 replay arc — interactive replay-control pane (floats over all).
-  if (replayData && replayView !== 'hidden') require('../overlay/replay-control').render(replayData);
+  if (replayData && replayView !== 'hidden') require('../overlay/replay-scrubber').render(replayData);
 
   // Cursor visibility — derived from mode state, single emission site.
   // Cursor *position* is set inline by renderTerminalOverlay (when in

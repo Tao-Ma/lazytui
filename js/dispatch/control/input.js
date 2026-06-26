@@ -516,7 +516,7 @@ function handleMouse(kind, x, y) {
   const _rc = require('../runtime/replay-control');
   if (_rc.active()) {
     if (kind === 'press') {
-      const f = require('../../overlay/replay-control').hitTestSeek(mx, my, _rc.renderData());
+      const f = require('../../overlay/replay-scrubber').hitTestSeek(mx, my, _rc.renderData());
       if (f != null) _rc.seekToFraction(f);
     }
     return;

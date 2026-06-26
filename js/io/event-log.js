@@ -1,10 +1,12 @@
 /**
- * Event log — an in-memory ring buffer of input events that drove the
- * TUI session. The recorder side of TEA item #2 (PRINCIPLES.md §11
- * sets the idempotence guarantee that makes a future replay
- * deterministic; this file is the producer).
+ * Event log — an in-memory ring buffer of input events and diagnostics
+ * from the running TUI session. This is a DIAGNOSTIC trail (it backs the
+ * diag-log overlay and the optional `save(path)` dump), NOT the replay
+ * recorder. Deterministic session reconstruction is driven by
+ * io/session-log.js — a Msg-level write-ahead log shipped in the v0.6.6
+ * replay arc; this file is input-level and intentionally lossy.
  *
- * What gets recorded — *inputs to the system*, not outputs:
+ * What gets recorded — *inputs to the system* and diagnostics, not outputs:
  *
  *   - `key`     — every key event passed through dispatch.handleKey
  *   - `refresh` — each refreshAll tick start (no payload — just the marker)
@@ -13,9 +15,9 @@
  *   - `input`   — edge-case input markers (oversize paste, unknown escape seq)
  *   - `warning` / `error` — diagnostics funneled here for the recorded trail
  *
- * NOTE: mouse events are NOT recorded today — the recorder is incomplete even as
- * an input log (and is input-level, not a Msg-level log; see
- * docs/v0.6.6-replay-readiness.md for what a future replay feature actually needs).
+ * NOT a replay source: it is input-level (not Msg-level), bounded (oldest
+ * events drop), and incomplete (e.g. mouse events are not recorded). For
+ * replay see io/session-log.js.
  *
  * What is NOT recorded — render calls, internal state mutations,
  * panel renders. These are responses, not inputs, and would flood the
@@ -28,11 +30,6 @@
  *
  * No I/O happens here unless the caller asks: `save(path)` writes the
  * current buffer as JSON. The recorder itself is silent.
- *
- * Replay is *not* implemented in v0.2.0 — see CHANGELOG. The recorded
- * shape is forward-compatible with a future replayer that re-injects
- * key/mouse/refresh events into dispatch.handleKey / handleMouse /
- * refreshAll.
  */
 'use strict';
 
