@@ -242,6 +242,7 @@ function main() {
   if (recordSaveFile) {
     const sessionLog = require('../io/session-log');
     sessionLog.enable(true);
+    sessionLog.setCheckpointCadence(sessionLog.DEFAULT_CHECKPOINT_CADENCE);
     sessionLog.attachStream(recordSaveFile);
   }
 

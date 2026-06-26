@@ -51,10 +51,11 @@ cap(() => {
   loop.dispatchMsg(api.wrap('layout', { type: 'focus_set', focus: 'groups' }));
   dispatch.navSelect('groups', 1);
 });
-const savedPath = rc.save(wal);
+const saved = rc.save(wal);
 const enabledAfterSave = sessionLog.isEnabled();
 const streamAfterSave = sessionLog.streamPath();
 const fileAfterSave = fs.readFileSync(wal, 'utf8').trim().split('\n');
+const savedAgain = rc.save(wal);   // repeated record-save while already recording → skipped
 
 cap(() => {
   state.toggleMultiSel('groups', 'g1');
@@ -80,13 +81,18 @@ const reconstructedEnc = enc(replay.snapshotState());
 
 describe('[1] record-save writes a self-contained file (checkpoint-seeded)', () => {
   it('returns the path and enables streaming to it', () => {
-    eq(savedPath, wal, 'returns the file path');
+    eq(saved.path, wal, 'returns the file path');
+    assert(!saved.skipped, 'not skipped on first save');
     assert(enabledAfterSave, 'recording enabled after save');
     eq(streamAfterSave, wal, 'streaming to the file');
   });
   it('the first non-header entry is a checkpoint', () => {
     eq(JSON.parse(fileAfterSave[0]).kind, 'header', 'header first');
     eq(JSON.parse(fileAfterSave[1]).kind, 'checkpoint', 'checkpoint seed second');
+  });
+  it('a repeated record-save while recording is skipped', () => {
+    assert(savedAgain.skipped, 'second save skipped');
+    eq(savedAgain.path, wal, 'reports the in-progress path');
   });
 });
 

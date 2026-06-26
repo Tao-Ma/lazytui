@@ -125,6 +125,14 @@ function checkpointNow() {
   });
 }
 
+/** Auto-cadence checkpoint: called once per outermost dispatch by the finalizer.
+ *  Writes a checkpoint when recording is on AND the cadence is due, so a long
+ *  recording stays fast to seek. A no-op otherwise (the common case). */
+function maybeCheckpoint() {
+  const sessionLog = require('../../io/session-log');
+  if (sessionLog.isEnabled() && sessionLog.checkpointDue()) checkpointNow();
+}
+
 /**
  * Replay a WAL up to `targetSeq` (default: the whole log). Seeks to the latest
  * checkpoint at or before the target (the resume optimization), restores it,
@@ -172,5 +180,5 @@ function replayTo(log, targetSeq = Infinity, opts = {}) {
 module.exports = {
   isReplaying, setReplaying,
   snapshotState, restoreState, replayEntries,
-  checkpointNow, replayTo,
+  checkpointNow, maybeCheckpoint, replayTo,
 };

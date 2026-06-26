@@ -66,8 +66,10 @@ as its reference implementation. Spec: [docs/v0.6.6.md](docs/v0.6.6.md).
   are identical to the original (the embedded terminal is reconstructed from its recorded
   byte stream — the materialized proof of `frame = f(model)` for everything except, and
   now including via the side-channel, the terminal island). **Checkpoints** snapshot the
-  full state so reconstruction can seek instead of folding from the start. Spec:
-  [docs/v0.6.6-replay.md](docs/v0.6.6-replay.md).
+  full state so reconstruction can seek instead of folding from the start; while
+  recording, one is written automatically every ~250 messages, so even a long session
+  stays fast to recover (a repeated `:record-save` while already recording is a no-op).
+  Spec: [docs/v0.6.6-replay.md](docs/v0.6.6-replay.md).
 - **Terminal-emulator port.** The embedded terminal's emulator now sits behind a
   defined screen port (`io/term-screen.js`) — the one module that imports it — so the
   session layer, render, and the replay snapshot all reach the screen through a small
