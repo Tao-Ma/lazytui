@@ -509,6 +509,19 @@ function handleMouse(kind, x, y) {
   const mx = x - 1;
   const my = y - 1;
 
+  // v0.6.6 replay arc — while interactive replay is active it OWNS all mouse
+  // input (the reconstructed app underneath is frozen). A press on the mini
+  // bar's progress strip seeks to that position; every other mouse event is
+  // consumed. Mirrors the keyboard early-route in dispatch.handleKey.
+  const _rc = require('../runtime/replay-control');
+  if (_rc.active()) {
+    if (kind === 'press') {
+      const f = require('../../overlay/replay-control').hitTestSeek(mx, my, _rc.renderData());
+      if (f != null) _rc.seekToFraction(f);
+    }
+    return;
+  }
+
   // Panel-chrome glyph clicks — single early hit-test site for both
   // [_]/[+] (collapse, always-on) and [X] (close, free-config-only).
   // The close-button paint is itself gated on free-config in render(),

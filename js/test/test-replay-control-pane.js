@@ -236,6 +236,11 @@ function boot() {
   const idxAfterCap = replayControl._state().idx;
   const capChanged = replayControl._state().idleCap;
 
+  // --- mouse: seekToFraction (the mini-bar click target) maps 0/0.5/1 ---
+  replayControl.seekToFraction(0);   const fracIdx0 = replayControl._state().idx;
+  replayControl.seekToFraction(1);   const fracIdx1 = replayControl._state().idx;
+  replayControl.seekToFraction(0.5); const fracIdxMid = replayControl._state().idx;
+
   api.scheduleRender = origSched;
   replayControl.exit();
 
@@ -248,6 +253,30 @@ function boot() {
     it('reverse play reconstructs == replayTo at the same idx', () => { assert(idxRev < end, `idxRev ${idxRev} < end ${end}`); eq(revState, revRef); });
     it('slow mode (sub-1× speed) advances at half rate', () => { eq(ratioHalf, 0.5); eq(ratioQuarter, 0.25); eq(idxSlow, 2); });
     it('mode toggle + idle-cap cycle preserve position', () => { eq(idxAfterToggle, idxBeforeToggle); eq(idxAfterCap, idxBeforeToggle); assert(capChanged !== 1000, 'cap advanced from default'); });
+    it('seekToFraction maps 0 / 0.5 / 1 to the position', () => { eq(fracIdx0, 0); eq(fracIdx1, end); eq(fracIdxMid, Math.round(0.5 * end)); });
+  });
+
+  describe('[7] mini-bar click hit-test → seek fraction', () => {
+    const draw = require('../leaves/render/draw');
+    draw.setDimsProvider(() => ({ cols: 100, rows: 30 }));
+    const ov = require('../overlay/replay-control');
+    const data = { paneView: 'mini', checkpoints: [{ seq: 1, t: 0, idx: 0 }, { seq: 9, t: 0, idx: 9 }], cursor: 0, idx: 5, pos: 5, total: 20, t: 1000, firstT: 1000, lastT: 2000, playing: null, ratio: 1, mode: 'realtime', idleCap: 1000 };
+    const row = ov._miniGeom(data).box.offY + 1;
+    let first = null, last = null;
+    for (let mx = 0; mx < 300; mx++) { const f = ov.hitTestSeek(mx, row, data); if (f != null) { if (first == null) first = mx; last = mx; } }
+    it('the bar is a contiguous strip whose ends map to 0 and 1', () => {
+      assert(first != null && last > first, `bar cols ${first}..${last}`);
+      eq(ov.hitTestSeek(first, row, data), 0);
+      eq(ov.hitTestSeek(last, row, data), 1);
+    });
+    it('a click mid-bar is ~0.5', () => {
+      assert(Math.abs(ov.hitTestSeek(Math.round((first + last) / 2), row, data) - 0.5) <= 0.1, 'mid frac');
+    });
+    it('off-bar / wrong row / non-mini → null', () => {
+      eq(ov.hitTestSeek(first - 1, row, data), null);
+      eq(ov.hitTestSeek(first, row - 1, data), null);
+      eq(ov.hitTestSeek(first, row, { ...data, paneView: 'full' }), null);
+    });
   });
 
   try { fs.unlinkSync(wal); } catch {}

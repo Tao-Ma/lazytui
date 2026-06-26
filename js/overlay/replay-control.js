@@ -15,7 +15,7 @@
  */
 'use strict';
 
-const { renderOverlay, viewportDims } = require('../leaves/render/draw');
+const { renderOverlay, overlayBox, viewportDims } = require('../leaves/render/draw');
 
 const MAX_W = 56;       // full pane width cap
 const MINI_BAR = 16;    // mini progress-bar inner width
@@ -37,26 +37,56 @@ function render(data) {
   return renderFull(data);
 }
 
-// Compact bottom bar — play state / speed / seq / checkpoint cursor / elapsed /
-// progress. Anchored bottom-left, width hugs the content. The progress fill
-// shows position; pressing j/k/up/down jumps the fill to the target checkpoint
-// and `cp X/N` gives its index (no per-checkpoint tick glyphs — they buried the
-// fill once checkpoints got dense and added a glyph dependency for no real gain).
-function renderMini(data) {
-  const { cols: COLS, rows: ROWS } = viewportDims();
+// The mini line's text pieces — shared by the renderer AND the click hit-test so
+// the bar's column position can't drift between paint and click (the same
+// discipline overlayBox enforces for the box itself).
+function _miniParts(data) {
   const dt = ((data.t - data.firstT) / 1000).toFixed(1);
   const cpN = (data.checkpoints || []).length;
   const cpLabel = cpN ? `  cp ${data.cursor + 1}/${cpN}` : '';
+  const head = `${_sym(data)} ${data.ratio}×`;            // bolded in render
+  const tail = ` ${data.pos}/${data.total}${cpLabel}  +${dt}s  `;
+  return { head, tail, plain: head + tail };               // `plain` = visible width before the bar
+}
+
+// The mini box geometry — same anchor/width the renderer uses — plus the
+// screen-cell range the progress bar occupies, for click-to-seek.
+function _miniGeom(data) {
+  const { cols: COLS, rows: ROWS } = viewportDims();
+  const plainLen = _miniParts(data).plain.length + MINI_BAR;
+  const maxWidth = Math.min(MAX_W, COLS - 4, Math.max(24, plainLen + 2));
+  const box = overlayBox({ linesLen: 1, anchor: { x: 1, y: ROWS }, maxWidth });
+  return { box, maxWidth };
+}
+
+// Click hit-test for the mini progress bar → a fraction in [0,1], or null if the
+// click isn't on the bar (or the pane isn't in mini). mx,my are 0-based.
+function hitTestSeek(mx, my, data) {
+  if (!data || data.paneView !== 'mini') return null;
+  const { box } = _miniGeom(data);
+  if (my !== box.offY + 1) return null;                    // the single content row
+  const start = box.offX + 1 + _miniParts(data).plain.length;
+  const end = Math.min(start + MINI_BAR - 1, box.offX + box.menuW - 2);
+  if (mx < start || mx > end) return null;
+  return Math.max(0, Math.min(1, (mx - start) / (MINI_BAR - 1)));
+}
+
+// Compact bottom bar — play state / speed / seq / checkpoint cursor / elapsed /
+// progress. Anchored bottom-left, width hugs the content. The progress fill
+// shows position; pressing j/k/up/down (or clicking the bar) jumps to that
+// position and `cp X/N` gives the checkpoint index (no per-checkpoint tick
+// glyphs — they buried the fill when dense and added a glyph dependency).
+function renderMini(data) {
+  const { rows: ROWS } = viewportDims();
+  const { head, tail } = _miniParts(data);
   const total = data.total;
   const frac = total > 1 ? data.idx / (total - 1) : 1;
   const fill = Math.max(0, Math.min(MINI_BAR, Math.round(frac * MINI_BAR)));
   const bar = `[bold]${'█'.repeat(fill)}[/][dim]${'░'.repeat(MINI_BAR - fill)}[/]`;
-  const line = `[bold]${_sym(data)} ${data.ratio}×[/] ${data.pos}/${data.total}${cpLabel}  +${dt}s  ${bar}`;
-  const plainLen = line.replace(/\[[^\]]*\]/g, '').length;   // strip markup to size the box
   renderOverlay({
-    lines: [line], title: '',
-    maxWidth: Math.min(MAX_W, COLS - 4, Math.max(24, plainLen + 2)),
-    anchor: { x: 1, y: ROWS },   // clamps to bottom-left
+    lines: [`[bold]${head}[/]${tail}${bar}`], title: '',
+    maxWidth: _miniGeom(data).maxWidth,
+    anchor: { x: 1, y: ROWS },   // same inputs _miniGeom feeds overlayBox → same box
   });
 }
 
@@ -102,4 +132,4 @@ function renderFull(data) {
   });
 }
 
-module.exports = { render };
+module.exports = { render, hitTestSeek, _miniGeom };
