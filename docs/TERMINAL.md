@@ -1,445 +1,184 @@
-# Terminal Tabs Design
+# Terminal Subsystem
 
-> **Note.** This doc is the original design rationale, written before
-> the v0.5 architectural arc. Code snippets reference the retired `S`
-> shim — substitute as you read:
->
-> - `S.config.*`, `S.currentGroup`, `S.terminalMode`, `S.activeTab` →
->   `getModel().config.*` / `.currentGroup` / `.modes.terminalMode` /
->   `getInstanceSlice('detail').tab` respectively (every read goes
->   through `getModel()` / `getInstanceSlice(<tabId>)` now; v0.6.1
->   Phase 8 retired the `getComponentSlice` shim — for singleton
->   instances the tab id equals the Component name).
-> - `S.detailLines` → `getInstanceSlice('detail').lines`.
-> - `S.paneBounds` → `getInstanceSlice('layout').paneBounds`.
-> - Direct assignment like `S.terminalMode = true` → dispatch the
->   appropriate Msg (`terminal_enter` / `terminal_exit` for the flag,
->   wrapped Msgs into the owning Component for slice writes).
->
-> The live source is the authoritative reference:
-> `js/panel/viewer/tabs.js`, `js/panel/viewer/viewer.js`,
-> `js/io/terminal.js`, `js/render/layout.js#renderTerminalOverlay`.
+Embedded interactive PTY sessions (SSH, SQL REPL, a spawned long-running
+command) shown as a tab in the viewer pane. Backed by `node-pty` (real PTY)
++ `@xterm/headless` (the emulator/screen buffer). No tmux knowledge required.
 
-Embed interactive terminal sessions (SSH, SQL editor, REPL) as tabs
-in the detail panel. Users configure `terminals:` per group in YAML.
-The framework manages PTY sessions transparently — no tmux knowledge
-required.
+This is the **reference FOREIGN COMPONENT (`#D14`)** — an explicitly non-TEA
+island. Two documents own the contract; this file is the subsystem map:
 
-## Concept
+- `docs/foreign-components.md` — the foreign-component contract (terminal is its
+  reference implementation).
+- `js/io/terminal.js` header — the per-module statement of the mechanism.
+- `docs/v0.6.6-replay-readiness.md` — why the screen contents are outside replay.
+
+## The split: lifecycle in the model, contents in xterm
+
+`js/io/terminal.js` is a **true leaf** — its only requires are `node-pty` +
+`@xterm/headless`; it reaches nothing upward (no app model, no panel/api, no
+render, no jobs). It owns a `sessions` map of `{ pty, xterm, cmd, cwd, exited,
+exitCode, jobId }`.
+
+- The **model** holds the PTY *lifecycle*: which tab is a terminal, its
+  `cmd`/`cwd`, whether it's placed/active. Reconstructible by replay.
+- The **`@xterm/headless` buffer** holds the *contents*. PTY `onData` writes
+  that off-model buffer and triggers a repaint via the injected `_renderHook`,
+  **bypassing the Msg loop** — funnelling every PTY byte through a Msg would be
+  heavy and redundant (xterm.js *is* the emulator).
+- Consequence (bounded, documented): replaying the Msg log reconstructs the
+  model but NOT the terminal screen — the `#D5`/`#D14` replayability boundary.
+
+## Injected hooks (boot wiring)
+
+Everything `io/terminal.js` needs from higher layers is injected at boot from
+`js/panel/viewer/pty-lifecycle.js#install(host)` (each hook unset = the effect is
+skipped, so the leaf runs standalone in tests/scripts):
+
+| Setter | Wired to | Purpose |
+|--------|----------|---------|
+| `setExitHandler(fn)` | `pty-lifecycle.handleExit` | PTY-exit fan-out |
+| `setRenderHook(fn)` | `leaves/infra/render-queue.scheduleOverlay` | repaint after each xterm write |
+| `setJobsHooks({register, close})` | `feature/jobs` | jobs-registry adapter |
+
+The spawn cwd is **not** read from the model by the leaf — it rides in as an
+`ensureSession(id, cmd, cols, rows, cwd)` argument (callers pass
+`getModel().projectDir`).
+
+## Session interface (`js/io/terminal.js` exports)
 
 ```
-╭─(0)─Actions────────────────────────────────────────────╮
-│   Status                                                │
-│   Restart                                  [confirm]    │
-│   Logs                                          ⧉      │
-╰────────────────────────────────────1 of 3──────────────╯
-╭─(o)─Info─Status─SQL─SSH────────────────────────────────╮
-│ mysql> SELECT * FROM users LIMIT 5;                     │
-│ +----+-------+-------------------+                      │
-│ | id | name  | email             |                      │
-│ +----+-------+-------------------+                      │
-│ |  1 | alice | alice@example.com |                      │
-│ |  2 | bob   | bob@example.com   |                      │
-│ +----+-------+-------------------+                      │
-│ 2 rows in set (0.01 sec)                                │
-│                                                         │
-│ mysql> _                                                │
-╰─────────────────────────────────────────────────────────╯
- Ctrl+\ return to TUI ── terminal: SQL
+ensureSession(id, cmd, cols, rows, cwd)  lazy create-or-return; idempotent
+getSession(id)                            → session | null
+writeToSession(id, data)                  forward keystrokes to the PTY
+resizeSession(id, cols, rows)             resize PTY + xterm
+destroySession(id) / destroyAll()         kill + dispose (cleanup on quit)
+restartSession(id, cols, rows)            kill old, respawn with same cmd/cwd
+isSessionDead(id)                         → bool (process exited?)
+
+scrollback (v0.6.5 §5(a)):
+scrollSession(id, amount)                 ± lines (− = back into history)
+scrollSessionPages(id, n)                 ± pages
+scrollSessionToTop(id) / ...ToBottom(id)
+sessionScrollInfo(id)                     → { atBottom, linesBelow }
+sessionMouseMode(id)                      → child's DEC mouse mode ('none'|x10|…)
 ```
 
-Tabs in order: **Info** → **Transcript** (always, both implicit
-globals) → **action tabs** (`tab: true`) → **terminal tabs**
-(`terminals:`) → **content tabs** (file/docker opens). Cycle with
-`]`/`[`. Transcript was added in v0.6.2 to host the unrouted
-accumulator that pre-fix double-booked Info; details in
-`docs/DATAFLOW.md` § Unrouted accumulator.
+The scroll fns return whether the viewport actually moved (callers gate their
+repaint on it). Writing PTY output while scrolled up is sticky in xterm (`baseY`
+grows, `viewportY` holds), so the view stays put until the user returns to the
+bottom.
 
-## Why tabs, not panels
+## Lifecycle reconcile
 
-- Detail panel **already has tabs** — `]`/`[` cycling, tab bar in title
-- No panel identity refactor needed (detail is a singleton)
-- Terminals are long-lived sessions — tabs match the "switch context" UX
-- Existing layout, rendering, key handling all stay intact
-- Users see one thing at a time, focused — not a cluttered split view
+The PTY's lifecycle is reconciled by the **dispatch finalizer**
+(`js/dispatch/runtime/finalize.js`) — NOT by render. After each outermost
+dispatch, if the active tab is a terminal it `ensureSession`s + `resizeSession`s
+to the viewer pane's **committed** geometry (`geo.visibleBoundsFor`, so a
+free-config drag-preview doesn't churn SIGWINCH per zone crossing). Lazy: only
+the *active* terminal tab ever spawns; `ensureSession` is idempotent, so
+re-running per dispatch is a no-op once the session exists.
 
-## YAML Configuration
+PTY exit is **event-driven**, not polled:
+
+```
+node-pty onExit  →  _onSessionExit(id, exitCode)  →  _exitHandler
+                                                       = pty-lifecycle.handleExit
+```
+
+`handleExit` (`js/panel/viewer/pty-lifecycle.js`):
+- if the user was interacting with the just-exited session, dispatches
+  `{type:'terminal_exit'}` (clears `model.modes.terminalMode`);
+- if `viewMode` was `'full'` and this was the active terminal, dispatches a
+  `view_set`/`view_drop_full_to_normal` so the user lands somewhere reachable
+  (the reducer arm emits `force_full_repaint` on the full→normal transition);
+- on a clean exit (`exitCode === 0`), auto-removes the ephemeral tab via
+  `tabs.handleSessionCleanExit` (a non-zero exit stays so the user can read the
+  code; `x` closes it). Configured `terminals:` tabs never auto-remove.
+
+The jobs registry is updated through the injected `_jobs` adapter: a session
+registers a `kind:'pty'` job on spawn and closes it on exit/kill.
+
+## Rendering
+
+`renderTerminalOverlay` in `js/render/paint.js` reads `getSession()` /
+`sessionScrollInfo()` **live** and does a per-row diff against the session's
+`prevFrame` cache; the footer's terminal line lives in `js/render/footer.js`.
+Render is **read-only** for the PTY (the spawn/resize moved to the finalizer);
+it positions the overlay against the focused viewer's committed (or, mid-drag,
+preview) bounds.
+
+Two repaint paths drive the overlay:
+- **primary** — the `_renderHook` (`scheduleOverlay`) fired on each xterm write,
+  so keystroke echo lands within ~16ms.
+- **backstop** — the `#D15` model-conditional `interval` Sub
+  (`js/app/state.js#_appSubscriptions`, 250ms), declared *only while a terminal
+  tab is on-screen* (`_termTabOnScreen()`) and torn down when it leaves. It
+  exists to cover async PTY race windows the event-driven paths can miss; it is
+  NOT an always-on `setInterval` and NOT 100ms.
+
+When the viewport sits above the live bottom, a reverse-video `[↑N]` indicator
+(N = `linesBelow`) is stamped at the top-right inner cell; any scroll change
+forces an inner repaint so the tag self-clears on return to the bottom. A dead
+session shows a centered `Process exited: <code> — Enter restart, x close`
+prompt on the bottom content row.
+
+## Input (`js/dispatch/control/input.js`)
+
+When `model.modes.terminalMode` is true, the stdin closure routes the raw chunk
+to `_handleTerminalModeData`, bypassing normal key parsing.
+
+- **Exit key** — `Ctrl+\` (`0x1c`) dispatches `{type:'terminal_exit'}`; a
+  dead/missing session also exits (and drops the keystroke). The PTY child keeps
+  running.
+- **Scrollback keys** — `Shift+PageUp`/`PageDown` (`\x1b[5;2~` / `\x1b[6;2~`),
+  `Shift+Home`/`End` (`\x1b[1;2H` / `\x1b[1;2F`). Plain Page/Home/End fall
+  through to the child (less, vim).
+- **Smart mouse forwarding** — `_classifyTerminalChunk` (pure, unit-tested)
+  decides per chunk using `sessionMouseMode(id)`. When the child enabled DEC
+  mouse reporting (vim, htop, `less --mouse`), mouse bytes forward raw. When it
+  hasn't (`'none'`), the wheel is the framework's scrollback control (3 lines /
+  notch); non-wheel mouse is dropped; any non-mouse residue forwards.
+- **Snap to bottom** — an ordinary keystroke at the prompt first
+  `scrollSessionToBottom`s, so typing always leaves scrollback.
+
+Wheel-on-a-terminal-tab while *not* in terminal mode also scrolls the PTY
+scrollback (`_handleWheel` → `scrollSession`), not the viewer slice.
+
+`Enter` on a (focused) terminal tab calls `dispatch/control/actions.js#
+activateTerminal`: if the session is dead it `restartSession`s sized to the
+viewer's bounds, then dispatches `terminal_enter`.
+
+## YAML configuration
+
+Per-group `terminals:` entries (parser normalizes to `{ cmd, label }`):
 
 ```yaml
 groups:
   database:
-    label: Database
-    containers: [db-postgres, db-redis]
-    actions:
-      status:
-        cmd: docker compose ps
-        label: Status
-        tab: true                  # existing: action tab
-      restart:
-        script: docker compose restart
-        label: Restart
-        confirm: "Restart database?"
-    terminals:                     # new: terminal tabs
-      sql:
-        cmd: "psql -h localhost -U admin mydb"
-        label: "SQL Editor"
-      redis:
-        cmd: "redis-cli -h localhost"
-        label: "Redis CLI"
-
-  servers:
-    label: Servers
-    actions: { ... }
     terminals:
-      ssh:
-        cmd: "ssh user@prod"
-        label: "SSH"
-      logs:
-        cmd: "ssh user@prod tail -f /var/log/app.log"
-        label: "Live Logs"
+      sql:   { cmd: "psql -h localhost -U admin mydb", label: "SQL Editor" }
+      redis: { cmd: "redis-cli -h localhost",          label: "Redis CLI" }
 ```
 
-Result tab bars:
-- database group: `[Info]─Status─SQL─Redis`
-- servers group: `[Info]─Status─SSH─Live Logs`
-
-## Architecture
+Tab strip order (flat `slice.tab` index; see
+`js/leaves/wm/pane-tabs.js#flatTabInfo`):
 
 ```
-  detail panel
-  ┌──────────────────────────────────────┐
-  │  Tab 0: Info          S.detailLines  │  ← Rich markup pipeline
-  │  Tab 1: Status        S.detailLines  │  ← action tab (execSync)
-  │  Tab 2: SQL           PTY overlay    │  ← terminal tab
-  │  Tab 3: Redis         PTY overlay    │  ← terminal tab
-  └──────────────────────────────────────┘
-         ↓ (terminal tabs)
-  ┌──────────────────────────────────────┐
-  │  terminal.js                         │
-  │    sessions = {                      │
-  │      "database_sql":  { pty, xterm } │
-  │      "database_redis": { pty, xterm }│
-  │      "servers_ssh":   { pty, xterm } │
-  │    }                                 │
-  └──────────────────────────────────────┘
-         ↓                    ↓
-      node-pty          @xterm/headless
-    (real PTY)       (terminal emulator)
+[Info] [Transcript] [actionTabs…] [termTabs…] [contentTabs…]
+   0        1          2..             …            …
 ```
 
-## Tab System Changes
-
-### Current tab model
-
-```
-Tab 0:  Info            always present
-Tab 1+: action tabs     group.actions where tab: true
-Total:  1 + actionTabs.length
-```
-
-`S.activeTab` indexes into this flat list. The `tab_cycle` Msg cycles
-and executes action scripts.
-
-### New tab model
-
-```
-Tab 0:          Info            always present
-Tab 1..N:       action tabs     group.actions where tab: true
-Tab N+1..N+M:   terminal tabs   group.terminals entries
-Total:          1 + N + M
-```
-
-Terminal tabs are **passive** — switching to one doesn't execute
-anything. The PTY session runs continuously. Content updates via
-the 100ms overlay refresh.
-
-### Tab type detection
-
-```javascript
-function getTabInfo() {
-  const group = S.config.groups[S.currentGroup];
-  if (!group) return { actionTabs: [], termTabs: [], total: 1 };
-  const actionTabs = Object.entries(group.actions || {})
-    .filter(([, a]) => a.tab);
-  const termTabs = Object.entries(group.terminals || {});
-  return {
-    actionTabs,
-    termTabs,
-    total: 1 + actionTabs.length + termTabs.length,
-  };
-}
-
-function isTerminalTab() {
-  const { actionTabs } = getTabInfo();
-  return S.activeTab > actionTabs.length;
-}
-
-function activeTerminalId() {
-  const { actionTabs, termTabs } = getTabInfo();
-  const idx = S.activeTab - 1 - actionTabs.length;
-  if (idx < 0 || idx >= termTabs.length) return null;
-  return `${S.currentGroup}_${termTabs[idx][0]}`;
-}
-```
-
-## Input Routing
-
-### Three modes
-
-```
-                    ]  [  (cycle tabs)
-                  ┌───────────────────┐
-                  │                   │
-  ┌────────┐    focus    ┌──────────┐│   Enter    ┌──────────────┐
-  │  TUI   │ ──────────→ │ Terminal ││ ────────→  │  Terminal    │
-  │  Mode  │             │ Tab View ││            │  Input Mode  │
-  │        │ ←────────── │ (passive)│← ────────── │  (active)    │
-  └────────┘   ] [ or    └──────────┘   Ctrl+\    └──────────────┘
-             leave tab                             all keys → PTY
-```
-
-**TUI Mode** (normal): all keys handled by TUI. `]`/`[` cycles tabs.
-
-**Terminal Tab View** (passive): on a terminal tab, content shows
-live PTY output. TUI keys still work (navigate other panels, cycle
-tabs). You see the terminal but aren't typing into it.
-
-**Terminal Input Mode** (active): press `Enter` on a terminal tab to
-activate. All keystrokes forwarded to PTY via `pty.write()`. Only
-`Ctrl+\` (0x1c) intercepted to exit back to passive view.
-
-### Why Enter to activate, not auto-activate
-
-- `]`/`[` must work to cycle past terminal tabs
-- User can browse terminal output without capturing input
-- Explicit activation matches vim's terminal mode pattern
-- Clear mental model: view vs interact
-
-### Key handling (keys.js)
-
-```javascript
-// In handleKey, before normal mode:
-if (S.terminalMode) {
-  if (seq === '\x1c') {
-    // Ctrl+\ — exit terminal mode
-    S.terminalMode = false;
-    render();
-    return;
-  }
-  // Forward everything else to PTY
-  const id = activeTerminalId();
-  if (id) writeToSession(id, data);  // raw stdin data
-  return;
-}
-
-// In normal mode, Enter on a terminal tab:
-case 'run_selected':
-  if (isTerminalTab()) {
-    S.terminalMode = true;
-    render();  // update footer
-  } else { ... }
-```
-
-## Rendering Pipeline
-
-### Two-phase render for terminal tabs
-
-**Phase 1** — normal render (existing pipeline):
-When active tab is a terminal tab, `renderDetailPanel` returns panel
-with blank content lines. Borders and tab title render normally.
-
-**Phase 2** — terminal overlay (new):
-After main render, `renderTerminalOverlay()` writes PTY screen buffer
-content directly to the detail panel's content area coordinates.
-
-```
-render()
-  ├─ renderNormal/Half/Full()    ← phase 1 (all panels)
-  ├─ renderTerminalOverlay()     ← phase 2 (if terminal tab active)
-  └─ renderFooter()
-```
-
-### Overlay implementation
-
-```javascript
-function renderTerminalOverlay() {
-  if (!isTerminalTab()) return;
-  const id = activeTerminalId();
-  const session = getSession(id);
-  if (!session) return;
-
-  const bounds = S.paneBounds.detail;
-  if (!bounds) return;
-  const innerW = bounds.w - 2;
-  const innerH = bounds.h - 2;
-
-  const buffer = session.xterm.buffer.active;
-  for (let row = 0; row < innerH; row++) {
-    const line = buffer.getLine(row + buffer.viewportY);
-    moveTo(bounds.y + row + 2, bounds.x + 2);
-    if (line) {
-      stdout.write(line.translateToString(true, 0, innerW) + RESET);
-    }
-  }
-}
-```
-
-### Detail panel changes
-
-```javascript
-function renderDetailPanel(panel, w) {
-  // Terminal tab: blank content (overlay fills it)
-  if (isTerminalTab()) {
-    return renderPanel({
-      width: w, height: h, lines: [],
-      title: detailTitle(), hotkey: 'o',
-      focused: S.terminalMode,  // highlight border in terminal mode
-    });
-  }
-  // Info/action tab: existing behavior
-  return renderPanel({ ... S.detailLines ... });
-}
-```
-
-### Refresh interval
-
-```javascript
-// In tui.js — fast refresh for terminal content
-if (hasTerminals()) {
-  setInterval(() => {
-    if (isTerminalTab()) renderTerminalOverlay();
-  }, 100);
-}
-```
-
-Only the overlay refreshes at 100ms — borders, other panels, footer
-are NOT re-rendered. Minimal CPU cost.
-
-## Session Lifecycle
-
-### Creation (lazy)
-
-Sessions are created on first access, not at startup. When the user
-switches to a terminal tab for the first time:
-
-```javascript
-function ensureSession(id, cmd, cols, rows) {
-  if (sessions[id]) return sessions[id];
-  const pty = spawn(shell, ['-c', cmd], { cols, rows });
-  const xterm = new Terminal({ cols, rows });
-  pty.onData(data => xterm.write(data));
-  sessions[id] = { pty, xterm, cmd };
-  return sessions[id];
-}
-```
-
-### Persistence across group switches
-
-Terminal sessions persist for the TUI lifetime. Switching from
-database group to servers group hides the SQL tab but does NOT kill
-the psql session. Switching back shows it again, with state intact.
-
-Session key: `${groupName}_${terminalKey}` (e.g., `database_sql`).
-
-### Resize
-
-On terminal resize or layout change:
-
-```javascript
-function resizeSession(id, cols, rows) {
-  const s = sessions[id];
-  if (!s) return;
-  s.pty.resize(cols, rows);
-  s.xterm.resize(cols, rows);
-}
-```
-
-Called after `calcLayout()` when detail panel dimensions change.
-
-### Cleanup
-
-On TUI exit (`q`, `Ctrl+C`, cleanup):
-
-```javascript
-function destroyAll() {
-  for (const [id, s] of Object.entries(sessions)) {
-    s.pty.kill();
-    s.xterm.dispose();
-    delete sessions[id];
-  }
-}
-```
-
-### Session death
-
-If the PTY process exits (user types `exit`, command finishes):
-- Show exit status in the detail panel: `[Process exited: 0]`
-- Tab stays visible but becomes passive (no terminal mode)
-- Press Enter on a dead session could restart it
-
-## New Module: terminal.js
-
-```
-js/io/terminal.js (~80 lines)
-  sessions = {}                            // id → { pty, xterm, cmd }
-  ensureSession(id, cmd, cols, rows)       // lazy create
-  destroySession(id)                       // kill one
-  destroyAll()                             // kill all (cleanup)
-  getSession(id)                           // lookup
-  resizeSession(id, cols, rows)            // resize PTY + xterm
-  writeToSession(id, data)                 // forward keystroke
-  hasTerminals()                           // any groups have terminals?
-  isTerminalTab()                          // active tab is terminal?
-  activeTerminalId()                       // current terminal session id
-  getTabInfo()                             // { actionTabs, termTabs, total }
-```
-
-## Dependencies
-
-```
-node-pty           native C++ addon, real PTY allocation
-                   ~500KB, requires node-gyp to build
-                   used by: VS Code, Hyper, Tabby
-
-@xterm/headless    pure JS terminal emulator (no DOM)
-                   ~300KB, xterm.js project
-                   maintains virtual screen buffer
-```
-
-These are terminal emulation deps — fundamentally different from
-"framework deps". The TUI framework itself stays zero-dep.
-
-Install in tools build pipeline alongside Node.js:
-
-```bash
-# In Dockerfile.download or build-all.sh
-npm install --omit=dev node-pty @xterm/headless
-```
-
-## Files Changed
-
-| File | Change |
-|------|--------|
-| **terminal.js** (new) | Session management, tab helpers |
-| **detail.js** | Tab cycling includes terminals, terminal tab detection |
-| **renderers.js** | `detailTitle()` includes terminal tabs, blank content for terminal tabs |
-| **keys.js** | Terminal input mode (Ctrl+\ escape), Enter activates |
-| **layout.js** | `renderTerminalOverlay()` after main render |
-| **tui.js** | 100ms interval, destroyAll on cleanup |
-| **state.js** | `S.terminalMode` flag |
-| **parser/** | Allow `terminals:` section in group schema |
-
-No panel identity refactor. No layout changes. The existing detail
-panel tab system extends naturally.
-
-## Implementation Order
-
-1. **npm setup** — package.json with node-pty + @xterm/headless
-2. **terminal.js** — session management module
-3. **State** — add `S.terminalMode` to state.js
-4. **Tab system** — extend detail.js with terminal tab support
-5. **Rendering** — blank content + overlay in renderers.js/layout.js
-6. **Input routing** — terminal mode in keys.js
-7. **Lifecycle** — lazy create, resize, cleanup in tui.js
-8. **Parser** — `terminals:` in group schema (or test with JSON first)
-9. **Build** — integrate npm install into tools build pipeline
+Info + Transcript are implicit globals; `terminals:` entries and runtime
+ephemeral terminals share the term-tab band. Sessions are lazy (first
+activation), persist across group switches, and are keyed `${group}_${key}`.
+
+## Spawn / TTY handoff (`js/dispatch/runtime/action-runner.js`)
+
+A `type: spawn` action:
+- **outside tmux** — opens an embedded PTY *ephemeral* tab (`tabs.addEphemeralTab`)
+  and auto-zooms to `viewMode: 'full'` so the child owns the screen. The child
+  dies with the TUI (by design — in-process node-pty, not a survivable session).
+  `Ctrl+\` drops the zoom (`terminal_exit` → full→normal) but the child keeps
+  running; a clean exit (`exitCode === 0`) auto-closes the tab.
+- **inside tmux** (`$TMUX` set) — `tmux new-window` instead; a real OS-level
+  window beats an in-process tab for long-lived interactive sessions.
