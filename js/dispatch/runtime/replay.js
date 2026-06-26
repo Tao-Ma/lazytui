@@ -61,7 +61,7 @@ function snapshotState() {
  *  slice is restored first so the instance reconcile can read the restored
  *  arrange, the per-pane instance set is then recreated to match, and finally
  *  every slice is written into the now-existing instances. This makes checkpoint
- *  restore work from a BARE registry (the --replay CLI), not only an
+ *  restore work from a BARE registry (the --record-load CLI), not only an
  *  already-booted app; minting is a no-op when the instances already exist (the
  *  in-process case). */
 function restoreState(snap) {

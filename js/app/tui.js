@@ -27,9 +27,12 @@ Options:
   --list [filter]            Print every YAML action (path, label, desc).
                              Optional substring filters by path.
   --spec                     Print the Component authoring spec to stdout
-  --replay <session.jsonl>   Reconstruct a recorded session (LAZYTUI_REPLAY_LOG)
-                             and print the frame. Headless; --seq <n> renders
-                             the frame at WAL sequence n (default: end).
+  --record-save <file>       Record this session to <file> from boot (also via
+                             the :record-save cmdline verb mid-session).
+  --record-load <file>       Reconstruct a recorded session and print the frame.
+                             Headless; --seq <n> renders the frame at WAL
+                             sequence n (default: end). The :record-load verb
+                             recovers into the live windows instead.
   -h, --help                 Show this help, then exit
 
 Examples:
@@ -90,7 +93,8 @@ function main() {
   let execArgs = [];
   let listMode = false;
   let listFilter = null;
-  let replayFile = null;
+  let recordLoadFile = null;
+  let recordSaveFile = null;
   let replaySeq = null;
   const configArgs = [];
   for (let i = 0; i < args.length; i++) {
@@ -101,9 +105,12 @@ function main() {
     } else if (a === '--spec') {
       printSpec();
       process.exit(0);
-    } else if (a === '--replay') {
-      if (i + 1 >= args.length) { console.error('--replay requires <session.jsonl>'); process.exit(2); }
-      replayFile = args[++i];
+    } else if (a === '--record-load') {
+      if (i + 1 >= args.length) { console.error('--record-load requires <session.jsonl>'); process.exit(2); }
+      recordLoadFile = args[++i];
+    } else if (a === '--record-save') {
+      if (i + 1 >= args.length) { console.error('--record-save requires <session.jsonl>'); process.exit(2); }
+      recordSaveFile = args[++i];
     } else if (a === '--seq') {
       if (i + 1 >= args.length) { console.error('--seq requires <n>'); process.exit(2); }
       replaySeq = parseInt(args[++i], 10);
@@ -129,12 +136,13 @@ function main() {
       process.exit(2);
     } else configArgs.push(a);
   }
-  // Replay mode — reconstruct a recorded session from its WAL and print the
-  // frame. Headless (no TTY, no PTY spawn, no subscriptions); takes no config
-  // (the recorded set_config Msg carries it). v0.6.6 replay arc.
-  if (replayFile !== null) {
+  // Record-load (headless) — reconstruct a recorded session from its WAL and
+  // print the frame. No TTY, no PTY spawn, no subscriptions; takes no config
+  // (the recorded set_config Msg carries it). The in-TUI `:record-load` verb is
+  // the live-windows recover; this flag is its headless sibling. v0.6.6 replay arc.
+  if (recordLoadFile !== null) {
     const { runReplay } = require('./replay-cli');
-    process.exit(runReplay(replayFile, { seq: Number.isFinite(replaySeq) ? replaySeq : undefined }));
+    process.exit(runReplay(recordLoadFile, { seq: Number.isFinite(replaySeq) ? replaySeq : undefined }));
   }
 
   if (configArgs.length < 1) {
@@ -226,6 +234,16 @@ function main() {
   // any Component registers — a Component's update→effects must resolve at
   // first dispatch.
   require('../dispatch/runtime/effects').installBuiltins();
+
+  // --record-save <file>: start recording from boot (before loadConfig, so the
+  // set_config Msg is the first recorded entry → a self-contained WAL). The
+  // in-session `:record-save` verb checkpoints-then-streams instead; this flag
+  // streams from the start. v0.6.6 replay arc.
+  if (recordSaveFile) {
+    const sessionLog = require('../io/session-log');
+    sessionLog.enable(true);
+    sessionLog.attachStream(recordSaveFile);
+  }
 
   // Friendly one-line error instead of a Node stack trace if the config
   // is missing, empty, or malformed — every other config-shaped error

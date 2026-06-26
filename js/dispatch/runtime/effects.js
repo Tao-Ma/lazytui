@@ -52,9 +52,12 @@ function _effectHost() {
     const { streamCommand } = require('./stream');
     const { cleanup } = require('./cleanup');
     const { showHelp } = require('../../overlay/help');
+    const rc = require('./record-control');
     _host = {
       dispatchMsg, applyMsg, wrap, streamCommand,
       refreshAll: api.refreshAll, cleanup, showHelp,
+      // v0.6.6 replay arc — the record-* cmdline verbs call these through the host.
+      recordSave: rc.save, recordLoad: rc.load, recordStop: rc.stop,
     };
   }
   return _host;
