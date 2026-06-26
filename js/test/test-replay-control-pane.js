@@ -180,6 +180,16 @@ function boot() {
   replay.replayTo(rlog, rlog[idxRev].seq, { useCheckpoints: true });
   const revRef = enc(replay.snapshotState());
 
+  // --- slow mode: sub-1× speed advances proportionally slower ---
+  replayControl.pause();
+  replayControl.seekToEnd(-1);                 // idx 0 (mode even, ratio 1)
+  replayControl.setRatio(-1); const ratioHalf = replayControl._state().ratio;     // 0.5
+  replayControl.setRatio(-1); const ratioQuarter = replayControl._state().ratio;  // 0.25
+  replayControl.setRatio(+1);                  // back to 0.5×
+  vt = 5_000_000; replayControl.play('fwd');   // anchor at idx 0
+  vt = 5_000_000 + tForIdx(4); replayControl._tick();   // wall time that reaches idx 4 at 1×
+  const idxSlow = replayControl._state().idx;  // at 0.5× → idx 2 (half)
+
   // --- mode toggle + idle-cap cycle preserve the current position ---
   replayControl.pause();
   const idxBeforeToggle = replayControl._state().idx;
@@ -199,6 +209,7 @@ function boot() {
     it('ratio change re-anchors (no retroactive jump)', () => eq(idxAfterRatio, 6));
     it('play stops at the end', () => { eq(idxAtEnd, end); eq(playingAtEnd, null); });
     it('reverse play reconstructs == replayTo at the same idx', () => { assert(idxRev < end, `idxRev ${idxRev} < end ${end}`); eq(revState, revRef); });
+    it('slow mode (sub-1× speed) advances at half rate', () => { eq(ratioHalf, 0.5); eq(ratioQuarter, 0.25); eq(idxSlow, 2); });
     it('mode toggle + idle-cap cycle preserve position', () => { eq(idxAfterToggle, idxBeforeToggle); eq(idxAfterCap, idxBeforeToggle); assert(capChanged !== 1000, 'cap advanced from default'); });
   });
 

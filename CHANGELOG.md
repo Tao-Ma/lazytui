@@ -71,8 +71,9 @@ as its reference implementation. Spec: [docs/v0.6.6.md](docs/v0.6.6.md).
   ceiling), so even a long session stays fast to recover (a repeated `:record-save` while
   already recording is a no-op). `--record-load <file>` (or the `:record-load` verb in a
   running session) opens the recording in an **interactive control pane** — a float listing
-  the checkpoints by timestamp, with a cursor to scrub and play / pause / fast-forward /
-  reverse; the panels underneath reconstruct to the current point. (`--record-print <file>`
+  the checkpoints by timestamp, with a cursor to scrub and play / pause / reverse at any speed
+  from **⅛× slow-motion to 16× fast-forward**; the panels underneath reconstruct to the
+  current point. (`--record-print <file>`
   is the headless variant — reconstruct, print the frame, exit — for scripts / CI.)
   Playback runs on a **monotonic-anchored presentation clock** (drift-free, self-correcting)
   with a steady ~30 fps scheduler that skips frames that don't change — so speed is smooth
