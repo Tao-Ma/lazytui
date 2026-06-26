@@ -1,0 +1,40 @@
+# Config for the replay smoke (js/test/smoke/replay.js).
+# A groups navigator with three groups so arrow-key selection moves produce
+# distinct recorded frames, plus a viewer. Minimal + self-contained — no
+# docker / postgres / external service. The smoke records a short session over
+# this config (--record-save), then reconstructs it (--record-load) and drives
+# the scrubber.
+project_dir: ../../..
+
+groups:
+  alpha:
+    label: Alpha
+    containers: [alpha-svc]
+    actions:
+      noop: { label: noop, desc: no-op, type: run, script: 'true', tab: false }
+  beta:
+    label: Beta
+    containers: [beta-svc]
+    actions:
+      noop: { label: noop, desc: no-op, type: run, script: 'true', tab: false }
+  gamma:
+    label: Gamma
+    containers: [gamma-svc]
+    actions:
+      noop: { label: noop, desc: no-op, type: run, script: 'true', tab: false }
+
+panels:
+  groups:
+    type: groups
+    title: Groups
+  detail:
+    type: detail
+    title: Detail
+
+layout:
+  columns:
+    - width: 30
+      panels:
+        - groups
+    - panels:
+        - detail
