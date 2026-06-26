@@ -73,7 +73,9 @@ as its reference implementation. Spec: [docs/v0.6.6.md](docs/v0.6.6.md).
   running session) opens the recording in an **interactive control pane** — a float listing
   the checkpoints by timestamp, with a cursor to scrub and play / pause / reverse at any speed
   from **⅛× slow-motion to 16× fast-forward**; the panels underneath reconstruct to the
-  current point. (`--record-print <file>`
+  current point. The pane cycles three view states (`p`) — full (checkpoint list), **mini** (a
+  compact bottom bar with just position + a progress bar, so playback stays watchable without
+  covering the view), and hidden. (`--record-print <file>`
   is the headless variant — reconstruct, print the frame, exit — for scripts / CI.)
   Playback runs on a **monotonic-anchored presentation clock** (drift-free, self-correcting)
   with a steady ~30 fps scheduler that skips frames that don't change — so speed is smooth

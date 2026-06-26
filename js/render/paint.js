@@ -708,11 +708,13 @@ function render(model) {
   }
   _frame.prevOverlayFlags = curOverlayFlags;
   // v0.6.6 replay arc — the replay-control pane is module-flagged (not in
-  // model.modes), so track its open/close here for the same force-full-on-drop.
+  // model.modes), so track its view state here. full/mini/hidden cover different
+  // regions, so ANY transition (incl. exit → no pane) must force a full repaint
+  // to clear the area the previous state painted.
   const replayData = _replaySource ? _replaySource() : null;
-  const replayPaneOpen = !!(replayData && replayData.paneOpen);
-  if (_frame.prevReplayPane && !replayPaneOpen) _frame.forceFull = true;
-  _frame.prevReplayPane = replayPaneOpen;
+  const replayView = replayData ? replayData.paneView : 'none';
+  if (_frame.prevReplayView && _frame.prevReplayView !== replayView) _frame.forceFull = true;
+  _frame.prevReplayView = replayView;
 
   let mainDidFull;
   // viewMode lives on the layout Component slice (Phase 1b).
@@ -770,7 +772,7 @@ function render(model) {
   if (md.jobsMode)    renderJobsOverlay(now);
   if (md.diagLogMode) require('../overlay/diag-log').renderDiagLog(now);
   // v0.6.6 replay arc — interactive replay-control pane (floats over all).
-  if (replayPaneOpen) require('../overlay/replay-control').render(replayData);
+  if (replayData && replayView !== 'hidden') require('../overlay/replay-control').render(replayData);
 
   // Cursor visibility — derived from mode state, single emission site.
   // Cursor *position* is set inline by renderTerminalOverlay (when in

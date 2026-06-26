@@ -59,8 +59,13 @@ const _timeline = () => require('../../leaves/replay/timeline');
 const _render = () => require('../../panel/api').scheduleRender();
 const _diag = (m) => { try { require('../../io/diag-log').error('replay', m); } catch (_) {} };
 
-function active()   { return S !== null; }
-function paneOpen() { return !!(S && S.paneOpen); }
+function active() { return S !== null; }
+
+// Pane visibility cycles full → mini → hidden. 'full' = status + checkpoint list
+// + legend (checkpoint navigation); 'mini' = a compact bottom bar (seq / ts /
+// progress only) so playback is watchable without the box covering the view;
+// 'hidden' = nothing (only `p` to cycle back / `q`,esc to exit still act).
+const PANE_CYCLE = { full: 'mini', mini: 'hidden', hidden: 'full' };
 
 function _clampIdx(i) { return Math.max(0, Math.min((S.log.length - 1) | 0, i | 0)); }
 
@@ -192,7 +197,7 @@ function enter(file, opts = {}) {
     clock: tl.clockForIdx(timeline, idx, 'realtime'),
     anchorClock: 0, anchorReal: 0,
     cursor: Math.max(0, checkpoints.length - 1),
-    playing: null, ratio: 1, paneOpen: true,
+    playing: null, ratio: 1, paneView: 'full',
     liveSnapshot: _replay().snapshotState(),
     timer: null, reverseCache: null,
     onExit: typeof opts.onExit === 'function' ? opts.onExit : null,
@@ -296,15 +301,17 @@ function _rearm() {
 }
 function _stopTimer() { if (S && S.timer) { _clearTimer(S.timer); S.timer = null; } }
 
-function togglePane() { if (S) { S.paneOpen = !S.paneOpen; _render(); } }
+function cyclePane() { if (S) { S.paneView = PANE_CYCLE[S.paneView] || 'full'; _render(); } }
 
 // --- input --------------------------------------------------------------
 
 function handleKey(key, seq) {
   if (!S) return;
   if (key === 'escape' || seq === 'q') { exit(); return; }
-  if (seq === 'p') { togglePane(); return; }
-  if (!S.paneOpen) return;   // pane hidden: only p (show) / q,esc (exit) act
+  if (seq === 'p') { cyclePane(); return; }
+  if (S.paneView === 'hidden') return;   // hidden: only p (cycle back) / q,esc act
+  // full AND mini both accept the full playback control surface; they differ
+  // only in what the pane DRAWS (the checkpoint list vs the compact bar).
   if (key === 'up'   || seq === 'k') { seekToCheckpoint(S.cursor - 1); return; }
   if (key === 'down' || seq === 'j') { seekToCheckpoint(S.cursor + 1); return; }
   if (seq === 'g') { seekToEnd(-1); return; }
@@ -324,7 +331,7 @@ function handleKey(key, seq) {
 function renderData() {
   if (!S) return null;
   return {
-    paneOpen: S.paneOpen,
+    paneView: S.paneView,
     checkpoints: S.checkpoints,
     cursor: S.cursor,
     idx: S.idx,
@@ -341,9 +348,9 @@ function renderData() {
 }
 
 module.exports = {
-  active, paneOpen, enter, exit,
+  active, enter, exit,
   seekToCheckpoint, stepSeq, seekToEnd, play, pause, setRatio,
-  toggleMode, cycleIdleCap,
+  toggleMode, cycleIdleCap, cyclePane,
   handleKey, renderData,
   // test seams
   _state: () => S,

@@ -93,8 +93,20 @@ function boot() {
   replayControl.pause();
   const pausedNull = replayControl._state().playing;
 
-  // overlay render (pane is open)
+  // overlay render (pane is open — default 'full')
   const overlayFrame = stripAnsi(capOut(() => require('../overlay/replay-control').render(replayControl.renderData())));
+  const fullView = replayControl._state().paneView;
+
+  // cycle the pane view: full → mini → hidden → full
+  const drawPane = () => stripAnsi(capOut(() => require('../overlay/replay-control').render(replayControl.renderData())));
+  replayControl.cyclePane();                       // → mini
+  const miniView = replayControl._state().paneView;
+  const miniFrame = drawPane();
+  replayControl.cyclePane();                       // → hidden
+  const hiddenView = replayControl._state().paneView;
+  const hiddenFrame = drawPane();
+  replayControl.cyclePane();                       // → full (restore)
+  const cycledBackView = replayControl._state().paneView;
 
   // exit → live restored
   const activeBeforeExit = replayControl.active();
@@ -121,6 +133,17 @@ function boot() {
       assert(/\d\d:\d\d:\d\d/.test(overlayFrame), 'a HH:MM:SS timestamp');
       assert(/seek/.test(overlayFrame), 'hint line');
     });
+  });
+  describe('[4b] pane view cycles full → mini → hidden', () => {
+    it('cyclePane walks the three states and back', () => {
+      eq(fullView, 'full'); eq(miniView, 'mini'); eq(hiddenView, 'hidden'); eq(cycledBackView, 'full');
+    });
+    it('mini shows seq + a progress bar but NOT the checkpoint legend', () => {
+      assert(/\d+\/\d+/.test(miniFrame), 'seq shown');
+      assert(/[█░]/.test(miniFrame), 'progress bar shown');
+      assert(!/seek/.test(miniFrame), 'no key legend in mini');
+    });
+    it('hidden renders nothing', () => eq(hiddenFrame, ''));
   });
   describe('[5] exit restores the live session', () => {
     it('was active, now inactive', () => { assert(activeBeforeExit, 'active during replay'); eq(activeAfterExit, false); });
