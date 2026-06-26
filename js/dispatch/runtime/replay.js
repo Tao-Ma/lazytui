@@ -57,14 +57,22 @@ function snapshotState() {
   return { model: _clone(getModel()), slices };
 }
 
-/** Restore a snapshot into the live stores (instance set must match the
- *  snapshot — the stable-pane case; pane add/remove is reconstructed by the
- *  finalizer's mint as the recorded layout Msgs fold). */
+/** Restore a snapshot into the live stores. Mint-on-restore: the layout (service)
+ *  slice is restored first so the instance reconcile can read the restored
+ *  arrange, the per-pane instance set is then recreated to match, and finally
+ *  every slice is written into the now-existing instances. This makes checkpoint
+ *  restore work from a BARE registry (the --replay CLI), not only an
+ *  already-booted app; minting is a no-op when the instances already exist (the
+ *  in-process case). */
 function restoreState(snap) {
   const route = require('../../panel/route');
+  const finalize = require('./finalize');
   const { setModel } = require('../../model/store');
+  const slices = snap.slices || {};
   setModel(_clone(snap.model));
-  for (const id of Object.keys(snap.slices)) route.setInstanceSlice(id, _clone(snap.slices[id]));
+  if (slices.layout !== undefined) route.setInstanceSlice('layout', _clone(slices.layout));
+  finalize.reconcileInstancesNow();
+  for (const id of Object.keys(slices)) route.setInstanceSlice(id, _clone(slices[id]));
 }
 
 // --- The fold driver -----------------------------------------------------

@@ -7,11 +7,11 @@
  *
  * The harness installs the SAME non-Msg runtime scaffolding the live boot does
  * (host wiring + effect handlers + the built-in Component set from
- * app/components + the per-pane/sub reconcilers), then folds the WAL from the
- * bare model. (It folds from the start rather than seeking a checkpoint:
- * checkpoint-accelerated CLI seek needs mint-on-restore — restoreState would
- * have to recreate the per-pane instance set before writing slices — which is a
- * documented follow-up. In-process checkpoint seek is proven by test-replay-checkpoint.)
+ * app/components + the per-pane/sub reconcilers), then folds the WAL. With
+ * checkpoints enabled it seeks to the nearest checkpoint and folds forward —
+ * `restoreState` recreates the per-pane instance set from the restored arrange
+ * (mint-on-restore), so a checkpoint reconstructs even from this bare boot. A
+ * WAL with no checkpoints folds from the start (set_config is the first entry).
  *
  * v0.6.6 replay arc; see docs/v0.6.6-replay-readiness.md + the arc memory.
  */
@@ -69,8 +69,9 @@ function runReplay(file, opts = {}) {
   catch (e) { console.error(`--replay: cannot read ${file}: ${e.message}`); return 1; }
 
   const targetSeq = (opts.seq != null && Number.isFinite(opts.seq)) ? opts.seq : Infinity;
-  // Fold the full WAL from the bare model (no checkpoint seek — see header).
-  replay.replayTo(log, targetSeq, { useCheckpoints: false });
+  // Seek to the nearest checkpoint and fold forward (mint-on-restore recreates
+  // the instance set from a bare boot); a checkpoint-less WAL folds from start.
+  replay.replayTo(log, targetSeq, { useCheckpoints: true });
 
   // Capture the painted frame.
   const chunks = [];

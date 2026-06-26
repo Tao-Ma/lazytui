@@ -21,6 +21,10 @@ const dispatch = require('../dispatch/control/dispatch');
 const state = require('../app/state');
 const sessionLog = require('../io/session-log');
 const replay = require('../dispatch/runtime/replay');
+const route = require('../panel/route');
+const runtime = require('../app/runtime');
+const { setModel } = require('../model/store');
+const replayCli = require('../app/replay-cli');
 
 // --- boot a minimal-but-real app ---
 const _grp = (name, label) => ({
@@ -28,6 +32,13 @@ const _grp = (name, label) => ({
   actions: { a1: { key: 'a1', label: 'Action 1', type: 'run', script: 'echo a1', tab: false } },
   children: [], parent: null, depth: 0, quick: false,
 });
+// Boot the FULL runtime (all built-in Components — like the live app and the
+// --replay harness), so the recorded instance set matches what a bare-registry
+// replay (block [4]) reconstructs.
+route._resetRegistryForTest();
+state._resetSubscriptions();
+setModel(runtime.init());
+replayCli._installRuntime();
 getModel().config = {
   project_dir: '.', theme: 'monokai', register: {}, files: [], plugins: {},
   groups: { g1: _grp('g1', 'Group 1'), g2: _grp('g2', 'Group 2') },
@@ -91,6 +102,20 @@ replay.replayTo(log, cp2Seq, { useCheckpoints: false, fromState: checkpoint0 });
 const foldToCp2 = enc(replay.snapshotState());
 const cp2Entry = log.find(e => e.kind === 'checkpoint' && e.seq === cp2Seq);
 
+// Bare-registry checkpoint seek (mint-on-restore): reset to a fresh registry +
+// model (as a `--replay` subprocess starts), install the CLI runtime
+// scaffolding, then seek — replayTo restores the nearest checkpoint into the
+// BARE registry, recreating the per-pane instance set from its arrange before
+// writing slices. The recorded log here has NO set_config/boot Msgs (recording
+// started post-boot), so this works ONLY because the checkpoint carries the full
+// model + slices.
+route._resetRegistryForTest();
+state._resetSubscriptions();
+setModel(runtime.init());
+replayCli._installRuntime();
+replay.replayTo(log, Infinity, { useCheckpoints: true });
+const bareSeekEnc = enc(replay.snapshotState());
+
 describe('[1] full fold reproduces the live state', () => {
   it('replayTo(useCheckpoints:false) == live', () => eq(fullEnc, finalEnc));
 });
@@ -105,6 +130,10 @@ describe('[3] a checkpoint stores exactly the fold-to-that-seq state', () => {
     assert(cp2Entry && cp2Entry.state, 'CP2 entry present with state');
     eq(cp2Entry.state, foldToCp2);
   });
+});
+
+describe('[4] checkpoint seek from a BARE registry (mint-on-restore)', () => {
+  it('restores + folds to the full live state from a fresh registry', () => eq(bareSeekEnc, finalEnc));
 });
 
 report();
