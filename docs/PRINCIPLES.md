@@ -338,7 +338,8 @@ resolved both:
 - **Replay.** If render output is a function of state alone, the recorded
   message stream replays through the pure reducers to an identical model and
   frame. This is no longer hypothetical: **session replay shipped in v0.6.6**
-  (`node tui.js --replay <file>`; recorder behind `LAZYTUI_REPLAY_LOG`), and
+  (`node tui.js --record-load <file>` interactive, `--record-print <file>`
+  headless; recorder behind `LAZYTUI_REPLAY_LOG`), and
   `js/test/test-replay.js` asserts `model = fold(reducer, MsgLog)` end-to-end —
   the materialized proof of this rule. The terminal island is reconstructed from
   its recorded byte stream (the foreign-component side-channel). See

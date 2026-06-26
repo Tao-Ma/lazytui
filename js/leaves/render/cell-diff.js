@@ -114,4 +114,4 @@ function highlightRow(prevMarkup, curMarkup, mode, hlOn = HL_ON, hlOff = HL_OFF)
   return curAnsi;
 }
 
-module.exports = { highlightRow, HL_ON, HL_OFF, _glyphByCol, _changedCols };
+module.exports = { highlightRow, HL_ON, HL_OFF };

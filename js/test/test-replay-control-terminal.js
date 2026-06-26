@@ -92,6 +92,28 @@ const SID = 'g1_shell';   // a deterministic group_key id — the colliding case
     it('destroyed on exit', () => eq(replayOnlyExistsAfter, false));
   });
 
+  // ---- [4] restoring over a colliding LIVE session disposes it (no leak) ----
+  // restoreReplaySession overwrites sessions[id]; without a dispose-before-overwrite
+  // the prior screen (and, for a live id, its PTY + onData listener) would leak.
+  // This is the worst case: a colliding live PTY-backed session.
+  let killed = false, subDisposed = false, screenDisposed = false;
+  terminal._setSessionForTest('g1_pty', {
+    pty: { kill() { killed = true; } },
+    screen: { dispose() { screenDisposed = true; } },
+    cmd: 'x', cwd: '.', exited: false, exitCode: null,
+    _onDataSub: { dispose() { subDisposed = true; } },
+  });
+  terminal.restoreLiveSessions({ 'g1_pty': { cols: 80, rows: 24, lines: ['x'], baseY: 0, viewportY: 0 } });
+  const restored = terminal.getSession('g1_pty');
+
+  describe('[4] restoreLiveSessions disposes a colliding live session (no leak)', () => {
+    it('killed the colliding live PTY before overwrite (no process leak)', () => assert(killed, 'pty.kill called'));
+    it('disposed its onData listener and screen (no listener/emulator leak)', () => {
+      assert(subDisposed, 'onData disposed'); assert(screenDisposed, 'screen disposed');
+    });
+    it('the session is now PTY-less (frozen at the live grid)', () => assert(restored && restored.pty === null, 'frozen replay session'));
+  });
+
   try { fs.unlinkSync(wal); } catch {}
   report();
 })();

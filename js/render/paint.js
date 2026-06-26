@@ -42,7 +42,7 @@ const { truncate, setWriter: _setDrawWriter } = require('../leaves/render/draw')
 _setDrawWriter((buf) => stdout.write(buf));
 const painter = require('../leaves/render/painter');
 const { isTerminalTab, activeTerminalId, activeTerminalConfig } = require('../panel/viewer/tabs');
-const { getSession, sessionScrollInfo, sessionViewportRows } = require('../io/terminal');
+const { getSession, sessionScrollInfo, sessionViewportRows, sessionCursor } = require('../io/terminal');
 const { getInstanceSlice, sliceForPane, getComponent,
        getComponentOwningPanel } = require('../panel/api');
 const { renderCopyMenu } = require('../overlay/copy');
@@ -657,9 +657,15 @@ function renderTerminalOverlay(model, arrangeOverride) {
   // Visibility (show/hide) is derived once at the end of render() from
   // model.modes.terminalMode || model.modes.cmdMode.
   if (model.modes.terminalMode && !session.exited) {
-    const cx = bounds.x + 2 + buffer.cursorX;
-    const cy = bounds.y + 2 + buffer.cursorY;
-    out += `\x1b[${cy};${cx}H`;
+    // Cursor position via the emulator port (NOT session.screen.buffer — render
+    // stays port-only; the v0.6.6 port refactor dropped the old `buffer` local
+    // but left these two reads referencing it → ReferenceError on terminal focus).
+    const cur = sessionCursor(id);
+    if (cur) {
+      const cx = bounds.x + 2 + cur.x;
+      const cy = bounds.y + 2 + cur.y;
+      out += `\x1b[${cy};${cx}H`;
+    }
   }
   stdout.write(out);
 }
