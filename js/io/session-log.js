@@ -45,6 +45,15 @@ let _seq = 0;
 let _buf = [];
 let _streamPath = null;
 
+// Auto-cadence checkpointing: write a checkpoint every `_checkpointCadence`
+// recorded entries so a long recording stays fast to seek (the finalizer calls
+// replay.maybeCheckpoint, which consults checkpointDue). 0 = off; record-save
+// turns it on at the default cadence. `_sinceCheckpoint` counts non-checkpoint
+// entries since the last checkpoint.
+let _sinceCheckpoint = 0;
+let _checkpointCadence = 0;
+const DEFAULT_CHECKPOINT_CADENCE = 250;
+
 function _nextSeq() { return ++_seq; }
 
 /**
@@ -55,6 +64,7 @@ function record(kind, fields) {
   if (!_enabled) return -1;
   const entry = { seq: _nextSeq(), t: Date.now(), kind, ...fields };
   _buf.push(entry);
+  if (kind === 'checkpoint') _sinceCheckpoint = 0; else _sinceCheckpoint++;
   if (_streamPath) {
     try { fs.appendFileSync(_streamPath, JSON.stringify(entry) + '\n'); }
     catch (e) { _streamPath = null; }   // file vanished/full — drop, don't crash
@@ -189,7 +199,12 @@ function decodeJson(v) {
 
 function enable(yes = true) { _enabled = !!yes; }
 function isEnabled()        { return _enabled; }
-function clear()            { _buf = []; _seq = 0; }
+function clear()            { _buf = []; _seq = 0; _sinceCheckpoint = 0; }
+
+// Auto-cadence: entries between checkpoints (0 = off). record-save sets the
+// default; record-stop clears it.
+function setCheckpointCadence(n) { _checkpointCadence = Math.max(0, n | 0); }
+function checkpointDue()         { return _checkpointCadence > 0 && _sinceCheckpoint >= _checkpointCadence; }
 function snapshot()         { return _buf.slice(); }
 function size()             { return _buf.length; }
 
@@ -197,6 +212,7 @@ module.exports = {
   record, recordMsg, recordTerm, recordCheckpoint,
   enable, isEnabled, clear, snapshot, size,
   attachStream, detachStream, streamTo, streamPath, DEFAULT_SESSION_FILE, save, load,
+  setCheckpointCadence, checkpointDue, DEFAULT_CHECKPOINT_CADENCE,
   encodeJson, decodeJson,
 };
 
@@ -205,5 +221,6 @@ module.exports = {
 // Mirrors io/event-log's LAZYTUI_LOG auto-attach.
 if (process.env.LAZYTUI_REPLAY_LOG) {
   _enabled = true;
+  _checkpointCadence = DEFAULT_CHECKPOINT_CADENCE;
   _openStream(process.env.LAZYTUI_REPLAY_LOG);
 }

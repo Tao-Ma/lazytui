@@ -21,15 +21,22 @@
 const sessionLog = require('../../io/session-log');
 const replay = require('./replay');
 
+/** Already actively recording to a file? */
+function isRecording() { return sessionLog.isEnabled() && !!sessionLog.streamPath(); }
+
 /** Start recording to `file` (default: the conventional session file). Records
  *  a checkpoint of the full current state first, so the file replays from here
- *  even mid-session, then streams subsequent Msgs. Returns the path. */
+ *  even mid-session, then streams subsequent Msgs + auto-cadence checkpoints.
+ *  A repeated record-save while already recording is SKIPPED (returns the
+ *  in-progress path). Returns `{ path, skipped }`. */
 function save(file) {
+  if (isRecording()) return { path: sessionLog.streamPath(), skipped: true };
   const path = file || sessionLog.DEFAULT_SESSION_FILE;
   sessionLog.enable(true);
+  sessionLog.setCheckpointCadence(sessionLog.DEFAULT_CHECKPOINT_CADENCE);
   replay.checkpointNow();        // full current state → self-contained from here
   sessionLog.streamTo(path);     // seed the file with the buffer (incl. checkpoint) + stream
-  return path;
+  return { path, skipped: false };
 }
 
 /** Recover a recorded session into the LIVE TUI: clear the windows and re-apply
@@ -56,10 +63,11 @@ function load(file) {
   return path;
 }
 
-/** Stop recording: detach the stream and disable the recorder. */
+/** Stop recording: detach the stream, disable the recorder, clear auto-cadence. */
 function stop() {
   sessionLog.detachStream();
   sessionLog.enable(false);
+  sessionLog.setCheckpointCadence(0);
 }
 
 module.exports = { save, load, stop };

@@ -167,6 +167,10 @@ function finalizeDispatch() {
         }
       }
     }
+    // v0.6.6 replay arc — auto-cadence checkpoint (once per outermost dispatch).
+    // No-op unless recording is on AND the cadence is due; never under replay
+    // (the early return above already left). Keeps long-recording seek fast.
+    replay.maybeCheckpoint();
   } catch (e) {
     console.error(`[dispatch] post-dispatch scroll clamp error: ${e.message}`);
   } finally {

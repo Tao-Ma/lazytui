@@ -170,8 +170,10 @@ const FRAMEWORK_COMMANDS = [
     run: (args) => {
       const { appendViewerLines } = require('./nav-state');
       const file = (args && args.join(' ').trim().replace(/^(['"])(.*)\1$/, '$2')) || undefined;
-      const path = _host.recordSave(file);
-      appendViewerLines(`[green]Recording session →[/] ${path}`);
+      const r = _host.recordSave(file);
+      appendViewerLines(r.skipped
+        ? `[yellow]Already recording →[/] ${r.path}`
+        : `[green]Recording session →[/] ${r.path}`);
     },
   },
   {
