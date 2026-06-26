@@ -103,13 +103,15 @@ dynamic is fine when the candidate list depends on state.
 | `theme <name>`    | Switch theme (one entry per theme)           |
 | `focus <panel>`   | Focus a panel (one entry per layout panel)   |
 | `free-config`     | Open the layout + pool editor                |
-| `design`          | Alias for `:free-config` (v0.5 name)         |
 | `hide <id>`       | Unplace a panel (one entry per placed id)    |
 | `show <id>`       | Place a hidden panel (one entry per hidden id) |
 | `switch-tab <pool-id>` | Flip the focused multi-tab pane's active tab (one entry per non-active tab in the focused pane; absent on single-tab panes) |
 | `open <path>`     | Open a file as a content tab in detail. TAB completes via the open-target scheme registry. |
+| `dismiss-warnings` | Clear the config-warning chrome notice      |
+| `add-column [position]` | Insert an empty column (default: just before the last column) |
+| `remove-column <n>` | Remove an empty column (1-based; refused on last column or non-empty) |
 
-These live in `panel/api.js#FRAMEWORK_COMMANDS` + a small
+These live in `panel/commands.js#FRAMEWORK_COMMANDS` + a small
 `_frameworkDynamicCommands` builder; they appear in the cmdline registry
 with the source tag `<framework>`.
 
@@ -176,19 +178,28 @@ Out of scope for v1 (deferred until a real use case shows up):
 ## Architecture
 
 ```
-┌─ dispatch.js ─────────────────────────────────────────┐
+┌─ dispatch/control/dispatch.js ────────────────────────┐
 │  ':' in handleNormalKey → cmdline_enter Msg            │
 │  modeChain: { active: () => cmdMode flag,              │
 │               handler: handleCmdlineKey }              │
-├─ cmdline.js ──────────────────────────────────────────┤
+│  handleCmdlineKey → each key becomes a cmdline_* Msg   │
+├─ dispatch/update/modal/cmdline.js (sub-reducer) ───────┤
+│  cmdline_enter / cmdline_key / cmdline_nav /           │
+│  cmdline_submit / cmdline_cancel / cmdline_set_matches  │
+│    state transitions; emits Cmd effects                │
+├─ dispatch/runtime/effects.js (Cmd effects) ────────────┤
+│  cmdline_rebuild / cmdline_run /                       │
+│  cmdline_clear / cmdline_preview                       │
+├─ dispatch/control/cmdline.js ──────────────────────────┤
 │  buildRegistry()              — walk panels/actions/   │
 │                                  items/Component cmds  │
 │  rebuild(text)                — fuzzy score + sort     │
+│  runAt(sel, args, expectedDisplay) — dispatch to source │
+├─ overlay/cmdline.js ───────────────────────────────────┤
 │  renderCmdline()              — bottom-row prompt +    │
 │                                  matches dropdown      │
-│  runAt(sel, args)             — dispatch to source     │
-├─ panel/api.js ─────────────────────────────────────┤
-│  getCommands() → [{name,desc,run,_source}]             │
+├─ panel/commands.js ────────────────────────────────────┤
+│  collectCommands() → [{name,desc,run,_source}]         │
 │    walks FRAMEWORK_COMMANDS +                          │
 │          static component.commands +                   │
 │          dynamic component.getCommands(model)          │
@@ -213,6 +224,7 @@ model.modes.cmdMode           // true while cmdline is open
 model.modal.cmdline = {
   text: '',                   // current input buffer
   sel: 0,                     // dropdown selection index
+  scroll: 0,                  // dropdown viewport offset
   matches: [],                // cached render-safe match projection
                               // ({display, desc, kind} — closures stay
                               //  module-held in cmdline.js)

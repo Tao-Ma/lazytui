@@ -5,7 +5,7 @@ the repo root.
 
 | Layer | What it covers | Where | How to run |
 |---|---|---|---|
-| Unit | TUI runtime + parser: state, dispatch, plugins, hub, render helpers, YAML schema, resolver | `js/test/test-*.js` | `node js/scripts/run-tests.js -q` |
+| Unit | TUI runtime + parser: state, dispatch, Components, hub, render helpers, YAML schema, resolver | `js/test/test-*.js` | `node js/scripts/run-tests.js -q` |
 | Smoke | End-to-end scenarios on the real dispatch / render path — routing, lifecycle, hit-zones, action-tab, drag. Pre-release gate. | `js/test/smoke/` | `node js/scripts/run-smoke.js -q` |
 | Integration | Live TUI against a real Docker stack + event paths | `test/` (run.sh + stack.yml + test.yml) | `test/run.sh up` then `test/run.sh tui` |
 
@@ -58,7 +58,7 @@ node js/scripts/run-smoke.js routing       # filter by name substring
 node js/scripts/run-smoke.js -q            # quiet — only show failing files
 ```
 
-The five scenarios target the bug class the unit suite misses:
+The scenarios target the bug class the unit suite misses:
 
 - **`routing.js`** — `paneId` vs panel-type comparator invariants
   for every placed pane (covers post-Phase-B3 `getFocus()`-is-
@@ -73,6 +73,16 @@ The five scenarios target the bug class the unit suite misses:
   with scroll bottom-pinned.
 - **`drag.js`** — free-config in-grid drag driven through
   `dispatchMsg(wrap('layout', free_config_mouse_*))` end-to-end.
+- **`boot.js`** — the deterministic first frame renders (guards the
+  render-queue self-register boot order).
+- **`pty-overlay.js`** — the embedded-terminal overlay repaints under
+  the async PTY race (the #D15 model-conditional poll backstop).
+- **`dual-viewer.js`** — multi-viewer layouts (≥2 detail panes) render
+  + route to the right pane.
+- **`multi-instance.js`** — same-kind multi-pane slice isolation (the
+  strict-miss / `_primaryByKind` class).
+- **`mouse-raw-sgr.js`** / **`mouse-gestures.js`** — SGR mouse parsing
+  and the gesture→intent mapping (press / double / right / wheel).
 
 Add a new scenario by dropping a `<name>.js` into `js/test/smoke/`;
 the aggregator at `js/scripts/run-smoke.js` discovers it. Each

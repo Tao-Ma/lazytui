@@ -205,9 +205,10 @@ hub.defineTopic('docker.stats', {
 (HUB.md §6). Parsing the strings still happens, but that's already in
 the existing path — no regression.
 
-**Existing `statsCache` stays.** It powers `getInfo()` and
-`copyOptions()` (which display human-readable strings, not numbers).
-The numeric publish runs alongside, populated from the same parse.
+**The docker Component slice (`slice.stats`) stays.** It powers
+`getInfo()` and `copyOptions()` (which display human-readable strings,
+not numbers). The numeric publish runs alongside, populated from the
+same parse.
 
 ## 6. Cross-panel selection — `select_from`
 
@@ -247,7 +248,8 @@ mem string changes between ticks — `0.0% → 0.0%` leaves it `false`,
 so the host's render-on-changed loop skips paints even though the hub
 got a new sample. Since v0.6.6 (Finding B) the `metrics-mirror` Sub
 subscribes to the hub with an `onUpdate` that schedules a *throttled*
-trailing sample (`ms`, default ~the poll interval): it mirrors
+trailing sample (`ms`, 250 ms (trailing/coalescing), independent of the
+~10 s producer poll): it mirrors
 `hub.matrix(topic)` into `model.metrics[topic]` via a `metrics_synced`
 Msg, whose model change drives the repaint — bypassing the producer's
 `changed` heuristic without re-introducing a per-publish dispatch.
@@ -288,7 +290,7 @@ labels worthwhile.
 | Piece | LOC |
 |-------|-----|
 | `panel/monitor/stats.js` — panel def, render, selection | ~80 |
-| `panel/monitor/stats-graph.js` — rasterizer + axis labels + overlay formatters | ~80 |
+| `panel/monitor/stats-graph.js` — rasterizer + overlay formatters | ~80 |
 | `docker.js` — `parseBytes` + `parsePercent` + publish + delete + defineTopic | ~30 |
 | `tests/test-stats.js` — rasterizer + selection + producer wire-up | ~120 |
 | YAML wiring in `test/test.yml` | ~5 |
