@@ -135,9 +135,10 @@ module.exports = {
   groupActions: (group, groupName, config, model) => ({ /* actionKey: action */ }),
   groupActionsMemo: true,   // opt-in fast path — see "The groupActions contract"
   // PURE PROJECTION — no IO, no mutation, same inputs → same outputs. ALWAYS
-  // enforced (read-only Proxy + timing, prod too). Called transitively on hot
-  // read paths (viewer_append per stream line). v0.6.2 added config + model;
-  // older 2-arg impls still work.
+  // enforced (mutation via a read-only Proxy every call; determinism via a
+  // one-shot re-call+compare; IO via an opt-in check — prod too, all clock-free).
+  // Called transitively on hot read paths (viewer_append per stream line).
+  // v0.6.2 added config + model; older 2-arg impls still work.
   commands:     [ { name, desc, run(args) } ],
   getCommands:  (model) => [ /* state-derived verbs */ ],
   cleanup:      () => { /* tear down long-lived children */ },
@@ -271,15 +272,23 @@ Because of that, `groupActions` **MUST be a pure projection**:
   outputs. A blocking call here stalls the event loop on every frame.
 
 **This contract is ALWAYS ENFORCED — in production, not just dev.** The
-framework (`panel/plugin-guard.js`) wraps the args in a recursive read-only
-`Proxy` and times every call:
+framework (`panel/plugin-guard.js`) checks it **directly** — purity is a static
+property, so each check runs at most once per `(group, Component)` and **never
+reads the wall clock on the render path** (the guard must not itself be impure):
 
-- A **write** at any depth throws; the offending Component contributes
+- **Mutation** (every call): the args are wrapped in a recursive read-only
+  `Proxy`. A **write** at any depth throws; the offending Component contributes
   **nothing** for that call and a `plugin-impure` warning is recorded in the
-  diagnostics window (`leader e`). The real `config`/`model` are never
-  touched, so the rest of the app behaves identically.
-- A call slower than `SLOW_MS` (2 ms) records a `plugin-slow` warning naming
-  the Component (it is almost certainly doing IO).
+  diagnostics window (`leader e`). The real `config`/`model` are never touched,
+  so the rest of the app behaves identically.
+- **Determinism** (once per group): on first use the projection is run a second
+  time with the **same** args and the two outputs compared (back-to-back on one
+  snapshot — `model` is an input, so comparing across renders would false-flag a
+  legitimately model-dependent projection). A difference records a
+  `plugin-nondeterministic` warning (it read `Date`/random or did varying IO).
+- **IO** (opt-in, `LAZYTUI_VERIFY_PLUGINS=1`): the projection is run once more
+  with `fs`/`child_process` intercepted; touching either records a `plugin-io`
+  warning. Off by default (it patches globals) — for plugin authors / CI.
 
 Warnings dedupe per `(code, key)` for the session.
 

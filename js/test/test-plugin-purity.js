@@ -3,10 +3,12 @@
  *
  * `panel/plugin-guard.js` wraps EVERY `groupActions(group, name, config,
  * model)` call (in production too — no env gate): it read-only-wraps the args
- * and times the call; a mutation or a slow (IO-ish) call is surfaced to the
- * diagnostics window WITHOUT mutating the real model/config or hard-failing.
- * A Component opts into a memoized fast path with `groupActionsMemo: true`
- * (guarded once per group, then cached).
+ * (mutation guard, every call) and, ONCE per (group, Component), verifies
+ * determinism with a clock-free back-to-back re-call + compare; an opt-in
+ * (LAZYTUI_VERIFY_PLUGINS=1) check intercepts fs/child_process to flag IO.
+ * Violations are surfaced to the diagnostics window WITHOUT mutating the real
+ * model/config or hard-failing. A Component opts into a memoized fast path with
+ * `groupActionsMemo: true` (guarded once per group, then cached).
  *
  * v0.6.6 §9 follow-up: callGroupActions runs on render paths, so the guard
  * recordDeferred()s its warns rather than warn()ing synchronously (render-path
@@ -84,19 +86,41 @@ describe('[guard] callGroupActions is always enforced', () => {
     assert(!('injected' in config.groups.g.actions), 'real config NOT mutated');
   });
 
-  it('a slow plugin records plugin-slow but keeps its output', () => {
+  it('a nondeterministic plugin records plugin-nondeterministic (clock-free check)', () => {
     fresh();
-    const slow = {
-      name: 'slow',
-      groupActions: () => {
-        const end = Date.now() + guard.SLOW_MS + 5;
-        while (Date.now() < end) { /* busy-wait > SLOW_MS */ }
-        return { s: { label: 'S' } };
-      },
-    };
-    const out = guard.callGroupActions(slow, {}, 'g', {}, {});
-    assert(out && out.s, 'slow plugin output still returned');
-    assert(warnCodes().includes('plugin-slow'), 'plugin-slow recorded');
+    let n = 0;
+    // Output varies per call (≈ reading Date.now / Math.random) — the back-to-
+    // back re-call on first use sees a different result and flags it.
+    const flaky = { name: 'flaky', groupActions: () => ({ a: { label: `A${n++}` } }) };
+    const out = guard.callGroupActions(flaky, { tag: true }, 'g', {}, {});
+    assert(out && out.a, 'output still returned');
+    assert(warnCodes().includes('plugin-nondeterministic'), 'plugin-nondeterministic recorded');
+  });
+
+  it('a deterministic plugin records NO plugin-nondeterministic across the verify re-call', () => {
+    fresh();
+    const det = { name: 'det', groupActions: (g) => (g && g.tag ? { a: { label: 'A' } } : {}) };
+    guard.callGroupActions(det, { tag: true }, 'g', {}, {});
+    diag.flushDeferred();
+    eq(diag.size(), 0, 'a pure projection passes the determinism re-call cleanly');
+  });
+
+  it('verify mode (LAZYTUI_VERIFY_PLUGINS=1) flags IO directly', () => {
+    fresh();
+    const io = { name: 'io-plugin',
+      groupActions: () => { require('fs').existsSync('/tmp'); return { a: { label: 'A' } }; } };
+    process.env.LAZYTUI_VERIFY_PLUGINS = '1';
+    try { guard.callGroupActions(io, { tag: true }, 'g', {}, {}); }
+    finally { delete process.env.LAZYTUI_VERIFY_PLUGINS; }
+    assert(warnCodes().includes('plugin-io'), 'plugin-io recorded when verify mode is on');
+  });
+
+  it('without verify mode, IO is NOT intercepted (no plugin-io, no global patching)', () => {
+    fresh();
+    const io = { name: 'io-plugin2',
+      groupActions: () => { require('fs').existsSync('/tmp'); return { a: { label: 'A' } }; } };
+    guard.callGroupActions(io, { tag: true }, 'g', {}, {});
+    assert(!warnCodes().includes('plugin-io'), 'IO check is opt-in (off by default)');
   });
 
   it('a genuine plugin bug (non-purity throw) propagates', () => {
@@ -131,18 +155,18 @@ describe('[memo] groupActionsMemo opt-in fast path', () => {
     const a = guard.callGroupActions(memo, group, 'g', {}, {});
     const b = guard.callGroupActions(memo, group, 'g', {}, {});
     const c = guard.callGroupActions(memo, group, 'g', {}, {});
-    eq(calls, 1, 'computed exactly once');
-    assert(a.m && b === a && c === a, 'same cached object reused (no re-call, no re-proxy)');
+    eq(calls, 2, 'computed once + verified once (a back-to-back re-call) on first use, then cached');
+    assert(a.m && b === a && c === a, 'same cached object reused (the first-call result; no re-call, no re-proxy)');
   });
 
-  it('non-memoized: groupActions runs on EVERY call (the Proxy is paid each time)', () => {
+  it('non-memoized: groupActions runs on EVERY call (+ one verify re-call on first use)', () => {
     fresh();
     let calls = 0;
     const plain = { name: 'plain', groupActions: () => { calls++; return {}; } };
     const group = { tag: true };
-    guard.callGroupActions(plain, group, 'g', {}, {});
-    guard.callGroupActions(plain, group, 'g', {}, {});
-    eq(calls, 2, 'recomputed each call — the incentive to opt into memo');
+    guard.callGroupActions(plain, group, 'g', {}, {});   // compute + one-shot determinism verify
+    guard.callGroupActions(plain, group, 'g', {}, {});   // recompute (already verified)
+    eq(calls, 3, 'first use computes twice (verify), then every call recomputes — the incentive to memoize');
   });
 
   it('memo is keyed on the group object — a distinct group recomputes', () => {
@@ -151,7 +175,7 @@ describe('[memo] groupActionsMemo opt-in fast path', () => {
     const memo = { name: 'memo2', groupActionsMemo: true, groupActions: () => { calls++; return {}; } };
     guard.callGroupActions(memo, { a: 1 }, 'g', {}, {});
     guard.callGroupActions(memo, { a: 1 }, 'g', {}, {}); // same shape, different object
-    eq(calls, 2, 'distinct group objects → distinct cache entries (a config reload mints new groups)');
+    eq(calls, 4, 'distinct group objects → distinct cache+verify entries (2 calls each: compute + verify)');
   });
 
   it('the first memoized call is STILL guarded — an impure memoized Component is caught', () => {
@@ -170,10 +194,10 @@ describe('[memo] groupActionsMemo opt-in fast path', () => {
     let calls = 0;
     const memo = { name: 'memo3', groupActionsMemo: true, groupActions: () => { calls++; return {}; } };
     const group = { a: 1 };
-    guard.callGroupActions(memo, group, 'g', {}, {});
+    guard.callGroupActions(memo, group, 'g', {}, {});   // compute + verify
     guard.reset();
-    guard.callGroupActions(memo, group, 'g', {}, {}); // same group, memo cleared
-    eq(calls, 2, 'reset cleared the cache → recomputed');
+    guard.callGroupActions(memo, group, 'g', {}, {});   // same group, memo + verify state cleared → compute + verify
+    eq(calls, 4, 'reset cleared the cache + verify state → recomputed and re-verified');
   });
 });
 

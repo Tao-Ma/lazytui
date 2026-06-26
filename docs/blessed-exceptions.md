@@ -227,6 +227,15 @@ order was by **(correctness value × tractability)**.
    it. Tests: `test-plugin-purity.js` (always-enforced + memo: runs-once,
    keyed-on-group, impure-caught-on-first-call, reset clears). Suite 92/93
    (xz env-only) + 9/9 smokes.
+   > **UPDATED 2026-06-26 (v0.6.6):** the wall-clock **timing** half ("timing is
+   > free") was removed — it read `Date.now` on the otherwise-pure render path
+   > (surfaced by the semantic purity tripwire, `test-purity-tripwire.js`) and
+   > was an imprecise IO proxy (missed a fast `Date.now`-reading plugin,
+   > false-alarmed on heavy-but-pure ones). Replaced by a **clock-free, one-shot
+   > determinism re-call + compare** (`plugin-nondeterministic`) plus an **opt-in
+   > `fs`/`child_process` IO check** (`LAZYTUI_VERIFY_PLUGINS=1` → `plugin-io`).
+   > The always-on + `groupActionsMemo` design above is unchanged; only the IO-
+   > detection mechanism changed. See docs/PLUGINS.md §"The groupActions contract".
 
 ---
 
