@@ -18,7 +18,7 @@
 const { renderOverlay, viewportDims } = require('../leaves/render/draw');
 
 const MAX_W = 56;       // full pane width cap
-const MINI_BAR = 20;    // mini progress-bar inner width
+const MINI_BAR = 16;    // mini progress-bar inner width
 const VH = 10;          // visible checkpoint rows (full)
 
 function _fmtTime(ms) {
@@ -37,8 +37,8 @@ function render(data) {
   return renderFull(data);
 }
 
-// Compact bottom bar — only play state / seq / timestamp / progress. Anchored
-// bottom-left so it covers a few footer rows, never the content.
+// Compact bottom bar — play state / speed / seq / timestamp / progress only.
+// Anchored bottom-left, width hugs the content so it covers as little as possible.
 function renderMini(data) {
   const { cols: COLS, rows: ROWS } = viewportDims();
   const dt = ((data.t - data.firstT) / 1000).toFixed(1);
@@ -46,10 +46,11 @@ function renderMini(data) {
   const frac = total > 1 ? data.idx / (total - 1) : 1;
   const fill = Math.max(0, Math.min(MINI_BAR, Math.round(frac * MINI_BAR)));
   const bar = `[bold]${'█'.repeat(fill)}[/][dim]${'░'.repeat(MINI_BAR - fill)}[/]`;
-  const line = `[bold]${_sym(data)}[/] ${data.pos}/${total}  ${_fmtTime(data.t)} +${dt}s  ${bar}`;
+  const line = `[bold]${_sym(data)} ${data.ratio}×[/] ${data.pos}/${total}  ${_fmtTime(data.t)} +${dt}s  ${bar}`;
+  const plainLen = line.replace(/\[[^\]]*\]/g, '').length;   // strip markup to size the box
   renderOverlay({
     lines: [line], title: '',
-    maxWidth: Math.min(MAX_W, COLS - 4),
+    maxWidth: Math.min(MAX_W, COLS - 4, Math.max(24, plainLen + 2)),
     anchor: { x: 1, y: ROWS },   // clamps to bottom-left
   });
 }

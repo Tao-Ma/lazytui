@@ -105,6 +105,10 @@ function boot() {
   replayControl.cyclePane();                       // → hidden
   const hiddenView = replayControl._state().paneView;
   const hiddenFrame = drawPane();
+  // playback/seek keys still act while hidden (view = display only)
+  const idxBeforeHiddenKey = replayControl._state().idx;
+  replayControl.handleKey('[', '[');               // step back one entry
+  const idxAfterHiddenKey = replayControl._state().idx;
   replayControl.cyclePane();                       // → full (restore)
   const cycledBackView = replayControl._state().paneView;
 
@@ -138,12 +142,14 @@ function boot() {
     it('cyclePane walks the three states and back', () => {
       eq(fullView, 'full'); eq(miniView, 'mini'); eq(hiddenView, 'hidden'); eq(cycledBackView, 'full');
     });
-    it('mini shows seq + a progress bar but NOT the checkpoint legend', () => {
+    it('mini shows speed + seq + a progress bar but NOT the checkpoint legend', () => {
+      assert(/×/.test(miniFrame), 'speed (ratio) shown');
       assert(/\d+\/\d+/.test(miniFrame), 'seq shown');
       assert(/[█░]/.test(miniFrame), 'progress bar shown');
       assert(!/seek/.test(miniFrame), 'no key legend in mini');
     });
     it('hidden renders nothing', () => eq(hiddenFrame, ''));
+    it('playback keys still act while hidden', () => eq(idxAfterHiddenKey, Math.max(0, idxBeforeHiddenKey - 1)));
   });
   describe('[5] exit restores the live session', () => {
     it('was active, now inactive', () => { assert(activeBeforeExit, 'active during replay'); eq(activeAfterExit, false); });
