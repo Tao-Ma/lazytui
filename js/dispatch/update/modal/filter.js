@@ -9,7 +9,7 @@
  */
 'use strict';
 
-const { withModes: _withModes, withModal: _withModal } = require('../model-ops');
+const { withModalMode: _withModalMode, withModal: _withModal } = require('../model-ops');
 const route = require('../../../panel/route');
 
 const TYPES = ['filter_enter', 'filter_key', 'filter_exit'];
@@ -19,10 +19,8 @@ function update(model, msg) {
     case 'filter_enter': {
       // v0.6.5 blessed-A — store the route bundle so filter_key/exit reuse it.
       const r = msg.route || null;
-      const next = {
-        ..._withModes(model, { filterMode: true }),
-        modal: { ...model.modal, filter: { text: msg.text || '', panel: msg.panel, route: r } },
-      };
+      const next = _withModalMode(model, { filterMode: true },
+        { filter: { text: msg.text || '', panel: msg.panel, route: r } });
       // v0.6.3 Round-2 — clear multiSel on filter-session entry. Selections
       // made before entering filter mode reference items the filter may hide;
       // carrying them across the commit surfaces as ghost selections when the
@@ -62,10 +60,8 @@ function update(model, msg) {
       const f = model.modal.filter;
       const text = f.text;
       const keep = !!msg.keep;
-      const next = {
-        ..._withModes(model, { filterMode: false }),
-        modal: { ...model.modal, filter: { text: '', panel: '', route: null } },
-      };
+      const next = _withModalMode(model, { filterMode: false },
+        { filter: { text: '', panel: '', route: null } });
       // v0.6.5 blessed-A — reuse the session route bundle stored at
       // filter_enter (f.route); commit/clear the filter + re-home
       // cursor/scroll on THAT instance's nav slice (keyed by its panel-type).

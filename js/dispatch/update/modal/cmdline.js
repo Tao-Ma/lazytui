@@ -10,7 +10,7 @@
  */
 'use strict';
 
-const { withModes: _withModes, withModal: _withModal } = require('../model-ops');
+const { withModalMode: _withModalMode, withModal: _withModal } = require('../model-ops');
 // cmdline split + viewport size live in a zero-dep leaf so this file,
 // dispatch/control/cmdline.js, and overlay/cmdline.js all read the same values.
 const { splitQuery: _cmdlineSplit, DROPDOWN_VIEWPORT: CMDLINE_VW } = require('../../../leaves/text/cmdline-split');
@@ -20,10 +20,8 @@ const TYPES = ['cmdline_enter', 'cmdline_set_matches', 'cmdline_nav', 'cmdline_k
 function update(model, msg) {
   switch (msg.type) {
     case 'cmdline_enter':
-      return [{
-        ..._withModes(model, { cmdMode: true }),
-        modal: { ...model.modal, cmdline: { text: '', sel: 0, scroll: 0, matches: [] } },
-      }, [{ type: 'cmdline_rebuild' }]];
+      return [_withModalMode(model, { cmdMode: true },
+        { cmdline: { text: '', sel: 0, scroll: 0, matches: [] } }), [{ type: 'cmdline_rebuild' }]];
     case 'cmdline_set_matches': {
       const c = model.modal.cmdline;
       const matches = msg.matches || [];
@@ -121,10 +119,8 @@ function update(model, msg) {
       const sel = c.sel;
       const { args } = _cmdlineSplit(c.text);
       const had = c.matches.length > 0;
-      const next = {
-        ..._withModes(model, { cmdMode: false }),
-        modal: { ...model.modal, cmdline: { text: '', sel: 0, scroll: 0, matches: [] } },
-      };
+      const next = _withModalMode(model, { cmdMode: false },
+        { cmdline: { text: '', sel: 0, scroll: 0, matches: [] } });
       // cmdline_run resolves the module-held closure at `sel` + runs it with
       // the parsed args; cmdline_clear drops the held registry afterward.
       // #F4.4 — carry the chosen entry's `display` on the Cmd so the use-site
@@ -140,10 +136,9 @@ function update(model, msg) {
       // cmdline_revert_preview restores whatever the active preview's
       // teardown points at (theme on revert, etc.) BEFORE clear drops
       // the registry — Esc must restore, not commit.
-      return [{
-        ..._withModes(model, { cmdMode: false }),
-        modal: { ...model.modal, cmdline: { text: '', sel: 0, scroll: 0, matches: [] } },
-      }, [{ type: 'cmdline_revert_preview' }, { type: 'cmdline_clear' }]];
+      return [_withModalMode(model, { cmdMode: false },
+        { cmdline: { text: '', sel: 0, scroll: 0, matches: [] } }),
+      [{ type: 'cmdline_revert_preview' }, { type: 'cmdline_clear' }]];
     default:
       return [model, []];
   }
