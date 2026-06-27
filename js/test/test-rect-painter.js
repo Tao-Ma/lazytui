@@ -10,11 +10,12 @@
 const { describe, it, eq, assert, report } = require('./test-runner');
 const { composeRows, paintFrame } = require('../leaves/render/painter');
 
-// A2 (v0.6.7): with LAZYTUI_CELL_DIFF=1 a changed row emits only its changed
-// CELLS, not the whole row — so a shared trailing glyph isn't re-emitted. The
-// row-positioning invariants hold either way; only the contiguous-content literal
-// differs. (The cell-diff path has its own battery in test-cell-grid.js.)
-const CELL = process.env.LAZYTUI_CELL_DIFF === '1';
+// A2 (v0.6.7): cell-diff is the DEFAULT paint path (opt out with
+// LAZYTUI_CELL_DIFF=0). A changed row then emits only its changed CELLS, so a
+// shared trailing glyph isn't re-emitted. The row-positioning invariants hold
+// either way; only the contiguous-content literal differs. (The cell-diff path
+// has its own battery in test-cell-grid.js.)
+const CELL = process.env.LAZYTUI_CELL_DIFF !== '0';
 
 const R = (x, y, w, h, lines) => ({ x, y, w, h, lines });
 

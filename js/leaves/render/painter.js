@@ -32,12 +32,15 @@
 
 const { richToAnsi, RESET, visibleLen } = require('../text/ansi');
 const cellDiff = require('./cell-diff');
-// A2 (v0.6.7) — cell-granular incremental diff, flag-gated during bake-in
-// (mirrors the LAZYTUI_RECT_PAINTER rollout). When on, a changed row emits only
-// its changed cells (cell-grid.diffRowToAnsi) instead of the whole row. Read
-// once at module load. Default OFF: the row-level path below stays the default.
+// A2 (v0.6.7) — cell-granular incremental diff: a changed row emits only its
+// changed cells (cell-grid.diffRowToAnsi) instead of the whole row. DEFAULT ON
+// (measured: −85% bytes on localized updates, neutral on full-row changes; CPU
+// cost negligible at TUI render rates). `LAZYTUI_CELL_DIFF=0` is an opt-out escape
+// hatch back to the row-level path (kept for this release in case a terminal
+// mishandles the finer SGR/MoveTo stream; removable once proven). Read once at
+// module load.
 const cellGrid = require('./cell-grid');
-const CELL_DIFF = process.env.LAZYTUI_CELL_DIFF === '1';
+const CELL_DIFF = process.env.LAZYTUI_CELL_DIFF !== '0';
 
 /**
  * Stamp a list of rects into a screen-sized row array.
