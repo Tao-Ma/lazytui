@@ -71,14 +71,20 @@ function truncate(text, maxWidth) {
  * @param {string} [opts.hotkey] - hotkey label
  * @param {boolean} [opts.focused] - focus state
  * @param {[number,number]} [opts.count] - [current, total] for bottom border
- * @param {number} [opts.scrollOffset] - first visible item index
+ * @param {number} [opts.scrollOffset] - first visible item index (drives the
+ *   scrollbar thumb; ALSO slices `lines` to the viewport unless `windowed`)
+ * @param {boolean} [opts.windowed] - A3 (v0.6.7): `lines` is ALREADY the visible
+ *   window (caller pre-sliced + decorated only the window, O(innerH) not O(total)).
+ *   Then `scrollOffset` positions the scrollbar thumb but does NOT re-slice, and
+ *   `count[1]` carries the true total. Default false (navigators pass the full
+ *   list + scrollOffset and let renderPanel slice).
  * @param {string} [opts.color] - focused border color
  * @returns {string} Rich markup string
  */
 function renderPanel({
   width, height, lines = [], title = '', hotkey = '',
   focused = false, count = null, scrollOffset = 0, color = null,
-  panelType = null, chrome = null,
+  panelType = null, chrome = null, windowed = false,
 }) {
   const t = theme();
   const b = BORDER;
@@ -178,7 +184,9 @@ function renderPanel({
   const sb = scrollbar(innerH, totalItems, innerH, scrollOffset);
 
   // --- Content ---
-  const visible = lines.slice(scrollOffset, scrollOffset + innerH);
+  // A3 — when `windowed`, the caller already sliced `lines` to the viewport
+  // (and decorated only those rows); scrollOffset is for the scrollbar only.
+  const visible = windowed ? lines : lines.slice(scrollOffset, scrollOffset + innerH);
   const rows = [];
   for (let i = 0; i < innerH; i++) {
     let line = i < visible.length ? visible[i] : '';

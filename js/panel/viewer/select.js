@@ -308,15 +308,22 @@ function highlightLine(line, startCol, endCol) {
  * no active selection — reading mode has no visible cursor, only
  * visual mode does.
  */
-function decorateLines(lines) {
+// A3 (v0.6.7) — `opts.offset`: decorate only the VISIBLE WINDOW. `lines` is the
+// window; `opts.offset` is its absolute start. The selection range is absolute,
+// so each window row maps to its absolute line via `i + offset`. Output is
+// byte-identical to the old whole-array decorate sliced to the window. Default
+// offset 0 reproduces the legacy whole-array behavior for direct callers (tests).
+function decorateLines(lines, opts) {
   const sel = _detail()?.select;
   if (!sel || !sel.active) return lines;
   const r = selectedRange();
   if (!r) return lines;
+  const offset = (opts && opts.offset) || 0;
   return lines.map((line, i) => {
-    if (i < r.startLine || i > r.endLine) return line;
-    const s = (i === r.startLine) ? r.startCol : 0;
-    const e = (i === r.endLine)   ? r.endCol   : Infinity;
+    const abs = i + offset;
+    if (abs < r.startLine || abs > r.endLine) return line;
+    const s = (abs === r.startLine) ? r.startCol : 0;
+    const e = (abs === r.endLine)   ? r.endCol   : Infinity;
     return highlightLine(line, s, e);
   });
 }
