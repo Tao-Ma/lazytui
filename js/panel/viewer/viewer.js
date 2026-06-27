@@ -1160,19 +1160,28 @@ function render(panel, w, h, slice, opts) {
   // it; T2d retires the fallback. infoFromFocus is the module-level
   // helper (was an identical inline closure here pre-cleanup).
   const derived = pt.viewerLines(slice, m, m.currentGroup, { infoFromFocus: _infoFromFocus });
-  let lines = derived;
+  const total = derived.length;
   let count = null;
-  if (lines.length > innerH) {
-    count = [slice.scroll + innerH, lines.length];
+  if (total > innerH) {
+    count = [slice.scroll + innerH, total];
   }
+  // A3 (v0.6.7) — slice the visible window FIRST, then decorate only those
+  // ~innerH rows (offset-aware). Decorating the whole buffer was O(total) — at
+  // 50k lines with an active search that was ~270ms/frame (4fps); window-only is
+  // ~190µs regardless of buffer size (see bench-render-construction.js). The
+  // no-search/no-selection path was already O(1) passthrough, so this only
+  // changes the active-search / active-selection case — and identically, since
+  // each row is decorated from its own content + absolute index.
+  const start = slice.scroll;
+  let lines = derived.slice(start, start + innerH);
   const select = require('./select');
   const search = require('./search');
   if (select.isActive()) {
-    lines = select.decorateLines(lines);
+    lines = select.decorateLines(lines, { offset: start });
   } else {
     // P4 review fix — thread THIS pane's slice so an unfocused viewer
     // is decorated with its own search state (multi-viewer).
-    lines = search.decorateLines(lines, slice);
+    lines = search.decorateLines(lines, slice, { offset: start, full: derived });
   }
   return renderPanel({
     width: w, height: h, lines,
@@ -1181,6 +1190,7 @@ function render(panel, w, h, slice, opts) {
     focused: isFocused,
     count,
     scrollOffset: slice.scroll,
+    windowed: true,
     chrome,
   });
 }

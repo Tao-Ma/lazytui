@@ -69,7 +69,18 @@ function typingText() { return _slice()?.search?.typing || ''; }
  * Render-side (reads the detail slice's `search`); composes with
  * select.decorateLines.
  */
-function decorateLines(lines, slice) {
+// A3 (v0.6.7) — `opts.offset`/`opts.full`: decorate only the VISIBLE WINDOW.
+// `lines` is the window (the ~innerH visible rows); `opts.offset` is the window's
+// absolute start index; `opts.full` is the whole buffer (for matchesFor — the
+// match list + active-match index must be computed over ALL content, not the
+// window, or "match k of N" and the active-match reverse-highlight break). The
+// match scan is memoized (ms.matchesFor, WeakMap on the full-array ref), so a
+// pure scroll re-paints only the window and recomputes no matches. Output is
+// byte-identical to the old whole-buffer decorate sliced to the window: each
+// line is decorated from its OWN content + ABSOLUTE index, so slice-then-decorate
+// equals decorate-then-slice. Defaults (offset 0, full = lines) reproduce the
+// legacy whole-array behavior for direct callers (tests).
+function decorateLines(lines, slice, opts) {
   // P4 review fix (multi-viewer) — decorate with the RENDERED pane's
   // search state, not the focused pane's. The render path passes its
   // own slice; legacy callers without one fall back to the focused
@@ -80,28 +91,36 @@ function decorateLines(lines, slice) {
   const s = slice || focusedSlice;
   const search = s?.search;
   if (!search) return lines;
-  // P1 (viewer-lines selector) — matches DERIVE from the very lines
-  // being decorated (ms.matchesFor memo), so highlights always align
-  // with the displayed content. Phase picks the term: typing while the
-  // `/` prompt is open (live preview) — but the typing buffer belongs
-  // to the FOCUSED viewer only; an unfocused pane shows its own
-  // committed term.
+  const offset = (opts && opts.offset) || 0;
+  const full = (opts && opts.full) || lines;
+  // P1 (viewer-lines selector) — matches DERIVE from the buffer content
+  // (ms.matchesFor memo), so highlights always align with what's shown.
+  // Phase picks the term: typing while the `/` prompt is open (live
+  // preview) — but the typing buffer belongs to the FOCUSED viewer only;
+  // an unfocused pane shows its own committed term.
   const typingPhase = getModel().modes.detailSearchMode && s === focusedSlice;
   const term = typingPhase
     ? (search.typing || '')
     : (search.active ? (search.term || '') : '');
-  const matches = ms.matchesFor(lines, term);
+  const matches = ms.matchesFor(full, term);
   if (!matches.length) return lines;
-  // Group matches by line index for O(N) decoration.
+  // Group matches by ABSOLUTE line index, keeping only those in the visible
+  // window — out-of-window matches are never painted, so skip the spread + Map
+  // insert (the iteration stays O(total matches) but the work is O(window); at
+  // 50k all-matching lines this is the difference between ~8ms and <1ms/frame).
+  // `_i` stays the GLOBAL match index so the active-match (search.idx) check in
+  // _multiHighlight still resolves across the whole buffer.
+  const lo = offset, hi = offset + lines.length;
   const byLine = new Map();
   matches.forEach((m, i) => {
+    if (m.line < lo || m.line >= hi) return;
     if (!byLine.has(m.line)) byLine.set(m.line, []);
     byLine.get(m.line).push({ ...m, _i: i });
   });
   // Stale idx (content shrank since it was set) clamps into range.
   const activeIdx = Math.min(search.idx || 0, matches.length - 1);
   return lines.map((line, i) => {
-    const spans = byLine.get(i);
+    const spans = byLine.get(i + offset);
     if (!spans) return line;
     // Multi-span single pass: each pass to plain→segments would lose info,
     // so we decorate all of a line's spans in one go.
