@@ -32,6 +32,12 @@
 
 const { richToAnsi, RESET, visibleLen } = require('../text/ansi');
 const cellDiff = require('./cell-diff');
+// A2 (v0.6.7) — cell-granular incremental diff, flag-gated during bake-in
+// (mirrors the LAZYTUI_RECT_PAINTER rollout). When on, a changed row emits only
+// its changed cells (cell-grid.diffRowToAnsi) instead of the whole row. Read
+// once at module load. Default OFF: the row-level path below stays the default.
+const cellGrid = require('./cell-grid');
+const CELL_DIFF = process.env.LAZYTUI_CELL_DIFF === '1';
 
 /**
  * Stamp a list of rects into a screen-sized row array.
@@ -130,10 +136,17 @@ function paintFrame(prevRows, newRows, force, opts) {
   } else {
     for (let i = 0; i < n; i++) {
       if (newRows[i] !== prevRows[i]) {
-        const body = hl
-          ? cellDiff.highlightRow(prevRows[i], newRows[i], hl.mode, hl.hlOn, hl.hlOff)
-          : richToAnsi(newRows[i]);
-        ansi += `\x1b[${i + 1};1H` + body + RESET + '\x1b[K';
+        if (CELL_DIFF && !hl) {
+          // A2 — cell-granular: emit only changed cells, each carrying its own
+          // MoveTo + trailing RESET (no row-level \x1b[..;1H or \x1b[K — the row
+          // is fixed-width so cells overwrite in place).
+          ansi += cellGrid.diffRowToAnsi(prevRows[i], newRows[i], i);
+        } else {
+          const body = hl
+            ? cellDiff.highlightRow(prevRows[i], newRows[i], hl.mode, hl.hlOn, hl.hlOff)
+            : richToAnsi(newRows[i]);
+          ansi += `\x1b[${i + 1};1H` + body + RESET + '\x1b[K';
+        }
       }
     }
   }

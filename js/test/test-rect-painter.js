@@ -10,6 +10,12 @@
 const { describe, it, eq, assert, report } = require('./test-runner');
 const { composeRows, paintFrame } = require('../leaves/render/painter');
 
+// A2 (v0.6.7): with LAZYTUI_CELL_DIFF=1 a changed row emits only its changed
+// CELLS, not the whole row — so a shared trailing glyph isn't re-emitted. The
+// row-positioning invariants hold either way; only the contiguous-content literal
+// differs. (The cell-diff path has its own battery in test-cell-grid.js.)
+const CELL = process.env.LAZYTUI_CELL_DIFF === '1';
+
 const R = (x, y, w, h, lines) => ({ x, y, w, h, lines });
 
 // ---------- composeRows -----------------------------------------
@@ -165,7 +171,9 @@ describe('[8] paintFrame — diff: only changed rows emit', () => {
     assert(!out.didFull);
     assert(out.ansi.includes('\x1b[2;1H'), 'positions row 2');
     assert(!out.ansi.includes('\x1b[1;1H'), 'row 1 NOT emitted');
-    assert(out.ansi.includes('NEW1'));
+    // Row-level emits the whole 'NEW1'; cell-diff emits only the changed prefix
+    // 'NEW' (the trailing '1' is shared with the prev row).
+    assert(out.ansi.includes(CELL ? 'NEW' : 'NEW1'), 'emits the changed content');
   });
 
   it('no diff: returns empty ansi', () => {
