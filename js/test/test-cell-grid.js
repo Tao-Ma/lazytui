@@ -87,6 +87,13 @@ const cases = [
   ['narrow → wide',         'abY',                    '世Y'],
   ['wide glyph swap',       'X世Y',                   'X界Y'],
   ['narrow → wide midrow',  'XabY',                   'X世Y'],
+  // v0.6.7 — kana/hangul are wide too (the charWidth fix). Same two-sided
+  // wide-invalidation path as CJK; pinned here so the diff exercises them.
+  // (equal visible width per pair, as composeRows guarantees in production)
+  ['katakana swap',         'XテY',                   'XスY'],
+  ['katakana → narrow',     'テスト',                 'abcdef'],
+  ['hangul swap',           'X가Y',                   'X나Y'],
+  ['hangul → katakana',     '가나다',                 'テスト'],
 ];
 
 describe('cell-grid — patch reproduces the target row exactly', () => {
