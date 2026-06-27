@@ -3,7 +3,10 @@
  *
  * Supports: [bold], [dim], [reverse], [green], [red], [yellow], [cyan],
  * [on dark_blue], [/], and escaped brackets \[text].
- * Zero dependencies.
+ *
+ * One dependency: `eastasianwidth` backs `charWidth` (Unicode East-Asian-Width —
+ * a standard, spec-evolving problem; see charWidth's doc). Otherwise pure string
+ * transforms.
  *
  * Lives in `leaves/` (not `io/`): every export here is a pure string
  * transform — it builds ANSI/markup strings but performs no I/O (no
@@ -13,6 +16,8 @@
  * "→ pure helper" edges. As a leaf the dependency direction reads true.
  */
 'use strict';
+
+const { eastAsianWidth } = require('eastasianwidth');
 
 const CODES = {
   bold: '\x1b[1m',
@@ -75,21 +80,39 @@ function stripMarkup(text) {
 }
 
 /**
- * Display width of a single codepoint in terminal columns. CJK and
- * fullwidth characters are 2; everything else is 1. Single source of
- * truth for east-asian width detection — used by visibleLen and panel.js
- * truncation alike.
+ * Display width of a single codepoint in terminal columns: 2 for East-Asian
+ * Wide/Fullwidth, 1 for everything else. Single source of truth for width
+ * detection — feeds visibleLen, viewer truncation/selection/search, chrome
+ * draw, AND the A2 cell-diff (leaves/render/cell-grid). The cell-diff emits
+ * ABSOLUTE per-cell MoveTo columns, so this MUST agree with the terminal's
+ * actual cursor advance, or borders/glyphs land at the wrong column.
+ *
+ * Backed by the `eastasianwidth` library — the Unicode East-Asian-Width
+ * (UAX #11) classification, the standard data source terminals' wcwidth() use.
+ * (A hand-picked range table previously here omitted hiragana/katakana/hangul
+ * entirely — the v0.6.7 kana bug; a curated in-repo Unicode table is the wrong
+ * tool for a standard, spec-evolving problem.) We use the lib's per-codepoint
+ * `eastAsianWidth()` primitive (NOT its `characterLength()` helper, which counts
+ * Ambiguous as 2 and would render every box-drawing border double-width) and
+ * apply the standard modern-terminal locale policy ourselves:
+ *   - Wide (W) + Fullwidth (F)  → 2
+ *   - Ambiguous (A), Narrow, Halfwidth, Neutral → 1
+ * Ambiguous→1 keeps box-drawing (│ ╭ ─), arrows and enclosed digits at width 1
+ * (legacy CJK locales render them wide; we don't). Emoji/pictographs classify as
+ * width 1, matching the embedded terminal's cursor advance (the cell-diff oracle).
+ * Verified codepoint-by-codepoint against @xterm/headless in test-char-width.js;
+ * the only divergences are three archaic ranges (Yijing, Hangul Jamo Ext-A, Kana
+ * Supplement) the lib's Unicode vintage and the terminal disagree on — unhittable
+ * in practice.
+ *
+ * The `cp < 0x1100` fast path returns 1 for ASCII/Latin (the overwhelming common
+ * case) before touching the lib, so the hot width-summing loops pay one integer
+ * comparison per ASCII char and never allocate.
  */
 function charWidth(cp) {
-  if ((cp >= 0x4E00 && cp <= 0x9FFF) ||      // CJK Unified Ideographs
-      (cp >= 0x3000 && cp <= 0x303F) ||      // CJK Symbols and Punctuation
-      (cp >= 0xFF01 && cp <= 0xFF60) ||      // Fullwidth Forms
-      (cp >= 0xF900 && cp <= 0xFAFF) ||      // CJK Compatibility Ideographs
-      (cp >= 0x3400 && cp <= 0x4DBF) ||      // CJK Extension A
-      (cp >= 0x20000 && cp <= 0x2A6DF)) {    // CJK Extension B
-    return 2;
-  }
-  return 1;
+  if (cp < 0x1100) return 1;           // ASCII / Latin / common — fast path
+  const c = eastAsianWidth(String.fromCodePoint(cp));
+  return (c === 'W' || c === 'F') ? 2 : 1;
 }
 
 /**

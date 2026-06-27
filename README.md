@@ -3,7 +3,7 @@
 > **everybody tui — a glue framework for the tools around your real work;
 > AI writes it, you run it as TUI or CLI.**
 
-`MIT License · Node.js · npm runtime deps: node-pty, @xterm/headless, js-yaml`
+`MIT License · Node.js · npm runtime deps: node-pty, @xterm/headless, js-yaml, eastasianwidth`
 
 ```
 ╭─(1)─Containers───────╮╭─(0)─Actions────────────────────────────────╮
