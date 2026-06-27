@@ -30,11 +30,13 @@ const { runEffects } = require('./effects');
 // instance reconcile) lives in its own after-update-phase module now; the loop
 // only gates it at depth-0 exit. One-way edge: loop → finalize.
 const { finalizeDispatch } = require('./finalize');
-// Replay recorder (io leaf — legal down-edge, like the event-log require below).
-// Records every Msg at the three entry points below; a near-no-op when disabled
-// (the default). The replay driver disables it during a fold, so replayed Msgs
-// are not re-recorded. v0.6.6 replay arc.
-const sessionLog = require('../../io/session-log');
+// Inbound dispatch middleware (C7, v0.6.7) — the ordered link list wrapping every
+// Msg entering the loop, before the reducer runs. The WAL recorder + a crash-
+// reporter are built-in links (see ./middleware). This replaces the 3 hardcoded
+// sessionLog.recordMsg calls that were the only inbound tap. The record link
+// self-gates when recording is disabled (the default) and during replay folds, so
+// it stays a near-no-op off the record path. v0.6.6 replay arc + v0.6.7 C7.
+const mw = require('./middleware');
 
 // Component registry lives in panel/api; read it lazily (the object ref is
 // stable — registerComponent mutates it in place) so this module never eagerly
@@ -71,8 +73,15 @@ let _dispatchDepth = 0;
 // Cmds (apply_msg / dispatch_msg) re-entering the dispatch graph see post-Msg
 // state. applyMsg does NOT run the finalizer (root Msgs don't move panes).
 function applyMsg(msg) {
-  sessionLog.recordMsg({ lane: 'root', msg });
-  const [next, cmds] = runtime.update(getModel(), msg);
+  mw.run({ lane: 'root', msg }, _termRoot);
+}
+
+// Stable lane-terminal (cached by identity in the middleware): the actual root
+// dispatch the inbound link chain terminates in. Reads `entry.msg` so an outer
+// link may transform it. NOT depth-counted, does NOT finalize (root Msgs don't
+// move panes).
+function _termRoot(entry) {
+  const [next, cmds] = runtime.update(getModel(), entry.msg);
   setModel(next);
   runEffects(cmds);
 }
@@ -85,14 +94,18 @@ function applyMsg(msg) {
  * don't stop the others.
  */
 function dispatchMsg(msg) {
-  sessionLog.recordMsg({ lane: 'comp', msg });
+  // Depth counter + finalize gate are the OUTER (loop-structural) frame; the
+  // inbound middleware wraps only the inner dispatch (record/crash links etc.).
   _dispatchDepth++;
-  try { _dispatchMsgInner(msg); }
+  try { mw.run({ lane: 'comp', msg }, _termComp); }
   finally {
     _dispatchDepth--;
     if (_dispatchDepth === 0) finalizeDispatch();
   }
 }
+
+// Stable lane-terminal for the Component fan-out path.
+function _termComp(entry) { _dispatchMsgInner(entry.msg); }
 
 function _dispatchMsgInner(msg) {
   const components = _reg();
@@ -169,14 +182,17 @@ function _dispatchMsgInner(msg) {
  * The claim is a `_claimed` sentinel effect in the Component's return.
  */
 function dispatchKeyToFocused(key, seq) {
-  sessionLog.recordMsg({ lane: 'key', key, keySeq: seq });
   _dispatchDepth++;
-  try { return _dispatchKeyToFocusedInner(key, seq); }
+  try { return mw.run({ lane: 'key', key, seq }, _termKey); }
   finally {
     _dispatchDepth--;
     if (_dispatchDepth === 0) finalizeDispatch();
   }
 }
+
+// Stable lane-terminal for the focused-key path; returns the `claimed` bool the
+// chain threads back out (the input layer uses it to gate the framework default).
+function _termKey(entry) { return _dispatchKeyToFocusedInner(entry.key, entry.seq); }
 
 // blessed-exceptions #3 — apply a Component's optional augmentMsg enrichment
 // hook in ONE place (the impure shell). When a Component declares
