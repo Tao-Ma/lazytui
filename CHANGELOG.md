@@ -6,6 +6,8 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.6] — 2026-06-27
+
 ### Architecture
 
 This release drives the decision layer to the honest pure-TEA ceiling:
@@ -2392,7 +2394,8 @@ release tarballs. Full pre-squash development history is preserved
 on the internal gitea mirror under the `backup/main-history` branch
 and the `v0.1.0-pre-squash` tag.
 
-[Unreleased]: https://github.com/Tao-Ma/lazytui/compare/v0.6.5...HEAD
+[Unreleased]: https://github.com/Tao-Ma/lazytui/compare/v0.6.6...HEAD
+[0.6.6]: https://github.com/Tao-Ma/lazytui/compare/v0.6.5...v0.6.6
 [0.6.5]: https://github.com/Tao-Ma/lazytui/compare/v0.6.4...v0.6.5
 [0.6.4]: https://github.com/Tao-Ma/lazytui/compare/v0.6.3...v0.6.4
 [0.6.3]: https://github.com/Tao-Ma/lazytui/compare/v0.6.2...v0.6.3
