@@ -7,7 +7,7 @@
  */
 'use strict';
 
-const { withModes: _withModes, withModal: _withModal } = require('../model-ops');
+const { withModalMode: _withModalMode, withModal: _withModal } = require('../model-ops');
 
 const TYPES = ['menu_open', 'menu_close', 'menu_nav', 'menu_activate'];
 
@@ -18,16 +18,12 @@ function update(model, msg) {
       // is stored so the menu render can open at a right-click's cursor; null
       // (the keyboard `x` verb) keeps the menu centered. `msg.title` overrides
       // the overlay title (right-click context menu → 'Actions'); null = 'Menu'.
-      return [{
-        ..._withModes(model, { menuOpen: true }),
-        modal: { ...model.modal, menu: { items: msg.items || [], idx: 0, anchor: msg.anchor || null, title: msg.title || null } },
-      }, []];
+      return [_withModalMode(model, { menuOpen: true },
+        { menu: { items: msg.items || [], idx: 0, anchor: msg.anchor || null, title: msg.title || null } }), []];
     case 'menu_close':
       if (!model.modes.menuOpen) return [model, []];
-      return [{
-        ..._withModes(model, { menuOpen: false }),
-        modal: { ...model.modal, menu: { items: [], idx: 0, anchor: null, title: null } },
-      }, []];
+      return [_withModalMode(model, { menuOpen: false },
+        { menu: { items: [], idx: 0, anchor: null, title: null } }), []];
     case 'menu_nav': {
       const mm = model.modal.menu;
       const items = mm.items;
@@ -44,10 +40,8 @@ function update(model, msg) {
       // keyboard Enter omits it and activates the highlighted row.
       const i = (typeof msg.idx === 'number') ? msg.idx : mm.idx;
       const item = mm.items[i];
-      const next = {
-        ..._withModes(model, { menuOpen: false }),
-        modal: { ...model.modal, menu: { items: [], idx: 0, anchor: null, title: null } },
-      };
+      const next = _withModalMode(model, { menuOpen: false },
+        { menu: { items: [], idx: 0, anchor: null, title: null } });
       if (!item) return [next, []];
       // item[2] (arg) rides along for verbs that take one (copy_text); bare
       // command verbs leave it undefined.

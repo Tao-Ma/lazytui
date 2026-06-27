@@ -5,17 +5,15 @@
  */
 'use strict';
 
-const { withModes: _withModes, withModal: _withModal } = require('../model-ops');
+const { withModalMode: _withModalMode, withModal: _withModal } = require('../model-ops');
 
 const TYPES = ['copy_enter', 'copy_nav', 'copy_select', 'copy_cancel'];
 
 function update(model, msg) {
   switch (msg.type) {
     case 'copy_enter':
-      return [{
-        ..._withModes(model, { copyMode: true }),
-        modal: { ...model.modal, copy: { options: msg.options || [], idx: 0 } },
-      }, []];
+      return [_withModalMode(model, { copyMode: true },
+        { copy: { options: msg.options || [], idx: 0 } }), []];
     case 'copy_nav': {
       const c = model.modal.copy;
       if (!c.options.length) return [model, []];
@@ -31,18 +29,13 @@ function update(model, msg) {
       // (reduce time) because `next` clears `options`, so the effect can no
       // longer read it back from the model.
       const chosen = model.modal.copy.options[idx];
-      const next = {
-        ..._withModes(model, { copyMode: false }),
-        modal: { ...model.modal, copy: { options: [], idx: 0 } },
-      };
+      const next = _withModalMode(model, { copyMode: false }, { copy: { options: [], idx: 0 } });
       return [next, [{ type: 'copy_commit', idx, label: chosen ? chosen.label : undefined }]];
     }
     case 'copy_cancel':
       if (!model.modes.copyMode) return [model, []];
-      return [{
-        ..._withModes(model, { copyMode: false }),
-        modal: { ...model.modal, copy: { options: [], idx: 0 } },
-      }, [{ type: 'copy_commit', idx: -1 }]];  // -1 = clear, no copy
+      return [_withModalMode(model, { copyMode: false }, { copy: { options: [], idx: 0 } }),
+        [{ type: 'copy_commit', idx: -1 }]];  // -1 = clear, no copy
     default:
       return [model, []];
   }

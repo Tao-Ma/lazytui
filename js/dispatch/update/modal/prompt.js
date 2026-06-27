@@ -7,7 +7,7 @@
  */
 'use strict';
 
-const { withModes: _withModes, withModal: _withModal } = require('../model-ops');
+const { withModalMode: _withModalMode, withModal: _withModal } = require('../model-ops');
 // Pending suffix of the autosuggest ghost (Tab/Right accept). Pure leaf —
 // shared with the prompt overlay render.
 const { ghostSuffix } = require('../../../leaves/render/ghost');
@@ -17,14 +17,12 @@ const TYPES = ['prompt_enter', 'prompt_key', 'prompt_submit', 'prompt_cancel'];
 function update(model, msg) {
   switch (msg.type) {
     case 'prompt_enter':
-      return [{
-        ..._withModes(model, { promptMode: true }),
-        modal: { ...model.modal, prompt: {
+      return [_withModalMode(model, { promptMode: true },
+        { prompt: {
           label: msg.label || 'Input', spec: msg.spec || '',
           text: typeof msg.text === 'string' ? msg.text : '',
           ghost: msg.ghost || '', cmd: msg.cmd || null,
-        } },
-      }, []];
+        } }), []];
     case 'prompt_key': {
       const p = model.modal.prompt;
       let text = p.text;
@@ -51,19 +49,15 @@ function update(model, msg) {
       const p = model.modal.prompt;
       const text = p.text;
       const cmd = p.cmd;
-      const next = {
-        ..._withModes(model, { promptMode: false }),
-        modal: { ...model.modal, prompt: { label: '', spec: '', text: '', ghost: '', cmd: null } },
-      };
+      const next = _withModalMode(model, { promptMode: false },
+        { prompt: { label: '', spec: '', text: '', ghost: '', cmd: null } });
       const args = text.trim() ? text.trim().split(/\s+/) : [];
       return [next, cmd ? [{ ...cmd, args }] : []];
     }
     case 'prompt_cancel':
       if (!model.modes.promptMode) return [model, []];
-      return [{
-        ..._withModes(model, { promptMode: false }),
-        modal: { ...model.modal, prompt: { label: '', spec: '', text: '', ghost: '', cmd: null } },
-      }, []];
+      return [_withModalMode(model, { promptMode: false },
+        { prompt: { label: '', spec: '', text: '', ghost: '', cmd: null } }), []];
     default:
       return [model, []];
   }
