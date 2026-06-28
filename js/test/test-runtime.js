@@ -28,7 +28,7 @@ describe('[0] init — builds the root model', () => {
 });
 
 describe('[3] update — (model, msg) → [model, cmds], pure + Cmd descriptors', () => {
-  it('focus_set stores focus and always emits show_selected_info', () => {
+  it('focus_set stores focus + show_selected_info; a real change also pushes nav-history', () => {
     const m = runtime.init();
     // Phase 1c: focus_set moved to layout.update — test the Component
     // update directly with an isolated slice.
@@ -37,12 +37,12 @@ describe('[3] update — (model, msg) → [model, cmds], pure + Cmd descriptors'
     slice.focus = 'groups';
     const [s1, c1] = layout.update({ type: 'focus_set', focus: 'actions' }, slice);
     eq(s1.focus, 'actions');
-    eq(c1.length, 1);
-    eq(c1[0].type, 'show_selected_info');
-    // null focus leaves it put but still refreshes the body
+    // v0.6.7 — a real focus change refreshes the body AND emits nav_capture.
+    eq(c1.map(c => c.type), ['show_selected_info', 'nav_capture']);
+    // null focus leaves it put — no change → no nav_capture, still refreshes body
     const [s2, c2] = layout.update({ type: 'focus_set', focus: null }, s1);
     eq(s2.focus, 'actions', 'null focus is a no-op on the value');
-    eq(c2[0].type, 'show_selected_info');
+    eq(c2.map(c => c.type), ['show_selected_info'], 'a no-op focus does not push nav-history');
   });
   it('returns the SAME model object (hybrid: mutate-and-return)', () => {
     const m = runtime.init();

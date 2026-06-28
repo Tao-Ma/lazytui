@@ -384,7 +384,12 @@ function update(msg, slice) {
       // so cascading here too would double-fire it against the stale
       // pre-write item.
       const next = msg.focus != null ? msg.focus : slice.focus;
-      return [_withFocus(slice, next), msg.skipInfo ? [] : [{ type: 'show_selected_info' }]];
+      const ns = _withFocus(slice, next);
+      const cmds = msg.skipInfo ? [] : [{ type: 'show_selected_info' }];
+      // v0.6.7 — a real focus change (resolved paneId differs) is a nav-history
+      // push point, unless the change came FROM a restore (msg.noCapture).
+      if (ns.focus !== slice.focus && !msg.noCapture) cmds.push({ type: 'nav_capture' });
+      return [ns, cmds];
     }
     // v0.6.4 #1 Step 2 — unified `[≡]` pane-menu open. Sets the target
     // paneId (the pane whose `[≡]` was clicked / `T` focused) + arms

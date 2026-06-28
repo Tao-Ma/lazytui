@@ -747,6 +747,10 @@ function _registerBuiltinChords() {
   // the first overlay frame shows a fresh age (model.now / tick arc).
   keybindings.registerKeyBinding('j',  { label: 'jobs (running)', run: () => applyMsg({ type: 'jobs_open', now: Date.now() }) }, b);
   keybindings.registerKeyBinding('e',  { label: 'diagnostics', run: () => applyMsg({ type: 'diag_log_open', now: Date.now() }) }, b);
+  // v0.6.7 Phase 3 — nav-history jumplist. vim mnemonic: o=Older (back),
+  // i=newer/In (forward), minus the Ctrl (project rule — no Ctrl-* binds).
+  keybindings.registerKeyBinding('o',  { label: 'nav back',    run: () => applyMsg({ type: 'nav_back' }) },    b);
+  keybindings.registerKeyBinding('i',  { label: 'nav forward', run: () => applyMsg({ type: 'nav_forward' }) }, b);
   keybindings.labelSubtree('g', '+goto');
 }
 _registerBuiltinChords();
