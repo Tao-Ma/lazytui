@@ -2,8 +2,9 @@
  * Command-menu sub-reducer (#D12). Items (action strings, no closures) are
  * threaded by the menu_open handler (built from the layout slice there); nav
  * skips null separators; activate emits a menu_action Cmd routing the chosen
- * verb back through dispatch.handleAction.
- * `update(model, msg) → [model, cmds]`.
+ * verb back through dispatch.handleAction. The fixed `menu_action` base is
+ * staged on `model.modal.continuation` (E14) and patched with the chosen
+ * verb/arg at activate. `update(model, msg) → [model, cmds]`.
  */
 'use strict';
 
@@ -19,11 +20,12 @@ function update(model, msg) {
       // (the keyboard `x` verb) keeps the menu centered. `msg.title` overrides
       // the overlay title (right-click context menu → 'Actions'); null = 'Menu'.
       return [_withModalMode(model, { menuOpen: true },
-        { menu: { items: msg.items || [], idx: 0, anchor: msg.anchor || null, title: msg.title || null } }), []];
+        { menu: { items: msg.items || [], idx: 0, anchor: msg.anchor || null, title: msg.title || null },
+          continuation: { type: 'menu_action' } }), []];
     case 'menu_close':
       if (!model.modes.menuOpen) return [model, []];
       return [_withModalMode(model, { menuOpen: false },
-        { menu: { items: [], idx: 0, anchor: null, title: null } }), []];
+        { menu: { items: [], idx: 0, anchor: null, title: null }, continuation: null }), []];
     case 'menu_nav': {
       const mm = model.modal.menu;
       const items = mm.items;
@@ -40,12 +42,13 @@ function update(model, msg) {
       // keyboard Enter omits it and activates the highlighted row.
       const i = (typeof msg.idx === 'number') ? msg.idx : mm.idx;
       const item = mm.items[i];
+      const cont = model.modal.continuation;
       const next = _withModalMode(model, { menuOpen: false },
-        { menu: { items: [], idx: 0, anchor: null, title: null } });
+        { menu: { items: [], idx: 0, anchor: null, title: null }, continuation: null });
       if (!item) return [next, []];
       // item[2] (arg) rides along for verbs that take one (copy_text); bare
       // command verbs leave it undefined.
-      return [next, [{ type: 'menu_action', action: item[1], arg: item[2] }]];
+      return [next, [{ ...cont, action: item[1], arg: item[2] }]];
     }
     default:
       return [model, []];

@@ -36,10 +36,28 @@ function withModalMode(model, modeFlagPatch, modalPatch) {
   };
 }
 
+// E14 — the modal continuation (and every modal sub-state) must be
+// serializable DATA, never a closure: `model.modal` rides a checkpoint's JSON
+// snapshot, so a function value would silently drop on a fold and the resumed
+// modal would emit `undefined`. This pure scan walks `model.modal` and returns
+// the dotted path of the first function value found, or null when clean. Used
+// by test-modal-continuation.js (and available as a dev guard) to keep the
+// "no closure in the model" contract enforced rather than conventional.
+function findModalClosure(node, path = 'modal') {
+  if (typeof node === 'function') return path;
+  if (node && typeof node === 'object') {
+    for (const k of Object.keys(node)) {
+      const hit = findModalClosure(node[k], `${path}.${k}`);
+      if (hit) return hit;
+    }
+  }
+  return null;
+}
+
 // (FIX-3 Phase 6 — the gated frame-clock loop is no longer armed here. The
 // `*_open` arms just set their mode + seed `now`; the clock ticks via the
 // model-conditional `clock` interval Sub, declared while an age overlay is
 // open — app/state.js#_appSubscriptions. The old `armClock`/`arm_clock`/
 // `CLOCK_MS` self-re-arm is retired.)
 
-module.exports = { withModes, withModal, withModalMode };
+module.exports = { withModes, withModal, withModalMode, findModalClosure };

@@ -24,7 +24,8 @@ const { describe, it, section, eq, report } = require('./test-runner');
 
 function reset() {
   getModel().modes.confirmMode = false;
-  getModel().modal.confirm = { message: '', cmd: null };
+  getModel().modal.confirm = { message: '' };
+  getModel().modal.continuation = null;
   jobs._reset();
 }
 // Drive a key through the active mode handler (the confirm modeChain entry).
@@ -43,7 +44,7 @@ describe('[1] runAction with confirm: stages the overlay, defers the action', ()
     reset();
     runAction('stop', CONFIRM_ACTION);
     eq(getModel().modes.confirmMode, true, 'overlay opened');
-    eq(getModel().modal.confirm.cmd.type, 'do_run', 'pending do_run Cmd staged (data, not a closure)');
+    eq(getModel().modal.continuation.type, 'do_run', 'pending do_run Cmd staged on continuation (data, not a closure)');
     eq(lastRanLabel(), '', 'execution deferred (no job registered)');
   });
 });

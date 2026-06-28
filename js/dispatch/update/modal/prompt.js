@@ -1,8 +1,9 @@
 /**
  * Args-prompt modal sub-reducer (#D12). Same Cmd-descriptor pattern as
- * confirm: the caller stages a base do_run Cmd; submit parses args from the
- * typed text and merges them in before emitting. The ghost is seeded by the
- * caller (reading the yank register, which the reducer can't).
+ * confirm: the caller stages a base do_run Cmd on `model.modal.continuation`
+ * (E14); submit parses args from the typed text and merges them in before
+ * emitting. The ghost is seeded by the caller (reading the yank register,
+ * which the reducer can't).
  * `update(model, msg) → [model, cmds]`.
  */
 'use strict';
@@ -21,8 +22,8 @@ function update(model, msg) {
         { prompt: {
           label: msg.label || 'Input', spec: msg.spec || '',
           text: typeof msg.text === 'string' ? msg.text : '',
-          ghost: msg.ghost || '', cmd: msg.cmd || null,
-        } }), []];
+          ghost: msg.ghost || '',
+        }, continuation: msg.cmd || null }), []];
     case 'prompt_key': {
       const p = model.modal.prompt;
       let text = p.text;
@@ -48,16 +49,16 @@ function update(model, msg) {
       if (!model.modes.promptMode) return [model, []];
       const p = model.modal.prompt;
       const text = p.text;
-      const cmd = p.cmd;
+      const cmd = model.modal.continuation;
       const next = _withModalMode(model, { promptMode: false },
-        { prompt: { label: '', spec: '', text: '', ghost: '', cmd: null } });
+        { prompt: { label: '', spec: '', text: '', ghost: '' }, continuation: null });
       const args = text.trim() ? text.trim().split(/\s+/) : [];
       return [next, cmd ? [{ ...cmd, args }] : []];
     }
     case 'prompt_cancel':
       if (!model.modes.promptMode) return [model, []];
       return [_withModalMode(model, { promptMode: false },
-        { prompt: { label: '', spec: '', text: '', ghost: '', cmd: null } }), []];
+        { prompt: { label: '', spec: '', text: '', ghost: '' }, continuation: null }), []];
     default:
       return [model, []];
   }

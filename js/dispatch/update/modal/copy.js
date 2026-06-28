@@ -1,7 +1,9 @@
 /**
  * Copy-menu modal sub-reducer (#D12). The content thunks stay module-held
  * (overlay/copy.js), resolved by the copy_commit Cmd carrying the chosen idx
- * (decision-A copy-split). `update(model, msg) → [model, cmds]`.
+ * (decision-A copy-split). The fixed `copy_commit` base is staged on
+ * `model.modal.continuation` (E14) at enter and patched with the chosen
+ * idx/label at select. `update(model, msg) → [model, cmds]`.
  */
 'use strict';
 
@@ -13,7 +15,7 @@ function update(model, msg) {
   switch (msg.type) {
     case 'copy_enter':
       return [_withModalMode(model, { copyMode: true },
-        { copy: { options: msg.options || [], idx: 0 } }), []];
+        { copy: { options: msg.options || [], idx: 0 }, continuation: { type: 'copy_commit' } }), []];
     case 'copy_nav': {
       const c = model.modal.copy;
       if (!c.options.length) return [model, []];
@@ -29,12 +31,13 @@ function update(model, msg) {
       // (reduce time) because `next` clears `options`, so the effect can no
       // longer read it back from the model.
       const chosen = model.modal.copy.options[idx];
-      const next = _withModalMode(model, { copyMode: false }, { copy: { options: [], idx: 0 } });
-      return [next, [{ type: 'copy_commit', idx, label: chosen ? chosen.label : undefined }]];
+      const cont = model.modal.continuation;
+      const next = _withModalMode(model, { copyMode: false }, { copy: { options: [], idx: 0 }, continuation: null });
+      return [next, [{ ...cont, idx, label: chosen ? chosen.label : undefined }]];
     }
     case 'copy_cancel':
       if (!model.modes.copyMode) return [model, []];
-      return [_withModalMode(model, { copyMode: false }, { copy: { options: [], idx: 0 } }),
+      return [_withModalMode(model, { copyMode: false }, { copy: { options: [], idx: 0 }, continuation: null }),
         [{ type: 'copy_commit', idx: -1 }]];  // -1 = clear, no copy
     default:
       return [model, []];

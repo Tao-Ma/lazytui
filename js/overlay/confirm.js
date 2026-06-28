@@ -3,8 +3,8 @@
  *
  * State + behavior now live in the reducer (runtime.update: confirm_enter/
  * accept/reject). The pending effect is staged as a Cmd DESCRIPTOR (data,
- * not a closure) in model.modal.confirm.cmd; `y` re-emits it. This module is
- * render-only: renderConfirmOverlay paints model.modal.confirm.message.
+ * not a closure) on model.modal.continuation (E14); `y` re-emits it. This
+ * module is render-only: renderConfirmOverlay paints model.modal.confirm.message.
  */
 'use strict';
 

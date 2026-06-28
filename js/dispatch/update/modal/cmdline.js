@@ -21,7 +21,8 @@ function update(model, msg) {
   switch (msg.type) {
     case 'cmdline_enter':
       return [_withModalMode(model, { cmdMode: true },
-        { cmdline: { text: '', sel: 0, scroll: 0, matches: [] } }), [{ type: 'cmdline_rebuild' }]];
+        { cmdline: { text: '', sel: 0, scroll: 0, matches: [] }, continuation: { type: 'cmdline_run' } }),
+      [{ type: 'cmdline_rebuild' }]];
     case 'cmdline_set_matches': {
       const c = model.modal.cmdline;
       const matches = msg.matches || [];
@@ -119,8 +120,9 @@ function update(model, msg) {
       const sel = c.sel;
       const { args } = _cmdlineSplit(c.text);
       const had = c.matches.length > 0;
+      const cont = model.modal.continuation;
       const next = _withModalMode(model, { cmdMode: false },
-        { cmdline: { text: '', sel: 0, scroll: 0, matches: [] } });
+        { cmdline: { text: '', sel: 0, scroll: 0, matches: [] }, continuation: null });
       // cmdline_run resolves the module-held closure at `sel` + runs it with
       // the parsed args; cmdline_clear drops the held registry afterward.
       // #F4.4 — carry the chosen entry's `display` on the Cmd so the use-site
@@ -128,7 +130,7 @@ function update(model, msg) {
       // be captured HERE (reduce time) because `next` clears `matches`, so the
       // effect can no longer read it back from the model.
       return [next, had
-        ? [{ type: 'cmdline_run', sel, args, display: chosen ? chosen.display : undefined }, { type: 'cmdline_clear' }]
+        ? [{ ...cont, sel, args, display: chosen ? chosen.display : undefined }, { type: 'cmdline_clear' }]
         : [{ type: 'cmdline_clear' }]];
     }
     case 'cmdline_cancel':
@@ -137,7 +139,7 @@ function update(model, msg) {
       // teardown points at (theme on revert, etc.) BEFORE clear drops
       // the registry — Esc must restore, not commit.
       return [_withModalMode(model, { cmdMode: false },
-        { cmdline: { text: '', sel: 0, scroll: 0, matches: [] } }),
+        { cmdline: { text: '', sel: 0, scroll: 0, matches: [] }, continuation: null }),
       [{ type: 'cmdline_revert_preview' }, { type: 'cmdline_clear' }]];
     default:
       return [model, []];

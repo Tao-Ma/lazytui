@@ -24,6 +24,7 @@ const sessionLog = require('../io/session-log');
 const replay = require('../dispatch/runtime/replay');
 const terminal = require('../io/terminal');
 const { render } = require('../render/paint');
+const { findModalClosure } = require('../dispatch/update/model-ops');
 
 // --- boot a minimal-but-real app ---
 const _grp = (name, label) => ({
@@ -118,6 +119,35 @@ function gridText(xterm) {
     it('replayed model deep-equals the live model', () => eq(replayedState.model, liveState.model));
     it('replayed slices deep-equal the live slices', () => eq(replayedState.slices, liveState.slices));
     it('replayed frame is byte-identical to the live frame', () => eq(replayedFrame, liveFrame));
+  });
+
+  // ===== Proof 1b: E14 modal continuation folds (serializable, not a closure) =====
+  // Self-contained mini-fold so it doesn't perturb the main frame comparison
+  // (an open overlay would shift the painter's module-local diff baseline).
+  // Stage a confirm continuation from a fresh checkpoint, fold it, and assert
+  // the staged Cmd DESCRIPTOR round-trips — a closure would drop through the
+  // checkpoint's JSON snapshot.
+  const cpModal = replay.snapshotState();
+  sessionLog.enable(true);
+  sessionLog.clear();
+  capture(() => {
+    loop.applyMsg({ type: 'confirm_enter', message: 'Replay me',
+      cmd: { type: 'do_run', actionKey: 'a1', action: { script: 'echo hi', type: 'run' } } });
+  });
+  const liveModal = replay.snapshotState();
+  const modalLog = sessionLog.snapshot();
+  sessionLog.enable(false);
+  replay.replayEntries(modalLog, { fromState: cpModal });
+  const replayedModal = replay.snapshotState();
+
+  describe('[1b] E14 modal continuation = fold(reducer, MsgLog)', () => {
+    it('a serializable continuation was staged (no closure)', () => {
+      assert(liveModal.model.modal.continuation && typeof liveModal.model.modal.continuation === 'object',
+        'continuation is a staged object');
+      assert(findModalClosure(liveModal.model.modal) === null, 'no closure under model.modal');
+    });
+    it('the staged continuation folds identically from the checkpoint', () =>
+      eq(replayedModal.model.modal.continuation, liveModal.model.modal.continuation));
   });
 
   describe('[2] terminal grid = fold(write, ByteLog)', () => {
