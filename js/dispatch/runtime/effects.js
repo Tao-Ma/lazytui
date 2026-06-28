@@ -366,6 +366,110 @@ function installBuiltins() {
       console.error('[leader]', e && e.message);
     }
   });
+
+  // --- v0.6.7 Phase 3: navigation history (jumplist) -------------------------
+  // Two "Cmd that reads then produces a Msg" effects (the jobs_route pattern):
+  // the topology/view reads a pure reducer must not do happen HERE, and the
+  // result is threaded onto a flat Msg whose reducer arm is pure + recorded
+  // (so the WAL fold reproduces model.nav without re-running these effects).
+
+  // nav_capture: a group/focus/tab transition committed — read the POST-commit
+  // coordinates by STABLE identity (group name, tab targetKey, focused-item
+  // idOf) and stamp them onto a nav_record Msg. The fragile paneId rides along
+  // only as a hint behind the stable `type` (the restore falls back to type).
+  registerEffect('nav_capture', () => {
+    const route = require('../../panel/route');
+    const m = getModel();
+    const focusId = route.getFocus();
+    if (focusId == null) return;
+    const type = route.instanceKind(focusId);
+    const loc = { v: 1, kind: 'loc', group: m.currentGroup || '',
+      focus: { paneId: focusId, type: type || null }, tab: null, sel: null };
+    if (type === route.VIEWER_KIND) {
+      // Focus is on the viewer → capture its active tab by stable key.
+      const pt = require('../../leaves/wm/pane-tabs');
+      const vid = route.resolveTarget('viewer');
+      const slice = vid ? route.getInstanceSlice(vid) : null;
+      if (slice) {
+        const key = pt.resolveTabKey(slice.tab | 0, slice, m);
+        if (key) loc.tab = { targetKey: key };
+      }
+    } else if (type) {
+      // Focus is on a navigator → capture the highlighted item by stable id.
+      const api = require('../../panel/api');
+      const navState = require('../../panel/nav-state');
+      const items = api.getItems(type);
+      const item = items[navState.getSel(type)];
+      if (item != null) loc.sel = { panel: type, id: api.idOf(type, item) };
+    }
+    require('../control/dispatch').applyMsg({ type: 'nav_record', loc });
+  });
+
+  // nav_restore: a back/forward step resolved to a target location — resolve
+  // each stable coordinate to a LIVE address and fire the existing primitive
+  // Msgs (set_current_group / focus_set / tab_switch / set_cursor), all stamped
+  // noCapture so retracing doesn't push new history. Per-coordinate best-effort
+  // (pane/tab/item gone → land on the nearest); a record whose GROUP is gone is
+  // the spine missing → prune it and continue the travel in `dir`.
+  registerEffect('nav_restore', (eff) => {
+    const loc = eff && eff.loc;
+    if (!loc) return;
+    const dir = eff.dir || 0;
+    const route = require('../../panel/route');
+    const dispatch = require('../control/dispatch');
+    const loop = require('./loop');
+    const m = getModel();
+
+    // 404 — group gone (config reloaded / group removed): prune + continue.
+    if (loc.group && m.config && m.config.groups && !(loc.group in m.config.groups)) {
+      dispatch.applyMsg({ type: 'nav_prune', index: m.nav.cursor });
+      if (dir < 0) dispatch.applyMsg({ type: 'nav_back' });
+      else if (dir > 0) dispatch.applyMsg({ type: 'nav_forward' });
+      return;
+    }
+
+    // 1. group (stable name; no-ops if already current).
+    if (loc.group) dispatch.applyMsg({ type: 'set_current_group', name: loc.group, noCapture: true });
+
+    // 2. focus — prefer the exact paneId if it still resolves; else fall back to
+    //    the stable TYPE and let layout._resolvePaneIdForFocus pick a live pane.
+    if (loc.focus) {
+      const arg = route.hasInstance(loc.focus.paneId) ? loc.focus.paneId : loc.focus.type;
+      if (arg) loop.dispatchMsg(route.wrap('layout', { type: 'focus_set', focus: arg, skipInfo: true, noCapture: true }));
+    }
+
+    // 3. tab — invert targetKey → the current idx (tab set shifts as actions/
+    //    terminals/content come and go); skip if it no longer resolves.
+    if (loc.tab && loc.tab.targetKey) {
+      const pt = require('../../leaves/wm/pane-tabs');
+      const mm = getModel();
+      const vid = route.resolveTarget('viewer');
+      const slice = vid ? route.getInstanceSlice(vid) : null;
+      if (slice) {
+        const info = pt.flatTabInfo(slice, mm, mm.currentGroup);
+        let idx = -1;
+        for (let i = 0; i < info.total; i++) {
+          if (pt.resolveTabKey(i, { ...slice, tab: i }, mm) === loc.tab.targetKey) { idx = i; break; }
+        }
+        if (idx >= 0) loop.dispatchMsg(route.wrap(vid,
+          { type: 'tab_switch', idx, targetKey: loc.tab.targetKey, currentGroup: mm.currentGroup, noCapture: true }));
+      }
+    }
+
+    // 4. sel — find the item by stable id in the CURRENT list; nearest (clamp to
+    //    0) if it's gone. set_cursor doesn't push, so no noCapture needed.
+    if (loc.sel && loc.sel.panel) {
+      const api = require('../../panel/api');
+      const b = route.bundle(loc.sel.panel);
+      if (b) {
+        const items = api.getItems(loc.sel.panel);
+        let index = items.findIndex(it => api.idOf(loc.sel.panel, it) === loc.sel.id);
+        if (index < 0) index = 0;
+        loop.dispatchMsg(route.wrap(b.target, { type: 'set_cursor', panel: loc.sel.panel, index }));
+        try { dispatch.showSelectedInfo(); } catch (_) { /* no renderer (test) */ }
+      }
+    }
+  });
 }
 
 // Exposed so boot-wired subscription handlers that AREN'T started by an effect

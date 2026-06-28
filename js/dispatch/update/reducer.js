@@ -57,6 +57,9 @@ const route = require('../../panel/route');
 const { init, getModel, setModel } = require('../../model/store');
 // Shared root-model write helpers (#D12) — also used by the modal sub-reducers.
 const { withModes: _withModes } = require('./model-ops');
+// Navigation-history ring math (v0.6.7 Phase 3) — pure jumplist leaf; the
+// nav_record/nav_back/nav_forward/nav_prune arms delegate the array/index math.
+const navHist = require('../../leaves/wm/nav-history');
 
 // Per-modal sub-reducers (#D12). Each exports { TYPES, update(model,msg) }.
 const confirm = require('./modal/confirm');
@@ -314,7 +317,37 @@ function update(model, msg) {
       // every reader sees the same source.
       const name = typeof msg.name === 'string' ? msg.name : '';
       if (name === model.currentGroup) return [model, []];
-      return [{ ...model, currentGroup: name }, []];
+      // v0.6.7 — a committed group change is a nav-history push point, unless
+      // the change came FROM a restore (msg.noCapture, stamped by nav_restore)
+      // — which must not push new locations as it retraces.
+      const cmds = msg.noCapture ? [] : [{ type: 'nav_capture' }];
+      return [{ ...model, currentGroup: name }, cmds];
+    }
+    // v0.6.7 Phase 3 — navigation history (jumplist back/forward). All four
+    // arms are PURE (ring math in leaves/wm/nav-history); the impure work
+    // (reading coords to build a location; resolving a stable location → a live
+    // address) lives in the nav_capture / nav_restore effects. The push lives on
+    // the Msg path (a stamped nav_record), never the finalizer/a bare effect, so
+    // the WAL fold reconstructs model.nav identically (see docs/v0.6.7.md).
+    case 'nav_record': {
+      const nav = navHist.push(model.nav, msg.loc);
+      if (nav === model.nav) return [model, []];   // consecutive-dup no-op
+      return [{ ...model, nav }, []];
+    }
+    case 'nav_back': {
+      const r = navHist.step(model.nav, -1);
+      if (!r) return [model, []];
+      return [{ ...model, nav: r.nav }, [{ type: 'nav_restore', loc: r.loc, dir: -1 }]];
+    }
+    case 'nav_forward': {
+      const r = navHist.step(model.nav, +1);
+      if (!r) return [model, []];
+      return [{ ...model, nav: r.nav }, [{ type: 'nav_restore', loc: r.loc, dir: +1 }]];
+    }
+    case 'nav_prune': {
+      const nav = navHist.prune(model.nav, msg.index);
+      if (nav === model.nav) return [model, []];
+      return [{ ...model, nav }, []];
     }
     // v0.6.3 Phase D3 — boot-time root writes routed through Msgs. loadConfig
     // parses + dispatches set_config; initState dispatches set_register.

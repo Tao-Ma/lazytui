@@ -791,6 +791,9 @@ function reduceTabMsg(msg, slice, ctx) {
         // resolve scroll the same way every other kind does.
         next = { ...next, scroll: _resolveScroll(0, 0) };
       }
+      // v0.6.7 — a real tab switch (past the same-tab early-out above) is a
+      // nav-history push point, unless it came FROM a restore (msg.noCapture).
+      if (!msg.noCapture) effects.push({ type: 'nav_capture' });
       return [next, effects];
     }
     // v0.6.3 TEA Phase 3f: tab_cycle Msg retired. The root reducer's

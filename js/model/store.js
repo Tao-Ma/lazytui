@@ -198,6 +198,14 @@ function init() {
     history: [],     // operation history (feature/history) → history navigator
     diagLog: [],     // diagnostics ring (io/diag-log)      → leader-e overlay
     jobs: [],        // live-jobs registry (feature/jobs)   → Running overlay
+    // v0.6.7 Phase 3 — navigation history (jumplist back/forward over visited
+    // group/pane/tab/item locations). Pure model state, single-writer = the
+    // reducer (nav_record/nav_back/nav_forward/nav_prune arms via the
+    // leaves/wm/nav-history ring leaf). Born on the model (NOT a store-mirror)
+    // and written only on the Msg path, so checkpoint + WAL-fold reconstruct it
+    // identically; plain JSON (no Sets) so it rides structuredClone. Namespaced
+    // under `.nav` to avoid the unrelated `model.history` action navigator.
+    nav: { history: [], cursor: -1, cap: 100 },
     // v0.6.6 Finding B — hub metrics time-series, keyed by topic, sampled in by
     // the throttled `metrics-mirror` Sub: { [topic]: { series:{rowKey:samples[]},
     // schema } }. The stats panel renders f(model.metrics[topic]) instead of
