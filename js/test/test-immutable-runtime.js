@@ -84,14 +84,14 @@ describe('[immutable] root reducer — confirm modal', () => {
     );
     eq(next.modes.confirmMode, true);
     eq(next.modal.confirm.message, 'Sure?');
-    assert(next.modal.confirm.cmd === stagedCmd, 'cmd ref carried through');
-    eq(m.modal.confirm.cmd, null, 'original modal untouched');
+    assert(next.modal.continuation === stagedCmd, 'cmd ref carried through on continuation');
+    eq(m.modal.continuation, null, 'original modal untouched');
   });
 
   it('confirm_accept re-emits the staged Cmd + clears the modal', () => {
     const armed = { ...freshModel(),
       modes: { ...freshModel().modes, confirmMode: true },
-      modal: { ...freshModel().modal, confirm: { message: 'Sure?', cmd: { type: 'do_run' } } },
+      modal: { ...freshModel().modal, confirm: { message: 'Sure?' }, continuation: { type: 'do_run' } },
     };
     const [next, cmds] = expectNoMutation(
       'confirm_accept leaves input frozen',
@@ -99,7 +99,7 @@ describe('[immutable] root reducer — confirm modal', () => {
       armed,
     );
     eq(next.modes.confirmMode, false);
-    eq(next.modal.confirm.cmd, null);
+    eq(next.modal.continuation, null);
     eq(cmds[0].type, 'do_run');
   });
 });
@@ -120,7 +120,7 @@ describe('[immutable] root reducer — prompt modal', () => {
   it('prompt_key appends a printable char', () => {
     const armed = { ...freshModel(),
       modes: { ...freshModel().modes, promptMode: true },
-      modal: { ...freshModel().modal, prompt: { label: '', spec: '', text: 'ls', ghost: '', cmd: null } },
+      modal: { ...freshModel().modal, prompt: { label: '', spec: '', text: 'ls', ghost: '' } },
     };
     const [next] = expectNoMutation(
       'prompt_key leaves input frozen',
@@ -134,7 +134,7 @@ describe('[immutable] root reducer — prompt modal', () => {
   it('T26 — paste support: bracketed-paste content appends to prompt', () => {
     const armed = { ...freshModel(),
       modes: { ...freshModel().modes, promptMode: true },
-      modal: { ...freshModel().modal, prompt: { label: '', spec: '', text: 'ls ', ghost: '', cmd: null } },
+      modal: { ...freshModel().modal, prompt: { label: '', spec: '', text: 'ls ', ghost: '' } },
     };
     const [next] = expectNoMutation(
       'prompt_key paste leaves input frozen',
@@ -146,7 +146,7 @@ describe('[immutable] root reducer — prompt modal', () => {
   it('T26 — paste collapses newlines in single-line prompt', () => {
     const armed = { ...freshModel(),
       modes: { ...freshModel().modes, promptMode: true },
-      modal: { ...freshModel().modal, prompt: { label: '', spec: '', text: '', ghost: '', cmd: null } },
+      modal: { ...freshModel().modal, prompt: { label: '', spec: '', text: '', ghost: '' } },
     };
     const [next] = runtime.update(armed, { type: 'prompt_key', key: 'paste', seq: 'line1\nline2\r\nline3' });
     eq(next.modal.prompt.text, 'line1 line2 line3', 'newlines collapsed to spaces');
@@ -155,7 +155,7 @@ describe('[immutable] root reducer — prompt modal', () => {
   it('prompt_submit emits the Cmd with parsed args', () => {
     const armed = { ...freshModel(),
       modes: { ...freshModel().modes, promptMode: true },
-      modal: { ...freshModel().modal, prompt: { label: '', spec: '', text: 'foo bar baz', ghost: '', cmd: { type: 'do_run' } } },
+      modal: { ...freshModel().modal, prompt: { label: '', spec: '', text: 'foo bar baz', ghost: '' }, continuation: { type: 'do_run' } },
     };
     const [next, cmds] = expectNoMutation(
       'prompt_submit leaves input frozen',

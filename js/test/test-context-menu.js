@@ -74,11 +74,13 @@ describe('[ctx-menu] buildContextItems — registry → rows', () => {
 });
 
 describe('[ctx-menu] menu_activate — absolute idx + arg threading', () => {
-  // Minimal model: the arm reads model.modes.menuOpen + model.modal.menu.
+  // Minimal model: the arm reads model.modes.menuOpen + model.modal.menu and
+  // patches the menu_action base staged on model.modal.continuation (E14 — set
+  // by menu_open in the real path).
   function openWith(items) {
     return {
       modes: { menuOpen: true },
-      modal: { menu: { items, idx: 0, anchor: null, title: 'Actions' } },
+      modal: { menu: { items, idx: 0, anchor: null, title: 'Actions' }, continuation: { type: 'menu_action' } },
     };
   }
 

@@ -132,13 +132,24 @@ function init() {
       // — blessed-A elimination (docs/reducer-route-purity.md).
       filter: { text: '', panel: '', route: null },
       menu: { items: [], idx: 0, anchor: null, title: null },
-      // The pending confirm: a message + the Cmd DESCRIPTOR to emit on `y`
-      // (data, not a closure — e.g. {type:'do_run', actionKey, action, args}).
-      confirm: { message: '', cmd: null },
+      // E14 — the modal result continuation: the serializable Cmd DESCRIPTOR
+      // a modal emits on a successful dismissal. Opener-staged for
+      // confirm/prompt (the caller passes what to run on `y`/submit); a fixed
+      // base for copy/cmdline/menu that the terminal arm patches with the
+      // user's selection (idx / sel+args / verb) before emitting. ONE shared
+      // slot (modals are flat — one at a time); every enter sets it, every
+      // exit clears it. NEVER a closure — it must round-trip a checkpoint's
+      // JSON, so a fold reproduces the same Cmd (replay-safe). Pinned by
+      // test-modal-continuation.js + the no-fn guard in model-ops.
+      continuation: null,
+      // The pending confirm: just the display message now — the Cmd to emit on
+      // `y` lives on `continuation` (E14).
+      confirm: { message: '' },
       // The args prompt: label/spec (display), text (typed), ghost
-      // (autosuggest, seeded by the caller from the yank register), and the
-      // base Cmd descriptor — submit parses args from text + merges them in.
-      prompt: { label: '', spec: '', text: '', ghost: '', cmd: null },
+      // (autosuggest, seeded by the caller from the yank register). The base
+      // Cmd descriptor lives on `continuation` (E14); submit parses args from
+      // text + merges them into it.
+      prompt: { label: '', spec: '', text: '', ghost: '' },
       // Copy menu: only the render-safe {label, cancel} options + idx. The
       // actual content thunks (plugin closures) stay module-held in copy.js;
       // copy_commit invokes the selected one by index.

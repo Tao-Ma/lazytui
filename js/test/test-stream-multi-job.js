@@ -90,12 +90,12 @@ describe('[multi-job] unrouted preempt — different label stages confirm', () =
     eq(r.length, 1, 'still exactly one running');
     eq(r[0].label, 'docker logs nginx', 'previous unrouted preserved (NOT silently replaced)');
     eq(runtime.getModel().modes.confirmMode, true, 'confirm overlay was staged');
-    eq(runtime.getModel().modal.confirm.cmd.type, 'unrouted_preempt_and_run',
-       'pending Cmd targets the unrouted-preempt path');
+    eq(runtime.getModel().modal.continuation.type, 'unrouted_preempt_and_run',
+       'pending Cmd staged on continuation targets the unrouted-preempt path');
     stream.killAll({ silent: true });
     runtime.setModel({ ...runtime.getModel(),
       modes: { ...runtime.getModel().modes, confirmMode: false },
-      modal: { ...runtime.getModel().modal, confirm: { message: '', cmd: null } },
+      modal: { ...runtime.getModel().modal, confirm: { message: '' }, continuation: null },
     });
   });
 });
