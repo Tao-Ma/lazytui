@@ -27,6 +27,11 @@ const { getSession } = require('../io/terminal');
 const { getPanelDef, getInstanceSlice, getFocus, instanceKind,
         collectViewContributions, filterCurrentText } = require('../panel/api');
 const modes = require('../leaves/input/modes');
+// E9 — footer key HINTS are declared as data in this leaf (the single source
+// the footer + a future powerline/segment footer project from). The footer
+// interleaves the genuinely-LIVE status (search count, filter text, leader
+// pending, terminal label) computed below; bindings supplies the key labels.
+const bindings = require('../leaves/input/bindings');
 const { getModel } = require('../model/store');
 const { getFreeConfigFooter } = require('../panel/free-config-view');
 
@@ -44,16 +49,18 @@ let _routeRef; const _route = () => (_routeRef ||= require('../panel/route'));
  */
 function footerKeys(model) {
   const md = model.modes;
+  // Modal footers: a LIVE prefix (pending keys / label / match count / typed
+  // text) computed here, joined to the mode's static key tail from the registry.
   if (md.prefixMode) {
     const pending = (model.prefixSeq && model.prefixSeq.length)
       ? ' ' + model.prefixSeq.join(' ')
       : '';
-    return ` \\[leader]${esc(pending)}… | <key> select | Esc cancel`;
+    return ` \\[leader]${esc(pending)}… | ${bindings.footerSegs('prefixMode').join(' | ')}`;
   }
   if (md.terminalMode) {
     const tconf = activeTerminalConfig();
     const label = tconf ? tconf.label : 'terminal';
-    return ` \\[terminal: ${esc(label)}] | Ctrl+\\ return to TUI`;
+    return ` \\[terminal: ${esc(label)}] | ${bindings.footerSegs('terminalMode').join(' | ')}`;
   }
   if (md.detailSearchMode) {
     // P1 (viewer-lines selector) — match count derives from the viewer's
@@ -66,10 +73,10 @@ function footerKeys(model) {
     const vlines = vslice ? require('../leaves/wm/pane-tabs').viewerLines(vslice, m, m.currentGroup) : [];
     const n = ms.matchesFor(vlines, term).length;
     const idx = n ? Math.min((vslice && vslice.search && vslice.search.idx) || 0, n - 1) + 1 : 0;
-    return ` /${esc(term)}│ \\[${idx}/${n}] | ↑↓ step | Esc cancel | Enter commit`;
+    return ` /${esc(term)}│ \\[${idx}/${n}] | ${bindings.footerSegs('detailSearchMode').join(' | ')}`;
   }
-  if (md.filterMode) return ` /${esc(filterCurrentText())}│ | Esc clear | Enter ok`;
-  if (md.copyMode)   return ' ↑↓ select | Esc cancel | Enter copy';
+  if (md.filterMode) return ` /${esc(filterCurrentText())}│ |${bindings.footerFor('filterMode')}`;
+  if (md.copyMode)   return bindings.footerFor('copyMode');
   if (md.freeConfigTitleEditMode) {
     const { titleEditText } = require('../panel/free-config-view');
     return ` rename: ${esc(titleEditText())}│ | Esc cancel | Enter ok`;
@@ -79,25 +86,25 @@ function footerKeys(model) {
     const dirty = (layoutSlice && layoutSlice.dirty) ? ' | [yellow]• unsaved (:save-layout)[/]' : '';
     return ` Free Config | drag/resize | J/K reorder | ←→ swap col | +/- col/detail · [/] panel h | space collapse | t rename | w panel list | u undo | C-r redo | :save-layout | q exit${getFreeConfigFooter()}${dirty}`;
   }
-  if (md.menuOpen)   return ' ↑↓ select | Esc close | Enter run';
+  if (md.menuOpen)   return bindings.footerFor('menuOpen');
 
-  // Hoist the resolver once — each instanceKind() can walk arrange for
-  // docker-style focus. Was called 3× sequentially below.
+  // Non-modal: the focus-kind's key hints come from the registry. Hoist the
+  // resolver once — each instanceKind() can walk arrange for docker-style focus.
   const focusKind = instanceKind(getFocus());
   if (focusKind === 'detail') {
+    // Build the live guard facts the detail context's `when` predicates read;
+    // the registry reproduces the old segment list, then the live committed-
+    // search count is appended (it carries a live number, not a key hint).
     const { total } = getTabInfo();
-    const segs = ['←→ panel'];
-    if (total > 1) segs.push(']\\[ tabs');
-    segs.push('+/_ view');
-    if (isTerminalTab()) {
+    const isTerminal = isTerminalTab();
+    let dead = false, isEphemeral = false;
+    if (isTerminal) {
       const id = activeTerminalId();
-      const dead = id && getSession(id) && getSession(id).exited;
-      // x closes a dead ephemeral terminal (otherwise it opens the menu).
-      const xLabel = dead && findEphemeralByid(id) ? 'x close' : 'x menu';
-      segs.push(xLabel, 'q quit', dead ? 'Enter restart' : 'Enter activate');
-    } else {
-      segs.push('x menu', 'q quit');
-      segs.push('/ search');
+      dead = !!(id && getSession(id) && getSession(id).exited);
+      isEphemeral = !!(dead && findEphemeralByid(id));
+    }
+    let keys = bindings.footerFor('detail', { total, isTerminal, dead, isEphemeral });
+    if (!isTerminal) {
       // P1 — committed-phase count derives from (lines, term).
       const vslice = getInstanceSlice(_route().resolveTarget('viewer') || 'detail');
       const search = vslice?.search;
@@ -107,18 +114,14 @@ function footerKeys(model) {
         const vlines = require('../leaves/wm/pane-tabs').viewerLines(vslice, m, m.currentGroup);
         const n = ms.matchesFor(vlines, search.term || '').length;
         const idx = n ? Math.min(search.idx || 0, n - 1) + 1 : 0;
-        segs.push(`n/N [${idx}/${n}]`, 'Esc clear');
+        keys += ` | n/N [${idx}/${n}] | Esc clear`;
       }
     }
-    return ' ' + segs.join(' | ');
+    return keys;
   }
-  if (focusKind === 'actions') {
-    return ' ↑↓ select | ←→ panel | / filter | +/_ view | x menu | q quit | Enter run';
-  }
-  if (focusKind === 'groups') {
-    return ' ↑↓ select | ←→ panel | / filter | +/_ view | x menu | q quit | Enter actions';
-  }
-  return ' ↑↓ select | ←→ panel | / filter | +/_ view | x menu | q quit';
+  if (focusKind === 'actions') return bindings.footerFor('actions');
+  if (focusKind === 'groups')  return bindings.footerFor('groups');
+  return bindings.footerFor('list');
 }
 
 function renderFooter(model = getModel()) {
