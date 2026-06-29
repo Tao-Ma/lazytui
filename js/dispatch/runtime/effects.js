@@ -447,7 +447,7 @@ function installBuiltins() {
   // noCapture so retracing doesn't push new history. Per-coordinate best-effort
   // (pane/tab/item gone → land on the nearest); a record whose GROUP is gone is
   // the spine missing → prune it and continue the travel in `dir`.
-  registerEffect('nav_restore', (eff) => {
+  const navRestoreEff = (eff) => {
     const loc = eff && eff.loc;
     if (!loc) return;
     const dir = eff.dir || 0;
@@ -456,11 +456,21 @@ function installBuiltins() {
     const loop = require('./loop');
     const m = getModel();
 
-    // 404 — group gone (config reloaded / group removed): prune + continue.
+    // 404 — group gone (config reloaded / group removed): prune the stale spine
+    // record and continue the travel in `dir` onto the next live record.
     if (loc.group && m.config && m.config.groups && !(loc.group in m.config.groups)) {
       dispatch.applyMsg({ type: 'nav_prune', index: m.nav.cursor });
-      if (dir < 0) dispatch.applyMsg({ type: 'nav_back' });
-      else if (dir > 0) dispatch.applyMsg({ type: 'nav_forward' });
+      // After the prune the cursor index is unchanged (clamped). For BACK the
+      // older neighbor didn't move, so step again (nav_back keeps the cursor
+      // synced). For FORWARD the next record shifted DOWN into the cursor slot,
+      // so the cursor ALREADY points at the forward target — re-resolve it in
+      // place; stepping again (nav_forward) would overshoot/skip it. Both
+      // continuations re-enter this restore, so a run of stale records recurses
+      // until a live one (or the ring end).
+      if (dir < 0) { dispatch.applyMsg({ type: 'nav_back' }); return; }
+      const nm = getModel();
+      const c = nm.nav.cursor;
+      if (dir > 0 && c >= 0 && c < nm.nav.history.length) navRestoreEff({ loc: nm.nav.history[c], dir: +1 });
       return;
     }
 
@@ -505,7 +515,8 @@ function installBuiltins() {
         try { dispatch.showSelectedInfo(); } catch (_) { /* no renderer (test) */ }
       }
     }
-  });
+  };
+  registerEffect('nav_restore', navRestoreEff);
 }
 
 // Exposed so boot-wired subscription handlers that AREN'T started by an effect
