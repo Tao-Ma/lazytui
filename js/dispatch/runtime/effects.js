@@ -416,37 +416,17 @@ function installBuiltins() {
   // result is threaded onto a flat Msg whose reducer arm is pure + recorded
   // (so the WAL fold reproduces model.nav without re-running these effects).
 
-  // nav_capture: a group/focus/tab transition committed — read the POST-commit
-  // coordinates by STABLE identity (group name, tab targetKey, focused-item
-  // idOf) and stamp them onto a nav_record Msg. The fragile paneId rides along
-  // only as a hint behind the stable `type` (the restore falls back to type).
-  registerEffect('nav_capture', () => {
-    const route = require('../../panel/route');
-    const m = getModel();
-    const focusId = route.getFocus();
-    if (focusId == null) return;
-    const type = route.instanceKind(focusId);
-    const loc = { v: 1, kind: 'loc', group: m.currentGroup || '',
-      focus: { paneId: focusId, type: type || null }, tab: null, sel: null };
-    if (type === route.VIEWER_KIND) {
-      // Focus is on the viewer → capture its active tab by stable key.
-      const pt = require('../../leaves/wm/pane-tabs');
-      const vid = route.resolveTarget('viewer');
-      const slice = vid ? route.getInstanceSlice(vid) : null;
-      if (slice) {
-        const key = pt.resolveTabKey(slice.tab | 0, slice, m);
-        if (key) loc.tab = { targetKey: key };
-      }
-    } else if (type) {
-      // Focus is on a navigator → capture the highlighted item by stable id.
-      const api = require('../../panel/api');
-      const navState = require('../../panel/nav-state');
-      const items = api.getItems(type);
-      const item = items[navState.getSel(type)];
-      if (item != null) loc.sel = { panel: type, id: api.idOf(type, item) };
-    }
-    require('../control/dispatch').applyMsg({ type: 'nav_record', loc });
-  });
+  // nav_capture: a group/focus/tab transition committed — mark a capture
+  // pending. The ACTUAL coordinate read + nav_record push is deferred to
+  // `flushNavCapture()`, run ONCE at the outermost-dispatch boundary (loop's
+  // global depth-0 exit). A single user gesture often cascades across arms
+  // (set_current_group + tab_switch + focus_set), each emitting nav_capture; if
+  // each pushed immediately the jumplist would gain an intermediate half-state
+  // record per arm (one back would only partly reverse the jump). Deferring to
+  // the boundary coalesces a same-gesture cascade into ONE record stamped with
+  // the FINAL coordinates. Replay-safe: the effect is suppressed during a fold,
+  // and the single emitted `nav_record` is what the WAL records + replays.
+  registerEffect('nav_capture', () => { _navDirty = true; });
 
   // nav_restore: a back/forward step resolved to a target location — resolve
   // each stable coordinate to a LIVE address and fire the existing primitive
@@ -532,5 +512,54 @@ function installBuiltins() {
 // (docker events) capture the host from their starting handler instead.
 function effectHost() { return _effectHost(); }
 
+// --- v0.6.7 nav-history capture coalescing -----------------------------------
+// `nav_capture` (emitted by the group/focus/tab transition arms) only sets this
+// flag; the real work runs once per outermost dispatch via flushNavCapture(),
+// called at loop's global depth-0 exit. This collapses a same-gesture arm
+// cascade into a SINGLE jumplist record holding the final coordinates.
+let _navDirty = false;
+
+// Read the POST-commit coordinates by STABLE identity (group name, tab
+// targetKey, focused-item idOf) and stamp them onto a nav_record Msg. The
+// fragile paneId rides along only as a hint behind the stable `type` (the
+// restore falls back to type). Module-scope so flushNavCapture() and the loop
+// share it; runs at the boundary, so getModel()/getFocus() are fully settled.
+function _captureNavLocation() {
+  const route = require('../../panel/route');
+  const m = require('../../model/store').getModel();
+  const focusId = route.getFocus();
+  if (focusId == null) return;
+  const type = route.instanceKind(focusId);
+  const loc = { v: 1, kind: 'loc', group: m.currentGroup || '',
+    focus: { paneId: focusId, type: type || null }, tab: null, sel: null };
+  if (type === route.VIEWER_KIND) {
+    // Focus is on the viewer → capture its active tab by stable key.
+    const pt = require('../../leaves/wm/pane-tabs');
+    const vid = route.resolveTarget('viewer');
+    const slice = vid ? route.getInstanceSlice(vid) : null;
+    if (slice) {
+      const key = pt.resolveTabKey(slice.tab | 0, slice, m);
+      if (key) loc.tab = { targetKey: key };
+    }
+  } else if (type) {
+    // Focus is on a navigator → capture the highlighted item by stable id.
+    const api = require('../../panel/api');
+    const navState = require('../../panel/nav-state');
+    const items = api.getItems(type);
+    const item = items[navState.getSel(type)];
+    if (item != null) loc.sel = { panel: type, id: api.idOf(type, item) };
+  }
+  require('../control/dispatch').applyMsg({ type: 'nav_record', loc });
+}
+
+// Flush a pending nav capture (called at the outermost-dispatch boundary). The
+// nav_record's consecutive-dup no-op (navHist.push) absorbs a capture that
+// lands on the current top, so an idempotent gesture pushes nothing.
+function flushNavCapture() {
+  if (!_navDirty) return;
+  _navDirty = false;
+  _captureNavLocation();
+}
+
 module.exports = { registerEffect, runEffects, clearEffects, installBuiltins, effectHost, _handlers,
-  cancelEffect, _clearInflight, _inflightKeys };
+  cancelEffect, _clearInflight, _inflightKeys, flushNavCapture };

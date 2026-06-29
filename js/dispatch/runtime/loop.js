@@ -25,7 +25,7 @@ const route = require('../../panel/route');
 const { wrap } = route;
 const { getModel, setModel } = require('../../model/store');
 const runtime = require('../update/reducer');
-const { runEffects } = require('./effects');
+const { runEffects, flushNavCapture } = require('./effects');
 // #D4 — the post-dispatch invariant pass (scroll clamp + viewer innerH + PTY +
 // instance reconcile) lives in its own after-update-phase module now; the loop
 // only gates it at depth-0 exit. One-way edge: loop → finalize.
@@ -50,12 +50,17 @@ function _reg() { return _comps || (_comps = require('../../panel/api')._compone
 // reach observers only via the onUpdate→render subscription path).
 const BROADCAST_TYPES = new Set(['refresh', 'action']);
 
-// Dispatch depth counter: both top-level entries (dispatchMsg +
-// dispatchKeyToFocused) share it, so effect-chained nested dispatches run the
-// after-update phase ONCE, at depth-0 exit. The pass itself (scroll clamp +
-// viewer innerH + PTY + instance reconcile) lives in ./finalize; the loop just
-// gates it here. finalize's own re-entrancy guard makes the set_scroll Msgs it
-// dispatches skip re-finalizing.
+// Dispatch depth counter: ALL THREE top-level entries (applyMsg + dispatchMsg +
+// dispatchKeyToFocused) share it, so effect-chained nested dispatches resolve
+// boundary work ONCE, at depth-0 exit. Two boundary concerns ride it:
+//   - the after-update phase (scroll clamp + viewer innerH + PTY + instance
+//     reconcile, in ./finalize) — comp/key lanes only (root Msgs don't move
+//     panes); finalize's own re-entrancy guard skips its set_scroll re-dispatch;
+//   - the nav-history capture flush (flushNavCapture) — ALL lanes, since a
+//     navigable transition (e.g. boot's root `set_current_group`) can be a
+//     top-level root Msg, and a cascade mixes root + comp arms under one
+//     gesture. Coalescing at the shared boundary makes one gesture = one record.
+// applyMsg is counted but never runs the after-update phase.
 let _dispatchDepth = 0;
 
 // ——— The root-Msg pump (#D4b — moved here from control/dispatch.js) ———
@@ -73,7 +78,13 @@ let _dispatchDepth = 0;
 // Cmds (apply_msg / dispatch_msg) re-entering the dispatch graph see post-Msg
 // state. applyMsg does NOT run the finalizer (root Msgs don't move panes).
 function applyMsg(msg) {
-  mw.run({ lane: 'root', msg }, _termRoot);
+  _dispatchDepth++;
+  try { mw.run({ lane: 'root', msg }, _termRoot); }
+  finally {
+    _dispatchDepth--;
+    // Nav-capture flush only — root Msgs don't move panes, so NOT finalizeDispatch.
+    if (_dispatchDepth === 0) flushNavCapture();
+  }
 }
 
 // Stable lane-terminal (cached by identity in the middleware): the actual root
@@ -100,7 +111,9 @@ function dispatchMsg(msg) {
   try { mw.run({ lane: 'comp', msg }, _termComp); }
   finally {
     _dispatchDepth--;
-    if (_dispatchDepth === 0) finalizeDispatch();
+    // Flush nav capture BEFORE finalize: finalize's nested set_scroll dispatch
+    // would otherwise hit depth-0 and fire the flush mid-finalize.
+    if (_dispatchDepth === 0) { flushNavCapture(); finalizeDispatch(); }
   }
 }
 
@@ -186,7 +199,7 @@ function dispatchKeyToFocused(key, seq) {
   try { return mw.run({ lane: 'key', key, seq }, _termKey); }
   finally {
     _dispatchDepth--;
-    if (_dispatchDepth === 0) finalizeDispatch();
+    if (_dispatchDepth === 0) { flushNavCapture(); finalizeDispatch(); }
   }
 }
 

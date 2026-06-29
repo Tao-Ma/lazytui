@@ -135,6 +135,38 @@ describe('[B] capture on transition', () => {
 });
 
 // ---------------------------------------------------------------------------
+// [B2] coalesce — ONE gesture that cascades across arms pushes ONE record
+//      (Round-3 review: a cascade combining set_current_group + focus_set +
+//      tab_switch used to push a record per arm, so one <leader>o back only
+//      partly reversed the jump. The capture is now coalesced at the outermost-
+//      dispatch boundary, so a gesture = one record holding the FINAL coords.)
+// ---------------------------------------------------------------------------
+describe('[B2] cascade coalescing', () => {
+  it('a group+focus cascade pushes one record, and one back fully reverses it', () => {
+    focusTo('groups');                       // clean baseline on the groups nav
+    const startGroup = getModel().currentGroup;
+    const before = getModel().nav.history.length;
+    const other = Object.keys(getModel().config.groups).find(g => g !== startGroup);
+
+    // One gesture: jobs activation onto an unrouted stream in ANOTHER group.
+    // The single top-level dispatch cascades set_current_group(other) +
+    // focus_set(detail) — two nav_capture arms, one logical jump.
+    getModel().modes.jobsMode = true;
+    capture(() => loop.applyMsg({ type: 'jobs_activate',
+      job: { kind: 'stream-unrouted', owner: { groupName: other } }, now: 0 }));
+
+    eq(getModel().currentGroup, other, 'the gesture switched group');
+    eq(kindNow(), 'detail', 'the gesture moved focus to the viewer');
+    eq(getModel().nav.history.length, before + 1, 'one gesture = exactly one record (coalesced, not per-arm)');
+
+    // One back must undo the WHOLE jump (group AND focus), not a half-state.
+    capture(() => loop.applyMsg({ type: 'nav_back' }));
+    eq(getModel().currentGroup, startGroup, 'one back restored the original group');
+    eq(kindNow(), 'groups', 'one back restored the original focus in a single step');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // [C] restore — back/forward re-dispatch primitives; cursor resolves by id
 // ---------------------------------------------------------------------------
 describe('[C] back / forward restore', () => {
