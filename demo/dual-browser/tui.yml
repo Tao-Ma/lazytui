@@ -42,6 +42,18 @@ mouse:
   middle-click: noop         # reserved — inert today
   double-click-ms: 250       # same-cell double-click window, in milliseconds
 
+# Remap normal-mode single keys (v0.6.7). `version` lets the format evolve;
+# `normal:` is `key → verb`. Run `lazytui --keymap` to list the verbs + the
+# reserved keys (return/escape/x/nav/… can't be remapped). See docs/keymap.md.
+# Uncomment to use:
+# keymap:
+#   version: 1
+#   normal:
+#     R: refresh            # move "refresh" from r to R …
+#     r: noop               # … by disabling the default r
+#     "?": show_help        # bare string = a built-in verb
+#     g: { action: grep }   # or run a configured action / :command
+
 # Extra right-click context-menu entries (v0.6.4 Theme F follow-on). Parallel
 # to `keys:` / `mouse:`: a list of rows appended to the right-click menu, after
 # the built-in Copy / Refresh / Help. Each row names ONE verb form —

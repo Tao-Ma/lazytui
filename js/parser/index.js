@@ -706,6 +706,10 @@ function parse(yamlPath) {
     // registers each entry into the prefix-key tree at boot. Default
     // empty — the built-in chords are registered unconditionally.
     keys: data.keys !== undefined ? data.keys : {},
+    // Configurable normal-mode keymap (top-level `keymap:`, v0.6.7 E9).
+    // dispatch.loadKeymap merges `normal:` over the built-in defaults at boot.
+    // Default empty — the built-in normal-mode bindings apply unchanged.
+    keymap: data.keymap !== undefined ? data.keymap : {},
     // Mouse gesture → intent overrides (top-level `mouse:`). v0.6.4 Theme F:
     // dispatch.loadMouseBindings merges these over the code defaults at boot.
     // Default empty — the built-in gesture map applies unchanged.

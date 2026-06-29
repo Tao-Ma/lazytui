@@ -10,8 +10,13 @@ const { SchemaError } = require('./errors');
 
 const VALID_ACTION_TYPES = new Set(['run', 'spawn', 'background']);
 
-const VALID_TOP_KEYS    = new Set(['project_dir', 'groups', 'vars', 'helpers', 'files', 'layout', 'theme', 'plugins', 'register', 'keys', 'mouse', 'context-menu', 'panels']);
+const VALID_TOP_KEYS    = new Set(['project_dir', 'groups', 'vars', 'helpers', 'files', 'layout', 'theme', 'plugins', 'register', 'keys', 'keymap', 'mouse', 'context-menu', 'panels']);
 const VALID_KEY_BINDING_KEYS = new Set(['action', 'command', 'builtin', 'label', 'desc']);
+// v0.6.7 E9 — the `keymap:` block (configurable normal-mode keys). A thin
+// versioned container; `normal:` is a flat key→verb map. SHAPE only here — the
+// verb-catalog / reserved-key / version-compat semantics validate at load time
+// (dispatch.loadKeymap), where the catalog + reserved set live.
+const VALID_KEYMAP_KEYS = new Set(['version', 'normal']);
 
 // v0.6.4 Theme F follow-on — the `context-menu:` block (extra right-click
 // entries). A list of `{ label, action|command|builtin, pane? }`; the three
@@ -79,6 +84,7 @@ function validate(data, _sourceFile, warnings) {
   if ('files' in data)   validateFiles(data.files);
   if ('register' in data) validateRegister(data.register);
   if ('keys' in data)     validateKeys(data.keys);
+  if ('keymap' in data)   validateKeymap(data.keymap);
   if ('mouse' in data)    validateMouse(data.mouse);
   if ('context-menu' in data) validateContextMenu(data['context-menu']);
   if ('panels' in data)   validatePanels(data.panels);
@@ -254,6 +260,42 @@ function validatePanels(panelsBlock) {
     const ctx = `panels.${id}`;
     if (!isMapping(entry)) {
       throw new SchemaError(`panel entry must be a mapping, got ${typeName(entry)}`, { context: ctx });
+    }
+  }
+}
+
+// v0.6.7 E9 — `keymap:` shape. `version` (optional int) + `normal` (optional
+// mapping of key → verb). A binding value is a non-empty string (a verb name, or
+// `noop` to disable) OR a one-verb `{action|command|builtin}` mapping (mirrors
+// `keys:`). Semantics (verb exists, key not reserved, version compat) are checked
+// at load time so the parser stays free of dispatch-layer knowledge.
+function validateKeymap(block) {
+  if (!isMapping(block)) throw new SchemaError("'keymap' must be a mapping");
+  checkUnknownKeys(block, VALID_KEYMAP_KEYS, 'keymap');
+  if ('version' in block && (typeof block.version !== 'number' || !Number.isInteger(block.version))) {
+    throw new SchemaError("'keymap.version' must be an integer");
+  }
+  if ('normal' in block) {
+    if (!isMapping(block.normal)) throw new SchemaError("'keymap.normal' must be a mapping");
+    for (const [key, spec] of Object.entries(block.normal)) {
+      const ctx = `keymap.normal, '${key}'`;
+      if (typeof spec === 'string') {
+        if (!spec.trim()) throw new SchemaError('binding string must be non-empty', { context: ctx });
+        continue;
+      }
+      if (!isMapping(spec)) {
+        throw new SchemaError(`binding must be a verb name or a {action|command|builtin} mapping, got ${typeName(spec)}`, { context: ctx });
+      }
+      checkUnknownKeys(spec, VALID_KEY_BINDING_KEYS, ctx);
+      const verbs = ['action', 'command', 'builtin'].filter(v => v in spec);
+      if (verbs.length === 0) throw new SchemaError("binding needs one of 'action', 'command', or 'builtin'", { context: ctx });
+      if (verbs.length > 1) throw new SchemaError(`binding has conflicting targets: ${verbs.join(', ')}`, { context: ctx });
+      if (typeof spec[verbs[0]] !== 'string' || !spec[verbs[0]].trim()) {
+        throw new SchemaError(`'${verbs[0]}' must be a non-empty string`, { context: ctx });
+      }
+      for (const opt of ['label', 'desc']) {
+        if (opt in spec && typeof spec[opt] !== 'string') throw new SchemaError(`'${opt}' must be a string`, { context: ctx });
+      }
     }
   }
 }
