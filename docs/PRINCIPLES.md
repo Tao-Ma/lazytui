@@ -348,9 +348,14 @@ resolved both:
   tests without elaborate setup. `js/test/test-render-idempotent.js`
   is the canonical example.
 - **Diff repaint.** `leaves/render/painter.js` (`composeRows` +
-  `paintFrame`, driven from `render/paint.js`) writes only the rows
-  that changed since the previous frame. If render were
-  non-idempotent the diff cache would silently desync — the user
+  `paintFrame`, driven from `render/paint.js`) writes only the *cells*
+  that changed since the previous frame — a row that didn't change is
+  skipped entirely, and within a changed row only the changed columns
+  are re-emitted (the per-cell diff in `leaves/render/cell-grid.js`,
+  default-on since v0.6.7; `LAZYTUI_CELL_DIFF=0` falls back to the
+  whole-row diff). The diff is a pure function of the two row strings, so
+  the emitted byte stream is itself a function of the model. If render
+  were non-idempotent the diff cache would silently desync — the user
   sees stale pixels.
 
 **Rule for new panel renders:** read the slice, return a string. Need a
@@ -464,6 +469,24 @@ module.exports = {
 - **Effects stay out of `update`** — return `[slice, effects]`, never perform
   I/O inline (keeps `update` pure + replayable). The framework runs effects;
   an effect's async result re-enters as a Msg.
+- **An effect may be keyed for exclusive cancellation** (v0.6.7, C5). A
+  descriptor with an optional `key` is *exclusive by key*: `runEffects` aborts
+  any in-flight effect with the same key before running the new one, injecting a
+  fresh `AbortSignal` on a per-call host (the ~all synchronous handlers that read
+  neither `signal` nor `releaseKey` are untouched). The controllers live in a
+  module-local `_inflight` Map in `effects.js` — **impure shell, never model
+  state** — and the replay early-return precedes the keyed block, so a WAL fold
+  never touches it. Use it for async *compute* effects (a re-issued docker fetch,
+  a superseded config-status diff); stream/Sub lifecycles keep their own teardown.
+- **Model state is serializable — no closures under the model.** A checkpoint is
+  JSON (`replay.snapshotState` clones the model; the WAL fold re-applies the
+  recorded Msgs with effects suppressed), so anything stored on the model must
+  survive a JSON round-trip. A *deferred action* is stored as a Cmd **descriptor**
+  (`{type, …}` data), never a closure: e.g. a modal stages its dismissal
+  continuation on `model.modal.continuation` (E14, the Textual `dismiss(value)`
+  shape) as the Cmd to emit on success. `model-ops.findModalClosure` is the guard
+  *helper* that pins "no function anywhere under `model.modal`" — exercised by
+  `test-modal-continuation.js`.
 - **Periodic work is a declared `interval` subscription.** A Component
   (or the app) declares it — `subscriptions(…) → [{kind:'interval', id,
   ms, onTick}]` — and the runtime owns the timer + teardown (start on
