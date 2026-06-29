@@ -3,7 +3,7 @@
  * memo) and A3 (window-only decoration).
  *
  * There is no other bench for construction cost (bench-hotpaths = reducer,
- * bench-cell-diff = wire). This one measures, through the REAL render path:
+ * bench-cell-grid = wire). This one measures, through the REAL render path:
  *
  *   [A3] viewer decoration cost — full-buffer vs visible-window — at scale, AND
  *        confirms the no-search/no-selection path is already O(1) passthrough
@@ -51,7 +51,7 @@ function setContent(lines) { api.dispatchMsg(api.wrap(V, { type: 'viewer_set_con
 function focus(id) { api.dispatchMsg(api.wrap('layout', { type: 'focus_set', focus: id })); }
 focus(V);
 
-// --- content generator (mirrors bench-cell-diff doc-shape: plain/CJK/emoji) ---
+// --- content generator (mirrors bench-cell-grid doc-shape: plain/CJK/emoji) ---
 function doc(n) {
   const out = [];
   for (let i = 1; i <= n; i++) {

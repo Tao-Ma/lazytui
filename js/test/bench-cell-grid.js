@@ -8,8 +8,10 @@
  * scrolling viewport where every row's content shifts).
  *
  * For each scenario we compute, over the SAME (prev,cur) frame, both emits and
- * report bytes (row → cell, % saved) and CPU (ops/sec each). Run:
- *   node js/test/bench-cell-diff.js
+ * report bytes (row → cell, % saved) and CPU (ops/sec each). Benches the A2
+ * implementation in leaves/render/cell-grid.js (distinct from the replay
+ * highlighter leaves/render/cell-diff.js). Run:
+ *   node js/test/bench-cell-grid.js
  */
 'use strict';
 
