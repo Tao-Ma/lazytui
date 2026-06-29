@@ -77,6 +77,27 @@ describe('[B6] diffState', () => {
     const r = diffState(S(oa), S(ob));
     assert(Array.isArray(r.changes), 'returned without throwing');
   });
+
+  // Round-3 review: a Map/Date used to fall into the plain-object branch
+  // (Object.keys(map) === []), so a value change was SILENTLY reported as "no
+  // change" — which would also make skip-to-change skip it. The strict
+  // isPlainObj routes them to the leaf branch so a change is always reported.
+  it('a Map value change is reported, not silently missed', () => {
+    const a = S({ m: new Map([['k', 1]]) });
+    const b = S({ m: new Map([['k', 2]]) });
+    const r = diffState(a, b);
+    assert(r.changes.length >= 1, 'the Map change is reported');
+    eq(r.changes[0].path, 'model.m');
+    // equal-by-ref → no change (Object.is short-circuit)
+    const m = new Map([['k', 1]]);
+    eq(diffState(S({ m }), S({ m })).changes, []);
+  });
+
+  it('a Date change is reported, not silently missed', () => {
+    const r = diffState(S({ t: new Date(1000) }), S({ t: new Date(2000) }));
+    assert(r.changes.length >= 1, 'the Date change is reported');
+    eq(r.changes[0].path, 'model.t');
+  });
 });
 
 report();

@@ -208,6 +208,10 @@ const _frame = {
   // render() from the replay scrubber's diff mode; passed to the main-frame
   // paintFrame calls so changed rows/cells tint. Never touches prevRows.
   hl:               null,
+  // v0.6.7 review — last frame's diff-highlight mode (off/line/cell), to force a
+  // full repaint when it changes (the highlight path leaves tint the cell-diff
+  // baseline doesn't know about — see the force logic in render()).
+  prevDiffMode:     'off',
 };
 
 /**
@@ -730,6 +734,14 @@ function render(model) {
   // when not replaying, so the live paint path is byte-for-byte unchanged.
   const diffMode = (replayData && replayData.diffMode) || 'off';
   _frame.hl = diffMode !== 'off' ? { mode: diffMode } : null;
+  // The highlight path paints tint SGR onto the screen while the stored diff
+  // baseline stays PLAIN markup, so the cell-diff invariant
+  // (screen == richToAnsi(prevRows)) does not hold across a highlight-mode
+  // change. Cycling the highlighter (d → off/line/cell) without a model change
+  // would otherwise freeze stale tint on cells that don't next change. Force a
+  // full repaint on any transition to flush it (mirrors the paneView force).
+  if (_frame.prevDiffMode !== diffMode) _frame.forceFull = true;
+  _frame.prevDiffMode = diffMode;
 
   let mainDidFull;
   // viewMode lives on the layout Component slice (Phase 1b).

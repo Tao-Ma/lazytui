@@ -59,8 +59,13 @@ function _header(extra) {
 // Classify a loaded header's schemaVersion against this build's.
 function _schemaCompat(ver) {
   if (ver == null) return 'unversioned';   // pre-B6 file = schema 1 by definition
-  if (ver === SCHEMA_VERSION) return 'ok';
-  return ver < SCHEMA_VERSION ? 'older' : 'newer';
+  // Coerce so a stringly-typed version ("1") classifies by value, not by the
+  // string-vs-number `<` coercion that flagged it spuriously NEWER; truly
+  // non-numeric junk degrades to unversioned best-effort (no false alarm).
+  const n = typeof ver === 'number' ? ver : Number(ver);
+  if (!Number.isFinite(n)) return 'unversioned';
+  if (n === SCHEMA_VERSION) return 'ok';
+  return n < SCHEMA_VERSION ? 'older' : 'newer';
 }
 function _warnSchema(ver, compat) {
   let msg = null;
@@ -215,9 +220,11 @@ function loadMeta(filepath) {
     if (obj && obj.kind === 'header') {
       return { schemaVersion: obj.schemaVersion, lazytui: obj.lazytui, compat: _schemaCompat(obj.schemaVersion) };
     }
-    return { schemaVersion: undefined, lazytui: undefined, compat: 'unversioned' };  // no header
+    // Not the header line — keep scanning (the header is normally first, but
+    // don't hard-fail to "unversioned" just because a data line precedes it,
+    // which would disagree with load()'s whole-file scan).
   }
-  return { schemaVersion: undefined, lazytui: undefined, compat: 'unversioned' };
+  return { schemaVersion: undefined, lazytui: undefined, compat: 'unversioned' };  // no header found
 }
 
 // --- Lifecycle / inspection ----------------------------------------------

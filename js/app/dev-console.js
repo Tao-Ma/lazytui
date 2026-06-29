@@ -24,12 +24,22 @@ function _parseFilter(expr) {
   }
   return p;
 }
+// `--seq-range lo..hi` (either side omittable: `5..`, `..9`; a bare `5` = 5..5).
+// Validates rather than failing open — a typo'd range like `abc` used to match
+// EVERYTHING (NaN→0..maxSeq) and `3..1` matched nothing, both silently. Returns
+// `{ bad }` on malformed input so the caller errors instead of dumping wrong.
 function _parseRange(expr, maxSeq) {
   if (!expr) return null;
-  const m = String(expr).split('..');
-  const a = parseInt(m[0], 10);
-  const b = m.length > 1 ? parseInt(m[1], 10) : a;
-  return { a: Number.isFinite(a) ? a : 0, b: Number.isFinite(b) ? b : maxSeq };
+  const parts = String(expr).split('..');
+  const hasA = parts[0].trim() !== '';
+  const hasB = parts.length > 1 && parts[1].trim() !== '';
+  const a = hasA ? parseInt(parts[0], 10) : 0;
+  const b = hasB ? parseInt(parts[1], 10) : (parts.length > 1 ? maxSeq : a);
+  if ((hasA && !Number.isFinite(a)) || (hasB && !Number.isFinite(b))) {
+    return { bad: `--seq-range: not a number in "${expr}" (expected lo..hi)` };
+  }
+  if (a > b) return { bad: `--seq-range: lo (${a}) > hi (${b})` };
+  return { a, b };
 }
 
 function _msgType(e) {
@@ -93,6 +103,7 @@ function runDevConsole(file, opts = {}) {
   const preds = _parseFilter(opts.filter);
   const maxSeq = entries.length ? entries[entries.length - 1].seq : 0;
   const range = _parseRange(opts.seqRange, maxSeq);
+  if (range && range.bad) { _err(range.bad); return 1; }
   const keep = (e) =>
     (!range || (e.seq >= range.a && e.seq <= range.b)) &&
     (!preds.lane || e.lane === preds.lane) &&
@@ -119,7 +130,10 @@ function runDevConsole(file, opts = {}) {
     const e = entries[i];
     if (!keep(e)) continue;
     out(`${String(e.seq).padStart(5)}  ${String(e.kind).padEnd(5)} ${_summary(e)}`);
-    if (diffs && diffs[i]) {
+    if (diffs && i === 0 && e.kind === 'msg') {
+      // idx 0 is the timeline baseline — no recorded prior frame to diff against.
+      out('        (initial frame — no prior state recorded)');
+    } else if (diffs && diffs[i]) {
       for (const c of diffs[i]) {
         const mark = c.kind === 'add' ? '+' : c.kind === 'remove' ? '-' : '~';
         const val = c.kind === 'add' ? c.after : c.kind === 'remove' ? c.before : `${c.before} -> ${c.after}`;
