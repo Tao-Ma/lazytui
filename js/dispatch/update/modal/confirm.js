@@ -8,12 +8,22 @@
 'use strict';
 
 const { withModalMode: _withModalMode } = require('../model-ops');
+const { isChainActive } = require('../../../leaves/input/modes');
 
 const TYPES = ['confirm_enter', 'confirm_accept', 'confirm_reject'];
 
 function update(model, msg) {
   switch (msg.type) {
     case 'confirm_enter':
+      // Modals are flat — one at a time (leaves/input/modes.js + the single
+      // model.modal.continuation slot). confirm_enter is the only modal-opener
+      // that can be dispatched ASYNCHRONOUSLY (the unrouted-stream preempt in
+      // stream.js, an action.confirm from action-runner) rather than from a
+      // keyboard gesture; opening it OVER an already-live modal would stomp that
+      // modal's staged continuation. In normal use the keyboard can't reach a
+      // confirm trigger while a modal owns input, so this guard only ever fires
+      // defensively — when it does, the open modal wins and the confirm is dropped.
+      if (isChainActive(model.modes)) return [model, []];
       return [_withModalMode(model, { confirmMode: true },
         { confirm: { message: msg.message || 'Are you sure?' }, continuation: msg.cmd || null }), []];
     case 'confirm_accept': {

@@ -126,6 +126,26 @@ describe('[E14] menu — fixed base, patched with the chosen verb/arg', () => {
   });
 });
 
+describe('[E14] flat-modal guard — async confirm_enter must not stomp an open modal', () => {
+  it('a confirm_enter while a prompt is open is dropped; the prompt continuation survives', () => {
+    const base = { type: 'run_action', actionKey: 'deploy', action: {} };
+    const [m1] = step(fresh(), { type: 'prompt_enter', label: 'Args', text: 'foo', cmd: base });
+    eq(m1.modes.promptMode, true, 'prompt open');
+    eq(m1.modal.continuation, base, 'prompt staged its continuation');
+    // An async confirm_enter (e.g. an unrouted-stream preempt, stream.js) collides
+    // while the prompt owns the screen. The flat-modal guard drops it rather than
+    // opening a second modal that would clobber the shared continuation slot.
+    const [m2, cmds] = step(m1, { type: 'confirm_enter', message: 'Kill?', cmd: { type: 'unrouted_preempt_and_run' } });
+    eq(m2.modes.confirmMode, false, 'confirm did NOT open over the prompt');
+    eq(cmds, [], 'the dropped confirm emits nothing');
+    eq(m2.modal.continuation, base, 'the prompt continuation was NOT clobbered');
+    // The prompt still submits its own staged Cmd.
+    const [m3, scmds] = step(m2, { type: 'prompt_submit' });
+    eq(scmds, [{ ...base, args: ['foo'] }], 'prompt_submit still emits its staged Cmd + parsed args');
+    eq(m3.modal.continuation, null, 'continuation cleared after submit');
+  });
+});
+
 describe('[E14] findModalClosure guard', () => {
   it('returns null for a clean modal and the dotted path for a leaked fn', () => {
     eq(findModalClosure(fresh().modal), null, 'fresh modal is clean');
