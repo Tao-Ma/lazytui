@@ -279,7 +279,12 @@ function _recomputeDiff() {
   if (!S || !S.diffPanel) return;
   if (S.diff && S.diff.idx === S.idx) return;       // cached for this position
   const idx = S.idx;
-  if (idx <= 0) { S.diff = { idx, changes: [], truncated: false }; return; }
+  // idx 0 is the timeline baseline: there is no recorded prior frame to diff
+  // against (a from-boot WAL's first entry folds from the bare boot model, which
+  // isn't snapshotted; an in-session WAL opens with a checkpoint, so its first
+  // Msg is idx≥1). Flag it `initial` so the panel shows "initial frame" rather
+  // than the misleading "no model change".
+  if (idx <= 0) { S.diff = { idx, changes: [], truncated: false, initial: true }; return; }
   const r = _replay();
   const { diffState } = require('../../leaves/replay/model-diff');
   const after = r.snapshotState();                  // displayed frame == state @ idx
@@ -293,10 +298,17 @@ function _recomputeDiff() {
 }
 
 // Does the entry at `i` change the model (state@i-1 vs state@i, non-empty diff)?
-// Used by the REVERSE skip scan (per-probe). Leaves the scratch model moved —
-// the caller restores. Bounded to max:1 (presence only).
+// Used by the REVERSE skip scan (per-probe, already gated on kind==='msg' by the
+// caller). Leaves the scratch model moved — the caller restores. Bounded to
+// max:1 (presence only).
 function _changeAt(i) {
-  if (i <= 0) return false;
+  if (i < 0) return false;
+  // idx 0 is the timeline's first state — a change from the bare initial model.
+  // Its diff isn't separately computable (no recorded prior frame), but a Msg
+  // there IS a valid back-skip anchor (the start), so `N` can reach it. (Without
+  // this it was reachable only by accident — the old per-probe teleport that
+  // this scan's no-match fix removed.)
+  if (i === 0) return true;
   const r = _replay();
   const { diffState } = require('../../leaves/replay/model-diff');
   r.replayTo(S.log, S.log[i].seq, { useCheckpoints: true });
@@ -315,6 +327,10 @@ function _findNextChange(dir) {
   const r = _replay();
   const { diffState } = require('../../leaves/replay/model-diff');
   const start = S.idx;
+  // No matching change within SCAN_CAP → stay put (a clean no-op via _moveTo).
+  // Previously `target` advanced on every probe, so an exhausted scan teleported
+  // up to SCAN_CAP frames to a NON-change frame — contradicting the "next Msg
+  // that changed the model" contract. Only commit `target` on an actual match.
   let target = start;
   if (dir > 0) {
     const end = _clampIdx(start + SCAN_CAP);
@@ -323,16 +339,14 @@ function _findNextChange(dir) {
     for (let i = start + 1; i <= end; i++) {
       r.advance(S.log, i - 1, i);
       const cur = r.snapshotState();
-      target = i;
       if (S.log[i].kind === 'msg'
-          && diffState(prev, cur, { max: 1, pathFilter: S.changeFilter }).changes.length > 0) break;
+          && diffState(prev, cur, { max: 1, pathFilter: S.changeFilter }).changes.length > 0) { target = i; break; }
       prev = cur;
     }
   } else {
     const floor = _clampIdx(start - SCAN_CAP);
     for (let i = start - 1; i >= floor; i--) {
-      target = i;
-      if (S.log[i].kind === 'msg' && _changeAt(i)) break;
+      if (S.log[i].kind === 'msg' && _changeAt(i)) { target = i; break; }
     }
   }
   r.replayTo(S.log, S.log[start].seq, { useCheckpoints: true });   // restore displayed frame
@@ -421,16 +435,19 @@ function _tick() {
   const dir = S.playing === 'rev' ? -1 : 1;
   S.clock = _currentClock();
   const target = _clampIdx(_timeline().idxForClock(S.timeline, S.clock, S.mode));
+  const willHalt = (dir > 0 && target >= S.log.length - 1) || (dir < 0 && target <= 0);
   if (target !== S.idx) {                         // else: no-op frame — render NOTHING
     _playMoveTo(target);
     S.idx = target;
     _syncCursorToIdx();
     _recomputeDiff();
-    _paint();                                     // B6 — no-op while locked (idx still advanced)
+    // When this tick also halts, _haltPlayback below renders the stopped frame;
+    // skip this paint so one tick doesn't render twice (playing → stopped).
+    if (!willHalt) _paint();                      // B6 — no-op while locked (idx still advanced)
   }
-  if ((dir > 0 && S.idx >= S.log.length - 1) || (dir < 0 && S.idx <= 0)) {
+  if (willHalt) {
     S.clock = _currentClock();
-    _haltPlayback(S.locked);                      // B6 — silent if locked (display stays frozen)
+    _haltPlayback(S.locked);                      // B6 — silent if locked; renders the stopped frame
     return;
   }
   _rearm();

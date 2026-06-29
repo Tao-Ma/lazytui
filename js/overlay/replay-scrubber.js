@@ -137,7 +137,7 @@ function renderFull(data) {
     lines.push('');
     lines.push(`[dim]──── changes @ seq ${data.pos} ────[/]`);
     if (!data.diff.changes.length) {
-      lines.push('[dim](no model change)[/]');
+      lines.push(`[dim](${data.diff.initial ? 'initial frame' : 'no model change'})[/]`);
     } else {
       for (const c of data.diff.changes.slice(0, DH)) {
         const mark = c.kind === 'add' ? '[green]+[/]' : c.kind === 'remove' ? '[red]-[/]' : '[yellow]~[/]';

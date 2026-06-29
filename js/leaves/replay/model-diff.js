@@ -24,6 +24,8 @@ function repr(v) {
   if (typeof v === 'string') { const s = JSON.stringify(v); return s.length > REPR_CAP ? s.slice(0, REPR_CAP - 1) + '…' : s; }
   if (typeof v === 'number' || typeof v === 'boolean') return String(v);
   if (v instanceof Set) return `Set(${v.size})`;
+  if (v instanceof Map) return `Map(${v.size})`;
+  if (v instanceof Date) return `Date(${v.getTime()})`;
   if (Array.isArray(v)) return `[${v.length}]`;
   if (typeof v === 'object') { const s = '{' + Object.keys(v).join(',') + '}'; return s.length > REPR_CAP ? s.slice(0, REPR_CAP - 1) + '…' : s; }
   return String(v);
@@ -34,7 +36,17 @@ function setEq(a, b) {
   for (const m of a) if (!b.has(m)) return false;
   return true;
 }
-function isPlainObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v) && !(v instanceof Set); }
+// STRICT plain-object test: only `{}`-shaped objects recurse key-by-key. A Map,
+// Date, RegExp, or class instance is NOT plain — it has its own prototype, so
+// `Object.keys()` would be empty and the diff would silently report "no change"
+// on a Map/Date value change (the replayable state holds only plain objects +
+// Sets today, so this is a latent guard: any future exotic value routes to the
+// leaf branch and is reported, never silently dropped).
+function isPlainObj(v) {
+  if (!v || typeof v !== 'object') return false;
+  const proto = Object.getPrototypeOf(v);
+  return proto === Object.prototype || proto === null;
+}
 
 /**
  * @returns {{ changes: Array<{path,kind,before?,after?}>, truncated: boolean }}

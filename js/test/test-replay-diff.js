@@ -99,6 +99,42 @@ function boot() {
   });
 
   cap(() => rc.exit());
+
+  // ---------------------------------------------------------------------------
+  // [B6] skip-to-next-change: NO match (Round-3 review). A scan that finds no
+  // changing Msg within SCAN_CAP must STAY PUT — it used to teleport up to
+  // SCAN_CAP frames to a non-change frame at the scan boundary.
+  // ---------------------------------------------------------------------------
+  boot();
+  sessionLog.enable(true); sessionLog.clear();
+  cap(() => {
+    loop.applyMsg({ type: 'clock_tick', now: 1000 });   // idx 0: →1000 (the start anchor)
+    loop.applyMsg({ type: 'clock_tick', now: 1000 });   // idx 1: no change
+    loop.applyMsg({ type: 'clock_tick', now: 1000 });   // idx 2: no change
+  });
+  sessionLog.save(wal);
+  sessionLog.enable(false); sessionLog.clear();
+  boot();
+  rc.enter(wal);
+  await new Promise(res => setImmediate(res));
+  const S2 = rc._state();
+
+  describe('[B6] skip-to-next-change: no later change stays put', () => {
+    it('`n` with no later change stays put (no teleport to the scan boundary)', () => {
+      cap(() => rc.seekToEnd(-1));            // idx 0
+      eq(S2.idx, 0);
+      cap(() => rc.handleKey('', 'n'));       // idx1, idx2 are no-ops → nothing changes ahead
+      eq(S2.idx, 0, 'stayed put — did not jump to the last no-change frame');
+    });
+    it('`N` reaches the timeline start anchor (idx 0), skipping the no-op', () => {
+      cap(() => rc.seekToEnd(1));             // idx 2 (end)
+      eq(S2.idx, 2);
+      cap(() => rc.handleKey('', 'N'));       // idx1 no-op → idx0 (the start anchor)
+      eq(S2.idx, 0, 'reached idx 0 by intent, not by a fall-through teleport');
+    });
+  });
+
+  cap(() => rc.exit());
   try { require('fs').unlinkSync(wal); } catch {}
   report();
 })();

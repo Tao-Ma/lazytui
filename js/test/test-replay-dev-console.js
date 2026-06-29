@@ -85,6 +85,13 @@ describe('[B6] --dev dump', () => {
     const rows = out.split('\n').filter(l => l && !l.startsWith('#'));
     eq(rows.length, 1, 'exactly the one in-range entry');
   });
+  it('--seq-range errors on garbage instead of failing open (Round-3 review)', () => {
+    const bad = dev(['--seq-range', 'abc']);
+    eq(bad.rc, 1, 'non-numeric range exits 1 (not a silent dump-all)');
+    assert(/seq-range/.test(bad.out), 'explains the bad range');
+    const inverted = dev(['--seq-range', '9..1']);
+    eq(inverted.rc, 1, 'lo>hi exits 1 (not a silent empty dump)');
+  });
   it('an unreadable file exits non-zero', () => {
     const { rc } = (() => { try { execFileSync('node', [path.join(REPO, 'js/app/tui.js'), '--dev', '/no/such/file.jsonl'], { cwd: REPO, encoding: 'utf8' }); return { rc: 0 }; } catch (e) { return { rc: e.status || 1 }; } })();
     assert(rc !== 0, 'non-zero on missing file');
