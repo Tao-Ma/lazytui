@@ -295,14 +295,22 @@ function update(model, msg) {
       if (msg.name === model.theme) return [model, []];
       return [{ ...model, theme: msg.name }, []];
     }
-    case 'mode_clear':
+    case 'mode_clear': {
       // Defensive: clear a single mode flag. Used by dispatch's wedge-guard
       // when a mode handler throws — without this, the failing modal traps
       // every subsequent key (Esc included) in the same throwing handler.
       // Routed through update so even the panic-recovery path stays single-
       // writer; falls back to no-op if the flag isn't a registered mode.
       if (!msg.flag || !(msg.flag in model.modes) || model.modes[msg.flag] === false) return [model, []];
-      return [_withModes(model, { [msg.flag]: false }), []];
+      // v0.6.7 review — also drop any staged modal continuation, so a thrown
+      // modal handler can't leave a stale continuation under model.modal for
+      // the NEXT modal to inherit (upholds E14's "every exit clears it").
+      const cleared = _withModes(model, { [msg.flag]: false });
+      if (cleared.modal && cleared.modal.continuation != null) {
+        return [{ ...cleared, modal: { ...cleared.modal, continuation: null } }, []];
+      }
+      return [cleared, []];
+    }
     case 'mode_set':
       // Companion to mode_clear: set a mode flag to true via Msg. Used by
       // the viewer Component's search-enter handler to flip detailSearchMode

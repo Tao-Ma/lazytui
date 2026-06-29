@@ -167,4 +167,17 @@ describe('[E14] findModalClosure guard', () => {
   });
 });
 
+// Round-3 review: the wedge-guard's mode_clear (fired when a modal handler
+// throws) used to clear only the mode flag, leaving a stale continuation under
+// model.modal — a contract leak ("every exit clears it"). Now it drops it too.
+describe('[E14] mode_clear panic path clears the continuation', () => {
+  it('a thrown-handler mode_clear drops a staged continuation', () => {
+    const [m1] = step(fresh(), { type: 'confirm_enter', message: 'x', cmd: { type: 'do_run', actionKey: 'k' } });
+    eq(m1.modal.continuation && m1.modal.continuation.type, 'do_run', 'continuation staged on enter');
+    const [m2] = step(m1, { type: 'mode_clear', flag: 'confirmMode' });
+    eq(m2.modes.confirmMode, false, 'mode flag cleared');
+    eq(m2.modal.continuation, null, 'stale continuation dropped on the panic clear');
+  });
+});
+
 report();
