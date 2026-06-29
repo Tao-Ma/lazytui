@@ -298,9 +298,17 @@ function installEffects(registerEffect) {
     // per-call host (undefined for raw/test invocations — guarded throughout).
     const signal = host.signal;
     const release = () => { if (host.releaseKey) host.releaseKey(); };
+    // Always clear the inFlight latch when this fetch settles, aborts, or is
+    // skipped — a bare dockerResult drops any stale data but keeps the prior
+    // maps, so the next tick can retry. (`_maybeFetch` refuses to start a fetch
+    // while inFlight is set, so an abort that did NOT clear it would stall
+    // polling if a future non-quit `cancelEffect('docker:fetch')` is ever added.
+    // At quit there is no next tick; the dispatch only schedules a debounced
+    // render that never fires before exit, so it's harmless there.)
+    const dropStale = () => host.dispatchMsg(host.wrap('docker', { type: 'dockerResult' }));
     setImmediate(async () => {
       try {
-        if (signal && signal.aborted) return;   // aborted before we started
+        if (signal && signal.aborted) { dropStale(); return; }   // aborted before we started
         // Live gates (the tick fired async). Skip the docker queries when
         // the terminal is unfocused — but still dispatch dockerResult so
         // the in-flight latch clears and the next tick can retry. A bare
@@ -315,7 +323,7 @@ function installEffects(registerEffect) {
           `docker inspect -f "{{.Name}}\t{{.State.Status}}" ${args} 2>/dev/null`,
           { timeout: 5000, signal },
         );
-        if (signal && signal.aborted) return;   // superseded/torn-down mid-fetch — drop stale
+        if (signal && signal.aborted) { dropStale(); return; }   // superseded/torn-down mid-fetch — drop stale, clear latch
         const seen = new Set();
         for (const line of inspectOut.split('\n').filter(Boolean)) {
           const [rawName, st] = line.split('\t');
@@ -334,7 +342,7 @@ function installEffects(registerEffect) {
             `docker stats --no-stream --format "{{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}" ${sargs} 2>/dev/null`,
             { timeout: 5000, signal },
           );
-          if (signal && signal.aborted) return;   // superseded/torn-down mid-fetch — drop stale
+          if (signal && signal.aborted) { dropStale(); return; }   // superseded/torn-down mid-fetch — drop stale, clear latch
           const ts = Date.now();
           for (const line of statsOut.split('\n').filter(Boolean)) {
             const [name, cpu, mem] = line.split('\t');
@@ -353,9 +361,8 @@ function installEffects(registerEffect) {
 
         host.dispatchMsg(host.wrap('docker', { type: 'dockerResult', status, stats }));
       } catch (e) {
-        if (signal && signal.aborted) return;   // abort surfaced as a spawn 'error' — swallow
-        console.error(`[docker:fetch] ${e.message}`);
-        host.dispatchMsg(host.wrap('docker', { type: 'dockerResult' }));  // keep prior maps, clear inFlight
+        if (!(signal && signal.aborted)) console.error(`[docker:fetch] ${e.message}`);  // abort surfaces as a spawn 'error' — don't log it
+        dropStale();   // keep prior maps, clear inFlight (on a real error AND on an abort)
       } finally {
         release();   // C5 — free the key once this fetch settles/aborts
       }
