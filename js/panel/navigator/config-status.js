@@ -522,7 +522,12 @@ function installEffects(registerEffect) {
       try {
         if (host.signal && host.signal.aborted) return;   // superseded/removed
         const { setViewerContent } = require('../nav-state');
-        const body = diffFor(eff.item, eff.branch, eff.projectDir || '.').join('\n');
+        // Mirror cfgStatusCompute: a throw in the git show/diff (e.g. mkdtempSync
+        // on a full/read-only tmpdir) must surface as content, not escape this
+        // setImmediate as an uncaught exception that exits the process.
+        let body;
+        try { body = diffFor(eff.item, eff.branch, eff.projectDir || '.').join('\n'); }
+        catch (e) { body = `[dim]diff failed:[/] ${e.message}`; }
         if (host.signal && host.signal.aborted) return;   // drop stale
         setViewerContent(null, body);
       } finally {

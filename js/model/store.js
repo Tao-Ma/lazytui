@@ -137,8 +137,10 @@ function init() {
       // confirm/prompt (the caller passes what to run on `y`/submit); a fixed
       // base for copy/cmdline/menu that the terminal arm patches with the
       // user's selection (idx / sel+args / verb) before emitting. ONE shared
-      // slot (modals are flat — one at a time); every enter sets it, every
-      // exit clears it. NEVER a closure — it must round-trip a checkpoint's
+      // slot (modals are flat — one at a time). The five result-emitting modals
+      // (confirm/prompt/copy/cmdline/menu) set it on enter and clear it on every
+      // exit; `filter` routes its result via the `filter_exit` cascade and never
+      // touches this slot. NEVER a closure — it must round-trip a checkpoint's
       // JSON, so a fold reproduces the same Cmd (replay-safe). Pinned by
       // test-modal-continuation.js via the model-ops.findModalClosure guard
       // helper (asserts no function under model.modal after each transition).

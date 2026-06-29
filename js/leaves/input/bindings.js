@@ -1,13 +1,18 @@
 /**
  * Footer / help key-hint registry (v0.6.7 Phase 3, E9).
  *
- * A pure, dependency-free leaf — the SINGLE source for the key HINTS shown in
- * the footer row and the help overlay. Historically these hints were typed by
- * hand in two places that drifted: the focus-kind / modal strings in
- * `render/footer.js` and the per-context blocks in `overlay/help.js` (plus the
- * per-panel `keyHints` strings on the panel defs). This table is the one place
- * a hint is declared; both consumers project from it — the same
- * declarative-table-kills-drift pattern as `leaves/input/modes.js`.
+ * A pure, dependency-free leaf — the SINGLE source for the terse key HINTS shown
+ * in the footer row. Historically these were typed by hand and scattered through
+ * `render/footer.js` (the focus-kind segments and the modal-mode tails). This
+ * table is the one place a terse hint is declared; `render/footer.js` projects
+ * from it — the same declarative-table-kills-drift pattern as
+ * `leaves/input/modes.js`.
+ *
+ * NOT consumed by `overlay/help.js`: the help overlay is a separate, more
+ * detailed reference (`x  Open menu popup`, not the terse `x menu`), built from
+ * each panel def's `keyHints` + the dynamic leader-chord walk over
+ * `leaves/input/keybindings` — a different, already-single source. Routing it
+ * through this terse registry would downgrade it (see docs/v0.6.7.md E9).
  *
  * Scope (E9 "Focused+"): this registry holds KEY HINTS only. The genuinely
  * LIVE status the footer interleaves — a search match count `[3/12]`, the typed
