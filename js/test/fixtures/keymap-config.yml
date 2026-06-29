@@ -1,0 +1,17 @@
+project_dir: .
+
+groups:
+  mygroup:
+    label: My Group
+    containers: []
+    actions:
+      hello:
+        cmd: echo hello
+        label: Hello
+
+keymap:
+  version: 1
+  normal:
+    R: refresh          # bare-string builtin verb
+    r: noop             # disable the default r (move refresh to R)
+    H: { action: hello }   # bind a configured action

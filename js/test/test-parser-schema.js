@@ -231,4 +231,34 @@ describe('files.category', () => {
   });
 });
 
+// v0.6.7 E9 — `keymap:` block shape (semantics validate at load time).
+describe('keymap: block', () => {
+  const withKeymap = (keymap) => ({ ...loadFixture('minimal_cmd.yml'), keymap });
+  it('valid: version + bare-string + mapping + noop', () => {
+    validate(withKeymap({ version: 1, normal: { R: 'refresh', g: { action: 'build' }, ',': 'noop' } }), 'test');
+    assert(true);
+  });
+  it('keymap must be a mapping', () => {
+    expectThrow(/'keymap' must be a mapping/, () => validate(withKeymap([1, 2]), 'test'));
+  });
+  it('unknown key in keymap rejected', () => {
+    expectThrow(/unknown key/, () => validate(withKeymap({ leader: {} }), 'test'));
+  });
+  it('version must be an integer', () => {
+    expectThrow(/'keymap.version' must be an integer/, () => validate(withKeymap({ version: 'one' }), 'test'));
+  });
+  it('normal must be a mapping', () => {
+    expectThrow(/'keymap.normal' must be a mapping/, () => validate(withKeymap({ normal: [1] }), 'test'));
+  });
+  it('empty binding string rejected', () => {
+    expectThrow(/non-empty/, () => validate(withKeymap({ normal: { R: '' } }), 'test'));
+  });
+  it('conflicting verb targets rejected', () => {
+    expectThrow(/conflicting targets/, () => validate(withKeymap({ normal: { R: { action: 'a', builtin: 'b' } } }), 'test'));
+  });
+  it('non-string / non-mapping binding rejected', () => {
+    expectThrow(/must be a verb name or a/, () => validate(withKeymap({ normal: { R: 42 } }), 'test'));
+  });
+});
+
 report();

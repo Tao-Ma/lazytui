@@ -215,6 +215,7 @@ for "the same thing but headless."
 | Mouse actions (v0.6.4+) | Left-click focuses + selects, double-click activates (Enter-equivalent), right-click opens a context menu at the cursor (copy line / copy selection + general entries; click-outside dismisses), wheel scrolls the pane under the cursor; drag-select persists like a `v` visual selection. Remappable via a YAML `mouse:` block; the context menu is extensible via a `context-menu:` block with keys-style verbs and per-pane gates. |
 | Diagnostics window (`<leader> e`, v0.6.4+) | Modal listing the warnings (`⚠`) and errors (`✕`) raised this session — boot config warnings, runtime errors, and multi-instance footgun guards. `j`/`k`/`g`/`G` nav, `y` copies the highlighted entry to the register + clipboard, `c` clears, `s` saves to `lazytui-diagnostics.json`, Esc closes. Backed by a dedicated buffer separate from the replay event-log so diagnostics aren't evicted by input noise. |
 | Navigation history (`<leader> o` / `<leader> i`, v0.6.7+) | Browser/vim-jumplist back (`o` = older) / forward (`i` = newer) over visited locations — group + focused pane + viewer tab + selected item, captured by stable identity so the cursor lands on the same item after a list reorders. A location whose group is gone is pruned and the travel continues. |
+| Configurable keys (v0.6.7+) | Remap normal-mode single keys via a YAML `keymap:` block (`key → verb`, `noop` to disable, or `{action\|command}` targets); the focus/mode-branching keys (nav / `return` / `escape` / `x` / …) stay reserved. `lazytui --keymap` dumps the verb catalog + reserved keys + effective bindings for discovery (AI-config-friendly). See [docs/keymap.md](docs/keymap.md). |
 | 6 themes + free-config mode | `:free-config` opens an interactive layout editor — drag/swap/resize/spawn columns and panels, hide/show from a pool of declared panel definitions, save back to YAML. |
 | `--spec` flag | Prints the plugin-authoring bundle for AI agents (every rule in one file). |
 
@@ -224,7 +225,7 @@ for "the same thing but headless."
   `@xterm/headless` for embedded PTY tabs, `js-yaml` for config parsing,
   `eastasianwidth` (UAX #11 wide) + `wcwidth` (POSIX zero-width) for the
   Unicode character-width truth function.
-- **Tests**: JS unit suites under `js/test/` (126 files), an opt-in
+- **Tests**: JS unit suites under `js/test/` (129 files), an opt-in
   pre-release smoke harness under `js/test/smoke/` (12 scenarios), and
   a live integration harness under `test/`. See [docs/TESTING.md](docs/TESTING.md).
 - **Two worked demos** at the time of initial public release; both ship

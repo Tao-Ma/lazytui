@@ -38,6 +38,8 @@ Options:
                              --filter lane=root,kind=msg,type=X,path=Y
                              --seq-range a..b   --diff (per-Msg model diff)
                              --json (JSONL of the filtered entries)
+  --keymap [config]          Headless: dump the normal-mode keymap (verbs,
+                             reserved keys, effective bindings), then exit.
   -h, --help                 Show this help, then exit
 
 Examples:
@@ -103,6 +105,7 @@ function main() {
   let recordSaveFile = null;
   let replaySeq = null;
   let devFile = null, devFilter = null, devSeqRange = null, devDiff = false, devJson = false;
+  let keymapDump = false;
   const configArgs = [];
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
@@ -137,6 +140,8 @@ function main() {
       devDiff = true;
     } else if (a === '--json') {
       devJson = true;
+    } else if (a === '--keymap') {
+      keymapDump = true;
     } else if (a === '--exec') {
       if (i + 1 >= args.length) {
         console.error('--exec requires <group>:<action>');
@@ -173,6 +178,15 @@ function main() {
   if (devFile !== null) {
     const { runDevConsole } = require('./dev-console');
     process.exit(runDevConsole(devFile, { filter: devFilter, seqRange: devSeqRange, diff: devDiff, json: devJson }));
+  }
+
+  // --keymap (headless) — dump the normal-mode keymap (verb catalog + reserved
+  // keys + effective bindings) so a config author can discover the vocabulary.
+  // Takes an OPTIONAL config arg to show that config's effective bindings;
+  // without one, shows the built-in defaults. v0.6.7 E9.
+  if (keymapDump) {
+    const { runKeymapDump } = require('./keymap-dump');
+    process.exit(runKeymapDump(configArgs[0] || null));
   }
 
   // --record-load takes no config (the recorded WAL carries it); it boots the
@@ -342,6 +356,11 @@ function main() {
     console.error(`keys: ${e.message}`);
     process.exit(1);
   }
+
+  // E9 (v0.6.7) — build the configurable normal-mode keymap (defaults ⊕ the
+  // `keymap:` block). Never throws (no-hard-fail: bad binds are logged as
+  // actionable errors and skipped), so no try/exit needed.
+  require('../dispatch/control/dispatch').loadKeymap(getModel().config);
 
   // v0.6.4 Theme F Phase 4 — merge the top-level `mouse:` block (gesture →
   // intent overrides + the double-click window) over the code defaults. The

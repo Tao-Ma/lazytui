@@ -34,6 +34,7 @@ const { isTerminalTab, activeTerminalId, findEphemeralByid,
         removeContentTab } = require('../../panel/viewer/tabs');
 const { isSessionDead } = require('../../io/terminal');
 const keybindings = require('../../leaves/input/keybindings');
+const keymap = require('../../leaves/input/keymap');
 const modes = require('../../leaves/input/modes');
 const route = require('../../panel/route');
 const mpane = require('../../leaves/wm/pane');
@@ -574,6 +575,13 @@ function handleNormalKey(key, seq) {
     switchGroupsTab();
     return;
   }
+  // E9 — configurable normal-mode keys: resolve through the keymap table
+  // (defaults ⊕ user `keymap.normal`) BEFORE the switch. Only the cleanly-
+  // global, single-dispatch keys live in the table; keys whose dispatch
+  // branches on focus/mode (return/escape/x/T/v/nav, the [/] groups fork above,
+  // the viewer-claimed `/`) stay in the switch and are reserved from rebinding.
+  const _kmSpec = keymap.resolveNormalSpec(key, [instanceKind(getFocus()), 'global'], _normalTable);
+  if (_kmSpec) { const _run = _keymapRunner(_kmSpec); if (_run) { _run(); return; } }
   switch (key) {
     case 'q': { require('../runtime/cleanup').cleanup(); process.exit(0); break; }
     case 'escape': {
@@ -626,7 +634,6 @@ function handleNormalKey(key, seq) {
       // their update and short-circuited dispatchKeyToFocused.
       intent.realize(intent.activate());
       break;
-    case 'r':              handleAction('refresh'); break;
     case 'T': {
       // Open the unified pane-menu anchored to the focused-or-sticky
       // viewer's `[≡]` trigger. The cursor seeds at the viewer's active
@@ -672,7 +679,6 @@ function handleNormalKey(key, seq) {
       intent.realize(intent.context());
       break;
     }
-    case '?':              handleAction('show_help'); break;
     // Tab keys: framework default cycles the viewer's tabs. The groups
     // quick-tab override is handled EARLIER in this fn (the [/] fork at the
     // top). config-status deliberately does NOT claim [/] — it lets them
@@ -681,10 +687,11 @@ function handleNormalKey(key, seq) {
     // update and short-circuit before we reach here, but none does today.
     case ']':              handleAction('next_tab'); break;
     case '[':              handleAction('prev_tab'); break;
-    case 'pageup': case ',': handleAction('page_up'); break;
-    case 'pagedown': case '.': handleAction('page_down'); break;
-    case '<':              handleAction('goto_top'); break;
-    case '>':              handleAction('goto_bottom'); break;
+    // E9 — the printable scroll keys , . < > moved to the configurable keymap
+    // table (page_up/page_down/goto_top/goto_bottom); the named-key aliases stay
+    // here as always-available bindings.
+    case 'pageup':         handleAction('page_up'); break;
+    case 'pagedown':       handleAction('page_down'); break;
     case '+':              handleAction('view_expand'); break;
     case '_':              handleAction('view_shrink'); break;
     case '/':
@@ -697,9 +704,8 @@ function handleNormalKey(key, seq) {
       // the behavior — #3 controller-thinning.)
       _enterFilterMode();
       break;
-    case 'y':              enterCopyMode(); break;
-    case '"':              applyMsg({ type: 'register_popup_enter' }); break;
-    case ':':              applyMsg({ type: 'cmdline_enter' }); break;
+    // E9 — y / " / : moved to the configurable keymap table
+    // (copy_mode / register / cmdline).
     default:
       // Numeric hotkey → focus the corresponding panel. Anything else
       // is a no-op at the framework level; the focused Component
@@ -803,6 +809,85 @@ function _collectActionKeys(config) {
  * flagged: single-char bindings shadowed by handleNormalKey's hardcoded
  * switch, and `action:` bindings whose target doesn't resolve.
  */
+// ——— E9 (v0.6.7) — configurable normal-mode keymap ————————————————————————
+//
+// The cleanly-global, single-dispatch normal-mode keys are DATA in
+// leaves/input/keymap.js; handleNormalKey resolves them through the table
+// (defaults ⊕ user `keymap.normal`) before its switch. This is the verb
+// vocabulary: catalog name → its EXACT dispatch (the dispatches the deleted
+// switch cases performed). Its key-set MUST equal keymap.VERB_CATALOG —
+// asserted by test-keymap-dispatch (so the AI-facing catalog can't drift).
+const NORMAL_VERBS = {
+  refresh:     () => handleAction('refresh'),
+  show_help:   () => handleAction('show_help'),
+  page_up:     () => handleAction('page_up'),
+  page_down:   () => handleAction('page_down'),
+  goto_top:    () => handleAction('goto_top'),
+  goto_bottom: () => handleAction('goto_bottom'),
+  register:    () => applyMsg({ type: 'register_popup_enter' }),
+  cmdline:     () => applyMsg({ type: 'cmdline_enter' }),
+  copy_mode:   () => enterCopyMode(),
+};
+
+// Resolve a keymap binding spec to its dispatch thunk (or null). `builtin` uses
+// the curated NORMAL_VERBS catalog; `action`/`command` reuse the `keys:` verb
+// vocabulary (an action's short key / a cmdline command string).
+function _keymapRunner(spec) {
+  if (!spec) return null;
+  if (spec.builtin) return NORMAL_VERBS[spec.builtin] || null;
+  if (spec.action)  return () => _runActionByKey(spec.action);
+  if (spec.command) return () => require('./cmdline').runCommandString(spec.command);
+  return null;
+}
+
+// The effective normal-mode table (defaults ⊕ user keymap.normal), built once
+// by loadKeymap at boot; handleNormalKey resolves through it. Seeded to the
+// defaults so a no-config / pre-load boot still binds the built-ins.
+let _normalTable = keymap.DEFAULT_NORMAL;
+function _effectiveNormalTable() { return _normalTable; }
+
+// Reserved normal keys: the ones handleNormalKey's switch claims with
+// focus/mode-branching logic (can't be a simple rebind), MINUS the keys we
+// moved to the table. Binding a reserved key in keymap.normal is a boot error.
+function _reservedNormalKeys() {
+  const remappable = new Set((keymap.DEFAULT_NORMAL.global || []).map(e => e.key));
+  return new Set([..._SHADOWED_NORMAL_KEYS].filter(k => !remappable.has(k)));
+}
+
+/**
+ * Build the effective normal-mode keymap from the `keymap:` config block
+ * (defaults ⊕ user overrides). Called once at boot, after the config + plugins
+ * load (so `action:` targets resolve). Version-classifies, merges, and logs
+ * actionable errors (reserved key / unknown verb / bad form / unresolved
+ * action) — the error text is documentation an AI config-author self-corrects
+ * from. Never throws (no-hard-fail, like the WAL schema policy).
+ */
+function loadKeymap(config, opts = {}) {
+  const block = (config && config.keymap) || {};
+  const { message } = keymap.schemaCompat(block.version);
+  if (message) console.error(`[keymap] ${message}`);
+  const { table, errors } = keymap.mergeUserNormal(
+    keymap.DEFAULT_NORMAL, block.normal || {},
+    { reservedKeys: _reservedNormalKeys(), legalVerbs: new Set(Object.keys(keymap.VERB_CATALOG)) });
+  for (const e of errors) console.error(`[keymap] ${e}`);
+  // action: targets resolve at invoke time (silent no-op if unknown) — pre-check
+  // against the merged action set, mirroring loadKeyBindings' R14 check. Skipped
+  // by the headless `--keymap` dump (`checkActions:false`): the merged set
+  // (incl. plugin-synth actions) only exists once the app is booted, so the
+  // check would mis-warn on every action binding there.
+  if (opts.checkActions !== false) {
+    const actionKeys = _collectActionKeys(config);
+    for (const ctx of Object.keys(table)) {
+      for (const e of table[ctx]) {
+        if (e.spec.action && !actionKeys.has(e.spec.action)) {
+          console.error(`[keymap] key '${e.key}' targets action '${e.spec.action}' but no action with that short key exists — it will be a silent no-op`);
+        }
+      }
+    }
+  }
+  _normalTable = table;
+}
+
 function loadKeyBindings(config) {
   const keys = (config && config.keys) || {};
   const actionKeys = _collectActionKeys(config);
@@ -1034,8 +1119,13 @@ module.exports = {
   _paneMenuPick,
   registerKeyFilter, clearKeyFilters,
   loadKeyBindings,
+  loadKeymap,
   loadMouseBindings,
   loadContextMenu,
+  // E9 — exposed for tests (catalog↔thunk sync + effective-table assertions).
+  _normalVerbNames: () => Object.keys(NORMAL_VERBS),
+  _effectiveNormalTable,
+  _reservedNormalKeys,
   // Exposed so actions.js (the carved-out handleAction switch) can lazy-
   // require _enterFilterMode for its `:filter` arm — keeps the filterable
   // gate single-sourced.
