@@ -84,4 +84,10 @@ skipped — the app still starts):
 - unknown verb → names the valid verbs (and the likely typo);
 - reserved key → names the remappable keys;
 - malformed value → shows the expected shape;
+- empty or whitespace-containing key → flagged (not a pressable key);
 - an `action:` target that doesn't resolve → flagged as a silent no-op.
+
+A `command:` target is **not** checked at boot — the command registry is
+state-derived (it varies by group), so a static check would mis-warn. A typo'd
+command is a silent no-op at invoke time; verify it with `--keymap` and by
+running the command from `:`.

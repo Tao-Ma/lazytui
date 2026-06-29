@@ -780,6 +780,13 @@ const _SHADOWED_NORMAL_KEYS = new Set([
   'q', 'v', 'r', 'x', 'y', '?', '/', ':', '"',
   'j', 'k', 'h', 'l', '*', '+', '_', '[', ']',
   ',', '.', '<', '>',
+  // The leader (space), the pane-menu opener, and the panel-focus digit
+  // hotkeys: dynamic/branching cases in handleNormalKey (enter_prefix /
+  // pane_menu_open / allPanels hotkey scan). Listed so a keymap.normal rebind
+  // is an actionable error rather than silently shadowing them — the resolver
+  // runs before the switch (review round). Also corrects the keys: shadow
+  // warning, where their omission was latent-but-benign.
+  ' ', 'T', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
   // Multi-char names that also have hardcoded cases:
   'escape', 'return', 'up', 'down', 'left', 'right',
   'pageup', 'pagedown',
