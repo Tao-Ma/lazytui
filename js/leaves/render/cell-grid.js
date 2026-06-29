@@ -66,7 +66,19 @@ function rowToCells(ansi) {
     }
     const cp = ansi.codePointAt(i);
     const ch = String.fromCodePoint(cp);
-    const w = charWidth(cp) || 1;
+    const w = charWidth(cp);
+    if (w === 0) {
+      // Zero-width (combining mark / ZWJ / variation selector): no column of its
+      // own — the terminal folds it into the preceding glyph, so we must too, or
+      // every absolute MoveTo after it drifts right. Append to the last real cell
+      // (skip a wide glyph's continuation column). A leading combiner with no base
+      // is dropped (matches the terminal; rows never start with one).
+      let k = cells.length - 1;
+      while (k >= 0 && cells[k].cont) k--;
+      if (k >= 0) cells[k].g += ch;
+      i += ch.length;
+      continue;
+    }
     cells.push({ g: ch, w, sgr: active });
     if (w === 2) cells.push({ cont: true });
     i += ch.length;

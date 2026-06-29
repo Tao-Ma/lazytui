@@ -43,7 +43,7 @@ const _CSI = /^\x1b\[[0-9;?]*[ -/]*[@-~]/;
 // has no entry. SGR sequences are zero-width.
 function _glyphByCol(ansi) {
   const g = {};
-  let col = 0, i = 0;
+  let col = 0, i = 0, lastStart = -1;
   while (i < ansi.length) {
     if (ansi[i] === '\x1b') {
       const m = ansi.slice(i).match(_CSI);
@@ -51,8 +51,17 @@ function _glyphByCol(ansi) {
     }
     const cp = ansi.codePointAt(i);
     const ch = String.fromCodePoint(cp);
+    const w = charWidth(cp);
+    if (w === 0) {
+      // Zero-width (combining mark / ZWJ / VS): fold into the preceding glyph's
+      // start column — don't advance, don't overwrite (a leading one is dropped).
+      if (lastStart >= 0) g[lastStart] += ch;
+      i += ch.length;
+      continue;
+    }
     g[col] = ch;
-    col += charWidth(cp);
+    lastStart = col;
+    col += w;
     i += ch.length;          // past the surrogate pair, if any
   }
   return { g, width: col };
