@@ -88,6 +88,25 @@ describe('[E9] mergeUserNormal', () => {
     const b = km.mergeUserNormal(km.DEFAULT_NORMAL, { 'a b': 'refresh' }, { reservedKeys: reserved });
     assert(b.errors.length === 1 && /not a pressable key/.test(b.errors[0]), `ws: ${b.errors[0]}`);
   });
+  it('multi-char key → rejected, not installed, kept out of the dump (review round)', () => {
+    // `gg`/`Rx` can never match (input delivers one code point per keystroke), so
+    // a multi-char binding would be a dead row the --keymap dump claims is live.
+    for (const k of ['gg', 'Rx', 'foo']) {
+      const { table, errors } = km.mergeUserNormal(km.DEFAULT_NORMAL, { [k]: 'refresh' }, { reservedKeys: reserved });
+      assert(errors.length === 1 && /not a single key/.test(errors[0]), `${k}: ${errors[0]}`);
+      eq(get(table, k), undefined, `${k} not installed`);
+    }
+  });
+  it("`paste` pseudo-key → rejected (it WOULD fire on every bracketed paste)", () => {
+    const { table, errors } = km.mergeUserNormal(km.DEFAULT_NORMAL, { paste: 'refresh' }, { reservedKeys: reserved });
+    assert(errors.length === 1 && /not a single key/.test(errors[0]), `paste: ${errors[0]}`);
+    eq(get(table, 'paste'), undefined, 'paste not installed');
+  });
+  it('a single multi-byte code point (e.g. emoji) is still one key', () => {
+    const { table, errors } = km.mergeUserNormal(km.DEFAULT_NORMAL, { '😀': 'refresh' }, { reservedKeys: reserved });
+    eq(errors, []);
+    eq(get(table, '😀'), { builtin: 'refresh' });
+  });
   it('returned table deep-copies default specs (no singleton poisoning, review round)', () => {
     const { table } = km.mergeUserNormal(km.DEFAULT_NORMAL, { Z: 'refresh' }, { reservedKeys: reserved });
     const merged = table.global.find(e => e.key === 'r');
