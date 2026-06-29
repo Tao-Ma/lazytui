@@ -85,6 +85,8 @@ skipped — the app still starts):
 - reserved key → names the remappable keys;
 - malformed value → shows the expected shape;
 - empty or whitespace-containing key → flagged (not a pressable key);
+- multi-character key (`gg`, `Rx`, or a named key like `paste`) → flagged (not a
+  single key) — normal-mode bindings are single keys; chords go in `keys:`;
 - an `action:` target that doesn't resolve → flagged as a silent no-op.
 
 A `command:` target is **not** checked at boot — the command registry is
