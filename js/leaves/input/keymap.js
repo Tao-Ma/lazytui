@@ -115,11 +115,17 @@ function mergeUserNormal(defaultTable, userNormal, opts = {}) {
   const reserved = opts.reservedKeys || new Set();
   const legal = opts.legalVerbs || new Set(Object.keys(VERB_CATALOG));
   const errors = [];
-  const byKey = new Map((defaultTable.global || []).map(e => [e.key, { ...e }]));
+  // Deep-copy each carried default's spec so the returned table never aliases
+  // into the module-level DEFAULT_NORMAL singleton (the "new table" contract).
+  const byKey = new Map((defaultTable.global || []).map(e => [e.key, { key: e.key, spec: { ...e.spec } }]));
   const remappable = () => [...byKey.keys()].join(' ');
   for (const [key, raw] of Object.entries(userNormal || {})) {
     if (reserved.has(key)) {
       errors.push(`keymap: key '${key}' is reserved by a built-in handler and can't be remapped — remappable keys: ${remappable()}`);
+      continue;
+    }
+    if (key === '' || /\s/.test(key)) {
+      errors.push(`keymap: key ${JSON.stringify(key)} is not a pressable key (empty or contains whitespace)`);
       continue;
     }
     const spec = _normalizeSpec(raw);
@@ -144,7 +150,13 @@ function mergeUserNormal(defaultTable, userNormal, opts = {}) {
  */
 function schemaCompat(version) {
   if (version == null) return { compat: 'missing', message: null };
-  const n = typeof version === 'number' ? version : Number(version);
+  // Only an actual number (or a numeric string) is a version. Coercing other
+  // types — false/[]/{}/'' all Number()→0, [1]→1 — would mis-report a bogus
+  // "version 0 < current" instead of "not a number" (review round). The schema
+  // already enforces an integer upstream; this is the defensive direct-call path.
+  let n = NaN;
+  if (typeof version === 'number') n = version;
+  else if (typeof version === 'string' && version.trim() !== '') n = Number(version);
   if (!Number.isFinite(n)) {
     return { compat: 'missing', message: `keymap: ignoring non-numeric version ${JSON.stringify(version)}` };
   }

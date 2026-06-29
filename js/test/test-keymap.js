@@ -82,6 +82,20 @@ describe('[E9] mergeUserNormal', () => {
     eq(get(table, 'g'), { action: 'grep' });
     eq(get(table, 'G'), { command: 'show-hidden' });
   });
+  it('empty / whitespace key → actionable error, not installed (review round)', () => {
+    const a = km.mergeUserNormal(km.DEFAULT_NORMAL, { '': 'refresh' }, { reservedKeys: reserved });
+    assert(a.errors.length === 1 && /not a pressable key/.test(a.errors[0]), `empty: ${a.errors[0]}`);
+    const b = km.mergeUserNormal(km.DEFAULT_NORMAL, { 'a b': 'refresh' }, { reservedKeys: reserved });
+    assert(b.errors.length === 1 && /not a pressable key/.test(b.errors[0]), `ws: ${b.errors[0]}`);
+  });
+  it('returned table deep-copies default specs (no singleton poisoning, review round)', () => {
+    const { table } = km.mergeUserNormal(km.DEFAULT_NORMAL, { Z: 'refresh' }, { reservedKeys: reserved });
+    const merged = table.global.find(e => e.key === 'r');
+    const dflt = km.DEFAULT_NORMAL.global.find(e => e.key === 'r');
+    assert(merged.spec !== dflt.spec, 'spec is a copy, not the singleton ref');
+    merged.spec.builtin = 'MUT';
+    eq(dflt.spec.builtin, 'refresh', 'mutating the merged spec does not poison DEFAULT_NORMAL');
+  });
 });
 
 describe('[E9] schemaCompat', () => {
@@ -99,6 +113,9 @@ describe('[E9] schemaCompat', () => {
   it('non-numeric → treated as missing with a note', () => {
     const r = km.schemaCompat('abc');
     eq(r.compat, 'missing'); assert(/non-numeric/.test(r.message));
+  });
+  it('false / [] / "" / [1] / {} → missing, NOT coerced to 0/1 (review round)', () => {
+    for (const v of [false, [], '', [1], {}]) eq(km.schemaCompat(v).compat, 'missing', `${JSON.stringify(v)} → missing`);
   });
 });
 

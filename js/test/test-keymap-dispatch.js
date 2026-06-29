@@ -28,8 +28,18 @@ describe('[E9] catalog ↔ thunk sync', () => {
 describe('[E9] reserved set', () => {
   it('reserves the entangled/dynamic keys, frees the remappable ones', () => {
     const r = dispatch._reservedNormalKeys();
-    for (const k of ['[', ']', '/', 'x', 'v', 'q', '+', '_']) assert(r.has(k), `'${k}' reserved`);
+    // review round: ' ' (leader), 'T' (pane menu), digits (panel hotkeys) must be reserved.
+    for (const k of ['[', ']', '/', 'x', 'v', 'q', '+', '_', ' ', 'T', '0', '7', '9']) assert(r.has(k), `'${k}' reserved`);
     for (const k of ['r', '?', ',', '.', '<', '>', '"', ':', 'y']) assert(!r.has(k), `'${k}' remappable`);
+  });
+  it('binding the leader / pane-menu / a digit hotkey is rejected (review round)', () => {
+    const reserved = dispatch._reservedNormalKeys();
+    const legal = new Set(Object.keys(km.VERB_CATALOG));
+    for (const k of [' ', 'T', '7']) {
+      const { table, errors } = km.mergeUserNormal(km.DEFAULT_NORMAL, { [k]: 'refresh' }, { reservedKeys: reserved, legalVerbs: legal });
+      assert(errors.some(e => /reserved/.test(e)), `'${k}' → reserved error`);
+      assert(!table.global.some(e => e.key === k), `'${k}' not installed`);
+    }
   });
 });
 
