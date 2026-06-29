@@ -49,6 +49,12 @@ greppable.
 ════════════════════════════ REDUCERS ══════════════════════════════
                                                             │
    applyMsg(msg)                  ←────────────────────────┤
+     (inbound middleware seam — dispatch/runtime/middleware.js:        │
+      an ordered link list wraps each lane's terminal dispatch,        │
+      composed once + cached by identity. Built-ins: WAL-record        │
+      (self-gates on the record flag) + crash-reporter (stamps         │
+      {entry,error,WAL-tail} + re-throws). A link MUST NOT dispatch     │
+      and MUST NOT do non-replay-safe I/O. C7, v0.6.7.)                 │
      [model', cmds] = runtime.update(model, msg)            │
      setModel(model')             ←── root reducer          │
      runEffects(cmds)                 (chrome / modal /     │
@@ -71,6 +77,12 @@ greppable.
      cmdline_rebuild / cmdline_run / cmdline_clear
      destroy_pty_session / emit_osc52 / copy_commit
      force_full_repaint / run_binding / menu_action
+     nav_capture / nav_restore       (jumplist push/restore; the "read-then-
+                                       emit-a-recorded-Msg" pattern, v0.6.7)
+   (an effect descriptor may carry an optional `key` → exclusive-by-key
+    cancellation: runEffects aborts the in-flight same-key effect, injects an
+    AbortSignal; controllers in a module-local _inflight Map, never the model,
+    skipped by the replay fold. C5, v0.6.7.)
    (recurring work + ongoing external sources are NOT effects — they are
     declared Subs reconciled by app/state.js, FIX-3; see STATE + Notes)
         │
@@ -80,6 +92,9 @@ greppable.
      modes (14 modal flags, incl. jobsMode for the Running overlay)
      modal.{ filter, prompt, menu, confirm, copy, registerPopup,
              cmdline, jobs }
+     modal.continuation        (E14: the serializable Cmd DESCRIPTOR a modal
+                                emits on a successful dismissal — never a closure)
+     nav { history[], cursor, cap }   (the jumplist ring, v0.6.7)
      currentGroup, config, register, prefixSeq, focused, now, theme, ...
      history / diagLog / jobs  (discrete live stores mirrored in via the
                                 store-mirror Sub, FIX-1 — render reads these)
@@ -123,7 +138,8 @@ greppable.
      3. renderTerminalOverlay     (PTY buffer per-row diff)
      4. renderFooter, renderRegisterStrip
      5. modal overlays (cmdline, menu, confirm, prompt, ...)
-     6. paintColumns              (per-row diff vs _prevRows)
+     6. paintColumns              (per-cell diff vs _prevRows, cell-grid.js;
+                                    LAZYTUI_CELL_DIFF=0 = whole-row diff)
         │
         ▼
    stdout (ANSI, diff'd writes only)

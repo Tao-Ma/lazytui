@@ -301,6 +301,7 @@ filesystem; select with `source:` (`declared` / `filesystem` / `both` /
 | `Enter` | Activate terminal tab (when on terminal tab) |
 | `Ctrl+\` | Exit terminal mode |
 | `?` | Show help in detail panel |
+| `<leader> o` / `<leader> i` | Navigation history: jump back (older) / forward (newer) — v0.6.7 |
 | `q` | Quit |
 | Mouse click | Focus panel + select item |
 

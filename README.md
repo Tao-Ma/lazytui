@@ -30,7 +30,7 @@
 git clone https://github.com/Tao-Ma/lazytui.git
 cd lazytui
 
-# One-time deps: node-pty + @xterm/headless + js-yaml.
+# One-time deps: node-pty + @xterm/headless + js-yaml + eastasianwidth.
 npm install --omit=dev
 
 # Try a worked demo. Requires Docker on the host.
@@ -214,15 +214,17 @@ for "the same thing but headless."
 | Pane menu (`[≡]`, v0.6.3+, unified v0.6.4) | Every pane has a `[≡]` glyph at top-left; click (or `T`) opens one dropdown listing panes + this pane's tabs. The pick is projection-aware: in normal view it swaps which pool entry occupies the cell, in half view it places the pick into the clicked slot, in full view it switches focus. Mouse + keyboard nav. |
 | Mouse actions (v0.6.4+) | Left-click focuses + selects, double-click activates (Enter-equivalent), right-click opens a context menu at the cursor (copy line / copy selection + general entries; click-outside dismisses), wheel scrolls the pane under the cursor; drag-select persists like a `v` visual selection. Remappable via a YAML `mouse:` block; the context menu is extensible via a `context-menu:` block with keys-style verbs and per-pane gates. |
 | Diagnostics window (`<leader> e`, v0.6.4+) | Modal listing the warnings (`⚠`) and errors (`✕`) raised this session — boot config warnings, runtime errors, and multi-instance footgun guards. `j`/`k`/`g`/`G` nav, `y` copies the highlighted entry to the register + clipboard, `c` clears, `s` saves to `lazytui-diagnostics.json`, Esc closes. Backed by a dedicated buffer separate from the replay event-log so diagnostics aren't evicted by input noise. |
+| Navigation history (`<leader> o` / `<leader> i`, v0.6.7+) | Browser/vim-jumplist back (`o` = older) / forward (`i` = newer) over visited locations — group + focused pane + viewer tab + selected item, captured by stable identity so the cursor lands on the same item after a list reorders. A location whose group is gone is pruned and the travel continues. |
 | 6 themes + free-config mode | `:free-config` opens an interactive layout editor — drag/swap/resize/spawn columns and panels, hide/show from a pool of declared panel definitions, save back to YAML. |
 | `--spec` flag | Prints the plugin-authoring bundle for AI agents (every rule in one file). |
 
 ## Status
 
 - **Renderer + parser**: Node.js. Runtime npm deps: `node-pty` and
-  `@xterm/headless` for embedded PTY tabs, `js-yaml` for config parsing.
-- **Tests**: JS unit suites under `js/test/` (97 files), an opt-in
-  pre-release smoke harness under `js/test/smoke/` (11 scenarios), and
+  `@xterm/headless` for embedded PTY tabs, `js-yaml` for config parsing,
+  `eastasianwidth` for Unicode East-Asian character width (UAX #11).
+- **Tests**: JS unit suites under `js/test/` (126 files), an opt-in
+  pre-release smoke harness under `js/test/smoke/` (12 scenarios), and
   a live integration harness under `test/`. See [docs/TESTING.md](docs/TESTING.md).
 - **Two worked demos** at the time of initial public release; both ship
   with the human-authored intent (`.agent-prompt.md`) checked in so the
@@ -268,4 +270,21 @@ bin/lazytui path/to/config.yml --list [filter]
 
 # Print the plugin-authoring bundle (feed to an AI agent)
 bin/lazytui --spec > spec.md
+```
+
+Debugging / replay (session recording shipped in v0.6.6, debugger layer v0.6.7):
+
+```sh
+# Record a session from boot (also via the :record-save verb mid-session)
+bin/lazytui path/to/config.yml --record-save session.wal
+
+# Replay interactively — a scrubber pane (checkpoints, play/pause/reverse,
+# per-Msg model diff, skip-to-change). The recording carries its own config.
+bin/lazytui --record-load session.wal
+
+# Headless: reconstruct a frame and print it (--seq <n> picks a WAL sequence)
+bin/lazytui --record-print session.wal
+
+# Headless WAL console: dump a recording's entries for grepping
+bin/lazytui --dev session.wal --filter lane=root,type=key --seq-range 0..200 --diff --json
 ```

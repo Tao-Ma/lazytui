@@ -140,7 +140,8 @@ function init() {
       // slot (modals are flat — one at a time); every enter sets it, every
       // exit clears it. NEVER a closure — it must round-trip a checkpoint's
       // JSON, so a fold reproduces the same Cmd (replay-safe). Pinned by
-      // test-modal-continuation.js + the no-fn guard in model-ops.
+      // test-modal-continuation.js via the model-ops.findModalClosure guard
+      // helper (asserts no function under model.modal after each transition).
       continuation: null,
       // The pending confirm: just the display message now — the Cmd to emit on
       // `y` lives on `continuation` (E14).
