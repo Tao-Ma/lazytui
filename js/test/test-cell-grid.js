@@ -40,7 +40,16 @@ function applyPatch(prevMarkup, patch) {
     }
     const cp = patch.codePointAt(i);
     const ch = String.fromCodePoint(cp);
-    const w = charWidth(cp) || 1;
+    const w = charWidth(cp);
+    if (w === 0) {
+      // Zero-width: the cursor didn't advance — fold into the last written
+      // glyph (skip a wide glyph's continuation cell), mirroring the terminal.
+      let base = col - 1;
+      while (base >= 0 && cells[base] && cells[base].cont) base--;
+      if (base >= 0 && cells[base]) cells[base] = { ...cells[base], g: cells[base].g + ch };
+      i += ch.length;
+      continue;
+    }
     cells[col] = { g: ch, w, sgr: active };
     if (w === 2) cells[col + 1] = { cont: true };
     col += w;
@@ -94,6 +103,14 @@ const cases = [
   ['katakana → narrow',     'テスト',                 'abcdef'],
   ['hangul swap',           'X가Y',                   'X나Y'],
   ['hangul → katakana',     '가나다',                 'テスト'],
+  // v0.6.7 round 2 — ZERO-WIDTH codepoints fold into the preceding glyph (the
+  // terminal advances 0). charWidth=1 here drifted every absolute MoveTo right
+  // (NFD text, ZWJ/VS emoji). Explicit escapes — a bare 'e\u0301' typed as NFC
+  // would be one codepoint and NOT exercise folding; these are decomposed.
+  ['NFD trailing change',   'e\u0301X', 'e\u0301Y'],         // é·X → é·Y (combiner unchanged)
+  ['combining mark change', 'e\u0301X', 'e\u0300X'],         // e+acute → e+grave (folded glyph changes)
+  ['VS16 emoji trailing',   '\u2764\ufe0fX', '\u2764\ufe0fY'], // heart+VS16 X → heart+VS16 Y
+  ['add a combining mark',  'eX',             'e\u0301X'],     // e → é (gain a zero-width mark)
 ];
 
 describe('cell-grid — patch reproduces the target row exactly', () => {

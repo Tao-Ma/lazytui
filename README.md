@@ -3,7 +3,7 @@
 > **everybody tui — a glue framework for the tools around your real work;
 > AI writes it, you run it as TUI or CLI.**
 
-`MIT License · Node.js · npm runtime deps: node-pty, @xterm/headless, js-yaml, eastasianwidth`
+`MIT License · Node.js · npm runtime deps: node-pty, @xterm/headless, js-yaml, eastasianwidth, wcwidth`
 
 ```
 ╭─(1)─Containers───────╮╭─(0)─Actions────────────────────────────────╮
@@ -30,7 +30,7 @@
 git clone https://github.com/Tao-Ma/lazytui.git
 cd lazytui
 
-# One-time deps: node-pty + @xterm/headless + js-yaml + eastasianwidth.
+# One-time deps: node-pty + @xterm/headless + js-yaml + eastasianwidth + wcwidth.
 npm install --omit=dev
 
 # Try a worked demo. Requires Docker on the host.
@@ -222,7 +222,8 @@ for "the same thing but headless."
 
 - **Renderer + parser**: Node.js. Runtime npm deps: `node-pty` and
   `@xterm/headless` for embedded PTY tabs, `js-yaml` for config parsing,
-  `eastasianwidth` for Unicode East-Asian character width (UAX #11).
+  `eastasianwidth` (UAX #11 wide) + `wcwidth` (POSIX zero-width) for the
+  Unicode character-width truth function.
 - **Tests**: JS unit suites under `js/test/` (126 files), an opt-in
   pre-release smoke harness under `js/test/smoke/` (12 scenarios), and
   a live integration harness under `test/`. See [docs/TESTING.md](docs/TESTING.md).

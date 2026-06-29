@@ -4,8 +4,9 @@
  * Supports: [bold], [dim], [reverse], [green], [red], [yellow], [cyan],
  * [on dark_blue], [/], and escaped brackets \[text].
  *
- * One dependency: `eastasianwidth` backs `charWidth` (Unicode East-Asian-Width —
- * a standard, spec-evolving problem; see charWidth's doc). Otherwise pure string
+ * Two dependencies back `charWidth` (the width truth function — a standard,
+ * spec-evolving problem; see charWidth's doc): `eastasianwidth` (UAX #11, the
+ * WIDE axis) and `wcwidth` (POSIX, the ZERO-WIDTH axis). Otherwise pure string
  * transforms.
  *
  * Lives in `leaves/` (not `io/`): every export here is a pure string
@@ -18,6 +19,7 @@
 'use strict';
 
 const { eastAsianWidth } = require('eastasianwidth');
+const wcwidth = require('wcwidth');
 
 const CODES = {
   bold: '\x1b[1m',
@@ -80,38 +82,46 @@ function stripMarkup(text) {
 }
 
 /**
- * Display width of a single codepoint in terminal columns: 2 for East-Asian
- * Wide/Fullwidth, 1 for everything else. Single source of truth for width
- * detection — feeds visibleLen, viewer truncation/selection/search, chrome
- * draw, AND the A2 cell-diff (leaves/render/cell-grid). The cell-diff emits
- * ABSOLUTE per-cell MoveTo columns, so this MUST agree with the terminal's
- * actual cursor advance, or borders/glyphs land at the wrong column.
+ * Display width of a single codepoint in terminal columns. THE width truth
+ * function — the single source everything routes through (visibleLen, viewer
+ * truncation/selection/search, chrome draw, the A2 cell-diff in
+ * leaves/render/cell-grid, leaves/text/search). The cell-diff emits ABSOLUTE
+ * per-cell MoveTo columns, so this MUST agree with the terminal's actual cursor
+ * advance, or borders/glyphs land at the wrong column.
  *
- * Backed by the `eastasianwidth` library — the Unicode East-Asian-Width
- * (UAX #11) classification, the standard data source terminals' wcwidth() use.
- * (A hand-picked range table previously here omitted hiragana/katakana/hangul
- * entirely — the v0.6.7 kana bug; a curated in-repo Unicode table is the wrong
- * tool for a standard, spec-evolving problem.) We use the lib's per-codepoint
- * `eastAsianWidth()` primitive (NOT its `characterLength()` helper, which counts
- * Ambiguous as 2 and would render every box-drawing border double-width) and
- * apply the standard modern-terminal locale policy ourselves:
- *   - Wide (W) + Fullwidth (F)  → 2
- *   - Ambiguous (A), Narrow, Halfwidth, Neutral → 1
- * Ambiguous→1 keeps box-drawing (│ ╭ ─), arrows and enclosed digits at width 1
- * (legacy CJK locales render them wide; we don't). Emoji/pictographs classify as
- * width 1, matching the embedded terminal's cursor advance (the cell-diff oracle).
- * Verified codepoint-by-codepoint against @xterm/headless in test-char-width.js;
- * the only divergences are three archaic ranges (Yijing, Hangul Jamo Ext-A, Kana
- * Supplement) the lib's Unicode vintage and the terminal disagree on — unhittable
- * in practice.
+ * Partitioned by axis, each axis resolved by a STANDARD LIBRARY — never a
+ * hand-maintained range table (a curated in-repo table is the wrong tool for a
+ * standard, spec-evolving problem; the v0.6.7 kana bug came from one such table
+ * omitting hiragana/katakana/hangul):
+ *   1. cp < 0x300            → 1   (everything below the first combining mark is
+ *                                   width 1: ASCII / Latin / Latin-Ext. Fast
+ *                                   path — the hot loops pay one int compare per
+ *                                   ASCII char and never allocate.)
+ *   2. zero-width            → 0   `wcwidth` (POSIX): combining marks, ZWJ,
+ *                                   variation selectors, format/default-ignorable.
+ *                                   A terminal advances the cursor 0 for these;
+ *                                   the cell-diff MUST too or it drifts every
+ *                                   absolute MoveTo to the right (NFD text,
+ *                                   ZWJ/VS emoji). This is the v0.6.7 round-2 fix.
+ *   3. East-Asian Wide/Full  → 2   `eastasianwidth` (UAX #11) `eastAsianWidth()`
+ *                                   primitive (NOT `characterLength()`, which
+ *                                   counts Ambiguous as 2 → double-width borders).
+ *   4. else                  → 1   Ambiguous / Narrow / Halfwidth / Neutral, and
+ *                                   emoji/pictographs (→ 1, matching the embedded
+ *                                   terminal's cursor advance, the cell-diff oracle).
  *
- * The `cp < 0x1100` fast path returns 1 for ASCII/Latin (the overwhelming common
- * case) before touching the lib, so the hot width-summing loops pay one integer
- * comparison per ASCII char and never allocate.
+ * Ambiguous→1 keeps box-drawing (│ ╭ ─), arrows, enclosed digits at width 1.
+ * Verified codepoint-by-codepoint against the embedded terminal's OWN wcwidth in
+ * test-char-width.js (the exhaustive differential oracle); the residual
+ * divergences there are archaic ranges (newer-Unicode libs vs @xterm/headless's
+ * V6) + a few astral combining marks — all unhittable in real TUI content,
+ * enumerated + pinned so any new divergence surfaces as a test failure.
  */
 function charWidth(cp) {
-  if (cp < 0x1100) return 1;           // ASCII / Latin / common — fast path
-  const c = eastAsianWidth(String.fromCodePoint(cp));
+  if (cp < 0x300) return 1;                          // below the first combining mark — all width 1
+  const ch = String.fromCodePoint(cp);
+  if (wcwidth(ch) === 0) return 0;                   // zero-width axis (POSIX wcwidth)
+  const c = eastAsianWidth(ch);                      // wide axis (UAX #11)
   return (c === 'W' || c === 'F') ? 2 : 1;
 }
 
