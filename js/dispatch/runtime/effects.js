@@ -96,17 +96,24 @@ function runEffects(effects) {
     // `host.releaseKey()` when its async work settles/aborts — runEffects can't
     // tell sync-done from async-pending, so it must not auto-release here.
     let callHost = host;
+    let keyedAc = null;
     if (eff.key) {
       const prior = _inflight.get(eff.key);
       if (prior) prior.abort();
-      const ac = new AbortController();
-      _inflight.set(eff.key, ac);
+      keyedAc = new AbortController();
+      _inflight.set(eff.key, keyedAc);
       callHost = Object.create(host);
-      callHost.signal = ac.signal;
-      callHost.releaseKey = () => { if (_inflight.get(eff.key) === ac) _inflight.delete(eff.key); };
+      callHost.signal = keyedAc.signal;
+      callHost.releaseKey = () => { if (_inflight.get(eff.key) === keyedAc) _inflight.delete(eff.key); };
     }
     try { fn(eff, callHost); }
     catch (e) {
+      // A SYNCHRONOUS throw means the handler never reached its releaseKey() —
+      // free the controller here so the key can't wedge `_inflight` forever
+      // (which would make a future same-key effect abort a dead controller and
+      // a non-quit cancelEffect the only way to recover). Identity-guarded, so
+      // it never drops a newer same-key controller a later effect installed.
+      if (keyedAc && _inflight.get(eff.key) === keyedAc) _inflight.delete(eff.key);
       console.error(`[effects] '${eff.type}' failed: ${e && e.message}`);
       _recordError({ where: 'effects', kind: 'throw', effectType: eff.type,
         message: e && e.message, stack: e && e.stack });

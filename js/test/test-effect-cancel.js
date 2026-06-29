@@ -31,6 +31,8 @@ effects.registerEffect('test_slow', (_eff, host) => {
 effects.registerEffect('test_sync', (_eff, host) => {
   if (host.releaseKey) host.releaseKey();
 });
+// A keyed handler that throws synchronously — BEFORE it could releaseKey().
+effects.registerEffect('test_throw', () => { throw new Error('boom'); });
 
 function reset() { effects._clearInflight(); runs = []; }
 
@@ -90,6 +92,17 @@ describe('[C5] synchronous keyed handler', () => {
     reset();
     effects.runEffects([{ type: 'test_sync', key: 's1' }]);
     eq(effects._inflightKeys(), [], 'no leaked controller');
+  });
+});
+
+describe('[C5] a keyed handler that throws synchronously does not wedge the key', () => {
+  it('a sync throw frees the controller; a later same-key effect still runs', () => {
+    reset();
+    effects.runEffects([{ type: 'test_throw', key: 't1' }]);   // logs the throw — must NOT leak
+    eq(effects._inflightKeys(), [], 'controller freed on the synchronous throw (no wedge)');
+    effects.runEffects([{ type: 'test_slow', key: 't1' }]);    // key reusable
+    eq(runs.length, 1, 'a later same-key effect ran — the key was not stuck');
+    eq(effects._inflightKeys(), ['t1'], 'fresh controller live');
   });
 });
 

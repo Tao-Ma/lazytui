@@ -8,12 +8,16 @@
 'use strict';
 
 const { withModalMode: _withModalMode, withModal: _withModal } = require('../model-ops');
+const { isChainActive } = require('../../../leaves/input/modes');
 
 const TYPES = ['copy_enter', 'copy_nav', 'copy_select', 'copy_cancel'];
 
 function update(model, msg) {
   switch (msg.type) {
     case 'copy_enter':
+      // Flat modals — one at a time; don't open over a live modal (would stomp
+      // its staged continuation). See the confirm_enter guard for the rationale.
+      if (isChainActive(model.modes)) return [model, []];
       return [_withModalMode(model, { copyMode: true },
         { copy: { options: msg.options || [], idx: 0 }, continuation: { type: 'copy_commit' } }), []];
     case 'copy_nav': {

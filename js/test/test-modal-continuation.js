@@ -144,6 +144,19 @@ describe('[E14] flat-modal guard — async confirm_enter must not stomp an open 
     eq(scmds, [{ ...base, args: ['foo'] }], 'prompt_submit still emits its staged Cmd + parsed args');
     eq(m3.modal.continuation, null, 'continuation cleared after submit');
   });
+
+  it('prompt_enter and copy_enter are ALSO dropped over a live modal (guard is not confirm-only)', () => {
+    // Open a confirm with a staged continuation, then try to open prompt/copy
+    // over it — both must be no-ops that leave the confirm + its continuation.
+    const cc = { type: 'do_run', actionKey: 'deploy' };
+    const [c1] = step(fresh(), { type: 'confirm_enter', message: 'Sure?', cmd: cc });
+    const [c2] = step(c1, { type: 'prompt_enter', label: 'Args', cmd: { type: 'run_action' } });
+    eq(c2.modes.promptMode, false, 'prompt did NOT open over the confirm');
+    eq(c2.modal.continuation, cc, 'confirm continuation intact after the dropped prompt');
+    const [c3] = step(c2, { type: 'copy_enter', options: [{ label: 'sha' }] });
+    eq(c3.modes.copyMode, false, 'copy did NOT open over the confirm');
+    eq(c3.modal.continuation, cc, 'confirm continuation intact after the dropped copy');
+  });
 });
 
 describe('[E14] findModalClosure guard', () => {
