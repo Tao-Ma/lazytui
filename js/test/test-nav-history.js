@@ -195,6 +195,25 @@ describe('[D] stale-record prune', () => {
     assert(!nav.history.some(r => r.group === 'gGONE'), 'stale record pruned out');
     eq(getModel().currentGroup, 'g1', 'continued back to the live g1 record');
   });
+
+  it('a forward into a removed-group record prunes it WITHOUT overshooting the next live record', () => {
+    // The prune at the cursor shifts the next-forward record DOWN into the
+    // cursor slot, so the cursor already points at the forward target — the
+    // continuation must re-resolve in place, not step forward again (which
+    // would skip the immediate live target). Regression guard for that bug.
+    const here = { v: 1, kind: 'loc', group: 'g1', focus: { paneId: 'groups', type: 'groups' }, tab: null, sel: null };
+    const stale = { v: 1, kind: 'loc', group: 'gGONE', focus: { paneId: 'groups', type: 'groups' }, tab: null, sel: null };
+    const fwd = { v: 1, kind: 'loc', group: 'g3', focus: { paneId: 'detail', type: 'detail' }, tab: null, sel: null };
+    const beyond = { v: 1, kind: 'loc', group: 'g2', focus: { paneId: 'detail', type: 'detail' }, tab: null, sel: null };
+    getModel().nav = { history: [here, stale, fwd, beyond], cursor: 0, cap: 100 };
+    // forward from g1 → stale gGONE → prune → must land on g3 (the immediate
+    // live forward target), NOT overshoot to g2.
+    capture(() => loop.applyMsg({ type: 'nav_forward' }));
+    const nav = getModel().nav;
+    assert(!nav.history.some(r => r.group === 'gGONE'), 'stale record pruned out');
+    eq(getModel().currentGroup, 'g3', 'continued forward to the immediate live g3 record (no overshoot)');
+    eq(nav.cursor, 1, 'cursor points at the restored g3, not past it');
+  });
 });
 
 report();
