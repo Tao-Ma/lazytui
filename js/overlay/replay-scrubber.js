@@ -48,8 +48,11 @@ function _miniParts(data) {
   const cpN = (data.checkpoints || []).length;
   const cpLabel = cpN ? `  cp ${data.cursor + 1}/${cpN}` : '';
   const diffLabel = data.diffMode && data.diffMode !== 'off' ? `  d:${data.diffMode}` : '';
+  // Plain text only (no markup) — `plain.length` drives the click hit-test, so
+  // it must equal the rendered width. B6 lock badge follows the same rule.
+  const lockLabel = data.locked ? '  LOCK' : '';
   const head = `${_sym(data)} ${data.ratio}×`;            // bolded in render
-  const tail = ` ${data.pos}/${data.total}${cpLabel}${diffLabel}  +${dt}s  `;
+  const tail = ` ${data.pos}/${data.total}${cpLabel}${diffLabel}${lockLabel}  +${dt}s  `;
   return { head, tail, plain: head + tail };               // `plain` = visible width before the bar
 }
 
@@ -106,8 +109,9 @@ function renderFull(data) {
     ? 'even'
     : `realtime ${data.idleCap === Infinity ? '∞' : (data.idleCap / 1000) + 's'}`;
   const diffLabel = data.diffMode && data.diffMode !== 'off' ? `  diff:${data.diffMode}` : '';
+  const lockLabel = data.locked ? '  [yellow]LOCK[/]' : '';   // B6 — distinct from ⏸ (pause)
   const lines = [
-    `[bold]${_sym(data)}[/] ${data.ratio}×  ${mode}   seq ${data.pos}/${data.total}  +${dt}s${diffLabel}`,
+    `[bold]${_sym(data)}[/] ${data.ratio}×  ${mode}   seq ${data.pos}/${data.total}  +${dt}s${diffLabel}${lockLabel}`,
     '[dim]────────────────────────────[/]',
   ];
 
@@ -126,8 +130,28 @@ function renderFull(data) {
     }
   }
 
+  // B6 — per-Msg model-diff panel (D). Lists what the Msg at the current
+  // position changed in the replayable state; null when the panel is hidden.
+  if (data.diff) {
+    const DH = 8;   // visible change rows
+    lines.push('');
+    lines.push(`[dim]──── changes @ seq ${data.pos} ────[/]`);
+    if (!data.diff.changes.length) {
+      lines.push('[dim](no model change)[/]');
+    } else {
+      for (const c of data.diff.changes.slice(0, DH)) {
+        const mark = c.kind === 'add' ? '[green]+[/]' : c.kind === 'remove' ? '[red]-[/]' : '[yellow]~[/]';
+        const val = c.kind === 'add' ? c.after : c.kind === 'remove' ? c.before : `${c.before} → ${c.after}`;
+        lines.push(`${mark} ${c.path}  ${val}`);
+      }
+      const extra = data.diff.changes.length - Math.min(DH, data.diff.changes.length);
+      if (extra > 0 || data.diff.truncated) lines.push(`[dim](… +${extra}${data.diff.truncated ? '+' : ''} more)[/]`);
+    }
+  }
+
   lines.push('');
   lines.push('[dim]j/k seek  space play  b rev  +/- speed  \\[ \\] step[/]');
+  lines.push('[dim]n/N next-change  l lock  D diff-panel[/]');
   lines.push('[dim]m mode  i cap  d diff  g/G ends  p view  q exit[/]');
 
   renderOverlay({

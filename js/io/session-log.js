@@ -45,6 +45,30 @@ let _seq = 0;
 let _buf = [];
 let _streamPath = null;
 
+// B6 — WAL entry-FORMAT version, distinct from `package.json` `version` (the app
+// version, recorded as the header's `lazytui`). v0.6.6's shipped format
+// (msg/term/checkpoint entries + Set codec) is schema 1; bump only on a
+// format-shape change. One `_header()` helper stamps it at all three write
+// sites so they can't drift; `load`/`loadMeta` read it back and apply a no-hard-
+// fail compat policy (a recording must never be unreadable by a build that
+// can't downgrade).
+const SCHEMA_VERSION = 1;
+function _header(extra) {
+  return { kind: 'header', lazytui: version, schemaVersion: SCHEMA_VERSION, ...extra };
+}
+// Classify a loaded header's schemaVersion against this build's.
+function _schemaCompat(ver) {
+  if (ver == null) return 'unversioned';   // pre-B6 file = schema 1 by definition
+  if (ver === SCHEMA_VERSION) return 'ok';
+  return ver < SCHEMA_VERSION ? 'older' : 'newer';
+}
+function _warnSchema(ver, compat) {
+  let msg = null;
+  if (compat === 'older') msg = `WAL schema v${ver}, current v${SCHEMA_VERSION} — loading best-effort`;
+  else if (compat === 'newer') msg = `WAL schema v${ver} is NEWER than this build (v${SCHEMA_VERSION}) — loading best-effort, some entries may be misread`;
+  if (msg) { try { require('./diag-log').warn('replay', msg); } catch (_) { /* diag-log unavailable (headless) */ } }
+}
+
 // Auto-cadence checkpointing: write a checkpoint when enough has been recorded
 // since the last one, so a long recording stays fast to seek (the finalizer
 // calls replay.maybeCheckpoint, which consults checkpointDue). The metric is
@@ -100,9 +124,7 @@ function recordCheckpoint(payload) { return record('checkpoint', payload); }
 
 function _openStream(filepath) {
   try {
-    fs.appendFileSync(filepath, JSON.stringify({
-      kind: 'header', lazytui: version, t: Date.now(), pid: process.pid,
-    }) + '\n');
+    fs.appendFileSync(filepath, JSON.stringify(_header({ t: Date.now(), pid: process.pid })) + '\n');
     _streamPath = filepath;
   } catch (e) {
     process.stderr.write(`session-log: cannot open ${filepath}: ${e.message}\n`);
@@ -128,7 +150,7 @@ function detachStream() { _streamPath = null; }
 function streamTo(filepath) {
   detachStream();
   try {
-    const lines = [JSON.stringify({ kind: 'header', lazytui: version, t: Date.now() })];
+    const lines = [JSON.stringify(_header({ t: Date.now() }))];
     for (const e of _buf) lines.push(JSON.stringify(e));
     fs.writeFileSync(filepath, lines.join('\n') + '\n');
     _streamPath = filepath;
@@ -150,33 +172,52 @@ const DEFAULT_SESSION_FILE = 'lazytui-session.jsonl';
 /** Write the full buffer to `filepath` as JSONL (header line + one entry per
  *  line) — the same format the live stream produces and `load` reads. */
 function save(filepath) {
-  const lines = [JSON.stringify({
-    kind: 'header', lazytui: version, savedAt: Date.now(), count: _buf.length,
-  })];
+  const lines = [JSON.stringify(_header({ savedAt: Date.now(), count: _buf.length }))];
   for (const e of _buf) lines.push(JSON.stringify(e));
   fs.writeFileSync(filepath, lines.join('\n') + '\n');
   return filepath;
 }
 
-/** Load a JSONL session file into the buffer (replacing it). Skips the header
- *  line; restores `_seq` to the max seen so post-load appends stay monotonic.
- *  Returns the loaded entries (header excluded). */
+/** Load a JSONL session file into the buffer (replacing it). Captures + inspects
+ *  the header (B6 schema compat — warns, never hard-fails); restores `_seq` to
+ *  the max seen so post-load appends stay monotonic. Returns the loaded entries
+ *  (header excluded). */
 function load(filepath) {
   const text = fs.readFileSync(filepath, 'utf8');
   const entries = [];
   let maxSeq = 0;
+  let header = null;
   for (const line of text.split('\n')) {
     const s = line.trim();
     if (!s) continue;
     let obj;
     try { obj = JSON.parse(s); } catch { continue; }   // tolerate a torn last line
-    if (!obj || obj.kind === 'header') continue;
+    if (!obj) continue;
+    if (obj.kind === 'header') { header = obj; continue; }   // capture, don't fold
     entries.push(obj);
     if (typeof obj.seq === 'number' && obj.seq > maxSeq) maxSeq = obj.seq;
   }
+  const ver = header && header.schemaVersion;
+  _warnSchema(ver, _schemaCompat(ver));
   _buf = entries;
   _seq = maxSeq;
   return entries;
+}
+
+/** Peek a WAL's header without loading it into the buffer — for the `--dev`
+ *  console + callers that want the schema/app version + compat verdict. */
+function loadMeta(filepath) {
+  const text = fs.readFileSync(filepath, 'utf8');
+  for (const line of text.split('\n')) {
+    const s = line.trim();
+    if (!s) continue;
+    let obj; try { obj = JSON.parse(s); } catch { continue; }
+    if (obj && obj.kind === 'header') {
+      return { schemaVersion: obj.schemaVersion, lazytui: obj.lazytui, compat: _schemaCompat(obj.schemaVersion) };
+    }
+    return { schemaVersion: undefined, lazytui: undefined, compat: 'unversioned' };  // no header
+  }
+  return { schemaVersion: undefined, lazytui: undefined, compat: 'unversioned' };
 }
 
 // --- Lifecycle / inspection ----------------------------------------------
@@ -231,9 +272,9 @@ function size()             { return _buf.length; }
 module.exports = {
   record, recordMsg, recordTerm, recordCheckpoint,
   enable, isEnabled, clear, snapshot, size,
-  attachStream, detachStream, streamTo, streamPath, DEFAULT_SESSION_FILE, save, load,
+  attachStream, detachStream, streamTo, streamPath, DEFAULT_SESSION_FILE, save, load, loadMeta,
   setCheckpointCadence, checkpointDue, DEFAULT_CHECKPOINT_CADENCE,
-  encodeJson, decodeJson,
+  encodeJson, decodeJson, SCHEMA_VERSION,
 };
 
 // LAZYTUI_REPLAY_LOG: if set, enable + attach a live JSONL stream at module
