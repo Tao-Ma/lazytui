@@ -216,7 +216,11 @@ function _maybeFetch(slice) {
   // FIX-3 Phase 5 — no more eventsStarted/dockerEventsStart here: the events
   // watcher is a declared `process-stream` Sub (subscriptions()), started by the
   // reconciler on pane placement, not lazily on first fetch.
-  return [{ ...slice, inFlight: true }, [{ type: 'dockerFetch' }]];
+  // C5 — host-global key so the in-flight docker subprocess can be killed
+  // (today only at quit via effects._clearInflight; the inFlight latch prevents
+  // a same-key supersede, and the service owner is skipped by the pane-orphan
+  // abort). The key threads an AbortSignal into the execAsync calls below.
+  return [{ ...slice, inFlight: true }, [{ type: 'dockerFetch', key: 'docker:fetch' }]];
 }
 
 function update(msg, slice) {
@@ -290,8 +294,13 @@ function installEffects(registerEffect) {
   // dockerResult. On failure it still dispatches dockerResult (no maps) so the
   // inFlight guard always clears.
   registerEffect('dockerFetch', (_eff, host) => {
+    // C5 — `host.signal`/`host.releaseKey` are present only on the keyed
+    // per-call host (undefined for raw/test invocations — guarded throughout).
+    const signal = host.signal;
+    const release = () => { if (host.releaseKey) host.releaseKey(); };
     setImmediate(async () => {
       try {
+        if (signal && signal.aborted) return;   // aborted before we started
         // Live gates (the tick fired async). Skip the docker queries when
         // the terminal is unfocused — but still dispatch dockerResult so
         // the in-flight latch clears and the next tick can retry. A bare
@@ -304,8 +313,9 @@ function installEffects(registerEffect) {
         const args = containers.map(JSON.stringify).join(' ');
         const inspectOut = await execAsync(
           `docker inspect -f "{{.Name}}\t{{.State.Status}}" ${args} 2>/dev/null`,
-          { timeout: 5000 },
+          { timeout: 5000, signal },
         );
+        if (signal && signal.aborted) return;   // superseded/torn-down mid-fetch — drop stale
         const seen = new Set();
         for (const line of inspectOut.split('\n').filter(Boolean)) {
           const [rawName, st] = line.split('\t');
@@ -322,8 +332,9 @@ function installEffects(registerEffect) {
           const sargs = running.map(JSON.stringify).join(' ');
           const statsOut = await execAsync(
             `docker stats --no-stream --format "{{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}" ${sargs} 2>/dev/null`,
-            { timeout: 5000 },
+            { timeout: 5000, signal },
           );
+          if (signal && signal.aborted) return;   // superseded/torn-down mid-fetch — drop stale
           const ts = Date.now();
           for (const line of statsOut.split('\n').filter(Boolean)) {
             const [name, cpu, mem] = line.split('\t');
@@ -342,8 +353,11 @@ function installEffects(registerEffect) {
 
         host.dispatchMsg(host.wrap('docker', { type: 'dockerResult', status, stats }));
       } catch (e) {
+        if (signal && signal.aborted) return;   // abort surfaced as a spawn 'error' — swallow
         console.error(`[docker:fetch] ${e.message}`);
         host.dispatchMsg(host.wrap('docker', { type: 'dockerResult' }));  // keep prior maps, clear inFlight
+      } finally {
+        release();   // C5 — free the key once this fetch settles/aborts
       }
     });
   });

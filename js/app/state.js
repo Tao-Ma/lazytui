@@ -563,7 +563,19 @@ function reconcilePaneInstances() {
     if (inst.service || inst.id === inst.kind) return;
     if (!placedIds.has(inst.id)) orphans.push(inst.id);
   });
-  for (const id of orphans) route.disposeInstance(id);
+  if (orphans.length) {
+    // C5 — abort a removed pane's in-flight keyed compute (config-status' slow
+    // git status/diff) so it doesn't run/land into a disposed instance. Keys
+    // are tied to the instance id (see config-status' cfgStatusCompute/Diff
+    // emits); cancelEffect no-ops if the key isn't live (the common case).
+    // Docker's fetch is service-owned (skipped above), aborted only at quit.
+    const effects = require('../dispatch/runtime/effects');
+    for (const id of orphans) {
+      effects.cancelEffect(`cfgStatus:compute:${id}`);
+      effects.cancelEffect(`cfgStatus:diff:${id}`);
+      route.disposeInstance(id);
+    }
+  }
 }
 
 function initState() {

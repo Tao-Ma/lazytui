@@ -19,15 +19,19 @@ const { spawn } = require('child_process');
  * commands like `docker inspect a b c` where one might be missing).
  * Never rejects — errors / timeouts resolve with whatever stdout was
  * gathered. Pass `cwd`, `env`, `timeout` (ms; default 5000) in options.
+ * Pass `signal` (an AbortSignal) to let a caller KILL the subprocess on
+ * cancellation (C5 — keyed effect cancellation): an abort fires the child's
+ * `error` event, which resolves with the partial stdout (never-reject intact).
  *
  * @returns {Promise<string>} stdout
  */
 function execAsync(cmd, options = {}) {
-  const { timeout = 5000, cwd, env } = options;
+  const { timeout = 5000, cwd, env, signal } = options;
   return new Promise((resolve) => {
     const opts = {};
     if (cwd) opts.cwd = cwd;
     if (env) opts.env = env;
+    if (signal) opts.signal = signal;   // abort → SIGTERM the child → 'error' → resolve
     const proc = spawn('sh', ['-c', cmd], opts);
     let stdout = '';
     const timer = setTimeout(() => { try { proc.kill(); } catch {} }, timeout);

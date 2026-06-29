@@ -63,6 +63,16 @@ function _effectHost() {
   return _host;
 }
 
+// C5 — keyed/exclusive effect cancellation registry. Module-local impure shell
+// (NOT model/slice state), so a replay fold — which skips runEffects entirely,
+// see the early-return below — never populates or reads it. A keyed effect's
+// AbortController lives here until its handler releases the key (its async work
+// settled) or a same-key supersede / a teardown aborts it. Complements (never
+// duplicates) stream slot-preemption + Sub reconciliation, which own their own
+// lifecycles; this only kills the transient subprocess/result of async COMPUTE
+// effects that have no slot/Sub machinery.
+const _inflight = new Map();   // key → AbortController
+
 function runEffects(effects) {
   if (!Array.isArray(effects)) return;
   // Replay: skip ALL effects. Every effect either re-dispatches a Msg (itself
@@ -79,7 +89,23 @@ function runEffects(effects) {
       _recordError({ where: 'effects', kind: 'no_handler', effectType: eff.type });
       continue;
     }
-    try { fn(eff, host); }
+    // C5 — a keyed effect is EXCLUSIVE by key: abort any in-flight effect with
+    // the same key, then run with a fresh AbortSignal injected on a per-call
+    // host that inherits the shared one (so the ~40 sync handlers, which read
+    // neither field, are untouched). The handler OWNS release: it calls
+    // `host.releaseKey()` when its async work settles/aborts — runEffects can't
+    // tell sync-done from async-pending, so it must not auto-release here.
+    let callHost = host;
+    if (eff.key) {
+      const prior = _inflight.get(eff.key);
+      if (prior) prior.abort();
+      const ac = new AbortController();
+      _inflight.set(eff.key, ac);
+      callHost = Object.create(host);
+      callHost.signal = ac.signal;
+      callHost.releaseKey = () => { if (_inflight.get(eff.key) === ac) _inflight.delete(eff.key); };
+    }
+    try { fn(eff, callHost); }
     catch (e) {
       console.error(`[effects] '${eff.type}' failed: ${e && e.message}`);
       _recordError({ where: 'effects', kind: 'throw', effectType: eff.type,
@@ -87,6 +113,16 @@ function runEffects(effects) {
     }
   }
 }
+
+// Abort + drop an in-flight keyed effect (pane teardown / quit / tests). No-op
+// if the key isn't live (the common case — most panes have no compute running).
+function cancelEffect(key) {
+  const ac = _inflight.get(key);
+  if (ac) { ac.abort(); _inflight.delete(key); }
+}
+// Abort + clear ALL in-flight keyed effects (quit teardown; test isolation).
+function _clearInflight() { for (const [, ac] of _inflight) ac.abort(); _inflight.clear(); }
+function _inflightKeys() { return [..._inflight.keys()]; }   // test-only
 
 // Persist the diagnostic to the event log too — console.error gets
 // painted over by the next render, so without this a thrown effect
@@ -478,4 +514,5 @@ function installBuiltins() {
 // (docker events) capture the host from their starting handler instead.
 function effectHost() { return _effectHost(); }
 
-module.exports = { registerEffect, runEffects, clearEffects, installBuiltins, effectHost, _handlers };
+module.exports = { registerEffect, runEffects, clearEffects, installBuiltins, effectHost, _handlers,
+  cancelEffect, _clearInflight, _inflightKeys };
