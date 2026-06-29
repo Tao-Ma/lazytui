@@ -6,6 +6,78 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.7] — 2026-06-30
+
+### Architecture
+
+A research-driven upgrade to lazytui's render kernel, effect/dispatch kernel,
+and input-as-data layer: study the Elm Architecture / MVU lineage and mature TUI
+tools, then adopt only what measurably improves the existing design — several
+borrowed ideas were reshaped or dropped after grounding them in the code (the
+planned full focus/context *stack* was dropped in favor of a navigation
+*jumplist* once cross-tool study showed focus and modals are best kept
+orthogonal, which lazytui already does). Each step shipped behind the gate
+(suite + smoke + acyclic layer graph + bench parity). Spec:
+[docs/v0.6.7.md](docs/v0.6.7.md).
+
+### Added
+
+- **Configurable normal-mode keybindings** — a `keymap:` config block remaps
+  single keys to built-in verbs, `action:`/`command:` targets, or `noop` (to
+  disable a default). Bad bindings are reported at boot as actionable messages
+  and skipped; the app still starts. A new `--keymap` flag dumps the effective
+  table (the AI-facing discovery surface that never drifts from what dispatches).
+  The resolver is a new pure leaf; the focus/mode-branching keys stay reserved in
+  the switch. Docs: [docs/keymap.md](docs/keymap.md).
+- **Navigation history (jumplist)** — browser/vim-style back/forward across
+  navigation gestures, modeled as `model.nav.history[] + cursor` (a list with a
+  cursor, not a stack) and fully replay-snapshottable. A multi-arm gesture
+  coalesces to one history entry.
+- **Replay debugger** (B6) over the v0.6.6 WAL + checkpoint engine: a scrubber
+  with skip-to-next-change (recompute from the nearest checkpoint), a per-Msg
+  model-diff panel, pause-vs-lock, and a headless `--dev` WAL console
+  (`--filter`, `--seq-range`, `--diff`, `--json`).
+- WAL entry-format schema version with a no-hard-fail compat policy — an
+  older/newer recording loads best-effort with a warning, never an error.
+
+### Changed
+
+- **Cell-granular render diff is now the default** (A2). Frames emit minimal
+  per-cell escape-sequence patches instead of repainting changed rows wholesale;
+  opt out with `LAZYTUI_CELL_DIFF=0`.
+- **Window-only viewer decoration** (A3) — search/selection highlighting now
+  decorates only the visible window rather than the whole buffer, with
+  byte-identical output.
+- **Keyed/exclusive effect cancellation** (C5) + a **named inbound
+  dispatch-middleware seam** (C7) — in-flight effects (docker poll, config-status
+  compute/diff) carry a key, are aborted on supersede and at teardown, and thread
+  an `AbortSignal` into their spawned subprocesses.
+- **`withModalMode`** collapses the modal-modes↔modal double-spread across the
+  modal reducers (C8), and **uniform modal continuation** (E14) gives every modal
+  a single result-continuation slot.
+- Footer key-hints are now derived from a binding registry (data) rather than
+  hard-coded strings (E9).
+
+### Fixed
+
+- **`charWidth()` width correctness** — kana/hangul were undercounted, and
+  zero-width combining marks / ZWJ / variation selectors were counted as width 1,
+  which corrupted the cell-diff render. `charWidth()` is now backed by `wcwidth`
+  (zero-width → 0) + `eastasianwidth` (wide → 2) and pinned by an exhaustive
+  `@xterm` differential oracle.
+- **keymap rejects multi-character keys** — `gg`/`Rx`, and the `paste`
+  pseudo-key, were accepted but unreachable while `--keymap` reported them as
+  live (and `paste` actually fired on every bracketed paste); now rejected with
+  an actionable error pointing chords at the `keys:` block (pre-release review).
+- Pre-release review rounds: nav-history forward-prune overshoot and per-gesture
+  capture coalescing, replay-debugger skip-teleport, the flat-modal continuation
+  guard, and the docker in-flight latch.
+
+### Performance
+
+- Window-only decoration drops active-search render cost from ~270 ms/frame at a
+  50k-line buffer to ~190 µs regardless of buffer size.
+
 ## [0.6.6] — 2026-06-27
 
 ### Architecture
@@ -2394,7 +2466,8 @@ release tarballs. Full pre-squash development history is preserved
 on the internal gitea mirror under the `backup/main-history` branch
 and the `v0.1.0-pre-squash` tag.
 
-[Unreleased]: https://github.com/Tao-Ma/lazytui/compare/v0.6.6...HEAD
+[Unreleased]: https://github.com/Tao-Ma/lazytui/compare/v0.6.7...HEAD
+[0.6.7]: https://github.com/Tao-Ma/lazytui/compare/v0.6.6...v0.6.7
 [0.6.6]: https://github.com/Tao-Ma/lazytui/compare/v0.6.5...v0.6.6
 [0.6.5]: https://github.com/Tao-Ma/lazytui/compare/v0.6.4...v0.6.5
 [0.6.4]: https://github.com/Tao-Ma/lazytui/compare/v0.6.3...v0.6.4
