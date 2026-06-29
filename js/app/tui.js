@@ -34,6 +34,10 @@ Options:
                              Takes no config; the recording carries it.
   --record-print <file>      Headless: reconstruct <file>, print the frame, exit.
                              --seq <n> picks a WAL sequence (default: end).
+  --dev <file>               Headless WAL console: dump a recording's entries.
+                             --filter lane=root,kind=msg,type=X,path=Y
+                             --seq-range a..b   --diff (per-Msg model diff)
+                             --json (JSONL of the filtered entries)
   -h, --help                 Show this help, then exit
 
 Examples:
@@ -98,6 +102,7 @@ function main() {
   let recordPrintFile = null;
   let recordSaveFile = null;
   let replaySeq = null;
+  let devFile = null, devFilter = null, devSeqRange = null, devDiff = false, devJson = false;
   const configArgs = [];
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
@@ -119,6 +124,19 @@ function main() {
     } else if (a === '--seq') {
       if (i + 1 >= args.length) { console.error('--seq requires <n>'); process.exit(2); }
       replaySeq = parseInt(args[++i], 10);
+    } else if (a === '--dev') {
+      if (i + 1 >= args.length) { console.error('--dev requires <session.jsonl>'); process.exit(2); }
+      devFile = args[++i];
+    } else if (a === '--filter') {
+      if (i + 1 >= args.length) { console.error('--filter requires <expr>'); process.exit(2); }
+      devFilter = args[++i];
+    } else if (a === '--seq-range') {
+      if (i + 1 >= args.length) { console.error('--seq-range requires <a..b>'); process.exit(2); }
+      devSeqRange = args[++i];
+    } else if (a === '--diff') {
+      devDiff = true;
+    } else if (a === '--json') {
+      devJson = true;
     } else if (a === '--exec') {
       if (i + 1 >= args.length) {
         console.error('--exec requires <group>:<action>');
@@ -148,6 +166,13 @@ function main() {
   if (recordPrintFile !== null) {
     const { runReplay } = require('./replay-cli');
     process.exit(runReplay(recordPrintFile, { seq: Number.isFinite(replaySeq) ? replaySeq : undefined }));
+  }
+
+  // --dev (headless) — dump/inspect a WAL's entries (+ optional per-Msg model
+  // diff). Reads the WAL as data; no TTY/PTY/config. The replay DEBUGGER (B6).
+  if (devFile !== null) {
+    const { runDevConsole } = require('./dev-console');
+    process.exit(runDevConsole(devFile, { filter: devFilter, seqRange: devSeqRange, diff: devDiff, json: devJson }));
   }
 
   // --record-load takes no config (the recorded WAL carries it); it boots the

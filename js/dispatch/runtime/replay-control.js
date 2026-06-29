@@ -58,7 +58,14 @@ const _terminal = () => require('../../io/terminal');
 const _sessionLog = () => require('../../io/session-log');
 const _timeline = () => require('../../leaves/replay/timeline');
 const _render = () => require('../../panel/api').scheduleRender();
+// B6 Lock — the lock-aware repaint. Under lock the DISPLAY is frozen while
+// playback keeps advancing S.idx underneath, so every playback/timing/control
+// sink paints through this (no-op while locked); only an explicit seek
+// (`_moveTo`, which clears lock) and the lock toggle itself repaint when locked.
+const _paint = () => { if (S && S.locked) return; _render(); };
 const _diag = (m) => { try { require('../../io/diag-log').error('replay', m); } catch (_) {} };
+
+const SCAN_CAP = 512;   // B6 skip-to-change — max entries probed per keystroke
 
 function active() { return S !== null; }
 
@@ -174,6 +181,8 @@ function _moveTo(target) {
   S.idx = target;
   _snapClockToIdx(target);
   _syncCursorToIdx();
+  S.locked = false; S.lockedIdx = null;   // B6 — an explicit seek ends a lock
+  _recomputeDiff();                        // B6 — refresh the changes panel (no-op when off)
   _render();
 }
 
@@ -203,6 +212,12 @@ function enter(file, opts = {}) {
     anchorClock: 0, anchorReal: 0,
     cursor: Math.max(0, checkpoints.length - 1),
     playing: null, ratio: 1, paneView: 'full', diffMode: 'off',
+    // B6 — per-Msg model-diff panel (off by default → zero fold cost), its
+    // cached result keyed by idx, an optional path filter; and Lock state
+    // (freeze the display while playback advances underneath). All on S, never
+    // the model.
+    diffPanel: false, diff: null, changeFilter: '',
+    locked: false, lockedIdx: null,
     liveSnapshot: _replay().snapshotState(),
     // The terminal is the off-model island — snapshot the live session screens
     // too, so exit() can scrub replay bytes off any colliding live pane (the
@@ -253,6 +268,113 @@ function seekToFraction(f) {
   _moveTo(Math.round(Math.max(0, Math.min(1, f)) * (S.log.length - 1)));
 }
 
+// --- B6 per-Msg model diff + skip-to-change -----------------------------
+
+// Compute the diff for the current idx (idx-1 → idx = the Msg's effect) into
+// S.diff, cached by idx. Gated by S.diffPanel (skip — zero fold cost — when the
+// panel is hidden). Folds a SCRATCH ladder for `before`, then RESTORES the
+// displayed frame, so the user's reconstruction is unchanged. Called from the
+// motion sinks before painting.
+function _recomputeDiff() {
+  if (!S || !S.diffPanel) return;
+  if (S.diff && S.diff.idx === S.idx) return;       // cached for this position
+  const idx = S.idx;
+  if (idx <= 0) { S.diff = { idx, changes: [], truncated: false }; return; }
+  const r = _replay();
+  const { diffState } = require('../../leaves/replay/model-diff');
+  const after = r.snapshotState();                  // displayed frame == state @ idx
+  const { lo } = _intervalFor(idx);
+  r.replayTo(S.log, S.log[lo].seq, { useCheckpoints: true });
+  if (idx - 1 > lo) r.foldMsgs(S.log, lo, idx - 1);
+  const before = r.snapshotState();                 // state @ idx-1
+  r.replayTo(S.log, S.log[idx].seq, { useCheckpoints: true });  // restore displayed frame
+  const { changes, truncated } = diffState(before, after, { max: 50, pathFilter: S.changeFilter });
+  S.diff = { idx, changes, truncated };
+}
+
+// Does the entry at `i` change the model (state@i-1 vs state@i, non-empty diff)?
+// Used by the REVERSE skip scan (per-probe). Leaves the scratch model moved —
+// the caller restores. Bounded to max:1 (presence only).
+function _changeAt(i) {
+  if (i <= 0) return false;
+  const r = _replay();
+  const { diffState } = require('../../leaves/replay/model-diff');
+  r.replayTo(S.log, S.log[i].seq, { useCheckpoints: true });
+  const after = r.snapshotState();
+  const { lo } = _intervalFor(i);
+  r.replayTo(S.log, S.log[lo].seq, { useCheckpoints: true });
+  if (i - 1 > lo) r.foldMsgs(S.log, lo, i - 1);
+  const before = r.snapshotState();
+  return diffState(before, after, { max: 1, pathFilter: S.changeFilter }).changes.length > 0;
+}
+
+// Find the next idx (in `dir`) whose Msg changed the model, bounded by SCAN_CAP.
+// Forward = a single rolling fold (cheap); reverse = per-probe (bounded). Always
+// RESTORES the displayed frame before returning so the caller's _moveTo is clean.
+function _findNextChange(dir) {
+  const r = _replay();
+  const { diffState } = require('../../leaves/replay/model-diff');
+  const start = S.idx;
+  let target = start;
+  if (dir > 0) {
+    const end = _clampIdx(start + SCAN_CAP);
+    r.replayTo(S.log, S.log[start].seq, { useCheckpoints: true });
+    let prev = r.snapshotState();
+    for (let i = start + 1; i <= end; i++) {
+      r.advance(S.log, i - 1, i);
+      const cur = r.snapshotState();
+      target = i;
+      if (S.log[i].kind === 'msg'
+          && diffState(prev, cur, { max: 1, pathFilter: S.changeFilter }).changes.length > 0) break;
+      prev = cur;
+    }
+  } else {
+    const floor = _clampIdx(start - SCAN_CAP);
+    for (let i = start - 1; i >= floor; i--) {
+      target = i;
+      if (S.log[i].kind === 'msg' && _changeAt(i)) break;
+    }
+  }
+  r.replayTo(S.log, S.log[start].seq, { useCheckpoints: true });   // restore displayed frame
+  return target;
+}
+
+// Skip to the next/prev Msg that changed the model. Pauses first (so the clock
+// snaps), then a clean _moveTo to the found target.
+function seekToNextChange(dir) {
+  if (!S) return;
+  pause();
+  _moveTo(_findNextChange(dir < 0 ? -1 : 1));
+}
+
+function toggleDiffPanel() {
+  if (!S) return;
+  S.diffPanel = !S.diffPanel;
+  if (S.diffPanel) _recomputeDiff(); else S.diff = null;
+  _paint();
+}
+
+// --- B6 Pause vs Lock ---------------------------------------------------
+
+// Stop playback. `silent` skips the repaint (used when locked — the display
+// stays frozen until the user unlocks). pause() and the lock-end share it.
+function _haltPlayback(silent) {
+  if (!S) return;
+  S.playing = null;
+  _stopTimer();
+  if (!silent) _render();
+}
+
+// Lock = freeze the DISPLAY while playback advances S.idx underneath. Toggling
+// renders once (to show the locked indicator on lock / snap forward on unlock);
+// between, the playback sinks paint through _paint() which no-ops while locked.
+function toggleLock() {
+  if (!S) return;
+  S.locked = !S.locked;
+  S.lockedIdx = S.locked ? S.idx : null;
+  _render();   // lock: paint the frozen frame + indicator; unlock: snap to live idx
+}
+
 // --- playback -----------------------------------------------------------
 
 function play(dir) {
@@ -266,23 +388,23 @@ function play(dir) {
   S.clock = _timeline().clockForIdx(S.timeline, S.idx, S.mode);
   S.anchorClock = S.clock; S.anchorReal = _now();
   _startTimer();
-  _render();
+  _paint();
 }
-function pause() { if (!S) return; S.clock = _currentClock(); S.playing = null; _stopTimer(); _render(); }
+function pause() { if (!S) return; S.clock = _currentClock(); _haltPlayback(S.locked); }
 
 function setRatio(d) {
   if (!S) return;
   _reanchor();                                   // re-anchor at the OLD scale first
   let i = RATIOS.indexOf(S.ratio); if (i < 0) i = 0;
   S.ratio = RATIOS[Math.max(0, Math.min(RATIOS.length - 1, i + (d | 0)))];
-  _render();
+  _paint();
 }
 
 function toggleMode() {
   if (!S) return;
   S.mode = S.mode === 'realtime' ? 'even' : 'realtime';
   _snapClockToIdx(S.idx);                         // clock UNIT changes — re-derive from position
-  _render();
+  _paint();
 }
 
 function cycleIdleCap() {
@@ -291,7 +413,7 @@ function cycleIdleCap() {
   S.idleCap = IDLE_CAPS[i];
   S.timeline = _timeline().buildTimeline(S.log, { idleCap: S.idleCap });
   _snapClockToIdx(S.idx);                         // axis changed — keep position fixed
-  _render();
+  _paint();
 }
 
 function _tick() {
@@ -303,9 +425,14 @@ function _tick() {
     _playMoveTo(target);
     S.idx = target;
     _syncCursorToIdx();
-    _render();
+    _recomputeDiff();
+    _paint();                                     // B6 — no-op while locked (idx still advanced)
   }
-  if ((dir > 0 && S.idx >= S.log.length - 1) || (dir < 0 && S.idx <= 0)) { pause(); return; }
+  if ((dir > 0 && S.idx >= S.log.length - 1) || (dir < 0 && S.idx <= 0)) {
+    S.clock = _currentClock();
+    _haltPlayback(S.locked);                      // B6 — silent if locked (display stays frozen)
+    return;
+  }
   _rearm();
 }
 function _startTimer() { _stopTimer(); _rearm(); }
@@ -316,8 +443,8 @@ function _rearm() {
 }
 function _stopTimer() { if (S && S.timer) { _clearTimer(S.timer); S.timer = null; } }
 
-function cyclePane() { if (S) { S.paneView = PANE_CYCLE[S.paneView] || 'full'; _render(); } }
-function cycleDiff() { if (S) { S.diffMode = DIFF_CYCLE[S.diffMode] || 'off'; _render(); } }
+function cyclePane() { if (S) { S.paneView = PANE_CYCLE[S.paneView] || 'full'; _paint(); } }
+function cycleDiff() { if (S) { S.diffMode = DIFF_CYCLE[S.diffMode] || 'off'; _paint(); } }
 
 // --- input --------------------------------------------------------------
 
@@ -325,7 +452,11 @@ function handleKey(key, seq) {
   if (!S) return;
   if (key === 'escape' || seq === 'q') { exit(); return; }
   if (seq === 'p') { cyclePane(); return; }
-  if (seq === 'd') { cycleDiff(); return; }
+  if (seq === 'd') { cycleDiff(); return; }          // cell/row visual tint (existing)
+  if (seq === 'D') { toggleDiffPanel(); return; }    // B6 — per-Msg model-diff panel
+  if (seq === 'n') { seekToNextChange(+1); return; } // B6 — skip to next changing Msg
+  if (seq === 'N') { seekToNextChange(-1); return; }
+  if (seq === 'l') { toggleLock(); return; }         // B6 — lock the display
   // All playback/seek controls act in EVERY view state (full / mini / hidden) —
   // paneView only changes what the pane DRAWS, never what the keys do. (Hidden is
   // a watch-with-no-overlay state, not a controls-off state.)
@@ -362,6 +493,10 @@ function renderData() {
     ratio: S.ratio,
     mode: S.mode,
     idleCap: S.idleCap,
+    // B6 — model-diff panel (null when hidden) + lock indicator state.
+    diff: S.diffPanel ? S.diff : null,
+    locked: S.locked,
+    lockedIdx: S.lockedIdx,
   };
 }
 
@@ -369,6 +504,8 @@ module.exports = {
   active, enter, exit,
   seekToCheckpoint, stepSeq, seekToEnd, seekToFraction, play, pause, setRatio,
   toggleMode, cycleIdleCap, cyclePane,
+  // B6 — debugger surface (seekToNextChange is keyboard-only via handleKey n/N).
+  toggleLock, toggleDiffPanel,
   handleKey, renderData,
   // test seams
   _state: () => S,
