@@ -9,6 +9,7 @@
 'use strict';
 
 const { withModalMode: _withModalMode, withModal: _withModal } = require('../model-ops');
+const { isChainActive } = require('../../../leaves/input/modes');
 // Pending suffix of the autosuggest ghost (Tab/Right accept). Pure leaf —
 // shared with the prompt overlay render.
 const { ghostSuffix } = require('../../../leaves/render/ghost');
@@ -18,6 +19,9 @@ const TYPES = ['prompt_enter', 'prompt_key', 'prompt_submit', 'prompt_cancel'];
 function update(model, msg) {
   switch (msg.type) {
     case 'prompt_enter':
+      // Flat modals — one at a time; don't open over a live modal (would stomp
+      // its staged continuation). See the confirm_enter guard for the rationale.
+      if (isChainActive(model.modes)) return [model, []];
       return [_withModalMode(model, { promptMode: true },
         { prompt: {
           label: msg.label || 'Input', spec: msg.spec || '',

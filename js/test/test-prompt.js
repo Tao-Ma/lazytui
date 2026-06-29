@@ -78,6 +78,8 @@ describe('[3] stray non-printable swallowed', () => {
     seq('\x01');    // Ctrl+A — outside printable range
     seq('a');
     eq(m.modal.prompt.text, 'a', 'only the printable char landed');
+    apply({ type: 'prompt_cancel' });   // close the modal — flat-modal guard now
+                                        // blocks a re-enter while one is open
   });
 });
 
