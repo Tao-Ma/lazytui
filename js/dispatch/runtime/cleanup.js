@@ -19,6 +19,10 @@ const { killAll } = require('./action-runner');
 function cleanup() {
   killAll({ silent: true });
   destroyAll();
+  // C5 — abort any in-flight keyed compute (e.g. an in-flight docker
+  // inspect/stats subprocess) so it's SIGTERM'd rather than orphaned on quit.
+  try { require('./effects')._clearInflight(); }
+  catch { /* effects not initialized (CLI path) */ }
   // Fire each Component's cleanup() hook (e.g. docker's `docker events`
   // stream) so no timer or child fires after quit. Lazy-required and
   // guarded: CLI mode (--exec/--list) never loaded the Component API.

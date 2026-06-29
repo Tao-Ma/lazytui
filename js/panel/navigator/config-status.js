@@ -441,6 +441,11 @@ function update(msg, slice) {
     return [{ ...slice, branch, computing: true }, [{
       type: 'cfgStatusCompute', branch, paneId: slice.paneId || null,
       files: slice.files || [], projectDir: slice.projectDir || '.',
+      // C5 — per-pane key so a pane removed mid-compute drops its stale result
+      // (computeStatus is blocking spawnSync — not killable, so this is a
+      // post-hoc drop, not a subprocess kill). Cancelled by the pane-orphan
+      // loop in app/state.js. Owner instance (paneId null) → 'primary'.
+      key: `cfgStatus:compute:${slice.paneId || 'primary'}`,
     }]];
   }
   if (msg.type === 'cfgStatusResult') {
@@ -472,6 +477,9 @@ function update(msg, slice) {
           type: 'cfgStatusDiff', item,
           branch: slice.branch || DEFAULT_BRANCH,
           projectDir: slice.projectDir || '.',
+          // C5 — per-pane key: exclusive-by-key supersedes a prior same-pane
+          // diff (fast Enter-Enter) and the orphan loop drops a removed pane's.
+          key: `cfgStatus:diff:${slice.paneId || 'primary'}`,
         }, { type: '_claimed' }]];
       }
       return [slice, [{ type: '_claimed' }]];
@@ -487,24 +495,39 @@ function update(msg, slice) {
 function installEffects(registerEffect) {
   registerEffect('cfgStatusCompute', (eff, host) => {
     setImmediate(() => {
-      let cache;
-      try { cache = computeStatus(eff.branch, eff.files || [], eff.projectDir || '.'); }
-      catch (e) { cache = { branch: eff.branch, byPath: {}, children: {}, error: e.message, computedAt: Date.now() }; }
-      // Route the result to the pane that kicked the compute — NOT the
-      // kind's primary. `wrap('config-status')` would land every instance's
-      // result on the first pane, leaving the others stuck on "computing…"
-      // (the files Arc 2 / docker Arc 3 collapse-to-primary footgun).
-      host.dispatchMsg(host.wrap(eff.paneId || 'config-status', { type: 'cfgStatusResult', cache }));
+      try {
+        // C5 — pane removed before the worker fired → skip the slow compute.
+        if (host.signal && host.signal.aborted) return;
+        let cache;
+        try { cache = computeStatus(eff.branch, eff.files || [], eff.projectDir || '.'); }
+        catch (e) { cache = { branch: eff.branch, byPath: {}, children: {}, error: e.message, computedAt: Date.now() }; }
+        // C5 — pane removed during the compute → drop the stale result.
+        if (host.signal && host.signal.aborted) return;
+        // Route the result to the pane that kicked the compute — NOT the
+        // kind's primary. `wrap('config-status')` would land every instance's
+        // result on the first pane, leaving the others stuck on "computing…"
+        // (the files Arc 2 / docker Arc 3 collapse-to-primary footgun).
+        host.dispatchMsg(host.wrap(eff.paneId || 'config-status', { type: 'cfgStatusResult', cache }));
+      } finally {
+        if (host.releaseKey) host.releaseKey();   // C5 — free the key
+      }
     });
   });
-  registerEffect('cfgStatusDiff', (eff) => {
+  registerEffect('cfgStatusDiff', (eff, host) => {
     // Two-phase, mirroring cfgStatusCompute: run the git show/diff OFF-tick so a
     // slow diff never blocks the event loop. The content lands via the
     // viewer_set_content Msg that setViewerContent dispatches (recordable,
     // single-writer) — not a direct slice write.
     setImmediate(() => {
-      const { setViewerContent } = require('../nav-state');
-      setViewerContent(null, diffFor(eff.item, eff.branch, eff.projectDir || '.').join('\n'));
+      try {
+        if (host.signal && host.signal.aborted) return;   // superseded/removed
+        const { setViewerContent } = require('../nav-state');
+        const body = diffFor(eff.item, eff.branch, eff.projectDir || '.').join('\n');
+        if (host.signal && host.signal.aborted) return;   // drop stale
+        setViewerContent(null, body);
+      } finally {
+        if (host.releaseKey) host.releaseKey();   // C5 — free the key
+      }
     });
   });
 }
