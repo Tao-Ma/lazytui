@@ -17,7 +17,7 @@
  */
 'use strict';
 
-const TYPES = ['port_inject', 'port_clear'];
+const TYPES = ['port_inject', 'port_clear', 'fabric_output_set'];
 
 function _withInjects(model, injects) {
   return { ...model, fabric: { ...(model.fabric || {}), injects } };
@@ -26,6 +26,17 @@ function _withInjects(model, injects) {
 function update(model, msg) {
   const injects = (model.fabric && model.fabric.injects) || {};
   switch (msg.type) {
+    case 'fabric_output_set': {
+      // Raw producer stdout (un-esc'd, no chrome) captured for parsing, keyed by
+      // [group][component]. Set semantics — each run replaces (the memoized
+      // parse re-runs once per run, on the new lines-array identity). Dispatched
+      // by the fabric stream path (stream.js) on process close.
+      if (typeof msg.group !== 'string' || typeof msg.name !== 'string') return [model, []];
+      const fab = model.fabric || {};
+      const output = fab.output || {};
+      const g = { ...(output[msg.group] || {}), [msg.name]: Array.isArray(msg.lines) ? msg.lines : [] };
+      return [{ ...model, fabric: { ...fab, output: { ...output, [msg.group]: g } } }, []];
+    }
     case 'port_inject': {
       // { port: "xlogminer.start_lsn", value } — last-write-wins.
       if (typeof msg.port !== 'string' || !msg.port) return [model, []];

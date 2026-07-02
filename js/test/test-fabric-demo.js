@@ -10,7 +10,7 @@
 const path = require('path');
 const { describe, it, eq, assert, section, report } = require('./test-runner');   // auto-wires panel-host
 const { parse } = require('../parser');
-const { init, setModel } = require('../app/runtime');
+const { init, setModel, getModel } = require('../app/runtime');
 const route = require('../panel/route');
 const { wireFabricHost } = require('../dispatch/runtime/host-wiring');
 const { doRunFabric } = require('../dispatch/runtime/action-runner');
@@ -58,10 +58,12 @@ setModel(base);
 route.setInstanceSlice('detail', { actionTabBuffers: {}, tab: 0, scroll: 0, viewerStreamBuffer: { lines: [], cap: 1000 } });
 wireFabricHost();
 
-function tabLines(name) {
-  const s = route.getInstanceSlice('detail');
-  const b = s && s.actionTabBuffers && s.actionTabBuffers.demo && s.actionTabBuffers.demo[name];
-  return b ? b.lines : [];
+// The producer's RAW output lands in model.fabric.output[group][name] on process
+// CLOSE — the correct completion signal to poll (the display buffer fills mid-
+// stream, before the port value is published).
+function fabricOut(name) {
+  const o = getModel().fabric && getModel().fabric.output && getModel().fabric.output.demo;
+  return (o && o[name]) || null;
 }
 function poll(cond, cb, tries = 80) {
   if (cond()) return cb();
@@ -71,13 +73,14 @@ function poll(cond, cb, tries = 80) {
 
 section('[fabric-demo] end-to-end run (real execve, no shell)');
 doRunFabric('source', cfg.groups.demo.actions.source);
-poll(() => tabLines('source').some(l => /REDO location/.test(l)), () => {
-  eq(portValue('source', 'lsn'), '0/CAFE', 'producer output parsed → output port derivable');
+poll(() => fabricOut('source'), () => {
+  eq(portValue('source', 'lsn'), '0/CAFE', 'producer RAW output parsed → output port derivable');
 
   doRunFabric('mine', cfg.groups.demo.actions.mine);
-  poll(() => tabLines('mine').some(l => /starting at/.test(l)), () => {
-    const out = tabLines('mine').join('\n');
+  poll(() => fabricOut('mine'), () => {
+    const out = fabricOut('mine').join('\n');
     assert(/starting at 0\/CAFE/.test(out), 'consumer ran with the WIRED value (zero manual input)');
+    assert(!/\[dim\]|\[green\]/.test(out), 'raw output is free of stream chrome (H1)');
     report();
   });
 });

@@ -46,9 +46,12 @@ function resolveInputs(consumerName, inputs, ctx) {
     const addr = formatFabricAddr(consumerName, name);
     const required = !def || def.required !== false;
 
-    // 1. inject (by value) — highest precedence.
-    if (injects[addr] !== undefined) {
-      values[name] = injects[addr].value;
+    // 1. inject (by value) — highest precedence. An inject whose value is
+    // undefined is treated as ABSENT, so it can't silently shadow a working
+    // wire (L6). A falsy "" / 0 is a real value and is honoured.
+    const inj = injects[addr];
+    if (inj !== undefined && inj.value !== undefined) {
+      values[name] = inj.value;
       sources[name] = 'inject';
       continue;
     }

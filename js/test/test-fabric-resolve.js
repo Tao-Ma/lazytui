@@ -72,6 +72,24 @@ describe('[fabric-resolve] readiness errors', () => {
     assert(m && /controldata\.redo_lsn has no value yet — run controldata first/.test(m.reason), m && m.reason);
   });
 
+  it('an undefined-valued inject does not shadow a working wire (L6)', () => {
+    const r = resolveInputs('xlogminer', { start_lsn: { type: 'pg.lsn', required: true } }, {
+      injects: { 'xlogminer.start_lsn': { value: undefined } },
+      wires: WIRES,
+      portValue: pv('0/WIRED'),
+    });
+    eq(r.values.start_lsn, '0/WIRED');
+    eq(r.sources.start_lsn, 'wire');
+  });
+
+  it('a falsy "" inject IS honored (not treated as absent)', () => {
+    const r = resolveInputs('xlogminer', { start_lsn: { required: false } }, {
+      injects: { 'xlogminer.start_lsn': { value: '' } },
+    });
+    eq(r.values.start_lsn, '');
+    eq(r.sources.start_lsn, 'inject');
+  });
+
   it('wired-but-empty falls through to a default when present', () => {
     const r = resolveInputs('c', { x: { required: true, default: 'D' } }, {
       wires: [{ from: 'up.o', to: 'c.x' }],

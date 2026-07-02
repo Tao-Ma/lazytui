@@ -195,9 +195,19 @@ function doRunFabric(actionKey, action) {
     return;
   }
 
-  const argv = fillCommand(compileCommand(action.run), values);
-  // cmd string is display/history only; opts.argv is the executed vector.
-  streamCommand(actionKey, argv.join(' '), [], { tabKey: actionKey, groupName: group, argv });
+  let argv;
+  try {
+    argv = fillCommand(compileCommand(action.run), values);
+  } catch (e) {
+    // e.g. a list value bound to an EMBEDDED hole (M4) — surface, don't run.
+    appendViewerLines(`[dim]$ ${esc(actionKey)}[/]\n[red]${esc(e.message)}[/]`);
+    return;
+  }
+  // cmd string is display/history only; opts.argv is the executed vector. opts.fabric
+  // routes the RAW output to model.fabric.output[group][actionKey] for parsing.
+  streamCommand(actionKey, argv.join(' '), [], {
+    tabKey: actionKey, groupName: group, argv, fabric: { group, name: actionKey },
+  });
 }
 
 // Re-export streaming helpers so existing import sites

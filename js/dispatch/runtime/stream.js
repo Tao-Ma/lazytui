@@ -183,6 +183,16 @@ function streamCommand(headerLabel, cmd, args = [], opts = {}) {
   const tabKey = opts.tabKey || null;
   const groupName = opts.groupName || null;
   const slotKey = _slotKey(tabKey, groupName);
+  // Fabric run (docs/ports-and-wires.md): capture RAW stdout (un-esc'd, no
+  // chrome) so output ports parse clean text, separate from the chrome/esc'd
+  // display buffer. Flushed to model.fabric.output on close/error.
+  const fab = opts.fabric || null;
+  const rawLines = [];
+  const flushFabric = () => {
+    if (fab) require('../control/dispatch').applyMsg({
+      type: 'fabric_output_set', group: fab.group, name: fab.name, lines: rawLines.slice(),
+    });
+  };
 
   // Confirm-before-preempt for the unrouted slot — protects the live
   // viewer transcript from being wiped by an *unrelated* command. Same
@@ -290,6 +300,7 @@ function streamCommand(headerLabel, cmd, args = [], opts = {}) {
     for (const line of lines) {
       appendDetailLine(esc(line), tabKey, groupName);
       rec.append(line);
+      if (fab) rawLines.push(line);
     }
     scheduleRender();
   };
@@ -313,12 +324,13 @@ function streamCommand(headerLabel, cmd, args = [], opts = {}) {
     const batch = [];
     const tail = decoder.end();
     if (tail) buffer += tail;
-    if (buffer) { batch.push(esc(buffer)); rec.append(buffer); buffer = ''; }
+    if (buffer) { batch.push(esc(buffer)); rec.append(buffer); if (fab) rawLines.push(buffer); buffer = ''; }
     if (signal)            { batch.push(`[yellow]Killed (${signal})[/]`); rec.end(`signal:${signal}`); }
     else if (code === 0)    { batch.push('[green]Done.[/]'); rec.end(0); }
     else                    { batch.push(`[red]Exit ${code}[/]`); rec.end(code); }
     if (tabKey && groupName) batch.push('[dim]Press Enter to run again.[/]');
     appendDetailLines(batch, tabKey, groupName);
+    flushFabric();   // publish the producer's raw output for parsing
     scheduleRender();
   });
 
@@ -332,6 +344,7 @@ function streamCommand(headerLabel, cmd, args = [], opts = {}) {
     if (tabKey && groupName) batch.push('[dim]Press Enter to run again.[/]');
     appendDetailLines(batch, tabKey, groupName);
     rec.end('error');
+    flushFabric();   // publish whatever raw output streamed before the error (may be empty)
     scheduleRender();
   });
 }

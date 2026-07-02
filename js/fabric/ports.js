@@ -80,7 +80,13 @@ function portValue(name, port) {
     const val = _extractFnFor(pdef.extract)(lines.join('\n'));
     return val == null ? undefined : val;
   }
-  return projectFrom(parsed(name), pdef.from == null ? port : pdef.from);
+  const rec = parsed(name);
+  // Explicit `from` → project that field. No `from`: a keyed object defaults to
+  // the port-name field (kv/json object); an ARRAY or primitive record IS the
+  // value — the whole-record port (a `{lines:true}` / whole-JSON producer). (M2)
+  if (pdef.from != null) return projectFrom(rec, pdef.from);
+  if (rec != null && typeof rec === 'object' && !Array.isArray(rec)) return projectFrom(rec, port);
+  return rec == null ? undefined : rec;
 }
 
 /** Every declared port across all components — powers the pane, wire pickers, P2. */

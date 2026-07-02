@@ -96,13 +96,15 @@ controldata:
       state:     { type: pg.state, from: "Database cluster state" }
 ```
 
-- **Producer-level `parse`** — slice → structured record. P1 built-ins (pin 3):
-  `{ kv: {sep} }` (key:value lines), `{ json: true }`, `{ lines: true }`. Code
+- **Producer-level `parse`** — slice → structured record. `parse` is **component-level**
+  (a sibling of `run`/`ports`, one pass over the whole output), NOT per-port. P1 built-ins
+  (pin 3): `{ kv: {sep} }` (key:value lines), `{ json: true }`, `{ lines: true }`. Code
   components may pass a function (`fn`, implicit — not a config feature).
-- **Per-port projection** — `{ type, desc, from }`; `from` selects a key/path out of
-  the parsed record and **defaults to the port name**. Note `from` can carry a component's
-  ugly source key while the *port* keeps a clean name (`redo_lsn`), so `kv` + `from`
-  already gives clean names over ugly keys.
+- **Per-port projection** — `{ type, desc, from }`; `from` selects a key out of the parsed
+  record. With **no `from`**: a keyed object (kv/json object) defaults to the **port-name**
+  field; an **array or primitive** record (a `{ lines: true }` producer, a whole-JSON value)
+  IS the value — a whole-record port. `from` can carry a component's ugly source key while
+  the *port* keeps a clean name (`redo_lsn`), so `kv` + `from` gives clean names over ugly keys.
 - **Escape hatch** — a per-port `extract: { regex, group }` for a bespoke field the
   structured parse didn't capture. Runs on the raw output. (A DRY regex-*table* at the
   producer level is deferred to P1.5 — see Decisions.)
@@ -130,13 +132,14 @@ Port values are **not materialized in the model** — same discipline as the
 ```yaml
 xlogminer:
   run: [ xlogminer, --start, "{{start_lsn}}", --end, "{{end_lsn}}", --timeline, "{{timeline}}" ]
+  parse: { lines: true }        # COMPONENT-level: xlogminer's OWN output → a line array
   ports:
     in:
       start_lsn: { type: pg.lsn, required: true }
       end_lsn:   { type: pg.lsn, required: true }
       timeline:  { type: pg.tli, required: false, default: 1 }
     out:
-      records:   { type: pg.wal_records, desc: "decoded WAL records", parse: { lines: true } }
+      records:   { type: pg.wal_records, desc: "decoded WAL records" }   # no `from` → the whole array
 ```
 
 Input ports are the consumer's **named, typed parameters** — they are the fabric's *only*
@@ -368,12 +371,13 @@ groups:
             redo_lsn: { type: pg.lsn, from: "Latest checkpoint's REDO location" }
       xlogminer:
         run: [ xlogminer, --start, "{{start_lsn}}", --end, "{{end_lsn}}" ]
+        parse: { lines: true }
         ports:
           in:
             start_lsn: { type: pg.lsn, required: true }
             end_lsn:   { type: pg.lsn, required: true }
           out:
-            records:   { type: pg.wal_records, parse: { lines: true } }
+            records:   { type: pg.wal_records }   # no `from` → the whole line array
     wires:
       - { from: controldata.redo_lsn, to: xlogminer.start_lsn }
 ```

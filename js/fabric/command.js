@@ -85,6 +85,11 @@ function fillCommand(template, values) {
     }
     argv.push(el.replace(HOLE_RE, (_m, name) => {
       const v = vals[name];
+      // A list value only splices as a WHOLE-element hole; embedding it would
+      // silently String()-join to a CSV. Reject instead (M4).
+      if (Array.isArray(v)) {
+        throw new Error(`fabric: cannot embed a list value in {{${name}}} — use {{${name}}} as a standalone argument`);
+      }
       return v === undefined ? '' : String(v);
     }));
   }

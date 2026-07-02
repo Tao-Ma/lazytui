@@ -1,15 +1,14 @@
 /**
  * Fabric end-to-end (P1 slice 5c) — the REAL host wiring over a seeded model:
- * a producer's streamed output in its tab buffer → parse → output port value →
+ * a producer's RAW output (model.fabric.output) → parse → output port value →
  * wire → a consumer's input resolves. Proves wireFabricHost's getters read the
- * right model/config/slice fields (not a fake host).
+ * right model/config fields (not a fake host).
  * Run: node js/test/test-fabric-integration.js
  */
 'use strict';
 
 const { describe, it, eq, assert, report } = require('./test-runner');   // auto-wires panel-host
-const { setModel } = require('../app/runtime');
-const route = require('../panel/route');
+const { setModel, getModel } = require('../app/runtime');
 const { wireFabricHost } = require('../dispatch/runtime/host-wiring');
 const { portValue, listPorts, listWires } = require('../fabric/ports');
 const { resolveInputs } = require('../fabric/resolve');
@@ -19,7 +18,9 @@ const CD_LINE = "Latest checkpoint's REDO location: 0/1A2B3C0";
 setModel({
   currentGroup: 'pg',
   modes: {},
-  fabric: { injects: {} },
+  // Seed controldata's RAW output (what the fabric run path captures on close
+  // into model.fabric.output[group][name] — H1, clean of chrome/esc).
+  fabric: { injects: {}, output: { pg: { controldata: [CD_LINE] } } },
   config: {
     groups: {
       pg: {
@@ -41,13 +42,9 @@ setModel({
   },
 });
 
-// Seed controldata's streamed output into its tab buffer (what the fabric run
-// path routes to: actionTabBuffers[group][name]).
-route.setInstanceSlice('detail', { actionTabBuffers: { pg: { controldata: { lines: [CD_LINE] } } } });
-
 wireFabricHost();
 
-describe('[fabric-e2e] real host reads config + tab buffer', () => {
+describe('[fabric-e2e] real host reads config + raw output', () => {
   it('portValue projects a producer field from its streamed output', () => {
     eq(portValue('controldata', 'redo_lsn'), '0/1A2B3C0');
   });
@@ -73,13 +70,13 @@ describe('[fabric-e2e] wire resolves through real portValue', () => {
   });
 
   it('before the producer has output, the consumer is not ready with a precise reason', () => {
-    route.setInstanceSlice('detail', { actionTabBuffers: {} });   // clear controldata output
+    getModel().fabric.output = {};                       // clear controldata's raw output
     const r = resolveInputs('xlogminer',
       { start_lsn: { type: 'pg.lsn', required: true } },
       { injects: {}, wires: listWires(), portValue });
     assert(!r.ready);
     assert(/run controldata first/.test(r.missing[0].reason), r.missing[0].reason);
-    route.setInstanceSlice('detail', { actionTabBuffers: { pg: { controldata: { lines: [CD_LINE] } } } });
+    getModel().fabric.output = { pg: { controldata: [CD_LINE] } };   // restore
   });
 
   it('an inject overrides the wire (by value)', () => {

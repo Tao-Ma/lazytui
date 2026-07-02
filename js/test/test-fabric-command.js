@@ -63,6 +63,11 @@ describe('[fabric-command] fillCommand', () => {
     eq(fillCommand(['tool', '{{opt}}'], {}).join(' '), 'tool');
     eq(fillCommand(['--x={{opt}}'], {})[0], '--x=');
   });
+  it('rejects a list value bound to an EMBEDDED hole (M4 — no silent CSV join)', () => {
+    assert(throws(() => fillCommand(['--flag={{files}}'], { files: ['a', 'b'] })), 'embedded array must throw');
+    // a whole-element list hole still splices fine
+    eq(fillCommand(['{{files}}'], { files: ['a', 'b'] }).join(' '), 'a b');
+  });
   it('delivers special chars as ONE literal argument (bind-parameter safety)', () => {
     const nasty = 'a b; $(whoami) `id` "q" \'s\' | rm -rf /';
     const argv = fillCommand(['tool', '{{x}}'], { x: nasty });

@@ -33,22 +33,20 @@ function wirePanelHost() {
 function wireFabricHost() {
   const { setFabricHost } = require('../../fabric/ports');
   const { getModel } = require('../../model/store');
-  const route = require('../../panel/route');
   const api = require('../../panel/api');
 
   const group = () => getModel().currentGroup;
 
   setFabricHost({
-    // Current output lines of a producer routed to its tab buffer
-    // (actionTabBuffers[group][name].lines) — ref-stable until it changes, so
-    // fabric's parse memo keys on it correctly.
+    // A producer's RAW output lines (model.fabric.output[group][name]) — un-esc'd
+    // and free of stream chrome, captured on process close, so parse sees clean
+    // text (H1). Distinct from the chrome/esc'd display buffer (actionTabBuffers).
+    // Ref-stable between runs, so fabric's parse memo keys on it correctly.
     componentLines(name) {
-      const target = route.resolveTarget('viewer');
-      if (target == null) return null;
-      const slice = api.getInstanceSlice(target);
-      const g = slice && slice.actionTabBuffers && slice.actionTabBuffers[group()];
-      const buf = g && g[name];
-      return buf ? buf.lines : null;
+      const out = (getModel().fabric && getModel().fabric.output) || {};
+      const g = out[group()];
+      const lines = g && g[name];
+      return Array.isArray(lines) ? lines : null;
     },
     // Declared parse/ports off the merged action set (config + plugin actions).
     componentSpec(name) {
