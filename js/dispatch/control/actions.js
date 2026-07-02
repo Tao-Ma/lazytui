@@ -391,6 +391,28 @@ function handleAction(action, arg) {
       // which mirrors to the OS clipboard via OSC52 (the same path as `y`).
       if (arg) applyMsg({ type: 'register_push', text: arg });
       break;
+    case 'send_to_port': {
+      // Right-click → push the selection into a consumer's input port
+      // (docs/ports-and-wires.md). The value is known here; the target port is
+      // a SECOND menu step. Each row carries {port, value} so the port_inject
+      // verb has both. A manual send is a HUMAN OVERRIDE of the type check —
+      // raw text lists every input port (type would only ORDER, not gate).
+      if (!arg) break;
+      const rows = require('../../fabric/ports').listPorts()
+        .filter(p => p.dir === 'in')
+        .map(p => {
+          const addr = `${p.component}.${p.port}`;
+          return [`${addr} (${p.type})`, 'port_inject', { port: addr, value: arg }];
+        });
+      const items = rows.length ? rows : [['(no input ports declared)', 'noop', null]];
+      applyMsg({ type: 'menu_open', items, title: 'Send selection to port' });
+      break;
+    }
+    case 'port_inject':
+      // The picked port + the selection value (also the P2 agent's push
+      // primitive). Sticky inject → resolves at the consumer's next run.
+      if (arg && arg.port) applyMsg({ type: 'port_inject', port: arg.port, value: arg.value });
+      break;
     case 'ctx_run_action':
       // A YAML `context-menu:` entry declared with `action:` — run the
       // configured action by its short key, the SAME path the leader

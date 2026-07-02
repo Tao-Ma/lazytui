@@ -68,10 +68,11 @@ function _extractReducerCases(src) {
 }
 
 /** The set of Msg types the root reducer HANDLES: inline `case` labels in
- *  reducer.js PLUS every type the per-modal sub-reducers declare (the reducer
- *  delegates these by type — #D12). A modal module exports `{ TYPES, update }`;
- *  TYPES is the authoritative "what this modal handles" contract the reducer's
- *  routing map is built from. */
+ *  reducer.js PLUS every type a per-concern sub-reducer declares (the reducer
+ *  delegates these by type — #D12 modal sub-reducers + the fabric injects
+ *  sub-reducer). A sub-reducer module exports `{ TYPES, update }`; TYPES is the
+ *  authoritative "what this handles" contract the reducer's routing map is built
+ *  from. */
 function _handledRootTypes() {
   const handled = _extractReducerCases(_readSource('dispatch/update/reducer.js'));
   const modalDir = path.join(JS_ROOT, 'dispatch/update/modal');
@@ -80,6 +81,9 @@ function _handledRootTypes() {
     const mod = require(path.join(modalDir, entry));
     for (const t of (mod.TYPES || [])) handled.add(t);
   }
+  // Non-modal sub-reducers delegated by the same mechanism (fabric injects —
+  // docs/ports-and-wires.md). Mirrors reducer.js's _SUBREDUCER_BY_TYPE list.
+  for (const t of (require(path.join(JS_ROOT, 'dispatch/update/fabric.js')).TYPES || [])) handled.add(t);
   return handled;
 }
 

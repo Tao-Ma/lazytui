@@ -57,6 +57,18 @@ const SECTIONS = [
           return ['Copy selection', 'copy_text', ctx.selectionText];
         },
       },
+      {
+        id: 'send-selection-to-port',
+        show: () => true,
+        // Dataflow fabric (docs/ports-and-wires.md) — push the selection into a
+        // consumer's input port. The value is known here; the target port is a
+        // SECOND menu the send_to_port handler builds (this pure leaf can't
+        // enumerate ports — that needs listPorts over the model/config).
+        build: (ctx) => {
+          if (!ctx.selectionText) return null;
+          return ['Send selection to port…', 'send_to_port', ctx.selectionText];
+        },
+      },
     ],
   },
   {
