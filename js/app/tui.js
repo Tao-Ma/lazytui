@@ -272,6 +272,9 @@ function main() {
   // of importing upward (the cut that dissolves the {dispatch,overlay,panel}
   // layer cycle). See docs/v0.6.5-render-exit.md "Domain detangle".
   require('../dispatch/runtime/host-wiring').wirePanelHost();
+  // Wire the dataflow-fabric host seam (fabric/ports reads component output +
+  // spec + wires off the model/config through it). docs/ports-and-wires.md.
+  require('../dispatch/runtime/host-wiring').wireFabricHost();
   // Inject the dispatch host into nav-state's writers (formalized injection —
   // they feed Msgs back through it instead of importing the relocating fan-out).
   // Before initState/refreshAll, whose finalizer runs syncPanelScroll→setScroll.

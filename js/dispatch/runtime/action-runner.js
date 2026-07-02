@@ -18,6 +18,11 @@ const { esc } = require('../../leaves/text/ansi');
 const history = require('../../feature/history');
 const jobs = require('../../feature/jobs');
 const sessionLog = require('../../io/session-log');
+// Dataflow fabric (docs/ports-and-wires.md) — a `run:` action resolves its input
+// ports and executes as a no-shell argv vector.
+const { resolveInputs } = require('../../fabric/resolve');
+const { compileCommand, fillCommand } = require('../../fabric/command');
+const fabricPorts = require('../../fabric/ports');
 
 // type:spawn uses a real `tmux new-window` ONLY when running under tmux AND we
 // are NOT recording. While recording, force the embedded-PTY path even under
@@ -72,6 +77,11 @@ function shQuote(s) {
 let _spawnSeq = 0;
 
 function doRun(actionKey, action, args = []) {
+  // Fabric consumer/producer (decision A): a `run:` action resolves its input
+  // ports and runs as a no-shell argv vector. Distinct from the legacy
+  // cmd/script shell path below.
+  if (action.run) return doRunFabric(actionKey, action);
+
   // Parser normalizes both YAML `cmd:` and `script:` into `action.script`
   const cmd = action.script || '';
   const actionType = action.type || 'run';
@@ -160,6 +170,36 @@ function doRun(actionKey, action, args = []) {
   streamCommand(actionKey, cmd, args, opts);
 }
 
+// Fabric run (docs/ports-and-wires.md). Resolve the consumer's input ports
+// against the current model (injects > wire > default), gate on readiness
+// (error-and-tell the precise reasons, decision 5), then fill the `run:` argv
+// template and stream it with no shell (opts.argv → execve). Output is routed to
+// the component's own tab buffer (tabKey = actionKey) so its output ports become
+// derivable (portValue reads actionTabBuffers[group][name]). Producers (no input
+// ports) resolve ready immediately. P1 resolves within the current group.
+function doRunFabric(actionKey, action) {
+  const model = getModel();
+  const group = model.currentGroup;
+  const inputs = (action.ports && action.ports.in) || {};
+  const cfgGroup = model.config && model.config.groups && model.config.groups[group];
+  const wires = (cfgGroup && cfgGroup.wires) || [];
+
+  const { ready, values, missing } = resolveInputs(actionKey, inputs, {
+    injects: (model.fabric && model.fabric.injects) || {},
+    wires,
+    portValue: fabricPorts.portValue,
+  });
+  if (!ready) {
+    appendViewerLines(`[dim]$ ${esc(actionKey)}[/]\n` +
+      missing.map(m => `[yellow]not ready: ${m.reason}[/]`).join('\n'));
+    return;
+  }
+
+  const argv = fillCommand(compileCommand(action.run), values);
+  // cmd string is display/history only; opts.argv is the executed vector.
+  streamCommand(actionKey, argv.join(' '), [], { tabKey: actionKey, groupName: group, argv });
+}
+
 // Re-export streaming helpers so existing import sites
 // (dispatch.js, plugins/docker.js, cleanup.js) keep working.
-module.exports = { runAction, doRun, killAll, streamCommand, _spawnUsesTmux };
+module.exports = { runAction, doRun, killAll, streamCommand, _spawnUsesTmux, doRunFabric };

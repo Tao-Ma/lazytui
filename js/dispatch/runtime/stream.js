@@ -248,8 +248,13 @@ function streamCommand(headerLabel, cmd, args = [], opts = {}) {
   require('./loop').dispatchMsg(api.wrap(target, startMsg));
   scheduleRender();
 
-  // -- delimiter so $0 = "--", $1 = first arg, $@ = arg list (POSIX).
-  const proc = spawn('sh', ['-c', cmd, '--', ...args], { cwd: getModel().projectDir });
+  // Fabric no-shell path (docs/ports-and-wires.md): opts.argv is a fully-resolved
+  // argv vector run via execve — spawn(prog, rest, {shell:false}) so a bound
+  // value never touches a shell parser. Otherwise the legacy shell path: `-- `
+  // delimiter so $0 = "--", $1 = first arg, $@ = arg list (POSIX).
+  const proc = Array.isArray(opts.argv) && opts.argv.length
+    ? spawn(opts.argv[0], opts.argv.slice(1), { cwd: getModel().projectDir, shell: false })
+    : spawn('sh', ['-c', cmd, '--', ...args], { cwd: getModel().projectDir });
   const jobId = jobs.register({
     kind: tabKey ? 'stream-routed' : 'stream-unrouted',
     label: headerLabel,
