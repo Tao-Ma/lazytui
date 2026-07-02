@@ -546,12 +546,20 @@ function walkGroups(rawGroups, varsBlock, helpersBlock, source, parent, depth, o
     if ('actions' in gdata) {
       for (const [aname, adata] of Object.entries(gdata.actions)) {
         const ctx = `group '${groupPath}', action '${aname}'`;
-        let script, varsUsed, helpersUsed;
+        let script = '', varsUsed = {}, helpersUsed = [];
         if ('cmd' in adata) {
           ({ script, varsUsed, helpersUsed } = passthroughCmd(adata.cmd, ctx));
-        } else {
+        } else if ('script' in adata) {
           ({ script, varsUsed, helpersUsed } = resolveScript(adata.script, varsBlock, helpersBlock, ctx));
         }
+        // Fabric `run:` (decision A) — a no-shell argv template. Resolve $VAR per
+        // element from the vars block (leaves {{holes}} + unknown $FOO alone), the
+        // same static pass cmd/script get; {{holes}} bind at invoke.
+        const runResolved = 'run' in adata
+          ? (Array.isArray(adata.run)
+              ? adata.run.map(el => resolveScript(String(el), varsBlock, helpersBlock, ctx).script)
+              : resolveScript(String(adata.run), varsBlock, helpersBlock, ctx).script)
+          : null;
         actions[aname] = {
           group: groupPath,
           key: aname,
@@ -566,6 +574,7 @@ function walkGroups(rawGroups, varsBlock, helpersBlock, source, parent, depth, o
           // schema.js; preserved here so the fabric host reads them off the config.
           parse: adata.parse !== undefined ? adata.parse : null,
           ports: adata.ports !== undefined ? adata.ports : null,
+          run: runResolved,
           script,
           containers,
           debug: {

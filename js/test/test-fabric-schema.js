@@ -107,6 +107,32 @@ describe('[fabric-schema] wires validation', () => {
   });
 });
 
+describe('[fabric-schema] run: (decision A)', () => {
+  it('accepts a list-form run with holes matching input ports', () => {
+    validate(baseCfg(pg => {
+      pg.actions.xlogminer.run = ['xlogminer', '--start', '{{start_lsn}}'];
+      delete pg.actions.xlogminer.cmd;
+    }));
+  });
+  it('accepts a producer run with no holes', () => {
+    validate(baseCfg(pg => { pg.actions.controldata.run = ['pg_controldata']; delete pg.actions.controldata.cmd; }));
+  });
+  it('rejects run combined with cmd', () => {
+    const msg = errOf(() => validate(baseCfg(pg => { pg.actions.xlogminer.run = ['x']; })));
+    assert(/cannot combine with 'cmd'/.test(msg), msg);
+  });
+  it('rejects a hole with no matching input port', () => {
+    const msg = errOf(() => validate(baseCfg(pg => {
+      pg.actions.xlogminer.run = ['xlogminer', '{{nope}}'];
+      delete pg.actions.xlogminer.cmd;
+    })));
+    assert(/no input port 'nope' is declared/.test(msg), msg);
+  });
+  it('rejects an empty run list', () => {
+    assert(throws(() => validate(baseCfg(pg => { pg.actions.xlogminer.run = []; delete pg.actions.xlogminer.cmd; }))));
+  });
+});
+
 describe('[fabric-schema] parser passthrough', () => {
   it('preserves action ports/parse + group wires through parse()', () => {
     const yaml = [

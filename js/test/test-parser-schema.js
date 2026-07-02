@@ -60,7 +60,7 @@ describe('optional fields', () => {
 describe('invalid structures rejected', () => {
   it('missing groups',                 () => expectThrow(/'groups' is required/, () => validate(loadFixture('invalid_no_groups.yml'), 'test')));
   it('both cmd and script',            () => expectThrow(/exactly one of 'cmd' or 'script'/, () => validate(loadFixture('invalid_both_cmd_script.yml'), 'test')));
-  it('neither cmd nor script',         () => expectThrow(/exactly one of 'cmd' or 'script'/, () => validate(loadFixture('invalid_neither_cmd_script.yml'), 'test')));
+  it('neither cmd nor script',         () => expectThrow(/exactly one of 'cmd', 'script', or 'run'/, () => validate(loadFixture('invalid_neither_cmd_script.yml'), 'test')));
   it('bad action type',                () => expectThrow(/'type' must be one of/, () => validate(loadFixture('invalid_bad_type.yml'), 'test')));
   it('missing action label',           () => expectThrow(/'label' is required/, () => validate(loadFixture('invalid_missing_label.yml'), 'test')));
   it('unknown action key',             () => expectThrow(/unknown key.*comand/, () => validate(loadFixture('invalid_unknown_key.yml'), 'test')));

@@ -12,6 +12,7 @@ const { SchemaError } = require('./errors');
 // extract shape, and address grammar have a single source of truth.
 const { parseFabricAddr, isValidFabricName } = require('../fabric/address');
 const { compileParse, compileExtract } = require('../fabric/parse');
+const { compileCommand, commandHoles } = require('../fabric/command');
 
 const VALID_ACTION_TYPES = new Set(['run', 'spawn', 'background']);
 
@@ -47,7 +48,7 @@ const VALID_ARCHIVE_KEYS = new Set(['target', 'output_dir', 'name']);
 const VALID_CONFIG_BRANCH_KEYS = new Set(['branch', 'paths', 'excludes', 'source', 'categories']);
 const VALID_IMAGES_KEYS = new Set(['list', 'output_dir']);
 const VALID_TERMINAL_KEYS = new Set(['cmd', 'label']);
-const VALID_ACTION_KEYS = new Set(['cmd', 'script', 'label', 'type', 'confirm', 'args', 'default_cmd', 'desc', 'tab', 'parse', 'ports']);
+const VALID_ACTION_KEYS = new Set(['cmd', 'script', 'label', 'type', 'confirm', 'args', 'default_cmd', 'desc', 'tab', 'parse', 'ports', 'run']);
 
 function isMapping(v) {
   return v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -631,11 +632,15 @@ function validateAction(groupPath, aname, adata) {
 
   const hasCmd    = 'cmd'    in adata;
   const hasScript = 'script' in adata;
+  const hasRun    = 'run'    in adata;   // fabric consumer: no-shell argv template (decision A)
   if (hasCmd && hasScript) {
     throw new SchemaError("must have exactly one of 'cmd' or 'script', not both", { context: ctx });
   }
-  if (!hasCmd && !hasScript) {
-    throw new SchemaError("must have exactly one of 'cmd' or 'script'", { context: ctx });
+  if (hasRun && (hasCmd || hasScript)) {
+    throw new SchemaError("'run' (fabric, no-shell) cannot combine with 'cmd' / 'script' — pick one", { context: ctx });
+  }
+  if (!hasCmd && !hasScript && !hasRun) {
+    throw new SchemaError("must have exactly one of 'cmd', 'script', or 'run'", { context: ctx });
   }
   if (hasCmd && typeof adata.cmd !== 'string') {
     throw new SchemaError("'cmd' must be a string", { context: ctx });
@@ -687,6 +692,33 @@ function validateAction(groupPath, aname, adata) {
     catch (e) { throw new SchemaError(`invalid 'parse': ${e.message}`, { context: ctx }); }
   }
   if ('ports' in adata) validateActionPorts(aname, adata.ports, ctx);
+  if ('run' in adata) validateActionRun(adata, ctx);
+}
+
+// Validate an action's `run:` argv template (decision A / decision 2): a
+// non-empty string, or a non-empty list of strings, and every {{hole}} must be
+// a declared input port (so a typo can't silently expand to nothing).
+function validateActionRun(adata, ctx) {
+  const run = adata.run;
+  if (Array.isArray(run)) {
+    if (run.length === 0) throw new SchemaError("'run' list must not be empty", { context: ctx });
+    for (const el of run) {
+      if (typeof el !== 'string') throw new SchemaError("'run' list elements must be strings", { context: ctx });
+    }
+  } else if (typeof run === 'string') {
+    if (!run.trim()) throw new SchemaError("'run' must not be empty or whitespace-only", { context: ctx });
+  } else {
+    throw new SchemaError("'run' must be a list of strings or a string", { context: ctx });
+  }
+  let holes;
+  try { holes = commandHoles(compileCommand(run)); }
+  catch (e) { throw new SchemaError(`invalid 'run': ${e.message}`, { context: ctx }); }
+  const inputs = (isMapping(adata.ports) && isMapping(adata.ports.in)) ? adata.ports.in : {};
+  for (const hole of holes) {
+    if (!(hole in inputs)) {
+      throw new SchemaError(`'run' references {{${hole}}} but no input port '${hole}' is declared`, { context: ctx });
+    }
+  }
 }
 
 // Validate an action's `ports: { in?, out? }`. The action NAME is addressable
