@@ -107,8 +107,10 @@ groups:
           Fabric consumer: pg_waldump from the wired REDO LSN. start_lsn fills
           from the controldata.redo_lsn -> waldump.start_lsn wire (or a
           right-click "Send selection to port") into a no-shell argv template.
+          `-p` points pg_waldump at the WAL directory so it can locate the
+          segment holding that LSN.
         tab: true
-        run: [ docker, compose, exec, -T, pg, /opt/pg/bin/pg_waldump, --start, "{{start_lsn}}" ]
+        run: [ docker, compose, exec, -T, pg, /opt/pg/bin/pg_waldump, -p, /var/lib/postgresql/data/pg_wal, --start, "{{start_lsn}}" ]
         ports:
           in:
             start_lsn: { type: pg.lsn, required: true, desc: "start LSN (wired from controldata.redo_lsn)" }
