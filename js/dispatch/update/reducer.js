@@ -61,7 +61,10 @@ const { withModes: _withModes } = require('./model-ops');
 // nav_record/nav_back/nav_forward/nav_prune arms delegate the array/index math.
 const navHist = require('../../leaves/wm/nav-history');
 
-// Per-modal sub-reducers (#D12). Each exports { TYPES, update(model,msg) }.
+// Per-concern sub-reducers. Each exports { TYPES, update(model,msg) }: the
+// modal sub-models (#D12) plus the dataflow-fabric injects store
+// (docs/ports-and-wires.md) — not a modal, but it delegates by the same
+// mechanism and writes its own root-model slice (model.fabric.injects).
 const confirm = require('./modal/confirm');
 const prompt = require('./modal/prompt');
 const copy = require('./modal/copy');
@@ -71,12 +74,13 @@ const jobs = require('./modal/jobs');
 const diagLog = require('./modal/diag-log');
 const menu = require('./modal/menu');
 const filter = require('./modal/filter');
+const fabric = require('./fabric');
 
-// Build the Msg-type → modal-sub-reducer routing table once. The root `update`
-// checks it first; a hit delegates the whole arm to that modal's `update`.
-const _MODAL_BY_TYPE = new Map();
-for (const m of [confirm, prompt, copy, registerPopup, cmdline, jobs, diagLog, menu, filter]) {
-  for (const t of m.TYPES) _MODAL_BY_TYPE.set(t, m);
+// Build the Msg-type → sub-reducer routing table once. The root `update`
+// checks it first; a hit delegates the whole arm to that sub-reducer's `update`.
+const _SUBREDUCER_BY_TYPE = new Map();
+for (const m of [confirm, prompt, copy, registerPopup, cmdline, jobs, diagLog, menu, filter, fabric]) {
+  for (const t of m.TYPES) _SUBREDUCER_BY_TYPE.set(t, m);
 }
 
 // blessed-exception A elimination (docs/reducer-route-purity.md) — the
@@ -116,9 +120,9 @@ function _cycleViewerTab(model, msg, dir) {
  * on no-ops (skip alloc).
  */
 function update(model, msg) {
-  // Modal Msgs delegate to their per-modal sub-reducer (#D12).
-  const modal = _MODAL_BY_TYPE.get(msg.type);
-  if (modal) return modal.update(model, msg);
+  // Delegate to a per-concern sub-reducer (modal #D12 / fabric injects) by type.
+  const sub = _SUBREDUCER_BY_TYPE.get(msg.type);
+  if (sub) return sub.update(model, msg);
 
   switch (msg.type) {
     case 'escape': {

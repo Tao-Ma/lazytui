@@ -209,6 +209,13 @@ function init() {
     // identically; plain JSON (no Sets) so it rides structuredClone. Namespaced
     // under `.nav` to avoid the unrelated `model.history` action navigator.
     nav: { history: [], cursor: -1, cap: 100 },
+    // Dataflow fabric (docs/ports-and-wires.md). `injects` = by-value, sticky
+    // one-shot pushes into an input port, keyed by `component.port`
+    // ({ value, at }). Written only by the fabric sub-reducer (port_inject /
+    // port_clear); transient (never serialised to config) but in-model so it
+    // rides the WAL + replay. Wires live on the parsed config (per group), not
+    // here; port VALUES are derived selectors (js/fabric/ports.js), not stored.
+    fabric: { injects: {} },
     // v0.6.6 Finding B — hub metrics time-series, keyed by topic, sampled in by
     // the throttled `metrics-mirror` Sub: { [topic]: { series:{rowKey:samples[]},
     // schema } }. The stats panel renders f(model.metrics[topic]) instead of
