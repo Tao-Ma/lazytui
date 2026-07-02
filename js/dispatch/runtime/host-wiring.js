@@ -1,5 +1,5 @@
 /**
- * Boot wiring for the panel-host seam (ports/panel-host.js).
+ * Boot wiring for the panel-host seam (hosts/panel-host.js).
  *
  * The `panel/` layer invokes a few dispatch capabilities (the relocated
  * Component fan-out `dispatchMsg`, the root `applyMsg`, `registerEffect`, and
@@ -14,7 +14,7 @@
  */
 'use strict';
 
-const panelHost = require('../../ports/panel-host');
+const panelHost = require('../../hosts/panel-host');
 
 function wirePanelHost() {
   const { dispatchMsg } = require('./loop');   // the relocated Component fan-out (B/S6)

@@ -8,8 +8,8 @@
  * would re-form the layer cycle), the few calls feature needs to make back
  * up are injected here and called through this port.
  *
- * Lives in `ports/` (its own bottom layer), NOT `leaves/`: like panel-host it
- * is a PURE injection port (injected fn slots + delegating wrappers, no
+ * Lives in `hosts/` (its own bottom layer), NOT `leaves/`: like panel-host it
+ * is a PURE injection seam (injected fn slots + delegating wrappers, no
  * transform logic), so it sits apart from the pure-transform leaves
  * (TEA-review follow-up #6). Same render-exit seam mechanism as the
  * seam-bearing leaves render-queue / draw's dims provider — those keep real

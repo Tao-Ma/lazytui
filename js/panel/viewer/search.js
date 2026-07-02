@@ -35,7 +35,7 @@ function _viewerTarget() { return require('../../panel/route').resolveTarget('vi
 function _dispatch(msg) {
   const target = _viewerTarget();
   if (!target) return;
-  return require('../../ports/panel-host').dispatchMsg(require('../../panel/route').wrap(target, msg));
+  return require('../../hosts/panel-host').dispatchMsg(require('../../panel/route').wrap(target, msg));
 }
 function _slice() {
   const target = _viewerTarget();

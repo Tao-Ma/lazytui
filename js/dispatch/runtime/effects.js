@@ -204,8 +204,8 @@ function installBuiltins() {
   const renderQueue = require('../../leaves/infra/render-queue');
   // Feature-host seam: feature/ workflows trigger a cmdline rebuild through
   // this injected fn instead of importing dispatch (keeps feature a bottom
-  // layer). See ports/feature-host.js + docs/v0.6.5-render-exit.md.
-  require('../../ports/feature-host').setFeatureHost({ refireCmdlineRebuild });
+  // layer). See hosts/feature-host.js + docs/v0.6.5-render-exit.md.
+  require('../../hosts/feature-host').setFeatureHost({ refireCmdlineRebuild });
   // render: request a repaint (async effect results landing into a slice).
   registerEffect('render', () => {
     try { renderQueue.scheduleRender(); } catch (_) { /* no renderer */ }

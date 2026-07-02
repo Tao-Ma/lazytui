@@ -14,15 +14,19 @@
  * dispatch facades (nav-state, commands — per-module injected host) get dispatch
  * a different way; see docs/v0.6.5-dispatch-loop.md "formalize injection".
  *
- * Lives in `ports/` (its own bottom layer), NOT `leaves/`: it is a PURE
- * injection port — nothing but injected fn slots + delegating wrappers, no
+ * Lives in `hosts/` (its own bottom layer), NOT `leaves/`: it is a PURE
+ * injection seam — nothing but injected fn slots + delegating wrappers, no
  * transform logic — so it doesn't belong among the pure-transform leaves
  * (TEA-review follow-up #6). The seam-bearing modules that DO carry real pure
  * logic (hub / draw / render-queue) stay leaves that merely expose a setter.
  * Same mechanism as those: a zero-dep module holds function slots; the host
  * layer registers them once at boot. The wrappers delegate at CALL time, so a
- * wrapper may be imported (panel→ports, legal down-edge) before its slot is
+ * wrapper may be imported (panel→hosts, legal down-edge) before its slot is
  * wired — only the eventual call must come after boot.
+ *
+ * (Dir renamed `ports/`→`hosts/` on 2026-07-02: "port" is the more proper term
+ * for the dataflow fabric's typed I/O endpoints, which now claim `js/ports/`.
+ * These modules are dependency-inversion HOST seams — see docs/ports-and-wires.md.)
  *
  * `dispatchMsg`'s implementation lives in dispatch/runtime/loop.js (B/S6 relocated the
  * Component fan-out to the dispatch layer); the seam just points at it.

@@ -82,8 +82,8 @@ function filterCurrentText() { return getModel().modal.filter.text; }
 
 // panel→dispatch / panel→overlay calls are inverted through the panel-host
 // seam (wired at boot) so panel stays a clean lower layer than dispatch.
-// See ports/panel-host.js + docs/v0.6.5-render-exit.md "Domain detangle".
-const panelHost = require('../ports/panel-host');
+// See hosts/panel-host.js + docs/v0.6.5-render-exit.md "Domain detangle".
+const panelHost = require('../hosts/panel-host');
 const { streamCommand } = panelHost;       // re-exported below for docker
 const { addEphemeralTab } = require('./viewer/tabs');
 const { scheduleRender } = require('../leaves/infra/render-queue');
