@@ -1,0 +1,53 @@
+# Self-contained dataflow-fabric demo (docs/ports-and-wires.md) — NO infra.
+#
+# A two-node pipe, echo-based so it runs anywhere:
+#   `source` prints an LSN-like line; its output is PARSED (kv) and projected
+#   as the typed output port `source.lsn`. A WIRE feeds that into `mine`'s
+#   input port `mine.start`, filled into its no-shell argv template ({{start}}).
+#
+# Try it:
+#   1. Run `source`  → "Latest checkpoint REDO location: 0/CAFE"
+#   2. Run `mine`    → its {{start}} resolves from the wire → "…starting at 0/CAFE"
+#   Or select any text, right-click → "Send selection to port…" → mine.start,
+#   then run `mine` (the inject overrides the wire for the next run).
+#
+# Zero model involvement — deterministic tools composed into a pipe.
+
+project_dir: .
+
+groups:
+  demo:
+    label: fabric demo
+    actions:
+      source:
+        label: Produce an LSN
+        tab: true
+        run: [ echo, "Latest checkpoint REDO location: 0/CAFE" ]
+        parse: { kv: { sep: ':' } }
+        ports:
+          out:
+            lsn: { type: demo.lsn, desc: "checkpoint REDO LSN", from: "Latest checkpoint REDO location" }
+      mine:
+        label: Mine WAL from the LSN
+        tab: true
+        run: [ echo, "mining WAL starting at {{start}}" ]
+        ports:
+          in:
+            start: { type: demo.lsn, required: true, desc: "start LSN (wired from source.lsn)" }
+          out:
+            records: { type: demo.records, extract: { regex: "starting at (\\S+)" } }
+    wires:
+      - { from: source.lsn, to: mine.start }
+
+panels:
+  groups:  { type: groups,  title: Groups }
+  actions: { type: actions, title: Actions }
+  detail:  { type: detail,  title: Detail }
+
+layout:
+  columns:
+    - width: 32
+      panels: [ groups ]
+    - panels:
+        - actions
+        - { tabs: [ detail ], height: 60% }

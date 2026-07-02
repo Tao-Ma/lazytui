@@ -87,6 +87,35 @@ groups:
         tab: true
         script: docker compose exec -T pg tail -n 50 /tmp/pg.log
 
+      # Dataflow fabric (docs/ports-and-wires.md) — pg_controldata → pg_waldump,
+      # composed by a WIRE: no model, no manual LSN paste, no shell.
+      controldata:
+        label: Checkpoint LSN (pg_controldata)
+        desc: |
+          Fabric producer: parse pg_controldata's key:value output and publish
+          the checkpoint REDO location as the typed port controldata.redo_lsn.
+        tab: true
+        run: [ docker, compose, exec, -T, pg, /opt/pg/bin/pg_controldata, /var/lib/postgresql/data ]
+        parse: { kv: { sep: ':' } }
+        ports:
+          out:
+            redo_lsn: { type: pg.lsn, desc: "checkpoint REDO location", from: "Latest checkpoint's REDO location" }
+
+      waldump:
+        label: Dump WAL from checkpoint (pg_waldump)
+        desc: |
+          Fabric consumer: pg_waldump from the wired REDO LSN. start_lsn fills
+          from the controldata.redo_lsn -> waldump.start_lsn wire (or a
+          right-click "Send selection to port") into a no-shell argv template.
+        tab: true
+        run: [ docker, compose, exec, -T, pg, /opt/pg/bin/pg_waldump, --start, "{{start_lsn}}" ]
+        ports:
+          in:
+            start_lsn: { type: pg.lsn, required: true, desc: "start LSN (wired from controldata.redo_lsn)" }
+
+    wires:
+      - { from: controldata.redo_lsn, to: waldump.start_lsn }
+
 panels:
   containers:
     type: containers
