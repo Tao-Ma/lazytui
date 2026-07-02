@@ -7,6 +7,11 @@
 'use strict';
 
 const { SchemaError } = require('./errors');
+// Dataflow fabric (docs/ports-and-wires.md) — parser→fabric is a clean
+// down-edge (fabric imports nothing back). Reused so the "valid parse kinds",
+// extract shape, and address grammar have a single source of truth.
+const { parseFabricAddr, isValidFabricName } = require('../fabric/address');
+const { compileParse, compileExtract } = require('../fabric/parse');
 
 const VALID_ACTION_TYPES = new Set(['run', 'spawn', 'background']);
 
@@ -37,12 +42,12 @@ const VALID_MOUSE_GESTURES = new Set(['double-click', 'right-click', 'middle-cli
 const VALID_MOUSE_INTENTS = new Set(['activate', 'context', 'noop']);
 const VALID_REGISTER_KEYS = new Set(['cap']);
 const VALID_FILE_KEYS   = new Set(['path', 'var', 'desc', 'exclude', 'category']);
-const VALID_GROUP_KEYS  = new Set(['label', 'compose', 'containers', 'actions', 'terminals', 'children', 'quick', 'archive', 'config_branch', 'images']);
+const VALID_GROUP_KEYS  = new Set(['label', 'compose', 'containers', 'actions', 'terminals', 'children', 'quick', 'archive', 'config_branch', 'images', 'wires']);
 const VALID_ARCHIVE_KEYS = new Set(['target', 'output_dir', 'name']);
 const VALID_CONFIG_BRANCH_KEYS = new Set(['branch', 'paths', 'excludes', 'source', 'categories']);
 const VALID_IMAGES_KEYS = new Set(['list', 'output_dir']);
 const VALID_TERMINAL_KEYS = new Set(['cmd', 'label']);
-const VALID_ACTION_KEYS = new Set(['cmd', 'script', 'label', 'type', 'confirm', 'args', 'default_cmd', 'desc', 'tab']);
+const VALID_ACTION_KEYS = new Set(['cmd', 'script', 'label', 'type', 'confirm', 'args', 'default_cmd', 'desc', 'tab', 'parse', 'ports']);
 
 function isMapping(v) {
   return v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -594,6 +599,10 @@ function validateGroup(gname, gdata, parentPath = '') {
     }
   }
 
+  // Fabric wires reference this group's action ports (same-group in P1), so
+  // validate after the actions above.
+  validateGroupWires(gdata, ctx);
+
   if (hasChildren) {
     const children = gdata.children;
     if (!isMapping(children) || Object.keys(children).length === 0) {
@@ -669,6 +678,99 @@ function validateAction(groupPath, aname, adata) {
   }
   if ('tab' in adata && typeof adata.tab !== 'boolean') {
     throw new SchemaError("'tab' must be a boolean", { context: ctx });
+  }
+
+  // Dataflow fabric (docs/ports-and-wires.md): an action that declares `parse`
+  // / `ports` is a fabric component (a producer and/or consumer).
+  if ('parse' in adata) {
+    try { compileParse(adata.parse); }
+    catch (e) { throw new SchemaError(`invalid 'parse': ${e.message}`, { context: ctx }); }
+  }
+  if ('ports' in adata) validateActionPorts(aname, adata.ports, ctx);
+}
+
+// Validate an action's `ports: { in?, out? }`. The action NAME is addressable
+// as `name.port`, so it must be a dot-free identifier (decision 4). Every port
+// carries a required `type` (the equality-match key); an output port projects
+// via `from` (defaults to the port name) OR a `{regex,group}` extract, not both.
+function validateActionPorts(aname, ports, ctx) {
+  if (!isMapping(ports)) throw new SchemaError("'ports' must be a mapping", { context: ctx });
+  if (!isValidFabricName(aname)) {
+    throw new SchemaError(
+      `action name '${aname}' declares ports, so it must be an identifier [A-Za-z_][A-Za-z0-9_]*`,
+      { context: ctx });
+  }
+  for (const dir of Object.keys(ports)) {
+    if (dir !== 'in' && dir !== 'out') {
+      throw new SchemaError(`'ports' keys must be 'in' or 'out', got '${dir}'`, { context: ctx });
+    }
+    const defs = ports[dir];
+    if (!isMapping(defs)) throw new SchemaError(`'ports.${dir}' must be a mapping`, { context: ctx });
+    for (const [pname, pdef] of Object.entries(defs)) {
+      const pctx = `${ctx}, port '${dir}.${pname}'`;
+      if (!isValidFabricName(pname)) {
+        throw new SchemaError("port name must be an identifier [A-Za-z_][A-Za-z0-9_]*", { context: pctx });
+      }
+      if (!isMapping(pdef)) throw new SchemaError("port must be a mapping", { context: pctx });
+      if (typeof pdef.type !== 'string' || !pdef.type) {
+        throw new SchemaError("'type' is required (a non-empty string — the wire equality-match key)", { context: pctx });
+      }
+      if ('desc' in pdef && typeof pdef.desc !== 'string') {
+        throw new SchemaError("'desc' must be a string", { context: pctx });
+      }
+      if (dir === 'out') {
+        const hasFrom = 'from' in pdef, hasExtract = 'extract' in pdef;
+        if (hasFrom && hasExtract) {
+          throw new SchemaError("an output port uses 'from' OR 'extract', not both", { context: pctx });
+        }
+        if (hasFrom && typeof pdef.from !== 'string') {
+          throw new SchemaError("'from' must be a string", { context: pctx });
+        }
+        if (hasExtract) {
+          try { compileExtract(pdef.extract); }
+          catch (e) { throw new SchemaError(`invalid 'extract': ${e.message}`, { context: pctx }); }
+        }
+      } else {
+        if ('required' in pdef && typeof pdef.required !== 'boolean') {
+          throw new SchemaError("'required' must be a boolean", { context: pctx });
+        }
+        if ('from' in pdef || 'extract' in pdef) {
+          throw new SchemaError("input ports don't take 'from' / 'extract'", { context: pctx });
+        }
+      }
+    }
+  }
+}
+
+// Validate a group's `wires: [{ from, to }]` — addresses parse (same-group
+// component.port), endpoints exist with the right direction, and the two ends'
+// types are string-equal (decision 1 / type model). Runs after the actions are
+// validated so the port declarations are present.
+function validateGroupWires(gdata, ctx) {
+  if (!('wires' in gdata)) return;
+  const wires = gdata.wires;
+  if (!Array.isArray(wires)) throw new SchemaError("'wires' must be a list", { context: ctx });
+  const actions = isMapping(gdata.actions) ? gdata.actions : {};
+  const portOf = (comp, port, dir) => {
+    const a = actions[comp];
+    const p = a && isMapping(a.ports) && isMapping(a.ports[dir]) ? a.ports[dir][port] : null;
+    return p && isMapping(p) ? p : null;
+  };
+  for (const w of wires) {
+    if (!isMapping(w) || typeof w.from !== 'string' || typeof w.to !== 'string') {
+      throw new SchemaError("each wire must be { from: <component.port>, to: <component.port> }", { context: ctx });
+    }
+    let f, t;
+    try { f = parseFabricAddr(w.from); } catch (e) { throw new SchemaError(`wire.from: ${e.message}`, { context: ctx }); }
+    try { t = parseFabricAddr(w.to);   } catch (e) { throw new SchemaError(`wire.to: ${e.message}`,   { context: ctx }); }
+    const fOut = portOf(f.component, f.port, 'out');
+    if (!fOut) throw new SchemaError(`wire.from '${w.from}' — no such output port in this group`, { context: ctx });
+    const tIn = portOf(t.component, t.port, 'in');
+    if (!tIn) throw new SchemaError(`wire.to '${w.to}' — no such input port in this group`, { context: ctx });
+    if (fOut.type !== tIn.type) {
+      throw new SchemaError(
+        `wire type mismatch: ${w.from} (${fOut.type}) → ${w.to} (${tIn.type})`, { context: ctx });
+    }
   }
 }
 

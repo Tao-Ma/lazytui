@@ -562,6 +562,10 @@ function walkGroups(rawGroups, varsBlock, helpersBlock, source, parent, depth, o
           default_cmd: adata.default_cmd !== undefined ? adata.default_cmd : null,
           desc:        adata.desc        !== undefined ? adata.desc        : null,
           tab: adata.tab === true,
+          // Dataflow fabric declarations (docs/ports-and-wires.md). Validated in
+          // schema.js; preserved here so the fabric host reads them off the config.
+          parse: adata.parse !== undefined ? adata.parse : null,
+          ports: adata.ports !== undefined ? adata.ports : null,
           script,
           containers,
           debug: {
