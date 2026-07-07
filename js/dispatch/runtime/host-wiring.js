@@ -32,6 +32,7 @@ function wirePanelHost() {
 // the focused group).
 function wireFabricHost() {
   const { setFabricHost } = require('../../fabric/ports');
+  const { mergeWires } = require('../../fabric/wires');
   const { getModel } = require('../../model/store');
   const api = require('../../panel/api');
 
@@ -58,10 +59,16 @@ function wireFabricHost() {
       const acts = api.getMergedActions(group());
       return Object.keys(acts).filter(k => acts[k] && acts[k].ports);
     },
+    // Config-authored wires MERGED with runtime wires (model.fabric.wires) — a
+    // runtime wire overrides a config wire to the same input (P1.5 pane wiring).
+    // Each result carries a `source` tag for the wire list. resolve.js reads only
+    // from/to, so the tag is inert there.
     wires() {
       const cfg = getModel().config;
       const g = cfg && cfg.groups && cfg.groups[group()];
-      return (g && g.wires) || [];
+      const configWires = (g && g.wires) || [];
+      const runtimeWires = (getModel().fabric && getModel().fabric.wires) || [];
+      return mergeWires(configWires, runtimeWires);
     },
   });
 }

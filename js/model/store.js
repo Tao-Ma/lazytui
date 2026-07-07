@@ -218,9 +218,14 @@ function init() {
     //     [group][component], captured on process close (fabric_output_set). The
     //     parse source for output ports — SEPARATE from the chrome/esc'd display
     //     buffer (actionTabBuffers), so JSON/kv/regex parse clean text.
-    // Wires live on the parsed config (per group), not here; port VALUES are
-    // derived selectors (js/fabric/ports.js), not stored.
-    fabric: { injects: {}, output: {} },
+    //   wires   — RUNTIME wires created interactively (the pane's "connect to…"
+    //     + wire-list edits), a flat [{ from, to }] list. Transient-in-model like
+    //     injects (session-only, rides the WAL, replayable) — the config file
+    //     stays purely user-authored. The fabric host MERGES these over the
+    //     config `wires:` (runtime overrides config per input; wire_create /
+    //     wire_delete). Config-authored wires still live on the parsed config.
+    // Port VALUES are derived selectors (js/fabric/ports.js), never stored.
+    fabric: { injects: {}, output: {}, wires: [] },
     // v0.6.6 Finding B — hub metrics time-series, keyed by topic, sampled in by
     // the throttled `metrics-mirror` Sub: { [topic]: { series:{rowKey:samples[]},
     // schema } }. The stats panel renders f(model.metrics[topic]) instead of

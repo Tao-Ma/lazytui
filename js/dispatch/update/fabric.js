@@ -17,10 +17,14 @@
  */
 'use strict';
 
-const TYPES = ['port_inject', 'port_clear', 'fabric_output_set'];
+const TYPES = ['port_inject', 'port_clear', 'fabric_output_set', 'wire_create', 'wire_delete'];
 
 function _withInjects(model, injects) {
   return { ...model, fabric: { ...(model.fabric || {}), injects } };
+}
+
+function _withWires(model, wires) {
+  return { ...model, fabric: { ...(model.fabric || {}), wires } };
 }
 
 function update(model, msg) {
@@ -49,6 +53,29 @@ function update(model, msg) {
       const next = { ...injects };
       delete next[msg.port];
       return [_withInjects(model, next), []];
+    }
+    case 'wire_create': {
+      // { from, to } — a RUNTIME wire (the pane's "connect to…"). Transient-in-
+      // model, WAL-replayable; the host merges it OVER config wires. One wire per
+      // input `to` (an input resolves a single wire), so a new wire to the same
+      // `to` REPLACES the prior runtime one — last-write-wins, like injects.
+      // Shape-guarded here; type-equality is validated at the handler (where the
+      // port types are in scope) so this stays a pure, dependency-light reducer.
+      if (typeof msg.from !== 'string' || !msg.from) return [model, []];
+      if (typeof msg.to !== 'string' || !msg.to) return [model, []];
+      const wires = (model.fabric && model.fabric.wires) || [];
+      const kept = wires.filter((w) => w && w.to !== msg.to);
+      return [_withWires(model, [...kept, { from: msg.from, to: msg.to }]), []];
+    }
+    case 'wire_delete': {
+      // { from, to } — remove a RUNTIME wire by exact endpoints; identity-preserve
+      // when absent (a config-authored wire isn't in this store, so deleting one
+      // is a no-op — config wires are user-authored on disk, not runtime-editable).
+      if (typeof msg.from !== 'string' || typeof msg.to !== 'string') return [model, []];
+      const wires = (model.fabric && model.fabric.wires) || [];
+      const kept = wires.filter((w) => !(w && w.from === msg.from && w.to === msg.to));
+      if (kept.length === wires.length) return [model, []];
+      return [_withWires(model, kept), []];
     }
     default:
       return [model, []];
