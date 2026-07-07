@@ -51,20 +51,44 @@ function _selectionName(paneId) {
   return typeof item === 'string' ? item : null;
 }
 
-function _resolveComponent(panel, slice) {
+// Resolves off the SLICE (not the arrange `panel`), so getItems — which only
+// receives the slice — resolves identically to render. `selectFrom`/`component`
+// are stashed from paneDef at init; `pinned` is a runtime pin (Slice D).
+function _resolveComponent(slice) {
   const fab = _fabricComponents();
   const ok = (n) => (n && fab.has(n) ? n : null);
+  if (!slice) return null;
   // 1. runtime pin (Slice D sets slice.pinned).
-  if (slice && slice.pinned && ok(slice.pinned)) return slice.pinned;
+  if (slice.pinned && ok(slice.pinned)) return slice.pinned;
   // 2. config-pinned single component.
-  if (panel.component && ok(panel.component)) return panel.component;
+  if (slice.component && ok(slice.component)) return slice.component;
   // 3. configured source pane (deterministic, like stats' select_from).
-  if (panel.select_from) { const n = ok(_selectionName(panel.select_from)); if (n) return n; }
+  if (slice.selectFrom) { const n = ok(_selectionName(slice.selectFrom)); if (n) return n; }
   // 4. follows-focus: the focused pane's selection (skip self so the inspector
   //    doesn't try to inspect its own rows).
   const focus = route.getFocus();
-  if (focus && focus !== panel.paneId) { const n = ok(_selectionName(focus)); if (n) return n; }
+  if (focus && focus !== slice.paneId) { const n = ok(_selectionName(focus)); if (n) return n; }
   return null;
+}
+
+// The current inspect context off the live model — shared by render + getItems.
+function _ctx() {
+  return {
+    injects: (getModel().fabric && getModel().fabric.injects) || {},
+    wires: listWires(),
+    portValue,
+  };
+}
+
+// Navigable rows = the input ports (the edit targets). getItems receives only
+// the slice, so it resolves the component the same way render does; the row
+// order matches inspectComponent().inputs (both walk Object.entries(in)). Run/
+// Clear + output rows are rendered by render() but are not navigated here.
+function getItems(slice) {
+  const name = _resolveComponent(slice);
+  if (!name) return [];
+  return inspectComponent(name, componentPorts(name), _ctx()).inputs
+    .map((r) => ({ ...r, addr: `${name}.${r.port}` }));
 }
 
 // ── Value formatting ───────────────────────────────────────────────────────
@@ -106,19 +130,15 @@ function render(panel, w, h, slice, opts) {
   const focused = !!(opts && opts.focused);
   const chrome = opts && opts.chrome;
 
-  const name = _resolveComponent(panel, slice);
+  const name = _resolveComponent(slice);
   if (!name) {
     return _renderEmpty(panel, w, h,
       '(no fabric component in focus — select one, configure select_from, or pin)',
       focused, chrome);
   }
 
-  const ctx = {
-    injects: (getModel().fabric && getModel().fabric.injects) || {},
-    wires: listWires(),
-    portValue,
-  };
-  const data = inspectComponent(name, componentPorts(name), ctx);
+  const data = inspectComponent(name, componentPorts(name), _ctx());
+  const sel = getSel(panel.paneId);   // cursor over the input rows
   const t = theme();
 
   // Column widths for the input/output tables (bounded so a long value doesn't
@@ -137,16 +157,23 @@ function render(panel, w, h, slice, opts) {
   lines.push(nameCell + ' '.repeat(gap) + badge);
   lines.push('');
 
-  // Operate-half — input ports.
+  // Operate-half — input ports (navigable; row order == getItems order).
   if (data.inputs.length) {
     lines.push(`[${t.dim}]in:[/]`);
-    for (const row of data.inputs) {
+    data.inputs.forEach((row, i) => {
       const val = _fmtValue(row.value);
-      const shown = val !== '' ? esc(val) : `[${t.dim}]${PLACEHOLDER}[/]`;
-      const ann = `[${t.dim}]${esc(_sourceLabel(row))}[/]`;
-      const req = row.required && row.value === undefined ? `[${t.dim}] *[/]` : '';
-      lines.push(`  ${esc(_pad(row.port, portW))}  [${t.dim}]${esc(_pad(row.type || '', typeW))}[/]  ${shown}  ${ann}${req}`);
-    }
+      const ann = _sourceLabel(row);
+      const req = row.required && row.value === undefined ? ' *' : '';
+      const body = `${_pad(row.port, portW)}  ${_pad(row.type || '', typeW)}  ${val !== '' ? val : PLACEHOLDER}  ${ann}${req}`;
+      if (focused && i === sel) {
+        // Selected row: plain text under [reverse]/selected, no inner markup
+        // (PRINCIPLES §8).
+        lines.push(`[${t.selected}]▸ ${esc(body)}`);
+      } else {
+        const shown = val !== '' ? esc(val) : `[${t.dim}]${PLACEHOLDER}[/]`;
+        lines.push(`  ${esc(_pad(row.port, portW))}  [${t.dim}]${esc(_pad(row.type || '', typeW))}[/]  ${shown}  [${t.dim}]${esc(ann)}${req}[/]`);
+      }
+    });
   }
 
   // Separator + action row (non-interactive in Slice B; C/D wire these).
@@ -170,7 +197,9 @@ function render(panel, w, h, slice, opts) {
     title: `${panel.title || 'Ports'}: ${esc(name)}`,
     hotkey: panel.hotkey,
     panelType: 'component-ports',
-    focused, chrome,
+    focused,
+    count: data.inputs.length ? [sel + 1, data.inputs.length] : null,
+    chrome,
   });
 }
 
@@ -182,11 +211,24 @@ function _visibleBadgeLen(data) {
 
 module.exports = {
   name: 'component-ports',
-  init: () => ({ nav: mnav.init(), pinned: null }),
+  // init-injection (#4): stash the pane's own paneId + the paneDef config
+  // (select_from / component) so getItems — which receives only the slice —
+  // resolves the inspected component identically to render.
+  init: (paneId, seed) => ({
+    nav: mnav.init(),
+    paneId,
+    pinned: null,
+    selectFrom: (seed && seed.paneDef && seed.paneDef.select_from) || null,
+    component: (seed && seed.paneDef && seed.paneDef.component) || null,
+  }),
   update: (msg, slice) => (mnav.isNavMsg(msg) ? mnav.apply(slice, msg) : slice),
   panelTypes: {
-    'component-ports': { render },
+    'component-ports': {
+      render,
+      getItems,
+      idOf: (row) => row.addr,
+    },
   },
   // Test-only internals.
-  _resolveComponent, _fmtValue, _sourceLabel,
+  _resolveComponent, _fmtValue, _sourceLabel, getItems,
 };

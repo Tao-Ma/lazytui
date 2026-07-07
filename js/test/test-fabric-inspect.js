@@ -135,8 +135,24 @@ describe('[fabric] component-ports pane render', () => {
   });
 
   it('_resolveComponent honours a runtime pin, ignores a non-fabric name', () => {
-    eq(pane._resolveComponent(panel, { pinned: 'xlogminer' }), 'xlogminer');
-    eq(pane._resolveComponent(panel, { pinned: 'not-a-component' }), null);
+    eq(pane._resolveComponent({ pinned: 'xlogminer' }), 'xlogminer');
+    eq(pane._resolveComponent({ pinned: 'not-a-component' }), null);
+  });
+
+  it('getItems returns the navigable input rows (order matches render)', () => {
+    const rows = pane.getItems({ pinned: 'xlogminer' });
+    eq(rows.length, 1, 'xlogminer has one input');
+    eq(rows[0].port, 'start_lsn');
+    eq(rows[0].addr, 'xlogminer.start_lsn', 'carries the fabric address for idOf/edit');
+    eq(pane.getItems({ pinned: null }).length, 0, 'no component → no rows');
+  });
+
+  it('init stashes paneDef config (select_from / component) into the slice', () => {
+    const s = pane.init('pane-x', { paneDef: { select_from: 'actions', component: 'xlogminer' } });
+    eq(s.paneId, 'pane-x');
+    eq(s.selectFrom, 'actions', 'select_from → slice.selectFrom (so getItems can resolve)');
+    eq(s.component, 'xlogminer');
+    eq(pane._resolveComponent(s), 'xlogminer', 'config-pinned component resolves off the slice');
   });
 
   it('_fmtValue: array → "N lines", object → "N fields", multiline → first + …', () => {
