@@ -415,8 +415,8 @@ safe channel), the `confirm.js` sub-reducer shape.
 
 **New (small), living in `js/fabric/`** (the DI seams that used to own `js/ports/` are now
 `js/hosts/`):
-1. `ports` declaration + the declarative parser (`kv` / `json` / `lines`) + per-port
-   `from` / `extract:{regex}`.
+1. `ports` declaration + the declarative parser (`kv` / `json` / `lines`; `fields`
+   regex-table added in P1.5) + per-port `from` / `extract:{regex}`.
 2. `portValue(component, port)` — memoized selector; `listPorts()` / `listWires()`.
 3. `parseFabricAddr` + `wires` in config + equality-validate + dot-free-name guard.
 4. Injects: `port_inject` / `port_clear` Msgs + a `confirm.js`-shaped sub-reducer +
@@ -424,15 +424,51 @@ safe channel), the `confirm.js` sub-reducer shape.
 5. The argv-template fill + pull-at-invoke resolution/readiness hook in `action-runner`
    (`spawn(…, { shell:false })`).
 6. `send_to_port` context-menu entry + handler + port-pick menu.
-7. **P1.5:** the component-ports pane (multi-field form widget, new panel kind) + the wire
-   list + the replay value-overlay + the regex-table parser + check-half UI.
+7. **P1.5 (shipped):** the component-ports pane (`panel/fabric/ports-pane.js`, new
+   `component-ports` panel kind) + the wire list (`panel/fabric/wire-list.js`,
+   `fabric-wires`) + the `fields` regex-table parser + check-half ✓/✗ + the runtime
+   wire store (`model.fabric.wires` + `fabric/wires.js#mergeWires`) + the in-grid
+   field editor (`fabricFieldMode` + `dispatch/update/modal/fabric-field.js`).
+   Replay-as-debugger fell out for free (a property — see below).
+
+## P1.5 — as shipped
+
+Landed on branch `fabric-groundwork` in seven slices (A runtime-wire store · B
+read-only inspector · C1 nav · C2 field-edit → inject · D connect-to wiring + Run
+· E wire-list · F `fields` parser + check-half · G replay property).
+
+- **Runtime wires.** Interactive wire creation (the pane's "connect to…" + the
+  wire list's delete) lives in a transient-in-model store `model.fabric.wires`,
+  mirroring injects (session-only, rides the WAL, replayable). The fabric host
+  MERGES it over the config `wires:` (`fabric/wires.js#mergeWires`, runtime
+  overrides config per input `to`, `source`-tagged); the config file stays purely
+  user-authored. `wire_create` / `wire_delete` are pure sub-reducer arms.
+- **Field editing = an inject**, via a dedicated in-grid edit mode
+  (`fabricFieldMode`, not the args-prompt — the fabric needs the RAW value never
+  re-parsed). Commit folds `applyInject` (the shared canonical write, also behind
+  `port_inject`) + closes the editor in one atomic reduction.
+- **Component-ports pane key map:** `↵` run the component (existing action
+  dispatch + pull-at-invoke) · `e` edit the selected input (→ inject) · `w`
+  connect it (compatible-producer picker → `wire_create`) · `x` clear its inject.
+  Follows-focus: runtime pin → config `component:` → `select_from` selection →
+  focused pane's selection. Row/component resolution needs model access, so the
+  keys claim + defer to `fabric_field_open` / `_clear` / `_connect_open` /
+  `fabric_run` effects (the pure `update` lacks model/focus).
+- **Check-half** shows whether each extract fired — ✓ matched · ✗ no match
+  (producer ran, field null) · — no value (not produced) — the reason the `fields`
+  table exists beyond DRY.
+- **Replay-as-debugger is a property, not a feature.** Port/wire values are pure
+  selectors over the model, and the whole fabric state (output + injects + wires)
+  rides the WAL as recorded root Msgs. Folding recorded history reconstructs the
+  model, so the two panes render correct values at every stepped frame with zero
+  fabric-specific replay code (locked by `test-fabric-replay.js`).
 
 ## Phasing
 
 | Phase | Scope | Status |
 |---|---|---|
-| **P1** | Fabric: ports (parse/project) · wires · injects · resolution/readiness · discovery · right-click send. Validated on the pg pipe **by config alone**. | not started |
-| **P1.5** | Interactive/observability: component-ports pane (hybrid instances) · wire list · replay-as-debugger · regex-table + check-half UI. | not started |
+| **P1** | Fabric: ports (parse/project) · wires · injects · resolution/readiness · discovery · right-click send. Validated on the pg pipe **by config alone**. | shipped (branch `fabric-groundwork`) |
+| **P1.5** | Interactive/observability: component-ports pane (hybrid instances) · wire list · replay-as-debugger · regex-table + check-half UI. | shipped (branch `fabric-groundwork`) |
 | **P2** | Agent as a fabric node — reads ports (resources), invokes consumers (tools), proposes/creates wires; value-feed = an inject. Provider-agnostic, OpenAI SDK behind a swap seam. | not started |
 | **P3** | Reactive push/subscribe — consumers re-run when a required input changes (readiness + "≥1 changed"); auto-run upstream. | not started |
 | **P4** | Optional: serialise the port registry over MCP for external clients. | not started |

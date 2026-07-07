@@ -62,7 +62,11 @@ function resolveInputs(consumerName, inputs, ctx) {
       let fv, fromComp = from;
       try { const a = parseFabricAddr(from); fromComp = a.component; fv = portValue(a.component, a.port); }
       catch { fv = undefined; }
-      if (fv !== undefined) {
+      // `!= null`: a `fields`/extract no-match projects to null — treat it as
+      // "upstream produced nothing" (fall through to default / readiness error),
+      // not a real bound value. A falsy "" / 0 IS real (both != null). Aligns with
+      // the inspector/wire-list `present` rule (L6 + P1.5 review).
+      if (fv != null) {
         values[name] = fv;
         sources[name] = 'wire';
         continue;

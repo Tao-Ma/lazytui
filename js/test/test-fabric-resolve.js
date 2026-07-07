@@ -72,6 +72,26 @@ describe('[fabric-resolve] readiness errors', () => {
     assert(m && /controldata\.redo_lsn has no value yet — run controldata first/.test(m.reason), m && m.reason);
   });
 
+  it('a null upstream (fields no-match) falls through like undefined, not ready', () => {
+    // P1.5 review — the `fields` parser projects null on no-match; resolve must
+    // treat it as absent (`!= null`), agreeing with the inspector/wire-list.
+    const r = resolveInputs('xlogminer', { start_lsn: { type: 'pg.lsn', required: true } }, {
+      wires: WIRES, portValue: pv(null),
+    });
+    assert(!r.ready, 'null upstream is not a bound value');
+    assert(r.missing.some(x => x.port === 'start_lsn'));
+  });
+
+  it('a falsy 0 / "" UPSTREAM value on a wire IS honored (real value, != null)', () => {
+    for (const real of [0, '']) {
+      const r = resolveInputs('xlogminer', { start_lsn: { type: 'pg.lsn', required: true } }, {
+        wires: WIRES, portValue: () => real,
+      });
+      eq(r.values.start_lsn, real);
+      eq(r.sources.start_lsn, 'wire');
+    }
+  });
+
   it('an undefined-valued inject does not shadow a working wire (L6)', () => {
     const r = resolveInputs('xlogminer', { start_lsn: { type: 'pg.lsn', required: true } }, {
       injects: { 'xlogminer.start_lsn': { value: undefined } },

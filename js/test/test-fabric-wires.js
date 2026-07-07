@@ -94,6 +94,13 @@ describe('[fabric] wire_create', () => {
     eq(m2.fabric.wires.length, 2);
   });
 
+  it('re-creating the identical sole edge is a no-op (identity-preserved)', () => {
+    const m = freshModel();
+    const [m1] = runtime.update(m, { type: 'wire_create', from: A, to: B });
+    const [m2] = runtime.update(m1, { type: 'wire_create', from: A, to: B });
+    assert(m2 === m1, 'no churn on an identical re-wire');
+  });
+
   it('ignores a non-string / empty endpoint (no-op, same ref)', () => {
     const m = freshModel();
     const [a] = runtime.update(m, { type: 'wire_create', from: A, to: '' });

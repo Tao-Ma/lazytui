@@ -74,6 +74,10 @@ function update(model, msg) {
       if (typeof msg.from !== 'string' || !msg.from) return [model, []];
       if (typeof msg.to !== 'string' || !msg.to) return [model, []];
       const wires = (model.fabric && model.fabric.wires) || [];
+      // Identity-preserve when re-creating the exact edge that's already the sole
+      // wire for this input (no churn/re-render on a no-op re-wire).
+      const forTo = wires.filter((w) => w && w.to === msg.to);
+      if (forTo.length === 1 && forTo[0].from === msg.from) return [model, []];
       const kept = wires.filter((w) => w && w.to !== msg.to);
       return [_withWires(model, [...kept, { from: msg.from, to: msg.to }]), []];
     }

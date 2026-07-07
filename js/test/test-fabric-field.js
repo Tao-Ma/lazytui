@@ -119,9 +119,22 @@ describe('[fabric-field] pane key-claim', () => {
     assert(cmds.some((c) => c.type === 'fabric_field_clear'), 'clear effect');
   });
 
+  it('p claims + emits fabric_pin_toggle', () => {
+    const [, cmds] = pane.update({ type: 'key', key: 'p' }, slice);
+    assert(claimed(cmds));
+    assert(cmds.some((c) => c.type === 'fabric_pin_toggle'), 'pin toggle effect');
+  });
+
   it('an unclaimed key returns the slice unchanged (falls through)', () => {
     const out = pane.update({ type: 'key', key: 'g' }, slice);
     assert(out === slice, 'no claim, framework handles it');
+  });
+
+  it('fabric_pin sets / clears slice.pinned (the runtime pin)', () => {
+    const pinned = pane.update({ type: 'fabric_pin', name: 'xlogminer' }, { paneId: 'p', pinned: null });
+    eq(pinned.pinned, 'xlogminer', 'pin to the resolved component');
+    const unpinned = pane.update({ type: 'fabric_pin', name: null }, { paneId: 'p', pinned: 'xlogminer' });
+    eq(unpinned.pinned, null, 'unpin → back to follows-focus');
   });
 });
 

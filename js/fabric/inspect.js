@@ -86,7 +86,10 @@ function inspectWires(wires, portValue) {
   return (wires || []).map((w) => {
     const dot = String(w.from).indexOf('.');
     const value = dot > 0 ? pv(w.from.slice(0, dot), w.from.slice(dot + 1)) : undefined;
-    return { from: w.from, to: w.to, source: w.source || 'config', value, present: value !== undefined };
+    // `!= null`: a `fields`/extract no-match projects to null — ABSENT, same as
+    // undefined (⚠ upstream unset). Matches inspectComponent + resolve.js so the
+    // wire-list, the check-half, and the readiness gate agree.
+    return { from: w.from, to: w.to, source: w.source || 'config', value, present: value != null };
   });
 }
 

@@ -168,12 +168,14 @@ function render(panel, w, h, slice, opts) {
     });
   }
 
-  // Separator + affordance hints (Enter run · e edit → inject · w wire · x clear).
+  // Separator + affordance hints (Enter run · e edit → inject · w wire · x clear
+  // · p pin/unpin). Pin state also shows in the title.
+  const pinHint = slice && slice.pinned ? 'p unpin' : 'p pin';
   lines.push(`  [${t.dim}]${'─'.repeat(Math.min(12, w - 4))}[/]`);
   if (data.inputs.length) {
-    lines.push(`  [${t.dim}]${esc('↵ run · e edit · w wire · x clear')}[/]`);
+    lines.push(`  [${t.dim}]${esc(`↵ run · e edit · w wire · x clear · ${pinHint}`)}[/]`);
   } else {
-    lines.push(`  [${t.dim}]${esc('↵ run')}[/]`);
+    lines.push(`  [${t.dim}]${esc(`↵ run · ${pinHint}`)}[/]`);
   }
 
   // Check-half — output ports. Shows whether each extract FIRED (the authoring
@@ -200,7 +202,7 @@ function render(panel, w, h, slice, opts) {
 
   return renderPanel({
     width: w, height: h, lines,
-    title: `${panel.title || 'Ports'}: ${esc(name)}`,
+    title: `${panel.title || 'Ports'}: ${esc(name)}${slice && slice.pinned ? ' (pinned)' : ''}`,
     hotkey: panel.hotkey,
     panelType: 'component-ports',
     focused,
@@ -223,17 +225,22 @@ function _visibleBadgeLen(data) {
 // nav Msgs (handled by mnav) and are NOT claimed.
 function update(msg, slice) {
   if (mnav.isNavMsg(msg)) return mnav.apply(slice, msg);
+  // Runtime pin toggle (routed back from the fabric_pin_toggle effect, which
+  // resolved the current component). `name` null → unpin (back to follows-focus).
+  if (msg && msg.type === 'fabric_pin') return { ...slice, pinned: msg.name || null };
   if (msg && msg.type === 'key') {
     const cursor = mnav.cursorOf(slice, 'component-ports');
     const claim = (cmd) => [slice, [{ type: '_claimed' }, cmd]];
     // Enter runs the component (lazytui's Enter=activate); e edits the selected
-    // input (→ inject); w wires it; x clears its inject. All claim the key so the
-    // framework default doesn't also fire. Row/component resolution needs model
-    // access, so each defers to an effect (see installEffects).
+    // input (→ inject); w wires it; x clears its inject; p pins/unpins the pane to
+    // the current component. All claim the key so the framework default doesn't
+    // also fire. Row/component resolution needs model access, so each defers to an
+    // effect (see installEffects).
     if (msg.key === 'return') return claim({ type: 'fabric_run', paneId: slice.paneId });
     if (msg.key === 'e') return claim({ type: 'fabric_field_open', paneId: slice.paneId, cursor });
     if (msg.key === 'x') return claim({ type: 'fabric_field_clear', paneId: slice.paneId, cursor });
     if (msg.key === 'w') return claim({ type: 'fabric_connect_open', paneId: slice.paneId, cursor });
+    if (msg.key === 'p') return claim({ type: 'fabric_pin_toggle', paneId: slice.paneId });
   }
   return slice;
 }
@@ -282,6 +289,16 @@ function installEffects(registerEffect) {
     const slice = route.getInstanceSlice(eff.paneId);
     const name = slice && _resolveComponent(slice);
     if (name && host.runActionByKey) host.runActionByKey(name);
+  });
+  // Pin/unpin the pane to a component (the hybrid "workbench" — freeze the
+  // inspector on one component while navigating elsewhere). Toggle: if already
+  // pinned, unpin (null → follows-focus); else pin to the currently resolved
+  // component. Routed back as a fabric_pin Component Msg (a slice write).
+  registerEffect('fabric_pin_toggle', (eff, host) => {
+    const slice = route.getInstanceSlice(eff.paneId);
+    if (!slice) return;
+    const name = slice.pinned ? null : _resolveComponent(slice);
+    host.dispatchMsg(host.wrap(eff.paneId, { type: 'fabric_pin', name }));
   });
 }
 

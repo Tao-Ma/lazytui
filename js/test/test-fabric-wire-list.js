@@ -30,6 +30,16 @@ describe('[fabric] inspectWires (pure)', () => {
     eq(inspectWires([{ from: 'a.b', to: 'c.d' }], pv)[0].source, 'config');
     eq(inspectWires().length, 0);
   });
+
+  it('a null upstream (fields no-match) is absent, not present (P1.5 review)', () => {
+    const rows = inspectWires([{ from: 'p.lsn', to: 'c.in' }], () => null);
+    eq(rows[0].present, false, 'null → ⚠ upstream unset, agreeing with the check-half');
+  });
+
+  it('a falsy 0 / "" upstream value IS present (real value)', () => {
+    eq(inspectWires([{ from: 'p.x', to: 'c.in' }], () => 0)[0].present, true);
+    eq(inspectWires([{ from: 'p.x', to: 'c.in' }], () => '')[0].present, true);
+  });
 });
 
 // ── Pane render + delete over the real host ─────────────────────────────────
