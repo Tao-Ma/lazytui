@@ -67,4 +67,47 @@ describe('[fabric-menu] handlers', () => {
   });
 });
 
+// Wiring from the component-ports pane's "connect to…" (P1.5 slice D). The picker
+// only offers compatible producers, but the wire_create handler validates
+// type-equality defensively (a P2 agent could emit the verb).
+function seedWire() {
+  const m = init();
+  m.currentGroup = 'pg';
+  m.config = { groups: { pg: { label: 'pg', actions: {
+    controldata: {
+      label: 'cd', run: ['pg_controldata'],
+      ports: { out: { redo_lsn: { type: 'pg.lsn' }, tli: { type: 'pg.tli' } } },
+    },
+    xlogminer: {
+      label: 'xm', run: ['xlogminer', '{{start_lsn}}'],
+      ports: { in: { start_lsn: { type: 'pg.lsn', required: true } } },
+    },
+  } } } };
+  setModel(m);
+  wireFabricHost();
+}
+
+describe('[fabric-menu] wire_create handler', () => {
+  it('creates a runtime wire for a type-compatible pick', () => {
+    seedWire();
+    handleAction('wire_create', { from: 'controldata.redo_lsn', to: 'xlogminer.start_lsn' });
+    const wires = getModel().fabric.wires;
+    eq(wires.length, 1);
+    eq(wires[0].from, 'controldata.redo_lsn');
+    eq(wires[0].to, 'xlogminer.start_lsn');
+  });
+
+  it('refuses a type-mismatched wire (error-and-tell, no wire)', () => {
+    seedWire();
+    handleAction('wire_create', { from: 'controldata.tli', to: 'xlogminer.start_lsn' }); // pg.tli → pg.lsn
+    eq(getModel().fabric.wires.length, 0, 'mismatch not created');
+  });
+
+  it('ignores a malformed arg', () => {
+    seedWire();
+    handleAction('wire_create', { from: 'controldata.redo_lsn' });   // no `to`
+    eq(getModel().fabric.wires.length, 0);
+  });
+});
+
 report();

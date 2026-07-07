@@ -58,6 +58,10 @@ function _effectHost() {
       refreshAll: api.refreshAll, cleanup, showHelp,
       // v0.6.6 replay arc — the record-* cmdline verbs call these through the host.
       recordSave: rc.save, recordLoad: rc.load, recordStop: rc.stop,
+      // P1.5 — run an action by its key (the full run path: confirm-gating +
+      // fabric input resolution/readiness). Lets the component-ports pane's
+      // "Run" trigger the existing dispatch without importing dispatch upward.
+      runActionByKey: (key) => require('../control/actions')._runActionByKey(key),
     };
   }
   return _host;

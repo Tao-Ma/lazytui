@@ -413,6 +413,27 @@ function handleAction(action, arg) {
       // primitive). Sticky inject → resolves at the consumer's next run.
       if (arg && arg.port) applyMsg({ type: 'port_inject', port: arg.port, value: arg.value });
       break;
+    case 'wire_create': {
+      // The component-ports pane's "connect to…" pick — create a RUNTIME wire
+      // from a producer output to the selected input. The picker is compatible-
+      // first, but validate type-equality here too (wires are the typed edge; a
+      // P2 agent could emit this verb): mismatch → error-and-tell, no wire.
+      if (!arg || !arg.from || !arg.to) break;
+      const ports = require('../../fabric/ports').listPorts();
+      const typeOf = (addr, dir) => {
+        const [c, p] = String(addr).split('.');
+        const hit = ports.find(x => x.component === c && x.port === p && x.dir === dir);
+        return hit ? hit.type : undefined;
+      };
+      const ft = typeOf(arg.from, 'out'), tt = typeOf(arg.to, 'in');
+      if (ft !== undefined && tt !== undefined && ft !== tt) {
+        require('../../io/diag-log').warn('fabric_wire_type',
+          `wire type mismatch: ${arg.from} (${ft}) → ${arg.to} (${tt}) — not created`);
+        break;
+      }
+      applyMsg({ type: 'wire_create', from: arg.from, to: arg.to });
+      break;
+    }
     case 'ctx_run_action':
       // A YAML `context-menu:` entry declared with `action:` — run the
       // configured action by its short key, the SAME path the leader

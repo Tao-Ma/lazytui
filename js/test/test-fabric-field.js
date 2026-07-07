@@ -90,19 +90,32 @@ describe('[fabric-field] enter / key / submit', () => {
 
 describe('[fabric-field] pane key-claim', () => {
   const slice = { paneId: 'p', nav: { cursor: 2, scroll: 0, multiSel: new Set(), filter: '' } };
+  const claimed = (cmds) => cmds.some((c) => c.type === '_claimed');
 
-  it('Enter claims + emits fabric_field_open for the cursor row', () => {
+  it('Enter claims + emits fabric_run (run the component)', () => {
     const [, cmds] = pane.update({ type: 'key', key: 'return' }, slice);
-    assert(cmds.some((c) => c.type === '_claimed'), 'claims Enter (suppresses run_selected)');
+    assert(claimed(cmds), 'claims Enter (suppresses run_selected default)');
+    const run = cmds.find((c) => c.type === 'fabric_run');
+    assert(run && run.paneId === 'p', 'emits the run effect');
+  });
+
+  it('e claims + emits fabric_field_open for the cursor row (edit → inject)', () => {
+    const [, cmds] = pane.update({ type: 'key', key: 'e' }, slice);
+    assert(claimed(cmds));
     const open = cmds.find((c) => c.type === 'fabric_field_open');
     assert(open, 'emits the resolve effect');
-    eq(open.paneId, 'p');
     eq(open.cursor, 2, 'carries the current cursor');
+  });
+
+  it('w claims + emits fabric_connect_open (connect to…)', () => {
+    const [, cmds] = pane.update({ type: 'key', key: 'w' }, slice);
+    assert(claimed(cmds));
+    assert(cmds.some((c) => c.type === 'fabric_connect_open'), 'wire picker effect');
   });
 
   it('x claims + emits fabric_field_clear', () => {
     const [, cmds] = pane.update({ type: 'key', key: 'x' }, slice);
-    assert(cmds.some((c) => c.type === '_claimed'));
+    assert(claimed(cmds));
     assert(cmds.some((c) => c.type === 'fabric_field_clear'), 'clear effect');
   });
 

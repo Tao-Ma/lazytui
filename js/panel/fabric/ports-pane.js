@@ -186,9 +186,13 @@ function render(panel, w, h, slice, opts) {
     });
   }
 
-  // Separator + action row (non-interactive in Slice B; C/D wire these).
+  // Separator + affordance hints (Enter run · e edit → inject · w wire · x clear).
   lines.push(`  [${t.dim}]${'─'.repeat(Math.min(12, w - 4))}[/]`);
-  lines.push(`  [${t.dim}]▸ Run    ▸ Clear[/]`);
+  if (data.inputs.length) {
+    lines.push(`  [${t.dim}]${esc('↵ run · e edit · w wire · x clear')}[/]`);
+  } else {
+    lines.push(`  [${t.dim}]${esc('↵ run')}[/]`);
+  }
 
   // Check-half — output ports.
   if (data.outputs.length) {
@@ -229,12 +233,15 @@ function update(msg, slice) {
   if (mnav.isNavMsg(msg)) return mnav.apply(slice, msg);
   if (msg && msg.type === 'key') {
     const cursor = mnav.cursorOf(slice, 'component-ports');
-    if (msg.key === 'return') {
-      return [slice, [{ type: '_claimed' }, { type: 'fabric_field_open', paneId: slice.paneId, cursor }]];
-    }
-    if (msg.key === 'x') {
-      return [slice, [{ type: '_claimed' }, { type: 'fabric_field_clear', paneId: slice.paneId, cursor }]];
-    }
+    const claim = (cmd) => [slice, [{ type: '_claimed' }, cmd]];
+    // Enter runs the component (lazytui's Enter=activate); e edits the selected
+    // input (→ inject); w wires it; x clears its inject. All claim the key so the
+    // framework default doesn't also fire. Row/component resolution needs model
+    // access, so each defers to an effect (see installEffects).
+    if (msg.key === 'return') return claim({ type: 'fabric_run', paneId: slice.paneId });
+    if (msg.key === 'e') return claim({ type: 'fabric_field_open', paneId: slice.paneId, cursor });
+    if (msg.key === 'x') return claim({ type: 'fabric_field_clear', paneId: slice.paneId, cursor });
+    if (msg.key === 'w') return claim({ type: 'fabric_connect_open', paneId: slice.paneId, cursor });
   }
   return slice;
 }
@@ -257,6 +264,32 @@ function installEffects(registerEffect) {
   registerEffect('fabric_field_clear', (eff, host) => {
     const row = rowAt(eff.paneId, eff.cursor);
     if (row) host.applyMsg({ type: 'port_clear', port: row.addr });
+  });
+  // "connect to…" — summon the global producer-port picker (menu.js), compatible-
+  // first (only type-matching outputs; wires are the TYPED edge). Selecting one
+  // emits wire_create via the menu's handleAction verb. Subsumes a standalone
+  // ports overlay (decision 6). Global listPorts → a follows-focus pane can wire
+  // to any producer.
+  registerEffect('fabric_connect_open', (eff, host) => {
+    const row = rowAt(eff.paneId, eff.cursor);
+    if (!row) return;
+    const to = row.addr;
+    const producers = listPorts().filter((p) => p.dir === 'out' && p.type === row.type);
+    const items = producers.length
+      ? producers.map((p) => {
+        const from = `${p.component}.${p.port}`;
+        return [`${from} (${p.type})`, 'wire_create', { from, to }];
+      })
+      : [[`(no producer port of type ${row.type || '?'})`, 'noop', null]];
+    host.applyMsg({ type: 'menu_open', items, title: `Wire → ${to}` });
+  });
+  // Run the inspected component — the existing action dispatch (pull-at-invoke
+  // resolves its inputs; readiness errors-and-tells). No new run path (decision
+  // 5). Resolves the component off the slice; needs the run seam on the host.
+  registerEffect('fabric_run', (eff, host) => {
+    const slice = route.getInstanceSlice(eff.paneId);
+    const name = slice && _resolveComponent(slice);
+    if (name && host.runActionByKey) host.runActionByKey(name);
   });
 }
 
