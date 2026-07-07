@@ -30,6 +30,7 @@ const {
 const route = require('../route');
 const { listPorts, portValue, listWires, componentPorts } = require('../../fabric/ports');
 const { inspectComponent } = require('../../fabric/inspect');
+const { fmtValue: _fmtValue, sourceLabel: _sourceLabel } = require('./format');
 
 // ── Component-name resolution ──────────────────────────────────────────────
 // Precedence: runtime pin → config-pinned → configured source pane's selection
@@ -89,26 +90,6 @@ function getItems(slice) {
   if (!name) return [];
   return inspectComponent(name, componentPorts(name), _ctx()).inputs
     .map((r) => ({ ...r, addr: `${name}.${r.port}` }));
-}
-
-// ── Value formatting ───────────────────────────────────────────────────────
-function _fmtValue(v) {
-  if (v === undefined || v === null) return '';
-  if (Array.isArray(v)) return `${v.length.toLocaleString()} line${v.length === 1 ? '' : 's'}`;
-  if (typeof v === 'object') { const n = Object.keys(v).length; return `{${n} field${n === 1 ? '' : 's'}}`; }
-  const s = String(v);
-  const nl = s.indexOf('\n');
-  return nl >= 0 ? `${s.slice(0, nl)} …` : s;
-}
-
-// Source annotation shown after an input's value.
-function _sourceLabel(row) {
-  switch (row.source) {
-    case 'inject':  return '(inject)';
-    case 'wire':    return row.wireFrom ? `← ${row.wireFrom}` : '← wire';
-    case 'default': return 'default';
-    default:        return '(unset)';
-  }
 }
 
 // ── Rendering ────────────────────────────────────────────────────────────────
@@ -315,5 +296,5 @@ module.exports = {
     },
   },
   // Test-only internals.
-  _resolveComponent, _fmtValue, _sourceLabel, getItems,
+  _resolveComponent, getItems,
 };

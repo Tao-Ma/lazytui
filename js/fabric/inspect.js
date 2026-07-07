@@ -69,4 +69,20 @@ function inspectComponent(name, ports, ctx) {
   return { name, ready: res.ready, missing: res.missing, inputs, outputs };
 }
 
-module.exports = { inspectComponent };
+/**
+ * inspectWires(wires, portValue) → [{ from, to, source, value, present }]
+ * The wire-list pane's row model: each edge annotated with the value currently on
+ * it (the producer output's portValue) + a `present` flag (⚠ upstream unset when
+ * false). `source` ('config' | 'runtime') rides through from mergeWires so the
+ * list can show provenance + gate delete. Pure (portValue injected).
+ */
+function inspectWires(wires, portValue) {
+  const pv = portValue || (() => undefined);
+  return (wires || []).map((w) => {
+    const dot = String(w.from).indexOf('.');
+    const value = dot > 0 ? pv(w.from.slice(0, dot), w.from.slice(dot + 1)) : undefined;
+    return { from: w.from, to: w.to, source: w.source || 'config', value, present: value !== undefined };
+  });
+}
+
+module.exports = { inspectComponent, inspectWires };

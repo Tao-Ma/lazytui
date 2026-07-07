@@ -10,6 +10,7 @@
 
 const { describe, it, eq, assert, report } = require('./test-runner');   // auto-wires panel-host
 const { inspectComponent } = require('../fabric/inspect');
+const fmt = require('../panel/fabric/format');
 
 describe('[fabric] inspectComponent (pure)', () => {
   const ports = {
@@ -155,21 +156,21 @@ describe('[fabric] component-ports pane render', () => {
     eq(pane._resolveComponent(s), 'xlogminer', 'config-pinned component resolves off the slice');
   });
 
-  it('_fmtValue: array → "N lines", object → "N fields", multiline → first + …', () => {
-    eq(pane._fmtValue(undefined), '');
-    eq(pane._fmtValue(['a', 'b', 'c']), '3 lines');
-    eq(pane._fmtValue(['x']), '1 line');
-    eq(pane._fmtValue({ a: 1, b: 2 }), '{2 fields}');
-    eq(pane._fmtValue('0/1A2B3C0'), '0/1A2B3C0');
-    eq(pane._fmtValue('line1\nline2'), 'line1 …');
+  it('fmtValue: array → "N lines", object → "N fields", multiline → first + …', () => {
+    eq(fmt.fmtValue(undefined), '');
+    eq(fmt.fmtValue(['a', 'b', 'c']), '3 lines');
+    eq(fmt.fmtValue(['x']), '1 line');
+    eq(fmt.fmtValue({ a: 1, b: 2 }), '{2 fields}');
+    eq(fmt.fmtValue('0/1A2B3C0'), '0/1A2B3C0');
+    eq(fmt.fmtValue('line1\nline2'), 'line1 …');
   });
 
-  it('_sourceLabel: wire shows the producer, others their kind', () => {
-    eq(pane._sourceLabel({ source: 'wire', wireFrom: 'controldata.redo_lsn' }), '← controldata.redo_lsn');
-    eq(pane._sourceLabel({ source: 'wire', wireFrom: null }), '← wire');
-    eq(pane._sourceLabel({ source: 'inject' }), '(inject)');
-    eq(pane._sourceLabel({ source: 'default' }), 'default');
-    eq(pane._sourceLabel({ source: null }), '(unset)');
+  it('sourceLabel: wire shows the producer, others their kind', () => {
+    eq(fmt.sourceLabel({ source: 'wire', wireFrom: 'controldata.redo_lsn' }), '← controldata.redo_lsn');
+    eq(fmt.sourceLabel({ source: 'wire', wireFrom: null }), '← wire');
+    eq(fmt.sourceLabel({ source: 'inject' }), '(inject)');
+    eq(fmt.sourceLabel({ source: 'default' }), 'default');
+    eq(fmt.sourceLabel({ source: null }), '(unset)');
   });
 });
 

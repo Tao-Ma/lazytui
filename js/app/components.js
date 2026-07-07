@@ -23,6 +23,7 @@ const BUILTIN_COMPONENTS = [
   require('../panel/viewer/viewer'),   // detail (the viewer)
   require('../panel/navigator/groups'),
   require('../panel/fabric/ports-pane'),   // component-ports (dataflow fabric, P1.5)
+  require('../panel/fabric/wire-list'),    // fabric-wires (global edge view, P1.5)
 ];
 
 module.exports = { BUILTIN_COMPONENTS };
