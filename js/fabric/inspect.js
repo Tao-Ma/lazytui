@@ -16,12 +16,14 @@ const { resolveInputs } = require('./resolve');
 
 /**
  * inspectComponent(name, ports, ctx) →
- *   { name, ready, missing:[{port,reason}],
+ *   { name, ready, ranOutput, missing:[{port,reason}],
  *     inputs:  [{ port, type, required, value, source, wireFrom, reason }],
  *     outputs: [{ port, type, desc, value, present }] }
  *
  *   ports — the component's declared `{ in?, out? }` map (fabric.componentPorts).
- *   ctx   — { injects, wires, portValue } (same shape resolveInputs consumes).
+ *   ctx   — { injects, wires, portValue, hasOutput? } (resolveInputs' shape +
+ *           an optional hasOutput(name) so the check-half distinguishes a field
+ *           that didn't match (ran, null) from one not produced yet (empty)).
  *
  * inputs mirror resolveInputs: `source` is 'inject' | 'wire' | 'default' | null
  * (unresolved), `wireFrom` the producer address when a wire is the source (so the
@@ -62,11 +64,14 @@ function inspectComponent(name, ports, ctx) {
       type: (def && def.type) || null,
       desc: (def && def.desc) || null,
       value,
-      present: value !== undefined,
+      // null (a `fields`/extract no-match) counts as ABSENT, same as undefined —
+      // the check-half shows ✗/— for both, ✓ only for a real value.
+      present: value != null,
     };
   });
 
-  return { name, ready: res.ready, missing: res.missing, inputs, outputs };
+  const ranOutput = ctx && typeof ctx.hasOutput === 'function' ? !!ctx.hasOutput(name) : undefined;
+  return { name, ready: res.ready, ranOutput, missing: res.missing, inputs, outputs };
 }
 
 /**

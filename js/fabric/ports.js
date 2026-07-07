@@ -116,4 +116,9 @@ function componentPorts(name) {
   return (spec && spec.ports) || null;
 }
 
-module.exports = { setFabricHost, parsed, portValue, listPorts, listWires, componentPorts };
+/** True when a component has produced output (its run captured lines) — lets the
+ *  check-half tell "✗ regex no-match" (ran, field null) from "— no value" (not
+ *  run yet). */
+function hasOutput(name) { return h().componentLines(name) != null; }
+
+module.exports = { setFabricHost, parsed, portValue, listPorts, listWires, componentPorts, hasOutput };

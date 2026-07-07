@@ -31,8 +31,22 @@ function compileParse(spec) {
   if (spec.lines === true) {
     return (text) => splitLines(text);
   }
+  if (spec.fields && typeof spec.fields === 'object' && !Array.isArray(spec.fields)) {
+    // The DRY regex TABLE (P1.5) — `fields: { name: {regex, group?} }` compiles to
+    // a record `{ name: value|null }`, one extractor per field. null marks a field
+    // whose regex didn't match, which the component-ports pane's check-half renders
+    // as ✗ no-match (the reason this exists beyond DRY — decision 3). Each field's
+    // regex is validated (compiled) here, so a bad pattern is a load error.
+    const compiled = Object.entries(spec.fields).map(([name, fspec]) => [name, compileExtract(fspec)]);
+    return (text) => {
+      const s = String(text == null ? '' : text);
+      const out = {};
+      for (const [name, fn] of compiled) out[name] = fn(s);
+      return out;
+    };
+  }
   throw new Error(
-    `fabric parse: unknown kind (expected kv / json / lines) in ${JSON.stringify(spec)}`);
+    `fabric parse: unknown kind (expected kv / json / lines / fields) in ${JSON.stringify(spec)}`);
 }
 
 /** Split text into lines, dropping a single trailing empty line from a

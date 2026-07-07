@@ -55,6 +55,25 @@ describe('[fabric] parse: lines', () => {
   });
 });
 
+describe('[fabric] parse: fields (regex table, P1.5)', () => {
+  const parse = compileParse({ fields: {
+    redo_lsn: { regex: "REDO location:\\s*(\\S+)" },
+    tli:      { regex: "TimeLineID:\\s*(\\d+)" },   // not present in the fixture
+  } });
+  const rec = parse(CONTROLDATA);
+  it('extracts each field via its own regex into one record', () => {
+    eq(rec.redo_lsn, '0/1A2B3C0');
+  });
+  it('a field whose regex does not match is null (→ check-half ✗ no-match)', () => {
+    eq(rec.tli, null);
+    assert('tli' in rec, 'the field is present as null, not omitted');
+  });
+  it('a bad field regex throws at compile (load-time error)', () => {
+    assert(throws(() => compileParse({ fields: { x: { regex: '(' } } })), 'unbalanced regex');
+    assert(throws(() => compileParse({ fields: { x: { notaregex: true } } })), 'missing regex');
+  });
+});
+
 describe('[fabric] compileParse errors', () => {
   it('throws on unknown kind', () => {
     assert(throws(() => compileParse({ toml: true })), 'unknown kind');

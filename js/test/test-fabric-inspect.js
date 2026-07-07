@@ -69,6 +69,25 @@ describe('[fabric] inspectComponent (pure)', () => {
     eq(d3.outputs.length, 0);
     assert(d3.ready, 'no required inputs → ready');
   });
+
+  it('check-half: null (no-match) counts as absent; ranOutput separates ✗ from —', () => {
+    const outPorts = { out: { redo_lsn: { type: 'pg.lsn' }, tli: { type: 'pg.tli' } } };
+    // Producer ran: redo_lsn matched, tli null (regex no-match).
+    const ran = inspectComponent('cd', outPorts, {
+      injects: {}, wires: [],
+      portValue: (c, p) => (p === 'redo_lsn' ? '0/1A2B3C0' : null),
+      hasOutput: () => true,
+    });
+    eq(ran.ranOutput, true);
+    eq(ran.outputs.find((r) => r.port === 'redo_lsn').present, true, '✓ matched');
+    eq(ran.outputs.find((r) => r.port === 'tli').present, false, 'null → absent (✗ no match)');
+    // Not run yet: everything undefined, ranOutput false → — no value.
+    const empty = inspectComponent('cd', outPorts, {
+      injects: {}, wires: [], portValue: () => undefined, hasOutput: () => false,
+    });
+    eq(empty.ranOutput, false);
+    eq(empty.outputs[0].present, false);
+  });
 });
 
 // ── Pane render over the real host ──────────────────────────────────────────

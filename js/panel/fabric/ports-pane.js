@@ -28,7 +28,7 @@ const {
   getSel, getItems: apiGetItems,
 } = require('../api');
 const route = require('../route');
-const { listPorts, portValue, listWires, componentPorts } = require('../../fabric/ports');
+const { listPorts, portValue, listWires, componentPorts, hasOutput } = require('../../fabric/ports');
 const { inspectComponent } = require('../../fabric/inspect');
 const { fmtValue: _fmtValue, sourceLabel: _sourceLabel } = require('./format');
 
@@ -78,6 +78,7 @@ function _ctx() {
     injects: (getModel().fabric && getModel().fabric.injects) || {},
     wires: listWires(),
     portValue,
+    hasOutput,
   };
 }
 
@@ -175,14 +176,24 @@ function render(panel, w, h, slice, opts) {
     lines.push(`  [${t.dim}]${esc('↵ run')}[/]`);
   }
 
-  // Check-half — output ports.
+  // Check-half — output ports. Shows whether each extract FIRED (the authoring
+  // win): ✓ matched (has a value) · ✗ no match (producer ran, field null/empty) ·
+  // — no value (not produced yet). data.ranOutput distinguishes the latter two.
   if (data.outputs.length) {
     lines.push('');
     lines.push(`[${t.dim}]out:[/]`);
     for (const row of data.outputs) {
-      const val = _fmtValue(row.value);
-      const mark = row.present ? `[${t.accent || t.selected}]✓[/]` : `[${t.dim}]—[/]`;
-      const shown = val !== '' ? esc(val) : `[${t.dim}](no value)[/]`;
+      let mark, shown;
+      if (row.present) {
+        mark = `[${t.accent || t.selected}]✓[/]`;
+        shown = esc(_fmtValue(row.value));
+      } else if (data.ranOutput) {
+        mark = `[${t.dim}]✗[/]`;
+        shown = `[${t.dim}]${esc('no match')}[/]`;
+      } else {
+        mark = `[${t.dim}]—[/]`;
+        shown = `[${t.dim}]${esc('no value')}[/]`;
+      }
       lines.push(`  ${esc(_pad(row.port, portW))}  [${t.dim}]${esc(_pad(row.type || '', typeW))}[/]  ${mark} ${shown}`);
     }
   }

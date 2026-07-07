@@ -50,6 +50,11 @@ describe('[fabric-schema] valid declarations pass', () => {
       A({ groups: { pg } }).controldata.ports.out.redo_lsn = { type: 'pg.lsn', extract: { regex: '(\\S+)' } };
     }));
   });
+  it('accepts a fields regex-table parse (P1.5)', () => {
+    validate(baseCfg(pg => {
+      pg.actions.controldata.parse = { fields: { redo_lsn: { regex: 'REDO:\\s*(\\S+)' } } };
+    }));
+  });
 });
 
 describe('[fabric-schema] ports validation', () => {
@@ -76,6 +81,10 @@ describe('[fabric-schema] ports validation', () => {
   });
   it('rejects a bad parse kind', () => {
     const msg = errOf(() => validate(baseCfg(pg => { pg.actions.controldata.parse = { toml: true }; })));
+    assert(/invalid 'parse'/.test(msg), msg);
+  });
+  it('rejects a fields table with a bad regex (load-time)', () => {
+    const msg = errOf(() => validate(baseCfg(pg => { pg.actions.controldata.parse = { fields: { x: { regex: '(' } } }; })));
     assert(/invalid 'parse'/.test(msg), msg);
   });
 });
