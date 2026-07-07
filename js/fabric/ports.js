@@ -104,7 +104,16 @@ function listPorts() {
   return out;
 }
 
-/** The current wire list (config, parsed). */
+/** The current wire list — config + runtime, merged by the host (each entry
+ *  carries a `source` tag). */
 function listWires() { return h().wires() || []; }
 
-module.exports = { setFabricHost, parsed, portValue, listPorts, listWires };
+/** The declared ports map `{ in?, out? }` for one component — the raw port defs
+ *  (type/required/default/desc/from/extract), for the P1.5 component-ports pane
+ *  and its inspector. null when the component is unknown or declares no ports. */
+function componentPorts(name) {
+  const spec = h().componentSpec(name);
+  return (spec && spec.ports) || null;
+}
+
+module.exports = { setFabricHost, parsed, portValue, listPorts, listWires, componentPorts };

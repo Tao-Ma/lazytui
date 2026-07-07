@@ -22,6 +22,7 @@ const BUILTIN_COMPONENTS = [
   require('../panel/navigator/history'),
   require('../panel/viewer/viewer'),   // detail (the viewer)
   require('../panel/navigator/groups'),
+  require('../panel/fabric/ports-pane'),   // component-ports (dataflow fabric, P1.5)
 ];
 
 module.exports = { BUILTIN_COMPONENTS };
