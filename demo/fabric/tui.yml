@@ -11,6 +11,14 @@
 #   Or select any text, right-click → "Send selection to port…" → mine.start,
 #   then run `mine` (the inject overrides the wire for the next run).
 #
+# P1.5 panes (Ports + Wires, placed below):
+#   - The Ports pane FOLLOWS the Actions selection (select_from) and shows the
+#     focused component's inputs (operate) + outputs (check). Focus it, then:
+#       ↵ run · e edit a field (→ inject) · w connect to a producer ·
+#       x clear an inject · p pin the pane to the current component.
+#   - The Wires pane lists every edge with the value on it + validity;
+#     d deletes a runtime wire.
+#
 # Zero model involvement — deterministic tools composed into a pipe.
 
 project_dir: .
@@ -42,12 +50,16 @@ groups:
 panels:
   groups:  { type: groups,  title: Groups }
   actions: { type: actions, title: Actions }
+  ports:   { type: component-ports, title: Ports, select_from: actions }
+  wires:   { type: fabric-wires, title: Wires }
   detail:  { type: detail,  title: Detail }
 
 layout:
   columns:
-    - width: 32
+    - width: 22
       panels: [ groups ]
+    - width: 44
+      panels: [ ports, wires ]
     - panels:
         - actions
-        - { tabs: [ detail ], height: 60% }
+        - { tabs: [ detail ], height: 45% }
