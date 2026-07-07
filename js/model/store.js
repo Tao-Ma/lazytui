@@ -181,6 +181,11 @@ function init() {
       // mirrored in), read at frame time so a warning/error arriving while the
       // window is open shows live.
       diagLog: { cursor: 0, scroll: 0 },
+      // Fabric field-edit (P1.5) — the component-ports pane's in-grid input
+      // editor: which pane + input `component.port` address is being edited and
+      // the typed text. Committed as a sticky inject on submit (→
+      // model.fabric.injects), discarded on cancel. Transient UI, replayable.
+      fabricField: { paneId: null, addr: null, text: '' },
     },
     // Framework-level state: parsed config, paths, leader-mode buffers,
     // misc flags. The layout struct + freeConfig state + viewMode + focus

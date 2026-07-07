@@ -140,6 +140,9 @@ function render(panel, w, h, slice, opts) {
   const data = inspectComponent(name, componentPorts(name), _ctx());
   const sel = getSel(panel.paneId);   // cursor over the input rows
   const t = theme();
+  // Field-edit in progress on THIS pane? (fabricFieldMode + our paneId.)
+  const ff = getModel().modal && getModel().modal.fabricField;
+  const editing = !!(getModel().modes && getModel().modes.fabricFieldMode) && ff && ff.paneId === panel.paneId;
 
   // Column widths for the input/output tables (bounded so a long value doesn't
   // shove the annotation off-screen — renderPanel truncates the row anyway).
@@ -164,6 +167,13 @@ function render(panel, w, h, slice, opts) {
       const val = _fmtValue(row.value);
       const ann = _sourceLabel(row);
       const req = row.required && row.value === undefined ? ' *' : '';
+      // Being edited → show the live buffer + a cursor block instead of the
+      // resolved value/source (the editor commits it as an inject on Enter).
+      if (editing && ff.addr === `${name}.${row.port}`) {
+        const body = `${_pad(row.port, portW)}  ${_pad(row.type || '', typeW)}  ${ff.text}▏`;
+        lines.push(`[${t.selected}]▸ ${esc(body)}`);
+        return;
+      }
       const body = `${_pad(row.port, portW)}  ${_pad(row.type || '', typeW)}  ${val !== '' ? val : PLACEHOLDER}  ${ann}${req}`;
       if (focused && i === sel) {
         // Selected row: plain text under [reverse]/selected, no inner markup
@@ -209,6 +219,47 @@ function _visibleBadgeLen(data) {
     : `⛔ not ready: ${data.missing.map((m) => m.port).join(', ')}`.length;
 }
 
+// Focused-pane keys (config-status precedent): Enter edits the selected input
+// (→ inject), `x` clears its inject. Both CLAIM the key so the framework's
+// run_selected default doesn't also fire. The selected row's address needs
+// model/focus access the pure update lacks, so a fabric_field_open / _clear
+// effect resolves paneId+cursor → addr (see installEffects). j/k etc. arrive as
+// nav Msgs (handled by mnav) and are NOT claimed.
+function update(msg, slice) {
+  if (mnav.isNavMsg(msg)) return mnav.apply(slice, msg);
+  if (msg && msg.type === 'key') {
+    const cursor = mnav.cursorOf(slice, 'component-ports');
+    if (msg.key === 'return') {
+      return [slice, [{ type: '_claimed' }, { type: 'fabric_field_open', paneId: slice.paneId, cursor }]];
+    }
+    if (msg.key === 'x') {
+      return [slice, [{ type: '_claimed' }, { type: 'fabric_field_clear', paneId: slice.paneId, cursor }]];
+    }
+  }
+  return slice;
+}
+
+// Resolve the selected input row → its address (model/focus access lives here,
+// off the pure update), then drive the field editor / clear. The row index
+// might be stale (component retargeted) → guard on a missing row.
+function installEffects(registerEffect) {
+  const rowAt = (paneId, cursor) => {
+    const slice = route.getInstanceSlice(paneId);
+    return slice ? getItems(slice)[cursor] : null;
+  };
+  registerEffect('fabric_field_open', (eff, host) => {
+    const row = rowAt(eff.paneId, eff.cursor);
+    if (!row) return;
+    const inj = (getModel().fabric && getModel().fabric.injects) || {};
+    const cur = inj[row.addr] && inj[row.addr].value;
+    host.applyMsg({ type: 'fabric_field_enter', paneId: eff.paneId, addr: row.addr, text: cur != null ? String(cur) : '' });
+  });
+  registerEffect('fabric_field_clear', (eff, host) => {
+    const row = rowAt(eff.paneId, eff.cursor);
+    if (row) host.applyMsg({ type: 'port_clear', port: row.addr });
+  });
+}
+
 module.exports = {
   name: 'component-ports',
   // init-injection (#4): stash the pane's own paneId + the paneDef config
@@ -221,7 +272,8 @@ module.exports = {
     selectFrom: (seed && seed.paneDef && seed.paneDef.select_from) || null,
     component: (seed && seed.paneDef && seed.paneDef.component) || null,
   }),
-  update: (msg, slice) => (mnav.isNavMsg(msg) ? mnav.apply(slice, msg) : slice),
+  update,
+  installEffects,
   panelTypes: {
     'component-ports': {
       render,

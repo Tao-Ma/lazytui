@@ -53,6 +53,9 @@ const MODES = [
   { flag: 'registerPopupMode',       chain: true,  overlay: true,  modal: false, reset: true, suppressChrome: true  },
   { flag: 'prefixMode',              chain: true,  overlay: true,  modal: true,  reset: true, suppressChrome: false },
   { flag: 'cmdMode',                 chain: true,  overlay: true,  modal: false, reset: true, suppressChrome: true  },
+  // Fabric field-edit (P1.5) — an in-grid text editor for a component-ports input
+  // row (not a centered overlay → overlay:false), owns the footer row while active.
+  { flag: 'fabricFieldMode',         chain: true,  overlay: false, modal: true,  reset: true, suppressChrome: true  },
   // v0.6.4 #1 Step 2 — the one `[≡]` pane-menu (unioned the former
   // tabListMode + paneSelectMode; same column profile).
   { flag: 'paneMenuMode',            chain: true,  overlay: true,  modal: false, reset: true, suppressChrome: false },

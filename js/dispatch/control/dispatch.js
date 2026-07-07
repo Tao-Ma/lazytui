@@ -992,6 +992,11 @@ const _modeHandlers = {
   // route through `focus_set` → `show_selected_info`. No per-keystroke
   // refresh needed.
   cmdMode:             (key, seq) => handleCmdlineKey(key, seq),
+  fabricFieldMode:     (key, seq) => {
+    if (key === 'escape') applyMsg({ type: 'fabric_field_cancel' });
+    else if (key === 'return') applyMsg({ type: 'fabric_field_submit' });
+    else applyMsg({ type: 'fabric_field_key', key, seq });
+  },
   paneMenuMode:        (key, seq) => handlePaneMenuKey(key, seq),
   jobsMode:            (key, seq) => handleJobsKey(key, seq),
   diagLogMode:         (key, seq) => handleDiagLogKey(key, seq),

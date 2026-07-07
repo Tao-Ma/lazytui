@@ -27,6 +27,17 @@ function _withWires(model, wires) {
   return { ...model, fabric: { ...(model.fabric || {}), wires } };
 }
 
+/**
+ * Write a sticky by-value inject for `port`, `at`-stamped from model.now
+ * (replay-safe). The canonical inject write — shared by the `port_inject` arm
+ * and the component-ports field editor's submit (modal/fabric-field.js) so both
+ * paths land identical state. Last-write-wins on the same port.
+ */
+function applyInject(model, port, value) {
+  const injects = (model.fabric && model.fabric.injects) || {};
+  return _withInjects(model, { ...injects, [port]: { value, at: model.now } });
+}
+
 function update(model, msg) {
   const injects = (model.fabric && model.fabric.injects) || {};
   switch (msg.type) {
@@ -44,8 +55,7 @@ function update(model, msg) {
     case 'port_inject': {
       // { port: "xlogminer.start_lsn", value } — last-write-wins.
       if (typeof msg.port !== 'string' || !msg.port) return [model, []];
-      const next = { ...injects, [msg.port]: { value: msg.value, at: model.now } };
-      return [_withInjects(model, next), []];
+      return [applyInject(model, msg.port, msg.value), []];
     }
     case 'port_clear': {
       // { port } — remove one; identity-preserve when absent (no-op).
@@ -82,4 +92,4 @@ function update(model, msg) {
   }
 }
 
-module.exports = { TYPES, update };
+module.exports = { TYPES, update, applyInject };
