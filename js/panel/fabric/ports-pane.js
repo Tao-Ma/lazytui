@@ -24,7 +24,7 @@
 const { getModel } = require('../../model/store');
 const mnav = require('../../leaves/wm/nav');
 const {
-  esc, theme, renderPanel,
+  esc, theme, renderPanel, visibleLen,
   getSel, getItems: apiGetItems,
 } = require('../api');
 const route = require('../route');
@@ -134,11 +134,15 @@ function render(panel, w, h, slice, opts) {
 
   const lines = [];
   // Header: component name + readiness badge (right-aligned).
+  // Readiness glyphs are TEXT-presentation, width-1 (✓ U+2713 / ✗ U+2717) — NOT
+  // an emoji like ⛔ (U+26D4), which real terminals render 2 columns wide while
+  // charWidth/@xterm score it 1, so the badge overran the right border. Right-
+  // align with visibleLen (the width truth function), never String.length.
   const badge = data.ready
     ? `[${t.accent || t.selected}]✓ ready[/]`
-    : `[${t.dim}]⛔ not ready: ${esc(data.missing.map((m) => m.port).join(', '))}[/]`;
+    : `[${t.dim}]✗ not ready: ${esc(data.missing.map((m) => m.port).join(', '))}[/]`;
   const nameCell = `[bold]${esc(name)}[/]`;
-  const gap = Math.max(1, (w - 2) - name.length - _visibleBadgeLen(data));
+  const gap = Math.max(1, (w - 2) - visibleLen(nameCell) - visibleLen(badge));
   lines.push(nameCell + ' '.repeat(gap) + badge);
   lines.push('');
 
@@ -209,12 +213,6 @@ function render(panel, w, h, slice, opts) {
     count: data.inputs.length ? [sel + 1, data.inputs.length] : null,
     chrome,
   });
-}
-
-// Visible length of the readiness badge (markup stripped) — for right-alignment.
-function _visibleBadgeLen(data) {
-  return data.ready ? '✓ ready'.length
-    : `⛔ not ready: ${data.missing.map((m) => m.port).join(', ')}`.length;
 }
 
 // Focused-pane keys (config-status precedent): Enter edits the selected input

@@ -288,7 +288,7 @@ component's whole port surface — inputs (the "operate" half) and outputs (the 
 half), since components are usually both:
 
 ```
-xlogminer                                   [⛔ not ready: end_lsn]
+xlogminer                                   [✗ not ready: end_lsn]
   start_lsn  pg.lsn   0/1A2B3C0   ← controldata.redo_lsn
   end_lsn    pg.lsn   ▏           (type, or wire / inject)
   timeline   pg.tli   1           default
@@ -342,7 +342,7 @@ optional) rendering the value currently on each wire plus validity, and offering
 
 ```
 controldata.redo_lsn → xlogminer.start_lsn   0/1A2B3C0   ✓
-elsewhere.x          → xlogminer.end_lsn      —           ⚠ upstream unset
+elsewhere.x          → xlogminer.end_lsn      —           ✗ upstream unset
 ```
 
 The pane owns wire *creation* (contextual, per input); the wire list owns the global

@@ -47,11 +47,11 @@ function render(panel, w, h, _slice, opts) {
   const lines = rows.map((r, i) => {
     const edge = `${r.from} → ${r.to}`;
     const val = fmtValue(r.value);
-    const mark = r.present ? '✓' : '⚠';
+    const mark = r.present ? '✓' : '✗';   // width-1 text glyphs (not emoji ⚠ U+26A0, terminal-width-ambiguous)
     const tag = r.source === 'runtime' ? '' : ' [cfg]';
     const body = `${_pad(edge, edgeW)}  ${mark} ${val || (r.present ? '' : 'upstream unset')}${tag}`;
     if (focused && i === sel) return `[${t.selected}]▸ ${esc(body)}`;
-    const markCol = r.present ? `[${t.accent || t.selected}]✓[/]` : `[${t.dim}]⚠[/]`;
+    const markCol = r.present ? `[${t.accent || t.selected}]✓[/]` : `[${t.dim}]✗[/]`;
     return `  ${esc(_pad(edge, edgeW))}  ${markCol} [${t.dim}]${esc(val || (r.present ? '' : 'upstream unset'))}${esc(tag)}[/]`;
   });
   lines.push('');
