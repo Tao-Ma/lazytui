@@ -15,7 +15,7 @@ const yaml = require('js-yaml');
 
 const { ParseError } = require('./errors');
 const { validate } = require('./schema');
-const { passthroughCmd, resolveScript } = require('./resolver');
+const { passthroughCmd, resolveScript, resolveVarsOnly } = require('./resolver');
 
 const { LEFT_HOTKEY_POOL, RIGHT_HOTKEY_POOL, hotkeyPoolForColumn } = require('../leaves/input/hotkeys');
 const mpane = require('../leaves/wm/pane');
@@ -553,12 +553,15 @@ function walkGroups(rawGroups, varsBlock, helpersBlock, source, parent, depth, o
           ({ script, varsUsed, helpersUsed } = resolveScript(adata.script, varsBlock, helpersBlock, ctx));
         }
         // Fabric `run:` (decision A) — a no-shell argv template. Resolve $VAR per
-        // element from the vars block (leaves {{holes}} + unknown $FOO alone), the
-        // same static pass cmd/script get; {{holes}} bind at invoke.
+        // element from the vars block — the `$VAR`-ONLY pass, NOT `@use` helper
+        // expansion: a `run:` element is a verbatim argv literal, so a literal
+        // that reads `@use foo` must reach the program unchanged, never be
+        // interpreted as a helper directive. {{holes}} + unknown $FOO are left
+        // alone; {{holes}} bind at invoke.
         const runResolved = 'run' in adata
           ? (Array.isArray(adata.run)
-              ? adata.run.map(el => resolveScript(String(el), varsBlock, helpersBlock, ctx).script)
-              : resolveScript(String(adata.run), varsBlock, helpersBlock, ctx).script)
+              ? adata.run.map(el => resolveVarsOnly(el, varsBlock))
+              : resolveVarsOnly(adata.run, varsBlock))
           : null;
         actions[aname] = {
           group: groupPath,

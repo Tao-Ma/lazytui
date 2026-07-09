@@ -244,9 +244,9 @@ resolve, folded into the same readiness gate. Auto-running the upstream (implici
 topo-order, cycles, surprise side effects) is **P3**, not P1.
 
 The resolution is a **pure read** of current model state (upstream slices for wires,
-inject state, defaults) performed while constructing the action Cmd; it produces the argv
+inject state, defaults) performed in `doRunFabric` just before spawn; it produces the argv
 fill (above) or the unresolved list. The command run is the existing effect channel.
-Target insertion point: `js/dispatch/runtime/action-runner.js`. The "tell" surfaces via the
+Insertion point: `js/dispatch/runtime/action-runner.js#doRunFabric`. The "tell" surfaces via the
 `appendViewerLines('[yellow] not ready: …')` convention (as spawn/background already do)
 and the P1.5 pane readiness badge.
 
@@ -360,6 +360,10 @@ fabric, not a second system.
 
 ## Worked example — the pg pipe
 
+> *Schematic — it shows the two-input, wire + inject shape. The runnable pipes ship as
+> `demo/postgres/tui.yml` (real pg: a single-input `waldump` consumer,
+> `controldata.redo_lsn → waldump.start_lsn`) and `demo/fabric/tui.yml` (infra-free echo).*
+
 ```yaml
 groups:
   pg:
@@ -401,7 +405,7 @@ Zero model involvement — deterministic tools composed into a pipe.
 
 - **Extractors** are pure functions of a slice, memoized on slice identity, and **not
   materialized** in the model (viewer-lines precedent).
-- **Resolution** is a pure read of current model state while constructing the action Cmd;
+- **Resolution** is a pure read of current model state in `doRunFabric` before spawn;
   the effect channel (an argv `execve`) is unchanged in shape.
 - **Wires and injects** are model/config state; edits are Msgs → WAL → **replayable**.
 
@@ -491,8 +495,9 @@ Walked one-by-one and pinned 2026-07-02.
 3. **Extractor breadth** — P1 ships `kv` + `json` + `lines` + per-port `from` + per-port
    `extract:{regex,group}`. The regex-*table* (`parse:{fields}`) defers to P1.5, landing
    with its check-half ✓/✗ UI. `fn` is implicit for code components (not a config feature).
-   *(Build note: `viewerStreamBuffer` is display-capped at 1000 lines — a big-output
-   producer needs full output captured for parsing; moot for pg, flagged for later.)*
+   *(Build note — RESOLVED: `viewerStreamBuffer` is display-capped at 1000 lines, but the
+   fabric parse path captures a SEPARATE, uncapped raw-output buffer (`model.fabric.output`,
+   flushed on process close), so a big-output producer parses its full output.)*
 4. **Addressing** — **`component.port` (attribute-access `.`)**, same-group in P1, group
    implicit (wires in the group's `wires:`). Dot-free-identifier guard on fabric names.
    Cross-group deferred. `parseFabricAddr` owns parsing — **not** the `:open` registry
@@ -512,7 +517,9 @@ Walked one-by-one and pinned 2026-07-02.
   is the proper term for a dataflow endpoint (flow-based-programming sense); the seams are
   dependency-inversion *hosts*. The fabric code lives in `js/fabric/`; `js/ports/` is
   vacated and reserved for the dataflow-fabric *concept*.
-- **Full-output capture for parse** — see decision 3's note.
+- **Full-output capture for parse** — DONE: the fabric run path captures raw stdout into
+  `model.fabric.output` (un-esc'd, uncapped), separate from the 1000-line display buffer
+  (see decision 3's note).
 - **Dot-free fabric names** — see decision 4; enforced at load for `ports`-declaring
   components and their port names.
 

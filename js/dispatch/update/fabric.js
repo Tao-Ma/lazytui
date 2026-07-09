@@ -1,18 +1,24 @@
 /**
- * Fabric injects sub-reducer — the by-value, sticky one-shot pushes into an
- * input port (docs/ports-and-wires.md, decision 1). Delegated by the root
- * reducer via { TYPES, update }, the same mechanism as the modal sub-reducers
- * (#D12), though injects are fabric state, not a modal.
+ * Fabric state sub-reducer — the single writer of `model.fabric.*` (injects,
+ * output, wires). Delegated by the root reducer via { TYPES, update }, the same
+ * mechanism as the modal sub-reducers (#D12), though this is fabric state, not a
+ * modal. See docs/ports-and-wires.md (decision 1 + "P1.5 — as shipped").
  *
- * Injects live at `model.fabric.injects`, keyed by the `component.port` address:
- *   - transient (never serialised to config) but IN-MODEL, so they ride the WAL
- *     and replay reproduces them (same discipline as model.modal.continuation);
- *   - STICKY: persist until overwritten by a newer inject to the same port
- *     (last-write-wins) or explicitly cleared — NOT auto-consumed on run.
- * Resolve-time precedence is inject > wire > default (the action-runner hook,
- * slice 5). The pane's source badge (P1.5) makes a shadowing inject visible.
+ * TYPES: port_inject / port_clear · fabric_output_set · wire_create / wire_delete.
+ * All of `model.fabric.*` is transient (never serialised to config) but IN-MODEL,
+ * so it rides the WAL and replay reproduces it (same discipline as
+ * model.modal.continuation):
+ *   - injects — by-value pushes, keyed by the `component.port` address. STICKY:
+ *     persist until overwritten by a newer inject to the same port (last-write-
+ *     wins) or explicitly cleared — NOT auto-consumed on run. Resolve-time
+ *     precedence is inject > wire > default (resolve.js, via the action-runner
+ *     run hook); the pane's source badge (P1.5) makes a shadowing inject visible.
+ *   - output — a producer's captured RAW stdout, keyed by [group][component];
+ *     the parse source for output ports, replaced per run (fabric_output_set).
+ *   - wires — RUNTIME wires (the pane's "connect to…" / wire-list edits), merged
+ *     OVER config wires by the host; one wire per input `to` (last-write-wins).
  *
- * Pure: returns [nextModel, []]; identity-preserved on a no-op clear. `at` is
+ * Pure: returns [nextModel, []]; identity-preserved on every no-op. `at` is
  * stamped from model.now (the frame clock) — replay-safe, never Date.now().
  */
 'use strict';

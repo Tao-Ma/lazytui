@@ -176,6 +176,32 @@ describe('[fabric-schema] parser passthrough', () => {
     eq(cfg.groups['pg'].wires.length, 1, 'wires pass through the group');
     eq(cfg.groups['pg'].wires[0].to, 'xlogminer.start_lsn');
   });
+
+  it('run: elements resolve $VAR but are NOT subject to @use helper expansion (#6)', () => {
+    // A `run:` element is a verbatim argv literal: `$VAR` resolves statically,
+    // but an element that reads `@use helper` must pass through unchanged — the
+    // pre-fix code ran it through the shell-script helper pass, which threw
+    // "undefined helper 'helper'" at parse time.
+    const yaml = [
+      'vars: { REGION: us-1 }',
+      'groups:',
+      '  g:',
+      '    label: g',
+      '    actions:',
+      '      tool:',
+      '        label: t',
+      '        run: [ mytool, "--region=$REGION", "@use helper" ]',
+      '',
+    ].join('\n');
+    const tmp = path.join(os.tmpdir(), `lazytui-fabric-run-${process.pid}.yml`);
+    fs.writeFileSync(tmp, yaml);
+    let cfg;
+    try { cfg = parse(tmp); } finally { fs.unlinkSync(tmp); }
+    const run = cfg.groups['g'].actions.tool.run;
+    eq(run[0], 'mytool');
+    eq(run[1], '--region=us-1', '$VAR resolves per element');
+    eq(run[2], '@use helper', 'an @use-looking argv literal is preserved verbatim (no helper expansion)');
+  });
 });
 
 report();

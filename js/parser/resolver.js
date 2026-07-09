@@ -67,4 +67,13 @@ function resolveVars(script, varsBlock) {
   return { script: out, varsUsed };
 }
 
-module.exports = { passthroughCmd, resolveScript };
+// $VAR / ${VAR} substitution ONLY — no `@use` helper expansion. For a fabric
+// `run:` argv element, which is a verbatim bind-parameter literal: an element
+// that happens to read `@use foo` (or any other text) must reach the program
+// unchanged, never be interpreted as a helper directive. `{{holes}}` carry no
+// `$`, so they pass through untouched and bind at invoke.
+function resolveVarsOnly(str, varsBlock) {
+  return resolveVars(String(str), varsBlock || {}).script;
+}
+
+module.exports = { passthroughCmd, resolveScript, resolveVarsOnly };

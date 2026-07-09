@@ -179,8 +179,18 @@ function _runResolvedAction(key, act) {
  *  plugin-synthesized actions + YAML) so a leader binding to a plugin
  *  action isn't silently dead. First match wins. */
 function _runActionByKey(key) {
-  const groups = (getModel().config && getModel().config.groups) || {};
-  for (const gname of Object.keys(groups)) {
+  const model = getModel();
+  const groups = (model.config && model.config.groups) || {};
+  // Prefer the CURRENT group when the same action key exists in several groups.
+  // The fabric run path (doRunFabric) resolves inputs / wires / output against
+  // model.currentGroup, so running an earlier-declared group's same-named
+  // component would execute one group's `run:` while resolving another's inputs.
+  // For a key unique across groups (the common case) the order is irrelevant.
+  const cur = model.currentGroup;
+  const order = (cur && groups[cur])
+    ? [cur, ...Object.keys(groups).filter((g) => g !== cur)]
+    : Object.keys(groups);
+  for (const gname of order) {
     const act = getMergedActions(gname)[key];
     if (!act) continue;
     _runResolvedAction(key, act);
