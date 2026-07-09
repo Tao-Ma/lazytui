@@ -181,12 +181,15 @@ function doRunFabric(actionKey, action) {
   const model = getModel();
   const group = model.currentGroup;
   const inputs = (action.ports && action.ports.in) || {};
-  const cfgGroup = model.config && model.config.groups && model.config.groups[group];
-  const wires = (cfgGroup && cfgGroup.wires) || [];
 
   const { ready, values, missing } = resolveInputs(actionKey, inputs, {
     injects: (model.fabric && model.fabric.injects) || {},
-    wires,
+    // config + runtime wires, MERGED by the fabric host — the SAME source the
+    // component-ports pane / wire-list resolve against. Reading config-only here
+    // would ignore a wire created interactively (the pane's "connect to…" writes
+    // model.fabric.wires): the input would show ✓ready in the UI yet resolve as
+    // unset at run. listWires() is host-bound to the current group.
+    wires: fabricPorts.listWires(),
     portValue: fabricPorts.portValue,
   });
   if (!ready) {

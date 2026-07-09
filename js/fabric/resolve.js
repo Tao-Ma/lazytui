@@ -46,11 +46,12 @@ function resolveInputs(consumerName, inputs, ctx) {
     const addr = formatFabricAddr(consumerName, name);
     const required = !def || def.required !== false;
 
-    // 1. inject (by value) — highest precedence. An inject whose value is
-    // undefined is treated as ABSENT, so it can't silently shadow a working
-    // wire (L6). A falsy "" / 0 is a real value and is honoured.
+    // 1. inject (by value) — highest precedence. A null/undefined inject value
+    // is treated as ABSENT (the `!= null` rule shared with the wire + default
+    // arms and inspect.js), so it can't silently shadow a working wire (L6). A
+    // falsy "" / 0 / false is a real value and is honoured.
     const inj = injects[addr];
-    if (inj !== undefined && inj.value !== undefined) {
+    if (inj != null && inj.value != null) {
       values[name] = inj.value;
       sources[name] = 'inject';
       continue;
@@ -72,13 +73,16 @@ function resolveInputs(consumerName, inputs, ctx) {
         continue;
       }
       // wired but upstream has no value yet — remember for a precise message.
-      if (def && 'default' in def) { values[name] = def.default; sources[name] = 'default'; continue; }
+      if (def && def.default != null) { values[name] = def.default; sources[name] = 'default'; continue; }
       if (required) missing.push({ port: name, reason: `\`${name}\` ← ${from} has no value yet — run ${fromComp} first` });
       continue;
     }
 
-    // 3. default.
-    if (def && 'default' in def) {
+    // 3. default — a REAL value only (`!= null`). A bare `default:` (YAML null)
+    // or an absent default is "no default" and falls through to the readiness
+    // gate; `'default' in def` alone would let a null default satisfy a required
+    // input and fill the literal "null" into the argv.
+    if (def && def.default != null) {
       values[name] = def.default;
       sources[name] = 'default';
       continue;

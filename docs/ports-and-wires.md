@@ -1,10 +1,11 @@
 # Component dataflow — ports, wires & injects (P1 · P1.5)
 
-**Status:** design spec, **decisions pinned 2026-07-02** (see "Decisions (pinned)"
-below). This is the *foundation* phase of the AI-integration direction — it is
-deliberately **humans-only**; the agent (P2) rides on top of it and adds no new
-fabric semantics. Groundwork done: `js/ports/` was vacated (the DI seams moved to
-`js/hosts/`) so `js/ports/` can house the fabric. No fabric code built yet.
+**Status:** **shipped — P1 + P1.5** on branch `fabric-groundwork` (decisions pinned
+2026-07-02; see "Decisions (pinned)" and "P1.5 — as shipped" below). This is the
+*foundation* phase of the AI-integration direction — it is deliberately
+**humans-only**; the agent (P2) rides on top of it and adds no new fabric semantics.
+The fabric ships in `js/fabric/`; `js/ports/` was vacated (its DI seams moved to
+`js/hosts/`) and is held as the name of the dataflow-fabric *concept*.
 
 > **Not** `DATAFLOW.md`. That doc maps the *internal* flow — how a keystroke becomes
 > a paint (input → dispatch → reducer → render). **This** doc is the *component*
@@ -506,10 +507,11 @@ Walked one-by-one and pinned 2026-07-02.
 
 ## Build notes
 
-- **`js/ports/` = the fabric; `js/hosts/` = the DI seams.** Done 2026-07-02 (commit on
-  `fabric-groundwork`): `js/ports/{panel,feature}-host.js` → `js/hosts/`. "Port" is the
-  proper term for a dataflow endpoint (flow-based-programming sense); the seams are
-  dependency-inversion *hosts*. `js/ports/` now empty, reserved for fabric code.
+- **`js/fabric/` = the fabric impl; `js/hosts/` = the DI seams.** Rename done 2026-07-02
+  (commit on `fabric-groundwork`): `js/ports/{panel,feature}-host.js` → `js/hosts/`. "Port"
+  is the proper term for a dataflow endpoint (flow-based-programming sense); the seams are
+  dependency-inversion *hosts*. The fabric code lives in `js/fabric/`; `js/ports/` is
+  vacated and reserved for the dataflow-fabric *concept*.
 - **Full-output capture for parse** — see decision 3's note.
 - **Dot-free fabric names** — see decision 4; enforced at load for `ports`-declaring
   components and their port names.

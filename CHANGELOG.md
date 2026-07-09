@@ -6,6 +6,34 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Component dataflow fabric (P1 + P1.5)** — components publish typed **output
+  ports** (a producer parses its raw stdout once — `kv` / `json` / `lines` / a
+  regex `fields` table — and projects fields; a per-port `from` / `extract` covers
+  the rest) and consume typed **input ports**. **Wires** are standing
+  producer→consumer connections resolved by reference on each run; **injects** are
+  one-shot by-value pushes (right-click "Send selection to port…", or an in-grid
+  field edit). Resolution precedence is inject > wire > default, gated by a
+  readiness check that errors and names exactly which required inputs are unset and
+  why. A fabric consumer's `run:` is a **no-shell argv template** (`{{holes}}` =
+  bound parameters) executed via `execve` — bind-parameter semantics, so command
+  injection is structurally impossible. Type matching is plain string equality over
+  author-chosen opaque tags (the core ships no ontology). Spec:
+  [docs/ports-and-wires.md](docs/ports-and-wires.md).
+- **Component-ports pane** (`component-ports`) — a follows-focus inspector over a
+  component's whole port surface: the operate-half (inputs — resolved value +
+  source badge + readiness) and the check-half (outputs — current value with a
+  ✓ matched / ✗ no-match / — no-value marker, so an author can see whether an
+  extract fired). Keys: `↵` run · `e` edit a field (→ inject) · `w` connect to a
+  producer · `x` clear an inject · `p` pin the pane to a component.
+- **Wire list** (`fabric-wires`) — a global edge view rendering the value on each
+  wire plus its validity, with `d` to delete a runtime wire.
+- **Replay-as-debugger** — every port/wire value is a derived selector over the
+  model and the whole fabric state rides the WAL, so stepping recorded history
+  reconstructs correct port/wire values at every frame with no fabric-specific
+  replay code.
+
 ## [0.6.7] — 2026-06-30
 
 ### Architecture
