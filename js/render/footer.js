@@ -186,7 +186,7 @@ function renderFooter(model = getModel()) {
   // Cleared by `:dismiss-warnings` or next config reload.
   const bw = layoutSlice.bootWarnings;
   if (bw && bw.length > 0) {
-    keys += ` | [yellow]⚠ ${bw.length} config warning(s) (:dismiss-warnings)[/]`;
+    keys += ` | [yellow]! ${bw.length} config warning(s) (:dismiss-warnings)[/]`;
   }
 
   // Right tail: footer:right + visual-select tag + view-mode tag.

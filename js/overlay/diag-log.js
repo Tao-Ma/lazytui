@@ -35,7 +35,10 @@ const FOOTER_ROWS = 2;   // blank + hint
 const TIME_W = 5;        // visible width reserved for the age column
 const CODE_W = 16;       // visible width reserved for the code column
 
-const LEVEL_GLYPH = { warn: '⚠', error: '✕' };
+// Width-1 text glyphs only — NOT emoji-presentation like ⚠ (U+26A0), which some
+// terminals render 2-wide while charWidth/@xterm score it 1 (see the charWidth
+// truth-function notes). '!' warn / '✕' error are both reliably width-1.
+const LEVEL_GLYPH = { warn: '!', error: '✕' };
 const LEVEL_COLOR = { warn: 'yellow', error: 'red' };
 
 function _fmtAge(t, now) {
@@ -89,7 +92,7 @@ function renderDiagLog(now) {
       const idx = scroll + i;
       const ev = list[idx];
       if (!ev) { lines.push(''); continue; }
-      const glyph = LEVEL_GLYPH[ev.level] || '⚠';
+      const glyph = LEVEL_GLYPH[ev.level] || '!';
       const color = LEVEL_COLOR[ev.level] || 'yellow';
       const age = _fmtAge(ev.t, now).padStart(TIME_W);
       const code = esc(ev.code).slice(0, CODE_W).padEnd(CODE_W);
