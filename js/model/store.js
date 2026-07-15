@@ -131,7 +131,7 @@ function init() {
       // filter_enter), so the filter arms route without re-reading topology
       // — blessed-A elimination (docs/reducer-route-purity.md).
       filter: { text: '', panel: '', route: null },
-      menu: { items: [], idx: 0, anchor: null, title: null },
+      menu: { items: [], idx: 0, anchor: null, title: null, back: null },
       // E14 — the modal result continuation: the serializable Cmd DESCRIPTOR
       // a modal emits on a successful dismissal. Opener-staged for
       // confirm/prompt (the caller passes what to run on `y`/submit); a fixed

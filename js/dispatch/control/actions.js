@@ -211,7 +211,7 @@ function _runActionByKey(key) {
 // us in 2be348a; dropping it removes the invitation to reintroduce
 // that bug class.
 
-function handleAction(action, arg) {
+function handleAction(action, arg, from) {
   switch (action) {
     case 'nav_up':       moveSel(-1); break;
     case 'nav_down':     moveSel(+1); break;
@@ -414,8 +414,12 @@ function handleAction(action, arg) {
           const addr = `${p.component}.${p.port}`;
           return [`${addr} (${p.type})`, 'port_inject', { port: addr, value: arg }];
         });
-      const items = rows.length ? rows : [['(no input ports declared)', 'noop', null]];
-      applyMsg({ type: 'menu_open', items, title: 'Send selection to port' });
+      const body = rows.length ? rows : [['(no input ports declared)', 'noop', null]];
+      // `from` = the context menu we came from (threaded via menu_action): open the
+      // picker at its cursor anchor (replace in place, not center) and offer a
+      // "← Back" row that restores it — mirrored by the Backspace key (menu_back).
+      const items = from ? [...body, null, ['← Back', 'menu_back', null]] : body;
+      applyMsg({ type: 'menu_open', items, title: 'Send selection to port', anchor: (from && from.anchor) || null, back: from || null });
       break;
     }
     case 'port_inject':

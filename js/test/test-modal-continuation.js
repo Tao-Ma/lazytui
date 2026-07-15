@@ -118,11 +118,57 @@ describe('[E14] menu — fixed base, patched with the chosen verb/arg', () => {
     eq(cmds, [{ type: 'menu_action', action: 'copy_text', arg: 'val' }], 'activate patches verb + arg');
     eq(m2.modal.continuation, null, 'continuation cleared');
   });
+  it('an anchored menu rides a `from` snapshot so a submenu reopens at the cursor + can go back', () => {
+    // A right-click menu carries a cursor anchor; activating an item that opens a
+    // SECOND menu (send_to_port's port picker) threads a `from` snapshot through so
+    // the picker replaces the first menu in place (not centered) and can offer
+    // "← Back" to it. An unanchored (keyboard) menu omits `from` (see above).
+    const items = [['Send…', 'send_to_port', 'sel']];
+    const [m1] = step(fresh(), { type: 'menu_open', items, anchor: { x: 12, y: 5 } });
+    const [, cmds] = step(m1, { type: 'menu_activate', idx: 0 });
+    eq(cmds, [{ type: 'menu_action', action: 'send_to_port', arg: 'sel',
+      from: { items, anchor: { x: 12, y: 5 }, title: null, back: null } }], 'from snapshot rides the Cmd');
+  });
   it('close emits nothing and clears the continuation', () => {
     const [m1] = step(fresh(), { type: 'menu_open', items: [['A', 'do_run']] });
     const [m2, cmds] = step(m1, { type: 'menu_close' });
     eq(cmds, [], 'close emits no Cmd');
     eq(m2.modal.continuation, null, 'continuation cleared');
+  });
+});
+
+describe('[menu-back] restore the previous menu (Backspace / "← Back" row)', () => {
+  const CTX = { items: [['Send…', 'send_to_port', 'sel']], anchor: { x: 12, y: 5 }, title: 'Actions', back: null };
+  // A submenu (the port picker) opened with `back` = the context-menu snapshot.
+  const openPicker = () => step(fresh(), {
+    type: 'menu_open',
+    items: [['a.in (t)', 'port_inject', {}], null, ['← Back', 'menu_back', null]],
+    title: 'Send selection to port', anchor: { x: 12, y: 5 }, back: CTX,
+  });
+
+  it('menu_back restores the previous menu (items/anchor/title) and stays open', () => {
+    const [m1] = openPicker();
+    const [m2, cmds] = step(m1, { type: 'menu_back' });
+    eq(cmds, [], 'menu_back emits no Cmd');
+    eq(m2.modes.menuOpen, true, 'menu still open');
+    eq(m2.modal.menu.items, CTX.items, 'the context menu items are back');
+    eq(m2.modal.menu.anchor, CTX.anchor, 'restored at the original cursor anchor');
+    eq(m2.modal.menu.title, 'Actions', 'restored title');
+    eq(m2.modal.menu.back, null, 'the restored menu has no further back');
+  });
+
+  it('activating the "← Back" row restores in place (inline, mm.back not yet cleared)', () => {
+    const [m1] = openPicker();
+    const [m2, cmds] = step(m1, { type: 'menu_activate', idx: 2 });   // the "← Back" row
+    eq(cmds, [], 'no menu_action Cmd — handled inline');
+    eq(m2.modes.menuOpen, true, 'menu still open');
+    eq(m2.modal.menu.items, CTX.items, 'restored to the context menu');
+  });
+
+  it('menu_back on a top-level menu (no back) closes it', () => {
+    const [m1] = step(fresh(), { type: 'menu_open', items: [['A', 'do_run']] });
+    const [m2] = step(m1, { type: 'menu_back' });
+    eq(m2.modes.menuOpen, false, 'closed — nothing to go back to');
   });
 });
 

@@ -402,7 +402,7 @@ function installBuiltins() {
   registerEffect('menu_action', (eff) => {
     const dispatch = require('../control/dispatch');
     if (eff.action.startsWith('focus_panel:')) dispatch.handleAction('focus_panel', eff.action.split(':')[1]);
-    else dispatch.handleAction(eff.action, eff.arg);
+    else dispatch.handleAction(eff.action, eff.arg, eff.from);
   });
   // run_binding: a resolved leader leaf. Surface sync throws + async
   // rejections (mirrors the `:` cmdline path) rather than swallowing them.

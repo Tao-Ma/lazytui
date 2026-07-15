@@ -214,7 +214,8 @@ function _groupsHasQuick() {
 function handleMenuKey(key, seq) {
   // Menu lives in the reducer now (menu_open/nav/activate/close);
   // activate emits a menu_action Cmd that routes the verb through handleAction.
-  if (key === 'escape') { applyMsg({ type: 'menu_close' }); return; }
+  if (key === 'escape') { applyMsg({ type: 'menu_close' }); return; }   // close everything
+  if (seq === '\x7f') { applyMsg({ type: 'menu_back' }); return; }       // Backspace — up one level (or close)
   if (key === 'up' || seq === 'k') { applyMsg({ type: 'menu_nav', dir: -1 }); return; }
   if (key === 'down' || seq === 'j') { applyMsg({ type: 'menu_nav', dir: +1 }); return; }
   if (key === 'return') { applyMsg({ type: 'menu_activate' }); }

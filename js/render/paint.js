@@ -195,6 +195,13 @@ const _frame = {
   prevCols:         0,
   forceFull:        true,
   prevOverlayFlags: new Set(),
+  // Menu-overlay items reference from the previous frame (null when the menu was
+  // closed). A menu-in-place REPLACE keeps the `menuOpen` flag in the set (so the
+  // flag-drop check misses it) but swaps the items array + anchor — e.g. the
+  // right-click "Send selection to port…" opening its port picker. Force a full
+  // repaint on that swap so the outgoing menu's pixels are wiped. Menu NAV (j/k)
+  // preserves the items identity, so it still cell-diffs (no flicker).
+  prevMenuItems:    null,
   // PTY-overlay sub-state (session.prevFrame lives per session).
   forceOverlayFull: true,
   lastOverlayId:    null,
@@ -721,6 +728,13 @@ function render(model) {
     if (!curOverlayFlags.has(flag)) { _frame.forceFull = true; break; }
   }
   _frame.prevOverlayFlags = curOverlayFlags;
+  // Menu replaced in place (open→open, different items array): the flag-set check
+  // above can't catch it (menuOpen stays set), so force a full repaint to wipe the
+  // outgoing menu's pixels (context menu → send_to_port port picker). A fresh
+  // menu_open always builds a new items array; menu_nav preserves it (no force).
+  const menuItemsNow = (md.menuOpen && model.modal.menu) ? model.modal.menu.items : null;
+  if (menuItemsNow && _frame.prevMenuItems && menuItemsNow !== _frame.prevMenuItems) _frame.forceFull = true;
+  _frame.prevMenuItems = menuItemsNow;
   // v0.6.6 replay arc — the replay-control pane is module-flagged (not in
   // model.modes), so track its view state here. full/mini/hidden cover different
   // regions, so ANY transition (incl. exit → no pane) must force a full repaint
