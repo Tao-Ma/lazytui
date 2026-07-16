@@ -34,6 +34,23 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   reconstructs correct port/wire values at every frame with no fabric-specific
   replay code.
 
+### Changed
+
+- **Overlay menus scroll** when taller than the terminal — the selection stays in
+  view (previously only the first screenful rendered and the cursor could move
+  off-screen). The right-click "Send selection to port…" picker opens **at the
+  cursor** (replacing the context menu in place) and supports **`← Back`** (a row
+  or the Backspace key) to step back to it; Esc still closes everything.
+
+### Fixed
+
+- Chrome status markers use width-1 glyphs (`✓` / `✗` / `!`) instead of
+  emoji-presentation glyphs (`⛔` / `⚠`) that some terminals render double-width,
+  which overran panel borders (the component-ports readiness badge, the wire list,
+  the footer's config-warning hint, and the diag-log).
+- The right-click → port picker no longer leaves the first menu ghosted at its
+  original position when the second menu opens.
+
 ## [0.6.7] — 2026-06-30
 
 ### Architecture
