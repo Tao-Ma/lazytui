@@ -337,10 +337,10 @@ function overlayBox({ linesLen, anchor = null, maxWidth = 44 }) {
   return { offX, offY, menuW, menuH };
 }
 
-function renderOverlay({ lines, title, count = null, maxWidth = 44, anchor = null }) {
+function renderOverlay({ lines, title, count = null, maxWidth = 44, anchor = null, scrollOffset = 0 }) {
   const { offX, offY, menuW, menuH } = overlayBox({ linesLen: lines.length, anchor, maxWidth });
   const content = renderPanel({
-    width: menuW, height: menuH, lines, title, focused: true, count,
+    width: menuW, height: menuH, lines, title, focused: true, count, scrollOffset,
   });
   const out = content.split('\n');
   // Build one string with embedded cursor moves, write once. Per-line
