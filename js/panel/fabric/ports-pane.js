@@ -305,16 +305,24 @@ function installEffects(registerEffect) {
   // emits wire_create via the menu's handleAction verb. Subsumes a standalone
   // ports overlay (decision 6). Global listPorts → a follows-focus pane can wire
   // to any producer.
+  //
+  // With >1 compatible producer (the multi-source case), the currently-wired one
+  // is TAGGED `✓ current` and FLOATED to the top, so re-pointing an input is an
+  // informed choice, not blind. The current wire is the merged (runtime>config)
+  // edge into `to` — the same list resolution consults.
   registerEffect('fabric_connect_open', (eff, host) => {
     const row = rowAt(eff.paneId, eff.cursor);
     if (!row) return;
     const to = row.addr;
-    const producers = listPorts().filter((p) => p.dir === 'out' && p.type === row.type);
-    const items = producers.length
-      ? producers.map((p) => {
-        const from = `${p.component}.${p.port}`;
-        return [`${from} (${p.type})`, 'wire_create', { from, to }];
-      })
+    const cur = listWires().find((w) => w && w.to === to);
+    const curFrom = cur ? cur.from : null;
+    const rows = listPorts()
+      .filter((p) => p.dir === 'out' && p.type === row.type)
+      .map((p) => ({ from: `${p.component}.${p.port}`, type: p.type }));
+    const isCur = (r) => r.from === curFrom;
+    const ordered = [...rows.filter(isCur), ...rows.filter((r) => !isCur(r))];
+    const items = ordered.length
+      ? ordered.map((r) => [`${r.from} (${r.type})${isCur(r) ? ' ✓ current' : ''}`, 'wire_create', { from: r.from, to }])
       : [[`(no producer port of type ${row.type || '?'})`, 'noop', null]];
     host.applyMsg({ type: 'menu_open', items, title: `Wire → ${to}` });
   });

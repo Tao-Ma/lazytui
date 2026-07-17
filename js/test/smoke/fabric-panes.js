@@ -112,6 +112,10 @@ describe('[4] w offers EVERY compatible producer (multi-source) → runtime wire
     const items = (getModel().modal.menu.items || []).map((r) => r && r[0]);
     assert(items.some((l) => /primary\.lsn/.test(l)) && items.some((l) => /standby\.lsn/.test(l)),
       `picker offers BOTH compatible producers (multi-source): ${JSON.stringify(items)}`);
+    // The config wire (primary.lsn → miner.start) is the current source: tagged
+    // + floated to the top so re-pointing is informed, not blind.
+    assert(/primary\.lsn.*✓ current/.test(items[0]),
+      `current wire tagged + floated first: ${JSON.stringify(items)}`);
     key('return');   // pick the highlighted producer (first = primary.lsn)
     assert(!getModel().modes.menuOpen, 'picker closed');
     const w = getModel().fabric.wires.find((x) => x.to === 'miner.start' && x.from === 'primary.lsn');

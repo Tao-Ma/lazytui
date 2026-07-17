@@ -29,7 +29,9 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   transform) and its **provenance** (that it follows the source pane's selection,
   or is pinned) — so it reads as a live inspector, not a frozen or empty pane.
   Keys: `↵` run · `e` edit a field (→ inject) · `w` connect to a producer · `x`
-  clear an inject · `p` pin the pane to a component.
+  clear an inject · `p` pin the pane to a component. When several producers match
+  an input's type, the `w` picker tags the currently-wired one `✓ current` and
+  floats it first, so re-pointing a multi-source input is an informed choice.
 - **Wire list** (`fabric-wires`) — a global edge view rendering the value on each
   wire plus its validity, with `d` to delete a runtime wire.
 - **Replay-as-debugger** — every port/wire value is a derived selector over the
