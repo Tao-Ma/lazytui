@@ -70,30 +70,32 @@ describe('[1] the demo places both fabric panes and they render live', () => {
     assert(PORTS, 'component-ports pane placed');
     assert(WIRES, 'fabric-wires pane placed');
   });
-  it('the initial frame shows both panes and the config wire', () => {
+  it('the initial frame shows both panes and a config wire', () => {
     const f = frame();
     assert(/Ports/.test(f), 'Ports pane title');
     assert(/Wires/.test(f), 'Wires pane title');
-    assert(/source\.lsn/.test(f) && /mine\.start/.test(f), 'the config wire edge is listed');
+    assert(/primary\.lsn/.test(f) && /miner\.start/.test(f), 'a config wire edge is listed');
   });
 });
 
 describe('[2] Ports follows the Actions selection (select_from)', () => {
-  it('selecting `mine` in Actions retargets the Ports pane to mine', () => {
-    navState.setSel('actions', 1);   // 0=source, 1=mine
+  it('selecting `miner` in Actions retargets the pane + shows role/provenance', () => {
+    navState.setSel('actions', 2);   // 0=primary, 1=standby, 2=miner, 3=compare
     const f = frame();
-    assert(/Ports: mine/.test(f), `Ports retargeted to mine\n${f}`);
-    assert(/start/.test(f), 'shows mine\'s input port');
+    assert(/Ports: miner/.test(f), `Ports retargeted to miner\n${f}`);
+    assert(/start/.test(f), 'shows miner\'s input port');
+    assert(/transform/.test(f) && /follows Actions/.test(f),
+      `header names the role + the follows-Actions provenance\n${f}`);
   });
 });
 
 describe('[3] e edits a field → sticky inject', () => {
-  it('e + typing + Enter commits the raw value as an inject on mine.start', () => {
+  it('e + typing + Enter commits the raw value as an inject on miner.start', () => {
     focusPorts();
     key('e');
     for (const ch of '0/BEEF') key(ch, ch);
     key('return');
-    const inj = getModel().fabric.injects['mine.start'];
+    const inj = getModel().fabric.injects['miner.start'];
     assert(inj && inj.value === '0/BEEF', `inject committed: ${JSON.stringify(inj)}`);
     assert(!getModel().modes.fabricFieldMode, 'editor closed after Enter');
     const f = frame();
@@ -102,17 +104,17 @@ describe('[3] e edits a field → sticky inject', () => {
   });
 });
 
-describe('[4] w connects a compatible producer → runtime wire', () => {
-  it('w opens the producer picker; selecting it creates the runtime wire', () => {
+describe('[4] w offers EVERY compatible producer (multi-source) → runtime wire', () => {
+  it('w picker lists both primary.lsn and standby.lsn; picking one wires it', () => {
     focusPorts();
-    // clear the inject first so the wire is the resolving source afterwards
-    navState.setSel('actions', 1);
+    navState.setSel('actions', 2);   // miner
     key('w');
     const items = (getModel().modal.menu.items || []).map((r) => r && r[0]);
-    assert(items.some((l) => /source\.lsn/.test(l)), `picker offers the compatible producer: ${JSON.stringify(items)}`);
-    key('return');   // pick the highlighted producer
+    assert(items.some((l) => /primary\.lsn/.test(l)) && items.some((l) => /standby\.lsn/.test(l)),
+      `picker offers BOTH compatible producers (multi-source): ${JSON.stringify(items)}`);
+    key('return');   // pick the highlighted producer (first = primary.lsn)
     assert(!getModel().modes.menuOpen, 'picker closed');
-    const w = getModel().fabric.wires.find((x) => x.to === 'mine.start' && x.from === 'source.lsn');
+    const w = getModel().fabric.wires.find((x) => x.to === 'miner.start' && x.from === 'primary.lsn');
     assert(w, `runtime wire created: ${JSON.stringify(getModel().fabric.wires)}`);
   });
 });
@@ -122,13 +124,26 @@ describe('[5] p pins the pane; x clears the inject', () => {
     focusPorts();
     key('p');
     const slice = api.getInstanceSlice(PORTS);
-    eq(slice.pinned, 'mine', 'slice.pinned set to the resolved component');
+    eq(slice.pinned, 'miner', 'slice.pinned set to the resolved component');
     assert(/\(pinned\)/.test(frame()), 'title shows the pinned marker');
   });
   it('x clears the inject on the selected input', () => {
     focusPorts();
     key('x');
-    assert(!('mine.start' in getModel().fabric.injects), 'inject removed');
+    assert(!('miner.start' in getModel().fabric.injects), 'inject removed');
+  });
+});
+
+describe('[6] compare is a fan-in node — two inputs, one wire each', () => {
+  it('selecting compare shows both inputs; both edges land in the Wires pane', () => {
+    focusPorts();
+    key('p');                        // unpin (test [5] pinned to miner) → follows-focus again
+    navState.setSel('actions', 3);   // compare
+    const f = frame();
+    assert(/Ports: compare/.test(f), `retargeted to compare\n${f}`);
+    assert(/primary_lsn/.test(f) && /standby_lsn/.test(f), 'both fan-in input ports shown');
+    assert(/primary\.lsn → compare\.primary_lsn/.test(f) && /standby\.lsn → compare\.standby_lsn/.test(f),
+      `Wires pane lists both edges into compare (fan-in)\n${f}`);
   });
 });
 

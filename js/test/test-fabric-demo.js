@@ -19,20 +19,28 @@ const { portValue } = require('../fabric/ports');
 const cfg = parse(path.join(__dirname, '../../demo/fabric/tui.yml'));
 
 describe('[fabric-demo] config parses with fabric declarations', () => {
-  const src = cfg.groups.demo.actions.source;
-  it('producer declares parse + a typed output port', () => {
-    eq(src.parse.kv.sep, ':');
-    eq(src.ports.out.lsn.type, 'demo.lsn');
-    eq(Array.isArray(src.run), true);
+  const A = cfg.groups.demo.actions;
+  it('two producers export the SAME type (demo.lsn) — the multi-source case', () => {
+    eq(A.primary.parse.kv.sep, ':');
+    eq(A.primary.ports.out.lsn.type, 'demo.lsn');
+    eq(A.standby.ports.out.lsn.type, 'demo.lsn');
+    eq(Array.isArray(A.primary.run), true);
   });
-  it('consumer declares a required input port + the {{start}} hole', () => {
-    const mine = cfg.groups.demo.actions.mine;
-    eq(mine.ports.in.start.required, true);
-    assert(mine.run.join(' ').includes('{{start}}'));
+  it('the consumer declares a required input port + the {{start}} hole', () => {
+    eq(A.miner.ports.in.start.required, true);
+    assert(A.miner.run.join(' ').includes('{{start}}'));
   });
-  it('the wire connects source.lsn → mine.start', () => {
-    eq(cfg.groups.demo.wires[0].from, 'source.lsn');
-    eq(cfg.groups.demo.wires[0].to, 'mine.start');
+  it('compare is a FAN-IN node — two required inputs of the same type', () => {
+    eq(A.compare.ports.in.primary_lsn.type, 'demo.lsn');
+    eq(A.compare.ports.in.standby_lsn.type, 'demo.lsn');
+    assert(A.compare.run.join(' ').includes('{{primary_lsn}}'));
+    assert(A.compare.run.join(' ').includes('{{standby_lsn}}'));
+  });
+  it('wires connect primary→miner and fan primary+standby into compare', () => {
+    const W = cfg.groups.demo.wires;
+    assert(W.some((w) => w.from === 'primary.lsn' && w.to === 'miner.start'));
+    assert(W.some((w) => w.from === 'primary.lsn' && w.to === 'compare.primary_lsn'));
+    assert(W.some((w) => w.from === 'standby.lsn' && w.to === 'compare.standby_lsn'));
   });
 });
 
@@ -72,15 +80,24 @@ function poll(cond, cb, tries = 80) {
 }
 
 section('[fabric-demo] end-to-end run (real execve, no shell)');
-doRunFabric('source', cfg.groups.demo.actions.source);
-poll(() => fabricOut('source'), () => {
-  eq(portValue('source', 'lsn'), '0/CAFE', 'producer RAW output parsed → output port derivable');
+const A = cfg.groups.demo.actions;
+// Run BOTH producers first; each publishes its own typed LSN.
+doRunFabric('primary', A.primary);
+doRunFabric('standby', A.standby);
+poll(() => fabricOut('primary') && fabricOut('standby'), () => {
+  eq(portValue('primary', 'lsn'), '0/CAFE', 'primary RAW output parsed → output port derivable');
+  eq(portValue('standby', 'lsn'), '0/BEEF', 'standby projects a DIFFERENT value (distinct source)');
 
-  doRunFabric('mine', cfg.groups.demo.actions.mine);
-  poll(() => fabricOut('mine'), () => {
-    const out = fabricOut('mine').join('\n');
-    assert(/starting at 0\/CAFE/.test(out), 'consumer ran with the WIRED value (zero manual input)');
-    assert(!/\[dim\]|\[green\]/.test(out), 'raw output is free of stream chrome (H1)');
+  // The consumer resolves from its wire (primary.lsn); the fan-in node resolves
+  // BOTH inputs, each from a different producer — zero manual input either way.
+  doRunFabric('miner', A.miner);
+  doRunFabric('compare', A.compare);
+  poll(() => fabricOut('miner') && fabricOut('compare'), () => {
+    const mo = fabricOut('miner').join('\n');
+    assert(/starting at 0\/CAFE/.test(mo), 'consumer ran with the WIRED value (primary.lsn)');
+    assert(!/\[dim\]|\[green\]/.test(mo), 'raw output is free of stream chrome (H1)');
+    const co = fabricOut('compare').join('\n');
+    assert(/primary=0\/CAFE standby=0\/BEEF/.test(co), 'fan-in: compare ran with BOTH wired inputs');
     report();
   });
 });

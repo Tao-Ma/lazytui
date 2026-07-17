@@ -55,22 +55,32 @@ function _selectionName(paneId) {
 // Resolves off the SLICE (not the arrange `panel`), so getItems — which only
 // receives the slice — resolves identically to render. `selectFrom`/`component`
 // are stashed from paneDef at init; `pinned` is a runtime pin (Slice D).
-function _resolveComponent(slice) {
+//
+// Returns { name, via } — `via` records WHICH precedence rule matched ('pin' |
+// 'config' | 'select_from' | 'focus' | null), so render can tell the user why
+// this component is showing (the follows-focus provenance subline). Only a name
+// that is a fabric component (declares ports) is accepted; anything else falls
+// through to the next source.
+function _targetInfo(slice) {
   const fab = _fabricComponents();
   const ok = (n) => (n && fab.has(n) ? n : null);
-  if (!slice) return null;
+  if (!slice) return { name: null, via: null };
   // 1. runtime pin (Slice D sets slice.pinned).
-  if (slice.pinned && ok(slice.pinned)) return slice.pinned;
+  if (slice.pinned && ok(slice.pinned)) return { name: slice.pinned, via: 'pin' };
   // 2. config-pinned single component.
-  if (slice.component && ok(slice.component)) return slice.component;
+  if (slice.component && ok(slice.component)) return { name: slice.component, via: 'config' };
   // 3. configured source pane (deterministic, like stats' select_from).
-  if (slice.selectFrom) { const n = ok(_selectionName(slice.selectFrom)); if (n) return n; }
+  if (slice.selectFrom) { const n = ok(_selectionName(slice.selectFrom)); if (n) return { name: n, via: 'select_from' }; }
   // 4. follows-focus: the focused pane's selection (skip self so the inspector
   //    doesn't try to inspect its own rows).
   const focus = route.getFocus();
-  if (focus && focus !== slice.paneId) { const n = ok(_selectionName(focus)); if (n) return n; }
-  return null;
+  if (focus && focus !== slice.paneId) { const n = ok(_selectionName(focus)); if (n) return { name: n, via: 'focus' }; }
+  return { name: null, via: null };
 }
+
+// Name-only convenience (getItems, effects, tests) — the provenance is a
+// render-only concern.
+function _resolveComponent(slice) { return _targetInfo(slice).name; }
 
 // The current inspect context off the live model — shared by render + getItems.
 function _ctx() {
@@ -98,6 +108,29 @@ const PLACEHOLDER = '▏';
 
 function _pad(s, n) { const len = s.length; return len >= n ? s : s + ' '.repeat(n - len); }
 
+// The component's dataflow ROLE, from its port surface: only outputs = a
+// producer (a source), only inputs = a consumer (a sink), both = a transform
+// (a pipe stage). Answers "what am I looking at" for a pane that would
+// otherwise read as empty when a producer declares no inputs.
+function _role(data) {
+  const hasIn = data.inputs.length, hasOut = data.outputs.length;
+  return hasIn && hasOut ? 'transform' : hasOut ? 'producer' : hasIn ? 'consumer' : 'component';
+}
+
+// Why THIS component is showing — the provenance subline, keyed off _targetInfo's
+// `via`. Makes the follows-focus behaviour legible: the pane isn't frozen on one
+// component, it tracks a selection.
+function _provenance(via, slice) {
+  const cap = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
+  switch (via) {
+    case 'pin':         return 'pinned — p to unpin';
+    case 'config':      return 'pinned in config';
+    case 'select_from': return `follows ${cap(slice.selectFrom)}`;
+    case 'focus':       return 'follows focus';
+    default:            return '';
+  }
+}
+
 function _renderEmpty(panel, w, h, msg, focused, chrome) {
   const t = theme();
   return renderPanel({
@@ -112,7 +145,7 @@ function render(panel, w, h, slice, opts) {
   const focused = !!(opts && opts.focused);
   const chrome = opts && opts.chrome;
 
-  const name = _resolveComponent(slice);
+  const { name, via } = _targetInfo(slice);
   if (!name) {
     return _renderEmpty(panel, w, h,
       '(no fabric component in focus — select one, configure select_from, or pin)',
@@ -144,6 +177,11 @@ function render(panel, w, h, slice, opts) {
   const nameCell = `[bold]${esc(name)}[/]`;
   const gap = Math.max(1, (w - 2) - visibleLen(nameCell) - visibleLen(badge));
   lines.push(nameCell + ' '.repeat(gap) + badge);
+  // Provenance subline: ROLE (producer/consumer/transform) + why this component
+  // is showing (follows the Actions selection / pinned). Tells the user what the
+  // pane is and that it tracks a selection — the two things the bare title hid.
+  const prov = _provenance(via, slice);
+  lines.push(`[${t.dim}]${esc(_role(data) + (prov ? ` · ${prov}` : ''))}[/]`);
   lines.push('');
 
   // Operate-half — input ports (navigable; row order == getItems order).

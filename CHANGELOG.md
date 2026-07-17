@@ -25,14 +25,21 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   component's whole port surface: the operate-half (inputs — resolved value +
   source badge + readiness) and the check-half (outputs — current value with a
   ✓ matched / ✗ no-match / — no-value marker, so an author can see whether an
-  extract fired). Keys: `↵` run · `e` edit a field (→ inject) · `w` connect to a
-  producer · `x` clear an inject · `p` pin the pane to a component.
+  extract fired). Its header names the component's **role** (producer / consumer /
+  transform) and its **provenance** (that it follows the source pane's selection,
+  or is pinned) — so it reads as a live inspector, not a frozen or empty pane.
+  Keys: `↵` run · `e` edit a field (→ inject) · `w` connect to a producer · `x`
+  clear an inject · `p` pin the pane to a component.
 - **Wire list** (`fabric-wires`) — a global edge view rendering the value on each
   wire plus its validity, with `d` to delete a runtime wire.
 - **Replay-as-debugger** — every port/wire value is a derived selector over the
   model and the whole fabric state rides the WAL, so stepping recorded history
   reconstructs correct port/wire values at every frame with no fabric-specific
   replay code.
+- **Fabric showcase demo** (`demo/fabric/tui.yml`) — a self-contained, echo-based
+  (no infra) replication pipe: two producers exporting the same type so a consumer
+  can pick its source via the `w` picker, plus a fan-in `compare` node wired from
+  both. Exercises multi-source wiring, fan-in, and the follows-Actions pane.
 
 ### Changed
 

@@ -362,7 +362,9 @@ fabric, not a second system.
 
 > *Schematic — it shows the two-input, wire + inject shape. The runnable pipes ship as
 > `demo/postgres/tui.yml` (real pg: a single-input `waldump` consumer,
-> `controldata.redo_lsn → waldump.start_lsn`) and `demo/fabric/tui.yml` (infra-free echo).*
+> `controldata.redo_lsn → waldump.start_lsn`) and `demo/fabric/tui.yml` (infra-free echo:
+> two producers exporting the same type so a consumer can pick its source, plus a
+> fan-in `compare` node wired from both).*
 
 ```yaml
 groups:

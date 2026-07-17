@@ -1,23 +1,39 @@
 # Self-contained dataflow-fabric demo (docs/ports-and-wires.md) — NO infra.
 #
-# A two-node pipe, echo-based so it runs anywhere:
-#   `source` prints an LSN-like line; its output is PARSED (kv) and projected
-#   as the typed output port `source.lsn`. A WIRE feeds that into `mine`'s
-#   input port `mine.start`, filled into its no-shell argv template ({{start}}).
+# A tiny Postgres-flavoured replication pipe, echo-based so it runs anywhere.
+# Four components wired into a dataflow graph:
 #
-# Try it:
-#   1. Run `source`  → "Latest checkpoint REDO location: 0/CAFE"
-#   2. Run `mine`    → its {{start}} resolves from the wire → "…starting at 0/CAFE"
-#   Or select any text, right-click → "Send selection to port…" → mine.start,
-#   then run `mine` (the inject overrides the wire for the next run).
+#   primary ─┐ (demo.lsn)
+#            ├──▶ miner.start        one input, TWO possible sources
+#   standby ─┘ (demo.lsn)
 #
-# P1.5 panes (Ports + Wires, placed below):
-#   - The Ports pane FOLLOWS the Actions selection (select_from) and shows the
-#     focused component's inputs (operate) + outputs (check). Focus it, then:
-#       ↵ run · e edit a field (→ inject) · w connect to a producer ·
-#       x clear an inject · p pin the pane to the current component.
-#   - The Wires pane lists every edge with the value on it + validity;
-#     d deletes a runtime wire.
+#   primary.lsn ──▶ compare.primary_lsn ┐
+#                                        ├──▶ compare  (FAN-IN: two inputs)
+#   standby.lsn ──▶ compare.standby_lsn ┘
+#
+#   - `primary` / `standby` are PRODUCERS: each echoes an LSN line, PARSED (kv)
+#     and projected as the typed output port `*.lsn` (type demo.lsn).
+#   - `miner` is a CONSUMER: its input `start` is filled into the no-shell argv
+#     template ({{start}}). It's WIRED from `primary` by default — but because
+#     BOTH producers export demo.lsn, you can re-point it (see below).
+#   - `compare` is a FAN-IN node: two inputs, one wired from each producer.
+#
+# Try it (Actions pane on the right — Enter runs a component):
+#   1. Run `primary` and `standby`  → each publishes its LSN.
+#   2. Run `miner`   → {{start}} resolves from its wire → "…starting at 0/CAFE".
+#   3. Run `compare` → both inputs resolve → "primary=0/CAFE standby=0/BEEF".
+#
+# Multiple sources — the whole point of the Ports pane:
+#   Focus the Ports pane, move to `miner`'s `start` input, press `w` (wire).
+#   The picker offers BOTH `primary.lsn` and `standby.lsn` (every producer of
+#   the matching type) — pick `standby.lsn` to re-point the pipe, then run
+#   `miner` again. Or press `e` to type a one-off value (a sticky inject that
+#   overrides the wire for the next run), `x` to clear it.
+#
+# The Ports pane FOLLOWS the Actions selection (select_from) and retargets to
+# whichever component you highlight — its header shows the component's ROLE
+# (producer / consumer / transform) and that it's tracking the Actions pane.
+# The Wires pane lists every edge with the value on it + validity.
 #
 # Zero model involvement — deterministic tools composed into a pipe.
 
@@ -27,25 +43,45 @@ groups:
   demo:
     label: fabric demo
     actions:
-      source:
-        label: Produce an LSN
+      primary:
+        label: Primary checkpoint LSN
         tab: true
         run: [ echo, "Latest checkpoint REDO location: 0/CAFE" ]
         parse: { kv: { sep: ':' } }
         ports:
           out:
-            lsn: { type: demo.lsn, desc: "checkpoint REDO LSN", from: "Latest checkpoint REDO location" }
-      mine:
-        label: Mine WAL from the LSN
+            lsn: { type: demo.lsn, desc: "primary's checkpoint REDO LSN", from: "Latest checkpoint REDO location" }
+      standby:
+        label: Standby replay LSN
+        tab: true
+        run: [ echo, "Last replayed REDO location: 0/BEEF" ]
+        parse: { kv: { sep: ':' } }
+        ports:
+          out:
+            lsn: { type: demo.lsn, desc: "standby's last-replayed LSN", from: "Last replayed REDO location" }
+      miner:
+        label: Mine WAL from an LSN
         tab: true
         run: [ echo, "mining WAL starting at {{start}}" ]
         ports:
           in:
-            start: { type: demo.lsn, required: true, desc: "start LSN (wired from source.lsn)" }
+            start: { type: demo.lsn, required: true, desc: "start LSN — wire from primary.lsn OR standby.lsn" }
           out:
             records: { type: demo.records, extract: { regex: "starting at (\\S+)" } }
+      compare:
+        label: Compare primary vs standby
+        tab: true
+        run: [ echo, "primary={{primary_lsn}} standby={{standby_lsn}}" ]
+        ports:
+          in:
+            primary_lsn: { type: demo.lsn, required: true, desc: "primary checkpoint LSN (wire from primary.lsn)" }
+            standby_lsn: { type: demo.lsn, required: true, desc: "standby replay LSN (wire from standby.lsn)" }
+          out:
+            report: { type: demo.report, extract: { regex: "primary=(\\S+) standby=(\\S+)", group: 0 } }
     wires:
-      - { from: source.lsn, to: mine.start }
+      - { from: primary.lsn, to: miner.start }
+      - { from: primary.lsn, to: compare.primary_lsn }
+      - { from: standby.lsn, to: compare.standby_lsn }
 
 panels:
   groups:  { type: groups,  title: Groups }
@@ -56,10 +92,10 @@ panels:
 
 layout:
   columns:
-    - width: 22
+    - width: 20
       panels: [ groups ]
-    - width: 44
+    - width: 48
       panels: [ ports, wires ]
     - panels:
         - actions
-        - { tabs: [ detail ], height: 45% }
+        - { tabs: [ detail ], height: 40% }
