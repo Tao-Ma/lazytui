@@ -48,8 +48,11 @@ edits to any Component's `render()`. paint announces the pane being rendered
 (`select-view.enterPane`/`exitPane`) so the wrapper can attribute content to a
 paneId without threading it through every call site.
 
-`select-core` is a pure bottom leaf (depends only on `leaves/text/ansi`), shared
-so the viewer can later migrate onto it.
+`select-core` is a pure bottom leaf (depends only on `leaves/text/ansi`) and the
+**single source of truth for selection geometry** — both the per-pane path
+(`panel/select-view`) and the viewer's own selection (`panel/viewer/select`)
+delegate to it for display-col ↔ codepoint mapping, selected-text extraction, and
+highlight decoration.
 
 ## Interaction — arm on press, begin on drag
 
@@ -61,9 +64,16 @@ selection). Right-click surfaces **Copy selection** and **Send selection to
 port…** for the active selection.
 
 The **viewer** keeps its own richer in-slice selection (`panel/viewer/select.js`)
-— scroll-anchored across its full scrollback, plus visual-mode `v`. At most one
-of the two backends is active at a time. (A later step may migrate the viewer
-onto the shared core; until then the two coexist.)
+— scroll-anchored across its full scrollback, plus visual-mode `v`/`V`/`y`. At
+most one of the two backends is active at a time.
+
+The two share the geometry **core** but keep **distinct state shapes**, on
+purpose: the viewer's selection is per-content-tab persisted and driven by a
+keyboard state machine, which doesn't fit the shared single-owner
+`model.selection` field. So `panel/viewer/select.js` is now just the viewer's
+coordinate contract + impure service (read the detail slice's `select`, dispatch
+the `select_*` Msgs, push a commit to the register), ~125 lines with zero
+duplicated geometry — everything computational lives in `select-core`.
 
 ### On table panes
 

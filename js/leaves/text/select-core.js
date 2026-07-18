@@ -153,7 +153,14 @@ function decorateWindow(lines, sel, offset = 0) {
   });
 }
 
-// Only the two composed entry points are public; the column-mapping / range /
-// highlight helpers are internal (exercised transitively). Keeping the surface
-// minimal keeps the dead-export gate at 0 until the viewer migrates onto this.
-module.exports = { selectedTextFrom, decorateWindow };
+/** Display width of the plain projection of content line `i` (CJK-aware) — the
+ *  viewer's horizontal cursor clamp reads this. */
+function plainLineWidthFrom(lines, i) {
+  return displayWidth(plainLineAt(lines, i));
+}
+
+// Public surface: the two composed entry points plus the two helpers the
+// viewer's own selection layer (panel/viewer/select.js) delegates to now that
+// both backends share this one geometry core. The column-mapping / range
+// internals stay private (exercised transitively).
+module.exports = { selectedTextFrom, decorateWindow, highlightLine, plainLineWidthFrom };
