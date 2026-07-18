@@ -431,10 +431,10 @@ function addEphemeral(slice, { groupName, key, cmd, label, currentGroup, groupEx
 // reopening the same file path, recreating an ephemeral terminal
 // under the same key) — counter to the "first visit → kind-specific
 // default" rule in tab_switch's _resolveScroll.
+// Store mechanics live in the pane-agnostic tab-state leaf (P1); this keeps the
+// R5 name + the group:kind:key rationale at the viewer's call sites.
 function _dropTabStateEntry(slice, key) {
-  if (!slice.tabState || !(key in slice.tabState)) return slice;
-  const { [key]: _drop, ...rest } = slice.tabState;
-  return { ...slice, tabState: rest };
+  return require('./tab-state').dropEntry(slice, key);
 }
 
 function removeEphemeral(slice, { groupName, key, currentGroup, yamlTerminals, actionCount }) {

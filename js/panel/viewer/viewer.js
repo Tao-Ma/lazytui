@@ -28,6 +28,7 @@ const {
 } = require('../api');
 const ms = require('../../leaves/text/search');
 const pt = require('../../leaves/wm/pane-tabs');
+const _tabStore = require('../../leaves/wm/tab-state');
 const mpool = require('../../leaves/wm/pool');
 const { stripMarkup, charWidth } = require('../../leaves/text/ansi');
 const { buildTabStrip } = require('./tab-strip');
@@ -86,40 +87,13 @@ function _setCursor(slice, line, col, extend) {
   return next;
 }
 
-// T3 — read a per-tab field with a fallback. Returns the stored value
-// when present (even if 0 / null), else the fallback.
-function _tabFieldOf(slice, key, field, fallback) {
-  if (!slice || !slice.tabState || !key) return fallback;
-  const entry = slice.tabState[key];
-  if (!entry || !(field in entry)) return fallback;
-  return entry[field];
-}
-
-// T3 — write a per-tab field; returns a fresh slice with the per-tab
-// entry merged. No-key calls are no-ops.
-function _withTabField(slice, key, field, value) {
-  if (!key) return slice;
-  const tabState = slice.tabState || {};
-  const cur = tabState[key] || {};
-  if (cur[field] === value) return slice;  // identity preserve
-  return {
-    ...slice,
-    tabState: { ...tabState, [key]: { ...cur, [field]: value } },
-  };
-}
-
-// T3 — merge multiple per-tab fields in one write. Used when scroll +
-// `bottomSticky` need to land together (the sticky bit drives re-snap
-// behavior on tab restore).
-function _withTabFields(slice, key, patch) {
-  if (!key || !patch) return slice;
-  const tabState = slice.tabState || {};
-  const cur = tabState[key] || {};
-  return {
-    ...slice,
-    tabState: { ...tabState, [key]: { ...cur, ...patch } },
-  };
-}
+// T3 — per-tab view-state accessors. The store mechanics now live in the
+// pane-agnostic leaf leaves/wm/tab-state (docs/pane-tabs-unification.md, P1); the
+// viewer keeps these thin aliases so its many call sites stay unchanged. Other
+// panes (the arc's later phases) import the leaf directly.
+function _tabFieldOf(slice, key, field, fallback) { return _tabStore.field(slice, key, field, fallback); }
+function _withTabField(slice, key, field, value) { return _tabStore.withField(slice, key, field, value); }
+function _withTabFields(slice, key, patch) { return _tabStore.withFields(slice, key, patch); }
 
 /** Cap an array of lines to maxLen by dropping the oldest. Returns
  *  [cappedLines, droppedCount] so callers can adjust scroll for the
