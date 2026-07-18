@@ -98,6 +98,13 @@ describe('[select-core] root reducer arms', () => {
     eq(m.selection.paneId, null);
     eq(m.selection.active, false);
   });
+  it('a group switch (reset_group_context) drops a stale selection', () => {
+    let m = init();
+    [m] = update(m, { type: 'sel_begin', paneId: 'ports-1', line: 3, col: 2 });
+    [m] = update(m, { type: 'reset_group_context', owners: {} });
+    eq(m.selection.active, false, 'selection cleared so it cannot highlight the new group\'s content');
+    eq(m.selection.paneId, null);
+  });
 });
 
 report();

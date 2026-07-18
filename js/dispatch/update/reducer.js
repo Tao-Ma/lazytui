@@ -410,7 +410,13 @@ function update(model, msg) {
       // the ROOT chrome half of resetGroupContext (mode flags off + per-group
       // sel / filters / multiSel reset). The viewer-slice half rides on
       // viewer_reset_chrome → detail Component.
-      const next = _withModes(model, { terminalMode: false, listSelectMode: false });
+      // Also drop any per-pane text selection (docs/pane-selection.md): its
+      // absolute line/col would otherwise highlight — and right-click-copy —
+      // whatever content now sits at that spot in the new group.
+      const cleared = model.selection && model.selection.active
+        ? { ...model, selection: { paneId: null, anchor: { line: 0, col: 0 }, cursor: { line: 0, col: 0 }, kind: 'char', active: false } }
+        : model;
+      const next = _withModes(cleared, { terminalMode: false, listSelectMode: false });
       // #D9 — the panel→owner map is resolved by the dispatcher (impure shell)
       // and stamped on msg.owners (`{ <panelType>: <ownerComponentName> }`), so
       // the reducer reads no ownership registry. The map's KEYS are WHICH

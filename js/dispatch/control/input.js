@@ -725,6 +725,12 @@ function handleMouse(kind, x, y) {
   // left press reaches the chrome/tab/detail pre-resolution + focus+select.
   if (kind !== 'press') return;
 
+  // A new press starts a fresh gesture: disarm any prior selection-arm so a
+  // press that lands on a NON-selectable target (viewer body, chrome) can't
+  // leave a stale arm that a later motion would begin. The body loop's
+  // "Other panels" arm re-sets it when the press lands on a selectable pane.
+  _armedSelect = null;
+
   let mutated = false;
 
   // Same reason as _handleWheel above: hit-test against ACTUALLY-
@@ -829,9 +835,7 @@ function handleMouse(kind, x, y) {
     applyMsg({ type: 'sel_clear' });
     if (_selectablePane(p.paneId)) {
       const cc = _contentCoordsAt(p.paneId, mx, my);
-      _armedSelect = cc ? { paneId: p.paneId, line: cc.line, col: cc.col } : null;
-    } else {
-      _armedSelect = null;
+      if (cc) _armedSelect = { paneId: p.paneId, line: cc.line, col: cc.col };  // else stays null (cleared above)
     }
     // Resolve whether this click lands on a selectable row BEFORE the
     // focus_set: if it does, navSelect (below) sets the cursor and fires

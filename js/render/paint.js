@@ -79,6 +79,7 @@ let _routeRef; const _route = () => (_routeRef ||= require('../panel/route'));
 let _decorRef; const _decor = () => (_decorRef ||= require('../leaves/render/draw'));
 let _tabsRef; const _tabs = () => (_tabsRef ||= require('../panel/viewer/tabs'));
 let _paneMenuRef; const _paneMenu = () => (_paneMenuRef ||= require('../overlay/pane-menu'));
+let _selViewRef; const _selView = () => (_selViewRef ||= require('../panel/select-view'));
 
 // Shared chrome-glyph inputs for composeRects / renderHalf / renderFull.
 // v0.6.4 Theme B — the scalar setup (chromeFor, viewer tab count, tab-
@@ -304,7 +305,7 @@ function _safeRender(panel, w, h, opts) {
   // pane is rendering so api.renderPanel can attribute its content lines to this
   // paneId without every render() call threading it through. Cleared in finally
   // so a throw can't leak the ambient into the next pane's render.
-  const selectView = require('../panel/select-view');
+  const selectView = _selView();
   selectView.enterPane(panel.paneId);
   try {
     // v0.6.3 P4.2b — pass opts (carries chrome spec from composeRects)
