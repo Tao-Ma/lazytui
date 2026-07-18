@@ -1,7 +1,15 @@
 # Panes as tab-containers (unification arc)
 
-> **Status:** planning. Not started. This captures the direction and a
-> gate-green phasing; it is not a commitment to build now.
+> **⚠ Superseded direction.** The live plan is
+> [one-tab-system.md](one-tab-system.md) (U2). Investigation found that flat
+> panes are *already* position-tab containers, so the better move inverts this
+> doc: instead of giving flat panes their own content-tabs (P2–P4 below),
+> dissolve the viewer's content-tabs into position-tabs. **P1 here (the shared
+> `leaves/wm/tab-state` store) shipped and is reused by U2**; P2–P4 are retained
+> only for the reasoning trail.
+>
+> **Status:** planning. P1 shipped; P2–P4 superseded by U2. This captures the
+> earlier direction and a gate-green phasing.
 
 ## One line
 
