@@ -384,6 +384,27 @@ function update(model, msg) {
     case 'set_register': {
       return [{ ...model, register: msg.register }, []];
     }
+    // Per-pane text selection (docs/pane-selection.md). A single owner (paneId)
+    // holds the active selection; the mouse pipeline drives these. Coords are
+    // absolute content line + display col — see model.selection in model/store.
+    case 'sel_begin': {
+      const at = { line: msg.line, col: msg.col };
+      return [{ ...model, selection: {
+        paneId: msg.paneId, anchor: at, cursor: at, kind: msg.kind || 'char', active: true,
+      } }, []];
+    }
+    case 'sel_extend': {
+      const sel = model.selection;
+      if (!sel || !sel.active) return [model, []];
+      return [{ ...model, selection: { ...sel, cursor: { line: msg.line, col: msg.col } } }, []];
+    }
+    case 'sel_clear': {
+      const sel = model.selection;
+      if (!sel || (!sel.active && sel.paneId == null)) return [model, []];
+      return [{ ...model, selection: {
+        paneId: null, anchor: { line: 0, col: 0 }, cursor: { line: 0, col: 0 }, kind: 'char', active: false,
+      } }, []];
+    }
     case 'reset_group_context': {
       // Cross-layer Msg emitted by the groups Component on a group switch —
       // the ROOT chrome half of resetGroupContext (mode flags off + per-group

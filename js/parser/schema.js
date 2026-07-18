@@ -16,7 +16,7 @@ const { compileCommand, commandHoles } = require('../fabric/command');
 
 const VALID_ACTION_TYPES = new Set(['run', 'spawn', 'background']);
 
-const VALID_TOP_KEYS    = new Set(['project_dir', 'groups', 'vars', 'helpers', 'files', 'layout', 'theme', 'plugins', 'register', 'keys', 'keymap', 'mouse', 'context-menu', 'panels']);
+const VALID_TOP_KEYS    = new Set(['project_dir', 'groups', 'vars', 'helpers', 'files', 'layout', 'theme', 'plugins', 'register', 'keys', 'keymap', 'mouse', 'context-menu', 'panels', 'selection']);
 const VALID_KEY_BINDING_KEYS = new Set(['action', 'command', 'builtin', 'label', 'desc']);
 // v0.6.7 E9 — the `keymap:` block (configurable normal-mode keys). A thin
 // versioned container; `normal:` is a flat key→verb map. SHAPE only here — the
@@ -84,6 +84,11 @@ function validate(data, _sourceFile, warnings) {
 
   if ('project_dir' in data && typeof data.project_dir !== 'string') {
     throw new SchemaError("'project_dir' must be a string");
+  }
+  // Global text-selection default (docs/pane-selection.md); default ON. Per-pane
+  // `select:` on a panel pool entry overrides it.
+  if ('selection' in data && typeof data.selection !== 'boolean') {
+    throw new SchemaError("'selection' must be a boolean");
   }
   if ('vars' in data)    validateVars(data.vars);
   if ('helpers' in data) validateHelpers(data.helpers);

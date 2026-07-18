@@ -8,6 +8,16 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Per-pane text selection** — drag-to-select and copy text in any focused pane
+  (the component-ports pane, the groups/actions lists, the wire list), not just
+  the viewer. A drag copies to the yank register (+ OSC 52 clipboard), highlights
+  the span, and feeds the right-click **Copy selection** / **Send selection to
+  port…** entries; char-level so you can grab an exact substring (e.g. just an
+  LSN out of a padded row). A press arms, the first motion begins — so a plain
+  click still selects a row. On by default; disable globally with top-level
+  `selection: false` or per pane with `select: false`. The viewer keeps its own
+  richer scroll-anchored selection. Spec:
+  [docs/pane-selection.md](docs/pane-selection.md).
 - **Component dataflow fabric (P1 + P1.5)** — components publish typed **output
   ports** (a producer parses its raw stdout once — `kv` / `json` / `lines` / a
   regex `fields` table — and projects fields; a per-port `from` / `extract` covers

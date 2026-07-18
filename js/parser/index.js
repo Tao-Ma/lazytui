@@ -87,6 +87,11 @@ function normalizePoolEntry(id, raw, synthesized) {
     }
     config[k] = v;
   }
+  // Per-pane text-selection override (docs/pane-selection.md) — a framework key,
+  // so validate it here rather than passing a bad value through as plugin config.
+  if ('select' in config && typeof config.select !== 'boolean') {
+    throw new ParseError(`panels.${id}: 'select' must be a boolean`);
+  }
   const entry = {
     id,
     type: raw.type,

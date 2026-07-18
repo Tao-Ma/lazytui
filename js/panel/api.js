@@ -22,7 +22,25 @@ const route = require('../panel/route');
 // still work but are not part of the contract.
 const { esc, visibleLen, stripMarkup, wrapColor } = require('../leaves/text/ansi');
 const { theme } = require('../leaves/infra/themes');
-const { renderPanel, setDimsProvider } = require('../leaves/render/draw');
+const { renderPanel: _leafRenderPanel, setDimsProvider } = require('../leaves/render/draw');
+const _selectView = require('./select-view');
+
+// Selection-aware renderPanel wrapper (docs/pane-selection.md). Every pane
+// renders its box through this, so it's the one seam where we (a) CAPTURE the
+// pane's content lines for the mouse selection pipeline and (b) DECORATE the
+// selected range when this pane owns the active selection — before the leaf
+// draws the border. The paneId comes from the ambient pane set by paint (or an
+// explicit opts.paneId for direct callers/tests); absent it, this is a pure
+// pass-through to the leaf, so overlays and unit tests are unaffected.
+function renderPanel(opts) {
+  const paneId = (opts && opts.paneId) || _selectView.currentPaneId();
+  if (paneId && opts) {
+    _selectView.recordContent(paneId, opts.lines, opts.scrollOffset || 0);
+    const decorated = _selectView.decorateFor(paneId, opts.lines || []);
+    if (decorated !== opts.lines) opts = { ...opts, lines: decorated };
+  }
+  return _leafRenderPanel(opts);
+}
 
 // Render-exit seam (docs/v0.6.5-render-exit.md): leaves/render/draw can't read the
 // model (panel layer) NOR import io (it's a pure bottom leaf). Inject the full

@@ -434,8 +434,14 @@ function _itemText(def, item) {
 
 function _resolveContextAt(mx, my) {
   const { stripMarkup } = require('../../leaves/text/ansi');
+  // Active text selection — either the viewer's rich in-slice selection or the
+  // shared per-pane one (docs/pane-selection.md); at most one is active at a
+  // time. Feeds the context menu's "Copy selection" / "Send selection to port".
   const sel = require('../../panel/viewer/select');
-  const selectionText = sel.isActive() ? (sel.selectedText() || null) : null;
+  const psel = require('../../panel/select-view');
+  const selectionText = sel.isActive() ? (sel.selectedText() || null)
+                      : psel.isActive() ? (psel.selectedText() || null)
+                      : null;
   const layoutSlice = getInstanceSlice('layout');
   for (const p of allPanels()) {
     const b = visibleBoundsFor(layoutSlice, p.paneId, route.resolveViewerPaneId());
@@ -499,6 +505,36 @@ function _realizeButtonGesture(intentName, x, y, mx, my) {
       // be inert rather than throw on a hot input path.
       return;
   }
+}
+
+// ── Shared per-pane text selection (docs/pane-selection.md) ────────────────
+// The viewer keeps its own rich in-slice selection (panel/viewer/select); every
+// OTHER pane uses the shared model.selection, driven from the mouse handler
+// below. A left press ARMS a potential selection (records the anchor); the FIRST
+// motion begins it — so a plain click still selects a row, and only a drag
+// starts text selection. Module-local, transient (like the free-config drag).
+let _armedSelect = null;   // { paneId, line, col } | null
+
+// Is this pane a selection target? Non-viewer (the viewer has its own path) and
+// not opted out via config (per-panel `select:` / global default — Slice 4).
+function _selectablePane(paneId) {
+  if (!paneId) return false;
+  const p = allPanels().find((x) => x.paneId === paneId);
+  if (!p || require('../../leaves/wm/pool').isDetailPane(p)) return false;
+  return require('../../panel/select-config').selectionEnabledFor(paneId);
+}
+
+// Map screen (mx,my) → { line (absolute content index), col (display) } inside a
+// pane's content region, or null on the border/outside. Absolute line folds in
+// the pane's scroll (0 for the non-scrolling list panes) so the selection stays
+// anchored to content, matching how the highlight decorates (offset 0).
+function _contentCoordsAt(paneId, mx, my) {
+  const b = visibleBoundsFor(getInstanceSlice('layout'), paneId, route.resolveViewerPaneId());
+  if (!b) return null;
+  if (my <= b.y || my >= b.y + b.h - 1) return null;   // top/bottom border rows
+  const cap = require('../../panel/select-view').contentFor(paneId);
+  const scroll = cap ? cap.scroll : 0;
+  return { line: scroll + (my - b.y - 1), col: Math.max(0, mx - b.x - 1) };
 }
 
 function handleMouse(kind, x, y) {
@@ -623,20 +659,37 @@ function handleMouse(kind, x, y) {
     return;
   }
 
-  // Detail-panel text selection. press → begin; motion (with button
-  // held) → extend; release → commit + push to register. Runs ahead
-  // of the focus+select loop so dragging across panels can extend a
-  // selection that started in detail rather than losing it to a focus
-  // change.
+  // Text selection. press → begin; motion (button held) → extend; release →
+  // copy to register. Runs ahead of the focus+select loop so a drag extends
+  // rather than losing the selection to a focus change. Two backends:
+  //   - VIEWER panes: the rich in-slice selection (panel/viewer/select).
+  //   - every OTHER pane: the shared model.selection (docs/pane-selection.md),
+  //     armed on press in the body loop below and begun on the first motion.
   const sel = require('../../panel/viewer/select');
-  if (kind === 'motion' && sel.isActive()) {
-    // v0.6.4 — focused viewer's CONTAINER pane bounds (see tab-drag site above).
-    const db = visibleBoundsFor(getInstanceSlice('layout'), route.resolveViewerPaneId(), route.resolveViewerPaneId());
-    if (db) {
-      const visibleLine = Math.max(0, Math.min(db.h - 3, my - db.y - 1));
-      const col = Math.max(0, mx - db.x - 1);
-      sel.extendTo((_detail()?.scroll || 0) + visibleLine, col);
+  const psel = require('../../panel/select-view');
+  if (kind === 'motion') {
+    if (sel.isActive()) {   // viewer selection (unchanged)
+      // v0.6.4 — focused viewer's CONTAINER pane bounds (see tab-drag site above).
+      const db = visibleBoundsFor(getInstanceSlice('layout'), route.resolveViewerPaneId(), route.resolveViewerPaneId());
+      if (db) {
+        const visibleLine = Math.max(0, Math.min(db.h - 3, my - db.y - 1));
+        const col = Math.max(0, mx - db.x - 1);
+        sel.extendTo((_detail()?.scroll || 0) + visibleLine, col);
+        render();
+      }
+      return;
+    }
+    // Shared per-pane selection: begin from an armed press, then extend. The
+    // first motion after a press turns an armed click into a drag-selection.
+    if (_armedSelect || psel.isActive()) {
+      if (!psel.isActive() && _armedSelect) {
+        applyMsg({ type: 'sel_begin', paneId: _armedSelect.paneId, line: _armedSelect.line, col: _armedSelect.col });
+      }
+      const paneId = psel.isActive() ? getModel().selection.paneId : (_armedSelect && _armedSelect.paneId);
+      const cc = paneId ? _contentCoordsAt(paneId, mx, my) : null;
+      if (cc) applyMsg({ type: 'sel_extend', line: cc.line, col: cc.col });
       render();
+      return;
     }
     return;
   }
@@ -646,8 +699,24 @@ function handleMouse(kind, x, y) {
       // selection (highlighted + offered to right-click "Copy selection")
       // rather than clearing it; a bare click with no drag still clears.
       sel.settle();
+      _armedSelect = null;
       render();
+      return;
     }
+    if (psel.isActive()) {
+      // Auto-copy a real drag to the register and keep it highlighted (offered
+      // to right-click "Copy selection"); a no-drag press clears — a plain
+      // click must not leave a stray one-char selection.
+      const s = getModel().selection;
+      const dragged = !(s.anchor.line === s.cursor.line && s.anchor.col === s.cursor.col);
+      const text = dragged ? psel.selectedText() : '';
+      if (text) applyMsg({ type: 'register_push', text });
+      else applyMsg({ type: 'sel_clear' });
+      _armedSelect = null;
+      render();
+      return;
+    }
+    _armedSelect = null;
     return;
   }
 
@@ -754,6 +823,16 @@ function handleMouse(kind, x, y) {
     // outside the detail content area cancels any pending selection
     // (starting a new gesture here).
     sel.cancel();
+    // Shared per-pane selection: a fresh press clears any prior selection and
+    // ARMS a new one at the click's content coords; the first motion begins it
+    // (so a plain click still selects the row, only a drag selects text).
+    applyMsg({ type: 'sel_clear' });
+    if (_selectablePane(p.paneId)) {
+      const cc = _contentCoordsAt(p.paneId, mx, my);
+      _armedSelect = cc ? { paneId: p.paneId, line: cc.line, col: cc.col } : null;
+    } else {
+      _armedSelect = null;
+    }
     // Resolve whether this click lands on a selectable row BEFORE the
     // focus_set: if it does, navSelect (below) sets the cursor and fires
     // show_selected_info against the NEW selection, so focus_set skips

@@ -300,6 +300,12 @@ function _safeRender(panel, w, h, opts) {
   const def = comp && comp.panelTypes && comp.panelTypes[panel.type];
   if (!def || typeof def.render !== 'function') return '';
   let raw;
+  // Selection capture/highlight seam (docs/pane-selection.md): announce which
+  // pane is rendering so api.renderPanel can attribute its content lines to this
+  // paneId without every render() call threading it through. Cleared in finally
+  // so a throw can't leak the ambient into the next pane's render.
+  const selectView = require('../panel/select-view');
+  selectView.enterPane(panel.paneId);
   try {
     // v0.6.3 P4.2b — pass opts (carries chrome spec from composeRects)
     // as a 5th arg. Existing panel renderers ignore unknown args; the
@@ -333,6 +339,8 @@ function _safeRender(panel, w, h, opts) {
     const rows = [errLine];
     for (let i = 1; i < h; i++) rows.push(blank);
     return rows.join('\n');
+  } finally {
+    selectView.exitPane();
   }
   return _normalizeRender(panel, raw, w, h).join('\n');
 }

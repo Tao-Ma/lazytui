@@ -231,6 +231,15 @@ function init() {
     //     wire_delete). Config-authored wires still live on the parsed config.
     // Port VALUES are derived selectors (js/fabric/ports.js), never stored.
     fabric: { injects: {}, output: {}, wires: [] },
+    // Per-pane text selection (docs/pane-selection.md). ONE selection at a time
+    // — `paneId` names the owning pane, so "focused-pane-only" is expressed as a
+    // single owner rather than per-slice state. `anchor`/`cursor` are content
+    // coords: absolute content-LINE index + DISPLAY column (so a selection stays
+    // anchored as a pane scrolls and maps CJK/wide glyphs correctly). Pure model
+    // state, single-writer = the reducer (sel_begin/sel_extend/sel_clear); rides
+    // the WAL + replay. The selected TEXT is derived on demand from the owner
+    // pane's captured content lines (leaves/text/select-core), never stored.
+    selection: { paneId: null, anchor: { line: 0, col: 0 }, cursor: { line: 0, col: 0 }, kind: 'char', active: false },
     // v0.6.6 Finding B — hub metrics time-series, keyed by topic, sampled in by
     // the throttled `metrics-mirror` Sub: { [topic]: { series:{rowKey:samples[]},
     // schema } }. The stats panel renders f(model.metrics[topic]) instead of
