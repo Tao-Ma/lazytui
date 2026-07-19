@@ -172,6 +172,64 @@ describe('[tab-container] perTabState round-trips through tab-state', () => {
   });
 });
 
+// --- instance backing (position/slot tabs) -------------------------------
+
+function multiTabPane() {
+  return {
+    pane: {
+      paneId: 'pane-docker', activeTabId: 'docker',
+      tabs: [{ id: 'docker', poolId: 'docker' }, { id: 'logs', poolId: 'logs' }],
+    },
+    pool: {
+      docker: { id: 'docker', type: 'docker', title: 'Docker' },
+      logs: { id: 'logs', type: 'viewer', title: 'Logs' },
+    },
+  };
+}
+
+describe('[tab-container] instance backing', () => {
+  it('listTabs — one row per pane.tabs[i], label/kind from the pool', () => {
+    const { pane, pool } = multiTabPane();
+    const rows = tc.listTabs(tc.containerFor('instance', { pane, pool }));
+    eq(rows.length, 2);
+    eq(rows[0].key, 'docker'); eq(rows[0].label, 'Docker'); eq(rows[0].kind, 'docker');
+    assert(rows[0].active, 'active on activeTabId');
+    eq(rows[1].key, 'logs'); eq(rows[1].label, 'Logs'); eq(rows[1].kind, 'viewer');
+    assert(!rows[1].active);
+  });
+
+  it('label falls back to poolId when no pool supplied', () => {
+    const { pane } = multiTabPane();
+    eq(tc.listTabs(tc.containerFor('instance', { pane }))[1].label, 'logs');
+  });
+
+  it('activeTab returns the active row', () => {
+    const { pane, pool } = multiTabPane();
+    eq(tc.activeTab(tc.containerFor('instance', { pane, pool })).key, 'docker');
+  });
+
+  it('switchTab names the set_active_tab Msg on layout', () => {
+    const { pane, pool } = multiTabPane();
+    const sw = tc.switchTab(tc.containerFor('instance', { pane, pool }), 'logs');
+    eq(sw.target, 'layout');
+    eq(JSON.stringify(sw.msg), JSON.stringify({ type: 'set_active_tab', paneId: 'pane-docker', tabPoolId: 'logs' }));
+  });
+
+  it('switchTab is null for already-active / unknown', () => {
+    const { pane, pool } = multiTabPane();
+    const c = tc.containerFor('instance', { pane, pool });
+    eq(tc.switchTab(c, 'docker'), null, 'already active');
+    eq(tc.switchTab(c, 'ghost'), null, 'unknown poolId');
+  });
+
+  it('perTabState is a stub (field → fallback, writes inert)', () => {
+    const ps = tc.perTabState(tc.containerFor('instance', multiTabPane()), 'docker');
+    eq(ps.field('scroll', 7), 7, 'reads return the fallback');
+    eq(ps.withField('scroll', 1), null, 'writes are inert until U2b');
+    eq(ps.entry(), null);
+  });
+});
+
 describe('[tab-container] frozen-input safe (pure return-new)', () => {
   it('listTabs / perTabState do not mutate a frozen slice', () => {
     sm.bootFresh();

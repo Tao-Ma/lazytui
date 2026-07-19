@@ -20,7 +20,12 @@
  *                        one tab's view-state.
  *
  * Two backings today:
- *   instance — a slot's `pane.tabs[]` (added in step 2 of U1).
+ *   instance — a slot's `pane.tabs[]` (`containerFor('instance', {pane, pool})`;
+ *              the pool supplies each tab's label/kind, since `pane.tabs[i]` is
+ *              only `{id, poolId}`). `perTabState` is a documented STUB here: a
+ *              position tab's view-state is its mounted instance's own slice,
+ *              addressed by instance id — a pure leaf can't reach it. The real
+ *              wiring lands in U2b (mint-into-slot).
  *   viewer   — the today-viewer's content tabs. Comes in a model-path form
  *              (`containerFor('viewer', {slice, model, paneId})`, for impure-
  *              shell callers) and a from-bundle twin (`containerFor('viewerB',
@@ -40,9 +45,26 @@ const ts = require('./tab-state');
 /** Build a container descriptor. `kind` is 'viewer' | 'viewerB' | 'instance'. */
 function containerFor(kind, args) {
   const a = args || {};
-  if (kind === 'viewer')  return { backing: 'viewer', slice: a.slice, model: a.model, paneId: a.paneId };
-  if (kind === 'viewerB') return { backing: 'viewer', slice: a.slice, bundle: a.bundle, paneId: a.paneId };
+  if (kind === 'viewer')   return { backing: 'viewer', slice: a.slice, model: a.model, paneId: a.paneId };
+  if (kind === 'viewerB')  return { backing: 'viewer', slice: a.slice, bundle: a.bundle, paneId: a.paneId };
+  if (kind === 'instance') return { backing: 'instance', pane: a.pane, pool: a.pool };
   return null;
+}
+
+/** Rows for a slot's position tabs. Each `pane.tabs[i]` is `{id, poolId}`; the
+ *  pool (when supplied) gives the label/kind — the active tab is the one whose
+ *  `id` matches `pane.activeTabId`. */
+function _instanceRows(pane, pool) {
+  if (!pane || !Array.isArray(pane.tabs)) return [];
+  return pane.tabs.map((tab, idx) => {
+    const entry = pool && pool[tab.poolId];
+    return {
+      key: tab.poolId, idx,
+      label: (entry && entry.title) || tab.poolId,
+      kind: (entry && entry.type) || '',
+      active: tab.id === pane.activeTabId,
+    };
+  });
 }
 
 /** The active tab idx a viewer slice is on (defaults to 0 — Info). */
@@ -101,6 +123,7 @@ function listTabs(container) {
     const info = pt.flatTabInfo(s, m, g);
     return _viewerRows(s, info, g, idx => pt.resolveTabKey(idx, s, m), activeIdx);
   }
+  if (container.backing === 'instance') return _instanceRows(container.pane, container.pool);
   return [];
 }
 
@@ -128,6 +151,17 @@ function switchTab(container, key) {
       msg: { type: 'tab_switch', idx: row.idx, targetKey: key, currentGroup: g },
     };
   }
+  if (container.backing === 'instance') {
+    const pane = container.pane;
+    if (!pane || !Array.isArray(pane.tabs)) return null;
+    const tab = pane.tabs.find(t => t.poolId === key);
+    if (!tab) return null;
+    if (tab.id === pane.activeTabId) return null;                    // already active
+    return {
+      target: 'layout',
+      msg: { type: 'set_active_tab', paneId: pane.paneId, tabPoolId: key },
+    };
+  }
   return null;
 }
 
@@ -135,6 +169,18 @@ function switchTab(container, key) {
  *  to the tab-state store; the with* verbs return a fresh slice (like the store),
  *  `field` reads with presence-not-truthiness, `entry` reads the whole entry. */
 function perTabState(container, key) {
+  if (container && container.backing === 'instance') {
+    // STUB — a position tab's view-state is its mounted instance's own slice
+    // (addressed by instance id), which a pure leaf can't reach. Reads return
+    // the fallback; writes are inert (null). Real wiring lands in U2b.
+    return {
+      field: (name, fallback) => fallback,
+      withField: () => null,
+      withFields: () => null,
+      drop: () => null,
+      entry: () => null,
+    };
+  }
   const slice = container && container.slice;
   return {
     field: (name, fallback) => ts.field(slice, key, name, fallback),
