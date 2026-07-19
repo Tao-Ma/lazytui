@@ -555,6 +555,19 @@ function reconcilePaneInstances() {
     // dispatch via reconcileSubscriptions, so a disposed pane's sub is torn down.)
   }
 
+  // U2b P0 (K3) — publish the paneId → active-tab-instance map + the geometry
+  // back-ref. In P0 the map is IDENTITY (paneId→paneId), so _resolveActive is a
+  // pass-through and every slice read/write is byte-identical to pre-U2b; P1
+  // rebuilds this per-tab. The map is a pure derivation of arrange, owned here in
+  // the impure shell (the reducer never touches it).
+  const activeMap = Object.create(null);
+  for (const p of placedPanes) {
+    if (!p.paneId) continue;
+    activeMap[p.paneId] = p.paneId;
+    route.setInstancePaneId(p.paneId, p.paneId);
+  }
+  route.setActiveInstanceMap(activeMap);
+
   // DISPOSE — per-pane instances whose pane is no longer placed. Skip service
   // slots (route refuses) and kind-seed singletons (id === kind: docker-style
   // panelTypes content owners + un-replaced registry seeds — not placed panes).

@@ -189,6 +189,13 @@ function resetGroupOwners() {
 
 const _instances = Object.create(null);
 const _primaryByKind = Object.create(null);
+// U2b (K3) — paneId → active tab-instance id. Rebuilt by reconcilePaneInstances
+// each arrange change; the four slice accessors resolve a placed paneId to its
+// active tab's instance through it (O(1) property read). For a single-tab pane
+// paneId === tabInstId, so the entry is identity and resolution is byte-identical
+// to pre-U2b. A key absent from the map (service kinds like 'layout', Component
+// names, or a tab-instance id passed directly) resolves to itself.
+let _activeInstanceOf = Object.create(null);
 
 // Monotonic version of the instance SET (ids + their kinds), bumped on
 // every add/dispose (and setService). resolveTarget / resolveViewerPaneId
@@ -336,8 +343,42 @@ function _strictMiss(fn, id) {
   } catch (_) { /* diag-log unavailable (early boot / test) */ }
 }
 
-function getInstanceSlice(id) {
+// U2b (K3) — resolve a placed paneId to its ACTIVE tab's instance id. The four
+// SLICE accessors (read/write a pane's slice) route through this so a keystroke /
+// render on a slot lands on its active tab. `getInstance` stays literal so a
+// NON-active tab is addressable by its own tab-instance id (U2c dispatch).
+function _resolveActive(id) {
+  const t = _activeInstanceOf[id];
+  return t !== undefined ? t : id;
+}
+
+function _activeMapEquals(a, b) {
+  const ka = Object.keys(a), kb = Object.keys(b);
+  if (ka.length !== kb.length) return false;
+  for (const k of ka) if (a[k] !== b[k]) return false;
+  return true;
+}
+
+/** Reconcile rebuilds the whole paneId→active-tabInstId map each arrange change
+ *  and swaps it here. Bumps `_instVer` ONLY on a real change (else the
+ *  resolveTarget/resolveViewerPaneId memos invalidate every dispatch — R5). */
+function setActiveInstanceMap(map) {
+  const next = map || Object.create(null);
+  if (_activeMapEquals(_activeInstanceOf, next)) return;
+  _activeInstanceOf = next;
+  _instVer++;
+}
+
+/** Back-ref: the COLUMN paneId (layout position) a tab-instance belongs to, so
+ *  geometry (which keys on the column paneId) resolves without an arrange walk.
+ *  Equal to the instance id for a single-tab pane. */
+function setInstancePaneId(id, paneId) {
   const inst = _instances[id];
+  if (inst) inst.paneId = paneId;
+}
+
+function getInstanceSlice(id) {
+  const inst = _instances[_resolveActive(id)];
   if (inst) return inst.slice;
   // Strict store read — NO kind-name fallback (split-arc P2; the
   // v0.6.3 Phase-B compat fallback resolved missed ids via
@@ -365,7 +406,8 @@ function getInstanceSlice(id) {
  *  No-op under single-pane configs: there `id === kind === primary`,
  *  so both arms return the same instance. */
 function sliceForPane(id, kind) {
-  if (id != null && _instances[id]) return _instances[id].slice;
+  const rid = id != null ? _resolveActive(id) : id;
+  if (rid != null && _instances[rid]) return _instances[rid].slice;
   // Arm 2 is the INTENTIONAL kind-level fallback (docker-style panes
   // whose content lives on the kind's canonical instance, and legacy
   // kind-name callers) — explicit primary read, not the (post-P2
@@ -374,7 +416,7 @@ function sliceForPane(id, kind) {
 }
 
 function setInstanceSlice(id, slice) {
-  const inst = _instances[id];
+  const inst = _instances[_resolveActive(id)];
   // Strict, mirroring getInstanceSlice: a missed write is a no-op (the
   // pinned contract), with the kind-name tripwire — a silent write to
   // "whichever pane is primary" was the worst flavor of the collapse.
@@ -382,7 +424,7 @@ function setInstanceSlice(id, slice) {
   inst.slice = slice;
 }
 
-function hasInstance(id) { return id in _instances; }
+function hasInstance(id) { return _resolveActive(id) in _instances; }
 
 function disposeInstance(id) {
   const inst = _instances[id];
@@ -653,6 +695,7 @@ module.exports = {
   getFocus,
   setInstance, getInstance, getInstanceSlice, sliceForPane, setInstanceSlice,
   hasInstance, disposeInstance, instanceKind, eachInstance,
+  setActiveInstanceMap, setInstancePaneId,
   setService, serviceSlice, isService,
   getPrimaryByKind, primarySliceOf,
   _resetRegistryForTest,
