@@ -123,7 +123,7 @@ function decorationFor(slice, full) {
 module.exports = {
   enter, cancel, commit, clearCommitted, keystroke,
   next, prev, isActive, typingText,
-  decorateLines,
+  decorateLines, decorationFor,
   // exposed for tests
   _displayWidthBefore: ms._displayWidthBefore,
 };

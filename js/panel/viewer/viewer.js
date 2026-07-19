@@ -29,6 +29,7 @@ const {
 const ms = require('../../leaves/text/search');
 const pt = require('../../leaves/wm/pane-tabs');
 const tc = require('../../leaves/wm/tab-container');
+const { buildTextView } = require('../../leaves/text-view/render');
 const mpool = require('../../leaves/wm/pool');
 const { stripMarkup, charWidth } = require('../../leaves/text/ansi');
 const { buildTabStrip } = require('./tab-strip');
@@ -1127,44 +1128,32 @@ function render(panel, w, h, slice, opts) {
     });
   }
   // T2c — display lines come from viewerLines() (derives from active
-  // tab + buffers + override + focused-Navigator's getInfo). Falls
-  // back to slice.lines for tabs whose reducer arms still maintain
-  // it; T2d retires the fallback. infoFromFocus is the module-level
-  // helper (was an identical inline closure here pre-cleanup).
+  // tab + buffers + override + focused-Navigator's getInfo). Content
+  // derivation stays here (viewer/tab-kind-aware, arc D3); the scrollable
+  // text RENDERING (window + decorate + render-args) is delegated to the
+  // pure leaves/text-view leaf (U2a). infoFromFocus is the module-level helper.
   const derived = pt.viewerLines(slice, m, m.currentGroup, { infoFromFocus: _infoFromFocus });
-  const total = derived.length;
-  let count = null;
-  if (total > innerH) {
-    count = [slice.scroll + innerH, total];
-  }
-  // A3 (v0.6.7) — slice the visible window FIRST, then decorate only those
-  // ~innerH rows (offset-aware). Decorating the whole buffer was O(total) — at
-  // 50k lines with an active search that was ~270ms/frame (4fps); window-only is
-  // ~190µs regardless of buffer size (see bench-render-construction.js). The
-  // no-search/no-selection path was already O(1) passthrough, so this only
-  // changes the active-search / active-selection case — and identically, since
-  // each row is decorated from its own content + absolute index.
-  const start = slice.scroll;
-  let lines = derived.slice(start, start + innerH);
+  // Resolve the decoration inputs in the impure shell, then hand the pure leaf
+  // resolved state. Selection wins over search (unchanged precedence); the
+  // selection reads the focused viewer's slice (as before), search reads THIS
+  // pane's slice (the P4 multi-viewer fix) — both preserved by resolving here.
   const select = require('./select');
   const search = require('./search');
-  if (select.isActive()) {
-    lines = select.decorateLines(lines, { offset: start });
-  } else {
-    // P4 review fix — thread THIS pane's slice so an unfocused viewer
-    // is decorated with its own search state (multi-viewer).
-    lines = search.decorateLines(lines, slice, { offset: start, full: derived });
-  }
-  return renderPanel({
-    width: w, height: h, lines,
+  const sel = select.activeSelection();
+  const searchDecoration = sel ? null : search.decorationFor(slice, derived);
+  // A3 windowed-decorate (window FIRST, then decorate only the ~innerH visible
+  // rows) lives inside buildTextView — byte-identical to whole-buffer-then-slice.
+  const args = buildTextView({
+    lines: derived, scroll: slice.scroll, innerH,
+    select: sel, searchDecoration,
+    width: w, height: h,
     title: detailTitle(slice, hotkey), hotkey,
-    panelType: 'detail',
-    focused: isFocused,
-    count,
-    scrollOffset: slice.scroll,
-    windowed: true,
-    chrome,
+    panelType: 'detail', focused: isFocused, chrome,
   });
+  // renderPanel here is the selection-aware panel/api wrapper — it captures the
+  // window for the per-pane MOUSE selection pipeline before drawing, so the args
+  // must flow through it (not the leaf renderPanel).
+  return renderPanel(args);
 }
 
 // v0.6.6 FIX-2 — the pane's viewport height, computed in the impure shell so

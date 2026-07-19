@@ -67,6 +67,14 @@ function isActive() {
   return !!(sel && sel.active);
 }
 
+/** The active selection object (for the pure text-view render leaf, U2a), or
+ *  null when none is active. Reads the SAME focused-viewer slice as isActive()
+ *  and decorateLines, so the leaf decorates identically to the old service path. */
+function activeSelection() {
+  const sel = _detail()?.select;
+  return (sel && sel.active) ? sel : null;
+}
+
 /** The current selection resolved to plain text (from the live viewer lines). */
 function selectedText() { return core.selectedTextFrom(_lines(), _detail()?.select); }
 
@@ -117,7 +125,7 @@ function decorateLines(lines, opts) {
 
 module.exports = {
   // Service (impure — the mouse path + render read/write the viewer slice).
-  beginAt, extendTo, cancel, commit, settle, isActive, selectedText, decorateLines,
+  beginAt, extendTo, cancel, commit, settle, isActive, activeSelection, selectedText, decorateLines,
   // PURE geometry, re-exported from the shared core so the viewer's reducer arms
   // (which thread `lines` in explicitly) and tests keep the same surface.
   selectedTextFrom: core.selectedTextFrom,
