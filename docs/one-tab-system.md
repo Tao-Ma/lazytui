@@ -1,7 +1,9 @@
 # One tab system (U2) — fold the viewer's content-tabs into position-tabs
 
-> **Status:** planning. A large, multi-release arc — do not start without an
-> explicit commitment. Supersedes the P2–P4 approach in
+> **Status:** in progress. **U1 shipped** (the keystone interface —
+> `leaves/wm/tab-container.js` + consumers routed, no behaviour change);
+> U2a–U2f are the remaining, un-started phases. A large, multi-release arc.
+> Supersedes the P2–P4 approach in
 > [pane-tabs-unification.md](pane-tabs-unification.md) (its P1 — the shared
 > `leaves/wm/tab-state` store — stays and is reused here as U1's basis).
 
@@ -103,10 +105,17 @@ ships and passes the gate (suite · smoke · acyclic · DEAD 0 · bench parity).
 
 ## Phasing (each phase ships behind the gate)
 
-- **U1 — tab-container interface.** Define the contract + two backings; route the
-  per-tab-state consumers (selection/scroll/cursor/search) through it. Reuses the
-  P1 `tab-state` leaf. No behaviour change. *The keystone — everything else
-  migrates behind it.*
+- **U1 — tab-container interface. ✅ SHIPPED.** `leaves/wm/tab-container.js`
+  defines the contract (`listTabs / activeTab / switchTab / perTabState`) over a
+  descriptor tagged by `backing`, with the viewer (tabState-backed, model-path +
+  from-bundle twin) and instance (slot `pane.tabs[]`, `perTabState` a documented
+  U2b stub) backings. Consumers routed: the `[≡]` pane-menu list + pick
+  (`_flatTabs`/`items`/`triggerVisible`/`_paneMenuPick`) and the viewer's
+  per-tab-state (finalizer capture + `show_info`/`set_tab`/`tab_switch` restores +
+  the R4 drop) — the viewer no longer touches `slice.tabState` raw. `switchTab` is
+  read-only (names `{target, msg}`; the caller dispatches). Reuses the P1
+  `tab-state` leaf (+ a new `entry()` accessor). No behaviour change (adversarially
+  reviewed). *The keystone — everything else migrates behind it.*
 - **U2a — extract `text-view`.** Pull the viewer's text rendering (scroll/search/
   select/cursor over a line buffer) into a standalone `text-view` pane type; the
   viewer delegates its content rendering to it. No new panes yet.
