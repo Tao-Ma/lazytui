@@ -39,7 +39,7 @@ const { stdout } = require('../io/term');
 const { isChainActive } = require('../leaves/input/modes');
 const mpool = require('../leaves/wm/pool');
 const { visibleBoundsFor } = require('../leaves/wm/geometry');
-const pt = require('../leaves/wm/pane-tabs');
+const tc = require('../leaves/wm/tab-container');
 const route = require('../panel/route');
 
 const MAX_W = 50;
@@ -87,41 +87,17 @@ function _paneById(paneId) {
 }
 
 /** Flat tab list for a viewer pane — same order/shape as the tab bar.
- *  Mirrors the retired overlay/tab-list#_flatTabs. */
+ *  Backed by the tab-container interface (U1): `tc.listTabs` returns neutral
+ *  rows; here they're tagged with the pane-menu `section:'tab'` presentation
+ *  vocabulary + `tabIdx`. Byte-identical to the retired hand-rolled build. */
 function _flatTabs(paneId) {
   const m = getModel();
   const slice = getInstanceSlice(paneId) || { ephemeralTerminals: {}, contentTabs: {}, tab: 0 };
-  const info = pt.flatTabInfo(slice, m, m.currentGroup);
-  const out = [
-    { section: 'tab', tabIdx: 0, label: 'Info', kind: '' },
-    { section: 'tab', tabIdx: 1, label: 'Transcript', kind: '' },
-  ];
-  info.actionTabs.forEach(([, a], i) => out.push({
-    section: 'tab', tabIdx: 2 + i, label: a.label, kind: 'action',
-  }));
-  const eph = (slice.ephemeralTerminals || {})[m.currentGroup] || {};
-  info.termTabs.forEach(([key, t], i) => out.push({
-    section: 'tab',
-    tabIdx: 2 + info.actionTabs.length + i,
-    label: t.label || key,
-    kind: 'term',
-    closeable: !!eph[key],
-    closeKind: 'terminal', closeKey: key,
-  }));
-  info.contentTabs.forEach(([key, c], i) => {
-    let k = 'content';
-    if (key.startsWith('docker:')) k = 'docker';
-    else if (key.startsWith('file:')) k = 'file';
-    out.push({
-      section: 'tab',
-      tabIdx: 2 + info.actionTabs.length + info.termTabs.length + i,
-      label: c.label || key,
-      kind: k,
-      closeable: true,
-      closeKind: 'content', closeKey: key,
-    });
+  return tc.listTabs(tc.containerFor('viewer', { slice, model: m })).map(r => {
+    const row = { section: 'tab', tabIdx: r.idx, label: r.label, kind: r.kind };
+    if ('closeable' in r) { row.closeable = r.closeable; row.closeKind = r.closeKind; row.closeKey = r.closeKey; }
+    return row;
   });
-  return out;
 }
 
 /** Current view mode ('normal' | 'half' | 'full'). */
