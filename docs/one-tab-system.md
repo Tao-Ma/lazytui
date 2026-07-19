@@ -1,8 +1,9 @@
 # One tab system (U2) — fold the viewer's content-tabs into position-tabs
 
-> **Status:** in progress. **U1 shipped** (the keystone interface —
-> `leaves/wm/tab-container.js` + consumers routed, no behaviour change);
-> U2a–U2f are the remaining, un-started phases. A large, multi-release arc.
+> **Status:** in progress. **U1 + U2a shipped** — U1 the keystone interface
+> (`leaves/wm/tab-container.js` + consumers routed); U2a the text-view render
+> primitive (`leaves/text-view/render.js` + search geometry moved to a leaf),
+> both no-behaviour-change. U2b–U2f remain un-started. A large, multi-release arc.
 > Supersedes the P2–P4 approach in
 > [pane-tabs-unification.md](pane-tabs-unification.md) (its P1 — the shared
 > `leaves/wm/tab-state` store — stays and is reused here as U1's basis).
@@ -116,9 +117,17 @@ ships and passes the gate (suite · smoke · acyclic · DEAD 0 · bench parity).
   read-only (names `{target, msg}`; the caller dispatches). Reuses the P1
   `tab-state` leaf (+ a new `entry()` accessor). No behaviour change (adversarially
   reviewed). *The keystone — everything else migrates behind it.*
-- **U2a — extract `text-view`.** Pull the viewer's text rendering (scroll/search/
-  select/cursor over a line buffer) into a standalone `text-view` pane type; the
-  viewer delegates its content rendering to it. No new panes yet.
+- **U2a — extract `text-view`. ✅ SHIPPED.** The viewer's scrollable-text
+  rendering (window a line buffer → decorate → renderPanel args) is now the pure
+  leaf `leaves/text-view/render.js#buildTextView`; `viewer.render()` derives the
+  content (`pt.viewerLines`, tab-kind-aware — stays) and hands the leaf resolved
+  decoration state. Prereq landed: the search highlight geometry moved from the
+  impure `panel/viewer/search.js` into `leaves/text/search.js#decorateWindow`
+  (mirror of `select-core#decorateWindow`), making search symmetric with
+  selection. Interaction reducer arms (scroll/search/select/cursor) STAY in the
+  viewer — extracting them into a shared `textViewUpdate` is U2c (when a routed
+  instance shares it). No new panes minted. No behaviour change (A3 windowed-
+  decorate byte-identical, ~326µs flat; adversarially reviewed).
 - **U2b — mint-into-slot.** Build the runtime "add instance X to slot S's tabs +
   focus" primitive (generalize tab-drag placement). Prove it by opening a manual
   `text-view` tab in a slot.
