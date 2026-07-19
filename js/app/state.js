@@ -527,54 +527,66 @@ function reconcilePaneInstances() {
   // `components[kind]`: that matched Component NAMES too, so a `type: docker`
   // pane disposed the kind-global service instance (its content owner). A
   // name-only kind mints nothing (honest unknown-type failure).
-  const placedIds = new Set();
-  for (const p of placedPanes) {
-    const kind = p.type;
-    const paneId = p.paneId;
-    if (!paneId || !kind) continue;
-    placedIds.add(paneId);
-    const comp = components[route.componentForPanel(kind)];
-    if (!comp) continue;
-    // Dispose the kind-keyed seed (minted at registerComponent) on the first
-    // per-pane mint; service slots are skipped (dispose refuses them anyway).
-    if (route.hasInstance(kind) && kind !== paneId && !route.isService(kind)) {
-      route.disposeInstance(kind);
-    }
-    if (!route.hasInstance(paneId)) {
-      // init-injection (v0.6.4 #4): thread the seed facts a Component's init
-      // would otherwise reach for as globals — init is a pure fn of (paneId,
-      // seed). init(paneId) also stamps pane identity so the Component resolves
-      // "my pane" from its own slice (incl. the broadcast refresh with no
-      // call-site id). Seed-blind inits arity-ignore the args.
-      const m = getModel();
-      const seed = { config: m.config, projectDir: m.projectDir, paneDef: p };
-      route.setInstance(paneId, kind, comp.init(paneId, seed));
-    }
-    // (#D13 — hub subscriptions are no longer wired per-pane here; the dispatch
-    // finalizer reconciles the whole desired set against the live set each
-    // dispatch via reconcileSubscriptions, so a disposed pane's sub is torn down.)
-  }
-
-  // U2b P0 (K3) — publish the paneId → active-tab-instance map + the geometry
-  // back-ref. In P0 the map is IDENTITY (paneId→paneId), so _resolveActive is a
-  // pass-through and every slice read/write is byte-identical to pre-U2b; P1
-  // rebuilds this per-tab. The map is a pure derivation of arrange, owned here in
-  // the impure shell (the reducer never touches it).
+  // U2b P1 (K3) — MINT one instance per TAB (a slot hosts N tab-instances, one
+  // active). tabInstId = newPaneId(tab.poolId); the tab's kind is its OWN pool
+  // entry type (this fixes cross-kind multi-tab panes — each tab gets its own
+  // slice shape). init receives the COLUMN paneId (slice.paneId self-identity for
+  // geometry), while the instance is KEYED by tabInstId — equal for a single-tab
+  // pane, so byte-identical there. `getInstance` is used (literal) for the
+  // concrete-id existence checks — `hasInstance` now resolves paneId→active-tab.
+  const mpane = require('../leaves/wm/pane');
+  const placedInstIds = new Set();
   const activeMap = Object.create(null);
   for (const p of placedPanes) {
-    if (!p.paneId) continue;
-    activeMap[p.paneId] = p.paneId;
-    route.setInstancePaneId(p.paneId, p.paneId);
+    const paneId = p.paneId;
+    if (!paneId) continue;
+    const tabs = (Array.isArray(p.tabs) && p.tabs.length) ? p.tabs : [{ id: p.id, poolId: p.id }];
+    for (const tab of tabs) {
+      const poolId = tab.poolId;
+      if (!poolId) continue;
+      const entry = (arrange.pool && arrange.pool[poolId]) || null;
+      const kind = entry ? entry.type : p.type;
+      if (!kind) continue;
+      const tabInstId = mpane.newPaneId(poolId);
+      const comp = components[route.componentForPanel(kind)];
+      if (!comp) continue;
+      // Dispose the kind-keyed registry seed (minted at registerComponent) on the
+      // first per-tab mint; service slots are skipped (dispose refuses them anyway).
+      if (route.getInstance(kind) && kind !== tabInstId && !route.isService(kind)) {
+        route.disposeInstance(kind);
+      }
+      if (!route.getInstance(tabInstId)) {
+        // init-injection (v0.6.4 #4): thread the seed facts init would reach for
+        // as globals — init is a pure fn of (paneId, seed). seed.paneDef is the
+        // PLACED PANE `p` (byte-identical to pre-U2b): the parser HOISTS panel
+        // fields (e.g. ports' select_from) onto the placed pane but keeps them
+        // nested in the pool entry's `config`, and some inits read the hoisted
+        // form — so the pane shape, not the raw pool entry, is the contract. For
+        // a single-tab pane `p` is the tab; for a multi-tab pane `p` mirrors the
+        // ACTIVE tab, and a minted tab is active at mint time, so its init sees
+        // its own config. (Per-tab KIND still comes from the tab's pool entry.)
+        const m = getModel();
+        const seed = { config: m.config, projectDir: m.projectDir, paneDef: p };
+        route.setInstance(tabInstId, kind, comp.init(paneId, seed));
+        route.setInstancePaneId(tabInstId, paneId);
+      }
+      placedInstIds.add(tabInstId);
+    }
+    // The slot's active instance = its activeTab's tab-instance.
+    const activeId = p.activeTabId || (tabs[0] && tabs[0].id) || p.id;
+    activeMap[paneId] = mpane.newPaneId(activeId);
+    // (#D13 — hub subscriptions reconcile against the whole desired set each
+    // dispatch via reconcileSubscriptions; a disposed pane's sub is torn down.)
   }
   route.setActiveInstanceMap(activeMap);
 
-  // DISPOSE — per-pane instances whose pane is no longer placed. Skip service
+  // DISPOSE — tab-instances whose tab/pane is no longer placed. Skip service
   // slots (route refuses) and kind-seed singletons (id === kind: docker-style
   // panelTypes content owners + un-replaced registry seeds — not placed panes).
   const orphans = [];
   route.eachInstance(inst => {
     if (inst.service || inst.id === inst.kind) return;
-    if (!placedIds.has(inst.id)) orphans.push(inst.id);
+    if (!placedInstIds.has(inst.id)) orphans.push(inst.id);
   });
   if (orphans.length) {
     // C5 — abort a removed pane's in-flight keyed compute (config-status' slow

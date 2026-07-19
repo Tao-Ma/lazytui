@@ -226,10 +226,11 @@ function _dispatchKeyToFocusedInner(key, seq) {
   if (!compName) return false;
   const comp = components[compName];
   if (!comp) return false;
-  // Route the keystroke to the FOCUSED instance: prefer the focused paneId
-  // directly (per-pane mint), else fall back to the kind's primary (docker-
-  // style panelTypes panes mint kind-keyed, not per-pane).
-  const id = route.hasInstance(focus) ? focus : route.getPrimaryByKind(compName);
+  // Route the keystroke to the FOCUSED slot's ACTIVE tab instance (U2b): focus is
+  // a column paneId; activeInstanceOf resolves it to the active tab's instance id
+  // (identity for a single-tab pane). Else fall back to the kind's primary
+  // (docker-style panelTypes panes mint kind-keyed, not per-pane).
+  const id = route.hasInstance(focus) ? route.activeInstanceOf(focus) : route.getPrimaryByKind(compName);
   if (id === undefined) return false;
   const inst = route.getInstance(id);
 

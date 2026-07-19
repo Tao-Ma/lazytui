@@ -352,6 +352,10 @@ function _resolveActive(id) {
   return t !== undefined ? t : id;
 }
 
+/** Exported `_resolveActive` — the focused-key dispatch path (loop.js) resolves a
+ *  focused paneId to its active tab's instance id before reading the instance. */
+function activeInstanceOf(id) { return _resolveActive(id); }
+
 function _activeMapEquals(a, b) {
   const ka = Object.keys(a), kb = Object.keys(b);
   if (ka.length !== kb.length) return false;
@@ -513,6 +517,7 @@ function _resetRegistryForTest() {
   for (const k in _instances) delete _instances[k];
   for (const k in _primaryByKind) delete _primaryByKind[k];
   for (const k in _serviceByKind) delete _serviceByKind[k];
+  _activeInstanceOf = Object.create(null);
   _warnedStrict.clear();
   _instVer++;
   _rtMemo = null;
@@ -695,7 +700,7 @@ module.exports = {
   getFocus,
   setInstance, getInstance, getInstanceSlice, sliceForPane, setInstanceSlice,
   hasInstance, disposeInstance, instanceKind, eachInstance,
-  setActiveInstanceMap, setInstancePaneId,
+  setActiveInstanceMap, setInstancePaneId, activeInstanceOf,
   setService, serviceSlice, isService,
   getPrimaryByKind, primarySliceOf,
   _resetRegistryForTest,
