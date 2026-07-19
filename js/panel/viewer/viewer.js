@@ -28,7 +28,7 @@ const {
 } = require('../api');
 const ms = require('../../leaves/text/search');
 const pt = require('../../leaves/wm/pane-tabs');
-const _tabStore = require('../../leaves/wm/tab-state');
+const tc = require('../../leaves/wm/tab-container');
 const mpool = require('../../leaves/wm/pool');
 const { stripMarkup, charWidth } = require('../../leaves/text/ansi');
 const { buildTabStrip } = require('./tab-strip');
@@ -87,13 +87,12 @@ function _setCursor(slice, line, col, extend) {
   return next;
 }
 
-// T3 — per-tab view-state accessors. The store mechanics now live in the
-// pane-agnostic leaf leaves/wm/tab-state (docs/pane-tabs-unification.md, P1); the
-// viewer keeps these thin aliases so its many call sites stay unchanged. Other
-// panes (the arc's later phases) import the leaf directly.
-function _tabFieldOf(slice, key, field, fallback) { return _tabStore.field(slice, key, field, fallback); }
-function _withTabField(slice, key, field, value) { return _tabStore.withField(slice, key, field, value); }
-function _withTabFields(slice, key, patch) { return _tabStore.withFields(slice, key, patch); }
+// Per-tab view-state via the tab-container interface (U1, docs/one-tab-system.md).
+// The viewer is tabState-backed; the accessor is slice-only (the key is already
+// resolved), so it needs no model/bundle and behaves the same in the reducer,
+// the finalizer, and the shell. (The dead _tabFieldOf/_withTabField singular
+// aliases retired here — only the multi-field capture was ever a live consumer.)
+function _pts(slice, key) { return tc.perTabState(tc.containerFor('viewer', { slice }), key); }
 
 /** Cap an array of lines to maxLen by dropping the oldest. Returns
  *  [cappedLines, droppedCount] so callers can adjust scroll for the
@@ -328,7 +327,7 @@ function _withDerivedFields(next, originalSlice, vm) {
         select: originalSlice.select,
         cursor: originalSlice.cursor,
       };
-      updated = _withTabFields(updated, fromKey, captured);
+      updated = _pts(updated, fromKey).withFields(captured);
     }
   }
   return updated;
@@ -479,7 +478,7 @@ function _updateInner(msg, slice, lines) {
             select: slice.select,
             cursor: slice.cursor,
           };
-          captureFirst = _withTabFields(slice, fromKey, captured);
+          captureFirst = _pts(slice, fromKey).withFields(captured);
         }
       }
       const next = {
@@ -562,7 +561,7 @@ function _updateInner(msg, slice, lines) {
         }
         return next;
       }
-      const entry = (slice.tabState && slice.tabState.info) || null;
+      const entry = _pts(slice, 'info').entry();
       return {
         ...slice,
         tab: 0,
@@ -723,11 +722,10 @@ function _updateInner(msg, slice, lines) {
         // rectangle on wrong content. Drop the entry so the next visit
         // gets fresh defaults via tab_switch's first-visit fallback.
         const dropKey = `${msg.groupName}:action:${msg.tabKey}`;
-        let nextTabState = slice.tabState;
-        if (slice.tabState && (dropKey in slice.tabState)) {
-          const { [dropKey]: _drop, ...rest } = slice.tabState;
-          nextTabState = rest;
-        }
+        // Routed through the accessor like every other per-tab-state touch;
+        // .drop() returns the post-drop slice, .tabState pulls its map to fold
+        // into the composite stream_start slice below (no-op ref when absent).
+        const nextTabState = _pts(slice, dropKey).drop().tabState;
         // v0.6.3 Phase D1 — dispatcher threads msg.currentGroup +
         // msg.actionTabIdx (the action's position in flatTabInfo.
         // actionTabs at dispatch time); cross-group skips the
@@ -850,7 +848,7 @@ function _updateInner(msg, slice, lines) {
       // terminal_exit — those are the user-initiated cascade's concerns.
       if (slice.viewerOverride) return { ...slice, tab };
       const toKey = msg.toTabKey || null;
-      const entry = (slice.tabState && toKey) ? slice.tabState[toKey] : null;
+      const entry = toKey ? _pts(slice, toKey).entry() : null;
       // R12 (v0.7 candidate) — `bottomSticky` tail-tracking semantics
       // differ from tab_switch's _resolveScroll. Today no production
       // caller passes a non-zero `tab` to viewer_set_tab (the docker /

@@ -23,6 +23,16 @@ function field(slice, key, name, fallback) {
   return entry[name];
 }
 
+/** Read tab `key`'s whole entry (every stored field at once), or null when
+ *  unset. The one home for "grab the entry" — a tab_switch restore reads
+ *  scroll/search/select/cursor together — shared by the tab-container
+ *  perTabState accessor and pane-tabs' restore, so the raw `slice.tabState[key]`
+ *  reach lives in exactly one place. */
+function entry(slice, key) {
+  if (!slice || !slice.tabState || !key) return null;
+  return slice.tabState[key] || null;
+}
+
 /** Merge one field into tab `key`, returning a fresh slice. No-key = no-op;
  *  an unchanged value preserves the slice identity (cheap re-render). */
 function withField(slice, key, name, value) {
@@ -50,4 +60,4 @@ function dropEntry(slice, key) {
   return { ...slice, tabState: rest };
 }
 
-module.exports = { field, withField, withFields, dropEntry };
+module.exports = { field, entry, withField, withFields, dropEntry };

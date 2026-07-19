@@ -22,6 +22,18 @@ describe('[tab-state] field — read with fallback', () => {
   });
 });
 
+describe('[tab-state] entry — read the whole entry', () => {
+  it('returns the stored entry object, or null when absent', () => {
+    const e = { scroll: 3, cursor: { line: 1, col: 0 } };
+    eq(ts.entry({ tabState: { k: e } }, 'k'), e, 'the raw entry ref');
+    eq(ts.entry({ tabState: { k: e } }, 'other'), null, 'unknown key → null');
+    eq(ts.entry({ tabState: {} }, 'k'), null);
+    eq(ts.entry({}, 'k'), null, 'no store → null');
+    eq(ts.entry(undefined, 'k'), null);
+    eq(ts.entry({ tabState: { k: e } }, ''), null, 'no key → null');
+  });
+});
+
 describe('[tab-state] withField — immutable single-field merge', () => {
   it('creates the entry + preserves other tabs/fields', () => {
     const s0 = { tabState: { a: { scroll: 1 } }, other: 9 };

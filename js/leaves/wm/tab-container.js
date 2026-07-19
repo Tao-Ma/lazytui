@@ -187,7 +187,7 @@ function perTabState(container, key) {
     withField: (name, value) => ts.withField(slice, key, name, value),
     withFields: (patch) => ts.withFields(slice, key, patch),
     drop: () => ts.dropEntry(slice, key),
-    entry: () => (slice && slice.tabState && slice.tabState[key]) || null,
+    entry: () => ts.entry(slice, key),
   };
 }
 

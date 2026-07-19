@@ -711,7 +711,7 @@ function reduceTabMsg(msg, slice, ctx) {
       // Read target tab's stored state. The finalizer (running AFTER
       // this reducer body) will capture the FROM-tab's view state;
       // for the to-restore we read what's currently stored.
-      const tabEntry = slice.tabState && targetKey && slice.tabState[targetKey];
+      const tabEntry = require('./tab-state').entry(slice, targetKey);
       const storedScroll = tabEntry ? tabEntry.scroll : undefined;
       const storedSticky = tabEntry ? !!tabEntry.bottomSticky : false;
       // T3c/d/e — restore the target tab's stored view state
