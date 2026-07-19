@@ -432,20 +432,20 @@ function _paneMenuPick(target, item) {
   // Wrapped layout Msgs route via dispatchMsg (api), not applyMsg (root).
   const close = () => dispatchMsg(wrap('layout', { type: 'pane_menu_close' }));
   if (item.section === 'tab') {
-    // Replicate the retired tab_list_pick cascade: close the menu, focus
-    // the viewer, switch its active tab. targetKey + currentGroup are
-    // view-derived (threaded so the viewer's tab_switch arm stays pure).
+    // Close the menu, focus the viewer, switch its active tab. The switch Msg
+    // is named by the tab-container interface (tc.switchTab): container-agnostic
+    // + carries the pure-reducer facts (targetKey / currentGroup). null when the
+    // picked tab is already active — the tab_switch arm no-ops on same idx, so
+    // skipping the dispatch is equivalent (focus + close still fire).
     const pt = require('../../leaves/wm/pane-tabs');
+    const tc = require('../../leaves/wm/tab-container');
     const slice = getInstanceSlice(target);
-    const idx = item.tabIdx | 0;
     const m = getModel();
+    const key = pt.resolveTabKey(item.tabIdx | 0, slice, m);
+    const sw = tc.switchTab(tc.containerFor('viewer', { slice, model: m, paneId: target }), key);
     close();
     dispatchMsg(wrap('layout', { type: 'focus_set', focus: target }));
-    dispatchMsg(wrap(target, {
-      type: 'tab_switch', idx,
-      targetKey: pt.resolveTabKey(idx, { ...slice, tab: idx }, m),
-      currentGroup: m.currentGroup,
-    }));
+    if (sw) dispatchMsg(wrap(sw.target, sw.msg));
     return;
   }
   // Pane row — resolve by view mode.
