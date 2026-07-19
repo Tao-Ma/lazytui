@@ -91,6 +91,89 @@ function matchesFor(lines, term) {
   return matches;
 }
 
+// --- render-side highlight geometry (mirror of select-core#decorateWindow) ---
+//
+// Moved here from panel/viewer/search.js so the pure text-view renderer can
+// decorate search hits without reaching through the impure viewer facade —
+// making search structurally symmetric with selection (leaves/text/select-core).
+// The impure half (resolve the phase-correct term + the active-match index)
+// stays in the facade; this leaf owns only the pure geometry.
+
+/**
+ * Apply search highlights to a WINDOW of lines. `matches` is the FULL match
+ * list (over the whole buffer); `activeIdx` is the active match's GLOBAL index
+ * (already clamped by the caller); `offset` is the window's absolute start.
+ * All matches paint `[yellow]`; the active one paints `[reverse][yellow]`.
+ * Byte-identical to decorating the whole buffer then slicing — each line is
+ * decorated from its OWN content + ABSOLUTE index (A3 windowed-decorate). Pass-
+ * through (`lines` unchanged) when there are no matches in the window.
+ */
+function decorateWindow(lines, matches, activeIdx, offset = 0) {
+  if (!matches || !matches.length) return lines;
+  // Group matches by ABSOLUTE line, keeping only those in the visible window;
+  // `_i` stays the GLOBAL match index so the active-match check resolves across
+  // the whole buffer.
+  const lo = offset, hi = offset + lines.length;
+  const byLine = new Map();
+  matches.forEach((m, i) => {
+    if (m.line < lo || m.line >= hi) return;
+    if (!byLine.has(m.line)) byLine.set(m.line, []);
+    byLine.get(m.line).push({ ...m, _i: i });
+  });
+  return lines.map((line, i) => {
+    const spans = byLine.get(i + offset);
+    if (!spans) return line;
+    return _multiHighlight(line, spans, activeIdx);
+  });
+}
+
+/**
+ * Render `line` with multiple highlight spans in one pass. `spans` is an
+ * array of {col, len, _i} (non-overlapping, within the line's width);
+ * `activeIdx` flags which span gets the "current match" style. Drops the
+ * line's existing markup (same v1 tradeoff as select-core.highlightLine).
+ */
+function _multiHighlight(line, spans, activeIdx) {
+  const plain = stripMarkup(line);
+  const chars = [...plain];
+  // Codepoint-index → display-col cumulative array → map [col,col+len) → cp range.
+  const colAt = new Array(chars.length + 1);
+  colAt[0] = 0;
+  for (let i = 0; i < chars.length; i++) {
+    colAt[i + 1] = colAt[i] + charWidth(chars[i].codePointAt(0));
+  }
+  const totalCols = colAt[chars.length];
+
+  const sorted = spans
+    .filter(s => s.col < totalCols)
+    .sort((a, b) => a.col - b.col);
+
+  const esc = (s) => s.replace(/\[/g, '\\[');
+  let cursor = 0;  // codepoint index
+  let out = '';
+  for (const sp of sorted) {
+    const startCp = _colToCp(colAt, sp.col);
+    const endCp   = _colToCp(colAt, Math.min(totalCols, sp.col + sp.len));
+    if (startCp < cursor || endCp <= startCp) continue;  // overlap/empty
+    out += esc(chars.slice(cursor, startCp).join(''));
+    const inner = esc(chars.slice(startCp, endCp).join(''));
+    out += sp._i === activeIdx
+      ? `[reverse][yellow]${inner}[/]`
+      : `[yellow]${inner}[/]`;
+    cursor = endCp;
+  }
+  out += esc(chars.slice(cursor).join(''));
+  return out;
+}
+
+function _colToCp(colAt, displayCol) {
+  // First codepoint whose start is at or after displayCol.
+  for (let i = 0; i < colAt.length; i++) {
+    if (colAt[i] >= displayCol) return i;
+  }
+  return colAt.length - 1;
+}
+
 // --- pure transforms over slice.search ---
 //
 // Each public fn takes `slice` and returns `[newSlice, info]` (or just
@@ -194,7 +277,7 @@ function scrollToActive(slice, innerH, lines, term) {
 }
 
 module.exports = {
-  matchesFor, _displayWidthBefore,
+  matchesFor, decorateWindow, _displayWidthBefore,
   enter, cancel, commit, clearCommitted, keystroke,
   next, prev,
 };

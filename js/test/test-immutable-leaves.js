@@ -182,6 +182,26 @@ describe('[immutable] leaves/search.js', () => {
     assert(c !== a && c.length === a.length, 'new lines ref recomputes');
   });
 
+  it('decorateWindow highlights matches without mutating input', () => {
+    const lines = ['hello world', 'world peace'];
+    const matches = ms.matchesFor(lines, 'world');
+    const out = expectNoMutation(
+      'decorateWindow leaves input frozen',
+      () => ms.decorateWindow(lines, matches, 0, 0),
+      lines,
+    );
+    assert(out[0].includes('[reverse][yellow]'), 'active match reverse-highlighted');
+    assert(out[1].includes('[yellow]') && !out[1].includes('[reverse]'), 'inactive match plain yellow');
+  });
+
+  it('decorateWindow with offset == whole-buffer decorate then slice (A3 byte-identity)', () => {
+    const lines = ['aa xx', 'bb xx', 'cc xx', 'dd xx'];
+    const matches = ms.matchesFor(lines, 'xx');
+    const whole = ms.decorateWindow(lines, matches, 2, 0);
+    const window = ms.decorateWindow(lines.slice(1, 3), matches, 2, 1);
+    eq(JSON.stringify(window), JSON.stringify(whole.slice(1, 3)), 'window+offset == whole then slice');
+  });
+
   it('keystroke returns new slice with updated typing', () => {
     const slice = makeSlice();
     slice.search = { ...slice.search, typing: 'wor' };

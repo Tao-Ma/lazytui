@@ -81,99 +81,43 @@ function typingText() { return _slice()?.search?.typing || ''; }
 // equals decorate-then-slice. Defaults (offset 0, full = lines) reproduce the
 // legacy whole-array behavior for direct callers (tests).
 function decorateLines(lines, slice, opts) {
-  // P4 review fix (multi-viewer) — decorate with the RENDERED pane's
-  // search state, not the focused pane's. The render path passes its
-  // own slice; legacy callers without one fall back to the focused
-  // viewer (singleton-equivalent). Pre-arc this read the focused
-  // pane's stored matches and painted their POSITIONS onto whatever
-  // pane was being rendered — cross-pane in a worse way.
+  const offset = (opts && opts.offset) || 0;
+  const full = (opts && opts.full) || lines;
+  const d = decorationFor(slice, full);
+  if (!d) return lines;
+  // Pure highlight geometry lives in the leaf now (ms.decorateWindow — mirror of
+  // select-core#decorateWindow); this facade owns only the impure resolution.
+  return ms.decorateWindow(lines, d.matches, d.activeIdx, offset);
+}
+
+/**
+ * Resolve the search decoration inputs for a pane's `slice` over the whole
+ * buffer `full`: `{ matches, activeIdx }`, or `null` when nothing is
+ * highlighted. This is the IMPURE half (reads getModel + the focused slice);
+ * the pure geometry that consumes it is ms.decorateWindow. Kept separate so the
+ * text-view render leaf (U2a) can take `{matches, activeIdx}` as data.
+ *
+ * P4 review fix (multi-viewer): decorate with the RENDERED pane's search state,
+ * not the focused pane's. The render path passes its own slice; legacy callers
+ * without one fall back to the focused viewer (singleton-equivalent). Phase
+ * picks the term — typing while the `/` prompt is open (live preview, FOCUSED
+ * viewer only) vs the committed term; matches DERIVE from the buffer content
+ * (ms.matchesFor memo) so highlights always align with what's shown.
+ */
+function decorationFor(slice, full) {
   const focusedSlice = _slice();
   const s = slice || focusedSlice;
   const search = s?.search;
-  if (!search) return lines;
-  const offset = (opts && opts.offset) || 0;
-  const full = (opts && opts.full) || lines;
-  // P1 (viewer-lines selector) — matches DERIVE from the buffer content
-  // (ms.matchesFor memo), so highlights always align with what's shown.
-  // Phase picks the term: typing while the `/` prompt is open (live
-  // preview) — but the typing buffer belongs to the FOCUSED viewer only;
-  // an unfocused pane shows its own committed term.
+  if (!search) return null;
   const typingPhase = getModel().modes.detailSearchMode && s === focusedSlice;
   const term = typingPhase
     ? (search.typing || '')
     : (search.active ? (search.term || '') : '');
-  const matches = ms.matchesFor(full, term);
-  if (!matches.length) return lines;
-  // Group matches by ABSOLUTE line index, keeping only those in the visible
-  // window — out-of-window matches are never painted, so skip the spread + Map
-  // insert (the iteration stays O(total matches) but the work is O(window); at
-  // 50k all-matching lines this is the difference between ~8ms and <1ms/frame).
-  // `_i` stays the GLOBAL match index so the active-match (search.idx) check in
-  // _multiHighlight still resolves across the whole buffer.
-  const lo = offset, hi = offset + lines.length;
-  const byLine = new Map();
-  matches.forEach((m, i) => {
-    if (m.line < lo || m.line >= hi) return;
-    if (!byLine.has(m.line)) byLine.set(m.line, []);
-    byLine.get(m.line).push({ ...m, _i: i });
-  });
+  const matches = ms.matchesFor(full || [], term);
+  if (!matches.length) return null;
   // Stale idx (content shrank since it was set) clamps into range.
   const activeIdx = Math.min(search.idx || 0, matches.length - 1);
-  return lines.map((line, i) => {
-    const spans = byLine.get(i + offset);
-    if (!spans) return line;
-    // Multi-span single pass: each pass to plain→segments would lose info,
-    // so we decorate all of a line's spans in one go.
-    return _multiHighlight(line, spans, activeIdx);
-  });
-}
-
-/**
- * Render `line` with multiple highlight spans in one pass. `spans` is an
- * array of {col, len, _i} (non-overlapping, within the line's width);
- * `activeIdx` flags which span gets the "current match" style. Drops the
- * line's existing markup (same v1 tradeoff as select.highlightLine).
- */
-function _multiHighlight(line, spans, activeIdx) {
-  const { stripMarkup, charWidth } = require('../../leaves/text/ansi');
-  const plain = stripMarkup(line);
-  const chars = [...plain];
-  // Codepoint-index → display-col cumulative array → map [col,col+len) → cp range.
-  const colAt = new Array(chars.length + 1);
-  colAt[0] = 0;
-  for (let i = 0; i < chars.length; i++) {
-    colAt[i + 1] = colAt[i] + charWidth(chars[i].codePointAt(0));
-  }
-  const totalCols = colAt[chars.length];
-
-  const sorted = spans
-    .filter(s => s.col < totalCols)
-    .sort((a, b) => a.col - b.col);
-
-  const esc = (s) => s.replace(/\[/g, '\\[');
-  let cursor = 0;  // codepoint index
-  let out = '';
-  for (const sp of sorted) {
-    const startCp = _colToCp(colAt, sp.col);
-    const endCp   = _colToCp(colAt, Math.min(totalCols, sp.col + sp.len));
-    if (startCp < cursor || endCp <= startCp) continue;  // overlap/empty
-    out += esc(chars.slice(cursor, startCp).join(''));
-    const inner = esc(chars.slice(startCp, endCp).join(''));
-    out += sp._i === activeIdx
-      ? `[reverse][yellow]${inner}[/]`
-      : `[yellow]${inner}[/]`;
-    cursor = endCp;
-  }
-  out += esc(chars.slice(cursor).join(''));
-  return out;
-}
-
-function _colToCp(colAt, displayCol) {
-  // First codepoint whose start is at or after displayCol.
-  for (let i = 0; i < colAt.length; i++) {
-    if (colAt[i] >= displayCol) return i;
-  }
-  return colAt.length - 1;
+  return { matches, activeIdx };
 }
 
 module.exports = {
