@@ -147,6 +147,25 @@ const FRAMEWORK_COMMANDS = [
     },
   },
   {
+    name: 'text-view',
+    desc: 'Open a scrollable text-view tab in the focused pane — :text-view [title]',
+    run: (args) => {
+      const layoutSlice = route.getInstanceSlice('layout');
+      const focus = layoutSlice && layoutSlice.focus;
+      if (!focus) {
+        const { appendViewerLines } = require('./nav-state');
+        appendViewerLines(`[red]:text-view needs a focused pane[/]`);
+        return;
+      }
+      const title = (args && args.length > 0) ? args.join(' ') : 'text';
+      // Placeholder content — U2c routes real streamed content here.
+      const lines = Array.from({ length: 40 }, (_, i) => `${title} — line ${i + 1}`);
+      _host.dispatchMsg(wrap('layout', {
+        type: 'mint_tab', paneId: focus, paneType: 'text-view', title, config: { lines },
+      }));
+    },
+  },
+  {
     name: 'remove-column',
     desc: 'Remove an empty column — :remove-column <n>  (1-based; refused on last column or non-empty)',
     run: (args) => {

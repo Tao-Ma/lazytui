@@ -952,6 +952,36 @@ function update(msg, slice) {
       }
       return next;
     }
+    // U2b — mint a NEW tab-instance into a slot's tabs[] (the mint-into-slot
+    // primitive). Creates a runtime pool entry, appends + activates a tab on the
+    // target pane, and focuses it. ONE undo entry (reverting drops the tab + the
+    // entry; reconcile then disposes the orphaned tab-instance). `poolId` derives
+    // replay-deterministically when absent. Refuses unknown pane / reserved
+    // singleton types (detail/actions) / a colliding poolId.
+    case 'mint_tab': {
+      const arrange = slice.arrange;
+      const paneId = msg.paneId;
+      const paneType = msg.paneType;
+      if (!paneId || !paneType) return slice;
+      if (paneType === 'detail' || paneType === 'actions') return slice;
+      const loc = mpool.findPaneLocation(arrange, p => p.paneId === paneId);
+      if (!loc) return slice;
+      const poolId = msg.poolId || mpool.nextTransientPoolId(arrange, msg.idPrefix || 'tv');
+      if (arrange.pool && arrange.pool[poolId]) return slice;   // id collision → no-op
+      const a1 = mpool.mintPoolEntry(arrange, {
+        poolId, type: paneType, title: msg.title || poolId, config: msg.config || {},
+      });
+      const entry = a1.pool[poolId];
+      const nextPane = mpane.addTab(loc.pane, { id: poolId, poolId }, entry, { activate: true });
+      const a2 = mpool.updateColumn(a1, loc.columnIndex, panels => {
+        const out = panels.slice();
+        out[loc.paneIndex] = nextPane;
+        return out;
+      });
+      const next = _commitArrange(slice, a2);
+      // The minted tab is now active + focused (the user asked to open it).
+      return [_withFocus(next, poolId), [{ type: 'show_selected_info' }]];
+    }
     case 'pool_hide': {
       const arrange = slice.arrange;
       const id = msg.id;

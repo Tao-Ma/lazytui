@@ -417,8 +417,43 @@ function paneMenuPanes(arrange, targetPaneId, mode) {
   return items;
 }
 
+/**
+ * The next replay-deterministic id for a runtime-minted pool entry: `<prefix>-<n>`
+ * where n = 1 + the max existing suffix over pool keys matching `<prefix>-<digits>`.
+ * A pure function of the current arrange (NOT a free-running counter), so a Msg-log
+ * fold reproduces the same id — the replay guarantee (docs/PRINCIPLES §11-12).
+ */
+function nextTransientPoolId(arrange, prefix) {
+  const pool = (arrange && arrange.pool) || {};
+  const re = new RegExp('^' + prefix + '-(\\d+)$');
+  let max = 0;
+  for (const k in pool) { const m = re.exec(k); if (m) { const n = +m[1]; if (n > max) max = n; } }
+  return `${prefix}-${max + 1}`;
+}
+
+/**
+ * Add a runtime pool entry (the U2b mint-into-slot primitive): a fresh arrange
+ * with `pool[poolId]` = `{ id, type, title, config, transient: true }`. The
+ * `transient` flag marks it session-only so serialization skips it (a manual tab
+ * doesn't leak into `:save-layout`). Pure, return-new.
+ */
+function mintPoolEntry(arrange, spec) {
+  const poolId = spec.poolId;
+  return {
+    ...arrange,
+    pool: {
+      ...(arrange.pool || {}),
+      [poolId]: {
+        id: poolId, type: spec.type, title: spec.title,
+        config: spec.config || {}, transient: true,
+      },
+    },
+  };
+}
+
 module.exports = {
   columnCount, lastColumnIndex,
+  nextTransientPoolId, mintPoolEntry,
   columnPanels, lastColumnPanels,
   allPanesInColumns, findPaneLocation, paneTypeIn, updateColumn,
   distributeColumnWidths,

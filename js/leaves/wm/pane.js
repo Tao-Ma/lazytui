@@ -68,7 +68,18 @@ function wrapAsPane(entry, paneId) {
  * not already active, pool entry exists) is the caller's responsibility.
  */
 function setActiveTab(pane, tabPoolId, entry) {
-  const nextPane = {
+  return _rebuildLegacyFields(pane, pane.tabs, tabPoolId, entry);
+}
+
+/**
+ * Rebuild a pane's legacy Panel fields (id/type/title/config + spread config
+ * keys) from a pool `entry`, with `tabs` + `activeTabId` set explicitly and the
+ * placement-only fields (paneId/hotkey/columnIndex/heightPct/collapsed)
+ * preserved. Shared by setActiveTab (switch) and addTab (append+activate) so the
+ * wide-pane shape lives in ONE place.
+ */
+function _rebuildLegacyFields(pane, tabs, activeTabId, entry) {
+  const next = {
     ...(entry.config || {}),
     id: entry.id,
     type: entry.type,
@@ -77,17 +88,30 @@ function setActiveTab(pane, tabPoolId, entry) {
     columnIndex: pane.columnIndex,
     config: entry.config,
     paneId: pane.paneId,
-    tabs: pane.tabs,
-    activeTabId: tabPoolId,
+    tabs,
+    activeTabId,
   };
-  if (pane.heightPct !== undefined) nextPane.heightPct = pane.heightPct;
-  if (pane.collapsed === true)      nextPane.collapsed = true;
-  return nextPane;
+  if (pane.heightPct !== undefined) next.heightPct = pane.heightPct;
+  if (pane.collapsed === true)      next.collapsed = true;
+  return next;
+}
+
+/**
+ * Append a tab `{ id, poolId }` to `pane.tabs` (the U2b mint-into-slot primitive).
+ * When `opts.activate`, the appended tab becomes active and the pane's legacy
+ * fields rebuild from `entry` (its pool entry); otherwise only `tabs` grows.
+ * Pure: returns a fresh pane; the caller handles the arrange splice + focus.
+ */
+function addTab(pane, tab, entry, opts) {
+  const tabs = [...(pane.tabs || []), tab];
+  if (opts && opts.activate) return _rebuildLegacyFields(pane, tabs, tab.id, entry);
+  return { ...pane, tabs };
 }
 
 module.exports = {
   newPaneId,
   wrapAsPane,
   setActiveTab,
+  addTab,
   paneMatchesFocus,
 };

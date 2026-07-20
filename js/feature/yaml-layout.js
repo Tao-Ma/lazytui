@@ -97,6 +97,7 @@ function serializePanelsBlock(arrange) {
   const out = ['panels:'];
   const pool = (arrange && arrange.pool) || {};
   for (const [id, entry] of Object.entries(pool)) {
+    if (entry && entry.transient) continue;   // U2b — runtime-minted, session-only
     out.push(`  ${id}:`);
     out.push(...serializePoolEntryYaml(entry, 4));
   }
@@ -125,8 +126,15 @@ function serializeLayoutCell(pane, indent, opts = {}) {
   // fall back to the legacy single-tab pane id for fixtures that bypass
   // wrapAsPane.
   let tabIds = (pane.tabs || []).map(t => t.poolId);
-  if (tabIds.length === 0 && pane.id) tabIds = [pane.id];
-  const activeTabId = pane.activeTabId || tabIds[0];
+  // U2b — drop runtime-minted (transient) tabs; a manual text-view is session-only.
+  const transientIds = opts.transientIds;
+  if (transientIds && transientIds.size) tabIds = tabIds.filter(id => !transientIds.has(id));
+  if (tabIds.length === 0 && pane.id && !(transientIds && transientIds.has(pane.id))) tabIds = [pane.id];
+  // If the active tab was transient (just-minted), fall back to the first
+  // persisted tab so the serialized cell doesn't name a dropped tab.
+  const activeTabId = (transientIds && transientIds.has(pane.activeTabId))
+    ? tabIds[0]
+    : (pane.activeTabId || tabIds[0]);
 
   // Placement overrides — pane-level fields lifted onto the cell.
   const overrides = {};
@@ -175,6 +183,10 @@ function serializeLayoutCell(pane, indent, opts = {}) {
  */
 function serializeLayout(layout) {
   const out = ['layout:'];
+  // U2b — runtime-minted (transient) pool entries are session-only; drop their
+  // tabs from the emitted cells so a manual text-view never leaks into :save-layout.
+  const pool = (layout && layout.pool) || {};
+  const transientIds = new Set(Object.keys(pool).filter(id => pool[id] && pool[id].transient));
   out.push('  columns:');
   const columns = layout.columns || [];
   const lastIdx = columns.length - 1;
@@ -187,7 +199,7 @@ function serializeLayout(layout) {
     }
     out.push('      panels:');
     for (const p of (col.panels || [])) {
-      out.push(...serializeLayoutCell(p, 10, { detailHeightPct: layout.detailHeightPct }));
+      out.push(...serializeLayoutCell(p, 10, { detailHeightPct: layout.detailHeightPct, transientIds }));
     }
   }
   return out.join('\n');

@@ -77,7 +77,11 @@ function componentForPanel(id) {
   // helper is the canonical resolver and the only translation site.
   const direct = _panelOwner[id];
   if (direct) return direct;
-  const inst = _instances[id];
+  // U2b — a paneId resolves via its ACTIVE tab's instance (_resolveActive;
+  // identity for a single-tab pane). Without this, a multi-tab pane's paneId
+  // (which collides with tab-0's instance id) would report tab-0's kind, not
+  // the active tab's.
+  const inst = _instances[_resolveActive(id)];
   if (inst) {
     const ownerByKind = _panelOwner[inst.kind];
     if (ownerByKind) return ownerByKind;
@@ -95,7 +99,8 @@ function componentForPanel(id) {
  *  paneId-or-type → panel-type. Returns null when nothing resolves. */
 function paneTypeOf(id) {
   if (_panelOwner[id]) return id;
-  const inst = _instances[id];
+  // U2b — resolve a paneId to its ACTIVE tab's instance (identity for single-tab).
+  const inst = _instances[_resolveActive(id)];
   if (inst && _panelOwner[inst.kind]) return inst.kind;
   // Docker-style: paneId in arrange but no per-pane instance minted.
   return _typeByArrangePaneId(id);
