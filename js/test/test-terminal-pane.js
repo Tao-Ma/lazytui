@@ -13,13 +13,20 @@
  */
 'use strict';
 
+// Mock writeToSession FIRST — before ANY module that destructures it at load
+// (input.js does, pulled in transitively by the runtime below). The other tests
+// spawn real PTYs but never write to them, so this stub is harmless to them.
+const terminal = require('../io/terminal');
+const writeToSessionCalls = [];
+terminal.writeToSession = (id, data) => { writeToSessionCalls.push({ id, data }); };
+
 const { describe, it, eq, assert, report } = require('./test-runner');
 const sm = require('./smoke/_helpers/smoke');
 const route = require('../panel/route');
-const terminal = require('../io/terminal');
 const { visibleTerminalSurfaces, focusedTerminalId } = require('../panel/terminal-surfaces');
-const { dispatchMsg } = require('../dispatch/runtime/loop');
+const { dispatchMsg, applyMsg } = require('../dispatch/runtime/loop');
 const { getModel } = require('../model/store');
+const { _handleTerminalModeData } = require('../dispatch/control/input');
 
 // The test-runner auto-registers only layout/detail/groups; register the pane
 // types this test mints (as test-mint-tab does for text-view).
@@ -139,6 +146,37 @@ describe('[terminal-pane] P1a — focus resolution + clean-exit auto-close', () 
     ptyLifecycle.handleExit('pane-term-1', 1);
     assert(paneAt(focus).tabs.some(t => t.id === 'term-1'), 'non-zero exit keeps the tab (readable exit code)');
     dispatchMsg(route.wrap('layout', { type: 'remove_tab', paneId: focus, tabPoolId: 'term-1' }));  // cleanup
+  });
+});
+
+describe('[terminal-pane] P1b — input forwarding + _onSessionExit fan-out', () => {
+  it('_handleTerminalModeData forwards keystrokes to the FOCUSED terminal pane PTY', () => {
+    sm.bootFresh();
+    const focus = route.getInstanceSlice('layout').focus;
+    dispatchMsg(route.wrap('layout', {
+      type: 'mint_tab', paneId: focus, paneType: 'terminal', poolId: 'term-1', config: { cmd: 'sleep 30' },
+    }));
+    // mint focus-follows the focused slot → the terminal pane is focused.
+    applyMsg({ type: 'terminal_enter' });
+    writeToSessionCalls.length = 0;
+    _handleTerminalModeData('hi');
+    eq(writeToSessionCalls.length, 1, 'forwarded once');
+    eq(writeToSessionCalls[0].id, 'pane-term-1', 'to the FOCUSED terminal pane PTY (focusedTerminalId)');
+    eq(writeToSessionCalls[0].data, 'hi', 'the exact bytes');
+    dispatchMsg(route.wrap('layout', { type: 'remove_tab', paneId: focus, tabPoolId: 'term-1' }));  // cleanup
+  });
+
+  it('_onSessionExit(0) fans out through the exit handler → auto-closes the pane', () => {
+    sm.bootFresh();
+    const focus = route.getInstanceSlice('layout').focus;
+    dispatchMsg(route.wrap('layout', {
+      type: 'mint_tab', paneId: focus, paneType: 'terminal', poolId: 'term-1', config: { cmd: 'sleep 30' },
+    }));
+    assert(terminal.getSession('pane-term-1'), 'precondition: PTY alive');
+    // The io/terminal exit fan-out entry (what onExit calls) → the wired handleExit.
+    terminal._onSessionExit('pane-term-1', 0);
+    assert(!paneAt(focus).tabs.some(t => t.id === 'term-1'), 'clean exit fan-out auto-closed the tab');
+    assert(!terminal.getSession('pane-term-1'), 'PTY destroyed');
   });
 });
 

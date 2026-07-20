@@ -12,7 +12,7 @@ const fs = require('fs');
 const { appendViewerLines } = require('../../panel/nav-state');
 const { streamCommand, killAll } = require('./stream');
 const { getInstanceSlice, wrap } = require('../../panel/api');
-const { dispatchMsg } = require('./loop');
+const { dispatchMsg, applyMsg } = require('./loop');
 const { getModel } = require('../../model/store');
 const { esc } = require('../../leaves/text/ansi');
 const history = require('../../feature/history');
@@ -69,12 +69,6 @@ function runAction(actionKey, action, args = []) {
 function shQuote(s) {
   return `'${String(s).replace(/'/g, `'\\''`)}'`;
 }
-
-// Monotonic per-process counter for ephemeral spawn tab keys.
-// Date.now() alone collides if the user double-fires the same action
-// faster than 1ms — addEphemeralTab silently reuses the existing tab
-// (and its dead PTY session) instead of starting a fresh child.
-let _spawnSeq = 0;
 
 // U2c P1 (docs/one-tab-system.md) — sanitize a hint component into a poolId-safe
 // token so the reuse id is a pure function of (group, actionKey).
@@ -168,27 +162,39 @@ function doRun(actionKey, action, args = []) {
       // The tmux branch above is still preferred when $TMUX is set —
       // a real OS-level new window beats an in-process tab for
       // long-lived interactive sessions.
-      const { addEphemeralTab } = require('../../panel/viewer/tabs');
+      // U2d P1b — mint a `terminal` PANE into the viewer's slot (the position-tab
+      // analog of the retired ephemeral content-tab). The PTY id is the tab-instance
+      // id; the finalizer spawns it once it's the slot's active tab.
+      const route = require('../../panel/route');
       const argStr = args.length ? ' ' + args.map(shQuote).join(' ') : '';
-      const tabKey = `spawn-${actionKey}-${Date.now()}-${++_spawnSeq}`;
-      // addEphemeralTab side-effects: detail slice's `tab` + ephemeral-
-      // Terminals[...][tabKey], getInstanceSlice("layout").focus='detail', model.modes.terminalMode.
-      addEphemeralTab(getModel().currentGroup, tabKey, `${tmp}${argStr}`, actionKey);
-      // view_set's reducer arm emits force_full_repaint on viewMode
-      // transitions (normal/half → full). When already in full, the
-      // arm short-circuits to no-op; the new ephemeral tab's chrome
-      // shows up as different row text, which the diff cache catches
-      // naturally — no extra invalidate needed (P5.4).
-      dispatchMsg(wrap('layout', { type: 'view_set', mode: 'full' }));
-      // T27 / B19 — pre-fix `{ detached: false }` returned a live
-      // record whose handle the caller discarded; the embedded PTY's
-      // exit lives in terminal.js with no link back, so the entry
-      // stayed `endedAt=null, exitCode=null` forever in the history
-      // panel. Flip to detached (treat like tmux spawn): the entry
-      // closes immediately. Cost: history doesn't show the spawn's
-      // exit code. Threading the record through addEphemeralTab →
-      // terminal session would be the precise fix but invasive — and
-      // the user can scroll back through the tab itself for output.
+      const group = getModel().currentGroup;
+      // The viewer slot (matches the legacy detail-panel placement); fall back to
+      // the focused slot when no viewer is placed.
+      const container = route.resolveViewerPaneId() || getInstanceSlice('layout').focus;
+      if (container) {
+        // Reducer-derived poolId (idPrefix `term`, NO Date.now()) → replay-
+        // deterministic AND fresh per run, so two spawns of one action open two
+        // distinct terminals. The hint tags origin for later tab-groups clustering;
+        // it does NOT drive reuse (the fresh poolId means every spawn is new).
+        dispatchMsg(wrap('layout', {
+          type: 'mint_tab', paneId: container, paneType: 'terminal', idPrefix: 'term',
+          title: actionKey, config: { cmd: `${tmp}${argStr}`, label: actionKey },
+          hint: { origin: 'spawn', group, key: actionKey },
+        }));
+        // mint_tab activates the tab but focus-FOLLOWS only a pre-focused slot; the
+        // spawner's focus is on the actions/groups list, so focus the terminal
+        // explicitly — view_set='full' projects the FOCUSED pane, and terminal_enter
+        // captures keystrokes for it. view_set emits force_full_repaint on the
+        // normal/half → full transition (no-op when already full).
+        dispatchMsg(wrap('layout', { type: 'focus_set', focus: container }));
+        dispatchMsg(wrap('layout', { type: 'view_set', mode: 'full' }));
+        // terminal_enter is a ROOT-reducer Msg (mode flag), so applyMsg — not
+        // dispatchMsg, which fans a WRAPPED Msg out to a Component.
+        applyMsg({ type: 'terminal_enter' });
+      }
+      // T27 / B19 — detached: the embedded PTY's exit lives in terminal.js with no
+      // link back to this record, so treat like the tmux spawn (the entry closes
+      // immediately; the user scrolls the tab for output).
       history.start(actionKey, cmd, { detached: true });
     }
     return;
