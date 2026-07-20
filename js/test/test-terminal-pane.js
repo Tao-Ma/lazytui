@@ -17,7 +17,7 @@ const { describe, it, eq, assert, report } = require('./test-runner');
 const sm = require('./smoke/_helpers/smoke');
 const route = require('../panel/route');
 const terminal = require('../io/terminal');
-const { visibleTerminalSurfaces } = require('../panel/terminal-surfaces');
+const { visibleTerminalSurfaces, focusedTerminalId } = require('../panel/terminal-surfaces');
 const { dispatchMsg } = require('../dispatch/runtime/loop');
 const { getModel } = require('../model/store');
 
@@ -26,6 +26,12 @@ const { getModel } = require('../model/store');
 const api = sm.api;
 if (!api.getComponent('terminal'))  api.registerComponent(require('../panel/terminal/terminal'));
 if (!api.getComponent('text-view')) api.registerComponent(require('../panel/text-view/text-view'));
+
+// P1a — wire the PTY-exit fan-out (handleExit) so the clean-exit auto-close test
+// can drive it, exactly as test-spawn-pty-tab does. Harmless for the P0b tests
+// (a killed session's async onExit lands after the instance is disposed → no-op).
+const ptyLifecycle = require('../panel/viewer/pty-lifecycle');
+ptyLifecycle.install(require('../dispatch/runtime/effects').effectHost());
 
 function paneAt(focus) {
   const arr = route.getInstanceSlice('layout').arrange;
@@ -93,6 +99,46 @@ describe('[terminal-pane] remove_tab guards', () => {
     eq(paneAt(focus).activeTabId, 'b', 'b is active after minting');
     dispatchMsg(route.wrap('layout', { type: 'remove_tab', paneId: focus, tabPoolId: 'b' }));
     eq(paneAt(focus).activeTabId, 'a', 'removing active b re-activates the previous tab a');
+  });
+});
+
+describe('[terminal-pane] P1a — focus resolution + clean-exit auto-close', () => {
+  it('focusedTerminalId resolves the FOCUSED terminal pane (input/activation target)', () => {
+    sm.bootFresh();
+    const focus = route.getInstanceSlice('layout').focus;
+    dispatchMsg(route.wrap('layout', {
+      type: 'mint_tab', paneId: focus, paneType: 'terminal', poolId: 'term-1', config: { cmd: 'sleep 30' },
+    }));
+    // mint_tab focus-follows the focused slot, so the terminal pane is now focused.
+    eq(route.instanceKind(route.getFocus()), 'terminal', 'the minted terminal pane is focused');
+    eq(focusedTerminalId(), 'pane-term-1', 'focusedTerminalId → the focused terminal pane');
+    // clean up the real PTY
+    dispatchMsg(route.wrap('layout', { type: 'remove_tab', paneId: focus, tabPoolId: 'term-1' }));
+  });
+
+  it('handleExit(code 0) auto-closes the terminal tab AND destroys the PTY (D-exit)', () => {
+    sm.bootFresh();
+    const focus = route.getInstanceSlice('layout').focus;
+    dispatchMsg(route.wrap('layout', {
+      type: 'mint_tab', paneId: focus, paneType: 'terminal', poolId: 'term-1', config: { cmd: 'sleep 30' },
+    }));
+    const ptyId = 'pane-term-1';
+    assert(terminal.getSession(ptyId), 'precondition: PTY alive');
+    // Simulate the PTY's clean-exit fan-out (the event io/terminal fires on exit 0).
+    ptyLifecycle.handleExit(ptyId, 0);
+    assert(!(paneAt(focus).tabs || []).some(t => t.id === 'term-1'), 'clean exit auto-closed the tab');
+    assert(!terminal.getSession(ptyId), 'PTY destroyed by the reconcile orphan-dispose');
+  });
+
+  it('handleExit(non-zero) leaves the tab in place (user dismisses with x)', () => {
+    sm.bootFresh();
+    const focus = route.getInstanceSlice('layout').focus;
+    dispatchMsg(route.wrap('layout', {
+      type: 'mint_tab', paneId: focus, paneType: 'terminal', poolId: 'term-1', config: { cmd: 'sleep 30' },
+    }));
+    ptyLifecycle.handleExit('pane-term-1', 1);
+    assert(paneAt(focus).tabs.some(t => t.id === 'term-1'), 'non-zero exit keeps the tab (readable exit code)');
+    dispatchMsg(route.wrap('layout', { type: 'remove_tab', paneId: focus, tabPoolId: 'term-1' }));  // cleanup
   });
 });
 

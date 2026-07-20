@@ -67,4 +67,17 @@ function visibleTerminalSurfaces(model, arrangeOverride) {
   return out;
 }
 
-module.exports = { visibleTerminalSurfaces };
+// The PTY session id for the FOCUSED pane's terminal — a minted `terminal` pane
+// (id == its tab-instance id) or, failing that, the legacy viewer terminal.
+// null when neither applies. The single resolver for "which PTY receives input"
+// (dispatch/control/input.js) + "which terminal does Enter activate"
+// (dispatch/control/actions.js), so both track focus the same way.
+function focusedTerminalId() {
+  const route = require('./route');
+  const focus = route.getFocus();
+  if (focus != null && route.instanceKind(focus) === 'terminal') return route.activeInstanceOf(focus);
+  const tabs = require('./viewer/tabs');
+  return tabs.isTerminalTab() ? tabs.activeTerminalId() : null;
+}
+
+module.exports = { visibleTerminalSurfaces, focusedTerminalId };

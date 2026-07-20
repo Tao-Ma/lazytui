@@ -166,6 +166,29 @@ const FRAMEWORK_COMMANDS = [
     },
   },
   {
+    name: 'terminal',
+    desc: 'Open a shell in a terminal tab in the focused pane — :terminal [cmd...]',
+    run: (args) => {
+      const layoutSlice = route.getInstanceSlice('layout');
+      const focus = layoutSlice && layoutSlice.focus;
+      if (!focus) {
+        const { appendViewerLines } = require('./nav-state');
+        appendViewerLines(`[red]:terminal needs a focused pane[/]`);
+        return;
+      }
+      const cmd = (args && args.length > 0) ? args.join(' ') : (process.env.SHELL || '/bin/bash');
+      const label = (args && args.length > 0) ? args[0] : 'sh';
+      // U2d — mint a `terminal` pane into the focused slot (idPrefix `term` →
+      // poolId term-N; the PTY id is its tab-instance id). mint_tab focus-follows
+      // the focused slot + the finalizer spawns the PTY; press Enter to interact
+      // (run_selected → activateTerminal → terminal_enter).
+      _host.dispatchMsg(wrap('layout', {
+        type: 'mint_tab', paneId: focus, paneType: 'terminal', title: label,
+        idPrefix: 'term', config: { cmd, label },
+      }));
+    },
+  },
+  {
     name: 'remove-column',
     desc: 'Remove an empty column — :remove-column <n>  (1-based; refused on last column or non-empty)',
     run: (args) => {

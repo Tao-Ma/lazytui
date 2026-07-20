@@ -28,7 +28,8 @@ const { runAction } = require('../runtime/action-runner');
 const { getPanelDef, getItems, getMergedActions, getInstanceSlice,
         wrap, getFocus, instanceKind } = require('../../panel/api');
 const { dispatchMsg } = require('../runtime/loop');
-const { isTerminalTab, activeTerminalId } = require('../../panel/viewer/tabs');
+const { isTerminalTab } = require('../../panel/viewer/tabs');
+const { focusedTerminalId } = require('../../panel/terminal-surfaces');
 const { isSessionDead, restartSession } = require('../../io/terminal');
 const { execSync } = require('child_process');
 const { getModel } = require('../../model/store');
@@ -137,12 +138,14 @@ function _pageStep(paneId) {
  * tab is a terminal tab.
  */
 function activateTerminal() {
-  const id = activeTerminalId();
+  const id = focusedTerminalId();
   if (!id) return;
   if (isSessionDead(id)) {
-    // v0.6.4 — size the restarted session to the FOCUSED viewer's
-    // CONTAINER pane (resolveViewerPaneId → half/full-correct bounds).
-    const bounds = visibleBoundsFor(getInstanceSlice('layout'), route.resolveViewerPaneId(), route.resolveViewerPaneId());
+    // Size the restarted session to the FOCUSED pane's CONTAINER bounds —
+    // getFocus() is the terminal pane (U2d) or the viewer (legacy); either way
+    // the pane whose terminal is being activated. resolveViewerPaneId supplies
+    // the half/full projection context.
+    const bounds = visibleBoundsFor(getInstanceSlice('layout'), getFocus(), route.resolveViewerPaneId());
     if (bounds) restartSession(id, bounds.w - 2, bounds.h - 2);
   }
   applyMsg({ type: 'terminal_enter' });
@@ -242,8 +245,10 @@ function handleAction(action, arg, from) {
       break;
     }
     case 'run_selected': {
-      // Enter on detail + terminal tab → activate terminal mode
-      if (instanceKind(getFocus()) === 'detail' && isTerminalTab()) {
+      // Enter on a terminal → activate terminal mode. U2d: a `terminal` PANE
+      // (its own kind) OR the legacy viewer terminal tab.
+      if (instanceKind(getFocus()) === 'terminal'
+          || (instanceKind(getFocus()) === 'detail' && isTerminalTab())) {
         activateTerminal();
         break;
       }

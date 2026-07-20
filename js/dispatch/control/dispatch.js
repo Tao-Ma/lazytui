@@ -654,6 +654,16 @@ function handleNormalKey(key, seq) {
       break;
     }
     case 'x': {
+      // U2d — a dead `terminal` PANE: `x` closes it via remove_tab (the
+      // pane-instance analog of the legacy dead-ephemeral dismiss below). Clean
+      // exits auto-close from handleExit; `x` dismisses a non-zero exit.
+      if (instanceKind(getFocus()) === 'terminal') {
+        const id = route.activeInstanceOf(getFocus());
+        if (id && isSessionDead(id)) {
+          dispatchMsg(wrap('layout', { type: 'remove_tab', paneId: getFocus(), tabPoolId: mpane.poolIdOf(id) }));
+          break;
+        }
+      }
       // On a dead ephemeral terminal tab, `x` closes it instead of
       // opening the menu. Lets the user dismiss a non-zero exit
       // (clean exits auto-close from the PTY onExit handler).

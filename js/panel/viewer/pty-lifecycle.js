@@ -36,6 +36,14 @@ const { scheduleRender } = require('../../leaves/infra/render-queue');
 let _host = null;
 
 function handleExit(id, exitCode) {
+  // U2d — a `terminal` PANE (id == its tab-instance id, registered in the route
+  // registry) exits via its own fan-out; the legacy viewer-content-tab ephemeral
+  // (id == `${group}_${key}`, not an instance) falls through below (retired in
+  // P3). getInstance is LITERAL, so a legacy id simply misses.
+  const route = require('../../panel/route');
+  const inst = route.getInstance(id);
+  if (inst && inst.kind === 'terminal') { _handlePaneExit(id, exitCode, inst); return; }
+
   // v0.6.1 Phase 4 — resolve which viewer-kind instance hosts this
   // PTY session before reading per-pane state. For Phase 4 singleton
   // the answer is always 'detail'; Phase 5+ may have multiple viewer
@@ -66,6 +74,37 @@ function handleExit(id, exitCode) {
     anyChange = true;
   }
   if (exitCode === 0 && tabs.handleSessionCleanExit(id, paneId)) {
+    anyChange = true;
+  }
+  if (anyChange) scheduleRender();
+}
+
+// U2d — exit fan-out for a `terminal` PANE (id == its tab-instance id). Mirror of
+// the legacy body: clear terminalMode if the user was interacting with this
+// (focused, active) terminal; drop a 'full' auto-zoom when the terminal's slot is
+// focused; and on a CLEAN exit auto-close the tab via remove_tab (a non-zero exit
+// stays so the code is readable — `x` dismisses it). The instance + PTY teardown
+// then flows through reconcile's orphan-dispose (destroySession). `inst.paneId` is
+// the owning COLUMN paneId (the back-ref stamped by reconcile).
+function _handlePaneExit(id, exitCode, inst) {
+  const route = require('../../panel/route');
+  const mpane = require('../../leaves/wm/pane');
+  const colPaneId = inst.paneId;
+  const wasActive = colPaneId != null && route.activeInstanceOf(colPaneId) === id;
+  const focused = colPaneId != null && route.getFocus() === colPaneId;
+  let anyChange = false;
+  if (wasActive && focused && getModel().modes.terminalMode) {
+    _host.applyMsg({ type: 'terminal_exit' });
+    anyChange = true;
+  }
+  const layoutSlice = api.getInstanceSlice('layout');
+  if (layoutSlice && layoutSlice.viewMode === 'full' && focused) {
+    _host.dispatchMsg(_host.wrap('layout', { type: 'view_set', mode: 'normal' }));
+    anyChange = true;
+  }
+  if (exitCode === 0 && colPaneId != null) {
+    _host.dispatchMsg(_host.wrap('layout',
+      { type: 'remove_tab', paneId: colPaneId, tabPoolId: mpane.poolIdOf(id) }));
     anyChange = true;
   }
   if (anyChange) scheduleRender();

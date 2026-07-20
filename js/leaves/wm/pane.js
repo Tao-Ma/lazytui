@@ -23,6 +23,16 @@ function newPaneId(poolId) {
 }
 
 /**
+ * Inverse of newPaneId: the poolId a `pane-<poolId>` tab-instance id was minted
+ * from. Used to turn a terminal's PTY session id (== its tab-instance id) back
+ * into the tabPoolId that `remove_tab` + the tab list key on. Passes through an
+ * id lacking the prefix unchanged (defensive).
+ */
+function poolIdOf(instId) {
+  return (typeof instId === 'string' && instId.startsWith('pane-')) ? instId.slice(5) : instId;
+}
+
+/**
  * Strict focus comparator. v0.6.3 post-arch-arc T3.5 collapsed the
  * Phase-B3 transitional fallback (type/id) — `slice.focus` is now
  * canonically a paneId, seeded by `set_arrange` (which auto-mints
@@ -132,6 +142,7 @@ function removeTab(pane, tabId, pool) {
 
 module.exports = {
   newPaneId,
+  poolIdOf,
   wrapAsPane,
   setActiveTab,
   addTab,

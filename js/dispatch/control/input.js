@@ -16,7 +16,8 @@ const { visibleBoundsFor, getPanelViewportH } = require('../../leaves/wm/geometr
 const { paintNow: render } = require('../../leaves/infra/render-queue');
 const { getModel } = require('../../model/store');
 const { enableMouse, enableFocusEvents, enableBracketedPaste, cols } = require('../../io/term');
-const { isTerminalTab, activeTerminalId } = require('../../panel/viewer/tabs');
+const { isTerminalTab } = require('../../panel/viewer/tabs');
+const { focusedTerminalId } = require('../../panel/terminal-surfaces');
 const { writeToSession, isSessionDead } = require('../../io/terminal');
 const {getPanelDef, getItems, getInstanceSlice, wrap, getFocus, instanceKind } = require('../../panel/api');
 const { dispatchMsg } = require('../runtime/loop');
@@ -954,7 +955,11 @@ function _handleTerminalModeData(data) {
     render();
     return true;
   }
-  const id = activeTerminalId();
+  // U2d — route to the FOCUSED pane's terminal (a minted `terminal` pane or the
+  // legacy viewer terminal). A null id also covers the multi-terminal edge where
+  // focus moved onto a non-terminal pane while terminalMode lingered: exit the
+  // mode (the key is dropped, as for a dead session — matches pre-U2d).
+  const id = focusedTerminalId();
   if (!id || isSessionDead(id)) {
     applyMsg({ type: 'terminal_exit' });
     render();
