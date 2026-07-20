@@ -142,8 +142,11 @@ function _dispatchMsgInner(msg) {
   if (msg && typeof msg.kind === 'string' && msg.msg !== undefined && msg.type === undefined) {
     const kind = msg.kind;
     // `kind` may be a Component name (legacy primary-instance routing) OR a
-    // paneId (post-B3 multi-instance routing). Try paneId lookup first.
-    let inst = route.getInstance(kind);
+    // paneId (post-B3 multi-instance routing). Try paneId lookup first. U2b —
+    // resolve a column paneId to its ACTIVE tab's instance (symmetric with the
+    // focused-key path); a Component name or a tab-instance id passes through
+    // activeInstanceOf unchanged, so a non-active tab stays directly addressable.
+    let inst = route.getInstance(route.activeInstanceOf(kind));
     let comp;
     if (inst) {
       // paneId form. Find the Component for this instance's kind — by direct

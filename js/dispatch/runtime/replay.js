@@ -72,7 +72,11 @@ function restoreState(snap) {
   setModel(_clone(snap.model));
   if (slices.layout !== undefined) route.setInstanceSlice('layout', _clone(slices.layout));
   finalize.reconcileInstancesNow();
-  for (const id of Object.keys(slices)) route.setInstanceSlice(id, _clone(slices[id]));
+  // LITERAL write (not setInstanceSlice): each snapshot slice restores to its OWN
+  // instance id. Under U2b's per-tab model a non-active tab's paneId-shaped id
+  // would divert to the active tab through _resolveActive, losing the non-active
+  // tab's checkpointed slice (a mint / runtime tab-switch makes active ≠ tab-0).
+  for (const id of Object.keys(slices)) route.restoreInstanceSlice(id, _clone(slices[id]));
 }
 
 // --- The fold driver -----------------------------------------------------

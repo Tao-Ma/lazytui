@@ -386,6 +386,16 @@ function setInstancePaneId(id, paneId) {
   if (inst) inst.paneId = paneId;
 }
 
+/** LITERAL slice write, bypassing the active-tab divert — for replay/checkpoint
+ *  restore, which writes each instance's OWN snapshot slice by its instance id
+ *  (a non-active tab's id must NOT resolve to the active tab; that would lose the
+ *  non-active tab's restored slice). Unlike setInstanceSlice this does not route
+ *  through _resolveActive; unlike setInstance it allows service slots. */
+function restoreInstanceSlice(id, slice) {
+  const inst = _instances[id];
+  if (inst) inst.slice = slice;
+}
+
 function getInstanceSlice(id) {
   const inst = _instances[_resolveActive(id)];
   if (inst) return inst.slice;
@@ -705,7 +715,7 @@ module.exports = {
   getFocus,
   setInstance, getInstance, getInstanceSlice, sliceForPane, setInstanceSlice,
   hasInstance, disposeInstance, instanceKind, eachInstance,
-  setActiveInstanceMap, setInstancePaneId, activeInstanceOf,
+  setActiveInstanceMap, setInstancePaneId, activeInstanceOf, restoreInstanceSlice,
   setService, serviceSlice, isService,
   getPrimaryByKind, primarySliceOf,
   _resetRegistryForTest,

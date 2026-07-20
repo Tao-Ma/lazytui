@@ -46,6 +46,22 @@ describe('[per-tab-instance] active-instance map resolution (K3)', () => {
     eq(route.getInstance('pane-a').slice.v, 'A', 'inactive tab a untouched');
   });
 
+  it('restoreInstanceSlice is LITERAL — restores a non-active tab by its own id', () => {
+    reset();
+    route.setInstance('pane-a', 'x', { v: 'A0' });   // tab a (non-active)
+    route.setInstance('pane-b', 'y', { v: 'B0' });   // tab b (active)
+    route.setActiveInstanceMap({ 'pane-a': 'pane-b' });
+    // The routed write (setInstanceSlice) diverts a paneId to the ACTIVE tab —
+    // which is why replay restore must NOT use it (it would lose tab a's slice).
+    route.setInstanceSlice('pane-a', { v: 'DIVERTED' });
+    eq(route.getInstance('pane-b').slice.v, 'DIVERTED', 'setInstanceSlice(paneId) hit the active tab');
+    eq(route.getInstance('pane-a').slice.v, 'A0', 'non-active tab untouched by the routed write');
+    // restoreInstanceSlice bypasses the divert — writes the non-active tab itself.
+    route.restoreInstanceSlice('pane-a', { v: 'A_RESTORED' });
+    eq(route.getInstance('pane-a').slice.v, 'A_RESTORED', 'literal write hit the non-active tab');
+    eq(route.getInstance('pane-b').slice.v, 'DIVERTED', 'active tab untouched by the literal write');
+  });
+
   it('activeInstanceOf resolves a mapped paneId; passes non-paneIds through', () => {
     reset();
     route.setActiveInstanceMap({ 'pane-a': 'pane-b' });
