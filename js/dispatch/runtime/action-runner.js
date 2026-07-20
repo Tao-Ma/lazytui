@@ -200,6 +200,31 @@ function doRun(actionKey, action, args = []) {
     return;
   }
 
+  if (actionType === 'terminal') {
+    // U2d P2 — a `group.terminals` entry (auto-generated action, api._terminalActions).
+    // Opens the configured shell as a REUSED `terminal` pane — the P2.5 docker-exec
+    // pattern: mint (a no-op when already open) + set_active_tab (bring a backgrounded
+    // one forward) + focus + terminal_enter. No temp-script wrapper (persistent, not a
+    // one-shot) and NO full-zoom (matches the legacy YAML-terminal activation). Reused
+    // per (group, name) via a stable poolId, so the pane persists across group switches.
+    const route = require('../../panel/route');
+    const group = getModel().currentGroup;
+    const poolId = `term-yaml-${_san(group)}-${_san(actionKey)}`;
+    const container = route.resolveViewerPaneId() || getInstanceSlice('layout').focus;
+    if (container) {
+      const label = action.label || actionKey;
+      dispatchMsg(wrap('layout', {
+        type: 'mint_tab', paneId: container, paneType: 'terminal', poolId,
+        title: label, config: { cmd, label },
+        hint: { origin: 'yaml-terminal', group, key: actionKey },
+      }));
+      dispatchMsg(wrap('layout', { type: 'set_active_tab', paneId: container, tabPoolId: poolId }));
+      dispatchMsg(wrap('layout', { type: 'focus_set', focus: container }));
+      applyMsg({ type: 'terminal_enter' });
+    }
+    return;
+  }
+
   if (actionType === 'background') {
     appendViewerLines(`[dim]$ ${esc(actionKey)}[/]\n[yellow]Started in background.[/]`);
     // -- delimiter so $0 = "--", $1 = first arg, $@ = arg list (POSIX).

@@ -8,14 +8,18 @@
  * never spawns a real PTY — only a real boot exercises the whole chain:
  * tab-activation → finalizer spawn → read-only render paints the buffer.
  *
- * This boots the real binary in a node-pty, cycles the viewer to its terminal
- * tab (two `]` = next_tab: Info(0) → Transcript(1) → terminal(2); next_tab
- * targets the viewer regardless of which pane is focused), then asserts the
- * terminal command's marker text appears in the painted output. Marker present
- * ⇒ the finalizer spawned the PTY AND render read + painted its buffer. It then
- * resizes the outer terminal — exercising the finalizer's resizeSession branch
- * (the other half of §5; `term_resized` runs the finalizer) — and confirms the
- * binary survives and the overlay still paints.
+ * This boots the real binary in a node-pty, opens a `terminal` PANE via the
+ * `:terminal <cmd>` cmdline verb (U2d), then asserts the terminal command's marker
+ * text appears in the painted output. Marker present ⇒ the finalizer spawned the
+ * PTY AND render read + painted its buffer. It then resizes the outer terminal —
+ * exercising the finalizer's resizeSession branch (the other half of §5;
+ * `term_resized` runs the finalizer) — and confirms the binary survives and the
+ * overlay still paints.
+ *
+ * The marker is split by adjacent quotes in the typed command (`PTYMARK''ER_…`) so
+ * the cmdline's own echo of what we TYPE never contains the literal marker — only
+ * the shell's output does (the shell drops the empty '' between the halves). So the
+ * assertion can only pass if the PTY actually ran and its buffer was painted.
  *
  * Run: node js/test/smoke/pty-overlay.js
  */
@@ -46,21 +50,24 @@ function run() {
     term.onExit((e) => { exitCode = e.exitCode; });
     (async () => {
       await delay(BOOT_MS);
-      try { term.write('\x1b[C'); } catch (_) {}   // focus the viewer pane (right column)
+      try { term.write('\x1b[C'); } catch (_) {}   // focus the detail pane (right column)
       await delay(300);
-      // Cycle the viewer to its terminal tab. `]` is next_tab.
-      try { term.write(']'); } catch (_) {}
+      // Open a `terminal` pane via `:terminal <cmd>` (mints into the focused slot,
+      // finalizer spawns the PTY). Split marker (PTYMARK''ER_…) so the typed cmdline
+      // never contains the literal marker — only the shell's echo output does.
+      try { term.write(':'); } catch (_) {}
       await delay(300);
-      try { term.write(']'); } catch (_) {}
+      try { term.write("terminal echo PTYMARK''ER_4F2A; sleep 30\r"); } catch (_) {}
       await delay(AFTER_KEY_MS);
       // Resize the outer terminal → term_resized Msg → finalizer →
       // resizeSession on the active PTY. Must not crash.
       try { term.resize(100, 30); } catch (_) {}
       await delay(RESIZE_MS);
-      // Enter on the focused terminal tab → terminal_enter → terminalMode, whose
-      // render positions the screen cursor at the PTY cursor (via the io/term-screen
-      // port). The v0.6.6 port refactor regressed this into a `buffer is not defined`
-      // ReferenceError → fatal exit; this step is the regression guard.
+      // Enter on the focused terminal pane → run_selected → activateTerminal →
+      // terminal_enter → terminalMode, whose render positions the screen cursor at
+      // the PTY cursor (via the io/term-screen port). The v0.6.6 port refactor
+      // regressed this into a `buffer is not defined` ReferenceError → fatal exit;
+      // this step is the regression guard.
       try { term.write('\r'); } catch (_) {}
       await delay(TERM_MODE_MS);
       const captured = out;
@@ -74,14 +81,14 @@ function run() {
   const { out, exitCode } = await run();
 
   describe('PTY overlay — finalizer spawns, render reads (v0.6.5 §5)', () => {
-    it('survives activating the terminal tab + a resize — no crash', () => {
+    it('survives opening a terminal pane + a resize — no crash', () => {
       // A read-only-render regression (e.g. dereferencing a null session) or a
       // throw in the finalizer's spawn/resize branch would crash the child
       // before the kill; a clean run stays alive → exitCode null.
       if (exitCode !== null) {
         console.error(`  ↳ exited with code ${exitCode}; last output:\n${out.slice(-600)}`);
       }
-      assert(exitCode === null, 'process still alive after activating the terminal tab + resize');
+      assert(exitCode === null, 'process still alive after opening a terminal pane + resize');
     });
 
     it('paints the PTY buffer (marker ⇒ finalizer spawned + render read it)', () => {

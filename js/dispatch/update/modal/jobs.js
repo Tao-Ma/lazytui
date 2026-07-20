@@ -117,15 +117,11 @@ function update(model, msg) {
         // least surfaces it; jumping to the position-tab is a follow-on.
         cmds.push({ type: 'msg', msg: route.wrap('layout', { type: 'focus_set', focus: viewerTarget }) });
       } else if (kind === 'pty' && owner.ptyId) {
-        if (msg.tabIdx != null) {
-          cmds.push({ type: 'msg', msg: route.wrap(viewerTarget, {
-            type: 'tab_switch', idx: msg.tabIdx,
-            targetKey: msg.targetKey,
-            currentGroup: groupName,
-          }) });
-          cmds.push({ type: 'msg', msg: route.wrap('layout', { type: 'focus_set', focus: viewerTarget }) });
-          cmds.push({ type: 'msg', msg: { type: 'terminal_enter' } });
-        }
+        // U2d P2 — the PTY's terminal is a `terminal` PANE now (not a viewer
+        // content-tab), so the flat-tab jump + terminal_enter are retired (same as
+        // stream-routed above). Focus the viewer so activating the job surfaces it;
+        // jumping to (and entering) the terminal's position-tab is a follow-on.
+        cmds.push({ type: 'msg', msg: route.wrap('layout', { type: 'focus_set', focus: viewerTarget }) });
       } else if (kind === 'background' || kind === 'tmux') {
         const now = msg.now | 0;
         const ageS = Math.max(0, Math.floor(((job.endedAt || now) - job.startedAt) / 1000));

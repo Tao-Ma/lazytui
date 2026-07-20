@@ -97,7 +97,7 @@ describe('[jobs_activate] full cascade — one Msg, reducer-driven', () => {
     eq(api.getInstanceSlice('layout').focus, 'detail', 'focus on viewer');
   });
 
-  it('pty → tab_switch to terminal tab + terminal_enter', () => {
+  it('pty → closes overlay, focuses viewer (no flat-tab jump — U2d P2)', () => {
     setup({
       kind: 'pty',
       label: 'bash',
@@ -106,10 +106,11 @@ describe('[jobs_activate] full cascade — one Msg, reducer-driven', () => {
     });
     _activate();
     eq(runtime.getModel().modes.jobsMode, false);
-    // U2c P2 — action tabs retired, so the tab strip is [Info, Transcript, shell,
-    // …]; shell is termTab idx 0 → absolute tab = 2.
-    eq(api.getInstanceSlice('detail').tab, 2, 'tab_switch landed on terminal tab idx 2');
-    eq(runtime.getModel().modes.terminalMode, true, 'terminal_enter fired');
+    // U2d P2 — the PTY's terminal is a `terminal` PANE now, not a viewer content-tab,
+    // so the flat-tab jump + terminal_enter are retired (same treatment as the
+    // stream-routed case above). Jumping to (and entering) the terminal's
+    // position-tab is a follow-on.
+    eq(runtime.getModel().modes.terminalMode, false, 'no content-tab jump → no terminal_enter');
   });
 
   it('background → viewer shows info card, no tab switch', () => {

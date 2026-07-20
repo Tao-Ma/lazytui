@@ -133,13 +133,16 @@ function viewerLinesFromBundle(slice, bundle, lookups) {
     () => flatTabInfoFromBundle(slice || {}, bundle), lookups);
 }
 
-/** Merged terminals: YAML-defined first, then runtime-ephemeral. */
+/** Terminals shown in the viewer's flat strip. U2d P2 — YAML `group.terminals`
+ *  no longer auto-show here: they're auto-generated `type:'terminal'` actions
+ *  (api._terminalActions) that open `terminal` PANES. slice.ephemeralTerminals is
+ *  also empty (runtime producers mint panes since P1b/P2.5), so this is now always
+ *  {} — the terminal segment of the strip is dead (removed with the rest in P2b).
+ *  Kept as a stub only so the index math stays valid this commit. */
 function groupTerminals(model, slice, groupName) {
   const group = _groupOf(model, groupName);
   if (!group) return {};
-  const yaml = group.terminals || {};
-  const eph = (slice.ephemeralTerminals && slice.ephemeralTerminals[groupName]) || {};
-  return { ...yaml, ...eph };
+  return (slice.ephemeralTerminals && slice.ephemeralTerminals[groupName]) || {};
 }
 
 function groupContentTabs(slice, groupName) {

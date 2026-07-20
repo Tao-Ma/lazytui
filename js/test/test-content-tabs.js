@@ -182,19 +182,10 @@ describe('[6] removeContentTab refreshes detail body', () => {
   });
 });
 
-describe('[4] isTerminalTab unaffected by content tabs', () => {
-  it('content tabs in the mix do not confuse isTerminalTab', () => {
-    // v0.6.2 layout: 0=Info, 1=Transcript, 2=term sh, 3=content a
-    freshGroup({ terminals: { sh: { cmd: 'bash', label: 'sh' } } });
-    tabs.addContentTab('g1', 'a', 'a', ['x']);
-    getInstanceSlice('detail').tab = 2;
-    eq(tabs.isTerminalTab(), true,  'index 2 is term');
-    eq(tabs.isContentTab(),  false, 'index 2 is not content');
-    getInstanceSlice('detail').tab = 3;
-    eq(tabs.isTerminalTab(), false, 'index 3 is not term');
-    eq(tabs.isContentTab(),  true,  'index 3 is content');
-  });
-});
+// [4] REMOVED (U2d P2) — tested that a YAML terminal auto-shows as a content-tab at
+// idx 2. YAML `group.terminals` are now `type:'terminal'` actions that open `terminal`
+// PANES (they no longer appear in the viewer's flat strip), so isTerminalTab() is dead
+// (removed with the terminal content-tab machinery in the P2b excise).
 
 // ---- T27 regression: cross-group tab mutators don't clobber current-group state ----
 //
@@ -453,30 +444,10 @@ describe('[R5] tab removal drops the matching tabState entry', () => {
   });
 });
 
-// ---- split-arc P2.2 regression: no-arg terminal helpers must resolve the
-// mounted viewer. activeTerminalId/findEphemeralByid used to default
-// `paneId = 'detail'` — a kind name only the deleted getInstanceSlice
-// fallback bridged to the minted pane instance. On real boots (seed
-// disposed, 'pane-detail' minted) the strict miss returned the empty
-// stub: terminal activation, terminal-mode input, and the PTY overlay
-// paint all read null while the isTerminalTab gate (resolveTarget-based)
-// said true.
-describe('[P2.2] no-arg activeTerminalId resolves the mounted viewer pane', () => {
-  it('post-mint shape: seed disposed, pane-detail minted → terminal still found', () => {
-    const route = require('../panel/route');
-    freshGroup({ terminals: { sh: { cmd: 'bash', label: 'sh' } } });
-    const seed = route.getInstance('detail').slice;
-    route.disposeInstance('detail');
-    route.setInstance('pane-detail', 'detail', { ...seed, tab: 2 });  // 0=Info 1=Transcript 2=term sh
-    try {
-      eq(tabs.activeTerminalId(), 'g1_sh',
-         'no-arg default resolves via resolveTarget (pre-fix: strict miss → null)');
-    } finally {
-      route.disposeInstance('pane-detail');
-      route.setInstance('detail', 'detail', seed);
-    }
-  });
-});
+// [P2.2] REMOVED (U2d P2) — tested that no-arg activeTerminalId() resolves a YAML
+// terminal content-tab through the mounted viewer. YAML terminals are `terminal`
+// PANES now (not content-tabs), so activeTerminalId is dead — removed with the
+// terminal content-tab machinery in the P2b excise.
 
 // Stage-1 domain-detangle guard (docs/v0.6.5-render-exit.md "domain detangle"):
 // feature/open-file no longer imports panel/viewer/tabs — it pushes content

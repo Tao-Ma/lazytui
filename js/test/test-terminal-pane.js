@@ -212,4 +212,41 @@ describe('[terminal-pane] P2.5 — docker exec mints a reused terminal pane', ()
   });
 });
 
+describe('[terminal-pane] P2 — YAML group.terminals → auto-generated terminal actions', () => {
+  it('getMergedActions generates a type:terminal action per group.terminals entry', () => {
+    sm.bootFresh();
+    const group = getModel().currentGroup;
+    getModel().config.groups[group].terminals = { sh: { cmd: 'sleep 30', label: 'Shell' } };
+    const acts = api.getMergedActions(group);
+    assert(acts.sh, 'a "sh" action generated from group.terminals');
+    eq(acts.sh.type, 'terminal', 'type:terminal');
+    eq(acts.sh.script, 'sleep 30', 'script = the configured cmd');
+    eq(acts.sh.label, 'Shell', 'label carried through');
+  });
+
+  it('running a type:terminal action mints a REUSED terminal pane', () => {
+    sm.bootFresh();
+    const { runAction } = require('../dispatch/runtime/action-runner');
+    const group = getModel().currentGroup;
+    const act = { type: 'terminal', script: 'sleep 30', label: 'Shell' };
+    runAction('sh', act, []);
+    const ptyId = `pane-term-yaml-${group}-sh`;
+    assert(route.getInstance(ptyId), 'terminal pane minted for the YAML terminal');
+    eq(route.getInstance(ptyId).kind, 'terminal');
+    eq(getModel().modes.terminalMode, true, 'entered terminal mode');
+    // Reuse: a second run of the same terminal must NOT open a second pane.
+    const countTermTabs = () => {
+      let n = 0;
+      for (const col of route.getInstanceSlice('layout').arrange.columns)
+        for (const p of col.panels)
+          for (const t of (p.tabs || [])) if (t.poolId === `term-yaml-${group}-sh`) n++;
+      return n;
+    };
+    eq(countTermTabs(), 1, 'one terminal tab after first run');
+    runAction('sh', act, []);
+    eq(countTermTabs(), 1, 'reused — still one tab after re-run (no duplicate)');
+    terminal.destroySession(ptyId);  // cleanup the real PTY
+  });
+});
+
 report();

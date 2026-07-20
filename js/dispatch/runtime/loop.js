@@ -76,14 +76,29 @@ let _dispatchDepth = 0;
 // captured ref would lose intermediate writes across cascades), so callers pass
 // only `msg`. setModel commits the snapshot BEFORE runEffects so cross-layer
 // Cmds (apply_msg / dispatch_msg) re-entering the dispatch graph see post-Msg
-// state. applyMsg does NOT run the finalizer (root Msgs don't move panes).
+// state. A root Msg's OWN reducer never moves panes — BUT its EFFECTS can dispatch
+// a pane-moving Component Msg (a cmdline verb minting a tab via _host.dispatchMsg:
+// `:terminal`, `:text-view`, `:add-column`, …). That nested dispatch runs at depth
+// ≥1 so it never hits the depth-0 finalize gate, and applyMsg historically skipped
+// the finalizer entirely — orphaning the mint from the per-pane instance reconcile
+// + the terminal PTY spawn (both live only in finalizeDispatch). So: track the
+// arrange across the OUTERMOST root dispatch and finalize iff it changed under us.
+// Gated on the arrange ref → a root Msg that moves nothing (the common case) stays
+// finalizer-free, no added cost on the hot root-Msg path.
+function _layoutArrange() {
+  const ls = route.getInstanceSlice('layout');
+  return ls ? ls.arrange : undefined;
+}
 function applyMsg(msg) {
   _dispatchDepth++;
+  const arrangeBefore = _dispatchDepth === 1 ? _layoutArrange() : undefined;
   try { mw.run({ lane: 'root', msg }, _termRoot); }
   finally {
     _dispatchDepth--;
-    // Nav-capture flush only — root Msgs don't move panes, so NOT finalizeDispatch.
-    if (_dispatchDepth === 0) flushNavCapture();
+    if (_dispatchDepth === 0) {
+      flushNavCapture();
+      if (arrangeBefore !== undefined && _layoutArrange() !== arrangeBefore) finalizeDispatch();
+    }
   }
 }
 

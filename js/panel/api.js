@@ -544,7 +544,22 @@ function getMergedActions(groupName) {
   const m = getModel();
   const g = m.config && m.config.groups && m.config.groups[groupName];
   if (!g) return {};
-  return { ...getGroupActions(g, groupName), ...(g.actions || {}) };
+  return { ...getGroupActions(g, groupName), ..._terminalActions(g), ...(g.actions || {}) };
+}
+
+// U2d P2 — group.terminals become auto-generated `type:'terminal'` actions (mirroring
+// how docker auto-generates compose actions). Invoking one opens the configured shell
+// as a REUSED `terminal` pane (action-runner doRun), replacing the legacy auto-shown
+// viewer terminal content-tabs: the terminals stay discoverable in the actions list,
+// and a minted pane persists across group switches (the documented "sessions persist").
+// Ordered before user `g.actions` so a same-named user action still overrides.
+function _terminalActions(g) {
+  const out = {};
+  const terms = (g && g.terminals) || {};
+  for (const name of Object.keys(terms)) {
+    out[name] = { type: 'terminal', script: terms[name].cmd, label: terms[name].label || name };
+  }
+  return out;
 }
 
 /**
