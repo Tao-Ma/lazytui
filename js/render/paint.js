@@ -173,12 +173,13 @@ function _renderCollapsed(p, w, chrome) {
 
 
 // --- Render modes ---
-// v0.6.3 P6 — single-Frame cache. Six module-locals (was prevRows,
-// prevCols, forceFull, prevOverlayFlags, forceOverlayFull,
-// lastOverlayId — split across two `let` blocks) collapse to one
-// struct so the diff invariants (width/rowcount delta → force,
-// overlay drop → force, etc) all live in one shape that can be
-// reset atomically.
+// v0.6.3 P6 — single-Frame cache. The main-frame diff state (prevRows,
+// prevCols, forceFull, prevOverlayFlags — once split across two `let`
+// blocks) collapses to one struct so the diff invariants (width/rowcount
+// delta → force, overlay drop → force, etc) all live in one shape that can
+// be reset atomically. (The PTY-overlay force-state that used to live here
+// too — forceOverlayFull/lastOverlayId/W/H — moved per-session in U2d P0a;
+// see the note on `_frame` below.)
 //
 // prevRows holds the markup string written for each screen row so the
 // next frame writes only rows that actually changed. clearScreen()
@@ -203,15 +204,14 @@ const _frame = {
   // repaint on that swap so the outgoing menu's pixels are wiped. Menu NAV (j/k)
   // preserves the items identity, so it still cell-diffs (no flicker).
   prevMenuItems:    null,
-  // PTY-overlay sub-state (session.prevFrame lives per session).
-  forceOverlayFull: true,
-  lastOverlayId:    null,
-  // v0.6.5 §5 — last overlay's displayed inner dims. The PTY resize moved to
-  // the dispatch finalizer, so render no longer sets forceOverlayFull off the
-  // resize itself; instead it NOTICES a dim change here (like lastOverlayId
-  // notices a session switch) to refresh the per-row diff cache.
-  lastOverlayW:     0,
-  lastOverlayH:     0,
+  // PTY-overlay force-state is NOT here — it moved per-session (U2d P0a). With
+  // N visible terminal panes there is no single "last overlay": each session
+  // tracks its own displayed dims (session.prevW/prevH) + viewport
+  // (session.prevViewportY) + row cache (session.prevFrame), and paint.js keeps
+  // a module-local `_paintedOverlayIds` set to force a full repaint for a
+  // session that just (re)appeared in the visible set. The "main paint cleared
+  // the screen → force every overlay" signal is the `forceAll` param threaded
+  // into renderTerminalOverlay, not a persistent flag.
   // v0.6.6 replay arc — change-highlight opts for paintFrame, or null. Set per
   // render() from the replay scrubber's diff mode; passed to the main-frame
   // paintFrame calls so changed rows/cells tint. Never touches prevRows.
@@ -569,125 +569,142 @@ function renderFull(model, arrangeOverride) {
 }
 
 
-// #D6 — model is threaded in (no `= getModel()` default), same as render():
-// pure-by-construction signature. The overlay seam thunk below fetches the
-// current model (`overlay: () => renderTerminalOverlay(getModel())`); the
-// 250ms safety-net timer (app/tui.js) threads getModel() at its call site.
-function renderTerminalOverlay(model, arrangeOverride) {
-  if (!isTerminalTab()) return;
+// The set of PTY session ids painted on the PREVIOUS overlay pass. A session
+// that newly (re)appears in the visible set — a tab switch, a fresh terminal,
+// or a return from being backgrounded — may sit on a screen region that another
+// surface or the main paint just clobbered, so its per-row diff cache is stale.
+// Forcing a full repaint for such a session replaces the old single
+// `_frame.lastOverlayId` "the one terminal switched" force, generalized to N.
+let _paintedOverlayIds = new Set();
+
+// A "visible terminal surface" to paint: { id (PTY session id), bounds (the
+// container pane rect), focused (holds keyboard focus → gets the cursor) }.
+// U2d P0a: the list is length ≤1, seeded from the single viewer-terminal
+// surface (isTerminalTab/activeTerminalId), so the overlay is byte-identical.
+// P0b extends it to also include `terminal`-kind pane instances; keeping ONE
+// producer means the legacy surface and future pane surfaces never fight over
+// shared force-state.
+function _visibleTerminals(model, arrangeOverride) {
+  if (!isTerminalTab()) return [];
   const id = activeTerminalId();
   const termConf = activeTerminalConfig();
-  if (!id || !termConf) return;
-
+  if (!id || !termConf) return [];
   const layoutSlice = getInstanceSlice('layout');
-  // v0.6.4 — position the terminal overlay against the FOCUSED viewer's
-  // CONTAINER pane bounds. resolveViewerPaneId bridges the viewer tab-id
-  // to its hosting paneId, the only key carrying half/full visible bounds.
-  // visibleBoundsFor (not boundsFor): in half/full the resolved viewer may
-  // be OFF-SCREEN (e.g. two non-viewer panes projected) — boundsFor would
-  // fall through to a phantom normal-view rect and mis-place the overlay.
-  // null → no-op. Single-viewer: the viewer is always on-screen, so this is
-  // byte-identical.
+  // v0.6.4 — position against the FOCUSED viewer's CONTAINER pane bounds.
+  // resolveViewerPaneId bridges the viewer tab-id to its hosting paneId, the
+  // only key carrying half/full visible bounds. visibleBoundsFor (not
+  // boundsFor): in half/full the resolved viewer may be OFF-SCREEN (e.g. two
+  // non-viewer panes projected) — boundsFor would fall through to a phantom
+  // normal-view rect and mis-place the overlay. null → skip.
   // Phase A.2 — bounds derive from the slice's arrange. During a drag the
   // overlay must follow the PREVIEW layout (its detail rect shifts to the
   // would-be-after-release position), so compute against the preview arrange
   // when one is threaded; otherwise the real slice.
   const boundsSlice = arrangeOverride ? { ...layoutSlice, arrange: arrangeOverride } : layoutSlice;
-  const bounds = geo.visibleBoundsFor(boundsSlice, _route().resolveViewerPaneId(), _route().resolveViewerPaneId());
-  if (!bounds) return;
-  const innerW = bounds.w - 2;
-  const innerH = bounds.h - 2;
+  const viewerPaneId = _route().resolveViewerPaneId();
+  const bounds = geo.visibleBoundsFor(boundsSlice, viewerPaneId, viewerPaneId);
+  if (!bounds) return [];
+  // Single-terminal world: terminalMode ⇔ the one terminal has focus.
+  return [{ id, bounds, focused: !!model.modes.terminalMode }];
+}
 
-  // v0.6.5 §5 — render is READ-ONLY for the PTY overlay. The session's
-  // lifecycle (lazy spawn on first activation + resize to the committed pane
-  // geometry) is reconciled by the dispatch finalizer
-  // (dispatch/runtime/finalize.js), the same runtime step that mints pane
-  // instances and derives the viewer's innerH. Here we just read the buffer.
-  // A null session means the finalizer hasn't spawned it yet (no activation
-  // dispatch has run) — skip this frame; the next render shows it.
-  const session = getSession(id);
-  if (!session) return;
-
-  // Switching session OR the overlay's displayed inner dims changed → force a
-  // full overlay repaint so the per-row diff cache is rebuilt at the new
-  // shape. The PTY resize itself lives in the finalizer now; render only
-  // NOTICES the change. During a free-config drag the displayed bounds are
-  // preview-shifted while the PTY holds its committed dims (the finalizer
-  // sizes off the committed arrange) — the dim-change force keeps the shifted
-  // overlay region clean.
-  if (id !== _frame.lastOverlayId || innerW !== _frame.lastOverlayW || innerH !== _frame.lastOverlayH) {
-    _frame.forceOverlayFull = true;
-    _frame.lastOverlayId = id;
-    _frame.lastOverlayW = innerW;
-    _frame.lastOverlayH = innerH;
-  }
-
-  // Diff-based render: only rewrite rows whose content changed since the
-  // previous overlay write. trimRight=false + pad so shorter lines fully
-  // overwrite prior content within the changed row.
-  // Read the visible viewport (plain-text rows + viewportY) through the
-  // emulator screen port — render never touches the emulator buffer directly
-  // (v0.6.6 replay arc: io/term-screen is the one emulator-aware module).
-  const { viewportY, rows } = sessionViewportRows(id, innerH, innerW);
-  if (!session.prevFrame) session.prevFrame = [];
-  // v0.6.5 §5(a) — scrollback: the overlay reads `viewportY`, which the scroll
-  // effects (terminal.scrollSession*) move. When the viewport position changes,
-  // every visible row shifts, so the per-row diff cache is stale — force a full
-  // inner repaint for that frame. This also clears the scroll indicator drawn
-  // below when the user returns to the bottom.
-  const scrolled = viewportY !== session.prevViewportY;
-  session.prevViewportY = viewportY;
-  const force = _frame.forceOverlayFull || scrolled;
-  _frame.forceOverlayFull = false;
-
+// #D6 — model is threaded in (no `= getModel()` default), same as render():
+// pure-by-construction signature. The overlay seam thunk (render-queue setup
+// below) fetches the current model (`overlay: () => renderTerminalOverlay(
+// getModel())`); the 250ms safety-net timer (app/tui.js) threads getModel() at
+// its call site.
+// `forceAll` — the caller (render(), after the main paint cleared the screen)
+// requests a full repaint of every overlay this frame; the debounced fast-path
+// (PTY onData → scheduleOverlay) omits it, so it stays a targeted diff.
+function renderTerminalOverlay(model, arrangeOverride, forceAll) {
+  const surfaces = _visibleTerminals(model, arrangeOverride);
+  const nowPainted = new Set();
   let out = '';
-  for (let row = 0; row < innerH; row++) {
-    let text = rows[row] || '';
-    if (text.length < innerW) text += ' '.repeat(innerW - text.length);
-    if (!force && session.prevFrame[row] === text) continue;
-    out += `\x1b[${bounds.y + row + 2};${bounds.x + 2}H${text}${RESET}`;
-    session.prevFrame[row] = text;
-  }
+  let cursorOut = '';   // the focused surface's cursor move — appended LAST so
+                        // it isn't stranded mid-buffer by a later surface's rows.
+  for (const surf of surfaces) {
+    const { id, bounds, focused } = surf;
+    const innerW = bounds.w - 2;
+    const innerH = bounds.h - 2;
 
-  // v0.6.5 §5(a) Phase 4 — scrollback position indicator. When the viewport
-  // sits above the live bottom, stamp a reverse-video `[↑N]` tag at the
-  // top-right inner cell. It overlays one cell of content while scrolled;
-  // any scroll change forces the inner rows to repaint (above), so the tag
-  // is self-clearing the frame the user returns to the bottom.
-  const scrollInfo = sessionScrollInfo(id);
-  if (!scrollInfo.atBottom && innerW > 6) {
-    const tag = `[↑${scrollInfo.linesBelow}]`;
-    const tx = bounds.x + 2 + innerW - tag.length;
-    out += `\x1b[${bounds.y + 2};${tx}H\x1b[7m${tag}\x1b[0m`;
-  }
+    // v0.6.5 §5 — render is READ-ONLY for the PTY overlay. The session's
+    // lifecycle (lazy spawn on first activation + resize to the committed pane
+    // geometry) is reconciled by the dispatch finalizer
+    // (dispatch/runtime/finalize.js). Here we just read the buffer. A null
+    // session means the finalizer hasn't spawned it yet — skip; next frame.
+    const session = getSession(id);
+    if (!session) continue;
+    nowPainted.add(id);
 
-  // Show exit prompt if process died (overlay on bottom content row).
-  // v0.6.3 P5.1 — the setImmediate terminal_exit dispatch that used to
-  // live here retired in favor of an event-driven dispatch from
-  // pty-lifecycle.handleExit (event-source = PTY's onExit, not render
-  // poll). One fewer render-side reducer dispatch.
-  if (session.exited) {
-    const msg = ` Process exited: ${session.exitCode} — Enter restart, x close `;
-    const text = msg.length > innerW ? msg.slice(0, innerW) : msg;
-    const padding = Math.max(0, Math.floor((innerW - text.length) / 2));
-    out += `\x1b[${bounds.y + innerH + 1};${bounds.x + 2 + padding}H\x1b[7m${text}\x1b[0m`;
-  }
+    // Per-session force-full triggers (replacing the old _frame singletons):
+    //  - appeared: this session was not painted last pass (its region may be
+    //    clobbered) — the generalized "session switched" force.
+    //  - dimChanged: the displayed inner dims changed (resize, or a free-config
+    //    drag preview-shifting the bounds while the PTY holds its committed
+    //    dims — the finalizer sizes off the committed arrange). render only
+    //    NOTICES the change to rebuild the per-row diff cache.
+    const appeared = !_paintedOverlayIds.has(id);
+    const dimChanged = session.prevW !== innerW || session.prevH !== innerH;
+    session.prevW = innerW;
+    session.prevH = innerH;
+    if (!session.prevFrame) session.prevFrame = [];
 
-  // Position screen cursor at PTY cursor when in terminal mode.
-  // Visibility (show/hide) is derived once at the end of render() from
-  // model.modes.terminalMode || model.modes.cmdMode.
-  if (model.modes.terminalMode && !session.exited) {
-    // Cursor position via the emulator port (NOT session.screen.buffer — render
-    // stays port-only; the v0.6.6 port refactor dropped the old `buffer` local
-    // but left these two reads referencing it → ReferenceError on terminal focus).
-    const cur = sessionCursor(id);
-    if (cur) {
-      const cx = bounds.x + 2 + cur.x;
-      const cy = bounds.y + 2 + cur.y;
-      out += `\x1b[${cy};${cx}H`;
+    // Read the visible viewport (plain-text rows + viewportY) through the
+    // emulator screen port — render never touches the emulator buffer directly
+    // (v0.6.6 replay arc: io/term-screen is the one emulator-aware module).
+    const { viewportY, rows } = sessionViewportRows(id, innerH, innerW);
+    // v0.6.5 §5(a) — scrollback: viewportY (moved by terminal.scrollSession*)
+    // shifts every visible row, so the per-row cache is stale — force a full
+    // inner repaint for that frame. Also clears the scroll indicator when the
+    // user returns to the bottom.
+    const scrolled = viewportY !== session.prevViewportY;
+    session.prevViewportY = viewportY;
+    const force = forceAll || appeared || dimChanged || scrolled;
+
+    // Diff-based render: only rewrite rows whose content changed since the
+    // previous overlay write. trimRight=false + pad so shorter lines fully
+    // overwrite prior content within the changed row.
+    for (let row = 0; row < innerH; row++) {
+      let text = rows[row] || '';
+      if (text.length < innerW) text += ' '.repeat(innerW - text.length);
+      if (!force && session.prevFrame[row] === text) continue;
+      out += `\x1b[${bounds.y + row + 2};${bounds.x + 2}H${text}${RESET}`;
+      session.prevFrame[row] = text;
+    }
+
+    // v0.6.5 §5(a) Phase 4 — scrollback position indicator. When the viewport
+    // sits above the live bottom, stamp a reverse-video `[↑N]` tag at the
+    // top-right inner cell. It overlays one cell of content while scrolled;
+    // any scroll change forces the inner rows to repaint (above), so the tag
+    // is self-clearing the frame the user returns to the bottom.
+    const scrollInfo = sessionScrollInfo(id);
+    if (!scrollInfo.atBottom && innerW > 6) {
+      const tag = `[↑${scrollInfo.linesBelow}]`;
+      const tx = bounds.x + 2 + innerW - tag.length;
+      out += `\x1b[${bounds.y + 2};${tx}H\x1b[7m${tag}\x1b[0m`;
+    }
+
+    // Show exit prompt if process died (overlay on bottom content row).
+    // v0.6.3 P5.1 — the terminal_exit dispatch is event-driven from
+    // pty-lifecycle.handleExit (PTY onExit), not a render-side poll.
+    if (session.exited) {
+      const msg = ` Process exited: ${session.exitCode} — Enter restart, x close `;
+      const text = msg.length > innerW ? msg.slice(0, innerW) : msg;
+      const padding = Math.max(0, Math.floor((innerW - text.length) / 2));
+      out += `\x1b[${bounds.y + innerH + 1};${bounds.x + 2 + padding}H\x1b[7m${text}\x1b[0m`;
+    }
+
+    // Position the hardware cursor at the PTY cursor for the FOCUSED terminal
+    // in terminal mode (only one surface is focused). Visibility (show/hide) is
+    // derived once at the end of render(). Cursor position via the emulator
+    // port (NOT session.screen.buffer — render stays port-only).
+    if (focused && !session.exited) {
+      const cur = sessionCursor(id);
+      if (cur) cursorOut = `\x1b[${bounds.y + 2 + cur.y};${bounds.x + 2 + cur.x}H`;
     }
   }
-  stdout.write(out);
+  _paintedOverlayIds = nowPainted;
+  stdout.write(out + cursorOut);
 }
 
 // `now` is the frame clock for the age-displaying overlays (jobs/diag),
@@ -790,9 +807,9 @@ function render(model) {
   // Only force the terminal-overlay repaint when main paint actually
   // cleared the screen (resize, overlay-close, first frame). In the steady
   // state main paint is diff-based and leaves the PTY region untouched, so
-  // the overlay's own diff cache is enough.
-  if (mainDidFull) _frame.forceOverlayFull = true;
-  renderTerminalOverlay(model, previewArrange);
+  // each surface's own per-session diff cache is enough. The debounced
+  // fast-path (PTY onData → scheduleOverlay) omits forceAll → targeted diff.
+  renderTerminalOverlay(model, previewArrange, mainDidFull);
   // blessed-exceptions Phase A — render produces NO slice writes: `innerH`
   // is computed in the post-dispatch finalizer (A.1), `paneBounds` is a pure
   // derived selector (A.2), and the former `tabBounds` render-write is gone
