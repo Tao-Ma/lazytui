@@ -39,7 +39,7 @@ const {
   esc, theme, renderPanel,
   getSel, getScroll, isMultiSel, getFilter,
   execAsync,
-  streamCommand, addEphemeralTab, scheduleRender,
+  streamCommand, scheduleRender,
   leaveTerminalMode,
   getItems: apiGetItems, selectedOrFocused,
   serviceSlice,
@@ -393,16 +393,30 @@ function installEffects(registerEffect) {
     }
   });
 
-  registerEffect('dockerShell', (eff) => {
+  registerEffect('dockerShell', (eff, host) => {
+    const route = require('../../panel/route');
     const q = JSON.stringify(eff.item);
     // bash if present, else sh. (`exec bash || exec sh` keeps the interactive
     // prompt — readline writes it to stderr, which a 2>/dev/null would mute.)
-    addEphemeralTab(
-      getModel().currentGroup,
-      `shell-${eff.item}`,
-      `docker exec -it ${q} sh -c 'command -v bash >/dev/null && exec bash || exec sh'`,
-      `sh:${eff.item}`,
-    );
+    const cmd = `docker exec -it ${q} sh -c 'command -v bash >/dev/null && exec bash || exec sh'`;
+    const label = `sh:${eff.item}`;
+    // U2d P2.5 — a `terminal` PANE, one per container: a STABLE poolId means a
+    // re-exec on the same container REUSES the tab (mint is a no-op when it
+    // exists; set_active_tab brings a backgrounded one forward), matching the
+    // legacy `shell-<item>` dedupe key. Into the viewer slot (or the focused
+    // slot); focus it + enter terminal mode. No auto-zoom (matches the legacy
+    // docker-shell path, unlike type:spawn).
+    const poolId = `term-dockersh-${String(eff.item).replace(/[^A-Za-z0-9_-]+/g, '_')}`;
+    const container = route.resolveViewerPaneId() || route.getFocus();
+    if (!container) return;
+    host.dispatchMsg(host.wrap('layout', {
+      type: 'mint_tab', paneId: container, paneType: 'terminal', poolId,
+      title: label, config: { cmd, label },
+      hint: { origin: 'docker-shell', item: eff.item },
+    }));
+    host.dispatchMsg(host.wrap('layout', { type: 'set_active_tab', paneId: container, tabPoolId: poolId }));
+    host.dispatchMsg(host.wrap('layout', { type: 'focus_set', focus: container }));
+    host.applyMsg({ type: 'terminal_enter' });
   });
 }
 

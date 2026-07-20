@@ -124,24 +124,15 @@ function _viewerTarget(intent) {
   return require('../../panel/route').resolveTarget(intent);
 }
 
-/** Add an ephemeral terminal tab at runtime. Used by plugins to open
- *  interactive shells against an item (e.g. docker exec). If a tab
- *  with the same key exists, switches to it. */
-// Dispatchers thread the model-derived bundle (currentGroup,
-// groupExists, yamlTerminals, actionCount) so the reducer arm and
-// the leaf can be pure of getModel(). pt.modelBundle is the single
-// helper that computes the bundle from (model, groupName).
+// Dispatchers thread the model-derived bundle (currentGroup, groupExists,
+// yamlTerminals, actionCount) so the reducer arm and the leaf can be pure of
+// getModel(). pt.modelBundle is the single helper that computes it.
+// (U2d P2.5 — addEphemeralTab retired: docker exec, its last caller, now mints a
+// `terminal` pane; runtime terminals are position-tabs. removeEphemeralTab stays
+// for the legacy dead-terminal `x` + clean-exit paths until the P3 excise.)
 
 function _getModel() {
   return getModel();
-}
-
-function addEphemeralTab(groupName, key, cmd, label) {
-  const target = _viewerTarget('terminal');
-  if (target == null) return;
-  panelHost.dispatchMsg(wrap(target,
-    { type: 'viewer_add_ephemeral_terminal', groupName, key, cmd, label,
-      ...pt.modelBundle(_getModel(), groupName) }));
 }
 
 function removeEphemeralTab(groupName, key) {
@@ -196,7 +187,7 @@ module.exports = {
   isTerminalTab, activeTerminalId, activeTerminalConfig,
   isContentTab, activeContentTab,
   findEphemeralByid, paneForSessionId,
-  addEphemeralTab, removeEphemeralTab,
+  removeEphemeralTab,
   addContentTab, removeContentTab, updateContentTabLines,
   handleSessionCleanExit,
 };

@@ -103,7 +103,6 @@ function filterCurrentText() { return getModel().modal.filter.text; }
 // See hosts/panel-host.js + docs/v0.6.5-render-exit.md "Domain detangle".
 const panelHost = require('../hosts/panel-host');
 const { streamCommand } = panelHost;       // re-exported below for docker
-const { addEphemeralTab } = require('./viewer/tabs');
 const { scheduleRender } = require('../leaves/infra/render-queue');
 
 // Components — the TEA-shaped strict-discipline shape used by every
@@ -642,11 +641,9 @@ module.exports = {
   getFilter, filterCurrentText,
   // exec
   execAsync,
-  // stream / tabs / render scheduling — host capabilities a Component
-  // may invoke (run a shell command, open an ephemeral terminal tab,
-  // request a redraw on async events)
+  // stream / render scheduling — host capabilities a Component may invoke
+  // (run a shell command, request a redraw on async events)
   streamCommand,
-  addEphemeralTab,
   scheduleRender,
   setActiveTab,
   leaveTerminalMode,

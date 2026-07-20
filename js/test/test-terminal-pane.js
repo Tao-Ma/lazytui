@@ -180,4 +180,36 @@ describe('[terminal-pane] P1b — input forwarding + _onSessionExit fan-out', ()
   });
 });
 
+describe('[terminal-pane] P2.5 — docker exec mints a reused terminal pane', () => {
+  // Capture the docker effect handlers without registering the whole component
+  // (avoids its polling/subprocess machinery). A MOCK host records the dispatched
+  // Msgs so we test the docker-specific dispatch logic (poolId sanitization, the
+  // docker-exec cmd, reuse-via-set_active_tab) without a real `docker exec` spawn —
+  // the mint→pane wiring itself is covered by the tests above.
+  const dockerHandlers = {};
+  require('../panel/navigator/docker').installEffects((t, fn) => { dockerHandlers[t] = fn; });
+
+  it('dockerShell dispatches a `terminal`-pane mint keyed per container + reuse', () => {
+    sm.bootFresh();
+    const dispatched = [];
+    const mockHost = {
+      dispatchMsg: (m) => dispatched.push(m),
+      applyMsg: (m) => dispatched.push(m),
+      wrap: (target, msg) => ({ __target: target, ...msg }),
+    };
+    dockerHandlers.dockerShell({ item: 'my/c1' }, mockHost);
+
+    const mint = dispatched.find(m => m.type === 'mint_tab');
+    assert(mint, 'dispatched a mint_tab');
+    eq(mint.paneType, 'terminal', 'mints a terminal pane');
+    eq(mint.poolId, 'term-dockersh-my_c1', 'stable poolId per container (sanitized)');
+    assert(mint.config.cmd.includes('docker exec -it "my/c1"'), 'runs docker exec for the container');
+    eq(mint.hint.origin, 'docker-shell', 'stamps a docker-shell hint');
+    assert(dispatched.some(m => m.type === 'set_active_tab' && m.tabPoolId === 'term-dockersh-my_c1'),
+      're-activates the tab (reuse on re-exec)');
+    assert(dispatched.some(m => m.type === 'focus_set'), 'focuses the container');
+    assert(dispatched.some(m => m.type === 'terminal_enter'), 'enters terminal mode');
+  });
+});
+
 report();
