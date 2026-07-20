@@ -40,12 +40,45 @@ function init(paneId, seed) {
   };
 }
 
+// Push streamed lines onto the buffer + bottom-stick scroll. The instance owns
+// its own scroll, so no active-tab bundle is needed (unlike the viewer): if the
+// user has scrolled up (not at bottom) new output accumulates without yanking
+// them down; at the bottom, the view follows the tail. Uncapped, like the action
+// buffer it replaces (action output is retained, not a ring like the Transcript).
+function _appendLines(slice, incoming) {
+  const innerH = slice.innerH > 0 ? slice.innerH : 1;
+  const cur = slice.lines || [];
+  const wasAtBottom = (slice.scroll || 0) >= Math.max(0, cur.length - innerH);
+  const lines = cur.concat(incoming);
+  const scroll = wasAtBottom ? Math.max(0, lines.length - innerH) : (slice.scroll || 0);
+  return { ...slice, lines, scroll };
+}
+
 function update(msg, slice) {
   // Project the stamped viewport height onto the slice so the shared reducer's
   // clamps read it through _innerH (mirror viewer.js FIX-2). The `!==` guard
   // preserves slice ref-identity when innerH is unchanged.
   if (msg && msg.innerH > 0 && slice.innerH !== msg.innerH) slice = { ...slice, innerH: msg.innerH };
-  // A text-view's content IS its own line buffer — no boundary derivation.
+  // Streamed-content arms (U2c P1) — an action's output routes here by paneId.
+  switch (msg.type) {
+    case 'tv_stream_start':
+      // Re-run reseed: clear to the header + reset view state (the per-instance
+      // analog of the viewer's routed stream_start R4 reset).
+      return {
+        ...slice,
+        lines: [msg.header],
+        scroll: 0,
+        search: { active: false, term: '', idx: 0, typing: '' },
+        select: { active: false, kind: 'char', anchor: { line: 0, col: 0 }, cursor: { line: 0, col: 0 } },
+        cursor: { line: 0, col: 0 },
+      };
+    case 'tv_append':
+      return _appendLines(slice, [msg.line]);
+    case 'tv_append_lines':
+      return (Array.isArray(msg.lines) && msg.lines.length) ? _appendLines(slice, msg.lines) : slice;
+    default: break;
+  }
+  // Interaction (U2c P0) — a text-view's content IS its own line buffer.
   const r = tvu.reduce(msg, slice, slice.lines || [], 'text-view');
   return r === null ? slice : r;
 }

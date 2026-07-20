@@ -76,6 +76,50 @@ function shQuote(s) {
 // (and its dead PTY session) instead of starting a fresh child.
 let _spawnSeq = 0;
 
+// U2c P1 (docs/one-tab-system.md) — sanitize a hint component into a poolId-safe
+// token so the reuse id is a pure function of (group, actionKey).
+function _san(s) { return String(s).replace(/[^A-Za-z0-9_-]+/g, '_'); }
+
+/**
+ * Ensure the action's output text-view tab exists in the viewer's slot and is the
+ * visible tab, then return the stream opts targeting it. Lifecycle: accrete +
+ * persist + hint — the tab is minted on first run (keyed by a stable hint-derived
+ * poolId `tv-act-<group>-<key>`, so reuse is the mint_tab id-collision no-op),
+ * persists across group switches, and is reused (reseeded) on re-run. Focus is
+ * handled INSIDE the focus-following mint_tab / set_active_tab arms — a background
+ * run shows its output without stealing keyboard focus from another pane.
+ *
+ * Returns stream opts: `slotKey` (the concurrency/preempt slot — the deterministic
+ * per-action id, so distinct actions run concurrently and a re-run preempts its own
+ * slot), `tabInstId` (the DISPLAY target — set only when the instance actually
+ * exists, so a degenerate no-layout env streams to the viewer's Transcript rather
+ * than a void), plus `tabKey`/`groupName` for the jobs owner.
+ */
+function ensureActionTab(group, actionKey) {
+  const route = require('../../panel/route');
+  const mpane = require('../../leaves/wm/pane');
+  const poolId = `tv-act-${_san(group)}-${_san(actionKey)}`;
+  const tabInstId = mpane.newPaneId(poolId);
+  const container = route.resolveViewerPaneId();
+  if (container) {
+    if (!route.getInstance(tabInstId)) {
+      dispatchMsg(wrap('layout', {
+        type: 'mint_tab', paneId: container, paneType: 'text-view',
+        poolId, title: actionKey, hint: { origin: 'action', group, key: actionKey },
+      }));
+    } else {
+      // Re-run → re-activate so the fresh run is visible (no-op if already active).
+      dispatchMsg(wrap('layout', { type: 'set_active_tab', paneId: container, tabPoolId: poolId }));
+    }
+  }
+  // slotKey is the stable per-action key (pure function of group+actionKey) — always
+  // distinct, independent of whether the display could be minted. The display target
+  // is set only if the instance now exists (mint succeeded); otherwise the stream
+  // still runs on its own slot but its display falls back to the Transcript.
+  const display = route.getInstance(tabInstId) ? tabInstId : null;
+  return { slotKey: tabInstId, tabInstId: display, tabKey: actionKey, groupName: group };
+}
+
 function doRun(actionKey, action, args = []) {
   // Fabric consumer/producer (decision A): a `run:` action resolves its input
   // ports and runs as a no-shell argv vector. Distinct from the legacy
@@ -164,19 +208,22 @@ function doRun(actionKey, action, args = []) {
     return;
   }
 
-  // type: run — stream stdout/stderr to detail panel. action.tab routes
-  // into per-action buffer (viewer.js); tabless actions hit slice.lines.
-  const opts = action.tab ? { tabKey: actionKey, groupName: getModel().currentGroup } : {};
+  // type: run — stream stdout/stderr. action.tab → route into a text-view
+  // instance minted/reused in the viewer's slot (U2c P1); tabless → the unrouted
+  // Transcript accumulator (viewerStreamBuffer).
+  const opts = action.tab ? ensureActionTab(getModel().currentGroup, actionKey) : {};
   streamCommand(actionKey, cmd, args, opts);
 }
 
 // Fabric run (docs/ports-and-wires.md). Resolve the consumer's input ports
 // against the current model (injects > wire > default), gate on readiness
 // (error-and-tell the precise reasons, decision 5), then fill the `run:` argv
-// template and stream it with no shell (opts.argv → execve). Output is routed to
-// the component's own tab buffer (tabKey = actionKey) so its output ports become
-// derivable (portValue reads actionTabBuffers[group][name]). Producers (no input
-// ports) resolve ready immediately. P1 resolves within the current group.
+// template and stream it with no shell (opts.argv → execve). The DISPLAY routes
+// to the component's text-view instance (U2c P1); its RAW output routes separately
+// to model.fabric.output[group][name] via opts.fabric (flushed on close) — that is
+// what fabric output ports derive from (fabric host componentLines), independent of
+// the display buffer. Producers (no input ports) resolve ready immediately. P1
+// resolves within the current group.
 function doRunFabric(actionKey, action) {
   const model = getModel();
   const group = model.currentGroup;
@@ -207,9 +254,11 @@ function doRunFabric(actionKey, action) {
     return;
   }
   // cmd string is display/history only; opts.argv is the executed vector. opts.fabric
-  // routes the RAW output to model.fabric.output[group][actionKey] for parsing.
+  // routes the RAW output to model.fabric.output[group][actionKey] for parsing;
+  // ensureActionTab routes the DISPLAY to the component's text-view instance.
   streamCommand(actionKey, argv.join(' '), [], {
-    tabKey: actionKey, groupName: group, argv, fabric: { group, name: actionKey },
+    ...ensureActionTab(group, actionKey),
+    argv, fabric: { group, name: actionKey },
   });
 }
 

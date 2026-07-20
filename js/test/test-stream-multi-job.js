@@ -2,9 +2,9 @@
  * v0.6.2 Large — multi-job stream invariants.
  *
  * Pins:
- *   - cross-slot concurrent: two routed streams in DIFFERENT
- *     (group, tabKey) slots register both into the jobs registry and
- *     leave both alive.
+ *   - cross-slot concurrent: two routed streams with DIFFERENT slotKey slots
+ *     (U2c P1 — the per-action concurrency key, distinct from the display target)
+ *     register both into the jobs registry and leave both alive.
  *   - same-slot preempt: re-running a routed stream in the SAME slot
  *     kills the previous (status='killed') before the new one starts.
  *   - unrouted singleton: a new unrouted stream preempts the previous
@@ -49,8 +49,8 @@ describe('[multi-job] cross-slot routed streams run concurrently', () => {
   it('Test + Server log both alive after sequential starts', () => {
     seedModel();
     jobs._reset();
-    stream.streamCommand('test', 'sleep 5', [], { tabKey: 'test', groupName: 'g' });
-    stream.streamCommand('server-log', 'sleep 5', [], { tabKey: 'server-log', groupName: 'g' });
+    stream.streamCommand('test', 'sleep 5', [], { slotKey: 'pane-tv-act-g-test', tabKey: 'test', groupName: 'g' });
+    stream.streamCommand('server-log', 'sleep 5', [], { slotKey: 'pane-tv-act-g-server-log', tabKey: 'server-log', groupName: 'g' });
     const r = running();
     eq(r.length, 2, 'two running jobs');
     const labels = r.map(j => j.label).sort();
@@ -65,9 +65,9 @@ describe('[multi-job] same-slot re-run preempts', () => {
   it('two starts of the same routed slot → one running, one killed', () => {
     seedModel();
     jobs._reset();
-    stream.streamCommand('test', 'sleep 5', [], { tabKey: 'test', groupName: 'g' });
+    stream.streamCommand('test', 'sleep 5', [], { slotKey: 'pane-tv-act-g-test', tabKey: 'test', groupName: 'g' });
     const firstId = running()[0].id;
-    stream.streamCommand('test', 'sleep 5', [], { tabKey: 'test', groupName: 'g' });
+    stream.streamCommand('test', 'sleep 5', [], { slotKey: 'pane-tv-act-g-test', tabKey: 'test', groupName: 'g' });
     const r = running();
     eq(r.length, 1, 'only one alive in the slot');
     const all = jobs.snapshot();
@@ -127,7 +127,7 @@ describe('[multi-job] routed + unrouted independent', () => {
   it('starting unrouted does NOT kill routed', () => {
     seedModel();
     jobs._reset();
-    stream.streamCommand('test', 'sleep 5', [], { tabKey: 'test', groupName: 'g' });
+    stream.streamCommand('test', 'sleep 5', [], { slotKey: 'pane-tv-act-g-test', tabKey: 'test', groupName: 'g' });
     stream.streamCommand('docker logs',  'sleep 5', []);
     const r = running();
     eq(r.length, 2, 'both alive');

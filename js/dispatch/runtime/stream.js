@@ -57,70 +57,38 @@ const jobs = require('../../feature/jobs');
 const procs = new Map();         // jobId → ProcCtx
 const slotIndex = new Map();      // slotKey → jobId
 
-function _slotKey(tabKey, groupName) {
-  return tabKey && groupName ? `routed:${groupName}:${tabKey}` : 'unrouted';
-}
-
-// Async producer-side writes. Destination resolves via route.resolveTarget;
-// dispatch is lazy-required to dodge the stream→dispatch→actions cycle.
-// tabKey+groupName route into actionTabBuffers; unset → the unrouted
-// Transcript accumulator (viewerStreamBuffer).
+// Async producer-side writes. Dispatch is lazy-required to dodge the
+// stream→dispatch→actions cycle.
+//   Routed (tabInstId set) → the action's text-view instance (U2c P1): tv_append /
+//     tv_append_lines dispatched to wrap(tabInstId). The instance owns its own
+//     scroll (bottom-stick lives in its update), so no per-line bundle is needed
+//     — a simplification over the retired actionTabBuffers routing.
+//   Unrouted (no tabInstId) → the viewer's Transcript accumulator
+//     (viewerStreamBuffer) via viewer_append / viewer_append_lines.
 //
 // appendDetailLine: single-line (the onData hot path — one Msg per line).
-// appendDetailLines: bulk variant for producer-event footers (one Msg for
-// the whole tail+status+rerun-hint batch — atomic reducer pass).
-// v0.6.3 Phase D1 — routed-branch arms read msg.currentGroup +
-// msg.activeActionTabKey (when groupName === currentGroup); the
-// dispatcher precomputes both so the reducer arm stays pure of
-// getModel(). For unrouted dispatches (no tabKey/groupName) no
-// threading is needed — the reducer arm's unrouted path doesn't
-// read model.
-function _routedBundle(slice, model, groupName) {
-  if (groupName !== model.currentGroup) {
-    return { currentGroup: model.currentGroup };
-  }
-  // Compute the active action tab key once at dispatch time. Saves
-  // the reducer the 71µs pt.activeActionTabIn (getMergedActions
-  // iteration) per streamed line.
-  const pt = require('../../leaves/wm/pane-tabs');
-  const active = pt.activeActionTabIn(slice, model, groupName);
-  return {
-    currentGroup: model.currentGroup,
-    activeActionTabKey: active ? active[0] : null,
-  };
-}
-
-function appendDetailLine(line, tabKey, groupName) {
-  const route = require('../../panel/route');
-  const target = route.resolveTarget('viewer');
-  if (target == null) return;
+// appendDetailLines: bulk variant for producer-event footers (one atomic Msg).
+function appendDetailLine(line, tabInstId) {
   const api = require('../../panel/api');
-  let msg;
-  if (tabKey && groupName) {
-    const slice = api.getInstanceSlice(target) || { tab: 0 };
-    const model = getModel();
-    msg = { type: 'viewer_append', line, tabKey, groupName, ..._routedBundle(slice, model, groupName) };
-  } else {
-    msg = { type: 'viewer_append', line };
+  if (tabInstId) {
+    require('./loop').dispatchMsg(api.wrap(tabInstId, { type: 'tv_append', line }));
+    return;
   }
-  require('./loop').dispatchMsg(api.wrap(target, msg));
+  const target = require('../../panel/route').resolveTarget('viewer');
+  if (target == null) return;
+  require('./loop').dispatchMsg(api.wrap(target, { type: 'viewer_append', line }));
 }
 
-function appendDetailLines(lines, tabKey, groupName) {
+function appendDetailLines(lines, tabInstId) {
   if (!lines || lines.length === 0) return;
-  const route = require('../../panel/route');
-  const target = route.resolveTarget('viewer');
-  if (target == null) return;
   const api = require('../../panel/api');
-  let msg;
-  if (tabKey && groupName) {
-    const slice = api.getInstanceSlice(target) || { tab: 0 };
-    const model = getModel();
-    msg = { type: 'viewer_append_lines', lines, tabKey, groupName, ..._routedBundle(slice, model, groupName) };
-  } else {
-    msg = { type: 'viewer_append_lines', lines };
+  if (tabInstId) {
+    require('./loop').dispatchMsg(api.wrap(tabInstId, { type: 'tv_append_lines', lines }));
+    return;
   }
-  require('./loop').dispatchMsg(api.wrap(target, msg));
+  const target = require('../../panel/route').resolveTarget('viewer');
+  if (target == null) return;
+  require('./loop').dispatchMsg(api.wrap(target, { type: 'viewer_append_lines', lines }));
 }
 
 /** Kill a single job. Removes it from procs + slotIndex, SIGTERMs the
@@ -142,10 +110,10 @@ function killJob(jobId, opts = {}) {
       if (tail) batch.push(esc(tail));
     }
     if (ctx.target) {
-      // Routed: re-run-on-same-slot footer. Goes to the action's buffer.
+      // Routed: re-run-on-same-slot footer → the action's text-view instance.
       batch.push('[yellow]Killed by next run.[/]');
       batch.push('[dim]Press Enter to run again.[/]');
-      appendDetailLines(batch, ctx.target.tabKey, ctx.target.groupName);
+      appendDetailLines(batch, ctx.target.tabInstId);
     } else {
       // Unrouted: identify what was killed (the next stream is a
       // different command, so "Killed by next run" reads oddly here).
@@ -180,9 +148,16 @@ function streamCommand(headerLabel, cmd, args = [], opts = {}) {
   const target = route.resolveTarget('viewer');
   if (target == null) return;     // no viewer registered
   const api = require('../../panel/api');
-  const tabKey = opts.tabKey || null;
-  const groupName = opts.groupName || null;
-  const slotKey = _slotKey(tabKey, groupName);
+  // U2c P1 — routed action output targets a text-view instance by its tabInstId
+  // (opts.tabInstId, the DISPLAY target set by action-runner.ensureActionTab when
+  // the instance exists; null → the display falls back to the Transcript). The
+  // concurrency/preempt slot is opts.slotKey (a distinct per-action id) — kept
+  // separate from the display so distinct actions run concurrently even when no
+  // display could be minted. Unrouted (tabless) → the singleton 'unrouted' slot.
+  // opts.tabKey/groupName ride along for the jobs owner (overlay + running-glyph).
+  const tabInstId = opts.tabInstId || null;
+  const slotKey = opts.slotKey || 'unrouted';
+  const routed = slotKey !== 'unrouted';
   // Fabric run (docs/ports-and-wires.md): capture RAW stdout (un-esc'd, no
   // chrome) so output ports parse clean text, separate from the chrome/esc'd
   // display buffer. Flushed to model.fabric.output on close/error.
@@ -228,34 +203,17 @@ function streamCommand(headerLabel, cmd, args = [], opts = {}) {
   const occupying = slotIndex.get(slotKey);
   if (occupying != null) killJob(occupying);
 
-  // T32 — esc the dynamic header to prevent markup corruption from
-  // user-supplied actionKey / verb strings.
-  // v0.6.3 Phase D1 — routed branch threads currentGroup +
-  // actionTabIdx (the action's position in flatTabInfo.actionTabs)
-  // so the reducer arm stays pure of getModel(). Cross-group is
-  // a no-op auto-jump (reducer's existing groupName !== currentGroup
-  // path), so we still thread currentGroup unconditionally for the
-  // comparison.
-  let startMsg;
-  if (tabKey && groupName) {
-    const pt = require('../../leaves/wm/pane-tabs');
-    const slice = api.getInstanceSlice(target) || { tab: 0 };
-    const model = getModel();
-    const startBundle = { currentGroup: model.currentGroup };
-    if (groupName === model.currentGroup) {
-      const info = pt.flatTabInfo(slice, model, groupName);
-      startBundle.actionTabIdx = info.actionTabs.findIndex(([k]) => k === tabKey);
-    }
-    startMsg = {
-      type: 'stream_start',
-      header: `[dim]$ ${esc(headerLabel)}[/]`,
-      tabKey, groupName,
-      ...startBundle,
-    };
+  // T32 — esc the dynamic header to prevent markup corruption from user-supplied
+  // actionKey / verb strings. Routed → the action's text-view instance seeds its
+  // buffer with the header (tv_stream_start also reseeds on re-run; the mint/
+  // reuse already made the tab the visible one). Unrouted → the viewer's
+  // Transcript accumulator (stream_start).
+  const header = `[dim]$ ${esc(headerLabel)}[/]`;
+  if (tabInstId) {
+    require('./loop').dispatchMsg(api.wrap(tabInstId, { type: 'tv_stream_start', header }));
   } else {
-    startMsg = { type: 'stream_start', header: `[dim]$ ${esc(headerLabel)}[/]` };
+    require('./loop').dispatchMsg(api.wrap(target, { type: 'stream_start', header }));
   }
-  require('./loop').dispatchMsg(api.wrap(target, startMsg));
   scheduleRender();
 
   // Fabric no-shell path (docs/ports-and-wires.md): opts.argv is a fully-resolved
@@ -266,10 +224,13 @@ function streamCommand(headerLabel, cmd, args = [], opts = {}) {
     ? spawn(opts.argv[0], opts.argv.slice(1), { cwd: getModel().projectDir, shell: false })
     : spawn('sh', ['-c', cmd, '--', ...args], { cwd: getModel().projectDir });
   const jobId = jobs.register({
-    kind: tabKey ? 'stream-routed' : 'stream-unrouted',
+    kind: routed ? 'stream-routed' : 'stream-unrouted',
     label: headerLabel,
     pid: proc.pid,
-    owner: tabKey ? { tabKey, groupName, cmd } : { cmd },
+    // owner keeps tabKey/groupName (jobs overlay + the viewer strip running-glyph
+    // read them) and the display tabInstId (the U2c-P1 routing target; may be null
+    // for a routed run whose display couldn't be minted).
+    owner: routed ? { tabKey: opts.tabKey, groupName: opts.groupName, tabInstId, cmd } : { cmd },
   });
   const rec = history.start(headerLabel, cmd);
 
@@ -287,7 +248,7 @@ function streamCommand(headerLabel, cmd, args = [], opts = {}) {
 
   const ctx = {
     proc, record: rec,
-    target: tabKey && groupName ? { tabKey, groupName } : null,
+    target: routed ? { tabInstId } : null,
     flushTail, slotKey, decoder, headerLabel,
   };
   procs.set(jobId, ctx);
@@ -298,7 +259,7 @@ function streamCommand(headerLabel, cmd, args = [], opts = {}) {
     const lines = buffer.split('\n');
     buffer = lines.pop();
     for (const line of lines) {
-      appendDetailLine(esc(line), tabKey, groupName);
+      appendDetailLine(esc(line), tabInstId);
       rec.append(line);
       if (fab) rawLines.push(line);
     }
@@ -328,8 +289,8 @@ function streamCommand(headerLabel, cmd, args = [], opts = {}) {
     if (signal)            { batch.push(`[yellow]Killed (${signal})[/]`); rec.end(`signal:${signal}`); }
     else if (code === 0)    { batch.push('[green]Done.[/]'); rec.end(0); }
     else                    { batch.push(`[red]Exit ${code}[/]`); rec.end(code); }
-    if (tabKey && groupName) batch.push('[dim]Press Enter to run again.[/]');
-    appendDetailLines(batch, tabKey, groupName);
+    if (routed) batch.push('[dim]Press Enter to run again.[/]');
+    appendDetailLines(batch, tabInstId);
     flushFabric();   // publish the producer's raw output for parsing
     scheduleRender();
   });
@@ -341,8 +302,8 @@ function streamCommand(headerLabel, cmd, args = [], opts = {}) {
     if (slotIndex.get(slotKey) === jobId) slotIndex.delete(slotKey);
       const batch = [`[red]Error: ${esc(err.message)}[/]`];
     rec.append(`Error: ${err.message}`);
-    if (tabKey && groupName) batch.push('[dim]Press Enter to run again.[/]');
-    appendDetailLines(batch, tabKey, groupName);
+    if (routed) batch.push('[dim]Press Enter to run again.[/]');
+    appendDetailLines(batch, tabInstId);
     rec.end('error');
     flushFabric();   // publish whatever raw output streamed before the error (may be empty)
     scheduleRender();

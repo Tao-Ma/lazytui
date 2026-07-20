@@ -433,20 +433,24 @@ function nextTransientPoolId(arrange, prefix) {
 
 /**
  * Add a runtime pool entry (the U2b mint-into-slot primitive): a fresh arrange
- * with `pool[poolId]` = `{ id, type, title, config, transient: true }`. The
+ * with `pool[poolId]` = `{ id, type, title, config, transient: true, hint? }`. The
  * `transient` flag marks it session-only so serialization skips it (a manual tab
- * doesn't leak into `:save-layout`). Pure, return-new.
+ * doesn't leak into `:save-layout`). U2c P1 — an optional `hint` (e.g.
+ * `{origin:'action', group, key}`) is stamped for reuse identity + the later
+ * tab-groups clustering feature. Pure, return-new.
  */
 function mintPoolEntry(arrange, spec) {
   const poolId = spec.poolId;
+  const entry = {
+    id: poolId, type: spec.type, title: spec.title,
+    config: spec.config || {}, transient: true,
+  };
+  if (spec.hint) entry.hint = spec.hint;
   return {
     ...arrange,
     pool: {
       ...(arrange.pool || {}),
-      [poolId]: {
-        id: poolId, type: spec.type, title: spec.title,
-        config: spec.config || {}, transient: true,
-      },
+      [poolId]: entry,
     },
   };
 }

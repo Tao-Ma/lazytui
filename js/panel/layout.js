@@ -970,6 +970,7 @@ function update(msg, slice) {
       if (arrange.pool && arrange.pool[poolId]) return slice;   // id collision → no-op
       const a1 = mpool.mintPoolEntry(arrange, {
         poolId, type: paneType, title: msg.title || poolId, config: msg.config || {},
+        hint: msg.hint,   // U2c P1 — reuse identity + later tab-groups clustering
       });
       const entry = a1.pool[poolId];
       const nextPane = mpane.addTab(loc.pane, { id: poolId, poolId }, entry, { activate: true });
@@ -979,8 +980,14 @@ function update(msg, slice) {
         return out;
       });
       const next = _commitArrange(slice, a2);
-      // The minted tab is now active + focused (the user asked to open it).
-      return [_withFocus(next, poolId), [{ type: 'show_selected_info' }]];
+      // The tab is always activated (the visible tab of its slot). Focus FOLLOWS
+      // the target slot (mirror set_active_tab): steal keyboard focus only when
+      // the target was already focused — so `:text-view` (mints into the focused
+      // slot) focuses the new tab, but a U2c-P1 action-mint into an unfocused
+      // viewer slot shows its output without yanking focus away.
+      const wasFocused = mpane.paneMatchesFocus(loc.pane, slice.focus);
+      if (wasFocused) return [_withFocus(next, poolId), [{ type: 'show_selected_info' }]];
+      return next;
     }
     case 'pool_hide': {
       const arrange = slice.arrange;

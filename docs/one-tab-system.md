@@ -6,9 +6,10 @@
 > the **full per-tab instance model** (each tab a first-class instance) + the
 > mint-into-slot primitive (`:text-view` opens a text-view tab into a slot). All
 > no-behaviour-change for existing layouts. **U2c is underway** — decomposed
-> P0/P1/P2; **P0 shipped** (shared `textViewUpdate` interaction reducer + full
-> `text-view` Component + `instanceKind` routing fix, no routing change). U2d–U2f
-> remain un-started. A large, multi-release arc.
+> P0/P1/P2; **P0 + P1 shipped** (P0: shared `textViewUpdate` interaction reducer +
+> full `text-view` Component + `instanceKind` routing fix; P1: action output now
+> mints/reuses + streams into a `text-view` instance by paneId). P2 (delete the
+> dead-fed `actionTabBuffers`) + U2d–U2f remain. A large, multi-release arc.
 > Supersedes the P2–P4 approach in
 > [pane-tabs-unification.md](pane-tabs-unification.md) (its P1 — the shared
 > `leaves/wm/tab-state` store — stays and is reused here as U1's basis).
@@ -165,10 +166,24 @@ ships and passes the gate (suite · smoke · acyclic · DEAD 0 · bench parity).
     (follow-up #1) so a runtime-switched slot's `focusKind`/keymap read the active
     tab's kind. No routing change; `actionTabBuffers` untouched. Gate: suite 155 ·
     smoke 14 · dep-walker `[]` both modes · dead-exports 0 · bench parity.
-  - **P1 (next).** Producer re-target: a `tab:true` action mints/reuses a text-view
-    (hint-derived deterministic poolId `tv-act-<group>-<key>`), streams `tv_*` Msgs
-    to it by paneId (off-tab via the distinct instance id); `_routedBundle` deleted.
-    `actionTabBuffers` stays dead-fed.
+  - **P1 (shipped).** Producer re-target. `action-runner.ensureActionTab` mints (or
+    reuses, via the `mint_tab` id-collision no-op) a `text-view` in the viewer's slot
+    keyed by the hint-derived poolId `tv-act-<group>-<key>`, stamps the hint, and
+    returns stream opts: a `slotKey` (the per-action concurrency/preempt key — always
+    distinct, a pure function of group+key) kept SEPARATE from `tabInstId` (the
+    display target, set only when the instance exists — so a no-layout env still runs
+    on its own slot). `stream.js` streams `tv_stream_start`/`tv_append`/
+    `tv_append_lines` to the instance by paneId (off-tab lands via the distinct
+    instance id — no R2 collision); the per-instance bottom-stick lives in the
+    text-view's `update`, so the old `_routedBundle` (currentGroup/activeActionTabKey
+    threading) is deleted. Focus policy: `mint_tab`/`set_active_tab` FOCUS-FOLLOW the
+    target slot, so a background action run shows its output without stealing focus
+    (`:text-view`, which mints into the focused slot, still focuses). Fabric `run:`
+    routes its DISPLAY here too; its RAW output → `model.fabric.output` (unchanged)
+    is what output ports derive from, independent of the display. `actionTabBuffers`
+    is now dead-fed (deleted in P2). Gate: suite 156 · smoke 14 · dep-walker `[]` both
+    modes · dead-exports 0 · bench parity. New test-action-tab-route (mint/reuse/
+    accrete/off-tab) + updated test-mint-tab / test-stream-multi-job / test-fabric-demo.
   - **P2.** Delete `actionTabBuffers` + the routed viewer arms + the action-tab
     enumeration in `pane-tabs.js`. Info/Transcript stay (they migrate in U2e).
   Follow-up #2 (`resolveViewerPaneId` viewer-specific): REUSED as-is, not
