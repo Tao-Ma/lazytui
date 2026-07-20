@@ -1,9 +1,12 @@
 # One tab system (U2) — fold the viewer's content-tabs into position-tabs
 
-> **Status:** in progress. **U1 + U2a shipped** — U1 the keystone interface
+> **Status:** in progress. **U1 + U2a + U2b shipped** — U1 the keystone interface
 > (`leaves/wm/tab-container.js` + consumers routed); U2a the text-view render
-> primitive (`leaves/text-view/render.js` + search geometry moved to a leaf),
-> both no-behaviour-change. U2b–U2f remain un-started. A large, multi-release arc.
+> primitive (`leaves/text-view/render.js` + search geometry moved to a leaf); U2b
+> the **full per-tab instance model** (each tab a first-class instance) + the
+> mint-into-slot primitive (`:text-view` opens a text-view tab into a slot). All
+> no-behaviour-change for existing layouts. U2c–U2f remain un-started. A large,
+> multi-release arc.
 > Supersedes the P2–P4 approach in
 > [pane-tabs-unification.md](pane-tabs-unification.md) (its P1 — the shared
 > `leaves/wm/tab-state` store — stays and is reused here as U1's basis).
@@ -128,9 +131,17 @@ ships and passes the gate (suite · smoke · acyclic · DEAD 0 · bench parity).
   viewer — extracting them into a shared `textViewUpdate` is U2c (when a routed
   instance shares it). No new panes minted. No behaviour change (A3 windowed-
   decorate byte-identical, ~326µs flat; adversarially reviewed).
-- **U2b — mint-into-slot.** Build the runtime "add instance X to slot S's tabs +
-  focus" primitive (generalize tab-drag placement). Prove it by opening a manual
-  `text-view` tab in a slot.
+- **U2b — mint-into-slot. ✅ SHIPPED.** Two parts. (1) The **full per-tab instance
+  model** (approach K3): `reconcilePaneInstances` mints one instance per TAB
+  (`tabInstId = pane-<poolId>`, kind from the tab's pool entry — fixing cross-kind
+  slots), and `route._activeInstanceOf[paneId]` maps a slot to its active tab's
+  instance; the four slice accessors + `componentForPanel`/`paneTypeOf` resolve a
+  paneId through it (`getInstance` stays literal so a non-active tab is
+  addressable). Byte-identical for existing layouts (single-tab: tabInstId ===
+  paneId, identity map). (2) The **mint primitive**: `pool.mintPoolEntry`
+  (transient, replay-deterministic id) + `pane.addTab` + a `mint_tab` layout Msg;
+  the `text-view` pane type; a `:text-view` verb that mints into the focused slot;
+  serialization drops transient entries (session-only). Adversarially reviewed.
 - **U2c — route action output to a `text-view` instance.** Running an action mints
   (or reuses) a `text-view` in the viewer's slot; output streams to that
   instance. Retire `actionTabBuffers` / action content-tabs.
