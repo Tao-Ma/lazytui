@@ -19,17 +19,16 @@ const { esc, visibleLen } = require('../../leaves/text/ansi');
 
 /**
  * Build the panel title string + tab-bounds array for a pane that hosts
- * a flat tab strip (Info | actions | terminals | content).
+ * a flat tab strip (Info | Transcript | terminals | content). (U2c P2 —
+ * action tabs retired: a tab:true action's output lives in its own text-view
+ * position-tab now, not this viewer-internal strip.)
  *
  * Inputs:
- *   tabInfo  — { actionTabs, termTabs, contentTabs } (from
+ *   tabInfo  — { termTabs, contentTabs } (from
  *              pt.flatTabInfo or panel/viewer/tabs.getTabInfo())
  *   activeTab — slice.tab (flat integer index)
  *   hotkey   — single-letter pane hotkey for x-offset math (the title
  *              starts after `╭─(hotkey)─`)
- *   runningActionKeys — optional Set<actionKey> for stream-routed jobs
- *              currently running in the active group. Prefixes those
- *              action tab labels with a `●` running glyph.
  *
  * Returns { title, tabBounds }:
  *   title     — rich-markup string ready for renderPanel(title=…). The
@@ -42,8 +41,8 @@ const { esc, visibleLen } = require('../../leaves/text/ansi');
  *               `b.tabs`). x is the column offset relative to the
  *               pane's left edge.
  */
-function buildTabStrip(tabInfo, activeTab, hotkey, runningActionKeys, hasTabTrigger) {
-  const { actionTabs, termTabs, contentTabs } = tabInfo;
+function buildTabStrip(tabInfo, activeTab, hotkey, hasTabTrigger) {
+  const { termTabs, contentTabs } = tabInfo;
   // total includes the implicit Info (idx 0) AND Transcript (idx
   // total-1); we always render at least [Info] [Transcript]
   // regardless of how empty the middle section is.
@@ -63,14 +62,11 @@ function buildTabStrip(tabInfo, activeTab, hotkey, runningActionKeys, hasTabTrig
   // per-group strip grows. Empty-buffer state still renders the
   // tab; tab_switch handler shows a placeholder.
   pushTab(esc('Transcript'), activeTab === 1, null);
-  actionTabs.forEach(([key, action], i) => {
-    const running = runningActionKeys && runningActionKeys.has(key);
-    const prefix = running ? '[yellow]●[/]' : '';
-    pushTab(prefix + esc(action.label), activeTab === i + 2, null);
-  });
-  const termOffset = 2 + actionTabs.length;
+  // U2c P2 — action tabs retired (action output → its own text-view position-tab),
+  // so terminals/content follow Info+Transcript directly.
+  const termOffset = 2;
   termTabs.forEach(([, term], i) => pushTab(term.label, activeTab === termOffset + i, null));
-  const contentOffset = 2 + actionTabs.length + termTabs.length;
+  const contentOffset = 2 + termTabs.length;
   contentTabs.forEach(([key, info], i) => pushTab(info.label, activeTab === contentOffset + i, key));
 
   const tabBounds = [];

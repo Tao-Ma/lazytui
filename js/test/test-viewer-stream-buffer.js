@@ -489,107 +489,11 @@ describe('[B2 viewer_set_tab inbound restore] producer-initiated set-tab restore
   });
 });
 
-describe('[B4 group-qualified tabState keys] two groups sharing an action name don\'t collide', () => {
-  // Pre-B4 keys were 'action:<key>'. Two groups both having a `test`
-  // action would share tabState['action:test'] — group A's view state
-  // restored when the user landed on group B's `test` tab. Post-B4
-  // keys are '<group>:action:<key>', so the two are addressed
-  // independently. Info / Transcript stay unprefixed.
-  it('action tab in group A vs group B store + restore independently', () => {
-    setModel({
-      currentGroup: 'g1',
-      modes: {},
-      config: { groups: {
-        g1: { label: 'G1', actions: { test: { label: 'Test', tab: 'Test', script: 'echo a' } } },
-        g2: { label: 'G2', actions: { test: { label: 'Test', tab: 'Test', script: 'echo b' } } },
-      } },
-    });
-    // Land on g1's `test` tab (idx 2). Route a stream into g1.test's
-    // buffer so the action tab has content (viewer_scroll clamps to 0
-    // otherwise — viewerLines returns empty for an unseeded action tab).
-    let s = { ...viewer._init(), tab: 2, innerH: 3 };
-    s = applyUpdate(s, {
-      type: 'viewer_append_lines',
-      tabKey: 'test', groupName: 'g1',
-      lines: Array.from({length: 80}, (_, i) => `g1-line-${i}`),
-    }).next;
-    // Set a known scroll (the routed append doesn't bottom-pin since
-    // it's not the user's active source... actually it does for active
-    // tab — scroll back to a deterministic position).
-    s = applyUpdate(s, { type: 'viewer_scroll', to: 'top' }).next;
-    s = applyUpdate(s, { type: 'viewer_scroll', delta: 30 }).next;
-    eq(s.scroll, 30, 'g1.test scrolled to 30');
-    // Leave g1.test via tab_switch — finalizer captures.
-    s = applyUpdate(s, { type: 'tab_switch', idx: 0 }).next;
-    eq(s.tabState['g1:action:test'].scroll, 30, 'g1:action:test captured at 30');
-    assert(!('action:test' in s.tabState), 'unprefixed action:test NOT used (would be collision)');
-    // Switch groups to g2; viewer_reset_chrome fires.
-    setModel({ ...require('../app/runtime').getModel(), currentGroup: 'g2' });
-    s = applyUpdate(s, { type: 'viewer_reset_chrome' }).next;
-    // Seed g2's `test` buffer (same idx 2 in the strip, but DIFFERENT key).
-    s = applyUpdate(s, {
-      type: 'viewer_append_lines',
-      tabKey: 'test', groupName: 'g2',
-      lines: Array.from({length: 80}, (_, i) => `g2-line-${i}`),
-    }).next;
-    s = applyUpdate(s, { type: 'tab_switch', idx: 2 }).next;
-    eq(s.tab, 2, 'on g2.test');
-    // First visit to g2.test — no stored state in tabState['g2:action:test'].
-    // Must NOT have inherited g1.test's scroll=30 (would be true if keys collided).
-    // Now scroll g2.test to a different position, capture on leave.
-    s = applyUpdate(s, { type: 'viewer_scroll', to: 'top' }).next;
-    s = applyUpdate(s, { type: 'viewer_scroll', delta: 60 }).next;
-    eq(s.scroll, 60, 'g2.test scrolled to 60');
-    s = applyUpdate(s, { type: 'tab_switch', idx: 0 }).next;
-    // Both g1's and g2's saved positions coexist.
-    eq(s.tabState['g1:action:test'].scroll, 30, 'g1:action:test preserved across group switch');
-    eq(s.tabState['g2:action:test'].scroll, 60, 'g2:action:test recorded independently');
-  });
-  it('R4: stream_start auto-jump drops tabState for the reset buffer', () => {
-    setModel({
-      currentGroup: 'g',
-      modes: {},
-      config: { groups: { g: { label: 'G', actions: { build: { label: 'Build', tab: 'Build', script: 'make' } } } } },
-    });
-    // Seed: user previously visited Build, captured search matches
-    // referencing line 80 of the (then-)buffer's content.
-    let s = { ...viewer._init(), tab: 0, innerH: 3 };
-    s = {
-      ...s,
-      tabState: {
-        'g:action:build': {
-          scroll: 80,
-          search: { active: true, term: 'foo', matches: [{ line: 80, col: 0 }], idx: 0, typing: '' },
-        },
-      },
-    };
-    // Fresh stream_start re-runs Build → buffer resets to [header].
-    const r = applyUpdate(s, { type: 'stream_start', tabKey: 'build', groupName: 'g', header: '$ make' });
-    eq(r.next.tab, 2, 'auto-jumped to Build');
-    assert(!('g:action:build' in r.next.tabState), 'tabState[g:action:build] dropped (matches reference pre-reset positions)');
-    eq(r.next.search.active, false, 'slice.search reset on auto-jump landing');
-    eq(r.next.scroll, 0, 'scroll reset');
-  });
-  it('R4: stream_start cross-group drops the target\'s tabState even without auto-jump', () => {
-    setModel({
-      currentGroup: 'g',
-      modes: {},
-      config: { groups: {
-        g:  { label: 'G',  actions: {} },
-        g2: { label: 'G2', actions: { build: { label: 'Build', tab: 'Build', script: 'make' } } },
-      } },
-    });
-    let s = { ...viewer._init(), tab: 0, innerH: 3 };
-    s = {
-      ...s,
-      tabState: {
-        'g2:action:build': { scroll: 50, search: { active: true, term: 'x', matches: [{ line: 50, col: 0 }], idx: 0, typing: '' } },
-      },
-    };
-    const r = applyUpdate(s, { type: 'stream_start', tabKey: 'build', groupName: 'g2', header: '$ make' });
-    eq(r.next.tab, 0, 'no auto-jump (cross-group)');
-    assert(!('g2:action:build' in r.next.tabState), 'tabState dropped for cross-group target too');
-  });
+describe('[group-switch cascade] viewer_reset_chrome ordering', () => {
+  // U2c P2 — the action-tab tabState-collision + routed stream_start auto-jump
+  // tests that led this block were retired with the action tabs they exercised
+  // (action output → a text-view instance now). The group-switch cascade-ordering
+  // test (B5) below is unrelated to action tabs and stays.
   it('B5: group-switch cascade emits viewer_reset_chrome BEFORE set_current_group', () => {
     // Round 2 adversarial finding: the finalizer's FROM-tab key
     // resolution reads getModel().currentGroup. If set_current_group
@@ -691,14 +595,16 @@ describe('[R6c viewer_set_content msg.tab] override + tab landing in one Msg', (
     // Fix: arm captures into tabState BEFORE clobbering, gated by
     // !slice.viewerOverride (first-arming only) && msg.tab absent
     // (transition path handled by the finalizer).
+    // U2c P2 — was seeded on an action tab (idx 2); action tabs retired, so this
+    // exercises the same B6 capture on the Transcript tab (idx 1, key 'transcript').
     setModel({
       currentGroup: 'g',
       modes: {},
-      config: { groups: { g: { label: 'G', actions: { build: { label: 'Build', tab: 'Build', script: 'echo b' } } } } },
+      config: { groups: { g: { label: 'G', actions: {} } } },
     });
     let s = {
       ...viewer._init(),
-      tab: 2,
+      tab: 1,
       scroll: 30,
       innerH: 5,
       search: { active: true, term: 'foo', matches: [{line:30,col:0}], idx:0, typing:'' },
@@ -707,16 +613,16 @@ describe('[R6c viewer_set_content msg.tab] override + tab landing in one Msg', (
     // same-group background job's info card, config-status diff,
     // ?-help on a non-Info tab).
     const r = applyUpdate(s, { type: 'viewer_set_content', lines: ['override line'] });
-    eq(r.next.tab, 2, 'tab unchanged (no msg.tab)');
+    eq(r.next.tab, 1, 'tab unchanged (no msg.tab)');
     eq(r.next.scroll, 0, 'scroll clobbered (override-arming write)');
     eq(r.next.search.active, false, 'search cleared');
     assert(r.next.viewerOverride, 'override set');
     // The critical assertion: pre-override state was captured.
-    assert(r.next.tabState && r.next.tabState['g:action:build'],
-      'pre-override state captured into tabState[g:action:build]');
-    eq(r.next.tabState['g:action:build'].scroll, 30,
+    assert(r.next.tabState && r.next.tabState['transcript'],
+      'pre-override state captured into tabState[transcript]');
+    eq(r.next.tabState['transcript'].scroll, 30,
       'pre-override scroll=30 preserved');
-    eq(r.next.tabState['g:action:build'].search.term, 'foo',
+    eq(r.next.tabState['transcript'].search.term, 'foo',
       'pre-override search "foo" preserved');
   });
   it('R13: viewer_set_content rejects negative / out-of-range msg.tab', () => {
@@ -752,63 +658,31 @@ describe('[R6c viewer_set_content msg.tab] override + tab landing in one Msg', (
     // immediately following the first), originalSlice.viewerOverride
     // is already set — capturing again would clobber the first
     // capture's pre-override state with the override-bound scroll: 0.
+    // U2c P2 — reframed onto the Transcript tab (action tabs retired).
     setModel({
       currentGroup: 'g',
       modes: {},
-      config: { groups: { g: { label: 'G', actions: { build: { label: 'Build', tab: 'Build', script: 'echo b' } } } } },
+      config: { groups: { g: { label: 'G', actions: {} } } },
     });
     // First arming: capture the pre-override state.
-    let s = { ...viewer._init(), tab: 2, scroll: 30, innerH: 5 };
+    let s = { ...viewer._init(), tab: 1, scroll: 30, innerH: 5 };
     s = applyUpdate(s, { type: 'viewer_set_content', lines: ['doc 1'] }).next;
-    eq(s.tabState['g:action:build'].scroll, 30, 'first arming captured scroll=30');
+    eq(s.tabState['transcript'].scroll, 30, 'first arming captured scroll=30');
     // Second arming: override already set. Must NOT overwrite tabState.
     const r = applyUpdate(s, { type: 'viewer_set_content', lines: ['doc 2'] });
-    eq(r.next.tabState['g:action:build'].scroll, 30,
+    eq(r.next.tabState['transcript'].scroll, 30,
       'second arming preserves the pre-override capture (no double-capture clobber)');
   });
 });
 
 describe('[B3 viewerOverride clear] tab-transitioning arms drop the stale override', () => {
-  // Pre-B3, only tab_switch cleared slice.viewerOverride. Three other
-  // arms also mutate slice.tab but skipped the clear:
-  //   - stream_start routed (auto-jump to action tab)
+  // Pre-B3, only tab_switch cleared slice.viewerOverride. Other arms also mutate
+  // slice.tab but skipped the clear:
   //   - stream_start unrouted (auto-jump to Transcript)
   //   - viewer_reset_chrome (group switch resets tab to 0)
-  // Visible repro: open Running overlay, activate a background job
-  // (writes override via setViewerContent), then trigger any routed
-  // action — the stream auto-jumps to the action tab but the user
-  // keeps seeing the background-job info card painted from
-  // viewerOverride while bytes silently fill an off-screen
-  // actionTabBuffers entry.
-  it('stream_start routed auto-jump clears viewerOverride', () => {
-    setModel({
-      currentGroup: 'g',
-      modes: {},
-      config: { groups: { g: { label: 'G', actions: { build: { label: 'Build', tab: 'Build', script: 'make' } } } } },
-    });
-    let s = { ...viewer._init(), tab: 0, innerH: 5 };
-    s = applyUpdate(s, { type: 'viewer_set_content', lines: ['override line'] }).next;
-    assert(s.viewerOverride, 'override armed');
-    const r = applyUpdate(s, { type: 'stream_start', tabKey: 'build', groupName: 'g', header: '$ make' });
-    eq(r.next.tab, 2, 'auto-jumped to action tab idx 2');
-    eq(r.next.viewerOverride, null, 'override cleared by routed auto-jump');
-  });
-  it('stream_start routed cross-group (no auto-jump) preserves viewerOverride', () => {
-    setModel({
-      currentGroup: 'g',
-      modes: {},
-      config: { groups: {
-        g:  { label: 'G',  actions: {} },
-        g2: { label: 'G2', actions: { build: { label: 'Build', tab: 'Build', script: 'make' } } },
-      } },
-    });
-    let s = { ...viewer._init(), tab: 0, innerH: 5 };
-    s = applyUpdate(s, { type: 'viewer_set_content', lines: ['override'] }).next;
-    // Stream targets g2 while currentGroup is g — no auto-jump.
-    const r = applyUpdate(s, { type: 'stream_start', tabKey: 'build', groupName: 'g2', header: '$ make' });
-    eq(r.next.tab, 0, 'no transition (cross-group)');
-    assert(r.next.viewerOverride, 'override survives — no auto-jump means no dismissal');
-  });
+  // (U2c P2 — the stream_start ROUTED auto-jump cases were retired: a tab:true
+  // action's stream now seeds its own text-view instance, not the viewer's flat
+  // strip, so it never auto-jumps or touches the viewer's override.)
   it('stream_start unrouted auto-jump to Transcript clears viewerOverride', () => {
     setModel({
       currentGroup: 'g',

@@ -44,15 +44,16 @@ function freshGroup({ actions = {}, terminals = {} } = {}) {
 }
 
 describe('[1] addContentTab basics', () => {
-  it('places a content tab after info / actions / terms', () => {
+  it('places a content tab after info / transcript / terms', () => {
     freshGroup({ actions: { a: { tab: true, label: 'A' } } });
     tabs.addContentTab('g1', 'file:foo.txt', 'foo.txt', ['line one', 'line two']);
     const info = tabs.getTabInfo();
-    eq(info.actionTabs.length, 1, 'one action tab');
     eq(info.contentTabs.length, 1, 'one content tab');
-    eq(info.total, 2 + 1 + 0 + 1, 'info + transcript + action + term + content');
-    // v0.6.2 layout: Info=0, Transcript=1, action(A)=2, content(file:foo)=3
-    eq(getInstanceSlice('detail').tab, 3, 'content tab is at index 3');
+    // U2c P2 — action tabs retired (a tab:true action's output → a text-view
+    // position-tab), so they no longer appear here or offset the content index.
+    eq(info.total, 2 + 0 + 1, 'info + transcript + term(0) + content(1)');
+    // Layout: Info=0, Transcript=1, content(file:foo)=2
+    eq(getInstanceSlice('detail').tab, 2, 'content tab is at index 2');
     eq(getFocus(), 'detail', 'focus moved to detail');
     eq(displayedLines(getInstanceSlice('detail')).join('\n'), 'line one\nline two', 'lines loaded into detail');
   });
@@ -332,24 +333,24 @@ describe('[R14] N1 content-tab tabState restore (non-adjacent transition)', () =
 
 describe('[purity] tab_switch reads msg.viewerModel, not the live model', () => {
   // v0.6.6 code-only TEA review: the tab_switch arm used to read getModel()
-  // via ctx.getTabInfo() for the {actionTabs, termTabs, total} guard — a live
-  // model read inside a reducer. It now derives those from msg.viewerModel via
-  // the pure flatTabInfoFromBundle twin. This proves the swap: make the bundle
-  // DISAGREE with the live model (bundle carries an action tab → total 3; live
-  // model has none → total 2) and confirm idx=2 is honored from the BUNDLE.
+  // via ctx.getTabInfo() for the {termTabs, total} guard — a live model read
+  // inside a reducer. It now derives those from msg.viewerModel via the pure
+  // flatTabInfoFromBundle twin. This proves the swap: make the bundle DISAGREE
+  // with the live model (bundle carries a terminal tab → total 3; live model has
+  // none → total 2) and confirm idx=2 is honored from the BUNDLE. (U2c P2 — was an
+  // action tab; action tabs retired, so a terminal tab is the disagreement now.)
   it('honors a tab idx present in the bundle even when the live model lacks it', () => {
     const viewer = require('../panel/viewer/viewer');
-    freshGroup({ actions: {} });               // live model: group g1, NO action tabs → total 2
+    freshGroup({ actions: {} });               // live model: group g1, NO term tabs → total 2
     const slice = getInstanceSlice('detail');
     const r = viewer._update({
       type: 'tab_switch', idx: 2,              // out-of-range if read from the live model
-      targetKey: 'g1:action:a',
+      targetKey: 'g1:terminal:sh',
       currentGroup: 'g1',
-      viewerModel: {                           // bundle disagrees: one action tab → total 3
+      viewerModel: {                           // bundle disagrees: one term tab → total 3
         currentGroup: 'g1',
-        group: { actions: {}, terminals: {} },
-        mergedActions: { a: { tab: true, label: 'A' } },
-        yamlTerminals: {},
+        group: { actions: {}, terminals: { sh: { cmd: 'sh', label: 'sh' } } },
+        yamlTerminals: { sh: { cmd: 'sh', label: 'sh' } },
       },
     }, slice);
     const next = Array.isArray(r) ? r[0] : r;

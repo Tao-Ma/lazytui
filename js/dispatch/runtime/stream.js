@@ -14,22 +14,21 @@
  * v0.6.2 Large — multi-job. The singleton currentProc retires; each
  * spawn lives in its own ProcCtx in the `procs` Map keyed by jobId.
  *
- * Slot semantics:
- *   Routed   (opts.tabKey + opts.groupName) → slotKey =
- *     `routed:${groupName}:${tabKey}`. One slot per action tab.
- *     Different slots run concurrently; same-slot replays preempt
- *     the previous run (e.g., re-Entering `make-check` while it's
- *     alive still kills the previous; running Test alongside
- *     Server log does NOT).
- *   Unrouted (no tabKey) → slotKey = 'unrouted'. Singleton slot —
- *     a new docker-logs preempts the previous (the legacy verb-
- *     verb behavior). One unrouted at a time is enough; multiple
- *     would interleave into the Transcript accumulator anyway.
+ * Slot semantics (U2c P1):
+ *   Routed   (opts.slotKey — the action's stable per-action id) → one slot per
+ *     action. Different slots run concurrently; same-slot replays preempt the
+ *     previous run (re-Entering `make-check` kills its previous; running Test
+ *     alongside Server log does NOT). opts.tabInstId is the DISPLAY target (the
+ *     action's text-view instance), streamed the tv_* Cmds below.
+ *   Unrouted (no slotKey) → slotKey = 'unrouted'. Singleton slot — a new
+ *     docker-logs preempts the previous. Streams the viewer_* Cmds into the
+ *     unrouted Transcript accumulator (viewerStreamBuffer).
  *
  * Lifecycle Cmds dispatched at boundaries:
- *   stream_start  { header, tabKey?, groupName? }   — at spawn
- *   viewer_append { line, tabKey?, groupName? }     — per output line
- *   viewer_append_lines { lines, … }                — preempt + close batches
+ *   routed   → tv_stream_start {header} / tv_append {line} / tv_append_lines {lines}
+ *              to wrap(tabInstId) (the text-view instance)
+ *   unrouted → stream_start {header} / viewer_append {line} / viewer_append_lines
+ *              {lines} to the viewer (Transcript)
  *
  * No layout dependency — uses scheduleRender from render-queue. Lazy-
  * requires dispatch.applyMsg / panel/api to dodge the
@@ -139,8 +138,8 @@ function killAll(opts = {}) {
 /**
  * Stream a shell command's stdout/stderr to the detail panel.
  *
- * opts.tabKey + opts.groupName route into actionTabBuffers (buffer per
- * tabbed action, see viewer.js); unset → the unrouted Transcript
+ * opts.tabInstId (+ opts.slotKey) route into a text-view instance (U2c P1 —
+ * the action's minted position-tab); unset → the unrouted Transcript
  * accumulator (singleton unrouted slot — new unrouted preempts previous).
  */
 function streamCommand(headerLabel, cmd, args = [], opts = {}) {

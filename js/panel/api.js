@@ -652,10 +652,6 @@ module.exports = {
   leaveTerminalMode,
 };
 
-// v0.6.5 §3 — inject the merged-actions provider into the pure pane-tabs
-// leaf at load time, so the leaf doesn't `require('../panel/api')` itself
-// (a leaf → panel inversion). This is the one wiring point that covers
-// every consumer: anything touching the panel layer requires this module,
-// and pane-tabs no longer imports back, so the edge is a clean downward
-// panel → leaf one (no cycle).
-require('../leaves/wm/pane-tabs').setMergedActionsProvider(getMergedActions);
+// U2c P2 — the merged-actions provider injection into pane-tabs was removed with
+// the action-tab machinery it fed (its only consumer). getMergedActions itself
+// stays (fabric ports / actions list still use it via panel/api).

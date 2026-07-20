@@ -327,17 +327,12 @@ function installBuiltins() {
     const { kind, owner = {} } = job;
     const out = { type: 'jobs_routed', job, now: eff.now | 0, viewerTarget, groupName };
 
-    if (kind === 'stream-routed' && owner.tabKey) {
-      const slice = route.getInstanceSlice(viewerTarget)
-        || { ephemeralTerminals: {}, contentTabs: {}, tab: 0 };
-      const info = pt.flatTabInfo(slice, m, groupName);
-      const idx = info.actionTabs.findIndex(([k]) => k === owner.tabKey);
-      if (idx >= 0) {
-        // v0.6.2 — action tabs start at idx 2 (Info=0, Transcript=1).
-        out.tabIdx = 2 + idx;
-        out.targetKey = pt.resolveTabKey(out.tabIdx, { ...slice, tab: out.tabIdx }, m);
-      }
-    } else if (kind === 'pty' && owner.ptyId) {
+    // U2c P2 — the stream-routed 'jump to the action's flat tab' is retired: a
+    // tab:true action's output now lives in its own text-view position-tab, which
+    // a viewer-flat-tab index can't address. Re-wiring the Running overlay to
+    // activate that position-tab (owner.tabInstId) is a follow-on; a stream-routed
+    // activate now surfaces the overlay without a tab jump.
+    if (kind === 'pty' && owner.ptyId) {
       const slice = route.getInstanceSlice(viewerTarget)
         || { ephemeralTerminals: {}, contentTabs: {}, tab: 0 };
       const info = pt.flatTabInfo(slice, m, groupName);
@@ -346,8 +341,8 @@ function installBuiltins() {
         if (`${groupName}_${info.termTabs[i][0]}` === owner.ptyId) { termIdx = i; break; }
       }
       if (termIdx >= 0) {
-        // v0.6.2 — term tabs start at idx 2 + actionTabs.length.
-        out.tabIdx = 2 + info.actionTabs.length + termIdx;
+        // U2c P2 — term tabs start at idx 2 (action tabs retired).
+        out.tabIdx = 2 + termIdx;
         out.targetKey = pt.resolveTabKey(out.tabIdx, { ...slice, tab: out.tabIdx }, m);
       }
     } else if (kind === 'background' || kind === 'tmux') {

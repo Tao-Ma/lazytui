@@ -20,33 +20,23 @@ const pt = require('../leaves/wm/pane-tabs');
 const viewer = require('../panel/viewer/viewer');
 
 describe('[P0] viewerModelBundle captures the model fact-set', () => {
-  it('has currentGroup, group, mergedActions, yamlTerminals', () => {
+  // U2c P2 — the bundle no longer carries `mergedActions`: it fed only the
+  // action-tab enumeration in flatTabInfoFromBundle, retired with action tabs.
+  it('has currentGroup, group, yamlTerminals', () => {
     sm.bootFresh();
     const m = getModel();
     const b = pt.viewerModelBundle(m, m.currentGroup);
     eq(b.currentGroup, m.currentGroup, 'currentGroup mirrors the model');
     assert(b.group && typeof b.group === 'object', 'group config present');
-    assert(b.mergedActions && typeof b.mergedActions === 'object', 'mergedActions is an object');
     assert(b.yamlTerminals === null || typeof b.yamlTerminals === 'object',
       'yamlTerminals is an object or null');
   });
 
-  it('mergedActions equals the live getMergedActions snapshot', () => {
-    sm.bootFresh();
-    const m = getModel();
-    const api = require('../panel/api');
-    const b = pt.viewerModelBundle(m, m.currentGroup);
-    eq(Object.keys(b.mergedActions).sort().join(','),
-       Object.keys(api.getMergedActions(m.currentGroup)).sort().join(','),
-       'same action keys as getMergedActions');
-  });
-
-  it('an unknown group yields empty merged actions + null terminals', () => {
+  it('an unknown group yields no group + null terminals', () => {
     sm.bootFresh();
     const m = getModel();
     const b = pt.viewerModelBundle(m, '__no_such_group__');
     eq(b.group, null, 'no group');
-    eq(Object.keys(b.mergedActions).length, 0, 'no merged actions');
     eq(b.yamlTerminals, null, 'no terminals');
   });
 });

@@ -51,35 +51,11 @@ function _groupOf(model, groupName) {
 // tab:true actions (postgres demo's `pg:status` was invisible). See
 // panel/api.js getMergedActions for the contract.
 //
-// PURITY CONTRACT: getMergedActions iterates every Component's
-// groupActions(group, name, config, model) hook — plugin code. Plugins
-// must implement groupActions as a pure projection (no I/O, no Date /
-// random, no module-local mutation). This function is called by the
-// leaf's reducer-side helpers (flatTabInfo, actionTabCount), so any
-// plugin impurity propagates into the reducer's purity guarantees. v0.7
-// candidate: project the merged set once per dispatch into a per-Msg
-// cache the leaf reads from, removing the live iteration from hot paths.
-// v0.6.5 §3 — the merged-actions map (YAML actions + plugin-synthesized
-// actions for a group) is a panel-registry computation this pure leaf must
-// NOT import. The provider is INJECTED at boot — `panel/api` wires it on
-// load, so every consumer (production + tests, which all touch the panel
-// layer) gets it — and called here. Unset → {} (graceful: a standalone
-// leaf load with no panel layer simply sees no plugin/action tabs).
-// Replaces the former lazy `require('../panel/api')` reach (profiled cheap
-// once memoized, but a layering inversion); the leaf's only requires are
-// now sibling leaves.
-let _mergedProvider = null;
-function setMergedActionsProvider(fn) {
-  _mergedProvider = (typeof fn === 'function') ? fn : null;
-}
-function _mergedFor(model, groupName) {
-  if (!_groupOf(model, groupName)) return {};
-  return _mergedProvider ? _mergedProvider(groupName) : {};
-}
-
-function actionTabCount(model, groupName) {
-  return Object.values(_mergedFor(model, groupName)).filter(a => a.tab).length;
-}
+// U2c P2 — the injected merged-actions provider (setMergedActionsProvider /
+// _mergedProvider / _mergedFor, wired by panel/api at boot) is removed with the
+// action-tab machinery it fed: its only consumer was the action-tab enumeration
+// in flatTabInfo / flatTabInfoFromBundle. Action output now lives in text-view
+// instances, so the leaf no longer needs the merged (YAML + plugin) action set.
 
 // T2 — view-derived lines for the viewer's active tab. Pure projection
 // of (slice, model, focused-Navigator). Order of precedence:
@@ -89,8 +65,6 @@ function actionTabCount(model, groupName) {
 //   2. Per-tab derivation by tab kind:
 //        idx 0 (Info)        → focused Navigator's getInfo(item)
 //        idx 1 (Transcript)  → slice.viewerStreamBuffer.lines
-//        action tab          → slice.actionTabBuffers[group][key].lines
-//                              (else "Press Enter to run." placeholder)
 //        term tab            → []  (PTY-rendered separately)
 //        content tab         → slice.contentTabs[group][key].lines
 //   3. Degenerate tab idx falls back to empty (P3 — the legacy
@@ -128,20 +102,13 @@ function _viewerLinesCore(slice, groupName, infoFn, lookups) {
     return ['[dim](no transcript yet)[/]'];
   }
   const info = infoFn();
-  // Action tab.
-  if (tab >= 2 && tab <= 1 + info.actionTabs.length) {
-    const [actionKey] = info.actionTabs[tab - 2];
-    const buf = slice && slice.actionTabBuffers
-      && slice.actionTabBuffers[groupName]
-      && slice.actionTabBuffers[groupName][actionKey];
-    if (buf && Array.isArray(buf.lines) && buf.lines.length > 0) return buf.lines;
-    return ['[dim]Press Enter to run.[/]'];
-  }
-  // Term tab — PTY-rendered, no slice-side content.
-  const termBase = 2 + info.actionTabs.length;
+  // Term tab — PTY-rendered, no slice-side content. (U2c P2 — action tabs
+  // retired; action output lives in its own text-view instance now, so terms
+  // start right after Info + Transcript.)
+  const termBase = 2;
   if (tab >= termBase && tab < termBase + info.termTabs.length) return [];
   // Content tab.
-  const contentBase = 2 + info.actionTabs.length + info.termTabs.length;
+  const contentBase = 2 + info.termTabs.length;
   if (tab >= contentBase && tab < contentBase + info.contentTabs.length) {
     const [contentKey] = info.contentTabs[tab - contentBase];
     const ct = slice && slice.contentTabs
@@ -182,30 +149,24 @@ function groupContentTabs(slice, groupName) {
 // --- Pure read derivatives (slice-only, no globals) -----------------------
 
 /** Flat tab info for a pane's slice + a group:
- *    { actionTabs, termTabs, contentTabs, total }
+ *    { termTabs, contentTabs, total }
  *  Tab strip layout, left → right:
- *    [Info] [Transcript] [actionTabs...] [termTabs...] [contentTabs...]
- *       0        1          2..1+A          2+A..1+A+T   2+A+T..1+A+T+C
+ *    [Info] [Transcript] [termTabs...] [contentTabs...]
+ *       0        1          2..1+T        2+T..1+T+C
  *  Two implicit globals (Info, Transcript) lead; per-group tabs follow.
- *  actionTabs comes from `group.actions[*].tab` merged with plugin-
- *  synthesized actions (see panel/api.js getMergedActions — v0.6.2
- *  fix for plugin tab:true actions that were invisible to this leaf
- *  pre-merge). termTabs merges group.terminals (YAML) + slice.
+ *  (U2c P2 — action tabs retired: a tab:true action's output now lives in its
+ *  own text-view instance minted as a position-tab, so it no longer appears in
+ *  this viewer-internal strip.) termTabs merges group.terminals (YAML) + slice.
  *  ephemeralTerminals[groupName] (runtime); contentTabs comes from
- *  slice.contentTabs[groupName]. `total` = 2 globals + A + T + C
- *  (v0.6.2 — Transcript took over hosting the unrouted accumulator
- *  so Info could be pure selection-info; placed right after Info so
- *  it stays adjacent regardless of how long the per-group strip
- *  grows). */
+ *  slice.contentTabs[groupName]. `total` = 2 globals + T + C. */
 function flatTabInfo(slice, model, groupName) {
   const group = _groupOf(model, groupName);
-  if (!group) return { actionTabs: [], termTabs: [], contentTabs: [], total: 2 };
-  const actionTabs = Object.entries(_mergedFor(model, groupName)).filter(([, a]) => a.tab);
+  if (!group) return { termTabs: [], contentTabs: [], total: 2 };
   const termTabs = Object.entries(groupTerminals(model, slice, groupName));
   const contentTabs = Object.entries(groupContentTabs(slice, groupName));
   return {
-    actionTabs, termTabs, contentTabs,
-    total: 2 + actionTabs.length + termTabs.length + contentTabs.length,
+    termTabs, contentTabs,
+    total: 2 + termTabs.length + contentTabs.length,
   };
 }
 
@@ -215,15 +176,14 @@ function flatTabInfo(slice, model, groupName) {
 // currentGroup` is the group the bundle describes, so it keys ephemerals /
 // content exactly as the model-path `groupName` does.
 function flatTabInfoFromBundle(slice, bundle) {
-  if (!bundle || !bundle.group) return { actionTabs: [], termTabs: [], contentTabs: [], total: 2 };
+  if (!bundle || !bundle.group) return { termTabs: [], contentTabs: [], total: 2 };
   const gn = bundle.currentGroup;
-  const actionTabs = Object.entries(bundle.mergedActions || {}).filter(([, a]) => a.tab);
   const eph = (slice && slice.ephemeralTerminals && slice.ephemeralTerminals[gn]) || {};
   const termTabs = Object.entries({ ...(bundle.yamlTerminals || {}), ...eph });
   const contentTabs = Object.entries(groupContentTabs(slice || {}, gn));
   return {
-    actionTabs, termTabs, contentTabs,
-    total: 2 + actionTabs.length + termTabs.length + contentTabs.length,
+    termTabs, contentTabs,
+    total: 2 + termTabs.length + contentTabs.length,
   };
 }
 
@@ -243,14 +203,11 @@ function resolveTabKey(idx, slice, model) {
   if (!model || !model.config || !model.config.groups) return null;
   const groupName = model.currentGroup;
   const info = flatTabInfo(slice || {}, model, groupName);
-  if (idx >= 2 && idx <= 1 + info.actionTabs.length) {
-    return `${groupName}:action:${info.actionTabs[idx - 2][0]}`;
-  }
-  const termBase = 2 + info.actionTabs.length;
+  const termBase = 2;
   if (idx >= termBase && idx < termBase + info.termTabs.length) {
     return `${groupName}:terminal:${info.termTabs[idx - termBase][0]}`;
   }
-  const contentBase = 2 + info.actionTabs.length + info.termTabs.length;
+  const contentBase = 2 + info.termTabs.length;
   if (idx >= contentBase && idx < contentBase + info.contentTabs.length) {
     return `${groupName}:content:${info.contentTabs[idx - contentBase][0]}`;
   }
@@ -264,14 +221,11 @@ function resolveTabKeyFromBundle(idx, slice, bundle) {
   if (!bundle || !bundle.group) return null;
   const groupName = bundle.currentGroup;
   const info = flatTabInfoFromBundle(slice || {}, bundle);
-  if (idx >= 2 && idx <= 1 + info.actionTabs.length) {
-    return `${groupName}:action:${info.actionTabs[idx - 2][0]}`;
-  }
-  const termBase = 2 + info.actionTabs.length;
+  const termBase = 2;
   if (idx >= termBase && idx < termBase + info.termTabs.length) {
     return `${groupName}:terminal:${info.termTabs[idx - termBase][0]}`;
   }
-  const contentBase = 2 + info.actionTabs.length + info.termTabs.length;
+  const contentBase = 2 + info.termTabs.length;
   if (idx >= contentBase && idx < contentBase + info.contentTabs.length) {
     return `${groupName}:content:${info.contentTabs[idx - contentBase][0]}`;
   }
@@ -282,32 +236,16 @@ function resolveTabKeyFromBundle(idx, slice, bundle) {
 function isTerminalTabIn(slice, model, groupName) {
   const info = flatTabInfo(slice, model, groupName);
   if (info.termTabs.length === 0) return false;
-  const start = 2 + info.actionTabs.length;
+  const start = 2;
   const t = slice.tab | 0;
   return t >= start && t < start + info.termTabs.length;
-}
-
-/** True when the slice's active tab is an action tab in `groupName`. */
-function isActionTabIn(slice, model, groupName) {
-  const info = flatTabInfo(slice, model, groupName);
-  if (info.actionTabs.length === 0) return false;
-  const t = slice.tab | 0;
-  return t >= 2 && t <= 1 + info.actionTabs.length;
-}
-
-/** [key, action] for the active action tab, or null. */
-function activeActionTabIn(slice, model, groupName) {
-  const info = flatTabInfo(slice, model, groupName);
-  const idx = (slice.tab | 0) - 2;
-  if (idx < 0 || idx >= info.actionTabs.length) return null;
-  return info.actionTabs[idx];
 }
 
 /** True when the slice's active tab is a content tab in `groupName`. */
 function isContentTabIn(slice, model, groupName) {
   const info = flatTabInfo(slice, model, groupName);
   if (info.contentTabs.length === 0) return false;
-  const start = 2 + info.actionTabs.length + info.termTabs.length;
+  const start = 2 + info.termTabs.length;
   const t = slice.tab | 0;
   return t >= start && t < start + info.contentTabs.length;
 }
@@ -315,7 +253,7 @@ function isContentTabIn(slice, model, groupName) {
 /** [key, { label, lines }] for the active content tab, or null. */
 function activeContentTabIn(slice, model, groupName) {
   const info = flatTabInfo(slice, model, groupName);
-  const idx = (slice.tab | 0) - 2 - info.actionTabs.length - info.termTabs.length;
+  const idx = (slice.tab | 0) - 2 - info.termTabs.length;
   if (idx < 0 || idx >= info.contentTabs.length) return null;
   return info.contentTabs[idx];
 }
@@ -323,7 +261,7 @@ function activeContentTabIn(slice, model, groupName) {
 /** Session id (`${group}_${key}`) for the active terminal tab, or null. */
 function activeTerminalIdIn(slice, model, groupName) {
   const info = flatTabInfo(slice, model, groupName);
-  const idx = (slice.tab | 0) - 2 - info.actionTabs.length;
+  const idx = (slice.tab | 0) - 2;
   if (idx < 0 || idx >= info.termTabs.length) return null;
   return `${groupName}_${info.termTabs[idx][0]}`;
 }
@@ -331,7 +269,7 @@ function activeTerminalIdIn(slice, model, groupName) {
 /** { cmd, label } for the active terminal tab, or null. */
 function activeTerminalConfigIn(slice, model, groupName) {
   const info = flatTabInfo(slice, model, groupName);
-  const idx = (slice.tab | 0) - 2 - info.actionTabs.length;
+  const idx = (slice.tab | 0) - 2;
   if (idx < 0 || idx >= info.termTabs.length) return null;
   return info.termTabs[idx][1];
 }
@@ -374,17 +312,20 @@ function modelBundle(model, groupName) {
     currentGroup: (model && model.currentGroup) || '',
     groupExists: !!group,
     yamlTerminals: group ? (group.terminals || {}) : null,
-    actionCount: group ? actionTabCount(model, groupName) : 0,
+    // U2c P2 — action tabs retired (action output → its own text-view instance),
+    // so they no longer offset the terminal/content tab indices. Kept as a 0 so the
+    // terminal/content mutators' `2 + actionCount + …` index math stays correct
+    // without churn (those mutators are reworked when terminals move — U2d).
+    actionCount: 0,
   };
 }
 
 /** blessed-exceptions #3 — the full model fact-set the viewer's tab/content
  *  readers (flatTabInfo / viewerLines / resolveTabKey + the `is*TabIn`
  *  predicates) need, captured ONCE so `viewer.update` can read it from the
- *  Msg payload instead of `getModel()`. `mergedActions` is the COMPUTED merge
- *  (getMergedActions reads the live registry internally), so it must be
- *  snapshotted here, in the impure shell, not recomputed in the reducer.
- *  Pair with `flatTabInfoFromBundle` / `viewerLinesFromBundle` (P1). */
+ *  Msg payload instead of `getModel()`. (U2c P2 — `mergedActions` dropped: it
+ *  fed only the retired action-tab enumeration.) Pair with
+ *  `flatTabInfoFromBundle` / `viewerLinesFromBundle` (P1). */
 function viewerModelBundle(model, groupName) {
   const group = _groupOf(model, groupName);
   return {
@@ -394,7 +335,6 @@ function viewerModelBundle(model, groupName) {
     // facts were computed for (parity with the model-path flatTabInfo).
     currentGroup: groupName,
     group,
-    mergedActions: _mergedFor(model, groupName),
     yamlTerminals: group ? (group.terminals || {}) : null,
   };
 }
@@ -675,7 +615,7 @@ function reduceTabMsg(msg, slice, ctx) {
       // flatTabInfoFromBundle twin — NOT a live getModel() read (the bundle is
       // stamped by viewer.augmentMsg on every viewer Msg, from the same model
       // this reducer runs on). Keeps the arm a pure fn of (slice, msg).
-      const { actionTabs, termTabs, total } = flatTabInfoFromBundle(slice, msg.viewerModel);
+      const { termTabs, total } = flatTabInfoFromBundle(slice, msg.viewerModel);
       const idx = msg.idx | 0;
       if (idx < 0 || idx >= total) return slice;
       // N4 — same-tab click is a no-op. Pre-N4 this still fired the full
@@ -706,7 +646,6 @@ function reduceTabMsg(msg, slice, ctx) {
       // tabSwitchMsg helpers) precomputes targetKey via
       // pt.resolveTabKey and threads targetKey + currentGroup through
       // the Msg payload. Pure reducer arm — no getModel() fallback.
-      const groupName = msg.currentGroup || '';
       const targetKey = msg.targetKey || null;
       // Read target tab's stored state. The finalizer (running AFTER
       // this reducer body) will capture the FROM-tab's view state;
@@ -763,20 +702,7 @@ function reduceTabMsg(msg, slice, ctx) {
         const innerH = slice.innerH > 0 ? slice.innerH : 1;
         const bottom = Math.max(0, linesLen - innerH);
         next = { ...next, scroll: _resolveScroll(bottom, bottom) };
-      } else if (idx <= 1 + actionTabs.length) {
-        // View-only restore from actionTabBuffers, else placeholder.
-        // Sticky → snap to new bottom; stored → literal; first visit
-        // → bottom-pin.
-        const [actionKey] = actionTabs[idx - 2];
-        const buf = slice.actionTabBuffers
-          && slice.actionTabBuffers[groupName]
-          && slice.actionTabBuffers[groupName][actionKey];
-        const linesLen = buf && Array.isArray(buf.lines) && buf.lines.length > 0
-          ? buf.lines.length : 1;  // placeholder counts as 1
-        const innerH = slice.innerH > 0 ? slice.innerH : 1;
-        const bottom = Math.max(0, linesLen - innerH);
-        next = { ...next, scroll: _resolveScroll(bottom, bottom) };
-      } else if (idx <= 1 + actionTabs.length + termTabs.length) {
+      } else if (idx <= 1 + termTabs.length) {
         next = { ...next, scroll: _resolveScroll(0, 0) };
       } else {
         // v0.6.2 B8 — drop the `if (activeContentTab())` guard.
@@ -852,13 +778,11 @@ function reduceTabMsg(msg, slice, ctx) {
 }
 
 module.exports = {
-  setMergedActionsProvider,   // v0.6.5 §3 — boot injection (panel/api wires it)
-  actionTabCount,
   flatTabInfo, transcriptTabIdx,
   resolveTabKey,
   viewerLines,
-  isTerminalTabIn, isContentTabIn, isActionTabIn,
-  activeContentTabIn, activeActionTabIn, activeTerminalIdIn, activeTerminalConfigIn,
+  isTerminalTabIn, isContentTabIn,
+  activeContentTabIn, activeTerminalIdIn, activeTerminalConfigIn,
   findEphemeralByIdIn,
   addEphemeral,
   addContent,

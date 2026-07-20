@@ -26,12 +26,10 @@ function flatTabsRef(slice, m, g) {
     { section: 'tab', tabIdx: 0, label: 'Info', kind: '' },
     { section: 'tab', tabIdx: 1, label: 'Transcript', kind: '' },
   ];
-  info.actionTabs.forEach(([, a], i) => out.push({
-    section: 'tab', tabIdx: 2 + i, label: a.label, kind: 'action',
-  }));
+  // U2c P2 — action tabs retired; terminals/content follow Info+Transcript.
   const eph = (slice.ephemeralTerminals || {})[g] || {};
   info.termTabs.forEach(([key, t], i) => out.push({
-    section: 'tab', tabIdx: 2 + info.actionTabs.length + i, label: t.label || key,
+    section: 'tab', tabIdx: 2 + i, label: t.label || key,
     kind: 'term', closeable: !!eph[key], closeKind: 'terminal', closeKey: key,
   }));
   info.contentTabs.forEach(([key, c], i) => {
@@ -39,7 +37,7 @@ function flatTabsRef(slice, m, g) {
     if (key.startsWith('docker:')) k = 'docker';
     else if (key.startsWith('file:')) k = 'file';
     out.push({
-      section: 'tab', tabIdx: 2 + info.actionTabs.length + info.termTabs.length + i,
+      section: 'tab', tabIdx: 2 + info.termTabs.length + i,
       label: c.label || key, kind: k, closeable: true, closeKind: 'content', closeKey: key,
     });
   });
@@ -54,20 +52,19 @@ function toSectionRow(r) {
 }
 
 // A viewer slice exercising every tab kind: an ephemeral terminal + a content
-// tab (action tabs come from the group config, whatever the fixture provides).
+// tab. (U2c P2 — action tabs retired, so the strip is Info/Transcript/term/content.)
 function viewerSlice(g, tab) {
   return {
     tab: tab | 0,
     infoLines: ['info-a', 'info-b'],
     ephemeralTerminals: { [g]: { sh: { cmd: 'bash', label: 'sh' } } },
     contentTabs: { [g]: { log: { label: 'log', lines: ['l1', 'l2'] } } },
-    actionTabBuffers: {},
     viewerStreamBuffer: { lines: [], cap: 1000 },
   };
 }
 
 describe('[tab-container] viewer listTabs backs pane-menu._flatTabs', () => {
-  it('maps field-for-field (Info/Transcript/action/term-closeable/content-kind)', () => {
+  it('maps field-for-field (Info/Transcript/term-closeable/content-kind)', () => {
     sm.bootFresh();
     const m = getModel();
     const g = m.currentGroup;

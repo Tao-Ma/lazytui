@@ -28,7 +28,7 @@ const { runAction } = require('../runtime/action-runner');
 const { getPanelDef, getItems, getMergedActions, getInstanceSlice,
         wrap, getFocus, instanceKind } = require('../../panel/api');
 const { dispatchMsg } = require('../runtime/loop');
-const { isTerminalTab, activeTerminalId, isActionTab, activeActionTab } = require('../../panel/viewer/tabs');
+const { isTerminalTab, activeTerminalId } = require('../../panel/viewer/tabs');
 const { isSessionDead, restartSession } = require('../../io/terminal');
 const { execSync } = require('child_process');
 const { getModel } = require('../../model/store');
@@ -247,16 +247,11 @@ function handleAction(action, arg, from) {
         activateTerminal();
         break;
       }
-      // Enter on detail + action tab → run the action backing that tab.
-      // tab_switch is view-only; this is the explicit run gesture.
-      if (instanceKind(getFocus()) === 'detail' && isActionTab()) {
-        const item = activeActionTab();
-        if (item) {
-          const [key, act] = item;
-          _runResolvedAction(key, act);
-        }
-        break;
-      }
+      // U2c P2 — the 'Enter on the viewer's action tab re-runs it' gesture is
+      // retired: action tabs no longer live in the viewer's flat strip (output
+      // is a text-view position-tab now). Re-run from the actions list; wiring
+      // Enter-on-a-text-view to re-run via its {origin:'action'} hint is a
+      // follow-on.
       // Enter on groups: branches toggle expand/collapse one level;
       // leaves drill into the actions panel. This is the only tree-shape
       // keybinding — recursive expand/collapse have no dedicated key,

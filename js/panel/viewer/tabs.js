@@ -16,13 +16,13 @@
  *
  * The detail panel's tab bar is conceptually:
  *
- *   [Info] [actionTabs...] [termTabs...] [contentTabs...]
- *      0     1..A            A+1..A+T     A+T+1..A+T+C
+ *   [Info] [Transcript] [termTabs...] [contentTabs...]
+ *      0        1          2..1+T        2+T..1+T+C
  *
- * actionTabs come from `group.actions[*].tab` (YAML); termTabs come from
- * `group.terminals` (YAML) plus slice.ephemeralTerminals (runtime);
- * contentTabs come from slice.contentTabs (runtime). slice.tab is the
- * flat integer index into this strip.
+ * (U2c P2 — action tabs retired: a tab:true action's output lives in its own
+ * text-view position-tab now.) termTabs come from `group.terminals` (YAML) plus
+ * slice.ephemeralTerminals (runtime); contentTabs come from slice.contentTabs
+ * (runtime). slice.tab is the flat integer index into this strip.
  */
 'use strict';
 
@@ -63,16 +63,8 @@ function isContentTab() {
   return pt.isContentTabIn(_detailSlice(), getModel(), getModel().currentGroup);
 }
 
-function isActionTab() {
-  return pt.isActionTabIn(_detailSlice(), getModel(), getModel().currentGroup);
-}
-
 function activeContentTab() {
   return pt.activeContentTabIn(_detailSlice(), getModel(), getModel().currentGroup);
-}
-
-function activeActionTab() {
-  return pt.activeActionTabIn(_detailSlice(), getModel(), getModel().currentGroup);
 }
 
 function activeTerminalId(paneId) {
@@ -203,7 +195,6 @@ module.exports = {
   getTabInfo,
   isTerminalTab, activeTerminalId, activeTerminalConfig,
   isContentTab, activeContentTab,
-  isActionTab, activeActionTab,
   findEphemeralByid, paneForSessionId,
   addEphemeralTab, removeEphemeralTab,
   addContentTab, removeContentTab, updateContentTabLines,

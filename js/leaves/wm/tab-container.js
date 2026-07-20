@@ -82,13 +82,11 @@ function _viewerRows(slice, info, g, keyOf, activeIdx) {
     { key: keyOf(0), idx: 0, label: 'Info', kind: '', active: activeIdx === 0 },
     { key: keyOf(1), idx: 1, label: 'Transcript', kind: '', active: activeIdx === 1 },
   ];
-  info.actionTabs.forEach(([, a], i) => {
-    const idx = 2 + i;
-    rows.push({ key: keyOf(idx), idx, label: a.label, kind: 'action', active: activeIdx === idx });
-  });
+  // U2c P2 — action tabs retired (action output → its own text-view position-tab),
+  // so terminals/content follow Info+Transcript directly.
   const eph = (s.ephemeralTerminals && s.ephemeralTerminals[g]) || {};
   info.termTabs.forEach(([key, t], i) => {
-    const idx = 2 + info.actionTabs.length + i;
+    const idx = 2 + i;
     rows.push({
       key: keyOf(idx), idx, label: t.label || key, kind: 'term', active: activeIdx === idx,
       closeable: !!eph[key], closeKind: 'terminal', closeKey: key,
@@ -98,7 +96,7 @@ function _viewerRows(slice, info, g, keyOf, activeIdx) {
     let k = 'content';
     if (key.startsWith('docker:')) k = 'docker';
     else if (key.startsWith('file:')) k = 'file';
-    const idx = 2 + info.actionTabs.length + info.termTabs.length + i;
+    const idx = 2 + info.termTabs.length + i;
     rows.push({
       key: keyOf(idx), idx, label: c.label || key, kind: k, active: activeIdx === idx,
       closeable: true, closeKind: 'content', closeKey: key,

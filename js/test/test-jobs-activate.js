@@ -64,16 +64,21 @@ describe('[jobs_activate] full cascade — one Msg, reducer-driven', () => {
     return jobs.register(jobInfo);
   }
 
-  it('stream-routed → closes overlay, switches to action tab', () => {
+  it('stream-routed → closes overlay, focuses viewer (no flat-tab jump — U2c P2)', () => {
     setup({
       kind: 'stream-routed',
       label: 'make-check',
       pid: 1,
       owner: { tabKey: 'make-check', groupName: 'g', cmd: 'make check' },
     });
+    const before = { ...api.getInstanceSlice('detail'), tab: 0 };
+    require('../panel/route').setInstanceSlice('detail', before);
     _activate();
     eq(runtime.getModel().modes.jobsMode, false, 'overlay closed');
-    eq(api.getInstanceSlice('detail').tab, 2, 'tab_switch landed on action tab idx 2 (Info=0, Transcript=1, make-check=2)');
+    // U2c P2 — action output lives in a text-view position-tab now; the flat action
+    // tab (and its jump) is retired. Activating a stream-routed job focuses the
+    // viewer without a flat-tab switch (jump-to-position-tab is a follow-on).
+    eq(api.getInstanceSlice('detail').tab, 0, 'no flat-tab switch');
     eq(api.getInstanceSlice('layout').focus, 'detail', 'focus on viewer pane');
   });
 
@@ -101,9 +106,9 @@ describe('[jobs_activate] full cascade — one Msg, reducer-driven', () => {
     });
     _activate();
     eq(runtime.getModel().modes.jobsMode, false);
-    // v0.6.2 tab strip: [Info, Transcript, make-check, shell, ...]. shell
-    // is termTab idx 0 → absolute tab = 2 + actionTabs.length(1) = 3.
-    eq(api.getInstanceSlice('detail').tab, 3, 'tab_switch landed on terminal tab idx 3');
+    // U2c P2 — action tabs retired, so the tab strip is [Info, Transcript, shell,
+    // …]; shell is termTab idx 0 → absolute tab = 2.
+    eq(api.getInstanceSlice('detail').tab, 2, 'tab_switch landed on terminal tab idx 2');
     eq(runtime.getModel().modes.terminalMode, true, 'terminal_enter fired');
   });
 
@@ -180,47 +185,11 @@ describe('[jobs_activate] full cascade — one Msg, reducer-driven', () => {
     eq(runtime.getModel().currentGroup, 'g2', 'currentGroup switched to g2 (B1: msg.name, not msg.group)');
   });
 
-  it('cross-group routed → tab_switch carries the TARGET group, not the captured currentGroup', () => {
-    // Round-5 regression: Phase-3d threaded `currentGroup: model.currentGroup`
-    // into the tab_switch Cmd, captured at the OLD value before the
-    // queued set_current_group Cmd applied. When that Cmd ran first,
-    // tab_switch reduced with the stale msg.currentGroup → the leaf
-    // looked up slice.actionTabBuffers[OLD_GROUP][actionKey] (undefined)
-    // → scroll fell to 0 instead of bottom-pinning the routed buffer.
-    _seedModel();
-    _resetJobs();
-    const m = runtime.getModel();
-    m.config.groups.g2 = {
-      label: 'G2',
-      actions: { 'g2-act': { label: 'G2', script: 'echo g2', tab: 'g2-act' } },
-    };
-    runtime.setModel({
-      ...m,
-      modes: { ...m.modes, jobsMode: true },
-      modal: { ...m.modal, jobs: { cursor: 0, scroll: 0 } },
-    });
-    // Seed a routed buffer for g2/g2-act with bottom-pin worth of lines.
-    // Also force slice.tab to 0 so the tab_switch arm doesn't early-return
-    // on same-tab (slice.tab leaks from prior tests in the same file).
-    const detail = api.getInstanceSlice('detail');
-    detail.actionTabBuffers = { g2: { 'g2-act': { lines: Array.from({ length: 90 }, (_, i) => `l${i}`) } } };
-    detail.innerH = 10;
-    detail.tab = 0;
-    detail.scroll = 0;
-    jobs.register({
-      kind: 'stream-routed',
-      label: 'g2-act',
-      pid: 1,
-      owner: { tabKey: 'g2-act', groupName: 'g2', cmd: 'echo g2' },
-    });
-    _activate();
-    eq(runtime.getModel().currentGroup, 'g2', 'currentGroup switched to g2');
-    eq(api.getInstanceSlice('detail').tab, 2, 'tab_switch landed on g2-act (idx 2 in g2)');
-    // The smoking gun: scroll should bottom-pin against the 90-line
-    // routed buffer (lines=90, innerH=10 → scroll=80). Pre-fix it
-    // landed at 0 because msg.currentGroup was the OLD group 'g'.
-    eq(api.getInstanceSlice('detail').scroll, 80, 'scroll bottom-pinned against routed buffer (g2)');
-  });
+  // U2c P2 — the 'cross-group routed → tab_switch carries the target group +
+  // bottom-pins the routed actionTabBuffers' test was retired: stream-routed
+  // activation no longer flat-tab-jumps (action output → a text-view position-tab)
+  // and actionTabBuffers is gone. The cross-group currentGroup switch itself is
+  // still covered by the preceding case.
 
   it('non-jobsMode → activate is a no-op (defensive)', () => {
     _seedModel();

@@ -15,7 +15,7 @@
  *     nav_select clears viewer chrome), it emits a dispatch_msg Cmd carrying
  *     viewer_reset_chrome → routed back here by the Component fan-out.
  *
- * Tab bar rendering (the Info | actionTabs | termTabs | contentTabs strip
+ * Tab bar rendering (the Info | Transcript | termTabs | contentTabs strip
  * and tab click bounds) stays inside this module's render path so the panel
  * def is the single home for the viewer's view.
  */
@@ -102,9 +102,8 @@ function init(paneId) {
     cursor: { line: 0, col: 0 },
     contentTabs: {},          // [groupName]: { [key]: { label, lines } }
     ephemeralTerminals: {},   // [groupName]: { [key]: { cmd, label } }
-    // [groupName]: { [actionKey]: { lines } } — survives tab switches
-    // so a tabbed action's output isn't lost when the user navigates away.
-    actionTabBuffers: {},
+    // (U2c P2 — slice.actionTabBuffers retired: a tab:true action's output now
+    // lives in its own text-view instance minted as a position-tab.)
     // Singleton accumulator for unrouted streams (tabless type:run,
     // docker logs/inspect verbs). Appends across commands; cap at 1000
     // lines (drop oldest when over). Transcript tab (idx 1) is the
@@ -507,42 +506,11 @@ function _updateInner(msg, slice, lines) {
     case 'viewer_scroll':
       return tvu.reduce(msg, slice, lines, 'detail');
     case 'viewer_append': {
-      // Hot path — streamed action output can fire 500-1000 lines/sec.
-      // Per the arc rule, no in-place exception: spread lines fresh each
-      // call. Bench (js/test/bench-hotpaths.js) clears the 1k/sec target.
-      //
-      // Routed (msg.tabKey set) → write to
-      // actionTabBuffers[group][tabKey]. Unrouted → append to
-      // viewerStreamBuffer (capped ring). slice.lines is finalizer-
-      // derived from the active tab's source via viewerLines() (T2d);
-      // this arm writes only to the buffer + scroll bookkeeping, never
-      // to slice.lines. Scroll bookkeeping reads from the BUFFER length
-      // (the source of truth), not slice.lines (the derived mirror).
-      if (msg.tabKey && msg.groupName) {
-        const all = slice.actionTabBuffers || {};
-        const group = all[msg.groupName] || {};
-        const buf = group[msg.tabKey] || { lines: [] };
-        const bufLines = [...buf.lines, msg.line];
-        const nextAll = {
-          ...all,
-          [msg.groupName]: { ...group, [msg.tabKey]: { lines: bufLines } },
-        };
-        // v0.6.3 Phase D1 — pure reducer: dispatcher (dispatch/runtime/stream.js)
-        // threads msg.currentGroup + (when groupName matches)
-        // msg.activeActionTabKey. Saves the 71µs activeActionTabIn
-        // (getMergedActions iteration) per streamed line.
-        if (msg.groupName === msg.currentGroup && msg.activeActionTabKey === msg.tabKey) {
-          const innerH = _innerH(slice);
-          const maxScrollOld = Math.max(0, buf.lines.length - innerH);
-          const wasAtBottom = slice.scroll >= maxScrollOld;
-          const newMaxScroll = Math.max(0, bufLines.length - innerH);
-          const scroll = wasAtBottom ? newMaxScroll : slice.scroll;
-          return { ...slice, actionTabBuffers: nextAll, scroll };
-        }
-        return { ...slice, actionTabBuffers: nextAll };
-      }
-      // Unrouted: append to viewerStreamBuffer (cap-aware). Scroll
-      // bookkeeping from the buffer length when on Transcript.
+      // Unrouted stream append → the Transcript accumulator (viewerStreamBuffer,
+      // capped ring). U2c P2 — the routed action-tab branch retired: a tab:true
+      // action's output now streams into its own text-view instance (tv_append),
+      // not actionTabBuffers, so this arm only serves the unrouted Transcript path.
+      // slice.lines is finalizer-derived; this writes only the buffer + scroll.
       const vsb = slice.viewerStreamBuffer || { lines: [], cap: 1000 };
       const [vsbLines, dropped] = _capLines([...vsb.lines, msg.line], vsb.cap);
       const nextBuf = { ...vsb, lines: vsbLines };
@@ -572,27 +540,8 @@ function _updateInner(msg, slice, lines) {
       if (incoming.length === 0) return slice;
       // T2d — scroll bookkeeping computed from buffer length; lines
       // mirror retired (finalizer re-derives slice.lines post-reducer).
-      if (msg.tabKey && msg.groupName) {
-        const all = slice.actionTabBuffers || {};
-        const group = all[msg.groupName] || {};
-        const buf = group[msg.tabKey] || { lines: [] };
-        const bufLines = [...buf.lines, ...incoming];
-        const nextAll = {
-          ...all,
-          [msg.groupName]: { ...group, [msg.tabKey]: { lines: bufLines } },
-        };
-        // v0.6.3 Phase D1 — same threading shape as viewer_append.
-        if (msg.groupName === msg.currentGroup && msg.activeActionTabKey === msg.tabKey) {
-          const innerH = _innerH(slice);
-          const maxScrollOld = Math.max(0, buf.lines.length - innerH);
-          const wasAtBottom = slice.scroll >= maxScrollOld;
-          const newMaxScroll = Math.max(0, bufLines.length - innerH);
-          const scroll = wasAtBottom ? newMaxScroll : slice.scroll;
-          return { ...slice, actionTabBuffers: nextAll, scroll };
-        }
-        return { ...slice, actionTabBuffers: nextAll };
-      }
-      // Unrouted bulk.
+      // U2c P2 — routed action-tab branch retired (see viewer_append); only the
+      // unrouted Transcript bulk-append remains.
       const vsb = slice.viewerStreamBuffer || { lines: [], cap: 1000 };
       const [vsbLines, dropped] = _capLines([...vsb.lines, ...incoming], vsb.cap);
       const nextBuf = { ...vsb, lines: vsbLines };
@@ -610,71 +559,9 @@ function _updateInner(msg, slice, lines) {
       return { ...slice, viewerStreamBuffer: nextBuf };
     }
     case 'stream_start': {
-      // Routed (msg.tabKey set) → seed actionTabBuffers + auto-jump to
-      // the action's tab so the user sees the new run regardless of
-      // where focus was when they pressed Enter. Cross-group runs skip
-      // the jump (buffer still seeded; visible on next group switch).
-      if (msg.tabKey && msg.groupName) {
-        const all = slice.actionTabBuffers || {};
-        const group = all[msg.groupName] || {};
-        const nextAll = {
-          ...all,
-          [msg.groupName]: { ...group, [msg.tabKey]: { lines: [msg.header] } },
-        };
-        // R4 — buffer reset invalidates the matching tabState entry.
-        // The captured search.matches and select.{anchor, cursor}
-        // reference line/col positions from the PRE-reset buffer;
-        // restoring them onto the fresh buffer (the next time the user
-        // visits this tab) would paint highlights / selection
-        // rectangle on wrong content. Drop the entry so the next visit
-        // gets fresh defaults via tab_switch's first-visit fallback.
-        const dropKey = `${msg.groupName}:action:${msg.tabKey}`;
-        // Routed through the accessor like every other per-tab-state touch;
-        // .drop() returns the post-drop slice, .tabState pulls its map to fold
-        // into the composite stream_start slice below (no-op ref when absent).
-        const nextTabState = _pts(slice, dropKey).drop().tabState;
-        // v0.6.3 Phase D1 — dispatcher threads msg.currentGroup +
-        // msg.actionTabIdx (the action's position in flatTabInfo.
-        // actionTabs at dispatch time); cross-group skips the
-        // jump branch entirely.
-        if (msg.groupName === msg.currentGroup) {
-          const idx = typeof msg.actionTabIdx === 'number' ? msg.actionTabIdx : -1;
-          if (idx >= 0) {
-            // Auto-jump skips tab_switch — emit terminal_exit so
-            // terminalMode doesn't survive the jump. v0.6.2 — action
-            // tabs start at idx 2 (Info=0, Transcript=1).
-            // B3 — clear viewerOverride on the auto-jump: the override
-            // (e.g. job-info card from a Running-overlay activate) is
-            // dismissed by the stream event that's taking over the
-            // visible viewer.
-            // R4 — also reset slice.{search, select, cursor} for the
-            // auto-jump landing: the user is now viewing the fresh
-            // buffer, so view-state should be empty defaults (not the
-            // leaving tab's residual fields).
-            // N2 — slice.lines mirror dropped; the finalizer derives it
-            // from actionTabBuffers[group][tabKey] (just seeded above).
-            return [
-              {
-                ...slice,
-                actionTabBuffers: nextAll,
-                tabState: nextTabState,
-                scroll: 0,
-                tab: 2 + idx,
-                viewerOverride: null,
-                search: { active: false, term: '', idx: 0, typing: '' },
-                select: { active: false, kind: 'char', anchor: { line: 0, col: 0 }, cursor: { line: 0, col: 0 } },
-                cursor: { line: 0, col: 0 },
-              },
-              [{ type: 'msg', msg: { type: 'terminal_exit' } }],
-            ];
-          }
-        }
-        // Cross-group: no auto-jump, no transition — override stays
-        // (it's bound to whatever the user is currently viewing).
-        // R4 — still drop the target's tabState entry so the next visit
-        // doesn't restore stale matches onto the fresh buffer.
-        return { ...slice, actionTabBuffers: nextAll, tabState: nextTabState };
-      }
+      // U2c P2 — the routed action-tab branch retired: a tab:true action's
+      // stream_start now seeds its own text-view instance (tv_stream_start), so
+      // this arm only serves the UNROUTED stream (tabless type:run, docker verbs).
       // Unrouted stream_start: append header to viewerStreamBuffer
       // (does NOT clear — the buffer is an accumulator across cmds).
       // Auto-jump to Transcript so the user sees the running stream.
@@ -831,29 +718,19 @@ function _updateInner(msg, slice, lines) {
 // (for the title) and by the input hit-test (for the tab bounds). The hotkey
 // comes from the pane being acted on (render threads panel.hotkey; the input
 // layer resolves it from the pane def) — it shifts each tab's hit-zone x, so
-// title and bounds must agree on it. Reads model.jobs (the store-mirror'd
-// snapshot, FIX-1) for the running-glyph set — a pure model read at these
-// render / handler boundaries. `slice` is THIS pane's own slice, so two
-// viewers don't share.
+// title and bounds must agree on it. `slice` is THIS pane's own slice, so two
+// viewers don't share. (U2c P2 — the running-glyph set retired with the action
+// tabs it decorated; a running action's indicator moves to its text-view
+// position-tab when the slot strip gains that decoration — a follow-on.)
 function tabStripFor(slice, model, hotkey) {
   const group = model.currentGroup;
   const tabInfo = pt.flatTabInfo(slice, model, group);
-  // Running indicator (Phase 4.4) — action keys whose stream-routed job is
-  // alive in the current group; buildTabStrip prefixes those labels with `●`.
-  // FIX-1 stage 3 — read model.jobs (the store-mirror'd snapshot), not the
-  // off-model feature/jobs registry live.
-  const runningActionKeys = new Set(
-    (model.jobs || [])
-      .filter(j => j.kind === 'stream-routed' && j.status === 'running'
-                && j.owner && j.owner.groupName === group)
-      .map(j => j.owner.tabKey)
-  );
   // hasTabTrigger reflects chromeFor()'s decision for detail panes: `[≡]` is
   // painted when the viewer has ≥2 tabs (Info + Transcript alone qualify). The
   // trigger occupies 3 cells between `(hk)` and the title; buildTabStrip needs
   // it to compute the correct x for each tab's hit-zone (the [x] glyph).
   const hasTabTrigger = (tabInfo && Number.isFinite(tabInfo.total) ? tabInfo.total : 0) >= 2;
-  return buildTabStrip(tabInfo, slice.tab, hotkey, runningActionKeys, hasTabTrigger);
+  return buildTabStrip(tabInfo, slice.tab, hotkey, hasTabTrigger);
 }
 
 // v0.6.4 blessed-exceptions tabBounds follow-on — the viewer tab-strip's

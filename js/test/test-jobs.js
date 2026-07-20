@@ -325,42 +325,10 @@ describe('[jobs_nav] clamps + scrolls', () => {
 
 // --- Tab-strip running indicator (Phase 4.4) -------------------------------
 
-describe('[tab-strip indicator] ● prepended when a stream-routed job is running', () => {
-  const widgets = require('../panel/viewer/tab-strip');
-  const tabInfo = {
-    actionTabs: [['make-check', { label: 'Test' }], ['lint', { label: 'Lint' }]],
-    termTabs: [],
-    contentTabs: [],
-    // v0.6.2: total = 1 (Info) + 1 (Transcript) + 2 actions + 0 + 0 = 4
-    total: 4,
-  };
-
-  it('no running jobs → no prefix', () => {
-    const built = widgets.buildTabStrip(tabInfo, 0, 'd', new Set());
-    eq(built.title, '\\[Info]─Transcript─Test─Lint');
-  });
-
-  it('one running → exactly that action tab gets the ● prefix', () => {
-    const built = widgets.buildTabStrip(tabInfo, 0, 'd', new Set(['make-check']));
-    eq(built.title, '\\[Info]─Transcript─[yellow]●[/]Test─Lint');
-  });
-
-  it('multiple running → both tabs prefixed', () => {
-    const built = widgets.buildTabStrip(tabInfo, 0, 'd', new Set(['make-check', 'lint']));
-    eq(built.title, '\\[Info]─Transcript─[yellow]●[/]Test─[yellow]●[/]Lint');
-  });
-
-  it('running set covers an inactive tab; running tab itself wears both ● + active wrap', () => {
-    // tab idx 2 = make-check (Info=0, Transcript=1, make-check=2).
-    const built = widgets.buildTabStrip(tabInfo, 2, 'd', new Set(['make-check']));
-    eq(built.title, 'Info─Transcript─\\[[yellow]●[/]Test]─Lint');
-  });
-
-  it('omitting the set → no prefix (back-compat)', () => {
-    const built = widgets.buildTabStrip(tabInfo, 0, 'd');
-    eq(built.title, '\\[Info]─Transcript─Test─Lint');
-  });
-});
+// U2c P2 — the [tab-strip indicator] block (● running-glyph prefixed onto the
+// viewer's flat action tabs) was retired with the action tabs it decorated. A
+// running action's indicator moves to its text-view position-tab when the slot
+// strip gains that decoration (a follow-on).
 
 describe('[clearCompleted] drops closed entries, keeps running', () => {
   it('keeps running + drops exited/killed', () => {

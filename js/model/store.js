@@ -222,7 +222,7 @@ function init() {
     //   output  — a producer's RAW stdout (un-esc'd, no stream chrome), keyed by
     //     [group][component], captured on process close (fabric_output_set). The
     //     parse source for output ports — SEPARATE from the chrome/esc'd display
-    //     buffer (actionTabBuffers), so JSON/kv/regex parse clean text.
+    //     buffer (the action's text-view instance), so JSON/kv/regex parse clean text.
     //   wires   — RUNTIME wires created interactively (the pane's "connect to…"
     //     + wire-list edits), a flat [{ from, to }] list. Transient-in-model like
     //     injects (session-only, rides the WAL, replayable) — the config file

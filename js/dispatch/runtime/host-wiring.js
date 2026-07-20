@@ -41,7 +41,7 @@ function wireFabricHost() {
   setFabricHost({
     // A producer's RAW output lines (model.fabric.output[group][name]) — un-esc'd
     // and free of stream chrome, captured on process close, so parse sees clean
-    // text (H1). Distinct from the chrome/esc'd display buffer (actionTabBuffers).
+    // text (H1). Distinct from the chrome/esc'd display buffer (the text-view instance).
     // Ref-stable between runs, so fabric's parse memo keys on it correctly.
     componentLines(name) {
       const out = (getModel().fabric && getModel().fabric.output) || {};

@@ -5,11 +5,13 @@
 > primitive (`leaves/text-view/render.js` + search geometry moved to a leaf); U2b
 > the **full per-tab instance model** (each tab a first-class instance) + the
 > mint-into-slot primitive (`:text-view` opens a text-view tab into a slot). All
-> no-behaviour-change for existing layouts. **U2c is underway** — decomposed
-> P0/P1/P2; **P0 + P1 shipped** (P0: shared `textViewUpdate` interaction reducer +
-> full `text-view` Component + `instanceKind` routing fix; P1: action output now
-> mints/reuses + streams into a `text-view` instance by paneId). P2 (delete the
-> dead-fed `actionTabBuffers`) + U2d–U2f remain. A large, multi-release arc.
+> no-behaviour-change for existing layouts. **U2c SHIPPED** (P0: shared
+> `textViewUpdate` interaction reducer + full `text-view` Component + `instanceKind`
+> routing fix; P1: action output mints/reuses + streams into a `text-view` instance
+> by paneId; P2: the flat action-tab strip + `actionTabBuffers` retired). Action
+> output is now fully re-homed to text-view position-tabs. **U2d–U2f remain**
+> (terminal-as-pane; Info/Transcript → text-view; delete the rest of the parallel
+> machinery). A large, multi-release arc.
 > Supersedes the P2–P4 approach in
 > [pane-tabs-unification.md](pane-tabs-unification.md) (its P1 — the shared
 > `leaves/wm/tab-state` store — stays and is reused here as U1's basis).
@@ -184,8 +186,25 @@ ships and passes the gate (suite · smoke · acyclic · DEAD 0 · bench parity).
     is now dead-fed (deleted in P2). Gate: suite 156 · smoke 14 · dep-walker `[]` both
     modes · dead-exports 0 · bench parity. New test-action-tab-route (mint/reuse/
     accrete/off-tab) + updated test-mint-tab / test-stream-multi-job / test-fabric-demo.
-  - **P2.** Delete `actionTabBuffers` + the routed viewer arms + the action-tab
-    enumeration in `pane-tabs.js`. Info/Transcript stay (they migrate in U2e).
+  - **P2 (shipped).** Retired the vestigial flat action-tab machinery across ~8
+    files: `slice.actionTabBuffers` + the routed branches of `viewer_append`/
+    `viewer_append_lines`/`stream_start`; `flatTabInfo`'s `actionTabs` enumeration +
+    all the `2 + actionTabs.length` index math (`isActionTabIn`/`activeActionTabIn`/
+    `actionTabCount` deleted; terminals/content now index from 2); the tab-strip +
+    tab-container action rendering + the `●` running-glyph set; the merged-actions
+    provider seam (`setMergedActionsProvider`/`_mergedFor`, its only consumer). Info
+    (tab 0) + Transcript (tab 1 / `viewerStreamBuffer`) + the unrouted stream path
+    STAY (they migrate in U2e). **Two gestures degraded to follow-ons** (they already
+    pointed at the now-dead flat tabs after P1, so not regressions of working
+    features): the Running-overlay "jump to a stream-routed job's tab" (now focus-
+    only) and Enter-to-rerun-on-the-action-tab (re-run from the actions list) — both
+    re-wire to the text-view position-tab later (Enter via the `{origin:'action'}`
+    hint). `actionCount` is neutralized to 0 in the model bundle so the terminal/
+    content mutators' `2 + actionCount + …` index math stays correct without churn
+    (those mutators are reworked when terminals move — U2d). Deleted the tests that
+    pinned the retired feature (`test-action-tab-buffer`, `test-plugin-tab`,
+    `smoke/action-tab`); updated the index-scheme + jump/glyph tests. Gate: suite 154
+    · smoke 13 · dep-walker `[]` both modes · dead-exports 0 · bench parity.
   Follow-up #2 (`resolveViewerPaneId` viewer-specific): REUSED as-is, not
   generalized (the action text-view's container *is* the viewer slot).
 - **U2d — `terminal` pane type.** PTY becomes a minted `terminal` pane; retire
