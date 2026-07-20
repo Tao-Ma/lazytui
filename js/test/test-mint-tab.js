@@ -65,9 +65,13 @@ describe('[mint-tab] mint a text-view into the focused slot', () => {
   it('keys route to the active text-view tab and scroll its own slice', () => {
     sm.bootFresh();
     const focus = route.getInstanceSlice('layout').focus;
+    // U2c P0 — the text-view now scrolls VIEWPORT-based through the shared
+    // reducer (maxScroll = lines - innerH), like the viewer, not the old U2b
+    // line-based clamp. Seed more lines than the pane is tall so `j` can move
+    // (a buffer shorter than the viewport has nothing to scroll to).
     dispatchMsg(route.wrap('layout', {
       type: 'mint_tab', paneId: focus, paneType: 'text-view', title: 'demo',
-      config: { lines: Array.from({ length: 10 }, (_, i) => `L${i}`) },
+      config: { lines: Array.from({ length: 60 }, (_, i) => `L${i}`) },
     }));
     eq(route.getInstanceSlice(focus).scroll, 0, 'starts at top');
     sm.handleKey('j', 'j');
@@ -75,6 +79,29 @@ describe('[mint-tab] mint a text-view into the focused slot', () => {
     sm.handleKey('j', 'j');
     sm.handleKey('k', 'k');
     eq(route.getInstanceSlice(focus).scroll, 1, 'j j k nets +1');
+  });
+
+  it('search + visual-select route through the shared reducer end-to-end', () => {
+    sm.bootFresh();
+    const { getModel } = require('../model/store');
+    const focus = route.getInstanceSlice('layout').focus;
+    dispatchMsg(route.wrap('layout', {
+      type: 'mint_tab', paneId: focus, paneType: 'text-view', title: 'demo',
+      config: { lines: Array.from({ length: 60 }, (_, i) => `line ${i}`) },
+    }));
+    // `/` enters search-typing → the mode_set effect arms detailSearchMode on the
+    // focused text-view (proves the shared reducer's effects plumb through the real
+    // Component key path); escape cancels back out.
+    sm.handleKey('/', '/');
+    assert(getModel().modes.detailSearchMode, '/ arms detailSearchMode on the text-view');
+    sm.handleKey('escape', 'escape');
+    assert(!getModel().modes.detailSearchMode, 'escape cancels search-typing');
+    // v enters visual mode on the text-view's OWN slice (per-instance selection —
+    // the partial D4 collapse); escape exits.
+    sm.handleKey('v', 'v');
+    assert(route.getInstanceSlice(focus).select.active, 'v enters visual mode on the text-view');
+    sm.handleKey('escape', 'escape');
+    assert(!route.getInstanceSlice(focus).select.active, 'escape exits visual mode');
   });
 
   it('switching away and back preserves BOTH tabs’ instances', () => {

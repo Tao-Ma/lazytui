@@ -497,7 +497,14 @@ function disposeInstance(id) {
  *  Components the two collapse (Component name == panel-type for
  *  singleton kinds); for docker they differ — see docker.js#render. */
 function instanceKind(id) {
-  const inst = _instances[id];
+  // U2c P0 — resolve a paneId to its ACTIVE tab's instance (identity for a
+  // single-tab pane / a non-container id), symmetric with componentForPanel /
+  // paneTypeOf. Without this, focusKind / keymap (loop.js) on a runtime-switched
+  // multi-tab slot read the ORIGINAL tab's kind, not the active tab's — so a
+  // focused text-view tab wouldn't resolve to 'text-view'. Safe for panel-type
+  // literals: _activeInstanceOf is keyed by 'pane-*' container ids, never bare
+  // panel-types, so _resolveActive is identity for those.
+  const inst = _instances[_resolveActive(id)];
   if (inst) return inst.kind;
   if (_panelOwner[id]) return id;
   return _typeByArrangePaneId(id);

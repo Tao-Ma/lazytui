@@ -26,38 +26,23 @@ const {
   renderPanel,
   getInstanceSlice, wrap,
 } = require('../api');
-const ms = require('../../leaves/text/search');
+const tvu = require('../../leaves/text/text-view-update');
+const { paneInnerH } = require('../pane-viewport');
 const pt = require('../../leaves/wm/pane-tabs');
 const tc = require('../../leaves/wm/tab-container');
 const { buildTextView } = require('../../leaves/text-view/render');
 const mpool = require('../../leaves/wm/pool');
-const { stripMarkup, charWidth } = require('../../leaves/text/ansi');
 const { buildTabStrip } = require('./tab-strip');
 const { getModel } = require('../../model/store');
 
 // --- internal slice transforms (pure return-new) ---
 //
-// Shared by the explicit `select_*` Msg arms (mouse path dispatches them via
-// panel/viewer/select.js) and the visual-mode keyboard handler in the `key` arm.
-// Each takes the slice + payload and returns a new slice. The `_moveCursor`
-// helper resolves display width through panel/viewer/select.js's pure ANSI-aware
-// reader.
-
-function _beginSelect(slice, line, col, kind, lines) {
-  const n = lines.length;
-  const l = n === 0 ? 0 : Math.max(0, Math.min(n - 1, line | 0));
-  const c = Math.max(0, col | 0);
-  return {
-    ...slice,
-    select: {
-      active: true,
-      kind: kind === 'line' ? 'line' : 'char',
-      anchor: { line: l, col: c },
-      cursor: { line: l, col: c },
-    },
-    cursor: { line: l, col: c },
-  };
-}
+// U2c P0 — the scroll/search/select/cursor transforms (_beginSelect, _setCursor,
+// _scrollView, _lineWidth, _moveCursor, _enterSearchReturn) moved to the shared
+// leaf leaves/text/text-view-update.js, reached via `tvu.reduce` from the
+// interaction arms below (so the viewer + any minted text-view instance share
+// one implementation). `_innerH` / `_pts` / `_capLines` stay — they serve the
+// content arms (append / stream_start / set_content) that remain viewer-specific.
 
 // Effective viewport for scroll/cursor clamps. The slice's `innerH` is set by
 // the viewer's OWN reducer (`update`) from the `msg.innerH` fact that
@@ -74,20 +59,6 @@ function _beginSelect(slice, line, col, kind, lines) {
 // Tests that need a specific viewport seed `slice.innerH` directly.
 function _innerH(slice) { return slice.innerH > 0 ? slice.innerH : 1; }
 
-function _setCursor(slice, line, col, extend) {
-  const cursor = { line: line | 0, col: col | 0 };
-  const innerH = _innerH(slice);
-  const top = slice.scroll || 0;
-  let scroll = slice.scroll || 0;
-  if (cursor.line < top)                       scroll = cursor.line;
-  else if (cursor.line >= top + innerH)        scroll = cursor.line - innerH + 1;
-  const next = { ...slice, cursor, scroll };
-  if (extend && slice.select && slice.select.active) {
-    next.select = { ...slice.select, cursor: { line: cursor.line, col: cursor.col } };
-  }
-  return next;
-}
-
 // Per-tab view-state via the tab-container interface (U1, docs/one-tab-system.md).
 // The viewer is tabState-backed; the accessor is slice-only (the key is already
 // resolved), so it needs no model/bundle and behaves the same in the reducer,
@@ -102,38 +73,6 @@ function _capLines(lines, maxLen) {
   if (lines.length <= maxLen) return [lines, 0];
   const dropped = lines.length - maxLen;
   return [lines.slice(dropped), dropped];
-}
-
-function _scrollView(slice, delta, lines) {
-  const innerH = _innerH(slice);
-  const maxScroll = Math.max(0, lines.length - innerH);
-  const scroll = Math.max(0, Math.min(maxScroll, (slice.scroll || 0) + (delta || 0)));
-  if (scroll === (slice.scroll || 0)) return slice;
-  return { ...slice, scroll };
-}
-
-// P2 (viewer-lines selector) — width computed from the boundary-derived
-// `lines` directly (was select.plainLineWidth, which re-read the STORED
-// slice mid-update — a stale-read wart this threading retires).
-function _lineWidth(lines, i) {
-  const ln = lines[i];
-  if (ln == null) return 0;
-  const plain = stripMarkup(ln);
-  let w = 0;
-  for (const ch of plain) w += charWidth(ch.codePointAt(0));
-  return w;
-}
-
-function _moveCursor(slice, dline, dcol, lines) {
-  const cur = slice.cursor || { line: 0, col: 0 };
-  const n = lines.length;
-  if (n === 0) return slice;
-  const newLine = Math.max(0, Math.min(n - 1, cur.line + dline));
-  let newCol = (dcol === 0) ? cur.col : Math.max(0, cur.col + dcol);
-  const w = _lineWidth(lines, newLine);
-  newCol = (w === 0) ? 0 : Math.min(w - 1, newCol);
-  const active = !!(slice.select && slice.select.active);
-  return _setCursor(slice, newLine, newCol, active);
 }
 
 // --- init ---
@@ -397,18 +336,6 @@ function update(msg, slice) {
 // chrome, put it in the leaf. If it's about viewing content (scroll
 // math, search match navigation, content-tab body update with
 // viewer-specific semantics), put it here.
-// Enter detail-search: step the slice into search-typing state and arm the
-// `detailSearchMode` chain flag when leaves/search says to. Shared by the
-// `viewer_search_enter` Msg arm (programmatic entry — panel/viewer/search.js)
-// and the `/` key claim in `case 'key'` below, so the keyboard path is a
-// single self-contained gesture the viewer owns rather than a focus-checked
-// dispatch in the controller (dispatch.js). Returns `[nextSlice, effects]`.
-function _enterSearchReturn(slice) {
-  const [next, info] = ms.enter(slice);
-  return [next, info.enableSearchMode
-    ? [{ type: 'msg', msg: { type: 'mode_set', flag: 'detailSearchMode' } }]
-    : []];
-}
 
 function _updateInner(msg, slice, lines) {
   // Boundary-derived active-tab lines (update() always passes them;
@@ -573,33 +500,12 @@ function _updateInner(msg, slice, lines) {
         cursor: (entry && entry.cursor) || { line: 0, col: 0 },
       };
     }
-    case 'viewer_scroll': {
-      // T2d — read displayed-lines length from viewerLines (derives
-      // from the active tab's source); needs to be right DURING the
-      // reducer body for scroll bounds.
-      // T3b — write per-tab scroll so the position survives a tab
-      // switch round-trip. slice.scroll still tracks the active tab's
-      // value as a mirror (search/select/render still read it).
-      // v0.6.3 Phase D1 — slice.lines is finalizer-derived (set by
-      // _withDerivedFields after the previous Msg). When this arm
-      // runs, slice.lines already reflects the current displayed
-      // content. Read .length from there instead of re-calling
-      // pt.viewerLines (which would need getModel + infoFromFocus).
-      // Reducer pure of getModel().
-      const innerH = _innerH(slice);
-      const maxScroll = Math.max(0, lines.length - innerH);
-      let next;
-      if (msg.to === 'top') next = 0;
-      else if (msg.to === 'bottom') next = maxScroll;
-      else next = slice.scroll + (msg.delta || 0);
-      const scroll = Math.max(0, Math.min(maxScroll, next));
-      if (scroll === slice.scroll) return slice;
-      // T3f — tab_switch captures slice.scroll into tabState on the
-      // way out; per-Msg mirror retired (was redundant — slice.scroll
-      // is the active-tab view, and tab_switch is the only point
-      // where we leave a tab).
-      return { ...slice, scroll };
-    }
+    // viewer_scroll + the search/select/key interaction Msgs delegate to the
+    // shared reducer (U2c P0). `lines` is the boundary-derived active-tab content;
+    // ownKind 'detail' gates the key state machine (byte-identical to the inline
+    // arms this replaced). tvu.reduce owns the scroll clamp / per-Msg mirror.
+    case 'viewer_scroll':
+      return tvu.reduce(msg, slice, lines, 'detail');
     case 'viewer_append': {
       // Hot path — streamed action output can fire 500-1000 lines/sec.
       // Per the arc rule, no in-place exception: spread lines fresh each
@@ -894,166 +800,26 @@ function _updateInner(msg, slice, lines) {
       return next;
     }
 
-    // --- viewer-search (typing phase, folded into the viewer Component).
-    // leaves/search returns [newSlice, info]; the detailSearchMode flag
-    // (root chrome) is set/cleared via apply_msg → mode_set / mode_clear.
+    // --- search (typing + committed) + visual-mode select + the keyboard state
+    // machine all delegate to the shared reducer (U2c P0, leaves/text/
+    // text-view-update). The mouse path still dispatches select_* here
+    // (panel/viewer/select.js); the keyboard `/`, n/N, v/V, y, j/k/h/l, 0/$ live
+    // in tvu's `key` arm, gated by ownKind 'detail' (byte-identical to the inline
+    // arms this replaced — including the mode_set/mode_clear detailSearchMode
+    // effects and the register_push yank).
     case 'viewer_search_enter':
-      return _enterSearchReturn(slice);
-    case 'viewer_search_key':    return ms.keystroke(slice, msg.seq);
-    // P1 (viewer-lines selector) — nav during the TYPING phase steps the
-    // typing-term's derived matches; lines = the active-tab content
-    // (slice.lines until P3 threads it).
-    case 'viewer_search_nav':    return msg.dir > 0
-      ? ms.next(slice, _innerH(slice), lines, slice.search.typing || '')
-      : ms.prev(slice, _innerH(slice), lines, slice.search.typing || '');
-    case 'viewer_search_commit': {
-      const [next, info] = ms.commit(slice, _innerH(slice), lines);
-      return [next, info.disableSearchMode
-        ? [{ type: 'msg', msg: { type: 'mode_clear', flag: 'detailSearchMode' } }]
-        : []];
-    }
-    case 'viewer_search_cancel': {
-      const [next, info] = ms.cancel(slice);
-      return [next, info.disableSearchMode
-        ? [{ type: 'msg', msg: { type: 'mode_clear', flag: 'detailSearchMode' } }]
-        : []];
-    }
-    // Committed-search adapter Msg — exposed for the non-reducer
-    // facade (panel/viewer/search.js) so its callers route through
-    // viewer.update rather than writing the slice directly (single-
-    // writer-per-slice per docs/PRINCIPLES.md §12).
-    // P1 (viewer-lines selector) — viewer_search_recompute(_for) arms
-    // retired: matches derive via ms.matchesFor (chained selector), so
-    // there is no stored match list to refresh.
-    case 'viewer_search_clear_committed': return ms.clearCommitted(slice);
-
-    // --- visual-mode select. The mouse path dispatches the select_* Msgs
-    // (panel/viewer/select.js); the keyboard path lives in `case 'key':` below.
-    // Both flow through the same pure slice transforms (`_beginSelect` /
-    // `_setCursor` / `_scrollView` / `_moveCursor`) defined above the
-    // reducer. The ANSI-aware reads the key arms need (selectedTextFrom /
-    // plainLineWidthFrom) are select.js's PURE variants — fed the threaded
-    // `lines` + our own `slice`, so no getModel()/resolveTarget reach.
+    case 'viewer_search_key':
+    case 'viewer_search_nav':
+    case 'viewer_search_commit':
+    case 'viewer_search_cancel':
+    case 'viewer_search_clear_committed':
     case 'select_begin':
-      return _beginSelect(slice, msg.line, msg.col, msg.kind, lines);
-    case 'select_extend': {
-      if (!slice.select || !slice.select.active) return slice;
-      const n = lines.length;
-      const l = n === 0 ? 0 : Math.max(0, Math.min(n - 1, msg.line | 0));
-      return { ...slice, select: { ...slice.select, cursor: { line: l, col: Math.max(0, msg.col | 0) } } };
-    }
+    case 'select_extend':
     case 'select_cancel':
-      if (!slice.select) return slice;
-      return { ...slice, select: { ...slice.select, active: false } };
     case 'select_set_cursor':
-      return _setCursor(slice, msg.line, msg.col, msg.extend);
     case 'select_scroll_view':
-      return _scrollView(slice, msg.delta, lines);
-
-    // --- keyboard: the detail-panel visual-mode state machine. Lives here
-    // (instead of as a dispatch.js hijack) because the claim is conditional
-    // on slice state — the `_claimed` sentinel returned with `[slice, …]`
-    // is consumed by `dispatchKeyToFocused` to gate the framework default.
-    //
-    // Two modes:
-    //   Reading mode (no selection active):
-    //     j / down  scroll +1
-    //     k / up    scroll -1
-    //     h / l     NOT claimed → framework focus-shift
-    //     v / V     enter char / line visual
-    //     n / N     search-nav (when committed search is active)
-    //   Visual mode (selection active):
-    //     j / k / h / l / arrows  cursor + extend
-    //     0 / $ / Home / End      cursor jump
-    //     y                       commit → register_push
-    //     v / V                   toggle off
-    //     escape                  cancel
-    case 'key': {
-      // v0.6.3 Phase D1: dispatcher (dispatch/runtime/loop#dispatchKeyToFocused)
-      // threads msg.focusKind + msg.terminalMode so the reducer stays
-      // pure. Higher-priority chain modes (menu/cmd/confirm/prompt/copy)
-      // are already filtered upstream by _dispatchActiveMode in
-      // dispatch.handleKey; this arm only ever runs when NO chain mode
-      // is active. terminalMode is non-chain (per modes.js) so it has
-      // to be checked here.
-      if (msg.focusKind !== 'detail' || msg.terminalMode) return slice;
-
-      const active = !!(slice.select && slice.select.active);
-      const claim = [{ type: '_claimed' }];
-
-      // `/` enters detail-search. The viewer owns its own `/` now that it's the
-      // focused pane (dispatch.js no longer focus-checks + dispatches it). Fires
-      // before the post-commit n/N block so `/` re-opens the typing phase from
-      // any search state — matching the prior controller behavior. The
-      // `viewer_search_enter` Msg path stays for programmatic entry (search.js).
-      if (msg.seq === '/' || msg.key === '/') {
-        const [next, fx] = _enterSearchReturn(slice);
-        return [next, [{ type: '_claimed' }, ...fx]];
-      }
-
-      // Detail-search post-commit n/N nav; Esc clears. P1 — committed
-      // phase steps the committed term's derived matches.
-      if (slice.search && slice.search.active) {
-        if (msg.seq === 'n' || msg.key === 'n') return [ms.next(slice, _innerH(slice), lines, slice.search.term || ''), claim];
-        if (msg.seq === 'N' || msg.key === 'N') return [ms.prev(slice, _innerH(slice), lines, slice.search.term || ''), claim];
-        if (msg.key === 'escape' && !active)    return [ms.clearCommitted(slice), claim];
-      }
-
-      // v / V — toggle visual mode. Anchor at the top of the current viewport
-      // (matches what mouse-drag effectively does — cursor where it lands).
-      if (msg.seq === 'v' || msg.key === 'v') {
-        const next = (active && slice.select.kind === 'char')
-          ? { ...slice, select: { ...slice.select, active: false } }
-          : _beginSelect(slice, slice.scroll || 0, 0, 'char', lines);
-        return [next, claim];
-      }
-      if (msg.seq === 'V' || msg.key === 'V') {
-        const next = (active && slice.select.kind === 'line')
-          ? { ...slice, select: { ...slice.select, active: false } }
-          : _beginSelect(slice, slice.scroll || 0, 0, 'line', lines);
-        return [next, claim];
-      }
-
-      // y — commit + push to register. The text resolution + OSC52 ride out
-      // as apply_msg → register_push (root reducer owns the register).
-      if ((msg.seq === 'y' || msg.key === 'y') && active) {
-        const text = require('./select').selectedTextFrom(lines, slice.select);
-        const next = { ...slice, select: { ...slice.select, active: false } };
-        const effects = [{ type: '_claimed' }];
-        if (text) effects.push({ type: 'msg', msg: { type: 'register_push', text } });
-        return [next, effects];
-      }
-      if (msg.key === 'escape' && active) {
-        return [{ ...slice, select: { ...slice.select, active: false } }, claim];
-      }
-
-      // Vertical movement: reading → scroll view, visual → cursor + extend.
-      if (msg.key === 'down' || msg.seq === 'j' || msg.key === 'j') {
-        const next = active ? _moveCursor(slice, +1, 0, lines) : _scrollView(slice, +1, lines);
-        return [next, claim];
-      }
-      if (msg.key === 'up' || msg.seq === 'k' || msg.key === 'k') {
-        const next = active ? _moveCursor(slice, -1, 0, lines) : _scrollView(slice, -1, lines);
-        return [next, claim];
-      }
-
-      // Horizontal h/l — only claim in visual mode so reading-mode focus-shift
-      // still works (`l` to step out of detail into the next panel).
-      if (active) {
-        if (msg.key === 'left'  || msg.seq === 'h' || msg.key === 'h') return [_moveCursor(slice, 0, -1, lines), claim];
-        if (msg.key === 'right' || msg.seq === 'l' || msg.key === 'l') return [_moveCursor(slice, 0, +1, lines), claim];
-      }
-
-      // 0 / $ — line-start / line-end jumps. Only meaningful with a cursor.
-      if (active && (msg.seq === '0' || msg.key === 'home')) {
-        return [_setCursor(slice, slice.cursor.line, 0, true), claim];
-      }
-      if (active && (msg.seq === '$' || msg.key === 'end')) {
-        const w = require('./select').plainLineWidthFrom(lines, slice.cursor.line);
-        return [_setCursor(slice, slice.cursor.line, Math.max(0, w - 1), true), claim];
-      }
-      return slice;
-    }
+    case 'key':
+      return tvu.reduce(msg, slice, lines, 'detail');
     default:
       return slice;
   }
@@ -1156,43 +922,18 @@ function render(panel, w, h, slice, opts) {
   return renderPanel(args);
 }
 
-// v0.6.6 FIX-2 — the pane's viewport height, computed in the impure shell so
-// the reducer reads it as a stamped fact (`msg.innerH`) rather than from a
-// finalizer-written slice field (retires blessed-exception B). Per-pane via the
-// slice's own paneId, falling back to the resolved primary viewer for the
-// singleton. Lazy requires keep the panel-layer edges cycle-safe (deferred,
-// like the rest of panel/). Returns 0 when geometry is unavailable (pre-boot /
-// no layout) → augmentMsg leaves msg.innerH unset and the slice fallback wins.
-let _routeRef, _geoRef;
-function _paneInnerH(slice) {
-  const route = (_routeRef || (_routeRef = require('../route')));
-  const geo = (_geoRef || (_geoRef = require('../../leaves/wm/geometry')));
-  const ls = route.serviceSlice('layout');
-  if (!ls || !ls.dims) return 0;
-  const viewerPaneId = route.resolveViewerPaneId();
-  const paneId = (slice && slice.paneId) || viewerPaneId;
-  if (!paneId) return 0;
-  // `undefined` = no precomputed-layout override. On-screen viewers (half/full
-  // view — the interactive case) get a fresh `availH-2` directly. An OFF-screen
-  // pane in normal multi-column view reads boundsFor→_currentLayout, which lags
-  // one dispatch during a resize. Accepted by design (v0.6.6 pre-release review,
-  // RISK): that pane isn't visible and the next dispatch corrects it; threading
-  // a fresh layout here would mean a calcLayout on every viewer Msg (a hot path)
-  // to fix an invisible frame.
-  return geo.getPanelViewportH(ls, paneId, ls.dims, undefined, viewerPaneId) || 0;
-}
-
 // blessed-exceptions #3 — the framework (loop._augment) calls this in the impure
 // dispatch shell to thread the viewer's model bundle + viewport height into
 // every Msg, so update() stays pure of getModel() and of layout geometry.
-// Idempotent: pre-attached facts win.
+// Idempotent: pre-attached facts win. The viewport height (v0.6.6 FIX-2) now
+// comes from the shared `paneInnerH` helper (U2c P0 — shared with text-view).
 function augmentMsg(msg, model, slice) {
   let out = msg;
   if (!out.viewerModel) {
     out = { ...out, viewerModel: pt.viewerModelBundle(model, model && model.currentGroup) };
   }
   if (!(out.innerH > 0)) {
-    const ih = _paneInnerH(slice);
+    const ih = paneInnerH(slice);
     if (ih > 0) out = { ...out, innerH: ih };
   }
   return out;

@@ -5,8 +5,10 @@
 > primitive (`leaves/text-view/render.js` + search geometry moved to a leaf); U2b
 > the **full per-tab instance model** (each tab a first-class instance) + the
 > mint-into-slot primitive (`:text-view` opens a text-view tab into a slot). All
-> no-behaviour-change for existing layouts. U2c–U2f remain un-started. A large,
-> multi-release arc.
+> no-behaviour-change for existing layouts. **U2c is underway** — decomposed
+> P0/P1/P2; **P0 shipped** (shared `textViewUpdate` interaction reducer + full
+> `text-view` Component + `instanceKind` routing fix, no routing change). U2d–U2f
+> remain un-started. A large, multi-release arc.
 > Supersedes the P2–P4 approach in
 > [pane-tabs-unification.md](pane-tabs-unification.md) (its P1 — the shared
 > `leaves/wm/tab-state` store — stays and is reused here as U1's basis).
@@ -144,7 +146,33 @@ ships and passes the gate (suite · smoke · acyclic · DEAD 0 · bench parity).
   serialization drops transient entries (session-only). Adversarially reviewed.
 - **U2c — route action output to a `text-view` instance.** Running an action mints
   (or reuses) a `text-view` in the viewer's slot; output streams to that
-  instance. Retire `actionTabBuffers` / action content-tabs.
+  instance. Retire `actionTabBuffers` / action content-tabs. Decomposed P0/P1/P2.
+  **Lifecycle (decided): accrete + persist + hint** — a `tab:true` action's output
+  tab is minted on first run, keyed by a `hint = {origin:'action', group, key}`,
+  persists as a position-tab across group switches, and is reused on re-run (no
+  empty pre-declared tab). The tab-groups clustering UI (collapsible hint sections
+  + hint-guided drag, generalizing D2) is a **separate follow-on** — U2c only
+  *stamps* the hint. Interim: the slot strip is flat and coexists with the viewer's
+  internal Info/Transcript strip until U2e unifies them.
+  - **P0 (shipped).** The scroll/search/select/cursor state machine extracted from
+    the viewer into the shared pure leaf `leaves/text/text-view-update.js#reduce`
+    (`(msg, slice, lines, ownKind)`); the viewer delegates its interaction arms to
+    it (byte-identical, ownKind `'detail'`) and the `text-view` Component adopts it
+    (ownKind `'text-view'`), gaining full search/select/cursor + per-instance
+    selection (the partial D4 collapse). `innerH` is stamped by a `text-view`
+    `augmentMsg` via the shared `panel/pane-viewport.js#paneInnerH` (no
+    viewer↔text-view edge). `route.instanceKind` now routes through `_resolveActive`
+    (follow-up #1) so a runtime-switched slot's `focusKind`/keymap read the active
+    tab's kind. No routing change; `actionTabBuffers` untouched. Gate: suite 155 ·
+    smoke 14 · dep-walker `[]` both modes · dead-exports 0 · bench parity.
+  - **P1 (next).** Producer re-target: a `tab:true` action mints/reuses a text-view
+    (hint-derived deterministic poolId `tv-act-<group>-<key>`), streams `tv_*` Msgs
+    to it by paneId (off-tab via the distinct instance id); `_routedBundle` deleted.
+    `actionTabBuffers` stays dead-fed.
+  - **P2.** Delete `actionTabBuffers` + the routed viewer arms + the action-tab
+    enumeration in `pane-tabs.js`. Info/Transcript stay (they migrate in U2e).
+  Follow-up #2 (`resolveViewerPaneId` viewer-specific): REUSED as-is, not
+  generalized (the action text-view's container *is* the viewer slot).
 - **U2d — `terminal` pane type.** PTY becomes a minted `terminal` pane; retire
   `ephemeralTerminals` + term content-tabs.
 - **U2e — `info` (+ Transcript → `text-view`).** The viewer slot starts with an
