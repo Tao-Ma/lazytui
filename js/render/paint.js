@@ -41,7 +41,7 @@ const { truncate, setWriter: _setDrawWriter } = require('../leaves/render/draw')
 // renderOverlay no-ops its write — they assert overlay state, not pixels.)
 _setDrawWriter((buf) => stdout.write(buf));
 const painter = require('../leaves/render/painter');
-const { isTerminalTab, activeTerminalId, activeTerminalConfig } = require('../panel/viewer/tabs');
+const { visibleTerminalSurfaces } = require('../panel/terminal-surfaces');
 const { getSession, sessionScrollInfo, sessionViewportRows, sessionCursor } = require('../io/terminal');
 const { getInstanceSlice, sliceForPane, getComponent,
        getComponentOwningPanel } = require('../panel/api');
@@ -577,37 +577,6 @@ function renderFull(model, arrangeOverride) {
 // `_frame.lastOverlayId` "the one terminal switched" force, generalized to N.
 let _paintedOverlayIds = new Set();
 
-// A "visible terminal surface" to paint: { id (PTY session id), bounds (the
-// container pane rect), focused (holds keyboard focus → gets the cursor) }.
-// U2d P0a: the list is length ≤1, seeded from the single viewer-terminal
-// surface (isTerminalTab/activeTerminalId), so the overlay is byte-identical.
-// P0b extends it to also include `terminal`-kind pane instances; keeping ONE
-// producer means the legacy surface and future pane surfaces never fight over
-// shared force-state.
-function _visibleTerminals(model, arrangeOverride) {
-  if (!isTerminalTab()) return [];
-  const id = activeTerminalId();
-  const termConf = activeTerminalConfig();
-  if (!id || !termConf) return [];
-  const layoutSlice = getInstanceSlice('layout');
-  // v0.6.4 — position against the FOCUSED viewer's CONTAINER pane bounds.
-  // resolveViewerPaneId bridges the viewer tab-id to its hosting paneId, the
-  // only key carrying half/full visible bounds. visibleBoundsFor (not
-  // boundsFor): in half/full the resolved viewer may be OFF-SCREEN (e.g. two
-  // non-viewer panes projected) — boundsFor would fall through to a phantom
-  // normal-view rect and mis-place the overlay. null → skip.
-  // Phase A.2 — bounds derive from the slice's arrange. During a drag the
-  // overlay must follow the PREVIEW layout (its detail rect shifts to the
-  // would-be-after-release position), so compute against the preview arrange
-  // when one is threaded; otherwise the real slice.
-  const boundsSlice = arrangeOverride ? { ...layoutSlice, arrange: arrangeOverride } : layoutSlice;
-  const viewerPaneId = _route().resolveViewerPaneId();
-  const bounds = geo.visibleBoundsFor(boundsSlice, viewerPaneId, viewerPaneId);
-  if (!bounds) return [];
-  // Single-terminal world: terminalMode ⇔ the one terminal has focus.
-  return [{ id, bounds, focused: !!model.modes.terminalMode }];
-}
-
 // #D6 — model is threaded in (no `= getModel()` default), same as render():
 // pure-by-construction signature. The overlay seam thunk (render-queue setup
 // below) fetches the current model (`overlay: () => renderTerminalOverlay(
@@ -617,7 +586,7 @@ function _visibleTerminals(model, arrangeOverride) {
 // requests a full repaint of every overlay this frame; the debounced fast-path
 // (PTY onData → scheduleOverlay) omits it, so it stays a targeted diff.
 function renderTerminalOverlay(model, arrangeOverride, forceAll) {
-  const surfaces = _visibleTerminals(model, arrangeOverride);
+  const surfaces = visibleTerminalSurfaces(model, arrangeOverride);
   const nowPainted = new Set();
   let out = '';
   let cursorOut = '';   // the focused surface's cursor move — appended LAST so

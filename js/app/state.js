@@ -319,7 +319,11 @@ function _appSubscriptions(model) {
 // poll is desired. Defensive try/catch: early boot / unit setups without a
 // resolvable detail slice answer "no" (so the poll isn't declared there).
 function _termTabOnScreen() {
-  try { return require('../panel/viewer/tabs').isTerminalTab(); }
+  // U2d — any terminal surface on screen (the legacy viewer terminal tab OR a
+  // minted `terminal` pane), via the shared selector the overlay also reads, so
+  // the poll's "should I exist" gate and the overlay's "what do I paint" list
+  // can't disagree.
+  try { return require('../panel/terminal-surfaces').visibleTerminalSurfaces(getModel()).length > 0; }
   catch (_) { return false; }
 }
 
@@ -586,7 +590,7 @@ function reconcilePaneInstances() {
   const orphans = [];
   route.eachInstance(inst => {
     if (inst.service || inst.id === inst.kind) return;
-    if (!placedInstIds.has(inst.id)) orphans.push(inst.id);
+    if (!placedInstIds.has(inst.id)) orphans.push({ id: inst.id, kind: inst.kind });
   });
   if (orphans.length) {
     // C5 — abort a removed pane's in-flight keyed compute (config-status' slow
@@ -595,9 +599,17 @@ function reconcilePaneInstances() {
     // emits); cancelEffect no-ops if the key isn't live (the common case).
     // Docker's fetch is service-owned (skipped above), aborted only at quit.
     const effects = require('../dispatch/runtime/effects');
-    for (const id of orphans) {
+    for (const { id, kind } of orphans) {
       effects.cancelEffect(`cfgStatus:compute:${id}`);
       effects.cancelEffect(`cfgStatus:diff:${id}`);
+      // U2d — a disposed `terminal` instance owns a live PTY keyed by its
+      // instance id (== ptyId). This orphan scan is the ONLY place that learns a
+      // terminal pane left the layout (a closed tab, a removed slot), so kill the
+      // PTY here. Idempotent: destroySession no-ops on an unknown/dead id, so it
+      // races safely with a concurrent clean-exit teardown.
+      if (kind === 'terminal') {
+        try { require('../io/terminal').destroySession(id); } catch (_) {}
+      }
       route.disposeInstance(id);
     }
   }

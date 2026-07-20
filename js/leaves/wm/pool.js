@@ -455,9 +455,22 @@ function mintPoolEntry(arrange, spec) {
   };
 }
 
+/**
+ * Drop a pool entry (the counterpart to mintPoolEntry — used by the U2d
+ * `remove_tab` arm to evict a closed minted tab's transient entry so it doesn't
+ * linger in the pool + `nextTransientPoolId`'s scan). No-op (same ref) when the
+ * id is absent. Pure, return-new. The caller is responsible for having already
+ * unplaced the entry (removed its tab); this only touches `pool`.
+ */
+function removePoolEntry(arrange, poolId) {
+  if (!arrange.pool || !(poolId in arrange.pool)) return arrange;
+  const { [poolId]: _drop, ...rest } = arrange.pool;
+  return { ...arrange, pool: rest };
+}
+
 module.exports = {
   columnCount, lastColumnIndex,
-  nextTransientPoolId, mintPoolEntry,
+  nextTransientPoolId, mintPoolEntry, removePoolEntry,
   columnPanels, lastColumnPanels,
   allPanesInColumns, findPaneLocation, paneTypeIn, updateColumn,
   distributeColumnWidths,

@@ -108,10 +108,33 @@ function addTab(pane, tab, entry, opts) {
   return { ...pane, tabs };
 }
 
+/**
+ * Remove the tab `tabId` from `pane.tabs` (the remove half of the mint-into-slot
+ * primitive; mirror of addTab). When the removed tab was the active one, the
+ * PREVIOUS tab (index clamped) becomes active and the legacy Panel fields rebuild
+ * from its pool entry (resolved from `pool`); a background removal keeps the
+ * active tab (its entry re-fetched, so the fields stay consistent). Refuses (→
+ * null, caller no-ops) when the tab isn't in the pane, would empty the slot (last
+ * tab), or the new-active entry is missing. Pure: returns
+ * `{ pane, activeId, wasActive }`.
+ */
+function removeTab(pane, tabId, pool) {
+  const tabs = pane.tabs || [];
+  const idx = tabs.findIndex(t => t.id === tabId);
+  if (idx < 0 || tabs.length <= 1) return null;
+  const nextTabs = tabs.slice(0, idx).concat(tabs.slice(idx + 1));
+  const wasActive = pane.activeTabId === tabId;
+  const activeId = wasActive ? nextTabs[Math.min(idx, nextTabs.length - 1)].id : pane.activeTabId;
+  const entry = (pool || {})[activeId];
+  if (!entry) return null;
+  return { pane: _rebuildLegacyFields(pane, nextTabs, activeId, entry), activeId, wasActive };
+}
+
 module.exports = {
   newPaneId,
   wrapAsPane,
   setActiveTab,
   addTab,
+  removeTab,
   paneMatchesFocus,
 };

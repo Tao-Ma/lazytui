@@ -25,6 +25,7 @@ const BUILTIN_COMPONENTS = [
   require('../panel/fabric/ports-pane'),   // component-ports (dataflow fabric, P1.5)
   require('../panel/fabric/wire-list'),    // fabric-wires (global edge view, P1.5)
   require('../panel/text-view/text-view'), // text-view (mint-into-slot, U2b)
+  require('../panel/terminal/terminal'),   // terminal (PTY as a pane, U2d)
 ];
 
 module.exports = { BUILTIN_COMPONENTS };

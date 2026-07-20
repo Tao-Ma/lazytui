@@ -989,6 +989,39 @@ function update(msg, slice) {
       if (wasFocused) return [_withFocus(next, poolId), [{ type: 'show_selected_info' }]];
       return next;
     }
+    // U2d — remove a tab from a slot's tabs[] (the remove half of the
+    // mint-into-slot primitive; mirror of mint_tab). Filters the tab, re-activates
+    // the previous tab when the removed one was active, and drops the removed tab's
+    // TRANSIENT pool entry (a config pane's entry is never dropped). The
+    // post-dispatch reconcile then disposes the orphaned tab-instance — and, for a
+    // `terminal` tab, destroys its PTY (state.reconcilePaneInstances). ONE undo
+    // entry. Refuses unknown pane / a tab not in the pane / the slot's last tab
+    // (mpane.removeTab → null keeps a slot from going empty).
+    case 'remove_tab': {
+      const arrange = slice.arrange;
+      const paneId = msg.paneId;
+      const tabPoolId = msg.tabPoolId;
+      if (!paneId || !tabPoolId) return slice;
+      const loc = mpool.findPaneLocation(arrange, p => p.paneId === paneId);
+      if (!loc) return slice;
+      const res = mpane.removeTab(loc.pane, tabPoolId, arrange.pool || {});
+      if (!res) return slice;
+      let a1 = mpool.updateColumn(arrange, loc.columnIndex, panels => {
+        const out = panels.slice();
+        out[loc.paneIndex] = res.pane;
+        return out;
+      });
+      const removedEntry = (arrange.pool || {})[tabPoolId];
+      if (removedEntry && removedEntry.transient) a1 = mpool.removePoolEntry(a1, tabPoolId);
+      const next = _commitArrange(slice, a1);
+      // Focus follow — only when the pane was focused AND the active tab changed
+      // (removing a background tab leaves focus + the active tab untouched).
+      const wasFocused = mpane.paneMatchesFocus(loc.pane, slice.focus);
+      if (wasFocused && res.wasActive) {
+        return [_withFocus(next, res.activeId), [{ type: 'show_selected_info' }]];
+      }
+      return next;
+    }
     case 'pool_hide': {
       const arrange = slice.arrange;
       const id = msg.id;

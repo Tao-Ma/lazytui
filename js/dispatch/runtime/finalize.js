@@ -35,6 +35,7 @@ const route = require('../../panel/route');
 const { getModel } = require('../../model/store');
 const geo = require('../../leaves/wm/geometry');
 const mpool = require('../../leaves/wm/pool');
+const mpane = require('../../leaves/wm/pane');
 const { syncPanelScroll } = require('../../panel/nav-state');
 const terminal = require('../../io/terminal');
 const tabs = require('../../panel/viewer/tabs');
@@ -165,6 +166,33 @@ function finalizeDispatch() {
             terminal.resizeSession(ptyId, cols, rows);
           }
         }
+      }
+    }
+    // U2d — PTY reconcile for minted `terminal` PANE instances (the analog of the
+    // legacy viewer-terminal block above; that block retires in P3). Visible-only:
+    // walk the placed panes, keep those whose ACTIVE tab is a terminal (derived
+    // purely from the arrange — the same filter the overlay's visibleTerminalSurfaces
+    // + the orphan-dispose destroySession use), ensure/resize each PTY keyed by the
+    // tab-instance id (== ptyId), sized to the pane's committed geometry.
+    // ensureSession is idempotent (no re-spawn when it exists). A backgrounded
+    // terminal tab isn't the active tab → not ensured here, but its PTY stays alive
+    // until the tab/pane is removed (D-e). visibleBoundsFor null → off-screen → skip.
+    {
+      const arrange = layoutSlice.arrange;
+      const pool = (arrange && arrange.pool) || {};
+      for (const p of mpool.allPanesInColumns(arrange)) {
+        if (!p.paneId) continue;
+        const poolId = p.activeTabId;
+        const entry = poolId && pool[poolId];
+        if (!entry || entry.type !== 'terminal') continue;
+        const tb = geo.visibleBoundsFor(layoutSlice, p.paneId, viewerPaneId);
+        if (!tb) continue;
+        const ptyId = mpane.newPaneId(poolId);
+        const cmd = (entry.config && entry.config.cmd) || process.env.SHELL || '/bin/bash';
+        const cols = tb.w - 2, rows = tb.h - 2;
+        terminal.ensureSession(ptyId, cmd, cols, rows, getModel().projectDir);
+        const sz = terminal.sessionSize(ptyId);
+        if (sz && (sz.cols !== cols || sz.rows !== rows)) terminal.resizeSession(ptyId, cols, rows);
       }
     }
     // v0.6.6 replay arc — auto-cadence checkpoint (once per outermost dispatch).
