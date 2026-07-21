@@ -436,8 +436,24 @@ function _paneMenuPick(target, item) {
     // + carries the pure-reducer facts (targetKey / currentGroup). null when the
     // picked tab is already active — the tab_switch arm no-ops on same idx, so
     // skipping the dispatch is equivalent (focus + close still fire).
-    const pt = require('../../leaves/wm/pane-tabs');
     const tc = require('../../leaves/wm/tab-container');
+    if (item.backing === 'instance') {
+      // U2e stopgap — position-tab switcher on a multi-tab slot: switch the
+      // slot's active POSITION-tab (tc.switchTab instance backing names the
+      // set_active_tab Msg; null when already active). Restores reachability of
+      // a backgrounded tab (e.g. Detail behind an action's text-view).
+      const mpoolL = require('../../leaves/wm/pool');
+      const layoutSlice = getInstanceSlice('layout');
+      const loc = layoutSlice && layoutSlice.arrange
+        ? mpoolL.findPaneLocation(layoutSlice.arrange, p => p.paneId === target) : null;
+      const pool = (layoutSlice && layoutSlice.arrange && layoutSlice.arrange.pool) || {};
+      const sw = loc ? tc.switchTab(tc.containerFor('instance', { pane: loc.pane, pool }), item.poolId) : null;
+      close();
+      dispatchMsg(wrap('layout', { type: 'focus_set', focus: target }));
+      if (sw) dispatchMsg(wrap(sw.target, sw.msg));
+      return;
+    }
+    const pt = require('../../leaves/wm/pane-tabs');
     const slice = getInstanceSlice(target);
     const m = getModel();
     const key = pt.resolveTabKey(item.tabIdx | 0, slice, m);
