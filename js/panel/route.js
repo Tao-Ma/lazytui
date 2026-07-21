@@ -704,15 +704,33 @@ function resolveViewerPaneId(ctx) {
 }
 
 function _resolveViewerPaneIdCompute(ctx, arrange) {
-  const tabId = resolveTarget('viewer', ctx);
-  if (tabId == null) return null;
   if (!arrange) return null;
   const mpool = require('../leaves/wm/pool');
-  // resolveTarget may hand back a container paneId (tier-1 focus) OR a tab
-  // id (tier-3 arrange scan) — match either against the pane's identity.
-  const loc = mpool.findPaneLocation(arrange, (p) =>
-    p.paneId === tabId || p.id === tabId || p.activeTabId === tabId ||
-    (Array.isArray(p.tabs) && p.tabs.some(t => t && t.id === tabId)));
+  // U2e P1a — the content SLOT (viewer geometry reference) is identified by its
+  // stable `role`, NOT by the instance kind occupying it. Keyed on
+  // `role === 'content'` instead of a `detail`-kind tab, this survives the P1b
+  // swap where the default tab becomes `info` and no `detail` instance exists.
+  // Behaviour-preserving: today the role marks exactly the pane hosting `detail`,
+  // so the same slot resolves. Same focus → sticky → arrange-order tiers as
+  // resolveTarget, so a multi-content-slot layout still tracks the focused one.
+  const isContent = (p) => !!(p && p.role === 'content');
+  // (1) the focused pane, if it's the content slot.
+  const focused = ctx.focusedTabId != null ? ctx.focusedTabId : getFocus();
+  if (focused != null) {
+    const f = mpool.findPaneLocation(arrange, (p) => p.paneId === focused);
+    if (f && isContent(f.pane)) return f.pane.paneId;
+  }
+  // (2) sticky lastViewerTab's pane, if it's still a content slot.
+  const layout = _layoutSvcSlice();
+  const lastViewerTab = layout ? layout.lastViewerTab : null;
+  if (lastViewerTab != null) {
+    const s = mpool.findPaneLocation(arrange, (p) =>
+      p.paneId === lastViewerTab || p.id === lastViewerTab || p.activeTabId === lastViewerTab ||
+      (Array.isArray(p.tabs) && p.tabs.some(t => t && t.id === lastViewerTab)));
+    if (s && isContent(s.pane)) return s.pane.paneId;
+  }
+  // (3) first content slot in arrange order.
+  const loc = mpool.findPaneLocation(arrange, isContent);
   return loc ? loc.pane.paneId : null;
 }
 

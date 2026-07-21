@@ -240,6 +240,11 @@ function buildPlacedPane(resolved, hotkey, columnIndex, detailHeightSetter, pool
   // wins over any stray heightPct on a detail cell.
   if (detailHeightPct !== undefined) pane.heightPct = detailHeightPct;
   if (placement.collapsed === true)      pane.collapsed = true;
+  // U2e P1a — stamp the stable content-slot role at the USER-layout pane birth
+  // site too (the default-layout path stamps via mpane.wrapAsPane). Today that's
+  // the detail-hosting pane; the role is preserved across tab switches so it
+  // survives once the default tab becomes `info` (P1b). See leaves/wm/pane.js.
+  if (mpool.isDetailPane(active)) pane.role = 'content';
   return pane;
 }
 

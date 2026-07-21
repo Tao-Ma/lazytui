@@ -67,6 +67,14 @@ function rebuildLayoutFromConfig(config) {
         columnIndex,
       };
       if (p.heightPct !== undefined) wide.heightPct = p.heightPct;
+      // U2e P1a — carry the stable content-slot role onto the runtime pane.
+      // Prefer the parser-stamped `p.role` (survives :restore-layout, and — once
+      // the P1b seed sets it explicitly — a content slot whose default tab is no
+      // longer `detail`); fall back to deriving it from a detail pane so a
+      // hand-built JSON layout (no parser role) still marks its viewer slot.
+      // The wrapAsPane path (single-tab / JSON below) re-derives the same.
+      if (p.role) wide.role = p.role;
+      else if (p.type === 'detail') wide.role = 'content';
       // v0.6.4 — detail height is per-pane (heightPct), like every other
       // pane. A detail pane that didn't carry an explicit `height:` is
       // seeded from the layout-level default so the invariant "every

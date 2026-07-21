@@ -58,12 +58,21 @@ function paneMatchesFocus(p, focus) {
  * the rest of the leaf pattern (return-new transforms).
  */
 function wrapAsPane(entry, paneId) {
-  return {
+  const pane = {
     ...entry,
     paneId,
     tabs: [{ id: entry.id, poolId: entry.id }],
     activeTabId: entry.id,
   };
+  // U2e P1a — mark the primary CONTENT slot (the "viewer slot": where Info /
+  // action output / opened files / terminals land, and the half/full-view
+  // geometry reference) with a STABLE role, decoupled from the instance kind
+  // that happens to occupy it. Today that slot is the pane hosting the `detail`
+  // kind, so the role is derived from it — behaviour-preserving. `role` is
+  // preserved across tab switches / mints (_rebuildLegacyFields) so it survives
+  // once the default tab becomes `info` and the `detail` instance is gone (P1b).
+  if (entry.type === 'detail') pane.role = 'content';
+  return pane;
 }
 
 /**
@@ -103,6 +112,10 @@ function _rebuildLegacyFields(pane, tabs, activeTabId, entry) {
   };
   if (pane.heightPct !== undefined) next.heightPct = pane.heightPct;
   if (pane.collapsed === true)      next.collapsed = true;
+  // U2e P1a — the content-slot role is a placement-only property of the SLOT, so
+  // it rides through a tab switch / mint like paneId/hotkey (the active tab's
+  // kind changes; the slot's role does not).
+  if (pane.role !== undefined)      next.role = pane.role;
   return next;
 }
 
