@@ -35,7 +35,7 @@ function init(paneId, seed) {
 function update(_msg, slice) { return slice; }
 
 // Paint ONLY the chrome; the overlay fills the interior with the live PTY grid
-// (mirror of the viewer's `isTerminalTab()` branch — empty `lines`).
+// (empty `lines` — the interior is painted by renderTerminalOverlay).
 function render(panel, w, h, slice, opts) {
   return renderPanel({
     width: w, height: h, lines: [],

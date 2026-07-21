@@ -1,8 +1,10 @@
 # Terminal Subsystem
 
 Embedded interactive PTY sessions (SSH, SQL REPL, a spawned long-running
-command) shown as a tab in the viewer pane. Backed by `node-pty` (real PTY)
-+ `@xterm/headless` (the emulator/screen buffer). No tmux knowledge required.
+command) hosted as a first-class **`terminal` pane** — a minted position-tab
+instance, not a viewer content-tab (U2d, docs/one-tab-system.md). Backed by
+`node-pty` (real PTY) + `@xterm/headless` (the emulator/screen buffer). No tmux
+knowledge required.
 
 This is the **reference FOREIGN COMPONENT (`#D14`)** — an explicitly non-TEA
 island. Two documents own the contract; this file is the subsystem map:
@@ -85,15 +87,18 @@ node-pty onExit  →  _onSessionExit(id, exitCode)  →  _exitHandler
                                                        = pty-lifecycle.handleExit
 ```
 
-`handleExit` (`js/panel/viewer/pty-lifecycle.js`):
-- if the user was interacting with the just-exited session, dispatches
+`handleExit` (`js/panel/viewer/pty-lifecycle.js`) resolves the exited session's
+`terminal` pane via the route registry (`ptyId == the instance id`) and runs
+`_handlePaneExit`:
+- if the user was interacting with this (focused, active) terminal, dispatches
   `{type:'terminal_exit'}` (clears `model.modes.terminalMode`);
-- if `viewMode` was `'full'` and this was the active terminal, dispatches a
-  `view_set`/`view_drop_full_to_normal` so the user lands somewhere reachable
-  (the reducer arm emits `force_full_repaint` on the full→normal transition);
-- on a clean exit (`exitCode === 0`), auto-removes the ephemeral tab via
-  `tabs.handleSessionCleanExit` (a non-zero exit stays so the user can read the
-  code; `x` closes it). Configured `terminals:` tabs never auto-remove.
+- if `viewMode` was `'full'` and the terminal's slot is focused, dispatches a
+  `view_set` to `'normal'` so the user lands somewhere reachable (the reducer arm
+  emits `force_full_repaint` on the full→normal transition);
+- on a clean exit (`exitCode === 0`), auto-closes the tab via a `remove_tab` Msg
+  (a non-zero exit stays so the user can read the code; `x` closes it). The
+  instance + PTY teardown then flows through reconcile's orphan-dispose
+  (`destroySession` in `app/state.js`).
 
 The jobs registry is updated through the injected `_jobs` adapter: a session
 registers a `kind:'pty'` job on spawn and closes it on exit/kill.
@@ -141,12 +146,13 @@ to `_handleTerminalModeData`, bypassing normal key parsing.
 - **Snap to bottom** — an ordinary keystroke at the prompt first
   `scrollSessionToBottom`s, so typing always leaves scrollback.
 
-Wheel-on-a-terminal-tab while *not* in terminal mode also scrolls the PTY
-scrollback (`_handleWheel` → `scrollSession`), not the viewer slice.
+Wheel-on-a-terminal-pane while *not* in terminal mode also scrolls the PTY
+scrollback (`_handleWheel` keys on `instanceKind(paneId) === 'terminal'` →
+`scrollSession`), not any viewer slice.
 
-`Enter` on a (focused) terminal tab calls `dispatch/control/actions.js#
+`Enter` on a (focused) `terminal` pane calls `dispatch/control/actions.js#
 activateTerminal`: if the session is dead it `restartSession`s sized to the
-viewer's bounds, then dispatches `terminal_enter`.
+pane's bounds, then dispatches `terminal_enter`.
 
 ## YAML configuration
 
@@ -160,25 +166,35 @@ groups:
       redis: { cmd: "redis-cli -h localhost",          label: "Redis CLI" }
 ```
 
-Tab strip order (flat `slice.tab` index; see
-`js/leaves/wm/pane-tabs.js#flatTabInfo`):
+Since U2d P2a these are **open-on-demand**, not auto-shown: `getMergedActions`
+surfaces each as an auto-generated `type:'terminal'` action (before user
+`g.actions`, which can override), the same way docker exposes its `compose`
+verbs. Invoking one opens a reused `terminal` pane (stable poolId
+`term-yaml-<group>-<name>`) — so it persists across group switches (position-tab
+persistence) and a second invocation reuses the live session rather than
+spawning a fresh one.
+
+The viewer's own flat strip is now just:
 
 ```
-[Info] [Transcript] [actionTabs…] [termTabs…] [contentTabs…]
-   0        1          2..             …            …
+[Info] [Transcript] [contentTabs…]
+   0        1          2..
 ```
 
-Info + Transcript are implicit globals; `terminals:` entries and runtime
-ephemeral terminals share the term-tab band. Sessions are lazy (first
-activation), persist across group switches, and are keyed `${group}_${key}`.
+Info + Transcript are implicit globals; the terminal + action segments that used
+to sit between Transcript and content are gone (terminals are `terminal` panes,
+action output is a `text-view` pane). PTY sessions are lazy (spawned by the
+finalizer once the terminal is the slot's active tab) and keyed by the pane
+instance id (`pane-<poolId>`).
 
 ## Spawn / TTY handoff (`js/dispatch/runtime/action-runner.js`)
 
 A `type: spawn` action:
-- **outside tmux** — opens an embedded PTY *ephemeral* tab (`tabs.addEphemeralTab`)
-  and auto-zooms to `viewMode: 'full'` so the child owns the screen. The child
-  dies with the TUI (by design — in-process node-pty, not a survivable session).
-  `Ctrl+\` drops the zoom (`terminal_exit` → full→normal) but the child keeps
-  running; a clean exit (`exitCode === 0`) auto-closes the tab.
+- **outside tmux** — mints a `terminal` pane into the viewer's slot (a fresh
+  transient poolId) and explicitly focuses it + auto-zooms to `viewMode: 'full'`
+  so the child owns the screen. The child dies with the TUI (by design —
+  in-process node-pty, not a survivable session). `Ctrl+\` drops the zoom
+  (`terminal_exit` → full→normal) but the child keeps running; a clean exit
+  (`exitCode === 0`) auto-closes the tab (`remove_tab`).
 - **inside tmux** (`$TMUX` set) — `tmux new-window` instead; a real OS-level
   window beats an in-process tab for long-lived interactive sessions.

@@ -38,7 +38,6 @@ const mpool = require('../../leaves/wm/pool');
 const mpane = require('../../leaves/wm/pane');
 const { syncPanelScroll } = require('../../panel/nav-state');
 const terminal = require('../../io/terminal');
-const tabs = require('../../panel/viewer/tabs');
 const diag = require('../../io/diag-log');
 // Replay flag (zero-dependency sibling — safe to top-require; no load cycle).
 const replay = require('./replay');
@@ -139,44 +138,21 @@ function finalizeDispatch() {
     // viewer's `augmentMsg` (computed from the pane's committed geometry) and
     // the viewer's own reducer commits it. What remains is the PTY reconcile.
     const viewerPaneId = route.resolveViewerPaneId();
-    if (viewerPaneId) {
-      // v0.6.5 §5 — PTY-session reconcile for the active terminal tab. This is
-      // the side-effect that used to run in render (paint.js's
-      // ensureSession/resizeSession); moving it here makes render a pure read
-      // of the session buffer. It is the SAME dispatch-runtime reconcile
-      // category as the instance-mint above: ensure the
-      // active terminal's PTY exists, and size it to the viewer pane's
-      // COMMITTED geometry. visibleBoundsFor reads the committed arrange (not
-      // render's drag-preview override), so the PTY holds its committed dims
-      // through a free-config drag — no SIGWINCH churn per zone crossing.
-      // Lazy: only the ACTIVE terminal tab spawns; tabs never visited never do.
-      // ensureSession is idempotent, so re-running per dispatch is a no-op once
-      // the session exists. activeTerminalId()/activeTerminalConfig() resolve
-      // the same focused viewer render did (resolveTarget('viewer')).
-      if (tabs.isTerminalTab()) {
-        const ptyId = tabs.activeTerminalId();
-        const tconf = tabs.activeTerminalConfig();
-        const tb = (ptyId && tconf)
-          ? geo.visibleBoundsFor(layoutSlice, viewerPaneId, viewerPaneId) : null;
-        if (tb) {
-          const cols = tb.w - 2, rows = tb.h - 2;
-          terminal.ensureSession(ptyId, tconf.cmd, cols, rows, getModel().projectDir);
-          const sz = terminal.sessionSize(ptyId);
-          if (sz && (sz.cols !== cols || sz.rows !== rows)) {
-            terminal.resizeSession(ptyId, cols, rows);
-          }
-        }
-      }
-    }
-    // U2d — PTY reconcile for minted `terminal` PANE instances (the analog of the
-    // legacy viewer-terminal block above; that block retires in P3). Visible-only:
-    // walk the placed panes, keep those whose ACTIVE tab is a terminal (derived
-    // purely from the arrange — the same filter the overlay's visibleTerminalSurfaces
-    // + the orphan-dispose destroySession use), ensure/resize each PTY keyed by the
-    // tab-instance id (== ptyId), sized to the pane's committed geometry.
-    // ensureSession is idempotent (no re-spawn when it exists). A backgrounded
-    // terminal tab isn't the active tab → not ensured here, but its PTY stays alive
-    // until the tab/pane is removed (D-e). visibleBoundsFor null → off-screen → skip.
+    // v0.6.5 §5 / U2d — PTY-session reconcile for the visible `terminal` PANE
+    // instances. This is the side-effect that used to run in render (paint.js's
+    // ensureSession/resizeSession); moving it here makes render a pure read of
+    // the session buffer. It is the SAME dispatch-runtime reconcile category as
+    // the instance-mint above. Visible-only: walk the placed panes, keep those
+    // whose ACTIVE tab is a terminal (derived purely from the arrange — the same
+    // filter the overlay's visibleTerminalSurfaces + the orphan-dispose
+    // destroySession use), ensure/resize each PTY keyed by the tab-instance id
+    // (== ptyId), sized to the pane's committed geometry. visibleBoundsFor reads
+    // the committed arrange (not render's drag-preview override), so the PTY
+    // holds its committed dims through a free-config drag — no SIGWINCH churn per
+    // zone crossing. ensureSession is idempotent (no re-spawn when it exists). A
+    // backgrounded terminal tab isn't the active tab → not ensured here, but its
+    // PTY stays alive until the tab/pane is removed (D-e). visibleBoundsFor null
+    // → off-screen → skip.
     {
       const arrange = layoutSlice.arrange;
       const pool = (arrange && arrange.pool) || {};

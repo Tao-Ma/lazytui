@@ -21,9 +21,8 @@ const { stdout } = require('../io/term');
 const { multiSelCount } = require('../panel/nav-state');
 const { theme } = require('../leaves/infra/themes');
 const { truncate, viewportDims } = require('../leaves/render/draw');
-const { isTerminalTab, activeTerminalId, activeTerminalConfig,
-        getTabInfo, findEphemeralByid } = require('../panel/viewer/tabs');
-const { getSession } = require('../io/terminal');
+const { getTabInfo } = require('../panel/viewer/tabs');
+const { focusedTerminalLabel } = require('../panel/terminal-surfaces');
 const { getPanelDef, getInstanceSlice, getFocus, instanceKind,
         collectViewContributions, filterCurrentText } = require('../panel/api');
 const modes = require('../leaves/input/modes');
@@ -58,8 +57,7 @@ function footerKeys(model) {
     return ` \\[leader]${esc(pending)}… | ${bindings.footerSegs('prefixMode').join(' | ')}`;
   }
   if (md.terminalMode) {
-    const tconf = activeTerminalConfig();
-    const label = tconf ? tconf.label : 'terminal';
+    const label = focusedTerminalLabel() || 'terminal';
     return ` \\[terminal: ${esc(label)}] | ${bindings.footerSegs('terminalMode').join(' | ')}`;
   }
   if (md.detailSearchMode) {
@@ -95,27 +93,21 @@ function footerKeys(model) {
     // Build the live guard facts the detail context's `when` predicates read;
     // the registry reproduces the old segment list, then the live committed-
     // search count is appended (it carries a live number, not a key hint).
+    // U2d P2b — a `detail` focus is never a terminal now (terminals are their
+    // own `terminal`-kind pane), so the isTerminal/dead/isEphemeral facts are
+    // permanently false; the content-tab count + committed-search count remain.
     const { total } = getTabInfo();
-    const isTerminal = isTerminalTab();
-    let dead = false, isEphemeral = false;
-    if (isTerminal) {
-      const id = activeTerminalId();
-      dead = !!(id && getSession(id) && getSession(id).exited);
-      isEphemeral = !!(dead && findEphemeralByid(id));
-    }
-    let keys = bindings.footerFor('detail', { total, isTerminal, dead, isEphemeral });
-    if (!isTerminal) {
-      // P1 — committed-phase count derives from (lines, term).
-      const vslice = getInstanceSlice(_route().resolveTarget('viewer') || 'detail');
-      const search = vslice?.search;
-      if (search && search.active) {
-        const ms = require('../leaves/text/search');
-        const m = getModel();
-        const vlines = require('../leaves/wm/pane-tabs').viewerLines(vslice, m, m.currentGroup);
-        const n = ms.matchesFor(vlines, search.term || '').length;
-        const idx = n ? Math.min(search.idx || 0, n - 1) + 1 : 0;
-        keys += ` | n/N [${idx}/${n}] | Esc clear`;
-      }
+    let keys = bindings.footerFor('detail', { total, isTerminal: false, dead: false, isEphemeral: false });
+    // P1 — committed-phase count derives from (lines, term).
+    const vslice = getInstanceSlice(_route().resolveTarget('viewer') || 'detail');
+    const search = vslice?.search;
+    if (search && search.active) {
+      const ms = require('../leaves/text/search');
+      const m = getModel();
+      const vlines = require('../leaves/wm/pane-tabs').viewerLines(vslice, m, m.currentGroup);
+      const n = ms.matchesFor(vlines, search.term || '').length;
+      const idx = n ? Math.min(search.idx || 0, n - 1) + 1 : 0;
+      keys += ` | n/N [${idx}/${n}] | Esc clear`;
     }
     return keys;
   }

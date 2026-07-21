@@ -69,9 +69,9 @@ function tabDragMotion(slice, mx, my, detailBounds, tabBounds, modelBundle, targ
   // stays pure (no `route` import).
   //
   // modelBundle (v0.6.3 TEA Phase 3c) is the precomputed
-  // {currentGroup, groupExists, yamlTerminals, actionCount} that the
-  // downstream reorderContent leaf needs. Spread into the emitted
-  // Cmd's Msg so it threads through to the pane-tabs reducer arm.
+  // {currentGroup, groupExists} that the downstream reorderContent leaf
+  // needs. Spread into the emitted Cmd's Msg so it threads through to the
+  // pane-tabs reducer arm.
   const advanced = {
     ...cursorOnly,
     freeConfig: { ...cursorOnly.freeConfig, drag: { ...cursorOnly.freeConfig.drag, fromIdx: toIdx } },

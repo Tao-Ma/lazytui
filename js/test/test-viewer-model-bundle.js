@@ -20,24 +20,22 @@ const pt = require('../leaves/wm/pane-tabs');
 const viewer = require('../panel/viewer/viewer');
 
 describe('[P0] viewerModelBundle captures the model fact-set', () => {
-  // U2c P2 — the bundle no longer carries `mergedActions`: it fed only the
-  // action-tab enumeration in flatTabInfoFromBundle, retired with action tabs.
-  it('has currentGroup, group, yamlTerminals', () => {
+  // U2c P2 — the bundle no longer carries `mergedActions` (fed only the retired
+  // action-tab enumeration). U2d P2b — nor `yamlTerminals` (fed the retired
+  // terminal segment): it's now just { currentGroup, group }.
+  it('has currentGroup, group', () => {
     sm.bootFresh();
     const m = getModel();
     const b = pt.viewerModelBundle(m, m.currentGroup);
     eq(b.currentGroup, m.currentGroup, 'currentGroup mirrors the model');
     assert(b.group && typeof b.group === 'object', 'group config present');
-    assert(b.yamlTerminals === null || typeof b.yamlTerminals === 'object',
-      'yamlTerminals is an object or null');
   });
 
-  it('an unknown group yields no group + null terminals', () => {
+  it('an unknown group yields no group', () => {
     sm.bootFresh();
     const m = getModel();
     const b = pt.viewerModelBundle(m, '__no_such_group__');
     eq(b.group, null, 'no group');
-    eq(b.yamlTerminals, null, 'no terminals');
   });
 });
 
@@ -49,14 +47,12 @@ describe('[P1] *FromBundle parity with the model-path readers', () => {
     const m = getModel();
     const g = m.currentGroup;
     const bundle = pt.viewerModelBundle(m, g);
-    // Exercise a representative slice: a content tab + an ephemeral term so
-    // the action/term/content branches are all populated.
+    // Exercise a representative slice: a content tab (U2d P2b — terminals are
+    // `terminal` panes now, so the strip is Info/Transcript/content only).
     const slice = {
       tab: 0,
       infoLines: ['info-a', 'info-b'],
-      ephemeralTerminals: { [g]: { sh: { cmd: 'bash', label: 'sh' } } },
       contentTabs: { [g]: { log: { lines: ['line-1', 'line-2'] } } },
-      actionTabBuffers: {},
       viewerStreamBuffer: { lines: [], cap: 1000 },
     };
 
@@ -106,7 +102,6 @@ describe('[P4] viewer.update is pure of getModel (bundle-driven)', () => {
     const slice = {
       tab: 0, scroll: 0, infoLines: ['i'],
       contentTabs: { [g]: { log: { lines: ['L1', 'L2'] } } },
-      ephemeralTerminals: {}, actionTabBuffers: {},
     };
     const info = pt.flatTabInfo(slice, m, g);
     const contentIdx = info.total - 1;                 // content tab is last

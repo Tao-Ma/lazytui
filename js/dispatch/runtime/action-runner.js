@@ -156,7 +156,7 @@ function doRun(actionKey, action, args = []) {
       // child's entire lifetime. The child now runs alongside the
       // TUI: `_` steps back to half/normal layout while the child
       // keeps running; `+` re-zooms; the tab auto-closes on clean
-      // exit (terminal.js#onExit → tabs.handleSessionCleanExit).
+      // exit (terminal.js#onExit → pty-lifecycle._handlePaneExit's remove_tab).
       // Non-zero exit keeps the tab so the user can read the error,
       // but drops viewMode so the rest of the TUI is reachable.
       // The tmux branch above is still preferred when $TMUX is set —

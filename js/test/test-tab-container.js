@@ -26,18 +26,14 @@ function flatTabsRef(slice, m, g) {
     { section: 'tab', tabIdx: 0, label: 'Info', kind: '' },
     { section: 'tab', tabIdx: 1, label: 'Transcript', kind: '' },
   ];
-  // U2c P2 — action tabs retired; terminals/content follow Info+Transcript.
-  const eph = (slice.ephemeralTerminals || {})[g] || {};
-  info.termTabs.forEach(([key, t], i) => out.push({
-    section: 'tab', tabIdx: 2 + i, label: t.label || key,
-    kind: 'term', closeable: !!eph[key], closeKind: 'terminal', closeKey: key,
-  }));
+  // U2c P2 — action tabs retired; U2d P2b — terminals retired (they're `terminal`
+  // panes). Content follows Info+Transcript directly, starting at idx 2.
   info.contentTabs.forEach(([key, c], i) => {
     let k = 'content';
     if (key.startsWith('docker:')) k = 'docker';
     else if (key.startsWith('file:')) k = 'file';
     out.push({
-      section: 'tab', tabIdx: 2 + info.termTabs.length + i,
+      section: 'tab', tabIdx: 2 + i,
       label: c.label || key, kind: k, closeable: true, closeKind: 'content', closeKey: key,
     });
   });
@@ -51,20 +47,19 @@ function toSectionRow(r) {
   return row;
 }
 
-// A viewer slice exercising every tab kind: an ephemeral terminal + a content
-// tab. (U2c P2 — action tabs retired, so the strip is Info/Transcript/term/content.)
+// A viewer slice exercising the content-tab kind. (U2c P2 — action tabs retired;
+// U2d P2b — terminals retired, so the strip is Info/Transcript/content.)
 function viewerSlice(g, tab) {
   return {
     tab: tab | 0,
     infoLines: ['info-a', 'info-b'],
-    ephemeralTerminals: { [g]: { sh: { cmd: 'bash', label: 'sh' } } },
     contentTabs: { [g]: { log: { label: 'log', lines: ['l1', 'l2'] } } },
     viewerStreamBuffer: { lines: [], cap: 1000 },
   };
 }
 
 describe('[tab-container] viewer listTabs backs pane-menu._flatTabs', () => {
-  it('maps field-for-field (Info/Transcript/term-closeable/content-kind)', () => {
+  it('maps field-for-field (Info/Transcript/content-kind)', () => {
     sm.bootFresh();
     const m = getModel();
     const g = m.currentGroup;

@@ -29,8 +29,7 @@ const { getPanelDef, getItems, idOf, getInstanceSlice,
 const { dispatchMsg, dispatchKeyToFocused } = require('../runtime/loop');
 const copy = require('../../overlay/copy');
 const registerPopup = require('../../overlay/register-popup');
-const { isTerminalTab, activeTerminalId, findEphemeralByid,
-        removeEphemeralTab, isContentTab, activeContentTab,
+const { isContentTab, activeContentTab,
         removeContentTab } = require('../../panel/viewer/tabs');
 const { isSessionDead } = require('../../io/terminal');
 const keybindings = require('../../leaves/input/keybindings');
@@ -405,16 +404,16 @@ function handlePaneMenuKey(key, seq) {
     return;
   }
   if (seq === 'x') {
-    // Close the highlighted closeable TAB row (viewer content / ephemeral
-    // terminal). Non-closeable rows + pane rows: silent no-op. The menu
-    // stays open and re-renders with the row gone.
+    // Close the highlighted closeable TAB row. (U2d P2b — the only closeable
+    // viewer-strip rows are content tabs now; terminals are `terminal` panes,
+    // closed via the pane menu's pane rows / dead-terminal `x`.) Non-closeable
+    // rows + pane rows: silent no-op. The menu stays open + re-renders without
+    // the row.
     const item = all[cursor];
     if (!item || item.section !== 'tab' || !item.closeable) return;
     const m = getModel();
-    const removeMsg = item.closeKind === 'content'
-      ? { type: 'viewer_remove_content_tab', groupName: m.currentGroup, key: item.closeKey }
-      : { type: 'viewer_remove_ephemeral_terminal', groupName: m.currentGroup, key: item.closeKey };
-    dispatchMsg(wrap(target, removeMsg));
+    dispatchMsg(wrap(target,
+      { type: 'viewer_remove_content_tab', groupName: m.currentGroup, key: item.closeKey }));
   }
 }
 
@@ -555,7 +554,7 @@ function handleDetailSearchKey(key, seq) {
 function handleNormalKey(key, seq) {
   // Phase 4 / T7 — no captured root-model local. Every read goes
   // through getModel() AT the read site so post-dispatch reads (e.g.
-  // model.currentGroup after a removeEphemeralTab cascade) see the
+  // model.currentGroup after a removeContentTab cascade) see the
   // current snapshot. Same hazard class as 2be348a / action-runner.
   // `dispatchKeyToFocused` (the call site that invokes us) already gave
   // the focused Component first dibs and returned only if the Component
@@ -662,16 +661,6 @@ function handleNormalKey(key, seq) {
         if (id && isSessionDead(id)) {
           dispatchMsg(wrap('layout', { type: 'remove_tab', paneId: getFocus(), tabPoolId: mpane.poolIdOf(id) }));
           break;
-        }
-      }
-      // On a dead ephemeral terminal tab, `x` closes it instead of
-      // opening the menu. Lets the user dismiss a non-zero exit
-      // (clean exits auto-close from the PTY onExit handler).
-      if (instanceKind(getFocus()) === 'detail' && isTerminalTab()) {
-        const id = activeTerminalId();
-        if (id && isSessionDead(id)) {
-          const eph = findEphemeralByid(id);
-          if (eph) { removeEphemeralTab(eph.group, eph.key); break; }
         }
       }
       // Content tabs (e.g. file-browser opens) close on `x` from

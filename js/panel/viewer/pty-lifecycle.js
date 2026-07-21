@@ -8,23 +8,21 @@
  * io/terminal.js takes an `setExitHandler(fn)` callback; this file
  * supplies the handler and tui.js wires it at boot.
  *
- * Two side effects:
- *   - If viewMode was 'full' AND this session was the active terminal
- *     tab, drop viewMode to 'normal' — user lands somewhere reachable
- *     instead of staring at an exited PTY (clean) or an unresponsive
- *     error screen (non-zero). 'half' is left alone (user-chosen).
- *   - On clean exit (exitCode === 0), auto-remove the ephemeral tab
- *     via `handleSessionCleanExit`. Non-zero stays put so the user can
- *     read the exit code; `x` closes it manually.
+ * Two side effects (U2d — see `_handlePaneExit`):
+ *   - If viewMode was 'full' AND the exited terminal's slot is focused,
+ *     drop viewMode to 'normal' — user lands somewhere reachable instead
+ *     of staring at an exited PTY (clean) or an unresponsive error screen
+ *     (non-zero). 'half' is left alone (user-chosen).
+ *   - On clean exit (exitCode === 0), auto-close the terminal tab via a
+ *     `remove_tab` Msg. Non-zero stays put so the user can read the exit
+ *     code; `x` closes it manually.
  *
- * When any state changed AND the exit was on the visible session, force
- * a full repaint — the PTY painted into cells the diff cache won't
- * touch, and dropping out of 'full' / closing the tab needs those cells
- * reclaimed by the chrome.
+ * When any state changed, force a full repaint — the PTY painted into
+ * cells the diff cache won't touch, and dropping out of 'full' / closing
+ * the tab needs those cells reclaimed by the chrome.
  */
 'use strict';
 
-const tabs = require('./tabs');
 const api = require('../api');
 const { getModel } = require('../../model/store');
 const { scheduleRender } = require('../../leaves/infra/render-queue');
@@ -36,56 +34,22 @@ const { scheduleRender } = require('../../leaves/infra/render-queue');
 let _host = null;
 
 function handleExit(id, exitCode) {
-  // U2d — a `terminal` PANE (id == its tab-instance id, registered in the route
-  // registry) exits via its own fan-out; the legacy viewer-content-tab ephemeral
-  // (id == `${group}_${key}`, not an instance) falls through below (retired in
-  // P3). getInstance is LITERAL, so a legacy id simply misses.
+  // U2d P2b — every embedded PTY is a `terminal` PANE (id == its tab-instance id,
+  // registered in the route registry) and exits via its own fan-out. getInstance
+  // is LITERAL, so an unknown/stale id (a pane already orphan-disposed) simply
+  // misses and this no-ops.
   const route = require('../../panel/route');
   const inst = route.getInstance(id);
-  if (inst && inst.kind === 'terminal') { _handlePaneExit(id, exitCode, inst); return; }
-
-  // v0.6.1 Phase 4 — resolve which viewer-kind instance hosts this
-  // PTY session before reading per-pane state. For Phase 4 singleton
-  // the answer is always 'detail'; Phase 5+ may have multiple viewer
-  // panes each with their own ephemerals.
-  const paneId = tabs.paneForSessionId(id) || 'detail';
-  let anyChange = false;
-  const wasActive = tabs.activeTerminalId(paneId) === id;
-  const layoutSlice = api.getInstanceSlice('layout');
-  // v0.6.3 P5.1 — clear terminalMode here when the user was actively
-  // interacting with the just-exited PTY. Pre-P5 this fired via a
-  // setImmediate from renderTerminalOverlay every render frame as a
-  // poll; routing it through handleExit makes it event-driven and
-  // closes one render-side dispatch (view → reducer impurity). Order:
-  // dispatch BEFORE view_set so view_set's reducer sees terminalMode
-  // already cleared (avoids the "drop full → normal while
-  // terminalMode still true" intermediate state).
-  if (wasActive && getModel().modes.terminalMode) {
-    _host.applyMsg({ type: 'terminal_exit' });
-    anyChange = true;
-  }
-  if (layoutSlice && layoutSlice.viewMode === 'full' && wasActive) {
-    // view_set's reducer arm emits force_full_repaint on the full →
-    // normal transition; the bare forceFullRepaint() that used to
-    // follow here was a redundant double-invalidate (P5.5). For the
-    // not-full case, the tab strip / viewer body changes show up as
-    // different row text and the diff cache catches them naturally.
-    _host.dispatchMsg(_host.wrap('layout', { type: 'view_set', mode: 'normal' }));
-    anyChange = true;
-  }
-  if (exitCode === 0 && tabs.handleSessionCleanExit(id, paneId)) {
-    anyChange = true;
-  }
-  if (anyChange) scheduleRender();
+  if (inst && inst.kind === 'terminal') _handlePaneExit(id, exitCode, inst);
 }
 
-// U2d — exit fan-out for a `terminal` PANE (id == its tab-instance id). Mirror of
-// the legacy body: clear terminalMode if the user was interacting with this
-// (focused, active) terminal; drop a 'full' auto-zoom when the terminal's slot is
-// focused; and on a CLEAN exit auto-close the tab via remove_tab (a non-zero exit
-// stays so the code is readable — `x` dismisses it). The instance + PTY teardown
-// then flows through reconcile's orphan-dispose (destroySession). `inst.paneId` is
-// the owning COLUMN paneId (the back-ref stamped by reconcile).
+// U2d — exit fan-out for a `terminal` PANE (id == its tab-instance id): clear
+// terminalMode if the user was interacting with this (focused, active) terminal;
+// drop a 'full' auto-zoom when the terminal's slot is focused; and on a CLEAN
+// exit auto-close the tab via remove_tab (a non-zero exit stays so the code is
+// readable — `x` dismisses it). The instance + PTY teardown then flows through
+// reconcile's orphan-dispose (destroySession). `inst.paneId` is the owning COLUMN
+// paneId (the back-ref stamped by reconcile).
 function _handlePaneExit(id, exitCode, inst) {
   const route = require('../../panel/route');
   const mpane = require('../../leaves/wm/pane');

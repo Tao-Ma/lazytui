@@ -103,18 +103,18 @@ describe('[immutable] leaves/register.js', () => {
 
 describe('[immutable] leaves/pane-tabs.js', () => {
   // v0.6.3 TEA Phase 3c: leaves now take a single (slice, msg) where
-  // msg carries the precomputed model bundle (currentGroup,
-  // groupExists, yamlTerminals, actionCount). modelBundle() is the
-  // single helper that computes it from (model, groupName).
+  // msg carries the precomputed model bundle (currentGroup, groupExists).
+  // modelBundle() is the single helper that computes it from (model,
+  // groupName). (U2d P2b — the addEphemeral leaf + its bundle fields
+  // yamlTerminals/actionCount retired: terminals are `terminal` panes.)
   const makeModel = () => ({
     currentGroup: 'g',
-    config: { groups: { g: { actions: {}, terminals: {} } } },
+    config: { groups: { g: { actions: {} } } },
   });
   const makeSlice = () => ({
     lines: [], scroll: 0, tab: 0,
     search: { active: false, term: '', matches: [], idx: 0, typing: '' },
     contentTabs: {},
-    ephemeralTerminals: {},
   });
 
   it('addContent returns [newSlice, info]', () => {
@@ -132,18 +132,6 @@ describe('[immutable] leaves/pane-tabs.js', () => {
     // it to slice.lines; that mirror retired.
     eq(next.contentTabs.g.k1.lines, ['x']);
     assert(slice.contentTabs.g === undefined, 'original contentTabs untouched');
-  });
-
-  it('addEphemeral builds nested update without mutating', () => {
-    const model = makeModel();
-    const slice = makeSlice();
-    const [next, info] = expectNoMutation(
-      'addEphemeral leaves input frozen',
-      () => mtabs.addEphemeral(slice, { groupName: 'g', key: 't1', cmd: 'sh', label: 'T', ...mtabs.modelBundle(model, 'g') }),
-      slice,
-    );
-    eq(info.terminalEnter, true);
-    eq(next.ephemeralTerminals.g.t1.label, 'T');
   });
 });
 

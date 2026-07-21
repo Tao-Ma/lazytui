@@ -79,7 +79,7 @@ describe('[gate exception] tab reorder passes for a MOUNTED viewer paneId', () =
     api.dispatchMsg(api.wrap('pane-frz-v', {
       type: 'viewer_reorder_content_tab',
       groupName: 'g1', fromIdx: 0, toIdx: 1,
-      currentGroup: 'g1', groupExists: true, yamlTerminals: {}, actionCount: 0,
+      currentGroup: 'g1', groupExists: true,
     }));
     eq(Object.keys(route.getInstanceSlice('pane-frz-v').contentTabs.g1).join(','),
        'file:b,file:a',

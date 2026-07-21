@@ -255,12 +255,10 @@ function installBuiltins() {
     try { require('../../io/diag-log').save(); }
     catch (e) { _recordError({ where: 'diag_save', kind: 'throw', message: e && e.message }); }
   });
-  // destroy_pty_session: PTY teardown from the viewer-tab lifecycle (closing
-  // an ephemeral terminal tab — emitted by detail.update's
-  // viewer_remove_ephemeral_terminal branch).
-  registerEffect('destroy_pty_session', (eff) => {
-    try { require('../../io/terminal').destroySession(eff.id); } catch (_) {}
-  });
+  // (U2d P2b — the `destroy_pty_session` effect is retired: its only emitter was
+  // the viewer's removeEphemeral arm (embedded terminals as content tabs). A
+  // `terminal` pane's PTY is now torn down by the orphan-dispose destroySession
+  // in app/state.js when the instance leaves the layout.)
   // (FIX-3 Phase 6 — the `tick` (generic self-re-arming-timer Cmd) and
   // `arm_clock` (frame-clock self-re-arm) effects are RETIRED. Recurring work
   // is now a declared `interval` subscription (app/state.js#_subKinds.interval):
@@ -324,32 +322,21 @@ function installBuiltins() {
     const m = getModel();
     const viewerTarget = route.resolveTarget('viewer') || 'detail';
     const groupName = m.currentGroup;
-    const { kind, owner = {} } = job;
+    const { kind } = job;
     const out = { type: 'jobs_routed', job, now: eff.now | 0, viewerTarget, groupName };
 
-    // U2c P2 — the stream-routed 'jump to the action's flat tab' is retired: a
-    // tab:true action's output now lives in its own text-view position-tab, which
-    // a viewer-flat-tab index can't address. Re-wiring the Running overlay to
-    // activate that position-tab (owner.tabInstId) is a follow-on; a stream-routed
-    // activate now surfaces the overlay without a tab jump.
-    if (kind === 'pty' && owner.ptyId) {
-      const slice = route.getInstanceSlice(viewerTarget)
-        || { ephemeralTerminals: {}, contentTabs: {}, tab: 0 };
-      const info = pt.flatTabInfo(slice, m, groupName);
-      let termIdx = -1;
-      for (let i = 0; i < info.termTabs.length; i++) {
-        if (`${groupName}_${info.termTabs[i][0]}` === owner.ptyId) { termIdx = i; break; }
-      }
-      if (termIdx >= 0) {
-        // U2c P2 — term tabs start at idx 2 (action tabs retired).
-        out.tabIdx = 2 + termIdx;
-        out.targetKey = pt.resolveTabKey(out.tabIdx, { ...slice, tab: out.tabIdx }, m);
-      }
-    } else if (kind === 'background' || kind === 'tmux') {
+    // U2c P2 / U2d P2b — the stream-routed 'jump to the producing tab' is retired
+    // for both action output (now a text-view position-tab) and pty terminals
+    // (now `terminal` panes): a viewer-flat-tab index can't address either.
+    // Re-wiring the Running overlay to activate the owning position-tab
+    // (owner.tabInstId) is a follow-on; a stream-routed activate now surfaces the
+    // overlay without a tab jump. Only background/tmux jobs still resolve a
+    // fromTabKey (their output lands in the viewer's Transcript/Info).
+    if (kind === 'background' || kind === 'tmux') {
       const vSlice = route.getInstanceSlice(viewerTarget) || { tab: 0 };
       out.fromTabKey = pt.resolveTabKey((vSlice.tab | 0), vSlice, m);
     }
-    // stream-unrouted: focus-only, nothing to resolve.
+    // stream-unrouted + pty: focus-only, nothing to resolve.
     require('../control/dispatch').applyMsg(out);
   });
   // copy_commit: resolve the selected copy option's (module-held) content

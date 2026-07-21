@@ -2,9 +2,8 @@
  * Core Component — detail (the viewer).
  *
  * Owns the viewer slice (`lines` / `scroll` / `tab` / `search` /
- * `select` / `cursor` / `contentTabs` / `ephemeralTerminals`). Every
- * viewer-* mutation is handled inside `update(msg, slice)` here; the
- * root reducer doesn't touch the slice.
+ * `select` / `cursor` / `contentTabs`). Every viewer-* mutation is handled
+ * inside `update(msg, slice)` here; the root reducer doesn't touch the slice.
  *
  * Cross-layer concerns:
  *   - When a viewer write also flips model.modes / getFocus() (tab-open
@@ -15,13 +14,12 @@
  *     nav_select clears viewer chrome), it emits a dispatch_msg Cmd carrying
  *     viewer_reset_chrome → routed back here by the Component fan-out.
  *
- * Tab bar rendering (the Info | Transcript | termTabs | contentTabs strip
- * and tab click bounds) stays inside this module's render path so the panel
- * def is the single home for the viewer's view.
+ * Tab bar rendering (the Info | Transcript | contentTabs strip and tab click
+ * bounds) stays inside this module's render path so the panel def is the single
+ * home for the viewer's view.
  */
 'use strict';
 
-const { isTerminalTab } = require('./tabs');
 const {
   renderPanel,
   getInstanceSlice, wrap,
@@ -101,9 +99,9 @@ function init(paneId) {
     select: { active: false, kind: 'char', anchor: { line: 0, col: 0 }, cursor: { line: 0, col: 0 } },
     cursor: { line: 0, col: 0 },
     contentTabs: {},          // [groupName]: { [key]: { label, lines } }
-    ephemeralTerminals: {},   // [groupName]: { [key]: { cmd, label } }
     // (U2c P2 — slice.actionTabBuffers retired: a tab:true action's output now
-    // lives in its own text-view instance minted as a position-tab.)
+    // lives in its own text-view instance minted as a position-tab. U2d P2b —
+    // slice.ephemeralTerminals retired: embedded terminals are `terminal` panes.)
     // Singleton accumulator for unrouted streams (tabless type:run,
     // docker logs/inspect verbs). Appends across commands; cap at 1000
     // lines (drop oldest when over). Transcript tab (idx 1) is the
@@ -199,33 +197,20 @@ function _linesEq(a, b) {
 //     unprefixed; per-group kinds carry the group prefix).
 //   _tabKeyExistsInFromBundle: R5 — does fromKey still resolve in `next`?
 //     When a tab is removed the FROM-capture would otherwise re-create the
-//     tabState entry we just dropped. Info/Transcript/action always exist;
-//     content/terminal are checked against next's stores. The capture only
-//     resolves CURRENT-group keys, which the bundle describes, so the
-//     yaml-terminal check keys off bundle.yamlTerminals (== the model path
-//     for keyGroup === currentGroup).
+//     tabState entry we just dropped. Info/Transcript always exist; content is
+//     checked against next's store. (U2d P2b — the terminal-key branch is gone:
+//     resolveTabKeyFromBundle only yields info/transcript/content keys now.)
 function _activeTabKeyFromBundle(slice, bundle) {
   return pt.resolveTabKeyFromBundle((slice && slice.tab) | 0, slice, bundle);
 }
 function _tabKeyExistsInFromBundle(next, bundle, key) {
   if (!key || key === 'info' || key === 'transcript') return true;
-  const mt = key.match(/^(.+?):(action|terminal|content):(.+)$/);
+  const mt = key.match(/^(.+?):content:(.+)$/);
   if (!mt) return true;
-  const [, keyGroup, kind, restKey] = mt;
-  if (kind === 'action') return true;
-  if (kind === 'content') {
-    const all = (next && next.contentTabs) || {};
-    const group = all[keyGroup];
-    return !!(group && group[restKey]);
-  }
-  if (kind === 'terminal') {
-    const eph = (next && next.ephemeralTerminals) || {};
-    const ephGroup = eph[keyGroup];
-    if (ephGroup && ephGroup[restKey]) return true;
-    const yamlTerms = (bundle && keyGroup === bundle.currentGroup && bundle.yamlTerminals) || {};
-    return !!yamlTerms[restKey];
-  }
-  return true;
+  const [, keyGroup, restKey] = mt;
+  const all = (next && next.contentTabs) || {};
+  const group = all[keyGroup];
+  return !!(group && group[restKey]);
 }
 
 // blessed-exceptions #3 — the finalizer reads the threaded `vm`
@@ -246,8 +231,8 @@ function _withDerivedFields(next, originalSlice, vm) {
   // them into tabState[fromKey] would clobber the pre-override saved
   // state (the user's real position on that tab).
   // R5 — also skip when the FROM tab was REMOVED (key no longer
-  // resolves in next). Otherwise removeContent / removeEphemeral's
-  // tabState drop is silently undone by this capture.
+  // resolves in next). Otherwise removeContent's tabState drop is
+  // silently undone by this capture.
   let updated = next;
   if (originalSlice
       && next.tab !== originalSlice.tab
@@ -312,7 +297,6 @@ function update(msg, slice) {
 //
 //   pane-tabs.reduceTabMsg (leaf, paneId-parameterized):
 //     tab_switch, tab_cycle,
-//     viewer_add_ephemeral_terminal, viewer_remove_ephemeral_terminal,
 //     viewer_add_content_tab, viewer_update_content_tab_lines,
 //     viewer_remove_content_tab, viewer_reorder_content_tab,
 //     tab_list_open / _close / _nav / _pick / _close_selected.
@@ -761,15 +745,6 @@ function render(panel, w, h, slice, opts) {
   // tab is live regardless of focus. No-op under single-pane configs.
   const isFocused = !!(opts && opts.focused) || m.modes.terminalMode;
   const chrome = opts && opts.chrome;
-  if (isTerminalTab()) {
-    return renderPanel({
-      width: w, height: h, lines: [],
-      title: detailTitle(slice, hotkey), hotkey,
-      panelType: 'detail',
-      focused: isFocused,
-      chrome,
-    });
-  }
   // T2c — display lines come from viewerLines() (derives from active
   // tab + buffers + override + focused-Navigator's getInfo). Content
   // derivation stays here (viewer/tab-kind-aware, arc D3); the scrollable

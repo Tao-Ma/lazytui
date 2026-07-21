@@ -86,7 +86,6 @@ function freshState(root, panelType = 'files', extraPanelCfg = {}) {
   // lives on each Component's nav slice. Re-home the panels we touch.
   setSel(panelType, 0); setScroll(panelType, 0);
   getInstanceSlice('detail').contentTabs = {};
-  getInstanceSlice('detail').ephemeralTerminals = {};
   getInstanceSlice('detail').tab = 0;
   getInstanceSlice("layout").focus = panelType;
   getInstanceSlice('detail').lines = [];

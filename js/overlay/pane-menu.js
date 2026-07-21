@@ -92,7 +92,7 @@ function _paneById(paneId) {
  *  vocabulary + `tabIdx`. Byte-identical to the retired hand-rolled build. */
 function _flatTabs(paneId) {
   const m = getModel();
-  const slice = getInstanceSlice(paneId) || { ephemeralTerminals: {}, contentTabs: {}, tab: 0 };
+  const slice = getInstanceSlice(paneId) || { contentTabs: {}, tab: 0 };
   return tc.listTabs(tc.containerFor('viewer', { slice, model: m })).map(r => {
     const row = { section: 'tab', tabIdx: r.idx, label: r.label, kind: r.kind };
     if ('closeable' in r) { row.closeable = r.closeable; row.closeKind = r.closeKind; row.closeKey = r.closeKey; }

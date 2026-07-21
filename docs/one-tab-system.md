@@ -9,9 +9,11 @@
 > `textViewUpdate` interaction reducer + full `text-view` Component + `instanceKind`
 > routing fix; P1: action output mints/reuses + streams into a `text-view` instance
 > by paneId; P2: the flat action-tab strip + `actionTabBuffers` retired). Action
-> output is now fully re-homed to text-view position-tabs. **U2d–U2f remain**
-> (terminal-as-pane; Info/Transcript → text-view; delete the rest of the parallel
-> machinery). A large, multi-release arc.
+> output is now fully re-homed to text-view position-tabs. **U2d SHIPPED**
+> (terminal-as-pane: the embedded PTY is a minted `terminal` pane, YAML
+> `group.terminals` are open-on-demand actions, and the viewer strip's terminal
+> segment + `ephemeralTerminals` are excised). **U2e–U2f remain** (Info/Transcript
+> → text-view; delete the rest of the parallel machinery). A large, multi-release arc.
 > Supersedes the P2–P4 approach in
 > [pane-tabs-unification.md](pane-tabs-unification.md) (its P1 — the shared
 > `leaves/wm/tab-state` store — stays and is reused here as U1's basis).
@@ -207,8 +209,44 @@ ships and passes the gate (suite · smoke · acyclic · DEAD 0 · bench parity).
     · smoke 13 · dep-walker `[]` both modes · dead-exports 0 · bench parity.
   Follow-up #2 (`resolveViewerPaneId` viewer-specific): REUSED as-is, not
   generalized (the action text-view's container *is* the viewer slot).
-- **U2d — `terminal` pane type.** PTY becomes a minted `terminal` pane; retire
-  `ephemeralTerminals` + term content-tabs.
+- **U2d — `terminal` pane type (shipped).** The embedded PTY becomes a first-class
+  minted `terminal` pane instead of a viewer content-tab. The PTY WAL/replay
+  contract (docs/foreign-components.md) is unchanged — only the terminal's host
+  moves. Sub-phases:
+  - **P0a (shipped).** Behavior-preserving overlay refactor: `renderTerminalOverlay`
+    consumes a `visibleTerminalSurfaces` list (per-session force-state) instead of
+    the single-terminal singletons — still single-source.
+  - **P0b (shipped).** The `terminal` pane-type Component + the missing `remove_tab`
+    primitive (`layout.remove_tab` / `mpane.removeTab` / `mpool.removePoolEntry`) +
+    `destroySession`-on-orphan; the shared `panel/terminal-surfaces.js` selector
+    (one producer) wired into the overlay + poll gate; the finalizer per-pane PTY
+    reconcile loop.
+  - **P1a/P1b (shipped).** Interactive terminal panes (input · Enter-activation ·
+    exit · `:terminal`); `type:spawn` mints a `terminal` pane (bare-PTY branch;
+    tmux untouched).
+  - **P2.5 (shipped).** Docker exec mints a reused `terminal` pane; `addEphemeralTab`
+    retired.
+  - **P2a (shipped).** YAML `group.terminals` migrate to auto-generated
+    `type:'terminal'` actions (open-on-demand — the docker-`compose` precedent),
+    resolving the fork to option B: position-tabs, not group-derived content.
+    Configured terminals stay discoverable in the actions list; the only UX change
+    is no auto-show. Also fixed a latent framework bug: cmdline verbs that mint a
+    pane (`:terminal`/`:text-view`/`:add-column`) never triggered the finalizer, so
+    the pane didn't spawn/paint until the next keypress (`loop.js#applyMsg` now
+    finalizes when the arrange changed under it).
+  - **P2b (shipped).** Excised the vestigial terminal content-tab machinery +
+    re-based the viewer strip to `[Info] [Transcript] [contentTabs…]` (content
+    starts at 2): dropped `slice.ephemeralTerminals` + `groupTerminals` +
+    `addEphemeral`/`removeEphemeral` + the `viewer_add/remove_ephemeral_terminal`
+    arms + the `isTerminalTab`/`activeTerminalId`/`activeTerminalConfig`/
+    `findEphemeralByid`/`removeEphemeralTab`/`handleSessionCleanExit`/
+    `paneForSessionId` facades + `modelBundle`'s `yamlTerminals`/`actionCount` + the
+    `2 + actionCount + termTabs.length` index math across every mutator/reader.
+    Rewired all consumers (finalizer legacy PTY block, footer terminal label →
+    focused pane, wheel scrollback → terminal pane, mousedown-select guard,
+    pane-menu close, dead-terminal `x`, `run_selected`, `jobs_route` pty branch,
+    tab-strip/tab-container). Retired the dead `destroy_pty_session` effect. Gate:
+    suite 155 · smoke 13 · dep-walker `[]` both modes · dead-exports 0 · bench parity.
 - **U2e — `info` (+ Transcript → `text-view`).** The viewer slot starts with an
   `info` tab; Transcript becomes a `text-view`. The "viewer" Component is now
   just a default slot layout.

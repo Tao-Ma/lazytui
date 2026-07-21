@@ -311,9 +311,8 @@ describe('[immutable] groups', () => {
 
 // --- detail / viewer (Phase 3 — the heavy Component) ---------------------
 //
-// The viewer slice owns lines/scroll/tab/search/select/cursor/contentTabs/
-// ephemeralTerminals. Each non-IO Msg should return a fresh slice without
-// touching the input.
+// The viewer slice owns lines/scroll/tab/search/select/cursor/contentTabs.
+// Each non-IO Msg should return a fresh slice without touching the input.
 
 describe('[immutable] detail (viewer)', () => {
   const makeSlice = (overrides = {}) => ({
@@ -324,7 +323,6 @@ describe('[immutable] detail (viewer)', () => {
     select: { active: false, kind: 'char', anchor: { line: 0, col: 0 }, cursor: { line: 0, col: 0 } },
     cursor: { line: 0, col: 0 },
     contentTabs: {},
-    ephemeralTerminals: {},
     ...overrides,
   });
 

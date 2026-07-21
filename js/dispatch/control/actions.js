@@ -28,7 +28,6 @@ const { runAction } = require('../runtime/action-runner');
 const { getPanelDef, getItems, getMergedActions, getInstanceSlice,
         wrap, getFocus, instanceKind } = require('../../panel/api');
 const { dispatchMsg } = require('../runtime/loop');
-const { isTerminalTab } = require('../../panel/viewer/tabs');
 const { focusedTerminalId } = require('../../panel/terminal-surfaces');
 const { isSessionDead, restartSession } = require('../../io/terminal');
 const { execSync } = require('child_process');
@@ -245,10 +244,9 @@ function handleAction(action, arg, from) {
       break;
     }
     case 'run_selected': {
-      // Enter on a terminal → activate terminal mode. U2d: a `terminal` PANE
-      // (its own kind) OR the legacy viewer terminal tab.
-      if (instanceKind(getFocus()) === 'terminal'
-          || (instanceKind(getFocus()) === 'detail' && isTerminalTab())) {
+      // Enter on a `terminal` PANE → activate terminal mode. (U2d P2b — the
+      // legacy viewer-terminal-tab disjunct is gone; terminals are their own kind.)
+      if (instanceKind(getFocus()) === 'terminal') {
         activateTerminal();
         break;
       }

@@ -3,12 +3,11 @@
  *
  * Two surfaces, both pure (return-new, no globals):
  *
- *   1. Slice mutators (lifecycle of content/ephemeral tabs)
- *      addEphemeral / removeEphemeral / addContent / updateContentLines /
- *      removeContent / reorderContent — each takes (slice, model, payload)
- *      and returns [newSlice, info] where info carries cross-layer flags
- *      the caller folds into Cmds (focusDetail, terminalEnter/Exit,
- *      sessionId, needShowSelectedInfo).
+ *   1. Slice mutators (lifecycle of content tabs)
+ *      addContent / updateContentLines / removeContent / reorderContent —
+ *      each takes (slice, payload) and returns [newSlice, info] where info
+ *      carries cross-layer flags the caller folds into Cmds (focusDetail,
+ *      terminalExit, needShowSelectedInfo).
  *
  *   2. reduceTabMsg(msg, slice, ctx) — the Msg reducer for tab-related
  *      Msgs. Returns:
@@ -23,6 +22,12 @@
  *
  * Was `leaves/tabs.js` (mutators only) before Phase 2 — the case-arms
  * lived inline in panel/viewer/viewer.js#211-407.
+ *
+ * U2d P2b — the embedded-terminal content tab is GONE: terminals are their own
+ * `terminal` position-tab pane instances now (docs/one-tab-system.md). This leaf
+ * lost `groupTerminals` / `addEphemeral` / `removeEphemeral` / the terminal
+ * predicates + the `2 + actionCount + termTabs.length` index math. The viewer
+ * strip is now just `[Info] [Transcript] [contentTabs...]` — content starts at 2.
  *
  * Single-writer per layer: writes to model.modes / getFocus() are
  * returned as apply_msg / dispatch_msg Cmds, never side-effected here.
@@ -43,20 +48,6 @@ function _groupOf(model, groupName) {
   return model.config.groups[groupName] || null;
 }
 
-// Merged-action lookup — yields YAML+plugin actions for `groupName`.
-// Lazy-require avoids a module-load cycle (panel/api itself imports
-// nothing from this leaf). Data flow stays pure: the leaf only READS
-// from the registry; nothing mutates here. v0.6.2 — pre-v0.6.2 the
-// tab system read group.actions directly and missed plugin-synth
-// tab:true actions (postgres demo's `pg:status` was invisible). See
-// panel/api.js getMergedActions for the contract.
-//
-// U2c P2 — the injected merged-actions provider (setMergedActionsProvider /
-// _mergedProvider / _mergedFor, wired by panel/api at boot) is removed with the
-// action-tab machinery it fed: its only consumer was the action-tab enumeration
-// in flatTabInfo / flatTabInfoFromBundle. Action output now lives in text-view
-// instances, so the leaf no longer needs the merged (YAML + plugin) action set.
-
 // T2 — view-derived lines for the viewer's active tab. Pure projection
 // of (slice, model, focused-Navigator). Order of precedence:
 //   1. slice.viewerOverride — discrete-doc writers (history replay,
@@ -65,8 +56,7 @@ function _groupOf(model, groupName) {
 //   2. Per-tab derivation by tab kind:
 //        idx 0 (Info)        → focused Navigator's getInfo(item)
 //        idx 1 (Transcript)  → slice.viewerStreamBuffer.lines
-//        term tab            → []  (PTY-rendered separately)
-//        content tab         → slice.contentTabs[group][key].lines
+//        content tab (idx≥2) → slice.contentTabs[group][key].lines
 //   3. Degenerate tab idx falls back to empty (P3 — the legacy
 //      slice.lines field is DELETED; Info's home is slice.infoLines).
 //
@@ -76,7 +66,7 @@ function _groupOf(model, groupName) {
 // Shared body for viewerLines / viewerLinesFromBundle. `infoFn` is a thunk
 // computing flatTabInfo, called LAZILY (only for tab>=2) so the hot
 // info/transcript tabs (0/1) never pay for it. `groupName` keys the
-// action/content buffers (== bundle.currentGroup in the from-bundle path).
+// content buffers (== bundle.currentGroup in the from-bundle path).
 function _viewerLinesCore(slice, groupName, infoFn, lookups) {
   if (slice && slice.viewerOverride && Array.isArray(slice.viewerOverride.lines)) {
     return slice.viewerOverride.lines;
@@ -102,13 +92,9 @@ function _viewerLinesCore(slice, groupName, infoFn, lookups) {
     return ['[dim](no transcript yet)[/]'];
   }
   const info = infoFn();
-  // Term tab — PTY-rendered, no slice-side content. (U2c P2 — action tabs
-  // retired; action output lives in its own text-view instance now, so terms
-  // start right after Info + Transcript.)
-  const termBase = 2;
-  if (tab >= termBase && tab < termBase + info.termTabs.length) return [];
-  // Content tab.
-  const contentBase = 2 + info.termTabs.length;
+  // Content tab (idx ≥ 2 — Info + Transcript lead). U2d P2b — the terminal
+  // segment that used to sit between Transcript and content is gone.
+  const contentBase = 2;
   if (tab >= contentBase && tab < contentBase + info.contentTabs.length) {
     const [contentKey] = info.contentTabs[tab - contentBase];
     const ct = slice && slice.contentTabs
@@ -133,18 +119,6 @@ function viewerLinesFromBundle(slice, bundle, lookups) {
     () => flatTabInfoFromBundle(slice || {}, bundle), lookups);
 }
 
-/** Terminals shown in the viewer's flat strip. U2d P2 — YAML `group.terminals`
- *  no longer auto-show here: they're auto-generated `type:'terminal'` actions
- *  (api._terminalActions) that open `terminal` PANES. slice.ephemeralTerminals is
- *  also empty (runtime producers mint panes since P1b/P2.5), so this is now always
- *  {} — the terminal segment of the strip is dead (removed with the rest in P2b).
- *  Kept as a stub only so the index math stays valid this commit. */
-function groupTerminals(model, slice, groupName) {
-  const group = _groupOf(model, groupName);
-  if (!group) return {};
-  return (slice.ephemeralTerminals && slice.ephemeralTerminals[groupName]) || {};
-}
-
 function groupContentTabs(slice, groupName) {
   return (slice.contentTabs && slice.contentTabs[groupName]) || {};
 }
@@ -152,42 +126,30 @@ function groupContentTabs(slice, groupName) {
 // --- Pure read derivatives (slice-only, no globals) -----------------------
 
 /** Flat tab info for a pane's slice + a group:
- *    { termTabs, contentTabs, total }
+ *    { contentTabs, total }
  *  Tab strip layout, left → right:
- *    [Info] [Transcript] [termTabs...] [contentTabs...]
- *       0        1          2..1+T        2+T..1+T+C
- *  Two implicit globals (Info, Transcript) lead; per-group tabs follow.
- *  (U2c P2 — action tabs retired: a tab:true action's output now lives in its
- *  own text-view instance minted as a position-tab, so it no longer appears in
- *  this viewer-internal strip.) termTabs merges group.terminals (YAML) + slice.
- *  ephemeralTerminals[groupName] (runtime); contentTabs comes from
- *  slice.contentTabs[groupName]. `total` = 2 globals + T + C. */
+ *    [Info] [Transcript] [contentTabs...]
+ *       0        1          2..1+C
+ *  Two implicit globals (Info, Transcript) lead; per-group content tabs follow.
+ *  (U2c P2 — action tabs retired: a tab:true action's output lives in its own
+ *  text-view instance minted as a position-tab. U2d P2b — terminals likewise
+ *  became `terminal` panes, so the strip no longer has a terminal segment.)
+ *  contentTabs comes from slice.contentTabs[groupName]. `total` = 2 globals + C. */
 function flatTabInfo(slice, model, groupName) {
   const group = _groupOf(model, groupName);
-  if (!group) return { termTabs: [], contentTabs: [], total: 2 };
-  const termTabs = Object.entries(groupTerminals(model, slice, groupName));
+  if (!group) return { contentTabs: [], total: 2 };
   const contentTabs = Object.entries(groupContentTabs(slice, groupName));
-  return {
-    termTabs, contentTabs,
-    total: 2 + termTabs.length + contentTabs.length,
-  };
+  return { contentTabs, total: 2 + contentTabs.length };
 }
 
 // blessed-exceptions #3 P1 — the from-bundle twin of flatTabInfo. Identical
-// result, sourced from a `viewerModelBundle` (mergedActions pre-computed,
-// group/yamlTerminals snapshotted) instead of the live model. `bundle.
-// currentGroup` is the group the bundle describes, so it keys ephemerals /
-// content exactly as the model-path `groupName` does.
+// result, sourced from a `viewerModelBundle` (group snapshotted) instead of the
+// live model. `bundle.currentGroup` is the group the bundle describes, so it
+// keys content exactly as the model-path `groupName` does.
 function flatTabInfoFromBundle(slice, bundle) {
-  if (!bundle || !bundle.group) return { termTabs: [], contentTabs: [], total: 2 };
-  const gn = bundle.currentGroup;
-  const eph = (slice && slice.ephemeralTerminals && slice.ephemeralTerminals[gn]) || {};
-  const termTabs = Object.entries({ ...(bundle.yamlTerminals || {}), ...eph });
-  const contentTabs = Object.entries(groupContentTabs(slice || {}, gn));
-  return {
-    termTabs, contentTabs,
-    total: 2 + termTabs.length + contentTabs.length,
-  };
+  if (!bundle || !bundle.group) return { contentTabs: [], total: 2 };
+  const contentTabs = Object.entries(groupContentTabs(slice || {}, bundle.currentGroup));
+  return { contentTabs, total: 2 + contentTabs.length };
 }
 
 /** Flat-index of the Transcript tab — always 1 (right after Info). */
@@ -206,11 +168,7 @@ function resolveTabKey(idx, slice, model) {
   if (!model || !model.config || !model.config.groups) return null;
   const groupName = model.currentGroup;
   const info = flatTabInfo(slice || {}, model, groupName);
-  const termBase = 2;
-  if (idx >= termBase && idx < termBase + info.termTabs.length) {
-    return `${groupName}:terminal:${info.termTabs[idx - termBase][0]}`;
-  }
-  const contentBase = 2 + info.termTabs.length;
+  const contentBase = 2;
   if (idx >= contentBase && idx < contentBase + info.contentTabs.length) {
     return `${groupName}:content:${info.contentTabs[idx - contentBase][0]}`;
   }
@@ -224,31 +182,18 @@ function resolveTabKeyFromBundle(idx, slice, bundle) {
   if (!bundle || !bundle.group) return null;
   const groupName = bundle.currentGroup;
   const info = flatTabInfoFromBundle(slice || {}, bundle);
-  const termBase = 2;
-  if (idx >= termBase && idx < termBase + info.termTabs.length) {
-    return `${groupName}:terminal:${info.termTabs[idx - termBase][0]}`;
-  }
-  const contentBase = 2 + info.termTabs.length;
+  const contentBase = 2;
   if (idx >= contentBase && idx < contentBase + info.contentTabs.length) {
     return `${groupName}:content:${info.contentTabs[idx - contentBase][0]}`;
   }
   return null;
 }
 
-/** True when the slice's active tab is a terminal tab in `groupName`. */
-function isTerminalTabIn(slice, model, groupName) {
-  const info = flatTabInfo(slice, model, groupName);
-  if (info.termTabs.length === 0) return false;
-  const start = 2;
-  const t = slice.tab | 0;
-  return t >= start && t < start + info.termTabs.length;
-}
-
 /** True when the slice's active tab is a content tab in `groupName`. */
 function isContentTabIn(slice, model, groupName) {
   const info = flatTabInfo(slice, model, groupName);
   if (info.contentTabs.length === 0) return false;
-  const start = 2 + info.termTabs.length;
+  const start = 2;
   const t = slice.tab | 0;
   return t >= start && t < start + info.contentTabs.length;
 }
@@ -256,37 +201,9 @@ function isContentTabIn(slice, model, groupName) {
 /** [key, { label, lines }] for the active content tab, or null. */
 function activeContentTabIn(slice, model, groupName) {
   const info = flatTabInfo(slice, model, groupName);
-  const idx = (slice.tab | 0) - 2 - info.termTabs.length;
+  const idx = (slice.tab | 0) - 2;
   if (idx < 0 || idx >= info.contentTabs.length) return null;
   return info.contentTabs[idx];
-}
-
-/** Session id (`${group}_${key}`) for the active terminal tab, or null. */
-function activeTerminalIdIn(slice, model, groupName) {
-  const info = flatTabInfo(slice, model, groupName);
-  const idx = (slice.tab | 0) - 2;
-  if (idx < 0 || idx >= info.termTabs.length) return null;
-  return `${groupName}_${info.termTabs[idx][0]}`;
-}
-
-/** { cmd, label } for the active terminal tab, or null. */
-function activeTerminalConfigIn(slice, model, groupName) {
-  const info = flatTabInfo(slice, model, groupName);
-  const idx = (slice.tab | 0) - 2;
-  if (idx < 0 || idx >= info.termTabs.length) return null;
-  return info.termTabs[idx][1];
-}
-
-/** Reverse-lookup an ephemeral entry from a session id. Groups can
- *  contain underscores, so we scan rather than split. */
-function findEphemeralByIdIn(slice, id) {
-  const eph = (slice && slice.ephemeralTerminals) || {};
-  for (const group of Object.keys(eph)) {
-    for (const key of Object.keys(eph[group])) {
-      if (`${group}_${key}` === id) return { group, key };
-    }
-  }
-  return null;
 }
 
 // --- Pure slice mutators (return [newSlice, info]) ------------------------
@@ -295,142 +212,61 @@ function findEphemeralByIdIn(slice, id) {
 // and read model.config.groups + model.currentGroup directly. They
 // now take `(slice, msg)` with the model-derived facts precomputed
 // by the dispatcher and threaded via msg: `currentGroup`,
-// `groupExists`, `yamlTerminals`, `actionCount`. Use `modelBundle()`
-// (exported below) to compute the bundle once per dispatch.
+// `groupExists`. Use `modelBundle()` (exported below) to compute the
+// bundle once per dispatch.
 
 /** Precompute the model-derived facts these leaves need, so dispatchers
  *  can thread them into each Msg payload and the leaves stay pure of
- *  getModel(). The bundle covers the 6 content/ephemeral tab leaves
- *  (addEphemeral / removeEphemeral / addContent / updateContentLines
- *  / removeContent / reorderContent). Spread into the dispatched Msg:
+ *  getModel(). The bundle covers the content-tab leaves (addContent /
+ *  updateContentLines / removeContent / reorderContent). Spread into the
+ *  dispatched Msg:
  *
  *    panelHost.dispatchMsg(wrap(target, {
  *      type: 'viewer_add_content_tab', groupName, key, label, lines,
  *      ...pt.modelBundle(model, groupName),
  *    }));
- */
+ *
+ *  (U2d P2b — `yamlTerminals` + `actionCount` dropped: the terminal segment +
+ *  the retired action tabs no longer offset the content index, so content
+ *  starts at a fixed base of 2.) */
 function modelBundle(model, groupName) {
   const group = _groupOf(model, groupName);
   return {
     currentGroup: (model && model.currentGroup) || '',
     groupExists: !!group,
-    yamlTerminals: group ? (group.terminals || {}) : null,
-    // U2c P2 — action tabs retired (action output → its own text-view instance),
-    // so they no longer offset the terminal/content tab indices. Kept as a 0 so the
-    // terminal/content mutators' `2 + actionCount + …` index math stays correct
-    // without churn (those mutators are reworked when terminals move — U2d).
-    actionCount: 0,
   };
 }
 
 /** blessed-exceptions #3 — the full model fact-set the viewer's tab/content
- *  readers (flatTabInfo / viewerLines / resolveTabKey + the `is*TabIn`
- *  predicates) need, captured ONCE so `viewer.update` can read it from the
- *  Msg payload instead of `getModel()`. (U2c P2 — `mergedActions` dropped: it
- *  fed only the retired action-tab enumeration.) Pair with
- *  `flatTabInfoFromBundle` / `viewerLinesFromBundle` (P1). */
+ *  readers (flatTabInfo / viewerLines / resolveTabKey + isContentTabIn)
+ *  need, captured ONCE so `viewer.update` can read it from the Msg payload
+ *  instead of `getModel()`. (U2c P2 — `mergedActions` dropped; U2d P2b —
+ *  `yamlTerminals` dropped.) Pair with `flatTabInfoFromBundle` /
+ *  `viewerLinesFromBundle` (P1). */
 function viewerModelBundle(model, groupName) {
   const group = _groupOf(model, groupName);
   return {
     // `currentGroup` = the group this bundle describes (always the viewer's
-    // current group in practice). The `*FromBundle` readers key ephemerals /
-    // content / tab-key prefixes off it, so it MUST match the `groupName` the
-    // facts were computed for (parity with the model-path flatTabInfo).
+    // current group in practice). The `*FromBundle` readers key content /
+    // tab-key prefixes off it, so it MUST match the `groupName` the facts
+    // were computed for (parity with the model-path flatTabInfo).
     currentGroup: groupName,
     group,
-    yamlTerminals: group ? (group.terminals || {}) : null,
   };
-}
-
-function addEphemeral(slice, { groupName, key, cmd, label, currentGroup, groupExists, yamlTerminals, actionCount }) {
-  if (!groupExists) return [slice, { focusDetail: false, terminalEnter: false }];
-
-  // T27 / R21 dup-key contract: when an entry already exists at this
-  // key, the new {cmd, label} is INTENTIONALLY DROPPED — the call is
-  // a "switch to existing tab" gesture (the live PTY session at
-  // ${groupName}_${key} is reused). Callers wanting a fresh shell
-  // must destroy the session + remove the tab first, then re-add.
-  const ephGroup = slice.ephemeralTerminals[groupName] || {};
-  const ephGroupNext = ephGroup[key] ? ephGroup : { ...ephGroup, [key]: { cmd, label } };
-  const ephAllNext = { ...slice.ephemeralTerminals, [groupName]: ephGroupNext };
-  const next = { ...slice, ephemeralTerminals: ephAllNext };
-
-  // T27 — cross-group guard. Don't touch the current-group cursor when
-  // the add lands in a group the user has switched away from.
-  if (groupName !== currentGroup) return [next, { focusDetail: false, terminalEnter: false }];
-
-  const allTerms = { ...(yamlTerminals || {}), ...ephGroupNext };
-  const termIdx = Object.keys(allTerms).indexOf(key);
-  if (termIdx < 0) return [next, { focusDetail: false, terminalEnter: false }];
-  return [
-    { ...next, tab: 2 + actionCount + termIdx },
-    { focusDetail: true, terminalEnter: true },
-  ];
 }
 
 // R5 — drop a tabState entry when its tab is removed. Without this,
 // tabState[<group>:<kind>:<key>] outlives the tab and gets restored
 // the next time the user creates a new tab with the same key (e.g.
-// reopening the same file path, recreating an ephemeral terminal
-// under the same key) — counter to the "first visit → kind-specific
-// default" rule in tab_switch's _resolveScroll.
+// reopening the same file path) — counter to the "first visit →
+// kind-specific default" rule in tab_switch's _resolveScroll.
 // Store mechanics live in the pane-agnostic tab-state leaf (P1); this keeps the
 // R5 name + the group:kind:key rationale at the viewer's call sites.
 function _dropTabStateEntry(slice, key) {
   return require('./tab-state').dropEntry(slice, key);
 }
 
-function removeEphemeral(slice, { groupName, key, currentGroup, yamlTerminals, actionCount }) {
-  const eph = slice.ephemeralTerminals[groupName];
-  if (!eph || !eph[key]) return [slice, { sessionId: null, terminalExit: false }];
-
-  const id = `${groupName}_${key}`;
-
-  const { [key]: _removed, ...ephGroupRest } = eph;
-  const ephAllNext = { ...slice.ephemeralTerminals };
-  if (Object.keys(ephGroupRest).length === 0) delete ephAllNext[groupName];
-  else ephAllNext[groupName] = ephGroupRest;
-
-  // R5 — drop the matching tabState entry for the removed terminal.
-  const dropKey = `${groupName}:terminal:${key}`;
-  const sliceAfterDrop = _dropTabStateEntry(slice, dropKey);
-
-  if (groupName !== currentGroup) {
-    return [{ ...sliceAfterDrop, ephemeralTerminals: ephAllNext }, { sessionId: id, terminalExit: false }];
-  }
-
-  const yaml = yamlTerminals || {};
-  const oldOrder = Object.keys({ ...yaml, ...eph });
-  const removedTermIdx = oldOrder.indexOf(key);
-  const removedTabIdx = 2 + actionCount + removedTermIdx;
-
-  const newCount = Object.keys({ ...yaml, ...ephGroupRest }).length;
-
-  let tab = slice.tab;
-  let scroll = slice.scroll;
-  let terminalExit = false;
-  if (slice.tab === removedTabIdx) {
-    if (newCount > 0) {
-      tab = 2 + actionCount + Math.min(removedTermIdx, newCount - 1);
-    } else {
-      tab = 0;
-      scroll = 0;
-    }
-    terminalExit = true;
-  } else if (slice.tab > removedTabIdx) {
-    tab = slice.tab - 1;
-  }
-
-  // N2 — slice.lines is finalizer-derived; mirror write retired.
-  // A7 — clear viewerOverride when removing the active terminal tab
-  // (same rationale as removeContent: override was painting on the
-  // surface being closed).
-  const out = { ...sliceAfterDrop, ephemeralTerminals: ephAllNext, tab, scroll };
-  if (slice.tab === removedTabIdx && slice.viewerOverride) out.viewerOverride = null;
-  return [out, { sessionId: id, terminalExit }];
-}
-
-function addContent(slice, { groupName, key, label, lines, currentGroup, groupExists, yamlTerminals, actionCount }) {
+function addContent(slice, { groupName, key, label, lines, currentGroup, groupExists }) {
   if (!groupExists) return [slice, { focusDetail: false, terminalExit: false }];
 
   const ctAll = slice.contentTabs || {};
@@ -444,12 +280,11 @@ function addContent(slice, { groupName, key, label, lines, currentGroup, groupEx
   const contentIdx = Object.keys(ctGroupNext).indexOf(key);
   if (contentIdx < 0) return [next, { focusDetail: false, terminalExit: false }];
 
-  const tCount = Object.keys({ ...(yamlTerminals || {}), ...((next.ephemeralTerminals || {})[groupName] || {}) }).length;
   // N2 — slice.lines is finalizer-derived; the lines field is stored
   // inside contentTabs (above), the slice mirror is dead.
   next = {
     ...next,
-    tab: 2 + actionCount + tCount + contentIdx,
+    tab: 2 + contentIdx,
     scroll: 0,
   };
   if (next.search && next.search.active) {
@@ -458,7 +293,7 @@ function addContent(slice, { groupName, key, label, lines, currentGroup, groupEx
   return [next, { focusDetail: true, terminalExit: true }];
 }
 
-function updateContentLines(slice, { groupName, key, lines, currentGroup, yamlTerminals, actionCount }) {
+function updateContentLines(slice, { groupName, key, lines, currentGroup }) {
   const ctAll = slice.contentTabs;
   if (!ctAll || !ctAll[groupName] || !ctAll[groupName][key]) return [slice, null];
 
@@ -468,8 +303,7 @@ function updateContentLines(slice, { groupName, key, lines, currentGroup, yamlTe
 
   if (groupName !== currentGroup) return [next, null];
   const order = Object.keys(ctGroupNext);
-  const tCount = Object.keys({ ...(yamlTerminals || {}), ...((next.ephemeralTerminals || {})[groupName] || {}) }).length;
-  const idx = next.tab - 2 - actionCount - tCount;
+  const idx = next.tab - 2;
   if (idx < 0 || idx >= order.length || order[idx] !== key) return [next, null];
   // N2 — slice.lines is finalizer-derived; lines live in contentTabs.
   return [{ ...next, scroll: 0 }, null];
@@ -478,7 +312,7 @@ function updateContentLines(slice, { groupName, key, lines, currentGroup, yamlTe
 /** Returns [newSlice, { needShowSelectedInfo }] — needShowSelectedInfo
  *  is true when the closed tab was the last content tab so the body
  *  falls back to Info (caller emits the Cmd). */
-function removeContent(slice, { groupName, key, currentGroup, yamlTerminals, actionCount }) {
+function removeContent(slice, { groupName, key, currentGroup }) {
   const ctAll = slice.contentTabs;
   const ct = ctAll && ctAll[groupName];
   if (!ct || !ct[key]) return [slice, { needShowSelectedInfo: false }];
@@ -496,10 +330,9 @@ function removeContent(slice, { groupName, key, currentGroup, yamlTerminals, act
     return [{ ...sliceAfterDrop, contentTabs: ctAllNext }, { needShowSelectedInfo: false }];
   }
 
-  const tCount = Object.keys({ ...(yamlTerminals || {}), ...((slice.ephemeralTerminals || {})[groupName] || {}) }).length;
   const oldOrder = Object.keys(ct);
   const removedContentIdx = oldOrder.indexOf(key);
-  const removedTabIdx = 2 + actionCount + tCount + removedContentIdx;
+  const removedTabIdx = 2 + removedContentIdx;
 
   let tab = slice.tab;
   let scroll = slice.scroll;
@@ -509,7 +342,7 @@ function removeContent(slice, { groupName, key, currentGroup, yamlTerminals, act
     const remainingKeys = Object.keys(ctGroupRest);
     if (remainingKeys.length > 0) {
       const newContentIdx = Math.min(removedContentIdx, remainingKeys.length - 1);
-      tab = 2 + actionCount + tCount + newContentIdx;
+      tab = 2 + newContentIdx;
       scroll = 0;
     } else {
       tab = 0;
@@ -543,7 +376,7 @@ function removeContent(slice, { groupName, key, currentGroup, yamlTerminals, act
  * moved tab when active is the one moving; otherwise it adjusts so the
  * SAME content stays focused.
  */
-function reorderContent(slice, { groupName, fromIdx, toIdx, currentGroup, yamlTerminals, actionCount }) {
+function reorderContent(slice, { groupName, fromIdx, toIdx, currentGroup }) {
   const ctAll = slice.contentTabs || {};
   const ct = ctAll[groupName];
   if (!ct) return slice;
@@ -563,8 +396,7 @@ function reorderContent(slice, { groupName, fromIdx, toIdx, currentGroup, yamlTe
 
   if (groupName !== currentGroup) return next;
 
-  const tCount = Object.keys({ ...(yamlTerminals || {}), ...((next.ephemeralTerminals || {})[groupName] || {}) }).length;
-  const contentBase = 2 + actionCount + tCount;
+  const contentBase = 2;
   const oldContentTab = slice.tab - contentBase;
   if (oldContentTab < 0 || oldContentTab >= n) return next;
 
@@ -618,7 +450,7 @@ function reduceTabMsg(msg, slice, ctx) {
       // flatTabInfoFromBundle twin — NOT a live getModel() read (the bundle is
       // stamped by viewer.augmentMsg on every viewer Msg, from the same model
       // this reducer runs on). Keeps the arm a pure fn of (slice, msg).
-      const { termTabs, total } = flatTabInfoFromBundle(slice, msg.viewerModel);
+      const { total } = flatTabInfoFromBundle(slice, msg.viewerModel);
       const idx = msg.idx | 0;
       if (idx < 0 || idx >= total) return slice;
       // N4 — same-tab click is a no-op. Pre-N4 this still fired the full
@@ -705,19 +537,17 @@ function reduceTabMsg(msg, slice, ctx) {
         const innerH = slice.innerH > 0 ? slice.innerH : 1;
         const bottom = Math.max(0, linesLen - innerH);
         next = { ...next, scroll: _resolveScroll(bottom, bottom) };
-      } else if (idx <= 1 + termTabs.length) {
-        next = { ...next, scroll: _resolveScroll(0, 0) };
       } else {
         // v0.6.2 B8 — drop the `if (activeContentTab())` guard.
         // activeContentTab() reads _detailSlice() from the store which
         // still reflects the PRE-transition slice.tab. Switching FROM
-        // Info / Action / Terminal TO a content tab → ct = null → the
+        // Info / Transcript TO a content tab → ct = null → the
         // scroll write was SKIPPED entirely, so next.scroll inherited
         // the leaving tab's value (via the earlier `next = { ...slice,
         // tab: idx, ... }` spread). With innerH > content-lines this
         // rendered the content tab past EOF — blank panel. We're
-        // already in the content-idx range here, so unconditionally
-        // resolve scroll the same way every other kind does.
+        // already in the content-idx range here (idx ≥ 2), so
+        // unconditionally resolve scroll the same way every other kind does.
         next = { ...next, scroll: _resolveScroll(0, 0) };
       }
       // v0.6.7 — a real tab switch (past the same-tab early-out above) is a
@@ -733,22 +563,9 @@ function reduceTabMsg(msg, slice, ctx) {
     // in this leaf.
 
     // --- tab lifecycle ---
-    case 'viewer_add_ephemeral_terminal': {
-      // Pure reducer arm — model-derived facts arrive via msg payload
-      // (dispatcher calls modelBundle and spreads). See addEphemeral.
-      const [next, info] = addEphemeral(slice, msg);
-      const effects = [];
-      if (info.focusDetail)   effects.push({ type: 'msg', msg: wrap('layout', { type: 'focus_set', focus: paneId }) });
-      if (info.terminalEnter) effects.push({ type: 'msg', msg: { type: 'terminal_enter' } });
-      return [next, effects];
-    }
-    case 'viewer_remove_ephemeral_terminal': {
-      const [next, { sessionId, terminalExit }] = removeEphemeral(slice, msg);
-      const effects = [];
-      if (sessionId)    effects.push({ type: 'destroy_pty_session', id: sessionId });
-      if (terminalExit) effects.push({ type: 'msg', msg: { type: 'terminal_exit' } });
-      return [next, effects];
-    }
+    // (U2d P2b — viewer_add/remove_ephemeral_terminal arms retired: embedded
+    // terminals are `terminal` position-tab panes now, minted/removed via the
+    // layout mint_tab/remove_tab primitives, not this viewer strip.)
     case 'viewer_add_content_tab': {
       const [next, info] = addContent(slice, msg);
       const effects = [];
@@ -784,10 +601,8 @@ module.exports = {
   flatTabInfo, transcriptTabIdx,
   resolveTabKey,
   viewerLines,
-  isTerminalTabIn, isContentTabIn,
-  activeContentTabIn, activeTerminalIdIn, activeTerminalConfigIn,
-  findEphemeralByIdIn,
-  addEphemeral,
+  isContentTabIn,
+  activeContentTabIn,
   addContent,
   modelBundle,
   viewerModelBundle,

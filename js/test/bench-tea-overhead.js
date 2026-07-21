@@ -85,7 +85,6 @@ const arrange = {
 
 const detailSlice = {
   lines: [], tab: 0,
-  ephemeralTerminals: {},
   contentTabs: {},
 };
 
@@ -109,7 +108,7 @@ const model = getModel();
 console.log('\n[1] pt.modelBundle (per viewer_add/remove/update dispatch)');
 bench('modelBundle(model, "pg")', 100_000, (n) => {
   let acc = 0;
-  for (let i = 0; i < n; i++) acc += pt.modelBundle(model, 'pg').actionCount;
+  for (let i = 0; i < n; i++) acc += pt.modelBundle(model, 'pg').groupExists ? 1 : 0;
   if (acc < 0) console.log(acc);  // prevent dead-code elim
 });
 

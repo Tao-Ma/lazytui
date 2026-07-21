@@ -2,11 +2,13 @@
  * Tab-container interface — one contract over the two tab systems (U1,
  * docs/one-tab-system.md). lazytui has TWO tab machines: position/slot tabs
  * (a pane's `tabs[]` + `activeTabId`, leaves/wm/pane) and the viewer's content
- * tabs (the flat strip over `slice.{contentTabs,ephemeralTerminals,…}` +
+ * tabs (the flat strip over `slice.{contentTabs,tabState}` +
  * per-tab view-state in `slice.tabState`, leaves/wm/pane-tabs + tab-state).
  * This leaf is the keystone that lets a consumer talk to either one the same
  * way, so later phases can migrate a content-kind BEHIND this contract without
- * the consumer noticing.
+ * the consumer noticing. (U2d P2b — the viewer strip's terminal segment is gone;
+ * embedded terminals are now `terminal` position-tab panes, so a viewer's
+ * content tabs are `slice.{contentTabs,tabState}` only.)
  *
  * The contract is FOUR verbs over a plain **descriptor** (tagged by `backing`):
  *   listTabs(c)        → [ { key, idx, label, kind, active, closeable?,
@@ -73,30 +75,21 @@ function _viewerActiveIdx(slice) {
 }
 
 /** Build the flat viewer strip as neutral rows. `info` is a flatTabInfo result,
- *  `g` the group the strip belongs to (for the ephemeral-terminal closeable
- *  probe), `keyOf(idx)` resolves the stable tab key. Mirrors pane-menu._flatTabs
+ *  `keyOf(idx)` resolves the stable tab key. Mirrors pane-menu._flatTabs
  *  field-for-field (kind / closeable / closeKind / closeKey) so it can back it. */
-function _viewerRows(slice, info, g, keyOf, activeIdx) {
-  const s = slice || {};
+function _viewerRows(slice, info, keyOf, activeIdx) {
   const rows = [
     { key: keyOf(0), idx: 0, label: 'Info', kind: '', active: activeIdx === 0 },
     { key: keyOf(1), idx: 1, label: 'Transcript', kind: '', active: activeIdx === 1 },
   ];
-  // U2c P2 — action tabs retired (action output → its own text-view position-tab),
-  // so terminals/content follow Info+Transcript directly.
-  const eph = (s.ephemeralTerminals && s.ephemeralTerminals[g]) || {};
-  info.termTabs.forEach(([key, t], i) => {
-    const idx = 2 + i;
-    rows.push({
-      key: keyOf(idx), idx, label: t.label || key, kind: 'term', active: activeIdx === idx,
-      closeable: !!eph[key], closeKind: 'terminal', closeKey: key,
-    });
-  });
+  // U2c P2 — action tabs retired (output → its own text-view position-tab).
+  // U2d P2b — terminals retired (they're `terminal` panes). Content follows
+  // Info+Transcript directly, starting at idx 2.
   info.contentTabs.forEach(([key, c], i) => {
     let k = 'content';
     if (key.startsWith('docker:')) k = 'docker';
     else if (key.startsWith('file:')) k = 'file';
-    const idx = 2 + info.termTabs.length + i;
+    const idx = 2 + i;
     rows.push({
       key: keyOf(idx), idx, label: c.label || key, kind: k, active: activeIdx === idx,
       closeable: true, closeKind: 'content', closeKey: key,
@@ -114,12 +107,12 @@ function listTabs(container) {
     if (container.bundle) {
       const b = container.bundle;
       const info = pt.flatTabInfoFromBundle(s, b);
-      return _viewerRows(s, info, b.currentGroup, idx => pt.resolveTabKeyFromBundle(idx, s, b), activeIdx);
+      return _viewerRows(s, info, idx => pt.resolveTabKeyFromBundle(idx, s, b), activeIdx);
     }
     const m = container.model;
     const g = m && m.currentGroup;
     const info = pt.flatTabInfo(s, m, g);
-    return _viewerRows(s, info, g, idx => pt.resolveTabKey(idx, s, m), activeIdx);
+    return _viewerRows(s, info, idx => pt.resolveTabKey(idx, s, m), activeIdx);
   }
   if (container.backing === 'instance') return _instanceRows(container.pane, container.pool);
   return [];

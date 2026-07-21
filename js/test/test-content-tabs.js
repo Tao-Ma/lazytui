@@ -34,7 +34,6 @@ function freshGroup({ actions = {}, terminals = {} } = {}) {
   // Minimal config — only the group lookup paths the tab code touches.
   getModel().config = { groups: { g1: { actions, terminals } } };
   getModel().currentGroup = 'g1';
-  getInstanceSlice('detail').ephemeralTerminals = {};
   getInstanceSlice('detail').contentTabs = {};
   getInstanceSlice('detail').tab = 0;
   getInstanceSlice("layout").focus = 'groups';
@@ -203,7 +202,6 @@ describe('[T27] cross-group mutators preserve current-group cursor + body', () =
     getModel().config = { groups: { g1: { actions: {}, terminals: {} },
                                     g2: { actions: {}, terminals: {} } } };
     getModel().currentGroup = 'g1';
-    getInstanceSlice('detail').ephemeralTerminals = {};
     getInstanceSlice('detail').contentTabs = {};
     getInstanceSlice('detail').infoLines = ['g1 content'];
     getInstanceSlice('detail').scroll = 5;
@@ -224,7 +222,6 @@ describe('[T27] cross-group mutators preserve current-group cursor + body', () =
     getModel().config = { groups: { g1: { actions: {}, terminals: {} },
                                     g2: { actions: {}, terminals: {} } } };
     getModel().currentGroup = 'g2';
-    getInstanceSlice('detail').ephemeralTerminals = {};
     getInstanceSlice('detail').contentTabs = { g1: { 'file:a': { label: 'a', lines: ['old'] } } };
     getInstanceSlice('detail').infoLines = ['g2 view'];
     getInstanceSlice('detail').scroll = 3;
@@ -324,24 +321,28 @@ describe('[R14] N1 content-tab tabState restore (non-adjacent transition)', () =
 
 describe('[purity] tab_switch reads msg.viewerModel, not the live model', () => {
   // v0.6.6 code-only TEA review: the tab_switch arm used to read getModel()
-  // via ctx.getTabInfo() for the {termTabs, total} guard — a live model read
-  // inside a reducer. It now derives those from msg.viewerModel via the pure
+  // via ctx.getTabInfo() for the {total} guard — a live model read inside a
+  // reducer. It now derives that from msg.viewerModel via the pure
   // flatTabInfoFromBundle twin. This proves the swap: make the bundle DISAGREE
-  // with the live model (bundle carries a terminal tab → total 3; live model has
-  // none → total 2) and confirm idx=2 is honored from the BUNDLE. (U2c P2 — was an
-  // action tab; action tabs retired, so a terminal tab is the disagreement now.)
-  it('honors a tab idx present in the bundle even when the live model lacks it', () => {
+  // with the live model and confirm idx=2 is honored from the BUNDLE. (U2c P2 —
+  // was an action tab, U2d P2b — terminals also retired, so the disagreement is
+  // now group-presence: the SLICE carries a content tab, the live model lacks
+  // the group entirely — total 2 — while the bundle's group EXISTS — total 3.)
+  it('honors a tab idx present in the bundle even when the live model lacks the group', () => {
+    const route = require('../panel/route');
     const viewer = require('../panel/viewer/viewer');
-    freshGroup({ actions: {} });               // live model: group g1, NO term tabs → total 2
-    const slice = getInstanceSlice('detail');
+    getModel().config = { groups: {} };        // live model: NO group g1 → flatTabInfo total 2
+    getModel().currentGroup = 'g1';
+    const slice = { ...getInstanceSlice('detail'), tab: 0,
+      contentTabs: { g1: { doc1: { label: 'd1', lines: ['x'] } } } };
+    route.setInstanceSlice('detail', slice);
     const r = viewer._update({
       type: 'tab_switch', idx: 2,              // out-of-range if read from the live model
-      targetKey: 'g1:terminal:sh',
+      targetKey: 'g1:content:doc1',
       currentGroup: 'g1',
-      viewerModel: {                           // bundle disagrees: one term tab → total 3
+      viewerModel: {                           // bundle disagrees: group EXISTS → total 3
         currentGroup: 'g1',
-        group: { actions: {}, terminals: { sh: { cmd: 'sh', label: 'sh' } } },
-        yamlTerminals: { sh: { cmd: 'sh', label: 'sh' } },
+        group: { actions: {} },
       },
     }, slice);
     const next = Array.isArray(r) ? r[0] : r;
@@ -406,12 +407,12 @@ describe('[B8] tab_switch to content tab from non-content origin resets scroll',
 });
 
 describe('[R5] tab removal drops the matching tabState entry', () => {
-  // Pre-R5: removeEphemeral / removeContent dropped the
-  // ephemeralTerminals[g][k] / contentTabs[g][k] entry but left
-  // tabState['<g>:terminal:<k>'] / tabState['<g>:content:<k>']
-  // intact. Reopening the same key inherited the prior tab's stored
-  // scroll / search / select / cursor — counter to the kind-specific
-  // first-visit defaults tab_switch's _resolveScroll falls back to.
+  // Pre-R5: removeContent dropped the contentTabs[g][k] entry but left
+  // tabState['<g>:content:<k>'] intact. Reopening the same key inherited the
+  // prior tab's stored scroll / search / select / cursor — counter to the
+  // kind-specific first-visit defaults tab_switch's _resolveScroll falls back
+  // to. (U2d P2b — the terminal-tab twin of this test retired with the embedded
+  // terminal content tab; terminals are `terminal` panes now.)
   it('removeContentTab drops tabState[<group>:content:<key>]', () => {
     freshGroup();
     tabs.addContentTab('g1', 'file:foo', 'foo', ['x', 'y', 'z']);
@@ -426,21 +427,6 @@ describe('[R5] tab removal drops the matching tabState entry', () => {
     const after = getInstanceSlice('detail');
     assert(!('g1:content:file:foo' in after.tabState), 'removed tab\'s entry dropped');
     eq(after.tabState['g1:content:other'].scroll, 99, 'sibling entry untouched');
-  });
-  it('removeEphemeralTab drops tabState[<group>:terminal:<key>]', () => {
-    freshGroup({ terminals: { shell: { cmd: 'bash', label: 'Shell' } } });
-    // Force an ephemeral terminal entry directly (skip add-flow nuance).
-    const slice = getInstanceSlice('detail');
-    slice.ephemeralTerminals = { g1: { 'eph-1': { cmd: 'sh', label: 'Eph' } } };
-    slice.tabState = {
-      'g1:terminal:eph-1': { scroll: 12 },
-      'g1:terminal:shell': { scroll: 5 },
-    };
-    require('../panel/route').setInstanceSlice('detail', slice);
-    tabs.removeEphemeralTab('g1', 'eph-1');
-    const after = getInstanceSlice('detail');
-    assert(!('g1:terminal:eph-1' in after.tabState), 'removed terminal\'s entry dropped');
-    eq(after.tabState['g1:terminal:shell'].scroll, 5, 'sibling entry untouched');
   });
 });
 

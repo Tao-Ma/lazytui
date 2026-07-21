@@ -55,6 +55,16 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Embedded terminals are now first-class panes**, not tabs inside the viewer
+  (one-tab-system arc, U2d). An embedded PTY — a `type: spawn` shell, a docker
+  `exec`, or a configured `terminals:` entry — opens as its own `terminal` pane
+  minted into a slot, so it lives in the general position-tab system like any
+  other pane. Configured per-group `terminals:` no longer auto-show as viewer
+  tabs; they surface as **open-on-demand actions** (like docker's compose verbs)
+  that reuse a persistent session across group switches. The viewer's own tab
+  strip is now just `[Info] [Transcript] [content…]`. See
+  [docs/TERMINAL.md](docs/TERMINAL.md) and
+  [docs/one-tab-system.md](docs/one-tab-system.md).
 - **Overlay menus scroll** when taller than the terminal — the selection stays in
   view (previously only the first screenful rendered and the cursor could move
   off-screen). The right-click "Send selection to port…" picker opens **at the
@@ -69,6 +79,10 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   the footer's config-warning hint, and the diag-log).
 - The right-click → port picker no longer leaves the first menu ghosted at its
   original position when the second menu opens.
+- Command-line verbs that mint a pane (`:terminal`, `:text-view`, `:add-column`)
+  now take effect immediately instead of only after the next keystroke — the
+  minted pane's instance/PTY reconcile ran on the finalizer, which the root
+  command dispatch was skipping.
 
 ## [0.6.7] — 2026-06-30
 

@@ -19,12 +19,13 @@ const { esc, visibleLen } = require('../../leaves/text/ansi');
 
 /**
  * Build the panel title string + tab-bounds array for a pane that hosts
- * a flat tab strip (Info | Transcript | terminals | content). (U2c P2 —
- * action tabs retired: a tab:true action's output lives in its own text-view
- * position-tab now, not this viewer-internal strip.)
+ * a flat tab strip (Info | Transcript | content). (U2c P2 — action tabs
+ * retired: a tab:true action's output lives in its own text-view position-tab.
+ * U2d P2b — embedded terminals became `terminal` panes, so the strip no longer
+ * has a terminal segment; content follows Info+Transcript directly.)
  *
  * Inputs:
- *   tabInfo  — { termTabs, contentTabs } (from
+ *   tabInfo  — { contentTabs } (from
  *              pt.flatTabInfo or panel/viewer/tabs.getTabInfo())
  *   activeTab — slice.tab (flat integer index)
  *   hotkey   — single-letter pane hotkey for x-offset math (the title
@@ -42,7 +43,7 @@ const { esc, visibleLen } = require('../../leaves/text/ansi');
  *               pane's left edge.
  */
 function buildTabStrip(tabInfo, activeTab, hotkey, hasTabTrigger) {
-  const { termTabs, contentTabs } = tabInfo;
+  const { contentTabs } = tabInfo;
   // total includes the implicit Info (idx 0) AND Transcript (idx
   // total-1); we always render at least [Info] [Transcript]
   // regardless of how empty the middle section is.
@@ -62,11 +63,10 @@ function buildTabStrip(tabInfo, activeTab, hotkey, hasTabTrigger) {
   // per-group strip grows. Empty-buffer state still renders the
   // tab; tab_switch handler shows a placeholder.
   pushTab(esc('Transcript'), activeTab === 1, null);
-  // U2c P2 — action tabs retired (action output → its own text-view position-tab),
-  // so terminals/content follow Info+Transcript directly.
-  const termOffset = 2;
-  termTabs.forEach(([, term], i) => pushTab(term.label, activeTab === termOffset + i, null));
-  const contentOffset = 2 + termTabs.length;
+  // U2c P2 — action tabs retired (output → its own text-view position-tab).
+  // U2d P2b — terminals retired (they're `terminal` panes). Content follows
+  // Info+Transcript directly, starting at idx 2.
+  const contentOffset = 2;
   contentTabs.forEach(([key, info], i) => pushTab(info.label, activeTab === contentOffset + i, key));
 
   const tabBounds = [];

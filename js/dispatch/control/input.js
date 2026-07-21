@@ -16,7 +16,6 @@ const { visibleBoundsFor, getPanelViewportH } = require('../../leaves/wm/geometr
 const { paintNow: render } = require('../../leaves/infra/render-queue');
 const { getModel } = require('../../model/store');
 const { enableMouse, enableFocusEvents, enableBracketedPaste, cols } = require('../../io/term');
-const { isTerminalTab } = require('../../panel/viewer/tabs');
 const { focusedTerminalId } = require('../../panel/terminal-surfaces');
 const { writeToSession, isSessionDead } = require('../../io/terminal');
 const {getPanelDef, getItems, getInstanceSlice, wrap, getFocus, instanceKind } = require('../../panel/api');
@@ -83,18 +82,18 @@ function _handleWheel(mx, my, delta) {
     if (!b) continue;
     if (mx < b.x || mx >= b.x + b.w || my < b.y || my >= b.y + b.h) continue;
 
+    if (instanceKind(p.paneId) === 'terminal') {
+      // U2d P2b / v0.6.5 §5(a) — the wheel over a `terminal` pane scrolls the
+      // PTY scrollback (xterm's own viewport), not any viewer slice. delta is
+      // -1 (wheel-up = back into history) / +1 (wheel-down = toward live
+      // bottom), which maps straight onto scrollSession's sign. A 3-line step
+      // matches the typical wheel notch. Returns whether the viewport moved so
+      // the caller's paint gating is unchanged.
+      const termId = route.activeInstanceOf(p.paneId);
+      if (termId) return require('../../io/terminal').scrollSession(termId, delta * 3);
+      continue;
+    }
     if (instanceKind(p.type) === 'detail') {
-      // v0.6.5 §5(a) Phase 2 — when this viewer's active tab is an embedded
-      // terminal, the wheel scrolls the PTY scrollback (xterm's own
-      // viewport), not the viewer slice's `scroll`. delta is -1 (wheel-up =
-      // back into history) / +1 (wheel-down = toward live bottom), which
-      // maps straight onto scrollSession's sign. A 3-line step matches the
-      // typical wheel notch. Returns whether the viewport moved so the
-      // caller's paint gating is unchanged.
-      const termId = require('../../panel/viewer/tabs').activeTerminalId(p.paneId);
-      if (termId) {
-        return require('../../io/terminal').scrollSession(termId, delta * 3);
-      }
       // v0.6.4 multi-viewer — clamp against the wheeled pane's OWN slice
       // (not _detail()'s focused viewer), so wheeling an unfocused second
       // viewer scrolls itself. sliceForPane falls back to the kind primary
@@ -808,14 +807,15 @@ function handleMouse(kind, x, y) {
       // paneId (was hardcoded 'detail', which focused the primary).
       dispatchMsg(wrap('layout', { type: 'focus_set', focus: p.paneId }));
       // Begin a selection iff the click landed in the content rows
-      // and this tab actually has scrollable text content (skip
-      // terminal tabs — the PTY handles its own input).
+      // and this tab actually has scrollable text content. (U2d P2b — a
+      // `detail` pane never hosts a terminal now; terminal panes are their own
+      // kind and don't reach this isDetailPane branch.)
       const inContent = my > b.y && my < b.y + b.h - 1;
       const d = route.sliceForPane(p.paneId, 'detail');
       // P3 (viewer-lines selector) — derive the displayed lines.
       const _dm = getModel();
       const _dlines = d ? require('../../leaves/wm/pane-tabs').viewerLines(d, _dm, _dm.currentGroup) : [];
-      if (inContent && !isTerminalTab() && _dlines.length > 0) {
+      if (inContent && _dlines.length > 0) {
         const visibleLine = my - b.y - 1;
         const col = Math.max(0, mx - b.x - 1);
         sel.beginAt((d.scroll || 0) + visibleLine, col, 'char');

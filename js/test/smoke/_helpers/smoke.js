@@ -88,7 +88,7 @@ function _grp(name, label, overrides) {
  *    - Overwrite model.config with the requested groups (or sane default).
  *    - Call initState() — re-mints per-pane viewer/groups slices.
  *    - Clear viewer per-group maps that initState doesn't touch
- *      (contentTabs / ephemeralTerminals / tabState / viewerOverride).
+ *      (contentTabs / tabState / viewerOverride).
  *
  *  The instance store survives across scenarios (modules are cached and
  *  test-runner auto-registers layout/detail/groups on first require).
@@ -124,7 +124,6 @@ function bootFresh(opts) {
     if (inst.kind !== 'detail') return;
     const s = inst.slice;
     s.contentTabs = {};
-    s.ephemeralTerminals = {};
     s.tabState = {};
     s.viewerOverride = null;
     s.tab = 0;
