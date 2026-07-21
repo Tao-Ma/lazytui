@@ -26,6 +26,7 @@ const BUILTIN_COMPONENTS = [
   require('../panel/fabric/wire-list'),    // fabric-wires (global edge view, P1.5)
   require('../panel/text-view/text-view'), // text-view (mint-into-slot, U2b)
   require('../panel/terminal/terminal'),   // terminal (PTY as a pane, U2d)
+  require('../panel/info/info'),           // info (viewer's Info tab as a pane, U2e)
 ];
 
 module.exports = { BUILTIN_COMPONENTS };
