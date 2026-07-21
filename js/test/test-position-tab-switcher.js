@@ -1,14 +1,14 @@
 /**
- * U2e stopgap — the `[≡]` position-tab switcher for MULTI-tab slots.
- * Run: node js/test/test-position-tab-switcher.js
+ * U2e stopgap — the UNIFIED tab strip for MULTI-tab slots (visible border strip +
+ * matching `[≡]` menu). Run: node js/test/test-position-tab-switcher.js
  *
  * Regression for a U2c-shipped bug: a `tab:true` action mints its output as a
- * `text-view` position-tab into the viewer slot + activates it, so the slot's
- * active kind is `text-view` — at which point the slot stops reading as a viewer
- * (`_isViewer` false) and its flat-strip `[≡]` switcher vanished, stranding the
- * backgrounded `detail` tab (Info/Transcript) with no way back. The stopgap wires
- * tab-container's `instance` backing into the pane-menu so any multi-tab slot
- * offers a position-tab switcher. (The proper unified strip lands in P1b/U2f.)
+ * `text-view` position-tab into the viewer slot + activates it, which used to
+ * swap the visible border strip from the viewer's inner tabs (`Info | Transcript`)
+ * to the slot's position-tabs (`Detail | primary`) — Info/Transcript appeared to
+ * vanish. The fix flattens both levels into ONE strip (`Info | Transcript |
+ * primary`) shown whichever is active, so running an action ADDS a tab. The `[≡]`
+ * menu shows the same flattened list. (The full unified strip lands in P1b/U2f.)
  */
 'use strict';
 
@@ -18,6 +18,7 @@ const route = sm.route;
 const api = sm.api;
 const paneMenu = require('../overlay/pane-menu');
 const dispatch = require('../dispatch/control/dispatch');
+const { unifiedSlotStrip } = require('../panel/slot-strip');
 
 if (!api.getComponent('text-view')) api.registerComponent(require('../panel/text-view/text-view'));
 
@@ -34,74 +35,80 @@ function paneOf(vpid) {
 }
 
 describe('[stopgap] single-tab viewer slot keeps its flat-strip [≡]', () => {
-  it('no position-tab switcher until the slot is multi-tab', () => {
+  it('no unified slot rows until the slot is multi-tab', () => {
     sm.bootFresh();
     const vpid = route.resolveViewerPaneId();
     const rows = paneMenu.items(vpid) || [];
-    // Single-tab viewer → the viewer flat strip (Info/Transcript), NOT instance rows.
-    assert(!rows.some(r => r && r.backing === 'instance'), 'no instance-backing rows for a single-tab slot');
+    assert(!rows.some(r => r && r.backing === 'slot'), 'no unified slot rows for a single-tab slot');
     assert(rows.some(r => r && r.section === 'tab'), 'viewer flat-strip tabs still present');
+    assert(unifiedSlotStrip(paneOf(vpid)) === null, 'unifiedSlotStrip null for single-tab');
   });
 });
 
-describe('[stopgap] a multi-tab slot offers a position-tab switcher', () => {
-  it('items() lists the slot position-tabs (Detail + the minted text-view)', () => {
+describe('[stopgap] a multi-tab slot flattens into ONE unified strip', () => {
+  it('the strip lists the viewer inner tabs + the action tab (Info/Transcript/primary), primary active', () => {
+    sm.bootFresh();
+    const vpid = route.resolveViewerPaneId();
+    mintTextView(vpid, 'tv-act-g-primary', 'primary');
+    const strip = unifiedSlotStrip(paneOf(vpid));
+    const labels = strip.entries.map(e => e.label);
+    eq(labels.join(','), 'Info,Transcript,primary', 'flattened: viewer inner tabs + the action tab');
+    eq(strip.entries[strip.activeIdx].label, 'primary', 'the just-run action tab is active');
+    // No standalone "Detail" entry — it expanded into Info/Transcript.
+    assert(!labels.includes('Detail'), 'the viewer tab is expanded, not shown as one "Detail" entry');
+  });
+
+  it('the [≡] menu shows the SAME flattened rows (menu ≡ strip)', () => {
+    sm.bootFresh();
+    const vpid = route.resolveViewerPaneId();
+    mintTextView(vpid, 'tv-act-g-primary', 'primary');
+    const rows = paneMenu.items(vpid) || [];
+    assert(rows.length >= 3 && rows.every(r => r && r.backing === 'slot'), 'unified slot rows');
+    eq(rows.map(r => r.label).join(','), 'Info,Transcript,primary', 'menu matches the strip');
+    assert(paneMenu.triggerVisible(vpid), '[≡] trigger shows on the multi-tab slot');
+  });
+
+  it('the visible border strip renders the flattened labels', () => {
     sm.bootFresh();
     const vpid = route.resolveViewerPaneId();
     mintTextView(vpid, 'tv-act-g-primary', 'primary');
     const pane = paneOf(vpid);
-    eq(pane.tabs.length, 2, 'slot now has 2 position-tabs');
-    assert(route.instanceKind(vpid) === 'text-view', 'the minted text-view is active');
-    const rows = paneMenu.items(vpid) || [];
-    assert(rows.length >= 2 && rows.every(r => r && r.backing === 'instance'),
-      'items() are instance-backing position-tab rows');
-    const labels = rows.map(r => r.label);
-    assert(labels.includes('primary'), 'the action text-view tab is listed');
-    assert(rows.some(r => r.poolId === 'detail'), 'the backgrounded Detail tab is listed (reachable)');
+    const tv = require('../panel/text-view/text-view');
+    const out = tv.panelTypes['text-view'].render(pane, 60, 8, api.getInstanceSlice(vpid), { focused: true });
+    const text = Array.isArray(out) ? out.join('\n') : String(out);
+    assert(/Info/.test(text) && /Transcript/.test(text), 'viewer inner tabs VISIBLE in the strip');
+    assert(/primary/.test(text), 'the action tab is visible');
   });
+});
 
-  it('triggerVisible is true so the [≡] glyph is clickable', () => {
-    sm.bootFresh();
-    const vpid = route.resolveViewerPaneId();
-    mintTextView(vpid, 'tv-act-g-primary', 'primary');
-    assert(paneMenu.triggerVisible(vpid), '[≡] trigger shows on the multi-tab slot');
-  });
-
-  it('picking the Detail row switches the slot back (Info/Transcript reachable)', () => {
+describe('[stopgap] picking a flattened row switches correctly', () => {
+  it('picking Transcript (a viewer inner tab) activates the viewer + its Transcript tab', () => {
     sm.bootFresh();
     const vpid = route.resolveViewerPaneId();
     mintTextView(vpid, 'tv-act-g-primary', 'primary');
     eq(route.instanceKind(vpid), 'text-view', 'text-view active before pick');
     api.dispatchMsg(api.wrap('layout', { type: 'pane_menu_open', paneId: vpid }));
-    const detailRow = (paneMenu.items(vpid) || []).find(r => r && r.poolId === 'detail');
-    assert(detailRow, 'Detail row present');
-    dispatch._paneMenuPick(vpid, detailRow);
-    eq(paneOf(vpid).activeTabId, 'detail', 'slot active tab flipped back to detail');
-    eq(route.instanceKind(vpid), 'detail', 'slot reads as a viewer again (flat strip renders)');
-    eq(api.getInstanceSlice('layout').arrange && paneOf(vpid).tabs.length, 2, 'both tabs still present (nothing destroyed)');
+    const row = (paneMenu.items(vpid) || []).find(r => r && r.label === 'Transcript');
+    assert(row && row.kind === 'flat', 'Transcript is a flat (viewer inner) row');
+    dispatch._paneMenuPick(vpid, row);
+    eq(paneOf(vpid).activeTabId, 'detail', 'viewer tab activated');
+    eq(route.instanceKind(vpid), 'detail', 'slot reads as a viewer again');
+    eq(api.getInstanceSlice(vpid).tab, 1, 'the viewer switched to its Transcript inner tab (idx 1)');
   });
-});
 
-describe('[stopgap] a multi-tab slot renders a VISIBLE position-tab strip', () => {
-  it('a text-view active in a multi-tab slot shows the sibling tab labels in its border', () => {
+  it('picking the action tab (a position row) activates the text-view', () => {
     sm.bootFresh();
     const vpid = route.resolveViewerPaneId();
     mintTextView(vpid, 'tv-act-g-primary', 'primary');
-    const pane = paneOf(vpid);
-    assert(pane.tabs.length === 2 && pane.activeTabId === 'tv-act-g-primary', 'text-view active in a 2-tab slot');
-    const tv = require('../panel/text-view/text-view');
-    const out = tv.panelTypes['text-view'].render(pane, 60, 8, api.getInstanceSlice(vpid), { focused: true });
-    const text = Array.isArray(out) ? out.join('\n') : String(out);
-    assert(/Detail/.test(text), 'the backgrounded Detail tab is VISIBLE in the border strip');
-    assert(/primary/.test(text), 'the active text-view tab is visible in the strip');
-  });
-  it('a single-tab text-view keeps its plain title (no strip)', () => {
-    const tv = require('../panel/text-view/text-view');
-    const panel = { paneId: 'pane-x', type: 'text-view', title: 'solo', hotkey: '9',
-                    tabs: [{ id: 'tv-solo', poolId: 'tv-solo' }], activeTabId: 'tv-solo' };
-    const out = tv.panelTypes['text-view'].render(panel, 40, 6, { lines: ['hi'], scroll: 0 }, {});
-    const text = Array.isArray(out) ? out.join('\n') : String(out);
-    assert(/solo/.test(text), 'plain title rendered for a single-tab slot');
+    // Switch to the viewer first, then back to the action tab via the menu.
+    api.dispatchMsg(api.wrap('layout', { type: 'set_active_tab', paneId: vpid, tabPoolId: 'detail' }));
+    eq(route.instanceKind(vpid), 'detail', 'viewer active');
+    api.dispatchMsg(api.wrap('layout', { type: 'pane_menu_open', paneId: vpid }));
+    const row = (paneMenu.items(vpid) || []).find(r => r && r.label === 'primary');
+    assert(row && row.kind === 'position', 'primary is a position row');
+    dispatch._paneMenuPick(vpid, row);
+    eq(paneOf(vpid).activeTabId, 'tv-act-g-primary', 'action text-view activated');
+    eq(paneOf(vpid).tabs.length, 2, 'both tabs still present (nothing destroyed)');
   });
 });
 

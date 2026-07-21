@@ -756,41 +756,28 @@ function handleMouse(kind, x, y) {
     const compSlice = route.sliceForPane(p.paneId, p.type);  // v0.6.4 multi-viewer — THIS pane's tabBounds
     // v0.6.4 blessed-exceptions tabBounds follow-on — only viewer panes have a
     // tab strip; recompute its bounds on demand (render no longer writes them).
-    const paneTabs = (p.type === 'detail' && compSlice)
-      ? require('../../panel/viewer/viewer').tabBoundsFor(compSlice, model, p.hotkey)
-      : null;
-    if (my === b.y && paneTabs && paneTabs.length > 0) {
+    // U2e stopgap — a MULTI-tab slot renders the UNIFIED slot strip
+    // (panel/slot-strip): the viewer's Info/Transcript/content flat tabs + the
+    // sibling position-tabs as ONE strip, shown whichever is active. Bounds carry
+    // {kind, poolId, flatIdx?}: a 'position' entry switches the slot's active
+    // position-tab; a 'flat' entry activates the viewer tab AND tab_switches its
+    // inner tab. (Single-tab detail uses the viewer's own flat strip below.)
+    if (my === b.y && Array.isArray(p.tabs) && p.tabs.length > 1) {
+      const strip = require('../../panel/slot-strip').unifiedSlotStrip(p);
       const localX = mx - b.x;
-      for (const tab of paneTabs) {
+      for (const tab of (strip ? strip.tabBounds : [])) {
         if (localX >= tab.x && localX < tab.x + tab.w) {
-          // Close-zone hit (content tabs only — the tab-strip builder
-          // stamps `closeKey` on those entries). Wins over a tab-
-          // switch click since the close glyph sits inside the tab's
-          // outer rect.
-          if (tab.closeKey != null && localX >= tab.closeX && localX < tab.closeX + tab.closeW) {
-            // Thread the model bundle so the reducer + leaf stay pure
-            // of getModel(). v0.6.3 TEA Phase 3c.
-            const mForBundle = getModel();
-            const groupName = mForBundle.currentGroup;
+          dispatchMsg(wrap('layout', { type: 'focus_set', focus: p.paneId }));
+          dispatchMsg(wrap('layout', { type: 'set_active_tab', paneId: p.paneId, tabPoolId: tab.poolId }));
+          if (tab.kind === 'flat') {
+            // The viewer tab is now the active instance — switch its inner tab.
+            const pt = require('../../leaves/wm/pane-tabs');
+            const vslice = route.sliceForPane(p.paneId, 'detail') || {};
             dispatchMsg(wrap(p.paneId, {
-              type: 'viewer_remove_content_tab',
-              groupName,
-              key: tab.closeKey,
-              ...require('../../leaves/wm/pane-tabs').modelBundle(mForBundle, groupName),
+              type: 'tab_switch', idx: tab.flatIdx,
+              targetKey: pt.resolveTabKey(tab.flatIdx, { ...vslice, tab: tab.flatIdx }, getModel()),
+              currentGroup: getModel().currentGroup,
             }));
-          } else {
-            dispatchMsg(wrap('layout', { type: 'focus_set', focus: p.paneId }));
-            // Phase 3d: thread targetKey + currentGroup so the tab_switch
-            // reducer arm stays pure of getModel().
-            {
-              const pt = require('../../leaves/wm/pane-tabs');
-              const slice = route.sliceForPane(p.paneId, p.type);
-              dispatchMsg(wrap(p.paneId, {
-                type: 'tab_switch', idx: tab.tabIdx,
-                targetKey: pt.resolveTabKey(tab.tabIdx, { ...slice, tab: tab.tabIdx }, getModel()),
-                currentGroup: getModel().currentGroup,
-              }));
-            }
           }
           mutated = true;
           break;
@@ -799,21 +786,35 @@ function handleMouse(kind, x, y) {
       if (mutated) break;
     }
 
-    // U2e stopgap — a MULTI-tab slot whose active tab is a `text-view` (e.g. an
-    // action's output) renders the slot's POSITION-tab strip (text-view.js
-    // _slotTitle); clicking a tab switches the slot's active position-tab. The
-    // detail-active case uses the flat viewer strip above (p.type === 'detail').
-    if (my === b.y && p.type === 'text-view' && Array.isArray(p.tabs) && p.tabs.length > 1) {
-      const ts = require('../../panel/viewer/tab-strip');
-      const _ls = getInstanceSlice('layout');
-      const _pool = (_ls && _ls.arrange && _ls.arrange.pool) || {};
-      const _labelOf = (poolId) => (_pool[poolId] && _pool[poolId].title) || poolId;
-      const slotTabs = ts.buildSlotTabStrip(p.tabs, p.activeTabId, _labelOf, p.hotkey, true).tabBounds;
+    // Single-tab detail → the viewer's own flat strip (Info/Transcript/content).
+    // Recompute its bounds on demand (render no longer writes them).
+    const paneTabs = (p.type === 'detail' && compSlice && !(Array.isArray(p.tabs) && p.tabs.length > 1))
+      ? require('../../panel/viewer/viewer').tabBoundsFor(compSlice, model, p.hotkey)
+      : null;
+    if (my === b.y && paneTabs && paneTabs.length > 0) {
       const localX = mx - b.x;
-      for (const tab of slotTabs) {
+      for (const tab of paneTabs) {
         if (localX >= tab.x && localX < tab.x + tab.w) {
-          dispatchMsg(wrap('layout', { type: 'focus_set', focus: p.paneId }));
-          dispatchMsg(wrap('layout', { type: 'set_active_tab', paneId: p.paneId, tabPoolId: tab.poolId }));
+          // Close-zone hit (content tabs only — the tab-strip builder stamps
+          // `closeKey`). Wins over a tab-switch click (the glyph sits inside the
+          // tab's outer rect).
+          if (tab.closeKey != null && localX >= tab.closeX && localX < tab.closeX + tab.closeW) {
+            const mForBundle = getModel();
+            const groupName = mForBundle.currentGroup;
+            dispatchMsg(wrap(p.paneId, {
+              type: 'viewer_remove_content_tab', groupName, key: tab.closeKey,
+              ...require('../../leaves/wm/pane-tabs').modelBundle(mForBundle, groupName),
+            }));
+          } else {
+            dispatchMsg(wrap('layout', { type: 'focus_set', focus: p.paneId }));
+            const pt = require('../../leaves/wm/pane-tabs');
+            const slice = route.sliceForPane(p.paneId, p.type);
+            dispatchMsg(wrap(p.paneId, {
+              type: 'tab_switch', idx: tab.tabIdx,
+              targetKey: pt.resolveTabKey(tab.tabIdx, { ...slice, tab: tab.tabIdx }, getModel()),
+              currentGroup: getModel().currentGroup,
+            }));
+          }
           mutated = true;
           break;
         }

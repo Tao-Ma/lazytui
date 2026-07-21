@@ -99,30 +99,29 @@ function buildTabStrip(tabInfo, activeTab, hotkey, hasTabTrigger) {
 }
 
 /**
- * Build a POSITION-tab strip for a multi-tab slot (U2e stopgap) — the pane's own
- * `tabs[]` shown as a visible, clickable strip so a minted tab (e.g. an action's
- * `text-view`) doesn't hide its siblings (the viewer's `detail`/Info+Transcript
- * tab). `labelOf(poolId)` yields each tab's display label; `activePoolId` is
- * bracketed. Returns `{ title, tabBounds }` where each bound carries `poolId`
- * (→ `set_active_tab`). Mirrors buildTabStrip's x-offset math (`(hk)` + optional
- * `[≡]` prefix) so the click hit-zones line up with the painted glyphs.
- * (The unified strip in U2e P1b/U2f supersedes this.)
+ * Build a strip from tagged ENTRIES (U2e stopgap) — the generic geometry engine
+ * behind the UNIFIED multi-tab-slot strip (panel/slot-strip.js). Each entry is
+ * `{ label, ...meta }`; `activeIdx` is bracketed. Returns `{ title, tabBounds }`
+ * where each bound is the entry's `meta` plus `{ x, w }` (the click hit-zone), so
+ * the caller routes by the entry's own tag (a viewer flat tab vs a position tab).
+ * Mirrors buildTabStrip's x-offset math (`(hk)` + optional `[≡]` prefix) so the
+ * hit-zones line up with the painted glyphs. (Superseded by P1b/U2f's real strip.)
  */
-function buildSlotTabStrip(tabs, activePoolId, labelOf, hotkey, hasTabTrigger) {
-  const parts = [];
-  for (const t of tabs) {
-    const label = esc(labelOf(t.poolId));
-    parts.push(t.poolId === activePoolId ? `\\[${label}]` : label);
-  }
+function buildEntryStrip(entries, activeIdx, hotkey, hasTabTrigger) {
+  const parts = entries.map((e, i) => {
+    const label = esc(e.label);
+    return i === activeIdx ? `\\[${label}]` : label;
+  });
   const tabBounds = [];
   let xOffset = 2 + (hotkey ? 2 + hotkey.length : 0) + (hasTabTrigger ? 3 : 0) + 1;
   parts.forEach((part, i) => {
     if (i > 0) xOffset += 1;  // `─` separator between tabs
     const visLen = visibleLen(part);
-    tabBounds.push({ poolId: tabs[i].poolId, x: xOffset, w: visLen });
+    const { label, ...meta } = entries[i];
+    tabBounds.push({ ...meta, x: xOffset, w: visLen });
     xOffset += visLen;
   });
   return { title: parts.join('─'), tabBounds };
 }
 
-module.exports = { buildTabStrip, buildSlotTabStrip };
+module.exports = { buildTabStrip, buildEntryStrip };

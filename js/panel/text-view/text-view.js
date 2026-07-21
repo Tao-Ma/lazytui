@@ -109,18 +109,13 @@ function _searchDecoration(slice, lines, focused) {
 }
 
 // U2e stopgap — when this text-view lives in a MULTI-tab slot, its title becomes
-// the slot's POSITION-tab strip (`Detail ─ [primary] ─ …`) so the siblings (e.g.
-// the viewer's Detail tab holding Info/Transcript) stay VISIBLE + clickable
-// instead of the border collapsing to just this tab's title. `panel` is the
-// placed pane (carries `tabs`/`activeTabId`); the pool supplies each tab's label.
-// Single-tab slots keep the plain title. (The unified strip lands in P1b/U2f.)
+// the slot's UNIFIED tab strip (`Info ─ Transcript ─ [primary]`) so the siblings
+// (the viewer's Info/Transcript, other action outputs) stay VISIBLE + clickable
+// as ONE consistent strip — running an action ADDS a tab rather than swapping the
+// strip to a different level. Single-tab slots keep the plain title.
 function _slotTitle(panel) {
-  if (!panel || !Array.isArray(panel.tabs) || panel.tabs.length <= 1) return panel && panel.title;
-  const ts = require('../viewer/tab-strip');
-  const layout = require('../api').getInstanceSlice('layout');
-  const pool = (layout && layout.arrange && layout.arrange.pool) || {};
-  const labelOf = (poolId) => (pool[poolId] && pool[poolId].title) || poolId;
-  return ts.buildSlotTabStrip(panel.tabs, panel.activeTabId, labelOf, panel.hotkey, true).title;
+  const strip = require('../slot-strip').unifiedSlotStrip(panel);
+  return strip ? strip.title : (panel && panel.title);
 }
 
 function render(panel, w, h, slice, opts) {

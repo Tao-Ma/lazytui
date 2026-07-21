@@ -437,20 +437,24 @@ function _paneMenuPick(target, item) {
     // picked tab is already active — the tab_switch arm no-ops on same idx, so
     // skipping the dispatch is equivalent (focus + close still fire).
     const tc = require('../../leaves/wm/tab-container');
-    if (item.backing === 'instance') {
-      // U2e stopgap — position-tab switcher on a multi-tab slot: switch the
-      // slot's active POSITION-tab (tc.switchTab instance backing names the
-      // set_active_tab Msg; null when already active). Restores reachability of
-      // a backgrounded tab (e.g. Detail behind an action's text-view).
-      const mpoolL = require('../../leaves/wm/pool');
-      const layoutSlice = getInstanceSlice('layout');
-      const loc = layoutSlice && layoutSlice.arrange
-        ? mpoolL.findPaneLocation(layoutSlice.arrange, p => p.paneId === target) : null;
-      const pool = (layoutSlice && layoutSlice.arrange && layoutSlice.arrange.pool) || {};
-      const sw = loc ? tc.switchTab(tc.containerFor('instance', { pane: loc.pane, pool }), item.poolId) : null;
+    if (item.backing === 'slot') {
+      // U2e stopgap — a UNIFIED slot-strip row (panel/slot-strip). Route by the
+      // entry's kind: 'position' → activate that position-tab; 'flat' → activate
+      // the viewer position-tab AND tab_switch to its inner tab (Info/Transcript/
+      // content). Restores reachability of a tab stranded behind an action's
+      // minted text-view — the same routing the visible strip's click uses.
       close();
       dispatchMsg(wrap('layout', { type: 'focus_set', focus: target }));
-      if (sw) dispatchMsg(wrap(sw.target, sw.msg));
+      dispatchMsg(wrap('layout', { type: 'set_active_tab', paneId: target, tabPoolId: item.poolId }));
+      if (item.kind === 'flat') {
+        const pt2 = require('../../leaves/wm/pane-tabs');
+        const vslice = getInstanceSlice(target) || {};
+        dispatchMsg(wrap(target, {
+          type: 'tab_switch', idx: item.flatIdx,
+          targetKey: pt2.resolveTabKey(item.flatIdx, { ...vslice, tab: item.flatIdx }, getModel()),
+          currentGroup: getModel().currentGroup,
+        }));
+      }
       return;
     }
     const pt = require('../../leaves/wm/pane-tabs');

@@ -100,23 +100,22 @@ function _flatTabs(paneId) {
   });
 }
 
-/** Position-tab rows for a MULTI-tab slot (U2e stopgap) — the slot's own
- *  `pane.tabs[]` via the tab-container INSTANCE backing, so every position-tab
- *  stays reachable (e.g. a viewer's `detail` tab backgrounded behind an action's
- *  minted `text-view`, which otherwise stranded Info/Transcript — the slot stops
- *  reading as a viewer once a non-detail tab is active, so its flat-strip switcher
- *  vanishes). Empty for single-tab slots (their `[≡]` keeps the viewer flat-strip /
- *  pane-swap behaviour). The proper UNIFIED strip lands in U2e P1b/U2f; this only
- *  restores reachability. Rows carry `backing:'instance'` + `poolId` so the pick
- *  routes via `set_active_tab` (tc.switchTab), not the viewer's `tab_switch`. */
+/** Tab rows for a MULTI-tab slot (U2e stopgap) — the SAME unified entry list the
+ *  visible border strip shows (panel/slot-strip), so the `[≡]` menu and the strip
+ *  never disagree. Flattens the viewer's inner Info/Transcript/content tabs +
+ *  each sibling position-tab into one list; a minted action `text-view` no longer
+ *  strands the viewer's tabs. Empty for single-tab slots (their `[≡]` keeps the
+ *  viewer flat-strip / pane-swap behaviour). Rows carry `backing:'slot'` + the
+ *  entry's `{kind, poolId, flatIdx?}` so the pick routes flat (viewer inner tab)
+ *  vs position (set_active_tab). The proper unified strip lands in U2e P1b/U2f. */
 function _instanceTabRows(paneId) {
   const pane = _paneById(paneId);
   if (!pane || !Array.isArray(pane.tabs) || pane.tabs.length <= 1) return [];
-  const layoutSlice = getInstanceSlice('layout');
-  const pool = (layoutSlice && layoutSlice.arrange && layoutSlice.arrange.pool) || {};
-  return tc.listTabs(tc.containerFor('instance', { pane, pool })).map(r => ({
-    section: 'tab', backing: 'instance', poolId: r.key, tabIdx: r.idx,
-    label: r.label, kind: r.kind, active: r.active,
+  const strip = require('../panel/slot-strip').unifiedSlotStrip(pane);
+  if (!strip || !strip.entries) return [];
+  return strip.entries.map((e, i) => ({
+    section: 'tab', backing: 'slot', kind: e.kind, poolId: e.poolId, flatIdx: e.flatIdx,
+    tabIdx: i, label: e.label, active: i === strip.activeIdx,
   }));
 }
 
@@ -317,9 +316,9 @@ function _formatPaneRow(it, width) {
 
 function _formatRow(it, paneId, width) {
   if (it.section === 'tab') {
-    // Instance-backing (position-tab) rows carry their own `active` flag (the
-    // slot's activeTabId); viewer flat-strip rows compare tabIdx to slice.tab.
-    if (it.backing === 'instance') return _formatTabRow(it, !!it.active, width);
+    // Unified slot rows carry their own `active` flag; viewer flat-strip rows
+    // compare tabIdx to slice.tab.
+    if (it.backing === 'slot') return _formatTabRow(it, !!it.active, width);
     const slice = getInstanceSlice(paneId) || {};
     const activeTab = slice.tab || 0;
     return _formatTabRow(it, it.tabIdx === activeTab, width);

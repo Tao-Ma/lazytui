@@ -759,13 +759,20 @@ function render(panel, w, h, slice, opts) {
   const search = require('./search');
   const sel = select.activeSelection();
   const searchDecoration = sel ? null : search.decorationFor(slice, derived);
+  // U2e stopgap — when the viewer shares its slot with minted position-tabs (an
+  // action's text-view), the title becomes the UNIFIED slot strip (its own
+  // Info/Transcript flat tabs + the sibling position-tabs, as ONE strip) so the
+  // strip reads consistently whether the viewer or an action tab is active.
+  // Single-tab slots keep the viewer's own flat strip (detailTitle).
+  const _strip = require('../slot-strip').unifiedSlotStrip(panel);
+  const title = _strip ? _strip.title : detailTitle(slice, hotkey);
   // A3 windowed-decorate (window FIRST, then decorate only the ~innerH visible
   // rows) lives inside buildTextView — byte-identical to whole-buffer-then-slice.
   const args = buildTextView({
     lines: derived, scroll: slice.scroll, innerH,
     select: sel, searchDecoration,
     width: w, height: h,
-    title: detailTitle(slice, hotkey), hotkey,
+    title, hotkey,
     panelType: 'detail', focused: isFocused, chrome,
   });
   // renderPanel here is the selection-aware panel/api wrapper — it captures the
