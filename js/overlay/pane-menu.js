@@ -303,9 +303,12 @@ function _formatTabRow(it, isActive, width) {
   return `${left}${' '.repeat(padLen)}${kind}`;
 }
 
-/** Format a pane row: `  type            [status]`. */
+/** Format a pane row: `  Title            [status]`. Shows the human `title`
+ *  (the name painted on the pane's border, e.g. "Actions"/"Groups") — NOT the
+ *  raw structural `type` ("actions"/"component-ports") — so the picker matches
+ *  what the user sees on-screen. Falls back to `type` if a title is absent. */
 function _formatPaneRow(it, width) {
-  const left = `  ${esc(it.type)}`;
+  const left = `  ${esc(it.title || it.type)}`;
   const right = _statusLabel(it);
   const leftVis = visibleLen(left);
   const rightVis = visibleLen(right);
@@ -397,5 +400,5 @@ function _resetRenderState() { _lastPanelH = 0; _lastTop = 0; _lastLeft = 0; _la
 module.exports = {
   hitTestTrigger, hitTest, render, items, viewportRows,
   triggerVisible, _triggerState, _isViewer,
-  _resetRenderState,
+  _resetRenderState, _formatPaneRow,
 };

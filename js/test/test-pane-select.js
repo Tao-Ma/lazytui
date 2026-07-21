@@ -623,4 +623,19 @@ describe('[8] paneMenuPanes — viewer-inclusive, mode-aware (v0.6.4 #1 Step 2)'
   });
 });
 
+describe('[9] _formatPaneRow — shows the human title, not the raw type', () => {
+  const paneMenu = require('../overlay/pane-menu');
+  it('renders it.title (border name) over it.type', () => {
+    const row = paneMenu._formatPaneRow(
+      { section: 'pane', type: 'component-ports', title: 'Ports', status: 'hidden' }, 40);
+    assert(row.includes('Ports'), 'human title present');
+    assert(!/\bcomponent-ports\b/.test(row), 'raw type NOT shown');
+  });
+  it('falls back to type when title is absent', () => {
+    const row = paneMenu._formatPaneRow(
+      { section: 'pane', type: 'groups', status: 'placed', columnIndex: 0 }, 40);
+    assert(row.includes('groups'), 'type shown as fallback');
+  });
+});
+
 report();
