@@ -108,6 +108,21 @@ function _searchDecoration(slice, lines, focused) {
   return { matches, activeIdx };
 }
 
+// U2e stopgap — when this text-view lives in a MULTI-tab slot, its title becomes
+// the slot's POSITION-tab strip (`Detail ─ [primary] ─ …`) so the siblings (e.g.
+// the viewer's Detail tab holding Info/Transcript) stay VISIBLE + clickable
+// instead of the border collapsing to just this tab's title. `panel` is the
+// placed pane (carries `tabs`/`activeTabId`); the pool supplies each tab's label.
+// Single-tab slots keep the plain title. (The unified strip lands in P1b/U2f.)
+function _slotTitle(panel) {
+  if (!panel || !Array.isArray(panel.tabs) || panel.tabs.length <= 1) return panel && panel.title;
+  const ts = require('../viewer/tab-strip');
+  const layout = require('../api').getInstanceSlice('layout');
+  const pool = (layout && layout.arrange && layout.arrange.pool) || {};
+  const labelOf = (poolId) => (pool[poolId] && pool[poolId].title) || poolId;
+  return ts.buildSlotTabStrip(panel.tabs, panel.activeTabId, labelOf, panel.hotkey, true).title;
+}
+
 function render(panel, w, h, slice, opts) {
   const focused = !!(opts && opts.focused);
   const lines = slice.lines || [];
@@ -117,7 +132,7 @@ function render(panel, w, h, slice, opts) {
     lines, scroll: slice.scroll, innerH: h - 2,
     select: sel, searchDecoration,
     width: w, height: h,
-    title: panel.title, hotkey: panel.hotkey,
+    title: _slotTitle(panel), hotkey: panel.hotkey,
     panelType: 'text-view', focused,
     chrome: opts && opts.chrome,
   });

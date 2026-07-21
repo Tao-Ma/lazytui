@@ -799,6 +799,28 @@ function handleMouse(kind, x, y) {
       if (mutated) break;
     }
 
+    // U2e stopgap — a MULTI-tab slot whose active tab is a `text-view` (e.g. an
+    // action's output) renders the slot's POSITION-tab strip (text-view.js
+    // _slotTitle); clicking a tab switches the slot's active position-tab. The
+    // detail-active case uses the flat viewer strip above (p.type === 'detail').
+    if (my === b.y && p.type === 'text-view' && Array.isArray(p.tabs) && p.tabs.length > 1) {
+      const ts = require('../../panel/viewer/tab-strip');
+      const _ls = getInstanceSlice('layout');
+      const _pool = (_ls && _ls.arrange && _ls.arrange.pool) || {};
+      const _labelOf = (poolId) => (_pool[poolId] && _pool[poolId].title) || poolId;
+      const slotTabs = ts.buildSlotTabStrip(p.tabs, p.activeTabId, _labelOf, p.hotkey, true).tabBounds;
+      const localX = mx - b.x;
+      for (const tab of slotTabs) {
+        if (localX >= tab.x && localX < tab.x + tab.w) {
+          dispatchMsg(wrap('layout', { type: 'focus_set', focus: p.paneId }));
+          dispatchMsg(wrap('layout', { type: 'set_active_tab', paneId: p.paneId, tabPoolId: tab.poolId }));
+          mutated = true;
+          break;
+        }
+      }
+      if (mutated) break;
+    }
+
     // Detail panel content area — text selection on a click inside the
     // body. Stays detail-specific until Phase 4 lifts the selection
     // machinery onto a per-pane basis.

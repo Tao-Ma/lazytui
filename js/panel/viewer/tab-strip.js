@@ -98,4 +98,31 @@ function buildTabStrip(tabInfo, activeTab, hotkey, hasTabTrigger) {
   return { title: parts.join('─'), tabBounds };
 }
 
-module.exports = { buildTabStrip };
+/**
+ * Build a POSITION-tab strip for a multi-tab slot (U2e stopgap) — the pane's own
+ * `tabs[]` shown as a visible, clickable strip so a minted tab (e.g. an action's
+ * `text-view`) doesn't hide its siblings (the viewer's `detail`/Info+Transcript
+ * tab). `labelOf(poolId)` yields each tab's display label; `activePoolId` is
+ * bracketed. Returns `{ title, tabBounds }` where each bound carries `poolId`
+ * (→ `set_active_tab`). Mirrors buildTabStrip's x-offset math (`(hk)` + optional
+ * `[≡]` prefix) so the click hit-zones line up with the painted glyphs.
+ * (The unified strip in U2e P1b/U2f supersedes this.)
+ */
+function buildSlotTabStrip(tabs, activePoolId, labelOf, hotkey, hasTabTrigger) {
+  const parts = [];
+  for (const t of tabs) {
+    const label = esc(labelOf(t.poolId));
+    parts.push(t.poolId === activePoolId ? `\\[${label}]` : label);
+  }
+  const tabBounds = [];
+  let xOffset = 2 + (hotkey ? 2 + hotkey.length : 0) + (hasTabTrigger ? 3 : 0) + 1;
+  parts.forEach((part, i) => {
+    if (i > 0) xOffset += 1;  // `─` separator between tabs
+    const visLen = visibleLen(part);
+    tabBounds.push({ poolId: tabs[i].poolId, x: xOffset, w: visLen });
+    xOffset += visLen;
+  });
+  return { title: parts.join('─'), tabBounds };
+}
+
+module.exports = { buildTabStrip, buildSlotTabStrip };

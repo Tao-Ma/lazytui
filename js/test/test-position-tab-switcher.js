@@ -82,4 +82,27 @@ describe('[stopgap] a multi-tab slot offers a position-tab switcher', () => {
   });
 });
 
+describe('[stopgap] a multi-tab slot renders a VISIBLE position-tab strip', () => {
+  it('a text-view active in a multi-tab slot shows the sibling tab labels in its border', () => {
+    sm.bootFresh();
+    const vpid = route.resolveViewerPaneId();
+    mintTextView(vpid, 'tv-act-g-primary', 'primary');
+    const pane = paneOf(vpid);
+    assert(pane.tabs.length === 2 && pane.activeTabId === 'tv-act-g-primary', 'text-view active in a 2-tab slot');
+    const tv = require('../panel/text-view/text-view');
+    const out = tv.panelTypes['text-view'].render(pane, 60, 8, api.getInstanceSlice(vpid), { focused: true });
+    const text = Array.isArray(out) ? out.join('\n') : String(out);
+    assert(/Detail/.test(text), 'the backgrounded Detail tab is VISIBLE in the border strip');
+    assert(/primary/.test(text), 'the active text-view tab is visible in the strip');
+  });
+  it('a single-tab text-view keeps its plain title (no strip)', () => {
+    const tv = require('../panel/text-view/text-view');
+    const panel = { paneId: 'pane-x', type: 'text-view', title: 'solo', hotkey: '9',
+                    tabs: [{ id: 'tv-solo', poolId: 'tv-solo' }], activeTabId: 'tv-solo' };
+    const out = tv.panelTypes['text-view'].render(panel, 40, 6, { lines: ['hi'], scroll: 0 }, {});
+    const text = Array.isArray(out) ? out.join('\n') : String(out);
+    assert(/solo/.test(text), 'plain title rendered for a single-tab slot');
+  });
+});
+
 report();
