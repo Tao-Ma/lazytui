@@ -52,13 +52,9 @@ function getTabInfo() {
   return pt.flatTabInfo(_detailSlice(), getModel(), getModel().currentGroup);
 }
 
-function isContentTab() {
-  return pt.isContentTabIn(_detailSlice(), getModel(), getModel().currentGroup);
-}
-
-function activeContentTab() {
-  return pt.activeContentTabIn(_detailSlice(), getModel(), getModel().currentGroup);
-}
+// U2e P1b — isContentTab / activeContentTab retired (the `x`-close + info-yank
+// consumers moved to the position-tab model: instanceKind-based close via
+// remove_tab, showSelectedInfo's set_active_tab yank). Excised fully in U2f.
 
 // --- Mutation surface (all routed through update — single-writer) ---------
 //
@@ -96,21 +92,12 @@ function updateContentTabLines(groupName, key, lines) {
       ...pt.modelBundle(_getModel(), groupName) }));
 }
 
-function removeContentTab(groupName, key) {
-  const target = _viewerTarget('viewer_tab_add');
-  if (target == null) return;
-  panelHost.dispatchMsg(wrap(target,
-    { type: 'viewer_remove_content_tab', groupName, key,
-      ...pt.modelBundle(_getModel(), groupName) }));
-}
-
 module.exports = {
   getTabInfo,
-  isContentTab, activeContentTab,
-  addContentTab, removeContentTab, updateContentTabLines,
+  addContentTab, updateContentTabLines,
 };
 
-// Feature-host seam: feature/open-file + open-docker push file content into a
-// viewer tab through these injected fns instead of importing panel (keeps
-// feature a bottom layer). See hosts/feature-host.js + docs/v0.6.5-render-exit.md.
-require('../../hosts/feature-host').setFeatureHost({ addContentTab, updateContentTabLines });
+// U2e P1b — the feature-host seam (addContentTab/updateContentTabLines) is now
+// wired by panel/content-tab.js, which mints a `text-view` POSITION-tab instead
+// of a viewer inner content-tab. This viewer-facade wiring is retired (the whole
+// contentTabs machinery here is dead post-P1b, excised in U2f).

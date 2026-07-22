@@ -18,6 +18,25 @@ const { displayedLines } = require('./_helpers/viewer-lines');
 const _api = require('../panel/api');
 _api.registerComponent(require('../panel/navigator/docker'));
 _api.registerComponent(require('../panel/navigator/actions'));
+// U2e P1b — the content slot dissolves the single `detail` viewer into sibling
+// position-tab instances (info / transcript). Register those Components + boot a
+// SEEDED content slot (parser + initState) so route.resolveTarget('viewer_info'
+// / 'viewer_transcript') resolve to real instances and the showSelectedInfo yank
+// (a `set_active_tab` on the slot) has a slot to act on.
+_api.registerComponent(require('../panel/info/info'));
+_api.registerComponent(require('../panel/text-view/text-view'));
+
+// Boot a seeded model with a placed content slot. Idempotent: safe to call once
+// per test that needs the slot. Uses the repo's test.yml (a `detail` pane →
+// role:'content' → seeded Info+Transcript tabs).
+function seedContentSlot() {
+  const { parse } = require('../parser/index');
+  const { initState } = require('../app/state');
+  const m = runtime.getModel();
+  m.config = parse(require('path').resolve(__dirname, '../../test/test.yml'));
+  m.projectDir = '.';
+  initState();
+}
 
 describe('[0] init — builds the root model', () => {
   it('returns a fresh model (viewMode moved to layout Component)', () => {
@@ -90,13 +109,16 @@ describe('[3] update — (model, msg) → [model, cmds], pure + Cmd descriptors'
     eq(state.getSel('groups'), 1, 'groups cursor advanced');
   });
 
-  it('navSelect: yanks viewer back to Info when focus has getInfo and on a non-Info tab', () => {
-    // v0.6.2 T1 — viewer_show_info reducer folds the yank: focus on
-    // a list panel with getInfo → yank to Info + populate. focus on
-    // detail / no-getInfo panels (stats) → bail. The
-    // addContentTab → focus_set(detail) cascade is safe by the bail.
+  it('navSelect: yanks the slot back to Info when focus has getInfo and slot is on another tab', () => {
+    // U2e P1b — the yank moved OUT of the viewer_show_info reducer arm
+    // (`tab: 0`) into dispatch.showSelectedInfo: when the focused pane HAS
+    // getInfo, it dispatches info_show_content AND a `set_active_tab` that makes
+    // the content slot's ACTIVE position-tab the info instance. So the assertion
+    // is now "the slot's active instance == the info instance," not a flat
+    // slice.tab. focus on detail / no-getInfo panels still bails (no lines).
     const route = require('../panel/route');
     const dispatch = require('../dispatch/control/dispatch');
+    seedContentSlot();
     // Seed a group + action so actions panel has items to feed getInfo.
     const m = runtime.getModel();
     m.config = { groups: { g: { label: 'G', actions: {
@@ -104,33 +126,47 @@ describe('[3] update — (model, msg) → [model, cmds], pure + Cmd descriptors'
     } } } };
     m.currentGroup = 'g';
     route.getInstanceSlice('layout').focus = 'actions';
-    // Park the viewer on Transcript (idx 1).
-    const sliceBefore = { ...route.getInstanceSlice('detail'), tab: 1 };
-    route.setInstanceSlice('detail', sliceBefore);
-    eq(route.getInstanceSlice('detail').tab, 1, 'precondition: on Transcript');
-    // Move cursor in actions — focus is on actions, actions has
-    // getInfo, items[0] exists → reducer yanks to Info.
+    const slotPaneId = route.resolveViewerPaneId();
+    const infoInst = route.resolveTarget('viewer_info');
+    const transInst = route.resolveTarget('viewer_transcript');
+    // Park the slot's active tab on Transcript (off Info).
+    const mpane = require('../leaves/wm/pane');
+    require('../panel/api').dispatchMsg(require('../panel/api').wrap('layout',
+      { type: 'set_active_tab', paneId: slotPaneId, tabPoolId: mpane.poolIdOf(transInst) }));
+    eq(route.activeInstanceOf(slotPaneId), transInst, 'precondition: slot on Transcript');
+    // Move cursor in actions — focus is on actions, actions has getInfo,
+    // items[0] exists → showSelectedInfo yanks the slot to the info instance.
     dispatch.navSelect('actions', 0);
-    eq(route.getInstanceSlice('detail').tab, 0, 'yanked back to Info');
+    eq(route.activeInstanceOf(slotPaneId), infoInst, 'yanked back to Info');
   });
 
-  it('navSelect: yanks from any non-Info tab (action tab idx 3, not just Transcript)', () => {
-    // Pin that yank fires from ANY non-Info tab. The reducer doesn't
-    // special-case Transcript — the precondition is "focus has
-    // getInfo," and the consequence is "tab=0 + populate."
+  it('navSelect: yanks from any non-Info tab (not just Transcript)', () => {
+    // Pin that the yank fires from ANY non-Info active tab — the precondition
+    // is "focus has getInfo," and the consequence is "slot active = info
+    // instance." Mint a THIRD content position-tab (a text-view) and park the
+    // slot on it, then confirm navSelect still yanks to Info.
     const route = require('../panel/route');
+    const api = require('../panel/api');
     const dispatch = require('../dispatch/control/dispatch');
+    seedContentSlot();
     const m = runtime.getModel();
     m.config = { groups: { g: { label: 'G', actions: {
       a: { label: 'A', desc: 'an action', script: 'echo a' },
     } } } };
     m.currentGroup = 'g';
     route.getInstanceSlice('layout').focus = 'actions';
-    const sliceBefore = { ...route.getInstanceSlice('detail'), tab: 3 };
-    route.setInstanceSlice('detail', sliceBefore);
-    eq(route.getInstanceSlice('detail').tab, 3, 'precondition: on tab 3');
+    const slotPaneId = route.resolveViewerPaneId();
+    const infoInst = route.resolveTarget('viewer_info');
+    // Mint an extra content text-view tab into the slot (mint_tab always
+    // activates it — a 3rd, non-Info, non-Transcript tab, the "any tab" case).
+    const extraPool = 'content-extra';
+    api.dispatchMsg(api.wrap('layout', { type: 'mint_tab', paneId: slotPaneId,
+      poolId: extraPool, paneType: 'text-view', title: 'Extra', config: { lines: ['x'] },
+      hint: { origin: 'open' } }));
+    const extraInst = route.activeInstanceOf(slotPaneId);
+    eq(extraInst, 'pane-' + extraPool, 'precondition: slot on the extra tab');
     dispatch.navSelect('actions', 0);
-    eq(route.getInstanceSlice('detail').tab, 0, 'yanked back to Info from tab 3');
+    eq(route.activeInstanceOf(slotPaneId), infoInst, 'yanked back to Info from a 3rd tab');
   });
 
   it('viewer_show_info bails when focus is on detail (no getInfo) — preserves addContentTab flow', () => {
@@ -368,20 +404,24 @@ describe('[3] update — (model, msg) → [model, cmds], pure + Cmd descriptors'
     const snap = JSON.stringify(m.focus);
     // show_help / quit no longer go through the reducer (R4.8) —
     // actions.js calls overlay/help.showHelp() / cleanup() + process.exit
-    // directly. next_tab / prev_tab emit tab_switch — v0.6.4 Theme C: the
-    // viewer tab bundle (curTab/total/tabKeys + the Cmd `target`) is threaded
-    // by the handler (actions._viewerTabBundle); the arm does the pure cycle
-    // math. blessed-A — `target` moved into the bundle (was resolveTarget in
-    // the arm), so thread it here too.
-    const bundle = { target: 'detail', curTab: 0, total: 2, tabKeys: ['info', 'transcript'], currentGroup: '' };
+    // directly. U2e P1b — next_tab / prev_tab cycle the content slot's VISIBLE
+    // position-tabs: the handler stamps { slotPaneId, tabPoolIds, curIdx } and
+    // the arm emits a `set_active_tab` (wrapped to layout) targeting the next
+    // poolId. Thread a 2-tab bundle (Info + Transcript) directly — the arm's
+    // cycle math is pure of route topology.
+    const bundle = {
+      slotPaneId: 'pane-detail',
+      tabPoolIds: ['info-pane-detail', 'transcript-pane-detail'],
+      curIdx: 0,
+    };
     const cmdsNext = runtime.update(m, { type: 'next_tab', ...bundle })[1];
     const cmdsPrev = runtime.update(m, { type: 'prev_tab', ...bundle })[1];
-    eq(cmdsNext[0].msg.msg.type, 'tab_switch');
-    eq(cmdsPrev[0].msg.msg.type, 'tab_switch');
-    // total=2 (Info + Transcript) with currentGroup=''; from tab=0,
-    // dir +1 → idx 1; dir -1 → idx 1 (wrap).
-    eq(cmdsNext[0].msg.msg.idx, 1);
-    eq(cmdsPrev[0].msg.msg.idx, 1);
+    eq(cmdsNext[0].msg.msg.type, 'set_active_tab');
+    eq(cmdsPrev[0].msg.msg.type, 'set_active_tab');
+    // 2 tabs, curIdx=0: dir +1 → idx 1 (Transcript); dir -1 → idx 1 (wrap).
+    eq(cmdsNext[0].msg.msg.tabPoolId, 'transcript-pane-detail');
+    eq(cmdsPrev[0].msg.msg.tabPoolId, 'transcript-pane-detail');
+    eq(cmdsNext[0].msg.msg.paneId, 'pane-detail');
     eq(JSON.stringify(m.focus), snap, 'model unchanged by Cmd-only verbs');
   });
   it('unknown msg: model untouched, no cmds', () => {
@@ -436,57 +476,37 @@ describe('[11] terminal mode + multi-select writes (folded off the input path)',
   });
 });
 
-describe('[10] streamed output — stream_start / viewer_append (effect source)', () => {
-  // Phase B: stream_start + viewer_append moved into detail.update — tested
-  // here against the Component update with an isolated slice.
-  const detail = require('../panel/viewer/viewer');
-  // Phase 3 — _update returns the new slice; capture it instead of reading
-  // the input after the call.
-  it('stream_start replaces detail with the header + auto-jumps to Transcript', () => {
-    // v0.6.2 — unrouted stream_start auto-jumps to the Transcript tab
-    // (last in the strip; idx 1 with no per-group tabs). Returns
-    // [slice, cmds] when slice.tab !== transcriptIdx — the cmds carry
-    // a terminal_exit so terminalMode doesn't leak across the jump.
-    const m = runtime.init();
-    const init = detail._init();
-    const slice = { ...init, infoLines: ['old', 'stuff'], scroll: 5, tab: 0 };
-    const r = detail._update({ type: 'stream_start', header: '$ run' }, slice);
-    assert(Array.isArray(r), 'jump path returns [slice, cmds]');
-    const [next, cmds] = r;
+describe('[10] streamed output — tv_stream_start / tv_append (Transcript instance)', () => {
+  // U2e P1b — the unrouted stream no longer flows through the detail viewer's
+  // flat-strip stream_start/viewer_append (viewerStreamBuffer + auto-jump to a
+  // `tab` index). It seeds the TRANSCRIPT text-view instance (a position-tab of
+  // the content slot, hint:'transcript') via tv_stream_start / tv_append, whose
+  // buffer lives on `slice.lines` (dispatch/runtime/stream.js resolves the target
+  // via route.resolveTarget('viewer_transcript')). Test the LIVE path against the
+  // text-view Component's update with an isolated slice.
+  const tv = require('../panel/text-view/text-view');
+  it('tv_stream_start reseeds the transcript buffer to the header + resets scroll', () => {
+    const init = tv.init();
+    const slice = { ...init, lines: ['old', 'stuff'], scroll: 5 };
+    const next = tv.update({ type: 'tv_stream_start', header: '$ run' }, slice);
     eq(displayedLines(next).length, 1);
     eq(displayedLines(next)[0], '$ run');
-    eq(next.scroll, 0);
-    eq(next.tab, 1, 'auto-jumped to Transcript');
-    assert(cmds.some(c => c.type === 'msg' && c.msg && c.msg.type === 'terminal_exit'),
-      'terminal_exit Cmd emitted');
+    eq(next.scroll, 0, 'scroll reset to top on re-run');
   });
-  it('viewer_append pins to bottom when already at bottom', () => {
-    // v0.6.2 T2d — slice.lines derives from viewerStreamBuffer on
-    // Transcript. Seed buffer state directly.
-    const init = detail._init();
-    const slice = {
-      ...init,
-      scroll: 0,
-      innerH: 3,
-      tab: 1,
-      viewerStreamBuffer: { lines: ['a', 'b', 'c'], cap: 1000 },
-    };
-    const r = detail._update({ type: 'viewer_append', line: 'd' }, slice);
-    eq(displayedLines(r).length, 4);
-    eq(r.scroll, 1, 'followed to the new bottom');
+  it('tv_append pins to bottom when already at bottom', () => {
+    // The instance owns its own scroll; at the bottom the view follows the tail.
+    const init = tv.init();
+    const slice = { ...init, scroll: 0, innerH: 3, lines: ['a', 'b', 'c'] };
+    const next = tv.update({ type: 'tv_append', line: 'd' }, slice);
+    eq(displayedLines(next).length, 4);
+    eq(next.scroll, 1, 'followed to the new bottom');
   });
-  it('viewer_append leaves scroll alone when the user scrolled up', () => {
-    const init = detail._init();
-    const slice = {
-      ...init,
-      scroll: 0,
-      innerH: 3,
-      tab: 1,
-      viewerStreamBuffer: { lines: ['a', 'b', 'c', 'd', 'e'], cap: 1000 },
-    };  // maxScroll = 2, user at top
-    const r = detail._update({ type: 'viewer_append', line: 'f' }, slice);
-    eq(displayedLines(r).length, 6);
-    eq(r.scroll, 0, 'not yanked down — user was reading');
+  it('tv_append leaves scroll alone when the user scrolled up', () => {
+    const init = tv.init();
+    const slice = { ...init, scroll: 0, innerH: 3, lines: ['a', 'b', 'c', 'd', 'e'] };  // maxScroll 2, user at top
+    const next = tv.update({ type: 'tv_append', line: 'f' }, slice);
+    eq(displayedLines(next).length, 6);
+    eq(next.scroll, 0, 'not yanked down — user was reading');
   });
 });
 

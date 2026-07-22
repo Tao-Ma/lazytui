@@ -25,6 +25,13 @@ const dispatch = require('../dispatch/control/dispatch');
 const route = require('../panel/route');
 const api = require('../panel/api');
 
+// U2e P1b — the content slot is SEEDED with Info(active)+Transcript+detail-anchor
+// tabs; its instances only mint when info + text-view are registered
+// (reconcilePaneInstances skips unregistered tab kinds). test-runner registers
+// only layout/detail/groups, so add these two before initState below.
+api.registerComponent(require('../panel/info/info'));
+api.registerComponent(require('../panel/text-view/text-view'));
+
 function capture(fn) {
   const orig = process.stdout.write;
   process.stdout.write = () => true;
@@ -111,8 +118,15 @@ describe('[B] capture on transition', () => {
     const hist = getModel().nav.history;
     eq(hist.length, before + 1, 'exactly one record pushed');
     const top = hist[hist.length - 1];
-    eq(top.focus.type, 'detail', 'focused pane type captured');
-    assert(top.tab && typeof top.tab.targetKey === 'string', 'viewer tab captured by stable key');
+    // U2e P1b — focusing the content slot lands focus on the column paneId, whose
+    // ACTIVE tab is now Info (the seeded default), so the captured kind is 'info'
+    // (was 'detail' when the slot hosted a single `detail` viewer). Restore keys
+    // off focus.paneId (the stable content-slot column id), which the record
+    // carries; the old flat-strip `tab.targetKey` capture is gated on VIEWER_KIND
+    // ('detail') and so is dormant for the info/text-view content slot — restoring
+    // the exact position-tab is a P1b follow-up, not wired here.
+    eq(top.focus.type, 'info', 'focused pane type captured (content slot active tab = Info)');
+    eq(top.focus.paneId, 'pane-detail', 'content-slot column paneId captured (the restore key)');
   });
 
   it('a navigator focus captures the cursor item by stable id (not an index)', () => {
@@ -156,7 +170,8 @@ describe('[B2] cascade coalescing', () => {
       job: { kind: 'stream-unrouted', owner: { groupName: other } }, now: 0 }));
 
     eq(getModel().currentGroup, other, 'the gesture switched group');
-    eq(kindNow(), 'detail', 'the gesture moved focus to the viewer');
+    // U2e P1b — the viewer slot's active tab is Info (kind 'info'), was 'detail'.
+    eq(kindNow(), 'info', 'the gesture moved focus to the content slot (active tab = Info)');
     eq(getModel().nav.history.length, before + 1, 'one gesture = exactly one record (coalesced, not per-arm)');
 
     // One back must undo the WHOLE jump (group AND focus), not a half-state.
@@ -177,7 +192,8 @@ describe('[C] back / forward restore', () => {
     capture(() => loop.applyMsg({ type: 'nav_back' }));
     eq(kindNow(), 'groups', 'back restored the groups focus');
     capture(() => loop.applyMsg({ type: 'nav_back' }));
-    eq(kindNow(), 'detail', 'back again restored the detail focus');
+    // U2e P1b — the content slot's active tab is Info now (was the 'detail' viewer).
+    eq(kindNow(), 'info', 'back again restored the content-slot focus (active tab = Info)');
     capture(() => loop.applyMsg({ type: 'nav_forward' }));
     eq(kindNow(), 'groups', 'forward retraced to groups');
   });

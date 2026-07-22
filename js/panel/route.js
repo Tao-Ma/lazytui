@@ -592,21 +592,38 @@ function getFocus() {
 
 const VIEWER_KIND = 'detail';
 
+// U2e P1b — content-viewer kinds sharing the tvu scrollable-text interaction: the
+// `detail` anchor + its successors (`info`, `text-view`). The page/scroll/search/
+// select gates that hard-checked `instanceKind(x) === 'detail'` widen to this — all
+// respond to viewer_scroll/viewer_search_*/select_* via leaves/text/text-view-update.
+// (terminal is deliberately excluded — it's a PTY surface, not a tvu text buffer.)
+const TEXT_VIEWER_KINDS = new Set(['detail', 'info', 'text-view']);
 function isViewerKind(id) {
-  return instanceKind(id) === VIEWER_KIND;
+  return TEXT_VIEWER_KINDS.has(instanceKind(id));
 }
 
-/** Map an arrange-walk hit (tab/pool id) to the MOUNTED instance id.
- *  Tab ids are pool ids ('detail'); initState mints instances keyed by
- *  the hosting pane's paneId ('pane-detail'). Pre-split, the
- *  getInstanceSlice kind-name fallback bridged that gap for singleton
- *  placements; post-P2 reads are strict, so resolveTarget must hand
- *  back an id that resolves. Prefers the tab id itself (per-tab
- *  instances + pre-init seeds), then the hosting pane's instance. */
-function _mountedViewerId(tabId, pane) {
-  if (_instances[tabId]) return tabId;
-  if (pane && pane.paneId && _instances[pane.paneId]) return pane.paneId;
-  return tabId;
+/** U2e P1b — the mounted instance id of the content slot's tab whose pool entry
+ *  matches `pred(entry)`. The slot hosts several sibling instances now (info /
+ *  transcript / minted text-views), so the intent-aware resolveTarget picks one by
+ *  its pool-entry shape (kind for info, `hint` for transcript). Returns null when
+ *  no such tab is mounted. Instances are keyed `newPaneId(poolId)` (reconcile). */
+function _slotInstanceWhere(slotPaneId, pred) {
+  const layout = _layoutSvcSlice();
+  const arrange = layout && layout.arrange;
+  if (!arrange) return null;
+  const mpool = require('../leaves/wm/pool');
+  const mpane = require('../leaves/wm/pane');
+  const loc = mpool.findPaneLocation(arrange, (p) => p.paneId === slotPaneId);
+  if (!loc) return null;
+  const pool = arrange.pool || {};
+  for (const t of (loc.pane.tabs || [])) {
+    const entry = pool[t.poolId];
+    if (entry && pred(entry)) {
+      const instId = mpane.newPaneId(t.poolId);
+      return _instances[instId] ? instId : null;
+    }
+  }
+  return null;
 }
 
 function resolveTarget(intent, ctx) {
@@ -630,47 +647,24 @@ function resolveTarget(intent, ctx) {
 }
 
 function _resolveTargetCompute(intent, focused, layout, lastViewerTab) {
-  // (1) focused viewer-kind
-  if (focused && isViewerKind(focused)) return focused;
-
-  // (2) sticky lastViewerTab — only when it still RESOLVES. The sticky
-  //     pointer survives the instance it names (reconfigure disposes,
-  //     harness seed swaps); post-split reads are strict, so a stale id
-  //     must fall through to the arrange walk / instance scan instead
-  //     of strict-missing at the consumer.
-  if (lastViewerTab && _instances[lastViewerTab]
-      && isViewerKind(lastViewerTab)) {
-    return lastViewerTab;
+  // U2e P1b — the content slot now hosts SEVERAL sibling instances (info /
+  // transcript / minted text-views), so resolution is: (a) find the content SLOT
+  // (role-anchored, same focus→sticky→arrange tiers as resolveViewerPaneId), then
+  // (b) pick the instance the INTENT wants.
+  const slotPaneId = resolveViewerPaneId({ focusedTabId: focused });
+  if (!slotPaneId) return null;   // no content slot placed → caller no-ops
+  //   viewer_info      → the slot's `info` tab (nav-selection body / showSelectedInfo)
+  //   viewer_transcript→ the slot's `hint:'transcript'` tab (unrouted stream)
+  //   viewer / *_tab_add / terminal → the slot's ACTIVE instance (what the user sees)
+  if (intent === 'viewer_info') {
+    return _slotInstanceWhere(slotPaneId, (e) => e.type === 'info')
+        || activeInstanceOf(slotPaneId);
   }
-
-  // (3) first viewer-kind in last-column arrange order. Walk each
-  //     pane's tabs for a viewer-kind hit, then map it to the MOUNTED
-  //     instance id via _mountedViewerId — tab/pool ids ('detail') and
-  //     minted instance ids ('pane-detail') differ for singleton
-  //     placements, and post-split reads are strict (no kind-name
-  //     bridge), so the returned id must actually resolve.
-  if (layout && layout.arrange && Array.isArray(layout.arrange.columns)) {
-    const mpool = require('../leaves/wm/pool');
-    for (const p of mpool.lastColumnPanels(layout.arrange)) {
-      if (!p) continue;
-      const tabs = Array.isArray(p.tabs) ? p.tabs : null;
-      if (tabs) {
-        for (const t of tabs) {
-          if (t && isViewerKind(t.id)) return _mountedViewerId(t.id, p);
-        }
-      } else if (isViewerKind(p.id)) {
-        return _mountedViewerId(p.id, p);
-      }
-    }
+  if (intent === 'viewer_transcript') {
+    return _slotInstanceWhere(slotPaneId, (e) => e.hint === 'transcript')
+        || activeInstanceOf(slotPaneId);
   }
-
-  // (4) any viewer-kind instance
-  for (const id in _instances) {
-    if (_instances[id].kind === VIEWER_KIND) return id;
-  }
-
-  // (5) no viewer registered — caller no-ops
-  return null;
+  return activeInstanceOf(slotPaneId);
 }
 
 // v0.6.4 — the CONTAINER paneId hosting the target viewer. resolveTarget

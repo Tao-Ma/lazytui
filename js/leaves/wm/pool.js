@@ -66,25 +66,6 @@ function findPaneLocation(arrange, predicate) {
   return null;
 }
 
-/** The panel-TYPE of a pane in this arrange — the placed column pane matched
- *  by paneId (its `.type` mirrors its active tab), else a pool entry keyed by
- *  id, else null. Pure mirror of route's arrange→type fallback, but operating
- *  on a PASSED arrange: lets a reducer (layout.update) classify the focused
- *  pane from its OWN slice.arrange instead of reaching into the global instance
- *  registry (route.instanceKind). Callers compare against the viewer kind
- *  ('detail') themselves — this stays generic arrange math, no viewer knowledge.
- *  Focus is always normalized to a column pane's paneId before this is called
- *  (layout._resolvePaneIdForFocus), so a column scan + pool fallback suffices;
- *  no tab descent needed. */
-function paneTypeIn(arrange, paneId) {
-  if (!arrange || paneId == null) return null;
-  for (const p of allPanesInColumns(arrange)) {
-    if (p && p.paneId === paneId) return p.type || null;
-  }
-  const entry = arrange.pool && arrange.pool[paneId];
-  return (entry && entry.type) || null;
-}
-
 /** Return a new arrange with column `columnIndex`'s panels replaced by
  *  `panelsFn(oldPanels)`. The column's other fields (width) survive. */
 function updateColumn(arrange, columnIndex, panelsFn) {
@@ -241,7 +222,9 @@ function panelListItems(arrange) {
     if (!p || !p.id) continue;
     const entry = arrange.pool[p.id];
     if (!entry) continue;
-    const status = (isDetailPane(entry) && soleDetail) ? 'essential' : 'placed';
+    // Essential = the sole CONTENT slot — test the PANE (carries `role`), not its
+    // active-tab pool entry (post-P1b that's `info`, kind-blind to slot identity).
+    const status = (isDetailPane(p) && soleDetail) ? 'essential' : 'placed';
     items.push({ id: entry.id, type: entry.type, title: entry.title, status });
     seen.add(entry.id);
   }
@@ -281,8 +264,14 @@ function placementFromPoolEntry(entry, columnIndex) {
 // kind lookup (v0.7) change the implementation here without touching
 // consumers. Same for actions (the second reserved-kind invariant).
 
+// U2e P1b — "is this THE content/viewer slot?" now answered by the stable
+// `role === 'content'` marker (P1a), NOT the active tab's kind: once the slot is
+// seeded, its default tab is `info`, so `pane.type` reads 'info'/'text-view' while
+// the SLOT is unchanged. Panes carry `role`; POOL ENTRIES don't (role is a
+// placement property), so entry-shaped callers fall back to the kind — the `detail`
+// anchor entry stays type 'detail' in the pool, which is exactly what they want.
 function isDetailPane(pane) {
-  return !!(pane && pane.type === 'detail');
+  return !!(pane && (pane.role === 'content' || pane.type === 'detail'));
 }
 
 function isActionsPane(pane) {
@@ -471,8 +460,8 @@ function removePoolEntry(arrange, poolId) {
 module.exports = {
   columnCount, lastColumnIndex,
   nextTransientPoolId, mintPoolEntry, removePoolEntry,
-  columnPanels, lastColumnPanels,
-  allPanesInColumns, findPaneLocation, paneTypeIn, updateColumn,
+  columnPanels,
+  allPanesInColumns, findPaneLocation, updateColumn,
   distributeColumnWidths,
   placedIds,
   placedIdSet,

@@ -33,6 +33,7 @@ const { getModel } = require('../model/store');
 // Eager-require open-target scheme modules so their schemes register on
 // the registry before the first `:open` invocation (or first cmdline
 // rebuild that consults argComplete).
+require('./content-tab');            // U2e P1b — wires the feature-host seam to mint text-view tabs (before the schemes below use it)
 require('../feature/open-file');     // host scheme (catch-all)
 require('../feature/open-docker');   // docker scheme (docker://<container>/<path>)
 

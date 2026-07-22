@@ -20,6 +20,14 @@ const sm = require('./smoke/_helpers/smoke');
 const { getInstanceSlice } = require('../panel/api');
 const geo = require('../leaves/wm/geometry');
 
+// U2e P1b — the content slot is SEEDED with Info(active)+Transcript+detail-anchor
+// tabs; the [9] innerH probe reads the slot's ACTIVE instance via
+// resolveTarget('viewer') (now the Info instance). That instance only mints when
+// info + text-view are registered (reconcilePaneInstances skips unregistered tab
+// kinds); test-runner registers only layout/detail/groups.
+require('../panel/api').registerComponent(require('../panel/info/info'));
+require('../panel/api').registerComponent(require('../panel/text-view/text-view'));
+
 function boot(cols, rows) {
   process.stdout.columns = cols;
   process.stdout.rows = rows;

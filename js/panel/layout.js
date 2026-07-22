@@ -127,9 +127,21 @@ function _withFocus(slice, focus) {
   // placement (the in-flight arrange has the just-placed pane before its
   // instance is minted by the post-dispatch reconcile). VIEWER_KIND is a
   // constant, not a topology read. (#1 — layout.update is now pure of route.)
-  const kind = mpool.paneTypeIn(slice.arrange, paneId);
-  const halfLeftPanel = kind !== route.VIEWER_KIND ? paneId : slice.halfLeftPanel;
-  const lastViewerTab = kind === route.VIEWER_KIND ? paneId : slice.lastViewerTab;
+  // U2e P1b — classify "is this the content/viewer slot?" by the stable
+  // `role === 'content'` marker, NOT the active tab's TYPE: post-P1b a content
+  // slot's active tab is `info`, so a type check (`paneTypeIn === VIEWER_KIND`)
+  // would misclassify it as a non-viewer and collapse default half-view to a
+  // single pane. (P1a re-anchored resolveViewerPaneId/isDetailPane to role; this
+  // is the matching classification for the half-view left/lastViewer bookkeeping.)
+  // Reads only slice.arrange (findPaneLocation is pure) — layout.update stays
+  // pure of the route/_instances registry.
+  const loc = mpool.findPaneLocation(slice.arrange, (p) => p.paneId === paneId);
+  // Use the SAME predicate as the isDetailPane chokepoint (role==='content' OR a
+  // literal `detail` type) — so a seeded content slot (active tab `info`) AND a
+  // hand-built `detail` pane both classify as the viewer.
+  const isViewer = !!(loc && mpool.isDetailPane(loc.pane));
+  const halfLeftPanel = isViewer ? slice.halfLeftPanel : paneId;
+  const lastViewerTab = isViewer ? paneId : slice.lastViewerTab;
   return { ...slice, focus: paneId, halfLeftPanel, lastViewerTab };
 }
 
@@ -1162,6 +1174,13 @@ function update(msg, slice) {
       // terminal-row floor is the only physical limit.
       const target = mpool.columnPanels(arrange, columnIndex);
       const placement = mpool.placementFromPoolEntry(entry, columnIndex);
+      // U2e P1b FOLLOW-UP — a content slot placed at RUNTIME (showing a hidden /
+      // second viewer) is NOT yet seeded with Info + Transcript here (only the
+      // boot/restore path is, via arrange.rebuildLayoutFromConfig). Seeding it
+      // needs the matching pool-identity rework (pool_hide / panelListItems key on
+      // `p.id`, which for a seeded slot mirrors the active `info` tab, not the
+      // anchor poolId) — a coherent follow-up, deferred to keep P1b scoped. A
+      // runtime-shown viewer currently shows the drained `detail` anchor.
       // v0.6.4 multi-viewer — detail is an ordinary pane: insert at the
       // requested index (pool-drag drop) or append (no index). The old
       // "clamp before the last-column detail" rule is gone.

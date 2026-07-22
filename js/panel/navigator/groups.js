@@ -208,6 +208,11 @@ function _groupChangeCmds(res, ctx) {
     cmds.push({ type: 'msg', msg: require('../api').wrap(target, {
       type: 'viewer_reset_chrome', paneMenuMode: !!(ctx && ctx.paneMenuMode),
     }) });
+    // U2e P1b — the menu-close half is hoisted out of the (now content-instance)
+    // target arm to this layout/mode-level cascade. Idempotent close.
+    if (ctx && ctx.paneMenuMode) {
+      cmds.push({ type: 'msg', msg: require('../api').wrap('layout', { type: 'pane_menu_close' }) });
+    }
   }
   cmds.push({ type: 'msg', msg: { type: 'set_current_group', name: res.newCurrentGroup } });
   // #D9 — owners (per-panel reset targets) are resolved by the dispatcher and

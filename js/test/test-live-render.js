@@ -14,6 +14,15 @@
 const { describe, it, assert, eq, report } = require('./test-runner');
 const { getModel } = require('../app/runtime');
 const {getInstanceSlice, primarySliceOf, getFocus } = require('../panel/api');
+const api = require('../panel/api');
+const route = require('../panel/route');
+
+// U2e P1b — the content slot is seeded with Info(active)+Transcript+detail-anchor
+// tabs; those instances only mint when info + text-view are registered
+// (reconcilePaneInstances skips unregistered tab kinds). test-runner registers
+// only layout/detail/groups, so add these two before initState below.
+api.registerComponent(require('../panel/info/info'));
+api.registerComponent(require('../panel/text-view/text-view'));
 
 const { initState, getSel, setSel, selectGroup } = require('../app/state');
 
@@ -200,22 +209,25 @@ describe('[collapse-shift] all-collapsed column preserves its horizontal slot', 
   });
 });
 
-describe('[4] detail content flows model → view — live', () => {
-  it('detail viewerOverride flows into the rendered Detail panel', () => {
-    // v0.6.2 T2c — render reads viewerLines() which prefers
-    // slice.viewerOverride for discrete-doc content (history replay,
-    // diff, help text). Poking slice.lines directly no longer reaches
-    // the frame — render derives from active tab + buffers + override.
+describe('[4] content-slot content flows model → view — live', () => {
+  it('the active content tab\'s lines flow into the rendered content panel', () => {
+    // U2e P1b — the content slot no longer hosts a single `detail` viewer whose
+    // `viewerOverride`/`lines` render. It hosts sibling POSITION-tab instances;
+    // the ACTIVE one (Info by default) renders its own `slice.lines`. So the
+    // model→view path we assert is: seed the active Info instance's `lines`, then
+    // confirm they reach the frame through the real render pipeline.
+    //   (viewerOverride is a P4-deferred writer — no longer wired into the content
+    //    slot's render path; seeding it on the anchor is a no-op, so this test
+    //    proves the live path via the active instance instead. // P4)
     capture(() => { handleKey('_', '_'); handleKey('_', '_'); });  // normal view
-    // primarySliceOf: this boot minted the viewer per-pane (the
-    // kind-keyed seed is disposed), and the intent here is "the
-    // config's one viewer" — a kind-level read.
-    primarySliceOf('detail').viewerOverride = { lines: ['ZZ-DETAIL-MARKER-ZZ'] };
-    primarySliceOf('detail').scroll = 0;
+    const viewerId = route.resolveTarget('viewer');   // the active content instance (Info)
+    const slice = getInstanceSlice(viewerId);
+    route.setInstanceSlice(viewerId, { ...slice, lines: ['ZZ-CONTENT-MARKER-ZZ'], scroll: 0 });
     const frame = capture(() => render(getModel()));
-    assert(/ZZ-DETAIL-MARKER-ZZ/.test(frame), 'detail content (via the model) reached the rendered frame');
-    // Cleanup so subsequent tests aren't sticky-overridden.
-    primarySliceOf('detail').viewerOverride = null;
+    assert(/ZZ-CONTENT-MARKER-ZZ/.test(frame),
+      'active content-tab lines (via the model) reached the rendered frame');
+    // Cleanup so subsequent tests aren't sticky.
+    route.setInstanceSlice(viewerId, { ...getInstanceSlice(viewerId), lines: [] });
   });
 });
 

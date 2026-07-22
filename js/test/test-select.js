@@ -2,6 +2,17 @@
  * Selection state machine smoke test — anchor/cursor normalization,
  * char vs line mode, multi-line text resolution, register integration.
  *
+ * U2e P1b — the content slot's ACTIVE instance is now the `info` instance
+ * (kind 'info'), which stores its buffer on `slice.lines` (not the retired
+ * `detail.infoLines`). We boot a real seeded content slot (parse-shaped config
+ * → initState → per-pane mint) and resolve it via
+ * `route.resolveTarget('viewer_info')`. The select-math + highlightLine
+ * assertions carry over verbatim once the slice resolves; the impure service
+ * layer (panel/viewer/select.js) targets `resolveTarget('viewer')` = the active
+ * info instance, and the keyboard visual-mode state machine flows through the
+ * SHARED reducer (leaves/text/text-view-update, ownKind 'info') via
+ * dispatchKeyToFocused.
+ *
  * Run: node js/test/test-select.js
  */
 'use strict';
@@ -21,24 +32,44 @@ const { describe, it, eq, assert, report } = require('./test-runner');
 const { getModel } = require('../app/runtime');
 const { getInstanceSlice } = require('../panel/api');
 const { dispatchKeyToFocused } = require('../dispatch/runtime/loop');
+const route = require('../panel/route');
 
-// (c)-era key-claim adapter: the keyboard visual-mode state machine
-// lives in the detail Component's update now, not in panel/viewer/select.
-// `dispatchKeyToFocused` returns true when the focused Component
-// returned the `_claimed` sentinel — the same semantic the retired
-// `detailKey` exposed. Used by the visual-mode test section
-// below to drive the state machine through the production path.
+// --- Boot a real seeded content slot ------------------------------------
+// test-runner registers layout/detail/groups but not info/text-view, and
+// doesn't boot a config; the info instance is minted only through initState.
+const api = require('../panel/api');
+if (!api.getComponent('text-view')) api.registerComponent(require('../panel/text-view/text-view'));
+if (!api.getComponent('info'))      api.registerComponent(require('../panel/info/info'));
+const { initState } = require('../app/state');
+getModel().config = {
+  theme: 'default',
+  register: { cap: 10 },
+  groups: { g: { label: 'G', actions: {}, items: [{ name: 'a' }] } },
+  warnings: [],
+};
+initState();
+
+// The content-slot's active `info` instance — the select facade's
+// resolveTarget('viewer') lands here.
+function infoSlice() { return getInstanceSlice(route.resolveTarget('viewer_info')); }
+
+// (c)-era key-claim adapter: the keyboard visual-mode state machine lives in the
+// focused Component's update now (the info instance's, via the shared tvu),
+// not in panel/viewer/select. `dispatchKeyToFocused` returns true when the
+// focused Component returned the `_claimed` sentinel — the same semantic the
+// retired `detailKey` exposed. Used by the visual-mode section below.
 function detailKey(key, seq) { return dispatchKeyToFocused(key, seq); }
 
 
 function setUp(lines) {
   reg.init({ cap: 10 });
   reg.clear();
-  // P3 — Info content's canonical home (slice.lines is deleted).
-  getInstanceSlice('detail').infoLines = lines.slice();
-  getInstanceSlice('detail').scroll = 0;
-  // Force re-init of getInstanceSlice('detail').select.
-  getInstanceSlice('detail').select = undefined;
+  // U2e P1b — Info content's canonical home is the info instance's `slice.lines`.
+  const s = infoSlice();
+  s.lines = lines.slice();
+  s.scroll = 0;
+  // Force re-init of the info instance's select via a full reset shape.
+  s.select = { active: false, kind: 'char', anchor: { line: 0, col: 0 }, cursor: { line: 0, col: 0 } };
   sel.cancel();
 }
 
@@ -174,17 +205,17 @@ describe('[10] decorateLines — multi-line render integration', () => {
     setUp(['before', 'sel-line', 'after']);
     sel.beginAt(1, 0, 'char');
     sel.extendTo(1, 99);
-    const out = sel.decorateLines(getInstanceSlice('detail').infoLines);
+    const out = sel.decorateLines(infoSlice().lines);
     eq(out[0], 'before', 'untouched');
     eq(out[2], 'after',  'untouched');
     assert(out[1].includes('[reverse]'), 'sel line carries [reverse]');
   });
   it('no-op when no active selection (reading mode = no cursor)', () => {
     setUp(['x']);
-    getInstanceSlice("layout").focus = 'detail';
+    getInstanceSlice('layout').focus = route.resolveViewerPaneId();
     sel.cancel();
-    const out = sel.decorateLines(getInstanceSlice('detail').infoLines);
-    eq(out, getInstanceSlice('detail').infoLines, 'pass-through; reading mode shows no cursor');
+    const out = sel.decorateLines(infoSlice().lines);
+    eq(out, infoSlice().lines, 'pass-through; reading mode shows no cursor');
   });
 });
 
@@ -199,88 +230,100 @@ describe('[8] cancel', () => {
   });
 });
 
-describe('[11] keyboard visual-mode — claim via detail Component update', () => {
-  function withDetail(lines) {
+describe('[11] keyboard visual-mode — claim via the info instance update', () => {
+  function withInfo(lines) {
     setUp(lines);
-    getInstanceSlice("layout").focus = 'detail';
+    // Focus the content SLOT so dispatchKeyToFocused routes keys to its active
+    // instance (info). getFocus() returns the slot paneId; instanceKind resolves
+    // it to the active `info` instance, whose ownKind gate ('info') matches.
+    const slot = route.resolveViewerPaneId();
+    api.dispatchMsg(api.wrap('layout', { type: 'focus_set', focus: slot }));
     require('../dispatch/control/dispatch').applyMsg({ type: 'mode_clear', flag: 'terminalMode' });
-    getInstanceSlice('detail').cursor = { line: 0, col: 0 };
-    // viewer.update reads slice.innerH directly (set by render's R4.9
-    // direct write; tests seed it to drive selection geometry without
-    // rendering). panelHeights left the slice in the API-abstraction
-    // arc — was a legacy co-seed here, dropped.
-    getInstanceSlice('detail').innerH = 8;
-    getInstanceSlice('detail').scroll = 0;
+    const s = infoSlice();
+    s.cursor = { line: 0, col: 0 };
+    // The shared tvu reducer reads slice.innerH directly (stamped by augmentMsg
+    // in production; seeded here to drive selection geometry without rendering).
+    s.innerH = 8;
+    s.scroll = 0;
   }
-  it('claims keys only when focus=detail', () => {
-    withDetail(['abc']);
-    getInstanceSlice("layout").focus = 'groups';
-    eq(detailKey('v', 'v'), false, 'returns false when focus != detail');
-    getInstanceSlice("layout").focus = 'detail';
-    eq(detailKey('v', 'v'), true, 'returns true when focus = detail');
+  it('claims keys only when the content slot is focused', () => {
+    withInfo(['abc']);
+    api.dispatchMsg(api.wrap('layout', { type: 'focus_set', focus: 'groups' }));
+    eq(detailKey('v', 'v'), false, 'returns false when focus is a non-content pane');
+    api.dispatchMsg(api.wrap('layout', { type: 'focus_set', focus: route.resolveViewerPaneId() }));
+    eq(detailKey('v', 'v'), true, 'returns true when the content slot is focused');
   });
   it('v lands cursor at top of current viewport', () => {
-    withDetail(Array.from({ length: 10 }, (_, i) => `line${i}`));
-    getInstanceSlice('detail').scroll = 3;
+    withInfo(Array.from({ length: 10 }, (_, i) => `line${i}`));
+    infoSlice().scroll = 3;
     detailKey('v', 'v');
-    eq(sel.isActive(), true);
-    eq(getInstanceSlice('detail').select.kind, 'char');
-    eq(getInstanceSlice('detail').select.anchor.line, 3, 'anchor at viewport top, not line 0');
-    eq(getInstanceSlice('detail').select.anchor.col, 0);
+    const s = infoSlice();
+    eq(s.select.active, true);
+    eq(s.select.kind, 'char');
+    eq(s.select.anchor.line, 3, 'anchor at viewport top, not line 0');
+    eq(s.select.anchor.col, 0);
   });
   it('V starts line mode at viewport top', () => {
-    withDetail(['a', 'b', 'c']);
-    getInstanceSlice('detail').scroll = 1;
+    withInfo(['a', 'b', 'c']);
+    infoSlice().scroll = 1;
     detailKey('V', 'V');
-    eq(getInstanceSlice('detail').select.kind, 'line');
-    eq(getInstanceSlice('detail').select.anchor.line, 1);
+    const s = infoSlice();
+    eq(s.select.kind, 'line');
+    eq(s.select.anchor.line, 1);
   });
   it('reading-mode j/k scrolls the view, cursor not used', () => {
-    withDetail(Array.from({ length: 20 }, (_, i) => `line${i}`));
-    getInstanceSlice('detail').innerH = 3;
-    eq(getInstanceSlice('detail').scroll, 0, 'starts at top');
+    withInfo(Array.from({ length: 20 }, (_, i) => `line${i}`));
+    infoSlice().innerH = 3;
+    eq(infoSlice().scroll, 0, 'starts at top');
     eq(sel.isActive(), false, 'reading mode (no select)');
     detailKey('j', 'j');
-    eq(getInstanceSlice('detail').scroll, 1, 'scroll advanced by 1');
+    eq(infoSlice().scroll, 1, 'scroll advanced by 1');
     detailKey('j', 'j');
     detailKey('j', 'j');
-    eq(getInstanceSlice('detail').scroll, 3, 'scrolled 3 lines');
+    eq(infoSlice().scroll, 3, 'scrolled 3 lines');
     detailKey('k', 'k');
-    eq(getInstanceSlice('detail').scroll, 2, 'k scrolls back');
+    eq(infoSlice().scroll, 2, 'k scrolls back');
   });
   it('reading-mode j/k clamps at top and bottom', () => {
-    withDetail(Array.from({ length: 10 }, (_, i) => `line${i}`));
-    getInstanceSlice('detail').innerH = 3;  // maxScroll = 7
-    for (let i = 0; i < 20; i++) detailKey('j', 'j');
-    eq(getInstanceSlice('detail').scroll, 7, 'clamped to maxScroll');
-    for (let i = 0; i < 20; i++) detailKey('k', 'k');
-    eq(getInstanceSlice('detail').scroll, 0, 'clamped to 0');
+    // The dispatch path re-stamps innerH from real pane geometry (augmentMsg),
+    // so a seeded slice.innerH is ignored here. Derive the real viewport height
+    // and size the buffer to it so maxScroll is deterministic across terminals.
+    const innerH = require('../panel/pane-viewport').paneInnerH(infoSlice()) || 1;
+    const nLines = innerH * 3;
+    withInfo(Array.from({ length: nLines }, (_, i) => `line${i}`));
+    const maxScroll = Math.max(0, nLines - innerH);
+    for (let i = 0; i < nLines + 5; i++) detailKey('j', 'j');
+    eq(infoSlice().scroll, maxScroll, 'clamped to maxScroll');
+    for (let i = 0; i < nLines + 5; i++) detailKey('k', 'k');
+    eq(infoSlice().scroll, 0, 'clamped to 0');
   });
   it('visual-mode j/k moves cursor and extends selection', () => {
-    withDetail(['line0', 'line1', 'line2', 'line3']);
+    withInfo(['line0', 'line1', 'line2', 'line3']);
     detailKey('v', 'v');
     detailKey('j', 'j');
-    eq(getInstanceSlice('detail').cursor.line, 1);
-    eq(getInstanceSlice('detail').select.cursor.line, 1, 'selection extended');
+    eq(infoSlice().cursor.line, 1);
+    eq(infoSlice().select.cursor.line, 1, 'selection extended');
     detailKey('j', 'j');
-    eq(getInstanceSlice('detail').cursor.line, 2);
+    eq(infoSlice().cursor.line, 2);
   });
   it('visual-mode j scrolls when cursor leaves viewport', () => {
-    withDetail(Array.from({ length: 20 }, (_, i) => `line${i}`));
-    getInstanceSlice('detail').innerH = 3;
+    // As above: real innerH drives. Fill past the viewport and step the cursor
+    // beyond innerH rows so it must scroll to stay visible.
+    const innerH = require('../panel/pane-viewport').paneInnerH(infoSlice()) || 1;
+    withInfo(Array.from({ length: innerH * 2 }, (_, i) => `line${i}`));
     detailKey('v', 'v');
-    for (let i = 0; i < 5; i++) detailKey('j', 'j');
-    assert(getInstanceSlice('detail').scroll > 0, `scroll auto-advanced (got ${getInstanceSlice('detail').scroll})`);
+    for (let i = 0; i < innerH + 2; i++) detailKey('j', 'j');
+    assert(infoSlice().scroll > 0, `scroll auto-advanced (got ${infoSlice().scroll})`);
   });
   it('h/l only claimed while selection active', () => {
-    withDetail(['abc']);
+    withInfo(['abc']);
     eq(detailKey('h', 'h'), false, 'h passes through when no sel');
     detailKey('v', 'v');
     eq(detailKey('l', 'l'), true, 'l claimed in visual mode');
-    eq(getInstanceSlice('detail').cursor.col, 1, 'cursor moved right');
+    eq(infoSlice().cursor.col, 1, 'cursor moved right');
   });
   it('y commits + pushes; selection cleared', () => {
-    withDetail(['hello']);
+    withInfo(['hello']);
     detailKey('v', 'v');
     detailKey('l', 'l');
     detailKey('l', 'l');
@@ -291,7 +334,7 @@ describe('[11] keyboard visual-mode — claim via detail Component update', () =
     eq(sel.isActive(), false, 'sel cleared');
   });
   it('Esc cancels without yanking', () => {
-    withDetail(['abc']);
+    withInfo(['abc']);
     detailKey('v', 'v');
     detailKey('l', 'l');
     detailKey('escape', '');

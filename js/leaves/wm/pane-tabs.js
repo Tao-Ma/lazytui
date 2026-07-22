@@ -107,6 +107,13 @@ function _viewerLinesCore(slice, groupName, infoFn, lookups) {
 }
 
 function viewerLines(slice, model, groupName, lookups) {
+  // U2e P1b — a content-slot instance (info / text-view / transcript) stores its
+  // displayed buffer on `slice.lines` directly. Return it here — the CANONICAL
+  // guard — so every consumer (footer, copy, select/drag, wheel, hit-test) is
+  // correct without a per-site branch. The `detail` viewer has no `slice.lines`
+  // (deleted in the viewer-lines-selector arc), so it falls through to the
+  // flat-strip derivation below.
+  if (slice && Array.isArray(slice.lines)) return slice.lines;
   return _viewerLinesCore(slice, groupName,
     () => flatTabInfo(slice || {}, model, groupName), lookups);
 }
@@ -189,22 +196,9 @@ function resolveTabKeyFromBundle(idx, slice, bundle) {
   return null;
 }
 
-/** True when the slice's active tab is a content tab in `groupName`. */
-function isContentTabIn(slice, model, groupName) {
-  const info = flatTabInfo(slice, model, groupName);
-  if (info.contentTabs.length === 0) return false;
-  const start = 2;
-  const t = slice.tab | 0;
-  return t >= start && t < start + info.contentTabs.length;
-}
-
-/** [key, { label, lines }] for the active content tab, or null. */
-function activeContentTabIn(slice, model, groupName) {
-  const info = flatTabInfo(slice, model, groupName);
-  const idx = (slice.tab | 0) - 2;
-  if (idx < 0 || idx >= info.contentTabs.length) return null;
-  return info.contentTabs[idx];
-}
+// U2e P1b — isContentTabIn / activeContentTabIn retired with the viewer content-tab
+// facade (their only callers, viewer/tabs.js's isContentTab/activeContentTab, are
+// gone; content tabs are position-tab text-view instances now). Excised in U2f.
 
 // --- Pure slice mutators (return [newSlice, info]) ------------------------
 //
@@ -601,8 +595,6 @@ module.exports = {
   flatTabInfo, transcriptTabIdx,
   resolveTabKey,
   viewerLines,
-  isContentTabIn,
-  activeContentTabIn,
   addContent,
   modelBundle,
   viewerModelBundle,

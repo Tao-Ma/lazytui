@@ -38,6 +38,15 @@ function assertPaneShape(p, where) {
   // Pane fields
   assert(typeof p.paneId === 'string' && p.paneId.length > 0, `${where}: paneId is non-empty string`);
   assert(p.paneId.startsWith('pane-'), `${where}: paneId starts with 'pane-' (got ${p.paneId})`);
+  // U2e P1b — a CONTENT slot (`role:'content'`) is no longer a length-1
+  // singleton: rebuildLayoutFromConfig seeds it with the persistent `detail`
+  // anchor plus two transient tabs (Info ACTIVE by default, Transcript), so
+  // `pane.type` reads 'info' and `activeTabId` is `info-<paneId>`. Assert that
+  // seeded shape here; every other pane stays the Phase-1 singleton.
+  if (p.role === 'content') {
+    assertContentSlotShape(p, where);
+    return;
+  }
   assert(Array.isArray(p.tabs) && p.tabs.length === 1, `${where}: tabs is length-1 array (Phase 1)`);
   assert(typeof p.activeTabId === 'string' && p.activeTabId === p.tabs[0].id,
     `${where}: activeTabId === tabs[0].id`);
@@ -46,6 +55,23 @@ function assertPaneShape(p, where) {
   // Legacy Panel fields preserved
   assert(typeof p.id === 'string', `${where}: legacy id present`);
   assert(typeof p.type === 'string', `${where}: legacy type present`);
+  assert(typeof p.columnIndex === 'number', `${where}: columnIndex present`);
+}
+
+// The seeded content slot: role='content' is its stable identity (NOT type,
+// which mirrors the ACTIVE tab — now 'info'). tabs = [detail anchor,
+// info-<paneId> (active), transcript-<paneId>]; activeTabId = info-<paneId>.
+function assertContentSlotShape(p, where) {
+  eq(p.role, 'content', `${where}: content slot identity is role, not type`);
+  const infoId = `info-${p.paneId}`;
+  const transId = `transcript-${p.paneId}`;
+  assert(Array.isArray(p.tabs) && p.tabs.length === 3,
+    `${where}: content slot has 3 seeded tabs [detail, info, transcript] (got ${p.tabs && p.tabs.length})`);
+  eq(p.tabs.map(t => t.poolId).join(','), `detail,${infoId},${transId}`,
+    `${where}: seeded tab poolIds in order`);
+  eq(p.activeTabId, infoId, `${where}: Info is the default active tab`);
+  eq(p.type, 'info', `${where}: legacy type mirrors the active (info) tab`);
+  eq(p.id, infoId, `${where}: legacy id mirrors the active tab`);
   assert(typeof p.columnIndex === 'number', `${where}: columnIndex present`);
 }
 

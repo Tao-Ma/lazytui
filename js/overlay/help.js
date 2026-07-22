@@ -20,7 +20,7 @@
 const { allPanels, setViewerContent } = require('../panel/nav-state');
 const { getModel } = require('../model/store');
 const { esc } = require('../leaves/text/ansi');
-const {getCommands, getPanelDef, getInstanceSlice, getFocus, instanceKind } = require('../panel/api');
+const {getCommands, getPanelDef, getInstanceSlice, getFocus } = require('../panel/api');
 const kb = require('../leaves/input/keybindings');
 const mpane = require('../leaves/wm/pane');
 const route = require('../panel/route');
@@ -94,7 +94,7 @@ function helpLines() {
     );
   }
 
-  if (instanceKind(getFocus()) === 'detail') {
+  if (route.isViewerKind(getFocus())) {   // U2e P1b — content-viewer kinds (detail/info/text-view) share the reading-mode help
     lines.push('', '[dim]Detail panel — reading mode[/]',
       '  j / k / arrows Scroll view ±1 line',
       '  , .            Page up / down',

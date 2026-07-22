@@ -120,4 +120,27 @@ describe('[info P0] registered in the builtin set', () => {
   });
 });
 
+// U2e P1b — Info is the content slot's ACTIVE DEFAULT tab, so its render MUST show
+// the unified position-tab strip (Info ─ Transcript ─ …); otherwise the strip
+// would vanish in the common state and the Transcript/content siblings would be
+// invisible + unclickable. Regression guard for the info.js `_slotTitle` wiring —
+// the stopgap wired the strip into viewer/text-view but not the new info type.
+describe('[info P1b] renders the unified slot strip when multi-tab', () => {
+  it('the Info tab render surfaces the Transcript sibling in its title strip', () => {
+    if (!api.getComponent('text-view')) api.registerComponent(require('../panel/text-view/text-view'));
+    if (!api.getComponent('detail')) api.registerComponent(require('../panel/viewer/viewer'));
+    sm.bootFresh();
+    const route = require('../panel/route');
+    const mpool = require('../leaves/wm/pool');
+    const layout = api.getInstanceSlice('layout');
+    const loc = mpool.findPaneLocation(layout.arrange, (p) => p.role === 'content');
+    assert(loc, 'a seeded content slot exists at boot');
+    const slice = route.getInstanceSlice(route.resolveTarget('viewer_info')) || {};
+    const out = info.panelTypes.info.render(loc.pane, 60, 8, slice, {});
+    const flat = typeof out === 'string' ? out : JSON.stringify(out);
+    assert(/Info/.test(flat) && /Transcript/.test(flat),
+      'info render shows both Info + Transcript in the unified strip');
+  });
+});
+
 report();

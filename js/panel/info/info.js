@@ -115,6 +115,16 @@ function _searchDecoration(slice, lines, focused) {
   return { matches, activeIdx };
 }
 
+// U2e P1b — when the info tab lives in a MULTI-tab content slot (the normal case:
+// Info + Transcript + any opened content), its title becomes the slot's UNIFIED
+// position-tab strip (`Info ─ Transcript ─ …`) so the siblings stay VISIBLE +
+// clickable. Info is the DEFAULT active tab, so without this the strip would
+// vanish whenever the user is on Info (the common state). Single-tab → plain title.
+function _slotTitle(panel) {
+  const strip = require('../slot-strip').unifiedSlotStrip(panel);
+  return strip ? strip.title : (panel && panel.title);
+}
+
 function render(panel, w, h, slice, opts) {
   const focused = !!(opts && opts.focused);
   const lines = slice.lines || [];
@@ -124,7 +134,7 @@ function render(panel, w, h, slice, opts) {
     lines, scroll: slice.scroll, innerH: h - 2,
     select: sel, searchDecoration,
     width: w, height: h,
-    title: panel.title, hotkey: panel.hotkey,
+    title: _slotTitle(panel), hotkey: panel.hotkey,
     panelType: 'info', focused,
     chrome: opts && opts.chrome,
   });

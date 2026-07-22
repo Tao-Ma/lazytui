@@ -145,7 +145,61 @@ function rebuildLayoutFromConfig(config) {
       { panels: lastColPanels },
     ];
   }
+  _seedContentSlots(out);
   return out;
 }
 
-module.exports = { rebuildLayoutFromConfig };
+/**
+ * U2e P1b — seed every CONTENT slot (`role:'content'`) with the transient Info +
+ * Transcript tabs, layered over its persistent `detail` anchor tab.
+ *
+ * `state.reconcilePaneInstances` mints ONE instance per `pane.tabs[]` entry (kind
+ * from each tab's pool entry) and activates `pane.activeTabId`, so this seed is the
+ * ONLY lever that creates the `info` + `transcript` (text-view) instances and makes
+ * Info the default. The `detail` tab STAYS (non-transient) as index-0 anchor so
+ * `:save-layout` serializes the slot back as `detail` verbatim (yaml-layout skips
+ * the two transient siblings); the strip hides it (see panel/slot-strip).
+ *
+ * Deterministic — poolIds derive from the slot's paneId — so `:restore-layout`,
+ * replay, and undo regenerate byte-identical seeds. Idempotent (the config never
+ * carries these transient tabs, but a re-seed is a no-op).
+ */
+function _seedContentSlots(out) {
+  for (const col of out.columns || []) {
+    const panels = col.panels || [];
+    for (let i = 0; i < panels.length; i++) {
+      const { pane, entries } = seedContentPane(panels[i]);
+      panels[i] = pane;
+      Object.assign(out.pool, entries);
+    }
+  }
+}
+
+/**
+ * Seed ONE content slot (`role:'content'`) with the transient Info + Transcript
+ * tabs. Returns `{ pane, entries }` — the seeded pane + the transient pool entries
+ * to merge into the arrange pool. Idempotent + a no-op for non-content / already-
+ * seeded panes (returns the input pane and `entries: {}`).
+ *
+ * Shared by boot/restore (`_seedContentSlots`) AND runtime placement (layout.js
+ * `pool_show` / free-config drop), so EVERY materialized content slot gets its
+ * Info + Transcript — not just the boot-placed ones.
+ */
+function seedContentPane(pane) {
+  if (!pane || pane.role !== 'content' || !pane.paneId) return { pane, entries: {} };
+  const infoId = `info-${pane.paneId}`;
+  const transId = `transcript-${pane.paneId}`;
+  if ((pane.tabs || []).some(t => t.poolId === infoId)) return { pane, entries: {} };  // already seeded
+  const entries = {
+    [infoId]: { id: infoId, type: 'info', title: 'Info', config: {}, transient: true },
+    [transId]: { id: transId, type: 'text-view', title: 'Transcript', config: {}, transient: true, hint: 'transcript' },
+  };
+  // Append Info (ACTIVE) then Transcript (background). addTab rebuilds the legacy
+  // Panel fields from the new active entry and preserves role / paneId / hotkey /
+  // heightPct.
+  let next = mpane.addTab(pane, { id: infoId, poolId: infoId }, entries[infoId], { activate: true });
+  next = mpane.addTab(next, { id: transId, poolId: transId }, entries[transId], { activate: false });
+  return { pane: next, entries };
+}
+
+module.exports = { rebuildLayoutFromConfig, seedContentPane };

@@ -105,6 +105,20 @@ function _enterSearchReturn(slice) {
 function reduce(msg, slice, lines, ownKind) {
   if (lines === undefined) lines = [];
   switch (msg.type) {
+    case 'viewer_reset_chrome': {
+      // U2e P1b — the per-INSTANCE half of the group-change reset (was the detail
+      // Component's viewer_reset_chrome arm): clear the visual selection + park the
+      // cursor so a stale highlight doesn't survive a group switch. The retired
+      // tab/viewerOverride resets and the `[≡]` menu-close are hoisted to the
+      // dispatch funnel (mode/layout concerns, not per-content). Ref-preserve on no-op.
+      const hasSel = !!(slice.select && slice.select.active);
+      const cur = slice.cursor || { line: 0, col: 0 };
+      if (!hasSel && cur.line === 0 && cur.col === 0) return slice;
+      const next = { ...slice, cursor: { line: 0, col: 0 } };
+      if (hasSel) next.select = { ...slice.select, active: false };
+      return next;
+    }
+
     case 'viewer_scroll': {
       const innerH = _innerH(slice);
       const maxScroll = Math.max(0, lines.length - innerH);

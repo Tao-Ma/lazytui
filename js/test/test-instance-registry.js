@@ -464,35 +464,107 @@ describe('[strict resolution] kind-name ids no longer resolve', () => {
     eq(route.getInstanceSlice('svc').v, 1, 'id === Component name → direct hit');
   });
 
-  it('resolveTarget arrange-walk returns a MOUNTED instance id, not the tab/pool id', () => {
-    // Regression — split-arc P2 follow-up. Tier 3 (arrange walk) used to
-    // return the viewer TAB id ('detail'); for singleton placements the
-    // instance is minted under the hosting pane's paneId ('pane-detail')
-    // and only the deleted kind-name fallback bridged the gap. Every
-    // production `getInstanceSlice(resolveTarget('viewer'))` read
+  // Build a P1b content SLOT fixture the way state.reconcilePaneInstances does:
+  // one pane carries the `detail` anchor + seeded info/transcript sibling tabs,
+  // its `role` is 'content' (P1a), its ACTIVE tab is `info`, and the
+  // active-instance map diverts the slot paneId → the info instance. `pool`
+  // carries per-tab entry shape (info kind / transcript hint) so the intent-aware
+  // resolveTarget can pick a sibling. Returns the arrange for the layout slice.
+  function seedContentSlot(paneId) {
+    const info = `info-${paneId}`;
+    const trans = `transcript-${paneId}`;
+    route.setInstance(paneId, 'detail', { v: `anchor:${paneId}` });        // hidden anchor
+    route.setInstance(`pane-${info}`, 'info', { v: `info:${paneId}` });    // ACTIVE
+    route.setInstance(`pane-${trans}`, 'text-view', { v: `transcript:${paneId}` });
+    return {
+      pane: {
+        id: 'detail', paneId, type: 'info', role: 'content', activeTabId: info,
+        tabs: [{ poolId: paneId }, { poolId: info }, { poolId: trans }],
+      },
+      pool: {
+        [paneId]: { id: paneId, type: 'detail' },
+        [info]: { id: info, type: 'info' },
+        [trans]: { id: trans, type: 'text-view', hint: 'transcript' },
+      },
+      activeMap: { [paneId]: `pane-${info}` },
+    };
+  }
+
+  it('resolveTarget arrange-walk returns the content slot ACTIVE instance, not the tab/pool id', () => {
+    // Regression — split-arc P2 follow-up, updated for U2e P1b. Tier 3 (arrange
+    // walk) used to return the viewer TAB id ('detail'); the mounted instance is
+    // keyed under a pane-<poolId> id and only the deleted kind-name fallback
+    // bridged the gap. Every `getInstanceSlice(resolveTarget('viewer'))` read
     // (footer/select/copy) returned undefined with the viewer unfocused.
+    // P1b: the slot's default active tab is now `info`, resolved via role
+    // ('content'), so resolveTarget('viewer') returns the ACTIVE info instance
+    // (pane-info-pane-detail) — still a mounted id, still strict-readable.
     resetRegistry();
     api.registerComponent({
       name: 'layout',
       init: () => ({ focus: null, lastViewerTab: null, arrange: null }),
       update: (m, s) => s,
     });
-    api.registerComponent({
-      name: 'detail',
-      panelTypes: { detail: { render: () => [] } },
-      init: () => ({}),
-      update: (m, s) => s,
-    });
-    // initState-style swap: seed disposed, instance minted per-pane.
-    route.disposeInstance('detail');
-    route.setInstance('pane-detail', 'detail', { v: 'mounted' });
-    // Viewer unfocused + no sticky lastViewerTab → tier 3 fires.
+    for (const kind of ['detail', 'info', 'text-view']) {
+      api.registerComponent({
+        name: kind,
+        panelTypes: { [kind]: { render: () => [] } },
+        init: () => ({}),
+        update: (m, s) => s,
+      });
+      route.disposeInstance(kind);   // initState-style swap: seed disposed, minted per-pane
+    }
+    const slot = seedContentSlot('pane-detail');
+    route.setActiveInstanceMap(slot.activeMap);
+    // Viewer unfocused + no sticky lastViewerTab → tier 3 (arrange walk) fires;
+    // the slot is found by role==='content'.
     route.setInstanceSlice('layout', {
       focus: 'pane-groups', lastViewerTab: null,
-      arrange: { columns: [{ panels: [{ id: 'detail', paneId: 'pane-detail', type: 'detail' }] }] },
+      arrange: { columns: [{ panels: [slot.pane] }], pool: slot.pool },
     });
-    eq(route.resolveTarget('viewer'), 'pane-detail', 'mounted instance id, not the tab id');
-    eq(route.getInstanceSlice(route.resolveTarget('viewer')).v, 'mounted', 'strict read resolves');
+    eq(route.resolveTarget('viewer'), 'pane-info-pane-detail',
+      'active (info) instance id, not the tab/pool id');
+    eq(route.getInstanceSlice(route.resolveTarget('viewer')).v, 'info:pane-detail',
+      'strict read resolves the active info instance');
+    // Intent-aware siblings resolve to their own mounted instances.
+    eq(route.resolveTarget('viewer_info'), 'pane-info-pane-detail', 'viewer_info → info sibling');
+    eq(route.resolveTarget('viewer_transcript'), 'pane-transcript-pane-detail',
+      'viewer_transcript → transcript (hint) sibling');
+  });
+
+  it('multi-viewer: two content slots each resolve their OWN active instance', () => {
+    // Two role==='content' slots. resolveTarget follows the focus → sticky →
+    // arrange-order tiers to pick the SLOT, then diverts to that slot's active
+    // instance — so focusing one slot resolves its own info instance, not the
+    // other's.
+    resetRegistry();
+    api.registerComponent({
+      name: 'layout',
+      init: () => ({ focus: null, lastViewerTab: null, arrange: null }),
+      update: (m, s) => s,
+    });
+    for (const kind of ['detail', 'info', 'text-view']) {
+      api.registerComponent({
+        name: kind,
+        panelTypes: { [kind]: { render: () => [] } },
+        init: () => ({}),
+        update: (m, s) => s,
+      });
+      route.disposeInstance(kind);
+    }
+    const left = seedContentSlot('pane-left');
+    const right = seedContentSlot('pane-right');
+    route.setActiveInstanceMap({ ...left.activeMap, ...right.activeMap });
+    const arrange = {
+      columns: [{ panels: [left.pane] }, { panels: [right.pane] }],
+      pool: { ...left.pool, ...right.pool },
+    };
+    // Focus the LEFT content slot → its own active info instance.
+    route.setInstanceSlice('layout', { focus: 'pane-left', lastViewerTab: null, arrange });
+    eq(route.resolveTarget('viewer'), 'pane-info-pane-left', 'left slot resolves its own info');
+    // Focus the RIGHT content slot → the OTHER slot's active info instance.
+    route.setInstanceSlice('layout', { focus: 'pane-right', lastViewerTab: null, arrange });
+    eq(route.resolveTarget('viewer'), 'pane-info-pane-right', 'right slot resolves its own info');
   });
 });
 

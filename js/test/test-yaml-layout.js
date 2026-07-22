@@ -357,7 +357,12 @@ describe('[4b] v0.6.4 — per-pane detail height (heightPct unification)', () =>
     const placed = rebuilt.columns.flatMap(c => c.panels);
     const src = placed.find(p => p.paneId === 'pane-src');
     const docs = placed.find(p => p.paneId === 'pane-docs');
-    const detail = placed.find(p => p.type === 'detail');
+    // U2e P1b — the content slot is seeded with Info/Transcript tabs, so its
+    // active tab (and hence `pane.type`) is now 'info', not 'detail'. Find it
+    // by its stable paneId ('pane-detail'); heightPct is preserved on the slot
+    // pane and the save-layout round-trip still serializes it as `tabs:[detail]`
+    // (the transient siblings are skipped on serialize — verified above).
+    const detail = placed.find(p => p.paneId === 'pane-detail');
     eq(src.heightPct, 35, 'first files pane keeps its own height across the round-trip');
     eq(docs.heightPct, 65, 'second files pane keeps a DIFFERENT height (no type collision)');
     eq(detail.heightPct, 50, 'detail height round-trips on the pane via the `height: %` form');

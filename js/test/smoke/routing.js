@@ -41,6 +41,14 @@ function bootAllComponents() {
     ['../../panel/navigator/actions',       'actions'],
     ['../../panel/monitor/stats',           'stats'],
     ['../../panel/navigator/history',       'history'],
+    // U2e P1b — the content slot is seeded (in arrange.js#_seedContentSlots)
+    // with `info` (ACTIVE default) + `transcript` (text-view) tabs over its
+    // `detail` anchor. state.reconcilePaneInstances mints one instance per
+    // seeded tab, so these two Components MUST be registered or the mint drops
+    // the info/transcript instances (and every viewer_info/_transcript read
+    // then misses). test-runner only auto-registers layout/detail/groups.
+    ['../../panel/info/info',               'info'],
+    ['../../panel/text-view/text-view',     'text-view'],
   ];
   for (const [modPath, name] of toRegister) {
     if (api.getComponent(name)) continue;   // spec registry — survives seed disposal
@@ -85,11 +93,35 @@ const PANES = placedPanes();
 // --- [1] Sanity: arrange placed the expected variety ---------------------
 
 describe('[1] arrange placed the panel-types the smoke needs', () => {
-  it('placed set covers groups + actions + detail + containers + files', () => {
+  it('placed set covers groups + actions + info (content slot) + containers + files', () => {
+    // U2e P1b — the viewer/content slot no longer surfaces as panel-type
+    // 'detail'. It is a `role:'content'` slot whose ACTIVE tab is `info`
+    // (arrange.js#_seedContentSlots makes Info the default), so `p.type`
+    // reads 'info'. The `detail` tab persists as a HIDDEN anchor (for
+    // :save-layout), addressed below via its still-minted detail instance.
     const types = new Set(PANES.map(p => p.type));
-    for (const need of ['groups', 'actions', 'detail', 'containers', 'files']) {
+    for (const need of ['groups', 'actions', 'info', 'containers', 'files']) {
       assert(types.has(need), `panel-type '${need}' placed (saw ${[...types].sort().join(',')})`);
     }
+  });
+
+  it('the content slot is role-anchored; its active kind is info, anchor still mints detail', () => {
+    // The slot is identified by role, NOT by type==='detail' (P1b).
+    const content = PANES.find(p => {
+      const layout = api.getInstanceSlice('layout');
+      for (const col of (layout.arrange.columns || []))
+        for (const q of (col.panels || []))
+          if (q.paneId === p.paneId && q.role === 'content') return true;
+      return false;
+    });
+    assert(content, 'a role===content slot is placed');
+    eq(content.type, 'info', 'the content slot\'s ACTIVE/visible kind is info (default tab)');
+    // The `detail` anchor tab still mints a drained detail-kind instance
+    // (kept for save-layout); its slice is reachable via primarySliceOf('detail').
+    assert(api.primarySliceOf('detail') !== undefined,
+      'the hidden detail anchor still mints a detail-kind instance');
+    assert(route.getPrimaryByKind('detail') !== undefined,
+      'detail kind has a primary (the anchor instance)');
   });
 });
 

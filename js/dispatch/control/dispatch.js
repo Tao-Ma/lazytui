@@ -29,8 +29,6 @@ const { getPanelDef, getItems, idOf, getInstanceSlice,
 const { dispatchMsg, dispatchKeyToFocused } = require('../runtime/loop');
 const copy = require('../../overlay/copy');
 const registerPopup = require('../../overlay/register-popup');
-const { isContentTab, activeContentTab,
-        removeContentTab } = require('../../panel/viewer/tabs');
 const { isSessionDead } = require('../../io/terminal');
 const keybindings = require('../../leaves/input/keybindings');
 const keymap = require('../../leaves/input/keymap');
@@ -83,11 +81,30 @@ const intent = require('./intent');
 // (the pane-tabs tab_switch-to-Info effect); default resolves
 // focused/sticky via resolveTarget.
 function showSelectedInfo(paneId) {
-  const target = paneId || route.resolveTarget('viewer');
+  // U2e P1b — Info now lives in a dedicated `info` instance (a position-tab of the
+  // content slot), not the detail viewer. Resolve the slot's info instance via the
+  // intent-aware resolveTarget; an explicit `paneId` (the dying flat-strip
+  // tab_switch path) pins THAT slot by riding in as the focus override. Dispatch
+  // `info_show_content` (the info Component's content-injection arm) with the
+  // dispatcher-precomputed lines, so the arm stays pure of plugin reads.
+  const ctx = paneId ? { focusedTabId: paneId } : undefined;
+  const target = route.resolveTarget('viewer_info', ctx);
   if (!target) return;
   const lines = require('../../panel/nav-state').infoLinesFromFocus();
   if (lines == null) return;
-  dispatchMsg(wrap(target, { type: 'viewer_show_info', lines }));
+  dispatchMsg(wrap(target, { type: 'info_show_content', lines }));
+  // U2e P1b — YANK the slot's visible tab to Info (was folded into the
+  // viewer_show_info arm as `tab: 0`). Reached only when the focused pane HAS
+  // getInfo (lines != null) — so it never yanks away from a content / terminal tab
+  // the user opened (that focus has no getInfo → we returned above). Gated on
+  // not-already-Info so a steady Info refresh doesn't re-dispatch; set_active_tab
+  // focus-follows only a pre-focused slot, and the navigator (not the slot) holds
+  // focus here, so this never steals keyboard focus.
+  const slotPaneId = route.resolveViewerPaneId(ctx);
+  if (slotPaneId && route.activeInstanceOf(slotPaneId) !== target) {
+    const infoPoolId = require('../../leaves/wm/pane').poolIdOf(target);
+    dispatchMsg(wrap('layout', { type: 'set_active_tab', paneId: slotPaneId, tabPoolId: infoPoolId }));
+  }
 }
 
 /**
@@ -164,7 +181,7 @@ function toggleMultiSelOnFocused() {
  * detail panel. Used to gate `v` (enter list-select mode) and `*`.
  */
 function _isListPanel(focus) {
-  if (instanceKind(focus) === 'detail') return false;
+  if (route.isViewerKind(focus)) return false;   // U2e P1b — content-viewer kinds (detail/info/text-view) aren't lists
   const def = getPanelDef(focus);
   return !!(def && typeof def.getItems === 'function');
 }
@@ -683,12 +700,18 @@ function handleNormalKey(key, seq) {
           break;
         }
       }
-      // Content tabs (e.g. file-browser opens) close on `x` from
-      // detail focus — no liveness concept like PTYs; users want a
-      // close gesture, and `x` mirrors the dead-terminal flow.
-      if (instanceKind(getFocus()) === 'detail' && isContentTab()) {
-        const ct = activeContentTab();
-        if (ct) { removeContentTab(getModel().currentGroup, ct[0]); break; }
+      // U2e P1b — a content `text-view` tab (opened file / action output) closes on
+      // `x` from the content slot, via remove_tab (the position-tab analog of the
+      // dead-terminal close above; no liveness concept — users just want a close
+      // gesture). Info + Transcript are permanent seeded defaults and must NOT
+      // close; the Transcript is a text-view too, so guard on its `hint`.
+      if (instanceKind(getFocus()) === 'text-view') {
+        const poolId = mpane.poolIdOf(route.activeInstanceOf(getFocus()));
+        const entry = ((getInstanceSlice('layout').arrange || {}).pool || {})[poolId];
+        if (entry && entry.hint !== 'transcript') {
+          dispatchMsg(wrap('layout', { type: 'remove_tab', paneId: getFocus(), tabPoolId: poolId }));
+          break;
+        }
       }
       // The dead-terminal / content-tab closes above are keyboard-specific
       // overloads of `x`; the genuine "open the context menu" meaning is the

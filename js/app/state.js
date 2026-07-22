@@ -728,7 +728,12 @@ function resetGroupContext() {
   if (target) {
     // v0.6.3 Phase D1: thread paneMenuMode so the reducer stays pure.
     const m = getModel();
-    require('../dispatch/runtime/loop').dispatchMsg(api.wrap(target, { type: 'viewer_reset_chrome', paneMenuMode: !!m.modes.paneMenuMode }));
+    const loop = require('../dispatch/runtime/loop');
+    loop.dispatchMsg(api.wrap(target, { type: 'viewer_reset_chrome', paneMenuMode: !!m.modes.paneMenuMode }));
+    // U2e P1b — the menu-close half of the reset is a mode/layout concern, hoisted
+    // out of the (now content-instance) target arm. Idempotent (closes an already-
+    // closed menu as a no-op). Was emitted by the detail viewer_reset_chrome arm.
+    if (m.modes.paneMenuMode) loop.dispatchMsg(api.wrap('layout', { type: 'pane_menu_close' }));
   }
 }
 

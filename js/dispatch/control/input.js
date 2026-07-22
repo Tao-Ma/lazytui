@@ -93,16 +93,18 @@ function _handleWheel(mx, my, delta) {
       if (termId) return require('../../io/terminal').scrollSession(termId, delta * 3);
       continue;
     }
-    if (instanceKind(p.type) === 'detail') {
+    if (route.isViewerKind(p.paneId)) {   // U2e P1b — content-viewer kinds (detail/info/text-view)
       // v0.6.4 multi-viewer — clamp against the wheeled pane's OWN slice
       // (not _detail()'s focused viewer), so wheeling an unfocused second
-      // viewer scrolls itself. sliceForPane falls back to the kind primary
-      // for the singleton.
+      // viewer scrolls itself. sliceForPane resolves the pane's active instance.
       const d = route.sliceForPane(p.paneId, 'detail');
-      // P3 (viewer-lines selector) — slice.lines is deleted; derive the
-      // wheeled pane's displayed lines (dispatch-side model read is fine).
+      // U2e P1b — the active instance (info / text-view) stores its buffer on
+      // slice.lines directly; fall back to the viewer's derived lines for the
+      // (drained) detail anchor. Used only for the scroll-clamp pre-check; the
+      // viewer_scroll dispatch below re-clamps in the instance's own reducer.
       const _m = getModel();
-      const lines = d ? require('../../leaves/wm/pane-tabs').viewerLines(d, _m, _m.currentGroup) : [];
+      const lines = d ? (Array.isArray(d.lines) ? d.lines
+        : require('../../leaves/wm/pane-tabs').viewerLines(d, _m, _m.currentGroup)) : [];
       const curScroll = d?.scroll || 0;
       // Single source of truth for the view-mode-aware viewport (P5
       // arc fix follow-up — panelHeights[type] would have given the
@@ -448,11 +450,13 @@ function _resolveContextAt(mx, my) {
     if (!b) continue;
     if (mx < b.x || mx >= b.x + b.w || my < b.y || my >= b.y + b.h) continue;
     const itemRow = my - b.y - 1;  // -1 for top border
-    if (instanceKind(p.type) === 'detail') {
+    if (route.isViewerKind(p.paneId)) {   // U2e P1b — content-viewer kinds (detail/info/text-view)
       const d = getInstanceSlice(p.paneId);
-      // P3 (viewer-lines selector) — derive the displayed lines.
+      // U2e P1b — active instance (info/text-view) holds its buffer on slice.lines;
+      // fall back to the viewer's derived lines for the drained detail anchor.
       const _m = getModel();
-      const lines = d ? require('../../leaves/wm/pane-tabs').viewerLines(d, _m, _m.currentGroup) : [];
+      const lines = d ? (Array.isArray(d.lines) ? d.lines
+        : require('../../leaves/wm/pane-tabs').viewerLines(d, _m, _m.currentGroup)) : [];
       const li = itemRow + ((d && d.scroll) || 0);
       const lineText = (itemRow >= 0 && li < lines.length) ? stripMarkup(lines[li]) : null;
       return { paneKind: 'detail', lineText, itemLabel: null, selectionText };

@@ -28,6 +28,23 @@ const actions = require('../../dispatch/control/actions');
 const dispatch = require('../../dispatch/control/dispatch');
 const mb = require('../../dispatch/control/mouse-bindings');
 const mreg = require('../../leaves/register');
+const route = sm.route;
+
+// U2e P1b — the content slot is seeded with Info + Transcript position-tabs
+// (arrange.js#_seedContentSlots), minting `info` + `text-view` instances. The
+// viewer body the user sees + selects in is the slot's ACTIVE instance (Info by
+// default), whose content lives on `slice.lines`. test-runner auto-registers
+// only layout/detail/groups, so register the two content Components or the seed
+// drops those instances (and every viewer read then lands on the drained anchor).
+if (!api.getComponent('info')) api.registerComponent(require('../../panel/info/info'));
+if (!api.getComponent('text-view')) api.registerComponent(require('../../panel/text-view/text-view'));
+
+// The slice of the content slot's ACTIVE instance (info/text-view) — the P1b
+// successor to the old `primarySliceOf('detail')`, which now resolves to the
+// hidden/drained detail anchor rather than the visible viewer body.
+function activeViewerSlice() {
+  return api.getInstanceSlice(route.resolveTarget('viewer'));
+}
 
 // 0-based pane grid → 1-based SGR coords (handleMouse subtracts 1).
 function sgr0(col0, row0) { return [col0 + 1, row0 + 1]; }
@@ -257,9 +274,11 @@ describe('[5] right-click context menu — copy + dismiss', () => {
     sm.capture(() => sm.render());
     // Seed viewer content directly; right-click → menu_open is a root Msg
     // (doesn't run the viewer finalizer), so the lines persist for the
-    // context resolver to read the line under the cursor.
-    const d = api.primarySliceOf('detail');
-    d.infoLines = ['alpha line', 'bravo line', 'charlie line'];  // P3 — Info canonical home
+    // context resolver to read the line under the cursor. U2e P1b — the visible
+    // viewer body is the content slot's ACTIVE instance (info by default), whose
+    // buffer is `slice.lines` (NOT the old drained detail anchor's infoLines).
+    const d = activeViewerSlice();
+    d.lines = ['alpha line', 'bravo line', 'charlie line'];
     d.scroll = 0;
     sm.capture(() => sm.render());
     const lay = api.getInstanceSlice('layout');
@@ -283,7 +302,9 @@ describe('[5] right-click context menu — copy + dismiss', () => {
     const { overlayBox } = require('../../leaves/render/draw');
     sm.bootFresh();
     sm.capture(() => sm.render());
-    const d = api.primarySliceOf('detail');
+    // U2e P1b — seed the ACTIVE viewer instance's buffer (slice.lines), the
+    // slice the drag-select + Copy-selection path reads via resolveTarget.
+    const d = activeViewerSlice();
     d.lines = ['hello world foo bar', 'second line'];
     d.scroll = 0;
     sm.capture(() => sm.render());
@@ -320,7 +341,7 @@ describe('[5] right-click context menu — copy + dismiss', () => {
     const sel = require('../../panel/viewer/select');
     sm.bootFresh();
     sm.capture(() => sm.render());
-    const d = api.primarySliceOf('detail');
+    const d = activeViewerSlice();   // U2e P1b — active viewer instance's buffer
     d.lines = ['hello world foo bar', 'second line'];
     d.scroll = 0;
     sm.capture(() => sm.render());

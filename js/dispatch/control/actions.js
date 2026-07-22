@@ -34,7 +34,6 @@ const { execSync } = require('child_process');
 const { getModel } = require('../../model/store');
 const route = require('../../panel/route');
 const mpane = require('../../leaves/wm/pane');
-const pt = require('../../leaves/wm/pane-tabs');
 
 /** v0.6.4 Theme C — compute the focused viewer's tab info HERE (handler,
  *  impure) so the next_tab/prev_tab reducer arms stay pure of Component
@@ -43,13 +42,19 @@ const pt = require('../../leaves/wm/pane-tabs');
  *  `target` here (was `resolveTarget('viewer')` inside the arm) and thread
  *  it, so the arm reads no route topology either. */
 function _viewerTabBundle() {
-  const target = route.resolveTarget('viewer');
-  const slice = (target && getInstanceSlice(target)) || { tab: 0 };
-  const m = getModel();
-  const groupName = m.currentGroup || '';
-  const total = pt.flatTabInfo(slice, m, groupName).total;
-  const tabKeys = Array.from({ length: total }, (_, i) => pt.resolveTabKey(i, { ...slice, tab: i }, m));
-  return { target, curTab: slice.tab | 0, total, tabKeys, currentGroup: groupName };
+  // U2e P1b — cycle the content slot's VISIBLE position-tabs (the unified slot
+  // strip: Info / Transcript / minted text-views), not the retired viewer flat
+  // strip. Stamp the slot paneId + ordered poolIds + current index so the reducer
+  // arm stays pure. Empty tabPoolIds (single visible tab / no slot) → cycle no-ops.
+  const slotPaneId = route.resolveViewerPaneId();
+  if (!slotPaneId) return { slotPaneId: null, tabPoolIds: [], curIdx: 0 };
+  const layout = getInstanceSlice('layout');
+  const mpool = require('../../leaves/wm/pool');
+  const loc = layout && layout.arrange && mpool.findPaneLocation(layout.arrange, p => p.paneId === slotPaneId);
+  const strip = loc && require('../../panel/slot-strip').unifiedSlotStrip(loc.pane);
+  const tabPoolIds = strip ? strip.entries.map(e => e.poolId) : [];
+  const curIdx = strip ? Math.max(0, strip.activeIdx) : 0;
+  return { slotPaneId, tabPoolIds, curIdx };
 }
 
 // Lazy stub for the dispatch back-edge. Each invocation looks up the
@@ -326,7 +331,7 @@ function handleAction(action, arg, from) {
       // (reducer is the gatekeeper, but resolving the id early lets
       // the no-op skip the wrapped Msg entirely).
       const focus = getFocus();
-      if (!focus || instanceKind(focus) === 'detail') break;
+      if (!focus || route.isViewerKind(focus)) break;   // U2e P1b — content-viewer kinds (detail/info/text-view) don't collapse
       // v0.6.3 post-arch-arc — focus is paneId; pane.type is panel-type.
       // Use the tolerant comparator so the find works for either form.
       const p = allPanels().find(x => mpane.paneMatchesFocus(x, focus));
@@ -350,25 +355,25 @@ function handleAction(action, arg, from) {
       const focus = getFocus();
       // v0.6.4 Phase 3b — _pageStep takes a paneId; in the viewer branch
       // `focus` IS the focused viewer's paneId (was the 'detail' literal).
-      if (instanceKind(focus) === 'detail') dispatchMsg(wrap(focus, { type: 'viewer_scroll', delta: -_pageStep(focus) }));
+      if (route.isViewerKind(focus)) dispatchMsg(wrap(focus, { type: 'viewer_scroll', delta: -_pageStep(focus) }));
       else                                  _pageInListPanel(-_pageStep(focus));
       break;
     }
     case 'page_down': {
       const focus = getFocus();
-      if (instanceKind(focus) === 'detail') dispatchMsg(wrap(focus, { type: 'viewer_scroll', delta: +_pageStep(focus) }));
+      if (route.isViewerKind(focus)) dispatchMsg(wrap(focus, { type: 'viewer_scroll', delta: +_pageStep(focus) }));
       else                                  _pageInListPanel(+_pageStep(focus));
       break;
     }
     case 'goto_top': {
       const focus = getFocus();
-      if (instanceKind(focus) === 'detail') dispatchMsg(wrap(focus, { type: 'viewer_scroll', to: 'top' }));
+      if (route.isViewerKind(focus)) dispatchMsg(wrap(focus, { type: 'viewer_scroll', to: 'top' }));
       else                                  _jumpInListPanel('top');
       break;
     }
     case 'goto_bottom': {
       const focus = getFocus();
-      if (instanceKind(focus) === 'detail') dispatchMsg(wrap(focus, { type: 'viewer_scroll', to: 'bottom' }));
+      if (route.isViewerKind(focus)) dispatchMsg(wrap(focus, { type: 'viewer_scroll', to: 'bottom' }));
       else                                  _jumpInListPanel('bottom');
       break;
     }

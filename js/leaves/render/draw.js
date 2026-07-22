@@ -264,7 +264,9 @@ function setWriter(fn) { _writer = fn; }
  *           tabTrigger: null|'available'|'open'|'disabled' }.
  */
 function chromeFor(pane, ctx) {
-  const isDetail = pane && pane.type === 'detail';
+  // U2e P1b — the content/viewer slot (no collapse/close glyphs) is identified by
+  // its stable `role`, not the active tab's kind (post-seed `pane.type` is 'info').
+  const isDetail = pane && (pane.role === 'content' || pane.type === 'detail');
   if (ctx && ctx.dragging) return { collapse: null, close: null, tabTrigger: null };
   let collapse = null, close = null;
   if (!isDetail) {

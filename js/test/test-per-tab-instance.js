@@ -10,7 +10,15 @@
 'use strict';
 
 const route = require('../panel/route');
+const api = require('../panel/api');
 const { describe, it, assert, eq, report } = require('./test-runner');
+// U2e P1b — the content slot is seeded with transient info + transcript
+// (text-view) sibling tabs and defaults its active tab to `info`. Register both
+// Components so bootFresh() mints the slot's active-tab instance (test-runner
+// only auto-registers layout/detail/groups). Registered before requiring smoke
+// so the mint happens on bootFresh.
+api.registerComponent(require('../panel/info/info'));
+api.registerComponent(require('../panel/text-view/text-view'));
 const sm = require('./smoke/_helpers/smoke');
 
 function reset() { route._resetRegistryForTest(); }
@@ -71,19 +79,23 @@ describe('[per-tab-instance] active-instance map resolution (K3)', () => {
   });
 });
 
-describe('[per-tab-instance] booted single-tab layout is byte-identical', () => {
-  it('every placed pane resolves its slice + type; instance keyed at pane-<poolId>', () => {
+describe('[per-tab-instance] booted layout keys the active instance at pane-<poolId>', () => {
+  it('every placed pane resolves its slice + type; active instance keyed at pane-<poolId>', () => {
     sm.bootFresh();
     const layout = route.getInstanceSlice('layout');
     let checked = 0;
     for (const col of layout.arrange.columns) {
       for (const p of col.panels) {
-        // A single-tab pane's active-instance id is pane-<activeTab poolId>,
-        // which equals its paneId — the identity that makes the map a no-op.
+        // The active-instance id is pane-<activeTab poolId>. For a single-tab
+        // pane (groups) that equals its paneId — an identity map. U2e P1b: the
+        // content slot is now MULTI-tab ([detail anchor, info, transcript]) and
+        // defaults its active tab to `info`, so its active instance is
+        // pane-info-<paneId> (NOT the paneId) — the same keying rule, exercised
+        // against the seeded tab set.
         const tabInstId = route.activeInstanceOf(p.paneId);
         // Skip panes whose Component isn't registered in the test harness (no
         // instance minted) — they use the kind-primary/default path, identical
-        // pre/post U2b.
+        // pre/post U2b. (`actions` is unregistered here.)
         if (!route.getInstance(tabInstId)) continue;
         eq(tabInstId, 'pane-' + (p.activeTabId || p.id), `${p.paneId} active instance keyed at pane-<poolId>`);
         assert(route.getInstanceSlice(p.paneId) !== undefined, `slice resolves via ${p.paneId}→active`);
@@ -91,7 +103,8 @@ describe('[per-tab-instance] booted single-tab layout is byte-identical', () => 
         checked++;
       }
     }
-    assert(checked >= 2, 'verified the registered single-tab panes (groups + detail)');
+    // groups (single-tab) + the content slot's ACTIVE `info` tab (P1b).
+    assert(checked >= 2, 'verified the registered panes (groups + content-slot active info tab)');
   });
 });
 

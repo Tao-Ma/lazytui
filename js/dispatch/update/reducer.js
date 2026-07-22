@@ -89,19 +89,19 @@ for (const m of [confirm, prompt, copy, registerPopup, cmdline, jobs, diagLog, m
 // resolve a pane address inline. The HANDLER stamps `route.bundle(id)` (the
 // `{ compName, panelType, target }` triple) onto the Msg; the arm reads it.
 
-// `]`/`[` cycle the focused-or-sticky viewer's tab list. The next_tab/prev_tab
-// handler (`actions._viewerTabBundle`) stamps `msg.target` + the tab info, so
-// the arm keeps only the pure cycle math + reads no route topology.
+// `]`/`[` cycle the content slot's visible POSITION-tabs (U2e P1b — Info /
+// Transcript / minted text-views; was the viewer's flat inner strip). The
+// next_tab/prev_tab handler (`actions._viewerTabBundle`) stamps the slot paneId +
+// its ordered visible tab poolIds + the current index, so the arm keeps only the
+// pure cycle math and reads no route topology; it emits a `set_active_tab`.
 function _cycleViewerTab(model, msg, dir) {
-  const target = msg.target;
-  if (!target) return [model, []];
-  const total = msg.total | 0;
-  if (total <= 1) return [model, []];
-  const next = (((msg.curTab | 0) + (dir | 0)) % total + total) % total;
-  const targetKey = (msg.tabKeys || [])[next] || null;
-  return [model, [{ type: 'msg', msg: route.wrap(target, {
-    type: 'tab_switch', idx: next,
-    targetKey, currentGroup: msg.currentGroup || (model.currentGroup || ''),
+  const slotPaneId = msg.slotPaneId;
+  const tabPoolIds = msg.tabPoolIds || [];
+  if (!slotPaneId || tabPoolIds.length <= 1) return [model, []];
+  const cur = msg.curIdx | 0;
+  const next = ((cur + (dir | 0)) % tabPoolIds.length + tabPoolIds.length) % tabPoolIds.length;
+  return [model, [{ type: 'msg', msg: route.wrap('layout', {
+    type: 'set_active_tab', paneId: slotPaneId, tabPoolId: tabPoolIds[next],
   }) }]];
 }
 

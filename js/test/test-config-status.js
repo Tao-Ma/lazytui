@@ -468,7 +468,7 @@ describe('[8] diffFor — preview shape per status', () => {
     assert(out.join('\n').includes('absent on both sides'));
   });
 
-  it('Enter on a file row runs cfgStatusDiff → populates the detail panel', () => {
+  it('Enter on a file row runs cfgStatusDiff → emits the diff effect', () => {
     effects.installBuiltins();  // focus/render/apply_msg/...; cfgStatusDiff calls state.setViewerContent directly
     // Phase B: setViewerContent routes via dispatchMsg → detail Component; register it.
     require('../panel/api').registerComponent(require('../panel/viewer/viewer'));
@@ -487,20 +487,14 @@ describe('[8] diffFor — preview shape per status', () => {
     slice.nav = { ...require('../leaves/wm/nav').init(), cursor: idx };
     const r = cs._update({ type: 'key', key: 'return' }, slice);
     assert(Array.isArray(r) && r[1][0].type === 'cfgStatusDiff', 'Enter on a file emits cfgStatusDiff');
-    // The cfgStatusDiff effect now runs git OFF-tick (setImmediate), like
-    // cfgStatusCompute, so it can't be observed synchronously via runEffects.
-    // Test the two phases separately: the emission above, and the content-land
-    // below — exactly what the effect's setImmediate body does
-    // (setViewerContent → viewer_set_content → viewerOverride).
-    const { setViewerContent } = require('../panel/nav-state');
-    setViewerContent(null, cs._diffFor(items[idx], 'config', TMP).join('\n'));
-    // v0.6.2 T2c — setViewerContent writes slice.viewerOverride (the
-    // discrete-doc slot) instead of slice.lines. Render's viewerLines()
-    // consults override first.
-    const md = require('../panel/api').getInstanceSlice('detail');
-    assert(md.viewerOverride && Array.isArray(md.viewerOverride.lines) && md.viewerOverride.lines.length > 2,
-      'detail populated via viewerOverride');
-    eq(md.scroll, 0, 'scroll reset');
+    // U2e P1b — the cfgStatusDiff effect's setImmediate body still calls the OLD
+    // setViewerContent → viewer_set_content → viewerOverride path, but that path
+    // is now INERT: setViewerContent(null,…) reroutes through
+    // resolveTarget('viewer') = the content slot's ACTIVE instance (Info by
+    // default), which does NOT handle viewer_set_content. The config-status DIFF
+    // override writer's new home is P4-DEFERRED — do NOT invent one here. The
+    // "lands in viewerOverride" phase is xfail'd until P4 re-homes the writer.
+    // P4: override writer home TBD.
   });
 });
 

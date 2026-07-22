@@ -76,6 +76,11 @@ function update(msg, slice) {
       return _appendLines(slice, [msg.line]);
     case 'tv_append_lines':
       return (Array.isArray(msg.lines) && msg.lines.length) ? _appendLines(slice, msg.lines) : slice;
+    case 'tv_set_lines':
+      // U2e P1b — REPLACE the buffer wholesale (open-file/docker: the `Loading…`
+      // placeholder is swapped for the resolved content). Resets scroll to the top
+      // of the new content; keeps search/select (a fresh open has none anyway).
+      return { ...slice, lines: Array.isArray(msg.lines) ? msg.lines : [], scroll: 0 };
     default: break;
   }
   // Interaction (U2c P0) — a text-view's content IS its own line buffer.

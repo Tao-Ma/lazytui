@@ -53,13 +53,27 @@ const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lazytui-inst-life-'));
 const cfgPath = path.join(dir, 'tui.yml');
 fs.writeFileSync(cfgPath, CONFIG);
 if (!api.getInstanceSlice('files')) api.registerComponent(require('../panel/navigator/files'));
+// U2e P1b — the content slot is seeded with transient info + transcript
+// (text-view) sibling tabs; reconcilePaneInstances only mints an instance for a
+// tab whose Component is registered, and hasInstance(paneId) resolves the slot's
+// ACTIVE tab (info by default). Register both so the slot's active instance exists.
+if (!api.getInstanceSlice('info')) api.registerComponent(require('../panel/info/info'));
+if (!api.getInstanceSlice('text-view')) api.registerComponent(require('../panel/text-view/text-view'));
 getModel().config = parse(cfgPath);
 getModel().projectDir = '.';
 require('../app/state').initState();
 
+// U2e P1b — a placed `detail` pane is now the CONTENT SLOT (role:'content'):
+// at boot it is SEEDED with transient info + transcript sibling tabs, so its
+// ACTIVE tab (and hence `pane.type`) reads 'info', not 'detail'. Identify the
+// slot by its stable role (via mpool.isDetailPane, which matches role==='content'),
+// NOT by the active tab's kind. Each such slot still mints exactly one detail
+// ANCHOR instance keyed `pane-<poolId>` (plus the seeded info/transcript
+// instances) — this helper counts SLOTS, and hasInstance(paneId) checks the
+// active-tab instance, so the lifecycle invariants below read the slot cleanly.
 const arrange = () => api.getInstanceSlice('layout').arrange;
 const detailPaneIds = () =>
-  mpool.allPanesInColumns(arrange()).filter(p => p.type === 'detail').map(p => p.paneId);
+  mpool.allPanesInColumns(arrange()).filter(p => mpool.isDetailPane(p)).map(p => p.paneId);
 
 const v1 = detailPaneIds()[0];
 let v2;

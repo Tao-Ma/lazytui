@@ -2,6 +2,17 @@
  * Detail-search smoke test — substring + regex matching, case-
  * insensitivity, invalid regex graceful, navigation, autoscroll.
  *
+ * U2e P1b — the viewer's single `detail` slot dissolved into sibling
+ * POSITION-TAB instances. The content-slot's ACTIVE instance is now `info`
+ * (kind 'info'), which stores its buffer on `slice.lines` (not the retired
+ * `detail.infoLines`). We boot a real seeded content slot (parse-shaped config
+ * → initState → per-pane mint) and drive search through the SAME facade
+ * (panel/viewer/search) production uses: every wrapper targets
+ * `resolveTarget('viewer')`, which now resolves to the active `info` instance,
+ * so search operates on the info instance's `slice.lines`. The search/match
+ * math itself is unchanged. The unrouted-append case ([10]) moved to the
+ * Transcript text-view instance's `tv_*` arms.
+ *
  * Run: node js/test/test-viewer-search.js
  */
 'use strict';
@@ -11,30 +22,56 @@ const ms = require('../leaves/text/search');
 const { describe, it, eq, assert, report } = require('./test-runner');
 const { getModel } = require('../app/runtime');
 const { getInstanceSlice } = require('../panel/api');
+const route = require('../panel/route');
+
+// --- Boot a real seeded content slot ------------------------------------
+//
+// test-runner registers layout/detail/groups but not info/text-view, and
+// doesn't boot a config. The content slot's info + transcript instances are
+// minted by `_seedContentSlots` (arrange.js) → reconcilePaneInstances, which
+// only runs through initState. Register the two extra Components (production
+// does via BUILTIN_COMPONENTS) then boot a minimal parse-shaped config.
+const api = require('../panel/api');
+if (!api.getComponent('text-view')) api.registerComponent(require('../panel/text-view/text-view'));
+if (!api.getComponent('info'))      api.registerComponent(require('../panel/info/info'));
+const { initState } = require('../app/state');
+getModel().config = {
+  theme: 'default',
+  register: { cap: 10 },
+  groups: { g: { label: 'G', actions: {}, items: [{ name: 'a' }, { name: 'b' }] } },
+  warnings: [],
+};
+initState();
+
+// The content-slot's ACTIVE instance (info by default) — the facade's
+// resolveTarget('viewer') lands here. viewer_info is the same instance while
+// info is active; using the explicit intent keeps the resolution honest.
+function infoSlice() { return getInstanceSlice(route.resolveTarget('viewer_info')); }
 
 // P1 (viewer-lines selector) — matches are DERIVED via the
 // ms.matchesFor(lines, term) memo, not stored on slice.search. Tests
-// read them the way production consumers do: derive from the slice's
-// lines + the phase-correct term.
-const { displayedLines } = require('./_helpers/viewer-lines');
+// read them the way production consumers do: derive from the info
+// instance's `slice.lines` + the phase-correct term.
 function typingMatches() {
-  const sl = getInstanceSlice('detail');
-  return ms.matchesFor(displayedLines(sl), sl.search.typing || '');
+  const sl = infoSlice();
+  return ms.matchesFor(sl.lines || [], sl.search.typing || '');
 }
 function committedMatches() {
-  const sl = getInstanceSlice('detail');
-  return ms.matchesFor(displayedLines(sl), sl.search.term || '');
+  const sl = infoSlice();
+  return ms.matchesFor(sl.lines || [], sl.search.term || '');
 }
 
 
 function setup(lines, panelH = 10) {
-  getInstanceSlice('detail').infoLines = lines.slice();  // P3 — Info canonical home
-  getInstanceSlice('detail').scroll = 0;
-  // A1/B1 fix: viewer.update reads slice.innerH directly. Tests seed it
-  // on the detail slice (was: cross-slice into layout.panelHeights.detail).
-  getInstanceSlice('detail').innerH = Math.max(1, panelH - 2);
+  const sl = infoSlice();
+  // U2e P1b — Info content's canonical home is the info instance's `slice.lines`.
+  sl.lines = lines.slice();
+  sl.scroll = 0;
+  // A1/B1 fix: the shared tvu reducer reads slice.innerH directly (stamped by
+  // augmentMsg in production). Tests seed it on the info instance's slice.
+  sl.innerH = Math.max(1, panelH - 2);
   getModel().modes.detailSearchMode = false;
-  getInstanceSlice('detail').search = { active: false, term: '', idx: 0, typing: '' };
+  sl.search = { active: false, term: '', idx: 0, typing: '' };
 }
 
 describe('[1] substring match (regex literal chars)', () => {
@@ -93,18 +130,18 @@ describe('[5] commit + clear', () => {
     'a'.split('').forEach(c => search.keystroke(c));
     search.commit();
     eq(getModel().modes.detailSearchMode, false);
-    eq(getInstanceSlice('detail').search.active, true);
+    eq(infoSlice().search.active, true);
     assert(committedMatches().length > 0);
     search.clearCommitted();
-    eq(getInstanceSlice('detail').search.active, false);
+    eq(infoSlice().search.active, false);
     eq(committedMatches().length, 0, 'cleared term derives no matches');
-    eq(getInstanceSlice('detail').search.term, '');
+    eq(infoSlice().search.term, '');
   });
   it('empty commit clears active', () => {
     setup(['only one']);
     search.enter();
     search.commit();
-    eq(getInstanceSlice('detail').search.active, false, 'empty term yields no active search');
+    eq(infoSlice().search.active, false, 'empty term yields no active search');
   });
 });
 
@@ -114,12 +151,12 @@ describe('[6] cancel during typing restores prior committed term', () => {
     search.enter();
     'hello'.split('').forEach(c => search.keystroke(c));
     search.commit();
-    eq(getInstanceSlice('detail').search.term, 'hello');
+    eq(infoSlice().search.term, 'hello');
     eq(committedMatches().length, 2);
     search.enter();      // reopen
     search.keystroke('X');
     search.cancel();     // Esc
-    eq(getInstanceSlice('detail').search.term, 'hello', 'committed term restored');
+    eq(infoSlice().search.term, 'hello', 'committed term restored');
     eq(committedMatches().length, 2);
   });
 });
@@ -132,15 +169,15 @@ describe('[7] next/prev cycles + autoscroll', () => {
     'row0'.split('').forEach(c => search.keystroke(c));
     search.commit();
     eq(committedMatches().length, 4);
-    eq(getInstanceSlice('detail').search.idx, 0);
+    eq(infoSlice().search.idx, 0);
     search.next();
-    eq(getInstanceSlice('detail').search.idx, 1);
+    eq(infoSlice().search.idx, 1);
     search.next(); search.next();
-    eq(getInstanceSlice('detail').search.idx, 3);
+    eq(infoSlice().search.idx, 3);
     search.next();
-    eq(getInstanceSlice('detail').search.idx, 0, 'wraps to start');
+    eq(infoSlice().search.idx, 0, 'wraps to start');
     search.prev();
-    eq(getInstanceSlice('detail').search.idx, 3, 'prev from 0 wraps to last');
+    eq(infoSlice().search.idx, 3, 'prev from 0 wraps to last');
   });
   it('autoscroll brings the match line into view', () => {
     setup(Array.from({ length: 50 }, (_, i) =>
@@ -149,9 +186,9 @@ describe('[7] next/prev cycles + autoscroll', () => {
     search.enter();
     'TARGET'.split('').forEach(c => search.keystroke(c));
     search.commit();
-    assert(getInstanceSlice('detail').scroll > 0, `scrolled to TARGET (got ${getInstanceSlice('detail').scroll})`);
+    assert(infoSlice().scroll > 0, `scrolled to TARGET (got ${infoSlice().scroll})`);
     const innerH = 6;
-    const top = getInstanceSlice('detail').scroll;
+    const top = infoSlice().scroll;
     assert(30 >= top && 30 < top + innerH, 'TARGET line is now in viewport');
   });
 });
@@ -162,7 +199,7 @@ describe('[8] decorateLines render integration', () => {
     search.enter();
     'foo'.split('').forEach(c => search.keystroke(c));
     search.commit();
-    const out = search.decorateLines(displayedLines(getInstanceSlice('detail')));
+    const out = search.decorateLines(infoSlice().lines);
     eq(out[0], 'no match here', 'untouched');
     assert(out[1].includes('[yellow]'), 'matched line carries [yellow]');
   });
@@ -171,8 +208,8 @@ describe('[8] decorateLines render integration', () => {
     search.enter();
     'foo'.split('').forEach(c => search.keystroke(c));
     search.commit();
-    getInstanceSlice('detail').search.idx = 0;
-    const out = search.decorateLines(displayedLines(getInstanceSlice('detail')));
+    infoSlice().search.idx = 0;
+    const out = search.decorateLines(infoSlice().lines);
     // First match (idx=0) → [reverse][yellow]
     assert(out[0].includes('[reverse][yellow]'), `expected active style: ${out[0]}`);
     // Second match (idx=1) → [yellow] only (no reverse)
@@ -182,8 +219,8 @@ describe('[8] decorateLines render integration', () => {
   });
   it('no matches → pass-through', () => {
     setup(['abc', 'def']);
-    const out = search.decorateLines(displayedLines(getInstanceSlice('detail')));
-    eq(out, displayedLines(getInstanceSlice('detail')));
+    const out = search.decorateLines(infoSlice().lines);
+    eq(out, infoSlice().lines);
   });
 });
 
@@ -195,14 +232,14 @@ describe('[8b] decorateLines decorates the RENDERED pane, not the focused one', 
   it('explicit slice arg drives term + idx', () => {
     setup(['focused content']);              // focused viewer: no search
     const other = {
-      infoLines: ['target here', 'no hit', 'target again'],
+      lines: ['target here', 'no hit', 'target again'],
       search: { active: true, term: 'target', idx: 1, typing: '' },
     };
-    const lines = other.infoLines;
+    const lines = other.lines;
     const out = search.decorateLines(lines, other);
     assert(out[0].includes('[yellow]'), 'unfocused pane decorated with ITS OWN committed term');
     assert(out[2].includes('[reverse]'), 'active idx from the passed slice');
-    const focusedOut = search.decorateLines(displayedLines(getInstanceSlice('detail')));
+    const focusedOut = search.decorateLines(infoSlice().lines);
     eq(focusedOut[0], 'focused content', 'focused pane (no search) untouched');
   });
   it('typing preview applies only to the focused slice', () => {
@@ -212,10 +249,10 @@ describe('[8b] decorateLines decorates the RENDERED pane, not the focused one', 
     // While detailSearchMode is ON, a DIFFERENT pane's decoration must
     // not pick up the focused pane's typing buffer.
     const other = {
-      infoLines: ['beta lives here'],
+      lines: ['beta lives here'],
       search: { active: false, term: '', idx: 0, typing: '' },
     };
-    const out = search.decorateLines(other.infoLines, other);
+    const out = search.decorateLines(other.lines, other);
     eq(out[0], 'beta lives here', 'unfocused pane has no active search → no highlight');
     search.cancel();
   });
@@ -237,75 +274,67 @@ describe('[9] zero-width pattern does not infinite-loop', () => {
 describe('[10] P1 — committed search survives a lines-change (derived matches)', () => {
   // Historical B2 added a finalizer recompute so a committed search
   // survived content changes. P1 deleted that machinery: matches DERIVE
-  // from (lines, term) via ms.matchesFor, so survival is structural —
-  // these tests pin the derived behavior across an append.
-  it('viewer_append on Transcript re-derives matches against the new buffer', () => {
-    const viewer = require('../panel/viewer/viewer');
-    // Park on Transcript (tab 1) with one matching line in the buffer.
-    const s0 = {
-      ...viewer._init(),
-      tab: 1,
-      innerH: 8,
-      viewerStreamBuffer: { lines: ['target line one'], cap: 1000 },
-    };
-    // Commit a search by running it through the reducer (search.enter +
-    // keystrokes + commit) so the finalizer derives lines from the
-    // buffer and the search state lands `active=true`.
-    let s = viewer._update({ type: 'viewer_search_enter' }, s0);
-    s = Array.isArray(s) ? s[0] : s;
-    for (const c of 'target') {
-      s = viewer._update({ type: 'viewer_search_key', seq: c }, s);
-      s = Array.isArray(s) ? s[0] : s;
-    }
-    s = viewer._update({ type: 'viewer_search_commit' }, s);
-    s = Array.isArray(s) ? s[0] : s;
+  // from (lines, term) via ms.matchesFor, so survival is structural.
+  // U2e P1b — the unrouted stream moved off the viewer's flat
+  // `viewerStreamBuffer` onto the Transcript text-view INSTANCE's `slice.lines`
+  // via the `tv_*` arms. These pin the derived behavior across a `tv_append`,
+  // driving the transcript instance through wrapped viewer_search_* + tv_* Msgs.
+  const D = (id, msg) => api.dispatchMsg(api.wrap(id, msg));
+  const transcriptId = () => route.resolveTarget('viewer_transcript');
+  // The transcript instance is a shared singleton across `it` blocks (the
+  // original tests each spun a fresh viewer._init()). Reset its committed
+  // search + set a viewport before each case so no prior term leaks in
+  // (viewer_search_enter would seed the leaked term into `typing`).
+  const resetTranscript = (tid) => {
+    D(tid, { type: 'viewer_search_clear_committed' });
+    api.getInstanceSlice(tid).innerH = 8;
+  };
+
+  it('tv_append on the Transcript instance re-derives matches against the new buffer', () => {
+    const tid = transcriptId();
+    // Park on Transcript with one matching line; give it a viewport.
+    resetTranscript(tid);
+    D(tid, { type: 'tv_set_lines', lines: ['target line one'] });
+    // Commit a search by running it through the transcript instance's reducer.
+    D(tid, { type: 'viewer_search_enter' });
+    for (const c of 'target') D(tid, { type: 'viewer_search_key', seq: c });
+    D(tid, { type: 'viewer_search_commit' });
+    let s = api.getInstanceSlice(tid);
     eq(s.search.active, true, 'search committed');
-    eq(ms.matchesFor(displayedLines(s), s.search.term).length, 1, 'one match before append');
+    eq(ms.matchesFor(s.lines, s.search.term).length, 1, 'one match before append');
 
     // Append a second line that also matches /target.
-    const r = viewer._update({ type: 'viewer_append', line: 'another target' }, s);
-    const next = Array.isArray(r) ? r[0] : r;
-    eq(next.viewerStreamBuffer.lines.length, 2, 'buffer grew');
-    const derived = ms.matchesFor(displayedLines(next), next.search.term);
+    D(tid, { type: 'tv_append', line: 'another target' });
+    s = api.getInstanceSlice(tid);
+    eq(s.lines.length, 2, 'buffer grew');
+    const derived = ms.matchesFor(s.lines, s.search.term);
     eq(derived.length, 2, 'matches derive against new lines (P1)');
     eq(derived[1].line, 1, 'new match lands on line 1');
   });
 
   it('a non-matching append still re-derives — matches re-count to original', () => {
-    const viewer = require('../panel/viewer/viewer');
-    const s0 = {
-      ...viewer._init(),
-      tab: 1,
-      innerH: 8,
-      viewerStreamBuffer: { lines: ['target one', 'noise'], cap: 1000 },
-    };
-    let s = viewer._update({ type: 'viewer_search_enter' }, s0);
-    s = Array.isArray(s) ? s[0] : s;
-    for (const c of 'target') {
-      s = viewer._update({ type: 'viewer_search_key', seq: c }, s);
-      s = Array.isArray(s) ? s[0] : s;
-    }
-    s = viewer._update({ type: 'viewer_search_commit' }, s);
-    s = Array.isArray(s) ? s[0] : s;
-    eq(ms.matchesFor(displayedLines(s), s.search.term).length, 1, 'one match before append');
+    const tid = transcriptId();
+    resetTranscript(tid);
+    D(tid, { type: 'tv_set_lines', lines: ['target one', 'noise'] });
+    D(tid, { type: 'viewer_search_enter' });
+    for (const c of 'target') D(tid, { type: 'viewer_search_key', seq: c });
+    D(tid, { type: 'viewer_search_commit' });
+    let s = api.getInstanceSlice(tid);
+    eq(ms.matchesFor(s.lines, s.search.term).length, 1, 'one match before append');
 
-    const r = viewer._update({ type: 'viewer_append', line: 'unrelated' }, s);
-    const next = Array.isArray(r) ? r[0] : r;
-    eq(ms.matchesFor(displayedLines(next), next.search.term).length, 1, 'still one match (no new hits)');
+    D(tid, { type: 'tv_append', line: 'unrelated' });
+    s = api.getInstanceSlice(tid);
+    eq(ms.matchesFor(s.lines, s.search.term).length, 1, 'still one match (no new hits)');
   });
 
   it('inactive search is not touched (gate respects search.active=false)', () => {
-    const viewer = require('../panel/viewer/viewer');
-    const s0 = {
-      ...viewer._init(),
-      tab: 1,
-      innerH: 8,
-      viewerStreamBuffer: { lines: ['line one'], cap: 1000 },
-    };
-    const r = viewer._update({ type: 'viewer_append', line: 'line two' }, s0);
-    const next = Array.isArray(r) ? r[0] : r;
-    eq(next.search.active, false, 'search still inactive');
-    eq(ms.matchesFor(displayedLines(next), next.search.term || '').length, 0, 'no term derives no matches');
+    const tid = transcriptId();
+    resetTranscript(tid);   // fresh set of lines with no committed search
+    D(tid, { type: 'tv_set_lines', lines: ['line one'] });
+    D(tid, { type: 'tv_append', line: 'line two' });
+    const s = api.getInstanceSlice(tid);
+    eq(s.search.active, false, 'search still inactive');
+    eq(ms.matchesFor(s.lines, s.search.term || '').length, 0, 'no term derives no matches');
   });
 });
 
@@ -313,7 +342,8 @@ describe('[N] "/" key enters search via the viewer itself (#3 controller-thinnin
   // The viewer claims `/` in its own `case 'key'` now that it's the focused
   // pane — dispatch.js no longer focus-checks + dispatches viewer_search_enter.
   // Same end state as the `viewer_search_enter` Msg path (search.js), reached
-  // through the key claim.
+  // through the key claim. This exercises the `detail` viewer Component in
+  // isolation (its `/`-claim survives P1b as the slot's index-0 anchor).
   it('focused detail: "/" claims the key and arms detailSearchMode', () => {
     const viewer = require('../panel/viewer/viewer');
     const s0 = { ...viewer._init(), infoLines: ['alpha', 'beta'], innerH: 8 };

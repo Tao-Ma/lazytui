@@ -157,7 +157,15 @@ layout:
     - { panels: [actions, detail] }
 `));
     const arrange = rebuildLayoutFromConfig(cfg);
-    eq(pool.placedIds(arrange).sort(), ['actions', 'detail', 'groups']);
+    // U2e P1b — the content slot (`detail`) is seeded with two transient
+    // sibling tabs (Info + Transcript), so placedIds now includes their pool
+    // ids. That IS the correct derivation: every mounted tab is placed.
+    eq(pool.placedIds(arrange).sort(),
+       ['actions', 'detail', 'groups', 'info-pane-detail', 'transcript-pane-detail']);
+    // The DECLARED pool (config, minus the runtime-seeded transient tabs) is
+    // still exactly the three explicit panels.
+    eq(pool.placedIds(arrange).filter(id => !arrange.pool[id].transient).sort(),
+       ['actions', 'detail', 'groups']);
     eq(pool.hiddenIds(arrange), []);
     assert(arrange.pool.groups, 'pool has groups entry');
     assert(!arrange.pool.groups._synthesized, 'pool entries are explicit, not synthesized');
@@ -175,7 +183,10 @@ layout:
     - { panels: [a, d] }
 `));
     const arrange = rebuildLayoutFromConfig(cfg);
-    eq(pool.placedIds(arrange), ['g', 'a', 'd']);
+    // U2e P1b — the `d` content slot is seeded with its Info + Transcript
+    // transient tabs (poolIds derive from its paneId `pane-d`), so they trail
+    // the declared cells in placedIds. `notes` stays hidden (not in any tab).
+    eq(pool.placedIds(arrange), ['g', 'a', 'd', 'info-pane-d', 'transcript-pane-d']);
     eq(pool.hiddenIds(arrange), ['notes']);
     assert(pool.isHidden(arrange, 'notes'));
     eq(pool.getPoolEntry(arrange, 'notes').title, 'Notes');
@@ -184,7 +195,12 @@ layout:
     const cfg = parse(tmpYaml(GROUPS));
     const arrange = rebuildLayoutFromConfig(cfg);
     assert(arrange.pool && typeof arrange.pool === 'object', 'pool present');
-    eq(pool.placedIds(arrange).sort(), ['actions', 'detail', 'groups']);
+    // U2e P1b — synthesized-default path seeds the content slot too, so the
+    // Info/Transcript transient tabs appear alongside the declared panels.
+    eq(pool.placedIds(arrange).sort(),
+       ['actions', 'detail', 'groups', 'info-pane-detail', 'transcript-pane-detail']);
+    eq(pool.placedIds(arrange).filter(id => !arrange.pool[id].transient).sort(),
+       ['actions', 'detail', 'groups']);
   });
 });
 
@@ -207,9 +223,18 @@ layout:
         - detail
 `));
     const arrange = rebuildLayoutFromConfig(cfg);
-    eq(pool.placedIds(arrange).sort(), ['actions', 'detail', 'docker', 'groups', 'logs'],
-       'every tab id appears in placedIds, including non-active logs');
-    eq(pool.activePaneIds(arrange), ['docker', 'groups', 'actions', 'detail'],
+    // U2e P1b — the `detail` content slot is seeded with Info + Transcript
+    // transient tabs, so their pool ids join the docker/logs multi-tab pane's
+    // in placedIds. Every mounted tab (declared or seeded) counts as placed.
+    eq(pool.placedIds(arrange).sort(),
+       ['actions', 'detail', 'docker', 'groups', 'info-pane-detail', 'logs', 'transcript-pane-detail'],
+       'every tab id appears in placedIds, including non-active logs + seeded transients');
+    eq(pool.placedIds(arrange).filter(id => !arrange.pool[id].transient).sort(),
+       ['actions', 'detail', 'docker', 'groups', 'logs'],
+       'declared pool (minus transient tabs) is the five configured panels');
+    // activePaneIds tracks the ACTIVE tab per pane. The content slot's default
+    // active tab is now Info, so its identity id is `info-pane-detail`.
+    eq(pool.activePaneIds(arrange), ['docker', 'groups', 'actions', 'info-pane-detail'],
        'activePaneIds returns one id per pane (the active tab)');
     eq(pool.hiddenIds(arrange), [],
        'no pool entries are hidden — every tab is mounted');

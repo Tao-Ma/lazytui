@@ -73,9 +73,12 @@ function appendDetailLine(line, tabInstId) {
     require('./loop').dispatchMsg(api.wrap(tabInstId, { type: 'tv_append', line }));
     return;
   }
-  const target = require('../../panel/route').resolveTarget('viewer');
+  // U2e P1b — unrouted output goes to the Transcript, now a `text-view` instance
+  // (hint:'transcript') of the content slot, via tv_* (was viewer_append to the
+  // detail viewer's viewerStreamBuffer accumulator).
+  const target = require('../../panel/route').resolveTarget('viewer_transcript');
   if (target == null) return;
-  require('./loop').dispatchMsg(api.wrap(target, { type: 'viewer_append', line }));
+  require('./loop').dispatchMsg(api.wrap(target, { type: 'tv_append', line }));
 }
 
 function appendDetailLines(lines, tabInstId) {
@@ -85,9 +88,9 @@ function appendDetailLines(lines, tabInstId) {
     require('./loop').dispatchMsg(api.wrap(tabInstId, { type: 'tv_append_lines', lines }));
     return;
   }
-  const target = require('../../panel/route').resolveTarget('viewer');
+  const target = require('../../panel/route').resolveTarget('viewer_transcript');
   if (target == null) return;
-  require('./loop').dispatchMsg(api.wrap(target, { type: 'viewer_append_lines', lines }));
+  require('./loop').dispatchMsg(api.wrap(target, { type: 'tv_append_lines', lines }));
 }
 
 /** Kill a single job. Removes it from procs + slotIndex, SIGTERMs the
@@ -144,8 +147,6 @@ function killAll(opts = {}) {
  */
 function streamCommand(headerLabel, cmd, args = [], opts = {}) {
   const route = require('../../panel/route');
-  const target = route.resolveTarget('viewer');
-  if (target == null) return;     // no viewer registered
   const api = require('../../panel/api');
   // U2c P1 — routed action output targets a text-view instance by its tabInstId
   // (opts.tabInstId, the DISPLAY target set by action-runner.ensureActionTab when
@@ -155,6 +156,12 @@ function streamCommand(headerLabel, cmd, args = [], opts = {}) {
   // display could be minted. Unrouted (tabless) → the singleton 'unrouted' slot.
   // opts.tabKey/groupName ride along for the jobs owner (overlay + running-glyph).
   const tabInstId = opts.tabInstId || null;
+  // U2e P1b — only an UNROUTED stream needs a place to land (the Transcript
+  // instance); a routed stream carries its own display target (or none) and runs
+  // regardless. (Pre-P1b this guarded on any viewer-kind instance existing;
+  // resolveTarget is content-slot-anchored now, so a bare model with no placed
+  // content slot would otherwise drop every routed job.)
+  if ((opts.slotKey || 'unrouted') === 'unrouted' && route.resolveTarget('viewer_transcript') == null) return;
   const slotKey = opts.slotKey || 'unrouted';
   const routed = slotKey !== 'unrouted';
   // Fabric run (docs/ports-and-wires.md): capture RAW stdout (un-esc'd, no
@@ -179,14 +186,9 @@ function streamCommand(headerLabel, cmd, args = [], opts = {}) {
     const existing = procs.get(existingId);
     const existingLabel = (existing && existing.headerLabel) || '<previous>';
     if (existingLabel !== headerLabel) {
-      // Phase 3d: thread targetKey + currentGroup so the tab_switch
-      // arm stays pure of getModel(). idx=0 is always Info; targetKey
-      // is the static 'info'. currentGroup read at dispatch time.
-      require('./loop').dispatchMsg(api.wrap(target, {
-        type: 'tab_switch', idx: 0,
-        targetKey: 'info',
-        currentGroup: getModel().currentGroup,
-      }));
+      // U2e P1b — the pre-confirm flat-strip switch-to-Info (tab_switch idx:0) is
+      // retired: Transcript is its own position-tab instance now, not a flat tab of
+      // the detail viewer, so there's no idx-0 Info tab to switch to here.
       require('../control/dispatch').applyMsg({
         type: 'confirm_enter',
         message: `Kill running '${existingLabel}'?`,
@@ -211,7 +213,10 @@ function streamCommand(headerLabel, cmd, args = [], opts = {}) {
   if (tabInstId) {
     require('./loop').dispatchMsg(api.wrap(tabInstId, { type: 'tv_stream_start', header }));
   } else {
-    require('./loop').dispatchMsg(api.wrap(target, { type: 'stream_start', header }));
+    // U2e P1b — unrouted header seeds the Transcript text-view instance (tv_stream_start),
+    // not the detail viewer's stream_start accumulator.
+    const transcript = route.resolveTarget('viewer_transcript');
+    if (transcript) require('./loop').dispatchMsg(api.wrap(transcript, { type: 'tv_stream_start', header }));
   }
   scheduleRender();
 

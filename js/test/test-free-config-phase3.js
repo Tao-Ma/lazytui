@@ -649,7 +649,12 @@ describe('[6] rebuildLayoutFromConfig — pure fn for :restore-layout', () => {
     // v0.6.4 — the detail pane is seeded with heightPct from the layout
     // default (detail_height_pct), so geometry sizes it through the same
     // per-pane heightPct path as every other pane.
-    eq(ly.columns[1].panels[1].type, 'detail');
+    // U2e P1b — the content slot's default tab is now `info`, so `pane.type`
+    // reads 'info'; identify the slot by its stable `role:'content'` marker
+    // (paneId 'pane-detail'), not the retired `type==='detail'` assumption.
+    // heightPct is preserved on the slot pane across the seed.
+    eq(ly.columns[1].panels[1].role, 'content', 'content slot identified by role, not active-tab type');
+    eq(ly.columns[1].panels[1].paneId, 'pane-detail', 'slot anchored on the detail paneId');
     eq(ly.columns[1].panels[1].heightPct, 70, 'detail pane seeded from detail_height_pct default');
   });
 

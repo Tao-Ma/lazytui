@@ -14,6 +14,10 @@ const pt = require('../../leaves/wm/pane-tabs');
 const { getModel } = require('../../app/runtime');
 
 function displayedLines(slice, model) {
+  // U2e P1b — the content slot's active instance (info / text-view / transcript)
+  // stores its buffer on `slice.lines` directly; prefer it. Fall back to the
+  // viewer's flat-strip derivation for a legacy/detail-shaped slice.
+  if (slice && Array.isArray(slice.lines)) return slice.lines;
   const m = model || getModel();
   return pt.viewerLines(slice, m, m.currentGroup);
 }

@@ -28,6 +28,38 @@ function freshModel() {
   return m;
 }
 
+// U2e P1b — next_tab/prev_tab cycle the content SLOT's visible position-tabs
+// (Info / Transcript / minted text-views), not the retired viewer flat strip.
+// The arm reads a handler-stamped bundle { slotPaneId, tabPoolIds, curIdx } and
+// no-ops when the slot has <2 visible tabs. So the "emits a Cmd" assertion needs
+// a SEEDED content slot with ≥2 tabs. Boot one through parser + initState (the
+// same path production takes), then derive the real bundle from route.
+function _viewerTabBundle() {
+  const api = require('../panel/api');
+  const route = require('../panel/route');
+  const slotPaneId = route.resolveViewerPaneId();
+  if (!slotPaneId) return { slotPaneId: null, tabPoolIds: [], curIdx: 0 };
+  const layout = api.getInstanceSlice('layout');
+  const mpool = require('../leaves/wm/pool');
+  const loc = layout && layout.arrange && mpool.findPaneLocation(layout.arrange, p => p.paneId === slotPaneId);
+  const strip = loc && require('../panel/slot-strip').unifiedSlotStrip(loc.pane);
+  const tabPoolIds = strip ? strip.entries.map(e => e.poolId) : [];
+  const curIdx = strip ? Math.max(0, strip.activeIdx) : 0;
+  return { slotPaneId, tabPoolIds, curIdx };
+}
+
+function seedContentSlot() {
+  const api = require('../panel/api');
+  if (!api.getComponent('info')) api.registerComponent(require('../panel/info/info'));
+  if (!api.getComponent('text-view')) api.registerComponent(require('../panel/text-view/text-view'));
+  const { parse } = require('../parser/index');
+  const { initState } = require('../app/state');
+  const m = runtime.getModel();
+  m.config = parse(require('path').resolve(__dirname, '../../test/test.yml'));
+  m.projectDir = '.';
+  initState();
+}
+
 describe('[immutable] root reducer — mode flips', () => {
   it('terminal_enter sets the flag on a new model', () => {
     const m = freshModel();
@@ -345,11 +377,13 @@ describe('[immutable] root reducer — Cmd-only verbs are identity-preserving', 
     const m = freshModel();
     // `refresh` / `show_help` / `quit` no longer go through the reducer
     // (R4.5 + R4.8) — actions.js calls the side-effects directly.
-    // v0.6.4 Theme C — the arm reads the viewer tab bundle from the Msg
-    // (handler-threaded), not the slice; thread total>1 so it emits.
-    // blessed-A — `target` is part of the bundle now (was resolveTarget in
-    // the arm); thread it so the arm doesn't early-return on a null target.
-    const bundle = { target: 'detail', curTab: 0, total: 2, tabKeys: ['info', 'transcript'], currentGroup: '' };
+    // U2e P1b — the arm reads a handler-stamped bundle { slotPaneId,
+    // tabPoolIds, curIdx } and cycles the content slot's VISIBLE position-tabs.
+    // It NO-OPS with <2 tabs, so seed a real content slot (Info + Transcript)
+    // and derive the bundle from route — else the cycle correctly emits nothing.
+    seedContentSlot();
+    const bundle = _viewerTabBundle();
+    assert(bundle.tabPoolIds.length >= 2, 'precondition: slot has ≥2 visible position-tabs');
     for (const t of ['next_tab', 'prev_tab']) {
       const [next, cmds] = runtime.update(m, { type: t, ...bundle });
       assert(next === m, `${t} returns same ref`);

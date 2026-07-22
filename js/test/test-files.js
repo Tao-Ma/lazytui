@@ -44,6 +44,16 @@ const route = require('../panel/route');
 const filesComp = require('../panel/navigator/files');
 api.registerComponent(filesComp);
 
+// U2e P1b — opening a file now mints a real `text-view` POSITION-tab in the
+// content slot (feature/content-tab.js), not a viewer `contentTabs` entry. The
+// content slot's info + text-view instances only mint when those Components are
+// registered (reconcilePaneInstances skips unregistered tab kinds); test-runner
+// registers only layout/detail/groups.
+api.registerComponent(require('../panel/info/info'));
+api.registerComponent(require('../panel/text-view/text-view'));
+const mpane = require('../leaves/wm/pane');
+const { _poolId } = require('../panel/content-tab');
+
 const { setSel, setScroll, getSel } = require('../app/state');
 
 function mkTree() {
@@ -85,10 +95,7 @@ function freshState(root, panelType = 'files', extraPanelCfg = {}) {
   // Phase 4a/4c — every per-panel chrome (cursor/scroll/multiSel/filter)
   // lives on each Component's nav slice. Re-home the panels we touch.
   setSel(panelType, 0); setScroll(panelType, 0);
-  getInstanceSlice('detail').contentTabs = {};
-  getInstanceSlice('detail').tab = 0;
   getInstanceSlice("layout").focus = panelType;
-  getInstanceSlice('detail').lines = [];
 }
 
 /**
@@ -332,23 +339,50 @@ describe('[10] two same-type files panes — independent browser state (Arc 2)',
 
 // --- async section: real registered Component + effect registry end-to-end ---
 
-section('[9] file open → content tab (real effect loop, async loader)');
+section('[9] file open → text-view position-tab (real effect loop, async loader)');
 (async () => {
   const root = mkTree();
   try {
-    // Install the built-in effect handlers (render) + register the Component so
+    // Install the built-in effect handlers (render) + register the Components so
     // the real loadDir/openFile effects run and dispatchMsg routes key events.
+    // U2e P1b — the opened file mints a `text-view` tab into the content slot,
+    // so the content slot's info + text-view instances must exist: boot through
+    // a real `config.layout` so initState's rebuildLayoutFromConfig seeds the
+    // role:'content' detail slot (Info(active) + Transcript + the detail anchor)
+    // and reconcilePaneInstances mints every tab instance (all Components already
+    // registered above). A hand-patched arrange would skip that seed + mint.
     require('../dispatch/runtime/effects').installBuiltins();
     api.registerComponent(filesComp);
-    freshState(root, 'file-browser');
-    // Arc 2 — mint the real per-pane instance the way state.js does
-    // (init(paneId)); the register-time 'files' singleton has no paneId,
-    // so the broadcast refresh would no-op on it.
-    if (route.hasInstance('files')) route.disposeInstance('files');
-    route.setInstance('file-browser', 'file-browser', filesComp.init('file-browser'));
+    getModel().config = {
+      project_dir: root, files: [],
+      groups: { g: { name: 'g', label: 'G', containers: [], actions: {},
+        children: [], parent: null, depth: 0, quick: false } },
+      layout: {
+        detail_height_pct: 60,
+        pool: {
+          fb: { id: 'fb', type: 'file-browser', title: 'Files', config: { root } },
+          d:  { id: 'd',  type: 'detail', title: 'Detail', config: {} },
+        },
+        columns: [
+          { width: 30, panels: [{ id: 'fb', type: 'file-browser', title: 'Files', config: { root } }] },
+          { panels: [{ id: 'd', type: 'detail', title: 'Detail', config: {} }] },
+        ],
+      },
+    };
+    getModel().projectDir = root;
+    getModel().currentGroup = 'g';
+    initState();
+
+    // The file-browser pane's runtime paneId (post-mint).
+    const fbId = (() => {
+      for (const col of getInstanceSlice('layout').arrange.columns)
+        for (const p of (col.panels || [])) if (p.type === 'file-browser') return p.paneId;
+      return null;
+    })();
+    assert(fbId, 'file-browser pane placed + minted');
 
     // Kick the real (async) listing and poll until it lands in the slice.
-    api.dispatchMsg({ type: 'refresh' });
+    api.dispatchMsg(api.wrap(fbId, { type: 'refresh' }));
     const poll = async (pred, ms = 1000) => {
       const start = Date.now();
       while (Date.now() - start < ms) {
@@ -358,26 +392,39 @@ section('[9] file open → content tab (real effect loop, async loader)');
       return false;
     };
     const loaded = await poll(() => {
-      const b = api.getInstanceSlice('file-browser').browser;
+      const b = api.getInstanceSlice(fbId).browser;
       return b && Array.isArray(b.items) && b.items.length > 1;
     });
     assert(loaded, 'real loadDir populated the slice');
 
-    const items = api.getItems('file-browser');
+    const items = api.getItems(fbId);
     const alphaIdx = items.findIndex(i => i.name === 'alpha.txt');
-    setSel('file-browser', alphaIdx);
-    getInstanceSlice("layout").focus = 'file-browser';
+    setSel(fbId, alphaIdx);
+    getInstanceSlice("layout").focus = fbId;
     // The real key path: routes to the focused Component's update → openFile.
     api.dispatchKeyToFocused('return', '');
 
     const alpha = items[alphaIdx];
     const key = `file:${alpha.path}`;
-    assert(getInstanceSlice('detail').contentTabs['g'] && getInstanceSlice('detail').contentTabs['g'][key], 'tab created');
+    // U2e P1b — the opened file is a minted `text-view` position-tab in the
+    // content slot (poolId `content-<sanitized key>`, instance `newPaneId(...)`),
+    // NOT a `detail.contentTabs` map entry.
+    const instId = mpane.newPaneId(_poolId(key));
+    assert(route.hasInstance(instId), 'a text-view tab was minted for the opened file');
+    eq(route.instanceKind(instId), 'text-view', 'minted tab is kind text-view');
+    // The content slot's tabs[] gained the new tab (and activated it).
+    const slotPaneId = route.resolveViewerPaneId();
+    const cslot = require('../leaves/wm/pool').findPaneLocation(
+      getInstanceSlice('layout').arrange, p => p.paneId === slotPaneId);
+    assert(cslot && cslot.pane.tabs.some(t => t.poolId === _poolId(key)),
+      'the content slot tabs[] carries the new text-view tab');
+
+    // Async loader resolves → tv_set_lines replaces the Loading… placeholder.
     const ready = await poll(() => {
-      const lines = getInstanceSlice('detail').contentTabs['g'][key].lines;
+      const lines = (getInstanceSlice(instId) || {}).lines;
       return lines && lines[0] === 'aaa';
     });
-    assert(ready, 'file contents loaded into the content tab');
+    assert(ready, 'file contents loaded into the text-view tab');
   } finally {
     rm(root);
     report();

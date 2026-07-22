@@ -1,509 +1,253 @@
 /**
- * v0.6.2 — viewer-stream buffer (unrouted accumulator).
+ * U2e P1b — the Transcript is now a first-class `text-view` INSTANCE
+ * (hint:'transcript') of the content slot, NOT the viewer's flat-strip
+ * `viewerStreamBuffer` accumulator behind a tab index.
  *
- *   slice.viewerStreamBuffer = { lines, cap: 1000 } — singleton
- *   accumulator across unrouted commands. The Transcript tab (last
- *   in the strip) is the display home; tab_switch into Transcript
- *   restores from the buffer (bottom-pin); empty buffer paints a
- *   `(no transcript yet)` placeholder. Info is pure selection-info
- *   and has no relationship to the buffer.
+ *   - Unrouted stream output routes to the transcript instance via `tv_append`
+ *     / `tv_append_lines` (the `tv_*` arms), resolved by
+ *     `route.resolveTarget('viewer_transcript')`. The instance owns its own
+ *     `slice.lines` + scroll (bottom-stick lives in its update), so there is no
+ *     per-tab bundle, no mirror-only-when-on-tab, and no ring cap (the buffer is
+ *     uncapped — action output is retained).
+ *   - `tv_stream_start` reseeds the instance to the header + resets its view
+ *     state (the per-instance analog of the old routed stream_start reset).
+ *   - Per-instance scroll / search / select / cursor flow through the SHARED
+ *     reducer `leaves/text/text-view-update` (tvu), same as the viewer. The
+ *     instance persists, so there's no tab-switch round-trip to lose or restore
+ *     state across.
  *
- * Pins:
- *   - stream_start (no tabKey) appends header to buffer; auto-jumps
- *     to Transcript; previous buffer content survives (NOT cleared).
- *   - viewer_append (no tabKey) appends to buffer; mirrors to
- *     slice.lines IFF on Transcript.
- *   - cap drops oldest when length > cap; scroll adjusts.
- *   - tab_switch into Transcript with non-empty buffer restores
- *     from it (bottom-pin); empty buffer → placeholder.
- *   - tab_switch into Info clears + dispatches viewer_show_info
- *     (Cmd routes to the focused Navigator's getInfo).
- *   - viewer_show_info has ONE guard now (off-Info bail); the
- *     pre-v0.6.2 unroutedStreaming + buffer-non-empty guards
- *     retired since Info no longer hosts the buffer.
+ * RETIRED with the flat strip (deleted, not migrated): the ring-buffer cap, the
+ * `(no transcript yet)` placeholder, `viewer_show_info` guards (Info is a
+ * dedicated `info` instance now, fed by `info_show_content`), `tab_switch`
+ * Info/Transcript routing + per-tab `tabState` persistence, `viewer_set_tab`
+ * inbound-restore, `viewer_set_content` / `viewerOverride`, and the
+ * stream_start auto-jump (a dedicated instance never jumps). That machinery is
+ * gone in P1b (excised through U2f).
+ *
+ * Two drive styles: direct `text-view.update` with a seeded `slice.innerH` for
+ * deterministic scroll/interaction math (the old `viewer._update` pattern), and
+ * a booted model (parse-shaped config → initState → per-pane mint) for the
+ * resolution/routing pins.
  *
  * Run: node js/test/test-viewer-stream-buffer.js
  */
 'use strict';
 
 const { describe, it, assert, eq, report } = require('./test-runner');
-const viewer = require('../panel/viewer/viewer');
-const pt = require('../leaves/wm/pane-tabs');
+const tv = require('../panel/text-view/text-view');
 const ms = require('../leaves/text/search');
-const { displayedLines } = require('./_helpers/viewer-lines');
-const { setModel, getModel } = require('../app/runtime');
+const { getModel } = require('../app/runtime');
+const route = require('../panel/route');
+const api = require('../panel/api');
 
-setModel({
-  currentGroup: 'g',
-  modes: {},
-  config: { groups: { g: { label: 'G', actions: {} } } },
-});
-
-function applyUpdate(s, msg) {
-  // v0.6.3 Phase 3d: thread targetKey + currentGroup into tab_switch.
-  if (msg && msg.type === 'tab_switch' && msg.targetKey == null) {
-    const m = getModel();
-    msg = {
-      ...msg,
-      targetKey: pt.resolveTabKey(msg.idx, { ...s, tab: msg.idx }, m),
-      currentGroup: m.currentGroup,
-    };
-  }
-  // v0.6.3 Phase D1: thread viewer_set_content bundle.
-  if (msg && msg.type === 'viewer_set_content' && msg.fromTabKey === undefined) {
-    const m = getModel();
-    const patched = {
-      ...msg,
-      currentGroup: m.currentGroup,
-      fromTabKey: pt.resolveTabKey((s.tab | 0), s, m),
-    };
-    if (typeof msg.tab === 'number') {
-      patched.total = pt.flatTabInfo(s, m, m.currentGroup).total;
-    }
-    msg = patched;
-  }
-  // Phase D1: stream_start routed branch threads currentGroup +
-  // actionTabIdx.
-  if (msg && msg.type === 'stream_start'
-      && msg.tabKey && msg.groupName && msg.currentGroup == null) {
-    const m = getModel();
-    const bundle = { currentGroup: m.currentGroup };
-    if (msg.groupName === m.currentGroup) {
-      const info = pt.flatTabInfo(s, m, msg.groupName);
-      bundle.actionTabIdx = info.actionTabs.findIndex(([k]) => k === msg.tabKey);
-    }
-    msg = { ...msg, ...bundle };
-  }
-  // Phase D1: viewer_set_tab threads total + toTabKey.
-  if (msg && msg.type === 'viewer_set_tab' && msg.total === undefined) {
-    const m = getModel();
-    const tab = msg.tab | 0;
-    msg = {
-      ...msg,
-      total: pt.flatTabInfo(s, m, m.currentGroup).total,
-      toTabKey: pt.resolveTabKey(tab, { ...s, tab }, m),
-    };
-  }
-  // blessed-exceptions #3 — thread the viewer model bundle, exactly as the
-  // framework's augmentMsg hook does in production, so update() resolves tab
-  // structure + lines without reading getModel().
-  if (msg && msg.viewerModel === undefined) {
-    const m = getModel();
-    msg = { ...msg, viewerModel: pt.viewerModelBundle(m, m.currentGroup) };
-  }
-  const r = viewer._update(msg, s);
-  return Array.isArray(r) ? { next: r[0], cmds: r[1] || [] } : { next: r, cmds: [] };
+// --- Direct-drive the text-view Component (deterministic innerH) ---------
+//
+// The framework's augmentMsg stamps innerH from real pane geometry; calling
+// update() directly lets a test seed innerH on the slice for exact scroll math
+// (mirrors the retired file's `viewer._update` step()). tv_* + interaction Msgs
+// return `nextSlice | [nextSlice, effects]`.
+function step(slice, msg) {
+  const r = tv.update(msg, slice);
+  return Array.isArray(r) ? r[0] : r;
+}
+function transcriptSlice(innerH = 5, lines = []) {
+  return { ...tv.init(), innerH, lines: lines.slice() };
 }
 
-// v0.6.2 — viewerStreamBuffer's display home moved from Info (tab 0)
-// to a dedicated Transcript tab (idx = total - 1; with no per-group
-// tabs in this test's setup, total=2 → transcriptIdx=1).
+// --- Boot a seeded content slot (resolution/routing pins) ----------------
+if (!api.getComponent('text-view')) api.registerComponent(require('../panel/text-view/text-view'));
+if (!api.getComponent('info'))      api.registerComponent(require('../panel/info/info'));
+const { initState } = require('../app/state');
+getModel().config = {
+  theme: 'default',
+  register: { cap: 10 },
+  groups: { g: { label: 'G', actions: {}, items: [{ name: 'a' }] } },
+  warnings: [],
+};
+initState();
 
-describe('[viewer_append unrouted] appends to viewerStreamBuffer; mirrors on Transcript', () => {
-  it('on Transcript tab → buffer grows + slice.lines mirrors', () => {
-    let s = { ...viewer._init(), tab: 1, innerH: 5 };
-    s = applyUpdate(s, { type: 'viewer_append', line: 'a' }).next;
-    s = applyUpdate(s, { type: 'viewer_append', line: 'b' }).next;
-    eq(s.viewerStreamBuffer.lines.length, 2, 'buffer = 2');
-    eq(displayedLines(s).length, 2, 'slice.lines mirrors on Transcript');
-    eq(displayedLines(s)[1], 'b');
+describe('[tv_append unrouted] accumulates on the Transcript instance buffer', () => {
+  it('single-line appends grow slice.lines + bottom-stick scroll', () => {
+    let s = transcriptSlice(3);
+    s = step(s, { type: 'tv_append', line: 'a' });
+    s = step(s, { type: 'tv_append', line: 'b' });
+    s = step(s, { type: 'tv_append', line: 'c' });
+    s = step(s, { type: 'tv_append', line: 'd' });
+    eq(s.lines, ['a', 'b', 'c', 'd'], 'buffer accumulates');
+    eq(s.scroll, Math.max(0, 4 - 3), 'bottom-stick (4 lines, innerH 3)');
   });
-  it('off-Transcript tab → buffer grows + slice.lines untouched', () => {
-    let s = { ...viewer._init(), tab: 0, innerH: 5, infoLines: ['info-content'] };
-    s = applyUpdate(s, { type: 'viewer_append', line: 'background-1' }).next;
-    eq(s.viewerStreamBuffer.lines.length, 1, 'buffer captured 1');
-    eq(displayedLines(s).length, 1, 'slice.lines untouched');
-    eq(displayedLines(s)[0], 'info-content', 'foreign tab content preserved');
+  it('a scrolled-up reader is NOT yanked to the tail on append', () => {
+    let s = transcriptSlice(3, ['a', 'b', 'c', 'd', 'e', 'f']);
+    s = step(s, { type: 'viewer_scroll', to: 'top' });
+    eq(s.scroll, 0, 'reader scrolled to top');
+    s = step(s, { type: 'tv_append', line: 'g' });
+    eq(s.scroll, 0, 'append while scrolled-up does not follow the tail');
+    eq(s.lines.length, 7, 'but the buffer still grew');
+  });
+  it('uncapped — the buffer retains history (no ring drop)', () => {
+    let s = transcriptSlice(5);
+    for (let i = 0; i < 1500; i++) s = step(s, { type: 'tv_append', line: `line-${i}` });
+    eq(s.lines.length, 1500, 'all 1500 lines retained (no cap)');
+    eq(s.lines[0], 'line-0', 'oldest preserved');
+    eq(s.lines[1499], 'line-1499', 'newest preserved');
   });
 });
 
-describe('[viewer_append unrouted] ring-buffer cap', () => {
-  it('drops oldest when length > cap', () => {
-    let s = { ...viewer._init(), tab: 1, innerH: 5 };
-    // Override cap for a fast test (10 instead of 1000).
-    s = { ...s, viewerStreamBuffer: { lines: [], cap: 10 } };
-    for (let i = 0; i < 15; i++) {
-      s = applyUpdate(s, { type: 'viewer_append', line: `line-${i}` }).next;
-    }
-    eq(s.viewerStreamBuffer.lines.length, 10, 'capped at 10');
-    eq(s.viewerStreamBuffer.lines[0], 'line-5', 'oldest 5 dropped');
-    eq(s.viewerStreamBuffer.lines[9], 'line-14', 'newest preserved');
-    eq(displayedLines(s).length, 10, 'slice.lines also capped (mirrored on Transcript)');
-  });
-});
-
-describe('[stream_start unrouted] auto-jumps to Transcript; preserves prior buffer', () => {
-  it('appends header to existing buffer (does NOT clear)', () => {
-    let s = { ...viewer._init(), tab: 1, innerH: 5 };
-    // Pre-seed buffer with a prior run.
-    s = applyUpdate(s, { type: 'viewer_append', line: 'prior-line' }).next;
-    eq(s.viewerStreamBuffer.lines.length, 1);
-    // New stream_start.
-    const r = applyUpdate(s, { type: 'stream_start', header: '$ new-cmd' });
-    s = r.next;
-    eq(s.viewerStreamBuffer.lines.length, 2, 'buffer has prior + header');
-    eq(s.viewerStreamBuffer.lines[0], 'prior-line');
-    eq(s.viewerStreamBuffer.lines[1], '$ new-cmd');
-  });
-  it('auto-jumps to Transcript when on a different tab + emits terminal_exit', () => {
-    let s = { ...viewer._init(), tab: 0, innerH: 5, infoLines: ['info-content'] };
-    const r = applyUpdate(s, { type: 'stream_start', header: '$ cmd' });
-    s = r.next;
-    eq(s.tab, 1, 'auto-jumped to Transcript (idx 1)');
-    eq(displayedLines(s).length, 1, 'lines now from buffer (just the header)');
-    eq(displayedLines(s)[0], '$ cmd');
-    assert(r.cmds.some(c => c.type === 'msg' && c.msg && c.msg.type === 'terminal_exit'),
-      'terminal_exit Cmd emitted');
-  });
-});
-
-describe('[viewer_append_lines unrouted] event-log accumulator (spawn/background status)', () => {
-  // v0.6.2 — spawn / background launch + cmdline-verb outcomes were
-  // re-routed from setViewerContent (replace) to appendViewerLines
-  // (accumulate). They join the unrouted transcript in
-  // viewerStreamBuffer and mirror to slice.lines only when the user
-  // is on the Transcript tab. Multi-spawn doesn't lose history.
-  it('two consecutive spawn-status appends accumulate in the buffer', () => {
-    let s = { ...viewer._init(), tab: 1, innerH: 5 };
-    s = applyUpdate(s, {
-      type: 'viewer_append_lines',
+describe('[tv_append_lines unrouted] bulk accumulator (spawn/background status)', () => {
+  // Spawn / background launch + cmdline-verb outcomes append as ONE atomic Msg.
+  // Multi-spawn doesn't lose history (uncapped, accumulate not replace).
+  it('two consecutive spawn-status bulk appends accumulate', () => {
+    let s = transcriptSlice(5);
+    s = step(s, {
+      type: 'tv_append_lines',
       lines: ['[dim]$ logs[/]', '[yellow]Spawned in new tmux window.[/]'],
-    }).next;
-    s = applyUpdate(s, {
-      type: 'viewer_append_lines',
+    });
+    s = step(s, {
+      type: 'tv_append_lines',
       lines: ['[dim]$ psql[/]', '[yellow]Spawned in new tmux window.[/]'],
-    }).next;
-    eq(s.viewerStreamBuffer.lines.length, 4, 'both spawn messages retained');
-    eq(s.viewerStreamBuffer.lines[0], '[dim]$ logs[/]', 'first spawn preserved');
-    eq(s.viewerStreamBuffer.lines[2], '[dim]$ psql[/]', 'second spawn after the first');
-    eq(displayedLines(s).length, 4, 'mirrored to slice.lines on Transcript');
+    });
+    eq(s.lines.length, 4, 'both spawn messages retained');
+    eq(s.lines[0], '[dim]$ logs[/]', 'first spawn preserved');
+    eq(s.lines[2], '[dim]$ psql[/]', 'second spawn after the first');
   });
-  it('spawn-status while on a non-Transcript tab leaves that tab untouched', () => {
-    let s = { ...viewer._init(), tab: 0, innerH: 5, infoLines: ['info-content'] };
-    s = applyUpdate(s, {
-      type: 'viewer_append_lines',
-      lines: ['[dim]$ logs[/]', '[yellow]Spawned.[/]'],
-    }).next;
-    eq(s.viewerStreamBuffer.lines.length, 2, 'buffer captured the spawn');
-    eq(displayedLines(s).length, 1, 'foreign tab lines untouched');
-    eq(displayedLines(s)[0], 'info-content', 'tab content survives');
-  });
-  it('tab_switch to Transcript restores accumulated spawn history', () => {
-    let s = { ...viewer._init(), tab: 1, innerH: 5 };
-    // Two spawns while on Transcript — buffer + slice.lines both grow.
-    s = applyUpdate(s, {
-      type: 'viewer_append_lines', lines: ['[dim]$ logs[/]', 'sp1'],
-    }).next;
-    // User switches to Info (tab 0).
-    s = { ...s, tab: 0, infoLines: ['some-info'] };
-    // A new spawn fires while user is off-Transcript.
-    s = applyUpdate(s, {
-      type: 'viewer_append_lines', lines: ['[dim]$ psql[/]', 'sp2'],
-    }).next;
-    eq(displayedLines(s)[0], 'some-info', 'off-Transcript tab not touched by spawn');
-    eq(s.viewerStreamBuffer.lines.length, 4, 'buffer has both spawns');
-    // User switches to Transcript — should see the full history.
-    const r = applyUpdate(s, { type: 'tab_switch', idx: 1 });
-    eq(displayedLines(r.next).length, 4, 'restored from buffer');
-    eq(displayedLines(r.next)[0], '[dim]$ logs[/]', 'first spawn first');
-    eq(displayedLines(r.next)[2], '[dim]$ psql[/]', 'second spawn second');
+  it('an empty bulk append is a no-op (ref-preserved)', () => {
+    const s0 = transcriptSlice(5, ['x']);
+    const s1 = step(s0, { type: 'tv_append_lines', lines: [] });
+    eq(s1, s0, 'empty append returns the input slice');
   });
 });
 
-describe('[viewer_show_info] — only off-Info guard remains', () => {
-  // v0.6.2 — Info is now PURE selection-info (Transcript hosts the
-  // unrouted accumulator). Pre-fix had three guards (off-Info,
-  // unroutedStreaming, buffer-non-empty); only off-Info survives.
-  it('non-Info tab → bails (no clobber of other tab content)', () => {
-    let s = { ...viewer._init(), tab: 1, innerH: 5, lines: ['transcript-content'] };
-    const r = applyUpdate(s, { type: 'viewer_show_info' });
-    eq(r.next, s, 'no-op on non-Info tab');
-  });
-  it('on Info with non-empty buffer → proceeds (no buffer short-circuit)', () => {
-    // Pre-fix this would have been a no-op. Now Info is independent
-    // of the buffer; show_info proceeds to focus lookup. The test
-    // setup has no Component/panel-def registered, so the no-panel-
-    // def fallback returns the input slice unchanged — the
-    // important pin is that the buffer is NOT consulted.
-    let s = { ...viewer._init(), tab: 1, innerH: 5 };
-    s = applyUpdate(s, { type: 'viewer_append', line: 'transcript-line' }).next;
-    assert(s.viewerStreamBuffer.lines.length > 0, 'buffer non-empty (precondition)');
-    // Switch to Info; show_info should not short-circuit on the buffer.
-    s = { ...s, tab: 0, lines: [] };
-    const r = applyUpdate(s, { type: 'viewer_show_info' });
-    eq(r.next, s, 'no-panel-def fallback (input slice returned), buffer guard absent');
+describe('[tv_stream_start] re-run reseed clears to the header + resets view state', () => {
+  it('replaces the buffer with just the header and resets scroll/search/select', () => {
+    let s = transcriptSlice(3, ['old-1', 'old-2', 'old-3', 'old-4']);
+    // Prime some view state that the reseed must clear.
+    s = step(s, { type: 'viewer_search_enter' });
+    for (const c of 'old') s = step(s, { type: 'viewer_search_key', seq: c });
+    s = step(s, { type: 'viewer_search_commit' });
+    s = step(s, { type: 'select_begin', line: 1, col: 0, kind: 'char' });
+    assert(s.search.active || s.select.active, 'view state primed');
+    const r = step(s, { type: 'tv_stream_start', header: '$ new-cmd' });
+    eq(r.lines, ['$ new-cmd'], 'buffer cleared to the header (does NOT preserve prior)');
+    eq(r.scroll, 0, 'scroll reset to top');
+    eq(r.search.active, false, 'search reset');
+    eq(r.select.active, false, 'select reset');
+    eq(r.cursor, { line: 0, col: 0 }, 'cursor reset');
   });
 });
 
-describe('[T3c per-tab search] tab remembers its search state across switches', () => {
-  it('search state survives a tab switch round-trip', () => {
-    // Park on Transcript with content. Enter and commit a search.
-    let s = { ...viewer._init(), tab: 1, innerH: 5 };
-    s = applyUpdate(s, {
-      type: 'viewer_append_lines',
-      lines: ['foo', 'BAR', 'baz', 'BAR again', 'qux'],
-    }).next;
-    s = applyUpdate(s, { type: 'viewer_search_enter' }).next;
-    s = applyUpdate(s, { type: 'viewer_search_key', seq: 'B' }).next;
-    s = applyUpdate(s, { type: 'viewer_search_key', seq: 'A' }).next;
-    s = applyUpdate(s, { type: 'viewer_search_key', seq: 'R' }).next;
-    s = applyUpdate(s, { type: 'viewer_search_commit' }).next;
+describe('[unrouted routing] resolveTarget(viewer_transcript) lands on the transcript instance', () => {
+  // The stream helpers (dispatch/runtime/stream.js appendDetailLine /
+  // appendDetailLines with no tabInstId) dispatch tv_append(_lines) to
+  // resolveTarget('viewer_transcript'). This pins that the intent resolves to a
+  // `text-view` instance whose pool entry is hint:'transcript'.
+  it('the intent resolves to a text-view instance distinct from Info', () => {
+    const tid = route.resolveTarget('viewer_transcript');
+    const iid = route.resolveTarget('viewer_info');
+    assert(tid, 'transcript instance resolved');
+    eq(route.instanceKind(tid), 'text-view', 'transcript is a text-view instance');
+    eq(route.instanceKind(iid), 'info', 'info is an info instance');
+    assert(tid !== iid, 'transcript and info are distinct instances');
+  });
+  it('a wrapped tv_append lands on that instance\'s slice.lines', () => {
+    const tid = route.resolveTarget('viewer_transcript');
+    api.dispatchMsg(api.wrap(tid, { type: 'tv_set_lines', lines: [] }));
+    api.dispatchMsg(api.wrap(tid, { type: 'tv_append', line: 'routed-line' }));
+    const s = api.getInstanceSlice(tid);
+    eq(s.lines[s.lines.length - 1], 'routed-line', 'append reached the transcript buffer');
+  });
+});
+
+describe('[per-instance scroll] the transcript instance owns its own scroll', () => {
+  // Pre-P1b this was a per-TAB tabState round-trip (scroll shared across tabs,
+  // captured/restored on tab_switch). Now each instance permanently owns its
+  // scroll on its own slice — no round-trip, no capture.
+  it('viewer_scroll clamps to the buffer + honors to:top / to:bottom', () => {
+    let s = transcriptSlice(3, ['a', 'b', 'c', 'd', 'e', 'f', 'g']);  // maxScroll = 4
+    s = step(s, { type: 'viewer_scroll', to: 'bottom' });
+    eq(s.scroll, 4, 'bottom = maxScroll');
+    s = step(s, { type: 'viewer_scroll', to: 'top' });
+    eq(s.scroll, 0, 'top');
+    s = step(s, { type: 'viewer_scroll', delta: 2 });
+    eq(s.scroll, 2, 'relative delta');
+    s = step(s, { type: 'viewer_scroll', delta: 999 });
+    eq(s.scroll, 4, 'clamped to maxScroll');
+  });
+});
+
+describe('[per-instance search] the transcript instance owns its own search', () => {
+  // The instance's content IS its own line buffer; matches DERIVE from
+  // (lines, term) via ms.matchesFor (P1 selector). No per-tab persistence.
+  it('enter → type → commit sets an active term; matches derive from the buffer', () => {
+    let s = transcriptSlice(5, ['foo', 'BAR', 'baz', 'BAR again', 'qux']);
+    s = step(s, { type: 'viewer_search_enter' });
+    for (const c of 'BAR') s = step(s, { type: 'viewer_search_key', seq: c });
+    s = step(s, { type: 'viewer_search_commit' });
     eq(s.search.active, true, 'search committed');
     eq(s.search.term, 'BAR', 'term set');
-    // P1 — matches derive from (lines, term) via the memo.
-    eq(ms.matchesFor(displayedLines(s), s.search.term).length, 2, 'two matches');
-    // Switch to Info, then back to Transcript.
-    s = applyUpdate(s, { type: 'tab_switch', idx: 0 }).next;
-    eq(s.search.active, false, 'Info search starts fresh (default empty)');
-    s = applyUpdate(s, { type: 'tab_switch', idx: 1 }).next;
-    eq(s.search.active, true, 'Transcript search restored');
-    eq(s.search.term, 'BAR', 'term restored');
-    eq(ms.matchesFor(displayedLines(s), s.search.term).length, 2, 'matches derive again');
+    eq(ms.matchesFor(s.lines, s.search.term).length, 2, 'two matches derive');
   });
-  it('first-visit tab gets a fresh empty search', () => {
-    let s = { ...viewer._init(), tab: 0, innerH: 5 };
-    // No prior interactions on this tab. tab_switch to it sets a
-    // clean search state.
-    s = applyUpdate(s, { type: 'tab_switch', idx: 1 }).next;
-    eq(s.search.active, false);
-    eq(s.search.term, '');
-    eq(ms.matchesFor(displayedLines(s), s.search.term).length, 0);
+  it('committed search survives an append — matches re-derive against new lines', () => {
+    let s = transcriptSlice(5, ['BAR one']);
+    s = step(s, { type: 'viewer_search_enter' });
+    for (const c of 'BAR') s = step(s, { type: 'viewer_search_key', seq: c });
+    s = step(s, { type: 'viewer_search_commit' });
+    eq(ms.matchesFor(s.lines, s.search.term).length, 1, 'one match before append');
+    s = step(s, { type: 'tv_append', line: 'BAR two' });
+    eq(ms.matchesFor(s.lines, s.search.term).length, 2, 'match count follows the buffer');
   });
 });
 
-describe('[T3d per-tab select] tab remembers its visual selection across switches', () => {
-  it('select state survives tab switch round-trip', () => {
-    let s = { ...viewer._init(), tab: 1, innerH: 5 };
-    s = applyUpdate(s, {
-      type: 'viewer_append_lines', lines: ['a', 'b', 'c', 'd', 'e'],
-    }).next;
-    // Begin a selection on Transcript at (1,0)→(3,0).
-    s = applyUpdate(s, { type: 'select_begin', line: 1, col: 0, kind: 'char' }).next;
-    s = applyUpdate(s, { type: 'select_extend', line: 3, col: 0 }).next;
+describe('[per-instance select] the transcript instance owns its own selection', () => {
+  it('select_begin + select_extend track anchor/cursor on this instance', () => {
+    let s = transcriptSlice(5, ['a', 'b', 'c', 'd', 'e']);
+    s = step(s, { type: 'select_begin', line: 1, col: 0, kind: 'char' });
+    s = step(s, { type: 'select_extend', line: 3, col: 0 });
     eq(s.select.active, true, 'select active');
     eq(s.select.anchor.line, 1, 'anchor at line 1');
     eq(s.select.cursor.line, 3, 'cursor at line 3');
-    // Switch to Info, then back.
-    s = applyUpdate(s, { type: 'tab_switch', idx: 0 }).next;
-    eq(s.select.active, false, 'Info has fresh default select');
-    s = applyUpdate(s, { type: 'tab_switch', idx: 1 }).next;
-    eq(s.select.active, true, 'Transcript select restored');
-    eq(s.select.anchor.line, 1);
-    eq(s.select.cursor.line, 3);
   });
 });
 
-describe('[T3e per-tab cursor] tab remembers its cursor position across switches', () => {
-  it('cursor state survives tab switch round-trip', () => {
-    let s = { ...viewer._init(), tab: 1, innerH: 5 };
-    s = applyUpdate(s, {
-      type: 'viewer_append_lines', lines: ['line0', 'line1', 'line2', 'line3', 'line4'],
-    }).next;
-    // Begin select to move the cursor as a side effect (the
-    // _beginSelect helper writes cursor too).
-    s = applyUpdate(s, { type: 'select_begin', line: 2, col: 3, kind: 'char' }).next;
+describe('[per-instance cursor] the transcript instance owns its own cursor', () => {
+  it('select_begin moves the cursor as a side effect', () => {
+    let s = transcriptSlice(5, ['line0', 'line1', 'line2', 'line3', 'line4']);
+    s = step(s, { type: 'select_begin', line: 2, col: 3, kind: 'char' });
     eq(s.cursor.line, 2, 'cursor at line 2');
     eq(s.cursor.col, 3, 'cursor at col 3');
-    s = applyUpdate(s, { type: 'tab_switch', idx: 0 }).next;
-    eq(s.cursor.line, 0, 'Info has fresh default cursor');
-    s = applyUpdate(s, { type: 'tab_switch', idx: 1 }).next;
-    eq(s.cursor.line, 2, 'Transcript cursor restored');
-    eq(s.cursor.col, 3);
   });
 });
 
-describe('[T3f-fix per-tab capture on stream_start bypass]', () => {
-  // T3f as initially shipped captured FROM-tab state only in
-  // tab_switch — bypass paths (stream_start auto-jump, viewer_set_tab)
-  // lost that state. T3f-fix moves the capture to the finalizer,
-  // detecting slice.tab change in any reducer arm. This pins the
-  // bypass-case behavior.
-  it('stream_start auto-jump (bypassing tab_switch) captures from-tab state', () => {
-    // User on Transcript, scrolled to a specific position.
-    let s = { ...viewer._init(), tab: 1, innerH: 3 };
-    s = applyUpdate(s, {
-      type: 'viewer_append_lines',
-      lines: ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'],
-    }).next;
-    s = applyUpdate(s, { type: 'viewer_scroll', to: 'top' }).next;
-    eq(s.scroll, 0, 'on Transcript at scroll 0');
-    // Now an UNROUTED stream_start fires — auto-jumps to Transcript
-    // (we're already on Transcript, so no transition). Use a routed
-    // one to action tab idx 2 instead — that's a true bypass.
-    // No actions configured here, so the routed branch falls through.
-    // Easier: directly fire viewer_set_tab as the bypass primitive.
-    s = applyUpdate(s, { type: 'viewer_set_tab', tab: 0 }).next;
-    eq(s.tab, 0, 'now on Info via the viewer_set_tab bypass');
-    // Despite NOT going through tab_switch, the finalizer should have
-    // captured Transcript's view state.
-    eq(s.tabState.transcript.scroll, 0, 'from-tab scroll captured even via bypass');
-    eq(s.tabState.transcript.bottomSticky, false, 'sticky captured (was at top)');
-    // Round-trip back via tab_switch — Transcript scroll restored.
-    s = applyUpdate(s, { type: 'tab_switch', idx: 1 }).next;
-    eq(s.scroll, 0, 'Transcript scroll restored after bypass + round-trip');
+describe('[viewer_reset_chrome] the per-instance half of the group-change reset', () => {
+  // U2e P1b — viewer_reset_chrome is handled by the shared tvu reducer: it
+  // clears the visual selection + parks the cursor so a stale highlight doesn't
+  // survive a group switch. (The retired tab/override resets + the [≡] menu-close
+  // hoisted to the dispatch funnel — see app/state.js#resetGroupContext.)
+  it('clears the active selection and resets the cursor', () => {
+    let s = transcriptSlice(5, ['a', 'b', 'c', 'd', 'e', 'f']);
+    s = step(s, { type: 'select_begin', line: 1, col: 0, kind: 'char' });
+    s = step(s, { type: 'select_extend', line: 3, col: 0 });
+    assert(s.select.active, 'selection primed');
+    s = step(s, { type: 'viewer_reset_chrome' });
+    eq(s.select.active, false, 'selection cleared');
+    eq(s.cursor, { line: 0, col: 0 }, 'cursor parked at origin');
+  });
+  it('no-op (no selection, cursor already at origin) preserves the slice ref', () => {
+    const s0 = transcriptSlice(5, ['a', 'b']);
+    const s1 = step(s0, { type: 'viewer_reset_chrome' });
+    eq(s1, s0, 'ref-preserved on no-op');
   });
 });
 
-describe('[T3b per-tab scroll] tab remembers its scroll across switches', () => {
-  // The fragility T3 is solving: pre-T3, slice.scroll was shared by
-  // all tabs. Scrolling Build to line 500, switching to Info, switching
-  // back to Build = scroll reset (tab_switch arm bottom-pinned).
-  // Post-T3 each tab remembers its scroll independently. T3f makes
-  // tab_switch the sole sync point (lazy persistence) — no per-Msg
-  // tabState mirroring.
-  it('Transcript user-scrolled position survives a tab switch', () => {
-    let s = { ...viewer._init(), tab: 1, innerH: 3 };
-    s = applyUpdate(s, {
-      type: 'viewer_append_lines',
-      lines: ['a', 'b', 'c', 'd', 'e', 'f', 'g'],
-    }).next;
-    eq(s.scroll, Math.max(0, 7 - 3), 'bottom-pinned post-append');
-    s = applyUpdate(s, { type: 'viewer_scroll', to: 'top' }).next;
-    eq(s.scroll, 0, 'scrolled to top');
-    // T3f: tabState.transcript is written when we switch AWAY (not
-    // per-Msg). End-to-end behavior is what matters — switch + back
-    // restores the user's scroll position.
-    s = applyUpdate(s, { type: 'tab_switch', idx: 0 }).next;
-    eq(s.tabState.transcript.scroll, 0, 'switch-out captured Transcript scroll');
-    eq(s.tabState.transcript.bottomSticky, false, 'sticky disarmed (was at top, not bottom)');
-    s = applyUpdate(s, { type: 'tab_switch', idx: 1 }).next;
-    eq(s.scroll, 0, 'scroll restored to user-scrolled position (not bottom-pinned)');
-  });
-  it('Transcript bottom-stuck position re-snaps to new tail after background appends', () => {
-    let s = { ...viewer._init(), tab: 1, innerH: 3 };
-    s = applyUpdate(s, {
-      type: 'viewer_append_lines', lines: ['a', 'b', 'c'],
-    }).next;
-    eq(s.scroll, 0, 'bottom of 3 lines with innerH 3 is scroll 0');
-    // Switch off — tab_switch captures bottomSticky=true (scroll was
-    // at maxScroll). Background growth simulated by direct buffer poke.
-    s = applyUpdate(s, { type: 'tab_switch', idx: 0 }).next;
-    eq(s.tabState.transcript.bottomSticky, true, 'sticky armed on switch-out');
-    s = {
-      ...s,
-      viewerStreamBuffer: { lines: ['a', 'b', 'c', 'd', 'e', 'f', 'g'], cap: 1000 },
-    };
-    s = applyUpdate(s, { type: 'tab_switch', idx: 1 }).next;
-    eq(s.scroll, Math.max(0, 7 - 3), 're-snapped to new bottom (sticky honored)');
-  });
-});
-
-describe('[tab_switch] Info vs Transcript routing', () => {
-  it('switch to Info parks on tab 0 + emits viewer_show_info', () => {
-    let s = { ...viewer._init(), tab: 1, innerH: 5, lines: ['transcript-content'] };
-    const { next, cmds } = applyUpdate(s, { type: 'tab_switch', idx: 0 });
-    eq(next.tab, 0, 'tab=0 (Info)');
-    eq(next.scroll, 0, 'scroll reset');
-    // v0.6.2 N2 — slice.lines is finalizer-derived. For Info, this unit
-    // test doesn't set up a focused def, so the viewerLines fallback
-    // returns slice.lines (the seeded value). The actual refresh arrives
-    // via the show_selected_info Cmd dispatched below (P0: the effects
-    // layer computes msg.lines at the showSelectedInfo chokepoint and
-    // targets eff.paneId — this pane — with the wrapped Msg).
-    assert(
-      cmds.some(c => c.type === 'show_selected_info'),
-      'show_selected_info Cmd dispatched (focused-panel refresh)'
-    );
-  });
-  it('switch to Transcript with empty buffer shows placeholder', () => {
-    let s = { ...viewer._init(), tab: 0, innerH: 5, infoLines: ['info-content'] };
-    const { next } = applyUpdate(s, { type: 'tab_switch', idx: 1 });
-    eq(next.tab, 1, 'tab=1 (Transcript)');
-    eq(displayedLines(next).length, 1, 'placeholder line');
-    assert(displayedLines(next)[0].includes('no transcript yet'), 'placeholder text');
-  });
-  it('switch to Transcript with non-empty buffer restores from it', () => {
-    let s = { ...viewer._init(), tab: 1, innerH: 3 };
-    // Seed buffer.
-    s = applyUpdate(s, {
-      type: 'viewer_append_lines', lines: ['a', 'b', 'c', 'd', 'e'],
-    }).next;
-    // Switch to Info, then back to Transcript.
-    s = { ...s, tab: 0, lines: [] };
-    const { next } = applyUpdate(s, { type: 'tab_switch', idx: 1 });
-    eq(next.tab, 1);
-    eq(displayedLines(next).length, 5, 'restored from buffer');
-    eq(next.scroll, Math.max(0, 5 - 3), 'bottom-pin scroll');
-  });
-});
-
-describe('[B2 viewer_set_tab inbound restore] producer-initiated set-tab restores tabState[toKey]', () => {
-  // Pre-B2: viewer_set_tab wrote only `{...slice, tab}` — slice.scroll/
-  // search/select/cursor retained the LEAVING tab's values. After
-  // setActiveTab(N), the user landed on tab N with stale per-tab view
-  // state. Post-B2: viewer_set_tab restores tabState[toKey] same as
-  // tab_switch (minus the cascade effects), unless viewerOverride is
-  // active (override owns the view state).
-  it('Transcript→Info via viewer_set_tab restores Info\'s stored scroll', () => {
-    let s = { ...viewer._init(), tab: 1, innerH: 3 };
-    // Land on Transcript at top, prime tabState['info'] = {scroll: 7}.
-    s = { ...s, tabState: { info: { scroll: 7 } } };
-    s = applyUpdate(s, { type: 'viewer_append_lines', lines: ['a','b','c','d','e','f','g','h','i','j'] }).next;
-    s = applyUpdate(s, { type: 'viewer_scroll', to: 'top' }).next;
-    eq(s.scroll, 0, 'Transcript at top');
-    // Producer set-tab to Info.
-    s = applyUpdate(s, { type: 'viewer_set_tab', tab: 0 }).next;
-    eq(s.tab, 0, 'on Info');
-    eq(s.scroll, 7, 'Info\'s stored scroll restored, not Transcript\'s 0');
-  });
-  it('viewer_set_tab with active override preserves slice.scroll (override owns view state)', () => {
-    let s = { ...viewer._init(), tab: 1, innerH: 3 };
-    // On Transcript at the bottom; tabState['info'] already has scroll: 42.
-    s = { ...s, tabState: { info: { scroll: 42 } } };
-    s = applyUpdate(s, { type: 'viewer_append_lines', lines: ['a','b','c','d','e'] }).next;
-    eq(s.scroll, Math.max(0, 5 - 3), 'Transcript bottom-pinned');
-    // Producer writes override (viewer_set_content commits scroll: 0)
-    // then issues viewer_set_tab. The combined effect: stay on the
-    // override's scroll: 0, NOT restore tabState['info'].scroll=42.
-    s = applyUpdate(s, { type: 'viewer_set_content', lines: ['override line 1', 'override line 2'] }).next;
-    eq(s.scroll, 0, 'override-writer set scroll: 0');
-    s = applyUpdate(s, { type: 'viewer_set_tab', tab: 0 }).next;
-    eq(s.tab, 0, 'on Info');
-    eq(s.scroll, 0, 'override-bound scroll preserved (NOT clobbered by tabState[\'info\'].scroll=42)');
-    assert(s.viewerOverride && s.viewerOverride.lines.length === 2, 'override still active');
-  });
-  it('finalizer skips FROM-capture when leaving slice had viewerOverride active', () => {
-    // Without this guard, a producer doing viewer_set_content (scroll:0)
-    // then viewer_set_tab(0) would write tabState['g:action:foo']={scroll:0}
-    // over the user's real saved Build scroll. Test: be on action:foo at
-    // scroll 100, override fires, set-tab to Info — tabState['g:action:foo']
-    // must keep its saved scroll, not the override's 0.
-    setModel({
-      currentGroup: 'g',
-      modes: {},
-      config: { groups: { g: { label: 'G', actions: { build: { label: 'Build', tab: 'Build', script: 'make' } } } } },
-    });
-    let s = { ...viewer._init(), tab: 2, innerH: 3, scroll: 100, lines: ['x','y','z'] };
-    s = { ...s, tabState: { 'g:action:build': { scroll: 100 } } };
-    // Producer writes override (scroll → 0, viewerOverride set).
-    s = applyUpdate(s, { type: 'viewer_set_content', lines: ['note1', 'note2'] }).next;
-    eq(s.scroll, 0, 'override committed scroll: 0');
-    assert(s.viewerOverride, 'override active');
-    // Producer's viewer_set_tab(0). Finalizer detects tab transition (2→0)
-    // but originalSlice.viewerOverride was active — skip FROM-capture.
-    const beforeAction = s.tabState['g:action:build'];
-    s = applyUpdate(s, { type: 'viewer_set_tab', tab: 0 }).next;
-    eq(s.tab, 0, 'on Info');
-    eq(s.tabState['g:action:build'].scroll, 100, 'tabState[g:action:build] PRESERVED (not clobbered by override-bound 0)');
-    eq(beforeAction.scroll, 100, 'sanity: was 100 before');
-  });
-});
-
-describe('[group-switch cascade] viewer_reset_chrome ordering', () => {
-  // U2c P2 — the action-tab tabState-collision + routed stream_start auto-jump
-  // tests that led this block were retired with the action tabs they exercised
-  // (action output → a text-view instance now). The group-switch cascade-ordering
-  // test (B5) below is unrelated to action tabs and stays.
+describe('[group-switch cascade] viewer_reset_chrome ordering (B5)', () => {
+  // Round 2 adversarial finding: the finalizer's FROM-tab key resolution reads
+  // getModel().currentGroup. If set_current_group runs first, currentGroup is
+  // the NEW group by finalizer-time — so the reset lands under the WRONG group's
+  // key. Fix: emit viewer_reset_chrome FIRST so currentGroup still holds the OLD
+  // value at finalizer-time. This is the groups Component's cascade, unrelated to
+  // the retired flat strip, so it carries over verbatim.
   it('B5: group-switch cascade emits viewer_reset_chrome BEFORE set_current_group', () => {
-    // Round 2 adversarial finding: the finalizer's FROM-tab key
-    // resolution reads getModel().currentGroup. If set_current_group
-    // runs first, currentGroup is the NEW group by the time
-    // viewer_reset_chrome's finalizer captures — so the FROM-tab state
-    // lands under the WRONG group's key (poisoning the new group AND
-    // losing the old group's saved state).
-    // Fix: emit viewer_reset_chrome FIRST so currentGroup still holds
-    // the OLD value at finalizer-time.
     const groups = require('../panel/navigator/groups');
+    const { setModel } = require('../app/runtime');
     setModel({
       currentGroup: 'g1',
       modes: {},
@@ -512,22 +256,15 @@ describe('[group-switch cascade] viewer_reset_chrome ordering', () => {
         g2: { label: 'G2', actions: {}, items: [{ name: 'c' }] },
       } },
     });
-    // The groups Component's groups_selected emits the cascade. Build a
-    // slice with two group rows + simulate moving to index 1.
     const initialSlice = groups.init();
-    // v0.6.3 Phase D1: thread groups ctx so reducer stays pure.
-    // #D10: the cascade's viewer destination now rides on ctx.viewerTarget
-    // (the impure-shell dispatcher resolves it via route.resolveTarget('viewer'));
-    // a truthy target is the precondition for the viewer_reset_chrome Cmd.
+    // #D10: the cascade's viewer destination rides on ctx.viewerTarget (the
+    // impure-shell dispatcher resolves it via route.resolveTarget('viewer')); a
+    // truthy target is the precondition for the viewer_reset_chrome Cmd.
     const grpCtx = { ...groups.groupsBundle(getModel()), tabListMode: false, viewerTarget: 'detail' };
-    // Recompute to populate slice.list (the groups Component's
-    // groups_recompute Msg).
     const rec = groups._update({ type: 'groups_recompute', ctx: grpCtx }, initialSlice);
     const slice = Array.isArray(rec) ? rec[0] : rec;
-    // Dispatch groups_selected with the new index.
     const res = groups._update({ type: 'groups_selected', index: 1, ctx: grpCtx }, slice);
     const cmds = Array.isArray(res) ? res[1] : [];
-    // Find the indices of the three relevant Cmds in the cascade.
     const resetChromeIdx = cmds.findIndex(c =>
       c.type === 'msg' && c.msg && c.msg.msg && c.msg.msg.type === 'viewer_reset_chrome');
     const setGroupIdx = cmds.findIndex(c =>
@@ -541,221 +278,6 @@ describe('[group-switch cascade] viewer_reset_chrome ordering', () => {
       `viewer_reset_chrome (idx ${resetChromeIdx}) MUST be before set_current_group (idx ${setGroupIdx}) — B5 contract`);
     assert(setGroupIdx < resetCtxIdx,
       `set_current_group (idx ${setGroupIdx}) before reset_group_context (idx ${resetCtxIdx}) — existing order`);
-  });
-  it('Info and Transcript are unprefixed (group-independent)', () => {
-    setModel({
-      currentGroup: 'g',
-      modes: {},
-      config: { groups: { g: { label: 'G', actions: {} } } },
-    });
-    let s = { ...viewer._init(), tab: 1, innerH: 3 };
-    s = applyUpdate(s, { type: 'viewer_append_lines', lines: ['a','b','c','d','e'] }).next;
-    s = applyUpdate(s, { type: 'viewer_scroll', to: 'top' }).next;
-    s = applyUpdate(s, { type: 'tab_switch', idx: 0 }).next;
-    eq(s.tabState.transcript.scroll, 0, 'transcript key is unprefixed');
-    assert(!('g:transcript' in s.tabState), 'no group-prefixed transcript');
-  });
-});
-
-describe('[R6c viewer_set_content msg.tab] override + tab landing in one Msg', () => {
-  // Pre-R6 history.replay dispatched viewer_set_content + viewer_set_tab
-  // as two imperative side effects. Post-R6 the optional msg.tab on
-  // viewer_set_content lets the producer commit both in one reducer
-  // pass.
-  it('msg.tab set: writes both override and tab in one Msg', () => {
-    setModel({
-      currentGroup: 'g',
-      modes: {},
-      config: { groups: { g: { label: 'G', actions: {} } } },
-    });
-    let s = { ...viewer._init(), tab: 3, innerH: 3 };
-    const r = applyUpdate(s, { type: 'viewer_set_content', lines: ['doc line 1', 'doc line 2'], tab: 0 });
-    eq(r.next.tab, 0, 'tab updated by msg.tab');
-    assert(r.next.viewerOverride && r.next.viewerOverride.lines.length === 2, 'override set');
-    eq(r.next.scroll, 0, 'scroll reset');
-  });
-  it('msg.tab omitted: tab unchanged (backward-compat)', () => {
-    setModel({
-      currentGroup: 'g',
-      modes: {},
-      config: { groups: { g: { label: 'G', actions: {} } } },
-    });
-    let s = { ...viewer._init(), tab: 3, innerH: 3 };
-    const r = applyUpdate(s, { type: 'viewer_set_content', lines: ['doc'] });
-    eq(r.next.tab, 3, 'tab preserved when msg.tab omitted');
-    assert(r.next.viewerOverride, 'override set');
-  });
-  it('B6: msg.tab omitted captures pre-override view-state into tabState[currentKey]', () => {
-    // Round 2 adversarial finding: when viewer_set_content fires
-    // without msg.tab, slice.tab doesn't change → no transition →
-    // finalizer skips capture → the user's pre-override
-    // {scroll, search, select, cursor} on the current tab is
-    // silently destroyed (clobbered to scroll: 0 / search cleared
-    // by the in-place override-arm).
-    // Fix: arm captures into tabState BEFORE clobbering, gated by
-    // !slice.viewerOverride (first-arming only) && msg.tab absent
-    // (transition path handled by the finalizer).
-    // U2c P2 — was seeded on an action tab (idx 2); action tabs retired, so this
-    // exercises the same B6 capture on the Transcript tab (idx 1, key 'transcript').
-    setModel({
-      currentGroup: 'g',
-      modes: {},
-      config: { groups: { g: { label: 'G', actions: {} } } },
-    });
-    let s = {
-      ...viewer._init(),
-      tab: 1,
-      scroll: 30,
-      innerH: 5,
-      search: { active: true, term: 'foo', matches: [{line:30,col:0}], idx:0, typing:'' },
-    };
-    // Producer fires viewer_set_content WITHOUT msg.tab (e.g.
-    // same-group background job's info card, config-status diff,
-    // ?-help on a non-Info tab).
-    const r = applyUpdate(s, { type: 'viewer_set_content', lines: ['override line'] });
-    eq(r.next.tab, 1, 'tab unchanged (no msg.tab)');
-    eq(r.next.scroll, 0, 'scroll clobbered (override-arming write)');
-    eq(r.next.search.active, false, 'search cleared');
-    assert(r.next.viewerOverride, 'override set');
-    // The critical assertion: pre-override state was captured.
-    assert(r.next.tabState && r.next.tabState['transcript'],
-      'pre-override state captured into tabState[transcript]');
-    eq(r.next.tabState['transcript'].scroll, 30,
-      'pre-override scroll=30 preserved');
-    eq(r.next.tabState['transcript'].search.term, 'foo',
-      'pre-override search "foo" preserved');
-  });
-  it('R13: viewer_set_content rejects negative / out-of-range msg.tab', () => {
-    setModel({
-      currentGroup: 'g',
-      modes: {},
-      config: { groups: { g: { label: 'G', actions: {} } } },  // total = 2
-    });
-    let s = { ...viewer._init(), tab: 1, innerH: 3 };
-    // Negative tab is silently dropped (slice.tab preserved).
-    const r1 = applyUpdate(s, { type: 'viewer_set_content', lines: ['x'], tab: -5 });
-    eq(r1.next.tab, 1, 'negative tab rejected, slice.tab preserved');
-    assert(r1.next.viewerOverride, 'override still set');
-    // Out-of-range positive tab is also dropped.
-    const r2 = applyUpdate(s, { type: 'viewer_set_content', lines: ['x'], tab: 99 });
-    eq(r2.next.tab, 1, 'out-of-range tab rejected');
-  });
-  it('R13: viewer_set_tab rejects negative / out-of-range msg.tab', () => {
-    setModel({
-      currentGroup: 'g',
-      modes: {},
-      config: { groups: { g: { label: 'G', actions: {} } } },  // total = 2
-    });
-    let s = { ...viewer._init(), tab: 1, innerH: 3 };
-    const r1 = applyUpdate(s, { type: 'viewer_set_tab', tab: -1 });
-    eq(r1.next.tab, 1, 'negative tab rejected — slice unchanged');
-    assert(r1.next === s || r1.next.tab === 1, 'no-op on out-of-range');
-    const r2 = applyUpdate(s, { type: 'viewer_set_tab', tab: 99 });
-    eq(r2.next.tab, 1, 'out-of-range positive tab rejected');
-  });
-  it('B6: subsequent viewer_set_content (override already active) does NOT re-capture', () => {
-    // When the override is rewritten (e.g., next history.replay
-    // immediately following the first), originalSlice.viewerOverride
-    // is already set — capturing again would clobber the first
-    // capture's pre-override state with the override-bound scroll: 0.
-    // U2c P2 — reframed onto the Transcript tab (action tabs retired).
-    setModel({
-      currentGroup: 'g',
-      modes: {},
-      config: { groups: { g: { label: 'G', actions: {} } } },
-    });
-    // First arming: capture the pre-override state.
-    let s = { ...viewer._init(), tab: 1, scroll: 30, innerH: 5 };
-    s = applyUpdate(s, { type: 'viewer_set_content', lines: ['doc 1'] }).next;
-    eq(s.tabState['transcript'].scroll, 30, 'first arming captured scroll=30');
-    // Second arming: override already set. Must NOT overwrite tabState.
-    const r = applyUpdate(s, { type: 'viewer_set_content', lines: ['doc 2'] });
-    eq(r.next.tabState['transcript'].scroll, 30,
-      'second arming preserves the pre-override capture (no double-capture clobber)');
-  });
-});
-
-describe('[B3 viewerOverride clear] tab-transitioning arms drop the stale override', () => {
-  // Pre-B3, only tab_switch cleared slice.viewerOverride. Other arms also mutate
-  // slice.tab but skipped the clear:
-  //   - stream_start unrouted (auto-jump to Transcript)
-  //   - viewer_reset_chrome (group switch resets tab to 0)
-  // (U2c P2 — the stream_start ROUTED auto-jump cases were retired: a tab:true
-  // action's stream now seeds its own text-view instance, not the viewer's flat
-  // strip, so it never auto-jumps or touches the viewer's override.)
-  it('stream_start unrouted auto-jump to Transcript clears viewerOverride', () => {
-    setModel({
-      currentGroup: 'g',
-      modes: {},
-      config: { groups: { g: { label: 'G', actions: {} } } },
-    });
-    let s = { ...viewer._init(), tab: 0, innerH: 5 };
-    s = applyUpdate(s, { type: 'viewer_set_content', lines: ['override'] }).next;
-    assert(s.viewerOverride, 'override armed');
-    const r = applyUpdate(s, { type: 'stream_start', header: '$ docker ps' });
-    eq(r.next.tab, 1, 'auto-jumped to Transcript');
-    eq(r.next.viewerOverride, null, 'override cleared by unrouted auto-jump');
-  });
-  it('B7: stream_start unrouted auto-jump resets slice.{search, select, cursor}', () => {
-    // Round 2 finding: the routed branch resets these fields on the
-    // auto-jump landing (R4 — landing on fresh buffer); the unrouted
-    // branch was the asymmetric oversight. Pre-B7 the FROM-tab's
-    // search-matches / visual-mode anchors painted highlights and
-    // selection rectangle on Transcript content using wrong-content
-    // line/col positions.
-    setModel({
-      currentGroup: 'g',
-      modes: {},
-      config: { groups: { g: { label: 'G', actions: {} } } },
-    });
-    // User on a content tab with active visual select + search.
-    let s = {
-      ...viewer._init(),
-      tab: 2, innerH: 5,
-      search: { active: true, term: 'err', idx: 0, typing: '' },
-      select: { active: true, kind: 'char', anchor: {line:3,col:0}, cursor: {line:5,col:4} },
-      cursor: { line: 5, col: 4 },
-    };
-    const r = applyUpdate(s, { type: 'stream_start', header: '$ docker ps' });
-    eq(r.next.tab, 1, 'auto-jumped to Transcript');
-    eq(r.next.search.active, false, 'search reset');
-    eq(r.next.search.term, '', 'term cleared (derived matches follow)');
-    eq(r.next.select.active, false, 'select reset');
-    eq(r.next.cursor.line, 0, 'cursor reset to {0,0}');
-  });
-  it('A5 (supersedes earlier B3 contract): stream_start unrouted while ALREADY on Transcript CLEARS override', () => {
-    // Pre-A5: B3's no-transition branch preserved the override on the
-    // assumption "user can dismiss explicitly." But viewerLines
-    // consults viewerOverride FIRST, so the new stream's bytes
-    // accumulated invisibly behind the override — UX trap. Post-A5:
-    // the stream is the takeover gesture; override yields. Symmetric
-    // with the auto-jump branch above.
-    setModel({
-      currentGroup: 'g',
-      modes: {},
-      config: { groups: { g: { label: 'G', actions: {} } } },
-    });
-    let s = { ...viewer._init(), tab: 1, innerH: 5 };
-    s = applyUpdate(s, { type: 'viewer_set_content', lines: ['override'] }).next;
-    const r = applyUpdate(s, { type: 'stream_start', header: '$ docker ps' });
-    eq(r.next.tab, 1, 'still on Transcript (no transition)');
-    eq(r.next.viewerOverride, null, 'override cleared by stream takeover');
-  });
-  it('viewer_reset_chrome (group switch) clears viewerOverride', () => {
-    setModel({
-      currentGroup: 'g',
-      modes: {},
-      config: { groups: { g: { label: 'G', actions: {} } } },
-    });
-    let s = { ...viewer._init(), tab: 2, innerH: 5 };
-    s = applyUpdate(s, { type: 'viewer_set_content', lines: ['per-group override'] }).next;
-    assert(s.viewerOverride, 'override armed');
-    const r = applyUpdate(s, { type: 'viewer_reset_chrome' });
-    // viewer_reset_chrome returns either a slice OR [slice, effects]
-    // depending on whether tabListMode was set; in this scenario it's not.
-    const next = Array.isArray(r.next) ? r.next[0] : r.next;
-    eq(next.tab, 0, 'tab reset to Info');
-    eq(next.viewerOverride, null, 'group-switch dismisses the override');
   });
 });
 

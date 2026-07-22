@@ -41,6 +41,12 @@ function _detail() {
 function _lines() {
   const sl = _detail();
   if (!sl) return [];
+  // U2e P1b — the active content instance (info / text-view / transcript) stores
+  // its buffer on slice.lines directly; prefer it (mirrors the guard at
+  // input.js wheel/context + footer). Fall back to the viewer's flat-strip
+  // derivation for the drained detail anchor. Without this, mouse drag-select
+  // over Info/Transcript yanked empty text (viewerLines has no slice.lines branch).
+  if (Array.isArray(sl.lines)) return sl.lines;
   const m = getModel();
   return require('../../leaves/wm/pane-tabs').viewerLines(sl, m, m.currentGroup);
 }

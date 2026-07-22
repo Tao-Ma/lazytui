@@ -89,7 +89,7 @@ function footerKeys(model) {
   // Non-modal: the focus-kind's key hints come from the registry. Hoist the
   // resolver once — each instanceKind() can walk arrange for docker-style focus.
   const focusKind = instanceKind(getFocus());
-  if (focusKind === 'detail') {
+  if (_route().isViewerKind(getFocus())) {   // U2e P1b — content-viewer kinds (detail/info/text-view) share the viewer footer
     // Build the live guard facts the detail context's `when` predicates read;
     // the registry reproduces the old segment list, then the live committed-
     // search count is appended (it carries a live number, not a key hint).
@@ -104,7 +104,10 @@ function footerKeys(model) {
     if (search && search.active) {
       const ms = require('../leaves/text/search');
       const m = getModel();
-      const vlines = require('../leaves/wm/pane-tabs').viewerLines(vslice, m, m.currentGroup);
+      // U2e P1b — active content instance holds its buffer on slice.lines; fall
+      // back to the viewer's derived lines for the drained detail anchor.
+      const vlines = Array.isArray(vslice.lines) ? vslice.lines
+        : require('../leaves/wm/pane-tabs').viewerLines(vslice, m, m.currentGroup);
       const n = ms.matchesFor(vlines, search.term || '').length;
       const idx = n ? Math.min(search.idx || 0, n - 1) + 1 : 0;
       keys += ` | n/N [${idx}/${n}] | Esc clear`;

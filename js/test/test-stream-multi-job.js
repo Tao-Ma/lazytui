@@ -23,22 +23,41 @@ const { describe, it, assert, eq, report } = require('./test-runner');
 const stream = require('../dispatch/runtime/stream');
 const jobs = require('../feature/jobs');
 const runtime = require('../app/runtime');
+const api = require('../panel/api');
+
+// U2e P1b — unrouted streams land in the content slot's TRANSCRIPT text-view
+// instance (route.resolveTarget('viewer_transcript')), and dispatch/runtime/stream
+// DROPS an unrouted stream when no content slot is placed (the transcript target
+// is null). The old bare-runtime.init() seed had no layout, so every unrouted
+// test silently no-op'd. Boot a SEEDED content slot (a `detail` pane → Info +
+// Transcript tabs) via parser + initState so the unrouted target resolves.
+// ROUTED streams run regardless of a placed viewer (fixed in production) — the
+// seeded slot doesn't affect them.
+api.registerComponent(require('../panel/info/info'));
+api.registerComponent(require('../panel/text-view/text-view'));
 
 function seedModel() {
+  const { parse } = require('../parser/index');
+  const { initState } = require('../app/state');
   const m = runtime.init();
-  m.config = {
-    groups: {
-      g: {
-        label: 'G',
-        actions: {
-          'test':       { label: 'Test',   script: 'sleep 5', tab: 'Test' },
-          'server-log': { label: 'Server', script: 'sleep 5', tab: 'Server' },
-        },
+  // Parse the repo test.yml for its layout (a `detail` pane → seeded content
+  // slot), then swap in this test's synthetic groups (the `test`/`server-log`
+  // actions the routed cases drive). resolveTarget('viewer_transcript') keys on
+  // the layout arrange, not config.groups, so the swap is safe.
+  m.config = parse(require('path').resolve(__dirname, '../../test/test.yml'));
+  m.config.groups = {
+    g: {
+      label: 'G',
+      actions: {
+        'test':       { label: 'Test',   script: 'sleep 5', tab: 'Test' },
+        'server-log': { label: 'Server', script: 'sleep 5', tab: 'Server' },
       },
     },
   };
   m.currentGroup = 'g';
+  m.projectDir = '.';
   runtime.setModel(m);
+  initState();
 }
 
 function running() {
