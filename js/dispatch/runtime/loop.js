@@ -144,13 +144,10 @@ function _dispatchMsgInner(msg) {
   const m = getModel();
   if (m && m.modes && m.modes.freeConfigMode) {
     const isLayoutWrap = msg && msg.kind === 'layout' && msg.type === undefined;
-    // Narrow exception: the free-config tab-reorder gesture lives on layout's
-    // slice but emits a viewer_reorder_content_tab dispatch_msg back through
-    // this gate to permute detail's contentTabs.
-    const isTabReorder = msg && msg.msg
-      && msg.msg.type === 'viewer_reorder_content_tab'
-      && typeof msg.kind === 'string' && route.isViewerKind(msg.kind);
-    if (!isLayoutWrap && !isTabReorder) return;
+    // (U2f — the free-config tab-reorder exception retired with the flat
+    // content-tab drag: content is position-tabs, reordered via the position-tab
+    // drag path, not a viewer_reorder_content_tab dispatch through this gate.)
+    if (!isLayoutWrap) return;
   }
   // Wrapped-Msg path. Routes to exactly one Component instance. Discriminator:
   // `{ kind: string, msg: any }` AND no top-level `type`.

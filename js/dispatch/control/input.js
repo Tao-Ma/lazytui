@@ -39,15 +39,6 @@ function _detail() {
   return getInstanceSlice(route.resolveTarget('viewer') || 'detail');
 }
 
-// v0.6.4 blessed-exceptions tabBounds follow-on — the focused viewer pane's
-// hotkey, needed to recompute its tab-strip bounds (the hotkey shifts each
-// tab's hit-zone x; must match render's `panel.hotkey`). Resolved from the
-// pane def for the major viewer's CONTAINER paneId (resolveViewerPaneId).
-function _viewerHotkey() {
-  const vpid = route.resolveViewerPaneId();
-  const p = allPanels().find(pp => pp.paneId === vpid);
-  return p ? p.hotkey : '';
-}
 const { handleKey, applyMsg, showSelectedInfo, navSelect } = require('./dispatch');
 const { cleanup } = require('../runtime/cleanup');
 
@@ -215,7 +206,6 @@ function _mouseHandleFreeConfigMode(kind, mx, my, model) {
   const slice = getInstanceSlice('layout');
   const drag = slice && slice.freeConfig && slice.freeConfig.drag;
   const isPoolDrag = drag && (drag.kind === 'pool-armed' || drag.kind === 'pool-dragging');
-  const isTabDrag = drag && (drag.kind === 'tab-armed' || drag.kind === 'tab-dragging');
 
   if (isPoolDrag) {
     if (kind === 'motion')       dispatchMsg(wrap('layout', { type: 'pool_drag_motion', mx, my, cols: cols() }));
@@ -224,66 +214,10 @@ function _mouseHandleFreeConfigMode(kind, mx, my, model) {
     return true;
   }
 
-  if (isTabDrag) {
-    if (kind === 'motion') {
-      const pt = require('../../leaves/wm/pane-tabs');
-      const route = require('../../panel/route');
-      const groupName = model.currentGroup;
-      const targetKind = route.resolveTarget('viewer') || 'detail';
-      // Resolve the container pane id here (impure shell) and thread it +
-      // targetKind so layout's tab_drag_motion arm reads no route topology (#1).
-      const viewerPaneId = route.resolveViewerPaneId();
-      const detailSlice = getInstanceSlice(targetKind);
-      // v0.6.4 blessed-exceptions tabBounds follow-on — recompute the viewer's
-      // tab-strip bounds on demand (render no longer writes slice.tabBounds).
-      const tabBounds = detailSlice
-        ? require('../../panel/viewer/viewer').tabBoundsFor(detailSlice, model, _viewerHotkey())
-        : null;
-      dispatchMsg(wrap('layout', {
-        type: 'tab_drag_motion', mx, my,
-        modelBundle: pt.modelBundle(model, groupName),
-        tabBounds,
-        viewerTarget: targetKind,
-        viewerPaneId,
-      }));
-    } else if (kind === 'release') {
-      dispatchMsg(wrap('layout', { type: 'tab_drag_release' }));
-    }
-    render();
-    return true;
-  }
-
-  // Tab-bar press detection — click on a content tab arms a tab-drag.
-  // v0.6.4 — the FOCUSED viewer's tab strip wins under multi-viewer.
-  // Bounds key = the viewer's CONTAINER paneId (carries half/full visible
-  // bounds); slice key = the viewer's tab/instance id (tabBounds owner) —
-  // these diverge once the type-keyed write retires.
-  const viewerId = route.resolveTarget('viewer') || 'detail';
-  const db = visibleBoundsFor(getInstanceSlice('layout'), route.resolveViewerPaneId(), route.resolveViewerPaneId());
-  const detailSlice = getInstanceSlice(viewerId);
-  // v0.6.4 blessed-exceptions tabBounds follow-on — recompute on demand.
-  const detailTabBounds = detailSlice
-    ? require('../../panel/viewer/viewer').tabBoundsFor(detailSlice, model, _viewerHotkey())
-    : null;
-  if (kind === 'press' && db && detailTabBounds && detailTabBounds.length > 0) {
-    if (my === db.y) {
-      const localX = mx - db.x;
-      let contentIdx = 0;
-      for (const t of detailTabBounds) {
-        if (t.closeKey == null) continue;
-        if (localX >= t.x && localX < t.x + t.w) {
-          dispatchMsg(wrap('layout', {
-            type: 'tab_drag_start',
-            sourceKey: t.closeKey, fromIdx: contentIdx,
-            mx, my,
-          }));
-          render();
-          return true;
-        }
-        contentIdx++;
-      }
-    }
-  }
+  // (U2f — the flat content-tab-strip press/drag path retired: content is
+  // position-tabs now, so free-config tab-reorder is the position-tab drag, not
+  // a flat viewer strip. The viewer.tabBoundsFor hit-test + tab_drag_* dispatch
+  // are gone.)
 
   if (kind === 'press' && slice && slice.panelList && slice.panelList.open) {
     const { hitTest } = require('../../overlay/panel-list');

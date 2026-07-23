@@ -28,7 +28,6 @@ const mfc = require('../leaves/free-config/free-config');
 const mfcCore = require('../leaves/free-config/free-config-core');
 const mfcMouse = require('../leaves/free-config/free-config-mouse');
 const mpoolDrag = require('../leaves/free-config/free-config-pool-drag');
-const mtabDrag = require('../leaves/wm/tab-drag');
 const mpool = require('../leaves/wm/pool');
 const mpane = require('../leaves/wm/pane');
 const { halfProjection, visibleBoundsFor } = require('../leaves/wm/geometry');
@@ -299,7 +298,7 @@ function update(msg, slice) {
   const willReassert =
     ((t === 'view_expand' || t === 'view_shrink') && msg.freeConfigMode) ||
     (t === 'free_config_enter' && slice.viewMode !== 'normal');
-  const motion = t === 'free_config_mouse_motion' || t === 'pool_drag_motion' || t === 'tab_drag_motion';
+  const motion = t === 'free_config_mouse_motion' || t === 'pool_drag_motion';
   if (slice.freeConfig && slice.freeConfig.notice && !motion && !willReassert) {
     slice = { ...slice, freeConfig: { ...slice.freeConfig, notice: null } };
   }
@@ -850,45 +849,10 @@ function update(msg, slice) {
       return [withPreview, [{ type: 'force_full_repaint' }]];
     }
     case 'pool_drag_release': return mpoolDrag.poolDragRelease(slice);
-    // Tab-reorder drag — free-config mouse drag on a detail-panel content
-    // tab. Live reorder: tabDragMotion emits viewer_reorder_content_tab
-    // Cmds each time the cursor crosses into a new content-tab slot;
-    // viewer.update permutes contentTabs[group] via the reorderContent
-    // leaf. The drag itself only touches layout's slice (freeConfig.drag).
-    case 'tab_drag_start': {
-      const next = mtabDrag.tabDragStart(slice, msg.sourceKey, msg.fromIdx, msg.mx, msg.my);
-      return [next, [{ type: 'force_full_repaint' }]];
-    }
-    case 'tab_drag_motion': {
-      // viewerTarget (the reorder dispatch's instance id) + viewerPaneId (the
-      // container pane for the drag geometry) are resolved by the dispatching
-      // handler (input.js, the impure shell) and threaded on the Msg, so this
-      // arm reads no route topology. Today viewer is singleton (viewerTarget
-      // == 'detail'); v0.7 multi-viewer changes only the handler's resolution.
-      // (#1 — layout.update is now pure of route.)
-      const targetKind = msg.viewerTarget || route.VIEWER_KIND;
-      // v0.6.3 P4.1: tabBounds moved off layoutSlice.paneBounds.detail.tabs
-      // onto the viewer's own slice.
-      // v0.6.3 Phase D4 — tabBounds threaded via msg.tabBounds from
-      // the input.js tab-drag dispatcher (which has the slice in
-      // scope). Reducer no longer cross-reads detail's slice.
-      return mtabDrag.tabDragMotion(
-        slice, msg.mx, msg.my,
-        // v0.6.4 — focused viewer's CONTAINER pane bounds for the drag
-        // geometry. visibleBoundsFor (not boundsFor): an off-screen viewer
-        // in half/full yields null (tabDragMotion no-ops) instead of a
-        // phantom normal-view rect. Single-viewer: the dragged viewer is
-        // always on-screen → byte-identical. Reads from `slice` — this
-        // reducer's own layout slice (wm-geo P1.2 made the accessor take
-        // it explicitly; the old global fetch resolved to the same object).
-        // viewerPaneId threaded from the handler (impure shell) — no route read.
-        visibleBoundsFor(slice, msg.viewerPaneId, msg.viewerPaneId),
-        msg.tabBounds || null,
-        msg.modelBundle,
-        targetKind,
-      );
-    }
-    case 'tab_drag_release':  return mtabDrag.tabDragRelease(slice);
+    // (U2f — the flat content-tab drag-reorder gesture retired with the viewer's
+    // flat tab strip: content is position-tabs now, and the flat strip was never
+    // populated post-P1b. tab_drag_start/motion/release + leaves/wm/tab-drag.js
+    // deleted.)
     case 'free_config_title_key': {
       const te = slice.freeConfig && slice.freeConfig.titleEdit;
       if (!te) return slice;
