@@ -596,23 +596,9 @@ function getCommands() {
 // Component authors.
 function registerEffect(type, fn) { panelHost.registerEffect(type, fn); }
 
-function setActiveTab(tab) {
-  // viewer_set_tab is handled by the viewer Component's update —
-  // routed via the Component fan-out. resolveTarget picks the focused/
-  // sticky viewer so producers (historyReplay, etc.) hit the right
-  // viewer rather than a hardcoded 'detail' singleton.
-  // v0.6.3 Phase D1: thread the precomputed total + toTabKey so the
-  // reducer arm stays pure of getModel() / pt.flatTabInfo /
-  // _activeTabKey internally.
-  const target = route.resolveTarget('viewer');
-  if (!target) return;
-  const slice = route.getInstanceSlice(target) || { tab: 0 };
-  const model = getModel();
-  const pt = require('../leaves/wm/pane-tabs');
-  const total = pt.flatTabInfo(slice, model, model.currentGroup).total;
-  const toTabKey = pt.resolveTabKey((tab | 0), { ...slice, tab: (tab | 0) }, model);
-  panelHost.dispatchMsg(wrap(target, { type: 'viewer_set_tab', tab, total, toTabKey }));
-}
+// (U2f — `setActiveTab` (the flat `viewer_set_tab` dispatcher) retired: it had no
+// caller — the docker/history pre-stream setActiveTab paths were dropped in
+// R6b/R6c. Content is position-tabs now, activated via `set_active_tab`.)
 function leaveTerminalMode() {
   panelHost.applyMsg({ type: 'terminal_exit' });
 }
@@ -660,7 +646,6 @@ module.exports = {
   // (run a shell command, request a redraw on async events)
   streamCommand,
   scheduleRender,
-  setActiveTab,
   leaveTerminalMode,
 };
 

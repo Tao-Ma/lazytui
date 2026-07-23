@@ -77,7 +77,6 @@ function setReplaySource(fn) { _replaySource = fn; }
 // no cycle; the slice-reading hit-tests went to panel/chrome-hittest.)
 let _routeRef; const _route = () => (_routeRef ||= require('../panel/route'));
 let _decorRef; const _decor = () => (_decorRef ||= require('../leaves/render/draw'));
-let _tabsRef; const _tabs = () => (_tabsRef ||= require('../panel/viewer/tabs'));
 let _paneMenuRef; const _paneMenu = () => (_paneMenuRef ||= require('../overlay/pane-menu'));
 let _selViewRef; const _selView = () => (_selViewRef ||= require('../panel/select-view'));
 

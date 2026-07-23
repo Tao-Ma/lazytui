@@ -26,8 +26,6 @@
 
 const { getModel } = require('../../model/store');
 const pt = require('../../leaves/wm/pane-tabs');
-const panelHost = require('../../hosts/panel-host');   // dispatchMsg (injected, B/S5)
-const { wrap } = require('../../panel/route');
 
 // --- Active-viewer slice fetcher ------------------------------------------
 
@@ -54,50 +52,15 @@ function getTabInfo() {
 
 // U2e P1b — isContentTab / activeContentTab retired (the `x`-close + info-yank
 // consumers moved to the position-tab model: instanceKind-based close via
-// remove_tab, showSelectedInfo's set_active_tab yank). Excised fully in U2f.
-
-// --- Mutation surface (all routed through update — single-writer) ---------
+// remove_tab, showSelectedInfo's set_active_tab yank).
 //
-// v0.6.1 Phase 6 — the content-tab mutators (add / update / remove) share the
-// 'viewer_tab_add' intent, since they all key into the same per-pane
-// content-tab map. Phase 5 resolveTarget collapses all intents to the same
-// body — the distinction is reserved for v0.7. null target (no viewer
-// registered) drops the dispatch silently.
-
-function _viewerTarget(intent) {
-  return require('../../panel/route').resolveTarget(intent);
-}
-
-// Dispatchers thread the model-derived bundle (currentGroup, groupExists) so
-// the reducer arm and the leaf can be pure of getModel(). pt.modelBundle is the
-// single helper that computes it.
-
-function _getModel() {
-  return getModel();
-}
-
-function addContentTab(groupName, key, label, lines) {
-  const target = _viewerTarget('viewer_tab_add');
-  if (target == null) return;
-  panelHost.dispatchMsg(wrap(target,
-    { type: 'viewer_add_content_tab', groupName, key, label, lines,
-      ...pt.modelBundle(_getModel(), groupName) }));
-}
-
-function updateContentTabLines(groupName, key, lines) {
-  const target = _viewerTarget('viewer_tab_add');
-  if (target == null) return;
-  panelHost.dispatchMsg(wrap(target,
-    { type: 'viewer_update_content_tab_lines', groupName, key, lines,
-      ...pt.modelBundle(_getModel(), groupName) }));
-}
+// U2f — the content-tab MUTATION surface (addContentTab / updateContentTabLines,
+// which dispatched viewer_add_content_tab / viewer_update_content_tab_lines) is
+// retired: the feature-host seam is wired by panel/content-tab.js, which mints a
+// `text-view` POSITION-tab instead of a viewer inner content-tab. getTabInfo is
+// the last survivor (footer tab-count); it retires when the footer switches to a
+// position-tab count.
 
 module.exports = {
   getTabInfo,
-  addContentTab, updateContentTabLines,
 };
-
-// U2e P1b — the feature-host seam (addContentTab/updateContentTabLines) is now
-// wired by panel/content-tab.js, which mints a `text-view` POSITION-tab instead
-// of a viewer inner content-tab. This viewer-facade wiring is retired (the whole
-// contentTabs machinery here is dead post-P1b, excised in U2f).
