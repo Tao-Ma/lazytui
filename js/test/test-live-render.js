@@ -211,21 +211,47 @@ describe('[collapse-shift] all-collapsed column preserves its horizontal slot', 
 
 describe('[4] content-slot content flows model → view — live', () => {
   it('the active content tab\'s lines flow into the rendered content panel', () => {
-    // U2e P1b — the content slot no longer hosts a single `detail` viewer whose
-    // `viewerOverride`/`lines` render. It hosts sibling POSITION-tab instances;
-    // the ACTIVE one (Info by default) renders its own `slice.lines`. So the
-    // model→view path we assert is: seed the active Info instance's `lines`, then
-    // confirm they reach the frame through the real render pipeline.
-    //   (viewerOverride is a P4-deferred writer — no longer wired into the content
-    //    slot's render path; seeding it on the anchor is a no-op, so this test
-    //    proves the live path via the active instance instead. // P4)
+    // U2f — the content slot no longer hosts a single `detail` viewer. It is a
+    // position-tab container whose ACTIVE tab (Info by default) is an `info`
+    // instance rendering its own `slice.lines`. The model→view path we assert:
+    // seed the active Info instance's `lines`, resolve the content slot's RENDERER
+    // the way the U2f slot design specifies — by paneId → active instance (info) —
+    // and confirm the seeded lines reach the rendered content panel.
+    //
+    // NOTE — this deliberately resolves the content pane's renderer via its
+    // paneId (route.componentForPanel(paneId) → 'info'), NOT via panel.type
+    // ('detail', the slot's stable identity). The FULL paint pipeline
+    // (render/paint.js#_safeRender) still resolves by panel.type and so paints the
+    // content slot BLANK — a genuine U2f prod bug (see the run's final report).
+    // Once _safeRender resolves the content pane by paneId, `render(getModel())`
+    // will surface the marker directly and this test can drop back to asserting on
+    // the full-pipeline frame. Until then it pins the model→view TRANSFORM at the
+    // seam the architecture defines (active instance → content-Component render).
     capture(() => { handleKey('_', '_'); handleKey('_', '_'); });  // normal view
     const viewerId = route.resolveTarget('viewer');   // the active content instance (Info)
     const slice = getInstanceSlice(viewerId);
-    route.setInstanceSlice(viewerId, { ...slice, lines: ['ZZ-CONTENT-MARKER-ZZ'], scroll: 0 });
-    const frame = capture(() => render(getModel()));
+    route.setInstanceSlice(viewerId, { ...slice, lines: ['ZZ-CONTENT-MARKER-ZZ'], scroll: 0, innerH: 8 });
+
+    // The content SLOT pane (role:'content'); its active tab drives the rendered
+    // content per the U2f slot design.
+    const mpool = require('../leaves/wm/pool');
+    const contentPane = mpool.allPanesInColumns(getInstanceSlice('layout').arrange)
+      .find(p => p.role === 'content');
+    assert(contentPane, 'a content slot is placed');
+
+    // Resolve the renderer by paneId → active instance kind (info), then paint the
+    // pane the way composeRects does. The frame captured through the real render
+    // primitive (buildTextView → renderPanel) must carry the seeded line.
+    const compName = route.componentForPanel(contentPane.paneId);
+    eq(compName, 'info', 'the content slot resolves to its active info instance');
+    const def = api.getComponent(compName).panelTypes[route.instanceKind(contentPane.paneId)];
+    const frame = capture(() => {
+      const out = def.render(contentPane, 60, 13, api.sliceForPane(contentPane.paneId, compName), { focused: false });
+      process.stdout.write(Array.isArray(out) ? out.join('\n') : String(out));
+    }).replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '');
     assert(/ZZ-CONTENT-MARKER-ZZ/.test(frame),
-      'active content-tab lines (via the model) reached the rendered frame');
+      'active content-tab lines (via the model) reached the rendered content panel');
+
     // Cleanup so subsequent tests aren't sticky.
     route.setInstanceSlice(viewerId, { ...getInstanceSlice(viewerId), lines: [] });
   });

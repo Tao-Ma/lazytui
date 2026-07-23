@@ -30,14 +30,20 @@ describe('[P1a] wrapAsPane stamps role only on the content (detail) slot', () =>
 });
 
 describe('[P1a] the role survives the active tab changing kind (the P1b invariant)', () => {
-  it('minting + activating a non-detail tab keeps role=content while pane.type flips', () => {
+  it('minting + activating a non-detail tab keeps role=content AND the stable slot identity', () => {
     const pane = mpane.wrapAsPane({ id: 'd', type: 'detail', title: 'D' }, 'pane-d');
     eq(pane.role, 'content');
     eq(pane.type, 'detail');
     // Mint a text-view tab and activate it (the U2b mint-into-slot primitive).
     const tvEntry = { id: 'tv-1', type: 'text-view', title: 'TV', config: {} };
     const next = mpane.addTab(pane, { id: 'tv-1', poolId: 'tv-1' }, tvEntry, { activate: true });
-    eq(next.type, 'text-view', 'active tab kind flipped to text-view');
+    // U2f — a CONTENT slot's legacy identity (id/type/title) is STABLE across a
+    // tab switch: _rebuildLegacyFields keeps the slot's own 'detail' identity
+    // rather than mirroring the active tab's kind (which is what listings /
+    // :save-layout key on). The active tab's kind drives RENDERED content via
+    // paneId → active instance, not pane.type.
+    eq(next.type, 'detail', 'content-slot pane.type stays the stable slot identity, NOT the active tab kind');
+    eq(next.activeTabId, 'tv-1', 'the text-view tab is active');
     eq(next.role, 'content', 'role PRESERVED across the activation (slot identity is stable)');
   });
   it('setActiveTab back to the detail tab keeps role', () => {

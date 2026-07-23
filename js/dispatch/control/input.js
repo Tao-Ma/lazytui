@@ -33,10 +33,9 @@ const intent = require('./intent');
 const mouseBindings = require('./mouse-bindings');
 
 function _detail() {
-  // v0.6.3 T1.4 — paneId-aware lookup (post-Phase B1). resolveTarget
-  // returns the focused viewer's paneId in multi-viewer setups; the
-  // 'detail' fallback covers the singleton boot case.
-  return getInstanceSlice(route.resolveTarget('viewer') || 'detail');
+  // The active content-slot instance (info / text-view). resolveTarget resolves
+  // the focused slot's active tab; undefined when none is placed (callers guard).
+  return getInstanceSlice(route.resolveTarget('viewer'));
 }
 
 const { handleKey, applyMsg, showSelectedInfo, navSelect } = require('./dispatch');
@@ -91,11 +90,9 @@ function _handleWheel(mx, my, delta) {
       const d = route.sliceForPane(p.paneId, 'detail');
       // U2e P1b — the active instance (info / text-view) stores its buffer on
       // slice.lines directly; fall back to the viewer's derived lines for the
-      // (drained) detail anchor. Used only for the scroll-clamp pre-check; the
-      // viewer_scroll dispatch below re-clamps in the instance's own reducer.
-      const _m = getModel();
-      const lines = d ? (Array.isArray(d.lines) ? d.lines
-        : require('../../leaves/wm/pane-tabs').viewerLines(d, _m, _m.currentGroup)) : [];
+      // content instance's slice.lines. Used only for the scroll-clamp pre-check;
+      // the viewer_scroll dispatch below re-clamps in the instance's own reducer.
+      const lines = (d && Array.isArray(d.lines)) ? d.lines : [];
       const curScroll = d?.scroll || 0;
       // Single source of truth for the view-mode-aware viewport (P5
       // arc fix follow-up — panelHeights[type] would have given the
@@ -384,13 +381,10 @@ function _resolveContextAt(mx, my) {
     if (!b) continue;
     if (mx < b.x || mx >= b.x + b.w || my < b.y || my >= b.y + b.h) continue;
     const itemRow = my - b.y - 1;  // -1 for top border
-    if (route.isViewerKind(p.paneId)) {   // U2e P1b — content-viewer kinds (detail/info/text-view)
+    if (route.isViewerKind(p.paneId)) {   // U2f — content-viewer kinds (info / text-view)
       const d = getInstanceSlice(p.paneId);
-      // U2e P1b — active instance (info/text-view) holds its buffer on slice.lines;
-      // fall back to the viewer's derived lines for the drained detail anchor.
-      const _m = getModel();
-      const lines = d ? (Array.isArray(d.lines) ? d.lines
-        : require('../../leaves/wm/pane-tabs').viewerLines(d, _m, _m.currentGroup)) : [];
+      // The active content instance holds its displayed buffer on slice.lines.
+      const lines = (d && Array.isArray(d.lines)) ? d.lines : [];
       const li = itemRow + ((d && d.scroll) || 0);
       const lineText = (itemRow >= 0 && li < lines.length) ? stripMarkup(lines[li]) : null;
       return { paneKind: 'detail', lineText, itemLabel: null, selectionText };
@@ -686,20 +680,11 @@ function handleMouse(kind, x, y) {
     if (!b) continue;
     if (mx < b.x || mx >= b.x + b.w || my < b.y || my >= b.y + b.h) continue;
 
-    // Top-border tab-strip — gated on a tabBounds list on the panel's
-    // own Component slice (v0.6.3 P4.1: moved off layoutSlice.paneBounds.
-    // .tabs). ANY pane whose Component publishes slice.tabBounds gets
-    // click routing — currently only detail; multi-viewer would have
-    // sibling viewers publish their own.
-    const compSlice = route.sliceForPane(p.paneId, p.type);  // v0.6.4 multi-viewer — THIS pane's tabBounds
-    // v0.6.4 blessed-exceptions tabBounds follow-on — only viewer panes have a
-    // tab strip; recompute its bounds on demand (render no longer writes them).
-    // U2e stopgap — a MULTI-tab slot renders the UNIFIED slot strip
-    // (panel/slot-strip): the viewer's Info/Transcript/content flat tabs + the
-    // sibling position-tabs as ONE strip, shown whichever is active. Bounds carry
-    // {kind, poolId, flatIdx?}: a 'position' entry switches the slot's active
-    // position-tab; a 'flat' entry activates the viewer tab AND tab_switches its
-    // inner tab. (Single-tab detail uses the viewer's own flat strip below.)
+    // Top-border tab-strip — a MULTI-tab slot (the content slot: Info / Transcript
+    // / opened content tabs, or any pane with >1 position-tab) renders the unified
+    // slot strip (panel/slot-strip). A strip click activates that position-tab.
+    // (U2f — the viewer's flat Info/Transcript/content strip + its close-glyph /
+    // tab_switch hit-test are gone; every entry is a real position-tab now.)
     if (my === b.y && Array.isArray(p.tabs) && p.tabs.length > 1) {
       const strip = require('../../panel/slot-strip').unifiedSlotStrip(p);
       const localX = mx - b.x;
@@ -707,52 +692,6 @@ function handleMouse(kind, x, y) {
         if (localX >= tab.x && localX < tab.x + tab.w) {
           dispatchMsg(wrap('layout', { type: 'focus_set', focus: p.paneId }));
           dispatchMsg(wrap('layout', { type: 'set_active_tab', paneId: p.paneId, tabPoolId: tab.poolId }));
-          if (tab.kind === 'flat') {
-            // The viewer tab is now the active instance — switch its inner tab.
-            const pt = require('../../leaves/wm/pane-tabs');
-            const vslice = route.sliceForPane(p.paneId, 'detail') || {};
-            dispatchMsg(wrap(p.paneId, {
-              type: 'tab_switch', idx: tab.flatIdx,
-              targetKey: pt.resolveTabKey(tab.flatIdx, { ...vslice, tab: tab.flatIdx }, getModel()),
-              currentGroup: getModel().currentGroup,
-            }));
-          }
-          mutated = true;
-          break;
-        }
-      }
-      if (mutated) break;
-    }
-
-    // Single-tab detail → the viewer's own flat strip (Info/Transcript/content).
-    // Recompute its bounds on demand (render no longer writes them).
-    const paneTabs = (p.type === 'detail' && compSlice && !(Array.isArray(p.tabs) && p.tabs.length > 1))
-      ? require('../../panel/viewer/viewer').tabBoundsFor(compSlice, model, p.hotkey)
-      : null;
-    if (my === b.y && paneTabs && paneTabs.length > 0) {
-      const localX = mx - b.x;
-      for (const tab of paneTabs) {
-        if (localX >= tab.x && localX < tab.x + tab.w) {
-          // Close-zone hit (content tabs only — the tab-strip builder stamps
-          // `closeKey`). Wins over a tab-switch click (the glyph sits inside the
-          // tab's outer rect).
-          if (tab.closeKey != null && localX >= tab.closeX && localX < tab.closeX + tab.closeW) {
-            const mForBundle = getModel();
-            const groupName = mForBundle.currentGroup;
-            dispatchMsg(wrap(p.paneId, {
-              type: 'viewer_remove_content_tab', groupName, key: tab.closeKey,
-              ...require('../../leaves/wm/pane-tabs').modelBundle(mForBundle, groupName),
-            }));
-          } else {
-            dispatchMsg(wrap('layout', { type: 'focus_set', focus: p.paneId }));
-            const pt = require('../../leaves/wm/pane-tabs');
-            const slice = route.sliceForPane(p.paneId, p.type);
-            dispatchMsg(wrap(p.paneId, {
-              type: 'tab_switch', idx: tab.tabIdx,
-              targetKey: pt.resolveTabKey(tab.tabIdx, { ...slice, tab: tab.tabIdx }, getModel()),
-              currentGroup: getModel().currentGroup,
-            }));
-          }
           mutated = true;
           break;
         }
@@ -772,10 +711,9 @@ function handleMouse(kind, x, y) {
       // `detail` pane never hosts a terminal now; terminal panes are their own
       // kind and don't reach this isDetailPane branch.)
       const inContent = my > b.y && my < b.y + b.h - 1;
-      const d = route.sliceForPane(p.paneId, 'detail');
-      // P3 (viewer-lines selector) — derive the displayed lines.
-      const _dm = getModel();
-      const _dlines = d ? require('../../leaves/wm/pane-tabs').viewerLines(d, _dm, _dm.currentGroup) : [];
+      const d = route.sliceForPane(p.paneId, p.type);
+      // The active content instance holds its displayed buffer on slice.lines.
+      const _dlines = (d && Array.isArray(d.lines)) ? d.lines : [];
       if (inContent && _dlines.length > 0) {
         const visibleLine = my - b.y - 1;
         const col = Math.max(0, mx - b.x - 1);

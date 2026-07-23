@@ -284,8 +284,12 @@ try {
   // an instance probe strictly misses once initState swapped the seed
   // for per-pane mints, and would re-register the Component mid-suite.
   if (!api.getComponent('layout')) api.registerComponent(require('../panel/layout'));
-  if (!api.getComponent('detail')) api.registerComponent(require('../panel/viewer/viewer'));
   if (!api.getComponent('groups')) api.registerComponent(require('../panel/navigator/groups'));
+  // U2f — the content slot's seeded default tabs are `info` (Info) + `text-view`
+  // (Transcript) instances; register them so initState's reconcile can mint the
+  // content-slot tabs (the former `detail`/viewer Component is gone).
+  if (!api.getComponent('info')) api.registerComponent(require('../panel/info/info'));
+  if (!api.getComponent('text-view')) api.registerComponent(require('../panel/text-view/text-view'));
 } catch (_) { /* tests that don't need Components still load */ }
 
 module.exports = { describe, section, it, assert, eq, report, _state,

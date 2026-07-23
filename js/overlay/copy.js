@@ -49,12 +49,10 @@ function collectOptions() {
       }
     }
   }
-  // v0.6.3 T1.4 — paneId-aware lookup (post-Phase B1).
-  // P3 (viewer-lines selector) — displayed lines derive via pane-tabs.
-  const detailSlice = getInstanceSlice(route.resolveTarget('viewer') || 'detail');
-  const _m = getModel();
-  const detailLines = detailSlice
-    ? require('../leaves/wm/pane-tabs').viewerLines(detailSlice, _m, _m.currentGroup) : [];
+  // v0.6.3 T1.4 — paneId-aware lookup (post-Phase B1). U2f — the active content
+  // instance holds its displayed buffer on slice.lines directly.
+  const detailSlice = getInstanceSlice(route.resolveTarget('viewer'));
+  const detailLines = (detailSlice && Array.isArray(detailSlice.lines)) ? detailSlice.lines : [];
   if (detailLines.length > 0) {
     options.push({
       label: 'Detail panel (plain text)',

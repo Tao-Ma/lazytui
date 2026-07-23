@@ -14,7 +14,8 @@ const { displayedLines } = require('./_helpers/viewer-lines');
 // Phase 4a — nav chrome (cursor/scroll/multiSel) lives on each Navigator
 // Component's slice. The tests below dispatch through wrapped Msgs and
 // read via state helpers, so the Components must be registered first.
-// test-runner already registered layout/detail/groups.
+// U2f — test-runner already registered layout/groups + the content-slot tabs
+// (info/text-view); the detail viewer Component is gone.
 const _api = require('../panel/api');
 _api.registerComponent(require('../panel/navigator/docker'));
 _api.registerComponent(require('../panel/navigator/actions'));
@@ -69,18 +70,18 @@ describe('[3] update — (model, msg) → [model, cmds], pure + Cmd descriptors'
     assert(m1 === m, 'update returns the threaded model, not a clone (Phase-0 contract)');
   });
   it('viewer_scroll: delta pages clamped, to:top/bottom jumps, no effects', () => {
-    // Phase B: viewer_scroll moved to detail.update — test the Component
-    // update directly with an isolated slice.
-    const detail = require('../panel/viewer/viewer');
-    // A1/B1 fix: viewport lives on detail's own slice (innerH), written
-    // by render() via viewer_set_viewport. Tests seed it directly.
-    // Phase 3 — _update returns the new slice; step() threads it through.
+    // U2f — viewer_scroll's home is the content instance's update (info /
+    // text-view), both delegating to the shared tvu clamp; the `detail` viewer
+    // Component is gone. Drive the `info` Component with an isolated slice; the
+    // buffer lives on `slice.lines` (was `infoLines`) and innerH is seeded
+    // directly (production stamps it via augmentMsg).
+    const info = require('../panel/info/info');
     const step = (sl, msg) => {
-      const out = detail._update(msg, sl);
+      const out = info.update(msg, sl);
       return Array.isArray(out) ? out[0] : out;
     };
-    let slice = detail._init();
-    slice = { ...slice, infoLines: new Array(100).fill('x'), innerH: 20 };  // maxScroll 80 (P3 — Info canonical home)
+    let slice = info.init('pane-x');
+    slice = { ...slice, lines: new Array(100).fill('x'), innerH: 20 };  // maxScroll 80
     slice = step(slice, { type: 'viewer_scroll', delta: 30 });
     eq(slice.scroll, 30);
     slice = step(slice, { type: 'viewer_scroll', delta: 999 });
@@ -89,7 +90,7 @@ describe('[3] update — (model, msg) → [model, cmds], pure + Cmd descriptors'
     eq(slice.scroll, 0, 'clamped to 0');
     slice = step(slice, { type: 'viewer_scroll', to: 'bottom' });
     eq(slice.scroll, 80);
-    const r = detail._update({ type: 'viewer_scroll', to: 'top' }, slice);
+    const r = info.update({ type: 'viewer_scroll', to: 'top' }, slice);
     // Bare slice return = no effects array.
     assert(!Array.isArray(r), 'scroll returns bare slice (no effects)');
     eq(r.scroll, 0);
@@ -169,133 +170,43 @@ describe('[3] update — (model, msg) → [model, cmds], pure + Cmd descriptors'
     eq(route.activeInstanceOf(slotPaneId), infoInst, 'yanked back to Info from a 3rd tab');
   });
 
-  it('viewer_show_info bails when focus is on detail (no getInfo) — preserves addContentTab flow', () => {
-    // T1 contract: detail / no-getInfo focus → no yank. Critical for
-    // the addContentTab → focus_set(detail) cascade: a freshly-opened
-    // content tab must STAY on the content tab even though
-    // show_selected_info fires from the cascade.
+  it('showSelectedInfo bails when the focused pane has no getInfo — no yank', () => {
+    // U2f — the deleted `viewer_show_info` arm's "no-getInfo focus → no yank"
+    // bail (T1 contract; kept the addContentTab-opened tab from being yanked to
+    // Info by a cascade) now lives in dispatch.showSelectedInfo: infoLinesFromFocus
+    // returns null for a focus with no getInfo, and the chokepoint returns before
+    // dispatching info_show_content OR the set_active_tab yank. Drive the live
+    // chokepoint with focus PARKED on the content slot (a content-viewer pane has
+    // no getInfo) and assert the slot's active tab is untouched.
     const route = require('../panel/route');
-    const detail = require('../panel/viewer/viewer');
-    const layout = route.getInstanceSlice('layout');
-    layout.focus = 'detail';
-    const slice = { ...route.getInstanceSlice('detail'), tab: 3 };
-    const r = detail._update({ type: 'viewer_show_info' }, slice);
-    // Unwrap [slice, effects] or bare slice.
-    const next = Array.isArray(r) ? r[0] : r;
-    eq(next.tab, 3, 'tab unchanged — yank skipped (detail focus has no getInfo)');
-    eq(next.infoLines, slice.infoLines, 'infoLines untouched — yank skipped');
+    const api = require('../panel/api');
+    const dispatch = require('../dispatch/control/dispatch');
+    seedContentSlot();
+    const slotPaneId = route.resolveViewerPaneId();
+    const transInst = route.resolveTarget('viewer_transcript');
+    const mpane = require('../leaves/wm/pane');
+    // Park the slot's active tab on Transcript (off Info).
+    api.dispatchMsg(api.wrap('layout',
+      { type: 'set_active_tab', paneId: slotPaneId, tabPoolId: mpane.poolIdOf(transInst) }));
+    eq(route.activeInstanceOf(slotPaneId), transInst, 'precondition: slot on Transcript');
+    // Focus the content slot itself — a content-viewer pane exposes no getInfo.
+    route.getInstanceSlice('layout').focus = slotPaneId;
+    dispatch.showSelectedInfo();
+    eq(route.activeInstanceOf(slotPaneId), transInst,
+      'active tab unchanged — yank skipped (focus has no getInfo)');
   });
-  it('R3: viewer_show_info from off-Info restores tabState[info]', () => {
-    // Pre-R3 the reducer wrote { tab: 0, scroll: 0 } unconditionally.
-    // navSelect from an action tab dropped Info's saved scroll.
-    // Post-R3: when transitioning to Info from another tab, restore
-    // tabState['info'].{scroll, search, select, cursor}.
-    const route = require('../panel/route');
-    const detail = require('../panel/viewer/viewer');
-    const m = runtime.getModel();
-    m.config = { groups: { g: { label: 'G', actions: {
-      a: { label: 'A', desc: 'an action', script: 'echo a' },
-    } } } };
-    m.currentGroup = 'g';
-    route.getInstanceSlice('layout').focus = 'actions';
-    // Land on action tab 3 with Info's tabState entry pre-seeded.
-    const slice = {
-      ...route.getInstanceSlice('detail'),
-      tab: 3,
-      scroll: 0,
-      tabState: { info: { scroll: 47, cursor: { line: 47, col: 0 } } },
-    };
-    // P0 (viewer-lines selector) — info content arrives precomputed on
-    // msg.lines (the showSelectedInfo chokepoint threads it); a direct
-    // arm dispatch must carry it or the arm bails.
-    const r = detail._update({ type: 'viewer_show_info', lines: ['an action'] }, slice);
-    const next = Array.isArray(r) ? r[0] : r;
-    eq(next.tab, 0, 'transitioned to Info');
-    eq(next.scroll, 47, 'restored Info scroll from tabState');
-    eq(next.cursor.line, 47, 'restored Info cursor from tabState');
-  });
-  it('A4/P1: viewer_show_info on Info resets the match cursor on content change, keeps term', () => {
-    // Round 2 finding (A4): with active committed search on Info, j/k
-    // re-fires viewer_show_info with the NEW item's content. P1 retired
-    // the stored match list (highlights derive from the current content
-    // via ms.matchesFor, so they can't go stale); the arm's remaining
-    // job is resetting the match CURSOR when content actually changed.
-    // term stays so the user can `/[Up]`-recall.
-    const route = require('../panel/route');
-    const detail = require('../panel/viewer/viewer');
-    const m = runtime.getModel();
-    m.config = { groups: { g: { label: 'G', actions: {
-      a: { label: 'A', desc: 'an action', script: 'echo a' },
-    } } } };
-    m.currentGroup = 'g';
-    route.getInstanceSlice('layout').focus = 'actions';
-    const slice = {
-      ...route.getInstanceSlice('detail'),
-      tab: 0,
-      infoLines: ['previous item info'],
-      search: { active: true, term: 'foo', idx: 1, typing: '' },
-    };
-    const r = detail._update({ type: 'viewer_show_info', lines: ['an action'] }, slice);
-    const next = Array.isArray(r) ? r[0] : r;
-    eq(next.tab, 0, 'stayed on Info');
-    eq(next.infoLines[0], 'an action', 'new content stored');
-    eq(next.search.idx, 0, 'match cursor reset on content change');
-    eq(next.search.term, 'foo', 'term preserved for /[Up] recall');
-    eq(next.search.active, true, 'active flag preserved');
-  });
-  it('R3: viewer_show_info while already on Info resets scroll to 0 (new item)', () => {
-    // Within-Info case (j/k navigates to a new item, same tab): scroll
-    // resets to 0 so the new item's getInfo displays from line 0.
-    // tabState[info] is NOT consulted — the restore is only for
-    // off-Info transitions; within-Info, content changes per item and
-    // scroll: 0 is the natural fresh-content default.
-    const route = require('../panel/route');
-    const detail = require('../panel/viewer/viewer');
-    const m = runtime.getModel();
-    m.config = { groups: { g: { label: 'G', actions: {
-      a: { label: 'A', desc: 'an action', script: 'echo a' },
-    } } } };
-    m.currentGroup = 'g';
-    route.getInstanceSlice('layout').focus = 'actions';
-    const slice = {
-      ...route.getInstanceSlice('detail'),
-      tab: 0,
-      scroll: 50,
-      tabState: { info: { scroll: 100 } },
-    };
-    // P0 — msg.lines threaded (new-item content); see the R3 test above.
-    const r = detail._update({ type: 'viewer_show_info', lines: ['an action'] }, slice);
-    const next = Array.isArray(r) ? r[0] : r;
-    eq(next.tab, 0, 'stayed on Info');
-    eq(next.scroll, 0, 'within-Info navSelect resets scroll to 0');
-  });
-  it('P0: viewer_show_info stores infoLines; equal content is ref-stable + no-op', () => {
-    // viewer-lines selector arc P0 — Info content's canonical home is
-    // slice.infoLines (msg.lines threaded by the showSelectedInfo
-    // chokepoint). Equal re-sends keep the previous ARRAY ref (so the
-    // derived-lines ref stays stable), and a true no-op (same content,
-    // scroll 0, no stale matches) returns the input SLICE ref so
-    // dispatch bookkeeping sees no change — redraw() fires this before
-    // every paint.
-    const route = require('../panel/route');
-    const detail = require('../panel/viewer/viewer');
-    route.getInstanceSlice('layout').focus = 'actions';
-    const slice = { ...route.getInstanceSlice('detail'), tab: 0, scroll: 0 };
-    const r1 = detail._update({ type: 'viewer_show_info', lines: ['a', 'b'] }, slice);
-    const s1 = Array.isArray(r1) ? r1[0] : r1;
-    eq(s1.infoLines.join('|'), 'a|b', 'infoLines stored');
-    const r2 = detail._update({ type: 'viewer_show_info', lines: ['a', 'b'] }, s1);
-    const s2 = Array.isArray(r2) ? r2[0] : r2;
-    assert(s2 === s1, 'equal content + clean view state → input ref returned (no-op)');
-    const r3 = detail._update({ type: 'viewer_show_info', lines: ['a', 'c'] }, s1);
-    const s3 = Array.isArray(r3) ? r3[0] : r3;
-    assert(s3 !== s1 && s3.infoLines[1] === 'c', 'changed content → new infoLines');
-    // P4 review — sameLines but scroll > 0 still resets to 0 (the old
-    // arm's unconditional reset; the identity guard must not eat it).
-    const r4 = detail._update({ type: 'viewer_show_info', lines: ['a', 'b'] }, { ...s1, scroll: 7 });
-    const s4 = Array.isArray(r4) ? r4[0] : r4;
-    eq(s4.scroll, 0, 'scroll reset despite unchanged content');
-  });
+  // U2f — the remaining `viewer_show_info` arm tests are RETIRED here: that Msg +
+  // the detail viewer's flat-tab machinery (slice.tab / slice.infoLines / slice.
+  // tabState) are gone. Their intent is fully re-homed + covered by
+  // test-info-pane.js `[info P0] info_show_content`:
+  //   - "stores lines + resets scroll on content change"      (was: R3 within-Info scroll→0, P0 store)
+  //   - "is a true no-op ... (ref-stable slice)"              (was: P0 equal-content no-op)
+  //   - "keeps the lines ref stable across content-equal ..."  (was: P0 lines-ref stability + scroll reset)
+  //   - "resets the match cursor (search.idx) on real change"  (was: A4/P1 match-cursor reset, keeps term)
+  // The off-Info→Info per-tab-state RESTORE (was: R3 tabState[info]) is not an arm
+  // concern anymore — content instances are their own position-tabs, so per-tab
+  // view-state persists on each instance's slice + is restored by the framework's
+  // tab-state / mint reconcile, not a viewer-internal `tabState` map.
   it('escape / list_select: emit wrapped multisel_clear into the focused Component', () => {
     // Phase 4a — escape/list_select route multiSel clears through the
     // focused Navigator's update (single-writer per slice). Read via the

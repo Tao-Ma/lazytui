@@ -420,18 +420,10 @@ function handlePaneMenuKey(key, seq) {
     _paneMenuPick(target, item);
     return;
   }
-  if (seq === 'x') {
-    // Close the highlighted closeable TAB row. (U2d P2b — the only closeable
-    // viewer-strip rows are content tabs now; terminals are `terminal` panes,
-    // closed via the pane menu's pane rows / dead-terminal `x`.) Non-closeable
-    // rows + pane rows: silent no-op. The menu stays open + re-renders without
-    // the row.
-    const item = all[cursor];
-    if (!item || item.section !== 'tab' || !item.closeable) return;
-    const m = getModel();
-    dispatchMsg(wrap(target,
-      { type: 'viewer_remove_content_tab', groupName: m.currentGroup, key: item.closeKey }));
-  }
+  // (U2f — the pane-menu `x` flat content-tab close retired with the viewer's flat
+  // strip: the menu's tab rows are position-tabs now. A content `text-view` tab
+  // closes via the keyboard `x` (→ remove_tab) on the focused slot; a
+  // close-from-menu gesture for position-tabs is a possible follow-on.)
 }
 
 // Resolve a pane-menu pick → reducer Msg(s) by the row's section AND the
@@ -448,40 +440,14 @@ function _paneMenuPick(target, item) {
   // Wrapped layout Msgs route via dispatchMsg (api), not applyMsg (root).
   const close = () => dispatchMsg(wrap('layout', { type: 'pane_menu_close' }));
   if (item.section === 'tab') {
-    // Close the menu, focus the viewer, switch its active tab. The switch Msg
-    // is named by the tab-container interface (tc.switchTab): container-agnostic
-    // + carries the pure-reducer facts (targetKey / currentGroup). null when the
-    // picked tab is already active — the tab_switch arm no-ops on same idx, so
-    // skipping the dispatch is equivalent (focus + close still fire).
-    const tc = require('../../leaves/wm/tab-container');
-    if (item.backing === 'slot') {
-      // U2e stopgap — a UNIFIED slot-strip row (panel/slot-strip). Route by the
-      // entry's kind: 'position' → activate that position-tab; 'flat' → activate
-      // the viewer position-tab AND tab_switch to its inner tab (Info/Transcript/
-      // content). Restores reachability of a tab stranded behind an action's
-      // minted text-view — the same routing the visible strip's click uses.
-      close();
-      dispatchMsg(wrap('layout', { type: 'focus_set', focus: target }));
-      dispatchMsg(wrap('layout', { type: 'set_active_tab', paneId: target, tabPoolId: item.poolId }));
-      if (item.kind === 'flat') {
-        const pt2 = require('../../leaves/wm/pane-tabs');
-        const vslice = getInstanceSlice(target) || {};
-        dispatchMsg(wrap(target, {
-          type: 'tab_switch', idx: item.flatIdx,
-          targetKey: pt2.resolveTabKey(item.flatIdx, { ...vslice, tab: item.flatIdx }, getModel()),
-          currentGroup: getModel().currentGroup,
-        }));
-      }
-      return;
-    }
-    const pt = require('../../leaves/wm/pane-tabs');
-    const slice = getInstanceSlice(target);
-    const m = getModel();
-    const key = pt.resolveTabKey(item.tabIdx | 0, slice, m);
-    const sw = tc.switchTab(tc.containerFor('viewer', { slice, model: m, paneId: target }), key);
+    // U2f — every pane-menu tab row is a POSITION-tab (the unified slot strip via
+    // panel/slot-strip; backing 'slot'), so a pick just activates it — the SAME
+    // routing the visible strip's click uses (menu ≡ strip). The flat viewer-tab
+    // pick (tab-container 'viewer' backing → resolveTabKey → tab_switch) retired
+    // with the viewer's flat strip.
     close();
     dispatchMsg(wrap('layout', { type: 'focus_set', focus: target }));
-    if (sw) dispatchMsg(wrap(sw.target, sw.msg));
+    dispatchMsg(wrap('layout', { type: 'set_active_tab', paneId: target, tabPoolId: item.poolId }));
     return;
   }
   // Pane row — resolve by view mode.

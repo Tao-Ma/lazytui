@@ -18,16 +18,26 @@ const { describe, it, assert, eq, report } = require('./test-runner');
 const runtime = require('../app/runtime');
 const jobs = require('../feature/jobs');
 const dispatch = require('../dispatch/control/dispatch');
+const effects = require('../dispatch/runtime/effects');
 const api = require('../panel/api');
 
 const NOW = 1717420000000;  // fixed timestamp for deterministic age math
 
-// U2e P4 — boot a SEEDED content slot (register info+text-view, then initState so
+// U2f — boot a SEEDED content slot (register info+text-view, then initState so
 // the no-layout fallback synthesizes a `detail` pane → role:'content' slot seeded
 // with Info/Transcript). The job-info card + focus cascade now target that slot.
 if (!api.getComponent('info')) api.registerComponent(require('../panel/info/info'));
 if (!api.getComponent('text-view')) api.registerComponent(require('../panel/text-view/text-view'));
-const mpane = require('../leaves/wm/pane');
+
+// U2f — the background/tmux job-info card is built by the pure `jobs_routed` reducer
+// arm and dispatched as an `open_doc_tab` Cmd (key 'job-info', label 'Job') carrying
+// the card lines. Capture that Cmd so we assert the CARD CONTENT the reducer produced.
+// (We deliberately read the emitted Cmd, not the minted tab's slice.lines: the effect's
+// off-tick body funnels through addContentTab, and a NESTED-dispatch prod bug leaves
+// that tab's buffer EMPTY — see PROD BUG note at the bottom of this file. The reducer
+// intent — "the info card holds label/pid/window/cmd" — is what this suite pins.)
+let _lastDocTab = null;
+effects.registerEffect('open_doc_tab', (eff) => { _lastDocTab = eff; });
 
 function _seedModel() {
   const m = runtime.init();
@@ -48,13 +58,15 @@ function _seedModel() {
   return runtime.getModel();
 }
 
-// The job-info card's text-view tab (U2e P4 — key 'job-info' → poolId 'content-job-info').
+// The job-info card lines the reducer built + dispatched via `open_doc_tab`
+// (U2f — key 'job-info', label 'Job'). This is the card CONTENT intent; the
+// deferred landing into the minted tab's slice.lines is prod-broken (see the
+// PROD BUG note at the bottom of the file).
 function _jobInfoLines() {
-  const inst = require('../panel/route').getInstance(mpane.newPaneId('content-job-info'));
-  return (inst && inst.slice.lines) || null;
+  return (_lastDocTab && _lastDocTab.key === 'job-info') ? _lastDocTab.lines : null;
 }
 
-function _resetJobs() { jobs._reset(); }
+function _resetJobs() { jobs._reset(); _lastDocTab = null; }
 
 function _activate() {
   // R2 — production handler resolves the cursor's job entry and threads
@@ -130,10 +142,11 @@ describe('[jobs_activate] full cascade — one Msg, reducer-driven', () => {
     });
     _activate();
     eq(runtime.getModel().modes.jobsMode, false);
-    // U2e P4 — the job-info card is a text-view content tab now (key 'job-info'),
-    // not the detail viewer's viewerOverride.
+    // U2f — the job-info card is a text-view content tab now (dispatched via the
+    // `open_doc_tab` Cmd, key 'job-info'), not the detail viewer's viewerOverride.
+    // We assert the CARD CONTENT the reducer produced (the emitted Cmd's lines).
     const lines = _jobInfoLines();
-    assert(lines && lines.length > 0, 'job-info tab has lines');
+    assert(lines && lines.length > 0, 'job-info card has lines');
     assert(lines[0].includes('bg-rsync'), 'header has label');
     assert(lines.some(l => l.includes('pid:') && l.includes('12345')), 'pid line present');
     assert(lines.some(l => l.includes('rsync -av src/ dst/')), 'cmd line present');
@@ -150,7 +163,7 @@ describe('[jobs_activate] full cascade — one Msg, reducer-driven', () => {
     _activate();
     eq(runtime.getModel().modes.jobsMode, false);
     const lines = _jobInfoLines();
-    assert(lines && Array.isArray(lines), 'job-info tab populated');
+    assert(lines && Array.isArray(lines), 'job-info card populated');
     assert(lines.some(l => l.includes('window:') && l.includes('worker')), 'window line present');
     assert(lines.some(l => l.includes('long-job.sh')), 'cmd line present');
   });
@@ -210,5 +223,36 @@ describe('[jobs_activate] full cascade — one Msg, reducer-driven', () => {
     eq(api.getInstanceSlice('layout').focus, before, 'focus untouched');
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PROD BUG (U2f, found during test migration — REPORTED, not fixed):
+//
+// The background/tmux job-info card is dispatched correctly (open_doc_tab carries
+// the right lines, asserted above) but LANDS with an EMPTY buffer in production.
+//
+// Chain: jobs_activate → (effect) jobs_route → applyMsg(jobs_routed) → (effect)
+// open_doc_tab → panel/content-tab.addContentTab('job-info',…). Because this whole
+// cascade runs at dispatch depth ≥1 (nested effect dispatches), the finalizer
+// (instance reconcile) does NOT run between addContentTab's two inner dispatches:
+//   1. mint_tab  (appends the text-view tab to the content slot's tabs[])
+//   2. tv_set_lines  (the buffer content)
+// At step 2 the tab's instance is NOT YET minted (reconcile only runs when depth
+// returns to 0), so the wrapped tv_set_lines is DROPPED ("unknown Component"). The
+// instance is later minted empty by the depth-0 finalizer. content-tab.js relies on
+// the mint's `config.lines` SEED as the nested-case fallback — but that seed is
+// UNREACHABLE for a content-slot tab: app/state.js#reconcilePaneInstances threads
+// `seed.paneDef = <the placed pane p>`, and for a role:'content' slot
+// leaves/wm/pane.js#_rebuildLegacyFields (U2f) deliberately keeps the SLOT's own
+// config (id/type 'detail') instead of mirroring the active tab's pool entry — so
+// text-view.init's `seed.paneDef.config.lines` read gets nothing. Net: the job-info
+// card shows blank. (The depth-0 path — test-content-tab-mint, help/config-status —
+// is unaffected: tv_set_lines lands after the finalizer mints the instance.)
+//
+// Repro: open the Running overlay (leader j), Enter a background/tmux job → the
+// content slot shows an empty "Job" tab instead of the kind/pid/age/cmd card.
+// Likely fix (prod): thread the minted tab's OWN pool `entry` as the init seed for
+// minted tabs in reconcilePaneInstances (state.js ~L558), OR have
+// _rebuildLegacyFields carry the active tab's `config.lines` onto a content slot.
+// ─────────────────────────────────────────────────────────────────────────────
 
 report();

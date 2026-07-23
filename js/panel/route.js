@@ -590,14 +590,12 @@ function getFocus() {
 //   4. any viewer-kind instance (insertion order)
 //   5. null — caller becomes a no-op
 
-const VIEWER_KIND = 'detail';
-
-// U2e P1b — content-viewer kinds sharing the tvu scrollable-text interaction: the
-// `detail` anchor + its successors (`info`, `text-view`). The page/scroll/search/
-// select gates that hard-checked `instanceKind(x) === 'detail'` widen to this — all
-// respond to viewer_scroll/viewer_search_*/select_* via leaves/text/text-view-update.
+// U2f — content-viewer kinds sharing the tvu scrollable-text interaction: the
+// content slot's `info` + `text-view` tab instances (the `detail`/viewer kind is
+// gone). The page/scroll/search/select gates check this — all respond to
+// viewer_scroll/viewer_search_*/select_* via leaves/text/text-view-update.
 // (terminal is deliberately excluded — it's a PTY surface, not a tvu text buffer.)
-const TEXT_VIEWER_KINDS = new Set(['detail', 'info', 'text-view']);
+const TEXT_VIEWER_KINDS = new Set(['info', 'text-view']);
 function isViewerKind(id) {
   return TEXT_VIEWER_KINDS.has(instanceKind(id));
 }
@@ -697,6 +695,21 @@ function resolveViewerPaneId(ctx) {
   return value;
 }
 
+/** U2f — the number of position-tabs in the (focused) content slot: Info +
+ *  Transcript + any opened content tabs. Drives the footer's `][ tabs` cycle
+ *  hint (shown when >1). 0 when no content slot is placed. Role-anchored via
+ *  resolveViewerPaneId, so it tracks the focused slot under multi-content. */
+function contentSlotTabCount(ctx) {
+  const slotPaneId = resolveViewerPaneId(ctx);
+  if (!slotPaneId) return 0;
+  const layout = _layoutSvcSlice();
+  const arrange = layout && layout.arrange;
+  if (!arrange) return 0;
+  const mpool = require('../leaves/wm/pool');
+  const loc = mpool.findPaneLocation(arrange, (p) => p.paneId === slotPaneId);
+  return loc ? (loc.pane.tabs || []).length : 0;
+}
+
 function _resolveViewerPaneIdCompute(ctx, arrange) {
   if (!arrange) return null;
   const mpool = require('../leaves/wm/pool');
@@ -739,5 +752,5 @@ module.exports = {
   getPrimaryByKind, primarySliceOf,
   _resetRegistryForTest,
   // Navigator → focused-viewer routing chokepoint.
-  resolveTarget, resolveViewerPaneId, isViewerKind, VIEWER_KIND,
+  resolveTarget, resolveViewerPaneId, isViewerKind, contentSlotTabCount,
 };

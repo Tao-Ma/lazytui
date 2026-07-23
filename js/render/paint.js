@@ -294,10 +294,17 @@ function _normalizeRender(panel, raw, w, h) {
 // marker that shifted everything below it within the same column).
 function _safeRender(panel, w, h, opts) {
   if (!panel) return '';
-  const compName = getComponentOwningPanel(panel.type);
+  // U2f — resolve the renderer by the pane's ACTIVE-tab instance kind (via
+  // paneId → active instance), NOT panel.type. For the content slot the stable
+  // `pane.type` is `'detail'` (a layout keyword with no Component); its active tab
+  // (info / text-view / terminal) is what renders. For every other pane the active
+  // kind === panel.type, so this is byte-identical (instanceKind falls back to the
+  // arrange/type when no instance is minted yet — the pre-reconcile boot frame).
+  const renderType = (panel.paneId ? _route().instanceKind(panel.paneId) : null) || panel.type;
+  const compName = getComponentOwningPanel(renderType);
   if (!compName) return '';
   const comp = getComponent(compName);
-  const def = comp && comp.panelTypes && comp.panelTypes[panel.type];
+  const def = comp && comp.panelTypes && comp.panelTypes[renderType];
   if (!def || typeof def.render !== 'function') return '';
   let raw;
   // Selection capture/highlight seam (docs/pane-selection.md): announce which

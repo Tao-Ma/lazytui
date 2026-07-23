@@ -36,7 +36,6 @@
 const route = require('./route');
 const mnav = require('../leaves/wm/nav');
 const mpool = require('../leaves/wm/pool');
-const pt = require('../leaves/wm/pane-tabs');
 const { getModel } = require('../model/store');
 
 // Lazy + cached panel/api ref — see the header note on the api↔nav-state

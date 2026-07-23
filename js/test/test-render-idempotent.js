@@ -4,7 +4,7 @@
  * docs/PRINCIPLES.md §11.
  *
  * The test exercises representative core plugin renderers (groups, actions,
- * detail, history). Docker + stats + config-status are
+ * info, history). Docker + stats + config-status are
  * deliberately skipped here:
  *
  *   - docker.render reads a runtime status cache fed by container events;
@@ -29,7 +29,10 @@ const { recomputeGroups } = require('../app/state');
 const { setTheme } = require('../leaves/infra/themes');
 const groups = require('../panel/navigator/groups');
 const actions = require('../panel/navigator/actions');
-const detail = require('../panel/viewer/viewer');
+// U2f — the `detail`/viewer Component is deleted; the viewer's Info tab is now
+// the first-class `info` content-slot pane type. Render it here in the viewer's
+// place (a scrollable text buffer, the same render family the viewer had).
+const info = require('../panel/info/info');
 const history = require('../panel/navigator/history');
 
 // --- Minimal state setup — just enough that every render under test can
@@ -69,9 +72,10 @@ function setupState() {
   recomputeGroups();
   getModel().currentGroup = getInstanceSlice('groups').list[0].name;
   getInstanceSlice("layout").focus = 'groups';
-  getInstanceSlice('detail').lines = ['[bold]Detail title[/]', '', 'body line 1', 'body line 2'];
-  getInstanceSlice('detail').scroll = 0;
-  getInstanceSlice('detail').tab = 0;
+  // U2f — the info instance stores its buffer on `slice.lines`; there is no
+  // per-tab index (`slice.tab` retired with the viewer).
+  getInstanceSlice('info').lines = ['[bold]Detail title[/]', '', 'body line 1', 'body line 2'];
+  getInstanceSlice('info').scroll = 0;
   // history Component holds its ring buffer in its own module (../history.js),
   // not on a shim field; no init needed here.
   getInstanceSlice("layout").arrange = {
@@ -95,7 +99,7 @@ function _resolveDef(mod, panelType) {
 const cases = [
   { name: 'groups',       fn: _resolveDef(groups,      'groups').render,       panel: { type: 'groups',       title: 'Groups',    hotkey: '1' } },
   { name: 'actions',      fn: _resolveDef(actions,     'actions').render,      panel: { type: 'actions',      title: 'Actions',   hotkey: '7' } },
-  { name: 'detail',       fn: _resolveDef(detail,      'detail').render,       panel: { type: 'detail',       title: 'Detail',    hotkey: '8', tabs: [{ label: 'Info' }] } },
+  { name: 'info',         fn: _resolveDef(info,        'info').render,         panel: { type: 'info',         title: 'Info',      hotkey: '8' } },
   { name: 'history',      fn: _resolveDef(history,     'history').render,      panel: { type: 'history',      title: 'History',   hotkey: '3' } },
 ];
 

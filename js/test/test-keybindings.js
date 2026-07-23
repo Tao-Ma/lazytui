@@ -291,16 +291,17 @@ describe('[9] space gate + group-switch reset', () => {
   const { resetGroupContext } = require('../app/state');
   it('space leads when select mode is armed but focus is a non-list panel', () => {
     kb.clearBindings();
+    // U2f — the `detail` viewer Component + its instance are gone. `detail` is now
+    // only the content slot's STABLE identity (id/type 'detail', role:'content'); it
+    // owns no panel def, so _isListPanel('detail') is false — a non-list focus. The
+    // space-leader gate reads ONLY _isListPanel(getFocus()); the old detail-slice
+    // seeding (lines/scroll/innerH/search/cursor) was viewer-render setup this gate
+    // never touches, so it's dropped (getInstanceSlice('detail') no longer exists).
     getInstanceSlice("layout").focus = 'detail';
     getModel().modes.listSelectMode = true;
     getModel().modes.prefixMode = false;
-    getInstanceSlice('detail').lines = []; getInstanceSlice('detail').scroll = 0;
-    // (panelHeights left the slice; viewer reads slice.innerH instead.)
-    getInstanceSlice('detail').innerH = 8;
-    getInstanceSlice('detail').search = { active: false };
-    getInstanceSlice('detail').cursor = { line: 0, col: 0 };
     dispatch._handleNormalKey(' ', ' ');
-    assert(getModel().modes.prefixMode === true, 'space is the leader on detail even with listSelectMode armed');
+    assert(getModel().modes.prefixMode === true, 'space is the leader on the content slot even with listSelectMode armed');
     dispatch._handlePrefixKey('escape', undefined);
   });
   it('resetGroupContext clears listSelectMode', () => {

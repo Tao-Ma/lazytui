@@ -36,7 +36,6 @@ const renderCurrent = () => render(getModel());
 const { initState } = require('../../../app/state');
 const route = require('../../../panel/route');
 const api = require('../../../panel/api');
-const tabs = require('../../../panel/viewer/tabs');
 
 // --- ANSI strip (mirrors test-live-render's `stripAnsi`). ----------------
 
@@ -117,18 +116,18 @@ function bootFresh(opts) {
   // Clear modal flags that may have been set by an earlier scenario.
   const modes = require('../../../leaves/input/modes');
   modes.resetModes(getModel().modes);
-  // Wipe per-group tab maps + override on every viewer-kind slice.
-  // Scenarios open tabs via tabs.addContentTab(); leaving the maps
-  // populated between scenarios would produce phantom tabs.
+  // U2f — reset the content-slot instances (info / text-view) between scenarios.
+  // rebuildLayoutFromConfig drops last scenario's minted content tabs, but the
+  // persistent Info/Transcript instances keep their id across boots (reconcile
+  // skips re-minting an existing tabInstId), so clear their buffers/view-state.
   route.eachInstance((inst) => {
-    if (inst.kind !== 'detail') return;
+    if (inst.kind !== 'info' && inst.kind !== 'text-view') return;
     const s = inst.slice;
-    s.contentTabs = {};
-    s.tabState = {};
-    s.viewerOverride = null;
-    s.tab = 0;
     s.lines = [];
     s.scroll = 0;
+    s.search = { active: false, term: '', idx: 0, typing: '' };
+    s.select = { active: false, kind: 'char', anchor: { line: 0, col: 0 }, cursor: { line: 0, col: 0 } };
+    s.cursor = { line: 0, col: 0 };
   });
   // Anchor on g1 so currentGroup is well-defined.
   const firstGroup = Object.keys(groups)[0];
@@ -234,5 +233,5 @@ module.exports = {
   render: renderCurrent,
   // And the route helpers, which scenarios use for the post-T3.5
   // paneId-vs-type comparators.
-  route, api, tabs,
+  route, api,
 };

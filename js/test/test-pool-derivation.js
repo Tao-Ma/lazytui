@@ -157,15 +157,20 @@ layout:
     - { panels: [actions, detail] }
 `));
     const arrange = rebuildLayoutFromConfig(cfg);
-    // U2e P1b — the content slot (`detail`) is seeded with two transient
-    // sibling tabs (Info + Transcript), so placedIds now includes their pool
-    // ids. That IS the correct derivation: every mounted tab is placed.
+    // U2f — the content slot's tabs are the two transient sibling tabs (Info +
+    // Transcript); the `detail` anchor tab is GONE (Component deleted). But the
+    // slot's STABLE id stays `detail` (pane.id, kept by _rebuildLegacyFields), and
+    // placedIds counts each pane's stable id, so `detail` is PLACED even though no
+    // tab references it (else `:show detail` would mount a duplicate). placedIds
+    // therefore = the two transients + `detail` + the other declared panels.
     eq(pool.placedIds(arrange).sort(),
        ['actions', 'detail', 'groups', 'info-pane-detail', 'transcript-pane-detail']);
-    // The DECLARED pool (config, minus the runtime-seeded transient tabs) is
-    // still exactly the three explicit panels.
+    // Minus the runtime-seeded transients: the content slot's stable `detail` id
+    // plus the two explicit non-content panels.
     eq(pool.placedIds(arrange).filter(id => !arrange.pool[id].transient).sort(),
        ['actions', 'detail', 'groups']);
+    // Nothing is hidden: `detail` is placed (stable id), and the transient
+    // Info/Transcript tabs are session-only (never summonable → hiddenIds skips them).
     eq(pool.hiddenIds(arrange), []);
     assert(arrange.pool.groups, 'pool has groups entry');
     assert(!arrange.pool.groups._synthesized, 'pool entries are explicit, not synthesized');
@@ -183,11 +188,11 @@ layout:
     - { panels: [a, d] }
 `));
     const arrange = rebuildLayoutFromConfig(cfg);
-    // U2e P1b — the `d` content slot is seeded with its Info + Transcript
-    // transient tabs (poolIds derive from its paneId `pane-d`), so they trail
-    // the declared cells in placedIds. `notes` stays hidden (not in any tab).
-    eq(pool.placedIds(arrange), ['g', 'a', 'd', 'info-pane-d', 'transcript-pane-d']);
-    eq(pool.hiddenIds(arrange), ['notes']);
+    // U2f — the `d` content slot's tabs are its Info + Transcript transients
+    // (poolIds derive from its paneId `pane-d`); its STABLE id `d` is still placed
+    // (pane.id). The declared `notes` viewer stays hidden (in no tab, non-transient).
+    eq(pool.placedIds(arrange), ['g', 'a', 'info-pane-d', 'transcript-pane-d', 'd']);
+    eq(pool.hiddenIds(arrange).sort(), ['notes']);
     assert(pool.isHidden(arrange, 'notes'));
     eq(pool.getPoolEntry(arrange, 'notes').title, 'Notes');
   });
@@ -195,8 +200,9 @@ layout:
     const cfg = parse(tmpYaml(GROUPS));
     const arrange = rebuildLayoutFromConfig(cfg);
     assert(arrange.pool && typeof arrange.pool === 'object', 'pool present');
-    // U2e P1b — synthesized-default path seeds the content slot too, so the
-    // Info/Transcript transient tabs appear alongside the declared panels.
+    // U2f — synthesized-default path seeds the content slot too: its tabs are
+    // the Info/Transcript transients, NOT a `detail` tab. placedIds carries the
+    // two transients + the slot's stable `detail` id + the other declared panels.
     eq(pool.placedIds(arrange).sort(),
        ['actions', 'detail', 'groups', 'info-pane-detail', 'transcript-pane-detail']);
     eq(pool.placedIds(arrange).filter(id => !arrange.pool[id].transient).sort(),
@@ -223,21 +229,26 @@ layout:
         - detail
 `));
     const arrange = rebuildLayoutFromConfig(cfg);
-    // U2e P1b — the `detail` content slot is seeded with Info + Transcript
-    // transient tabs, so their pool ids join the docker/logs multi-tab pane's
-    // in placedIds. Every mounted tab (declared or seeded) counts as placed.
+    // U2f — the `detail` content slot's tabs are Info + Transcript transients
+    // (no `detail` tab), so their pool ids join the docker/logs multi-tab pane's
+    // in placedIds; the slot's stable `detail` id is placed too. Every MOUNTED tab
+    // (declared or seeded) + each pane's stable id counts as placed.
     eq(pool.placedIds(arrange).sort(),
        ['actions', 'detail', 'docker', 'groups', 'info-pane-detail', 'logs', 'transcript-pane-detail'],
-       'every tab id appears in placedIds, including non-active logs + seeded transients');
+       'every tab id + stable pane id appears in placedIds (incl. non-active logs + seeded transients)');
     eq(pool.placedIds(arrange).filter(id => !arrange.pool[id].transient).sort(),
        ['actions', 'detail', 'docker', 'groups', 'logs'],
-       'declared pool (minus transient tabs) is the five configured panels');
-    // activePaneIds tracks the ACTIVE tab per pane. The content slot's default
-    // active tab is now Info, so its identity id is `info-pane-detail`.
-    eq(pool.activePaneIds(arrange), ['docker', 'groups', 'actions', 'info-pane-detail'],
-       'activePaneIds returns one id per pane (the active tab)');
+       'declared pool (minus transients) is the four panels + the content-slot `detail` id');
+    // activePaneIds tracks the ACTIVE tab per pane. The content slot's stable
+    // identity id is `detail` (pane.id preserved across tab switches), even
+    // though its active tab is Info.
+    eq(pool.activePaneIds(arrange), ['docker', 'groups', 'actions', 'detail'],
+       'activePaneIds returns one id per pane (the stable content-slot identity)');
+    // U2f — the content slot's stable `detail` id is PLACED (placedIds counts it),
+    // and there's no other declared-but-unplaced entry here → nothing hidden.
     eq(pool.hiddenIds(arrange), [],
-       'no pool entries are hidden — every tab is mounted');
+       'the detail anchor is placed (stable id), not hidden');
+    assert(pool.isPlaced(arrange, 'detail'), 'the content-slot stable id is placed');
     assert(pool.isPlaced(arrange, 'logs'), 'non-active tab counts as placed');
     assert(!pool.isHidden(arrange, 'logs'), 'non-active tab is NOT hidden');
   });
@@ -261,8 +272,11 @@ layout:
         - detail
 `));
     const arrange = rebuildLayoutFromConfig(cfg);
-    eq(pool.hiddenIds(arrange), ['notes'], 'notes is truly hidden');
+    // U2f — `notes` is the declared-but-unplaced viewer (hidden). `detail` is the
+    // content slot's stable id → PLACED, not hidden. So only `notes` is hidden.
+    eq(pool.hiddenIds(arrange).sort(), ['notes'], 'only the unplaced `notes` viewer is hidden');
     assert(pool.isPlaced(arrange, 'logs'),  'logs (a tab) is placed');
+    assert(pool.isPlaced(arrange, 'detail'), 'the content-slot stable id is placed');
     assert(pool.isHidden(arrange, 'notes'), 'notes (not in any tab) is hidden');
   });
 });

@@ -14,6 +14,8 @@
  *   stats           any-Msg no-op (identity)
  *   history         non-claim no-op + nav Msg (T9 coverage)
  *   actions         nav Msg + non-nav identity (T9 coverage)
+ *   info            info_show_content + the shared tvu arms (reset_chrome/select_*)
+ *   text-view       tv_append / tv_set_lines / tv_stream_start + shared tvu arms
  *
  * Branches that read model.config / model.focused / panel layout (eg.
  * `refresh` on docker, files, config-status) are exercised by the
@@ -36,7 +38,13 @@ const stats         = require('../panel/monitor/stats');
 const history       = require('../panel/navigator/history');
 const actions       = require('../panel/navigator/actions');
 const groups        = require('../panel/navigator/groups');
-const detail        = require('../panel/viewer/viewer');
+// U2f — the `detail`/viewer Component is deleted. Its scrollable-text interaction
+// (scroll/search/select/cursor) is now shared via `leaves/text/text-view-update`
+// (tvu) and exposed through the two content-slot Components: `info` (the viewer's
+// Info tab, content injected via `info_show_content`) and `text-view` (streamed
+// content via the `tv_*` arms). The freeze pins below retarget onto both.
+const info          = require('../panel/info/info');
+const textView      = require('../panel/text-view/text-view');
 const runtime       = require('../app/runtime');
 const { displayedLines } = require('./_helpers/viewer-lines');
 
@@ -309,96 +317,57 @@ describe('[immutable] groups', () => {
   });
 });
 
-// --- detail / viewer (Phase 3 — the heavy Component) ---------------------
+// --- info (content-slot Component; the viewer's Info tab) ----------------
 //
-// The viewer slice owns lines/scroll/tab/search/select/cursor/contentTabs.
-// Each non-IO Msg should return a fresh slice without touching the input.
+// U2f — the info instance owns lines/scroll/search/select/cursor and stores its
+// buffer on `slice.lines` (the retired viewer fields infoLines / tab /
+// contentTabs / viewerOverride / viewerStreamBuffer are gone). Content injection
+// is `info_show_content` (replace-wholesale, the analog of the retired
+// viewer_set_content); interaction flows through the shared tvu reducer. Each
+// non-IO Msg returns a fresh slice without touching the input.
+//
+// U2f — DELETED cases (pinned Msgs that no longer exist): `viewer_set_content`
+// (→ info_show_content), `viewer_append` / `stream_start` (→ text-view tv_append /
+// tv_stream_start below), `viewer_set_tab` (position-tabs, no per-doc `slice.tab`).
 
-describe('[immutable] detail (viewer)', () => {
+describe('[immutable] info', () => {
   const makeSlice = (overrides = {}) => ({
-    infoLines: ['hello', 'world', 'third'],  // P3 — Info canonical home
+    paneId: 'pane-info',
+    lines: ['hello', 'world', 'third'],  // buffer canonical home
     scroll: 0,
-    tab: 0,
     search: { active: false, term: '', idx: 0, typing: '' },
     select: { active: false, kind: 'char', anchor: { line: 0, col: 0 }, cursor: { line: 0, col: 0 } },
     cursor: { line: 0, col: 0 },
-    contentTabs: {},
     ...overrides,
   });
 
-  it('viewer_set_content writes viewerOverride, resets scroll, clears active search', () => {
-    // v0.6.2 T2c — viewer_set_content now writes slice.viewerOverride
-    // (discrete-doc slot) instead of slice.lines. Render's viewerLines()
-    // consults override first; tab_switch clears it.
-    const slice = makeSlice({
-      scroll: 5,
-      search: { active: true, term: 'old', matches: [{ line: 0, col: 0 }], idx: 0, typing: '' },
-    });
+  it('info_show_content replaces the buffer + resets scroll', () => {
+    // The content-injection arm (dispatch.showSelectedInfo → info_show_content):
+    // a fresh Navigator selection REPLACES the buffer wholesale and parks scroll
+    // at the top of the new item (the analog of the retired viewer_set_content).
+    const slice = makeSlice({ scroll: 5 });
     const out = expectNoMutation(
-      'viewer_set_content leaves input frozen',
-      () => detail._update({ type: 'viewer_set_content', lines: ['new'] }, slice),
+      'info_show_content leaves input frozen',
+      () => info.update({ type: 'info_show_content', lines: ['new'] }, slice),
       slice,
     );
-    eq(out.viewerOverride.lines, ['new']);
+    eq(displayedLines(out), ['new']);
     eq(out.scroll, 0);
-    eq(out.search.active, false);
     assert(out !== slice, 'fresh ref');
   });
 
-  it('viewer_set_content preserves an inactive search ref (identity)', () => {
-    const slice = makeSlice();
-    const out = detail._update({ type: 'viewer_set_content', lines: ['x'] }, slice);
-    assert(out.search === slice.search, 'inactive search ref preserved');
-  });
-
-  it('viewer_append spreads lines, follows bottom', () => {
-    // v0.6.2 T2d — slice.lines is derived from viewerLines (buffer is
-    // source of truth). Seed buffer state directly; tab=1 is Transcript
-    // in the test model's default (no per-group tabs → total=2 → idx 1).
+  it('viewer_reset_chrome clears cursor + select.active (via the shared tvu reducer)', () => {
+    // U2f — the tvu arm no longer touches a `tab` field (position-tabs replaced
+    // the per-doc tab index); it parks the cursor + drops the visual selection.
     const slice = makeSlice({
-      scroll: 0,
-      innerH: 3,
-      tab: 1,
-      viewerStreamBuffer: { lines: ['a', 'b', 'c'], cap: 1000 },
-    });
-    const out = expectNoMutation(
-      'viewer_append leaves input frozen',
-      () => detail._update({ type: 'viewer_append', line: 'd' }, slice),
-      slice,
-    );
-    eq(displayedLines(out).length, 4);
-    eq(displayedLines(out)[3], 'd');
-    eq(out.scroll, 1, 'followed to bottom');
-    assert(out.viewerStreamBuffer.lines !== slice.viewerStreamBuffer.lines, 'buffer array re-allocated');
-  });
-
-  it('viewer_set_tab returns new slice on change, same ref on no-op', () => {
-    // v0.6.2 R13 — msg.tab is range-validated against flatTabInfo's
-    // total. With no actions/terminals/content in the model, total = 2
-    // (Info + Transcript), so valid tabs here are 0 or 1.
-    const slice = makeSlice({ tab: 1 });
-    const same = detail._update({ type: 'viewer_set_tab', tab: 1 }, slice);
-    assert(same === slice, 'no-op no-allocate');
-    const next = expectNoMutation(
-      'viewer_set_tab change leaves input frozen',
-      () => detail._update({ type: 'viewer_set_tab', tab: 0 }, slice),
-      slice,
-    );
-    eq(next.tab, 0);
-  });
-
-  it('viewer_reset_chrome clears tab, cursor, select.active', () => {
-    const slice = makeSlice({
-      tab: 3,
       cursor: { line: 7, col: 4 },
       select: { active: true, kind: 'line', anchor: { line: 7, col: 0 }, cursor: { line: 8, col: 2 } },
     });
     const out = expectNoMutation(
-      'viewer_reset_chrome leaves input frozen',
-      () => detail._update({ type: 'viewer_reset_chrome' }, slice),
+      'info viewer_reset_chrome leaves input frozen',
+      () => info.update({ type: 'viewer_reset_chrome' }, slice),
       slice,
     );
-    eq(out.tab, 0);
     eq(out.cursor.line, 0);
     eq(out.cursor.col, 0);
     eq(out.select.active, false);
@@ -408,8 +377,8 @@ describe('[immutable] detail (viewer)', () => {
   it('select_begin builds fresh select + cursor', () => {
     const slice = makeSlice();
     const out = expectNoMutation(
-      'select_begin leaves input frozen',
-      () => detail._update({ type: 'select_begin', line: 1, col: 2, kind: 'line' }, slice),
+      'info select_begin leaves input frozen',
+      () => info.update({ type: 'select_begin', line: 1, col: 2, kind: 'line' }, slice),
       slice,
     );
     eq(out.select.active, true);
@@ -423,8 +392,8 @@ describe('[immutable] detail (viewer)', () => {
       select: { active: true, kind: 'char', anchor: { line: 0, col: 0 }, cursor: { line: 0, col: 0 } },
     });
     const out = expectNoMutation(
-      'select_extend leaves input frozen',
-      () => detail._update({ type: 'select_extend', line: 2, col: 4 }, slice),
+      'info select_extend leaves input frozen',
+      () => info.update({ type: 'select_extend', line: 2, col: 4 }, slice),
       slice,
     );
     eq(out.select.cursor.line, 2);
@@ -437,32 +406,87 @@ describe('[immutable] detail (viewer)', () => {
       select: { active: true, kind: 'char', anchor: { line: 0, col: 0 }, cursor: { line: 1, col: 1 } },
     });
     const out = expectNoMutation(
-      'select_cancel leaves input frozen',
-      () => detail._update({ type: 'select_cancel' }, slice),
+      'info select_cancel leaves input frozen',
+      () => info.update({ type: 'select_cancel' }, slice),
       slice,
     );
     eq(out.select.active, false);
 
     const noSelect = { ...slice, select: null };
-    const same = detail._update({ type: 'select_cancel' }, noSelect);
+    const same = info.update({ type: 'select_cancel' }, noSelect);
     assert(same === noSelect, 'identity-preserve when no select');
   });
+});
 
-  it('stream_start replaces lines, resets scroll', () => {
-    // v0.6.2 — unrouted stream_start now auto-jumps to the Transcript
-    // tab (last in the strip); with no per-group tabs in this test
-    // model's currentGroup, total=2 and transcript idx = 1. Returns
-    // [slice, cmds] when slice.tab !== transcriptIdx (the jump path).
-    const slice = makeSlice({ infoLines: ['x'], scroll: 8, tab: 0 });
-    const r = expectNoMutation(
-      'stream_start leaves input frozen',
-      () => detail._update({ type: 'stream_start', header: '$ cmd' }, slice),
+// --- text-view (content-slot Component; streamed content) ----------------
+//
+// U2f — a text-view instance owns the same per-instance interaction state as
+// info; its content arrives streamed via the `tv_*` arms (the analogs of the
+// retired flat viewer_append / stream_start): tv_append pushes a line +
+// bottom-sticks scroll, tv_set_lines replaces wholesale, tv_stream_start reseeds
+// to a header + resets view state.
+
+describe('[immutable] text-view', () => {
+  const makeSlice = (overrides = {}) => ({
+    paneId: 'pane-tv',
+    lines: ['a', 'b', 'c'],
+    scroll: 0,
+    innerH: 3,
+    search: { active: false, term: '', idx: 0, typing: '' },
+    select: { active: false, kind: 'char', anchor: { line: 0, col: 0 }, cursor: { line: 0, col: 0 } },
+    cursor: { line: 0, col: 0 },
+    ...overrides,
+  });
+
+  it('tv_append pushes a line + follows bottom (input frozen)', () => {
+    const slice = makeSlice();
+    const out = expectNoMutation(
+      'text-view tv_append leaves input frozen',
+      () => textView.update({ type: 'tv_append', line: 'd' }, slice),
       slice,
     );
-    const out = Array.isArray(r) ? r[0] : r;
+    eq(displayedLines(out).length, 4);
+    eq(displayedLines(out)[3], 'd');
+    eq(out.scroll, 1, 'followed to bottom');
+    assert(out.lines !== slice.lines, 'buffer array re-allocated');
+  });
+
+  it('tv_set_lines replaces the buffer + resets scroll', () => {
+    const slice = makeSlice({ scroll: 2 });
+    const out = expectNoMutation(
+      'text-view tv_set_lines leaves input frozen',
+      () => textView.update({ type: 'tv_set_lines', lines: ['x', 'y'] }, slice),
+      slice,
+    );
+    eq(displayedLines(out), ['x', 'y']);
+    eq(out.scroll, 0);
+  });
+
+  it('tv_stream_start reseeds to the header + resets view state', () => {
+    // The per-instance analog of the retired unrouted stream_start reset:
+    // clear to the header line, park scroll, drop search/select/cursor.
+    const slice = makeSlice({ scroll: 8, search: { active: true, term: 'q', idx: 2, typing: 'q' } });
+    const out = expectNoMutation(
+      'text-view tv_stream_start leaves input frozen',
+      () => textView.update({ type: 'tv_stream_start', header: '$ cmd' }, slice),
+      slice,
+    );
     eq(displayedLines(out), ['$ cmd']);
     eq(out.scroll, 0);
-    eq(out.tab, 1, 'auto-jumped to Transcript');
+    eq(out.search.active, false, 'search reset on reseed');
+  });
+
+  it('select_begin flows through the shared tvu reducer (input frozen)', () => {
+    const slice = makeSlice();
+    const out = expectNoMutation(
+      'text-view select_begin leaves input frozen',
+      () => textView.update({ type: 'select_begin', line: 1, col: 2, kind: 'line' }, slice),
+      slice,
+    );
+    eq(out.select.active, true);
+    eq(out.select.kind, 'line');
+    eq(out.cursor.line, 1);
+    eq(out.cursor.col, 2);
   });
 });
 

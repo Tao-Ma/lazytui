@@ -16,7 +16,6 @@ const { describe, it, eq, assert, expectNoMutation, report } = require('./test-r
 
 const mnav = require('../leaves/wm/nav');
 const mreg = require('../leaves/register');
-const mtabs = require('../leaves/wm/pane-tabs');
 const ms = require('../leaves/text/search');
 const mfc = require('../leaves/free-config/free-config');
 const mfcCore = require('../leaves/free-config/free-config-core');
@@ -99,41 +98,12 @@ describe('[immutable] leaves/register.js', () => {
   });
 });
 
-// --- leaves/pane-tabs ----------------------------------------------------
-
-describe('[immutable] leaves/pane-tabs.js', () => {
-  // v0.6.3 TEA Phase 3c: leaves now take a single (slice, msg) where
-  // msg carries the precomputed model bundle (currentGroup, groupExists).
-  // modelBundle() is the single helper that computes it from (model,
-  // groupName). (U2d P2b — the addEphemeral leaf + its bundle fields
-  // yamlTerminals/actionCount retired: terminals are `terminal` panes.)
-  const makeModel = () => ({
-    currentGroup: 'g',
-    config: { groups: { g: { actions: {} } } },
-  });
-  const makeSlice = () => ({
-    lines: [], scroll: 0, tab: 0,
-    search: { active: false, term: '', matches: [], idx: 0, typing: '' },
-    contentTabs: {},
-  });
-
-  it('addContent returns [newSlice, info]', () => {
-    const model = makeModel();
-    const slice = makeSlice();
-    const [next, info] = expectNoMutation(
-      'addContent leaves input frozen',
-      () => mtabs.addContent(slice, { groupName: 'g', key: 'k1', label: 'L', lines: ['x'], ...mtabs.modelBundle(model, 'g') }),
-      slice,
-    );
-    eq(info.focusDetail, true);
-    eq(next.contentTabs.g.k1.label, 'L');
-    // v0.6.2 N2 — slice.lines is finalizer-derived; the content lives
-    // in contentTabs[group][key].lines. Pre-N2 the reducer also mirrored
-    // it to slice.lines; that mirror retired.
-    eq(next.contentTabs.g.k1.lines, ['x']);
-    assert(slice.contentTabs.g === undefined, 'original contentTabs untouched');
-  });
-});
+// U2f — the `[immutable] leaves/pane-tabs.js` block is deleted: the module
+// `js/leaves/wm/pane-tabs.js` and its content-tab machinery (addContent /
+// modelBundle / the flat `contentTabs` slice field) are gone with the viewer
+// dissolution. Position-tabs now flow through set_active_tab / mint_tab /
+// remove_tab on `pane.tabs` (leaves/wm/pane.js), and content lives on each
+// tab-instance's own `slice.lines`.
 
 // --- leaves/search -------------------------------------------------------
 

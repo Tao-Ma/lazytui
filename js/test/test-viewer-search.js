@@ -338,16 +338,18 @@ describe('[10] P1 — committed search survives a lines-change (derived matches)
   });
 });
 
-describe('[N] "/" key enters search via the viewer itself (#3 controller-thinning)', () => {
-  // The viewer claims `/` in its own `case 'key'` now that it's the focused
-  // pane — dispatch.js no longer focus-checks + dispatches viewer_search_enter.
-  // Same end state as the `viewer_search_enter` Msg path (search.js), reached
-  // through the key claim. This exercises the `detail` viewer Component in
-  // isolation (its `/`-claim survives P1b as the slot's index-0 anchor).
-  it('focused detail: "/" claims the key and arms detailSearchMode', () => {
-    const viewer = require('../panel/viewer/viewer');
-    const s0 = { ...viewer._init(), infoLines: ['alpha', 'beta'], innerH: 8 };
-    const r = viewer._update({ type: 'key', key: '/', focusKind: 'detail' }, s0);
+describe('[N] "/" key enters search via the content pane itself (#3 controller-thinning)', () => {
+  // The focused content pane claims `/` in its own `case 'key'` (dispatch.js no
+  // longer focus-checks + dispatches viewer_search_enter). U2f — the `detail`
+  // viewer Component is gone; the `/`-claim now lives in the SHARED tvu reducer
+  // (leaves/text/text-view-update `case 'key'`), gated on `msg.focusKind ===
+  // ownKind`. The content slot's active tab is `info` (ownKind 'info'), so we
+  // exercise the claim through the info Component's `update` — the same end state
+  // as the `viewer_search_enter` Msg path (search.js), reached through the key claim.
+  const info = require('../panel/info/info');
+  it('focused content pane: "/" claims the key and arms detailSearchMode', () => {
+    const s0 = { ...info.init('pane-x'), lines: ['alpha', 'beta'], innerH: 8 };
+    const r = info.update({ type: 'key', key: '/', focusKind: 'info' }, s0);
     assert(Array.isArray(r), 'returns [slice, effects] (claimed)');
     const effects = r[1];
     assert(effects.some(e => e.type === '_claimed'), 'claims the keystroke');
@@ -357,9 +359,10 @@ describe('[N] "/" key enters search via the viewer itself (#3 controller-thinnin
     );
   });
 
-  it('non-detail focus: "/" is left for the controller (filter mode)', () => {
-    const viewer = require('../panel/viewer/viewer');
-    const r = viewer._update({ type: 'key', key: '/', focusKind: 'groups' }, { ...viewer._init() });
+  it('non-content focus: "/" is left for the controller (filter mode)', () => {
+    // focusKind mismatches ownKind ('info') → the tvu key state machine returns the
+    // bare slice (unclaimed), so handleNormalKey runs _enterFilterMode.
+    const r = info.update({ type: 'key', key: '/', focusKind: 'groups' }, { ...info.init('pane-x') });
     assert(!Array.isArray(r), 'returns the bare slice (unclaimed) so handleNormalKey runs _enterFilterMode');
   });
 });

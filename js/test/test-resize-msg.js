@@ -20,11 +20,13 @@ const sm = require('./smoke/_helpers/smoke');
 const { getInstanceSlice } = require('../panel/api');
 const geo = require('../leaves/wm/geometry');
 
-// U2e P1b — the content slot is SEEDED with Info(active)+Transcript+detail-anchor
-// tabs; the [9] innerH probe reads the slot's ACTIVE instance via
-// resolveTarget('viewer') (now the Info instance). That instance only mints when
-// info + text-view are registered (reconcilePaneInstances skips unregistered tab
-// kinds); test-runner registers only layout/detail/groups.
+// U2f — the content slot is SEEDED with Info(active)+Transcript tabs (no detail
+// anchor; the `detail`/viewer Component is gone). The [9] innerH probe reads the
+// slot's ACTIVE instance via resolveTarget('viewer') (now the Info instance).
+// That instance only mints when info + text-view are registered
+// (reconcilePaneInstances skips unregistered tab kinds); test-runner registers
+// only layout/groups now.
+const route = require('../panel/route');
 require('../panel/api').registerComponent(require('../panel/info/info'));
 require('../panel/api').registerComponent(require('../panel/text-view/text-view'));
 
@@ -204,10 +206,14 @@ describe('[9] viewer innerH is reducer-owned, threaded via augmentMsg (FIX-2)', 
     const vp = route.resolveViewerPaneId();
     return geo.getPanelViewportH(ls, vp, ls.dims, undefined, vp);
   }
-  // A no-op viewer Msg routes through loop._augment → viewer.augmentMsg (stamps
-  // msg.innerH) → the viewer's reducer projects + commits it. No render needed.
+  // A no-op viewer Msg routes through loop._augment → info.augmentMsg (stamps
+  // msg.innerH via paneInnerH) → the shared tvu reducer projects + commits it.
+  // No render needed. U2f — the `detail` viewer Component is gone; the content
+  // slot's ACTIVE instance (Info by default) is the viewer-kind tab now, so wrap
+  // its instance id (resolveTarget('viewer')) instead of the retired 'detail'.
   function pokeViewer() {
-    sm.api.dispatchMsg(sm.api.wrap('detail', { type: 'viewer_scroll', delta: 0 }));
+    const t = route.resolveTarget('viewer');
+    sm.api.dispatchMsg(sm.api.wrap(t, { type: 'viewer_scroll', delta: 0 }));
   }
 
   it('innerH matches the viewport after a viewer Msg (no render)', () => {

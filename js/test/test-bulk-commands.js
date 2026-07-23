@@ -32,7 +32,8 @@ api.registerComponent(dockerPlugin);
 
 const { describe, it, assert, eq, report } = require('./test-runner');
 const { getModel } = require('../app/runtime');
-const { getInstanceSlice } = require('../panel/api');
+// U2f — getInstanceSlice('detail') is retired (the viewer Component is gone); the
+// [6] case no longer seeds the viewer's flat content-tab index.
 
 
 // Set up a fake config + group so apiGetItems('containers', S) returns names.
@@ -109,14 +110,15 @@ describe('[5] empty operand → no streamCommand call', () => {
 describe('[6] command leaves terminalMode (R6: tab transition handled by stream_start auto-jump)', () => {
   it('leaves terminal mode + invokes streamCommand', () => {
     // v0.6.2 R6 — the pre-stream setActiveTab(0) was dropped (legacy
-    // from pre-Transcript-tab era). In production, stream_start's
-    // unrouted-auto-jump puts the user on Transcript (idx 1) when
-    // the spawn fires; in this test streamCommand is mocked so no
-    // stream_start fires — slice.tab stays where it was. We only
-    // verify the synchronous side-effects: terminalMode cleared +
-    // streamCommand invoked with the right args.
+    // from pre-Transcript-tab era). We only verify the synchronous
+    // side-effects: terminalMode cleared + streamCommand invoked with
+    // the right args.
+    // U2f — the old `getInstanceSlice('detail').tab = 3` scaffolding
+    // (the retired viewer's flat content-tab index) is dropped: the
+    // `detail` viewer Component + its `slice.tab` are gone, and the tab
+    // transition this case cares about is a no-op under a mocked
+    // streamCommand (no stream_start fires) — exactly as before.
     getModel().config = { groups: { g1: { name: 'g1', containers: ['c1'] } } };
-    getInstanceSlice('detail').tab = 3;
     require('../dispatch/control/dispatch').applyMsg({ type: 'mode_set', flag: 'terminalMode' });
     setSel('containers', 0);
     clearMultiSel('containers');

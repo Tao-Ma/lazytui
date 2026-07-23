@@ -1,14 +1,13 @@
 /**
- * U2e stopgap — the UNIFIED tab strip for MULTI-tab slots (visible border strip +
- * matching `[≡]` menu). Run: node js/test/test-position-tab-switcher.js
+ * U2f — the UNIFIED tab strip for the (always multi-tab) content slot (visible
+ * border strip + matching `[≡]` menu). Run: node js/test/test-position-tab-switcher.js
  *
- * Regression for a U2c-shipped bug: a `tab:true` action mints its output as a
- * `text-view` position-tab into the viewer slot + activates it, which used to
- * swap the visible border strip from the viewer's inner tabs (`Info | Transcript`)
- * to the slot's position-tabs (`Detail | primary`) — Info/Transcript appeared to
- * vanish. The fix flattens both levels into ONE strip (`Info | Transcript |
- * primary`) shown whichever is active, so running an action ADDS a tab. The `[≡]`
- * menu shows the same flattened list. (The full unified strip lands in P1b/U2f.)
+ * Post-U2f the content slot is a position-tab container seeded with Info +
+ * Transcript position-tabs (each its own instance; there is NO hidden `detail`
+ * anchor — the viewer Component is gone). Running a `tab:true` action mints its
+ * output as a `text-view` position-tab into the slot + activates it, so the strip
+ * reads `Info ─ Transcript ─ primary` and only the active bracket moves — running
+ * an action ADDS a tab. The `[≡]` menu shows the SAME unified list as the strip.
  */
 'use strict';
 
@@ -95,12 +94,12 @@ describe('[U2f] running an action ADDS a position-tab to the unified strip', () 
   });
 });
 
-describe('[stopgap] picking a position row switches correctly', () => {
+describe('[U2f] picking a position row switches correctly', () => {
   it('picking Transcript (a position row) activates the Transcript text-view tab', () => {
-    // U2e P1b — Transcript is now a real POSITION-tab (its own text-view
-    // instance), not the viewer's inner flat tab. Picking it activates that
-    // tab directly via set_active_tab; the slot stays a text-view instance
-    // (Transcript IS a text-view), so there's no inner `slice.tab` flip.
+    // U2f — Transcript is a real POSITION-tab (its own text-view instance),
+    // seeded alongside Info directly on the content slot (there is NO hidden
+    // `detail` anchor anymore). Picking it activates that tab via set_active_tab;
+    // the slot stays a text-view instance (Transcript IS a text-view).
     sm.bootFresh();
     const vpid = route.resolveViewerPaneId();
     mintTextView(vpid, 'tv-act-g-primary', 'primary');
@@ -111,25 +110,26 @@ describe('[stopgap] picking a position row switches correctly', () => {
     dispatch._paneMenuPick(vpid, row);
     eq(paneOf(vpid).activeTabId, 'transcript-pane-detail', 'Transcript position-tab activated');
     eq(route.instanceKind(vpid), 'text-view', 'the Transcript tab is a text-view instance');
-    eq(paneOf(vpid).tabs.length, 4,
-       'all tabs still present (detail anchor + Info + Transcript + primary)');
+    eq(paneOf(vpid).tabs.length, 3,
+       'all tabs still present (Info + Transcript + primary — no detail anchor)');
   });
 
   it('picking the action tab (a position row) activates the text-view', () => {
     sm.bootFresh();
     const vpid = route.resolveViewerPaneId();
     mintTextView(vpid, 'tv-act-g-primary', 'primary');
-    // Switch to the detail anchor first, then back to the action tab via the menu.
-    api.dispatchMsg(api.wrap('layout', { type: 'set_active_tab', paneId: vpid, tabPoolId: 'detail' }));
-    eq(route.instanceKind(vpid), 'detail', 'detail anchor active');
+    // U2f — switch to the seeded Info position-tab first (there is no `detail`
+    // anchor anymore), then back to the action tab via the menu.
+    api.dispatchMsg(api.wrap('layout', { type: 'set_active_tab', paneId: vpid, tabPoolId: 'info-pane-detail' }));
+    eq(route.instanceKind(vpid), 'info', 'Info position-tab active');
     api.dispatchMsg(api.wrap('layout', { type: 'pane_menu_open', paneId: vpid }));
     const row = (paneMenu.items(vpid) || []).find(r => r && r.label === 'primary');
     assert(row && row.kind === 'position', 'primary is a position row');
     dispatch._paneMenuPick(vpid, row);
     eq(paneOf(vpid).activeTabId, 'tv-act-g-primary', 'action text-view activated');
-    // Post-P1b the slot always carries the seeded detail/Info/Transcript tabs
-    // plus the minted action tab — nothing is destroyed by switching.
-    eq(paneOf(vpid).tabs.length, 4, 'all four tabs still present (nothing destroyed)');
+    // Post-U2f the slot always carries the seeded Info + Transcript tabs plus the
+    // minted action tab — nothing is destroyed by switching.
+    eq(paneOf(vpid).tabs.length, 3, 'all three tabs still present (nothing destroyed)');
   });
 });
 

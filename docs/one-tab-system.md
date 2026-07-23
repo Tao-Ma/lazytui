@@ -1,6 +1,8 @@
 # One tab system (U2) — fold the viewer's content-tabs into position-tabs
 
-> **Status:** in progress. **U1 + U2a + U2b shipped** — U1 the keystone interface
+> **Status:** COMPLETE — U1 · U2a–U2f all shipped (branch `pane-tabs`). One tab
+> system: every tab is a position-tab instance; the viewer god-object is gone.
+> **U1 + U2a + U2b shipped** — U1 the keystone interface
 > (`leaves/wm/tab-container.js` + consumers routed); U2a the text-view render
 > primitive (`leaves/text-view/render.js` + search geometry moved to a leaf); U2b
 > the **full per-tab instance model** (each tab a first-class instance) + the
@@ -12,8 +14,19 @@
 > output is now fully re-homed to text-view position-tabs. **U2d SHIPPED**
 > (terminal-as-pane: the embedded PTY is a minted `terminal` pane, YAML
 > `group.terminals` are open-on-demand actions, and the viewer strip's terminal
-> segment + `ephemeralTerminals` are excised). **U2e–U2f remain** (Info/Transcript
-> → text-view; delete the rest of the parallel machinery). A large, multi-release arc.
+> segment + `ephemeralTerminals` are excised). **U2e SHIPPED** (the atomic pivot:
+> the `detail`/viewer Component dissolved into sibling POSITION-tabs — Info is an
+> `info` pane instance, Transcript + opened content are `text-view` instances; the
+> content slot is identified by a stable `pane.role==='content'`). **U2f SHIPPED**
+> — the parallel machinery is DELETED: `panel/viewer/viewer.js`, `viewer/tabs.js`,
+> `leaves/wm/pane-tabs.js`, the flat-tab drag-reorder, `tab_switch`/`viewer_*`
+> content Msgs, tab-container's viewer backing, and the drained slice fields
+> (`contentTabs`/`tab`/`viewerStreamBuffer`/`viewerOverride`/`infoLines`). The
+> content slot's stable identity (`pane.id/type/title = detail/Detail`, a layout
+> keyword, no Component) is preserved across tab switches for listings +
+> `:save-layout`; `paint` resolves each pane's renderer by its ACTIVE-tab instance
+> kind. Follow-up #11 (listings showed the active tab's "Info" not the slot's
+> "Detail") + nav-history position-tab capture folded in. ONE tab system now.
 > Supersedes the P2–P4 approach in
 > [pane-tabs-unification.md](pane-tabs-unification.md) (its P1 — the shared
 > `leaves/wm/tab-state` store — stays and is reused here as U1's basis).
@@ -247,13 +260,32 @@ ships and passes the gate (suite · smoke · acyclic · DEAD 0 · bench parity).
     pane-menu close, dead-terminal `x`, `run_selected`, `jobs_route` pty branch,
     tab-strip/tab-container). Retired the dead `destroy_pty_session` effect. Gate:
     suite 155 · smoke 13 · dep-walker `[]` both modes · dead-exports 0 · bench parity.
-- **U2e — `info` (+ Transcript → `text-view`).** The viewer slot starts with an
-  `info` tab; Transcript becomes a `text-view`. The "viewer" Component is now
-  just a default slot layout.
-- **U2f — retire the parallel machinery.** Delete `contentTabs`, `tab-strip.js`
-  (folded into the slot strip at D2), the viewer's `select` state (now per-
-  instance), and `pane-tabs.js`'s viewer-only tab-kind logic. `tab-state` (P1)
-  remains as the generic per-instance view-state store.
+- **U2e — `info` (+ Transcript → `text-view`). ✅ SHIPPED** (the atomic pivot,
+  P0→P4). The content slot's default tab is an `info` instance; Transcript + opened
+  content are `text-view` instances; the slot is identified by a stable
+  `pane.role==='content'` (not the `detail` kind). The override writers
+  (config-diff/history/help/job-info) rehome to text-view content tabs.
+- **U2f — retire the parallel machinery. ✅ SHIPPED.** Deleted
+  `panel/viewer/viewer.js` (the `detail` Component), `viewer/tabs.js`,
+  `leaves/wm/pane-tabs.js`, the flat-tab drag-reorder (`tab-drag.js` + `tab_drag_*`),
+  `tab_switch`/`viewer_set_tab`/`viewer_*_content_tab` Msgs, tab-container's `viewer`
+  backing (only `instance` remains), `tab-strip.js#buildTabStrip` (only
+  `buildEntryStrip` for the slot strip), and the drained slice fields
+  (`contentTabs`/`tab`/`viewerStreamBuffer`/`viewerOverride`/`infoLines`). The
+  content slot's `pane.id/type/title` stay the stable `detail`/`Detail` keyword
+  (no Component) across tab switches — that's what listings + `:save-layout`
+  serialize (from `role`, not a `detail`-typed tab); `paint._safeRender` resolves
+  each pane's renderer by its ACTIVE-tab instance kind, not `pane.type`. Kept the
+  generic infrastructure: `tab-state`, `tab-container` (`instance`), `tvu`,
+  `buildTextView`, `viewer/{search,select}.js` (shared facades). Folded in
+  follow-up #11 (`placedIds`/`hiddenIds`/`panelListItems` key on the slot's stable
+  id + skip transient tabs → listings show "Detail", not the active "Info") and
+  nav-history position-tab capture (`_captureNavLocation` gates on `isViewerKind`,
+  records the active tab's poolId, restores via `set_active_tab`). Executed as 3
+  commits (C1 flat-tab-drag · C2 vestigial reads · C3 the atomic delete + fold-ins
+  + fanned test migration); 2 latent prod bugs the migration surfaced were fixed
+  (blank content-slot render; empty nested job-info card). Gate: suite 157 · smoke
+  13 · dep-walker `[]` both modes · dead-exports 0.
 
 Selection unification lands as a *consequence* of D4 across U2c–U2f, not as a
 separate phase.

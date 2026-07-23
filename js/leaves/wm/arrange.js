@@ -150,19 +150,26 @@ function rebuildLayoutFromConfig(config) {
 }
 
 /**
- * U2e P1b — seed every CONTENT slot (`role:'content'`) with the transient Info +
- * Transcript tabs, layered over its persistent `detail` anchor tab.
+ * U2e — seed every CONTENT slot (`role:'content'`) with the transient Info +
+ * Transcript tabs.
  *
  * `state.reconcilePaneInstances` mints ONE instance per `pane.tabs[]` entry (kind
  * from each tab's pool entry) and activates `pane.activeTabId`, so this seed is the
  * ONLY lever that creates the `info` + `transcript` (text-view) instances and makes
- * Info the default. The `detail` tab STAYS (non-transient) as index-0 anchor so
- * `:save-layout` serializes the slot back as `detail` verbatim (yaml-layout skips
- * the two transient siblings); the strip hides it (see panel/slot-strip).
+ * Info the default.
+ *
+ * U2f — the `detail` anchor tab is GONE (its Component was deleted): the slot's
+ * tabs become [Info(active), Transcript] outright. The slot keeps its STABLE
+ * identity (`pane.id`/`type`/`title` = the config's `detail`/`Detail`, preserved
+ * across tab switches by pane._rebuildLegacyFields) — that's what `:save-layout`
+ * serializes (the transient Info/Transcript are skipped → the cell falls back to
+ * the non-transient `pane.id`) and what listings show. The persistent `detail`
+ * pool entry stays in `arrange.pool` unreferenced-by-tabs, purely as that
+ * serialization + display anchor; reconcile never mints it (no `detail` Component).
  *
  * Deterministic — poolIds derive from the slot's paneId — so `:restore-layout`,
- * replay, and undo regenerate byte-identical seeds. Idempotent (the config never
- * carries these transient tabs, but a re-seed is a no-op).
+ * replay, and undo regenerate byte-identical seeds. Idempotent (a re-seed is a
+ * no-op once the Info tab is present).
  */
 function _seedContentSlots(out) {
   for (const col of out.columns || []) {
@@ -194,10 +201,14 @@ function seedContentPane(pane) {
     [infoId]: { id: infoId, type: 'info', title: 'Info', config: {}, transient: true },
     [transId]: { id: transId, type: 'text-view', title: 'Transcript', config: {}, transient: true, hint: 'transcript' },
   };
-  // Append Info (ACTIVE) then Transcript (background). addTab rebuilds the legacy
-  // Panel fields from the new active entry and preserves role / paneId / hotkey /
-  // heightPct.
-  let next = mpane.addTab(pane, { id: infoId, poolId: infoId }, entries[infoId], { activate: true });
+  // Replace the slot's tabs with [Info(ACTIVE), Transcript] — no `detail` tab. The
+  // slot's stable identity (pane.id/type/title) is preserved (_rebuildLegacyFields
+  // keeps it for role:'content'); only tabs + activeTabId change here. addTab from
+  // the info tab makes it active + rebuilds the legacy fields, which — being a
+  // content slot — resolve back to the slot's own identity, not info's.
+  let next = mpane.addTab(
+    { ...pane, tabs: [], activeTabId: null },
+    { id: infoId, poolId: infoId }, entries[infoId], { activate: true });
   next = mpane.addTab(next, { id: transId, poolId: transId }, entries[transId], { activate: false });
   return { pane: next, entries };
 }

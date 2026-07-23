@@ -125,10 +125,12 @@ describe('[info P0] registered in the builtin set', () => {
 // would vanish in the common state and the Transcript/content siblings would be
 // invisible + unclickable. Regression guard for the info.js `_slotTitle` wiring —
 // the stopgap wired the strip into viewer/text-view but not the new info type.
+// U2f — the `detail`/viewer Component is gone; the content slot seeds `info` +
+// `text-view` (Transcript) tabs at boot (test-runner auto-registers both), so the
+// strip is asserted straight off the seeded slot with no viewer registration.
 describe('[info P1b] renders the unified slot strip when multi-tab', () => {
   it('the Info tab render surfaces the Transcript sibling in its title strip', () => {
     if (!api.getComponent('text-view')) api.registerComponent(require('../panel/text-view/text-view'));
-    if (!api.getComponent('detail')) api.registerComponent(require('../panel/viewer/viewer'));
     sm.bootFresh();
     const route = require('../panel/route');
     const mpool = require('../leaves/wm/pool');

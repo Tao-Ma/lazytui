@@ -38,11 +38,13 @@ function assertPaneShape(p, where) {
   // Pane fields
   assert(typeof p.paneId === 'string' && p.paneId.length > 0, `${where}: paneId is non-empty string`);
   assert(p.paneId.startsWith('pane-'), `${where}: paneId starts with 'pane-' (got ${p.paneId})`);
-  // U2e P1b — a CONTENT slot (`role:'content'`) is no longer a length-1
-  // singleton: rebuildLayoutFromConfig seeds it with the persistent `detail`
-  // anchor plus two transient tabs (Info ACTIVE by default, Transcript), so
-  // `pane.type` reads 'info' and `activeTabId` is `info-<paneId>`. Assert that
-  // seeded shape here; every other pane stays the Phase-1 singleton.
+  // U2f — a CONTENT slot (`role:'content'`) is no longer a length-1 singleton:
+  // rebuildLayoutFromConfig seeds it with two transient tabs (Info ACTIVE by
+  // default, Transcript) and NO `detail` tab (that Component was deleted). Its
+  // legacy identity (`pane.id`/`type`/`title`) stays the STABLE slot identity
+  // ('detail'/'detail'/'Detail'), decoupled from the active tab's kind, and
+  // `activeTabId` is `info-<paneId>`. Assert that seeded shape here; every other
+  // pane stays the Phase-1 singleton.
   if (p.role === 'content') {
     assertContentSlotShape(p, where);
     return;
@@ -58,20 +60,22 @@ function assertPaneShape(p, where) {
   assert(typeof p.columnIndex === 'number', `${where}: columnIndex present`);
 }
 
-// The seeded content slot: role='content' is its stable identity (NOT type,
-// which mirrors the ACTIVE tab — now 'info'). tabs = [detail anchor,
-// info-<paneId> (active), transcript-<paneId>]; activeTabId = info-<paneId>.
+// The seeded content slot (U2f): role='content' is the stable slot marker. tabs =
+// [info-<paneId> (active), transcript-<paneId>] — NO `detail` tab. The legacy
+// identity (id/type/title) is the STABLE slot identity ('detail'/'detail'/'Detail'),
+// preserved by pane._rebuildLegacyFields across tab switches — it does NOT mirror
+// the active tab's kind. activeTabId = info-<paneId>.
 function assertContentSlotShape(p, where) {
-  eq(p.role, 'content', `${where}: content slot identity is role, not type`);
+  eq(p.role, 'content', `${where}: content slot identity is role`);
   const infoId = `info-${p.paneId}`;
   const transId = `transcript-${p.paneId}`;
-  assert(Array.isArray(p.tabs) && p.tabs.length === 3,
-    `${where}: content slot has 3 seeded tabs [detail, info, transcript] (got ${p.tabs && p.tabs.length})`);
-  eq(p.tabs.map(t => t.poolId).join(','), `detail,${infoId},${transId}`,
+  assert(Array.isArray(p.tabs) && p.tabs.length === 2,
+    `${where}: content slot has 2 seeded tabs [info, transcript] (got ${p.tabs && p.tabs.length})`);
+  eq(p.tabs.map(t => t.poolId).join(','), `${infoId},${transId}`,
     `${where}: seeded tab poolIds in order`);
   eq(p.activeTabId, infoId, `${where}: Info is the default active tab`);
-  eq(p.type, 'info', `${where}: legacy type mirrors the active (info) tab`);
-  eq(p.id, infoId, `${where}: legacy id mirrors the active tab`);
+  eq(p.type, 'detail', `${where}: legacy type is the STABLE slot identity, not the active tab kind`);
+  eq(p.id, 'detail', `${where}: legacy id is the STABLE slot identity`);
   assert(typeof p.columnIndex === 'number', `${where}: columnIndex present`);
 }
 

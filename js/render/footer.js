@@ -21,7 +21,6 @@ const { stdout } = require('../io/term');
 const { multiSelCount } = require('../panel/nav-state');
 const { theme } = require('../leaves/infra/themes');
 const { truncate, viewportDims } = require('../leaves/render/draw');
-const { getTabInfo } = require('../panel/viewer/tabs');
 const { focusedTerminalLabel } = require('../panel/terminal-surfaces');
 const { getPanelDef, getInstanceSlice, getFocus, instanceKind,
         collectViewContributions, filterCurrentText } = require('../panel/api');
@@ -66,9 +65,8 @@ function footerKeys(model) {
     const ds = require('../panel/viewer/search');
     const ms = require('../leaves/text/search');
     const term = ds.typingText();
-    const vslice = getInstanceSlice(_route().resolveTarget('viewer') || 'detail');
-    const m = getModel();
-    const vlines = vslice ? require('../leaves/wm/pane-tabs').viewerLines(vslice, m, m.currentGroup) : [];
+    const vslice = getInstanceSlice(_route().resolveTarget('viewer'));
+    const vlines = (vslice && Array.isArray(vslice.lines)) ? vslice.lines : [];
     const n = ms.matchesFor(vlines, term).length;
     const idx = n ? Math.min((vslice && vslice.search && vslice.search.idx) || 0, n - 1) + 1 : 0;
     return ` /${esc(term)}│ \\[${idx}/${n}] | ${bindings.footerSegs('detailSearchMode').join(' | ')}`;
@@ -93,21 +91,19 @@ function footerKeys(model) {
     // Build the live guard facts the detail context's `when` predicates read;
     // the registry reproduces the old segment list, then the live committed-
     // search count is appended (it carries a live number, not a key hint).
-    // U2d P2b — a `detail` focus is never a terminal now (terminals are their
-    // own `terminal`-kind pane), so the isTerminal/dead/isEphemeral facts are
-    // permanently false; the content-tab count + committed-search count remain.
-    const { total } = getTabInfo();
+    // A content focus is never a terminal (terminals are their own `terminal`-kind
+    // pane), so the isTerminal/dead/isEphemeral facts are permanently false; the
+    // position-tab count + committed-search count remain. `total` = the content
+    // slot's tabs (Info + Transcript + opened content tabs) → the `][ tabs` hint.
+    const total = _route().contentSlotTabCount();
     let keys = bindings.footerFor('detail', { total, isTerminal: false, dead: false, isEphemeral: false });
     // P1 — committed-phase count derives from (lines, term).
-    const vslice = getInstanceSlice(_route().resolveTarget('viewer') || 'detail');
+    const vslice = getInstanceSlice(_route().resolveTarget('viewer'));
     const search = vslice?.search;
     if (search && search.active) {
       const ms = require('../leaves/text/search');
-      const m = getModel();
-      // U2e P1b — active content instance holds its buffer on slice.lines; fall
-      // back to the viewer's derived lines for the drained detail anchor.
-      const vlines = Array.isArray(vslice.lines) ? vslice.lines
-        : require('../leaves/wm/pane-tabs').viewerLines(vslice, m, m.currentGroup);
+      // The active content instance (info / text-view) holds its buffer on slice.lines.
+      const vlines = Array.isArray(vslice.lines) ? vslice.lines : [];
       const n = ms.matchesFor(vlines, search.term || '').length;
       const idx = n ? Math.min(search.idx || 0, n - 1) + 1 : 0;
       keys += ` | n/N [${idx}/${n}] | Esc clear`;
@@ -195,7 +191,7 @@ function renderFooter(model = getModel()) {
   // on a non-list panel, where space falls back to the leader.)
   // focusDef hoisted at the top of this function.
   const selectActive = model.modes.listSelectMode && focusDef && typeof focusDef.getItems === 'function';
-  const sel = getInstanceSlice(_route().resolveTarget('viewer') || 'detail')?.select;
+  const sel = getInstanceSlice(_route().resolveTarget('viewer'))?.select;
   const selectTag = (sel && sel.active)
     ? ` \\[${sel.kind === 'line' ? 'v-line' : 'v-char'}]`
     : (selectActive ? ' \\[select]' : '');

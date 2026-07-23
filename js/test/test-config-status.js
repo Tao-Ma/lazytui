@@ -27,7 +27,14 @@ const { describe, it, assert, eq, report } = require('./test-runner');
 // registered (layout first per Phase 3) for the helper to resolve.
 api.registerComponent(require('../panel/layout'));
 api.registerComponent(cs);
-const { setSel } = require('../app/state');
+// U2f — the cfgStatusDiff writer's new home ([8], below) is a `text-view` content
+// tab in the seeded content slot; its instance only mints when info + text-view are
+// registered (reconcilePaneInstances skips unregistered tab kinds).
+api.registerComponent(require('../panel/info/info'));
+api.registerComponent(require('../panel/text-view/text-view'));
+const { setSel, initState } = require('../app/state');
+const route = require('../panel/route');
+const mpane = require('../leaves/wm/pane');
 
 const STATUS = cs.STATUS;
 
@@ -469,14 +476,12 @@ describe('[8] diffFor — preview shape per status', () => {
   });
 
   it('Enter on a file row runs cfgStatusDiff → emits the diff effect', () => {
-    effects.installBuiltins();  // focus/render/apply_msg/...; cfgStatusDiff calls state.setViewerContent directly
-    // Phase B: setViewerContent routes via dispatchMsg → detail Component; register it.
-    require('../panel/api').registerComponent(require('../panel/viewer/viewer'));
+    effects.installBuiltins();  // focus/render/apply_msg/...
     baseline();
     fs.writeFileSync(path.join(TMP, 'data', 'dev9', 'bashrc'), 'export FOO=mutated\n');
     const cache = cs._computeStatus('config', E2E_FILES, TMP);
     const slice = {
-      tab: 0, expanded: {}, branch: 'config', computing: false,
+      expanded: {}, branch: 'config', computing: false,
       files: E2E_FILES, projectDir: TMP, cache,
     };
     const items = cs._buildItems(slice, E2E_FILES);
@@ -486,15 +491,35 @@ describe('[8] diffFor — preview shape per status', () => {
     // Pure return arm reads the cursor from slice.nav (not the global).
     slice.nav = { ...require('../leaves/wm/nav').init(), cursor: idx };
     const r = cs._update({ type: 'key', key: 'return' }, slice);
+    // (1) The pure reducer intent: Enter on a file emits the cfgStatusDiff effect
+    // carrying the row + branch + projectDir (unchanged by U2f).
     assert(Array.isArray(r) && r[1][0].type === 'cfgStatusDiff', 'Enter on a file emits cfgStatusDiff');
-    // U2e P1b — the cfgStatusDiff effect's setImmediate body still calls the OLD
-    // setViewerContent → viewer_set_content → viewerOverride path, but that path
-    // is now INERT: setViewerContent(null,…) reroutes through
-    // resolveTarget('viewer') = the content slot's ACTIVE instance (Info by
-    // default), which does NOT handle viewer_set_content. The config-status DIFF
-    // override writer's new home is P4-DEFERRED — do NOT invent one here. The
-    // "lands in viewerOverride" phase is xfail'd until P4 re-homes the writer.
-    // P4: override writer home TBD.
+    eq(r[1][0].item.path, 'data/dev9/bashrc', 'effect carries the selected file row');
+    eq(r[1][0].branch, 'config', 'effect carries the branch');
+
+    // (2) U2f — P4 re-homed the DIFF override writer from the retired viewerOverride
+    // slot to a `text-view` CONTENT TAB. The cfgStatusDiff effect's off-tick body
+    // funnels through nav-state.setViewerContent(null, diffBody, {key:'config-diff',
+    // label:'Diff'}) → panel/content-tab.addContentTab → a minted `content-config-diff`
+    // text-view tab whose slice.lines hold the diff. That async setImmediate boundary
+    // can't be awaited before this file's synchronous report()/exit, so drive the
+    // REHOMED WRITER directly (the same call the effect makes) and assert it lands.
+    // Needs a seeded content slot (initState) for resolveViewerPaneId to resolve.
+    const m = getModel();
+    m.config = { project_dir: '.', theme: 'monokai', register: {}, files: [], plugins: {},
+      groups: { g: { name: 'g', label: 'g', containers: [], actions: {},
+        children: [], parent: null, depth: 0, quick: false } } };
+    m.projectDir = '.';
+    m.currentGroup = 'g';
+    initState();
+    const body = cs._diffFor(items[idx], 'config', TMP).join('\n');
+    require('../panel/nav-state').setViewerContent(null, body, { key: 'config-diff', label: 'Diff' });
+    const tabInst = route.getInstance(mpane.newPaneId('content-config-diff'));
+    assert(tabInst, 'the config-diff text-view tab was minted in the content slot');
+    eq(route.instanceKind(mpane.newPaneId('content-config-diff')), 'text-view', 'rehomed to a text-view tab');
+    const landed = (tabInst.slice.lines || []).join('\n');
+    assert(landed.includes('data/dev9/bashrc'), 'diff header (the file path) landed on the tab');
+    assert(landed.includes('differs'), 'diff body (the * differs note) landed on the tab');
   });
 });
 

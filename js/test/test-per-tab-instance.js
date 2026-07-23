@@ -99,7 +99,15 @@ describe('[per-tab-instance] booted layout keys the active instance at pane-<poo
         if (!route.getInstance(tabInstId)) continue;
         eq(tabInstId, 'pane-' + (p.activeTabId || p.id), `${p.paneId} active instance keyed at pane-<poolId>`);
         assert(route.getInstanceSlice(p.paneId) !== undefined, `slice resolves via ${p.paneId}→active`);
-        eq(route.paneTypeOf(p.paneId), p.type, `paneTypeOf(${p.paneId})`);
+        // U2f — paneTypeOf resolves a slot to its ACTIVE tab's kind (via the
+        // active-instance map), NOT the slot's stable legacy `pane.type`. For a
+        // single-tab pane the two coincide (groups → 'groups'); for the content
+        // slot they diverge — the slot's `type` is the stable 'detail', but its
+        // active tab is `info`, so paneTypeOf reads 'info' (== the resolved
+        // instance's kind). Compare against the active instance's kind, which is
+        // exactly what routing keys on.
+        eq(route.paneTypeOf(p.paneId), route.getInstance(tabInstId).kind,
+          `paneTypeOf(${p.paneId}) === active tab kind`);
         checked++;
       }
     }

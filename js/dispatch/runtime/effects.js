@@ -457,22 +457,13 @@ function installBuiltins() {
       if (arg) loop.dispatchMsg(route.wrap('layout', { type: 'focus_set', focus: arg, skipInfo: true, noCapture: true }));
     }
 
-    // 3. tab — invert targetKey → the current idx (tab set shifts as actions/
-    //    terminals/content come and go); skip if it no longer resolves.
-    if (loc.tab && loc.tab.targetKey) {
-      const pt = require('../../leaves/wm/pane-tabs');
-      const mm = getModel();
-      const vid = route.resolveTarget('viewer');
-      const slice = vid ? route.getInstanceSlice(vid) : null;
-      if (slice) {
-        const info = pt.flatTabInfo(slice, mm, mm.currentGroup);
-        let idx = -1;
-        for (let i = 0; i < info.total; i++) {
-          if (pt.resolveTabKey(i, { ...slice, tab: i }, mm) === loc.tab.targetKey) { idx = i; break; }
-        }
-        if (idx >= 0) loop.dispatchMsg(route.wrap(vid,
-          { type: 'tab_switch', idx, targetKey: loc.tab.targetKey, currentGroup: mm.currentGroup, noCapture: true }));
-      }
+    // 3. tab — re-activate the captured position-tab by its stable poolId.
+    //    set_active_tab no-ops if the tab is gone (a closed content tab) or
+    //    already active, and doesn't emit nav_capture, so no re-push guard needed.
+    if (loc.tab && loc.tab.tabPoolId) {
+      const slotPaneId = route.resolveViewerPaneId();
+      if (slotPaneId) loop.dispatchMsg(route.wrap('layout',
+        { type: 'set_active_tab', paneId: slotPaneId, tabPoolId: loc.tab.tabPoolId }));
     }
 
     // 4. sel — find the item by stable id in the CURRENT list; nearest (clamp to
@@ -518,15 +509,18 @@ function _captureNavLocation() {
   const type = route.instanceKind(focusId);
   const loc = { v: 1, kind: 'loc', group: m.currentGroup || '',
     focus: { paneId: focusId, type: type || null }, tab: null, sel: null };
-  if (type === route.VIEWER_KIND) {
-    // Focus is on the viewer → capture its active tab by stable key.
-    const pt = require('../../leaves/wm/pane-tabs');
-    const vid = route.resolveTarget('viewer');
-    const slice = vid ? route.getInstanceSlice(vid) : null;
-    if (slice) {
-      const key = pt.resolveTabKey(slice.tab | 0, slice, m);
-      if (key) loc.tab = { targetKey: key };
-    }
+  if (route.isViewerKind(focusId)) {
+    // U2f — focus is on the content slot → capture its ACTIVE position-tab by its
+    // stable poolId (deterministic across group switches / re-seeds). The old flat
+    // `slice.tab`→resolveTabKey capture retired with the viewer's flat strip; the
+    // slot's tabs are position-tabs (info / transcript / minted text-views) now.
+    const slotPaneId = route.resolveViewerPaneId();
+    const layoutSlice = route.getInstanceSlice('layout');
+    const arr = layoutSlice && layoutSlice.arrange;
+    const slotLoc = (slotPaneId && arr)
+      ? require('../../leaves/wm/pool').findPaneLocation(arr, p => p.paneId === slotPaneId)
+      : null;
+    if (slotLoc && slotLoc.pane.activeTabId) loc.tab = { tabPoolId: slotLoc.pane.activeTabId };
   } else if (type) {
     // Focus is on a navigator → capture the highlighted item by stable id.
     const api = require('../../panel/api');

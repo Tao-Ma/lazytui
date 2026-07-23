@@ -417,24 +417,9 @@ function _resetSubscriptions() {
 // Lazy auto-register covers tests that touch state without explicit
 // Component setup; production registers detail + groups + layout at
 // boot via tui.js, so these only trip in the test harness.
-let _detailAutoRegistered = false;
-function _detailSlice() {
-  const api = require('../panel/api');
-  // primarySliceOf, not getInstanceSlice: post-initState the kind-keyed
-  // seed is disposed and the slice lives on the primary PANE instance —
-  // an id read would miss and re-register the Component mid-session.
-  let s = api.primarySliceOf('detail');
-  if (!s) {
-    if (!_detailAutoRegistered) {
-      try { require('../dispatch/runtime/effects').installBuiltins(); } catch (_) {}
-      _detailAutoRegistered = true;
-    }
-    _layoutSlice();   // layout must register first — focus reader's service slot
-    api.registerComponent(require('../panel/viewer/viewer'));
-    s = api.primarySliceOf('detail');
-  }
-  return s;
-}
+// (U2f — `_detailSlice` retired with the `detail`/viewer Component. The content
+// slot is a position-tab container of `info` + `text-view` instances now; nothing
+// reads a kind-level `detail` slice.)
 
 let _groupsAutoRegistered = false;
 function _groupsSlice() {
@@ -562,15 +547,23 @@ function reconcilePaneInstances() {
       if (!route.getInstance(tabInstId)) {
         // init-injection (v0.6.4 #4): thread the seed facts init would reach for
         // as globals — init is a pure fn of (paneId, seed). seed.paneDef is the
-        // PLACED PANE `p` (byte-identical to pre-U2b): the parser HOISTS panel
-        // fields (e.g. ports' select_from) onto the placed pane but keeps them
-        // nested in the pool entry's `config`, and some inits read the hoisted
-        // form — so the pane shape, not the raw pool entry, is the contract. For
-        // a single-tab pane `p` is the tab; for a multi-tab pane `p` mirrors the
-        // ACTIVE tab, and a minted tab is active at mint time, so its init sees
-        // its own config. (Per-tab KIND still comes from the tab's pool entry.)
+        // PLACED PANE `p` for a DECLARED tab: the parser HOISTS panel fields (e.g.
+        // ports' select_from) onto the placed pane but keeps them nested in the
+        // pool entry's `config`, and some inits read the hoisted form — so the pane
+        // shape, not the raw pool entry, is the contract.
+        //   U2f — but a RUNTIME-MINTED (transient) tab's init must see its OWN
+        // entry's config: a content slot's stable `pane.type/config` is now `detail`
+        // (kept by _rebuildLegacyFields), so `p.config` no longer mirrors the active
+        // minted tab. A minted content tab seeds its initial content via the mint's
+        // `config.lines` (content-tab.js) which text-view.init reads from
+        // seed.paneDef.config — so thread the tab's own entry for transient tabs
+        // (else the nested jobs-cascade job-info card renders empty). Transient
+        // entries are self-contained (no parser hoisting), so this is safe.
         const m = getModel();
-        const seed = { config: m.config, projectDir: m.projectDir, paneDef: p };
+        const seedPaneDef = (entry && entry.transient)
+          ? { ...p, id: entry.id, type: entry.type, config: entry.config || {} }
+          : p;
+        const seed = { config: m.config, projectDir: m.projectDir, paneDef: seedPaneDef };
         route.setInstance(tabInstId, kind, comp.init(paneId, seed));
         route.setInstancePaneId(tabInstId, paneId);
       }
@@ -626,11 +619,10 @@ function initState() {
   // Msg applies the configured one.
   require('../dispatch/control/dispatch').applyMsg({ type: 'set_theme', name: config.theme || 'default' });
 
-  // Force-register the layout / groups / detail Components — production
-  // (tui.js) already did, but the test harness path may have skipped them.
+  // Force-register the layout / groups Components — production (tui.js) already
+  // did, but the test harness path may have skipped them.
   _layoutSlice();
   _groupsSlice();
-  _detailSlice();
 
   // Seed the layout arrange struct from config via the layout
   // Component's own writer (set_arrange Msg). Single-writer holds at

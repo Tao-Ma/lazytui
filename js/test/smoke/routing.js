@@ -30,7 +30,7 @@ const api = sm.api;
 //     the always-placed groups/actions/detail.
 
 function bootAllComponents() {
-  // test-runner.js auto-registered layout/detail/groups on require.
+  // test-runner.js auto-registered layout/groups/info/text-view on require.
   // Register the remaining production Components in tui.js order.
   // Skip ones already attached to be idempotent across multiple
   // bootFresh() calls within the same process.
@@ -82,46 +82,58 @@ function placedPanes() {
   const layout = api.getInstanceSlice('layout');
   for (const col of (layout.arrange.columns || [])) {
     for (const p of (col.panels || [])) {
-      if (p && p.paneId && p.type) out.push({ paneId: p.paneId, type: p.type });
+      if (p && p.paneId && p.type) out.push({ paneId: p.paneId, type: p.type, role: p.role });
     }
   }
   return out;
 }
 
-const PANES = placedPanes();
+// U2f — the CONTENT slot is a special case for the "three accessors agree"
+// invariant: it's a position-tab container whose STABLE type ('detail', a layout
+// keyword — the viewer Component is gone) DIVERGES from its ACTIVE tab's instance
+// kind ('info'). So paneId→active-kind and type→slot-identity intentionally
+// disagree; the uniform [2]-[6] loops (which pin agreement) EXCLUDE it, and [1b]
+// pins its own invariants instead.
+const CONTENT = placedPanes().find(p => p.role === 'content');
+const PANES = placedPanes().filter(p => p.role !== 'content');
 
 // --- [1] Sanity: arrange placed the expected variety ---------------------
 
 describe('[1] arrange placed the panel-types the smoke needs', () => {
-  it('placed set covers groups + actions + info (content slot) + containers + files', () => {
-    // U2e P1b — the viewer/content slot no longer surfaces as panel-type
-    // 'detail'. It is a `role:'content'` slot whose ACTIVE tab is `info`
-    // (arrange.js#_seedContentSlots makes Info the default), so `p.type`
-    // reads 'info'. The `detail` tab persists as a HIDDEN anchor (for
-    // :save-layout), addressed below via its still-minted detail instance.
+  it('placed set covers groups + actions + containers + files (+ a content slot)', () => {
     const types = new Set(PANES.map(p => p.type));
-    for (const need of ['groups', 'actions', 'info', 'containers', 'files']) {
+    for (const need of ['groups', 'actions', 'containers', 'files']) {
       assert(types.has(need), `panel-type '${need}' placed (saw ${[...types].sort().join(',')})`);
     }
+    assert(CONTENT, 'a role===content slot is placed');
   });
+});
 
-  it('the content slot is role-anchored; its active kind is info, anchor still mints detail', () => {
-    // The slot is identified by role, NOT by type==='detail' (P1b).
-    const content = PANES.find(p => {
-      const layout = api.getInstanceSlice('layout');
-      for (const col of (layout.arrange.columns || []))
-        for (const q of (col.panels || []))
-          if (q.paneId === p.paneId && q.role === 'content') return true;
-      return false;
-    });
-    assert(content, 'a role===content slot is placed');
-    eq(content.type, 'info', 'the content slot\'s ACTIVE/visible kind is info (default tab)');
-    // The `detail` anchor tab still mints a drained detail-kind instance
-    // (kept for save-layout); its slice is reachable via primarySliceOf('detail').
-    assert(api.primarySliceOf('detail') !== undefined,
-      'the hidden detail anchor still mints a detail-kind instance');
-    assert(route.getPrimaryByKind('detail') !== undefined,
-      'detail kind has a primary (the anchor instance)');
+// --- [1b] The content slot — stable identity vs active-tab kind ----------
+
+describe('[1b] content slot: stable identity `detail`, active kind `info`, no detail instance', () => {
+  it('the placed pane TYPE is the stable slot keyword `detail`', () => {
+    // U2f — pane.id/type/title stay the config's `detail`/`Detail` across tab
+    // switches (pane._rebuildLegacyFields), so listings/save-layout key on a
+    // stable identity. This is NOT a Component kind — no `detail` Component exists.
+    eq(CONTENT.type, 'detail', 'content slot pane.type is the stable `detail` keyword');
+  });
+  it('the ACTIVE-tab instance kind is `info` (the seeded default)', () => {
+    eq(route.instanceKind(CONTENT.paneId), 'info',
+      'instanceKind(slot paneId) resolves the active tab (info), not the slot keyword');
+    const target = route.resolveTarget('viewer');
+    eq(route.instanceKind(target), 'info', 'resolveTarget(viewer) → the active info instance');
+  });
+  it('NO `detail`-kind instance is minted (the P1b anchor is gone)', () => {
+    assert(api.primarySliceOf('detail') === undefined,
+      'no detail-kind primary slice (the viewer Component + anchor instance are gone)');
+    assert(route.getPrimaryByKind('detail') === undefined,
+      'no detail-kind primary id');
+  });
+  it('the `detail` pool entry persists (unreferenced-by-tabs) as the serialization anchor', () => {
+    const pool = api.getInstanceSlice('layout').arrange.pool || {};
+    assert(pool.detail && pool.detail.type === 'detail',
+      'arrange.pool.detail survives for :save-layout + listings');
   });
 });
 

@@ -32,12 +32,15 @@ describe('[v0.6.1 Phase 0] tab-instance registry', () => {
 
   it('setInstance populates id/kind/slice; getters read back', () => {
     resetRegistry();
-    route.setInstance('t1', 'detail', { lines: ['hello'], tab: 0 });
+    // U2f — `kind` here is an opaque registry label (never resolved to a
+    // Component); reparam'd off the deleted `detail` kind to the surviving
+    // content-slot kind `info`.
+    route.setInstance('t1', 'info', { lines: ['hello'], scroll: 0 });
     assert(route.hasInstance('t1') === true, 'has');
-    eq(route.instanceKind('t1'), 'detail', 'kind');
+    eq(route.instanceKind('t1'), 'info', 'kind');
     const inst = route.getInstance('t1');
     eq(inst.id, 't1', 'inst.id');
-    eq(inst.kind, 'detail', 'inst.kind');
+    eq(inst.kind, 'info', 'inst.kind');
     eq(inst.slice.lines[0], 'hello', 'inst.slice');
     eq(route.getInstanceSlice('t1').lines[0], 'hello', 'getInstanceSlice');
   });
@@ -67,7 +70,7 @@ describe('[v0.6.1 Phase 0] tab-instance registry', () => {
 
   it('eachInstance iterates in insertion order', () => {
     resetRegistry();
-    route.setInstance('a', 'detail', {});
+    route.setInstance('a', 'info', {});
     route.setInstance('b', 'groups', {});
     route.setInstance('c', 'files', {});
     const seen = [];
@@ -88,13 +91,14 @@ describe('[v0.6.1 Phase 0] tab-instance registry', () => {
     // Phase 0 invariant: instance registry must not interfere with the
     // existing getInstanceSlice('name') path. Setting an instance with
     // id === some-component-name does NOT collide with the slice store.
+    // U2f — id/kind reparam'd off the deleted `detail` kind to `info`.
     resetRegistry();
-    route.setInstance('detail', 'detail', { fromInstance: true });
-    // No expectation about getInstanceSlice('detail') here — it lives
+    route.setInstance('info', 'info', { fromInstance: true });
+    // No expectation about getInstanceSlice('info') here — it lives
     // in a separate map. Just confirm the two are not aliased.
-    const inst = route.getInstanceSlice('detail');
+    const inst = route.getInstanceSlice('info');
     eq(inst.fromInstance, true, 'instance slice intact');
-    route.disposeInstance('detail');
+    route.disposeInstance('info');
   });
 });
 
@@ -264,23 +268,28 @@ describe('[v0.6.4 Theme A Phase 5] per-pane nav READS', () => {
   });
 });
 
-// v0.6.4 multi-viewer — two `detail` (viewer) instances are independent.
-// Drives the REAL viewer Component (init/update) rather than a stub, so
-// the Phase-0 keystone (slice.paneId self-identity + per-pane writes) and
-// Phase-1 scroll dispatch are both exercised.
-describe('[v0.6.4 multi-viewer] two detail instances scroll independently', () => {
-  const viewer = require('../panel/viewer/viewer');
+// v0.6.4 multi-viewer — two content-slot instances are independent.
+// U2f — the `detail`/viewer Component is deleted; the content slot's scrollable
+// text pane is now the `info` kind (a near-clone of the viewer's Info tab,
+// sharing the tvu interaction reducer). Drives the REAL info Component
+// (init/update) rather than a stub, so the Phase-0 keystone (slice.paneId
+// self-identity + per-pane writes) and Phase-1 scroll dispatch are both
+// exercised — two content slots ⇒ two independent info instances.
+describe('[v0.6.4 multi-viewer] two content-slot instances scroll independently', () => {
+  const info = require('../panel/info/info');
 
   function setupTwoViewers() {
     resetRegistry();
-    // Mint two viewer instances the way state.js does: init(paneId).
-    route.setInstance('pane-left',  'detail', viewer._init('pane-left'));
-    route.setInstance('pane-right', 'detail', viewer._init('pane-right'));
-    // Seed each with content + a viewport so viewer_scroll has room.
+    // Mint two info instances the way state.js does: init(paneId).
+    route.setInstance('pane-left',  'info', info.init('pane-left'));
+    route.setInstance('pane-right', 'info', info.init('pane-right'));
+    // Seed each with content + a viewport so viewer_scroll has room. U2f — the
+    // content instances store their buffer on `slice.lines` (the retired
+    // `infoLines` field is gone).
     route.setInstanceSlice('pane-left',  { ...route.getInstanceSlice('pane-left'),
-      infoLines: Array.from({ length: 50 }, (_, i) => `L${i}`), innerH: 10 });
+      lines: Array.from({ length: 50 }, (_, i) => `L${i}`), innerH: 10 });
     route.setInstanceSlice('pane-right', { ...route.getInstanceSlice('pane-right'),
-      infoLines: Array.from({ length: 50 }, (_, i) => `R${i}`), innerH: 10 });
+      lines: Array.from({ length: 50 }, (_, i) => `R${i}`), innerH: 10 });
   }
 
   it('each instance self-identifies (Phase 0 keystone)', () => {
@@ -301,25 +310,32 @@ describe('[v0.6.4 multi-viewer] two detail instances scroll independently', () =
     eq(route.getInstanceSlice('pane-left').scroll, 5, 'left still at its own offset');
   });
 
-  it('render writes NO tabBounds (pure view); tabBoundsFor recomputes per-pane', () => {
+  it('render writes NO tabBounds (pure view); the slot strip recomputes per-pane', () => {
     // v0.6.4 blessed-exceptions tabBounds follow-on — the render-side
-    // slice.tabBounds WRITE is retired. render() is a pure view; the input
-    // layer recomputes the tab-strip hit-test bounds on demand via
-    // tabBoundsFor(slice, model, hotkey), keyed off THIS pane's own slice.
-    const { getModel } = require('../app/runtime');
+    // slice.tabBounds WRITE is retired. render() is a pure view. U2f — the
+    // viewer's own `tabBoundsFor(slice, ...)` is gone with the viewer; the
+    // surviving on-demand recompute is `slot-strip.unifiedSlotStrip(pane)`,
+    // which derives the tab-strip hit-test bounds from the pane's `tabs[]`
+    // (input.js drives it on a top-border click).
     setupTwoViewers();
-    const paneRight = { paneId: 'pane-right', type: 'detail', hotkey: 'o', tabs: [] };
+    const paneRight = { paneId: 'pane-right', type: 'info', hotkey: 'o', title: 'Info' };
     // Invoke the panel def render the way paint.js does — it must NOT mutate
     // the slice (teeth: this fails against the pre-follow-on write).
-    viewer.panelTypes.detail.render(paneRight, 40, 12, route.getInstanceSlice('pane-right'), { focused: true });
+    info.panelTypes.info.render(paneRight, 40, 12, route.getInstanceSlice('pane-right'), { focused: true });
     assert(route.getInstanceSlice('pane-right').tabBounds === undefined,
       'render did not write tabBounds onto the slice');
     assert(route.getInstanceSlice('pane-left').tabBounds === undefined,
       'render did not write tabBounds onto any sibling slice');
-    // On-demand recompute returns a bounds array per pane (independent slices).
-    const rb = viewer.tabBoundsFor(route.getInstanceSlice('pane-right'), getModel(), 'o');
-    const lb = viewer.tabBoundsFor(route.getInstanceSlice('pane-left'),  getModel(), 'p');
-    assert(Array.isArray(rb) && Array.isArray(lb), 'tabBoundsFor computes per-pane bounds on demand');
+    // On-demand recompute returns a bounds array per pane (a multi-tab slot).
+    const ss = require('../panel/slot-strip');
+    const mkMultiTab = (paneId, hotkey) => ({
+      paneId, type: 'info', hotkey, activeTabId: `info-${paneId}`,
+      tabs: [{ poolId: `info-${paneId}` }, { poolId: `transcript-${paneId}` }],
+    });
+    const rb = ss.unifiedSlotStrip(mkMultiTab('pane-right', 'o'));
+    const lb = ss.unifiedSlotStrip(mkMultiTab('pane-left',  'p'));
+    assert(rb && Array.isArray(rb.tabBounds) && lb && Array.isArray(lb.tabBounds),
+      'unifiedSlotStrip computes per-pane tab-strip bounds on demand');
   });
 });
 

@@ -23,32 +23,23 @@
  */
 'use strict';
 
-const { getModel } = require('../../model/store');
 const { getInstanceSlice } = require('../api');
 const core = require('../../leaves/text/select-core');
 
-// All reads target the active viewer Component slice (lines / select / cursor /
-// scroll / search). resolveTarget lands on the focused viewer in multi-viewer
-// setups; falls back to the kind name for the legacy primary. undefined if no
-// viewer is registered (callers null-guard).
+// All reads target the active content-slot instance (info / text-view / transcript):
+// its lines / select / cursor / scroll / search. resolveTarget lands on the focused
+// slot's ACTIVE tab in multi-content setups; undefined if none is placed (callers
+// null-guard).
 function _detail() {
   const route = require('../../panel/route');
-  return getInstanceSlice(route.resolveTarget('viewer') || 'detail');
+  return getInstanceSlice(route.resolveTarget('viewer'));
 }
 
-// The active-tab lines derive via the pane-tabs projection (dispatch-side; the
-// model read is fine here). Replaces the old stored slice.lines read.
+// The displayed lines — the active content instance stores its buffer on
+// slice.lines directly (U2f — the viewer's flat-strip derivation is gone).
 function _lines() {
   const sl = _detail();
-  if (!sl) return [];
-  // U2e P1b — the active content instance (info / text-view / transcript) stores
-  // its buffer on slice.lines directly; prefer it (mirrors the guard at
-  // input.js wheel/context + footer). Fall back to the viewer's flat-strip
-  // derivation for the drained detail anchor. Without this, mouse drag-select
-  // over Info/Transcript yanked empty text (viewerLines has no slice.lines branch).
-  if (Array.isArray(sl.lines)) return sl.lines;
-  const m = getModel();
-  return require('../../leaves/wm/pane-tabs').viewerLines(sl, m, m.currentGroup);
+  return (sl && Array.isArray(sl.lines)) ? sl.lines : [];
 }
 
 // Selection writes fold onto the update spine (select_* Msgs). This module can't
@@ -73,13 +64,9 @@ function isActive() {
   return !!(sel && sel.active);
 }
 
-/** The active selection object (for the pure text-view render leaf, U2a), or
- *  null when none is active. Reads the SAME focused-viewer slice as isActive()
- *  and decorateLines, so the leaf decorates identically to the old service path. */
-function activeSelection() {
-  const sel = _detail()?.select;
-  return (sel && sel.active) ? sel : null;
-}
+// (U2f — `activeSelection` retired with the viewer's render: each content
+// instance (info / text-view) resolves its OWN `slice.select` in its render path
+// now, so the cross-pane focused-viewer selection accessor has no caller.)
 
 /** The current selection resolved to plain text (from the live viewer lines). */
 function selectedText() { return core.selectedTextFrom(_lines(), _detail()?.select); }
@@ -131,7 +118,7 @@ function decorateLines(lines, opts) {
 
 module.exports = {
   // Service (impure — the mouse path + render read/write the viewer slice).
-  beginAt, extendTo, cancel, commit, settle, isActive, activeSelection, selectedText, decorateLines,
+  beginAt, extendTo, cancel, commit, settle, isActive, selectedText, decorateLines,
   // PURE geometry, re-exported from the shared core so the viewer's reducer arms
   // (which thread `lines` in explicitly) and tests keep the same surface.
   selectedTextFrom: core.selectedTextFrom,

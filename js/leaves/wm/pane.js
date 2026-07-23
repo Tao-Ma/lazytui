@@ -98,14 +98,27 @@ function setActiveTab(pane, tabPoolId, entry) {
  * wide-pane shape lives in ONE place.
  */
 function _rebuildLegacyFields(pane, tabs, activeTabId, entry) {
+  // U2f — a CONTENT slot (role:'content', the viewer slot) has a STABLE identity
+  // decoupled from its active tab: `id`/`type`/`title`/`config` stay the slot's
+  // ('detail'/'detail'/'Detail'), NOT the active tab's pool entry. The active tab
+  // (info / text-view) drives RENDERED content via paneId → active instance; the
+  // slot identity is what listings (panelListItems / paneSelectItems / pane-menu),
+  // pool_hide, and :save-layout key on. Without this, `pane.id` drifted to
+  // `info-<paneId>` on every tab switch — listings showed "Info", and removing the
+  // `detail` anchor tab left no stable id to serialize (the P1b follow-up #11).
+  // Every OTHER pane keeps mirroring its active tab's entry (the wide-pane shape).
+  const isContent = pane.role === 'content';
+  const idEntry = isContent
+    ? { id: pane.id, type: pane.type, title: pane.title, config: pane.config }
+    : entry;
   const next = {
-    ...(entry.config || {}),
-    id: entry.id,
-    type: entry.type,
-    title: entry.title,
+    ...(idEntry.config || {}),
+    id: idEntry.id,
+    type: idEntry.type,
+    title: idEntry.title,
     hotkey: pane.hotkey,
     columnIndex: pane.columnIndex,
-    config: entry.config,
+    config: idEntry.config,
     paneId: pane.paneId,
     tabs,
     activeTabId,

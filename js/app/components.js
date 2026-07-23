@@ -7,8 +7,10 @@
  * The first group OWN state in their slices (genuine isolation — poll loops,
  * browsers, git cache); the rest are stateless Components (empty slice + no-op
  * update) — the API-uniformity tax for ONE panel shape across the view set.
- * See docs/v0.5-layering.md. `layout` is the chrome/frame Component; `detail`
- * (panel/viewer/viewer) is the viewer; `groups` owns the group tree.
+ * See docs/v0.5-layering.md. `layout` is the chrome/frame Component; `groups`
+ * owns the group tree. The former `detail`/viewer Component is gone (U2f): the
+ * content slot is a position-tab container whose default tab is an `info` pane
+ * (+ a `text-view` Transcript), identified by `pane.role === 'content'`.
  */
 'use strict';
 
@@ -20,7 +22,6 @@ const BUILTIN_COMPONENTS = [
   require('../panel/navigator/actions'),
   require('../panel/monitor/stats'),
   require('../panel/navigator/history'),
-  require('../panel/viewer/viewer'),   // detail (the viewer)
   require('../panel/navigator/groups'),
   require('../panel/fabric/ports-pane'),   // component-ports (dataflow fabric, P1.5)
   require('../panel/fabric/wire-list'),    // fabric-wires (global edge view, P1.5)

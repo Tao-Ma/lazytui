@@ -123,7 +123,10 @@ function decorationFor(slice, full) {
 module.exports = {
   enter, cancel, commit, clearCommitted, keystroke,
   next, prev, isActive, typingText,
-  decorateLines, decorationFor,
+  // U2f — `decorationFor` no longer exported: the viewer render (its only external
+  // caller) is gone; info/text-view render resolve their own search decoration.
+  // Still used INTERNALLY by decorateLines below.
+  decorateLines,
   // exposed for tests
   _displayWidthBefore: ms._displayWidthBefore,
 };

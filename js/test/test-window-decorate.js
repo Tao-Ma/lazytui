@@ -16,11 +16,20 @@
 'use strict';
 
 const { describe, it, eq, report } = require('./test-runner');
+const sm = require('./smoke/_helpers/smoke');
 const search = require('../panel/viewer/search');
 const select = require('../panel/viewer/select');
+const route = require('../panel/route');
 const { getInstanceSlice } = require('../panel/api');
 
 const INNER_H = 38;
+
+// U2f — select.decorateLines reads the ACTIVE content-slot instance's `select`
+// (via resolveTarget('viewer')); there is no `detail` instance anymore. Boot a
+// real content slot so the resolution lands on a live info instance whose
+// `slice.select` the withSelect helper seeds.
+sm.bootFresh();
+function contentSlice() { return getInstanceSlice(route.resolveTarget('viewer')); }
 
 function doc(n) {
   const out = [];
@@ -67,9 +76,10 @@ describe('[1] search: windowed decoration == whole-buffer sliced', () => {
   });
 });
 
-// select.decorateLines reads _detail().select; set it on the primary detail slice.
+// select.decorateLines reads _detail().select; set it on the active content-slot
+// instance (U2f — resolveTarget('viewer'), where the viewer's selection now lives).
 function withSelect(sel, fn) {
-  const ds = getInstanceSlice('detail');
+  const ds = contentSlice();
   const prev = ds.select;
   ds.select = sel;
   try { fn(); } finally { ds.select = prev; }

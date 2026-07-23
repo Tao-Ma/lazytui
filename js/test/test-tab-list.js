@@ -112,14 +112,24 @@ describe('[pane-menu items] section depends on the pane kind', () => {
   const overlay = require('../overlay/pane-menu');
   const layoutSlice = api.getInstanceSlice('layout');
 
-  it('a viewer pane → tab rows (section:tab), at least Info + Transcript', () => {
+  it('a content slot → position-tab rows (section:tab), Info + Transcript', () => {
+    // U2f — the content slot is a MULTI-tab position container (role:'content')
+    // seeded with Info + Transcript position-tabs; its `[≡]` shows the SAME unified
+    // slot rows the visible border strip does (backing:'slot', kind:'position'),
+    // NOT the retired viewer's flat Info/Transcript literals.
     layoutSlice.arrange = { columns: [
-      { panels: [{ type: 'detail', id: 'd', paneId: 'pane-d', tabs: [{ id: 'd', poolId: 'd' }] }] },
-    ], pool: { d: { id: 'd', type: 'detail' } } };
+      { panels: [{ type: 'info', id: 'detail', paneId: 'pane-d', role: 'content',
+        activeTabId: 'info-pane-d',
+        tabs: [{ id: 'info-pane-d', poolId: 'info-pane-d' }, { id: 'transcript-pane-d', poolId: 'transcript-pane-d' }] }] },
+    ], pool: {
+      'info-pane-d': { id: 'info-pane-d', type: 'info', title: 'Info' },
+      'transcript-pane-d': { id: 'transcript-pane-d', type: 'text-view', title: 'Transcript', hint: 'transcript' },
+    } };
     getModel().currentGroup = getModel().currentGroup || '';
     const items = overlay.items('pane-d');
     assert(items.length >= 2, 'Info + Transcript at minimum');
-    assert(items.every(it => it.section === 'tab'), 'all rows are tab rows');
+    assert(items.every(it => it.section === 'tab' && it.backing === 'slot' && it.kind === 'position'),
+      'all rows are unified position-tab slot rows');
     eq(items[0].label, 'Info');
     eq(items[1].label, 'Transcript');
   });
@@ -225,10 +235,22 @@ describe('[hitTestTrigger] multi-viewer — each glyph opens its own pane', () =
       'pane-left':  { x: 0,  y: 0, w: 40, h: 20 },
       'pane-right': { x: 50, y: 0, w: 40, h: 20 },
     };
+    // U2f — a viewer's `[≡]` shows when it's a multi-tab CONTENT slot; build each
+    // as a role:'content' position container with its seeded Info + Transcript
+    // position-tabs, so triggerVisible is true (a >1-tab slot always shows).
+    const contentSlot = (paneId, id) => ({
+      paneId, type: 'info', id, role: 'content', activeTabId: `info-${paneId}`,
+      tabs: [{ id: `info-${paneId}`, poolId: `info-${paneId}` }, { id: `transcript-${paneId}`, poolId: `transcript-${paneId}` }],
+    });
     layoutSlice.arrange = { columns: [
-      { panels: [{ paneId: 'pane-left',  type: 'detail', id: 'l' }] },
-      { panels: [{ paneId: 'pane-right', type: 'detail', id: 'r' }] },
-    ], pool: { l: { id: 'l', type: 'detail' }, r: { id: 'r', type: 'detail' } } };
+      { panels: [contentSlot('pane-left', 'l')] },
+      { panels: [contentSlot('pane-right', 'r')] },
+    ], pool: {
+      'info-pane-left':  { id: 'info-pane-left',  type: 'info', title: 'Info' },
+      'transcript-pane-left':  { id: 'transcript-pane-left',  type: 'text-view', title: 'Transcript', hint: 'transcript' },
+      'info-pane-right': { id: 'info-pane-right', type: 'info', title: 'Info' },
+      'transcript-pane-right': { id: 'transcript-pane-right', type: 'text-view', title: 'Transcript', hint: 'transcript' },
+    } };
     layoutSlice.paneMenu = { targetPaneId: null, cursor: 0, scroll: 0 };
     layoutSlice.freeConfig = { drag: null };
     md.paneMenuMode = false; md.freeConfigMode = false; md.cmdMode = false;

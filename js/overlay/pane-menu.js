@@ -39,7 +39,6 @@ const { stdout } = require('../io/term');
 const { isChainActive } = require('../leaves/input/modes');
 const mpool = require('../leaves/wm/pool');
 const { visibleBoundsFor } = require('../leaves/wm/geometry');
-const tc = require('../leaves/wm/tab-container');
 const route = require('../panel/route');
 
 const MAX_W = 50;
@@ -86,35 +85,19 @@ function _paneById(paneId) {
   return loc ? loc.pane : null;
 }
 
-/** Flat tab list for a viewer pane — same order/shape as the tab bar.
- *  Backed by the tab-container interface (U1): `tc.listTabs` returns neutral
- *  rows; here they're tagged with the pane-menu `section:'tab'` presentation
- *  vocabulary + `tabIdx`. Byte-identical to the retired hand-rolled build. */
-function _flatTabs(paneId) {
-  const m = getModel();
-  const slice = getInstanceSlice(paneId) || { contentTabs: {}, tab: 0 };
-  return tc.listTabs(tc.containerFor('viewer', { slice, model: m })).map(r => {
-    const row = { section: 'tab', tabIdx: r.idx, label: r.label, kind: r.kind };
-    if ('closeable' in r) { row.closeable = r.closeable; row.closeKind = r.closeKind; row.closeKey = r.closeKey; }
-    return row;
-  });
-}
-
-/** Tab rows for a MULTI-tab slot (U2e stopgap) — the SAME unified entry list the
- *  visible border strip shows (panel/slot-strip), so the `[≡]` menu and the strip
- *  never disagree. Flattens the viewer's inner Info/Transcript/content tabs +
- *  each sibling position-tab into one list; a minted action `text-view` no longer
- *  strands the viewer's tabs. Empty for single-tab slots (their `[≡]` keeps the
- *  viewer flat-strip / pane-swap behaviour). Rows carry `backing:'slot'` + the
- *  entry's `{kind, poolId, flatIdx?}` so the pick routes flat (viewer inner tab)
- *  vs position (set_active_tab). The proper unified strip lands in U2e P1b/U2f. */
+/** Tab rows for a MULTI-tab slot — the SAME unified entry list the visible border
+ *  strip shows (panel/slot-strip), so the `[≡]` menu and the strip never disagree.
+ *  U2f — every tab is a real position-tab (Info / Transcript / minted text-views);
+ *  rows carry `backing:'slot'` + the entry's `{kind, poolId}` and a pick routes via
+ *  set_active_tab (see dispatch._paneMenuPick). Empty for single-tab slots (their
+ *  `[≡]` keeps the pane-swap behaviour). */
 function _instanceTabRows(paneId) {
   const pane = _paneById(paneId);
   if (!pane || !Array.isArray(pane.tabs) || pane.tabs.length <= 1) return [];
   const strip = require('../panel/slot-strip').unifiedSlotStrip(pane);
   if (!strip || !strip.entries) return [];
   return strip.entries.map((e, i) => ({
-    section: 'tab', backing: 'slot', kind: e.kind, poolId: e.poolId, flatIdx: e.flatIdx,
+    section: 'tab', backing: 'slot', kind: e.kind, poolId: e.poolId,
     tabIdx: i, label: e.label, active: i === strip.activeIdx,
   }));
 }
@@ -155,15 +138,13 @@ function items(paneId) {
   if (paneId == null) paneId = _targetPaneId();
   if (!paneId) return [];
   const mode = _viewMode();
-  // U2e stopgap — a MULTI-tab slot offers its position-tab switcher, taking
-  // precedence so a backgrounded tab (e.g. Detail behind an action's text-view)
-  // is always reachable. Single-tab slots keep the viewer flat-strip / pane-swap.
+  // A MULTI-tab slot (the content slot, or any pane with >1 position-tab) offers
+  // its position-tab switcher, so a backgrounded tab (e.g. Info behind an action's
+  // text-view) is always reachable. Otherwise the Panes section (pool-swap /
+  // projection picker). (U2f — the single-tab-viewer flat-strip rows retired.)
   const instTabs = _instanceTabRows(paneId);
   if (instTabs.length) return instTabs;
-  const tabs = _isViewer(paneId) ? _flatTabs(paneId) : [];
-  const panes = _paneRows(paneId, mode);
-  if (tabs.length && panes.length) return [...tabs, null, ...panes];
-  return tabs.length ? tabs : panes;
+  return _paneRows(paneId, mode);
 }
 
 // --- Open-state + anchoring -------------------------------------------
@@ -206,10 +187,11 @@ function _triggerClickable() {
  *  current occupant + at least one swap target). Used by BOTH the click
  *  hit-test and the chrome paint so they never disagree. */
 function triggerVisible(paneId) {
-  // U2e stopgap — a multi-tab slot always has a position-tab switcher to show.
+  // A multi-tab slot always has a position-tab switcher to show (the content slot
+  // is always ≥2 tabs: Info + Transcript). Any other pane shows when there are ≥2
+  // pane rows (the current occupant + ≥1 swap target).
   const pane = _paneById(paneId);
   if (pane && Array.isArray(pane.tabs) && pane.tabs.length > 1) return true;
-  if (_isViewer(paneId)) return _flatTabs(paneId).length >= 2;  // always (Info+Transcript)
   return _paneRows(paneId, _viewMode()).length >= 2;
 }
 
@@ -319,12 +301,9 @@ function _formatPaneRow(it, width) {
 
 function _formatRow(it, paneId, width) {
   if (it.section === 'tab') {
-    // Unified slot rows carry their own `active` flag; viewer flat-strip rows
-    // compare tabIdx to slice.tab.
-    if (it.backing === 'slot') return _formatTabRow(it, !!it.active, width);
-    const slice = getInstanceSlice(paneId) || {};
-    const activeTab = slice.tab || 0;
-    return _formatTabRow(it, it.tabIdx === activeTab, width);
+    // U2f — all tab rows are unified slot rows carrying their own `active` flag
+    // (the viewer flat-strip rows + their slice.tab compare retired).
+    return _formatTabRow(it, !!it.active, width);
   }
   return _formatPaneRow(it, width);
 }

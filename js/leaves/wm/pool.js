@@ -134,13 +134,19 @@ function distributeColumnWidths(arrange, COLS) {
 function placedIds(arrange) {
   if (!arrange) return [];
   const out = [];
+  const seen = new Set();
+  const add = (id) => { if (id && !seen.has(id)) { seen.add(id); out.push(id); } };
   for (const p of allPanesInColumns(arrange)) {
     if (!p) continue;
     if (Array.isArray(p.tabs) && p.tabs.length > 0) {
-      for (const t of p.tabs) if (t && t.poolId) out.push(t.poolId);
-    } else if (p.id) {
-      out.push(p.id);
+      for (const t of p.tabs) if (t && t.poolId) add(t.poolId);
     }
+    // U2f — also count the pane's STABLE id. For the content slot that's `detail`
+    // (role-stable, kept by _rebuildLegacyFields) which is referenced by NO tab
+    // (its tabs are info/transcript/…), so without this it'd fall into hiddenIds
+    // and `:show detail` would mount a duplicate Component-less pane. For every
+    // other pane p.id already equals a tab poolId (deduped here).
+    add(p.id);
   }
   return out;
 }
@@ -162,7 +168,11 @@ function placedIdSet(arrange) {
 function hiddenIds(arrange) {
   if (!arrange || !arrange.pool) return [];
   const placed = placedIdSet(arrange);
-  return Object.keys(arrange.pool).filter(id => !placed.has(id));
+  // U2f — transient (runtime-minted) entries are session-only, never summonable
+  // panels: a content slot's seeded info/transcript + any minted content tab live
+  // in the pool but must not surface in `:show` / the panel-list as "hidden".
+  return Object.keys(arrange.pool)
+    .filter(id => !placed.has(id) && !(arrange.pool[id] && arrange.pool[id].transient));
 }
 
 function isPlaced(arrange, id) {
@@ -231,6 +241,7 @@ function panelListItems(arrange) {
   for (const id of Object.keys(arrange.pool)) {
     if (seen.has(id)) continue;
     const entry = arrange.pool[id];
+    if (entry && entry.transient) continue;   // U2f — session-only tabs aren't summonable panels
     items.push({ id: entry.id, type: entry.type, title: entry.title, status: 'hidden' });
   }
   return items;
