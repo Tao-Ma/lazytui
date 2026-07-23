@@ -38,16 +38,24 @@ function addContentTab(groupName, key, label, lines) {
   const slotPaneId = route.resolveViewerPaneId();
   if (!slotPaneId) return;   // no content slot placed → nowhere to open
   const poolId = _poolId(key);
+  const seedLines = Array.isArray(lines) ? lines : [];
   // Mint (no-op if the tab already exists) then activate — reuse re-focuses the
   // existing tab; a fresh mint is already active but set_active_tab is idempotent.
+  // Seed the INITIAL content via the mint's `config.lines` — text-view.init reads
+  // it — so a freshly-minted tab has its content immediately, WITHOUT depending on
+  // the mint's post-dispatch reconcile having minted the instance before the
+  // tv_set_lines below (which it hasn't when addContentTab is called from a NESTED
+  // dispatch, e.g. the jobs cascade — the instance doesn't exist mid-cascade, so
+  // that tv_set_lines is dropped). updateContentTabLines then covers the REUSE case
+  // (existing tab → replace) + the async-resolve case (open-file's .then()).
   _dispatch(route.wrap('layout', {
     type: 'mint_tab', paneId: slotPaneId, paneType: 'text-view', poolId,
-    title: label, hint: { origin: 'open', key },
+    title: label, hint: { origin: 'open', key }, config: { lines: seedLines },
   }));
   _dispatch(route.wrap('layout', {
     type: 'set_active_tab', paneId: slotPaneId, tabPoolId: poolId,
   }));
-  updateContentTabLines(groupName, key, lines);
+  updateContentTabLines(groupName, key, seedLines);
 }
 
 function updateContentTabLines(groupName, key, lines) {

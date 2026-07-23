@@ -166,35 +166,20 @@ function collapseGroup(path, recursive = false) {
 // --- Viewer content writers ---
 
 function setViewerContent(tabId, text, opts) {
-  // viewer_set_content REPLACES the body — single-writer for producers that
-  // show a discrete document (history replay, config-status diff, help text,
-  // Running-overlay job info). For ephemeral event/status messages, use
-  // appendViewerLines below — that accumulates into viewerStreamBuffer and
-  // survives tab switches.
-  //
-  // `tabId` is the producer-side address. When null, the destination resolves
-  // via route.resolveTarget('viewer'). `opts.tab` (v0.6.2 R6) lands on a
-  // specific tab in the SAME dispatch (e.g. history.replay parks on Info).
-  if (tabId == null) {
-    tabId = route.resolveTarget('viewer');
-    if (tabId == null) return;   // no viewer registered — drop the write
-  }
-  // v0.6.3 Phase D1 — thread root facts the viewer_set_content arm needs so
-  // the reducer stays pure of getModel(): currentGroup, fromTabKey (the
-  // FROM-tab key for view-state capture), total (when msg.tab is set).
-  const slice = route.getInstanceSlice(tabId) || { tab: 0 };
-  const model = getModel();
-  const inner = {
-    type: 'viewer_set_content',
-    lines: text ? text.split('\n') : [],
-    currentGroup: model.currentGroup,
-    fromTabKey: pt.resolveTabKey((slice.tab | 0), slice, model),
-  };
-  if (opts && typeof opts.tab === 'number') {
-    inner.tab = opts.tab | 0;
-    inner.total = pt.flatTabInfo(slice, model, model.currentGroup).total;
-  }
-  _host.dispatchMsg(route.wrap(tabId, inner));
+  // U2e P4 — a discrete document (history replay, config-status diff, help text,
+  // Running-overlay job info) is shown as a `text-view` POSITION-tab in the content
+  // slot (was the detail viewer's single `viewerOverride` slot, retired with the
+  // viewer). Each producer keys a distinct REUSED tab via `opts.key` (poolId
+  // `content-<key>`), so re-invoking replaces its content in place; `opts.label`
+  // names the tab. `tabId` is vestigial (destination is the content slot). Reuses
+  // the P1b mint path (panel/content-tab) → recording/replay + per-instance
+  // view-state come for free. This is the impure-shell entry (help / the
+  // config-status + history effects); the reducer-side caller (jobs) emits the
+  // `open_doc_tab` Cmd, whose effect funnels here.
+  opts = opts || {};
+  const lines = text ? text.split('\n') : [];
+  require('./content-tab').addContentTab(
+    getModel().currentGroup, opts.key || 'viewer-doc', opts.label || 'Doc', lines);
 }
 
 /**

@@ -157,9 +157,9 @@ function helpLines() {
   return lines;
 }
 
-/** Build help lines and dump them into the focused viewer. */
+/** Build help lines and show them as the content slot's Help text-view tab (U2e P4). */
 function showHelp() {
-  setViewerContent(null, helpLines().join('\n'));
+  setViewerContent(null, helpLines().join('\n'), { key: 'help', label: 'Help' });
 }
 
 module.exports = { helpLines, showHelp };

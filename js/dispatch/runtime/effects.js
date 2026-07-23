@@ -244,6 +244,17 @@ function installBuiltins() {
     // not whatever resolveTarget picks (viewer-lines-selector P0).
     try { require('../control/dispatch').showSelectedInfo(eff && eff.paneId); } catch (_) { /* no renderer (test) */ }
   });
+  // U2e P4 — open a discrete document as a text-view content tab in the content
+  // slot (the reducer-side entry: the jobs job-info card emits this Cmd rather than
+  // dispatching viewer_set_content to the retired viewerOverride). Impure-shell
+  // callers (help / config-status + history effects) use nav-state.setViewerContent
+  // directly; both funnel to the same content-tab mint.
+  registerEffect('open_doc_tab', (eff) => {
+    try {
+      require('../../panel/content-tab').addContentTab(
+        getModel().currentGroup, eff.key, eff.label, eff.lines || []);
+    } catch (_) { /* no content slot / no renderer (test) */ }
+  });
   // diag_clear / diag_save: the diagnostics window's `c` / `s` keys.
   // Buffer mutation + file I/O are side-effects, so the diag_log_clear /
   // diag_log_save reducer arms emit these rather than touching the
@@ -318,25 +329,14 @@ function installBuiltins() {
     const job = eff && eff.job;
     if (!job) return;
     const route = require('../../panel/route');
-    const pt = require('../../leaves/wm/pane-tabs');
     const m = getModel();
-    const viewerTarget = route.resolveTarget('viewer') || 'detail';
+    // U2e P4 — thread the content SLOT paneId (the column pane) for the focus
+    // cascade; `viewerTarget` (the active instance id) is no longer a valid focus
+    // target post-P1b. The bg/tmux job-info card mints its own text-view tab
+    // (open_doc_tab), so the old fromTabKey view-state capture is retired.
+    const viewerPaneId = route.resolveViewerPaneId();
     const groupName = m.currentGroup;
-    const { kind } = job;
-    const out = { type: 'jobs_routed', job, now: eff.now | 0, viewerTarget, groupName };
-
-    // U2c P2 / U2d P2b — the stream-routed 'jump to the producing tab' is retired
-    // for both action output (now a text-view position-tab) and pty terminals
-    // (now `terminal` panes): a viewer-flat-tab index can't address either.
-    // Re-wiring the Running overlay to activate the owning position-tab
-    // (owner.tabInstId) is a follow-on; a stream-routed activate now surfaces the
-    // overlay without a tab jump. Only background/tmux jobs still resolve a
-    // fromTabKey (their output lands in the viewer's Transcript/Info).
-    if (kind === 'background' || kind === 'tmux') {
-      const vSlice = route.getInstanceSlice(viewerTarget) || { tab: 0 };
-      out.fromTabKey = pt.resolveTabKey((vSlice.tab | 0), vSlice, m);
-    }
-    // stream-unrouted + pty: focus-only, nothing to resolve.
+    const out = { type: 'jobs_routed', job, now: eff.now | 0, viewerPaneId, groupName };
     require('../control/dispatch').applyMsg(out);
   });
   // copy_commit: resolve the selected copy option's (module-held) content

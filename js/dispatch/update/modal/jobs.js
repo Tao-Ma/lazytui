@@ -106,22 +106,25 @@ function update(model, msg) {
       const job = msg.job || null;
       if (!job) return [model, []];
       const { kind, owner = {} } = job;
-      const viewerTarget = msg.viewerTarget || 'detail';
-      const groupName = msg.groupName || model.currentGroup;
+      // U2e P4 — the content SLOT paneId (column pane), the valid focus target
+      // (was `viewerTarget`, an instance id post-P1b — not focusable). null when
+      // no content slot is placed → the focus_set is skipped.
+      const viewerPaneId = msg.viewerPaneId || null;
+      const focusSlot = viewerPaneId
+        ? [{ type: 'msg', msg: route.wrap('layout', { type: 'focus_set', focus: viewerPaneId }) }]
+        : [];
       const cmds = [];
 
       if (kind === 'stream-routed' || kind === 'stream-unrouted') {
         // U2c P2 — a stream-routed action's output lives in its own text-view
-        // position-tab now, so the flat-tab jump is retired (the effect sets no
-        // tabIdx for stream-routed). Focus the viewer so activating the job at
-        // least surfaces it; jumping to the position-tab is a follow-on.
-        cmds.push({ type: 'msg', msg: route.wrap('layout', { type: 'focus_set', focus: viewerTarget }) });
+        // position-tab now, so the flat-tab jump is retired. Focus the content
+        // slot so activating the job at least surfaces it; jumping to the
+        // producing position-tab is a follow-on.
+        cmds.push(...focusSlot);
       } else if (kind === 'pty' && owner.ptyId) {
-        // U2d P2 — the PTY's terminal is a `terminal` PANE now (not a viewer
-        // content-tab), so the flat-tab jump + terminal_enter are retired (same as
-        // stream-routed above). Focus the viewer so activating the job surfaces it;
-        // jumping to (and entering) the terminal's position-tab is a follow-on.
-        cmds.push({ type: 'msg', msg: route.wrap('layout', { type: 'focus_set', focus: viewerTarget }) });
+        // U2d P2 — the PTY's terminal is a `terminal` PANE now; the flat-tab jump +
+        // terminal_enter are retired. Focus the content slot to surface it.
+        cmds.push(...focusSlot);
       } else if (kind === 'background' || kind === 'tmux') {
         const now = msg.now | 0;
         const ageS = Math.max(0, Math.floor(((job.endedAt || now) - job.startedAt) / 1000));
@@ -138,16 +141,11 @@ function update(model, msg) {
           `[dim]cmd:[/]`,
           `  ${esc(owner.cmd || '(no cmd recorded)')}`,
         ];
-        // v0.6.3 Phase D1 — thread root facts the viewer_set_content arm
-        // needs (currentGroup, fromTabKey). fromTabKey was read from the
-        // viewer slice by the jobs_route effect; bg/tmux never switch group,
-        // so model.currentGroup here equals the pre-switch value.
-        cmds.push({ type: 'msg', msg: route.wrap(viewerTarget, {
-          type: 'viewer_set_content', lines,
-          currentGroup: model.currentGroup,
-          fromTabKey: msg.fromTabKey,
-        }) });
-        cmds.push({ type: 'msg', msg: route.wrap('layout', { type: 'focus_set', focus: viewerTarget }) });
+        // U2e P4 — the job-info card is a text-view content tab now (was the
+        // viewer's viewerOverride). The open_doc_tab effect mints/reuses the 'Job'
+        // tab + replaces its lines; set_active_tab (inside) makes it visible.
+        cmds.push({ type: 'open_doc_tab', key: 'job-info', label: 'Job', lines });
+        cmds.push(...focusSlot);
       }
       return [model, cmds];
     }

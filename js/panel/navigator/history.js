@@ -164,12 +164,10 @@ function augmentMsg(msg, model) {
  *  file (which would no-op due to module caching). */
 function installEffects(registerEffect) {
   registerEffect('historyReplay', (eff) => {
-    // v0.6.2 R6 — single dispatch via the extended viewer_set_content
-    // (opts.tab=0 lands the user on Info in the same reducer pass that
-    // sets the override). Pre-R6 this was two imperative dispatches
-    // (setViewerContent + setActiveTab) — handler-orchestrated cascade,
-    // visible to the reducer only as two unrelated Msgs.
-    setViewerContent(null, _replayLines(eff.entry).join('\n'), { tab: 0 });
+    // U2e P4 — replay output shows as the content slot's History text-view tab
+    // (was the viewer's viewerOverride; the opts.tab=0 park-on-Info is retired
+    // with the flat strip).
+    setViewerContent(null, _replayLines(eff.entry).join('\n'), { key: 'history', label: 'History' });
   });
 }
 

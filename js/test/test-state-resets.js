@@ -66,38 +66,31 @@ describe('[2] viewer_reset_chrome clears the active content instance transient s
   });
 });
 
-describe('[3] setViewerContent invalidates a committed search', () => {
-  // U2e P1b — setViewerContent(null, …) no longer hardcodes the 'detail' tab; it
-  // reroutes through route.resolveTarget('viewer') = the content slot's ACTIVE
-  // instance. The discrete-doc viewer_set_content arm (→ viewerOverride + the
-  // search reset) lives on the `detail` viewer, so this test boots a seeded slot
-  // and activates the `detail` anchor tab, making the reroute land on it. (The
-  // config-status DIFF caller of the SAME path is P4-deferred — see
-  // test-config-status.js — so on the default Info tab the write is inert.)
-  function seededDetailTarget() {
-    seedContentSlot();
-    const slotPaneId = route.resolveViewerPaneId();
-    // Activate the hidden `detail` anchor so resolveTarget('viewer') resolves it.
-    api.dispatchMsg(api.wrap('layout', { type: 'set_active_tab', paneId: slotPaneId, tabPoolId: 'detail' }));
-    return route.resolveTarget('viewer');   // == the detail viewer instance id
+describe('[3] setViewerContent shows a discrete doc as a text-view tab (U2e P4)', () => {
+  // U2e P4 — setViewerContent no longer writes the detail viewer's viewerOverride
+  // (retired). It mints a `text-view` content tab (poolId `content-<opts.key>`) and
+  // replaces its lines, reusing the tab on re-invoke. This is the shared entry for
+  // help / config-status diff / history replay.
+  const mpane = require('../leaves/wm/pane');
+  function docTabLines(key) {
+    const inst = route.getInstance(mpane.newPaneId('content-' + key));
+    return inst ? inst.slice.lines : null;
   }
 
-  it('drops stale matches when content is replaced', () => {
-    // P1 (viewer-lines selector) — matches are derived (ms.matchesFor), not
-    // stored; "stale matches" can't exist. The reset contract is on the
-    // canonical fields: active off + term cleared.
-    const target = seededDetailTarget();
-    getInstanceSlice(target).search = { active: true, term: 'err', idx: 1 };
-    setViewerContent(null, 'brand new\ncontent here');
-    eq(getInstanceSlice(target).search.active, false, 'search deactivated');
-    eq(getInstanceSlice(target).search.term, '', 'term cleared');
+  it('mints a text-view tab with the given content, active', () => {
+    seedContentSlot();
+    setViewerContent(null, 'brand new\ncontent here', { key: 'doc3', label: 'Doc' });
+    const slotPaneId = route.resolveViewerPaneId();
+    const pane = require('../leaves/wm/pool').findPaneLocation(
+      getInstanceSlice('layout').arrange, p => p.paneId === slotPaneId).pane;
+    eq(pane.activeTabId, 'content-doc3', 'the doc tab is active');
+    eq((docTabLines('doc3') || []).join('|'), 'brand new|content here', 'lines seeded');
   });
-  it('leaves an inactive search untouched (no needless churn)', () => {
-    const target = seededDetailTarget();
-    getInstanceSlice(target).search = { active: false, term: '', idx: 0 };
-    const ref = getInstanceSlice(target).search;
-    setViewerContent(null, 'more content');
-    eq(getInstanceSlice(target).search, ref, 'same object — not reallocated when already inactive');
+  it('reuses the same tab and replaces content on re-invoke', () => {
+    seedContentSlot();
+    setViewerContent(null, 'first', { key: 'doc3b', label: 'Doc' });
+    setViewerContent(null, 'second\nthird', { key: 'doc3b', label: 'Doc' });
+    eq((docTabLines('doc3b') || []).join('|'), 'second|third', 'content replaced in place');
   });
 });
 

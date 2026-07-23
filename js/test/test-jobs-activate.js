@@ -22,6 +22,13 @@ const api = require('../panel/api');
 
 const NOW = 1717420000000;  // fixed timestamp for deterministic age math
 
+// U2e P4 — boot a SEEDED content slot (register info+text-view, then initState so
+// the no-layout fallback synthesizes a `detail` pane → role:'content' slot seeded
+// with Info/Transcript). The job-info card + focus cascade now target that slot.
+if (!api.getComponent('info')) api.registerComponent(require('../panel/info/info'));
+if (!api.getComponent('text-view')) api.registerComponent(require('../panel/text-view/text-view'));
+const mpane = require('../leaves/wm/pane');
+
 function _seedModel() {
   const m = runtime.init();
   m.config = {
@@ -35,9 +42,16 @@ function _seedModel() {
       },
     },
   };
-  m.currentGroup = 'g';
+  m.projectDir = '.';
   runtime.setModel(m);
-  return m;
+  require('../app/state').initState();   // builds + seeds the content slot
+  return runtime.getModel();
+}
+
+// The job-info card's text-view tab (U2e P4 — key 'job-info' → poolId 'content-job-info').
+function _jobInfoLines() {
+  const inst = require('../panel/route').getInstance(mpane.newPaneId('content-job-info'));
+  return (inst && inst.slice.lines) || null;
 }
 
 function _resetJobs() { jobs._reset(); }
@@ -71,15 +85,12 @@ describe('[jobs_activate] full cascade — one Msg, reducer-driven', () => {
       pid: 1,
       owner: { tabKey: 'make-check', groupName: 'g', cmd: 'make check' },
     });
-    const before = { ...api.getInstanceSlice('detail'), tab: 0 };
-    require('../panel/route').setInstanceSlice('detail', before);
     _activate();
     eq(runtime.getModel().modes.jobsMode, false, 'overlay closed');
-    // U2c P2 — action output lives in a text-view position-tab now; the flat action
-    // tab (and its jump) is retired. Activating a stream-routed job focuses the
-    // viewer without a flat-tab switch (jump-to-position-tab is a follow-on).
-    eq(api.getInstanceSlice('detail').tab, 0, 'no flat-tab switch');
-    eq(api.getInstanceSlice('layout').focus, 'detail', 'focus on viewer pane');
+    // U2c P2 / U2e P4 — action output lives in a text-view position-tab now; the flat
+    // action-tab jump is retired. Activating a stream-routed job focuses the CONTENT
+    // SLOT (its column paneId) without a tab jump (jump-to-position-tab is a follow-on).
+    eq(api.getInstanceSlice('layout').focus, 'pane-detail', 'focus on the content slot');
   });
 
   it('stream-unrouted → closes overlay, focus moves to viewer; no tab change', () => {
@@ -89,12 +100,9 @@ describe('[jobs_activate] full cascade — one Msg, reducer-driven', () => {
       pid: 2,
       owner: { cmd: 'docker logs nginx' },
     });
-    const sliceBefore = { ...api.getInstanceSlice('detail'), tab: 0 };
-    require('../panel/route').setInstanceSlice('detail', sliceBefore);
     _activate();
     eq(runtime.getModel().modes.jobsMode, false);
-    eq(api.getInstanceSlice('detail').tab, 0, 'tab unchanged');
-    eq(api.getInstanceSlice('layout').focus, 'detail', 'focus on viewer');
+    eq(api.getInstanceSlice('layout').focus, 'pane-detail', 'focus on the content slot');
   });
 
   it('pty → closes overlay, focuses viewer (no flat-tab jump — U2d P2)', () => {
@@ -122,14 +130,14 @@ describe('[jobs_activate] full cascade — one Msg, reducer-driven', () => {
     });
     _activate();
     eq(runtime.getModel().modes.jobsMode, false);
-    // v0.6.2 T2c — job-info card writes slice.viewerOverride via
-    // setViewerContent; render's viewerLines() consults override first.
-    const ov = api.getInstanceSlice('detail').viewerOverride;
-    assert(ov && Array.isArray(ov.lines) && ov.lines.length > 0, 'viewer has override lines');
-    assert(ov.lines[0].includes('bg-rsync'), 'header has label');
-    assert(ov.lines.some(l => l.includes('pid:') && l.includes('12345')), 'pid line present');
-    assert(ov.lines.some(l => l.includes('rsync -av src/ dst/')), 'cmd line present');
-    eq(api.getInstanceSlice('layout').focus, 'detail', 'focus moved to viewer');
+    // U2e P4 — the job-info card is a text-view content tab now (key 'job-info'),
+    // not the detail viewer's viewerOverride.
+    const lines = _jobInfoLines();
+    assert(lines && lines.length > 0, 'job-info tab has lines');
+    assert(lines[0].includes('bg-rsync'), 'header has label');
+    assert(lines.some(l => l.includes('pid:') && l.includes('12345')), 'pid line present');
+    assert(lines.some(l => l.includes('rsync -av src/ dst/')), 'cmd line present');
+    eq(api.getInstanceSlice('layout').focus, 'pane-detail', 'focus moved to the content slot');
   });
 
   it('tmux → viewer shows info card with window name', () => {
@@ -141,10 +149,10 @@ describe('[jobs_activate] full cascade — one Msg, reducer-driven', () => {
     });
     _activate();
     eq(runtime.getModel().modes.jobsMode, false);
-    const ov = api.getInstanceSlice('detail').viewerOverride;
-    assert(ov && Array.isArray(ov.lines), 'override populated');
-    assert(ov.lines.some(l => l.includes('window:') && l.includes('worker')), 'window line present');
-    assert(ov.lines.some(l => l.includes('long-job.sh')), 'cmd line present');
+    const lines = _jobInfoLines();
+    assert(lines && Array.isArray(lines), 'job-info tab populated');
+    assert(lines.some(l => l.includes('window:') && l.includes('worker')), 'window line present');
+    assert(lines.some(l => l.includes('long-job.sh')), 'cmd line present');
   });
 
   it('empty list (cursor on nothing) → close only, no crash', () => {
