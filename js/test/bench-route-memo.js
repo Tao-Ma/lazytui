@@ -13,14 +13,19 @@
  * when it never hits.
  *
  * Miss lever: resolveTarget(intent, ctx) keys partly on ctx.focusedTabId.
- * Alternating that string between two NON-viewer ids forces, every call:
+ * Alternating that string between two NON-content-slot ids forces, every call:
  *   - a memo miss (focused changed),
- *   - the full tier 1→4 walk (tier 1 fails on a non-viewer focus; tier 3
- *     walks the arrange; tier 4 finds the 'detail' instance),
- *   - tier 3's short-lived array alloc (mpool.lastColumnPanels) + the
- *     resolveViewerPaneId predicate-closure alloc — the GC churn the memo
+ *   - the full resolveViewerPaneId walk (focus tier fails on a non-slot focus;
+ *     the sticky + arrange-order tiers then find the seeded content slot),
+ *   - resolveTarget's follow-on `_slotInstanceWhere` / activeInstanceOf pick +
+ *     the findPaneLocation predicate-closure alloc — the GC churn the memo
  *     exists to avoid.
  * No slice is mutated, so this isolates the memo cost from write cost.
+ *
+ * U2f — the viewer/`detail` kind is gone. `resolveTarget('viewer')` now resolves
+ * the content SLOT (seeded by initState with an Info(active)+Transcript strip)
+ * and returns its ACTIVE instance — the `info` tab (id `pane-info-pane-detail`),
+ * NOT a tier-4 `detail` instance. This bench boots that seeded slot via initState.
  *
  * Run: node js/test/bench-route-memo.js
  */
@@ -28,20 +33,43 @@
 
 const api = require('../panel/api');
 const route = require('../panel/route');
+// U2f — the content slot's default tabs are `info` (Info) + `text-view`
+// (Transcript); register both so initState's reconcile mints the slot's tabs
+// (the former `detail`/viewer Component is gone).
+require('../dispatch/runtime/host-wiring').wirePanelHost();
+require('../panel/nav-state').setNavDispatch(require('../dispatch/runtime/effects').effectHost());
 require('../dispatch/runtime/effects').installBuiltins();
 api.registerComponent(require('../panel/layout'));
-api.registerComponent(require('../panel/viewer/viewer'));
+api.registerComponent(require('../panel/info/info'));
+api.registerComponent(require('../panel/text-view/text-view'));
 
 // Mute terminal writes so timing isn't polluted.
 const term = require('../io/term');
 const _w = term.stdout.write.bind(term.stdout);
 term.stdout.write = (c, ...r) => { const s = typeof c === 'string' ? c : ''; if (s.startsWith('\x1b')) return true; return _w(c, ...r); };
 
+// Boot a seeded model with a placed content slot (default arrange places a
+// role:'content' detail slot; rebuildLayoutFromConfig seeds its Info + Transcript
+// tabs). Without this, resolveViewerPaneId has no arrange to walk and every call
+// short-circuits to null — the memo would never exercise the tier walk.
+const { getModel } = require('../app/runtime');
+const { initState } = require('../app/state');
+process.stdout.columns = 100;
+process.stdout.rows = 40;
+getModel().config = { project_dir: '.', theme: 'monokai', register: {}, files: [], plugins: {},
+  groups: { g: { name: 'g', label: 'g', containers: [], actions: {},
+    children: [], parent: null, depth: 0, quick: false } } };
+getModel().projectDir = '.';
+getModel().currentGroup = 'g';
+initState();
+
 // Pre-built ctx objects hoisted OUT of the loop, so we measure the memo's
 // behavior — not per-call ctx allocation. HIT reuses one; MISS alternates.
+// Both focus ids are NON-content-slot → the focus tier misses and the walk
+// falls through to the arrange-order tier that finds the seeded slot.
 const ctxHit = { focusedTabId: 'navA' };
 const ctxA = { focusedTabId: 'navA' };
-const ctxB = { focusedTabId: 'navB' }; // both non-viewer → tier 1 misses, full walk
+const ctxB = { focusedTabId: 'navB' };
 
 function bench(label, n, fn) {
   fn(Math.min(2000, n));               // warm
@@ -53,8 +81,8 @@ function bench(label, n, fn) {
 
 console.log('\n=== resolveTarget / resolveViewerPaneId memo bench ===');
 console.log('Sanity:', JSON.stringify({
-  target_navA: route.resolveTarget('viewer', ctxA),     // expect 'detail' (tier 4)
-  paneId: route.resolveViewerPaneId(ctxA),               // expect null (no hosting pane)
+  target_navA: route.resolveTarget('viewer', ctxA),     // expect 'pane-info-pane-detail' (slot's active `info` tab)
+  paneId: route.resolveViewerPaneId(ctxA),               // expect 'pane-detail' (the content slot container)
 }));
 
 const N = 100_000;

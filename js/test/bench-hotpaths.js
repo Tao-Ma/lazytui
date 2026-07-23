@@ -1,26 +1,32 @@
 /**
- * Phase 6 perf benchmark — the two hot paths the pure-TEA arc flagged.
+ * Hot-path perf benchmark — the streaming-append + selection-drag paths.
  *
- *   1. `viewer_append` under streamed action output. Each append
- *      spreads `[...slice.lines, line]` — fresh array per Msg. The
- *      worst real-world case is `docker logs -f` on a chatty service:
- *      ~500-1000 lines/sec sustained, with bursts higher.
+ *   1. Streamed action / log output. U2f — the viewer's `viewer_append` (into a
+ *      per-tab `viewerStreamBuffer`) is GONE; a `text-view` instance now owns its
+ *      content directly on `slice.lines`, and streamed output arrives as
+ *      `tv_append` (one line) / `tv_append_lines` (a batch). Each `tv_append`
+ *      concats `slice.lines.concat([line])` — a fresh array per Msg. The worst
+ *      real-world case is `docker logs -f` on a chatty service: ~500-1000
+ *      lines/sec sustained, with bursts higher.
  *
- *   2. `select_extend` during mouse drag. Mouse motion events fire at
- *      the terminal's rate (typically 60Hz, 100Hz on some terms). Each
- *      one spreads `{ ...slice, select: { ...slice.select, cursor } }`.
+ *   2. `select_extend` during mouse drag. Mouse motion events fire at the
+ *      terminal's rate (typically 60Hz, 100Hz on some terms). Each one spreads
+ *      `{ ...slice, select: { ...slice.select, cursor } }`. Post-U2f this flows
+ *      through the SHARED tvu reducer on the text-view's own slice (the same
+ *      transform the viewer used) — see leaves/text/text-view-update.
  *
- * Both are Msgs through the dispatch graph (applyMsg → runtime.update
- * for the model-level path, dispatchMsg → Component.update for the
- * slice-level path). We measure end-to-end throughput including
- * runEffects so the numbers reflect what the user sees.
+ * Both are Msgs through the dispatch graph (dispatchMsg → Component.update →
+ * setSlice). We measure end-to-end throughput including the finalizer so the
+ * numbers reflect what the user sees.
+ *
+ * U2f target instance: the content slot's seeded Transcript tab is a real
+ * `text-view` instance, so we bench straight against it (no mint needed).
  *
  * Run: node js/test/bench-hotpaths.js
  */
 'use strict';
 
 const api = require('../panel/api');
-const runtime = require('../app/runtime');
 const { getInstanceSlice } = api;
 // B/S6 — the Component fan-out relocated to dispatch/runtime/loop.js; wire the
 // injected hosts like production boot so dispatchMsg + the finalizer resolve.
@@ -30,7 +36,12 @@ require('../panel/nav-state').setNavDispatch(require('../dispatch/runtime/effect
 
 require('../dispatch/runtime/effects').installBuiltins();
 api.registerComponent(require('../panel/layout'));
-api.registerComponent(require('../panel/viewer/viewer'));
+// U2f — the content slot's default tabs are `info` (Info) + `text-view`
+// (Transcript); register both so initState's reconcile mints the slot's tabs
+// (the former `detail`/viewer Component is gone). We stream into the Transcript
+// text-view instance.
+api.registerComponent(require('../panel/info/info'));
+api.registerComponent(require('../panel/text-view/text-view'));
 
 // Mute the OSC52 / render scheduling side-channels so timing isn't
 // polluted by terminal writes. (Filter OSC52 only — keep stdout
@@ -44,19 +55,51 @@ term.stdout.write = (chunk, ...rest) => {
 };
 try { require('../leaves/infra/render-queue').scheduleRender = () => {}; } catch (_) {}
 
-const detailSlice = getInstanceSlice('detail');
-// P3 — slice.lines deleted; buffers are the only content homes.
-// Seed innerH so viewer_append's bottom-stick math has a realistic
-// viewport (38 = panelH 40 minus 2-row border chrome). A1/B1 fix: this
-// lives on detail's own slice now, not cross-slice in layout.
-detailSlice.innerH = 38;
-// v0.6.2 — Transcript tab is the unrouted accumulator's display home;
-// park the bench on it so we exercise the active-tab mirror path (the
-// hot case streaming docker logs hits when the user is watching).
-detailSlice.tab = 1;
-// Helper — read the displayed buffer length (T2d: slice.lines is
-// derived, the buffer is the source of truth).
-const bufLen = () => (getInstanceSlice('detail').viewerStreamBuffer || { lines: [] }).lines.length;
+// Boot a seeded model with a placed content slot; rebuildLayoutFromConfig seeds
+// its Info(active) + Transcript tabs. The Transcript tab is a `text-view`
+// instance keyed `newPaneId('transcript-<slotPaneId>')`.
+const route = require('../panel/route');
+const mpane = require('../leaves/wm/pane');
+const { getModel } = require('../app/runtime');
+const { initState } = require('../app/state');
+process.stdout.columns = 100;
+process.stdout.rows = 40;
+getModel().config = { project_dir: '.', theme: 'monokai', register: {}, files: [], plugins: {},
+  groups: { g: { name: 'g', label: 'g', containers: [], actions: {},
+    children: [], parent: null, depth: 0, quick: false } } };
+getModel().projectDir = '.';
+getModel().currentGroup = 'g';
+initState();
+
+const slotPaneId = route.resolveViewerPaneId();          // 'pane-detail'
+const TV = mpane.newPaneId('transcript-' + slotPaneId);  // Transcript text-view instance id
+const INFO = route.resolveTarget('viewer_info');          // Info instance id
+if (!route.hasInstance(TV)) throw new Error('bench setup: Transcript text-view instance not minted');
+if (!route.hasInstance(INFO)) throw new Error('bench setup: Info instance not minted');
+
+// This bench isolates the streaming/selection TRANSFORM cost (per-Msg reducer +
+// dispatch plumbing), the same thing the pre-U2f bench measured — that one never
+// booted a layout, so its post-dispatch finalizer early-returned. Post-U2f we
+// MUST boot a placed slot (to have a real text-view instance), which arms the
+// finalizer's two injected reconcilers. The SUBSCRIPTION reconciler in particular
+// runs UNGATED per outermost dispatch and costs ~350µs/op in steady state
+// (dominated by _appSubscriptions → visibleTerminalSurfaces, ~135µs), which
+// swamps the ~4µs transform signal and pins every case to a flat ~2.8k ops/sec.
+// (That fixed per-dispatch overhead is a real production cost — reported to the
+// caller, NOT a bench artifact.) Unwire both reconcilers here so the bench
+// measures the transform, not the fixed finalizer floor; the arrange is stable
+// through the append loops anyway, so the instance-reconcile would no-op.
+const finalize = require('../dispatch/runtime/finalize');
+finalize.setSubscriptionReconciler(null);
+finalize.setInstanceReconciler(null);
+
+// text-view owns its scroll; seed a realistic viewport (38 = panelH 40 minus the
+// 2-row border chrome) so tv_append's bottom-stick math clamps correctly even
+// though the bench doesn't run a full render to stamp innerH via augmentMsg.
+const tvSlice = () => getInstanceSlice(TV);
+route.setInstanceSlice(TV, { ...tvSlice(), innerH: 38 });
+// Helper — the text-view's buffer IS slice.lines (no separate stream buffer).
+const bufLen = () => (tvSlice().lines || []).length;
 
 function bench(label, n, fn) {
   // One warmup pass so V8 has a chance to inline / optimize.
@@ -69,123 +112,103 @@ function bench(label, n, fn) {
   console.log(`  ${label.padEnd(40)}  ${n.toLocaleString()} ops  ${ms.toFixed(2)}ms  →  ${opsPerSec.toLocaleString()} ops/sec`);
 }
 
-console.log('\n=== Phase 6 hot-path benchmark ===');
+console.log('\n=== hot-path benchmark (U2f: text-view streaming + selection) ===');
 console.log('Each Msg goes through the full dispatch graph (dispatchMsg → Component.update → setSlice).\n');
 
-// --- viewer_append ---
-console.log('[1] viewer_append (streamed lines, bottom-stick scroll)');
-detailSlice.viewerStreamBuffer = { lines: [], cap: 1_000_000 };  // bench-cap; production cap is 1000
+// --- tv_append ---
+console.log('[1] tv_append (streamed lines, bottom-stick scroll — from empty)');
+route.setInstanceSlice(TV, { ...tvSlice(), lines: [], scroll: 0, innerH: 38 });
 bench('append from empty', 10_000, (n) => {
   for (let i = 0; i < n; i++) {
-    fanout.dispatchMsg(api.wrap('detail', { type: 'viewer_append', line: `line ${i}` }));
+    fanout.dispatchMsg(api.wrap(TV, { type: 'tv_append', line: `line ${i}` }));
   }
 });
 console.log(`  final buffer length: ${bufLen()}`);
 
-// Reset and benchmark the steady-state (large pre-existing buffer).
-console.log('\n[2] viewer_append (buffer already 10k lines — spread cost scales with length)');
+// Steady-state (large pre-existing buffer): tv_append concats slice.lines, so the
+// per-append copy cost scales with buffer length.
+console.log('\n[2] tv_append (buffer already 10k lines — concat cost scales with length)');
 bench('append to 10k buffer', 10_000, (n) => {
   for (let i = 0; i < n; i++) {
-    fanout.dispatchMsg(api.wrap('detail', { type: 'viewer_append', line: `line ${i}` }));
+    fanout.dispatchMsg(api.wrap(TV, { type: 'tv_append', line: `line ${i}` }));
   }
 });
 console.log(`  final buffer length: ${bufLen()}`);
 
-console.log('\n[2b] viewer_append (buffer 50k lines — long-running stream)');
-// Build up to 50k without timing the warmup. v0.6.2 T2d — read buffer
-// length directly (slice.lines is derived, not the source).
+console.log('\n[2b] tv_append (buffer 50k lines — long-running stream)');
+// Build up to 50k without timing the warmup.
 while (bufLen() < 50_000) {
-  fanout.dispatchMsg(api.wrap('detail', { type: 'viewer_append', line: 'x' }));
+  fanout.dispatchMsg(api.wrap(TV, { type: 'tv_append', line: 'x' }));
 }
 bench('append to 50k buffer', 5_000, (n) => {
   for (let i = 0; i < n; i++) {
-    fanout.dispatchMsg(api.wrap('detail', { type: 'viewer_append', line: `line ${i}` }));
+    fanout.dispatchMsg(api.wrap(TV, { type: 'tv_append', line: `line ${i}` }));
   }
 });
 console.log(`  final buffer length: ${bufLen()}`);
 
 // --- select_extend ---
 console.log('\n[3] select_extend (mouse drag, ~60Hz target = 60 ops/sec minimum)');
-// Seed with a select_begin so isActive() returns true and select_extend hits.
-fanout.dispatchMsg(api.wrap('detail', { type: 'select_begin', line: 0, col: 0, kind: 'char' }));
+// Seed with a select_begin so slice.select.active is true and select_extend hits.
+fanout.dispatchMsg(api.wrap(TV, { type: 'select_begin', line: 0, col: 0, kind: 'char' }));
 bench('extend through 10k positions', 10_000, (n) => {
   for (let i = 0; i < n; i++) {
-    fanout.dispatchMsg(api.wrap('detail', { type: 'select_extend', line: i % 100, col: i % 50 }));
+    fanout.dispatchMsg(api.wrap(TV, { type: 'select_extend', line: i % 100, col: i % 50 }));
   }
 });
 
-// --- viewer_append routed, off-active-tab ---
-//
-// Real-world scenario: user runs Build (action tab), then switches to
-// Test to watch it. Build keeps streaming in the background — every
-// append is routed (tabKey='build') but the active tab is Test, so the
-// reducer's mirror branch doesn't fire. The buffer write + finalizer
-// pass still run. Pre-T3f-fix this path bypassed tabState; post-
-// T3f-fix the finalizer's transition-detect is a single ref check
-// (no transition during the bench), so we measure the routed-append
-// off-tab cost cleanly.
-console.log('\n[4] viewer_append routed, off-active-tab (background streaming while user is elsewhere)');
-// Set up a minimal group + actions so flatTabInfo recognizes two
-// action tabs. Park the user on the first; route appends to the second.
-const runtime_mod = require('../app/runtime');
-const m = runtime_mod.getModel();
-m.config = {
-  groups: { g: { label: 'G', actions: {
-    build: { label: 'Build', script: 'true', tab: true },
-    test:  { label: 'Test',  script: 'true', tab: true },
-  } } },
-};
-m.currentGroup = 'g';
-// Tab strip is now: [Info][Transcript][Build=2][Test=3]. Park on Build.
-detailSlice.tab = 2;
-bench('routed off-tab append (10k)', 10_000, (n) => {
-  for (let i = 0; i < n; i++) {
-    fanout.dispatchMsg(api.wrap('detail', {
-      type: 'viewer_append', line: `bg ${i}`,
-      tabKey: 'test', groupName: 'g',  // routed to Test, but user is on Build
-    }));
-  }
-});
-const testBufLen = ((api.getInstanceSlice('detail').actionTabBuffers || {}).g || {}).test || { lines: [] };
-console.log(`  final test buffer length: ${testBufLen.lines.length}`);
-
-// --- viewer_append_lines bulk variant ---
+// --- tv_append_lines bulk variant ---
 //
 // Stream-end footers, preempt notices, decoder-tail flushes dispatch
-// viewer_append_lines (bulk) instead of N x viewer_append. One Msg per
-// batch = one finalizer pass per batch. Producers in stream.js use
-// this for the `Press Enter to run again.` + status footer pair.
-console.log('\n[5] viewer_append_lines bulk (one Msg per N-line batch)');
-detailSlice.tab = 1;  // back to Transcript so the unrouted mirror engages
-api.getInstanceSlice('detail').viewerStreamBuffer = { lines: [], cap: 1_000_000 };
+// tv_append_lines (bulk) instead of N × tv_append. One Msg per batch = one
+// finalizer pass per batch, and one concat of N lines rather than N concats.
+console.log('\n[4] tv_append_lines bulk (one Msg per N-line batch)');
+route.setInstanceSlice(TV, { ...tvSlice(), lines: [], scroll: 0, innerH: 38 });
 const _batch10 = () => Array.from({ length: 10 }, (_, i) => `b${i}`);
 bench('append_lines x1000 (10 lines/batch)', 1_000, (n) => {
   const lines = _batch10();
   for (let i = 0; i < n; i++) {
-    fanout.dispatchMsg(api.wrap('detail', { type: 'viewer_append_lines', lines }));
+    fanout.dispatchMsg(api.wrap(TV, { type: 'tv_append_lines', lines }));
   }
 });
 console.log(`  final buffer length: ${bufLen()}`);
 
-// --- pure finalizer cost (per-Msg overhead) ---
+// --- info_show_content (Info body swap on nav-select) ---
 //
-// What does the finalizer-+-update plumbing cost per Msg, when the
-// reducer arm itself does minimal work? Useful baseline for any future
-// finalizer addition. viewer_search_clear_committed always returns a
-// fresh slice with an empty search struct (no buffer scan, no
-// lines change) — closest synthetic for "single dispatch + finalizer
-// + minimal reducer alloc."
-console.log('\n[6] pure finalizer cost (viewer_search_clear_committed per Msg)');
-api.getInstanceSlice('detail').viewerStreamBuffer = { lines: [], cap: 1_000_000 };
+// The Info tab's content is REPLACED wholesale each time the focused Navigator's
+// selection changes (dispatch.showSelectedInfo → info_show_content). Redraw fires
+// this on every nav-select, so it sits on the navigator-cursor hot path. The arm
+// scans for content-equality (ref-stable slice on no-change) then replaces.
+console.log('\n[5] info_show_content (Info body swap on nav-select — alternating content)');
+const _infoA = Array.from({ length: 40 }, (_, i) => `A line ${i}`);
+const _infoB = Array.from({ length: 40 }, (_, i) => `B line ${i}`);
+bench('show_content x100k (alternating)', 100_000, (n) => {
+  for (let i = 0; i < n; i++) {
+    fanout.dispatchMsg(api.wrap(INFO, { type: 'info_show_content', lines: (i & 1) ? _infoA : _infoB }));
+  }
+});
+console.log(`  final Info buffer length: ${(getInstanceSlice(INFO).lines || []).length}`);
+
+// --- per-Msg dispatch/reducer floor ---
+//
+// What does the dispatch + Component.update plumbing cost per Msg when the reducer
+// arm itself does minimal work? Useful baseline for any future arm. Note: the
+// heavy per-dispatch FINALIZER reconcilers were unwired at boot (see setup), so
+// this is the transform plumbing floor, NOT production's full per-dispatch cost
+// (which additionally pays the ~350µs subscription reconcile — see the report).
+// viewer_search_clear_committed (owned by the shared tvu reducer) returns a fresh
+// slice with an empty search struct (no buffer scan, no lines change) — closest
+// synthetic for "single dispatch + minimal reducer alloc."
+console.log('\n[6] per-Msg dispatch/reducer floor (viewer_search_clear_committed per Msg)');
 bench('search_clear x100k', 100_000, (n) => {
   for (let i = 0; i < n; i++) {
-    fanout.dispatchMsg(api.wrap('detail', { type: 'viewer_search_clear_committed' }));
+    fanout.dispatchMsg(api.wrap(TV, { type: 'viewer_search_clear_committed' }));
   }
 });
 
 console.log('\n--- Interpretation ---');
-console.log('viewer_append target: docker logs -f sustains ~1k lines/sec; bursts to ~5k.');
+console.log('tv_append target: docker logs -f sustains ~1k lines/sec; bursts to ~5k.');
 console.log('select_extend target: 60Hz mouse drag = 60 ops/sec; 100Hz = 100 ops/sec.');
-console.log('off-tab append target: same hot path as foreground; mirror branch skipped — should be ≥ on-tab throughput.');
-console.log('append_lines bulk: one finalizer pass per N lines — per-line cost should beat singular viewer_append.');
-console.log('finalizer cost: per-Msg overhead floor; ≫ 10k ops/sec means finalizer is not a bottleneck.\n');
+console.log('append_lines bulk: one finalizer pass per N lines — per-line cost should beat singular tv_append.');
+console.log('info_show_content: fires per nav-select; content-equality guard keeps no-change refreshes cheap.');
+console.log('dispatch/reducer floor: transform plumbing per Msg (finalizer reconcilers unwired for this bench).\n');
