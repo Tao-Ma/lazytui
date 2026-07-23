@@ -67,6 +67,13 @@ const _replay = () => (_replayRef ||= require('../dispatch/runtime/replay'));
 // the token back through its kind handler.
 const _liveSubs = new Map();
 
+// PERF gate for reconcileSubscriptions — the last-reconciled {arrange, dims,
+// viewMode, jobsMode, diagLogMode}. The desired set is a pure function of these
+// (see reconcileSubscriptions), so an unchanged gate means the live set is
+// already correct and the ~350µs desired-set rebuild+diff can be skipped. Reset
+// to null by `_resetSubscriptions` so the next reconcile always runs.
+let _lastSubGate = null;
+
 // Sub-kind handler registry — how each kind of ongoing source is keyed,
 // started, and stopped. The reconciler is kind-agnostic; new external-source
 // kinds (interval / resize / process-stream — FIX-3 later phases) plug in here.
@@ -377,6 +384,32 @@ function _addDesired(out, d) {
 // diff makes it a no-op when the desired set is unchanged (the common case) —
 // so a live source is NOT torn down + restarted while its key is stable.
 function reconcileSubscriptions(model) {
+  // PERF gate — the DESIRED subscription set is a pure function of the LAYOUT
+  // (arrange = which panes are placed + each pane's `subscriptions()`; dims +
+  // viewMode = the on-screen-terminal check that gates the #D15 overlay poll)
+  // plus the two mode flags that toggle the clock sub. Everything else desired is
+  // constant (resize + the 3 store-mirrors) or immutable-post-boot (docker's
+  // `_containers()` config gate — a `:reload-config` rebuilds arrange, so it
+  // rides the arrange ref). So when none of these changed since the last
+  // reconcile, the desired set is unchanged and the live subs are already correct
+  // — skip the desired-set rebuild + diff (~350µs/dispatch, dominated by the
+  // `visibleTerminalSurfaces` on-screen check + the per-pane walk). This was
+  // ungated (a per-keystroke cost on ANY booted layout).
+  //   INVARIANT: if a future component's `subscriptions()` starts depending on
+  // OTHER volatile model state, add that input to the gate key here (else the sub
+  // won't start/stop correctly). Today: stats keys on paneDef only; docker on the
+  // immutable container config; no other component declares subs.
+  const ls = _layoutSlice();
+  const modes = (model && model.modes) || {};
+  const jobsMode = !!modes.jobsMode, diagLogMode = !!modes.diagLogMode;
+  const g = _lastSubGate;
+  if (g && ls && g.arrange === ls.arrange && g.dims === ls.dims
+        && g.viewMode === ls.viewMode && g.jobsMode === jobsMode && g.diagLogMode === diagLogMode) {
+    return;   // desired set unchanged → live subs already correct
+  }
+  _lastSubGate = ls
+    ? { arrange: ls.arrange, dims: ls.dims, viewMode: ls.viewMode, jobsMode, diagLogMode }
+    : null;
   const ctx = _subCtx();
   const desired = _desiredSubs(model);
   // stop — live sources no longer desired (e.g. a disposed pane's sub).
@@ -410,6 +443,7 @@ function _subCtx() {
 function _resetSubscriptions() {
   for (const { kind, token } of _liveSubs.values()) _subKinds[kind].stop(token);
   _liveSubs.clear();
+  _lastSubGate = null;   // force the next reconcile to rebuild (live set was cleared)
 }
 
 // --- Component slice resolution ---
@@ -445,7 +479,8 @@ function _groupsSlice() {
 // tag), so the helper is called there.
 let _layoutAutoRegistered = false;
 function _layoutSlice() {
-  const api = require('../panel/api');
+  const api = _api();   // cached ref — a fresh relative require() here is ~70µs,
+                        // and this sits on the per-dispatch sub-reconcile gate path.
   // layout is a SERVICE slot (chrome Component) — explicit read.
   let s = api.serviceSlice('layout');
   if (!s) {
