@@ -9,8 +9,8 @@
  * static `panel→dispatch` import edges.
  *
  * This is the formalized-injection seam for the SCATTERED synchronous panel
- * writers (viewer/select, viewer/search, viewer/tabs, free-config, files cmd) +
- * api's own refreshAll/setActiveTab. Effect handlers (per-call host) and the big
+ * writers (viewer/select, viewer/search, content-tab, free-config, files cmd) +
+ * api's own refreshAll. Effect handlers (per-call host) and the big
  * dispatch facades (nav-state, commands — per-module injected host) get dispatch
  * a different way; see docs/v0.6.5-dispatch-loop.md "formalize injection".
  *
@@ -25,8 +25,10 @@
  * wired — only the eventual call must come after boot.
  *
  * (Dir renamed `ports/`→`hosts/` on 2026-07-02: "port" is the more proper term
- * for the dataflow fabric's typed I/O endpoints, which now claim `js/ports/`.
- * These modules are dependency-inversion HOST seams — see docs/ports-and-wires.md.)
+ * for the dataflow fabric's typed I/O endpoints, so `js/ports/` was vacated to
+ * free that name for the fabric concept — the fabric impl itself lives in
+ * `js/fabric/`. These modules are dependency-inversion HOST seams — see
+ * docs/ports-and-wires.md.)
  *
  * `dispatchMsg`'s implementation lives in dispatch/runtime/loop.js (B/S6 relocated the
  * Component fan-out to the dispatch layer); the seam just points at it.

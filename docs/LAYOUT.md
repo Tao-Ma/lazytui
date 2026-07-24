@@ -84,9 +84,8 @@ Multi-tab panes use the mapping form too:
 `activeTab` is optional — defaults to `tabs[0]`. Switch active tab
 at runtime via `:switch-tab <pool-id>` (cmdline; autocomplete restricts
 to the focused pane's other tabs) or from the unified `[≡]` pane-menu's
-Tabs section (mouse). `]`/`[` still cycles the active viewer tab's
-inner strip (Info / Transcript / action tabs / terminal tabs /
-content tabs), not pane-level tabs. See
+Tabs section (mouse). `]`/`[` still cycles the content pane's
+inner strip (Info / Transcript / content tabs), not pane-level tabs. See
 [`history/v0.6.1-migrate.md`](history/v0.6.1-migrate.md) for the conversion guide
 from v0.6.0 inline cells.
 
@@ -185,7 +184,7 @@ on rows that get repainted while a glyph sits over them.
 | `[X]` | red | top-right of non-detail panels | free-config mode only | `pool_hide` — unplaces the panel; the entry stays in the pool (reachable via `:show <id>` or the `w` panel-list overlay) |
 | `[_]` | yellow | top-right of non-detail panels (4-cell gap left of `[X]` when both visible) | always (normal + free-config) | `panel_collapse_toggle` — collapses the panel to a single header row |
 | `[+]` | green | replaces `[_]` when the panel is already collapsed | always | toggle back to expanded |
-| `[≡]` | theme accent | top-left of **every** panel (immediately after the hotkey), v0.6.4 unified | shown per-pane when there's something to pick (a viewer with ≥2 tabs, any other pane with ≥2 pane rows); suppressed during drag, and siblings disable while the menu is open on one cell | opens the centered **pane-menu** — one projection-aware overlay (subsumes the former tab-list + pane-select dropdown) with a **Tabs** section (Info, Transcript, action / terminal / content tabs — viewers only) and a **Panes** section for swapping which pool entry occupies this slot (SWAP if picked is placed elsewhere, REPLACE if picked is hidden; half/full views place side-by-side viewers via `pane_menu_place`) |
+| `[≡]` | theme accent | top-left of **every** panel (immediately after the hotkey), v0.6.4 unified | shown per-pane when there's something to pick (a viewer with ≥2 tabs, any other pane with ≥2 pane rows); suppressed during drag, and siblings disable while the menu is open on one cell | opens the centered **pane-menu** — one projection-aware overlay (subsumes the former tab-list + pane-select dropdown) with a **Tabs** section (Info, Transcript, content tabs — content panes only) and a **Panes** section for swapping which pool entry occupies this slot (SWAP if picked is placed elsewhere, REPLACE if picked is hidden; half/full views place side-by-side viewers via `pane_menu_place`) |
 
 Detail's top row reads `╭─(o)[≡]─Detail─…─╮` — both the hotkey label
 and the pane-menu trigger are visible, the trigger's 3-cell width
@@ -298,7 +297,7 @@ filesystem; select with `source:` (`declared` / `filesystem` / `both` /
 | `x` | Toggle keybinding menu popup |
 | `r` | Refresh container status |
 | `/` | Filter panel items |
-| `Enter` | Activate terminal tab (when on terminal tab) |
+| `Enter` | Activate terminal (when focused on a terminal pane) |
 | `Ctrl+\` | Exit terminal mode |
 | `?` | Show help in detail panel |
 | `<leader> o` / `<leader> i` | Navigation history: jump back (older) / forward (newer) — v0.6.7 |
@@ -317,12 +316,12 @@ terminal — native text selection may not work while the TUI runs.
 
 ## Detail tabs
 
-The detail strip has two implicit global tabs followed by per-group
-tabs:
+The detail (content) pane's strip has two implicit global tabs
+followed by per-group content tabs:
 
 ```
-[Info] [Transcript] [actionTabs...] [termTabs...] [contentTabs...]
-   0        1          2..1+A          2+A..1+A+T   2+A+T..1+A+T+C
+[Info] [Transcript] [content tabs...]
+   0        1          2..
 ```
 
 - **Info** (idx 0) — pure selection-info. Refreshes as the cursor
@@ -332,13 +331,15 @@ tabs:
   launch confirmations, cmdline-verb outcomes. Cap 1000 lines,
   bottom-pin on restore, `[dim](no transcript yet)[/]` placeholder
   when empty.
-- **Action tabs** — actions with `tab: true` (see below).
-- **Terminal tabs** — `terminals:` PTYs.
-- **Content tabs** — files opened via `:open` / Enter on a file row.
+- **Content tabs** (idx 2+) — full `text-view` instances minted into
+  the slot: an action stream with `tab: true`, and files opened via
+  `:open` / Enter on a file row. Each carries its own scroll / search /
+  selection state (v0.6.8 — every tab is a position-tab instance; see
+  [one-tab-system.md](one-tab-system.md)).
 
 `]`/`[` cycles between them. Tab actions execute silently (bypass
 confirm/args, don't mark as last-run). Navigating items in a list
-panel auto-yanks the viewer back to Info from any non-Info tab, so
+panel auto-yanks the pane back to Info from any non-Info tab, so
 selection-info always appears with the cursor (v0.6.2 — the unrouted
 transcript stays available via Transcript).
 
@@ -347,10 +348,10 @@ actions:
   build:
     cmd: make
     label: Build
-    tab: true          # long-running stream → dedicated tab
+    tab: true          # long-running stream → dedicated content tab
   ssh:
     type: spawn
-    label: SSH         # no tab — spawn opens a terminal
+    label: SSH         # no tab — spawn opens a terminal pane
   ps:
     cmd: docker compose ps
     label: PS          # no tab — one-shot snapshot → Transcript
@@ -361,11 +362,13 @@ action concurrency, or output you'll diff across runs. One-shot
 snapshots and ad-hoc commands fit Transcript naturally and don't
 need their own tab.
 
-## Terminal tabs
+## Terminals
 
-Groups can define `terminals:` — interactive PTY sessions embedded as
-detail panel tabs. Strip position: after action tabs (i.e., starting
-at `idx = 2 + actionTabs.length`).
+Groups can define `terminals:` — interactive PTY sessions. As of
+v0.6.8 each opens as its own first-class `terminal` **pane** (not a
+detail-strip tab): the `terminals:` entries surface as open-on-demand
+actions (like docker's compose verbs) that mint — or re-focus — a
+persistent `terminal` pane, reusing one session across group switches.
 
 ```yaml
 groups:
@@ -376,7 +379,7 @@ groups:
         label: "SQL Editor"
 ```
 
-Press `]`/`[` to reach the terminal tab. Press `Enter` to activate
+Run the action to open the terminal pane. Press `Enter` to activate
 terminal mode (keystrokes go to PTY). Press `Ctrl+\` to return to TUI.
 Sessions persist across group switches. See TERMINAL.md for details.
 

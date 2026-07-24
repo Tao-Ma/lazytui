@@ -121,11 +121,11 @@ function finalizeDispatch() {
     // subs/PTYs during replay). The `finally` below still clears the guard.
     if (replay.isReplaying()) return;
     // #D13 — reconcile hub subscriptions against the model (canonical Model →
-    // Sub). Ungated: the desired set is recomputed + diffed every outermost
-    // dispatch so a sub whose existence depends on model state (today: which
-    // panes are placed) starts/stops correctly — incl. tearing down a disposed
-    // pane's topic. The diff no-ops when unchanged (the common case), so the
-    // steady-state cost is one cheap desired-set build + Map compare.
+    // Sub) so a sub whose existence depends on model state (today: which panes
+    // are placed) starts/stops correctly — incl. tearing down a disposed pane's
+    // topic. Gated inside the reconciler on a cheap key (arrange/dims/viewMode/
+    // jobsMode/diagLogMode): an unchanged key skips the desired-set rebuild +
+    // diff entirely (the steady-state case). See js/app/state.js.
     if (_subscriptionReconciler) _subscriptionReconciler(getModel());
     const layout = _finalizeLayout(layoutSlice);
     for (const p of mpool.allPanesInColumns(layoutSlice.arrange)) {

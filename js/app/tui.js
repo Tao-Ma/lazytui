@@ -330,8 +330,8 @@ function main() {
   // PTY exit fan-out — wires `panel/viewer/pty-lifecycle` into
   // `io/terminal.js` so the io layer stays a leaf (it used to lazy-
   // require panel/viewer/tabs + panel/api + render/geometry on every
-  // session exit — a documented inversion). Must run AFTER the viewer
-  // Component is registered so the handler's slice reads land.
+  // session exit — a documented inversion). Must run AFTER the
+  // components are registered so the handler's slice reads land.
   require('../panel/viewer/pty-lifecycle').install(require('../dispatch/runtime/effects').effectHost());
 
   // Phase 6 — the runtime Plugin API retired. External authors write

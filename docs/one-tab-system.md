@@ -293,10 +293,19 @@ separate phase.
 ## What gets deleted (the payoff)
 
 `slice.contentTabs`, `slice.tabState`-as-viewer-special, `slice.ephemeralTerminals`,
-`slice.actionTabBuffers` / `viewerStreamBuffer` routing, `panel/viewer/tab-strip.js`,
-the viewer-specific tab-kind machinery in `leaves/wm/pane-tabs.js`, and the
-per-content selection in `panel/viewer/select.js`. The viewer stops being a
-god-object; there is one tab concept, one strip, one selection model.
+`slice.actionTabBuffers` / `viewerStreamBuffer` routing, and the viewer-specific
+tab-kind machinery in `leaves/wm/pane-tabs.js` (the pure strip-geometry engine
+`panel/viewer/tab-strip.js` is retained and now drives every pane's slot strip).
+The viewer stops being a god-object; there is one tab concept and one strip.
+
+The selection collapse (D4) landed **partially**: keyboard visual-mode selection
+still lives in the content instance's own `slice.select` (per-tab, driven by a
+`v`/`V` state machine), distinct from the single-owner `model.selection` that
+mouse drag-to-copy uses in every other pane. The two share the geometry core
+(`leaves/text/select-core.js`), not the state shape — so `panel/viewer/select.js`
+survives as the keyboard-visual-mode half rather than being deleted. Fully
+unifying the two shapes is a tracked follow-on (see also the deferred
+`panel/viewer/` directory rename).
 
 ## Non-goals
 

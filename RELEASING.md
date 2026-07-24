@@ -14,7 +14,7 @@ Every release builds **two tarballs**, both attached to the GitHub Release:
 
 | Artifact | Contents | Use case |
 |---|---|---|
-| `lazytui-X.Y.Z.tgz` | npm-style package. Runtime + parser + docs only (no tests, no demos, no `.github/`). 78 files / ~170 kB. | `npm install` from URL; future `npm install -g lazytui` once we publish. |
+| `lazytui-X.Y.Z.tgz` | npm-style package. Runtime + parser + docs only (no tests, no demos, no `.github/`). ~225 files / ~980 kB as of v0.6.8. | `npm install` from URL; future `npm install -g lazytui` once we publish. |
 | `lazytui-X.Y.Z-source.tar.gz` | Full source archive of the tagged commit (`git archive HEAD`). Includes tests, demos, CI configs — everything that's in git. | Read-only mirror of the tag for users who can't or don't want to `git clone`. |
 
 The split exists because the npm tarball is the runtime form (lean,

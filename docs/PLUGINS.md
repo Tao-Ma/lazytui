@@ -59,9 +59,9 @@ const {
   // nav-chrome reads (per-panel; writes go through wrapped Msgs)
   getSel, getScroll, isMultiSel,
   // filter / exec / streaming
-  getFilter, execAsync, streamCommand, addEphemeralTab, scheduleRender,
-  // viewer tab controls
-  setActiveTab, leaveTerminalMode,
+  getFilter, execAsync, streamCommand, scheduleRender,
+  // terminal controls
+  leaveTerminalMode,
 } = require('./panel/api');
 ```
 

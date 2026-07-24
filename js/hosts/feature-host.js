@@ -16,7 +16,7 @@
  * pure logic, so they stay leaves; these two are nothing but the seam.
  *
  * Wired at boot:
- *   - panel/viewer/tabs.js  → addContentTab, updateContentTabLines
+ *   - panel/content-tab.js  → addContentTab, updateContentTabLines
  *   - dispatch/runtime/effects.js   → refireCmdlineRebuild
  *
  * See docs/v0.6.5-render-exit.md (the layering arc) for the pattern.
