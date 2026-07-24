@@ -127,6 +127,19 @@ function highlightLine(line, startCol, endCol) {
   // drop it INSIDE — the selected span reads as normal video, standing out against
   // the reversed row. (Other markup is still dropped; for a transient selection
   // that fidelity loss is acceptable, as before.)
+  //
+  // CONTRACT: `baseReverse` treats a leading `[reverse]` as "this whole row is
+  // reversed", which is EXACT for every reversed-row producer (all navigator +
+  // fabric selected rows: leading `[reverse]`, UNCLOSED, to EOL, content `esc()`'d
+  // so no inner `[/]`). A precise "no inner close tag" test is deliberately NOT
+  // used: esc()'d content may contain a literal `\[/]` whose substring is `[/]`,
+  // which would false-negative a genuine reversed row. If a future caller emits a
+  // row that OPENS then CLOSES reverse before EOL, this proxy would XOR the wrong
+  // region — keep such rows out, or revisit here.
+  //
+  // Note: XOR is RELATIVE to each row's own base, so a multi-row drag shows the
+  // selected span reversed on normal rows but normal-video on the (reversed) cursor
+  // row — intentional (the span always contrasts its row), not a uniformity bug.
   const baseReverse = /^\[reverse\]/.test(line);
   const plain = stripMarkup(line);
   const lineW = displayWidth(plain);

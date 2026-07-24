@@ -670,7 +670,10 @@ function _resolveTargetCompute(intent, focused, layout, lastViewerTab) {
  *  unrouted run seeds the Transcript, and the caller switches the slot's active
  *  tab to it so the user sees the output (the routed path gets this free from the
  *  tab mint; the always-present Transcript needs an explicit switch). Returns null
- *  when no content slot is placed or it has no transcript tab. */
+ *  when no content slot is placed, it has no transcript tab, or that tab's
+ *  instance isn't mounted — the last mirrors `_slotInstanceWhere`/resolveTarget so
+ *  this resolver and `resolveTarget('viewer_transcript')` (which seeds the header)
+ *  can never disagree about whether the transcript is a live switch target. */
 function resolveTranscriptTab(ctx) {
   ctx = ctx || {};
   const focused = ctx.focusedTabId != null ? ctx.focusedTabId : getFocus();
@@ -680,12 +683,15 @@ function resolveTranscriptTab(ctx) {
   const arrange = layout && layout.arrange;
   if (!arrange) return null;
   const mpool = require('../leaves/wm/pool');
+  const mpane = require('../leaves/wm/pane');
   const loc = mpool.findPaneLocation(arrange, (p) => p.paneId === slotPaneId);
   if (!loc) return null;
   const pool = arrange.pool || {};
   for (const t of (loc.pane.tabs || [])) {
     const entry = pool[t.poolId];
-    if (entry && entry.hint === 'transcript') return { paneId: slotPaneId, poolId: t.poolId };
+    if (entry && entry.hint === 'transcript') {
+      return _instances[mpane.newPaneId(t.poolId)] ? { paneId: slotPaneId, poolId: t.poolId } : null;
+    }
   }
   return null;
 }

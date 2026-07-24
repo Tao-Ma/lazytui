@@ -37,6 +37,11 @@ const CLOSE_GLYPH = '\\[X]';
  * not a tag start.
  */
 function truncate(text, maxWidth) {
+  // Non-positive budget → nothing fits (not even the ellipsis). Return empty so
+  // `visibleLen(out) <= max(0, maxWidth)` holds unconditionally — the cell-diff
+  // emits absolute per-cell column moves and cannot tolerate a 1-col overrun into
+  // a degenerate sub-2-col panel (title truncation, a 0-width preview column).
+  if (maxWidth <= 0) return '';
   if (visibleLen(text) <= maxWidth) return text;
   const limit = maxWidth - 1;   // leave 1 col for the ellipsis
   let out = '';

@@ -60,4 +60,43 @@ describe('[truncate] leading style + width + escapes', () => {
   });
 });
 
+describe('[truncate] never overruns — parametric no-overrun invariant', () => {
+  // The cell-diff emits absolute per-cell column moves, so truncate MUST satisfy
+  // visibleLen(out) <= max(0, w) for EVERY input class × width — a 1-col overrun
+  // misaligns borders. Sweeps glyph widths, markup, escapes, and degenerate cases.
+  const samples = [
+    'plain ascii text that is fairly long and will overflow narrow widths',
+    '日本語テストワイド'.repeat(4),                 // CJK wide (2 cols each)
+    'aＢc日d',                                      // mixed narrow/fullwidth
+    '👍🏽 emoji 👩‍👩‍👧 zwj family and more text here', // surrogate pairs + ZWJ
+    'áb́ć combining marks trailing',  // zero-width combining
+    '[reverse][bold][green]all markup no glyphs[/]',
+    '[reverse]▸ leading reverse row, unclosed, to end of a long line',
+    'the [reverse][yellow]match[/] inside a longer line that overflows',
+    '[unmatched bracket with no close and lots of trailing text here',
+    'literal \\[Enter] escape then a long overflowing tail tail tail',
+    'ends with a lone backslash and long text \\',
+    '',
+  ];
+  it('visibleLen(truncate(s, w)) <= max(0, w) for all classes × w in [0..14]', () => {
+    for (const s of samples) {
+      for (let w = 0; w <= 14; w++) {
+        const out = truncate(s, w);
+        const vl = visibleLen(out);
+        assert(vl <= Math.max(0, w),
+          `overrun: w=${w} vl=${vl} in=${JSON.stringify(s)} out=${JSON.stringify(out)}`);
+      }
+    }
+  });
+  it('non-positive width yields empty (no stray ellipsis)', () => {
+    eq(truncate('[reverse]anything', 0), '');
+    eq(truncate('anything', -3), '');
+  });
+  it('a 2-col glyph on a 1-col boundary is refused (no 1-col overrun)', () => {
+    // "a" (1) fills to w=3's limit-1=2? then "日" (2) would overrun → dropped.
+    const out = truncate('a日 tail', 3);
+    assert(visibleLen(out) <= 3, `within 3 cols: ${JSON.stringify(out)}`);
+  });
+});
+
 report();
