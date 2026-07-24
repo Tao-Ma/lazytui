@@ -142,6 +142,27 @@ describe('[multi-job] unrouted preempt — same label silent restart', () => {
   });
 });
 
+describe('[multi-job] unrouted stream auto-jumps the slot to Transcript', () => {
+  it('an unrouted run makes Transcript the active content tab', () => {
+    // Regression: v0.6.7's flat-strip `stream_start` reducer auto-jumped to the
+    // Transcript tab so the user saw an unrouted run (e.g. docker `Status`). The
+    // U2e P1b position-tab migration seeded the header but dropped the switch;
+    // restored via streamCommand → set_active_tab (route.resolveTranscriptTab).
+    seedModel();
+    jobs._reset();
+    const route = require('../panel/route');
+    const transcript = route.resolveTarget('viewer_transcript');
+    assert(transcript != null, 'transcript instance resolves');
+    // A freshly seeded content slot starts on Info, not Transcript — so a switch
+    // is observable (guards against a vacuous pass).
+    assert(route.resolveTarget('viewer') !== transcript, 'starts off Transcript (on Info)');
+    stream.streamCommand('docker ps', 'sleep 5', []);
+    eq(route.resolveTarget('viewer'), transcript, 'Transcript is now the active content tab');
+    stream.killAll({ silent: true });
+    eq(running().length, 0, 'cleanup');
+  });
+});
+
 describe('[multi-job] routed + unrouted independent', () => {
   it('starting unrouted does NOT kill routed', () => {
     seedModel();

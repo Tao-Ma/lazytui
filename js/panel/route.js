@@ -665,6 +665,31 @@ function _resolveTargetCompute(intent, focused, layout, lastViewerTab) {
   return activeInstanceOf(slotPaneId);
 }
 
+/** U2e P1b — the content slot's Transcript tab as { paneId, poolId } for a
+ *  set_active_tab dispatch. Restores the v0.6.7 unrouted-stream auto-jump: an
+ *  unrouted run seeds the Transcript, and the caller switches the slot's active
+ *  tab to it so the user sees the output (the routed path gets this free from the
+ *  tab mint; the always-present Transcript needs an explicit switch). Returns null
+ *  when no content slot is placed or it has no transcript tab. */
+function resolveTranscriptTab(ctx) {
+  ctx = ctx || {};
+  const focused = ctx.focusedTabId != null ? ctx.focusedTabId : getFocus();
+  const slotPaneId = resolveViewerPaneId({ focusedTabId: focused });
+  if (!slotPaneId) return null;
+  const layout = _layoutSvcSlice();
+  const arrange = layout && layout.arrange;
+  if (!arrange) return null;
+  const mpool = require('../leaves/wm/pool');
+  const loc = mpool.findPaneLocation(arrange, (p) => p.paneId === slotPaneId);
+  if (!loc) return null;
+  const pool = arrange.pool || {};
+  for (const t of (loc.pane.tabs || [])) {
+    const entry = pool[t.poolId];
+    if (entry && entry.hint === 'transcript') return { paneId: slotPaneId, poolId: t.poolId };
+  }
+  return null;
+}
+
 // v0.6.4 — the CONTAINER paneId hosting the target viewer. resolveTarget
 // returns a viewer *tab/instance* id (singleton: 'detail'); boundsFor /
 // visibleBoundsFor are keyed by the *container* paneId ('pane-detail'), which is
@@ -752,5 +777,5 @@ module.exports = {
   getPrimaryByKind, primarySliceOf,
   _resetRegistryForTest,
   // Navigator → focused-viewer routing chokepoint.
-  resolveTarget, resolveViewerPaneId, isViewerKind, contentSlotTabCount,
+  resolveTarget, resolveViewerPaneId, resolveTranscriptTab, isViewerKind, contentSlotTabCount,
 };

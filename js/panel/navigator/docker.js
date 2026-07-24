@@ -379,9 +379,9 @@ function installEffects(registerEffect) {
     // pre-Transcript-tab era when the unrouted accumulator lived on
     // Info; parking the user on Info first set up Info to receive the
     // stream. Post-v0.6.2 the Transcript tab hosts the unrouted
-    // accumulator and stream_start's unrouted-auto-jump branch puts
-    // the user on Transcript directly (regardless of where they were
-    // before). The setActiveTab(0) was a brief stop on Info en route
+    // accumulator and streamCommand's unrouted branch switches the
+    // content slot to Transcript directly (regardless of where the user
+    // was before). The setActiveTab(0) was a brief stop on Info en route
     // to Transcript — pure churn.
     const q = JSON.stringify(eff.item);
     host.applyMsg({ type: 'terminal_exit' });
@@ -567,8 +567,9 @@ function bulkContainer(verb, opts = {}) {
       const names = selectedOrFocused('containers');
       if (!names.length) return;
       const quoted = names.map(n => JSON.stringify(n)).join(' ');
-      // R6 — same drop as dockerExec: stream_start unrouted auto-jumps
-      // to Transcript, so the pre-stream setActiveTab(0) is dead.
+      // R6 — same drop as dockerExec: streamCommand's unrouted branch
+      // auto-jumps the content slot to Transcript, so the pre-stream
+      // setActiveTab(0) is dead.
       leaveTerminalMode();
       const label = names.length === 1 ? `${verb} ${names[0]}` : `${verb} ${names.length} containers`;
       streamCommand(label, `docker ${verb} ${quoted}${cmdSuffix}`);

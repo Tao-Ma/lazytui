@@ -217,6 +217,17 @@ function streamCommand(headerLabel, cmd, args = [], opts = {}) {
     // not the detail viewer's stream_start accumulator.
     const transcript = route.resolveTarget('viewer_transcript');
     if (transcript) require('./loop').dispatchMsg(api.wrap(transcript, { type: 'tv_stream_start', header }));
+    // U2e P1b regression fix — restore the v0.6.7 unrouted auto-jump: make the
+    // Transcript the content slot's active tab so the user SEES the new stream
+    // (e.g. docker `Status`/`Logs`). The flat-strip `stream_start` reducer did
+    // this via `tab: transcriptTabIdx`; the position-tab migration seeded the
+    // header but dropped the switch. Routed runs get it free from the tab mint;
+    // the always-present Transcript needs an explicit set_active_tab (idempotent
+    // when already active — no churn if the user is already on Transcript).
+    const tj = route.resolveTranscriptTab();
+    if (tj) require('./loop').dispatchMsg(api.wrap('layout', {
+      type: 'set_active_tab', paneId: tj.paneId, tabPoolId: tj.poolId,
+    }));
   }
   scheduleRender();
 

@@ -75,6 +75,12 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Running an unrouted action (docker `Status` / `Logs`, or any `type: run`
+  without `tab: true`) switches the content pane to the **Transcript** tab so the
+  output is visible. The one-tab-system migration seeded the Transcript header but
+  left the tab inactive, hiding the output on a tab the user had to cycle to by
+  hand; an explicit `set_active_tab` on unrouted stream start restores the
+  auto-jump.
 - Chrome status markers use width-1 glyphs (`✓` / `✗` / `!`) instead of
   emoji-presentation glyphs (`⛔` / `⚠`) that some terminals render double-width,
   which overran panel borders (the component-ports readiness badge, the wire list,
