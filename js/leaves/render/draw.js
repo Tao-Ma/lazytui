@@ -8,7 +8,7 @@
  */
 'use strict';
 
-const { visibleLen, stripMarkup, charWidth, richToAnsi, wrapColor, RESET } = require('../text/ansi');
+const { visibleLen, charWidth, richToAnsi, wrapColor, RESET } = require('../text/ansi');
 const { scrollbar } = require('./scrollbar');
 const { theme } = require('../infra/themes');
 // No io import: terminal dims arrive via the injected _dimsProvider (below)
@@ -21,43 +21,52 @@ const THUMB = '▐';
 const CLOSE_GLYPH = '\\[X]';
 
 /**
- * Truncate text to max visible width.
+ * Truncate text to max visible width — MARKUP-AWARE.
  *
- * Preserves leading style tags ([reverse], [bold], [dim], …) — they
- * wrap the entire row's content (selection highlight, dim notes,
- * etc.) and getting silently stripped during truncation made
- * cursor highlights vanish on long file paths. The panel renderer
- * adds a reset before the right border, so we leave the prefix
- * unclosed by convention (PRINCIPLES.md §8).
+ * Walks the Rich string keeping EVERY tag verbatim at zero visible width —
+ * leading AND inner ([reverse], [/], per-span colors, search-match / selection
+ * highlights) — counting only real glyphs. Whatever style is open at the cut
+ * runs into the `…`; the panel renderer adds a reset before the right border,
+ * so we leave it unclosed by convention (PRINCIPLES.md §8).
+ *
+ * The prior version kept only the LEADING style prefix and stripMarkup'd the
+ * rest, which silently dropped inner styling on any truncated line — e.g. a
+ * drag-selection over a long reversed row (its `[/]…[reverse]` XOR break was
+ * discarded, so the whole row painted as one solid reverse bar). A `\[` escape
+ * is preserved as-is (a literal `[`, 1 col) so richToAnsi re-emits a literal,
+ * not a tag start.
  */
 function truncate(text, maxWidth) {
   if (visibleLen(text) <= maxWidth) return text;
-  const m = text.match(/^((?:\[[^\/\]]+\])+)/);
-  const prefix = m ? m[1] : '';
-  const plain = stripMarkup(text);
-  const result = [];
+  const limit = maxWidth - 1;   // leave 1 col for the ellipsis
+  let out = '';
   let w = 0;
-  for (const ch of plain) {
-    const cw = charWidth(ch.codePointAt(0));
-    if (w + cw > maxWidth - 1) break;
-    result.push(ch);
+  let i = 0;
+  const n = text.length;
+  while (i < n) {
+    // Escaped bracket `\[` → one literal `[` glyph. Keep the escape.
+    if (text[i] === '\\' && text[i + 1] === '[') {
+      if (w + 1 > limit) break;
+      out += '\\[';
+      w += 1;
+      i += 2;
+      continue;
+    }
+    // Rich tag `[...]` — zero visible width, kept verbatim (incl. `[/]`).
+    if (text[i] === '[') {
+      const close = text.indexOf(']', i);
+      if (close !== -1) { out += text.slice(i, close + 1); i = close + 1; continue; }
+      // unmatched `[` → fall through and treat it as a visible char
+    }
+    const cp = text.codePointAt(i);
+    const ch = String.fromCodePoint(cp);
+    const cw = charWidth(cp);
+    if (w + cw > limit) break;
+    out += ch;
     w += cw;
+    i += ch.length;
   }
-  // Re-escape literal `[` in the truncated plain text — stripMarkup
-  // converted any original `\[` escape into a literal `[`, and emitting
-  // that un-escaped would let richToAnsi re-parse it as the START of
-  // a markup tag (e.g. `\[Enter]` in a hint string → `[Enter]` after
-  // stripMarkup → matched as `[Enter]` tag, looked up in CODES, missed,
-  // emits RESET — the bracketed text silently disappears). v0.5 hadn't
-  // hit this because no in-tree caller mixed `\[` escapes with content
-  // long enough to truncate; the v0.6 panel-list overlay's hint row does.
-  //
-  // Only `[` needs escaping. richToAnsi doesn't have a `\]` handler —
-  // a bare `]` doesn't trigger tag matching (the regex requires `[xxx]`)
-  // and writing `\]` would emit the LITERAL TWO CHARS `\` + `]` in the
-  // terminal, miscounting visible width.
-  const safe = result.join('').replace(/\[/g, '\\[');
-  return prefix + safe + '…';
+  return out + '…';
 }
 
 /**
