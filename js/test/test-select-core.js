@@ -71,6 +71,29 @@ describe('[select-core] decorateWindow', () => {
   });
 });
 
+describe('[select-core] decorateWindow — selection over a reversed (cursor) row XORs', () => {
+  // A selected/cursor row ships as a leading `[reverse]` (theme().selected). A
+  // naive re-reverse would wipe the bar and leave the span reverse-on-reverse (no
+  // contrast); the selected span must instead read as NORMAL video, with the row's
+  // reverse kept around it. Regression for the "selection over the cursor row looks
+  // wrong" report.
+  const REV = '[reverse]  alpha   running  ';   // leading reverse, no closing tag
+  it('drops reverse on the selected span so it stands out against the reversed row', () => {
+    const out = sc.decorateWindow([REV], selChar(0, 2, 0, 6), 0)[0];
+    assert(!/\[reverse\]alpha/.test(out), `selected span must NOT be reversed: ${out}`);
+    assert(/\[\/\]alpha\[reverse\]/.test(out), `span is normal video between reversed sides: ${out}`);
+  });
+  it('keeps the row reverse on both sides of the selection', () => {
+    const out = sc.decorateWindow([REV], selChar(0, 2, 0, 6), 0)[0];
+    assert(out.startsWith('[reverse]  [/]'), `before-span stays reversed: ${out}`);
+    assert(/alpha\[reverse\]   running/.test(out), `after-span reversed to EOL: ${out}`);
+  });
+  it('a plain (non-cursor) row still reverses the selected span (unchanged)', () => {
+    const out = sc.decorateWindow(['  alpha   running  '], selChar(0, 2, 0, 6), 0)[0];
+    assert(/\[reverse\]alpha\[\/\]/.test(out), `plain-row span reversed: ${out}`);
+  });
+});
+
 describe('[select-core] root reducer arms', () => {
   it('sel_begin sets an active selection owned by the pane', () => {
     const [m] = update(init(), { type: 'sel_begin', paneId: 'ports-1', line: 2, col: 4 });

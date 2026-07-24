@@ -119,6 +119,15 @@ function selectedTextFrom(lines, sel) {
  * plain projection is re-escaped so stray brackets aren't read as markup.
  */
 function highlightLine(line, startCol, endCol) {
+  // A selected/cursor row is emitted as a LEADING `[reverse]` running to end of
+  // line (theme().selected === 'reverse'; no inner markup, PRINCIPLES §8). Naively
+  // stripping it and re-reversing only the selected span would (a) wipe the row's
+  // highlight everywhere outside the span and (b) leave the span reverse-on-reverse
+  // = no contrast. So detect that base and XOR: keep reverse OUTSIDE the selection,
+  // drop it INSIDE — the selected span reads as normal video, standing out against
+  // the reversed row. (Other markup is still dropped; for a transient selection
+  // that fidelity loss is acceptable, as before.)
+  const baseReverse = /^\[reverse\]/.test(line);
   const plain = stripMarkup(line);
   const lineW = displayWidth(plain);
   if (lineW === 0) return line;
@@ -132,6 +141,14 @@ function highlightLine(line, startCol, endCol) {
   const before = chars.slice(0, a).join('');
   const sel    = chars.slice(a, b).join('');
   const after  = chars.slice(b).join('');
+  if (baseReverse) {
+    // XOR the reverse bit across the selected span. Trailing `[reverse]` is left
+    // open (no `[/]`) so it runs through the panel's end-of-line padding, matching
+    // the row's original full-width highlight bar.
+    const bwrap = before ? `[reverse]${esc(before)}[/]` : '';
+    const awrap = after  ? `[reverse]${esc(after)}`     : '';
+    return `${bwrap}${esc(sel)}${awrap}`;
+  }
   return `${esc(before)}[reverse]${esc(sel)}[/]${esc(after)}`;
 }
 

@@ -6,6 +6,14 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- Text selection (drag-to-copy) over an already-highlighted row — the focused
+  pane's selected/cursor row, drawn in reverse video — no longer wipes the row's
+  highlight or leaves the selected span with no contrast. The selection now XORs
+  the reverse attribute: the selected span reads as normal video (standing out
+  against the reversed row), and the rest of the row keeps its highlight.
+
 ## [0.6.8] — 2026-07-24
 
 ### Added
