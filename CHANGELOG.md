@@ -6,6 +6,8 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.8] — 2026-07-24
+
 ### Added
 
 - **Per-pane text selection** — drag-to-select and copy text in any focused pane
@@ -2544,7 +2546,8 @@ release tarballs. Full pre-squash development history is preserved
 on the internal gitea mirror under the `backup/main-history` branch
 and the `v0.1.0-pre-squash` tag.
 
-[Unreleased]: https://github.com/Tao-Ma/lazytui/compare/v0.6.7...HEAD
+[Unreleased]: https://github.com/Tao-Ma/lazytui/compare/v0.6.8...HEAD
+[0.6.8]: https://github.com/Tao-Ma/lazytui/compare/v0.6.7...v0.6.8
 [0.6.7]: https://github.com/Tao-Ma/lazytui/compare/v0.6.6...v0.6.7
 [0.6.6]: https://github.com/Tao-Ma/lazytui/compare/v0.6.5...v0.6.6
 [0.6.5]: https://github.com/Tao-Ma/lazytui/compare/v0.6.4...v0.6.5
