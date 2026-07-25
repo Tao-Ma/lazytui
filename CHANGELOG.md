@@ -8,6 +8,12 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Horizontal mouse-wheel events (a tilt-wheel or trackpad side-scroll — SGR wheel
+  buttons 66/67) are no longer misread as vertical up/down. The parser derived the
+  direction from a single bit, so a horizontal scroll moved the list cursor
+  vertically; a slow vertical scroll then jittered and skipped items whenever the
+  mouse emitted horizontal events interleaved with the vertical ones. Horizontal
+  wheel is now ignored (there is no horizontal axis).
 - Text selection (drag-to-copy) over an already-highlighted row — the focused
   pane's selected/cursor row, drawn in reverse video — no longer wipes the row's
   highlight or leaves the selected span with no contrast. The selection now XORs

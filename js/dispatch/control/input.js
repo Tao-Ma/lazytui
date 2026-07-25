@@ -1030,8 +1030,16 @@ function setupKeyListener() {
       const released = mm[4] === 'm';
       if ((btn & 0x40) !== 0) {
         if (released) continue;
-        const kind = (btn & 1) ? 'wheel-down' : 'wheel-up';
-        handleMouse(kind, x, y);
+        // SGR wheel buttons: 64 = up, 65 = down (VERTICAL); 66 = left, 67 = right
+        // (HORIZONTAL tilt-wheel / trackpad side-scroll). Only bit 0 tells up from
+        // down, so the old `btn & 1` misread 66 as wheel-up and 67 as wheel-down —
+        // a horizontal scroll injected spurious vertical steps, jittering the list
+        // cursor during a slow scroll (66/67 interleaved with the real 65s). lazytui
+        // has no horizontal axis, so drop 66/67 entirely.
+        const low = btn & 0x03;
+        if (low === 0)      handleMouse('wheel-up', x, y);
+        else if (low === 1) handleMouse('wheel-down', x, y);
+        // low === 2 (wheel-left) / 3 (wheel-right): horizontal — ignored.
         continue;
       }
       const motion = (btn & 0x20) !== 0;

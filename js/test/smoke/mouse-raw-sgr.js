@@ -181,4 +181,33 @@ describe('[4] shrunk double-click window → same bytes are two singles', () => 
   });
 });
 
+// Build a raw wheel SGR sequence. btn: 64=up, 65=down (vertical);
+// 66=left, 67=right (horizontal tilt-wheel / trackpad side-scroll).
+function wheelBytes(btn, sx, sy) { return `\x1b[<${btn};${sx};${sy}M`; }
+
+describe('[5] horizontal wheel (66/67) is ignored, not read as vertical up/down', () => {
+  it('vertical wheel-down (65) moves the list cursor; horizontal (66/67) does not', () => {
+    // Regression: the parser mapped kind via `btn & 1`, so 66 → wheel-up and
+    // 67 → wheel-down — a horizontal tilt-wheel injected spurious vertical steps
+    // (reported live: a slow scroll jittered because 66/67 events interleaved
+    // with the real 65s). bootFresh has 2 groups → cursor starts at 0, so a
+    // mis-read 67 WOULD have moved it to 1.
+    sm.bootFresh();
+    sm.capture(() => sm.render());
+    const ns = require('../../panel/nav-state');
+    const b = groupsBounds();
+    const [sx, sy] = sgr0(b.x + 2, b.y + 1);   // a cell inside the groups body
+    eq(ns.getSel('pane-groups'), 0, 'cursor starts at group 0');
+
+    fire(wheelBytes(67, sx, sy));               // horizontal RIGHT — was mis-read as down
+    eq(ns.getSel('pane-groups'), 0, 'wheel-right (67) ignored — cursor unmoved');
+
+    fire(wheelBytes(66, sx, sy));               // horizontal LEFT — was mis-read as up
+    eq(ns.getSel('pane-groups'), 0, 'wheel-left (66) ignored — cursor unmoved');
+
+    fire(wheelBytes(65, sx, sy));               // vertical DOWN — still works
+    eq(ns.getSel('pane-groups'), 1, 'vertical wheel-down (65) advances the cursor');
+  });
+});
+
 report();
