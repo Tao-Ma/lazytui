@@ -6,28 +6,7 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-### Fixed
-
-- Horizontal mouse-wheel events (a tilt-wheel or trackpad side-scroll — SGR wheel
-  buttons 66/67) are no longer misread as vertical up/down. The parser derived the
-  direction from a single bit, so a horizontal scroll moved the list cursor
-  vertically; a slow vertical scroll then jittered and skipped items whenever the
-  mouse emitted horizontal events interleaved with the vertical ones. Horizontal
-  wheel is now ignored (there is no horizontal axis).
-- Text selection (drag-to-copy) over an already-highlighted row — the focused
-  pane's selected/cursor row, drawn in reverse video — no longer wipes the row's
-  highlight or leaves the selected span with no contrast. The selection now XORs
-  the reverse attribute: the selected span reads as normal video (standing out
-  against the reversed row), and the rest of the row keeps its highlight. This
-  also holds when the row is long enough to be truncated (e.g. the fabric Wires
-  pane's rows).
-- Truncating a styled line now preserves its INNER markup, not just the leading
-  style tag. Previously a long line kept only its first tag and dropped the rest,
-  so any mid-line styling on a truncated row vanished — a selection's reverse
-  break, a search-match highlight, or a per-span color would collapse into the
-  row's leading style.
-
-## [0.6.8] — 2026-07-24
+## [0.6.8] — 2026-07-25
 
 ### Added
 
@@ -96,6 +75,24 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Horizontal mouse-wheel events (a tilt-wheel or trackpad side-scroll — SGR wheel
+  buttons 66/67) are no longer misread as vertical up/down. The parser derived the
+  direction from a single bit, so a horizontal scroll moved the list cursor
+  vertically; a slow vertical scroll then jittered and skipped items whenever the
+  mouse emitted horizontal events interleaved with the vertical ones. Horizontal
+  wheel is now ignored (there is no horizontal axis).
+- Text selection (drag-to-copy) over an already-highlighted row — the focused
+  pane's selected/cursor row, drawn in reverse video — no longer wipes the row's
+  highlight or leaves the selected span with no contrast. The selection now XORs
+  the reverse attribute: the selected span reads as normal video (standing out
+  against the reversed row), and the rest of the row keeps its highlight. This
+  also holds when the row is long enough to be truncated (e.g. the fabric Wires
+  pane's rows).
+- Truncating a styled line now preserves its INNER markup, not just the leading
+  style tag. Previously a long line kept only its first tag and dropped the rest,
+  so any mid-line styling on a truncated row vanished — a selection's reverse
+  break, a search-match highlight, or a per-span color would collapse into the
+  row's leading style.
 - Running an unrouted action (docker `Status` / `Logs`, or any `type: run`
   without `tab: true`) switches the content pane to the **Transcript** tab so the
   output is visible. The one-tab-system migration seeded the Transcript header but
