@@ -275,6 +275,9 @@ function main() {
   // Wire the dataflow-fabric host seam (fabric/ports reads component output +
   // spec + wires off the model/config through it). docs/ports-and-wires.md.
   require('../dispatch/runtime/host-wiring').wireFabricHost();
+  // Wire the live-agent session host (io/agent events → recorded agent_event
+  // Msgs + repaint + jobs). docs/live-agent.md §"Data flow".
+  require('../dispatch/runtime/host-wiring').wireAgentHost();
   // Inject the dispatch host into nav-state's writers (formalized injection —
   // they feed Msgs back through it instead of importing the relocating fan-out).
   // Before initState/refreshAll, whose finalizer runs syncPanelScroll→setScroll.

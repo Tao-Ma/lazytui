@@ -73,4 +73,30 @@ function wireFabricHost() {
   });
 }
 
-module.exports = { wirePanelHost, wireFabricHost };
+// Boot wiring for the live-agent session host (io/agent.js — Slice A3,
+// docs/live-agent.md §"Data flow"). Injects the io leaf's environment, exactly
+// as pty-lifecycle.install does for io/terminal: the event fan-out, the
+// post-event repaint, and the jobs adapter. The event handler is THE seam that
+// makes an agent replayable: every coarse normalized event enters the dispatch
+// loop as a recorded `agent_event` Msg wrapped to the pane instance (session
+// id == tab-instance id), so replaying the Msg log re-folds the transcript
+// with io/agent never spawning (runEffects skips under replay).
+function wireAgentHost() {
+  const agentIo = require('../../io/agent');
+  const { dispatchMsg } = require('./loop');
+  const route = require('../../panel/route');
+
+  agentIo.setEventHandler((id, evt) => {
+    // A closed pane's instance is gone — drop the stragglers silently (the
+    // pty-lifecycle getInstance-miss posture) instead of logging a missed-wrap
+    // error per event. Pane close stops the session; this covers the gap.
+    if (!route.getInstance(id)) return;
+    dispatchMsg(route.wrap(id, { type: 'agent_event', evt }));
+  });
+  // Transcript/status are ordinary pane content — the debounced full repaint
+  // (NOT scheduleOverlay: that's the terminal's bypass-the-model path).
+  agentIo.setRenderHook(require('../../leaves/infra/render-queue').scheduleRender);
+  agentIo.setJobsHooks(require('../../feature/jobs'));
+}
+
+module.exports = { wirePanelHost, wireFabricHost, wireAgentHost };

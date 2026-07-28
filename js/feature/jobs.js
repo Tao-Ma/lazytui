@@ -13,6 +13,7 @@
  *   pty              ensureSession in io/terminal (ephemeral terminals + docker shells)
  *   background       type:background — detached `sh -c` spawn, fire-and-forget
  *   tmux             type:spawn under $TMUX — detached `tmux new-window` spawn
+ *   agent            io/agent live-agent session (long-lived; closes on exit)
  *
  * background + tmux entries don't auto-close in Phase 4.1; they stay
  * 'running' until lazytui restart. Phase 4.3+ adds pid liveness polling.

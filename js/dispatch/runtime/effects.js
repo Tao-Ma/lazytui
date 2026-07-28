@@ -202,6 +202,14 @@ function refireCmdlineRebuild() {
   require('../../leaves/infra/render-queue').scheduleRender();
 }
 
+// Live-agent backend registry: descriptor name → AgentBackend object
+// (js/agent/protocol.js). The effect resolves the name so io/agent.js stays
+// registry-free (it takes the backend OBJECT). 'pi' lands in Slice A5.
+function _agentBackend(name) {
+  if (name === 'mock') return require('../../agent/backends/mock');
+  return null;
+}
+
 function installBuiltins() {
   const { getModel } = require('../../model/store');
   const api = require('../../panel/api');
@@ -282,6 +290,36 @@ function installBuiltins() {
   // a per-frame derivation that replay reproduces — so the frame is replay-safe
   // of the theme without an effect. The reducer's set_theme arm just sets
   // model.theme now; no Cmd.)
+
+  // --- Live-agent session control (Slice A3, docs/live-agent.md) ---
+  // Thin io calls into io/agent.js — the transcript/status folds happen in
+  // the reducer via the recorded `agent_event` Msgs the wired event handler
+  // (host-wiring.wireAgentHost) dispatches back. Effects stay side-effect-only,
+  // so replay — which skips runEffects wholesale — never re-spawns a backend;
+  // the recorded Msg stream alone reconstructs the pane.
+  registerEffect('agent_start', (eff, host) => {
+    const name = (eff.cfg && eff.cfg.backend) || '(unset)';
+    const backend = _agentBackend(name);
+    if (!backend) {
+      // Config error at start: surface it IN the pane (fold an error event —
+      // same shape a backend error takes) + diag, don't throw.
+      require('../../io/diag-log').error('agent', `unknown agent backend '${name}'`);
+      host.dispatchMsg(host.wrap(eff.id, {
+        type: 'agent_event', evt: { type: 'error', message: `unknown agent backend '${name}'` },
+      }));
+      return;
+    }
+    require('../../io/agent').start(eff.id, backend, eff.cfg || {});
+  });
+  registerEffect('agent_send', (eff) => {
+    require('../../io/agent').send(eff.id, eff.text, eff.opts);
+  });
+  registerEffect('agent_interrupt', (eff) => {
+    require('../../io/agent').interrupt(eff.id);
+  });
+  registerEffect('agent_stop', (eff) => {
+    require('../../io/agent').stop(eff.id);
+  });
 
   // --- Root-reducer Cmds ---
   // Emitted by `runtime.update` branches; run from `dispatch.applyMsg` via

@@ -130,6 +130,12 @@ function stop(id) {
   if (s && !s.exited) s.backend.stop(s.handle);
 }
 
+/** Stop every live session (cleanup on TUI exit — the terminal destroyAll
+ *  analog). Graceful: each backend tears its own subprocess down. */
+function stopAll() {
+  for (const id of Object.keys(sessions)) stop(id);
+}
+
 /** A session's lifecycle entry, or null (callers read exited/exitCode). */
 function getSession(id) { return sessions[id] || null; }
 
@@ -142,7 +148,7 @@ function _reset() {
 }
 
 module.exports = {
-  start, send, interrupt, stop, getSession,
+  start, send, interrupt, stop, stopAll, getSession,
   setEventHandler, setRenderHook, setJobsHooks,
   _reset,
 };
