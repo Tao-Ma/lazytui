@@ -233,6 +233,43 @@ the user's authority. Pi's RPC exposes no approval gate, so the trust boundary i
   ports (structured results) + reactive re-run once subscribe (P3) lands.
 - **Phase C — fabric-as-tools.** The Pi extension exposing lazytui to the agent.
 
+## Phase-A build plan
+
+Takes the §"Open decisions" proposed defaults as settled: subprocess-RPC backend
+(Pi) with a **mock backend for tests**, the §"backend seam" event vocabulary,
+spinner+settle streaming, standalone agent pane.
+
+**Guiding principle — mock-backend-first.** A deterministic mock backend lets us
+build and gate the *entire* pipeline without Pi installed; Pi becomes the last
+slice, and even its unit tests run on fixtures. Every slice ships behind the full
+gate (suite · smoke · dep-walker `[]` both modes · dead-exports 0), on a
+`live-agent` branch, in lazytui's usual slice-at-a-time style.
+
+| # | Slice | Deliverable | Layer | Test |
+|---|---|---|---|---|
+| **A0** | Protocol + mock | `js/agent/protocol.js` (normalized `AgentEvent` shapes + `AgentBackend` interface) · `js/agent/backends/mock.js` (scripted deterministic events) | pure leaf | schema + mock emits the expected events |
+| **A1** | Session host | `io/agent.js` — off-model `sessions` map; `start` / `send` / `interrupt` / `stop`; **stdin write** (the one new capability); `feature/jobs` register/close; injected `setEventHandler` / `setRenderHook` (leaf, no-op when unwired) | io leaf | via mock: send→events→handler; interrupt; stop closes the job |
+| **A2** | Model | `panel/agent/agent.js` slice `{ transcript, status, inputDraft, descriptor }` + pure reducer arms folding coarse events → transcript (reuse `leaves/text/text-view-update`) + status; transcript cap | Component + text leaf | fold an event sequence → correct transcript/status; identity-preserved on no-ops |
+| **A3** | Wiring | boot host-seam (à la `wireFabricHost`): io/agent's event handler `dispatchMsg`s coarse events (→ recorded, replayable); `send` / `interrupt` effects | dispatch/runtime | end-to-end through the real dispatch loop with the mock |
+| **A4** | Pane + input | `agent` pane type (transcript + status + draft), minted via `mint_tab`; `:agent` verb; **agent-mode input** in `dispatch/control/input.js` (compose → Enter=send, Esc=leave, chord=interrupt), mirroring terminal-mode | panel + dispatch | smoke: mint, type, send, render, leave |
+| **A5** | Pi backend | `js/agent/backends/pi.js` — spawn `pi --mode rpc`; JSONL framing (parse stdout lines + partial-line buffer / write command lines); Pi events ↔ normalized; `send`/`interrupt` → `prompt`/`abort` | io leaf | fixture Pi lines → normalized events (unit); **live** validation needs Pi installed |
+| **A6** | Replay + polish | verify recorded coarse Msgs reconstruct the transcript with `io/agent.start` skipped under replay; transcript cap; spinner; CHANGELOG; doc status | — | replay property test + full gate |
+
+**Notes & risk areas**
+
+- **Layering:** `js/agent/` = pure/io leaves (protocol, backends); `io/agent.js` =
+  io leaf (injected hooks, standalone in tests, exactly like `io/terminal.js`);
+  `panel/agent/` = Component; reducers/effects/wiring in `dispatch/`. Dep-walker
+  stays acyclic in both modes.
+- **Nail A0's event vocabulary first** — it's the contract A1–A5 all build against;
+  one careful pass before any backend is written.
+- **Genuinely new mechanics:** bidirectional stdin (A1) and JSONL line-framing +
+  partial-line buffering + backpressure (A5). Everything else reuses existing
+  patterns (procs/jobs, text-view fold, `mint_tab`, terminal-mode input, host-seam
+  wiring).
+- **A0–A4 + A6 are fully buildable and gated with the mock backend**; only A5's
+  *live* validation needs Pi on the dev machine.
+
 ## Open decisions (to confirm before building Phase A)
 
 1. **Backend seam scope** — *proposed:* subprocess-RPC first (Pi), in-process SDK a
