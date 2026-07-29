@@ -211,21 +211,84 @@ pi the durable id IS the session file path — the pane-config `sessionId` knob
 feeds `switch_session` directly). Fresh vs. resumed is a descriptor flag — no
 foreign machinery.
 
-## Fabric coupling (later phase)
+## Phase B — the agent as a fabric node (DESIGN)
 
-Once the standalone primitive is solid, the agent becomes a **live fabric node**:
+> **Status:** design, decisions pending (§Phase-B open decisions). Phase A is
+> shipped (v0.6.9); this section replaces the earlier sketch. Phase C
+> (fabric-as-tools: a Pi extension exposing lazytui's ports/components as
+> tools, so the agent can *read and drive the cockpit*) stays furthest out.
 
-- **Inputs** — the agent's input ports are wired from producers; on `send` (or
-  reactively, once subscribe/P3 lands) the wired values are injected into the
-  message context — the agent *watches the dataflow*.
-- **Outputs** — the agent's `tool-result` / final `assistant-message` can be
-  parsed (kv/json/regex — the existing port machinery) into **typed output ports**
-  for deterministic downstream nodes.
-- **Fabric-as-tools** (furthest out) — ship a Pi *extension* (Pi extends via
-  TypeScript tools) exposing lazytui's ports/components as tools, so the agent can
-  *read and drive the cockpit*.
+The whole design rides three seams that already exist — no new fabric
+semantics, no new UI:
 
-Keep all of this out of Phase A.
+1. **Identity — a pane-declared component.** The agent pane's config gains
+   `name:` (a dot-free fabric name) plus the standard `ports:` / `parse:`
+   blocks. `wireFabricHost`'s `componentSpec` / `listComponents` merge a
+   SECOND component source — agent panes in the layout — over the action
+   set. That one host extension buys everything downstream: the agent
+   appears in `listPorts()`, so the **component-ports pane inspects it, the
+   connect-to picker wires it, source badges + readiness ✓/✗ render, and
+   the wire list shows its edges — all for free** (the P1.5 surface is fed
+   entirely by `listPorts`/`portValue`). Group binding: fabric is
+   same-group (P1); the agent binds to the group current at mint (stamped
+   on the descriptor) so a pane that persists across group switches keeps a
+   deterministic fabric home.
+
+2. **Outputs — publish on settle, parse with the existing machinery.** The
+   `assistant-message` fold already has the raw text; the slice keeps the
+   last turn's raw message, and the `settled` fold arm emits a
+   `fabric_output_set {group, name, lines}` Cmd — the SAME recorded Msg a
+   `run:` producer's close dispatches. `componentLines` then reads
+   `model.fabric.output[group][name]` unchanged, `parse:` + `ports.out`
+   project typed values, downstream wires pull them. Because the publish is
+   a recorded Msg from a pure reducer arm, **replay re-publishes the
+   agent's outputs identically — zero new replay machinery** (the
+   replay-as-debugger property extends over the agent's dataflow edges).
+   Scope: the final settled assistant text per turn (tool-results are
+   intermediates; the settled message is "the result").
+
+3. **Inputs — resolve at send, the pull-at-invoke grain.** Enter runs the
+   agent's `ports.in` through the SAME `resolveInputs` (inject > wire >
+   default) the `run:` hook uses, in the send path (the impure shell
+   resolves; the reducer receives the resolved bundle — the
+   handler-stamped-Msg pattern). `{{hole}}` substitution in the TYPED
+   MESSAGE mirrors the `run:` argv template: the user writes
+   `analyze {{start_lsn}}` and the hole fills with the wired/injected
+   value at send. A required input that doesn't resolve blocks the send
+   with the error-and-tell readiness message (P5 grain, folded into the
+   transcript). The transcript's `›` user line records the FILLED message —
+   what was actually sent, replay-faithful.
+
+Reactive re-run ("the agent watches the dataflow" without a keystroke)
+stays with P3 subscribe/push, where it belongs.
+
+### Phase-B open decisions
+
+1. **Input-injection shape** — *proposed:* `{{holes}}` in the typed message
+   as the primary mechanism (explicit, deterministic, the bind-parameter
+   grain), plus an opt-in pane flag (`context: auto`) that prepends ALL
+   resolved input ports as a context block when the draft has no holes —
+   for the "ambient context" chat style. Alternatives: holes-only (purist),
+   or always-attach (magical). Confirm the hybrid or pick a pole.
+2. **Output scope** — *proposed:* last settled assistant text per turn.
+   Alternative: also publish tool-results under reserved port names.
+   Confirm.
+3. **Group binding** — *proposed:* stamp the fabric group at mint
+   (descriptor carries it; deterministic across group switches). Alternative:
+   publish into the group active at settle. Confirm.
+4. **Send-gating** — *proposed:* a required unresolved input BLOCKS the send
+   (error-and-tell in the transcript). Alternative: send anyway with the
+   hole left literal. Confirm.
+
+### Phase-B slice plan (draft — pending the pins)
+
+| # | Slice | Deliverable | Test |
+|---|---|---|---|
+| **B0** | Identity | pane-config `name`/`ports`/`parse` schema validation (dot-free, name-collision vs actions) + the host's second component source | agent appears in `listPorts`; ports-pane inspects it (smoke) |
+| **B1** | Outputs | raw last-message on the slice + `settled` → `fabric_output_set` Cmd; wires agent.out → consumer resolve | fold → publish → `portValue` reads it; replay re-publishes |
+| **B2** | Inputs | send-path `resolveInputs` + `{{hole}}` fill + readiness gate | wired/injected/default/missing matrix; filled `›` line; blocked send |
+| **B3** | Context opt-in + polish | `context: auto` (if pinned), docs, CHANGELOG | context block content pinned |
+| **B4** | Worked demo | a real pipe: producer.port → agent.in, agent.out → consumer `run:` (mock-model scripted; the §Live-validation recipe for pi) | e2e through the real loop |
 
 ## Trust
 
