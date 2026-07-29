@@ -4,12 +4,13 @@
 > `live-agent` branch; the mock backend is exercised end-to-end (unit + smoke
 > + replay), the Pi backend against a wire-exact fixture
 > (`js/test/fixtures/fake-pi.js`) AND live against an installed **pi 0.82.1**
-> (spawn / RPC handshake / ready / prompt→error mapping / footer + jobs /
-> close + subprocess teardown — full pipeline; the validation caught one real
-> fold bug, fixed). The one remaining unexercised path is a **keyed LLM
-> turn** (streaming turn + real tool executions), which needs provider
-> credentials. §"As built" collects where the implementation refined this
-> design.
+> — including a full **agent turn with a real tool execution** driven by a
+> local scripted model (§"Live validation without credentials"): streaming
+> deltas, tool_execution_start/end (pi really ran the bash tool), settled
+> text + usage folds, the retry/error paths, footer/jobs/close/teardown.
+> The validation caught one real fold bug (multi-line errors), fixed. Only
+> a credentialed run against a REAL provider remains as an optional final
+> smoke. §"As built" collects where the implementation refined this design.
 >
 > This spec models a *live, long-lived agent* as a **managed
 > structured-protocol subprocess** — an extension of lazytui's existing
@@ -330,6 +331,28 @@ deltas worth recording:
   error arm folds through the same split-before-esc block helper as tool
   results. (Every fixture error had been single-line — the value of the
   live pass.)
+
+## Live validation without credentials (the recipe)
+
+Pi has no dedicated test mode, but its `~/.pi/agent/models.json` custom-
+provider mechanism (the Ollama path) IS one: point a provider at a **local
+scripted OpenAI-completions server** and pi runs a genuine agent loop
+against it — real streaming, real tool execution, real settle — with no
+API keys. The recipe used for the Phase-A live pass:
+
+1. `models.json`: a provider (`baseUrl: http://127.0.0.1:<port>/v1`,
+   `api: openai-completions`, a dummy `apiKey`) with one model id.
+2. A ~60-line node http server speaking SSE chat-completions: first
+   request (no `role:"tool"` message in the conversation) streams a
+   `tool_calls` delta invoking pi's bash tool (`echo live-tool-ok`);
+   the follow-up request streams the settled text + usage.
+3. An agent pane with `config: { backend: pi, provider: <name>,
+   model: <id> }` — send a prompt, watch the tool line, result block,
+   settled text, and `N tok` fold live.
+
+Caveat: pi inherits lazytui's environment — an `http_proxy` in the env
+routes the local baseUrl through the proxy (connection errors that look
+like model failures). Unset the proxy vars for local-endpoint runs.
 
 ## Open decisions — RESOLVED (build took the proposals)
 
