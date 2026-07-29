@@ -177,6 +177,91 @@ describe('[agent model] transcript ring cap', () => {
   });
 });
 
+describe('[agent model] agent_activate (A4): idempotent start + mode flip', () => {
+  it('emits agent_start with the descriptor cfg, then agent_enter', () => {
+    const s = agent.init('p1', { paneDef: { config: { backend: 'mock', label: 'helper' } } });
+    const [next, cmds] = agent.update({ type: 'agent_activate', selfId: 'agent-7' }, s);
+    assert(next === s, 'slice untouched');
+    eq(cmds, [
+      { type: 'agent_start', id: 'agent-7', cfg: { backend: 'mock', model: null, label: 'helper', sessionId: null } },
+      { type: 'msg', msg: { type: 'agent_enter' } },
+    ]);
+  });
+});
+
+describe('[agent model] agent_input (A4): draft editing', () => {
+  const inp = (s, key, seq) => agent.update({ type: 'agent_input', key, seq: seq === undefined ? key : seq, selfId: 'a1' }, s);
+  it('printable ASCII inserts at the cursor; arrows/home/end move it', () => {
+    let s = agent.init('p1', null);
+    for (const ch of 'hlo') s = inp(s, ch);
+    s = inp(s, 'left'); s = inp(s, 'left');
+    s = inp(s, 'e');
+    eq(s.inputDraft, { text: 'helo', cursor: 2 });
+    s = inp(s, 'end'); s = inp(s, '!');
+    eq(s.inputDraft.text, 'helo!');
+    s = inp(s, 'home');
+    eq(s.inputDraft.cursor, 0);
+  });
+  it('backspace/delete edit around the cursor; Ctrl+U clears', () => {
+    let s = agent.init('p1', null);
+    for (const ch of 'abc') s = inp(s, ch);
+    s = inp(s, 'backspace', '\x7f');
+    eq(s.inputDraft, { text: 'ab', cursor: 2 });
+    s = inp(s, 'home'); s = inp(s, 'delete');
+    eq(s.inputDraft, { text: 'b', cursor: 0 });
+    s = inp(s, 'u', '\x15');
+    eq(s.inputDraft, { text: '', cursor: 0 });
+  });
+  it('paste inserts, collapsing newlines (single-line draft)', () => {
+    let s = agent.init('p1', null);
+    s = inp(s, 'paste', 'two\nlines');
+    eq(s.inputDraft.text, 'two lines');
+  });
+  it('unhandled keys are identity no-ops', () => {
+    const s = agent.init('p1', null);
+    assert(inp(s, 'up') === s, 'up reserved');
+    assert(inp(s, 'f1', '\x1bOP') === s, 'function key');
+  });
+});
+
+describe('[agent model] agent_input (A4): Enter sends, Esc interrupts-or-leaves', () => {
+  const inp = (s, key, seq) => agent.update({ type: 'agent_input', key, seq: seq === undefined ? key : seq, selfId: 'a1' }, s);
+  it('Enter: user line appended (markup-escaped), draft cleared, start+send Cmds', () => {
+    let s = agent.init('p1', null);
+    for (const ch of 'hi [x]') s = inp(s, ch);
+    const r = inp(s, 'return');
+    const [next, cmds] = r;
+    eq(next.transcript, ['[cyan]› hi \\[x][/]'], 'user line markup-escaped');
+    eq(next.inputDraft, { text: '', cursor: 0 });
+    eq(cmds[0].type, 'agent_start', 'self-healing idempotent start rides along');
+    eq(cmds[1], { type: 'agent_send', id: 'a1', text: 'hi [x]' });
+  });
+  it('Enter on an empty/whitespace draft is an identity no-op', () => {
+    const s = agent.init('p1', null);
+    assert(inp(s, 'return') === s);
+  });
+  it('Esc while BUSY interrupts (stays in mode); Esc when idle leaves', () => {
+    const busy = fold([{ type: 'turn-start' }]);
+    const [sameB, cmdsB] = inp(busy, 'escape');
+    assert(sameB === busy);
+    eq(cmdsB, [{ type: 'agent_interrupt', id: 'a1' }]);
+    const idle = fold([{ type: 'settled' }]);
+    const [sameI, cmdsI] = inp(idle, 'escape');
+    assert(sameI === idle);
+    eq(cmdsI, [{ type: 'msg', msg: { type: 'agent_exit' } }]);
+  });
+  it('pageup/pagedown scroll the transcript while chatting', () => {
+    let s = { ...agent.init('p1', null), innerH: 3 };
+    s = fold(Array.from({ length: 9 }, (_, i) => ({ type: 'assistant-message', text: `l${i}` })), s);
+    eq(s.scroll, 6, 'bottom-stuck');
+    s = inp(s, 'pageup');
+    eq(s.scroll, 3);
+    s = inp(s, 'pagedown');
+    eq(s.scroll, 6);
+    assert(inp(s, 'pagedown') === s, 'clamped at bottom = identity');
+  });
+});
+
 describe('[agent model] shared text-view interaction falls through', () => {
   it('viewer_scroll moves the transcript viewport (innerH stamped via msg)', () => {
     let s = agent.init('p1', null);

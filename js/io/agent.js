@@ -136,6 +136,24 @@ function stopAll() {
   for (const id of Object.keys(sessions)) stop(id);
 }
 
+/** Tear down AND forget a session — the terminal destroySession analog, for
+ *  a pane leaving the layout (orphan-dispose). The entry is removed FIRST so
+ *  every further delivery (including the backend's own final `exit`) drops
+ *  via the stale-session guard; the job closes here instead ('killed'). */
+function destroy(id) {
+  const s = sessions[id];
+  if (!s) return;
+  delete sessions[id];
+  if (s.jobId && _jobs) {
+    _jobs.close(s.jobId, { status: 'killed' });
+    s.jobId = null;
+  }
+  if (!s.exited) {
+    try { s.backend.stop(s.handle); }
+    catch (e) { diag.warn('agent', `destroy '${id}': backend stop threw: ${e.message}`); }
+  }
+}
+
 /** A session's lifecycle entry, or null (callers read exited/exitCode). */
 function getSession(id) { return sessions[id] || null; }
 
@@ -148,7 +166,7 @@ function _reset() {
 }
 
 module.exports = {
-  start, send, interrupt, stop, stopAll, getSession,
+  start, send, interrupt, stop, stopAll, destroy, getSession,
   setEventHandler, setRenderHook, setJobsHooks,
   _reset,
 };

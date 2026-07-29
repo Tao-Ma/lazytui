@@ -27,14 +27,23 @@
  * adds 'starting' (before the first settled) and 'exited' (after exit) —
  * pane-lifecycle states no backend event carries directly.
  *
- * The pane half (panelTypes render + mint + agent-mode input) lands in A4;
- * until then this Component is NOT in BUILTIN_COMPONENTS.
+ * The pane half (A4): render = transcript window + a status line + the input
+ * draft, all pure f(slice) (the one impure-shell read is the agentMode flag
+ * for the cursor, mirroring text-view's detailSearchMode read). Input rides
+ * two arms: `agent_activate` (Enter on the pane — start the session
+ * idempotently + flip the mode) and `agent_input` (a keystroke in agent
+ * mode; the mode handler stamps `selfId` so Cmds carry the session id).
+ * Esc interrupts while a turn is in flight, leaves the mode when idle.
  */
 'use strict';
 
 const tvu = require('../../leaves/text/text-view-update');
+const ms = require('../../leaves/text/search');
 const { esc } = require('../../leaves/text/ansi');
+const { buildTextView } = require('../../leaves/text-view/render');
+const { renderPanel } = require('../api');
 const { paneInnerH } = require('../pane-viewport');
+const { getModel } = require('../../model/store');
 
 // Transcript ring cap (the Transcript tab's 1000-line precedent); per-pane
 // override via config `cap`. Keeps replay checkpoints small.
@@ -157,12 +166,84 @@ function _fold(slice, evt) {
   }
 }
 
+// The session-states during which Esc means "interrupt the turn" rather than
+// "leave agent mode" (the in-flight half of the protocol's STATUS_STATES).
+const BUSY_STATES = ['thinking', 'tool', 'compacting', 'retrying'];
+
+/** One agent-mode keystroke (`agent_input`, id stamped by the mode handler).
+ *  Enter sends (and idempotently starts/restarts the session — self-healing
+ *  after an exit); Esc interrupts while busy, leaves the mode when not;
+ *  everything else edits the draft (the prompt_key idiom: ASCII printable via
+ *  seq, \x7f backspace, Ctrl+U clear, bracketed paste) with a cursor. */
+function _input(slice, msg) {
+  const { key, seq, selfId } = msg;
+  const d = slice.inputDraft || { text: '', cursor: 0 };
+  if (key === 'escape') {
+    if (BUSY_STATES.includes((slice.status || {}).state)) {
+      return [slice, [{ type: 'agent_interrupt', id: selfId }]];
+    }
+    return [slice, [{ type: 'msg', msg: { type: 'agent_exit' } }]];
+  }
+  if (key === 'return') {
+    const text = (d.text || '').trim();
+    if (!text) return slice;
+    const next = _append({ ...slice, inputDraft: { text: '', cursor: 0 } },
+                         [`[cyan]› ${esc(text)}[/]`]);
+    return [next, [
+      { type: 'agent_start', id: selfId, cfg: { ...slice.descriptor } },
+      { type: 'agent_send', id: selfId, text },
+    ]];
+  }
+  // Page keys scroll the transcript while chatting (the draft is one line, so
+  // they're free); plain up/down stay reserved (draft history, later).
+  if (key === 'pageup' || key === 'pagedown') {
+    const innerH = slice.innerH > 0 ? slice.innerH : 1;
+    const lines = slice.transcript || [];
+    const maxScroll = Math.max(0, lines.length - innerH);
+    const scroll = Math.max(0, Math.min(maxScroll,
+      (slice.scroll || 0) + (key === 'pageup' ? -innerH : innerH)));
+    return scroll === (slice.scroll || 0) ? slice : { ...slice, scroll };
+  }
+  let text = d.text || '';
+  let cursor = Math.max(0, Math.min(text.length, d.cursor | 0));
+  if (key === 'backspace' || seq === '\x7f') {
+    if (cursor > 0) { text = text.slice(0, cursor - 1) + text.slice(cursor); cursor--; }
+  } else if (key === 'delete') {
+    text = text.slice(0, cursor) + text.slice(cursor + 1);
+  } else if (key === 'left')  { cursor = Math.max(0, cursor - 1); }
+  else if (key === 'right')   { cursor = Math.min(text.length, cursor + 1); }
+  else if (key === 'home')    { cursor = 0; }
+  else if (key === 'end')     { cursor = text.length; }
+  else if (seq === '\x15')    { text = ''; cursor = 0; }                 // Ctrl+U (prompt/cmdline parity)
+  else if (key === 'paste' && typeof seq === 'string') {
+    const pasted = seq.replace(/[\r\n]+/g, ' ');                          // single-line draft
+    text = text.slice(0, cursor) + pasted + text.slice(cursor);
+    cursor += pasted.length;
+  } else if (seq && seq.length === 1 && seq.charCodeAt(0) >= 32 && seq.charCodeAt(0) < 127) {
+    text = text.slice(0, cursor) + seq + text.slice(cursor);
+    cursor++;
+  } else {
+    return slice;
+  }
+  if (text === d.text && cursor === d.cursor) return slice;
+  return { ...slice, inputDraft: { text, cursor } };
+}
+
 function update(msg, slice) {
   // Stamped viewport height → slice, ref-preserving (text-view FIX-2 mirror).
   if (msg && msg.innerH > 0 && slice.innerH !== msg.innerH) slice = { ...slice, innerH: msg.innerH };
   switch (msg.type) {
     case 'agent_event':
       return _fold(slice, msg.evt || {});
+    case 'agent_activate':
+      // Enter on the pane (run_selected fork): start the session — idempotent
+      // while live, replaces an exited one — then flip into agent mode.
+      return [slice, [
+        { type: 'agent_start', id: msg.selfId, cfg: { ...slice.descriptor } },
+        { type: 'msg', msg: { type: 'agent_enter' } },
+      ]];
+    case 'agent_input':
+      return _input(slice, msg);
     default: break;
   }
   // Interaction over the transcript — the shared text-view reducer.
@@ -171,11 +252,93 @@ function update(msg, slice) {
 }
 
 // Framework (loop._augment) stamps the viewport height so update() stays pure
-// of layout geometry — verbatim text-view augmentMsg.
+// of layout geometry — text-view's augmentMsg, minus the TWO interior rows the
+// agent pane reserves (status line + input draft), so scroll clamps against
+// the real transcript viewport.
 function augmentMsg(msg, model, slice) {
   if (msg.innerH > 0) return msg;
-  const ih = paneInnerH(slice);
+  const ih = paneInnerH(slice) - 2;
   return ih > 0 ? { ...msg, innerH: ih } : msg;
+}
+
+// --- render — pure f(slice): transcript window + status + draft -------------
+
+const STATUS_LINE = {
+  starting:   '[dim]· not started[/]',   // the draft ghost carries the "Enter to chat" hint
+  idle:       '[green]· idle[/]',
+  thinking:   '[yellow]· thinking…[/]',
+  tool:       '[yellow]· running tool…[/]',
+  compacting: '[yellow]· compacting…[/]',
+  retrying:   '[yellow]· retrying…[/]',
+  exited:     '[red]· session ended[/]',
+};
+
+function _statusLine(slice) {
+  const st = slice.status || {};
+  let line = STATUS_LINE[st.state] || STATUS_LINE.idle;
+  const extras = [];
+  if (Number.isFinite(st.tokens)) extras.push(`${st.tokens} tok`);
+  if (Number.isFinite(st.cost)) extras.push(`$${st.cost.toFixed(2)}`);
+  if (extras.length) line += ` [dim]· ${extras.join(' · ')}[/]`;
+  return line;
+}
+
+/** The draft row. While typing (agent mode + focused) the cursor renders as a
+ *  reverse cell — sliced from the RAW text before esc, so the split can't
+ *  land inside an escape. */
+function _inputLine(slice, typing) {
+  const d = slice.inputDraft || { text: '', cursor: 0 };
+  const raw = d.text || '';
+  if (!typing) {
+    return raw ? `[cyan]›[/] ${esc(raw)}` : '[cyan]›[/] [dim]Enter to chat[/]';
+  }
+  const c = Math.max(0, Math.min(raw.length, d.cursor | 0));
+  const at = raw.slice(c, c + 1);
+  return `[cyan]›[/] ${esc(raw.slice(0, c))}[reverse]${at ? esc(at) : ' '}[/]${esc(raw.slice(c + 1))}`;
+}
+
+// Search decoration over the transcript (text-view's _searchDecoration,
+// resolved against the own slice; selection wins — same precedence).
+function _searchDecoration(slice, lines, focused) {
+  const search = slice.search;
+  if (!search) return null;
+  const typingPhase = focused && getModel().modes.detailSearchMode;
+  const term = typingPhase ? (search.typing || '') : (search.active ? (search.term || '') : '');
+  const matches = ms.matchesFor(lines, term);
+  if (!matches.length) return null;
+  const activeIdx = Math.min(search.idx || 0, matches.length - 1);
+  return { matches, activeIdx };
+}
+
+// Multi-tab slots show the unified strip as the title (text-view's U2e
+// stopgap — same helper, same reason: siblings stay visible + clickable).
+function _slotTitle(panel) {
+  const strip = require('../slot-strip').unifiedSlotStrip(panel);
+  return strip ? strip.title : (panel && panel.title);
+}
+
+function render(panel, w, h, slice, opts) {
+  const focused = !!(opts && opts.focused);
+  const lines = slice.transcript || [];
+  const sel = (slice.select && slice.select.active) ? slice.select : null;
+  const searchDecoration = sel ? null : _searchDecoration(slice, lines, focused);
+  const tvH = Math.max(1, h - 4);   // 2 border rows + status + input
+  const args = buildTextView({
+    lines, scroll: slice.scroll, innerH: tvH,
+    select: sel, searchDecoration,
+    width: w, height: h,
+    title: _slotTitle(panel), hotkey: panel.hotkey,
+    panelType: 'agent', focused,
+    chrome: opts && opts.chrome,
+  });
+  // Pin status + draft to the bottom: pad the (possibly short) transcript
+  // window to its viewport, then append the two reserved rows.
+  const typing = focused && !!getModel().modes.agentMode;
+  const body = args.lines.slice();
+  while (body.length < tvH) body.push('');
+  body.push(_statusLine(slice));
+  body.push(_inputLine(slice, typing));
+  return renderPanel({ ...args, lines: body });
 }
 
 module.exports = {
@@ -183,4 +346,5 @@ module.exports = {
   init,
   update,
   augmentMsg,
+  panelTypes: { agent: { render } },
 };

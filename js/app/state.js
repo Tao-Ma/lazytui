@@ -638,6 +638,13 @@ function reconcilePaneInstances() {
       if (kind === 'terminal') {
         try { require('../io/terminal').destroySession(id); } catch (_) {}
       }
+      // A disposed `agent` instance owns a live backend session keyed the
+      // same way (session id == instance id) — tear it down + forget it.
+      // Straggler events, incl. the backend's own final exit, drop via
+      // io/agent's stale-session guard.
+      if (kind === 'agent') {
+        try { require('../io/agent').destroy(id); } catch (_) {}
+      }
       route.disposeInstance(id);
     }
   }

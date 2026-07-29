@@ -255,6 +255,15 @@ function handleAction(action, arg, from) {
         activateTerminal();
         break;
       }
+      // Enter on an `agent` PANE → activate agent-mode input (the terminal-
+      // mode mirror, docs/live-agent.md A4). The Component decides the Cmd
+      // cascade — start the session idempotently + flip the mode flag — in
+      // its agent_activate arm; here we only resolve + stamp the instance id.
+      if (instanceKind(getFocus()) === 'agent') {
+        const aid = route.activeInstanceOf(getFocus());
+        if (aid) dispatchMsg(wrap(aid, { type: 'agent_activate', selfId: aid }));
+        break;
+      }
       // U2c P2 — the 'Enter on the viewer's action tab re-runs it' gesture is
       // retired: action tabs no longer live in the viewer's flat strip (output
       // is a text-view position-tab now). Re-run from the actions list; wiring

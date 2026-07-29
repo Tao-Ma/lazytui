@@ -64,6 +64,12 @@ const MODES = [
   // jobs/tabList/paneSelect — so it suppresses chrome-glyph clicks behind it
   // (a stray click shouldn't collapse/close a pane underneath the window).
   { flag: 'diagLogMode',             chain: true,  overlay: true,  modal: false, reset: true, suppressChrome: true  },
+  // Live-agent input (docs/live-agent.md A4) — the terminal-mode analog for an
+  // `agent` pane: keystrokes compose the message draft. LAST in the chain so
+  // every popup above (confirm, menu, jobs, …) wins while open; in-grid like
+  // fabricFieldMode; chrome clicks stay live (a mouse gesture shouldn't be
+  // dead while chatting).
+  { flag: 'agentMode',               chain: true,  overlay: false, modal: true,  reset: true, suppressChrome: false },
   // Non-chain modes (see header).
   { flag: 'terminalMode',            chain: false, overlay: false, modal: true,  reset: true, suppressChrome: true  },
   { flag: 'listSelectMode',          chain: false, overlay: false, modal: false, reset: true, suppressChrome: false },

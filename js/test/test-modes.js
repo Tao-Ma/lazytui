@@ -18,8 +18,9 @@ const { getModel } = require('../app/runtime');
 
 describe('[1] registry derivations', () => {
   it('CHAIN_MODES is the modeChain precedence order', () => {
+    // agentMode (live-agent A4) is LAST — every popup above wins while open.
     eq(modes.CHAIN_MODES.join(','),
-       'confirmMode,promptMode,freeConfigTitleEditMode,freeConfigMode,menuOpen,filterMode,copyMode,detailSearchMode,registerPopupMode,prefixMode,cmdMode,fabricFieldMode,paneMenuMode,jobsMode,diagLogMode');
+       'confirmMode,promptMode,freeConfigTitleEditMode,freeConfigMode,menuOpen,filterMode,copyMode,detailSearchMode,registerPopupMode,prefixMode,cmdMode,fabricFieldMode,paneMenuMode,jobsMode,diagLogMode,agentMode');
   });
   it('isOverlayActive matches the pre-registry hardcoded list', () => {
     const overlay = ['copyMode','menuOpen','freeConfigMode','cmdMode','confirmMode','promptMode','registerPopupMode','prefixMode','paneMenuMode','jobsMode','diagLogMode'];
@@ -29,7 +30,7 @@ describe('[1] registry derivations', () => {
     }
   });
   it('isModal matches the pre-registry hardcoded list', () => {
-    const modal = ['terminalMode','filterMode','copyMode','freeConfigMode','freeConfigTitleEditMode','menuOpen','prefixMode','fabricFieldMode'];
+    const modal = ['terminalMode','filterMode','copyMode','freeConfigMode','freeConfigTitleEditMode','menuOpen','prefixMode','fabricFieldMode','agentMode'];
     for (const f of modes.MODES.map(m => m.flag)) {
       const s = {}; s[f] = true;
       eq(modes.isModal(s), modal.includes(f), `${f} modal`);
