@@ -666,6 +666,17 @@ function handleNormalKey(key, seq) {
           break;
         }
       }
+      // A dead `agent` PANE closes on `x` too (the dead-terminal analog):
+      // once the session exited, the transcript is a corpse to dismiss —
+      // Enter would restart it instead (agent_activate's idempotent start).
+      if (instanceKind(getFocus()) === 'agent') {
+        const id = route.activeInstanceOf(getFocus());
+        const sl = id ? getInstanceSlice(id) : null;
+        if (sl && sl.status && sl.status.state === 'exited') {
+          dispatchMsg(wrap('layout', { type: 'remove_tab', paneId: getFocus(), tabPoolId: mpane.poolIdOf(id) }));
+          break;
+        }
+      }
       // U2e P1b — a content `text-view` tab (opened file / action output) closes on
       // `x` from the content slot, via remove_tab (the position-tab analog of the
       // dead-terminal close above; no liveness concept — users just want a close
@@ -1009,6 +1020,19 @@ const _modeHandlers = {
   paneMenuMode:        (key, seq) => handlePaneMenuKey(key, seq),
   jobsMode:            (key, seq) => handleJobsKey(key, seq),
   diagLogMode:         (key, seq) => handleDiagLogKey(key, seq),
+  // Live-agent input (A4) — thin: resolve the focused agent instance HERE
+  // (the impure shell, like focusedTerminalId) and stamp its id into the
+  // wrapped Msg (handler-stamped bundle), so the Component's agent_input arm
+  // stays pure and can emit id-carrying Cmds (agent_send / agent_interrupt).
+  // Focus drifted off an agent pane with the flag lingering → exit the mode
+  // and drop the key (the terminal-mode multi-pane edge, same posture).
+  agentMode:           (key, seq) => {
+    const focus = getFocus();
+    const id = focus ? route.activeInstanceOf(focus) : null;
+    const inst = id ? route.getInstance(id) : null;
+    if (!inst || inst.kind !== 'agent') { applyMsg({ type: 'agent_exit' }); return; }
+    dispatchMsg(wrap(id, { type: 'agent_input', key, seq, selfId: id }));
+  },
 };
 
 const modeChain = modes.CHAIN_MODES.map(flag => {

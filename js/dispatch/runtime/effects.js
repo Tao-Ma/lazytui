@@ -202,6 +202,15 @@ function refireCmdlineRebuild() {
   require('../../leaves/infra/render-queue').scheduleRender();
 }
 
+// Live-agent backend registry: descriptor name → AgentBackend object
+// (js/agent/protocol.js). The effect resolves the name so io/agent.js stays
+// registry-free (it takes the backend OBJECT).
+function _agentBackend(name) {
+  if (name === 'mock') return require('../../agent/backends/mock');
+  if (name === 'pi') return require('../../agent/backends/pi');
+  return null;
+}
+
 function installBuiltins() {
   const { getModel } = require('../../model/store');
   const api = require('../../panel/api');
@@ -283,6 +292,39 @@ function installBuiltins() {
   // of the theme without an effect. The reducer's set_theme arm just sets
   // model.theme now; no Cmd.)
 
+  // --- Live-agent session control (Slice A3, docs/live-agent.md) ---
+  // Thin io calls into io/agent.js — the transcript/status folds happen in
+  // the reducer via the recorded `agent_event` Msgs the wired event handler
+  // (host-wiring.wireAgentHost) dispatches back. Effects stay side-effect-only,
+  // so replay — which skips runEffects wholesale — never re-spawns a backend;
+  // the recorded Msg stream alone reconstructs the pane.
+  registerEffect('agent_start', (eff, host) => {
+    const name = (eff.cfg && eff.cfg.backend) || '(unset)';
+    const backend = _agentBackend(name);
+    if (!backend) {
+      // Config error at start: surface it IN the pane (fold an error event —
+      // same shape a backend error takes) + diag, don't throw.
+      require('../../io/diag-log').error('agent', `unknown agent backend '${name}'`);
+      host.dispatchMsg(host.wrap(eff.id, {
+        type: 'agent_event', evt: { type: 'error', message: `unknown agent backend '${name}'` },
+      }));
+      return;
+    }
+    // cwd: the agent operates on the workspace (streamCommand's projectDir
+    // posture); an explicit cfg.cwd wins.
+    require('../../io/agent').start(eff.id, backend, { cwd: getModel().projectDir, ...(eff.cfg || {}) });
+  });
+  registerEffect('agent_send', (eff) => {
+    require('../../io/agent').send(eff.id, eff.text, eff.opts);
+  });
+  registerEffect('agent_interrupt', (eff) => {
+    require('../../io/agent').interrupt(eff.id);
+  });
+  // (No agent_stop effect: nothing produces it — pane close goes through
+  // io/agent.destroy, quit through stopAll, Esc through agent_interrupt.
+  // A Phase-B stop-without-close gesture re-adds it WITH its producer;
+  // registry entries stay drive-toward-empty.)
+
   // --- Root-reducer Cmds ---
   // Emitted by `runtime.update` branches; run from `dispatch.applyMsg` via
   // the same `runEffects` interpreter as Component effects.
@@ -337,6 +379,13 @@ function installBuiltins() {
     const viewerPaneId = route.resolveViewerPaneId();
     const groupName = m.currentGroup;
     const out = { type: 'jobs_routed', job, now: eff.now | 0, viewerPaneId, groupName };
+    // Live-agent job: thread the OWNING pane (owner.agentId == tab-instance
+    // id) so the pure jobs_routed arm can jump to it without a route read.
+    if (job.kind === 'agent' && job.owner && job.owner.agentId) {
+      const inst = route.getInstance(job.owner.agentId);
+      out.agentPaneId = (inst && inst.paneId) || null;
+      out.agentPoolId = require('../../leaves/wm/pane').poolIdOf(job.owner.agentId);
+    }
     require('../control/dispatch').applyMsg(out);
   });
   // copy_commit: resolve the selected copy option's (module-held) content

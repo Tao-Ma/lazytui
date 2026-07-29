@@ -190,6 +190,28 @@ const FRAMEWORK_COMMANDS = [
     },
   },
   {
+    name: 'agent',
+    desc: 'Open a live-agent chat tab in the focused pane — :agent [backend]',
+    run: (args) => {
+      const layoutSlice = route.getInstanceSlice('layout');
+      const focus = layoutSlice && layoutSlice.focus;
+      if (!focus) {
+        const { appendViewerLines } = require('./nav-state');
+        appendViewerLines(`[red]:agent needs a focused pane[/]`);
+        return;
+      }
+      // docs/live-agent.md A4 — mint an `agent` pane into the focused slot
+      // (the terminal-mint mirror; session id == tab-instance id). The session
+      // itself starts lazily on Enter (agent_activate → idempotent
+      // agent_start), so a minted-but-never-entered pane spawns nothing.
+      const backend = (args && args.length > 0) ? args[0] : 'mock';
+      _host.dispatchMsg(wrap('layout', {
+        type: 'mint_tab', paneId: focus, paneType: 'agent', title: 'agent',
+        idPrefix: 'agent', config: { backend, label: `${backend} agent` },
+      }));
+    },
+  },
+  {
     name: 'remove-column',
     desc: 'Remove an empty column — :remove-column <n>  (1-based; refused on last column or non-empty)',
     run: (args) => {

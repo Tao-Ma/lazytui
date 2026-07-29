@@ -59,6 +59,14 @@ function footerKeys(model) {
     const label = focusedTerminalLabel() || 'terminal';
     return ` \\[terminal: ${esc(label)}] | ${bindings.footerSegs('terminalMode').join(' | ')}`;
   }
+  if (md.agentMode) {
+    // Live-agent input (docs/live-agent.md A4) — the Esc dual role (interrupt
+    // while a turn runs, leave when idle) is exactly what a hint row is for.
+    const inst = _route().getInstance(_route().activeInstanceOf(getFocus()));
+    const d = inst && inst.slice && inst.slice.descriptor;
+    const label = (d && (d.label || d.backend)) || 'agent';
+    return ` \\[agent: ${esc(label)}] | ${bindings.footerSegs('agentMode').join(' | ')}`;
+  }
   if (md.detailSearchMode) {
     // P1 (viewer-lines selector) — match count derives from the viewer's
     // lines via the ms.matchesFor memo (typing term), not a stored list.

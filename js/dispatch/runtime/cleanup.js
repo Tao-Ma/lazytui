@@ -3,8 +3,8 @@
  * Called on user-quit (q / Ctrl-C) and from process.on('exit').
  *
  * Order matters: kill the streamed action first (so its stdout doesn't
- * arrive after we've reset the screen), then PTYs, then mouse + cursor +
- * full reset, finally clear and home cursor.
+ * arrive after we've reset the screen), then agent sessions, then PTYs,
+ * then mouse + cursor + full reset, finally clear and home cursor.
  */
 'use strict';
 
@@ -18,6 +18,9 @@ const { killAll } = require('./action-runner');
 
 function cleanup() {
   killAll({ silent: true });
+  // Live-agent sessions — same "children first" reasoning; each backend
+  // tears its own subprocess down (a no-op for sessions already dead).
+  require('../../io/agent').stopAll();
   destroyAll();
   // C5 — abort any in-flight keyed compute (e.g. an in-flight docker
   // inspect/stats subprocess) so it's SIGTERM'd rather than orphaned on quit.

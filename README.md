@@ -205,9 +205,10 @@ for "the same thing but headless."
 |---|---|
 | N-column layout (v0.6.2+) | Ordered columns list, default 2 columns. Soft caps: 6 panes in the first, 3 in the last. Detail panes live in any column — and since v0.6.4 a layout may declare several of them, each the sole tab of its pane. YAML-configurable content + column count. Grow / shrink at runtime via drag-edge spawn or `:add-column` / `:remove-column`. |
 | Action types | `run` (capture output), `spawn` (full-screen interactive), `background` (fire-and-forget). One uniform schema. |
-| Built-in panel types | `groups`, `actions`, `files`, `history`, `detail`, `terminal`, `text-view`, `component-ports`, `fabric-wires`, plus docker container / stats panels. |
+| Built-in panel types | `groups`, `actions`, `files`, `history`, `detail`, `info`, `terminal`, `text-view`, `agent`, `component-ports`, `fabric-wires`, plus docker container / stats panels. |
 | Embedded terminals | First-class `terminal` panes (from `type: spawn` actions, `docker exec`, group `terminals:`, or `:terminal`), persistent across group switches. Scrollback via mouse-wheel and `Shift+PageUp`/`PageDown`/`Home`/`End`, with smart mouse-forwarding — bytes reach the child only when it enabled mouse reporting (vim, htop, `less --mouse`); otherwise the wheel scrolls scrollback, and a `[↑N]` indicator shows how far back the view sits (v0.6.5). |
 | Component dataflow fabric (v0.6.8+) | Components publish typed **output ports** and consume typed **input ports**. **Wires** are standing producer→consumer connections; **injects** are one-shot by-value pushes (right-click "Send selection to port…", or an in-grid field edit). A consumer's `run:` is a **no-shell argv template** (`{{holes}}` = bound parameters, executed via `execve`) so command injection is structurally impossible. Inspect it live via the `component-ports` pane and the `fabric-wires` wire list. See [docs/ports-and-wires.md](docs/ports-and-wires.md). |
+| Live agent pane (unreleased) | `:agent [backend]` mints a chat pane driving a long-lived AI agent: Enter starts/activates, keystrokes compose a draft, Esc interrupts a running turn or leaves the mode. The transcript is modeled pure-TEA, so a recorded session replays without re-calling any LLM. Backends plug in behind a normalized protocol: `mock` (built-in) and `pi` ([Pi](https://github.com/earendil-works/pi) via `pi --mode rpc`). See [docs/live-agent.md](docs/live-agent.md). |
 | Event hub | In-process pub/sub for plugins. Time-series, snapshot, matrix shapes. Cost scales with subscribers. |
 | Decorator slots | Plugins add glyphs to rows / titles / tabs / footer without touching the renderer. |
 | Cmdline (`:`) | `:quit`, `:refresh`, `:help`, plus plugin-registered verbs, with positional-arg plumbing. |
@@ -226,8 +227,8 @@ for "the same thing but headless."
   `@xterm/headless` for embedded PTY tabs, `js-yaml` for config parsing,
   `eastasianwidth` (UAX #11 wide) + `wcwidth` (POSIX zero-width) for the
   Unicode character-width truth function.
-- **Tests**: JS unit suites under `js/test/` (158 files), an opt-in
-  pre-release smoke harness under `js/test/smoke/` (13 scenarios), and
+- **Tests**: JS unit suites under `js/test/` (166 files), an opt-in
+  pre-release smoke harness under `js/test/smoke/` (14 scenarios), and
   a live integration harness under `test/`. See [docs/TESTING.md](docs/TESTING.md).
 - **Two worked demos** at the time of initial public release; both ship
   with the human-authored intent (`.agent-prompt.md`) checked in so the

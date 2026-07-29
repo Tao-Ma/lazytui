@@ -238,6 +238,16 @@ function update(model, msg) {
       if (!model.modes.terminalMode) return [model, []];
       return [_withModes(model, { terminalMode: false }),
               [{ type: 'msg', msg: route.wrap('layout', { type: 'view_drop_full_to_normal' }) }]];
+    // --- agent mode enter/exit (docs/live-agent.md A4) — the terminal-mode
+    // mirror for an `agent` pane's draft input. Just the flag write: the
+    // session start rides the agent_activate Cmd cascade (panel/agent), and
+    // there is no auto-zoom to drop on exit.
+    case 'agent_enter':
+      if (model.modes.agentMode) return [model, []];
+      return [_withModes(model, { agentMode: true }), []];
+    case 'agent_exit':
+      if (!model.modes.agentMode) return [model, []];
+      return [_withModes(model, { agentMode: false }), []];
     // --- terminal focus events (DEC 1004). Pauses/resumes the refresh loop
     // via model.focused; the focus-regain catch-up scheduleRender stays in
     // input.js (an effect decision the caller owns).

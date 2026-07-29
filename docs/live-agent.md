@@ -1,13 +1,25 @@
 # Live agent — design spec
 
-> **Status:** DESIGN, not yet built. This spec models a *live, long-lived agent*
-> as a **managed structured-protocol subprocess** — an extension of lazytui's
-> existing streaming machinery (`dispatch/runtime/stream.js` + `feature/jobs` +
-> the `text-view` instance), staying in **pure TEA**. It is deliberately **not** a
-> [foreign component](foreign-components.md) (§"Why not a foreign component"). The
-> generalized part is the **agent-backend seam**: lazytui owns the *live-agent
-> concept*, and a concrete agent (Pi, an in-process SDK loop, …) is a pluggable
-> *backend*.
+> **Status:** BUILT + LIVE-VALIDATED — Phase A (slices A0–A6) shipped on the
+> `live-agent` branch; the mock backend is exercised end-to-end (unit + smoke
+> + replay), the Pi backend against a wire-exact fixture
+> (`js/test/fixtures/fake-pi.js`) AND live against an installed **pi 0.82.1**
+> — including a full **agent turn with a real tool execution** driven by a
+> local scripted model (§"Live validation without credentials"): streaming
+> deltas, tool_execution_start/end (pi really ran the bash tool), settled
+> text + usage folds, the retry/error paths, footer/jobs/close/teardown.
+> The validation caught one real fold bug (multi-line errors), fixed. Only
+> a credentialed run against a REAL provider remains as an optional final
+> smoke. §"As built" collects where the implementation refined this design.
+>
+> This spec models a *live, long-lived agent* as a **managed
+> structured-protocol subprocess** — an extension of lazytui's existing
+> streaming machinery (`dispatch/runtime/stream.js` + `feature/jobs` + the
+> `text-view` instance), staying in **pure TEA**. It is deliberately **not** a
+> [foreign component](foreign-components.md) (§"Why not a foreign component").
+> The generalized part is the **agent-backend seam**: lazytui owns the
+> *live-agent concept*, and a concrete agent (Pi, an in-process SDK loop, …)
+> is a pluggable *backend*.
 
 ## Why a *live* agent, not a one-shot node
 
@@ -89,13 +101,13 @@ right and any agent plugs in; get it wrong and it leaks one backend's idioms:
 |---|---|---|
 | `turn-start` | assistant turn began | status Msg |
 | `assistant-delta {text\|thinking}` | streaming token(s) of the current turn | **not folded** — spinner, or throttled (§Streaming) |
-| `assistant-message {text}` | a turn's assistant text settled | `tv_append` → transcript |
-| `tool-call {id, name, args}` | agent invoked a tool | `tv_append` (folded line) |
-| `tool-result {id, result, isError}` | tool finished | `tv_append` |
-| `status {state, tokens?, cost?}` | idle/thinking/compacting/retrying | status Msg |
+| `assistant-message {text}` | a turn's assistant text settled | transcript fold (the `agent_event` arm) |
+| `tool-call {id, name, args}` | agent invoked a tool | transcript fold (one `→ name(args)` line) + tool spinner |
+| `tool-result {id, result, isError}` | tool finished | transcript fold (`←`/`✗` block) |
+| `status {state, tokens?, cost?}` | idle/thinking/tool/compacting/retrying | status merge |
 | `turn-end` | assistant turn completed | flush pending settle |
 | `settled` | session idle, nothing queued | status Msg (drives input-ready) |
-| `error {message}` | backend/turn error | `tv_append` + `diag-log` |
+| `error {message}` | backend/turn error | transcript fold (red `✗` line) |
 | `exit {code}` | session ended | lifecycle Msg |
 
 Input commands map the same way: `send`, `interrupt`, `stop`, plus optional
@@ -112,14 +124,14 @@ provider-agnostic. Mapping:
 | lazytui seam | Pi RPC |
 |---|---|
 | `start(cfg)` | spawn `pi --mode rpc …` (a long-lived job in the `procs` map) |
-| `send(h, msg)` | write a `prompt` command line to stdin; `steer` / `follow_up` for queued input |
+| `send(h, msg)` | write a `prompt` command line to stdin (`streamingBehavior: steer/followUp` rides the same command) |
 | `interrupt(h)` | write an `abort` command |
 | `stop(h)` | close stdin / kill the child |
 | `assistant-delta` | `message_update` → `assistantMessageEvent` (`text_delta` / `thinking_delta`) |
-| `assistant-message` | `turn_end` message text / `message_end` |
+| `assistant-message` | `turn_end` message text (`message_end` unused — §As built) |
 | `tool-call` | `tool_execution_start` (`toolCallId`, `toolName`, `args`) |
 | `tool-result` | `tool_execution_end` (`result`, `isError`) |
-| `status` | `agent_start` / `compaction_*` / `auto_retry_*` / `get_state` |
+| `status` | `agent_start` / `compaction_*` / `auto_retry_*` |
 | `settled` | `agent_settled` |
 | `error` | error / `extension_error` events |
 
@@ -138,7 +150,7 @@ backend sidesteps this entirely, which is why it goes first.
 user types → send Cmd → io/agent.send(id, msg) → backend stdin
 backend stdout (JSONL) → adapter → normalized events → injected handler
    → dispatchMsg(coarse event)                        (NEVER writes the model directly)
-       → reducer folds into the text-view instance (tv_append / tv_set_lines)
+       → reducer folds into the agent slice's transcript (the agent_event arm)
        → reducer updates turn status on the agent slice
 render = f(model): the transcript + status, painted by the text-view pane
 ```
@@ -153,11 +165,12 @@ in the `<leader> j` overlay for free.
 A new pane type minted like any other (`mint_tab` with `paneType: 'agent'`, the
 same primitive `text-view` / `terminal` use, on the U2 position-tab system):
 
-- Backed by a **`text-view`-style transcript** (reuse its `tv_append` / scroll /
+- Backed by a **`text-view`-style transcript** (its OWN line buffer; scroll /
   search / select) plus a small **status line** and an **input draft**.
 - **Agent-mode input** (analogous to terminal-mode): keystrokes compose a message;
   Enter `send`s, Esc leaves, a chord `interrupt`s. Routed in
-  `dispatch/control/input.js` alongside terminal input.
+  `dispatch/control/dispatch.js` (the `agentMode` modeChain handler),
+  beside the other modal-mode handlers; terminal raw-stdin stays in input.js.
 - Render is pure `f(model)` — no `getSnapshot`, no overlay.
 
 ## Replay
@@ -193,8 +206,10 @@ Neither needs a foreign exception.
 The subprocess dies with the app (like any spawned process); the **transcript
 survives in the model**. To *continue the conversation* after a restart, the
 descriptor carries a durable **backend session id** and `start` resumes it (Pi
-persists sessions to JSONL and exposes `switch_session` / `get_entries`). Fresh
-vs. resumed is a descriptor flag — no foreign machinery.
+persists sessions to JSONL and exposes `switch_session` / `get_entries`; for
+pi the durable id IS the session file path — the pane-config `sessionId` knob
+feeds `switch_session` directly). Fresh vs. resumed is a descriptor flag — no
+foreign machinery.
 
 ## Fabric coupling (later phase)
 
@@ -235,6 +250,11 @@ the user's authority. Pi's RPC exposes no approval gate, so the trust boundary i
 
 ## Phase-A build plan
 
+> **SHIPPED** — all seven slices (A0–A6) landed on the `live-agent` branch (one gated
+> commit each), 2026-07-28/29. The one open box is A5's **live** validation:
+> `:agent pi` against a real installed Pi (everything else runs on the mock
+> + the wire-exact fake-pi fixture).
+
 Takes the §"Open decisions" proposed defaults as settled: subprocess-RPC backend
 (Pi) with a **mock backend for tests**, the §"backend seam" event vocabulary,
 spinner+settle streaming, standalone agent pane.
@@ -251,7 +271,7 @@ gate (suite · smoke · dep-walker `[]` both modes · dead-exports 0), on a
 | **A1** | Session host | `io/agent.js` — off-model `sessions` map; `start` / `send` / `interrupt` / `stop`; **stdin write** (the one new capability); `feature/jobs` register/close; injected `setEventHandler` / `setRenderHook` (leaf, no-op when unwired) | io leaf | via mock: send→events→handler; interrupt; stop closes the job |
 | **A2** | Model | `panel/agent/agent.js` slice `{ transcript, status, inputDraft, descriptor }` + pure reducer arms folding coarse events → transcript (reuse `leaves/text/text-view-update`) + status; transcript cap | Component + text leaf | fold an event sequence → correct transcript/status; identity-preserved on no-ops |
 | **A3** | Wiring | boot host-seam (à la `wireFabricHost`): io/agent's event handler `dispatchMsg`s coarse events (→ recorded, replayable); `send` / `interrupt` effects | dispatch/runtime | end-to-end through the real dispatch loop with the mock |
-| **A4** | Pane + input | `agent` pane type (transcript + status + draft), minted via `mint_tab`; `:agent` verb; **agent-mode input** in `dispatch/control/input.js` (compose → Enter=send, Esc=leave, chord=interrupt), mirroring terminal-mode | panel + dispatch | smoke: mint, type, send, render, leave |
+| **A4** | Pane + input | `agent` pane type (transcript + status + draft), minted via `mint_tab`; `:agent` verb; **agent-mode input** as an `agentMode` modeChain handler in `dispatch/control/dispatch.js` (compose → Enter=send, Esc=interrupt-or-leave), mirroring terminal-mode | panel + dispatch | smoke: mint, type, send, render, leave |
 | **A5** | Pi backend | `js/agent/backends/pi.js` — spawn `pi --mode rpc`; JSONL framing (parse stdout lines + partial-line buffer / write command lines); Pi events ↔ normalized; `send`/`interrupt` → `prompt`/`abort` | io leaf | fixture Pi lines → normalized events (unit); **live** validation needs Pi installed |
 | **A6** | Replay + polish | verify recorded coarse Msgs reconstruct the transcript with `io/agent.start` skipped under replay; transcript cap; spinner; CHANGELOG; doc status | — | replay property test + full gate |
 
@@ -270,17 +290,79 @@ gate (suite · smoke · dep-walker `[]` both modes · dead-exports 0), on a
 - **A0–A4 + A6 are fully buildable and gated with the mock backend**; only A5's
   *live* validation needs Pi on the dev machine.
 
-## Open decisions (to confirm before building Phase A)
+## As built (Phase A) — where the implementation refined the design
 
-1. **Backend seam scope** — *proposed:* subprocess-RPC first (Pi), in-process SDK a
-   second backend to prove genericity; the interface must not leak subprocess
-   assumptions. Confirm.
-2. **Normalized event vocabulary** — the table in §"The backend-adapter seam" is the
-   proposed contract; highest-leverage thing to get right. Confirm / refine.
-3. **Streaming** — *proposed:* spinner + settle for Phase A; throttled-delta later
-   if wanted. Confirm.
-4. **Phase-A boundary** — *proposed:* standalone agent pane; fabric wiring deferred
-   to Phase B. Confirm.
+All four §"Open decisions" proposals were taken as settled and held up. The
+deltas worth recording:
+
+- **Wire spec verified** against the pi repo's
+  `packages/coding-agent/docs/rpc.md`: commands are `{type:'prompt',message}`
+  / `{type:'abort'}` JSONL lines; **`turn_end` carries the settled assistant
+  message** (content parts + per-turn usage) and **`agent_settled` is the
+  settle signal** — `message_end` is unused (avoids double-fold). Framing is
+  spec-mandated `\n`-only splitting (never readline: U+2028/U+2029 are legal
+  inside JSON strings), pinned by a fixture test.
+- **Deltas are dropped at the adapter** (`message_update` → nothing), not
+  filtered downstream: folding per-token events would push every token
+  through dispatch + the WAL for nothing under spinner+settle. A future
+  throttled-delta slots into exactly that adapter arm.
+- **Usage**: per-turn `message.usage` accumulates on the backend handle and
+  rides the `status {state:'idle', tokens, cost}` emitted at settle; the
+  pane's status-merge keeps the totals displayed.
+- **Extension-UI dialogs auto-cancel**: Pi extensions can raise blocking
+  confirm/select/input dialogs; with no approval seam they'd hang the agent.
+  The adapter answers `cancelled: true` immediately and folds an error line
+  saying why (§Trust — the approval seam remains future work).
+- **Input ergonomics**: **Esc interrupts while a turn is in flight and leaves
+  agent mode when idle** — one key, no new chord. Enter on the pane starts
+  the session **lazily and idempotently** (a minted-but-never-entered pane
+  spawns nothing; Enter after an exit restarts). `x` closes an *exited*
+  agent pane (the dead-terminal analog). PageUp/PageDown scroll the
+  transcript while composing.
+- **Identity**: the session id IS the tab-instance id (like a terminal's PTY
+  id); orphan-dispose destroys the session entry first so straggler events —
+  including the backend's own final `exit` — drop via a stale-session guard.
+- **Delivery contract hardening** (protocol.js): backends emit nothing in
+  `start`'s tick, `settled` on ready, an interrupted turn still terminates
+  (`turn-end` + `settled`), and `exit` is once-and-last.
+- **Multi-line errors fold as blocks** — live-Pi validation caught that a
+  real backend error can be multi-line (pi's no-API-key message); an
+  embedded `\n` inside one transcript row corrupts row rendering, so the
+  error arm folds through the same split-before-esc block helper as tool
+  results. (Every fixture error had been single-line — the value of the
+  live pass.)
+
+## Live validation without credentials (the recipe)
+
+Pi has no dedicated test mode, but its `~/.pi/agent/models.json` custom-
+provider mechanism (the Ollama path) IS one: point a provider at a **local
+scripted OpenAI-completions server** and pi runs a genuine agent loop
+against it — real streaming, real tool execution, real settle — with no
+API keys. The recipe used for the Phase-A live pass:
+
+1. `models.json`: a provider (`baseUrl: http://127.0.0.1:<port>/v1`,
+   `api: openai-completions`, a dummy `apiKey`) with one model id.
+2. A ~60-line node http server speaking SSE chat-completions: first
+   request (no `role:"tool"` message in the conversation) streams a
+   `tool_calls` delta invoking pi's bash tool (`echo live-tool-ok`);
+   the follow-up request streams the settled text + usage.
+3. An agent pane with `config: { backend: pi, provider: <name>,
+   model: <id> }` — send a prompt, watch the tool line, result block,
+   settled text, and `N tok` fold live.
+
+Caveat: pi inherits lazytui's environment — an `http_proxy` in the env
+routes the local baseUrl through the proxy (connection errors that look
+like model failures). Unset the proxy vars for local-endpoint runs.
+
+## Open decisions — RESOLVED (build took the proposals)
+
+1. **Backend seam scope** — subprocess-RPC first (Pi) ✓; the mock backend
+   already proves a second, non-subprocess implementation of the same seam.
+   An in-process SDK backend remains a candidate follow-on.
+2. **Normalized event vocabulary** — the §"backend seam" table shipped as-is
+   (10 closed types, open extra fields), pinned by `test-agent-protocol.js`.
+3. **Streaming** — spinner + settle ✓ (deltas dropped at the adapter).
+4. **Phase-A boundary** — standalone pane ✓; fabric wiring stays Phase B.
 
 ## See also
 

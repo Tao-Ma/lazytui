@@ -28,6 +28,7 @@ const BUILTIN_COMPONENTS = [
   require('../panel/text-view/text-view'), // text-view (mint-into-slot, U2b)
   require('../panel/terminal/terminal'),   // terminal (PTY as a pane, U2d)
   require('../panel/info/info'),           // info (viewer's Info tab as a pane, U2e)
+  require('../panel/agent/agent'),         // agent (live-agent chat pane, docs/live-agent.md)
 ];
 
 module.exports = { BUILTIN_COMPONENTS };
