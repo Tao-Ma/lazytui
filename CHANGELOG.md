@@ -6,6 +6,8 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.9] — 2026-07-29
+
 ### Added
 
 - **Live agent pane** — a long-lived AI agent living in a cockpit pane
@@ -2597,7 +2599,8 @@ release tarballs. Full pre-squash development history is preserved
 on the internal gitea mirror under the `backup/main-history` branch
 and the `v0.1.0-pre-squash` tag.
 
-[Unreleased]: https://github.com/Tao-Ma/lazytui/compare/v0.6.8...HEAD
+[Unreleased]: https://github.com/Tao-Ma/lazytui/compare/v0.6.9...HEAD
+[0.6.9]: https://github.com/Tao-Ma/lazytui/compare/v0.6.8...v0.6.9
 [0.6.8]: https://github.com/Tao-Ma/lazytui/compare/v0.6.7...v0.6.8
 [0.6.7]: https://github.com/Tao-Ma/lazytui/compare/v0.6.6...v0.6.7
 [0.6.6]: https://github.com/Tao-Ma/lazytui/compare/v0.6.5...v0.6.6
