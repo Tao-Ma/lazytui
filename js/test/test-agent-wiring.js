@@ -103,6 +103,49 @@ const jobFor = (id) => jobs.snapshot().find(j => j.owner && j.owner.agentId === 
   effects.runEffects([{ type: 'agent_stop', id: 'nowhere-1' }]);
   assert(await until(() => agentIo.getSession('nowhere-1').exited), 'session still closes cleanly');
 
+  section('[wiring] agent_event folds THROUGH the free-config gate (review MED)');
+  {
+    const s6 = mint('agent-6');
+    effects.runEffects([{ type: 'agent_start', id: 'agent-6', cfg: { backend: 'mock' } }]);
+    assert(await until(() => s6().status.state === 'idle'), 'ready');
+    require('../model/store').getModel().modes.freeConfigMode = true;
+    try {
+      effects.runEffects([{ type: 'agent_send', id: 'agent-6', text: 'under free-config' }]);
+      assert(await until(() => s6().transcript.some(l => l.includes('echo: under free-config'))),
+             'the async event stream keeps folding (no transcript loss)');
+      assert(await until(() => s6().status.state === 'idle'), 'lifecycle events pass too — no wedge');
+      // The exemption is EVENTS-ONLY: a user-gesture agent Msg stays gated.
+      const { dispatchMsg } = require('../dispatch/runtime/loop');
+      dispatchMsg(route.wrap('agent-6', { type: 'agent_input', key: 'z', seq: 'z', selfId: 'agent-6' }));
+      eq(s6().inputDraft.text, '', 'agent_input still gated under free-config');
+    } finally {
+      require('../model/store').getModel().modes.freeConfigMode = false;
+    }
+  }
+
+  section('[wiring] jobs overlay: an agent job routes to its owning pane (review M1)');
+  {
+    // The pure jobs_routed arm — the jobs_route effect threads
+    // agentPaneId/agentPoolId (resolved from owner.agentId); the arm emits
+    // the jump cascade without any route read.
+    const jobsModal = require('../dispatch/update/modal/jobs');
+    const model0 = require('../model/store').getModel();
+    const [, jcmds] = jobsModal.update(model0, {
+      type: 'jobs_routed',
+      job: { kind: 'agent', owner: { agentId: 'agent-1' } },
+      agentPaneId: 'col-x', agentPoolId: 'agent-1',
+    });
+    eq(jcmds, [
+      { type: 'msg', msg: { kind: 'layout', msg: { type: 'set_active_tab', paneId: 'col-x', tabPoolId: 'agent-1' } } },
+      { type: 'msg', msg: { kind: 'layout', msg: { type: 'focus_set', focus: 'col-x' } } },
+    ], 'jump cascade: activate the tab, focus the pane');
+    const [, none] = jobsModal.update(model0, {
+      type: 'jobs_routed', job: { kind: 'agent', owner: { agentId: 'ghost' } },
+      agentPaneId: null, agentPoolId: null,
+    });
+    eq(none, [], 'an unresolvable owner (disposed pane) emits nothing');
+  }
+
   section('[wiring] stopAll (the cleanup hook) stops every live session');
   const s4 = mint('agent-4');
   const s5 = mint('agent-5');

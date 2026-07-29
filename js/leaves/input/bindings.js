@@ -85,6 +85,11 @@ const BINDINGS = {
   filterMode: [{ label: 'Esc clear', order: 10 }, { label: 'Enter ok', order: 20 }],
   detailSearchMode: [{ label: '↑↓ step', order: 10 }, { label: 'Esc cancel', order: 20 }, { label: 'Enter commit', order: 30 }],
   terminalMode: [{ label: 'Ctrl+\\ return to TUI', order: 10 }],
+  agentMode: [
+    { label: 'Enter send', order: 10 },
+    { label: 'Esc interrupt/leave', order: 20 },
+    { label: 'PgUp/PgDn scroll', order: 30 },
+  ],
 };
 
 // Pick a context's entries that pass their guard, sorted by order.

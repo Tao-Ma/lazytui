@@ -258,6 +258,25 @@ function startFake() {
   eq(a.evts[a.evts.length - 1].type, 'exit', 'NOTHING follows exit');
   allValid(a.evts, 'stop e2e');
 
+  section('[pi e2e] framing: a Buffer split INSIDE a multi-byte codepoint survives');
+  const m = startFake(); open.push(m.h);
+  assert(await until(() => count(m.evts, 'settled') === 1), 'ready');
+  pi.send(m.h, 'mbsplit');
+  assert(await until(() => count(m.evts, 'settled') === 2), 'mbsplit run settles');
+  eq(m.evts.find(e => e.type === 'assistant-message').text, 'héllo 多字节 done',
+     'the StringDecoder healed the split codepoint (no U+FFFD)');
+
+  section('[pi e2e] stdin EPIPE (child dies with pipe data pending) cannot crash');
+  const k = startFake();
+  assert(await until(() => count(k.evts, 'settled') === 1), 'ready');
+  // 'die' exits the child while the chasing 1MiB write is still in flight —
+  // the async stdin 'error' (EPIPE) was an app-killing uncaughtException
+  // before the review-H1 fix (stdin error listener in start()).
+  pi.send(k.h, 'die');
+  pi.send(k.h, 'x'.repeat(1 << 20));
+  assert(await until(() => count(k.evts, 'exit') === 1), 'lifecycle still terminates');
+  eq(k.evts[k.evts.length - 1].type, 'exit', 'exit last — and the process is alive to assert it');
+
   section('[pi e2e] spawn failure (pi not installed): error says why, then exit');
   const bad = pi.start({ argv: ['/nonexistent-pi-binary-xyz'] });
   const badEvts = [];

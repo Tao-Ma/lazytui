@@ -168,4 +168,7 @@ contract is that pattern, made explicit and kept minimal.
 
 See also: `PRINCIPLES.md` §12 (live-external-state convention + decision table),
 `model/store.js` (§Replayability boundary, `#D5`/`#D14`),
-`docs/v0.6.6-replay-readiness.md` (replay design brief).
+`docs/v0.6.6-replay-readiness.md` (replay design brief), and
+[live-agent.md](live-agent.md) §"Why not a foreign component" — the worked
+counter-example: a live LLM agent whose transcript/status are coarse and
+modelable, so it stays pure TEA (a managed stream, NOT a second exception).

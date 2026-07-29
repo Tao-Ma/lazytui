@@ -147,7 +147,16 @@ function _dispatchMsgInner(msg) {
     // (U2f — the free-config tab-reorder exception retired with the flat
     // content-tab drag: content is position-tabs, reordered via the position-tab
     // drag path, not a viewer_reorder_content_tab dispatch through this gate.)
-    if (!isLayoutWrap) return;
+    //
+    // Live-agent exemption: a backend's async `agent_event` stream must keep
+    // folding under free-config — the events are not re-derivable (a dropped
+    // assistant-message is transcript loss; a dropped exit/settled wedges the
+    // modeled status machine). The fold touches only the agent slice — no
+    // pane moves — which is all this gate protects. User-gesture agent Msgs
+    // (agent_input/agent_activate) can't fire in free-config (its mode owns
+    // the keys), so only the event lane needs the pass.
+    const isAgentEvent = msg && msg.msg && msg.msg.type === 'agent_event' && msg.type === undefined;
+    if (!isLayoutWrap && !isAgentEvent) return;
   }
   // Wrapped-Msg path. Routes to exactly one Component instance. Discriminator:
   // `{ kind: string, msg: any }` AND no top-level `type`.

@@ -83,6 +83,21 @@ function _handleWheel(mx, my, delta) {
       if (termId) return require('../../io/terminal').scrollSession(termId, delta * 3);
       continue;
     }
+    if (instanceKind(p.paneId) === 'agent') {
+      // Wheel over an agent pane scrolls the transcript through the shared
+      // reducer (clamped against the stamped innerH, which already reserves
+      // the 2 bottom rows). Pre-check against the pane's own slice so a
+      // no-move wheel skips the repaint (the viewer-branch posture).
+      const inst = route.getInstance(route.activeInstanceOf(p.paneId));
+      const a = inst && inst.slice;
+      const lines = (a && Array.isArray(a.transcript)) ? a.transcript : [];
+      const innerH = (a && a.innerH > 0) ? a.innerH : 1;
+      const cur = (a && a.scroll) || 0;
+      const next = Math.max(0, Math.min(Math.max(0, lines.length - innerH), cur + delta));
+      if (next === cur) return false;
+      dispatchMsg(wrap(p.paneId, { type: 'viewer_scroll', delta }));
+      return true;
+    }
     if (route.isViewerKind(p.paneId)) {   // U2e P1b — content-viewer kinds (detail/info/text-view)
       // v0.6.4 multi-viewer — clamp against the wheeled pane's OWN slice
       // (not _detail()'s focused viewer), so wheeling an unfocused second
@@ -278,6 +293,17 @@ const _modeMouseHandlers = {
   menuOpen:        _mouseHandleMenuMode,
   paneMenuMode:    _mouseHandlePaneMenuMode,
   freeConfigMode:  _mouseHandleFreeConfigMode,
+  // agentMode is an in-grid typing mode, not an overlay: the transcript stays
+  // fully visible, so the WHEEL passes through to the normal per-pane scroll
+  // (the agent arm in _handleWheel). Clicks/drags still fall through to the
+  // T13 chain gate below — a modal claims pointer gestures like keystrokes.
+  agentMode: (kind, mx, my) => {
+    if (kind === 'wheel-up' || kind === 'wheel-down') {
+      if (_handleWheel(mx, my, kind === 'wheel-down' ? +1 : -1)) render();
+      return true;
+    }
+    return false;
+  },
 };
 
 // Mouse mode precedence — DERIVED from the keyboard chain (CHAIN_MODES,
@@ -712,8 +738,11 @@ function handleMouse(kind, x, y) {
       // kind and don't reach this isDetailPane branch.)
       const inContent = my > b.y && my < b.y + b.h - 1;
       const d = route.sliceForPane(p.paneId, p.type);
-      // The active content instance holds its displayed buffer on slice.lines.
-      const _dlines = (d && Array.isArray(d.lines)) ? d.lines : [];
+      // The active content instance holds its displayed buffer on slice.lines
+      // — except an `agent` tab, whose buffer is `transcript` (drag-select
+      // over an agent tab minted into the content slot works like text).
+      const _dlines = (d && Array.isArray(d.lines)) ? d.lines
+        : (d && Array.isArray(d.transcript)) ? d.transcript : [];
       if (inContent && _dlines.length > 0) {
         const visibleLine = my - b.y - 1;
         const col = Math.max(0, mx - b.x - 1);

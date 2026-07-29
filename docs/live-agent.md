@@ -95,13 +95,13 @@ right and any agent plugs in; get it wrong and it leaks one backend's idioms:
 |---|---|---|
 | `turn-start` | assistant turn began | status Msg |
 | `assistant-delta {text\|thinking}` | streaming token(s) of the current turn | **not folded** — spinner, or throttled (§Streaming) |
-| `assistant-message {text}` | a turn's assistant text settled | `tv_append` → transcript |
-| `tool-call {id, name, args}` | agent invoked a tool | `tv_append` (folded line) |
-| `tool-result {id, result, isError}` | tool finished | `tv_append` |
-| `status {state, tokens?, cost?}` | idle/thinking/compacting/retrying | status Msg |
+| `assistant-message {text}` | a turn's assistant text settled | transcript fold (the `agent_event` arm) |
+| `tool-call {id, name, args}` | agent invoked a tool | transcript fold (one `→ name(args)` line) + tool spinner |
+| `tool-result {id, result, isError}` | tool finished | transcript fold (`←`/`✗` block) |
+| `status {state, tokens?, cost?}` | idle/thinking/tool/compacting/retrying | status merge |
 | `turn-end` | assistant turn completed | flush pending settle |
 | `settled` | session idle, nothing queued | status Msg (drives input-ready) |
-| `error {message}` | backend/turn error | `tv_append` + `diag-log` |
+| `error {message}` | backend/turn error | transcript fold (red `✗` line) |
 | `exit {code}` | session ended | lifecycle Msg |
 
 Input commands map the same way: `send`, `interrupt`, `stop`, plus optional
@@ -118,7 +118,7 @@ provider-agnostic. Mapping:
 | lazytui seam | Pi RPC |
 |---|---|
 | `start(cfg)` | spawn `pi --mode rpc …` (a long-lived job in the `procs` map) |
-| `send(h, msg)` | write a `prompt` command line to stdin; `steer` / `follow_up` for queued input |
+| `send(h, msg)` | write a `prompt` command line to stdin (`streamingBehavior: steer/followUp` rides the same command) |
 | `interrupt(h)` | write an `abort` command |
 | `stop(h)` | close stdin / kill the child |
 | `assistant-delta` | `message_update` → `assistantMessageEvent` (`text_delta` / `thinking_delta`) |
@@ -144,7 +144,7 @@ backend sidesteps this entirely, which is why it goes first.
 user types → send Cmd → io/agent.send(id, msg) → backend stdin
 backend stdout (JSONL) → adapter → normalized events → injected handler
    → dispatchMsg(coarse event)                        (NEVER writes the model directly)
-       → reducer folds into the text-view instance (tv_append / tv_set_lines)
+       → reducer folds into the agent slice's transcript (the agent_event arm)
        → reducer updates turn status on the agent slice
 render = f(model): the transcript + status, painted by the text-view pane
 ```
@@ -159,11 +159,12 @@ in the `<leader> j` overlay for free.
 A new pane type minted like any other (`mint_tab` with `paneType: 'agent'`, the
 same primitive `text-view` / `terminal` use, on the U2 position-tab system):
 
-- Backed by a **`text-view`-style transcript** (reuse its `tv_append` / scroll /
+- Backed by a **`text-view`-style transcript** (its OWN line buffer; scroll /
   search / select) plus a small **status line** and an **input draft**.
 - **Agent-mode input** (analogous to terminal-mode): keystrokes compose a message;
   Enter `send`s, Esc leaves, a chord `interrupt`s. Routed in
-  `dispatch/control/input.js` alongside terminal input.
+  `dispatch/control/dispatch.js` (the `agentMode` modeChain handler),
+  beside the other modal-mode handlers; terminal raw-stdin stays in input.js.
 - Render is pure `f(model)` — no `getSnapshot`, no overlay.
 
 ## Replay
@@ -199,8 +200,10 @@ Neither needs a foreign exception.
 The subprocess dies with the app (like any spawned process); the **transcript
 survives in the model**. To *continue the conversation* after a restart, the
 descriptor carries a durable **backend session id** and `start` resumes it (Pi
-persists sessions to JSONL and exposes `switch_session` / `get_entries`). Fresh
-vs. resumed is a descriptor flag — no foreign machinery.
+persists sessions to JSONL and exposes `switch_session` / `get_entries`; for
+pi the durable id IS the session file path — the pane-config `sessionId` knob
+feeds `switch_session` directly). Fresh vs. resumed is a descriptor flag — no
+foreign machinery.
 
 ## Fabric coupling (later phase)
 
@@ -241,7 +244,7 @@ the user's authority. Pi's RPC exposes no approval gate, so the trust boundary i
 
 ## Phase-A build plan
 
-> **SHIPPED** — all six slices landed on the `live-agent` branch (one gated
+> **SHIPPED** — all seven slices (A0–A6) landed on the `live-agent` branch (one gated
 > commit each), 2026-07-28/29. The one open box is A5's **live** validation:
 > `:agent pi` against a real installed Pi (everything else runs on the mock
 > + the wire-exact fake-pi fixture).
@@ -262,7 +265,7 @@ gate (suite · smoke · dep-walker `[]` both modes · dead-exports 0), on a
 | **A1** | Session host | `io/agent.js` — off-model `sessions` map; `start` / `send` / `interrupt` / `stop`; **stdin write** (the one new capability); `feature/jobs` register/close; injected `setEventHandler` / `setRenderHook` (leaf, no-op when unwired) | io leaf | via mock: send→events→handler; interrupt; stop closes the job |
 | **A2** | Model | `panel/agent/agent.js` slice `{ transcript, status, inputDraft, descriptor }` + pure reducer arms folding coarse events → transcript (reuse `leaves/text/text-view-update`) + status; transcript cap | Component + text leaf | fold an event sequence → correct transcript/status; identity-preserved on no-ops |
 | **A3** | Wiring | boot host-seam (à la `wireFabricHost`): io/agent's event handler `dispatchMsg`s coarse events (→ recorded, replayable); `send` / `interrupt` effects | dispatch/runtime | end-to-end through the real dispatch loop with the mock |
-| **A4** | Pane + input | `agent` pane type (transcript + status + draft), minted via `mint_tab`; `:agent` verb; **agent-mode input** in `dispatch/control/input.js` (compose → Enter=send, Esc=leave, chord=interrupt), mirroring terminal-mode | panel + dispatch | smoke: mint, type, send, render, leave |
+| **A4** | Pane + input | `agent` pane type (transcript + status + draft), minted via `mint_tab`; `:agent` verb; **agent-mode input** as an `agentMode` modeChain handler in `dispatch/control/dispatch.js` (compose → Enter=send, Esc=interrupt-or-leave), mirroring terminal-mode | panel + dispatch | smoke: mint, type, send, render, leave |
 | **A5** | Pi backend | `js/agent/backends/pi.js` — spawn `pi --mode rpc`; JSONL framing (parse stdout lines + partial-line buffer / write command lines); Pi events ↔ normalized; `send`/`interrupt` → `prompt`/`abort` | io leaf | fixture Pi lines → normalized events (unit); **live** validation needs Pi installed |
 | **A6** | Replay + polish | verify recorded coarse Msgs reconstruct the transcript with `io/agent.start` skipped under replay; transcript cap; spinner; CHANGELOG; doc status | — | replay property test + full gate |
 

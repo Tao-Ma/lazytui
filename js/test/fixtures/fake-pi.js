@@ -17,6 +17,10 @@
  *   'badcmd'    — emits a failed command response.
  *   'hang'      — agent_start + turn_start, then nothing until `abort`
  *                 arrives (→ turn_end with no text + agent_settled).
+ *   'die'       — exits(1) immediately (a crashing pi; drives the stdin-EPIPE
+ *                 regression when a large write chases it into the pipe).
+ *   'mbsplit'   — writes a turn_end record as a BUFFER split INSIDE a
+ *                 multi-byte UTF-8 codepoint (the StringDecoder claim).
  *
  * Exits 0 when stdin closes (Pi's clean-shutdown convention).
  */
@@ -78,6 +82,23 @@ function onCommand(cmd) {
         out({ type: 'agent_start' });
         out({ type: 'turn_start' });
         return;   // ...until abort
+      }
+      if (m === 'die') process.exit(1);
+      if (m === 'mbsplit') {
+        out({ type: 'agent_start' });
+        const line = Buffer.from(JSON.stringify({
+          type: 'turn_end',
+          message: { role: 'assistant', content: [{ type: 'text', text: 'héllo 多字节 done' }] },
+        }) + '\n', 'utf8');
+        // Split one byte INTO the 3-byte 多 — a string-level split can't
+        // produce this; only the decoder path survives it.
+        const cut = line.indexOf(Buffer.from('多', 'utf8')) + 1;
+        process.stdout.write(line.subarray(0, cut));
+        setTimeout(() => {
+          process.stdout.write(line.subarray(cut));
+          out({ type: 'agent_settled' });
+        }, 10);
+        return;
       }
       return run(m);
     }

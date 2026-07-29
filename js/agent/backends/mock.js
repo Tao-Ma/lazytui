@@ -28,7 +28,8 @@
  * - Events emitted while no handler is attached are dropped (the contract
  *   says attach in `start`'s tick — before delivery begins).
  *
- * Pure-io leaf (js/agent/): no lazytui imports beyond the protocol.
+ * io-shaped leaf (js/agent/, async by nature): no lazytui imports beyond
+ * the protocol.
  */
 'use strict';
 

@@ -33,6 +33,7 @@ const KIND_GLYPH = {
   'pty':             '▢',
   'background':      '↗',
   'tmux':            '⊞',
+  'agent':           '◆',   // live-agent session (io/agent.js, docs/live-agent.md)
 };
 const KIND_TAG = {
   'stream-routed':   'tab',
@@ -40,6 +41,7 @@ const KIND_TAG = {
   'pty':             'pty',
   'background':      'bg',
   'tmux':            'tmux',
+  'agent':           'agent',
 };
 
 function _fmtAge(startedAt, endedAt, now) {

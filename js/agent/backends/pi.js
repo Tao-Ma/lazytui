@@ -29,8 +29,13 @@
  * - After `stop`, everything but the final `exit` is suppressed (the mock's
  *   semantics; exit is contractually last).
  *
- * cfg: { provider?, model?, cwd?, sessionPath?, noSession?, sessionDir?,
- *        argv? }. `model` may be 'provider/model' when `provider` is unset.
+ * Token-collision note: `agent_start` names both a Pi WIRE event (Pi's
+ * snake_case choice, mapped below) and a lazytui EFFECT (effects.js) — the
+ * kebab-case normalized vocabulary sits between them; don't conflate.
+ *
+ * cfg: { provider?, model?, cwd?, sessionPath? | sessionId?, noSession?,
+ *        sessionDir?, argv? }. `model` may be 'provider/model' when
+ *        `provider` is unset.
  *   `argv` overrides the spawn vector entirely (the fixture/test seam —
  *   tests run `node fake-pi.js`; live validation needs pi installed).
  *   `sessionPath` resumes a persisted session via `switch_session`.
@@ -83,6 +88,14 @@ function start(cfg) {
     stderrTail: '',
   };
   child.once('spawn', () => _emit(h, { type: 'settled' }));   // session open — input-ready
+  // stdin 'error' is ASYNC (EPIPE when the child dies with pipe data still
+  // buffered — a large prompt/images payload into a crashed pi). Unhandled it
+  // is an uncaughtException that kills the whole app; the try/catch around
+  // write()/end() only covers synchronous throws. Surface + let 'close' end
+  // the lifecycle. (Review H1 — reproduced before the fix.)
+  child.stdin.on('error', (err) => {
+    _emit(h, { type: 'error', message: `pi stdin: ${err.message}` });
+  });
   child.stdout.on('data', (chunk) => _onChunk(h, chunk));
   child.stderr.on('data', (d) => { h.stderrTail = (h.stderrTail + d).slice(-2048); });
   child.on('error', (err) => {
@@ -99,7 +112,11 @@ function start(cfg) {
     }
     _emit(h, { type: 'exit', code: signal ? null : (code == null ? null : code) });
   });
-  if (cfg.sessionPath) _write(h, { type: 'switch_session', sessionPath: cfg.sessionPath });
+  // Resume a persisted session. For pi the descriptor's durable "session id"
+  // IS the session file path (pi persists sessions to JSONL and addresses
+  // them by path) — so the pane-config `sessionId` knob feeds this too.
+  const sessionPath = cfg.sessionPath || cfg.sessionId;
+  if (sessionPath) _write(h, { type: 'switch_session', sessionPath });
   return h;
 }
 
@@ -146,6 +163,11 @@ function _write(h, obj) {
 
 // --- framing -----------------------------------------------------------------
 
+// An unterminated line buffers until its \n; cap it so a misbehaving wrapper
+// printing an endless blob can't balloon memory (a compliant pi record is
+// far below this).
+const MAX_LINE = 1 << 20;   // 1 MiB
+
 function _onChunk(h, chunk) {
   h.buf += h.decoder.write(chunk);
   let i;
@@ -155,6 +177,10 @@ function _onChunk(h, chunk) {
     if (line.endsWith('\r')) line = line.slice(0, -1);
     if (!line.trim()) continue;
     _onLine(h, line);
+  }
+  if (h.buf.length > MAX_LINE) {
+    _emit(h, { type: 'error', message: `pi: unterminated output line exceeded ${MAX_LINE} bytes — dropped` });
+    h.buf = '';
   }
 }
 
@@ -247,7 +273,9 @@ const UI_DIALOGS = ['select', 'confirm', 'input', 'editor'];
 
 function _uiRequest(h, obj) {
   if (UI_DIALOGS.includes(obj.method)) {
-    _write(h, { type: 'extension_ui_response', id: obj.id, cancelled: true });
+    // Only answer a correlatable request — a response without the id would be
+    // dropped by pi and the dialog would hang anyway; surface regardless.
+    if (obj.id != null) _write(h, { type: 'extension_ui_response', id: obj.id, cancelled: true });
     return [{ type: 'error', message: `extension dialog auto-cancelled: ${obj.title || obj.method}` }];
   }
   if (obj.method === 'notify' && obj.notifyType === 'error') {

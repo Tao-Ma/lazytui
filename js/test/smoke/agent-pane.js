@@ -97,5 +97,46 @@ function agentInstance() {
   eq(agentIo.getSession(inst.id), null, 'session destroyed + forgotten');
   eq(jobEntry().status, 'killed', 'job closed as killed');
 
+  // --- review-sweep additions: wheel, focus-drift guard, x-close ------------
+
+  section('[agent smoke] wheel scrolls the transcript, in AND out of agent mode');
+  type(':'); type('agent'); key('return');
+  const inst2 = agentInstance();
+  assert(!!inst2, 'fresh pane minted');
+  for (let i = 0; i < 60; i++) {
+    dispatchMsg(api.wrap(inst2.id, { type: 'agent_event', evt: { type: 'assistant-message', text: `line ${i}` } }));
+  }
+  const { visibleBoundsFor } = require('../../leaves/wm/geometry');
+  const b = visibleBoundsFor(route.getInstanceSlice('layout'), inst2.paneId, route.resolveViewerPaneId());
+  assert(!!b, 'pane bounds resolved');
+  const s0 = inst2.slice.scroll;
+  assert(s0 > 0, 'bottom-stuck after the fill');
+  const input = require('../../dispatch/control/input');
+  sm.capture(() => input._handleWheel(b.x + 2, b.y + 2, -1));
+  eq(inst2.slice.scroll, s0 - 1, 'wheel-up scrolls outside the mode (the agent _handleWheel arm)');
+  key('return');   // enter agent mode
+  eq(getModel().modes.agentMode, true, 'in agent mode');
+  sm.capture(() => input.handleMouse('wheel-up', b.x + 2, b.y + 2));
+  eq(inst2.slice.scroll, s0 - 2, 'wheel passes through the chain gate IN agent mode');
+  key('escape');
+  eq(getModel().modes.agentMode, false, 'left the mode');
+
+  section('[agent smoke] focus drift exits agent mode and drops the key');
+  key('return');   // re-enter
+  eq(getModel().modes.agentMode, true, 're-entered');
+  const awayPane = route.resolveViewerPaneId();
+  assert(awayPane && awayPane !== inst2.paneId, 'a different pane to drift to');
+  dispatchMsg(api.wrap('layout', { type: 'focus_set', focus: awayPane }));
+  key('j');        // drift guard: exit + drop
+  eq(getModel().modes.agentMode, false, 'mode exited on the first key after drift');
+  eq(inst2.slice.inputDraft.text, '', 'the key was dropped, not typed');
+
+  section('[agent smoke] x closes an EXITED agent pane (the dead-terminal analog)');
+  dispatchMsg(api.wrap('layout', { type: 'focus_set', focus: inst2.paneId }));
+  require('../../dispatch/runtime/effects').runEffects([{ type: 'agent_stop', id: inst2.id }]);
+  assert(await until(() => inst2.slice.status.state === 'exited'), 'session exited');
+  key('x');
+  assert(!agentInstance(), 'x removed the dead agent tab');
+
   report();
 })();

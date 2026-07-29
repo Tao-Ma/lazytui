@@ -67,8 +67,10 @@ const MODES = [
   // Live-agent input (docs/live-agent.md A4) — the terminal-mode analog for an
   // `agent` pane: keystrokes compose the message draft. LAST in the chain so
   // every popup above (confirm, menu, jobs, …) wins while open; in-grid like
-  // fabricFieldMode; chrome clicks stay live (a mouse gesture shouldn't be
-  // dead while chatting).
+  // fabricFieldMode. Mouse while chatting: chrome-glyph clicks stay live
+  // (suppressChrome:false) and the WHEEL scrolls the transcript (an agentMode
+  // mouse handler passes it through); other clicks/drags are chain-gated like
+  // any modal (input.js T13).
   { flag: 'agentMode',               chain: true,  overlay: false, modal: true,  reset: true, suppressChrome: false },
   // Non-chain modes (see header).
   { flag: 'terminalMode',            chain: false, overlay: false, modal: true,  reset: true, suppressChrome: true  },

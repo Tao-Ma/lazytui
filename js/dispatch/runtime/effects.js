@@ -320,6 +320,10 @@ function installBuiltins() {
   registerEffect('agent_interrupt', (eff) => {
     require('../../io/agent').interrupt(eff.id);
   });
+  // agent_stop has no reducer producer YET (pane close goes through
+  // io/agent.destroy, quit through stopAll, Esc through agent_interrupt) —
+  // it completes the session-control Cmd channel for the Phase-B surfaces
+  // (a stop-without-close gesture); the wiring tests drive it meanwhile.
   registerEffect('agent_stop', (eff) => {
     require('../../io/agent').stop(eff.id);
   });
@@ -378,6 +382,13 @@ function installBuiltins() {
     const viewerPaneId = route.resolveViewerPaneId();
     const groupName = m.currentGroup;
     const out = { type: 'jobs_routed', job, now: eff.now | 0, viewerPaneId, groupName };
+    // Live-agent job: thread the OWNING pane (owner.agentId == tab-instance
+    // id) so the pure jobs_routed arm can jump to it without a route read.
+    if (job.kind === 'agent' && job.owner && job.owner.agentId) {
+      const inst = route.getInstance(job.owner.agentId);
+      out.agentPaneId = (inst && inst.paneId) || null;
+      out.agentPoolId = require('../../leaves/wm/pane').poolIdOf(job.owner.agentId);
+    }
     require('../control/dispatch').applyMsg(out);
   });
   // copy_commit: resolve the selected copy option's (module-held) content

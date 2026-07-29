@@ -186,6 +186,10 @@ function _input(slice, msg) {
   const { key, seq, selfId } = msg;
   const d = slice.inputDraft || { text: '', cursor: 0 };
   if (key === 'escape') {
+    // Busy is judged off the MODELED status, which flips to 'thinking' only
+    // when the turn-start event folds — an Esc in the send→turn-start tick
+    // window exits the mode instead of interrupting (re-enter + Esc works;
+    // inherent to modeled-status semantics, kept for purity).
     if (BUSY_STATES.includes((slice.status || {}).state)) {
       return [slice, [{ type: 'agent_interrupt', id: selfId }]];
     }
@@ -294,16 +298,29 @@ function _statusLine(slice) {
 
 /** The draft row. While typing (agent mode + focused) the cursor renders as a
  *  reverse cell — sliced from the RAW text before esc, so the split can't
- *  land inside an escape. */
-function _inputLine(slice, typing) {
+ *  land inside an escape. The raw draft is WINDOWED around the cursor (code
+ *  units — the draft is ASCII-gated; the cmdline-field idiom) so typing a
+ *  message longer than the pane never goes blind: the leaf renderer right-
+ *  truncates rows, which would otherwise cut the cursor + new chars off. */
+function _inputLine(slice, typing, w) {
   const d = slice.inputDraft || { text: '', cursor: 0 };
   const raw = d.text || '';
   if (!typing) {
     return raw ? `[cyan]›[/] ${esc(raw)}` : '[cyan]›[/] [dim]Enter to chat[/]';
   }
   const c = Math.max(0, Math.min(raw.length, d.cursor | 0));
-  const at = raw.slice(c, c + 1);
-  return `[cyan]›[/] ${esc(raw.slice(0, c))}[reverse]${at ? esc(at) : ' '}[/]${esc(raw.slice(c + 1))}`;
+  // Budget: pane interior (w-2) minus the '› ' prefix and one slack column
+  // for the left '…' marker; the cursor cell may sit one past the text end.
+  const avail = Math.max(8, (w | 0) - 5);
+  let start = 0;
+  if (raw.length + 1 > avail && c > avail - 2) {
+    start = Math.min(c - (avail - 2), raw.length + 1 - avail);
+  }
+  const win = raw.slice(start, start + avail);
+  const wc = c - start;
+  const at = win.slice(wc, wc + 1);
+  const pre = start > 0 ? '[dim]…[/]' : '';
+  return `[cyan]›[/] ${pre}${esc(win.slice(0, wc))}[reverse]${at ? esc(at) : ' '}[/]${esc(win.slice(wc + 1))}`;
 }
 
 // Search decoration over the transcript (text-view's _searchDecoration,
@@ -341,12 +358,19 @@ function render(panel, w, h, slice, opts) {
     chrome: opts && opts.chrome,
   });
   // Pin status + draft to the bottom: pad the (possibly short) transcript
-  // window to its viewport, then append the two reserved rows.
+  // window to its viewport, then append the two reserved rows. At degenerate
+  // heights (h < 5) the interior can't hold all rows — truncate from the
+  // FRONT so the status + input rows survive, not the transcript tail.
+  // (Known cosmetic caveat: the leaf's scrollbar thumb spans the full
+  // interior incl. the 2 reserved rows, so it can paint slightly long —
+  // count geometry is transcript-true, the thumb is approximate.)
   const typing = focused && !!getModel().modes.agentMode;
   const body = args.lines.slice();
   while (body.length < tvH) body.push('');
   body.push(_statusLine(slice));
-  body.push(_inputLine(slice, typing));
+  body.push(_inputLine(slice, typing, w));
+  const inner = Math.max(1, h - 2);
+  if (body.length > inner) body.splice(0, body.length - inner);
   return renderPanel({ ...args, lines: body });
 }
 

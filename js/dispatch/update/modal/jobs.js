@@ -125,6 +125,16 @@ function update(model, msg) {
         // U2d P2 — the PTY's terminal is a `terminal` PANE now; the flat-tab jump +
         // terminal_enter are retired. Focus the content slot to surface it.
         cmds.push(...focusSlot);
+      } else if (kind === 'agent') {
+        // Live-agent session: jump to the OWNING pane — make its tab active +
+        // focus it. The jobs_route effect threaded agentPaneId/agentPoolId
+        // (resolved from owner.agentId) so this arm stays route-read-free.
+        if (msg.agentPaneId) {
+          cmds.push({ type: 'msg', msg: route.wrap('layout', {
+            type: 'set_active_tab', paneId: msg.agentPaneId, tabPoolId: msg.agentPoolId }) });
+          cmds.push({ type: 'msg', msg: route.wrap('layout', {
+            type: 'focus_set', focus: msg.agentPaneId }) });
+        }
       } else if (kind === 'background' || kind === 'tmux') {
         const now = msg.now | 0;
         const ageS = Math.max(0, Math.floor(((job.endedAt || now) - job.startedAt) / 1000));
