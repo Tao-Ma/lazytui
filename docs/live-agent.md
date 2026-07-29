@@ -1,10 +1,15 @@
 # Live agent — design spec
 
-> **Status:** BUILT — Phase A (slices A0–A6) shipped on the `live-agent`
-> branch; the mock backend is exercised end-to-end (unit + smoke + replay),
-> the Pi backend against a wire-exact fixture (`js/test/fixtures/fake-pi.js`)
-> — only **live validation against an installed Pi** remains (A5's last box).
-> §"As built" collects where the implementation refined this design.
+> **Status:** BUILT + LIVE-VALIDATED — Phase A (slices A0–A6) shipped on the
+> `live-agent` branch; the mock backend is exercised end-to-end (unit + smoke
+> + replay), the Pi backend against a wire-exact fixture
+> (`js/test/fixtures/fake-pi.js`) AND live against an installed **pi 0.82.1**
+> (spawn / RPC handshake / ready / prompt→error mapping / footer + jobs /
+> close + subprocess teardown — full pipeline; the validation caught one real
+> fold bug, fixed). The one remaining unexercised path is a **keyed LLM
+> turn** (streaming turn + real tool executions), which needs provider
+> credentials. §"As built" collects where the implementation refined this
+> design.
 >
 > This spec models a *live, long-lived agent* as a **managed
 > structured-protocol subprocess** — an extension of lazytui's existing
@@ -319,6 +324,12 @@ deltas worth recording:
 - **Delivery contract hardening** (protocol.js): backends emit nothing in
   `start`'s tick, `settled` on ready, an interrupted turn still terminates
   (`turn-end` + `settled`), and `exit` is once-and-last.
+- **Multi-line errors fold as blocks** — live-Pi validation caught that a
+  real backend error can be multi-line (pi's no-API-key message); an
+  embedded `\n` inside one transcript row corrupts row rendering, so the
+  error arm folds through the same split-before-esc block helper as tool
+  results. (Every fixture error had been single-line — the value of the
+  live pass.)
 
 ## Open decisions — RESOLVED (build took the proposals)
 

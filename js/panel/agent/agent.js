@@ -163,7 +163,11 @@ function _fold(slice, evt) {
     case 'settled':
       return _status(slice, { state: 'idle' });
     case 'error':
-      return _append(slice, [`[red]✗ ${esc(String(evt.message))}[/]`]);
+      // _blockLines splits BEFORE esc — a real backend error can be
+      // multi-line (pi's no-API-key message is), and an embedded \n inside
+      // one transcript row corrupts row rendering. Caught by live-Pi
+      // validation; the fixtures' errors were all single-line.
+      return _append(slice, _blockLines(String(evt.message), 'red', '✗'));
     case 'exit': {
       const label = evt.code === null ? '(killed)' : `(exit ${evt.code})`;
       return _status(_append(slice, [`[yellow]Session ended ${label}.[/]`]), { state: 'exited' });

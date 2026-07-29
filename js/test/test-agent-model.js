@@ -143,6 +143,16 @@ describe('[agent model] error / exit lifecycle', () => {
     eq(s.transcript, ['[red]✗ rate limited[/]']);
     eq(s.status.state, 'idle');
   });
+  it('a MULTI-LINE error folds as a block — no embedded newline in any row (live-Pi regression)', () => {
+    const s = fold([{ type: 'error', message: 'No API key found.\n\nUse /login. See:\n  docs.md' }]);
+    eq(s.transcript, [
+      '[red]✗ No API key found.[/]',
+      '[red]  [/]',
+      '[red]  Use /login. See:[/]',
+      '[red]    docs.md[/]',
+    ]);
+    assert(s.transcript.every(l => !l.includes('\n')), 'every row is newline-free');
+  });
   it('exit appends the end line + state exited; null code reads killed', () => {
     const s = fold([{ type: 'exit', code: 0 }]);
     eq(s.transcript, ['[yellow]Session ended (exit 0).[/]']);
