@@ -6,6 +6,33 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Live agent pane** — a long-lived AI agent living in a cockpit pane
+  (`:agent [backend]` mints one; Phase A of
+  [docs/live-agent.md](docs/live-agent.md)). Press **Enter** to start the
+  session and chat: keystrokes compose a one-line draft, Enter sends, **Esc
+  interrupts a running turn / leaves the mode when idle**, PageUp/PageDown
+  scroll the transcript while typing. The transcript (your `›` lines, the
+  agent's replies, folded `→ tool(args)` / `← result` lines) is a capped ring
+  buffer with the full text-view interaction set — scroll, `/` search, visual
+  select, yank; a status line tracks idle / thinking… / running tool… /
+  compacting / retrying plus session tokens + cost. Sessions register as jobs
+  (`agent` kind, visible in the leader-j overlay), stop on pane close and on
+  quit, and restart on Enter after an exit; `x` closes a dead agent pane.
+  **Pure TEA, not a foreign component**: every coarse agent event enters the
+  dispatch loop as a recorded Msg, so a recorded session **replays the whole
+  conversation without re-calling any LLM** (the replay debugger steps it like
+  any other state). Backends plug in behind a normalized event protocol
+  (`js/agent/protocol.js`): `mock` (deterministic, the default — no
+  installation needed) and **`pi`** (spawns
+  [Pi](https://github.com/earendil-works/pi) as `pi --mode rpc`, JSONL over
+  stdio; Pi owns provider/keys/context/compaction — `:agent pi` uses your
+  configured Pi defaults, `provider`/`model` pane config overrides). Streaming
+  is spinner + settle: per-token deltas are deliberately not folded into the
+  model (a settled turn lands at once); blocking extension-UI dialogs are
+  auto-cancelled and surfaced, since no approval seam exists yet.
+
 ## [0.6.8] — 2026-07-25
 
 ### Added

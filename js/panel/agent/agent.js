@@ -54,7 +54,7 @@ function init(paneId, seed) {
   return {
     paneId: paneId || null,
     transcript: [],
-    status: { state: 'starting', tokens: null, cost: null },
+    status: { state: 'starting', tokens: null, cost: null, tool: null },
     inputDraft: { text: '', cursor: 0 },
     descriptor: {
       backend: cfg.backend || 'mock',
@@ -103,7 +103,8 @@ function _append(slice, incoming) {
 function _status(slice, patch) {
   const cur = slice.status || {};
   const next = { ...cur, ...patch };
-  if (next.state === cur.state && next.tokens === cur.tokens && next.cost === cur.cost) return slice;
+  if (next.state === cur.state && next.tokens === cur.tokens
+      && next.cost === cur.cost && next.tool === cur.tool) return slice;
   return { ...slice, status: next };
 }
 
@@ -135,16 +136,21 @@ function _fold(slice, evt) {
     case 'assistant-message':
       return _append(slice, String(evt.text == null ? '' : evt.text).split('\n').map(esc));
     case 'tool-call': {
+      // Also drive the spinner (§Streaming "thinking… (tool: …)"): the fold
+      // sets state 'tool' + the name HERE, backend-agnostically — no backend
+      // reliably emits a status event per tool.
       const preview = _argsPreview(evt.args);
-      return _append(slice, [`[dim]→ ${esc(String(evt.name))}(${esc(preview)})[/]`]);
+      return _status(_append(slice, [`[dim]→ ${esc(String(evt.name))}(${esc(preview)})[/]`]),
+                     { state: 'tool', tool: String(evt.name) });
     }
     case 'tool-result': {
       const text = typeof evt.result === 'string' ? evt.result
         : evt.result === undefined ? ''
         : JSON.stringify(evt.result);
-      return _append(slice, evt.isError
+      return _status(_append(slice, evt.isError
         ? _blockLines(text, 'red', '✗')
-        : _blockLines(text, 'dim', '←'));
+        : _blockLines(text, 'dim', '←')),
+        { state: 'thinking', tool: null });
     }
     case 'status': {
       const patch = { state: evt.state };
@@ -276,7 +282,9 @@ const STATUS_LINE = {
 
 function _statusLine(slice) {
   const st = slice.status || {};
-  let line = STATUS_LINE[st.state] || STATUS_LINE.idle;
+  let line = (st.state === 'tool' && st.tool)
+    ? `[yellow]· tool: ${esc(st.tool)}…[/]`   // the spec's "(tool: …)" spinner
+    : (STATUS_LINE[st.state] || STATUS_LINE.idle);
   const extras = [];
   if (Number.isFinite(st.tokens)) extras.push(`${st.tokens} tok`);
   if (Number.isFinite(st.cost)) extras.push(`$${st.cost.toFixed(2)}`);

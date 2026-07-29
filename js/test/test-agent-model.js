@@ -24,7 +24,7 @@ describe('[agent model] init', () => {
   it('defaults: empty transcript, starting status, mock backend, 1000-line cap', () => {
     const s = agent.init('p1', null);
     eq(s.transcript, []);
-    eq(s.status, { state: 'starting', tokens: null, cost: null });
+    eq(s.status, { state: 'starting', tokens: null, cost: null, tool: null });
     eq(s.inputDraft, { text: '', cursor: 0 });
     eq(s.descriptor, { backend: 'mock', provider: null, model: null, label: null, sessionId: null });
     eq(s.cap, 1000);
@@ -70,6 +70,15 @@ describe('[agent model] a full turn folds to transcript + status', () => {
   it('turn-start flips starting → thinking; explicit status overrides', () => {
     eq(fold([{ type: 'turn-start' }]).status.state, 'thinking');
     eq(fold([{ type: 'turn-start' }, { type: 'status', state: 'compacting' }]).status.state, 'compacting');
+  });
+  it('the spinner (A6): tool-call sets state tool + the name; tool-result returns to thinking', () => {
+    const mid = fold([
+      { type: 'turn-start' },
+      { type: 'tool-call', id: 't1', name: 'bash', args: {} },
+    ]);
+    eq([mid.status.state, mid.status.tool], ['tool', 'bash'], 'mid-tool frame names the tool');
+    const after = fold([{ type: 'tool-result', id: 't1', result: 'ok' }], mid);
+    eq([after.status.state, after.status.tool], ['thinking', null], 'back to thinking after the result');
   });
 });
 
@@ -124,7 +133,7 @@ describe('[agent model] status merge keeps last-known usage counters', () => {
       { type: 'status', state: 'thinking', tokens: 1200, cost: 0.05 },
       { type: 'status', state: 'tool' },
     ]);
-    eq(s.status, { state: 'tool', tokens: 1200, cost: 0.05 });
+    eq(s.status, { state: 'tool', tokens: 1200, cost: 0.05, tool: null });
   });
 });
 

@@ -1,13 +1,19 @@
 # Live agent — design spec
 
-> **Status:** DESIGN, not yet built. This spec models a *live, long-lived agent*
-> as a **managed structured-protocol subprocess** — an extension of lazytui's
-> existing streaming machinery (`dispatch/runtime/stream.js` + `feature/jobs` +
-> the `text-view` instance), staying in **pure TEA**. It is deliberately **not** a
-> [foreign component](foreign-components.md) (§"Why not a foreign component"). The
-> generalized part is the **agent-backend seam**: lazytui owns the *live-agent
-> concept*, and a concrete agent (Pi, an in-process SDK loop, …) is a pluggable
-> *backend*.
+> **Status:** BUILT — Phase A (slices A0–A6) shipped on the `live-agent`
+> branch; the mock backend is exercised end-to-end (unit + smoke + replay),
+> the Pi backend against a wire-exact fixture (`js/test/fixtures/fake-pi.js`)
+> — only **live validation against an installed Pi** remains (A5's last box).
+> §"As built" collects where the implementation refined this design.
+>
+> This spec models a *live, long-lived agent* as a **managed
+> structured-protocol subprocess** — an extension of lazytui's existing
+> streaming machinery (`dispatch/runtime/stream.js` + `feature/jobs` + the
+> `text-view` instance), staying in **pure TEA**. It is deliberately **not** a
+> [foreign component](foreign-components.md) (§"Why not a foreign component").
+> The generalized part is the **agent-backend seam**: lazytui owns the
+> *live-agent concept*, and a concrete agent (Pi, an in-process SDK loop, …)
+> is a pluggable *backend*.
 
 ## Why a *live* agent, not a one-shot node
 
@@ -116,10 +122,10 @@ provider-agnostic. Mapping:
 | `interrupt(h)` | write an `abort` command |
 | `stop(h)` | close stdin / kill the child |
 | `assistant-delta` | `message_update` → `assistantMessageEvent` (`text_delta` / `thinking_delta`) |
-| `assistant-message` | `turn_end` message text / `message_end` |
+| `assistant-message` | `turn_end` message text (`message_end` unused — §As built) |
 | `tool-call` | `tool_execution_start` (`toolCallId`, `toolName`, `args`) |
 | `tool-result` | `tool_execution_end` (`result`, `isError`) |
-| `status` | `agent_start` / `compaction_*` / `auto_retry_*` / `get_state` |
+| `status` | `agent_start` / `compaction_*` / `auto_retry_*` |
 | `settled` | `agent_settled` |
 | `error` | error / `extension_error` events |
 
@@ -235,6 +241,11 @@ the user's authority. Pi's RPC exposes no approval gate, so the trust boundary i
 
 ## Phase-A build plan
 
+> **SHIPPED** — all six slices landed on the `live-agent` branch (one gated
+> commit each), 2026-07-28/29. The one open box is A5's **live** validation:
+> `:agent pi` against a real installed Pi (everything else runs on the mock
+> + the wire-exact fake-pi fixture).
+
 Takes the §"Open decisions" proposed defaults as settled: subprocess-RPC backend
 (Pi) with a **mock backend for tests**, the §"backend seam" event vocabulary,
 spinner+settle streaming, standalone agent pane.
@@ -270,17 +281,51 @@ gate (suite · smoke · dep-walker `[]` both modes · dead-exports 0), on a
 - **A0–A4 + A6 are fully buildable and gated with the mock backend**; only A5's
   *live* validation needs Pi on the dev machine.
 
-## Open decisions (to confirm before building Phase A)
+## As built (Phase A) — where the implementation refined the design
 
-1. **Backend seam scope** — *proposed:* subprocess-RPC first (Pi), in-process SDK a
-   second backend to prove genericity; the interface must not leak subprocess
-   assumptions. Confirm.
-2. **Normalized event vocabulary** — the table in §"The backend-adapter seam" is the
-   proposed contract; highest-leverage thing to get right. Confirm / refine.
-3. **Streaming** — *proposed:* spinner + settle for Phase A; throttled-delta later
-   if wanted. Confirm.
-4. **Phase-A boundary** — *proposed:* standalone agent pane; fabric wiring deferred
-   to Phase B. Confirm.
+All four §"Open decisions" proposals were taken as settled and held up. The
+deltas worth recording:
+
+- **Wire spec verified** against the pi repo's
+  `packages/coding-agent/docs/rpc.md`: commands are `{type:'prompt',message}`
+  / `{type:'abort'}` JSONL lines; **`turn_end` carries the settled assistant
+  message** (content parts + per-turn usage) and **`agent_settled` is the
+  settle signal** — `message_end` is unused (avoids double-fold). Framing is
+  spec-mandated `\n`-only splitting (never readline: U+2028/U+2029 are legal
+  inside JSON strings), pinned by a fixture test.
+- **Deltas are dropped at the adapter** (`message_update` → nothing), not
+  filtered downstream: folding per-token events would push every token
+  through dispatch + the WAL for nothing under spinner+settle. A future
+  throttled-delta slots into exactly that adapter arm.
+- **Usage**: per-turn `message.usage` accumulates on the backend handle and
+  rides the `status {state:'idle', tokens, cost}` emitted at settle; the
+  pane's status-merge keeps the totals displayed.
+- **Extension-UI dialogs auto-cancel**: Pi extensions can raise blocking
+  confirm/select/input dialogs; with no approval seam they'd hang the agent.
+  The adapter answers `cancelled: true` immediately and folds an error line
+  saying why (§Trust — the approval seam remains future work).
+- **Input ergonomics**: **Esc interrupts while a turn is in flight and leaves
+  agent mode when idle** — one key, no new chord. Enter on the pane starts
+  the session **lazily and idempotently** (a minted-but-never-entered pane
+  spawns nothing; Enter after an exit restarts). `x` closes an *exited*
+  agent pane (the dead-terminal analog). PageUp/PageDown scroll the
+  transcript while composing.
+- **Identity**: the session id IS the tab-instance id (like a terminal's PTY
+  id); orphan-dispose destroys the session entry first so straggler events —
+  including the backend's own final `exit` — drop via a stale-session guard.
+- **Delivery contract hardening** (protocol.js): backends emit nothing in
+  `start`'s tick, `settled` on ready, an interrupted turn still terminates
+  (`turn-end` + `settled`), and `exit` is once-and-last.
+
+## Open decisions — RESOLVED (build took the proposals)
+
+1. **Backend seam scope** — subprocess-RPC first (Pi) ✓; the mock backend
+   already proves a second, non-subprocess implementation of the same seam.
+   An in-process SDK backend remains a candidate follow-on.
+2. **Normalized event vocabulary** — the §"backend seam" table shipped as-is
+   (10 closed types, open extra fields), pinned by `test-agent-protocol.js`.
+3. **Streaming** — spinner + settle ✓ (deltas dropped at the adapter).
+4. **Phase-A boundary** — standalone pane ✓; fabric wiring stays Phase B.
 
 ## See also
 
