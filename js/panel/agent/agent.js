@@ -58,6 +58,7 @@ function init(paneId, seed) {
     inputDraft: { text: '', cursor: 0 },
     descriptor: {
       backend: cfg.backend || 'mock',
+      provider: cfg.provider || null,   // pi: --provider (else parsed off a 'provider/model' model)
       model: cfg.model || null,
       label: cfg.label || null,
       sessionId: cfg.sessionId || null,

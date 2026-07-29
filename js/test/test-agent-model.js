@@ -26,15 +26,15 @@ describe('[agent model] init', () => {
     eq(s.transcript, []);
     eq(s.status, { state: 'starting', tokens: null, cost: null });
     eq(s.inputDraft, { text: '', cursor: 0 });
-    eq(s.descriptor, { backend: 'mock', model: null, label: null, sessionId: null });
+    eq(s.descriptor, { backend: 'mock', provider: null, model: null, label: null, sessionId: null });
     eq(s.cap, 1000);
     eq(s.paneId, 'p1');
   });
   it('config seeds the descriptor + cap', () => {
     const s = agent.init('p2', { paneDef: { config: {
-      backend: 'pi', model: 'gpt-x', label: 'helper', sessionId: 'sess-9', cap: 50,
+      backend: 'pi', provider: 'openai', model: 'gpt-x', label: 'helper', sessionId: 'sess-9', cap: 50,
     } } });
-    eq(s.descriptor, { backend: 'pi', model: 'gpt-x', label: 'helper', sessionId: 'sess-9' });
+    eq(s.descriptor, { backend: 'pi', provider: 'openai', model: 'gpt-x', label: 'helper', sessionId: 'sess-9' });
     eq(s.cap, 50);
   });
   it('zero-arg init works (registration singleton seed)', () => {
@@ -183,7 +183,7 @@ describe('[agent model] agent_activate (A4): idempotent start + mode flip', () =
     const [next, cmds] = agent.update({ type: 'agent_activate', selfId: 'agent-7' }, s);
     assert(next === s, 'slice untouched');
     eq(cmds, [
-      { type: 'agent_start', id: 'agent-7', cfg: { backend: 'mock', model: null, label: 'helper', sessionId: null } },
+      { type: 'agent_start', id: 'agent-7', cfg: { backend: 'mock', provider: null, model: null, label: 'helper', sessionId: null } },
       { type: 'msg', msg: { type: 'agent_enter' } },
     ]);
   });

@@ -204,9 +204,10 @@ function refireCmdlineRebuild() {
 
 // Live-agent backend registry: descriptor name → AgentBackend object
 // (js/agent/protocol.js). The effect resolves the name so io/agent.js stays
-// registry-free (it takes the backend OBJECT). 'pi' lands in Slice A5.
+// registry-free (it takes the backend OBJECT).
 function _agentBackend(name) {
   if (name === 'mock') return require('../../agent/backends/mock');
+  if (name === 'pi') return require('../../agent/backends/pi');
   return null;
 }
 
@@ -309,7 +310,9 @@ function installBuiltins() {
       }));
       return;
     }
-    require('../../io/agent').start(eff.id, backend, eff.cfg || {});
+    // cwd: the agent operates on the workspace (streamCommand's projectDir
+    // posture); an explicit cfg.cwd wins.
+    require('../../io/agent').start(eff.id, backend, { cwd: getModel().projectDir, ...(eff.cfg || {}) });
   });
   registerEffect('agent_send', (eff) => {
     require('../../io/agent').send(eff.id, eff.text, eff.opts);
