@@ -320,13 +320,10 @@ function installBuiltins() {
   registerEffect('agent_interrupt', (eff) => {
     require('../../io/agent').interrupt(eff.id);
   });
-  // agent_stop has no reducer producer YET (pane close goes through
-  // io/agent.destroy, quit through stopAll, Esc through agent_interrupt) —
-  // it completes the session-control Cmd channel for the Phase-B surfaces
-  // (a stop-without-close gesture); the wiring tests drive it meanwhile.
-  registerEffect('agent_stop', (eff) => {
-    require('../../io/agent').stop(eff.id);
-  });
+  // (No agent_stop effect: nothing produces it — pane close goes through
+  // io/agent.destroy, quit through stopAll, Esc through agent_interrupt.
+  // A Phase-B stop-without-close gesture re-adds it WITH its producer;
+  // registry entries stay drive-toward-empty.)
 
   // --- Root-reducer Cmds ---
   // Emitted by `runtime.update` branches; run from `dispatch.applyMsg` via

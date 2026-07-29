@@ -133,7 +133,7 @@ function agentInstance() {
 
   section('[agent smoke] x closes an EXITED agent pane (the dead-terminal analog)');
   dispatchMsg(api.wrap('layout', { type: 'focus_set', focus: inst2.paneId }));
-  require('../../dispatch/runtime/effects').runEffects([{ type: 'agent_stop', id: inst2.id }]);
+  agentIo.stop(inst2.id);   // io-level stop (no agent_stop effect — nothing produces one)
   assert(await until(() => inst2.slice.status.state === 'exited'), 'session exited');
   key('x');
   assert(!agentInstance(), 'x removed the dead agent tab');

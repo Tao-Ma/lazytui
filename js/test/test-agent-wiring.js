@@ -73,8 +73,8 @@ const jobFor = (id) => jobs.snapshot().find(j => j.owner && j.owner.agentId === 
   assert(await until(() => s3().status.state === 'idle'), 'interrupted turn still settles');
   eq(s3().transcript.some(l => l.includes('SHOULD NOT FOLD')), false, 'tail never folded');
 
-  section('[wiring] agent_stop: exit folds, job closes, session goes dead');
-  effects.runEffects([{ type: 'agent_stop', id: 'agent-1' }]);
+  section('[wiring] stop (io-level): exit folds, job closes, session goes dead');
+  agentIo.stop('agent-1');
   assert(await until(() => s1().status.state === 'exited'), 'exit folded to status');
   assert(s1().transcript.some(l => l.includes('Session ended (exit 0)')), 'end line in transcript');
   eq([jobFor('agent-1').status, jobFor('agent-1').exitCode], ['exited', 0], 'job closed');
@@ -100,7 +100,7 @@ const jobFor = (id) => jobs.snapshot().find(j => j.owner && j.owner.agentId === 
     const h = agentIo.getSession('nowhere-1').handle;
     return h.queue.length === 0;
   }), 'turn played to nobody, no crash');
-  effects.runEffects([{ type: 'agent_stop', id: 'nowhere-1' }]);
+  agentIo.stop('nowhere-1');
   assert(await until(() => agentIo.getSession('nowhere-1').exited), 'session still closes cleanly');
 
   section('[wiring] agent_event folds THROUGH the free-config gate (review MED)');
