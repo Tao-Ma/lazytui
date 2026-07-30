@@ -92,6 +92,27 @@ describe('[agent-replay] the recorded Msg log reconstructs the pane, effect-free
   });
 });
 
+describe('[agent-replay] throttled streaming deltas rebuild the preview, settle clears it', () => {
+  const W2 = (evt) => ({ kind: 'msg', lane: 'comp', msg: { kind: 'agent-1', msg: { type: 'agent_event', evt } } });
+  const deltas = [
+    W2({ type: 'turn-start' }),
+    W2({ type: 'assistant-delta', text: 'Hel' }),
+    W2({ type: 'assistant-delta', text: 'lo' }),
+  ];
+  it('replaying delta Msgs reconstructs the streaming preview progressively', () => {
+    seed();
+    replay.replayEntries(deltas);
+    eq(slice().streaming, 'Hello', 'the throttled increments re-folded into the preview');
+    eq(slice().transcript, [], 'nothing settled yet');
+  });
+  it('folding the settle on top clears the preview + lands the transcript line', () => {
+    seed();
+    replay.replayEntries([...deltas, W2({ type: 'assistant-message', text: 'Hello' }), W2({ type: 'settled' })]);
+    eq(slice().streaming, '', 'settle cleared the preview');
+    eq(slice().transcript, ['Hello'], 'the settled text is the transcript line');
+  });
+});
+
 describe('[agent-replay] the ring cap replays identically (checkpoints stay small)', () => {
   it('a capped transcript folds to the same last-N under replay', () => {
     seed({ cap: 3 });

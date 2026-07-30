@@ -79,6 +79,21 @@ describe('[agent render] input row', () => {
   });
 });
 
+describe('[agent render] streaming preview', () => {
+  it('the in-flight streaming text renders as a provisional trailing line (dim)', () => {
+    let s = fold([{ type: 'settled' }, { type: 'assistant-message', text: 'done earlier' }]);
+    s = { ...s, streaming: 'now typing…' };
+    const out = plain(draw(s, { h: 12 }));
+    assert(out.includes('done earlier'), 'settled line present');
+    assert(out.includes('now typing…'), 'streaming preview present below it');
+  });
+  it('no streaming → no provisional line', () => {
+    const s = fold([{ type: 'assistant-message', text: 'x' }]);
+    const out = String(draw(s, { h: 12 }));
+    assert(plain(out).includes('x'));
+  });
+});
+
 describe('[agent render] degenerate heights keep status + input (front-truncate)', () => {
   const s = fold([{ type: 'settled' },
                   { type: 'assistant-message', text: 'l1\nl2\nl3' }]);

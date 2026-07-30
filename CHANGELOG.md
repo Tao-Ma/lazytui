@@ -6,6 +6,23 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Live-agent streaming** — an agent's reply now types into the transcript as
+  it arrives (throttled ~10 Hz), instead of appearing all at once on settle.
+- **Agent draft history** — `↑`/`↓` in an agent pane recall previously-sent
+  messages (readline-style; editing a recalled line forks it).
+
+### Changed
+
+- **Jump-to-job lands on the producing tab.** Activating a job in the
+  `<leader> j` overlay now jumps to the tab that produced it (a routed action's
+  output, a terminal, an agent, or the Transcript for unrouted streams) instead
+  of only focusing the content column.
+- Internal: `panel/viewer/` → `panel/content/` (the viewer Component is gone;
+  the dir holds content-slot pane services); the root mouse-selection Msgs
+  `sel_*` → `mouse_sel_*` to disambiguate from the keyboard `select_*` set.
+
 ## [0.6.9] — 2026-07-29
 
 ### Added

@@ -65,6 +65,11 @@ function init(paneId, seed) {
     history: [],
     histIdx: null,
     histStash: '',
+    // In-flight streaming preview (throttled assistant-delta increments); shown
+    // as a provisional trailing line, cleared + replaced by the settled
+    // assistant-message. Separate from the transcript so the ring stays
+    // append-only.
+    streaming: '',
     descriptor: {
       backend: cfg.backend || 'mock',
       provider: cfg.provider || null,   // pi: --provider (else parsed off a 'provider/model' model)
@@ -134,16 +139,29 @@ function _blockLines(text, color, glyph) {
     i === 0 ? `[${color}]${glyph} ${esc(l)}[/]` : `[${color}]  ${esc(l)}[/]`);
 }
 
+/** Clear the in-flight streaming preview, ref-preserving when already empty. */
+function _clearStream(slice) {
+  return slice.streaming ? { ...slice, streaming: '' } : slice;
+}
+
 /** Fold one normalized AgentEvent into the slice. Pure; identity on no-ops
- *  (deltas, unknown types, status that changes nothing). */
+ *  (unknown types, status/thinking-delta that change nothing). */
 function _fold(slice, evt) {
   switch (evt.type) {
     case 'turn-start':
-      return _status(slice, { state: 'thinking' });
+      // Fresh turn — clear any leftover streaming preview + flip to thinking.
+      return _status(_clearStream(slice), { state: 'thinking' });
     case 'assistant-delta':
-      return slice;   // spinner + settle: deltas never touch the model
+      // Throttled streaming (§Streaming): a TEXT increment appends to the
+      // provisional streaming line (rendered below the settled transcript,
+      // replaced by assistant-message on settle). thinking deltas aren't shown
+      // (the status line covers them) → identity.
+      if (typeof evt.text !== 'string' || evt.text === '') return slice;
+      return { ...slice, streaming: (slice.streaming || '') + evt.text };
     case 'assistant-message':
-      return _append(slice, String(evt.text == null ? '' : evt.text).split('\n').map(esc));
+      // The settled turn text appends to the transcript + clears the preview.
+      return _clearStream(
+        _append(slice, String(evt.text == null ? '' : evt.text).split('\n').map(esc)));
     case 'tool-call': {
       // Also drive the spinner (§Streaming "thinking… (tool: …)"): the fold
       // sets state 'tool' + the name HERE, backend-agnostically — no backend
@@ -168,9 +186,11 @@ function _fold(slice, evt) {
       return _status(slice, patch);
     }
     case 'turn-end':
-      return slice;   // state stays until `settled` (queued turns) or the next turn-start
+      // The turn's streaming is done; state stays until `settled` (queued
+      // turns) or the next turn-start. Clear any preview not already settled.
+      return _clearStream(slice);
     case 'settled':
-      return _status(slice, { state: 'idle' });
+      return _status(_clearStream(slice), { state: 'idle' });
     case 'error':
       // _blockLines splits BEFORE esc — a real backend error can be
       // multi-line (pi's no-API-key message is), and an embedded \n inside
@@ -179,7 +199,7 @@ function _fold(slice, evt) {
       return _append(slice, _blockLines(String(evt.message), 'red', '✗'));
     case 'exit': {
       const label = evt.code === null ? '(killed)' : `(exit ${evt.code})`;
-      return _status(_append(slice, [`[yellow]Session ended ${label}.[/]`]), { state: 'exited' });
+      return _status(_append(_clearStream(slice), [`[yellow]Session ended ${label}.[/]`]), { state: 'exited' });
     }
     default:
       return slice;   // io/agent validates; an unknown type here is a no-op, not a crash
@@ -389,12 +409,23 @@ function _slotTitle(panel) {
 
 function render(panel, w, h, slice, opts) {
   const focused = !!(opts && opts.focused);
-  const lines = slice.transcript || [];
+  const settled = slice.transcript || [];
+  const tvH = Math.max(1, h - 4);   // 2 border rows + status + input
+  // Streaming preview: the in-flight assistant text renders as provisional
+  // trailing lines below the settled transcript (dim, replaced by the settled
+  // assistant-message). Bottom-stick to follow the stream when the user is at
+  // the settled bottom; hold their position if they scrolled up.
+  const streamLines = slice.streaming
+    ? slice.streaming.split('\n').map((l) => `[dim]${esc(l)}[/]`) : [];
+  const lines = streamLines.length ? settled.concat(streamLines) : settled;
+  let scroll = slice.scroll || 0;
+  if (streamLines.length && scroll >= Math.max(0, settled.length - tvH)) {
+    scroll = Math.max(0, lines.length - tvH);
+  }
   const sel = (slice.select && slice.select.active) ? slice.select : null;
   const searchDecoration = sel ? null : _searchDecoration(slice, lines, focused);
-  const tvH = Math.max(1, h - 4);   // 2 border rows + status + input
   const args = buildTextView({
-    lines, scroll: slice.scroll, innerH: tvH,
+    lines, scroll, innerH: tvH,
     select: sel, searchDecoration,
     width: w, height: h,
     title: _slotTitle(panel), hotkey: panel.hotkey,

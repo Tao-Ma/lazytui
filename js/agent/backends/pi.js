@@ -13,10 +13,10 @@
  * (stream.js's T24 precedent).
  *
  * Mapping choices beyond the table in docs/live-agent.md:
- * - `message_update` deltas are DROPPED HERE (spinner + settle): folding
- *   per-token events would put every token through dispatch + the WAL for
- *   nothing. A future throttled-delta (metrics-mirror pattern) slots into
- *   this arm.
+ * - `message_update` text deltas are THROTTLED here (~10Hz) into
+ *   `assistant-delta` increments — smooth streaming without a per-token WAL
+ *   (the metrics-mirror pattern, docs/live-agent.md §Streaming). thinking /
+ *   toolcall deltas aren't streamed (the status line covers "thinking…").
  * - Ready signal: Pi emits no "ready" event; the child's 'spawn' event is
  *   the session-open `settled` (stdin buffers writes until then anyway).
  * - Usage: per-turn `message.usage` accumulates on the handle; the session
@@ -47,6 +47,22 @@
 
 const { spawn } = require('child_process');
 const { StringDecoder } = require('string_decoder');
+
+// Streaming throttle: emit at most one assistant-delta per this interval (~10Hz)
+// so a fast token stream becomes smooth-but-bounded transcript updates.
+const STREAM_THROTTLE_MS = 100;
+
+/** Emit the buffered stream increment if the throttle gate is open (or forced),
+ *  clearing the buffer + stamping the emit time. Returns [] when gated/empty. */
+function _streamEmit(h, force) {
+  if (!h.streamBuf) return [];
+  const now = Date.now();
+  if (!force && now - h.streamLastEmit < STREAM_THROTTLE_MS) return [];
+  const text = h.streamBuf;
+  h.streamBuf = '';
+  h.streamLastEmit = now;
+  return [{ type: 'assistant-delta', text }];
+}
 
 /** Build the spawn vector from cfg (exported for tests). */
 function _argv(cfg) {
@@ -86,6 +102,8 @@ function start(cfg) {
     exited: false,
     usage: { tokens: 0, cost: 0 },
     stderrTail: '',
+    streamBuf: '',                   // text_delta pieces buffered since the last throttled emit
+    streamLastEmit: 0,               // Date.now() of the last assistant-delta emit (throttle gate)
   };
   child.once('spawn', () => _emit(h, { type: 'settled' }));   // session open — input-ready
   // stdin 'error' is ASYNC (EPIPE when the child dies with pipe data still
@@ -206,6 +224,10 @@ function _mapPiEvent(h, obj) {
     case 'turn_start':
       return [{ type: 'turn-start' }];
     case 'turn_end': {
+      // Discard any un-emitted stream tail: the settled assistant-message
+      // carries the full text and the fold clears the streaming preview, so a
+      // final sub-throttle increment would be superseded in the same tick.
+      h.streamBuf = '';
       const out = [];
       const text = _assistantText(obj.message);
       if (text) out.push({ type: 'assistant-message', text });
@@ -213,8 +235,21 @@ function _mapPiEvent(h, obj) {
       out.push({ type: 'turn-end' });
       return out;
     }
-    case 'message_update':
-      return [];   // spinner + settle — deltas deliberately dropped (see header)
+    case 'message_update': {
+      // Throttled streaming (docs/live-agent.md §Streaming, the metrics-mirror
+      // pattern): buffer text_delta pieces and emit an `assistant-delta`
+      // INCREMENT at most every STREAM_THROTTLE_MS (~10Hz). Increments (not
+      // accumulated snapshots) keep the WAL linear in message length — the
+      // fold appends them into the transcript's provisional streaming line.
+      // thinking / toolcall deltas aren't streamed to the transcript (the
+      // status line already says "thinking…").
+      const ev = obj.assistantMessageEvent;
+      if (ev && ev.type === 'text_delta' && typeof ev.delta === 'string') {
+        h.streamBuf += ev.delta;
+        return _streamEmit(h, false);
+      }
+      return [];
+    }
     case 'tool_execution_start': {
       const evt = {
         type: 'tool-call',

@@ -19,6 +19,9 @@
  *                 arrives (→ turn_end with no text + agent_settled).
  *   'die'       — exits(1) immediately (a crashing pi; drives the stdin-EPIPE
  *                 regression when a large write chases it into the pipe).
+ *   'stream'    — a turn of text_delta message_updates spread over time (the
+ *                 backend throttle coalesces them to ~10Hz assistant-delta
+ *                 increments), then the settled turn_end.
  *   'mbsplit'   — writes a turn_end record as a BUFFER split INSIDE a
  *                 multi-byte UTF-8 codepoint (the StringDecoder claim).
  *
@@ -82,6 +85,29 @@ function onCommand(cmd) {
         out({ type: 'agent_start' });
         out({ type: 'turn_start' });
         return;   // ...until abort
+      }
+      if (m === 'stream') {
+        // A streaming turn: several text_delta message_updates (spread over
+        // time so the backend's ~10Hz throttle emits multiple increments),
+        // then the settled turn_end. Exercises the throttle + the fold preview.
+        out({ type: 'agent_start' });
+        out({ type: 'turn_start' });
+        const pieces = ['Stream', 'ing ', 'one ', 'token ', 'at ', 'a ', 'time.'];
+        let i = 0;
+        const tick = () => {
+          if (i < pieces.length) {
+            out({ type: 'message_update', assistantMessageEvent: { type: 'text_delta', contentIndex: 0, delta: pieces[i] } });
+            i++;
+            setTimeout(tick, 40);
+          } else {
+            out({ type: 'turn_end', message: { role: 'assistant',
+              content: [{ type: 'text', text: 'Streaming one token at a time.' }],
+              usage: { input: 5, output: 7, cost: { total: 0.002 } } } });
+            out({ type: 'agent_settled' });
+          }
+        };
+        tick();
+        return;
       }
       if (m === 'die') process.exit(1);
       if (m === 'mbsplit') {

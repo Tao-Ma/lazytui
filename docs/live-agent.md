@@ -190,16 +190,28 @@ turns — which is what you want.
 
 ## Streaming — the one thing "foreign" would have bought
 
-Per-token live typing is **optional polish, not structural**. Two model-pure options:
+Per-token live typing is model-pure — no foreign exception. Two options, both shipped:
 
-1. **Spinner + settle** (default) — show a "thinking… (tool: …)" status while a
-   turn runs; fold the settled `assistant-message` when it lands. Zero per-token
-   cost, trivially replayable.
-2. **Throttled delta** — sample `assistant-delta` at ~10 Hz into the transcript's
-   last line via a `tv_set_lines`-style update (the `metrics-mirror` throttle
-   pattern, `PRINCIPLES.md` §12). Smooth-enough typing, still pure TEA.
+1. **Spinner + settle** — a "thinking… (tool: …)" status while a turn runs; the
+   settled `assistant-message` folds when it lands. Zero per-token cost. This is
+   the fallback whenever a backend emits no deltas (a scripted mock turn, a
+   backend without streaming).
+2. **Throttled delta (BUILT, the default when a backend streams)** — the backend
+   adapter coalesces `message_update` text deltas to ~10 Hz `assistant-delta`
+   **increments** (the `metrics-mirror` throttle, `PRINCIPLES.md` §12; the pi
+   backend gates on `STREAM_THROTTLE_MS`). The fold appends each increment to a
+   separate `slice.streaming` field — rendered as a dim **provisional trailing
+   line** below the settled transcript — which `assistant-message` clears and
+   replaces on settle (so the transcript ring stays append-only, one
+   authoritative line per turn). Increments, not accumulated snapshots, keep the
+   WAL **linear** in message length; each is a recorded Msg, so replay rebuilds
+   the preview progressively and smoothly (or, since the preview clears on
+   settle, a checkpoint past the turn simply shows the settled line). thinking /
+   toolcall deltas are not streamed (the status line covers "thinking…").
 
-Neither needs a foreign exception.
+Neither needs a foreign exception. Accepted cost of option 2: ~10 extra small
+Msgs/sec/turn in the WAL between checkpoints — bounded by the throttle + the
+transcript cap, and the price of smooth replay.
 
 ## Session continuity across a restart
 

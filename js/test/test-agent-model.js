@@ -84,10 +84,17 @@ describe('[agent model] a full turn folds to transcript + status', () => {
 
 describe('[agent model] identity preserved on no-ops', () => {
   const idle = fold([{ type: 'settled' }]);
-  it('assistant-delta never touches the model (spinner + settle)', () => {
-    assert(agent.update(ev({ type: 'assistant-delta', text: 'tok' }), idle) === idle);
+  it('a text delta updates the streaming preview, not the transcript', () => {
+    const s = agent.update(ev({ type: 'assistant-delta', text: 'tok' }), idle);
+    assert(s !== idle, 'streaming changed');
+    eq(s.streaming, 'tok');
+    eq(s.transcript, idle.transcript, 'transcript untouched');
   });
-  it('turn-end is a no-op (state holds until settled or next turn-start)', () => {
+  it('a thinking delta is identity (the status line covers thinking)', () => {
+    assert(agent.update(ev({ type: 'assistant-delta', thinking: 'hm' }), idle) === idle);
+    assert(agent.update(ev({ type: 'assistant-delta', text: '' }), idle) === idle, 'empty text too');
+  });
+  it('turn-end is a no-op when nothing is streaming (state holds)', () => {
     assert(agent.update(ev({ type: 'turn-end' }), idle) === idle);
   });
   it('settled when already idle', () => {
@@ -278,6 +285,34 @@ describe('[agent model] agent_input (A4): Enter sends, Esc interrupts-or-leaves'
     s = inp(s, 'pagedown');
     eq(s.scroll, 6);
     assert(inp(s, 'pagedown') === s, 'clamped at bottom = identity');
+  });
+});
+
+describe('[agent model] throttled streaming preview', () => {
+  it('delta increments accumulate into streaming; assistant-message settles + clears it', () => {
+    let s = fold([{ type: 'turn-start' }]);
+    eq(s.streaming, '', 'turn-start clears any prior preview');
+    s = fold([{ type: 'assistant-delta', text: 'Hel' },
+              { type: 'assistant-delta', text: 'lo w' },
+              { type: 'assistant-delta', text: 'orld' }], s);
+    eq(s.streaming, 'Hello world', 'increments appended');
+    eq(s.transcript, [], 'nothing in the transcript yet');
+    s = fold([{ type: 'assistant-message', text: 'Hello world' }], s);
+    eq(s.streaming, '', 'settled message cleared the preview');
+    eq(s.transcript, ['Hello world'], 'the settled text is the authoritative transcript line');
+  });
+  it('turn-start / turn-end / settled / exit all clear a leftover preview', () => {
+    const withStream = fold([{ type: 'assistant-delta', text: 'partial' }]);
+    eq(withStream.streaming, 'partial');
+    for (const closer of ['turn-start', 'turn-end', 'settled', { type: 'exit', code: 0 }]) {
+      const evt = typeof closer === 'string' ? { type: closer } : closer;
+      eq(fold([evt], withStream).streaming, '', `${evt.type} clears the preview`);
+    }
+  });
+  it('a multi-line streamed preview keeps arriving until settle', () => {
+    let s = fold([{ type: 'assistant-delta', text: 'line1\nli' },
+                  { type: 'assistant-delta', text: 'ne2' }]);
+    eq(s.streaming, 'line1\nline2');
   });
 });
 

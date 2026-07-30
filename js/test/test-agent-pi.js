@@ -22,7 +22,7 @@ function fakeHandle() {
   const writes = [];
   return {
     h: { running: false, stopping: false, exited: false,
-         usage: { tokens: 0, cost: 0 },
+         usage: { tokens: 0, cost: 0 }, streamBuf: '', streamLastEmit: 0,
          child: { stdin: { write: (s) => writes.push(s) } } },
     writes,
   };
@@ -71,10 +71,24 @@ describe('[pi] event mapping: lifecycle + turns', () => {
     eq(pi._mapPiEvent(h, { type: 'turn_end', message: { role: 'assistant', content: [] } }),
        [{ type: 'turn-end' }]);
   });
-  it('message_update deltas are dropped (spinner + settle)', () => {
+  it('a text_delta buffers + emits a throttled assistant-delta increment; thinking/other dropped', () => {
     const { h } = fakeHandle();
+    h.streamLastEmit = 0;   // gate open (0 is far in the past)
     eq(pi._mapPiEvent(h, { type: 'message_update',
-      assistantMessageEvent: { type: 'text_delta', delta: 'tok' } }), []);
+      assistantMessageEvent: { type: 'text_delta', delta: 'Hel' } }),
+      [{ type: 'assistant-delta', text: 'Hel' }], 'first delta emits');
+    // Immediately after an emit the gate is closed → the next delta buffers.
+    eq(pi._mapPiEvent(h, { type: 'message_update',
+      assistantMessageEvent: { type: 'text_delta', delta: 'lo' } }), [], 'buffered within the throttle window');
+    eq(h.streamBuf, 'lo', 'the buffered increment is held');
+    // A thinking delta isn't streamed to the transcript.
+    eq(pi._mapPiEvent(h, { type: 'message_update',
+      assistantMessageEvent: { type: 'thinking_delta', delta: 'hm' } }), [], 'thinking not streamed');
+    // turn_end discards the un-emitted tail (assistant-message carries the full text).
+    const te = pi._mapPiEvent(h, { type: 'turn_end', message: { role: 'assistant',
+      content: [{ type: 'text', text: 'Hello' }] } });
+    eq(h.streamBuf, '', 'buffer reset at turn_end');
+    eq(te, [{ type: 'assistant-message', text: 'Hello' }, { type: 'turn-end' }]);
   });
   it('agent_settled → status idle carrying session usage, then settled', () => {
     const { h } = fakeHandle();
@@ -195,20 +209,28 @@ function startFake() {
   assert(await until(() => a.evts.length >= 1), 'ready arrives');
   eq(types(a.evts), ['settled'], 'session-open settled');
 
-  section('[pi e2e] prompt → full echo run, deltas dropped, usage on the idle status');
+  section('[pi e2e] prompt → full echo run, streamed delta, usage on the idle status');
   pi.send(a.h, 'hello', { streamingBehavior: 'steer' });
   assert(await until(() => count(a.evts, 'settled') === 2), 'run settles');
-  eq(types(a.evts), [
-    'settled',
+  // The fixture's echo run emits two synchronous text_deltas; the throttle
+  // emits the first as an increment and folds the tail into the settle, so the
+  // sequence carries assistant-delta(s) before the tool-call. Assert the
+  // stable spine order and read settle facts by TYPE (delta count is timing-
+  // dependent, so it's not pinned to an index).
+  const spine = types(a.evts).filter(t => t !== 'assistant-delta');
+  eq(spine, [
+    'settled',           // session ready
     'status',            // agent_start → thinking
     'turn-start',
     'tool-call', 'tool-result',
     'assistant-message', 'turn-end',
     'status',            // agent_settled → idle + usage
     'settled',
-  ], 'the normalized sequence — NO assistant-delta anywhere');
-  eq(a.evts[5].text, 'pi-echo: hello', 'text parts only (thinking part excluded)');
-  eq(a.evts[7], { type: 'status', state: 'idle', tokens: 15, cost: 0.01 }, 'session usage rides idle');
+  ], 'the spine order (deltas interleave before the tool-call)');
+  assert(count(a.evts, 'assistant-delta') >= 1, 'at least one throttled delta streamed');
+  eq(a.evts.find(e => e.type === 'assistant-message').text, 'pi-echo: hello', 'settled text = text parts only');
+  eq(a.evts.find(e => e.type === 'status' && e.state === 'idle'),
+     { type: 'status', state: 'idle', tokens: 15, cost: 0.01 }, 'session usage rides the idle status');
   allValid(a.evts, 'echo e2e');
 
   section('[pi e2e] framing: \\r\\n + split-chunk partial line + U+2028 inside a string');
@@ -265,6 +287,23 @@ function startFake() {
   assert(await until(() => count(m.evts, 'settled') === 2), 'mbsplit run settles');
   eq(m.evts.find(e => e.type === 'assistant-message').text, 'héllo 多字节 done',
      'the StringDecoder healed the split codepoint (no U+FFFD)');
+
+  section('[pi e2e] streaming: text_deltas arrive as throttled assistant-delta increments');
+  const strm = startFake(); open.push(strm.h);
+  assert(await until(() => count(strm.evts, 'settled') === 1), 'ready');
+  pi.send(strm.h, 'stream');
+  assert(await until(() => count(strm.evts, 'settled') === 2), 'streaming turn settles');
+  const deltas = strm.evts.filter(e => e.type === 'assistant-delta');
+  assert(deltas.length >= 1, `got ${deltas.length} throttled deltas`);
+  assert(deltas.every(d => typeof d.text === 'string' && d.text.length), 'each delta is a non-empty increment');
+  // Increments concatenate toward (a prefix of) the settled text — the throttle
+  // never drops content that isn't superseded by the settle.
+  const streamed = deltas.map(d => d.text).join('');
+  assert('Streaming one token at a time.'.startsWith(streamed) || streamed === '',
+         `increments are a prefix of the settled text (got "${streamed}")`);
+  eq(strm.evts.find(e => e.type === 'assistant-message').text, 'Streaming one token at a time.',
+     'the settled message carries the full text');
+  allValid(strm.evts, 'streaming e2e');
 
   section('[pi e2e] stdin EPIPE (child dies with pipe data pending) cannot crash');
   const k = startFake();
