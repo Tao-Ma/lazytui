@@ -90,19 +90,20 @@ describe('[jobs_activate] full cascade — one Msg, reducer-driven', () => {
     return jobs.register(jobInfo);
   }
 
-  it('stream-routed → closes overlay, focuses viewer (no flat-tab jump — U2c P2)', () => {
+  it('stream-routed → closes overlay, falls back to the content slot when the owner tab is unminted', () => {
     setup({
       kind: 'stream-routed',
       label: 'make-check',
       pid: 1,
-      owner: { tabKey: 'make-check', groupName: 'g', cmd: 'make check' },
+      owner: { tabKey: 'make-check', groupName: 'g', cmd: 'make check' },   // no tabInstId → no jump target
     });
     _activate();
     eq(runtime.getModel().modes.jobsMode, false, 'overlay closed');
-    // U2c P2 / U2e P4 — action output lives in a text-view position-tab now; the flat
-    // action-tab jump is retired. Activating a stream-routed job focuses the CONTENT
-    // SLOT (its column paneId) without a tab jump (jump-to-position-tab is a follow-on).
-    eq(api.getInstanceSlice('layout').focus, 'pane-detail', 'focus on the content slot');
+    // The jump-to-producing-tab path threads {jumpPaneId} only when the owner's
+    // tabInstId resolves to a minted instance; this harness owner has none, so it
+    // falls back to focusing the CONTENT SLOT. The jump itself is pinned by the
+    // '→ producing tab' pure-arm test below.
+    eq(api.getInstanceSlice('layout').focus, 'pane-detail', 'focus on the content slot (fallback)');
   });
 
   it('stream-unrouted → closes overlay, focus moves to viewer; no tab change', () => {
@@ -126,11 +127,11 @@ describe('[jobs_activate] full cascade — one Msg, reducer-driven', () => {
     });
     _activate();
     eq(runtime.getModel().modes.jobsMode, false);
-    // U2d P2 — the PTY's terminal is a `terminal` PANE now, not a viewer content-tab,
-    // so the flat-tab jump + terminal_enter are retired (same treatment as the
-    // stream-routed case above). Jumping to (and entering) the terminal's
-    // position-tab is a follow-on.
-    eq(runtime.getModel().modes.terminalMode, false, 'no content-tab jump → no terminal_enter');
+    // U2d P2 — the PTY's terminal is a `terminal` PANE now. A resolvable ptyId
+    // jumps to (activates + focuses) that terminal pane; this harness owner's
+    // 'g_shell' isn't a minted instance, so it falls back to the content slot.
+    // The jump does NOT auto-enter terminal mode (navigating jobs ≠ typing).
+    eq(runtime.getModel().modes.terminalMode, false, 'jump never auto-enters terminal mode');
   });
 
   it('background → viewer shows info card, no tab switch', () => {
@@ -212,6 +213,24 @@ describe('[jobs_activate] full cascade — one Msg, reducer-driven', () => {
   // activation no longer flat-tab-jumps (action output → a text-view position-tab)
   // and actionTabBuffers is gone. The cross-group currentGroup switch itself is
   // still covered by the preceding case.
+
+  it('→ producing tab: a threaded jump target activates the tab + focuses its column', () => {
+    // The jobs_route EFFECT resolves the owner's tab-instance id to
+    // {jumpPaneId, jumpPoolId}; here we drive the PURE jobs_routed arm with that
+    // payload (as the effect would thread it) and assert the jump cascade —
+    // uniform across stream-routed / pty / agent / unrouted-Transcript.
+    const jobsModal = require('../dispatch/update/modal/jobs');
+    for (const kind of ['stream-routed', 'pty', 'stream-unrouted']) {
+      const [, cmds] = jobsModal.update(runtime.getModel(), {
+        type: 'jobs_routed', job: { kind, owner: {} },
+        jumpPaneId: 'pane-detail', jumpPoolId: 'tv-7',
+      });
+      eq(cmds, [
+        { type: 'msg', msg: { kind: 'layout', msg: { type: 'set_active_tab', paneId: 'pane-detail', tabPoolId: 'tv-7' } } },
+        { type: 'msg', msg: { kind: 'layout', msg: { type: 'focus_set', focus: 'pane-detail' } } },
+      ], `${kind}: activate the producing tab, focus its column`);
+    }
+  });
 
   it('non-jobsMode → activate is a no-op (defensive)', () => {
     _seedModel();

@@ -170,8 +170,11 @@ describe('[B2] cascade coalescing', () => {
       job: { kind: 'stream-unrouted', owner: { groupName: other } }, now: 0 }));
 
     eq(getModel().currentGroup, other, 'the gesture switched group');
-    // U2e P1b — the viewer slot's active tab is Info (kind 'info'), was 'detail'.
-    eq(kindNow(), 'info', 'the gesture moved focus to the content slot (active tab = Info)');
+    // The jump-to-producing-tab follow-on: an unrouted stream's output lives in
+    // the Transcript (a text-view), so activating the job now surfaces THAT tab
+    // (set_active_tab + focus), not just the slot with Info active. The extra
+    // set_active_tab arm rides the same one gesture — coalescing is unaffected.
+    eq(kindNow(), 'text-view', 'the gesture jumped to the Transcript tab (where the unrouted output is)');
     eq(getModel().nav.history.length, before + 1, 'one gesture = exactly one record (coalesced, not per-arm)');
 
     // One back must undo the WHOLE jump (group AND focus), not a half-state.

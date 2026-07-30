@@ -133,17 +133,17 @@ const jobFor = (id) => jobs.snapshot().find(j => j.owner && j.owner.agentId === 
     const [, jcmds] = jobsModal.update(model0, {
       type: 'jobs_routed',
       job: { kind: 'agent', owner: { agentId: 'agent-1' } },
-      agentPaneId: 'col-x', agentPoolId: 'agent-1',
+      jumpPaneId: 'col-x', jumpPoolId: 'agent-1',
     });
     eq(jcmds, [
       { type: 'msg', msg: { kind: 'layout', msg: { type: 'set_active_tab', paneId: 'col-x', tabPoolId: 'agent-1' } } },
       { type: 'msg', msg: { kind: 'layout', msg: { type: 'focus_set', focus: 'col-x' } } },
     ], 'jump cascade: activate the tab, focus the pane');
+    // An agent whose pane is gone (no jump threaded) + no content slot → nothing.
     const [, none] = jobsModal.update(model0, {
       type: 'jobs_routed', job: { kind: 'agent', owner: { agentId: 'ghost' } },
-      agentPaneId: null, agentPoolId: null,
     });
-    eq(none, [], 'an unresolvable owner (disposed pane) emits nothing');
+    eq(none, [], 'an unresolvable agent owner emits nothing');
   }
 
   section('[wiring] stopAll (the cleanup hook) stops every live session');

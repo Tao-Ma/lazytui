@@ -379,12 +379,26 @@ function installBuiltins() {
     const viewerPaneId = route.resolveViewerPaneId();
     const groupName = m.currentGroup;
     const out = { type: 'jobs_routed', job, now: eff.now | 0, viewerPaneId, groupName };
-    // Live-agent job: thread the OWNING pane (owner.agentId == tab-instance
-    // id) so the pure jobs_routed arm can jump to it without a route read.
-    if (job.kind === 'agent' && job.owner && job.owner.agentId) {
-      const inst = route.getInstance(job.owner.agentId);
-      out.agentPaneId = (inst && inst.paneId) || null;
-      out.agentPoolId = require('../../leaves/wm/pane').poolIdOf(job.owner.agentId);
+    // Jump-to-tab: a job that OWNS a position-tab threads its {paneId, poolId}
+    // so the pure jobs_routed arm can set_active_tab + focus without a route
+    // read. The owner field carrying the tab-instance id differs by kind
+    // (agent → agentId, stream-routed → tabInstId, pty → ptyId); a
+    // stream-unrouted job's output lives in the Transcript tab. All resolve to
+    // the SAME {column paneId, tab poolId} the jump needs.
+    const owner = job.owner || {};
+    const jumpInstId = job.kind === 'agent'          ? owner.agentId
+                     : job.kind === 'stream-routed'  ? owner.tabInstId
+                     : job.kind === 'pty'            ? owner.ptyId
+                     : null;
+    if (jumpInstId) {
+      const inst = route.getInstance(jumpInstId);
+      if (inst && inst.paneId) {
+        out.jumpPaneId = inst.paneId;
+        out.jumpPoolId = require('../../leaves/wm/pane').poolIdOf(jumpInstId);
+      }
+    } else if (job.kind === 'stream-unrouted') {
+      const tj = route.resolveTranscriptTab();
+      if (tj) { out.jumpPaneId = tj.paneId; out.jumpPoolId = tj.poolId; }
     }
     require('../control/dispatch').applyMsg(out);
   });

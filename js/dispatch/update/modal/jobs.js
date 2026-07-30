@@ -113,28 +113,23 @@ function update(model, msg) {
       const focusSlot = viewerPaneId
         ? [{ type: 'msg', msg: route.wrap('layout', { type: 'focus_set', focus: viewerPaneId }) }]
         : [];
+      // Jump to the producing position-tab: the jobs_route effect threaded
+      // {jumpPaneId, jumpPoolId} (the column pane + the tab poolId) for any job
+      // that owns a tab — a routed stream's text-view, a pty's terminal pane,
+      // an agent's chat pane, an unrouted stream's Transcript. Make that tab
+      // active + focus its column. Route-read-free (the effect did the reads).
+      const jump = msg.jumpPaneId
+        ? [{ type: 'msg', msg: route.wrap('layout', {
+              type: 'set_active_tab', paneId: msg.jumpPaneId, tabPoolId: msg.jumpPoolId }) },
+           { type: 'msg', msg: route.wrap('layout', { type: 'focus_set', focus: msg.jumpPaneId }) }]
+        : [];
       const cmds = [];
 
-      if (kind === 'stream-routed' || kind === 'stream-unrouted') {
-        // U2c P2 — a stream-routed action's output lives in its own text-view
-        // position-tab now, so the flat-tab jump is retired. Focus the content
-        // slot so activating the job at least surfaces it; jumping to the
-        // producing position-tab is a follow-on.
-        cmds.push(...focusSlot);
-      } else if (kind === 'pty' && owner.ptyId) {
-        // U2d P2 — the PTY's terminal is a `terminal` PANE now; the flat-tab jump +
-        // terminal_enter are retired. Focus the content slot to surface it.
-        cmds.push(...focusSlot);
-      } else if (kind === 'agent') {
-        // Live-agent session: jump to the OWNING pane — make its tab active +
-        // focus it. The jobs_route effect threaded agentPaneId/agentPoolId
-        // (resolved from owner.agentId) so this arm stays route-read-free.
-        if (msg.agentPaneId) {
-          cmds.push({ type: 'msg', msg: route.wrap('layout', {
-            type: 'set_active_tab', paneId: msg.agentPaneId, tabPoolId: msg.agentPoolId }) });
-          cmds.push({ type: 'msg', msg: route.wrap('layout', {
-            type: 'focus_set', focus: msg.agentPaneId }) });
-        }
+      if (kind === 'stream-routed' || kind === 'stream-unrouted' || kind === 'pty' || kind === 'agent') {
+        // Jump to the owning tab when we have one; else fall back to focusing the
+        // content slot (a routed run whose display tab couldn't be minted, or no
+        // Transcript placed). An agent always owns a pane, so it never falls back.
+        cmds.push(...(jump.length ? jump : focusSlot));
       } else if (kind === 'background' || kind === 'tmux') {
         const now = msg.now | 0;
         const ageS = Math.max(0, Math.floor(((job.endedAt || now) - job.startedAt) / 1000));
