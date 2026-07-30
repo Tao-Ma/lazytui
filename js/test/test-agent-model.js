@@ -281,6 +281,66 @@ describe('[agent model] agent_input (A4): Enter sends, Esc interrupts-or-leaves'
   });
 });
 
+describe('[agent model] draft history (up/down recall)', () => {
+  const inp = (s, key, seq) => agent.update({ type: 'agent_input', key, seq: seq === undefined ? key : seq, selfId: 'a1' }, s);
+  function typed(s, str) { for (const ch of str) s = inp(s, ch); return s; }
+  function send(s, str) { s = typed(s, str); const r = inp(s, 'return'); return Array.isArray(r) ? r[0] : r; }
+
+  it('Enter records the sent message; consecutive duplicates are not double-pushed', () => {
+    let s = agent.init('p1', null);
+    s = send(s, 'one'); s = send(s, 'two'); s = send(s, 'two');
+    eq(s.history, ['one', 'two'], 'deduped consecutive');
+  });
+  it('up walks older, holds at the oldest; down walks newer, restores the live line past newest', () => {
+    let s = agent.init('p1', null);
+    s = send(s, 'one'); s = send(s, 'two'); s = send(s, 'three');
+    s = typed(s, 'draft-in-progress');
+    s = inp(s, 'up');   eq(s.inputDraft.text, 'three', 'up → newest');
+    s = inp(s, 'up');   eq(s.inputDraft.text, 'two');
+    s = inp(s, 'up');   eq(s.inputDraft.text, 'one', 'oldest');
+    s = inp(s, 'up');   eq(s.inputDraft.text, 'one', 'up at oldest holds');
+    s = inp(s, 'down'); eq(s.inputDraft.text, 'two');
+    s = inp(s, 'down'); eq(s.inputDraft.text, 'three', 'newest again');
+    s = inp(s, 'down'); eq(s.inputDraft.text, 'draft-in-progress', 'down past newest restores the stashed live line');
+    eq(s.histIdx, null, 'back to the live line (not browsing)');
+    s = inp(s, 'down'); eq(s.inputDraft.text, 'draft-in-progress', 'down at live is a no-op');
+  });
+  it('up on empty history is a no-op', () => {
+    const s = agent.init('p1', null);
+    assert(inp(s, 'up') === s);
+  });
+  it('the recall cursor lands at end-of-line', () => {
+    let s = send(agent.init('p1', null), 'hello');
+    s = inp(s, 'up');
+    eq(s.inputDraft.cursor, 5);
+  });
+  it('editing a recalled line forks to the live line; Enter sends the edit + records it', () => {
+    let s = agent.init('p1', null);
+    s = send(s, 'orig');
+    s = inp(s, 'up');                       // recall 'orig'
+    eq(s.histIdx, 0, 'browsing');
+    s = inp(s, '!');                        // edit → forks
+    eq(s.inputDraft.text, 'orig!');
+    eq(s.histIdx, null, 'content edit dropped the browse cursor');
+    const r = inp(s, 'return');
+    const next = Array.isArray(r) ? r[0] : r;
+    eq(next.history, ['orig', 'orig!'], 'the edited line recorded as new');
+  });
+  it('a cursor-only move keeps browsing (does not fork)', () => {
+    let s = send(agent.init('p1', null), 'abc');
+    s = inp(s, 'up');
+    s = inp(s, 'left');
+    eq(s.histIdx, 0, 'still browsing after a cursor move');
+  });
+  it('history caps oldest-first at 100', () => {
+    let s = agent.init('p1', null);
+    for (let i = 0; i < 105; i++) s = send(s, `m${i}`);
+    eq(s.history.length, 100);
+    eq(s.history[0], 'm5', 'oldest 5 dropped');
+    eq(s.history[99], 'm104');
+  });
+});
+
 describe('[agent model] shared text-view interaction falls through', () => {
   it('viewer_scroll moves the transcript viewport (innerH stamped via msg)', () => {
     let s = agent.init('p1', null);

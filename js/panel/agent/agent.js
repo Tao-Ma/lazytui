@@ -49,6 +49,9 @@ const { getModel } = require('../../model/store');
 // override via config `cap`. Keeps replay checkpoints small.
 const DEFAULT_CAP = 1000;
 
+// Sent-message history cap (draft recall via up/down).
+const HISTORY_CAP = 100;
+
 function init(paneId, seed) {
   const cfg = (seed && seed.paneDef && seed.paneDef.config) || {};
   return {
@@ -56,6 +59,12 @@ function init(paneId, seed) {
     transcript: [],
     status: { state: 'starting', tokens: null, cost: null, tool: null },
     inputDraft: { text: '', cursor: 0 },
+    // Draft history (up/down recall). `history` = sent messages (oldest first);
+    // `histIdx` = the browse position (null = live line, not browsing);
+    // `histStash` = the in-progress line saved when browsing begins.
+    history: [],
+    histIdx: null,
+    histStash: '',
     descriptor: {
       backend: cfg.backend || 'mock',
       provider: cfg.provider || null,   // pi: --provider (else parsed off a 'provider/model' model)
@@ -202,15 +211,42 @@ function _input(slice, msg) {
   if (key === 'return') {
     const text = (d.text || '').trim();
     if (!text) return slice;
-    const next = _append({ ...slice, inputDraft: { text: '', cursor: 0 } },
-                         [`[cyan]› ${esc(text)}[/]`]);
+    // Push to history (skip a consecutive duplicate), cap oldest-first, and
+    // reset the browse cursor.
+    const hist = slice.history || [];
+    const history = hist[hist.length - 1] === text ? hist : [...hist, text].slice(-HISTORY_CAP);
+    const next = _append(
+      { ...slice, inputDraft: { text: '', cursor: 0 }, history, histIdx: null, histStash: '' },
+      [`[cyan]› ${esc(text)}[/]`]);
     return [next, [
       { type: 'agent_start', id: selfId, cfg: { ...slice.descriptor } },
       { type: 'agent_send', id: selfId, text },
     ]];
   }
+  // Draft history — up/down recall previously-sent messages (readline-style).
+  // The in-progress line is stashed on the first Up and restored on Down past
+  // the newest; editing a recalled line forks it back to the live line (below).
+  if (key === 'up' || key === 'down') {
+    const hist = slice.history || [];
+    if (!hist.length) return slice;
+    let idx = slice.histIdx;
+    let stash = slice.histStash || '';
+    if (key === 'up') {
+      if (idx == null) { stash = d.text || ''; idx = hist.length - 1; }   // enter browse from live
+      else if (idx > 0) { idx--; }
+      else return slice;                                                   // at oldest — hold
+    } else {                                                               // down
+      if (idx == null) return slice;                                       // already live
+      if (idx < hist.length - 1) { idx++; }
+      else {                                                               // past newest → restore live
+        return { ...slice, inputDraft: { text: stash, cursor: stash.length }, histIdx: null, histStash: '' };
+      }
+    }
+    const t = hist[idx];
+    return { ...slice, inputDraft: { text: t, cursor: t.length }, histIdx: idx, histStash: stash };
+  }
   // Page keys scroll the transcript while chatting (the draft is one line, so
-  // they're free); plain up/down stay reserved (draft history, later).
+  // they're free).
   if (key === 'pageup' || key === 'pagedown') {
     const innerH = slice.innerH > 0 ? slice.innerH : 1;
     const lines = slice.transcript || [];
@@ -241,7 +277,11 @@ function _input(slice, msg) {
     return slice;
   }
   if (text === d.text && cursor === d.cursor) return slice;
-  return { ...slice, inputDraft: { text, cursor } };
+  const out = { ...slice, inputDraft: { text, cursor } };
+  // A content edit forks a recalled line back to the live line (drop the browse
+  // cursor); a cursor-only move keeps browsing.
+  if (text !== (d.text || '')) { out.histIdx = null; out.histStash = ''; }
+  return out;
 }
 
 function update(msg, slice) {

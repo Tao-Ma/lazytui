@@ -81,6 +81,12 @@ function agentInstance() {
   assert(f.includes('› hi'), 'user line rendered in the transcript');
   assert(f.includes('echo: hi'), 'assistant line rendered');
 
+  section('[agent smoke] up recalls the sent message (draft history, real key path)');
+  key('up');
+  eq(inst.slice.inputDraft.text, 'hi', 'up recalled the last sent message into the draft');
+  key('down');
+  eq(inst.slice.inputDraft.text, '', 'down past newest restored the (empty) live line');
+
   section('[agent smoke] Esc leaves agent mode; keys fall back to the framework');
   key('escape');
   eq(getModel().modes.agentMode, false, 'mode left (idle → exit, not interrupt)');
