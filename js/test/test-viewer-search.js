@@ -7,7 +7,7 @@
  * (kind 'info'), which stores its buffer on `slice.lines` (not the retired
  * `detail.infoLines`). We boot a real seeded content slot (parse-shaped config
  * → initState → per-pane mint) and drive search through the SAME facade
- * (panel/viewer/search) production uses: every wrapper targets
+ * (panel/content/search) production uses: every wrapper targets
  * `resolveTarget('viewer')`, which now resolves to the active `info` instance,
  * so search operates on the info instance's `slice.lines`. The search/match
  * math itself is unchanged. The unrouted-append case ([10]) moved to the
@@ -17,7 +17,7 @@
  */
 'use strict';
 
-const search = require('../panel/viewer/search');
+const search = require('../panel/content/search');
 const ms = require('../leaves/text/search');
 const { describe, it, eq, assert, report } = require('./test-runner');
 const { getModel } = require('../app/runtime');

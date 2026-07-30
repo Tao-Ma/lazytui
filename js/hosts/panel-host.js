@@ -9,7 +9,7 @@
  * static `panel→dispatch` import edges.
  *
  * This is the formalized-injection seam for the SCATTERED synchronous panel
- * writers (viewer/select, viewer/search, content-tab, free-config, files cmd) +
+ * writers (content/select, content/search, content-tab, free-config, files cmd) +
  * api's own refreshAll. Effect handlers (per-call host) and the big
  * dispatch facades (nav-state, commands — per-module injected host) get dispatch
  * a different way; see docs/v0.6.5-dispatch-loop.md "formalize injection".

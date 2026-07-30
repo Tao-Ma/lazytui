@@ -33,7 +33,7 @@ exitCode, jobId }`.
 ## Injected hooks (boot wiring)
 
 Everything `io/terminal.js` needs from higher layers is injected at boot from
-`js/panel/viewer/pty-lifecycle.js#install(host)` (each hook unset = the effect is
+`js/panel/content/pty-lifecycle.js#install(host)` (each hook unset = the effect is
 skipped, so the leaf runs standalone in tests/scripts):
 
 | Setter | Wired to | Purpose |
@@ -87,7 +87,7 @@ node-pty onExit  →  _onSessionExit(id, exitCode)  →  _exitHandler
                                                        = pty-lifecycle.handleExit
 ```
 
-`handleExit` (`js/panel/viewer/pty-lifecycle.js`) resolves the exited session's
+`handleExit` (`js/panel/content/pty-lifecycle.js`) resolves the exited session's
 `terminal` pane via the route registry (`ptyId == the instance id`) and runs
 `_handlePaneExit`:
 - if the user was interacting with this (focused, active) terminal, dispatches

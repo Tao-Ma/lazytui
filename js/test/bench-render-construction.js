@@ -24,7 +24,7 @@ const path = require('path');
 // memoized-cheap — otherwise pre-boot route churn dominates the decorate timings.
 require('./test-runner');
 const sm = require('./smoke/_helpers/smoke');
-const search = require('../panel/viewer/search');
+const search = require('../panel/content/search');
 const matches = require('../leaves/text/search');
 const { parse } = require('../parser/index');
 const { getModel } = require('../app/runtime');

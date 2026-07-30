@@ -8,7 +8,7 @@
  * → initState → per-pane mint) and resolve it via
  * `route.resolveTarget('viewer_info')`. The select-math + highlightLine
  * assertions carry over verbatim once the slice resolves; the impure service
- * layer (panel/viewer/select.js) targets `resolveTarget('viewer')` = the active
+ * layer (panel/content/select.js) targets `resolveTarget('viewer')` = the active
  * info instance, and the keyboard visual-mode state machine flows through the
  * SHARED reducer (leaves/text/text-view-update, ownKind 'info') via
  * dispatchKeyToFocused.
@@ -27,7 +27,7 @@ term.stdout.write = (chunk, ...rest) => {
 };
 
 const reg = require('./_helpers/register');
-const sel = require('../panel/viewer/select');
+const sel = require('../panel/content/select');
 const { describe, it, eq, assert, report } = require('./test-runner');
 const { getModel } = require('../app/runtime');
 const { getInstanceSlice } = require('../panel/api');
@@ -55,7 +55,7 @@ function infoSlice() { return getInstanceSlice(route.resolveTarget('viewer_info'
 
 // (c)-era key-claim adapter: the keyboard visual-mode state machine lives in the
 // focused Component's update now (the info instance's, via the shared tvu),
-// not in panel/viewer/select. `dispatchKeyToFocused` returns true when the
+// not in panel/content/select. `dispatchKeyToFocused` returns true when the
 // focused Component returned the `_claimed` sentinel — the same semantic the
 // retired `detailKey` exposed. Used by the visual-mode section below.
 function detailKey(key, seq) { return dispatchKeyToFocused(key, seq); }

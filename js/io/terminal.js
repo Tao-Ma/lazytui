@@ -27,7 +27,7 @@
  * see model/store.js §Replayability boundary (#D5/#D14).
  *
  * Everything it needs FROM higher layers is injected at boot from
- * panel/viewer/pty-lifecycle.install (each unset = the effect is skipped,
+ * panel/content/pty-lifecycle.install (each unset = the effect is skipped,
  * so the module runs standalone in tests/scripts):
  *   - `setExitHandler(fn)` — the PTY-exit fan-out.
  *   - `setRenderHook(fn)` — repaint after the PTY writes (scheduleOverlay).

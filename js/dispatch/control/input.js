@@ -396,7 +396,7 @@ function _resolveContextAt(mx, my) {
   // Active text selection — either the viewer's rich in-slice selection or the
   // shared per-pane one (docs/pane-selection.md); at most one is active at a
   // time. Feeds the context menu's "Copy selection" / "Send selection to port".
-  const sel = require('../../panel/viewer/select');
+  const sel = require('../../panel/content/select');
   const psel = require('../../panel/select-view');
   const selectionText = sel.isActive() ? (sel.selectedText() || null)
                       : psel.isActive() ? (psel.selectedText() || null)
@@ -466,7 +466,7 @@ function _realizeButtonGesture(intentName, x, y, mx, my) {
 }
 
 // ── Shared per-pane text selection (docs/pane-selection.md) ────────────────
-// The viewer keeps its own rich in-slice selection (panel/viewer/select); every
+// The viewer keeps its own rich in-slice selection (panel/content/select); every
 // OTHER pane uses the shared model.selection, driven from the mouse handler
 // below. A left press ARMS a potential selection (records the anchor); the FIRST
 // motion begins it — so a plain click still selects a row, and only a drag
@@ -620,10 +620,10 @@ function handleMouse(kind, x, y) {
   // Text selection. press → begin; motion (button held) → extend; release →
   // copy to register. Runs ahead of the focus+select loop so a drag extends
   // rather than losing the selection to a focus change. Two backends:
-  //   - VIEWER panes: the rich in-slice selection (panel/viewer/select).
+  //   - VIEWER panes: the rich in-slice selection (panel/content/select).
   //   - every OTHER pane: the shared model.selection (docs/pane-selection.md),
   //     armed on press in the body loop below and begun on the first motion.
-  const sel = require('../../panel/viewer/select');
+  const sel = require('../../panel/content/select');
   const psel = require('../../panel/select-view');
   if (kind === 'motion') {
     if (sel.isActive()) {   // viewer selection (unchanged)

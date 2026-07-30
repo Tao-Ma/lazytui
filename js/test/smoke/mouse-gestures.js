@@ -298,7 +298,7 @@ describe('[5] right-click context menu — copy + dismiss', () => {
   });
 
   it('a viewer drag-selection PERSISTS, and right-click → Copy selection copies it', () => {
-    const sel = require('../../panel/viewer/select');
+    const sel = require('../../panel/content/select');
     const { overlayBox } = require('../../leaves/render/draw');
     sm.bootFresh();
     sm.capture(() => sm.render());
@@ -338,7 +338,7 @@ describe('[5] right-click context menu — copy + dismiss', () => {
     // Regression: settle() used to treat a zero-width click as a 1-char
     // selection — yanking a stray char to the register AND leaving the
     // viewer stuck in visual mode (j/k extend instead of scroll).
-    const sel = require('../../panel/viewer/select');
+    const sel = require('../../panel/content/select');
     sm.bootFresh();
     sm.capture(() => sm.render());
     const d = activeViewerSlice();   // U2e P1b — active viewer instance's buffer

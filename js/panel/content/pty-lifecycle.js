@@ -1,6 +1,6 @@
 /**
- * PTY-exit fan-out — the panel/viewer side effects that fire when a
- * shell session ends.
+ * PTY-exit fan-out — the content-pane (panel/content) side effects that
+ * fire when a shell session ends.
  *
  * Used to live inside `io/terminal.js#_onSessionExit` via lazy-requires
  * up to panel/viewer/tabs, panel/api, render/geometry — a layering

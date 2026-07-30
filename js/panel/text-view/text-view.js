@@ -98,7 +98,7 @@ function augmentMsg(msg, model, slice) {
   return ih > 0 ? { ...msg, innerH: ih } : msg;
 }
 
-// Search decoration for THIS instance's slice (mirror of panel/viewer/search.js
+// Search decoration for THIS instance's slice (mirror of panel/content/search.js
 // decorationFor, resolved against the own slice + focus). Render is impure shell,
 // so the getModel() read of the global detailSearchMode flag is fine. Selection
 // wins over search (same precedence as the viewer).

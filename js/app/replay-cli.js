@@ -25,7 +25,7 @@ function _installRuntime() {
   installBuiltins();
   const { registerComponent } = require('../panel/api');
   for (const comp of require('./components').BUILTIN_COMPONENTS) registerComponent(comp);
-  require('../panel/viewer/pty-lifecycle').install(effectHost());
+  require('../panel/content/pty-lifecycle').install(effectHost());
   // Wire the reconcilers the finalizer needs so a replayed `set_arrange` mints
   // the per-pane slices (the sub-reconcile is skipped under replay, but wire it
   // for parity with the live boot).

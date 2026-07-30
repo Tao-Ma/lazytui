@@ -17,8 +17,8 @@
 
 const { describe, it, eq, report } = require('./test-runner');
 const sm = require('./smoke/_helpers/smoke');
-const search = require('../panel/viewer/search');
-const select = require('../panel/viewer/select');
+const search = require('../panel/content/search');
+const select = require('../panel/content/select');
 const route = require('../panel/route');
 const { getInstanceSlice } = require('../panel/api');
 

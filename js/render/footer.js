@@ -70,7 +70,7 @@ function footerKeys(model) {
   if (md.detailSearchMode) {
     // P1 (viewer-lines selector) — match count derives from the viewer's
     // lines via the ms.matchesFor memo (typing term), not a stored list.
-    const ds = require('../panel/viewer/search');
+    const ds = require('../panel/content/search');
     const ms = require('../leaves/text/search');
     const term = ds.typingText();
     const vslice = getInstanceSlice(_route().resolveTarget('viewer'));

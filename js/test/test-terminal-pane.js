@@ -37,7 +37,7 @@ if (!api.getComponent('text-view')) api.registerComponent(require('../panel/text
 // P1a — wire the PTY-exit fan-out (handleExit) so the clean-exit auto-close test
 // can drive it, exactly as test-spawn-pty-tab does. Harmless for the P0b tests
 // (a killed session's async onExit lands after the instance is disposed → no-op).
-const ptyLifecycle = require('../panel/viewer/pty-lifecycle');
+const ptyLifecycle = require('../panel/content/pty-lifecycle');
 ptyLifecycle.install(require('../dispatch/runtime/effects').effectHost());
 
 function paneAt(focus) {

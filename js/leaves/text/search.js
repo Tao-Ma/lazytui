@@ -93,7 +93,7 @@ function matchesFor(lines, term) {
 
 // --- render-side highlight geometry (mirror of select-core#decorateWindow) ---
 //
-// Moved here from panel/viewer/search.js so the pure text-view renderer can
+// Moved here from panel/content/search.js so the pure text-view renderer can
 // decorate search hits without reaching through the impure viewer facade —
 // making search structurally symmetric with selection (leaves/text/select-core).
 // The impure half (resolve the phase-correct term + the active-match index)

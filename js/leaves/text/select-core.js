@@ -190,7 +190,7 @@ function plainLineWidthFrom(lines, i) {
 }
 
 // Public surface: the two composed entry points plus the two helpers the
-// viewer's own selection layer (panel/viewer/select.js) delegates to now that
+// viewer's own selection layer (panel/content/select.js) delegates to now that
 // both backends share this one geometry core. The column-mapping / range
 // internals stay private (exercised transitively).
 module.exports = { selectedTextFrom, decorateWindow, highlightLine, plainLineWidthFrom };
