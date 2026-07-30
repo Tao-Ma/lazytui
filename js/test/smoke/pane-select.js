@@ -99,7 +99,7 @@ describe('[3] right-click offers "Copy selection" for the active selection', () 
     const items = (getModel().modal.menu.items || []).map((r) => r && r[0]);
     assert(items.some((l) => /Copy selection/.test(l)), `menu has Copy selection: ${JSON.stringify(items)}`);
     require('../../dispatch/control/dispatch').applyMsg({ type: 'menu_close' });
-    require('../../dispatch/control/dispatch').applyMsg({ type: 'sel_clear' });
+    require('../../dispatch/control/dispatch').applyMsg({ type: 'mouse_sel_clear' });
   });
 });
 

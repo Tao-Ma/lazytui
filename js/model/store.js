@@ -236,7 +236,7 @@ function init() {
     // single owner rather than per-slice state. `anchor`/`cursor` are content
     // coords: absolute content-LINE index + DISPLAY column (so a selection stays
     // anchored as a pane scrolls and maps CJK/wide glyphs correctly). Pure model
-    // state, single-writer = the reducer (sel_begin/sel_extend/sel_clear); rides
+    // state, single-writer = the reducer (mouse_sel_begin/mouse_sel_extend/mouse_sel_clear); rides
     // the WAL + replay. The selected TEXT is derived on demand from the owner
     // pane's captured content lines (leaves/text/select-core), never stored.
     selection: { paneId: null, anchor: { line: 0, col: 0 }, cursor: { line: 0, col: 0 }, kind: 'char', active: false },

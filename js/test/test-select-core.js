@@ -1,6 +1,6 @@
 /**
  * Slice 1 — the pure text-selection core (leaves/text/select-core) + the root
- * reducer arms (sel_begin / sel_extend / sel_clear). See docs/pane-selection.md.
+ * reducer arms (mouse_sel_begin / mouse_sel_extend / mouse_sel_clear). See docs/pane-selection.md.
  * Run: node js/test/test-select-core.js
  */
 'use strict';
@@ -96,7 +96,7 @@ describe('[select-core] decorateWindow — selection over a reversed (cursor) ro
 
 describe('[select-core] root reducer arms', () => {
   it('sel_begin sets an active selection owned by the pane', () => {
-    const [m] = update(init(), { type: 'sel_begin', paneId: 'ports-1', line: 2, col: 4 });
+    const [m] = update(init(), { type: 'mouse_sel_begin', paneId: 'ports-1', line: 2, col: 4 });
     eq(m.selection.paneId, 'ports-1');
     eq(m.selection.active, true);
     eq(m.selection.anchor.line, 2);
@@ -104,26 +104,26 @@ describe('[select-core] root reducer arms', () => {
   });
   it('sel_extend moves the cursor, keeps the anchor', () => {
     let m = init();
-    [m] = update(m, { type: 'sel_begin', paneId: 'ports-1', line: 0, col: 0 });
-    [m] = update(m, { type: 'sel_extend', line: 0, col: 6 });
+    [m] = update(m, { type: 'mouse_sel_begin', paneId: 'ports-1', line: 0, col: 0 });
+    [m] = update(m, { type: 'mouse_sel_extend', line: 0, col: 6 });
     eq(m.selection.anchor.col, 0);
     eq(m.selection.cursor.col, 6);
   });
   it('sel_extend is a no-op without an active selection', () => {
     const before = init();
-    const [after] = update(before, { type: 'sel_extend', line: 1, col: 1 });
+    const [after] = update(before, { type: 'mouse_sel_extend', line: 1, col: 1 });
     eq(after, before, 'same model ref — no-op');
   });
   it('sel_clear resets to the inactive, unowned selection', () => {
     let m = init();
-    [m] = update(m, { type: 'sel_begin', paneId: 'ports-1', line: 1, col: 1 });
-    [m] = update(m, { type: 'sel_clear' });
+    [m] = update(m, { type: 'mouse_sel_begin', paneId: 'ports-1', line: 1, col: 1 });
+    [m] = update(m, { type: 'mouse_sel_clear' });
     eq(m.selection.paneId, null);
     eq(m.selection.active, false);
   });
   it('a group switch (reset_group_context) drops a stale selection', () => {
     let m = init();
-    [m] = update(m, { type: 'sel_begin', paneId: 'ports-1', line: 3, col: 2 });
+    [m] = update(m, { type: 'mouse_sel_begin', paneId: 'ports-1', line: 3, col: 2 });
     [m] = update(m, { type: 'reset_group_context', owners: {} });
     eq(m.selection.active, false, 'selection cleared so it cannot highlight the new group\'s content');
     eq(m.selection.paneId, null);

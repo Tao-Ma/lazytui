@@ -397,18 +397,18 @@ function update(model, msg) {
     // Per-pane text selection (docs/pane-selection.md). A single owner (paneId)
     // holds the active selection; the mouse pipeline drives these. Coords are
     // absolute content line + display col — see model.selection in model/store.
-    case 'sel_begin': {
+    case 'mouse_sel_begin': {
       const at = { line: msg.line, col: msg.col };
       return [{ ...model, selection: {
         paneId: msg.paneId, anchor: at, cursor: at, kind: msg.kind || 'char', active: true,
       } }, []];
     }
-    case 'sel_extend': {
+    case 'mouse_sel_extend': {
       const sel = model.selection;
       if (!sel || !sel.active) return [model, []];
       return [{ ...model, selection: { ...sel, cursor: { line: msg.line, col: msg.col } } }, []];
     }
-    case 'sel_clear': {
+    case 'mouse_sel_clear': {
       const sel = model.selection;
       if (!sel || (!sel.active && sel.paneId == null)) return [model, []];
       return [{ ...model, selection: {

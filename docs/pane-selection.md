@@ -29,8 +29,11 @@ correctly (a click on either cell of a 2-wide glyph grabs the whole glyph). The
 selected **text is derived on demand** from the owning pane's captured content
 lines — never stored — so it rides the WAL and replays like any other state.
 
-Single-writer = the reducer, via three arms: `sel_begin` / `sel_extend` /
-`sel_clear` (`dispatch/update/reducer.js`).
+Single-writer = the reducer, via three arms: `mouse_sel_begin` /
+`mouse_sel_extend` / `mouse_sel_clear` (`dispatch/update/reducer.js`). The
+`mouse_sel_` prefix disambiguates the mouse-driven root selection from the
+keyboard visual-mode `select_*` Msgs of the in-slice text-pane selection —
+the two shapes deliberately stay distinct (see the note below).
 
 ## Architecture — three seams, no per-pane render edits
 
@@ -74,6 +77,19 @@ keyboard state machine, which doesn't fit the shared single-owner
 coordinate contract + impure service (read the detail slice's `select`, dispatch
 the `select_*` Msgs, push a commit to the register), ~125 lines with zero
 duplicated geometry — everything computational lives in `select-core`.
+
+> **Deferred — a deeper unification dive.** A follow-on review (2026-07-30)
+> evaluated collapsing the two state shapes into one and concluded the geometry
+> (the real duplication) is already shared, and a full state collapse would
+> *cost* a real property either way — force everything onto the root field and
+> you lose the viewer's per-tab persistence + split a text pane's cohesive
+> interaction state (scroll/search/cursor/select) across two homes; force the
+> viewer onto per-slice-only and you lose the universal zero-per-pane-edit
+> capture that `select-view.js` buys. So the shapes stay distinct **for now**,
+> with the `mouse_sel_*` / `select_*` naming split making the boundary legible.
+> A deeper dive (e.g. a per-pane keyed selection model that unifies both without
+> sacrificing either property) is left as a future investigation, not current
+> debt.
 
 ### On table panes
 
