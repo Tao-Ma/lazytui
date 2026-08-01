@@ -11,14 +11,14 @@
  *
  * Returns null for a ≤1-tab slot (the pane keeps its own title). Impure shell
  * (reads getInstanceSlice('layout') at render+dispatch time) — NOT a pure leaf;
- * the geometry engine it calls (panel/content/tab-strip.buildEntryStrip) is pure.
+ * the geometry engine it calls (leaves/wm/tab-strip.buildEntryStrip) is pure.
  */
 'use strict';
 
 function unifiedSlotStrip(pane) {
   if (!pane || !Array.isArray(pane.tabs)) return null;
   const api = require('./api');
-  const ts = require('./content/tab-strip');
+  const ts = require('../leaves/wm/tab-strip');
   const layout = api.getInstanceSlice('layout');
   const pool = (layout && layout.arrange && layout.arrange.pool) || {};
 

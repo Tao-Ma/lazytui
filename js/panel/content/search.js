@@ -1,21 +1,21 @@
 /**
- * Detail-panel search — vim/less-style `/pattern` with regex-by-default.
+ * Content-pane search — vim/less-style `/pattern` with regex-by-default.
  *
  * Two phases:
  *   1. Typing phase (detailSearchMode === true): user types into a search
  *      buffer at the bottom. Each keystroke re-runs the matcher against the
- *      detail lines (markup-stripped); every match becomes a {line,col,len}
+ *      content lines (markup-stripped); every match becomes a {line,col,len}
  *      record. Forgiving — invalid regex yields an empty match list.
  *   2. Committed phase (detailSearchMode false, search.active true): the
  *      typing overlay is gone; matches stay highlighted; `n`/`N` cycle
  *      through them; `Esc` clears the committed search.
  *
  * The typing-phase TRANSFORMS (matcher + keystroke/nav/commit/cancel) live in
- * the pure leaf js/leaves/search.js, called from the detail Component's
- * update. This module is the FACADE: thin wrappers binding the leaf for
- * non-reducer callers (select.js committed-phase n/N, tests), plus the
- * render-side highlight (decorateLines) which reads the detail slice's
- * `search`.
+ * the pure leaf js/leaves/text/search.js, driven from the shared text-view
+ * reducer (leaves/text/text-view-update). This module is the FACADE: thin
+ * wrappers binding the leaf for non-reducer callers (footer, panel-host,
+ * tests), plus the render-side highlight (decorateLines) which reads the
+ * content instance's `slice.search`.
  *
  * Regex flavor: JS RegExp with `gi` flags. Matches are display columns.
  */

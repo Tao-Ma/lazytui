@@ -10,7 +10,7 @@
  */
 'use strict';
 
-const { esc, visibleLen } = require('../../leaves/text/ansi');
+const { esc, visibleLen } = require('../text/ansi');
 
 /**
  * Build a strip from tagged ENTRIES — the geometry engine behind the multi-tab

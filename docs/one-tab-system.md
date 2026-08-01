@@ -295,7 +295,8 @@ separate phase.
 `slice.contentTabs`, `slice.tabState`-as-viewer-special, `slice.ephemeralTerminals`,
 `slice.actionTabBuffers` / `viewerStreamBuffer` routing, and the viewer-specific
 tab-kind machinery in `leaves/wm/pane-tabs.js` (the pure strip-geometry engine
-`panel/viewer/tab-strip.js` is retained and now drives every pane's slot strip).
+survives as `leaves/wm/tab-strip.js` — re-homed from `panel/viewer/` via
+`panel/content/` — and now drives every pane's slot strip).
 The viewer stops being a god-object; there is one tab concept and one strip.
 
 The selection collapse (D4) landed **partially** in this arc: keyboard
