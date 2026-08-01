@@ -38,6 +38,13 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   versions (the released `sel_*` of v0.6.8–v0.6.9, and the interim
   `mouse_sel_*` rename) no longer fold.
 
+### Fixed
+
+- Spawn/background launch confirmations and cmdline outcomes (`:save-layout`,
+  `:open` errors, recording start/stop, …) appear in the Transcript again —
+  the plumbing was dropped by the v0.6.8 tab unification and the lines were
+  silently discarded since.
+
 ## [0.6.9] — 2026-07-29
 
 ### Added
