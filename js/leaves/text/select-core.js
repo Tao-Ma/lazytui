@@ -189,8 +189,49 @@ function plainLineWidthFrom(lines, i) {
   return displayWidth(plainLineAt(lines, i));
 }
 
-// Public surface: the two composed entry points plus the two helpers the
-// viewer's own selection layer (panel/content/select.js) delegates to now that
-// both backends share this one geometry core. The column-mapping / range
-// internals stay private (exercised transitively).
-module.exports = { selectedTextFrom, decorateWindow, highlightLine, plainLineWidthFrom };
+/**
+ * The pure selection-STATE arms — sel-in/sel-out for the three Msgs every
+ * selection backend shares (`select_begin` / `select_extend` / `select_cancel`).
+ * One home for the state transitions, so the content panes' reducer
+ * (leaves/text/text-view-update) and the generic per-pane fallback drive the
+ * exact same machine; callers wrap the result back onto their slice.
+ *
+ * `linesLen` is the clamp bound: content panes pass their buffer length (line
+ * clamped to [0, linesLen-1]); callers without a buffer omit it (col/line only
+ * floored at 0 — the geometry above tolerates past-the-end coords). Identity-
+ * preserving: an arm that changes nothing returns `sel` unchanged, so callers
+ * can skip the slice write. Returns `undefined` for any other Msg type.
+ */
+function reduceSelect(msg, sel, linesLen) {
+  const clampLine = (line) => {
+    const l = Math.max(0, line | 0);
+    if (linesLen === undefined) return l;
+    return linesLen === 0 ? 0 : Math.min(linesLen - 1, l);
+  };
+  switch (msg.type) {
+    case 'select_begin': {
+      const at = { line: clampLine(msg.line), col: Math.max(0, msg.col | 0) };
+      return {
+        active: true,
+        kind: msg.kind === 'line' ? 'line' : 'char',
+        anchor: at,
+        cursor: { ...at },
+      };
+    }
+    case 'select_extend': {
+      if (!sel || !sel.active) return sel;
+      return { ...sel, cursor: { line: clampLine(msg.line), col: Math.max(0, msg.col | 0) } };
+    }
+    case 'select_cancel':
+      if (!sel || !sel.active) return sel;
+      return { ...sel, active: false };
+  }
+  return undefined;
+}
+
+// Public surface: the composed entry points, the helpers the content panes'
+// selection layer delegates to, and the shared state arms (reduceSelect) —
+// both selection drivers (content-pane reducer + generic per-pane fallback)
+// share this one geometry + state core. The column-mapping / range internals
+// stay private (exercised transitively).
+module.exports = { selectedTextFrom, decorateWindow, highlightLine, plainLineWidthFrom, reduceSelect };

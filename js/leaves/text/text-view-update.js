@@ -27,20 +27,11 @@ const { stripMarkup, charWidth } = require('./ansi');
 // Effective viewport rows; pre-first-render fallback is 1 (see viewer.js FIX-2).
 function _innerH(slice) { return slice.innerH > 0 ? slice.innerH : 1; }
 
+// Begin via the shared state arms (select-core.reduceSelect); the content-pane
+// extra is stamping slice.cursor onto the anchor so keyboard nav lands there.
 function _beginSelect(slice, line, col, kind, lines) {
-  const n = lines.length;
-  const l = n === 0 ? 0 : Math.max(0, Math.min(n - 1, line | 0));
-  const c = Math.max(0, col | 0);
-  return {
-    ...slice,
-    select: {
-      active: true,
-      kind: kind === 'line' ? 'line' : 'char',
-      anchor: { line: l, col: c },
-      cursor: { line: l, col: c },
-    },
-    cursor: { line: l, col: c },
-  };
+  const select = sc.reduceSelect({ type: 'select_begin', line, col, kind }, slice.select, lines.length);
+  return { ...slice, select, cursor: { ...select.anchor } };
 }
 
 function _setCursor(slice, line, col, extend) {
@@ -162,14 +153,13 @@ function reduce(msg, slice, lines, ownKind) {
     case 'select_begin':
       return _beginSelect(slice, msg.line, msg.col, msg.kind, lines);
     case 'select_extend': {
-      if (!slice.select || !slice.select.active) return slice;
-      const n = lines.length;
-      const l = n === 0 ? 0 : Math.max(0, Math.min(n - 1, msg.line | 0));
-      return { ...slice, select: { ...slice.select, cursor: { line: l, col: Math.max(0, msg.col | 0) } } };
+      const next = sc.reduceSelect(msg, slice.select, lines.length);
+      return next === slice.select ? slice : { ...slice, select: next };
     }
-    case 'select_cancel':
-      if (!slice.select) return slice;
-      return { ...slice, select: { ...slice.select, active: false } };
+    case 'select_cancel': {
+      const next = sc.reduceSelect(msg, slice.select);
+      return next === slice.select ? slice : { ...slice, select: next };
+    }
     case 'select_set_cursor':
       return _setCursor(slice, msg.line, msg.col, msg.extend);
     case 'select_scroll_view':
