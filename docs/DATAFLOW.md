@@ -17,7 +17,7 @@ greppable.
         │
         ▼
 ════════════════════════════ DISPATCH ══════════════════════════════
-   handleKey / handleMouse                (js/dispatch/control/dispatch.js)
+   handleKey / handleMouse      (js/dispatch/control/{dispatch,input}.js)
         │
         ├──── modeChain active? ──yes──→ mode handler ──→ applyMsg
         │     (filter, menu, cmdline,                       │
@@ -38,6 +38,7 @@ greppable.
         (button/wheel; YAML `mouse:`)     │    ▼            │
                                           │  intent.realize │
                                           │  (js/dispatch/  │
+                                          │   control/      │
                                           │   intent.js —   │
                                           │   the key/mouse │
                                           │   intent seam)  │
@@ -70,12 +71,13 @@ greppable.
      msg           → applyMsg / dispatchMsg routed by msg.kind
                                        (cycle cap @ 32 deep; T28)
      render        → scheduleRender (50ms debounce)
-     show_selected_info
-     do_run / run_action
+     show_selected_info / open_doc_tab
+     do_run / run_action / jobs_route / unrouted_preempt_and_run
      dockerFetch / dockerExec / dockerShell
      loadDir / openFile
      cmdline_rebuild / cmdline_run / cmdline_clear
-     destroy_pty_session / emit_osc52 / copy_commit
+     emit_osc52 / copy_commit / select_cancel_all
+     agent_start / agent_send / agent_interrupt
      force_full_repaint / run_binding / menu_action
      nav_capture / nav_restore       (jumplist push/restore; the "read-then-
                                        emit-a-recorded-Msg" pattern, v0.6.7)
@@ -89,25 +91,32 @@ greppable.
         ▼
 ═══════════════════════════ STATE ══════════════════════════════════
    Root model (js/model/store.js, _modelRef.current; re-exported from app/runtime.js)
-     modes (14 modal flags, incl. jobsMode for the Running overlay)
+     modes (18 modal flags, incl. jobsMode for the Running overlay)
      modal.{ filter, prompt, menu, confirm, copy, registerPopup,
-             cmdline, jobs }
+             cmdline, jobs, diagLog, fabricField }
      modal.continuation        (E14: the serializable Cmd DESCRIPTOR a modal
                                 emits on a successful dismissal — never a closure)
      nav { history[], cursor, cap }   (the jumplist ring, v0.6.7)
-     currentGroup, config, register, prefixSeq, focused, now, theme, ...
+     currentGroup, config, register, prefixSeq, focused, now, theme,
+     fabric, ...
      history / diagLog / jobs  (discrete live stores mirrored in via the
                                 store-mirror Sub, FIX-1 — render reads these)
      metrics[topic]            (continuous hub time-series mirrored in via the
                                 throttled metrics-mirror Sub, Finding B — the
                                 stats graph reads this, not the hub live)
 
-   Component slices (js/panel/route.js, nested instance store)
-     layout         focus, viewMode, arrange, freeConfig
+   Component slices (js/panel/route.js, nested instance store —
+                     one instance per placed TAB: every tab is a
+                     position-tab instance, one-tab-system.md U2)
+     layout         focus, viewMode, arrange, freeConfig, lastViewerTab, dims
                     (no paneBounds field — pane geometry is pure-derived, #D7)
-     detail         lines, scroll, tab, search, select, cursor,
-                    contentTabs, ephemeralTerminals, actionTabBuffers,
-                    viewerStreamBuffer, viewerOverride, tabState
+     content tabs   the content slot (role 'content', stable id `detail`)
+                    hosts per-tab minted instances (U2e/U2f):
+                      info / text-view  lines, scroll, search, select,
+                                        cursor, innerH
+                      terminal          paneId, cmd, label (the PTY buffer
+                                        is the io/terminal island, #D14)
+                      agent             transcript, status, inputDraft, …
      groups         list, expanded:Set, tab
      docker         status, stats, inFlight
      files          per-panel-type browsers
@@ -132,14 +141,17 @@ greppable.
         no slice write)
         (pure — render dispatches nothing; the keep-in-view scroll
         clamp runs in the post-dispatch finalizer, see Notes)
-     2. for each panel in arrange:
+     2. composeRects: for each panel in arrange,
           _safeRender(panel, w, h)
-            (resolves comp + slice internally; P5.7)
-     3. renderTerminalOverlay     (PTY buffer per-row diff)
-     4. renderFooter, renderRegisterStrip
-     5. modal overlays (cmdline, menu, confirm, prompt, ...)
-     6. paintColumns              (per-cell diff vs _prevRows, cell-grid.js;
-                                    LAZYTUI_CELL_DIFF=0 = whole-row diff)
+            (renderer resolved by the pane's ACTIVE-tab instance kind,
+             U2f; slice via sliceForPane)
+     3. painter.composeRows + paintFrame
+                                  (per-cell diff vs _frame.prevRows,
+                                    cell-grid.js; LAZYTUI_CELL_DIFF=0 =
+                                    whole-row diff)
+     4. renderTerminalOverlay     (PTY buffer per-row diff)
+     5. renderFooter
+     6. modal overlays (cmdline, menu, confirm, prompt, ...)
         │
         ▼
    stdout (ANSI, diff'd writes only)
@@ -154,8 +166,9 @@ greppable.
 The spine is *cyclic at the effects layer*: the `msg` Cmd re-enters
 `applyMsg` / `dispatchMsg` (routed by payload — wrapped Msg →
 Component fan-out, flat → root reducer), so one Msg can ripple into
-a multi-step cascade (e.g. groups switch → reset_group_context →
-3× set_cursor + multisel_clear + clear_filter + viewer_reset_chrome).
+a multi-step cascade (e.g. groups switch → viewer_reset_chrome +
+reset_group_context → select_cancel_all + per-panel set_cursor /
+multisel_clear / clear_filter).
 T28 caps depth at 32 around the `msg` Cmd handler specifically —
 direct `applyMsg`/`dispatchMsg` calls from async producers (PTY
 onExit, stream onData, a declared Sub's callback — `interval` /
@@ -189,17 +202,22 @@ writes the root model; only each Component's own `update` writes its
 slice. Cross-layer writes have a Msg channel (the `msg` Cmd — wrapped
 payload fans out to a Component, flat payload re-enters the root
 reducer) — no path where module X writes layer Y's state directly.
+(One framework-level writer shares the Component spine: a `select_*`
+Msg a Component leaves unclaimed gets the shared pure selection
+transition applied to that instance's slice by the loop's generic
+fallback — `dispatch/runtime/loop.js#_selectFallback`,
+docs/pane-selection.md — still exactly one write per dispatch.)
 Render writes NO slice state at all; every former render-side write
 is now retired:
 
   RETIRED render-side writes (blessed-exceptions arc) — render is now a
   pure reader of these:
-  - `viewer.slice.tabBounds` — was written by the viewer's `detailTitle`
-    (tab-bar hit-test cache). Retired in A.3 (2026-06-14): now
-    compute-on-read via `viewer.tabBoundsFor`, a pure
-    `(slice, model, hotkey) → bounds` projection the input layer
-    recomputes on demand. render() builds the strip only for the title
-    and writes nothing; `slice.tabBounds` has no writer or reader.
+  - `viewer.slice.tabBounds` — was written by the then-viewer's title
+    renderer (tab-bar hit-test cache). Retired in A.3 (2026-06-14) as
+    compute-on-read; the strip itself is the SLOT strip now (U2f — tabs
+    are position-tabs) and the input layer still recomputes its geometry
+    on demand (`panel/slot-strip.js#unifiedSlotStrip`), so render builds
+    the strip only for the title and writes nothing.
   - `layout.paneBounds` — was written by each render-mode; now a PURE
     DERIVED value (Phase A.2). `geometry.boundsFor`/`visibleBoundsFor`
     compute it from `(arrange, dims, viewMode, focus, halfView)` via the
@@ -207,11 +225,13 @@ is now retired:
     `paneBounds` field at all (#D7 2026-06-18 deleted it); the accessors
     honor a test-only `slice.paneBounds` override when a unit fixture injects
     one (to keep hit-test-math tests decoupled from layout-math).
-  - viewer `innerH` — was a direct `setInstanceSlice` from `render()`; A.1 moved
-    it to the post-dispatch finalizer, then **v0.6.6 FIX-2 moved it again to the
-    viewer's OWN reducer**: `augmentMsg` stamps `msg.innerH` (the pane's committed
-    viewport height) onto each viewer Msg and the reducer commits it. No outside
-    writer remains — **blessed-exception B is retired** (`docs/v0.6.6.md`).
+  - content-pane `innerH` — was a direct `setInstanceSlice` from `render()`; A.1
+    moved it to the post-dispatch finalizer, then **v0.6.6 FIX-2 moved it again
+    to the pane's OWN reducer**: `augmentMsg` (today: info / text-view / agent,
+    via the shared `panel/pane-viewport.js#paneInnerH`) stamps `msg.innerH` (the
+    pane's committed viewport height) onto each Msg and the reducer commits it.
+    No outside writer remains — **blessed-exception B is retired**
+    (`docs/v0.6.6.md`).
   - `setImmediate(terminal_exit)` from `renderTerminalOverlay` — retired
     v0.6.3 P5.1; PTY exit is event-driven from `pty-lifecycle.handleExit`.
 
@@ -233,111 +253,53 @@ per keystroke at the tail of `dispatch.handleKey`. The 50 ms
 `scheduleRender` debounce only fires for *async* producers (streamed
 action output, docker poll, refresh ticks) so they coalesce bursts.
 
-**Routed stream Msgs.** `stream_start { header, tabKey?, groupName? }`
-and `viewer_append { line, tabKey?, groupName? }` (+ bulk
-`viewer_append_lines`) carry an optional routing key. With
-`{tabKey, groupName}` set, the viewer reducer writes to
-`slice.actionTabBuffers[groupName][tabKey].lines`; the displayed
-lines DERIVE from the active tab's source via `pane-tabs.viewerLines`
-(v0.6.4 viewer-lines selector — the stored `slice.lines` mirror is
-deleted; render, dispatch-side readers, and the viewer's update
-boundary all call the projection). `stream_start`'s
-routed path additionally auto-jumps `slice.tab` to the action's index,
-emits `terminal_exit` so `terminalMode` doesn't survive the jump,
-clears `slice.viewerOverride` (B3 — stream takeover dismisses any
-discrete-doc override), drops the matching `tabState` entry (R4 —
-buffer reset invalidates the captured search.matches / select
-references on the old buffer), and resets `slice.{search, select,
-cursor}` for the auto-jump landing (R4 — user is now viewing the
-fresh buffer).
+**Routed action output — a minted `text-view` tab (U2c).** Running a
+`tab:true` action mints (or reuses) a `text-view` position-tab in the
+content slot (`action-runner.ensureActionTab`; poolId
+`tv-act-<group>-<key>`, reuse hint `{origin:'action', group, key}`)
+and streams into THAT instance by id: `tv_stream_start { header }`
+reseeds the buffer + view state on a re-run, `tv_append { line }` (the
+per-line hot path) and bulk `tv_append_lines { lines }` append. The
+instance owns its own buffer and scroll — bottom-stick lives in its
+`update` (at-bottom follows the tail; a scrolled-up reader is not
+yanked down) — so off-tab streaming needs no routing bundle, and the
+tab persists across group switches. Concurrency/preempt is keyed by
+`slotKey` (a per-action id, separate from the display target) in
+`stream.js`'s proc map (`procs` by jobId + `slotIndex` by slot):
+distinct slots run side-by-side; a same-slot re-run preempts silently.
 
-**Unrouted accumulator (v0.6.2).** Without `{tabKey, groupName}`,
-streams flow into `slice.viewerStreamBuffer` (a singleton ring
-buffer, cap 1000) and the viewer's display home is the dedicated
-**Transcript** tab at strip idx 1 (between Info and per-group
-action tabs). The displayed lines derive from the buffer when on
-Transcript; off-Transcript appends silently grow it. `stream_start`'s unrouted
-auto-jump to Transcript also clears `viewerOverride` (B3); already-on-
-Transcript appends preserve any pre-existing override (no transition).
-`tab_switch` to Transcript restores from buffer with bottom-pin
-scroll (empty → `[dim](no transcript yet)[/]` placeholder).
-Spawn-launch and cmdline-verb status messages join the same buffer
-via `appendViewerLines` (`panel/nav-state.js`; re-exported from `app/state.js`).
+**Unrouted streams — the Transcript tab.** Without a routed target,
+streams flow to the content slot's dedicated **Transcript** tab — a
+`text-view` instance seeded into the slot when the arrange is built
+(`arrange.seedContentPane`, pool hint `'transcript'`), resolved via
+`route.resolveTarget('viewer_transcript')`
+— using the
+same `tv_*` Msgs (buffer uncapped). `streamCommand` then switches the
+slot's active tab to it (`route.resolveTranscriptTab` → a layout
+`set_active_tab`), preserving the v0.6.7 auto-jump so the user sees
+the new stream. The unrouted slot is a singleton: a same-label re-run
+preempts silently; a different-label unrouted run opens a confirm
+overlay (default reject, via the `unrouted_preempt_and_run` Cmd) to
+protect the live transcript. Stream-end footers (`Press Enter to run
+again.`) are stamped via batched `tv_append_lines` for atomic reducer
+passes. Ephemeral status lines (spawn/background launch
+confirmations, cmdline-verb outcomes) join the same transcript via
+`appendViewerLines` (`panel/nav-state.js`) — appended with
+`tv_append_lines`, no tab switch, no focus steal.
 
-Per-action buffers and the Transcript buffer survive `tab_switch`;
-producer lifetime is decoupled from tab visibility. `streamCommand`
-maintains a per-slot proc map (`procs.set(jobId, ctx)` keyed by
-`tabKey || 'unrouted'`) — concurrent routed streams across distinct
-slots run side-by-side. Same-slot routed re-runs preempt silently;
-cross-label unrouted preempts open a confirm overlay (default
-reject) to protect the live transcript. Stream-end footers
-(`Press Enter to run again.`) are stamped via batched
-`viewer_append_lines` for atomic reducer passes.
-
-**Per-tab view state (T3).** `slice.{scroll, search, select, cursor}`
-are the active-tab live view; their off-tab persistence lives in
-`slice.tabState`, keyed by stable identity (`'info'`, `'transcript'`,
-`'<group>:action:<key>'`, `'<group>:terminal:<key>'`,
-`'<group>:content:<key>'` — resolved via the canonical
-`pane-tabs.resolveTabKey` (N1 — single source of truth, called by
-both the finalizer's leaving capture and the inbound-restore arms;
-viewer.js's `_activeTabKey` is a thin delegate). Per-group kinds
-carry the group prefix (B4) so two groups sharing an action name
-don't collide; Info / Transcript stay unprefixed (Info is
-per-focus, Transcript is the singleton accumulator). String keys
-outlive numeric idx: adding/removing a content tab renumbers the
-strip but leaves stored entries correctly addressed.
-
-A consequence of the unprefixed Info / Transcript keys: their saved
-view state is global, not per-group. The user's last-seen Info
-scroll is MRU across groups — switching to group B, scrolling
-Info, switching back to group A → Info's scroll is B's, not A's.
-This matches the "Info is per-focus" framing (the displayed
-content already depends on the focused Navigator's item, which
-changes across groups). If per-group Info bookkeeping is wanted
-later, prefix the key the same way per-group kinds do.
-
-*Capture (leaving).* The viewer's finalizer (`_withDerivedFields`)
-is the single sync point. Post-reducer, when `next.tab !==
-originalSlice.tab`, the leaving tab's `{scroll, bottomSticky, search,
-select, cursor}` is captured into `tabState[fromKey]`. Two
-carve-outs:
-  - Skip when `originalSlice.viewerOverride` was active (B2):
-    override-bound view state is per-doc, not per-tab — capturing
-    it would clobber the pre-override saved state.
-  - Skip when the leaving tab was REMOVED in this same Msg (R5):
-    `removeContent` / `removeEphemeral` drop the matching
-    `tabState` entry and suppress the would-be re-capture (the
-    finalizer checks `_tabKeyExistsIn(next, model, fromKey)` against
-    next's content/ephemeral stores).
-
-*Restore (entering).* Three reducer arms handle restore depending
-on the kind of transition:
-  - `pane-tabs.tab_switch` (user click / `tab_cycle`) — full
-    kind-specific cascade: restore `tabState[toKey]`, clear
-    `viewerOverride`, emit `terminal_exit`, handle `bottomSticky`
-    tail-tracking for live-stream tabs.
-  - `viewer.viewer_set_tab` (producer-initiated set-tab; history
-    replay, docker pre-stream) — restore `tabState[toKey]` minus
-    the cascade side effects. Skipped when `slice.viewerOverride`
-    is active (the override owns the view state; restoring
-    `tabState['info'].scroll` over the override's committed
-    `scroll: 0` would clobber the producer's setup).
-  - `viewer.viewer_show_info` (navSelect cascade) — restore
-    `tabState['info']` when transitioning to Info from another
-    tab; within-Info navSelect resets scroll to 0 (new item, fresh
-    content) without consulting `tabState`.
-
-*Override hygiene.* `slice.viewerOverride` clears on every transition
-that's "user-dismiss or producer-takeover": `tab_switch` (T2c),
-`stream_start` auto-jump routed + unrouted (B3), `viewer_reset_chrome`
-group switch (B3). It does NOT clear on `viewer_set_tab` (producer
-just set override + tab together), `viewer_set_content` itself
-(it's the override-writer), or in branches that don't transition
-(cross-group `stream_start`, already-on-Transcript unrouted append).
-
-Per-Msg mirrors are *not* maintained — lazy persistence, single
-sync point per concern, identity-preserving.
+**Per-tab view state — per-instance (U2).** Every tab is a
+position-tab instance, so per-tab view state needs no machinery:
+`slice.{scroll, search, select, cursor}` live on each tab's OWN
+instance slice, and switching tabs switches instances — persistence
+across switches is free, by construction (this is also what makes
+selection per-tab; docs/pane-selection.md). The v0.6.2 "T3" system
+this section used to describe — `slice.tabState` keyed by resolved tab
+identity, a finalizer FROM-capture, per-arm restores, `viewerOverride`
+hygiene — was the workaround for ONE viewer slice serving many content
+tabs; it retired with the viewer in U2f (docs/one-tab-system.md). The
+generic `leaves/wm/tab-state.js` store survives as a pure leaf
+(reachable via tab-container's `perTabState`), but no production pane
+needs it today.
 
 **See also.**
 - `docs/PRINCIPLES.md` §12 — the Component discipline rules.

@@ -273,11 +273,13 @@ overlay-subsystem reads, called out at the end):
   keep-in-view scroll clamp likewise no longer rides `calcLayout()`: it runs
   in the post-dispatch finalizer and routes through a `set_scroll` Msg
   (resize-as-Msg arc), so it is a dispatch-time single-writer update, not a
-  render-side write. (History: `docs/history/v0.5-layering.md`.) The viewer's
+  render-side write. (History: `docs/history/v0.5-layering.md`.) A content pane's
   `innerH` (the viewport height its reducer reads for scroll/cursor clamps) is
-  likewise no longer an outside-writer field: `viewer.augmentMsg` threads
-  `msg.innerH` onto each viewer Msg and the viewer's own reducer commits it
-  (v0.6.6 FIX-2 — retired blessed-exception B, the finalizer's same-slice write).
+  likewise no longer an outside-writer field: each content pane's `augmentMsg`
+  (info / text-view / agent, via the shared `panel/pane-viewport.js#paneInnerH`)
+  threads `msg.innerH` onto each Msg and the pane's own reducer commits it
+  (v0.6.6 FIX-2, on the then-viewer — retired blessed-exception B, the
+  finalizer's same-slice write).
 - **Hub subscriptions** are DECLARED + RECONCILED — canonical TEA
   `subscriptions : Model → Sub` (#D13). A Component exports a pure
   `subscriptions(paneDef, model) → [{topic, window}]`; the framework
@@ -372,7 +374,7 @@ Every panel is a **Component**: the framework owns a state slice per
 Component, messages arrive through `update(msg, slice)` which returns
 either the next slice or `[nextSlice, effects]`. Effects are plain data
 descriptors (`{ type, … }`) the effects layer runs: async work, a
-viewer write, a repaint, a `msg` re-dispatch
+content-tab write, a repaint, a `msg` re-dispatch
 (routed by `msg.kind` — wrapped → Component fan-out, flat → root
 reducer). (Recurring work is no longer an effect — the generic `tick`
 was retired in FIX-3; periodic sources are declared `interval`
@@ -422,17 +424,17 @@ module.exports = {
   (handlers, finalizers, contributors registered with the framework)
   may still read `getModel()`; the rule applies to the arm body only.
   **The framework provides a seam for Components that need model-derived
-  facts in their reducer: an optional `augmentMsg(msg, model)` hook**
-  (`api.js`, called at both `comp.update` sites). The impure dispatch shell
-  computes the facts ONCE and threads them into the Msg payload, so the
-  Component's whole `update` — arms AND finalizer — stays pure of
-  `getModel()`. The viewer uses it: `augmentMsg` attaches a
-  `pt.viewerModelBundle` (current group, its config, the COMPUTED merged
-  actions, yaml terminals) as `msg.viewerModel`, and `viewer.update` derives
-  its active-tab lines + tab-transition capture from that bundle via the
-  `*FromBundle` readers — **no Component reducer reads `getModel()` anymore**
-  (blessed-exceptions #3, 2026-06-15). Render still may (`detailTitle`/
-  `render` read the model as their view input — §11).
+  facts in their reducer: an optional `augmentMsg(msg, model, slice)` hook**
+  (`dispatch/runtime/loop.js#_augment`, applied at every `comp.update` site).
+  The impure dispatch shell computes the facts ONCE and threads them into
+  the Msg payload, so the Component's whole `update` stays pure of
+  `getModel()`. The content panes use it: info / text-view / agent stamp the
+  pane's committed viewport height as `msg.innerH` (via the shared
+  `panel/pane-viewport.js#paneInnerH`) so their scroll/cursor clamps read no
+  layout geometry; files threads `msg.filesModel`, docker its shell-computed
+  facts — **no Component reducer reads `getModel()` anymore**
+  (blessed-exceptions #3, 2026-06-15). Render still may (`render` reads the
+  model as its view input — §11).
 - **The ROOT reducer (`runtime.update`) is held to the same bar**
   (v0.6.4 Theme C). Its arms may do ROUTING reads via `route`
   (`getFocus` / `componentForPanel` / `paneTypeOf` / `resolveTarget` —
@@ -440,15 +442,15 @@ module.exports = {
   (`multiSel.size`, `slice.tab`, `flatTabInfo`, `buildItems(slice)`) to
   branch — those are threaded via Msg payload by the dispatching handler
   (e.g. `escape`'s `hadMultiSel`, `next_tab`'s tab bundle, `menu_open`'s
-  `items`). There are now **no exceptions**: `jobs_activate`'s viewer reads
-  (the last holdout — they depend on the post-switch `currentGroup`, so
-  they couldn't be hoisted to dispatch *time*) were split out in v0.6.4
+  `items`). There are now **no exceptions**: `jobs_activate`'s content-slot
+  reads (the last holdout — they depend on the post-switch `currentGroup`,
+  so they couldn't be hoisted to dispatch *time*) were split out in v0.6.4
   Phase C. `jobs_activate` is a pure orchestrator that closes the overlay,
   queues the group switch, and emits a `jobs_route` Cmd; that effect runs
-  AFTER the switch commits, reads the now-correct viewer slice in the
-  dispatch layer, and threads the resolved tab into the pure `jobs_routed`
-  arm. "Not threadable within one Msg" was true — a second Msg makes it
-  threadable.
+  AFTER the switch commits, resolves the now-correct content slot + the
+  job's owning tab in the dispatch layer, and threads them into the pure
+  `jobs_routed` arm. "Not threadable within one Msg" was true — a second
+  Msg makes it threadable.
 - A Component **never writes** the root model. The Component's own
   slice is the only thing its `update` writes directly. Cross-layer
   writes go out as a `{type:'msg', msg}` effect — a wrapped Msg
@@ -539,80 +541,57 @@ are legitimate. The choice is per-piece-of-state:
 
 The genuine isolation wins live on slices: docker's polling loop +
 stats + events subprocess; files' per-panel directory browsers;
-config-status' git-worktree cache; the viewer's content tabs +
-ephemeral terminals; the groups tree's `expanded` Set; per-Navigator
+config-status' git-worktree cache; the content slot's per-tab
+instances (info / text-view / terminal / agent — every tab is a
+position-tab instance owning its own buffer + view state, U2); the
+groups tree's `expanded` Set; per-Navigator
 nav chrome (`slice.nav[panel].cursor/scroll/multiSel`, Phase 4a). The
 layout Component owns the frame (focus, viewMode, freeConfig, panel
 arrangement) — slice-private but loaded via cross-layer Msgs.
 
 > **Producer survives the consumer's tab.** When a long-running
-> producer (streamed action, future job entry) outlives the user's
-> attention on its tab, give it a per-id buffer in the slice and
-> route its writes by id (e.g. `slice.actionTabBuffers[group][key]`).
-> The active-tab "viewer" is then a DERIVED view — computed from the
-> per-id homes via `pane-tabs.viewerLines` (and search matches via the
-> `ms.matchesFor` memo), never stored. Pre-Phase-2 the viewer's
+> producer (streamed action, agent turn) outlives the user's attention
+> on its tab, give it a per-id home and route its writes by id. Since
+> U2 the per-id home IS a pane instance: action output streams by
+> instance id into its own minted `text-view` tab (`tv_append*`), whose
+> slice owns the buffer + scroll — off-tab streaming lands in the right
+> home with no kill-on-switch and no cross-talk. (Pre-U2 the viewer's
 > `slice.lines` doubled as "the active tab's content" AND "the
-> streaming producer's sink," forcing kill-on-switch as the only way
-> to avoid cross-talk; the v0.6.4 viewer-lines selector arc finished
-> the separation by deleting the stored mirror entirely. The pattern:
-> canonical content lives in per-id homes; anything computable from
-> them is a memoized selector, not a slice field — stored derived
-> state carries a standing invariant every reviewer must re-learn and
-> every new write path can silently break.
+> streaming producer's sink"; the v0.6.4 viewer-lines selector arc
+> separated them with per-id buffers + a derived active-tab projection,
+> and U2c finished the job by making the per-id home a first-class
+> instance.) The surviving pattern: canonical content lives in per-id
+> homes; anything computable from them is a memoized selector (e.g.
+> search matches via `ms.matchesFor`), not a slice field — stored
+> derived state carries a standing invariant every reviewer must
+> re-learn and every new write path can silently break.
 
 > **Consumer view-state survives the tab switch.** Complement to the
 > producer rule: per-tab *view* state (scroll position, search match
 > index, selection range, cursor) also wants to outlive the active tab.
-> Resist the temptation to mirror it to a per-tab map on every Msg
-> (v0.6.2 T3b-e shipped that and the redundancy bit back). Keep the
-> live view in `slice.{scroll, search, select, cursor}` as a single
-> active mirror, and capture only on transition: a single sync point
-> in the **finalizer** compares `next.tab !== originalSlice.tab` and
-> writes the leaving tab's view-state into a keyed map
-> (`slice.tabState[key]`) exactly once per switch. The capture site
-> catches every path that mutates the tab idx — `tab_switch`,
-> auto-jump (`stream_start` routed + unrouted), primitive bypasses
-> (`viewer_set_tab` from `setActiveTab()`), and the navSelect yank
-> (`viewer_show_info`). Generalisation: **when N reducer arms mutate
-> the same field and a side-effect should fire on every transition,
-> detect the transition in the finalizer, not in each arm.**
+> Since U2 this is free, by construction: every tab is its own
+> instance, so `slice.{scroll, search, select, cursor}` ARE the per-tab
+> state — switching tabs switches instances, and nothing is captured or
+> restored. (Two retired designs mark the trail, see
+> docs/one-tab-system.md: v0.6.2 T3b-e mirrored the view state to a
+> per-tab map on every Msg and the redundancy bit back; the T3
+> finalizer-capture replaced that with a single transition-detecting
+> sync point plus the carve-outs, split restore arms, and override
+> hygiene the one shared viewer slice forced. Instance-per-tab deleted
+> the whole concern.) Two generalisations outlive it:
 >
-> *Carve-outs for the capture.* Two cases where the finalizer must
-> SKIP the FROM-capture:
->   - **Override active on leave** (B2). When
->     `originalSlice.viewerOverride` is set, `slice.{scroll, search,
->     select, cursor}` belong to the discrete-doc, not to the
->     underlying tab. Capturing them into `tabState[fromKey]` would
->     clobber the user's real saved state on fromKey. The override is
->     a transient lens over whatever tab is active; archiving its
->     state as if it were per-tab is wrong by definition.
->   - **FROM tab removed** (R5). When the leaving tab was destroyed
->     in this same Msg (`removeContent` / `removeEphemeral`), the
->     `tabState[fromKey]` entry was just dropped and there's nothing
->     to come back to. Re-creating the entry from the about-to-vanish
->     view state would silently undo the removal's hygiene. Detection:
->     re-resolve fromKey against `next`'s content/ephemeral stores; if
->     gone, skip.
->
-> *Restore lives in multiple arms.* The capture is unified in the
-> finalizer; restore is split per kind of transition: `tab_switch`
-> runs the full user-initiated cascade (override clear + terminal
-> exit + bottomSticky tail-track), `viewer_set_tab` does the
-> minimal producer-initiated restore (skips when override is active —
-> the override owns view-state), `viewer_show_info` restores Info
-> on the navSelect yank. Each arm reads `tabState[toKey]` through
-> the same canonical resolver (`pane-tabs.resolveTabKey`).
->
-> **Stable string keys outlive numeric indices.** Key per-element maps
-> (tabState entries, per-id buffers) by stable string identity
-> (`'<group>:action:<name>'`, `'<group>:content:<id>'`), not by
-> position. Adding or removing siblings renumbers the strip; stored
-> entries should remain correctly addressed. Stable AND unique: when
-> per-group surfaces share the same domain key (`test` action in
-> every group), prefix with the disambiguator (the group name) so two
-> groups don't collide on `tabState['action:test']` (B4 regression —
-> pre-fix, group A's view state restored onto group B's tab).
+>   - **When N reducer arms mutate the same field and a side-effect
+>     should fire on every transition, detect the transition in the
+>     finalizer, not in each arm** — still how the post-dispatch
+>     scroll clamp and the per-pane instance reconcile run: once per
+>     dispatch, at the boundary.
+>   - **Stable string keys outlive numeric indices.** Key per-element
+>     maps by stable string identity, not position: a minted content
+>     tab's poolId (`tv-act-<group>-<key>`) and its reuse hint
+>     (`{origin:'action', group, key}`) survive strip renumbering, and
+>     the group disambiguator keeps two groups' same-named actions
+>     from colliding (the B4 regression class — pre-fix, group A's
+>     state landed on group B's tab).
 
 > **✅ RETIRED (v0.6.6 FIX-1).** The pattern below — three cross-cutting
 > registries (`feature/history`, `feature/jobs`, `io/diag-log`) living OUTSIDE
@@ -685,7 +664,7 @@ the current state (SNAPSHOT):
 
 | View needs | Source rate | Mechanism | In this codebase |
 |---|---|---|---|
-| **APPEND** (order + every event matters; you scroll back) | any | fold each event into a model list/buffer (one Msg per event/batch) | viewer stream buffers (`viewer_append*`) — logs / `tail -f` |
+| **APPEND** (order + every event matters; you scroll back) | any | fold each event into a model list/buffer (one Msg per event/batch) | content-tab line buffers (`tv_append*`) — logs / `tail -f` |
 | **SNAPSHOT** (only current state matters; view redraws) | **discrete / low-freq** | **`store-mirror`** Sub — cb fires per mutation → whole-snapshot Msg | jobs / diag / history → `model.{jobs,diagLog,history}` |
 | **SNAPSHOT** | **continuous / high-freq** | **`metrics-mirror`** Sub — *throttle*: sample at a bounded cadence, one Msg per window | hub metrics → `model.metrics[topic]` (stats graph) |
 
@@ -725,7 +704,8 @@ terminal-overlay poll, the frame clock — and retired the self-re-arm pattern.
 `io/diag-log`, `feature/history`) into the Model via the `store-mirror` Sub.
 A subsequent **code-only TEA re-review** ("forget docs/comments") caught the
 last two leaks: the `tab_switch` reducer arm still read `getModel()` (fixed —
-reads the threaded `msg.viewerModel` bundle), and the **stats panel still read
+read a threaded `msg.viewerModel` bundle; that arm and bundle have since
+retired with the viewer, U2f), and the **stats panel still read
 the live hub bus** at render — closed by the `metrics-mirror` Sub
 (continuous-source throttle, above) sampling the hub series into
 `model.metrics[topic]`. The #D5 render-reads-live-stores boundary is now gone:
