@@ -394,27 +394,6 @@ function update(model, msg) {
     case 'set_register': {
       return [{ ...model, register: msg.register }, []];
     }
-    // Per-pane text selection (docs/pane-selection.md). A single owner (paneId)
-    // holds the active selection; the mouse pipeline drives these. Coords are
-    // absolute content line + display col — see model.selection in model/store.
-    case 'mouse_sel_begin': {
-      const at = { line: msg.line, col: msg.col };
-      return [{ ...model, selection: {
-        paneId: msg.paneId, anchor: at, cursor: at, kind: msg.kind || 'char', active: true,
-      } }, []];
-    }
-    case 'mouse_sel_extend': {
-      const sel = model.selection;
-      if (!sel || !sel.active) return [model, []];
-      return [{ ...model, selection: { ...sel, cursor: { line: msg.line, col: msg.col } } }, []];
-    }
-    case 'mouse_sel_clear': {
-      const sel = model.selection;
-      if (!sel || (!sel.active && sel.paneId == null)) return [model, []];
-      return [{ ...model, selection: {
-        paneId: null, anchor: { line: 0, col: 0 }, cursor: { line: 0, col: 0 }, kind: 'char', active: false,
-      } }, []];
-    }
     case 'reset_group_context': {
       // Cross-layer Msg emitted by the groups Component on a group switch —
       // the ROOT chrome half of resetGroupContext (mode flags off + per-group
@@ -422,18 +401,18 @@ function update(model, msg) {
       // viewer_reset_chrome → detail Component.
       // Also drop any per-pane text selection (docs/pane-selection.md): its
       // absolute line/col would otherwise highlight — and right-click-copy —
-      // whatever content now sits at that spot in the new group.
-      const cleared = model.selection && model.selection.active
-        ? { ...model, selection: { paneId: null, anchor: { line: 0, col: 0 }, cursor: { line: 0, col: 0 }, kind: 'char', active: false } }
-        : model;
-      const next = _withModes(cleared, { terminalMode: false, listSelectMode: false });
+      // whatever content now sits at that spot in the new group. Selection
+      // state lives on pane instance slices, so the clear is a Cmd: the
+      // select_cancel_all effect resolves the owner (impure shell) and routes
+      // a wrapped select_cancel through the Component fan-out.
+      const next = _withModes(model, { terminalMode: false, listSelectMode: false });
       // #D9 — the panel→owner map is resolved by the dispatcher (impure shell)
       // and stamped on msg.owners (`{ <panelType>: <ownerComponentName> }`), so
       // the reducer reads no ownership registry. The map's KEYS are WHICH
       // panels reset (route.resetGroupOwners is the single source); null owner
       // skips that panel. Routing by Component NAME so the fanout resolves to
       // the kind's primary instance (containers → docker).
-      const cmds = [];
+      const cmds = [{ type: 'select_cancel_all' }];
       for (const [panel, compName] of Object.entries(msg.owners || {})) {
         if (!compName) continue;
         cmds.push({ type: 'msg', msg: route.wrap(compName, { type: 'set_cursor', panel, index: 0 }) });

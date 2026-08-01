@@ -639,13 +639,18 @@ function handleMouse(kind, x, y) {
     }
     // Shared per-pane selection: begin from an armed press, then extend. The
     // first motion after a press turns an armed click into a drag-selection.
-    if (_armedSelect || psel.isActive()) {
-      if (!psel.isActive() && _armedSelect) {
-        applyMsg({ type: 'mouse_sel_begin', paneId: _armedSelect.paneId, line: _armedSelect.line, col: _armedSelect.col });
+    // begin/extend ride wrapped select_* to the pane's active instance (the
+    // generic fallback in the loop applies them for panes that don't model
+    // selection themselves — docs/pane-selection.md).
+    const _active = psel.activeSelection();
+    if (_armedSelect || _active) {
+      if (_armedSelect && !_active) {
+        dispatchMsg(wrap(_armedSelect.paneId,
+          { type: 'select_begin', line: _armedSelect.line, col: _armedSelect.col, kind: 'char' }));
       }
-      const paneId = psel.isActive() ? getModel().selection.paneId : (_armedSelect && _armedSelect.paneId);
-      const cc = paneId ? _contentCoordsAt(paneId, mx, my) : null;
-      if (cc) applyMsg({ type: 'mouse_sel_extend', line: cc.line, col: cc.col });
+      const paneId = _armedSelect ? _armedSelect.paneId : _active.paneId;
+      const cc = _contentCoordsAt(paneId, mx, my);
+      if (cc) dispatchMsg(wrap(paneId, { type: 'select_extend', line: cc.line, col: cc.col }));
       render();
       return;
     }
@@ -661,15 +666,16 @@ function handleMouse(kind, x, y) {
       render();
       return;
     }
-    if (psel.isActive()) {
+    const _active = psel.activeSelection();
+    if (_active) {
       // Auto-copy a real drag to the register and keep it highlighted (offered
       // to right-click "Copy selection"); a no-drag press clears — a plain
       // click must not leave a stray one-char selection.
-      const s = getModel().selection;
+      const s = _active.sel;
       const dragged = !(s.anchor.line === s.cursor.line && s.anchor.col === s.cursor.col);
       const text = dragged ? psel.selectedText() : '';
       if (text) applyMsg({ type: 'register_push', text });
-      else applyMsg({ type: 'mouse_sel_clear' });
+      else dispatchMsg(wrap(_active.paneId, { type: 'select_cancel' }));
       _armedSelect = null;
       render();
       return;
@@ -761,7 +767,8 @@ function handleMouse(kind, x, y) {
     // Shared per-pane selection: a fresh press clears any prior selection and
     // ARMS a new one at the click's content coords; the first motion begins it
     // (so a plain click still selects the row, only a drag selects text).
-    applyMsg({ type: 'mouse_sel_clear' });
+    const _prior = psel.activeSelection();
+    if (_prior) dispatchMsg(wrap(_prior.paneId, { type: 'select_cancel' }));
     if (_selectablePane(p.paneId)) {
       const cc = _contentCoordsAt(p.paneId, mx, my);
       if (cc) _armedSelect = { paneId: p.paneId, line: cc.line, col: cc.col };  // else stays null (cleared above)

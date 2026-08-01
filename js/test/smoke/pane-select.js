@@ -22,6 +22,7 @@ const { wireFabricHost } = require('../../dispatch/runtime/host-wiring');
 const { dispatchMsg } = require('../../dispatch/runtime/loop');
 const navState = require('../../panel/nav-state');
 const input = require('../../dispatch/control/input');
+const selView = require('../../panel/select-view');
 const { visibleBoundsFor } = require('../../leaves/wm/geometry');
 const paint = require('../../render/paint');
 
@@ -72,8 +73,8 @@ describe('[1] a drag selects a substring and copies it to the register', () => {
     mouse('motion', PORTS, 2, 0);
     mouse('motion', PORTS, 4, 0);
     mouse('release', PORTS, 4, 0);
-    const s = getModel().selection;
-    assert(s.active && s.paneId === PORTS, `selection active on ports: ${JSON.stringify(s)}`);
+    const own = selView.activeSelection();
+    assert(own && own.sel.active && own.paneId === PORTS, `selection active on ports: ${JSON.stringify(own)}`);
     eq(getModel().register.history[0], 'miner', 'selected text pushed to the register');
   });
   it('the selected span renders reverse-highlighted', () => {
@@ -85,7 +86,7 @@ describe('[2] a plain click leaves no selection', () => {
   it('press+release with no motion clears the selection (a click, not a drag)', () => {
     mouse('press', PORTS, 3, 0);
     mouse('release', PORTS, 3, 0);
-    assert(!getModel().selection.active, 'no active selection after a bare click');
+    assert(!selView.activeSelection(), 'no active selection after a bare click');
   });
 });
 
@@ -99,7 +100,8 @@ describe('[3] right-click offers "Copy selection" for the active selection', () 
     const items = (getModel().modal.menu.items || []).map((r) => r && r[0]);
     assert(items.some((l) => /Copy selection/.test(l)), `menu has Copy selection: ${JSON.stringify(items)}`);
     require('../../dispatch/control/dispatch').applyMsg({ type: 'menu_close' });
-    require('../../dispatch/control/dispatch').applyMsg({ type: 'mouse_sel_clear' });
+    const own = selView.activeSelection();
+    if (own) dispatchMsg(route.wrap(own.paneId, { type: 'select_cancel' }));
   });
 });
 
@@ -109,7 +111,7 @@ describe('[4] the config gate disables selection', () => {
     mouse('press', PORTS, 0, 0);
     mouse('motion', PORTS, 4, 0);
     mouse('release', PORTS, 4, 0);
-    assert(!getModel().selection.active, 'no selection when globally disabled');
+    assert(!selView.activeSelection(), 'no selection when globally disabled');
   });
   it('a per-pane select:true override re-enables it while global is off', () => {
     const p = navState.allPanels().find((x) => x.paneId === PORTS);
@@ -117,7 +119,7 @@ describe('[4] the config gate disables selection', () => {
     mouse('press', PORTS, 0, 0);
     mouse('motion', PORTS, 4, 0);
     mouse('release', PORTS, 4, 0);
-    assert(getModel().selection.active, 'per-pane override wins over the global default');
+    assert(selView.activeSelection(), 'per-pane override wins over the global default');
     p.select = undefined;
     getModel().config.selection = true;
   });

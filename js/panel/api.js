@@ -28,16 +28,20 @@ const _selectView = require('./select-view');
 // Selection-aware renderPanel wrapper (docs/pane-selection.md). Every pane
 // renders its box through this, so it's the one seam where we (a) CAPTURE the
 // pane's content lines for the mouse selection pipeline and (b) DECORATE the
-// selected range when this pane owns the active selection — before the leaf
-// draws the border. The paneId comes from the ambient pane set by paint (or an
+// selected range when this pane's instance owns an active selection — before
+// the leaf draws the border. Pre-windowed callers (opts.windowed — the content
+// panes via buildTextView) self-decorate offset-aware, so only the capture
+// applies to them. The paneId comes from the ambient pane set by paint (or an
 // explicit opts.paneId for direct callers/tests); absent it, this is a pure
 // pass-through to the leaf, so overlays and unit tests are unaffected.
 function renderPanel(opts) {
   const paneId = (opts && opts.paneId) || _selectView.currentPaneId();
   if (paneId && opts) {
-    _selectView.recordContent(paneId, opts.lines, opts.scrollOffset || 0);
-    const decorated = _selectView.decorateFor(paneId, opts.lines || []);
-    if (decorated !== opts.lines) opts = { ...opts, lines: decorated };
+    _selectView.recordContent(paneId, opts.lines, opts.scrollOffset || 0, opts.windowed);
+    if (!opts.windowed) {
+      const decorated = _selectView.decorateFor(paneId, opts.lines || []);
+      if (decorated !== opts.lines) opts = { ...opts, lines: decorated };
+    }
   }
   return _leafRenderPanel(opts);
 }

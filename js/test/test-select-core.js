@@ -94,39 +94,50 @@ describe('[select-core] decorateWindow — selection over a reversed (cursor) ro
   });
 });
 
-describe('[select-core] root reducer arms', () => {
-  it('sel_begin sets an active selection owned by the pane', () => {
-    const [m] = update(init(), { type: 'mouse_sel_begin', paneId: 'ports-1', line: 2, col: 4 });
-    eq(m.selection.paneId, 'ports-1');
-    eq(m.selection.active, true);
-    eq(m.selection.anchor.line, 2);
-    eq(m.selection.cursor.col, 4, 'cursor starts at the anchor');
+describe('[select-core] reduceSelect — the shared state arms', () => {
+  it('select_begin sets an active char selection at the coords', () => {
+    const sel = sc.reduceSelect({ type: 'select_begin', line: 2, col: 4 }, undefined);
+    eq(sel.active, true);
+    eq(sel.kind, 'char');
+    eq(sel.anchor.line, 2);
+    eq(sel.cursor.col, 4, 'cursor starts at the anchor');
   });
-  it('sel_extend moves the cursor, keeps the anchor', () => {
-    let m = init();
-    [m] = update(m, { type: 'mouse_sel_begin', paneId: 'ports-1', line: 0, col: 0 });
-    [m] = update(m, { type: 'mouse_sel_extend', line: 0, col: 6 });
-    eq(m.selection.anchor.col, 0);
-    eq(m.selection.cursor.col, 6);
+  it('select_begin clamps the line against linesLen when given', () => {
+    const sel = sc.reduceSelect({ type: 'select_begin', line: 99, col: 4 }, undefined, 3);
+    eq(sel.anchor.line, 2, 'clamped to the last line');
   });
-  it('sel_extend is a no-op without an active selection', () => {
-    const before = init();
-    const [after] = update(before, { type: 'mouse_sel_extend', line: 1, col: 1 });
-    eq(after, before, 'same model ref — no-op');
+  it('select_begin floors coords at 0 without a linesLen bound', () => {
+    const sel = sc.reduceSelect({ type: 'select_begin', line: -3, col: -1 }, undefined);
+    eq(sel.anchor.line, 0);
+    eq(sel.anchor.col, 0);
   });
-  it('sel_clear resets to the inactive, unowned selection', () => {
-    let m = init();
-    [m] = update(m, { type: 'mouse_sel_begin', paneId: 'ports-1', line: 1, col: 1 });
-    [m] = update(m, { type: 'mouse_sel_clear' });
-    eq(m.selection.paneId, null);
-    eq(m.selection.active, false);
+  it('select_extend moves the cursor, keeps the anchor', () => {
+    let sel = sc.reduceSelect({ type: 'select_begin', line: 0, col: 0 }, undefined);
+    sel = sc.reduceSelect({ type: 'select_extend', line: 0, col: 6 }, sel);
+    eq(sel.anchor.col, 0);
+    eq(sel.cursor.col, 6);
   });
-  it('a group switch (reset_group_context) drops a stale selection', () => {
-    let m = init();
-    [m] = update(m, { type: 'mouse_sel_begin', paneId: 'ports-1', line: 3, col: 2 });
-    [m] = update(m, { type: 'reset_group_context', owners: {} });
-    eq(m.selection.active, false, 'selection cleared so it cannot highlight the new group\'s content');
-    eq(m.selection.paneId, null);
+  it('select_extend is identity without an active selection', () => {
+    const before = { ...selChar(0, 0, 0, 3), active: false };
+    eq(sc.reduceSelect({ type: 'select_extend', line: 1, col: 1 }, before), before, 'same ref — no-op');
+    eq(sc.reduceSelect({ type: 'select_extend', line: 1, col: 1 }, undefined), undefined);
+  });
+  it('select_cancel deactivates; identity when already inactive', () => {
+    const active = selChar(0, 0, 1, 2);
+    const off = sc.reduceSelect({ type: 'select_cancel' }, active);
+    eq(off.active, false);
+    eq(sc.reduceSelect({ type: 'select_cancel' }, off), off, 'same ref — no-op');
+  });
+  it('returns undefined for a Msg it does not own', () => {
+    eq(sc.reduceSelect({ type: 'viewer_scroll', delta: 1 }, selChar(0, 0, 0, 1)), undefined);
+  });
+});
+
+describe('[select-core] reset_group_context emits the selection clear Cmd', () => {
+  it('a group switch carries select_cancel_all so a stale per-pane selection is dropped', () => {
+    const [, cmds] = update(init(), { type: 'reset_group_context', owners: {} });
+    assert(cmds.some((c) => c && c.type === 'select_cancel_all'),
+      'reset_group_context Cmds include select_cancel_all');
   });
 });
 

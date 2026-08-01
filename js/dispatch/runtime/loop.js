@@ -291,21 +291,47 @@ function _dispatchKeyToFocusedInner(key, seq) {
   return claimed;
 }
 
+// Generic per-pane selection fallback (docs/pane-selection.md). The three
+// select_* state arms apply to ANY pane: a Component that models selection
+// itself (the content panes — info / text-view / agent) claims them in its own
+// update, clamped against its buffer; every other Component leaves them
+// unclaimed and gets the shared pure transition applied to its slice HERE —
+// one seam, zero per-Component edits, single-writer preserved (the write still
+// rides the update spine of exactly one dispatch). "Unclaimed" is detected by
+// SLICE IDENTITY, not just an undefined return: most Components `return slice`
+// unchanged for Msgs they don't own (e.g. ports-pane / wire-list defaults) —
+// and a content pane whose own select arm no-ops by identity would no-op in
+// reduceSelect too, so the identity test can't double-apply.
+const SELECT_FALLBACK_TYPES = new Set(['select_begin', 'select_extend', 'select_cancel']);
+function _selectFallback(inst, msg) {
+  if (!msg || !SELECT_FALLBACK_TYPES.has(msg.type)) return;
+  const sel = inst.slice && inst.slice.select;
+  const next = require('../../leaves/text/select-core').reduceSelect(msg, sel);
+  if (next === undefined || next === sel) return;
+  route.setInstanceSlice(inst.id, { ...inst.slice, select: next });
+}
+
 // Inner helper — runs ONE instance's update, handles the
 // undefined / slice / [slice, effects] return contract, and isolates throws.
 // Shared by the wrapped and broadcast dispatch paths.
 function _runInstance(inst, comp, msg) {
   try {
     msg = _augment(comp, msg, inst.slice);
+    const before = inst.slice;
     const result = comp.update(msg, inst.slice);
-    if (result === undefined) return;
-    if (Array.isArray(result)) {
+    let claimed;   // did the Component's own update produce a NEW slice?
+    if (result === undefined) {
+      claimed = false;
+    } else if (Array.isArray(result)) {
       const [next, effects] = result;
       if (next !== undefined) route.setInstanceSlice(inst.id, next);
+      claimed = next !== undefined && next !== before;
       runEffects(effects);
     } else {
       route.setInstanceSlice(inst.id, result);
+      claimed = result !== before;
     }
+    if (!claimed) _selectFallback(inst, msg);
   } catch (e) {
     console.error(`[component:${inst.kind}] update error: ${e.message}`);
     _recordError({ where: 'component_update', component: inst.kind, instance: inst.id,
