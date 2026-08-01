@@ -182,19 +182,21 @@ function setViewerContent(tabId, text, opts) {
 }
 
 /**
- * Append an event/status message to the viewer's unrouted accumulator
- * (`slice.viewerStreamBuffer`) — the same buffer streamed `type:run` output
- * writes to. Use for ephemeral "user did X" lines (spawn/background
- * confirmations, cmdline outcomes) that should join the transcript instead
- * of clobbering the current tab.
+ * Append an event/status message to the Transcript tab — the same instance
+ * unrouted `type:run` output streams to (dispatch/runtime/stream.js). Use for
+ * ephemeral "user did X" lines (spawn/background confirmations, cmdline
+ * outcomes) that should join the transcript instead of clobbering the current
+ * tab. No tab switch, no focus steal — the lines are there when the user
+ * looks. (U2f fix: this dispatched the retired viewer_append_lines Msg for a
+ * while, which no arm owned — the lines were silently dropped.)
  */
 function appendViewerLines(text) {
   if (!text) return;
-  const tabId = route.resolveTarget('viewer');
-  if (tabId == null) return;
+  const target = route.resolveTarget('viewer_transcript');
+  if (target == null) return;
   const lines = text.split('\n');
   if (!lines.length) return;
-  _host.dispatchMsg(route.wrap(tabId, { type: 'viewer_append_lines', lines }));
+  _host.dispatchMsg(route.wrap(target, { type: 'tv_append_lines', lines }));
 }
 
 // --- Multi-select (bulk-operation operand) ---

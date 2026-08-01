@@ -281,4 +281,26 @@ describe('[6] slice retrieval — strict ids, primarySliceOf, serviceSlice', () 
   }
 });
 
+describe('[7] appendViewerLines lands on the Transcript instance', () => {
+  // U2f regression pin (found in the v0.6.10 doc-parity review): the helper
+  // kept dispatching the retired viewer_append_lines Msg, which no arm owned —
+  // every spawn/background confirmation and cmdline status line (`:save-layout`
+  // etc.) was silently dropped. It must append to the same text-view instance
+  // unrouted streams write to, without switching tabs or stealing focus.
+  it('a status line appends to the transcript; active tab + focus untouched', () => {
+    const navState = require('../../panel/nav-state');
+    const target = route.resolveTarget('viewer_transcript');
+    assert(target != null, 'transcript instance resolves');
+    const focusBefore = route.getFocus();
+    const activeBefore = route.resolveTarget('viewer');
+    const before = (api.getInstanceSlice(target).lines || []).length;
+    navState.appendViewerLines('[green]Layout saved to[/] /tmp/x.yml\nsecond line');
+    const lines = api.getInstanceSlice(target).lines || [];
+    eq(lines.length, before + 2, 'both lines appended to the transcript');
+    eq(lines[lines.length - 2], '[green]Layout saved to[/] /tmp/x.yml', 'first line intact');
+    eq(route.resolveTarget('viewer'), activeBefore, 'active tab unchanged (no clobber)');
+    eq(route.getFocus(), focusBefore, 'focus unchanged (no steal)');
+  });
+});
+
 report();
