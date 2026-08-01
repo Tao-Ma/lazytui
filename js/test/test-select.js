@@ -6,12 +6,15 @@
  * (kind 'info'), which stores its buffer on `slice.lines` (not the retired
  * `detail.infoLines`). We boot a real seeded content slot (parse-shaped config
  * → initState → per-pane mint) and resolve it via
- * `route.resolveTarget('viewer_info')`. The select-math + highlightLine
- * assertions carry over verbatim once the slice resolves; the impure service
- * layer (panel/content/select.js) targets `resolveTarget('viewer')` = the active
- * info instance, and the keyboard visual-mode state machine flows through the
- * SHARED reducer (leaves/text/text-view-update, ownKind 'info') via
- * dispatchKeyToFocused.
+ * `route.resolveTarget('viewer_info')`. The keyboard visual-mode state machine
+ * flows through the SHARED reducer (leaves/text/text-view-update, ownKind
+ * 'info') via dispatchKeyToFocused.
+ *
+ * Stage-3 unification — the viewer facade (panel/content/select) is gone. The
+ * `sel` driver below IS the production path minus the mouse: wrapped select_*
+ * Msgs to the content slot's active instance (what input.js dispatches), reads
+ * through the unified selection service (panel/select-view), and the release
+ * arm's settle semantics for commit.
  *
  * Run: node js/test/test-select.js
  */
@@ -27,7 +30,6 @@ term.stdout.write = (chunk, ...rest) => {
 };
 
 const reg = require('./_helpers/register');
-const sel = require('../panel/content/select');
 const { describe, it, eq, assert, report } = require('./test-runner');
 const { getModel } = require('../app/runtime');
 const { getInstanceSlice } = require('../panel/api');
@@ -49,9 +51,39 @@ getModel().config = {
 };
 initState();
 
-// The content-slot's active `info` instance — the select facade's
-// resolveTarget('viewer') lands here.
+// The content-slot's active `info` instance — resolveTarget('viewer') lands here.
 function infoSlice() { return getInstanceSlice(route.resolveTarget('viewer_info')); }
+
+// The unified selection driver (see the header): wrapped select_* dispatch to
+// the content slot's active instance + reads via panel/select-view — the same
+// seams the mouse pipeline uses.
+const selView = require('../panel/select-view');
+const core = require('../leaves/text/select-core');
+const sel = {
+  beginAt(line, col, kind) {
+    api.dispatchMsg(api.wrap(route.resolveTarget('viewer'), { type: 'select_begin', line, col, kind }));
+  },
+  extendTo(line, col) {
+    api.dispatchMsg(api.wrap(route.resolveTarget('viewer'), { type: 'select_extend', line, col }));
+  },
+  cancel() {
+    api.dispatchMsg(api.wrap(route.resolveTarget('viewer'), { type: 'select_cancel' }));
+  },
+  isActive() { return selView.isActive(); },
+  selectedText() { return selView.selectedText(); },
+  // The release arm's settle: push a non-empty selection to the register, clear.
+  commit() {
+    const text = selView.selectedText();
+    this.cancel();
+    if (text) require('../dispatch/control/dispatch').applyMsg({ type: 'register_push', text });
+    return text;
+  },
+  highlightLine: core.highlightLine,
+  decorateLines(lines) {
+    const s = getInstanceSlice(route.resolveTarget('viewer'));
+    return core.decorateWindow(lines, s && s.select, 0);
+  },
+};
 
 // (c)-era key-claim adapter: the keyboard visual-mode state machine lives in the
 // focused Component's update now (the info instance's, via the shared tvu),

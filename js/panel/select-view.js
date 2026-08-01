@@ -86,13 +86,9 @@ function decorateFor(paneId, lines, type) {
  * The pane owning the active selection: `{ paneId, type, sel, slice }`, or null.
  * Scans each pane's ACTIVE instance slice — a hidden tab's persisted selection
  * stays out (per-tab persistence: it re-owns when its tab is active again).
- * Detail panes are skipped for now: the viewer drives its selection through its
- * own facade (panel/content/select) until stage 3 folds it onto this path.
  */
 function activeSelection() {
-  const pool = require('../leaves/wm/pool');
   for (const p of _panels()) {
-    if (pool.isDetailPane(p)) continue;
     const slice = _sliceFor(p.paneId, p.type);
     const sel = slice && slice.select;
     if (sel && sel.active) return { paneId: p.paneId, type: p.type, sel, slice };

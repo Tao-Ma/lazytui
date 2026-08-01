@@ -32,12 +32,6 @@ const intent = require('./intent');
 // window. Dependency-free leaf, so this top-level require is cycle-safe.
 const mouseBindings = require('./mouse-bindings');
 
-function _detail() {
-  // The active content-slot instance (info / text-view). resolveTarget resolves
-  // the focused slot's active tab; undefined when none is placed (callers guard).
-  return getInstanceSlice(route.resolveTarget('viewer'));
-}
-
 const { handleKey, applyMsg, showSelectedInfo, navSelect } = require('./dispatch');
 const { cleanup } = require('../runtime/cleanup');
 
@@ -100,7 +94,7 @@ function _handleWheel(mx, my, delta) {
     }
     if (route.isViewerKind(p.paneId)) {   // U2e P1b — content-viewer kinds (detail/info/text-view)
       // v0.6.4 multi-viewer — clamp against the wheeled pane's OWN slice
-      // (not _detail()'s focused viewer), so wheeling an unfocused second
+      // (not the focused viewer's), so wheeling an unfocused second
       // viewer scrolls itself. sliceForPane resolves the pane's active instance.
       const d = route.sliceForPane(p.paneId, 'detail');
       // U2e P1b — the active instance (info / text-view) stores its buffer on
@@ -393,14 +387,10 @@ function _itemText(def, item) {
 
 function _resolveContextAt(mx, my) {
   const { stripMarkup } = require('../../leaves/text/ansi');
-  // Active text selection — either the viewer's rich in-slice selection or the
-  // shared per-pane one (docs/pane-selection.md); at most one is active at a
-  // time. Feeds the context menu's "Copy selection" / "Send selection to port".
-  const sel = require('../../panel/content/select');
-  const psel = require('../../panel/select-view');
-  const selectionText = sel.isActive() ? (sel.selectedText() || null)
-                      : psel.isActive() ? (psel.selectedText() || null)
-                      : null;
+  // Active text selection (docs/pane-selection.md) — whichever pane instance
+  // owns it, resolved by the one selection service. Feeds the context menu's
+  // "Copy selection" / "Send selection to port".
+  const selectionText = require('../../panel/select-view').selectedText() || null;
   const layoutSlice = getInstanceSlice('layout');
   for (const p of allPanels()) {
     const b = visibleBoundsFor(layoutSlice, p.paneId, route.resolveViewerPaneId());
@@ -465,34 +455,42 @@ function _realizeButtonGesture(intentName, x, y, mx, my) {
   }
 }
 
-// ── Shared per-pane text selection (docs/pane-selection.md) ────────────────
-// The viewer keeps its own rich in-slice selection (panel/content/select); every
-// OTHER pane uses the shared model.selection, driven from the mouse handler
-// below. A left press ARMS a potential selection (records the anchor); the FIRST
-// motion begins it — so a plain click still selects a row, and only a drag
-// starts text selection. Module-local, transient (like the free-config drag).
+// ── Per-pane text selection (docs/pane-selection.md) ───────────────────────
+// ONE mouse path for every pane — content panes (info / text-view / agent)
+// included; their Components claim the wrapped select_* Msgs themselves, every
+// other pane gets the loop's generic fallback. A left press ARMS a potential
+// selection (records the anchor); the FIRST motion begins it — so a plain
+// click still selects a row / focuses, and only a drag starts text selection.
+// Module-local, transient (like the free-config drag).
 let _armedSelect = null;   // { paneId, line, col } | null
 
-// Is this pane a selection target? Non-viewer (the viewer has its own path) and
-// not opted out via config (per-panel `select:` / global default — Slice 4).
+// Is this pane a selection target? Not opted out via config (per-panel
+// `select:` / global default — panel/select-config).
 function _selectablePane(paneId) {
   if (!paneId) return false;
   const p = allPanels().find((x) => x.paneId === paneId);
-  if (!p || require('../../leaves/wm/pool').isDetailPane(p)) return false;
+  if (!p) return false;
   return require('../../panel/select-config').selectionEnabledFor(paneId);
 }
 
 // Map screen (mx,my) → { line (absolute content index), col (display) } inside a
-// pane's content region, or null on the border/outside. Absolute line folds in
-// the pane's scroll (0 for the non-scrolling list panes) so the selection stays
-// anchored to content, matching how the highlight decorates (offset 0).
-function _contentCoordsAt(paneId, mx, my) {
+// pane's content region. Absolute line folds in the pane's scroll (0 for the
+// non-scrolling list panes) so the selection stays anchored to content, matching
+// how the highlight decorates. `clamp` (the motion path) pins an out-of-bounds
+// row to the nearest content row so a drag past the pane's edge extends to the
+// first/last visible line; without it (the press path) border/outside rows
+// return null — a press on the frame must not arm.
+function _contentCoordsAt(paneId, mx, my, clamp) {
   const b = visibleBoundsFor(getInstanceSlice('layout'), paneId, route.resolveViewerPaneId());
   if (!b) return null;
-  if (my <= b.y || my >= b.y + b.h - 1) return null;   // top/bottom border rows
+  let row = my - b.y - 1;
+  if (row < 0 || row > b.h - 3) {              // top/bottom border rows or beyond
+    if (!clamp) return null;
+    row = Math.max(0, Math.min(b.h - 3, row));
+  }
   const cap = require('../../panel/select-view').contentFor(paneId);
   const scroll = cap ? cap.scroll : 0;
-  return { line: scroll + (my - b.y - 1), col: Math.max(0, mx - b.x - 1) };
+  return { line: scroll + row, col: Math.max(0, mx - b.x - 1) };
 }
 
 function handleMouse(kind, x, y) {
@@ -617,31 +615,16 @@ function handleMouse(kind, x, y) {
     return;
   }
 
-  // Text selection. press → begin; motion (button held) → extend; release →
-  // copy to register. Runs ahead of the focus+select loop so a drag extends
-  // rather than losing the selection to a focus change. Two backends:
-  //   - VIEWER panes: the rich in-slice selection (panel/content/select).
-  //   - every OTHER pane: the shared model.selection (docs/pane-selection.md),
-  //     armed on press in the body loop below and begun on the first motion.
-  const sel = require('../../panel/content/select');
+  // Text selection (docs/pane-selection.md) — ONE path for every pane. press
+  // (body loop below) arms; the first motion begins; further motion extends;
+  // release settles (auto-copy a real drag + keep it highlighted; cancel a
+  // no-drag press so a plain click leaves no stray one-char selection). The
+  // select_* Msgs ride wrapped to the pane's active instance — content panes
+  // claim them in their own update (clamped against their buffer), every other
+  // pane gets the loop's generic fallback. Runs ahead of the focus+select loop
+  // so a drag extends rather than losing the selection to a focus change.
   const psel = require('../../panel/select-view');
   if (kind === 'motion') {
-    if (sel.isActive()) {   // viewer selection (unchanged)
-      // v0.6.4 — focused viewer's CONTAINER pane bounds (see tab-drag site above).
-      const db = visibleBoundsFor(getInstanceSlice('layout'), route.resolveViewerPaneId(), route.resolveViewerPaneId());
-      if (db) {
-        const visibleLine = Math.max(0, Math.min(db.h - 3, my - db.y - 1));
-        const col = Math.max(0, mx - db.x - 1);
-        sel.extendTo((_detail()?.scroll || 0) + visibleLine, col);
-        render();
-      }
-      return;
-    }
-    // Shared per-pane selection: begin from an armed press, then extend. The
-    // first motion after a press turns an armed click into a drag-selection.
-    // begin/extend ride wrapped select_* to the pane's active instance (the
-    // generic fallback in the loop applies them for panes that don't model
-    // selection themselves — docs/pane-selection.md).
     const _active = psel.activeSelection();
     if (_armedSelect || _active) {
       if (_armedSelect && !_active) {
@@ -649,7 +632,7 @@ function handleMouse(kind, x, y) {
           { type: 'select_begin', line: _armedSelect.line, col: _armedSelect.col, kind: 'char' }));
       }
       const paneId = _armedSelect ? _armedSelect.paneId : _active.paneId;
-      const cc = _contentCoordsAt(paneId, mx, my);
+      const cc = _contentCoordsAt(paneId, mx, my, true);   // clamp: drag past the edge pins to the nearest row
       if (cc) dispatchMsg(wrap(paneId, { type: 'select_extend', line: cc.line, col: cc.col }));
       render();
       return;
@@ -657,20 +640,8 @@ function handleMouse(kind, x, y) {
     return;
   }
   if (kind === 'release') {
-    if (sel.isActive()) {
-      // v0.6.4 context-menu follow-on — settle (auto-copy) but PERSIST the
-      // selection (highlighted + offered to right-click "Copy selection")
-      // rather than clearing it; a bare click with no drag still clears.
-      sel.settle();
-      _armedSelect = null;
-      render();
-      return;
-    }
     const _active = psel.activeSelection();
     if (_active) {
-      // Auto-copy a real drag to the register and keep it highlighted (offered
-      // to right-click "Copy selection"); a no-drag press clears — a plain
-      // click must not leave a stray one-char selection.
       const s = _active.sel;
       const dragged = !(s.anchor.line === s.cursor.line && s.anchor.col === s.cursor.col);
       const text = dragged ? psel.selectedText() : '';
@@ -731,42 +702,12 @@ function handleMouse(kind, x, y) {
       if (mutated) break;
     }
 
-    // Detail panel content area — text selection on a click inside the
-    // body. Stays detail-specific until Phase 4 lifts the selection
-    // machinery onto a per-pane basis.
-    if (require('../../leaves/wm/pool').isDetailPane(p)) {
-      // v0.6.4 multi-viewer — focus + select the CLICKED viewer pane by
-      // paneId (was hardcoded 'detail', which focused the primary).
-      dispatchMsg(wrap('layout', { type: 'focus_set', focus: p.paneId }));
-      // Begin a selection iff the click landed in the content rows
-      // and this tab actually has scrollable text content. (U2d P2b — a
-      // `detail` pane never hosts a terminal now; terminal panes are their own
-      // kind and don't reach this isDetailPane branch.)
-      const inContent = my > b.y && my < b.y + b.h - 1;
-      const d = route.sliceForPane(p.paneId, p.type);
-      // The active content instance holds its displayed buffer on slice.lines
-      // — except an `agent` tab, whose buffer is `transcript` (drag-select
-      // over an agent tab minted into the content slot works like text).
-      const _dlines = (d && Array.isArray(d.lines)) ? d.lines
-        : (d && Array.isArray(d.transcript)) ? d.transcript : [];
-      if (inContent && _dlines.length > 0) {
-        const visibleLine = my - b.y - 1;
-        const col = Math.max(0, mx - b.x - 1);
-        sel.beginAt((d.scroll || 0) + visibleLine, col, 'char');
-      } else {
-        sel.cancel();
-      }
-      mutated = true;
-      break;
-    }
-
-    // Other panels — focus + select clicked item. A press anywhere
-    // outside the detail content area cancels any pending selection
-    // (starting a new gesture here).
-    sel.cancel();
-    // Shared per-pane selection: a fresh press clears any prior selection and
-    // ARMS a new one at the click's content coords; the first motion begins it
-    // (so a plain click still selects the row, only a drag selects text).
+    // Focus + select clicked item. A fresh press clears any prior selection —
+    // whichever pane instance owns it — and ARMS a new one at the click's
+    // content coords; the first motion begins it (so a plain click still
+    // selects the row / focuses, only a drag selects text). Content panes
+    // (info / text-view / agent) ride the same arm: their instances claim the
+    // wrapped select_* Msgs with buffer-clamped coords.
     const _prior = psel.activeSelection();
     if (_prior) dispatchMsg(wrap(_prior.paneId, { type: 'select_cancel' }));
     if (_selectablePane(p.paneId)) {

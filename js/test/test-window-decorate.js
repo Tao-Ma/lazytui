@@ -18,7 +18,7 @@
 const { describe, it, eq, report } = require('./test-runner');
 const sm = require('./smoke/_helpers/smoke');
 const search = require('../panel/content/search');
-const select = require('../panel/content/select');
+const core = require('../leaves/text/select-core');
 const route = require('../panel/route');
 const { getInstanceSlice } = require('../panel/api');
 
@@ -76,19 +76,23 @@ describe('[1] search: windowed decoration == whole-buffer sliced', () => {
   });
 });
 
-// select.decorateLines reads _detail().select; set it on the active content-slot
-// instance (U2f — resolveTarget('viewer'), where the viewer's selection now lives).
+// Selection decoration reads the active content-slot instance's `slice.select`
+// (buildTextView → select-core.decorateWindow, offset-aware); seed it there and
+// decorate through the same core entry point the render path uses.
 function withSelect(sel, fn) {
   const ds = contentSlice();
   const prev = ds.select;
   ds.select = sel;
   try { fn(); } finally { ds.select = prev; }
 }
+function selDecorate(lines, offset) {
+  return core.decorateWindow(lines, contentSlice().select, offset || 0);
+}
 function assertSelectEquiv(label, lines, offsets) {
-  const full = select.decorateLines(lines);                  // whole buffer (offset 0)
+  const full = selDecorate(lines);                           // whole buffer (offset 0)
   for (const start of offsets) {
     const fullWindow = full.slice(start, start + INNER_H);
-    const win = select.decorateLines(lines.slice(start, start + INNER_H), { offset: start });
+    const win = selDecorate(lines.slice(start, start + INNER_H), start);
     eq(win, fullWindow, `${label} @offset ${start}`);
   }
 }
