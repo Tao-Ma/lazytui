@@ -1,8 +1,9 @@
 /**
  * Text-selection core — the PURE geometry of a rectangular-free, char/line
  * selection over an array of Rich-markup content lines. Shared bottom leaf: the
- * per-pane selection service (js/panel/select/*) and, later, the viewer's own
- * selection both resolve display-column ↔ codepoint boundaries, extract the
+ * selection service (js/panel/select-view.js), the content panes' shared
+ * reducer (leaves/text/text-view-update), and the loop's generic select_*
+ * fallback all resolve display-column ↔ codepoint boundaries, extract the
  * selected text, and decorate the highlighted range through this one module.
  *
  * A selection is `{ anchor:{line,col}, cursor:{line,col}, kind:'char'|'line',

@@ -54,8 +54,8 @@ Keys whose behavior **branches on focus or mode** stay built-in and **cannot be
 remapped** — binding one is a boot error that names the remappable keys. These
 include the navigation keys (`j k h l` / arrows), `return`, `escape`, `x`, `T`,
 `v`, `*`, `<space>` (the leader), the view-resize keys `+` / `_`, the tab keys
-`[` / `]` (they fork to the groups quick-tab), and `/` (the viewer claims it for
-search). Run `--keymap` for the exact set.
+`[` / `]` (they fork to the groups quick-tab), and `/` (the content panes claim
+it for search). Run `--keymap` for the exact set.
 
 A key not listed as reserved and not a built-in default is **free** — bind it to
 anything (e.g. `C: cmdline`).

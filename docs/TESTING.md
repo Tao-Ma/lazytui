@@ -77,7 +77,7 @@ The scenarios target the bug class the unit suite misses:
   render-queue self-register boot order).
 - **`pty-overlay.js`** — the embedded-terminal overlay repaints under
   the async PTY race (the #D15 model-conditional poll backstop).
-- **`dual-viewer.js`** — multi-viewer layouts (≥2 detail panes) render
+- **`dual-viewer.js`** — multi-viewer layouts (≥2 content slots) render
   + route to the right pane.
 - **`multi-instance.js`** — same-kind multi-pane slice isolation (the
   strict-miss / `_primaryByKind` class).

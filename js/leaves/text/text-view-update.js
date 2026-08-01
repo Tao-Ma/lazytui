@@ -2,9 +2,9 @@
  * Shared text-view interaction reducer (U2c P0, docs/one-tab-system.md).
  *
  * The scroll / search / select / cursor state machine that drives a scrollable
- * text pane. Extracted verbatim from the viewer Component (`panel/viewer/viewer.js`)
- * so BOTH the viewer (tab-kind `'detail'`) and any minted `text-view` instance
- * (tab-kind `'text-view'`) share ONE implementation. Pure: a function of
+ * text pane. Extracted from the (since-retired) viewer Component so every
+ * content instance — `info`, minted `text-view` tabs, the `agent` transcript —
+ * shares ONE implementation. Pure: a function of
  * `(msg, slice, lines, ownKind)` — no getModel(), no route reads. The caller
  * derives `lines` (the active-tab content) at the dispatch boundary and threads
  * it in; `slice.innerH` (the viewport height) is stamped by the caller's
@@ -16,7 +16,8 @@
  * from the viewer: `mode_set`/`mode_clear` on the `detailSearchMode` chrome flag
  * (kept global — one text pane searches at a time) and `register_push` on yank.
  * The `key` arm claims via the `{ type: '_claimed' }` sentinel exactly as before;
- * the focus gate is `ownKind` (the viewer passes 'detail', text-view 'text-view').
+ * the focus gate is `ownKind` (each caller passes its own kind — 'info',
+ * 'text-view', 'agent').
  */
 'use strict';
 

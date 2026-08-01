@@ -20,7 +20,8 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   output, a terminal, an agent, or the Transcript for unrouted streams) instead
   of only focusing the content column.
 - Internal: `panel/viewer/` → `panel/content/` (the viewer Component is gone;
-  the dir holds content-slot pane services); the root mouse-selection Msgs
+  the dir holds content-slot pane services); the pure slot-strip geometry
+  engine re-homed to `leaves/wm/tab-strip.js`; the root mouse-selection Msgs
   `sel_*` → `mouse_sel_*` to disambiguate from the keyboard `select_*` set.
 - **One selection model.** The two text-selection state shapes (the content
   panes' in-slice selection vs the root `model.selection` every other pane
@@ -30,8 +31,12 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   covers mouse selection on content panes too (they were exempt); a drag past
   a pane's edge extends to the nearest visible line on every pane (previously
   viewer-only); a press on a content pane clears another pane's persisted
-  selection like any other press. The interim `mouse_sel_*` Msgs are gone —
-  replay recordings from the rename window no longer fold.
+  selection like any other press; a group switch clears hidden tabs' persisted
+  selections too; with several active selections, right-click **Copy
+  selection** copies the highlight under the pointer. The root mouse-selection
+  Msg arms are gone — mouse selections in replay recordings from earlier
+  versions (the released `sel_*` of v0.6.8–v0.6.9, and the interim
+  `mouse_sel_*` rename) no longer fold.
 
 ## [0.6.9] — 2026-07-29
 

@@ -107,7 +107,7 @@ describe('[immutable] leaves/register.js', () => {
 
 // --- leaves/search -------------------------------------------------------
 
-describe('[immutable] leaves/search.js', () => {
+describe('[immutable] leaves/text/search.js', () => {
   // P1 (viewer-lines selector) — matches are NOT stored on the slice:
   // ms.matchesFor(lines, term) is the chained-selector memo. Transforms
   // take (slice, innerH, lines, term) where the caller passes the

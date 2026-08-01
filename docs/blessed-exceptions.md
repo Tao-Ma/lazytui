@@ -494,8 +494,8 @@ Two options; pick one in the Decisions section:
 - **Files.** `js/render/paint.js` (delete writes), `js/leaves/geometry.js`
   (selector or accessor; the old `render/geometry.js` facade was deleted by
   the wm-geometry refactor), `js/dispatch/input.js` +
-  `js/panel/viewer/*` (hit-test read sites), `js/panel/layout.js:185` (drop the
-  field if fully derived).
+  the viewer-era hit-test read sites (that dir is `js/panel/content/` today),
+  `js/panel/layout.js:185` (drop the field if fully derived).
 - **Tests.** `test-mouse-wheel`, `test-viewer-pane-bounds`, tab-strip hit-test
   tests stay green; add a render-purity assertion (render produces no slice diff).
 - **Risk.** Medium — touches every hit-test reader. The half/full visible-bounds

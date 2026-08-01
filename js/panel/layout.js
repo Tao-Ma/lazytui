@@ -919,7 +919,7 @@ function update(msg, slice) {
       // user's freshly-switched pane drops its focus highlight.
       // The old pane.id (= pane.activeTabId before switch) is the
       // canonical focus value most producers write; pane.paneId is
-      // the alternative (pane-tabs.js producers). _withFocus stamps
+      // the alternative some producers write. _withFocus stamps
       // focus + halfLeftPanel + lastViewerTab; emit show_selected_info
       // directly — sibling arms (pool_show, remove_column) do the same.
       const wasFocused = mpane.paneMatchesFocus(pane, slice.focus);

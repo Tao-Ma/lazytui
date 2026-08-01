@@ -1,16 +1,18 @@
 /**
  * Per-tab state store — pure, pane-agnostic (docs/pane-tabs-unification.md, P1).
  *
- * A pane's slice carries `tabState`, a keyed map `{ <tabKey>: { <field>: value } }`
+ * A slice carries `tabState`, a keyed map `{ <tabKey>: { <field>: value } }`
  * where each entry holds one tab's persisted view state (scroll / cursor /
  * filter / selection / search …). These four accessors are the whole store
- * mechanism; both the viewer (panel/viewer) and — as the arc lands — every
- * other pane read/write per-tab state through them.
+ * mechanism, consumed through the tab-container contract's `perTabState` verb
+ * (leaves/wm/tab-container.js). Since U2f a position tab's view state lives
+ * NATIVELY on its own instance slice — this keyed store remains the mechanics
+ * behind the container verb, not the primary home it was when the viewer
+ * Component multiplexed tabs over one slice.
  *
  * What lives HERE: the store mechanics (read a field with a fallback, merge a
- * field/patch immutably, drop an entry). What stays per-pane: the KEY scheme and
- * which tabs exist (the viewer's `<group>:<kind>:<key>` keys live in
- * leaves/wm/pane-tabs). Pure leaf — no model/global reads, no imports.
+ * field/patch immutably, drop an entry). What stays per-caller: the KEY scheme
+ * and which tabs exist. Pure leaf — no model/global reads, no imports.
  */
 'use strict';
 

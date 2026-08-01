@@ -100,7 +100,7 @@ right and any agent plugs in; get it wrong and it leaks one backend's idioms:
 | Normalized event | Meaning | Becomes |
 |---|---|---|
 | `turn-start` | assistant turn began | status Msg |
-| `assistant-delta {text\|thinking}` | streaming token(s) of the current turn | **not folded** — spinner, or throttled (§Streaming) |
+| `assistant-delta {text\|thinking}` | streaming increment of the current turn | transcript fold into the provisional streaming preview (throttled at the backend, §Streaming) |
 | `assistant-message {text}` | a turn's assistant text settled | transcript fold (the `agent_event` arm) |
 | `tool-call {id, name, args}` | agent invoked a tool | transcript fold (one `→ name(args)` line) + tool spinner |
 | `tool-result {id, result, isError}` | tool finished | transcript fold (`←`/`✗` block) |
@@ -377,10 +377,13 @@ deltas worth recording:
   settle signal** — `message_end` is unused (avoids double-fold). Framing is
   spec-mandated `\n`-only splitting (never readline: U+2028/U+2029 are legal
   inside JSON strings), pinned by a fixture test.
-- **Deltas are dropped at the adapter** (`message_update` → nothing), not
-  filtered downstream: folding per-token events would push every token
-  through dispatch + the WAL for nothing under spinner+settle. A future
-  throttled-delta slots into exactly that adapter arm.
+- **Deltas are throttled at the adapter** (`message_update` text deltas buffer
+  on the handle and emit as `assistant-delta` INCREMENTS at most every ~100 ms,
+  §Streaming), not filtered downstream: folding raw per-token events would push
+  every token through dispatch + the WAL. Phase A shipped this arm as
+  spinner+settle (deltas → nothing); the throttled-delta slotted into exactly
+  that arm, as designed. Thinking / toolcall deltas are still dropped — the
+  status line already says "thinking…".
 - **Usage**: per-turn `message.usage` accumulates on the backend handle and
   rides the `status {state:'idle', tokens, cost}` emitted at settle; the
   pane's status-merge keeps the totals displayed.
@@ -393,7 +396,9 @@ deltas worth recording:
   the session **lazily and idempotently** (a minted-but-never-entered pane
   spawns nothing; Enter after an exit restarts). `x` closes an *exited*
   agent pane (the dead-terminal analog). PageUp/PageDown scroll the
-  transcript while composing.
+  transcript while composing; `↑`/`↓` recall previously-sent messages into
+  the draft (readline-style history — editing a recalled line forks it back
+  to the live line).
 - **Identity**: the session id IS the tab-instance id (like a terminal's PTY
   id); orphan-dispose destroys the session entry first so straggler events —
   including the backend's own final `exit` — drop via a stale-session guard.
@@ -436,7 +441,8 @@ like model failures). Unset the proxy vars for local-endpoint runs.
    An in-process SDK backend remains a candidate follow-on.
 2. **Normalized event vocabulary** — the §"backend seam" table shipped as-is
    (10 closed types, open extra fields), pinned by `test-agent-protocol.js`.
-3. **Streaming** — spinner + settle ✓ (deltas dropped at the adapter).
+3. **Streaming** — throttled-delta preview ✓ (~10 Hz increments folding into
+   the transcript, §Streaming; Phase A shipped spinner+settle first).
 4. **Phase-A boundary** — standalone pane ✓; fabric wiring stays Phase B.
 
 ## See also
