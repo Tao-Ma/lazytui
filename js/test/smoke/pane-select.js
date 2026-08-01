@@ -105,6 +105,39 @@ describe('[3] right-click offers "Copy selection" for the active selection', () 
   });
 });
 
+describe('[5] two active selections — the gesture stays on the armed pane', () => {
+  // More than one pane can hold an active selection by design (a keyboard
+  // visual-mode selection + a persisted mouse one, or a hidden tab re-owning
+  // on switch-back). Regression: the scan-first pick used to skip select_begin
+  // on the dragged pane and settle/copy the STALE pane's selection instead.
+  const WIRES = paneIdOf('fabric-wires');
+  it('a persisted selection elsewhere neither blocks the drag nor hijacks the copy', () => {
+    dispatchMsg(route.wrap(WIRES, { type: 'select_begin', line: 0, col: 0, kind: 'char' }));
+    dispatchMsg(route.wrap(WIRES, { type: 'select_extend', line: 0, col: 3 }));
+    assert(selView.selectionFor(WIRES), 'wires selection seeded');
+    mouse('press', PORTS, 0, 0);
+    assert(!selView.selectionFor(WIRES), 'press cancelled the OTHER pane\'s selection too');
+    mouse('motion', PORTS, 4, 0);
+    mouse('release', PORTS, 4, 0);
+    const own = selView.activeSelection();
+    assert(own && own.paneId === PORTS, `the drag began+settled on ports: ${JSON.stringify(own)}`);
+    eq(getModel().register.history[0], 'miner', 'the DRAGGED text was copied, not the stale selection');
+  });
+});
+
+describe('[6] group switch clears EVERY active selection', () => {
+  const WIRES = paneIdOf('fabric-wires');
+  it('two actives → reset_group_context → none survive', () => {
+    dispatchMsg(route.wrap(PORTS, { type: 'select_begin', line: 0, col: 0, kind: 'char' }));
+    dispatchMsg(route.wrap(PORTS, { type: 'select_extend', line: 0, col: 4 }));
+    dispatchMsg(route.wrap(WIRES, { type: 'select_begin', line: 0, col: 0, kind: 'char' }));
+    dispatchMsg(route.wrap(WIRES, { type: 'select_extend', line: 0, col: 3 }));
+    eq(selView.activeSelections().length, 2, 'two panes hold active selections');
+    require('../../dispatch/control/dispatch').applyMsg({ type: 'reset_group_context', owners: {} });
+    eq(selView.activeSelections().length, 0, 'the select_cancel_all sweep cancelled them all');
+  });
+});
+
 describe('[4] the config gate disables selection', () => {
   it('global selection:false → a drag produces no selection', () => {
     getModel().config.selection = false;

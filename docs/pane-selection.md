@@ -79,12 +79,20 @@ row, so dragging to the border extends to the first/last visible line. Release
 **settles**: a real drag is auto-copied to the register and stays highlighted
 (offered to right-click **Copy selection** / **Send selection to port…**); a
 no-drag press clears (no stray one-char selection). A fresh press anywhere
-clears whichever pane owned the previous selection.
+clears **every** pane's visible selection before arming.
 
 The content panes additionally drive the same `slice.select` from the keyboard
 visual-mode state machine (`v`/`V`/`y`, `leaves/text/text-view-update`) —
 scroll-anchored across their full scrollback. Mouse and keyboard are two drivers
 of ONE state shape, not two backends.
+
+More than one pane can hold an active selection at a time (a keyboard
+visual-mode selection plus a persisted mouse one, or a hidden tab re-owning on
+switch-back), so nothing resolves ownership by "the first active one found": the
+mouse gesture is scoped to its ARMED pane throughout, sweep operations (press
+clear, the group-switch `select_cancel_all`) cancel **all** of them, and the
+highlight/copy consumers act on `activeSelection()` — the **focused** pane's own
+selection first, else the first in pane order.
 
 > **Unified (2026-08-01).** Selection previously had two state shapes: the
 > content panes' in-slice `select` and a single-owner root `model.selection`

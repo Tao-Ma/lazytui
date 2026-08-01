@@ -238,15 +238,17 @@ function installBuiltins() {
       else require('../control/dispatch').applyMsg(eff.msg);
     } finally { _exitCrossLayer(); }
   });
-  // select_cancel_all: drop the active per-pane text selection, whichever pane
-  // instance owns it (docs/pane-selection.md). Selection state lives on pane
-  // slices, so the root reducer (reset_group_context) can't clear it directly —
-  // it emits this Cmd and the shell resolves the owner (select-view's scan) and
-  // routes a wrapped select_cancel through the Component fan-out.
+  // select_cancel_all: drop EVERY active per-pane text selection — more than
+  // one pane can hold one (docs/pane-selection.md). Selection state lives on
+  // pane slices, so the root reducer (reset_group_context) can't clear it
+  // directly — it emits this Cmd and the shell resolves the owners
+  // (select-view's scan) and routes a wrapped select_cancel to each through
+  // the Component fan-out.
   registerEffect('select_cancel_all', () => {
     try {
-      const own = require('../../panel/select-view').activeSelection();
-      if (own) require('./loop').dispatchMsg(require('../../panel/route').wrap(own.paneId, { type: 'select_cancel' }));
+      for (const own of require('../../panel/select-view').activeSelections()) {
+        require('./loop').dispatchMsg(require('../../panel/route').wrap(own.paneId, { type: 'select_cancel' }));
+      }
     } catch (_) { /* no panes (test) */ }
   });
   // show_selected_info: Component-level access to the framework Cmd that

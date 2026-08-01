@@ -82,18 +82,45 @@ function decorateFor(paneId, lines, type) {
   return core.decorateWindow(lines, sel, 0);
 }
 
+/** One pane's OWN active selection: `{ paneId, type, sel, slice }`, or null.
+ *  Reads the pane's ACTIVE instance slice — a hidden tab's persisted selection
+ *  stays out (per-tab persistence: it re-owns when its tab is active again). */
+function selectionFor(paneId, type) {
+  const slice = _sliceFor(paneId, type);
+  const sel = slice && slice.select;
+  return (sel && sel.active) ? { paneId, type, sel, slice } : null;
+}
+
 /**
- * The pane owning the active selection: `{ paneId, type, sel, slice }`, or null.
- * Scans each pane's ACTIVE instance slice — a hidden tab's persisted selection
- * stays out (per-tab persistence: it re-owns when its tab is active again).
+ * EVERY pane whose active instance holds an active selection. More than one is
+ * reachable by design (a keyboard visual-mode selection on the focused content
+ * pane + a persisted mouse selection elsewhere; a hidden tab re-owning its
+ * selection on switch-back) — sweep callers (press-clear, the group-switch
+ * select_cancel_all effect) must cancel them ALL, not the first hit.
+ */
+function activeSelections() {
+  const out = [];
+  for (const p of _panels()) {
+    const own = selectionFor(p.paneId, p.type);
+    if (own) out.push(own);
+  }
+  return out;
+}
+
+/**
+ * THE active selection — the one highlight/copy consumers act on. The FOCUSED
+ * pane's own selection wins (a keyboard visual-mode selection is always on the
+ * focused pane, and the pre-unification viewer had the same precedence);
+ * otherwise the first pane-order hit.
  */
 function activeSelection() {
-  for (const p of _panels()) {
-    const slice = _sliceFor(p.paneId, p.type);
-    const sel = slice && slice.select;
-    if (sel && sel.active) return { paneId: p.paneId, type: p.type, sel, slice };
+  const focus = require('./route').getFocus();
+  if (focus) {
+    const own = selectionFor(focus);
+    if (own) return own;
   }
-  return null;
+  const all = activeSelections();
+  return all.length ? all[0] : null;
 }
 
 // The content buffer a selection resolves against when the frame capture is
@@ -106,16 +133,23 @@ function _bufferOf(slice) {
   return null;
 }
 
-/** The current selection's text, resolved from the owner pane's content. ''
- *  when there's no active selection or no content to resolve against. */
-function selectedText() {
-  const own = activeSelection();
+// Resolve an owner's selection to text: the frame capture when it holds the
+// full content, else the instance's own buffer (windowed captures only carry
+// the visible rows).
+function _textOf(own) {
   if (!own) return '';
   const cap = _content.get(own.paneId);
   const lines = (cap && !cap.windowed) ? cap.lines : (_bufferOf(own.slice) || (cap && cap.lines));
   if (!lines) return '';
   return core.selectedTextFrom(lines, own.sel);
 }
+
+/** THE active selection's text ('' when none) — highlight/copy consumers. */
+function selectedText() { return _textOf(activeSelection()); }
+
+/** A specific pane's own active selection's text ('' when none) — the mouse
+ *  release settles the ARMED pane, not whatever pane a scan finds first. */
+function selectedTextFor(paneId) { return _textOf(selectionFor(paneId)); }
 
 /** True iff a selection is active. */
 function isActive() {
@@ -124,5 +158,7 @@ function isActive() {
 
 module.exports = {
   enterPane, exitPane, currentPaneId,
-  recordContent, contentFor, decorateFor, activeSelection, selectedText, isActive,
+  recordContent, contentFor, decorateFor,
+  selectionFor, activeSelection, activeSelections,
+  selectedText, selectedTextFor, isActive,
 };

@@ -623,35 +623,40 @@ function handleMouse(kind, x, y) {
   // claim them in their own update (clamped against their buffer), every other
   // pane gets the loop's generic fallback. Runs ahead of the focus+select loop
   // so a drag extends rather than losing the selection to a focus change.
+  // The gesture is scoped to the ARMED pane throughout — never resolved by an
+  // ownership scan. More than one pane can hold an active selection by design
+  // (a persisted mouse selection + a keyboard visual-mode one, or a hidden tab
+  // re-owning on switch-back), and a scan-first pick would extend/settle the
+  // WRONG pane's selection (copying stale text on release).
   const psel = require('../../panel/select-view');
   if (kind === 'motion') {
-    const _active = psel.activeSelection();
-    if (_armedSelect || _active) {
-      if (_armedSelect && !_active) {
-        dispatchMsg(wrap(_armedSelect.paneId,
+    if (_armedSelect) {
+      const paneId = _armedSelect.paneId;
+      // First motion after the press: begin at the armed anchor (the armed
+      // pane's own selection isn't active yet — the press cancelled priors).
+      if (!psel.selectionFor(paneId)) {
+        dispatchMsg(wrap(paneId,
           { type: 'select_begin', line: _armedSelect.line, col: _armedSelect.col, kind: 'char' }));
       }
-      const paneId = _armedSelect ? _armedSelect.paneId : _active.paneId;
       const cc = _contentCoordsAt(paneId, mx, my, true);   // clamp: drag past the edge pins to the nearest row
       if (cc) dispatchMsg(wrap(paneId, { type: 'select_extend', line: cc.line, col: cc.col }));
       render();
-      return;
     }
     return;
   }
   if (kind === 'release') {
-    const _active = psel.activeSelection();
-    if (_active) {
-      const s = _active.sel;
-      const dragged = !(s.anchor.line === s.cursor.line && s.anchor.col === s.cursor.col);
-      const text = dragged ? psel.selectedText() : '';
-      if (text) applyMsg({ type: 'register_push', text });
-      else dispatchMsg(wrap(_active.paneId, { type: 'select_cancel' }));
+    if (_armedSelect) {
+      const own = psel.selectionFor(_armedSelect.paneId);
+      if (own) {
+        const s = own.sel;
+        const dragged = !(s.anchor.line === s.cursor.line && s.anchor.col === s.cursor.col);
+        const text = dragged ? psel.selectedTextFor(_armedSelect.paneId) : '';
+        if (text) applyMsg({ type: 'register_push', text });
+        else dispatchMsg(wrap(_armedSelect.paneId, { type: 'select_cancel' }));
+        render();
+      }
       _armedSelect = null;
-      render();
-      return;
     }
-    _armedSelect = null;
     return;
   }
 
@@ -702,14 +707,16 @@ function handleMouse(kind, x, y) {
       if (mutated) break;
     }
 
-    // Focus + select clicked item. A fresh press clears any prior selection —
-    // whichever pane instance owns it — and ARMS a new one at the click's
-    // content coords; the first motion begins it (so a plain click still
-    // selects the row / focuses, only a drag selects text). Content panes
-    // (info / text-view / agent) ride the same arm: their instances claim the
-    // wrapped select_* Msgs with buffer-clamped coords.
-    const _prior = psel.activeSelection();
-    if (_prior) dispatchMsg(wrap(_prior.paneId, { type: 'select_cancel' }));
+    // Focus + select clicked item. A fresh press clears EVERY prior visible
+    // selection (more than one pane can hold one — see the gesture note above)
+    // and ARMS a new one at the click's content coords; the first motion
+    // begins it (so a plain click still selects the row / focuses, only a drag
+    // selects text). Content panes (info / text-view / agent) ride the same
+    // arm: their instances claim the wrapped select_* Msgs with buffer-clamped
+    // coords.
+    for (const _prior of psel.activeSelections()) {
+      dispatchMsg(wrap(_prior.paneId, { type: 'select_cancel' }));
+    }
     if (_selectablePane(p.paneId)) {
       const cc = _contentCoordsAt(p.paneId, mx, my);
       if (cc) _armedSelect = { paneId: p.paneId, line: cc.line, col: cc.col };  // else stays null (cleared above)
