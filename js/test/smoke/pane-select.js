@@ -158,4 +158,38 @@ describe('[4] the config gate disables selection', () => {
   });
 });
 
+describe('[7] per-tab persistence — a content tab keeps its selection across a tab switch', () => {
+  // THE property the unified per-instance model buys (docs/pane-selection.md):
+  // every tab is its own instance, so a hidden tab's `slice.select` survives —
+  // without owning the app-wide selection — and re-owns on switch-back.
+  it('hidden tab keeps but does not own; switch-back re-owns', () => {
+    for (const own of selView.activeSelections()) {                 // clean slate after [4]
+      dispatchMsg(route.wrap(own.paneId, { type: 'select_cancel' }));
+    }
+    const viewerPane = route.resolveViewerPaneId();
+    const target = route.resolveTarget('viewer');                   // active content instance
+    const vs = api.getInstanceSlice(target);
+    vs.lines = ['alpha beta', 'gamma delta'];
+    vs.scroll = 0;
+    dispatchMsg(route.wrap(target, { type: 'select_begin', line: 0, col: 0, kind: 'char' }));
+    dispatchMsg(route.wrap(target, { type: 'select_extend', line: 0, col: 4 }));
+    eq(selView.activeSelection()?.paneId, viewerPane, 'content pane owns the selection');
+    eq(selView.selectedText(), 'alpha', 'selected text resolves from the instance buffer');
+
+    // Mint a second content tab — it becomes the pane's active tab.
+    require('../../panel/content-tab').addContentTab(
+      getModel().currentGroup, 'doc-x', 'Doc X', ['doc line 1']);
+    assert(route.resolveTarget('viewer') !== target, 'the minted doc tab is active now');
+    assert(api.getInstanceSlice(target).select?.active, 'hidden tab keeps its selection on its slice');
+    assert(!selView.activeSelection(), 'but the hidden tab does NOT own the app-wide selection');
+
+    // Switch back to the original tab → its persisted selection re-owns.
+    const pane = navState.allPanels().find((x) => x.paneId === viewerPane);
+    const back = (pane.tabs || []).find((t) => t.type === 'info') || (pane.tabs || [])[0];
+    dispatchMsg(route.wrap('layout', { type: 'set_active_tab', paneId: viewerPane, tabPoolId: back.poolId }));
+    eq(selView.activeSelection()?.paneId, viewerPane, 'switch-back re-owns the persisted selection');
+    eq(selView.selectedText(), 'alpha', 'and its text is intact');
+  });
+});
+
 report();
