@@ -27,9 +27,9 @@ selection stays anchored to content as a pane scrolls and maps CJK / wide glyphs
 correctly (a click on either cell of a 2-wide glyph grabs the whole glyph). The
 selected **text is derived on demand** from the owning pane's content — never
 stored — so it rides the WAL and replays like any other state. Ownership is
-implicit: the pane whose ACTIVE instance carries `select.active` owns the
-selection (`select-view.activeSelection`, the one scan behind highlight, copy,
-and the context menu). Every tab is its own instance, so a content tab's
+implicit: a pane owns a selection when its ACTIVE instance carries
+`select.active` (`select-view.selectionFor`; more than one pane can own one at
+a time — see §Interaction). Every tab is its own instance, so a content tab's
 selection is **per-tab persisted by construction** — switch away and back and
 it's still there; a hidden tab's selection never owns the app-wide one.
 
@@ -89,10 +89,16 @@ of ONE state shape, not two backends.
 More than one pane can hold an active selection at a time (a keyboard
 visual-mode selection plus a persisted mouse one, or a hidden tab re-owning on
 switch-back), so nothing resolves ownership by "the first active one found": the
-mouse gesture is scoped to its ARMED pane throughout, sweep operations (press
-clear, the group-switch `select_cancel_all`) cancel **all** of them, and the
-highlight/copy consumers act on `activeSelection()` — the **focused** pane's own
-selection first, else the first in pane order.
+mouse gesture is scoped to its ARMED pane throughout, the highlight paints on
+**every** owning pane, and the right-click menu's **Copy selection** / **Send
+selection to port…** resolve the pane under the POINTER first
+(`selectionFor`), falling back to `activeSelection()` — the **focused** pane's
+own selection, else the first in pane order. Sweeps cancel all owners, at two
+scopes: a fresh press clears every **visible** selection (each pane's active
+instance), while the group-switch `select_cancel_all` Cmd sweeps the whole
+instance **registry** (`allSelections`) — a hidden tab's per-tab-persisted
+selection must not survive into a new group, where it would re-own over
+whatever content the group loads into that instance on switch-back.
 
 > **Unified (2026-08-01).** Selection previously had two state shapes: the
 > content panes' in-slice `select` and a single-owner root `model.selection`
@@ -103,7 +109,9 @@ selection first, else the first in pane order.
 > *by construction*, and the loop's generic `select_*` fallback preserves the
 > universal zero-per-pane-edit property on the slice side. `model.selection`,
 > the `mouse_sel_*` arms, and the viewer facade (`panel/content/select.js`)
-> are gone; old replay recordings carrying `mouse_sel_*` no longer fold.
+> are gone; mouse-selection Msgs in old replay recordings no longer fold —
+> the released `sel_*` root arms (v0.6.8–v0.6.9) as well as the interim
+> `mouse_sel_*` rename.
 
 ### On table panes
 

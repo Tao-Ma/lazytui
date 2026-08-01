@@ -387,15 +387,19 @@ function _itemText(def, item) {
 
 function _resolveContextAt(mx, my) {
   const { stripMarkup } = require('../../leaves/text/ansi');
-  // Active text selection (docs/pane-selection.md) — whichever pane instance
-  // owns it, resolved by the one selection service. Feeds the context menu's
-  // "Copy selection" / "Send selection to port".
-  const selectionText = require('../../panel/select-view').selectedText() || null;
   const layoutSlice = getInstanceSlice('layout');
   for (const p of allPanels()) {
     const b = visibleBoundsFor(layoutSlice, p.paneId, route.resolveViewerPaneId());
     if (!b) continue;
     if (mx < b.x || mx >= b.x + b.w || my < b.y || my >= b.y + b.h) continue;
+    // Active text selection (docs/pane-selection.md) — POINTER-scoped: the
+    // pane under the cursor's own selection wins, so right-clicking a visible
+    // highlight always copies THAT text (more than one pane can hold an active
+    // selection; the focused-first global scan would pick the wrong one).
+    // Falls back to the app-wide selection when the pointer pane owns none.
+    // Feeds the context menu's "Copy selection" / "Send selection to port".
+    const psel = require('../../panel/select-view');
+    const selectionText = psel.selectedTextFor(p.paneId) || psel.selectedText() || null;
     const itemRow = my - b.y - 1;  // -1 for top border
     if (route.isViewerKind(p.paneId)) {   // U2f — content-viewer kinds (info / text-view)
       const d = getInstanceSlice(p.paneId);

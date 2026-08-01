@@ -95,8 +95,9 @@ function selectionFor(paneId, type) {
  * EVERY pane whose active instance holds an active selection. More than one is
  * reachable by design (a keyboard visual-mode selection on the focused content
  * pane + a persisted mouse selection elsewhere; a hidden tab re-owning its
- * selection on switch-back) — sweep callers (press-clear, the group-switch
- * select_cancel_all effect) must cancel them ALL, not the first hit.
+ * selection on switch-back) — the press-clear sweep must cancel them ALL, not
+ * the first hit. VISIBLE selections only: hidden tabs' persisted ones stay
+ * (per-tab persistence); the group-switch clear uses allSelections instead.
  */
 function activeSelections() {
   const out = [];
@@ -104,6 +105,24 @@ function activeSelections() {
     const own = selectionFor(p.paneId, p.type);
     if (own) out.push(own);
   }
+  return out;
+}
+
+/**
+ * EVERY registered instance holding an active selection — hidden tabs'
+ * persisted ones included (the per-pane scans above see only each pane's
+ * ACTIVE instance). The group-switch select_cancel_all sweep needs this
+ * registry-wide view: a hidden tab's selection would otherwise survive the
+ * switch and re-own over whatever content the NEW group loads into that
+ * instance (docs/pane-selection.md §Clearing). `{ instId, sel }` — instance
+ * ids are directly addressable through the wrapped-Msg path.
+ */
+function allSelections() {
+  const out = [];
+  require('./route').eachInstance((inst) => {
+    const sel = inst.slice && inst.slice.select;
+    if (sel && sel.active) out.push({ instId: inst.id, sel });
+  });
   return out;
 }
 
@@ -159,6 +178,6 @@ function isActive() {
 module.exports = {
   enterPane, exitPane, currentPaneId,
   recordContent, contentFor, decorateFor,
-  selectionFor, activeSelection, activeSelections,
+  selectionFor, activeSelection, activeSelections, allSelections,
   selectedText, selectedTextFor, isActive,
 };

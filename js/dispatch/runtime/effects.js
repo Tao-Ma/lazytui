@@ -238,18 +238,24 @@ function installBuiltins() {
       else require('../control/dispatch').applyMsg(eff.msg);
     } finally { _exitCrossLayer(); }
   });
-  // select_cancel_all: drop EVERY active per-pane text selection — more than
-  // one pane can hold one (docs/pane-selection.md). Selection state lives on
-  // pane slices, so the root reducer (reset_group_context) can't clear it
-  // directly — it emits this Cmd and the shell resolves the owners
-  // (select-view's scan) and routes a wrapped select_cancel to each through
-  // the Component fan-out.
-  registerEffect('select_cancel_all', () => {
-    try {
-      for (const own of require('../../panel/select-view').activeSelections()) {
-        require('./loop').dispatchMsg(require('../../panel/route').wrap(own.paneId, { type: 'select_cancel' }));
-      }
-    } catch (_) { /* no panes (test) */ }
+  // select_cancel_all: drop EVERY active text selection — more than one pane
+  // can hold one, and a hidden tab's persisted selection counts too: per-tab
+  // persistence would otherwise carry it across the group switch and re-own it
+  // over whatever content the NEW group loads into that instance
+  // (docs/pane-selection.md §Clearing). Selection state lives on instance
+  // slices, so the root reducer (reset_group_context) can't clear it directly —
+  // it emits this Cmd and the shell sweeps the instance REGISTRY (not the
+  // visible panes), routing a wrapped select_cancel to each owner; instance ids
+  // stay directly addressable through the wrapped-Msg path, so hidden tabs are
+  // reachable. Each dispatch synchronously re-enters the pipeline → counted
+  // under the T28 cap like the `msg` effect.
+  registerEffect('select_cancel_all', (eff) => {
+    for (const own of require('../../panel/select-view').allSelections()) {
+      if (!_enterCrossLayer('select_cancel_all', eff)) return;
+      try {
+        require('./loop').dispatchMsg(require('../../panel/route').wrap(own.instId, { type: 'select_cancel' }));
+      } finally { _exitCrossLayer(); }
+    }
   });
   // show_selected_info: Component-level access to the framework Cmd that
   // refreshes the focused panel's info into the viewer. detail.update emits

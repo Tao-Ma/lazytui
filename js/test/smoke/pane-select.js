@@ -136,6 +136,33 @@ describe('[6] group switch clears EVERY active selection', () => {
     require('../../dispatch/control/dispatch').applyMsg({ type: 'reset_group_context', owners: {} });
     eq(selView.activeSelections().length, 0, 'the select_cancel_all sweep cancelled them all');
   });
+  it('a hidden tab\'s persisted selection is cleared too (registry sweep)', () => {
+    // Seed a selection on the ACTIVE content instance, then hide it behind a
+    // freshly minted tab — per-tab persistence keeps slice.select on the hidden
+    // instance (scenario [7]). The group switch must reach it ANYWAY: the
+    // per-pane scan sees only active instances, and a surviving hidden
+    // selection would re-own over whatever content the new group loads into
+    // that instance on switch-back (review 2026-08-01, MED).
+    const target = route.resolveTarget('viewer');
+    const vs = api.getInstanceSlice(target);
+    vs.lines = ['alpha beta'];
+    vs.scroll = 0;
+    dispatchMsg(route.wrap(target, { type: 'select_begin', line: 0, col: 0, kind: 'char' }));
+    dispatchMsg(route.wrap(target, { type: 'select_extend', line: 0, col: 4 }));
+    require('../../panel/content-tab').addContentTab(
+      getModel().currentGroup, 'doc-hidden-sweep', 'Doc', ['other line']);
+    assert(route.resolveTarget('viewer') !== target, 'the seeded instance is hidden now');
+    assert(api.getInstanceSlice(target).select?.active, 'hidden tab holds a persisted selection');
+    require('../../dispatch/control/dispatch').applyMsg({ type: 'reset_group_context', owners: {} });
+    assert(!api.getInstanceSlice(target).select?.active, 'the registry sweep cleared the hidden selection');
+    eq(selView.allSelections().length, 0, 'no instance anywhere still holds one');
+    // Restore the original tab as active so later scenarios ([7]) see the
+    // pre-mint content instance.
+    const viewerPane = route.resolveViewerPaneId();
+    const pane = navState.allPanels().find((x) => x.paneId === viewerPane);
+    const back = (pane.tabs || []).find((t) => t.type === 'info') || (pane.tabs || [])[0];
+    dispatchMsg(route.wrap('layout', { type: 'set_active_tab', paneId: viewerPane, tabPoolId: back.poolId }));
+  });
 });
 
 describe('[4] the config gate disables selection', () => {
@@ -189,6 +216,37 @@ describe('[7] per-tab persistence — a content tab keeps its selection across a
     dispatchMsg(route.wrap('layout', { type: 'set_active_tab', paneId: viewerPane, tabPoolId: back.poolId }));
     eq(selView.activeSelection()?.paneId, viewerPane, 'switch-back re-owns the persisted selection');
     eq(selView.selectedText(), 'alpha', 'and its text is intact');
+  });
+});
+
+describe('[8] Copy selection is POINTER-scoped under multi-active selections', () => {
+  // Two active selections (by design): a focused-pane one on ports + a
+  // persisted one on wires. Right-clicking OVER the wires highlight must copy
+  // the wires text — the focused-first global scan used to win, copying a
+  // selection the pointer wasn't even on (review 2026-08-01, MED).
+  const WIRES = paneIdOf('fabric-wires');
+  it('right-click over the non-focused pane\'s highlight copies THAT text', () => {
+    mouse('press', PORTS, 0, 0);                 // focuses ports; sweeps priors
+    mouse('motion', PORTS, 4, 0);
+    mouse('release', PORTS, 4, 0);
+    assert(selView.selectionFor(PORTS), 'ports (focused) holds a selection');
+    dispatchMsg(route.wrap(WIRES, { type: 'select_begin', line: 0, col: 0, kind: 'char' }));
+    dispatchMsg(route.wrap(WIRES, { type: 'select_extend', line: 0, col: 3 }));
+    const wiresText = selView.selectedTextFor(WIRES);
+    assert(wiresText && wiresText !== selView.selectedTextFor(PORTS), 'two distinct active selections');
+
+    const b = bounds(WIRES);
+    sm.capture(() => input.handleMouse('right', (b.x + 1 + 1) + 1, (b.y + 1) + 1));
+    const menu = getModel().modal.menu;
+    const ci = (menu.items || []).findIndex((r) => r && r[0] === 'Copy selection');
+    assert(ci >= 0, `menu offers Copy selection (saw: ${JSON.stringify((menu.items || []).map((r) => r && r[0]))})`);
+    const box = require('../../leaves/render/draw').overlayBox(
+      { linesLen: menu.items.length, anchor: menu.anchor, maxWidth: 44 });
+    sm.capture(() => input.handleMouse('press', box.offX + 3, box.offY + 1 + ci + 1));
+    eq(getModel().register.history[0], wiresText, 'the POINTER pane\'s selection was copied');
+    for (const own of selView.allSelections()) {
+      dispatchMsg(route.wrap(own.instId, { type: 'select_cancel' }));
+    }
   });
 });
 
