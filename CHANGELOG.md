@@ -6,6 +6,15 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **Agent draft history keeps your in-progress line reachable.** Editing a
+  recalled message now edits a transient working copy at that history position
+  (closer to readline) instead of forking to the live line and discarding the
+  stashed draft. `↓` past the newest entry — or sending the recalled/edited
+  line — restores what you were typing; working copies last until the next
+  send.
+
 ### Fixed
 
 - **Agent pane selection geometry.** A mouse press on the agent pane's status

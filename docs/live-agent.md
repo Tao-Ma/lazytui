@@ -397,8 +397,10 @@ deltas worth recording:
   spawns nothing; Enter after an exit restarts). `x` closes an *exited*
   agent pane (the dead-terminal analog). PageUp/PageDown scroll the
   transcript while composing; `↑`/`↓` recall previously-sent messages into
-  the draft (readline-style history — editing a recalled line forks it back
-  to the live line).
+  the draft (readline-style history — editing a recalled line edits a
+  transient working copy at that position; `↓` past the newest, or sending,
+  always restores your in-progress line, so a browse can never eat the
+  draft).
 - **Identity**: the session id IS the tab-instance id (like a terminal's PTY
   id); orphan-dispose destroys the session entry first so straggler events —
   including the backend's own final `exit` — drop via a stale-session guard.

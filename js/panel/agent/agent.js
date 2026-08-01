@@ -62,10 +62,15 @@ function init(paneId, seed) {
     inputDraft: { text: '', cursor: 0 },
     // Draft history (up/down recall). `history` = sent messages (oldest first);
     // `histIdx` = the browse position (null = live line, not browsing);
-    // `histStash` = the in-progress line saved when browsing begins.
+    // `histStash` = the in-progress line saved when browsing begins (non-empty
+    // ONLY while browsing — every exit from browsing restores it, so it can
+    // never be silently lost); `histEdits` = transient per-entry working
+    // copies (readline-style: editing a recalled line edits a copy AT that
+    // position, cleared on send).
     history: [],
     histIdx: null,
     histStash: '',
+    histEdits: {},
     // In-flight streaming preview (throttled assistant-delta increments); shown
     // as a provisional trailing line, cleared + replaced by the settled
     // assistant-message. Separate from the transcript so the ring stays
@@ -236,8 +241,13 @@ function _input(slice, msg) {
     // reset the browse cursor.
     const hist = slice.history || [];
     const history = hist[hist.length - 1] === text ? hist : [...hist, text].slice(-HISTORY_CAP);
+    // Sending while browsing restores the stashed in-progress line as the new
+    // draft (readline discards it on accept — we keep it reachable); the stash
+    // is non-empty only while browsing. Working copies are spent.
+    const stash = slice.histStash || '';
     const next = _append(
-      { ...slice, inputDraft: { text: '', cursor: 0 }, history, histIdx: null, histStash: '' },
+      { ...slice, inputDraft: { text: stash, cursor: stash.length }, history,
+        histIdx: null, histStash: '', histEdits: {} },
       [`[cyan]› ${esc(text)}[/]`]);
     return [next, [
       { type: 'agent_start', id: selfId, cfg: { ...slice.descriptor } },
@@ -246,10 +256,13 @@ function _input(slice, msg) {
   }
   // Draft history — up/down recall previously-sent messages (readline-style).
   // The in-progress line is stashed on the first Up and restored on Down past
-  // the newest; editing a recalled line forks it back to the live line (below).
+  // the newest (or on send — the stash is always reachable). Editing a
+  // recalled line edits a transient working copy AT that position (below), so
+  // browsing shows edits until send clears them.
   if (key === 'up' || key === 'down') {
     const hist = slice.history || [];
     if (!hist.length) return slice;
+    const edits = slice.histEdits || {};
     let idx = slice.histIdx;
     let stash = slice.histStash || '';
     if (key === 'up') {
@@ -263,7 +276,7 @@ function _input(slice, msg) {
         return { ...slice, inputDraft: { text: stash, cursor: stash.length }, histIdx: null, histStash: '' };
       }
     }
-    const t = hist[idx];
+    const t = edits[idx] !== undefined ? edits[idx] : hist[idx];
     return { ...slice, inputDraft: { text: t, cursor: t.length }, histIdx: idx, histStash: stash };
   }
   // Page keys scroll the transcript while chatting (the draft is one line, so
@@ -299,9 +312,14 @@ function _input(slice, msg) {
   }
   if (text === d.text && cursor === d.cursor) return slice;
   const out = { ...slice, inputDraft: { text, cursor } };
-  // A content edit forks a recalled line back to the live line (drop the browse
-  // cursor); a cursor-only move keeps browsing.
-  if (text !== (d.text || '')) { out.histIdx = null; out.histStash = ''; }
+  // A content edit while browsing edits a transient working copy AT this
+  // history position (readline-style): the browse cursor stays, Down still
+  // restores the stashed live line, and browsing back up shows the edit until
+  // send clears the copies. (The v0.6.10 fork-to-live dropped the stash here,
+  // making the in-progress draft unrecoverable — review 2026-08-01 LOW.)
+  if (text !== (d.text || '') && slice.histIdx != null) {
+    out.histEdits = { ...(slice.histEdits || {}), [slice.histIdx]: text };
+  }
   return out;
 }
 

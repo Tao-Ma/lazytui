@@ -349,23 +349,43 @@ describe('[agent model] draft history (up/down recall)', () => {
     s = inp(s, 'up');
     eq(s.inputDraft.cursor, 5);
   });
-  it('editing a recalled line forks to the live line; Enter sends the edit + records it', () => {
+  it('editing a recalled line edits a working copy AT that position; the stash survives', () => {
     let s = agent.init('p1', null);
     s = send(s, 'orig');
-    s = inp(s, 'up');                       // recall 'orig'
+    s = typed(s, 'my draft');
+    s = inp(s, 'up');                       // recall 'orig' (stashes 'my draft')
     eq(s.histIdx, 0, 'browsing');
-    s = inp(s, '!');                        // edit → forks
+    s = inp(s, '!');                        // edit → working copy, NOT a fork
     eq(s.inputDraft.text, 'orig!');
-    eq(s.histIdx, null, 'content edit dropped the browse cursor');
-    const r = inp(s, 'return');
+    eq(s.histIdx, 0, 'the edit keeps the browse cursor (readline-style)');
+    s = inp(s, 'down');                     // past newest → restore the stash
+    eq(s.inputDraft.text, 'my draft', 'Down restores the stashed draft after an edit');
+    s = inp(s, 'up');
+    eq(s.inputDraft.text, 'orig!', 'browsing back up shows the working copy, not the original');
+    const r = inp(s, 'return');             // send the edited recall
     const next = Array.isArray(r) ? r[0] : r;
     eq(next.history, ['orig', 'orig!'], 'the edited line recorded as new');
   });
-  it('a cursor-only move keeps browsing (does not fork)', () => {
+  it('send while browsing restores the stashed draft and spends the working copies', () => {
+    let s = agent.init('p1', null);
+    s = send(s, 'orig');
+    s = typed(s, 'keep me');
+    s = inp(s, 'up');                       // recall 'orig'
+    const r = inp(s, 'return');             // resend it
+    const next = Array.isArray(r) ? r[0] : r;
+    eq(next.inputDraft.text, 'keep me', 'the in-progress draft came back as the live line');
+    eq(next.histIdx, null, 'not browsing');
+    eq(next.histStash, '', 'stash consumed');
+    eq(next.histEdits, {}, 'working copies cleared');
+    let t = inp(next, 'up');
+    eq(t.inputDraft.text, 'orig', 'a later recall shows the ORIGINAL entry (copy was spent)');
+  });
+  it('a cursor-only move keeps browsing (and writes no working copy)', () => {
     let s = send(agent.init('p1', null), 'abc');
     s = inp(s, 'up');
     s = inp(s, 'left');
     eq(s.histIdx, 0, 'still browsing after a cursor move');
+    eq(s.histEdits, {}, 'no working copy from a cursor move');
   });
   it('history caps oldest-first at 100', () => {
     let s = agent.init('p1', null);

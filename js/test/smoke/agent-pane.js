@@ -86,6 +86,22 @@ function agentInstance() {
   eq(inst.slice.inputDraft.text, 'hi', 'up recalled the last sent message into the draft');
   key('down');
   eq(inst.slice.inputDraft.text, '', 'down past newest restored the (empty) live line');
+  // Editing a recall must not eat the in-progress draft (readline working-copy
+  // semantics): the stash stays reachable via Down — and via send.
+  type('my draft');
+  key('up');
+  type('!');                                  // edit the recalled 'hi' → working copy
+  eq(inst.slice.inputDraft.text, 'hi!', 'recall edited in place');
+  key('down');
+  eq(inst.slice.inputDraft.text, 'my draft', 'down restored the stashed draft after the edit');
+  key('up');
+  eq(inst.slice.inputDraft.text, 'hi!', 'the working copy survived the round-trip');
+  key('return');                              // send the edited recall
+  assert(await until(() => inst.slice.transcript.some(l => l.includes('echo: hi!'))), 'edited recall sent + echoed');
+  eq(inst.slice.inputDraft.text, 'my draft', 'send restored the stashed draft as the live line');
+  assert(await until(() => inst.slice.status.state === 'idle'), 'turn settled (so Esc exits, not interrupts)');
+  for (const ch of 'my draft') key('backspace');   // clean slate for the next sections
+  eq(inst.slice.inputDraft.text, '', 'draft cleared');
 
   section('[agent smoke] Esc leaves agent mode; keys fall back to the framework');
   key('escape');
