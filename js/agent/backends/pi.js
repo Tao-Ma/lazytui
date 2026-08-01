@@ -52,12 +52,12 @@ const { StringDecoder } = require('string_decoder');
 // so a fast token stream becomes smooth-but-bounded transcript updates.
 const STREAM_THROTTLE_MS = 100;
 
-/** Emit the buffered stream increment if the throttle gate is open (or forced),
- *  clearing the buffer + stamping the emit time. Returns [] when gated/empty. */
-function _streamEmit(h, force) {
+/** Emit the buffered stream increment if the throttle gate is open, clearing
+ *  the buffer + stamping the emit time. Returns [] when gated/empty. */
+function _streamEmit(h) {
   if (!h.streamBuf) return [];
   const now = Date.now();
-  if (!force && now - h.streamLastEmit < STREAM_THROTTLE_MS) return [];
+  if (now - h.streamLastEmit < STREAM_THROTTLE_MS) return [];
   const text = h.streamBuf;
   h.streamBuf = '';
   h.streamLastEmit = now;
@@ -169,7 +169,7 @@ function onEvent(h, fn) {
 function _emit(h, evt) {
   if (h.exited) return;
   if (h.stopping && evt.type !== 'exit') return;
-  if (evt.type === 'exit') h.exited = true;
+  if (evt.type === 'exit') { h.exited = true; h.streamBuf = ''; }
   if (h.handler) h.handler(evt);
 }
 
@@ -222,6 +222,10 @@ function _mapPiEvent(h, obj) {
       h.running = true;
       return [{ type: 'status', state: 'thinking' }];
     case 'turn_start':
+      // A fresh turn must never inherit a stale tail: if the previous turn
+      // ended without a `turn_end` (abort / pi crash mid-turn), un-emitted
+      // buffered deltas would otherwise leak into this turn's first increment.
+      h.streamBuf = '';
       return [{ type: 'turn-start' }];
     case 'turn_end': {
       // Discard any un-emitted stream tail: the settled assistant-message
@@ -246,7 +250,7 @@ function _mapPiEvent(h, obj) {
       const ev = obj.assistantMessageEvent;
       if (ev && ev.type === 'text_delta' && typeof ev.delta === 'string') {
         h.streamBuf += ev.delta;
-        return _streamEmit(h, false);
+        return _streamEmit(h);
       }
       return [];
     }

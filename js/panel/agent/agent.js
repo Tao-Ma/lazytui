@@ -10,9 +10,10 @@
  * One Msg arm does the folding: `agent_event { evt }` carries a normalized
  * AgentEvent (js/agent/protocol.js vocabulary), dispatched per-instance by
  * the A3 wiring — so recorded Msgs re-fold the transcript on replay with no
- * side-channel. `assistant-delta` is deliberately NOT folded (spinner +
- * settle; the wiring shouldn't even dispatch deltas — the arm is an identity
- * no-op if one arrives).
+ * side-channel. `assistant-delta` increments (throttled ~10 Hz at the
+ * backend, docs/live-agent.md §Streaming) fold into `slice.streaming` — the
+ * provisional trailing line render paints dim; the settled
+ * `assistant-message` supersedes it and clears the preview.
  *
  * Interaction (scroll / search / select / cursor) falls through to the
  * SHARED `leaves/text/text-view-update` reducer over the transcript, exactly
