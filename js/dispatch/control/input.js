@@ -494,6 +494,23 @@ function _contentCoordsAt(paneId, mx, my, clamp) {
   }
   const cap = require('../../panel/select-view').contentFor(paneId);
   const scroll = cap ? cap.scroll : 0;
+  // Selectable extent (docs/pane-selection.md §Interaction) — not every
+  // interior row is selectable content. A windowed capture may carry
+  // non-content rows after the real content (the agent pane's status/input
+  // chrome + its provisional streaming preview — it declares
+  // `selectableRows`); a full-content capture simply ends. A press beyond the
+  // extent must not arm (the pointer isn't on selectable text); a drag pins to
+  // the last selectable row, same as any past-the-edge motion.
+  if (cap) {
+    const rows = cap.windowed
+      ? (cap.selectableRows != null ? cap.selectableRows : cap.lines.length)
+      : cap.lines.length - scroll;
+    if (rows <= 0) return null;                // nothing selectable this frame
+    if (row > rows - 1) {
+      if (!clamp) return null;
+      row = rows - 1;
+    }
+  }
   return { line: scroll + row, col: Math.max(0, mx - b.x - 1) };
 }
 

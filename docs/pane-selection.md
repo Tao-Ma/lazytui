@@ -75,7 +75,13 @@ A press **arms** a selection (records the anchor) but does not start one; the
 **first motion** begins it. So a plain click still selects a row / activates /
 focuses as before, and only a drag starts text selection — on every pane,
 content panes included. A drag past the pane's edge pins to the nearest content
-row, so dragging to the border extends to the first/last visible line. Release
+row, so dragging to the border extends to the first/last visible line. Not
+every interior row is content: a press beyond the pane's **selectable extent**
+does not arm, and a drag pins to its last row — the frame capture records the
+extent per pane (a windowed pane may declare `selectableRows` when its window
+carries non-content rows: the agent pane's status/input chrome and its
+provisional streaming preview; a full-content capture simply ends at its last
+line). Release
 **settles**: a real drag is auto-copied to the register and stays highlighted
 (offered to right-click **Copy selection** / **Send selection to port…**); a
 no-drag press clears (no stray one-char selection). A fresh press anywhere

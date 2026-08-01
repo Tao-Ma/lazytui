@@ -44,10 +44,15 @@ function currentPaneId() { return _current; }
 /** Record a pane's content window (the lines handed to renderPanel) + scroll.
  *  `windowed` marks a pre-windowed buffer (content panes): the capture then
  *  holds only the visible rows, so text extraction must read the instance's
- *  own buffer instead. */
-function recordContent(paneId, lines, scroll, windowed) {
+ *  own buffer instead. `selectableRows` (windowed panes only) declares how
+ *  many LEADING captured rows are selectable content when the window carries
+ *  non-content rows after them — the agent pane's status/input chrome and its
+ *  provisional streaming preview (extraction reads `slice.transcript`, which
+ *  the preview is not part of). null = every captured row is content. */
+function recordContent(paneId, lines, scroll, windowed, selectableRows) {
   if (!paneId) return;
-  _content.set(paneId, { lines: lines || [], scroll: scroll || 0, windowed: !!windowed });
+  _content.set(paneId, { lines: lines || [], scroll: scroll || 0, windowed: !!windowed,
+    selectableRows: selectableRows == null ? null : selectableRows });
 }
 /** The last-recorded content for a pane, or null. */
 function contentFor(paneId) { return _content.get(paneId) || null; }

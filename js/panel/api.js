@@ -37,7 +37,8 @@ const _selectView = require('./select-view');
 function renderPanel(opts) {
   const paneId = (opts && opts.paneId) || _selectView.currentPaneId();
   if (paneId && opts) {
-    _selectView.recordContent(paneId, opts.lines, opts.scrollOffset || 0, opts.windowed);
+    _selectView.recordContent(paneId, opts.lines, opts.scrollOffset || 0, opts.windowed,
+      opts.selectableRows);
     if (!opts.windowed) {
       const decorated = _selectView.decorateFor(paneId, opts.lines || []);
       if (decorated !== opts.lines) opts = { ...opts, lines: decorated };

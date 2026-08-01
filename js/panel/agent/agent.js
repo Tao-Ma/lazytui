@@ -446,8 +446,16 @@ function render(panel, w, h, slice, opts) {
   body.push(_statusLine(slice));
   body.push(_inputLine(slice, typing, w));
   const inner = Math.max(1, h - 2);
-  if (body.length > inner) body.splice(0, body.length - inner);
-  return renderPanel({ ...args, lines: body });
+  const overflow = Math.max(0, body.length - inner);
+  if (overflow) body.splice(0, overflow);
+  // Mouse-selection extent: only the SETTLED transcript rows of the window
+  // are selectable — the streaming preview is provisional (text extraction
+  // reads `slice.transcript`, which it is not part of) and the padded /
+  // status / input rows are chrome. A degenerate height front-truncates the
+  // window, breaking the row↔line mapping — declare nothing selectable
+  // rather than mis-map.
+  const selectableRows = overflow ? 0 : Math.max(0, Math.min(tvH, settled.length - scroll));
+  return renderPanel({ ...args, lines: body, selectableRows });
 }
 
 module.exports = {

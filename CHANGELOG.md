@@ -6,6 +6,16 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Agent pane selection geometry.** A mouse press on the agent pane's status
+  or input rows no longer arms a text selection pinned to the last transcript
+  line, and a drag into the live streaming preview pins to the settled
+  transcript instead of highlighting provisional text that copies as empty.
+  Generic seam: a pane's frame capture now declares its selectable extent, and
+  a press beyond it never arms on any pane
+  ([docs/pane-selection.md](docs/pane-selection.md)).
+
 ## [0.6.10] — 2026-08-01
 
 ### Added

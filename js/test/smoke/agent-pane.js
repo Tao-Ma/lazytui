@@ -144,5 +144,54 @@ function agentInstance() {
   key('x');
   assert(!agentInstance(), 'x removed the dead agent tab');
 
+  section('[agent smoke] mouse selection respects the transcript geometry');
+  // The pane reserves its bottom two interior rows (status + input) and may
+  // append a provisional streaming preview after the settled transcript —
+  // none of that is selectable content (render declares `selectableRows`;
+  // docs/pane-selection.md §Interaction). A press there must not arm; a drag
+  // into the preview pins to the last settled line.
+  type(':'); type('agent'); key('return');
+  const inst3 = agentInstance();
+  assert(!!inst3, 'selection pane minted');
+  inst3.slice.transcript = ['alpha beta', 'second line', 'third line'];
+  inst3.slice.scroll = 0;
+  const sb = visibleBoundsFor(route.getInstanceSlice('layout'), inst3.paneId, route.resolveViewerPaneId());
+  assert(!!sb, 'selection pane bounds resolved');
+  const tvH3 = sb.h - 4;
+  frame();                                              // populate the capture
+  const psel = require('../../panel/select-view');
+  const at = (col, row) => [sb.x + 2 + col, sb.y + 2 + row];
+
+  // [1] a drag across a settled transcript row selects + copies its text
+  sm.capture(() => input.handleMouse('press', ...at(0, 0)));
+  sm.capture(() => input.handleMouse('motion', ...at(2, 0)));
+  sm.capture(() => input.handleMouse('motion', ...at(4, 0)));
+  sm.capture(() => input.handleMouse('release', ...at(4, 0)));
+  eq(psel.selectedTextFor(inst3.paneId), 'alpha', 'drag on a transcript row selects its text');
+  eq(getModel().register.history[0], 'alpha', 'and copies it to the register');
+
+  // [2] the status + input rows are chrome — a press there must not arm
+  for (const chromeRow of [tvH3, tvH3 + 1]) {
+    sm.capture(() => input.handleMouse('press', ...at(0, chromeRow)));
+    sm.capture(() => input.handleMouse('motion', ...at(6, chromeRow)));
+    sm.capture(() => input.handleMouse('release', ...at(6, chromeRow)));
+  }
+  assert(!psel.selectionFor(inst3.paneId), 'press on the status/input rows arms nothing');
+  eq(getModel().register.history[0], 'alpha', 'register untouched by the chrome-row drag');
+
+  // [3] streaming preview rows are provisional — a drag into them pins to the
+  //     settled tail (extraction reads slice.transcript, not the preview)
+  dispatchMsg(api.wrap(inst3.id, { type: 'agent_event',
+    evt: { type: 'assistant-delta', text: 'preview one\npreview two' } }));
+  assert(!!inst3.slice.streaming, 'delta folded into the streaming preview');
+  frame();                                              // capture now carries preview rows
+  sm.capture(() => input.handleMouse('press', ...at(0, 1)));
+  sm.capture(() => input.handleMouse('motion', ...at(3, 4)));   // row 4 = inside the preview
+  sm.capture(() => input.handleMouse('release', ...at(3, 4)));
+  const pinned = psel.selectedTextFor(inst3.paneId);
+  assert(/^second line\nthi/.test(pinned), `drag into the preview pinned to the settled tail (got ${JSON.stringify(pinned)})`);
+  assert(!pinned.includes('preview'), 'no provisional preview text in the copy');
+  eq(getModel().register.history[0], pinned, 'the pinned text is what was copied');
+
   report();
 })();
