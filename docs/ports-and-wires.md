@@ -415,7 +415,7 @@ Zero model involvement — deterministic tools composed into a pipe.
 
 **Reused as-is:** components/slices, actions + command execution, stream buffers, the
 context menu (`context-menu.js` `SECTIONS`), menu overlay (`overlay/menu.js`), selection
-(`panel/viewer/select.js`), register (`leaves/register.js`), WAL + replay,
+(`panel/select-view.js` + `leaves/text/select-core.js`), register (`leaves/register.js`), WAL + replay,
 panes-as-containers layout, the derived-selector + memo pattern (`ms.matchesFor`), the
 `shQuote`-free `spawn(…, { shell:false })` argv path (extends the existing `-- ...args`
 safe channel), the `confirm.js` sub-reducer shape.

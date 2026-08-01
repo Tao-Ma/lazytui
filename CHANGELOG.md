@@ -22,6 +22,16 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 - Internal: `panel/viewer/` → `panel/content/` (the viewer Component is gone;
   the dir holds content-slot pane services); the root mouse-selection Msgs
   `sel_*` → `mouse_sel_*` to disambiguate from the keyboard `select_*` set.
+- **One selection model.** The two text-selection state shapes (the content
+  panes' in-slice selection vs the root `model.selection` every other pane
+  used) collapsed into one: `slice.select` on the owning pane instance, driven
+  by the `select_*` Msgs everywhere ([docs/pane-selection.md](docs/pane-selection.md)).
+  User-visible edges: the `selection:` / per-pane `select:` config gate now
+  covers mouse selection on content panes too (they were exempt); a drag past
+  a pane's edge extends to the nearest visible line on every pane (previously
+  viewer-only); a press on a content pane clears another pane's persisted
+  selection like any other press. The interim `mouse_sel_*` Msgs are gone —
+  replay recordings from the rename window no longer fold.
 
 ## [0.6.9] — 2026-07-29
 

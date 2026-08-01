@@ -85,11 +85,11 @@ const sel = {
   },
 };
 
-// (c)-era key-claim adapter: the keyboard visual-mode state machine lives in the
-// focused Component's update now (the info instance's, via the shared tvu),
-// not in panel/content/select. `dispatchKeyToFocused` returns true when the
-// focused Component returned the `_claimed` sentinel — the same semantic the
-// retired `detailKey` exposed. Used by the visual-mode section below.
+// Key-claim adapter: the keyboard visual-mode state machine lives in the
+// focused Component's update (the info instance's, via the shared tvu).
+// `dispatchKeyToFocused` returns true when the focused Component returned the
+// `_claimed` sentinel — the same semantic the retired `detailKey` exposed.
+// Used by the visual-mode section below.
 function detailKey(key, seq) { return dispatchKeyToFocused(key, seq); }
 
 

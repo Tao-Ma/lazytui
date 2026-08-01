@@ -9,7 +9,10 @@
 > only for the reasoning trail.
 >
 > **Status:** planning. P1 shipped; P2–P4 superseded by U2. This captures the
-> earlier direction and a gate-green phasing.
+> earlier direction and a gate-green phasing. The selection unification itself
+> (this doc's original motivation — P3/D5) landed 2026-08-01 on U2's
+> instance-per-tab shape: `slice.select` is the one selection state,
+> `model.selection` is gone. See docs/pane-selection.md.
 
 ## One line
 

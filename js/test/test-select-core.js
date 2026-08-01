@@ -1,6 +1,8 @@
 /**
- * Slice 1 — the pure text-selection core (leaves/text/select-core) + the root
- * reducer arms (mouse_sel_begin / mouse_sel_extend / mouse_sel_clear). See docs/pane-selection.md.
+ * The pure text-selection core (leaves/text/select-core): geometry
+ * (selectedTextFrom / decorateWindow / highlightLine) + the shared state arms
+ * (reduceSelect — select_begin / select_extend / select_cancel), plus the
+ * reset_group_context → select_cancel_all Cmd. See docs/pane-selection.md.
  * Run: node js/test/test-select-core.js
  */
 'use strict';

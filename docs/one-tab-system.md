@@ -298,14 +298,15 @@ tab-kind machinery in `leaves/wm/pane-tabs.js` (the pure strip-geometry engine
 `panel/viewer/tab-strip.js` is retained and now drives every pane's slot strip).
 The viewer stops being a god-object; there is one tab concept and one strip.
 
-The selection collapse (D4) landed **partially**: keyboard visual-mode selection
-still lives in the content instance's own `slice.select` (per-tab, driven by a
-`v`/`V` state machine), distinct from the single-owner `model.selection` that
-mouse drag-to-copy uses in every other pane. The two share the geometry core
-(`leaves/text/select-core.js`), not the state shape — so `panel/viewer/select.js`
-survives as the keyboard-visual-mode half rather than being deleted. Fully
-unifying the two shapes is a tracked follow-on (see also the deferred
-`panel/viewer/` directory rename).
+The selection collapse (D4) landed **partially** in this arc: keyboard
+visual-mode selection stayed in the content instance's own `slice.select`
+(per-tab, driven by a `v`/`V` state machine), distinct from the single-owner
+`model.selection` that mouse drag-to-copy used in every other pane, sharing only
+the geometry core (`leaves/text/select-core.js`). *Follow-up (2026-08-01): the
+collapse completed — in the OPPOSITE direction from D4's sketch. `slice.select`
+won as the one shape (per-instance ⇒ per-tab persistence for free, exactly what
+this arc's instance-per-tab made possible); `model.selection`, the `mouse_sel_*`
+arms, and the viewer facade are gone. See docs/pane-selection.md.*
 
 ## Non-goals
 
