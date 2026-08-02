@@ -62,6 +62,10 @@ function _effectHost() {
       // fabric input resolution/readiness). Lets the component-ports pane's
       // "Run" trigger the existing dispatch without importing dispatch upward.
       runActionByKey: (key) => require('../control/actions')._runActionByKey(key),
+      // Edit-in-editor (dispatch/runtime/edit.js) — the :edit / :config
+      // cmdline verbs launch through the host (panel never imports dispatch).
+      editFile: (p, opts) => require('./edit').editFile(p, opts),
+      editConfig: (which) => require('./edit').editConfig(which),
     };
   }
   return _host;
@@ -249,6 +253,11 @@ function installBuiltins() {
   // stay directly addressable through the wrapped-Msg path, so hidden tabs are
   // reachable. Each dispatch synchronously re-enters the pipeline → counted
   // under the T28 cap like the `msg` effect.
+  // edit_file: open a file in the user's editor (dispatch/runtime/edit.js) —
+  // the files pane's `e` emits this from its pure key arm.
+  registerEffect('edit_file', (eff) => {
+    require('./edit').editFile(eff.path, { isConfig: eff.isConfig });
+  });
   registerEffect('select_cancel_all', (eff) => {
     for (const own of require('../../panel/select-view').allSelections()) {
       if (!_enterCrossLayer('select_cancel_all', eff)) return;

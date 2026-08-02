@@ -60,6 +60,22 @@ function openHostFileAsTab(filepath, opts = {}) {
 }
 
 /**
+ * Refresh an OPEN doc tab showing `absPath` after an external change (the
+ * editor exited — dispatch/runtime/edit.js continuation). Inherently gated:
+ * tabs key by `file:<absPath>` and updateContentTabLines drops silently when
+ * no such tab is mounted, so this never opens anything new.
+ */
+function refreshHostFileTab(absPath) {
+  const key = `file:${absPath}`;
+  loadFile(absPath, { maxBytes: DEFAULT_MAX_BYTES, hexAfter: DEFAULT_HEX_AFTER })
+    .then((result) => {
+      updateContentTabLines(getModel().currentGroup, key, result.lines);
+      require('../leaves/infra/render-queue').scheduleRender();
+    })
+    .catch(() => { /* file unreadable post-edit — the stale tab stays */ });
+}
+
+/**
  * Path completion for the host filesystem. Returns render-safe match
  * entries the cmdline drops into its dropdown.
  *
@@ -130,4 +146,4 @@ openTarget.registerOpenScheme('host', {
   open: (target, opts) => openHostFileAsTab(target, opts),
 });
 
-module.exports = { openHostFileAsTab, hostComplete };
+module.exports = { openHostFileAsTab, refreshHostFileTab, hostComplete };

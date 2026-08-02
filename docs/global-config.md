@@ -68,10 +68,26 @@ event log + the footer's ⚠ notice + `<leader> e`).
 
 `editor:` names the command that opens files for editing (a program name or
 path, optionally with arguments — `nvim`, `code --wait`). Resolution chain:
-project `editor:` → global `editor:` → `$VISUAL` → `$EDITOR` → `vi`. The
-edit affordances that consume it (files-pane `e`, `:edit`, `:config`) ride
-the embedded-PTY spawn seam; config edits apply on the next boot (no live
-reload — deliberate, see the 2026-08-02 decision in the CHANGELOG arc).
+project `editor:` → global `editor:` → `$VISUAL` → `$EDITOR` → `vi`.
+
+The edit affordances that consume it ride the embedded-PTY spawn seam
+(`dispatch/runtime/edit.js` — mint a terminal tab, auto-zoom, return on
+quit; exit-0 auto-closes the tab):
+
+- **`e`** on a files-pane row (host files only — a docker-sourced row has
+  no local path to hand an editor);
+- **`:edit <path>`** (host-path TAB completion, resolved against
+  `project_dir`);
+- **`:config`** — the project config; **`:config global`** — this file,
+  created with a commented skeleton on first use.
+
+On a clean editor exit, a serializable `onExit` continuation on the minted
+tab refreshes an open doc tab showing that file (gated — it never opens
+one) and, after a config edit, prints "changes apply on the next lazytui
+start" on the Transcript. No live reload — deliberate (2026-08-02): a
+mid-session re-parse conflicts with every piece of state derived from the
+boot config. Under tmux the editor opens in a `tmux new-window` lazytui
+doesn't own; the continuation doesn't fire there.
 
 ## Tests
 

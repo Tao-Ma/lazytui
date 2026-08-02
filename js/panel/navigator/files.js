@@ -447,8 +447,8 @@ function update(msg, slice) {
 }
 
 /**
- * Enter is the only key the Component owns — the handler returns the
- * `_claimed` sentinel effect to suppress the framework's run_selected
+ * Enter and `e` are the only keys the Component owns — the handler returns
+ * the `_claimed` sentinel effect to suppress the framework's run_selected
  * default. Cursor navigation is framework chrome (Phase 4a moved it
  * onto this Component's slice.nav[panelType], written by the wrapped
  * set_cursor Msg the global j/k path emits). The key Msg carries no
@@ -456,7 +456,7 @@ function update(msg, slice) {
  * list render() does.
  */
 function _handleKey(msg, slice) {
-  if (msg.key !== 'return') return slice;
+  if (msg.key !== 'return' && msg.key !== 'e') return slice;
   // Pure key arm — all global facts arrive via msg.filesModel (threaded by
   // augmentMsg in the shell): the pane def, the declared items, the filter,
   // the project base. The cursor comes from slice.nav via the nav leaf. No
@@ -472,6 +472,18 @@ function _handleKey(msg, slice) {
   // (no item / loading) — the framework default would just call back
   // into the panel with no useful result.
   if (!item || item.kind === 'loading') return [slice, [{ type: '_claimed' }]];
+  // `e` — open the row's file in the user's editor (docs/global-config
+  // §editor). Host files only: a docker-sourced row has no local path to
+  // hand an editor; dirs/parents claim-and-ignore (no accidental
+  // run_selected fallthrough).
+  if (msg.key === 'e') {
+    const container = item.container || (panel.source === 'docker' ? panel.container : null);
+    const editable = (item.kind === 'file' || item.kind === 'declared' || item.kind === 'symlink')
+      && !container && item.path;
+    return editable
+      ? [slice, [{ type: 'edit_file', path: item.path }, { type: '_claimed' }]]
+      : [slice, [{ type: '_claimed' }]];
+  }
   if (item.kind === 'parent' || item.kind === 'dir') {
     const source = _source(panel, hardcoded);
     // Navigation forces a fresh cwd, so seed the load directly from item.path.
@@ -611,8 +623,8 @@ function _makeDef(panelType, hardcoded) {
     // Enter is owned in update() (navigate / open) — suppress the framework
     // default (run_selected / viewer_show_info) for it.
     keyHints: hardcoded === 'declared'
-      ? 'Enter open · / filter · y copy'
-      : 'Enter open · / regex · y copy',
+      ? 'Enter open · e edit · / filter · y copy'
+      : 'Enter open · e edit · / regex · y copy',
   };
 }
 

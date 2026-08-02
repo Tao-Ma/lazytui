@@ -110,6 +110,7 @@ function freshState(root, panelType = 'files', extraPanelCfg = {}) {
 function makeDriver(paneId = 'files') {
   let slice = filesComp._init(paneId);
   const opened = [];
+  const edited = [];
   function runEffect(eff) {
     if (eff.type === 'loadDir') {
       let items = [];
@@ -129,6 +130,8 @@ function makeDriver(paneId = 'files') {
       api.dispatchMsg(api.wrap('files', { type: 'clear_filter', panel: eff.paneId }));
     } else if (eff.type === 'openFile') {
       opened.push(eff);
+    } else if (eff.type === 'edit_file') {
+      edited.push(eff);
     }
     // 'render' → no-op in the harness
   }
@@ -157,6 +160,7 @@ function makeDriver(paneId = 'files') {
     items: (panelType, hardcoded = null) => filesComp._itemsFor(slice, panelType, hardcoded),
     browser: () => slice.browser,
     opened,
+    edited,
   };
 }
 
@@ -297,6 +301,23 @@ describe('[8] Enter on a dir navigates — slice cwd advances + chrome resets', 
       eq(d.opened.length, 1, 'one openFile effect emitted');
       eq(d.opened[0].item.name, 'alpha.txt');
       eq(d.browser().cwd, root, 'cwd unchanged when opening a file');
+    } finally { rm(root); }
+  });
+  it('`e` on a file emits edit_file with the absolute path; on a dir it claims and stays', () => {
+    const root = mkTree();
+    try {
+      freshState(root, 'file-browser');
+      const d = makeDriver('file-browser');
+      d.dispatch({ type: 'refresh' });
+      const items = d.items('file-browser', 'filesystem');
+      setSel('file-browser', items.findIndex(i => i.name === 'alpha.txt'));
+      d.dispatch({ type: 'key', key: 'e', seq: 'e', focusKind: 'file-browser' });
+      eq(d.edited.length, 1, 'one edit_file effect emitted');
+      eq(d.edited[0].path, path.join(root, 'alpha.txt'), 'absolute path threaded');
+      setSel('file-browser', items.findIndex(i => i.name === 'subdir'));
+      d.dispatch({ type: 'key', key: 'e', seq: 'e', focusKind: 'file-browser' });
+      eq(d.edited.length, 1, 'no edit_file for a directory (claimed no-op)');
+      eq(d.browser().cwd, root, 'cwd unchanged — `e` never navigates');
     } finally { rm(root); }
   });
 });

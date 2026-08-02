@@ -102,6 +102,36 @@ const FRAMEWORK_COMMANDS = [
     },
   },
   {
+    name: 'edit',
+    desc: 'Open a file in your editor — :edit <path>  (editor: / $VISUAL / $EDITOR / vi)',
+    // Host-path completion only — the editor runs locally; docker:// URIs
+    // have no local file to hand it.
+    argComplete: (text) => require('../feature/open-file').hostComplete(text),
+    run: (args) => {
+      const input = (args && args.join(' ')) || '';
+      if (!input) {
+        const { appendViewerLines } = require('./nav-state');
+        appendViewerLines('[red]:edit requires a path[/] — usage: :edit <path>');
+        return;
+      }
+      const cleaned = input.replace(/^(['"])(.*)\1$/, '$2');
+      _host.editFile(cleaned);
+    },
+  },
+  {
+    name: 'config',
+    desc: 'Edit the project config in your editor — :config; the global user config — :config global',
+    run: (args) => {
+      const which = args && args[0];
+      if (which && which !== 'global') {
+        const { appendViewerLines } = require('./nav-state');
+        appendViewerLines(`[red]:config takes no argument, or 'global'[/]`);
+        return;
+      }
+      _host.editConfig(which || null);
+    },
+  },
+  {
     name: 'restore-layout',
     desc: 'Discard runtime changes; reload panel layout from YAML',
     run: () => {

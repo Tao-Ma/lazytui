@@ -17,9 +17,18 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   file degrades to project-only with a ⚠ boot diagnostic — never fatal.
   `--keymap` dumps the merged effective bindings.
   ([docs/global-config.md](docs/global-config.md))
-- **`editor:` config key** — names the command the upcoming edit affordances
-  launch; resolution chain: project `editor:` → global `editor:` →
-  `$VISUAL` → `$EDITOR` → `vi`.
+- **`editor:` config key** — names the command the edit affordances launch;
+  resolution chain: project `editor:` → global `editor:` → `$VISUAL` →
+  `$EDITOR` → `vi`.
+- **Edit in your editor.** `e` on a files-pane row, `:edit <path>` (with
+  host-path TAB completion), and `:config` / `:config global` (the global
+  file is created with a commented skeleton on first use) open the resolved
+  editor in an embedded terminal tab — auto-zoomed, back where you were on
+  quit, exactly like a `type: spawn` action. On a clean exit an open doc tab
+  showing the file refreshes in place, and a config edit prints a "changes
+  apply on the next lazytui start" reminder on the Transcript (no live
+  reload — deliberate). Under tmux the editor opens in a new tmux window.
+  ([docs/global-config.md](docs/global-config.md) §editor)
 
 ### Fixed
 

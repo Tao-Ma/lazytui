@@ -71,7 +71,28 @@ function _handlePaneExit(id, exitCode, inst) {
       { type: 'remove_tab', paneId: colPaneId, tabPoolId: mpane.poolIdOf(id) }));
     anyChange = true;
   }
+  // Spawn continuation (dispatch/runtime/edit.js) — a serializable descriptor
+  // the mint stamped onto the terminal's slice. Clean exits only: a non-zero
+  // exit keeps the tab and the user is reading the error, so a refresh or
+  // hint would be noise.
+  if (exitCode === 0 && inst.slice && inst.slice.onExit) {
+    _realizeExit(inst.slice.onExit);
+    anyChange = true;
+  }
   if (anyChange) scheduleRender();
+}
+
+// Realize an onExit descriptor. Panel-layer effects only (the layering wall:
+// panel never imports dispatch): the doc-tab refresh no-ops unless a content
+// tab for that file is open (updateContentTabLines drops on a missing tab),
+// and the config hint rides the Transcript like any status line.
+function _realizeExit(desc) {
+  if (desc.kind !== 'edit' || !desc.path) return;
+  require('../../feature/open-file').refreshHostFileTab(desc.path);
+  if (desc.isConfig) {
+    require('../nav-state').appendViewerLines(
+      `[yellow]Config edited — changes apply on the next lazytui start.[/]`);
+  }
 }
 
 /** Boot wiring — called from tui.js after the panel layer is registered.

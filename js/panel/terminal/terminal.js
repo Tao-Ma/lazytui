@@ -27,6 +27,9 @@ function init(paneId, seed) {
     paneId: paneId || null,
     cmd: cfg.cmd || process.env.SHELL || '/bin/bash',
     label: cfg.label || 'terminal',
+    // Serializable spawn continuation (dispatch/runtime/edit.js): realized by
+    // the exit fan-out on a clean exit. null for plain terminals.
+    onExit: cfg.onExit || null,
   };
 }
 
