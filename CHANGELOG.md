@@ -6,6 +6,8 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.11] — 2026-08-02
+
 ### Changed
 
 - **Agent draft history keeps your in-progress line reachable.** Editing a
@@ -2659,7 +2661,8 @@ release tarballs. Full pre-squash development history is preserved
 on the internal gitea mirror under the `backup/main-history` branch
 and the `v0.1.0-pre-squash` tag.
 
-[Unreleased]: https://github.com/Tao-Ma/lazytui/compare/v0.6.10...HEAD
+[Unreleased]: https://github.com/Tao-Ma/lazytui/compare/v0.6.11...HEAD
+[0.6.11]: https://github.com/Tao-Ma/lazytui/compare/v0.6.10...v0.6.11
 [0.6.10]: https://github.com/Tao-Ma/lazytui/compare/v0.6.9...v0.6.10
 [0.6.9]: https://github.com/Tao-Ma/lazytui/compare/v0.6.8...v0.6.9
 [0.6.8]: https://github.com/Tao-Ma/lazytui/compare/v0.6.7...v0.6.8
