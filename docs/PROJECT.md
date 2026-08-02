@@ -51,6 +51,12 @@ Two consequences worth internalizing:
   Config splits always anchor to the entry-point YAML's directory.
   `project_dir` only changes where action scripts run.
 
+A **global user config** (`~/.config/lazytui/config.yml`) layers
+app-behavior preferences (theme, keys, keymap, mouse, context-menu,
+selection, editor) UNDER every project's config — see
+[global-config.md](global-config.md) for the honored sections, merge
+rules, and failure contract. Project content never lives there.
+
 ## What the framework owns
 
 The framework guarantees, regardless of project:

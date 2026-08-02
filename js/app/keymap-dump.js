@@ -19,7 +19,10 @@ function runKeymapDump(configPath) {
 
   if (configPath) {
     let config;
-    try { config = require('../parser').parse(path.resolve(configPath)); }
+    // Layer the global user config exactly as boot does (docs/global-config),
+    // so the dump shows the EFFECTIVE bindings, global keymap included.
+    const glob = require('../parser/global').loadGlobal(process.env);
+    try { config = require('../parser').parse(path.resolve(configPath), { global: glob.config }); }
     catch (e) { process.stderr.write(`keymap: cannot read ${configPath}: ${e.message}\n`); return 1; }
     // checkActions:false — the merged action set (incl. plugin-synth actions)
     // only exists once the app is booted; skip it here so the dump doesn't

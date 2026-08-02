@@ -642,7 +642,7 @@ function walkGroups(rawGroups, varsBlock, helpersBlock, source, parent, depth, o
   }
 }
 
-function parse(yamlPath) {
+function parse(yamlPath, opts) {
   const source = String(yamlPath);
   const absPath = path.resolve(yamlPath);
 
@@ -667,6 +667,14 @@ function parse(yamlPath) {
   // Load and merge YAML plugins BEFORE validation. Resolved from the
   // directory containing the source YAML.
   mergeYamlPlugins(data, path.dirname(absPath));
+
+  // Global user config (docs/global-config) — the pre-validated raw
+  // app-behavior sections layer UNDER the raw project data HERE, before
+  // validation and defaulting, so `theme:`/`selection:` defaults apply to
+  // the MERGED result and the honored sections validate uniformly.
+  if (opts && opts.global) {
+    data = require('./global').mergeGlobal(data, opts.global);
+  }
 
   // Soft-cap warnings (column over default cap, etc.) accumulate here
   // and ride out on the returned config. tui.js boot reads them.
@@ -717,6 +725,14 @@ function parse(yamlPath) {
     files,
     layout,
     theme: data.theme !== undefined ? data.theme : 'monokai',
+    // Global text-selection default (docs/pane-selection.md). Was validated
+    // but DROPPED here until the global-config arc — a YAML `selection:
+    // false` silently did nothing (select-config reads config.selection).
+    selection: data.selection !== undefined ? data.selection : true,
+    // The editor command (docs/global-config): project `editor:` wins over
+    // the global one (merged above); the edit feature resolves the full
+    // chain editor → $VISUAL → $EDITOR → vi.
+    editor: data.editor !== undefined ? data.editor : null,
     // Preserve the `plugins:` block for round-trip fidelity. The Plugin
     // API itself retired in v0.5 Phase 6; tui.js surfaces a one-time
     // warning if the field is non-empty. (YAML plugin merging — entries

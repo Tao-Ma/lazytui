@@ -2,7 +2,10 @@
 
 The `keymap:` block in your config remaps **normal-mode single keys**. It is a
 thin, versioned container; the bindings inside read like the thought —
-*"this key does this verb."*
+*"this key does this verb."* It may also live in the global user config
+(`~/.config/lazytui/config.yml`, [global-config.md](global-config.md)):
+global bindings apply in every project, merged per key under the project's
+own `keymap:`.
 
 ```yaml
 keymap:

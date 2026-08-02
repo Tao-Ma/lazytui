@@ -497,18 +497,33 @@ function _layoutSlice() {
 // --- Config loading ---
 
 function loadConfig(configPath) {
+  // Global user config (~/.config/lazytui/config.yml, docs/global-config) —
+  // loaded FIRST and layered under the project config BEFORE the set_config
+  // Msg, so the recorded Msg carries the merged result (replay never
+  // re-reads the file). Tolerant: missing = fine; broken = warning +
+  // project-only.
+  const g = require('../parser/global');
+  const glob = g.loadGlobal(process.env);
   const ext = path.extname(configPath);
   let config;
   if (ext === '.json') {
+    // JSON configs are the RESOLVED shape (parse()'s output form), so the
+    // global raw sections merge post-hoc: absent key = global applies.
     config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    config = g.mergeGlobal(config, glob.config);
   } else {
     // In-process JS parser — was an out-of-process `python -m parser`
     // call until the parser was rewritten in JS. Errors thrown by
     // parse() are ParseError subclasses with composed messages; let
     // them propagate so tui.js's top-level handler prints them and
     // exits non-zero (mirrors the old "parser: <msg>" stderr line).
+    // The global sections merge INSIDE parse (pre-validation) so
+    // theme/selection defaulting applies to the merged result.
     const { parse } = require('../parser');
-    config = parse(path.resolve(configPath));
+    config = parse(path.resolve(configPath), { global: glob.config });
+  }
+  if (glob.warnings.length) {
+    config = { ...config, warnings: [...(config.warnings || []), ...glob.warnings] };
   }
   // v0.6.3 Phase D3 — route the root-model write through a Msg so
   // the reducer is the sole writer to model.config / projectDir /

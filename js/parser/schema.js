@@ -16,7 +16,13 @@ const { compileCommand, commandHoles } = require('../fabric/command');
 
 const VALID_ACTION_TYPES = new Set(['run', 'spawn', 'background']);
 
-const VALID_TOP_KEYS    = new Set(['project_dir', 'groups', 'vars', 'helpers', 'files', 'layout', 'theme', 'plugins', 'register', 'keys', 'keymap', 'mouse', 'context-menu', 'panels', 'selection']);
+const VALID_TOP_KEYS    = new Set(['project_dir', 'groups', 'vars', 'helpers', 'files', 'layout', 'theme', 'plugins', 'register', 'keys', 'keymap', 'mouse', 'context-menu', 'panels', 'selection', 'editor']);
+
+// Global user config (~/.config/lazytui/config.yml, docs/global-config) — only
+// the APP-BEHAVIOR sections are honored there; project content (groups,
+// layout, vars, …) belongs to the per-project config. Anything else in the
+// global file warns and is ignored — a global file must never brick a project.
+const GLOBAL_TOP_KEYS = new Set(['theme', 'keys', 'keymap', 'mouse', 'context-menu', 'selection', 'editor']);
 const VALID_KEY_BINDING_KEYS = new Set(['action', 'command', 'builtin', 'label', 'desc']);
 // v0.6.7 E9 — the `keymap:` block (configurable normal-mode keys). A thin
 // versioned container; `normal:` is a flat key→verb map. SHAPE only here — the
@@ -90,6 +96,7 @@ function validate(data, _sourceFile, warnings) {
   if ('selection' in data && typeof data.selection !== 'boolean') {
     throw new SchemaError("'selection' must be a boolean");
   }
+  if ('editor' in data) validateEditor(data.editor);
   if ('vars' in data)    validateVars(data.vars);
   if ('helpers' in data) validateHelpers(data.helpers);
   if ('files' in data)   validateFiles(data.files);
@@ -104,6 +111,45 @@ function validate(data, _sourceFile, warnings) {
   for (const [gname, gdata] of Object.entries(groups)) {
     validateGroup(gname, gdata);
   }
+}
+
+// The editor command (a program name/path, optionally with args — e.g.
+// `nvim`, `code --wait`). Resolution chain lives in the edit feature:
+// project `editor:` → global `editor:` → $VISUAL → $EDITOR → vi.
+function validateEditor(v) {
+  if (typeof v !== 'string' || !v.trim()) {
+    throw new SchemaError("'editor' must be a non-empty string");
+  }
+}
+
+/**
+ * Scoped validation for the GLOBAL user config. Tolerant by design: only
+ * GLOBAL_TOP_KEYS are honored; every other key — project content or a typo —
+ * appends a `{code, message}` warning and is dropped here, instead of
+ * throwing. The honored sections validate with the SAME validators as the
+ * project config, and those DO throw: a malformed honored section is a real
+ * error the user must see (the caller catches and degrades to project-only).
+ */
+function validateGlobal(data, warnings) {
+  if (!isMapping(data)) throw new SchemaError('global config must be a YAML mapping');
+  for (const k of Object.keys(data).sort()) {
+    if (GLOBAL_TOP_KEYS.has(k)) continue;
+    if (warnings) {
+      warnings.push({
+        code: 'global.ignored_key',
+        message: `global config: '${k}' is not a global section (honored: ${[...GLOBAL_TOP_KEYS].sort().join(', ')}) — ignored`,
+      });
+    }
+    delete data[k];
+  }
+  if ('selection' in data && typeof data.selection !== 'boolean') {
+    throw new SchemaError("'selection' must be a boolean");
+  }
+  if ('editor' in data)   validateEditor(data.editor);
+  if ('keys' in data)     validateKeys(data.keys);
+  if ('keymap' in data)   validateKeymap(data.keymap);
+  if ('mouse' in data)    validateMouse(data.mouse);
+  if ('context-menu' in data) validateContextMenu(data['context-menu']);
 }
 
 /**
@@ -821,4 +867,4 @@ function validateTerminal(groupPath, tname, tdata) {
   if (typeof tdata.label !== 'string') throw new SchemaError("'label' must be a string", { context: ctx });
 }
 
-module.exports = { validate };
+module.exports = { validate, validateGlobal };

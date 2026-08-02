@@ -32,6 +32,14 @@
  */
 'use strict';
 
+// Hermeticity — never let a developer's real ~/.config/lazytui leak into a
+// test run (in-process loadConfig calls AND child binaries spawned by smokes
+// inherit this). '' disables the global-config lookup (parser/global.js);
+// pre-set values are respected so a test can point it at a scratch file.
+if (!('LAZYTUI_GLOBAL_CONFIG' in process.env)) {
+  process.env.LAZYTUI_GLOBAL_CONFIG = '';
+}
+
 // --- Aggregator state ---
 
 let _activeSection = null;     // currently-active describe block name

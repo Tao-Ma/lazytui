@@ -6,6 +6,28 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Global user config** — `~/.config/lazytui/config.yml` (honoring
+  `$XDG_CONFIG_HOME`; `LAZYTUI_GLOBAL_CONFIG` overrides, empty disables)
+  layers app-behavior preferences under every project's config: `theme`,
+  `keys`, `keymap`, `mouse`, `context-menu`, `selection`, `editor`. Keyed
+  sections merge per entry (a project rebind wins per key), scalars are
+  project-wins. Project content there warns and is ignored; a broken global
+  file degrades to project-only with a ⚠ boot diagnostic — never fatal.
+  `--keymap` dumps the merged effective bindings.
+  ([docs/global-config.md](docs/global-config.md))
+- **`editor:` config key** — names the command the upcoming edit affordances
+  launch; resolution chain: project `editor:` → global `editor:` →
+  `$VISUAL` → `$EDITOR` → `vi`.
+
+### Fixed
+
+- **`selection: false` in YAML configs now actually disables selection.**
+  The key validated but was dropped by the parser on its way to the model,
+  so the global gate silently stayed on (per-pane `select:` overrides were
+  unaffected). Found while wiring the global-config merge.
+
 ## [0.6.11] — 2026-08-02
 
 ### Changed
