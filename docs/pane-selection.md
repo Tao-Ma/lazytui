@@ -155,3 +155,6 @@ and stays ungated.
 - `js/test/smoke/pane-select.js` — the real mouse pipeline end-to-end on the
   ports pane: drag → select + copy, highlight paints, click leaves nothing,
   right-click offers Copy selection, and the global / per-pane gate.
+- `js/test/smoke/agent-pane.js` — the selectable-extent geometry on the agent
+  pane: drag on a transcript row selects + copies, the status/input chrome
+  rows never arm, a drag into the streaming preview pins to the settled tail.

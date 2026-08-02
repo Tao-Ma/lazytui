@@ -5,9 +5,10 @@
  * its own instance); this module contributes the three impure-shell services
  * around it:
  *
- *   1. CAPTURE — record each pane's content lines (+ scroll, + whether they
- *      were pre-windowed) per frame, keyed by paneId, so the mouse pipeline can
- *      map a click to content coords and resolve the selected text on release.
+ *   1. CAPTURE — record each pane's content lines (+ scroll, the pre-windowed
+ *      flag, and the selectable extent) per frame, keyed by paneId, so the
+ *      mouse pipeline can map a click to content coords, refuse chrome rows,
+ *      and resolve the selected text on release.
  *   2. DECORATE — reverse-highlight a pane's active `slice.select` in its
  *      content before the box is drawn. Only for panes that DON'T window their
  *      buffer themselves: the content panes render through buildTextView, which
@@ -31,8 +32,9 @@
 
 const core = require('../leaves/text/select-core');
 
-// paneId -> { lines, scroll, windowed }. Overwritten every frame (composeRects
-// renders every pane), so it always reflects the latest paint.
+// paneId -> { lines, scroll, windowed, selectableRows }. Overwritten every
+// frame (composeRects renders every pane), so it always reflects the latest
+// paint.
 const _content = new Map();
 
 // The pane currently being rendered (ambient, set by paint's _safeRender).

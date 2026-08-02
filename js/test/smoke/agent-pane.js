@@ -209,5 +209,17 @@ function agentInstance() {
   assert(!pinned.includes('preview'), 'no provisional preview text in the copy');
   eq(getModel().register.history[0], pinned, 'the pinned text is what was copied');
 
+  // [4] all-preview window (first turn, nothing settled) — nothing arms at
+  //     all (selectableRows = 0, the rows<=0 branch). Pre-fix this armed a
+  //     highlight over the provisional text that copied as empty.
+  inst3.slice.transcript = [];
+  inst3.slice.scroll = 0;
+  frame();
+  sm.capture(() => input.handleMouse('press', ...at(0, 0)));
+  sm.capture(() => input.handleMouse('motion', ...at(4, 0)));
+  sm.capture(() => input.handleMouse('release', ...at(4, 0)));
+  assert(!psel.selectionFor(inst3.paneId), 'press on an all-preview window arms nothing');
+  eq(getModel().register.history[0], pinned, 'register untouched by the all-preview drag');
+
   report();
 })();
