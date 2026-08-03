@@ -206,6 +206,24 @@ bench('search_clear x100k', 100_000, (n) => {
   }
 });
 
+// --- richToAnsi (truecolor arc 1a — the tag parser + memo) ---------------
+// Guards the parser rewrite: richToAnsi runs per visible row per frame and
+// twice per diffed row. Frozen table-lookup baseline: 0.90 µs/row on the
+// 4-named-tag row (2026-08-03, docs/truecolor.md §Bench); parser+memo
+// landed at 0.83. Hex tags must stay in the same ballpark as named.
+{
+  const { richToAnsi } = require('../leaves/text/ansi');
+  const namedRow = '[yellow]item[/]  [dim]2026-08-03[/]  [green]running[/]  [bold cyan]42%[/]' + ' pad'.repeat(8);
+  const hexRow = '[#e6db74]item[/]  [dim]2026-08-03[/]  [#a6e22e]running[/]  [bold #66d9ef]42%[/]' + ' pad'.repeat(8);
+  console.log('\n[7] richToAnsi (tag parser + memo; per visible row per frame)');
+  bench('richToAnsi 4 named tags', 200_000, (n) => {
+    for (let i = 0; i < n; i++) richToAnsi(namedRow);
+  });
+  bench('richToAnsi 4 hex/mixed tags', 200_000, (n) => {
+    for (let i = 0; i < n; i++) richToAnsi(hexRow);
+  });
+}
+
 console.log('\n--- Interpretation ---');
 console.log('tv_append target: docker logs -f sustains ~1k lines/sec; bursts to ~5k.');
 console.log('select_extend target: 60Hz mouse drag = 60 ops/sec; 100Hz = 100 ops/sec.');

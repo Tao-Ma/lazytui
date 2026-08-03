@@ -111,4 +111,62 @@ describe('[3] esc() — expands \\t to spaces against 8-col tab stops', () => {
   });
 });
 
+// Truecolor arc 1a (docs/truecolor.md) — the tag PARSER. Named atoms must
+// stay byte-identical to the retired CODES table (P6); hex atoms always
+// emit 38;2/48;2 (P3 — canonical truecolor, depth adapts at the write
+// boundary, never here); any unknown atom collapses the whole tag to RESET.
+describe('[N] tag parser — named atoms byte-identical to the CODES table', () => {
+  const PINS = {
+    bold: '\x1b[1m', dim: '\x1b[2m', reverse: '\x1b[7m',
+    green: '\x1b[32m', red: '\x1b[31m', yellow: '\x1b[33m', blue: '\x1b[34m',
+    magenta: '\x1b[35m', cyan: '\x1b[36m', white: '\x1b[37m',
+    'bold cyan': '\x1b[1;36m', 'bold yellow': '\x1b[1;33m', 'bold red': '\x1b[1;31m',
+    'bold green': '\x1b[1;32m', 'bold magenta': '\x1b[1;35m', 'bold blue': '\x1b[1;34m',
+    'bold white': '\x1b[1;37m', 'on dark_blue': '\x1b[44m',
+  };
+  for (const [tag, sgr] of Object.entries(PINS)) {
+    it(`[${tag}] emits the exact pre-parser bytes`, () => {
+      eq(richToAnsi(`[${tag}]x[/]`), `${sgr}x\x1b[0m`);
+    });
+  }
+  it('[dim reverse] now compiles (was a CODES miss → RESET; footer slot in every theme)', () => {
+    eq(richToAnsi('[dim reverse]x[/]'), '\x1b[2;7mx\x1b[0m');
+  });
+});
+
+describe('[N+1] tag parser — hex atoms (canonical truecolor)', () => {
+  it('hex fg', () => {
+    eq(richToAnsi('[#ff8800]x[/]'), '\x1b[38;2;255;136;0mx\x1b[0m');
+  });
+  it('hex bg', () => {
+    eq(richToAnsi('[on #282a36]x[/]'), '\x1b[48;2;40;42;54mx\x1b[0m');
+  });
+  it('attr + hex fg compound, atom order preserved', () => {
+    eq(richToAnsi('[bold #f8f8f2]x[/]'), '\x1b[1;38;2;248;248;242mx\x1b[0m');
+  });
+  it('hex fg + hex bg pair', () => {
+    eq(richToAnsi('[#f8f8f2 on #44475a]x[/]'), '\x1b[38;2;248;248;242;48;2;68;71;90mx\x1b[0m');
+  });
+  it('uppercase hex accepted', () => {
+    eq(richToAnsi('[#FF8800]x[/]'), '\x1b[38;2;255;136;0mx\x1b[0m');
+  });
+  it('short/invalid hex is an unknown atom → whole tag RESET', () => {
+    eq(richToAnsi('[#f80]x'), '\x1b[0mx');
+    eq(richToAnsi('[#ff88zz]x'), '\x1b[0mx');
+  });
+  it('unknown atom poisons a compound → RESET', () => {
+    eq(richToAnsi('[bold sparkle]x'), '\x1b[0mx');
+    eq(richToAnsi('[on nothing]x'), '\x1b[0mx');
+  });
+  it('empty and orphan-on tags → RESET (pre-parser behavior)', () => {
+    eq(richToAnsi('[]x'), '\x1b[0mx');
+    eq(richToAnsi('[on]x'), '\x1b[0mx');
+  });
+  it('ESC excluded from tag interiors — raw SGR is not eaten by a later ]', () => {
+    // Unescaped raw SGR followed by a literal ] elsewhere: the old [^\]]*
+    // interior would swallow '\x1b[33mAB' into one bogus "tag".
+    eq(richToAnsi('\x1b[33mAB]'), '\x1b[33mAB]');
+  });
+});
+
 report();

@@ -1,8 +1,20 @@
 /**
  * Minimal Rich-markup-to-ANSI converter.
  *
- * Supports: [bold], [dim], [reverse], [green], [red], [yellow], [cyan],
- * [on dark_blue], [/], and escaped brackets \[text].
+ * A tag is space-separated ATOMS, compiled to one SGR sequence in atom order:
+ *   attributes  bold · dim · reverse
+ *   fg colors   green red yellow blue magenta cyan white · #rrggbb (24-bit)
+ *   bg          on <named|dark_blue|#rrggbb>
+ *   reset       [/] (also [/bold], [/dim])
+ * plus escaped brackets \[text]. Examples: [bold cyan], [#ff8800],
+ * [#f8f8f2 on #44475a]. Hex atoms ALWAYS emit 38;2/48;2 — the pipeline is
+ * canonically truecolor; device depth adapts at the WRITE boundary, never
+ * here (docs/truecolor.md P3). A tag containing any unknown atom compiles to
+ * RESET (defensive, pre-parser behavior preserved). Named atoms emit
+ * byte-identical SGR to the pre-parser CODES table (P6, pinned in
+ * test-ansi.js). Compiled tags are memoized (pure memoization — same tag,
+ * same bytes; the vocabulary is finite since esc() escapes brackets in
+ * content, so content cannot mint tags).
  *
  * Two dependencies back `charWidth` (the width truth function — a standard,
  * spec-evolving problem; see charWidth's doc): `eastasianwidth` (UAX #11, the
@@ -21,27 +33,58 @@
 const { eastAsianWidth } = require('eastasianwidth');
 const wcwidth = require('wcwidth');
 
-const CODES = {
-  bold: '\x1b[1m',
-  dim: '\x1b[2m',
-  reverse: '\x1b[7m',
-  green: '\x1b[32m',
-  red: '\x1b[31m',
-  yellow: '\x1b[33m',
-  blue: '\x1b[34m',
-  magenta: '\x1b[35m',
-  cyan: '\x1b[36m',
-  white: '\x1b[37m',
-  'bold cyan': '\x1b[1;36m',
-  'bold yellow': '\x1b[1;33m',
-  'bold red': '\x1b[1;31m',
-  'bold green': '\x1b[1;32m',
-  'bold magenta': '\x1b[1;35m',
-  'bold blue': '\x1b[1;34m',
-  'bold white': '\x1b[1;37m',
-  'on dark_blue': '\x1b[44m',
-};
 const RESET = '\x1b[0m';
+
+// Atom tables. Values are SGR params (joined with ';' in atom order, so
+// 'bold cyan' → '1;36' — byte-identical to the retired CODES table).
+const _ATTRS = { bold: '1', dim: '2', reverse: '7' };
+const _FG = { green: '32', red: '31', yellow: '33', blue: '34', magenta: '35', cyan: '36', white: '37' };
+const _BG = { dark_blue: '44', green: '42', red: '41', yellow: '43', blue: '44', magenta: '45', cyan: '46', white: '47' };
+const _HEX = /^#([0-9a-fA-F]{6})$/;
+
+function _hexParams(prefix, hex) {
+  return `${prefix};2;${parseInt(hex.slice(0, 2), 16)};${parseInt(hex.slice(2, 4), 16)};${parseInt(hex.slice(4, 6), 16)}`;
+}
+
+/** Compile one tag body to SGR, or null when any atom is unknown. */
+function _compileTag(tag) {
+  if (tag === '/' || tag === '/bold' || tag === '/dim') return RESET;
+  const toks = tag.split(' ');
+  const codes = [];
+  for (let i = 0; i < toks.length; i++) {
+    const tk = toks[i];
+    if (tk === 'on') {
+      const b = toks[++i];
+      if (b !== undefined && _BG[b]) { codes.push(_BG[b]); continue; }
+      const m = b !== undefined && _HEX.exec(b);
+      if (m) { codes.push(_hexParams('48', m[1])); continue; }
+      return null;
+    }
+    if (_ATTRS[tk]) { codes.push(_ATTRS[tk]); continue; }
+    if (_FG[tk]) { codes.push(_FG[tk]); continue; }
+    const m = _HEX.exec(tk);
+    if (m) { codes.push(_hexParams('38', m[1])); continue; }
+    return null;                                  // unknown atom (incl. '')
+  }
+  return codes.length ? `\x1b[${codes.join(';')}m` : null;
+}
+
+// Tag → SGR memo. Pure memoization (deterministic, no observable state) —
+// richToAnsi runs per visible row per frame and twice per diffed row, so the
+// hot path must stay one Map hit. The cap is defensive only: the tag
+// vocabulary is finite (theme slot values + panel literals + gradient steps).
+const _TAG_CACHE = new Map();
+const _TAG_CACHE_MAX = 1024;
+
+function _tagSgr(tag) {
+  let v = _TAG_CACHE.get(tag);
+  if (v === undefined) {
+    v = _compileTag(tag) || RESET;
+    if (_TAG_CACHE.size >= _TAG_CACHE_MAX) _TAG_CACHE.clear();
+    _TAG_CACHE.set(tag, v);
+  }
+  return v;
+}
 
 /**
  * Convert Rich-style markup to ANSI escape sequences.
@@ -60,14 +103,22 @@ const _BRACKET_SENTINEL = '';
 // the sentinel-restore regex on every call was real allocation churn.
 const _SENTINEL_RE = new RegExp(_BRACKET_SENTINEL, 'g');
 
+// Tag guard (defensive, truecolor arc 1a): a tag's `[` must not be preceded
+// by ESC (lookbehind) and its interior may not contain ESC. On UNESCAPED
+// raw-SGR input — which production rows never are, since esc() escapes
+// content SGR brackets and the sentinel round-trip reassembles them — the
+// old `\[([^\]]*)\]` treated every `\x1b[` as a tag opener: catastrophic
+// scans toward a `]` that never comes (~360 µs on a 120-col raw-SGR row),
+// and a later literal `]` made it swallow the sequence AND the text into
+// one bogus tag → RESET. Legitimate tags are never ESC-adjacent, so both
+// guards are behavior-neutral for markup. stripMarkup carries the same
+// guards: it must agree with richToAnsi on what is a tag (visibleLen pads
+// what richToAnsi renders).
 function richToAnsi(text) {
   // Protect escaped brackets
   let result = text.replace(/\\\[/g, _BRACKET_SENTINEL);
   // Replace tags
-  result = result.replace(/\[([^\]]*)\]/g, (_, tag) => {
-    if (tag === '/' || tag === '/bold' || tag === '/dim') return RESET;
-    return CODES[tag] || RESET;
-  });
+  result = result.replace(/(?<!\x1b)\[([^\]\x1b]*)\]/g, (_, tag) => _tagSgr(tag));
   // Restore escaped brackets
   return result.replace(_SENTINEL_RE, '[');
 }
@@ -77,7 +128,7 @@ function richToAnsi(text) {
  */
 function stripMarkup(text) {
   return text.replace(/\\\[/g, _BRACKET_SENTINEL)
-    .replace(/\[[^\]]*\]/g, '')
+    .replace(/(?<!\x1b)\[[^\]\x1b]*\]/g, '')
     .replace(_SENTINEL_RE, '[');
 }
 
