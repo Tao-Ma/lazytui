@@ -3,8 +3,9 @@
  * config author (usually an AI) can DISCOVER the vocabulary before writing
  * `keymap:` YAML: every verb + a one-line summary, the bindable forms, the
  * reserved keys (and why), the format version, and the EFFECTIVE bindings
- * (defaults ⊕ the given config). The catalog here is the same single source the
- * dispatcher + validation use, so the dump never drifts from what dispatches.
+ * (defaults ⊕ the global user config ⊕ the given config — docs/global-config).
+ * The catalog here is the same single source the dispatcher + validation use,
+ * so the dump never drifts from what dispatches.
  *
  *   node js/app/tui.js --keymap [config.yml]
  */
@@ -17,17 +18,20 @@ function runKeymapDump(configPath) {
   const dispatch = require('../dispatch/control/dispatch');
   const out = (s) => process.stdout.write(s + '\n');
 
+  // Layer the global user config exactly as boot does (docs/global-config),
+  // so the dump shows the EFFECTIVE bindings, global keymap included — with
+  // OR without a project config argument.
+  const glob = require('../parser/global').loadGlobal(process.env);
   if (configPath) {
     let config;
-    // Layer the global user config exactly as boot does (docs/global-config),
-    // so the dump shows the EFFECTIVE bindings, global keymap included.
-    const glob = require('../parser/global').loadGlobal(process.env);
     try { config = require('../parser').parse(path.resolve(configPath), { global: glob.config }); }
     catch (e) { process.stderr.write(`keymap: cannot read ${configPath}: ${e.message}\n`); return 1; }
     // checkActions:false — the merged action set (incl. plugin-synth actions)
     // only exists once the app is booted; skip it here so the dump doesn't
     // mis-warn on every `action:` binding.
     dispatch.loadKeymap(config, { checkActions: false });   // build the effective table
+  } else if (glob.config && glob.config.keymap) {
+    dispatch.loadKeymap({ keymap: glob.config.keymap }, { checkActions: false });
   }
 
   out(`# lazytui keymap — format version ${km.KEYMAP_VERSION}`);

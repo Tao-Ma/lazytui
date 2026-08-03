@@ -33,9 +33,8 @@ function globalConfigPath(env) {
     const p = env.LAZYTUI_GLOBAL_CONFIG;
     return p ? path.resolve(p) : null;          // '' disables
   }
-  const base = env.XDG_CONFIG_HOME && env.XDG_CONFIG_HOME.trim()
-    ? env.XDG_CONFIG_HOME
-    : path.join(os.homedir(), '.config');
+  const xdg = (env.XDG_CONFIG_HOME || '').trim();
+  const base = xdg || path.join(os.homedir(), '.config');
   return path.join(base, 'lazytui', 'config.yml');
 }
 
@@ -59,7 +58,7 @@ function loadGlobal(env) {
   }
   if (data == null) return { config: null, warnings };   // empty file
   try {
-    validateGlobal(data, warnings);
+    data = validateGlobal(data, warnings);
   } catch (e) {
     warnings.push({ code: 'global.invalid',
       message: `global config ${p}: ${e.message} — ignored` });
@@ -82,7 +81,11 @@ function mergeGlobal(project, global) {
   if (!global) return project;
   const out = { ...project };
   for (const k of ['theme', 'selection', 'editor']) {
-    if (!(k in out) && k in global) out[k] = global[k];
+    // null counts as unset: parse() stamps `editor: null` on its output, so
+    // a resolved-shape .json config must not block a global editor with the
+    // stamped "not set" default (v0.6.12 review MED). theme/selection are
+    // always explicit in resolved JSON — see docs/global-config.md §JSON.
+    if ((!(k in out) || out[k] == null) && k in global) out[k] = global[k];
   }
   for (const k of ['keys', 'mouse']) {
     if (k in global) out[k] = { ...global[k], ...(out[k] || {}) };

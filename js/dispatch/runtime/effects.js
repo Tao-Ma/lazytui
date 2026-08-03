@@ -242,6 +242,15 @@ function installBuiltins() {
       else require('../control/dispatch').applyMsg(eff.msg);
     } finally { _exitCrossLayer(); }
   });
+  // edit_file: open a file in the user's editor (dispatch/runtime/edit.js) —
+  // the files pane's `e` emits this from its pure key arm. editFile
+  // synchronously re-enters dispatch (mint/focus/view/mode Msgs) → counted
+  // under the T28 cap like the `msg` effect.
+  registerEffect('edit_file', (eff) => {
+    if (!_enterCrossLayer('edit_file', eff)) return;
+    try { require('./edit').editFile(eff.path, { isConfig: eff.isConfig }); }
+    finally { _exitCrossLayer(); }
+  });
   // select_cancel_all: drop EVERY active text selection — more than one pane
   // can hold one, and a hidden tab's persisted selection counts too: per-tab
   // persistence would otherwise carry it across the group switch and re-own it
@@ -253,11 +262,6 @@ function installBuiltins() {
   // stay directly addressable through the wrapped-Msg path, so hidden tabs are
   // reachable. Each dispatch synchronously re-enters the pipeline → counted
   // under the T28 cap like the `msg` effect.
-  // edit_file: open a file in the user's editor (dispatch/runtime/edit.js) —
-  // the files pane's `e` emits this from its pure key arm.
-  registerEffect('edit_file', (eff) => {
-    require('./edit').editFile(eff.path, { isConfig: eff.isConfig });
-  });
   registerEffect('select_cancel_all', (eff) => {
     for (const own of require('../../panel/select-view').allSelections()) {
       if (!_enterCrossLayer('select_cancel_all', eff)) return;

@@ -45,11 +45,20 @@ The global file layers UNDER the project config:
 - **Scalars** (`theme`, `selection`, `editor`) are wholesale — a project
   value wins; absent, the global value applies.
 
-The merge happens on the raw YAML inside `parse()` (before validation and
-defaulting), so the merged result validates uniformly and `theme:` /
-`selection:` defaults apply after the layer — and it happens BEFORE the
-`set_config` Msg, so a recording carries the merged config and replay never
-re-reads the file. `--keymap` dumps the effective (merged) bindings.
+The merge happens inside `parse()`: the project config validates STANDALONE
+first (its errors surface unchanged, global file or not), the pre-validated
+global sections then layer in before the output assembly, so `theme:` /
+`selection:` defaulting applies to the merged result. It all happens BEFORE
+the `set_config` Msg, so a recording carries the merged config and replay
+never re-reads the file. `--keymap` dumps the effective (merged) bindings.
+
+## JSON configs
+
+A `.json` config is the parser's RESOLVED output shape, so it always carries
+explicit `theme`/`selection` values — the global scalars can't apply there
+(nothing is "absent"); `editor: null` counts as unset, so a global `editor:`
+still lands. The keyed sections (`keys`, `keymap`, `mouse`, `context-menu`)
+layer exactly as they do for YAML.
 
 ## Failure contract
 

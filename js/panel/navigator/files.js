@@ -620,8 +620,10 @@ function _makeDef(panelType, hardcoded) {
     customFilter: true,
     filterText: (it) => it.name || it.path || '',
     idOf: (it) => it.path,
-    // Enter is owned in update() (navigate / open) — suppress the framework
-    // default (run_selected / viewer_show_info) for it.
+    // Enter and `e` are owned in update() (navigate / open / edit) — suppress
+    // the framework default (run_selected / viewer_show_info) for them.
+    // (`e` is host-files-only; on a docker-sourced pane the hint over-promises
+    // — accepted until docker-edit lands, keyHints is contractually a string.)
     keyHints: hardcoded === 'declared'
       ? 'Enter open · e edit · / filter · y copy'
       : 'Enter open · e edit · / regex · y copy',

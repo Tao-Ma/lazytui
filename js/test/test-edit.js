@@ -18,9 +18,19 @@ const spawnCalls = [];
 const _realSpawn = child_process.spawn;
 child_process.spawn = (...args) => { spawnCalls.push(args); return { on() {}, kill() {} }; };
 
-// Drop rendered frames — the PTY exit fan-out schedules real repaints in this
-// test env (same interception as test-select.js's OSC52 filter).
-require('../io/term').stdout.write = () => true;
+// Drop rendered FRAMES only — the PTY exit fan-out schedules real repaints in
+// this test env. Cursor-addressed paints carry CSI row;colH / 2J / ?25 codes;
+// the harness's own ✓/✗ report lines don't, and must stay visible (a
+// drop-everything stub silenced report() itself — v0.6.12 review LOW).
+{
+  const term = require('../io/term');
+  const _w = term.stdout.write.bind(term.stdout);
+  term.stdout.write = (chunk, ...rest) => {
+    const s = typeof chunk === 'string' ? chunk : '';
+    if (/\x1b\[\d+;\d+H|\x1b\[2J|\x1b\[\?25/.test(s)) return true;
+    return _w(chunk, ...rest);
+  };
+}
 
 const fs = require('fs');
 const os = require('os');
@@ -143,6 +153,50 @@ describe('[4] :config global — skeleton on first run', () => {
     eq(fs.readFileSync(globPath, 'utf8'), 'theme: nord\n');
   });
   process.env.LAZYTUI_GLOBAL_CONFIG = prev;
+  cleanupTerminals();
+});
+
+describe('[4b] :edit works through the REAL cmdline (completion + fallback)', () => {
+  // v0.6.12 review HIGH: the completion entries carried :open's display/run
+  // (Tab rewrote the buffer to `open …`, Enter opened a read-only tab) and an
+  // empty dropdown made submit a dead key — so `:edit` never reached the
+  // editor, including the create-a-new-file case.
+  sm.bootFresh();
+  layoutSlice().viewMode = 'normal';
+  delete process.env.TMUX;
+  require('../panel/commands').setCommandsDispatch(
+    require('../dispatch/runtime/effects').effectHost());
+  const cmdline = require('../dispatch/control/cmdline');
+  getModel().config.editor = 'sleep 30';
+  getModel().projectDir = TMP;
+  fs.writeFileSync(path.join(TMP, 'target2.txt'), 'x\n');
+
+  it('completion rows carry the edit verb, not open', () => {
+    const rows = cmdline.rebuild('edit target');
+    assert(rows.length >= 1, 'a completion matched');
+    assert(rows[0].display.startsWith('edit '), `display: ${rows[0].display}`);
+  });
+  it('Enter on a completion row launches the editor', () => {
+    const rows = cmdline.rebuild('edit target');
+    const idx = rows.findIndex((r) => r.display === 'edit target2.txt');
+    assert(idx >= 0, `row present: ${JSON.stringify(rows.map((r) => r.display))}`);
+    cmdline.runAt(idx, [], rows[idx].display);
+    eq(activeEntry().config.cmd, `sleep 30 '${path.join(TMP, 'target2.txt')}'`,
+      'the editor terminal minted from the completion row');
+  });
+  it('a nonexistent path falls back to the verb row; Enter creates-and-edits', () => {
+    const rows = cmdline.rebuild('edit brand-new.txt');
+    eq(rows.length, 1, 'exactly the fallback row');
+    eq(rows[0].display, 'edit', 'the verb itself');
+    cmdline.runAt(0, ['brand-new.txt'], rows[0].display);
+    eq(activeEntry().config.cmd, `sleep 30 '${path.join(TMP, 'brand-new.txt')}'`,
+      'the editor launched on the not-yet-existing path');
+  });
+  it(':edit rejects scheme URIs (host-only)', () => {
+    const before = viewerPane().activeTabId;
+    require('../dispatch/control/cmdline').runCommandString('edit docker://c/etc/hosts');
+    eq(viewerPane().activeTabId, before, 'no editor minted for a docker:// URI');
+  });
   cleanupTerminals();
 });
 

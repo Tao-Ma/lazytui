@@ -125,31 +125,34 @@ function validateEditor(v) {
 /**
  * Scoped validation for the GLOBAL user config. Tolerant by design: only
  * GLOBAL_TOP_KEYS are honored; every other key — project content or a typo —
- * appends a `{code, message}` warning and is dropped here, instead of
+ * appends a `{code, message}` warning and is filtered out, instead of
  * throwing. The honored sections validate with the SAME validators as the
  * project config, and those DO throw: a malformed honored section is a real
  * error the user must see (the caller catches and degrades to project-only).
+ * PURE of its input: returns a filtered COPY (the caller's object is never
+ * mutated — it may be reused after a caught throw).
  */
 function validateGlobal(data, warnings) {
   if (!isMapping(data)) throw new SchemaError('global config must be a YAML mapping');
+  const out = {};
   for (const k of Object.keys(data).sort()) {
-    if (GLOBAL_TOP_KEYS.has(k)) continue;
+    if (GLOBAL_TOP_KEYS.has(k)) { out[k] = data[k]; continue; }
     if (warnings) {
       warnings.push({
         code: 'global.ignored_key',
         message: `global config: '${k}' is not a global section (honored: ${[...GLOBAL_TOP_KEYS].sort().join(', ')}) — ignored`,
       });
     }
-    delete data[k];
   }
-  if ('selection' in data && typeof data.selection !== 'boolean') {
+  if ('selection' in out && typeof out.selection !== 'boolean') {
     throw new SchemaError("'selection' must be a boolean");
   }
-  if ('editor' in data)   validateEditor(data.editor);
-  if ('keys' in data)     validateKeys(data.keys);
-  if ('keymap' in data)   validateKeymap(data.keymap);
-  if ('mouse' in data)    validateMouse(data.mouse);
-  if ('context-menu' in data) validateContextMenu(data['context-menu']);
+  if ('editor' in out)   validateEditor(out.editor);
+  if ('keys' in out)     validateKeys(out.keys);
+  if ('keymap' in out)   validateKeymap(out.keymap);
+  if ('mouse' in out)    validateMouse(out.mouse);
+  if ('context-menu' in out) validateContextMenu(out['context-menu']);
+  return out;
 }
 
 /**

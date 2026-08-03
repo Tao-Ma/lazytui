@@ -668,18 +668,22 @@ function parse(yamlPath, opts) {
   // directory containing the source YAML.
   mergeYamlPlugins(data, path.dirname(absPath));
 
-  // Global user config (docs/global-config) — the pre-validated raw
-  // app-behavior sections layer UNDER the raw project data HERE, before
-  // validation and defaulting, so `theme:`/`selection:` defaults apply to
-  // the MERGED result and the honored sections validate uniformly.
-  if (opts && opts.global) {
-    data = require('./global').mergeGlobal(data, opts.global);
-  }
-
   // Soft-cap warnings (column over default cap, etc.) accumulate here
   // and ride out on the returned config. tui.js boot reads them.
   const warnings = [];
   validate(data, source, warnings);
+
+  // Global user config (docs/global-config) — layered UNDER the project data
+  // AFTER the project validates standalone (a malformed project section must
+  // keep its composed SchemaError — pre-validation merging masked it or
+  // crashed raw when the global defined the same section), and BEFORE the
+  // output assembly, so `theme:`/`selection:` defaulting applies to the
+  // MERGED result. `opts.global` must be pre-validated (loadGlobal runs
+  // validateGlobal); merging two shape-valid sections yields a shape-valid
+  // section by construction, so no re-validation is needed.
+  if (opts && opts.global) {
+    data = require('./global').mergeGlobal(data, opts.global);
+  }
 
   // Build files list (before groups — auto-helper needs it).
   const files = [];

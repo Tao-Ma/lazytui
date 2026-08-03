@@ -295,4 +295,4 @@ function doRunFabric(actionKey, action) {
 
 // Re-export streaming helpers so existing import sites
 // (dispatch.js, plugins/docker.js, cleanup.js) keep working.
-module.exports = { runAction, doRun, killAll, streamCommand, _spawnUsesTmux, doRunFabric };
+module.exports = { runAction, doRun, killAll, streamCommand, _spawnUsesTmux, doRunFabric, shQuote };

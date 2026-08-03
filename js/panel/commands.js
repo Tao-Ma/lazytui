@@ -105,8 +105,11 @@ const FRAMEWORK_COMMANDS = [
     name: 'edit',
     desc: 'Open a file in your editor — :edit <path>  (editor: / $VISUAL / $EDITOR / vi)',
     // Host-path completion only — the editor runs locally; docker:// URIs
-    // have no local file to hand it.
-    argComplete: (text) => require('../feature/open-file').hostComplete(text),
+    // have no local file to hand it. The completion entries carry THIS
+    // verb's display + action (v0.6.12 review HIGH — reusing :open's
+    // entries verbatim made Tab/Enter run :open semantics).
+    argComplete: (text) => require('../feature/open-file').hostComplete(text,
+      { verb: 'edit', onFile: (p) => _host.editFile(p) }),
     run: (args) => {
       const input = (args && args.join(' ')) || '';
       if (!input) {
@@ -115,6 +118,11 @@ const FRAMEWORK_COMMANDS = [
         return;
       }
       const cleaned = input.replace(/^(['"])(.*)\1$/, '$2');
+      if (/^[a-z][a-z0-9+.-]*:\/\//i.test(cleaned)) {
+        const { appendViewerLines } = require('./nav-state');
+        appendViewerLines(`[red]:edit is host-only[/] — a ${cleaned.split('://')[0]}:// URI has no local file to hand an editor`);
+        return;
+      }
       _host.editFile(cleaned);
     },
   },

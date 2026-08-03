@@ -271,10 +271,17 @@ function rebuildMatches(text) {
     if (matchedCmd && typeof matchedCmd.argComplete === 'function') {
       try {
         const completions = matchedCmd.argComplete(args.join(' ')) || [];
-        return completions.map(c => ({ ...c, argComplete: true }));
+        if (completions.length) return completions.map(c => ({ ...c, argComplete: true }));
+        // Zero completions ≠ dead key. Fall back to the verb's own row so
+        // Enter still fires run(args) with the typed args — `:edit
+        // brand-new.txt` (a path being CREATED) must launch the editor, and
+        // `:open nosuch` should surface its own load error instead of
+        // silently no-oping on submit (v0.6.12 review HIGH: the empty
+        // dropdown made cmdline_submit's `had` false → nothing ran).
+        return [matchedCmd];
       } catch (e) {
         console.error('[cmdline] argComplete error:', e.message);
-        return [];
+        return [matchedCmd];
       }
     }
   }

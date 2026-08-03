@@ -20,13 +20,11 @@
 'use strict';
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
 const { getModel } = require('../../model/store');
-
-function shQuote(s) {
-  return `'${String(s).replace(/'/g, `'\\''`)}'`;
-}
+const { shQuote } = require('./action-runner');
 
 /** The editor command string — merged config editor: → $VISUAL → $EDITOR → vi. */
 function resolveEditor(config, env) {
@@ -59,6 +57,7 @@ function editFile(filepath, opts) {
   opts = opts || {};
   const m = getModel();
   const base = m.projectDir || process.cwd();
+  if (/^~(\/|$)/.test(filepath)) filepath = path.join(os.homedir(), filepath.slice(1));
   const abs = path.isAbsolute(filepath) ? filepath : path.resolve(base, filepath);
   const editor = resolveEditor(m.config, process.env);
   const cmd = `${editor} ${shQuote(abs)}`;

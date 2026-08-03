@@ -69,7 +69,9 @@ describe('[global] tolerant load', () => {
       'editor: nvim',
     ].join('\n') + '\n');
     const r = g.loadGlobal({ LAZYTUI_GLOBAL_CONFIG: p });
-    eq(r.config, { theme: 'nord', editor: 'nvim' });
+    eq(r.config.theme, 'nord');
+    eq(r.config.editor, 'nvim');
+    eq(Object.keys(r.config).length, 2, 'project keys dropped');
     eq(r.warnings.map((w) => w.code), ['global.ignored_key', 'global.ignored_key']);
     assert(/'groups' is not a global section/.test(r.warnings[0].message), r.warnings[0].message);
   });
@@ -131,6 +133,30 @@ describe('[global] through parse() — defaulting applies to the MERGED result',
     const out = parse(proj, { global: { keymap: { normal: { q: 'noop', G: 'cursor_bottom' } } } });
     eq(out.keymap.normal, { q: 'quit', G: 'cursor_bottom' });
   });
+  it('a MALFORMED project section still rejects when the global defines it too', () => {
+    // Pre-fix (v0.6.12 review MED): the merge ran before validation, so a
+    // global keymap MASKED a project keymap typo (binding silently vanished)
+    // and a non-mapping project section crashed with a raw TypeError instead
+    // of the composed SchemaError. Project errors must surface unchanged.
+    const typo = write('km-typo.yml',
+      fs.readFileSync(MINIMAL, 'utf8') + '\nkeymap:\n  normall:\n    q: quit\n');
+    let msg = '';
+    try { parse(typo, { global: { keymap: { normal: { G: 'cursor_bottom' } } } }); }
+    catch (e) { msg = e.message; }
+    assert(/unknown key\(s\): normall/.test(msg), `typo must reject: ${msg}`);
+    const nonMap = write('km-nonmap.yml',
+      fs.readFileSync(MINIMAL, 'utf8') + '\nkeymap: nonsense\n');
+    msg = '';
+    try { parse(nonMap, { global: { keymap: { normal: { G: 'cursor_bottom' } } } }); }
+    catch (e) { msg = e.message; }
+    assert(/'keymap' must be a mapping/.test(msg), `non-mapping must reject cleanly: ${msg}`);
+    const badMouse = write('mouse-bad.yml',
+      fs.readFileSync(MINIMAL, 'utf8') + '\nmouse: true\n');
+    msg = '';
+    try { parse(badMouse, { global: { mouse: { 'right-click': 'context' } } }); }
+    catch (e) { msg = e.message; }
+    assert(/'mouse' must be a mapping/.test(msg), `bad mouse must reject: ${msg}`);
+  });
 });
 
 describe('[parse] selection/editor pass-through (the pre-existing drop)', () => {
@@ -147,6 +173,25 @@ describe('[parse] selection/editor pass-through (the pre-existing drop)', () => 
     let threw = false;
     try { parse(bad); } catch (e) { threw = /'editor' must be a non-empty string/.test(e.message); }
     assert(threw, 'non-string editor rejects at parse');
+  });
+});
+
+describe('[json] resolved-shape configs — keyed sections layer, editor null counts as unset', () => {
+  it('a global editor lands through the .json path; explicit theme stays', () => {
+    // v0.6.12 review MED: parse-output JSON always stamps theme/selection/
+    // editor, so wholesale-if-absent never fired — the stamped `editor: null`
+    // blocked a global editor. null now counts as unset for scalars.
+    const resolved = parse(MINIMAL);   // the canonical resolved shape
+    const jsonPath = write('resolved.json', JSON.stringify(resolved));
+    const globPath = write('json-global.yml', 'editor: nvim\ntheme: nord\nkeymap:\n  normal:\n    G: cursor_bottom\n');
+    const prev = process.env.LAZYTUI_GLOBAL_CONFIG;
+    process.env.LAZYTUI_GLOBAL_CONFIG = globPath;
+    try { require('../app/state').loadConfig(jsonPath); }
+    finally { process.env.LAZYTUI_GLOBAL_CONFIG = prev; }
+    const cfg = require('../app/runtime').getModel().config;
+    eq(cfg.editor, 'nvim', 'stamped null no longer blocks the global editor');
+    eq(cfg.theme, resolved.theme, 'explicit resolved theme stays (documented JSON caveat)');
+    eq(cfg.keymap.normal.G, 'cursor_bottom', 'keyed sections layer as usual');
   });
 });
 

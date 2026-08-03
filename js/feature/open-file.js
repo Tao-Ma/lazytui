@@ -88,7 +88,7 @@ function refreshHostFileTab(absPath) {
  * carry `argComplete: true` so the cmdline knows to use replace-buffer
  * semantics rather than the default command-name rewrite.
  */
-function hostComplete(input) {
+function hostComplete(input, opts2) {
   const base = getModel().projectDir || process.cwd();
   let dir, prefix;
   if (!input || input.endsWith('/')) {
@@ -122,16 +122,21 @@ function hostComplete(input) {
         : path.relative(base, fullPath) || e.name;
       const suffix = e.isDirectory() ? '/' : '';
       const shown = displayPath + suffix;
+      // The verb/action pair is the CALLER's (v0.6.12 review HIGH: these
+      // entries hardcoded :open's, so `:edit` + Tab/Enter silently ran
+      // :open semantics). Default preserves the :open behavior.
+      const verb = (opts2 && opts2.verb) || 'open';
+      const onFile = (opts2 && opts2.onFile) || openHostFileAsTab;
       return {
-        display: `open ${shown}`,
+        display: `${verb} ${shown}`,
         desc: e.isDirectory() ? '[dir]' : '[file]',
         kind: 'path',
         argComplete: true,
         // Directories are refine-only: Enter behaves like Tab (descend).
-        // Files have a meaningful Enter (open the file).
+        // Files have a meaningful Enter (the verb's action on the file).
         refine: e.isDirectory(),
         run: () => {
-          if (!e.isDirectory()) openHostFileAsTab(shown);
+          if (!e.isDirectory()) onFile(shown);
         },
       };
     });

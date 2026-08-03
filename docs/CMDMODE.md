@@ -107,6 +107,8 @@ dynamic is fine when the candidate list depends on state.
 | `show <id>`       | Place a hidden panel (one entry per hidden id) |
 | `switch-tab <pool-id>` | Flip the focused multi-tab pane's active tab (one entry per non-active tab in the focused pane; absent on single-tab panes) |
 | `open <path>`     | Open a file as a content tab in detail. TAB completes via the open-target scheme registry. |
+| `edit <path>`     | Open a file in your editor (`editor:` / `$VISUAL` / `$EDITOR` / `vi`) in an embedded terminal tab. TAB completes host paths. |
+| `config [global]` | Edit the project config — or the global user config (created with a skeleton on first use) — in your editor. |
 | `dismiss-warnings` | Clear the config-warning chrome notice      |
 | `add-column [position]` | Insert an empty column (default: just before the last column) |
 | `remove-column <n>` | Remove an empty column (1-based; refused on last column or non-empty) |

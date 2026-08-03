@@ -508,7 +508,10 @@ function loadConfig(configPath) {
   let config;
   if (ext === '.json') {
     // JSON configs are the RESOLVED shape (parse()'s output form), so the
-    // global raw sections merge post-hoc: absent key = global applies.
+    // global raw sections merge post-hoc. Keyed sections layer as usual;
+    // the wholesale scalars (theme/selection/editor) apply only when the
+    // key is ABSENT — true for hand-authored JSON that omits them, never
+    // for parse-resolved JSON (parse always emits them, defaults included).
     config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
     config = g.mergeGlobal(config, glob.config);
   } else {

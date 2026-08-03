@@ -19,8 +19,9 @@ keymap:
 
 > **Discover the vocabulary:** run `lazytui --keymap [config.yml]` — it prints
 > every verb with a one-line summary, the reserved keys, and the **effective**
-> bindings (defaults ⊕ your config). That dump is generated from the same source
-> the app dispatches from, so it is always current. Prefer it over this list.
+> bindings (defaults ⊕ the global user config ⊕ your config). That dump is
+> generated from the same source the app dispatches from, so it is always
+> current. Prefer it over this list.
 
 ## Binding forms
 
