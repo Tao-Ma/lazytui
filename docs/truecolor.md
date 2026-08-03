@@ -137,9 +137,17 @@ change — theme colors become the schemes' true shades.
     precision (equal-net-style cells with different histories stop
     reading as changed).
   - **H2** CSI scan without per-escape `slice(i).match()` (sticky
-    regex / manual scan): the current shape allocates ~the remaining
-    row per escape — measured dominating cost on escape-dense rows
-    (616 µs/row where the diff itself is ~25 µs).
+    regex): the old shape allocated ~the remaining row per escape —
+    an O(row²) allocation class. LANDED 2026-08-03; measured effect
+    at 120 cols is modest (26.7 → 23.3 µs/row escape-dense). The
+    freeze-time "616 µs" attribution was WRONG: profiling during H2
+    showed that probe figure was dominated by `richToAnsi`'s tag
+    regex scanning from every raw `\x1b[` toward a `]` that never
+    comes — catastrophic only on UNESCAPED escape-dense input, which
+    production rows cannot be (content SGR arrives `esc()`-escaped;
+    the sentinel round-trip reassembles it after tag replacement).
+    Defensive guard (ESC excluded from tag interiors) folds into the
+    1a parser regardless.
 - **1e** Gates: tripwire scan (P2), bench A/B (§Bench), full suite ×2
   modes.
 
@@ -215,7 +223,7 @@ during Phase 1):
 | A `richToAnsi`, 4-tag 120-col row | 0.9 µs/row — 1a gate: stay in this ballpark |
 | B 1-cell change, 16-color vs truecolor styled row | 8.5 → 11.1 µs; 51 → 142 B (changed rows only — acceptable) |
 | C graph scroll tick, mono vs reset-free per-col gradient | 24.8 µs / 134 B → 284.7 µs / **128,530 B** (H1 target) |
-| C3 same, `[/]`-terminated runs | 2,725 B (linear ✓) but 616 µs (H2 target) |
+| C3 same, `[/]`-terminated runs | 2,725 B (linear ✓); the 616 µs was a probe artifact of unescaped input — see H2 |
 | D unchanged-row `===`, 180 vs 336-char rows | 1.2 µs both — row widening is a non-issue |
 
 `bench-cell-grid` 48×120 full-frame baselines: clock tick −85% bytes /

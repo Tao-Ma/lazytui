@@ -36,8 +36,13 @@
 const { richToAnsi, charWidth, RESET } = require('../text/ansi');
 
 // A CSI sequence. Post-richToAnsi rows carry SGR (`\x1b[…m`); pass through any
-// other zero-width CSI defensively. Anchored: callers slice from the index.
-const _CSI = /^\x1b\[[0-9;?]*[ -/]*[@-~]/;
+// other zero-width CSI defensively. STICKY (`y`), matched in place via
+// `lastIndex` — H2 (docs/truecolor.md §Hardening): the previous anchored form
+// was used as `ansi.slice(i).match(_CSI)`, allocating ~the remaining row per
+// escape; escape-dense rows (per-column gradient graphs, colorful child
+// output) paid quadratic allocation churn. `lastIndex` is always assigned
+// before exec, so the shared regex carries no state between calls.
+const _CSI = /\x1b\[[0-9;?]*[ -/]*[@-~]/y;
 const _SGR = /^\x1b\[[0-9;]*m$/;
 
 /**
@@ -52,7 +57,8 @@ function rowToCells(ansi) {
   let i = 0;
   while (i < ansi.length) {
     if (ansi[i] === '\x1b') {
-      const m = ansi.slice(i).match(_CSI);
+      _CSI.lastIndex = i;
+      const m = _CSI.exec(ansi);
       if (m) {
         const seq = m[0];
         if (_SGR.test(seq)) {

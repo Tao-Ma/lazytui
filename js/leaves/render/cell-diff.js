@@ -35,8 +35,10 @@ const HL_OFF = '\x1b[49m';         // reset BACKGROUND only — leaves foregroun
 
 // A CSI sequence (SGR + friends). Post-richToAnsi rows carry only SGR (`\x1b[…m`)
 // — content cursor moves are stripped by the sanitizer — but pass through any
-// zero-width CSI to be safe. Anchored: callers slice from the current index.
-const _CSI = /^\x1b\[[0-9;?]*[ -/]*[@-~]/;
+// zero-width CSI to be safe. Sticky, matched in place via `lastIndex` (H2,
+// docs/truecolor.md §Hardening — no per-escape slice allocation); `lastIndex`
+// is always assigned before exec, so no state is carried between calls.
+const _CSI = /\x1b\[[0-9;?]*[ -/]*[@-~]/y;
 
 // Walk an ANSI row → { g: {startCol: glyph}, width }. Double-width (CJK) glyphs
 // claim two columns; the start column holds the glyph, the continuation column
@@ -46,7 +48,8 @@ function _glyphByCol(ansi) {
   let col = 0, i = 0, lastStart = -1;
   while (i < ansi.length) {
     if (ansi[i] === '\x1b') {
-      const m = ansi.slice(i).match(_CSI);
+      _CSI.lastIndex = i;
+      const m = _CSI.exec(ansi);
       if (m) { i += m[0].length; continue; }
     }
     const cp = ansi.codePointAt(i);
@@ -92,7 +95,8 @@ function _emit(curAnsi, isChanged, hlOn, hlOff) {
   let col = 0, i = 0, inRun = false;
   while (i < curAnsi.length) {
     if (curAnsi[i] === '\x1b') {
-      const m = curAnsi.slice(i).match(_CSI);
+      _CSI.lastIndex = i;
+      const m = _CSI.exec(curAnsi);
       if (m) {
         out += m[0];
         if (inRun) out += hlOn;   // re-assert bg — a passed-through reset would clear it
