@@ -81,6 +81,25 @@ function reproduces(prev, cur) {
   return cellsDiff(got, want);
 }
 
+// Truecolor arc Phase 1 (docs/truecolor.md §Tests) — 24-bit / 256-color SGR
+// transits the cell path in production TODAY (child-process content SGR is
+// preserved by stripControls and passes through richToAnsi untouched), but
+// the suite had zero 38;2 vectors. Pinned BEFORE the H1/H2 hardening so the
+// rowToCells rewrite is gated by these. Raw escapes, not markup tags: hex
+// markup atoms don't exist until Phase 1a.
+const TC = (r, g, b) => `\x1b[38;2;${r};${g};${b}m`;
+const TCBG = (r, g, b) => `\x1b[48;2;${r};${g};${b}m`;
+// An 8-col per-column-colored graph row (the Phase-2 gradient shape),
+// shifted by `off` — every glyph AND every color changes on a tick.
+const gradRow = (off) => {
+  let s = '';
+  for (let c = 0; c < 8; c++) {
+    const v = (c + off) % 8;
+    s += `\x1b[0m\x1b[38;2;${40 + v * 25};${240 - v * 20};96m` + '▁▂▃▄▅▆▇█'[v];
+  }
+  return s;
+};
+
 const cases = [
   ['identical rows',        'abcde',                 'abcde'],
   ['single interior glyph', 'abcde',                 'abXde'],
@@ -111,6 +130,15 @@ const cases = [
   ['combining mark change', 'e\u0301X', 'e\u0300X'],         // e+acute → e+grave (folded glyph changes)
   ['VS16 emoji trailing',   '\u2764\ufe0fX', '\u2764\ufe0fY'], // heart+VS16 X → heart+VS16 Y
   ['add a combining mark',  'eX',             'e\u0301X'],     // e → é (gain a zero-width mark)
+  // Truecolor / 256-color vectors (see the TC/gradRow block above).
+  ['truecolor glyph change',       `${TC(255, 136, 0)}abc`,            `${TC(255, 136, 0)}aXc`],
+  ['truecolor style-only change',  `a${TC(80, 248, 160)}b\x1b[0mc`,    `a${TC(248, 80, 80)}b\x1b[0mc`],
+  ['gain a truecolor bg',          'abc',                              `a${TCBG(40, 42, 54)}b\x1b[0mc`],
+  ['256-color fg change',          'a\x1b[38;5;208mb\x1b[0mc',         'a\x1b[38;5;39mb\x1b[0mc'],
+  ['truecolor + attr compound',    `\x1b[1m${TC(1, 2, 3)}ab`,          `\x1b[1m${TC(1, 2, 3)}aX`],
+  ['truecolor mixed with markup',  `[bold]x[/] ${TC(9, 9, 9)}y`,       `[bold]x[/] ${TC(9, 9, 9)}z`],
+  ['no-reset accumulated fg run',  `${TC(10, 20, 30)}a${TC(40, 50, 60)}b`, `${TC(10, 20, 30)}a${TC(40, 50, 60)}X`],
+  ['gradient graph scroll tick',   gradRow(0),                         gradRow(1)],
 ];
 
 describe('cell-grid — patch reproduces the target row exactly', () => {
