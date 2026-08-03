@@ -21,13 +21,22 @@
  * Deterministic: output is a pure function of (prevMarkup, curMarkup, rowIdx), so
  * the emitted byte stream is itself a function of the model — replay-safe.
  *
- * Style model: rows come from richToAnsi, which is deterministic, so the SGR
- * bytes for a given style are stable. `rowToCells` accumulates the active SGR
- * (cleared by a full reset `\x1b[0m`/`\x1b[m`) and tags each glyph with it; two
- * cells are "equal" iff same glyph AND byte-identical active SGR. That is
- * CONSERVATIVE (a semantically-equal style reached via different bytes re-emits)
- * — never wrong, occasionally a few extra bytes; for richToAnsi output the bytes
- * match, so it is also minimal in practice.
+ * Style model (H1, docs/truecolor.md §Hardening): `rowToCells` FOLDS SGR into
+ * a per-channel state — known attributes (bold/dim/italic/…, a bitmask with
+ * their paired clears: 22 clears 1+2, 24 clears 4+21, …), fg / bg / underline
+ * color (30-37/90-97, 38;5;n, 38;2;r;g;b and the 48/58 counterparts; 39/49/59
+ * clear), full reset clears all, and rare unknown codes ride along as ordered
+ * last-wins extras. Each glyph is tagged with the CANONICAL re-emission of
+ * that state (one sequence, fixed channel order), so equal net style ⇒
+ * identical string: cell equality stays a byte compare AND gains precision
+ * (equal-net cells reached via different byte histories no longer re-emit).
+ * The fold replaced plain accumulation (`active += seq`), which grew without
+ * bound when styles changed with no interleaved reset — per-column-colored
+ * content made cell N carry N concatenated sequences, a measured 128,530-byte
+ * emit for ONE 120-col row. `cell.sgr` is now bounded by the channel count.
+ * Malformed 38/48/58 tails are DROPPED (a terminal ignores them; re-emitting
+ * them inside a rebuilt param list could make the terminal misparse what
+ * follows).
  *
  * Pure: string in, string out. No I/O, no module state. Lives in leaves/.
  */
@@ -45,6 +54,59 @@ const { richToAnsi, charWidth, RESET } = require('../text/ansi');
 const _CSI = /\x1b\[[0-9;?]*[ -/]*[@-~]/y;
 const _SGR = /^\x1b\[[0-9;]*m$/;
 
+// H1 — per-channel SGR fold. Known attributes carry a bit each; the paired
+// "off" codes clear exactly what the terminal clears. Everything the fold
+// doesn't know is kept as a standalone extra param (safe anywhere in a
+// rebuilt list — only 38/48/58 consume following params, and those are
+// handled explicitly).
+const _ATTR_BIT = { 1: 1, 2: 2, 3: 4, 4: 8, 5: 16, 6: 32, 7: 64, 8: 128, 9: 256, 21: 512, 51: 1024, 52: 2048, 53: 4096 };
+const _ATTR_ORDER = [1, 2, 3, 4, 5, 6, 7, 8, 9, 21, 51, 52, 53];
+const _ATTR_CLEAR = { 22: 1 | 2, 23: 4, 24: 8 | 512, 25: 16 | 32, 27: 64, 28: 128, 29: 256, 54: 1024 | 2048, 55: 4096 };
+
+/** Fold one SGR body (the digits between `\x1b[` and `m`) into `st`. */
+function _foldSgr(st, body) {
+  const t = body.split(';');
+  for (let i = 0; i < t.length; i++) {
+    const n = t[i] === '' ? 0 : parseInt(t[i], 10);
+    if (n === 0) { st.mask = 0; st.fg = null; st.bg = null; st.ul = null; if (st.ex) st.ex.length = 0; }
+    else if (_ATTR_BIT[n]) st.mask |= _ATTR_BIT[n];
+    else if (_ATTR_CLEAR[n]) st.mask &= ~_ATTR_CLEAR[n];
+    else if ((n >= 30 && n <= 37) || (n >= 90 && n <= 97)) st.fg = String(n);
+    else if (n === 39) st.fg = null;
+    else if ((n >= 40 && n <= 47) || (n >= 100 && n <= 107)) st.bg = String(n);
+    else if (n === 49) st.bg = null;
+    else if (n === 38 || n === 48 || n === 58) {
+      let val = null;
+      const kind = t[i + 1] === '' ? 0 : parseInt(t[i + 1], 10);
+      if (kind === 5 && i + 2 < t.length) { val = `${n};5;${parseInt(t[i + 2], 10)}`; i += 2; }
+      else if (kind === 2 && i + 4 < t.length) {
+        val = `${n};2;${parseInt(t[i + 2], 10)};${parseInt(t[i + 3], 10)};${parseInt(t[i + 4], 10)}`;
+        i += 4;
+      } else { i = t.length; }               // malformed tail — drop (see header)
+      if (val !== null) { if (n === 38) st.fg = val; else if (n === 48) st.bg = val; else st.ul = val; }
+    } else if (n === 59) st.ul = null;
+    else {
+      if (!st.ex) st.ex = [];
+      const c = String(n);
+      const k = st.ex.indexOf(c);
+      if (k >= 0) st.ex.splice(k, 1);
+      st.ex.push(c);                          // last occurrence wins, order kept
+    }
+  }
+}
+
+/** Canonical single-sequence re-emission of `st` ('' when default). */
+function _sgrString(st) {
+  if (!st.mask && st.fg === null && st.bg === null && st.ul === null && (!st.ex || !st.ex.length)) return '';
+  const p = [];
+  for (const a of _ATTR_ORDER) if (st.mask & _ATTR_BIT[a]) p.push(a);
+  if (st.ex) for (const e of st.ex) p.push(e);
+  if (st.fg !== null) p.push(st.fg);
+  if (st.bg !== null) p.push(st.bg);
+  if (st.ul !== null) p.push(st.ul);
+  return `\x1b[${p.join(';')}m`;
+}
+
 /**
  * Parse a post-richToAnsi row into an array indexed by VISIBLE column.
  *   - a glyph's start column → { g, w, sgr }  (w = 1 or 2; sgr = active style)
@@ -53,6 +115,7 @@ const _SGR = /^\x1b\[[0-9;]*m$/;
  */
 function rowToCells(ansi) {
   const cells = [];
+  const st = { mask: 0, fg: null, bg: null, ul: null, ex: null };
   let active = '';
   let i = 0;
   while (i < ansi.length) {
@@ -63,8 +126,14 @@ function rowToCells(ansi) {
         const seq = m[0];
         if (_SGR.test(seq)) {
           const body = seq.slice(2, -1);          // between '\x1b[' and 'm'
-          if (body === '' || body === '0') active = '';   // full reset
-          else active += seq;                     // accumulate
+          if (body === '' || body === '0') {      // full reset (fast path)
+            st.mask = 0; st.fg = null; st.bg = null; st.ul = null;
+            if (st.ex) st.ex.length = 0;
+            active = '';
+          } else {
+            _foldSgr(st, body);                   // H1 — per-channel fold
+            active = _sgrString(st);
+          }
         }
         i += seq.length;
         continue;
