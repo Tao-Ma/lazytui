@@ -327,12 +327,19 @@ function main() {
 
   // Truecolor arc 1b (docs/truecolor.md P3) — apply the config's
   // `color_depth:` to the render shell's write-boundary adaptation. 'auto' /
-  // absent keep paint's startup auto-detection (LAZYTUI_COLOR → COLORTERM →
-  // TERM). Depth is a device constant: never model state, never in the
-  // frame. paint.js is already loaded (the lazy-load block above), so this
-  // require is a cache hit, not a new dep for CLI mode (which returned
-  // earlier).
-  require('../render/paint').setColorDepth((getModel().config || {}).color_depth);
+  // absent keep paint's startup auto-detection (COLORTERM → TERM). Depth is
+  // a device constant: never model state, never in the frame. paint.js is
+  // already loaded (the lazy-load block above), so this require is a cache
+  // hit, not a new dep for CLI mode (which returned earlier).
+  //
+  // Precedence (review MED): an explicit LAZYTUI_COLOR env override BEATS
+  // the config — it's the one-shot "test this terminal at depth X" knob
+  // (the LAZYTUI_CELL_DIFF class), and detection already honored it at
+  // paint load; applying the config unconditionally silently reversed that.
+  const _envDepth = process.env.LAZYTUI_COLOR;
+  if (_envDepth !== 'truecolor' && _envDepth !== '256' && _envDepth !== '16') {
+    require('../render/paint').setColorDepth((getModel().config || {}).color_depth);
+  }
 
   // Built-in Components (TEA shape), in registration order. The list is
   // single-sourced in app/components.js so the replay harness registers the

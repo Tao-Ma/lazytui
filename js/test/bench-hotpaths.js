@@ -224,6 +224,27 @@ bench('search_clear x100k', 100_000, (n) => {
   });
 }
 
+// --- downgradeAnsi (truecolor arc 1b — the write-boundary depth funnel) --
+// Only 256/16 devices pay this; truecolor is an identity fast-path. The
+// input models a diff-emit chunk: MoveTos + mixed truecolor SGR + glyphs.
+{
+  const { downgradeAnsi } = require('../leaves/render/color-depth');
+  let chunk = '';
+  for (let i = 0; i < 40; i++) {
+    chunk += `\x1b[${i + 1};10H\x1b[0m\x1b[38;2;${40 + i * 5};${240 - i * 4};96;48;2;40;42;54m graph-cell-${i} `;
+  }
+  console.log('\n[8] downgradeAnsi (write-boundary; per emitted frame chunk, ~2.6KB)');
+  bench('downgrade at 16', 20_000, (n) => {
+    for (let i = 0; i < n; i++) downgradeAnsi(chunk, '16');
+  });
+  bench('downgrade at 256', 20_000, (n) => {
+    for (let i = 0; i < n; i++) downgradeAnsi(chunk, '256');
+  });
+  bench('truecolor identity fast-path', 200_000, (n) => {
+    for (let i = 0; i < n; i++) downgradeAnsi(chunk, 'truecolor');
+  });
+}
+
 console.log('\n--- Interpretation ---');
 console.log('tv_append target: docker logs -f sustains ~1k lines/sec; bursts to ~5k.');
 console.log('select_extend target: 60Hz mouse drag = 60 ops/sec; 100Hz = 100 ops/sec.');

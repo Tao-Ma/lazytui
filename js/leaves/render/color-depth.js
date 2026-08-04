@@ -13,11 +13,14 @@
  *   - '16':  38;2 and 38;5 both land on the nearest of the 16 base colors
  *     (fg → 30-37/90-97, bg → 40-47/100-107); underline color (58) has no
  *     16-color form and is dropped.
- * Malformed 38/48/58 tails are dropped when the pass runs, mirroring the
- * cell-grid H1 fold — re-emitting them inside a rebuilt param list could
- * misparse what follows. (A string whose ONLY extended params are malformed
- * has no well-formed marker, takes the fast-path, and passes through
- * unchanged — same as no downgrade at all.)
+ * Malformed 38/48/58 tails are dropped when the pass runs (params after
+ * them included — a conservative divergence from xterm's recovery),
+ * mirroring the cell-grid H1 fold — re-emitting them inside a rebuilt param
+ * list could misparse what follows. (A string whose ONLY extended params
+ * are malformed has no well-formed marker, takes the fast-path, and passes
+ * through unchanged — same as no downgrade at all. Same limitation for a
+ * leading-zero kind param like `38;02;…`: legal per ECMA-48, absent from
+ * real emitters, missed by the marker pre-check — documented, accepted.)
  *
  * The RGB tables below are the xterm DEVICE palette — quantization math,
  * not UI color choices; the slot-discipline tripwire allowlists this file

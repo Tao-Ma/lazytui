@@ -34,9 +34,12 @@
  * bound when styles changed with no interleaved reset — per-column-colored
  * content made cell N carry N concatenated sequences, a measured 128,530-byte
  * emit for ONE 120-col row. `cell.sgr` is now bounded by the channel count.
- * Malformed 38/48/58 tails are DROPPED (a terminal ignores them; re-emitting
- * them inside a rebuilt param list could make the terminal misparse what
- * follows).
+ * Malformed 38/48/58 tails are DROPPED, params after them included — a
+ * CONSERVATIVE divergence from xterm (which recovers and applies the tail):
+ * re-emitting a malformed prefix inside a rebuilt param list could make the
+ * terminal misparse what follows, and malformed extended color can't be
+ * produced by richToAnsi anyway (content-only input). Same policy as
+ * color-depth.js's walker — the two stay consistent.
  *
  * Pure: string in, string out. No I/O, no module state. Lives in leaves/.
  */
@@ -60,14 +63,26 @@ const _SGR = /^\x1b\[[0-9;]*m$/;
 // rebuilt list — only 38/48/58 consume following params, and those are
 // handled explicitly).
 const _ATTR_BIT = { 1: 1, 2: 2, 3: 4, 4: 8, 5: 16, 6: 32, 7: 64, 8: 128, 9: 256, 21: 512, 51: 1024, 52: 2048, 53: 4096 };
+// Fixed emission order. Known caveat (review, accepted): a body that sets
+// 21 THEN 4 re-emits as `4;21` — on terminals where those are competing
+// underline STYLES (kitty, recent xterm) the net flips single→double.
+// Independent-bit attrs and extras keep correct last-wins order; only this
+// style-conflicting pair can reorder, and only from exotic content SGR.
 const _ATTR_ORDER = [1, 2, 3, 4, 5, 6, 7, 8, 9, 21, 51, 52, 53];
 const _ATTR_CLEAR = { 22: 1 | 2, 23: 4, 24: 8 | 512, 25: 16 | 32, 27: 64, 28: 128, 29: 256, 54: 1024 | 2048, 55: 4096 };
 
 /** Fold one SGR body (the digits between `\x1b[` and `m`) into `st`. */
+// Empty params are 0 per ECMA-48 — for CHANNEL VALUES too (`38;5;` → index
+// 0), matching downgradeAnsi's walker and real terminals. Pre-review this
+// used bare parseInt: `parseInt('') = NaN` stringified INTO the emitted
+// escape, a real terminal ended the CSI at the `N` and printed "aNm" as
+// text — shifting every later cell in the row (review Track 2 HIGH).
+const _p0 = (s) => (s === '' || s === undefined ? 0 : parseInt(s, 10));
+
 function _foldSgr(st, body) {
   const t = body.split(';');
   for (let i = 0; i < t.length; i++) {
-    const n = t[i] === '' ? 0 : parseInt(t[i], 10);
+    const n = _p0(t[i]);
     if (n === 0) { st.mask = 0; st.fg = null; st.bg = null; st.ul = null; if (st.ex) st.ex.length = 0; }
     else if (_ATTR_BIT[n]) st.mask |= _ATTR_BIT[n];
     else if (_ATTR_CLEAR[n]) st.mask &= ~_ATTR_CLEAR[n];
@@ -77,10 +92,10 @@ function _foldSgr(st, body) {
     else if (n === 49) st.bg = null;
     else if (n === 38 || n === 48 || n === 58) {
       let val = null;
-      const kind = t[i + 1] === '' ? 0 : parseInt(t[i + 1], 10);
-      if (kind === 5 && i + 2 < t.length) { val = `${n};5;${parseInt(t[i + 2], 10)}`; i += 2; }
+      const kind = _p0(t[i + 1]);
+      if (kind === 5 && i + 2 < t.length) { val = `${n};5;${_p0(t[i + 2])}`; i += 2; }
       else if (kind === 2 && i + 4 < t.length) {
-        val = `${n};2;${parseInt(t[i + 2], 10)};${parseInt(t[i + 3], 10)};${parseInt(t[i + 4], 10)}`;
+        val = `${n};2;${_p0(t[i + 2])};${_p0(t[i + 3])};${_p0(t[i + 4])}`;
         i += 4;
       } else { i = t.length; }               // malformed tail — drop (see header)
       if (val !== null) { if (n === 38) st.fg = val; else if (n === 48) st.bg = val; else st.ul = val; }

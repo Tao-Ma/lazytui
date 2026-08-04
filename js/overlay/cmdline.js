@@ -16,9 +16,8 @@
 
 const { getModel } = require('../model/store');
 const { richToAnsi, RESET, visibleLen, esc } = require('../leaves/text/ansi');
-const { stdout } = require('../io/term');
 const { theme } = require('../leaves/infra/themes');
-const { renderPanel, viewportDims } = require('../leaves/render/draw');
+const { renderPanel, viewportDims, writeOut } = require('../leaves/render/draw');
 const { DROPDOWN_VIEWPORT: MAX_DROPDOWN } = require('../leaves/text/cmdline-split');
 
 // Panel height (including borders) painted by the previous render.
@@ -125,7 +124,9 @@ function renderCmdline() {
   const cursorCol = 2 + 1 + _text.length;
   buf += `\x1b[${ROWS};${cursorCol}H`;
 
-  stdout.write(buf);
+  // Through draw's injected writer → paint's depth funnel (P3) — never raw
+  // stdout: this overlay's rows carry theme hex since the truecolor arc.
+  writeOut(buf);
 }
 
 /** Reset module-local render state. Called from dispatch/cmdline#clear

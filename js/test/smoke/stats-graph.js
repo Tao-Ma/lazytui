@@ -119,4 +119,22 @@ describe('stats smoke — write-boundary downgrade (P3) on real output', () => {
   });
 });
 
+describe('stats smoke — self-writing overlays go through the depth funnel too', () => {
+  // Pre-release review HIGH: cmdline + pane-menu composed their own screen
+  // bytes and wrote io/term stdout DIRECTLY, bypassing paint's _emit — raw
+  // 38;2 leaked at legacy depths the moment their slots went hex (the same
+  // class as the footer bypass this file caught earlier). Both now route
+  // through draw.writeOut → the injected depth funnel. Pin the cmdline path
+  // (the pane-menu shares the writer).
+  paint.setColorDepth('16');
+  const cap = sm.capture(() => sm.handleKey(':', ':'));
+  const esc16 = sm.capture(() => sm.handleKey('escape', '\x1b'));
+  paint.setColorDepth('truecolor');
+
+  it('cmdline overlay painted, with zero 38;2 at depth 16', () => {
+    assert(/\x1b\[/.test(cap.raw), 'cmdline emitted bytes');
+    assert(!/38;2;/.test(cap.raw + esc16.raw), 'overlay bytes quantized');
+  });
+});
+
 report();

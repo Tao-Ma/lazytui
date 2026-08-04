@@ -6,11 +6,12 @@
  * contributions, and a right tail of select / view-mode tags, padded
  * to terminal width.)
  *
- * Two public functions:
- *   - `footerKeys(model)` — the left-half keys string (modal footers own
- *     the row; non-modal is assembled from focus-kind segments).
- *   - `renderFooter(model)` — composes left + right + padding and writes
- *     the bottom row. Called once per frame by geometry.render().
+ * One public function: `renderFooter(model)` — composes left (footerKeys:
+ * modal footers own the row; non-modal assembles focus-kind segments) +
+ * right tail + padding and RETURNS the row's ansi (undefined in cmdline
+ * mode). Called once per frame by paint.js render(), which emits it
+ * through the depth-adapting _emit funnel (truecolor arc 3b / P3 — a
+ * direct stdout write here bypassed the downgrade).
  *
  * Zero npm dependencies (uses local modules).
  */
@@ -113,7 +114,9 @@ function footerKeys(model) {
       const vlines = Array.isArray(vslice.lines) ? vslice.lines : [];
       const n = ms.matchesFor(vlines, search.term || '').length;
       const idx = n ? Math.min(search.idx || 0, n - 1) + 1 : 0;
-      keys += ` | n/N [${idx}/${n}] | Esc clear`;
+      // `\[` — an unescaped [1/5] parses as an unknown tag → RESET and the
+      // count vanishes (the modal branch above already escapes it).
+      keys += ` | n/N \\[${idx}/${n}] | Esc clear`;
     }
     return keys;
   }
@@ -234,4 +237,4 @@ function renderFooter(model = getModel()) {
   return `\x1b[${ROWS};1H` + richToAnsi(footerMarkup) + RESET;
 }
 
-module.exports = { footerKeys, renderFooter };
+module.exports = { renderFooter };

@@ -33,9 +33,8 @@
 
 const { getModel } = require('../model/store');
 const { getInstanceSlice, theme } = require('../panel/api');
-const { renderPanel, viewportDims } = require('../leaves/render/draw');
+const { renderPanel, viewportDims, writeOut } = require('../leaves/render/draw');
 const { richToAnsi, RESET, esc, visibleLen } = require('../leaves/text/ansi');
-const { stdout } = require('../io/term');
 const { isChainActive } = require('../leaves/input/modes');
 const mpool = require('../leaves/wm/pool');
 const { visibleBoundsFor } = require('../leaves/wm/geometry');
@@ -265,10 +264,15 @@ function hitTest(mx, my) {
 // --- Render ------------------------------------------------------------
 
 function _statusLabel(it) {
+  // Literal brackets MUST be escaped (`\[`) — an unescaped `[here]` parses
+  // as an unknown markup tag → RESET, rendering the status column as
+  // NOTHING. Latent since these labels existed; caught by the pre-release
+  // review (Track 2 LOW, probed: richToAnsi('[dim][here][/]') emitted zero
+  // visible text).
   const t = theme();
-  if (it.status === 'here')   return '[dim][here][/]';
-  if (it.status === 'hidden') return `[${t.warning}][hidden][/]`;
-  return `[${t.accent}][in col ${it.columnIndex + 1}][/]`;
+  if (it.status === 'here')   return '[dim]\\[here][/]';
+  if (it.status === 'hidden') return `[${t.warning}]\\[hidden][/]`;
+  return `[${t.accent}]\\[in col ${it.columnIndex + 1}][/]`;
 }
 
 /** Format a tab row: `* [N]  Label  (kind)` — `*` on the active tab. */
@@ -365,7 +369,9 @@ function render() {
   _lastTop = g.y;
   _lastLeft = g.x;
   _lastWidth = g.w;
-  stdout.write(buf);
+  // Through draw's injected writer → paint's depth funnel (P3) — never raw
+  // stdout: this overlay's rows carry theme hex since the truecolor arc.
+  writeOut(buf);
 }
 
 function _maybeBlank() {

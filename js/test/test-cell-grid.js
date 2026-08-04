@@ -139,6 +139,13 @@ const cases = [
   ['truecolor mixed with markup',  `[bold]x[/] ${TC(9, 9, 9)}y`,       `[bold]x[/] ${TC(9, 9, 9)}z`],
   ['no-reset accumulated fg run',  `${TC(10, 20, 30)}a${TC(40, 50, 60)}b`, `${TC(10, 20, 30)}a${TC(40, 50, 60)}X`],
   ['gradient graph scroll tick',   gradRow(0),                         gradRow(1)],
+  // Review Track 2 HIGH — empty channel params are 0 per ECMA-48; bare
+  // parseInt stringified NaN INTO the escape (terminal printed "aNm" as
+  // text, shifting every later cell). Pinned via reproduction + the
+  // explicit no-NaN sweep below.
+  ['empty 256-index param (= 0)',  '\x1b[38;5;mab',                    '\x1b[38;5;maX'],
+  ['empty rgb channel param (= 0)', '\x1b[38;2;10;20;mab',             '\x1b[38;2;10;20;maX'],
+  ['empty param mid-body',         '\x1b[38;5;;1mab',                  '\x1b[38;5;;1maX'],
 ];
 
 describe('cell-grid — patch reproduces the target row exactly', () => {
@@ -148,6 +155,15 @@ describe('cell-grid — patch reproduces the target row exactly', () => {
       assert(d === null, d || 'reproduced');
     });
   }
+});
+
+describe('cell-grid — no NaN ever reaches the emitted bytes', () => {
+  it('every case above emits NaN-free patches', () => {
+    for (const [name, prev, cur] of cases) {
+      const patch = diffRowToAnsi(prev, cur, 0);
+      assert(!patch.includes('NaN'), `${name}: literal NaN in patch`);
+    }
+  });
 });
 
 describe('cell-grid — MoveTo economy', () => {

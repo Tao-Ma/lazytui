@@ -261,6 +261,14 @@ function viewportDims() {
 // want (they assert overlay geometry/state, never pixels).
 let _writer = null;
 function setWriter(fn) { _writer = fn; }
+// Direct write-through for overlays that compose their OWN screen bytes
+// (cmdline, pane-menu) instead of going through renderOverlay. Review Track
+// 1/2 HIGH (truecolor arc): those overlays wrote io/term stdout directly,
+// bypassing paint's depth-adapting _emit funnel — raw 38;2 leaked on 16/256
+// devices the moment their slots went hex (the footer-bug class, P3). Every
+// frame byte must leave through the injected writer. No-op when unset
+// (CLI/tests without the paint path), same contract as renderOverlay.
+function writeOut(buf) { if (_writer) _writer(buf); }
 
 // --- Pure chrome-glyph derivation (moved from render/decor.js in the
 // render-exit arc; the slice-reading hit-tests went to panel/chrome-hittest).
@@ -371,6 +379,6 @@ function renderOverlay({ lines, title, count = null, maxWidth = 44, anchor = nul
 
 module.exports = {
   renderPanel, renderOverlay, overlayBox, truncate, viewportDims, setDimsProvider,
-  setWriter,
+  setWriter, writeOut,
   chromeFor, _collapseGlyphMarkup, _closeGlyphMarkup,
 };

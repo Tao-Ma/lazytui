@@ -209,7 +209,7 @@ function render(panel, w, h, _slice, opts) {
   const graphRowsTotal = innerH - sepRows - headerRows - meterRows;
   const perMetric = Math.floor(graphRowsTotal / metrics.length);
   if (perMetric < 2) {
-    return _renderEmpty(panel, w, h, '(panel too short for graph)', chrome);
+    return _renderEmpty(panel, w, h, '(panel too short for graph)', chrome, focused);
   }
 
   const lines = [];
