@@ -15,15 +15,16 @@
  *     select_from: containers
  *     metrics: [cpu, mem]   # optional, defaults to all percent/bytes columns
  *     window: 40            # optional, default 40
+ *     graph: braille        # optional: braille (default) | blocks
  */
 'use strict';
 
 const { getModel } = require('../../model/store');
 const {
-  esc, theme, renderPanel,
+  esc, theme, gradient, renderPanel,
   getItems: apiGetItems,
 } = require('../api');
-const { rasterize } = require('./stats-graph');
+const { rasterize, rasterizeBraille, columnNorms, colorizeRows, meterRow } = require('./stats-graph');
 
 // stats DECLARES its hub subscription; the framework owns the hub.subscribe
 // side effect. This is the canonical TEA `subscriptions : Model → Sub` seam
@@ -98,21 +99,30 @@ function _renderEmpty(panel, w, h, msg, chrome, focused) {
 }
 
 /**
- * Render one metric's section: header line + graph rows.
+ * Render one metric's section: header line, meter row (percent metrics),
+ * graph rows.
  *
  *   CPU                    47.2%  peak 92.1%  avg 38.5%
- *   ▁▁▁▂▃▄▅▆▇█▇▆▅▄▃▂▁▁
+ *   █████████▍                              ← percent only: current value
+ *   ⣠⣴⣾⣿⣿⣷⣄⡀                              ← value-mapped gradient color
  *   ...
  *
  * Axis scaling:
  *   percent → fixed 0–100 (so "30% CPU" reads visually as "around a third")
  *   bytes / number → 0–local-max (shape of change, not absolute scale)
  *
+ * Truecolor arc Phase 2 (docs/truecolor.md): graphs render braille by
+ * default (`graph: blocks` opts out per pane — a plain config choice, P4:
+ * render never consults device depth) and columns are colored by VALUE
+ * through the theme's percent gradient — the colorize leaf batches runs
+ * and `[/]`-terminates them (P8); this panel only injects
+ * `gradient('percent', norm)`.
+ *
  * `meta: true` schema columns (e.g. memLimit) carry scale info that
  * a consumer could use, but the panel stays scale-of-its-own — empty
  * containers and busy ones both get a graph that fills the rows.
  */
-function _renderSection(metric, samples, schema, width, graphHeight) {
+function _renderSection(metric, samples, schema, width, graphHeight, style) {
   const col = (schema.columns || {})[metric] || {};
   const values = samples.map(s => s && s[metric]);
   const finite = values.filter(Number.isFinite);
@@ -142,10 +152,21 @@ function _renderSection(metric, samples, schema, width, graphHeight) {
   const padLen = Math.max(1, width - labelLen - statsLen);
   const header = `[bold]${label}[/]${' '.repeat(padLen)}[${t.dim}]${stats}[/]`;
 
-  const rows = rasterize(values, { width, height: graphHeight, min, max });
-  const colored = rows.map(r => `[${t.accent}]${r}[/]`);
+  const opts = { width, height: graphHeight, min, max };
+  const rows = style === 'blocks' ? rasterize(values, opts) : rasterizeBraille(values, opts);
+  const norms = columnNorms(values, { width, min, max, group: style === 'blocks' ? 1 : 2 });
+  const colored = colorizeRows(rows, norms,
+    (n) => (Number.isFinite(n) ? gradient('percent', n) : null));
 
-  return [header, ...colored];
+  const out = [header];
+  if (col.type === 'percent') {
+    // Current-value meter (one value = one color run).
+    const frac = Number.isFinite(latest) ? latest / 100 : NaN;
+    const meter = meterRow(frac, width);
+    out.push(Number.isFinite(frac) ? `[${gradient('percent', frac)}]${meter}[/]` : meter);
+  }
+  out.push(...colored);
+  return out;
 }
 
 function render(panel, w, h, _slice, opts) {
@@ -174,11 +195,18 @@ function render(panel, w, h, _slice, opts) {
   const metrics = panel.metrics || _defaultMetrics(schema);
   if (!metrics.length) return _renderEmpty(panel, w, h, '(no graphable metrics)', chrome, focused);
 
+  // Graph style: braille by default, `graph: blocks` opts out (P4 — a plain
+  // per-pane config choice; render never consults the device's color depth).
+  const style = panel.graph === 'blocks' ? 'blocks' : 'braille';
+
   const innerW = w - 2;
   const innerH = h - 2;
   const sepRows = Math.max(0, metrics.length - 1);
   const headerRows = metrics.length;
-  const graphRowsTotal = innerH - sepRows - headerRows;
+  // Percent metrics carry a one-row current-value meter under the header.
+  const meterRows = metrics
+    .filter((m) => ((schema.columns || {})[m] || {}).type === 'percent').length;
+  const graphRowsTotal = innerH - sepRows - headerRows - meterRows;
   const perMetric = Math.floor(graphRowsTotal / metrics.length);
   if (perMetric < 2) {
     return _renderEmpty(panel, w, h, '(panel too short for graph)', chrome);
@@ -187,7 +215,7 @@ function render(panel, w, h, _slice, opts) {
   const lines = [];
   metrics.forEach((m, i) => {
     if (i > 0) lines.push('');
-    lines.push(..._renderSection(m, samples, schema, innerW, perMetric));
+    lines.push(..._renderSection(m, samples, schema, innerW, perMetric, style));
   });
 
   return renderPanel({
@@ -221,4 +249,5 @@ module.exports = {
   _defaultMetrics,
   _fmtBytes,
   _fmtPercent,
+  _renderSection,
 };

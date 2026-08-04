@@ -85,6 +85,7 @@ panels:
     select_from: containers # which panel's focused row drives content
     metrics: [cpu, mem]     # which schema columns to graph, top-to-bottom
     window: 40              # samples retained per row (panel-driven sub)
+    graph: braille          # braille (default) | blocks
 ```
 
 | Field         | Required | Default                                | Notes |
@@ -94,6 +95,17 @@ panels:
 | `select_from` | yes      | —                                      | Panel type whose focused row is the topic's row key. |
 | `metrics`     | no       | all `percent` / `bytes` schema columns | Columns to graph, in order. |
 | `window`      | no       | `40`                                   | Samples retained. With 10s producer poll → ~7 min of history. |
+| `graph`       | no       | `braille`                              | Glyph style. Braille packs 2 samples/column at 4 dot-rows/cell (2× the horizontal resolution of blocks); set `blocks` if your font's braille coverage is poor. A plain config choice — never inferred from color depth (docs/truecolor.md P4). |
+
+**Color + meter (truecolor arc Phase 2, docs/truecolor.md).** Graph
+columns are colored by VALUE through the active theme's `percent`
+gradient (cool→hot as the value climbs); the panel injects
+`gradient('percent', norm)` into the pure colorize leaf, which batches
+same-color runs and `[/]`-terminates every run (P8). `percent`-type
+metrics additionally carry a one-row eighth-block METER under the
+header showing the current value, colored by the same gradient. On
+256/16-color terminals the gradient quantizes at the write boundary
+like everything else.
 
 The schema-driven `metrics` default keeps the simple case
 (`type: stats, topic: docker.stats, select_from: containers`) one-line.

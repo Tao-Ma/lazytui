@@ -11,7 +11,7 @@
 const { describe, it, assert, eq, report } = require('./test-runner');
 const hub = require('../leaves/infra/hub');
 const { update } = require('../app/runtime');
-const { rasterize, BLOCKS } = require('../panel/monitor/stats-graph');
+const { rasterize, rasterizeBraille, columnNorms, colorizeRows, meterRow, BLOCKS } = require('../panel/monitor/stats-graph');
 const stats = require('../panel/monitor/stats');
 const docker = require('../panel/navigator/docker');
 
@@ -80,6 +80,129 @@ describe('[4] rasterize: vertical resolution', () => {
   it('full value → all rows full', () => {
     const rows = rasterize([100, 100, 100], { width: 3, height: 3, min: 0, max: 100 });
     rows.forEach(r => eq(r, '███', 'every cell full'));
+  });
+});
+
+// --- braille rasterizer + colorize + meter (truecolor arc Phase 2) ---
+
+describe('[4b] rasterizeBraille: contract mirrors rasterize', () => {
+  it('zero height / width degenerate to []', () => {
+    eq(rasterizeBraille([1], { width: 3, height: 0, min: 0, max: 1 }).length, 0);
+    eq(rasterizeBraille([1], { width: 0, height: 2, min: 0, max: 1 }).length, 0);
+  });
+  it('exact shape: height rows × width chars', () => {
+    const rows = rasterizeBraille([50, 50, 50, 50], { width: 5, height: 2, min: 0, max: 100 });
+    eq(rows.length, 2);
+    rows.forEach(r => eq(r.length, 5, 'row width'));
+  });
+  it('2 samples per column, newest-last at the right edge', () => {
+    // 2 columns × 2 samples: [0, 0, 100, 100] → left col empty, right full.
+    const rows = rasterizeBraille([0, 0, 100, 100], { width: 2, height: 1, min: 0, max: 100 });
+    eq(rows[0][0], ' ', 'zero column empty');
+    eq(rows[0][1], '⣿', 'full column = all 8 dots');
+  });
+  it('half-cell: one finite + one NaN sample fills one dot column', () => {
+    const rows = rasterizeBraille([100, NaN], { width: 1, height: 1, min: 0, max: 100 });
+    eq(rows[0], '⡇', 'left dot column full, right empty');
+  });
+  it('right-aligned: short series left-pads with gaps', () => {
+    const rows = rasterizeBraille([100, 100], { width: 3, height: 1, min: 0, max: 100 });
+    eq(rows[0], '  ⣿', 'newest data at column W-1');
+  });
+  it('vertical resolution is H*4 dot slots, bottom-up', () => {
+    // 2 rows × 4 slots = 8. Value 25% of range → slot 2 → bottom row, 2 dots.
+    const rows = rasterizeBraille([25, 25], { width: 1, height: 2, min: 0, max: 100 });
+    eq(rows[0], ' ', 'top row empty');
+    eq(rows[1], '⣤', 'bottom row: 2 dot-rows in both columns');
+  });
+  it('zero range renders empty (mirrors rasterize)', () => {
+    const rows = rasterizeBraille([5, 5], { width: 1, height: 1, min: 0, max: 0 });
+    eq(rows[0], ' ');
+  });
+});
+
+describe('[4c] columnNorms: grouping + peaks + gaps', () => {
+  it('group=1 aligns with blocks columns', () => {
+    eq(columnNorms([0, 50, 100], { width: 3, min: 0, max: 100, group: 1 }).join(','), '0,0.5,1');
+  });
+  it('group=2 takes the max of each pair (peaks win)', () => {
+    eq(columnNorms([10, 90, 40, 20], { width: 2, min: 0, max: 100, group: 2 }).join(','), '0.9,0.4');
+  });
+  it('all-gap group → NaN; mixed group ignores the gap', () => {
+    const n = columnNorms([NaN, NaN, NaN, 60], { width: 2, min: 0, max: 100, group: 2 });
+    assert(Number.isNaN(n[0]), 'gap column');
+    eq(n[1], 0.6, 'finite half wins');
+  });
+  it('right-aligned like the rasterizers', () => {
+    const n = columnNorms([100], { width: 3, min: 0, max: 100, group: 1 });
+    assert(Number.isNaN(n[0]) && Number.isNaN(n[1]), 'padded columns are gaps');
+    eq(n[2], 1);
+  });
+});
+
+describe('[4d] colorizeRows: run batching + [/] termination (P8)', () => {
+  const colorFor = (n) => (Number.isFinite(n) ? (n > 0.5 ? 'hot' : 'cold') : null);
+  it('adjacent same-color columns batch into one run', () => {
+    const out = colorizeRows(['████'], [0.1, 0.2, 0.9, 0.95], colorFor);
+    eq(out[0], '[cold]██[/][hot]██[/]');
+  });
+  it('space columns stay uncolored and split runs', () => {
+    const out = colorizeRows(['█ █'], [0.9, NaN, 0.9], colorFor);
+    eq(out[0], '[hot]█[/] [hot]█[/]');
+  });
+  it('every run is [/]-terminated — no reset-free color changes (P8)', () => {
+    const norms = Array.from({ length: 16 }, (_, i) => i / 15);
+    const out = colorizeRows(['████████████████'], norms, (n) => `c${Math.round(n * 15)}`)[0];
+    const opens = (out.match(/\[c\d+\]/g) || []).length;
+    const closes = (out.match(/\[\/\]/g) || []).length;
+    eq(opens, closes, 'one [/] per color run');
+    assert(!/\[c\d+\][^[]*\[c\d+\]/.test(out), 'no color tag directly follows another without [/]');
+  });
+  it('uncolored rows pass through unchanged', () => {
+    eq(colorizeRows(['   '], [NaN, NaN, NaN], colorFor)[0], '   ');
+  });
+});
+
+describe('[4e] meterRow: eighth-block horizontal fill', () => {
+  it('empty / full / clamped', () => {
+    eq(meterRow(0, 4), '    ');
+    eq(meterRow(1, 4), '████');
+    eq(meterRow(7, 4), '████', 'clamps above 1');
+    eq(meterRow(NaN, 4), '    ', 'non-finite → empty track');
+  });
+  it('partial fill uses eighth blocks', () => {
+    eq(meterRow(0.5, 1), '▌', 'half of one cell');
+    eq(meterRow(0.5, 4), '██  ', 'half of four cells');
+    eq(meterRow(0.75, 2), '█▌', 'one full + one half');
+    eq(meterRow(9 / 16, 2), '█▏', 'eighth precision: 9/16 of 2 cells = 1 + 1/8');
+  });
+  it('always exactly width chars', () => {
+    for (const f of [0, 0.33, 0.66, 1]) eq(meterRow(f, 7).length, 7);
+  });
+});
+
+describe('[4f] _renderSection composition — braille default, meter, gradient', () => {
+  const schema = { columns: { cpu: { type: 'percent' }, mem: { type: 'bytes' } } };
+  const samples = Array.from({ length: 20 }, (_, i) => ({ cpu: i * 5, mem: 1024 * (i + 1) }));
+  it('percent metric: header + meter + graph rows, braille glyphs, hex gradient tags', () => {
+    const out = stats._renderSection('cpu', samples, schema, 20, 2, 'braille');
+    eq(out.length, 4, 'header + meter + 2 graph rows');
+    assert(out[0].includes('[bold]CPU[/]'), 'header label');
+    assert(/\[#[0-9a-f]{6}\]/i.test(out[1]), 'meter is gradient-colored');
+    assert(out[1].includes('█') || out[1].includes('▌'), 'meter uses block fill');
+    assert(/[⠀-⣿]/.test(out[2] + out[3]), 'graph rows are braille');
+    assert(/\[#[0-9a-f]{6}\]/i.test(out[2] + out[3]), 'graph runs are gradient-colored');
+    assert(!/\[#[0-9a-f]{6}\][^[]*\[#/i.test(out[2]), 'runs are [/]-terminated (P8)');
+  });
+  it('bytes metric: no meter row', () => {
+    const out = stats._renderSection('mem', samples, schema, 20, 2, 'braille');
+    eq(out.length, 3, 'header + 2 graph rows only');
+  });
+  it("graph: 'blocks' opts out of braille", () => {
+    const out = stats._renderSection('cpu', samples, schema, 20, 2, 'blocks');
+    assert(!/[⠀-⣿]/.test(out.join('')), 'no braille glyphs');
+    assert(/[▁▂▃▄▅▆▇█]/.test(out[2] + out[3]), 'block glyphs instead');
+    assert(/\[#[0-9a-f]{6}\]/i.test(out[2] + out[3]), 'blocks are gradient-colored too');
   });
 });
 

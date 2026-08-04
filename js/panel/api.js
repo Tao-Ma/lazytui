@@ -21,7 +21,7 @@ const route = require('../panel/route');
 // away from any future API change. Direct imports from `../ansi` etc.
 // still work but are not part of the contract.
 const { esc, visibleLen, stripMarkup, wrapColor } = require('../leaves/text/ansi');
-const { theme } = require('../leaves/infra/themes');
+const { theme, gradient } = require('../leaves/infra/themes');
 const { renderPanel: _leafRenderPanel, setDimsProvider } = require('../leaves/render/draw');
 const _selectView = require('./select-view');
 
@@ -638,7 +638,7 @@ module.exports = {
   // ansi
   esc, visibleLen, stripMarkup, wrapColor,
   // themes
-  theme,
+  theme, gradient,
   // panel
   renderPanel,
   // nav-state (read helpers — Components write via wrapped Msgs into their own slice)
