@@ -19,6 +19,7 @@ GLOBAL_TOP_KEYS`):
 theme: nord                 # wholesale — a project theme: wins
 selection: true             # wholesale — global text-selection default
 editor: nvim                # wholesale — see §editor below
+color_depth: auto           # wholesale — auto | truecolor | 256 | 16 (see below)
 keys:                       # entry-level merge — per key-sequence
   "<space>g": { command: "grep TODO" }
 keymap:                     # entry-level merge on normal:, version project-wins
@@ -42,8 +43,22 @@ The global file layers UNDER the project config:
   level — a global binding applies everywhere unless the project rebinds
   that same key/gesture.
 - **`context-menu`** is a list: global entries first, project entries after.
-- **Scalars** (`theme`, `selection`, `editor`) are wholesale — a project
-  value wins; absent, the global value applies.
+- **Scalars** (`theme`, `selection`, `editor`, `color_depth`) are wholesale —
+  a project value wins; absent, the global value applies. For `color_depth`,
+  a project `auto` ALSO counts as absent: `auto` means "detect from the
+  environment", i.e. no override opinion, so an explicit global depth
+  applies under it.
+
+### color_depth
+
+Render color depth (truecolor arc, docs/truecolor.md P3). The pipeline is
+canonically truecolor; this key overrides the DEVICE adaptation applied at
+the write boundary. `auto` (the default) detects from the environment:
+`LAZYTUI_COLOR` env override → `COLORTERM=truecolor|24bit` → `TERM`
+(`*direct*`/`*truecolor*` → truecolor, `*256color*` → 256, else 16). Set an
+explicit `truecolor`/`256`/`16` only when detection gets your terminal
+wrong (e.g. tmux without the RGB capability advertising a truecolor-less
+TERM). Depth never changes the frame — only the emitted bytes.
 
 The merge happens inside `parse()`: the project config validates STANDALONE
 first (its errors surface unchanged, global file or not), the pre-validated

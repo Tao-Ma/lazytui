@@ -325,6 +325,15 @@ function main() {
   try { loadConfig(configArgs[0]); }
   catch (e) { console.error(`config: ${e.message}`); process.exit(1); }
 
+  // Truecolor arc 1b (docs/truecolor.md P3) — apply the config's
+  // `color_depth:` to the render shell's write-boundary adaptation. 'auto' /
+  // absent keep paint's startup auto-detection (LAZYTUI_COLOR → COLORTERM →
+  // TERM). Depth is a device constant: never model state, never in the
+  // frame. paint.js is already loaded (the lazy-load block above), so this
+  // require is a cache hit, not a new dep for CLI mode (which returned
+  // earlier).
+  require('../render/paint').setColorDepth((getModel().config || {}).color_depth);
+
   // Built-in Components (TEA shape), in registration order. The list is
   // single-sourced in app/components.js so the replay harness registers the
   // identical set. See that file + docs/v0.5-layering.md.

@@ -737,6 +737,11 @@ function parse(yamlPath, opts) {
     // the global one (merged above); the edit feature resolves the full
     // chain editor → $VISUAL → $EDITOR → vi.
     editor: data.editor !== undefined ? data.editor : null,
+    // Render color depth (truecolor arc 1b, docs/truecolor.md P3). String-
+    // normalized (YAML parses `256`/`16` unquoted as ints); 'auto' = detect,
+    // and mergeGlobal treats 'auto' as unset so a stamped 'auto' in a
+    // resolved-shape .json never blocks a global value.
+    color_depth: data.color_depth !== undefined ? String(data.color_depth) : 'auto',
     // Preserve the `plugins:` block for round-trip fidelity. The Plugin
     // API itself retired in v0.5 Phase 6; tui.js surfaces a one-time
     // warning if the field is non-empty. (YAML plugin merging — entries

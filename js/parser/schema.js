@@ -16,13 +16,13 @@ const { compileCommand, commandHoles } = require('../fabric/command');
 
 const VALID_ACTION_TYPES = new Set(['run', 'spawn', 'background']);
 
-const VALID_TOP_KEYS    = new Set(['project_dir', 'groups', 'vars', 'helpers', 'files', 'layout', 'theme', 'plugins', 'register', 'keys', 'keymap', 'mouse', 'context-menu', 'panels', 'selection', 'editor']);
+const VALID_TOP_KEYS    = new Set(['project_dir', 'groups', 'vars', 'helpers', 'files', 'layout', 'theme', 'plugins', 'register', 'keys', 'keymap', 'mouse', 'context-menu', 'panels', 'selection', 'editor', 'color_depth']);
 
 // Global user config (~/.config/lazytui/config.yml, docs/global-config) — only
 // the APP-BEHAVIOR sections are honored there; project content (groups,
 // layout, vars, …) belongs to the per-project config. Anything else in the
 // global file warns and is ignored — a global file must never brick a project.
-const GLOBAL_TOP_KEYS = new Set(['theme', 'keys', 'keymap', 'mouse', 'context-menu', 'selection', 'editor']);
+const GLOBAL_TOP_KEYS = new Set(['theme', 'keys', 'keymap', 'mouse', 'context-menu', 'selection', 'editor', 'color_depth']);
 const VALID_KEY_BINDING_KEYS = new Set(['action', 'command', 'builtin', 'label', 'desc']);
 // v0.6.7 E9 — the `keymap:` block (configurable normal-mode keys). A thin
 // versioned container; `normal:` is a flat key→verb map. SHAPE only here — the
@@ -97,6 +97,7 @@ function validate(data, _sourceFile, warnings) {
     throw new SchemaError("'selection' must be a boolean");
   }
   if ('editor' in data) validateEditor(data.editor);
+  if ('color_depth' in data) validateColorDepth(data.color_depth);
   if ('vars' in data)    validateVars(data.vars);
   if ('helpers' in data) validateHelpers(data.helpers);
   if ('files' in data)   validateFiles(data.files);
@@ -119,6 +120,17 @@ function validate(data, _sourceFile, warnings) {
 function validateEditor(v) {
   if (typeof v !== 'string' || !v.trim()) {
     throw new SchemaError("'editor' must be a non-empty string");
+  }
+}
+
+// Render color depth (truecolor arc 1b, docs/truecolor.md P3). 'auto' =
+// detect from the environment (the default); the two numeric forms are
+// accepted unquoted (YAML parses `color_depth: 256` as an int) and
+// normalized to strings at output assembly.
+function validateColorDepth(v) {
+  const s = String(v);
+  if (s !== 'auto' && s !== 'truecolor' && s !== '256' && s !== '16') {
+    throw new SchemaError("'color_depth' must be one of: auto, truecolor, 256, 16");
   }
 }
 
@@ -148,6 +160,7 @@ function validateGlobal(data, warnings) {
     throw new SchemaError("'selection' must be a boolean");
   }
   if ('editor' in out)   validateEditor(out.editor);
+  if ('color_depth' in out) validateColorDepth(out.color_depth);
   if ('keys' in out)     validateKeys(out.keys);
   if ('keymap' in out)   validateKeymap(out.keymap);
   if ('mouse' in out)    validateMouse(out.mouse);

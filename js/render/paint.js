@@ -34,12 +34,31 @@ const mpool = require('../leaves/wm/pool');
 const mpane = require('../leaves/wm/pane');
 const { theme, setTheme } = require('../leaves/infra/themes');
 const { truncate, setWriter: _setDrawWriter } = require('../leaves/render/draw');
+const { detectColorDepth, downgradeAnsi } = require('../leaves/render/color-depth');
+
+// Truecolor arc 1b (docs/truecolor.md P3) — color depth is a DEVICE property,
+// so it lives here in the render shell, never in the frame: markup/cells/diff
+// are canonically truecolor and depth-independent; `_emit` adapts bytes at
+// the write boundary only. Detected once at load (LAZYTUI_COLOR override →
+// COLORTERM → TERM — a config constant, the LAZYTUI_CELL_DIFF class);
+// `setColorDepth` lets startup apply the `color_depth:` config key ('auto' /
+// invalid values are ignored, detection stands). Truecolor devices take the
+// identity fast-path and pay nothing.
+let _colorDepth = detectColorDepth(process.env);
+function setColorDepth(d) {
+  if (d === 'truecolor' || d === '256' || d === '16') _colorDepth = String(d);
+}
+function _emit(s) {
+  stdout.write(_colorDepth === 'truecolor' ? s : downgradeAnsi(s, _colorDepth));
+}
+
 // Wire the overlay-paint write seam: draw.renderOverlay (a pure leaf) emits its
 // composed buffer through this instead of importing io/term's stdout directly.
 // Done here because paint.js is the render layer that legitimately owns stdout.
 // (CLI/tests never load paint.js, so the leaf's writer stays unset there and
 // renderOverlay no-ops its write — they assert overlay state, not pixels.)
-_setDrawWriter((buf) => stdout.write(buf));
+// Routed through _emit so overlay bytes get the same depth adaptation.
+_setDrawWriter((buf) => _emit(buf));
 const painter = require('../leaves/render/painter');
 const { visibleTerminalSurfaces } = require('../panel/terminal-surfaces');
 const { getSession, sessionScrollInfo, sessionViewportRows, sessionCursor } = require('../io/terminal');
@@ -455,7 +474,7 @@ function renderNormal(model, arrangeOverride) {
   _frame.prevCols = COLS;
   const { ansi, didFull } = painter.paintFrame(_frame.prevRows, newRows, _frame.forceFull, _frame.hl);
   if (didFull) _frame.forceFull = false;
-  if (ansi) stdout.write(ansi);
+  if (ansi) _emit(ansi);
   _frame.prevRows = newRows;
   return didFull;
 }
@@ -532,7 +551,7 @@ function renderHalf(model, arrangeOverride) {
   _frame.prevCols = COLS;
   const { ansi, didFull } = painter.paintFrame(_frame.prevRows, newRows, _frame.forceFull, _frame.hl);
   if (didFull) _frame.forceFull = false;
-  if (ansi) stdout.write(ansi);
+  if (ansi) _emit(ansi);
   _frame.prevRows = newRows;
   return didFull;
 }
@@ -569,7 +588,7 @@ function renderFull(model, arrangeOverride) {
   _frame.prevCols = COLS;
   const { ansi, didFull } = painter.paintFrame(_frame.prevRows, newRows, _frame.forceFull, _frame.hl);
   if (didFull) _frame.forceFull = false;
-  if (ansi) stdout.write(ansi);
+  if (ansi) _emit(ansi);
   _frame.prevRows = newRows;
   return didFull;
 }
@@ -679,7 +698,7 @@ function renderTerminalOverlay(model, arrangeOverride, forceAll) {
     }
   }
   _paintedOverlayIds = nowPainted;
-  stdout.write(out + cursorOut);
+  _emit(out + cursorOut);
 }
 
 // `now` is the frame clock for the age-displaying overlays (jobs/diag),
@@ -874,7 +893,7 @@ function invalidateRows(startY, endY) {
 
 module.exports = {
   render, renderTerminalOverlay,
-  forceFullRepaint, invalidateRows, setReplaySource,
+  forceFullRepaint, invalidateRows, setReplaySource, setColorDepth,
   // v0.6.3 P2 test seam: _normalizeRender enforces the Rect contract
   // (exactly h lines of width w). Exposed so test-rect-contract.js
   // can exercise both check mode (env LAZYTUI_RENDER_CHECK=1 → throws

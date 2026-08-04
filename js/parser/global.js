@@ -75,7 +75,8 @@ function loadGlobal(env) {
  *       keys, mouse         (flat maps)
  *       keymap              (`normal` merges per key; `version` project-wins)
  *   - `context-menu` is a LIST: global entries first, project's appended
- *   - scalars are wholesale, project-wins: theme, selection, editor
+ *   - scalars are wholesale, project-wins: theme, selection, editor,
+ *     color_depth (where 'auto' also counts as unset)
  */
 function mergeGlobal(project, global) {
   if (!global) return project;
@@ -86,6 +87,15 @@ function mergeGlobal(project, global) {
     // stamped "not set" default (v0.6.12 review MED). theme/selection are
     // always explicit in resolved JSON — see docs/global-config.md §JSON.
     if ((!(k in out) || out[k] == null) && k in global) out[k] = global[k];
+  }
+  {
+    // color_depth (truecolor arc 1b): 'auto' ALSO counts as unset — auto
+    // means "detect from the environment", i.e. no override opinion, so an
+    // explicit global depth applies under it. This also keeps a resolved-
+    // shape .json's stamped 'auto' from blocking a global value (the same
+    // class as editor's stamped null above).
+    const k = 'color_depth';
+    if ((!(k in out) || out[k] == null || out[k] === 'auto') && k in global) out[k] = global[k];
   }
   for (const k of ['keys', 'mouse']) {
     if (k in global) out[k] = { ...global[k], ...(out[k] || {}) };
