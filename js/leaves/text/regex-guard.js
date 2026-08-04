@@ -60,5 +60,4 @@ function safeRegex(pattern, flags) {
   }
 }
 
-module.exports = { safeRegex, MAX_PATTERN_LEN,
-  _NESTED_QUANT: NESTED_QUANT, _NESTED_QUANT_OUTER: NESTED_QUANT_OUTER };
+module.exports = { safeRegex, MAX_PATTERN_LEN };

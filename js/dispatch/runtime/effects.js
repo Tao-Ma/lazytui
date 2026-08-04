@@ -182,7 +182,6 @@ function _enterCrossLayer(kind, eff) {
 function _exitCrossLayer() { if (_crossLayerDepth > 0) _crossLayerDepth--; }
 
 /** Clear all handlers — test isolation only. */
-function clearEffects() { for (const k of Object.keys(_handlers)) delete _handlers[k]; }
 
 /**
  * Register the framework's built-in effect handlers. Called once at boot
@@ -636,5 +635,5 @@ function flushNavCapture() {
   _captureNavLocation();
 }
 
-module.exports = { registerEffect, runEffects, clearEffects, installBuiltins, effectHost, _handlers,
+module.exports = { registerEffect, runEffects, installBuiltins, effectHost,
   cancelEffect, _clearInflight, _inflightKeys, flushNavCapture };

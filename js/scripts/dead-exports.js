@@ -41,21 +41,29 @@ for (const [f, s] of src) decommented.set(f, decomment(s));
 
 function exportsOf(source) {
   const names = new Set();
-  // block form: module.exports = { ... } — multi-line (newline before the
-  // closing brace) OR single-line. The multi-line-only regex left every
-  // single-line exporter (themes.js, stats-graph.js, color-depth.js, …)
-  // completely unscanned, so the DEAD gate was blind to them — caught by
-  // the truecolor pre-release review (Track 3 MED); it hid a genuinely
-  // dead export (themes.activeThemeName, since removed).
-  const m = source.match(/module\.exports\s*=\s*\{([\s\S]*?)\n\}/)
-    || source.match(/module\.exports\s*=\s*\{([^\n]*)\};?/);
-  if (m) {
-    const body = decomment(m[1]);
-    for (const part of body.split(',')) {
-      const t = part.trim();
-      if (!t || t.startsWith('...')) continue;
-      const key = t.split(':')[0].trim();
-      if (/^[A-Za-z_$][\w$]*$/.test(key)) names.add(key);
+  // block form: module.exports = { ... } — extracted by a BRACE-BALANCED
+  // scan, not a regex. Two rounds of review caught regex variants of this
+  // being blind to whole exporter shapes: a `\n}`-anchored form missed
+  // every single-line exporter (themes.js, …; round 1, hid a dead export),
+  // and the single-line alternate still missed WRAPPED exporters whose
+  // closing `};` isn't at column 0 (effects.js, regex-guard.js; round 2,
+  // hid three more). Walking to the matching brace covers every shape.
+  const start = source.search(/module\.exports\s*=\s*\{/);
+  if (start >= 0) {
+    const open = source.indexOf('{', start);
+    let depth = 0, end = -1;
+    for (let i = open; i < source.length; i++) {
+      if (source[i] === '{') depth++;
+      else if (source[i] === '}' && --depth === 0) { end = i; break; }
+    }
+    if (end > open) {
+      const body = decomment(source.slice(open + 1, end));
+      for (const part of body.split(',')) {
+        const t = part.trim();
+        if (!t || t.startsWith('...')) continue;
+        const key = t.split(':')[0].trim();
+        if (/^[A-Za-z_$][\w$]*$/.test(key)) names.add(key);
+      }
     }
   }
   // exports.x = / module.exports.x =
