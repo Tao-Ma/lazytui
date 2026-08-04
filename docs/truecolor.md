@@ -167,6 +167,14 @@ true shades.
 
 ### Phase 2 — graph leaves + the stats payoff
 
+**LANDED 2026-08-04** (commit `26d727e`). Gate: smoke 15 (new
+end-to-end stats smoke incl. a real-frame P3 downgrade proof) · suite
+173×2 · DEAD 0 · SCC `[]` both. As built: the rasterizers share one
+`_cut` windowing helper; `columnNorms` takes the MAX of a braille
+column's two samples (peaks win); the percent meter sits between
+header and graph and the layout math accounts for it;
+`panel/api` re-exports `gradient`.
+
 - **2a** Braille rasterizer (2×4 dots/cell) as a sibling of
   `panel/monitor/stats-graph.js` (same home while single-importer, per
   the model-leaf pattern), same contract: samples newest-last, NaN
