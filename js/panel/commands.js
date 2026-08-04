@@ -479,4 +479,4 @@ function collectCommands(componentsList, m) {
   return out;
 }
 
-module.exports = { setCommandsDispatch, FRAMEWORK_COMMANDS, collectCommands };
+module.exports = { setCommandsDispatch, collectCommands };

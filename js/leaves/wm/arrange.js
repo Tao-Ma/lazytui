@@ -213,4 +213,4 @@ function seedContentPane(pane) {
   return { pane: next, entries };
 }
 
-module.exports = { rebuildLayoutFromConfig, seedContentPane };
+module.exports = { rebuildLayoutFromConfig };

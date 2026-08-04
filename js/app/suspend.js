@@ -90,4 +90,4 @@ function installSuspendHandlers() {
   process.on('SIGCONT', _resumeHandler);
 }
 
-module.exports = { installSuspendHandlers, suspendTerminal, resumeTerminal };
+module.exports = { installSuspendHandlers };

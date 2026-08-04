@@ -59,4 +59,4 @@ function prune(nav, index) {
   return { ...nav, history, cursor };
 }
 
-module.exports = { EMPTY, sameLoc, push, step, prune };
+module.exports = { EMPTY, push, step, prune };

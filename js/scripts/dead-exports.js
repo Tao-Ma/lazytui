@@ -41,8 +41,14 @@ for (const [f, s] of src) decommented.set(f, decomment(s));
 
 function exportsOf(source) {
   const names = new Set();
-  // block form: module.exports = { ... }
-  const m = source.match(/module\.exports\s*=\s*\{([\s\S]*?)\n\}/);
+  // block form: module.exports = { ... } — multi-line (newline before the
+  // closing brace) OR single-line. The multi-line-only regex left every
+  // single-line exporter (themes.js, stats-graph.js, color-depth.js, …)
+  // completely unscanned, so the DEAD gate was blind to them — caught by
+  // the truecolor pre-release review (Track 3 MED); it hid a genuinely
+  // dead export (themes.activeThemeName, since removed).
+  const m = source.match(/module\.exports\s*=\s*\{([\s\S]*?)\n\}/)
+    || source.match(/module\.exports\s*=\s*\{([^\n]*)\};?/);
   if (m) {
     const body = decomment(m[1]);
     for (const part of body.split(',')) {

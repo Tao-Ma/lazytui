@@ -159,4 +159,4 @@ function buildContextItems(ctx = {}) {
   return out;
 }
 
-module.exports = { buildContextItems, configure, reset, SECTIONS, ENTRIES };
+module.exports = { buildContextItems, configure, reset, ENTRIES };

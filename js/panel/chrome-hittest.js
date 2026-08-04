@@ -77,4 +77,4 @@ function hitTestCloseButton(mx, my) {
   return null;
 }
 
-module.exports = { hitTestCollapseButton, hitTestCloseButton, _placedWidgetTargets };
+module.exports = { hitTestCollapseButton, hitTestCloseButton };

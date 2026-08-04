@@ -28,4 +28,4 @@ function hotkeyPoolForColumn(ci, N) {
   return [];
 }
 
-module.exports = { LEFT_HOTKEY_POOL, RIGHT_HOTKEY_POOL, hotkeyPoolForColumn };
+module.exports = { LEFT_HOTKEY_POOL, hotkeyPoolForColumn };

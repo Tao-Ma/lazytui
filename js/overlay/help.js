@@ -162,4 +162,4 @@ function showHelp() {
   setViewerContent(null, helpLines().join('\n'), { key: 'help', label: 'Help' });
 }
 
-module.exports = { helpLines, showHelp };
+module.exports = { showHelp };

@@ -189,7 +189,6 @@ function setTheme(name) {
 }
 
 function theme() { return active; }
-function activeThemeName() { return activeName; }
 function themeNames() { return Object.keys(THEMES); }
 
 // --- gradient(name, frac) → '#rrggbb' -------------------------------------
@@ -237,4 +236,4 @@ function gradient(name, frac) {
   return _ramp(activeName, name)[Math.round(f * STEPS)];
 }
 
-module.exports = { setTheme, theme, activeThemeName, themeNames, gradient, THEMES, GRADS, DEFAULT_THEME };
+module.exports = { setTheme, theme, themeNames, gradient, THEMES, GRADS, DEFAULT_THEME };

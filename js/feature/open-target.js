@@ -40,11 +40,6 @@ function _findScheme(input) {
   return null;
 }
 
-/** First scheme to claim `input`, with its parsed target — or null. */
-function parseTarget(input) {
-  return _findScheme(input);
-}
-
 /** Completion candidates for `input`, routed to the claiming scheme.
  *  Returns [] when no scheme claims or the claiming scheme has no
  *  complete() hook.
@@ -94,10 +89,5 @@ function openInput(input, opts) {
   m.scheme.open(m.target, opts || {});
 }
 
-/** Test-only: clear the scheme registry between cases. */
-function _resetSchemes() { _schemes.length = 0; }
 
-/** Read access for telemetry / debug. */
-function _schemeNames() { return _schemes.map(s => s.name); }
-
-module.exports = { registerOpenScheme, parseTarget, complete, openInput, _resetSchemes, _schemeNames };
+module.exports = { registerOpenScheme, complete, openInput };

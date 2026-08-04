@@ -109,4 +109,4 @@ function _reset() { _links = []; _cache = new WeakMap(); }
 
 installBuiltins();
 
-module.exports = { use, run, installBuiltins, _reset, crashReporterLink, recordLink };
+module.exports = { use, run, installBuiltins, _reset, crashReporterLink };

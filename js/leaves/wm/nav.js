@@ -141,4 +141,4 @@ function apply(slice, msg) {
   return { ...slice, nav: { ...slice.nav, [msg.panel]: nextEntry } };
 }
 
-module.exports = { init, apply, entryOf, cursorOf, isNavMsg, NAV_TYPES };
+module.exports = { init, apply, entryOf, cursorOf, isNavMsg };

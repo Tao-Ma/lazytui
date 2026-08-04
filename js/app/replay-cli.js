@@ -89,4 +89,4 @@ function runReplay(file, opts = {}) {
   return 0;
 }
 
-module.exports = { runReplay, _frameToText, _installRuntime };
+module.exports = { runReplay, _installRuntime };
