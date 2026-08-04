@@ -188,6 +188,19 @@ header and graph and the layout math accounts for it;
 
 ### Phase 3 — attribute sweep
 
+**LANDED 2026-08-04** (commits `7df31ab` saturation guard + `597b538`
+sweep/restyle). Gate: suite 173×2 · smoke 15 · DEAD 0 · SCC `[]` both.
+As built: the selection restyle ATTEMPT SUCCEEDED (scope decision 3) —
+`select-core.highlightLine` parametrized on the base tag, XOR
+mechanics unchanged, PRINCIPLES §8 rewritten; search + text-view
+leaves take highlight tags as parameters (purity wall). Two
+reducer-baked literals in agent.js stay named-color on purpose
+(update() must not read the #D8 cache). Found+fixed: footer.js wrote
+stdout directly, bypassing the P3 depth funnel — caught by the
+stats smoke's depth-16 assertion; renderFooter now returns its ansi.
+The 3c render-sim drove a quantizer improvement (saturation guard:
+chromatic hues never land on white/gray at 16).
+
 - **3a** New semantic slots (`success`, `warning`, `match`,
   `match_current`, …); sweep the hardcoded `[green]`/`[yellow]`
   literals (`panel/commands.js`, `panel/free-config-view.js`,
