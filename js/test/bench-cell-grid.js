@@ -71,7 +71,43 @@ const scenarios = {
     for (let i = 1; i < ROWS - 1; i++) c[i] = pad(`line ${i + 1}: the quick brown fox jumps over the lazy dog ${i + 1}`);
     return c;
   },
+  // Truecolor arc 1e (docs/truecolor.md §Bench) — hex-tag scenarios through
+  // the same markup path panels use. The gradient tick is the Phase-2 graph
+  // workload: per-run colored braille, every run [/]-terminated (P8 — the
+  // reset-free shape is the H1 quadratic and is pinned OUT by the oracle).
 };
+
+// Truecolor arc 1e (docs/truecolor.md §Bench) — hex-tag scenarios through
+// the same markup path panels use, on their OWN prev frame (seeding graph
+// rows into the shared base would perturb the frozen scroll baseline). The
+// gradient tick is the Phase-2 graph workload: per-run colored braille,
+// every run [/]-terminated (P8 — the reset-free shape is the H1 quadratic
+// and is pinned OUT by the oracle).
+const tcScenarios = {
+  'truecolor: one status cell changes shade': (f) => {
+    const c = f.slice(); c[7] = pad(`[#a6e22e]●[/] container-7 running   cpu 2.7%  mem 31MB`); return c;
+  },
+  'truecolor gradient graph tick (4 rows, per-run color)': (f) => {
+    const c = f.slice();
+    for (let r = 0; r < 4; r++) c[20 + r] = gradGraphRow(r, 1);
+    return c;
+  },
+};
+
+// A markup graph row: 8-col runs of braille, each run its own hex shade —
+// a tick shifts glyphs AND run colors, the worst realistic Phase-2 case.
+// NOT pad()ed: pad slices by raw length and would cut mid-markup; the row is
+// already exactly COLS visible glyphs.
+const _BRAILLE = '⣀⣤⣶⣿⡿⠿⠛⠉';
+const _SHADES = ['#50f8a0', '#78e884', '#a0d868', '#c8c84c', '#f0b830', '#f89020', '#f86810', '#f84000'];
+function gradGraphRow(row, tick) {
+  let s = '';
+  for (let run = 0; run < COLS / 8; run++) {
+    const v = (run + row + tick) % 8;
+    s += `[${_SHADES[v]}]${_BRAILLE[v].repeat(8)}[/]`;
+  }
+  return s;
+}
 
 function timeOps(fn, prev, cur, iters) {
   // warmup
@@ -86,15 +122,23 @@ function timeOps(fn, prev, cur, iters) {
 const base = baseFrame();
 console.log(`cell-diff vs row-diff — ${ROWS}×${COLS} frame, per-scenario (one frame update)\n`);
 const ITERS = 50000;
-for (const [name, mut] of Object.entries(scenarios)) {
-  const cur = mut(base);
-  const rb = rowEmit(base, cur).length;
-  const cb = cellEmit(base, cur).length;
+function runScenario(name, prev, cur) {
+  const rb = rowEmit(prev, cur).length;
+  const cb = cellEmit(prev, cur).length;
   const saved = rb === 0 ? 0 : Math.round((1 - cb / rb) * 100);
-  const rowOps = timeOps(rowEmit, base, cur, ITERS);
-  const cellOps = timeOps(cellEmit, base, cur, ITERS);
+  const rowOps = timeOps(rowEmit, prev, cur, ITERS);
+  const cellOps = timeOps(cellEmit, prev, cur, ITERS);
   const cpu = Math.round((cellOps / rowOps - 1) * 100);
   console.log(`${name}`);
   console.log(`  bytes:  row ${rb}  →  cell ${cb}   (${saved >= 0 ? '-' : '+'}${Math.abs(saved)}% on the wire)`);
   console.log(`  cpu:    row ${rowOps.toLocaleString()} ops/s  cell ${cellOps.toLocaleString()} ops/s   (cell ${cpu >= 0 ? '+' : ''}${cpu}%)\n`);
+}
+for (const [name, mut] of Object.entries(scenarios)) {
+  runScenario(name, base, mut(base));
+}
+// Truecolor scenarios diff against a graph-seeded variant of the base.
+const tcBase = base.slice();
+for (let r = 0; r < 4; r++) tcBase[20 + r] = gradGraphRow(r, 0);
+for (const [name, mut] of Object.entries(tcScenarios)) {
+  runScenario(name, tcBase, mut(tcBase));
 }

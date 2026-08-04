@@ -105,9 +105,23 @@ user decision in the config arc).
 
 ### Phase 1 — RGB pipeline + hardening
 
-Visual impact: 1a/1b/1d land with zero visual change (P6, hardening);
-1c's canonical hex palettes are the arc's first *deliberate* visible
-change — theme colors become the schemes' true shades.
+**LANDED 2026-08-04** (commits `9aaeb29` H2 → `eff486a` H1 → `9646865`
+1a → `ac8370a` 1b → `13be6d6` 1c; oracle vectors pinned first at the
+commit before H2). Gate at close: suite 173×2 · smoke 14 · SCC `[]`
+both · DEAD 0 · tripwire live. Landed numbers: H1 killed the quadratic
+(gradient row emit 128,530 → 2,725 B; routine 1-cell patches also
+shrank 51→21 B via canonical re-emission); the 1a parser+memo BEAT the
+table baseline (0.83 vs 0.90 µs/row, hex 0.88); the Phase-2-shaped
+gradient-tick bench case (markup path, [/]-terminated runs) costs
+~42 µs/row with linear bytes — negligible at stats cadence. Found +
+fixed en route: the `[dim reverse]` footer slot was a CODES miss
+rendering as RESET in ALL six themes (latent since the slot existed) —
+now compiles, footers gained their designed look.
+
+Visual impact: 1a/1b/1d land with zero visual change (P6, hardening;
+plus the footer fix above); 1c's canonical hex palettes are the arc's
+first *deliberate* visible change — theme colors become the schemes'
+true shades.
 
 - **1a** `ansi.js` tag *parser* replaces the fixed `CODES` table: a tag
   is space-separated atoms — `bold|dim|reverse`, the named 16 colors,
