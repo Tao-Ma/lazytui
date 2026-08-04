@@ -6,8 +6,8 @@
  *   fg colors   green red yellow blue magenta cyan white · #rrggbb (24-bit)
  *   bg          on <named|dark_blue|#rrggbb>
  *   reset       [/] (also [/bold], [/dim])
- * plus escaped brackets \[text]. Examples: [bold cyan], [#ff8800],
- * [#f8f8f2 on #44475a]. Hex atoms ALWAYS emit 38;2/48;2 — the pipeline is
+ * plus escaped brackets \[text]. Examples: [bold cyan], [#rrggbb],
+ * [#rrggbb on #rrggbb]. Hex atoms ALWAYS emit 38;2/48;2 — the pipeline is
  * canonically truecolor; device depth adapts at the WRITE boundary, never
  * here (docs/truecolor.md P3). A tag containing any unknown atom compiles to
  * RESET (defensive, pre-parser behavior preserved). Named atoms emit
