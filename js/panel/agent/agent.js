@@ -42,7 +42,7 @@ const tvu = require('../../leaves/text/text-view-update');
 const ms = require('../../leaves/text/search');
 const { esc } = require('../../leaves/text/ansi');
 const { buildTextView } = require('../../leaves/text-view/render');
-const { renderPanel } = require('../api');
+const { renderPanel, theme } = require('../api');
 const { paneInnerH } = require('../pane-viewport');
 const { getModel } = require('../../model/store');
 
@@ -205,6 +205,7 @@ function _fold(slice, evt) {
       return _append(slice, _blockLines(String(evt.message), 'red', '✗'));
     case 'exit': {
       const label = evt.code === null ? '(killed)' : `(exit ${evt.code})`;
+      // Named 16-color literal ON PURPOSE: update() is a pure reducer and must not read the #D8 theme cache (truecolor arc 3a leaves reducer-baked content lines un-themed).
       return _status(_append(_clearStream(slice), [`[yellow]Session ended ${label}.[/]`]), { state: 'exited' });
     }
     default:
@@ -245,6 +246,7 @@ function _input(slice, msg) {
     // draft (readline discards it on accept — we keep it reachable); the stash
     // is non-empty only while browsing. Working copies are spent.
     const stash = slice.histStash || '';
+    // Named 16-color literal ON PURPOSE: update() is a pure reducer and must not read the #D8 theme cache (truecolor arc 3a leaves reducer-baked content lines un-themed).
     const next = _append(
       { ...slice, inputDraft: { text: stash, cursor: stash.length }, history,
         histIdx: null, histStash: '', histEdits: {} },
@@ -357,21 +359,28 @@ function augmentMsg(msg, model, slice) {
 
 // --- render — pure f(slice): transcript window + status + draft -------------
 
-const STATUS_LINE = {
-  starting:   '[dim]· not started[/]',   // the draft ghost carries the "Enter to chat" hint
-  idle:       '[green]· idle[/]',
-  thinking:   '[yellow]· thinking…[/]',
-  tool:       '[yellow]· running tool…[/]',
-  compacting: '[yellow]· compacting…[/]',
-  retrying:   '[yellow]· retrying…[/]',
-  exited:     '[red]· session ended[/]',
-};
+// Render-time status → line map. A function (not a module-level constant) so
+// theme() is read lazily per render — session states ride the STATE slots
+// (running/partial/stopped), which change with the active theme (truecolor 3a).
+function _statusLineFor(state) {
+  const t = theme();
+  const lines = {
+    starting:   '[dim]· not started[/]',   // the draft ghost carries the "Enter to chat" hint
+    idle:       `[${t.running}]· idle[/]`,
+    thinking:   `[${t.partial}]· thinking…[/]`,
+    tool:       `[${t.partial}]· running tool…[/]`,
+    compacting: `[${t.partial}]· compacting…[/]`,
+    retrying:   `[${t.partial}]· retrying…[/]`,
+    exited:     `[${t.stopped}]· session ended[/]`,
+  };
+  return lines[state] || lines.idle;
+}
 
 function _statusLine(slice) {
   const st = slice.status || {};
   let line = (st.state === 'tool' && st.tool)
-    ? `[yellow]· tool: ${esc(st.tool)}…[/]`   // the spec's "(tool: …)" spinner
-    : (STATUS_LINE[st.state] || STATUS_LINE.idle);
+    ? `[${theme().partial}]· tool: ${esc(st.tool)}…[/]`   // the spec's "(tool: …)" spinner
+    : _statusLineFor(st.state);
   const extras = [];
   if (Number.isFinite(st.tokens)) extras.push(`${st.tokens} tok`);
   if (Number.isFinite(st.cost)) extras.push(`$${st.cost.toFixed(2)}`);
@@ -386,10 +395,11 @@ function _statusLine(slice) {
  *  message longer than the pane never goes blind: the leaf renderer right-
  *  truncates rows, which would otherwise cut the cursor + new chars off. */
 function _inputLine(slice, typing, w) {
+  const t = theme();
   const d = slice.inputDraft || { text: '', cursor: 0 };
   const raw = d.text || '';
   if (!typing) {
-    return raw ? `[cyan]›[/] ${esc(raw)}` : '[cyan]›[/] [dim]Enter to chat[/]';
+    return raw ? `[${t.accent}]›[/] ${esc(raw)}` : `[${t.accent}]›[/] [dim]Enter to chat[/]`;
   }
   const c = Math.max(0, Math.min(raw.length, d.cursor | 0));
   // Budget: pane interior (w-2) minus the '› ' prefix and one slack column
@@ -403,7 +413,7 @@ function _inputLine(slice, typing, w) {
   const wc = c - start;
   const at = win.slice(wc, wc + 1);
   const pre = start > 0 ? '[dim]…[/]' : '';
-  return `[cyan]›[/] ${pre}${esc(win.slice(0, wc))}[reverse]${at ? esc(at) : ' '}[/]${esc(win.slice(wc + 1))}`;
+  return `[${t.accent}]›[/] ${pre}${esc(win.slice(0, wc))}[reverse]${at ? esc(at) : ' '}[/]${esc(win.slice(wc + 1))}`;
 }
 
 // Search decoration over the transcript (text-view's _searchDecoration,
@@ -443,9 +453,12 @@ function render(panel, w, h, slice, opts) {
   }
   const sel = (slice.select && slice.select.active) ? slice.select : null;
   const searchDecoration = sel ? null : _searchDecoration(slice, lines, focused);
+  const _t = theme();
   const args = buildTextView({
     lines, scroll, innerH: tvH,
     select: sel, searchDecoration,
+    // 3b — thread the theme's selection/search tags into the pure leaf.
+    selectedTag: _t.selected, searchTags: { match: _t.match, current: _t.match_current },
     width: w, height: h,
     title: _slotTitle(panel), hotkey: panel.hotkey,
     panelType: 'agent', focused,

@@ -22,6 +22,9 @@ const ms = require('../leaves/text/search');
 const { describe, it, eq, assert, report } = require('./test-runner');
 const { getModel } = require('../app/runtime');
 const { getInstanceSlice } = require('../panel/api');
+// Truecolor arc 3a — search styles come from theme slots (match /
+// match_current), injected by the panel facade into the pure leaf.
+const { theme } = require('../leaves/infra/themes');
 const route = require('../panel/route');
 
 // --- Boot a real seeded content slot ------------------------------------
@@ -201,20 +204,21 @@ describe('[8] decorateLines render integration', () => {
     search.commit();
     const out = search.decorateLines(infoSlice().lines);
     eq(out[0], 'no match here', 'untouched');
-    assert(out[1].includes('[yellow]'), 'matched line carries [yellow]');
+    // The buffer's single match is also the ACTIVE one (idx 0) → match_current.
+    assert(out[1].includes(`[${theme().match_current}]`), 'matched line carries the active-match slot style');
   });
-  it('current match gets reverse style', () => {
+  it('current match gets the match_current style', () => {
     setup(['foo bar foo']);
     search.enter();
     'foo'.split('').forEach(c => search.keystroke(c));
     search.commit();
     infoSlice().search.idx = 0;
     const out = search.decorateLines(infoSlice().lines);
-    // First match (idx=0) → [reverse][yellow]
-    assert(out[0].includes('[reverse][yellow]'), `expected active style: ${out[0]}`);
-    // Second match (idx=1) → [yellow] only (no reverse)
-    const r1 = out[0].indexOf('[reverse]');
-    const y2 = out[0].indexOf('[yellow]', r1 + 1);
+    // First match (idx=0) → theme().match_current
+    assert(out[0].includes(`[${theme().match_current}]`), `expected active style: ${out[0]}`);
+    // Second match (idx=1) → theme().match only
+    const r1 = out[0].indexOf(`[${theme().match_current}]`);
+    const y2 = out[0].indexOf(`[${theme().match}]`, r1 + 1);
     assert(y2 > 0, 'second span exists');
   });
   it('no matches → pass-through', () => {
@@ -237,8 +241,8 @@ describe('[8b] decorateLines decorates the RENDERED pane, not the focused one', 
     };
     const lines = other.lines;
     const out = search.decorateLines(lines, other);
-    assert(out[0].includes('[yellow]'), 'unfocused pane decorated with ITS OWN committed term');
-    assert(out[2].includes('[reverse]'), 'active idx from the passed slice');
+    assert(out[0].includes(`[${theme().match}]`), 'unfocused pane decorated with ITS OWN committed term');
+    assert(out[2].includes(`[${theme().match_current}]`), 'active idx from the passed slice');
     const focusedOut = search.decorateLines(infoSlice().lines);
     eq(focusedOut[0], 'focused content', 'focused pane (no search) untouched');
   });

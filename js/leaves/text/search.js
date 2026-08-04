@@ -103,12 +103,17 @@ function matchesFor(lines, term) {
  * Apply search highlights to a WINDOW of lines. `matches` is the FULL match
  * list (over the whole buffer); `activeIdx` is the active match's GLOBAL index
  * (already clamped by the caller); `offset` is the window's absolute start.
- * All matches paint `[yellow]`; the active one paints `[reverse][yellow]`.
- * Byte-identical to decorating the whole buffer then slicing — each line is
- * decorated from its OWN content + ABSOLUTE index (A3 windowed-decorate). Pass-
- * through (`lines` unchanged) when there are no matches in the window.
+ * Matches paint `tags.match`, the active one `tags.current` — markup tag
+ * bodies INJECTED by the caller (truecolor arc 3a: the panel passes
+ * theme().match / theme().match_current; this leaf stays theme-free per the
+ * purity wall). Defaults preserve the historical look. Byte-identical to
+ * decorating the whole buffer then slicing — each line is decorated from its
+ * OWN content + ABSOLUTE index (A3 windowed-decorate). Pass-through (`lines`
+ * unchanged) when there are no matches in the window.
  */
-function decorateWindow(lines, matches, activeIdx, offset = 0) {
+const _DEFAULT_TAGS = { match: 'yellow', current: 'reverse yellow' };
+
+function decorateWindow(lines, matches, activeIdx, offset = 0, tags = _DEFAULT_TAGS) {
   if (!matches || !matches.length) return lines;
   // Group matches by ABSOLUTE line, keeping only those in the visible window;
   // `_i` stays the GLOBAL match index so the active-match check resolves across
@@ -123,7 +128,7 @@ function decorateWindow(lines, matches, activeIdx, offset = 0) {
   return lines.map((line, i) => {
     const spans = byLine.get(i + offset);
     if (!spans) return line;
-    return _multiHighlight(line, spans, activeIdx);
+    return _multiHighlight(line, spans, activeIdx, tags);
   });
 }
 
@@ -133,7 +138,7 @@ function decorateWindow(lines, matches, activeIdx, offset = 0) {
  * `activeIdx` flags which span gets the "current match" style. Drops the
  * line's existing markup (same v1 tradeoff as select-core.highlightLine).
  */
-function _multiHighlight(line, spans, activeIdx) {
+function _multiHighlight(line, spans, activeIdx, tags) {
   const plain = stripMarkup(line);
   const chars = [...plain];
   // Codepoint-index → display-col cumulative array → map [col,col+len) → cp range.
@@ -158,8 +163,8 @@ function _multiHighlight(line, spans, activeIdx) {
     out += esc(chars.slice(cursor, startCp).join(''));
     const inner = esc(chars.slice(startCp, endCp).join(''));
     out += sp._i === activeIdx
-      ? `[reverse][yellow]${inner}[/]`
-      : `[yellow]${inner}[/]`;
+      ? `[${tags.current}]${inner}[/]`
+      : `[${tags.match}]${inner}[/]`;
     cursor = endCp;
   }
   out += esc(chars.slice(cursor).join(''));

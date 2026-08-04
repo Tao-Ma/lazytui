@@ -73,7 +73,7 @@ function render() {
       let text = preview;
       if (visibleLen(text) > budget) text = text.slice(0, budget - 1) + '…';
       const row = `  ${indexStr}  ${esc(text)}`;
-      if (i === _idx) lines.push(`[reverse]${row}`);
+      if (i === _idx) lines.push(`[${require('../leaves/infra/themes').theme().selected}]${row}`);
       else            lines.push(row);
     }
   }

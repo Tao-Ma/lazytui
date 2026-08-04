@@ -26,6 +26,7 @@ const fsp = require('fs').promises;
 // This edge is cycle-free now that the leaves layer imports no io (the hub +
 // draw seams) — see docs/v0.6.5-render-exit.md.
 const { esc } = require('../leaves/text/ansi');
+const { theme } = require('../leaves/infra/themes');
 
 const DEFAULT_MAX_BYTES = 1024 * 1024;        // 1MB for text
 const DEFAULT_HEX_AFTER  = 256 * 1024;        // 256KB for hex
@@ -175,7 +176,7 @@ async function loadFile(path, opts = {}) {
   } catch (err) {
     return {
       kind: 'error',
-      lines: [`[red]Failed to read ${path}[/]`, '', `[dim]${err.message}[/]`],
+      lines: [`[${theme().error}]Failed to read ${path}[/]`, '', `[dim]${err.message}[/]`],
       totalSize: 0, truncated: false, path,
       error: err.message,
     };

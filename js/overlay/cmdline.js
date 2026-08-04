@@ -98,7 +98,7 @@ function renderCmdline() {
       const matchIdx = _scroll + k - 1 - i;
       const m = _matches[matchIdx];
       const label = _formatMatchLine(m);
-      lines.push(matchIdx === _sel ? `[reverse]  ${label}` : `  ${label}`);
+      lines.push(matchIdx === _sel ? `[${t.selected}]  ${label}` : `  ${label}`);
     }
     const content = renderPanel({
       width: panelW, height: panelH, lines,

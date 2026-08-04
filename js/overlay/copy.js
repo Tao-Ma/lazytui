@@ -128,10 +128,11 @@ function clearOptions() { _options = []; }
 function renderCopyMenu() {
   if (!getModel().modes.copyMode) return;
   const { options, idx } = getModel().modal.copy;
+  const t = require('../leaves/infra/themes').theme();
   const lines = options.map((o, i) => {
     const label = esc(o.label);
-    if (i === idx) return `[reverse]  ${label}`;     // selected — reverse
-    if (o.cancel) return `  [dim]${label}[/]`;        // dim when unselected
+    if (i === idx) return `[${t.selected}]  ${label}`; // selected — theme slot (§8)
+    if (o.cancel) return `  [dim]${label}[/]`;         // dim when unselected
     return `  ${label}`;
   });
   renderOverlay({

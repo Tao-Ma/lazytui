@@ -130,9 +130,12 @@ function render(panel, w, h, slice, opts) {
   const lines = slice.lines || [];
   const sel = (slice.select && slice.select.active) ? slice.select : null;
   const searchDecoration = sel ? null : _searchDecoration(slice, lines, focused);
+  const t = require('../../leaves/infra/themes').theme();
   const args = buildTextView({
     lines, scroll: slice.scroll, innerH: h - 2,
     select: sel, searchDecoration,
+    // 3b — thread the theme's selection/search tags into the pure leaf.
+    selectedTag: t.selected, searchTags: { match: t.match, current: t.match_current },
     width: w, height: h,
     title: _slotTitle(panel), hotkey: panel.hotkey,
     panelType: 'info', focused,

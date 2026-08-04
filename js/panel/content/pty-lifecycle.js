@@ -26,6 +26,7 @@
 const api = require('../api');
 const { getModel } = require('../../model/store');
 const { scheduleRender } = require('../../leaves/infra/render-queue');
+const { theme } = require('../../leaves/infra/themes');
 
 // Injected dispatch host (set by install() from tui.js boot). handleExit is a
 // boot-wired PTY-exit subscription — it holds dispatch the way a Hyperapp/Elmish
@@ -91,7 +92,7 @@ function _realizeExit(desc) {
   require('../../feature/open-file').refreshHostFileTab(desc.path);
   if (desc.isConfig) {
     require('../nav-state').appendViewerLines(
-      `[yellow]Config edited — changes apply on the next lazytui start.[/]`);
+      `[${theme().warning}]Config edited — changes apply on the next lazytui start.[/]`);
   }
 }
 

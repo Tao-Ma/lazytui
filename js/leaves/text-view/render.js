@@ -30,6 +30,11 @@ const search = require('../text/search');
  *   innerH           visible rows (panel height minus border chrome)
  *   select           the active selection object, or null   (wins over search)
  *   searchDecoration { matches, activeIdx } over the full buffer, or null
+ *   selectedTag      markup tag for selection spans (theme().selected —
+ *                    truecolor arc 3b; the leaf stays theme-free, default
+ *                    'reverse' preserves the historical look)
+ *   searchTags       { match, current } markup tags for search highlights
+ *                    (theme().match / theme().match_current)
  *   width, height, title, hotkey, focused, chrome, panelType   renderPanel chrome
  * @returns renderPanel argument object
  */
@@ -44,9 +49,9 @@ function buildTextView(o) {
   // decorate leaves are byte-identical to whole-buffer-decorate-then-slice.
   let window = lines.slice(scroll, scroll + innerH);
   if (o.select) {
-    window = selectCore.decorateWindow(window, o.select, scroll);
+    window = selectCore.decorateWindow(window, o.select, scroll, o.selectedTag || 'reverse');
   } else if (o.searchDecoration) {
-    window = search.decorateWindow(window, o.searchDecoration.matches, o.searchDecoration.activeIdx, scroll);
+    window = search.decorateWindow(window, o.searchDecoration.matches, o.searchDecoration.activeIdx, scroll, o.searchTags);
   }
   return {
     width: o.width,

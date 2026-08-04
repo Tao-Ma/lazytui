@@ -24,6 +24,7 @@ const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
 const { getModel } = require('../../model/store');
+const { theme } = require('../../leaves/infra/themes');
 const { shQuote } = require('./action-runner');
 
 /** The editor command string — merged config editor: → $VISUAL → $EDITOR → vi. */
@@ -65,10 +66,11 @@ function editFile(filepath, opts) {
   const globalPath = require('../../parser/global').globalConfigPath(process.env);
   const isConfig = Boolean(opts.isConfig || abs === m.configPath || (globalPath && abs === globalPath));
 
+  const t = theme();
   const { appendViewerLines } = require('../../panel/nav-state');
   if (require('./action-runner')._spawnUsesTmux()) {
-    appendViewerLines(`[dim]$ ${cmd}[/]\n[yellow]Editor opened in a new tmux window.[/]`
-      + (isConfig ? '\n[yellow]Config changes apply on the next lazytui start.[/]' : ''));
+    appendViewerLines(`[dim]$ ${cmd}[/]\n[${t.warning}]Editor opened in a new tmux window.[/]`
+      + (isConfig ? `\n[${t.warning}]Config changes apply on the next lazytui start.[/]` : ''));
     spawn('tmux', ['new-window', '-n', `edit:${name}`, cmd], { detached: true, stdio: 'ignore' });
     return;
   }
@@ -78,7 +80,7 @@ function editFile(filepath, opts) {
   const container = route.resolveViewerPaneId()
     || (getInstanceSlice('layout') || {}).focus;
   if (!container) {
-    appendViewerLines('[red]edit: no pane to open the editor in[/]');
+    appendViewerLines(`[${t.error}]edit: no pane to open the editor in[/]`);
     return;
   }
   const { dispatchMsg } = require('./loop');
@@ -100,11 +102,12 @@ function editFile(filepath, opts) {
  * (created with a commented skeleton on first use).
  */
 function editConfig(which) {
+  const t = theme();
   const { appendViewerLines } = require('../../panel/nav-state');
   if (which === 'global') {
     const p = require('../../parser/global').globalConfigPath(process.env);
     if (!p) {
-      appendViewerLines('[red]:config global — the global config is disabled (LAZYTUI_GLOBAL_CONFIG=\'\')[/]');
+      appendViewerLines(`[${t.error}]:config global — the global config is disabled (LAZYTUI_GLOBAL_CONFIG='')[/]`);
       return;
     }
     if (!fs.existsSync(p)) {
@@ -116,7 +119,7 @@ function editConfig(which) {
   }
   const cp = getModel().configPath;
   if (!cp) {
-    appendViewerLines('[red]:config — no config file loaded[/]');
+    appendViewerLines(`[${t.error}]:config — no config file loaded[/]`);
     return;
   }
   editFile(cp, { isConfig: true });

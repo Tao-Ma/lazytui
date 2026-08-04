@@ -46,21 +46,34 @@ describe('[text-view] window slice + render args', () => {
 });
 
 describe('[text-view] search decoration', () => {
-  it('window matches paint [yellow]; the active one paints [reverse][yellow]', () => {
+  // Leaf DEFAULTS pinned here ('yellow' / 'reverse yellow' — one tag since
+  // the truecolor arc 3a); production callers thread theme().match /
+  // theme().match_current through o.searchTags instead.
+  it('window matches paint the match tag; the active one the current tag', () => {
     const lines = ['aa foo', 'bb foo', 'cc foo'];
     const matches = ms.matchesFor(lines, 'foo');
     const a = buildTextView({ lines, scroll: 0, innerH: 3, searchDecoration: { matches, activeIdx: 1 }, width: 20, height: 5 });
-    assert(a.lines[0].includes('[yellow]') && !a.lines[0].includes('[reverse]'), 'idx 0 plain yellow');
-    assert(a.lines[1].includes('[reverse][yellow]'), 'idx 1 active reverse');
-    assert(a.lines[2].includes('[yellow]') && !a.lines[2].includes('[reverse]'), 'idx 2 plain yellow');
+    assert(a.lines[0].includes('[yellow]') && !a.lines[0].includes('[reverse yellow]'), 'idx 0 plain match tag');
+    assert(a.lines[1].includes('[reverse yellow]'), 'idx 1 active current tag');
+    assert(a.lines[2].includes('[yellow]') && !a.lines[2].includes('[reverse yellow]'), 'idx 2 plain match tag');
   });
   it('active-match index is ABSOLUTE across the buffer, not window-relative', () => {
     const lines = ['aa foo', 'bb foo', 'cc foo', 'dd foo'];
     const matches = ms.matchesFor(lines, 'foo');
     // window = abs lines 2..3; active global idx 2 → the FIRST window row.
     const a = buildTextView({ lines, scroll: 2, innerH: 2, searchDecoration: { matches, activeIdx: 2 }, width: 20, height: 4 });
-    assert(a.lines[0].includes('[reverse][yellow]'), 'window row 0 (abs line 2) is active');
-    assert(!a.lines[1].includes('[reverse]'), 'window row 1 (abs line 3) not active');
+    assert(a.lines[0].includes('[reverse yellow]'), 'window row 0 (abs line 2) is active');
+    assert(!a.lines[1].includes('[reverse yellow]'), 'window row 1 (abs line 3) not active');
+  });
+  it('o.searchTags overrides the defaults (the production theme path)', () => {
+    const lines = ['aa foo'];
+    const matches = ms.matchesFor(lines, 'foo');
+    const a = buildTextView({
+      lines, scroll: 0, innerH: 1, width: 20, height: 3,
+      searchDecoration: { matches, activeIdx: 0 },
+      searchTags: { match: 'M', current: 'C' },
+    });
+    assert(a.lines[0].includes('[C]foo[/]'), 'current tag threaded');
   });
 });
 

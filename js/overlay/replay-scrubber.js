@@ -19,6 +19,7 @@
 'use strict';
 
 const { renderOverlay, overlayBox, viewportDims } = require('../leaves/render/draw');
+const { theme } = require('../leaves/infra/themes');
 
 const MAX_W = 56;       // full pane width cap
 const MINI_BAR = 16;    // mini progress-bar inner width
@@ -99,6 +100,7 @@ function renderMini(data) {
 
 // Full pane — status + checkpoint list + key legend.
 function renderFull(data) {
+  const t = theme();
   const cps = data.checkpoints || [];
   const total = cps.length;
   const COLS = viewportDims().cols;
@@ -109,7 +111,7 @@ function renderFull(data) {
     ? 'even'
     : `realtime ${data.idleCap === Infinity ? '∞' : (data.idleCap / 1000) + 's'}`;
   const diffLabel = data.diffMode && data.diffMode !== 'off' ? `  diff:${data.diffMode}` : '';
-  const lockLabel = data.locked ? '  [yellow]LOCK[/]' : '';   // B6 — distinct from ⏸ (pause)
+  const lockLabel = data.locked ? `  [${t.warning}]LOCK[/]` : '';   // B6 — distinct from ⏸ (pause)
   const lines = [
     `[bold]${_sym(data)}[/] ${data.ratio}×  ${mode}   seq ${data.pos}/${data.total}  +${dt}s${diffLabel}${lockLabel}`,
     '[dim]────────────────────────────[/]',
@@ -126,7 +128,7 @@ function renderFull(data) {
       if (!cp) { lines.push(''); continue; }
       const d = ((cp.t - data.firstT) / 1000).toFixed(1);
       const row = `${_fmtTime(cp.t)}  +${d}s  seq ${cp.seq}`;
-      lines.push(idx === data.cursor ? `[reverse] ${row} [/]` : `  ${row}`);
+      lines.push(idx === data.cursor ? `[${t.selected}] ${row} [/]` : `  ${row}`);
     }
   }
 
@@ -140,7 +142,7 @@ function renderFull(data) {
       lines.push(`[dim](${data.diff.initial ? 'initial frame' : 'no model change'})[/]`);
     } else {
       for (const c of data.diff.changes.slice(0, DH)) {
-        const mark = c.kind === 'add' ? '[green]+[/]' : c.kind === 'remove' ? '[red]-[/]' : '[yellow]~[/]';
+        const mark = c.kind === 'add' ? `[${t.success}]+[/]` : c.kind === 'remove' ? `[${t.error}]-[/]` : `[${t.warning}]~[/]`;
         const val = c.kind === 'add' ? c.after : c.kind === 'remove' ? c.before : `${c.before} → ${c.after}`;
         lines.push(`${mark} ${c.path}  ${val}`);
       }

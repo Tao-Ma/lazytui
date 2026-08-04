@@ -360,7 +360,7 @@ function _safeRender(panel, w, h, opts) {
     // v0.6.3 P2 — expand from one-line marker to h-line block. The
     // error message stays on row 0; rows 1..h-1 are blank-of-width-w
     // so the panel's vertical slot is preserved.
-    const errLine = `[red]\\[render error: ${esc(String(panel && panel.type))} — ${esc(String(e && e.message))}\\][/]`;
+    const errLine = `[${theme().error}]\\[render error: ${esc(String(panel && panel.type))} — ${esc(String(e && e.message))}\\][/]`;
     const blank = ' '.repeat(w);
     const rows = [errLine];
     for (let i = 1; i < h; i++) rows.push(blank);
@@ -809,7 +809,10 @@ function render(model) {
   // derived selector (A.2), and the former `tabBounds` render-write is gone
   // (`tabBoundsFor` is a pure projection; input.js recomputes on demand).
   // render() is now a pure `model -> output` view.
-  renderFooter(model);
+  // 3b — footer returns its ansi (undefined in cmdline mode); paint emits it
+  // through the depth funnel like every other frame byte.
+  const footerAnsi = renderFooter(model);
+  if (footerAnsi) _emit(footerAnsi);
   // Panel-chrome glyphs (`[_]`/`[+]` collapse, `[X]` close in free-config,
   // `[≡]` tab trigger) are composed INLINE in the panel's top border
   // by renderPanel({chrome}) — v0.6.3 P4.2 retired the post-render

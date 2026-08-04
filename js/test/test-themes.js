@@ -83,9 +83,18 @@ describe('[3] gradient() — ramp endpoints, midpoint, clamping, fallback', () =
 });
 
 describe('[4] palette contracts', () => {
-  it("selected === 'reverse' in every theme (select-core PRINCIPLES §8; Phase 3 owns changing this)", () => {
+  it('selected is reverse (minimal) or a fg/bg hex pair (hex themes) — PRINCIPLES §8 shape', () => {
     for (const [name, palette] of Object.entries(THEMES)) {
-      eq(palette.selected, 'reverse', `${name}.selected`);
+      if (name === 'minimal') { eq(palette.selected, 'reverse', 'minimal.selected'); continue; }
+      assert(/^#[0-9a-f]{6} on #[0-9a-f]{6}$/i.test(palette.selected),
+        `${name}.selected must be '#fg on #bg', got '${palette.selected}'`);
+    }
+  });
+  it('footer is dim reverse (minimal) or a fg/bg hex pair', () => {
+    for (const [name, palette] of Object.entries(THEMES)) {
+      if (name === 'minimal') { eq(palette.footer, 'dim reverse', 'minimal.footer'); continue; }
+      assert(/^#[0-9a-f]{6} on #[0-9a-f]{6}$/i.test(palette.footer),
+        `${name}.footer must be '#fg on #bg', got '${palette.footer}'`);
     }
   });
   it('minimal stays named-16 (the no-quantization theme)', () => {

@@ -32,7 +32,7 @@
 'use strict';
 
 const { getModel } = require('../model/store');
-const { getInstanceSlice } = require('../panel/api');
+const { getInstanceSlice, theme } = require('../panel/api');
 const { renderPanel, viewportDims } = require('../leaves/render/draw');
 const { richToAnsi, RESET, esc, visibleLen } = require('../leaves/text/ansi');
 const { stdout } = require('../io/term');
@@ -265,9 +265,10 @@ function hitTest(mx, my) {
 // --- Render ------------------------------------------------------------
 
 function _statusLabel(it) {
+  const t = theme();
   if (it.status === 'here')   return '[dim][here][/]';
-  if (it.status === 'hidden') return '[yellow][hidden][/]';
-  return `[cyan][in col ${it.columnIndex + 1}][/]`;
+  if (it.status === 'hidden') return `[${t.warning}][hidden][/]`;
+  return `[${t.accent}][in col ${it.columnIndex + 1}][/]`;
 }
 
 /** Format a tab row: `* [N]  Label  (kind)` — `*` on the active tab. */

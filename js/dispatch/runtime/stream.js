@@ -39,6 +39,7 @@
 const { spawn } = require('child_process');
 const { StringDecoder } = require('string_decoder');
 const { esc } = require('../../leaves/text/ansi');
+const { theme } = require('../../leaves/infra/themes');
 const { getModel } = require('../../model/store');
 const { scheduleRender } = require('../../leaves/infra/render-queue');
 const history = require('../../feature/history');
@@ -106,6 +107,7 @@ function killJob(jobId, opts = {}) {
   try { ctx.proc.stderr.removeAllListeners('data'); } catch {}
   try { ctx.proc.kill('SIGTERM'); } catch {}
   if (!opts.silent) {
+    const t = theme();
     const batch = [];
     if (ctx.flushTail) {
       const tail = ctx.flushTail();
@@ -113,14 +115,14 @@ function killJob(jobId, opts = {}) {
     }
     if (ctx.target) {
       // Routed: re-run-on-same-slot footer → the action's text-view instance.
-      batch.push('[yellow]Killed by next run.[/]');
+      batch.push(`[${t.warning}]Killed by next run.[/]`);
       batch.push('[dim]Press Enter to run again.[/]');
       appendDetailLines(batch, ctx.target.tabInstId);
     } else {
       // Unrouted: identify what was killed (the next stream is a
       // different command, so "Killed by next run" reads oddly here).
       // Goes to viewerStreamBuffer (no tabKey on the dispatch).
-      batch.push(`[yellow]Killed previous: ${esc(ctx.headerLabel || '<stream>')}.[/]`);
+      batch.push(`[${t.warning}]Killed previous: ${esc(ctx.headerLabel || '<stream>')}.[/]`);
       appendDetailLines(batch);
     }
   }
@@ -297,13 +299,14 @@ function streamCommand(headerLabel, cmd, args = [], opts = {}) {
       // Coalesce decoder tail + status + re-run hint into one batched
     // append — atomic reducer pass instead of 2-3 sequential
     // viewer_append dispatches.
+    const t = theme();
     const batch = [];
     const tail = decoder.end();
     if (tail) buffer += tail;
     if (buffer) { batch.push(esc(buffer)); rec.append(buffer); if (fab) rawLines.push(buffer); buffer = ''; }
-    if (signal)            { batch.push(`[yellow]Killed (${signal})[/]`); rec.end(`signal:${signal}`); }
-    else if (code === 0)    { batch.push('[green]Done.[/]'); rec.end(0); }
-    else                    { batch.push(`[red]Exit ${code}[/]`); rec.end(code); }
+    if (signal)            { batch.push(`[${t.warning}]Killed (${signal})[/]`); rec.end(`signal:${signal}`); }
+    else if (code === 0)    { batch.push(`[${t.success}]Done.[/]`); rec.end(0); }
+    else                    { batch.push(`[${t.error}]Exit ${code}[/]`); rec.end(code); }
     if (routed) batch.push('[dim]Press Enter to run again.[/]');
     appendDetailLines(batch, tabInstId);
     flushFabric();   // publish the producer's raw output for parsing
@@ -315,7 +318,7 @@ function streamCommand(headerLabel, cmd, args = [], opts = {}) {
     jobs.close(jobId, { status: 'killed' });
     procs.delete(jobId);
     if (slotIndex.get(slotKey) === jobId) slotIndex.delete(slotKey);
-      const batch = [`[red]Error: ${esc(err.message)}[/]`];
+      const batch = [`[${theme().error}]Error: ${esc(err.message)}[/]`];
     rec.append(`Error: ${err.message}`);
     if (routed) batch.push('[dim]Press Enter to run again.[/]');
     appendDetailLines(batch, tabInstId);

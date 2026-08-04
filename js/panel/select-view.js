@@ -86,7 +86,13 @@ function decorateFor(paneId, lines, type) {
   const sl = _sliceFor(paneId, type);
   const sel = sl && sl.select;
   if (!sel || !sel.active) return lines;
-  return core.decorateWindow(lines, sel, 0);
+  // Truecolor arc 3b — thread the active selected tag into the pure leaf
+  // (purity wall: the leaf takes it as data). Selection spans and selected
+  // rows share ONE style, so a span on a normal row matches the theme's row
+  // highlight, and the XOR on a highlighted row still reads as normal video
+  // (see select-core.highlightLine's contract).
+  const baseTag = require('../leaves/infra/themes').theme().selected;
+  return core.decorateWindow(lines, sel, 0, baseTag);
 }
 
 /** One pane's OWN active selection: `{ paneId, type, sel, slice }`, or null.

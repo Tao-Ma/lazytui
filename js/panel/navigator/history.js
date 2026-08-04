@@ -115,14 +115,15 @@ function render(panel, w, h, _slice, opts) {
  * historyReplay effect on Enter.
  */
 function _replayLines(entry) {
+  const t = theme();
   const lines = [`[dim]$ ${esc(entry.label)}[/]`];
   for (const ol of entry.output || []) lines.push(esc(ol));
   if (entry._detached) {
     lines.push('[dim](detached — no captured output)[/]');
   } else if (entry.exitCode === 0) {
-    lines.push('[green]Done.[/]');
+    lines.push(`[${t.success}]Done.[/]`);
   } else if (entry.exitCode !== null) {
-    lines.push(`[red]Exit ${entry.exitCode}[/]`);
+    lines.push(`[${t.error}]Exit ${entry.exitCode}[/]`);
   }
   return lines;
 }

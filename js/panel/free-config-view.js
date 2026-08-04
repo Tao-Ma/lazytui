@@ -26,7 +26,7 @@
 const { esc } = require('../leaves/text/ansi');
 const { cols } = require('../io/term');
 const { getModel } = require('../model/store');
-const { getInstanceSlice } = require("./api");
+const { getInstanceSlice, theme } = require("./api");
 const mfcCore = require('../leaves/free-config/free-config-core');
 const mfcMouse = require('../leaves/free-config/free-config-mouse');
 const mpool = require('../leaves/wm/pool');
@@ -55,12 +55,13 @@ function getFreeConfigFooter() {
   if (!getModel().modes.freeConfigMode) return '';
   const d = _freeConfig();
   if (!d) return '';
+  const th = theme();
   const drag = d.drag;
   if (drag && drag.kind === 'dragging') {
     const t = drag.target;
     const srcTitle = panelTitle(drag.sourceType);
-    if (!t) return ` | dragging ${esc(srcTitle)} → [yellow](drop outside)[/]`;
-    if (!t.valid) return ` | dragging ${esc(srcTitle)} → [red]✗ ${esc(t.reason || 'blocked')}[/]`;
+    if (!t) return ` | dragging ${esc(srcTitle)} → [${th.warning}](drop outside)[/]`;
+    if (!t.valid) return ` | dragging ${esc(srcTitle)} → [${th.error}]✗ ${esc(t.reason || 'blocked')}[/]`;
     if (t.kind === 'swap') {
       // Self-swap (source == occupant) is valid but a no-op on release;
       // rendering it as "swap X" in bold yellow looks like a real action
@@ -68,10 +69,10 @@ function getFreeConfigFooter() {
       if (t.occupantType === drag.sourceType) {
         return ` | dragging ${esc(srcTitle)} → [dim](no-op — release to cancel)[/]`;
       }
-      return ` | dragging ${esc(srcTitle)} → [bold yellow]swap[/] ${esc(panelTitle(t.occupantType))} (col ${t.columnIndex + 1})`;
+      return ` | dragging ${esc(srcTitle)} → [bold ${th.warning}]swap[/] ${esc(panelTitle(t.occupantType))} (col ${t.columnIndex + 1})`;
     }
     if (t.kind === 'new_column') {
-      return ` | dragging ${esc(srcTitle)} → [bold green]new column[/] at position ${t.position + 1}`;
+      return ` | dragging ${esc(srcTitle)} → [bold ${th.success}]new column[/] at position ${t.position + 1}`;
     }
     const clampSuffix = t.clamp ? ` [dim](clamped — ${esc(t.clamp)})[/]` : '';
     return ` | dragging ${esc(srcTitle)} → col ${t.columnIndex + 1} @ ${t.index}${clampSuffix}`;
@@ -87,19 +88,19 @@ function getFreeConfigFooter() {
       return ` | from pool: ${esc(srcTitle)} → [dim](move to drop)[/]`;
     }
     const t = drag.target;
-    if (!t)             return ` | from pool: ${esc(srcTitle)} → [yellow](drop outside cancels)[/]`;
+    if (!t)             return ` | from pool: ${esc(srcTitle)} → [${th.warning}](drop outside cancels)[/]`;
     if (!t.valid) {
       const reason = t.kind === 'replace' ? (t.reason || 'detail is essential') : (t.reason || `col ${t.columnIndex + 1} blocked`);
-      return ` | from pool: ${esc(srcTitle)} → [red]✗ ${reason}[/]`;
+      return ` | from pool: ${esc(srcTitle)} → [${th.error}]✗ ${reason}[/]`;
     }
     if (t.kind === 'replace') {
-      return ` | from pool: ${esc(srcTitle)} → [bold yellow]replace[/] ${esc(t.occupantId)} (col ${t.columnIndex + 1})`;
+      return ` | from pool: ${esc(srcTitle)} → [bold ${th.warning}]replace[/] ${esc(t.occupantId)} (col ${t.columnIndex + 1})`;
     }
     if (t.kind === 'new_column') {
-      return ` | from pool: ${esc(srcTitle)} → [bold green]new column[/] at position ${t.position + 1}`;
+      return ` | from pool: ${esc(srcTitle)} → [bold ${th.success}]new column[/] at position ${t.position + 1}`;
     }
     const clampSuffix = t.clamp ? ` [dim](clamped — ${esc(t.clamp)})[/]` : '';
-    return ` | from pool: ${esc(srcTitle)} → [bold green]insert[/] at col ${t.columnIndex + 1}:${t.index}${clampSuffix}`;
+    return ` | from pool: ${esc(srcTitle)} → [bold ${th.success}]insert[/] at col ${t.columnIndex + 1}:${t.index}${clampSuffix}`;
   }
   const slice = _slice();
   const all = slice ? mpool.allPanesInColumns(slice.arrange) : [];

@@ -24,6 +24,7 @@ const fs = require('fs');
 const { addContentTab, updateContentTabLines } = require('../hosts/feature-host');
 const { loadFile, DEFAULT_MAX_BYTES, DEFAULT_HEX_AFTER } = require('../io/file-loader');
 const { esc } = require('../leaves/text/ansi');
+const { theme } = require('../leaves/infra/themes');
 const { getModel } = require('../model/store');
 const openTarget = require('./open-target');
 
@@ -53,7 +54,7 @@ function openHostFileAsTab(filepath, opts = {}) {
     require('../leaves/infra/render-queue').scheduleRender();
   }).catch(err => {
     updateContentTabLines(originGroup, key, [
-      '[red]Failed to load:[/]', '', `[dim]${esc(err.message)}[/]`,
+      `[${theme().error}]Failed to load:[/]`, '', `[dim]${esc(err.message)}[/]`,
     ]);
     require('../leaves/infra/render-queue').scheduleRender();
   });

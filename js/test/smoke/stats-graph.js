@@ -105,6 +105,9 @@ describe('stats smoke — write-boundary downgrade (P3) on real output', () => {
   paint.setColorDepth('truecolor');
 
   it('no 38;2 escapes at depth 16', () => {
+    // This assertion caught a REAL bypass on its first run: footer.js wrote
+    // stdout directly, skipping paint's depth funnel — invisible while the
+    // footer was 16-color, a leak the moment it became a hex pair (3b).
     assert(!/38;2;/.test(lo.raw), 'truecolor quantized away');
   });
   it('quantized base-16 colors present instead', () => {

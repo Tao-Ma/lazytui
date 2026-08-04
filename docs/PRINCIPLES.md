@@ -140,24 +140,33 @@ and breaking `visibleLen()` width calculation, misaligning borders.
 
 `esc()` replaces `[` → `\[`. Defined in `js/leaves/text/ansi.js` (a pure leaf).
 
-## 8. Selected lines: plain text in `[reverse]`, no inner markup
+## 8. Selected lines: plain text in the `selected` tag, no inner markup
 
-Selected/highlighted lines use `[reverse]` with NO closing `[/]` —
-the panel renderer's padding spaces extend the highlight to fill
-the full line width. A `[/]` reset before the right border stops
-the bleed.
+Selected/highlighted lines open with `[${theme().selected}]` — a
+fg/bg hex pair on the hex themes since the truecolor arc 3b,
+`reverse` on `minimal` — with NO closing `[/]`: the panel renderer's
+padding spaces extend the highlight (the pair's background, or the
+reverse) to fill the full line width. A `[/]` reset before the right
+border stops the bleed.
 
 **Rule: no `[/]`, `[dim]`, `[green]`, or any markup inside a
-`[reverse]` line.** Any `[/]` (ANSI reset) kills the reverse.
+selected line.** Any `[/]` (ANSI reset) kills the highlight.
 
 ```javascript
-// WRONG — [green]●[/] resets the reverse mid-line
-return `[reverse] [green]●[/] ${name}`;
+// WRONG — [green]●[/] resets the highlight mid-line
+return `[${theme().selected}] [green]●[/] ${name}`;
 
 // RIGHT — plain text only, colors on unselected items
-if (selected) return `[reverse] ● ${esc(name)}`;
+if (selected) return `[${theme().selected}] ● ${esc(name)}`;
 return ` [green]●[/] ${esc(name)}`;
 ```
+
+Two consumers LEAN on this exact shape — keep them in mind before
+bending the rule: `select-core.highlightLine` detects a leading
+selected tag to XOR mouse-selection spans against the row (the panel
+layer threads `theme().selected` in as `baseTag`; the leaf stays
+theme-free), and hardcoding `[reverse]` instead of the slot leaves a
+row un-themed on the hex themes.
 
 ## 9. Components read state, they don't hold it
 

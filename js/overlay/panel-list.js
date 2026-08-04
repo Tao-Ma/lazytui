@@ -19,7 +19,7 @@
 
 const { esc, visibleLen, stripMarkup } = require('../leaves/text/ansi');
 const { renderOverlay, truncate, viewportDims } = require('../leaves/render/draw');
-const { getInstanceSlice } = require('../panel/api');
+const { getInstanceSlice, theme } = require('../panel/api');
 const mpool = require('../leaves/wm/pool');
 
 // Side-by-side overlay sizing — middle ground between the v0.6 Phase 4
@@ -45,6 +45,7 @@ function _slice() { return getInstanceSlice('layout'); }
  *  Items truncated to fit `w` columns of visible width. Returns rich-
  *  markup strings; renderOverlay handles ANSI conversion. */
 function _buildListLines(items, cursor, w) {
+  const t = theme();
   const lines = [];
   const placedCount = items.filter(it => it.status !== 'hidden').length;
 
@@ -72,11 +73,13 @@ function _buildListLines(items, cursor, w) {
     const coloredMarker = it.status === 'essential'
       ? '[dim]●[/]'
       : it.status === 'placed'
-        ? '[green]●[/]'
-        : '[yellow]○[/]';
+        ? `[${t.success}]●[/]`
+        : `[${t.warning}]○[/]`;
     if (i === cursor) {
-      // Single [reverse]…[/] wrapping the whole label — no inner [/].
-      lines.push(`[reverse]> ${markerChar}  ${idCol} ${typeCol} ${titleCol}[/]`);
+      // Single selected-tag wrap (§8: theme slot, no inner [/]) — closed
+      // here rather than run-to-EOL because SEP + preview follow on the
+      // same composed row.
+      lines.push(`[${t.selected}]> ${markerChar}  ${idCol} ${typeCol} ${titleCol}[/]`);
     } else {
       lines.push(`  ${coloredMarker}  ${idCol} ${typeCol} ${titleCol}`);
     }
@@ -156,8 +159,9 @@ function _buildPreviewLines(entry, w, h, arrange) {
     return lines;
   }
   // Hidden entry — render on demand.
+  const t = theme();
   const renderer = _rendererFor(entry.type);
-  if (!renderer) return [`[red](no renderer for type '${esc(entry.type)}')[/]`];
+  if (!renderer) return [`[${t.error}](no renderer for type '${esc(entry.type)}')[/]`];
   const panel = {
     ...(entry.config || {}),
     id: entry.id,
@@ -177,7 +181,7 @@ function _buildPreviewLines(entry, w, h, arrange) {
   try {
     out = renderer(panel, renderW, h);
   } catch (e) {
-    return [`[red](preview error)[/]`, `[red]${esc((e && e.message) || String(e))}[/]`];
+    return [`[${t.error}](preview error)[/]`, `[${t.error}]${esc((e && e.message) || String(e))}[/]`];
   }
   if (typeof out !== 'string') return ['[dim](empty preview)[/]'];
   return out.split('\n').slice(0, h);

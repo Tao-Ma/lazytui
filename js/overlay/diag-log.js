@@ -39,7 +39,9 @@ const CODE_W = 16;       // visible width reserved for the code column
 // terminals render 2-wide while charWidth/@xterm score it 1 (see the charWidth
 // truth-function notes). '!' warn / '✕' error are both reliably width-1.
 const LEVEL_GLYPH = { warn: '!', error: '✕' };
-const LEVEL_COLOR = { warn: 'yellow', error: 'red' };
+// Level → theme SLOT name (resolved lazily at render — the palette can
+// change at runtime; truecolor arc 3a).
+const LEVEL_SLOT = { warn: 'warning', error: 'error' };
 
 function _fmtAge(t, now) {
   const s = Math.max(0, Math.floor((now - t) / 1000));
@@ -93,12 +95,13 @@ function renderDiagLog(now) {
       const ev = list[idx];
       if (!ev) { lines.push(''); continue; }
       const glyph = LEVEL_GLYPH[ev.level] || '!';
-      const color = LEVEL_COLOR[ev.level] || 'yellow';
+      const t = require('../leaves/infra/themes').theme();
+      const color = t[LEVEL_SLOT[ev.level] || 'warning'];
       const age = _fmtAge(ev.t, now).padStart(TIME_W);
       const code = esc(ev.code).slice(0, CODE_W).padEnd(CODE_W);
       const message = _msg(ev.message, msgW);
       lines.push(idx === cursor
-        ? `[reverse]${glyph} ${age} ${code} ${message}[/]`
+        ? `[${t.selected}]${glyph} ${age} ${code} ${message}[/]`
         : `[${color}]${glyph}[/] [dim]${age}[/] [dim]${code}[/] ${message}`);
     }
   }

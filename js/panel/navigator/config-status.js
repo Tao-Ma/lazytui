@@ -353,11 +353,12 @@ function getInfo(item) {
  *  projectDir (was S), spawns git synchronously — run by the cfgStatusDiff
  *  effect on Enter, not in update(). */
 function diffFor(item, branch, projectDir) {
+  const t = theme();
   const localAbs = path.resolve(projectDir, item.path);
   const header = [`[bold]${esc(item.path)}[/]`, ''];
 
   if (item.status === STATUS_MATCHES) {
-    return [...header, `[green]${item.status} matches branch "${branch}" — no diff[/]`];
+    return [...header, `[${t.success}]${item.status} matches branch "${branch}" — no diff[/]`];
   }
   if (item.status === STATUS_UNKNOWN) {
     return [...header, `[dim]${item.status} declared but absent on both sides[/]`];
@@ -377,7 +378,7 @@ function diffFor(item, branch, projectDir) {
   if (item.status === STATUS_BRANCH_ONLY) {
     const r = spawnSync('git', ['show', `${branch}:${item.path}`], { cwd: projectDir, encoding: 'utf8' });
     if (r.status !== 0) {
-      return [...header, `[red](git show "${branch}:${item.path}" failed)[/]`, ...(r.stderr || '').split('\n').map(esc)];
+      return [...header, `[${t.error}](git show "${branch}:${item.path}" failed)[/]`, ...(r.stderr || '').split('\n').map(esc)];
     }
     const lines = r.stdout.split('\n').slice(0, 200).map(esc);
     return [...header, `[bold]${item.status} branch-only — local missing[/]`, '', ...lines];
@@ -387,7 +388,7 @@ function diffFor(item, branch, projectDir) {
   const branchFile = path.join(tmp, 'branch');
   try {
     const sh = spawnSync('sh', ['-c', `git show '${branch}:${item.path}' > '${branchFile}'`], { cwd: projectDir, encoding: 'utf8' });
-    if (sh.status !== 0) return [...header, `[red](git show failed)[/]`, ...(sh.stderr || '').split('\n').map(esc)];
+    if (sh.status !== 0) return [...header, `[${t.error}](git show failed)[/]`, ...(sh.stderr || '').split('\n').map(esc)];
     const d = spawnSync('git', ['diff', '--no-index', '--', branchFile, localAbs], { encoding: 'utf8' });
     const out = (d.stdout || '').split('\n').map(esc);
     return [...header, `[bold]${item.status} differs — branch vs local[/]`, '', ...out];

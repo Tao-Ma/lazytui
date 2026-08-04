@@ -17,7 +17,6 @@
 'use strict';
 
 const { RESET, richToAnsi, esc, visibleLen, wrapColor } = require('../leaves/text/ansi');
-const { stdout } = require('../io/term');
 const { multiSelCount } = require('../panel/nav-state');
 const { theme } = require('../leaves/infra/themes');
 const { truncate, viewportDims } = require('../leaves/render/draw');
@@ -87,7 +86,7 @@ function footerKeys(model) {
   }
   if (md.freeConfigMode) {
     const layoutSlice = getInstanceSlice('layout');
-    const dirty = (layoutSlice && layoutSlice.dirty) ? ' | [yellow]• unsaved (:save-layout)[/]' : '';
+    const dirty = (layoutSlice && layoutSlice.dirty) ? ` | [${theme().warning}]• unsaved (:save-layout)[/]` : '';
     return ` Free Config | drag/resize | J/K reorder | ←→ swap col | +/- col/detail · [/] panel h | space collapse | t rename | w panel list | u undo | C-r redo | :save-layout | q exit${getFreeConfigFooter()}${dirty}`;
   }
   if (md.menuOpen)   return bindings.footerFor('menuOpen');
@@ -128,6 +127,7 @@ function renderFooter(model = getModel()) {
   // footer first would flicker on every keystroke as renderCmdline() then
   // overwrites it.
   if (model.modes.cmdMode) return;
+  const t = theme();
   const { cols: COLS, rows: ROWS } = viewportDims();
   const inModal = modes.isModal(model.modes);
   const layoutSlice = getInstanceSlice('layout') || { viewMode: 'normal', dirty: false };
@@ -149,7 +149,7 @@ function renderFooter(model = getModel()) {
     // reminds them `:save-layout` exists. Free-config footer adds
     // its own dirty marker in footerKeys() to keep modal layout
     // self-contained.
-    if (layoutSlice.dirty) keys += ` | [yellow]• unsaved (:save-layout)[/]`;
+    if (layoutSlice.dirty) keys += ` | [${t.warning}]• unsaved (:save-layout)[/]`;
   }
 
   // Component footer contributions (Phase 5 — viewContributions slots
@@ -176,7 +176,7 @@ function renderFooter(model = getModel()) {
   const layoutNotice = layoutSlice.freeConfig && layoutSlice.freeConfig.notice;
   if (layoutNotice) {
     const kind = (layoutSlice.freeConfig && layoutSlice.freeConfig.noticeKind) || 'error';
-    const color = kind === 'info' ? 'bold green' : 'bold red';
+    const color = kind === 'info' ? `bold ${t.success}` : `bold ${t.error}`;
     keys += ` | [${color}]${esc(layoutNotice)}[/]`;
   }
 
@@ -185,7 +185,7 @@ function renderFooter(model = getModel()) {
   // Cleared by `:dismiss-warnings` or next config reload.
   const bw = layoutSlice.bootWarnings;
   if (bw && bw.length > 0) {
-    keys += ` | [yellow]! ${bw.length} config warning(s) (:dismiss-warnings)[/]`;
+    keys += ` | [${t.warning}]! ${bw.length} config warning(s) (:dismiss-warnings)[/]`;
   }
 
   // Right tail: footer:right + visual-select tag + view-mode tag.
@@ -226,7 +226,12 @@ function renderFooter(model = getModel()) {
   // renderPanel's title fix.
   const footerMarkup = wrapColor(theme().footer,
     `${keys}${padding}${rightTail}${selectTag}${modeTag}`);
-  stdout.write(`\x1b[${ROWS};1H` + richToAnsi(footerMarkup) + RESET);
+  // Truecolor arc 3b — RETURN the ansi instead of writing it: paint.js owns
+  // the stdout seam and routes every frame byte through its depth-adapting
+  // _emit funnel (docs/truecolor.md P3). A direct write here bypassed the
+  // downgrade — invisible while the footer was 16-color ('dim reverse'),
+  // caught by the stats smoke the moment the footer became a hex pair.
+  return `\x1b[${ROWS};1H` + richToAnsi(footerMarkup) + RESET;
 }
 
 module.exports = { footerKeys, renderFooter };

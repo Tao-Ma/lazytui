@@ -148,8 +148,10 @@ describe('[immutable] leaves/text/search.js', () => {
       () => ms.decorateWindow(lines, matches, 0, 0),
       lines,
     );
-    assert(out[0].includes('[reverse][yellow]'), 'active match reverse-highlighted');
-    assert(out[1].includes('[yellow]') && !out[1].includes('[reverse]'), 'inactive match plain yellow');
+    // Leaf DEFAULTS ('reverse yellow' one tag since the truecolor arc 3a);
+    // production threads theme().match/match_current through the callers.
+    assert(out[0].includes('[reverse yellow]'), 'active match current-highlighted');
+    assert(out[1].includes('[yellow]') && !out[1].includes('[reverse yellow]'), 'inactive match plain match tag');
   });
 
   it('decorateWindow with offset == whole-buffer decorate then slice (A3 byte-identity)', () => {

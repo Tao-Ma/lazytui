@@ -86,8 +86,12 @@ function decorateLines(lines, slice, opts) {
   const d = decorationFor(slice, full);
   if (!d) return lines;
   // Pure highlight geometry lives in the leaf now (ms.decorateWindow — mirror of
-  // select-core#decorateWindow); this facade owns only the impure resolution.
-  return ms.decorateWindow(lines, d.matches, d.activeIdx, offset);
+  // select-core#decorateWindow); this facade owns only the impure resolution —
+  // including the theme read (truecolor arc 3a): the leaf takes the match /
+  // match_current tags as data, the facade resolves them per render.
+  const t = require('../../leaves/infra/themes').theme();
+  return ms.decorateWindow(lines, d.matches, d.activeIdx, offset,
+    { match: t.match, current: t.match_current });
 }
 
 /**

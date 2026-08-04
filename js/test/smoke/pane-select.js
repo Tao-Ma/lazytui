@@ -51,6 +51,11 @@ function paneIdOf(type) {
 const PORTS = paneIdOf('component-ports');
 const rawFrame = () => { paint.forceFullRepaint(); return sm.capture(() => sm.render()).frame; };
 const raw = () => { paint.forceFullRepaint(); return sm.capture(() => sm.render()).raw; };
+// Raw-byte assertions below compare against richToAnsi's canonical truecolor
+// compile — pin the depth so the harness env (e.g. TERM=tmux-256color → 256)
+// doesn't downgrade the frame bytes first. Depth adaptation has its own
+// end-to-end proof in smoke/stats-graph.js.
+paint.setColorDepth('truecolor');
 const bounds = (paneId) => visibleBoundsFor(api.getInstanceSlice('layout'), paneId, route.resolveViewerPaneId());
 
 // Drive the real mouse pipeline. Content coords → 1-based SGR: the content
@@ -77,8 +82,15 @@ describe('[1] a drag selects a substring and copies it to the register', () => {
     assert(own && own.sel.active && own.paneId === PORTS, `selection active on ports: ${JSON.stringify(own)}`);
     eq(getModel().register.history[0], 'miner', 'selected text pushed to the register');
   });
-  it('the selected span renders reverse-highlighted', () => {
-    assert(/\x1b\[7m\s*miner/.test(raw()), 'reverse SGR wraps "miner"');
+  it('the selected span renders in the theme selected style', () => {
+    // 3b — the span carries theme().selected (a fg/bg pair on hex themes,
+    // reverse on minimal); assert the tag's COMPILED SGR wraps the span so
+    // the smoke stays correct under any theme the harness boots with.
+    const { theme } = require('../../leaves/infra/themes');
+    const { richToAnsi } = require('../../leaves/text/ansi');
+    const selSgr = richToAnsi(`[${theme().selected}]`)
+      .replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    assert(new RegExp(`${selSgr}\\s*miner`).test(raw()), 'selected SGR wraps "miner"');
   });
 });
 

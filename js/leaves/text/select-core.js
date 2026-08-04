@@ -119,29 +119,35 @@ function selectedTextFrom(lines, sel) {
  * for a transient selection that fidelity loss is acceptable. Literal `[` in the
  * plain projection is re-escaped so stray brackets aren't read as markup.
  */
-function highlightLine(line, startCol, endCol) {
-  // A selected/cursor row is emitted as a LEADING `[reverse]` running to end of
-  // line (theme().selected === 'reverse'; no inner markup, PRINCIPLES §8). Naively
-  // stripping it and re-reversing only the selected span would (a) wipe the row's
-  // highlight everywhere outside the span and (b) leave the span reverse-on-reverse
-  // = no contrast. So detect that base and XOR: keep reverse OUTSIDE the selection,
-  // drop it INSIDE — the selected span reads as normal video, standing out against
-  // the reversed row. (Other markup is still dropped; for a transient selection
-  // that fidelity loss is acceptable, as before.)
+function highlightLine(line, startCol, endCol, baseTag = 'reverse') {
+  // A selected/cursor row is emitted as a LEADING selected tag running to end
+  // of line (`[${theme().selected}]` — 'reverse' on minimal, a fg/bg hex pair
+  // on the hex themes since the truecolor arc 3b; no inner markup, PRINCIPLES
+  // §8). The panel layer threads the active tag in as `baseTag` — this leaf
+  // stays theme-free (purity wall), and the 'reverse' default preserves the
+  // historical behavior for direct callers. Naively stripping the base and
+  // re-styling only the selected span would (a) wipe the row's highlight
+  // everywhere outside the span and (b) leave the span base-on-base = no
+  // contrast. So detect that base and XOR: keep the base style OUTSIDE the
+  // selection, drop it INSIDE — the selected span reads as normal video,
+  // standing out against the highlighted row. (Other markup is still
+  // dropped; for a transient selection that fidelity loss is acceptable.)
   //
-  // CONTRACT: `baseReverse` treats a leading `[reverse]` as "this whole row is
-  // reversed", which is EXACT for every reversed-row producer (all navigator +
-  // fabric selected rows: leading `[reverse]`, UNCLOSED, to EOL, content `esc()`'d
-  // so no inner `[/]`). A precise "no inner close tag" test is deliberately NOT
-  // used: esc()'d content may contain a literal `\[/]` whose substring is `[/]`,
-  // which would false-negative a genuine reversed row. If a future caller emits a
-  // row that OPENS then CLOSES reverse before EOL, this proxy would XOR the wrong
-  // region — keep such rows out, or revisit here.
+  // CONTRACT: `baseSelected` treats a leading base tag as "this whole row is
+  // highlighted", which is EXACT for every selected-row producer (all
+  // navigator + fabric selected rows: leading `[${theme().selected}]`,
+  // UNCLOSED, to EOL, content `esc()`'d so no inner `[/]`). A precise "no
+  // inner close tag" test is deliberately NOT used: esc()'d content may
+  // contain a literal `\[/]` whose substring is `[/]`, which would
+  // false-negative a genuine highlighted row. If a future caller emits a row
+  // that OPENS then CLOSES the base before EOL, this proxy would XOR the
+  // wrong region — keep such rows out, or revisit here.
   //
-  // Note: XOR is RELATIVE to each row's own base, so a multi-row drag shows the
-  // selected span reversed on normal rows but normal-video on the (reversed) cursor
-  // row — intentional (the span always contrasts its row), not a uniformity bug.
-  const baseReverse = /^\[reverse\]/.test(line);
+  // Note: XOR is RELATIVE to each row's own base, so a multi-row drag shows
+  // the selected span highlighted on normal rows but normal-video on the
+  // (highlighted) cursor row — intentional (the span always contrasts its
+  // row), not a uniformity bug.
+  const baseSelected = line.startsWith(`[${baseTag}]`);
   const plain = stripMarkup(line);
   const lineW = displayWidth(plain);
   if (lineW === 0) return line;
@@ -155,15 +161,15 @@ function highlightLine(line, startCol, endCol) {
   const before = chars.slice(0, a).join('');
   const sel    = chars.slice(a, b).join('');
   const after  = chars.slice(b).join('');
-  if (baseReverse) {
-    // XOR the reverse bit across the selected span. Trailing `[reverse]` is left
-    // open (no `[/]`) so it runs through the panel's end-of-line padding, matching
-    // the row's original full-width highlight bar.
-    const bwrap = before ? `[reverse]${esc(before)}[/]` : '';
-    const awrap = after  ? `[reverse]${esc(after)}`     : '';
+  if (baseSelected) {
+    // XOR the base style across the selected span. The trailing base tag is
+    // left open (no `[/]`) so it runs through the panel's end-of-line
+    // padding, matching the row's original full-width highlight bar.
+    const bwrap = before ? `[${baseTag}]${esc(before)}[/]` : '';
+    const awrap = after  ? `[${baseTag}]${esc(after)}`     : '';
     return `${bwrap}${esc(sel)}${awrap}`;
   }
-  return `${esc(before)}[reverse]${esc(sel)}[/]${esc(after)}`;
+  return `${esc(before)}[${baseTag}]${esc(sel)}[/]${esc(after)}`;
 }
 
 /**
@@ -172,7 +178,7 @@ function highlightLine(line, startCol, endCol) {
  * i+offset). Lines outside the range pass through unchanged. Returns `lines`
  * as-is when there is no active selection.
  */
-function decorateWindow(lines, sel, offset = 0) {
+function decorateWindow(lines, sel, offset = 0, baseTag = 'reverse') {
   const r = selectedRangeOf(sel);
   if (!r) return lines;
   return lines.map((line, i) => {
@@ -180,7 +186,7 @@ function decorateWindow(lines, sel, offset = 0) {
     if (abs < r.startLine || abs > r.endLine) return line;
     const s = (abs === r.startLine) ? r.startCol : 0;
     const e = (abs === r.endLine)   ? r.endCol   : Infinity;
-    return highlightLine(line, s, e);
+    return highlightLine(line, s, e, baseTag);
   });
 }
 

@@ -259,7 +259,7 @@ function _getInfoFor(item, paneId, hardcoded) {
     const cwdPrefix = source === 'docker' && panel && panel.container
       ? `${esc(panel.container)}:` : '';
     lines.push(`[bold]${cwdPrefix}${esc(b.cwd || '?')}[/]`);
-    if (b.lastError) lines.push('', `[red]${esc(b.lastError)}[/]`);
+    if (b.lastError) lines.push('', `[${theme().error}]${esc(b.lastError)}[/]`);
     lines.push('');
   }
   if (!item) return lines;

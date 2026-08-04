@@ -11,7 +11,7 @@ const { spawn } = require('child_process');
 const fs = require('fs');
 const { appendViewerLines } = require('../../panel/nav-state');
 const { streamCommand, killAll } = require('./stream');
-const { getInstanceSlice, wrap } = require('../../panel/api');
+const { getInstanceSlice, wrap, theme } = require('../../panel/api');
 const { dispatchMsg, applyMsg } = require('./loop');
 const { getModel } = require('../../model/store');
 const { esc } = require('../../leaves/text/ansi');
@@ -134,7 +134,7 @@ function doRun(actionKey, action, args = []) {
     const body = `#!/bin/sh\nrm -- "$0"\ncd ${getModel().projectDir} && ${cmd}\n`;
     fs.writeFileSync(tmp, body, { mode: 0o700 });
     if (_spawnUsesTmux()) {
-      appendViewerLines(`[dim]$ ${esc(actionKey)}[/]\n[yellow]Spawned in new tmux window.[/]`);
+      appendViewerLines(`[dim]$ ${esc(actionKey)}[/]\n[${theme().warning}]Spawned in new tmux window.[/]`);
       const argStr = args.length ? ' ' + args.map(shQuote).join(' ') : '';
       spawn('tmux', ['new-window', '-n', actionKey, `${tmp}${argStr}; read`], { detached: true, stdio: 'ignore' });
       history.start(actionKey, cmd, { detached: true });
@@ -226,7 +226,7 @@ function doRun(actionKey, action, args = []) {
   }
 
   if (actionType === 'background') {
-    appendViewerLines(`[dim]$ ${esc(actionKey)}[/]\n[yellow]Started in background.[/]`);
+    appendViewerLines(`[dim]$ ${esc(actionKey)}[/]\n[${theme().warning}]Started in background.[/]`);
     // -- delimiter so $0 = "--", $1 = first arg, $@ = arg list (POSIX).
     const bgProc = spawn('sh', ['-c', cmd, '--', ...args], { cwd: getModel().projectDir, detached: true, stdio: 'ignore' });
     history.start(actionKey, cmd, { detached: true });
@@ -272,7 +272,7 @@ function doRunFabric(actionKey, action) {
   });
   if (!ready) {
     appendViewerLines(`[dim]$ ${esc(actionKey)}[/]\n` +
-      missing.map(m => `[yellow]not ready: ${m.reason}[/]`).join('\n'));
+      missing.map(m => `[${theme().warning}]not ready: ${m.reason}[/]`).join('\n'));
     return;
   }
 
@@ -281,7 +281,7 @@ function doRunFabric(actionKey, action) {
     argv = fillCommand(compileCommand(action.run), values);
   } catch (e) {
     // e.g. a list value bound to an EMBEDDED hole (M4) — surface, don't run.
-    appendViewerLines(`[dim]$ ${esc(actionKey)}[/]\n[red]${esc(e.message)}[/]`);
+    appendViewerLines(`[dim]$ ${esc(actionKey)}[/]\n[${theme().error}]${esc(e.message)}[/]`);
     return;
   }
   // cmd string is display/history only; opts.argv is the executed vector. opts.fabric
