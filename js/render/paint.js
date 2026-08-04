@@ -354,8 +354,8 @@ function _safeRender(panel, w, h, opts) {
     // contained a literal `[` would otherwise become embedded markup
     // and confuse the panel renderer's parser. The OUTER brackets
     // around "render error: …" must also be escaped — without `\[`
-    // and `\]`, richToAnsi treats the whole thing as a tag, looks it
-    // up in CODES (miss), and emits RESET, swallowing the message.
+    // and `\]`, richToAnsi treats the whole thing as a tag whose atoms
+    // the parser doesn't know, and emits RESET, swallowing the message.
     //
     // v0.6.3 P2 — expand from one-line marker to h-line block. The
     // error message stays on row 0; rows 1..h-1 are blank-of-width-w
@@ -719,9 +719,18 @@ function render(model) {
   // (mirrors `now = model.now` above), NOT an effect-synced store: replaying the
   // Msg log reconstructs model.theme → this sync reproduces the palette, so the
   // frame is replay-safe of the theme. (Was the `set_theme` effect, which replay
-  // skips; that effect + its Cmd are retired. theme()'s readers are all
-  // render-time, so syncing here covers them; setTheme is a cheap THEMES[name] +
+  // skips; that effect + its Cmd are retired. setTheme is a cheap THEMES[name] +
   // 2 field writes.)
+  //
+  // theme()'s readers are (a) render-time — fully covered by this sync — and,
+  // since the truecolor arc 3a sweep, (b) SHELL-time: effect handlers /
+  // process callbacks / cmdline run handlers that bake slot values into
+  // appended content lines. Class (b) reads the palette as of the LAST
+  // frame; a shell event landing between a set_theme dispatch and its next
+  // frame bakes the previous theme's hex into that one content line —
+  // bounded, sub-frame, and replay-safe (the bytes ride the recorded Msg;
+  // append-time snapshots are the arc's accepted design; never read in a
+  // reducer). Noted per the 2026-08 pre-release review.
   setTheme(model.theme);
   // `model` is the TEA root model (js/model/store.js; reduced by
   // js/dispatch/update/reducer.js), threaded in by the owner (the program).

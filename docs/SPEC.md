@@ -80,7 +80,8 @@ Read the sections in this order. Each is the original `.md` file from
 `docs/`, also shipped on disk for human reading.
 
 1. **PRINCIPLES** — invariants. "YAML defines, TUI renders." Type-based
-   dispatch. Markup safety rules (`esc()`, `[reverse]` no inner markup).
+   dispatch. Markup safety rules (`esc()`; selected rows use the theme's
+   `selected` slot with no inner markup).
    The Component discipline + the "two homes for state" question. Read
    this first; it disciplines every other doc.
 2. **PLUGINS** — the Component contract. Module shape, panel types,
@@ -131,6 +132,7 @@ suite (`js/test/test-parser-*.js`).
 - "Producer" / "consumer" refer to hub roles. "Component author" /
   "user" refer to the human writing config.
 - All Rich markup examples follow PRINCIPLES §7–8 — `[` always escaped
-  in dynamic strings, `[reverse]` rows have no inner markup.
+  in dynamic strings; selected rows open with the theme's `selected`
+  slot and carry no inner markup.
 
 ---

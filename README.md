@@ -218,7 +218,8 @@ for "the same thing but headless."
 | Diagnostics window (`<leader> e`, v0.6.4+) | Modal listing the warnings (`⚠`) and errors (`✕`) raised this session — boot config warnings, runtime errors, and multi-instance footgun guards. `j`/`k`/`g`/`G` nav, `y` copies the highlighted entry to the register + clipboard, `c` clears, `s` saves to `lazytui-diagnostics.json`, Esc closes. Backed by a dedicated buffer separate from the replay event-log so diagnostics aren't evicted by input noise. |
 | Navigation history (`<leader> o` / `<leader> i`, v0.6.7+) | Browser/vim-jumplist back (`o` = older) / forward (`i` = newer) over visited locations — group + focused pane + active tab + selected item, captured by stable identity so the cursor lands on the same item after a list reorders. A location whose group is gone is pruned and the travel continues. |
 | Configurable keys (v0.6.7+) | Remap normal-mode single keys via a YAML `keymap:` block (`key → verb`, `noop` to disable, or `{action\|command}` targets); the focus/mode-branching keys (nav / `return` / `escape` / `x` / …) stay reserved. `lazytui --keymap` dumps the verb catalog + reserved keys + effective bindings for discovery (AI-config-friendly). See [docs/keymap.md](docs/keymap.md). |
-| Global user config | `~/.config/lazytui/config.yml` (XDG-aware) carries your app-behavior preferences — theme, keys, keymap, mouse, context-menu entries, selection default, editor — layered under every project's config (a project setting wins per key). A broken global file warns and is ignored, never fatal. See [docs/global-config.md](docs/global-config.md). |
+| Global user config | `~/.config/lazytui/config.yml` (XDG-aware) carries your app-behavior preferences — theme, keys, keymap, mouse, context-menu entries, selection default, editor, color depth — layered under every project's config (a project setting wins per key). A broken global file warns and is ignored, never fatal. See [docs/global-config.md](docs/global-config.md). |
+| Truecolor + graphs (v0.6.13+) | The 6 themes carry their schemes' real hex palettes (24-bit color, auto-detected; quantizes cleanly to 256/16 — `color_depth:` / `LAZYTUI_COLOR` override); stats panes draw braille graphs colored by value through a per-theme gradient, with current-value meters on percent metrics. |
 | Edit in your editor | `e` on a files row, `:edit <path>`, or `:config` / `:config global` opens your editor (`editor:` config / `$VISUAL` / `$EDITOR` / `vi`) in an embedded terminal tab — auto-zoomed, back where you were on quit. An open doc tab showing the file refreshes on a clean exit; config edits remind you they apply on the next start. |
 | 6 themes + free-config mode | `:free-config` opens an interactive layout editor — drag/swap/resize/spawn columns and panels, hide/show from a pool of declared panel definitions, save back to YAML. |
 | `--spec` flag | Prints the plugin-authoring bundle for AI agents (every rule in one file). |
@@ -229,8 +230,8 @@ for "the same thing but headless."
   `@xterm/headless` for embedded PTY tabs, `js-yaml` for config parsing,
   `eastasianwidth` (UAX #11 wide) + `wcwidth` (POSIX zero-width) for the
   Unicode character-width truth function.
-- **Tests**: JS unit suites under `js/test/` (166 files), an opt-in
-  pre-release smoke harness under `js/test/smoke/` (14 scenarios), and
+- **Tests**: JS unit suites under `js/test/` (173 files), an opt-in
+  pre-release smoke harness under `js/test/smoke/` (15 scenarios), and
   a live integration harness under `test/`. See [docs/TESTING.md](docs/TESTING.md).
 - **Two worked demos** at the time of initial public release; both ship
   with the human-authored intent (`.agent-prompt.md`) checked in so the

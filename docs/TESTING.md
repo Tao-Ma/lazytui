@@ -68,9 +68,6 @@ The scenarios target the bug class the unit suite misses:
 - **`hit-zones.js`** — `[x]` close glyph painted column matches
   `tabBounds.closeX` (paint-vs-hittest cross-check), plus off-by-
   one brackets on both sides of `closeX`.
-- **`action-tab.js`** — routed-stream action tab: producer
-  survives switch-away, buffer keeps growing, switch-back restores
-  with scroll bottom-pinned.
 - **`drag.js`** — free-config in-grid drag driven through
   `dispatchMsg(wrap('layout', free_config_mouse_*))` end-to-end.
 - **`boot.js`** — the deterministic first frame renders (guards the
@@ -83,6 +80,20 @@ The scenarios target the bug class the unit suite misses:
   strict-miss / `_primaryByKind` class).
 - **`mouse-raw-sgr.js`** / **`mouse-gestures.js`** — SGR mouse parsing
   and the gesture→intent mapping (press / double / right / wheel).
+- **`pane-select.js`** — mouse drag-selection end-to-end: register +
+  clipboard push, the selected span carrying the theme's `selected`
+  style in the real frame.
+- **`agent-pane.js`** — `:agent` mint → chrome/status/draft-ghost →
+  a full mock-backend turn streamed into the transcript.
+- **`fabric-panes.js`** — ports/wires panes over a demo fabric:
+  retarget-follows-focus, wire list, not-ready guards.
+- **`replay.js`** — record → fold-the-WAL → reconstructed model
+  equivalence (the replay determinism gate).
+- **`stats-graph.js`** — stats pane end-to-end (truecolor arc): braille
+  graph + gradient color + meter reach the real frame; canonical `38;2`
+  bytes at truecolor depth and ZERO at depth 16 (the write-boundary
+  downgrade proven on real output — this assertion caught two real
+  funnel bypasses, footer and cmdline/pane-menu).
 
 Add a new scenario by dropping a `<name>.js` into `js/test/smoke/`;
 the aggregator at `js/scripts/run-smoke.js` discovers it. Each

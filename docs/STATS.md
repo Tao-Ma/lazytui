@@ -344,7 +344,9 @@ Run via `node js/scripts/run-tests.js -q`.
 - **Y-axis labels.** Dropped from v1 — axis labels eat too much
   horizontal space at typical panel widths (~50 cols). Revisit on
   wider panel slots.
-- **Color-coded thresholds** (CPU > 80% → red).
+- ~~**Color-coded thresholds** (CPU > 80% → red).~~ Shipped in stronger
+  form by the truecolor arc: every column is value-mapped through the
+  theme's `percent` gradient (continuous cool→hot, not a threshold).
 - **Mouse interaction.** Hover-for-value, drag-to-zoom. Rasterizer
   doesn't track per-column source samples.
 - **Multi-line overlay.** "All containers, one line each." Likely a

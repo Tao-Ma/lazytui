@@ -54,11 +54,16 @@ The global file layers UNDER the project config:
 Render color depth (truecolor arc, docs/truecolor.md P3). The pipeline is
 canonically truecolor; this key overrides the DEVICE adaptation applied at
 the write boundary. `auto` (the default) detects from the environment:
-`LAZYTUI_COLOR` env override → `COLORTERM=truecolor|24bit` → `TERM`
-(`*direct*`/`*truecolor*` → truecolor, `*256color*` → 256, else 16). Set an
-explicit `truecolor`/`256`/`16` only when detection gets your terminal
-wrong (e.g. tmux without the RGB capability advertising a truecolor-less
-TERM). Depth never changes the frame — only the emitted bytes.
+`COLORTERM=truecolor|24bit` → `TERM` (`*direct*`/`*truecolor*` →
+truecolor, `*256color*` → 256, else 16). Set an explicit
+`truecolor`/`256`/`16` only when detection gets your terminal wrong (e.g.
+tmux without the RGB capability advertising a truecolor-less TERM).
+
+Precedence: a valid `LAZYTUI_COLOR` env value beats EVERYTHING, including
+an explicit config depth — it's the one-shot "test this terminal at depth
+X" knob (`LAZYTUI_COLOR=16 lazytui …` works even with `color_depth:
+truecolor` configured). Then config, then detection. Depth never changes
+the frame — only the emitted bytes.
 
 The merge happens inside `parse()`: the project config validates STANDALONE
 first (its errors surface unchanged, global file or not), the pre-validated
@@ -72,8 +77,9 @@ never re-reads the file. `--keymap` dumps the effective (merged) bindings.
 A `.json` config is the parser's RESOLVED output shape, so it always carries
 explicit `theme`/`selection` values — the global scalars can't apply there
 (nothing is "absent"); `editor: null` counts as unset, so a global `editor:`
-still lands. The keyed sections (`keys`, `keymap`, `mouse`, `context-menu`)
-layer exactly as they do for YAML.
+still lands, and the stamped `color_depth: 'auto'` likewise counts as unset
+(auto = "no override opinion"). The keyed sections (`keys`, `keymap`,
+`mouse`, `context-menu`) layer exactly as they do for YAML.
 
 ## Failure contract
 

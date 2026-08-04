@@ -64,10 +64,11 @@ function isActive() {
 function typingText() { return _slice()?.search?.typing || ''; }
 
 /**
- * Apply search highlights to a copy of `lines`. All matches get [yellow];
- * the active one gets [reverse][yellow]. Pass-through when no search active.
- * Render-side (reads the detail slice's `search`); composes with
- * select.decorateLines.
+ * Apply search highlights to a copy of `lines`. Matches get the theme's
+ * `match` slot; the active one `match_current` (truecolor arc 3a — this
+ * facade resolves the slots, the pure leaf takes them as data).
+ * Pass-through when no search active. Render-side (reads the detail
+ * slice's `search`); composes with select.decorateLines.
  */
 // A3 (v0.6.7) — `opts.offset`/`opts.full`: decorate only the VISIBLE WINDOW.
 // `lines` is the window (the ~innerH visible rows); `opts.offset` is the window's

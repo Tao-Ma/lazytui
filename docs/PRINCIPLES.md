@@ -739,8 +739,8 @@ Before implementing, verify:
 - [ ] Can you delete the TUI and rebuild it from the YAML alone?
 - [ ] Is every dynamic string passed through `esc()` before markup?
 - [ ] Do static strings with literal `[` use `\[`?
-- [ ] Do selected lines use plain text in `[reverse]` with no inner markup?
-- [ ] Is the `[reverse]` left unclosed (panel renderer adds reset before border)?
+- [ ] Do selected lines use plain text in the `selected` slot (`[${theme().selected}]`, never a hardcoded `[reverse]`) with no inner markup?
+- [ ] Is the selected tag left unclosed (panel renderer adds reset before border)?
 - [ ] Does the Component reference top-level state (`source: files`, top-level vars) rather than redeclaring it inside its own config block?
 - [ ] Is each Component's `render()` idempotent on equal state? (§11)
 - [ ] Does each piece of state live in the right home — Component slice for slice-shaped state with async work, root model for cross-cutting chrome (modes, modal sub-models, currentGroup)? (§12)

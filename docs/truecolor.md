@@ -1,11 +1,23 @@
 # Truecolor — design spec (the v0.6.13 arc)
 
-> **Status:** SPEC FROZEN 2026-08-03 — planning conversation complete
-> (shape + 4 scope decisions user-pinned), no code yet. Three review
-> rounds hardened this spec before freeze: an architecture/TEA/replay
-> recheck (moved depth adaptation out of the pure bottom, §P3) and a
-> perf & test recheck (measured baselines, found two pre-existing
-> hot-path hazards now scoped in as Phase-1 hardening, §"Hardening").
+> **Status:** ALL 3 PHASES LANDED 2026-08-04 + pre-release 4-track
+> review RUN 2026-08-04 (arch/TEA · adversarial code · layout · doc
+> parity). The review found + fixed: 2 HIGH — the H1 fold emitted
+> literal `NaN` on empty extended-SGR params (row-corrupting), and
+> cmdline/pane-menu overlays bypassed the P3 depth funnel (the footer
+> bug class; both now route through draw.writeOut, smoke-pinned) — plus
+> a MED depth-precedence inversion (LAZYTUI_COLOR now beats config, as
+> documented), a dead-exports scanner blind spot (single-line exporters
+> were never scanned; fixed, 16 pre-existing dead exports cleaned), the
+> missing CHANGELOG entry, and a doc-parity sweep. Two pre-existing
+> visible bugs found en route: pane-menu status labels and the footer's
+> search count rendered as NOTHING (unescaped brackets → RESET).
+>
+> Originally SPEC FROZEN 2026-08-03. Three review rounds hardened the
+> spec before freeze: an architecture/TEA/replay recheck (moved depth
+> adaptation out of the pure bottom, §P3) and a perf & test recheck
+> (measured baselines, found two pre-existing hot-path hazards scoped
+> in as Phase-1 hardening, §"Hardening").
 >
 > **Goal:** close the color-depth gap against btop-class TUIs — RGB
 > theme slots, value-mapped gradients, braille graphs, block meters —
@@ -193,9 +205,10 @@ sweep/restyle). Gate: suite 173×2 · smoke 15 · DEAD 0 · SCC `[]` both.
 As built: the selection restyle ATTEMPT SUCCEEDED (scope decision 3) —
 `select-core.highlightLine` parametrized on the base tag, XOR
 mechanics unchanged, PRINCIPLES §8 rewritten; search + text-view
-leaves take highlight tags as parameters (purity wall). Two
-reducer-baked literals in agent.js stay named-color on purpose
-(update() must not read the #D8 cache). Found+fixed: footer.js wrote
+leaves take highlight tags as parameters (purity wall). The CLASS of
+reducer-baked literals in agent.js (the two commented sites plus the
+`_blockLines(…, 'red')` error blocks in `_fold`) stays named-color on
+purpose (update() must not read the #D8 cache). Found+fixed: footer.js wrote
 stdout directly, bypassing the P3 depth funnel — caught by the
 stats smoke's depth-16 assertion; renderFooter now returns its ansi.
 The 3c render-sim drove a quantizer improvement (saturation guard:
@@ -243,15 +256,20 @@ closure.
 
 ## Bench (additions + frozen baselines)
 
-Additions: `richToAnsi` case in `bench-hotpaths.js` (nothing guards
-the 1a rewrite today); truecolor scenarios in `bench-cell-grid.js`
-(styled-row edit, gradient scroll tick); the downgrade transform at
-256/16. A/B runs on the same filesystem (`/tmp`), per the standing
-rule.
+Additions (ALL LANDED): `richToAnsi` cases in `bench-hotpaths.js` [7]
+(named + hex rows — nothing guarded the 1a rewrite before); truecolor
+scenarios in `bench-cell-grid.js` (styled-row edit, gradient scroll
+tick); `downgradeAnsi` in `bench-hotpaths.js` [8] (added at the
+pre-release review, which caught it missing): ~26 µs per ~2.6 KB
+emitted chunk at 16 depth, ~22 µs at 256, identity fast-path
+effectively free at truecolor. A/B runs on the same filesystem
+(`/tmp`), per the standing rule.
 
-Baselines (2026-08-03, dev box, pre-arc tip `43ba148`; probe script:
-scratchpad `bench-truecolor-probe.js`, to be carried into `js/test/`
-during Phase 1):
+Baselines (2026-08-03, dev box, pre-arc tip `43ba148`; the scratchpad
+probe script's cases were folded into the two bench files above rather
+than carried verbatim — probe A → hotpaths [7], probes B/C →
+bench-cell-grid's truecolor scenarios, probe D measured a non-issue
+and dropped):
 
 | Probe | Result |
 |---|---|

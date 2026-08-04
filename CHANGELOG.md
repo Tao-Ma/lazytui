@@ -6,6 +6,46 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Truecolor themes** — the six built-in themes carry their schemes'
+  canonical hex palettes (`minimal` deliberately stays 16-color); markup
+  gains `#rrggbb` / `on #rrggbb` atoms (a tag parser replaces the fixed
+  code table; named tags stay byte-identical). Selected rows and the
+  footer restyle to tuned fg/bg pairs per theme; new semantic slots
+  (`success`/`warning`/`error`/`match`/`match_current`) replace hardcoded
+  color literals across the UI (tripwire-enforced: raw RGB lives only in
+  the theme table and the device palette).
+- **Color depth** — the render pipeline is canonically truecolor with
+  depth adaptation at the write boundary, so frames are byte-identical at
+  every depth. Auto-detected (`COLORTERM`/`TERM`), overridable via
+  `LAZYTUI_COLOR` env (wins) or a new `color_depth:` config key
+  (`auto|truecolor|256|16`, project + global). 256/16 terminals get
+  extended colors quantized; chromatic hues never land on gray at 16.
+- **Stats graphs, btop-style** — braille rendering by default (2 samples
+  per column; per-pane `graph: blocks` opts out), columns colored by value
+  through a per-theme gradient (cool→hot), and an eighth-block
+  current-value meter row for percent metrics.
+
+### Changed
+
+- Search highlights use the theme's `match`/`match_current` slots (the
+  active match reads as dark-on-highlight instead of reverse video).
+- Child-process SGR (including truecolor) is quantized on 256/16-color
+  terminals instead of being emitted raw.
+
+### Fixed
+
+- The `dim reverse` footer style silently rendered as RESET in every
+  theme (latent since the slot existed).
+- Pane-menu status labels (`[here]`/`[hidden]`/`[in col N]`) and the
+  footer's committed-search count rendered as nothing — unescaped
+  brackets parsed as markup tags.
+- A quadratic byte blow-up in the cell-diff on reset-free per-column
+  colored content (one 120-col row could emit 128 KB), an O(row²)
+  CSI-scan allocation, and a literal-`NaN` emission on empty extended-SGR
+  params that corrupted row alignment on real terminals.
+
 ## [0.6.12] — 2026-08-03
 
 ### Added
