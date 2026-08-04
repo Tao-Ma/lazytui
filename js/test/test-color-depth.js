@@ -58,6 +58,15 @@ describe('[2] downgradeAnsi — truecolor identity, 256/16 quantization', () => 
     eq(downgradeAnsi('\x1b[38;2;255;0;0mx', '16'), '\x1b[91mx');
     eq(downgradeAnsi('\x1b[48;2;0;0;0mx', '16'), '\x1b[40mx');
   });
+  it('saturation guard: chromatic inputs never land on white/gray at 16 (3c)', () => {
+    // Pale theme yellow (monokai warn #e6db74) — plain distance picks white;
+    // the guard keeps it in the yellow tier.
+    eq(downgradeAnsi('\x1b[38;2;230;219;116mx', '16'), '\x1b[33mx');
+    // Genuinely gray input still maps to the gray tier.
+    eq(downgradeAnsi('\x1b[38;2;128;128;128mx', '16'), '\x1b[90mx');
+    // Near-white low-saturation input (solarized base2) stays achromatic.
+    eq(downgradeAnsi('\x1b[38;2;238;232;213mx', '16'), '\x1b[37mx');
+  });
   it('38;5 requantizes at 16, passes through at 256', () => {
     eq(downgradeAnsi('\x1b[38;5;196mx', '16'), '\x1b[91mx');
     eq(downgradeAnsi('\x1b[38;5;196mx', '256'), '\x1b[38;5;196mx');

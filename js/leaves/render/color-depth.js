@@ -72,10 +72,19 @@ function _rgbTo256(r, g, b) {
     : 232 + gi;
 }
 
-/** Nearest base-16 SGR param for an RGB triple. */
+// Palette indices that are achromatic (black / white / the two grays).
+const _ACHROMATIC = new Set([0, 7, 8, 15]);
+
+/** Nearest base-16 SGR param for an RGB triple. Saturation guard (truecolor
+ *  arc 3c): a clearly CHROMATIC input never maps to black/white/gray — plain
+ *  Euclidean distance ranks the achromatic entries too close to pale hues
+ *  (e.g. a pale theme yellow landing on white), which reads as "the color
+ *  vanished" at 16 depth. Low-saturation inputs still use all 16. */
 function _rgbTo16(r, g, b, isBg) {
+  const chromatic = Math.max(r, g, b) - Math.min(r, g, b) >= 30;
   let best = 0, bd = Infinity;
   for (let i = 0; i < 16; i++) {
+    if (chromatic && _ACHROMATIC.has(i)) continue;
     const d = _dist2(r, g, b, _PALETTE16[i]);
     if (d < bd) { bd = d; best = i; }
   }
