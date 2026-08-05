@@ -29,6 +29,7 @@ const route = require('../../panel/route');
 const mpane = require('../../leaves/wm/pane');
 const { isChainActive, CHAIN_MODES, suppressesChromeClicks } = require('../../leaves/input/modes');
 const { tokenizeInput } = require('../../leaves/input/tokenize');
+const { kkpToLegacy } = require('../../leaves/input/kkp-decode');
 // v0.6.4 Theme F Phase 2 — mouse gestures route through the shared intent
 // layer (the keyboard side joined in Phase 1). intent.js executes no
 // requires at load time, so this top-level require is load-order-safe
@@ -1233,6 +1234,16 @@ function _dispatchToken(tok) {
   if (tok === '\r' || tok === '\n' || tok === '\r\n') return handleKey('return');
   if (tok === '\x03') { cleanup(); process.exit(0); }
   if (tok === '\x12') return handleKey('ctrl-r');  // Ctrl+R → free-config redo
+
+  // Kitty-keyboard CSI-u key event (`\x1b[<code>;<mods>u`, only arrives once
+  // the protocol is enabled). Normalize back to the legacy byte and re-run the
+  // ladder (D4) — so Esc→\x1b, Ctrl+C→\x03 (quit), Ctrl+R→\x12 (redo). An event
+  // with no legacy equivalent lazytui binds returns null and falls through to
+  // the unknown-escape drop below, matching legacy mode.
+  if (tok.charCodeAt(0) === 0x1b && tok.charCodeAt(tok.length - 1) === 0x75 /* 'u' */) {
+    const legacy = kkpToLegacy(tok);
+    if (legacy != null) return _dispatchToken(legacy);
+  }
 
   // T25 / B14 — never fire Esc for an escape-PREFIXED event: F-keys
   // (\x1bOP), Alt-modified keys (\x1b[1;3A, \x1bj), Home/End (\x1b[H,
