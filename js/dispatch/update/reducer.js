@@ -230,14 +230,18 @@ function update(model, msg) {
     // reclaims the cells the PTY painted (the diff cache can't see those).
     case 'terminal_enter':
       if (model.modes.terminalMode) return [model, []];
-      return [_withModes(model, { terminalMode: true }), []];
+      // Suspend kitty-keyboard while the embedded child owns the terminal, so
+      // the outer terminal reverts to legacy encoding and the child (which
+      // never negotiated CSI-u) gets clean keystrokes. Re-pushed on exit.
+      return [_withModes(model, { terminalMode: true }), [{ type: 'kkp_suspend' }]];
     case 'terminal_exit':
       // Guard on the flag so the per-frame setImmediate from a dead-PTY
       // overlay paint doesn't re-emit view_drop_full_to_normal each frame
       // once terminalMode is already off.
       if (!model.modes.terminalMode) return [model, []];
       return [_withModes(model, { terminalMode: false }),
-              [{ type: 'msg', msg: route.wrap('layout', { type: 'view_drop_full_to_normal' }) }]];
+              [{ type: 'kkp_resume' },
+               { type: 'msg', msg: route.wrap('layout', { type: 'view_drop_full_to_normal' }) }]];
     // --- agent mode enter/exit (docs/live-agent.md A4) — the terminal-mode
     // mirror for an `agent` pane's draft input. Just the flag write: the
     // session start rides the agent_activate Cmd cascade (panel/agent), and

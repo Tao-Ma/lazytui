@@ -8,14 +8,18 @@
  * (Alt-chords, super/hyper/meta, keypad/PUA) return null → dropped like a
  * legacy unknown escape.
  *
- * Block [3] is the D6 oracle differential: an INDEPENDENT implementation
- * (the MIT `kitty-keyboard` package) parses the same byte sequences and we
- * assert it recovers the same (codepoint, modifier) — catching any misread of
- * the wire format. It's dev-only (not a runtime dep, not in package.json):
- * install with `npm i --no-save kitty-keyboard` (needs a recent Node). The
- * block SKIPS cleanly when the package is absent, so the durable spec vectors
- * in [1]/[2]/[4] are the always-on gate. Values are computed from codepoints,
- * never hand-typed — the spec review produced two wrong CSI-u numbers by hand.
+ * Block [3] is the D6 oracle differential against an INDEPENDENT implementation
+ * (the MIT `kitty-keyboard` package): (1) it drives the real `term.js` writers
+ * and asserts their on-wire bytes equal the reference's enable/query/disable
+ * builders, and (2) for the whole (code,mods) space it decodes the reference's
+ * recovered (codepoint, modifier) into the expected legacy byte and asserts
+ * `kkpToLegacy` produces the same — so a decoder that misread the wire format
+ * (wrong field, off-by-one modifier) fails here. It's dev-only (not a runtime
+ * dep, not in package.json): install with `npm i --no-save kitty-keyboard`
+ * (needs a recent Node). The block SKIPS cleanly when the package is absent, so
+ * the durable spec vectors in [1]/[2]/[4] are the always-on gate. Values are
+ * computed from codepoints, never hand-typed — the spec review produced two
+ * wrong CSI-u numbers by hand.
  *
  * Run: node js/test/test-kkp-decode.js
  */
@@ -86,6 +90,10 @@ describe('[4] non-key inputs are not decoded (return null)', () => {
     eq(kkpToLegacy('\x1b[1;5A'), null);    // modified arrow (existing ladder handles/drops)
     eq(kkpToLegacy('\x1b[5;2~'), null);    // shift+PageUp (existing ladder handles)
   });
+  it('lone-surrogate codepoints → null (not a scalar value)', () => {
+    eq(kkpToLegacy(csu(0xd800)), null);   // high surrogate
+    eq(kkpToLegacy(csu(0xdfff)), null);   // low surrogate
+  });
   it('malformed / empty / non-CSI → null', () => {
     eq(kkpToLegacy('\x1b[u'), null);       // no code
     eq(kkpToLegacy('\x1b[abcu'), null);    // non-numeric params
@@ -108,30 +116,55 @@ describe('[4] non-key inputs are not decoded (return null)', () => {
     }
     const { parseKeyEvents, buildKittyKeyboardEnableSequence,
             buildKittyKeyboardQuery, buildKittyKeyboardDisableSequence } = oracle;
+    const term = require('../io/term');
+    // Capture what a term.js writer emits to stdout.
+    const cap = (fn) => {
+      let s = ''; const w = process.stdout.write;
+      process.stdout.write = (x) => { s += x; return true; };
+      try { fn(); } finally { process.stdout.write = w; }
+      return s;
+    };
 
-    it('our term.js sequences match the reference builders', () => {
-      eq(buildKittyKeyboardEnableSequence(1), '\x1b[>1u', 'enable(disambiguate)');
-      eq(buildKittyKeyboardQuery(), '\x1b[?u', 'query');
-      eq(buildKittyKeyboardDisableSequence(), '\x1b[<u', 'disable/pop');
+    it('term.js actually emits the reference sequences', () => {
+      // Drive the real term.js functions (not literals) and compare their
+      // on-wire bytes to the independent reference builders.
+      term.disableKKP();                                    // known clean start
+      eq(cap(() => term.enableKKP()), buildKittyKeyboardEnableSequence(1), 'enableKKP');
+      eq(cap(() => term.disableKKP()), buildKittyKeyboardDisableSequence(), 'disableKKP');
+      assert(cap(() => term.queryKKP()).startsWith(buildKittyKeyboardQuery()), 'queryKKP');
     });
 
-    it('reference recovers the same (codepoint, mods) from every sequence we build', () => {
-      const codes = [27, 13, 9, 127, ...[]];
-      for (let c = 0x21; c <= 0x7e; c++) codes.push(c);   // printable ASCII
-      const modVals = [1, mv(SHIFT), mv(ALT), mv(CTRL), mv(CTRL, SHIFT), mv(CTRL, ALT)];
+    it('kkpToLegacy agrees with the reference decode across the (code,mods) space', () => {
+      const codes = [27, 13, 9, 127];
+      for (let c = 0x21; c <= 0x7e; c++) codes.push(c);     // printable ASCII
+      const modVals = [1, mv(SHIFT), mv(ALT), mv(CTRL), mv(CTRL, SHIFT)];
       let pairs = 0;
       for (const code of codes) {
         for (const modVal of modVals) {
           const tok = csu(code, modVal);
-          const parsed = parseKeyEvents(tok);
-          const ev = parsed && parsed.events && parsed.events[0];
-          assert(ev, `oracle parsed ${JSON.stringify(tok)}`);
-          eq(ev.codepoint, code, `codepoint for ${JSON.stringify(tok)}`);
-          eq(ev.mods, modVal, `mods for ${JSON.stringify(tok)}`);
+          const ev = parseKeyEvents(tok).events[0];
+          // 1) the reference recovers the (codepoint, mods) we encoded — pins
+          //    that csu() (and thus the wire format we assume) is spec-correct.
+          eq(ev.codepoint, code, `oracle codepoint ${JSON.stringify(tok)}`);
+          eq(ev.mods, modVal, `oracle mods ${JSON.stringify(tok)}`);
+          // 2) derive the legacy byte from the REFERENCE's (codepoint, mods)
+          //    and assert OUR decoder produces it — a decoder that misread the
+          //    wire format (wrong field, off-by-one mod) fails here.
+          const bit = ev.mods - 1;
+          let expected;
+          if (bit & 2) expected = null;                     // alt-chord → drop
+          else if (bit & 4) expected = (ev.codepoint >= 64 && ev.codepoint <= 127)
+            ? String.fromCharCode(ev.codepoint & 0x1f) : null;
+          else if (ev.codepoint === 27) expected = '\x1b';
+          else if (ev.codepoint === 13) expected = '\r';
+          else if (ev.codepoint === 9)  expected = '\t';
+          else if (ev.codepoint === 127) expected = '\x7f';
+          else expected = String.fromCodePoint(ev.codepoint);
+          eq(kkpToLegacy(tok), expected, `decoder vs reference for ${JSON.stringify(tok)}`);
           pairs++;
         }
       }
-      assert(pairs > 500, `exercised ${pairs} (code,mods) pairs`);
+      assert(pairs > 400, `exercised ${pairs} (code,mods) pairs`);
     });
   });
 

@@ -134,4 +134,24 @@ describe('[5] config plumbing — color_depth key', () => {
   });
 });
 
+describe('[6] config plumbing — keyboard_protocol key (kitty-keyboard arc)', () => {
+  it("mergeGlobal: 'auto' counts as unset (global applies under it)", () => {
+    eq(mergeGlobal({ keyboard_protocol: 'auto' }, { keyboard_protocol: 'legacy' }).keyboard_protocol, 'legacy');
+  });
+  it('mergeGlobal: an explicit project value wins', () => {
+    eq(mergeGlobal({ keyboard_protocol: 'kitty' }, { keyboard_protocol: 'legacy' }).keyboard_protocol, 'kitty');
+  });
+  it('mergeGlobal: absent project takes the global value', () => {
+    eq(mergeGlobal({}, { keyboard_protocol: 'kitty' }).keyboard_protocol, 'kitty');
+  });
+  it('validateGlobal accepts auto/legacy/kitty, rejects junk', () => {
+    validateGlobal({ keyboard_protocol: 'auto' });
+    validateGlobal({ keyboard_protocol: 'legacy' });
+    validateGlobal({ keyboard_protocol: 'kitty' });
+    let threw = false;
+    try { validateGlobal({ keyboard_protocol: 'nope' }); } catch (_) { threw = true; }
+    assert(threw, 'junk value must throw');
+  });
+});
+
 report();

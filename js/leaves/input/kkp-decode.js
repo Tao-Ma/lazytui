@@ -78,6 +78,7 @@ function kkpToLegacy(tok) {
     case 127: return '\x7f';   // Backspace (DEL)
     default:
       if (code < 32) return null;                  // other bare C0: unbound
+      if (code >= 0xd800 && code <= 0xdfff) return null;  // lone surrogate: not a scalar
       try { return String.fromCodePoint(code); } catch { return null; }
   }
 }

@@ -50,14 +50,26 @@ function disableBracketedPaste() { stdout.write('\x1b[?2004l'); }
 // into event-types/report-all-keys/associated-text (D1). The push/pop stack
 // (`CSI > flags u` / `CSI < u`) restores whatever the outer program had.
 //
-// `_kkpActive` tracks whether WE currently have flags pushed, so disableKKP is
-// a no-op when we never enabled (never pop a stack entry we didn't push), and
-// suspend/exit teardown can pop exactly once. Detection (queryKKP) and the
-// enableKKP call are driven from the boot handshake (P2), gated by config/env.
-let _kkpActive = false;
-function enableKKP()  { if (!_kkpActive) { stdout.write('\x1b[>1u'); _kkpActive = true; } }
-function disableKKP() { if (_kkpActive)  { stdout.write('\x1b[<u');  _kkpActive = false; } }
-function kkpActive()  { return _kkpActive; }
+// Two axes: `_kkpDesired` = should KKP be on (detected/forced), and
+// `_kkpSuspend` = a depth count of temporary hand-offs where a child owns the
+// terminal (an embedded PTY tab, or Ctrl+Z). Flags are pushed on the terminal
+// iff desired AND not suspended. `_kkpPushed` mirrors the actual on-wire state
+// so every entry point is idempotent — we never push twice or pop a stack
+// entry we didn't push. The depth counter makes suspend/resume correctly
+// nestable (no lost state), which a single was-active flag could not.
+let _kkpDesired = false;
+let _kkpSuspend = 0;
+let _kkpPushed  = false;
+function _applyKkp() {
+  const want = _kkpDesired && _kkpSuspend === 0;
+  if (want && !_kkpPushed)      { stdout.write('\x1b[>1u'); _kkpPushed = true; }
+  else if (!want && _kkpPushed) { stdout.write('\x1b[<u');  _kkpPushed = false; }
+}
+function enableKKP()  { _kkpDesired = true;  _applyKkp(); }  // detection/force enable
+function disableKKP() { _kkpDesired = false; _applyKkp(); }  // permanent (exit teardown)
+function suspendKKP() { _kkpSuspend++; _applyKkp(); }        // child takes the keyboard
+function resumeKKP()  { if (_kkpSuspend > 0) _kkpSuspend--; _applyKkp(); }
+function kkpActive()  { return _kkpPushed; }                 // currently on the wire
 // Detection: query current flags, then Primary Device Attributes as a fence.
 // A KKP terminal answers `\x1b[?<flags>u` BEFORE the DA1 reply `\x1b[?...c`;
 // a non-KKP terminal answers only DA1. The input layer's response arm reads
@@ -90,7 +102,7 @@ module.exports = {
   enableMouse, disableMouse,
   enableFocusEvents, disableFocusEvents,
   enableBracketedPaste, disableBracketedPaste,
-  enableKKP, disableKKP, kkpActive, queryKKP,
+  enableKKP, disableKKP, suspendKKP, resumeKKP, kkpActive, queryKKP,
   emitOSC52,
   cols, rows, dims, stdout,
 };

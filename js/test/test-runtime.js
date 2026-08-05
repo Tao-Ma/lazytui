@@ -345,26 +345,29 @@ describe('[3] update — (model, msg) → [model, cmds], pure + Cmd descriptors'
 });
 
 describe('[11] terminal mode + multi-select writes (folded off the input path)', () => {
-  it('terminal_enter sets the flag; no Cmds', () => {
-    // Phase 4 — capture the new model from the return tuple.
+  it('terminal_enter sets the flag; emits kkp_suspend (hand keyboard to the child)', () => {
+    // Phase 4 — capture the new model from the return tuple. The kitty-keyboard
+    // arc brackets the embedded-terminal hand-off: enter suspends the flags.
     const m = runtime.init();
     const [m2, cmds] = runtime.update(m, { type: 'terminal_enter' });
     eq(m2.modes.terminalMode, true);
-    eq(cmds.length, 0);
+    eq(cmds.length, 1);
+    eq(cmds[0].type, 'kkp_suspend');
   });
-  it('terminal_exit clears the flag and emits cross-layer dispatch_msg wrapped to layout', () => {
+  it('terminal_exit clears the flag and emits kkp_resume + cross-layer dispatch_msg to layout', () => {
     // Phase 1b: viewMode lives on layout's slice; terminal_exit emits a
-    // dispatch_msg → view_drop_full_to_normal. Phase 2a — the inner Msg is
-    // wrapped { kind: 'layout', msg: {...} } so the handler routes
-    // straight to layout's update.
+    // dispatch_msg → view_drop_full_to_normal (wrapped { kind: 'layout', ... }).
+    // The kitty-keyboard arc prepends kkp_resume (re-push the flags after the
+    // child exits).
     const m = runtime.init();
     const armed = { ...m, modes: { ...m.modes, terminalMode: true } };
     const [m2, cmds] = runtime.update(armed, { type: 'terminal_exit' });
     eq(m2.modes.terminalMode, false);
-    eq(cmds.length, 1);
-    eq(cmds[0].type, 'msg');
-    eq(cmds[0].msg.kind, 'layout');
-    eq(cmds[0].msg.msg.type, 'view_drop_full_to_normal');
+    eq(cmds.length, 2);
+    eq(cmds[0].type, 'kkp_resume');
+    const drop = cmds.find((c) => c.type === 'msg');
+    eq(drop.msg.kind, 'layout');
+    eq(drop.msg.msg.type, 'view_drop_full_to_normal');
   });
   it('multisel toggle/clear lands on the Component slice (wrapped Msg path)', () => {
     // Phase 4b — call sites wrap directly to the owning Component now;

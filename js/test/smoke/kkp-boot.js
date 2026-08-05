@@ -34,9 +34,17 @@ const POP    = '\x1b[<u';   // pop on teardown
 const REPLY  = '\x1b[?1u\x1b[?62;1;6c';  // kitty flags report + Primary-DA fence
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// Poll `cond()` up to `ms`, checking every 25ms. Returns true if it became
+// true before the deadline. Poll-until-condition (not a fixed sleep) keeps the
+// test robust under CI load AND races the reply in well before the detection
+// safety-net timeout fires.
+async function until(cond, ms = 4000) {
+  for (let waited = 0; waited < ms; waited += 25) { if (cond()) return true; await sleep(25); }
+  return cond();
+}
 
 // Boot the real binary in a PTY, play the terminal side, collect the byte
-// stream. `env` selects the mode; `reply` (optional) is injected once the
+// stream. `env` selects the mode; `reply` (optional) is injected the moment the
 // query is seen; then we quit with Ctrl-C and let exit cleanup run.
 async function run({ env, reply }) {
   let out = '';
@@ -47,15 +55,19 @@ async function run({ env, reply }) {
   term.onData((d) => { out += d; });
   term.onExit((e) => { exitCode = e.exitCode; });
 
-  await sleep(1500);                       // boot + first paint + handshake query
-  const queried = out.includes(QUERY);
-  const beforeReply = out.length;
-  if (reply && queried) { term.write(reply); await sleep(800); }
-  const enabled = out.slice(beforeReply).includes(ENABLE);
+  let enabled = false;
+  const queried = await until(() => out.includes(QUERY), 4000);
+  if (reply && queried) {
+    const beforeReply = out.length;
+    term.write(reply);                     // inject promptly — beats the timeout
+    enabled = await until(() => out.slice(beforeReply).includes(ENABLE), 2000);
+  } else if (!reply) {
+    // legacy mode never queries — give boot a beat to prove no probe appears.
+    await sleep(600);
+  }
 
   term.write('\x03');                      // Ctrl-C → quit → exit cleanup
-  await sleep(500);
-  const popped = out.includes(POP);
+  const popped = await until(() => out.includes(POP), 2000);
   try { term.kill(); } catch { /* already gone */ }
   return { out, exitCode, queried, enabled, popped };
 }

@@ -51,14 +51,22 @@ const feed = (chunk) => sm.capture(() => stdin.emit('data', chunk));
 
 describe('[1] handshake: DA1 without a flags report → legacy', () => {
   it('caps.keyboard stays legacy and the protocol is not enabled', () => {
-    assert(!term.kkpActive(), 'not active at start');
-    sm.capture(() => input.beginKeyboardDetection());
-    feed('\x1b[?62;1;6c');   // Primary DA fence only — no kitty flags report
-    eq(getModel().caps.keyboard, 'legacy', 'no support recorded');
-    assert(!term.kkpActive(), 'no flags pushed');
-    const d = lastKbdDiag();
-    assert(d && d.level === 'info' && /legacy/.test(d.message),
-      `leader-e hint records the legacy outcome (got ${JSON.stringify(d)})`);
+    // Clear any inherited multiplexer env so we exercise the PLAIN-terminal
+    // message branch (CI often runs under $TMUX); [1b] covers the mux branch.
+    const savedMux = { TMUX: process.env.TMUX, STY: process.env.STY, ZELLIJ: process.env.ZELLIJ };
+    for (const k of Object.keys(savedMux)) delete process.env[k];
+    try {
+      assert(!term.kkpActive(), 'not active at start');
+      sm.capture(() => input.beginKeyboardDetection());
+      feed('\x1b[?62;1;6c');   // Primary DA fence only — no kitty flags report
+      eq(getModel().caps.keyboard, 'legacy', 'no support recorded');
+      assert(!term.kkpActive(), 'no flags pushed');
+      const d = lastKbdDiag();
+      assert(d && d.level === 'info' && /not supported by this terminal/.test(d.message),
+        `leader-e hint records the plain legacy outcome (got ${JSON.stringify(d)})`);
+    } finally {
+      for (const [k, v] of Object.entries(savedMux)) if (v !== undefined) process.env[k] = v;
+    }
   });
 });
 
@@ -93,6 +101,17 @@ describe('[2] handshake: flags report before the DA1 fence → kitty + enabled',
   });
 });
 
+describe('[3a] embedded-terminal hand-off brackets KKP', () => {
+  it('terminal_enter suspends the flags; terminal_exit re-pushes', () => {
+    assert(term.kkpActive(), 'enabled from [2]');
+    sm.capture(() => dispatch.applyMsg({ type: 'terminal_enter' }));
+    assert(!term.kkpActive(), 'flags popped while the embedded child owns the terminal');
+    sm.capture(() => dispatch.applyMsg({ type: 'terminal_exit' }));
+    assert(term.kkpActive(), 're-pushed after the child exits');
+    assert(!getModel().modes.terminalMode, 'back out of terminal mode');
+  });
+});
+
 describe('[3] CSI-u key decode → legacy ladder', () => {
   it('Escape and Ctrl+R decode; an Alt-chord drops', () => {
     assert(term.kkpActive(), 'protocol enabled from [2]');
@@ -119,6 +138,23 @@ describe('[4] lifecycle: suspend pops, resume re-pushes, cleanup pops', () => {
   it('exit cleanup pops the flags', () => {
     sm.capture(() => require('../../dispatch/runtime/cleanup').cleanup());
     assert(!term.kkpActive(), 'popped on cleanup — never leaks to the shell');
+  });
+});
+
+describe('[5] explicit modes via applyKeyboardMode (boot config/env branches)', () => {
+  it('kitty force-enables without a handshake, records caps + diag', () => {
+    sm.capture(() => input.applyKeyboardMode('kitty'));
+    eq(getModel().caps.keyboard, 'kitty', 'caps set to kitty');
+    assert(term.kkpActive(), 'flags pushed without a query');
+    const d = lastKbdDiag();
+    assert(d && /force-enabled/.test(d.message), `diag says force-enabled (got ${JSON.stringify(d)})`);
+  });
+  it('legacy is authoritative off, records caps + diag', () => {
+    sm.capture(() => input.applyKeyboardMode('legacy'));
+    eq(getModel().caps.keyboard, 'legacy', 'caps set to legacy');
+    assert(!term.kkpActive(), 'flags popped');
+    const d = lastKbdDiag();
+    assert(d && /disabled/.test(d.message), `diag says disabled (got ${JSON.stringify(d)})`);
   });
 });
 

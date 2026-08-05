@@ -70,10 +70,11 @@ describe('[immutable] root reducer — mode flips', () => {
     );
     eq(next.modes.terminalMode, true);
     eq(m.modes.terminalMode, false, 'original untouched');
-    eq(cmds.length, 0);
+    eq(cmds.length, 1);
+    eq(cmds[0].type, 'kkp_suspend', 'brackets the embedded-terminal hand-off');
   });
 
-  it('terminal_exit emits cross-layer dispatch_msg', () => {
+  it('terminal_exit emits kkp_resume + cross-layer dispatch_msg', () => {
     const armed = { ...freshModel(), modes: { ...freshModel().modes, terminalMode: true } };
     const [next, cmds] = expectNoMutation(
       'terminal_exit leaves input frozen',
@@ -81,8 +82,9 @@ describe('[immutable] root reducer — mode flips', () => {
       armed,
     );
     eq(next.modes.terminalMode, false);
-    eq(cmds[0].type, 'msg');
-    eq(cmds[0].msg.kind, 'layout');
+    eq(cmds[0].type, 'kkp_resume');
+    const drop = cmds.find((c) => c.type === 'msg');
+    eq(drop.msg.kind, 'layout');
   });
 
   it('mode_set / mode_clear are identity-preserving when no-op', () => {

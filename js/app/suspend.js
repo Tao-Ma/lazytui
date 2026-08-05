@@ -27,28 +27,26 @@ const {
   enableMouse, disableMouse,
   enableFocusEvents, disableFocusEvents,
   enableBracketedPaste, disableBracketedPaste,
-  enableKKP, disableKKP, kkpActive,
+  suspendKKP, resumeKKP,
   stdout,
 } = require('../io/term');
 const { RESET } = require('../leaves/text/ansi');
 
 let _suspendHandler;
 let _resumeHandler;
-// Remember whether kitty-keyboard flags were pushed before we suspended, so
-// resume re-pushes them (disableKKP clears the active flag as it pops).
-let _kkpWasActive = false;
 
 // Save/restore the terminal modes lazytui owns (raw-mode, cursor,
-// mouse, focus, bracketed paste). Used both by SIGTSTP/SIGCONT (the
-// kernel-stop case) and by actions.js when type: spawn hands the
-// terminal to a child synchronously outside tmux. Exporting these so
-// both call sites stay in sync — adding a new mode happens once.
+// mouse, focus, bracketed paste, kitty-keyboard). Called by SIGTSTP/SIGCONT
+// (the kernel-stop / Ctrl+Z case). NOTE: the type:spawn / :edit handoff runs
+// the child in an EMBEDDED PTY tab (terminalMode), NOT through here — that
+// path brackets kitty-keyboard via the kkp_suspend/kkp_resume Cmds on
+// terminal_enter/terminal_exit (see reducer + effects). Exporting these so
+// the Ctrl+Z path and the smoke test stay in sync — adding a mode happens once.
 function suspendTerminal() {
   disableMouse();
   disableFocusEvents();
   disableBracketedPaste();
-  _kkpWasActive = kkpActive();
-  disableKKP();   // hand a clean keyboard to the child shell / editor
+  suspendKKP();   // hand a clean keyboard to the child shell / editor
   showCursor();
   stdout.write(RESET);
   try { process.stdin.setRawMode(false); } catch (e) { /* not a TTY */ }
@@ -59,7 +57,7 @@ function resumeTerminal() {
   enableMouse();
   enableFocusEvents();
   enableBracketedPaste();
-  if (_kkpWasActive) enableKKP();
+  resumeKKP();
   hideCursor();
 }
 

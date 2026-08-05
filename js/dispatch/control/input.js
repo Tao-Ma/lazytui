@@ -1174,10 +1174,39 @@ let _kkpSawReply = false;
 const _KKP_REPLY_RE = /^\x1b\[\?[\d;:]*u$/;   // CSI ? flags u  (kitty flags report)
 const _DA1_REPLY_RE = /^\x1b\[\?[\d;]*c$/;    // CSI ? ... c     (Primary DA — the fence)
 
+// Generous safety-net window: a real terminal answers the query near-instantly
+// (locally, or one SSH round-trip away). This only fires when a terminal
+// answers NEITHER the flags query NOR the DA1 fence — rare — so erring long
+// costs nothing but avoids a false "unsupported" on a laggy link.
+const _KKP_DETECT_MS = 2000;
+let _kkpDetectTimer = null;
+
 function beginKeyboardDetection() {
   _kkpDetecting = true;
   _kkpSawReply = false;
   require('../../io/term').queryKKP();
+  // Safety net: if the DA1 fence never comes back (a terminal that ignores the
+  // query, or a lost reply), finalize after a short window so caps still
+  // resolves and the leader-e hint is still written — rather than staying
+  // armed for the session. Unref'd so it never holds the process open; cleared
+  // the moment the fence arrives.
+  if (_kkpDetectTimer) clearTimeout(_kkpDetectTimer);
+  _kkpDetectTimer = setTimeout(_finalizeDetection, _KKP_DETECT_MS);
+  if (_kkpDetectTimer.unref) _kkpDetectTimer.unref();
+}
+
+// Resolve the auto handshake: record caps ('kitty' iff we saw the flags report
+// before the fence), push the flags on support, write the hint. Idempotent via
+// the _kkpDetecting guard — the DA1 fence token and the timeout race to call
+// this; first wins, the other becomes a no-op.
+function _finalizeDetection() {
+  if (_kkpDetectTimer) { clearTimeout(_kkpDetectTimer); _kkpDetectTimer = null; }
+  if (!_kkpDetecting) return;
+  _kkpDetecting = false;
+  const supported = _kkpSawReply;
+  applyMsg({ type: 'kkp_detected', supported });
+  if (supported) require('../../io/term').enableKKP();
+  _recordKbdDiag(null);
 }
 
 // The diagnostics hint for a failed detection. A multiplexer (tmux/screen/
@@ -1194,23 +1223,46 @@ function _kkpUnsupportedMsg() {
     : 'legacy — kitty keyboard protocol not supported by this terminal';
 }
 
+// Write the leader-e session fact, reading the EFFECTIVE protocol from
+// model.caps.keyboard — the single source of truth just set by kkp_detected
+// (so caps has a genuine reader, not just a writer). `ctx.forced`/`ctx.disabled`
+// pick the explicit-config wording; a null ctx is the auto-detected path.
+function _recordKbdDiag(ctx) {
+  const diag = require('../../io/diag-log');
+  if (getModel().caps.keyboard === 'kitty') {
+    diag.info('keyboard', ctx && ctx.forced
+      ? 'kitty keyboard protocol force-enabled (keyboard_protocol: kitty)'
+      : 'kitty keyboard protocol enabled (CSI-u disambiguate)');
+  } else {
+    diag.info('keyboard', ctx && ctx.disabled
+      ? 'legacy keyboard mode (kitty keyboard protocol disabled)'
+      : _kkpUnsupportedMsg());
+  }
+}
+
+// Apply the boot-resolved keyboard mode (tui.js, after the env/config gate).
+// 'auto' runs the detection handshake; 'kitty' force-enables without it;
+// 'legacy' stays on the tokenizer path. All three record caps + the hint.
+function applyKeyboardMode(mode) {
+  if (mode === 'kitty') {
+    require('../../io/term').enableKKP();
+    applyMsg({ type: 'kkp_detected', supported: true });
+    _recordKbdDiag({ forced: true });
+  } else if (mode === 'legacy') {
+    require('../../io/term').disableKKP();   // authoritative off (a no-op at boot)
+    applyMsg({ type: 'kkp_detected', supported: false });
+    _recordKbdDiag({ disabled: true });
+  } else {
+    beginKeyboardDetection();
+  }
+}
+
 // Consume a handshake response token. Returns true if `tok` was a response
 // (so the ladder must not treat it as a key), false otherwise.
 function _maybeKkpResponse(tok) {
   if (!_kkpDetecting) return false;
   if (_KKP_REPLY_RE.test(tok)) { _kkpSawReply = true; return true; }
-  if (_DA1_REPLY_RE.test(tok)) {
-    _kkpDetecting = false;
-    const supported = _kkpSawReply;
-    applyMsg({ type: 'kkp_detected', supported });
-    if (supported) require('../../io/term').enableKKP();
-    // A one-line session fact for the `leader e` diagnostics window so the
-    // user can see which keyboard protocol they got (docs/kitty-keyboard.md).
-    require('../../io/diag-log').info('keyboard', supported
-      ? 'kitty keyboard protocol enabled (CSI-u disambiguate)'
-      : _kkpUnsupportedMsg());
-    return true;
-  }
+  if (_DA1_REPLY_RE.test(tok)) { _finalizeDetection(); return true; }
   return false;
 }
 
@@ -1324,7 +1376,8 @@ function _dispatchMouseEvent(mm) {
 
 module.exports = {
   setupKeyListener,
-  beginKeyboardDetection,   // boot handshake initiation (tui.js)
+  applyKeyboardMode,        // boot: apply the resolved keyboard mode (tui.js)
+  beginKeyboardDetection,   // exported for tests (in-process handshake driving)
   _handleTerminalModeData,  // exported for tests
   _classifyTerminalChunk,   // exported for tests (v0.6.5 PTY scrollback classifier)
   _handleWheel,             // exported for tests

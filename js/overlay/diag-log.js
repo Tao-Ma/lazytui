@@ -89,7 +89,7 @@ function renderDiagLog(now) {
 
   const lines = [];
   if (list.length === 0) {
-    lines.push('[dim]  (no warnings or errors)[/]');
+    lines.push('[dim]  (no diagnostics)[/]');
   } else {
     for (let i = 0; i < vh; i++) {
       const idx = scroll + i;

@@ -226,6 +226,12 @@ function installBuiltins() {
   registerEffect('render', () => {
     try { renderQueue.scheduleRender(); } catch (_) { /* no renderer */ }
   });
+  // kkp_suspend / kkp_resume: bracket the embedded-terminal hand-off. On
+  // terminal_enter we pop the kitty-keyboard flags so the child sees legacy
+  // keys; on terminal_exit we re-push (no-op when KKP was never enabled).
+  // Terminal writes, like the enableMouse family — replay skips all effects.
+  registerEffect('kkp_suspend', () => require('../../io/term').suspendKKP());
+  registerEffect('kkp_resume',  () => require('../../io/term').resumeKKP());
   // msg: cross-layer Msg dispatch. The payload shape picks the routing:
   // a WRAPPED Msg `{kind, msg}` goes through api.dispatchMsg (Component
   // fan-out — e.g. groups → viewer_reset_chrome → detail); a FLAT Msg

@@ -79,7 +79,8 @@ but can now carry a modifier param (`\x1b[1;5A` = Ctrl+Up). Modifiers =
 | Escape sequences | `js/io/term.js` | Add `enableKKP()`/`disableKKP()`/`queryKKP()`, symmetric with the existing `enableMouse` family. |
 | Boot | `js/app/tui.js` (~329, next to `color_depth` resolve) | After raw mode + `enableMouse`, initiate detection (write query + DA fence). |
 | Exit teardown | `js/dispatch/runtime/cleanup.js` (disableMouse/showCursor block) | **MUST** `disableKKP()` (pop). Leaving KKP on after exit breaks the user's shell. |
-| Suspend/resume | `js/app/suspend.js` (`suspendTerminal`/`resumeTerminal`) | **MUST** pop on suspend, re-push on resume — same reason, and covers Ctrl-Z + the `type:spawn` editor/shell handoff that reuses these. The "adding a new mode happens once" comment invites exactly this. |
+| Suspend/resume (Ctrl-Z) | `js/app/suspend.js` (`suspendTerminal`/`resumeTerminal`) | **MUST** suspend on SIGTSTP, resume on SIGCONT. |
+| Embedded-terminal hand-off | `terminal_enter`/`terminal_exit` reducer arms → `kkp_suspend`/`kkp_resume` Cmds → `term.suspendKKP()`/`resumeKKP()` | **MUST** — the `type:spawn` / `:edit` / `:config` / terminal-tab path runs the child in an embedded PTY (terminalMode), which does NOT go through suspend.js. terminalMode forwards keystrokes raw to the child, so KKP must be popped there or the child gets CSI-u it can't read. `term.js` uses a desired+suspend-depth model so Ctrl-Z-nested-in-a-terminal-tab can't lose state. |
 | Tokenizer | `js/leaves/input/tokenize.js` | **NO CHANGE.** `\x1b[27u`, `\x1b[27;5u`, `\x1b[?1u`, `\x1b[?62;c` all match the existing sticky `_CSI_FULL` regex (params `[0-?]` covers `?><=;:` + digits; final `[@-~]` covers `u`,`c`). The tokenizer already emits them as single complete tokens. This is the arc's biggest gift — the hard part is already done. |
 | Dispatch ladder | `js/dispatch/control/input.js` `_dispatchToken` (~1168) | (a) **Response arm** — recognize `\x1b[?<flags>u` (KKP reply) and `\x1b[?...c` (DA fence) → emit a capability Msg, not a key. Place before the key arms (the `?` private marker means no collision with real keys). (b) **CSI-u decoder arm** — decode `\x1b[<code>;<mods>u` and modified functional forms into the SAME key names the legacy arms produce (`up`, `escape`, `ctrl-c`, …), so the keymap layer (E9) is untouched. |
 | Capability state | model + a `kkp_detected` Msg | Land support in `model` via a Msg so it's replayable (like arrange / color-depth state). New field e.g. `model.caps.keyboard`. |
@@ -108,9 +109,11 @@ CJS, node>=18 runtime dep** that clears the bar for a never-brick core
 input path:
 
 - `kitty-keyboard@0.1.0` (the one directly-relevant package) — **ESM-only**
-  and **`engines: node>=24`**. Adopting it bumps our minimum Node 18→24
-  and forces async ESM-interop into a synchronous input path, on a
-  1-release/one-month-old package. Rejected as a runtime dep.
+  and **declares `engines: node>=24`** (though it installs with only a warning
+  and runs on node 18–22 in practice). Adopting it forces async ESM-interop
+  into a synchronous input path, on a 1-release/one-month-old package, and
+  couples us to its declared engine floor. Rejected as a runtime dep; used
+  dev-only as the oracle (test-kkp-decode).
 - `@bindtty/input@0.1.0-beta.x` — ESM-only, beta, coupled to its own
   framework (`@bindtty/text`). Rejected.
 - `@xterm/headless` (already a dep) is an *output* emulator — it does not
@@ -245,3 +248,18 @@ suitable one matures.
 - Key-release / event-type / associated-text features (flags 2/4/8/16).
 - modifyOtherKeys fallback tier.
 - Exposing KKP-only key distinctions (Ctrl-I≠Tab) to the keymap.
+
+## Known limitations
+
+- **Hard kill leaves the flags pushed.** The flags are popped on every
+  graceful exit (`q`, `:quit`, Ctrl-C, editor onExit, a thrown error, and
+  `process.on('exit')`) and bracketed on suspend / embedded-terminal entry.
+  But `SIGKILL`, and an un-trapped `SIGTERM`/`SIGHUP` (terminal-window close),
+  bypass the exit hooks — so the kitty flags (like mouse/paste/cursor modes)
+  leak into the shell. Unlike those, a leaked kitty push makes Escape arrive
+  as `\x1b[27u` at the prompt until a `reset`. This is a pre-existing gap for
+  all terminal modes, not KKP-specific; a general fix (SIGTERM/SIGHUP →
+  cleanup handlers) would cover every mode at once and is tracked separately.
+- **Inside a multiplexer** (tmux/screen/zellij) the protocol is not
+  negotiated for the inner app; lazytui correctly falls back to legacy and
+  the `<leader> e` hint names the multiplexer. Run outside it to use KKP.
