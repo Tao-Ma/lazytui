@@ -16,13 +16,13 @@ const { compileCommand, commandHoles } = require('../fabric/command');
 
 const VALID_ACTION_TYPES = new Set(['run', 'spawn', 'background']);
 
-const VALID_TOP_KEYS    = new Set(['project_dir', 'groups', 'vars', 'helpers', 'files', 'layout', 'theme', 'plugins', 'register', 'keys', 'keymap', 'mouse', 'context-menu', 'panels', 'selection', 'editor', 'color_depth']);
+const VALID_TOP_KEYS    = new Set(['project_dir', 'groups', 'vars', 'helpers', 'files', 'layout', 'theme', 'plugins', 'register', 'keys', 'keymap', 'mouse', 'context-menu', 'panels', 'selection', 'editor', 'color_depth', 'keyboard_protocol']);
 
 // Global user config (~/.config/lazytui/config.yml, docs/global-config) — only
 // the APP-BEHAVIOR sections are honored there; project content (groups,
 // layout, vars, …) belongs to the per-project config. Anything else in the
 // global file warns and is ignored — a global file must never brick a project.
-const GLOBAL_TOP_KEYS = new Set(['theme', 'keys', 'keymap', 'mouse', 'context-menu', 'selection', 'editor', 'color_depth']);
+const GLOBAL_TOP_KEYS = new Set(['theme', 'keys', 'keymap', 'mouse', 'context-menu', 'selection', 'editor', 'color_depth', 'keyboard_protocol']);
 const VALID_KEY_BINDING_KEYS = new Set(['action', 'command', 'builtin', 'label', 'desc']);
 // v0.6.7 E9 — the `keymap:` block (configurable normal-mode keys). A thin
 // versioned container; `normal:` is a flat key→verb map. SHAPE only here — the
@@ -98,6 +98,7 @@ function validate(data, _sourceFile, warnings) {
   }
   if ('editor' in data) validateEditor(data.editor);
   if ('color_depth' in data) validateColorDepth(data.color_depth);
+  if ('keyboard_protocol' in data) validateKeyboardProtocol(data.keyboard_protocol);
   if ('vars' in data)    validateVars(data.vars);
   if ('helpers' in data) validateHelpers(data.helpers);
   if ('files' in data)   validateFiles(data.files);
@@ -134,6 +135,18 @@ function validateColorDepth(v) {
   }
 }
 
+// Keyboard input protocol (kitty-keyboard arc, docs/kitty-keyboard.md).
+// 'auto' = run the detection handshake and enable on a confirmed reply (the
+// default); 'legacy' = stay on the tokenizer path, never probe or enable;
+// 'kitty' = force-enable without the handshake (for terminals that support the
+// protocol but don't answer the query). The LAZYTUI_KBD env var overrides this.
+function validateKeyboardProtocol(v) {
+  const s = String(v);
+  if (s !== 'auto' && s !== 'legacy' && s !== 'kitty') {
+    throw new SchemaError("'keyboard_protocol' must be one of: auto, legacy, kitty");
+  }
+}
+
 /**
  * Scoped validation for the GLOBAL user config. Tolerant by design: only
  * GLOBAL_TOP_KEYS are honored; every other key — project content or a typo —
@@ -161,6 +174,7 @@ function validateGlobal(data, warnings) {
   }
   if ('editor' in out)   validateEditor(out.editor);
   if ('color_depth' in out) validateColorDepth(out.color_depth);
+  if ('keyboard_protocol' in out) validateKeyboardProtocol(out.keyboard_protocol);
   if ('keys' in out)     validateKeys(out.keys);
   if ('keymap' in out)   validateKeymap(out.keymap);
   if ('mouse' in out)    validateMouse(out.mouse);

@@ -742,6 +742,10 @@ function parse(yamlPath, opts) {
     // and mergeGlobal treats 'auto' as unset so a stamped 'auto' in a
     // resolved-shape .json never blocks a global value.
     color_depth: data.color_depth !== undefined ? String(data.color_depth) : 'auto',
+    // Keyboard input protocol (kitty-keyboard arc, docs/kitty-keyboard.md).
+    // 'auto' (default) = detection handshake; 'legacy' = tokenizer only;
+    // 'kitty' = force-enable. LAZYTUI_KBD env overrides at boot (tui.js).
+    keyboard_protocol: data.keyboard_protocol !== undefined ? String(data.keyboard_protocol) : 'auto',
     // Preserve the `plugins:` block for round-trip fidelity. The Plugin
     // API itself retired in v0.5 Phase 6; tui.js surfaces a one-time
     // warning if the field is non-empty. (YAML plugin merging — entries

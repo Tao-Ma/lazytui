@@ -76,7 +76,7 @@ function loadGlobal(env) {
  *       keymap              (`normal` merges per key; `version` project-wins)
  *   - `context-menu` is a LIST: global entries first, project's appended
  *   - scalars are wholesale, project-wins: theme, selection, editor,
- *     color_depth (where 'auto' also counts as unset)
+ *     color_depth + keyboard_protocol (where 'auto' also counts as unset)
  */
 function mergeGlobal(project, global) {
   if (!global) return project;
@@ -88,13 +88,12 @@ function mergeGlobal(project, global) {
     // always explicit in resolved JSON — see docs/global-config.md §JSON.
     if ((!(k in out) || out[k] == null) && k in global) out[k] = global[k];
   }
-  {
-    // color_depth (truecolor arc 1b): 'auto' ALSO counts as unset — auto
-    // means "detect from the environment", i.e. no override opinion, so an
-    // explicit global depth applies under it. This also keeps a resolved-
-    // shape .json's stamped 'auto' from blocking a global value (the same
-    // class as editor's stamped null above).
-    const k = 'color_depth';
+  // color_depth (truecolor arc 1b) + keyboard_protocol (kitty-keyboard arc):
+  // 'auto' ALSO counts as unset — auto means "no override opinion, decide from
+  // the environment", so an explicit global value applies under it. Also keeps
+  // a resolved-shape .json's stamped 'auto' from blocking a global value (the
+  // same class as editor's stamped null above).
+  for (const k of ['color_depth', 'keyboard_protocol']) {
     if ((!(k in out) || out[k] == null || out[k] === 'auto') && k in global) out[k] = global[k];
   }
   for (const k of ['keys', 'mouse']) {
