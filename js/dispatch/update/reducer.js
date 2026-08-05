@@ -256,6 +256,15 @@ function update(model, msg) {
       if (focused === model.focused) return [model, []];
       return [{ ...model, focused }, []];
     }
+    // Kitty-keyboard detection result from the boot handshake (input.js
+    // response arm). The terminal-side enable/disable is an impure-shell
+    // effect the caller owns (like the focus catch-up scheduleRender above);
+    // this arm only records the learned capability so it rides the WAL.
+    case 'kkp_detected': {
+      const keyboard = msg.supported ? 'kitty' : 'legacy';
+      if (keyboard === model.caps.keyboard) return [model, []];
+      return [{ ...model, caps: { ...model.caps, keyboard } }, []];
+    }
     // Frame-clock tick (docs/model-now-tick.md). Advance model.now from the
     // shell-stamped msg.now. FIX-3 Phase 6: the cadence is the model-conditional
     // `clock` interval Sub (app/state.js#_appSubscriptions — declared while an

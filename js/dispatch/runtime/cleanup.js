@@ -11,7 +11,7 @@
 const { RESET } = require('../../leaves/text/ansi');
 const {
   showCursor, moveTo, stdout, clearScreen,
-  disableMouse, disableFocusEvents, disableBracketedPaste,
+  disableMouse, disableFocusEvents, disableBracketedPaste, disableKKP,
 } = require('../../io/term');
 const { destroyAll } = require('../../io/terminal');
 const { killAll } = require('./action-runner');
@@ -34,6 +34,7 @@ function cleanup() {
   disableMouse();
   disableFocusEvents();
   disableBracketedPaste();
+  disableKKP();   // pop our kitty-keyboard flags — never leak them to the shell
   showCursor();
   stdout.write(RESET);
   clearScreen();

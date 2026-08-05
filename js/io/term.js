@@ -39,6 +39,31 @@ function disableFocusEvents() { stdout.write('\x1b[?1004l'); }
 function enableBracketedPaste()  { stdout.write('\x1b[?2004h'); }
 function disableBracketedPaste() { stdout.write('\x1b[?2004l'); }
 
+// Kitty keyboard protocol (CSI-u). Spec:
+// https://sw.kovidgoyal.net/kitty/keyboard-protocol/ — implemented from the
+// spec (a protocol is a method of operation, not copyrightable); we never
+// copy kitty's GPL source. v0.6.14 arc (docs/kitty-keyboard.md).
+//
+// We push only the "disambiguate escape codes" flag (bit 1) — enough to make
+// Escape and the ambiguous ctrl/alt combos arrive as self-terminating CSI-u
+// sequences (killing the legacy Esc-vs-sequence ambiguity), without opting
+// into event-types/report-all-keys/associated-text (D1). The push/pop stack
+// (`CSI > flags u` / `CSI < u`) restores whatever the outer program had.
+//
+// `_kkpActive` tracks whether WE currently have flags pushed, so disableKKP is
+// a no-op when we never enabled (never pop a stack entry we didn't push), and
+// suspend/exit teardown can pop exactly once. Detection (queryKKP) and the
+// enableKKP call are driven from the boot handshake (P2), gated by config/env.
+let _kkpActive = false;
+function enableKKP()  { if (!_kkpActive) { stdout.write('\x1b[>1u'); _kkpActive = true; } }
+function disableKKP() { if (_kkpActive)  { stdout.write('\x1b[<u');  _kkpActive = false; } }
+function kkpActive()  { return _kkpActive; }
+// Detection: query current flags, then Primary Device Attributes as a fence.
+// A KKP terminal answers `\x1b[?<flags>u` BEFORE the DA1 reply `\x1b[?...c`;
+// a non-KKP terminal answers only DA1. The input layer's response arm reads
+// both off the normal stdin path (they tokenize as ordinary CSI sequences).
+function queryKKP() { stdout.write('\x1b[?u\x1b[c'); }
+
 function cols() { return COLS; }
 function rows() { return ROWS; }
 
@@ -65,6 +90,7 @@ module.exports = {
   enableMouse, disableMouse,
   enableFocusEvents, disableFocusEvents,
   enableBracketedPaste, disableBracketedPaste,
+  enableKKP, disableKKP, kkpActive, queryKKP,
   emitOSC52,
   cols, rows, dims, stdout,
 };

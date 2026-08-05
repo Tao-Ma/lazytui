@@ -195,6 +195,11 @@ function init() {
     projectDir: '.',
     configPath: '',
     focused: true,
+    // Device capabilities learned at runtime. `keyboard` starts 'legacy' and
+    // flips to 'kitty' if the boot handshake confirms kitty-keyboard-protocol
+    // support (docs/kitty-keyboard.md). Single-writer = the reducer's
+    // `kkp_detected` arm; folds identically from the WAL on replay.
+    caps: { keyboard: 'legacy' },
     prefixNode: null,
     prefixSeq: [],
     register: null,                  // yank register {history, cap} (register.js)

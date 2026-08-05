@@ -419,6 +419,23 @@ function main() {
   redraw();
   setupKeyListener();
 
+  // Kitty-keyboard protocol (docs/kitty-keyboard.md). Resolve the mode with
+  // the same precedence as color depth: an explicit LAZYTUI_KBD env override
+  // BEATS the config's `keyboard_protocol:` key. `legacy` stays on the
+  // battle-tested tokenizer path; `kitty` force-enables (for terminals that
+  // support it but don't answer the query); `auto` (default) runs the
+  // detection handshake and enables only on a confirmed reply. Must run after
+  // setupKeyListener (raw mode on + the stdin handler installed to read the
+  // reply). Skipped for the replay-debugger boot path above (legacy input).
+  {
+    const envKbd = process.env.LAZYTUI_KBD;
+    const kbd = (envKbd === 'legacy' || envKbd === 'kitty' || envKbd === 'auto')
+      ? envKbd
+      : ((getModel().config || {}).keyboard_protocol || 'auto');
+    if (kbd === 'kitty') require('../io/term').enableKKP();
+    else if (kbd !== 'legacy') require('../dispatch/control/input').beginKeyboardDetection();
+  }
+
   // Phase 6 — the framework's per-Plugin refresh-loop retired. Components
   // that need periodic polling (docker, files, config-status) self-arm
   // from their `refresh`-Msg handler via a `tick` effect; the cadence is

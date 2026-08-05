@@ -1158,6 +1158,42 @@ function _makeDataHandler(stdin) {
   };
 }
 
+// --- Kitty-keyboard detection handshake (docs/kitty-keyboard.md P2) --------
+// beginKeyboardDetection() writes the query + DA1 fence (term.queryKKP) and
+// arms the response arm below. A kitty-keyboard terminal answers the flags
+// report `\x1b[?<flags>u` BEFORE the Primary-DA reply `\x1b[?...c`; a terminal
+// without the protocol answers only DA1. On the DA1 fence we finalize: record
+// the capability (kkp_detected Msg → model.caps.keyboard) and, on support,
+// push our flags via enableKKP(). Both replies tokenize as ordinary CSI
+// sequences, so they arrive here through the normal pipeline. The arm is armed
+// only during the handshake window, so a stray private-mode CSI can't be
+// mistaken for a response afterward.
+let _kkpDetecting = false;
+let _kkpSawReply = false;
+const _KKP_REPLY_RE = /^\x1b\[\?[\d;:]*u$/;   // CSI ? flags u  (kitty flags report)
+const _DA1_REPLY_RE = /^\x1b\[\?[\d;]*c$/;    // CSI ? ... c     (Primary DA — the fence)
+
+function beginKeyboardDetection() {
+  _kkpDetecting = true;
+  _kkpSawReply = false;
+  require('../../io/term').queryKKP();
+}
+
+// Consume a handshake response token. Returns true if `tok` was a response
+// (so the ladder must not treat it as a key), false otherwise.
+function _maybeKkpResponse(tok) {
+  if (!_kkpDetecting) return false;
+  if (_KKP_REPLY_RE.test(tok)) { _kkpSawReply = true; return true; }
+  if (_DA1_REPLY_RE.test(tok)) {
+    _kkpDetecting = false;
+    const supported = _kkpSawReply;
+    applyMsg({ type: 'kkp_detected', supported });
+    if (supported) require('../../io/term').enableKKP();
+    return true;
+  }
+  return false;
+}
+
 /**
  * One complete input event → the same ladder the whole-chunk handler used
  * to exact-match. Behavior is preserved event-for-event; the ladder now
@@ -1166,6 +1202,9 @@ function _makeDataHandler(stdin) {
  * `return`; a batched `\x03` didn't quit).
  */
 function _dispatchToken(tok) {
+  // Kitty-keyboard handshake replies (only while a detection is in flight).
+  if (_maybeKkpResponse(tok)) return;
+
   // Terminal focus events (DEC 1004). On blur, the periodic
   // refresh loop in tui.js pauses; on focus return, we fire one
   // catch-up refresh immediately so stale data doesn't show.
@@ -1255,6 +1294,7 @@ function _dispatchMouseEvent(mm) {
 
 module.exports = {
   setupKeyListener,
+  beginKeyboardDetection,   // boot handshake initiation (tui.js)
   _handleTerminalModeData,  // exported for tests
   _classifyTerminalChunk,   // exported for tests (v0.6.5 PTY scrollback classifier)
   _handleWheel,             // exported for tests
