@@ -6,6 +6,21 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Kitty keyboard protocol** — on terminals that support it, lazytui
+  negotiates the "disambiguate escape codes" mode (CSI-u) at boot: a
+  query + Primary-DA fence handshake detects support, and on confirmation
+  the flags are pushed so the Escape key and ctrl/alt combos arrive as
+  self-terminating sequences instead of the historically ambiguous legacy
+  bytes. CSI-u key events are normalized back to their legacy form, so the
+  existing keymap is unchanged. Controlled by `keyboard_protocol:`
+  (`auto` — the default handshake · `legacy` — never probe · `kitty` —
+  force-enable) or the `LAZYTUI_KBD` env override (env wins). The flags are
+  popped on suspend/exit so a spawned shell or editor is never left in the
+  protocol. Terminals without the protocol are untouched (the legacy
+  tokenizer path is unchanged). Implemented from the published spec.
+
 ## [0.6.13] — 2026-08-05
 
 ### Added

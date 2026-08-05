@@ -122,6 +122,18 @@ The scenarios target the bug class the unit suite misses:
   NO PTY characters behind (the overlay writes outside the cell-diff
   cache; a vanished surface must force the reclaiming repaint).
 
+- **`kkp.js`** — the kitty keyboard protocol end-to-end
+  (docs/kitty-keyboard.md): the boot handshake decides on the Primary-DA
+  fence (a flags report before it → `caps.keyboard = 'kitty'` + flags
+  pushed; DA1 alone → legacy); a CSI-u Escape / Ctrl+R decodes back to the
+  legacy key through the real ladder while an unbound Alt-chord drops; and
+  the flags are popped on suspend / re-pushed on resume / popped on exit
+  cleanup (never leaked to a spawned shell). The CSI-u decoder itself is
+  unit-pinned by `test/test-kkp-decode.js` (spec vectors), which also runs
+  a **dev-only** differential against the MIT `kitty-keyboard` package when
+  present (`npm i --no-save kitty-keyboard`) — the D6 oracle; it is not a
+  dependency and the block skips cleanly when the package is absent.
+
 Add a new scenario by dropping a `<name>.js` into `js/test/smoke/`;
 the aggregator at `js/scripts/run-smoke.js` discovers it. Each
 scenario imports the helper as `./_helpers/smoke` and uses

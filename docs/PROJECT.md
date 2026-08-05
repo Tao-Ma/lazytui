@@ -53,7 +53,7 @@ Two consequences worth internalizing:
 
 A **global user config** (`~/.config/lazytui/config.yml`) layers
 app-behavior preferences (theme, keys, keymap, mouse, context-menu,
-selection, editor, color_depth) UNDER every project's config — see
+selection, editor, color_depth, keyboard_protocol) UNDER every project's config — see
 [global-config.md](global-config.md) for the honored sections, merge
 rules, and failure contract. Project content never lives there.
 

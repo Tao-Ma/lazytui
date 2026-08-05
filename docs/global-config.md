@@ -20,6 +20,7 @@ theme: nord                 # wholesale — a project theme: wins
 selection: true             # wholesale — global text-selection default
 editor: nvim                # wholesale — see §editor below
 color_depth: auto           # wholesale — auto | truecolor | 256 | 16 (see below)
+keyboard_protocol: auto     # wholesale — auto | legacy | kitty (see below)
 keys:                       # entry-level merge — per key-sequence
   "<space>g": { command: "grep TODO" }
 keymap:                     # entry-level merge on normal:, version project-wins
@@ -43,11 +44,11 @@ The global file layers UNDER the project config:
   level — a global binding applies everywhere unless the project rebinds
   that same key/gesture.
 - **`context-menu`** is a list: global entries first, project entries after.
-- **Scalars** (`theme`, `selection`, `editor`, `color_depth`) are wholesale —
-  a project value wins; absent, the global value applies. For `color_depth`,
-  a project `auto` ALSO counts as absent: `auto` means "detect from the
-  environment", i.e. no override opinion, so an explicit global depth
-  applies under it.
+- **Scalars** (`theme`, `selection`, `editor`, `color_depth`,
+  `keyboard_protocol`) are wholesale — a project value wins; absent, the
+  global value applies. For `color_depth` and `keyboard_protocol`, a project
+  `auto` ALSO counts as absent: `auto` means "no override opinion, decide
+  from the environment", so an explicit global value applies under it.
 
 ### color_depth
 
@@ -65,6 +66,22 @@ X" knob (`LAZYTUI_COLOR=16 lazytui …` works even with `color_depth:
 truecolor` configured). Then config, then detection. Depth never changes
 the frame — only the emitted bytes.
 
+### keyboard_protocol
+
+Keyboard input protocol (kitty-keyboard arc, docs/kitty-keyboard.md). `auto`
+(the default) runs the boot detection handshake (a CSI-u flags query fenced
+by a Primary-DA request) and enables the "disambiguate escape codes" mode
+only on a confirmed reply; `legacy` stays on the tokenizer path and never
+probes or enables; `kitty` force-enables without the handshake (for terminals
+that support the protocol but don't answer the query). Terminals without the
+protocol are unaffected either way.
+
+Precedence mirrors `color_depth`: a valid `LAZYTUI_KBD` env value beats the
+config (`LAZYTUI_KBD=legacy lazytui …` disables it for one run even with
+`keyboard_protocol: kitty` configured). The flags are pushed on a save/restore
+stack and popped on suspend (Ctrl+Z) and exit, so a shell or editor spawned
+from lazytui is never left in the protocol.
+
 The merge happens inside `parse()`: the project config validates STANDALONE
 first (its errors surface unchanged, global file or not), the pre-validated
 global sections then layer in before the output assembly, so `theme:` /
@@ -77,8 +94,9 @@ never re-reads the file. `--keymap` dumps the effective (merged) bindings.
 A `.json` config is the parser's RESOLVED output shape, so it always carries
 explicit `theme`/`selection` values — the global scalars can't apply there
 (nothing is "absent"); `editor: null` counts as unset, so a global `editor:`
-still lands, and the stamped `color_depth: 'auto'` likewise counts as unset
-(auto = "no override opinion"). The keyed sections (`keys`, `keymap`,
+still lands, and the stamped `color_depth: 'auto'` / `keyboard_protocol:
+'auto'` likewise count as unset (auto = "no override opinion"). The keyed
+sections (`keys`, `keymap`,
 `mouse`, `context-menu`) layer exactly as they do for YAML.
 
 ## Failure contract

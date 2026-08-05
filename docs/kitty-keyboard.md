@@ -1,8 +1,13 @@
-# Kitty keyboard protocol — arc SPEC (FROZEN 2026-08-05)
+# Kitty keyboard protocol — arc SPEC (IMPLEMENTED)
 
-Status: **FROZEN** (user pinned all six decisions 2026-08-05). Follow-on
-arc to v0.6.13 (truecolor); implementation begins on the user's word,
-after v0.6.13 tags. Sibling to terminal-pane color / user theme files.
+Status: **IMPLEMENTED 2026-08-06** on the `kitty-keyboard` branch (all six
+decisions below were pinned 2026-08-05 and built as specified). Target
+release **v0.6.14**. Landed as: io/term.js sequences + lifecycle
+(cleanup/suspend), the boot detection handshake + `model.caps.keyboard`
+(kkp_detected Msg), the pure `leaves/input/kkp-decode.js` CSI-u decoder +
+dispatch arm, the `keyboard_protocol:` config key + `LAZYTUI_KBD` env, and
+tests (`test-kkp-decode.js` spec vectors + dev-only kitty-keyboard oracle,
+`smoke/kkp.js` end-to-end). The plan below is retained as the design record.
 
 ## Why this exists — the deep-check finding
 
