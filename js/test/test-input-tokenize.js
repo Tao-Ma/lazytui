@@ -95,6 +95,61 @@ describe('carry — sequences split across chunks', () => {
   });
 });
 
+describe('terminator rule — ESC/C0 cancels a pending sequence (review 2026-08-05)', () => {
+  it('ESC after SS3 prefix: orphan drops alone, the arrow survives (was: stray [ B typed)', () => {
+    eq(toks('\x1bO\x1b[B').join('|'), '\x1bO|\x1b[B');
+  });
+  it('C0 after SS3 prefix is not absorbed', () => {
+    eq(toks('\x1bO\x03').join('|'), '\x1bO|\x03');
+  });
+  it('ESC after CSI introducer: head drops alone, the arrow survives (was: rest-of-chunk swallowed)', () => {
+    eq(toks('\x1b[\x1b[B').join('|'), '\x1b[|\x1b[B');
+  });
+  it('C0 inside a pending CSI: Ctrl-C and the keys after it survive', () => {
+    eq(toks('\x1b[1\x03jjj').join('|'), '\x1b[1|\x03|j|j|j');
+  });
+});
+
+describe('legacy encodings — payload must not type as keys (review 2026-08-05)', () => {
+  it('X10 mouse report is ONE token: \\x1b[M + 3 coordinate bytes (a click at column 81 is q)', () => {
+    eq(toks('\x1b[M !!').join('|'), '\x1b[M !!');
+    eq(toks('\x1b[M !!j').join('|'), '\x1b[M !!|j');
+  });
+  it('split X10 report carries and rejoins', () => {
+    const first = tokenizeInput('\x1b[M !');
+    eq(first.carry, '\x1b[M !');
+    eq(tokenizeInput(first.carry + '!').tokens.join('|'), '\x1b[M !!');
+  });
+  it('an ESC/C0 where a coordinate should be terminates the report (never absorbed)', () => {
+    eq(toks('\x1b[M\x1b[B').join('|'), '\x1b[M|\x1b[B');
+  });
+  it('Linux-console F-key \\x1b[[A is ONE token (was: dropped CSI + stray typed A)', () => {
+    eq(toks('\x1b[[A').join('|'), '\x1b[[A');
+    eq(toks('\x1b[[Aj').join('|'), '\x1b[[A|j');
+    eq(carry('\x1b[['), '\x1b[[');
+    eq(toks('\x1b[[\x1b[B').join('|'), '\x1b[[|\x1b[B');
+  });
+});
+
+describe('pathological floods (review 2026-08-05)', () => {
+  it('an ESC flood tokenizes iteratively as one dropped run (was: stack-overflow crash)', () => {
+    const r = tokenizeInput('\x1b'.repeat(5000));
+    eq(r.tokens.length, 1);
+    eq(r.tokens[0].length, 5000);
+    eq(r.carry, '');
+  });
+  it('a flood ending in a partial CSI respects the carry cap (emitted, not carried)', () => {
+    const s = '\x1b'.repeat(100) + '[';
+    const r = tokenizeInput(s);
+    eq(r.carry, '');
+    eq(r.tokens.join(''), s);
+  });
+  it('a SHORT Alt-prefix stack on a partial still carries (\\x1b\\x1b[ + A → alt-arrow)', () => {
+    eq(carry('\x1b\x1b['), '\x1b\x1b[');
+    eq(tokenizeInput('\x1b\x1b[' + 'A').tokens.join('|'), '\x1b\x1b[A');
+  });
+});
+
 describe('invariants', () => {
   it('tokens are exact contiguous slices: join(tokens) + carry === input', () => {
     const inputs = [
@@ -108,6 +163,23 @@ describe('invariants', () => {
   });
   it('empty input → no tokens, no carry', () => {
     eq(JSON.stringify(tokenizeInput('')), '{"tokens":[],"carry":""}');
+  });
+  it('seeded fuzz: 2000 adversarial chunks — invariant holds, nothing throws', () => {
+    // Deterministic LCG; the alphabet is escape-heavy on purpose — the
+    // review findings all lived in ESC-interrupted / legacy shapes.
+    let seed = 0x2f6e2b1;
+    const rnd = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x80000000;
+    const abc = ['\x1b', '[', 'O', 'M', '~', ';', '1', '<', '2', '0', 'j', 'A',
+                 'あ', '😀', '\x03', '\r', '\x7f', ' ', 'q'];
+    let bad = null;
+    for (let n = 0; n < 2000 && !bad; n++) {
+      let s = '';
+      const len = 1 + Math.floor(rnd() * 24);
+      for (let k = 0; k < len; k++) s += abc[Math.floor(rnd() * abc.length)];
+      const { tokens, carry: c } = tokenizeInput(s);
+      if (tokens.join('') + c !== s) bad = s;
+    }
+    eq(bad, null, `slice invariant violated for ${JSON.stringify(bad)}`);
   });
   it('control chars pass through as plain tokens (\\r \\x03)', () => {
     eq(toks('\r\n\x03').join('|'), '\r|\n|\x03');

@@ -1094,6 +1094,10 @@ function _makeDataHandler(stdin) {
         if (tok === _PASTE_OPEN) { reemit(tokens.slice(i).join('')); return; }
         _dispatchToken(tok);
       }
+      // A terminal-mode flip on the FINAL token leaves no next iteration
+      // to hand off through — but the pending carry belongs to the PTY
+      // stream now, not the keyboard parser, so forward it the same way.
+      if (_carry && getModel().modes.terminalMode) reemit('');
     } finally { if (batch) endBatch(); }
   };
 }

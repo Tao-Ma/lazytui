@@ -118,4 +118,59 @@ describe('[5] burst ending in a partial sequence', () => {
   });
 });
 
+// --- Review hardening, 2026-08-05 -----------------------------------------
+
+describe('[6] ESC flood (pre-fix: stack-overflow crash killed the app)', () => {
+  it('a 5000-ESC chunk is inert and the handler stays responsive', () => {
+    const before = sel();
+    feed('\x1b'.repeat(5000));
+    eq(sel(), before, 'flood dispatched nothing');
+    feed('j');
+    eq(sel(), before + 1, 'next key still works');
+  });
+});
+
+describe('[7] ESC terminates a pending sequence (pre-fix: absorbed or swallowed)', () => {
+  it('\\x1bO + arrow: the orphan SS3 prefix drops, the arrow works (was: stray [ B typed)', () => {
+    const before = sel();
+    feed('\x1bO\x1b[B');
+    eq(sel(), before + 1, 'arrow dispatched despite the orphan prefix');
+  });
+  it('\\x1b[ + arrow batched in one chunk: head drops, arrow works (was: chunk swallowed whole)', () => {
+    const before = sel();
+    feed('\x1b[\x1b[B');
+    eq(sel(), before + 1, 'arrow survived the malformed head');
+  });
+});
+
+describe('[8] X10 mouse report is inert (pre-fix: coordinates typed as keys)', () => {
+  it('a click whose column byte is ‘j’ does not move the cursor', () => {
+    const before = sel();
+    feed('\x1b[M!j%');   // btn-byte '!', col-byte 'j' (col 74), row-byte '%' (row 5)
+    eq(sel(), before, 'no coordinate byte reached the key ladder');
+  });
+});
+
+describe('[9] terminal-mode flip on the FINAL token forwards the carry to the PTY', () => {
+  it('carry takes the PTY path, not the 50ms flush (dead session exits the mode)', () => {
+    // Key filter: 'T' flips terminalMode ON, simulating a terminal-entering
+    // key (same shim as the review probe). No live session exists here, so
+    // _handleTerminalModeData on the forwarded carry exits the mode — mode
+    // OFF after the feed proves the carry took the PTY path; pre-fix it
+    // stayed ON and the carry flush-dropped.
+    const dispatch = require('../../dispatch/control/dispatch');
+    dispatch.registerKeyFilter((evt) => {
+      if (evt.key === 'T') {
+        dispatch.applyMsg({ type: 'mode_set', flag: 'terminalMode' });
+        return null;
+      }
+      return evt;
+    });
+    const before = sel();
+    feed('T\x1b[');      // tokens=['T'] flips the mode; carry='\x1b[' pends
+    eq(getModel().modes.terminalMode, false, 'carry was forwarded and the dead session exited the mode');
+    eq(sel(), before, 'nothing leaked through the key ladder');
+  });
+});
+
 report();
