@@ -134,6 +134,17 @@ The scenarios target the bug class the unit suite misses:
   present (`npm i --no-save kitty-keyboard`) — the D6 oracle; it is not a
   dependency and the block skips cleanly when the package is absent.
 
+- **`kkp-boot.js`** — the same protocol through the REAL boot path: spawns
+  `tui.js` in a node-pty (a true TTY, past the boot gate) and PLAYS the
+  terminal side. A raw PTY never auto-answers our query, so the test injects
+  the reply the protocol specifies and asserts the running binary reacts —
+  `auto` mode emits the query, enables on the reply, pops on quit; a
+  `LAZYTUI_KBD=legacy` boot never probes. This is the only test exercising
+  the TTY-gated boot wiring (real `setRawMode` + the detection block + exit
+  cleanup). The terminal's own CSI-u ENCODING is the terminal's job (no
+  library synthesizes it headlessly); our decode side is pinned by the
+  vectors + oracle above.
+
 Add a new scenario by dropping a `<name>.js` into `js/test/smoke/`;
 the aggregator at `js/scripts/run-smoke.js` discovers it. Each
 scenario imports the helper as `./_helpers/smoke` and uses
