@@ -1180,6 +1180,20 @@ function beginKeyboardDetection() {
   require('../../io/term').queryKKP();
 }
 
+// The diagnostics hint for a failed detection. A multiplexer (tmux/screen/
+// zellij) is the common reason a kitty-capable terminal reports "unsupported":
+// it answers the DA1 fence itself but doesn't negotiate the protocol for the
+// inner app. Name it so the user isn't left blaming their real terminal.
+function _kkpUnsupportedMsg() {
+  const mux = process.env.TMUX ? 'tmux'
+    : process.env.STY ? 'screen'
+    : process.env.ZELLIJ ? 'zellij'
+    : null;
+  return mux
+    ? `legacy — kitty keyboard protocol not negotiated (running inside ${mux}; run outside it to enable)`
+    : 'legacy — kitty keyboard protocol not supported by this terminal';
+}
+
 // Consume a handshake response token. Returns true if `tok` was a response
 // (so the ladder must not treat it as a key), false otherwise.
 function _maybeKkpResponse(tok) {
@@ -1194,7 +1208,7 @@ function _maybeKkpResponse(tok) {
     // user can see which keyboard protocol they got (docs/kitty-keyboard.md).
     require('../../io/diag-log').info('keyboard', supported
       ? 'kitty keyboard protocol enabled (CSI-u disambiguate)'
-      : 'legacy — kitty keyboard protocol not supported by this terminal');
+      : _kkpUnsupportedMsg());
     return true;
   }
   return false;

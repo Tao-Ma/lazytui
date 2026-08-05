@@ -57,8 +57,24 @@ describe('[1] handshake: DA1 without a flags report → legacy', () => {
     eq(getModel().caps.keyboard, 'legacy', 'no support recorded');
     assert(!term.kkpActive(), 'no flags pushed');
     const d = lastKbdDiag();
-    assert(d && d.level === 'info' && /not supported/.test(d.message),
+    assert(d && d.level === 'info' && /legacy/.test(d.message),
       `leader-e hint records the legacy outcome (got ${JSON.stringify(d)})`);
+  });
+});
+
+describe('[1b] multiplexer-aware wording', () => {
+  it('names tmux when detection fails inside it', () => {
+    const saved = process.env.TMUX;
+    process.env.TMUX = 'fake-session';
+    try {
+      sm.capture(() => input.beginKeyboardDetection());
+      feed('\x1b[?62;1;6c');   // DA1 fence only → unsupported
+      const d = lastKbdDiag();
+      assert(d && /tmux/.test(d.message),
+        `message names the multiplexer (got ${JSON.stringify(d)})`);
+    } finally {
+      if (saved === undefined) delete process.env.TMUX; else process.env.TMUX = saved;
+    }
   });
 });
 

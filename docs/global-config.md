@@ -82,6 +82,14 @@ config (`LAZYTUI_KBD=legacy lazytui …` disables it for one run even with
 stack and popped on suspend (Ctrl+Z) and exit, so a shell or editor spawned
 from lazytui is never left in the protocol.
 
+Note on multiplexers: inside **tmux / screen / zellij**, lazytui talks to the
+multiplexer, not your outer terminal — and those answer the detection fence
+themselves without negotiating the kitty protocol for the inner app, so `auto`
+falls back to legacy even under a kitty-capable terminal (Ghostty, kitty,
+foot, WezTerm…). The `<leader> e` hint names the multiplexer in that case. To
+use the protocol, run lazytui outside the multiplexer. (SSH and container
+shells are transparent — only the multiplexer layer matters.)
+
 The merge happens inside `parse()`: the project config validates STANDALONE
 first (its errors surface unchanged, global file or not), the pre-validated
 global sections then layer in before the output assembly, so `theme:` /
