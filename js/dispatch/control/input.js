@@ -1,10 +1,15 @@
 /**
  * Input layer — raw stdin → key events; SGR mouse parsing → click events.
  *
- * Parses:
+ * A chunk is first TOKENIZED into complete input events (leaves/input/
+ * tokenize — network-lag fix, 2026-08-05: over SSH one chunk can batch
+ * many events, and TCP can split one sequence across chunks). Each token
+ * then dispatches through one ladder:
  *   - SGR mouse: \x1b[<button;x;yM (press) / m (release), left clicks only
  *   - Arrow keys, PgUp/Dn, Esc, Enter, Ctrl+C — into named keys
  *   - Anything else — passed through as both `key` and `seq` to handleKey
+ * A multi-token chunk paints ONCE (render-queue beginBatch/endBatch); a
+ * single-token chunk keeps the synchronous per-key paint.
  *
  * Terminal mode bypasses parsing: bytes go straight to the active PTY,
  * except Ctrl+\ which exits terminal mode.
@@ -13,7 +18,7 @@
 
 const { allPanels, setSel, getSel, getScroll } = require('../../panel/nav-state');
 const { visibleBoundsFor, getPanelViewportH } = require('../../leaves/wm/geometry');
-const { paintNow: render } = require('../../leaves/infra/render-queue');
+const { paintNow: render, beginBatch, endBatch } = require('../../leaves/infra/render-queue');
 const { getModel } = require('../../model/store');
 const { enableMouse, enableFocusEvents, enableBracketedPaste, cols } = require('../../io/term');
 const { focusedTerminalId } = require('../../panel/terminal-surfaces');
@@ -23,6 +28,7 @@ const { dispatchMsg } = require('../runtime/loop');
 const route = require('../../panel/route');
 const mpane = require('../../leaves/wm/pane');
 const { isChainActive, CHAIN_MODES, suppressesChromeClicks } = require('../../leaves/input/modes');
+const { tokenizeInput } = require('../../leaves/input/tokenize');
 // v0.6.4 Theme F Phase 2 — mouse gestures route through the shared intent
 // layer (the keyboard side joined in Phase 1). intent.js executes no
 // requires at load time, so this top-level require is load-order-safe
@@ -910,27 +916,24 @@ function _handleTerminalModeData(data) {
 // which fired Esc (closing any open modal); subsequent chunks
 // silently dropped.
 //
-// Residual gap (not fixed): if the 6-byte OPEN marker itself splits
-// across chunks (e.g. chunk-1 ends with `\x1b[20`, chunk-2 starts
-// with `0~content...`), the first chunk doesn't satisfy
-// `startsWith(_PASTE_OPEN)` and falls through to the unknown-escape
-// drop path. The paste content gets fed back through `stdin.emit`
-// retry but without the open-marker context, so it dispatches as
-// individual chars. Practically rare — TTY pastes typically arrive
-// with the open marker intact in the first chunk (markers are 6
-// bytes, the splits are large-content-driven) — but the gap exists.
-// A more robust accumulator would also detect prefixes-of-OPEN at
-// chunk boundaries, which adds latency to every \x1b-prefixed key.
+// The historical residual gap — the 6-byte OPEN marker itself splitting
+// across chunks (chunk-1 ends `\x1b[20`, chunk-2 starts `0~content...`)
+// — is closed by the tokenizer carry (2026-08-05): the trailing partial
+// CSI is carried, rejoins the next chunk, and the completed paste-open
+// token re-routes the rest of the chunk back through this accumulator
+// (see the token loop's _PASTE_OPEN re-emit).
 let _pasteBuffer = '';
 const _PASTE_MAX = 256 * 1024;   // 256 KB cap (R16)
 const _PASTE_OPEN = '\x1b[200~';
 const _PASTE_CLOSE = '\x1b[201~';
 
-// T25 — multi-event SGR mouse parser (R15). Pre-fix used a single
-// .match() which dispatched only the first event in a chunk; fast
-// drag motion that coalesced multiple events per chunk silently
-// dropped all but the first. matchAll iterates every event.
-const _MOUSE_RE_G = /\x1b\[<(\d+);(\d+);(\d+)([Mm])/g;
+// One SGR mouse event, anchored — the tokenizer hands us exactly one
+// sequence per token. (T25/R15's multi-event-per-chunk handling — fast
+// drags coalescing several events into one chunk — now falls out of the
+// tokenizer: each event is its own token, and keys interleaved with the
+// mouse bytes dispatch too instead of being dropped by the old
+// `if (sawMouse) return`.)
+const _MOUSE_RE = /^\x1b\[<(\d+);(\d+);(\d+)([Mm])$/;
 
 // v0.6.4 Theme F Phase 3 — double-click derivation lives HERE, in the
 // parser: it is the only layer that sees raw press timing, and a
@@ -978,7 +981,52 @@ function setupKeyListener() {
   enableFocusEvents();       // \e[I on focus gain, \e[O on focus loss
   enableBracketedPaste();    // \e[200~ ... \e[201~ wraps pasted blocks
 
-  stdin.on('data', (data) => {
+  stdin.on('data', _makeDataHandler(stdin));
+}
+
+// --- Chunk → token pipeline (network-lag fix, 2026-08-05) -----------------
+//
+// Locally raw mode fires one 'data' event per keystroke, so the historical
+// whole-chunk exact matches (`data === '\x1b[B'`) worked. Over SSH they
+// broke two ways:
+//   1. Autorepeat BATCHES — one chunk carries `'jjjjj'` or
+//      `'\x1b[B\x1b[B\x1b[B'`. The plain-char burst split per char but
+//      PAINTED per key (N queued frames per chunk → the crawling-highlight
+//      lag over a slow link), and a batched escape-prefixed chunk matched
+//      nothing exact and was dropped WHOLE (held arrow-down over a laggy
+//      link ate keystrokes).
+//   2. TCP splits one sequence ACROSS chunks (`\x1b[` + `B`): the head
+//      dropped as unknown-escape, the tail typed a stray plain 'B'.
+// The tokenizer leaf splits a chunk into complete events; _dispatchToken
+// runs the SAME per-event ladder the whole-chunk matches encoded. A
+// multi-token chunk paints ONCE via render-queue beginBatch/endBatch
+// (measured: a 5-key burst was 5 frames / 2,963 B per-key, 1 frame /
+// 586 B batched); a single-token chunk keeps the synchronous paint, so
+// local per-keystroke latency is untouched. An incomplete trailing
+// sequence is CARRIED into the next chunk; a short flush timer logs +
+// drops it if no continuation arrives (a deliberate Esc-then-`[` can't
+// wedge the pipeline — flush equals the old incomplete-chunk treatment).
+const _CARRY_FLUSH_MS = 50;
+let _carry = '';
+let _carryTimer = null;
+
+function _clearCarryTimer() {
+  if (_carryTimer) { clearTimeout(_carryTimer); _carryTimer = null; }
+}
+
+function _makeDataHandler(stdin) {
+  // Re-emit raw bytes as a fresh 'data' event — used when a token flips
+  // the input mode mid-chunk (terminal-mode entry routes the rest of the
+  // chunk to the PTY; a paste-open routes it into the accumulator). The
+  // pending carry belongs after `rest` in stream order, so it rides along.
+  const reemit = (rest) => {
+    const tail = rest + _carry;
+    _carry = '';
+    _clearCarryTimer();
+    stdin.emit('data', tail);
+  };
+
+  return (data) => {
     // Terminal mode: forward raw bytes to PTY (Ctrl+\ exits)
     if (getModel().modes.terminalMode && _handleTerminalModeData(data)) return;
 
@@ -1009,109 +1057,140 @@ function setupKeyListener() {
       return;
     }
 
-    // Terminal focus events (DEC 1004). On blur, the periodic
-    // refresh loop in tui.js pauses; on focus return, we fire one
-    // catch-up refresh immediately so stale data doesn't show.
-    if (data === '\x1b[I') {
-      const wasUnfocused = !getModel().focused;
-      applyMsg({ type: 'focus_event', focused: true });
-      if (wasUnfocused) require('../../leaves/infra/render-queue').scheduleRender();
-      return;
+    // Tokenize, joining any partial sequence carried from the previous
+    // chunk. A fresh chunk supersedes the pending carry flush.
+    _clearCarryTimer();
+    const { tokens, carry } = tokenizeInput(_carry + data);
+    _carry = carry;
+    if (_carry) {
+      _carryTimer = setTimeout(() => {
+        // No continuation arrived — the "incomplete sequence" was a
+        // deliberate Esc-prefix keyboard chord after all. Log + drop,
+        // exactly the pre-tokenizer treatment of an incomplete chunk.
+        const c = _carry;
+        _carry = '';
+        _carryTimer = null;
+        require('../../io/event-log').record('input', {
+          kind: 'unknown_escape',
+          bytes: c.length > 64 ? c.slice(0, 64) + '...' : c,
+        });
+      }, _CARRY_FLUSH_MS);
+      if (_carryTimer.unref) _carryTimer.unref();
     }
-    if (data === '\x1b[O') {
-      applyMsg({ type: 'focus_event', focused: false });
-      return;
-    }
+    if (!tokens.length) return;
 
-    // SGR mouse events: \x1b[<button;x;yM (press / motion) or m (release).
-    // T25 / R15 — matchAll loop: fast drag can coalesce multiple events
-    // per chunk. The pre-fix single .match() dispatched only the first.
-    let sawMouse = false;
-    for (const mm of data.matchAll(_MOUSE_RE_G)) {
-      sawMouse = true;
-      const btn      = parseInt(mm[1]);
-      const x        = parseInt(mm[2]);
-      const y        = parseInt(mm[3]);
-      const released = mm[4] === 'm';
-      if ((btn & 0x40) !== 0) {
-        if (released) continue;
-        // SGR wheel buttons: 64 = up, 65 = down (VERTICAL); 66 = left, 67 = right
-        // (HORIZONTAL tilt-wheel / trackpad side-scroll). Only bit 0 tells up from
-        // down, so the old `btn & 1` misread 66 as wheel-up and 67 as wheel-down —
-        // a horizontal scroll injected spurious vertical steps, jittering the list
-        // cursor during a slow scroll (66/67 interleaved with the real 65s). lazytui
-        // has no horizontal axis, so drop 66/67 entirely.
-        const low = btn & 0x03;
-        if (low === 0)      handleMouse('wheel-up', x, y);
-        else if (low === 1) handleMouse('wheel-down', x, y);
-        // low === 2 (wheel-left) / 3 (wheel-right): horizontal — ignored.
-        continue;
+    // Multi-token chunk → one trailing paint (render-queue.beginBatch).
+    const batch = tokens.length > 1;
+    if (batch) beginBatch();
+    try {
+      for (let i = 0; i < tokens.length; i++) {
+        const tok = tokens[i];
+        // A token can flip the input mode mid-chunk; the REST of the
+        // chunk then belongs to the new mode's parser, not this ladder.
+        if (i > 0 && getModel().modes.terminalMode) { reemit(tokens.slice(i).join('')); return; }
+        // A paste-open reaching here came from a chunk-split OPEN marker
+        // rejoined by the carry (a whole-chunk open hits the accumulator
+        // branch above) — hand the rest back so the accumulator owns it.
+        if (tok === _PASTE_OPEN) { reemit(tokens.slice(i).join('')); return; }
+        _dispatchToken(tok);
       }
-      const motion = (btn & 0x20) !== 0;
-      const button = btn & 3;
-      // Motion + release stay left-only — text-select extend/commit have no
-      // right/middle analog, so a right/middle drag or release is dropped
-      // exactly as before. Released is checked first (a release-during-drag
-      // carries both the 'm' suffix and the motion bit).
-      if (released) {
-        if (button !== 0) continue;
-        handleMouse('release', x, y);
-        continue;
-      }
-      if (motion) {
-        if (button !== 0) continue;
-        handleMouse('motion', x, y);
-        continue;
-      }
-      // Fresh press — classify into press/double (left) or right/middle.
-      // v0.6.4 Theme F Phase 3 — was `if (button !== 0) continue`, which
-      // dropped every non-left button at the door.
-      const gesture = _classifyPress(button, x, y, Date.now());
-      if (gesture) handleMouse(gesture, x, y);
-    }
-    if (sawMouse) return;
+    } finally { if (batch) endBatch(); }
+  };
+}
 
-    if (data === '\x1b[A') return handleKey('up');
-    if (data === '\x1b[B') return handleKey('down');
-    if (data === '\x1b[C') return handleKey('right');
-    if (data === '\x1b[D') return handleKey('left');
-    if (data === '\x1b[5~') return handleKey('pageup');
-    if (data === '\x1b[6~') return handleKey('pagedown');
-    if (data === '\x1b' || data === '\x1b\x1b') return handleKey('escape');
-    if (data === '\r' || data === '\n') return handleKey('return');
-    if (data === '\x03') { cleanup(); process.exit(0); }
-    if (data === '\x12') return handleKey('ctrl-r');  // Ctrl+R → free-config redo
+/**
+ * One complete input event → the same ladder the whole-chunk handler used
+ * to exact-match. Behavior is preserved event-for-event; the ladder now
+ * also applies to events that arrive batched, which the exact matches
+ * missed (a batched `\r` used to dispatch as a raw char instead of
+ * `return`; a batched `\x03` didn't quit).
+ */
+function _dispatchToken(tok) {
+  // Terminal focus events (DEC 1004). On blur, the periodic
+  // refresh loop in tui.js pauses; on focus return, we fire one
+  // catch-up refresh immediately so stale data doesn't show.
+  if (tok === '\x1b[I') {
+    const wasUnfocused = !getModel().focused;
+    applyMsg({ type: 'focus_event', focused: true });
+    if (wasUnfocused) require('../../leaves/infra/render-queue').scheduleRender();
+    return;
+  }
+  if (tok === '\x1b[O') {
+    applyMsg({ type: 'focus_event', focused: false });
+    return;
+  }
 
-    // T25 / B14 — was: ANY chunk starting with \x1b fired handleKey
-    // ('escape'). That treated F-keys (\x1bOP), Alt-modified keys
-    // (\x1b[1;3A), Home/End (\x1b[H, \x1b[F), Shift-Tab (\x1b[Z) etc.
-    // as Esc — silently canceling any open modal. Now: only fire Esc
-    // when the chunk IS exactly Esc (caught above) or \x1b\x1b (caught
-    // above); other escape-prefixed chunks log + drop. Logged to
-    // event-log so a maintainer reading a recorded session can see
-    // what unknown sequences fired.
-    if (data.charCodeAt(0) === 0x1b) {
-      require('../../io/event-log').record('input', {
-        kind: 'unknown_escape',
-        bytes: data.length > 64 ? data.slice(0, 64) + '...' : data,
-      });
-      return;
-    }
+  // SGR mouse event: \x1b[<button;x;yM (press / motion) or m (release).
+  const mm = _MOUSE_RE.exec(tok);
+  if (mm) return _dispatchMouseEvent(mm);
 
-    // T25 / B16 — bursty plain chunk (no escape prefix). Node TTY in
-    // raw mode usually fires one 'data' per keystroke, but under high
-    // CPU load or terminal autorepeat or piped-keystroke playback,
-    // chunks can batch — `data === 'jjjjj'`. Each handler downstream
-    // (handleNormalKey's switch, modal text input's length===1 gate)
-    // expects single-char keys. Split per-char so `100j` style
-    // autorepeat doesn't silently drop. Skip if length 1 (common path).
-    if (data.length > 1) {
-      for (const ch of data) handleKey(ch, ch);
-      return;
-    }
+  if (tok === '\x1b[A') return handleKey('up');
+  if (tok === '\x1b[B') return handleKey('down');
+  if (tok === '\x1b[C') return handleKey('right');
+  if (tok === '\x1b[D') return handleKey('left');
+  if (tok === '\x1b[5~') return handleKey('pageup');
+  if (tok === '\x1b[6~') return handleKey('pagedown');
+  if (tok === '\x1b' || tok === '\x1b\x1b') return handleKey('escape');
+  if (tok === '\r' || tok === '\n') return handleKey('return');
+  if (tok === '\x03') { cleanup(); process.exit(0); }
+  if (tok === '\x12') return handleKey('ctrl-r');  // Ctrl+R → free-config redo
 
-    handleKey(data, data);
-  });
+  // T25 / B14 — never fire Esc for an escape-PREFIXED event: F-keys
+  // (\x1bOP), Alt-modified keys (\x1b[1;3A, \x1bj), Home/End (\x1b[H,
+  // \x1b[F), Shift-Tab (\x1b[Z) etc. would silently cancel any open
+  // modal. Esc fires only for the exact forms caught above; other
+  // escape-initiated tokens log + drop (event-log, so a maintainer
+  // reading a recorded session can see what unknown sequences fired).
+  if (tok.charCodeAt(0) === 0x1b) {
+    require('../../io/event-log').record('input', {
+      kind: 'unknown_escape',
+      bytes: tok.length > 64 ? tok.slice(0, 64) + '...' : tok,
+    });
+    return;
+  }
+
+  handleKey(tok, tok);
+}
+
+/** One SGR mouse event (an anchored _MOUSE_RE match). */
+function _dispatchMouseEvent(mm) {
+  const btn      = parseInt(mm[1]);
+  const x        = parseInt(mm[2]);
+  const y        = parseInt(mm[3]);
+  const released = mm[4] === 'm';
+  if ((btn & 0x40) !== 0) {
+    if (released) return;
+    // SGR wheel buttons: 64 = up, 65 = down (VERTICAL); 66 = left, 67 = right
+    // (HORIZONTAL tilt-wheel / trackpad side-scroll). Only bit 0 tells up from
+    // down, so the old `btn & 1` misread 66 as wheel-up and 67 as wheel-down —
+    // a horizontal scroll injected spurious vertical steps, jittering the list
+    // cursor during a slow scroll (66/67 interleaved with the real 65s). lazytui
+    // has no horizontal axis, so drop 66/67 entirely.
+    const low = btn & 0x03;
+    if (low === 0)      handleMouse('wheel-up', x, y);
+    else if (low === 1) handleMouse('wheel-down', x, y);
+    // low === 2 (wheel-left) / 3 (wheel-right): horizontal — ignored.
+    return;
+  }
+  const motion = (btn & 0x20) !== 0;
+  const button = btn & 3;
+  // Motion + release stay left-only — text-select extend/commit have no
+  // right/middle analog, so a right/middle drag or release is dropped
+  // exactly as before. Released is checked first (a release-during-drag
+  // carries both the 'm' suffix and the motion bit).
+  if (released) {
+    if (button !== 0) return;
+    return handleMouse('release', x, y);
+  }
+  if (motion) {
+    if (button !== 0) return;
+    return handleMouse('motion', x, y);
+  }
+  // Fresh press — classify into press/double (left) or right/middle.
+  // v0.6.4 Theme F Phase 3 — was `if (button !== 0) return`, which
+  // dropped every non-left button at the door.
+  const gesture = _classifyPress(button, x, y, Date.now());
+  if (gesture) handleMouse(gesture, x, y);
 }
 
 module.exports = {
@@ -1121,4 +1200,5 @@ module.exports = {
   _handleWheel,             // exported for tests
   handleMouse,              // exported for tests (T13 modal-gate regression)
   _classifyPress,           // exported for tests (Theme F Phase 3 double-click derivation)
+  _makeDataHandler,         // exported for tests (input-burst smoke drives the real handler)
 };

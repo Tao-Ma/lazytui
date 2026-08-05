@@ -98,6 +98,11 @@ The scenarios target the bug class the unit suite misses:
   one gesture: single steps down past the fold and back up, plus
   bottom/top jumps, each asserting the frame shows exactly the cursor's
   row highlighted (the applyMsg nav-gate regression class).
+- **`input-burst.js`** — batched stdin chunks through the REAL data
+  handler: an autorepeat burst dispatches every key and paints ONCE
+  (the network-lag class), batched arrow-key chunks dispatch instead
+  of dropping whole, and a sequence split across chunks rejoins via
+  the tokenizer carry; the single-key chunk still paints synchronously.
 
 Add a new scenario by dropping a `<name>.js` into `js/test/smoke/`;
 the aggregator at `js/scripts/run-smoke.js` discovers it. Each

@@ -50,6 +50,16 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   kept descending — the keep-in-view scroll clamp ran one gesture late
   on the per-keystroke nav path. Long-standing (reproduced on v0.6.12);
   scroll now follows the cursor within the same keypress.
+- Fast cursor movement over a network no longer lags behind the key.
+  Over SSH, autorepeat keystrokes arrive batched in one stdin chunk;
+  each key painted its own frame into the congested link and the
+  client terminal replayed every intermediate state (a 5-key chunk
+  emitted 5 frames — now 1). Input chunks are tokenized into complete
+  events: batched arrow-key repeats dispatch instead of being dropped
+  whole, keys interleaved with mouse events are no longer discarded,
+  and a sequence split across chunks (`ESC[` + `B`) rejoins instead of
+  misparsing as a stray key. Long-standing; local single-keystroke
+  latency is unchanged.
 
 ## [0.6.12] — 2026-08-03
 

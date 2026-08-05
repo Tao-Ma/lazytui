@@ -12,8 +12,12 @@ greppable.
         │                       │                   │
         ▼                       ▼                   ▼
    js/dispatch/control/input.js    js/dispatch/runtime/stream.js  a declared Sub cb
-   • SGR mouse parse        js/io/terminal.js   (interval/process-stream/
-   • paste accumulator     • PTY mgmt            resize; app/state.js)
+   • chunk → event tokens    js/io/terminal.js   (interval/process-stream/
+     (leaves/input/tokenize; • PTY mgmt           resize; app/state.js)
+     multi-event chunk paints
+     once — render-queue batch)
+   • SGR mouse parse
+   • paste accumulator
         │
         ▼
 ════════════════════════════ DISPATCH ══════════════════════════════
