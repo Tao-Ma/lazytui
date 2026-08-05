@@ -19,7 +19,9 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   force-enable) or the `LAZYTUI_KBD` env override (env wins). The flags are
   popped on suspend/exit so a spawned shell or editor is never left in the
   protocol. Terminals without the protocol are untouched (the legacy
-  tokenizer path is unchanged). Implemented from the published spec.
+  tokenizer path is unchanged). The negotiated protocol is recorded as an
+  info line in the `<leader> e` diagnostics window (e.g. "keyboard: kitty
+  keyboard protocol enabled"). Implemented from the published spec.
 
 ## [0.6.13] — 2026-08-05
 

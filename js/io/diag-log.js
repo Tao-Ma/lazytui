@@ -12,7 +12,10 @@
  *
  * Entry shape: { t, level, code, message }
  *   - t       — ms epoch (Date.now() at record time)
- *   - level   — 'warn' | 'error' (anything else normalizes to 'warn')
+ *   - level   — 'warn' | 'error' | 'info' (anything else normalizes to
+ *               'warn'). 'info' is a benign session fact (e.g. the negotiated
+ *               keyboard protocol), not a problem — it does not count toward
+ *               the warn/error badge.
  *   - code    — short machine tag ('pane-collapse', 'config', 'throw' …)
  *   - message — human-readable one-liner
  *
@@ -50,18 +53,19 @@ function _notify() { if (_onChange) _onChange(); }
 function _push(level, code, message) {
   _buf.push({
     t: Date.now(),
-    level: level === 'error' ? 'error' : 'warn',
+    level: (level === 'error' || level === 'info') ? level : 'warn',
     code: String(code == null ? '' : code),
     message: String(message == null ? '' : message),
   });
   if (_buf.length > _cap) _buf.shift();
 }
 
-/** Append a diagnostic. `level` normalizes to 'warn' unless 'error'. */
+/** Append a diagnostic. `level` normalizes to 'warn' unless 'error'/'info'. */
 function record(level, code, message) { _push(level, code, message); _notify(); }
 
 function warn(code, message)  { record('warn', code, message); }
 function error(code, message) { record('error', code, message); }
+function info(code, message)  { record('info', code, message); }
 
 // Deferred lane (v0.6.6 §9 follow-up — render-path purity). A render/read-path
 // detection must NOT mutate the buffer synchronously: a write here fires
@@ -105,7 +109,7 @@ function size() { return _buf.length; }
  *  future footer badge (no footer indicator wires it in yet). */
 function counts() {
   let w = 0, e = 0;
-  for (const x of _buf) (x.level === 'error' ? e++ : w++);
+  for (const x of _buf) { if (x.level === 'error') e++; else if (x.level === 'warn') w++; }
   return { warn: w, error: e, total: _buf.length };
 }
 
@@ -141,7 +145,7 @@ function save(filepath) {
 }
 
 module.exports = {
-  record, warn, error, snapshot, size, counts, clear, setCap, save,
+  record, warn, error, info, snapshot, size, counts, clear, setCap, save,
   yankText, DEFAULT_CAP, setOnChange,
   warnDeferred, flushDeferred,
 };

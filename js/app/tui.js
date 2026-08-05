@@ -432,8 +432,14 @@ function main() {
     const kbd = (envKbd === 'legacy' || envKbd === 'kitty' || envKbd === 'auto')
       ? envKbd
       : ((getModel().config || {}).keyboard_protocol || 'auto');
-    if (kbd === 'kitty') require('../io/term').enableKKP();
-    else if (kbd !== 'legacy') require('../dispatch/control/input').beginKeyboardDetection();
+    if (kbd === 'kitty') {
+      require('../io/term').enableKKP();
+      require('../io/diag-log').info('keyboard', 'kitty keyboard protocol force-enabled (keyboard_protocol: kitty)');
+    } else if (kbd === 'legacy') {
+      require('../io/diag-log').info('keyboard', 'legacy keyboard mode (kitty keyboard protocol disabled)');
+    } else {
+      require('../dispatch/control/input').beginKeyboardDetection();
+    }
   }
 
   // Phase 6 — the framework's per-Plugin refresh-loop retired. Components

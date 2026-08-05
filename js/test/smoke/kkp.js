@@ -28,7 +28,11 @@ const dispatch = require('../../dispatch/control/dispatch');
 const term = require('../../io/term');
 const suspend = require('../../app/suspend');
 const { getModel } = require('../../model/store');
+const diag = require('../../io/diag-log');
 const { describe, it, assert, eq, report } = require('../test-runner');
+
+// Newest 'keyboard' diagnostic (the leader-e hint recorded at detection).
+const lastKbdDiag = () => diag.snapshot().find((e) => e.code === 'keyboard');
 
 if (!api.getComponent('actions')) api.registerComponent(require('../../panel/navigator/actions'));
 
@@ -52,6 +56,9 @@ describe('[1] handshake: DA1 without a flags report → legacy', () => {
     feed('\x1b[?62;1;6c');   // Primary DA fence only — no kitty flags report
     eq(getModel().caps.keyboard, 'legacy', 'no support recorded');
     assert(!term.kkpActive(), 'no flags pushed');
+    const d = lastKbdDiag();
+    assert(d && d.level === 'info' && /not supported/.test(d.message),
+      `leader-e hint records the legacy outcome (got ${JSON.stringify(d)})`);
   });
 });
 
@@ -64,6 +71,9 @@ describe('[2] handshake: flags report before the DA1 fence → kitty + enabled',
     feed('\x1b[?62;1;6c');                    // DA1 fence
     eq(getModel().caps.keyboard, 'kitty', 'support recorded');
     assert(term.kkpActive(), 'flags pushed on confirmed support');
+    const d = lastKbdDiag();
+    assert(d && d.level === 'info' && /kitty/.test(d.message),
+      `leader-e hint records the kitty outcome (got ${JSON.stringify(d)})`);
   });
 });
 

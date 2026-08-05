@@ -1190,6 +1190,11 @@ function _maybeKkpResponse(tok) {
     const supported = _kkpSawReply;
     applyMsg({ type: 'kkp_detected', supported });
     if (supported) require('../../io/term').enableKKP();
+    // A one-line session fact for the `leader e` diagnostics window so the
+    // user can see which keyboard protocol they got (docs/kitty-keyboard.md).
+    require('../../io/diag-log').info('keyboard', supported
+      ? 'kitty keyboard protocol enabled (CSI-u disambiguate)'
+      : 'legacy — kitty keyboard protocol not supported by this terminal');
     return true;
   }
   return false;

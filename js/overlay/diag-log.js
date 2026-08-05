@@ -37,11 +37,12 @@ const CODE_W = 16;       // visible width reserved for the code column
 
 // Width-1 text glyphs only — NOT emoji-presentation like ⚠ (U+26A0), which some
 // terminals render 2-wide while charWidth/@xterm score it 1 (see the charWidth
-// truth-function notes). '!' warn / '✕' error are both reliably width-1.
-const LEVEL_GLYPH = { warn: '!', error: '✕' };
+// truth-function notes). '!' warn / '✕' error / 'i' info are all width-1.
+const LEVEL_GLYPH = { warn: '!', error: '✕', info: 'i' };
 // Level → theme SLOT name (resolved lazily at render — the palette can
-// change at runtime; truecolor arc 3a).
-const LEVEL_SLOT = { warn: 'warning', error: 'error' };
+// change at runtime; truecolor arc 3a). 'info' uses the neutral accent slot
+// (a benign session fact, not a problem color).
+const LEVEL_SLOT = { warn: 'warning', error: 'error', info: 'accent' };
 
 function _fmtAge(t, now) {
   const s = Math.max(0, Math.floor((now - t) / 1000));
