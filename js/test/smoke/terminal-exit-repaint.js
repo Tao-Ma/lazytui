@@ -188,7 +188,8 @@ const waitDead = async (id) => {
   }
   stdin.emit('data', `\x1b[<0;${stripX + 1};${stripY + 1}M\x1b[<0;${stripX + 1};${stripY + 1}m`);
   await sleep(150);
-  await gridWrite(takeRaw());
+  const switchRaw = takeRaw();
+  await gridWrite(switchRaw);
   const residueAfterSwitch = gridHas(/RESIDUE_/);
   restore();
 
@@ -199,6 +200,12 @@ const waitDead = async (id) => {
     });
     it('no shell characters survive the switch (was: residue in the new tab)', () => {
       eq(residueAfterSwitch, false, 'RESIDUE_ marker fully reclaimed');
+    });
+    it('the reclaim is TARGETED — row invalidation, not a full screen clear', () => {
+      // The vanish reconciliation invalidates only the rows the surface
+      // covered; a `\x1b[2J` here would mean the whole frame re-emitted
+      // (bytes + blink over a slow link — the class this arc exists to fix).
+      assert(!switchRaw.includes('\x1b[2J'), 'no full-screen clear in the switch frame');
     });
   });
 

@@ -601,6 +601,12 @@ function renderFull(model, arrangeOverride) {
 // Forcing a full repaint for such a session replaces the old single
 // `_frame.lastOverlayId` "the one terminal switched" force, generalized to N.
 let _paintedOverlayIds = new Set();
+// The screen rows (0-based, half-open) each painted surface's interior covered
+// on its LAST paint — the counterpart bookkeeping for the VANISH direction
+// (render()'s reclaim check invalidates exactly these rows when a surface
+// stops painting). Kept here, not on the session, because a closed tab's
+// session is already destroyed by the time the reclaiming frame renders.
+const _overlayLastRows = new Map();
 
 // #D6 — model is threaded in (no `= getModel()` default), same as render():
 // pure-by-construction signature. The overlay seam thunk (render-queue setup
@@ -629,6 +635,10 @@ function renderTerminalOverlay(model, arrangeOverride, forceAll) {
     const session = getSession(id);
     if (!session) continue;
     nowPainted.add(id);
+    // Interior rows this surface writes (incl. the exit prompt on the last
+    // inner row and the scrollback tag on the first) — the vanish-reclaim
+    // range. The border/strip rows stay main-pass-owned.
+    _overlayLastRows.set(id, { top: bounds.y + 1, bottom: bounds.y + 1 + innerH });
 
     // Per-session force-full triggers (replacing the old _frame singletons):
     //  - appeared: this session was not painted last pass (its region may be
@@ -698,6 +708,9 @@ function renderTerminalOverlay(model, arrangeOverride, forceAll) {
     }
   }
   _paintedOverlayIds = nowPainted;
+  for (const id of _overlayLastRows.keys()) {
+    if (!nowPainted.has(id)) _overlayLastRows.delete(id);
+  }
   _emit(out + cursorOut);
 }
 
@@ -810,17 +823,22 @@ function render(model) {
   // terminal chrome rendered, so the diff pass skips exactly the cells where
   // the NEW tab's content is blank — the shell's characters survive the
   // switch (user-found 2026-08-05: docker-shell residue in the next tab).
-  // Same drop-out idiom as the modal-overlay/menu/replay checks above: any
-  // vanished surface forces the full repaint that reclaims its cells.
-  // (_paintedOverlayIds is refreshed by renderTerminalOverlay at the end of
-  // this frame, so the force fires exactly once per vanish.)
+  // VANISH completes the per-surface reconciliation family (appeared /
+  // dimChanged / scrolled forces + the shrink invalidation): invalidate
+  // exactly the rows the surface last covered, so THIS frame's diff pass
+  // rewrites them from the underlying panels — no full clear, no whole-frame
+  // bytes over a slow link. The overlay pass prunes the bookkeeping at the
+  // end of the frame, so the reclaim fires once per vanish.
   if (_paintedOverlayIds.size) {
     const nowVisible = new Set();
     for (const s of visibleTerminalSurfaces(model, previewArrange)) {
       if (getSession(s.id)) nowVisible.add(s.id);
     }
     for (const id of _paintedOverlayIds) {
-      if (!nowVisible.has(id)) { _frame.forceFull = true; break; }
+      if (nowVisible.has(id)) continue;
+      const rows = _overlayLastRows.get(id);
+      if (rows) invalidateRows(rows.top, rows.bottom);
+      else _frame.forceFull = true;   // no recorded bounds — reclaim conservatively
     }
   }
   const viewMode = layoutSlice.viewMode;

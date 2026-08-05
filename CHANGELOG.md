@@ -69,7 +69,9 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   stray shell characters in the next tab. The PTY overlay writes to the
   screen outside the cell-diff cache, so the switch skipped repainting
   exactly the cells where the new tab was blank; a vanished terminal
-  surface now forces the full repaint that reclaims its cells.
+  surface now invalidates precisely the rows it covered, and the same
+  frame repaints them — no full-screen clear, no whole-frame bytes over
+  a slow link.
 - Input hardening from the tokenizer review: a flood of ESC bytes in
   one chunk can no longer crash the app; an escape/control byte
   interrupting a pending sequence cancels it instead of being absorbed
