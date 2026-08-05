@@ -907,6 +907,61 @@ function _handleTerminalModeData(data) {
   return true;
 }
 
+// Terminal-mode control events the per-chunk exact matches encode: the
+// mode-exit chord plus the framework scrollback keys (_classifyTerminalChunk
+// / _handleTerminalModeData match these against a WHOLE chunk).
+const _TERM_CONTROLS = new Set([
+  '\x1c',                                          // Ctrl+\ — exit terminal mode
+  '\x1b[5;2~', '\x1b[6;2~', '\x1b[1;2H', '\x1b[1;2F',  // Shift+Page/Home/End
+]);
+
+/**
+ * Terminal-mode chunk walk (review 2026-08-05). The whole-chunk exact
+ * matches above have the same SSH-batching hole the normal-mode ladder
+ * had: autorepeat Shift+PageUp arrives as `\x1b[5;2~\x1b[5;2~` in ONE
+ * chunk (matched nothing → forwarded to the child), and Ctrl+\ batched
+ * behind other keys (`q\x1c`) was forwarded as a literal FS byte instead
+ * of exiting — terminal mode WEDGED over a laggy link.
+ *
+ * Split the chunk into events; consecutive non-control events re-join
+ * (tokens are exact contiguous slices, so the PTY receives byte-identical
+ * data in ONE write) and each control event exact-matches as before. A
+ * trailing partial is NEVER held back from the PTY — it joins the last
+ * run (a control sequence split ACROSS chunks doesn't match, same as the
+ * pre-tokenizer behavior). Any piece can exit the mode (Ctrl+\ or the
+ * dead-session rule); the rest of the chunk then belongs to the
+ * normal-mode pipeline and re-emits. A multi-piece walk batches paints
+ * (scroll repaints + the exit's full repaint coalesce into one frame).
+ */
+function _handleTerminalChunk(data, reemit) {
+  const { tokens, carry } = tokenizeInput(data);
+  const parts = carry ? tokens.concat([carry]) : tokens;
+  // Single event (the local per-keystroke case): the historical path.
+  if (parts.length <= 1) { _handleTerminalModeData(data); return; }
+  beginBatch();
+  try {
+    let i = 0;
+    while (i < parts.length) {
+      let piece;
+      if (_TERM_CONTROLS.has(parts[i])) {
+        piece = parts[i];
+        i++;
+      } else {
+        let j = i;
+        while (j < parts.length && !_TERM_CONTROLS.has(parts[j])) j++;
+        piece = parts.slice(i, j).join('');
+        i = j;
+      }
+      _handleTerminalModeData(piece);
+      if (!getModel().modes.terminalMode) {
+        const rest = parts.slice(i).join('');
+        if (rest) reemit(rest);
+        return;
+      }
+    }
+  } finally { endBatch(); }
+}
+
 // --- Stdin setup ---
 
 // T25 — bracketed paste accumulator (B13). A large paste can split
@@ -1027,8 +1082,9 @@ function _makeDataHandler(stdin) {
   };
 
   return (data) => {
-    // Terminal mode: forward raw bytes to PTY (Ctrl+\ exits)
-    if (getModel().modes.terminalMode && _handleTerminalModeData(data)) return;
+    // Terminal mode: forward to the PTY, matching control events per-EVENT
+    // so batched chunks can't wedge the mode (Ctrl+\ exits).
+    if (getModel().modes.terminalMode) { _handleTerminalChunk(data, reemit); return; }
 
     // T25 — bracketed paste accumulator (B13). If we're mid-paste OR
     // this chunk starts with the open marker, route to the accumulator
@@ -1135,7 +1191,7 @@ function _dispatchToken(tok) {
   if (tok === '\x1b[5~') return handleKey('pageup');
   if (tok === '\x1b[6~') return handleKey('pagedown');
   if (tok === '\x1b' || tok === '\x1b\x1b') return handleKey('escape');
-  if (tok === '\r' || tok === '\n') return handleKey('return');
+  if (tok === '\r' || tok === '\n' || tok === '\r\n') return handleKey('return');
   if (tok === '\x03') { cleanup(); process.exit(0); }
   if (tok === '\x12') return handleKey('ctrl-r');  // Ctrl+R → free-config redo
 

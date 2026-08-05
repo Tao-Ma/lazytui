@@ -60,6 +60,18 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   and a sequence split across chunks (`ESC[` + `B`) rejoins instead of
   misparsing as a stray key. Long-standing; local single-keystroke
   latency is unchanged.
+- Input hardening from the tokenizer review: a flood of ESC bytes in
+  one chunk can no longer crash the app; an escape/control byte
+  interrupting a pending sequence cancels it instead of being absorbed
+  (no more stray typed characters or a swallowed `Ctrl-C`); X10-encoded
+  mouse reports (terminals without SGR mouse) and Linux-console F-keys
+  drop inert instead of typing their payload — an X10 click could
+  previously land on `q` and quit; `CRLF` in one chunk is one Enter,
+  not two. In embedded terminal panes the same batching hole is closed:
+  held Shift+PageUp scrollback over SSH scrolls per keypress, and
+  `Ctrl+\` batched behind other keys exits terminal mode instead of
+  reaching the child as a stray byte (the mode could wedge over a
+  laggy link).
 
 ## [0.6.12] — 2026-08-03
 

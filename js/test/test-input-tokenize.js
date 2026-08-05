@@ -182,7 +182,14 @@ describe('invariants', () => {
     eq(bad, null, `slice invariant violated for ${JSON.stringify(bad)}`);
   });
   it('control chars pass through as plain tokens (\\r \\x03)', () => {
-    eq(toks('\r\n\x03').join('|'), '\r|\n|\x03');
+    eq(toks('\r\x03').join('|'), '\r|\x03');
+    eq(toks('\n').join('|'), '\n');
+  });
+  it('CRLF is ONE token — one line ending, one return (review 2026-08-05)', () => {
+    eq(toks('\r\n').join('|'), '\r\n');
+    eq(toks('\r\n\r\n').join('|'), '\r\n|\r\n');
+    eq(toks('j\r\nk').join('|'), 'j|\r\n|k');
+    eq(toks('\n\r').join('|'), '\n|\r', 'LF-then-CR is NOT a CRLF');
   });
 });
 

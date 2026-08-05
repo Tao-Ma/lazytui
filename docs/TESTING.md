@@ -103,6 +103,12 @@ The scenarios target the bug class the unit suite misses:
   (the network-lag class), batched arrow-key chunks dispatch instead
   of dropping whole, and a sequence split across chunks rejoins via
   the tokenizer carry; the single-key chunk still paints synchronously.
+  Review hardening (2026-08-05): an ESC flood is inert instead of
+  crashing, an orphaned escape prefix can't eat the following arrow,
+  X10 mouse coordinates never reach the key ladder, a terminal-mode
+  flip forwards its pending carry to the PTY, and batched terminal-mode
+  chunks match `Ctrl+\` / scrollback keys per-event (with the rest of
+  the chunk re-entering the normal ladder after an exit).
 
 Add a new scenario by dropping a `<name>.js` into `js/test/smoke/`;
 the aggregator at `js/scripts/run-smoke.js` discovers it. Each

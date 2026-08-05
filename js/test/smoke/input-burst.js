@@ -173,4 +173,28 @@ describe('[9] terminal-mode flip on the FINAL token forwards the carry to the PT
   });
 });
 
+describe('[10] batched Ctrl+\\ exits terminal mode (pre-fix: forwarded as a literal FS byte)', () => {
+  it('\\x1c batched with trailing keys exits, and the keys reach the normal ladder', () => {
+    // Reuses the 'T' mode-flip filter registered in [9]. 'T' flips the
+    // mode mid-chunk; the remainder '\x1cjj' reemits into the terminal
+    // path, where the walk must match \x1c per-EVENT (pre-fix the whole
+    // remainder failed the exact match, dead-exited, and dropped).
+    const before = sel();
+    feed('T\x1cjj');
+    eq(getModel().modes.terminalMode, false, 'Ctrl+\\ matched inside the batched chunk');
+    eq(sel(), before + 2, 'keys after the exit reached the normal ladder');
+  });
+});
+
+describe('[11] terminal-mode exit mid-chunk re-emits the rest (dead-session rule)', () => {
+  it('the run before a control exits (dead session); everything after re-enters the ladder', () => {
+    const before = sel();
+    // 'T' flips; remainder 'j\x1b[5;2~jj' → walk: run 'j' dead-exits the
+    // mode, rest '\x1b[5;2~jj' re-emits → unknown-escape drop + 2 keys.
+    feed('Tj\x1b[5;2~jj');
+    eq(getModel().modes.terminalMode, false, 'first forwarded run hit the dead-session exit');
+    eq(sel(), before + 2, 'the rest of the chunk re-entered the normal ladder');
+  });
+});
+
 report();

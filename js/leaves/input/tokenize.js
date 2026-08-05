@@ -44,6 +44,24 @@
  * at the terminator, so `\x1bO` + arrow can't eat the arrow's introducer
  * and `\x1b[1\x03` can't swallow a Ctrl-C.
  *
+ * DELIBERATE NON-FEATURES (review 2026-08-05 — each "fix" creates a worse
+ * real bug than the hole it closes):
+ *   · The 50ms misjoin: a chunk ending exactly `\x1b[` (SSH-batched
+ *     deliberate Esc+`[` keys) joined with a key inside the flush window
+ *     parses as one dropped CSI, eating all three. Unfixable at the byte
+ *     level: `\x1b[`+`j` (misjoin) and `\x1b[`+`B` (genuine TCP split
+ *     that MUST rejoin) are indistinguishable, and any whitelist tiebreak
+ *     re-types stray chars for real split sequences (`\x1b[1;5`+`C`).
+ *     Bare Esc alone never carries, so the window only opens when Esc
+ *     and `[` arrive pre-batched in one chunk.
+ *   · OSC/DCS/PM/APC string sequences are NOT in the grammar. Their
+ *     introducers collide with real Alt chords (`\x1b]` = Alt+], `\x1bP`
+ *     = Alt+Shift+P): a payload-swallow arm would eat every key typed
+ *     after such a chord until a terminator shows up. lazytui never
+ *     solicits terminal responses (color depth is env-derived, OSC52 is
+ *     write-only), so the sequences this would guard against never
+ *     arrive; the chords are real user input.
+ *
  * Pure: string in, {tokens, carry} out. No I/O, no module state.
  */
 'use strict';
@@ -168,6 +186,13 @@ function tokenizeInput(input) {
       if (ev.carry !== undefined) return { tokens, carry: ev.carry };
       tokens.push(ev.tok);
       i += ev.len;
+      continue;
+    }
+    // CRLF is ONE line ending (piped playback, non-bracketed paste) —
+    // as two tokens it would fire two `return` keys.
+    if (input[i] === '\r' && input[i + 1] === '\n') {
+      tokens.push('\r\n');
+      i += 2;
       continue;
     }
     const cp = input.codePointAt(i);

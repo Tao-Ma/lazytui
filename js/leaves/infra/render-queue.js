@@ -40,6 +40,7 @@ let _renderPending = false;
 let _overlayRendering = false;
 let _batchDepth = 0;
 let _batchDirty = false;
+let _batchFull = false;
 
 /**
  * Register the actual paint callbacks. Called once during boot from
@@ -93,12 +94,23 @@ function beginBatch() { _batchDepth++; }
 function endBatch() {
   if (_batchDepth > 0 && --_batchDepth === 0 && _batchDirty) {
     _batchDirty = false;
-    if (_renderFn) _renderFn();
+    const full = _batchFull;
+    _batchFull = false;
+    // A force-full inside the window upgrades the ONE trailing paint to
+    // the full (non-diff) form — full ⊇ diff, so both requests are met
+    // by a single frame instead of full-now + diff-trailing.
+    if (full && _forceFn) _forceFn();
+    else if (_renderFn) _renderFn();
   }
 }
 
-/** Force a full (non-diff) repaint — chrome reclaims the screen. */
-function forceFullRepaint() { if (_forceFn) _forceFn(); }
+/** Force a full (non-diff) repaint — chrome reclaims the screen. Inside a
+ *  beginBatch/endBatch window it defers like paintNow, upgrading the
+ *  trailing paint to the full form. */
+function forceFullRepaint() {
+  if (_batchDepth > 0) { _batchDirty = true; _batchFull = true; return; }
+  if (_forceFn) _forceFn();
+}
 
 /** Mark screen rows [startY,endY) dirty so the next frame repaints them. */
 function invalidateRows(startY, endY) { if (_invalidateFn) _invalidateFn(startY, endY); }
