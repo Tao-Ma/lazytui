@@ -82,28 +82,28 @@ describe('recovery and guards', () => {
   });
 });
 
-describe('forceFullRepaint in the window', () => {
-  it('outside a batch it is immediate and does not touch the diff renderer', () => {
+describe('forceFullRepaint vs the window', () => {
+  it('is an invalidation, not a paint — immediate outside a batch, no render', () => {
     reset();
     rq.forceFullRepaint();
     eq(fulls, 1);
     eq(paints, 0);
   });
-  it('inside a batch it defers and upgrades the trailing paint to the full form', () => {
+  it('inside a batch it invalidates IMMEDIATELY; the one trailing paint repaints in full', () => {
+    // paint.js registers forceFull as a diff-cache reset (prevRows=[]) —
+    // it paints NOTHING itself. Deferring it in place of the trailing
+    // paint swallowed the frame entirely (the stale-screen flicker after
+    // a batched terminal-exit click, user-found 2026-08-05). Invalidate
+    // now, paint once at endBatch.
     reset();
     rq.beginBatch();
     rq.forceFullRepaint();
-    eq(fulls, 0, 'deferred — nothing painted mid-batch');
-    rq.paintNow();              // a diff request in the same window
+    eq(fulls, 1, 'invalidation is not deferred');
+    rq.paintNow();              // the paired render request in the same window
+    eq(paints, 0, 'the PAINT defers');
     rq.endBatch();
-    eq(fulls, 1, 'one trailing FULL paint');
-    eq(paints, 0, 'full ⊇ diff — no separate diff paint');
-  });
-  it('the full flag does not leak into the next batch', () => {
-    reset();
-    rq.beginBatch(); rq.paintNow(); rq.endBatch();
-    eq(paints, 1, 'plain batch back to the diff renderer');
-    eq(fulls, 0);
+    eq(paints, 1, 'ONE trailing paint (which sees the invalidated cache → full)');
+    eq(fulls, 1, 'no second invalidation');
   });
 });
 

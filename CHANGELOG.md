@@ -60,6 +60,11 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   and a sequence split across chunks (`ESC[` + `B`) rejoins instead of
   misparsing as a stray key. Long-standing; local single-keystroke
   latency is unchanged.
+- Opening a shell in a content tab (`s` on a container, `type: spawn`
+  actions) no longer hides the Info/Transcript tabs: the terminal pane
+  now renders the same unified tab strip as every other content tab, so
+  the siblings stay visible (and clickable once you leave the shell)
+  for the whole life of the session.
 - Input hardening from the tokenizer review: a flood of ESC bytes in
   one chunk can no longer crash the app; an escape/control byte
   interrupting a pending sequence cancels it instead of being absorbed

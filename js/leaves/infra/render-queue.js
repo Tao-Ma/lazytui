@@ -40,7 +40,6 @@ let _renderPending = false;
 let _overlayRendering = false;
 let _batchDepth = 0;
 let _batchDirty = false;
-let _batchFull = false;
 
 /**
  * Register the actual paint callbacks. Called once during boot from
@@ -94,23 +93,19 @@ function beginBatch() { _batchDepth++; }
 function endBatch() {
   if (_batchDepth > 0 && --_batchDepth === 0 && _batchDirty) {
     _batchDirty = false;
-    const full = _batchFull;
-    _batchFull = false;
-    // A force-full inside the window upgrades the ONE trailing paint to
-    // the full (non-diff) form — full ⊇ diff, so both requests are met
-    // by a single frame instead of full-now + diff-trailing.
-    if (full && _forceFn) _forceFn();
-    else if (_renderFn) _renderFn();
+    if (_renderFn) _renderFn();
   }
 }
 
-/** Force a full (non-diff) repaint — chrome reclaims the screen. Inside a
- *  beginBatch/endBatch window it defers like paintNow, upgrading the
- *  trailing paint to the full form. */
-function forceFullRepaint() {
-  if (_batchDepth > 0) { _batchDirty = true; _batchFull = true; return; }
-  if (_forceFn) _forceFn();
-}
+/** Ask for a full (non-diff) NEXT paint — chrome reclaims the screen.
+ *  This is a diff-cache INVALIDATION, not a paint (paint.js registers a
+ *  prevRows reset; callers pair it with their own render/paintNow), so it
+ *  must NOT defer inside a batch window: invalidating immediately is
+ *  harmless, and the ONE trailing paint then repaints in full. Deferring
+ *  it INSTEAD of the trailing paint swallowed the frame entirely — the
+ *  user-visible stale-screen flicker after a batched terminal-exit click
+ *  (found 2026-08-05). */
+function forceFullRepaint() { if (_forceFn) _forceFn(); }
 
 /** Mark screen rows [startY,endY) dirty so the next frame repaints them. */
 function invalidateRows(startY, endY) { if (_invalidateFn) _invalidateFn(startY, endY); }

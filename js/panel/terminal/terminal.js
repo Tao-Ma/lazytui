@@ -37,12 +37,22 @@ function init(paneId, seed) {
 // content state to update. Kept as an explicit no-op for the Component contract.
 function update(_msg, slice) { return slice; }
 
+// U2e P1b parity (user-found 2026-08-05): in a MULTI-tab content slot the title
+// is the slot's UNIFIED position-tab strip — info/text-view/agent all do this,
+// but the terminal pane kept its plain pane title, so the moment a shell tab
+// went active the Info/Transcript tabs VANISHED from the border (no way to see
+// or click back to them while the shell ran). Single-tab → plain title.
+function _slotTitle(panel) {
+  const strip = require('../slot-strip').unifiedSlotStrip(panel);
+  return strip ? strip.title : (panel && panel.title);
+}
+
 // Paint ONLY the chrome; the overlay fills the interior with the live PTY grid
 // (empty `lines` — the interior is painted by renderTerminalOverlay).
 function render(panel, w, h, slice, opts) {
   return renderPanel({
     width: w, height: h, lines: [],
-    title: panel.title, hotkey: panel.hotkey,
+    title: _slotTitle(panel), hotkey: panel.hotkey,
     panelType: 'terminal',
     focused: !!(opts && opts.focused),
     chrome: opts && opts.chrome,

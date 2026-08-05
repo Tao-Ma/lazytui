@@ -110,6 +110,15 @@ The scenarios target the bug class the unit suite misses:
   chunks match `Ctrl+\` / scrollback keys per-event (with the rest of
   the chunk re-entering the normal ladder after an exit).
 
+- **`terminal-exit-repaint.js`** — the shell-in-a-tab lifecycle with a
+  REAL PTY: while the shell runs, the content slot keeps its unified
+  tab strip (Info/Transcript stay visible); a typed `exit` triggers the
+  pty-lifecycle fan-out (mode exit + tab auto-close + repaint); and a
+  BATCHED press+release click on a dead full-zoom terminal exits the
+  mode AND paints a frame (the swallowed-trailing-paint regression
+  class — a force-full inside the batch window must not replace the
+  trailing paint).
+
 Add a new scenario by dropping a `<name>.js` into `js/test/smoke/`;
 the aggregator at `js/scripts/run-smoke.js` discovers it. Each
 scenario imports the helper as `./_helpers/smoke` and uses
