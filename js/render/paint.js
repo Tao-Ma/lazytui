@@ -803,6 +803,26 @@ function render(model) {
   // layout), so the preview arrange is passed to it explicitly.
   const drag = layoutSlice.freeConfig && layoutSlice.freeConfig.drag;
   const previewArrange = (drag && drag.previewArrange) || null;
+  // A terminal surface that painted last pass but won't paint this pass
+  // (active tab switched away, tab closed, session destroyed) left PTY bytes
+  // on cells the main diff cache never saw: the overlay writes the grid
+  // directly to the screen while prevRows still holds the blank interior the
+  // terminal chrome rendered, so the diff pass skips exactly the cells where
+  // the NEW tab's content is blank — the shell's characters survive the
+  // switch (user-found 2026-08-05: docker-shell residue in the next tab).
+  // Same drop-out idiom as the modal-overlay/menu/replay checks above: any
+  // vanished surface forces the full repaint that reclaims its cells.
+  // (_paintedOverlayIds is refreshed by renderTerminalOverlay at the end of
+  // this frame, so the force fires exactly once per vanish.)
+  if (_paintedOverlayIds.size) {
+    const nowVisible = new Set();
+    for (const s of visibleTerminalSurfaces(model, previewArrange)) {
+      if (getSession(s.id)) nowVisible.add(s.id);
+    }
+    for (const id of _paintedOverlayIds) {
+      if (!nowVisible.has(id)) { _frame.forceFull = true; break; }
+    }
+  }
   const viewMode = layoutSlice.viewMode;
   if (viewMode === 'half') mainDidFull = renderHalf(model, previewArrange);
   else if (viewMode === 'full') mainDidFull = renderFull(model, previewArrange);

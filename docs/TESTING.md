@@ -117,7 +117,10 @@ The scenarios target the bug class the unit suite misses:
   BATCHED press+release click on a dead full-zoom terminal exits the
   mode AND paints a frame (the swallowed-trailing-paint regression
   class — a force-full inside the batch window must not replace the
-  trailing paint).
+  trailing paint). Also decodes the raw byte stream through
+  @xterm/headless to assert a tab switch away from a live shell leaves
+  NO PTY characters behind (the overlay writes outside the cell-diff
+  cache; a vanished surface must force the reclaiming repaint).
 
 Add a new scenario by dropping a `<name>.js` into `js/test/smoke/`;
 the aggregator at `js/scripts/run-smoke.js` discovers it. Each

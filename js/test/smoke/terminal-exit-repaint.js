@@ -133,7 +133,6 @@ const waitDead = async (id) => {
 
   stdin.emit('data', '\x1b[<0;10;2M\x1b[<0;10;2m');   // batched press+release
   const clickRaw = takeRaw();
-  restore();
 
   describe('[B] batched click on a dead full-zoom terminal exits AND repaints', () => {
     it('dead-session rule exits the mode and drops the zoom', () => {
@@ -144,6 +143,62 @@ const waitDead = async (id) => {
       assert(clickRaw.length > 0, `painted ${clickRaw.length} bytes`);
       assert(/Info|Transcript/.test(sm.stripAnsi(clickRaw)),
              'the repainted frame shows the content strip');
+    });
+  });
+
+  // ---- scenario C: switching tabs away from a live shell reclaims its cells ----
+  // The overlay writes the PTY grid directly to the screen; the main diff
+  // cache holds the blank interior the terminal chrome painted, so switching
+  // tabs used to skip exactly the cells where the new tab is blank — the
+  // shell's characters survived (user-found 2026-08-05, round 2). Decode the
+  // REAL byte stream through @xterm/headless and assert the marker is gone.
+  const { Terminal } = require('@xterm/headless');
+  const xt = new Terminal({ cols: 100, rows: 30, allowProposedApi: true });
+  const gridWrite = (raw) => new Promise((res) => xt.write(raw, res));
+  const gridHas = (re) => {
+    for (let y = 0; y < 30; y++) {
+      if (re.test(xt.buffer.active.getLine(y).translateToString(true))) return true;
+    }
+    return false;
+  };
+
+  await gridWrite(fullFrame());                       // seed the grid with the current screen
+  const shPool = 'term-dockersh-marker';
+  loop.dispatchMsg(api.wrap('layout', {
+    type: 'mint_tab', paneId: container, paneType: 'terminal', poolId: shPool,
+    title: 'sh:marker', config: { cmd: 'sh -c "for i in 1 2 3 4 5 6; do echo RESIDUE_$i; done; sleep 30"', label: 'sh:marker' },
+    hint: { origin: 'docker-shell', item: 'marker' },
+  }));
+  loop.dispatchMsg(api.wrap('layout', { type: 'set_active_tab', paneId: container, tabPoolId: shPool }));
+  loop.dispatchMsg(api.wrap('layout', { type: 'focus_set', focus: container }));
+  dispatch.applyMsg({ type: 'terminal_enter' });
+  await sleep(400);                                   // PTY output → overlay paints
+  await gridWrite(takeRaw());
+  const markerOnScreen = gridHas(/RESIDUE_/);
+
+  stdin.emit('data', '\x1c');                         // leave terminal mode
+  await sleep(50);
+  await gridWrite(takeRaw());
+  // Click the Transcript tab on the strip (locate it on the decoded grid).
+  let stripY = -1, stripX = -1;
+  for (let y = 0; y < 30; y++) {
+    const s = xt.buffer.active.getLine(y).translateToString(true);
+    const idx = s.indexOf('Transcript');
+    if (idx >= 0) { stripY = y; stripX = idx + 3; break; }
+  }
+  stdin.emit('data', `\x1b[<0;${stripX + 1};${stripY + 1}M\x1b[<0;${stripX + 1};${stripY + 1}m`);
+  await sleep(150);
+  await gridWrite(takeRaw());
+  const residueAfterSwitch = gridHas(/RESIDUE_/);
+  restore();
+
+  describe('[C] tab switch away from a live shell reclaims the overlay cells', () => {
+    it('precondition: the shell marker was on screen and the strip was clickable', () => {
+      eq(markerOnScreen, true, 'shell output visible before the switch');
+      assert(stripY >= 0, 'found the Transcript tab on the strip');
+    });
+    it('no shell characters survive the switch (was: residue in the new tab)', () => {
+      eq(residueAfterSwitch, false, 'RESIDUE_ marker fully reclaimed');
     });
   });
 

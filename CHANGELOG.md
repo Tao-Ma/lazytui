@@ -65,6 +65,11 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   now renders the same unified tab strip as every other content tab, so
   the siblings stay visible (and clickable once you leave the shell)
   for the whole life of the session.
+- Switching tabs away from a terminal (or closing one) no longer leaves
+  stray shell characters in the next tab. The PTY overlay writes to the
+  screen outside the cell-diff cache, so the switch skipped repainting
+  exactly the cells where the new tab was blank; a vanished terminal
+  surface now forces the full repaint that reclaims its cells.
 - Input hardening from the tokenizer review: a flood of ESC bytes in
   one chunk can no longer crash the app; an escape/control byte
   interrupting a pending sequence cancels it instead of being absorbed
