@@ -6,6 +6,8 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.13] — 2026-08-05
+
 ### Added
 
 - **Truecolor themes** — the six built-in themes carry their schemes'
@@ -2773,7 +2775,8 @@ release tarballs. Full pre-squash development history is preserved
 on the internal gitea mirror under the `backup/main-history` branch
 and the `v0.1.0-pre-squash` tag.
 
-[Unreleased]: https://github.com/Tao-Ma/lazytui/compare/v0.6.12...HEAD
+[Unreleased]: https://github.com/Tao-Ma/lazytui/compare/v0.6.13...HEAD
+[0.6.13]: https://github.com/Tao-Ma/lazytui/compare/v0.6.12...v0.6.13
 [0.6.12]: https://github.com/Tao-Ma/lazytui/compare/v0.6.11...v0.6.12
 [0.6.11]: https://github.com/Tao-Ma/lazytui/compare/v0.6.10...v0.6.11
 [0.6.10]: https://github.com/Tao-Ma/lazytui/compare/v0.6.9...v0.6.10
