@@ -45,6 +45,11 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   colored content (one 120-col row could emit 128 KB), an O(row²)
   CSI-scan allocation, and a literal-`NaN` emission on empty extended-SGR
   params that corrupted row alignment on real terminals.
+- Moving the cursor past the last visible row of a list pane left the
+  selected row invisible (one row below the window) for as long as you
+  kept descending — the keep-in-view scroll clamp ran one gesture late
+  on the per-keystroke nav path. Long-standing (reproduced on v0.6.12);
+  scroll now follows the cursor within the same keypress.
 
 ## [0.6.12] — 2026-08-03
 

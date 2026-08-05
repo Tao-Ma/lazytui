@@ -94,6 +94,10 @@ The scenarios target the bug class the unit suite misses:
   bytes at truecolor depth and ZERO at depth 16 (the write-boundary
   downgrade proven on real output — this assertion caught two real
   funnel bypasses, footer and cmdline/pane-menu).
+- **`nav-follow.js`** — keep-in-view scroll follows the cursor WITHIN
+  one gesture: single steps down past the fold and back up, plus
+  bottom/top jumps, each asserting the frame shows exactly the cursor's
+  row highlighted (the applyMsg nav-gate regression class).
 
 Add a new scenario by dropping a `<name>.js` into `js/test/smoke/`;
 the aggregator at `js/scripts/run-smoke.js` discovers it. Each

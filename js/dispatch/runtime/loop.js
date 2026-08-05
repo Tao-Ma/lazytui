@@ -89,15 +89,31 @@ function _layoutArrange() {
   const ls = route.getInstanceSlice('layout');
   return ls ? ls.arrange : undefined;
 }
+// Second cheap ref for the same gate class: nav Msgs. A root Msg's effects
+// can move a CURSOR at depth ≥1 the same way they can move a pane (the whole
+// per-keystroke nav path — nav_select's reducer-emitted set_cursor Cmd — is
+// exactly this), and that nested dispatch never hits dispatchMsg's depth-0
+// finalize. Without this the keep-in-view scroll clamp ran one GESTURE late
+// (the next key-lane dispatch), so walking down past the fold left the
+// selected row permanently one row below the window — no visible cursor
+// (user-reported 2026-08-05; latent since the finalize/lane split). The ref
+// is a counter bumped in the Component pump for every wrapped nav-shaped Msg
+// (leaves/wm/nav.isNavMsg — the same predicate the nav reducer keys on), so
+// it counts the write at the ONE choke point every origin passes through.
+// Unchanged counter → no finalize, no added cost on the hot root-Msg path.
+const _mnav = require('../../leaves/wm/nav');
+let _navMsgSeq = 0;
 function applyMsg(msg) {
   _dispatchDepth++;
   const arrangeBefore = _dispatchDepth === 1 ? _layoutArrange() : undefined;
+  const navBefore = _dispatchDepth === 1 ? _navMsgSeq : undefined;
   try { mw.run({ lane: 'root', msg }, _termRoot); }
   finally {
     _dispatchDepth--;
     if (_dispatchDepth === 0) {
       flushNavCapture();
-      if (arrangeBefore !== undefined && _layoutArrange() !== arrangeBefore) finalizeDispatch();
+      if ((arrangeBefore !== undefined && _layoutArrange() !== arrangeBefore)
+        || (navBefore !== undefined && _navMsgSeq !== navBefore)) finalizeDispatch();
     }
   }
 }
@@ -161,6 +177,10 @@ function _dispatchMsgInner(msg) {
   // Wrapped-Msg path. Routes to exactly one Component instance. Discriminator:
   // `{ kind: string, msg: any }` AND no top-level `type`.
   if (msg && typeof msg.kind === 'string' && msg.msg !== undefined && msg.type === undefined) {
+    // Nav-ref for applyMsg's finalize gate (see the comment there): count every
+    // nav-shaped Msg at the pump — the one choke point every origin (nav-state
+    // facade, reducer-emitted Cmds, effects) passes through.
+    if (_mnav.isNavMsg(msg.msg)) _navMsgSeq++;
     const kind = msg.kind;
     // `kind` may be a Component name (legacy primary-instance routing) OR a
     // paneId (post-B3 multi-instance routing). Try paneId lookup first. U2b —
