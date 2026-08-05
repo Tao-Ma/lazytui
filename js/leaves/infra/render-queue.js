@@ -38,6 +38,8 @@ let _forceFn = null;
 let _invalidateFn = null;
 let _renderPending = false;
 let _overlayRendering = false;
+let _batchDepth = 0;
+let _batchDirty = false;
 
 /**
  * Register the actual paint callbacks. Called once during boot from
@@ -64,8 +66,36 @@ function scheduleOverlay() {
 }
 
 /** Synchronous immediate repaint — the seam form of the old direct
- *  render() call (same timing). No-op until renderers are registered. */
-function paintNow() { if (_renderFn) _renderFn(); }
+ *  render() call (same timing). No-op until renderers are registered.
+ *  Inside a beginBatch/endBatch window the paint is DEFERRED: the call
+ *  marks the batch dirty and endBatch runs ONE trailing paint. */
+function paintNow() {
+  if (_batchDepth > 0) { _batchDirty = true; return; }
+  if (_renderFn) _renderFn();
+}
+
+/**
+ * Paint batching — coalesce a multi-event input chunk's paints into one
+ * trailing paint (network-lag fix, 2026-08-05). Over a slow link,
+ * autorepeat keystrokes arrive BATCHED in a single stdin chunk; painting
+ * once per key queued N intermediate frames into the congested socket and
+ * the client terminal replayed them all — the highlight visibly crawled
+ * behind the key. Measured on an Actions-pane descent: a 5-key chunk
+ * emitted 5 frames / 2,963 B per-key vs 1 frame / 586 B batched.
+ *
+ * Depth-counted (nestable — a batched token can re-enter the stdin
+ * handler via `stdin.emit`), dirty-flagged (a chunk whose tokens all
+ * dropped paints nothing). Only paintNow defers: scheduleRender already
+ * debounces, and scheduleOverlay stays synchronous (PTY echo latency
+ * dominates perception there).
+ */
+function beginBatch() { _batchDepth++; }
+function endBatch() {
+  if (_batchDepth > 0 && --_batchDepth === 0 && _batchDirty) {
+    _batchDirty = false;
+    if (_renderFn) _renderFn();
+  }
+}
 
 /** Force a full (non-diff) repaint — chrome reclaims the screen. */
 function forceFullRepaint() { if (_forceFn) _forceFn(); }
@@ -75,5 +105,5 @@ function invalidateRows(startY, endY) { if (_invalidateFn) _invalidateFn(startY,
 
 module.exports = {
   setRenderers, scheduleRender, scheduleOverlay,
-  paintNow, forceFullRepaint, invalidateRows,
+  paintNow, beginBatch, endBatch, forceFullRepaint, invalidateRows,
 };
