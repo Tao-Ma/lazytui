@@ -6,6 +6,19 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Rightmost pane border missing on first paint** — on terminals that
+  apply erase-to-end-of-line at the last-column (pending-wrap) position —
+  e.g. Ghostty — a right-side pane's right border was blank on boot and
+  only appeared once the pane was focused. The full-repaint path emitted a
+  trailing `\x1b[K` after each row, but every row is already exactly the
+  screen width and the screen is cleared first, so the EL was redundant —
+  and at the last column it erased the border glyph. Focusing forced an
+  incremental cell-diff repaint, which never emitted the EL, so the border
+  reappeared. Dropped the trailing EL on both the full-repaint and
+  row-level paint paths (the cell-diff path already omitted it).
+
 ## [0.6.14] — 2026-08-06
 
 ### Added

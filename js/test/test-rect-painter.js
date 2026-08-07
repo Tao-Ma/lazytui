@@ -194,4 +194,36 @@ describe('[9] paintFrame — row count change forces full repaint', () => {
   });
 });
 
+describe('[10] paintFrame — no per-row \\x1b[K (last-column-flag erase hazard)', () => {
+  // Regression: a 2-column screen where the right pane's right border sits in
+  // the LAST column. composeRows pads every row to `cols`, so the row already
+  // fills the width and — on the full-repaint path — `\x1b[2J` already cleared
+  // the screen. A trailing `\x1b[K` is therefore redundant AND, after a
+  // full-width row, the cursor sits at the last column in the pending-wrap
+  // (last-column-flag) state; terminals that apply EL there (e.g. Ghostty)
+  // erase that final cell, wiping the rightmost pane's right border on the
+  // first paint (visible border only reappeared once focus forced a cell-diff
+  // repaint, which never emitted EL). The border glyph must survive.
+  const twoCol = composeRows(
+    [R(0, 0, 4, 1, ['ab │']), R(4, 0, 4, 1, ['cd │'])],  // both columns end in '│'
+    8, 1,
+  );
+
+  it('full repaint of full-width rows emits no \\x1b[K, keeps the last-column border', () => {
+    const out = paintFrame([], twoCol, true);
+    assert(out.didFull);
+    assert(!out.ansi.includes('\x1b[K'), 'no EL in a full repaint of full-width rows');
+    assert(out.ansi.includes('│'), 'the last-column border glyph is emitted');
+  });
+
+  it('incremental repaint of a changed full-width row emits no \\x1b[K', () => {
+    // Holds on either paint path: cell-diff emits changed cells directly (no EL),
+    // and the row-level fallback (LAZYTUI_CELL_DIFF=0) no longer appends one.
+    const out = paintFrame(['ab │cd │'], ['ab │XY │'], false);
+    assert(!out.didFull);
+    assert(out.ansi !== '', 'the changed row emits');
+    assert(!out.ansi.includes('\x1b[K'), 'no EL when repainting a changed full-width row');
+  });
+});
+
 report();

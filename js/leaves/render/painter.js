@@ -133,7 +133,15 @@ function paintFrame(prevRows, newRows, force, opts) {
   if (force || prevRows.length !== n) {
     ansi += '\x1b[2J\x1b[H';
     for (let i = 0; i < n; i++) {
-      ansi += `\x1b[${i + 1};1H` + richToAnsi(newRows[i]) + RESET + '\x1b[K';
+      // No trailing `\x1b[K`: `\x1b[2J` already cleared the screen and every row
+      // is exactly `cols` wide (composeRows / _normalizeRender invariant), so
+      // there is nothing to erase to the right. Emitting EL here is not just
+      // redundant — after a full-width row the cursor sits at the last column
+      // in the pending-wrap (last-column-flag) state, and terminals that apply
+      // EL at that position (e.g. Ghostty) erase the final cell, wiping the
+      // rightmost pane's right border on the first paint. The cell-diff path
+      // omits EL for the same invariant (see cell-grid.js header).
+      ansi += `\x1b[${i + 1};1H` + richToAnsi(newRows[i]) + RESET;
     }
     didFull = true;
   } else {
@@ -148,7 +156,10 @@ function paintFrame(prevRows, newRows, force, opts) {
           const body = hl
             ? cellDiff.highlightRow(prevRows[i], newRows[i], hl.mode, hl.hlOn, hl.hlOff)
             : richToAnsi(newRows[i]);
-          ansi += `\x1b[${i + 1};1H` + body + RESET + '\x1b[K';
+          // `body` is a full-width row overwriting the prior full-width row in
+          // place, so EL is redundant here too — and erases the last cell on
+          // last-column-flag terminals (see the full-repaint branch above).
+          ansi += `\x1b[${i + 1};1H` + body + RESET;
         }
       }
     }
