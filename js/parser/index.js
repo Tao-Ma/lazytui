@@ -737,6 +737,15 @@ function parse(yamlPath, opts) {
     // the global one (merged above); the edit feature resolves the full
     // chain editor → $VISUAL → $EDITOR → vi.
     editor: data.editor !== undefined ? data.editor : null,
+    // Command-finish status line (action-status feature, docs/global-config.md
+    // §action_status). GLOBAL-ONLY (in GLOBAL_TOP_KEYS, not VALID_TOP_KEYS), so
+    // `data.action_status` is only ever set by mergeGlobal above. This line was
+    // MISSING until the post-merge review: without it the return whitelist
+    // dropped the merged value on the YAML/JS config path, so `enabled: false`
+    // / `live: false` / custom `segments` silently did nothing (only the
+    // resolved-shape .json path honored it). Absent → `true` (resolveConfig
+    // treats true/null/undefined identically as default-on).
+    action_status: data.action_status !== undefined ? data.action_status : true,
     // Render color depth (truecolor arc 1b, docs/truecolor.md P3). String-
     // normalized (YAML parses `256`/`16` unquoted as ints); 'auto' = detect,
     // and mergeGlobal treats 'auto' as unset so a stamped 'auto' in a

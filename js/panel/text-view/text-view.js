@@ -184,35 +184,55 @@ function render(panel, w, h, slice, opts) {
   const innerW = w - 2;
   const innerH = h - 2;
 
-  // Effective lines for THIS frame (frame = f(model)): the stored buffer with
-  // (a) any status rows flushed right to the current width, and (b) the live
-  // running line appended at the end. Both are render-time so they stay correct
-  // across resizes without rewriting the stored buffer. No copy for the common
-  // case (no status rows, not running) — most text-views hit this.
-  let lines = slice.lines || [];
-  let scroll = slice.scroll;
+  // Effective lines for THIS frame (frame = f(model)). Two derived forms, kept
+  // distinct so the display transform never corrupts selection/search:
+  //   • contentLines — the stored buffer with status rows flushed right to the
+  //     current width. This is the SELECTION + SEARCH buffer. Right-aligning
+  //     here (not in the stored buffer) keeps the text width-agnostic across
+  //     resizes, and it holds real, copyable content at the columns actually
+  //     displayed — so a yank of a right-aligned status row reads the shifted
+  //     text the user saw, not the stored left-aligned bytes at the wrong
+  //     columns (review [6]).
+  //   • displayLines — contentLines PLUS the ephemeral live running line floated
+  //     at the tail. RENDER-ONLY: the running line is not in slice.lines, so it
+  //     must not be searched (its ticking duration would paint a phantom,
+  //     un-navigable highlight the reducer never counts — review [3]) nor
+  //     yielded by a yank; it lives in the display window, not the select set.
+  // No copy for the common case (no status rows, not running) — most text-views
+  // hit this and contentLines === slice.lines by reference.
+  let contentLines = slice.lines || [];
   const statusRows = slice.statusRows;
-  const running = _runningLine(panel, t, innerW);
-  if ((statusRows && statusRows.length) || running) {
-    lines = lines.slice();
-    if (statusRows) {
-      for (const i of statusRows) {
-        if (i >= 0 && i < lines.length) lines[i] = _rightAlign(lines[i], innerW);
-      }
-    }
-    if (running) {
-      // Bottom-stick: keep the floating line visible only when already at the
-      // tail; don't yank a user who has scrolled up into history.
-      const wasBottom = (slice.scroll || 0) >= Math.max(0, (slice.lines || []).length - innerH);
-      lines.push(running);
-      if (wasBottom) scroll = Math.max(0, lines.length - innerH);
+  if (statusRows && statusRows.length) {
+    contentLines = contentLines.slice();
+    for (const i of statusRows) {
+      if (i >= 0 && i < contentLines.length) contentLines[i] = _rightAlign(contentLines[i], innerW);
     }
   }
 
+  // Search decoration over contentLines (excludes the running line) so render's
+  // match set stays in lockstep with the reducer, which runs matchesFor over
+  // slice.lines. Selection wins over search (same precedence as the viewer).
   const sel = (slice.select && slice.select.active) ? slice.select : null;
-  const searchDecoration = sel ? null : _searchDecoration(slice, lines, focused);
+  const searchDecoration = sel ? null : _searchDecoration(slice, contentLines, focused);
+
+  // Float the live running line at the tail for display only. Bottom-stick: keep
+  // it visible only when already at the tail; don't yank a user who has scrolled
+  // up into history.
+  let displayLines = contentLines;
+  let scroll = slice.scroll;
+  const running = _runningLine(panel, t, innerW);
+  if (running) {
+    displayLines = contentLines.slice();
+    const wasBottom = (slice.scroll || 0) >= Math.max(0, (slice.lines || []).length - innerH);
+    displayLines.push(running);
+    if (wasBottom) scroll = Math.max(0, displayLines.length - innerH);
+  }
+
   const args = buildTextView({
-    lines, scroll, innerH,
+    // `lines` is the display window source; `selectLines` is the copyable
+    // content buffer recorded for the mouse-selection pipeline (excludes the
+    // running line, includes the right-aligned status rows).
+    lines: displayLines, selectLines: contentLines, scroll, innerH,
     select: sel, searchDecoration,
     // 3b — thread the theme's selection/search tags into the pure leaf.
     selectedTag: t.selected, searchTags: { match: t.match, current: t.match_current },

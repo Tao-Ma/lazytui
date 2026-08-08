@@ -155,9 +155,14 @@ function validateKeyboardProtocol(v) {
 
 // action_status (docs/global-config.md). A mapping (or the boolean shorthands:
 // `true` = default-on, `false` = disable). Shape only; the resolve/default
-// logic lives in the action-status leaf.
+// logic lives in the action-status leaf. `null`/absent (a bare `action_status:`
+// key) is TOLERATED as default-on to match the leaf's resolveConfig(null),
+// which returns the default-on shape — rejecting it here would throw through
+// validateGlobal and drop the ENTIRE global config to project-only over one
+// empty key, against the never-brick contract. (This section's resolver treats
+// null as a meaningful value, unlike the sibling honored keys.)
 function validateActionStatus(v) {
-  if (v === true || v === false) return;
+  if (v === true || v === false || v == null) return;
   if (!isMapping(v)) {
     throw new SchemaError("'action_status' must be a mapping (or a boolean to enable/disable)");
   }

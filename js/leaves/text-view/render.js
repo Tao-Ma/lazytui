@@ -57,6 +57,16 @@ function buildTextView(o) {
     width: o.width,
     height: o.height,
     lines: window,
+    // The full, un-windowed content buffer for the mouse-selection pipeline
+    // (docs/pane-selection.md). Windowed captures otherwise only hold the
+    // visible rows, so selection extraction falls back to the instance's stored
+    // slice.lines — which desyncs from the display when a caller applies a
+    // per-line transform (text-view right-aligns status rows). When provided,
+    // this carries the SAME display-space text the window was sliced from, so a
+    // yank maps the captured (display) columns to the right glyphs. Undefined
+    // for callers that pass no transform (info/agent) → extraction keeps its
+    // slice.lines fallback, unchanged.
+    fullLines: o.selectLines,
     title: o.title,
     hotkey: o.hotkey,
     panelType: o.panelType,

@@ -149,6 +149,27 @@ describe('[action-status] render right-aligns status rows', () => {
     assert(/ {10,}✓ · 1\.2s.$/.test(statusRow), `status right-aligned: ${JSON.stringify(statusRow)}`);
     assert(buildRow.indexOf('$ build') <= 1, `output stays left: ${JSON.stringify(buildRow)}`);
   });
+  it('records the DISPLAY-aligned buffer for selection, so a yank matches the row shown', () => {
+    // Review [6]: render right-aligns the status row in a copy, but the yank path
+    // read the stored (left-aligned) slice.lines with the captured DISPLAY
+    // columns → shifted/garbled copy. The capture now carries the display buffer
+    // (fullLines), so extraction maps the click columns onto the glyphs shown.
+    const sv = require('../panel/select-view');
+    let s = tv.init('p1');
+    s = tv.update({ type: 'tv_append_lines', lines: ['$ build', 'compiling'] }, s);
+    s = tv.update({ type: 'tv_status', line: '[green]✓[/] · [dim]1.2s[/]' }, s);
+    s = { ...s, scroll: 0 };
+    sv.enterPane('p1');
+    try { render({ paneId: 'p1', hotkey: null }, 30, 8, s, {}); } finally { sv.exitPane(); }
+    const cap = sv.contentFor('p1');
+    assert(cap && Array.isArray(cap.fullLines), 'a full selection buffer was recorded');
+    // The status row (buffer index 2) is right-aligned in the SELECTION buffer,
+    // exactly as displayed — not the stored left-aligned bytes.
+    assert(/^ {10,}✓ · 1\.2s$/.test(stripMarkup(cap.fullLines[2])),
+      `selection buffer row is display-aligned: ${JSON.stringify(stripMarkup(cap.fullLines[2]))}`);
+    // Ordinary rows are untouched (identity with the stored buffer).
+    eq(stripMarkup(cap.fullLines[0]), '$ build');
+  });
 });
 
 describe('[action-status] global-config wiring', () => {
@@ -170,6 +191,40 @@ describe('[action-status] global-config wiring', () => {
   });
   it('mergeGlobal lifts action_status onto the merged config (global-only key)', () => {
     eq(mergeGlobal({ groups: {} }, { action_status: { segments: ['status'] } }).action_status, { segments: ['status'] });
+  });
+  it('a bare `action_status:` (null) is tolerated as default-on, not a whole-config brick', () => {
+    // Review [10]: rejecting null here threw through validateGlobal and dropped
+    // the ENTIRE global config to project-only over one empty key. The leaf's
+    // resolveConfig(null) already means default-on, so the validator matches it.
+    const out = validateGlobal({ theme: 'dracula', action_status: null }, []);
+    eq(out.action_status, null);                    // survives validation (no throw)
+    eq(out.theme, 'dracula');                        // the rest of the global config is kept
+    eq(astatus.resolveConfig(null).enabled, true);   // resolver treats null as default-on
+    // A genuinely malformed shape must STILL reject (guard not over-loosened).
+    let threw = false;
+    try { validateGlobal({ action_status: 42 }, []); } catch (e) { threw = /must be a mapping/.test(e.message); }
+    assert(threw, 'a non-mapping non-boolean non-null value still throws');
+  });
+});
+
+// Review [5] — the headline bug: `action_status` reached model.config on the
+// rarely-used resolved-shape .json path but was SILENTLY DROPPED on the primary
+// YAML/JS path, because parse()'s return object is a fixed key whitelist that
+// omitted it. So `enabled:false` / `live:false` / custom `segments` did nothing.
+// No test exercised parse()'s output for this key — which is how it shipped.
+describe('[action-status] parse() carries action_status onto model.config (YAML path)', () => {
+  const { parse } = require('../parser');
+  const path = require('path');
+  const FIX = path.resolve(__dirname, 'fixtures/minimal_cmd.yml');
+  it('a global action_status survives the parse() whitelist', () => {
+    const out = parse(FIX, { global: { action_status: { enabled: false, live: false, segments: ['status'] } } });
+    eq(out.action_status, { enabled: false, live: false, segments: ['status'] });
+    eq(out.theme, 'monokai');                                   // sibling keys unaffected
+    eq(astatus.resolveConfig(out.action_status).enabled, false); // the disable switch now works
+  });
+  it('absent → default-on (true), so the feature works with no config set', () => {
+    eq(parse(FIX, {}).action_status, true);
+    eq(astatus.resolveConfig(parse(FIX, {}).action_status).enabled, true);
   });
 });
 

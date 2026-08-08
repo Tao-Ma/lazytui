@@ -106,4 +106,21 @@ describe('[text-view] no decoration', () => {
   });
 });
 
+describe('[text-view] selectLines → fullLines (selection buffer)', () => {
+  it('forwards selectLines as the full selection buffer, distinct from the display window', () => {
+    // Review [3]/[6]: text-view passes a display buffer (with the ephemeral
+    // running line) as `lines`, and the copyable content buffer (without it) as
+    // `selectLines`. The leaf forwards the latter as `fullLines` so the mouse-
+    // selection pipeline extracts real content, not the transient running line.
+    const content = ['a', 'b', 'c'];
+    const display = content.concat(['⠋ · 0ms']);
+    const a = buildTextView({ lines: display, selectLines: content, scroll: 0, innerH: 4, width: 20, height: 6 });
+    eq(a.fullLines, content);        // selection buffer excludes the running line
+    eq(a.lines.length, 4);           // display window includes it
+  });
+  it('no selectLines → fullLines undefined (info/agent callers keep the slice.lines fallback)', () => {
+    eq(buildTextView({ lines: ['x', 'y'], scroll: 0, innerH: 2, width: 20, height: 4 }).fullLines, undefined);
+  });
+});
+
 report();

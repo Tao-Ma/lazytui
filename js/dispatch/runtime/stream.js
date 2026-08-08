@@ -108,6 +108,22 @@ function appendStatusLine(line, tabInstId) {
   require('./loop').dispatchMsg(api.wrap(target, { type: 'tv_status', line }));
 }
 
+// The ONE job-termination status seam (review [16]). The powerline `✓/✗/⊗ · dur ·
+// time` stamp was originally wired only into the normal `close` path, so a spawn
+// `error` and a preempt (`killJob`) exit were left silently unmarked. Routing
+// all three through here keeps them consistent — and a future exit point is one
+// call, not a re-discovered gap. Returns true when a chip was appended, so the
+// close path can fall back to its plain Done./Exit N footer when the chip is
+// disabled; error/killJob keep their own detail footers regardless.
+function emitStatusChip(outcome, tabInstId) {
+  const t = theme();
+  const chip = astatus.statusLine(outcome, null, (getModel().config || {}).action_status,
+    { success: t.success, warning: t.warning, error: t.error });
+  if (!chip) return false;
+  appendStatusLine(chip, tabInstId);
+  return true;
+}
+
 /** Kill a single job. Removes it from procs + slotIndex, SIGTERMs the
  *  proc, emits the preempt footer to its buffer unless opts.silent,
  *  closes the registry entry, and refreshes the unrouted flag.
@@ -120,6 +136,9 @@ function killJob(jobId, opts = {}) {
   try { ctx.proc.stdout.removeAllListeners('data'); } catch {}
   try { ctx.proc.stderr.removeAllListeners('data'); } catch {}
   try { ctx.proc.kill('SIGTERM'); } catch {}
+  // Close the history record first so the status chip below reads its stamped
+  // endedAt (the duration/time segments).
+  if (ctx.record) ctx.record.kill();
   if (!opts.silent) {
     const t = theme();
     const batch = [];
@@ -130,7 +149,6 @@ function killJob(jobId, opts = {}) {
     if (ctx.target) {
       // Routed: re-run-on-same-slot footer → the action's text-view instance.
       batch.push(`[${t.warning}]Killed by next run.[/]`);
-      batch.push('[dim]Press Enter to run again.[/]');
       appendDetailLines(batch, ctx.target.tabInstId);
     } else {
       // Unrouted: identify what was killed (the next stream is a
@@ -139,9 +157,20 @@ function killJob(jobId, opts = {}) {
       batch.push(`[${t.warning}]Killed previous: ${esc(ctx.headerLabel || '<stream>')}.[/]`);
       appendDetailLines(batch);
     }
+    // Powerline stamp for the preempt outcome (review [16]) — a killed job is a
+    // ⊗; routes to the job's own instance (routed) or the Transcript (unrouted),
+    // so all three termination seams (close/error/killJob) mark consistently.
+    // Emitted after the footer text, before the routed re-run hint (mirrors the
+    // close path's tail → chip → hint order).
+    if (ctx.record) {
+      emitStatusChip(
+        { status: 'killed', startedAt: ctx.record.entry.startedAt, endedAt: ctx.record.entry.endedAt },
+        ctx.target ? ctx.target.tabInstId : undefined,
+      );
+    }
+    if (ctx.target) appendDetailLine('[dim]Press Enter to run again.[/]', ctx.target.tabInstId);
   }
   jobs.close(jobId, { status: 'killed' });
-  if (ctx.record) ctx.record.kill();
   procs.delete(jobId);
   if (slotIndex.get(ctx.slotKey) === jobId) slotIndex.delete(ctx.slotKey);
 }
@@ -327,11 +356,8 @@ function streamCommand(headerLabel, cmd, args = [], opts = {}) {
     const outcome = signal
       ? { status: 'killed', signal, startedAt: rec.entry.startedAt, endedAt: rec.entry.endedAt }
       : { status: 'exited', exitCode: (code == null ? null : (code | 0)), startedAt: rec.entry.startedAt, endedAt: rec.entry.endedAt };
-    const chip = astatus.statusLine(outcome, null, (getModel().config || {}).action_status,
-      { success: t.success, warning: t.warning, error: t.error });
-    if (chip) {
-      appendStatusLine(chip, tabInstId);
-    } else {
+    if (!emitStatusChip(outcome, tabInstId)) {
+      // Chip disabled → the classic plain footer, so completion is never silent.
       const plain = signal ? `[${t.warning}]Killed (${signal})[/]`
         : code === 0 ? `[${t.success}]Done.[/]` : `[${t.error}]Exit ${code}[/]`;
       appendDetailLine(plain, tabInstId);
@@ -346,11 +372,18 @@ function streamCommand(headerLabel, cmd, args = [], opts = {}) {
     jobs.close(jobId, { status: 'killed' });
     procs.delete(jobId);
     if (slotIndex.get(slotKey) === jobId) slotIndex.delete(slotKey);
-      const batch = [`[${theme().error}]Error: ${esc(err.message)}[/]`];
+    const t = theme();
     rec.append(`Error: ${err.message}`);
-    if (routed) batch.push('[dim]Press Enter to run again.[/]');
-    appendDetailLines(batch, tabInstId);
-    rec.end('error');
+    rec.end('error');   // stamp endedAt so the chip's duration/time resolve
+    appendDetailLine(`[${t.error}]Error: ${esc(err.message)}[/]`, tabInstId);
+    // Same powerline stamp as the normal close path (review [2]/[16]) so a spawn
+    // failure is marked like every other outcome. A spawn error carries no exit
+    // code/signal → renders `✗ ?`; the Error: line above carries the detail.
+    emitStatusChip(
+      { status: 'exited', exitCode: null, startedAt: rec.entry.startedAt, endedAt: rec.entry.endedAt },
+      tabInstId,
+    );
+    if (routed) appendDetailLine('[dim]Press Enter to run again.[/]', tabInstId);
     flushFabric();   // publish whatever raw output streamed before the error (may be empty)
     scheduleRender();
   });

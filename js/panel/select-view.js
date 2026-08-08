@@ -51,10 +51,17 @@ function currentPaneId() { return _current; }
  *  non-content rows after them — the agent pane's status/input chrome and its
  *  provisional streaming preview (extraction reads `slice.transcript`, which
  *  the preview is not part of). null = every captured row is content. */
-function recordContent(paneId, lines, scroll, windowed, selectableRows) {
+function recordContent(paneId, lines, scroll, windowed, selectableRows, fullLines) {
   if (!paneId) return;
   _content.set(paneId, { lines: lines || [], scroll: scroll || 0, windowed: !!windowed,
-    selectableRows: selectableRows == null ? null : selectableRows });
+    selectableRows: selectableRows == null ? null : selectableRows,
+    // The full display-space buffer for extraction on windowed panes that apply
+    // a per-line display transform (text-view right-aligns status rows), so a
+    // yank reads the text at the columns the click captured — not the stored
+    // slice.lines, which the transform shifted away from (docs/pane-selection).
+    // null when the caller passes no transform → _textOf keeps its slice.lines
+    // fallback.
+    fullLines: Array.isArray(fullLines) ? fullLines : null });
 }
 /** The last-recorded content for a pane, or null. */
 function contentFor(paneId) { return _content.get(paneId) || null; }
@@ -171,7 +178,12 @@ function _bufferOf(slice) {
 function _textOf(own) {
   if (!own) return '';
   const cap = _content.get(own.paneId);
-  const lines = (cap && !cap.windowed) ? cap.lines : (_bufferOf(own.slice) || (cap && cap.lines));
+  // Windowed panes: prefer the recorded full DISPLAY buffer when the caller
+  // supplied one (text-view's right-aligned status rows), so extraction maps the
+  // captured display columns onto the glyphs actually shown; else the instance's
+  // own stored buffer; else the captured window as a last resort.
+  const lines = (cap && !cap.windowed) ? cap.lines
+    : ((cap && cap.fullLines) || _bufferOf(own.slice) || (cap && cap.lines));
   if (!lines) return '';
   return core.selectedTextFrom(lines, own.sel);
 }

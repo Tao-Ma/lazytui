@@ -178,6 +178,37 @@ describe('[multi-job] routed + unrouted independent', () => {
   });
 });
 
+// Review [16] regression — the powerline completion chip was originally wired
+// ONLY into the normal `close` path, so a preempt (`killJob`) exit was left
+// silently unmarked. `killJob` now routes through the shared `emitStatusChip`
+// seam. Driven by a DIRECT killJob (not a same-slot re-run, whose tv_stream_start
+// reseed would immediately clear the chip) so the appended row is observable.
+describe('[multi-job] killJob stamps the ⊗ completion chip (review [16])', () => {
+  it('a killed job appends a ⊗ status row to its target buffer, like a clean close', () => {
+    seedModel();
+    jobs._reset();
+    const route = require('../panel/route');
+    const { stripMarkup } = require('../leaves/text/ansi');
+    const transcript = route.resolveTarget('viewer_transcript');
+    assert(transcript != null, 'transcript instance resolves');
+
+    // An unrouted stream lands its header + chip on the Transcript instance
+    // (ctx.target is null → emitStatusChip routes to viewer_transcript).
+    stream.streamCommand('docker logs x', 'sleep 5', []);
+    const jobId = running()[0].id;
+    const before = (route.getInstanceSlice(transcript).statusRows || []).length;
+
+    stream.killJob(jobId);   // NOT silent → the preempt footer + chip are emitted
+
+    const slice = route.getInstanceSlice(transcript);
+    const rows = slice.statusRows || [];
+    eq(rows.length, before + 1, 'killJob appended exactly one status row (was silent on the old code)');
+    const chip = stripMarkup(slice.lines[rows[rows.length - 1]]);
+    assert(chip.includes('⊗'), `the killed chip carries the ⊗ glyph: ${JSON.stringify(chip)}`);
+    eq(running().length, 0, 'job cleared');
+  });
+});
+
 // v0.6.2 R9 — model.unroutedStreaming was retired. The field was
 // written by dispatch/runtime/stream.js on every slot lifecycle event but no
 // production reader consumed it (the Transcript-tab refactor at
