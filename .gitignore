@@ -9,3 +9,9 @@ node_modules/
 
 # macOS
 .DS_Store
+
+# Core dumps — a crashing child process (e.g. an embedded PTY) drops one in its
+# CWD; the kernel core_pattern here is bare "core". Never commit these.
+# (A future legitimately-named `core` file/dir would need `git add -f`.)
+core
+core.[0-9]*
