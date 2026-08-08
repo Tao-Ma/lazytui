@@ -178,12 +178,22 @@ describe('[multi-job] routed + unrouted independent', () => {
   });
 });
 
-// Review [16] regression — the powerline completion chip was originally wired
-// ONLY into the normal `close` path, so a preempt (`killJob`) exit was left
-// silently unmarked. `killJob` now routes through the shared `emitStatusChip`
-// seam. Driven by a DIRECT killJob (not a same-slot re-run, whose tv_stream_start
-// reseed would immediately clear the chip) so the appended row is observable.
-describe('[multi-job] killJob stamps the ⊗ completion chip (review [16])', () => {
+// Review [16] SEAM — the powerline completion chip was originally wired ONLY
+// into the normal `close` path, so a preempt (`killJob`) exit was left silently
+// unmarked. A non-silent `killJob` now routes a killed job through the shared
+// `emitStatusChip` seam, exactly like a clean close. This drives a DIRECT
+// non-silent killJob to observe the appended ⊗ row.
+//
+// This asserts the SEAM (killed → ⊗), NOT user-visible output — in the live
+// paths the in-pane chip does not survive:
+//   • routed same-slot re-run: killJob(non-silent) emits it, then the new run's
+//     tv_stream_start reseed WIPES it (pinned by test-action-status
+//     "tv_stream_start (re-run reseed) clears statusRows"); the kill lives in
+//     the history record.
+//   • unrouted preempt: now kills SILENTLY and seeds a SURVIVING "⊗ killed
+//     previous" preamble instead (the C block below). The seam stays live for
+//     the routed re-run and any future standalone "stop job" path.
+describe('[multi-job] killJob stamps the ⊗ completion chip (review [16] seam)', () => {
   it('a killed job appends a ⊗ status row to its target buffer, like a clean close', () => {
     seedModel();
     jobs._reset();
@@ -206,6 +216,37 @@ describe('[multi-job] killJob stamps the ⊗ completion chip (review [16])', () 
     const chip = stripMarkup(slice.lines[rows[rows.length - 1]]);
     assert(chip.includes('⊗'), `the killed chip carries the ⊗ glyph: ${JSON.stringify(chip)}`);
     eq(running().length, 0, 'job cleared');
+  });
+});
+
+// C — the unrouted preempt's "what did I just kill" notice SURVIVES the reseed.
+// killJob's own footer/chip would be wiped by the new run's tv_stream_start, so
+// the preempt path (effects.unrouted_preempt_and_run) captures a one-line notice,
+// kills SILENTLY, and seeds the notice as a `preamble` ahead of the new header.
+describe('[multi-job] unrouted preempt seeds a surviving "killed previous" preamble (C)', () => {
+  const { stripMarkup } = require('../leaves/text/ansi');
+  it('the new Transcript starts with the ⊗ notice, then the new command header', () => {
+    seedModel();
+    jobs._reset();
+    const route = require('../panel/route');
+    const transcript = route.resolveTarget('viewer_transcript');
+    assert(transcript != null, 'transcript instance resolves');
+    stream.streamCommand('docker logs A', 'sleep 5', []);
+    const aId = running()[0].id;
+    const notice = stream.preemptNotice(aId);          // captured BEFORE the kill removes the job
+    assert(/⊗ killed previous: docker logs A/.test(stripMarkup(notice)),
+      `notice text: ${JSON.stringify(stripMarkup(notice))}`);
+    stream.killJob(aId, { silent: true });             // silent → no wiped footer/chip
+    stream.streamCommand('docker logs B', 'sleep 5', [], { preamble: notice });
+    const lines = (route.getInstanceSlice(transcript).lines || []).map(stripMarkup);
+    assert(/⊗ killed previous: docker logs A/.test(lines[0] || ''),
+      `preamble survives at the top: ${JSON.stringify(lines[0])}`);
+    assert(/\$ docker logs B/.test(lines[1] || ''),
+      `new command header follows the preamble: ${JSON.stringify(lines[1])}`);
+    stream.killAll({ silent: true });
+  });
+  it("preemptNotice('<unknown>') is '' (no crash when the job is already gone)", () => {
+    eq(stream.preemptNotice('does-not-exist'), '');
   });
 });
 

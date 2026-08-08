@@ -72,10 +72,13 @@ function update(msg, slice) {
   switch (msg.type) {
     case 'tv_stream_start':
       // Re-run reseed: clear to the header + reset view state (the per-instance
-      // analog of the viewer's routed stream_start R4 reset).
+      // analog of the viewer's routed stream_start R4 reset). An optional
+      // `preamble` line is seeded AHEAD of the header — the unrouted preempt uses
+      // it to carry a "⊗ killed previous: X" notice that SURVIVES this reset
+      // (killJob's own footer/chip would otherwise be wiped by the reseed).
       return {
         ...slice,
-        lines: [msg.header],
+        lines: msg.preamble != null ? [msg.preamble, msg.header] : [msg.header],
         scroll: 0,
         search: { active: false, term: '', idx: 0, typing: '' },
         select: { active: false, kind: 'char', anchor: { line: 0, col: 0 }, cursor: { line: 0, col: 0 } },

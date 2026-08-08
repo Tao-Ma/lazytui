@@ -134,6 +134,16 @@ describe('[action-status] tv_status reducer arm', () => {
     eq(s.statusRows, []);
     eq(s.lines, ['$ build']);
   });
+  it('tv_stream_start with a preamble seeds it AHEAD of the header (unrouted preempt notice — C)', () => {
+    // The reseed normally wipes everything to [header]; a `preamble` survives it,
+    // carrying the "⊗ killed previous: X" notice ahead of the new command. Old
+    // arm ignores preamble → lines would be ['$ new'] only.
+    let s = tv.init('p1');
+    s = tv.update({ type: 'tv_append', line: 'old output' }, s);
+    s = tv.update({ type: 'tv_stream_start', header: '$ new', preamble: '[yellow]⊗[/] killed previous: X' }, s);
+    eq(s.lines, ['[yellow]⊗[/] killed previous: X', '$ new']);
+    eq(s.statusRows, []);
+  });
 });
 
 describe('[action-status] render right-aligns status rows', () => {

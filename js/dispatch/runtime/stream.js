@@ -128,6 +128,18 @@ function emitStatusChip(outcome, tabInstId) {
   return true;
 }
 
+/** The one-line preempt notice for an unrouted job about to be killed by a
+ *  DIFFERENT unrouted run — seeded as a `preamble` into the new stream's
+ *  reseeded Transcript so the "what did I just kill" record SURVIVES the
+ *  tv_stream_start reset (killJob's own footer/chip would be wiped by it). Read
+ *  BEFORE killJob removes the job from `procs`. '' if it's already gone. */
+function preemptNotice(jobId) {
+  const ctx = procs.get(jobId);
+  if (!ctx) return '';
+  const t = theme();
+  return `[${t.warning}]⊗[/] [dim]killed previous: ${esc(ctx.headerLabel || '<stream>')}[/]`;
+}
+
 /** Kill a single job. Removes it from procs + slotIndex, SIGTERMs the
  *  proc, emits the preempt footer to its buffer unless opts.silent,
  *  closes the registry entry, and refreshes the unrouted flag.
@@ -259,13 +271,19 @@ function streamCommand(headerLabel, cmd, args = [], opts = {}) {
   // reuse already made the tab the visible one). Unrouted → the viewer's
   // Transcript accumulator (stream_start).
   const header = `[dim]$ ${esc(headerLabel)}[/]`;
+  // C — an unrouted preempt threads a `preamble` (the "⊗ killed previous: X"
+  // notice) so it survives the reseed ahead of this run's header; absent on
+  // ordinary runs, so routed re-runs stay clean.
+  const startMsg = opts.preamble != null
+    ? { type: 'tv_stream_start', header, preamble: opts.preamble }
+    : { type: 'tv_stream_start', header };
   if (tabInstId) {
-    require('./loop').dispatchMsg(api.wrap(tabInstId, { type: 'tv_stream_start', header }));
+    require('./loop').dispatchMsg(api.wrap(tabInstId, startMsg));
   } else {
     // U2e P1b — unrouted header seeds the Transcript text-view instance (tv_stream_start),
     // not the detail viewer's stream_start accumulator.
     const transcript = route.resolveTarget('viewer_transcript');
-    if (transcript) require('./loop').dispatchMsg(api.wrap(transcript, { type: 'tv_stream_start', header }));
+    if (transcript) require('./loop').dispatchMsg(api.wrap(transcript, startMsg));
     // U2e P1b regression fix — restore the v0.6.7 unrouted auto-jump: make the
     // Transcript the content slot's active tab so the user SEES the new stream
     // (e.g. docker `Status`/`Logs`). The flat-strip `stream_start` reducer did
@@ -393,4 +411,4 @@ function streamCommand(headerLabel, cmd, args = [], opts = {}) {
   });
 }
 
-module.exports = { streamCommand, killJob, killAll };
+module.exports = { streamCommand, killJob, killAll, preemptNotice };

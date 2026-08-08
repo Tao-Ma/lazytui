@@ -386,13 +386,17 @@ function installBuiltins() {
   });
   // unrouted_preempt_and_run: fired by confirm_accept when the user
   // confirms "Kill running '<label>'?" on an unrouted-slot collision.
-  // Kills the prior stream (emits its "Killed previous:" footer into
-  // the viewerStreamBuffer), then starts the new stream.
+  // Captures a one-line "⊗ killed previous: X" notice, kills the prior stream
+  // SILENTLY (its own footer/chip would be wiped by the new run's tv_stream_start
+  // reseed anyway), then starts the new stream with that notice as a preamble so
+  // the "what did I just kill" record SURVIVES the reseed, ahead of the new
+  // header. The kill is still recorded in history via killJob → record.kill().
   registerEffect('unrouted_preempt_and_run', (eff) => {
     setImmediate(() => {
       const stream = require('./stream');
-      stream.killJob(eff.existingId, { silent: false });
-      stream.streamCommand(eff.headerLabel, eff.cmd, eff.args, eff.opts || {});
+      const notice = stream.preemptNotice(eff.existingId);
+      stream.killJob(eff.existingId, { silent: true });
+      stream.streamCommand(eff.headerLabel, eff.cmd, eff.args, { ...(eff.opts || {}), preamble: notice });
     });
   });
   // jobs_route: the second half of jobs_activate (Phase C). jobs_activate
