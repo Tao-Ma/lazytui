@@ -127,7 +127,11 @@ action_status:
   off; the plain left-aligned `Done.` / `Exit N` footer is used instead.
 - `segments` — any subset of `status` / `duration` / `time`, in the order you
   want them to appear; unknown tokens are rejected at load. Defaults to all
-  three. `time` is omitted while a job is still running (no finish time yet).
+  three. The `status` glyph is **always** shown (a failed or running command is
+  never silent) — listing `status` only sets where it sits in the order; omitting
+  it, or `segments: []`, still renders the glyph and just controls the extra
+  fields (duration/time). `time` is omitted while a job is still running (no
+  finish time yet).
 - `live` — when `true` (default), the 1-second frame clock is armed while a
   streamed action runs so the floating line's duration and spinner advance
   between output chunks; the *permanent* stamp is correct either way, so `false`

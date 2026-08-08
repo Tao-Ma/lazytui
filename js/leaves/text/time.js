@@ -1,10 +1,8 @@
-'use strict';
-
 /**
  * time — shared, pure time/duration formatters.
  *
  * Extracted so the history navigator (js/panel/navigator/history.js) and the
- * action-status stamp (js/leaves/infra/action-status.js) format clocks and
+ * action-status stamp (js/leaves/text/action-status.js) format clocks and
  * durations IDENTICALLY. They previously hand-rolled the two: a byte-identical
  * `HH:MM:SS` clock, and a minutes/seconds ladder that had DRIFTED — history
  * rendered `1m5s` (no zero-pad, no hour tier) while the status chip rendered
@@ -15,6 +13,7 @@
  * concern, not I/O). Callers own their own sentinels (running / detached) and
  * clamp negatives before calling.
  */
+'use strict';
 
 /** epoch-ms → `14:32:07` (local wall clock). */
 function fmtClock(ms) {

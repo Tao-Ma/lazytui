@@ -37,4 +37,27 @@ function paneInnerH(slice) {
   return geo.getPanelViewportH(ls, paneId, ls.dims, undefined, viewerPaneId) || 0;
 }
 
-module.exports = { paneInnerH };
+// The pane's inner content WIDTH — the render-side `innerW` (rect width − 2 for
+// the border) for the CURRENTLY-VISIBLE pane, computed here in the impure shell
+// so the interaction reducer reads it as a stamped Msg fact (`msg.innerW`), the
+// width sibling of paneInnerH. Used only to right-align status rows into the
+// display-space content buffer the reducer selects/searches over (text-view), so
+// keyboard + mouse coordinates agree. `visibleBoundsFor` returns the same
+// view-mode-aware rect render draws into (normal = _normalBoundsMap = the rects
+// composeRects windows; half/full = _half/_fullBoundsMap, mirrors of renderHalf/
+// renderFull), so this matches render's `innerW` exactly for a visible pane. An
+// off-screen pane (half/full view) yields null → 0; that pane isn't rendered, so
+// there's no highlight to align, and the reducer falls back to slice.lines.
+function paneInnerW(slice) {
+  const route = (_routeRef || (_routeRef = require('./route')));
+  const geo = (_geoRef || (_geoRef = require('../leaves/wm/geometry')));
+  const ls = route.serviceSlice('layout');
+  if (!ls || !ls.dims) return 0;
+  const viewerPaneId = route.resolveViewerPaneId();
+  const paneId = (slice && slice.paneId) || viewerPaneId;
+  if (!paneId) return 0;
+  const b = geo.visibleBoundsFor(ls, paneId, viewerPaneId);
+  return (b && b.w) ? Math.max(0, b.w - 2) : 0;
+}
+
+module.exports = { paneInnerH, paneInnerW };

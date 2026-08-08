@@ -20,7 +20,7 @@ const fs = require('fs');
 const path = require('path');
 const { getModel } = require('../model/store');
 const { rebuildLayoutFromConfig } = require('../leaves/wm/arrange');
-const astatus = require('../leaves/infra/action-status');
+const astatus = require('../leaves/text/action-status');
 // Panel-state accessors (readers/writers/composites) moved to
 // panel/nav-state.js in v0.6.5 §1 Phase 2. This module keeps the boot layer
 // (loadConfig/initState) + the two dispatch-layer group helpers

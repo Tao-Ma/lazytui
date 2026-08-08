@@ -33,13 +33,16 @@
 // Shared pure formatters (a sibling leaf — no model/io/theme, so purity holds).
 // The clock + duration ladder are shared with the history navigator so the two
 // panels never drift (they once rendered `1m5s` vs `1m05s` for the same run).
-const { fmtClock, fmtDurationMs } = require('../text/time');
+const { fmtClock, fmtDurationMs } = require('./time');
 
 const VALID_SEGMENTS = new Set(['status', 'duration', 'time']);
 const DEFAULT_SEGMENTS = ['status', 'duration', 'time'];
-// Braille spinner — the running indicator. Advances by wall-elapsed so it
-// animates smoothly under streaming renders and still visibly turns on the 1s
-// frame-clock cadence when a run produces no output.
+// Braille spinner — the running indicator. Indexed by elapsed since startedAt
+// (`now - startedAt`, in 125ms steps). `now` is the frame clock (model.now),
+// which advances on the 1s clock tick while a run is live — so the spinner turns
+// about once per second, NOT per output chunk (a render driven by streamed
+// output reuses the same model.now; a per-render wall-clock read would break
+// purity/replay).
 const SPINNER = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
 /** Normalize the raw config value into a resolved shape with defaults applied.

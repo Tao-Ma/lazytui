@@ -15,7 +15,7 @@
 'use strict';
 
 const { describe, it, eq, assert, report } = require('./test-runner');
-const astatus = require('../leaves/infra/action-status');
+const astatus = require('../leaves/text/action-status');
 const { stripMarkup } = require('../leaves/text/ansi');
 const { validateGlobal } = require('../parser/schema');
 const { mergeGlobal } = require('../parser/global');
@@ -334,6 +334,89 @@ describe('[action-status] jobs_synced alone arms/tears the clock via the finaliz
     assert(hasClock(), 'clock armed from the jobs change alone (finalize gate fired on the jobs-ref change)');
     applyMsg({ type: 'jobs_synced', jobs: [{ id: 'j1', status: 'exited', kind: 'stream-routed', startedAt: 1, endedAt: 2, exitCode: 0, owner: {} }] });
     assert(!hasClock(), 'clock torn down from the jobs change alone (no leaked idle tick)');
+  });
+});
+
+// ① fix — the interaction reducer runs over the DISPLAY-space buffer (status
+// rows right-aligned to msg.innerW), the SAME contentLines render decorates +
+// windows, so keyboard selection/search coordinates match what's on screen.
+// Before the fix the reducer ran over the stored (left-aligned) slice.lines
+// while render + the mouse yank used the right-aligned buffer — so a keyboard
+// visual-select HIGHLIGHT painted on the empty left region, and a whitespace
+// search added phantom highlights the reducer never navigated. (The pre-fix
+// keyboard YANK text was already correct — it read slice.lines — so these pin
+// the coordinate UNIFICATION, driven directly through the text-view reducer.)
+describe('[action-status] keyboard selection runs over the display buffer (① fix)', () => {
+  const W = 40;                                   // stamped innerW (pane inner width)
+  function statusSlice() {
+    let s = tv.init('p1');
+    s = tv.update({ type: 'tv_append_lines', lines: ['$ build', 'compiling'] }, s);
+    s = tv.update({ type: 'tv_status', line: '[green]✓[/] · [dim]1.2s[/]' }, s);   // status row @ index 2
+    return { ...s, scroll: 0, innerH: 20 };
+  }
+  const onLine = (s, ln) => ({ ...s, select: { active: true, kind: 'char', anchor: { line: ln, col: 0 }, cursor: { line: ln, col: 0 } }, cursor: { line: ln, col: 0 } });
+  const unwrap = (r) => (Array.isArray(r) ? r[0] : r);
+  const effectsOf = (r) => (Array.isArray(r) ? (r[1] || []) : []);
+
+  it("'$' on a right-aligned status row reaches the DISPLAY-space end col, not the stored (left) width", () => {
+    const s = onLine(statusSlice(), 2);
+    const next = unwrap(tv.update({ type: 'key', seq: '$', focusKind: 'text-view', innerW: W }, s));
+    eq(next.select.cursor.col, W - 1);            // display end (39); pre-fix: 7 (stored "✓ · 1.2s", width 8)
+  });
+
+  it("'y' yanks the display-aligned status row (leading pad included, matching the shown row)", () => {
+    const s = { ...statusSlice(), select: { active: true, kind: 'char', anchor: { line: 2, col: 0 }, cursor: { line: 2, col: W - 1 } } };
+    const fx = effectsOf(tv.update({ type: 'key', seq: 'y', focusKind: 'text-view', innerW: W }, s));
+    const push = fx.find((e) => e && e.msg && e.msg.type === 'register_push');
+    assert(push, 'a register_push effect was emitted');
+    assert(/^ {10,}✓ · 1\.2s$/.test(push.msg.text), `yank is display-aligned: ${JSON.stringify(push.msg.text)}`);
+  });
+
+  it('no innerW stamped (pre-boot) → reducer falls back to slice.lines, unchanged behavior', () => {
+    const next = unwrap(tv.update({ type: 'key', seq: '$', focusKind: 'text-view' }, onLine(statusSlice(), 2)));
+    eq(next.select.cursor.col, 7);               // stored "✓ · 1.2s" (width 8) → end col 7
+  });
+
+  it('a NON-status line is unaffected by innerW (only recorded status rows right-align)', () => {
+    const next = unwrap(tv.update({ type: 'key', seq: '$', focusKind: 'text-view', innerW: W }, onLine(statusSlice(), 0)));
+    eq(next.select.cursor.col, '$ build'.length - 1);   // line 0 = "$ build" (7 wide), left → col 6
+  });
+});
+
+// The augmentMsg wiring that feeds the reducer above: innerW is the render-side
+// inner width (via paneInnerW → geometry.visibleBoundsFor, mirror of paneInnerH),
+// stamped ONLY when the pane has status rows so the common streaming path pays no
+// geometry read.
+describe('[action-status] augmentMsg stamps innerW only when status rows exist (① wiring)', () => {
+  const sm = require('./smoke/_helpers/smoke');
+  const route = require('../panel/route');
+  const { getModel } = require('../app/runtime');
+
+  it('no status rows → no innerW stamp (common path skips the geometry read)', () => {
+    const msg = tv.augmentMsg({ type: 'key', seq: 'v', focusKind: 'text-view' }, {}, tv.init('p1'));
+    eq(msg.innerW, undefined);
+  });
+
+  it('a streaming append (tv_append) skips the innerW stamp even WITH status rows (Transcript hot path)', () => {
+    // The tv_* arms are served before the reducer and never read innerW, so the
+    // append path (incl. the Transcript, which keeps appending after a status row
+    // lands) must not pay the paneInnerW geometry read.
+    const slice = { ...tv.init('p1'), lines: ['x'], statusRows: [0] };
+    eq(tv.augmentMsg({ type: 'tv_append', line: 'y' }, {}, slice).innerW, undefined);
+  });
+
+  it("a pane with status rows gets innerW = the visible pane's inner width (render's source)", () => {
+    sm.bootFresh({ groups: { g1: { name: 'g1', label: 'G1', containers: [], children: [], parent: null, depth: 0, quick: false, actions: {} } } });
+    sm.resize(100, 30);
+    const vp = route.resolveViewerPaneId();
+    assert(vp, 'a viewer pane resolves');
+    const geo = require('../leaves/wm/geometry');
+    const ls = route.serviceSlice('layout');
+    const b = geo.visibleBoundsFor(ls, vp, vp);
+    assert(b && b.w > 2, 'the viewer pane has real bounds');
+    const slice = { ...tv.init(vp), lines: ['x'], statusRows: [0] };
+    const msg = tv.augmentMsg({ type: 'key', seq: 'v', focusKind: 'text-view' }, getModel(), slice);
+    eq(msg.innerW, b.w - 2);                       // stamped == render's innerW (w − 2)
   });
 });
 

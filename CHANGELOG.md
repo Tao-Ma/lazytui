@@ -12,7 +12,7 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   end of an action's output pane (the routed tab and the Transcript). While the
   action runs, a live line floats at the end (braille spinner + ticking
   duration) and is pushed down by new output. On completion it becomes a line
-  **in the pane's scrollback** — a status glyph (`✓` · `✗ N` · `⊗ SIG`) with the
+  **in the pane's scrollback** — a status glyph (`✓` · `✗ N` · `✗ ?` · `⊗ SIG`) with the
   run duration and finish clock time, middot-joined — so it scrolls with the
   output instead of being overwritten in place the way the old single-cell
   status would be, and each routed action's tab keeps its own stamp. This

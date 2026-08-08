@@ -2,7 +2,7 @@
  * Streamed shell-command output → detail panel.
  *
  * v0.6.2 R8 — moved from io/ to dispatch/. This module is primarily a
- * Msg-dispatcher facade (stream_start / viewer_append / viewer_append_lines
+ * Msg-dispatcher facade (tv_stream_start / tv_append / tv_append_lines / tv_status
  * wrapped via panel/api + route, slot map for preempt semantics,
  * confirm-overlay for cross-label unrouted preempt) that happens to wrap
  * child_process.spawn underneath. Its lazy requires reach dispatch/,
@@ -21,15 +21,17 @@
  *     alongside Server log does NOT). opts.tabInstId is the DISPLAY target (the
  *     action's text-view instance), streamed the tv_* Cmds below.
  *   Unrouted (no slotKey) → slotKey = 'unrouted'. Singleton slot — a new
- *     docker-logs preempts the previous. Streams the viewer_* Cmds into the
- *     unrouted Transcript accumulator (viewerStreamBuffer).
+ *     docker-logs preempts the previous. Streams the tv_* Cmds into the
+ *     Transcript text-view instance (U2e P1b; was the viewer's viewerStreamBuffer
+ *     accumulator).
  *
  * Lifecycle Cmds dispatched at boundaries:
  *   routed   → tv_stream_start {header} / tv_append {line} / tv_append_lines {lines}
  *              / tv_status {line} (the permanent completion chip) to
  *              wrap(tabInstId) (the text-view instance)
- *   unrouted → stream_start {header} / viewer_append {line} / viewer_append_lines
- *              {lines} to the viewer (Transcript)
+ *   unrouted → tv_stream_start {header} / tv_append {line} / tv_append_lines
+ *              {lines} / tv_status {line} to the Transcript text-view instance
+ *              (resolveTarget('viewer_transcript'))
  *
  * No layout dependency — uses scheduleRender from render-queue. Lazy-
  * requires dispatch.applyMsg / panel/api to dodge the
@@ -41,7 +43,7 @@ const { spawn } = require('child_process');
 const { StringDecoder } = require('string_decoder');
 const { esc } = require('../../leaves/text/ansi');
 const { theme } = require('../../leaves/infra/themes');
-const astatus = require('../../leaves/infra/action-status');
+const astatus = require('../../leaves/text/action-status');
 const { getModel } = require('../../model/store');
 const { scheduleRender } = require('../../leaves/infra/render-queue');
 const history = require('../../feature/history');
@@ -65,8 +67,9 @@ const slotIndex = new Map();      // slotKey → jobId
 //     tv_append_lines dispatched to wrap(tabInstId). The instance owns its own
 //     scroll (bottom-stick lives in its update), so no per-line bundle is needed
 //     — a simplification over the retired actionTabBuffers routing.
-//   Unrouted (no tabInstId) → the viewer's Transcript accumulator
-//     (viewerStreamBuffer) via viewer_append / viewer_append_lines.
+//   Unrouted (no tabInstId) → the Transcript text-view instance
+//     (resolveTarget('viewer_transcript')) via tv_append / tv_append_lines
+//     (U2e P1b; was viewer_append to the viewer's viewerStreamBuffer accumulator).
 //
 // appendDetailLine: single-line (the onData hot path — one Msg per line).
 // appendDetailLines: bulk variant for producer-event footers (one atomic Msg).
@@ -154,7 +157,7 @@ function killJob(jobId, opts = {}) {
     } else {
       // Unrouted: identify what was killed (the next stream is a
       // different command, so "Killed by next run" reads oddly here).
-      // Goes to viewerStreamBuffer (no tabKey on the dispatch).
+      // Goes to the Transcript text-view instance (no tabInstId on the dispatch).
       batch.push(`[${t.warning}]Killed previous: ${esc(ctx.headerLabel || '<stream>')}.[/]`);
       appendDetailLines(batch);
     }

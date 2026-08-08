@@ -19,9 +19,9 @@ const { renderPanel } = require('../api');
 const { buildTextView } = require('../../leaves/text-view/render');
 const tvu = require('../../leaves/text/text-view-update');
 const ms = require('../../leaves/text/search');
-const astatus = require('../../leaves/infra/action-status');
+const astatus = require('../../leaves/text/action-status');
 const { visibleLen } = require('../../leaves/text/ansi');
-const { paneInnerH } = require('../pane-viewport');
+const { paneInnerH, paneInnerW } = require('../pane-viewport');
 const { getModel } = require('../../model/store');
 
 function init(paneId, seed) {
@@ -40,10 +40,11 @@ function init(paneId, seed) {
     select: { active: false, kind: 'char', anchor: { line: 0, col: 0 }, cursor: { line: 0, col: 0 } },
     cursor: { line: 0, col: 0 },
     // Indices of buffer lines that are action-status stamps (the permanent
-    // `✓ Done · …` completion line). render() right-aligns these to the current
-    // pane width — the alignment is a display concern, so the stored text stays
-    // width-agnostic and resizes cleanly. Appends never shift existing indices
-    // (append-only tail); tv_stream_start (re-run reseed) clears them.
+    // `✓ · dur · time` completion line). The display transform (_contentLines)
+    // right-aligns these to the current pane width for BOTH render and the
+    // interaction reducer — the alignment is a display concern, so the stored
+    // text stays width-agnostic and resizes cleanly. Appends never shift existing
+    // indices (append-only tail); tv_stream_start (re-run reseed) clears them.
     statusRows: [],
   };
 }
@@ -100,19 +101,38 @@ function update(msg, slice) {
       return { ...slice, lines: Array.isArray(msg.lines) ? msg.lines : [], scroll: 0, statusRows: [] };
     default: break;
   }
-  // Interaction (U2c P0) — a text-view's content IS its own line buffer.
-  const r = tvu.reduce(msg, slice, slice.lines || [], 'text-view');
+  // Interaction (U2c P0) — a text-view's content IS its own line buffer. The
+  // reducer runs over the DISPLAY-space buffer (status rows right-aligned to
+  // msg.innerW — the SAME contentLines render decorates + windows), so keyboard
+  // selection/search coordinates match what the user sees. Mouse already reports
+  // display columns; unifying the reducer here puts both in one coordinate
+  // system. innerW absent (pre-boot / no status rows) → contentLines === slice.lines.
+  const r = tvu.reduce(msg, slice, _contentLines(slice, msg.innerW), 'text-view');
   return r === null ? slice : r;
 }
 
-// Framework (loop._augment) stamps the viewport height so update() stays pure of
-// layout geometry. Idempotent: a pre-attached innerH wins. Reuses the shared
-// paneInnerH (keyed on this instance's column paneId) so a background-streaming
-// off-tab text-view still clamps against its container slot's height.
+// Framework (loop._augment) stamps the viewport geometry so update() stays pure
+// of layout reads. Idempotent: a pre-attached innerH/innerW wins. Reuses the
+// shared paneInnerH/paneInnerW (keyed on this instance's column paneId) so a
+// background-streaming off-tab text-view still clamps against its container slot.
+// innerW is consumed ONLY to right-align status rows for the interaction reducer,
+// so it's stamped ONLY for the fall-through interaction Msgs on a pane that HAS
+// status rows: the streaming arms (tv_*) are served in update()'s switch before
+// the reducer and never read it, so the hot append path — including the Transcript,
+// which keeps appending after an action's status row lands — pays no geometry read.
+const _TV_STREAM_ARMS = new Set(['tv_stream_start', 'tv_append', 'tv_append_lines', 'tv_status', 'tv_set_lines']);
 function augmentMsg(msg, model, slice) {
-  if (msg.innerH > 0) return msg;
-  const ih = paneInnerH(slice);
-  return ih > 0 ? { ...msg, innerH: ih } : msg;
+  let out = msg;
+  if (!(out.innerH > 0)) {
+    const ih = paneInnerH(slice);
+    if (ih > 0) out = { ...out, innerH: ih };
+  }
+  if (!(out.innerW > 0) && !_TV_STREAM_ARMS.has(msg.type)
+      && slice.statusRows && slice.statusRows.length) {
+    const iw = paneInnerW(slice);
+    if (iw > 0) out = { ...out, innerW: iw };
+  }
+  return out;
 }
 
 // Search decoration for THIS instance's slice (mirror of panel/content/search.js
@@ -145,6 +165,24 @@ function _slotTitle(panel) {
 function _rightAlign(line, width) {
   const vl = visibleLen(line);
   return vl >= width ? line : ' '.repeat(width - vl) + line;
+}
+
+// The DISPLAY-space content buffer: slice.lines with the recorded status rows
+// flushed right to `innerW`. This is the ONE buffer both render (highlight +
+// window source) AND the interaction reducer (selection/search coordinates)
+// consume, so keyboard/mouse coords and the painted highlight can't drift.
+// Right-aligning here (not in the stored buffer) keeps the text width-agnostic
+// across resizes. Ref-preserving: returns slice.lines untouched on the common
+// path (no status rows, or width unavailable) so the no-copy fast path holds.
+function _contentLines(slice, innerW) {
+  const lines = slice.lines || [];
+  const statusRows = slice.statusRows;
+  if (!statusRows || !statusRows.length || !(innerW > 0)) return lines;
+  const out = lines.slice();
+  for (const i of statusRows) {
+    if (i >= 0 && i < out.length) out[i] = _rightAlign(out[i], innerW);
+  }
+  return out;
 }
 
 // The LIVE action-status line for this pane while its action is still running:
@@ -200,18 +238,12 @@ function render(panel, w, h, slice, opts) {
   //     yielded by a yank; it lives in the display window, not the select set.
   // No copy for the common case (no status rows, not running) — most text-views
   // hit this and contentLines === slice.lines by reference.
-  let contentLines = slice.lines || [];
-  const statusRows = slice.statusRows;
-  if (statusRows && statusRows.length) {
-    contentLines = contentLines.slice();
-    for (const i of statusRows) {
-      if (i >= 0 && i < contentLines.length) contentLines[i] = _rightAlign(contentLines[i], innerW);
-    }
-  }
+  let contentLines = _contentLines(slice, innerW);
 
   // Search decoration over contentLines (excludes the running line) so render's
-  // match set stays in lockstep with the reducer, which runs matchesFor over
-  // slice.lines. Selection wins over search (same precedence as the viewer).
+  // match set stays in lockstep with the reducer, which now runs matchesFor over
+  // the SAME contentLines (built by _contentLines at the reduce call, same
+  // innerW). Selection wins over search (same precedence as the viewer).
   const sel = (slice.select && slice.select.active) ? slice.select : null;
   const searchDecoration = sel ? null : _searchDecoration(slice, contentLines, focused);
 

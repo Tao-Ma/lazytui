@@ -223,7 +223,7 @@ identity-preserves on no-op. **All 19 arms are pure** — verified.
 | `terminal_enter` | enter-terminal verb | `modes.terminalMode→true` | — | ✓ |
 | `terminal_exit` | exit-terminal / dead PTY | `modes.terminalMode→false` | `msg→view_drop_full_to_normal` (layout) | ✓ |
 | `focus_event` | DEC 1004 focus in/out | `model.focused` | — | ✓ |
-| `clock_tick` | `clock` interval Sub | `model.now=msg.now` | — | ✓⁵ |
+| `clock_tick` | `clock` interval Sub | `model.now=msg.now` | `render` | ✓⁵ |
 | `set_theme` | `:theme` / boot | `model.theme` | — | ✓ |
 | `mode_clear` | wedge-guard / panic recovery | `modes[msg.flag]→false` | — | ✓ |
 | `mode_set` | viewer search-enter etc. | `modes[msg.flag]→true` | — | ✓ |
@@ -247,7 +247,10 @@ identity-preserves on no-op. **All 19 arms are pure** — verified.
 ⁵ `msg.now` is threaded from the `clock` interval Sub's `onTick`, which reads the
   wall clock in the impure shell (exception C). The arm itself is pure of the
   clock, and no longer re-arms — the Sub owns the cadence (FIX-3 Phase 6; the
-  `arm_clock` effect + `clockArmed` latch are retired).
+  `arm_clock` effect + `clockArmed` latch are retired). It emits a `render` Cmd:
+  the live action-status line is a panel (not an overlay), so its ticking
+  spinner/duration needs the repaint the tick drives (cell-diff-bounded — see
+  `docs/model-now-tick.md`).
 ⁶ `msg.csOwner` (the config-status owner) is resolved by `app/state.loadConfig`
   (impure shell), so the reducer reads no ownership registry (#D9).
 ⁷ `msg.owners` (`{panelType: ownerComponentName}`) is resolved by the dispatch
