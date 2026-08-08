@@ -225,7 +225,7 @@ defaulting to the terminal's plain `[dim]` foreground).
 ╭─(3)─Config Files────────╮│ dev9-noip         exited                    │
 │ client/id_ed25519       ▐│ dev9-status       running                   │
 │ client/*.ovpn           ││                                             │
-│ conf/gitea/app.ini      ││ Done.                                       │
+│ conf/gitea/app.ini      ││ ✓ 0.4s                                      │
 │ conf/noip.env           ││                                         9/11│
 ╰─────────────────1 of 24─╯╰─────────────────────────────────────────────╯
  ↑↓ select  ←→ panel  Enter run  x menu  q quit

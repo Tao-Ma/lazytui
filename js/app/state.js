@@ -419,6 +419,12 @@ function reconcileSubscriptions(model) {
   // `_liveActionStatus(model)` (a running stream job + action_status config) —
   // NOT part of the layout slice — so it is folded into the gate below; without
   // it the live status clock would never arm on job start / tear down on job end.
+  //   TRIGGER (not just key): this reconcile only RUNS from finalizeDispatch,
+  // which on the root lane fires when arrange/nav OR the `model.jobs` ref
+  // changed across the dispatch (loop.js applyMsg gate). A job's lifecycle
+  // arrives as `jobs_synced` (root lane, no arrange/nav move), so the jobs-ref
+  // check there is what triggers this reconcile on job start/end — the gate key
+  // below then decides whether the desired set actually changed.
   const ls = _layoutSlice();
   const modes = (model && model.modes) || {};
   const jobsMode = !!modes.jobsMode, diagLogMode = !!modes.diagLogMode;

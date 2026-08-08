@@ -16,6 +16,16 @@ feature — persisting/re-feeding the Msg log (§5) — stays a separate future 
 > is unchanged — `model.now` advances ~1 s while an age overlay is open, idle
 > otherwise — only the cadence owner moved (reducer self-re-arm → declared Sub).
 > The rest of this doc is kept accurate to the original arc.
+>
+> **⚠️ Extended (action-status feature).** The `clock` Sub now also arms while a
+> live action-status line runs — its gate is `overlayClock || _liveActionStatus(model)`
+> (`app/state.js`), so the tick advances `model.now` while a stream job runs, not
+> only for age overlays. And the `clock_tick` reducer arm now emits a `render`
+> Cmd (`js/dispatch/update/reducer.js`) so the floating live status line (a panel,
+> re-derived from `model.now`) repaints each tick — the FIX-3 "clock emits
+> nothing" invariant no longer holds. The reconcile that arms/tears the Sub is
+> triggered on the root lane by a `model.jobs`-ref change in the `applyMsg`
+> finalize gate (`js/dispatch/runtime/loop.js`).
 
 As-built deltas from the spec below (original arc; cadence since superseded — see above):
 - `model.now` + `model.clockArmed` added in `js/model/store.js init()`.

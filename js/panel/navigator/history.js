@@ -13,6 +13,10 @@
 const { setViewerContent } = require('../nav-state');
 const { getModel } = require('../../model/store');
 const mnav = require('../../leaves/wm/nav');
+// Shared clock + duration ladder — the same pure leaf the action-status stamp
+// uses, so the history list and the completion chip format identically (was
+// drifting: `1m5s` here vs `1m05s` there).
+const { fmtClock: fmtTime, fmtDurationMs } = require('../../leaves/text/time');
 const {
   esc, theme, renderPanel,
   getSel, getScroll, isMultiSel,
@@ -25,18 +29,13 @@ const {
 // read (#D5) — strictly purer than the prior feature/history.all() live read.
 function getItems() { return getModel().history; }
 
-function fmtTime(ms) {
-  const d = new Date(ms);
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
-}
-
+// `fmtTime` is the shared `fmtClock` (imported above). Duration keeps history's
+// entry-shaped sentinels (detached / still-running) but delegates the numeric
+// ladder to the shared leaf so it matches the action-status chip.
 function fmtDuration(entry) {
   if (entry._detached) return '⧉';
   if (entry.endedAt === null) return '⟳';
-  const ms = entry.endedAt - entry.startedAt;
-  if (ms < 1000) return `${ms}ms`;
-  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
-  return `${Math.floor(ms / 60_000)}m${Math.floor((ms % 60_000) / 1000)}s`;
+  return fmtDurationMs(entry.endedAt - entry.startedAt);
 }
 
 function statusGlyph(entry) {

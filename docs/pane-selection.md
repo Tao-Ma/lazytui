@@ -61,7 +61,13 @@ paneId without threading it through every call site. Content panes hand
 `renderPanel` a pre-windowed buffer (`windowed`, via `buildTextView`) and
 self-decorate offset-aware, so the wrapper only captures for them; their text
 extraction reads the instance's own full buffer (`slice.lines`, or the agent
-pane's `slice.transcript`) instead of the windowed capture.
+pane's `slice.transcript`) instead of the windowed capture. Exception: a
+windowed pane that applies a per-line DISPLAY transform (the text-view right-
+aligns its completion status rows) records the full display-space buffer as
+`fullLines`, which extraction prefers over `slice.lines` — so a yank maps the
+captured (display) columns onto the glyphs actually shown, not the stored
+left-aligned bytes at shifted columns. Panes with no transform pass no
+`fullLines` and keep the `slice.lines` fallback described above.
 
 `select-core` is a pure bottom leaf (depends only on `leaves/text/ansi`) and the
 **single source of truth for selection geometry and state transitions** — the

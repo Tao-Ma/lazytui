@@ -192,11 +192,11 @@ function render(panel, w, h, slice, opts) {
   //     resizes, and it holds real, copyable content at the columns actually
   //     displayed — so a yank of a right-aligned status row reads the shifted
   //     text the user saw, not the stored left-aligned bytes at the wrong
-  //     columns (review [6]).
+  //     columns.
   //   • displayLines — contentLines PLUS the ephemeral live running line floated
   //     at the tail. RENDER-ONLY: the running line is not in slice.lines, so it
   //     must not be searched (its ticking duration would paint a phantom,
-  //     un-navigable highlight the reducer never counts — review [3]) nor
+  //     un-navigable highlight the reducer never counts) nor
   //     yielded by a yank; it lives in the display window, not the select set.
   // No copy for the common case (no status rows, not running) — most text-views
   // hit this and contentLines === slice.lines by reference.
@@ -229,9 +229,10 @@ function render(panel, w, h, slice, opts) {
   }
 
   const args = buildTextView({
-    // `lines` is the display window source; `selectLines` is the copyable
-    // content buffer recorded for the mouse-selection pipeline (excludes the
-    // running line, includes the right-aligned status rows).
+    // `lines` is the display window source; `selectLines` (caller intent) is
+    // the copyable content buffer — forwarded downstream as `fullLines`
+    // (pipeline role) and recorded for the mouse-selection pipeline. It excludes
+    // the running line and includes the right-aligned status rows.
     lines: displayLines, selectLines: contentLines, scroll, innerH,
     select: sel, searchDecoration,
     // 3b — thread the theme's selection/search tags into the pure leaf.

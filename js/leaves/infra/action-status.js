@@ -8,9 +8,10 @@
  *     output. Ephemeral (not stored); re-derived each frame from the frame
  *     clock (`model.now`, ticked while a stream job runs — see app/state.js).
  *   - on completion — a PERMANENT line appended to the buffer by
- *     dispatch/runtime/stream.js (`✓ Done` / `✗ Exit N` / `⊗ Killed` + duration
- *     + finish time), one per command, so a newer run never overwrites an
- *     older one. It replaces the classic plain `Done.`/`Exit N` footer.
+ *     dispatch/runtime/stream.js (`✓ · dur · time` / `✗ N` / `⊗ SIG`), one per
+ *     command, so a newer run never overwrites an older one. It replaces the
+ *     classic plain `Done.`/`Exit N` footer (which is the DISABLED-chip fallback
+ *     — the "Done"/"Exit N"/"Killed" words live there, never in the chip).
  *
  * PURE: `(outcome, now, cfg, tags) → Rich-markup string`. The caller resolves
  * the outcome (from the feature/jobs mirror while running, or the exit
@@ -29,6 +30,11 @@
  */
 'use strict';
 
+// Shared pure formatters (a sibling leaf — no model/io/theme, so purity holds).
+// The clock + duration ladder are shared with the history navigator so the two
+// panels never drift (they once rendered `1m5s` vs `1m05s` for the same run).
+const { fmtClock, fmtDurationMs } = require('../text/time');
+
 const VALID_SEGMENTS = new Set(['status', 'duration', 'time']);
 const DEFAULT_SEGMENTS = ['status', 'duration', 'time'];
 // Braille spinner — the running indicator. Advances by wall-elapsed so it
@@ -38,7 +44,9 @@ const SPINNER = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', 
 
 /** Normalize the raw config value into a resolved shape with defaults applied.
  *  Tolerant: a missing / non-object value → default-on; `false` → disabled;
- *  unknown segment tokens are dropped (the schema validator already warns). */
+ *  unknown segment tokens are dropped here as a defensive belt-and-suspenders —
+ *  the schema validator already REJECTS them at load (throwing, which degrades
+ *  the global config to project-only), so a validated value never reaches this. */
 function resolveConfig(cfg) {
   if (cfg === false) return { enabled: false, segments: [], live: false };
   if (cfg === true || cfg == null || typeof cfg !== 'object') {
@@ -68,21 +76,11 @@ function jobForPane(jobs, instId, isTranscript) {
   return null;
 }
 
-/** `ref - startedAt` → `840ms` / `2.3s` / `3m04s`. `ref` is endedAt for a
+/** Elapsed → `840ms` / `2.3s` / `3m04s` (shared ladder). `ref` is endedAt for a
  *  finished job, else the frame clock (`now`), else startedAt (0). */
 function fmtDuration(startedAt, endedAt, now) {
   const ref = endedAt != null ? endedAt : (now != null ? now : startedAt);
-  const ms = Math.max(0, ref - startedAt);
-  if (ms < 1000) return `${ms}ms`;
-  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
-  if (ms < 3600000) return `${Math.floor(ms / 60000)}m${String(Math.floor((ms % 60000) / 1000)).padStart(2, '0')}s`;
-  return `${Math.floor(ms / 3600000)}h${String(Math.floor((ms % 3600000) / 60000)).padStart(2, '0')}m`;
-}
-
-/** epoch-ms → `14:32:07` (local clock, mirror of history.js fmtTime). */
-function fmtClock(ms) {
-  const d = new Date(ms);
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
+  return fmtDurationMs(Math.max(0, ref - startedAt));
 }
 
 function _spinner(now, startedAt) {

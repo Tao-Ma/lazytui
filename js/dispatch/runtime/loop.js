@@ -107,13 +107,23 @@ function applyMsg(msg) {
   _dispatchDepth++;
   const arrangeBefore = _dispatchDepth === 1 ? _layoutArrange() : undefined;
   const navBefore = _dispatchDepth === 1 ? _navMsgSeq : undefined;
+  // The app-global `clock` Sub arms/tears down on `_liveActionStatus(model)` (a
+  // running stream job + action_status config), reconciled only by finalize. A
+  // job's lifecycle lands via the jobs store-mirror's `jobs_synced` applyMsg —
+  // a ROOT-lane Msg that moves neither arrange nor nav, so without this it would
+  // NOT finalize, and the live-status clock's arm/teardown would ride on some
+  // incidental accompanying dispatch instead of the job change that gates it.
+  // `jobs_synced` replaces `model.jobs` wholesale, so a cheap reference compare
+  // (no _liveActionStatus recompute on the hot path) catches every job change.
+  const jobsBefore = _dispatchDepth === 1 ? getModel().jobs : undefined;
   try { mw.run({ lane: 'root', msg }, _termRoot); }
   finally {
     _dispatchDepth--;
     if (_dispatchDepth === 0) {
       flushNavCapture();
       if ((arrangeBefore !== undefined && _layoutArrange() !== arrangeBefore)
-        || (navBefore !== undefined && _navMsgSeq !== navBefore)) finalizeDispatch();
+        || (navBefore !== undefined && _navMsgSeq !== navBefore)
+        || (jobsBefore !== undefined && getModel().jobs !== jobsBefore)) finalizeDispatch();
     }
   }
 }

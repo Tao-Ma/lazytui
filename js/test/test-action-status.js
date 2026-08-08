@@ -222,9 +222,22 @@ describe('[action-status] parse() carries action_status onto model.config (YAML 
     eq(out.theme, 'monokai');                                   // sibling keys unaffected
     eq(astatus.resolveConfig(out.action_status).enabled, false); // the disable switch now works
   });
-  it('absent → default-on (true), so the feature works with no config set', () => {
-    eq(parse(FIX, {}).action_status, true);
+  it('absent → null unset-sentinel (default-on via resolveConfig, and lets a .json global override)', () => {
+    // Stamped `null`, NOT `true`: null is the "unset" sentinel mergeGlobal
+    // treats as absent (like editor:null / color_depth:'auto'), so a resolved-
+    // shape .json carrying this default still lets a user's global apply. `true`
+    // would BLOCK the override on the .json path. resolveConfig(null) is on.
+    eq(parse(FIX, {}).action_status, null);
     eq(astatus.resolveConfig(parse(FIX, {}).action_status).enabled, true);
+  });
+  it('the stamped null does NOT block a global override on the .json (post-hoc merge) path', () => {
+    // .json path: mergeGlobal runs AFTER the parse-shaped default is present.
+    // With the stamped null, a user global `action_status: false` must win.
+    const merged = mergeGlobal({ action_status: parse(FIX, {}).action_status }, { action_status: false });
+    eq(merged.action_status, false);
+    eq(astatus.resolveConfig(merged.action_status).enabled, false);
+    // A non-null local (an explicit user choice) is NOT overridden — sanity.
+    eq(mergeGlobal({ action_status: false }, { action_status: true }).action_status, false);
   });
 });
 
@@ -291,6 +304,36 @@ describe('[action-status] reconcile arms/tears down the live clock', () => {
     state.reconcileSubscriptions(m);
     assert(!hasClock(), 'live:false → clock stays off');
     m.config = {};
+  });
+});
+
+// Arch fix (confirms review [11]): reconcileSubscriptions runs only from
+// finalizeDispatch, and on the root lane that fires only when arrange/nav OR the
+// model.jobs ref changed (loop.js applyMsg gate). A job lifecycle lands as a
+// bare `jobs_synced` applyMsg (root lane, no arrange/nav move), so the clock
+// arm/teardown must be TRIGGERED by the jobs-ref check — not ride on an
+// incidental accompanying dispatch. Driven through the REAL applyMsg (not a
+// direct reconcileSubscriptions call) so it exercises the loop.js gate.
+describe('[action-status] jobs_synced alone arms/tears the clock via the finalize gate', () => {
+  const sm = require('./smoke/_helpers/smoke');
+  const { applyMsg } = require('../dispatch/control/dispatch');
+  const state = require('../app/state');
+  const hasClock = () => state._liveSubKeys().some((k) => /clock/.test(k));
+
+  it('a bare jobs_synced (no arrange/nav change) triggers reconcile → clock arms, then tears down', () => {
+    sm.bootFresh({ groups: { g1: { name: 'g1', label: 'G1', containers: [], children: [], parent: null, depth: 0, quick: false, actions: {} } } });
+    // Establish idle explicitly: bootFresh does NOT clear model.jobs (review [7]),
+    // so a prior block may leave a running job. A bare jobs_synced:[] is itself
+    // the gate under test — on the pre-fix gate it would NOT finalize and a leaked
+    // clock would survive here, so this assert also guards the teardown path.
+    applyMsg({ type: 'jobs_synced', jobs: [] });
+    assert(!hasClock(), 'idle: jobs_synced:[] reconciles the clock off');
+    // Only jobs_synced through the real root-lane applyMsg — no key/mint/component
+    // dispatch tags along. Pre-fix this did NOT finalize, so the clock never armed.
+    applyMsg({ type: 'jobs_synced', jobs: [{ id: 'j1', status: 'running', kind: 'stream-routed', startedAt: 1, owner: {} }] });
+    assert(hasClock(), 'clock armed from the jobs change alone (finalize gate fired on the jobs-ref change)');
+    applyMsg({ type: 'jobs_synced', jobs: [{ id: 'j1', status: 'exited', kind: 'stream-routed', startedAt: 1, endedAt: 2, exitCode: 0, owner: {} }] });
+    assert(!hasClock(), 'clock torn down from the jobs change alone (no leaked idle tick)');
   });
 });
 

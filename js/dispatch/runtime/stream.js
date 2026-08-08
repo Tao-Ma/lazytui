@@ -26,7 +26,8 @@
  *
  * Lifecycle Cmds dispatched at boundaries:
  *   routed   → tv_stream_start {header} / tv_append {line} / tv_append_lines {lines}
- *              to wrap(tabInstId) (the text-view instance)
+ *              / tv_status {line} (the permanent completion chip) to
+ *              wrap(tabInstId) (the text-view instance)
  *   unrouted → stream_start {header} / viewer_append {line} / viewer_append_lines
  *              {lines} to the viewer (Transcript)
  *
@@ -108,7 +109,7 @@ function appendStatusLine(line, tabInstId) {
   require('./loop').dispatchMsg(api.wrap(target, { type: 'tv_status', line }));
 }
 
-// The ONE job-termination status seam (review [16]). The powerline `✓/✗/⊗ · dur ·
+// The ONE job-termination status seam (pre-release review). The powerline `✓/✗/⊗ · dur ·
 // time` stamp was originally wired only into the normal `close` path, so a spawn
 // `error` and a preempt (`killJob`) exit were left silently unmarked. Routing
 // all three through here keeps them consistent — and a future exit point is one
@@ -157,7 +158,7 @@ function killJob(jobId, opts = {}) {
       batch.push(`[${t.warning}]Killed previous: ${esc(ctx.headerLabel || '<stream>')}.[/]`);
       appendDetailLines(batch);
     }
-    // Powerline stamp for the preempt outcome (review [16]) — a killed job is a
+    // Powerline stamp for the preempt outcome (pre-release review) — a killed job is a
     // ⊗; routes to the job's own instance (routed) or the Transcript (unrouted),
     // so all three termination seams (close/error/killJob) mark consistently.
     // Emitted after the footer text, before the routed re-run hint (mirrors the
@@ -348,11 +349,11 @@ function streamCommand(headerLabel, cmd, args = [], opts = {}) {
     if (buffer) { appendDetailLine(esc(buffer), tabInstId); rec.append(buffer); if (fab) rawLines.push(buffer); buffer = ''; }
     if (signal) rec.end(`signal:${signal}`);
     else rec.end(code);
-    // Completion status line — the powerline-style `✓ Done · dur · time`
-    // stamp, appended as a right-aligned status row (docs/global-config.md
-    // §action_status). It REPLACES the classic plain `Done.`/`Exit N` footer;
-    // when the chip is disabled we fall back to that plain footer so there's
-    // always some completion feedback.
+    // Completion status line — the powerline-style `✓ · dur · time` (`✗ N` /
+    // `⊗ SIG`) stamp, appended as a right-aligned status row (docs/global-
+    // config.md §action_status). It REPLACES the classic plain `Done.`/`Exit N`
+    // footer; when the chip is disabled we fall back to that plain footer (the
+    // only place the "Done."/"Exit N" words appear) so completion is never silent.
     const outcome = signal
       ? { status: 'killed', signal, startedAt: rec.entry.startedAt, endedAt: rec.entry.endedAt }
       : { status: 'exited', exitCode: (code == null ? null : (code | 0)), startedAt: rec.entry.startedAt, endedAt: rec.entry.endedAt };
@@ -376,7 +377,7 @@ function streamCommand(headerLabel, cmd, args = [], opts = {}) {
     rec.append(`Error: ${err.message}`);
     rec.end('error');   // stamp endedAt so the chip's duration/time resolve
     appendDetailLine(`[${t.error}]Error: ${esc(err.message)}[/]`, tabInstId);
-    // Same powerline stamp as the normal close path (review [2]/[16]) so a spawn
+    // Same powerline stamp as the normal close path (pre-release review) so a spawn
     // failure is marked like every other outcome. A spawn error carries no exit
     // code/signal → renders `✗ ?`; the Error: line above carries the detail.
     emitStatusChip(

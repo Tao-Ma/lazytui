@@ -263,7 +263,9 @@ content slot (`action-runner.ensureActionTab`; poolId
 `tv-act-<group>-<key>`, reuse hint `{origin:'action', group, key}`)
 and streams into THAT instance by id: `tv_stream_start { header }`
 reseeds the buffer + view state on a re-run, `tv_append { line }` (the
-per-line hot path) and bulk `tv_append_lines { lines }` append. The
+per-line hot path) and bulk `tv_append_lines { lines }` append; on
+termination a `tv_status { line }` records the permanent right-aligned
+`✓/✗/⊗` completion stamp as a distinct status row. The
 instance owns its own buffer and scroll — bottom-stick lives in its
 `update` (at-bottom follows the tail; a scrolled-up reader is not
 yanked down) — so off-tab streaming needs no routing bundle, and the
@@ -284,9 +286,11 @@ slot's active tab to it (`route.resolveTranscriptTab` → a layout
 the new stream. The unrouted slot is a singleton: a same-label re-run
 preempts silently; a different-label unrouted run opens a confirm
 overlay (default reject, via the `unrouted_preempt_and_run` Cmd) to
-protect the live transcript. Stream-end footers (`Press Enter to run
-again.`) are stamped via batched `tv_append_lines` for atomic reducer
-passes. Ephemeral status lines (spawn/background launch
+protect the live transcript. On termination the completion path emits
+separate dispatches — the decoder tail, then the `tv_status` chip (a
+distinct status row so it can be right-aligned), then the routed
+`Press Enter to run again.` hint; a disabled chip falls back to the
+plain `Done.`/`Exit N` footer. Ephemeral status lines (spawn/background launch
 confirmations, cmdline-verb outcomes) join the same transcript via
 `appendViewerLines` (`panel/nav-state.js`) — appended with
 `tv_append_lines`, no tab switch, no focus steal.

@@ -100,8 +100,9 @@ A powerline-style, right-aligned status stamp at the end of an action's output
 pane — the routed tab of a `tab:`-routed action and the Transcript. It shows,
 for the job that produced that pane's output:
 
-- a status glyph — `✓` (exit 0), `✗ N` (non-zero, with the code), `⊗ SIG`
-  (killed by signal), or a braille spinner while running;
+- a status glyph — `✓` (exit 0), `✗ N` (non-zero, with the code), `✗ ?` (no
+  exit code, e.g. a spawn failure), `⊗ SIG` (killed by signal), or a braille
+  spinner while running;
 - the run **duration** (ticking live while running, final on completion);
 - the **finish** clock time (shown once the action has ended).
 
@@ -148,7 +149,8 @@ A `.json` config is the parser's RESOLVED output shape, so it always carries
 explicit `theme`/`selection` values — the global scalars can't apply there
 (nothing is "absent"); `editor: null` counts as unset, so a global `editor:`
 still lands, and the stamped `color_depth: 'auto'` / `keyboard_protocol:
-'auto'` likewise count as unset (auto = "no override opinion"). The keyed
+'auto'` / `action_status: null` likewise count as unset (auto / null = "no
+override opinion"), so a global override of any of them still applies. The keyed
 sections (`keys`, `keymap`,
 `mouse`, `context-menu`) layer exactly as they do for YAML.
 

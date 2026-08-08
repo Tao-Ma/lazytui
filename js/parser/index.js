@@ -742,10 +742,15 @@ function parse(yamlPath, opts) {
     // `data.action_status` is only ever set by mergeGlobal above. This line was
     // MISSING until the post-merge review: without it the return whitelist
     // dropped the merged value on the YAML/JS config path, so `enabled: false`
-    // / `live: false` / custom `segments` silently did nothing (only the
-    // resolved-shape .json path honored it). Absent → `true` (resolveConfig
-    // treats true/null/undefined identically as default-on).
-    action_status: data.action_status !== undefined ? data.action_status : true,
+    // / `live: false` / custom `segments` silently did nothing.
+    // Absent → `null`, NOT `true`: `null` is the "unset" sentinel (like
+    // editor:null / color_depth:'auto') that mergeGlobal treats as absent, so a
+    // resolved-shape `.json` carrying the stamped default still lets a user's
+    // global `action_status` apply. `true` would BLOCK the global override on
+    // the .json path (mergeGlobal only lifts when the local is null/absent).
+    // resolveConfig(null) is still default-on, so behavior is unchanged when no
+    // global is set.
+    action_status: data.action_status !== undefined ? data.action_status : null,
     // Render color depth (truecolor arc 1b, docs/truecolor.md P3). String-
     // normalized (YAML parses `256`/`16` unquoted as ints); 'auto' = detect,
     // and mergeGlobal treats 'auto' as unset so a stamped 'auto' in a
