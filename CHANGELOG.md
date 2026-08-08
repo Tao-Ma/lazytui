@@ -6,6 +6,21 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Action status line** — a powerline-style, right-aligned status stamp at the
+  end of an action's output pane (the routed tab and the Transcript). While the
+  action runs, a live line floats at the end (braille spinner + ticking
+  duration) and is pushed down by new output. On completion it becomes a line
+  **in the pane's scrollback** — a status glyph (`✓` · `✗ N` · `⊗ SIG`) with the
+  run duration and finish clock time, middot-joined — so it scrolls with the
+  output instead of being overwritten in place the way the old single-cell
+  status would be, and each routed action's tab keeps its own stamp. This
+  **replaces** the plain `Done.` / `Exit N` footer. Configurable via the global
+  config's `action_status:` section
+  (`enabled`, `segments` = which chips + order, `live`); see
+  docs/global-config.md. Disabling it restores the plain footer.
+
 ## [0.6.15] — 2026-08-07
 
 ### Fixed

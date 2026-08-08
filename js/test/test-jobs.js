@@ -197,20 +197,25 @@ describe('[jobs_close] flips jobsMode off; idempotent', () => {
 });
 
 describe('[clock_tick] advances model.now (cadence is the `clock` interval Sub)', () => {
-  it('advances model.now from msg.now — NO re-arm Cmd (FIX-3 Phase 6)', () => {
+  it('advances model.now from msg.now — a `render` Cmd, NOT a self-re-arm', () => {
     let m = _newModel();
     m = { ...m, modes: { ...m.modes, jobsMode: true } };
     runtime.setModel(m);
     const [next, cmds] = runtime.update(m, { type: 'clock_tick', now: 5000 });
     eq(next.now, 5000, 'now advanced');
-    eq(cmds.length, 0, 'no re-arm — the `clock` interval Sub drives cadence');
+    // Cadence is the declared `clock` interval Sub (FIX-3 Phase 6) — the arm
+    // does NOT self-re-arm. It now emits a `render` Cmd so the live
+    // action-status line (a panel that reads model.now) repaints; that is a
+    // repaint, not a re-arm.
+    eq(cmds.length, 1, 'exactly one Cmd');
+    eq(cmds[0].type, 'render', 'a render Cmd (live-line repaint), not a re-arm');
   });
   it('advances now regardless of overlay state (the Sub gates declaration, not the arm)', () => {
     let m = _newModel();   // both overlays closed
     runtime.setModel(m);
     const [next, cmds] = runtime.update(m, { type: 'clock_tick', now: 6000 });
     eq(next.now, 6000, 'now advances');
-    eq(cmds.length, 0, 'no Cmd');
+    eq(cmds[0] && cmds[0].type, 'render', 'render Cmd (no self-re-arm)');
   });
 });
 

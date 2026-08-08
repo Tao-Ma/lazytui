@@ -19,6 +19,8 @@ const { renderPanel } = require('../api');
 const { buildTextView } = require('../../leaves/text-view/render');
 const tvu = require('../../leaves/text/text-view-update');
 const ms = require('../../leaves/text/search');
+const astatus = require('../../leaves/infra/action-status');
+const { visibleLen } = require('../../leaves/text/ansi');
 const { paneInnerH } = require('../pane-viewport');
 const { getModel } = require('../../model/store');
 
@@ -37,6 +39,12 @@ function init(paneId, seed) {
     search: { active: false, term: '', idx: 0, typing: '' },
     select: { active: false, kind: 'char', anchor: { line: 0, col: 0 }, cursor: { line: 0, col: 0 } },
     cursor: { line: 0, col: 0 },
+    // Indices of buffer lines that are action-status stamps (the permanent
+    // `✓ Done · …` completion line). render() right-aligns these to the current
+    // pane width — the alignment is a display concern, so the stored text stays
+    // width-agnostic and resizes cleanly. Appends never shift existing indices
+    // (append-only tail); tv_stream_start (re-run reseed) clears them.
+    statusRows: [],
   };
 }
 
@@ -71,16 +79,25 @@ function update(msg, slice) {
         search: { active: false, term: '', idx: 0, typing: '' },
         select: { active: false, kind: 'char', anchor: { line: 0, col: 0 }, cursor: { line: 0, col: 0 } },
         cursor: { line: 0, col: 0 },
+        statusRows: [],
       };
     case 'tv_append':
       return _appendLines(slice, [msg.line]);
     case 'tv_append_lines':
       return (Array.isArray(msg.lines) && msg.lines.length) ? _appendLines(slice, msg.lines) : slice;
+    case 'tv_status': {
+      // Append the permanent completion-status line + record its index so
+      // render() right-aligns it (docs/global-config.md §action_status).
+      const s = _appendLines(slice, [msg.line]);
+      return { ...s, statusRows: (slice.statusRows || []).concat([s.lines.length - 1]) };
+    }
     case 'tv_set_lines':
       // U2e P1b — REPLACE the buffer wholesale (open-file/docker: the `Loading…`
       // placeholder is swapped for the resolved content). Resets scroll to the top
       // of the new content; keeps search/select (a fresh open has none anyway).
-      return { ...slice, lines: Array.isArray(msg.lines) ? msg.lines : [], scroll: 0 };
+      // Also clears statusRows: the indices point into the OLD buffer, so a
+      // wholesale replace must drop them (mirrors tv_stream_start's reset).
+      return { ...slice, lines: Array.isArray(msg.lines) ? msg.lines : [], scroll: 0, statusRows: [] };
     default: break;
   }
   // Interaction (U2c P0) — a text-view's content IS its own line buffer.
@@ -123,14 +140,79 @@ function _slotTitle(panel) {
   return strip ? strip.title : (panel && panel.title);
 }
 
+// Flush `line` to the right edge of a `width`-wide content area (leading pad),
+// markup-aware. Too-wide lines are left untouched (the pane truncates them).
+function _rightAlign(line, width) {
+  const vl = visibleLen(line);
+  return vl >= width ? line : ' '.repeat(width - vl) + line;
+}
+
+// The LIVE action-status line for this pane while its action is still running:
+// a right-aligned spinner + ticking duration, floated at the end of the output
+// (docs/global-config.md §action_status). '' when disabled, when this pane
+// holds no running action (completed / open-file / docker-log views), or on the
+// pre-reconcile boot frame. On completion this vanishes and stream.js's stored
+// `tv_status` line takes over. The Transcript (unrouted sink) matches by kind.
+function _runningLine(panel, t, innerW) {
+  const model = getModel();
+  // Cheap early-out for the steady state (no action running): skip the config
+  // resolve + transcript-identity resolve + per-pane job scan entirely. This
+  // runs per text-view pane per frame — and the frame clock now repaints 1x/s
+  // while an action runs — so the common no-op path must stay trivial.
+  const jobs = model.jobs;
+  if (!Array.isArray(jobs) || !jobs.some((j) => j.status === 'running'
+      && (j.kind === 'stream-routed' || j.kind === 'stream-unrouted'))) return '';
+  const cfg = astatus.resolveConfig((model.config || {}).action_status);
+  if (!cfg.enabled) return '';
+  const route = require('../route');
+  const instId = panel && panel.paneId ? route.activeInstanceOf(panel.paneId) : null;
+  if (!instId) return '';
+  const isTranscript = instId === route.resolveTarget('viewer_transcript');
+  const job = astatus.jobForPane(jobs, instId, isTranscript);
+  if (!job || job.status !== 'running') return '';
+  const seg = astatus.statusLine(
+    { status: 'running', startedAt: job.startedAt },
+    model.now, cfg,
+    { success: t.success, warning: t.warning, error: t.error },
+  );
+  return seg ? _rightAlign(seg, innerW) : '';
+}
+
 function render(panel, w, h, slice, opts) {
   const focused = !!(opts && opts.focused);
-  const lines = slice.lines || [];
+  const t = require('../../leaves/infra/themes').theme();
+  const innerW = w - 2;
+  const innerH = h - 2;
+
+  // Effective lines for THIS frame (frame = f(model)): the stored buffer with
+  // (a) any status rows flushed right to the current width, and (b) the live
+  // running line appended at the end. Both are render-time so they stay correct
+  // across resizes without rewriting the stored buffer. No copy for the common
+  // case (no status rows, not running) — most text-views hit this.
+  let lines = slice.lines || [];
+  let scroll = slice.scroll;
+  const statusRows = slice.statusRows;
+  const running = _runningLine(panel, t, innerW);
+  if ((statusRows && statusRows.length) || running) {
+    lines = lines.slice();
+    if (statusRows) {
+      for (const i of statusRows) {
+        if (i >= 0 && i < lines.length) lines[i] = _rightAlign(lines[i], innerW);
+      }
+    }
+    if (running) {
+      // Bottom-stick: keep the floating line visible only when already at the
+      // tail; don't yank a user who has scrolled up into history.
+      const wasBottom = (slice.scroll || 0) >= Math.max(0, (slice.lines || []).length - innerH);
+      lines.push(running);
+      if (wasBottom) scroll = Math.max(0, lines.length - innerH);
+    }
+  }
+
   const sel = (slice.select && slice.select.active) ? slice.select : null;
   const searchDecoration = sel ? null : _searchDecoration(slice, lines, focused);
-  const t = require('../../leaves/infra/themes').theme();
   const args = buildTextView({
-    lines, scroll: slice.scroll, innerH: h - 2,
+    lines, scroll, innerH,
     select: sel, searchDecoration,
     // 3b — thread the theme's selection/search tags into the pure leaf.
     selectedTag: t.selected, searchTags: { match: t.match, current: t.match_current },

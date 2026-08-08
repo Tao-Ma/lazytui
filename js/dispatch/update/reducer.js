@@ -272,10 +272,15 @@ function update(model, msg) {
     // Frame-clock tick (docs/model-now-tick.md). Advance model.now from the
     // shell-stamped msg.now. FIX-3 Phase 6: the cadence is the model-conditional
     // `clock` interval Sub (app/state.js#_appSubscriptions — declared while an
-    // age overlay is open, torn down when it closes), so this arm no longer
-    // self-re-arms or tracks a clockArmed latch.
+    // age overlay is open OR a live action-status line is running, torn down
+    // otherwise), so this arm no longer self-re-arms or tracks a clockArmed
+    // latch. The `render` Cmd is LOAD-BEARING for the action-status case: its
+    // live floating line is a PANEL (frame = f(model.now)), not an overlay, so
+    // — unlike the age overlays, repainted by the 250ms overlay-repaint Sub —
+    // it has no other repaint driver; without this the spinner/duration would
+    // advance in the model invisibly. Same shape as the *_synced arms below.
     case 'clock_tick':
-      return [{ ...model, now: msg.now || model.now }, []];
+      return [{ ...model, now: msg.now || model.now }, [{ type: 'render' }]];
     // The four mirror-sync arms below land an external source's snapshot on the
     // model and emit a `render` Cmd. The render Cmd is LOAD-BEARING: these Msgs
     // arrive via the mirror Sub's `ctx.applyMsg` (app/state.js store-mirror /

@@ -22,7 +22,13 @@ const VALID_TOP_KEYS    = new Set(['project_dir', 'groups', 'vars', 'helpers', '
 // the APP-BEHAVIOR sections are honored there; project content (groups,
 // layout, vars, …) belongs to the per-project config. Anything else in the
 // global file warns and is ignored — a global file must never brick a project.
-const GLOBAL_TOP_KEYS = new Set(['theme', 'keys', 'keymap', 'mouse', 'context-menu', 'selection', 'editor', 'color_depth', 'keyboard_protocol']);
+const GLOBAL_TOP_KEYS = new Set(['theme', 'keys', 'keymap', 'mouse', 'context-menu', 'selection', 'editor', 'color_depth', 'keyboard_protocol', 'action_status']);
+
+// action-status — the powerline-style command-finish status line on a
+// text-view output pane. `segments` are the fields (subset + order); `time` =
+// finish clock time.
+const VALID_ACTION_STATUS_SEGMENTS = new Set(['status', 'duration', 'time']);
+const VALID_ACTION_STATUS_KEYS = new Set(['enabled', 'segments', 'live']);
 const VALID_KEY_BINDING_KEYS = new Set(['action', 'command', 'builtin', 'label', 'desc']);
 // v0.6.7 E9 — the `keymap:` block (configurable normal-mode keys). A thin
 // versioned container; `normal:` is a flat key→verb map. SHAPE only here — the
@@ -147,6 +153,33 @@ function validateKeyboardProtocol(v) {
   }
 }
 
+// action_status (docs/global-config.md). A mapping (or the boolean shorthands:
+// `true` = default-on, `false` = disable). Shape only; the resolve/default
+// logic lives in the action-status leaf.
+function validateActionStatus(v) {
+  if (v === true || v === false) return;
+  if (!isMapping(v)) {
+    throw new SchemaError("'action_status' must be a mapping (or a boolean to enable/disable)");
+  }
+  checkUnknownKeys(v, VALID_ACTION_STATUS_KEYS, 'action_status');
+  if ('enabled' in v && typeof v.enabled !== 'boolean') {
+    throw new SchemaError("'action_status.enabled' must be a boolean");
+  }
+  if ('live' in v && typeof v.live !== 'boolean') {
+    throw new SchemaError("'action_status.live' must be a boolean");
+  }
+  if ('segments' in v) {
+    if (!Array.isArray(v.segments)) {
+      throw new SchemaError("'action_status.segments' must be a list");
+    }
+    for (const s of v.segments) {
+      if (!VALID_ACTION_STATUS_SEGMENTS.has(s)) {
+        throw new SchemaError(`'action_status.segments' has unknown segment '${s}' (valid: ${[...VALID_ACTION_STATUS_SEGMENTS].join(', ')})`);
+      }
+    }
+  }
+}
+
 /**
  * Scoped validation for the GLOBAL user config. Tolerant by design: only
  * GLOBAL_TOP_KEYS are honored; every other key — project content or a typo —
@@ -175,6 +208,7 @@ function validateGlobal(data, warnings) {
   if ('editor' in out)   validateEditor(out.editor);
   if ('color_depth' in out) validateColorDepth(out.color_depth);
   if ('keyboard_protocol' in out) validateKeyboardProtocol(out.keyboard_protocol);
+  if ('action_status' in out) validateActionStatus(out.action_status);
   if ('keys' in out)     validateKeys(out.keys);
   if ('keymap' in out)   validateKeymap(out.keymap);
   if ('mouse' in out)    validateMouse(out.mouse);

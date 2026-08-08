@@ -20,6 +20,7 @@ const fs = require('fs');
 const path = require('path');
 const { getModel } = require('../model/store');
 const { rebuildLayoutFromConfig } = require('../leaves/wm/arrange');
+const astatus = require('../leaves/infra/action-status');
 // Panel-state accessors (readers/writers/composites) moved to
 // panel/nav-state.js in v0.6.5 §1 Phase 2. This module keeps the boot layer
 // (loadConfig/initState) + the two dispatch-layer group helpers
@@ -261,11 +262,22 @@ const _subKinds = {
   },
 };
 
+// True while a streamed action is running AND the live action-status chip is
+// enabled — the arming condition for the frame clock (so the on-border
+// duration/spinner advances mid-run). Pure projection; no wall-clock read.
+function _liveActionStatus(model) {
+  if (!model || !Array.isArray(model.jobs) || !model.jobs.length) return false;
+  const cfg = astatus.resolveConfig(model.config && model.config.action_status);
+  if (!cfg.enabled || !cfg.live) return false;
+  return model.jobs.some((j) => j.status === 'running'
+    && (j.kind === 'stream-routed' || j.kind === 'stream-unrouted'));
+}
+
 // App-global subscriptions — ongoing sources not owned by any pane. Pure
 // projection of the model, merged into the per-pane component subs by
 // `_desiredSubs`. (FIX-3: resize [always]; terminal-overlay poll [Phase 3,
 // while a terminal tab is on-screen]; frame clock [Phase 6, while an age
-// overlay is open].)
+// overlay is open or a live action-status chip is running].)
 function _appSubscriptions(model) {
   const subs = [{ kind: 'resize' }];
   // #D15 terminal-overlay repaint backstop — only WHILE a terminal tab is
@@ -292,11 +304,16 @@ function _appSubscriptions(model) {
     });
   }
   // Frame clock (model.now) — ticks ONLY while an age overlay (jobs/diag) is
-  // open, so an idle TUI emits no ticks and the replay log stays quiet (FIX-3
+  // open OR a stream action is running with a live action-status chip on
+  // screen, so an idle TUI emits no ticks and the replay log stays quiet (FIX-3
   // Phase 6; was the arm_clock self-re-arm gated on model.clockArmed). onTick
   // reads the wall clock in the shell (blessed exc. C) and applyMsg's a flat
-  // `clock_tick` carrying the fresh `now`.
-  if (model && model.modes && (model.modes.jobsMode || model.modes.diagLogMode)) {
+  // `clock_tick` carrying the fresh `now`. The action-status arm tears down
+  // when the last stream job ends (the chip's FINAL stamp uses endedAt, not
+  // now, so it's correct with or without the tick — the tick only makes the
+  // mid-run duration/spinner advance between output chunks).
+  const overlayClock = model && model.modes && (model.modes.jobsMode || model.modes.diagLogMode);
+  if (overlayClock || _liveActionStatus(model)) {
     subs.push({
       kind: 'interval', id: 'clock', ms: 1000,
       onTick: (ctx) => ctx.applyMsg({ type: 'clock_tick', now: Date.now() }),
@@ -397,18 +414,23 @@ function reconcileSubscriptions(model) {
   // ungated (a per-keystroke cost on ANY booted layout).
   //   INVARIANT: if a future component's `subscriptions()` starts depending on
   // OTHER volatile model state, add that input to the gate key here (else the sub
-  // won't start/stop correctly). Today: stats keys on paneDef only; docker on the
-  // immutable container config; no other component declares subs.
+  // won't start/stop correctly). stats keys on paneDef only; docker on the
+  // immutable container config. The app-global `clock` sub keys on
+  // `_liveActionStatus(model)` (a running stream job + action_status config) —
+  // NOT part of the layout slice — so it is folded into the gate below; without
+  // it the live status clock would never arm on job start / tear down on job end.
   const ls = _layoutSlice();
   const modes = (model && model.modes) || {};
   const jobsMode = !!modes.jobsMode, diagLogMode = !!modes.diagLogMode;
+  const liveClock = _liveActionStatus(model);
   const g = _lastSubGate;
   if (g && ls && g.arrange === ls.arrange && g.dims === ls.dims
-        && g.viewMode === ls.viewMode && g.jobsMode === jobsMode && g.diagLogMode === diagLogMode) {
+        && g.viewMode === ls.viewMode && g.jobsMode === jobsMode && g.diagLogMode === diagLogMode
+        && g.liveClock === liveClock) {
     return;   // desired set unchanged → live subs already correct
   }
   _lastSubGate = ls
-    ? { arrange: ls.arrange, dims: ls.dims, viewMode: ls.viewMode, jobsMode, diagLogMode }
+    ? { arrange: ls.arrange, dims: ls.dims, viewMode: ls.viewMode, jobsMode, diagLogMode, liveClock }
     : null;
   const ctx = _subCtx();
   const desired = _desiredSubs(model);
@@ -807,6 +829,10 @@ module.exports = {
   // #D13 — exposed for tests: the Model→Sub reconciler, its pure desired-set
   // projection, the per-descriptor add/merge, and the live-set teardown/reset.
   reconcileSubscriptions, _desiredSubs, _addDesired, _resetSubscriptions,
+  // Test-only: the live subscription keys — lets a test assert the gated
+  // `clock` sub actually arms/tears down as a stream job starts/ends (the
+  // reconcile-gate coverage for the live action-status line).
+  _liveSubKeys: () => [..._liveSubs.keys()],
   // Production quit-teardown: stop every live Sub (kill process-stream
   // children, cancel intervals, remove the resize listener). Same impl as the
   // test reset; wired to process exit from tui.js (FIX-3 Phase 5).

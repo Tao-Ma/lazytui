@@ -21,6 +21,8 @@ selection: true             # wholesale — global text-selection default
 editor: nvim                # wholesale — see §editor below
 color_depth: auto           # wholesale — auto | truecolor | 256 | 16 (see below)
 keyboard_protocol: auto     # wholesale — auto | legacy | kitty (see below)
+action_status:              # global-only — action-status chip (see below)
+  segments: [status, duration, time]
 keys:                       # entry-level merge — per key-sequence
   "<space>g": { command: "grep TODO" }
 keymap:                     # entry-level merge on normal:, version project-wins
@@ -49,6 +51,8 @@ The global file layers UNDER the project config:
   global value applies. For `color_depth` and `keyboard_protocol`, a project
   `auto` ALSO counts as absent: `auto` means "no override opinion, decide
   from the environment", so an explicit global value applies under it.
+- **`action_status`** is global-only (not a project top key), so it is simply
+  lifted onto the merged config — a display preference that follows the user.
 
 ### color_depth
 
@@ -89,6 +93,47 @@ falls back to legacy even under a kitty-capable terminal (Ghostty, kitty,
 foot, WezTerm…). The `<leader> e` hint names the multiplexer in that case. To
 use the protocol, run lazytui outside the multiplexer. (SSH and container
 shells are transparent — only the multiplexer layer matters.)
+
+### action_status
+
+A powerline-style, right-aligned status stamp at the end of an action's output
+pane — the routed tab of a `tab:`-routed action and the Transcript. It shows,
+for the job that produced that pane's output:
+
+- a status glyph — `✓` (exit 0), `✗ N` (non-zero, with the code), `⊗ SIG`
+  (killed by signal), or a braille spinner while running;
+- the run **duration** (ticking live while running, final on completion);
+- the **finish** clock time (shown once the action has ended).
+
+Segments are middot-joined, e.g. `✓ · 4.1s · 14:32:07`.
+
+While the action runs, a **live** line floats at the end of the output (spinner
++ ticking duration) and is pushed down by new output. On completion it becomes a
+line **in the pane's scrollback** (not an ephemeral chrome cell), so it scrolls
+with the output rather than being overwritten in place, and each routed action's
+own tab keeps its stamp; a re-run reseeds its pane like any output does. It
+**replaces** the classic plain `Done.` / `Exit N` footer, and is right-aligned
+at render so it stays flush-right across pane resizes.
+
+```yaml
+action_status:
+  enabled: true                     # master on/off (default true)
+  segments: [status, duration, time]  # which chips + their left→right order
+  live: true                        # tick the running line while it runs
+```
+
+- `enabled` — set `false` (or `action_status: false` as a shorthand) to turn it
+  off; the plain left-aligned `Done.` / `Exit N` footer is used instead.
+- `segments` — any subset of `status` / `duration` / `time`, in the order you
+  want them to appear; unknown tokens are rejected at load. Defaults to all
+  three. `time` is omitted while a job is still running (no finish time yet).
+- `live` — when `true` (default), the 1-second frame clock is armed while a
+  streamed action runs so the floating line's duration and spinner advance
+  between output chunks; the *permanent* stamp is correct either way, so `false`
+  just makes a long, silent run's live duration refresh only when it next
+  prints.
+
+Terminal (`type: spawn` / `terminal`) panes are not covered.
 
 The merge happens inside `parse()`: the project config validates STANDALONE
 first (its errors surface unchanged, global file or not), the pre-validated

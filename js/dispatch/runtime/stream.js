@@ -40,6 +40,7 @@ const { spawn } = require('child_process');
 const { StringDecoder } = require('string_decoder');
 const { esc } = require('../../leaves/text/ansi');
 const { theme } = require('../../leaves/infra/themes');
+const astatus = require('../../leaves/infra/action-status');
 const { getModel } = require('../../model/store');
 const { scheduleRender } = require('../../leaves/infra/render-queue');
 const history = require('../../feature/history');
@@ -92,6 +93,19 @@ function appendDetailLines(lines, tabInstId) {
   const target = require('../../panel/route').resolveTarget('viewer_transcript');
   if (target == null) return;
   require('./loop').dispatchMsg(api.wrap(target, { type: 'tv_append_lines', lines }));
+}
+
+// Append the permanent completion-status line (`tv_status`) — same routing as
+// appendDetailLine, but the arm records the line as a right-aligned status row.
+function appendStatusLine(line, tabInstId) {
+  const api = require('../../panel/api');
+  if (tabInstId) {
+    require('./loop').dispatchMsg(api.wrap(tabInstId, { type: 'tv_status', line }));
+    return;
+  }
+  const target = require('../../panel/route').resolveTarget('viewer_transcript');
+  if (target == null) return;
+  require('./loop').dispatchMsg(api.wrap(target, { type: 'tv_status', line }));
 }
 
 /** Kill a single job. Removes it from procs + slotIndex, SIGTERMs the
@@ -296,19 +310,33 @@ function streamCommand(headerLabel, cmd, args = [], opts = {}) {
     });
     procs.delete(jobId);
     if (slotIndex.get(slotKey) === jobId) slotIndex.delete(slotKey);
-      // Coalesce decoder tail + status + re-run hint into one batched
-    // append — atomic reducer pass instead of 2-3 sequential
-    // viewer_append dispatches.
+    // Completion appends: the decoder tail (if any), then the status line (a
+    // right-aligned `tv_status` row), then the routed re-run hint — separate
+    // dispatches (the status row must be recorded distinctly for right-align).
     const t = theme();
-    const batch = [];
     const tail = decoder.end();
     if (tail) buffer += tail;
-    if (buffer) { batch.push(esc(buffer)); rec.append(buffer); if (fab) rawLines.push(buffer); buffer = ''; }
-    if (signal)            { batch.push(`[${t.warning}]Killed (${signal})[/]`); rec.end(`signal:${signal}`); }
-    else if (code === 0)    { batch.push(`[${t.success}]Done.[/]`); rec.end(0); }
-    else                    { batch.push(`[${t.error}]Exit ${code}[/]`); rec.end(code); }
-    if (routed) batch.push('[dim]Press Enter to run again.[/]');
-    appendDetailLines(batch, tabInstId);
+    if (buffer) { appendDetailLine(esc(buffer), tabInstId); rec.append(buffer); if (fab) rawLines.push(buffer); buffer = ''; }
+    if (signal) rec.end(`signal:${signal}`);
+    else rec.end(code);
+    // Completion status line — the powerline-style `✓ Done · dur · time`
+    // stamp, appended as a right-aligned status row (docs/global-config.md
+    // §action_status). It REPLACES the classic plain `Done.`/`Exit N` footer;
+    // when the chip is disabled we fall back to that plain footer so there's
+    // always some completion feedback.
+    const outcome = signal
+      ? { status: 'killed', signal, startedAt: rec.entry.startedAt, endedAt: rec.entry.endedAt }
+      : { status: 'exited', exitCode: (code == null ? null : (code | 0)), startedAt: rec.entry.startedAt, endedAt: rec.entry.endedAt };
+    const chip = astatus.statusLine(outcome, null, (getModel().config || {}).action_status,
+      { success: t.success, warning: t.warning, error: t.error });
+    if (chip) {
+      appendStatusLine(chip, tabInstId);
+    } else {
+      const plain = signal ? `[${t.warning}]Killed (${signal})[/]`
+        : code === 0 ? `[${t.success}]Done.[/]` : `[${t.error}]Exit ${code}[/]`;
+      appendDetailLine(plain, tabInstId);
+    }
+    if (routed) appendDetailLine('[dim]Press Enter to run again.[/]', tabInstId);
     flushFabric();   // publish the producer's raw output for parsing
     scheduleRender();
   });
