@@ -76,9 +76,10 @@ function update(msg, slice) {
       // `preamble` line is seeded AHEAD of the header — the unrouted preempt uses
       // it to carry a "⊗ killed previous: X" notice that SURVIVES this reset
       // (killJob's own footer/chip would otherwise be wiped by the reseed).
+      // Truthiness guard: a '' preamble (preempted job already gone) seeds no line.
       return {
         ...slice,
-        lines: msg.preamble != null ? [msg.preamble, msg.header] : [msg.header],
+        lines: msg.preamble ? [msg.preamble, msg.header] : [msg.header],
         scroll: 0,
         search: { active: false, term: '', idx: 0, typing: '' },
         select: { active: false, kind: 'char', anchor: { line: 0, col: 0 }, cursor: { line: 0, col: 0 } },

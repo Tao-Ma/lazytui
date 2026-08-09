@@ -273,8 +273,10 @@ function streamCommand(headerLabel, cmd, args = [], opts = {}) {
   const header = `[dim]$ ${esc(headerLabel)}[/]`;
   // C — an unrouted preempt threads a `preamble` (the "⊗ killed previous: X"
   // notice) so it survives the reseed ahead of this run's header; absent on
-  // ordinary runs, so routed re-runs stay clean.
-  const startMsg = opts.preamble != null
+  // ordinary runs, so routed re-runs stay clean. Truthiness (not `!= null`):
+  // preemptNotice() returns '' when the preempted job is already gone, and an
+  // empty string must NOT seed a blank leading line above the header.
+  const startMsg = opts.preamble
     ? { type: 'tv_stream_start', header, preamble: opts.preamble }
     : { type: 'tv_stream_start', header };
   if (tabInstId) {

@@ -286,7 +286,12 @@ slot's active tab to it (`route.resolveTranscriptTab` → a layout
 the new stream. The unrouted slot is a singleton: a same-label re-run
 preempts silently; a different-label unrouted run opens a confirm
 overlay (default reject, via the `unrouted_preempt_and_run` Cmd) to
-protect the live transcript. On termination the completion path emits
+protect the live transcript. When accepted, that Cmd captures a one-line
+"⊗ killed previous: X" notice, kills the prior stream silently, then
+threads the notice as a `preamble` on the new run's `tv_stream_start` so
+the record of *what was just killed* SURVIVES the reseed (seeded ahead of
+the new header). The notice is empty — and the preamble omitted — when the
+preempted job has already exited on its own. On termination the completion path emits
 separate dispatches — the decoder tail, then the `tv_status` chip (a
 distinct status row so it can be right-aligned), then the routed
 `Press Enter to run again.` hint; a disabled chip falls back to the

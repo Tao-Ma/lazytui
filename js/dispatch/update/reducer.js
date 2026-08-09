@@ -274,11 +274,15 @@ function update(model, msg) {
     // `clock` interval Sub (app/state.js#_appSubscriptions — declared while an
     // age overlay is open OR a live action-status line is running, torn down
     // otherwise), so this arm no longer self-re-arms or tracks a clockArmed
-    // latch. The `render` Cmd is LOAD-BEARING for the action-status case: its
-    // live floating line is a PANEL (frame = f(model.now)), not an overlay, so
-    // — unlike the age overlays, repainted by the 250ms overlay-repaint Sub —
-    // it has no other repaint driver; without this the spinner/duration would
-    // advance in the model invisibly. Same shape as the *_synced arms below.
+    // latch. The `render` Cmd is LOAD-BEARING: the clock tick carries no implicit
+    // repaint, so this Cmd is the SOLE driver for every armed case — the live
+    // action-status line (a PANEL, frame = f(model.now)) AND the jobs/diag age
+    // overlays alike. (The 250ms `overlay-repaint` Sub is a SEPARATE driver gated
+    // on a terminal surface being on-screen — `_termTabOnScreen()`, not on an age
+    // overlay being open — so it does NOT cover these.) Without this Cmd the
+    // spinner/duration/age would advance in the model invisibly. Do NOT narrow it
+    // to "action-status only": that would silently freeze age-overlay ticking.
+    // Same shape as the *_synced arms below.
     case 'clock_tick':
       return [{ ...model, now: msg.now || model.now }, [{ type: 'render' }]];
     // The four mirror-sync arms below land an external source's snapshot on the

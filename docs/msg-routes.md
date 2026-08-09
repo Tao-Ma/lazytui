@@ -509,6 +509,9 @@ reducer (they hold no domain state beyond nav).
 | **history** | `panel/navigator/history.js` | 1 +nav | see §7.8 (effect `historyReplay`) | ✅ verified (loop 4) |
 | **actions** | `panel/navigator/actions.js` | 0 +nav | shared nav only | ✅ nav-only (§7.2) |
 | **stats** | `panel/monitor/stats.js` | 0 (no-op update) | `subscriptions(paneDef,model)` (#D13) — see §7.9 | ✅ verified (loop 4) |
+| **text-view** | `panel/text-view/text-view.js` | 5 + shared tvu | see note below | 📎 catalogued (post-audit) |
+
+> **text-view vocabulary** (the content Component that superseded the viewer's flat content-tab machinery in U2f — post-dates this doc's original 2026-06-24 audit loops). Own Msgs: `tv_stream_start` (re-run reseed to the header; optional `preamble` line seeded ahead of it — the unrouted-preempt "⊗ killed previous: X" notice that survives the reseed, §DATAFLOW; omitted when empty), `tv_append` / `tv_append_lines` (streamed output), `tv_set_lines` (wholesale replace), `tv_status` (a distinct right-alignable status row — the action-status chip). Selection/search/scroll flow through the shared `tvu` reducer (`leaves/text/text-view-update.js`), same arms the viewer used.
 
 ### 7.4 viewer/detail (`kind: 'detail'`) — verified
 
@@ -996,11 +999,14 @@ throughout §4–§7). Same model: read once in the shell, stamp onto the Msg.
 
 A grep-diff of the catalog against the whole `js/` tree (excl. tests):
 
-- **Every reducer/modal/Component Msg type is documented.** Cross-checked all
-  `case '…'` / `msg.type === '…'` handlers, INCLUDING the 5 camelCase Component
-  Msgs the first pass's `[a-z_]+` grep missed (`dockerPoll`, `dockerResult`,
-  `dirLoaded`, `showHidden`, `cfgStatusResult` — all in §7.8). (The `dockerTick`
-  self-re-arm Msg was retired in v0.6.6 FIX-3 — the poll is an `interval` Sub.)
+- **Every reducer/modal/Component Msg type is documented** as of the 2026-06-24
+  audit loops. Cross-checked all `case '…'` / `msg.type === '…'` handlers,
+  INCLUDING the 5 camelCase Component Msgs the first pass's `[a-z_]+` grep missed
+  (`dockerPoll`, `dockerResult`, `dirLoaded`, `showHidden`, `cfgStatusResult` —
+  all in §7.8). (The `dockerTick` self-re-arm Msg was retired in v0.6.6 FIX-3 —
+  the poll is an `interval` Sub.) The `tv_*` family (text-view Component, added by
+  the U2f refactor AFTER this audit) is catalogued in the §7.3 note, not the
+  original loops.
 - **Every effect is documented.** Every `registerEffect('…')` type appears in
   §8.1 (framework) or §8.2 (component) or is one of the test-only fixtures.
   (The `dockerEventsStart` component effect was retired in v0.6.6 FIX-3 — the

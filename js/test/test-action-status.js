@@ -144,6 +144,15 @@ describe('[action-status] tv_status reducer arm', () => {
     eq(s.lines, ['[yellow]⊗[/] killed previous: X', '$ new']);
     eq(s.statusRows, []);
   });
+  it('tv_stream_start with an EMPTY preamble seeds NO blank leading line', () => {
+    // preemptNotice() returns '' when the preempted job is already gone (it died
+    // on its own during the confirm window). That '' must reseed to [header]
+    // alone, not ['', header] — a truthiness guard, since '' != null is true.
+    let s = tv.init('p1');
+    s = tv.update({ type: 'tv_append', line: 'old output' }, s);
+    s = tv.update({ type: 'tv_stream_start', header: '$ new', preamble: '' }, s);
+    eq(s.lines, ['$ new']);
+  });
 });
 
 describe('[action-status] render right-aligns status rows', () => {
