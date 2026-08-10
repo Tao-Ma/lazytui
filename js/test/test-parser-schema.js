@@ -64,6 +64,15 @@ describe('invalid structures rejected', () => {
   it('bad action type',                () => expectThrow(/'type' must be one of/, () => validate(loadFixture('invalid_bad_type.yml'), 'test')));
   it('missing action label',           () => expectThrow(/'label' is required/, () => validate(loadFixture('invalid_missing_label.yml'), 'test')));
   it('unknown action key',             () => expectThrow(/unknown key.*comand/, () => validate(loadFixture('invalid_unknown_key.yml'), 'test')));
+  it('bad action output mode',         () => expectThrow(/'output' must be one of/, () => validate({ groups: { g: {
+    label: 'G', actions: { a: { cmd: 'echo', label: 'A', output: 'accumulate' } },
+  } } }, 'test')));
+  it('valid action output modes accepted', () => {
+    for (const mode of ['replace', 'append']) {
+      validate({ groups: { g: { label: 'G', actions: { a: { cmd: 'echo', label: 'A', output: mode } } } } }, 'test');
+    }
+    assert(true, "output: 'replace' | 'append' accepted");
+  });
   it('empty groups dict',              () => expectThrow(/non-empty mapping/, () => validate({ groups: {} }, 'test')));
   it('groups not a dict',              () => expectThrow(/non-empty mapping/, () => validate({ groups: 'nope' }, 'test')));
   it('top-level not a mapping',        () => expectThrow(/must be a YAML mapping/, () => validate('not a dict', 'test')));

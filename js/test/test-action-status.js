@@ -153,6 +153,26 @@ describe('[action-status] tv_status reducer arm', () => {
     s = tv.update({ type: 'tv_stream_start', header: '$ new', preamble: '' }, s);
     eq(s.lines, ['$ new']);
   });
+  it('tv_stream_start append mode keeps prior runs + adds a separator, header, and jumps to the tail', () => {
+    // output: append — a re-run accumulates below the previous run instead of
+    // reseeding. Prior lines survive, a blank separator + the new header land at
+    // the tail, and scroll bottom-sticks so the new run is visible.
+    let s = tv.init('p1');
+    s = tv.update({ type: 'tv_append_lines', lines: ['$ status', 'up 2s'], innerH: 4 }, s);
+    s = tv.update({ type: 'tv_status', line: '[green]✓ · 0.2s[/]', innerH: 4 }, s);
+    const linesBefore = s.lines.slice();
+    const statusRowsBefore = s.statusRows.slice();
+    eq(statusRowsBefore.length, 1);              // prior stamp recorded
+    s = tv.update({ type: 'tv_stream_start', header: '$ status', append: true, innerH: 4 }, s);
+    eq(s.lines, linesBefore.concat(['', '$ status']));
+    eq(s.statusRows, statusRowsBefore);          // prior stamp index still valid (tail-only growth)
+    eq(s.scroll, Math.max(0, s.lines.length - 4)); // jumped to the new run
+  });
+  it('tv_stream_start append mode on an EMPTY buffer seeds just the header (no leading blank)', () => {
+    let s = tv.init('p1');
+    s = tv.update({ type: 'tv_stream_start', header: '$ status', append: true }, s);
+    eq(s.lines, ['$ status']);
+  });
 });
 
 describe('[action-status] render right-aligns status rows', () => {

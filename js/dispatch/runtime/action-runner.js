@@ -243,6 +243,10 @@ function doRun(actionKey, action, args = []) {
   // instance minted/reused in the viewer's slot (U2c P1); tabless → the unrouted
   // Transcript accumulator (viewerStreamBuffer).
   const opts = action.tab ? ensureActionTab(getModel().currentGroup, actionKey) : {};
+  // `output: append` (default 'replace') keeps prior runs in the buffer instead
+  // of reseeding on re-run — a status-over-time log. Best paired with tab:true so
+  // it accumulates in its own tab, not the shared Transcript. See docs/DATAFLOW.md.
+  if (action.output === 'append') opts.append = true;
   streamCommand(actionKey, cmd, args, opts);
 }
 
@@ -289,6 +293,7 @@ function doRunFabric(actionKey, action) {
   // ensureActionTab routes the DISPLAY to the component's text-view instance.
   streamCommand(actionKey, argv.join(' '), [], {
     ...ensureActionTab(group, actionKey),
+    ...(action.output === 'append' ? { append: true } : {}),
     argv, fabric: { group, name: actionKey },
   });
 }

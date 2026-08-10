@@ -276,9 +276,11 @@ function streamCommand(headerLabel, cmd, args = [], opts = {}) {
   // ordinary runs, so routed re-runs stay clean. Truthiness (not `!= null`):
   // preemptNotice() returns '' when the preempted job is already gone, and an
   // empty string must NOT seed a blank leading line above the header.
-  const startMsg = opts.preamble
-    ? { type: 'tv_stream_start', header, preamble: opts.preamble }
-    : { type: 'tv_stream_start', header };
+  // `append` (per-action `output: append`) makes the reducer keep prior runs and
+  // add this one below, instead of reseeding.
+  const startMsg = { type: 'tv_stream_start', header };
+  if (opts.preamble) startMsg.preamble = opts.preamble;
+  if (opts.append) startMsg.append = true;
   if (tabInstId) {
     require('./loop').dispatchMsg(api.wrap(tabInstId, startMsg));
   } else {

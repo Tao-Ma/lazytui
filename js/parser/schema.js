@@ -15,6 +15,10 @@ const { compileParse, compileExtract } = require('../fabric/parse');
 const { compileCommand, commandHoles } = require('../fabric/command');
 
 const VALID_ACTION_TYPES = new Set(['run', 'spawn', 'background']);
+// Per-action re-run behavior for the streamed output buffer: 'replace' (default)
+// reseeds the buffer to the new run's header; 'append' keeps prior runs and adds
+// the new run below (a status-over-time log). See docs/DATAFLOW.md.
+const VALID_ACTION_OUTPUT_MODES = new Set(['replace', 'append']);
 
 const VALID_TOP_KEYS    = new Set(['project_dir', 'groups', 'vars', 'helpers', 'files', 'layout', 'theme', 'plugins', 'register', 'keys', 'keymap', 'mouse', 'context-menu', 'panels', 'selection', 'editor', 'color_depth', 'keyboard_protocol']);
 
@@ -60,7 +64,7 @@ const VALID_ARCHIVE_KEYS = new Set(['target', 'output_dir', 'name']);
 const VALID_CONFIG_BRANCH_KEYS = new Set(['branch', 'paths', 'excludes', 'source', 'categories']);
 const VALID_IMAGES_KEYS = new Set(['list', 'output_dir']);
 const VALID_TERMINAL_KEYS = new Set(['cmd', 'label']);
-const VALID_ACTION_KEYS = new Set(['cmd', 'script', 'label', 'type', 'confirm', 'args', 'default_cmd', 'desc', 'tab', 'parse', 'ports', 'run']);
+const VALID_ACTION_KEYS = new Set(['cmd', 'script', 'label', 'type', 'confirm', 'args', 'default_cmd', 'desc', 'tab', 'output', 'parse', 'ports', 'run']);
 
 function isMapping(v) {
   return v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -803,6 +807,10 @@ function validateAction(groupPath, aname, adata) {
   }
   if ('tab' in adata && typeof adata.tab !== 'boolean') {
     throw new SchemaError("'tab' must be a boolean", { context: ctx });
+  }
+  if ('output' in adata && !VALID_ACTION_OUTPUT_MODES.has(adata.output)) {
+    const list = '[' + [...VALID_ACTION_OUTPUT_MODES].sort().map(s => `'${s}'`).join(', ') + ']';
+    throw new SchemaError(`'output' must be one of ${list}, got '${adata.output}'`, { context: ctx });
   }
 
   // Dataflow fabric (docs/ports-and-wires.md): an action that declares `parse`

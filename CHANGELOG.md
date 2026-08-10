@@ -20,6 +20,13 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   config's `action_status:` section
   (`enabled`, `segments` = which chips + order, `live`); see
   docs/global-config.md. Disabling it restores the plain footer.
+- **Per-action `output: append`** — a new per-action key controlling re-run
+  behavior of the streamed output buffer. The default (`replace`) reseeds the
+  buffer to the new run's header, as before; `append` keeps prior runs and adds
+  each new run below the previous one (with the action-status stamp as a natural
+  separator) — a status-over-time log. Best paired with `tab: true` so it
+  accumulates in the action's own tab rather than the shared Transcript. See
+  docs/DATAFLOW.md.
 
 ## [0.6.15] — 2026-08-07
 

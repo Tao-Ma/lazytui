@@ -70,13 +70,26 @@ function update(msg, slice) {
   if (msg && msg.innerH > 0 && slice.innerH !== msg.innerH) slice = { ...slice, innerH: msg.innerH };
   // Streamed-content arms (U2c P1) — an action's output routes here by paneId.
   switch (msg.type) {
-    case 'tv_stream_start':
-      // Re-run reseed: clear to the header + reset view state (the per-instance
-      // analog of the viewer's routed stream_start R4 reset). An optional
-      // `preamble` line is seeded AHEAD of the header — the unrouted preempt uses
-      // it to carry a "⊗ killed previous: X" notice that SURVIVES this reset
-      // (killJob's own footer/chip would otherwise be wiped by the reseed).
-      // Truthiness guard: a '' preamble (preempted job already gone) seeds no line.
+    case 'tv_stream_start': {
+      // Append mode (per-action `output: append`, docs/DATAFLOW.md): keep the
+      // accumulated buffer and add this run BELOW the previous one (a blank
+      // separator + optional preamble + header), jumping to the tail so the new
+      // run is visible. Prior statusRows indices stay valid — the buffer only
+      // grows at the tail. First run (empty buffer) falls through to the reseed,
+      // which also yields just [header], so there's no leading blank line.
+      if (msg.append && (slice.lines || []).length) {
+        const add = msg.preamble ? ['', msg.preamble, msg.header] : ['', msg.header];
+        const lines = (slice.lines || []).concat(add);
+        const innerH = slice.innerH > 0 ? slice.innerH : 1;
+        return { ...slice, lines, scroll: Math.max(0, lines.length - innerH) };
+      }
+      // Re-run reseed (default 'replace'): clear to the header + reset view state
+      // (the per-instance analog of the viewer's routed stream_start R4 reset). An
+      // optional `preamble` line is seeded AHEAD of the header — the unrouted
+      // preempt uses it to carry a "⊗ killed previous: X" notice that SURVIVES
+      // this reset (killJob's own footer/chip would otherwise be wiped by the
+      // reseed). Truthiness guard: a '' preamble (preempted job already gone)
+      // seeds no line.
       return {
         ...slice,
         lines: msg.preamble ? [msg.preamble, msg.header] : [msg.header],
@@ -86,6 +99,7 @@ function update(msg, slice) {
         cursor: { line: 0, col: 0 },
         statusRows: [],
       };
+    }
     case 'tv_append':
       return _appendLines(slice, [msg.line]);
     case 'tv_append_lines':

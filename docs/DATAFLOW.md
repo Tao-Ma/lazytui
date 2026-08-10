@@ -265,7 +265,15 @@ and streams into THAT instance by id: `tv_stream_start { header }`
 reseeds the buffer + view state on a re-run, `tv_append { line }` (the
 per-line hot path) and bulk `tv_append_lines { lines }` append; on
 termination a `tv_status { line }` records the permanent right-aligned
-`✓/✗/⊗` completion stamp as a distinct status row. The
+`✓/✗/⊗` completion stamp as a distinct status row. A per-action
+`output: append` (default `replace`) flips the re-run behavior: the
+`tv_stream_start` carries `append:true`, and the reducer keeps the
+accumulated buffer and adds the new run below the previous one (a blank
+separator + header, jumping to the tail) instead of reseeding — a
+status-over-time log. Prior `statusRows` indices stay valid because the
+buffer only grows at the tail; the first run (empty buffer) still yields
+just `[header]`. Best paired with `tab:true` so runs accumulate in the
+action's own tab rather than interleaving in the shared Transcript. The
 instance owns its own buffer and scroll — bottom-stick lives in its
 `update` (at-bottom follows the tail; a scrolled-up reader is not
 yanked down) — so off-tab streaming needs no routing bundle, and the
