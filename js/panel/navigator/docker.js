@@ -47,9 +47,7 @@ const {
 } = require('../api');
 const { getModel } = require('../../model/store');
 const mnav = require('../../leaves/wm/nav');
-const { clampRefreshMs, DEFAULT_REFRESH_MS } = require('../../leaves/render/monitor-control');
-
-const POLL_MS = 10000;
+const { clampRefreshMs, stepRefreshMs, DEFAULT_REFRESH_MS } = require('../../leaves/render/monitor-control');
 
 // The container poll interval (ms) — seeded onto the service slice at init from
 // the `containers` panel's optional `refresh_ms:` config (clamped to the ladder;
@@ -275,6 +273,18 @@ function update(msg, slice) {
       stats: msg.stats || slice.stats,
       inFlight: false,
     }, [{ type: 'render' }]];
+  }
+  if (msg.type === 'set_refresh_ms') {
+    // Refresh-rate control (the `- Ns +` widget / +/- keys): step the owner's
+    // poll cadence. `dir` ±1 walks the ladder; `ms` sets it directly. The changed
+    // slice.refreshMs re-arms the `interval` Sub — reconcileSubscriptions keys on
+    // it (app/state.js) and the interval subKind keys on `${id}:${ms}`, so a new
+    // ms tears the old timer down and arms a fresh one. Render so the label
+    // repaints. At a ladder end the step is a no-op → return the same slice ref
+    // (no render, no reconcile churn).
+    const next = msg.ms != null ? clampRefreshMs(msg.ms) : stepRefreshMs(slice.refreshMs, msg.dir || 0);
+    if (next === slice.refreshMs) return slice;
+    return [{ ...slice, refreshMs: next }, [{ type: 'render' }]];
   }
   return slice;
 }
@@ -612,11 +622,16 @@ const containerCommands = [
 // loop, and the poll Msg lands on the service owner (paneId == null) via the
 // gate in update(). The reconciler tears it down when the last docker pane
 // leaves the layout — the old self-arm tick polled forever once refreshed.
+//
+// The cadence is the owner's live `refreshMs` (config-seeded, mutated by the
+// refresh control): the interval subKind keys on `${id}:${ms}`, so a changed
+// refreshMs re-arms the timer at the new rate via the #D13 reconciler — see the
+// `set_refresh_ms` arm + the sub-gate input in app/state.js.
 function subscriptions(/* paneDef, model */) {
   const subs = [{
     kind: 'interval',
     id: 'docker-poll',
-    ms: POLL_MS,
+    ms: clampRefreshMs(_slice().refreshMs),
     onTick: (ctx) => ctx.dispatch(ctx.wrap('docker', { type: 'dockerPoll' })),
   }];
   // FIX-3 Phase 5 — the long-lived `docker events` watcher is a `process-stream`

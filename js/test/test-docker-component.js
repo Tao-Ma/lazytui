@@ -350,4 +350,58 @@ describe('[9] refresh_ms — poll cadence seeded from the containers panel confi
   });
 });
 
+describe('[10] set_refresh_ms steps the owner poll cadence', () => {
+  const mc = require('../leaves/render/monitor-control');
+  it('dir +1 slower / -1 faster, and emits a render', () => {
+    const owner = { ...slice0(), refreshMs: 2000 };
+    const up = step({ type: 'set_refresh_ms', dir: 1 }, owner);
+    eq(up.slice.refreshMs, 5000);
+    assert(types(up.effects).includes('render'), 'render Cmd emitted');
+    eq(step({ type: 'set_refresh_ms', dir: -1 }, owner).slice.refreshMs, 1000);
+  });
+  it('a ladder-end step is a no-op — same slice ref, no render (no reconcile churn)', () => {
+    const owner = { ...slice0(), refreshMs: mc.MAX_REFRESH_MS };
+    const r = step({ type: 'set_refresh_ms', dir: 1 }, owner);
+    assert(r.slice === owner, 'unchanged slice returned by reference');
+    eq(r.effects.length, 0, 'no render on a no-op');
+  });
+  it('ms sets the cadence directly, clamped', () => {
+    const owner = { ...slice0(), refreshMs: 2000 };
+    eq(step({ type: 'set_refresh_ms', ms: 500 }, owner).slice.refreshMs, 500);
+    eq(step({ type: 'set_refresh_ms', ms: 999999 }, owner).slice.refreshMs, mc.MAX_REFRESH_MS);
+  });
+  it('a placed pane (paneId set) ignores it — the cadence is host-global (owner only)', () => {
+    const placed = { ...slice0(), paneId: 'docker-a', refreshMs: 2000 };
+    eq(step({ type: 'set_refresh_ms', dir: 1 }, placed).slice.refreshMs, 2000);
+  });
+});
+
+describe('[11] refreshMs drives subscriptions() + is a reconcile-gate input', () => {
+  const state = require('../app/state');
+  it('the interval Sub ms tracks the owner slice refreshMs (so a change re-arms it)', () => {
+    const PANE = { type: 'containers', paneId: 'c-sub', title: 'C' };
+    api.dispatchMsg(api.wrap('docker', { type: 'set_refresh_ms', ms: 2000 }));
+    eq(api.serviceSlice('docker').refreshMs, 2000);
+    eq(docker.subscriptions(PANE, getModel()).find(s => s.kind === 'interval').ms, 2000);
+    api.dispatchMsg(api.wrap('docker', { type: 'set_refresh_ms', ms: 5000 }));
+    eq(docker.subscriptions(PANE, getModel()).find(s => s.kind === 'interval').ms, 5000);
+  });
+  it('changing refreshMs changes the desired-sub key → must be (and is) in the gate key', () => {
+    // The docker-poll interval sub keys on `${id}:${ms}`, so a rate change is a
+    // NEW desired-set key. reconcileSubscriptions' perf gate folds `dockerRefresh`
+    // in for exactly this reason (state.js); without it the change would be
+    // skipped and the timer never re-armed.
+    getInstanceSlice('layout').arrange = {
+      columns: [{ panels: [{ type: 'containers', paneId: 'c-gate', title: 'C', columnIndex: 0 }] }],
+      detailHeightPct: 60,
+    };
+    api.dispatchMsg(api.wrap('docker', { type: 'set_refresh_ms', ms: 2000 }));
+    const a = [...state._desiredSubs(getModel()).keys()].sort();
+    api.dispatchMsg(api.wrap('docker', { type: 'set_refresh_ms', ms: 5000 }));
+    const b = [...state._desiredSubs(getModel()).keys()].sort();
+    assert(a.some(k => k.includes('docker-poll')), 'docker-poll sub is present');
+    assert(JSON.stringify(a) !== JSON.stringify(b), 'the docker-poll key changed with refreshMs');
+  });
+});
+
 report();

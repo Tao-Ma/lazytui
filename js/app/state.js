@@ -395,6 +395,15 @@ function _addDesired(out, d) {
   out.set(key, { kind, desc: (prior && h.merge) ? h.merge(prior.desc, desc) : desc });
 }
 
+// The docker container-poll cadence — a service-slice field (config-seeded,
+// stepped by the refresh control). docker's `subscriptions()` reads it live, so
+// it is a gate input (the INVARIANT below); undefined when docker isn't placed →
+// a stable value that never trips the gate.
+function _dockerRefreshMs() {
+  const s = _api().serviceSlice('docker');
+  return s ? s.refreshMs : undefined;
+}
+
 // Reconcile the live subscriptions to match `_desiredSubs(model)`: start the
 // newly-desired, stop the no-longer-desired, each routed through its kind
 // handler. Called by the dispatch finalizer each outermost dispatch (#D13); the
@@ -414,11 +423,14 @@ function reconcileSubscriptions(model) {
   // ungated (a per-keystroke cost on ANY booted layout).
   //   INVARIANT: if a future component's `subscriptions()` starts depending on
   // OTHER volatile model state, add that input to the gate key here (else the sub
-  // won't start/stop correctly). stats keys on paneDef only; docker on the
-  // immutable container config. The app-global `clock` sub keys on
-  // `_liveActionStatus(model)` (a running stream job + action_status config) —
-  // NOT part of the layout slice — so it is folded into the gate below; without
-  // it the live status clock would never arm on job start / tear down on job end.
+  // won't start/stop correctly). stats keys on paneDef only. The app-global
+  // `clock` sub keys on `_liveActionStatus(model)` (a running stream job +
+  // action_status config) — NOT part of the layout slice — so it is folded into
+  // the gate below; without it the live status clock would never arm on job
+  // start / tear down on job end. docker's poll interval keys on the owner
+  // slice's `refreshMs` (the refresh control mutates it) — also NOT in the layout
+  // slice, so `dockerRefresh` is folded in too; without it a rate change would
+  // not re-arm the `interval` Sub.
   //   TRIGGER (not just key): this reconcile only RUNS from finalizeDispatch,
   // which on the root lane fires when arrange/nav OR the `model.jobs` ref
   // changed across the dispatch (loop.js applyMsg gate). A job's lifecycle
@@ -429,14 +441,15 @@ function reconcileSubscriptions(model) {
   const modes = (model && model.modes) || {};
   const jobsMode = !!modes.jobsMode, diagLogMode = !!modes.diagLogMode;
   const liveClock = _liveActionStatus(model);
+  const dockerRefresh = _dockerRefreshMs();
   const g = _lastSubGate;
   if (g && ls && g.arrange === ls.arrange && g.dims === ls.dims
         && g.viewMode === ls.viewMode && g.jobsMode === jobsMode && g.diagLogMode === diagLogMode
-        && g.liveClock === liveClock) {
+        && g.liveClock === liveClock && g.dockerRefresh === dockerRefresh) {
     return;   // desired set unchanged → live subs already correct
   }
   _lastSubGate = ls
-    ? { arrange: ls.arrange, dims: ls.dims, viewMode: ls.viewMode, jobsMode, diagLogMode, liveClock }
+    ? { arrange: ls.arrange, dims: ls.dims, viewMode: ls.viewMode, jobsMode, diagLogMode, liveClock, dockerRefresh }
     : null;
   const ctx = _subCtx();
   const desired = _desiredSubs(model);
