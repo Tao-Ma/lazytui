@@ -47,8 +47,23 @@ const {
 } = require('../api');
 const { getModel } = require('../../model/store');
 const mnav = require('../../leaves/wm/nav');
+const { clampRefreshMs, DEFAULT_REFRESH_MS } = require('../../leaves/render/monitor-control');
 
 const POLL_MS = 10000;
+
+// The container poll interval (ms) — seeded onto the service slice at init from
+// the `containers` panel's optional `refresh_ms:` config (clamped to the ladder;
+// missing/garbage → DEFAULT_REFRESH_MS, which equals the historical POLL_MS).
+// Pure (config in, ms out) so it's testable without the hub/global model. The
+// btop-style refresh control mutates the slice value from here (Phase 2+);
+// subscriptions() reads the live slice value, not POLL_MS.
+function configuredRefreshMs(config) {
+  const panels = (config && config.panels) || {};
+  for (const p of Object.values(panels)) {
+    if (p && p.type === 'containers' && p.refresh_ms != null) return clampRefreshMs(p.refresh_ms);
+  }
+  return DEFAULT_REFRESH_MS;
+}
 
 // --- slice access (the polled state lives in the Component slice) ---
 //
@@ -189,6 +204,10 @@ function init(paneId) {
   });
   return {
     status: {}, stats: {}, inFlight: false,
+    // Container poll cadence (ms). Host-global like status/stats — only the
+    // service owner's copy is read (via _slice()); a placed pane's is unused.
+    // Seeded from config; mutated live by the refresh control (Phase 2+).
+    refreshMs: configuredRefreshMs(getModel().config),
     // v0.6.1 Phase 3 — single-panel Component, nav stores the entry directly.
     nav: mnav.init(),
     // v0.6.4 Theme A Phase 5 Arc 3 — pane identity. The register-time
@@ -679,4 +698,5 @@ module.exports = {
   _parsePercent: parsePercent,
   _init: init,
   _update: update,
+  configuredRefreshMs,
 };

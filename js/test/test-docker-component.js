@@ -331,4 +331,23 @@ describe('[8] groupActions: logs spawns through a mouse-capable pager', () => {
   });
 });
 
+describe('[9] refresh_ms — poll cadence seeded from the containers panel config', () => {
+  const mc = require('../leaves/render/monitor-control');
+  it('defaults when no containers panel / no refresh_ms configured', () => {
+    eq(docker.configuredRefreshMs({}), mc.DEFAULT_REFRESH_MS);
+    eq(docker.configuredRefreshMs({ panels: { s: { type: 'stats' } } }), mc.DEFAULT_REFRESH_MS);
+    eq(docker.configuredRefreshMs({ panels: { c: { type: 'containers' } } }), mc.DEFAULT_REFRESH_MS);
+  });
+  it('reads the containers panel refresh_ms, clamped to the ladder bounds', () => {
+    eq(docker.configuredRefreshMs({ panels: { c: { type: 'containers', refresh_ms: 2000 } } }), 2000);
+    eq(docker.configuredRefreshMs({ panels: { c: { type: 'containers', refresh_ms: 10 } } }), mc.MIN_REFRESH_MS);
+    eq(docker.configuredRefreshMs({ panels: { c: { type: 'containers', refresh_ms: 999999 } } }), mc.MAX_REFRESH_MS);
+    eq(docker.configuredRefreshMs({ panels: { c: { type: 'containers', refresh_ms: 'nope' } } }), mc.DEFAULT_REFRESH_MS);
+  });
+  it('init seeds the service slice with the configured cadence', () => {
+    getModel().config = { panels: { c: { type: 'containers', refresh_ms: 5000 } } };
+    eq(docker._init().refreshMs, 5000);
+  });
+});
+
 report();
