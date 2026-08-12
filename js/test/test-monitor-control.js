@@ -27,6 +27,8 @@ describe('[monitor-control] ladder + clamp', () => {
     eq(mc.clampRefreshMs(undefined), mc.DEFAULT_REFRESH_MS);
     eq(mc.clampRefreshMs(NaN), mc.DEFAULT_REFRESH_MS);
     eq(mc.clampRefreshMs('nope'), mc.DEFAULT_REFRESH_MS);
+    eq(mc.clampRefreshMs(0), mc.DEFAULT_REFRESH_MS);    // ≤0 → default, NOT MIN (no 500ms poll storm)
+    eq(mc.clampRefreshMs(-5), mc.DEFAULT_REFRESH_MS);
   });
 });
 
@@ -92,6 +94,44 @@ describe('[monitor-control] refreshControlDir (hit predicate)', () => {
     eq(mc.refreshControlDir(16, 0, h), 0);    // label cell
     eq(mc.refreshControlDir(14, 1, h), 0);    // wrong row
     eq(mc.refreshControlDir(14, 0, null), 0); // no hits
+  });
+});
+
+// The phantom-click guard (review HIGH): renderPanel must draw the control on
+// EXACTLY the widths where refreshControlFits() says so — the predicate
+// chrome-hittest gates on. If they ever diverge, a click lands on the title/border
+// where no control drew (or a real control is un-clickable). Cross-check the REAL
+// renderPanel output against the predicate across every width.
+describe('[monitor-control] render ↔ refreshControlFits agreement (phantom-click guard)', () => {
+  const draw = require('../leaves/render/draw');
+  const { stripMarkup } = require('../leaves/text/ansi');
+  const GLYPH_W = 3;   // collapse [_] only (the control shows in normal mode)
+  it('renderPanel draws the control IFF refreshControlFits predicts it, w ∈ [8,60]', () => {
+    const { text, visibleW } = mc.refreshControlText(10000);   // "10s"
+    for (let w = 8; w <= 60; w++) {
+      const top = stripMarkup(draw.renderPanel({
+        width: w, height: 4, lines: [], title: 'Containers', hotkey: 'd',
+        chrome: { collapse: 'collapse' }, monitorControl: text,
+      }).split('\n')[0]);
+      const drawn = top.includes('- 10s +');
+      const predicted = mc.refreshControlFits(w - 2, GLYPH_W, visibleW);
+      eq(drawn, predicted, `w=${w}: drawn=${drawn} predicted=${predicted} top=${JSON.stringify(top)}`);
+    }
+  });
+  it('a longer title does NOT change presence (title-independent) — same first-shown width', () => {
+    const { text, visibleW } = mc.refreshControlText(10000);
+    const firstShown = (title) => {
+      for (let w = 8; w <= 60; w++) {
+        const top = stripMarkup(draw.renderPanel({ width: w, height: 4, lines: [], title, hotkey: 'd',
+          chrome: { collapse: 'collapse' }, monitorControl: text }).split('\n')[0]);
+        if (top.includes('- 10s +')) return w;
+      }
+      return null;
+    };
+    let predFirst = null;
+    for (let w = 8; w <= 60; w++) if (mc.refreshControlFits(w - 2, GLYPH_W, visibleW)) { predFirst = w; break; }
+    eq(firstShown('C'), predFirst);
+    eq(firstShown('a very long containers panel title'), predFirst);   // title length is irrelevant
   });
 });
 

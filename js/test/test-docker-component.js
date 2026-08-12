@@ -331,21 +331,28 @@ describe('[8] groupActions: logs spawns through a mouse-capable pager', () => {
   });
 });
 
-describe('[9] refresh_ms — poll cadence seeded from the containers panel config', () => {
+describe('[9] refresh_ms — poll cadence seeded from the RESOLVED pool config', () => {
   const mc = require('../leaves/render/monitor-control');
-  it('defaults when no containers panel / no refresh_ms configured', () => {
+  // Real parsed shape (verified against parser.parse): `panels:` folds into
+  // config.layout.pool[id] with plugin config nested under `.config` — there is
+  // NO top-level config.panels. (The old test pinned a `{panels}` fiction that
+  // parse() never produces, so the dead seam stayed green — review HIGH.)
+  const cfg = (pool) => ({ layout: { pool } });
+  it('defaults when no containers pane / no refresh_ms configured', () => {
     eq(docker.configuredRefreshMs({}), mc.DEFAULT_REFRESH_MS);
-    eq(docker.configuredRefreshMs({ panels: { s: { type: 'stats' } } }), mc.DEFAULT_REFRESH_MS);
-    eq(docker.configuredRefreshMs({ panels: { c: { type: 'containers' } } }), mc.DEFAULT_REFRESH_MS);
+    eq(docker.configuredRefreshMs(cfg({ s: { type: 'stats', config: {} } })), mc.DEFAULT_REFRESH_MS);
+    eq(docker.configuredRefreshMs(cfg({ c: { type: 'containers', config: {} } })), mc.DEFAULT_REFRESH_MS);
+    eq(docker.configuredRefreshMs(cfg({ c: { type: 'containers' } })), mc.DEFAULT_REFRESH_MS);   // no .config
   });
-  it('reads the containers panel refresh_ms, clamped to the ladder bounds', () => {
-    eq(docker.configuredRefreshMs({ panels: { c: { type: 'containers', refresh_ms: 2000 } } }), 2000);
-    eq(docker.configuredRefreshMs({ panels: { c: { type: 'containers', refresh_ms: 10 } } }), mc.MIN_REFRESH_MS);
-    eq(docker.configuredRefreshMs({ panels: { c: { type: 'containers', refresh_ms: 999999 } } }), mc.MAX_REFRESH_MS);
-    eq(docker.configuredRefreshMs({ panels: { c: { type: 'containers', refresh_ms: 'nope' } } }), mc.DEFAULT_REFRESH_MS);
+  it('reads the containers pane config.refresh_ms, clamped', () => {
+    eq(docker.configuredRefreshMs(cfg({ c: { type: 'containers', config: { refresh_ms: 2000 } } })), 2000);
+    eq(docker.configuredRefreshMs(cfg({ c: { type: 'containers', config: { refresh_ms: 10 } } })), mc.MIN_REFRESH_MS);
+    eq(docker.configuredRefreshMs(cfg({ c: { type: 'containers', config: { refresh_ms: 999999 } } })), mc.MAX_REFRESH_MS);
+    eq(docker.configuredRefreshMs(cfg({ c: { type: 'containers', config: { refresh_ms: 'nope' } } })), mc.DEFAULT_REFRESH_MS);
+    eq(docker.configuredRefreshMs(cfg({ c: { type: 'containers', config: { refresh_ms: 0 } } })), mc.DEFAULT_REFRESH_MS);   // ≤0 → default
   });
   it('init seeds the service slice with the configured cadence', () => {
-    getModel().config = { panels: { c: { type: 'containers', refresh_ms: 5000 } } };
+    getModel().config = cfg({ c: { type: 'containers', config: { refresh_ms: 5000 } } });
     eq(docker._init().refreshMs, 5000);
   });
 });
@@ -439,6 +446,16 @@ describe('[13] hitTestRefreshControl resolves clicks on a placed containers pane
     eq(hitTestRefreshControl(29, 1), null);          // wrong row
     ls.paneBounds = { 'c-hit': { x: 0, y: 0, w: 10, h: 8 } };   // too narrow → control not shown
     eq(hitTestRefreshControl(5, 0), null);
+  });
+  it('suppressed in free-config (the control is not painted there → no phantom click)', () => {
+    const ls = getInstanceSlice('layout');
+    ls.arrange = { columns: [{ panels: [{ type: 'containers', paneId: 'c-hit', title: 'C', columnIndex: 0 }] }], detailHeightPct: 60 };
+    ls.paneBounds = { 'c-hit': { x: 0, y: 0, w: 40, h: 8 } };
+    ls.freeConfig = null;
+    getModel().modes = { freeConfigMode: true };
+    api.dispatchMsg(api.wrap('docker', { type: 'set_refresh_ms', ms: 2000 }));
+    eq(hitTestRefreshControl(29, 0), null);   // would hit `-` in normal mode; suppressed here
+    getModel().modes = {};
   });
 });
 

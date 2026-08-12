@@ -27,6 +27,14 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   separator) — a status-over-time log. Best paired with `tab: true` so it
   accumulates in the action's own tab rather than the shared Transcript. See
   docs/DATAFLOW.md.
+- **Refresh-rate control on the docker pane** — a btop-style `- Ns +` control on
+  the containers pane's top border. Click `−`/`+` to step the container poll
+  cadence through a ladder (500ms · 1s · 2s · 5s · 10s · 30s); the interval Sub
+  re-arms live at the new rate. The starting cadence is the containers panel's
+  optional `refresh_ms:` config key (default 10s, the previous fixed poll); a bad
+  value degrades to the default. The cadence is host-global (one docker daemon),
+  so every docker pane shows the same value and a click on any of them steps the
+  shared rate. See docs/STATS.md (the stats history window scales with it).
 
 ## [0.6.15] — 2026-08-07
 

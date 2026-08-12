@@ -87,23 +87,23 @@ function hitTestCloseButton(mx, my) {
  *  border. Returns `{ dir }` (-1 faster / +1 slower) or null. The control is
  *  host-global (the docker owner's cadence), so a click on ANY monitor pane's
  *  control steps the shared rate — the caller dispatches `set_refresh_ms {dir}`
- *  to the owner. Geometry mirrors renderPanel: the control sits one gap-dash left
- *  of the leftmost chrome glyph (close in free-config, else collapse), so both
- *  derive positions from monitor-control.refreshControlBorderX0. */
+ *  to the owner.
+ *
+ *  Presence + geometry mirror renderPanel EXACTLY so a click can't land where no
+ *  control drew: docker suppresses the control in free-config (dropped there), so
+ *  it only ever shows in normal mode where the sole right glyph is `[_]`
+ *  (collapse) — glyph cluster width = GLYPH_W. Presence gates on the shared
+ *  `refreshControlFits` (the title-independent predicate renderPanel reserves
+ *  for); position is `refreshControlBorderX0(_collapseGlyphX0, visibleW)`. */
 function hitTestRefreshControl(mx, my) {
   const targets = _placedWidgetTargets();
   if (!targets) return null;
-  const freeConfig = !!((getModel().modes || {}).freeConfigMode);
+  if ((getModel().modes || {}).freeConfigMode) return null;   // control suppressed in free-config
   const { visibleW } = mc.refreshControlText(mc.clampRefreshMs((serviceSlice('docker') || {}).refreshMs));
   for (const { p, b } of targets) {
     if (!MONITOR_TYPES.has(p.type)) continue;
-    // Width gate: the control renders only when it fits beside the glyphs + some
-    // title (renderPanel degrades it first). Require room for control + gap +
-    // collapse glyph + a little title so we don't hit-test bare dash-fill.
-    if (b.w < visibleW + 1 + GLYPH_W + 4) continue;
-    const glyphX0 = freeConfig ? _closeGlyphX0(b) : _collapseGlyphX0(b);
-    const x0 = mc.refreshControlBorderX0(glyphX0, visibleW);
-    if (x0 <= b.x) continue;   // would collide with the left corner → not shown
+    if (!mc.refreshControlFits(b.w - 2, GLYPH_W, visibleW)) continue;   // same gate renderPanel uses
+    const x0 = mc.refreshControlBorderX0(_collapseGlyphX0(b), visibleW);
     const dir = mc.refreshControlDir(mx, my, mc.refreshControlHits(x0, b.y, visibleW));
     if (dir) return { dir };
   }

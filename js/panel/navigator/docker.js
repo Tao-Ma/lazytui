@@ -55,10 +55,16 @@ const { clampRefreshMs, stepRefreshMs, refreshControlText, DEFAULT_REFRESH_MS } 
 // Pure (config in, ms out) so it's testable without the hub/global model. The
 // btop-style refresh control mutates the slice value from here (Phase 2+);
 // subscriptions() reads the live slice value, not POLL_MS.
+//
+// Reads the RESOLVED pool: parse() folds `panels:` into `config.layout.pool[id]`
+// with each pane's plugin config nested under `.config` (there is no top-level
+// `config.panels`), so `refresh_ms` lives at `layout.pool[id].config.refresh_ms`.
 function configuredRefreshMs(config) {
-  const panels = (config && config.panels) || {};
-  for (const p of Object.values(panels)) {
-    if (p && p.type === 'containers' && p.refresh_ms != null) return clampRefreshMs(p.refresh_ms);
+  const pool = (config && config.layout && config.layout.pool) || {};
+  for (const p of Object.values(pool)) {
+    if (p && p.type === 'containers' && p.config && p.config.refresh_ms != null) {
+      return clampRefreshMs(p.config.refresh_ms);
+    }
   }
   return DEFAULT_REFRESH_MS;
 }
@@ -279,7 +285,7 @@ function update(msg, slice) {
     }, [{ type: 'render' }]];
   }
   if (msg.type === 'set_refresh_ms') {
-    // Refresh-rate control (the `- Ns +` widget / +/- keys): step the owner's
+    // Refresh-rate control (the `- Ns +` widget): step the owner's
     // poll cadence. `dir` ±1 walks the ladder; `ms` sets it directly. The changed
     // slice.refreshMs re-arms the `interval` Sub — reconcileSubscriptions keys on
     // it (app/state.js) and the interval subKind keys on `${id}:${ms}`, so a new
@@ -548,8 +554,10 @@ function render(panel, width, height, _slice, opts) {
     chrome: opts && opts.chrome,
     // btop-style refresh-rate control on the top border (Phase 3). The cadence
     // is host-global (the service owner's refreshMs), so every docker pane shows
-    // the same value; a click on any pane's -/+ steps the shared rate.
-    monitorControl: refreshControlText(_refreshMs()).text,
+    // the same value; a click on any pane's -/+ steps the shared rate. Suppressed
+    // in free-config: that mode drops non-`layout` wraps, so the click would be
+    // inert — don't paint a dead affordance (chrome-hittest mirrors this).
+    monitorControl: (m.modes && m.modes.freeConfigMode) ? null : refreshControlText(_refreshMs()).text,
   });
 }
 

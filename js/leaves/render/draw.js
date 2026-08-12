@@ -128,6 +128,17 @@ function renderPanel({
   const wantRightCollapse = chrome && chrome.collapse;
   const wantRightClose    = chrome && chrome.close;
   if (chrome && (wantLeftTrigger || wantRightCollapse || wantRightClose)) {
+    // Right cluster first. Monitor refresh control (`- Ns +`, opt-in) sits one
+    // gap-dash LEFT of the glyphs (right-anchored), matching
+    // monitor-control.refreshControlBorderX0 that panel/chrome-hittest hit-tests.
+    let rightPart = '';
+    if (wantRightClose) rightPart += _closeGlyphMarkup(focused, fc);
+    if (wantRightClose && wantRightCollapse) rightPart += b.h;
+    if (wantRightCollapse) rightPart += _collapseGlyphMarkup(chrome.collapse, focused, fc);
+    if (monitorControl) rightPart = `${monitorControl}${b.h}${rightPart}`;
+    rightPart += b.tr;
+    const rightVis = visibleLen(rightPart);
+
     let leftPart = `${b.tl}${b.h}`;
     if (hotkey) leftPart += `(${hotkey})`;
     if (wantLeftTrigger) {
@@ -137,28 +148,23 @@ function renderPanel({
       leftPart += _tabTriggerMarkup(chrome.tabTrigger, focused, fc);
     }
     if (title) leftPart += `${b.h}${title}`;
-    leftPart = truncate(leftPart, innerW + 2 - 2);  // leave space for ╮ on right
-
-    let rightPart = '';
-    if (wantRightClose) rightPart += _closeGlyphMarkup(focused, fc);
-    if (wantRightClose && wantRightCollapse) rightPart += b.h;
-    if (wantRightCollapse) rightPart += _collapseGlyphMarkup(chrome.collapse, focused, fc);
-    rightPart += b.tr;
+    // With a monitor control, reserve the WHOLE right cluster (+ one separator
+    // dash) so the TITLE truncates to fit it — the control's presence is then
+    // title-INDEPENDENT (renders iff `╭─` + a dash + the cluster fit), which
+    // monitor-control.refreshControlFits mirrors for the hit-test so a click can
+    // never land where no control drew. Without a control, the pre-P4 behavior:
+    // the title may use the full width and the whole chrome row drops if it and
+    // the glyphs don't fit.
+    const leftCap = monitorControl ? (innerW + 2 - rightVis - 1) : (innerW + 2 - 2);
+    leftPart = truncate(leftPart, Math.max(0, leftCap));
 
     const leftVis  = visibleLen(leftPart);
-    // Monitor refresh control (`- Ns +`), opt-in — one gap-dash left of the glyph
-    // cluster (right-anchored), matching monitor-control.refreshControlBorderX0
-    // that panel/chrome-hittest hit-tests against. It degrades FIRST: added only
-    // if it fits without forcing the chrome row to drop, so the glyphs stay
-    // rendered-and-clickable even when the control can't.
-    if (monitorControl) {
-      const withCtl = `${monitorControl}${b.h}${rightPart}`;
-      if ((innerW + 2) - leftVis - visibleLen(withCtl) >= 1) rightPart = withCtl;
-    }
-    const rightVis = visibleLen(rightPart);
     const midFill = (innerW + 2) - leftVis - rightVis;
-    if (midFill >= 1) {
-      top = wrapColor(fc, leftPart + b.h.repeat(midFill) + rightPart);
+    // Monitor control: presence gates on `leftCap >= 2` (room for `╭─`), which
+    // guarantees midFill >= 1. Otherwise the pre-P4 `midFill >= 1` gate.
+    const fits = monitorControl ? (leftCap >= 2) : (midFill >= 1);
+    if (fits) {
+      top = wrapColor(fc, leftPart + b.h.repeat(Math.max(1, midFill)) + rightPart);
     } else {
       // Chrome + title doesn't fit. Drop chrome; fall back to plain
       // border so the title at least survives.

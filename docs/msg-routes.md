@@ -738,10 +738,11 @@ rule across all their effects: **route async results to the ORIGINATING
 `paneId`** (`host.wrap(eff.paneId || kind, …)`), never the kind's primary — else
 multi-instance panes clobber each other (the "collapse-to-primary footgun").
 
-**docker (`kind: 'docker'`)** — `slice.{status, stats, inFlight}`. The container
-poll is a declared `interval` Sub and `docker events` a `process-stream` Sub
-(FIX-3 Phase 4/5 — the `started` flag + self-re-arm are gone); `augmentMsg`
-threads container `items`.
+**docker (`kind: 'docker'`)** — `slice.{status, stats, inFlight, refreshMs}`. The
+container poll is a declared `interval` Sub (its `ms` = the owner's `refreshMs`,
+config-seeded from the containers panel's `refresh_ms:` and stepped by the refresh
+control) and `docker events` a `process-stream` Sub (FIX-3 Phase 4/5 — the
+`started` flag + self-re-arm are gone); `augmentMsg` threads container `items`.
 
 | Msg | Writes | Emits | Purity |
 |---|---|---|---|
@@ -749,6 +750,7 @@ threads container `items`.
 | `key{focusKind,items}` | — | `i`→`dockerExec{inspect}` · `t`→`dockerExec{logs}` · `s`→`dockerShell` | shell² |
 | `refresh` / `dockerPoll` | — | `dockerFetch` (inFlight-guarded) | ✓ |
 | `dockerResult{status,stats}` | `status`, `stats`, `inFlight→false` | `render` | ✓ |
+| `set_refresh_ms{dir\|ms}` | `refreshMs` (owner-only; ladder step or clamp) | `render` | ✓ — re-arms the `interval` Sub (keyed `${id}:${ms}`); the sub-gate keys on `dockerRefresh` (state.js). No-op at a ladder end returns the same slice ref |
 
 **files (`kind: 'files'` + `file-browser`)** — `slice.browser` (per-pane dir
 browser). Multi-panelType. `augmentMsg` threads `filesModel` (pane def + declared

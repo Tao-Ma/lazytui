@@ -34,9 +34,10 @@ const MAX_REFRESH_MS = REFRESH_LADDER[REFRESH_LADDER.length - 1];
 const DEFAULT_REFRESH_MS = 10000;
 
 /** Clamp a (possibly config-supplied) interval to [MIN, MAX]. Non-finite /
- *  missing → DEFAULT (never-brick: a bad config value must not wedge polling). */
+ *  missing / non-positive → DEFAULT (never-brick: a garbage or `0`/negative
+ *  config value must not wedge polling into a 500ms `docker inspect` storm). */
 function clampRefreshMs(ms) {
-  if (!Number.isFinite(ms)) return DEFAULT_REFRESH_MS;
+  if (!Number.isFinite(ms) || ms <= 0) return DEFAULT_REFRESH_MS;
   return Math.min(MAX_REFRESH_MS, Math.max(MIN_REFRESH_MS, Math.round(ms)));
 }
 
@@ -100,6 +101,19 @@ function refreshControlBorderX0(glyphX0, visibleW) {
   return glyphX0 - 1 - visibleW;
 }
 
+/** Whether the control is drawn on the top border — the SINGLE source both
+ *  renderPanel and panel/chrome-hittest gate on, so a click can never land where
+ *  no control was drawn. TITLE-INDEPENDENT by design: renderPanel reserves the
+ *  full right cluster (control + gap + glyphs + corner) and truncates the TITLE
+ *  to fit it, so presence depends only on pane width + cluster width — which the
+ *  hit-test also knows. `innerW` = pane width − 2; `glyphClusterW` = the chrome
+ *  glyphs' visible width (a `[_]` = 3; add `[X] ` = 4 more in free-config).
+ *  Renders iff there's room for `╭─` + one separator dash + the right cluster. */
+function refreshControlFits(innerW, glyphClusterW, visibleW) {
+  const rightVis = visibleW + 1 + glyphClusterW + 1;   // control + gap + glyphs + corner
+  return innerW >= rightVis + 1;                        // + one separator dash before the cluster
+}
+
 /** Pure hit predicate over a `{ minus, plus }` hit-rect pair (from
  *  refreshControlHits). Returns -1 (`-`, faster), +1 (`+`, slower), or 0 (miss).
  *  null → miss. */
@@ -114,5 +128,5 @@ function refreshControlDir(mx, my, hits) {
 module.exports = {
   REFRESH_LADDER, MIN_REFRESH_MS, MAX_REFRESH_MS, DEFAULT_REFRESH_MS,
   clampRefreshMs, stepRefreshMs, formatRefreshMs,
-  refreshControlText, refreshControlHits, refreshControlBorderX0, refreshControlDir,
+  refreshControlText, refreshControlHits, refreshControlBorderX0, refreshControlFits, refreshControlDir,
 };

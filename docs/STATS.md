@@ -94,7 +94,7 @@ panels:
 | `topic`       | yes      | —                                      | Hub topic to subscribe. Must have a registered schema. |
 | `select_from` | yes      | —                                      | Panel type whose focused row is the topic's row key. |
 | `metrics`     | no       | all `percent` / `bytes` schema columns | Columns to graph, in order. |
-| `window`      | no       | `40`                                   | Samples retained. With 10s producer poll → ~7 min of history. |
+| `window`      | no       | `40`                                   | Samples retained. Window span = `window` × the producer's sample cadence. For the `docker.stats` topic that cadence is the `containers` pane's `refresh_ms:` (default 10s → ~7 min of history), adjustable live via the `- Ns +` control on that pane's top border. |
 | `graph`       | no       | `braille`                              | Glyph style. Braille packs 2 samples/column at 4 dot-rows/cell (2× the horizontal resolution of blocks); set `blocks` if your font's braille coverage is poor. A plain config choice — never inferred from color depth (docs/truecolor.md P4). |
 
 **Color + meter (truecolor arc Phase 2, docs/truecolor.md).** Graph
