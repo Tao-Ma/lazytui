@@ -550,10 +550,19 @@ function handleMouse(kind, x, y) {
   // and the in-grid modes (filter/search/prefix/listSelect) still let
   // chrome clicks through; only input-owning modes block them.
   if (kind === 'press' && !suppressesChromeClicks(model.modes)) {
-    const { hitTestCollapseButton, hitTestCloseButton } = require('../../panel/chrome-hittest');
+    const { hitTestCollapseButton, hitTestCloseButton, hitTestRefreshControl } = require('../../panel/chrome-hittest');
     const collapseId = hitTestCollapseButton(mx, my);
     if (collapseId) {
       dispatchMsg(wrap('layout', { type: 'panel_collapse_toggle', id: collapseId }));
+      render();
+      return;
+    }
+    // Monitor refresh control (`- Ns +`) on a monitor pane's top border. Host-
+    // global cadence, so the Msg routes to the docker owner regardless of which
+    // pane was clicked (wrap('docker') → primary; the owner-only arm handles it).
+    const refreshHit = hitTestRefreshControl(mx, my);
+    if (refreshHit) {
+      dispatchMsg(wrap('docker', { type: 'set_refresh_ms', dir: refreshHit.dir }));
       render();
       return;
     }

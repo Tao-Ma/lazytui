@@ -15,9 +15,15 @@
  */
 'use strict';
 
-const { getInstanceSlice } = require('./api');
+const { getInstanceSlice, serviceSlice } = require('./api');
+const { getModel } = require('../model/store');
 const mpool = require('../leaves/wm/pool');
 const { visibleBoundsFor } = require('../leaves/wm/geometry');
+const mc = require('../leaves/render/monitor-control');
+
+// Pane types that carry a top-border refresh control (Phase 3). Docker-first;
+// stats-graph would join here when it adopts the control.
+const MONITOR_TYPES = new Set(['containers']);
 
 const GLYPH_W = 3;
 const COLLAPSE_MIN_W = 9;
@@ -77,4 +83,31 @@ function hitTestCloseButton(mx, my) {
   return null;
 }
 
-module.exports = { hitTestCollapseButton, hitTestCloseButton };
+/** Hit-test the monitor refresh control (`- Ns +`) on a monitor pane's top
+ *  border. Returns `{ dir }` (-1 faster / +1 slower) or null. The control is
+ *  host-global (the docker owner's cadence), so a click on ANY monitor pane's
+ *  control steps the shared rate — the caller dispatches `set_refresh_ms {dir}`
+ *  to the owner. Geometry mirrors renderPanel: the control sits one gap-dash left
+ *  of the leftmost chrome glyph (close in free-config, else collapse), so both
+ *  derive positions from monitor-control.refreshControlBorderX0. */
+function hitTestRefreshControl(mx, my) {
+  const targets = _placedWidgetTargets();
+  if (!targets) return null;
+  const freeConfig = !!((getModel().modes || {}).freeConfigMode);
+  const { visibleW } = mc.refreshControlText(mc.clampRefreshMs((serviceSlice('docker') || {}).refreshMs));
+  for (const { p, b } of targets) {
+    if (!MONITOR_TYPES.has(p.type)) continue;
+    // Width gate: the control renders only when it fits beside the glyphs + some
+    // title (renderPanel degrades it first). Require room for control + gap +
+    // collapse glyph + a little title so we don't hit-test bare dash-fill.
+    if (b.w < visibleW + 1 + GLYPH_W + 4) continue;
+    const glyphX0 = freeConfig ? _closeGlyphX0(b) : _collapseGlyphX0(b);
+    const x0 = mc.refreshControlBorderX0(glyphX0, visibleW);
+    if (x0 <= b.x) continue;   // would collide with the left corner → not shown
+    const dir = mc.refreshControlDir(mx, my, mc.refreshControlHits(x0, b.y, visibleW));
+    if (dir) return { dir };
+  }
+  return null;
+}
+
+module.exports = { hitTestCollapseButton, hitTestCloseButton, hitTestRefreshControl };

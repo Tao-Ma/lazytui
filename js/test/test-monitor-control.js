@@ -60,41 +60,38 @@ describe('[monitor-control] formatRefreshMs', () => {
   });
 });
 
-describe('[monitor-control] refreshControlLayout', () => {
-  const inner = { x: 0, y: 0, w: 20, h: 5 };
-  it('right-aligns on the top inner row with correct hit rects', () => {
-    const l = mc.refreshControlLayout(inner, 2000);       // label "2s" → visibleW 6
-    eq(l.visibleW, 6);
-    eq(l.x, 14);                                          // 0 + 20 - 6
-    eq(l.y, 0);
-    eq(l.text, '[dim]-[/] 2s [dim]+[/]');
-    eq(l.hits.minus, { x0: 14, x1: 15, y: 0 });           // glyph + inner space
-    eq(l.hits.plus,  { x0: 18, x1: 19, y: 0 });
+describe('[monitor-control] refreshControlText', () => {
+  it('markup + visible width for the label', () => {
+    eq(mc.refreshControlText(2000), { text: '[dim]-[/] 2s [dim]+[/]', visibleW: 6 });   // "2s" + 4
+    eq(mc.refreshControlText(10000).visibleW, 7);                                        // "10s" (3) + 4
+    eq(mc.refreshControlText(500).visibleW, 9);                                          // "500ms" (5) + 4
   });
-  it('hit rects never overlap the label span', () => {
-    const l = mc.refreshControlLayout(inner, 10000);      // "10s" → visibleW 7
-    assert(l.hits.minus.x1 < l.hits.plus.x0, 'minus fully left of plus');
-    // label occupies the cells strictly between the two 2-cell buttons
-    assert(l.hits.plus.x0 - l.hits.minus.x1 > 1, 'a label gap exists between buttons');
+});
+
+describe('[monitor-control] refreshControlHits + border x0', () => {
+  it('two 2-cell buttons that never overlap the label span', () => {
+    const h = mc.refreshControlHits(14, 0, 6);
+    eq(h.minus, { x0: 14, x1: 15, y: 0 });
+    eq(h.plus,  { x0: 18, x1: 19, y: 0 });
+    assert(h.minus.x1 < h.plus.x0, 'minus fully left of plus (label gap between)');
   });
-  it('returns null when it does not fit', () => {
-    eq(mc.refreshControlLayout({ x: 0, y: 0, w: 5, h: 5 }, 2000), null);   // w 5 < visibleW 6
-    eq(mc.refreshControlLayout({ x: 0, y: 0, w: 20, h: 0 }, 2000), null);  // zero height
-    eq(mc.refreshControlLayout(null, 2000), null);
+  it('the border x0 is one gap-dash left of the leftmost glyph', () => {
+    eq(mc.refreshControlBorderX0(28, 6), 21);   // 28 - 1 - 6
   });
 });
 
 describe('[monitor-control] refreshControlDir (hit predicate)', () => {
-  const l = mc.refreshControlLayout({ x: 0, y: 0, w: 20, h: 5 }, 2000);
+  const h = mc.refreshControlHits(14, 0, 6);
   it('maps a click on each button to its direction', () => {
-    eq(mc.refreshControlDir(14, 0, l), -1);   // on `-`
-    eq(mc.refreshControlDir(15, 0, l), -1);   // the button's second cell
-    eq(mc.refreshControlDir(19, 0, l), 1);    // on `+`
+    eq(mc.refreshControlDir(14, 0, h), -1);   // on `-`
+    eq(mc.refreshControlDir(15, 0, h), -1);   // the button's second cell
+    eq(mc.refreshControlDir(18, 0, h), 1);    // on `+`
+    eq(mc.refreshControlDir(19, 0, h), 1);
   });
-  it('a click on the label or off-row or missing layout is a miss', () => {
-    eq(mc.refreshControlDir(16, 0, l), 0);    // label cell
-    eq(mc.refreshControlDir(14, 1, l), 0);    // wrong row
-    eq(mc.refreshControlDir(14, 0, null), 0); // no control laid out
+  it('a click on the label / off-row / missing hits is a miss', () => {
+    eq(mc.refreshControlDir(16, 0, h), 0);    // label cell
+    eq(mc.refreshControlDir(14, 1, h), 0);    // wrong row
+    eq(mc.refreshControlDir(14, 0, null), 0); // no hits
   });
 });
 

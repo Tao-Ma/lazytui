@@ -404,4 +404,42 @@ describe('[11] refreshMs drives subscriptions() + is a reconcile-gate input', ()
   });
 });
 
+describe('[12] render draws the refresh control on the top border', () => {
+  const { stripMarkup } = require('../leaves/text/ansi');
+  const drender = docker.panelTypes.containers.render;
+  it('shows `- Ns +` on the top border when chrome is present and it fits', () => {
+    setup(['c1', 'c2']);
+    api.dispatchMsg(api.wrap('docker', { type: 'set_refresh_ms', ms: 2000 }));
+    const panel = { paneId: 'containers', title: 'Containers', hotkey: '1' };
+    const out = drender(panel, 44, 8, null, { focused: true, chrome: { collapse: 'expand' } });
+    const top = stripMarkup(out.split('\n')[0]);
+    assert(top.includes('- 2s +'), `control on top border: ${JSON.stringify(top)}`);
+  });
+  it('reflects the current cadence (5s after a step)', () => {
+    setup(['c1']);
+    api.dispatchMsg(api.wrap('docker', { type: 'set_refresh_ms', ms: 5000 }));
+    const panel = { paneId: 'containers', title: 'Containers', hotkey: '1' };
+    const top = stripMarkup(drender(panel, 44, 8, null, { focused: true, chrome: { collapse: 'expand' } }).split('\n')[0]);
+    assert(top.includes('- 5s +'), `control shows 5s: ${JSON.stringify(top)}`);
+  });
+});
+
+describe('[13] hitTestRefreshControl resolves clicks on a placed containers pane', () => {
+  const { hitTestRefreshControl } = require('../panel/chrome-hittest');
+  it('maps -/+ cells to a direction; label / off-row / non-monitor miss', () => {
+    const ls = getInstanceSlice('layout');
+    ls.arrange = { columns: [{ panels: [{ type: 'containers', paneId: 'c-hit', title: 'C', columnIndex: 0 }] }], detailHeightPct: 60 };
+    ls.paneBounds = { 'c-hit': { x: 0, y: 0, w: 40, h: 8 } };   // collapse [_] x0 = 36
+    ls.freeConfig = null;
+    getModel().modes = {};                                       // not free-config → collapse is leftmost glyph
+    api.dispatchMsg(api.wrap('docker', { type: 'set_refresh_ms', ms: 2000 }));  // "2s" → visibleW 6 → control x0 = 36-1-6 = 29
+    eq(hitTestRefreshControl(29, 0), { dir: -1 });   // on `-`
+    eq(hitTestRefreshControl(34, 0), { dir: 1 });    // on `+` (x0+visibleW-1)
+    eq(hitTestRefreshControl(31, 0), null);          // label cell
+    eq(hitTestRefreshControl(29, 1), null);          // wrong row
+    ls.paneBounds = { 'c-hit': { x: 0, y: 0, w: 10, h: 8 } };   // too narrow → control not shown
+    eq(hitTestRefreshControl(5, 0), null);
+  });
+});
+
 report();

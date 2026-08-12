@@ -72,49 +72,47 @@ function formatRefreshMs(ms) {
 const _PAD_CELLS = 4;
 
 /**
- * Lay the control out, right-aligned on the TOP inner row of a monitor pane.
- *   inner      — the pane's inner content bounds { x, y, w, h } (NOT the border).
- *   refreshMs  — the current interval.
- * Returns null when it doesn't fit (inner too narrow / zero height) so the
- * caller simply omits it. Otherwise:
- *   { text, visibleW, x, y, hits: { minus:{x0,x1,y}, plus:{x0,x1,y} } }
- * `text` is the markup to draw at (x, y); the `-`/`+` glyphs are dimmed. Each
- * hit target is 2 cells (glyph + the space beside it, toward the label) so it's
- * comfortably clickable; the ranges are inclusive and never overlap the label.
+ * The control markup + its visible cell width. `text` renders as `- Ns +` with
+ * the `-`/`+` dimmed; the caller places it (docker draws it on the top border via
+ * renderPanel's `monitorControl` slot). Width = label + the `- ` / ` +` padding.
  */
-function refreshControlLayout(inner, refreshMs) {
-  if (!inner || !(inner.w > 0) || !(inner.h > 0)) return null;
+function refreshControlText(refreshMs) {
   const label = formatRefreshMs(refreshMs);
-  const visibleW = visibleLen(label) + _PAD_CELLS;
-  if (inner.w < visibleW) return null;
-  const x = inner.x + inner.w - visibleW;   // right-aligned
-  const y = inner.y;                         // top inner row
-  const text = `[dim]-[/] ${label} [dim]+[/]`;
+  return { text: `[dim]-[/] ${label} [dim]+[/]`, visibleW: visibleLen(label) + _PAD_CELLS };
+}
+
+/** The `-` / `+` button cell rects, given the control's leftmost cell (x0) and
+ *  row (y). Each target is 2 cells (glyph + the space beside it, toward the
+ *  label) so it's comfortably clickable; inclusive ranges, never overlapping the
+ *  label. Both the hit-test and any renderer derive positions from here. */
+function refreshControlHits(x0, y, visibleW) {
   return {
-    text,
-    visibleW,
-    x,
-    y,
-    hits: {
-      minus: { x0: x, x1: x + 1, y },
-      plus:  { x0: x + visibleW - 2, x1: x + visibleW - 1, y },
-    },
+    minus: { x0, x1: x0 + 1, y },
+    plus:  { x0: x0 + visibleW - 2, x1: x0 + visibleW - 1, y },
   };
 }
 
-/** Pure hit predicate: which button (if any) is at (mx, my) for a laid-out
- *  control. Returns -1 (`-`, faster), +1 (`+`, slower), or 0 (miss). Consumed by
- *  panel/chrome-hittest (Phase 3). null layout → miss. */
-function refreshControlDir(mx, my, layout) {
-  if (!layout) return 0;
+/** The control's leftmost cell on a pane's TOP BORDER: one gap dash to the left
+ *  of the leftmost chrome glyph (`glyphX0`). renderPanel places it by the same
+ *  construction — prepend `control + one dash` to the right-anchored glyph
+ *  cluster — so render and hit-test agree without a shared string. */
+function refreshControlBorderX0(glyphX0, visibleW) {
+  return glyphX0 - 1 - visibleW;
+}
+
+/** Pure hit predicate over a `{ minus, plus }` hit-rect pair (from
+ *  refreshControlHits). Returns -1 (`-`, faster), +1 (`+`, slower), or 0 (miss).
+ *  null → miss. */
+function refreshControlDir(mx, my, hits) {
+  if (!hits) return 0;
   const on = (r) => my === r.y && mx >= r.x0 && mx <= r.x1;
-  if (on(layout.hits.minus)) return -1;
-  if (on(layout.hits.plus)) return 1;
+  if (on(hits.minus)) return -1;
+  if (on(hits.plus)) return 1;
   return 0;
 }
 
 module.exports = {
   REFRESH_LADDER, MIN_REFRESH_MS, MAX_REFRESH_MS, DEFAULT_REFRESH_MS,
   clampRefreshMs, stepRefreshMs, formatRefreshMs,
-  refreshControlLayout, refreshControlDir,
+  refreshControlText, refreshControlHits, refreshControlBorderX0, refreshControlDir,
 };

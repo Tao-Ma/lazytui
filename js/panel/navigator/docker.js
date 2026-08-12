@@ -47,7 +47,7 @@ const {
 } = require('../api');
 const { getModel } = require('../../model/store');
 const mnav = require('../../leaves/wm/nav');
-const { clampRefreshMs, stepRefreshMs, DEFAULT_REFRESH_MS } = require('../../leaves/render/monitor-control');
+const { clampRefreshMs, stepRefreshMs, refreshControlText, DEFAULT_REFRESH_MS } = require('../../leaves/render/monitor-control');
 
 // The container poll interval (ms) — seeded onto the service slice at init from
 // the `containers` panel's optional `refresh_ms:` config (clamped to the ladder;
@@ -76,6 +76,10 @@ function configuredRefreshMs(config) {
 function _slice()        { return serviceSlice('docker') || { status: {}, stats: {} }; }
 function _status(name)   { return _slice().status[name] || '?'; }
 function _stats(name)    { return _slice().stats[name] || null; }
+// The live host-global poll cadence (clamped). A module helper so callers whose
+// scope shadows `_slice` (render's 4th param) can still read it, and so render +
+// subscriptions() share one source.
+function _refreshMs()    { return clampRefreshMs(_slice().refreshMs); }
 
 // --- app-global reads (explicit, per the Component contract) ---
 
@@ -542,6 +546,10 @@ function render(panel, width, height, _slice, opts) {
     count: containers.length ? [sel + 1, containers.length] : null,
     scrollOffset: getScroll(panel.paneId),
     chrome: opts && opts.chrome,
+    // btop-style refresh-rate control on the top border (Phase 3). The cadence
+    // is host-global (the service owner's refreshMs), so every docker pane shows
+    // the same value; a click on any pane's -/+ steps the shared rate.
+    monitorControl: refreshControlText(_refreshMs()).text,
   });
 }
 
@@ -631,7 +639,7 @@ function subscriptions(/* paneDef, model */) {
   const subs = [{
     kind: 'interval',
     id: 'docker-poll',
-    ms: clampRefreshMs(_slice().refreshMs),
+    ms: _refreshMs(),
     onTick: (ctx) => ctx.dispatch(ctx.wrap('docker', { type: 'dockerPoll' })),
   }];
   // FIX-3 Phase 5 — the long-lived `docker events` watcher is a `process-stream`

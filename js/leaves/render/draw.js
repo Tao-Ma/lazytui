@@ -98,7 +98,7 @@ function truncate(text, maxWidth) {
 function renderPanel({
   width, height, lines = [], title = '', hotkey = '',
   focused = false, count = null, scrollOffset = 0, color = null,
-  panelType = null, chrome = null, windowed = false,
+  panelType = null, chrome = null, windowed = false, monitorControl = null,
 }) {
   const t = theme();
   const b = BORDER;
@@ -146,6 +146,15 @@ function renderPanel({
     rightPart += b.tr;
 
     const leftVis  = visibleLen(leftPart);
+    // Monitor refresh control (`- Ns +`), opt-in — one gap-dash left of the glyph
+    // cluster (right-anchored), matching monitor-control.refreshControlBorderX0
+    // that panel/chrome-hittest hit-tests against. It degrades FIRST: added only
+    // if it fits without forcing the chrome row to drop, so the glyphs stay
+    // rendered-and-clickable even when the control can't.
+    if (monitorControl) {
+      const withCtl = `${monitorControl}${b.h}${rightPart}`;
+      if ((innerW + 2) - leftVis - visibleLen(withCtl) >= 1) rightPart = withCtl;
+    }
     const rightVis = visibleLen(rightPart);
     const midFill = (innerW + 2) - leftVis - rightVis;
     if (midFill >= 1) {
