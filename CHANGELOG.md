@@ -6,6 +6,8 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.16] — 2026-08-12
+
 ### Added
 
 - **Action status line** — a powerline-style, right-aligned status stamp at the
@@ -2842,7 +2844,8 @@ release tarballs. Full pre-squash development history is preserved
 on the internal gitea mirror under the `backup/main-history` branch
 and the `v0.1.0-pre-squash` tag.
 
-[Unreleased]: https://github.com/Tao-Ma/lazytui/compare/v0.6.15...HEAD
+[Unreleased]: https://github.com/Tao-Ma/lazytui/compare/v0.6.16...HEAD
+[0.6.16]: https://github.com/Tao-Ma/lazytui/compare/v0.6.15...v0.6.16
 [0.6.15]: https://github.com/Tao-Ma/lazytui/compare/v0.6.14...v0.6.15
 [0.6.14]: https://github.com/Tao-Ma/lazytui/compare/v0.6.13...v0.6.14
 [0.6.13]: https://github.com/Tao-Ma/lazytui/compare/v0.6.12...v0.6.13
