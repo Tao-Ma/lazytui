@@ -29,12 +29,15 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   docs/DATAFLOW.md.
 - **Refresh-rate control on the docker pane** — a btop-style `- Ns +` control on
   the containers pane's top border. Click `−`/`+` to step the container poll
-  cadence through a ladder (500ms · 1s · 2s · 5s · 10s · 30s); the interval Sub
-  re-arms live at the new rate. The starting cadence is the containers panel's
-  optional `refresh_ms:` config key (default 10s, the previous fixed poll); a bad
-  value degrades to the default. The cadence is host-global (one docker daemon),
-  so every docker pane shows the same value and a click on any of them steps the
-  shared rate. See docs/STATS.md (the stats history window scales with it).
+  cadence through a ladder (default `1s · 2s · 5s · 10s · 30s · 60s`, tuned for
+  docker's per-poll subprocess cost — no aggressive sub-second floor); the
+  interval Sub re-arms live at the new rate. Two optional `containers` panel
+  config keys: `refresh_ms:` (starting cadence, default 10s — the previous fixed
+  poll) and `refresh_ladder:` (a custom list of step stops in ms, e.g. to poll
+  slower than 60s); bad values degrade to the defaults. The cadence is host-global
+  (one docker daemon), so every docker pane shows the same value and a click on
+  any of them steps the shared rate. See docs/STATS.md (the stats history window
+  scales with it).
 
 ## [0.6.15] — 2026-08-07
 

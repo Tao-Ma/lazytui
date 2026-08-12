@@ -59,6 +59,30 @@ describe('[monitor-control] formatRefreshMs', () => {
     eq(mc.formatRefreshMs(1500), '1.5s');
     eq(mc.formatRefreshMs(10000), '10s');
     eq(mc.formatRefreshMs(30000), '30s');
+    eq(mc.formatRefreshMs(60000), '60s');       // new ladder ceiling
+    eq(mc.formatRefreshMs(120000), '120s');     // a custom-ladder stop above 60s (formats as-given, no clamp)
+  });
+});
+
+describe('[monitor-control] configurable ladder', () => {
+  it('normalizeLadder sorts / dedupes / drops non-positive; garbage → default', () => {
+    eq(mc.normalizeLadder([5000, 2000, 1000]), [1000, 2000, 5000]);   // sorted
+    eq(mc.normalizeLadder([2000, 2000, 5000]), [2000, 5000]);         // deduped
+    eq(mc.normalizeLadder([3000, -3, 6000, 'x', 0]), [3000, 6000]);   // drop non-positive / non-finite
+    eq(mc.normalizeLadder('nope'), mc.REFRESH_LADDER);                // not an array → default
+    eq(mc.normalizeLadder([2000]), mc.REFRESH_LADDER);                // <2 usable stops → default
+    eq(mc.normalizeLadder(undefined), mc.REFRESH_LADDER);
+  });
+  it('clamp + step honor a custom ladder (incl. a lifted ceiling)', () => {
+    const L = [3000, 6000, 120000];
+    eq(mc.clampRefreshMs(1000, L), 3000);                   // below custom min
+    eq(mc.clampRefreshMs(999999, L), 120000);               // above custom max — 60s ceiling lifted
+    eq(mc.clampRefreshMs(undefined, L), mc.DEFAULT_REFRESH_MS);   // default 10s is in [3s,120s]
+    eq(mc.clampRefreshMs(undefined, [3000, 6000]), 6000);        // default above custom max → clamped
+    eq(mc.stepRefreshMs(3000, +1, L), 6000);
+    eq(mc.stepRefreshMs(6000, +1, L), 120000);              // extended ceiling honored
+    eq(mc.stepRefreshMs(120000, +1, L), 120000);            // clamp at custom max
+    eq(mc.stepRefreshMs(6000, -1, L), 3000);
   });
 });
 

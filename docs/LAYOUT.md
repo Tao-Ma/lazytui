@@ -42,7 +42,8 @@ panels:                # the pool — every panel keyed by id
   containers:
     type: containers
     title: Containers
-    refresh_ms: 5000   # optional: container poll cadence (default 10s), live-adjustable via the top-border `- Ns +` control
+    refresh_ms: 5000               # optional: starting poll cadence (default 10s), live-adjustable via the top-border `- Ns +` control
+    refresh_ladder: [2000, 10000, 60000, 300000]   # optional: custom `-`/`+` step stops in ms (default 1s·2s·5s·10s·30s·60s)
   groups:
     type: groups
   files:
@@ -186,7 +187,7 @@ on rows that get repainted while a glyph sits over them.
 | `[_]` | yellow | top-right of non-detail panels (4-cell gap left of `[X]` when both visible) | always (normal + free-config) | `panel_collapse_toggle` — collapses the panel to a single header row |
 | `[+]` | green | replaces `[_]` when the panel is already collapsed | always | toggle back to expanded |
 | `[≡]` | theme accent | top-left of **every** panel (immediately after the hotkey), v0.6.4 unified | shown per-pane when there's something to pick (a viewer with ≥2 tabs, any other pane with ≥2 pane rows); suppressed during drag, and siblings disable while the menu is open on one cell | opens the centered **pane-menu** — one projection-aware overlay (subsumes the former tab-list + pane-select dropdown) with a **Tabs** section (Info, Transcript, content tabs — content panes only) and a **Panes** section for swapping which pool entry occupies this slot (SWAP if picked is placed elsewhere, REPLACE if picked is hidden; half/full views place side-by-side viewers via `pane_menu_place`) |
-| `- Ns +` | dim `−`/`+`, theme border | **monitor panes only** (the `containers` pane), on the top border just left of `[_]` | normal mode (suppressed in free-config); when the pane is wide enough (else the title truncates to keep it) | `set_refresh_ms` — `−`/`+` step the container **poll cadence** through a ladder (500ms…30s). Host-global (one docker daemon) so every docker pane shows the same value. Starting cadence is the `containers` pane's `refresh_ms:` config (default 10s). See docs/STATS.md. |
+| `- Ns +` | dim `−`/`+`, theme border | **monitor panes only** (the `containers` pane), on the top border just left of `[_]` | normal mode (suppressed in free-config); when the pane is wide enough (else the title truncates to keep it) | `set_refresh_ms` — `−`/`+` step the container **poll cadence** through a ladder (default 1s…60s, tuned for docker's poll cost; override with `refresh_ladder:`). Host-global (one docker daemon) so every docker pane shows the same value. Starting cadence is the `containers` pane's `refresh_ms:` config (default 10s). See docs/STATS.md. |
 
 Detail's top row reads `╭─(o)[≡]─Detail─…─╮` — both the hotkey label
 and the pane-menu trigger are visible, the trigger's 3-cell width

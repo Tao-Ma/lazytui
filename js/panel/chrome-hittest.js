@@ -99,7 +99,8 @@ function hitTestRefreshControl(mx, my) {
   const targets = _placedWidgetTargets();
   if (!targets) return null;
   if ((getModel().modes || {}).freeConfigMode) return null;   // control suppressed in free-config
-  const { visibleW } = mc.refreshControlText(mc.clampRefreshMs((serviceSlice('docker') || {}).refreshMs));
+  const s = serviceSlice('docker') || {};
+  const { visibleW } = mc.refreshControlText(mc.clampRefreshMs(s.refreshMs, s.refreshLadder));
   for (const { p, b } of targets) {
     if (!MONITOR_TYPES.has(p.type)) continue;
     if (!mc.refreshControlFits(b.w - 2, GLYPH_W, visibleW)) continue;   // same gate renderPanel uses

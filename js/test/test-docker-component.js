@@ -351,9 +351,23 @@ describe('[9] refresh_ms — poll cadence seeded from the RESOLVED pool config',
     eq(docker.configuredRefreshMs(cfg({ c: { type: 'containers', config: { refresh_ms: 'nope' } } })), mc.DEFAULT_REFRESH_MS);
     eq(docker.configuredRefreshMs(cfg({ c: { type: 'containers', config: { refresh_ms: 0 } } })), mc.DEFAULT_REFRESH_MS);   // ≤0 → default
   });
-  it('init seeds the service slice with the configured cadence', () => {
-    getModel().config = cfg({ c: { type: 'containers', config: { refresh_ms: 5000 } } });
-    eq(docker._init().refreshMs, 5000);
+  it('configuredRefreshLadder reads refresh_ladder (normalized); default otherwise', () => {
+    eq(docker.configuredRefreshLadder({}), mc.REFRESH_LADDER);
+    eq(docker.configuredRefreshLadder(cfg({ c: { type: 'containers', config: {} } })), mc.REFRESH_LADDER);
+    eq(docker.configuredRefreshLadder(cfg({ c: { type: 'containers', config: { refresh_ladder: [5000, 2000, 60000] } } })),
+       [2000, 5000, 60000]);                                     // sorted
+    eq(docker.configuredRefreshLadder(cfg({ c: { type: 'containers', config: { refresh_ladder: 'bad' } } })), mc.REFRESH_LADDER);
+  });
+  it('refresh_ms is clamped into the CONFIGURED ladder', () => {
+    const L = { refresh_ladder: [3000, 6000, 120000] };
+    eq(docker.configuredRefreshMs(cfg({ c: { type: 'containers', config: { ...L, refresh_ms: 120000 } } })), 120000);  // 60s ceiling lifted
+    eq(docker.configuredRefreshMs(cfg({ c: { type: 'containers', config: { ...L, refresh_ms: 1000 } } })), 3000);      // clamped up to custom min
+  });
+  it('init seeds the service slice with the configured cadence + ladder', () => {
+    getModel().config = cfg({ c: { type: 'containers', config: { refresh_ms: 5000, refresh_ladder: [1000, 5000, 60000] } } });
+    const s = docker._init();
+    eq(s.refreshMs, 5000);
+    eq(s.refreshLadder, [1000, 5000, 60000]);
   });
 });
 
@@ -372,9 +386,10 @@ describe('[10] set_refresh_ms steps the owner poll cadence', () => {
     assert(r.slice === owner, 'unchanged slice returned by reference');
     eq(r.effects.length, 0, 'no render on a no-op');
   });
-  it('ms sets the cadence directly, clamped', () => {
-    const owner = { ...slice0(), refreshMs: 2000 };
-    eq(step({ type: 'set_refresh_ms', ms: 500 }, owner).slice.refreshMs, 500);
+  it('ms sets the cadence directly, clamped to the ladder', () => {
+    const owner = { ...slice0(), refreshMs: 2000 };   // no refreshLadder → default ladder
+    eq(step({ type: 'set_refresh_ms', ms: 5000 }, owner).slice.refreshMs, 5000);
+    eq(step({ type: 'set_refresh_ms', ms: 500 }, owner).slice.refreshMs, mc.MIN_REFRESH_MS);   // below floor → clamped
     eq(step({ type: 'set_refresh_ms', ms: 999999 }, owner).slice.refreshMs, mc.MAX_REFRESH_MS);
   });
   it('a placed pane (paneId set) ignores it — the cadence is host-global (owner only)', () => {

@@ -47,26 +47,31 @@ const {
 } = require('../api');
 const { getModel } = require('../../model/store');
 const mnav = require('../../leaves/wm/nav');
-const { clampRefreshMs, stepRefreshMs, refreshControlText, DEFAULT_REFRESH_MS } = require('../../leaves/render/monitor-control');
+const { clampRefreshMs, stepRefreshMs, normalizeLadder, refreshControlText } = require('../../leaves/render/monitor-control');
 
-// The container poll interval (ms) — seeded onto the service slice at init from
-// the `containers` panel's optional `refresh_ms:` config (clamped to the ladder;
-// missing/garbage → DEFAULT_REFRESH_MS, which equals the historical POLL_MS).
-// Pure (config in, ms out) so it's testable without the hub/global model. The
-// btop-style refresh control mutates the slice value from here (Phase 2+);
-// subscriptions() reads the live slice value, not POLL_MS.
-//
-// Reads the RESOLVED pool: parse() folds `panels:` into `config.layout.pool[id]`
-// with each pane's plugin config nested under `.config` (there is no top-level
-// `config.panels`), so `refresh_ms` lives at `layout.pool[id].config.refresh_ms`.
-function configuredRefreshMs(config) {
+// The `containers` pane's resolved plugin config (`refresh_ms` / `refresh_ladder`
+// live here). parse() folds `panels:` into `config.layout.pool[id]` with each
+// pane's plugin config nested under `.config` — there is NO top-level
+// `config.panels` — so this reads `layout.pool[id].config`.
+function _containersCfg(config) {
   const pool = (config && config.layout && config.layout.pool) || {};
   for (const p of Object.values(pool)) {
-    if (p && p.type === 'containers' && p.config && p.config.refresh_ms != null) {
-      return clampRefreshMs(p.config.refresh_ms);
-    }
+    if (p && p.type === 'containers' && p.config) return p.config;
   }
-  return DEFAULT_REFRESH_MS;
+  return {};
+}
+
+// The poll cadence ladder (`-`/`+` step stops) + the starting interval, both
+// host-global and seeded onto the service slice at init. Configurable per pane:
+// `refresh_ladder:` (list of ms; garbage → the default docker ladder) and
+// `refresh_ms:` (starting value, clamped into the ladder; missing/garbage →
+// DEFAULT). Pure (config in) so they're testable without the hub/global model.
+function configuredRefreshLadder(config) {
+  return normalizeLadder(_containersCfg(config).refresh_ladder);
+}
+function configuredRefreshMs(config) {
+  const cfg = _containersCfg(config);
+  return clampRefreshMs(cfg.refresh_ms, normalizeLadder(cfg.refresh_ladder));
 }
 
 // --- slice access (the polled state lives in the Component slice) ---
@@ -82,10 +87,10 @@ function configuredRefreshMs(config) {
 function _slice()        { return serviceSlice('docker') || { status: {}, stats: {} }; }
 function _status(name)   { return _slice().status[name] || '?'; }
 function _stats(name)    { return _slice().stats[name] || null; }
-// The live host-global poll cadence (clamped). A module helper so callers whose
-// scope shadows `_slice` (render's 4th param) can still read it, and so render +
-// subscriptions() share one source.
-function _refreshMs()    { return clampRefreshMs(_slice().refreshMs); }
+// The live host-global poll cadence (clamped into the live ladder). A module
+// helper so callers whose scope shadows `_slice` (render's 4th param) can still
+// read it, and so render + subscriptions() share one source.
+function _refreshMs()    { const s = _slice(); return clampRefreshMs(s.refreshMs, s.refreshLadder); }
 
 // --- app-global reads (explicit, per the Component contract) ---
 
@@ -212,9 +217,11 @@ function init(paneId) {
   });
   return {
     status: {}, stats: {}, inFlight: false,
-    // Container poll cadence (ms). Host-global like status/stats — only the
-    // service owner's copy is read (via _slice()); a placed pane's is unused.
-    // Seeded from config; mutated live by the refresh control (Phase 2+).
+    // Container poll cadence (ms) + its `-`/`+` step ladder. Host-global like
+    // status/stats — only the service owner's copy is read (via _slice()); a
+    // placed pane's is unused. Both seeded from config (refresh_ms / the
+    // configurable refresh_ladder); refreshMs is mutated live by the control.
+    refreshLadder: configuredRefreshLadder(getModel().config),
     refreshMs: configuredRefreshMs(getModel().config),
     // v0.6.1 Phase 3 — single-panel Component, nav stores the entry directly.
     nav: mnav.init(),
@@ -292,7 +299,9 @@ function update(msg, slice) {
     // ms tears the old timer down and arms a fresh one. Render so the label
     // repaints. At a ladder end the step is a no-op → return the same slice ref
     // (no render, no reconcile churn).
-    const next = msg.ms != null ? clampRefreshMs(msg.ms) : stepRefreshMs(slice.refreshMs, msg.dir || 0);
+    const next = msg.ms != null
+      ? clampRefreshMs(msg.ms, slice.refreshLadder)
+      : stepRefreshMs(slice.refreshMs, msg.dir || 0, slice.refreshLadder);
     if (next === slice.refreshMs) return slice;
     return [{ ...slice, refreshMs: next }, [{ type: 'render' }]];
   }
@@ -729,5 +738,5 @@ module.exports = {
   _parsePercent: parsePercent,
   _init: init,
   _update: update,
-  configuredRefreshMs,
+  configuredRefreshMs, configuredRefreshLadder,
 };

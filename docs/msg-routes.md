@@ -738,11 +738,12 @@ rule across all their effects: **route async results to the ORIGINATING
 `paneId`** (`host.wrap(eff.paneId || kind, …)`), never the kind's primary — else
 multi-instance panes clobber each other (the "collapse-to-primary footgun").
 
-**docker (`kind: 'docker'`)** — `slice.{status, stats, inFlight, refreshMs}`. The
-container poll is a declared `interval` Sub (its `ms` = the owner's `refreshMs`,
+**docker (`kind: 'docker'`)** — `slice.{status, stats, inFlight, refreshMs, refreshLadder}`.
+The container poll is a declared `interval` Sub (its `ms` = the owner's `refreshMs`,
 config-seeded from the containers panel's `refresh_ms:` and stepped by the refresh
-control) and `docker events` a `process-stream` Sub (FIX-3 Phase 4/5 — the
-`started` flag + self-re-arm are gone); `augmentMsg` threads container `items`.
+control along `refreshLadder` — the default docker ladder or a configured
+`refresh_ladder:`) and `docker events` a `process-stream` Sub (FIX-3 Phase 4/5 —
+the `started` flag + self-re-arm are gone); `augmentMsg` threads container `items`.
 
 | Msg | Writes | Emits | Purity |
 |---|---|---|---|
