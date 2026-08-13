@@ -6,6 +6,17 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Terminal no longer leaks its modes on `SIGTERM`/`SIGHUP`/`SIGINT`.** A
+  supervisor `kill`, the terminal window closing, or an out-of-band `kill -INT`
+  used to terminate the process without running the exit hooks, leaving the
+  shell in raw mode with mouse tracking, bracketed paste, focus reporting, a
+  hidden cursor, and the kitty-keyboard flags all still on (Escape arriving as
+  `\x1b[27u` until a `reset`). These signals are now trapped: the terminal is
+  restored and the process exits `128+signum`. `SIGKILL` remains uncatchable —
+  only a shell-side `reset` recovers that.
+
 ## [0.6.16] — 2026-08-12
 
 ### Added

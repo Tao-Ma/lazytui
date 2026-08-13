@@ -237,7 +237,7 @@ function main() {
   const { setupKeyListener } = require('../dispatch/control/input');
   const { getModel } = require('../model/store');
   const { installSuspendHandlers } = require('./suspend');
-  const { cleanup } = require('../dispatch/runtime/cleanup');
+  const { cleanup, installTerminationHandlers } = require('../dispatch/runtime/cleanup');
 
   // Register the global cleanup handler FIRST — any throw between here
   // and the input pump starting (loadConfig, registerComponent, the
@@ -266,6 +266,13 @@ function main() {
   };
   process.on('uncaughtException',  _onFatal('uncaughtException'));
   process.on('unhandledRejection', _onFatal('unhandledRejection'));
+  // SIGTERM/SIGHUP/SIGINT terminate the process WITHOUT running the
+  // `process.on('exit')` handlers above, so every enabled terminal mode
+  // (raw/mouse/paste/focus/cursor/kitty-keyboard) would leak into the
+  // shell. Trap them → cleanup → exit 128+signum. Registered here (before
+  // loadConfig/registerComponent) so a signal mid-boot is covered too.
+  // SIGKILL can't be trapped. See cleanup.js + docs/kitty-keyboard.md.
+  installTerminationHandlers();
 
   // Wire the panel-host seam (hosts/panel-host) before any dispatch — the
   // `panel/` layer invokes dispatch + overlay capabilities through it instead

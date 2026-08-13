@@ -251,15 +251,18 @@ suitable one matures.
 
 ## Known limitations
 
-- **Hard kill leaves the flags pushed.** The flags are popped on every
+- **`SIGKILL` leaves the flags pushed.** The flags are popped on every
   graceful exit (`q`, `:quit`, Ctrl-C, editor onExit, a thrown error, and
-  `process.on('exit')`) and bracketed on suspend / embedded-terminal entry.
-  But `SIGKILL`, and an un-trapped `SIGTERM`/`SIGHUP` (terminal-window close),
-  bypass the exit hooks — so the kitty flags (like mouse/paste/cursor modes)
-  leak into the shell. Unlike those, a leaked kitty push makes Escape arrive
-  as `\x1b[27u` at the prompt until a `reset`. This is a pre-existing gap for
-  all terminal modes, not KKP-specific; a general fix (SIGTERM/SIGHUP →
-  cleanup handlers) would cover every mode at once and is tracked separately.
+  `process.on('exit')`), bracketed on suspend / embedded-terminal entry, and —
+  as of the termination-signal handlers (`installTerminationHandlers` in
+  `js/dispatch/runtime/cleanup.js`) — popped on `SIGTERM`/`SIGHUP`/`SIGINT`
+  too (a supervisor `kill`, the terminal window closing, an out-of-band
+  `kill -INT`; each runs cleanup then exits 128+signum). Only `SIGKILL`
+  still bypasses the hooks — it can't be trapped — so the kitty flags (like
+  mouse/paste/cursor modes) leak into the shell there. Unlike those other
+  modes, a leaked kitty push makes Escape arrive as `\x1b[27u` at the prompt
+  until a `reset`. The fix is general (it covers every terminal mode at once,
+  not just KKP); `SIGKILL` is only recoverable with a shell-side `reset`.
 - **Inside a multiplexer** (tmux/screen/zellij) the protocol is not
   negotiated for the inner app; lazytui correctly falls back to legacy and
   the `<leader> e` hint names the multiplexer. Run outside it to use KKP.
