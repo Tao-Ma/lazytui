@@ -808,9 +808,19 @@ function validateAction(groupPath, aname, adata) {
   if ('tab' in adata && typeof adata.tab !== 'boolean') {
     throw new SchemaError("'tab' must be a boolean", { context: ctx });
   }
-  if ('output' in adata && !VALID_ACTION_OUTPUT_MODES.has(adata.output)) {
-    const list = '[' + [...VALID_ACTION_OUTPUT_MODES].sort().map(s => `'${s}'`).join(', ') + ']';
-    throw new SchemaError(`'output' must be one of ${list}, got '${adata.output}'`, { context: ctx });
+  if ('output' in adata) {
+    if (!VALID_ACTION_OUTPUT_MODES.has(adata.output)) {
+      const list = '[' + [...VALID_ACTION_OUTPUT_MODES].sort().map(s => `'${s}'`).join(', ') + ']';
+      throw new SchemaError(`'output' must be one of ${list}, got '${adata.output}'`, { context: ctx });
+    }
+    // `output:` controls the STREAMED text-view buffer (replace vs append), so it
+    // only means anything for `type: run` (the default). A `spawn` action's output
+    // lives in its PTY tab and `background` runs detached with stdio ignored —
+    // neither reads `action.output` in action-runner. Reject it there rather than
+    // silently no-op a config the user clearly meant to have an effect.
+    if (adata.type === 'spawn' || adata.type === 'background') {
+      throw new SchemaError(`'output' has no effect on a '${adata.type}' action (it applies to 'run' output only); remove it or drop 'type'`, { context: ctx });
+    }
   }
 
   // Dataflow fabric (docs/ports-and-wires.md): an action that declares `parse`

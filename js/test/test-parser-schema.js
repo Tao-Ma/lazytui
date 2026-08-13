@@ -73,6 +73,17 @@ describe('invalid structures rejected', () => {
     }
     assert(true, "output: 'replace' | 'append' accepted");
   });
+  it("'output' rejected on spawn/background (no effect there)", () => {
+    for (const type of ['spawn', 'background']) {
+      expectThrow(/'output' has no effect on a '.*' action/, () => validate({ groups: { g: {
+        label: 'G', actions: { a: { cmd: 'echo', label: 'A', type, output: 'append' } },
+      } } }, 'test'));
+    }
+  });
+  it("'output' accepted on an explicit type: run action", () => {
+    validate({ groups: { g: { label: 'G', actions: { a: { cmd: 'echo', label: 'A', type: 'run', output: 'append' } } } } }, 'test');
+    assert(true, "output on type: run accepted");
+  });
   it('empty groups dict',              () => expectThrow(/non-empty mapping/, () => validate({ groups: {} }, 'test')));
   it('groups not a dict',              () => expectThrow(/non-empty mapping/, () => validate({ groups: 'nope' }, 'test')));
   it('top-level not a mapping',        () => expectThrow(/must be a YAML mapping/, () => validate('not a dict', 'test')));

@@ -17,6 +17,14 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   restored and the process exits `128+signum`. `SIGKILL` remains uncatchable —
   only a shell-side `reset` recovers that.
 
+### Changed
+
+- **`output:` is now rejected on `spawn`/`background` actions.** It only affects
+  the streamed `run` output buffer (`replace` vs `append`); a `spawn` action's
+  output lives in its PTY tab and `background` runs detached, so the key was a
+  silent no-op there. The parser now errors instead of ignoring it (fix a config
+  by removing `output:` or dropping the `type:`).
+
 ## [0.6.16] — 2026-08-12
 
 ### Added

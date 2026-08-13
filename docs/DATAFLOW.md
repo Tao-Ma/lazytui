@@ -273,7 +273,11 @@ separator + header, jumping to the tail) instead of reseeding — a
 status-over-time log. Prior `statusRows` indices stay valid because the
 buffer only grows at the tail; the first run (empty buffer) still yields
 just `[header]`. Best paired with `tab:true` so runs accumulate in the
-action's own tab rather than interleaving in the shared Transcript. The
+action's own tab rather than interleaving in the shared Transcript.
+`output:` applies to `type: run` (the default) only — a `spawn` action's
+output lives in its PTY tab and a `background` action runs detached, so
+neither consults it; the parser rejects `output:` on those types rather
+than silently ignoring it. The
 instance owns its own buffer and scroll — bottom-stick lives in its
 `update` (at-bottom follows the tail; a scrolled-up reader is not
 yanked down) — so off-tab streaming needs no routing bundle, and the
