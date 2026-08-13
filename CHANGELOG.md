@@ -6,8 +6,38 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Sort the containers pane by column, from a border control.** A `‹ col ›`
+  selector on the pane's top border (left of the `- Ns +` refresh control)
+  cycles the sort column — native order · `name` · `status` · `cpu` · `mem` —
+  with the direction shown (`↑`/`↓`); click the arrows to cycle, the label to
+  reverse. It's **per-pane** (two containers panes sort independently) and
+  applied centrally, so it composes with the `/` filter and the keyboard
+  actions act on the row you actually see. Default is native (config) order —
+  nothing reorders until you pick a column; a new column starts ascending. See
+  docs/LAYOUT.md.
+- **Per-container action bar on the containers pane.** A clickable row on the
+  pane's bottom border with each action's trigger key highlighted inside the
+  word — `i`nspect · `L`ogs · `s`hell · `S`top · `R`estart · `K`ill (an
+  uppercase letter is a Shift chord). Click a word — or press its key — to run
+  it against the selected container; `inspect`/`logs`/`shell` open as before,
+  and the new `stop`/`restart`/`kill` run `docker <verb>` behind a `y`/`N`
+  confirm. Width-adaptive: full labels on a wide pane, just the key letters on a
+  narrow one.
+- **`quick_keys` global config — where a pane's quick keys surface.** `border`
+  (default) draws the on-pane action bar above; `footer` puts the keys in the
+  status line instead, keeping the pane border clean; `off` hides them (the keys
+  still work). Shown in exactly one place, never both. Global-only, in
+  `~/.config/lazytui/config.yml` — see docs/global-config.md.
+
 ### Fixed
 
+- **A collapsed docker pane no longer fires a phantom click from its title
+  bar.** A collapsed pane draws only its title + collapse glyph — no border
+  controls — yet a click on its header dashes still stepped the refresh rate
+  (shipped in v0.6.16). The border-control hit-test now skips collapsed panes
+  (the `[+]` expand glyph stays clickable).
 - **Terminal no longer leaks its modes on `SIGTERM`/`SIGHUP`/`SIGINT`.** A
   supervisor `kill`, the terminal window closing, or an out-of-band `kill -INT`
   used to terminate the process without running the exit hooks, leaving the
@@ -32,6 +62,11 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   output lives in its PTY tab and `background` runs detached, so the key was a
   silent no-op there. The parser now errors instead of ignoring it (fix a config
   by removing `output:` or dropping the `type:`).
+- **The containers-pane `logs` key moved from `t` to `L`.** The new action bar
+  highlights each action's key inside its word, so the key has to be the word's
+  first letter — `t` was never in "logs", and lowercase `l` is list navigation
+  (focus-right), so logs is now Shift+`L`. `i` (inspect) and `s` (shell) are
+  unchanged; `S`top/`R`estart/`K`ill are new.
 
 ## [0.6.16] — 2026-08-12
 
