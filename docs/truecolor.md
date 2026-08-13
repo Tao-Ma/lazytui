@@ -197,6 +197,8 @@ header and graph and the layout math accounts for it;
 - **2c** `stats.js` adoption: braille graphs colored by value, plus an
   eighth-block horizontal meter row for percent-type current values.
   YAML: `graph: braille|blocks` (P4). STATS.md updated.
+  (Post-arc: the default color mapping later moved to height-mapped for
+  wire-byte thrift — `graph_color:` selects value/banded/height; see STATS.md.)
 
 ### Phase 3 — attribute sweep
 

@@ -167,6 +167,38 @@ function colorizeRows(rows, norms, colorFor) {
   });
 }
 
+/**
+ * Height-mapped colorize (btop-style) — each row is ONE color run, determined
+ * by its VERTICAL position (top = hot end of the ramp, bottom = cool). Because a
+ * row's color is fixed regardless of the samples, a value shift that moves the
+ * glyphs but not a row's contents emits no SGR change — cell-diff only re-sends
+ * the cells whose GLYPH changed. That's the byte-thrift win over the value-mapped
+ * `colorizeRows` (which recolors nearly every column each tick). `colorFor(frac)`
+ * gets the row's height fraction ∈ [0,1] (1 = top). All-space rows stay bare.
+ */
+function colorizeByHeight(rows, colorFor) {
+  const H = rows.length;
+  return rows.map((row, i) => {
+    if (!/\S/.test(row)) return row;                 // all gaps → uncolored
+    const frac = H > 1 ? (H - 1 - i) / (H - 1) : 1;   // top row = 1, bottom = 0
+    const atom = colorFor(frac) || null;
+    return atom ? `[${atom}]${row}[/]` : row;
+  });
+}
+
+/**
+ * Quantize a norm ∈ [0,1] to one of `bands` evenly-spaced levels (band centers
+ * at k/(bands-1)). Keeps the value→color SEMANTICS of `colorizeRows` but snaps
+ * the color, so a small sample shift that stays within a band emits no SGR
+ * change — a middle ground between the full 101-step ramp and height-mapping.
+ * NaN passes through (a gap column stays uncolored).
+ */
+function quantizeNorm(n, bands) {
+  if (!Number.isFinite(n)) return n;
+  const b = Math.max(2, bands | 0);
+  return Math.round(Math.max(0, Math.min(1, n)) * (b - 1)) / (b - 1);
+}
+
 // Horizontal eighth-block partials, 1/8 → 7/8 (left-fill).
 const _MPARTIAL = '▏▎▍▌▋▊▉';
 
@@ -186,4 +218,4 @@ function meterRow(frac, width) {
   return s.length < width ? s + ' '.repeat(width - s.length) : s;
 }
 
-module.exports = { rasterize, rasterizeBraille, columnNorms, colorizeRows, meterRow, BLOCKS };
+module.exports = { rasterize, rasterizeBraille, columnNorms, colorizeRows, colorizeByHeight, quantizeNorm, meterRow, BLOCKS };

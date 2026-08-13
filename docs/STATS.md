@@ -86,6 +86,7 @@ panels:
     metrics: [cpu, mem]     # which schema columns to graph, top-to-bottom
     window: 40              # samples retained per row (panel-driven sub)
     graph: braille          # braille (default) | blocks
+    graph_color: height     # height (default) | value | banded
 ```
 
 | Field         | Required | Default                                | Notes |
@@ -96,16 +97,18 @@ panels:
 | `metrics`     | no       | all `percent` / `bytes` schema columns | Columns to graph, in order. |
 | `window`      | no       | `40`                                   | Samples retained. Window span = `window` × the producer's sample cadence. For the `docker.stats` topic that cadence is the `containers` pane's `refresh_ms:` (default 10s → ~7 min of history), adjustable live via the `- Ns +` control on that pane's top border. |
 | `graph`       | no       | `braille`                              | Glyph style. Braille packs 2 samples/column at 4 dot-rows/cell (2× the horizontal resolution of blocks); set `blocks` if your font's braille coverage is poor. A plain config choice — never inferred from color depth (docs/truecolor.md P4). |
+| `graph_color` | no       | `height`                               | Color mapping. `height` (default, btop-style) colors by vertical position — static per row, so a sample shift moves the glyphs but recolors nothing (the cell-diff sends only the changed cells: ~−81% wire bytes/tick vs `value`, the fix for the graph's over-the-wire cost). `value` colors each column by its value through the full `percent` ramp (highest signal, but the 101-step ramp recolors nearly every column each tick). `banded` keeps value-mapping quantized to 8 steps (~−38%, a middle ground). |
 
 **Color + meter (truecolor arc Phase 2, docs/truecolor.md).** Graph
-columns are colored by VALUE through the active theme's `percent`
-gradient (cool→hot as the value climbs); the panel injects
-`gradient('percent', norm)` into the pure colorize leaf, which batches
-same-color runs and `[/]`-terminates every run (P8). `percent`-type
-metrics additionally carry a one-row eighth-block METER under the
-header showing the current value, colored by the same gradient. On
-256/16-color terminals the gradient quantizes at the write boundary
-like everything else.
+color maps through the active theme's `percent` gradient (cool→hot); the
+mapping is `graph_color:` (above — `height` by default, colored by row for
+wire-byte thrift; `value`/`banded` opt in to value-mapped color). The panel
+injects `gradient('percent', frac)` into the pure colorize leaves, which batch
+same-color runs and `[/]`-terminate every run (P8). `percent`-type metrics
+additionally carry a one-row eighth-block METER under the header showing the
+current value, colored by that value through the same gradient (independent of
+`graph_color`). On 256/16-color terminals the gradient quantizes at the write
+boundary like everything else.
 
 The schema-driven `metrics` default keeps the simple case
 (`type: stats, topic: docker.stats, select_from: containers`) one-line.
@@ -345,8 +348,10 @@ Run via `node js/scripts/run-tests.js -q`.
   horizontal space at typical panel widths (~50 cols). Revisit on
   wider panel slots.
 - ~~**Color-coded thresholds** (CPU > 80% → red).~~ Shipped in stronger
-  form by the truecolor arc: every column is value-mapped through the
-  theme's `percent` gradient (continuous cool→hot, not a threshold).
+  form by the truecolor arc: `graph_color: value` (or `banded`) maps each
+  column through the theme's `percent` gradient (continuous cool→hot, not a
+  threshold). The default `graph_color: height` colors by row for wire-byte
+  thrift; opt into value-mapped color per pane.
 - **Mouse interaction.** Hover-for-value, drag-to-zoom. Rasterizer
   doesn't track per-column source samples.
 - **Multi-line overlay.** "All containers, one line each." Likely a

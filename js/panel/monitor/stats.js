@@ -24,7 +24,7 @@ const {
   esc, theme, gradient, renderPanel,
   getItems: apiGetItems,
 } = require('../api');
-const { rasterize, rasterizeBraille, columnNorms, colorizeRows, meterRow } = require('./stats-graph');
+const { rasterize, rasterizeBraille, columnNorms, colorizeRows, colorizeByHeight, quantizeNorm, meterRow } = require('./stats-graph');
 
 // stats DECLARES its hub subscription; the framework owns the hub.subscribe
 // side effect. This is the canonical TEA `subscriptions : Model → Sub` seam
@@ -104,7 +104,7 @@ function _renderEmpty(panel, w, h, msg, chrome, focused) {
  *
  *   CPU                    47.2%  peak 92.1%  avg 38.5%
  *   █████████▍                              ← percent only: current value
- *   ⣠⣴⣾⣿⣿⣷⣄⡀                              ← value-mapped gradient color
+ *   ⣠⣴⣾⣿⣿⣷⣄⡀                              ← height-mapped gradient (default)
  *   ...
  *
  * Axis scaling:
@@ -113,16 +113,17 @@ function _renderEmpty(panel, w, h, msg, chrome, focused) {
  *
  * Truecolor arc Phase 2 (docs/truecolor.md): graphs render braille by
  * default (`graph: blocks` opts out per pane — a plain config choice, P4:
- * render never consults device depth) and columns are colored by VALUE
- * through the theme's percent gradient — the colorize leaf batches runs
- * and `[/]`-terminates them (P8); this panel only injects
- * `gradient('percent', norm)`.
+ * render never consults device depth). Color maps through the theme's percent
+ * gradient; the mapping is `graph_color:` (default `height`, btop-style, colored
+ * by vertical position for wire-byte thrift; `value`/`banded` opt in to
+ * value-mapped color). The colorize leaves batch runs and `[/]`-terminate them
+ * (P8); this panel only injects `gradient('percent', frac)`.
  *
  * `meta: true` schema columns (e.g. memLimit) carry scale info that
  * a consumer could use, but the panel stays scale-of-its-own — empty
  * containers and busy ones both get a graph that fills the rows.
  */
-function _renderSection(metric, samples, schema, width, graphHeight, style) {
+function _renderSection(metric, samples, schema, width, graphHeight, style, colorMode) {
   const col = (schema.columns || {})[metric] || {};
   const values = samples.map(s => s && s[metric]);
   const finite = values.filter(Number.isFinite);
@@ -155,8 +156,19 @@ function _renderSection(metric, samples, schema, width, graphHeight, style) {
   const opts = { width, height: graphHeight, min, max };
   const rows = style === 'blocks' ? rasterize(values, opts) : rasterizeBraille(values, opts);
   const norms = columnNorms(values, { width, min, max, group: style === 'blocks' ? 1 : 2 });
-  const colored = colorizeRows(rows, norms,
-    (n) => (Number.isFinite(n) ? gradient('percent', n) : null));
+  let colored;
+  if (colorMode === 'value') {
+    // value-mapped through the full ramp (highest fidelity, most wire bytes).
+    colored = colorizeRows(rows, norms,
+      (n) => (Number.isFinite(n) ? gradient('percent', n) : null));
+  } else if (colorMode === 'banded') {
+    // value-mapped but quantized to 8 bands (fewer SGR changes per tick).
+    colored = colorizeRows(rows, norms,
+      (n) => (Number.isFinite(n) ? gradient('percent', quantizeNorm(n, 8)) : null));
+  } else {
+    // height (default): color by vertical position, static per row (byte-thrift).
+    colored = colorizeByHeight(rows, (frac) => gradient('percent', frac));
+  }
 
   const out = [header];
   if (col.type === 'percent') {
@@ -198,6 +210,15 @@ function render(panel, w, h, _slice, opts) {
   // Graph style: braille by default, `graph: blocks` opts out (P4 — a plain
   // per-pane config choice; render never consults the device's color depth).
   const style = panel.graph === 'blocks' ? 'blocks' : 'braille';
+  // Graph color mapping. `height` (DEFAULT, btop-style) colors by vertical
+  // position — static per row, so a sample shift moves the glyphs but recolors
+  // nothing: cell-diff sends only the changed cells (~−81% wire bytes/tick vs
+  // `value`). Opt out per pane: `value` colors each column by its value through
+  // the full percent ramp (highest signal, but the 101-step ramp recolors nearly
+  // every column each tick); `banded` keeps value-mapping quantized to 8 bands
+  // (~−38%, a middle ground). See docs/truecolor.md + STATS.md.
+  const colorMode = (panel.graph_color === 'value' || panel.graph_color === 'banded')
+    ? panel.graph_color : 'height';
 
   const innerW = w - 2;
   const innerH = h - 2;
@@ -215,7 +236,7 @@ function render(panel, w, h, _slice, opts) {
   const lines = [];
   metrics.forEach((m, i) => {
     if (i > 0) lines.push('');
-    lines.push(..._renderSection(m, samples, schema, innerW, perMetric, style));
+    lines.push(..._renderSection(m, samples, schema, innerW, perMetric, style, colorMode));
   });
 
   return renderPanel({

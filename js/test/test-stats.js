@@ -11,7 +11,7 @@
 const { describe, it, assert, eq, report } = require('./test-runner');
 const hub = require('../leaves/infra/hub');
 const { update } = require('../app/runtime');
-const { rasterize, rasterizeBraille, columnNorms, colorizeRows, meterRow, BLOCKS } = require('../panel/monitor/stats-graph');
+const { rasterize, rasterizeBraille, columnNorms, colorizeRows, colorizeByHeight, quantizeNorm, meterRow, BLOCKS } = require('../panel/monitor/stats-graph');
 const stats = require('../panel/monitor/stats');
 const docker = require('../panel/navigator/docker');
 
@@ -160,6 +160,46 @@ describe('[4d] colorizeRows: run batching + [/] termination (P8)', () => {
   });
   it('uncolored rows pass through unchanged', () => {
     eq(colorizeRows(['   '], [NaN, NaN, NaN], colorFor)[0], '   ');
+  });
+});
+
+describe('[4d2] colorizeByHeight: one run per row, colored by vertical position', () => {
+  // frac is passed the row's height fraction (1 = top row, 0 = bottom).
+  const colorFor = (frac) => `r${Math.round(frac * 100)}`;
+  it('each row is a single run keyed to its row fraction (top=1, bottom=0)', () => {
+    const out = colorizeByHeight(['███', '███', '███'], colorFor);
+    eq(out[0], '[r100]███[/]', 'top row = frac 1');
+    eq(out[1], '[r50]███[/]',  'middle row = frac 0.5');
+    eq(out[2], '[r0]███[/]',   'bottom row = frac 0');
+  });
+  it('the same row keeps its color regardless of contents (byte-thrift: static per row)', () => {
+    // Two ticks of a moving bar in the SAME row → identical color run (only the
+    // glyphs differ), which is exactly what lets cell-diff skip the SGR.
+    const a = colorizeByHeight(['█▄ ', '   '], colorFor)[0];
+    const b = colorizeByHeight([' ▄█', '   '], colorFor)[0];
+    assert(a.startsWith('[r100]') && b.startsWith('[r100]'), 'same row → same color atom across ticks');
+  });
+  it('all-gap rows pass through uncolored', () => {
+    eq(colorizeByHeight(['   ', '█  '], colorFor)[0], '   ');
+  });
+  it('single-row graph gets the top (frac 1) color', () => {
+    eq(colorizeByHeight(['██'], colorFor)[0], '[r100]██[/]');
+  });
+});
+
+describe('[4d3] quantizeNorm: snap to N evenly-spaced bands', () => {
+  it('8 bands → centers at k/7', () => {
+    eq(quantizeNorm(0, 8), 0);
+    eq(quantizeNorm(1, 8), 1);
+    eq(Math.round(quantizeNorm(0.5, 8) * 7), 4, '0.5 → nearest band (4/7)');
+  });
+  it('nearby values collapse to the same band (fewer SGR changes)', () => {
+    eq(quantizeNorm(0.70, 8), quantizeNorm(0.72, 8), 'small shift stays in-band');
+  });
+  it('clamps out-of-range and passes NaN through (a gap stays uncolored)', () => {
+    eq(quantizeNorm(-0.5, 8), 0);
+    eq(quantizeNorm(1.5, 8), 1);
+    assert(Number.isNaN(quantizeNorm(NaN, 8)), 'NaN → NaN');
   });
 });
 

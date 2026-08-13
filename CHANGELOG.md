@@ -19,6 +19,14 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Stats graphs now color by height (btop-style) by default, cutting their
+  over-the-wire cost ~5–10×.** The old per-column value-mapped gradient recolored
+  nearly every column on each new sample, so a live graph emitted ~5.8 KB/tick
+  (braille) even when little changed — noticeable over SSH. Coloring by vertical
+  position instead is static per row, so the cell-diff sends only the cells whose
+  glyph actually moved (~1.1 KB/tick, −81%). Set `graph_color:` per `stats` pane
+  to choose: `height` (default), `value` (the previous full-ramp value mapping),
+  or `banded` (value-mapped, quantized to 8 steps, ~−38%). See docs/STATS.md.
 - **`output:` is now rejected on `spawn`/`background` actions.** It only affects
   the streamed `run` output buffer (`replace` vs `append`); a `spawn` action's
   output lives in its PTY tab and `background` runs detached, so the key was a
