@@ -230,10 +230,20 @@ function registerComponent(comp) {
   // Chrome (no panelTypes) + explicit `service: true` → service slot
   // (kind-global, undisposable); plain placeable → kind-keyed
   // singleton seed that initState swaps for per-pane instances.
+  //
+  // init-injection (v0.6.4 #4): thread the same boot seed the placed-pane
+  // mint threads (app/state.js), minus `paneDef` — there's no pane yet at
+  // registration. A register-time slice that derives config-backed state
+  // (docker's host-global `refreshMs`/`refreshLadder` — the load-bearing
+  // SERVICE slice, since there's no `set_config` arm to re-seed it) reads it
+  // from the seed instead of reaching into getModel(), keeping init a pure
+  // function of (paneId, seed). Inits that don't take a seed ignore the arg.
+  const m = getModel();
+  const bootSeed = { config: m.config, projectDir: m.projectDir };
   if (!comp.panelTypes || comp.service === true) {
-    route.setService(comp.name, comp.init());
+    route.setService(comp.name, comp.init(undefined, bootSeed));
   } else {
-    route.setInstance(comp.name, comp.name, comp.init());
+    route.setInstance(comp.name, comp.name, comp.init(undefined, bootSeed));
   }
   // Per-Component effects (loadDir, openFile, historyReplay, …) — used
   // to be registered at module-top-level via top-level
@@ -376,6 +386,21 @@ const { wrap } = route;
 
 function getComponent(name)              { return components[name]; }
 const { componentForPanel: getComponentOwningPanel, getFocus } = route;
+
+// Component-declared capability: a panel type carries the top-border refresh
+// control iff its owning Component's `panelTypes[type]` descriptor sets
+// `refreshControl: true`. The SINGLE source both the render decision
+// (navigator/docker's renderPanel `borderControl` slot) and the click routing
+// (panel/chrome-hittest) read, so the two can't drift — remove the flag and
+// both the paint and the hit-test drop together. Was a hardcoded type Set in
+// chrome-hittest before v0.6.16-followups.
+function paneTypeHasRefreshControl(type) {
+  for (const comp of Object.values(components)) {
+    const desc = comp.panelTypes && comp.panelTypes[type];
+    if (desc && desc.refreshControl) return true;
+  }
+  return false;
+}
 
 // Tab-instance registry surface. `getInstanceSlice(tabId)` is the
 // slice-read primitive every reader uses. See `panel/route.js` for
@@ -620,6 +645,7 @@ module.exports = {
   registerComponent, registerEffect, wrap,
   _components: _componentsMap,  // v0.6.3 Phase B — internal use by initState + fanout
   getComponent, getComponentOwningPanel, getFocus,
+  paneTypeHasRefreshControl,
   // Tab-instance registry surface.
   setInstance, getInstance, getInstanceSlice, sliceForPane, setInstanceSlice,
   hasInstance, disposeInstance, instanceKind, eachInstance,

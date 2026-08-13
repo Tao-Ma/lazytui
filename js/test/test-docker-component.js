@@ -363,11 +363,17 @@ describe('[9] refresh_ms — poll cadence seeded from the RESOLVED pool config',
     eq(docker.configuredRefreshMs(cfg({ c: { type: 'containers', config: { ...L, refresh_ms: 120000 } } })), 120000);  // 60s ceiling lifted
     eq(docker.configuredRefreshMs(cfg({ c: { type: 'containers', config: { ...L, refresh_ms: 1000 } } })), 3000);      // clamped up to custom min
   });
-  it('init seeds the service slice with the configured cadence + ladder', () => {
-    getModel().config = cfg({ c: { type: 'containers', config: { refresh_ms: 5000, refresh_ladder: [1000, 5000, 60000] } } });
-    const s = docker._init();
+  it('init seeds the service slice from the boot seed config (cadence + ladder)', () => {
+    // init-injection: config arrives via the seed the mint threads (api
+    // registerComponent for the service slot), NOT getModel() — init is pure.
+    const config = cfg({ c: { type: 'containers', config: { refresh_ms: 5000, refresh_ladder: [1000, 5000, 60000] } } });
+    const s = docker._init(undefined, { config });
     eq(s.refreshMs, 5000);
     eq(s.refreshLadder, [1000, 5000, 60000]);
+  });
+  it('init with no seed degrades to the default cadence + ladder', () => {
+    const s = docker._init();
+    eq(s.refreshMs, require('../leaves/render/monitor-control').DEFAULT_REFRESH_MS);
   });
 });
 

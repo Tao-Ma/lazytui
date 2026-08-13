@@ -92,7 +92,7 @@ const _PAD_CELLS = 4;
 /**
  * The control markup + its visible cell width. `text` renders as `- Ns +` with
  * the `-`/`+` dimmed; the caller places it (docker draws it on the top border via
- * renderPanel's `monitorControl` slot). Width = label + the `- ` / ` +` padding.
+ * renderPanel's `borderControl` slot). Width = label + the `- ` / ` +` padding.
  */
 function refreshControlText(refreshMs) {
   const label = formatRefreshMs(refreshMs);

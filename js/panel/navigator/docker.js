@@ -43,6 +43,7 @@ const {
   leaveTerminalMode,
   getItems: apiGetItems, selectedOrFocused,
   serviceSlice,
+  paneTypeHasRefreshControl,
   hub,
 } = require('../api');
 const { getModel } = require('../../model/store');
@@ -204,7 +205,7 @@ function unprefix(name) { return name.replace(/^\//, ''); }
 
 // --- update + effects (the TEA half) ---
 
-function init(paneId) {
+function init(paneId, seed) {
   // Hub topic schema — feeds the stats panel's axis scaling + value formatting
   // (STATS.md §5 + HUB.md §16). Defined once at registration, before any publish.
   hub.defineTopic('docker.stats', {
@@ -215,14 +216,19 @@ function init(paneId) {
       memLimit: { type: 'bytes',   unit: 'B', meta: true },
     },
   });
+  // init-injection (v0.6.4 #4): config comes from the seed the mint threads
+  // (api registerComponent for the SERVICE slot, app/state.js for placed panes),
+  // so init stays a pure function of (paneId, seed) — no getModel(). A missing
+  // seed (a bare init() in a test) degrades to the built-in defaults.
+  const config = (seed && seed.config) || {};
   return {
     status: {}, stats: {}, inFlight: false,
     // Container poll cadence (ms) + its `-`/`+` step ladder. Host-global like
     // status/stats — only the service owner's copy is read (via _slice()); a
     // placed pane's is unused. Both seeded from config (refresh_ms / the
     // configurable refresh_ladder); refreshMs is mutated live by the control.
-    refreshLadder: configuredRefreshLadder(getModel().config),
-    refreshMs: configuredRefreshMs(getModel().config),
+    refreshLadder: configuredRefreshLadder(config),
+    refreshMs: configuredRefreshMs(config),
     // v0.6.1 Phase 3 — single-panel Component, nav stores the entry directly.
     nav: mnav.init(),
     // v0.6.4 Theme A Phase 5 Arc 3 — pane identity. The register-time
@@ -563,10 +569,13 @@ function render(panel, width, height, _slice, opts) {
     chrome: opts && opts.chrome,
     // btop-style refresh-rate control on the top border (Phase 3). The cadence
     // is host-global (the service owner's refreshMs), so every docker pane shows
-    // the same value; a click on any pane's -/+ steps the shared rate. Suppressed
-    // in free-config: that mode drops non-`layout` wraps, so the click would be
-    // inert — don't paint a dead affordance (chrome-hittest mirrors this).
-    monitorControl: (m.modes && m.modes.freeConfigMode) ? null : refreshControlText(_refreshMs()).text,
+    // the same value; a click on any pane's -/+ steps the shared rate. Gated on
+    // the Component-declared `refreshControl` capability (the SAME predicate the
+    // hit-test reads, so paint + click can't drift). Suppressed in free-config:
+    // that mode drops non-`layout` wraps, so the click would be inert — don't
+    // paint a dead affordance (chrome-hittest mirrors this).
+    borderControl: (!(m.modes && m.modes.freeConfigMode) && paneTypeHasRefreshControl('containers'))
+      ? refreshControlText(_refreshMs()).text : null,
   });
 }
 
@@ -727,6 +736,11 @@ module.exports = {
       filterable: true,
       filterText: name => name,
       idOf: name => name,
+      // Component-declared capability (v0.6.16 follow-up): this pane type
+      // carries the top-border refresh control. The ONE source both the
+      // render slot (see render() below) and the click hit-test
+      // (panel/chrome-hittest via api.paneTypeHasRefreshControl) read.
+      refreshControl: true,
     },
   },
   // Test-only internals (events stream pure helpers + stat parsers + reducer).

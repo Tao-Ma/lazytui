@@ -15,15 +15,17 @@
  */
 'use strict';
 
-const { getInstanceSlice, serviceSlice } = require('./api');
+const { getInstanceSlice, serviceSlice, paneTypeHasRefreshControl } = require('./api');
 const { getModel } = require('../model/store');
 const mpool = require('../leaves/wm/pool');
 const { visibleBoundsFor } = require('../leaves/wm/geometry');
 const mc = require('../leaves/render/monitor-control');
 
-// Pane types that carry a top-border refresh control (Phase 3). Docker-first;
-// stats-graph would join here when it adopts the control.
-const MONITOR_TYPES = new Set(['containers']);
+// Which pane types carry a top-border refresh control is a Component-declared
+// capability (`panelTypes[type].refreshControl`) read via api — the SAME source
+// the render decision uses, so paint and hit-test can't drift. Docker-first;
+// stats-graph joins by setting the flag on its own descriptor. (Was a hardcoded
+// Set(['containers']) here.)
 
 const GLYPH_W = 3;
 const COLLAPSE_MIN_W = 9;
@@ -102,7 +104,7 @@ function hitTestRefreshControl(mx, my) {
   const s = serviceSlice('docker') || {};
   const { visibleW } = mc.refreshControlText(mc.clampRefreshMs(s.refreshMs, s.refreshLadder));
   for (const { p, b } of targets) {
-    if (!MONITOR_TYPES.has(p.type)) continue;
+    if (!paneTypeHasRefreshControl(p.type)) continue;
     if (!mc.refreshControlFits(b.w - 2, GLYPH_W, visibleW)) continue;   // same gate renderPanel uses
     const x0 = mc.refreshControlBorderX0(_collapseGlyphX0(b), visibleW);
     const dir = mc.refreshControlDir(mx, my, mc.refreshControlHits(x0, b.y, visibleW));
