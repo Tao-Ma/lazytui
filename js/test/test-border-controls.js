@@ -103,4 +103,22 @@ describe('[border-controls] bottom legend render ↔ bottomFits/bottomX0 agreeme
   });
 });
 
+// FINDING 1 regression: a bottom control with its OWN markup (colored keys) is
+// wrapped with wrapColor, which re-opens the border color after each internal
+// `[/]` reset — so the dashes/count/corner after the legend keep the border
+// color instead of falling to the terminal default.
+describe('[border-controls] bottom legend markup does not leak the border color', () => {
+  const draw = require('../leaves/render/draw');
+  it('re-opens fc after the legend’s internal [/] (regression)', () => {
+    const out = draw.renderPanel({
+      width: 60, height: 4, lines: [], title: 'T',
+      bottomControls: ['[red]K[/]ill'], count: [1, 3], focused: true, color: 'blue',
+    });
+    const row = out.split('\n').pop();
+    // wrapColor('blue', …) turns the legend's `[/]` into `[/][blue]`, so 'ill', the
+    // dashes, the count, and the corner all render in fc — not terminal default.
+    assert(row.includes('[/][blue]'), `fc re-opened after the legend reset: ${JSON.stringify(row)}`);
+  });
+});
+
 report();

@@ -23,7 +23,9 @@ const { theme } = require('../leaves/infra/themes');
 const { truncate, viewportDims } = require('../leaves/render/draw');
 const { focusedTerminalLabel } = require('../panel/terminal-surfaces');
 const { getPanelDef, getInstanceSlice, getFocus, instanceKind,
-        collectViewContributions, filterCurrentText, paneTypeHasBottomBar } = require('../panel/api');
+        collectViewContributions, filterCurrentText, paneTypeHasBottomBar,
+        borderControlsFor } = require('../panel/api');
+const { visibleBoundsFor } = require('../leaves/wm/geometry');
 const modes = require('../leaves/input/modes');
 // E9 — footer key HINTS are declared as data in this leaf (the single source
 // the footer + a future powerline/segment footer project from). The footer
@@ -46,8 +48,17 @@ let _routeRef; const _route = () => (_routeRef ||= require('../panel/route'));
 // quick keys never appear in two places. (docs/global-config.md)
 function _showFooterHints(model, focus) {
   const type = _route().paneTypeOf(focus) || focus;
-  if (!paneTypeHasBottomBar(type)) return true;
-  return ((model.config && model.config.quick_keys) || 'border') === 'footer';
+  if (!paneTypeHasBottomBar(type)) return true;   // no border bar → footer is the only surface
+  const qk = (model.config && model.config.quick_keys) || 'border';
+  if (qk === 'footer') return true;
+  if (qk === 'off') return false;                 // neither surface
+  // border mode: the footer is the FALLBACK — show the keys only when the bar
+  // didn't actually paint (pane too narrow for even the compact key row), so they
+  // never vanish from BOTH surfaces. Ask the SAME source the bar uses.
+  const b = visibleBoundsFor(getInstanceSlice('layout'), focus);
+  const pane = { paneId: focus, type, focused: true, innerW: b ? b.w - 2 : 0 };
+  const barShown = borderControlsFor(pane, model).some(c => (c.spec.slot || 'top') === 'bottom');
+  return !barShown;
 }
 
 /**

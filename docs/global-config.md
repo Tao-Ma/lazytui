@@ -152,7 +152,9 @@ place only, never two:
   each trigger key highlighted in the word (`i`nspect `L`ogs `s`hell `S`top
   `R`estart `K`ill; uppercase = a Shift chord). Clickable, and width-adaptive
   (full labels when they fit, else just the key letters). The footer's key hints
-  for that pane are suppressed so the keys aren't shown twice.
+  for that pane are suppressed so the keys aren't shown twice — *unless* the pane
+  is too narrow for even the compact key row, where the footer shows them as a
+  fallback so they're never absent from both surfaces.
 - `footer` — no border bar; the keys appear as text in the **footer** status
   line (the traditional lazytui style), keeping the pane's border clean.
 - `off` — neither surface; the keys still work.

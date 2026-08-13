@@ -222,7 +222,11 @@ function renderPanel({
     const rightCore = showCount ? `${countText}${b.h}` : '';
     const rightVis = showCount ? countText.length + 1 : 0;
     const mid = innerW - leadAndLegend - rightVis;   // ≥1 (bottomFits guarantees it when no count)
-    bottom = `[${fc}]${b.bl}${b.h}${legend}${b.h.repeat(Math.max(1, mid))}${rightCore}${b.br}[/]`;
+    // wrapColor (NOT a raw `[fc]…[/]`): the legend embeds `[key_hint]X[/]` per
+    // action, and `[/]` compiles to a HARD reset — a raw wrap would leave the
+    // rest of the border (dashes, count, corner) in the terminal default. wrapColor
+    // re-opens `fc` after each internal reset, exactly like the top border does.
+    bottom = wrapColor(fc, `${b.bl}${b.h}${legend}${b.h.repeat(Math.max(1, mid))}${rightCore}${b.br}`);
   } else if (countText) {
     const bfill = innerW - countText.length;
     if (bfill >= 2) {

@@ -171,6 +171,7 @@ describe('[5] item-action key Msgs emit the right effects on the focused row', (
     eq(i.effects[0].type, 'dockerExec');
     eq(i.effects[0].mode, 'inspect');
     eq(i.effects[0].item, 'c2');
+    assert(i.effects.some(e => e.type === '_claimed'), 'an item-action key claims it (no framework re-run)');
     const l = step(km('L'), focused);   // logs is L now (t was never in the word; l = focus-right nav)
     eq(l.effects[0].mode, 'logs');
     const s = step(km('s'), focused);
@@ -610,6 +611,23 @@ describe('[18] paneTypeHasBottomBar — the footer uses this to avoid double-sho
   it('true for a pane with a bottom action bar (containers), false otherwise', () => {
     eq(api.paneTypeHasBottomBar('containers'), true);
     eq(api.paneTypeHasBottomBar('groups'), false);
+  });
+});
+
+describe('[19] item-action invariants', () => {
+  it('label[0] === key for every real _itemActions entry (the render highlights label[0])', () => {
+    for (const a of docker._itemActions) eq(a.label[0], a.key, a.id);
+  });
+  it('the bar reports no bottom control on a too-narrow pane (footer becomes the fallback)', () => {
+    // innerW 6 can\'t fit even the compact 6-key row (needs >= 13) → the bar is
+    // absent, so _showFooterHints must NOT suppress the footer (FINDING 2).
+    const narrow = { paneId: 'containers', type: 'containers', focused: true, innerW: 6 };
+    const wide   = { paneId: 'containers', type: 'containers', focused: true, innerW: 40 };
+    getModel().config = { ...getModel().config, quick_keys: 'border' };
+    const hasBottom = (pane) => api.borderControlsFor(pane, getModel()).some(c => (c.spec.slot || 'top') === 'bottom');
+    eq(hasBottom(narrow), false, 'no bar when too narrow');
+    eq(hasBottom(wide), true, 'bar present when wide');
+    delete getModel().config.quick_keys;
   });
 });
 

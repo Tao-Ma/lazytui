@@ -331,7 +331,11 @@ function _handleKey(msg, slice) {
   const a = _itemActions.find(x => x.key && x.key === msg.key);
   if (!a) return slice;
   const item = (msg.items || [])[mnav.cursorOf(slice, 'containers')];
-  return [slice, _itemActionCmds(a.id, item)];
+  // CLAIM the key (the `_claimed` sentinel): we handled it, so the framework's
+  // normal-key default must NOT also run. Without this, a user who rebinds e.g.
+  // `S`/`K` in keymap.normal would DOUBLE-fire — the container stop/kill AND
+  // their global verb. (No default binds these today, but claiming is correct.)
+  return [slice, [..._itemActionCmds(a.id, item), { type: '_claimed' }]];
 }
 
 // The Cmds an item-action emits — the SINGLE definition both the keyboard
@@ -758,6 +762,13 @@ const _sortKeys = [
 // each other). inspect/logs/shell keep their effects; destructive stop/restart/
 // kill go through the confirm gate (_itemActionCmds). ONE list — bar + keybind
 // read it, so a click and a keypress can't drift.
+//
+// The uppercase binds assume Shift+letter arrives as the uppercase byte — true
+// under the disambiguate-only kitty-keyboard flag we push (io/term.js). If that
+// were ever escalated to "report all keys as escape codes", Shift would become a
+// modifier bit and these would decode to lowercase (S→s = shell, K→k = up-nav) —
+// revisit here if so. `label[0] === key` (the render highlights label[0]); a test
+// pins it against this exported list.
 const _itemActions = [
   { id: 'inspect', label: 'inspect', key: 'i' },
   { id: 'logs',    label: 'Logs',    key: 'L' },
@@ -831,6 +842,7 @@ module.exports = {
   _parseBytes: parseBytes,
   _parseMem: parseMem,
   _parsePercent: parsePercent,
+  _itemActions,
   _init: init,
   _update: update,
   configuredRefreshMs, configuredRefreshLadder,
