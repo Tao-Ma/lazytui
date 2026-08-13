@@ -23,7 +23,7 @@ const { theme } = require('../leaves/infra/themes');
 const { truncate, viewportDims } = require('../leaves/render/draw');
 const { focusedTerminalLabel } = require('../panel/terminal-surfaces');
 const { getPanelDef, getInstanceSlice, getFocus, instanceKind,
-        collectViewContributions, filterCurrentText } = require('../panel/api');
+        collectViewContributions, filterCurrentText, paneTypeHasBottomBar } = require('../panel/api');
 const modes = require('../leaves/input/modes');
 // E9 — footer key HINTS are declared as data in this leaf (the single source
 // the footer + a future powerline/segment footer project from). The footer
@@ -38,6 +38,17 @@ const { getFreeConfigFooter } = require('../panel/free-config-view');
 // render-path require sweep in geometry.js). Kept lazy to avoid a load-
 // order cycle through panel/route.
 let _routeRef; const _route = () => (_routeRef ||= require('../panel/route'));
+
+// Whether the focused pane's `keyHints` should appear in the footer. A pane with
+// no border item-action bar always uses the footer. A pane that HAS one (docker)
+// shows its keys in the footer ONLY when `quick_keys: footer` — under the default
+// `border` (bar owns them) and `off` (no hints) the footer stays quiet, so the
+// quick keys never appear in two places. (docs/global-config.md)
+function _showFooterHints(model, focus) {
+  const type = _route().paneTypeOf(focus) || focus;
+  if (!paneTypeHasBottomBar(type)) return true;
+  return ((model.config && model.config.quick_keys) || 'border') === 'footer';
+}
 
 /**
  * Build the keys-string for the footer's left half. Modal footers
@@ -144,7 +155,7 @@ function renderFooter(model = getModel()) {
   const focusDef = getPanelDef(focus);
   let keys = footerKeys(model);
   if (!inModal) {
-    if (focusDef && focusDef.keyHints) keys += ` | ${esc(focusDef.keyHints)}`;
+    if (focusDef && focusDef.keyHints && _showFooterHints(model, focus)) keys += ` | ${esc(focusDef.keyHints)}`;
     const msCount = multiSelCount(focus);
     if (msCount > 0) keys += ` | ${esc(`[${msCount} sel]`)}`;
     // Surface layout-dirty state to non-modal users too. They might

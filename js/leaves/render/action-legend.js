@@ -78,6 +78,11 @@ function actionLegendSpec({ actions, itemAt }) {
     render(model, pane) {
       if (model && model.modes && model.modes.freeConfigMode) return null;
       if (!pane || !pane.focused) return null;
+      // Global `quick_keys` placement: `border` (default) draws this bar;
+      // `footer`/`off` suppress it (the footer shows/hides the hints instead —
+      // footer.js reads the same setting, so the keys live in ONE place).
+      const qk = (model && model.config && model.config.quick_keys) || 'border';
+      if (qk !== 'border') return null;
       return actionLegendRender(actions, pane.innerW);
     },
     regions(x0, y, _visibleW, pane) {

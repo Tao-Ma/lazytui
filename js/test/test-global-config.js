@@ -218,4 +218,20 @@ describe('[boot] loadConfig layers the global file (real seam)', () => {
   });
 });
 
+describe('[global] quick_keys — global-only item-action placement', () => {
+  it('valid values load; an invalid one drops the whole global with a warning (never-brick)', () => {
+    const ok = g.loadGlobal({ LAZYTUI_GLOBAL_CONFIG: write('qk-ok.yml', 'quick_keys: footer\n') });
+    eq(ok.config.quick_keys, 'footer');
+    const off = g.loadGlobal({ LAZYTUI_GLOBAL_CONFIG: write('qk-off.yml', 'quick_keys: off\n') });
+    eq(off.config.quick_keys, 'off');
+    const bad = g.loadGlobal({ LAZYTUI_GLOBAL_CONFIG: write('qk-bad.yml', 'quick_keys: sidebar\n') });
+    eq(bad.config, null, 'invalid value → global dropped (project-only)');
+    assert(bad.warnings.some(w => /quick_keys/.test(w.message)), 'warns about quick_keys');
+  });
+  it('mergeGlobal lifts it onto the config (global-only — project never carries it)', () => {
+    eq(g.mergeGlobal({ theme: 'x' }, { quick_keys: 'off' }).quick_keys, 'off');
+    eq(g.mergeGlobal({}, { quick_keys: 'border' }).quick_keys, 'border');
+  });
+});
+
 report();

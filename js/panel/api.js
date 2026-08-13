@@ -424,6 +424,13 @@ function paneBorderControlSpecs(type) {
 // hit-test). The SINGLE source both the render decision (navigator render →
 // renderPanel `borderControls`) and the click routing (panel/chrome-hittest)
 // read, so paint and hit-test can't drift.
+// Whether a panel type carries a BOTTOM-slot border control (the item-action
+// bar). Used by the footer to drop that pane's `keyHints` when `quick_keys` puts
+// the hints on the border instead — so the keys aren't shown twice.
+function paneTypeHasBottomBar(type) {
+  return paneBorderControlSpecs(type).some(s => (s.slot || 'top') === 'bottom');
+}
+
 function borderControlsFor(pane, model) {
   const out = [];
   for (const spec of paneBorderControlSpecs(pane && pane.type)) {
@@ -701,7 +708,7 @@ module.exports = {
   registerComponent, registerEffect, wrap,
   _components: _componentsMap,  // v0.6.3 Phase B — internal use by initState + fanout
   getComponent, getComponentOwningPanel, getFocus,
-  paneBorderControlSpecs, borderControlsFor,
+  paneBorderControlSpecs, borderControlsFor, paneTypeHasBottomBar,
   // Tab-instance registry surface.
   setInstance, getInstance, getInstanceSlice, sliceForPane, setInstanceSlice,
   hasInstance, disposeInstance, instanceKind, eachInstance,

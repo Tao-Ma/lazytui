@@ -606,4 +606,11 @@ describe('[17] augmentMsg threads the canonical list only for key Msgs, keyed on
   });
 });
 
+describe('[18] paneTypeHasBottomBar — the footer uses this to avoid double-showing quick keys', () => {
+  it('true for a pane with a bottom action bar (containers), false otherwise', () => {
+    eq(api.paneTypeHasBottomBar('containers'), true);
+    eq(api.paneTypeHasBottomBar('groups'), false);
+  });
+});
+
 report();

@@ -23,6 +23,7 @@ color_depth: auto           # wholesale — auto | truecolor | 256 | 16 (see bel
 keyboard_protocol: auto     # wholesale — auto | legacy | kitty (see below)
 action_status:              # global-only — action-status chip (see below)
   segments: [status, duration, time]
+quick_keys: border          # global-only — border | footer | off (see below)
 keys:                       # entry-level merge — per key-sequence
   "<space>g": { command: "grep TODO" }
 keymap:                     # entry-level merge on normal:, version project-wins
@@ -51,8 +52,9 @@ The global file layers UNDER the project config:
   global value applies. For `color_depth` and `keyboard_protocol`, a project
   `auto` ALSO counts as absent: `auto` means "no override opinion, decide
   from the environment", so an explicit global value applies under it.
-- **`action_status`** is global-only (not a project top key), so it is simply
-  lifted onto the merged config — a display preference that follows the user.
+- **`action_status`** and **`quick_keys`** are global-only (not project top
+  keys), so they are simply lifted onto the merged config — display preferences
+  that follow the user.
 
 ### color_depth
 
@@ -139,6 +141,25 @@ action_status:
   prints.
 
 Terminal (`type: spawn` / `terminal`) panes are not covered.
+
+### quick_keys
+
+Where a pane's per-item **quick keys** (the item-action affordance — inspect /
+logs / shell / stop / restart / kill on the `containers` pane) surface. One
+place only, never two:
+
+- `border` *(default)* — an on-pane bar on the pane's **bottom border**, with
+  each trigger key highlighted in the word (`i`nspect `L`ogs `s`hell `S`top
+  `R`estart `K`ill; uppercase = a Shift chord). Clickable, and width-adaptive
+  (full labels when they fit, else just the key letters). The footer's key hints
+  for that pane are suppressed so the keys aren't shown twice.
+- `footer` — no border bar; the keys appear as text in the **footer** status
+  line (the traditional lazytui style), keeping the pane's border clean.
+- `off` — neither surface; the keys still work.
+
+Global-only and applies to every pane that has an item-action bar (today the
+`containers` pane). Panes without one always show their hints in the footer,
+regardless of this setting.
 
 The merge happens inside `parse()`: the project config validates STANDALONE
 first (its errors surface unchanged, global file or not), the pre-validated

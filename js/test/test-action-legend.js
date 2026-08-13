@@ -85,4 +85,15 @@ describe('[action-legend] spec', () => {
   });
 });
 
+describe('[action-legend] quick_keys placement gate', () => {
+  const spec = al.actionLegendSpec({ actions: acts, itemAt: () => 'web' });
+  const pane = { paneId: 'p', focused: true, innerW: 40 };
+  it('renders in border mode + by default; suppressed in footer / off', () => {
+    assert(spec.render({ modes: {}, config: { quick_keys: 'border' } }, pane));
+    assert(spec.render({ modes: {}, config: {} }, pane), 'default = border');
+    eq(spec.render({ modes: {}, config: { quick_keys: 'footer' } }, pane), null);
+    eq(spec.render({ modes: {}, config: { quick_keys: 'off' } }, pane), null);
+  });
+});
+
 report();

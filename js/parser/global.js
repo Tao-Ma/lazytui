@@ -81,9 +81,10 @@ function loadGlobal(env) {
 function mergeGlobal(project, global) {
   if (!global) return project;
   const out = { ...project };
-  // action_status is global-only (not a project top key), so project never
-  // carries it — this just lifts the global value onto the merged config.
-  for (const k of ['theme', 'selection', 'editor', 'action_status']) {
+  // action_status + quick_keys are global-only (not project top keys), so the
+  // project never carries them — this just lifts the global value onto the
+  // merged config.
+  for (const k of ['theme', 'selection', 'editor', 'action_status', 'quick_keys']) {
     // null counts as unset: parse() stamps `editor: null` on its output, so
     // a resolved-shape .json config must not block a global editor with the
     // stamped "not set" default (v0.6.12 review MED). theme/selection are

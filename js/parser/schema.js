@@ -26,7 +26,7 @@ const VALID_TOP_KEYS    = new Set(['project_dir', 'groups', 'vars', 'helpers', '
 // the APP-BEHAVIOR sections are honored there; project content (groups,
 // layout, vars, …) belongs to the per-project config. Anything else in the
 // global file warns and is ignored — a global file must never brick a project.
-const GLOBAL_TOP_KEYS = new Set(['theme', 'keys', 'keymap', 'mouse', 'context-menu', 'selection', 'editor', 'color_depth', 'keyboard_protocol', 'action_status']);
+const GLOBAL_TOP_KEYS = new Set(['theme', 'keys', 'keymap', 'mouse', 'context-menu', 'selection', 'editor', 'color_depth', 'keyboard_protocol', 'action_status', 'quick_keys']);
 
 // action-status — the powerline-style command-finish status line on a
 // text-view output pane. `segments` are the fields (subset + order); `time` =
@@ -165,6 +165,18 @@ function validateKeyboardProtocol(v) {
 // validateGlobal and drop the ENTIRE global config to project-only over one
 // empty key, against the never-brick contract. (This section's resolver treats
 // null as a meaningful value, unlike the sibling honored keys.)
+// quick_keys (docs/global-config.md) — where a pane's item-action quick keys
+// surface: `border` (the on-pane bottom-border bar, default), `footer` (the
+// status-line hints, lazytui's traditional style), or `off` (neither; the keys
+// still work). Global-only; resolve/default lives at the read sites.
+const VALID_QUICK_KEYS = new Set(['border', 'footer', 'off']);
+function validateQuickKeys(v) {
+  if (v == null) return;   // bare key → default (border) at the read site
+  if (!VALID_QUICK_KEYS.has(v)) {
+    throw new SchemaError(`'quick_keys' must be one of: ${[...VALID_QUICK_KEYS].join(', ')}`);
+  }
+}
+
 function validateActionStatus(v) {
   if (v === true || v === false || v == null) return;
   if (!isMapping(v)) {
@@ -218,6 +230,7 @@ function validateGlobal(data, warnings) {
   if ('color_depth' in out) validateColorDepth(out.color_depth);
   if ('keyboard_protocol' in out) validateKeyboardProtocol(out.keyboard_protocol);
   if ('action_status' in out) validateActionStatus(out.action_status);
+  if ('quick_keys' in out) validateQuickKeys(out.quick_keys);
   if ('keys' in out)     validateKeys(out.keys);
   if ('keymap' in out)   validateKeymap(out.keymap);
   if ('mouse' in out)    validateMouse(out.mouse);
