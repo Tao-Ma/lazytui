@@ -387,19 +387,35 @@ const { wrap } = route;
 function getComponent(name)              { return components[name]; }
 const { componentForPanel: getComponentOwningPanel, getFocus } = route;
 
-// Component-declared capability: a panel type carries the top-border refresh
-// control iff its owning Component's `panelTypes[type]` descriptor sets
-// `refreshControl: true`. The SINGLE source both the render decision
-// (navigator/docker's renderPanel `borderControl` slot) and the click routing
-// (panel/chrome-hittest) read, so the two can't drift — remove the flag and
-// both the paint and the hit-test drop together. Was a hardcoded type Set in
-// chrome-hittest before v0.6.16-followups.
-function paneTypeHasRefreshControl(type) {
+// Component-declared capability: the ordered list of top-border control SPECS a
+// panel type carries, from its owning Component's `panelTypes[type].borderControls`
+// array (the registration-based successor to the `refreshControl: true` boolean).
+// A pane declares its controls (refresh, sort, …) once; the framework renders +
+// hit-tests them generically. Empty array = no controls.
+function paneBorderControlSpecs(type) {
   for (const comp of Object.values(components)) {
     const desc = comp.panelTypes && comp.panelTypes[type];
-    if (desc && desc.refreshControl) return true;
+    if (desc && Array.isArray(desc.borderControls) && desc.borderControls.length) {
+      return desc.borderControls;
+    }
   }
-  return false;
+  return [];
+}
+
+// Resolve a panel type's border controls against the live model: each spec's
+// `render(model)` → `{ text, visibleW }`, or null to hide it this frame (e.g. the
+// refresh control suppresses itself in free-config). Returns the VISIBLE controls
+// in registration order, each carrying its spec (for `regions`/`dispatch` in the
+// hit-test). The SINGLE source both the render decision (navigator render →
+// renderPanel `borderControls`) and the click routing (panel/chrome-hittest) read,
+// so paint and hit-test can't drift.
+function borderControlsFor(type, model) {
+  const out = [];
+  for (const spec of paneBorderControlSpecs(type)) {
+    const r = spec.render(model);
+    if (r) out.push({ spec, text: r.text, visibleW: r.visibleW });
+  }
+  return out;
 }
 
 // Tab-instance registry surface. `getInstanceSlice(tabId)` is the
@@ -645,7 +661,7 @@ module.exports = {
   registerComponent, registerEffect, wrap,
   _components: _componentsMap,  // v0.6.3 Phase B — internal use by initState + fanout
   getComponent, getComponentOwningPanel, getFocus,
-  paneTypeHasRefreshControl,
+  paneBorderControlSpecs, borderControlsFor,
   // Tab-instance registry surface.
   setInstance, getInstance, getInstanceSlice, sliceForPane, setInstanceSlice,
   hasInstance, disposeInstance, instanceKind, eachInstance,

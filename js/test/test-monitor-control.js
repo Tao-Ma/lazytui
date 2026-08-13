@@ -135,7 +135,7 @@ describe('[monitor-control] render ↔ refreshControlFits agreement (phantom-cli
     for (let w = 8; w <= 60; w++) {
       const top = stripMarkup(draw.renderPanel({
         width: w, height: 4, lines: [], title: 'Containers', hotkey: 'd',
-        chrome: { collapse: 'collapse' }, borderControl: text,
+        chrome: { collapse: 'collapse' }, borderControls: [text],
       }).split('\n')[0]);
       const drawn = top.includes('- 10s +');
       const predicted = mc.refreshControlFits(w - 2, GLYPH_W, visibleW);
@@ -147,7 +147,7 @@ describe('[monitor-control] render ↔ refreshControlFits agreement (phantom-cli
     const firstShown = (title) => {
       for (let w = 8; w <= 60; w++) {
         const top = stripMarkup(draw.renderPanel({ width: w, height: 4, lines: [], title, hotkey: 'd',
-          chrome: { collapse: 'collapse' }, borderControl: text }).split('\n')[0]);
+          chrome: { collapse: 'collapse' }, borderControls: [text] }).split('\n')[0]);
         if (top.includes('- 10s +')) return w;
       }
       return null;

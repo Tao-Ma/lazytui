@@ -91,8 +91,9 @@ const _PAD_CELLS = 4;
 
 /**
  * The control markup + its visible cell width. `text` renders as `- Ns +` with
- * the `-`/`+` dimmed; the caller places it (docker draws it on the top border via
- * renderPanel's `borderControl` slot). Width = label + the `- ` / ` +` padding.
+ * the `-`/`+` dimmed; the caller places it (the refresh spec returns it from
+ * render(), and docker feeds it to renderPanel's `borderControls` strip). Width =
+ * label + the `- ` / ` +` padding.
  */
 function refreshControlText(refreshMs) {
   const label = formatRefreshMs(refreshMs);
@@ -142,8 +143,46 @@ function refreshControlDir(mx, my, hits) {
   return 0;
 }
 
+/**
+ * A BORDER-CONTROL SPEC for the refresh control — the refresh KIND packaged for
+ * the generic border-control strip (leaves/render/border-controls + api's
+ * borderControlsFor + panel/chrome-hittest). A pane registers this in its
+ * `panelTypes[type].borderControls` array; the framework renders + hit-tests it
+ * without knowing it's "the refresh control". This is the reuse seam: any
+ * monitor pane (stats-graph next) parameterizes it with its own owner + a reader
+ * for the current (already-clamped) interval.
+ *
+ * @param {string} owner - Component name the click Msg routes to
+ * @param {() => number} currentMs - reads the live, clamped refresh interval
+ * @returns {{ render, regions, dispatch }} a spec:
+ *   - render(model) → { text, visibleW } | null   (null = hidden this frame)
+ *   - regions(x0, y, visibleW) → [{ x0, x1, y, action }]  action ∈ 'dec'|'inc'
+ *   - dispatch(action) → { owner, msg }            the Msg to dispatch on a hit
+ *
+ * Suppressed in free-config (that mode drops non-`layout` wraps, so a `-`/`+`
+ * click would be inert — don't paint a dead affordance; the paint + hit-test
+ * both read `render() === null` so they can't drift).
+ */
+function refreshControlSpec({ owner, currentMs }) {
+  return {
+    id: 'refresh',
+    render(model) {
+      if (model && model.modes && model.modes.freeConfigMode) return null;
+      return refreshControlText(currentMs());
+    },
+    regions(x0, y, visibleW) {
+      const h = refreshControlHits(x0, y, visibleW);
+      return [{ ...h.minus, action: 'dec' }, { ...h.plus, action: 'inc' }];
+    },
+    dispatch(action) {
+      return { owner, msg: { type: 'set_refresh_ms', dir: action === 'dec' ? -1 : 1 } };
+    },
+  };
+}
+
 module.exports = {
   REFRESH_LADDER, MIN_REFRESH_MS, MAX_REFRESH_MS, DEFAULT_REFRESH_MS,
   normalizeLadder, clampRefreshMs, stepRefreshMs, formatRefreshMs,
   refreshControlText, refreshControlHits, refreshControlBorderX0, refreshControlFits, refreshControlDir,
+  refreshControlSpec,
 };

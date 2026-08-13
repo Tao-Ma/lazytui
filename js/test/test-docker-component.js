@@ -452,21 +452,23 @@ describe('[12] render draws the refresh control on the top border', () => {
   });
 });
 
-describe('[13] hitTestRefreshControl resolves clicks on a placed containers pane', () => {
-  const { hitTestRefreshControl } = require('../panel/chrome-hittest');
-  it('maps -/+ cells to a direction; label / off-row / non-monitor miss', () => {
+describe('[13] hitTestBorderControls resolves refresh-control clicks on a placed containers pane', () => {
+  const { hitTestBorderControls } = require('../panel/chrome-hittest');
+  const dec = { owner: 'docker', msg: { type: 'set_refresh_ms', dir: -1 } };
+  const inc = { owner: 'docker', msg: { type: 'set_refresh_ms', dir: 1 } };
+  it('maps -/+ cells to the owner Msg; label / off-row / too-narrow miss', () => {
     const ls = getInstanceSlice('layout');
     ls.arrange = { columns: [{ panels: [{ type: 'containers', paneId: 'c-hit', title: 'C', columnIndex: 0 }] }], detailHeightPct: 60 };
     ls.paneBounds = { 'c-hit': { x: 0, y: 0, w: 40, h: 8 } };   // collapse [_] x0 = 36
     ls.freeConfig = null;
     getModel().modes = {};                                       // not free-config → collapse is leftmost glyph
     api.dispatchMsg(api.wrap('docker', { type: 'set_refresh_ms', ms: 2000 }));  // "2s" → visibleW 6 → control x0 = 36-1-6 = 29
-    eq(hitTestRefreshControl(29, 0), { dir: -1 });   // on `-`
-    eq(hitTestRefreshControl(34, 0), { dir: 1 });    // on `+` (x0+visibleW-1)
-    eq(hitTestRefreshControl(31, 0), null);          // label cell
-    eq(hitTestRefreshControl(29, 1), null);          // wrong row
+    eq(hitTestBorderControls(29, 0), dec);    // on `-`
+    eq(hitTestBorderControls(34, 0), inc);    // on `+` (x0+visibleW-1)
+    eq(hitTestBorderControls(31, 0), null);   // label cell
+    eq(hitTestBorderControls(29, 1), null);   // wrong row
     ls.paneBounds = { 'c-hit': { x: 0, y: 0, w: 10, h: 8 } };   // too narrow → control not shown
-    eq(hitTestRefreshControl(5, 0), null);
+    eq(hitTestBorderControls(5, 0), null);
   });
   it('suppressed in free-config (the control is not painted there → no phantom click)', () => {
     const ls = getInstanceSlice('layout');
@@ -475,7 +477,7 @@ describe('[13] hitTestRefreshControl resolves clicks on a placed containers pane
     ls.freeConfig = null;
     getModel().modes = { freeConfigMode: true };
     api.dispatchMsg(api.wrap('docker', { type: 'set_refresh_ms', ms: 2000 }));
-    eq(hitTestRefreshControl(29, 0), null);   // would hit `-` in normal mode; suppressed here
+    eq(hitTestBorderControls(29, 0), null);   // would hit `-` in normal mode; suppressed here
     getModel().modes = {};
   });
 });

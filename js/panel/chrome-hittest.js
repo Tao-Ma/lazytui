@@ -15,17 +15,16 @@
  */
 'use strict';
 
-const { getInstanceSlice, serviceSlice, paneTypeHasRefreshControl } = require('./api');
+const { getInstanceSlice, borderControlsFor } = require('./api');
 const { getModel } = require('../model/store');
 const mpool = require('../leaves/wm/pool');
 const { visibleBoundsFor } = require('../leaves/wm/geometry');
-const mc = require('../leaves/render/monitor-control');
+const bc = require('../leaves/render/border-controls');
 
-// Which pane types carry a top-border refresh control is a Component-declared
-// capability (`panelTypes[type].refreshControl`) read via api — the SAME source
-// the render decision uses, so paint and hit-test can't drift. Docker-first;
-// stats-graph joins by setting the flag on its own descriptor. (Was a hardcoded
-// Set(['containers']) here.)
+// Which top-border controls a pane type carries is a Component-declared
+// capability (`panelTypes[type].borderControls`) resolved via api.borderControlsFor
+// — the SAME source the render decision uses, so paint and hit-test can't drift.
+// Docker-first; other panes join by declaring their own control specs.
 
 const GLYPH_W = 3;
 const COLLAPSE_MIN_W = 9;
@@ -85,32 +84,36 @@ function hitTestCloseButton(mx, my) {
   return null;
 }
 
-/** Hit-test the monitor refresh control (`- Ns +`) on a monitor pane's top
- *  border. Returns `{ dir }` (-1 faster / +1 slower) or null. The control is
- *  host-global (the docker owner's cadence), so a click on ANY monitor pane's
- *  control steps the shared rate — the caller dispatches `set_refresh_ms {dir}`
- *  to the owner.
+/** Hit-test the top-border control strip (refresh `- Ns +`, sort `‹ col ›`, …)
+ *  on a placed pane. Returns `{ owner, msg }` — the spec's own click Msg, routed
+ *  to its owner Component — or null. The caller dispatches `wrap(owner, msg)`.
  *
  *  Presence + geometry mirror renderPanel EXACTLY so a click can't land where no
- *  control drew: docker suppresses the control in free-config (dropped there), so
- *  it only ever shows in normal mode where the sole right glyph is `[_]`
- *  (collapse) — glyph cluster width = GLYPH_W. Presence gates on the shared
- *  `refreshControlFits` (the title-independent predicate renderPanel reserves
- *  for); position is `refreshControlBorderX0(_collapseGlyphX0, visibleW)`. */
-function hitTestRefreshControl(mx, my) {
+ *  control drew: the SAME `borderControlsFor(type, model)` the render decision
+ *  uses returns only the controls visible THIS frame (specs suppress themselves
+ *  in free-config, so the strip is empty there — no phantom click). Controls only
+ *  ever show in normal mode where the sole right glyph is `[_]` (collapse), so
+ *  the glyph cluster width = GLYPH_W. Presence gates on the shared `bc.fits`
+ *  (the title-independent predicate renderPanel reserves for); positions come
+ *  from `bc.placeX0s(visibleWs, _collapseGlyphX0)`. */
+function hitTestBorderControls(mx, my) {
   const targets = _placedWidgetTargets();
   if (!targets) return null;
-  if ((getModel().modes || {}).freeConfigMode) return null;   // control suppressed in free-config
-  const s = serviceSlice('docker') || {};
-  const { visibleW } = mc.refreshControlText(mc.clampRefreshMs(s.refreshMs, s.refreshLadder));
+  const model = getModel();
   for (const { p, b } of targets) {
-    if (!paneTypeHasRefreshControl(p.type)) continue;
-    if (!mc.refreshControlFits(b.w - 2, GLYPH_W, visibleW)) continue;   // same gate renderPanel uses
-    const x0 = mc.refreshControlBorderX0(_collapseGlyphX0(b), visibleW);
-    const dir = mc.refreshControlDir(mx, my, mc.refreshControlHits(x0, b.y, visibleW));
-    if (dir) return { dir };
+    const controls = borderControlsFor(p.type, model);
+    if (!controls.length) continue;
+    const visibleWs = controls.map(c => c.visibleW);
+    if (!bc.fits(b.w - 2, GLYPH_W, visibleWs)) continue;   // same gate renderPanel uses
+    const x0s = bc.placeX0s(visibleWs, _collapseGlyphX0(b));
+    for (let i = 0; i < controls.length; i++) {
+      const regions = controls[i].spec.regions(x0s[i], b.y, controls[i].visibleW);
+      for (const r of regions) {
+        if (my === r.y && mx >= r.x0 && mx <= r.x1) return controls[i].spec.dispatch(r.action);
+      }
+    }
   }
   return null;
 }
 
-module.exports = { hitTestCollapseButton, hitTestCloseButton, hitTestRefreshControl };
+module.exports = { hitTestCollapseButton, hitTestCloseButton, hitTestBorderControls };

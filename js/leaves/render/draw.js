@@ -93,17 +93,19 @@ function truncate(text, maxWidth) {
  *   `count[1]` carries the true total. Default false (navigators pass the full
  *   list + scrollOffset and let renderPanel slice).
  * @param {string} [opts.color] - focused border color
- * @param {string} [opts.borderControl] - opt-in interactive control text embedded
- *   in the top border, right-anchored one gap-dash left of the chrome glyphs (the
- *   monitor refresh control `- Ns +` is the first consumer). Its presence is
- *   title-INDEPENDENT (the title truncates to reserve room); panel/chrome-hittest
- *   mirrors the same fit predicate so a click can't land where no control drew.
+ * @param {string[]} [opts.borderControls] - opt-in interactive control markup
+ *   embedded in the top border, right-anchored one gap-dash left of the chrome
+ *   glyphs. An ordered STRIP: the first entry paints leftmost, the last nearest
+ *   the glyphs (the monitor refresh control `- Ns +` was the first consumer).
+ *   Presence is title-INDEPENDENT (the title truncates to reserve the whole
+ *   strip); leaves/render/border-controls + panel/chrome-hittest mirror the same
+ *   fit predicate so a click can't land where no control drew.
  * @returns {string} Rich markup string
  */
 function renderPanel({
   width, height, lines = [], title = '', hotkey = '',
   focused = false, count = null, scrollOffset = 0, color = null,
-  panelType = null, chrome = null, windowed = false, borderControl = null,
+  panelType = null, chrome = null, windowed = false, borderControls = [],
 }) {
   const t = theme();
   const b = BORDER;
@@ -132,16 +134,20 @@ function renderPanel({
   const wantLeftTrigger  = chrome && chrome.tabTrigger;
   const wantRightCollapse = chrome && chrome.collapse;
   const wantRightClose    = chrome && chrome.close;
+  const hasControls = Array.isArray(borderControls) && borderControls.length > 0;
   if (chrome && (wantLeftTrigger || wantRightCollapse || wantRightClose)) {
-    // Right cluster first. The opt-in border control (e.g. the monitor refresh
-    // control `- Ns +`) sits one gap-dash LEFT of the glyphs (right-anchored),
-    // matching monitor-control.refreshControlBorderX0 that panel/chrome-hittest
-    // hit-tests.
+    // Right cluster first. The opt-in border-control strip (e.g. the monitor
+    // refresh control `- Ns +`) sits one gap-dash LEFT of the glyphs (right-
+    // anchored). Prepend controls right-to-left so the FIRST registered paints
+    // leftmost and the LAST nearest the glyphs — matching border-controls.placeX0s
+    // that panel/chrome-hittest hit-tests.
     let rightPart = '';
     if (wantRightClose) rightPart += _closeGlyphMarkup(focused, fc);
     if (wantRightClose && wantRightCollapse) rightPart += b.h;
     if (wantRightCollapse) rightPart += _collapseGlyphMarkup(chrome.collapse, focused, fc);
-    if (borderControl) rightPart = `${borderControl}${b.h}${rightPart}`;
+    if (hasControls) {
+      for (let i = borderControls.length - 1; i >= 0; i--) rightPart = `${borderControls[i]}${b.h}${rightPart}`;
+    }
     rightPart += b.tr;
     const rightVis = visibleLen(rightPart);
 
@@ -154,21 +160,21 @@ function renderPanel({
       leftPart += _tabTriggerMarkup(chrome.tabTrigger, focused, fc);
     }
     if (title) leftPart += `${b.h}${title}`;
-    // With a border control, reserve the WHOLE right cluster (+ one separator
-    // dash) so the TITLE truncates to fit it — the control's presence is then
-    // title-INDEPENDENT (renders iff `╭─` + a dash + the cluster fit), which
-    // monitor-control.refreshControlFits mirrors for the hit-test so a click can
-    // never land where no control drew. Without a control, the pre-P4 behavior:
-    // the title may use the full width and the whole chrome row drops if it and
-    // the glyphs don't fit.
-    const leftCap = borderControl ? (innerW + 2 - rightVis - 1) : (innerW + 2 - 2);
+    // With a border-control strip, reserve the WHOLE right cluster (+ one
+    // separator dash) so the TITLE truncates to fit it — the strip's presence is
+    // then title-INDEPENDENT (renders iff `╭─` + a dash + the cluster fit), which
+    // border-controls.fits mirrors for the hit-test so a click can never land
+    // where no control drew. Without controls, the pre-P4 behavior: the title
+    // may use the full width and the whole chrome row drops if it and the glyphs
+    // don't fit.
+    const leftCap = hasControls ? (innerW + 2 - rightVis - 1) : (innerW + 2 - 2);
     leftPart = truncate(leftPart, Math.max(0, leftCap));
 
     const leftVis  = visibleLen(leftPart);
     const midFill = (innerW + 2) - leftVis - rightVis;
-    // Border control: presence gates on `leftCap >= 2` (room for `╭─`), which
-    // guarantees midFill >= 1. Otherwise the pre-P4 `midFill >= 1` gate.
-    const fits = borderControl ? (leftCap >= 2) : (midFill >= 1);
+    // Border-control strip: presence gates on `leftCap >= 2` (room for `╭─`),
+    // which guarantees midFill >= 1. Otherwise the pre-P4 `midFill >= 1` gate.
+    const fits = hasControls ? (leftCap >= 2) : (midFill >= 1);
     if (fits) {
       top = wrapColor(fc, leftPart + b.h.repeat(Math.max(1, midFill)) + rightPart);
     } else {

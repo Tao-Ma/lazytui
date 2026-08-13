@@ -43,12 +43,12 @@ const {
   leaveTerminalMode,
   getItems: apiGetItems, selectedOrFocused,
   serviceSlice,
-  paneTypeHasRefreshControl,
+  borderControlsFor,
   hub,
 } = require('../api');
 const { getModel } = require('../../model/store');
 const mnav = require('../../leaves/wm/nav');
-const { clampRefreshMs, stepRefreshMs, normalizeLadder, refreshControlText } = require('../../leaves/render/monitor-control');
+const { clampRefreshMs, stepRefreshMs, normalizeLadder, refreshControlSpec } = require('../../leaves/render/monitor-control');
 
 // The `containers` pane's resolved plugin config (`refresh_ms` / `refresh_ladder`
 // live here). parse() folds `panels:` into `config.layout.pool[id]` with each
@@ -567,15 +567,13 @@ function render(panel, width, height, _slice, opts) {
     count: containers.length ? [sel + 1, containers.length] : null,
     scrollOffset: getScroll(panel.paneId),
     chrome: opts && opts.chrome,
-    // btop-style refresh-rate control on the top border (Phase 3). The cadence
-    // is host-global (the service owner's refreshMs), so every docker pane shows
-    // the same value; a click on any pane's -/+ steps the shared rate. Gated on
-    // the Component-declared `refreshControl` capability (the SAME predicate the
-    // hit-test reads, so paint + click can't drift). Suppressed in free-config:
-    // that mode drops non-`layout` wraps, so the click would be inert — don't
-    // paint a dead affordance (chrome-hittest mirrors this).
-    borderControl: (!(m.modes && m.modes.freeConfigMode) && paneTypeHasRefreshControl('containers'))
-      ? refreshControlText(_refreshMs()).text : null,
+    // Top-border control strip — resolved from the Component-declared
+    // `borderControls` specs (the refresh `- Ns +` control today). The SAME
+    // `borderControlsFor` the hit-test reads, so paint + click can't drift; each
+    // spec self-suppresses when inert (refresh hides in free-config, whose wraps
+    // are dropped). The refresh cadence is host-global (the service owner's
+    // refreshMs), so every docker pane shows the same value.
+    borderControls: borderControlsFor('containers', m).map(c => c.text),
   });
 }
 
@@ -736,11 +734,13 @@ module.exports = {
       filterable: true,
       filterText: name => name,
       idOf: name => name,
-      // Component-declared capability (v0.6.16 follow-up): this pane type
-      // carries the top-border refresh control. The ONE source both the
-      // render slot (see render() below) and the click hit-test
-      // (panel/chrome-hittest via api.paneTypeHasRefreshControl) read.
-      refreshControl: true,
+      // Component-declared top-border control strip. Each entry is a
+      // border-control SPEC (render/regions/dispatch); the framework
+      // (api.borderControlsFor + panel/chrome-hittest) renders + hit-tests them
+      // generically. The ONE source both the render slot (see render() above)
+      // and the click hit-test read, so paint + click can't drift. The refresh
+      // control is host-global — its click Msg routes to the docker owner.
+      borderControls: [refreshControlSpec({ owner: 'docker', currentMs: _refreshMs })],
     },
   },
   // Test-only internals (events stream pure helpers + stat parsers + reducer).
