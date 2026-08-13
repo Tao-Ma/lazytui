@@ -50,6 +50,7 @@ const { getModel } = require('../../model/store');
 const mnav = require('../../leaves/wm/nav');
 const { clampRefreshMs, stepRefreshMs, normalizeLadder, refreshControlSpec } = require('../../leaves/render/monitor-control');
 const { sortControlSpec } = require('../../leaves/render/sort-control');
+const { actionLegendSpec } = require('../../leaves/render/action-legend');
 
 // The `containers` pane's resolved plugin config (`refresh_ms` / `refresh_ladder`
 // live here). parse() folds `panels:` into `config.layout.pool[id]` with each
@@ -268,6 +269,10 @@ function update(msg, slice) {
   // Phase 4a — nav chrome Msgs handled by the shared leaf.
   if (mnav.isNavMsg(msg)) return mnav.apply(slice, msg);
   if (msg.type === 'key') return _handleKey(msg, slice);
+  // Item-action bar click (per-pane, so it's handled ABOVE the content gate on
+  // this pane's own instance). The clicked item was resolved at dispatch time
+  // (chrome-hittest), so the reducer stays pure of getModel().
+  if (msg.type === 'item_action') return [slice, _itemActionCmds(msg.action, msg.item)];
   // v0.6.4 Theme A Phase 5 Arc 3 — content gate. The status/stats fetch
   // loop + the `docker events` stream are HOST-GLOBAL (the same daemon,
   // the same containers, regardless of how many docker panes are placed),
@@ -318,16 +323,40 @@ function update(msg, slice) {
 function _handleKey(msg, slice) {
   // Pure key arm — all inputs come from the Msg + our own slice, not global
   // reads: msg.focusKind is the focused pane's panel-type (threaded by
-  // dispatchKeyToFocused); msg.items is the active group's container list
-  // (threaded by augmentMsg, computed in the impure shell — was
-  // _getItems()→getModel()); the cursor comes from slice.nav via the nav leaf.
+  // dispatchKeyToFocused); msg.items is the canonical (filtered+sorted) container
+  // list (threaded by augmentMsg); the cursor comes from slice.nav via the nav
+  // leaf. The key→action map IS the declared `_itemActions` list — the same one
+  // the bottom action bar renders — so a keypress and a click can't drift.
   if (msg.focusKind !== 'containers') return slice;
+  const a = _itemActions.find(x => x.key && x.key === msg.key);
+  if (!a) return slice;
   const item = (msg.items || [])[mnav.cursorOf(slice, 'containers')];
-  if (!item) return slice;
-  if (msg.key === 'i') return [slice, [{ type: 'dockerExec', mode: 'inspect', item }]];
-  if (msg.key === 't') return [slice, [{ type: 'dockerExec', mode: 'logs', item }]];
-  if (msg.key === 's') return [slice, [{ type: 'dockerShell', item }]];
-  return slice;
+  return [slice, _itemActionCmds(a.id, item)];
+}
+
+// The Cmds an item-action emits — the SINGLE definition both the keyboard
+// (_handleKey) and the bar click (`item_action` arm) resolve through, so they
+// can't drift. inspect/logs/shell emit their existing effects directly;
+// stop/restart/kill run `docker <verb> <item>` through the shared action runner
+// (`run_action` Cmd) which applies the `confirm:` y/N gate before executing.
+function _itemActionCmds(actionId, item) {
+  if (item == null) return [];
+  switch (actionId) {
+    case 'inspect': return [{ type: 'dockerExec', mode: 'inspect', item }];
+    case 'logs':    return [{ type: 'dockerExec', mode: 'logs', item }];
+    case 'shell':   return [{ type: 'dockerShell', item }];
+    case 'stop': case 'restart': case 'kill': {
+      const verb = actionId;
+      const action = {
+        script: `docker ${verb} ${JSON.stringify(item)}`,
+        type: 'run',
+        label: `docker ${verb} ${item}`,
+        confirm: `${verb[0].toUpperCase()}${verb.slice(1)} container "${item}"?`,
+      };
+      return [{ type: 'run_action', actionKey: `docker-${verb}-${item}`, action }];
+    }
+    default: return [];
+  }
 }
 
 // Msg-enrichment hook (dispatch/runtime/loop _runInstance / dispatchKeyToFocused). The
@@ -573,13 +602,19 @@ function render(panel, width, height, _slice, opts) {
     count: containers.length ? [sel + 1, containers.length] : null,
     scrollOffset: getScroll(panel.paneId),
     chrome: opts && opts.chrome,
-    // Top-border control strip — resolved from the Component-declared
-    // `borderControls` specs (the refresh `- Ns +` control today). The SAME
-    // `borderControlsFor` the hit-test reads, so paint + click can't drift; each
-    // spec self-suppresses when inert (refresh hides in free-config, whose wraps
-    // are dropped). The refresh cadence is host-global (the service owner's
-    // refreshMs), so every docker pane shows the same value.
-    borderControls: borderControlsFor({ paneId: panel.paneId, type: 'containers' }, m).map(c => c.text),
+    ...(() => {
+      // Border controls — resolved from the Component-declared `borderControls`
+      // specs via the SAME `borderControlsFor` the hit-test reads (paint + click
+      // can't drift). Each spec self-suppresses when inert (refresh/sort hide in
+      // free-config; the action bar shows on the focused pane only). Partition by
+      // slot: the top strip (refresh + sort, right-anchored) and the bottom
+      // legend (item-action bar, left-anchored).
+      const ctl = borderControlsFor({ paneId: panel.paneId, type: 'containers', focused: isFocused }, m);
+      return {
+        borderControls: ctl.filter(c => (c.spec.slot || 'top') !== 'bottom').map(c => c.text),
+        bottomControls: ctl.filter(c => (c.spec.slot || 'top') === 'bottom').map(c => c.text),
+      };
+    })(),
   });
 }
 
@@ -713,6 +748,20 @@ const _sortKeys = [
   { key: 'mem',    label: 'mem',    value: n => { const s = _stats(n); const v = s ? parseMem(s.mem).used : NaN; return Number.isFinite(v) ? v : -1; } },
 ];
 
+// Per-container actions for the bottom action bar (btop-style) + the keyboard.
+// The bar renders `label`s (order = display order); `key` (when set) also binds
+// it on the keyboard. inspect/logs/shell keep their existing effects; the
+// destructive stop/restart/kill run through the confirm gate (see _itemActionCmds).
+// ONE list — bar + keybind read it, so a click and a keypress can't drift.
+const _itemActions = [
+  { id: 'inspect', label: 'inspect', key: 'i' },
+  { id: 'logs',    label: 'logs',    key: 't' },
+  { id: 'shell',   label: 'shell',   key: 's' },
+  { id: 'stop',    label: 'stop' },
+  { id: 'restart', label: 'restart' },
+  { id: 'kill',    label: 'kill' },
+];
+
 module.exports = {
   name: 'docker',
   init,
@@ -766,6 +815,7 @@ module.exports = {
       borderControls: [
         refreshControlSpec({ owner: 'docker', currentMs: _refreshMs }),
         sortControlSpec({ keys: _sortKeys, getSort }),
+        actionLegendSpec({ actions: _itemActions, itemAt: (paneId) => apiGetItems(paneId)[getSel(paneId)] }),
       ],
     },
   },

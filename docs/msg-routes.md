@@ -505,7 +505,7 @@ reducer (they hold no domain state beyond nav).
 | **detail** (viewer) | `panel/viewer/viewer.js` | ~22 + tab leaf | see §7.4 | ✅ verified (loop 2) |
 | **layout** | `panel/layout.js` | ~40 | see §7.5 | ✅ verified (loop 3) |
 | **groups** | `panel/navigator/groups.js` | ~4 +nav | see §7.6 | ✅ verified (loop 3) |
-| **docker** | `panel/navigator/docker.js` | 5 +nav | see §7.8 | ✅ verified (loop 4) |
+| **docker** | `panel/navigator/docker.js` | 6 +nav | see §7.8 | ✅ verified (loop 4) |
 | **files** | `panel/navigator/files.js` | 4 +nav | see §7.8 | ✅ verified (loop 4) |
 | **config-status** | `panel/navigator/config-status.js` | 4 +nav | see §7.8 | ✅ verified (loop 4) |
 | **history** | `panel/navigator/history.js` | 1 +nav | see §7.8 (effect `historyReplay`) | ✅ verified (loop 4) |
@@ -745,12 +745,14 @@ The container poll is a declared `interval` Sub (its `ms` = the owner's `refresh
 config-seeded from the containers panel's `refresh_ms:` and stepped by the refresh
 control along `refreshLadder` — the default docker ladder or a configured
 `refresh_ladder:`) and `docker events` a `process-stream` Sub (FIX-3 Phase 4/5 —
-the `started` flag + self-re-arm are gone); `augmentMsg` threads container `items`.
+the `started` flag + self-re-arm are gone); `augmentMsg` threads the CANONICAL
+`apiGetItems` list (filtered + sorted), so key actions hit the visible row.
 
 | Msg | Writes | Emits | Purity |
 |---|---|---|---|
-| *(content gate)* | — | — | a placed pane (`slice.paneId != null`) `return slice` — host-global content runs only on the singleton owner¹ |
-| `key{focusKind,items}` | — | `i`→`dockerExec{inspect}` · `t`→`dockerExec{logs}` · `s`→`dockerShell` | shell² |
+| *(content gate)* | — | — | a placed pane (`slice.paneId != null`) `return slice` for content Msgs — but nav/key/`item_action` are handled ABOVE it (per-pane), so a placed pane still drives its own selection/actions¹ |
+| `key{focusKind,items}` | — | maps `msg.key` via the declared `_itemActions` list → `_itemActionCmds` (below) | shell² |
+| `item_action{action,item}` | — | inspect→`dockerExec{inspect}` · logs→`dockerExec{logs}` · shell→`dockerShell` · stop/restart/kill→`run_action{docker <verb> <item>, confirm}` (the shared confirm gate). The action bar click; `item` resolved at dispatch time | shell² |
 | `refresh` / `dockerPoll` | — | `dockerFetch` (inFlight-guarded) | ✓ |
 | `dockerResult{status,stats}` | `status`, `stats`, `inFlight→false` | `render` | ✓ |
 | `set_refresh_ms{dir\|ms}` | `refreshMs` (owner-only; ladder step or clamp) | `render` | ✓ — re-arms the `interval` Sub (keyed `${id}:${ms}`); the sub-gate keys on `dockerRefresh` (state.js). No-op at a ladder end returns the same slice ref |

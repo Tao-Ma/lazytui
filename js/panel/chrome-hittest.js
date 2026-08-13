@@ -15,9 +15,10 @@
  */
 'use strict';
 
-const { getInstanceSlice, borderControlsFor } = require('./api');
+const { getInstanceSlice, borderControlsFor, getFocus } = require('./api');
 const { getModel } = require('../model/store');
 const mpool = require('../leaves/wm/pool');
+const mpane = require('../leaves/wm/pane');
 const { visibleBoundsFor } = require('../leaves/wm/geometry');
 const bc = require('../leaves/render/border-controls');
 
@@ -89,28 +90,49 @@ function hitTestCloseButton(mx, my) {
  *  to its owner Component — or null. The caller dispatches `wrap(owner, msg)`.
  *
  *  Presence + geometry mirror renderPanel EXACTLY so a click can't land where no
- *  control drew: the SAME `borderControlsFor(type, model)` the render decision
+ *  control drew: the SAME `borderControlsFor(pane, model)` the render decision
  *  uses returns only the controls visible THIS frame (specs suppress themselves
- *  in free-config, so the strip is empty there — no phantom click). Controls only
- *  ever show in normal mode where the sole right glyph is `[_]` (collapse), so
- *  the glyph cluster width = GLYPH_W. Presence gates on the shared `bc.fits`
- *  (the title-independent predicate renderPanel reserves for); positions come
- *  from `bc.placeX0s(visibleWs, _collapseGlyphX0)`. */
+ *  in free-config + off-focus). Two slots:
+ *    - TOP strip (refresh/sort): right-anchored left of `[_]` (glyph cluster =
+ *      GLYPH_W since controls only show in normal mode); gate `bc.fits`, positions
+ *      `bc.placeX0s`.
+ *    - BOTTOM legend (item-actions): left-anchored after `╰─`; gate `bc.bottomFits`
+ *      (count-independent), position `bc.bottomX0`, row = pane's last.
+ *  `pane.focused` (via paneMatchesFocus) lets a spec show per-focus (the bottom
+ *  legend does; top controls ignore it). */
 function hitTestBorderControls(mx, my) {
   const targets = _placedWidgetTargets();
   if (!targets) return null;
   const model = getModel();
+  const focus = getFocus();
   for (const { p, b } of targets) {
-    const pane = { paneId: p.paneId, type: p.type };
+    const pane = { paneId: p.paneId, type: p.type, focused: mpane.paneMatchesFocus(p, focus) };
     const controls = borderControlsFor(pane, model);
     if (!controls.length) continue;
-    const visibleWs = controls.map(c => c.visibleW);
-    if (!bc.fits(b.w - 2, GLYPH_W, visibleWs)) continue;   // same gate renderPanel uses
-    const x0s = bc.placeX0s(visibleWs, _collapseGlyphX0(b));
-    for (let i = 0; i < controls.length; i++) {
-      const regions = controls[i].spec.regions(x0s[i], b.y, controls[i].visibleW);
-      for (const r of regions) {
-        if (my === r.y && mx >= r.x0 && mx <= r.x1) return controls[i].spec.dispatch(r.action, pane);
+
+    // TOP strip — right-anchored, left of the glyph cluster.
+    const top = controls.filter(c => (c.spec.slot || 'top') !== 'bottom');
+    if (top.length) {
+      const visibleWs = top.map(c => c.visibleW);
+      if (bc.fits(b.w - 2, GLYPH_W, visibleWs)) {
+        const x0s = bc.placeX0s(visibleWs, _collapseGlyphX0(b));
+        for (let i = 0; i < top.length; i++) {
+          for (const r of top[i].spec.regions(x0s[i], b.y, top[i].visibleW)) {
+            if (my === r.y && mx >= r.x0 && mx <= r.x1) return top[i].spec.dispatch(r.action, pane);
+          }
+        }
+      }
+    }
+
+    // BOTTOM legend — left-anchored on the pane's last row.
+    const bottom = controls.find(c => (c.spec.slot || 'top') === 'bottom');
+    if (bottom && bc.bottomFits(b.w - 2, bottom.visibleW)) {
+      const y = b.y + b.h - 1;
+      for (const r of bottom.spec.regions(bc.bottomX0(b.x), y, bottom.visibleW)) {
+        if (my === r.y && mx >= r.x0 && mx <= r.x1) {
+          const hit = bottom.spec.dispatch(r.action, pane);
+          if (hit) return hit;   // null = nothing selected → fall through (harmless)
+        }
       }
     }
   }

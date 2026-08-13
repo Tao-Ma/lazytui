@@ -522,4 +522,45 @@ describe('[14] sort orders the canonical getItems list, composes with filter, an
   });
 });
 
+describe('[15] item-action bar: reducer Cmds, confirm on destructive, focused bottom hit-test', () => {
+  it('inspect/logs/shell emit their effects directly', () => {
+    const item = 'web';
+    eq(step({ type: 'item_action', action: 'inspect', item }, slice0()).effects, [{ type: 'dockerExec', mode: 'inspect', item }]);
+    eq(step({ type: 'item_action', action: 'logs',    item }, slice0()).effects, [{ type: 'dockerExec', mode: 'logs', item }]);
+    eq(step({ type: 'item_action', action: 'shell',   item }, slice0()).effects, [{ type: 'dockerShell', item }]);
+  });
+  it('stop/restart/kill run `docker <verb>` through the shared confirm gate (run_action)', () => {
+    for (const verb of ['stop', 'restart', 'kill']) {
+      const e = step({ type: 'item_action', action: verb, item: 'web' }, slice0()).effects;
+      eq(e.length, 1);
+      eq(e[0].type, 'run_action');
+      eq(e[0].action.type, 'run');
+      assert(e[0].action.script.includes(`docker ${verb} `), `runs docker ${verb}: ${e[0].action.script}`);
+      assert(/container "web"\?$/.test(e[0].action.confirm), `confirm prompt: ${e[0].action.confirm}`);
+    }
+  });
+  it('no selected item → no Cmd', () => {
+    eq(step({ type: 'item_action', action: 'kill', item: undefined }, slice0()).effects, []);
+  });
+  it('a click on a bottom-legend label dispatches item_action for the focused pane', () => {
+    const { hitTestBorderControls } = require('../panel/chrome-hittest');
+    setup(['c1', 'c2']);                 // setup() focuses the 'containers' pane
+    const ls = getInstanceSlice('layout');
+    ls.arrange = { columns: [{ panels: [{ type: 'containers', paneId: 'containers', title: 'C', columnIndex: 0 }] }], detailHeightPct: 60 };
+    ls.paneBounds = { containers: { x: 0, y: 0, w: 60, h: 8 } };   // legend row = y+h-1 = 7; bottomX0 = 2
+    ls.freeConfig = null;
+    getModel().modes = {};
+    // 'inspect logs shell stop restart kill' from x0=2 → inspect 2..8, kill 34..37
+    eq(hitTestBorderControls(2, 7),  { owner: 'containers', msg: { type: 'item_action', action: 'inspect', item: 'c1' } });
+    eq(hitTestBorderControls(34, 7), { owner: 'containers', msg: { type: 'item_action', action: 'kill', item: 'c1' } });
+    eq(hitTestBorderControls(9, 7), null);   // the separator gap between inspect and logs
+  });
+  it('the bar is suppressed on an UNfocused pane (no phantom bottom hit)', () => {
+    const ls = getInstanceSlice('layout');
+    ls.focus = 'elsewhere';
+    eq(require('../panel/chrome-hittest').hitTestBorderControls(34, 7), null);
+    ls.focus = 'containers';
+  });
+});
+
 report();

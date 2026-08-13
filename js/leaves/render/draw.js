@@ -11,6 +11,7 @@
 const { visibleLen, charWidth, richToAnsi, wrapColor, RESET } = require('../text/ansi');
 const { scrollbar } = require('./scrollbar');
 const { theme } = require('../infra/themes');
+const bctl = require('./border-controls');
 // No io import: terminal dims arrive via the injected _dimsProvider (below)
 // and the overlay paint write via the injected _writer (setWriter), both wired
 // at boot. Keeping this leaf free of io is what lets io/file-loader depend DOWN
@@ -105,7 +106,7 @@ function truncate(text, maxWidth) {
 function renderPanel({
   width, height, lines = [], title = '', hotkey = '',
   focused = false, count = null, scrollOffset = 0, color = null,
-  panelType = null, chrome = null, windowed = false, borderControls = [],
+  panelType = null, chrome = null, windowed = false, borderControls = [], bottomControls = [],
 }) {
   const t = theme();
   const b = BORDER;
@@ -205,9 +206,24 @@ function renderPanel({
   }
 
   // --- Bottom border ---
+  // Left-anchored item-action legend (the `bottomControls` strip — one control
+  // today) + the right-anchored `N of M` count. The legend is COUNT-INDEPENDENT
+  // (shown iff the pane is wide enough for it alone — border-controls.bottomFits,
+  // the same gate chrome-hittest reads); the count drops when it can't share the
+  // row. Placement mirrors border-controls.bottomX0 so a click can't miss.
   const countText = count ? `${count[0]} of ${count[1]}` : '';
+  const legend = (Array.isArray(bottomControls) && bottomControls[0]) || '';
+  const legendVis = legend ? visibleLen(legend) : 0;
   let bottom;
-  if (countText) {
+  if (legendVis && bctl.bottomFits(innerW, legendVis)) {
+    // ╰─{legend}{mid dashes}[{count}─]╯ — inner cells = 1 lead + legend + mid + right
+    const leadAndLegend = 1 + legendVis;
+    const showCount = countText && (innerW - leadAndLegend - (countText.length + 1) >= 1);
+    const rightCore = showCount ? `${countText}${b.h}` : '';
+    const rightVis = showCount ? countText.length + 1 : 0;
+    const mid = innerW - leadAndLegend - rightVis;   // ≥1 (bottomFits guarantees it when no count)
+    bottom = `[${fc}]${b.bl}${b.h}${legend}${b.h.repeat(Math.max(1, mid))}${rightCore}${b.br}[/]`;
+  } else if (countText) {
     const bfill = innerW - countText.length;
     if (bfill >= 2) {
       bottom = `[${fc}]${b.bl}${b.h.repeat(bfill - 1)}${countText}${b.h}${b.br}[/]`;

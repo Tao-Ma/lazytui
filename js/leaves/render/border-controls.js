@@ -60,4 +60,23 @@ function placeX0s(visibleWs, glyphX0) {
   return xs;
 }
 
-module.exports = { GAP, reservedW, fits, placeX0s };
+// --- Bottom border, LEFT-anchored single control (the item-action legend) ---
+// Layout: `╰` `─`(lead dash) {control} `─…`(≥1 trailing dash) `╯`. Count-
+// INDEPENDENT: the count (right-anchored) drops if it can't share the row, so
+// the control's presence + position depend only on the pane width — which the
+// hit-test also knows. Both the painter (draw.js bottom border) and the hit-test
+// derive from these two.
+
+/** Does a left-anchored bottom control of visible width `visibleW` fit on a
+ *  bottom border of inner width `innerW` (lead dash + control + ≥1 trailing)? */
+function bottomFits(innerW, visibleW) {
+  return innerW >= visibleW + 2;
+}
+
+/** Leftmost cell (x0) of the bottom control: one lead dash right of the corner
+ *  at the pane's left edge `paneX`. */
+function bottomX0(paneX) {
+  return paneX + 2;   // corner + lead dash
+}
+
+module.exports = { GAP, reservedW, fits, placeX0s, bottomFits, bottomX0 };

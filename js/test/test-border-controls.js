@@ -84,4 +84,23 @@ describe('[border-controls] render ↔ fits/placeX0s agreement (multi-control ph
   });
 });
 
+// The bottom-legend paint ↔ geometry guard: renderPanel must draw the left-
+// anchored bottom control on EXACTLY the widths bottomFits predicts, at the cell
+// bottomX0 gives — the same predicate + position chrome-hittest gates on.
+describe('[border-controls] bottom legend render ↔ bottomFits/bottomX0 agreement', () => {
+  const draw = require('../leaves/render/draw');
+  const { stripMarkup } = require('../leaves/text/ansi');
+  const LEG = 'inspect stop kill';   // visibleW 17
+  it('draws the legend on the bottom border IFF bottomFits, at bottomX0, w ∈ [8,40]', () => {
+    for (let w = 8; w <= 40; w++) {
+      const out = draw.renderPanel({ width: w, height: 4, lines: [], title: 'T', bottomControls: [LEG], count: [1, 3] });
+      const row = stripMarkup(out.split('\n').pop());
+      const drawn = row.includes(LEG);
+      const predicted = bc.bottomFits(w - 2, 17);
+      eq(drawn, predicted, `w=${w}: drawn=${drawn} predicted=${predicted} row=${JSON.stringify(row)}`);
+      if (drawn) eq(row.indexOf(LEG), bc.bottomX0(0), `legend at bottomX0 (w=${w})`);
+    }
+  });
+});
+
 report();
